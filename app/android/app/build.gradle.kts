@@ -17,7 +17,7 @@ val keyProps = Properties().apply {
 }
 
 android {
-    namespace = "dev.lx_labs.familienzentrale"
+    namespace = "dev.lx_labs.fampad"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -27,7 +27,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.lx_labs.familienzentrale"
+        applicationId = "dev.lx_labs.fampad"
         // Android 9 (API 28): Mindestversion für Passkeys über den Credential Manager
         minSdk = 28
         targetSdk = flutter.targetSdkVersion

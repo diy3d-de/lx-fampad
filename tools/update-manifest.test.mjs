@@ -11,12 +11,12 @@ const pub = rawPublicKey(publicKey).toString('base64');
 
 const basis = {
   apkBytes: Buffer.from('apk-inhalt'),
-  apkName: 'lx-familienzentrale-0.2.0.apk',
+  apkName: 'dev-lx_labs-fampad-0.2.0.apk',
   version: '0.2.0',
   versionCode: 2,
   minVersion: '0.1.0',
   notes: 'Neu',
-  packageName: 'dev.lx_labs.familienzentrale',
+  packageName: 'dev.lx_labs.fampad',
   keyId: 'test',
   issuedAt: '2026-10-18T12:00:00Z',
 };

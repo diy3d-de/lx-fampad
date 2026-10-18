@@ -22,7 +22,7 @@ export function readKeyConstants(source) {
 /** Wirft bei Platzhalter oder wenn der öffentliche Schlüssel nicht zum privaten passt; liefert die Schlüssel-ID. */
 export function checkKey(source, privatePem) {
   const { keyId, publicKey } = readKeyConstants(source);
-  if (!keyId) throw new Error("kUpdateKeyId ist kein Textwert (noch der Verweis auf den Platzhalter?). Echte ID eintragen, z. B. 'familie-2026-1'.");
+  if (!keyId) throw new Error("kUpdateKeyId ist kein Textwert (noch der Verweis auf den Platzhalter?). Echte ID eintragen, z. B. 'fampad-2026-1'.");
   if (keyId === PLATZHALTER_KEY_ID) throw new Error('kUpdateKeyId ist noch der Platzhalter');
   if (!publicKey) throw new Error('kUpdatePublicKey nicht gefunden');
   if (!privatePem) throw new Error('UPDATE_SIGNING_KEY fehlt');

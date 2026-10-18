@@ -7,7 +7,7 @@
 //       (kUpdatePublicKey, dazu kUpdateKeyId).
 //
 //   node tools/update-manifest.mjs sign --apk <datei.apk> --version 0.2.0 --version-code 2 --key-id <id> \
-//        [--min-version 0.1.0] [--notes "Text"] [--package-name dev.lx_labs.familienzentrale] \
+//        [--min-version 0.1.0] [--notes "Text"] [--package-name dev.lx_labs.fampad] \
 //        [--issued-at 2026-10-18T12:00:00Z] [--key-file <datei.pem> | Umgebungsvariable UPDATE_SIGNING_KEY] --out latest.json
 //       Schreibt latest.json: { "payload": "<JSON-Text>", "signature": "<Base64, 64 Byte>" }.
 //       Signiert wird genau der Text in "payload" (UTF-8). Die App prüft diesen Text unverändert.
@@ -19,7 +19,7 @@ import { basename, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
-export const DEFAULT_PACKAGE_NAME = 'dev.lx_labs.familienzentrale';
+export const DEFAULT_PACKAGE_NAME = 'dev.lx_labs.fampad';
 export const MAX_APK_BYTES = 200 * 1024 * 1024;
 
 /** Rohschlüssel (32 Byte) eines Ed25519-Public-Keys. */

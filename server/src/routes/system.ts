@@ -50,7 +50,7 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: S
   app.get('/api/v1/version', async (_req, reply) => {
     reply.header('Cache-Control', 'no-store');
     return {
-      service: 'lx-familie',
+      service: 'lx-fampad',
       version: SERVER_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       minProtocolVersion: MIN_PROTOCOL_VERSION,

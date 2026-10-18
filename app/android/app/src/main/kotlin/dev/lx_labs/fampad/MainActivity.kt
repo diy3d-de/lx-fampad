@@ -1,4 +1,4 @@
-package dev.lx_labs.familienzentrale
+package dev.lx_labs.fampad
 
 import android.app.PendingIntent
 import android.content.Intent
@@ -18,7 +18,7 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.familienzentrale/update")
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.fampad/update")
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "appVersion" -> result.success(packageManager.getPackageInfo(packageName, 0).versionName)

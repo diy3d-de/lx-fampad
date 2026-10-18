@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
-# Läuft auf dem Server (vom PC aus gestartet: ssh lx-labs bash lx-familienzentrale/deploy/deploy.sh):
-# neuesten Stand von GitHub holen, Server bauen, nach /srv/familie/server übertragen, Dienst neu starten.
+# Läuft auf dem Server (vom PC aus gestartet: ssh lx-labs bash lx-fampad/deploy/deploy.sh):
+# neuesten Stand von GitHub holen, Server bauen, nach /srv/fampad/server übertragen, Dienst neu starten.
 # Die Web-App wird getrennt mit deploy/deploy-web.sh hochgeladen (Flutter ist nicht auf dem Server installiert).
-# Die Vorversion bleibt in /srv/familie/server.prev; schlägt der Health-Check nach dem Neustart fehl, wird sie automatisch zurückgespielt.
-# Datenbank-Migrationen laufen beim Start des Dienstes (ExecStartPre in lx-familie.service).
+# Die Vorversion bleibt in /srv/fampad/server.prev; schlägt der Health-Check nach dem Neustart fehl, wird sie automatisch zurückgespielt.
+# Datenbank-Migrationen laufen beim Start des Dienstes (ExecStartPre in lx-fampad.service).
 #
 # Pakete: Installation immer mit --ignore-scripts (kein fremder Code aus Paket-Skripten auf dem Server). Gebaut wird mit
-# allen Paketen (TypeScript braucht die devDependencies); nach /srv/familie/server kommen nur die Produktivpakete,
+# allen Paketen (TypeScript braucht die devDependencies); nach /srv/fampad/server kommen nur die Produktivpakete,
 # frisch installiert (npm ci --omit=dev) in einem Zwischenordner. Brauchen künftige Pakete ein Installationsskript
 # (z. B. Prebuild-Download), wird es dort bewusst und einzeln freigegeben, nicht global eingeschaltet.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-TARGET=/srv/familie/server
-# Fest: derselbe Port steht in lx-familie.service und deploy/Caddyfile (die env-Datei ist für lx nicht lesbar)
+TARGET=/srv/fampad/server
+# Fest: derselbe Port steht in lx-fampad.service und deploy/Caddyfile (die env-Datei ist für lx nicht lesbar)
 PORT=4400
 # Vorversion für den automatischen Rückfall (nur lx schreibbar, siehe deploy/README.md, Schritt 2)
-PREV=/srv/familie/server.prev
+PREV=/srv/fampad/server.prev
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
@@ -35,7 +35,7 @@ cp package.json package-lock.json "$STAGE/"
 echo "==> nach $TARGET übertragen"
 mkdir -p "$TARGET"
 # Vorversion sichern (für den automatischen Rückfall). Das Verzeichnis legt die Einrichtung an (README, Schritt 2),
-# weil lx in /srv/familie nichts anlegen darf. Beim allerersten Deployment gibt es noch nichts zu sichern.
+# weil lx in /srv/fampad nichts anlegen darf. Beim allerersten Deployment gibt es noch nichts zu sichern.
 HAT_VORVERSION=0
 if [ -f "$TARGET/dist/server.js" ]; then
   if [ ! -d "$PREV" ] || [ ! -w "$PREV" ]; then
@@ -68,18 +68,18 @@ warte_auf_health() {
 }
 
 echo "==> restart"
-sudo systemctl restart lx-familie
+sudo systemctl restart lx-fampad
 if ! warte_auf_health; then
-  echo "==> FEHLER: Dienst antwortet nach 30s nicht mit \"db\":\"ok\". Logs: sudo journalctl -u lx-familie -n 50" >&2
+  echo "==> FEHLER: Dienst antwortet nach 30s nicht mit \"db\":\"ok\". Logs: sudo journalctl -u lx-fampad -n 50" >&2
   if [ "$HAT_VORVERSION" -eq 1 ]; then
     echo "==> Rückfall auf die Vorversion ($PREV)" >&2
     rsync -a --delete "$PREV/" "$TARGET/"
-    sudo systemctl restart lx-familie
+    sudo systemctl restart lx-fampad
     if warte_auf_health; then
       echo "==> Vorversion läuft wieder. Die neue Version ist NICHT aktiv; Ursache in den Logs suchen." >&2
       echo "    Hinweis: Migrationen der neuen Version wurden schon angewendet (nur vorwärts, rückwärtskompatibel)." >&2
     else
-      echo "==> FEHLER: auch die Vorversion antwortet nicht. Logs: sudo journalctl -u lx-familie -n 50" >&2
+      echo "==> FEHLER: auch die Vorversion antwortet nicht. Logs: sudo journalctl -u lx-fampad -n 50" >&2
     fi
   else
     echo "==> Keine Vorversion vorhanden, kein Rückfall möglich." >&2
@@ -88,9 +88,9 @@ if ! warte_auf_health; then
 fi
 
 # Caddy-Konfiguration wird nicht automatisch übernommen (braucht sudo mit Passwort)
-if ! cmp -s deploy/Caddyfile /etc/caddy/conf.d/familie.caddy; then
-  echo "==> Hinweis: deploy/Caddyfile weicht von /etc/caddy/conf.d/familie.caddy ab. Übernehmen mit:"
-  echo "    sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/conf.d/familie.caddy && caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
+if ! cmp -s deploy/Caddyfile /etc/caddy/conf.d/fampad.caddy; then
+  echo "==> Hinweis: deploy/Caddyfile weicht von /etc/caddy/conf.d/fampad.caddy ab. Übernehmen mit:"
+  echo "    sudo cp ~/lx-fampad/deploy/Caddyfile /etc/caddy/conf.d/fampad.caddy && caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
 fi
 # Ein Deploy von lx-labs ersetzt /etc/caddy/Caddyfile und entfernt dabei die Import-Zeile (deploy/README.md, Schritt 6)
 if ! grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then

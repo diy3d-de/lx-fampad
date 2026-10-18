@@ -1,4 +1,4 @@
-# lx-familienzentrale – Projektbeschreibung
+# lx-fampad – Projektbeschreibung
 
 Stand: 18.10.2026 · Status: Konzept · Mockups: [`docs/mockups/`](mockups/) und Design-Canvas (claude.ai, privat)
 
@@ -133,7 +133,7 @@ Mindestversionen: Android 9 (API 28, nötig für Passkeys über Credential Manag
    ▲             │                                       ├─▶ API + WebSocket :4400    │
    │             │                                       └─▶ /releases (OTA-Dateien)  │
    │             │   API ──▶ PostgreSQL 17 (nur localhost)                            │
-   │             │   API ──▶ Dateiablage /srv/familie/files (verschlüsselt)           │
+   │             │   API ──▶ Dateiablage /srv/fampad/files (verschlüsselt)           │
    │             │   Backup: restic, verschlüsselt, auf externes Ziel                  │
    │             └────────────────────────────────────────────────────────────────────┘
    └──── Push über eigenen ntfy-Server (UnifiedPush) – nur „es gibt Neues“, kein Inhalt
@@ -270,7 +270,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 - **Server-Härtung:** PostgreSQL nur auf localhost, eigener Systembenutzer und systemd-Dienst, Firewall
   unverändert (nur SSH/HTTP/HTTPS), Sicherheits-Header und strenge CSP über Caddy, Upload-Größen und
   Dateitypen begrenzt.
-- **Rechtliches:** eigene Datenschutzerklärung für die Familienzentrale (Kinderdaten, Standort, Web Push über den
+- **Rechtliches:** eigene Datenschutzerklärung für lx-fampad (Kinderdaten, Standort, Web Push über den
   Browser-Dienst), Löschkonzept (Konto löschen, Familie löschen, Export aller Daten als ZIP).
 
 ## 10. Betrieb auf dem VPS
@@ -278,7 +278,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 - DNS bei Cloudflare: `familie` A-Record auf die Server-IP, **DNS only** (graue Wolke) wie lx-labs.dev.
 - Caddy: zusätzlicher Site-Block `familie.lx-labs.dev` (statische Web-App, Reverse Proxy `/api` und `/ws`
   auf `127.0.0.1:4400`, `/releases`, `/.well-known`).
-- Dienst `lx-familie.service` unter eigenem Benutzer, Daten unter `/srv/familie/`.
+- Dienst `lx-fampad.service` unter eigenem Benutzer, Daten unter `/srv/fampad/`.
 - Backups: nächtlich `pg_dump` + Dateien mit restic auf ein externes Ziel, Aufbewahrung 7 Tage / 4 Wochen /
   6 Monate, Wiederherstellung einmal pro Quartal testen.
 - Monitoring: `/api/v1/health`, Speicherplatz-Warnung, Log-Rotation; keine IP-Adressen länger als 7 Tage.
@@ -288,7 +288,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 ## 11. Projektstruktur (geplant)
 
 ```
-lx-familienzentrale/
+lx-fampad/
   server/          Node/Fastify-API, Sync, Auth, Dateien, WebSocket, Drizzle-Schema und Migrationen
   app/             Flutter (Android, Web; iOS später): lib/data (drift, sync), lib/features/<bereich>, lib/ui (Tokens)
   deploy/          Caddy-Site, systemd-Dienst, deploy.sh, Backup-Skripte, Anleitung
@@ -317,7 +317,7 @@ Jede Phase durchläuft das Team: **Research** (Bibliotheken, Plattformvorgaben) 
 Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören vor Beginn bzw. in den Anfang von Phase 1 (Auth, Sync, Dateien):
 
 - ~~**WebSocket-Fehlversuche zählen:**~~ erledigt in Phase 1a: abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
-- ~~**Getrennte Datenbank-Rollen:**~~ erledigt in Phase 1a (`lx_familie_migrate` / `lx_familie`, `deploy/README.md`): eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
+- ~~**Getrennte Datenbank-Rollen:**~~ erledigt in Phase 1a (`lx_fampad_migrate` / `lx_fampad`, `deploy/README.md`): eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
 - **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen.
 - **Löschkonzept (teilweise erledigt):** `audit_log` (IP 7 Tage, Einträge 365 Tage) ist geregelt und wird aufgeräumt; offen bleibt `change_log.changes` (Sync, Phase 1c). Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
 - **Mitgliedschafts-Prüfung bei Schema-Verweisen (teilweise erledigt):** Zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships` gelten für Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen und Lesebestätigungen. Für Verweise mit `ON DELETE SET NULL` (`events.owner_id`, `*.assignee_id`, `messages.sender_id`, `files.uploaded_by`, `change_log.author_id`) geht das nicht (die Familien-Spalte würde mit auf NULL gesetzt); sie prüft der Sync serverseitig (Phase 1c). Ursprünglich: wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.

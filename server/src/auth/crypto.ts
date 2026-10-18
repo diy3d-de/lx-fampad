@@ -34,6 +34,7 @@ export class KeyRing {
 
   derive(purpose: string): Buffer {
     let key = this.cache.get(purpose);
+    // Domänen-Label der Schlüsselableitung: bewusst NICHT umbenannt (Projekt hieß früher lx-familie); eine Änderung machte vorhandene HMACs und TOTP-Geheimnisse ungültig.
     if (!key) {
       key = Buffer.from(hkdfSync('sha256', this.master, Buffer.alloc(0), `lx-familie/${purpose}`, 32));
       this.cache.set(purpose, key);

@@ -1,4 +1,4 @@
-# Datenschutzerklärung – Entwurf (Familienzentrale)
+# Datenschutzerklärung – Entwurf (lx-fampad)
 
 Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0 und 1a (Konten und Anmeldung im Server)
 und die in `docs/PROJEKTBESCHREIBUNG.md` festgelegten Phasen 1 bis 3. Vor dem Echtbetrieb mit Dritten (Großeltern, Gäste) von einer
@@ -6,13 +6,13 @@ fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte 
 
 ## 1. Verantwortlicher und Geltungsbereich
 
-- Verantwortlich: **[Name, Anschrift, E-Mail des Betreibers]** (Privatperson, betreibt die Familienzentrale für die eigene Familie).
+- Verantwortlich: **[Name, Anschrift, E-Mail des Betreibers]** (Privatperson, betreibt lx-fampad für die eigene Familie).
 - Geltungsbereich: Web-App (`familie.lx-labs.dev`), Android-App, Server, Push-Dienst (`ntfy.familie.lx-labs.dev`).
 - **[Prüfen]** Haushaltsausnahme (Art. 2 Abs. 2 lit. c DSGVO): Rein familiäre Nutzung fällt eventuell nicht unter die DSGVO. Sobald
   Personen außerhalb des Haushalts teilnehmen (Großeltern als Gäste) oder der Betreiber die Daten für andere verwaltet, ist vorsorglich so zu
   handeln, als gelte sie. Dieser Entwurf geht vom vorsichtigen Fall aus.
 
-## 2. Überblick: Was die Familienzentrale nicht tut
+## 2. Überblick: Was lx-fampad nicht tut
 
 Keine Werbung, keine Tracker, keine Statistik-Dienste, keine KI-Auswertung der Familiendaten, keine öffentlichen Profile, keine
 eingebetteten Fremdinhalte (Schriften, Karten und Skripte kommen von der eigenen Domain; die Content-Security-Policy in `deploy/Caddyfile`

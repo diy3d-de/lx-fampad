@@ -1,9 +1,9 @@
 {
-  "name": "lx-familie-server",
+  "name": "lx-fampad-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "lx-familienzentrale: API, Sync und WebSocket",
+  "description": "lx-fampad: API, Sync und WebSocket",
   "engines": {
     "node": ">=24.21.0 <25"
   },

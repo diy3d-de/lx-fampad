@@ -21,7 +21,7 @@ class LoginScreen extends ConsumerWidget {
                 const MonoLabel('// anmelden'),
                 const SizedBox(height: 4),
                 const Text(
-                  'Familienzentrale',
+                  'lx-fampad',
                   style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: kTextStrong),
                 ),
                 const SizedBox(height: 28),

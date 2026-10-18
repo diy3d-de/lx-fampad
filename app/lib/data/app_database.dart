@@ -34,7 +34,7 @@ class AppDatabase extends _$AppDatabase {
   int get schemaVersion => 1;
 
   static QueryExecutor _openConnection() => driftDatabase(
-        name: 'lx_familie',
+        name: 'lx_fampad',
         // sqlite3.wasm und drift_worker.js liegen in web/ (keine CDN-Abrufe), Versionen siehe docs/VERSIONEN.md
         web: DriftWebOptions(
           sqlite3Wasm: Uri.parse('sqlite3.wasm'),

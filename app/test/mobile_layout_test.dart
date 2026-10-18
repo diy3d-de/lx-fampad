@@ -8,8 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:lx_familienzentrale/app.dart';
-import 'package:lx_familienzentrale/constants.dart';
+import 'package:lx_fampad/app.dart';
+import 'package:lx_fampad/constants.dart';
 
 const _breite = 360.0;
 const _minZiel = 44.0;
@@ -63,7 +63,7 @@ void main() {
       addTearDown(tester.view.reset);
       addTearDown(tester.platformDispatcher.clearAllTestValues);
 
-      await tester.pumpWidget(const ProviderScope(child: FamilienzentraleApp()));
+      await tester.pumpWidget(const ProviderScope(child: FampadApp()));
       await tester.pump();
       expect(tester.takeException(), isNull, reason: 'Anmeldung');
       expect(kleineZiele(tester), isEmpty, reason: 'Anmeldung');
@@ -103,7 +103,7 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(const ProviderScope(child: FamilienzentraleApp()));
+    await tester.pumpWidget(const ProviderScope(child: FampadApp()));
     await tester.pump();
     await tester.tap(find.text('Vorschau ohne Anmeldung (Phase 0)'));
     await tester.pump();

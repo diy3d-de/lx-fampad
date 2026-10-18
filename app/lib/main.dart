@@ -9,5 +9,5 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   pruefeBasisAdressen();
   await initializeDateFormatting('de_DE');
-  runApp(const ProviderScope(child: FamilienzentraleApp()));
+  runApp(const ProviderScope(child: FampadApp()));
 }

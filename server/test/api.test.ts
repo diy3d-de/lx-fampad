@@ -120,7 +120,7 @@ describe('GET /api/v1/version', () => {
     const res = await (await start({ env: { MIN_APP_VERSION: '0.2.0', WEB_VERSION: 'abc123' } })).inject('/api/v1/version');
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
-      service: 'lx-familie',
+      service: 'lx-fampad',
       version: SERVER_VERSION,
       protocolVersion: PROTOCOL_VERSION,
       minAppVersion: '0.2.0',

@@ -1,4 +1,4 @@
-# lx-familienzentrale
+# lx-fampad
 
 Selbst gehostete Familien-Zentrale (Kalender, Chat, Listen, Aufgaben, Dateien, später Fotos, Karte u. a.) für die eigene Familie.
 Web und Android aus einer Flutter-Codebasis, Server auf dem netcup-VPS von lx-labs.dev. Domain: **familie.lx-labs.dev**.
@@ -10,7 +10,7 @@ Stand: **Phase 1a** (Server: Konten und Anmeldung; die App folgt in 1b, Sync in 
 
 - **Server** (`server/`): Node 24.21.0, TypeScript 6.0.3, Fastify 5.12.5, `@fastify/websocket` 11.3.3, Drizzle ORM 0.45.3 (+ drizzle-kit 0.31.11), PostgreSQL 17, Vitest 5.0.3, ESLint. Anmeldung: `@simplewebauthn/server` 14.0.3 (Passkeys), `argon2` 0.45.1 (Argon2id), `otplib` 13.5.0 (TOTP), `zod` 4.6.5 (Eingabevalidierung). Konfiguration nur über Umgebungsvariablen (`server/.env.example`); ohne `NODE_ENV` gilt `production` (fail-closed), unbekannte Werte brechen den Start ab, lokal `NODE_ENV=development` in `.env`. In `production` ist `AUTH_SECRET_KEY` Pflicht (Hauptschlüssel für TOTP-Verschlüsselung und HMACs, nie in der Datenbank, nie ändern).
 - **App** (`app/`): Flutter 3.47.6 / Dart 3.13.5 (Android + Web, kein iOS), Riverpod 3.4.3, drift 2.35.1 (SQLite, im Web WASM/OPFS). Web ohne CDN: `--no-web-resources-cdn`, Schriften gebündelt, `fontFallbackBaseUrl` auf die eigene Domain. `analyzer` (14.4.0) und `sqlite3` (3.7.0, passend zu `web/sqlite3.wasm`) sind bewusst gepinnt; `app/web-assets.sha256` hält die Prüfsummen der Web-Binärdateien.
-- **Deploy** (`deploy/`): Caddy (Site `familie.lx-labs.dev`, ntfy auf `ntfy.familie.lx-labs.dev`), systemd-Dienst `lx-familie`, `deploy.sh`, `deploy-web.sh`. Einrichtung: `deploy/README.md`.
+- **Deploy** (`deploy/`): Caddy (Site `familie.lx-labs.dev`, ntfy auf `ntfy.familie.lx-labs.dev`), systemd-Dienst `lx-fampad`, `deploy.sh`, `deploy-web.sh`. Einrichtung: `deploy/README.md`.
 - **Versionen sind exakt gepinnt** (kein `^`, kein `~`), Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Neue Pakete nur mit Version, die mindestens 14 Tage alt ist; in `docs/VERSIONEN.md` eintragen.
 
 ## Befehle
@@ -25,7 +25,7 @@ npm test             # Vitest (Schema- und Anmelde-Tests laufen gegen PGlite; mi
 npm run build        # nach dist/
 npm run db:generate  # neue Migration aus src/db/schema.ts erzeugen (drizzle/)
 npm run migrate      # Migrationen anwenden (MIGRATION_DATABASE_URL, sonst DATABASE_URL; nach build)
-npm run bootstrap    # Erstinstallation: Familie + Einladungslink für den ersten Admin (nach build); --reset <E-Mail> für den Notfall; auf dem Server: sudo node --env-file=/etc/lx-familie/env /srv/familie/server/dist/cli/bootstrap.js
+npm run bootstrap    # Erstinstallation: Familie + Einladungslink für den ersten Admin (nach build); --reset <E-Mail> für den Notfall; auf dem Server: sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js
 
 # App (in app/)
 flutter pub get --enforce-lockfile   # pubspec.lock ist eingecheckt; neu auflösen nur bewusst mit "flutter pub get"
@@ -40,7 +40,7 @@ node --test "tools/*.test.mjs"                                      # Test der M
 node tools/update-manifest.mjs keygen|sign …            # Update-Schlüssel, Manifest signieren (tools/README.md)
 
 # Deploy
-ssh lx-labs bash lx-familienzentrale/deploy/deploy.sh   # Server
+ssh lx-labs bash lx-fampad/deploy/deploy.sh   # Server
 deploy/deploy-web.sh                                    # Web-App
 ```
 
@@ -67,9 +67,9 @@ app/
   lib/features/<bereich>/  shell, home, calendar, chat, files, lists, login, update (Manifest-Prüfung Ed25519, Download, Pflicht-Update)
   lib/widgets/         bereichsübergreifende Widgets (Sync-Indikator)
   web/                 index.html, flutter_bootstrap.js, sqlite3.wasm, drift_worker.js, Icons
-  android/             applicationId dev.lx_labs.familienzentrale, MainActivity + UpdateReceiver (Update per PackageInstaller)
+  android/             applicationId dev.lx_labs.fampad, MainActivity + UpdateReceiver (Update per PackageInstaller)
   test/                app_test (Tabs), update_test (Ed25519, Manifest), mobile_layout_test (360 px, Textskala 1.5, Touch-Ziele)
-deploy/                Caddyfile, lx-familie.service + lx-familie-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, ntfy/server.yml, README.md
+deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md
 docs/                  Projektbeschreibung, Versionen, Datenschutz-Entwurf, Mockups
 .github/workflows/     ci.yml: Server (Lint, Typen, Tests, Build), App (analyze, test), Android-Debug-Build; release.yml: APK bauen/signieren, Manifest, Release-Entwurf (deploy/README.md, Abschnitt 10)
@@ -96,7 +96,7 @@ Vorbild ist **lx-urlaubsplanung** (`src/app/globals.css`, `mobile/lib/main.dart`
 - Anmeldung (Server): Geheimnisse nur gehasht oder verschlüsselt (Tokens/Tickets SHA-256, Passwörter Argon2id, Codes/PINs HMAC, TOTP AES-256-GCM); Einmal-Einlösungen immer atomar (`UPDATE/DELETE … RETURNING`, Zählen vor dem Vergleich); alle Fehlschläge der Anmeldung antworten gleich; jede Route, die Familiendaten liefert, filtert über die Familie der Sitzung (fremde Objekte = 404); neue Prüfungen für sensible Aktionen über `requireStepUp`. Datenbank-Rollen: Laufzeit nur DML (`DATABASE_URL`), Migrationen mit `MIGRATION_DATABASE_URL`.
 - Offline-first: UI schreibt in die lokale DB/Outbox und wartet nie auf den Server (Sync-Protokoll: Projektbeschreibung Abschnitt 6).
 - Datenschutz: keine Tracker, keine Fremd-Einbindungen (Schriften, Karten, Skripte), Push ohne Inhalte, Standort nur durch die Person selbst. CSP in `deploy/Caddyfile` nicht lockern, ohne Security zu fragen.
-- `applicationId` (`dev.lx_labs.familienzentrale`) und Android-Signaturschlüssel nie ändern.
+- `applicationId` (`dev.lx_labs.fampad`) und Android-Signaturschlüssel nie ändern.
 - Geheimnisse (`.env`, `key.properties`, Keystores, Signaturschlüssel des Update-Manifests) nie einchecken. `kUpdatePublicKey` ist bis zum ersten Release ein Platzhalter (siehe `tools/README.md`).
 - Commit-Nachrichten auf Deutsch, kurz und im Imperativ-/Beschreibungsstil. Kein Push nach `main` ohne ausdrücklichen Auftrag.
 

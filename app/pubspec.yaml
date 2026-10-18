@@ -1,5 +1,5 @@
-name: lx_familienzentrale
-description: "lx-familienzentrale: Familien-App (Android und Web)"
+name: lx_fampad
+description: "lx-fampad: Familien-App (Android und Web)"
 publish_to: 'none'
 
 # Versionsnummer = Update-Vergleich (Android-OTA, /api/v1/version). Build-Nummer = versionCode.

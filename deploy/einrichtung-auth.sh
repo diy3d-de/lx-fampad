@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Anmeldung (Phase 1a) einrichten bzw. eine bestehende Installation darauf umstellen. Idempotent: mehrfaches Ausführen ist gefahrlos.
-#   1. AUTH_SECRET_KEY in /etc/lx-familie/env anlegen (nur wenn er fehlt; ein vorhandener Schlüssel bleibt unverändert)
-#   2. Datenbank-Rollen trennen: lx_familie_migrate (Eigentümer, darf DDL, nur für Migrationen) und lx_familie (Laufzeit, nur DML)
-#   3. Zugangsdaten der Migrationsrolle nach /etc/lx-familie/migrate.env (root:root, 0600; nur die Migrations-Einheit lädt sie)
-#   4. Einheiten lx-familie.service und lx-familie-migrate.service installieren
-# Aufruf auf dem Server:   sudo bash ~/lx-familienzentrale/deploy/einrichtung-auth.sh
+#   1. AUTH_SECRET_KEY in /etc/lx-fampad/env anlegen (nur wenn er fehlt; ein vorhandener Schlüssel bleibt unverändert)
+#   2. Datenbank-Rollen trennen: lx_fampad_migrate (Eigentümer, darf DDL, nur für Migrationen) und lx_fampad (Laufzeit, nur DML)
+#   3. Zugangsdaten der Migrationsrolle nach /etc/lx-fampad/migrate.env (root:root, 0600; nur die Migrations-Einheit lädt sie)
+#   4. Einheiten lx-fampad.service und lx-fampad-migrate.service installieren
+# Aufruf auf dem Server:   sudo bash ~/lx-fampad/deploy/einrichtung-auth.sh
 # Danach deployen (deploy/deploy.sh) und den ersten Admin anlegen (siehe deploy/README.md, Abschnitt "Erster Admin").
 #
 # Die laufende Installation bleibt bis zum nächsten Deployment unverändert: Der Dienst nutzt weiter die Laufzeitrolle
@@ -18,11 +18,11 @@ if [ "$(id -u)" -ne 0 ]; then
   exit 1
 fi
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE=/etc/lx-familie/env
-MIGRATE_ENV=/etc/lx-familie/migrate.env
-DB=lx_familie
-RUNTIME_ROLE=lx_familie
-MIGRATE_ROLE=lx_familie_migrate
+ENV_FILE=/etc/lx-fampad/env
+MIGRATE_ENV=/etc/lx-fampad/migrate.env
+DB=lx_fampad
+RUNTIME_ROLE=lx_fampad
+MIGRATE_ROLE=lx_fampad_migrate
 
 [ -f "$ENV_FILE" ] || { echo "$ENV_FILE fehlt (zuerst Schritt 5 der Einrichtung bzw. einrichtung-1.sh)." >&2; exit 1; }
 command -v openssl >/dev/null || { echo "openssl fehlt" >&2; exit 1; }
@@ -89,10 +89,10 @@ SQL
 echo "    Eigentümer: $MIGRATE_ROLE (DDL); Laufzeit: $RUNTIME_ROLE (nur SELECT/INSERT/UPDATE/DELETE)."
 
 echo "==> 3/4 systemd-Einheiten"
-cp "$SELF_DIR/lx-familie.service" "$SELF_DIR/lx-familie-migrate.service" /etc/systemd/system/
+cp "$SELF_DIR/lx-fampad.service" "$SELF_DIR/lx-fampad-migrate.service" /etc/systemd/system/
 systemctl daemon-reload
-echo "    lx-familie.service und lx-familie-migrate.service installiert."
+echo "    lx-fampad.service und lx-fampad-migrate.service installiert."
 
 echo "==> 4/4 Fertig"
-echo "    Nächste Schritte:  bash ~/lx-familienzentrale/deploy/deploy.sh"
-echo "    Erster Admin:      sudo node --env-file=/etc/lx-familie/env /srv/familie/server/dist/cli/bootstrap.js --family \"Familie\""
+echo "    Nächste Schritte:  bash ~/lx-fampad/deploy/deploy.sh"
+echo "    Erster Admin:      sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js --family \"Familie\""

@@ -1,11 +1,11 @@
 {
-  "name": "Familienzentrale",
+  "name": "lx-fampad",
   "short_name": "Familie",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#090A0F",
   "theme_color": "#090A0F",
-  "description": "Familienzentrale: Kalender, Chat, Listen und Dateien, selbst gehostet.",
+  "description": "lx-fampad: Kalender, Chat, Listen und Dateien, selbst gehostet.",
   "orientation": "portrait-primary",
   "prefer_related_applications": false,
   "icons": [

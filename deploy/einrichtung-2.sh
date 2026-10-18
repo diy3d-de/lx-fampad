@@ -4,17 +4,17 @@
 # Voraussetzung: DNS-Einträge `familie` und `ntfy.familie` zeigen auf den Server (nur DNS, graue Wolke).
 # ntfy gehört NICHT dazu: Der Site-Block für ntfy.familie wird hier vorerst ausgelassen.
 #
-# Aufruf auf dem Server als Benutzer lx:   sudo bash ~/lx-familienzentrale/deploy/einrichtung-2.sh
+# Aufruf auf dem Server als Benutzer lx:   sudo bash ~/lx-fampad/deploy/einrichtung-2.sh
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ]; then
   echo "Bitte als Benutzer lx starten:  sudo bash $0" >&2
   exit 1
 fi
-REPO="$(getent passwd "$SUDO_USER" | cut -d: -f6)/lx-familienzentrale"
+REPO="$(getent passwd "$SUDO_USER" | cut -d: -f6)/lx-fampad"
 CADDYFILE=/etc/caddy/Caddyfile
-BACKUP=/etc/caddy/Caddyfile.vor-familie
-SITE=/etc/caddy/conf.d/familie.caddy
+BACKUP=/etc/caddy/Caddyfile.vor-fampad
+SITE=/etc/caddy/conf.d/fampad.caddy
 IMPORT='import /etc/caddy/conf.d/*.caddy'
 
 echo "==> Voraussetzungen"

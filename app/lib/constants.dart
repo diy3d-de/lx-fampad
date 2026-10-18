@@ -77,7 +77,7 @@ const kMaxApkBytes = 200 * 1024 * 1024;
 const kProtocolVersion = 1;
 
 /// Paketname der App; das signierte Update-Manifest muss genau diesen Namen tragen.
-const kPackageName = 'dev.lx_labs.familienzentrale';
+const kPackageName = 'dev.lx_labs.fampad';
 
 /// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64). PLATZHALTER: Der zugehörige private
 /// Schlüssel existiert nicht, daher wird kein Manifest akzeptiert. Vor dem ersten Release durch den echten
@@ -103,7 +103,7 @@ void pruefeBasisAdressen({bool? debug, bool? android, String api = kApiBase, Str
 }
 
 /// Methodenkanal zu MainActivity.kt (Version abfragen, APK installieren).
-const kUpdateChannel = 'dev.lx_labs.familienzentrale/update';
+const kUpdateChannel = 'dev.lx_labs.fampad/update';
 
 /// Navigationsziele (Reihenfolge = Reihenfolge in der NavigationBar).
 class NavTab {

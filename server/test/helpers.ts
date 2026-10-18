@@ -20,7 +20,7 @@ import * as schema from '../src/db/schema.js';
 import { TestAuthenticator } from './authenticator.js';
 
 export const migrationsFolder = fileURLToPath(new URL('../drizzle', import.meta.url));
-export const TEST_KEY = createHash('sha256').update('lx-familie-test-key').digest('base64');
+export const TEST_KEY = createHash('sha256').update('lx-fampad-test-key').digest('base64');
 export const ORIGIN = 'https://familie.lx-labs.dev';
 
 export interface Harness {

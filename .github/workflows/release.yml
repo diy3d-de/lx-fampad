@@ -69,7 +69,7 @@ jobs:
           {
             echo "version=$v"
             echo "version_code=$code"
-            echo "apk_name=dev-lx_labs-familienzentrale-$v.apk"
+            echo "apk_name=dev-lx_labs-fampad-$v.apk"
           } >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
@@ -280,7 +280,7 @@ jobs:
           printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/deploy_key"
           printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
           ssh_cmd="ssh -i $RUNNER_TEMP/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
-          # Der Schlüssel ist auf dem Server auf rrsync (nur schreiben, nur /srv/familie/releases/android) beschränkt.
+          # Der Schlüssel ist auf dem Server auf rrsync (nur schreiben, nur /srv/fampad/releases/android) beschränkt.
           # rsync schreibt in eine Temp-Datei und benennt um: jede Datei erscheint vollständig oder gar nicht.
           rsync -e "$ssh_cmd" --chmod=F644 "$APK_NAME" "$VPS_USER@$VPS_HOST:./"
           rsync -e "$ssh_cmd" --chmod=F644 latest.json "$VPS_USER@$VPS_HOST:./"

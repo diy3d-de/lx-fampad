@@ -2,19 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
-import 'package:lx_familienzentrale/app.dart';
-import 'package:lx_familienzentrale/constants.dart';
-import 'package:lx_familienzentrale/features/calendar/calendar_screen.dart';
-import 'package:lx_familienzentrale/features/chat/chat_screen.dart';
-import 'package:lx_familienzentrale/features/files/files_screen.dart';
-import 'package:lx_familienzentrale/features/home/home_screen.dart';
-import 'package:lx_familienzentrale/features/lists/lists_screen.dart';
+import 'package:lx_fampad/app.dart';
+import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/features/calendar/calendar_screen.dart';
+import 'package:lx_fampad/features/chat/chat_screen.dart';
+import 'package:lx_fampad/features/files/files_screen.dart';
+import 'package:lx_fampad/features/home/home_screen.dart';
+import 'package:lx_fampad/features/lists/lists_screen.dart';
 
 void main() {
   setUpAll(() => initializeDateFormatting('de_DE'));
 
   Future<void> start(WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: FamilienzentraleApp()));
+    await tester.pumpWidget(const ProviderScope(child: FampadApp()));
     await tester.pump();
   }
 

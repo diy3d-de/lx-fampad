@@ -10,15 +10,15 @@ import 'features/update/update_service.dart';
 import 'ui/theme.dart';
 import 'ui/widgets.dart';
 
-class FamilienzentraleApp extends ConsumerWidget {
-  const FamilienzentraleApp({super.key});
+class FampadApp extends ConsumerWidget {
+  const FampadApp({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final angemeldet = ref.watch(authProvider);
     final pflichtUpdate = ref.watch(updateProvider.select((u) => u.pflicht));
     return MaterialApp(
-      title: 'Familienzentrale',
+      title: 'lx-fampad',
       debugShowCheckedModeBanner: false,
       locale: const Locale('de', 'DE'),
       supportedLocales: const [Locale('de', 'DE')],
