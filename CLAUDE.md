@@ -49,6 +49,7 @@ deploy/deploy-web.sh                                    # Web-App
 ```
 server/
   src/config.ts        Umgebungsvariablen -> Config
+  src/log.ts, net.ts   Fehler-Serializer fürs Log (nie SQL-Parameter), IP-Normalisierung (IPv6 /64)
   src/app.ts           Fastify-App (buildApp, ohne Port; für Tests)
   src/server.ts        Start, Datenbank, Shutdown
   src/errors.ts        AppError + eigener Fehlerhandler (nie interne Meldungen)
@@ -59,7 +60,7 @@ server/
   src/sync/            nur Typen (Phase 1c)
   src/db/              schema.ts (Drizzle), index.ts (Pool), migrate-cli.ts (Migrationsrolle)
   drizzle/             erzeugte SQL-Migrationen (einchecken)
-  test/                Vitest: api.test.ts (Routen, Rate-Limit, WebSocket, Konfiguration, Fehlerhandler), migration.test.ts (Schema), auth.test.ts (Bootstrap, Einladungen), auth-login.test.ts (Anmeldearten, Sitzungen, Step-up, Sperren, Familiengrenze, Aufräumen), ws-auth.test.ts (Tickets, Limits); authenticator.ts (simulierter WebAuthn-Authenticator), helpers.ts (Backends PGlite/PostgreSQL, Welt mit Uhr)
+  test/                Vitest: api.test.ts (Routen, Rate-Limit, WebSocket, Konfiguration, Fehlerhandler), migration.test.ts (Schema), auth.test.ts (Bootstrap, Einladungen), auth-login.test.ts (Anmeldearten, Sitzungen, Step-up, Sperren, Familiengrenze, Aufräumen), ws-auth.test.ts (Tickets, Limits), hardening.test.ts (Log ohne Parameter, ungültige Zeichen, IPv6, Aufräumen, Einladungsrechte, WebSocket-Widerruf), crypto.test.ts (Known-Answer der Schlüsselableitung, IP, Serializer, Zeichen); authenticator.ts (simulierter WebAuthn-Authenticator), helpers.ts (Backends PGlite/PostgreSQL, Welt mit Uhr)
 app/
   lib/constants.dart   Design-Tokens, Personenfarben, Tabs, Konstanten
   lib/ui/              theme.dart (Material 3), widgets.dart (Glow-Hintergrund, Karten, Labels)

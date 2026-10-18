@@ -28,7 +28,7 @@ verbietet Fremdadressen). Es gibt keinen Service Worker und keine Cookies außer
 | Einladungen: Rolle, Ersteller, Gültigkeit, Token (nur SHA-256-Hash), optionale PIN (nur HMAC-Hash), Zähler der PIN-Fehlversuche, Zeitpunkte (benutzt, widerrufen, gesperrt) | Aufnahme neuer Mitglieder | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b, f |
 | Geräte und Sitzungen: Gerätename (bei Browsern grob aus dem User-Agent, z. B. „Chrome auf Windows“), Plattform, App-Version, Zeitpunkte (angelegt, zuletzt aktiv, abgelaufen, widerrufen), Sitzungs-Token (nur Hash), Anmeldeart | Geräteverwaltung, Abmelden einzelner Geräte | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b, f |
 | Sicherheitsprotokoll (Audit-Log): Einladung erstellt/benutzt/widerrufen/abgelaufen, PIN-Fehlversuche, Anmeldung (auch fehlgeschlagen), neues Gerät, Rollenänderung, Zurücksetzen, Freigabe/Ablehnung, Wiederherstellungs-Code eingelöst, Wiederverwendung eines Refresh-Tokens, fehlgeschlagene WebSocket-Anmeldung, jeweils mit Zeitpunkt, handelnder Person und IP-Adresse | Missbrauchserkennung, Nachvollziehbarkeit | Ist (Phase 1a); nie Passwörter, Tokens, PINs oder Codes | Art. 6 Abs. 1 lit. f |
-| Fehlversuchs-Zähler (`login_attempts`): Schlüssel aus einem HMAC der IP bzw. der E-Mail-Adresse (keine Klartext-Werte), Anzahl, Zeitpunkte, Sperre | Schutz vor Raten von Passwörtern, Codes und PINs | Ist (Phase 1a) | Art. 6 Abs. 1 lit. f |
+| Fehlversuchs-Zähler (`login_attempts`): Schlüssel aus einem HMAC der IP (IPv6: des /64-Präfixes), der E-Mail-Adresse bzw. des Paares aus beidem (keine Klartext-Werte), Anzahl, Zeitpunkte, Sperre | Schutz vor Raten von Passwörtern, Codes und PINs | Ist (Phase 1a) | Art. 6 Abs. 1 lit. f |
 | Kurzlebige Anmeldezustände: WebAuthn-Challenges, angefangene Registrierungen (Name, E-Mail, Passwort-Hash und verschlüsseltes TOTP-Geheimnis bis zum Abschluss), WebSocket-Tickets (nur Hash) | Ablauf der Anmeldung | Ist (Phase 1a), Löschung nach wenigen Minuten bzw. 30 Sekunden | Art. 6 Abs. 1 lit. b |
 | Inhalte: Termine, Chat-Nachrichten (inkl. Lesebestätigungen, Reaktionen), Listen, Aufgaben, Dateien | eigentliche Funktion | Geplant (Phase 1), Fotos u. a. Phase 2 | Art. 6 Abs. 1 lit. b |
 | Standort (Live-Teilen) | Funktion „Standort teilen“ | Geplant (Phase 2) | Art. 6 Abs. 1 lit. a (Einwilligung, Abschnitt 8) |
@@ -49,7 +49,7 @@ Eine Ende-zu-Ende-Verschlüsselung gibt es in Phase 1 bewusst nicht; der Betreib
   Das Journal gilt für alle Dienste des Servers, also auch für andere Projekte auf demselben VPS.
 - **Im Arbeitsspeicher:** Begrenzungen (Rate-Limit, Verbindungen je IP) halten IP-Adressen nur flüchtig im Speicher des Prozesses; sie werden
   nicht gespeichert und gehen beim Neustart verloren.
-- **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt; ein Aufräum-Job (beim Start des Servers und danach täglich) leert die Spalte. Die Fehlversuchs-Zähler enthalten keine Klartext-IP (nur einen HMAC) und werden einen Tag nach dem letzten Fehlversuch gelöscht.
+- **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt; ein Aufräum-Job (beim Start des Servers und danach **stündlich**) leert die Spalte. Die Fehlversuchs-Zähler enthalten keine Klartext-IP (nur einen HMAC) und werden gelöscht, sobald ihr Zählfenster (15 Minuten) ohne neuen Fehlversuch abgelaufen und keine Sperre mehr aktiv ist, spätestens bei einem der stündlichen Läufe. Offene WebAuthn-Challenges (auch angefangene Registrierungen mit Passwort-Hash und verschlüsseltem TOTP-Geheimnis) und WebSocket-Tickets werden nach Ablauf ebenfalls stündlich gelöscht.
 - **[Prüfen]** Der Hoster (netcup) kann auf Netzwerkebene eigene Verbindungsdaten erfassen (Abschnitt 5).
 
 ## 5. Empfänger und Auftragsverarbeiter
@@ -106,16 +106,16 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 | `audit_log`-Einträge | 365 Tage (Voreinstellung `AUDIT_RETENTION_DAYS`) **[Prüfen: Dauer festlegen]**, danach gelöscht |
 | Sitzungen und Geräte | Cookie-Sitzung höchstens 30 Tage (7 Tage Leerlauf), App-Sitzung höchstens 90 Tage (30 Tage Leerlauf); abgelaufene Sitzungen löscht der Aufräum-Job einen Tag nach Ablauf, widerrufene nach 30 Tagen, abgemeldete Geräte nach 30 Tagen |
 | Einladungen | 24 Stunden Standard, höchstens 7 Tage gültig, einmalig; nie benutzte, abgelaufene Einladungen werden nach 30 Tagen gelöscht, benutzte bleiben als Nachweis (ohne Token) |
-| WebAuthn-Challenges, angefangene Registrierungen | 5 Minuten |
-| WebSocket-Tickets | 30 Sekunden |
-| Fehlversuchs-Zähler | 1 Tag nach dem letzten Fehlversuch (sofern nicht mehr gesperrt) |
+| WebAuthn-Challenges, angefangene Registrierungen | 5 Minuten (gelöscht beim nächsten stündlichen Lauf) |
+| WebSocket-Tickets | 30 Sekunden (gelöscht beim nächsten stündlichen Lauf) |
+| Fehlversuchs-Zähler | 15 Minuten nach dem letzten Fehlversuch (sofern nicht mehr gesperrt), gelöscht beim nächsten stündlichen Lauf |
 | Chat, Termine, Listen, Dateien | bis zum Löschen durch die Nutzer; gelöschte Einträge bleiben als **Tombstone** (ohne Inhalt) im Änderungsprotokoll, bis alle Geräte sie kennen |
 | Standortdaten | nach Ende der Freigabe sofort gelöscht |
 | ntfy-Zwischenspeicher | 12 Stunden |
 | Backups (restic, verschlüsselt, externes Ziel) | täglich 7, wöchentlich 4, monatlich 6 Stück **[Phase 1]**; gelöschte Daten verschwinden spätestens nach Ablauf der letzten Sicherung |
 
 Löschkonzept (Phase 1 bis 3): Konto löschen (entfernt Anmeldedaten, Geräte, Sitzungen, Wiederherstellungs-Codes; Inhalte werden dem Betreiber zugeordnet oder auf Wunsch gelöscht), Familie löschen
-(entfernt alle Daten der Familie per Datenbank-Kaskade), Export aller Daten als ZIP (Auskunft/Übertragbarkeit). Umgesetzt in Phase 1a ist das **Entfernen eines Mitglieds** durch einen Admin (löscht Konto, Anmeldedaten, Geräte, Sitzungen und Wiederherstellungs-Codes; Verweise in Audit-Einträgen werden anonymisiert) sowie das **Ablehnen** wartender Mitglieder.
+(entfernt alle Daten der Familie per Datenbank-Kaskade), Export aller Daten als ZIP (Auskunft/Übertragbarkeit). Umgesetzt in Phase 1a ist das **Entfernen eines Mitglieds** durch einen Admin (löscht die Mitgliedschaft samt Geräten und Sitzungen und, da der Server genau eine Familie bedient, auch das Konto mit Anmeldedaten und Wiederherstellungs-Codes; offene Einladungen der Person werden widerrufen) sowie das **Ablehnen** wartender Mitglieder. **Audit-Einträge bleiben bis zum Ablauf der Aufbewahrungsfrist (365 Tage) bestehen:** Der Verweis auf das Konto (`actor_id`) wird beim Löschen geleert; in den Einzelheiten der Einträge bleibt die frühere interne Benutzer-ID als **Pseudonym** stehen (keine Namen, keine E-Mail-Adressen, nach 7 Tagen auch keine IP). Das ist nicht „anonymisiert“ im strengen Sinn, solange die Zuordnung über andere Quellen (z. B. Sicherungen) möglich wäre.
 
 ## 11. Sicherheitsmaßnahmen (Auszug)
 
