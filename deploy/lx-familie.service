@@ -1,0 +1,43 @@
+# systemd-Dienst für die lx-familie API (Fastify, Port 4400 nur lokal).
+# Installation: siehe deploy/README.md, Abschnitt "Dienst einrichten".
+#   sudo cp deploy/lx-familie.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now lx-familie
+
+[Unit]
+Description=lx-familie (Familienzentrale API)
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=simple
+User=lx-familie
+Group=lx-familie
+WorkingDirectory=/srv/familie/server
+Environment=NODE_ENV=production
+# HOST, PORT, DATABASE_URL, PUBLIC_URL usw. stehen in dieser Datei (root:lx-familie, 0640), siehe server/.env.example
+EnvironmentFile=/etc/lx-familie/env
+# Datenbank-Migrationen (nur vorwärts, rückwärtskompatibel zur Vorgängerversion) vor jedem Start
+ExecStartPre=/usr/bin/node dist/db/migrate-cli.js
+ExecStart=/usr/bin/node dist/server.js
+Restart=on-failure
+RestartSec=5
+
+# Härtung
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+# Schreibzugriff nur auf die Dateiablage
+ReadWritePaths=/srv/familie/files
+
+[Install]
+WantedBy=multi-user.target
