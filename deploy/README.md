@@ -16,9 +16,9 @@ Browser/App ──HTTPS──▶ Caddy :443 ─┬─ familie.lx-labs.dev
 Dateien in diesem Ordner:
 
 - `Caddyfile` – Site-Blöcke `familie.lx-labs.dev` und `ntfy.familie.lx-labs.dev` mit strengen Sicherheits-Headern
-- `lx-familie.service` – systemd-Dienst der API (eigener Benutzer, gehärtet, Migrationen vor dem Start)
-- `deploy.sh` – läuft auf dem Server: Code holen, Server bauen, Dienst neu starten
-- `deploy-web.sh` – läuft auf dem PC: Flutter-Web bauen und versioniert hochladen
+- `lx-familie.service` – systemd-Dienst der API (eigener Benutzer, gehärtet, Speicher-/Prozessgrenzen, Migrationen vor dem Start)
+- `deploy.sh` – läuft auf dem Server: Code holen, Server bauen (`npm ci --ignore-scripts`), nur Produktivpakete übertragen, Dienst neu starten, Health-Check mit `"db":"ok"`
+- `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
 - `ntfy/server.yml` – ntfy-Konfiguration (deny-all, nur `up*`-Topics beschreibbar)
 
 Verzeichnisse auf dem Server:
@@ -32,7 +32,7 @@ Verzeichnisse auf dem Server:
 | `/srv/familie/well-known` | `assetlinks.json` (später `apple-app-site-association`) | `lx` |
 | `/srv/familie/font-fallback` | Fallback-Schriften für Flutter Web | `lx` |
 | `/srv/familie/files` | Dateiablage (später verschlüsselt) | `lx-familie`, 0700 |
-| `/etc/lx-familie/env` | Konfiguration und Geheimnisse | `root:lx-familie`, 0640 |
+| `/etc/lx-familie/env` | Konfiguration und Geheimnisse (Datenbank-Passwort) | `root:root`, 0600 |
 
 ---
 
@@ -55,11 +55,16 @@ Debian 13 liefert PostgreSQL 17. Der Server lauscht standardmäßig nur auf loca
 sudo apt install -y postgresql postgresql-client rsync
 sudo -u postgres psql -c "select version();"        # muss PostgreSQL 17.x melden
 
-# Rolle und Datenbank; Passwort erzeugen und für die env-Datei merken
-DBPASS=$(openssl rand -base64 24 | tr -d '/+=')
-echo "$DBPASS"
-sudo -u postgres psql -c "CREATE ROLE lx_familie LOGIN PASSWORD '$DBPASS'"
-sudo -u postgres psql -c "CREATE DATABASE lx_familie OWNER lx_familie ENCODING 'UTF8'"
+# Passwort erzeugen und anzeigen (zum Einfügen in die nächsten Schritte; nicht in Befehlszeilen schreiben)
+openssl rand -base64 24 | tr -d '/+='
+
+# Rolle und Datenbank in einer psql-Sitzung. Das Passwort NICHT per psql -c / echo setzen: Befehlszeilen stehen in
+# der Prozessliste, im Shell-Verlauf und (je nach log_statement) im PostgreSQL-Log. \password fragt ohne Anzeige ab.
+sudo -u postgres psql
+postgres=# CREATE ROLE lx_familie LOGIN;
+postgres=# \password lx_familie
+postgres=# CREATE DATABASE lx_familie OWNER lx_familie ENCODING 'UTF8';
+postgres=# \q
 ```
 
 ### 2. Systembenutzer, Verzeichnisse, Konfiguration
@@ -98,10 +103,11 @@ git clone git@github.com:<dein-github-name>/lx-familienzentrale.git ~/lx-familie
 ### 5. Konfiguration und Dienst einrichten
 
 ```bash
-# Konfiguration: Vorlage ist server/.env.example
-sudo cp ~/lx-familienzentrale/server/.env.example /etc/lx-familie/env
-sudo chown root:lx-familie /etc/lx-familie/env && sudo chmod 640 /etc/lx-familie/env
+# Konfiguration: Vorlage ist server/.env.example. Die Datei enthält das Datenbank-Passwort: root:root, 0600.
+# systemd liest sie als root (EnvironmentFile), der Dienst selbst und auch der Benutzer lx können sie nicht lesen.
+sudo install -o root -g root -m 600 ~/lx-familienzentrale/server/.env.example /etc/lx-familie/env
 sudoedit /etc/lx-familie/env      # DATABASE_URL mit dem Passwort aus Schritt 1, FILES_DIR=/srv/familie/files
+sudo ls -l /etc/lx-familie/env    # -rw------- root root
 
 sudo cp ~/lx-familienzentrale/deploy/lx-familie.service /etc/systemd/system/
 sudo systemctl daemon-reload
@@ -116,15 +122,26 @@ sudo systemctl enable lx-familie
 curl http://127.0.0.1:4400/api/v1/health      # → {"status":"ok","db":"ok"}
 ```
 
+Der Port 4400 und `HOST=127.0.0.1` stehen fest in `lx-familie.service` (nicht in der env-Datei); dadurch kann `deploy.sh` den Health-Check ausführen, ohne die env-Datei zu lesen. Wer den Port ändert, muss `lx-familie.service`, `deploy.sh` und `Caddyfile` gemeinsam anpassen. `deploy.sh` meldet erst "online", wenn der Health-Check `"db":"ok"` liefert (nicht nur "ok" ohne Datenbank).
+
 Beim Start wendet `ExecStartPre` die Migrationen an. Fehler stehen in `sudo journalctl -u lx-familie -n 50`.
 
 ### 6. Caddy
 
 ```bash
 sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/familie.caddy
-echo 'import /etc/caddy/familie.caddy' | sudo tee -a /etc/caddy/Caddyfile    # nur beim ersten Mal
+echo 'import /etc/caddy/familie.caddy' | sudo tee -a /etc/caddy/Caddyfile    # vorläufig, siehe unten
 caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 ```
+
+**Achtung: Ein Deploy von lx-labs entfernt die Import-Zeile.** `/etc/caddy/Caddyfile` gehört dem lx-labs-Deploy, der die Datei aus `lx-labs/deploy/Caddyfile` überschreibt. Dauerhaft lösen lässt sich das nur dort. **Vorschlag für `lx-labs/deploy/Caddyfile`** (dieses Repository ändert das lx-labs-Repository nicht; der Eintrag ist dort von Hand vorzunehmen), am Ende der Datei:
+
+```caddy
+# Familienzentrale (Repository lx-familienzentrale, Datei wird von dessen deploy/ gepflegt)
+import /etc/caddy/familie.caddy
+```
+
+Caddy bricht beim `reload` mit einem Fehler ab, wenn `/etc/caddy/familie.caddy` fehlt; deshalb zuerst Schritt 6 ausführen, dann den lx-labs-Deploy. Bis der Vorschlag umgesetzt ist: nach jedem lx-labs-Deploy `deploy.sh` (oder `grep familie.caddy /etc/caddy/Caddyfile`) ausführen. `deploy.sh` warnt, wenn die Zeile in `/etc/caddy/Caddyfile` fehlt; dann die Zeile mit dem Befehl oben wieder anfügen und Caddy neu laden.
 
 Caddy holt danach die Zertifikate für beide Domains. Bis die Web-App hochgeladen ist (Schritt 8), antwortet `familie.lx-labs.dev` unter `/` mit 404; `/api/v1/health` geht sofort.
 
@@ -172,7 +189,11 @@ Das Skript baut mit `--no-web-resources-cdn`, lädt nach `/srv/familie/web/<vers
 ### 9. Passkey- und Update-Dateien (ab Phase 1)
 
 - `/srv/familie/well-known/assetlinks.json` mit den SHA-256-Fingerprints aller Signaturschlüssel der Android-App (`dev.lx_labs.familienzentrale`)
-- `/srv/familie/releases/android/latest.json` und `lx-familienzentrale-<version>.apk` (signiert, Ablauf siehe `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 8)
+- `/srv/familie/releases/android/latest.json` und `lx-familienzentrale-<version>.apk`. **Erst hochladen, wenn der echte Update-Schlüssel eingebaut ist:** In `app/lib/constants.dart` steht ein Platzhalter-Schlüssel (`kUpdatePublicKey`), zu dem es keinen privaten Schlüssel gibt; die App lehnt dann jedes Manifest ab. Ablauf:
+  1. Schlüssel erzeugen (außerhalb des Repositories): `node tools/update-manifest.mjs keygen ~/lx-update-key.pem`; öffentlichen Schlüssel in `kUpdatePublicKey` und eine neue `kUpdateKeyId` eintragen, den privaten als CI-Secret `UPDATE_SIGNING_KEY` hinterlegen.
+  2. App mit dem neuen Schlüssel bauen, signieren: `node tools/update-manifest.mjs sign --apk … --version … --version-code … --key-id … --out latest.json` (Näheres: `tools/README.md`).
+  3. APK und `latest.json` nach `/srv/familie/releases/android/` legen, **APK zuerst**, dann `latest.json`.
+  Der private Schlüssel gehört nie in das Repository und nie auf den Server.
 
 ---
 
@@ -185,6 +206,19 @@ deploy/deploy-web.sh                                           # Web-App (nur be
 ```
 
 Die Caddy-Konfiguration wird nicht automatisch übernommen (sudo mit Passwort); weicht `deploy/Caddyfile` ab, meldet `deploy.sh` den Befehl dazu. Datenbank-Migrationen laufen nur vorwärts und müssen zur Vorgängerversion der App passen (Rollback der Server-Version ohne Datenbank-Rollback).
+
+## Logs und Datenschutz (journald)
+
+Die API-Logs enthalten Client-IP-Adressen (hinter Caddy aus `X-Forwarded-For`). Aufbewahrung höchstens **7 Tage**, ältere Einträge löscht journald selbst:
+
+```bash
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nMaxRetentionSec=7day\n' | sudo tee /etc/systemd/journald.conf.d/lx-retention.conf
+sudo systemctl restart systemd-journald
+journalctl --disk-usage
+```
+
+Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewahrung), also auch für lx-labs und Caddy. Der Caddyfile schreibt keine Zugriffslogs (kein `log`-Block); wer sie einschaltet, muss Rotation und Aufbewahrung ebenfalls auf 7 Tage begrenzen. Was die Familienzentrale sonst speichert, steht in `docs/DATENSCHUTZ-ENTWURF.md`.
 
 ## Nützliche Befehle auf dem Server
 
@@ -199,5 +233,5 @@ Die Caddy-Konfiguration wird nicht automatisch übernommen (sudo mit Passwort); 
 ## Noch offen (spätere Phasen)
 
 - Backups: nächtlich `pg_dump` + `/srv/familie/files` mit restic auf ein externes Ziel; Wiederherstellung quartalsweise testen
-- Speicherplatz-Warnung, Log-Rotation, Aufbewahrung von IP-Adressen höchstens 7 Tage
+- Speicherplatz-Warnung; Aufbewahrung von IP-Adressen in der Datenbank (`audit_log.ip`) höchstens 7 Tage (Aufräum-Job in Phase 1)
 - Hauptschlüssel für die Dateiverschlüsselung außerhalb von `/srv/familie/files` ablegen (Phase 1)

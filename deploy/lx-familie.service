@@ -13,13 +13,25 @@ User=lx-familie
 Group=lx-familie
 WorkingDirectory=/srv/familie/server
 Environment=NODE_ENV=production
-# HOST, PORT, DATABASE_URL, PUBLIC_URL usw. stehen in dieser Datei (root:lx-familie, 0640), siehe server/.env.example
+# Fest eingetragen (nicht in der env-Datei): Caddy (deploy/Caddyfile) und deploy.sh gehen von diesem Port aus,
+# und der Health-Check in deploy.sh braucht ihn, ohne die Geheimnisse der env-Datei lesen zu müssen.
+Environment=HOST=127.0.0.1
+Environment=PORT=4400
+# Der Heap muss unter MemoryMax bleiben (ProcSubset=pid blendet /proc/meminfo aus, V8 kann den Speicher nicht selbst erkennen)
+Environment=NODE_OPTIONS=--max-old-space-size=384
+# DATABASE_URL, PUBLIC_URL usw. stehen in dieser Datei: root:root, 0600. systemd liest sie als root, bevor es auf
+# den Benutzer lx-familie wechselt; der Dienst und alle anderen Benutzer (auch lx) können sie nicht lesen. Vorlage: server/.env.example
 EnvironmentFile=/etc/lx-familie/env
 # Datenbank-Migrationen (nur vorwärts, rückwärtskompatibel zur Vorgängerversion) vor jedem Start
 ExecStartPre=/usr/bin/node dist/db/migrate-cli.js
 ExecStart=/usr/bin/node dist/server.js
 Restart=on-failure
 RestartSec=5
+
+# Ressourcengrenzen (der VPS teilt sich den Speicher mit lx-labs, PostgreSQL und Caddy)
+MemoryMax=512M
+TasksMax=256
+LimitNOFILE=4096
 
 # Härtung
 NoNewPrivileges=true
@@ -29,13 +41,29 @@ ProtectSystem=strict
 ProtectHome=true
 ProtectKernelTunables=true
 ProtectKernelModules=true
+ProtectKernelLogs=true
 ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# fremde Prozesse nicht sehen; /proc nur mit Prozess-Verzeichnissen (kein /proc/meminfo, /proc/cpuinfo)
+ProtectProc=invisible
+ProcSubset=pid
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 RestrictNamespaces=true
+RestrictRealtime=true
 LockPersonality=true
 RestrictSUIDSGID=true
+RemoveIPC=true
 SystemCallArchitectures=native
+# Systemaufrufe: normale Dienst-Aufrufe erlauben, privilegierte und Ressourcen-Aufrufe sperren.
+# Kein MemoryDenyWriteExecute: V8 (JIT) braucht beschreibbaren, ausführbaren Speicher.
+# Gesperrte Aufrufe liefern einen Fehler (EPERM) statt den Dienst zu beenden.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
+# Neue Dateien nur für den Dienst lesbar
+UMask=0077
 # Schreibzugriff nur auf die Dateiablage
 ReadWritePaths=/srv/familie/files
 

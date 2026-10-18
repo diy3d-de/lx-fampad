@@ -2,7 +2,8 @@
 # Caddy holt die HTTPS-Zertifikate automatisch (Let's Encrypt).
 # Voraussetzung: Die DNS-Einträge "familie" und "ntfy.familie" (A, DNS only) zeigen auf diesen Server.
 #
-# Einbinden: im Haupt-Caddyfile (/etc/caddy/Caddyfile) die Zeile  import /etc/caddy/familie.caddy  ergänzen, dann
+# Einbinden: im Haupt-Caddyfile (/etc/caddy/Caddyfile) die Zeile  import /etc/caddy/familie.caddy  ergänzen. Ein Deploy von
+# lx-labs überschreibt diese Datei; dauerhaft gehört die Zeile in lx-labs/deploy/Caddyfile (Vorschlag: README.md, Schritt 6). Dann
 #   sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/familie.caddy
 #   caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 
