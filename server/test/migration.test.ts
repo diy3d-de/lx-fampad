@@ -83,6 +83,9 @@ const TABLES = [
   'families',
   'users',
   'memberships',
+  'webauthn_challenges',
+  'login_attempts',
+  'ws_tickets',
   'credentials',
   'recovery_codes',
   'audit_log',
@@ -129,6 +132,7 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
       .insert(schema.users)
       .values({ email: `${randomUUID()}@example.org`, displayName: 'Anna' })
       .returning());
+    await db.insert(schema.memberships).values({ familyId: family.id, userId: user.id, role: 'parent' });
     const device = one(await db
       .insert(schema.devices)
       .values({ familyId: family.id, userId: user.id, name: 'Handy', platform: 'android' })
@@ -150,7 +154,7 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
   });
 
   it('versieht fachliche Tabellen mit family_id', async () => {
-    const withFamily = TABLES.filter((t) => !['families', 'users', 'credentials', 'recovery_codes'].includes(t));
+    const withFamily = TABLES.filter((t) => !['families', 'users', 'credentials', 'recovery_codes', 'login_attempts', 'webauthn_challenges'].includes(t));
     const cols = await rows<{ table_name: string }>(
       sql`select table_name from information_schema.columns where table_schema = 'public' and column_name = 'family_id'`,
     );
@@ -456,5 +460,14 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
       await db.insert(schema.appliedOps).values({ familyId: a.familyId, opId, rev: 1 });
       await db.insert(schema.appliedOps).values({ familyId: b.familyId, opId, rev: 1 });
     });
+  });
+});
+
+describe('Eingecheckte Migrationen', () => {
+  it('0000_init.sql ist unverändert (bereits deployt, nur neue Migrationen anhängen)', async () => {
+    const { createHash } = await import('node:crypto');
+    const { readFileSync } = await import('node:fs');
+    const text = readFileSync(new URL('../drizzle/0000_init.sql', import.meta.url), 'utf8').replaceAll('\r\n', '\n');
+    expect(createHash('sha256').update(text).digest('hex')).toBe('913701818d34e72121485178a8ed78caf765d14b76ae71a90eb5c460252ee361');
   });
 });

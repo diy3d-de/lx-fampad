@@ -23,6 +23,8 @@ import {
 } from 'drizzle-orm/pg-core';
 
 export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child', 'guest']);
+/** pending: per Einladung mit Freigabe registriert, darf sich erst nach Freigabe durch einen Admin anmelden. */
+export const memberStatus = pgEnum('member_status', ['active', 'pending']);
 export const credentialType = pgEnum('credential_type', ['passkey', 'totp', 'password']);
 export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
@@ -73,9 +75,14 @@ export const memberships = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     role: memberRole('role').notNull(),
+    status: memberStatus('status').notNull().default('active'),
     createdAt: createdAt(),
   },
-  (t) => [uniqueIndex('memberships_family_user_uq').on(t.familyId, t.userId), index('memberships_user_idx').on(t.userId)],
+  (t) => [
+    // Ziel der zusammengesetzten Fremdschlüssel (family_id, user_id): Verweise auf Personen bleiben in der Familie
+    unique('memberships_family_user_uq').on(t.familyId, t.userId),
+    index('memberships_user_idx').on(t.userId),
+  ],
 );
 
 /** Anmeldedaten je Benutzer (nicht je Familie): Passkey, TOTP-Geheimnis oder Argon2id-Passwort-Hash. */
@@ -105,6 +112,10 @@ export const credentials = pgTable(
     uniqueIndex('credentials_external_id_uq')
       .on(t.externalId)
       .where(sql`${t.externalId} is not null`),
+    // je Person höchstens ein aktives Passwort bzw. TOTP-Geheimnis (Passkeys beliebig viele)
+    uniqueIndex('credentials_single_active_uq')
+      .on(t.userId, t.type)
+      .where(sql`${t.type} in ('password', 'totp') and ${t.revokedAt} is null`),
   ],
 );
 
@@ -121,8 +132,21 @@ export const invites = pgTable(
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     usedAt: timestamp('used_at', { withTimezone: true }),
     usedBy: uuid('used_by').references(() => users.id, { onDelete: 'set null' }),
+    /** Zurücksetzen: Einladung für ein bestehendes Konto (neue Anmeldedaten); sonst null (neues Konto). */
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    /** HMAC-SHA256 der 6-stelligen PIN (mit Server-Schlüssel); null = keine PIN. */
+    pinHash: text('pin_hash'),
+    /** Gezählte PIN-Versuche (vor dem Vergleich erhöht, damit parallele Versuche nicht durchrutschen). */
+    pinAttempts: integer('pin_attempts').notNull().default(0),
+    /** Nach zu vielen PIN-Fehlversuchen gesperrt. */
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /** Neues Mitglied bleibt bis zur Freigabe durch einen Admin "pending". */
+    requireApproval: boolean('require_approval').notNull().default(false),
+    /** Wann der Ablauf ins Audit-Log geschrieben wurde (Aufräum-Job). */
+    expiredLoggedAt: timestamp('expired_logged_at', { withTimezone: true }),
   },
-  (t) => [index('invites_family_idx').on(t.familyId)],
+  (t) => [index('invites_family_idx').on(t.familyId), check('invites_pin_attempts_ck', sql`${t.pinAttempts} >= 0`)],
 );
 
 export const devices = pgTable(
@@ -130,9 +154,7 @@ export const devices = pgTable(
   {
     id: id(),
     familyId: familyRef(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
     name: text('name').notNull(),
     platform: text('platform').notNull(),
     appVersion: text('app_version'),
@@ -145,9 +167,12 @@ export const devices = pgTable(
     lastRev: bigint('last_rev', { mode: 'number' }).notNull().default(0),
     createdAt: createdAt(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    /** Abgemeldetes Gerät: erscheint nicht mehr in der Liste; der Aufräum-Job löscht die Zeile später. */
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
   },
   (t) => [
     index('devices_user_idx').on(t.userId),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     index('devices_family_idx').on(t.familyId),
     // Ziel der zusammengesetzten Fremdschlüssel (family_id, device_id): eine Sitzung gehört nie zu einem fremden Gerät
     unique('devices_family_id_uq').on(t.familyId, t.id),
@@ -159,10 +184,14 @@ export const sessions = pgTable(
   {
     id: id(),
     familyId: familyRef(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
     deviceId: uuid('device_id'),
+    /** web: Cookie-Sitzung; app: Refresh-Token (Rotation). */
+    kind: text('kind').notNull().default('web'),
+    /** passkey | password | recovery */
+    authMethod: text('auth_method').notNull().default('passkey'),
+    /** Letzte erneute Bestätigung (Step-up) oder Anmeldung; Grundlage für "frisch bestätigt". */
+    stepUpAt: timestamp('step_up_at', { withTimezone: true }),
     /** Hash von Session-Cookie (Web) bzw. Refresh-Token (App); Rotation über token_family. */
     tokenHash: text('token_hash').notNull().unique(),
     tokenFamily: uuid('token_family')
@@ -185,6 +214,8 @@ export const sessions = pgTable(
     index('sessions_device_idx').on(t.deviceId),
     index('sessions_token_family_idx').on(t.tokenFamily),
     foreignKey({ columns: [t.familyId, t.deviceId], foreignColumns: [devices.familyId, devices.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    check('sessions_kind_ck', sql`${t.kind} in ('web', 'app')`),
   ],
 );
 
@@ -196,7 +227,7 @@ export const recoveryCodes = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** SHA-256 des Codes (der Code hat genug Zufall, ein schneller Hash genügt); nie der Klartext. */
+    /** HMAC-SHA256 des normalisierten Codes mit serverseitigem Schlüssel (nie der Klartext, kein ungesalzener Hash). */
     codeHash: text('code_hash').notNull().unique(),
     createdAt: createdAt(),
     usedAt: timestamp('used_at', { withTimezone: true }),
@@ -220,7 +251,58 @@ export const auditLog = pgTable(
     ip: text('ip'),
     createdAt: createdAt(),
   },
-  (t) => [index('audit_log_family_created_idx').on(t.familyId, t.createdAt), index('audit_log_actor_idx').on(t.actorId)],
+  (t) => [index('audit_log_family_created_idx').on(t.familyId, t.createdAt), index('audit_log_actor_idx').on(t.actorId), index('audit_log_created_idx').on(t.createdAt)],
+);
+
+/**
+ * Kurzlebige WebAuthn-Challenges und Registrierungszustände (Passkey-/Passwort-Einrichtung): einmal einlösbar,
+ * wenige Minuten gültig, werden beim Einlösen gelöscht (DELETE ... RETURNING) und vom Aufräum-Job bereinigt.
+ */
+export const webauthnChallenges = pgTable(
+  'webauthn_challenges',
+  {
+    id: id(),
+    /** login | register_passkey | register_password | add_passkey | step_up */
+    purpose: text('purpose').notNull(),
+    challenge: text('challenge').notNull(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
+    data: jsonb('data').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: createdAt(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [index('webauthn_challenges_expires_idx').on(t.expiresAt)],
+);
+
+/** Fehlversuche je Schlüssel ("ip:<IP>" bzw. "acct:<HMAC der E-Mail>") mit verzögerter Sperre. */
+export const loginAttempts = pgTable(
+  'login_attempts',
+  {
+    key: text('key').primaryKey(),
+    failCount: integer('fail_count').notNull().default(0),
+    windowStartedAt: timestamp('window_started_at', { withTimezone: true }).notNull().defaultNow(),
+    lastFailedAt: timestamp('last_failed_at', { withTimezone: true }).notNull().defaultNow(),
+    lockedUntil: timestamp('locked_until', { withTimezone: true }),
+  },
+  (t) => [index('login_attempts_last_failed_idx').on(t.lastFailedAt)],
+);
+
+/** Einmal-Tickets für die WebSocket-Anmeldung: nur der Hash wird gespeichert, 30 s gültig, einmal einlösbar. */
+export const wsTickets = pgTable(
+  'ws_tickets',
+  {
+    tokenHash: text('token_hash').primaryKey(),
+    familyId: familyRef(),
+    userId: uuid('user_id').notNull(),
+    sessionId: uuid('session_id')
+      .notNull()
+      .references(() => sessions.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    index('ws_tickets_expires_idx').on(t.expiresAt),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+  ],
 );
 
 /** Bereits verarbeitete Client-Operationen (op_id): ein wiederholter Upload derselben Op ändert nichts. */
@@ -301,14 +383,13 @@ export const eventAttendees = pgTable(
     id: id(),
     familyId: familyRef(),
     eventId: uuid('event_id').notNull(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
     foreignKey({ columns: [t.familyId, t.eventId], foreignColumns: [events.familyId, events.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     // eine aktive Zeile je Person und Termin; entfernte Teilnehmer bleiben als Tombstone stehen
     uniqueIndex('event_attendees_active_uq')
       .on(t.eventId, t.userId)
@@ -431,15 +512,14 @@ export const messageReactions = pgTable(
     id: id(),
     familyId: familyRef(),
     messageId: uuid('message_id').notNull(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
     emoji: text('emoji').notNull(),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
     foreignKey({ columns: [t.familyId, t.messageId], foreignColumns: [messages.familyId, messages.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     uniqueIndex('message_reactions_active_uq')
       .on(t.messageId, t.userId, t.emoji)
       .where(sql`${t.deletedAt} is null`),
@@ -456,15 +536,14 @@ export const messageReads = pgTable(
     id: id(),
     familyId: familyRef(),
     messageId: uuid('message_id').notNull(),
-    userId: uuid('user_id')
-      .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id').notNull(),
     readAt: timestamp('read_at', { withTimezone: true }).notNull().defaultNow(),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
     foreignKey({ columns: [t.familyId, t.messageId], foreignColumns: [messages.familyId, messages.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     uniqueIndex('message_reads_message_user_uq').on(t.messageId, t.userId),
     index('message_reads_user_idx').on(t.userId),
     index('message_reads_family_rev_idx').on(t.familyId, t.rev),
