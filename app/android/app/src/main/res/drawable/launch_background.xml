@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Startbild: einfarbig im Hintergrundton der App (kBg), bis Flutter das erste Bild zeichnet -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/lx_bg" />
+</layer-list>

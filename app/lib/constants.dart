@@ -1,0 +1,76 @@
+// Design-Tokens und Konstanten. Farben und Schriften wie lx-labs.dev bzw. lx-urlaubsplanung
+// (docs/PROJEKTBESCHREIBUNG.md, Abschnitt "Design"). Keine Farbwerte in Widgets: neue Farben nur hier.
+import 'package:flutter/material.dart';
+
+const kBg = Color(0xFF090A0F);
+const kBgElevated = Color(0xFF0E1017);
+const kSurface = Color(0xFF13161F);
+const kSurface2 = Color(0xFF1A1E29);
+const kSurfaceHover = Color(0xFF212634);
+const kBorder = Color(0xFF242936);
+const kBorderSoft = Color(0xFF1B1F2B);
+const kText = Color(0xFFE6E8EE);
+const kTextMuted = Color(0xFF8B93A7);
+const kTextFaint = Color(0xFF5D6578);
+const kAccent = Color(0xFF00F0FF); // Cyber Cyan
+const kAccentStrong = Color(0xFF5CF6FF);
+const kNeural = Color(0xFF7C3AED);
+const kTerminal = Color(0xFF10B981); // Erfolg / online
+const kWarn = Color(0xFFFEBC2E);
+const kDanger = Color(0xFFFF5F57);
+const kOnAccent = Color(0xFF04121B);
+
+/// Weicher Akzent (rgba(0,240,255,0.12)) für Flächen und den Navigations-Indikator.
+final kAccentSoft = kAccent.withValues(alpha: 0.12);
+
+const kFontSans = 'Inter';
+const kFontMono = 'JetBrainsMono';
+
+/// Personenfarben, je Familienmitglied fest (Kalender, Chat, Karte, Listen einheitlich).
+const personPalette = <Color>[
+  Color(0xFF38BDF8),
+  Color(0xFF34D399),
+  Color(0xFFFBBF24),
+  Color(0xFFFB7185),
+  Color(0xFFA78BFA),
+  Color(0xFFF472B6),
+  Color(0xFFA3E635),
+  Color(0xFFFB923C),
+  Color(0xFF2DD4BF),
+  Color(0xFF818CF8),
+];
+
+Color personColor(int index) => personPalette[index % personPalette.length];
+
+String personInitials(String name) {
+  final parts = name.trim().split(RegExp(r'\s+')).where((s) => s.isNotEmpty).toList();
+  if (parts.isEmpty) return '?';
+  if (parts.length == 1) return parts.first.characters.take(2).toString().toUpperCase();
+  return (parts.first.characters.first + parts.last.characters.first).toUpperCase();
+}
+
+/// Basisadresse des Servers. Im Web leer (gleiche Domain, Caddy leitet /api und /ws weiter);
+/// für die Android-App beim Build setzen: --dart-define=API_BASE=https://familie.lx-labs.dev
+const kApiBase = String.fromEnvironment('API_BASE', defaultValue: '');
+
+/// Basisadresse des Update-Kanals (Manifest und APK liegen unter /releases/android/).
+const kReleasesBase = String.fromEnvironment('RELEASES_BASE', defaultValue: 'https://familie.lx-labs.dev/releases');
+
+/// Methodenkanal zu MainActivity.kt (Version abfragen, APK installieren).
+const kUpdateChannel = 'dev.lx_labs.familienzentrale/update';
+
+/// Navigationsziele (Reihenfolge = Reihenfolge in der NavigationBar).
+class NavTab {
+  final String label;
+  final IconData icon;
+  final IconData selectedIcon;
+  const NavTab(this.label, this.icon, this.selectedIcon);
+}
+
+const kTabs = <NavTab>[
+  NavTab('Start', Icons.home_outlined, Icons.home),
+  NavTab('Kalender', Icons.calendar_month_outlined, Icons.calendar_month),
+  NavTab('Chat', Icons.chat_bubble_outline, Icons.chat_bubble),
+  NavTab('Dateien', Icons.folder_outlined, Icons.folder),
+  NavTab('Listen', Icons.checklist_outlined, Icons.checklist),
+];
