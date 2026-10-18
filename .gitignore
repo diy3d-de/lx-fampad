@@ -28,3 +28,4 @@ app/android/**/GeneratedPluginRegistrant.*
 *.pem
 update-signing*.key
 /server/data/
+.claude/
