@@ -123,7 +123,7 @@ main() {
   # Der Checkout gehört lx, das Skript läuft als root und installiert daraus nach /etc: Stand anzeigen, Abweichungen verbieten
   if [ -d "$REPO_AKTUELL/.git" ]; then
     echo "    Stand des Checkouts (wird als root nach /etc installiert):"
-    sudo -u "$LX" git -C "$REPO_AKTUELL" log -1 --format='      %h %an %ad  %s' --date=short
+    sudo -u "$LX" git -C "$REPO_AKTUELL" log -1 --format='      %h %an %ad  %s' --date=short || echo "      (kein Commit lesbar)"
     aenderungen="$(sudo -u "$LX" git -C "$REPO_AKTUELL" status --porcelain -- deploy)"
     [ -z "$aenderungen" ] || abbruch "Der Checkout hat uncommittete Änderungen in deploy/ (git status --short deploy). Prüfen und zurücksetzen oder einchecken, dann erneut starten:
 $aenderungen"
