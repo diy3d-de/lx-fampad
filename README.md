@@ -24,7 +24,7 @@ cp .env.example .env        # DATABASE_URL anpassen, dann: npm run build && npm 
 curl http://127.0.0.1:4400/api/v1/health
 
 # App (Flutter 3.47.6)
-cd app && flutter pub get
+cd app && flutter pub get --enforce-lockfile
 dart run build_runner build --delete-conflicting-outputs
 flutter analyze && flutter test
 flutter run -d chrome

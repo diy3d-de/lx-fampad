@@ -1,5 +1,6 @@
 // Design-Tokens und Konstanten. Farben und Schriften wie lx-labs.dev bzw. lx-urlaubsplanung
 // (docs/PROJEKTBESCHREIBUNG.md, Abschnitt "Design"). Keine Farbwerte in Widgets: neue Farben nur hier.
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 const kBg = Color(0xFF090A0F);
@@ -19,6 +20,14 @@ const kTerminal = Color(0xFF10B981); // Erfolg / online
 const kWarn = Color(0xFFFEBC2E);
 const kDanger = Color(0xFFFF5F57);
 const kOnAccent = Color(0xFF04121B);
+const kTextStrong = Color(0xFFFFFFFF); // Überschriften
+
+/// Stärke des Hintergrund-Schimmers oben (wie lx-urlaubsplanung): Violett links, Cyan rechts.
+const kGlowNeuralAlpha = 0.30;
+const kGlowAccentAlpha = 0.09;
+
+/// Breite, bis zu der der Inhalt wächst (Desktop/Tablet); darüber wird er zentriert (wie die Anmeldung).
+const kMaxContentWidth = 720.0;
 
 /// Weicher Akzent (rgba(0,240,255,0.12)) für Flächen und den Navigations-Indikator.
 final kAccentSoft = kAccent.withValues(alpha: 0.12);
@@ -55,6 +64,36 @@ const kApiBase = String.fromEnvironment('API_BASE', defaultValue: '');
 
 /// Basisadresse des Update-Kanals (Manifest und APK liegen unter /releases/android/).
 const kReleasesBase = String.fromEnvironment('RELEASES_BASE', defaultValue: 'https://familie.lx-labs.dev/releases');
+
+/// Kennung des Web-Builds, gesetzt von deploy-web.sh (--dart-define=WEB_VERSION=...). Der Server meldet die
+/// aktuelle Kennung in /api/v1/version (webVersion); weicht sie ab, erscheint "Neue Version - neu laden".
+const kWebVersion = String.fromEnvironment('WEB_VERSION', defaultValue: '');
+
+/// Obergrenze für die Größe einer Update-APK (Manifest und Download).
+const kMaxApkBytes = 200 * 1024 * 1024;
+
+/// Protokollversion, die diese App spricht (Server: PROTOCOL_VERSION). Ist sie kleiner als die Mindestversion
+/// des Servers (minProtocolVersion), ist ein Update Pflicht.
+const kProtocolVersion = 1;
+
+/// Paketname der App; das signierte Update-Manifest muss genau diesen Namen tragen.
+const kPackageName = 'dev.lx_labs.familienzentrale';
+
+/// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64). PLATZHALTER: Der zugehörige private
+/// Schlüssel existiert nicht, daher wird kein Manifest akzeptiert. Vor dem ersten Release durch den echten
+/// Schlüssel ersetzen, siehe tools/README.md ("Update-Schlüssel erzeugen"). Der private Schlüssel gehört nie ins Repo.
+const kUpdatePublicKey = 't0zasQh0NHzkm8Xk7o4+StCnrNd1+ewgY9U4EmlhF18=';
+
+/// Kennung des Schlüssels (keyId im signierten Manifest); beim Schlüsselwechsel hochzählen.
+const kUpdateKeyId = 'platzhalter';
+
+/// Prüft die Basisadressen: Außerhalb des Debug-Modus nur HTTPS (das `assert` allein würde im Release entfallen).
+/// Wirft [StateError] bei Klartext-Adressen. [debug] ist für Tests überschreibbar.
+void pruefeBasisAdressen({bool? debug, String api = kApiBase, String releases = kReleasesBase}) {
+  if (debug ?? kDebugMode) return;
+  if (api.isNotEmpty && !api.startsWith('https://')) throw StateError('API_BASE muss mit https:// beginnen');
+  if (!releases.startsWith('https://')) throw StateError('RELEASES_BASE muss mit https:// beginnen');
+}
 
 /// Methodenkanal zu MainActivity.kt (Version abfragen, APK installieren).
 const kUpdateChannel = 'dev.lx_labs.familienzentrale/update';

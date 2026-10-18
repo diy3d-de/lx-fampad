@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -33,8 +34,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     ref.read(updateProvider.notifier).init();
-    // erste Update-Prüfung kurz nach dem Start, danach beim Zurückkehren in die App
-    _ersteUpdatePruefung = Timer(const Duration(seconds: 15), _updatePruefen);
+    // erste Update-Prüfung kurz nach dem Start (Pflicht-Updates sollen früh auffallen), danach beim Zurückkehren in die App
+    _ersteUpdatePruefung = Timer(const Duration(seconds: 3), _updatePruefen);
     WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(syncProvider.notifier).synchronisieren());
   }
 
@@ -55,7 +56,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     if (s != AppLifecycleState.resumed) return;
     ref.read(syncProvider.notifier).synchronisieren();
     final l = _letztePruefung;
-    if (l == null || DateTime.now().difference(l) > const Duration(hours: 6)) _updatePruefen();
+    // Web: häufiger, der Hinweis "Neue Version - neu laden" ist billig (eine kleine JSON-Abfrage)
+    final abstand = kIsWeb ? const Duration(minutes: 15) : const Duration(hours: 6);
+    if (l == null || DateTime.now().difference(l) > abstand) _updatePruefen();
   }
 
   @override
@@ -63,7 +66,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     return Scaffold(
       backgroundColor: kBg,
-      body: LxBackground(child: SafeArea(child: IndexedStack(index: _tab, children: _screens))),
+      body: LxBackground(
+        child: SafeArea(child: LxContentWidth(child: IndexedStack(index: _tab, children: _screens))),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
         onDestinationSelected: (i) => setState(() => _tab = i),

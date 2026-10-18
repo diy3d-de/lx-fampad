@@ -22,7 +22,7 @@ class LoginScreen extends ConsumerWidget {
                 const SizedBox(height: 4),
                 const Text(
                   'Familienzentrale',
-                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: Colors.white),
+                  style: TextStyle(fontSize: 28, fontWeight: FontWeight.w800, letterSpacing: -0.7, color: kTextStrong),
                 ),
                 const SizedBox(height: 28),
                 FilledButton.icon(

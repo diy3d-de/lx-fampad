@@ -59,7 +59,7 @@ class _ListsScreenState extends State<ListsScreen> {
         borderRadius: BorderRadius.circular(9),
         onTap: () => setState(() => _tab = i),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 40),
+          constraints: const BoxConstraints(minHeight: 44),
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: aktiv ? kAccentSoft : null,

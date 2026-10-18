@@ -11,3 +11,7 @@ Future<String> apkHerunterladen({
   required FortschrittCallback onFortschritt,
 }) =>
     throw UnsupportedError('APK-Updates gibt es nur unter Android');
+
+/// Web: APK-Updates gibt es nicht.
+Future<bool> apkPruefsummeStimmt(String pfad, String erwartetSha256) =>
+    throw UnsupportedError('APK-Updates gibt es nur unter Android');

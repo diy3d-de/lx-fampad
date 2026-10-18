@@ -15,7 +15,7 @@ class LxBackground extends StatelessWidget {
             gradient: RadialGradient(
               center: const Alignment(-0.4, -1.15),
               radius: 1.1,
-              colors: [kNeural.withValues(alpha: 0.30), kNeural.withValues(alpha: 0.0)],
+              colors: [kNeural.withValues(alpha: kGlowNeuralAlpha), kNeural.withValues(alpha: 0.0)],
             ),
           ),
           child: DecoratedBox(
@@ -23,12 +23,24 @@ class LxBackground extends StatelessWidget {
               gradient: RadialGradient(
                 center: const Alignment(0.8, -1.1),
                 radius: 0.8,
-                colors: [kAccent.withValues(alpha: 0.09), kAccent.withValues(alpha: 0.0)],
+                colors: [kAccent.withValues(alpha: kGlowAccentAlpha), kAccent.withValues(alpha: 0.0)],
               ),
             ),
             child: child,
           ),
         ),
+      );
+}
+
+/// Begrenzt die Inhaltsbreite auf [kMaxContentWidth] und zentriert sie (Desktop/Tablet, wie die Anmeldung).
+class LxContentWidth extends StatelessWidget {
+  final Widget child;
+  const LxContentWidth({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) => Align(
+        alignment: Alignment.topCenter,
+        child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: kMaxContentWidth), child: child),
       );
 }
 
@@ -62,7 +74,7 @@ class ScreenHeader extends StatelessWidget {
                 if (label != null) ...[MonoLabel(label!), const SizedBox(height: 4)],
                 Text(
                   title,
-                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.65, color: Colors.white),
+                  style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.65, color: kTextStrong),
                 ),
               ],
             ),

@@ -21,6 +21,8 @@ ThemeData buildTheme() {
   return ThemeData(
     colorScheme: scheme,
     useMaterial3: true,
+    // Tipp-Fläche aller Knöpfe mindestens 48 px, auch wenn die sichtbare Form kleiner ist (Touch-Ziele >= 44 px)
+    materialTapTargetSize: MaterialTapTargetSize.padded,
     fontFamily: kFontSans,
     textTheme: textTheme,
     // transparent: den violett-cyanen Schimmer zeichnet LxBackground hinter alle Seiten
@@ -31,7 +33,7 @@ ThemeData buildTheme() {
       foregroundColor: kText,
       elevation: 0,
       scrolledUnderElevation: 0,
-      titleTextStyle: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4, color: Colors.white),
+      titleTextStyle: textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong),
     ),
     cardTheme: const CardThemeData(
       color: kSurface,

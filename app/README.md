@@ -3,7 +3,7 @@
 Flutter 3.47.6 / Dart 3.13.5, Riverpod 3.4.3, drift 2.35.1 (Versionen exakt gepinnt, siehe `../docs/VERSIONEN.md`).
 
 ```bash
-flutter pub get
+flutter pub get --enforce-lockfile
 dart run build_runner build --delete-conflicting-outputs   # erzeugt lib/data/app_database.g.dart (drift)
 flutter analyze
 flutter test

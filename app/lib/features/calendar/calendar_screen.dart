@@ -57,11 +57,15 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ],
         ),
         const SizedBox(height: 6),
-        GridView.count(
-          crossAxisCount: 7,
+        GridView(
+          // Zellen mindestens 44 px hoch und (bei 360 px Breite) ohne Lücke mindestens 44 px breit
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 7,
+            mainAxisSpacing: 4,
+            crossAxisSpacing: 0,
+            mainAxisExtent: 48,
+          ),
           shrinkWrap: true,
-          mainAxisSpacing: 4,
-          crossAxisSpacing: 4,
           physics: const NeverScrollableScrollPhysics(),
           children: [
             for (var i = 0; i < zellen; i++) _zelle(i - versatz + 1, tageImMonat),
@@ -105,6 +109,7 @@ class _Tag extends StatelessWidget {
           onTap: onTap,
           child: Container(
             alignment: Alignment.center,
+            margin: const EdgeInsets.symmetric(horizontal: 2),
             decoration: BoxDecoration(
               color: gewaehlt ? kAccentSoft : null,
               borderRadius: BorderRadius.circular(10),

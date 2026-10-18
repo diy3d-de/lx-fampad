@@ -47,12 +47,15 @@ class HomeScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 20),
-        GridView.count(
-          crossAxisCount: 4,
-          mainAxisSpacing: 10,
-          crossAxisSpacing: 10,
+        GridView(
+          // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite und bleibt bei großer Schrift bedienbar
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            mainAxisExtent: 96,
+          ),
           shrinkWrap: true,
-          childAspectRatio: 0.95,
           physics: const NeverScrollableScrollPhysics(),
           children: const [
             _Schnellzugriff('Termin', Icons.calendar_today_outlined),
