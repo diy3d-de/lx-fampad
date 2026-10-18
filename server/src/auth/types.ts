@@ -9,6 +9,8 @@ export interface Principal {
   familyId: string;
   role: Role;
   deviceId: string | null;
+  /** Sitzung, aus der die Anmeldung stammt (WebSocket: für das Schließen bei Widerruf und die Prüfung beim Ping). */
+  sessionId?: string;
 }
 
 /** Principal einer echten Sitzung (Cookie oder Access-Token). */
@@ -24,6 +26,8 @@ export interface AuthService {
   authenticate(request: FastifyRequest): Promise<Principal | null>;
   /** Löst ein Einmal-Ticket für den WebSocket-Aufbau ein (einmal, 30 s); null = ungültig. */
   redeemWsTicket(ticket: string): Promise<Principal | null>;
+  /** Prüft eine bestehende Anmeldung erneut (Sitzung widerrufen/abgelaufen, Rolle geändert): aktuelle Person oder null. */
+  recheck?(principal: Principal): Promise<Principal | null>;
   /** Ist die IP wegen zu vieler Fehlversuche gesperrt? (Prüfung vor dem WebSocket-Upgrade) */
   isIpBlocked?(ip: string): Promise<boolean>;
   /** Zählt eine fehlgeschlagene WebSocket-Anmeldung gegen die IP (verzögerte Sperre, Audit-Log). */

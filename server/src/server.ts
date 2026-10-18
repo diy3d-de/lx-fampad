@@ -4,12 +4,13 @@ import { buildApp } from './app.js';
 import { startMaintenance } from './auth/maintenance.js';
 import { loadConfig } from './config.js';
 import { createDb } from './db/index.js';
+import { serializeErr } from './log.js';
 
 const config = loadConfig();
 // der Pool entsteht vor der App; Fehler gehen erst ins App-Log, sobald es existiert
 const logRef: { current?: FastifyBaseLogger } = {};
 const database = config.databaseUrl
-  ? createDb(config.databaseUrl, (err) => (logRef.current ? logRef.current.error({ err }, 'Fehler im Datenbank-Pool') : console.error(err)))
+  ? createDb(config.databaseUrl, (err) => (logRef.current ? logRef.current.error({ err }, 'Fehler im Datenbank-Pool') : console.error('Fehler im Datenbank-Pool', serializeErr(err))))
   : undefined;
 
 const app = await buildApp({
@@ -18,7 +19,7 @@ const app = await buildApp({
   pingDb: database ? async () => void (await database.db.execute(sql`select 1`)) : undefined,
 });
 logRef.current = app.log;
-// Aufräumen beim Start und täglich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
+// Aufräumen beim Start und stündlich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
 const maintenance = app.authCore ? startMaintenance(app.authCore.ctx) : undefined;
 
 const shutdown = async (signal: string) => {

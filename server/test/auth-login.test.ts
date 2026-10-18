@@ -543,20 +543,22 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
   });
 
   describe('Fehlversuche und Sperren', () => {
-    it('sperrt ein Konto nach 5 Fehlversuchen verzögert (auch mit richtigen Daten) und gibt es später wieder frei', async () => {
+    const bad = (email: string, ip: string) => world.client(ip).post('/api/v1/auth/login/password', { email, password: 'falsch-falsch-falsch', totp: '123456' });
+
+    it('sperrt Konto+IP nach 5 Fehlversuchen verzögert (auch mit richtigen Daten), andere IPs nicht, und gibt später wieder frei', async () => {
       const a = await adminPassword(world);
       world.advance(31_000);
-      for (let i = 0; i < 5; i++) {
-        const r = await world.client(`198.51.100.${60 + i}`).post('/api/v1/auth/login/password', { email: a.email, password: 'falsch-falsch-falsch', totp: '123456' });
-        expect(r.status).toBe(401);
-      }
+      for (let i = 0; i < 5; i++) expect((await bad(a.email, '198.51.100.60')).status).toBe(401);
       const code = await world.totp(a.totpSecret);
-      const locked = await world.client('198.51.100.70').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: code });
+      const locked = await world.client('198.51.100.60').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: code });
       expect(locked.status).toBe(429);
       expect(locked.json.error).toBe('too_many_attempts');
       expect(Number(locked.headers['retry-after'])).toBeGreaterThan(0);
+      // fremde Konten lassen sich nicht aussperren: die berechtigte Person kommt von einer anderen IP sofort hinein
+      const other = await world.client('198.51.100.61').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: code });
+      expect(other.status).toBe(200);
       world.advance(31_000);
-      const free = await world.client('198.51.100.71').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: await world.totp(a.totpSecret) });
+      const free = await world.client('198.51.100.60').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: await world.totp(a.totpSecret) });
       expect(free.status).toBe(200);
     });
 
@@ -565,12 +567,13 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       const trace = async (email: string) => {
         const out: Array<[number, string]> = [];
         for (let i = 0; i < 8; i++) {
-          const r = await world.client(`192.0.2.${i + 1}`).post('/api/v1/auth/login/password', { email, password: 'falsch-falsch-falsch', totp: '123456' });
+          const r = await bad(email, '192.0.2.1');
           out.push([r.status, r.json.error as string]);
         }
         return out;
       };
       const a = await trace(known.email);
+      world.advance(10 * 60_000);
       const b = await trace('gibt-es-nicht@example.org');
       expect(a).toEqual(b);
       expect(a.map((x) => x[0])).toEqual([401, 401, 401, 401, 401, 429, 429, 429]);
@@ -578,6 +581,47 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       // Schlüssel enthalten weder E-Mail noch IP im Klartext
       expect(JSON.stringify(rows)).not.toContain('example.org');
       expect(JSON.stringify(rows)).not.toContain('192.0.2.');
+    });
+
+    it('die Konto-Sperre aus vielen IPs greift erst später und dauert höchstens 90 Sekunden', async () => {
+      const a = await adminPassword(world);
+      const ips = Array.from({ length: 14 }, (_, i) => `198.51.100.${100 + i}`);
+      const results: number[] = [];
+      for (const ip of ips) results.push((await bad(a.email, ip)).status);
+      // 10 Fehlversuche aus verschiedenen IPs sperren das Konto kurz: ab dem 10. gilt die Sperre für alle
+      expect(results.slice(0, 10)).toEqual(Array(10).fill(401));
+      expect(results.slice(10)).toEqual([429, 429, 429, 429]);
+      const locked = await world.client('198.51.100.200').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: await world.totp(a.totpSecret) });
+      expect(locked.status).toBe(429);
+      expect(Number(locked.headers['retry-after'])).toBeLessThanOrEqual(90);
+      world.advance(91_000);
+      expect((await world.client('198.51.100.201').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: await world.totp(a.totpSecret) })).status).toBe(200);
+    });
+
+    it('Passkey-Anmeldung hängt nicht an der Konto-Sperre (und sperrt kein Konto)', async () => {
+      const a = await adminPasskey(world);
+      // das Konto ist per Passwort-Anmeldung gesperrt (viele Fehlversuche aus vielen IPs)
+      for (let i = 0; i < 12; i++) await bad(a.email, `198.51.100.${120 + i}`);
+      expect((await bad(a.email, '198.51.100.190')).status).toBe(429);
+      expect((await world.loginPasskey(world.client('198.51.100.191'), a.authenticator)).status).toBe(200);
+      const accountKeys = async () => (await harness.db.select().from(schema.loginAttempts)).map((r) => r.key).filter((k) => k.startsWith('acct:') || k.startsWith('acip:')).length;
+      const before = await accountKeys();
+      const rogue = new TestAuthenticator();
+      for (let i = 0; i < 12; i++) await world.loginPasskey(world.client('198.51.100.192'), rogue);
+      expect(await accountKeys()).toBe(before);
+    });
+
+    it('Step-up und Anmeldung teilen EINEN Konto-Schlüssel', async () => {
+      const a = await adminPassword(world);
+      world.advance(61_000);
+      // fünfmal falscher Step-up-Code aus derselben IP -> dieselbe IP kann sich auch nicht mehr per Passwort anmelden
+      for (let i = 0; i < 5; i++) expect((await a.client.post('/api/v1/auth/step-up/code', { totp: '000000' })).status).toBe(401);
+      expect((await a.client.post('/api/v1/auth/step-up/code', { totp: '000000' })).status).toBe(429);
+      expect((await bad(a.email, a.client.ip)).status).toBe(429);
+      // genau ein Konto-Schlüssel und ein Paar-Schlüssel (nicht je Verfahren einer)
+      const keys = (await harness.db.select().from(schema.loginAttempts)).map((r) => r.key);
+      expect(keys.filter((k) => k.startsWith('acct:'))).toHaveLength(1);
+      expect(keys.filter((k) => k.startsWith('acip:'))).toHaveLength(1);
     });
 
     it('zählt Fehlversuche je IP über alle Konten und sperrt dann auch andere Anmelderouten', async () => {
@@ -593,9 +637,10 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
 
     it('erfolgreiche Anmeldung setzt den Konto-Zähler zurück', async () => {
       const a = await adminPassword(world);
-      for (let i = 0; i < 3; i++) await world.client(`198.51.100.${80 + i}`).post('/api/v1/auth/login/password', { email: a.email, password: 'falsch-falsch-falsch', totp: '123456' });
+      for (let i = 0; i < 8; i++) await world.client(`198.51.100.${80 + i}`).post('/api/v1/auth/login/password', { email: a.email, password: 'falsch-falsch-falsch', totp: '123456' });
       expect((await passwordLogin(a.email, a.totpSecret, world.client('198.51.100.90'))).status).toBe(200);
-      for (let i = 0; i < 4; i++) await world.client(`198.51.100.${91 + i}`).post('/api/v1/auth/login/password', { email: a.email, password: 'falsch-falsch-falsch', totp: '123456' });
+      // ohne Zurücksetzen wären es jetzt 16 Fehlversuche (Schwelle 10)
+      for (let i = 0; i < 8; i++) await world.client(`198.51.100.${91 + i}`).post('/api/v1/auth/login/password', { email: a.email, password: 'falsch-falsch-falsch', totp: '123456' });
       world.advance(31_000);
       expect((await world.client('198.51.100.99').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: await world.totp(a.totpSecret) })).status).toBe(200);
     });

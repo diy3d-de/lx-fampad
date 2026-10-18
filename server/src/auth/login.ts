@@ -1,5 +1,5 @@
 // Anmeldung (Passkey; Passwort + TOTP; Wiederherstellungs-Code) und erneute Bestätigung (Step-up).
-// Jede fehlgeschlagene Anmeldung antwortet gleich (401 invalid_credentials) und zählt gegen IP und Konto; unbekannte Konten
+// Jede fehlgeschlagene Anmeldung antwortet gleich (401 invalid_credentials) und zählt gegen IP, Konto und Paar (Konto+IP); unbekannte Konten
 // laufen durch dieselben Schritte (Platzhalter-Hash), damit weder Antwort noch Zeit verraten, ob ein Konto existiert.
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { and, eq, isNull, sql } from 'drizzle-orm';
@@ -8,7 +8,7 @@ import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
 import type { AuthContext, RequestMeta } from './context.js';
-import { accountKey, assertNotLocked, clearFailures, ipKey, recordLoginFailure } from './lockout.js';
+import { assertNotLocked, clearAccountFailures, ipKey, loginKeys, recordLoginFailure } from './lockout.js';
 import { verifyPassword } from './password.js';
 import { consumeRecoveryCode, countRemainingCodes } from './recovery.js';
 import { establishSession, markStepUp, type AuthMethod, type DeviceInput, type Established, type SessionKind } from './sessions.js';
@@ -52,8 +52,11 @@ export async function findAccountByEmail(ctx: AuthContext, email: string): Promi
   return r ? toAccount(r) : null;
 }
 
-export async function findAccountById(ctx: AuthContext, userId: string): Promise<Account | null> {
-  const [r] = await accountSelect(ctx).where(eq(users.id, userId)).limit(1);
+/** Mit `familyId` gilt genau diese Mitgliedschaft (sonst irgendeine, der Server bedient heute genau eine Familie). */
+export async function findAccountById(ctx: AuthContext, userId: string, familyId?: string): Promise<Account | null> {
+  const [r] = await accountSelect(ctx)
+    .where(and(eq(users.id, userId), familyId ? eq(memberships.familyId, familyId) : undefined))
+    .limit(1);
   return r ? toAccount(r) : null;
 }
 
@@ -80,7 +83,8 @@ async function finishLogin(
 ): Promise<Established> {
   if (account.disabled) throw invalidCredentials();
   if (account.status === 'pending') throw pending();
-  await clearFailures(ctx, accountKey(ctx, account.email));
+  // Passkeys sind nicht ratbar: sie setzen die Zähler der Passwort-Anmeldung nicht zurück
+  if (input.method !== 'passkey') await clearAccountFailures(ctx, input.meta.ip, account.email);
   return ctx.db.transaction((tx) =>
     establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.method, meta: input.meta }),
   );
@@ -117,7 +121,7 @@ export async function loginWithPassword(
   input: { email: string; password: string; totp?: string | undefined; recoveryCode?: string | undefined; client: SessionKind; device?: DeviceInput | undefined },
   meta: RequestMeta,
 ): Promise<Established> {
-  await assertNotLocked(ctx, [ipKey(ctx, meta.ip), accountKey(ctx, input.email)]);
+  await assertNotLocked(ctx, loginKeys(ctx, meta.ip, input.email));
   const account = await findAccountByEmail(ctx, input.email);
   let hash: string | null = null;
   if (account) {
@@ -147,7 +151,7 @@ export async function loginWithRecoveryCode(
   input: { email: string; code: string; client: SessionKind; device?: DeviceInput | undefined },
   meta: RequestMeta,
 ): Promise<{ session: Established; remainingCodes: number }> {
-  await assertNotLocked(ctx, [ipKey(ctx, meta.ip), accountKey(ctx, input.email)]);
+  await assertNotLocked(ctx, loginKeys(ctx, meta.ip, input.email));
   const account = await findAccountByEmail(ctx, input.email);
   const ok = account ? await consumeRecoveryCode(ctx, account.userId, input.code) : false;
   if (!account || !ok) return failLogin(ctx, meta, 'recovery', input.email, account);
@@ -161,7 +165,7 @@ export async function loginWithRecoveryCode(
 export async function startPasskeyLogin(ctx: AuthContext, meta: RequestMeta) {
   await assertNotLocked(ctx, [ipKey(ctx, meta.ip)]);
   const options = await authenticationOptions(ctx);
-  const challengeId = await saveChallenge(ctx, { purpose: 'login', challenge: options.challenge });
+  const challengeId = await saveChallenge(ctx, { purpose: 'login', challenge: options.challenge, unauthenticatedFrom: meta });
   return { challengeId, options };
 }
 
@@ -237,9 +241,10 @@ export async function finishPasskeyLogin(
   const passkey = taken ? await loadPasskey(ctx, input.response.id) : null;
   const account = passkey ? await findAccountById(ctx, passkey.userId) : null;
   if (!taken || !passkey || !account) return failLogin(ctx, meta, 'passkey', undefined, account);
-  if (account.email) await assertNotLocked(ctx, [accountKey(ctx, account.email)]);
+  // bewusst keine Konto-Sperre und kein Konto-Zähler: ein Passkey lässt sich nicht erraten, und wer fremde Passkey-Anmeldungen
+  // fehlschlagen lässt, soll das Konto nicht sperren können (nur die IP-Sperre gilt)
   const ok = await verifyPasskeyAssertion(ctx, passkey, input.response, taken.challenge, meta);
-  if (!ok) return failLogin(ctx, meta, 'passkey', account.email, account);
+  if (!ok) return failLogin(ctx, meta, 'passkey', undefined, account);
   return finishLogin(ctx, account, { client: input.client, device: input.device, method: 'passkey', meta });
 }
 
@@ -259,8 +264,13 @@ export async function startPasskeyStepUp(ctx: AuthContext, principal: SessionPri
   return { challengeId, options };
 }
 
+/** Schlüssel der Bestätigung: derselbe Konto-Schlüssel (E-Mail) wie bei der Anmeldung, damit beide EINEN Zähler teilen. */
+async function stepUpIdentifier(ctx: AuthContext, principal: SessionPrincipal): Promise<string> {
+  return (await findAccountById(ctx, principal.userId))?.email ?? principal.userId;
+}
+
 async function stepUpFailed(ctx: AuthContext, principal: SessionPrincipal, meta: RequestMeta, method: string): Promise<never> {
-  await recordLoginFailure(ctx, meta.ip, principal.userId);
+  await recordLoginFailure(ctx, meta.ip, await stepUpIdentifier(ctx, principal));
   await writeAudit(ctx, ctx.db, { event: 'step_up_failed', familyId: principal.familyId, actorId: principal.userId, ip: meta.ip, detail: { method } });
   throw new AppError(401, 'step_up_failed', 'Die Bestätigung ist fehlgeschlagen.');
 }
@@ -271,7 +281,7 @@ export async function finishPasskeyStepUp(
   input: { challengeId: string; response: AuthenticationResponseJSON },
   meta: RequestMeta,
 ): Promise<Date> {
-  await assertNotLocked(ctx, [ipKey(ctx, meta.ip), accountKey(ctx, principal.userId)]);
+  await assertNotLocked(ctx, loginKeys(ctx, meta.ip, await stepUpIdentifier(ctx, principal)));
   const taken = await takeChallenge(ctx, input.challengeId, 'step_up');
   if (!taken || taken.userId !== principal.userId || taken.data.sessionId !== principal.sessionId) return stepUpFailed(ctx, principal, meta, 'passkey');
   const passkey = await loadPasskey(ctx, input.response.id, principal.userId);
@@ -287,7 +297,7 @@ export async function stepUpWithCode(
   input: { totp?: string | undefined; recoveryCode?: string | undefined },
   meta: RequestMeta,
 ): Promise<Date> {
-  await assertNotLocked(ctx, [ipKey(ctx, meta.ip), accountKey(ctx, principal.userId)]);
+  await assertNotLocked(ctx, loginKeys(ctx, meta.ip, await stepUpIdentifier(ctx, principal)));
   let ok = false;
   let method = 'totp';
   if (input.totp) ok = await verifyUserTotp(ctx, principal.userId, input.totp);

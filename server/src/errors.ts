@@ -25,6 +25,7 @@ const DEFAULT_MESSAGES: Record<number, string> = {
   415: 'Nicht unterstützter Inhaltstyp.',
   429: 'Zu viele Anfragen. Bitte später erneut versuchen.',
   500: 'Interner Fehler.',
+  503: 'Der Server ist gerade nicht erreichbar.',
 };
 
 function body(code: string, status: number, message?: string) {

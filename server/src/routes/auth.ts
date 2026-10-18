@@ -11,11 +11,14 @@ import { AppError } from '../errors.js';
 import type { Config } from '../config.js';
 import {
   authenticationResponseSchema,
+  boundedString,
   clearCookie,
   clientSchema,
   codeSchema,
   deviceSchema,
   displayNameSchema,
+  labelSchema,
+  passwordSchema,
   emailSchema,
   meta,
   parse,
@@ -26,7 +29,7 @@ import {
   uuid,
 } from './util.js';
 
-const tokenSchema = z.string().min(16).max(128);
+const tokenSchema = boundedString(16, 128);
 
 const identity = {
   token: tokenSchema,
@@ -58,7 +61,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
 
   app.post('/api/v1/auth/invites/passkey/complete', strikt, async (req, reply) => {
     const body = parse(
-      z.object({ challengeId: uuid, response: registrationResponseSchema, client: clientSchema, device: deviceSchema.optional(), label: z.string().trim().max(60).optional() }).strict(),
+      z.object({ challengeId: uuid, response: registrationResponseSchema, client: clientSchema, device: deviceSchema.optional(), label: labelSchema.optional() }).strict(),
       req.body,
     );
     const r = await finishPasskeyRegistration(ctx, body, meta(req));
@@ -66,7 +69,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
   });
 
   app.post('/api/v1/auth/invites/password/start', strikt, async (req) => {
-    const body = parse(z.object({ ...identity, password: z.string().min(1).max(256) }).strict(), req.body);
+    const body = parse(z.object({ ...identity, password: passwordSchema }).strict(), req.body);
     return startPasswordRegistration(ctx, body, meta(req));
   });
 
@@ -90,9 +93,9 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
       z
         .object({
           email: emailSchema,
-          password: z.string().min(1).max(256),
+          password: passwordSchema,
           totp: codeSchema.optional(),
-          recoveryCode: z.string().min(8).max(40).optional(),
+          recoveryCode: boundedString(8, 40).optional(),
           client: clientSchema,
           device: deviceSchema.optional(),
         })
@@ -104,14 +107,14 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
   });
 
   app.post('/api/v1/auth/login/recovery', strikt, async (req, reply) => {
-    const body = parse(z.object({ email: emailSchema, code: z.string().min(8).max(40), client: clientSchema, device: deviceSchema.optional() }).strict(), req.body);
+    const body = parse(z.object({ email: emailSchema, code: boundedString(8, 40), client: clientSchema, device: deviceSchema.optional() }).strict(), req.body);
     const r = await loginWithRecoveryCode(ctx, body, meta(req));
     return { user: await userBody(auth, r.session.userId), session: sessionResponse(ctx, reply, r.session), recoveryCodesRemaining: r.remainingCodes };
   });
 
   // ----- Token erneuern (App) -----
   app.post('/api/v1/auth/refresh', strikt, async (req, reply) => {
-    const body = parse(z.object({ refreshToken: z.string().min(16).max(128), deviceId: uuid }).strict(), req.body);
+    const body = parse(z.object({ refreshToken: tokenSchema, deviceId: uuid }).strict(), req.body);
     const { established } = await refreshSession(ctx, body, meta(req));
     return { session: sessionResponse(ctx, reply, established) };
   });
@@ -143,7 +146,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
 
   app.post('/api/v1/auth/step-up/code', strikt, async (req) => {
     const p = await auth.requireSession(req);
-    const body = parse(z.object({ totp: codeSchema.optional(), recoveryCode: z.string().min(8).max(40).optional() }).strict(), req.body);
+    const body = parse(z.object({ totp: codeSchema.optional(), recoveryCode: boundedString(8, 40).optional() }).strict(), req.body);
     if (!body.totp && !body.recoveryCode) throw new AppError(400, 'invalid_request');
     return { stepUpAt: await stepUpWithCode(ctx, p, body, meta(req)) };
   });

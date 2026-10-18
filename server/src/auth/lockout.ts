@@ -1,13 +1,28 @@
-// Fehlversuche je Konto und je IP mit verzögerter Sperre. Die Schlüssel sind HMACs (keine Klartext-IP, keine Klartext-E-Mail
-// in der Tabelle); die Zähler laufen ohne neuen Fehlversuch ab. Zählen und Sperren geschehen in der Datenbank (atomar).
+// Fehlversuche mit verzögerter Sperre, gezählt je IP (IPv6: /64), je Konto UND je Paar (Konto + IP). Die Schlüssel sind HMACs
+// (keine Klartext-IP, keine Klartext-E-Mail in der Tabelle); die Zähler laufen ohne neuen Fehlversuch ab. Zählen und Sperren
+// geschehen in der Datenbank (atomar).
+//
+// Warum drei Zähler: Der Konto-Zähler allein ließe fremde Konten sperren (jeder kann fünfmal falsch tippen). Deshalb sperrt der
+// Paar-Zähler früh (nur die tippende IP verliert den Zugang), der Konto-Zähler erst später und höchstens kurz (Höchstdauer
+// lockoutMaxDelaySec); er bremst nur verteilte Angriffe. Passkeys sind nicht ratbar und hängen nicht an der Konto-Sperre.
 import { eq, inArray, sql } from 'drizzle-orm';
 import { loginAttempts } from '../db/schema.js';
 import { AppError } from '../errors.js';
+import { normalizeIp } from '../net.js';
 import type { AuthContext } from './context.js';
 
-export const ipKey = (ctx: AuthContext, ip: string | undefined) => `ip:${ctx.keys.hmac('lockout-ip', ip ?? 'unbekannt')}`;
+export const ipKey = (ctx: AuthContext, ip: string | undefined) => `ip:${ctx.keys.hmac('lockout-ip', normalizeIp(ip))}`;
 export const accountKey = (ctx: AuthContext, identifier: string) =>
   `acct:${ctx.keys.hmac('lockout-account', identifier.trim().toLowerCase())}`;
+/** Paar aus Konto (E-Mail) und IP (IPv6: /64). */
+export const accountIpKey = (ctx: AuthContext, identifier: string, ip: string | undefined) =>
+  `acip:${ctx.keys.hmac('lockout-account-ip', `${identifier.trim().toLowerCase()}|${normalizeIp(ip)}`)}`;
+
+/** Alle Schlüssel einer Anmeldung bzw. Bestätigung: IP, Konto und Paar (ohne Konto nur die IP). */
+export const loginKeys = (ctx: AuthContext, ip: string | undefined, identifier?: string): string[] => [
+  ipKey(ctx, ip),
+  ...(identifier ? [accountKey(ctx, identifier), accountIpKey(ctx, identifier, ip)] : []),
+];
 
 const ts = (d: Date) => sql`${d.toISOString()}::timestamptz`;
 
@@ -28,7 +43,7 @@ export async function assertNotLocked(ctx: AuthContext, keys: string[]): Promise
   }
 }
 
-/** Zählt einen Fehlversuch; ab der Schwelle wächst die Sperre exponentiell (30 s, 60 s, ... bis zum Höchstwert). */
+/** Zählt einen Fehlversuch; ab der Schwelle wächst die Sperre exponentiell (30 s, 60 s, ... bis zum Höchstwert, standardmäßig 90 s). */
 export async function recordFailure(ctx: AuthContext, key: string, threshold: number): Promise<void> {
   const { lockoutWindowSec: windowSec, lockoutMaxDelaySec: maxDelay } = ctx.config.auth;
   const now = ctx.now();
@@ -60,8 +75,17 @@ export async function clearFailures(ctx: AuthContext, key: string): Promise<void
   await ctx.db.delete(loginAttempts).where(eq(loginAttempts.key, key));
 }
 
-/** Fehlversuch für die IP und (optional) das Konto zählen. */
+/** Fehlversuch für die IP und (optional) das Konto sowie das Paar Konto+IP zählen. */
 export async function recordLoginFailure(ctx: AuthContext, ip: string | undefined, identifier?: string): Promise<void> {
-  await recordFailure(ctx, ipKey(ctx, ip), ctx.config.auth.lockoutIpThreshold);
-  if (identifier) await recordFailure(ctx, accountKey(ctx, identifier), ctx.config.auth.lockoutAccountThreshold);
+  const { lockoutIpThreshold, lockoutAccountThreshold, lockoutPairThreshold } = ctx.config.auth;
+  await recordFailure(ctx, ipKey(ctx, ip), lockoutIpThreshold);
+  if (identifier) {
+    await recordFailure(ctx, accountKey(ctx, identifier), lockoutAccountThreshold);
+    await recordFailure(ctx, accountIpKey(ctx, identifier, ip), lockoutPairThreshold);
+  }
+}
+
+/** Nach erfolgreicher Anmeldung: Zähler des Kontos und des Paares zurücksetzen (der IP-Zähler läuft von selbst ab). */
+export async function clearAccountFailures(ctx: AuthContext, ip: string | undefined, identifier: string): Promise<void> {
+  await ctx.db.delete(loginAttempts).where(inArray(loginAttempts.key, [accountKey(ctx, identifier), accountIpKey(ctx, identifier, ip)]));
 }

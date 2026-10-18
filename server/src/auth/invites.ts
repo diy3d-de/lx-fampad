@@ -1,6 +1,7 @@
 // Einladungen: Einmal-Token (256 Bit, nur SHA-256 gespeichert), Gültigkeit 24 h (bis 7 Tage), feste Rolle, optionale PIN
 // (HMAC, 5 Fehlversuche, dann gesperrt) und optionale Freigabe durch einen Admin. Das Token steht im URL-Fragment des Links.
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { randomUUID } from 'node:crypto';
+import { and, desc, eq, isNull, sql } from 'drizzle-orm';
 import { families, invites, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
@@ -18,6 +19,20 @@ export function assertMayInvite(actorRole: Role, target: Role): void {
   const allowed = actorRole === 'admin' || (actorRole === 'parent' && (target === 'child' || target === 'guest'));
   if (!allowed) throw new AppError(403, 'forbidden', 'Diese Einladung darfst du nicht erstellen.');
 }
+
+/**
+ * Freigabe durch einen Admin: Gast-Einladungen brauchen sie immer, es sei denn, ein Admin verzichtet ausdrücklich darauf.
+ * Nicht-Admins können sie bei Gästen nicht abschalten (serverseitig erzwungen, egal was der Client sendet).
+ */
+export function effectiveRequireApproval(actorRole: Role, targetRole: Role, requested: boolean | undefined): boolean | undefined {
+  if (targetRole === 'guest' && actorRole !== 'admin') return true;
+  return requested;
+}
+
+const ROLE_RANK: Record<Role, number> = { admin: 3, parent: 2, child: 1, guest: 0 };
+
+/** Ist `to` eine niedrigere Rolle als `from`? */
+export const isDowngrade = (from: Role, to: Role): boolean => ROLE_RANK[to] < ROLE_RANK[from];
 
 export function inviteLink(ctx: AuthContext, token: string): string {
   // Fragment (#/einladung/<token>): wird vom Browser nie an Server oder Proxy gesendet und landet in keinem Log
@@ -56,9 +71,13 @@ export async function createInvite(ctx: AuthContext, exec: Executor, input: Crea
   const pin = input.withPin ? randomPin() : undefined;
   const requireApproval = input.requireApproval ?? (input.role === 'guest' && !input.userId);
   const expiresAt = new Date(now.getTime() + input.hours * 3_600_000);
+  // ID vorab, damit der PIN-Hash im selben INSERT steht (kein Zwischenzustand ohne PIN, auch ohne umgebende Transaktion)
+  const id = randomUUID();
   const [row] = await exec
     .insert(invites)
     .values({
+      id,
+      ...(pin ? { pinHash: pinHash(ctx, id, pin) } : {}),
       familyId: input.familyId,
       role: input.role,
       tokenHash: sha256Hex(token),
@@ -70,7 +89,6 @@ export async function createInvite(ctx: AuthContext, exec: Executor, input: Crea
     })
     .returning({ id: invites.id });
   if (!row) throw new Error('Einladung nicht angelegt');
-  if (pin) await exec.update(invites).set({ pinHash: pinHash(ctx, row.id, pin) }).where(eq(invites.id, row.id));
   await writeAudit(ctx, exec, {
     event: 'invite_created',
     familyId: input.familyId,
@@ -134,6 +152,8 @@ async function ownInvite(ctx: AuthContext, actor: { familyId: string; userId: st
     .from(invites)
     .where(and(eq(invites.id, inviteId), eq(invites.familyId, actor.familyId)));
   if (!row || (actor.role !== 'admin' && row.createdBy !== actor.userId)) throw new AppError(404, 'not_found');
+  // wer die Rolle nicht (mehr) einladen darf (z. B. herabgestufter Admin), darf die Einladung auch nicht mehr verwalten
+  assertMayInvite(actor.role, row.role);
   return row;
 }
 
@@ -148,7 +168,10 @@ export async function revokeInvite(ctx: AuthContext, actor: { familyId: string; 
   await writeAudit(ctx, ctx.db, { event: 'invite_revoked', familyId: actor.familyId, actorId: actor.userId, ip: meta.ip, detail: { inviteId: row.id } });
 }
 
-/** Verlängert eine noch nicht benutzte Einladung auf "jetzt + hours" (höchstens 7 Tage). Gesperrte (PIN) bleiben gesperrt. */
+/**
+ * Verlängert eine noch nicht benutzte Einladung auf "jetzt + hours" (höchstens 7 Tage), verkürzt sie aber nie
+ * (gilt sie schon länger, bleibt es dabei). Gesperrte (PIN) bleiben gesperrt. Gibt die tatsächliche neue Ablaufzeit zurück.
+ */
 export async function extendInvite(
   ctx: AuthContext,
   actor: { familyId: string; userId: string; role: Role },
@@ -158,15 +181,39 @@ export async function extendInvite(
 ): Promise<Date> {
   if (hours < 1 || hours > ctx.config.auth.inviteMaxHours) throw new AppError(400, 'invalid_request');
   const row = await ownInvite(ctx, actor, inviteId);
-  const expiresAt = new Date(ctx.now().getTime() + hours * 3_600_000);
-  const done = await ctx.db
+  const wanted = new Date(ctx.now().getTime() + hours * 3_600_000);
+  return ctx.db.transaction(async (tx) => {
+    const [done] = await tx
+      .update(invites)
+      .set({
+        expiresAt: sql`greatest(${invites.expiresAt}, ${wanted.toISOString()}::timestamptz)`,
+        // nur wenn sie wirklich abgelaufen war, beginnt eine neue Ablaufprotokollierung
+        expiredLoggedAt: sql`case when ${invites.expiresAt} < ${wanted.toISOString()}::timestamptz then null else ${invites.expiredLoggedAt} end`,
+      })
+      .where(and(eq(invites.id, row.id), sql`${invites.usedAt} is null`, sql`${invites.revokedAt} is null`, sql`${invites.lockedAt} is null`))
+      .returning({ expiresAt: invites.expiresAt });
+    if (!done) throw new AppError(409, 'invite_not_open', 'Die Einladung kann nicht verlängert werden.');
+    await writeAudit(ctx, tx, { event: 'invite_extended', familyId: actor.familyId, actorId: actor.userId, ip: meta.ip, detail: { inviteId: row.id, hours } });
+    return done.expiresAt;
+  });
+}
+
+/** Widerruft alle offenen Einladungen, die eine Person erstellt hat (Herabstufung, Entfernung). Gibt die Anzahl zurück. */
+export async function revokeOpenInvitesBy(
+  ctx: AuthContext,
+  exec: Executor,
+  input: { familyId: string; creatorId: string; actorId: string | null; reason: string },
+  meta: RequestMeta,
+): Promise<number> {
+  const rows = await exec
     .update(invites)
-    .set({ expiresAt, expiredLoggedAt: null })
-    .where(and(eq(invites.id, row.id), sql`${invites.usedAt} is null`, sql`${invites.revokedAt} is null`, sql`${invites.lockedAt} is null`))
+    .set({ revokedAt: ctx.now() })
+    .where(and(eq(invites.familyId, input.familyId), eq(invites.createdBy, input.creatorId), isNull(invites.usedAt), isNull(invites.revokedAt)))
     .returning({ id: invites.id });
-  if (done.length === 0) throw new AppError(409, 'invite_not_open', 'Die Einladung kann nicht verlängert werden.');
-  await writeAudit(ctx, ctx.db, { event: 'invite_extended', familyId: actor.familyId, actorId: actor.userId, ip: meta.ip, detail: { inviteId: row.id, hours } });
-  return expiresAt;
+  for (const r of rows) {
+    await writeAudit(ctx, exec, { event: 'invite_revoked', familyId: input.familyId, actorId: input.actorId, ip: meta.ip, detail: { inviteId: r.id, reason: input.reason } });
+  }
+  return rows.length;
 }
 
 /** Liefert die Einladung zum Token, wenn sie benutzbar ist (nicht benutzt, widerrufen, gesperrt oder abgelaufen). */

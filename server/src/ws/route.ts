@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { AuthService, Principal } from '../auth/types.js';
 import { isLax, type Config } from '../config.js';
+import { normalizeIp } from '../net.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { Hub, ServerMessage } from './hub.js';
 
@@ -86,10 +87,12 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       return reply.code(429).send({ error: 'too_many_attempts' });
     }
     // ab hier kein await mehr bis zur Reservierung: prüfen und zählen in einem Schritt
-    if (!perIp.tryAcquire(req.ip, config.wsMaxPerIp)) {
+    // (IPv6: ein Anschluss hat ein ganzes /64, das Limit gilt je Präfix)
+    const ipKey = normalizeIp(req.ip);
+    if (!perIp.tryAcquire(ipKey, config.wsMaxPerIp)) {
       return reply.code(429).send({ error: 'too_many_connections' });
     }
-    const reservation = { ip: req.ip, claimed: false, released: false };
+    const reservation = { ip: ipKey, claimed: false, released: false };
     reservations.set(req, reservation);
     setTimeout(() => {
       if (!reservation.claimed && !reservation.released) {
@@ -101,9 +104,10 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
 
   app.get('/ws', { websocket: true, preValidation }, (socket, req) => {
     const ip = req.ip;
+    const ipKey = normalizeIp(ip);
     const reservation = reservations.get(req);
     if (reservation && !reservation.released) reservation.claimed = true;
-    else perIp.tryAcquire(ip, Number.MAX_SAFE_INTEGER);
+    else perIp.tryAcquire(ipKey, Number.MAX_SAFE_INTEGER);
 
     let principal: Principal | null = null;
     let userKey: string | null = null;
@@ -124,7 +128,27 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       }
       alive = false;
       socket.ping();
+      void recheck();
     }, config.wsPingIntervalMs);
+
+    // Beim Ping die Sitzung prüfen: widerrufen, abgelaufen oder Mitglied entfernt -> schließen; sonst Rolle aktuell halten
+    let rechecking = false;
+    const recheck = async () => {
+      if (!principal || !auth.recheck || rechecking) return;
+      rechecking = true;
+      try {
+        const current = await auth.recheck(principal);
+        if (!current) socket.close(WS_CLOSE_UNAUTHENTICATED, 'session_ended');
+        else if (principal && current.role !== principal.role) {
+          principal = { ...principal, role: current.role };
+          hub.setRole(socket, current.role);
+        }
+      } catch (err: unknown) {
+        req.log.warn({ err }, 'Sitzungsprüfung des WebSockets fehlgeschlagen');
+      } finally {
+        rechecking = false;
+      }
+    };
 
     socket.on('pong', () => {
       alive = true;
@@ -133,7 +157,7 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
     socket.once('close', () => {
       clearTimeout(authTimer);
       clearInterval(pingTimer);
-      perIp.release(ip);
+      perIp.release(ipKey);
       if (userKey) perUser.release(userKey);
     });
 
@@ -152,7 +176,7 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       userKey = p.userId;
       principal = p;
       clearTimeout(authTimer);
-      hub.add(p.familyId, socket);
+      hub.add(p.familyId, socket, { userId: p.userId, sessionId: p.sessionId, deviceId: p.deviceId, role: p.role });
       send(socket, { type: 'ready' });
     };
 

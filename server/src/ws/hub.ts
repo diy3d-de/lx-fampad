@@ -1,4 +1,5 @@
 import type { WebSocket } from 'ws';
+import type { Role } from '../auth/types.js';
 
 /** Server -> Client. Der WebSocket meldet nur "neue Revision N"; Daten holt der Client per /api/v1/sync. */
 export type ServerMessage =
@@ -8,35 +9,106 @@ export type ServerMessage =
   | { type: 'rev'; rev: number }
   | { type: 'error'; code: string };
 
-/** Verwaltet die offenen Verbindungen je Familie (Phase 0: nur Gerüst, noch ohne Anmeldung genutzt). */
-export class Hub {
-  private readonly byFamily = new Map<string, Set<WebSocket>>();
+/** Wer hinter einer Verbindung steckt (für gezieltes Schließen bei Abmeldung, Widerruf, Rollenwechsel). */
+export interface Subject {
+  userId: string;
+  sessionId?: string | undefined;
+  deviceId?: string | null | undefined;
+  role?: Role | undefined;
+}
 
-  add(familyId: string, socket: WebSocket): void {
-    let set = this.byFamily.get(familyId);
-    if (!set) this.byFamily.set(familyId, (set = new Set()));
-    set.add(socket);
-    socket.once('close', () => this.remove(familyId, socket));
+interface Entry extends Subject {
+  familyId: string;
+  socket: WebSocket;
+}
+
+function addTo<K>(map: Map<K, Set<Entry>>, key: K, entry: Entry): void {
+  let set = map.get(key);
+  if (!set) map.set(key, (set = new Set()));
+  set.add(entry);
+}
+
+function removeFrom<K>(map: Map<K, Set<Entry>>, key: K, entry: Entry): void {
+  const set = map.get(key);
+  if (!set) return;
+  set.delete(entry);
+  if (set.size === 0) map.delete(key);
+}
+
+/** Verwaltet die offenen Verbindungen je Familie, Person, Sitzung und Gerät. */
+export class Hub {
+  private readonly byFamily = new Map<string, Set<Entry>>();
+  private readonly byUser = new Map<string, Set<Entry>>();
+  private readonly bySession = new Map<string, Set<Entry>>();
+  private readonly byDevice = new Map<string, Set<Entry>>();
+  private readonly entries = new Map<WebSocket, Entry>();
+
+  add(familyId: string, socket: WebSocket, subject: Subject): void {
+    const entry: Entry = { ...subject, familyId, socket };
+    this.entries.set(socket, entry);
+    addTo(this.byFamily, familyId, entry);
+    addTo(this.byUser, subject.userId, entry);
+    if (subject.sessionId) addTo(this.bySession, subject.sessionId, entry);
+    if (subject.deviceId) addTo(this.byDevice, subject.deviceId, entry);
+    socket.once('close', () => this.remove(socket));
   }
 
-  remove(familyId: string, socket: WebSocket): void {
-    const set = this.byFamily.get(familyId);
-    if (!set) return;
-    set.delete(socket);
-    if (set.size === 0) this.byFamily.delete(familyId);
+  remove(socket: WebSocket): void {
+    const entry = this.entries.get(socket);
+    if (!entry) return;
+    this.entries.delete(socket);
+    removeFrom(this.byFamily, entry.familyId, entry);
+    removeFrom(this.byUser, entry.userId, entry);
+    if (entry.sessionId) removeFrom(this.bySession, entry.sessionId, entry);
+    if (entry.deviceId) removeFrom(this.byDevice, entry.deviceId, entry);
+  }
+
+  private closeAll(set: Set<Entry> | undefined, code: number, reason: string, skip?: (e: Entry) => boolean): number {
+    let n = 0;
+    // Kopie: close() kann 'close'-Ereignisse auslösen, die das Set verändern
+    for (const e of [...(set ?? [])]) {
+      if (skip?.(e)) continue;
+      e.socket.close(code, reason);
+      n++;
+    }
+    return n;
+  }
+
+  /** Schließt alle Verbindungen einer Sitzung. */
+  closeSession(sessionId: string, code: number, reason: string): number {
+    return this.closeAll(this.bySession.get(sessionId), code, reason);
+  }
+
+  /** Schließt alle Verbindungen eines Geräts. */
+  closeDevice(deviceId: string, code: number, reason: string): number {
+    return this.closeAll(this.byDevice.get(deviceId), code, reason);
+  }
+
+  /** Schließt alle Verbindungen einer Person, optional ohne die einer Sitzung. */
+  closeUser(userId: string, code: number, reason: string, exceptSessionId?: string): number {
+    return this.closeAll(this.byUser.get(userId), code, reason, exceptSessionId ? (e) => e.sessionId === exceptSessionId : undefined);
+  }
+
+  /** Aktualisiert die gemerkte Rolle einer Verbindung. */
+  setRole(socket: WebSocket, role: Role): void {
+    const e = this.entries.get(socket);
+    if (e) e.role = role;
   }
 
   /** Meldet allen Geräten der Familie die neue Revision. */
   notifyRev(familyId: string, rev: number): void {
     const msg = JSON.stringify({ type: 'rev', rev } satisfies ServerMessage);
-    for (const s of this.byFamily.get(familyId) ?? []) {
-      if (s.readyState === s.OPEN) s.send(msg);
+    for (const e of this.byFamily.get(familyId) ?? []) {
+      if (e.socket.readyState === e.socket.OPEN) e.socket.send(msg);
     }
   }
 
+  /** Für Tests und Diagnose: wer ist verbunden (ohne Sockets). */
+  snapshot(): Array<Subject & { familyId: string }> {
+    return [...this.entries.values()].map(({ socket: _socket, ...rest }) => rest);
+  }
+
   get size(): number {
-    let n = 0;
-    for (const set of this.byFamily.values()) n += set.size;
-    return n;
+    return this.entries.size;
   }
 }

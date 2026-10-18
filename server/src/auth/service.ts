@@ -2,7 +2,7 @@
 import type { FastifyRequest } from 'fastify';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { redeemWsTicket } from './account.js';
+import { recheckSession, redeemWsTicket } from './account.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, Db, Logger } from './context.js';
 import { KeyRing } from './crypto.js';
@@ -20,6 +20,7 @@ export class Auth implements AuthService {
       keys: new KeyRing(deps.config.auth.secretKey),
       now: deps.now ?? (() => new Date()),
       log: deps.log ?? { warn: () => {}, error: () => {} },
+      onRevoke: () => {},
     };
   }
 
@@ -36,6 +37,10 @@ export class Auth implements AuthService {
 
   redeemWsTicket(ticket: string): Promise<Principal | null> {
     return redeemWsTicket(this.ctx, ticket);
+  }
+
+  recheck(principal: Principal): Promise<Principal | null> {
+    return recheckSession(this.ctx, principal);
   }
 
   async isIpBlocked(ip: string): Promise<boolean> {

@@ -7,12 +7,12 @@ import { writeAudit } from './audit.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken, sha256Hex } from './crypto.js';
-import { createInvite, type CreatedInvite } from './invites.js';
+import { createInvite, isDowngrade, revokeOpenInvitesBy, type CreatedInvite } from './invites.js';
 import { findAccountById, type Account } from './login.js';
 import { assertNotLocked, ipKey, recordFailure } from './lockout.js';
 import { countRemainingCodes, createRecoveryCodes } from './recovery.js';
 import type { MemberView } from './register.js';
-import { csrfTokenFor, isAlive, requireStepUp, revokeAllForUser, revokeDevice } from './sessions.js';
+import { csrfTokenFor, isAlive, loadLive, requireStepUp, revokeAllForUser, revokeDevice } from './sessions.js';
 import type { Principal, Role, SessionPrincipal } from './types.js';
 import { checkRegistration, registrationOptions } from './webauthn.js';
 
@@ -77,8 +77,8 @@ export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promis
 }
 
 async function memberOf(ctx: AuthContext, p: SessionPrincipal, userId: string): Promise<Account> {
-  const a = await findAccountById(ctx, userId);
-  if (!a || a.familyId !== p.familyId) throw notFound();
+  const a = await findAccountById(ctx, userId, p.familyId);
+  if (!a) throw notFound();
   return a;
 }
 
@@ -102,8 +102,12 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
       throw new AppError(409, 'last_admin', 'Der letzte Admin kann nicht herabgestuft werden.');
     }
     await tx.update(memberships).set({ role }).where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)));
-    // Rollenwechsel: alle Sitzungen der Person enden, sie meldet sich mit der neuen Rolle neu an
+    // Rollenwechsel: alle Sitzungen der Person enden (auch ihre WebSockets), sie meldet sich mit der neuen Rolle neu an
     await revokeAllForUser(ctx, tx, targetId);
+    // Herabgestuft: ihre noch offenen Einladungen (mit der alten Rolle erstellt) enden ebenfalls
+    if (isDowngrade(target.role, role)) {
+      await revokeOpenInvitesBy(ctx, tx, { familyId: p.familyId, creatorId: targetId, actorId: p.userId, reason: 'role_downgraded' }, meta);
+    }
     await writeAudit(ctx, tx, {
       event: 'role_changed',
       familyId: p.familyId,
@@ -125,12 +129,35 @@ export async function approveMember(ctx: AuthContext, p: SessionPrincipal, targe
   await writeAudit(ctx, ctx.db, { event: 'member_approved', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId } });
 }
 
+/**
+ * Nimmt eine Person aus der Familie: Mitgliedschaft (und damit Geräte, Sitzungen, Tickets der Familie) werden gelöscht, offene
+ * Einladungen von ihr und für sie widerrufen. Die Benutzerzeile samt Anmeldedaten verschwindet nur, wenn es keine weitere
+ * Mitgliedschaft gibt (der Server bedient heute genau eine Familie, das Schema erlaubt aber mehrere).
+ */
+async function removeFromFamily(
+  ctx: AuthContext,
+  tx: Executor,
+  input: { familyId: string; userId: string; actorId: string; reason: string },
+  meta: RequestMeta,
+): Promise<void> {
+  await revokeOpenInvitesBy(ctx, tx, { familyId: input.familyId, creatorId: input.userId, actorId: input.actorId, reason: input.reason }, meta);
+  await tx
+    .update(invites)
+    .set({ revokedAt: ctx.now() })
+    .where(and(eq(invites.familyId, input.familyId), eq(invites.userId, input.userId), isNull(invites.usedAt), isNull(invites.revokedAt)));
+  await tx.delete(memberships).where(and(eq(memberships.familyId, input.familyId), eq(memberships.userId, input.userId)));
+  const [other] = await tx.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, input.userId)).limit(1);
+  if (!other) await tx.delete(users).where(eq(users.id, input.userId));
+  // offene WebSockets der Person schließen
+  ctx.onRevoke({ kind: 'user', userId: input.userId });
+}
+
 export async function rejectMember(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
   requireAdmin(p);
   const target = await memberOf(ctx, p, targetId);
   if (target.status !== 'pending') throw new AppError(409, 'not_pending', 'Das Mitglied wartet nicht auf Freigabe.');
   await ctx.db.transaction(async (tx) => {
-    await tx.delete(users).where(eq(users.id, targetId));
+    await removeFromFamily(ctx, tx, { familyId: p.familyId, userId: targetId, actorId: p.userId, reason: 'member_rejected' }, meta);
     await writeAudit(ctx, tx, { event: 'member_rejected', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId } });
   });
 }
@@ -145,7 +172,7 @@ export async function removeMember(ctx: AuthContext, p: SessionPrincipal, target
     if (target.role === 'admin' && (await activeAdminCount(tx, p.familyId)) <= 1) {
       throw new AppError(409, 'last_admin', 'Der letzte Admin kann nicht entfernt werden.');
     }
-    await tx.delete(users).where(eq(users.id, targetId));
+    await removeFromFamily(ctx, tx, { familyId: p.familyId, userId: targetId, actorId: p.userId, reason: 'member_removed' }, meta);
     await writeAudit(ctx, tx, { event: 'member_removed', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, role: target.role } });
   });
 }
@@ -159,8 +186,8 @@ export async function resetMember(
   input: { familyId: string; userId: string; actorId: string | null; hours: number; withPin: boolean },
   meta: RequestMeta,
 ): Promise<CreatedInvite> {
-  const target = await findAccountById(ctx, input.userId);
-  if (!target || target.familyId !== input.familyId) throw notFound();
+  const target = await findAccountById(ctx, input.userId, input.familyId);
+  if (!target) throw notFound();
   return ctx.db.transaction(async (tx) => {
     const now = ctx.now();
     await tx.update(credentials).set({ revokedAt: now }).where(and(eq(credentials.userId, input.userId), isNull(credentials.revokedAt)));
@@ -202,7 +229,10 @@ export async function removeDevice(ctx: AuthContext, p: SessionPrincipal, device
 export async function logoutCurrent(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta): Promise<void> {
   await ctx.db.transaction(async (tx) => {
     if (p.deviceId) await revokeDevice(ctx, tx, p.deviceId);
-    else await tx.update(sessions).set({ revokedAt: ctx.now() }).where(eq(sessions.id, p.sessionId));
+    else {
+      await tx.update(sessions).set({ revokedAt: ctx.now() }).where(eq(sessions.id, p.sessionId));
+      ctx.onRevoke({ kind: 'session', sessionId: p.sessionId });
+    }
     await writeAudit(ctx, tx, { event: 'logout', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip });
   });
 }
@@ -342,5 +372,14 @@ export async function redeemWsTicket(ctx: AuthContext, ticket: string): Promise<
     .where(eq(sessions.id, t.sessionId));
   // eine zwischenzeitlich rotierte Sitzung (used_at) gilt für das Ticket weiter; widerrufen oder abgelaufen nicht
   if (!s || s.status !== 'active' || s.disabledAt || !isAlive(ctx, s.session, { allowUsed: true })) return null;
-  return { userId: s.session.userId, familyId: s.session.familyId, role: s.role, deviceId: s.session.deviceId };
+  return { userId: s.session.userId, familyId: s.session.familyId, role: s.role, deviceId: s.session.deviceId, sessionId: s.session.id };
+}
+
+/** Prüft eine offene WebSocket-Anmeldung erneut (beim Ping): Sitzung noch gültig und Mitglied noch aktiv? Liefert die aktuelle Rolle. */
+export async function recheckSession(ctx: AuthContext, p: Principal): Promise<Principal | null> {
+  if (!p.sessionId) return p;
+  const live = await loadLive(ctx, { id: p.sessionId });
+  // eine rotierte Sitzung (used_at) gilt für den WebSocket weiter, wie beim Einlösen des Tickets
+  if (!live || !isAlive(ctx, live.row, { allowUsed: true })) return null;
+  return { ...p, role: live.role };
 }

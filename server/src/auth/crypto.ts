@@ -27,6 +27,14 @@ export function safeEqual(a: string, b: string): boolean {
   return timingSafeEqual(ha, hb);
 }
 
+/**
+ * Domänen-Label der Schlüsselableitung (HKDF-Info: `${KDF_DOMAIN}/${purpose}`). Es trennt die Teilschlüssel dieses Projekts von allen
+ * anderen Ableitungen aus demselben Hauptschlüssel. NIE ändern: Jede Änderung macht alle gespeicherten HMACs (PINs,
+ * Wiederherstellungs-Codes, Sperr-Schlüssel) und TOTP-Geheimnisse ungültig. Gesichert durch einen Known-Answer-Test (test/crypto.test.ts).
+ * (Vor dem ersten Einsatz von lx-familie/ auf lx-fampad/ umgestellt; es gab keine Bestandsdaten.)
+ */
+export const KDF_DOMAIN = 'lx-fampad';
+
 /** Teilschlüssel für einen Zweck, abgeleitet aus dem Hauptschlüssel (HKDF-SHA256). */
 export class KeyRing {
   private readonly cache = new Map<string, Buffer>();
@@ -34,9 +42,8 @@ export class KeyRing {
 
   derive(purpose: string): Buffer {
     let key = this.cache.get(purpose);
-    // Domänen-Label der Schlüsselableitung: bewusst NICHT umbenannt (Projekt hieß früher lx-familie); eine Änderung machte vorhandene HMACs und TOTP-Geheimnisse ungültig.
     if (!key) {
-      key = Buffer.from(hkdfSync('sha256', this.master, Buffer.alloc(0), `lx-familie/${purpose}`, 32));
+      key = Buffer.from(hkdfSync('sha256', this.master, Buffer.alloc(0), `${KDF_DOMAIN}/${purpose}`, 32));
       this.cache.set(purpose, key);
     }
     return key;

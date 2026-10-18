@@ -5,9 +5,41 @@ import type { RequestMeta } from '../auth/context.js';
 import { clearedSessionCookie, sessionCookie, type Established } from '../auth/sessions.js';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
+import { AppError } from '../errors.js';
 
-/** Eingabe prüfen: bei Fehlern wirft zod, der Fehlerhandler antwortet generisch mit 400. */
+// NUL (\u0000) lässt PostgreSQL bei text/jsonb mit einem Fehler scheitern (500), ein einzelnes Surrogat (z. B. \ud800) ist kein
+// gültiges Unicode und verfälscht sich beim Speichern. Beides wird in JEDEM Text abgelehnt.
+// eslint-disable-next-line no-control-regex
+const BAD_TEXT = /\u0000|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
+
+/** true, wenn der Text NUL oder ein einzelnes Surrogat enthält. */
+export const hasBadText = (s: string): boolean => BAD_TEXT.test(s);
+
+/** Durchsucht Werte und Schlüssel beliebig verschachtelter Eingaben (ohne Rekursion, damit tiefe Verschachtelung nichts sprengt). */
+function containsBadText(root: unknown): boolean {
+  const stack: unknown[] = [root];
+  while (stack.length > 0) {
+    const v = stack.pop();
+    if (typeof v === 'string') {
+      if (hasBadText(v)) return true;
+    } else if (Array.isArray(v)) {
+      stack.push(...v);
+    } else if (typeof v === 'object' && v !== null) {
+      for (const [k, x] of Object.entries(v)) {
+        if (hasBadText(k)) return true;
+        stack.push(x);
+      }
+    }
+  }
+  return false;
+}
+
+/** Text ohne NUL und ohne einzelne Surrogate. */
+export const safeString = () => z.string().refine((s) => !hasBadText(s), 'Ungültige Zeichen');
+
+/** Eingabe prüfen: bei Fehlern wirft zod, der Fehlerhandler antwortet generisch mit 400. Ungültige Zeichen in irgendeinem Text: 400. */
 export function parse<S extends z.ZodType>(schema: S, data: unknown): z.infer<S> {
+  if (containsBadText(data)) throw new AppError(400, 'invalid_request');
   return schema.parse(data ?? {});
 }
 
@@ -19,19 +51,25 @@ export const strictLimit = (config: Config) => ({ config: { rateLimit: { max: co
 export const uuid = z.string().uuid();
 export const idParams = z.object({ id: uuid }).strict();
 
-const text = (max: number) => z.string().trim().min(1).max(max);
+export const text = (max: number) => safeString().pipe(z.string().trim().min(1).max(max));
 
 export const deviceSchema = z
   .object({
     id: uuid.optional(),
     name: text(60),
     platform: z.enum(['android', 'ios', 'web', 'windows', 'linux', 'macos']),
-    appVersion: z.string().trim().max(32).optional(),
+    appVersion: safeString().pipe(z.string().trim().max(32)).optional(),
   })
   .strict();
 
 export const clientSchema = z.enum(['web', 'app']).default('web');
-export const emailSchema = z.string().trim().email().max(254);
+export const emailSchema = safeString().pipe(z.string().trim().email().max(254));
+/** Optionale Bezeichnung (z. B. eines Passkeys). */
+export const labelSchema = safeString().pipe(z.string().trim().max(60));
+/** Passwort: Länge zählt (Zeichen), sonst keine Regeln. */
+export const passwordSchema = safeString().pipe(z.string().min(1).max(256));
+/** Code/Token als Text mit fester Längengrenze. */
+export const boundedString = (min: number, max: number) => safeString().pipe(z.string().min(min).max(max));
 export const displayNameSchema = text(60);
 export const pinSchema = z.string().regex(/^\d{6}$/);
 export const codeSchema = z.string().regex(/^\d{6}$/);

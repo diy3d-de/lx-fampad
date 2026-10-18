@@ -30,9 +30,15 @@ export interface AuthConfig {
   /** Fehlversuche, ab denen die verzögerte Sperre beginnt (je Konto bzw. je IP). */
   lockoutAccountThreshold: number;
   lockoutIpThreshold: number;
+  /** Je Paar aus Konto und IP: sperrt früher als der Konto-Zähler und trifft nur die tippende IP. */
+  lockoutPairThreshold: number;
   /** Fehlversuche verfallen nach dieser Zeit ohne neuen Fehlversuch. */
   lockoutWindowSec: number;
+  /** Höchstdauer einer Sperre (Sekunden); kurz gehalten, damit niemand fremde Konten lange aussperren kann. */
   lockoutMaxDelaySec: number;
+  /** Unauthentifiziert erzeugte WebAuthn-Challenges, die gleichzeitig offen sein dürfen: je IP (IPv6: /64) und insgesamt. */
+  challengeMaxPerIp: number;
+  challengeMaxGlobal: number;
   maxInvitePinAttempts: number;
   auditRetentionDays: number;
 }
@@ -84,6 +90,14 @@ function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number): nu
 }
 
 const PLACEHOLDER_KEYS = ['CHANGE_ME', 'changeme', 'secret'];
+
+/** Mindestlänge neuer Passwörter: einstellbar, aber nie unter 10. */
+export const MIN_PASSWORD_LENGTH_FLOOR = 10;
+function minPasswordLength(env: NodeJS.ProcessEnv): number {
+  const n = positiveInt(env, 'MIN_PASSWORD_LENGTH', 12);
+  if (n < MIN_PASSWORD_LENGTH_FLOOR) throw new Error(`MIN_PASSWORD_LENGTH darf nicht unter ${MIN_PASSWORD_LENGTH_FLOOR} liegen: ${n}`);
+  return n;
+}
 
 /** Liest den Hauptschlüssel aus AUTH_SECRET_KEY (Base64/Hex) oder AUTH_SECRET_KEY_FILE; mindestens 32 Byte. */
 function loadSecretKey(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Buffer {
@@ -162,11 +176,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       stepUpMaxAgeSec: 5 * 60,
       wsTicketTtlSec: 30,
       challengeTtlSec: 5 * 60,
-      minPasswordLength: positiveInt(env, 'MIN_PASSWORD_LENGTH', 12),
-      lockoutAccountThreshold: 5,
+      minPasswordLength: minPasswordLength(env),
+      lockoutAccountThreshold: 10,
       lockoutIpThreshold: 20,
+      lockoutPairThreshold: 5,
       lockoutWindowSec: 15 * 60,
-      lockoutMaxDelaySec: 15 * 60,
+      lockoutMaxDelaySec: 90,
+      challengeMaxPerIp: positiveInt(env, 'CHALLENGE_MAX_PER_IP', 20),
+      challengeMaxGlobal: positiveInt(env, 'CHALLENGE_MAX_GLOBAL', 2000),
       maxInvitePinAttempts: 5,
       auditRetentionDays: positiveInt(env, 'AUDIT_RETENTION_DAYS', 365),
     },

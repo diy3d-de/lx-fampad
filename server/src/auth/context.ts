@@ -13,6 +13,12 @@ export interface Logger {
   error(obj: object, msg?: string): void;
 }
 
+/** Sitzungen, die gerade widerrufen wurden (der WebSocket-Hub schließt daraufhin die zugehörigen Verbindungen). */
+export type RevokeEvent =
+  | { kind: 'user'; userId: string; exceptSessionId?: string | undefined }
+  | { kind: 'device'; deviceId: string }
+  | { kind: 'session'; sessionId: string };
+
 /** Gemeinsamer Kontext aller Auth-Funktionen. `now` ist austauschbar (Tests). */
 export interface AuthContext {
   db: Db;
@@ -20,6 +26,8 @@ export interface AuthContext {
   keys: KeyRing;
   now: () => Date;
   log: Logger;
+  /** Wird nach jedem Widerruf aufgerufen; app.ts hängt den WebSocket-Hub ein. */
+  onRevoke: (event: RevokeEvent) => void;
 }
 
 /** Angaben zur Anfrage, die ins Audit-Log und in die Fehlversuchs-Zähler fließen. */

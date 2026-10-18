@@ -11,7 +11,7 @@ import { peekChallenge, saveChallenge, takeChallenge } from './challenges.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken } from './crypto.js';
 import { consumeInvite, INVALID_INVITE, verifyInvite } from './invites.js';
-import { accountKey, assertNotLocked, ipKey, recordFailure } from './lockout.js';
+import { assertNotLocked, ipKey, loginKeys, recordFailure, recordLoginFailure } from './lockout.js';
 import { assertPasswordPolicy, hashPassword } from './password.js';
 import { createRecoveryCodes } from './recovery.js';
 import { establishSession, type DeviceInput, type Established, type SessionKind } from './sessions.js';
@@ -81,7 +81,7 @@ export async function startPasskeyRegistration(
 ) {
   const id = await resolveIdentity(ctx, input, meta);
   const options = await registrationOptions(ctx, { userId: id.userId, accountName: id.email, displayName: id.displayName, existing: [] });
-  const challengeId = await saveChallenge(ctx, { purpose: 'register_passkey', challenge: options.challenge, data: { ...id } });
+  const challengeId = await saveChallenge(ctx, { purpose: 'register_passkey', challenge: options.challenge, data: { ...id }, unauthenticatedFrom: meta });
   return { challengeId, options };
 }
 
@@ -132,6 +132,7 @@ export async function startPasswordRegistration(
   const challengeId = await saveChallenge(ctx, {
     purpose: 'register_password',
     challenge: randomToken(16),
+    unauthenticatedFrom: meta,
     data: { ...id, passwordHash, totpSecretEnc: ctx.keys.encrypt('totp', secret, `totp:${id.userId}`) },
   });
   return { challengeId, totpSecret: secret, totpUri: totpUri(secret, id.email, ctx.config.auth.rpName) };
@@ -145,13 +146,11 @@ export async function finishPasswordRegistration(
   const peek = await peekChallenge(ctx, input.challengeId, 'register_password');
   if (!peek) throw challengeInvalid();
   const data = peek.data as unknown as Identity & { passwordHash: string; totpSecretEnc: string };
-  const keys = [ipKey(ctx, meta.ip), accountKey(ctx, data.email)];
-  await assertNotLocked(ctx, keys);
+  await assertNotLocked(ctx, loginKeys(ctx, meta.ip, data.email));
   const secret = ctx.keys.decrypt('totp', data.totpSecretEnc, `totp:${data.userId}`);
   const step = await checkTotp(secret, input.code, ctx.now());
   if (step === null) {
-    await recordFailure(ctx, keys[0]!, ctx.config.auth.lockoutIpThreshold);
-    await recordFailure(ctx, keys[1]!, ctx.config.auth.lockoutAccountThreshold);
+    await recordLoginFailure(ctx, meta.ip, data.email);
     throw new AppError(400, 'invalid_code', 'Der Code stimmt nicht. Bitte erneut versuchen.');
   }
   // erst jetzt einlösen (atomar); parallele Doppel-Abschlüsse scheitern hier

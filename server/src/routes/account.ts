@@ -19,12 +19,12 @@ import {
   startAddPasskey,
   updateProfile,
 } from '../auth/account.js';
-import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
+import { assertMayInvite, createInvite, effectiveRequireApproval, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { clearCookie, displayNameSchema, idParams, meta, parse, registrationResponseSchema, strictLimit, uuid } from './util.js';
+import { clearCookie, displayNameSchema, idParams, labelSchema, meta, parse, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child', 'guest']);
 
@@ -49,7 +49,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   app.post('/api/v1/me/passkeys/verify', strikt, async (req) => {
     const p = await auth.requireSession(req);
-    const body = parse(z.object({ challengeId: uuid, response: registrationResponseSchema, label: z.string().trim().max(60).optional() }).strict(), req.body);
+    const body = parse(z.object({ challengeId: uuid, response: registrationResponseSchema, label: labelSchema.optional() }).strict(), req.body);
     return finishAddPasskey(ctx, p, body, meta(req));
   });
 
@@ -122,7 +122,12 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     );
     assertMayInvite(p.role, body.role);
     if (body.role === 'admin') requireStepUp(ctx, p);
-    const invite = await createInvite(ctx, ctx.db, { familyId: p.familyId, role: body.role, hours: body.hours, withPin: body.pin, requireApproval: body.requireApproval, createdBy: p.userId }, meta(req));
+    // Gast-Einladungen brauchen die Freigabe, außer ein Admin verzichtet ausdrücklich darauf (Nicht-Admins: immer erzwungen)
+    const requireApproval = effectiveRequireApproval(p.role, body.role, body.requireApproval);
+    // Einladung samt PIN-Hash und Audit-Eintrag in einer Transaktion
+    const invite = await ctx.db.transaction((tx) =>
+      createInvite(ctx, tx, { familyId: p.familyId, role: body.role, hours: body.hours, withPin: body.pin, requireApproval, createdBy: p.userId }, meta(req)),
+    );
     // Token und PIN erscheinen nur in dieser Antwort; die Liste zeigt sie nie wieder
     return { invite };
   });

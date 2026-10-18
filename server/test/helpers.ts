@@ -9,6 +9,7 @@ import { migrate as migrateLite } from 'drizzle-orm/pglite/migrator';
 import type { FastifyInstance } from 'fastify';
 import { generate } from 'otplib';
 import { createHash, randomUUID } from 'node:crypto';
+import type { Writable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { buildApp } from '../src/app.js';
@@ -163,7 +164,7 @@ export class World {
     readonly config: Config,
   ) {}
 
-  static async create(db: Db, env: NodeJS.ProcessEnv = {}): Promise<World> {
+  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable } = {}): Promise<World> {
     const config = loadConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
@@ -174,7 +175,7 @@ export class World {
       ...env,
     });
     const holder: { world?: World } = {};
-    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()) });
+    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}) });
     await app.ready();
     const authCore = app.authCore;
     if (!authCore) throw new Error('Auth fehlt');

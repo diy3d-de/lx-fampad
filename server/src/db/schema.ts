@@ -273,7 +273,7 @@ export const webauthnChallenges = pgTable(
   (t) => [index('webauthn_challenges_expires_idx').on(t.expiresAt)],
 );
 
-/** Fehlversuche je Schlüssel ("ip:<IP>" bzw. "acct:<HMAC der E-Mail>") mit verzögerter Sperre. */
+/** Fehlversuche je Schlüssel (HMACs: "ip:" je IP/IPv6-/64, "acct:" je Konto, "acip:" je Konto+IP) mit verzögerter Sperre. */
 export const loginAttempts = pgTable(
   'login_attempts',
   {

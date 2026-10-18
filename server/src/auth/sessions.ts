@@ -290,11 +290,18 @@ export async function authenticateRequest(ctx: AuthContext, req: FastifyRequest)
 /** Widerruft alle Sitzungen der Person (und markiert ihre Geräte als abgemeldet); optional eine Sitzung ausnehmen. */
 export async function revokeAllForUser(ctx: AuthContext, exec: Executor, userId: string, opts: { exceptSessionId?: string } = {}): Promise<void> {
   const now = ctx.now();
+  // Das Gerät der ausgenommenen Sitzung bleibt aktiv, auch wenn dort ältere Sitzungszeilen (Rotation) widerrufen werden.
+  let keepDevice: string | null = null;
+  if (opts.exceptSessionId) {
+    const [kept] = await exec.select({ deviceId: sessions.deviceId }).from(sessions).where(and(eq(sessions.id, opts.exceptSessionId), eq(sessions.userId, userId)));
+    keepDevice = kept?.deviceId ?? null;
+  }
   const where = and(eq(sessions.userId, userId), isNull(sessions.revokedAt), opts.exceptSessionId ? sql`${sessions.id} <> ${opts.exceptSessionId}` : undefined);
   const hit = await exec.update(sessions).set({ revokedAt: now }).where(where).returning({ deviceId: sessions.deviceId });
-  const deviceIds = [...new Set(hit.map((h) => h.deviceId).filter((d): d is string => !!d))];
+  const deviceIds = [...new Set(hit.map((h) => h.deviceId).filter((d): d is string => !!d && d !== keepDevice))];
   if (deviceIds.length > 0) await exec.update(devices).set({ revokedAt: now }).where(and(inArray(devices.id, deviceIds), isNull(devices.revokedAt)));
   if (!opts.exceptSessionId) await exec.update(devices).set({ revokedAt: now }).where(and(eq(devices.userId, userId), isNull(devices.revokedAt)));
+  ctx.onRevoke({ kind: 'user', userId, exceptSessionId: opts.exceptSessionId });
 }
 
 /** Meldet ein Gerät ab: alle seine Sitzungen werden widerrufen, das Gerät verschwindet aus der Liste. */
@@ -302,6 +309,7 @@ export async function revokeDevice(ctx: AuthContext, exec: Executor, deviceId: s
   const now = ctx.now();
   await exec.update(sessions).set({ revokedAt: now }).where(and(eq(sessions.deviceId, deviceId), isNull(sessions.revokedAt)));
   await exec.update(devices).set({ revokedAt: now }).where(and(eq(devices.id, deviceId), isNull(devices.revokedAt)));
+  ctx.onRevoke({ kind: 'device', deviceId });
 }
 
 export async function revokeFamily(ctx: AuthContext, exec: Executor, tokenFamily: string): Promise<void> {
