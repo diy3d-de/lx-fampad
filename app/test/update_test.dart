@@ -285,7 +285,7 @@ void main() {
     });
 
     test('die eingebauten Standardwerte sind HTTPS', () {
-      expect(() => pruefeBasisAdressen(debug: false), returnsNormally);
+      expect(() => pruefeBasisAdressen(debug: false, android: false), returnsNormally);
       expect(kDebugMode, isTrue); // Tests laufen im Debug-Modus
     });
   });

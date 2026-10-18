@@ -35,7 +35,7 @@ flutter run -d chrome
 flutter build web --release --no-web-resources-cdn
 
 # Werkzeuge (Repo-Wurzel)
-node --test tools/                                      # Test der Manifest-Signatur
+node --test "tools/*.test.mjs"                                      # Test der Manifest-Signatur
 node tools/update-manifest.mjs keygen|sign …            # Update-Schlüssel, Manifest signieren (tools/README.md)
 
 # Deploy

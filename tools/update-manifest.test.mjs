@@ -1,4 +1,4 @@
-// Test: node --test tools/
+// Test: node --test "tools/*.test.mjs"
 import assert from 'node:assert/strict';
 import { generateKeyPairSync } from 'node:crypto';
 import { test } from 'node:test';

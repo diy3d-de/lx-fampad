@@ -49,5 +49,5 @@ Welche Secrets (Android-Keystore, `UPDATE_SIGNING_KEY`, SSH-Zugang) angelegt wer
 ### Test
 
 ```bash
-node --test tools/
+node --test "tools/*.test.mjs"
 ```
