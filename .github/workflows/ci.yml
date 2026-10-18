@@ -15,6 +15,21 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # Echtes PostgreSQL 17 für den Schema-Test (zusätzlich zu PGlite)
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:ci@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,14 +37,24 @@ jobs:
           node-version: 24.21.0
           cache: npm
           cache-dependency-path: server/package-lock.json
-      - run: npm ci --no-fund --no-audit
+      - run: npm ci --ignore-scripts --no-fund --no-audit
       - run: npm run lint
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
 
+  tools:
+    name: Werkzeuge (Manifest-Signatur)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - run: node --test tools/
+
   app:
-    name: App (analyze, test)
+    name: App (analyze, test, Web-Build)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,8 +66,18 @@ jobs:
           flutter-version: 3.47.6
           channel: stable
           cache: true
-      - run: flutter pub get
-      # erzeugt lib/data/app_database.g.dart (drift), die Datei ist nicht eingecheckt
-      - run: dart run build_runner build --delete-conflicting-outputs
+      # pubspec.lock ist eingecheckt: die CI darf nichts neu auflösen (analyzer 14.5.0 bricht build_runner 2.16.1)
+      - run: flutter pub get --enforce-lockfile
+      # eingecheckte Binärdateien des Webs prüfen (sqlite3.wasm passend zu sqlite3 3.7.0, drift_worker.js)
+      - name: Prüfsummen web/sqlite3.wasm und web/drift_worker.js
+        run: |
+          sha256sum -c web-assets.sha256
+          # dieselben Werte müssen in docs/VERSIONEN.md stehen
+          for h in $(cut -d' ' -f1 web-assets.sha256); do grep -q "$h" ../docs/VERSIONEN.md; done
+      # erzeugt lib/data/app_database.g.dart (drift), die Datei ist nicht eingecheckt (sauberer Checkout: keine Altlasten)
+      - run: dart run build_runner build
       - run: flutter analyze
       - run: flutter test
+      - run: flutter build web --release --no-web-resources-cdn
+      - name: Gebaute Web-Binärdateien sind die geprüften
+        run: sed -E 's# (\*?)web/# \1build/web/#' web-assets.sha256 | sha256sum -c

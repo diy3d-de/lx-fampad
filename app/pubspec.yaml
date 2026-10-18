@@ -22,6 +22,10 @@ dependencies:
   crypto: 3.0.7
   path_provider: 2.1.6
   intl: 0.20.3
+  # Ed25519-Prüfung des Update-Manifests (reines Dart, läuft auch im Web)
+  cryptography: 2.9.0
+  # an sqlite3.wasm gebunden (web/sqlite3.wasm, Prüfsumme in docs/VERSIONEN.md): beide immer zusammen ändern
+  sqlite3: 3.7.0
 
 dev_dependencies:
   flutter_test:
@@ -29,6 +33,8 @@ dev_dependencies:
   flutter_lints: 6.0.0
   drift_dev: 2.35.1
   build_runner: 2.16.1
+  # analyzer 14.5.0 ist zu jung (Regel: mind. 14 Tage) und bricht build_runner 2.16.1: bis auf Weiteres festhalten
+  analyzer: 14.4.0
 
 flutter:
   uses-material-design: true

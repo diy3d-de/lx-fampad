@@ -17,6 +17,13 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 | argon2 | 0.45.1 | Argon2id, Prebuilds |
 | @tus/server / @tus/file-store | 2.4.5 / 2.1.1 | Teil-Uploads liegen unverschlüsselt: nach `onUploadFinish` verschlüsselt ablegen |
 | sharp | 0.35.5 | |
+| pg / @types/pg | 8.23.1 / 8.23.1 | node-postgres; Pool mit Fehler-Handler und Verbindungs-Timeout |
+| @fastify/rate-limit | 11.2.0 | 11.2.1 (08.10.2026) war zum Stichtag jünger als 14 Tage |
+| @types/ws | 8.18.2 | Typen für den WebSocket (ws kommt über @fastify/websocket) |
+| @types/node | 24.19.1 | passend zu Node 24 |
+| @electric-sql/pglite (pglite) | 0.5.8 | nur Tests: PostgreSQL als WASM für den Schema-Test; zusätzlich läuft derselbe Test gegen echtes PostgreSQL 17 (`TEST_DATABASE_URL`) |
+| tsx | 4.23.15 | nur Entwicklung (`npm run dev`) |
+| eslint / @eslint/js / typescript-eslint | 10.12.0 / 10.0.1 / 8.71.0 | |
 | Vitest | 5.0.3 | |
 | ntfy | 2.28.0 (2.31.1 ab 31.10.) | eigene Subdomain, `deny-all`, UnifiedPush-Topics `up*` |
 
@@ -34,6 +41,32 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 | maplibre | 0.3.6 | Ersatz für flutter_map + PMTiles-Vektor (veraltet); pre-1.0 |
 | geolocator | 14.1.1 | Vordergrunddienst eingebaut |
 | web_socket_channel | 3.0.3 | Reconnect selbst bauen |
+| http | 1.6.0 | Update-Prüfung und APK-Download |
+| crypto | 3.0.7 | SHA-256 der APK |
+| cryptography | 2.9.0 | Ed25519-Prüfung des Update-Manifests (reines Dart, auch im Web); 21.11.2025 |
+| path_provider | 2.1.6 | Cache-Ordner für die heruntergeladene APK |
+| intl | 0.20.3 | Datumsformate (de_DE) |
+| flutter_lints | 6.0.0 | nur Entwicklung |
+| build_runner | 2.16.1 | nur Entwicklung (drift-Code); `--delete-conflicting-outputs` nur lokal, nicht in der CI |
+| analyzer | 14.4.0 | nur Entwicklung, **fest gepinnt**: 14.5.0 ist zu jung und bricht build_runner 2.16.1 |
+
+## Android-Build
+
+| Baustein | Version | Hinweis |
+| --- | --- | --- |
+| Android Gradle Plugin | 9.1.0 | `android/settings.gradle.kts`; mit `android.builtInKotlin=false` und `android.newDsl=false` (Flutter-Vorlage) |
+| Kotlin-Plugin | 2.4.0 | `org.jetbrains.kotlin.android`, in `app/android/app/build.gradle.kts` angewendet |
+| Gradle | 9.3.1 | Wrapper |
+| androidx.core | 1.16.0 | `implementation` in `app/android/app/build.gradle.kts` (Update-Installation nutzt `PackageInstaller` ohne FileProvider) |
+
+## Prüfsummen eingecheckter Binärdateien (Web)
+
+`app/web/sqlite3.wasm` gehört zu sqlite3 **3.7.0** (in `app/pubspec.yaml` fest gepinnt, `pubspec.lock` eingecheckt); `app/web/drift_worker.js` zu drift 2.35.1. Beim Aktualisieren von sqlite3 oder drift beide Dateien und diese Prüfsummen gemeinsam ändern. Die CI und `deploy/deploy-web.sh` prüfen sie mit `sha256sum -c app/web-assets.sha256`.
+
+| Datei | SHA-256 |
+| --- | --- |
+| `sqlite3.wasm` | `fbcd2e8214f9231ea961e1b7706a22dd1194cfbfe6f26f13841b5aa7a0be1a1f` |
+| `drift_worker.js` | `fe5f13be0526f78293796aefb9a29d3823a2dbdbf1bccd3f0faeb90eaaafd72a` |
 
 ## Auflagen aus der Recherche
 
