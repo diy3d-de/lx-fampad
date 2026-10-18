@@ -1,0 +1,9 @@
+node_modules/
+dist/
+build/
+.dart_tool/
+.env
+*.jks
+key.properties
+update-config.json
+.DS_Store

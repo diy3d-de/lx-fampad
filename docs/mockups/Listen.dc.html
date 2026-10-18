@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Listen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#090A0F}
+a{color:#00F0FF;text-decoration:none}a:hover{color:#E6E8EE}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; overflow: hidden; background: radial-gradient(ellipse 60% 380px at 30% 0, rgba(124,58,237,0.22), transparent 70%), radial-gradient(ellipse 45% 300px at 70% 0, rgba(0,240,255,0.07), transparent 70%), #090A0F; background-repeat: no-repeat; color: #E6E8EE; font-family: Inter, ui-sans-serif, system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box; padding: 56px 20px 20px; display: flex; flex-direction: column; gap: 16px;">
+    <header style="display: flex; align-items: center; gap: 8px;">
+      <h1 style="flex: 1; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.025em;">Listen</h1>
+      <span style="display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid rgba(16,185,129,0.4); background: rgba(16,185,129,0.1); padding: 2px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #10B981;">● live</span>
+    </header>
+
+    <div role="tablist" aria-label="Listen" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 12px; border: 1px solid #242936; background: #13161F;">
+      <sc-for list="{{ tabs }}" as="t" hint-placeholder-count="3">
+        <button type="button" role="tab" aria-selected="{{ t.sel }}" onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}</button>
+      </sc-for>
+    </div>
+
+    <form onSubmit="{{ add }}" style="display: flex; gap: 8px;">
+      <label style="flex: 1; min-width: 0; display: flex;">
+        <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);">Neuer Eintrag</span>
+        <input type="text" value="{{ draft }}" onChange="{{ type }}" placeholder="{{ placeholder }}" style="flex: 1; min-width: 0; min-height: 46px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; border: 1px solid #242936; background: rgba(9,10,15,0.6); color: #E6E8EE; font: inherit; font-size: 15px;">
+      </label>
+      <button type="submit" aria-label="Hinzufügen" style="width: 46px; height: 46px; border-radius: 12px; border: 0; background: #00F0FF; color: #090A0F; display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+    </form>
+
+    <div style="display: flex; flex-direction: column; gap: 6px;">
+      <sc-for list="{{ items }}" as="it" hint-placeholder-count="5">
+        <label style="{{ it.row }}">
+          <input type="checkbox" checked="{{ it.done }}" onChange="{{ it.toggle }}" style="width: 20px; height: 20px; accent-color: #10B981;">
+          <span style="{{ it.textStyle }}">{{ it.text }}</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">{{ it.who }}</span>
+        </label>
+      </sc-for>
+    </div>
+
+    <div style="margin-top: auto; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7; text-align: center;">{{ summary }}</div>
+  </div>
+
+  <nav aria-label="App-Navigation" style="flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid #242936; background: rgba(19,22,31,0.95); padding: 6px 8px 24px;">
+    <a href="Home.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Start</a>
+    <a href="Kalender.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Kalender</a>
+    <a href="Chat.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</a>
+    <a href="Dateien.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>Dateien</a>
+    <a href="Listen.dc.html" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: #00F0FF;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>Listen</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = {
+tab: 0,
+draft: '',
+lists: [
+[['Milch (2×)', 'ben', false], ['Äpfel', 'mia', false], ['Waschmittel', 'anna', false], ['Brötchen fürs Frühstück', 'leo', false], ['Kaffee', 'ben', true]],
+[['Müll rausbringen', 'leo · heute', false], ['Elternabend anmelden', 'anna · di', false], ['Winterreifen-Termin', 'ben · fr', false], ['Zimmer aufräumen', 'mia · sa', true]],
+[['Reisepässe', 'anna', false], ['Ladekabel', 'ben', false], ['Schwimmsachen', 'mia', true]]
+]
+};
+}
+renderVals() {
+var self = this;
+var names = ['Einkauf', 'Aufgaben', 'Packliste'];
+var tab = this.state.tab;
+var list = this.state.lists[tab];
+var open = list.filter(function (x) { return !x[2]; }).length;
+var ordered = list.map(function (x, i) { return [x, i]; }).sort(function (a, b) { return (a[0][2] ? 1 : 0) - (b[0][2] ? 1 : 0); });
+return {
+tabs: names.map(function (n, i) {
+var sel = i === tab;
+return {
+label: n,
+sel: sel ? 'true' : 'false',
+pick: function () { self.setState({ tab: i, draft: '' }); },
+style: 'min-height: 40px; border-radius: 9px; font: inherit; font-size: 14px; cursor: pointer; ' + (sel ? 'border: 1px solid rgba(0,240,255,0.4); background: rgba(0,240,255,0.12); color: #00F0FF; font-weight: 600;' : 'border: 1px solid transparent; background: transparent; color: #8B93A7;')
+};
+}),
+items: ordered.map(function (p) {
+var x = p[0], i = p[1];
+return {
+text: x[0], who: x[2] ? '✓ ' + x[1] : x[1], done: x[2],
+toggle: function () {
+var lists = self.state.lists.map(function (l) { return l.slice(); });
+var e = lists[tab][i].slice(); e[2] = !e[2]; lists[tab][i] = e;
+self.setState({ lists: lists });
+},
+row: 'display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 14px; border-radius: 12px; border: 1px solid #242936; background: ' + (x[2] ? 'transparent' : 'rgba(19,22,31,0.7)') + '; cursor: pointer;',
+textStyle: 'flex: 1; font-size: 15px; ' + (x[2] ? 'color: #8B93A7; text-decoration: line-through;' : '')
+};
+}),
+draft: this.state.draft,
+placeholder: tab === 0 ? 'Was fehlt?' : tab === 1 ? 'Neue Aufgabe' : 'Was muss mit?',
+type: function (e) { self.setState({ draft: e.target.value }); },
+add: function (e) {
+if (e && e.preventDefault) e.preventDefault();
+var t = self.state.draft.trim();
+if (!t) return;
+var lists = self.state.lists.map(function (l) { return l.slice(); });
+lists[tab].unshift([t, 'anna', false]);
+self.setState({ lists: lists, draft: '' });
+},
+summary: open + ' offen · ' + (list.length - open) + ' erledigt · änderungen erscheinen sofort bei allen'
+};
+}
+}
+</script>
+</body>
+</html>

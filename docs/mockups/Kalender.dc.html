@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Kalender</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#090A0F}
+a{color:#00F0FF;text-decoration:none}a:hover{color:#E6E8EE}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: radial-gradient(ellipse 60% 380px at 30% 0, rgba(124,58,237,0.22), transparent 70%), radial-gradient(ellipse 45% 300px at 70% 0, rgba(0,240,255,0.07), transparent 70%), #090A0F; background-repeat: no-repeat; color: #E6E8EE; font-family: Inter, ui-sans-serif, system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box; padding: 56px 20px 20px; display: flex; flex-direction: column; gap: 16px;">
+    <header style="display: flex; align-items: center; gap: 8px;">
+      <h1 style="flex: 1; margin: 0; font-size: 26px; font-weight: 800; letter-spacing: -0.025em;">Oktober <span style="color: #8B93A7; font-weight: 600;">2026</span></h1>
+      <button type="button" aria-label="Vorheriger Monat" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #242936; background: rgba(19,22,31,0.7); color: #E6E8EE; display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></button>
+      <button type="button" aria-label="Nächster Monat" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #242936; background: rgba(19,22,31,0.7); color: #E6E8EE; display: flex; align-items: center; justify-content: center;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+    </header>
+
+    <div style="display: flex; gap: 8px; overflow: hidden;">
+      <span style="flex: none; border-radius: 999px; border: 1px solid #00F0FF; background: rgba(0,240,255,0.1); color: #00F0FF; padding: 6px 12px; font-size: 13px; font-weight: 600;">Alle</span>
+      <span style="flex: none; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid #242936; padding: 6px 12px; font-size: 13px;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #00F0FF;"></span>Anna</span>
+      <span style="flex: none; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid #242936; padding: 6px 12px; font-size: 13px;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #C4B5FD;"></span>Ben</span>
+      <span style="flex: none; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid #242936; padding: 6px 12px; font-size: 13px;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #10B981;"></span>Mia</span>
+      <span style="flex: none; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; border: 1px solid #242936; padding: 6px 12px; font-size: 13px;"><span style="width: 8px; height: 8px; border-radius: 999px; background: #FEBC2E;"></span>Leo</span>
+    </div>
+
+    <section style="border-radius: 14px; border: 1px solid #242936; background: rgba(19,22,31,0.7); padding: 12px; display: flex; flex-direction: column; gap: 6px;">
+      <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7; text-align: center;">
+        <span>mo</span><span>di</span><span>mi</span><span>do</span><span>fr</span><span>sa</span><span>so</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px;">
+        <sc-for list="{{ days }}" as="d" hint-placeholder-count="35">
+          <button type="button" onClick="{{ d.pick }}" aria-label="{{ d.aria }}" style="{{ d.style }}">
+            <span>{{ d.label }}</span>
+            <span style="display: flex; gap: 3px; height: 5px;">
+              <sc-for list="{{ d.dots }}" as="c" hint-placeholder-count="1">
+                <span style="{{ c.style }}"></span>
+              </sc-for>
+            </span>
+          </button>
+        </sc-for>
+      </div>
+    </section>
+
+    <div style="display: flex; flex-direction: column; gap: 10px;">
+      <div style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #00F0FF;">// {{ dayTitle }}</div>
+      <sc-if value="{{ hasEvents }}" hint-placeholder-val="{{ true }}">
+        <sc-for list="{{ events }}" as="e" hint-placeholder-count="3">
+          <div style="display: flex; gap: 12px; align-items: center; min-height: 52px; padding: 0 14px; border-radius: 12px; border: 1px solid #242936; background: rgba(19,22,31,0.7);">
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 13px; color: #8B93A7; width: 44px;">{{ e.time }}</span>
+            <span style="{{ e.bar }}"></span>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 14px; font-weight: 600;">{{ e.title }}</span><span style="font-size: 12px; color: #8B93A7;">{{ e.meta }}</span></div>
+          </div>
+        </sc-for>
+      </sc-if>
+      <sc-if value="{{ noEvents }}" hint-placeholder-val="{{ false }}">
+        <div style="min-height: 52px; display: flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px dashed #242936; font-size: 14px; color: #8B93A7;">Keine Termine – frei!</div>
+      </sc-if>
+    </div>
+  </div>
+
+  <button type="button" aria-label="Termin anlegen" style="position: absolute; right: 20px; bottom: 104px; width: 56px; height: 56px; border-radius: 16px; border: 0; background: #00F0FF; color: #090A0F; box-shadow: 0 0 20px rgba(0,240,255,0.35); display: flex; align-items: center; justify-content: center; cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+
+  <nav aria-label="App-Navigation" style="flex: none; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-top: 1px solid #242936; background: rgba(19,22,31,0.95); padding: 6px 8px 24px;">
+    <a href="Home.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Start</a>
+    <a href="Kalender.dc.html" aria-current="page" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; font-weight: 600; color: #00F0FF;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Kalender</a>
+    <a href="Chat.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Chat</a>
+    <a href="Dateien.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>Dateien</a>
+    <a href="Listen.dc.html" style="min-height: 52px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: 11px; color: #8B93A7;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/></svg>Listen</a>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { sel: 18 };
+}
+renderVals() {
+var C = { a: '#00F0FF', b: '#C4B5FD', m: '#10B981', l: '#FEBC2E' };
+var EV = {
+2: [['18:00', 'Elternabend 3b', 'Anna · Grundschule', 'a']],
+7: [['19:30', 'Kino', 'Ben', 'b']],
+12: [['15:00', 'Flötenunterricht', 'Mia', 'm'], ['16:00', 'Fußballtraining', 'Leo', 'l']],
+15: [['10:00', 'Hausarzt', 'Anna', 'a']],
+18: [['09:30', 'Schwimmkurs', 'Mia · Hallenbad Nord', 'm'], ['12:00', 'Mittagessen bei Oma', 'Alle · Erinnerung 1 h vorher', 'a'], ['16:00', 'Fußballtraining', 'Leo · bringt: Ben', 'l']],
+19: [['07:45', 'Zahnarzt', 'Ben · Praxis Dr. Muster', 'b']],
+21: [['17:00', 'Geburtstag Oma', 'Alle · ganztägig', 'a']],
+24: [['11:00', 'Fußballturnier', 'Leo', 'l']],
+27: [['15:00', 'Freundin besuchen', 'Mia', 'm']],
+30: [['20:00', 'Yoga', 'Anna', 'a'], ['18:00', 'Stammtisch', 'Ben', 'b']]
+};
+var WD = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
+var self = this;
+var sel = this.state.sel;
+var days = [];
+for (var i = 0; i < 35; i++) {
+var n = i - 2;
+var valid = n >= 1 && n <= 31;
+var isSel = valid && n === sel;
+var isToday = n === 18;
+var list = valid && EV[n] ? EV[n] : [];
+var seen = {};
+var dots = [];
+list.forEach(function (e) {
+if (!seen[e[3]]) { seen[e[3]] = 1; dots.push({ style: 'width: 5px; height: 5px; border-radius: 999px; background: ' + C[e[3]] + ';' }); }
+});
+var base = 'min-height: 44px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; border-radius: 10px; font-family: inherit; font-size: 14px; cursor: pointer; ';
+var look = !valid ? 'border: 1px solid transparent; background: transparent; color: transparent; pointer-events: none;'
+: isSel ? 'border: 1px solid #00F0FF; background: rgba(0,240,255,0.12); color: #00F0FF; font-weight: 700;'
+: isToday ? 'border: 1px solid #242936; background: #13161F; color: #00F0FF; font-weight: 700;'
+: 'border: 1px solid transparent; background: transparent; color: ' + ((i % 7) > 4 ? '#8B93A7' : '#E6E8EE') + ';';
+days.push({
+label: valid ? String(n) : '·',
+aria: valid ? n + '. Oktober' : 'leer',
+style: base + look,
+dots: dots,
+pick: (function (d) { return function () { if (d >= 1 && d <= 31) self.setState({ sel: d }); }; })(n)
+});
+}
+var evs = (EV[sel] || []).slice().sort(function (x, y) { return x[0] < y[0] ? -1 : 1; }).map(function (e) {
+return { time: e[0], title: e[1], meta: e[2], bar: 'width: 3px; height: 32px; border-radius: 2px; background: ' + C[e[3]] + ';' };
+});
+var wd = WD[(sel + 2) % 7];
+return {
+days: days,
+events: evs,
+hasEvents: evs.length > 0,
+noEvents: evs.length === 0,
+dayTitle: wd.toLowerCase() + ', ' + sel + '. oktober' + (sel === 18 ? ' · heute' : '')
+};
+}
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Sicherheit, Sync und Update</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#090A0F}
+a{color:#00F0FF;text-decoration:none}a:hover{color:#E6E8EE}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: radial-gradient(ellipse 60% 380px at 30% 0, rgba(124,58,237,0.22), transparent 70%), radial-gradient(ellipse 45% 300px at 70% 0, rgba(0,240,255,0.07), transparent 70%), #090A0F; background-repeat: no-repeat; color: #E6E8EE; font-family: Inter, ui-sans-serif, system-ui, sans-serif; display: flex; flex-direction: column;">
+
+  <div style="flex: 1; min-height: 0; overflow: hidden; box-sizing: border-box; padding: 52px 20px 20px; display: flex; flex-direction: column; gap: 16px;">
+    <header style="display: flex; align-items: center; gap: 8px;">
+      <a href="Home.dc.html" aria-label="Zurück" style="width: 44px; height: 44px; margin-left: -12px; display: flex; align-items: center; justify-content: center; color: #E6E8EE;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></a>
+      <h1 style="flex: 1; margin: 0; font-size: 24px; font-weight: 800; letter-spacing: -0.025em;">Sicherheit &amp; System</h1>
+    </header>
+
+    <section style="border-radius: 14px; border: 1px solid #242936; background: rgba(19,22,31,0.7); display: flex; flex-direction: column;">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 14px; border-bottom: 1px solid #242936;"><span style="color: #00F0FF; display: flex;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></svg></span><div style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 14px; font-weight: 600;">Passkeys</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">pixel 9 · windows hello</span></div><span style="border-radius: 999px; border: 1px solid rgba(16,185,129,0.4); background: rgba(16,185,129,0.1); padding: 2px 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #10B981;">2 aktiv</span></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 14px; border-bottom: 1px solid #242936;"><span style="color: #00F0FF; display: flex;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span><div style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 14px; font-weight: 600;">Zwei-Faktor (TOTP)</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">authenticator-app · 8 recovery-codes</span></div><span style="border-radius: 999px; border: 1px solid rgba(16,185,129,0.4); background: rgba(16,185,129,0.1); padding: 2px 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #10B981;">an</span></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 0 14px;"><span style="color: #00F0FF; display: flex;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2" width="12" height="20" rx="2"/><path d="M11 18h2"/></svg></span><div style="flex: 1; display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 14px; font-weight: 600;">Angemeldete Geräte</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">4 geräte · einzeln abmelden</span></div><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8B93A7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></div>
+    </section>
+
+    <section aria-label="Synchronisation" style="border-radius: 14px; border: 1px solid #242936; background: #13161F; overflow: hidden;">
+      <div style="display: flex; align-items: center; gap: 6px; padding: 10px 12px; border-bottom: 1px solid #242936;">
+        <span style="width: 10px; height: 10px; border-radius: 999px; background: #FF5F57;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 999px; background: #FEBC2E;"></span>
+        <span style="width: 10px; height: 10px; border-radius: 999px; background: #10B981;"></span>
+        <span style="flex: 1; text-align: center; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">sync-status</span>
+      </div>
+      <div style="padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.5;">
+        <span><span style="color: #00F0FF;">$</span> server&nbsp;&nbsp;&nbsp;<span style="color: #10B981;">● online</span> familie.lx-labs.dev</span>
+        <span><span style="color: #00F0FF;">$</span> kanal&nbsp;&nbsp;&nbsp;&nbsp;websocket · tls 1.3</span>
+        <span><span style="color: #00F0FF;">$</span> stand&nbsp;&nbsp;&nbsp;&nbsp;rev 18 442 · vor 4 s</span>
+        <span><span style="color: #00F0FF;">$</span> offen&nbsp;&nbsp;&nbsp;&nbsp;0 änderungen</span>
+        <span><span style="color: #00F0FF;">$</span> offline&nbsp;&nbsp;312 einträge · 48 dateien</span>
+      </div>
+    </section>
+
+    <div style="display: flex; align-items: center; justify-content: space-between; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #8B93A7;"><span>app-version {{ current }}</span><button type="button" onClick="{{ reopen }}" style="min-height: 44px; border: 0; background: transparent; color: #00F0FF; font: inherit; cursor: pointer; padding: 0;">nach updates suchen</button></div>
+  </div>
+
+  <sc-if value="{{ sheet }}" hint-placeholder-val="{{ true }}">
+  <div style="position: absolute; inset: 0; background: rgba(9,10,15,0.6); display: flex; flex-direction: column; justify-content: flex-end;">
+    <div role="dialog" aria-label="App-Update" style="box-sizing: border-box; padding: 12px 20px 32px; border-radius: 22px 22px 0 0; border-top: 1px solid rgba(0,240,255,0.4); background: #13161F; box-shadow: 0 0 20px rgba(0,240,255,0.25); display: flex; flex-direction: column; gap: 14px;">
+      <span style="align-self: center; width: 40px; height: 4px; border-radius: 999px; background: #242936;"></span>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <span style="border-radius: 999px; border: 1px solid rgba(0,240,255,0.4); background: rgba(0,240,255,0.1); padding: 2px 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #00F0FF;">ota-update</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">{{ current }} → {{ next }}</span>
+      </div>
+      <h2 style="margin: 0; font-size: 22px; font-weight: 800; letter-spacing: -0.02em;">{{ title }}</h2>
+      <div style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.5; color: #E6E8EE;">
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B93A7;">neu</span>
+        <span>· Essensplan mit Einkaufsliste verknüpft</span>
+        <span>· Fotos lassen sich jetzt als Album teilen</span>
+        <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: #8B93A7; padding-top: 4px;">behoben</span>
+        <span>· Erinnerungen bei Zeitumstellung</span>
+      </div>
+      <sc-if value="{{ loading }}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="height: 6px; border-radius: 999px; background: #242936; overflow: hidden;"><div style="{{ bar }}"></div></div>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">{{ progressText }}</span>
+        </div>
+      </sc-if>
+      <div style="display: flex; align-items: center; gap: 8px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #10B981;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>signatur geprüft · sha-256 ok · von familie.lx-labs.dev</div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+        <button type="button" onClick="{{ later }}" style="min-height: 50px; border-radius: 12px; border: 1px solid #242936; background: transparent; color: #E6E8EE; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Später</button>
+        <button type="button" onClick="{{ install }}" style="min-height: 50px; border-radius: 12px; border: 0; background: #00F0FF; color: #090A0F; font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;">{{ cta }}</button>
+      </div>
+    </div>
+  </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { sheet: true, phase: 'bereit', pct: 0 };
+}
+componentWillUnmount() {
+if (this.timer) clearInterval(this.timer);
+}
+renderVals() {
+var self = this;
+var s = this.state;
+var titles = { bereit: 'Update bereit', laedt: 'Wird installiert …', fertig: 'Installiert' };
+var ctas = { bereit: 'Installieren', laedt: 'Bitte warten', fertig: 'Neu starten' };
+return {
+sheet: s.sheet,
+current: s.phase === 'fertig' ? '[NEUE VERSION]' : '[VERSION]',
+next: '[NEUE VERSION]',
+title: titles[s.phase],
+cta: ctas[s.phase],
+loading: s.phase !== 'bereit',
+bar: 'width: ' + s.pct + '%; height: 100%; background: linear-gradient(90deg, #00F0FF, #7C3AED);',
+progressText: s.phase === 'fertig' ? 'fertig · deine daten bleiben erhalten' : 'lädt ' + s.pct + ' % · sync pausiert',
+later: function () { if (self.timer) clearInterval(self.timer); self.setState({ sheet: false, phase: 'bereit', pct: 0 }); },
+reopen: function () { self.setState({ sheet: true }); },
+install: function () {
+if (self.state.phase === 'fertig') { self.setState({ sheet: false }); return; }
+if (self.state.phase !== 'bereit') return;
+self.setState({ phase: 'laedt', pct: 0 });
+self.timer = setInterval(function () {
+var p = Math.min(100, self.state.pct + 12);
+self.setState({ pct: p, phase: p >= 100 ? 'fertig' : 'laedt' });
+if (p >= 100) clearInterval(self.timer);
+}, 250);
+}
+};
+}
+}
+</script>
+</body>
+</html>

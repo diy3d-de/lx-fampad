@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<title>Standort teilen</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0;background:#090A0F}
+a{color:#00F0FF;text-decoration:none}a:hover{color:#E6E8EE}
+</style>
+</helmet>
+<div style="position: relative; width: 390px; height: 844px; overflow: hidden; background: #0D0F16; color: #E6E8EE; font-family: Inter, ui-sans-serif, system-ui, sans-serif;">
+
+  <svg width="390" height="600" viewBox="0 0 390 600" style="position: absolute; left: 0; top: 0;" role="img" aria-label="Karte mit Straßen, Park und Fluss; Standorte der Familienmitglieder">
+    <rect width="390" height="600" fill="#0D0F16"/>
+    <rect x="30" y="360" width="140" height="110" rx="14" fill="rgba(16,185,129,0.10)" stroke="rgba(16,185,129,0.25)"/>
+    <path d="M-10 140 C 80 120, 140 190, 230 170 S 360 120, 410 150" fill="none" stroke="rgba(0,240,255,0.14)" stroke-width="26" stroke-linecap="round"/>
+    <g stroke="#242936" stroke-width="9" stroke-linecap="round" fill="none">
+      <path d="M-10 280 L 400 250"/>
+      <path d="M-10 420 L 400 470"/>
+      <path d="M90 -10 L 120 610"/>
+      <path d="M250 -10 L 280 610"/>
+      <path d="M-10 60 L 400 90"/>
+    </g>
+    <g stroke="#1A1E2A" stroke-width="4" stroke-linecap="round" fill="none">
+      <path d="M-10 350 L 400 340"/>
+      <path d="M190 -10 L 200 610"/>
+      <path d="M330 -10 L 350 610"/>
+      <path d="M-10 200 L 400 210"/>
+      <path d="M-10 520 L 400 540"/>
+    </g>
+    <path d="M280 330 C 262 300, 236 270, 214 214" fill="none" stroke="#C4B5FD" stroke-width="3" stroke-dasharray="2 7" stroke-linecap="round"/>
+    <path d="M150 262 C 170 250, 190 232, 214 214" fill="none" stroke="#10B981" stroke-width="3" stroke-dasharray="2 7" stroke-linecap="round"/>
+  </svg>
+
+  <div style="position: absolute; left: 0; right: 0; top: 0; box-sizing: border-box; padding: 52px 16px 0; display: flex; align-items: center; gap: 8px;">
+    <a href="Home.dc.html" aria-label="Zurück" style="width: 44px; height: 44px; border-radius: 12px; border: 1px solid #242936; background: rgba(19,22,31,0.9); color: #E6E8EE; display: flex; align-items: center; justify-content: center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 6l-6 6 6 6"/></svg></a>
+    <h1 style="flex: 1; margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; text-shadow: 0 1px 8px #0D0F16;">Orte</h1>
+    <span style="display: inline-flex; align-items: center; gap: 6px; min-height: 32px; border-radius: 999px; border: 1px solid #242936; background: rgba(19,22,31,0.9); padding: 0 12px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">karten: eigener server</span>
+  </div>
+
+  <div style="position: absolute; left: 130px; top: 196px; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+    <span style="width: 34px; height: 34px; border-radius: 999px; border: 2px solid #FEBC2E; background: #13161F; opacity: 0.55; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;">L</span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8B93A7;">aus</span>
+  </div>
+  <div style="position: absolute; left: 197px; top: 196px; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+    <span style="width: 34px; height: 34px; border-radius: 999px; border: 2px solid #10B981; background: #13161F; box-shadow: 0 0 14px rgba(16,185,129,0.5); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;">M</span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #10B981;">hallenbad</span>
+  </div>
+  <div style="position: absolute; left: 263px; top: 312px; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+    <span style="width: 34px; height: 34px; border-radius: 999px; border: 2px solid #C4B5FD; background: #13161F; box-shadow: 0 0 14px rgba(196,181,253,0.5); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;">B</span>
+    <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #C4B5FD;">unterwegs · 48 km/h</span>
+  </div>
+  <sc-if value="{{ sharing }}" hint-placeholder-val="{{ true }}">
+    <div style="position: absolute; left: 90px; top: 420px; width: 80px; height: 80px; margin-left: -23px; margin-top: -23px;">
+      <span style="position: absolute; inset: 0; border-radius: 999px; background: rgba(0,240,255,0.12); border: 1px solid rgba(0,240,255,0.35);"></span>
+      <span style="position: absolute; left: 23px; top: 23px; width: 34px; height: 34px; box-sizing: border-box; border-radius: 999px; border: 2px solid #00F0FF; background: #13161F; box-shadow: 0 0 14px rgba(0,240,255,0.55); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700;">A</span>
+    </div>
+  </sc-if>
+  <sc-if value="{{ notSharing }}" hint-placeholder-val="{{ false }}">
+    <div style="position: absolute; left: 62px; top: 404px; display: flex; flex-direction: column; align-items: center; gap: 2px;">
+      <span style="width: 34px; height: 34px; border-radius: 999px; border: 2px dashed #8B93A7; background: #13161F; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #8B93A7;">A</span>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #8B93A7;">nur für dich sichtbar</span>
+    </div>
+  </sc-if>
+
+  <div role="region" aria-label="Standort teilen" style="position: absolute; left: 0; right: 0; bottom: 0; box-sizing: border-box; padding: 12px 20px 30px; border-radius: 22px 22px 0 0; border-top: 1px solid #242936; background: rgba(19,22,31,0.97); display: flex; flex-direction: column; gap: 14px;">
+    <span style="align-self: center; width: 40px; height: 4px; border-radius: 999px; background: #242936;"></span>
+
+    <sc-if value="{{ notSharing }}" hint-placeholder-val="{{ true }}">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 800; letter-spacing: -0.02em;">Standort teilen</h2>
+        <p style="margin: 0; font-size: 13px; line-height: 1.5; color: #8B93A7;">Wähle, wie lange die Familie dich auf der Karte sieht. Du kannst jederzeit beenden.</p>
+      </div>
+      <div role="radiogroup" aria-label="Dauer" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+        <sc-for list="{{ durations }}" as="d" hint-placeholder-count="4">
+          <button type="button" role="radio" aria-checked="{{ d.checked }}" onClick="{{ d.pick }}" style="{{ d.style }}">
+            <span style="font-size: 15px; font-weight: 600;">{{ d.label }}</span>
+            <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: 0.8;">{{ d.until }}</span>
+          </button>
+        </sc-for>
+      </div>
+      <label style="display: flex; align-items: center; gap: 10px; min-height: 40px; font-size: 13px; color: #E6E8EE;"><input type="checkbox" checked style="width: 18px; height: 18px; accent-color: #00F0FF;">Bewegungsspur der letzten 2 Stunden zeigen</label>
+      <button type="button" onClick="{{ start }}" style="min-height: 52px; border-radius: 12px; border: 0; background: #00F0FF; color: #090A0F; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.5-7-12a7 7 0 0 1 14 0c0 5.5-7 12-7 12z"/><circle cx="12" cy="9" r="2.5"/></svg>Teilen starten</button>
+    </sc-if>
+
+    <sc-if value="{{ sharing }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid rgba(16,185,129,0.4); background: rgba(16,185,129,0.08);">
+        <span style="width: 10px; height: 10px; border-radius: 999px; background: #10B981; box-shadow: 0 0 10px #10B981;"></span>
+        <div style="flex: 1; display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 15px; font-weight: 700;">Du teilst deinen Standort</span>
+          <span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #10B981;">{{ remaining }}</span>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px;">
+        <button type="button" onClick="{{ extend }}" style="min-height: 50px; border-radius: 12px; border: 1px solid #242936; background: transparent; color: #E6E8EE; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">+ 1 Std verlängern</button>
+        <button type="button" onClick="{{ stop }}" style="min-height: 50px; border-radius: 12px; border: 1px solid rgba(255,95,87,0.6); background: rgba(255,95,87,0.12); color: #FF5F57; font: inherit; font-size: 14px; font-weight: 700; cursor: pointer;">Teilen beenden</button>
+      </div>
+    </sc-if>
+
+    <div style="display: flex; flex-direction: column; gap: 2px; padding-top: 4px; border-top: 1px solid #242936;">
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 48px;"><span style="width: 30px; height: 30px; border-radius: 999px; border: 2px solid #C4B5FD; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">B</span><span style="flex: 1; font-size: 14px;">Ben</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #C4B5FD;">noch 2 Std 10 Min</span></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 48px;"><span style="width: 30px; height: 30px; border-radius: 999px; border: 2px solid #10B981; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">M</span><span style="flex: 1; font-size: 14px;">Mia</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #10B981;">noch 42 Min</span></div>
+      <div style="display: flex; align-items: center; gap: 12px; min-height: 48px;"><span style="width: 30px; height: 30px; border-radius: 999px; border: 2px solid #FEBC2E; opacity: 0.55; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700;">L</span><span style="flex: 1; font-size: 14px; color: #8B93A7;">Leo</span><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #8B93A7;">teilt nicht</span></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+constructor(props) {
+super(props);
+this.state = { sharing: false, dur: 1, extra: 0 };
+}
+renderVals() {
+var self = this;
+var s = this.state;
+var opts = [
+{ label: '15 Minuten', until: 'bis 08:55', mins: 15 },
+{ label: '1 Stunde', until: 'bis 09:40', mins: 60 },
+{ label: '8 Stunden', until: 'bis 16:40', mins: 480 },
+{ label: 'Bis ich beende', until: 'ohne Ende', mins: 0 }
+];
+var o = opts[s.dur];
+var remaining = 'bis du beendest';
+if (o.mins) {
+var total = o.mins + s.extra * 60;
+var h = Math.floor(total / 60), m = total % 60;
+remaining = 'noch ' + (h ? h + ' Std ' : '') + (m ? m + ' Min' : '');
+}
+return {
+sharing: s.sharing,
+notSharing: !s.sharing,
+durations: opts.map(function (d, i) {
+var on = i === s.dur;
+return {
+label: d.label, until: d.until, checked: on ? 'true' : 'false',
+pick: function () { self.setState({ dur: i }); },
+style: 'min-height: 58px; box-sizing: border-box; padding: 0 14px; border-radius: 12px; display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 2px; font-family: inherit; text-align: left; cursor: pointer; ' + (on ? 'border: 1px solid #00F0FF; background: rgba(0,240,255,0.12); color: #00F0FF;' : 'border: 1px solid #242936; background: transparent; color: #E6E8EE;')
+};
+}),
+remaining: remaining,
+start: function () { self.setState({ sharing: true, extra: 0 }); },
+stop: function () { self.setState({ sharing: false, extra: 0 }); },
+extend: function () { self.setState({ extra: self.state.extra + 1 }); }
+};
+}
+}
+</script>
+</body>
+</html>
