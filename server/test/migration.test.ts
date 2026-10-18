@@ -37,22 +37,44 @@ async function openPglite(): Promise<Backend> {
   return { db: db as unknown as TestDb, close: () => client.close() };
 }
 
+/** PG-Fehlercode "terminating connection due to administrator command" (admin_shutdown). */
+const ADMIN_SHUTDOWN = '57P01';
+
 async function openPostgres(adminUrl: string): Promise<Backend> {
   const name = `lx_test_${randomUUID().replaceAll('-', '')}`;
+  // Fehler von Verbindungen duerfen nie unbehandelt bleiben (sonst "Uncaught Exception" im Vitest-Lauf).
+  // Beim Aufraeumen ist 57P01 erwartet: pool.end() wartet nicht, bis der Server die Backends beendet hat,
+  // und DROP DATABASE ... WITH (FORCE) beendet sie dann selbst. Alle anderen Fehler werden gesammelt
+  // und beim Schliessen als Testfehler gemeldet.
+  let closing = false;
+  const unexpected: Error[] = [];
+  const onError = (err: Error & { code?: string }) => {
+    if (closing && err.code === ADMIN_SHUTDOWN) return;
+    unexpected.push(err);
+  };
   const admin = new pg.Client({ connectionString: adminUrl });
+  admin.on('error', onError);
   await admin.connect();
   await admin.query(`create database ${name}`);
   const url = new URL(adminUrl);
   url.pathname = `/${name}`;
   const pool = new pg.Pool({ connectionString: url.toString(), max: 4 });
+  pool.on('error', onError);
   const db = drizzlePg(pool, { schema });
   await migratePg(db, { migrationsFolder });
   return {
     db: db as unknown as TestDb,
     close: async () => {
-      await pool.end();
-      await admin.query(`drop database ${name} with (force)`);
-      await admin.end();
+      closing = true;
+      try {
+        await pool.end();
+        await admin.query(`drop database ${name} with (force)`);
+      } finally {
+        await admin.end();
+      }
+      if (unexpected.length > 0) {
+        throw new AggregateError(unexpected, 'Unerwartete Verbindungsfehler in der Test-Datenbank');
+      }
     },
   };
 }
