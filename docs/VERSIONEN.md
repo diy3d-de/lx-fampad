@@ -11,7 +11,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 | Fastify | 5.12.5 | auf Node 24 im Test prüfen |
 | @fastify/websocket | 11.3.3 | Auth über Session-Cookie beim Upgrade oder Einmal-Ticket |
 | drizzle-orm / drizzle-kit | 0.45.3 / 0.31.11 | 1.0 noch RC; kein `db.query` (Relational v1) |
-| PostgreSQL | 17 (Debian 13) oder 18.6 (PGDG) | Entscheidung offen |
+| PostgreSQL | 17 (Debian 13, Debian-Repo) | entschieden 18.10.2026 |
 | @simplewebauthn/server | 14.0.3 | Registrierung: `supportedAlgorithmIDs` auf klassische Algorithmen setzen |
 | otplib | 13.5.0 | API ≠ v12; Replay-Schutz über `afterTimeStep` |
 | argon2 | 0.45.1 | Argon2id, Prebuilds |
