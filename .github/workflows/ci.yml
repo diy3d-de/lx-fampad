@@ -1,0 +1,111 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'phase-*']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  server:
+    name: Server (Lint, Typen, Tests, Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    # Echtes PostgreSQL 17 für den Schema-Test (zusätzlich zu PGlite)
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:ci@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --ignore-scripts --no-fund --no-audit
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+  tools:
+    name: Werkzeuge (Manifest-Signatur)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.21.0
+      - run: node --test "tools/*.test.mjs"
+
+  app:
+    name: App (analyze, test, Web-Build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+      # pubspec.lock ist eingecheckt: die CI darf nichts neu auflösen (analyzer 14.5.0 bricht build_runner 2.16.1)
+      - run: flutter pub get --enforce-lockfile
+      # eingecheckte Binärdateien des Webs prüfen (sqlite3.wasm passend zu sqlite3 3.7.0, drift_worker.js)
+      - name: Prüfsummen web/sqlite3.wasm und web/drift_worker.js
+        run: |
+          sha256sum -c web-assets.sha256
+          # dieselben Werte müssen in docs/VERSIONEN.md stehen
+          for h in $(cut -d' ' -f1 web-assets.sha256); do grep -q "$h" ../docs/VERSIONEN.md; done
+      # erzeugt lib/data/app_database.g.dart (drift), die Datei ist nicht eingecheckt (sauberer Checkout: keine Altlasten)
+      - run: dart run build_runner build
+      - run: flutter analyze
+      - run: flutter test
+      - run: flutter build web --release --no-web-resources-cdn
+      - name: Gebaute Web-Binärdateien sind die geprüften
+        run: sed -E 's# (\*?)web/# \1build/web/#' web-assets.sha256 | sha256sum -c
+
+  android-debug:
+    name: Android (Debug-APK bauen)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+      # Android-SDK ist auf dem Runner vorinstalliert; nur die Lizenzen bestätigen
+      - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+        working-directory: .
+      - run: flutter pub get --enforce-lockfile
+      - run: dart run build_runner build
+      # Debug-APK ist mit dem Debug-Schlüssel signiert und wird nicht veröffentlicht; prüft nur, dass der Android-Build läuft
+      - run: flutter build apk --debug

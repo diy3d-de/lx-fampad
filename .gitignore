@@ -7,3 +7,25 @@ build/
 key.properties
 update-config.json
 .DS_Store
+*.log
+.env.*
+!.env.example
+coverage/
+.idea/
+.vscode/
+Thumbs.db
+# Flutter
+app/.flutter-plugins*
+app/.packages
+app/.pub-cache/
+app/.pub/
+app/build/
+app/android/.gradle/
+app/android/local.properties
+app/android/**/GeneratedPluginRegistrant.*
+# Signatur- und Release-Geheimnisse
+*.keystore
+*.pem
+update-signing*.key
+/server/data/
+.claude/

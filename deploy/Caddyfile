@@ -1,0 +1,89 @@
+# Caddy-Konfiguration für familie.lx-labs.dev (ergänzt den Block für lx-labs.dev aus lx-labs/deploy/Caddyfile).
+# Caddy holt die HTTPS-Zertifikate automatisch (Let's Encrypt).
+# Voraussetzung: Die DNS-Einträge "familie" und "ntfy.familie" (A, DNS only) zeigen auf diesen Server.
+#
+# Einbinden: Datei nach /etc/caddy/conf.d/familie.caddy kopieren; im Haupt-Caddyfile (/etc/caddy/Caddyfile) steht dafür die Zeile
+#   import /etc/caddy/conf.d/*.caddy
+# Ein Deploy von lx-labs überschreibt das Haupt-Caddyfile; dauerhaft gehört die Zeile in lx-labs/deploy/Caddyfile
+# (Ablauf mit Sicherung und Prüfung: deploy/README.md, Schritt 6). Übernehmen einer geänderten Datei:
+#   sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/conf.d/familie.caddy
+#   caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# Der Snippet-Name ist mit Präfix versehen, damit er nicht mit Snippets anderer importierter Dateien kollidiert.
+
+# Gemeinsame Sicherheits-Header (CSP/COOP/COEP gelten nur für die Web-App, siehe unten)
+(familie_sicherheit) {
+	header {
+		# Nur noch per HTTPS aufrufen (1 Jahr)
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Browser sollen Dateitypen nicht erraten
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		# Nicht in fremde Seiten einbetten lassen
+		X-Frame-Options "DENY"
+		# Server-Software nicht verraten
+		-Server
+		-Via
+	}
+}
+
+familie.lx-labs.dev {
+	encode zstd gzip
+	import familie_sicherheit
+
+	header {
+		# wasm-unsafe-eval: CanvasKit und sqlite3.wasm (drift). unsafe-inline nur bei style-src: Flutter Web setzt
+		# Styles zur Laufzeit. Keine Fremd-Adressen: alles kommt von dieser Domain (Karten später ebenfalls).
+		Content-Security-Policy "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://familie.lx-labs.dev blob: data:; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		# Cross-Origin-Isolation: nötig für SharedArrayBuffer/OPFS (drift im Web, schnelle lokale Datenbank)
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Embedder-Policy "require-corp"
+		Cross-Origin-Resource-Policy "same-origin"
+		# Passkeys (WebAuthn) und Standort nur für diese Seite, alles andere aus
+		Permissions-Policy "publickey-credentials-get=(self), publickey-credentials-create=(self), geolocation=(self), camera=(), microphone=(), usb=(), payment=()"
+	}
+
+	# API und WebSocket (den WebSocket-Upgrade erkennt Caddy automatisch)
+	handle /api/* {
+		reverse_proxy 127.0.0.1:4400
+	}
+	handle /ws {
+		reverse_proxy 127.0.0.1:4400
+	}
+
+	# Android-Update-Kanal: latest.json (signiert) und APK. Immer frisch prüfen lassen.
+	handle_path /releases/* {
+		root * /srv/familie/releases
+		header Cache-Control "no-cache"
+		@apk path *.apk
+		header @apk Content-Type "application/vnd.android.package-archive"
+		file_server
+	}
+
+	# assetlinks.json (Android) und apple-app-site-association (iOS, später) für Passkeys
+	handle_path /.well-known/* {
+		root * /srv/familie/well-known
+		file_server
+	}
+
+	# Fallback-Schriften für Flutter Web (fontFallbackBaseUrl in web/flutter_bootstrap.js), siehe deploy/README.md
+	handle_path /font-fallback/* {
+		root * /srv/familie/font-fallback
+		header Cache-Control "public, max-age=604800"
+		file_server
+	}
+
+	# Flutter-Web-Build (aktuelle Version per Symlink). Per ETag prüfen lassen, damit Updates sofort greifen.
+	handle {
+		root * /srv/familie/web/current
+		header Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
+
+# Eigener ntfy-Server (UnifiedPush). Meldungen enthalten nie Inhalte.
+ntfy.familie.lx-labs.dev {
+	encode zstd gzip
+	import familie_sicherheit
+	reverse_proxy 127.0.0.1:2586
+}

@@ -1,0 +1,49 @@
+name: lx_familienzentrale
+description: "lx-familienzentrale: Familien-App (Android und Web)"
+publish_to: 'none'
+
+# Versionsnummer = Update-Vergleich (Android-OTA, /api/v1/version). Build-Nummer = versionCode.
+version: 0.1.0+1
+
+# Versionen sind exakt gepinnt (docs/VERSIONEN.md), kein ^ und keine Bereiche.
+environment:
+  sdk: 3.13.5
+  flutter: 3.47.6
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  flutter_riverpod: 3.4.3
+  drift: 2.35.1
+  drift_flutter: 0.3.1
+  http: 1.6.0
+  crypto: 3.0.7
+  path_provider: 2.1.6
+  intl: 0.20.3
+  # Ed25519-Prüfung des Update-Manifests (reines Dart, läuft auch im Web)
+  cryptography: 2.9.0
+  # an sqlite3.wasm gebunden (web/sqlite3.wasm, Prüfsumme in docs/VERSIONEN.md): beide immer zusammen ändern
+  sqlite3: 3.7.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: 6.0.0
+  drift_dev: 2.35.1
+  build_runner: 2.16.1
+  # analyzer 14.5.0 ist zu jung (Regel: mind. 14 Tage) und bricht build_runner 2.16.1: bis auf Weiteres festhalten
+  analyzer: 14.4.0
+
+flutter:
+  uses-material-design: true
+
+  # Schriften werden mitgeliefert (SIL Open Font License, Lizenztexte liegen daneben) - kein Google-Fonts-Abruf.
+  fonts:
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter.ttf
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono.ttf

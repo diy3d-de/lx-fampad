@@ -1,0 +1,40 @@
+{
+  "name": "lx-familie-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "lx-familienzentrale: API, Sync und WebSocket",
+  "engines": {
+    "node": ">=24.21.0 <25"
+  },
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "start": "node --env-file-if-exists=.env dist/server.js",
+    "migrate": "node --env-file-if-exists=.env dist/db/migrate-cli.js",
+    "db:generate": "drizzle-kit generate",
+    "lint": "eslint .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "11.2.0",
+    "@fastify/websocket": "11.3.3",
+    "drizzle-orm": "0.45.3",
+    "fastify": "5.12.5",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "@eslint/js": "10.0.1",
+    "@types/node": "24.19.1",
+    "@types/pg": "8.23.1",
+    "@types/ws": "8.18.2",
+    "drizzle-kit": "0.31.11",
+    "eslint": "10.12.0",
+    "tsx": "4.23.15",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vitest": "5.0.3"
+  }
+}

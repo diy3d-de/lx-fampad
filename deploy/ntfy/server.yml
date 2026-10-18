@@ -1,0 +1,26 @@
+# /etc/ntfy/server.yml - eigener ntfy-Server für UnifiedPush (Familienzentrale)
+# Bei Änderungen: sudo systemctl restart ntfy
+base-url: "https://ntfy.familie.lx-labs.dev"
+# Nur lokal lauschen; Caddy leitet weiter und terminiert TLS
+listen-http: "127.0.0.1:2586"
+behind-proxy: true
+
+# Zugriff: standardmäßig alles verboten. Anonymes Schreiben nur auf up*-Topics (UnifiedPush),
+# Lesen nur mit Benutzer (siehe deploy/README.md, Abschnitt ntfy).
+auth-file: "/var/lib/ntfy/user.db"
+auth-default-access: "deny-all"
+enable-login: true
+enable-signup: false
+enable-reservations: false
+
+# Kurz zwischenspeichern, damit Geräte nach kurzer Funkstille nichts verpassen
+cache-file: "/var/cache/ntfy/cache.db"
+cache-duration: "12h"
+
+# Kein Firebase/Google, kein ntfy.sh-Upstream: Push läuft nur über den eigenen Server
+web-root: "disable"
+
+# Missbrauchsgrenzen
+visitor-request-limit-burst: 60
+visitor-request-limit-replenish: "5s"
+message-size-limit: "4k"

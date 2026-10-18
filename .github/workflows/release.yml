@@ -1,0 +1,290 @@
+# Release der Android-App: APK bauen, signieren, Update-Manifest (latest.json) erzeugen, als Release-ENTWURF anhängen.
+# Optional (nur manuell, nur auf Wunsch): Upload auf den VPS. Einrichtung und Secrets: deploy/README.md, Abschnitt 10, und tools/README.md.
+#
+# Trennung der Geheimnisse:
+#   build   sieht nur den Android-Signaturschlüssel (Keystore); kein Update-Schlüssel, kein SSH-Schlüssel
+#   sign    sieht nur UPDATE_SIGNING_KEY; läuft in der Environment "release" (manuelle Freigabe), baut selbst nichts
+#   draft   hat nur das GITHUB_TOKEN (contents: write); legt den Entwurf an
+#   deploy  sieht nur den SSH-Schlüssel; Environment "vps-deploy" (manuelle Freigabe); nur auf ausdrücklichen Wunsch
+# Alle Aktionen sind auf Commit-SHA gepinnt (Version im Kommentar). Es gibt keine Drittanbieter-Aktion außer subosito/flutter-action.
+name: Release (Android)
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version ohne v, z. B. 0.2.0 (bei einem Tag-Push wird sie aus dem Tag gelesen)'
+        required: true
+        type: string
+      deploy_vps:
+        description: 'Zusätzlich auf den VPS hochladen (Environment vps-deploy, manuelle Freigabe)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  API_BASE: https://familie.lx-labs.dev
+  RELEASES_BASE: https://familie.lx-labs.dev/releases
+
+jobs:
+  build:
+    name: APK bauen (signiert mit dem Android-Schlüssel)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      version_code: ${{ steps.v.outputs.version_code }}
+      apk_name: ${{ steps.v.outputs.apk_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Version aus Tag oder Eingabe bestimmen
+        id: v
+        env:
+          EVENT: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if [ "$EVENT" = workflow_dispatch ]; then v="$INPUT_VERSION"; else v="${REF_NAME#v}"; fi
+          if ! [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            echo "Version '$v' ist nicht von der Form x.y.z" >&2; exit 1
+          fi
+          major=${BASH_REMATCH[1]}; minor=${BASH_REMATCH[2]}; patch=${BASH_REMATCH[3]}
+          if [ "$major" -gt 2000 ] || [ "$minor" -gt 999 ] || [ "$patch" -gt 999 ]; then
+            echo "Version außerhalb des Bereichs (major <= 2000, minor/patch <= 999)" >&2; exit 1
+          fi
+          # versionCode steigt mit der Version: major*1000000 + minor*1000 + patch (0.1.0 -> 1000, 0.2.0 -> 2000)
+          code=$(( 10#$major * 1000000 + 10#$minor * 1000 + 10#$patch ))
+          {
+            echo "version=$v"
+            echo "version_code=$code"
+            echo "apk_name=dev-lx_labs-familienzentrale-$v.apk"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: 3.47.6
+          channel: stable
+          cache: true
+
+      - name: Android-SDK-Lizenzen akzeptieren (SDK ist auf dem Runner vorinstalliert)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+
+      # pubspec.lock ist eingecheckt: nichts neu auflösen
+      - name: Pakete (Lockfile erzwingen)
+        working-directory: app
+        run: flutter pub get --enforce-lockfile
+      - name: build_runner (drift)
+        working-directory: app
+        run: dart run build_runner build
+      - name: analyze
+        working-directory: app
+        run: flutter analyze
+      - name: test
+        working-directory: app
+        run: flutter test
+
+      - name: Signaturschlüssel bereitstellen (nur für diesen Job, wird danach gelöscht)
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          for n in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!n}" ]; then echo "Secret für $n fehlt (siehe deploy/README.md, Abschnitt 10)" >&2; exit 1; fi
+          done
+          umask 077
+          printf '%s' "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          {
+            echo "storeFile=$RUNNER_TEMP/release.jks"
+            echo "storePassword=$KEYSTORE_PASSWORD"
+            echo "keyAlias=$KEY_ALIAS"
+            echo "keyPassword=$KEY_PASSWORD"
+          } > app/android/key.properties
+
+      - name: APK bauen (release)
+        working-directory: app
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+          VERSION_CODE: ${{ steps.v.outputs.version_code }}
+        run: |
+          flutter build apk --release \
+            --build-name="$VERSION" --build-number="$VERSION_CODE" \
+            --dart-define=API_BASE="$API_BASE" --dart-define=RELEASES_BASE="$RELEASES_BASE"
+
+      - name: Schlüssel wieder löschen
+        if: always()
+        run: rm -f app/android/key.properties "$RUNNER_TEMP/release.jks"
+
+      - name: Signatur prüfen, Prüfsumme berechnen
+        env:
+          APK_NAME: ${{ steps.v.outputs.apk_name }}
+        run: |
+          mkdir -p out
+          cp app/build/app/outputs/flutter-apk/app-release.apk "out/$APK_NAME"
+          apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$apksigner" verify --print-certs "out/$APK_NAME"     # zeigt den SHA-256 des Zertifikats (für assetlinks.json)
+          (cd out && sha256sum "$APK_NAME" | tee "$APK_NAME.sha256")
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: apk
+          path: out/
+          if-no-files-found: error
+          retention-days: 14
+
+  sign:
+    name: Update-Manifest signieren (Freigabe nötig)
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Environment "release": Pflicht-Prüfer einrichten (Repository-Einstellungen > Environments), Secret UPDATE_SIGNING_KEY nur dort
+    environment: release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: apk
+          path: out
+
+      - name: Prüfsumme der APK
+        working-directory: out
+        run: sha256sum -c ./*.sha256
+
+      # Schutz vor Platzhalter/falschem Schlüssel: kUpdateKeyId muss ein echter Wert sein, kUpdatePublicKey muss
+      # zum privaten Schlüssel aus dem Secret passen. Sonst würde die App das Manifest ablehnen.
+      - name: Schlüssel gegen app/lib/constants.dart prüfen
+        id: key
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: node tools/verify-update-key.mjs app/lib/constants.dart >> "$GITHUB_OUTPUT"
+
+      - name: Manifest erzeugen und signieren
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          VERSION: ${{ needs.build.outputs.version }}
+          VERSION_CODE: ${{ needs.build.outputs.version_code }}
+          APK_NAME: ${{ needs.build.outputs.apk_name }}
+          KEY_ID: ${{ steps.key.outputs.key_id }}
+          MIN_VERSION: ${{ vars.UPDATE_MIN_VERSION || '0.1.0' }}
+        run: |
+          node tools/update-manifest.mjs sign \
+            --apk "out/$APK_NAME" --version "$VERSION" --version-code "$VERSION_CODE" \
+            --min-version "$MIN_VERSION" --key-id "$KEY_ID" --notes "Version $VERSION" \
+            --out out/latest.json
+          cat out/latest.json
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: manifest
+          path: out/latest.json
+          if-no-files-found: error
+          retention-days: 14
+
+  draft:
+    name: Release-Entwurf anlegen
+    needs: [build, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: apk
+          path: out
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: manifest
+          path: out
+      - name: Entwurf mit APK, Prüfsumme und latest.json
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+          APK_NAME: ${{ needs.build.outputs.apk_name }}
+        run: |
+          cd out
+          tag="v$VERSION"
+          if gh release view "$tag" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            gh release upload "$tag" "$APK_NAME" "$APK_NAME.sha256" latest.json --clobber -R "$GITHUB_REPOSITORY"
+          else
+            gh release create "$tag" "$APK_NAME" "$APK_NAME.sha256" latest.json -R "$GITHUB_REPOSITORY" \
+              --draft --target "$GITHUB_SHA" --title "Version $VERSION" \
+              --notes "Android-Release $VERSION. latest.json erst nach Prüfung auf den Server legen (deploy/README.md, Abschnitt 10)."
+          fi
+
+  deploy:
+    name: Upload auf den VPS (optional, Freigabe nötig)
+    needs: [build, sign, draft]
+    if: github.event_name == 'workflow_dispatch' && inputs.deploy_vps
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: vps-deploy
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: apk
+          path: out
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: manifest
+          path: out
+
+      - name: Prüfsummen (Datei, Manifest)
+        env:
+          APK_NAME: ${{ needs.build.outputs.apk_name }}
+        working-directory: out
+        run: |
+          sha256sum -c "$APK_NAME.sha256"
+          erwartet=$(jq -r .payload latest.json | jq -r .sha256)
+          ist=$(sha256sum "$APK_NAME" | cut -d' ' -f1)
+          [ "$erwartet" = "$ist" ] || { echo "SHA-256 im Manifest ($erwartet) weicht von der APK ($ist) ab" >&2; exit 1; }
+          [ "$(jq -r .payload latest.json | jq -r .apk)" = "$APK_NAME" ] || { echo "APK-Name im Manifest weicht ab" >&2; exit 1; }
+
+      - name: Hochladen (erst die APK, dann latest.json)
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.VPS_KNOWN_HOSTS }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          APK_NAME: ${{ needs.build.outputs.apk_name }}
+        working-directory: out
+        run: |
+          for n in SSH_KEY KNOWN_HOSTS VPS_HOST VPS_USER; do
+            if [ -z "${!n}" ]; then echo "Secret für $n fehlt" >&2; exit 1; fi
+          done
+          umask 077
+          printf '%s\n' "$SSH_KEY" > "$RUNNER_TEMP/deploy_key"
+          printf '%s\n' "$KNOWN_HOSTS" > "$RUNNER_TEMP/known_hosts"
+          ssh_cmd="ssh -i $RUNNER_TEMP/deploy_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+          # Der Schlüssel ist auf dem Server auf rrsync (nur schreiben, nur /srv/familie/releases/android) beschränkt.
+          # rsync schreibt in eine Temp-Datei und benennt um: jede Datei erscheint vollständig oder gar nicht.
+          rsync -e "$ssh_cmd" --chmod=F644 "$APK_NAME" "$VPS_USER@$VPS_HOST:./"
+          rsync -e "$ssh_cmd" --chmod=F644 latest.json "$VPS_USER@$VPS_HOST:./"
+
+      - name: Schlüssel wieder löschen
+        if: always()
+        run: rm -f "$RUNNER_TEMP/deploy_key" "$RUNNER_TEMP/known_hosts"

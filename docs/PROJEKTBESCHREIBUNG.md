@@ -35,8 +35,9 @@ lx-labs-Tokens nutzt. Verbindlich für Web und App:
 
 - **Farben:** `bg #090a0f`, `bg-elevated #0e1017`, `surface #13161f`, `surface-2 #1a1e29`, `surface-hover #212634`,
   `border #242936`, `border-soft #1b1f2b`, `text #e6e8ee`, `text-muted #8b93a7`, `text-faint #5d6578`,
-  Akzent `#00f0ff` (weich `rgba(0,240,255,0.12)`, stark `#5cf6ff`), `neural #7c3aed`, `danger #ff5f57`.
-- **Hintergrund:** violett-cyaner Schimmer oben (zwei Radialverläufe, Violett 0.22 links, Cyan 0.07 rechts) statt
+  Akzent `#00f0ff` (weich `rgba(0,240,255,0.12)`, stark `#5cf6ff`), `neural #7c3aed`, `danger #ff5f57`,
+  Überschriften `text-strong #ffffff` (`kTextStrong`).
+- **Hintergrund:** violett-cyaner Schimmer oben (zwei Radialverläufe, Violett 0.30 links, Cyan 0.09 rechts wie in lx-urlaubsplanung; `kGlowNeuralAlpha`, `kGlowAccentAlpha`) statt
   Punktraster. Dark Mode only; für Drucklisten (Einkauf, Packliste) ein heller Druckstil wie in der Urlaubsplanung.
 - **Schrift:** Inter (Text, Überschriften fett mit negativem Letter-Spacing), JetBrains Mono für Kennzahlen,
   Status, Uhrzeiten, Metadaten; selbst gehostet.
@@ -46,6 +47,9 @@ lx-labs-Tokens nutzt. Verbindlich für Web und App:
   `NavigationBar` in `surface` mit Akzent-Indikator und Mono-Beschriftung, `FilledButton` in Cyan, Dialoge und
   Bottom-Sheets in `surface`, Sync-Anzeige und Update-Anzeige (`update_service`, `UpdateAnzeige`) wie dort.
   Konstanten in einer `constants.dart` (kAccent, kBg, kSurface, …), keine Farbwerte in Widgets.
+- **Layout:** ab 360 px Breite und bei Textskalierung bis 1.5 ohne Überlauf; Touch-Ziele mindestens 44 px (Knöpfe haben 48 px
+  Tipp-Fläche, Kalenderzellen 48 px hoch, Raster mit fester Höhe `mainAxisExtent` statt Seitenverhältnis); der Inhalt wird auf
+  Desktop/Tablet auf 720 px Breite begrenzt und zentriert (`kMaxContentWidth`, wie die Anmeldung mit 420 px).
 - Code und Muster aus lx-urlaubsplanung (Sync-Indikator, Update-Dialog, Einstellungen) werden übernommen statt neu erfunden.
 
 Die Mockups wurden auf den Hintergrund der Urlaubsplanung umgestellt; Personenfarben und weitere Feinheiten
@@ -161,7 +165,11 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
 2. **Ausgang im Client:** Lokale Änderungen landen sofort in der lokalen DB und in einer Outbox
    (`op`, `entity`, `id`, geänderte Felder, `baseRev`). Die Oberfläche wartet nie auf den Server.
 3. **Abgleich:** `POST /api/v1/sync { sinceRev, ops[] }` → Server übernimmt die Ops in einer Transaktion und
-   antwortet mit Bestätigungen, Konflikten und allen Änderungen seit `sinceRev`.
+   antwortet mit Bestätigungen (`acked`: die `op_id`s), Konflikten (`conflicts`: feldweise unterlegene Werte) und allen
+   Änderungen seit `sinceRev`. Jede Op trägt eine vom Client vergebene `op_id` (UUID); der Server merkt sie sich
+   (`applied_ops`), ein wiederholter Upload (Abbruch nach dem Senden, Zeitüberschreitung) ändert nichts und wird
+   erneut bestätigt. `sinceRev` speichert der Server je Gerät (`devices.last_rev`); Tombstones werden erst entfernt,
+   wenn alle Geräte sie kennen.
 4. **Echtzeit:** Über den WebSocket meldet der Server nur „neue Revision N“; der Client stößt daraufhin den
    Abgleich an. Ohne WebSocket (Hintergrund, schlechtes Netz) Abgleich beim Start, beim Zurückkehren in die
    App, nach Push und alle paar Minuten.
@@ -169,7 +177,10 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
    - Felder: „letzte Änderung gewinnt“ **pro Feld** (nicht pro Datensatz) – zwei Personen können denselben
      Termin gleichzeitig an verschiedenen Feldern bearbeiten.
    - Listen-Einträge: jeder Eintrag einzeln, Abhaken gewinnt gegen gleichzeitiges Umbenennen nicht.
-   - Chat und Pinnwand: nur Anhängen, keine Konflikte.
+   - Chat und Pinnwand: nur Anhängen, keine Konflikte. Reaktionen, Lesebestätigungen und Termin-Teilnehmer sind eigene
+     Tabellen mit einer Zeile je Person (und Emoji) und eigenen Sync-Spalten, kein JSON in der Nachricht bzw. im Termin;
+     gleichzeitiges Reagieren zweier Personen kollidiert so nie.
+   - Ganztägige Termine sind Kalendertage (Datum ohne Uhrzeit und Zeitzone), zeitgebundene Termine Zeitpunkte (UTC).
    - Dateien: unveränderlich, jede neue Fassung ist eine neue Version.
 6. **Gleiche Regeln überall:** Der Server prüft jede Op (Rechte, Pflichtfelder). Abgelehnte Ops gehen mit Grund
    an den Client zurück und werden dort sichtbar gemacht, nicht still verworfen.
@@ -183,14 +194,15 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
   `/.well-known/assetlinks.json` (Android) und `/.well-known/apple-app-site-association` (iOS).
 - **Passwort nur mit 2FA.** Wer statt Passkey ein Passwort nutzt, muss TOTP (Authenticator-App) einrichten.
   Passwörter mit **Argon2id**, Prüfung gegen bekannte geleakte Passwörter (k-Anonymität, optional).
-- **Wiederherstellung:** 10 Einmal-Codes beim Einrichten; zusätzlich kann ein Admin ein Mitglied zurücksetzen
-  (neue Einladung). Keine Wiederherstellung per SMS.
+- **Wiederherstellung:** 10 Einmal-Codes beim Einrichten (nur als Hash gespeichert, `recovery_codes`, mit Einlöse-Zeitpunkt);
+  zusätzlich kann ein Admin ein Mitglied zurücksetzen (neue Einladung). Keine Wiederherstellung per SMS.
 - **Einladungen** per Link oder QR-Code, einmalig, 7 Tage gültig, an eine Rolle gebunden. Es gibt keine offene
   Registrierung.
 - **Sitzungen:**
   - Web: Session-Cookie `HttpOnly; Secure; SameSite=Strict`, CSRF-Schutz.
   - App: Access-Token (15 min) + Refresh-Token mit Rotation und Wiederverwendungs-Erkennung, gebunden an das
-    Gerät; Ablage in `flutter_secure_storage`.
+    Gerät; Ablage in `flutter_secure_storage`. Beim Einlösen setzt der Server `used_at` und `rotated_to`; wird ein bereits
+    eingelöstes Token erneut vorgelegt, widerruft er die ganze Token-Familie und schreibt einen Eintrag ins Audit-Log.
   - Geräteliste in den Einstellungen, jedes Gerät einzeln abmeldbar.
 - **Erneute Bestätigung** (Passkey oder 2FA) für Tresor, Rollenänderungen, Löschen der Familie, neue Passkeys.
 - **Schutz:** Rate-Limits für Anmeldung und 2FA, verzögerte Sperre nach Fehlversuchen, Audit-Log
@@ -202,10 +214,10 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
 | Ziel | Weg |
 | --- | --- |
 | **Server** | wie lx-labs: `npm run deploy` (bauen, pushen, auf dem VPS aktualisieren). Datenbank-Migrationen nur vorwärts und rückwärtskompatibel zur Vorgängerversion der App. |
-| **Web** | Flutter-Web-Build liegt versioniert hinter Caddy. Die Seite fragt `/api/v1/version` ab; bei neuer Version Hinweis „Neue Version – neu laden“. Kein automatisch registrierter Service Worker ohne Zustimmung (wie bei lx-labs, TDDDG). |
-| **Android** | **Eigener Update-Kanal auf dem VPS** statt GitHub-Releases: `familie.lx-labs.dev/releases/android/latest.json` mit Version, Mindestversion, SHA-256 und Release-Notes, **signiert mit Ed25519** (privater Schlüssel nur in der CI). Die App prüft Signatur und Prüfsumme, lädt die APK und installiert per `PackageInstaller` nach Klick. Vorteil gegenüber dem bestehenden OTA-Paket: kein Lese-Token in der App, nichts Extrahierbares. Signaturschlüssel und `applicationId` nie ändern. |
+| **Web** | Flutter-Web-Build liegt versioniert hinter Caddy. Die Seite fragt `/api/v1/version` ab; bei neuer Version Hinweis „Neue Version – neu laden“: `deploy-web.sh` schreibt die Kennung des Builds nach `version.txt` (der Server meldet sie als `webVersion`) und baut sie mit `--dart-define=WEB_VERSION` in die App ein; weichen beide ab, erscheint der Hinweis. Kein automatisch registrierter Service Worker ohne Zustimmung (wie bei lx-labs, TDDDG). |
+| **Android** | **Eigener Update-Kanal auf dem VPS** statt GitHub-Releases: `familie.lx-labs.dev/releases/android/latest.json` mit Version, Mindestversion, SHA-256 und Release-Notes, **signiert mit Ed25519** (privater Schlüssel nur in der CI). Das Manifest ist `{ "payload": "<JSON-Text>", "signature": "<Base64>" }`; signiert wird genau der Text in `payload`. Der Payload enthält `packageName`, `version`, `versionCode`, `minVersion`, `apk`, `sha256`, `size`, `notes`, `issuedAt` und `keyId`. Die App (Paket `cryptography`, öffentlicher Schlüssel als Konstante `kUpdatePublicKey`) prüft: Signatur, `packageName`, `keyId`, `versionCode` (größer als der installierte; ein kleinerer ist ein altes Manifest und wird abgelehnt), `issuedAt` (nicht in der Zukunft, höchstens 365 Tage alt, solange ein Update angeboten wird) und `size` (1 Byte bis 200 MB). Der Download bricht ab, sobald mehr Bytes kommen als `size`; Größe und SHA-256 werden geprüft und unmittelbar vor der Installation erneut berechnet. Installiert wird per `PackageInstaller`-Session nach Klick. Den Schlüssel erzeugt und das Manifest signiert `tools/update-manifest.mjs` (privater Schlüssel nur in der CI, nie im Repo; Ablauf in `tools/README.md`). Vorteil gegenüber dem bestehenden OTA-Paket: kein Lese-Token in der App, nichts Extrahierbares. Signaturschlüssel und `applicationId` nie ändern. |
 | **iOS** | *Zurückgestellt.* Apple erlaubt keine eigene Installation von Apps. Weg: **TestFlight / App Store** (Apple Developer Program, 99 $/Jahr; Build auf einem Mac oder per Cloud-CI). Optional später **Shorebird** für Dart-Patches ohne Store-Review – das ist ein externer Dienst und muss vorher von Security/Datenschutz bewertet werden. |
-| **Erzwingen** | `minVersion` im Manifest bzw. `protocolVersion` im Sync: zu alte Clients bekommen einen Pflicht-Update-Dialog. |
+| **Erzwingen** | Die App fragt `/api/v1/version` ab: ist ihre Version kleiner als `minAppVersion` oder ihre Protokollversion kleiner als `minProtocolVersion` (oder das Manifest hat eine höhere `minVersion`), ersetzt eine Pflicht-Update-Seite die App, bis das Update installiert (Web: neu geladen) ist. |
 
 Übernommen aus dem OTA-Paket: Statusmodell (`deaktiviert | pruefe | aktuell | laedt | bereit | fehler`),
 Installation nur per Klick, Installationssperre während Upload/Sync, Release-Notes als reiner Text,
@@ -270,6 +282,19 @@ Design-Tokens aus `lx-labs/src/styles/global.css` werden als `ThemeData`/`ColorS
 Jede Phase durchläuft das Team: **Research** (Bibliotheken, Plattformvorgaben) → **Coding** →
 **QM/Testing** (Sync-Randfälle: offline, gleichzeitige Änderungen, abgebrochene Uploads; Mobilansicht ab
 360 px) → **Code-Review** → **Security** (vor jedem Deploy, insbesondere Auth, Uploads, OTA-Signatur).
+
+### Vor Phase 1 zu erledigen
+
+Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören vor Beginn bzw. in den Anfang von Phase 1 (Auth, Sync, Dateien):
+
+- **WebSocket-Fehlversuche zählen:** abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
+- **Getrennte Datenbank-Rollen:** eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
+- **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen.
+- **Löschkonzept:** Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
+- **Mitgliedschafts-Prüfung bei Schema-Verweisen:** wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
+- **Recovery-Codes:** nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
+- **WebSocket-Limits atomar:** Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
+- **Eigener Fehlerhandler:** einheitliche Fehlerantworten ohne interne Details (keine Stacktraces oder Meldungen von Bibliotheken), Fehler nur im Log.
 
 ## 13. Offene Entscheidungen
 
