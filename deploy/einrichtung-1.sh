@@ -41,13 +41,13 @@ if [ -f /etc/lx-familie/env ]; then
   echo "    /etc/lx-familie/env existiert schon, bleibt unverändert."
 else
   PW="$(openssl rand -base64 24 | tr -d '/+=')"
-  if sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='lx_familie'" | grep -q 1; then
-    echo "    Rolle lx_familie existiert schon, aber es gibt keine env-Datei." >&2
-    echo "    Passwort der Rolle bitte selbst setzen:  sudo -u postgres psql -c '\\password lx_familie'  und in /etc/lx-familie/env eintragen." >&2
-    exit 1
-  fi
   # Passwort über stdin setzen (nicht in der Prozessliste)
-  printf "CREATE ROLE lx_familie LOGIN PASSWORD '%s';\n" "$PW" | sudo -u postgres psql -v ON_ERROR_STOP=1 -q
+  if sudo -u postgres psql -tAc "select 1 from pg_roles where rolname='lx_familie'" | grep -q 1; then
+    echo "    Rolle lx_familie existiert schon (ohne env-Datei): bekommt ein neues Passwort."
+    printf "ALTER ROLE lx_familie LOGIN PASSWORD '%s';\n" "$PW" | sudo -u postgres psql -v ON_ERROR_STOP=1 -q
+  else
+    printf "CREATE ROLE lx_familie LOGIN PASSWORD '%s';\n" "$PW" | sudo -u postgres psql -v ON_ERROR_STOP=1 -q
+  fi
   sudo -u postgres psql -tAc "select 1 from pg_database where datname='lx_familie'" | grep -q 1 \
     || sudo -u postgres psql -v ON_ERROR_STOP=1 -q -c "CREATE DATABASE lx_familie OWNER lx_familie ENCODING 'UTF8'"
   umask 077
