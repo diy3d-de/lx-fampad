@@ -68,7 +68,7 @@ app/
 deploy/                Caddyfile, lx-familie.service, deploy.sh, deploy-web.sh, ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md
 docs/                  Projektbeschreibung, Versionen, Datenschutz-Entwurf, Mockups
-.github/workflows/     CI: Server (Lint, Typen, Tests, Build), App (analyze, test)
+.github/workflows/     ci.yml: Server (Lint, Typen, Tests, Build), App (analyze, test), Android-Debug-Build; release.yml: APK bauen/signieren, Manifest, Release-Entwurf (deploy/README.md, Abschnitt 10)
 ```
 
 ## Design-Regeln (verbindlich)

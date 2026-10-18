@@ -225,13 +225,54 @@ Das Skript baut mit `--no-web-resources-cdn`, lädt nach `/srv/familie/web/<vers
 ### 9. Passkey- und Update-Dateien (ab Phase 1)
 
 - `/srv/familie/well-known/assetlinks.json` mit den SHA-256-Fingerprints aller Signaturschlüssel der Android-App (`dev.lx_labs.familienzentrale`)
-- `/srv/familie/releases/android/latest.json` und `lx-familienzentrale-<version>.apk`. **Erst hochladen, wenn der echte Update-Schlüssel eingebaut ist:** In `app/lib/constants.dart` steht ein Platzhalter-Schlüssel (`kUpdatePublicKey`), zu dem es keinen privaten Schlüssel gibt; die App lehnt dann jedes Manifest ab. Ablauf:
+- `/srv/familie/releases/android/latest.json` und `dev-lx_labs-familienzentrale-<version>.apk` (erzeugt vom Release-Workflow, Abschnitt 10). **Erst hochladen, wenn der echte Update-Schlüssel eingebaut ist:** In `app/lib/constants.dart` steht ein Platzhalter-Schlüssel (`kUpdatePublicKey`), zu dem es keinen privaten Schlüssel gibt; die App lehnt dann jedes Manifest ab. Ablauf:
   1. Schlüssel erzeugen (außerhalb des Repositories): `node tools/update-manifest.mjs keygen ~/lx-update-key.pem`; öffentlichen Schlüssel in `kUpdatePublicKey` und eine neue `kUpdateKeyId` eintragen, den privaten als CI-Secret `UPDATE_SIGNING_KEY` hinterlegen.
-  2. App mit dem neuen Schlüssel bauen, signieren: `node tools/update-manifest.mjs sign --apk … --version … --version-code … --key-id … --out latest.json` (Näheres: `tools/README.md`).
+  2. App mit dem neuen Schlüssel bauen, signieren: `node tools/update-manifest.mjs sign --apk … --version … --version-code … --key-id … --out latest.json` (Näheres: `tools/README.md`; normalerweise erledigt das der Release-Workflow, Abschnitt 10).
   3. APK und `latest.json` nach `/srv/familie/releases/android/` legen, **APK zuerst**, dann `latest.json`.
   Der private Schlüssel gehört nie in das Repository und nie auf den Server.
 
 ---
+
+### 10. Android-Release per GitHub Actions (APK bauen, signieren, ausliefern)
+
+Der Workflow `.github/workflows/release.yml` läuft bei einem Tag `v*` (z. B. `v0.2.0`) oder manuell (Actions > "Release (Android)" > Run workflow, Version ohne `v`). Ablauf:
+
+1. **build**: Lockfile erzwingen, build_runner, analyze, test, dann `flutter build apk --release` mit dem Android-Schlüssel aus den Secrets (`key.properties` entsteht erst im Job und wird danach gelöscht) und `--dart-define` für `API_BASE` und `RELEASES_BASE` (`https://familie.lx-labs.dev`). `versionName` = Tag, `versionCode` = `major*1000000 + minor*1000 + patch` (0.2.0 gibt 2000); der Wert aus `pubspec.yaml` wird dabei überschrieben. Danach `apksigner verify` und SHA-256. Dateiname: `dev-lx_labs-familienzentrale-<version>.apk` (passt zur Namensprüfung der App).
+2. **sign** (Environment `release`, manuelle Freigabe): prüft, dass `kUpdateKeyId`/`kUpdatePublicKey` in `constants.dart` echt sind und zum Secret `UPDATE_SIGNING_KEY` passen, erzeugt und signiert `latest.json`. Nur dieser Job sieht den Update-Schlüssel.
+3. **draft**: legt einen **Release-Entwurf** mit APK, `.sha256` und `latest.json` an (nichts wird veröffentlicht).
+4. **deploy** (optional, nur manuell mit Häkchen "deploy_vps", Environment `vps-deploy` mit Freigabe): lädt auf den VPS hoch.
+
+**Entscheidung zur Auslieferung:** Der Upload ist als Option eingebaut, standardmäßig aus. Begründung: Der Schlüssel liegt als GitHub-Secret außerhalb des Servers und ist auf dem Server per `authorized_keys` auf `rrsync -wo /srv/familie/releases/android` beschränkt (nur Schreiben in genau diesen Ordner, keine Shell, kein Lesen, kein Löschen). Ein gestohlener Schlüssel kann daher keinen Code ausführen und keine gültig signierte Aktualisierung erzeugen (dazu fehlt `UPDATE_SIGNING_KEY`); das Restrisiko ist, dass jemand `latest.json` mit Unsinn überschreibt (die App lehnt es ab, Updates fallen aus). Wer das nicht will, lässt die Option aus und lädt den Entwurf von Hand hoch (APK zuerst, `sha256sum -c`, dann `latest.json`; `scp` nach `/srv/familie/releases/android/`). Der Upload prüft vorher SHA-256 (Datei gegen Manifest), schreibt die APK zuerst und `latest.json` zuletzt; rsync legt jede Datei über eine Temp-Datei an und benennt sie um, daher erscheint sie vollständig oder gar nicht.
+
+**Wichtig:** `applicationId` (`dev.lx_labs.familienzentrale`) und der Android-Keystore dürfen **nie** geändert werden. Mit einem anderen Schlüssel lässt sich die App nicht mehr über die installierte Version aktualisieren; geht der Keystore verloren, hilft nur Deinstallieren und Neuinstallieren (lokale Daten weg). Keystore und Passwörter zusätzlich offline sichern.
+
+**Einmalig vorbereiten (Reihenfolge des ersten Releases):**
+
+1. Android-Keystore erzeugen (außerhalb des Repositories):
+   ```bash
+   keytool -genkeypair -v -keystore ~/lx-familie-release.jks -alias lxfamilie -keyalg RSA -keysize 4096 -validity 10000
+   base64 -w0 ~/lx-familie-release.jks      # Ausgabe = Secret ANDROID_KEYSTORE_BASE64
+   ```
+2. Update-Schlüssel erzeugen: `node tools/update-manifest.mjs keygen ~/lx-update-key.pem` (siehe `tools/README.md`). Den öffentlichen Schlüssel in `kUpdatePublicKey` und eine echte `kUpdateKeyId` (Textwert, z. B. `'familie-2026-1'`) in `app/lib/constants.dart` eintragen, committen. **Erst damit nimmt die App Manifeste an.**
+3. Secrets anlegen (Repository > Settings > Secrets and variables > Actions):
+
+   | Secret | Inhalt | Gilt für |
+   | --- | --- | --- |
+   | `ANDROID_KEYSTORE_BASE64` | Keystore, Base64 (Schritt 1) | Repository-Secret (Job build) |
+   | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | Angaben aus `keytool` | Repository-Secret (Job build) |
+   | `UPDATE_SIGNING_KEY` | Inhalt von `~/lx-update-key.pem` | **nur** in der Environment `release` |
+   | `VPS_SSH_KEY`, `VPS_KNOWN_HOSTS`, `VPS_HOST`, `VPS_USER` | nur für den optionalen Upload (s. u.) | **nur** in der Environment `vps-deploy` |
+
+   Environments (Settings > Environments): `release` und (falls Upload gewollt) `vps-deploy` mit "Required reviewers" = du selbst. Optional die Variable `UPDATE_MIN_VERSION` (Mindestversion, ab der ein Update Pflicht ist; Standard 0.1.0).
+4. Optional SSH-Zugang für den Upload: Schlüssel auf dem PC erzeugen (`ssh-keygen -t ed25519 -N "" -C lx-familie-release -f ~/lx-release-deploy`), die öffentliche Zeile auf dem Server in `~lx/.ssh/authorized_keys` mit Beschränkung eintragen:
+   ```
+   restrict,command="/usr/bin/rrsync -wo /srv/familie/releases/android" ssh-ed25519 AAAA… lx-familie-release
+   ```
+   (Pfad von rrsync mit `command -v rrsync` prüfen; Paket `rsync`.) Den privaten Schlüssel als `VPS_SSH_KEY` hinterlegen, den Host-Schlüssel als `VPS_KNOWN_HOSTS` (`ssh-keyscan -t ed25519 <host>`, Fingerabdruck mit `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` auf dem Server vergleichen), dazu `VPS_HOST` und `VPS_USER` (`lx`). Danach die lokale Schlüsseldatei löschen.
+5. Erstes Release: `git tag v0.1.0 && git push origin v0.1.0`, Freigabe der Environment `release` erteilen, Entwurf unter "Releases" prüfen. Die erste APK wird **von Hand** auf die Handys installiert (aus dem Entwurf). Das Zertifikat-SHA-256 aus dem Schritt "Signatur prüfen, Prüfsumme berechnen" im Log gehört in `/srv/familie/well-known/assetlinks.json` (Passkeys, Abschnitt 9).
+6. **`latest.json` erst hochladen, wenn der echte öffentliche Schlüssel in `constants.dart` steht und die dazu gebaute App installiert ist** (der Workflow verweigert das Signieren sonst). Danach den Entwurf veröffentlichen und APK + `latest.json` auf den Server legen (Upload-Job oder von Hand, APK zuerst).
+
+Der Android-Build wird außerdem bei jedem Push und Pull Request als Debug-APK geprüft (`.github/workflows/ci.yml`, Job `android-debug`).
 
 ## Updates veröffentlichen
 

@@ -217,17 +217,20 @@ void main() {
     });
 
     test('lehnt jedes Manifest hart ab, solange die Schlüssel-ID "platzhalter" ist', () async {
-      expect(kUpdateKeyId, kPlatzhalterKeyId); // Stand vor dem ersten Release; mit echtem Schlüssel entfällt dieser Check
       final manifest = await _manifest({...gueltig, 'keyId': kPlatzhalterKeyId}, key);
-      await expectLater(
-        parseManifest(manifest, verifier: verifier, installierteVersionCode: 1, jetzt: _jetzt),
-        throwsA(predicate((e) => '$e'.contains('Platzhalter'))),
-      );
       await expectLater(
         parseManifest(manifest, verifier: verifier, installierteVersionCode: 1, jetzt: _jetzt, keyId: kPlatzhalterKeyId),
         throwsA(predicate((e) => '$e'.contains('Platzhalter'))),
       );
     });
+
+    test('mit eingebauter Platzhalter-ID (Stand vor dem ersten Release) wird nichts akzeptiert', () async {
+      final manifest = await _manifest({...gueltig, 'keyId': kUpdateKeyId}, key);
+      await expectLater(
+        parseManifest(manifest, verifier: verifier, installierteVersionCode: 1, jetzt: _jetzt),
+        throwsException,
+      );
+    }, skip: kUpdateKeyId != kPlatzhalterKeyId ? 'echter Schlüssel eingetragen' : false);
 
     test('lehnt unsigniertes Manifest ab', () async {
       await expectLater(_parse(jsonEncode(gueltig), verifier), throwsException);

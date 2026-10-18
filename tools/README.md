@@ -24,18 +24,27 @@ Das Skript schreibt den privaten Schlüssel (PEM, Rechte 0600) und gibt den öff
 
 ```bash
 node tools/update-manifest.mjs sign \
-  --apk build/app/outputs/flutter-apk/lx-familienzentrale-0.2.0.apk \
+  --apk build/app/outputs/flutter-apk/dev-lx_labs-familienzentrale-0.2.0.apk \
   --version 0.2.0 --version-code 2 --min-version 0.1.0 \
   --key-id familie-2026-1 --notes "Kurzer Text für die Release-Notes" \
   --out latest.json                                           # privater Schlüssel aus $UPDATE_SIGNING_KEY oder --key-file
 ```
 
-`--version-code` ist die Build-Nummer aus `app/pubspec.yaml` (`0.2.0+2`) und muss mit der APK übereinstimmen. Der Dateiname der APK steht im Manifest und darf nur
+`--version-code` muss mit dem `versionCode` der APK übereinstimmen. Der Release-Workflow (`.github/workflows/release.yml`, `deploy/README.md` Abschnitt 10) leitet ihn aus dem Tag ab (`major*1000000 + minor*1000 + patch`, also `v0.2.0` gibt 2000) und baut die APK mit `--build-number`; von Hand muss man beides gleich setzen. Der Dateiname der APK steht im Manifest und darf nur
 aus `A-Z a-z 0-9 . _ -` bestehen. Hochladen: erst die APK, dann `latest.json` nach `/srv/familie/releases/android/` (siehe `deploy/README.md`, Abschnitt 9).
 
 Format: `{ "payload": "<JSON-Text>", "signature": "<Base64, 64 Byte>" }`. Signiert wird genau der Text in `payload`; er enthält `packageName`, `version`, `versionCode`,
 `minVersion`, `apk`, `sha256`, `size`, `notes`, `issuedAt` und `keyId`. Die App lehnt falsche Signaturen, fremde Paketnamen und Schlüssel-IDs, kleinere `versionCode`s als die installierte,
 zu alte (über 365 Tage) oder in der Zukunft liegende Manifeste und Größen über 200 MB ab.
+
+### Prüfung vor dem Signieren (CI)
+
+`verify-update-key.mjs` stellt sicher, dass `kUpdateKeyId` kein Platzhalter ist und `kUpdatePublicKey` in `app/lib/constants.dart` zum privaten Schlüssel (`UPDATE_SIGNING_KEY`) passt:
+`UPDATE_SIGNING_KEY="$(cat ~/lx-update-key.pem)" node tools/verify-update-key.mjs app/lib/constants.dart` (gibt `key_id=…` aus). Der Release-Workflow ruft es vor dem Signieren auf.
+
+### Secrets und Reihenfolge des ersten Releases
+
+Welche Secrets (Android-Keystore, `UPDATE_SIGNING_KEY`, SSH-Zugang) angelegt werden, wie der Keystore mit `keytool` entsteht und in welcher Reihenfolge das erste Release läuft, steht in `deploy/README.md`, Abschnitt 10. **`applicationId` und Android-Keystore nie ändern. `latest.json` erst hochladen, wenn der echte öffentliche Schlüssel in `constants.dart` steht.**
 
 ### Test
 
