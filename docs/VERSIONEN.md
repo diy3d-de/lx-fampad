@@ -1,6 +1,6 @@
-# Gepinnte Versionen (Phase 0)
+# Gepinnte Versionen (Phase 0 und 1a)
 
-Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Quelle: Research-Teammate.
+Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlichungsdatum in der Spalte „Hinweis“ bei den Paketen von Phase 1a, geprüft mit `npm view <Paket> time`). Alle Versionen sind exakt gepinnt (kein `^`, kein `~`); Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Quelle: Research-Teammate.
 
 ## Server
 
@@ -12,9 +12,10 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 | @fastify/websocket | 11.3.3 | Auth über Session-Cookie beim Upgrade oder Einmal-Ticket |
 | drizzle-orm / drizzle-kit | 0.45.3 / 0.31.11 | 1.0 noch RC; kein `db.query` (Relational v1) |
 | PostgreSQL | 17 (Debian 13, Debian-Repo) | entschieden 18.10.2026 |
-| @simplewebauthn/server | 14.0.3 | Registrierung: `supportedAlgorithmIDs` auf klassische Algorithmen setzen |
-| otplib | 13.5.0 | API ≠ v12; Replay-Schutz über `afterTimeStep` |
-| argon2 | 0.45.1 | Argon2id, Prebuilds |
+| @simplewebauthn/server | 14.0.3 | Phase 1a im Einsatz (veröffentlicht 25.09.2026). `supportedAlgorithmIDs` = ES256/RS256, UV Pflicht, Attestation `none`; Antworten werden im Test mit einem eigenen Test-Authenticator erzeugt |
+| otplib | 13.5.0 | Phase 1a im Einsatz (21.08.2026). API ≠ v12 (funktionale `verify`/`generate`, `epochTolerance`); Replay-Schutz über `afterTimeStep` und atomares Fortschreiben von `credentials.last_time_step` |
+| argon2 | 0.45.1 | Phase 1a im Einsatz (21.07.2026). Argon2id (32 MiB, t=3, p=1). Native Prebuilds liegen im Paket: läuft auch mit `npm ci --ignore-scripts` (deploy.sh), auf Debian 13/glibc x64 noch nicht auf dem echten Server geprüft |
+| zod | 4.6.5 | Phase 1a: Eingabevalidierung der Routen (13.09.2026). 4.6.6 (11.10.) und 4.6.7 (12.10.) waren zum Stichtag jünger als 14 Tage |
 | @tus/server / @tus/file-store | 2.4.5 / 2.1.1 | Teil-Uploads liegen unverschlüsselt: nach `onUploadFinish` verschlüsselt ablegen |
 | sharp | 0.35.5 | |
 | pg / @types/pg | 8.23.1 / 8.23.1 | node-postgres; Pool mit Fehler-Handler und Verbindungs-Timeout |

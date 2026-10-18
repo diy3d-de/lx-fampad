@@ -61,7 +61,7 @@ Die Spalte „Phase“ legt die Reihenfolge fest (siehe Abschnitt 11).
 
 | Bereich | Funktionen | Phase |
 | --- | --- | --- |
-| **Konten & Familie** | Registrierung per Einladung (Link/QR), Profile, Farbe je Mitglied, Rollen | 1 |
+| **Konten & Familie** | Registrierung per Einladung (Link/QR, optional mit PIN und Freigabe), Profile, Farbe je Mitglied, Rollen | 1 (Server: 1a) |
 | **Kalender** | Gemeinsame und persönliche Kalender, Termine mit Teilnehmern, Wiederholungen (RRULE), Erinnerungen, Monat/Woche/Agenda, Filter je Person, Geburtstage | 1 |
 | **Chat** | Familien-Chat, Gruppen, Einzelchats, Bilder/Dateien, Lesebestätigung, Reaktionen, Push | 1 |
 | **Listen** | Einkaufsliste, Packlisten, beliebige Listen; Abhaken in Echtzeit, Zuständigkeit | 1 |
@@ -189,25 +189,54 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
 
 ## 7. Anmeldung und Konten
 
-- **Passkey als Standard.** Bei der Registrierung legt jede Person einen Passkey an (Handy, Windows Hello,
-  Sicherheitsschlüssel). Für Passkeys in der App braucht `familie.lx-labs.dev` die Dateien
-  `/.well-known/assetlinks.json` (Android) und `/.well-known/apple-app-site-association` (iOS).
-- **Passwort nur mit 2FA.** Wer statt Passkey ein Passwort nutzt, muss TOTP (Authenticator-App) einrichten.
-  Passwörter mit **Argon2id**, Prüfung gegen bekannte geleakte Passwörter (k-Anonymität, optional).
-- **Wiederherstellung:** 10 Einmal-Codes beim Einrichten (nur als Hash gespeichert, `recovery_codes`, mit Einlöse-Zeitpunkt);
-  zusätzlich kann ein Admin ein Mitglied zurücksetzen (neue Einladung). Keine Wiederherstellung per SMS.
-- **Einladungen** per Link oder QR-Code, einmalig, 7 Tage gültig, an eine Rolle gebunden. Es gibt keine offene
-  Registrierung.
-- **Sitzungen:**
-  - Web: Session-Cookie `HttpOnly; Secure; SameSite=Strict`, CSRF-Schutz.
-  - App: Access-Token (15 min) + Refresh-Token mit Rotation und Wiederverwendungs-Erkennung, gebunden an das
-    Gerät; Ablage in `flutter_secure_storage`. Beim Einlösen setzt der Server `used_at` und `rotated_to`; wird ein bereits
-    eingelöstes Token erneut vorgelegt, widerruft er die ganze Token-Familie und schreibt einen Eintrag ins Audit-Log.
-  - Geräteliste in den Einstellungen, jedes Gerät einzeln abmeldbar.
-- **Erneute Bestätigung** (Passkey oder 2FA) für Tresor, Rollenänderungen, Löschen der Familie, neue Passkeys.
-- **Schutz:** Rate-Limits für Anmeldung und 2FA, verzögerte Sperre nach Fehlversuchen, Audit-Log
-  sicherheitsrelevanter Ereignisse (Anmeldung, neues Gerät, Rollen), Hinweis per Mail bei neuem Gerät.
-- Kinderkonten legen die Eltern an; Kinder melden sich mit Passkey auf ihrem eigenen Gerät an.
+Umgesetzt in Phase 1a (Server); die App folgt in Phase 1b. Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.
+
+### Grundsätze
+
+- **Passkey als Standard.** Jede Person kann einen Passkey einrichten (Handy, Windows Hello, Sicherheitsschlüssel). Server: `@simplewebauthn/server`, nur klassische Algorithmen (ES256, RS256),
+  Nutzerprüfung (UV) und auffindbare Passkeys Pflicht, Attestation `none`, Challenge serverseitig gespeichert (5 Minuten, einmal einlösbar), `signCount` wird geprüft (Rückgang = abgelehnt und im Audit-Log).
+  RP-ID `familie.lx-labs.dev` (konfigurierbar, `WEBAUTHN_RP_ID`). Für Passkeys in der App braucht `familie.lx-labs.dev` die Dateien `/.well-known/assetlinks.json` (Android) und
+  `/.well-known/apple-app-site-association` (iOS); die Android-Origin der App kommt über `WEBAUTHN_ORIGINS`.
+- **Passwort nur mit TOTP.** Wer statt Passkey ein Passwort nutzt, richtet bei der Registrierung TOTP ein (die Code-Bestätigung ist Pflicht, sonst entsteht kein Konto). Passwörter mit **Argon2id**
+  (32 MiB, 3 Durchgänge), mindestens 12 Zeichen. Das TOTP-Geheimnis liegt **AES-256-GCM-verschlüsselt** in der Datenbank (Schlüssel `AUTH_SECRET_KEY` außerhalb der Datenbank, an die Benutzer-ID gebunden).
+  Replay-Schutz: Der zuletzt akzeptierte Zeitschritt wird atomar fortgeschrieben; derselbe Code gilt nie zweimal. Die Prüfung gegen geleakte Passwörter (k-Anonymität) ist **nicht** umgesetzt (optional, offen).
+- **Wiederherstellung:** 10 Einmal-Codes (`XXXX-XXXX-XXXX-XXXX`, rund 78 Bit) beim Einrichten, gespeichert als **HMAC-SHA256 mit dem Server-Schlüssel** (`recovery_codes`, mit Einlöse-Zeitpunkt). Ein Code genügt für die
+  Anmeldung (die Sitzung gilt als frisch bestätigt, damit ein neuer Passkey eingerichtet werden kann) oder ersetzt bei Passwort-Konten den TOTP-Code. Admins können ein Mitglied **zurücksetzen** (alle
+  Anmeldedaten, Codes und Sitzungen werden widerrufen, eine neue Einladung für dasselbe Konto entsteht); der Betreiber kann das auch per Kommandozeile (`--reset`). Keine Wiederherstellung per SMS.
+- **Keine offene Registrierung.** Der Server bedient genau eine Familie.
+
+### Ablauf
+
+1. **Erstinstallation:** Der Betreiber ruft auf dem Server `node dist/cli/bootstrap.js` auf. Das legt die Familie und eine Einladung für den ersten Admin an und gibt den Link aus
+   (Einmaltoken, 7 Tage). Läuft die Einladung ab, ersetzt ein erneuter Aufruf sie; nach dem Einlösen ist der Weg gesperrt.
+2. **Einladen:** Admins erzeugen Einladungen für jede Rolle (Admin-Einladungen verlangen zusätzlich eine frische Bestätigung); Eltern nur für Kinder und Gäste (und verwalten nur ihre eigenen Einladungen).
+   - **Token:** 256 Bit aus dem CSPRNG, in der Datenbank nur der SHA-256-Hash, einmalig, Rolle fest. Der Link trägt das Token im **URL-Fragment** (`https://familie.lx-labs.dev/#/einladung/<token>`), nie als Pfad oder Query,
+     damit es in keinem Server-, Proxy- oder Caddy-Log landet; die App sendet es nur im POST-Body. Der QR-Code kodiert denselben Link (die Grafik erzeugt die App).
+   - **Gültigkeit:** Standard 24 Stunden, einstellbar bis 7 Tage; ein Admin kann widerrufen oder (auch Abgelaufene) verlängern.
+   - **PIN (optional):** 6 Ziffern aus dem CSPRNG, nur als HMAC gespeichert, dem Einladenden einmalig bei der Erstellung angezeigt und getrennt weiterzugeben. Jeder Versuch wird **vor** dem Vergleich atomar gezählt;
+     nach 5 Fehlversuchen ist die Einladung gesperrt.
+   - **Freigabe (optional):** Mit `requireApproval` (Standard für Gäste) wird das neue Mitglied `pending` und kann sich erst nach Freigabe durch einen Admin anmelden.
+3. **Annehmen:** Die eingeladene Person prüft die Einladung (`lookup`), wählt Passkey oder Passwort+TOTP, bestätigt den Besitz (Passkey-Antwort bzw. TOTP-Code) und bekommt erst dann das Konto, die
+   Wiederherstellungs-Codes und (wenn nicht `pending`) eine Sitzung. Alles geschieht in einer Transaktion; die Einladung wird dabei atomar verbraucht (parallele Einlösungen: genau eine gewinnt).
+4. **Anmelden:** Passkey (ohne Kontoangabe), Passwort+TOTP oder Wiederherstellungs-Code. Alle Fehlschläge antworten gleich (`invalid_credentials`); unbekannte Konten rechnen gegen einen Platzhalter-Hash (keine Konto-Enumeration per Antwort oder Zeit).
+5. **Sitzungen:**
+   - **Web:** Cookie `__Host-lxsid` (`Secure; HttpOnly; SameSite=Strict`, ohne Domain; Token 256 Bit, in der Datenbank nur der Hash). CSRF-Schutz doppelt: ein fremder `Origin` wird abgelehnt, und jede ändernde Anfrage
+     braucht `X-CSRF-Token` (aus der Sitzungs-ID abgeleitet). 30 Tage absolut, 7 Tage Leerlauf.
+   - **App:** Access-Token (HMAC-signiert, 15 min, prüft zusätzlich die Sitzung in der Datenbank und wirkt nach einem Widerruf daher sofort nicht mehr) + Refresh-Token mit Rotation. Beim Einlösen setzt der Server `used_at` und
+     `rotated_to`; ein erneut vorgelegtes Token widerruft die **ganze `token_family`** und schreibt `session_reuse_detected` ins Audit-Log. Das Refresh-Token ist an die Geräte-ID gebunden; die absolute Dauer (90 Tage) bleibt
+     bei der Rotation erhalten, im Leerlauf (30 Tage) läuft es ab. Ablage in `flutter_secure_storage` (App, Phase 1b).
+   - **Geräteliste** (`GET /devices`), jedes Gerät einzeln abmeldbar, „überall abmelden“. Bei **Rollenwechsel** werden alle Sitzungen der Person widerrufen.
+6. **Erneute Bestätigung (Step-up):** wiederverwendbare Prüfung (`requireStepUp`, 5 Minuten) für Tresor, Rollenänderung, Mitglied entfernen/zurücksetzen, Admin-Einladung, neuen Passkey und neue Wiederherstellungs-Codes.
+   Bestätigt wird per Passkey, TOTP oder Wiederherstellungs-Code; die Anmeldung selbst zählt als frische Bestätigung.
+7. **WebSocket:** `POST /api/v1/ws-ticket` liefert ein Einmal-Ticket (256 Bit, 30 s, nur der Hash gespeichert, atomar einlösbar). Der Socket löst es in der ersten Nachricht ein; Browser mit Cookie sind beim Upgrade angemeldet.
+   Fehlgeschlagene Anmeldungen am WebSocket zählen gegen die IP (verzögerte Sperre schon vor dem Upgrade). Nachrichtenlimit je Socket sowie Verbindungslimit je IP und je Person werden ohne Wettlauf gezählt.
+8. **Schutz:** Strengere Rate-Limits für Anmelde-, 2FA- und Ticket-Routen; Fehlversuche je Konto und je IP mit verzögerter Sperre (ab 5 bzw. 20 Fehlversuchen 30 s, verdoppelt bis höchstens 15 min; Schlüssel nur als HMAC gespeichert);
+   Audit-Log sicherheitsrelevanter Ereignisse (Anmeldung, neues Gerät, Rollen, Zurücksetzen, Einladungen, Fehlversuche, Wiederverwendung); eigener Fehlerhandler ohne interne Meldungen.
+   Die IP im Audit-Log wird nach 7 Tagen entfernt, die Einträge nach 365 Tagen gelöscht (Aufräum-Job beim Start und täglich; er bereinigt auch Sitzungen, Challenges, Tickets und Fehlversuche).
+   **Nicht umgesetzt:** Hinweis per Mail bei neuem Gerät (es gibt noch keinen Mail-Versand; das Audit-Log hält `device_added` fest).
+9. **Familiengrenze:** Alle Abfragen sind auf die Familie der Sitzung begrenzt; Verweise auf Personen laufen über zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships`
+   (Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen, Lesebestätigungen), sodass die Datenbank Verweise über Familiengrenzen verhindert.
+- Kinderkonten legen die Eltern per Einladung an; Kinder melden sich mit Passkey auf ihrem eigenen Gerät an.
 
 ## 8. Updates (OTA)
 
@@ -287,14 +316,14 @@ Jede Phase durchläuft das Team: **Research** (Bibliotheken, Plattformvorgaben) 
 
 Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören vor Beginn bzw. in den Anfang von Phase 1 (Auth, Sync, Dateien):
 
-- **WebSocket-Fehlversuche zählen:** abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
-- **Getrennte Datenbank-Rollen:** eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
+- ~~**WebSocket-Fehlversuche zählen:**~~ erledigt in Phase 1a: abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
+- ~~**Getrennte Datenbank-Rollen:**~~ erledigt in Phase 1a (`lx_familie_migrate` / `lx_familie`, `deploy/README.md`): eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
 - **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen.
-- **Löschkonzept:** Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
-- **Mitgliedschafts-Prüfung bei Schema-Verweisen:** wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
-- **Recovery-Codes:** nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
-- **WebSocket-Limits atomar:** Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
-- **Eigener Fehlerhandler:** einheitliche Fehlerantworten ohne interne Details (keine Stacktraces oder Meldungen von Bibliotheken), Fehler nur im Log.
+- **Löschkonzept (teilweise erledigt):** `audit_log` (IP 7 Tage, Einträge 365 Tage) ist geregelt und wird aufgeräumt; offen bleibt `change_log.changes` (Sync, Phase 1c). Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
+- **Mitgliedschafts-Prüfung bei Schema-Verweisen (teilweise erledigt):** Zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships` gelten für Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen und Lesebestätigungen. Für Verweise mit `ON DELETE SET NULL` (`events.owner_id`, `*.assignee_id`, `messages.sender_id`, `files.uploaded_by`, `change_log.author_id`) geht das nicht (die Familien-Spalte würde mit auf NULL gesetzt); sie prüft der Sync serverseitig (Phase 1c). Ursprünglich: wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
+- ~~**Recovery-Codes:**~~ erledigt in Phase 1a (HMAC-SHA256 mit Server-Schlüssel): nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
+- ~~**WebSocket-Limits atomar:**~~ erledigt in Phase 1a: Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
+- ~~**Eigener Fehlerhandler:**~~ erledigt in Phase 1a: einheitliche Fehlerantworten ohne interne Details (keine Stacktraces oder Meldungen von Bibliotheken), Fehler nur im Log.
 
 ## 13. Offene Entscheidungen
 

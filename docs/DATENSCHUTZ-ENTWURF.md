@@ -1,8 +1,8 @@
 # Datenschutzerklärung – Entwurf (Familienzentrale)
 
-Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0
+Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0 und 1a (Konten und Anmeldung im Server)
 und die in `docs/PROJEKTBESCHREIBUNG.md` festgelegten Phasen 1 bis 3. Vor dem Echtbetrieb mit Dritten (Großeltern, Gäste) von einer
-fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte „Stand“: **Ist** = heute umgesetzt, **Geplant** = Phase 1 bis 3.
+fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte „Stand“: **Ist** = heute umgesetzt (Server), **Geplant** = Phase 1 (App, Sync, Fachbereiche) bis 3.
 
 ## 1. Verantwortlicher und Geltungsbereich
 
@@ -23,10 +23,13 @@ verbietet Fremdadressen). Es gibt keinen Service Worker und keine Cookies außer
 | Daten | Zweck | Stand | Rechtsgrundlage (Vorschlag) |
 | --- | --- | --- | --- |
 | Verbindungsdaten: IP-Adresse, Zeitpunkt, aufgerufener Pfad (ohne Query), Statuscode, Antwortzeit in den **Server-Logs** | Betrieb, Fehlersuche, Missbrauchsabwehr | Ist (Details: Abschnitt 4) | Art. 6 Abs. 1 lit. f (berechtigtes Interesse an sicherem Betrieb) |
-| Konto: Name, E-Mail, Farbe, Rolle, Familienzugehörigkeit | Anmeldung, Zuordnung der Inhalte | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b bzw. lit. f |
-| Anmeldedaten: Passkey (öffentlicher Schlüssel), Passwort (Argon2id-Hash), TOTP-Geheimnis (verschlüsselt), Wiederherstellungs-Codes (nur Hash) | Anmeldung | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b |
-| Geräte und Sitzungen: Gerätename, Plattform, App-Version, letzte Aktivität, Sitzungs-Token (nur Hash) | Geräteverwaltung, Abmelden einzelner Geräte | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b, f |
-| Sicherheitsprotokoll (Audit-Log): Anmeldung, neues Gerät, Rollenänderung, eingelöster Wiederherstellungs-Code, ggf. IP-Adresse | Missbrauchserkennung | Tabelle vorbereitet (Ist), Befüllung Phase 1 | Art. 6 Abs. 1 lit. f |
+| Konto: Name, E-Mail, Farbe, Rolle, Familienzugehörigkeit, Status (aktiv / wartet auf Freigabe) | Anmeldung, Zuordnung der Inhalte | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b bzw. lit. f |
+| Anmeldedaten: Passkey (Credential-ID, öffentlicher Schlüssel, Zähler), Passwort (Argon2id-Hash), TOTP-Geheimnis (AES-256-GCM-verschlüsselt, Schlüssel außerhalb der Datenbank), Wiederherstellungs-Codes (nur HMAC-Hash, mit Einlöse-Zeitpunkt) | Anmeldung | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b |
+| Einladungen: Rolle, Ersteller, Gültigkeit, Token (nur SHA-256-Hash), optionale PIN (nur HMAC-Hash), Zähler der PIN-Fehlversuche, Zeitpunkte (benutzt, widerrufen, gesperrt) | Aufnahme neuer Mitglieder | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b, f |
+| Geräte und Sitzungen: Gerätename (bei Browsern grob aus dem User-Agent, z. B. „Chrome auf Windows“), Plattform, App-Version, Zeitpunkte (angelegt, zuletzt aktiv, abgelaufen, widerrufen), Sitzungs-Token (nur Hash), Anmeldeart | Geräteverwaltung, Abmelden einzelner Geräte | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b, f |
+| Sicherheitsprotokoll (Audit-Log): Einladung erstellt/benutzt/widerrufen/abgelaufen, PIN-Fehlversuche, Anmeldung (auch fehlgeschlagen), neues Gerät, Rollenänderung, Zurücksetzen, Freigabe/Ablehnung, Wiederherstellungs-Code eingelöst, Wiederverwendung eines Refresh-Tokens, fehlgeschlagene WebSocket-Anmeldung, jeweils mit Zeitpunkt, handelnder Person und IP-Adresse | Missbrauchserkennung, Nachvollziehbarkeit | Ist (Phase 1a); nie Passwörter, Tokens, PINs oder Codes | Art. 6 Abs. 1 lit. f |
+| Fehlversuchs-Zähler (`login_attempts`): Schlüssel aus einem HMAC der IP bzw. der E-Mail-Adresse (keine Klartext-Werte), Anzahl, Zeitpunkte, Sperre | Schutz vor Raten von Passwörtern, Codes und PINs | Ist (Phase 1a) | Art. 6 Abs. 1 lit. f |
+| Kurzlebige Anmeldezustände: WebAuthn-Challenges, angefangene Registrierungen (Name, E-Mail, Passwort-Hash und verschlüsseltes TOTP-Geheimnis bis zum Abschluss), WebSocket-Tickets (nur Hash) | Ablauf der Anmeldung | Ist (Phase 1a), Löschung nach wenigen Minuten bzw. 30 Sekunden | Art. 6 Abs. 1 lit. b |
 | Inhalte: Termine, Chat-Nachrichten (inkl. Lesebestätigungen, Reaktionen), Listen, Aufgaben, Dateien | eigentliche Funktion | Geplant (Phase 1), Fotos u. a. Phase 2 | Art. 6 Abs. 1 lit. b |
 | Standort (Live-Teilen) | Funktion „Standort teilen“ | Geplant (Phase 2) | Art. 6 Abs. 1 lit. a (Einwilligung, Abschnitt 8) |
 | Push-Endpunkt je Gerät (UnifiedPush/Web Push), enthält nie Inhalte | Benachrichtigung „es gibt Neues“ | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b, f |
@@ -46,7 +49,7 @@ Eine Ende-zu-Ende-Verschlüsselung gibt es in Phase 1 bewusst nicht; der Betreib
   Das Journal gilt für alle Dienste des Servers, also auch für andere Projekte auf demselben VPS.
 - **Im Arbeitsspeicher:** Begrenzungen (Rate-Limit, Verbindungen je IP) halten IP-Adressen nur flüchtig im Speicher des Prozesses; sie werden
   nicht gespeichert und gehen beim Neustart verloren.
-- **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt, danach leert ein Aufräum-Job die Spalte **[Phase 1 umsetzen]**.
+- **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt; ein Aufräum-Job (beim Start des Servers und danach täglich) leert die Spalte. Die Fehlversuchs-Zähler enthalten keine Klartext-IP (nur einen HMAC) und werden einen Tag nach dem letzten Fehlversuch gelöscht.
 - **[Prüfen]** Der Hoster (netcup) kann auf Netzwerkebene eigene Verbindungsdaten erfassen (Abschnitt 5).
 
 ## 5. Empfänger und Auftragsverarbeiter
@@ -64,7 +67,7 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 
 ## 6. Cookies, lokale Speicherung, Aktualisierung
 
-- **Web:** Nach der Anmeldung (Phase 1) ein Session-Cookie `HttpOnly; Secure; SameSite=Strict`; technisch notwendig, daher ohne Einwilligungsabfrage
+- **Web:** Nach der Anmeldung ein Session-Cookie `__Host-lxsid` (`HttpOnly; Secure; SameSite=Strict`, ohne Domain); technisch notwendig, daher ohne Einwilligungsabfrage
   (§ 25 Abs. 2 Nr. 2 TDDDG). Die Web-App legt zudem eine lokale Datenbank im Browser an (OPFS/IndexedDB, Offline-Betrieb); sie bleibt auf dem Gerät und wird mit dem Server abgeglichen.
   Kein Service Worker, keine Tracking-Cookies, kein Local-Storage zu Analysezwecken.
 - **Android:** Sitzungs-Token im Android-Keystore (`flutter_secure_storage`, **geplant**, noch nicht eingebaut; ab Phase 1), lokale SQLite-Datenbank; Datensicherung durch Android ist abgeschaltet (`allowBackup=false`).
@@ -99,21 +102,25 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 | Daten | Aufbewahrung |
 | --- | --- |
 | Server-Logs (journald), Client-IP | 7 Tage |
-| `audit_log.ip` | 7 Tage, danach geleert; der Eintrag selbst **[Prüfen: z. B. 12 Monate]** |
-| Sitzungen und Geräte | bis Abmeldung/Ablauf; abgelaufene Sitzungen werden aufgeräumt **[Phase 1]** |
-| Einladungen | 7 Tage gültig, einmalig |
+| `audit_log.ip` | 7 Tage, danach geleert (Aufräum-Job) |
+| `audit_log`-Einträge | 365 Tage (Voreinstellung `AUDIT_RETENTION_DAYS`) **[Prüfen: Dauer festlegen]**, danach gelöscht |
+| Sitzungen und Geräte | Cookie-Sitzung höchstens 30 Tage (7 Tage Leerlauf), App-Sitzung höchstens 90 Tage (30 Tage Leerlauf); abgelaufene Sitzungen löscht der Aufräum-Job einen Tag nach Ablauf, widerrufene nach 30 Tagen, abgemeldete Geräte nach 30 Tagen |
+| Einladungen | 24 Stunden Standard, höchstens 7 Tage gültig, einmalig; nie benutzte, abgelaufene Einladungen werden nach 30 Tagen gelöscht, benutzte bleiben als Nachweis (ohne Token) |
+| WebAuthn-Challenges, angefangene Registrierungen | 5 Minuten |
+| WebSocket-Tickets | 30 Sekunden |
+| Fehlversuchs-Zähler | 1 Tag nach dem letzten Fehlversuch (sofern nicht mehr gesperrt) |
 | Chat, Termine, Listen, Dateien | bis zum Löschen durch die Nutzer; gelöschte Einträge bleiben als **Tombstone** (ohne Inhalt) im Änderungsprotokoll, bis alle Geräte sie kennen |
 | Standortdaten | nach Ende der Freigabe sofort gelöscht |
 | ntfy-Zwischenspeicher | 12 Stunden |
 | Backups (restic, verschlüsselt, externes Ziel) | täglich 7, wöchentlich 4, monatlich 6 Stück **[Phase 1]**; gelöschte Daten verschwinden spätestens nach Ablauf der letzten Sicherung |
 
 Löschkonzept (Phase 1 bis 3): Konto löschen (entfernt Anmeldedaten, Geräte, Sitzungen, Wiederherstellungs-Codes; Inhalte werden dem Betreiber zugeordnet oder auf Wunsch gelöscht), Familie löschen
-(entfernt alle Daten der Familie per Datenbank-Kaskade), Export aller Daten als ZIP (Auskunft/Übertragbarkeit).
+(entfernt alle Daten der Familie per Datenbank-Kaskade), Export aller Daten als ZIP (Auskunft/Übertragbarkeit). Umgesetzt in Phase 1a ist das **Entfernen eines Mitglieds** durch einen Admin (löscht Konto, Anmeldedaten, Geräte, Sitzungen und Wiederherstellungs-Codes; Verweise in Audit-Einträgen werden anonymisiert) sowie das **Ablehnen** wartender Mitglieder.
 
 ## 11. Sicherheitsmaßnahmen (Auszug)
 
 TLS für alle Verbindungen (HSTS); Server in Deutschland **[Prüfen: Standort des netcup-Rechenzentrums und Vertragsunterlagen bestätigen]**; PostgreSQL nur lokal erreichbar; eigener Systembenutzer, gehärteter systemd-Dienst mit Speicher- und Prozessgrenzen; Konfiguration und Geheimnisse nur für root lesbar; strenge
-Sicherheits-Header und Content-Security-Policy; Rate-Limits für Anmeldung und Schnittstellen; Origin-Prüfung am WebSocket; Passkeys und Argon2id; Sitzungs-Wiederverwendungs-Erkennung; Dateien AES-256-GCM
+Sicherheits-Header und Content-Security-Policy; Rate-Limits für Anmeldung und Schnittstellen; Origin-Prüfung am WebSocket und bei ändernden Anfragen, CSRF-Token; Passkeys und Argon2id; TOTP-Geheimnisse verschlüsselt (AES-256-GCM); Wiederherstellungs-Codes und PINs nur als HMAC; getrennte Datenbank-Rollen (Migration/Betrieb); Sitzungs-Wiederverwendungs-Erkennung; verzögerte Sperre nach Fehlversuchen; Dateien AES-256-GCM
 (Phase 1); signierte App-Updates (Ed25519); Backups verschlüsselt.
 
 ## 12. Rechte der Betroffenen
@@ -124,4 +131,4 @@ Anfragen an den Verantwortlichen (Abschnitt 1). **[Prüfen]** zuständige Aufsic
 ## 13. Änderungen
 
 Diese Erklärung wird mit jeder Phase angepasst; die jeweils geltende Fassung steht in der App unter „Einstellungen“ **[Phase 1]**. Offene Punkte vor dem Echtbetrieb: Betreiberangaben (Abschnitt 1), AVV mit netcup,
-Einwilligungstexte für Kinder und Standort, Aufbewahrungsdauer des Audit-Logs, Aufsichtsbehörde.
+Einwilligungstexte für Kinder und Standort, Aufbewahrungsdauer des Audit-Logs, Aufsichtsbehörde. Hinweis zu Phase 1a: Ein E-Mail-Hinweis bei neuem Gerät ist noch **nicht** umgesetzt (kein Mail-Versand); sobald er kommt, ist der Mail-Dienst in Abschnitt 5 zu ergänzen.

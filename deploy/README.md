@@ -16,7 +16,7 @@ Browser/App ──HTTPS──▶ Caddy :443 ─┬─ familie.lx-labs.dev
 Dateien in diesem Ordner:
 
 - `Caddyfile` – Site-Blöcke `familie.lx-labs.dev` und `ntfy.familie.lx-labs.dev` mit strengen Sicherheits-Headern
-- `lx-familie.service` – systemd-Dienst der API (eigener Benutzer, gehärtet, Speicher-/Prozessgrenzen, Migrationen vor dem Start)
+- `lx-familie.service` – systemd-Dienst der API (eigener Benutzer, gehärtet, Speicher-/Prozessgrenzen); `lx-familie-migrate.service` führt vor jedem Start die Migrationen mit der Migrationsrolle aus; `einrichtung-auth.sh` richtet Schlüssel und Datenbank-Rollen ein
 - `deploy.sh` – läuft auf dem Server: Code holen, Server bauen (`npm ci --ignore-scripts`), nur Produktivpakete übertragen, Dienst neu starten, Health-Check mit `"db":"ok"`
 - `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
 - `ntfy/server.yml` – ntfy-Konfiguration (deny-all, nur `up*`-Topics beschreibbar)
@@ -63,7 +63,7 @@ openssl rand -base64 24 | tr -d '/+='
 # Rolle und Datenbank in einer psql-Sitzung. Das Passwort NICHT per psql -c / echo setzen: Befehlszeilen stehen in
 # der Prozessliste, im Shell-Verlauf und (je nach log_statement) im PostgreSQL-Log. \password fragt ohne Anzeige ab.
 sudo -u postgres psql
-postgres=# CREATE ROLE lx_familie LOGIN;
+postgres=# CREATE ROLE lx_familie LOGIN;           -- Laufzeitrolle; die Migrationsrolle lx_familie_migrate legt einrichtung-auth.sh an (Schritt 5)
 postgres=# \password lx_familie
 postgres=# CREATE DATABASE lx_familie OWNER lx_familie ENCODING 'UTF8';
 postgres=# \q
@@ -120,8 +120,9 @@ sudo install -o root -g root -m 600 ~/lx-familienzentrale/server/.env.example /e
 sudoedit /etc/lx-familie/env      # DATABASE_URL mit dem Passwort aus Schritt 1, FILES_DIR=/srv/familie/files
 sudo ls -l /etc/lx-familie/env    # -rw------- root root
 
-sudo cp ~/lx-familienzentrale/deploy/lx-familie.service /etc/systemd/system/
-sudo systemctl daemon-reload
+# Anmeldung (Phase 1a): erzeugt AUTH_SECRET_KEY, trennt die Datenbank-Rollen (Migration/Betrieb) und installiert BEIDE
+# Einheiten (lx-familie.service + lx-familie-migrate.service). Vor dem ersten Deployment ausführen, Details: Abschnitt "Anmeldung und Datenbank-Rollen".
+sudo bash ~/lx-familienzentrale/deploy/einrichtung-auth.sh
 
 # deploy.sh darf den Dienst ohne Passwort neu starten (nur genau diesen Befehl)
 echo 'lx ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-familie' | sudo tee /etc/sudoers.d/lx-familie
@@ -138,7 +139,45 @@ Der Port 4400, `HOST=127.0.0.1` und `NODE_ENV=production` stehen fest in `lx-fam
 
 `deploy.sh` sichert vor jedem Deployment die laufende Version in `/srv/familie/server.prev`. Besteht der Health-Check nach dem Neustart nicht, spielt das Skript die Vorversion automatisch zurück und endet mit Fehler (Migrationen werden nicht zurückgedreht; sie sind nur vorwärts und rückwärtskompatibel).
 
-Beim Start wendet `ExecStartPre` die Migrationen an. Fehler stehen in `sudo journalctl -u lx-familie -n 50`.
+Vor dem Start wendet `lx-familie-migrate.service` die Migrationen an (mit der Migrationsrolle). Fehler stehen in `sudo journalctl -u lx-familie -n 50`.
+
+### Anmeldung und Datenbank-Rollen (Phase 1a)
+
+Ab Phase 1a gibt es Konten. Dafür braucht der Server (alles erledigt `deploy/einrichtung-auth.sh`, idempotent, auch für eine **bestehende Installation**):
+
+- **`AUTH_SECRET_KEY`** in `/etc/lx-familie/env` (256 Bit, Base64): Hauptschlüssel für die TOTP-Verschlüsselung (AES-256-GCM) und die HMACs von Wiederherstellungs-Codes und Einladungs-PINs. Ohne ihn startet der Dienst in `production` nicht (fail-closed; `deploy.sh` spielt dann die Vorversion zurück). Er liegt **außerhalb der Datenbank**, darf nie geändert oder verloren gehen (sonst sind alle TOTP-Geheimnisse und Codes unbrauchbar) und gehört in die Datensicherung, getrennt vom Datenbank-Dump. Alternativ `AUTH_SECRET_KEY_FILE`.
+- **Zwei Datenbank-Rollen:** `lx_familie_migrate` (Eigentümer von Datenbank und Tabellen, darf DDL, nur für Migrationen) und `lx_familie` (Laufzeit, nur SELECT/INSERT/UPDATE/DELETE; `ALTER DEFAULT PRIVILEGES` gibt Tabellen künftiger Migrationen automatisch dieselben Rechte). `DATABASE_URL` in `/etc/lx-familie/env` bleibt die Laufzeitrolle; die Zugangsdaten der Migrationsrolle stehen als `MIGRATION_DATABASE_URL` nur in `/etc/lx-familie/migrate.env` (`root:root`, 0600), die ausschließlich `lx-familie-migrate.service` lädt. Der Dienst selbst kennt sie nicht.
+- **`lx-familie-migrate.service`** (oneshot, `Requires=` von `lx-familie.service`) ersetzt das frühere `ExecStartPre`: Vor jedem Start laufen die Migrationen mit der Migrationsrolle. Fehlt `migrate.env`, nutzt `migrate-cli` `DATABASE_URL` (Rückfall für Installationen mit einer Rolle).
+- Passkeys: `WEBAUTHN_RP_ID` (Standard: Hostname von `PUBLIC_URL`, also `familie.lx-labs.dev`). Ein späterer Wechsel der RP-ID macht alle Passkeys unbrauchbar.
+
+**Umstellung einer laufenden Installation:** `git pull`, dann direkt nacheinander
+
+```bash
+sudo bash ~/lx-familienzentrale/deploy/einrichtung-auth.sh     # Schlüssel, Rollen, Einheiten (ändert den laufenden Dienst nicht)
+bash ~/lx-familienzentrale/deploy/deploy.sh                    # baut, migriert (Migration 0001) und startet neu
+```
+
+Zwischen beiden Schritten sollte der Server nicht neu starten: die alte Programmversion kennt die getrennten Rollen nicht (sie würde beim Start die Migrationen mit der Laufzeitrolle versuchen und scheitern). Die laufende Version arbeitet mit der Laufzeitrolle weiter, weil sie nur DML braucht.
+
+#### Erster Admin (Bootstrap)
+
+Es gibt genau eine Familie und keine offene Registrierung. Den ersten Admin legt der Betreiber auf dem Server an (nach dem Deployment):
+
+```bash
+sudo node --env-file=/etc/lx-familie/env /srv/familie/server/dist/cli/bootstrap.js --family "Familie Beispiel" [--pin]
+```
+
+Das Skript legt Familie und eine Einladung für den ersten Admin an und gibt den Link `https://familie.lx-labs.dev/#/einladung/<Token>` aus (Einmaltoken, 7 Tage gültig; in der Datenbank steht nur der SHA-256-Hash; das Token steht im URL-Fragment und taucht in keinem Log auf). `--pin` verlangt zusätzlich eine 6-stellige PIN, die getrennt weitergegeben wird. Ein erneuter Aufruf vor dem Einlösen ersetzt die Einladung; nach dem Einlösen bricht er ab (`already_bootstrapped`).
+
+**Notfall** (der einzige Admin hat Passkey/Passwort und alle Wiederherstellungs-Codes verloren):
+
+```bash
+sudo node --env-file=/etc/lx-familie/env /srv/familie/server/dist/cli/bootstrap.js --reset admin@example.org
+```
+
+widerruft alle Anmeldedaten, Sitzungen und Codes dieses Mitglieds und gibt einen neuen Einladungslink für dasselbe Konto aus.
+
+**Aufräumen:** Beim Start und danach täglich leert der Dienst die IP-Spalte im Audit-Log (älter als 7 Tage), löscht Audit-Einträge nach `AUDIT_RETENTION_DAYS` (Standard 365) sowie abgelaufene Sitzungen, Challenges, Tickets und Fehlversuche und protokolliert abgelaufene Einladungen.
 
 ### 6. Caddy
 
