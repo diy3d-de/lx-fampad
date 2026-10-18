@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
 import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
@@ -8,12 +9,36 @@ export interface SystemDeps {
   pingDb?: () => Promise<void>;
 }
 
+const WEB_VERSION_FORMAT = /^[A-Za-z0-9._-]{1,64}$/;
+
+/** Bricht [work] nach [ms] ab (der Pool hat zusätzlich eigene Timeouts). */
+function withTimeout<T>(work: Promise<T>, ms: number): Promise<T> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Zeitüberschreitung nach ${ms} ms`)), ms);
+  });
+  return Promise.race([work, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Version des Web-Builds: aus WEB_VERSION oder der Datei, die deploy-web.sh mitliefert (null, wenn unbekannt). */
+async function readWebVersion(config: Config): Promise<string | null> {
+  if (config.webVersion) return config.webVersion;
+  if (!config.webVersionFile) return null;
+  try {
+    const text = (await readFile(config.webVersionFile, 'utf8')).trim();
+    return WEB_VERSION_FORMAT.test(text) ? text : null;
+  } catch {
+    return null;
+  }
+}
+
 export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: SystemDeps): void {
-  app.get('/api/v1/health', async (_req, reply) => {
+  // Health-Check ist vom Rate-Limit ausgenommen (deploy.sh und Überwachung rufen ihn oft ab)
+  app.get('/api/v1/health', { config: { rateLimit: false } }, async (_req, reply) => {
     reply.header('Cache-Control', 'no-store');
     if (!pingDb) return { status: 'ok', db: 'skipped' };
     try {
-      await pingDb();
+      await withTimeout(pingDb(), config.healthTimeoutMs);
       return { status: 'ok', db: 'ok' };
     } catch (err) {
       app.log.error({ err }, 'Datenbank nicht erreichbar');
@@ -29,7 +54,7 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: S
       protocolVersion: PROTOCOL_VERSION,
       minProtocolVersion: MIN_PROTOCOL_VERSION,
       minAppVersion: config.minAppVersion,
-      webVersion: config.webVersion ?? null,
+      webVersion: await readWebVersion(config),
     };
   });
 }

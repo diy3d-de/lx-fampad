@@ -3,6 +3,7 @@ import type { WebSocket } from 'ws';
 /** Server -> Client. Der WebSocket meldet nur "neue Revision N"; Daten holt der Client per /api/v1/sync. */
 export type ServerMessage =
   | { type: 'hello'; protocolVersion: number; serverVersion: string }
+  | { type: 'ready' }
   | { type: 'pong' }
   | { type: 'rev'; rev: number }
   | { type: 'error'; code: string };

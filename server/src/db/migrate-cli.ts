@@ -7,7 +7,7 @@ import { createDb } from './index.js';
 const config = loadConfig();
 if (!config.databaseUrl) throw new Error('DATABASE_URL fehlt');
 
-const { db, pool } = createDb(config.databaseUrl);
+const { db, pool } = createDb(config.databaseUrl, (err) => console.error('Datenbank-Fehler:', err));
 try {
   await migrate(db, { migrationsFolder: fileURLToPath(new URL('../../drizzle', import.meta.url)) });
   console.log('Migrationen angewendet');
