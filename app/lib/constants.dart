@@ -85,12 +85,19 @@ const kPackageName = 'dev.lx_labs.familienzentrale';
 const kUpdatePublicKey = 't0zasQh0NHzkm8Xk7o4+StCnrNd1+ewgY9U4EmlhF18=';
 
 /// Kennung des Schlüssels (keyId im signierten Manifest); beim Schlüsselwechsel hochzählen.
-const kUpdateKeyId = 'platzhalter';
+const kUpdateKeyId = kPlatzhalterKeyId;
+
+/// Kennung des Platzhalter-Schlüssels. Solange [kUpdateKeyId] diesen Wert hat, lehnt die App jedes Update-Manifest hart ab
+/// (auch ein Manifest, das jemand mit dem Platzhalter-Schlüssel oder einer Schlüssel-ID "platzhalter" signiert).
+const kPlatzhalterKeyId = 'platzhalter';
 
 /// Prüft die Basisadressen: Außerhalb des Debug-Modus nur HTTPS (das `assert` allein würde im Release entfallen).
-/// Wirft [StateError] bei Klartext-Adressen. [debug] ist für Tests überschreibbar.
-void pruefeBasisAdressen({bool? debug, String api = kApiBase, String releases = kReleasesBase}) {
+/// Im Android-Release muss API_BASE gesetzt sein (ohne sie gäbe es keinen Server; im Web ist sie bewusst leer).
+/// Wirft [StateError] bei Klartext-Adressen oder fehlender Adresse. [debug] und [android] sind für Tests überschreibbar.
+void pruefeBasisAdressen({bool? debug, bool? android, String api = kApiBase, String releases = kReleasesBase}) {
   if (debug ?? kDebugMode) return;
+  final istAndroid = android ?? (!kIsWeb && defaultTargetPlatform == TargetPlatform.android);
+  if (istAndroid && api.isEmpty) throw StateError('API_BASE fehlt: Android-Release mit --dart-define=API_BASE=https://… bauen');
   if (api.isNotEmpty && !api.startsWith('https://')) throw StateError('API_BASE muss mit https:// beginnen');
   if (!releases.startsWith('https://')) throw StateError('RELEASES_BASE muss mit https:// beginnen');
 }

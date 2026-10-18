@@ -12,29 +12,34 @@ Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Frei
       (Karte später zusätzlich 5–10 GB).
 - [ ] Belegte Ports: `ss -tlnp` — frei sein müssen `127.0.0.1:4400` (API), `127.0.0.1:2586` (ntfy), `127.0.0.1:5432` (PostgreSQL).
 - [ ] lx-labs läuft: `systemctl status lx-labs`, `curl -sI https://lx-labs.dev | head -3` — Ausgangszustand merken.
-- [ ] Sicherung der Caddy-Konfiguration: `cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.vor-familie`.
-- [ ] Vorschlag für `lx-labs/deploy/Caddyfile` vorbereiten: `import /etc/caddy/conf.d/*.caddy` (siehe C. und deploy/README), damit ein
+- [ ] Sicherung der Caddy-Konfiguration: `sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.vor-familie` (README 6 legt sie ebenfalls an).
+- [ ] Haupt-Caddyfile von lx-labs setzt **kein globales `log`** (`grep -n '^[[:space:]]*log' /etc/caddy/Caddyfile`, Treffer einzeln ansehen); sonst gäbe es Zugriffslogs mit IPs auch für die Familie.
+- [ ] Firewall-Ausgangszustand: `sudo ufw status verbose` (aktiv; nur 22, 80, 443 offen) notieren.
+- [ ] Vorschlag für `lx-labs/deploy/Caddyfile` vorbereiten: `import /etc/caddy/conf.d/*.caddy` (siehe README 6), damit ein
       lx-labs-Deploy die Familien-Site nicht mehr entfernt.
 
 ## B. Reihenfolge der Einrichtung (jeweils danach lx-labs.dev prüfen, siehe E.)
 
 1. **DNS** bei Cloudflare: `familie` und `ntfy.familie` als A-Record, *DNS only* (README 0). Betrifft nur die neuen Namen.
 2. **PostgreSQL 17** installieren, Rolle und Datenbank `lx_familie` anlegen, Passwort per `\password` (README 1).
-3. **Systembenutzer, Verzeichnisse** (`/srv/familie`), `/etc/lx-familie/env` als `root:root 0600` (README 2).
+3. **Systembenutzer, Verzeichnisse** (`/srv/familie`, auch `server.prev`), `/etc/lx-familie/env` als `root:root 0600` (README 2).
 4. **Node 24**: nur nutzen, falls lx-labs dieselbe Hauptversion hat; sonst nicht systemweit ändern (README 3).
-5. **Code holen, Dienst einrichten** (README 4–5): `lx-familie.service` startet auf `127.0.0.1:4400`. Prüfen: `curl http://127.0.0.1:4400/api/v1/health` liefert `"db":"ok"`.
-6. **Caddy**: `familie.caddy` nach `/etc/caddy/conf.d/`, **erst** `caddy validate --config /etc/caddy/Caddyfile`, dann `systemctl reload caddy` (README 6). Bei Fehler: Rückbau C.
-7. **ntfy** auf eigener Subdomain, `deny-all`, danach Benutzer pro Handy (README 7).
-8. **Web-App hochladen** mit `deploy-web.sh` (README 8).
-9. **Erst später:** `assetlinks.json`, `latest.json` und APK **nicht** hochladen, bis der Ed25519-Verifier und die Signatur fertig sind (README 9).
+5. **journald auf 7 Tage begrenzen** (`MaxRetentionSec=7day`, README 5, erster Block) — **vor** dem ersten Start des Dienstes, weil ab dann IP-Adressen im Journal stehen. Prüfen: `journalctl --disk-usage`.
+6. **Code holen, Dienst einrichten** (README 4–5): `lx-familie.service` startet auf `127.0.0.1:4400`; sudoers-Datei mit `sudo visudo -cf /etc/sudoers.d/lx-familie` prüfen. Prüfen: `curl http://127.0.0.1:4400/api/v1/health` liefert `"db":"ok"`.
+7. **Caddy**: `familie.caddy` nach `/etc/caddy/conf.d/`, Haupt-Caddyfile sichern (`Caddyfile.vor-familie`), Import-Zeile anfügen, **erst** `caddy validate --config /etc/caddy/Caddyfile`, bei Fehler sofort zurückkopieren, **dann** `systemctl reload caddy` (README 6). Bei Fehler: Rückbau C.
+8. **ntfy** auf eigener Subdomain: Paketquelle erst nach Fingerabdruck-Vergleich mit docs.ntfy.sh, `deny-all`, danach Benutzer pro Handy (README 7).
+9. **Web-App hochladen** mit `deploy-web.sh` (README 8).
+10. **Erst später:** `assetlinks.json`, `latest.json` und APK **nicht** hochladen, bis der echte Update-Schlüssel erzeugt und in der App eingebaut ist (README 9). Die Ed25519-Prüfung in der App ist fertig; bis dahin steht ein Platzhalter-Schlüssel (`kUpdateKeyId == 'platzhalter'`) in der App und sie lehnt jedes Manifest ab.
 
 ## C. Rückbau (jeweils unabhängig von lx-labs)
 
 | Stufe | Befehle (als root) |
 | --- | --- |
-| Nur Caddy | `rm /etc/caddy/conf.d/familie.caddy` (bzw. Import-Zeile entfernen) → `caddy validate` → `systemctl reload caddy` |
+| Nur Caddy | `rm /etc/caddy/conf.d/familie.caddy`, Import-Zeile `import /etc/caddy/conf.d/*.caddy` aus `/etc/caddy/Caddyfile` entfernen (oder `Caddyfile.vor-familie` zurückkopieren) → `caddy validate --config /etc/caddy/Caddyfile` → `systemctl reload caddy` |
 | Dienst | `systemctl disable --now lx-familie ntfy` |
-| Alles | zusätzlich: `rm /etc/systemd/system/lx-familie.service`, `userdel` des Systembenutzers, `dropdb lx_familie`, `dropuser lx_familie`, `rm -r /srv/familie /etc/lx-familie`, DNS-Einträge löschen |
+| Alles | zusätzlich: `rm /etc/systemd/system/lx-familie.service` (+ `systemctl daemon-reload`), `rm /etc/sudoers.d/lx-familie`, `gpasswd -d lx lx-familie` (macht `usermod -aG lx-familie lx` rückgängig), `userdel lx-familie`, `dropdb lx_familie`, `dropuser lx_familie`, `rm -r /srv/familie /etc/lx-familie`, DNS-Einträge löschen |
+| ntfy-Quelle | `apt-mark unhold ntfy && apt purge ntfy`, `rm /etc/apt/sources.list.d/ntfy.list /etc/apt/keyrings/ntfy.gpg`, `apt update` |
+| journald | `rm /etc/systemd/journald.conf.d/lx-retention.conf` → `systemctl restart systemd-journald` (Achtung: gilt für alle Dienste; Löschen ist nur sinnvoll, wenn die 7-Tage-Grenze auch für lx-labs nicht mehr gewollt ist) |
 | Notfall | Snapshot aus A. zurückspielen |
 
 `Caddyfile.vor-familie` zurückkopieren und `systemctl reload caddy`, falls das Haupt-Caddyfile selbst verändert wurde.
@@ -51,11 +56,13 @@ Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Frei
 - [ ] `systemctl is-active lx-labs caddy` → beide `active`
 - [ ] `journalctl -u caddy -n 20 --no-pager` ohne Fehler
 - [ ] `free -h` und `uptime`: Last/RAM im Rahmen (bei mehr als ca. 80 % RAM: Limits der Units senken oder Server vergrößern)
-- [ ] nach Schritt 6/8: `https://familie.lx-labs.dev` lädt, Netzwerk-Tab ohne Fremdabrufe, `crossOriginIsolated === true`
+- [ ] Firewall: `sudo ufw status verbose` unverändert gegenüber A. (nur 22, 80, 443)
+- [ ] **von außen** (anderer Rechner/Handy-Netz, nicht vom Server): `nc -zv -w 3 <SERVER-IP> 4400`, `2586`, `5432` müssen alle fehlschlagen (Zeitüberschreitung/refused); nur 80/443 antworten
+- [ ] nach Schritt 7/9: `https://familie.lx-labs.dev` lädt, Netzwerk-Tab ohne Fremdabrufe, `crossOriginIsolated === true`
 - [ ] Sicherheit: `curl -sI https://familie.lx-labs.dev` zeigt HSTS, CSP, COOP/COEP; `https://ntfy.familie.lx-labs.dev` verlangt Anmeldung
 
 ## F. Danach (Betrieb)
 
 - [ ] Backup-Job (`pg_dump` + Dateien, restic) einrichten und eine Wiederherstellung testen.
-- [ ] journald auf 7 Tage begrenzen (`MaxRetentionSec=7day`).
+- [ ] journald-Begrenzung (7 Tage) ist bereits aus Schritt 5 aktiv: `journalctl --disk-usage` und `cat /etc/systemd/journald.conf.d/lx-retention.conf` kontrollieren.
 - [ ] Datenschutzerklärung veröffentlichen, bevor andere Personen das System nutzen.

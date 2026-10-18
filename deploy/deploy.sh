@@ -2,6 +2,7 @@
 # Läuft auf dem Server (vom PC aus gestartet: ssh lx-labs bash lx-familienzentrale/deploy/deploy.sh):
 # neuesten Stand von GitHub holen, Server bauen, nach /srv/familie/server übertragen, Dienst neu starten.
 # Die Web-App wird getrennt mit deploy/deploy-web.sh hochgeladen (Flutter ist nicht auf dem Server installiert).
+# Die Vorversion bleibt in /srv/familie/server.prev; schlägt der Health-Check nach dem Neustart fehl, wird sie automatisch zurückgespielt.
 # Datenbank-Migrationen laufen beim Start des Dienstes (ExecStartPre in lx-familie.service).
 #
 # Pakete: Installation immer mit --ignore-scripts (kein fremder Code aus Paket-Skripten auf dem Server). Gebaut wird mit
@@ -13,6 +14,8 @@ cd "$(dirname "$0")/.."
 TARGET=/srv/familie/server
 # Fest: derselbe Port steht in lx-familie.service und deploy/Caddyfile (die env-Datei ist für lx nicht lesbar)
 PORT=4400
+# Vorversion für den automatischen Rückfall (nur lx schreibbar, siehe deploy/README.md, Schritt 2)
+PREV=/srv/familie/server.prev
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
@@ -31,38 +34,67 @@ cp package.json package-lock.json "$STAGE/"
 
 echo "==> nach $TARGET übertragen"
 mkdir -p "$TARGET"
+# Vorversion sichern (für den automatischen Rückfall). Das Verzeichnis legt die Einrichtung an (README, Schritt 2),
+# weil lx in /srv/familie nichts anlegen darf. Beim allerersten Deployment gibt es noch nichts zu sichern.
+HAT_VORVERSION=0
+if [ -f "$TARGET/dist/server.js" ]; then
+  if [ ! -d "$PREV" ] || [ ! -w "$PREV" ]; then
+    echo "==> FEHLER: $PREV fehlt oder ist nicht beschreibbar (deploy/README.md, Schritt 2). Es wurde nichts verändert." >&2
+    exit 1
+  fi
+  rsync -a --delete "$TARGET/" "$PREV/"
+  HAT_VORVERSION=1
+fi
 rsync -a --delete dist/ "$TARGET/dist/"
 rsync -a --delete drizzle/ "$TARGET/drizzle/"
 rsync -a --delete "$STAGE/node_modules/" "$TARGET/node_modules/"
 cp package.json package-lock.json "$TARGET/"
 cd ..
 
+# Erst "fertig" melden, wenn der Dienst antwortet UND die Datenbank erreichbar ist
+# ("db":"ok"; ohne Datenbank meldet der Dienst "skipped", mit Fehler 503 und "down").
+# Der Aufruf kommt von 127.0.0.1 und ist daher vom Rate-Limit ausgenommen (server/src/routes/system.ts).
+url="http://127.0.0.1:${PORT}/api/v1/health"
+warte_auf_health() {
+  local i
+  for i in $(seq 1 30); do
+    if curl -fsS --max-time 3 "$url" 2>/dev/null | grep -q '"db":"ok"'; then
+      echo "==> online mit Datenbank nach ${i}s"
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
 echo "==> restart"
 sudo systemctl restart lx-familie
-
-# Erst "fertig" melden, wenn der Dienst wieder antwortet UND die Datenbank erreichbar ist
-# ("db":"ok"; ohne Datenbank meldet der Dienst "skipped", mit Fehler 503 und "down").
-url="http://127.0.0.1:${PORT}/api/v1/health"
-for i in $(seq 1 30); do
-  if curl -fsS --max-time 3 "$url" 2>/dev/null | grep -q '"db":"ok"'; then
-    echo "==> online mit Datenbank nach ${i}s"
-    break
+if ! warte_auf_health; then
+  echo "==> FEHLER: Dienst antwortet nach 30s nicht mit \"db\":\"ok\". Logs: sudo journalctl -u lx-familie -n 50" >&2
+  if [ "$HAT_VORVERSION" -eq 1 ]; then
+    echo "==> Rückfall auf die Vorversion ($PREV)" >&2
+    rsync -a --delete "$PREV/" "$TARGET/"
+    sudo systemctl restart lx-familie
+    if warte_auf_health; then
+      echo "==> Vorversion läuft wieder. Die neue Version ist NICHT aktiv; Ursache in den Logs suchen." >&2
+      echo "    Hinweis: Migrationen der neuen Version wurden schon angewendet (nur vorwärts, rückwärtskompatibel)." >&2
+    else
+      echo "==> FEHLER: auch die Vorversion antwortet nicht. Logs: sudo journalctl -u lx-familie -n 50" >&2
+    fi
+  else
+    echo "==> Keine Vorversion vorhanden, kein Rückfall möglich." >&2
   fi
-  if [ "$i" -eq 30 ]; then
-    echo "==> FEHLER: Dienst antwortet nach 30s nicht mit \"db\":\"ok\". Logs: sudo journalctl -u lx-familie -n 50" >&2
-    exit 1
-  fi
-  sleep 1
-done
+  exit 1
+fi
 
 # Caddy-Konfiguration wird nicht automatisch übernommen (braucht sudo mit Passwort)
-if ! cmp -s deploy/Caddyfile /etc/caddy/familie.caddy; then
-  echo "==> Hinweis: deploy/Caddyfile weicht von /etc/caddy/familie.caddy ab. Übernehmen mit:"
-  echo "    sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/familie.caddy && sudo systemctl reload caddy"
+if ! cmp -s deploy/Caddyfile /etc/caddy/conf.d/familie.caddy; then
+  echo "==> Hinweis: deploy/Caddyfile weicht von /etc/caddy/conf.d/familie.caddy ab. Übernehmen mit:"
+  echo "    sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/conf.d/familie.caddy && caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy"
 fi
 # Ein Deploy von lx-labs ersetzt /etc/caddy/Caddyfile und entfernt dabei die Import-Zeile (deploy/README.md, Schritt 6)
-if ! grep -qs '^[[:space:]]*import[[:space:]]\+/etc/caddy/familie\.caddy' /etc/caddy/Caddyfile; then
-  echo "==> WARNUNG: /etc/caddy/Caddyfile enthält die Zeile 'import /etc/caddy/familie.caddy' nicht (nach einem lx-labs-Deploy?)." >&2
+if ! grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then
+  echo "==> WARNUNG: /etc/caddy/Caddyfile enthält die Zeile 'import /etc/caddy/conf.d/*.caddy' nicht (nach einem lx-labs-Deploy?)." >&2
   echo "    familie.lx-labs.dev ist dann nicht erreichbar. Siehe deploy/README.md, Schritt 6." >&2
 fi
 

@@ -190,9 +190,21 @@ describe('Rate-Limit', () => {
     expect((await get('203.0.113.2')).statusCode).toBe(200);
   });
 
-  it('nimmt den Health-Check aus, damit Überwachung und Deploy nie ausgesperrt werden', async () => {
+  it('begrenzt den Health-Check von außen (Client-IP aus X-Forwarded-For)', async () => {
+    const instance = await start({ env: { RATE_LIMIT_MAX: '2' } });
+    const get = (ip: string) => instance.inject({ url: '/api/v1/health', headers: { 'x-forwarded-for': ip } });
+    expect((await get('203.0.113.1')).statusCode).toBe(200);
+    expect((await get('203.0.113.1')).statusCode).toBe(200);
+    expect((await get('203.0.113.1')).statusCode).toBe(429);
+    expect((await get('203.0.113.2')).statusCode).toBe(200);
+  });
+
+  it('nimmt nur 127.0.0.1 vom Limit des Health-Checks aus (deploy.sh)', async () => {
     const instance = await start({ env: { RATE_LIMIT_MAX: '1' } });
     for (let i = 0; i < 5; i++) expect((await instance.inject('/api/v1/health')).statusCode).toBe(200);
+    // andere Routen bleiben auch für 127.0.0.1 begrenzt
+    expect((await instance.inject('/api/v1/version')).statusCode).toBe(200);
+    expect((await instance.inject('/api/v1/version')).statusCode).toBe(429);
   });
 });
 

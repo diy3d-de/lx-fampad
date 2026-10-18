@@ -12,6 +12,8 @@ import 'package:lx_familienzentrale/features/update/versions.dart';
 final _seed = List<int>.generate(32, (i) => i + 1);
 final _otherSeed = List<int>.generate(32, (i) => 100 + i);
 final _jetzt = DateTime.utc(2026, 10, 18, 12);
+// Schlüssel-ID der Testmanifeste (die eingebaute ID ist solange "platzhalter", und dann wird nichts akzeptiert)
+const _testKeyId = 'testschluessel';
 
 Future<(Ed25519ManifestVerifier, SimpleKeyPair)> _schluessel(List<int> seed) async {
   final pair = await Ed25519().newKeyPairFromSeed(seed);
@@ -35,11 +37,11 @@ final gueltig = <String, Object?>{
   'size': 1234,
   'notes': 'Neu',
   'issuedAt': '2026-10-17T12:00:00Z',
-  'keyId': kUpdateKeyId,
+  'keyId': _testKeyId,
 };
 
 Future<UpdateInfo> _parse(String json, ManifestVerifier v, {int code = 1, DateTime? jetzt}) =>
-    parseManifest(json, verifier: v, installierteVersionCode: code, jetzt: jetzt ?? _jetzt);
+    parseManifest(json, verifier: v, installierteVersionCode: code, jetzt: jetzt ?? _jetzt, keyId: _testKeyId);
 
 void main() {
   group('compareVersions', () {
@@ -214,6 +216,19 @@ void main() {
       expect((await _parse(await _manifest({...gueltig, 'size': 1}, key), verifier)).size, 1);
     });
 
+    test('lehnt jedes Manifest hart ab, solange die Schlüssel-ID "platzhalter" ist', () async {
+      expect(kUpdateKeyId, kPlatzhalterKeyId); // Stand vor dem ersten Release; mit echtem Schlüssel entfällt dieser Check
+      final manifest = await _manifest({...gueltig, 'keyId': kPlatzhalterKeyId}, key);
+      await expectLater(
+        parseManifest(manifest, verifier: verifier, installierteVersionCode: 1, jetzt: _jetzt),
+        throwsA(predicate((e) => '$e'.contains('Platzhalter'))),
+      );
+      await expectLater(
+        parseManifest(manifest, verifier: verifier, installierteVersionCode: 1, jetzt: _jetzt, keyId: kPlatzhalterKeyId),
+        throwsA(predicate((e) => '$e'.contains('Platzhalter'))),
+      );
+    });
+
     test('lehnt unsigniertes Manifest ab', () async {
       await expectLater(_parse(jsonEncode(gueltig), verifier), throwsException);
     });
@@ -257,7 +272,13 @@ void main() {
       expect(() => pruefeBasisAdressen(debug: true, api: 'http://localhost:4400', releases: 'http://localhost/r'), returnsNormally);
       expect(() => pruefeBasisAdressen(debug: false, api: 'http://x', releases: 'https://x/r'), throwsStateError);
       expect(() => pruefeBasisAdressen(debug: false, api: 'https://x', releases: 'http://x/r'), throwsStateError);
-      expect(() => pruefeBasisAdressen(debug: false, api: '', releases: 'https://x/r'), returnsNormally);
+      expect(() => pruefeBasisAdressen(debug: false, android: false, api: '', releases: 'https://x/r'), returnsNormally);
+    });
+
+    test('Android-Release ohne API_BASE wird abgelehnt (Web darf leer sein)', () {
+      expect(() => pruefeBasisAdressen(debug: false, android: true, api: '', releases: 'https://x/r'), throwsStateError);
+      expect(() => pruefeBasisAdressen(debug: false, android: true, api: 'https://x', releases: 'https://x/r'), returnsNormally);
+      expect(() => pruefeBasisAdressen(debug: true, android: true, api: '', releases: 'http://x/r'), returnsNormally);
     });
 
     test('die eingebauten Standardwerte sind HTTPS', () {

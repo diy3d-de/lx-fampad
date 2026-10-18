@@ -33,8 +33,9 @@ async function readWebVersion(config: Config): Promise<string | null> {
 }
 
 export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: SystemDeps): void {
-  // Health-Check ist vom Rate-Limit ausgenommen (deploy.sh und Überwachung rufen ihn oft ab)
-  app.get('/api/v1/health', { config: { rateLimit: false } }, async (_req, reply) => {
+  // Health-Check bleibt begrenzt (er fragt die Datenbank ab). Nur Aufrufe von 127.0.0.1 (deploy.sh, lokale Überwachung)
+  // sind ausgenommen; über Caddy ist req.ip die echte Client-IP aus X-Forwarded-For, nie 127.0.0.1.
+  app.get('/api/v1/health', { config: { rateLimit: { allowList: ['127.0.0.1'] } } }, async (_req, reply) => {
     reply.header('Cache-Control', 'no-store');
     if (!pingDb) return { status: 'ok', db: 'skipped' };
     try {

@@ -38,8 +38,9 @@ Eine Ende-zu-Ende-Verschlüsselung gibt es in Phase 1 bewusst nicht; der Betreib
 
 - **Was geschrieben wird:** Die API (Fastify/Pino) protokolliert je Anfrage Methode, Pfad **ohne Query-Parameter**, Host, Client-IP
   (aus `X-Forwarded-For` von Caddy), Statuscode und Antwortzeit. `Cookie`- und `Authorization`-Header werden geschwärzt und nie geloggt;
-  Tickets und Tokens stehen nie in der URL. Caddy schreibt keine eigenen Zugriffslogs (kein `log`-Block im Caddyfile). Der ntfy-Server
-  und systemd erzeugen Betriebsmeldungen im selben Journal.
+  Tickets und Tokens stehen nie in der URL. Caddy schreibt keine eigenen Zugriffslogs (kein `log`-Block im Caddyfile; **[Prüfen]** der Haupt-Caddyfile von lx-labs setzt kein globales `log`). Caddy schreibt aber sein
+  Betriebs- und Fehlerlog ins Journal (Einheit `caddy`); darin können bei Fehlern (z. B. fehlgeschlagene TLS-Verbindungen, Proxy-Fehler) Client-IP-Adressen stehen. Der ntfy-Server,
+  systemd und weitere Dienste des Servers (z. B. SSH-Anmeldeversuche) erzeugen Meldungen im selben Journal, ebenfalls mit möglichen IP-Adressen.
 - **Wohin:** systemd-journald auf dem Server.
 - **Wie lange:** höchstens **7 Tage** (`MaxRetentionSec=7day`, Einrichtung in `deploy/README.md`, Abschnitt „Logs und Datenschutz“).
   Das Journal gilt für alle Dienste des Servers, also auch für andere Projekte auf demselben VPS.
@@ -66,7 +67,7 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 - **Web:** Nach der Anmeldung (Phase 1) ein Session-Cookie `HttpOnly; Secure; SameSite=Strict`; technisch notwendig, daher ohne Einwilligungsabfrage
   (§ 25 Abs. 2 Nr. 2 TDDDG). Die Web-App legt zudem eine lokale Datenbank im Browser an (OPFS/IndexedDB, Offline-Betrieb); sie bleibt auf dem Gerät und wird mit dem Server abgeglichen.
   Kein Service Worker, keine Tracking-Cookies, kein Local-Storage zu Analysezwecken.
-- **Android:** Sitzungs-Token im Android-Keystore (`flutter_secure_storage`), lokale SQLite-Datenbank; Datensicherung durch Android ist abgeschaltet (`allowBackup=false`).
+- **Android:** Sitzungs-Token im Android-Keystore (`flutter_secure_storage`, **geplant**, noch nicht eingebaut; ab Phase 1), lokale SQLite-Datenbank; Datensicherung durch Android ist abgeschaltet (`allowBackup=false`).
 - **App-Update (Android):** Die App ruft `familie.lx-labs.dev/releases/android/latest.json` und die APK von der eigenen Domain ab (die Verbindungsdaten aus Abschnitt 4 fallen an);
   das Manifest ist signiert, Prüfung auf dem Gerät. Zusätzlich liest die App `/api/v1/version`. Es werden keine Gerätekennungen übertragen.
 
@@ -111,7 +112,7 @@ Löschkonzept (Phase 1 bis 3): Konto löschen (entfernt Anmeldedaten, Geräte, S
 
 ## 11. Sicherheitsmaßnahmen (Auszug)
 
-TLS für alle Verbindungen (HSTS); Server in Deutschland; PostgreSQL nur lokal erreichbar; eigener Systembenutzer, gehärteter systemd-Dienst mit Speicher- und Prozessgrenzen; Konfiguration und Geheimnisse nur für root lesbar; strenge
+TLS für alle Verbindungen (HSTS); Server in Deutschland **[Prüfen: Standort des netcup-Rechenzentrums und Vertragsunterlagen bestätigen]**; PostgreSQL nur lokal erreichbar; eigener Systembenutzer, gehärteter systemd-Dienst mit Speicher- und Prozessgrenzen; Konfiguration und Geheimnisse nur für root lesbar; strenge
 Sicherheits-Header und Content-Security-Policy; Rate-Limits für Anmeldung und Schnittstellen; Origin-Prüfung am WebSocket; Passkeys und Argon2id; Sitzungs-Wiederverwendungs-Erkennung; Dateien AES-256-GCM
 (Phase 1); signierte App-Updates (Ed25519); Backups verschlüsselt.
 

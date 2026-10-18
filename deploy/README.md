@@ -27,6 +27,8 @@ Verzeichnisse auf dem Server:
 | --- | --- | --- |
 | `~/lx-familienzentrale` | Git-Checkout (nur lesend per Deploy-Key) | `lx` |
 | `/srv/familie/server` | gebauter Server (`dist`, `drizzle`, `node_modules`) | `lx`, Gruppe `lx-familie` |
+| `/srv/familie/server.prev` | Vorversion für den automatischen Rückfall von `deploy.sh` | `lx`, Gruppe `lx-familie` |
+| `/etc/caddy/conf.d/familie.caddy` | Caddy-Konfiguration dieses Projekts (eingebunden, siehe Schritt 6) | `root` |
 | `/srv/familie/web/<version>` + `current` | Flutter-Web-Builds, `current` ist ein Symlink | `lx` |
 | `/srv/familie/releases/android` | `latest.json` und APK des Update-Kanals | `lx` |
 | `/srv/familie/well-known` | `assetlinks.json` (später `apple-app-site-association`) | `lx` |
@@ -73,8 +75,8 @@ postgres=# \q
 sudo adduser --system --group --no-create-home --shell /usr/sbin/nologin lx-familie
 sudo usermod -aG lx-familie lx                       # lx darf den Code in /srv/familie/server ablegen
 
-sudo mkdir -p /srv/familie/{server,web,releases/android,well-known,font-fallback,files} /etc/lx-familie
-sudo chown lx:lx-familie /srv/familie/server && sudo chmod 750 /srv/familie/server
+sudo mkdir -p /srv/familie/{server,server.prev,web,releases/android,well-known,font-fallback,files} /etc/lx-familie
+sudo chown lx:lx-familie /srv/familie/server /srv/familie/server.prev && sudo chmod 750 /srv/familie/server /srv/familie/server.prev
 sudo chown -R lx:lx /srv/familie/web /srv/familie/releases /srv/familie/well-known /srv/familie/font-fallback
 sudo chmod -R 755 /srv/familie/web /srv/familie/releases /srv/familie/well-known /srv/familie/font-fallback
 sudo chown lx-familie:lx-familie /srv/familie/files && sudo chmod 700 /srv/familie/files
@@ -102,6 +104,15 @@ git clone git@github.com:<dein-github-name>/lx-familienzentrale.git ~/lx-familie
 
 ### 5. Konfiguration und Dienst einrichten
 
+**Zuerst die Log-Aufbewahrung begrenzen** (ab dem ersten Start landen Client-IP-Adressen im Journal; Hintergrund: Abschnitt "Logs und Datenschutz" unten). Das gilt für alle Dienste des Servers, auch lx-labs:
+
+```bash
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nMaxRetentionSec=7day\n' | sudo tee /etc/systemd/journald.conf.d/lx-retention.conf
+sudo systemctl restart systemd-journald
+journalctl --disk-usage
+```
+
 ```bash
 # Konfiguration: Vorlage ist server/.env.example. Die Datei enthält das Datenbank-Passwort: root:root, 0600.
 # systemd liest sie als root (EnvironmentFile), der Dienst selbst und auch der Benutzer lx können sie nicht lesen.
@@ -115,6 +126,7 @@ sudo systemctl daemon-reload
 # deploy.sh darf den Dienst ohne Passwort neu starten (nur genau diesen Befehl)
 echo 'lx ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-familie' | sudo tee /etc/sudoers.d/lx-familie
 sudo chmod 440 /etc/sudoers.d/lx-familie
+sudo visudo -cf /etc/sudoers.d/lx-familie     # muss "parsed OK" melden; sonst Datei sofort löschen (ein Fehler kann sudo sperren)
 
 # erstes Deployment: baut den Server, überträgt ihn und startet den Dienst (Migrationen laufen dabei)
 bash ~/lx-familienzentrale/deploy/deploy.sh
@@ -122,37 +134,61 @@ sudo systemctl enable lx-familie
 curl http://127.0.0.1:4400/api/v1/health      # → {"status":"ok","db":"ok"}
 ```
 
-Der Port 4400 und `HOST=127.0.0.1` stehen fest in `lx-familie.service` (nicht in der env-Datei); dadurch kann `deploy.sh` den Health-Check ausführen, ohne die env-Datei zu lesen. Wer den Port ändert, muss `lx-familie.service`, `deploy.sh` und `Caddyfile` gemeinsam anpassen. `deploy.sh` meldet erst "online", wenn der Health-Check `"db":"ok"` liefert (nicht nur "ok" ohne Datenbank).
+Der Port 4400, `HOST=127.0.0.1` und `NODE_ENV=production` stehen fest in `lx-familie.service` (nicht in der env-Datei: `EnvironmentFile` überschreibt `Environment=`, deshalb fehlen sie in `server/.env.example`); dadurch kann `deploy.sh` den Health-Check ausführen, ohne die env-Datei zu lesen. Wer den Port ändert, muss `lx-familie.service`, `deploy.sh` und `Caddyfile` gemeinsam anpassen. `deploy.sh` meldet erst "online", wenn der Health-Check `"db":"ok"` liefert (nicht nur "ok" ohne Datenbank).
+
+`deploy.sh` sichert vor jedem Deployment die laufende Version in `/srv/familie/server.prev`. Besteht der Health-Check nach dem Neustart nicht, spielt das Skript die Vorversion automatisch zurück und endet mit Fehler (Migrationen werden nicht zurückgedreht; sie sind nur vorwärts und rückwärtskompatibel).
 
 Beim Start wendet `ExecStartPre` die Migrationen an. Fehler stehen in `sudo journalctl -u lx-familie -n 50`.
 
 ### 6. Caddy
 
+Festgelegter Pfad: die Konfiguration liegt in **`/etc/caddy/conf.d/familie.caddy`**; das Haupt-Caddyfile (`/etc/caddy/Caddyfile`, gehört dem lx-labs-Deploy) bindet sie mit der Zeile `import /etc/caddy/conf.d/*.caddy` ein. Reihenfolge zum Schutz von lx-labs.dev: erst sichern, dann Zeile anfügen, prüfen, bei Fehler sofort zurückkopieren, erst danach neu laden.
+
+**Vorab prüfen:** Das Haupt-Caddyfile von lx-labs darf kein globales `log` setzen (kein `log` im Optionsblock `{ … }` ganz oben und keines außerhalb eines Site-Blocks). Sonst entstünden auch für die Familienzentrale Zugriffslogs mit IP-Adressen, die der Datenschutz-Entwurf ausschließt. Prüfen: `grep -n '^[[:space:]]*log' /etc/caddy/Caddyfile`; ein `log` nur im Site-Block von lx-labs.dev betrifft die Familie nicht.
+
 ```bash
-sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/familie.caddy
-echo 'import /etc/caddy/familie.caddy' | sudo tee -a /etc/caddy/Caddyfile    # vorläufig, siehe unten
-caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+sudo mkdir -p /etc/caddy/conf.d
+sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/conf.d/familie.caddy
+
+# 1. Sicherung des Haupt-Caddyfiles
+sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.vor-familie
+# 2. Zeile anfügen (nur, wenn sie noch fehlt)
+grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' /etc/caddy/Caddyfile \
+  || echo 'import /etc/caddy/conf.d/*.caddy' | sudo tee -a /etc/caddy/Caddyfile
+# 3. Prüfen; bei Fehler sofort zurückkopieren (und nichts neu laden)
+if caddy validate --config /etc/caddy/Caddyfile; then
+  sudo systemctl reload caddy
+else
+  sudo cp /etc/caddy/Caddyfile.vor-familie /etc/caddy/Caddyfile
+  echo "Caddy-Prüfung fehlgeschlagen, Haupt-Caddyfile zurückgesetzt"
+fi
 ```
 
-**Achtung: Ein Deploy von lx-labs entfernt die Import-Zeile.** `/etc/caddy/Caddyfile` gehört dem lx-labs-Deploy, der die Datei aus `lx-labs/deploy/Caddyfile` überschreibt. Dauerhaft lösen lässt sich das nur dort. **Vorschlag für `lx-labs/deploy/Caddyfile`** (dieses Repository ändert das lx-labs-Repository nicht; der Eintrag ist dort von Hand vorzunehmen), am Ende der Datei:
+Danach lx-labs.dev prüfen (`curl -sI https://lx-labs.dev | head -1`).
+
+**Achtung: Ein Deploy von lx-labs entfernt die Import-Zeile.** Der lx-labs-Deploy überschreibt `/etc/caddy/Caddyfile` aus `lx-labs/deploy/Caddyfile`. Dauerhaft lösen lässt sich das nur dort. **Vorschlag für `lx-labs/deploy/Caddyfile`** (dieses Repository ändert das lx-labs-Repository nicht; der Eintrag ist dort von Hand vorzunehmen), am Ende der Datei:
 
 ```caddy
 # Familienzentrale (Repository lx-familienzentrale, Datei wird von dessen deploy/ gepflegt)
-import /etc/caddy/familie.caddy
+import /etc/caddy/conf.d/*.caddy
 ```
 
-Caddy bricht beim `reload` mit einem Fehler ab, wenn `/etc/caddy/familie.caddy` fehlt; deshalb zuerst Schritt 6 ausführen, dann den lx-labs-Deploy. Bis der Vorschlag umgesetzt ist: nach jedem lx-labs-Deploy `deploy.sh` (oder `grep familie.caddy /etc/caddy/Caddyfile`) ausführen. `deploy.sh` warnt, wenn die Zeile in `/etc/caddy/Caddyfile` fehlt; dann die Zeile mit dem Befehl oben wieder anfügen und Caddy neu laden.
+Ein Glob-Import ohne Treffer ist für Caddy kein Fehler. Bis der Vorschlag umgesetzt ist: nach jedem lx-labs-Deploy `deploy.sh` (oder `grep conf.d /etc/caddy/Caddyfile`) ausführen. `deploy.sh` warnt, wenn die Zeile fehlt; dann Schritt 1 bis 3 oben wiederholen.
 
 Caddy holt danach die Zertifikate für beide Domains. Bis die Web-App hochgeladen ist (Schritt 8), antwortet `familie.lx-labs.dev` unter `/` mit 404; `/api/v1/health` geht sofort.
 
 ### 7. ntfy (UnifiedPush)
 
-ntfy ist **2.28.0** gepinnt (2.31.1 ab 31.10.). Installation aus dem offiziellen Debian-Repository von ntfy, Version festhalten:
+ntfy ist **2.28.0** gepinnt (2.31.1 ab 31.10.). Installation aus dem offiziellen Debian-Repository von ntfy, Version festhalten.
+
+Paketquelle einrichten und **vor dem Installieren den Schlüssel prüfen**. Die Anleitung steht in der offiziellen Dokumentation (<https://docs.ntfy.sh/install/>, Abschnitt Debian/Ubuntu-Repository), dort auch der Fingerabdruck. Beim Erstellen dieser Anleitung nannte die Seite die Quelle `https://archive.ntfy.sh/apt` (der ältere Name `archive.heckel.io` ist abgelöst) und den Fingerabdruck `55BA 774A 6F5E E674 31E4 B6B7 CFDB 962D 4F1E C4AF`. **Den aktuellen Wert selbst auf docs.ntfy.sh nachlesen und vergleichen**; bei Abweichung abbrechen.
 
 ```bash
 sudo mkdir -p /etc/apt/keyrings
-curl -fsSL https://archive.heckel.io/apt/pubkey.txt | sudo gpg --dearmor -o /etc/apt/keyrings/archive.heckel.io.gpg
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/archive.heckel.io.gpg] https://archive.heckel.io/apt debian main" | sudo tee /etc/apt/sources.list.d/archive.heckel.io.list
+sudo curl -fsSL -o /etc/apt/keyrings/ntfy.gpg https://archive.ntfy.sh/apt/keyring.gpg
+gpg --show-keys --with-fingerprint /etc/apt/keyrings/ntfy.gpg      # Fingerabdruck mit der Dokumentation vergleichen
+# erst wenn er übereinstimmt:
+echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ntfy.gpg] https://archive.ntfy.sh/apt stable main" | sudo tee /etc/apt/sources.list.d/ntfy.list
 sudo apt update && apt-cache policy ntfy          # 2.28.0 muss in der Liste stehen
 sudo apt install -y ntfy=2.28.0 && sudo apt-mark hold ntfy
 
@@ -205,18 +241,13 @@ ssh lx-labs bash lx-familienzentrale/deploy/deploy.sh          # Server: pull, b
 deploy/deploy-web.sh                                           # Web-App (nur bei Änderungen in app/)
 ```
 
-Die Caddy-Konfiguration wird nicht automatisch übernommen (sudo mit Passwort); weicht `deploy/Caddyfile` ab, meldet `deploy.sh` den Befehl dazu. Datenbank-Migrationen laufen nur vorwärts und müssen zur Vorgängerversion der App passen (Rollback der Server-Version ohne Datenbank-Rollback).
+Die Caddy-Konfiguration wird nicht automatisch übernommen (sudo mit Passwort); weicht `deploy/Caddyfile` von `/etc/caddy/conf.d/familie.caddy` ab, meldet `deploy.sh` den Befehl dazu (mit `caddy validate` vor dem Neuladen). Datenbank-Migrationen laufen nur vorwärts und müssen zur Vorgängerversion der App passen (Rollback der Server-Version ohne Datenbank-Rollback).
 
 ## Logs und Datenschutz (journald)
 
-Die API-Logs enthalten Client-IP-Adressen (hinter Caddy aus `X-Forwarded-For`). Aufbewahrung höchstens **7 Tage**, ältere Einträge löscht journald selbst:
+Die API-Logs enthalten Client-IP-Adressen (hinter Caddy aus `X-Forwarded-For`). Aufbewahrung höchstens **7 Tage**, ältere Einträge löscht journald selbst.
 
-```bash
-sudo mkdir -p /etc/systemd/journald.conf.d
-printf '[Journal]\nMaxRetentionSec=7day\n' | sudo tee /etc/systemd/journald.conf.d/lx-retention.conf
-sudo systemctl restart systemd-journald
-journalctl --disk-usage
-```
+Die Begrenzung wird in Schritt 5 eingerichtet (vor dem ersten Start des Dienstes). Prüfen: `cat /etc/systemd/journald.conf.d/lx-retention.conf` und `journalctl --disk-usage`.
 
 Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewahrung), also auch für lx-labs und Caddy. Der Caddyfile schreibt keine Zugriffslogs (kein `log`-Block); wer sie einschaltet, muss Rotation und Aufbewahrung ebenfalls auf 7 Tage begrenzen. Was die Familienzentrale sonst speichert, steht in `docs/DATENSCHUTZ-ENTWURF.md`.
 

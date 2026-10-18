@@ -283,6 +283,19 @@ Jede Phase durchläuft das Team: **Research** (Bibliotheken, Plattformvorgaben) 
 **QM/Testing** (Sync-Randfälle: offline, gleichzeitige Änderungen, abgebrochene Uploads; Mobilansicht ab
 360 px) → **Code-Review** → **Security** (vor jedem Deploy, insbesondere Auth, Uploads, OTA-Signatur).
 
+### Vor Phase 1 zu erledigen
+
+Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören vor Beginn bzw. in den Anfang von Phase 1 (Auth, Sync, Dateien):
+
+- **WebSocket-Fehlversuche zählen:** abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
+- **Getrennte Datenbank-Rollen:** eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
+- **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen.
+- **Löschkonzept:** Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
+- **Mitgliedschafts-Prüfung bei Schema-Verweisen:** wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
+- **Recovery-Codes:** nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
+- **WebSocket-Limits atomar:** Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
+- **Eigener Fehlerhandler:** einheitliche Fehlerantworten ohne interne Details (keine Stacktraces oder Meldungen von Bibliotheken), Fehler nur im Log.
+
 ## 13. Offene Entscheidungen
 
 Entschieden (18.10.2026): iOS zurückgestellt (nur Android + Web), nur die eigene Familie, Push selbst gehostet

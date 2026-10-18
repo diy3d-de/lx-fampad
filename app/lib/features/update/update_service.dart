@@ -307,6 +307,10 @@ Future<UpdateInfo> parseManifest(
   String packageName = kPackageName,
   String keyId = kUpdateKeyId,
 }) async {
+  // Solange nur der Platzhalter-Schlüssel eingebaut ist, gibt es keinen vertrauenswürdigen Signierer: nichts akzeptieren.
+  if (keyId == kPlatzhalterKeyId) {
+    throw Exception('Updates sind noch nicht eingerichtet (Platzhalter-Schlüssel)');
+  }
   final Object? raw = jsonDecode(json);
   if (raw is! Map<String, dynamic>) throw Exception('Manifest ungültig');
   final signature = raw['signature'];

@@ -2,13 +2,16 @@
 # Caddy holt die HTTPS-Zertifikate automatisch (Let's Encrypt).
 # Voraussetzung: Die DNS-Einträge "familie" und "ntfy.familie" (A, DNS only) zeigen auf diesen Server.
 #
-# Einbinden: im Haupt-Caddyfile (/etc/caddy/Caddyfile) die Zeile  import /etc/caddy/familie.caddy  ergänzen. Ein Deploy von
-# lx-labs überschreibt diese Datei; dauerhaft gehört die Zeile in lx-labs/deploy/Caddyfile (Vorschlag: README.md, Schritt 6). Dann
-#   sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/familie.caddy
+# Einbinden: Datei nach /etc/caddy/conf.d/familie.caddy kopieren; im Haupt-Caddyfile (/etc/caddy/Caddyfile) steht dafür die Zeile
+#   import /etc/caddy/conf.d/*.caddy
+# Ein Deploy von lx-labs überschreibt das Haupt-Caddyfile; dauerhaft gehört die Zeile in lx-labs/deploy/Caddyfile
+# (Ablauf mit Sicherung und Prüfung: deploy/README.md, Schritt 6). Übernehmen einer geänderten Datei:
+#   sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/conf.d/familie.caddy
 #   caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
+# Der Snippet-Name ist mit Präfix versehen, damit er nicht mit Snippets anderer importierter Dateien kollidiert.
 
 # Gemeinsame Sicherheits-Header (CSP/COOP/COEP gelten nur für die Web-App, siehe unten)
-(sicherheit) {
+(familie_sicherheit) {
 	header {
 		# Nur noch per HTTPS aufrufen (1 Jahr)
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -25,7 +28,7 @@
 
 familie.lx-labs.dev {
 	encode zstd gzip
-	import sicherheit
+	import familie_sicherheit
 
 	header {
 		# wasm-unsafe-eval: CanvasKit und sqlite3.wasm (drift). unsafe-inline nur bei style-src: Flutter Web setzt
@@ -81,6 +84,6 @@ familie.lx-labs.dev {
 # Eigener ntfy-Server (UnifiedPush). Meldungen enthalten nie Inhalte.
 ntfy.familie.lx-labs.dev {
 	encode zstd gzip
-	import sicherheit
+	import familie_sicherheit
 	reverse_proxy 127.0.0.1:2586
 }
