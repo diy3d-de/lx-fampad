@@ -58,9 +58,9 @@ else
   echo "    Datenbank angelegt, Passwort steht nur in /etc/lx-familie/env (root, 0600)."
 fi
 
-echo "==> 4/7 Dienst installieren"
-cp "$REPO/deploy/lx-familie.service" /etc/systemd/system/lx-familie.service
-systemctl daemon-reload
+echo "==> 4/7 Anmeldung einrichten (Schlüssel, getrennte Datenbank-Rollen) und Dienst installieren"
+# legt AUTH_SECRET_KEY an, trennt Migrations- und Laufzeitrolle und installiert lx-familie.service + lx-familie-migrate.service
+bash "$REPO/deploy/einrichtung-auth.sh"
 
 echo "==> 5/7 sudo-Regel für den Neustart durch deploy.sh"
 echo "$LX ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-familie" > /etc/sudoers.d/lx-familie

@@ -1,0 +1,48 @@
+# Datenbank-Migrationen mit der Migrationsrolle (Eigentümer, darf DDL). Läuft vor jedem Start von lx-familie.service
+# (Requires=/After= dort) und als einmaliger Auftrag; der Dienst selbst hat nur die Laufzeitrolle (SELECT/INSERT/UPDATE/DELETE).
+# Die Zugangsdaten der Migrationsrolle stehen in /etc/lx-familie/migrate.env (root:root, 0600, nur hier geladen);
+# fehlt die Datei, nutzt migrate-cli DATABASE_URL (eine Rolle für beides, wie vor Phase 1).
+# Installation: siehe deploy/README.md, Abschnitt "Datenbank-Rollen trennen".
+
+[Unit]
+Description=lx-familie Datenbank-Migrationen
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=lx-familie
+Group=lx-familie
+WorkingDirectory=/srv/familie/server
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/lx-familie/env
+EnvironmentFile=-/etc/lx-familie/migrate.env
+ExecStart=/usr/bin/node dist/db/migrate-cli.js
+TimeoutStartSec=120
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+UMask=0077
+MemoryMax=256M
