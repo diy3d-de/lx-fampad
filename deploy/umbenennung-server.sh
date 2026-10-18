@@ -35,6 +35,7 @@ NEU_DB_MIGRATE=lx_fampad_migrate
 
 SCHRITT="Start"
 BACKUP_DIR=""
+# shellcheck disable=SC2329  # wird über trap ERR aufgerufen
 fehler() {
   echo >&2
   echo "!!  FEHLER im Schritt: $SCHRITT (Zeile $1)." >&2
@@ -57,7 +58,6 @@ main() {
   [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != "root" ] || abbruch "Bitte als Benutzer lx starten:  sudo bash $0"
   LX="$SUDO_USER"
   LX_HOME="$(getent passwd "$LX" | cut -d: -f6)"
-  SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   ALT_REPO="$LX_HOME/lx-familienzentrale"
   NEU_REPO="$LX_HOME/lx-fampad"
   ALT_BARE="$LX_HOME/familie.git"
@@ -109,11 +109,13 @@ main() {
     install -d -m 700 -o root -g root "$BACKUP_DIR"
     if db_da "$ALT_DB"; then
       # Ausgabe schreibt root (Umleitung), pg_dump läuft als postgres; Format "custom" (pg_restore)
+      # shellcheck disable=SC2024  # die Umleitung soll als root schreiben
       sudo -u postgres pg_dump -Fc "$ALT_DB" > "$BACKUP_DIR/$ALT_DB.dump"
       [ -s "$BACKUP_DIR/$ALT_DB.dump" ] || abbruch "pg_dump hat eine leere Datei erzeugt."
       pg_restore -l "$BACKUP_DIR/$ALT_DB.dump" >/dev/null || abbruch "Die Sicherung ist nicht lesbar."
       chmod 600 "$BACKUP_DIR/$ALT_DB.dump"
     elif db_da "$NEU_DB"; then
+      # shellcheck disable=SC2024  # die Umleitung soll als root schreiben
       sudo -u postgres pg_dump -Fc "$NEU_DB" > "$BACKUP_DIR/$NEU_DB.dump"
       chmod 600 "$BACKUP_DIR/$NEU_DB.dump"
     fi
@@ -181,7 +183,7 @@ main() {
         "${PSQL[@]}" -c "ALTER ROLE $alt RENAME TO $neu"
       fi
     done
-    db_da "$NEU_DB" && rolle_da "$NEU_DB" || abbruch "Datenbank/Rolle $NEU_DB fehlt nach der Umbenennung."
+    { db_da "$NEU_DB" && rolle_da "$NEU_DB"; } || abbruch "Datenbank/Rolle $NEU_DB fehlt nach der Umbenennung."
 
     # -------------------------------------------------------------- 6. env-Dateien
     schritt "6/12 env-Dateien anpassen"
@@ -345,7 +347,7 @@ main() {
   echo "  1. Neu anmelden (oder 'newgrp $NEU_NAME'), damit die umbenannte Gruppe in der Sitzung gilt."
   echo "  2. cd ~/lx-fampad && bash deploy/deploy.sh      # neuen Code bauen und ausrollen"
   echo "  3. Auf dem PC die ssh-Aufrufe anpassen (ssh lx-labs bash lx-fampad/deploy/deploy.sh)."
-  [ -n "$BACKUP_DIR" ] && echo "Sicherung (nach einigen Tagen ohne Auffälligkeiten löschbar): $BACKUP_DIR"
+  if [ -n "$BACKUP_DIR" ]; then echo "Sicherung (nach einigen Tagen ohne Auffälligkeiten löschbar): $BACKUP_DIR"; fi
 }
 
 # Erst nach dem vollständigen Einlesen ausführen: das Skript liegt im Checkout, der am Ende verschoben wird.

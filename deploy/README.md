@@ -346,3 +346,28 @@ Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewah
 - Backups: nächtlich `pg_dump` + `/srv/fampad/files` mit restic auf ein externes Ziel; Wiederherstellung quartalsweise testen
 - Speicherplatz-Warnung; Aufbewahrung von IP-Adressen in der Datenbank (`audit_log.ip`) höchstens 7 Tage (Aufräum-Job in Phase 1)
 - Hauptschlüssel für die Dateiverschlüsselung außerhalb von `/srv/fampad/files` ablegen (Phase 1)
+
+## Umbenennung von lx-familienzentrale
+
+Das Projekt hieß früher `lx-familienzentrale` (Dienst/Benutzer/Verzeichnisse `lx-familie`, `/srv/familie`, Datenbank `lx_familie`). Die Domain `familie.lx-labs.dev` und die WebAuthn-RP-ID bleiben. Eine bestehende Installation wird einmalig mit `umbenennung-server.sh` umgestellt (idempotent, bricht bei jedem Fehler mit Meldung ab; `lx-labs` und dessen Caddy-Site werden nicht angefasst).
+
+```bash
+cd ~/lx-familienzentrale && git pull --ff-only           # neuen Stand holen (enthält das Skript)
+sudo bash ~/lx-familienzentrale/deploy/umbenennung-server.sh
+cd ~ && newgrp lx-fampad                                  # oder neu anmelden (umbenannte Gruppe)
+cd ~/lx-fampad && bash deploy/deploy.sh                   # neuen Code ausrollen
+```
+
+Das Skript sichert vorab nach `/var/backups/lx-fampad-umbenennung-<Zeit>/` (pg_dump, `/etc/lx-familie`, Caddyfile, Site-Datei, Units, sudoers), stoppt den Dienst, benennt Benutzer/Gruppe (`usermod -l`, `groupmod -n`; die Mitgliedschaft von `lx` bleibt), `/srv/familie` -> `/srv/fampad`, `/etc/lx-familie` -> `/etc/lx-fampad`, Datenbank und Rollen (`lx_fampad`, `lx_fampad_migrate`) um, passt die env-Dateien an (0600 root:root; Passwörter werden geprüft und bei Bedarf neu gesetzt), tauscht Units und sudoers aus, ersetzt `conf.d/familie.caddy` durch `fampad.caddy` (mit `caddy validate` vor dem Reload, bei Fehler Rückfall und Prüfung von lx-labs.dev), benennt `~/lx-familienzentrale` -> `~/lx-fampad` und `~/familie.git` -> `~/fampad.git` um (git-Remote wird mitgezogen) und prüft zuletzt `https://familie.lx-labs.dev/api/v1/health` (`"db":"ok"`) und `https://lx-labs.dev` (200).
+
+Danach anpassen: PC-Aufrufe (`ssh lx-labs bash lx-fampad/deploy/deploy.sh`), GitHub-Repository auf `diy3d-de/lx-fampad` umbenennen und den Remote setzen. Der SSH-Deploy-Key `~/.ssh/id_ed25519_familie` darf seinen Namen behalten.
+
+**Rückbau** (als root, `B=/var/backups/lx-fampad-umbenennung-<Zeit>`):
+
+1. `systemctl disable --now lx-fampad; rm /etc/systemd/system/lx-fampad*.service /etc/sudoers.d/lx-fampad`
+2. Caddy: `rm /etc/caddy/conf.d/fampad.caddy; cp $B/familie.caddy /etc/caddy/conf.d/ ; cp $B/Caddyfile /etc/caddy/Caddyfile; caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy`; danach `curl -sI https://lx-labs.dev | head -1`
+3. Datenbank/Rollen zurück: `sudo -u postgres psql -c "ALTER DATABASE lx_fampad RENAME TO lx_familie" -c "ALTER ROLE lx_fampad RENAME TO lx_familie" -c "ALTER ROLE lx_fampad_migrate RENAME TO lx_familie_migrate"` (vorher Verbindungen trennen; Passwörter ggf. neu setzen). Notfalls aus `$B/lx_familie.dump` wiederherstellen (`pg_restore -C -d postgres`).
+4. Benutzer/Gruppe: `groupmod -n lx-familie lx-fampad; usermod -l lx-familie -d /home/lx-familie lx-fampad`
+5. Verzeichnisse: `mv /srv/fampad /srv/familie; mv /etc/lx-fampad /etc/lx-familie`; env-Dateien aus `$B/etc-lx-familie/` zurückkopieren
+6. Units aus `$B/lx-familie*.service` nach `/etc/systemd/system/`, `$B/sudoers-lx-familie` nach `/etc/sudoers.d/lx-familie` (0440, `visudo -cf`), `systemctl daemon-reload; systemctl enable --now lx-familie`
+7. `mv ~/lx-fampad ~/lx-familienzentrale; mv ~/fampad.git ~/familie.git` und Remote zurücksetzen

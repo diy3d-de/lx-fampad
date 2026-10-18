@@ -69,7 +69,7 @@ app/
   web/                 index.html, flutter_bootstrap.js, sqlite3.wasm, drift_worker.js, Icons
   android/             applicationId dev.lx_labs.fampad, MainActivity + UpdateReceiver (Update per PackageInstaller)
   test/                app_test (Tabs), update_test (Ed25519, Manifest), mobile_layout_test (360 px, Textskala 1.5, Touch-Ziele)
-deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, ntfy/server.yml, README.md
+deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, umbenennung-server.sh (einmalig), ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md
 docs/                  Projektbeschreibung, Versionen, Datenschutz-Entwurf, Mockups
 .github/workflows/     ci.yml: Server (Lint, Typen, Tests, Build), App (analyze, test), Android-Debug-Build; release.yml: APK bauen/signieren, Manifest, Release-Entwurf (deploy/README.md, Abschnitt 10)
