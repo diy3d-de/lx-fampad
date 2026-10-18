@@ -20,7 +20,7 @@ dem eigenen Server in Deutschland und bei keinem Dritten.
 | Rolle | Rechte |
 | --- | --- |
 | **Admin** (ein Elternteil) | Familie verwalten, Mitglieder einladen und entfernen, Speicher, alle Rechte der Eltern |
-| **Elternteil** | Alles lesen und schreiben, Zugriff auf den Tresor, Kinderkonten verwalten |
+| **Elternteil** | Alles lesen und schreiben, Zugriff auf den Tresor, Kind-Einladungen anlegen (Zurücksetzen und Entfernen von Konten vorerst nur Admin, Entscheidung 19.10.2026) |
 | **Kind** | Eigene und freigegebene Inhalte; kein Tresor; Ortsfreigabe nur mit Zustimmung der Eltern |
 | **Gast** (z. B. Großeltern) | Nur freigegebene Bereiche (z. B. ein Album, ein Kalender, ein Chat) |
 
