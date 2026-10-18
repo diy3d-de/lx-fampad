@@ -2,15 +2,17 @@
 # Anmeldung (Phase 1a) einrichten bzw. eine bestehende Installation darauf umstellen. Idempotent: mehrfaches Ausführen ist gefahrlos.
 #   1. AUTH_SECRET_KEY in /etc/lx-fampad/env anlegen (nur wenn er fehlt; ein vorhandener Schlüssel bleibt unverändert)
 #   2. Datenbank-Rollen trennen: lx_fampad_migrate (Eigentümer, darf DDL, nur für Migrationen) und lx_fampad (Laufzeit, nur DML)
-#   3. Zugangsdaten der Migrationsrolle nach /etc/lx-fampad/migrate.env (root:root, 0600; nur die Migrations-Einheit lädt sie)
-#   4. Einheiten lx-fampad.service und lx-fampad-migrate.service installieren
+#   3. Zugangsdaten der Migrationsrolle nach /etc/lx-fampad/migrate.env (root:root, 0600; nur die Migrations-Einheit lädt sie,
+#      und zwar NUR diese Datei, nicht die env mit AUTH_SECRET_KEY). Besitzer und Rechte beider Dateien werden bei jedem Lauf erzwungen.
+#   4. Einheiten lx-fampad.service und lx-fampad-migrate.service installieren (root:root, 0644)
+# WICHTIG: Mit dem Code ab Phase 1a MUSS dieses Skript VOR dem ersten deploy.sh laufen. Ohne AUTH_SECRET_KEY startet der Dienst
+# nicht (fail-closed), ohne migrate.env schlägt die Migrations-Einheit fehl.
 # Aufruf auf dem Server:   sudo bash ~/lx-fampad/deploy/einrichtung-auth.sh
 # Danach deployen (deploy/deploy.sh) und den ersten Admin anlegen (siehe deploy/README.md, Abschnitt "Erster Admin").
 #
 # Die laufende Installation bleibt bis zum nächsten Deployment unverändert: Der Dienst nutzt weiter die Laufzeitrolle
-# (DATABASE_URL), die Rechte sind danach auf SELECT/INSERT/UPDATE/DELETE beschränkt. Fehlt migrate.env, benutzt
-# migrate-cli DATABASE_URL (eine Rolle für beides) – die Migration schlüge dann nach der Trennung fehl, deshalb legt dieses Skript
-# die Datei an, bevor es die Rechte entzieht.
+# (DATABASE_URL), die Rechte sind danach auf SELECT/INSERT/UPDATE/DELETE beschränkt. Die Migrations-Einheit lädt nur migrate.env;
+# deshalb legt dieses Skript die Datei an, bevor es die Rechte entzieht.
 set -euo pipefail
 
 if [ "$(id -u)" -ne 0 ]; then
@@ -27,6 +29,9 @@ MIGRATE_ROLE=lx_fampad_migrate
 [ -f "$ENV_FILE" ] || { echo "$ENV_FILE fehlt (zuerst Schritt 5 der Einrichtung bzw. einrichtung-1.sh)." >&2; exit 1; }
 command -v openssl >/dev/null || { echo "openssl fehlt" >&2; exit 1; }
 PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1 -q -X)
+# Besitzer und Rechte immer erzwingen (auch wenn die Dateien von Hand angelegt oder verändert wurden)
+chown root:root "$ENV_FILE"
+chmod 600 "$ENV_FILE"
 
 echo "==> 1/4 Schlüssel für die Anmeldung (AUTH_SECRET_KEY)"
 if grep -q '^AUTH_SECRET_KEY=.\+' "$ENV_FILE"; then
@@ -55,12 +60,18 @@ else
   else
     printf "CREATE ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOCREATEDB NOCREATEROLE;\n" "$MIGRATE_ROLE" "$PW" | "${PSQL[@]}"
   fi
-  umask 077
-  printf 'MIGRATION_DATABASE_URL=postgres://%s:%s@127.0.0.1:5432/%s\n' "$MIGRATE_ROLE" "$PW" "$DB" > "$MIGRATE_ENV"
-  chown root:root "$MIGRATE_ENV"
-  chmod 600 "$MIGRATE_ENV"
+  # umask nur für diese Zeile (Unterschale): die Datei entsteht nie lesbar
+  ( umask 077; printf 'MIGRATION_DATABASE_URL=postgres://%s:%s@127.0.0.1:5432/%s\n' "$MIGRATE_ROLE" "$PW" "$DB" > "$MIGRATE_ENV" )
   unset PW
   echo "    Rolle $MIGRATE_ROLE angelegt; Zugangsdaten nur in $MIGRATE_ENV (root, 0600)."
+fi
+
+if [ -f "$MIGRATE_ENV" ]; then
+  chown root:root "$MIGRATE_ENV"
+  chmod 600 "$MIGRATE_ENV"
+else
+  echo "    FEHLER: $MIGRATE_ENV fehlt, obwohl die Rolle $MIGRATE_ROLE existiert (Passwort unbekannt). Rolle löschen oder Passwort neu setzen und Datei von Hand anlegen." >&2
+  exit 1
 fi
 
 # Eigentum an Datenbank und allen Objekten geht an die Migrationsrolle; die Laufzeitrolle bekommt nur DML.
@@ -89,7 +100,7 @@ SQL
 echo "    Eigentümer: $MIGRATE_ROLE (DDL); Laufzeit: $RUNTIME_ROLE (nur SELECT/INSERT/UPDATE/DELETE)."
 
 echo "==> 3/4 systemd-Einheiten"
-cp "$SELF_DIR/lx-fampad.service" "$SELF_DIR/lx-fampad-migrate.service" /etc/systemd/system/
+install -m 644 -o root -g root "$SELF_DIR/lx-fampad.service" "$SELF_DIR/lx-fampad-migrate.service" /etc/systemd/system/
 systemctl daemon-reload
 echo "    lx-fampad.service und lx-fampad-migrate.service installiert."
 

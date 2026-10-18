@@ -1,7 +1,8 @@
 # Datenbank-Migrationen mit der Migrationsrolle (Eigentümer, darf DDL). Läuft vor jedem Start von lx-fampad.service
 # (Requires=/After= dort) und als einmaliger Auftrag; der Dienst selbst hat nur die Laufzeitrolle (SELECT/INSERT/UPDATE/DELETE).
-# Die Zugangsdaten der Migrationsrolle stehen in /etc/lx-fampad/migrate.env (root:root, 0600, nur hier geladen);
-# fehlt die Datei, nutzt migrate-cli DATABASE_URL (eine Rolle für beides, wie vor Phase 1).
+# Geladen wird NUR /etc/lx-fampad/migrate.env (root:root, 0600; enthält MIGRATION_DATABASE_URL): weder AUTH_SECRET_KEY noch die
+# Zugangsdaten der Laufzeitrolle gelangen in diesen Prozess (migrate-cli braucht keine weitere Konfiguration). Fehlt die Datei,
+# scheitert die Einheit mit klarer Meldung (einrichtung-auth.sh legt sie an) und damit auch der Start von lx-fampad.service.
 # Installation: siehe deploy/README.md, Abschnitt "Datenbank-Rollen trennen".
 
 [Unit]
@@ -15,8 +16,7 @@ User=lx-fampad
 Group=lx-fampad
 WorkingDirectory=/srv/fampad/server
 Environment=NODE_ENV=production
-EnvironmentFile=/etc/lx-fampad/env
-EnvironmentFile=-/etc/lx-fampad/migrate.env
+EnvironmentFile=/etc/lx-fampad/migrate.env
 ExecStart=/usr/bin/node dist/db/migrate-cli.js
 TimeoutStartSec=120
 

@@ -13,7 +13,8 @@ if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ];
 fi
 REPO="$(getent passwd "$SUDO_USER" | cut -d: -f6)/lx-fampad"
 CADDYFILE=/etc/caddy/Caddyfile
-BACKUP=/etc/caddy/Caddyfile.vor-fampad
+# Jede Ausführung sichert frisch (mit Zeitstempel) und stellt nur DIESE Sicherung wieder her, nie eine ältere
+BACKUP="/etc/caddy/Caddyfile.vor-fampad.$(date +%Y%m%d-%H%M%S)"
 SITE=/etc/caddy/conf.d/fampad.caddy
 IMPORT='import /etc/caddy/conf.d/*.caddy'
 
@@ -31,7 +32,8 @@ awk '/^ntfy\.familie\.lx-labs\.dev/{exit} {print}' "$REPO/deploy/Caddyfile" > "$
 grep -q '^familie\.lx-labs\.dev' "$SITE" || { echo "Site-Block familie.lx-labs.dev nicht gefunden" >&2; rm -f "$SITE"; exit 1; }
 
 echo "==> Haupt-Caddyfile sichern und Import ergänzen"
-[ -f "$BACKUP" ] || cp "$CADDYFILE" "$BACKUP"
+cp -p "$CADDYFILE" "$BACKUP"
+echo "    Sicherung: $BACKUP"
 grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' "$CADDYFILE" || printf '\n%s\n' "$IMPORT" >> "$CADDYFILE"
 
 zuruecksetzen() {
@@ -52,7 +54,7 @@ sleep 3
 curl -fsI --max-time 10 https://lx-labs.dev | head -1 || zuruecksetzen
 
 echo "==> Zertifikat für familie.lx-labs.dev abwarten (bis zu 60 s)"
-for i in $(seq 1 30); do
+for _ in $(seq 1 30); do
   if curl -fsS --max-time 5 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then
     echo "    familie.lx-labs.dev antwortet über HTTPS."
     break

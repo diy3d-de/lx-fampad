@@ -31,8 +31,16 @@ RestartSec=5
 
 # Ressourcengrenzen (der VPS teilt sich den Speicher mit lx-labs, PostgreSQL und Caddy)
 MemoryMax=512M
+# höchstens 1,5 Kerne (Argon2 und JSON dürfen lx-labs und PostgreSQL nicht verdrängen)
+CPUQuota=150%
 TasksMax=256
 LimitNOFILE=4096
+
+# Netzwerk: nur lokal (PostgreSQL und Caddy laufen auf demselben Server, DATABASE_URL zeigt auf 127.0.0.1). Kein Zugriff nach außen
+# und von außen nur über Caddy. ACHTUNG, Web-Push (später, Phase 5): Der Dienst muss dann Push-Dienste im Internet erreichen
+# (HTTPS). Dann hier gezielt erweitern (IPAddressAllow= für die Ziele bzw. diese Zeilen ersetzen) und in der Doku vermerken.
+IPAddressDeny=any
+IPAddressAllow=localhost
 
 # Härtung
 NoNewPrivileges=true

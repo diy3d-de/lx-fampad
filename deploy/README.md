@@ -121,7 +121,8 @@ sudoedit /etc/lx-fampad/env      # DATABASE_URL mit dem Passwort aus Schritt 1, 
 sudo ls -l /etc/lx-fampad/env    # -rw------- root root
 
 # Anmeldung (Phase 1a): erzeugt AUTH_SECRET_KEY, trennt die Datenbank-Rollen (Migration/Betrieb) und installiert BEIDE
-# Einheiten (lx-fampad.service + lx-fampad-migrate.service). Vor dem ersten Deployment ausführen, Details: Abschnitt "Anmeldung und Datenbank-Rollen".
+# Einheiten (lx-fampad.service + lx-fampad-migrate.service). IMMER VOR dem ersten deploy.sh mit Phase-1-Code ausführen
+# (sonst startet der Dienst ohne AUTH_SECRET_KEY nicht), Details: Abschnitt "Anmeldung und Datenbank-Rollen".
 sudo bash ~/lx-fampad/deploy/einrichtung-auth.sh
 
 # deploy.sh darf den Dienst ohne Passwort neu starten (nur genau diesen Befehl)
@@ -135,6 +136,8 @@ sudo systemctl enable lx-fampad
 curl http://127.0.0.1:4400/api/v1/health      # → {"status":"ok","db":"ok"}
 ```
 
+Der Dienst darf nur lokal sprechen (`IPAddressDeny=any`, `IPAddressAllow=localhost`: PostgreSQL und Caddy laufen auf demselben Server) und höchstens 1,5 Kerne nutzen (`CPUQuota=150%`). **Ausnahme später:** Web-Push (Phase 5) braucht ausgehende HTTPS-Verbindungen zu den Push-Diensten; dann die IP-Sperre in `lx-fampad.service` gezielt öffnen und hier vermerken. Startet der Dienst nach einer Änderung an diesen Zeilen nicht, zeigt `systemd-analyze security lx-fampad` und `journalctl -u lx-fampad` den Grund.
+
 Der Port 4400, `HOST=127.0.0.1` und `NODE_ENV=production` stehen fest in `lx-fampad.service` (nicht in der env-Datei: `EnvironmentFile` überschreibt `Environment=`, deshalb fehlen sie in `server/.env.example`); dadurch kann `deploy.sh` den Health-Check ausführen, ohne die env-Datei zu lesen. Wer den Port ändert, muss `lx-fampad.service`, `deploy.sh` und `Caddyfile` gemeinsam anpassen. `deploy.sh` meldet erst "online", wenn der Health-Check `"db":"ok"` liefert (nicht nur "ok" ohne Datenbank).
 
 `deploy.sh` sichert vor jedem Deployment die laufende Version in `/srv/fampad/server.prev`. Besteht der Health-Check nach dem Neustart nicht, spielt das Skript die Vorversion automatisch zurück und endet mit Fehler (Migrationen werden nicht zurückgedreht; sie sind nur vorwärts und rückwärtskompatibel).
@@ -147,7 +150,7 @@ Ab Phase 1a gibt es Konten. Dafür braucht der Server (alles erledigt `deploy/ei
 
 - **`AUTH_SECRET_KEY`** in `/etc/lx-fampad/env` (256 Bit, Base64): Hauptschlüssel für die TOTP-Verschlüsselung (AES-256-GCM) und die HMACs von Wiederherstellungs-Codes und Einladungs-PINs. Ohne ihn startet der Dienst in `production` nicht (fail-closed; `deploy.sh` spielt dann die Vorversion zurück). Er liegt **außerhalb der Datenbank**, darf nie geändert oder verloren gehen (sonst sind alle TOTP-Geheimnisse und Codes unbrauchbar) und gehört in die Datensicherung, getrennt vom Datenbank-Dump. Alternativ `AUTH_SECRET_KEY_FILE`.
 - **Zwei Datenbank-Rollen:** `lx_fampad_migrate` (Eigentümer von Datenbank und Tabellen, darf DDL, nur für Migrationen) und `lx_fampad` (Laufzeit, nur SELECT/INSERT/UPDATE/DELETE; `ALTER DEFAULT PRIVILEGES` gibt Tabellen künftiger Migrationen automatisch dieselben Rechte). `DATABASE_URL` in `/etc/lx-fampad/env` bleibt die Laufzeitrolle; die Zugangsdaten der Migrationsrolle stehen als `MIGRATION_DATABASE_URL` nur in `/etc/lx-fampad/migrate.env` (`root:root`, 0600), die ausschließlich `lx-fampad-migrate.service` lädt. Der Dienst selbst kennt sie nicht.
-- **`lx-fampad-migrate.service`** (oneshot, `Requires=` von `lx-fampad.service`) ersetzt das frühere `ExecStartPre`: Vor jedem Start laufen die Migrationen mit der Migrationsrolle. Fehlt `migrate.env`, nutzt `migrate-cli` `DATABASE_URL` (Rückfall für Installationen mit einer Rolle).
+- **`lx-fampad-migrate.service`** (oneshot, `Requires=` von `lx-fampad.service`) ersetzt das frühere `ExecStartPre`: Vor jedem Start laufen die Migrationen mit der Migrationsrolle. Die Einheit lädt **nur** `migrate.env` (nicht die env-Datei mit `AUTH_SECRET_KEY`); fehlt die Datei, scheitert sie mit klarer Meldung und damit auch der Start des Dienstes. `einrichtung-auth.sh` legt sie an und erzwingt bei jedem Lauf Besitzer und Rechte (`root:root`, 0600) beider Dateien.
 - Passkeys: `WEBAUTHN_RP_ID` (Standard: Hostname von `PUBLIC_URL`, also `familie.lx-labs.dev`). Ein späterer Wechsel der RP-ID macht alle Passkeys unbrauchbar.
 
 **Umstellung einer laufenden Installation:** `git pull`, dann direkt nacheinander
@@ -156,6 +159,21 @@ Ab Phase 1a gibt es Konten. Dafür braucht der Server (alles erledigt `deploy/ei
 sudo bash ~/lx-fampad/deploy/einrichtung-auth.sh     # Schlüssel, Rollen, Einheiten (ändert den laufenden Dienst nicht)
 bash ~/lx-fampad/deploy/deploy.sh                    # baut, migriert (Migration 0001) und startet neu
 ```
+
+**Reihenfolge ist zwingend:** `einrichtung-auth.sh` VOR dem ersten `deploy.sh` mit Phase-1-Code. Ohne `AUTH_SECRET_KEY` startet der Dienst in `production` nicht, ohne `migrate.env` scheitert die Migrations-Einheit; `deploy.sh` spielt dann zwar die Vorversion zurück, die Migration 0001 hätte aber trotzdem schon die Tabellen verändert, falls sie vorher lief.
+
+**Vorprüfung für Altdaten (Migration 0001):** Die Migration ergänzt zusammengesetzte Fremdschlüssel `(family_id, user_id)` -> `memberships` für `devices`, `sessions`, `ws_tickets`, `event_attendees`, `message_reactions` und `message_reads`. Zeilen ohne passende Mitgliedschaft lassen die Migration scheitern (sie läuft in einer Transaktion und wird dann vollständig zurückgerollt; der Dienst startet nicht, `deploy.sh` spielt die Vorversion zurück). In Phase 0 waren diese Tabellen leer, bei einer Installation mit Testdaten vorher prüfen (muss in jeder Zeile 0 ergeben):
+
+```bash
+sudo -u postgres psql lx_fampad -c "
+select 'devices' t, count(*) from devices x left join memberships m on m.family_id = x.family_id and m.user_id = x.user_id where m.id is null
+union all select 'sessions', count(*) from sessions x left join memberships m on m.family_id = x.family_id and m.user_id = x.user_id where m.id is null
+union all select 'event_attendees', count(*) from event_attendees x left join memberships m on m.family_id = x.family_id and m.user_id = x.user_id where m.id is null
+union all select 'message_reactions', count(*) from message_reactions x left join memberships m on m.family_id = x.family_id and m.user_id = x.user_id where m.id is null
+union all select 'message_reads', count(*) from message_reads x left join memberships m on m.family_id = x.family_id and m.user_id = x.user_id where m.id is null;"
+```
+
+Verwaiste Testzeilen vorher löschen (`delete from sessions x where not exists (select 1 from memberships m where m.family_id = x.family_id and m.user_id = x.user_id);`, entsprechend für die übrigen Tabellen); `ws_tickets` gibt es vor der Migration nicht.
 
 Zwischen beiden Schritten sollte der Server nicht neu starten: die alte Programmversion kennt die getrennten Rollen nicht (sie würde beim Start die Migrationen mit der Laufzeitrolle versuchen und scheitern). Die laufende Version arbeitet mit der Laufzeitrolle weiter, weil sie nur DML braucht.
 
@@ -177,7 +195,7 @@ sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js
 
 widerruft alle Anmeldedaten, Sitzungen und Codes dieses Mitglieds und gibt einen neuen Einladungslink für dasselbe Konto aus.
 
-**Aufräumen:** Beim Start und danach täglich leert der Dienst die IP-Spalte im Audit-Log (älter als 7 Tage), löscht Audit-Einträge nach `AUDIT_RETENTION_DAYS` (Standard 365) sowie abgelaufene Sitzungen, Challenges, Tickets und Fehlversuche und protokolliert abgelaufene Einladungen.
+**Aufräumen:** Beim Start und danach stündlich leert der Dienst die IP-Spalte im Audit-Log (älter als 7 Tage), löscht Audit-Einträge nach `AUDIT_RETENTION_DAYS` (Standard 365) sowie abgelaufene Sitzungen, Challenges, Tickets und Fehlversuche und protokolliert abgelaufene Einladungen.
 
 ### 6. Caddy
 
@@ -189,8 +207,9 @@ Festgelegter Pfad: die Konfiguration liegt in **`/etc/caddy/conf.d/fampad.caddy`
 sudo mkdir -p /etc/caddy/conf.d
 sudo cp ~/lx-fampad/deploy/Caddyfile /etc/caddy/conf.d/fampad.caddy
 
-# 1. Sicherung des Haupt-Caddyfiles
-sudo cp /etc/caddy/Caddyfile /etc/caddy/Caddyfile.vor-fampad
+# 1. Sicherung des Haupt-Caddyfiles (jedes Mal frisch, mit Zeitstempel; zurückgespielt wird nur diese)
+BAK="/etc/caddy/Caddyfile.vor-fampad.$(date +%Y%m%d-%H%M%S)"
+sudo cp -p /etc/caddy/Caddyfile "$BAK"
 # 2. Zeile anfügen (nur, wenn sie noch fehlt)
 grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' /etc/caddy/Caddyfile \
   || echo 'import /etc/caddy/conf.d/*.caddy' | sudo tee -a /etc/caddy/Caddyfile
@@ -198,7 +217,7 @@ grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' /etc/cad
 if caddy validate --config /etc/caddy/Caddyfile; then
   sudo systemctl reload caddy
 else
-  sudo cp /etc/caddy/Caddyfile.vor-fampad /etc/caddy/Caddyfile
+  sudo cp -p "$BAK" /etc/caddy/Caddyfile
   echo "Caddy-Prüfung fehlgeschlagen, Haupt-Caddyfile zurückgesetzt"
 fi
 ```
@@ -351,23 +370,30 @@ Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewah
 
 Das Projekt hieß früher `lx-familienzentrale` (Dienst/Benutzer/Verzeichnisse `lx-familie`, `/srv/familie`, Datenbank `lx_familie`). Die Domain `familie.lx-labs.dev` und die WebAuthn-RP-ID bleiben. Eine bestehende Installation wird einmalig mit `umbenennung-server.sh` umgestellt (idempotent, bricht bei jedem Fehler mit Meldung ab; `lx-labs` und dessen Caddy-Site werden nicht angefasst).
 
+**Vorher prüfen, was im Checkout liegt:** Das Skript läuft als root, der Checkout `~/lx-familienzentrale` gehört aber `lx` (schreibbar), und das Skript installiert Dateien daraus nach `/etc` (Units, Caddy). Es zeigt den letzten Commit an und bricht bei uncommitteten Änderungen in `deploy/` ab; trotzdem vorher selbst ansehen:
+
 ```bash
 cd ~/lx-familienzentrale && git pull --ff-only           # neuen Stand holen (enthält das Skript)
+git log -3 --stat                                         # stammen die Commits von dir?
+git status --short deploy                                 # muss leer sein
+git diff origin/<Branch> -- deploy                        # sollte leer sein
 sudo bash ~/lx-familienzentrale/deploy/umbenennung-server.sh
 cd ~ && newgrp lx-fampad                                  # oder neu anmelden (umbenannte Gruppe)
 cd ~/lx-fampad && bash deploy/deploy.sh                   # neuen Code ausrollen
 ```
 
-Das Skript sichert vorab nach `/var/backups/lx-fampad-umbenennung-<Zeit>/` (pg_dump, `/etc/lx-familie`, Caddyfile, Site-Datei, Units, sudoers), stoppt den Dienst, benennt Benutzer/Gruppe (`usermod -l`, `groupmod -n`; die Mitgliedschaft von `lx` bleibt), `/srv/familie` -> `/srv/fampad`, `/etc/lx-familie` -> `/etc/lx-fampad`, Datenbank und Rollen (`lx_fampad`, `lx_fampad_migrate`) um, passt die env-Dateien an (0600 root:root; Passwörter werden geprüft und bei Bedarf neu gesetzt), tauscht Units und sudoers aus, ersetzt `conf.d/familie.caddy` durch `fampad.caddy` (mit `caddy validate` vor dem Reload, bei Fehler Rückfall und Prüfung von lx-labs.dev), benennt `~/lx-familienzentrale` -> `~/lx-fampad` und `~/familie.git` -> `~/fampad.git` um (git-Remote wird mitgezogen) und prüft zuletzt `https://familie.lx-labs.dev/api/v1/health` (`"db":"ok"`) und `https://lx-labs.dev` (200).
+Schritt 0 prüft **alle** Voraussetzungen (Befehle, `/srv/familie/{server,files}`, `server.prev` wird bei Bedarf angelegt, `env`, Caddy-Import und -Konfiguration, freier Platz) und legt Fehlendes an, bevor irgendein Dienst gestoppt wird. Danach sichert es **getrennt**: nach `/var/backups/lx-fampad-umbenennung-<Zeit>/` pg_dump, Caddyfile, Site-Datei, Units und sudoers, und nach `/root/lx-fampad-umbenennung-<Zeit>-schluessel/` (nur root, 0700/0600) `/etc/lx-familie` mit den env-Dateien und `AUTH_SECRET_KEY`. Der Dump enthält Klarnamen und Anmeldedaten, der Schlüssel entschlüsselt die TOTP-Geheimnisse darin; beides gehört nicht zusammen in einen Ordner (Backup-Werkzeuge, Weitergabe). **Beide Sicherungen nach wenigen Tagen ohne Auffälligkeiten löschen, spätestens nach 14 Tagen** (`sudo rm -rf /var/backups/lx-fampad-umbenennung-* /root/lx-fampad-umbenennung-*-schluessel`). Das Skript stoppt dann den Dienst, benennt Benutzer und Gruppe getrennt und wiederholbar um (`usermod -l`, `groupmod -n`; die Mitgliedschaft von `lx` bleibt), `/srv/familie` -> `/srv/fampad`, `/etc/lx-familie` -> `/etc/lx-fampad`, Datenbank und Rollen (`lx_fampad`, `lx_fampad_migrate`) um, passt die env-Dateien an (0600 root:root; Passwörter werden geprüft und bei Bedarf neu gesetzt), tauscht Units und sudoers aus, ersetzt `conf.d/familie.caddy` durch `fampad.caddy` (mit `caddy validate` vor dem Reload, bei Fehler Rückfall und Prüfung von lx-labs.dev), benennt `~/lx-familienzentrale` -> `~/lx-fampad` und `~/familie.git` -> `~/fampad.git` um (git-Remote wird mitgezogen) und prüft zuletzt `https://familie.lx-labs.dev/api/v1/health` (`"db":"ok"`) und `https://lx-labs.dev` (200).
 
 Danach anpassen: PC-Aufrufe (`ssh lx-labs bash lx-fampad/deploy/deploy.sh`), GitHub-Repository auf `diy3d-de/lx-fampad` umbenennen und den Remote setzen. Der SSH-Deploy-Key `~/.ssh/id_ed25519_familie` darf seinen Namen behalten.
 
-**Rückbau** (als root, `B=/var/backups/lx-fampad-umbenennung-<Zeit>`):
+Wird das Skript nach einem Abbruch wiederholt, folgt die Caddy-Site dem Vorhandenen: Ein `ntfy`-Block kommt nur in die neue Site-Datei, wenn er in der bisherigen Datei stand. Hat ein Abbruch die Datenbank für Verbindungen gesperrt (`ALLOW_CONNECTIONS false` während des Umbenennens), öffnet sie das Skript beim Beenden und bei jedem Start wieder.
+
+**Rückbau** (als root, `B=/var/backups/lx-fampad-umbenennung-<Zeit>`, `K=/root/lx-fampad-umbenennung-<Zeit>-schluessel`):
 
 1. `systemctl disable --now lx-fampad; rm /etc/systemd/system/lx-fampad*.service /etc/sudoers.d/lx-fampad`
 2. Caddy: `rm /etc/caddy/conf.d/fampad.caddy; cp $B/familie.caddy /etc/caddy/conf.d/ ; cp $B/Caddyfile /etc/caddy/Caddyfile; caddy validate --config /etc/caddy/Caddyfile && systemctl reload caddy`; danach `curl -sI https://lx-labs.dev | head -1`
 3. Datenbank/Rollen zurück: `sudo -u postgres psql -c "ALTER DATABASE lx_fampad RENAME TO lx_familie" -c "ALTER ROLE lx_fampad RENAME TO lx_familie" -c "ALTER ROLE lx_fampad_migrate RENAME TO lx_familie_migrate"` (vorher Verbindungen trennen; Passwörter ggf. neu setzen). Notfalls aus `$B/lx_familie.dump` wiederherstellen (`pg_restore -C -d postgres`).
 4. Benutzer/Gruppe: `groupmod -n lx-familie lx-fampad; usermod -l lx-familie -d /home/lx-familie lx-fampad`
-5. Verzeichnisse: `mv /srv/fampad /srv/familie; mv /etc/lx-fampad /etc/lx-familie`; env-Dateien aus `$B/etc-lx-familie/` zurückkopieren
+5. Verzeichnisse: `mv /srv/fampad /srv/familie; mv /etc/lx-fampad /etc/lx-familie`; env-Dateien aus `$K/etc-lx-familie/` zurückkopieren
 6. Units aus `$B/lx-familie*.service` nach `/etc/systemd/system/`, `$B/sudoers-lx-familie` nach `/etc/sudoers.d/lx-familie` (0440, `visudo -cf`), `systemctl daemon-reload; systemctl enable --now lx-familie`
 7. `mv ~/lx-fampad ~/lx-familienzentrale; mv ~/fampad.git ~/familie.git` und Remote zurücksetzen
