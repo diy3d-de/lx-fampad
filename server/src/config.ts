@@ -1,10 +1,56 @@
 // Konfiguration ausschließlich über Umgebungsvariablen (siehe .env.example).
+import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
+
+/** Zeiten und Grenzen der Anmeldung (Standardwerte, nur Tests überschreiben sie). */
+export interface AuthConfig {
+  /** WebAuthn: Relying-Party-ID (registrierbare Domain, ohne Schema und Port). */
+  rpId: string;
+  rpName: string;
+  /** Weitere erlaubte WebAuthn-Origins (z. B. android:apk-key-hash:... für die App); die Origin aus PUBLIC_URL gilt immer. */
+  extraOrigins: string[];
+  /** Hauptschlüssel (32 Byte): daraus werden per HKDF die Teilschlüssel abgeleitet (TOTP-Verschlüsselung, HMACs). */
+  secretKey: Buffer;
+  inviteDefaultHours: number;
+  inviteMaxHours: number;
+  /** Standard-Gültigkeit der Einladung aus dem Bootstrap (Stunden). */
+  bootstrapInviteHours: number;
+  accessTokenTtlSec: number;
+  /** Cookie-Sitzung (Web): absolute Dauer und Leerlauf in Tagen. */
+  webSessionMaxDays: number;
+  webSessionIdleDays: number;
+  /** Refresh-Token (App): absolute Dauer und Leerlauf in Tagen. */
+  appSessionMaxDays: number;
+  appSessionIdleDays: number;
+  /** So lange gilt eine erneute Bestätigung (Step-up) bzw. die Anmeldung als frisch. */
+  stepUpMaxAgeSec: number;
+  wsTicketTtlSec: number;
+  challengeTtlSec: number;
+  minPasswordLength: number;
+  /** Fehlversuche, ab denen die verzögerte Sperre beginnt (je Konto bzw. je IP). */
+  lockoutAccountThreshold: number;
+  lockoutIpThreshold: number;
+  /** Fehlversuche verfallen nach dieser Zeit ohne neuen Fehlversuch. */
+  lockoutWindowSec: number;
+  lockoutMaxDelaySec: number;
+  maxInvitePinAttempts: number;
+  auditRetentionDays: number;
+}
+
 export interface Config {
   env: 'development' | 'production' | 'test';
   host: string;
   port: number;
+  /** Laufzeit-Rolle (nur DML). */
   databaseUrl: string | undefined;
+  /** Migrationsrolle (DDL, Eigentümer); nur migrate-cli. Ohne Angabe gilt databaseUrl (Rückfall für bestehende Installationen). */
+  migrationDatabaseUrl: string | undefined;
   publicUrl: string;
+  auth: AuthConfig;
+  /** WebSocket: Verbindungen je Benutzer sowie Nachrichten je Socket und Zeitfenster. */
+  wsMaxPerUser: number;
+  wsMaxMessages: number;
+  wsMessageWindowMs: number;
   filesDir: string;
   minAppVersion: string;
   webVersion: string | undefined;
@@ -37,6 +83,31 @@ function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number): nu
   return n;
 }
 
+const PLACEHOLDER_KEYS = ['CHANGE_ME', 'changeme', 'secret'];
+
+/** Liest den Hauptschlüssel aus AUTH_SECRET_KEY (Base64/Hex) oder AUTH_SECRET_KEY_FILE; mindestens 32 Byte. */
+function loadSecretKey(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Buffer {
+  let raw = env.AUTH_SECRET_KEY?.trim();
+  const file = env.AUTH_SECRET_KEY_FILE?.trim();
+  if (!raw && file) {
+    try {
+      raw = readFileSync(file, 'utf8').trim();
+    } catch {
+      throw new Error('AUTH_SECRET_KEY_FILE nicht lesbar');
+    }
+  }
+  if (!raw) {
+    // fail-closed: nur Entwicklung und Test erzeugen einen flüchtigen Schlüssel (Sitzungen überleben keinen Neustart)
+    if (nodeEnv === 'production') throw new Error('AUTH_SECRET_KEY (oder AUTH_SECRET_KEY_FILE) fehlt');
+    return randomBytes(32);
+  }
+  if (PLACEHOLDER_KEYS.some((p) => raw.includes(p))) throw new Error('AUTH_SECRET_KEY ist ein Platzhalter');
+  const key = /^[0-9a-fA-F]{64,}$/.test(raw) ? Buffer.from(raw, 'hex') : Buffer.from(raw, 'base64');
+  if (key.length < 32) throw new Error('AUTH_SECRET_KEY muss mindestens 32 Byte lang sein (Base64 oder Hex)');
+  if (key.every((b) => b === key[0])) throw new Error('AUTH_SECRET_KEY ist unzulässig (gleichförmig)');
+  return key;
+}
+
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // fail-closed: ohne NODE_ENV gilt "production" (strenge Prüfungen); unbekannte Werte werden abgelehnt.
   // Gelockert wird nur bei ausdrücklich gesetztem "development" oder "test".
@@ -56,6 +127,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new Error(`PUBLIC_URL ungültig: ${publicUrl}`);
   }
 
+  const rpId = env.WEBAUTHN_RP_ID?.trim() || new URL(publicUrl).hostname;
+  if (!/^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$/i.test(rpId)) throw new Error(`WEBAUTHN_RP_ID ungültig: ${rpId}`);
+
   const minAppVersion = env.MIN_APP_VERSION ?? '0.1.0';
   if (!SEMVER.test(minAppVersion)) throw new Error(`MIN_APP_VERSION ungültig: ${minAppVersion}`);
 
@@ -67,7 +141,38 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? '127.0.0.1',
     port,
     databaseUrl: env.DATABASE_URL || undefined,
+    migrationDatabaseUrl: env.MIGRATION_DATABASE_URL || undefined,
     publicUrl,
+    auth: {
+      rpId,
+      rpName: env.WEBAUTHN_RP_NAME?.trim() || 'Familienzentrale',
+      extraOrigins: (env.WEBAUTHN_ORIGINS ?? '')
+        .split(',')
+        .map((o) => o.trim())
+        .filter(Boolean),
+      secretKey: loadSecretKey(env, nodeEnv),
+      inviteDefaultHours: 24,
+      inviteMaxHours: 168,
+      bootstrapInviteHours: 168,
+      accessTokenTtlSec: 15 * 60,
+      webSessionMaxDays: 30,
+      webSessionIdleDays: 7,
+      appSessionMaxDays: 90,
+      appSessionIdleDays: 30,
+      stepUpMaxAgeSec: 5 * 60,
+      wsTicketTtlSec: 30,
+      challengeTtlSec: 5 * 60,
+      minPasswordLength: positiveInt(env, 'MIN_PASSWORD_LENGTH', 12),
+      lockoutAccountThreshold: 5,
+      lockoutIpThreshold: 20,
+      lockoutWindowSec: 15 * 60,
+      lockoutMaxDelaySec: 15 * 60,
+      maxInvitePinAttempts: 5,
+      auditRetentionDays: positiveInt(env, 'AUDIT_RETENTION_DAYS', 365),
+    },
+    wsMaxPerUser: positiveInt(env, 'WS_MAX_PER_USER', 8),
+    wsMaxMessages: positiveInt(env, 'WS_MAX_MESSAGES', 30),
+    wsMessageWindowMs: positiveInt(env, 'WS_MESSAGE_WINDOW_MS', 10_000),
     filesDir: env.FILES_DIR ?? './data/files',
     minAppVersion,
     webVersion: env.WEB_VERSION || undefined,

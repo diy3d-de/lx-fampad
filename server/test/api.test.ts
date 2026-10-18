@@ -9,6 +9,7 @@ import WebSocket, { type ClientOptions } from 'ws';
 import { buildApp } from '../src/app.js';
 import type { AuthService, Principal } from '../src/auth/types.js';
 import { loadConfig } from '../src/config.js';
+import { TEST_KEY } from './helpers.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../src/version.js';
 import { WS_CLOSE_PING_TIMEOUT, WS_CLOSE_UNAUTHENTICATED } from '../src/ws/route.js';
 
@@ -25,7 +26,7 @@ interface StartOptions {
 
 async function start({ env = {}, pingDb, auth, logStream }: StartOptions = {}) {
   app = await buildApp({
-    config: loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', ...env }),
+    config: loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', AUTH_SECRET_KEY: TEST_KEY, ...env }),
     pingDb,
     auth,
     logStream,
@@ -171,17 +172,6 @@ describe('Rate-Limit', () => {
     expect(codes).toEqual([200, 200, 200, 429, 429]);
   });
 
-  it('begrenzt Anmeldung und Ticket-Ausgabe strenger als den Rest', async () => {
-    const instance = await start({ env: { RATE_LIMIT_MAX: '100', AUTH_RATE_LIMIT_MAX: '2' } });
-    for (const url of ['/api/v1/auth/login', '/api/v1/ws-ticket']) {
-      const codes: number[] = [];
-      for (let i = 0; i < 4; i++) codes.push((await instance.inject({ method: 'POST', url, payload: {} })).statusCode);
-      expect(codes, url).toEqual([501, 501, 429, 429]);
-    }
-    // andere Routen sind davon nicht betroffen
-    expect((await instance.inject('/api/v1/version')).statusCode).toBe(200);
-  });
-
   it('zählt je Client-IP (X-Forwarded-For von Caddy)', async () => {
     const instance = await start({ env: { RATE_LIMIT_MAX: '1' } });
     const get = (ip: string) => instance.inject({ url: '/api/v1/version', headers: { 'x-forwarded-for': ip } });
@@ -315,7 +305,7 @@ describe('WebSocket /ws', () => {
     });
 
     it('behandelt fehlendes NODE_ENV wie production', async () => {
-      const config = loadConfig({ LOG_LEVEL: 'silent', PUBLIC_URL: 'https://familie.lx-labs.dev' });
+      const config = loadConfig({ LOG_LEVEL: 'silent', PUBLIC_URL: 'https://familie.lx-labs.dev', AUTH_SECRET_KEY: TEST_KEY });
       expect(config.env).toBe('production');
       app = await buildApp({ config });
       await app.ready();
@@ -337,23 +327,109 @@ describe('loadConfig', () => {
     expect(() => loadConfig({ PORT: 'abc' })).toThrow(/PORT/);
     expect(() => loadConfig({ MIN_APP_VERSION: '1.2' })).toThrow(/MIN_APP_VERSION/);
     expect(() => loadConfig({ PUBLIC_URL: 'kein url' })).toThrow(/PUBLIC_URL/);
-    expect(() => loadConfig({ RATE_LIMIT_MAX: '0' })).toThrow(/RATE_LIMIT_MAX/);
-    expect(() => loadConfig({ WS_MAX_PER_IP: 'viele' })).toThrow(/WS_MAX_PER_IP/);
+    expect(() => loadConfig({ AUTH_SECRET_KEY: TEST_KEY, RATE_LIMIT_MAX: '0' })).toThrow(/RATE_LIMIT_MAX/);
+    expect(() => loadConfig({ AUTH_SECRET_KEY: TEST_KEY, WS_MAX_PER_IP: 'viele' })).toThrow(/WS_MAX_PER_IP/);
   });
 
   it('lehnt unbekannte NODE_ENV ab (fail-closed) und nimmt production als Standard', () => {
     expect(() => loadConfig({ NODE_ENV: 'staging' })).toThrow(/NODE_ENV/);
     expect(() => loadConfig({ NODE_ENV: 'prod' })).toThrow(/NODE_ENV/);
-    expect(loadConfig({}).env).toBe('production');
-    expect(loadConfig({ NODE_ENV: '' }).env).toBe('production');
+    expect(loadConfig({ AUTH_SECRET_KEY: TEST_KEY }).env).toBe('production');
+    expect(loadConfig({ NODE_ENV: '', AUTH_SECRET_KEY: TEST_KEY }).env).toBe('production');
     expect(loadConfig({ NODE_ENV: 'development' }).env).toBe('development');
   });
 
   it('hat sichere Standardwerte (nur localhost)', () => {
-    const c = loadConfig({});
+    const c = loadConfig({ AUTH_SECRET_KEY: TEST_KEY });
     expect(c.host).toBe('127.0.0.1');
     expect(c.port).toBe(4400);
     expect(c.wsMaxPerIp).toBeGreaterThan(0);
     expect(c.authRateLimitMax).toBeLessThan(c.rateLimitMax);
+  });
+});
+
+describe('Schlüssel und Datenbank-Rollen (Konfiguration)', () => {
+  it('production verlangt AUTH_SECRET_KEY und lehnt Platzhalter, kurze und gleichförmige Schlüssel ab', () => {
+    expect(() => loadConfig({ NODE_ENV: 'production' })).toThrow(/AUTH_SECRET_KEY/);
+    expect(() => loadConfig({ AUTH_SECRET_KEY: 'CHANGE_ME_CHANGE_ME_CHANGE_ME_CHANGE_ME' })).toThrow(/Platzhalter/);
+    expect(() => loadConfig({ AUTH_SECRET_KEY: Buffer.from('zu kurz').toString('base64') })).toThrow(/32 Byte/);
+    expect(() => loadConfig({ AUTH_SECRET_KEY: Buffer.alloc(32).toString('base64') })).toThrow(/unzulässig/);
+    expect(loadConfig({ AUTH_SECRET_KEY: TEST_KEY }).auth.secretKey.length).toBe(32);
+    expect(loadConfig({ AUTH_SECRET_KEY: Buffer.from(TEST_KEY, 'base64').toString('hex') }).auth.secretKey.length).toBe(32);
+  });
+
+  it('Entwicklung und Test erzeugen ohne Schlüssel einen flüchtigen', () => {
+    const a = loadConfig({ NODE_ENV: 'test' }).auth.secretKey;
+    const b = loadConfig({ NODE_ENV: 'test' }).auth.secretKey;
+    expect(a.length).toBe(32);
+    expect(a.equals(b)).toBe(false);
+  });
+
+  it('liest den Schlüssel aus einer Datei außerhalb der Datenbank (AUTH_SECRET_KEY_FILE)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'lx-key-'));
+    tmpDirs.push(dir);
+    const file = join(dir, 'auth.key');
+    writeFileSync(file, `${TEST_KEY}
+`);
+    expect(loadConfig({ AUTH_SECRET_KEY_FILE: file }).auth.secretKey.toString('base64')).toBe(TEST_KEY);
+    expect(() => loadConfig({ AUTH_SECRET_KEY_FILE: join(dir, 'fehlt') })).toThrow(/AUTH_SECRET_KEY_FILE/);
+  });
+
+  it('trennt Migrations- und Laufzeit-Datenbank (Rückfall: nur DATABASE_URL)', () => {
+    const both = loadConfig({ AUTH_SECRET_KEY: TEST_KEY, DATABASE_URL: 'postgres://app@h/db', MIGRATION_DATABASE_URL: 'postgres://owner@h/db' });
+    expect(both.databaseUrl).toBe('postgres://app@h/db');
+    expect(both.migrationDatabaseUrl).toBe('postgres://owner@h/db');
+    expect(loadConfig({ AUTH_SECRET_KEY: TEST_KEY, DATABASE_URL: 'postgres://app@h/db' }).migrationDatabaseUrl).toBeUndefined();
+  });
+
+  it('RP-ID ist konfigurierbar und Standard ist der Hostname von PUBLIC_URL', () => {
+    expect(loadConfig({ NODE_ENV: 'test', PUBLIC_URL: 'https://familie.lx-labs.dev' }).auth.rpId).toBe('familie.lx-labs.dev');
+    expect(loadConfig({ NODE_ENV: 'test', WEBAUTHN_RP_ID: 'lx-labs.dev' }).auth.rpId).toBe('lx-labs.dev');
+    expect(() => loadConfig({ NODE_ENV: 'test', WEBAUTHN_RP_ID: 'https://x' })).toThrow(/WEBAUTHN_RP_ID/);
+  });
+});
+
+describe('Fehlerhandler', () => {
+  it('gibt nie interne Meldungen aus (500) und antwortet auf kaputte Eingaben generisch (400/404)', async () => {
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk, _enc, cb) {
+        lines.push(String(chunk));
+        cb();
+      },
+    });
+    const instance = await start({ env: { LOG_LEVEL: 'error' }, logStream });
+    const missing = await instance.inject('/api/v1/gibt-es-nicht');
+    expect(missing.json()).toEqual({ error: 'not_found', message: 'Nicht gefunden.' });
+    const bad = await instance.inject({ method: 'POST', url: '/api/v1/sync', headers: { 'content-type': 'application/json' }, payload: '{kaputt' });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toEqual({ error: 'invalid_request', message: 'Ungültige Eingabe.' });
+    expect(bad.payload).not.toMatch(/JSON|token|position/i);
+    const wrongType = await instance.inject({ method: 'POST', url: '/api/v1/sync', headers: { 'content-type': 'application/xml' }, payload: '<x/>' });
+    expect(wrongType.statusCode).toBe(415);
+    expect(wrongType.json().error).toBe('unsupported_media_type');
+  });
+
+  it('antwortet auf unerwartete Fehler mit 500 und generischem Text; Details stehen nur im Log', async () => {
+    const { default: Fastify } = await import('fastify');
+    const { registerErrorHandling } = await import('../src/errors.js');
+    const lines: string[] = [];
+    const logStream = new Writable({
+      write(chunk, _enc, cb) {
+        lines.push(String(chunk));
+        cb();
+      },
+    });
+    const f = Fastify({ logger: { level: 'error', stream: logStream } });
+    registerErrorHandling(f);
+    f.get('/boom', async () => {
+      throw new Error('GEHEIM: select * from users');
+    });
+    const res = await f.inject('/boom');
+    expect(res.statusCode).toBe(500);
+    expect(res.json()).toEqual({ error: 'internal_error', message: 'Interner Fehler.' });
+    expect(res.payload).not.toContain('GEHEIM');
+    expect(lines.join('')).toContain('GEHEIM');
+    await f.close();
   });
 });

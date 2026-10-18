@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { buildApp } from './app.js';
+import { startMaintenance } from './auth/maintenance.js';
 import { loadConfig } from './config.js';
 import { createDb } from './db/index.js';
 
@@ -13,12 +14,16 @@ const database = config.databaseUrl
 
 const app = await buildApp({
   config,
+  db: database?.db,
   pingDb: database ? async () => void (await database.db.execute(sql`select 1`)) : undefined,
 });
 logRef.current = app.log;
+// Aufräumen beim Start und täglich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
+const maintenance = app.authCore ? startMaintenance(app.authCore.ctx) : undefined;
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'Beende Server');
+  maintenance?.stop();
   await app.close();
   await database?.pool.end();
   process.exit(0);
