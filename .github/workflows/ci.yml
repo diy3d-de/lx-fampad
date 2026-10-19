@@ -96,6 +96,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Speicherplatz: NDK-Download, libsodium-Build für alle ABIs und die APK füllen die Platte des Runners ("No space left on device"); ungenutzte Vorinstallationen entfernen
+      - run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk/27* /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift /usr/local/.ghcup && df -h /
+        working-directory: .
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
