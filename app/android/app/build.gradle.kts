@@ -22,6 +22,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications (Terminerinnerungen) braucht java.time auf älteren Android-Versionen
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -54,6 +56,8 @@ android {
             // bewusst kein Rückfall auf den Debug-Schlüssel: ohne key.properties gibt es keine Signatur,
             // und der Build bricht unten mit einer klaren Meldung ab
             signingConfig = signingConfigs.findByName("release")
+            // Regeln für R8 (flutter_local_notifications braucht Gson/TypeToken, siehe proguard-rules.pro)
+            proguardFiles("proguard-rules.pro")
         }
     }
 }
@@ -74,6 +78,7 @@ gradle.taskGraph.whenReady {
 
 dependencies {
     implementation("androidx.core:core:1.16.0")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
 
 kotlin {

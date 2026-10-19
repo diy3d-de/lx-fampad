@@ -38,6 +38,8 @@ dependencies:
   timezone: 0.11.1
   # ICS-Import: Dateiauswahl über den System-Picker (Android ohne Speicherberechtigung, Web: Browser-Dialog)
   file_picker: 13.1.0
+  # Lokale Terminerinnerungen (nur Android; Web bekommt keine). 22.3.2 (12.10.2026) war zum Stichtag jünger als 14 Tage
+  flutter_local_notifications: 22.3.1
 
 dev_dependencies:
   flutter_test:
