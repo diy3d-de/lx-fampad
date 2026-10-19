@@ -172,7 +172,7 @@ void main() {
     c = ProviderContainer(overrides: [...env.overrides, syncZufallProvider.overrideWithValue(_FesterZufall())]);
     sync = c.read(syncProvider.notifier)..starten();
     await ruhe(tester);
-    expect(c.read(syncProvider).status, SyncStatus.fehler);
+    expect(c.read(syncProvider).status, SyncStatus.laeuft, reason: 'Mengenlimit mit Wartezeit ist kein Fehler');
     await ruhe(tester, const Duration(seconds: 6));
     expect(anfragen(), 1, reason: 'Retry-After: 7 s schlägt den Backoff von 2 s');
     await ruhe(tester, const Duration(seconds: 2));

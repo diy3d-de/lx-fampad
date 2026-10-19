@@ -332,6 +332,10 @@ class SyncController extends Notifier<SyncState> {
       case SyncAusgang.offline:
         state = state.copyWith(status: SyncStatus.offline, meldung: e.meldung, hinweise: hinweise);
         _backoffPlanen(e);
+      case SyncAusgang.ueberlastet when e.warten != null:
+        // Mengenlimit mit Wartezeit (z. B. großer Import): kein Fehler, der Abgleich läuft nach der Wartezeit weiter
+        state = state.copyWith(status: SyncStatus.laeuft, hinweise: hinweise);
+        _backoffPlanen(e);
       case SyncAusgang.ueberlastet || SyncAusgang.fehler:
         state = state.copyWith(status: SyncStatus.fehler, meldung: e.meldung, hinweise: hinweise);
         _backoffPlanen(e);
@@ -341,6 +345,17 @@ class SyncController extends Notifier<SyncState> {
   /// Nächster Versuch nach 2 s, 4 s, 8 s ... höchstens 5 min (mit ±50 % Zufall); bei 429/503 mindestens die Wartezeit des Servers.
   void _backoffPlanen(SyncErgebnis e, {bool kurz = false}) {
     if (!_aktiv) return;
+    // Mengenlimit des Servers (429 mit Retry-After, z. B. bei einem großen Import): genau so lange warten wie genannt (plus bis zu 1 s Zufall)
+    // und nicht hochschaukeln, sonst dauert ein Import mit vielen Änderungen ein Vielfaches der nötigen Zeit.
+    if (e.ausgang == SyncAusgang.ueberlastet && e.warten != null) {
+      final warte = e.warten! + Duration(milliseconds: 250 + (ref.read(syncZufallProvider).nextDouble() * 750).round());
+      _backoffTimer?.cancel();
+      _backoffTimer = Timer(warte, () {
+        _backoffTimer = null;
+        unawaited(synchronisieren());
+      });
+      return;
+    }
     _fehlversuche++;
     final basis = min(_zeiten.backoffMax.inMilliseconds, _zeiten.backoffStart.inMilliseconds * pow(2, min(_fehlversuche - 1, 16)).toInt());
     var warte = Duration(milliseconds: kurz ? _zeiten.backoffStart.inMilliseconds : (basis * (0.5 + ref.read(syncZufallProvider).nextDouble())).round());
