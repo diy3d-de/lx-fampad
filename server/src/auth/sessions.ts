@@ -323,9 +323,54 @@ export interface RefreshResult {
 }
 
 /**
+ * Toleranzfenster für ein gerade rotiertes Refresh-Token (Antwort ging unterwegs verloren, z. B. Funkloch nach dem Senden).
+ * Nur wenn ALLES zutrifft, wird die Wiederholung bedient statt die Familie zu widerrufen:
+ *   - die Zeile wurde vor höchstens `refreshGraceSec` Sekunden eingelöst (festes Fenster ab used_at, nicht gleitend),
+ *   - dieselbe Geräte-ID wie beim ersten Einlösen,
+ *   - die Nachfolgerin ist noch unbenutzt (nicht eingelöst, nicht widerrufen).
+ * Dann wird die Nachfolgerin widerrufen und genau eine neue Nachfolgerin ausgestellt (es gibt nie zwei lebende Nachfolger).
+ * Alles andere bleibt echte Wiederverwendung (Familie widerrufen). Die Zeile der eingelösten Sitzung wird gesperrt (FOR UPDATE),
+ * damit parallele Wiederholungen nacheinander laufen.
+ */
+async function regrantRefresh(
+  ctx: AuthContext,
+  rowId: string,
+  input: { deviceId: string },
+  meta: RequestMeta,
+): Promise<{ next: { row: SessionRow; token: string }; revokedSuccessor: string } | null> {
+  const graceMs = ctx.config.auth.refreshGraceSec * 1000;
+  if (graceMs <= 0) return null;
+  return ctx.db.transaction(async (tx) => {
+    const [cur] = await tx.select().from(sessions).where(eq(sessions.id, rowId)).for('update');
+    if (!cur || cur.kind !== 'app' || cur.revokedAt || !cur.usedAt || !cur.rotatedTo) return null;
+    if (!cur.deviceId || cur.deviceId !== input.deviceId) return null;
+    const now = ctx.now();
+    if (now.getTime() - cur.usedAt.getTime() > graceMs || now.getTime() < cur.usedAt.getTime()) return null;
+    if (!isAlive(ctx, cur, { allowUsed: true })) return null;
+    const [succ] = await tx.select().from(sessions).where(eq(sessions.id, cur.rotatedTo)).for('update');
+    if (!succ || succ.revokedAt || succ.usedAt || succ.tokenFamily !== cur.tokenFamily) return null;
+    await tx.update(sessions).set({ revokedAt: now }).where(eq(sessions.id, succ.id));
+    const next = await insertSession(ctx, tx, {
+      familyId: cur.familyId,
+      userId: cur.userId,
+      deviceId: cur.deviceId,
+      kind: 'app',
+      authMethod: cur.authMethod as AuthMethod,
+      stepUpAt: cur.stepUpAt,
+      tokenFamily: cur.tokenFamily,
+      expiresAt: cur.expiresAt,
+    });
+    await tx.update(sessions).set({ rotatedTo: next.row.id }).where(eq(sessions.id, cur.id));
+    await writeAudit(ctx, tx, { event: 'session_refresh_retry', familyId: cur.familyId, actorId: cur.userId, deviceId: cur.deviceId, ip: meta.ip });
+    return { next, revokedSuccessor: succ.id };
+  });
+}
+
+/**
  * Löst ein Refresh-Token ein. Jedes Token gilt genau einmal: Die Zeile bekommt used_at und rotated_to, eine
  * Nachfolgerin in derselben token_family entsteht. Wird ein bereits eingelöstes Token erneut vorgelegt (auch
  * gleichzeitig), ist es gestohlen oder kopiert: die ganze Familie wird widerrufen und ein Audit-Eintrag geschrieben.
+ * Ausnahme: das kurze Toleranzfenster, siehe [regrantRefresh].
  */
 export async function refreshSession(ctx: AuthContext, input: { refreshToken: string; deviceId: string }, meta: RequestMeta): Promise<RefreshResult> {
   const fail = () => new AppError(401, 'invalid_token', 'Sitzung abgelaufen. Bitte neu anmelden.');
@@ -333,7 +378,13 @@ export async function refreshSession(ctx: AuthContext, input: { refreshToken: st
   if (!live || live.row.kind !== 'app') throw fail();
   const row = live.row;
 
-  const reuse = async () => {
+  const reuse = async (): Promise<RefreshResult> => {
+    // erst das Toleranzfenster (verlorene Antwort, gleiches Gerät, Nachfolgerin unbenutzt), sonst Widerruf der Familie
+    const again = await regrantRefresh(ctx, row.id, input, meta);
+    if (again) {
+      ctx.onRevoke({ kind: 'session', sessionId: again.revokedSuccessor });
+      return { established: toEstablished(ctx, again.next.row, again.next.token) };
+    }
     await ctx.db.transaction(async (tx) => {
       await revokeFamily(ctx, tx, row.tokenFamily);
       await writeAudit(ctx, tx, { event: 'session_reuse_detected', familyId: row.familyId, actorId: row.userId, deviceId: row.deviceId, ip: meta.ip });
@@ -348,7 +399,7 @@ export async function refreshSession(ctx: AuthContext, input: { refreshToken: st
 
   const now = ctx.now();
   const result = await ctx.db.transaction(async (tx) => {
-    // Einlösen ist atomar: nur die erste Anfrage setzt used_at, jede weitere gilt als Wiederverwendung
+    // Einlösen ist atomar: nur die erste Anfrage setzt used_at, jede weitere gilt als Wiederverwendung (oder Wiederholung im Fenster)
     const claimed = await tx
       .update(sessions)
       .set({ usedAt: now })

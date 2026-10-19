@@ -22,6 +22,8 @@ export interface AuthConfig {
   /** Refresh-Token (App): absolute Dauer und Leerlauf in Tagen. */
   appSessionMaxDays: number;
   appSessionIdleDays: number;
+  /** Toleranzfenster (Sekunden) für ein gerade rotiertes Refresh-Token derselben Geräte-ID, solange die Nachfolgerin unbenutzt ist (Antwort ging verloren). 0 = aus. */
+  refreshGraceSec: number;
   /** So lange gilt eine erneute Bestätigung (Step-up) bzw. die Anmeldung als frisch. */
   stepUpMaxAgeSec: number;
   wsTicketTtlSec: number;
@@ -173,6 +175,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       webSessionIdleDays: 7,
       appSessionMaxDays: 90,
       appSessionIdleDays: 30,
+      refreshGraceSec: 30,
       stepUpMaxAgeSec: 5 * 60,
       wsTicketTtlSec: 30,
       challengeTtlSec: 5 * 60,

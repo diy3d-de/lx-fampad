@@ -24,6 +24,7 @@ export type AuditEvent =
   | 'logout'
   | 'logout_all'
   | 'session_reuse_detected'
+  | 'session_refresh_retry'
   | 'step_up_ok'
   | 'step_up_failed'
   | 'passkey_added'

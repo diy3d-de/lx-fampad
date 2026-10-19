@@ -7,10 +7,10 @@ import { credentials, memberships, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
-import type { AuthContext, RequestMeta } from './context.js';
+import type { AuthContext, Executor, RequestMeta, Tx } from './context.js';
 import { assertNotLocked, clearAccountFailures, ipKey, loginKeys, recordLoginFailure } from './lockout.js';
 import { verifyPassword } from './password.js';
-import { consumeRecoveryCode, countRemainingCodes } from './recovery.js';
+import { consumeRecoveryCode, countRemainingCodes, isRecoveryCodeValid } from './recovery.js';
 import { establishSession, markStepUp, type AuthMethod, type DeviceInput, type Established, type SessionKind } from './sessions.js';
 import { checkTotp } from './totp.js';
 import type { Role, SessionPrincipal } from './types.js';
@@ -75,43 +75,64 @@ async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, em
   throw invalidCredentials();
 }
 
-/** Nach erfolgreicher Prüfung: Konto muss aktiv sein (pending/gesperrt gehören nicht angemeldet). */
+/**
+ * Nach erfolgreicher Prüfung: Konto muss aktiv sein (pending/gesperrt gehören nicht angemeldet).
+ * [verbrauchen] (zweiter Faktor: TOTP-Zeitschritt, Wiederherstellungscode) läuft in DERSELBEN Transaktion wie die Sitzungserstellung
+ * und erst NACH der Statusprüfung: bei pending/gesperrt wird nichts verbraucht. Gibt null zurück, wenn der Faktor nicht (mehr) einlösbar war.
+ */
 async function finishLogin(
   ctx: AuthContext,
   account: Account,
-  input: { client: SessionKind; device?: DeviceInput | undefined; method: AuthMethod; meta: RequestMeta },
-): Promise<Established> {
+  input: { client: SessionKind; device?: DeviceInput | undefined; method: AuthMethod; meta: RequestMeta; verbrauchen?: ((tx: Tx) => Promise<boolean>) | undefined },
+): Promise<Established | null> {
   if (account.disabled) throw invalidCredentials();
   if (account.status === 'pending') throw pending();
+  const established = await ctx.db.transaction(async (tx) => {
+    if (input.verbrauchen && !(await input.verbrauchen(tx))) return null;
+    return establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.method, meta: input.meta });
+  });
   // Passkeys sind nicht ratbar: sie setzen die Zähler der Passwort-Anmeldung nicht zurück
-  if (input.method !== 'passkey') await clearAccountFailures(ctx, input.meta.ip, account.email);
-  return ctx.db.transaction((tx) =>
-    establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.method, meta: input.meta }),
-  );
+  if (established && input.method !== 'passkey') await clearAccountFailures(ctx, input.meta.ip, account.email);
+  return established;
 }
 
-/** Prüft einen TOTP-Code der Person; der Zeitschritt wird atomar verbraucht (Replay-Schutz auch bei parallelen Anfragen). */
-export async function verifyUserTotp(ctx: AuthContext, userId: string, code: string): Promise<boolean> {
+interface TotpHit {
+  credentialId: string;
+  step: number;
+}
+
+/** Prüft einen TOTP-Code der Person, OHNE den Zeitschritt zu verbrauchen. */
+export async function checkUserTotp(ctx: AuthContext, userId: string, code: string): Promise<TotpHit | null> {
   const [c] = await ctx.db
     .select()
     .from(credentials)
     .where(and(eq(credentials.userId, userId), eq(credentials.type, 'totp'), isNull(credentials.revokedAt)));
-  if (!c) return false;
+  if (!c) return null;
   let secret: string;
   try {
     secret = ctx.keys.decrypt('totp', c.secret, `totp:${userId}`);
   } catch (err) {
     ctx.log.error({ err: (err as Error).message, userId }, 'TOTP-Geheimnis nicht entschlüsselbar (Schlüssel geändert?)');
-    return false;
+    return null;
   }
   const step = await checkTotp(secret, code, ctx.now(), c.lastTimeStep);
-  if (step === null) return false;
-  const claimed = await ctx.db
+  return step === null ? null : { credentialId: c.id, step };
+}
+
+/** Verbraucht den Zeitschritt atomar (Replay-Schutz auch bei parallelen Anfragen); false, wenn er schon vergeben ist. */
+async function claimTotpStep(ctx: AuthContext, exec: Executor, hit: TotpHit): Promise<boolean> {
+  const claimed = await exec
     .update(credentials)
-    .set({ lastTimeStep: step, lastUsedAt: ctx.now() })
-    .where(and(eq(credentials.id, c.id), sql`(${credentials.lastTimeStep} is null or ${credentials.lastTimeStep} < ${step})`))
+    .set({ lastTimeStep: hit.step, lastUsedAt: ctx.now() })
+    .where(and(eq(credentials.id, hit.credentialId), sql`(${credentials.lastTimeStep} is null or ${credentials.lastTimeStep} < ${hit.step})`))
     .returning({ id: credentials.id });
   return claimed.length > 0;
+}
+
+/** Prüft einen TOTP-Code der Person; der Zeitschritt wird atomar verbraucht (Replay-Schutz auch bei parallelen Anfragen). */
+export async function verifyUserTotp(ctx: AuthContext, userId: string, code: string): Promise<boolean> {
+  const hit = await checkUserTotp(ctx, userId, code);
+  return hit !== null && (await claimTotpStep(ctx, ctx.db, hit));
 }
 
 // ---------- Passwort + TOTP ----------
@@ -132,16 +153,28 @@ export async function loginWithPassword(
     hash = c?.secret ?? null;
   }
   const passwordOk = await verifyPassword(hash, input.password);
-  let secondOk = false;
-  if (passwordOk && account) {
-    if (input.totp) secondOk = await verifyUserTotp(ctx, account.userId, input.totp);
-    else if (input.recoveryCode) {
-      secondOk = await consumeRecoveryCode(ctx, account.userId, input.recoveryCode);
-      if (secondOk) await writeAudit(ctx, ctx.db, { event: 'recovery_code_used', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { with: 'password' } });
+  if (!account || !passwordOk) return failLogin(ctx, meta, 'password', input.email, account);
+  // gesperrte Konten: wie ein falsches Passwort, ohne den zweiten Faktor anzufassen
+  if (account.disabled) return failLogin(ctx, meta, 'password', input.email, account);
+  // Zweiter Faktor: zuerst nur prüfen; verbraucht wird er erst in der Anmelde-Transaktion, nach der Statusprüfung
+  let verbrauchen: ((tx: Tx) => Promise<boolean>) | undefined;
+  if (input.totp) {
+    const hit = await checkUserTotp(ctx, account.userId, input.totp);
+    if (hit) verbrauchen = (tx) => claimTotpStep(ctx, tx, hit);
+  } else if (input.recoveryCode) {
+    const code = input.recoveryCode;
+    if (await isRecoveryCodeValid(ctx, account.userId, code)) {
+      verbrauchen = async (tx) => {
+        if (!(await consumeRecoveryCode(ctx, account.userId, code, tx))) return false;
+        await writeAudit(ctx, tx, { event: 'recovery_code_used', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { with: 'password' } });
+        return true;
+      };
     }
   }
-  if (!account || !passwordOk || !secondOk) return failLogin(ctx, meta, 'password', input.email, account);
-  return finishLogin(ctx, account, { client: input.client, device: input.device, method: 'password', meta });
+  if (!verbrauchen) return failLogin(ctx, meta, 'password', input.email, account);
+  // Erst nach erfolgreicher Prüfung von Passwort UND zweitem Faktor darf die Antwort den Status verraten (403 account_pending)
+  const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'password', meta, verbrauchen });
+  return est ?? failLogin(ctx, meta, 'password', input.email, account);
 }
 
 // ---------- Wiederherstellungs-Code (verlorener Passkey/TOTP) ----------
@@ -153,10 +186,16 @@ export async function loginWithRecoveryCode(
 ): Promise<{ session: Established; remainingCodes: number }> {
   await assertNotLocked(ctx, loginKeys(ctx, meta.ip, input.email));
   const account = await findAccountByEmail(ctx, input.email);
-  const ok = account ? await consumeRecoveryCode(ctx, account.userId, input.code) : false;
-  if (!account || !ok) return failLogin(ctx, meta, 'recovery', input.email, account);
-  await writeAudit(ctx, ctx.db, { event: 'recovery_code_used', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { with: 'recovery' } });
-  const session = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'recovery', meta });
+  // gesperrte Konten: wie ein falscher Code; pending: der Code wird geprüft, aber erst nach gültigem Code kommt 403 und nichts wird verbraucht
+  const gueltig = account && !account.disabled ? await isRecoveryCodeValid(ctx, account.userId, input.code) : false;
+  if (!account || !gueltig) return failLogin(ctx, meta, 'recovery', input.email, account);
+  const verbrauchen = async (tx: Tx): Promise<boolean> => {
+    if (!(await consumeRecoveryCode(ctx, account.userId, input.code, tx))) return false;
+    await writeAudit(ctx, tx, { event: 'recovery_code_used', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { with: 'recovery' } });
+    return true;
+  };
+  const session = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'recovery', meta, verbrauchen });
+  if (!session) return failLogin(ctx, meta, 'recovery', input.email, account);
   return { session, remainingCodes: await countRemainingCodes(ctx, account.userId) };
 }
 
@@ -245,7 +284,9 @@ export async function finishPasskeyLogin(
   // fehlschlagen lässt, soll das Konto nicht sperren können (nur die IP-Sperre gilt)
   const ok = await verifyPasskeyAssertion(ctx, passkey, input.response, taken.challenge, meta);
   if (!ok) return failLogin(ctx, meta, 'passkey', undefined, account);
-  return finishLogin(ctx, account, { client: input.client, device: input.device, method: 'passkey', meta });
+  const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'passkey', meta });
+  if (!est) return failLogin(ctx, meta, 'passkey', undefined, account);
+  return est;
 }
 
 // ---------- Step-up ----------

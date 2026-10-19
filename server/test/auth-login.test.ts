@@ -319,6 +319,108 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       expect(events1).toEqual(expect.arrayContaining(['device_added', 'device_removed']));
     });
 
+    describe('zweiter Faktor wird nur bei aktivem Konto verbraucht', () => {
+      const unusedCodes = async (email: string) => {
+        const [u] = await harness.db.select().from(schema.users).where(eq(schema.users.email, email));
+        const rows = await harness.db.select().from(schema.recoveryCodes).where(eq(schema.recoveryCodes.userId, u?.id ?? ''));
+        return rows.filter((r) => r.usedAt === null).length;
+      };
+      const totpStep = async (email: string) => {
+        const [u] = await harness.db.select().from(schema.users).where(eq(schema.users.email, email));
+        const rows = await harness.db.select().from(schema.credentials).where(eq(schema.credentials.userId, u?.id ?? ''));
+        return rows.find((r) => r.type === 'totp')?.lastTimeStep ?? null;
+      };
+      async function member() {
+        const a = await adminPassword(world);
+        const g = await addMember(world, a.client, 'guest', 'oma@example.org');
+        expect(g.complete?.json.status).toBe('pending');
+        const id = (await a.client.get('/api/v1/members')).json.members.find((m: { email: string }) => m.email === 'oma@example.org').id as string;
+        return { a, g, id };
+      }
+
+      it('pending + gültiger Wiederherstellungscode (Passwort-Anmeldung): 403 und kein Code verbraucht', async () => {
+        const { a, g, id } = await member();
+        const code = g.recoveryCodes[0] ?? '';
+        const res = await world.client('203.0.113.201').post('/api/v1/auth/login/password', { email: g.email, password: g.password, recoveryCode: code });
+        expect(res.status).toBe(403);
+        expect(res.json.error).toBe('account_pending');
+        expect(await unusedCodes(g.email)).toBe(10);
+        // nach der Freigabe gilt derselbe Code noch
+        expect((await a.client.post(`/api/v1/members/${id}/approve`)).status).toBe(200);
+        const ok = await world.client('203.0.113.202').post('/api/v1/auth/login/password', { email: g.email, password: g.password, recoveryCode: code });
+        expect(ok.status).toBe(200);
+        expect(await unusedCodes(g.email)).toBe(9);
+      });
+
+      it('pending + gültiger TOTP-Zeitschritt: 403 und Zeitschritt nicht verbraucht', async () => {
+        const { a, g, id } = await member();
+        world.advance(31_000);
+        const before = await totpStep(g.email);
+        const totp = await world.totp(g.totpSecret);
+        const res = await world.client('203.0.113.203').post('/api/v1/auth/login/password', { email: g.email, password: g.password, totp });
+        expect(res.status).toBe(403);
+        expect(res.json.error).toBe('account_pending');
+        expect(await totpStep(g.email)).toBe(before);
+        expect((await a.client.post(`/api/v1/members/${id}/approve`)).status).toBe(200);
+        // derselbe Code funktioniert jetzt, weil er nicht verbraucht wurde
+        const ok = await world.client('203.0.113.204').post('/api/v1/auth/login/password', { email: g.email, password: g.password, totp });
+        expect(ok.status).toBe(200);
+        expect(await totpStep(g.email)).not.toBe(before);
+      });
+
+      it('pending verrät sich nicht vor dem zweiten Faktor: falsches Passwort oder falscher Code -> 401 invalid_credentials', async () => {
+        const { g } = await member();
+        world.advance(31_000);
+        const wrongPw = await world.client('203.0.113.205').post('/api/v1/auth/login/password', { email: g.email, password: 'ganz-falsches-passwort-1', totp: await world.totp(g.totpSecret) });
+        expect(wrongPw.status).toBe(401);
+        expect(wrongPw.json.error).toBe('invalid_credentials');
+        const wrongCode = await world.client('203.0.113.206').post('/api/v1/auth/login/password', { email: g.email, password: g.password, totp: '000000' });
+        expect(wrongCode.status).toBe(401);
+        const wrongRecovery = await world.client('203.0.113.207').post('/api/v1/auth/login/password', { email: g.email, password: g.password, recoveryCode: 'AAAA-BBBB-CCCC-DDDD' });
+        expect(wrongRecovery.status).toBe(401);
+        const noFactor = await world.client('203.0.113.208').post('/api/v1/auth/login/password', { email: g.email, password: g.password });
+        expect(noFactor.status).toBe(401);
+        const wrongRecoveryOnly = await world.client('203.0.113.209').post('/api/v1/auth/login/recovery', { email: g.email, code: 'AAAA-BBBB-CCCC-DDDD' });
+        expect(wrongRecoveryOnly.status).toBe(401);
+      });
+
+      it('pending + gültiger Wiederherstellungscode (nur Code): 403 und Code unverändert', async () => {
+        const { g } = await member();
+        const res = await world.client('203.0.113.210').post('/api/v1/auth/login/recovery', { email: g.email, code: g.recoveryCodes[3] ?? '' });
+        expect(res.status).toBe(403);
+        expect(res.json.error).toBe('account_pending');
+        expect(await unusedCodes(g.email)).toBe(10);
+      });
+
+      it('gesperrtes Konto: invalid_credentials, nichts verbraucht (Passwort+TOTP, Passwort+Code, nur Code)', async () => {
+        const a = await adminPassword(world);
+        const m = await addMember(world, a.client, 'child', 'kind@example.org', { requireApproval: false });
+        expect(m.complete?.json.status).toBe('active');
+        await harness.db.update(schema.users).set({ disabledAt: new Date(world.clock) }).where(eq(schema.users.email, 'kind@example.org'));
+        world.advance(31_000);
+        const before = await totpStep(m.email);
+        const totp = await world.totp(m.totpSecret);
+        const r1 = await world.client('203.0.113.211').post('/api/v1/auth/login/password', { email: m.email, password: m.password, totp });
+        const r2 = await world.client('203.0.113.212').post('/api/v1/auth/login/password', { email: m.email, password: m.password, recoveryCode: m.recoveryCodes[0] });
+        const r3 = await world.client('203.0.113.213').post('/api/v1/auth/login/recovery', { email: m.email, code: m.recoveryCodes[1] ?? '' });
+        for (const r of [r1, r2, r3]) {
+          expect(r.status).toBe(401);
+          expect(r.json.error).toBe('invalid_credentials');
+        }
+        expect(await totpStep(m.email)).toBe(before);
+        expect(await unusedCodes(m.email)).toBe(10);
+      });
+
+      it('aktives Konto: der Wiederherstellungscode wird verbraucht und gilt kein zweites Mal', async () => {
+        const a = await adminPassword(world);
+        const res = await world.client('203.0.113.214').post('/api/v1/auth/login/password', { email: a.email, password: a.password, recoveryCode: a.recoveryCodes[2] });
+        expect(res.status).toBe(200);
+        expect(await unusedCodes(a.email)).toBe(9);
+        const again = await world.client('203.0.113.215').post('/api/v1/auth/login/password', { email: a.email, password: a.password, recoveryCode: a.recoveryCodes[2] });
+        expect(again.status).toBe(401);
+      });
+    });
+
     describe('App: Access- und Refresh-Token', () => {
       async function appLogin() {
         const a = await adminPassword(world);
@@ -359,7 +461,8 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
         expect(old?.rotatedTo).toBe(fresh?.id);
         expect(old?.tokenFamily).toBe(fresh?.tokenFamily);
 
-        // Diebstahl: das alte Token wird erneut vorgelegt -> die ganze Familie fällt
+        // Diebstahl: das alte Token wird (nach dem Toleranzfenster) erneut vorgelegt -> die ganze Familie fällt
+        world.advance(31_000);
         const reuse = await world.client('198.51.100.9').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId });
         expect(reuse.status).toBe(401);
         expect((await c.get('/api/v1/me')).status).toBe(401); // auch das neue Access-Token ist tot
@@ -370,15 +473,108 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
         expect(await events()).toContain('session_reuse_detected');
       });
 
-      it('gleichzeitige Einlösung desselben Refresh-Tokens: nur eine Anfrage gewinnt, die Familie wird widerrufen', async () => {
+      const SEC = 1000;
+      const familyRows = async (token: string) => {
+        const rows = await harness.db.select().from(schema.sessions);
+        const mine = rows.find((r) => r.tokenHash === sha256Hex(token));
+        return rows.filter((r) => r.tokenFamily === mine?.tokenFamily);
+      };
+
+      it('gleichzeitige Einlösung desselben Refresh-Tokens außerhalb des Toleranzfensters: kein Gewinner, Familie widerrufen', async () => {
         const { session } = await appLogin();
+        const first = await world.client('198.51.100.20').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId });
+        expect(first.status).toBe(200);
+        world.advance(31 * SEC);
         const results = await Promise.all(
           ['198.51.100.21', '198.51.100.22', '198.51.100.23'].map((ip) => world.client(ip).post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })),
         );
-        expect(results.filter((r) => r.status === 200).length).toBeLessThanOrEqual(1);
-        const rows = (await harness.db.select().from(schema.sessions)).filter((r) => r.kind === 'app');
-        expect(rows.length).toBeGreaterThanOrEqual(1);
+        expect(results.every((r) => r.status === 401)).toBe(true);
+        const rows = await familyRows(session.refreshToken);
+        expect(rows.length).toBeGreaterThanOrEqual(2);
         expect(rows.every((r) => r.revokedAt !== null)).toBe(true);
+        expect(await events()).toContain('session_reuse_detected');
+      });
+
+      it('Toleranzfenster: wiederholte Anfrage derselben Geräte-ID liefert ein neues Paar, ohne die Familie zu widerrufen', async () => {
+        const { c, session } = await appLogin();
+        c.bearer = undefined;
+        const r1 = await c.post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId });
+        expect(r1.status).toBe(200);
+        // die Antwort ging verloren: die App legt dasselbe Token noch einmal vor
+        world.advance(10 * SEC);
+        const r2 = await world.client('198.51.100.60').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId });
+        expect(r2.status).toBe(200);
+        expect(r2.json.session.refreshToken).not.toBe(r1.json.session.refreshToken);
+        expect(r2.json.session.deviceId).toBe(session.deviceId);
+        // die zuerst ausgestellte, nie angekommene Nachfolgerin ist tot, es gibt genau einen lebenden Nachfolger
+        c.bearer = r1.json.session.accessToken;
+        expect((await c.get('/api/v1/me')).status).toBe(401);
+        c.bearer = r2.json.session.accessToken;
+        expect((await c.get('/api/v1/me')).status).toBe(200);
+        const rows = await familyRows(session.refreshToken);
+        expect(rows.filter((r) => r.revokedAt === null && r.usedAt === null)).toHaveLength(1);
+        expect(rows.find((r) => r.tokenHash === sha256Hex(session.refreshToken))?.rotatedTo).toBe(rows.find((r) => r.tokenHash === sha256Hex(r2.json.session.refreshToken))?.id);
+        // und es geht normal weiter
+        const r3 = await world.client('198.51.100.61').post('/api/v1/auth/refresh', { refreshToken: r2.json.session.refreshToken, deviceId: session.deviceId });
+        expect(r3.status).toBe(200);
+        const ev = await events();
+        expect(ev).toContain('session_refresh_retry');
+        expect(ev).not.toContain('session_reuse_detected');
+      });
+
+      it('Toleranzfenster: nach 30 Sekunden ist die Wiederholung echte Wiederverwendung (Familie widerrufen)', async () => {
+        const { session } = await appLogin();
+        expect((await world.client('198.51.100.62').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })).status).toBe(200);
+        world.advance(30 * SEC + 1);
+        expect((await world.client('198.51.100.63').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })).status).toBe(401);
+        expect((await familyRows(session.refreshToken)).every((r) => r.revokedAt !== null)).toBe(true);
+        expect(await events()).toContain('session_reuse_detected');
+      });
+
+      it('Toleranzfenster: am Rand (genau 30 Sekunden) gilt noch', async () => {
+        const { session } = await appLogin();
+        expect((await world.client('198.51.100.64').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })).status).toBe(200);
+        world.advance(30 * SEC);
+        expect((await world.client('198.51.100.65').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })).status).toBe(200);
+      });
+
+      it('Toleranzfenster: andere Geräte-ID im Fenster ist Wiederverwendung (Familie widerrufen)', async () => {
+        const { session } = await appLogin();
+        const r1 = await world.client('198.51.100.66').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId });
+        expect(r1.status).toBe(200);
+        world.advance(5 * SEC);
+        const stolen = await world.client('198.51.100.67').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: '00000000-0000-4000-8000-000000000000' });
+        expect(stolen.status).toBe(401);
+        expect((await familyRows(session.refreshToken)).every((r) => r.revokedAt !== null)).toBe(true);
+        expect((await world.client('198.51.100.68').post('/api/v1/auth/refresh', { refreshToken: r1.json.session.refreshToken, deviceId: session.deviceId })).status).toBe(401);
+        expect(await events()).toContain('session_reuse_detected');
+      });
+
+      it('Toleranzfenster: wurde die Nachfolgerin schon benutzt, ist die Wiederholung Wiederverwendung', async () => {
+        const { session } = await appLogin();
+        const r1 = await world.client('198.51.100.69').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId });
+        expect(r1.status).toBe(200);
+        // die Nachfolgerin wird eingelöst: dann ist das ursprüngliche Token nur noch kopiert/gestohlen
+        world.advance(2 * SEC);
+        expect((await world.client('198.51.100.70').post('/api/v1/auth/refresh', { refreshToken: r1.json.session.refreshToken, deviceId: session.deviceId })).status).toBe(200);
+        world.advance(2 * SEC);
+        expect((await world.client('198.51.100.71').post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })).status).toBe(401);
+        expect((await familyRows(session.refreshToken)).every((r) => r.revokedAt !== null)).toBe(true);
+        expect(await events()).toContain('session_reuse_detected');
+      });
+
+      it('Toleranzfenster: parallele Wiederholungen derselben Geräte-ID gelingen, es bleibt genau ein lebender Nachfolger', async () => {
+        const { session } = await appLogin();
+        const results = await Promise.all(
+          ['198.51.100.72', '198.51.100.73', '198.51.100.74'].map((ip) => world.client(ip).post('/api/v1/auth/refresh', { refreshToken: session.refreshToken, deviceId: session.deviceId })),
+        );
+        expect(results.every((r) => r.status === 200)).toBe(true);
+        expect(new Set(results.map((r) => r.json.session.refreshToken)).size).toBe(3);
+        const rows = await familyRows(session.refreshToken);
+        const live = rows.filter((r) => r.revokedAt === null && r.usedAt === null);
+        expect(live).toHaveLength(1);
+        expect(results.some((r) => sha256Hex(r.json.session.refreshToken) === live[0]?.tokenHash)).toBe(true);
+        expect(await events()).not.toContain('session_reuse_detected');
       });
 
       it('ist an das Gerät gebunden: falsche Geräte-ID wird abgelehnt', async () => {
