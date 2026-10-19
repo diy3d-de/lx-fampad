@@ -19,6 +19,7 @@
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 
 import '../api/api_client.dart';
 import '../api/api_error.dart';
@@ -35,8 +36,11 @@ import 'push_wecker.dart';
 const kPushHintergrundArgument = '--unifiedpush-bg';
 
 /// Container des Hintergrund-Abgleichs: der API-Client darf nie das Refresh-Token einlösen.
-ProviderContainer hintergrundContainer() => ProviderContainer(
+ProviderContainer hintergrundContainer({List<Override> zusaetzlich = const []}) => ProviderContainer(
   overrides: [
+    ...zusaetzlich,
+    // keine Chat-Verschlüsselung im Wecker-Start: kein Schlüsselbund, kein ChatKryptoController (Klartext im Ausgang geht hier nie hinaus)
+    opVorbereiterProvider.overrideWithValue(null),
     // lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
     ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
     apiClientProvider.overrideWith((ref) => ApiClient(client: ref.watch(httpClientProvider), store: ref.watch(tokenStoreProvider), refreshErlaubt: false)),

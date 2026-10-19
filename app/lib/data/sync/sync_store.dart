@@ -204,16 +204,18 @@ class SyncStore {
   // ------------------------------------------------------------------ Senden
 
   /// Die nächsten Ops (älteste zuerst), als gesendet markiert. Schon gesendete, noch nicht bestätigte Ops gehen erneut mit (gleiche op_id).
-  /// Mit [vorbereiter] wird jede Op vor dem Senden vorbereitet (Chat: verschlüsselt); ist eine Op nicht sendbar, endet die Liste dort: diese und alle späteren
-  /// bleiben im Ausgang. Ein lokaler Klartext (`l1:`) wird nie ausgeliefert.
+  /// Mit [vorbereiter] wird jede Op vor dem Senden vorbereitet (Chat: verschlüsselt). Ist eine Op nicht sendbar, bleibt sie im Ausgang und mit ihr alle
+  /// späteren Ops DERSELBEN Entität/ID (Reihenfolge je Datensatz); alle anderen Ops gehen weiter (sonst könnte eine wartende Nachricht die Epoche blockieren,
+  /// auf die sie selbst wartet). Ein lokaler Klartext (`l1:`) wird nie ausgeliefert.
   Future<List<OutboxData>> naechsteOps(int max, {OpVorbereiter? vorbereiter}) async {
-    final zeilen = await (db.select(db.outbox)
-          ..orderBy([(o) => OrderingTerm.asc(o.id)])
-          ..limit(max))
-        .get();
+    final zeilen = await (db.select(db.outbox)..orderBy([(o) => OrderingTerm.asc(o.id)])).get();
     final bereit = <OutboxData>[];
     final geaendert = <int, String>{};
+    final zurueck = <String>{};
     for (final z in zeilen) {
+      if (bereit.length >= max) break;
+      final key = '${z.entity}/${z.entityId}';
+      if (zurueck.contains(key)) continue;
       var op = z;
       if (vorbereiter != null) {
         String? felder;
@@ -222,13 +224,19 @@ class SyncStore {
         } catch (_) {
           felder = null; // eine fehlgeschlagene Vorbereitung hält die Op zurück, sie geht nie unvorbereitet hinaus
         }
-        if (felder == null) break;
+        if (felder == null) {
+          zurueck.add(key);
+          continue;
+        }
         if (felder != z.fieldsJson) {
           op = z.copyWith(fieldsJson: felder);
           geaendert[z.id] = felder;
         }
       }
-      if (_hatLokalenKlartext(op)) break;
+      if (_hatLokalenKlartext(op)) {
+        zurueck.add(key);
+        continue;
+      }
       bereit.add(op);
     }
     return db.transaction(() async {
@@ -367,7 +375,7 @@ class SyncStore {
     final name = await def.anzeigename(db, z.entityId) ?? 'Ein Eintrag';
     final neu = z.baseRev == 0 && z.op == 'upsert';
     // Normalfall "der erste gewinnt" (gleichzeitige Rotation des Epochenschlüssels): still verwerfen, den Stand des Servers neu laden
-    if (def.abgelehntStill && neu && code != 'duplicate_op') {
+    if (def.abgelehntStill && neu && code != 'duplicate_op' && !(code == 'limit_reached' && def.bleibtBeiLimit)) {
       await _entferneBaum(z.entity, z.entityId);
       bericht.neuLaden = true;
       return;

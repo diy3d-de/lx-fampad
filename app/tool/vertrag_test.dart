@@ -30,6 +30,7 @@ import 'package:lx_fampad/data/chat/chat_ids.dart';
 import 'package:lx_fampad/data/chat/chat_krypto.dart';
 import 'package:lx_fampad/data/chat/chat_krypto_state.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
+import 'package:lx_fampad/data/crypto/crypto_fehler.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
@@ -482,7 +483,7 @@ class E2eeGeraet {
       meineKeyVersion: person.version,
       gemerkt: (u, {version}) async => e.tofu[u],
       serverSchluessel: () => e.karte,
-      absenderSchluessel: (u, v) async => e.tofu[u]?.version == v ? e.tofu[u]! : await g.api.mitgliedSchluessel(u, v),
+      absenderSchluessel: (u, v) async => e.tofu[u]?.version == v ? e.tofu[u]! : throw const CryptoFehler(CryptoFehlerArt.signatur, 'Absender nicht bestätigt'),
     );
     e.engine = SyncEngine(
       store: e.store,
@@ -526,7 +527,7 @@ class E2eeGeraet {
 
   Future<String> lesen(String konversationId, String nachrichtId) async {
     final n = await (db.select(db.nachrichten)..where((x) => x.id.equals(nachrichtId))).getSingle();
-    final d = await krypto.nachrichtOeffnen(konversationId: konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt);
+    final d = await krypto.nachrichtOeffnen(konversationId: konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt, antwortAuf: n.antwortAuf);
     return d.lesbar ? d.text : '<${d.hinweis}>';
   }
 }

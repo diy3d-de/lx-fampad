@@ -1,5 +1,6 @@
 // Migration der lokalen Datenbank von Version 1 (Phase 0 bis 1b: sync_meta + leere outbox) auf Version 2 (Phase 1c: Listen, Einträge,
 // Ausgang mit op_id). Der Besitzer der Daten (sync_meta) muss erhalten bleiben, sonst würde nach dem Update nicht erkannt, wem die Daten gehören.
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/app_database.dart';
@@ -119,10 +120,10 @@ void main() {
     await db.metaSchreiben('sinceRev', '42');
     await db.into(db.listen).insert(ListenCompanion.insert(id: 'l1', name: 'Einkauf', createdAt: DateTime.fromMillisecondsSinceEpoch(1760000000000)));
     await db.close();
-    // Stand der Version 4: Sekunden statt Millisekunden
-    raw.execute("INSERT INTO konversationen (id, art, titel, teilnehmer, created_at, rev) VALUES ('k1', 'family', '', '[]', 1760000000, 3)");
-    raw.execute("INSERT INTO nachrichten (id, konversation_id, text, created_at, bearbeitet_at, rev) VALUES ('n1', 'k1', 'p1:x', 1760000010, 1760000020, 4)");
-    raw.execute("INSERT INTO lesestand (id, konversation_id, user_id, gelesen_bis, rev) VALUES ('s1', 'k1', 'u1', 1760000010, 5)");
+    // Stand der Version 4: Sekunden statt Millisekunden (rev 0: lokal neu und noch nicht gesendet, deshalb bleiben die Zeilen; bestätigte kämen mit dem Snapshot)
+    raw.execute("INSERT INTO konversationen (id, art, titel, teilnehmer, created_at, rev) VALUES ('k1', 'family', '', '[]', 1760000000, 0)");
+    raw.execute("INSERT INTO nachrichten (id, konversation_id, text, created_at, bearbeitet_at, rev) VALUES ('n1', 'k1', 'p1:x', 1760000010, 1760000020, 0)");
+    raw.execute("INSERT INTO lesestand (id, konversation_id, user_id, gelesen_bis, rev) VALUES ('s1', 'k1', 'u1', 1760000010, 0)");
     // Stand der Version 4: ohne enc_version, ohne Epochen und Wraps
     raw.execute('ALTER TABLE konversationen DROP COLUMN enc_version');
     raw.execute('DROP TABLE konversation_epochen');
@@ -145,6 +146,31 @@ void main() {
     await db.into(db.nachrichten).insert(NachrichtenCompanion.insert(id: 'n2', konversationId: 'k1', inhalt: 'p1:y', createdAt: DateTime.fromMillisecondsSinceEpoch(1760000010123)));
     expect((await (db.select(db.nachrichten)..where((n) => n.id.equals('n2'))).getSingle()).createdAt.millisecondsSinceEpoch, 1760000010123);
     expect(raw.select('PRAGMA user_version').single.values.first, 6);
+  });
+
+  test('Version 4 -> 6: auf dem Server gelöschte Chat-Zeilen (Geister) verschwinden, lokal neue (rev 0) bleiben', () async {
+    final raw = sqlite3.openInMemory();
+    addTearDown(raw.close);
+    var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
+    await db.besitzerSetzen('u1');
+    final t0 = DateTime.utc(2026, 10, 19, 9);
+    await db.into(db.konversationen).insert(KonversationenCompanion.insert(id: 'k-alt', art: 'group', createdAt: t0, rev: const Value(5)));
+    await db.into(db.konversationen).insert(KonversationenCompanion.insert(id: 'k-neu', art: 'group', createdAt: t0));
+    await db.into(db.nachrichten).insert(NachrichtenCompanion.insert(id: 'n-alt', konversationId: 'k-alt', inhalt: 'p1:alt', createdAt: t0, rev: const Value(7)));
+    await db.into(db.nachrichten).insert(NachrichtenCompanion.insert(id: 'n-neu', konversationId: 'k-neu', inhalt: 'p1:neu', createdAt: t0));
+    await db.metaSchreiben('sinceRev', '500');
+    await db.close();
+    // Schema der Version 4: ohne Verschlüsselungsspalte und ohne die Epochen-Tabellen
+    raw.execute('ALTER TABLE konversationen DROP COLUMN enc_version');
+    raw.execute('DROP TABLE konversation_epochen');
+    raw.execute('DROP TABLE epoche_wraps');
+    raw.execute('PRAGMA user_version = 4');
+    db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
+    addTearDown(db.close);
+    expect([for (final k in await db.select(db.konversationen).get()) k.id], ['k-neu'], reason: 'die bestätigte Zeile kommt mit dem Snapshot zurück, gelöschte nie');
+    expect([for (final n in await db.select(db.nachrichten).get()) n.id], ['n-neu']);
+    expect(await db.metaLesen('sinceRev'), isNull);
+    expect(await db.besitzerLesen(), 'u1');
   });
 
   test('frische Datenbank: Version 6 mit allen Tabellen', () async {

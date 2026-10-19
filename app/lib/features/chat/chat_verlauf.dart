@@ -321,6 +321,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
               : null,
         ),
         if (verschluesselt) SchluesselWechselHinweis(personen: art == ChatArt.family ? const {} : {...teilnehmer}),
+        if (verschluesselt) AufnahmeHinweis(konversationId: konv.id, chatName: name),
         if (!verschluesselt)
           Container(
             margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),

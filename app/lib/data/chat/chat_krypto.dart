@@ -66,6 +66,26 @@ class EpochenMitglied {
 /// Gründe, warum eine Nachricht nicht lesbar ist (die Oberfläche zeigt je Grund einen kurzen Hinweis, nie Inhalte).
 enum NichtLesbarGrund { schluesselFehlt, absenderUnbekannt, signaturUngueltig, beschaedigt, neuereVersion, unverschluesselt }
 
+/// Was an den Mitgliedern einer Konversation anders ist als in ihrer letzten Epoche. [mitglieder] sind die Empfänger einer neuen Epoche (alle mit
+/// vertrauenswürdigem Schlüssel, auch die [neu] hinzugekommenen).
+///
+/// Automatisch (ohne Rückfrage) rotiert ein Gerät nur, wenn jemand ENTFERNT wurde, eine bekannte Person einen bestätigten neuen Schlüssel hat oder die Epoche
+/// nicht lesbar ist ([heilung]). Neu hinzugekommene Personen bekommen den Schlüssel nur auf Bestätigung der Person, die sie hinzugefügt hat, oder eines anderen
+/// Mitglieds in der Oberfläche: sonst könnte ein Betreiber mit einem neuen Konto oder einer geänderten Teilnehmerliste ungefragt Zugang zu einer Gruppe bekommen.
+class RotationsPlan {
+  final Set<String> mitglieder;
+  final Set<String> neu;
+  final Set<String> entfernt;
+  final bool versionNeu;
+  final bool heilung;
+  const RotationsPlan({required this.mitglieder, required this.neu, required this.entfernt, required this.versionNeu, required this.heilung});
+
+  bool get automatisch => entfernt.isNotEmpty || versionNeu || heilung;
+
+  /// Empfänger einer automatischen Rotation: ohne die noch unbestätigten Neuen.
+  Set<String> get automatischeMitglieder => mitglieder.difference(neu);
+}
+
 class _Ring {
   final Map<int, Uint8List> schluessel = {};
 
@@ -101,6 +121,30 @@ class ChatKrypto {
   /// Zählt jede Änderung des Vertrauens (neue gemerkte Schlüssel, Mitgliederliste): bis dahin gescheiterte Wraps werden dann erneut versucht.
   int _vertrauensStempel = 0;
   final Map<String, int> _gescheitertBei = {};
+
+  /// Anzahl der Abrufe der Mitglieder beim Server ([mitgliederBeobachtet]) und der Abruf, bei dem eine Person zuerst fehlte: erst wenn sie in ZWEI aufeinanderfolgenden
+  /// Abrufen fehlt, gilt sie als entfernt (ein einzelner unvollständiger Abruf löst keine Rotation aus).
+  int _abrufe = 0;
+  final Map<String, int> _fehltSeit = {};
+
+  /// Seit wann die höchste Epoche für diese Person keinen lesbaren Schlüssel hat (Selbstheilung), je "Konversation:Epoche".
+  final Map<String, DateTime> _ohneSchluesselSeit = {};
+
+  /// Seit wann eine Konversation ohne Epoche beobachtet wird (Karenz der ersten Epoche, nicht gegen die Zeit eines fremden Geräts gerechnet).
+  final Map<String, DateTime> _ohneEpocheSeit = {};
+
+  /// Seit wann einem Empfänger der eigenen Epoche der Wrap fehlt, und welche Wraps in dieser Sitzung schon nachgereicht wurden.
+  final Map<String, DateTime> _wrapFehltSeit = {};
+  final Set<String> _nachgereicht = {};
+
+  /// Wie lange die höchste Epoche unlesbar sein darf, bevor ein Gerät mit Schlüssel eine neue anlegt (Selbstheilung nach einer vergifteten Epoche).
+  static const heilungsFrist = Duration(minutes: 5);
+
+  /// Wie lange einem Empfänger der Wrap fehlen darf, bevor der Verteiler ihn erneut erzeugt.
+  static const wrapFrist = Duration(minutes: 3);
+
+  /// Der Abruf der Mitglieder beim Server hat geklappt (zählt für die Erkennung entfernter Personen).
+  void mitgliederBeobachtet() => _abrufe++;
 
   ChatKrypto({
     required this.crypto,
@@ -189,6 +233,13 @@ class ChatKrypto {
       if (konversationen[e.konversationId]?.encVersion == 'e1') (nachKonv[e.konversationId] ??= []).add(e);
     }
     final wrapNach = {for (final w in wraps) '${w.konversationId}:${w.epoche}': w};
+    // Konversationen ohne jede Epoche (Zeilen sind verschwunden): ihre Schlüssel im Speicher gehen mit
+    for (final id in _ringe.keys.toList()) {
+      if (!nachKonv.containsKey(id)) {
+        _verwerfen(id);
+        geaendert = true;
+      }
+    }
 
     for (final eintrag in nachKonv.entries) {
       final conv = eintrag.key;
@@ -261,6 +312,15 @@ class ChatKrypto {
       }
       for (final e in spaeter) {
         if (!ring.schluessel.containsKey(e.epoche) && !(_probleme[conv]?.containsKey(e.epoche) ?? false)) _problem(conv, e.epoche, NichtLesbarGrund.schluesselFehlt);
+      }
+      // Verschwindet die Epochenzeile oder der eigene Wrap lokal (Neuaufbau, gelöscht), gehört der Schlüssel im Speicher nicht mehr dazu: überschreiben und entfernen
+      final vorhandeneEpochen = {for (final e in liste) if (wrapNach.containsKey('$conv:${e.epoche}')) e.epoche};
+      for (final ep in ring.schluessel.keys.toList()) {
+        if (!vorhandeneEpochen.contains(ep)) {
+          loescheBytes(ring.schluessel.remove(ep)!);
+          ring.stand.remove(ep);
+          geaendert = true;
+        }
       }
     }
     return geaendert;
@@ -404,7 +464,7 @@ class ChatKrypto {
   // ------------------------------------------------------------------ Nachrichten
 
   /// Verschlüsselt eine Nachricht für den Versand (Hülle `e1:`); null, wenn jetzt nicht verschlüsselt werden kann (der Aufrufer wartet).
-  Future<String?> nachrichtVersiegeln({required String konversationId, required String nachrichtId, required String klartext}) async {
+  Future<String?> nachrichtVersiegeln({required String konversationId, required String nachrichtId, required String klartext, String? antwortAuf}) async {
     final bytes = utf8.encode(klartext);
     if (bytes.length > kMaxNachrichtBytes) throw const VerschluesselungNichtBereit('Die Nachricht ist zu lang.');
     final s = await sendeEpoche(konversationId);
@@ -415,14 +475,39 @@ class ChatKrypto {
     final wire = _huelle.versiegeln(
       schluessel: key,
       klartext: Uint8List.fromList(bytes),
-      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: ichId, epoch: epoche, senderKeyVersion: meineKeyVersion),
+      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: ichId, epoch: epoche, senderKeyVersion: meineKeyVersion, antwortAuf: antwortAuf),
       signGeheim: meinSchluessel.signGeheim,
     );
     return '$kPraefixE1$wire';
   }
 
+  /// Epoche, mit der eine `e1:`-Hülle verschlüsselt ist (null: keine gültige Hülle).
+  static int? huellenEpoche(String wire) {
+    if (!wire.startsWith(kPraefixE1)) return null;
+    try {
+      return HuellenCodec.epocheLesen(wire.substring(kPraefixE1.length));
+    } on CryptoFehler {
+      return null;
+    }
+  }
+
+  /// Eine eigene, schon verschlüsselte Nachricht im Ausgang mit der höchsten bestätigten Epoche neu verschlüsseln, wenn inzwischen eine neuere bekannt ist (eine
+  /// Rotation lag dazwischen: sonst könnte ein inzwischen entferntes Mitglied sie noch lesen). Liefert die neue Hülle, [wire] unverändert (schon aktuell oder
+  /// nicht neu zu verschlüsseln) oder null (die neuere Epoche ist noch nicht bereit: die Nachricht wartet).
+  Future<String?> nachrichtNeuVersiegeln({required String konversationId, required String nachrichtId, required String wire, String? antwortAuf}) async {
+    final alt = huellenEpoche(wire);
+    if (alt == null) return wire;
+    final s = await sendeEpoche(konversationId);
+    final neu = s.epoche;
+    if (neu == null) return null;
+    if (alt >= neu) return wire;
+    final d = await nachrichtOeffnen(konversationId: konversationId, nachrichtId: nachrichtId, autorId: ichId, wire: wire, antwortAuf: antwortAuf);
+    if (!d.lesbar) return wire; // die alte Epoche lässt sich nicht mehr öffnen: es bleibt, wie es ist
+    return nachrichtVersiegeln(konversationId: konversationId, nachrichtId: nachrichtId, klartext: d.text, antwortAuf: antwortAuf);
+  }
+
   /// Öffnet eine verschlüsselte Nachricht (`e1:`). Prüft zuerst die Signatur gegen den Schlüssel des Absenders in der Version der Hülle, entschlüsselt erst danach.
-  Future<DekodierterInhalt> nachrichtOeffnen({required String konversationId, required String nachrichtId, required String? autorId, required String wire}) async {
+  Future<DekodierterInhalt> nachrichtOeffnen({required String konversationId, required String nachrichtId, required String? autorId, required String wire, String? antwortAuf}) async {
     if (!wire.startsWith(kPraefixE1)) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt');
     final huelle = wire.substring(kPraefixE1.length);
     if (autorId == null) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Absender nicht mehr in der Familie');
@@ -440,8 +525,9 @@ class ChatKrypto {
       } else {
         try {
           sender = await absenderSchluessel(autorId, senderVersion);
-        } on CryptoFehler {
-          return DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: _hinweis(NichtLesbarGrund.absenderUnbekannt));
+        } on CryptoFehler catch (f) {
+          // ein Schlüssel, den dieses Gerät nie bestätigt hat, gilt nicht (kein Nachladen vom Server): "Absender nicht bestätigt"
+          return DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: _hinweis(f.art == CryptoFehlerArt.signatur ? NichtLesbarGrund.signaturUngueltig : NichtLesbarGrund.absenderUnbekannt));
         } on Object {
           return DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: _hinweis(NichtLesbarGrund.absenderUnbekannt));
         }
@@ -449,7 +535,7 @@ class ChatKrypto {
       final klar = _huelle.oeffnen(
         schluessel: key,
         huelle: huelle,
-        kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autorId, epoch: epoche, senderKeyVersion: senderVersion),
+        kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autorId, epoch: epoche, senderKeyVersion: senderVersion, antwortAuf: antwortAuf),
         sender: sender,
       );
       try {
@@ -559,13 +645,16 @@ class ChatKrypto {
     }
   }
 
-  /// Soll für die Konversation eine neue Epoche angelegt werden, damit die Mitglieder der letzten Epoche zu den heutigen Teilnehmern passen? Liefert die
-  /// Personen für die neue Epoche und die neu hinzugekommenen (null: nichts zu tun).
-  ///  - Entfernt: Personen der Liste, die nicht mehr Teilnehmer oder nicht mehr aktiv sind: neue Epoche ohne sie.
-  ///  - Hinzugekommen: Teilnehmer mit vertrauenswürdigem Schlüssel, die nicht in der Liste stehen (Schlüssel eingerichtet, aufgenommen).
+  /// Soll für die Konversation eine neue Epoche angelegt werden, damit die Mitglieder der letzten Epoche zu den heutigen Teilnehmern passen? Liefert den
+  /// [RotationsPlan] (null: nichts zu tun).
+  ///  - Entfernt: Personen der Liste, die nicht mehr Teilnehmer oder nicht mehr aktiv sind: neue Epoche ohne sie. Dass eine Person aus der Familie verschwunden ist,
+  ///    gilt erst, wenn sie in zwei aufeinanderfolgenden Abrufen der Mitglieder fehlt ([mitgliederBeobachtet]).
+  ///  - Hinzugekommen: Teilnehmer mit vertrauenswürdigem Schlüssel, die nicht in der Liste stehen (nur auf Bestätigung, siehe [RotationsPlan]).
   ///  - Neuer Schlüssel einer Person, der dieses Gerät vertraut (die Liste kennt die alte Version): sie bekommt die neue Epoche.
+  ///  - Heilung: die höchste Epoche nennt dieses Gerät mit seinem aktuellen Schlüssel, ist aber seit [heilungsFrist] nicht lesbar (fehlender oder ungültiger Wrap,
+  ///    z. B. eine absichtlich angelegte Epoche ohne gültige Wraps): ein Gerät mit Schlüssel legt die nächste an.
   /// Eine Person mit ungeprüfter Schlüsseländerung löst NICHTS aus (sonst schaukeln sich Geräte mit verschiedenem Vertrauen gegenseitig hoch).
-  Future<({Set<String> mitglieder, Set<String> neu})?> rotationNoetig({required Konversation konversation, required Set<String> teilnehmer}) async {
+  Future<RotationsPlan?> rotationNoetig({required Konversation konversation, required Set<String> teilnehmer}) async {
     if (konversation.encVersion != 'e1' || konversation.rev == 0) return null;
     final epochen = await _epochen(konversation.id);
     if (epochen.isEmpty) return null;
@@ -580,10 +669,29 @@ class ChatKrypto {
     final liste = {for (final m in signiert.liste.mitglieder) m.userId: m.keyVersion};
     final aktiv = serverSchluessel();
     if (aktiv == null) return null;
+    // Selbstheilung: die höchste Epoche nennt mich mit meinem Schlüssel, aber ich kann sie nicht öffnen
+    var heilung = false;
+    final hk = '${konversation.id}:${letzte.epoche}';
+    if (liste[ichId] == meineKeyVersion && schluessel(konversation.id, letzte.epoche) == null) {
+      final seit = _ohneSchluesselSeit.putIfAbsent(hk, _jetzt);
+      heilung = _jetzt().difference(seit) >= heilungsFrist;
+    } else {
+      _ohneSchluesselSeit.remove(hk);
+    }
     // nur Teilnehmer, die aktive Mitglieder sind (alle Mitglieder beim Familienchat)
     final sollen = konversation.art == _familie ? aktiv.keys.toSet() : teilnehmer.where(aktiv.containsKey).toSet();
     if (!sollen.contains(ichId) && konversation.art != _familie) return null;
-    final entfernt = liste.keys.where((u) => !sollen.contains(u)).toSet();
+    _fehltSeit.removeWhere((u, _) => aktiv.containsKey(u));
+    final entfernt = <String>{};
+    for (final u in liste.keys) {
+      if (sollen.contains(u)) continue;
+      if (!aktiv.containsKey(u)) {
+        // aus der Familie verschwunden: erst beim zweiten Abruf in Folge
+        final seit = _fehltSeit.putIfAbsent(u, () => _abrufe);
+        if (_abrufe - seit < 1) continue;
+      }
+      entfernt.add(u);
+    }
     final neu = <String>{};
     var versionNeu = false;
     for (final u in sollen) {
@@ -596,14 +704,83 @@ class ChatKrypto {
         versionNeu = true;
       }
     }
-    if (entfernt.isEmpty && neu.isEmpty && !versionNeu) return null;
+    if (entfernt.isEmpty && neu.isEmpty && !versionNeu && !heilung) return null;
     // Empfänger der neuen Epoche: alle Sollenden mit vertrauenswürdigem Schlüssel
     final empf = <String>{};
     for (final u in sollen) {
       if (await vertrauenswuerdig(u) != null) empf.add(u);
     }
     if (!empf.contains(ichId)) return null;
-    return (mitglieder: empf, neu: neu);
+    return RotationsPlan(mitglieder: empf, neu: neu, entfernt: entfernt, versionNeu: versionNeu, heilung: heilung);
+  }
+
+  // ------------------------------------------------------------------ Verlorene Wraps nachreichen
+
+  /// Empfänger der höchsten Epoche, die dieses Gerät selbst verteilt hat (Verteiler der Epoche = diese Person, Schlüssel im Speicher) und für die es lokal keinen
+  /// Wrap gibt, seit mehr als [wrapFrist] (z. B. wegen einer abgelehnten Op). Jede Person nur einmal je Sitzung.
+  Future<List<String>> fehlendeWraps(String konversationId) async {
+    final epochen = await _epochen(konversationId);
+    if (epochen.isEmpty) return const [];
+    final e = epochen.first;
+    if (e.rev == 0) return const [];
+    final key = schluessel(konversationId, e.epoche);
+    if (key == null) return const [];
+    final SignierteMitgliederListe signiert;
+    try {
+      signiert = SignierteMitgliederListe.dekodieren(e.mitglieder);
+    } on CryptoFehler {
+      return const [];
+    }
+    if (signiert.verteilerId != ichId || signiert.verteilerKeyVersion != meineKeyVersion) return const [];
+    final wraps = await (db.select(db.epocheWraps)..where((w) => w.konversationId.equals(konversationId) & w.epoche.equals(e.epoche))).get();
+    final da = {for (final w in wraps) w.empfaengerId};
+    final fehlt = <String>[];
+    for (final m in signiert.liste.mitglieder) {
+      final k = '$konversationId:${e.epoche}:${m.userId}';
+      if (da.contains(m.userId) || _nachgereicht.contains(k)) {
+        _wrapFehltSeit.remove(k);
+        continue;
+      }
+      final seit = _wrapFehltSeit.putIfAbsent(k, _jetzt);
+      if (_jetzt().difference(seit) >= wrapFrist) fehlt.add(m.userId);
+    }
+    return fehlt;
+  }
+
+  /// Erzeugt die fehlenden Wraps der höchsten Epoche erneut (gleicher Schlüssel, gleicher Empfänger); nur für Personen, deren Schlüssel noch zu der Version in der
+  /// signierten Liste passt und denen dieses Gerät vertraut. Die Aufrufer schreiben sie über [SyncStore.aendernMehrere].
+  Future<List<SyncAenderung>> wrapsNachreichen(String konversationId, Iterable<String> personen) async {
+    final epochen = await _epochen(konversationId);
+    if (epochen.isEmpty) return const [];
+    final e = epochen.first;
+    final key = schluessel(konversationId, e.epoche);
+    if (key == null) return const [];
+    final SignierteMitgliederListe signiert;
+    try {
+      signiert = SignierteMitgliederListe.dekodieren(e.mitglieder);
+    } on CryptoFehler {
+      return const [];
+    }
+    final aenderungen = <SyncAenderung>[];
+    for (final u in personen) {
+      final version = signiert.liste.versionVon(u);
+      final k = await vertrauenswuerdig(u);
+      _nachgereicht.add('$konversationId:${e.epoche}:$u');
+      if (version == null || k == null || k.version != version || u == ichId) continue;
+      final w = EpochenVerteiler.wrapErstellen(
+        crypto,
+        epochenschluessel: key,
+        conversationId: konversationId,
+        epoch: e.epoche,
+        empfaengerId: u,
+        empfaenger: k,
+        verteilerId: ichId,
+        verteilerKeyVersion: meineKeyVersion,
+        verteilerSignGeheim: meinSchluessel.signGeheim,
+      );
+      aenderungen.add(SyncAenderung('epoche_wrap', wrapId(konversationId, e.epoche, u), {'konversationId': konversationId, 'epoche': e.epoche, 'empfaengerId': u, 'wrap': w.kodieren()}));
+    }
+    return aenderungen;
   }
 
   /// Wie lange eine Konversation ohne Epoche warten darf, bevor ein anderes Gerät die erste anlegt (der Ersteller legt sie sofort selbst an).
@@ -612,8 +789,13 @@ class ChatKrypto {
   /// Konversation ohne jede Epoche (Ersteller ohne Schlüssel oder verlorene Anlage): nach der [karenz] legt ein Teilnehmer mit Schlüssel die erste an.
   Future<Set<String>?> ersteEpocheNoetig({required Konversation konversation, required Set<String> teilnehmer}) async {
     if (konversation.encVersion != 'e1' || konversation.rev == 0) return null;
-    if (_jetzt().difference(konversation.createdAt) < karenz) return null;
-    if ((await _epochen(konversation.id)).isNotEmpty) return null;
+    // Karenz ab dem Zeitpunkt, an dem DIESES Gerät die Konversation ohne Epoche zuerst gesehen hat (nicht gegen die Uhr eines fremden Geräts)
+    if ((await _epochen(konversation.id)).isNotEmpty) {
+      _ohneEpocheSeit.remove(konversation.id);
+      return null;
+    }
+    final seit = _ohneEpocheSeit.putIfAbsent(konversation.id, _jetzt);
+    if (_jetzt().difference(seit) < karenz) return null;
     final aktiv = serverSchluessel();
     if (aktiv == null) return null;
     final sollen = konversation.art == _familie ? aktiv.keys.toSet() : teilnehmer.where(aktiv.containsKey).toSet();

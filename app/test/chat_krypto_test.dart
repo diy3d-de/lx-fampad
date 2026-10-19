@@ -455,15 +455,141 @@ Future<void> main() async {
         expect(await a.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3), isNull);
         // jemand wurde aus der Familie entfernt: Cora ist nicht mehr aktiv
         a.karte = {for (final p in [anna, ben, dora]) p.id: p.oeffentlich};
+        // ein einzelner Abruf ohne Cora löst nichts aus, erst der zweite in Folge
+        expect(await a.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3), isNull);
+        a.krypto.mitgliederBeobachtet();
         final r1 = await a.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3);
         expect(r1!.mitglieder, {anna.id, ben.id});
+        expect(r1.entfernt, {cora.id});
+        expect(r1.automatisch, isTrue);
         // ein Teilnehmer, der noch nicht in der Liste steht
         a.mitgliederLernen(alle);
         final r2 = await a.krypto.rotationNoetig(konversation: konv, teilnehmer: {...alle3, dora.id});
         expect(r2!.neu, {dora.id});
+        expect(r2.automatisch, isFalse, reason: 'Neue bekommen den Schlüssel nur auf Bestätigung');
         // offline (Stand unbekannt): keine Rotation
         a.karte = null;
         expect(await a.krypto.rotationNoetig(konversation: konv, teilnehmer: {...alle3, dora.id}), isNull);
+      });
+
+      test('Ausgang ohne Deadlock: eine wartende Nachricht hält die eigene Rotation nicht auf; die Nachricht geht danach mit der neuen Epoche', () async {
+        final id = await gruppe(a, [b]);
+        final msg = (await a.repo.senden(id, 'wartet auf die Rotation'))!; // im Ausgang VOR der Epoche
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, ben.id}));
+        final ausgang = [for (final o in await a.ausgang()) o.entity];
+        expect(ausgang.indexOf('nachricht'), lessThan(ausgang.indexOf('epoche')), reason: 'die Nachricht steht vor der Epoche');
+        await abgleich([a, b]);
+        expect(welt.alle('epoche'), hasLength(2), reason: 'die Epoche ging trotz der wartenden Nachricht hinaus');
+        final wire = welt.zeile('nachricht', msg)!.fields['text'] as String;
+        expect(ChatKrypto.huellenEpoche(wire), 2, reason: 'die Nachricht wurde erst nach der Bestätigung gesendet, mit der neuen Epoche');
+        expect(await text(b, id, msg), 'wartet auf die Rotation');
+        expect((await a.ausgang()), isEmpty);
+      });
+
+      test('Ausgang nach Rotation neu verschlüsseln: eine schon mit der alten Epoche vorbereitete Nachricht geht mit der neuen hinaus', () async {
+        final id = await gruppe(a, [b]);
+        final msg = (await a.repo.senden(id, 'schon vorbereitet'))!;
+        // vorbereitet (e1, Epoche 1), aber nicht abgesendet
+        await a.store.naechsteOps(50, vorbereiter: a.vorbereiter);
+        final vorbereitet = (await a.ausgang()).firstWhere((o) => o.entity == 'nachricht');
+        expect(ChatKrypto.huellenEpoche((jsonDecode(vorbereitet.fieldsJson) as Map)['text'] as String), 1);
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, ben.id}));
+        await abgleich([a, b]);
+        expect(ChatKrypto.huellenEpoche(welt.zeile('nachricht', msg)!.fields['text'] as String), 2);
+        expect(await text(b, id, msg), 'schon vorbereitet');
+      });
+
+      test('Neue Mitglieder: ein anderes Gerät rotiert nicht automatisch für sie (nur auf Bestätigung); Entfernen rotiert automatisch', () async {
+        final id = await gruppe(a, [b]);
+        // ein anderes Gerät (hier Bens) fügt Cora zur Teilnehmerliste hinzu, ohne den Schlüssel zu teilen
+        await b.store.aendern('konversation', id, {'teilnehmer': [anna.id, ben.id, cora.id]});
+        await abgleich([b, a, c]);
+        final konv = await (a.db.select(a.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        final plan = await a.krypto.rotationNoetig(konversation: konv, teilnehmer: {anna.id, ben.id, cora.id});
+        expect(plan!.neu, {cora.id});
+        expect(plan.automatisch, isFalse);
+        expect(plan.automatischeMitglieder, {anna.id, ben.id}, reason: 'auch eine Rotation aus anderem Grund gibt den Schlüssel nicht an Neue');
+        // Bestätigung: neue Epoche mit Cora
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: plan.mitglieder));
+        await abgleich([a, b, c]);
+        final nachher = await senden(a, id, 'jetzt mit Cora', abgleichen: [a, b, c]);
+        expect(await text(c, id, nachher), 'jetzt mit Cora');
+      });
+
+      test('vergiftete Epoche: eine Epoche ohne gültige Wraps wird nach der Frist von einem Gerät mit Schlüssel durch eine neue ersetzt, der Chat heilt', () async {
+        final id = await gruppe(b, [a, c]);
+        await senden(b, id, 'vor der Vergiftung', abgleichen: [a, b, c]);
+        // Cora (z. B. ein Kind) legt Epoche 2 an, ohne irgendeinen Wrap mitzuschicken
+        final nurEpoche = [for (final x in await c.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, ben.id, cora.id})) if (x.entity == 'epoche') x];
+        await c.store.aendernMehrere(nurEpoche);
+        await abgleich([c, a, b]);
+        expect(a.krypto.schluessel(id, 2), isNull);
+        final konv = await (a.db.select(a.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        final alle3 = {anna.id, ben.id, cora.id};
+        expect(await a.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3), isNull, reason: 'erst nach der Frist');
+        a.jetzt = a.jetzt.add(ChatKrypto.heilungsFrist + const Duration(seconds: 1));
+        final plan = await a.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3);
+        expect(plan!.heilung, isTrue);
+        expect(plan.automatisch, isTrue);
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: plan.automatischeMitglieder));
+        await abgleich([a, b, c]);
+        final neu = await senden(a, id, 'geheilt', abgleichen: [a, b, c]);
+        expect(await text(b, id, neu), 'geheilt');
+        expect(await text(c, id, neu), 'geheilt');
+        expect(a.krypto.epochenMitSchluessel(id), contains(3));
+      });
+
+      test('verlorene Wraps: der Verteiler erzeugt sie nach der Wartezeit erneut, nur einmal je Sitzung', () async {
+        final id = await a.repo.direktChat(ben.id);
+        // der Wrap für Ben geht verloren (z. B. abgelehnt): lokal und im Ausgang weg
+        await a.db.customStatement("DELETE FROM epoche_wraps WHERE empfaenger_id = '${ben.id}'");
+        await a.db.customStatement("DELETE FROM outbox WHERE entity = 'epoche_wrap' AND fields_json LIKE '%${ben.id}%'");
+        await abgleich([a, b]);
+        expect(await a.krypto.fehlendeWraps(id), isEmpty, reason: 'erst nach der Wartezeit');
+        a.jetzt = a.jetzt.add(ChatKrypto.wrapFrist + const Duration(seconds: 1));
+        final fehlt = await a.krypto.fehlendeWraps(id);
+        expect(fehlt, [ben.id]);
+        await a.store.aendernMehrere(await a.krypto.wrapsNachreichen(id, fehlt));
+        await abgleich([a, b]);
+        expect(await a.krypto.fehlendeWraps(id), isEmpty, reason: 'nur einmal je Sitzung');
+        final n = await senden(a, id, 'jetzt kommt es an', abgleichen: [a, b]);
+        expect(await text(b, id, n), 'jetzt kommt es an');
+      });
+
+      test('Schlüssel im Speicher gehen mit, wenn Epoche oder Wrap lokal verschwinden', () async {
+        final id = await gruppe(a, [b]);
+        expect(b.krypto.schluessel(id, 1), isNotNull);
+        await b.db.customStatement('DELETE FROM epoche_wraps');
+        await b.krypto.aktualisieren();
+        expect(b.krypto.schluessel(id, 1), isNull);
+      });
+
+      test('Absender nicht bestätigt: ein Signaturschlüssel in einer Version, die dieses Gerät nie gemerkt hat, gilt nicht (kein Nachladen vom Server)', () async {
+        final id = await gruppe(a, [b]);
+        final m = await senden(a, id, 'echt signiert', abgleichen: [a, b]);
+        // Ben kennt Annas Schlüssel nur in einer anderen Version
+        b.tofu[anna.id] = anna.pk.oeffentlich(2);
+        expect(await text(b, id, m), '<Absender nicht bestätigt>');
+      });
+
+      test('Anzeige: eigene, schon bestätigte Nachricht mit l1: ist "wird gesendet", nicht "unverschlüsselt"', () async {
+        final inhalt = E2eeNachrichtenInhalt(krypto: () async => null, encVersion: (_) async => 'e1', ich: () => anna.id, lokaleIds: () => <String>{}, beiAenderung: () {});
+        final eigene = Nachricht(id: 'n1', konversationId: 'k', autorId: anna.id, inhalt: 'l1:x', antwortAuf: null, bearbeitetAt: null, createdAt: a.jetzt, rev: 3);
+        expect(inhalt.nachricht(eigene).hinweis, 'wird gesendet');
+        final fremde = Nachricht(id: 'n2', konversationId: 'k', autorId: ben.id, inhalt: 'l1:x', antwortAuf: null, bearbeitetAt: null, createdAt: a.jetzt, rev: 3);
+        expect(inhalt.nachricht(fremde).hinweis, 'unverschlüsselt');
+      });
+
+      test('Entschlüsselte Nachrichten im Speicher sind begrenzt; Fehlschläge werden bei neuem Vertrauen vergessen', () async {
+        final inhalt = E2eeNachrichtenInhalt(krypto: () async => null, encVersion: (_) async => 'e1', ich: () => anna.id, lokaleIds: () => <String>{}, beiAenderung: () {});
+        for (var i = 0; i < E2eeNachrichtenInhalt.maxCache + 100; i++) {
+          inhalt.nachricht(Nachricht(id: 'n$i', konversationId: 'k', autorId: ben.id, inhalt: 'e1:AAAA$i', antwortAuf: null, bearbeitetAt: null, createdAt: a.jetzt, rev: 1));
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(inhalt.cacheGroesse, lessThanOrEqualTo(E2eeNachrichtenInhalt.maxCache));
+        expect(inhalt.cacheGroesse, greaterThan(0));
+        inhalt.fehlschlaegeVergessen();
+        expect(inhalt.cacheGroesse, 0, reason: 'alles war nicht lesbar (keine Verschlüsselung bereit): nach neuem Vertrauen wird erneut versucht');
       });
 
       test('erste Epoche: nur für Konversationen ohne Epoche und erst nach der Karenz', () async {

@@ -108,9 +108,10 @@ class Geraet {
       absenderSchluessel: (u, version) async {
         final s = tofu[u];
         if (s != null && s.version == version) return s;
-        final alt = w.historie['$u:$version'];
+        // nur Schlüssel, die dieses Gerät selbst gemerkt hat (nie die Historie des Servers)
+        final alt = frueher['$u:$version'];
         if (alt != null) return alt;
-        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Absender unbekannt');
+        throw const CryptoFehler(CryptoFehlerArt.signatur, 'Absender nicht bestätigt');
       },
       jetzt: () => jetzt,
     );
@@ -125,6 +126,7 @@ class Geraet {
       }
     }
     krypto.vertrauenGeaendert();
+    krypto.mitgliederBeobachtet(); // jeder Aufruf steht für einen gelungenen Abruf der Mitglieder
   }
 
   Future<void> schliessen() => db.close();
@@ -140,7 +142,7 @@ class Geraet {
   /// Text einer Nachricht, wie ihn die Oberfläche sähe (entschlüsselt, sonst der Hinweis).
   Future<String> lesen(Nachricht n) async {
     if (n.inhalt.startsWith(kPraefixLokal)) return n.inhalt.substring(kPraefixLokal.length);
-    final d = await krypto.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt);
+    final d = await krypto.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt, antwortAuf: n.antwortAuf);
     return d.lesbar ? d.text : '<${d.hinweis}>';
   }
 }

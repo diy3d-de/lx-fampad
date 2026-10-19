@@ -669,6 +669,13 @@ class EpocheWrapEntitaet extends SyncEntity {
   @override
   bool get abgelehntStill => true;
 
+  /// Ein Wrap geht nicht verloren, wenn der Server wegen der Rate kurz ablehnt: er kommt mit neuer op_id wieder in den Ausgang.
+  @override
+  bool get bleibtBeiLimit => true;
+
+  @override
+  String get grenzeErreicht => 'Zu viele Schlüssel auf einmal';
+
   @override
   bool kannAnlegen(Json fields) =>
       _text(fields['konversationId']) != null && _int(fields['epoche']) != null && _text(fields['empfaengerId']) != null && _text(fields['wrap']) != null;

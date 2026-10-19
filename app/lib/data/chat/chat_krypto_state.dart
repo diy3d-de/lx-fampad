@@ -53,6 +53,20 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
   final Set<String>? Function() lokaleIds;
   final void Function() beiAenderung;
   final Map<String, ({String wire, DekodierterInhalt inhalt})> _cache = {};
+
+  /// Höchstzahl der entschlüsselten Nachrichten im Arbeitsspeicher (die ältesten fliegen zuerst raus; sie werden bei Bedarf neu geöffnet).
+  static const maxCache = 500;
+
+  void _merke(String id, ({String wire, DekodierterInhalt inhalt}) v) {
+    _cache.remove(id);
+    _cache[id] = v;
+    while (_cache.length > maxCache) {
+      _cache.remove(_cache.keys.first);
+    }
+  }
+
+  /// Anzahl der Einträge im Zwischenspeicher (Tests).
+  int get cacheGroesse => _cache.length;
   final Set<String> _laufend = {};
   static const _namen = KlartextHuelle();
 
@@ -73,10 +87,15 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
       final ids = lokaleIds();
       if (ids == null) return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
       if (n.autorId != null && n.autorId == ich() && (n.rev == 0 || ids.contains(n.id))) return DekodierterInhalt(w.substring(kPraefixLokal.length), InhaltStatus.bereit);
+      // eigene Nachricht, die der Server schon kennt, deren Text hier aber noch nicht durch die Antwort ersetzt ist: sie ist unterwegs, nicht unverschlüsselt
+      if (n.autorId != null && n.autorId == ich()) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'wird gesendet');
       return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt');
     }
     final c = _cache[n.id];
-    if (c != null && c.wire == w) return c.inhalt;
+    if (c != null && c.wire == w) {
+      _merke(n.id, c);
+      return c.inhalt;
+    }
     if (_laufend.add(n.id)) unawaited(_oeffnen(n));
     return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
   }
@@ -98,11 +117,11 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
         final k = await krypto();
         r = k == null
             ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
-            : await k.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: w);
+            : await k.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: w, antwortAuf: n.antwortAuf);
       }
-      _cache[n.id] = (wire: n.inhalt, inhalt: r);
+      _merke(n.id, (wire: n.inhalt, inhalt: r));
     } on Object {
-      _cache[n.id] = (wire: n.inhalt, inhalt: const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'nicht lesbar'));
+      _merke(n.id, (wire: n.inhalt, inhalt: const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'nicht lesbar')));
     } finally {
       _laufend.remove(n.id);
     }
@@ -129,17 +148,26 @@ class ChatOpVorbereiter implements OpVorbereiter {
     final Object? f = jsonDecode(op.fieldsJson);
     if (f is! Map<String, dynamic>) return op.fieldsJson;
     final text = f['text'];
-    if (text is! String || !text.startsWith(kPraefixLokal)) return op.fieldsJson;
+    if (text is! String) return op.fieldsJson;
+    final klar = text.startsWith(kPraefixLokal);
+    // schon verschlüsselt: nur anfassen, wenn inzwischen eine neuere Epoche gilt (dann neu verschlüsseln); sonst unverändert
+    if (!klar && !text.startsWith(kPraefixE1)) return op.fieldsJson;
+    final zeile = await (db.select(db.nachrichten)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
     var konversationId = f['konversationId'];
-    if (konversationId is! String) {
-      konversationId = (await (db.select(db.nachrichten)..where((n) => n.id.equals(op.entityId))).getSingleOrNull())?.konversationId;
-    }
+    if (konversationId is! String) konversationId = zeile?.konversationId;
     if (konversationId is! String) return null;
+    final antwort = f.containsKey('antwortAuf') ? f['antwortAuf'] : zeile?.antwortAuf;
+    final antwortAuf = antwort is String ? antwort : null;
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)
     await k.aktualisieren();
-    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length));
+    if (!klar) {
+      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf);
+      if (neu == null) return null;
+      return neu == text ? op.fieldsJson : jsonEncode({...f, 'text': neu});
+    }
+    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf);
     if (wire == null) return null;
     return jsonEncode({...f, 'text': wire});
   }
@@ -194,6 +222,62 @@ class ChatKryptoController extends Notifier<int> {
   DateTime? _mitgliederStand;
   final Map<String, DateTime> _rotiert = {};
 
+  /// Neu hinzugekommene Personen je Konversation, die noch keinen Schlüssel bekommen haben und auf die Bestätigung eines Mitglieds warten.
+  Map<String, Set<String>> _aufnahmen = const {};
+  final Set<String> _verborgen = {};
+
+  /// Wartende Aufnahmen (Konversation -> Personen), ohne die in dieser Sitzung zurückgestellten. Die Oberfläche fragt nach: "X wurde zu Y hinzugefügt – Schlüssel teilen?"
+  Map<String, Set<String>> get aufnahmen => {
+    for (final e in _aufnahmen.entries)
+      if (!_verborgen.contains(e.key)) e.key: e.value,
+  };
+
+  /// Zurückstellen (bis zum nächsten Start der App).
+  void aufnahmeSpaeter(String konversationId) {
+    _verborgen.add(konversationId);
+    _anstossen();
+  }
+
+  void _aufnahmenSetzen(Map<String, Set<String>> neu) {
+    final gleich = neu.length == _aufnahmen.length && neu.entries.every((e) => _aufnahmen[e.key]?.length == e.value.length && _aufnahmen[e.key]!.containsAll(e.value));
+    _aufnahmen = neu;
+    if (!gleich) _anstossen();
+  }
+
+  /// Gibt den Chat-Schlüssel an die neu hinzugekommenen Personen weiter (neue Epoche). Liefert false, wenn das jetzt nicht geht.
+  Future<bool> aufnahmeBestaetigen(String konversationId) async {
+    final k = await krypto();
+    if (k == null) return false;
+    await k.aktualisieren();
+    final konv = await (_db.select(_db.konversationen)..where((x) => x.id.equals(konversationId))).getSingleOrNull();
+    if (konv == null) return false;
+    try {
+      final plan = await k.rotationNoetig(konversation: konv, teilnehmer: _teilnehmer(konv).toSet());
+      if (plan == null || plan.neu.isEmpty) {
+        _aufnahmenSetzen({..._aufnahmen}..remove(konversationId));
+        return true;
+      }
+      final aenderungen = await k.epocheErstellen(
+        konversationId: konv.id,
+        mitglieder: plan.mitglieder,
+        historieFuer: konv.art == 'family' ? plan.neu : const {},
+        unvertrauteAuslassen: true,
+      );
+      await ref.read(syncStoreProvider).aendernMehrere(aenderungen);
+      _rotiert[konv.id] = DateTime.now();
+      _aufnahmenSetzen({..._aufnahmen}..remove(konversationId));
+      ref.read(syncProvider.notifier).lokaleAenderung();
+      _geplant();
+      return true;
+    } on SchluesselFehlt {
+      return false;
+    } on VerschluesselungNichtBereit {
+      return false;
+    } on CryptoFehler {
+      return false;
+    }
+  }
+
   /// Inhalt für die Oberfläche (Zwischenspeicher der entschlüsselten Nachrichten).
   NachrichtenInhalt get inhalt => _inhalt!;
 
@@ -206,6 +290,9 @@ class ChatKryptoController extends Notifier<int> {
     _krypto?.vergessen();
     _krypto = null;
     _mitgliederStand = null;
+    _inhalt?.leeren(); // Neuaufbau (andere Person, Abmelden): nichts Entschlüsseltes bleibt im Speicher
+    _aufnahmen = const {};
+    _verborgen.clear();
     _inhalt = E2eeNachrichtenInhalt(
       krypto: krypto,
       encVersion: (id) async => (await (_db.select(_db.konversationen)..where((k) => k.id.equals(id))).getSingleOrNull())?.encVersion,
@@ -220,6 +307,9 @@ class ChatKryptoController extends Notifier<int> {
     ref.listen(e2eeProvider, (alt, neu) {
       if (alt?.status != neu.status || !identical(alt?.mitglieder, neu.mitglieder) || !identical(alt?.warnungen, neu.warnungen)) {
         _krypto?.vertrauenGeaendert();
+        // was bisher nicht lesbar war, wird mit dem neuen Stand des Vertrauens (bestätigte Warnung, neue Mitglieder) erneut versucht
+        _inhalt?.fehlschlaegeVergessen();
+        _anstossen();
         _geplant();
       }
     });
@@ -271,9 +361,13 @@ class ChatKryptoController extends Notifier<int> {
     _mitgliederStand = jetzt;
     try {
       await ref.read(e2eeProvider.notifier).laden();
+      final e = ref.read(e2eeProvider);
+      // nur ein gelungener Abruf zählt für die Erkennung entfernter Personen
+      if (e.status != E2eeStatus.nichtVerfuegbar && e.mitglieder.isNotEmpty) _krypto?.mitgliederBeobachtet();
     } on Object {
       // offline: der Schlüsselbund arbeitet mit dem, was lokal da ist
     }
+    _inhalt?.fehlschlaegeVergessen();
     _geplant();
   }
 
@@ -377,37 +471,49 @@ class ChatKryptoController extends Notifier<int> {
     }
   }
 
-  /// Epochen pflegen: erste Epoche für Konversationen ohne, neue Epoche bei Mitgliederwechsel. Nur mit frischem Stand der Mitglieder vom Server.
+  /// Epochen pflegen: erste Epoche für Konversationen ohne, neue Epoche bei Entfernten, bestätigten Schlüsselwechseln und unlesbarer Epoche (Selbstheilung),
+  /// verlorene Wraps nachreichen. Neu hinzugekommene Personen warten auf die Bestätigung ([aufnahmen]). Nur mit frischem Stand der Mitglieder vom Server.
   Future<void> _pflegen(ChatKrypto k) async {
     final e = ref.read(e2eeProvider);
     if (e.status != E2eeStatus.bereit || e.mitglieder.isEmpty) return;
     final jetzt = DateTime.now();
+    final aufnahmen = <String, Set<String>>{};
+    final kandidaten = <Konversation>[];
     for (final konv in await _db.select(_db.konversationen).get()) {
       if (konv.encVersion != 'e1' || konv.rev == 0) continue;
+      final teilnehmer = _teilnehmer(konv).toSet();
+      final erste = await k.ersteEpocheNoetig(konversation: konv, teilnehmer: teilnehmer);
+      final rot = erste == null ? await k.rotationNoetig(konversation: konv, teilnehmer: teilnehmer) : null;
+      if (rot != null && rot.neu.isNotEmpty) aufnahmen[konv.id] = rot.neu;
+      if (erste == null && !(rot?.automatisch ?? false)) {
+        await _wrapsNachreichen(k, konv.id);
+        continue;
+      }
       final letzte = _rotiert[konv.id];
       if (letzte != null && jetzt.difference(letzte) < const Duration(seconds: 30)) continue;
-      final teilnehmer = _teilnehmer(konv).toSet();
-      var erste = await k.ersteEpocheNoetig(konversation: konv, teilnehmer: teilnehmer);
-      var rot = erste == null ? await k.rotationNoetig(konversation: konv, teilnehmer: teilnehmer) : null;
-      if (erste == null && rot == null) continue;
-      // nicht alle Geräte gleichzeitig: kurz warten und neu prüfen (der erste Schreiber gewinnt, die anderen übernehmen seine Epoche)
-      await Future<void>.delayed(ref.read(chatKryptoVersatzProvider)());
-      if (!ref.mounted) return;
+      kandidaten.add(konv);
+    }
+    _aufnahmenSetzen(aufnahmen);
+    if (kandidaten.isEmpty) return;
+    // nicht alle Geräte gleichzeitig: EINMAL je Lauf kurz warten und neu prüfen (der erste Schreiber gewinnt, die anderen übernehmen seine Epoche)
+    await Future<void>.delayed(ref.read(chatKryptoVersatzProvider)());
+    if (!ref.mounted) return;
+    for (final konv in kandidaten) {
       final frisch = await (_db.select(_db.konversationen)..where((t) => t.id.equals(konv.id))).getSingleOrNull();
       if (frisch == null) continue;
-      erste = await k.ersteEpocheNoetig(konversation: frisch, teilnehmer: _teilnehmer(frisch).toSet());
-      rot = erste == null ? await k.rotationNoetig(konversation: frisch, teilnehmer: _teilnehmer(frisch).toSet()) : null;
-      if (erste == null && rot == null) continue;
+      final teil = _teilnehmer(frisch).toSet();
+      final erste = await k.ersteEpocheNoetig(konversation: frisch, teilnehmer: teil);
+      final rot = erste == null ? await k.rotationNoetig(konversation: frisch, teilnehmer: teil) : null;
+      if (erste == null && !(rot?.automatisch ?? false)) continue;
       try {
         final aenderungen = await k.epocheErstellen(
           konversationId: konv.id,
-          mitglieder: erste ?? rot!.mitglieder,
-          // Familienchat: neue Mitglieder sehen die Historie; Gruppen und Direktchats: nur der Mitgliederwechsel in der Oberfläche entscheidet darüber
-          historieFuer: konv.art == 'family' && rot != null ? rot.neu : const {},
+          // automatisch nie an Neue: sie warten auf die Bestätigung
+          mitglieder: erste ?? rot!.automatischeMitglieder,
           unvertrauteAuslassen: true,
         );
         await ref.read(syncStoreProvider).aendernMehrere(aenderungen);
-        _rotiert[konv.id] = jetzt;
+        _rotiert[konv.id] = DateTime.now();
         ref.read(syncProvider.notifier).lokaleAenderung();
         _geplant();
       } on SchluesselFehlt {
@@ -419,5 +525,18 @@ class ChatKryptoController extends Notifier<int> {
       }
     }
   }
-}
 
+  /// Wraps der eigenen Epoche, die lokal fehlen (abgelehnt, verloren), nach einer Wartezeit erneut erzeugen.
+  Future<void> _wrapsNachreichen(ChatKrypto k, String konversationId) async {
+    try {
+      final fehlend = await k.fehlendeWraps(konversationId);
+      if (fehlend.isEmpty) return;
+      final aenderungen = await k.wrapsNachreichen(konversationId, fehlend);
+      if (aenderungen.isEmpty) return;
+      await ref.read(syncStoreProvider).aendernMehrere(aenderungen);
+      ref.read(syncProvider.notifier).lokaleAenderung();
+    } on CryptoFehler {
+      // nichts nachreichen
+    }
+  }
+}

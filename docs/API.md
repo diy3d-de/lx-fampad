@@ -359,7 +359,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
 | `konversation` | `art` | `family`, `direct`, `group` (Pflicht) | create |
-| | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`) | create |
+| | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), auch das Wiederbeleben einer gelöschten Konversation setzt sie nicht neu | create |
 | | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
 | | `teilnehmer` | Liste von UUIDs (sortiert, eindeutig; Familienchat leer, Direktchat 2, Gruppe 2 bis 20) | rw (nur Gruppen) |
 | | `ownerId` | UUID oder `null` (anlegende Person) | server |
@@ -379,6 +379,7 @@ Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschl
   **Der erste Schreiber gewinnt:** wer eine schon vorhandene Epoche mit anderem Inhalt anlegt, wird mit `invalid` abgelehnt (die identische Wiederholung wird bestätigt); der Verlierer einer gleichzeitigen Rotation übernimmt
   die Epoche des Gewinners aus dem Änderungsstrom. Lückenlos: Epoche N gibt es erst, wenn N-1 da ist (sonst `invalid`). Alle Teilnehmer der Konversation lesen sie (im Familienchat alle aktiven Mitglieder), Nichtteilnehmer erfahren nichts
   (`not_found`, auch für Admins); unveränderlich, nicht löschbar (verschwindet nur mit der Konversation). Höchstens 1000 je Konversation, 20 neue je Person und Minute (`limit_reached`).
+- **Grenzen für Epochen und Wraps:** Epochen je Person höchstens 3 je Minute und 12 je Stunde, höchstens 100 lebende je Konversation und Person (insgesamt 1000); Wraps höchstens 100 je Minute und 800 je Stunde, 2000 lebende je Konversation und Person (`limit_reached`). Wraps der **höchsten** Epoche nimmt der Server nur vom Verteiler dieser Epoche an (`forbidden`); für ältere Epochen (Verlauf teilen) darf jedes Mitglied Wraps anlegen. Eine gelöschte Epoche oder ein gelöschter Wrap lässt sich mit derselben ID wieder anlegen (Wiederbeleben). Im Verlauf für neu Aufgenommene liefert der Server die eigenen Wraps immer (Abfrage nach Empfänger, kein Verdrängen durch fremde Zeilen). Wraps und Lesestand lösen keinen Push-Wecker aus.
 - **`epoche_wrap`:** der für **eine Person** verpackte Epochenschlüssel (Sealed Box plus Signatur des Verteilers). Je (Konversation, Epoche, Empfänger) genau eine Zeile mit vorgeschriebener ID (`wrap:<Konversation>:<Nummer>:<Empfänger>`), der erste gewinnt
   (ein zweiter ist `not_found`, "gibt es schon"), unveränderlich. **Nur der Empfänger liest seinen Wrap** (auch der Verteiler, die anderen Teilnehmer und Admins nicht), der WebSocket-Hinweis geht nur an ihn. Anlegen darf jeder Teilnehmer;
   die Epoche muss es geben, der Empfänger muss Teilnehmer sein (Familienchat: aktives Mitglied), sonst `invalid`. Verlässt die Person die Familie, verschwinden ihre Wraps (Tombstone für ihre Geräte). Höchstens 20 000 je Konversation, 400 neue je Person und Minute.

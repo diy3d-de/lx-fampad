@@ -7,6 +7,7 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_krypto.dart';
+import '../../data/chat/chat_krypto_state.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../ui/widgets.dart';
 import '../profile/verschluesselung_screen.dart';
@@ -288,4 +289,63 @@ String? personKryptoHindernis(E2eeState s, String userId) {
   if (m == null || m.schluessel == null) return 'Verschlüsselung noch nicht eingerichtet';
   if (s.warnungen.any((w) => w.userId == userId)) return 'Schlüssel nicht bestätigt';
   return null;
+}
+
+/// Frage im Chat, wenn jemand zur Konversation hinzugekommen ist, ohne dass dieses Gerät den Schlüssel dafür weitergegeben hat ("X wurde zu Y hinzugefügt –
+/// Schlüssel teilen?"). Der Schlüssel geht nie automatisch an Neue: sonst kämen Personen über ein neues Konto oder eine geänderte Teilnehmerliste ungefragt hinein.
+class AufnahmeHinweis extends ConsumerWidget {
+  final String konversationId;
+  final String chatName;
+  const AufnahmeHinweis({super.key, required this.konversationId, required this.chatName});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(chatKryptoProvider);
+    final neu = ref.read(chatKryptoProvider.notifier).aufnahmen[konversationId];
+    if (neu == null || neu.isEmpty) return const SizedBox.shrink();
+    final e = ref.watch(e2eeProvider);
+    final namen = [for (final id in neu) e.mitglieder.where((m) => m.id == id).firstOrNull?.displayName ?? 'Eine Person'];
+    final wer = namen.length == 1 ? namen.first : '${namen.take(2).join(' und ')}${namen.length > 2 ? ' u. a.' : ''}';
+    return Semantics(
+      container: true,
+      liveRegion: true,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+        padding: const EdgeInsets.fromLTRB(12, 8, 4, 4),
+        decoration: BoxDecoration(color: kSurface, border: Border.all(color: kWarn.withValues(alpha: 0.6)), borderRadius: BorderRadius.circular(12)),
+        child: Row(
+          children: [
+            const Icon(Icons.group_add_outlined, size: 20, color: kWarn),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '$wer ${namen.length == 1 ? 'wurde' : 'wurden'} zu „$chatName“ hinzugefügt. Schlüssel teilen? Nur wenn du die ${namen.length == 1 ? 'Person' : 'Personen'} erwartest.',
+                style: const TextStyle(fontSize: 13, height: 1.35, color: kText),
+              ),
+            ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  onPressed: () async {
+                    final ok = await ref.read(chatKryptoProvider.notifier).aufnahmeBestaetigen(konversationId);
+                    if (!ok && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Das geht gerade nicht. Versuche es gleich noch einmal.')));
+                    }
+                  },
+                  child: const Text('Teilen'),
+                ),
+                TextButton(
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  onPressed: () => ref.read(chatKryptoProvider.notifier).aufnahmeSpaeter(konversationId),
+                  child: const Text('Später'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

@@ -88,7 +88,7 @@ void main() {
         if (n.autorId == fixIdAdmin)
           n.inhalt.startsWith('l1:')
               ? n.inhalt.substring(3)
-              : (await a.annasKrypto.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt)).text,
+              : (await a.annasKrypto.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt, antwortAuf: n.antwortAuf)).text,
     ];
   }
 

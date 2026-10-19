@@ -48,7 +48,7 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
 
   bool get _neu => widget.modus == PersonenWahlModus.neuerChat;
   bool get _gruppe => _gewaehlt.length >= 2;
-  bool get _gueltig => _neu ? _gewaehlt.isNotEmpty : _gewaehlt.isNotEmpty;
+  bool get _gueltig => _gewaehlt.isNotEmpty;
 
   @override
   Widget build(BuildContext context) {

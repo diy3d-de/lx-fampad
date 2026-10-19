@@ -316,6 +316,13 @@ class AppDatabase extends _$AppDatabase {
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
       // vollständigen Snapshot (Upsert; offene lokale Änderungen und der Ausgang bleiben). deviceId, ownerUserId, members bleiben.
       if (from < 6) {
+        // Auch Zeilen, die der Server inzwischen gelöscht hat, würden sonst als Geister bleiben (der Snapshot ergänzt nur): die synchronisierten Chat-Tabellen werden
+        // geleert, nur lokal neu angelegte, noch unbestätigte Zeilen (rev 0) bleiben, wie beim Neuaufbau im Sync (SyncStore._neuAufsetzen).
+        if (from >= 4) {
+          for (final tabelle in const ['nachrichten', 'lesestand', 'konversationen']) {
+            await customStatement('DELETE FROM $tabelle WHERE rev > 0');
+          }
+        }
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
     },

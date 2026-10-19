@@ -138,12 +138,12 @@ class ChatUiAufbau {
   }
 
   /// Eine echte verschlüsselte Hülle `e1:` von [autor] mit dem Epochenschlüssel von Ben (Epoche [epoche]).
-  Future<String> verschluesselt(String konversationId, String nachrichtId, TestPerson autor, String klartext, {int epoche = 1}) async {
+  Future<String> verschluesselt(String konversationId, String nachrichtId, TestPerson autor, String klartext, {int epoche = 1, String? antwortAuf}) async {
     final key = bens.krypto.schluessel(konversationId, epoche)!;
     final wire = HuellenCodec(crypto).versiegeln(
       schluessel: key,
       klartext: utf8Bytes(klartext),
-      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autor.id, epoch: epoche, senderKeyVersion: autor.version),
+      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autor.id, epoch: epoche, senderKeyVersion: autor.version, antwortAuf: antwortAuf),
       signGeheim: autor.pk.signGeheim,
     );
     return '$kPraefixE1$wire';
@@ -153,7 +153,7 @@ class ChatUiAufbau {
   Future<void> nachricht(String konversationId, String id, TestPerson autor, String klartext, String createdAt, {String? antwortAuf, int epoche = 1}) async {
     env.sync.andereAendert('nachricht', id, {
       'konversationId': konversationId,
-      'text': await verschluesselt(konversationId, id, autor, klartext, epoche: epoche),
+      'text': await verschluesselt(konversationId, id, autor, klartext, epoche: epoche, antwortAuf: antwortAuf),
       'autorId': autor.id,
       'antwortAuf': ?antwortAuf,
       'createdAt': createdAt,
