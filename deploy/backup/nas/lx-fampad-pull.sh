@@ -32,6 +32,7 @@ MAX_TOTAL_MB="${LXB_MAX_TOTAL_MB:-20480}"          # mehr Gesamtgröße des Arch
 MAX_PULL_MB="${LXB_MAX_PULL_MB:-1024}"           # mehr zu holende Daten je Lauf (vorab per rsync --dry-run --stats ermittelt) = Alarm
 MAX_PER_DAY="${LXB_MAX_PER_DAY:-6}"                # mehr Ordner an einem Tag = Alarm (Normalwert 1, manuelle Läufe ein paar mehr)
 FULLCHECK_DAYS="${LXB_FULLCHECK_DAYS:-7}"          # alle so viele Tage: sha256sum -c über das gesamte Archiv
+FULLCHECK_TIMEOUT="${LXB_FULLCHECK_TIMEOUT:-2h}"        # Zeitlimit je Ordner der Volltiefenprüfung
 MIN_FREE_MB="${LXB_MIN_FREE_MB:-2048}"             # weniger freier Platz am Ziel = Alarm vor dem Holen
 MIN_VALID="${LXB_MIN_VALID:-3}"                    # nach der Rotation müssen mindestens so viele geprüfte Ordner bleiben
 MIN_DB_BYTES="${LXB_MIN_DB_BYTES:-2000}"           # kleinere Datenbankdatei gilt als nicht plausibel
@@ -76,7 +77,9 @@ zu_loeschen() {
     [ -n "${lastweek[$week]:-}" ] || lastweek[$week]="$n"
     [ -n "${lastmonth[$month]:-}" ] || lastmonth[$month]="$n"
   done
-  for day in "${!lastday[@]}"; do [ -n "${okday[$day]:-}" ] && keep[${lastday[$day]}]=1; done
+  # innerhalb der täglichen Frist bleiben ALLE Ordner (höchstens LXB_MAX_PER_DAY je Tag, siehe unten); eine Fälschung kurz nach 00:00 UTC
+  # verdrängt so keinen echten Lauf. Erst darüber hinaus wird je Woche/Monat auf den ältesten Ordner ausgedünnt.
+  for n in "${names[@]}"; do if [ -n "${okday[${n:0:8}]:-}" ]; then keep[$n]=1; fi; done
   for week in "${!lastweek[@]}"; do [ -n "${okweek[$week]:-}" ] && keep[${lastweek[$week]}]=1; done
   for month in "${!lastmonth[@]}"; do [ -n "${okmonth[$month]:-}" ] && keep[${lastmonth[$month]}]=1; done
   # Sicherheitsnetz: Ordner der letzten 2 Tage und der neueste überhaupt bleiben immer
@@ -96,12 +99,37 @@ case "$SERVER$SSH_KEY$KNOWN_HOSTS" in
   *[[:space:]\'\"\\]*) alarm "Host, SSH-Schlüssel- und known_hosts-Pfad dürfen keine Leerzeichen, Anführungszeichen oder Backslashes enthalten" ;;
 esac
 [[ "$PORT" =~ ^[0-9]+$ ]] || alarm "LXB_PORT muss eine Zahl sein"
-mkdir -p "$ARCHIV"
+command -v flock >/dev/null || alarm "flock fehlt (Paket util-linux); ohne Sperre könnten sich zwei Läufe stören"
+mkdir -p "$ARCHIV" 2>/dev/null || true
+[ -d "$ARCHIV" ] && [ -w "$ARCHIV" ] || alarm "Zielordner $ARCHIV existiert nicht oder ist nicht beschreibbar (Rechte/Freigabe prüfen)"
 # nur ein Lauf gleichzeitig (Staging und Archiv würden sich sonst stören)
-exec 8>"$DEST/.lock"
-flock -n 8 || { echo "Ein anderer Lauf des Pull-Skripts ist aktiv (Sperre $DEST/.lock), Abbruch." >&2; exit 75; }
+exec 8>>"$DEST/.lock" || alarm "Sperrdatei $DEST/.lock nicht beschreibbar"
+if ! flock -n 8; then
+  echo "Ein anderer Lauf des Pull-Skripts ist aktiv (Sperre $DEST/.lock), Abbruch." >&2
+  # läuft der andere Lauf ungewöhnlich lange (Sperrdatei älter als 3 h), ist das ein Fehler, den man erfahren will
+  if [ -n "$(find "$DEST/.lock" -mmin +180 -print)" ]; then
+    echo "ALARM: der andere Lauf hält die Sperre seit über 3 Stunden (hängt er?)" >&2
+    if [ -n "$NOTIFY_CMD" ]; then $NOTIFY_CMD "lx-fampad Sicherung: Pull-Lauf hängt seit über 3 Stunden" || true; fi
+  fi
+  exit 75    # bewusst eigener Code: in einem Timer/einer Unit als erfolgreich behandeln (SuccessExitStatus=75)
+fi
+: > "$DEST/.lock"; touch "$DEST/.lock"
 GESEHEN="$DEST/gesehen.txt"     # alle je angenommenen Ordnernamen (auch die durch die Rotation gelöschten)
 touch "$GESEHEN"
+# Name muss YYYYMMDD-HHMMSS UND ein gültiges Datum sein (sonst bräche date -d das Skript ab)
+name_ok() { [[ "$1" =~ $NAME_RE ]] && date -u -d "${1:0:4}-${1:4:2}-${1:6:2} ${1:9:2}:${1:11:2}:${1:13:2}" +%s >/dev/null 2>&1; }
+db_groesse() { { stat -c %s "$1"/db-*.dump.age 2>/dev/null || true; } | sort -n | tail -1; }
+# Median der Datenbankgrößen der 7 neuesten geprüften Archivordner (0 = zu wenig Vergleichswerte)
+median_db() {
+  local nm=() dd vv=() kk
+  for dd in "$ARCHIV"/[0-9]*-[0-9]*; do
+    if [ -f "$dd/.geprueft" ] && name_ok "$(basename "$dd")"; then nm+=("$(basename "$dd")"); fi
+  done
+  [ "${#nm[@]}" -ge 3 ] || { echo 0; return 0; }
+  mapfile -t nm < <(printf '%s\n' "${nm[@]}" | sort | tail -7)
+  for kk in "${nm[@]}"; do vv+=("$(db_groesse "$ARCHIV/$kk")"); done
+  printf '%s\n' "${vv[@]}" | sort -n | sed -n "$(( (${#vv[@]} + 1) / 2 ))p"
+}
 epoch_von_namen() { date -u -d "${1:0:4}-${1:4:2}-${1:6:2} ${1:9:2}:${1:11:2}:${1:13:2}" +%s; }
 status_pruefen() {   # $1 = Datei: höchstens 4 KB, nur Zeilen schluessel=wert
   [ "$(stat -c %s "$1")" -le 4096 ] || alarm "status ist größer als 4 KB (nicht übernommen)"
@@ -178,7 +206,7 @@ if [ "$ROTATE_ONLY" = 0 ]; then
     for d in "$STAGING"/*/; do
       [ -d "$d" ] || continue
       d="${d%/}"; n="$(basename "$d")"
-      [[ "$n" =~ $NAME_RE ]] || alarm "unzulässiger Ordnername im Staging: $n"
+      name_ok "$n" || { echo "WARNUNG: Ordner $n hat keinen gültigen Namen oder kein gültiges Datum (übersprungen, nicht übernommen)" >&2; continue; }
       if [ "$(epoch_von_namen "$n")" -gt $((JETZT + 3600)) ]; then
         alarm "Ordner mit Datum in der Zukunft: $n (Manipulation oder falsche Uhr; nichts übernommen, nichts rotiert, Ordner prüfen)"
       fi
@@ -190,10 +218,16 @@ if [ "$ROTATE_ONLY" = 0 ]; then
         alarm "Ordner $n ist nicht neuer als der neueste bekannte ($NEUESTE_BEKANNT): Fälschung oder Zeitfehler am Server (nicht übernommen)"
       fi
     done
+    MED="$(median_db)"
     for d in "$STAGING"/*/; do   # aufsteigend nach Namen
       [ -d "$d" ] || continue
       d="${d%/}"; n="$(basename "$d")"
+      name_ok "$n" || continue
       pruefen_ordner "$d"
+      DBS="$(db_groesse "$d")"
+      if [ "$MED" -gt 0 ] && [ "$((DBS * 2))" -lt "$MED" ]; then
+        alarm "Datenbanksicherung in $n ist nur $((DBS * 100 / MED)) % des Medians der letzten Sicherungen (unter 50 %: nicht übernommen, Server prüfen)"
+      fi
       hash_von "$d" > "$d/.geprueft"
       [ ! -e "$ARCHIV/$n" ] || alarm "$ARCHIV/$n existiert schon"
       mv -T "$d" "$ARCHIV/$n"
@@ -212,7 +246,7 @@ ANZAHL=0
 for d in "$ARCHIV"/[0-9]*-[0-9]*; do
   [ -d "$d" ] || continue
   n="$(basename "$d")"
-  [[ "$n" =~ $NAME_RE ]] || continue
+  name_ok "$n" || { echo "WARNUNG: Ordner $n im Archiv hat keinen gültigen Namen oder kein gültiges Datum (übersprungen)" >&2; continue; }
   ANZAHL=$((ANZAHL + 1))
   if [ "$(epoch_von_namen "$n")" -gt $((JETZT + 3600)) ]; then
     alarm "Ordner mit Datum in der Zukunft: $n (Manipulation oder falsche Uhr; nichts wird rotiert, Ordner prüfen)"
@@ -251,17 +285,28 @@ fi
 
 # Wiederkehrende Volltiefenprüfung: alle FULLCHECK_DAYS Tage sha256sum -c über das ganze Archiv (erkennt stille Veränderungen)
 VOLL="$DEST/.vollpruefung"
-if [ "$DRY" = 0 ] && { [ ! -e "$VOLL" ] || [ -n "$(find "$VOLL" -mtime +"$FULLCHECK_DAYS" -print)" ]; }; then
+if [ "$DRY" = 0 ] && { [ ! -e "$VOLL" ] || [ -n "$(find "$VOLL" -mmin +"$((FULLCHECK_DAYS * 1440))" -print)" ]; }; then
   echo "==> Volltiefenprüfung des Archivs (alle $FULLCHECK_DAYS Tage)"
   for d in "$ARCHIV"/[0-9]*-[0-9]*; do
     [ -d "$d" ] || continue
-    ( cd "$d" && sha256sum -c --strict --quiet SHA256SUMS ) || alarm "Volltiefenprüfung: Prüfsummen stimmen nicht in $d (Archiv beschädigt oder verändert; nichts wird rotiert)"
+    name_ok "$(basename "$d")" || continue
+    ( cd "$d" && timeout "$FULLCHECK_TIMEOUT" sha256sum -c --strict --quiet SHA256SUMS ) || alarm "Volltiefenprüfung: Prüfsummen stimmen nicht oder Zeitlimit ($FULLCHECK_TIMEOUT) in $d (Archiv beschädigt/verändert oder zu langsam; nichts wird rotiert)"
   done
   touch "$VOLL"
 fi
 
 echo "==> Rotation ($KEEP_DAILY täglich, $KEEP_WEEKLY wöchentlich, $KEEP_MONTHLY monatlich)"
-mapfile -t ALLE < <(for d in "$ARCHIV"/[0-9]*-[0-9]*; do if [ -d "$d" ]; then basename "$d"; fi; done)
+mapfile -t ALLE < <(for d in "$ARCHIV"/[0-9]*-[0-9]*; do if [ -d "$d" ] && name_ok "$(basename "$d")"; then basename "$d"; fi; done)
+# Datenbankgrößen der Ordner innerhalb der täglichen Frist gegen den Median prüfen (eine winzige Fälschung ist ein Alarm, keine Rotation)
+MED="$(median_db)"
+if [ "$MED" -gt 0 ]; then
+  DAYCUT="$(date -u -d "-$KEEP_DAILY day" +%Y%m%d)"
+  for n in ${ALLE[@]+"${ALLE[@]}"}; do
+    if ! [[ "${n:0:8}" < "$DAYCUT" ]] && [ "$(( $(db_groesse "$ARCHIV/$n") * 2 ))" -lt "$MED" ]; then
+      alarm "Datenbanksicherung in $n ist kleiner als 50 % des Medians der letzten Sicherungen (Fälschung oder Fehler am Server): nichts wird rotiert"
+    fi
+  done
+fi
 # leere Felder: ${A[@]+"${A[@]}"} hält auch bash < 4.4 unter set -u ruhig
 mapfile -t LOESCHEN < <(printf '%s\n' ${ALLE[@]+"${ALLE[@]}"} | zu_loeschen "$(date -u +%Y%m%d)")
 # Sicherheitsnetz: nach dem Löschen müssen mindestens MIN_VALID geprüfte, plausibel große Ordner übrig sein

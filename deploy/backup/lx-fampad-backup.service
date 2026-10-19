@@ -5,6 +5,8 @@ Wants=postgresql.service
 
 [Service]
 Type=oneshot
+# Exit 75 = eine andere Sicherung läuft noch (Sperre): kein Fehler der Unit; ein stiller Ausfall fällt über das Alter auf dem NAS auf
+SuccessExitStatus=75
 ExecStart=/usr/local/sbin/lx-fampad-backup
 # Der Lauf braucht root (Lesen aller Dateien, Wechsel zu postgres per runuser). Der Rest ist eingeschränkt.
 ProtectSystem=strict
