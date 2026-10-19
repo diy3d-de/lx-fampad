@@ -12,6 +12,7 @@ import '../../widgets/sync_anzeige.dart';
 import '../profile/profile_screen.dart';
 import '../update/update_service.dart';
 import 'shell_tab.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Noch nicht gebaute Bereiche in der Seitenleiste (deaktiviert, mit "bald" markiert).
 const _kBaldBereiche = <(String, IconData)>[
@@ -90,7 +91,7 @@ class _Seitenleiste extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('lx-fampad', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.55, color: kTextStrong)),
+                  Text(kAppName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.55, color: kTextStrong)),
                   SizedBox(height: 2),
                   Text(kInviteHost, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                 ],
@@ -239,7 +240,7 @@ class _ProfilKachel extends ConsumerWidget {
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             children: [
-              PersonAvatar(name: name, colorIndex: user?.colorIndex ?? 0, size: 32),
+              BenutzerAvatar(user: user, ersatzName: name, size: 32),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

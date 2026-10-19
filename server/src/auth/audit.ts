@@ -15,6 +15,7 @@ export type AuditEvent =
   | 'member_approved'
   | 'member_rejected'
   | 'member_removed'
+  | 'avatar_reset'
   | 'member_reset'
   | 'role_changed'
   | 'login_ok'

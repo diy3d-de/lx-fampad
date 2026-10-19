@@ -14,9 +14,6 @@ import '../auth/auth_widgets.dart';
 import '../update/update_service.dart';
 import 'profile_screen.dart' show EinstellungsZeile;
 
-/// Anzeigename der App (an dieser einen Stelle; später mit einer gemeinsamen Konstante vereinheitlichbar).
-const kUeberAppName = 'lx-familyhub';
-
 /// Angaben für die Anzeige. [version] ist im Web die Kennung des Bundles (WEB_VERSION, lokal "dev").
 class UeberInfo {
   final String version;
@@ -27,7 +24,7 @@ class UeberInfo {
   const UeberInfo({required this.version, this.build, required this.plattform, this.geraet, this.server});
 
   /// Kurzangabe für die Zwischenablage, z. B. "lx-familyhub 0.2.0 (1002) · Android".
-  String get kurz => '$kUeberAppName $version${build != null ? ' ($build)' : ''} · $plattform';
+  String get kurz => '$kAppName $version${build != null ? ' ($build)' : ''} · $plattform';
 }
 
 final ueberInfoProvider = FutureProvider.autoDispose<UeberInfo>((ref) async {
@@ -91,7 +88,7 @@ class UeberScreen extends ConsumerWidget {
     final pruefend = update.phase == UpdatePhase.pruefe || update.phase == UpdatePhase.laedt;
     return AuthSeite(
       label: '// app',
-      titel: 'Über $kUeberAppName',
+      titel: 'Über $kAppName',
       maxBreite: kMaxContentWidth,
       kinder: [
         Semantics(
@@ -100,7 +97,7 @@ class UeberScreen extends ConsumerWidget {
           excludeSemantics: true,
           child: EinstellungsZeile(
             icon: Icons.info_outline,
-            titel: i == null ? 'wird geladen …' : '$kUeberAppName ${i.version}',
+            titel: i == null ? 'wird geladen …' : '$kAppName ${i.version}',
             untertitel: i == null ? null : [if (i.build != null) 'build ${i.build}', i.plattform].join(' · '),
             status: i == null ? null : const Icon(Icons.copy, size: 18, color: kTextMuted),
             onTap: i == null ? null : () => unawaited(_kopieren(context, i)),

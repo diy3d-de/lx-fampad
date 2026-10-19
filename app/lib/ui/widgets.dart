@@ -152,33 +152,48 @@ class StatusPill extends StatelessWidget {
       );
 }
 
-/// Runder Avatar mit Initialen in der Personenfarbe.
+/// Runder Avatar: Benutzerbild (Foto oder Platzhalter-Zeichnung) oder, solange es keines gibt oder es nicht lädt, die Initialen
+/// in der Personenfarbe. Platzhalter-Zeichnungen sind transparent und sitzen auf der vollen Personenfarbe ([bildAufFarbe]).
+/// Mit Daten der Familie baut man ihn über `BenutzerAvatar` (widgets/benutzer_avatar.dart), der das Bild der Person auflöst.
 class PersonAvatar extends StatelessWidget {
   final String name;
   final int colorIndex;
   final double size;
 
-  /// Benutzerbild (vorgesehen); fehlt es, zeigt der Kreis die Initialen.
+  /// Benutzerbild; fehlt es oder lässt es sich nicht laden, zeigt der Kreis die Initialen.
   final ImageProvider<Object>? bild;
-  const PersonAvatar({super.key, required this.name, required this.colorIndex, this.size = 40, this.bild});
+
+  /// Das Bild ist eine transparente Platzhalter-Zeichnung: Hintergrund in voller Personenfarbe statt der blassen Fläche.
+  final bool bildAufFarbe;
+  const PersonAvatar({super.key, required this.name, required this.colorIndex, this.size = 40, this.bild, this.bildAufFarbe = false});
 
   @override
   Widget build(BuildContext context) {
     final farbe = personColor(colorIndex);
+    final initialen = Center(
+      child: Text(personInitials(name), style: TextStyle(fontFamily: kFontMono, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
+    );
     return ExcludeSemantics(
       child: Container(
         width: size,
         height: size,
-        alignment: Alignment.center,
+        clipBehavior: Clip.antiAlias,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: farbe.withValues(alpha: 0.18),
+          color: bild != null && bildAufFarbe ? farbe : farbe.withValues(alpha: 0.18),
           border: Border.all(color: farbe.withValues(alpha: 0.6)),
-          image: bild == null ? null : DecorationImage(image: bild!, fit: BoxFit.cover),
         ),
-        child: bild != null
-            ? null
-            : Text(personInitials(name), style: TextStyle(fontFamily: kFontMono, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
+        child: bild == null
+            ? initialen
+            : Image(
+                image: bild!,
+                width: size,
+                height: size,
+                fit: BoxFit.cover,
+                gaplessPlayback: true,
+                errorBuilder: (_, _, _) => initialen,
+                frameBuilder: (_, kind, frame, sofort) => frame == null && !sofort ? initialen : kind,
+              ),
       ),
     );
   }

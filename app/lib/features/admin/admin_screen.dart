@@ -13,6 +13,7 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'einladung_neu.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 class AdminScreen extends ConsumerWidget {
   const AdminScreen({super.key});
@@ -54,7 +55,7 @@ class _MitgliederTab extends ConsumerStatefulWidget {
   ConsumerState<_MitgliederTab> createState() => _MitgliederTabState();
 }
 
-enum _Aktion { rolle, zuruecksetzen, entfernen, freigeben, ablehnen }
+enum _Aktion { rolle, zuruecksetzen, bildZuruecksetzen, entfernen, freigeben, ablehnen }
 
 class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZustand<_MitgliederTab> {
   List<UserDto>? _mitglieder;
@@ -99,6 +100,17 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         );
         if (neu == null || neu == m.role || !mounted) return;
         await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).rolleAendern(m.id, neu)), erfolg: 'Rolle geändert.');
+      case _Aktion.bildZuruecksetzen:
+        final bild = await _frage(
+          'Profilbild zurücksetzen?',
+          'Das Profilbild von ${m.displayName} wird entfernt, es erscheinen wieder die Initialen. ${m.displayName} kann selbst ein neues Bild wählen.',
+          'Zurücksetzen',
+        );
+        if (!bild || !mounted) return;
+        await _ausfuehrenUndLaden(
+          () => _schritt(() => ref.read(apiProvider).avatarMitgliedZuruecksetzen(m.id), stepUp: false),
+          erfolg: 'Profilbild zurückgesetzt.',
+        );
       case _Aktion.entfernen:
         final ja = await _frage(
           'Mitglied entfernen?',
@@ -259,7 +271,7 @@ class _MitgliedKarte extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
         child: Row(
           children: [
-            PersonAvatar(name: m.displayName, colorIndex: m.colorIndex),
+            BenutzerAvatar(user: m),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -282,10 +294,11 @@ class _MitgliedKarte extends StatelessWidget {
                         PopupMenuItem(value: _Aktion.freigeben, child: Text('Freigeben')),
                         PopupMenuItem(value: _Aktion.ablehnen, child: Text('Ablehnen')),
                       ]
-                    : const [
-                        PopupMenuItem(value: _Aktion.rolle, child: Text('Rolle ändern')),
-                        PopupMenuItem(value: _Aktion.zuruecksetzen, child: Text('Zugang zurücksetzen')),
-                        PopupMenuItem(value: _Aktion.entfernen, child: Text('Entfernen')),
+                    : [
+                        const PopupMenuItem(value: _Aktion.rolle, child: Text('Rolle ändern')),
+                        if (m.avatar != null) const PopupMenuItem(value: _Aktion.bildZuruecksetzen, child: Text('Profilbild zurücksetzen')),
+                        const PopupMenuItem(value: _Aktion.zuruecksetzen, child: Text('Zugang zurücksetzen')),
+                        const PopupMenuItem(value: _Aktion.entfernen, child: Text('Entfernen')),
                       ],
               ),
           ],

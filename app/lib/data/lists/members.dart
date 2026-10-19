@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error.dart';
 import '../api/models.dart';
 import '../auth/auth_state.dart';
+import '../avatar/avatar_foto.dart';
 import '../database_provider.dart';
 
 const _kMitglieder = 'members';
@@ -21,9 +22,15 @@ final mitgliederProvider = FutureProvider.autoDispose<List<UserDto>>((ref) async
         if (u.status == MemberStatus.active) u,
     ];
     try {
-      await db.metaSchreiben(_kMitglieder, jsonEncode([for (final u in alle) {'id': u.id, 'displayName': u.displayName, 'colorIndex': u.colorIndex, 'role': u.role.wire, 'status': 'active'}]));
+      await db.metaSchreiben(_kMitglieder, jsonEncode([for (final u in alle) {'id': u.id, 'displayName': u.displayName, 'colorIndex': u.colorIndex, 'role': u.role.wire, 'status': 'active', if (u.avatar != null) 'avatar': u.avatar!.toJson()}]));
     } catch (_) {
       // Zwischenspeicher ist nur ein Komfort
+    }
+    try {
+      // Fotos von Personen, die nicht mehr in der Familie sind, vom Gerät entfernen
+      await avatarCacheBereinigen(db, [for (final u in alle) u.id]);
+    } catch (_) {
+      // nur ein Komfort
     }
     return alle;
   } on ApiException {

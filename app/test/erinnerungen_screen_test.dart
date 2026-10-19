@@ -168,7 +168,7 @@ void main() {
         await tippeText(tester, 'Neuer Termin');
         await tippeText(tester, '15 Minuten');
         await warte(tester);
-        expect(find.textContaining('Benachrichtigungen für lx-fampad nicht erlaubt'), erlaubt ? findsNothing : findsOneWidget);
+        expect(find.textContaining('Benachrichtigungen für lx-familyhub nicht erlaubt'), erlaubt ? findsNothing : findsOneWidget);
         if (!erlaubt) {
           await tippeText(tester, 'Benachrichtigungen erlauben');
           expect(find.text('Titel auf Sperrbildschirm zeigen'), findsOneWidget, reason: 'Link öffnet die Einstellungen');

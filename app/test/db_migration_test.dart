@@ -55,6 +55,31 @@ void main() {
     expect(raw.select('PRAGMA user_version').single.values.first, 3);
   });
 
+  test('Version 2 -> 3: Sync-Fortschritt wird zurückgesetzt, übrige Meta-Werte und Ausgang bleiben', () async {
+    final raw = sqlite3.openInMemory();
+    addTearDown(raw.close);
+    var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
+    await db.besitzerSetzen('u1');
+    await db.metaSchreiben('deviceId', 'dev-1');
+    await db.metaSchreiben('members', '[]');
+    await db.metaSchreiben('sinceRev', '500');
+    await db.metaSchreiben('snapshotRev', '600');
+    await db.into(db.outbox).insert(OutboxCompanion.insert(opId: 'op-1', op: 'upsert', entity: 'list', entityId: 'l1'));
+    await db.close();
+    for (final t in ['termine', 'termin_teilnehmer', 'termin_ausnahmen']) {
+      raw.execute('DROP TABLE $t');
+    }
+    raw.execute('PRAGMA user_version = 2');
+    db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
+    addTearDown(db.close);
+    expect(await db.metaLesen('sinceRev'), isNull);
+    expect(await db.metaLesen('snapshotRev'), isNull);
+    expect(await db.metaLesen('deviceId'), 'dev-1');
+    expect(await db.metaLesen('members'), '[]');
+    expect(await db.besitzerLesen(), 'u1');
+    expect((await db.select(db.outbox).get()).single.opId, 'op-1');
+  });
+
   test('frische Datenbank: Version 3 mit allen Tabellen', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);

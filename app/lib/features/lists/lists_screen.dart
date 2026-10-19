@@ -13,6 +13,7 @@ import '../../ui/widgets.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../../widgets/kopfzeile.dart';
 import 'list_dialogs.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Listen (Einkauf, Packliste, eigene Listen): Liste wählen, Einträge anlegen, abhaken, bearbeiten, zuweisen, löschen.
 /// Alles wirkt sofort auf die lokale Datenbank; der Abgleich mit dem Server läuft im Hintergrund (data/sync/).
@@ -433,14 +434,14 @@ class _Zeile extends StatelessWidget {
                   height: 52,
                   child: Center(
                     child: zugewiesen
-                        ? PersonAvatar(name: person?.displayName ?? '?', colorIndex: person?.colorIndex ?? 0, size: 30)
+                        ? BenutzerAvatar(user: person, size: 30)
                         : const Icon(Icons.person_add_alt, size: 20, color: kTextFaint),
                   ),
                 ),
               ),
             )
           else if (zugewiesen)
-            Padding(padding: const EdgeInsets.only(right: 12), child: PersonAvatar(name: person?.displayName ?? '?', colorIndex: person?.colorIndex ?? 0, size: 30)),
+            Padding(padding: const EdgeInsets.only(right: 12), child: BenutzerAvatar(user: person, size: 30)),
         ],
       ),
     );

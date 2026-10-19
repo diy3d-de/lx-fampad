@@ -141,7 +141,7 @@ class MarkenKopf extends StatelessWidget {
         TextSpan(
           children: [
             TextSpan(text: 'lx', style: TextStyle(color: kAccent)),
-            TextSpan(text: '-fampad'),
+            TextSpan(text: '-familyhub'),
           ],
         ),
         style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong),

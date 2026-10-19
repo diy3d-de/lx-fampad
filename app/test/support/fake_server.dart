@@ -39,7 +39,8 @@ class FakeServer {
   late final MockClient client = MockClient((request) async {
     final uri = request.url;
     Object? body;
-    if (request.body.isNotEmpty) body = jsonDecode(request.body);
+    // JSON wird gelesen, andere Inhalte (z. B. ein hochgeladenes Bild) bleiben rohe Bytes
+    if (request.bodyBytes.isNotEmpty) body = (request.headers['content-type'] ?? '').contains('json') ? jsonDecode(request.body) : request.bodyBytes;
     final req = Req(request.method, uri.path.replaceFirst('/api/v1', ''), request.headers, body);
     log.add(req);
     final h = routes[req.key];
@@ -123,7 +124,7 @@ Map<String, dynamic> neueEinladungJson({bool pin = true}) => {
 
 Map<String, dynamic> webauthnOptionen() => {
   'challenge': 'Y2hhbGxlbmdl',
-  'rp': {'name': 'lx-fampad', 'id': 'familie.lx-labs.dev'},
+  'rp': {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'},
   'user': {'id': 'dXNlcg', 'name': 'anna@beispiel.de', 'displayName': 'Anna'},
   'pubKeyCredParams': [
     {'alg': -7, 'type': 'public-key'},

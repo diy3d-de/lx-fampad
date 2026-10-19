@@ -1,6 +1,7 @@
 // Profil > Über: Version und Build, Server und Protokoll, Kopieren, Update-Prüfung; Layout bei 360 px, Textskala 1.0/1.5.
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/constants.dart' show kAppName;
 import 'package:lx_fampad/features/profile/ueber_screen.dart';
 import 'package:lx_fampad/features/update/update_service.dart';
 
@@ -24,14 +25,14 @@ void main() {
     env.extraOverrides.add(ueberInfoProvider.overrideWith((ref) async => info));
     await starteApp(tester, env, skala: skala);
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-    await tippeText(tester, 'Über $kUeberAppName');
+    await tippeText(tester, 'Über $kAppName');
     await warte(tester);
   }
 
   for (final skala in [1.0, 1.5]) {
     testWidgets('Textskala $skala: Angaben sichtbar, kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
       await oeffnen(tester, android, skala: skala);
-      expect(find.text('$kUeberAppName 0.2.0'), findsOneWidget);
+      expect(find.text('$kAppName 0.2.0'), findsOneWidget);
       expect(find.text('build 1002 · Android'), findsOneWidget);
       expect(find.text('Server 0.1.4 · Protokoll 1'), findsOneWidget);
       expect(find.text('Pixel 9'), findsOneWidget);
@@ -49,14 +50,14 @@ void main() {
     addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
     await oeffnen(tester, android);
     expect(kopiert, isNull, reason: 'nur auf Klick');
-    await tippeText(tester, '$kUeberAppName 0.2.0');
+    await tippeText(tester, '$kAppName 0.2.0');
     expect(kopiert, 'lx-familyhub 0.2.0 (1002) · Android');
     expect(find.text('Versionsangabe kopiert'), findsOneWidget);
   });
 
   testWidgets('Web: Kennung "dev" ohne Build-Nummer, Server unbekannt', (tester) async {
     await oeffnen(tester, web);
-    expect(find.text('$kUeberAppName dev'), findsOneWidget);
+    expect(find.text('$kAppName dev'), findsOneWidget);
     expect(find.text('Web'), findsOneWidget);
     expect(find.text('nicht erreichbar'), findsOneWidget);
     expect(web.kurz, 'lx-familyhub dev · Web');

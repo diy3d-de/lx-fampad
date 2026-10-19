@@ -80,7 +80,7 @@ void main() {
   });
 
   test('Passwort-Registrierung: Start-Antwort', () {
-    final s = PasswordStart.fromJson({'challengeId': 'c1', 'totpSecret': 'JBSWY3DPEHPK3PXP', 'totpUri': 'otpauth://totp/lx-fampad:a@b.de?secret=JBSWY3DPEHPK3PXP'});
+    final s = PasswordStart.fromJson({'challengeId': 'c1', 'totpSecret': 'JBSWY3DPEHPK3PXP', 'totpUri': 'otpauth://totp/lx-familyhub:a@b.de?secret=JBSWY3DPEHPK3PXP'});
     expect(s.totpUri, startsWith('otpauth://'));
   });
 
@@ -96,7 +96,7 @@ void main() {
 
   test('WebAuthn-Optionen bleiben unverändert erhalten', () {
     final c = ChallengeDto.fromJson({'challengeId': 'x', 'options': webauthnOptionen()});
-    expect(c.options['rp'], {'name': 'lx-fampad', 'id': 'familie.lx-labs.dev'});
+    expect(c.options['rp'], {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'});
   });
 
   test('Rollen: Wire-Namen, Beschriftung und Einladungsrechte (Eltern nur Kind); unbekannte Werte (alter Server: "guest") gelten als Kind', () {

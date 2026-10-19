@@ -174,6 +174,12 @@ class AppDatabase extends _$AppDatabase {
         await m.createIndex(terminTeilnehmerTerminIdx);
         await m.createIndex(terminAusnahmenTerminIdx);
       }
+      // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
+      // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
+      // vollständigen Snapshot (Upsert; offene lokale Änderungen und der Ausgang bleiben). deviceId, ownerUserId, members bleiben.
+      if (from < 3) {
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
     },
   );
 
@@ -194,6 +200,9 @@ class AppDatabase extends _$AppDatabase {
   Future<String?> metaLesen(String key) async => (await (select(syncMeta)..where((t) => t.key.equals(key))).getSingleOrNull())?.value;
 
   Future<void> metaSchreiben(String key, String value) => into(syncMeta).insertOnConflictUpdate(SyncMetaCompanion.insert(key: key, value: value));
+
+  /// Schlüssel mit dem Präfix (ohne die LIKE-Zeichen % und _, z. B. 'avatar:').
+  Future<List<String>> metaSchluesselMit(String prefix) async => [for (final r in await (select(syncMeta)..where((t) => t.key.like('$prefix%'))).get()) r.key];
 
   Future<void> metaLoeschen(String key) => (delete(syncMeta)..where((t) => t.key.equals(key))).go();
 

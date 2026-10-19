@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'constants.dart';
 import 'data/auth/auth_state.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
@@ -116,7 +117,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     });
     ref.listen(inviteIntakeProvider, (_, _) => _einladungVerarbeiten());
     return MaterialApp(
-      title: 'lx-fampad',
+      title: kAppName,
       navigatorKey: _navigatorKey,
       scaffoldMessengerKey: _messengerKey,
       debugShowCheckedModeBanner: false,

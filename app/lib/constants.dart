@@ -77,6 +77,9 @@ const kMaxApkBytes = 200 * 1024 * 1024;
 const kProtocolVersion = 1;
 
 /// Paketname der App; das signierte Update-Manifest muss genau diesen Namen tragen.
+/// Anzeigename der App in allen sichtbaren Texten (Paketname, Kanäle, Dienst- und Pfadnamen bleiben lx-fampad/fampad).
+const kAppName = 'lx-familyhub';
+
 const kPackageName = 'dev.lx_labs.fampad';
 
 /// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64), erzeugt am 19.10.2026. Der private
