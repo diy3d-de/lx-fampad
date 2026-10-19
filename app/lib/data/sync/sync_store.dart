@@ -38,6 +38,15 @@ class UebernahmeBericht {
   bool resync = false;
 }
 
+/// Eine lokale Änderung für [SyncStore.aendernMehrere].
+class SyncAenderung {
+  final String entity;
+  final String id;
+  final Json fields;
+  final Json nurLokal;
+  const SyncAenderung(this.entity, this.id, this.fields, {this.nurLokal = const {}});
+}
+
 class SyncStore {
   final AppDatabase db;
   final Map<String, SyncEntity> entitaeten;
@@ -94,7 +103,17 @@ class SyncStore {
 
   /// Schreibt eine Änderung sofort lokal und stellt die Op in den Ausgang. [fields] gehen zum Server (Schnittstellenformat),
   /// [nurLokal] nur in die lokale Zeile (z. B. createdAt und ownerId einer neuen Zeile, bis der Server sie liefert).
-  Future<void> aendern(String entity, String id, Json fields, {Json nurLokal = const {}}) => db.transaction(() async {
+  Future<void> aendern(String entity, String id, Json fields, {Json nurLokal = const {}}) => db.transaction(() => _aendern(entity, id, fields, nurLokal));
+
+  /// Mehrere Änderungen in EINER Transaktion (alles oder nichts). Verschachtelte Transaktionen gibt es nicht (drift im Web, WASM,
+  /// kann sie nicht zurückrollen): wer mehrere Zeilen atomar schreiben will, nimmt diese Methode statt [aendern] in einer eigenen Transaktion.
+  Future<void> aendernMehrere(List<SyncAenderung> liste) => db.transaction(() async {
+    for (final a in liste) {
+      await _aendern(a.entity, a.id, a.fields, a.nurLokal);
+    }
+  });
+
+  Future<void> _aendern(String entity, String id, Json fields, Json nurLokal) async {
     final def = _entitaet(entity);
     final rev = await def.rev(db, id);
     if (rev == null && !def.kannAnlegen(fields)) return; // Zeile gibt es nicht mehr (anderswo gelöscht): keine Teilzeile anlegen
@@ -115,7 +134,7 @@ class SyncStore {
     await db.into(db.outbox).insert(
       OutboxCompanion.insert(opId: _neueOpId(), op: 'upsert', entity: entity, entityId: id, fieldsJson: Value(jsonEncode(fields)), baseRev: Value(rev ?? 0), createdAt: Value(_jetzt())),
     );
-  });
+  }
 
   /// Löscht lokal sofort (samt untergeordneten Zeilen) und merkt die Löschung für den Server vor. Eine Zeile, die der Server nie
   /// gesehen hat, verschwindet spurlos (ohne Op).

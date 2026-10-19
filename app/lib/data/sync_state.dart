@@ -343,8 +343,13 @@ class SyncController extends Notifier<SyncState> {
         _limitFolge = e.ops > 0 ? 1 : _limitFolge + 1;
         final sek = _limitWartezeit(e).inSeconds;
         final lang = sek > 60 || _limitFolge > 5;
+        // Retry-After von 30 Minuten und mehr ist das Tageslimit des Servers (Retry-After 3600): das heißt "heute nicht mehr"
+        final roh = e.warten?.inSeconds ?? 0;
+        final meldung = roh >= 1800
+            ? 'Tageslimit für Änderungen erreicht: der Server nimmt vorerst nichts mehr an (weiter in etwa ${roh >= 5400 ? '${(roh / 3600).round()} Std.' : '${(roh / 60).round()} Min.'}). Deine Änderungen bleiben gespeichert.'
+            : 'Der Server bremst gerade (zu viele Anfragen). Nächster Versuch in $sek s.';
         state = lang
-            ? state.copyWith(status: SyncStatus.fehler, meldung: 'Der Server bremst gerade (zu viele Anfragen). Nächster Versuch in $sek s.', hinweise: hinweise)
+            ? state.copyWith(status: SyncStatus.fehler, meldung: meldung, hinweise: hinweise)
             : state.copyWith(status: SyncStatus.laeuft, meldungLoeschen: true, hinweise: hinweise);
         _backoffPlanen(e);
       case SyncAusgang.ueberlastet || SyncAusgang.fehler:

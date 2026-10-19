@@ -22,6 +22,9 @@ import 'kalender_widgets.dart' show PersonKapsel;
 
 Future<void> icsImportOeffnen(BuildContext context) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const IcsImportScreen()));
 
+/// Mindesthöhe 48 px für Knöpfe (Touch-Ziele mindestens 44 px, auch bei Textskala 1.5).
+final _hoch = ButtonStyle(minimumSize: const WidgetStatePropertyAll(Size(64, 48)), tapTargetSize: MaterialTapTargetSize.padded);
+
 enum _Phase { wahl, liest, vorschau, laeuft, fertig }
 
 class IcsImportScreen extends ConsumerStatefulWidget {
@@ -62,7 +65,11 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     }
     if (datei == null || !mounted) return;
     if ((datei.laenge ?? 0) > kIcsMaxBytes) {
-      setState(() => _fehler = 'Die Datei ist größer als 5 MB.');
+      setState(() {
+        _fehler = 'Die Datei ist größer als 5 MB.';
+        _plan = null; // eine frühere Vorschau gehört nicht zu dieser Datei
+        _phase = _Phase.wahl;
+      });
       return;
     }
     setState(() {
@@ -87,6 +94,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       if (mounted) {
         setState(() {
           _fehler = e.meldung;
+          _plan = null;
           _phase = _Phase.wahl;
         });
       }
@@ -94,6 +102,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       if (mounted) {
         setState(() {
           _fehler = 'Die Datei konnte nicht gelesen werden.';
+          _plan = null;
           _phase = _Phase.wahl;
         });
       }
@@ -164,11 +173,11 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     switch (_phase) {
       case _Phase.vorschau:
         final n = plan == null ? 0 : plan.neu + (_aktualisieren ? plan.geaendert : 0);
-        fuss = FilledButton(onPressed: n > 0 ? _importieren : null, child: Text(n == 1 ? '1 Termin importieren' : '$n Termine importieren'));
+        fuss = FilledButton(style: _hoch, onPressed: n > 0 ? _importieren : null, child: Text(n == 1 ? '1 Termin importieren' : '$n Termine importieren'));
       case _Phase.laeuft:
-        fuss = OutlinedButton(onPressed: () => setState(() => _abbruch.angefordert = true), child: const Text('Abbrechen'));
+        fuss = OutlinedButton(style: _hoch, onPressed: () => setState(() => _abbruch.angefordert = true), child: const Text('Abbrechen'));
       case _Phase.fertig:
-        fuss = FilledButton(onPressed: () => Navigator.of(context).maybePop(), child: const Text('Fertig'));
+        fuss = FilledButton(style: _hoch, onPressed: () => Navigator.of(context).maybePop(), child: const Text('Fertig'));
       case _Phase.wahl || _Phase.liest:
         fuss = null;
     }
@@ -200,7 +209,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         const Text(
           'Übernimm deinen bisherigen Kalender aus einer ICS-Datei (Export aus Google, Apple, Outlook und anderen). '
           'Übernommen werden Termine mit Ort, Beschreibung, Wiederholungen und Erinnerung. Teilnehmer, Anhänge und Links bleiben außen vor. '
-          'Ein erneuter Import legt keine Termine doppelt an.',
+          'Ein erneuter Import legt keine Termine doppelt an. Importiere dieselbe Datei aber nicht gleichzeitig auf zwei Geräten: bis zum Abgleich würden Termine doppelt entstehen.',
           style: TextStyle(color: kTextMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
@@ -394,7 +403,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
           ],
         ],
         const SizedBox(height: 8),
-        TextButton.icon(onPressed: _waehlen, icon: const Icon(Icons.swap_horiz), label: const Text('Andere Datei wählen')),
+        TextButton.icon(style: _hoch, onPressed: _waehlen, icon: const Icon(Icons.swap_horiz), label: const Text('Andere Datei wählen')),
       ],
     );
   }

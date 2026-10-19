@@ -23,13 +23,28 @@ import 'support/harness.dart';
 final _admin = TerminRechte(Role.admin, 'user-1');
 Uint8List _fixture(String n) => File('test/fixtures/ics/$n').readAsBytesSync();
 
+/// Datenbank, die wie drift im Web (WASM) keine verschachtelte Transaktion verträgt: sie wirft, statt sie still zuzulassen.
+class _SpyDb extends AppDatabase {
+  _SpyDb() : super(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  var tiefe = 0;
+  var transaktionen = 0;
+
+  @override
+  Future<T> transaction<T>(Future<T> Function() action, {bool requireNew = false}) {
+    if (tiefe > 0) throw StateError('transaction in transaction');
+    tiefe++;
+    transaktionen++;
+    return super.transaction(action, requireNew: requireNew).whenComplete(() => tiefe--);
+  }
+}
+
 class _Geraet {
-  final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  final AppDatabase db;
   late final SyncStore store = SyncStore(db);
   late final IcsImporter importer;
   var geaendert = 0;
   var _n = 0;
-  _Geraet() {
+  _Geraet({AppDatabase? datenbank}) : db = datenbank ?? AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true)) {
     importer = IcsImporter(
       db: db,
       store: store,
@@ -78,6 +93,40 @@ void main() {
       expect((await g.db.select(g.db.terminTeilnehmer).get()), hasLength(e.termine.length));
       final ops = await g.ausgang();
       expect(ops.where((o) => o.entity == 'termin'), hasLength(e.termine.length));
+    });
+
+    test('Web-Regression: der Import öffnet nie eine verschachtelte Transaktion (auch Serien mit Ausnahmen, Aktualisieren, Teilnehmer)', () async {
+      final spy = _SpyDb();
+      final g = _Geraet(datenbank: spy);
+      final e = icsLesen(_fixture('familywall.ics'));
+      final b = await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin, teilnehmer: {'user-2'});
+      expect(b.neu, e.termine.length, reason: b.uebersprungen.join('; '));
+      expect(b.uebersprungen, isEmpty);
+      expect(spy.transaktionen, lessThan(e.termine.length), reason: 'Etappen statt einer Transaktion je Termin');
+      expect((await g.db.select(g.db.terminAusnahmen).get()), isNotEmpty);
+      // Aktualisieren mit geänderter Datei
+      final geaendert = icsLesen(Uint8List.fromList(utf8.encode(utf8.decode(_fixture('familywall.ics')).replaceAll('SUMMARY:Physio', 'SUMMARY:Physio neu'))));
+      final plan = await g.plan(geaendert);
+      expect(plan.geaendert, 1);
+      final b2 = await g.importer.importieren(plan, sicht: TerminSicht.family, rechte: _admin, aktualisieren: true);
+      expect(b2.aktualisiert, 1, reason: b2.uebersprungen.join('; '));
+      expect(spy.tiefe, 0);
+    });
+
+    test('Fehlerisolierung: scheitert eine Etappe, werden die Termine einzeln geschrieben und nur der kaputte entfällt (mit Fehlertyp im Bericht)', () async {
+      final g = _Geraet();
+      final e = IcsErgebnis(
+        termine: [
+          const IcsTermin(uid: 'ok1', titel: 'ok', ganztaegig: true, startDate: '2026-12-01', endDate: '2026-12-02'),
+          IcsTermin(uid: 'kaputt', titel: 'kaputt', ganztaegig: false, startUtc: null, endUtc: null, tzid: 'Europe/Berlin'),
+        ],
+        hinweise: const [],
+        gelesen: 2,
+        abgeschnitten: false,
+      );
+      final b = await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin);
+      expect(b.neu, 1);
+      expect(b.uebersprungen.single.text, contains('('));
     });
 
     test('erneuter Import legt keine Duplikate an', () async {

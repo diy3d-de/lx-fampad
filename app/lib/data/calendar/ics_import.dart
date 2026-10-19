@@ -169,6 +169,9 @@ class IcsAbbruch {
   bool angefordert = false;
 }
 
+/// Termine je Etappe (eine Transaktion, danach Luft für die Oberfläche).
+const _kEtappe = 25;
+
 class IcsImporter {
   final AppDatabase db;
   final SyncStore store;
@@ -204,33 +207,52 @@ class IcsImporter {
         if (e.status == IcsStatus.uebersprungen) IcsHinweis(e.termin.titel, e.grund ?? 'Übersprungen', uebersprungen: true),
     ];
     var abgebrochen = false;
-    for (var i = 0; i < arbeit.length; i++) {
+    var erledigt = 0;
+    for (var von = 0; von < arbeit.length; von += _kEtappe) {
       if (abbruch?.angefordert ?? false) {
         abgebrochen = true;
         break;
       }
-      final e = arbeit[i];
-      try {
-        if (e.status == IcsStatus.neu) {
-          await db.transaction(() => _anlegen(e.termin, sicht, teilnehmer));
-          neu++;
-        } else {
-          // die Rechte werden hier noch einmal gegen den aktuellen Stand geprüft (zwischen Vorschau und Import kann sich etwas ändern)
-          final alt = await (db.select(db.termine)..where((x) => x.id.equals(e.vorhandenId!))).getSingleOrNull();
-          if (alt == null || !rechte.darfAendern(alt)) {
-            probleme.add(IcsHinweis(e.termin.titel, 'Nicht aktualisiert: keine Berechtigung oder inzwischen gelöscht', uebersprungen: true));
+      final teil = arbeit.sublist(von, von + _kEtappe > arbeit.length ? arbeit.length : von + _kEtappe);
+      // vorbereiten: je Termin die Liste seiner Änderungen (Termin, Teilnehmer, Ausnahmen)
+      final vorbereitet = <(IcsPlanEintrag, List<SyncAenderung>)>[];
+      for (final e in teil) {
+        try {
+          if (e.status == IcsStatus.neu) {
+            vorbereitet.add((e, _anlegenOps(e.termin, sicht, teilnehmer)));
           } else {
-            await db.transaction(() => _aktualisieren(e.vorhandenId!, e.termin));
-            akt++;
+            // die Rechte werden hier noch einmal gegen den aktuellen Stand geprüft (zwischen Vorschau und Import kann sich etwas ändern)
+            final alt = await (db.select(db.termine)..where((x) => x.id.equals(e.vorhandenId!))).getSingleOrNull();
+            if (alt == null || !rechte.darfAendern(alt)) {
+              probleme.add(IcsHinweis(e.termin.titel, 'Nicht aktualisiert: keine Berechtigung oder inzwischen gelöscht', uebersprungen: true));
+            } else {
+              vorbereitet.add((e, await _aktualisierenOps(alt, e.termin)));
+            }
           }
+        } catch (err) {
+          probleme.add(IcsHinweis(e.termin.titel, 'Konnte nicht gespeichert werden (${err.runtimeType})', uebersprungen: true));
+        }
+      }
+      // schreiben: die ganze Etappe in EINER Transaktion (schnell). Scheitert sie, jeder Termin einzeln in einer eigenen Transaktion,
+      // damit ein kaputter Termin nur sich selbst auslässt. Nie verschachtelt (Web: drift/WASM kann das nicht zurückrollen).
+      try {
+        await store.aendernMehrere([for (final v in vorbereitet) ...v.$2]);
+        for (final v in vorbereitet) {
+          v.$1.status == IcsStatus.neu ? neu++ : akt++;
         }
       } catch (_) {
-        probleme.add(IcsHinweis(e.termin.titel, 'Konnte nicht gespeichert werden', uebersprungen: true));
+        for (final v in vorbereitet) {
+          try {
+            await store.aendernMehrere(v.$2);
+            v.$1.status == IcsStatus.neu ? neu++ : akt++;
+          } catch (err) {
+            probleme.add(IcsHinweis(v.$1.termin.titel, 'Konnte nicht gespeichert werden (${err.runtimeType})', uebersprungen: true));
+          }
+        }
       }
-      if ((i + 1) % 20 == 0) {
-        fortschritt?.call(i + 1, arbeit.length);
-        await Future<void>.delayed(Duration.zero);
-      }
+      erledigt += teil.length;
+      fortschritt?.call(erledigt, arbeit.length);
+      await Future<void>.delayed(Duration.zero);
     }
     fortschritt?.call(arbeit.length, arbeit.length);
     if (neu > 0 || akt > 0) beiAenderung();
@@ -238,39 +260,33 @@ class IcsImporter {
     return IcsBericht(neu: neu, aktualisiert: akt, vorhanden: vorhanden, uebersprungen: probleme, abgebrochen: abgebrochen);
   }
 
-  Future<void> _anlegen(IcsTermin t, TerminSicht sicht, Set<String> teilnehmer) async {
+  List<SyncAenderung> _anlegenOps(IcsTermin t, TerminSicht sicht, Set<String> teilnehmer) {
     final id = _neueId();
-    await store.aendern('termin', id, {..._felder(t), 'audience': sicht.wire}, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
-    for (final u in teilnehmer) {
-      await store.aendern('termin_teilnehmer', _neueId(), {'terminId': id, 'userId': u});
-    }
-    for (final a in t.ausnahmen) {
-      await store.aendern('termin_ausnahmen', ausnahmeId(id, a.schluessel), {'terminId': id, 'originalStart': a.schluessel, ..._ausnahmeFelder(a)});
-    }
+    return [
+      SyncAenderung('termin', id, {..._felder(t), 'audience': sicht.wire}, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()}),
+      for (final u in teilnehmer) SyncAenderung('termin_teilnehmer', _neueId(), {'terminId': id, 'userId': u}),
+      for (final a in t.ausnahmen) SyncAenderung('termin_ausnahmen', ausnahmeId(id, a.schluessel), {'terminId': id, 'originalStart': a.schluessel, ..._ausnahmeFelder(a)}),
+    ];
   }
 
-  Future<void> _aktualisieren(String id, IcsTermin t) async {
-    final alt = await (db.select(db.termine)..where((x) => x.id.equals(id))).getSingleOrNull();
-    if (alt == null) return;
+  Future<List<SyncAenderung>> _aktualisierenOps(Termin alt, IcsTermin t) async {
+    final id = alt.id;
     final d = _unterschiede(alt, t);
-    if (d.isNotEmpty) await store.aendern('termin', id, d);
     final zeilen = await (db.select(db.terminAusnahmen)..where((a) => a.terminId.equals(id))).get();
     final nachSchluessel = {for (final z in zeilen) z.originalStart: z};
-    for (final a in t.ausnahmen) {
-      final z = nachSchluessel[a.schluessel];
-      if (z == null) {
-        await store.aendern('termin_ausnahmen', ausnahmeId(id, a.schluessel), {'terminId': id, 'originalStart': a.schluessel, ..._ausnahmeFelder(a)});
-      } else if (!_ausnahmeGleich(z, a)) {
-        await store.aendern('termin_ausnahmen', z.id, _ausnahmeFelder(a));
-      }
-    }
-    // Ausnahmen, die es in der Datei nicht (mehr) gibt, werden zurückgesetzt (die Zeile bleibt, ihre feste ID kann nie neu vergeben werden)
     final inDatei = {for (final a in t.ausnahmen) a.schluessel};
-    for (final z in zeilen) {
-      if (!inDatei.contains(z.originalStart) && !_leereAusnahme(z)) {
-        await store.aendern('termin_ausnahmen', z.id, {'abgesagt': false, 'titel': null, 'start': null, 'ende': null, 'ort': null});
-      }
-    }
+    return [
+      if (d.isNotEmpty) SyncAenderung('termin', id, d),
+      for (final a in t.ausnahmen)
+        if (nachSchluessel[a.schluessel] == null)
+          SyncAenderung('termin_ausnahmen', ausnahmeId(id, a.schluessel), {'terminId': id, 'originalStart': a.schluessel, ..._ausnahmeFelder(a)})
+        else if (!_ausnahmeGleich(nachSchluessel[a.schluessel]!, a))
+          SyncAenderung('termin_ausnahmen', nachSchluessel[a.schluessel]!.id, _ausnahmeFelder(a)),
+      // Ausnahmen, die es in der Datei nicht (mehr) gibt, werden zurückgesetzt (die Zeile bleibt, ihre feste ID kann nie neu vergeben werden)
+      for (final z in zeilen)
+        if (!inDatei.contains(z.originalStart) && !_leereAusnahme(z))
+          SyncAenderung('termin_ausnahmen', z.id, {'abgesagt': false, 'titel': null, 'start': null, 'ende': null, 'ort': null}),
+    ];
   }
 }
 

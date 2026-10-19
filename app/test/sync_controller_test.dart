@@ -203,7 +203,7 @@ void main() {
     lauf('429 mit Retry-After $sekunden: höchstens 5 Minuten warten, Status "fehler" mit Hinweis, kein Überlauf', (tester) async {
       await mitFehlern(tester, [(429, 'rate_limited')], sekunden);
       expect(c.read(syncProvider).status, SyncStatus.fehler);
-      expect(c.read(syncProvider).meldung, contains('bremst'));
+      expect(c.read(syncProvider).meldung, contains('Tageslimit'), reason: 'Retry-After von 30 Minuten und mehr ist das Tageslimit');
       await ruhe(tester, const Duration(minutes: 4));
       expect(anfragen(), 1);
       await ruhe(tester, const Duration(minutes: 1, seconds: 5));
