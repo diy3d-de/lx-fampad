@@ -49,6 +49,10 @@ abstract class SyncEntity {
   /// des Servers kommt mit dem Abgleich), nicht "wurde gelöscht".
   bool get eindeutigBeiAnlage => false;
 
+  /// Eine abgelehnte NEUE Zeile dieser Entität ist kein Fehler, sondern Teil des Normalfalls (der erste Schreiber gewinnt, z. B. bei einer gleichzeitigen
+  /// Rotation des Epochenschlüssels): die lokale Kopie entfällt ohne Hinweis und der Stand des Servers wird neu geladen.
+  bool get abgelehntStill => false;
+
   /// Bei `limit_reached` (Mengenbegrenzung des Servers) bleibt eine neue Zeile erhalten und wird später erneut gesendet, statt zu verschwinden.
   bool get bleibtBeiLimit => false;
 }
@@ -399,7 +403,7 @@ class KonversationEntitaet extends SyncEntity {
   String get name => 'konversation';
 
   @override
-  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId')];
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -435,6 +439,7 @@ class KonversationEntitaet extends SyncEntity {
           titel: Value(_text(fields['titel']) ?? ''),
           teilnehmerJson: Value(jsonEncode(_liste(fields['teilnehmer']) ?? const <String>[])),
           ownerId: Value(_text(fields['ownerId'])),
+          encVersion: Value(_text(fields['encVersion']) ?? 'e1'),
           rev: Value(rev ?? 0),
         ),
         mode: InsertMode.insertOrReplace,
@@ -446,6 +451,7 @@ class KonversationEntitaet extends SyncEntity {
         titel: setze('titel') ? Value(_text(fields['titel']) ?? '') : const Value.absent(),
         teilnehmerJson: setze('teilnehmer') && _liste(fields['teilnehmer']) != null ? Value(jsonEncode(_liste(fields['teilnehmer']))) : const Value.absent(),
         ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
+        encVersion: setze('encVersion') && _text(fields['encVersion']) != null ? Value(_text(fields['encVersion'])!) : const Value.absent(),
         createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
         rev: rev != null ? Value(rev) : const Value.absent(),
       ),
@@ -587,6 +593,132 @@ class LesestandEntitaet extends SyncEntity {
   Future<void> leeren(AppDatabase db) => db.delete(db.lesestaende).go();
 }
 
+class EpocheEntitaet extends SyncEntity {
+  @override
+  String get name => 'epoche';
+
+  @override
+  String get elternGeloescht => 'Der Chat wurde gelöscht.';
+
+  /// Je Konversation und Epoche gibt es nur eine: wer zu spät kommt (gleichzeitige Rotation), übernimmt die des Gewinners.
+  @override
+  bool get eindeutigBeiAnlage => true;
+
+  @override
+  bool get abgelehntStill => true;
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['konversationId']) != null && _int(fields['epoche']) != null && _text(fields['mitglieder']) != null;
+
+  Selectable<Epoche> _zeile(AppDatabase db, String id) => db.select(db.konversationEpochen)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Der Schlüssel';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    if (vorhanden == null) {
+      await db.into(db.konversationEpochen).insert(
+        KonversationEpochenCompanion.insert(
+          id: id,
+          konversationId: _text(fields['konversationId']) ?? '',
+          epoche: _int(fields['epoche']) ?? 0,
+          mitglieder: _text(fields['mitglieder']) ?? '',
+          verteilerId: Value(_text(fields['verteilerId'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    // Epochen sind unveränderlich: nur Revision und (vom Server gesetzter) Verteiler
+    await (db.update(db.konversationEpochen)..where((t) => t.id.equals(id))).write(
+      KonversationEpochenCompanion(
+        verteilerId: fields.containsKey('verteilerId') ? Value(_text(fields['verteilerId'])) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.konversationEpochen)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'konversationId'
+      ? const []
+      : [for (final r in await (db.select(db.konversationEpochen)..where((t) => t.konversationId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.konversationEpochen).go();
+}
+
+class EpocheWrapEntitaet extends SyncEntity {
+  @override
+  String get name => 'epoche_wrap';
+
+  @override
+  String get elternGeloescht => 'Der Chat wurde gelöscht.';
+
+  @override
+  bool get eindeutigBeiAnlage => true;
+
+  @override
+  bool get abgelehntStill => true;
+
+  @override
+  bool kannAnlegen(Json fields) =>
+      _text(fields['konversationId']) != null && _int(fields['epoche']) != null && _text(fields['empfaengerId']) != null && _text(fields['wrap']) != null;
+
+  Selectable<EpocheWrapZeile> _zeile(AppDatabase db, String id) => db.select(db.epocheWraps)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Der Schlüssel';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    if (vorhanden == null) {
+      await db.into(db.epocheWraps).insert(
+        EpocheWrapsCompanion.insert(
+          id: id,
+          konversationId: _text(fields['konversationId']) ?? '',
+          epoche: _int(fields['epoche']) ?? 0,
+          empfaengerId: _text(fields['empfaengerId']) ?? '',
+          wrap: _text(fields['wrap']) ?? '',
+          verteilerId: Value(_text(fields['verteilerId'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.epocheWraps)..where((t) => t.id.equals(id))).write(
+      EpocheWrapsCompanion(
+        verteilerId: fields.containsKey('verteilerId') ? Value(_text(fields['verteilerId'])) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.epocheWraps)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'konversationId'
+      ? const []
+      : [for (final r in await (db.select(db.epocheWraps)..where((t) => t.konversationId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.epocheWraps).go();
+}
+
 /// Alle synchronisierten Entitäten des Clients.
 final Map<String, SyncEntity> syncEntities = {
   for (final e in <SyncEntity>[
@@ -598,6 +730,8 @@ final Map<String, SyncEntity> syncEntities = {
     KonversationEntitaet(),
     NachrichtEntitaet(),
     LesestandEntitaet(),
+    EpocheEntitaet(),
+    EpocheWrapEntitaet(),
   ])
     e.name: e,
 };

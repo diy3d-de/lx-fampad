@@ -30,7 +30,7 @@ String chatName(Konversation k, List<String> teilnehmer, Mitglieder mitglieder, 
 
 /// Kurzer Text einer Nachricht für Listen und Zitate (eine Zeile, ohne Inhalt bei nicht lesbaren Nachrichten).
 String nachrichtKurztext(Nachricht n, NachrichtenInhalt inhalt) {
-  final d = inhalt.dekodieren(n.inhalt);
+  final d = inhalt.nachricht(n);
   return switch (d.status) {
     InhaltStatus.bereit => d.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
     InhaltStatus.wirdEntschluesselt => 'wird entschlüsselt …',

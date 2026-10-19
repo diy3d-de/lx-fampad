@@ -70,6 +70,13 @@ class HuellenCodec {
     return u32Lesen(bytes, 6);
   }
 
+  /// Liest die Epoche aus der Hülle, ohne sie zu prüfen (damit der Empfänger den Epochenschlüssel besorgen kann). Verbindlich erst durch Signatur und AAD in [oeffnen].
+  static int epocheLesen(String huelle) {
+    final bytes = base64urlDekodieren(huelle);
+    if (bytes.length < _kopfLaenge + kSignaturLaenge + kTagLaenge) throw const CryptoFehler(CryptoFehlerArt.format, 'Die Nachricht ist beschädigt.');
+    return u32Lesen(bytes, 2);
+  }
+
   /// Verschlüsselt und signiert [klartext] mit dem Epochenschlüssel [schluessel] (32 Byte). [signGeheim] ist der Ed25519-Schlüssel des Absenders in
   /// der Version [kontext].senderKeyVersion.
   String versiegeln({required Uint8List schluessel, required Uint8List klartext, required HuellenKontext kontext, required Uint8List signGeheim}) {

@@ -173,7 +173,49 @@ class Konversationen extends Table {
   TextColumn get titel => text().withDefault(const Constant(''))();
   TextColumn get teilnehmerJson => text().named('teilnehmer').withDefault(const Constant('[]'))();
   TextColumn get ownerId => text().nullable()();
+
+  /// Version der Inhaltshülle: `e1` Ende-zu-Ende verschlüsselt (Standard), `p1` Klartext (nur Altbestand; die App schreibt dort nicht mehr).
+  TextColumn get encVersion => text().named('enc_version').withDefault(const Constant('e1'))();
   IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Epochen einer verschlüsselten Konversation (E2EE Phase 2): `mitglieder` ist die vom Verteiler signierte Mitgliederliste (Base64url, undurchsichtig für
+/// Server und Tabelle; geprüft wird sie nur von `ChatKrypto`). Keine Schlüssel: diese stecken in den Wraps, geöffnet werden sie nur im Arbeitsspeicher.
+@DataClassName('Epoche')
+@TableIndex(name: 'konversation_epochen_idx', columns: {#konversationId, #epoche})
+class KonversationEpochen extends Table {
+  @override
+  String get tableName => 'konversation_epochen';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  IntColumn get epoche => integer()();
+  TextColumn get mitglieder => text()();
+  TextColumn get verteilerId => text().nullable()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Für eine Person verpackte Epochenschlüssel (E2EE Phase 2): Sealed Box plus Signatur des Verteilers, Base64url. Lokal liegen die der eigenen Person
+/// (vom Server) und die selbst verteilten (bis zur Bestätigung); nur der Empfänger kann sie öffnen.
+@DataClassName('EpocheWrapZeile')
+@TableIndex(name: 'epoche_wraps_idx', columns: {#konversationId, #epoche})
+class EpocheWraps extends Table {
+  @override
+  String get tableName => 'epoche_wraps';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  IntColumn get epoche => integer()();
+  TextColumn get empfaengerId => text()();
+  TextColumn get wrap => text()();
+  TextColumn get verteilerId => text().nullable()();
   IntColumn get rev => integer().withDefault(const Constant(0))();
 
   @override
@@ -218,14 +260,15 @@ class Lesestaende extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende])
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at. Version 3 (Phase 1c-2a): Termine, Teilnehmer, Ausnahmen.
   /// Version 4 (Phase 1c-3a): Chat (Konversationen, Nachrichten, Lesestand). Version 5: Chat-Zeiten in Millisekunden.
+  /// Version 6 (E2EE Phase 2): `enc_version` der Konversationen, Epochen und Schlüssel-Wraps.
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -259,11 +302,20 @@ class AppDatabase extends _$AppDatabase {
           await customStatement('UPDATE lesestand SET gelesen_bis = gelesen_bis * 1000');
           await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
         }
+        if (from < 6) {
+          // Konversationen aus Version 4/5 (nur Entwicklungsstände, nie veröffentlicht) sind Klartext-Chats: p1. Frische Zeilen bekommen e1.
+          if (from >= 4) await m.addColumn(konversationen, konversationen.encVersion);
+          if (from >= 4) await customStatement("UPDATE konversationen SET enc_version = 'p1'");
+          await m.createTable(konversationEpochen);
+          await m.createTable(epocheWraps);
+          await m.createIndex(konversationEpochenIdx);
+          await m.createIndex(epocheWrapsIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
       // vollständigen Snapshot (Upsert; offene lokale Änderungen und der Ausgang bleiben). deviceId, ownerUserId, members bleiben.
-      if (from < 4) {
+      if (from < 6) {
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
     },

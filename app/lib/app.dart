@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
+import 'data/chat/chat_krypto_state.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
 import 'features/auth/auth_widgets.dart';
@@ -108,6 +109,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     // Terminerinnerungen (Android) aktuell halten: hier am Wurzel-Widget, das nie pausiert (hinter geöffneten Seiten pausieren Beobachter)
     ref.watch(erinnerungSteuerungProvider);
+    // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten
+    ref.watch(chatKryptoSteuerungProvider);
     ref.listen(authProvider.select((s) => s.status), (alt, neu) {
       // Sitzung weg oder Konto wartet: alle offenen Unterseiten (Profil, Admin ...) schließen
       if (alt != neu && neu != AuthStatus.angemeldet) {

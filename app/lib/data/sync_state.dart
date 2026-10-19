@@ -14,6 +14,7 @@ import '../features/update/update_service.dart';
 import 'auth/auth_state.dart';
 import 'database_provider.dart';
 import 'erinnerungen/erinnerung_dienst.dart';
+import 'chat/chat_krypto_state.dart';
 import 'sync/sync_engine.dart';
 import 'sync/sync_socket.dart';
 import 'sync/sync_store.dart';
@@ -107,6 +108,8 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
   return SyncEngine(
     store: ref.watch(syncStoreProvider),
     api: ref.watch(apiProvider),
+    // Chat: Klartext im Ausgang wird erst beim Senden verschlüsselt (mit der dann aktuellen Epoche)
+    vorbereiter: ChatOpVorbereiter(db: ref.watch(appDatabaseProvider), krypto: () => ref.read(chatKryptoProvider.notifier).krypto()),
     geraeteId: () async {
       final aus = ref.read(authProvider).me?.sessionDeviceId;
       if (aus != null && aus.isNotEmpty) return aus;

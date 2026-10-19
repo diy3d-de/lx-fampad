@@ -2,8 +2,7 @@
 // Liste, Kaskade beim Verschwinden einer Konversation und die Inhaltshülle. Reine Datenbank-Tests, kein Netz.
 import 'dart:convert';
 
-import 'package:drift/drift.dart' show DatabaseConnection, OrderingTerm;
-import 'package:drift/native.dart';
+import 'package:drift/drift.dart' show OrderingTerm, Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/chat/chat_ids.dart';
@@ -12,10 +11,13 @@ import 'package:lx_fampad/data/chat/nachrichten_inhalt.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
 
+import 'support/chat_welt.dart';
+import 'support/fake_crypto.dart';
+
 const _ich = 'aaaaaaaa-0000-4000-8000-000000000001';
 const _ben = 'bbbbbbbb-0000-4000-8000-000000000002';
 const _cora = 'cccccccc-0000-4000-8000-000000000003';
-const _fam = 'ffffffff-0000-4000-8000-00000000000f';
+const _fam = familieId;
 
 SyncResult antwort({int rev = 1, List<String> acked = const [], List<SyncChange> changes = const []}) => SyncResult(
   resyncNoetig: false,
@@ -39,28 +41,27 @@ void main() {
   late AppDatabase db;
   late SyncStore store;
   late ChatRepository repo;
-  var ops = 0;
+  late Geraet g;
   var ids = 0;
   var geaendert = 0;
-  var jetzt = DateTime.utc(2026, 10, 19, 9);
 
   setUp(() {
-    db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
-    ops = 0;
     ids = 0;
     geaendert = 0;
-    jetzt = DateTime.utc(2026, 10, 19, 9);
-    store = SyncStore(db, opId: () => 'op-${++ops}');
-    repo = ChatRepository(
-      db: db,
-      store: store,
-      inhalt: const KlartextHuelle(),
-      ich: () => _ich,
-      familie: () => _fam,
-      beiAenderung: () => geaendert++,
-      jetzt: () => jetzt,
+    final crypto = FakeCryptoProvider();
+    final welt = ChatWelt(crypto);
+    final personen = [TestPerson(_ich, 'Ich', crypto), TestPerson(_ben, 'Ben', crypto), TestPerson(_cora, 'Cora', crypto)];
+    g = Geraet.neu(
+      welt,
+      personen.first,
+      opPraefix: 'op-',
       neueId: () => '00000000-0000-4000-8000-${(++ids).toString().padLeft(12, '0')}',
-    );
+      beiAenderung: () => geaendert++,
+    )..mitgliederLernen(personen);
+    g.jetzt = DateTime.utc(2026, 10, 19, 9);
+    db = g.db;
+    store = g.store;
+    repo = g.repo;
   });
   tearDown(() => db.close());
 
@@ -140,12 +141,12 @@ void main() {
       final n = (await nachrichten()).single;
       expect(n.rev, 0);
       expect(n.autorId, _ich);
-      expect(n.inhalt, 'p1:Hallo Welt');
+      expect(n.inhalt, 'l1:Hallo Welt'); // Klartext nur lokal, verschlüsselt wird erst beim Senden
       expect(n.createdAt.toUtc(), DateTime.utc(2026, 10, 19, 9));
       final op = (await ausgang()).single;
       expect(op.entity, 'nachricht');
       expect(op.baseRev, 0);
-      expect(jsonDecode(op.fieldsJson), {'konversationId': 'k1', 'text': 'p1:Hallo Welt', 'antwortAuf': 'q1'});
+      expect(jsonDecode(op.fieldsJson), {'konversationId': 'k1', 'text': 'l1:Hallo Welt', 'antwortAuf': 'q1'});
       expect(geaendert, 1);
     });
 
@@ -172,11 +173,11 @@ void main() {
       await vomServer([aenderung('konversation', 'k1', konvJson('family'), 1), aenderung('nachricht', 'n1', nachrichtJson('k1', 'alt', autor: _ich), 2)]);
       await repo.bearbeiten('n1', ' neu ');
       var n = (await nachrichten()).single;
-      expect(n.inhalt, 'p1:neu');
+      expect(n.inhalt, 'l1:neu');
       expect(n.bearbeitetAt, isNotNull);
       final op = (await ausgang()).single;
       expect(op.baseRev, 2);
-      expect(jsonDecode(op.fieldsJson), {'text': 'p1:neu'});
+      expect(jsonDecode(op.fieldsJson), {'text': 'l1:neu'});
       await repo.loeschen('n1');
       expect(await nachrichten(), isEmpty);
       expect((await ausgang()).last.op, 'delete');
@@ -198,8 +199,10 @@ void main() {
       final k = (await db.select(db.konversationen).get()).single;
       expect(k.id, familienchatId(_fam));
       expect(k.art, 'family');
-      expect((await ausgang()), hasLength(1));
-      expect(jsonDecode((await ausgang()).single.fieldsJson), {'art': 'family'});
+      // Konversation, Epoche 1 und je ein Wrap für die drei aktiven Mitglieder mit Schlüssel
+      expect((await ausgang()), hasLength(5));
+      expect(jsonDecode((await ausgang()).first.fieldsJson), {'art': 'family', 'encVersion': 'e1'});
+      expect([for (final o in await ausgang()) o.entity], ['konversation', 'epoche', 'epoche_wrap', 'epoche_wrap', 'epoche_wrap']);
     });
 
     test('Familienchat vom Server verhindert das Anlegen', () async {
@@ -214,8 +217,8 @@ void main() {
       expect(await repo.direktChat(_ben), id);
       final k = (await db.select(db.konversationen).get()).single;
       expect(teilnehmerIds(k), [_ich, _ben]..sort());
-      expect(await ausgang(), hasLength(1));
-      expect(jsonDecode((await ausgang()).single.fieldsJson), {'art': 'direct', 'teilnehmer': [_ich, _ben]..sort()});
+      expect(await ausgang(), hasLength(4)); // Konversation, Epoche 1, zwei Wraps
+      expect(jsonDecode((await ausgang()).first.fieldsJson), {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [_ich, _ben]..sort()});
     });
 
     test('Gruppe: die eigene Person kommt dazu, Name als Hülle, Teilnehmer sortiert und ohne Doppelte', () async {
@@ -339,7 +342,7 @@ void main() {
         aenderung('nachricht', 'x2', {...nachrichtJson('fam', 'x2'), 'createdAt': ms(10, 500)}, 9),
         aenderung('nachricht', 'x1', {...nachrichtJson('fam', 'x1'), 'createdAt': ms(10, 500)}, 8),
       ]);
-      jetzt = DateTime.utc(2026, 10, 19, 8, 0, 10, 500);
+      g.jetzt = DateTime.utc(2026, 10, 19, 8, 0, 10, 500);
       final eigene = (await repo.senden('fam', 'eigene'))!;
       expect([for (final n in await repo.nachrichten('fam').first) n.id], ['x1', 'x2', eigene]);
       expect((await repo.juengste(1).first).single.id, eigene);
@@ -369,6 +372,11 @@ void main() {
     test('limit_reached: die Nachricht bleibt erhalten und kommt mit neuer op_id wieder in den Ausgang', () async {
       await vomServer([aenderung('konversation', 'fam', konvJson('family'), 1)]);
       final id = (await repo.senden('fam', 'wichtig'))!;
+      // der Klartext (l1:) verlässt den Ausgang nie: ohne Vorbereitung (Verschlüsselung) wird nichts geliefert
+      expect(await store.naechsteOps(10), isEmpty);
+      // der Abgleich hat die Nachricht inzwischen verschlüsselt (hier nachgebildet)
+      final huelle = 'e1:${'A' * 160}';
+      await (db.update(db.outbox)).write(OutboxCompanion(fieldsJson: Value(jsonEncode({'konversationId': 'fam', 'text': huelle}))));
       final gesendet = await store.naechsteOps(10);
       final r = SyncResult(
         resyncNoetig: false,
@@ -387,7 +395,7 @@ void main() {
       final op = (await ausgang()).single;
       expect(op.opId, isNot(gesendet.single.opId));
       expect(op.entity, 'nachricht');
-      expect(jsonDecode(op.fieldsJson)['text'], 'p1:wichtig');
+      expect(jsonDecode(op.fieldsJson)['text'], 'e1:${'A' * 160}');
       expect(bericht.hinweise.single.text, contains('wird später gesendet'));
     });
   });

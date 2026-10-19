@@ -13,6 +13,8 @@ import '../sync/sync_entities.dart';
 import '../sync/sync_store.dart';
 import '../sync_state.dart';
 import 'chat_ids.dart';
+import 'chat_krypto.dart';
+import 'chat_krypto_state.dart';
 import 'nachrichten_inhalt.dart';
 
 /// Größte Nachricht in der Schnittstelle (UTF-16-Einheiten, wie auf dem Server).
@@ -21,6 +23,11 @@ const kMaxNachrichtWire = 16384;
 /// Die Nachricht ist zu lang für den Server (die Oberfläche zeigt einen Hinweis).
 class NachrichtZuLang implements Exception {
   const NachrichtZuLang();
+}
+
+/// In diesem Chat darf nicht geschrieben werden, weil er nicht Ende-zu-Ende verschlüsselt ist (Altbestand): die App sendet nie Klartext.
+class ChatNichtVerschluesselt implements Exception {
+  const ChatNichtVerschluesselt();
 }
 
 /// Art einer Konversation.
@@ -86,6 +93,9 @@ class ChatRepository {
   final SyncStore store;
   final NachrichtenInhalt inhalt;
 
+  /// Die Verschlüsselung dieser Person (null, solange kein Schlüssel bereit ist). Nötig, um Chats anzulegen und Mitglieder zu wechseln.
+  final Future<ChatKrypto?> Function() krypto;
+
   /// Angemeldete Person und ihre Familie (Besitzer neuer Nachrichten, solange der Server es noch nicht bestätigt hat).
   final String? Function() ich;
   final String? Function() familie;
@@ -99,6 +109,7 @@ class ChatRepository {
     required this.db,
     required this.store,
     required this.inhalt,
+    required this.krypto,
     required this.ich,
     required this.familie,
     required this.beiAenderung,
@@ -181,34 +192,44 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
 
   // ------------------------------------------------------------------ Senden, Bearbeiten, Löschen
 
-  /// Neue Nachricht: sofort lokal, "wird gesendet" bis der Server sie bestätigt. Leere Nachrichten werden nicht gesendet (Rückgabe null).
+  /// Neue Nachricht: sofort lokal, "wird gesendet" bis der Server sie bestätigt. Leere Nachrichten werden nicht gesendet (Rückgabe null). Im Ausgang liegt der
+  /// Klartext (`l1:`); der Abgleich verschlüsselt ihn erst beim Senden mit der dann aktuellen Epoche (Ende-zu-Ende) und hält die Nachricht zurück, bis das geht.
   Future<String?> senden(String konversationId, String text, {String? antwortAuf}) async {
     final t = text.trim();
     if (t.isEmpty) return null;
-    final kodiert = inhalt.kodieren(t);
-    _laengePruefen(t, kodiert);
+    _laengePruefen(t);
+    await _verschluesselterChat(konversationId);
     final id = _neueId();
     await store.aendern(
       'nachricht',
       id,
-      {'konversationId': konversationId, 'text': kodiert, 'antwortAuf': ?antwortAuf},
+      {'konversationId': konversationId, 'text': '$kPraefixLokal$t', 'antwortAuf': ?antwortAuf},
       nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'autorId': ich()},
     );
     beiAenderung();
     return id;
   }
 
-  /// Länge in UTF-16-Einheiten wie auf dem Server (Eingabefeld und Server zählen sonst verschieden: Emoji sind 2 bis 11 Einheiten): zu lang wird nie gesendet.
-  static void _laengePruefen(String klartext, String kodiert) {
-    if (klartext.length > kMaxNachrichtenZeichen * 2 || kodiert.length > kMaxNachrichtWire) throw const NachrichtZuLang();
+  /// Geschrieben wird nur in verschlüsselten Chats (e1); ein Altbestand ohne Verschlüsselung bleibt lesbar, bekommt aber nichts Neues.
+  Future<void> _verschluesselterChat(String konversationId) async {
+    final k = await (db.select(db.konversationen)..where((t) => t.id.equals(konversationId))).getSingleOrNull();
+    if (k == null || k.encVersion != 'e1') throw const ChatNichtVerschluesselt();
+  }
+
+  /// Länge wie auf dem Server und in der Hülle: höchstens ein paar tausend Zeichen UND [kMaxNachrichtBytes] Bytes (Emoji und Schrift mit mehr Bytes pro Zeichen
+  /// würden die verschlüsselte Hülle sonst über die Obergrenze des Servers heben). Zu lang wird nie gesendet.
+  static void _laengePruefen(String klartext) {
+    if (klartext.length > kMaxNachrichtenZeichen * 2 || utf8.encode(klartext).length > kMaxNachrichtBytes) throw const NachrichtZuLang();
   }
 
   Future<void> bearbeiten(String nachrichtId, String text) async {
     final t = text.trim();
     if (t.isEmpty) return;
-    final kodiert = inhalt.kodieren(t);
-    _laengePruefen(t, kodiert);
-    await store.aendern('nachricht', nachrichtId, {'text': kodiert}, nurLokal: {'bearbeitetAt': zeitFuerServer(_jetzt())});
+    _laengePruefen(t);
+    final n = await (db.select(db.nachrichten)..where((x) => x.id.equals(nachrichtId))).getSingleOrNull();
+    if (n == null) return;
+    await _verschluesselterChat(n.konversationId);
+    await store.aendern('nachricht', nachrichtId, {'text': '$kPraefixLokal$t'}, nurLokal: {'bearbeitetAt': zeitFuerServer(_jetzt())});
     beiAenderung();
   }
 
@@ -219,45 +240,80 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
 
   // ------------------------------------------------------------------ Konversationen
 
+  /// Der Chat braucht Verschlüsselung: ohne eingerichtete Schlüssel dieser Person geht nichts.
+  Future<ChatKrypto> _kryptoPflicht() async {
+    final k = await krypto();
+    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst die Verschlüsselung ein (Profil, Verschlüsselung).');
+    return k;
+  }
+
   /// Legt den Familienchat an, falls es lokal keinen gibt (die erste App, die ihn nicht findet; feste ID, daher auch bei gleichzeitigem Anlegen
-  /// auf mehreren Geräten nur einer). Erst nach einem erfolgreichen Abgleich aufrufen.
+  /// auf mehreren Geräten nur einer). Erst nach einem erfolgreichen Abgleich aufrufen. Verschlüsselt (e1): die erste Epoche geht an alle aktiven Mitglieder, die ihre
+  /// Verschlüsselung eingerichtet haben (die übrigen kommen mit einer neuen Epoche dazu, sobald sie so weit sind). Ohne eigenen Schlüssel passiert nichts.
   Future<void> familienchatSicherstellen() async {
     final fam = familie();
     if (fam == null) return;
     final da = await (db.select(db.konversationen)..where((k) => k.art.equals(ChatArt.family.wire))).get();
     if (da.isNotEmpty) return;
-    await store.aendern('konversation', familienchatId(fam), {'art': ChatArt.family.wire}, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
+    final k = await krypto();
+    if (k == null) return;
+    final id = familienchatId(fam);
+    final alle = k.aktiveMitglieder();
+    final epoche = await k.epocheErstellen(konversationId: id, mitglieder: alle, unvertrauteAuslassen: true);
+    await store.aendernMehrere([
+      SyncAenderung('konversation', id, {'art': ChatArt.family.wire, 'encVersion': 'e1'}, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()}),
+      ...epoche,
+    ]);
     beiAenderung();
   }
 
-  /// Direktchat mit einer Person: den vorhandenen öffnen oder (mit fester ID je Paar) anlegen. Liefert die ID.
+  /// Gibt es den Direktchat mit dieser Person schon (lokal)?
+  Future<bool> direktChatVorhanden(String andere) async {
+    final me = ich();
+    if (me == null) return false;
+    return await (db.select(db.konversationen)..where((k) => k.id.equals(direktChatId(me, andere)))).getSingleOrNull() != null;
+  }
+
+  /// Direktchat mit einer Person: den vorhandenen öffnen oder (mit fester ID je Paar) anlegen. Liefert die ID. Die andere Person braucht eine eingerichtete
+  /// Verschlüsselung ([SchluesselFehlt] sonst).
   Future<String> direktChat(String andere) async {
     final me = ich();
     if (me == null) throw StateError('Nicht angemeldet');
     final id = direktChatId(me, andere);
     if (await (db.select(db.konversationen)..where((k) => k.id.equals(id))).getSingleOrNull() != null) return id;
-    await store.aendern(
-      'konversation',
-      id,
-      {'art': ChatArt.direct.wire, 'teilnehmer': ([me, andere]..sort())},
-      nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': me},
-    );
+    final k = await _kryptoPflicht();
+    final epoche = await k.epocheErstellen(konversationId: id, mitglieder: {me, andere});
+    await store.aendernMehrere([
+      SyncAenderung(
+        'konversation',
+        id,
+        {'art': ChatArt.direct.wire, 'encVersion': 'e1', 'teilnehmer': ([me, andere]..sort())},
+        nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': me},
+      ),
+      ...epoche,
+    ]);
     beiAenderung();
     return id;
   }
 
-  /// Neue Gruppe aus mehreren Personen (die eigene kommt dazu); der Name ist optional.
+  /// Neue Gruppe aus mehreren Personen (die eigene kommt dazu); der Name ist optional (sichtbar für den Server, nur der Inhalt der Nachrichten ist verschlüsselt).
+  /// Alle Teilnehmer brauchen eine eingerichtete Verschlüsselung ([SchluesselFehlt] sonst).
   Future<String> gruppeAnlegen(List<String> andere, {String name = ''}) async {
     final me = ich();
     if (me == null) throw StateError('Nicht angemeldet');
     final id = _neueId();
     final teilnehmer = {me, ...andere}.toList()..sort();
-    await store.aendern(
-      'konversation',
-      id,
-      {'art': ChatArt.group.wire, 'titel': inhalt.kodieren(name.trim()), 'teilnehmer': teilnehmer},
-      nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': me},
-    );
+    final k = await _kryptoPflicht();
+    final epoche = await k.epocheErstellen(konversationId: id, mitglieder: teilnehmer.toSet());
+    await store.aendernMehrere([
+      SyncAenderung(
+        'konversation',
+        id,
+        {'art': ChatArt.group.wire, 'encVersion': 'e1', 'titel': inhalt.kodieren(name.trim()), 'teilnehmer': teilnehmer},
+        nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': me},
+      ),
+      ...epoche,
+    ]);
     beiAenderung();
     return id;
   }
@@ -268,11 +324,22 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
   }
 
   /// Teilnehmer ändern: ausgehend vom aktuellen Stand der Konversation (nicht von der Mitgliederliste) werden nur die genannten Personen hinzugefügt oder entfernt.
-  Future<void> teilnehmerAendern(String id, {Set<String> hinzu = const {}, Set<String> weg = const {}}) async {
+  /// Jeder Wechsel legt eine NEUE Epoche an (neuer Schlüssel nur für die Verbleibenden und Neuen: entfernte Personen lesen Neues nicht mehr). Mit [verlaufTeilen]
+  /// bekommen die Neuen zusätzlich die Schlüssel der älteren Epochen (sonst sehen sie den bisherigen Verlauf nicht lesbar). Neue Personen brauchen eine eingerichtete
+  /// Verschlüsselung ([SchluesselFehlt] sonst). Wer sich selbst entfernt, legt keine Epoche an (das tun die Verbleibenden).
+  Future<void> teilnehmerAendern(String id, {Set<String> hinzu = const {}, Set<String> weg = const {}, bool verlaufTeilen = false}) async {
     final k = await (db.select(db.konversationen)..where((t) => t.id.equals(id))).getSingleOrNull();
     if (k == null) return;
     final neu = {...teilnehmerIds(k), ...hinzu}..removeAll(weg);
-    await teilnehmerSetzen(id, neu.toList());
+    final sortiert = {...neu}.toList()..sort();
+    final aenderungen = <SyncAenderung>[SyncAenderung('konversation', id, {'teilnehmer': sortiert})];
+    final me = ich();
+    if (k.encVersion == 'e1' && (me == null || neu.contains(me))) {
+      final kr = await _kryptoPflicht();
+      aenderungen.addAll(await kr.epocheErstellen(konversationId: id, mitglieder: neu, historieFuer: verlaufTeilen ? hinzu : const {}, unvertrauteAuslassen: weg.isNotEmpty && hinzu.isEmpty));
+    }
+    await store.aendernMehrere(aenderungen);
+    beiAenderung();
   }
 
   Future<void> teilnehmerSetzen(String id, List<String> teilnehmer) async {
@@ -313,6 +380,7 @@ final chatRepositoryProvider = Provider<ChatRepository>((ref) {
     db: ref.watch(appDatabaseProvider),
     store: ref.watch(syncStoreProvider),
     inhalt: ref.watch(nachrichtenInhaltProvider),
+    krypto: ref.read(chatKryptoProvider.notifier).krypto,
     ich: () => ref.read(authProvider).user?.id,
     familie: () => ref.read(authProvider).me?.familyId,
     beiAenderung: () => ref.read(syncProvider.notifier).lokaleAenderung(),

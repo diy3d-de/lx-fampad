@@ -1,19 +1,24 @@
 // Chat-Oberfläche: Konversationsliste, Verlauf (Senden offline-first, Antworten, Bearbeiten, Löschen, Lesestand), Neuer Chat, Ungelesen-Zeichen
 // am Tab, nicht lesbare Nachrichten, Layout bei 360 px / Textskala 1.5, Desktop-Zweispalter und Chat-Karte der Startseite.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/chat/chat_ids.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
+import 'package:lx_fampad/data/crypto/bytes.dart';
+import 'package:lx_fampad/data/crypto/huelle.dart';
 import 'package:lx_fampad/data/sync_state.dart';
 
+import 'support/chat_ui_aufbau.dart';
 import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/test_app.dart';
 
 const _fam = 'fa000000-0000-4000-8000-000000000001';
-const _cora = '33333333-3333-4333-8333-333333333333';
+const _cora = coraId;
 const _famChat = '44444444-4444-4444-8444-444444444444';
 
 String vor(int minuten) => DateTime.now().toUtc().subtract(Duration(minutes: minuten)).toIso8601String();
@@ -29,8 +34,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(testVorbereiten);
 
-  /// Familienchat mit zwei Nachrichten von Ben, Direktchat Anna/Ben mit einer Nachricht, Gruppe mit Namen ohne Nachrichten.
-  void grundstand(TestUmgebung env, {bool gruppe = true}) {
+  /// Familienchat mit zwei Nachrichten von Ben und Cora, Direktchat Anna/Ben mit einer Nachricht, Gruppe mit Namen ohne Nachrichten. Alle Chats sind verschlüsselt
+  /// (Epoche 1 von Ben verteilt, Nachrichten echt verschlüsselt und signiert); Anna liest und schreibt mit ihrem Schlüssel.
+  Future<void> grundstand(TestUmgebung env, ChatUiAufbau a, {bool gruppe = true}) async {
     env.server.json('GET /members', {
       'members': [
         userJson(),
@@ -38,47 +44,53 @@ void main() {
         userJson(id: _cora, role: 'parent', name: 'Cora Berger', email: 'cora@beispiel.de'),
       ],
     });
-    env.sync.andereAendert('konversation', _famChat, {'art': 'family', 'titel': '', 'teilnehmer': <String>[], 'ownerId': null, 'createdAt': vor(600)});
-    env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-000000000001', {
-      'konversationId': _famChat,
-      'text': 'p1:Wer holt heute die Kinder ab?',
-      'autorId': fixIdKind,
-      'createdAt': vor(30),
-    });
-    env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-000000000002', {
-      'konversationId': _famChat,
-      'text': 'p1:Ich kann das machen',
-      'autorId': _cora,
-      'createdAt': vor(20),
-    });
+    env.sync.andereAendert('konversation', _famChat, {'art': 'family', 'encVersion': 'e1', 'titel': '', 'teilnehmer': <String>[], 'ownerId': null, 'createdAt': vor(600)});
+    await a.epoche(_famChat, [a.anna, a.ben, a.cora], art: 'family');
+    await a.nachricht(_famChat, 'a0000000-0000-4000-8000-000000000001', a.ben, 'Wer holt heute die Kinder ab?', vor(30));
+    await a.nachricht(_famChat, 'a0000000-0000-4000-8000-000000000002', a.cora, 'Ich kann das machen', vor(20));
     final dm = direktChatId(fixIdAdmin, fixIdKind);
-    env.sync.andereAendert('konversation', dm, {'art': 'direct', 'titel': '', 'teilnehmer': [fixIdAdmin, fixIdKind]..sort(), 'ownerId': fixIdKind, 'createdAt': vor(300)});
-    env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-000000000003', {
-      'konversationId': dm,
-      'text': 'p1:Kommst du zum Training?',
-      'autorId': fixIdKind,
-      'createdAt': vor(10),
-    });
+    env.sync.andereAendert('konversation', dm, {'art': 'direct', 'encVersion': 'e1', 'titel': '', 'teilnehmer': [fixIdAdmin, fixIdKind]..sort(), 'ownerId': fixIdKind, 'createdAt': vor(300)});
+    await a.epoche(dm, [a.anna, a.ben]);
+    await a.nachricht(dm, 'a0000000-0000-4000-8000-000000000003', a.ben, 'Kommst du zum Training?', vor(10));
     if (gruppe) {
       env.sync.andereAendert('konversation', 'bbbbbbbb-0000-4000-8000-0000000000b1', {
         'art': 'group',
+        'encVersion': 'e1',
         'titel': 'p1:Wochenendausflug',
         'teilnehmer': [fixIdAdmin, fixIdKind, _cora]..sort(),
         'ownerId': fixIdKind,
         'createdAt': vor(200),
       });
+      await a.epoche('bbbbbbbb-0000-4000-8000-0000000000b1', [a.anna, a.ben, a.cora]);
     }
   }
 
-  Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', double skala = 1.0, Size groesse = const Size(360, 800), void Function(TestUmgebung env)? vorher, bool chat = true}) async {
+  final aufbauten = <TestUmgebung, ChatUiAufbau>{};
+
+  Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', double skala = 1.0, Size groesse = const Size(360, 800), FutureOr<void> Function(TestUmgebung env, ChatUiAufbau a)? vorher, bool chat = true}) async {
     final env = await angemeldeteUmgebung(role: role);
-    vorher?.call(env);
+    final a = ChatUiAufbau(env);
+    aufbauten[env] = a;
+    env.extraOverrides.addAll(a.overrides);
+    await vorher?.call(env, a);
     await starteApp(tester, env, skala: skala, groesse: groesse);
     if (chat) await zumChatTab(tester);
     return env;
   }
 
   Future<List<Nachricht>> alleNachrichten(TestUmgebung env) => env.db.select(env.db.nachrichten).get();
+
+  /// Klartext der Nachrichten dieser Person (Anna) nach dem Entschlüsseln.
+  Future<List<String>> meineTexte(TestUmgebung env) async {
+    final a = aufbauten[env]!;
+    return [
+      for (final n in await alleNachrichten(env))
+        if (n.autorId == fixIdAdmin)
+          n.inhalt.startsWith('l1:')
+              ? n.inhalt.substring(3)
+              : (await a.annasKrypto.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt)).text,
+    ];
+  }
 
   testWidgets('Liste: Familienchat oben, Direktchat mit Namen der Person, Gruppe mit Namen; Vorschau, Absender und Ungelesen-Zähler', (tester) async {
     await start(tester, vorher: grundstand);
@@ -131,7 +143,8 @@ void main() {
     await warte(tester, 10);
     expect(find.text('Klar, bin dabei 🎉'), findsOneWidget);
     expect(find.text('wird gesendet'), findsOneWidget);
-    final n = (await alleNachrichten(env)).firstWhere((n) => n.inhalt == 'p1:Klar, bin dabei 🎉');
+    final n = (await alleNachrichten(env)).firstWhere((n) => n.autorId == fixIdAdmin);
+    expect(n.inhalt, 'l1:Klar, bin dabei 🎉', reason: 'Klartext nur lokal');
     expect(n.rev, 0);
     expect(n.autorId, fixIdAdmin);
     expect(tester.widget<TextField>(eingabe()).controller!.text, isEmpty);
@@ -139,7 +152,12 @@ void main() {
     env.sync.offline = false;
     await tester.pump(const Duration(seconds: 40));
     await warte(tester, 10);
-    expect(env.sync.zeilen.values.where((z) => z.entity == 'nachricht' && z.fields['text'] == 'p1:Klar, bin dabei 🎉'), hasLength(1));
+    // der Server bekommt nur die verschlüsselte Hülle, nie den Klartext
+    final gesendet = env.sync.zeilen.values.where((z) => z.entity == 'nachricht' && z.fields['autorId'] == fixIdAdmin);
+    expect(gesendet.single.fields['text'], startsWith('e1:'));
+    expect(gesendet, hasLength(1));
+    expect(gesendet.single.fields['text'], isNot(contains('Klar')));
+    expect(await meineTexte(env), ['Klar, bin dabei 🎉']);
     expect(find.text('wird gesendet'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -159,7 +177,7 @@ void main() {
     await tester.pump();
     await tippe(tester, find.byTooltip('Senden'));
     await warte(tester, 10);
-    final antwort = (await alleNachrichten(env)).firstWhere((n) => n.inhalt == 'p1:Ja, um 17 Uhr');
+    final antwort = (await alleNachrichten(env)).firstWhere((n) => n.autorId == fixIdAdmin);
     expect(antwort.antwortAuf, 'a0000000-0000-4000-8000-000000000003');
     // Zitat sichtbar
     expect(find.text('Kommst du zum Training?'), findsNWidgets(2));
@@ -174,14 +192,14 @@ void main() {
     await warte(tester, 10);
     expect(find.text('Ja, um 18 Uhr'), findsOneWidget);
     expect(find.text('bearbeitet'), findsOneWidget);
-    expect((await alleNachrichten(env)).where((n) => n.inhalt == 'p1:Ja, um 18 Uhr'), hasLength(1));
+    expect(await meineTexte(env), ['Ja, um 18 Uhr']);
     // eigene Nachricht löschen
     await tippeText(tester, 'Ja, um 18 Uhr');
     await tippeText(tester, 'Löschen');
     await tippeText(tester, 'Löschen'); // Bestätigen
     await warte(tester, 10);
     expect(find.text('Ja, um 18 Uhr'), findsNothing);
-    expect((await alleNachrichten(env)).where((n) => n.inhalt.contains('18 Uhr')), isEmpty);
+    expect(await meineTexte(env), isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -202,10 +220,17 @@ void main() {
     expect(find.text('Löschen'), findsNothing);
   });
 
-  testWidgets('nicht lesbare Nachrichten (verschlüsselt/unbekannte Hülle): kein Klartext, Hinweis "warte auf Schlüssel"', (tester) async {
-    await start(tester, vorher: (env) {
-      grundstand(env);
-      env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-000000000009', {'konversationId': _famChat, 'text': 'e1:Z2VoZWlt', 'autorId': fixIdKind, 'createdAt': vor(1)});
+  testWidgets('nicht lesbare Nachrichten (Epoche ohne Schlüssel): kein Klartext, Hinweis "warte auf Schlüssel"', (tester) async {
+    await start(tester, vorher: (env, a) async {
+      await grundstand(env, a);
+      // gültige Hülle, aber mit einer Epoche (7), für die Anna keinen Schlüssel hat
+      final wire = HuellenCodec(a.crypto).versiegeln(
+        schluessel: a.crypto.zufall(32),
+        klartext: utf8Bytes('Z2VoZWlt'),
+        kontext: HuellenKontext(conversationId: _famChat, messageId: 'a0000000-0000-4000-8000-000000000009', senderId: a.ben.id, epoch: 7, senderKeyVersion: 1),
+        signGeheim: a.ben.pk.signGeheim,
+      );
+      env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-000000000009', {'konversationId': _famChat, 'text': 'e1:$wire', 'autorId': fixIdKind, 'createdAt': vor(1)});
     });
     expect(find.text('Ben: Nachricht nicht lesbar'), findsOneWidget);
     expect(find.textContaining('Z2VoZWlt'), findsNothing);
@@ -219,11 +244,15 @@ void main() {
   });
 
   testWidgets('Neuer Chat: eine Person ergibt einen Direktchat (feste ID, kein zweiter bei erneutem Wählen)', (tester) async {
-    final env = await start(tester, vorher: (e) => grundstand(e, gruppe: false));
+    final env = await start(tester, vorher: (e, a) => grundstand(e, a, gruppe: false));
     await tippeText(tester, 'Neuer Chat');
     await tippeText(tester, 'Cora Berger');
     expect(find.text('Chat starten'), findsOneWidget);
     await tippeText(tester, 'Chat starten');
+    // Pflicht: Mitglieder und Sicherheitscode zeigen, erst dann wird angelegt
+    expect(find.text('Direktchat starten'), findsOneWidget);
+    expect(find.textContaining('Vergleiche diesen Code'), findsOneWidget);
+    await tippeText(tester, 'Starten');
     await warte(tester, 10);
     final dm = direktChatId(fixIdAdmin, _cora);
     expect((await env.db.select(env.db.konversationen).get()).where((k) => k.id == dm), hasLength(1));
@@ -234,29 +263,32 @@ void main() {
     await warte(tester);
     await tippeText(tester, 'Neuer Chat');
     await tippeText(tester, 'Cora Berger');
-    await tippeText(tester, 'Chat starten');
+    await tippeText(tester, 'Chat starten'); // vorhandener Chat: ohne Rückfrage
     await warte(tester, 10);
     expect((await env.db.select(env.db.konversationen).get()).where((k) => k.art == 'direct'), hasLength(2));
   });
 
   testWidgets('Neuer Chat: mehrere Personen ergeben eine Gruppe mit optionalem Namen; die eigene Person ist dabei', (tester) async {
-    final env = await start(tester, vorher: (e) => grundstand(e, gruppe: false));
+    final env = await start(tester, vorher: (e, a) => grundstand(e, a, gruppe: false));
     await tippeText(tester, 'Neuer Chat');
     await tippeText(tester, 'Ben');
     await tippeText(tester, 'Cora Berger');
     expect(find.text('Gruppe anlegen'), findsOneWidget);
     await eingeben(tester, 'Gruppenname (optional)', 'Skiurlaub');
     await tippeText(tester, 'Gruppe anlegen');
+    expect(find.text('Gruppe anlegen'), findsOneWidget); // Titel der Bestätigung (Mitglieder und Sicherheitscode)
+    await tippeText(tester, 'Anlegen');
     await warte(tester, 10);
     final g = (await env.db.select(env.db.konversationen).get()).firstWhere((k) => k.art == 'group');
     expect(g.titel, 'p1:Skiurlaub');
     expect(teilnehmerIds(g), [fixIdAdmin, fixIdKind, _cora]..sort());
     expect(find.text('Skiurlaub'), findsOneWidget); // Kopf des Verlaufs
-    expect(find.text('3 teilnehmer'), findsOneWidget);
+    expect(find.textContaining('3 teilnehmer'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsWidgets); // Schloss im Kopf: Ende-zu-Ende verschlüsselt
   });
 
   testWidgets('Neuer Chat ohne weitere Mitglieder: Hinweis statt leerer Liste', (tester) async {
-    await start(tester, vorher: (env) {
+    await start(tester, vorher: (env, a) {
       env.server.json('GET /members', {
         'members': [userJson()],
       });
@@ -315,21 +347,18 @@ void main() {
   });
 
   testWidgets('Layout 360 px: lange Nachricht ohne Leerzeichen und langer Gruppenname laufen nicht über', (tester) async {
-    await start(tester, skala: 1.5, vorher: (env) {
-      grundstand(env);
-      env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-0000000000aa', {
-        'konversationId': _famChat,
-        'text': 'p1:${'Wort ' * 80}${'x' * 120}',
-        'autorId': fixIdKind,
-        'createdAt': vor(2),
-      });
+    await start(tester, skala: 1.5, vorher: (env, a) async {
+      await grundstand(env, a);
+      await a.nachricht(_famChat, 'a0000000-0000-4000-8000-0000000000aa', a.ben, '${'Wort ' * 80}${'x' * 120}', vor(2));
       env.sync.andereAendert('konversation', 'bbbbbbbb-0000-4000-8000-0000000000b2', {
         'art': 'group',
+        'encVersion': 'e1',
         'titel': 'p1:Ein sehr langer Gruppenname der nicht in eine Zeile passt',
         'teilnehmer': [fixIdAdmin, fixIdKind]..sort(),
         'ownerId': fixIdKind,
         'createdAt': vor(100),
       });
+      await a.epoche('bbbbbbbb-0000-4000-8000-0000000000b2', [a.anna, a.ben]);
     });
     pruefeLayout(tester, 'Liste mit langen Texten');
     await tippeText(tester, 'Ein sehr langer Gruppenname der nicht in eine Zeile passt');
@@ -345,15 +374,22 @@ void main() {
     // die Gruppe hat Anna (ich), Ben und Cora; Cora wird abgewählt, dann wieder dazu
     await tippeText(tester, 'Cora Berger');
     await tippeText(tester, 'Übernehmen');
+    expect(find.text('Teilnehmer ändern?'), findsOneWidget, reason: 'auch das Entfernen zeigt die Mitglieder und den Sicherheitscode');
+    await tippeText(tester, 'Ändern');
     await warte(tester, 10);
     var g = await (env.db.select(env.db.konversationen)..where((k) => k.id.equals('bbbbbbbb-0000-4000-8000-0000000000b1'))).getSingle();
-    expect(teilnehmerIds(g), [fixIdAdmin, fixIdKind]..sort(), reason: 'Entfernen braucht keine Warnung');
+    expect(teilnehmerIds(g), [fixIdAdmin, fixIdKind]..sort());
+    // neue Epoche nur für die Verbleibenden: Cora bekommt keinen Wrap der neuen Epoche
+    final wraps = await env.db.select(env.db.epocheWraps).get();
+    expect(wraps.where((w) => w.konversationId == g.id && w.epoche == 2).map((w) => w.empfaengerId).toSet(), {fixIdAdmin, fixIdKind});
     await tester.tap(find.byTooltip('Gruppe verwalten'));
     await warte(tester);
     await tippeText(tester, 'Teilnehmer ändern');
     await tippeText(tester, 'Cora Berger');
     await tippeText(tester, 'Übernehmen');
-    expect(find.text('Neue Mitglieder sehen den bisherigen Verlauf der Gruppe.'), findsOneWidget);
+    expect(find.text('Mitglieder prüfen und hinzufügen'), findsOneWidget);
+    expect(find.text('Bisherigen Verlauf mit den Neuen teilen'), findsOneWidget);
+    expect(find.textContaining('Vergleiche diesen Code'), findsOneWidget);
     await tippeText(tester, 'Abbrechen');
     g = await (env.db.select(env.db.konversationen)..where((k) => k.id.equals('bbbbbbbb-0000-4000-8000-0000000000b1'))).getSingle();
     expect(teilnehmerIds(g), isNot(contains(_cora)));
@@ -383,15 +419,10 @@ void main() {
   });
 
   testWidgets('Zitat: eine Antwort auf eine Nachricht einer anderen Konversation zeigt den Text nicht', (tester) async {
-    await start(tester, vorher: (env) {
-      grundstand(env);
-      env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-0000000000cc', {
-        'konversationId': _famChat,
-        'text': 'p1:Bezug auf fremden Chat',
-        'autorId': fixIdKind,
-        'antwortAuf': 'a0000000-0000-4000-8000-000000000003', // Nachricht des Direktchats
-        'createdAt': vor(1),
-      });
+    await start(tester, vorher: (env, a) async {
+      await grundstand(env, a);
+      // Nachricht des Direktchats als Bezug
+      await a.nachricht(_famChat, 'a0000000-0000-4000-8000-0000000000cc', a.ben, 'Bezug auf fremden Chat', vor(1), antwortAuf: 'a0000000-0000-4000-8000-000000000003');
     });
     await tippeText(tester, 'Ben: Bezug auf fremden Chat');
     expect(find.text('Nachricht nicht verfügbar'), findsOneWidget);
@@ -400,7 +431,9 @@ void main() {
 
   testWidgets('Desktop: Lesestand nur bei sichtbarem Chat-Bereich; beim Zurückwechseln wird nachgeholt', (tester) async {
     final env = await angemeldeteUmgebung();
-    grundstand(env);
+    final a = ChatUiAufbau(env);
+    env.extraOverrides.addAll(a.overrides);
+    await grundstand(env, a);
     final container = await starteApp(tester, env, groesse: const Size(1280, 800));
     final nav = find.bySemanticsLabel(RegExp('^Navigation'));
     await tester.tap(find.descendant(of: nav, matching: find.text('Chat')));
@@ -413,7 +446,7 @@ void main() {
     await tester.tap(find.descendant(of: nav, matching: find.text('Start')));
     await warte(tester);
     final dm = direktChatId(fixIdAdmin, fixIdKind);
-    env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-0000000000dd', {'konversationId': dm, 'text': 'p1:Bist du da?', 'autorId': fixIdKind, 'createdAt': vor(0)});
+    await a.nachricht(dm, 'a0000000-0000-4000-8000-0000000000dd', a.ben, 'Bist du da?', vor(0));
     await container.read(syncProvider.notifier).synchronisieren(manuell: true);
     await warte(tester, 10);
     expect((await env.db.select(env.db.nachrichten).get()).length, 4, reason: 'neue Nachricht angekommen');
@@ -451,7 +484,7 @@ void main() {
       await tester.pump();
       await tester.sendKeyEvent(LogicalKeyboardKey.enter);
       await warte(tester, 10);
-      expect((await alleNachrichten(env)).where((n) => n.inhalt == 'p1:Erste Zeile'), hasLength(1));
+      expect(await meineTexte(env), ['Erste Zeile']);
     });
 
     testWidgets('Startseite: Chat-Karte zeigt die letzten echten Nachrichten der sichtbaren Chats (neueste zuerst)', (tester) async {

@@ -8,13 +8,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/chat/chat_krypto_state.dart';
 import '../../data/chat/chat_repository.dart';
-import '../../data/chat/nachrichten_inhalt.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../shell/shell_tab.dart';
 import 'chat_anzeige.dart';
+import 'chat_krypto_ui.dart';
 import 'chat_verlauf.dart';
 import 'personen_wahl.dart';
 
@@ -34,7 +36,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => mounted ? _familienchatPruefen() : null);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _familienchatPruefen();
+      // frischer Stand der Mitglieder und ihrer Schlüssel (neue Schlüssel, Wechsel), sobald der Chat-Bereich zum ersten Mal gebaut wird
+      unawaited(ref.read(chatKryptoProvider.notifier).mitgliederAktualisieren());
+    });
   }
 
   /// Den Familienchat legt die erste App an, in der jemand den Chat-Bereich öffnet und die nach einem erfolgreichen Abgleich keinen findet
@@ -43,8 +50,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     if (_familienchatGeprueft || ref.read(syncProvider).letzterAbgleich == null || ref.read(shellTabProvider) != kChatTab) return;
     final liste = ref.read(chatUebersichtProvider).value;
     if (liste == null) return;
+    if (liste.any((e) => e.art == ChatArt.family)) {
+      _familienchatGeprueft = true;
+      return;
+    }
+    // der Familienchat ist verschlüsselt: ohne eingerichteten Schlüssel gibt es ihn noch nicht (der Hinweis im Chat-Bereich führt zum Einrichten)
+    if (ref.read(e2eeProvider).status != E2eeStatus.bereit) return;
     _familienchatGeprueft = true;
-    if (liste.any((e) => e.art == ChatArt.family)) return;
     unawaited(ref.read(chatRepositoryProvider).familienchatSicherstellen());
   }
 
@@ -52,9 +64,33 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     final repo = ref.read(chatRepositoryProvider);
     final gewaehlt = ref.read(gewaehlterChatProvider.notifier);
     final navigator = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     final wahl = await navigator.push<PersonenAuswahl>(MaterialPageRoute(builder: (_) => const PersonenWahlSeite(modus: PersonenWahlModus.neuerChat)));
     if (wahl == null || !mounted) return;
-    final id = wahl.personen.length == 1 ? await repo.direktChat(wahl.personen.first) : await repo.gruppeAnlegen(wahl.personen.toList(), name: wahl.name);
+    // vorhandenen Direktchat ohne Rückfrage öffnen, sonst die Mitglieder prüfen lassen (Pflicht: Aufforderung zum Vergleich des Sicherheitscodes)
+    final vorhanden = wahl.personen.length == 1 && await repo.direktChatVorhanden(wahl.personen.first);
+    if (!vorhanden) {
+      if (!mounted) return;
+      final ok = await mitgliederBestaetigen(
+        context,
+        titel: wahl.personen.length == 1 ? 'Direktchat starten' : 'Gruppe anlegen',
+        personen: wahl.personen.toList(),
+        neu: wahl.personen,
+        knopf: wahl.personen.length == 1 ? 'Starten' : 'Anlegen',
+      );
+      if (ok == null || !mounted) return;
+    }
+    final String id;
+    try {
+      id = wahl.personen.length == 1 ? await repo.direktChat(wahl.personen.first) : await repo.gruppeAnlegen(wahl.personen.toList(), name: wahl.name);
+    } on Object catch (e) {
+      final text = kryptoFehlerText(e, ref.read(e2eeProvider).mitglieder);
+      if (text == null) rethrow;
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(text)));
+      return;
+    }
     if (!mounted) return;
     if (zweiSpalten) {
       gewaehlt.waehlen(id);
@@ -81,6 +117,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     ref.listen(chatUebersichtProvider, (_, _) => _familienchatPruefen());
     ref.listen(syncProvider.select((s) => s.letzterAbgleich), (_, _) => _familienchatPruefen());
     ref.listen(shellTabProvider, (_, _) => _familienchatPruefen());
+    ref.listen(e2eeProvider.select((s) => s.status), (_, _) => _familienchatPruefen());
     return LayoutBuilder(
       builder: (context, c) {
         final zweiSpalten = c.maxWidth >= kChatZweiSpaltenBreite;
@@ -171,6 +208,7 @@ class _Liste extends ConsumerWidget {
         Column(
           children: [
             const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 4), child: TabKopfzeile(title: 'Chat')),
+            const VerschluesselungHinweis(),
             Expanded(child: inhaltsbereich),
           ],
         ),
@@ -179,7 +217,7 @@ class _Liste extends ConsumerWidget {
           bottom: 16,
           child: FilledButton.icon(
             style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: onNeu,
+            onPressed: chatKryptoZustand(ref.watch(e2eeProvider)).darfSchreiben ? onNeu : null,
             icon: const Icon(Icons.edit_outlined, size: 20),
             label: const Text('Neuer Chat'),
           ),

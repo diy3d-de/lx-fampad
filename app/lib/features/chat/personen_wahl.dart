@@ -7,8 +7,10 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
+import 'chat_krypto_ui.dart';
 
 /// Ergebnis der Auswahl: die gewählten Personen (ohne die eigene) und der Gruppenname (leer: ohne Namen).
 class PersonenAuswahl {
@@ -53,6 +55,7 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
     final ich = ref.watch(authProvider.select((s) => s.user?.id));
     final async = ref.watch(mitgliederProvider);
     final andere = [for (final u in async.value ?? const <UserDto>[]) if (u.id != ich) u];
+    final krypto = ref.watch(e2eeProvider);
     final knopf = _neu ? (_gruppe ? 'Gruppe anlegen' : 'Chat starten') : 'Übernehmen';
     return Scaffold(
       backgroundColor: kBg,
@@ -88,12 +91,13 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
                               Semantics(
                                 container: true,
                                 checked: _gewaehlt.contains(u.id),
-                                label: '${u.displayName}, ${u.role.label}',
+                                enabled: _waehlbar(u.id, personKryptoHindernis(krypto, u.id)),
+                                label: '${u.displayName}, ${u.role.label}${personKryptoHindernis(krypto, u.id) == null ? '' : ', ${personKryptoHindernis(krypto, u.id)}'}',
                                 excludeSemantics: true,
-                                onTap: () => _umschalten(u.id),
+                                onTap: _waehlbar(u.id, personKryptoHindernis(krypto, u.id)) ? () => _umschalten(u.id) : null,
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(12),
-                                  onTap: () => _umschalten(u.id),
+                                  onTap: _waehlbar(u.id, personKryptoHindernis(krypto, u.id)) ? () => _umschalten(u.id) : null,
                                   child: ConstrainedBox(
                                     constraints: const BoxConstraints(minHeight: 56),
                                     child: Padding(
@@ -102,10 +106,25 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
                                         children: [
                                           PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 36),
                                           const SizedBox(width: 12),
-                                          Expanded(child: Text(u.displayName, maxLines: 2, overflow: TextOverflow.ellipsis)),
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                Text(u.displayName, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(color: _waehlbar(u.id, personKryptoHindernis(krypto, u.id)) ? kText : kTextMuted)),
+                                                // Personen ohne eingerichtete Verschlüsselung können nicht teilnehmen, bis sie so weit sind
+                                                if (personKryptoHindernis(krypto, u.id) case final h?) Text(h, style: const TextStyle(fontSize: 12, color: kWarn)),
+                                              ],
+                                            ),
+                                          ),
                                           const SizedBox(width: 8),
                                           Text(u.role.label.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-                                          ExcludeSemantics(child: Checkbox(value: _gewaehlt.contains(u.id), onChanged: (_) => _umschalten(u.id))),
+                                          ExcludeSemantics(
+                                            child: Checkbox(
+                                              value: _gewaehlt.contains(u.id),
+                                              onChanged: _waehlbar(u.id, personKryptoHindernis(krypto, u.id)) ? (_) => _umschalten(u.id) : null,
+                                            ),
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -140,6 +159,9 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
       ),
     );
   }
+
+  /// Eine Person ohne eingerichtete Verschlüsselung (oder mit ungeprüftem Schlüssel) lässt sich nicht neu wählen; wer schon gewählt ist, kann abgewählt werden.
+  bool _waehlbar(String id, String? hindernis) => hindernis == null || _gewaehlt.contains(id);
 
   /// Höchstens 20 Teilnehmer je Gruppe (mit der eigenen Person), wie auf dem Server.
   static const _maxAndere = 19;

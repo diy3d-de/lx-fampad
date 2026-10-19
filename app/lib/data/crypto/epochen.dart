@@ -364,6 +364,49 @@ class EpochenEmpfaenger {
     );
   }
 
+  /// Übernimmt den Schlüssel einer ÄLTEREN Epoche, die ein Mitglied beim Aufnehmen mit dem Verlauf geteilt hat ("Verlauf teilen"). Die ältere Epoche hat
+  /// die Person nicht in ihrer Mitgliederliste; der Wrap gilt deshalb nur, wenn die AKTUELLE, geprüfte Liste (Signatur des [aktuellerVerteiler], enthält die
+  /// Person mit ihrem Schlüssel) den Verteiler des Wraps als Mitglied nennt: ein aktuelles Mitglied bürgt für den Schlüssel. Die Signatur des Wraps wird gegen
+  /// [wrapVerteiler] geprüft (gemerkter Schlüssel, nie einer vom Server). Ein Server kann nichts unterschieben; ein Mitglied könnte einen falschen alten Schlüssel
+  /// weitergeben (die Nachrichten der alten Epoche blieben dann unlesbar, Entschlüsseln prüft jede Nachricht).
+  static Uint8List historieUebernehmen(
+    CryptoProvider crypto, {
+    required EpochenWrap wrap,
+    required String erwarteteConversationId,
+    required int erwarteteEpoche,
+    required SignierteMitgliederListe aktuelleListe,
+    required int aktuelleEpoche,
+    required OeffentlicheSchluessel aktuellerVerteiler,
+    required String ichId,
+    required Personenschluessel meinSchluessel,
+    required int meineKeyVersion,
+    required OeffentlicheSchluessel wrapVerteiler,
+  }) {
+    if (erwarteteEpoche >= aktuelleEpoche) throw const CryptoFehler(CryptoFehlerArt.format, 'Das ist keine ältere Epoche.');
+    listePruefen(
+      crypto,
+      signiert: aktuelleListe,
+      erwarteteConversationId: erwarteteConversationId,
+      erwarteteEpoche: aktuelleEpoche,
+      verteiler: aktuellerVerteiler,
+      ichId: ichId,
+      meineKeyVersion: meineKeyVersion,
+    );
+    if (aktuelleListe.liste.versionVon(wrap.verteilerId) != wrap.verteilerKeyVersion) {
+      throw const CryptoFehler(CryptoFehlerArt.signatur, 'Der Schlüssel des Verlaufs stammt nicht von einem aktuellen Mitglied.');
+    }
+    return wrapOeffnen(
+      crypto,
+      wrap: wrap,
+      erwarteteConversationId: erwarteteConversationId,
+      erwarteteEpoche: erwarteteEpoche,
+      ichId: ichId,
+      meinSchluessel: meinSchluessel,
+      meineKeyVersion: meineKeyVersion,
+      verteiler: wrapVerteiler,
+    );
+  }
+
   /// Wie [uebernehmen], aber der Verteiler-Schlüssel kommt aus dem TOFU-Speicher (nie vom Server): unbekannte Verteiler werden abgelehnt.
   static Future<Uint8List> uebernehmenMitVertrauen(
     CryptoProvider crypto, {

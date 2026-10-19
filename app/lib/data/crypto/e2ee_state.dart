@@ -36,6 +36,7 @@ String personenschluesselName(String userId) => 'e2ee.pk.$userId';
 Future<void> Function() e2eeDatenWiper(Ref ref) => () async {
   try {
     await ref.read(schluesselSpeicherProvider).loescheMitPraefix('e2ee.pk.');
+    await ref.read(schluesselSpeicherProvider).loescheMitPraefix('e2ee.kv.');
   } finally {
     // Zustand und der Schlüssel im Arbeitsspeicher gehören der bisherigen Person: verwerfen (der Neuaufbau überschreibt die Bytes), auch wenn das Löschen scheiterte
     ref.invalidate(e2eeProvider);
@@ -176,6 +177,30 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
+  static String _versionName(String userId) => 'e2ee.kv.$userId';
+
+  /// Merkt die Schlüsselversion der eigenen Person (öffentlich, kein Geheimnis): so kann der Chat auch ohne Verbindung zum Server lesen und schreiben.
+  Future<void> _versionMerken(String userId, int version) async {
+    try {
+      await _speicher.schreiben(_versionName(userId), utf8Bytes('$version'));
+    } on Object {
+      // nur eine Erleichterung für den Offline-Betrieb
+    }
+  }
+
+  /// Zuletzt vom Server erfahrene Schlüsselversion dieser Person (null: nie erfahren).
+  Future<int?> letzteBekannteVersion() async {
+    final id = ref.read(authProvider).user?.id;
+    if (id == null) return null;
+    try {
+      final b = await _speicher.lesen(_versionName(id));
+      if (b == null) return null;
+      return int.tryParse(String.fromCharCodes(b));
+    } on Object {
+      return null;
+    }
+  }
+
   /// Öffentliche Schlüssel dieses Geräts (null, wenn keiner da ist); für die Phase 2 (Signieren, Entschlüsseln).
   Personenschluessel? get lokalerSchluessel => _lokal;
 
@@ -188,12 +213,19 @@ class E2eeController extends Notifier<E2eeState> {
     if (uid == null) return;
     try {
       final crypto = await _krypto();
+      // der lokale Schlüssel gehört zum Gerät: er steht auch ohne Verbindung zum Server zur Verfügung (Chat lesen und schreiben offline)
+      try {
+        _lokal ??= await _lokalLaden(crypto);
+      } on SchluesselSpeicherFehler {
+        // der Schlüsselspeicher ist gerade nicht lesbar: unten wird es erneut versucht und gemeldet
+      }
       final eigene = await _api.eigeneSchluessel();
       final mitglieder = await _api.mitglieder();
       if (!ref.mounted) return;
       _lokal = await _lokalLaden(crypto);
       await _zwischenstandAufloesen(crypto, eigene.schluessel);
       final server = eigene.schluessel;
+      if (server != null) await _versionMerken(uid, server.version);
       final pruefer = VertrauensPruefer(_speicher, eigeneUserId: uid);
       final warnungen = await pruefer.pruefen({for (final m in mitglieder) m.id: m.schluessel});
       final status = switch ((server, _lokal)) {

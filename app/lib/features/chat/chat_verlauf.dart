@@ -11,6 +11,7 @@ import '../../data/api/models.dart';
 import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
@@ -18,6 +19,7 @@ import '../auth/auth_widgets.dart' show BildschirmSchutz;
 import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
 import 'chat_anzeige.dart';
+import 'chat_krypto_ui.dart';
 import 'personen_wahl.dart';
 
 class ChatVerlauf extends ConsumerStatefulWidget {
@@ -94,6 +96,18 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       } else {
         await _repo.senden(_id, t, antwortAuf: antwort?.id);
       }
+    } on ChatNichtVerschluesselt {
+      if (mounted) {
+        _text.text = t;
+        setState(() {
+          _antwort = antwort;
+          _bearbeitet = bearbeitet;
+        });
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Dieser Chat ist nicht verschlüsselt. Neue Nachrichten sind hier nicht möglich.')));
+      }
+      return;
     } on NachrichtZuLang {
       // nichts gesendet: der Text bleibt im Feld
       if (mounted) {
@@ -174,21 +188,26 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         final hinzu = wahl.personen.difference(bisher);
         final weg = bisher.difference(wahl.personen);
         if (hinzu.isEmpty && weg.isEmpty) return;
-        if (hinzu.isNotEmpty) {
-          final ok = await showDialog<bool>(
-            context: context,
-            builder: (c) => AlertDialog(
-              title: const Text('Neue Mitglieder hinzufügen?'),
-              content: const Text('Neue Mitglieder sehen den bisherigen Verlauf der Gruppe.'),
-              actions: [
-                TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Abbrechen')),
-                FilledButton(onPressed: () => Navigator.of(c).pop(true), child: const Text('Hinzufügen')),
-              ],
-            ),
-          );
-          if (ok != true) return;
+        final alle = {...bisher, ...hinzu}..removeAll(weg);
+        final bestaetigung = await mitgliederBestaetigen(
+          context,
+          titel: hinzu.isEmpty ? 'Teilnehmer ändern?' : 'Mitglieder prüfen und hinzufügen',
+          personen: alle.toList(),
+          neu: hinzu,
+          entfernt: weg,
+          verlaufFrage: true,
+          knopf: hinzu.isEmpty ? 'Ändern' : 'Hinzufügen',
+        );
+        if (bestaetigung == null || !mounted) return;
+        try {
+          await _repo.teilnehmerAendern(k.id, hinzu: hinzu, weg: weg, verlaufTeilen: bestaetigung.verlaufTeilen);
+        } on Object catch (e) {
+          final text = kryptoFehlerText(e, ref.read(e2eeProvider).mitglieder);
+          if (text == null) rethrow;
+          messenger
+            ..hideCurrentSnackBar()
+            ..showSnackBar(SnackBar(content: Text(text)));
         }
-        await _repo.teilnehmerAendern(k.id, hinzu: hinzu, weg: weg);
       case 'verlassen':
         if (teilnehmer.length <= 2) {
           messenger
@@ -243,6 +262,9 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       ChatArt.direct => 'direktchat',
       ChatArt.group => '${teilnehmer.length} teilnehmer',
     };
+    final verschluesselt = konv.encVersion == 'e1';
+    final kryptoZustand = chatKryptoZustand(ref.watch(e2eeProvider));
+    final darfSchreiben = verschluesselt && kryptoZustand.darfSchreiben;
     final liste = ref.watch(nachrichtenProvider(_id)).value ?? const <Nachricht>[];
     final nachId = {for (final n in liste) n.id: n};
 
@@ -282,6 +304,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
           beiSchliessen: widget.zurueckPfeil ? widget.beiSchliessen : null,
           titel: name,
           untertitel: untertitel,
+          verschluesselt: verschluesselt,
           avatar: ChatAvatar(art: art, person: anderer, name: name, size: 36),
           menue: art == ChatArt.group
               ? PopupMenuButton<String>(
@@ -297,6 +320,17 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                 )
               : null,
         ),
+        if (verschluesselt) SchluesselWechselHinweis(personen: art == ChatArt.family ? const {} : {...teilnehmer}),
+        if (!verschluesselt)
+          Container(
+            margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: kSurface, border: Border.all(color: kWarn.withValues(alpha: 0.6)), borderRadius: BorderRadius.circular(12)),
+            child: const Text(
+              'Dieser Chat ist nicht verschlüsselt (er stammt aus einer früheren Version). Du kannst ihn lesen, aber nichts mehr schreiben. Starte einen neuen, verschlüsselten Chat.',
+              style: TextStyle(fontSize: 13, height: 1.4, color: kText),
+            ),
+          ),
         Expanded(
           child: liste.isEmpty
               ? EmptyState(icon: Icons.chat_bubble_outline, title: 'Noch keine Nachrichten', hint: art == ChatArt.family ? 'Schreib die erste Nachricht an die Familie.' : 'Schreib die erste Nachricht.')
@@ -313,7 +347,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     // Name nur über der ersten Nachricht einer Folge derselben Person (in Direktchats nie)
                     final davor = i + 1 < umgekehrt.length ? umgekehrt[i + 1] : null;
                     final zeigeName = !eigen && art != ChatArt.direct && !(davor is Nachricht && davor.autorId == n.autorId);
-                    final d = inhalt.dekodieren(n.inhalt);
+                    final d = inhalt.nachricht(n);
                     final autor = mitglieder[n.autorId];
                     // ein Zitat zeigt nur eine Nachricht derselben Konversation (der Server prüft das ebenfalls)
                     final zitatKandidat = n.antwortAuf == null ? null : nachId[n.antwortAuf];
@@ -336,7 +370,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                   },
                 ),
         ),
-        eingabe,
+        if (darfSchreiben) eingabe else if (verschluesselt) const VerschluesselungHinweis(gross: false),
       ],
     );
     // private Chats (Direkt, Gruppe): kein Bildschirmfoto (Android, FLAG_SECURE; Web und Desktop ohne Wirkung); der Familienchat bleibt frei
@@ -348,9 +382,10 @@ class _Kopf extends StatelessWidget {
   final VoidCallback? beiSchliessen;
   final String titel;
   final String untertitel;
+  final bool verschluesselt;
   final Widget? avatar;
   final Widget? menue;
-  const _Kopf({required this.beiSchliessen, required this.titel, required this.untertitel, required this.avatar, required this.menue});
+  const _Kopf({required this.beiSchliessen, required this.titel, required this.untertitel, required this.avatar, required this.menue, this.verschluesselt = false});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -368,7 +403,23 @@ class _Kopf extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Semantics(header: true, child: Text(titel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: kTextStrong))),
-              if (untertitel.isNotEmpty) Text(untertitel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              if (untertitel.isNotEmpty)
+                Row(
+                  children: [
+                    if (verschluesselt) ...[
+                      Semantics(label: 'Ende-zu-Ende verschlüsselt', child: const Icon(Icons.lock_outline, size: 12, color: kTerminal)),
+                      const SizedBox(width: 4),
+                    ],
+                    Expanded(
+                      child: Text(
+                        verschluesselt ? 'ende-zu-ende verschlüsselt · $untertitel' : untertitel,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                      ),
+                    ),
+                  ],
+                ),
             ],
           ),
         ),
@@ -440,7 +491,7 @@ class _Blase extends StatelessWidget {
     final text = switch (inhalt.status) {
       InhaltStatus.bereit => inhalt.text,
       InhaltStatus.wirdEntschluesselt => 'wird entschlüsselt …',
-      InhaltStatus.nichtEntschluesselbar => 'Nachricht nicht lesbar – warte auf Schlüssel',
+      InhaltStatus.nichtEntschluesselbar => 'Nachricht nicht lesbar – ${inhalt.hinweis ?? 'warte auf Schlüssel'}',
     };
     final lesbar = inhalt.lesbar;
     final zeit = uhrzeit(nachricht.createdAt);
