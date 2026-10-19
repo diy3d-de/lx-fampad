@@ -11,11 +11,11 @@ class ListenRechte {
 
   bool get _erwachsen => rolle == Role.admin || rolle == Role.parent;
 
-  /// Gäste legen keine Listen an; Kinder nur Familienlisten.
-  bool get darfListeAnlegen => rolle != Role.guest;
+  /// Alle Rollen legen Listen an; Kinder nur Familienlisten.
+  bool get darfListeAnlegen => true;
 
-  /// Eintragen, bearbeiten, zuweisen, löschen: alle außer Gäste. Gäste dürfen nur abhaken.
-  bool get darfEintraegeAendern => rolle != Role.guest;
+  /// Eintragen, bearbeiten, abhaken, zuweisen, löschen: alle Rollen (in sichtbaren Listen).
+  bool get darfEintraegeAendern => true;
 
   bool darfListeAendern(Liste l) => _erwachsen || (rolle == Role.child && userId != null && l.ownerId == userId);
 

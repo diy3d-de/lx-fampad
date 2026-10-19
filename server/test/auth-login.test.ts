@@ -332,7 +332,7 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       };
       async function member() {
         const a = await adminPassword(world);
-        const g = await addMember(world, a.client, 'guest', 'oma@example.org');
+        const g = await addMember(world, a.client, 'child', 'oma@example.org', { requireApproval: true });
         expect(g.complete?.json.status).toBe('pending');
         const id = (await a.client.get('/api/v1/members')).json.members.find((m: { email: string }) => m.email === 'oma@example.org').id as string;
         return { a, g, id };
@@ -636,7 +636,7 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       const members = (await a.client.get('/api/v1/members')).json.members as Array<{ id: string; email: string }>;
       const adminId = members.find((m) => m.email === a.email)?.id;
       const mamaId = members.find((m) => m.email === 'mama@example.org')?.id;
-      expect((await mama.client.patch(`/api/v1/members/${adminId}/role`, { role: 'guest' })).status).toBe(403);
+      expect((await mama.client.patch(`/api/v1/members/${adminId}/role`, { role: 'child' })).status).toBe(403);
       expect((await mama.client.patch(`/api/v1/members/${mamaId}/role`, { role: 'admin' })).status).toBe(403);
       const last = await a.client.patch(`/api/v1/members/${adminId}/role`, { role: 'parent' });
       expect(last.status).toBe(409);
@@ -647,7 +647,7 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
     it('Mitgliederliste: Nicht-Admins sehen keine E-Mail-Adressen und keine wartenden Mitglieder', async () => {
       const a = await adminPassword(world);
       const kind = await addMember(world, a.client, 'child', 'kind@example.org');
-      await addMember(world, a.client, 'guest', 'oma@example.org');
+      await addMember(world, a.client, 'child', 'oma@example.org', { requireApproval: true });
       const list = (await kind.client.get('/api/v1/members')).json.members as Array<Record<string, unknown>>;
       expect(list.map((m) => m.displayName).sort()).toEqual(['Admin', 'kind']);
       for (const m of list) if (m.displayName !== 'kind') expect(m.email).toBeUndefined();
@@ -881,7 +881,7 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       const [user] = await harness.db.insert(schema.users).values({ email: 'fremd@example.org', displayName: 'Fremd' }).returning();
       if (!fam || !user) throw new Error('Setup');
       await harness.db.insert(schema.memberships).values({ familyId: fam.id, userId: user.id, role: 'admin' });
-      await harness.db.insert(schema.invites).values({ familyId: fam.id, role: 'guest', tokenHash: sha256Hex('fremde-einladung'), expiresAt: new Date(world.clock + DAY) });
+      await harness.db.insert(schema.invites).values({ familyId: fam.id, role: 'child', tokenHash: sha256Hex('fremde-einladung'), expiresAt: new Date(world.clock + DAY) });
       return { fam, user };
     }
 
@@ -891,7 +891,7 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       const list = (await a.client.get('/api/v1/members')).json.members as Array<{ email?: string }>;
       expect(JSON.stringify(list)).not.toContain('fremd@example.org');
       for (const [m, url, body] of [
-        ['PATCH', `/api/v1/members/${user.id}/role`, { role: 'guest' }],
+        ['PATCH', `/api/v1/members/${user.id}/role`, { role: 'child' }],
         ['POST', `/api/v1/members/${user.id}/approve`, {}],
         ['POST', `/api/v1/members/${user.id}/reject`, {}],
         ['POST', `/api/v1/members/${user.id}/reset`, {}],

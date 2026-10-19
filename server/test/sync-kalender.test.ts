@@ -117,11 +117,11 @@ const act = (def: typeof terminEntity, action: 'create' | 'update' | 'delete', r
 describe('Rechte-Regeltabelle: Termine', () => {
   it('Admin und Eltern dürfen alles', () => {
     for (const role of ['admin', 'parent'] as const) {
-      for (const a of ['parents', 'family', 'all'] as const) {
+      for (const a of ['parents', 'family'] as const) {
         for (const def of [terminEntity, terminTeilnehmerEntity, terminAusnahmeEntity]) {
           expect(mayRead(def.rules, actor(role), facts(a))).toBe(true);
           expect(act(def, 'create', role, facts(a), [], { audience: a })).toBe('ok');
-          expect(act(def, 'update', role, facts(a), ['audience'], { audience: 'all' })).toBe('ok');
+          expect(act(def, 'update', role, facts(a), ['audience'], { audience: 'parents' })).toBe('ok');
           expect(act(def, 'delete', role, facts(a))).toBe('ok');
         }
       }
@@ -132,9 +132,9 @@ describe('Rechte-Regeltabelle: Termine', () => {
     expect(mayRead(terminEntity.rules, actor('child'), facts('parents'))).toBe(false);
     expect(mayRead(terminEntity.rules, actor('child'), facts('family'))).toBe(true);
     expect(act(terminEntity, 'create', 'child', facts('family', 'u-self'), ['titel'], { audience: 'family' })).toBe('ok');
-    expect(act(terminEntity, 'create', 'child', facts('all', 'u-self'), ['titel', 'audience'], { audience: 'all' })).toBe('forbidden');
+    expect(act(terminEntity, 'create', 'child', facts('parents', 'u-self'), ['titel', 'audience'], { audience: 'parents' })).toBe('forbidden');
     expect(act(terminEntity, 'update', 'child', facts('family', 'u-self'), ['titel', 'startUtc'], { titel: 'x' })).toBe('ok');
-    expect(act(terminEntity, 'update', 'child', facts('family', 'u-self'), ['audience'], { audience: 'all' })).toBe('forbidden');
+    expect(act(terminEntity, 'update', 'child', facts('family', 'u-self'), ['audience'], { audience: 'parents' })).toBe('forbidden');
     expect(act(terminEntity, 'update', 'child', facts('family', 'u-other'), ['titel'])).toBe('forbidden');
     expect(act(terminEntity, 'update', 'child', facts('parents', 'u-self'), ['titel'])).toBe('not_found');
     expect(act(terminEntity, 'delete', 'child', facts('family', 'u-self'))).toBe('ok');
@@ -142,33 +142,18 @@ describe('Rechte-Regeltabelle: Termine', () => {
     expect(act(terminEntity, 'delete', 'child', facts('parents', 'u-other'))).toBe('not_found');
   });
 
-  it('Teilnehmer und Ausnahmen: Kinder nur an eigenen Terminen (geerbt), Gäste nie', () => {
+  it('Teilnehmer und Ausnahmen: Kinder nur an eigenen Terminen (geerbt)', () => {
     for (const def of [terminTeilnehmerEntity, terminAusnahmeEntity]) {
       expect(act(def, 'create', 'child', facts('family', 'u-self'))).toBe('ok');
       expect(act(def, 'create', 'child', facts('family', 'u-other'))).toBe('forbidden');
       expect(act(def, 'delete', 'child', facts('family', 'u-other'))).toBe('forbidden');
       expect(act(def, 'update', 'child', facts('parents', 'u-self'))).toBe('not_found');
-      expect(act(def, 'create', 'guest', facts('all', 'u-self'))).toBe('forbidden');
-      // Gäste dürfen Teilnehmer gar nicht lesen (dann nicht_found), Ausnahmen lesen sie (dann verboten)
-      const erwartet = def === terminTeilnehmerEntity ? 'not_found' : 'forbidden';
-      expect(act(def, 'update', 'guest', facts('all'))).toBe(erwartet);
-      expect(act(def, 'delete', 'guest', facts('all'))).toBe(erwartet);
     }
   });
 
-  it('Teilnehmer: Gäste lesen nichts (Kennungen der Familie), Ausnahmen lesen sie', () => {
-    expect(mayRead(terminTeilnehmerEntity.rules, actor('guest'), facts('all'))).toBe(false);
-    expect(mayRead(terminAusnahmeEntity.rules, actor('guest'), facts('all'))).toBe(true);
+  it('Teilnehmer und Ausnahmen: Kinder lesen sie in sichtbaren Terminen', () => {
     expect(mayRead(terminTeilnehmerEntity.rules, actor('child'), facts('family'))).toBe(true);
-  });
-
-  it('Gäste sehen nur freigegebene Termine und ändern nichts', () => {
-    expect(mayRead(terminEntity.rules, actor('guest'), facts('all'))).toBe(true);
-    expect(mayRead(terminEntity.rules, actor('guest'), facts('family'))).toBe(false);
-    expect(act(terminEntity, 'create', 'guest', facts('family', 'u-self'), ['titel'])).toBe('forbidden');
-    expect(act(terminEntity, 'update', 'guest', facts('all'), ['titel'])).toBe('forbidden');
-    expect(act(terminEntity, 'update', 'guest', facts('family'), ['titel'])).toBe('not_found');
-    expect(act(terminEntity, 'delete', 'guest', facts('all'))).toBe('forbidden');
+    expect(mayRead(terminAusnahmeEntity.rules, actor('child'), facts('parents'))).toBe(false);
   });
 });
 
@@ -188,7 +173,7 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
   });
   beforeEach(async () => {
     await resetSync(world);
-    fam.admin.sinceRev = fam.parent.sinceRev = fam.child.sinceRev = fam.guest.sinceRev = 0;
+    fam.admin.sinceRev = fam.parent.sinceRev = fam.child.sinceRev = 0;
   });
 
   const zeit = (extra: Json = {}): Json => ({
@@ -369,7 +354,7 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
       expect((await fam.child.sync([opGeheim])).json.rejected).toEqual([{ opId: opGeheim.opId, code: 'not_found' }]);
       const opDel = remove('termin', nurEltern, 3);
       expect((await fam.child.sync([opDel])).json.rejected).toEqual([{ opId: opDel.opId, code: 'not_found' }]);
-      const frei = upsert('termin', eigen, { audience: 'all' }, 1);
+      const frei = upsert('termin', eigen, { audience: 'parents' }, 1);
       expect((await fam.child.sync([frei])).json.rejected).toEqual([{ opId: frei.opId, code: 'forbidden' }]);
       expect((await fam.child.sync([upsert('termin', eigen, { titel: 'Fußball' }, 1)])).json.rejected).toEqual([]);
       const mine = await fam.child.pull();
@@ -381,31 +366,20 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
       expect((await fam.child.sync([upsert('termin_teilnehmer', randomUUID(), { terminId: eigen, userId: fam.admin.userId })])).json.rejected).toEqual([]);
     });
 
-    it('Gäste sehen nur freigegebene Termine und deren Ausnahmen, aber nicht die Teilnehmer, und ändern nichts', async () => {
-      const privat = await anlegen(fam.admin);
-      const frei = await anlegen(fam.admin, zeit({ audience: 'all', titel: 'Oma-Besuch' }));
-      await fam.admin.sync([upsert('termin_teilnehmer', randomUUID(), { terminId: frei, userId: fam.guest.userId })]);
-      const seen = await fam.guest.pull();
-      expect(seen.filter((c) => c.entity === 'termin').map((c) => c.id)).toEqual([frei]);
-      expect(seen.filter((c) => c.entity === 'termin_teilnehmer')).toHaveLength(0);
-      const top = upsert('termin_teilnehmer', randomUUID(), { terminId: frei, userId: fam.guest.userId });
-      expect((await fam.guest.sync([top])).json.rejected).toEqual([{ opId: top.opId, code: 'forbidden' }]);
-      const op = upsert('termin', frei, { titel: 'x' }, 2);
-      expect((await fam.guest.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'forbidden' }]);
-      const op2 = upsert('termin', privat, { titel: 'x' }, 1);
-      expect((await fam.guest.sync([op2])).json.rejected).toEqual([{ opId: op2.opId, code: 'not_found' }]);
-      const neu = upsert('termin', randomUUID(), zeit());
-      expect((await fam.guest.sync([neu])).json.rejected).toEqual([{ opId: neu.opId, code: 'forbidden' }]);
+    it('alte Apps senden die Stufe "all": sie wird als "family" gespeichert; Kinder sehen den Termin', async () => {
+      const id = await anlegen(fam.parent, zeit({ audience: 'all', titel: 'Alt' }));
+      expect((await rows(world, sql`select audience from termine where id = ${id}`))[0]?.audience).toBe('family');
+      expect((await fam.child.pull()).find((c) => c.id === id)?.fields.audience).toBe('family');
     });
 
-    it('Freigabe zurücknehmen: Gäste bekommen einen Tombstone (hidden) für den Termin; Kinder-Datensätze verwirft die App mit ihm', async () => {
-      const frei = await anlegen(fam.admin, zeit({ audience: 'all' }));
+    it('Freigabe zurücknehmen: das Kind bekommt einen Tombstone (hidden) für den Termin', async () => {
+      const frei = await anlegen(fam.admin, zeit({ audience: 'family' }));
       await fam.admin.sync([upsert('termin_ausnahmen', randomUUID(), { terminId: frei, originalStart: '2026-10-27T08:00:00Z', abgesagt: true })]);
-      expect((await fam.guest.pull()).filter((c) => c.entity === 'termin_ausnahmen')).toHaveLength(1);
-      const res = await fam.admin.sync([upsert('termin', frei, { audience: 'family' }, 1)]);
+      expect((await fam.child.pull()).filter((c) => c.entity === 'termin_ausnahmen')).toHaveLength(1);
+      const res = await fam.admin.sync([upsert('termin', frei, { audience: 'parents' }, 1)]);
       expect(res.json.rejected).toEqual([]);
-      const guestView = await fam.guest.pull();
-      expect(guestView.filter((c) => c.hidden).map((c) => c.entity)).toEqual(['termin']);
+      const childView = await fam.child.pull();
+      expect(childView.filter((c) => c.hidden).map((c) => c.entity)).toEqual(['termin']);
     });
   });
 

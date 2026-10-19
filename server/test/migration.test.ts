@@ -191,11 +191,11 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
     expect(eventCols).not.toContain('teilnehmer_ids');
   });
 
-  it('kennt die Rollen admin, parent, child, guest', async () => {
+  it('kennt die Rollen admin, parent, child (ohne guest)', async () => {
     const roles = await rows<{ enumlabel: string }>(
       sql`select e.enumlabel from pg_enum e join pg_type t on t.oid = e.enumtypid where t.typname = 'member_role' order by e.enumsortorder`,
     );
-    expect(roles.map((r) => r.enumlabel)).toEqual(['admin', 'parent', 'child', 'guest']);
+    expect(roles.map((r) => r.enumlabel)).toEqual(['admin', 'parent', 'child']);
   });
 
   it('kennt die Anmeldearten passkey, totp, password', async () => {

@@ -92,7 +92,7 @@ void main() {
       'auswahl:Packliste',
       'auswahl:Eigene Liste',
       // Admin darf die Freigabe wählen
-      for (final s in ['Nur Eltern', 'Familie', 'Alle (auch Gäste)']) 'auswahl:$s',
+      for (final s in ['Nur Eltern', 'Familie']) 'auswahl:$s',
       'knopf:Abbrechen',
       'knopf:Anlegen',
     ];
@@ -257,10 +257,10 @@ void main() {
 
     await tippe(tester, find.byTooltip('Liste verwalten'));
     await tippeText(tester, 'Sichtbar für …');
-    await tippeText(tester, 'Alle (auch Gäste)');
+    await tippeText(tester, 'Nur Eltern');
     await warte(tester, 8);
-    expect((await env.db.select(env.db.listen).get()).single.audience, 'all');
-    expect(find.textContaining('Alle (auch Gäste)'), findsOneWidget);
+    expect((await env.db.select(env.db.listen).get()).single.audience, 'parents');
+    expect(find.textContaining('Nur Eltern'), findsOneWidget);
 
     await tippe(tester, find.byTooltip('Liste verwalten'));
     await tippeText(tester, 'Liste löschen');
@@ -288,29 +288,14 @@ void main() {
     expect(eingabe('Was muss mit?'), findsOneWidget);
   });
 
-  testWidgets('Gast: sieht die freigegebene Liste und darf abhaken, aber nichts anlegen, bearbeiten oder verwalten', (tester) async {
-    final env = await start(tester, role: 'guest', vorher: (e) {
+  testWidgets('alter Wert "all" (früher: auch Gäste) wird wie "Familie" behandelt', (tester) async {
+    await start(tester, vorher: (e) {
       eigeneListe(e, audience: 'all');
       e.sync.andereAendert('list_item', _i1, {'listId': _l1, 'text': 'Salat', 'position': 0});
     });
     expect(find.text('Salat'), findsOneWidget);
-    expect(find.byTooltip('Hinzufügen'), findsNothing);
-    expect(find.byTooltip('Neue Liste'), findsNothing);
-    expect(find.byTooltip('Liste verwalten'), findsNothing);
-    expect(find.byTooltip('Zuweisen'), findsNothing);
-    await tester.tap(find.byIcon(Icons.check_box_outline_blank).first);
-    await warte(tester, 8);
-    expect((await eintraege(env)).single.doneAt, isNotNull);
-    // Text antippen öffnet kein Blatt
-    await tester.tap(find.text('Salat'));
-    await warte(tester);
-    expect(find.text('Speichern'), findsNothing);
-  });
-
-  testWidgets('Gast ohne freigegebene Liste: Leerzustand ohne Anlegen-Knopf', (tester) async {
-    await start(tester, role: 'guest');
-    expect(find.text('Noch keine Liste'), findsOneWidget);
-    expect(find.text('Liste anlegen'), findsNothing);
+    expect(ListenSicht.von('all'), ListenSicht.family);
+    expect(ListenSicht.von('unbekannt'), ListenSicht.family);
   });
 
   testWidgets('Kind: legt Familienlisten an (keine Freigabe-Wahl), verwaltet nur eigene Listen', (tester) async {
@@ -331,7 +316,6 @@ void main() {
     await tippeText(tester, 'Liste anlegen');
     expect(find.text('NUR ELTERN'), findsNothing);
     expect(find.text('Nur Eltern'), findsOneWidget);
-    expect(find.text('Alle (auch Gäste)'), findsOneWidget);
   });
 
   testWidgets('offline: Hinweisleiste, Sync-Symbol, Änderungen bleiben und werden gezählt; danach wieder synchron', (tester) async {
@@ -431,7 +415,7 @@ void main() {
         vorher: (e) {
           e.sync.offline = true;
           eigeneListe(e, name: 'Wocheneinkauf für die ganze Familie mit einem wirklich langen Namen');
-          eigeneListe(e, id: _l2, name: 'Packliste Sommerurlaub am Meer', kind: 'packing', audience: 'all');
+          eigeneListe(e, id: _l2, name: 'Packliste Sommerurlaub am Meer', kind: 'packing', audience: 'parents');
           for (var i = 0; i < 4; i++) {
             e.sync.andereAendert('list_item', '00000000-0000-4000-8000-00000000000$i', {
               'listId': _l1,

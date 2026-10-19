@@ -14,22 +14,13 @@ type InviteRow = typeof invites.$inferSelect;
 
 export const INVALID_INVITE = () => new AppError(400, 'invite_invalid', 'Die Einladung ist ungültig, abgelaufen oder gesperrt.');
 
-/** Admins laden jede Rolle ein, Eltern nur Kinder und Gäste; Kinder und Gäste gar nicht. */
+/** Admins laden jede Rolle ein, Eltern nur Kinder; Kinder gar nicht. */
 export function assertMayInvite(actorRole: Role, target: Role): void {
-  const allowed = actorRole === 'admin' || (actorRole === 'parent' && (target === 'child' || target === 'guest'));
+  const allowed = actorRole === 'admin' || (actorRole === 'parent' && target === 'child');
   if (!allowed) throw new AppError(403, 'forbidden', 'Diese Einladung darfst du nicht erstellen.');
 }
 
-/**
- * Freigabe durch einen Admin: Gast-Einladungen brauchen sie immer, es sei denn, ein Admin verzichtet ausdrücklich darauf.
- * Nicht-Admins können sie bei Gästen nicht abschalten (serverseitig erzwungen, egal was der Client sendet).
- */
-export function effectiveRequireApproval(actorRole: Role, targetRole: Role, requested: boolean | undefined): boolean | undefined {
-  if (targetRole === 'guest' && actorRole !== 'admin') return true;
-  return requested;
-}
-
-const ROLE_RANK: Record<Role, number> = { admin: 3, parent: 2, child: 1, guest: 0 };
+const ROLE_RANK: Record<Role, number> = { admin: 3, parent: 2, child: 1 };
 
 /** Ist `to` eine niedrigere Rolle als `from`? */
 export const isDowngrade = (from: Role, to: Role): boolean => ROLE_RANK[to] < ROLE_RANK[from];
@@ -69,7 +60,7 @@ export async function createInvite(ctx: AuthContext, exec: Executor, input: Crea
   const now = ctx.now();
   const token = randomToken(32);
   const pin = input.withPin ? randomPin() : undefined;
-  const requireApproval = input.requireApproval ?? (input.role === 'guest' && !input.userId);
+  const requireApproval = input.requireApproval ?? false;
   const expiresAt = new Date(now.getTime() + input.hours * 3_600_000);
   // ID vorab, damit der PIN-Hash im selben INSERT steht (kein Zwischenzustand ohne PIN, auch ohne umgebende Transaktion)
   const id = randomUUID();

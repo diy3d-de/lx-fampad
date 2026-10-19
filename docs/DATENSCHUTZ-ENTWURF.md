@@ -1,7 +1,7 @@
 # Datenschutzerklärung – Entwurf (lx-fampad)
 
 Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0, 1a (Konten und Anmeldung im Server), 1b (App: Anmeldung, Einladungen, Konto) und 1c-1 (Sync-Kern und Listen)
-und die in `docs/PROJEKTBESCHREIBUNG.md` festgelegten Phasen 1 bis 3. Vor dem Echtbetrieb mit Dritten (Großeltern, Gäste) von einer
+und die in `docs/PROJEKTBESCHREIBUNG.md` festgelegten Phasen 1 bis 3. Vor dem Echtbetrieb mit Dritten (z. B. Großeltern als Familienmitglieder) von einer
 fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte „Stand“: **Ist** = heute umgesetzt (Server, Anmelde-Teil der App), **Geplant** = Phase 1 (App, Sync, Fachbereiche) bis 3.
 
 ## 1. Verantwortlicher und Geltungsbereich
@@ -9,7 +9,7 @@ fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte 
 - Verantwortlich: **[Name, Anschrift, E-Mail des Betreibers]** (Privatperson, betreibt lx-fampad für die eigene Familie).
 - Geltungsbereich: Web-App (`familie.lx-labs.dev`), Android-App, Server, Push-Dienst (`ntfy.familie.lx-labs.dev`).
 - **[Prüfen]** Haushaltsausnahme (Art. 2 Abs. 2 lit. c DSGVO): Rein familiäre Nutzung fällt eventuell nicht unter die DSGVO. Sobald
-  Personen außerhalb des Haushalts teilnehmen (Großeltern als Gäste) oder der Betreiber die Daten für andere verwaltet, ist vorsorglich so zu
+  Personen außerhalb des Haushalts teilnehmen (z. B. Großeltern als eingeladene Familienmitglieder) oder der Betreiber die Daten für andere verwaltet, ist vorsorglich so zu
   handeln, als gelte sie. Dieser Entwurf geht vom vorsichtigen Fall aus.
 
 ## 2. Überblick: Was lx-fampad nicht tut
@@ -88,14 +88,14 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 - **[Prüfen]** Ab welchem Alter eine eigene Einwilligung genügt (Art. 8 DSGVO: Einwilligung bei Diensten der Informationsgesellschaft ab 16 Jahren, darunter Zustimmung der Sorgeberechtigten). Da der Dienst nur Familienmitgliedern offensteht und
   nicht an die Öffentlichkeit gerichtet ist, bleibt zu klären, welche Fassung der Einwilligung gewählt wird. Empfehlung: Die Sorgeberechtigten willigen für Kinder unter 16 Jahren schriftlich ein, auch in die Standortfreigabe.
 - Eltern können die Konten ihrer Kinder verwalten und Inhalte einsehen, die in gemeinsamen Bereichen liegen; **Standorte** sehen sie nur, wenn das Kind aktiv teilt (Abschnitt 8). Kinder erfahren, was die Eltern sehen können.
-- Gäste (z. B. Großeltern) sehen ausschließlich ausdrücklich freigegebene Bereiche und nie Standorte.
+- Es gibt keine Gast-Rolle: Zugriff haben nur eingeladene Familienmitglieder (Admin, Elternteil, Kind). Was nur für Eltern gedacht ist (Freigabe-Stufe „nur Eltern“), sehen Kinder nicht. Beim Wegfall der Gäste (Migration 0005) wurden vorhandene Gast-Konten samt Geräten, Sitzungen und Zuordnungen gelöscht; im Audit-Protokoll bleibt ein Eintrag je entferntem Konto (ohne E-Mail).
 
 ## 8. Standort (Phase 2)
 
 - Standort wird **nur von der Person selbst** geteilt; niemand kann ihn einschalten oder anfordern (Eltern können Kindern nur eine Erinnerung schicken).
 - Dauer vor dem Start wählbar (15 Minuten, 1 Stunde, 8 Stunden, „bis ich beende“); Beenden jederzeit mit einem Tipp. Solange geteilt wird, zeigt Android eine ständige Benachrichtigung (Vordergrunddienst).
 - Beim Beenden löscht der Server die Positionen der Freigabe sofort; laufende Freigaben halten höchstens 2 Stunden Bewegungsspur. Die Ablaufzeit liegt auf dem Server, nicht nur im Gerät.
-- Die Freigabe geht an die gesamte Familie oder ausgewählte Mitglieder; Gäste sehen nie Standorte.
+- Die Freigabe geht an die gesamte Familie oder ausgewählte Mitglieder.
 - Das Standortrecht „immer“ unter Android wird nur angefordert, wenn jemand teilt. Rechtsgrundlage: Einwilligung (Art. 6 Abs. 1 lit. a, Widerruf jederzeit durch Beenden).
 - Kartenkacheln liefert der eigene Server; weder Google noch OpenStreetMap-Server erfahren den Standort.
 

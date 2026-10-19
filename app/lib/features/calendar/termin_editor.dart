@@ -248,7 +248,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider.select((a) => a.user));
-    final rechte = TerminRechte(user?.role ?? Role.guest, user?.id);
+    final rechte = TerminRechte(user?.role ?? Role.child, user?.id);
     final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
     final datum = DateFormat('E, d. MMM y', 'de_DE');
     final titel = _neu ? 'Neuer Termin' : (_nurDieses ? 'Dieses Vorkommen' : (widget.umfang == SerieUmfang.folgende ? 'Dieses und folgende' : 'Termin bearbeiten'));

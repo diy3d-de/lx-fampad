@@ -7,9 +7,9 @@ import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/test_app.dart';
 
-const _lookupGast = {
+const _lookupMitFreigabe = {
   'invite': {
-    'role': 'guest',
+    'role': 'child',
     'pinRequired': true,
     'requireApproval': true,
     'familyName': 'Familie Beispiel mit einem ziemlich langen Namen',
@@ -27,7 +27,7 @@ void main() {
 
     testWidgets('360 px, $s: Anmeldung, Einladung, Registrierung, Codes, Warten', (tester) async {
       final server = FakeServer()
-        ..json('POST /auth/invites/lookup', _lookupGast)
+        ..json('POST /auth/invites/lookup', _lookupMitFreigabe)
         ..json('POST /auth/invites/passkey/options', {'challengeId': 'c-9', 'options': webauthnOptionen()})
         ..json('POST /auth/invites/password/start', {
           'challengeId': 'c-10',
@@ -35,7 +35,7 @@ void main() {
           'totpUri': 'otpauth://totp/lx-fampad:ben%40beispiel.de?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=lx-fampad',
         })
         ..json('POST /auth/invites/password/complete', {
-          'member': userJson(role: 'guest', status: 'pending', name: 'Oma'),
+          'member': userJson(role: 'child', status: 'pending', name: 'Oma'),
           'status': 'pending',
           'recoveryCodes': codes(),
         });

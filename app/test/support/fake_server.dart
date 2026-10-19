@@ -145,11 +145,11 @@ FakeServer standardServer({String role = 'admin'}) {
     'members': [
       userJson(),
       userJson(id: fixIdKind, role: 'child', name: 'Ben', email: 'ben@beispiel.de'),
-      userJson(id: '22222222-3333-4444-8555-666666666666', role: 'guest', status: 'pending', name: 'Oma', email: 'oma@beispiel.de'),
+      userJson(id: '22222222-3333-4444-8555-666666666666', role: 'child', status: 'pending', name: 'Oma', email: 'oma@beispiel.de'),
     ],
   });
   s.json('GET /invites', {
-    'invites': [einladungJson(), einladungJson(id: 'i2', role: 'guest', status: 'expired', approval: true), einladungJson(id: 'i3', status: 'used')],
+    'invites': [einladungJson(), einladungJson(id: 'i2', role: 'parent', status: 'expired', approval: true), einladungJson(id: 'i3', status: 'used')],
   });
   s.json('GET /devices', {
     'devices': [

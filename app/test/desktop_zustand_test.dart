@@ -46,13 +46,6 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Gast: kein "+ Neu", Einkaufskarte ohne Anlegen-Hinweis', (tester) async {
-    await start(tester, const Size(1440, 900), role: 'guest');
-    expect(find.text('Neu'), findsNothing);
-    expect(find.textContaining('klicken zum Anlegen'), findsNothing);
-    expect(find.text('Noch keine Einkaufsliste'), findsOneWidget);
-  });
-
   testWidgets('Admin: Hinweis zum Anlegen sichtbar', (tester) async {
     await start(tester, const Size(1440, 900));
     expect(find.textContaining('klicken zum Anlegen'), findsOneWidget);
