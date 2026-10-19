@@ -333,9 +333,21 @@ class ChatKrypto {
         meinSchluessel: meinSchluessel,
         meineKeyVersion: meineKeyVersion,
         wrapVerteiler: wrapVerteiler,
+        alteListe: _alteListe(e, wrap, wrapVerteiler),
       );
     } on CryptoFehler catch (f) {
       _problem(conv, e.epoche, _grund(f));
+      return null;
+    }
+  }
+
+  /// Die Mitgliederliste der älteren Epoche, wenn sie vom Verteiler des Wraps signiert ist (dann prüft die Übernahme den Schlüssel gegen ihre Verpflichtung).
+  MitgliederListe? _alteListe(Epoche e, EpochenWrap wrap, OeffentlicheSchluessel wrapVerteiler) {
+    try {
+      final s = SignierteMitgliederListe.dekodieren(e.mitglieder);
+      if (s.verteilerId != wrap.verteilerId) return null;
+      return EpochenEmpfaenger.alteListeGeprueft(crypto, signiert: s, verteiler: wrapVerteiler);
+    } on CryptoFehler {
       return null;
     }
   }
@@ -500,6 +512,7 @@ class ChatKrypto {
         conversationId: konversationId,
         epoch: nummer,
         mitglieder: [for (final m in e.schluessel.entries) MitgliedEintrag(m.key, m.value.version)],
+        schluesselCommitment: schluesselCommitmentBerechnen(crypto, epochenschluessel: epochenKey, conversationId: konversationId, epoch: nummer),
       );
       final signiert = EpochenVerteiler.listeSignieren(crypto, liste: liste, verteilerId: ichId, verteilerKeyVersion: meineKeyVersion, verteilerSignGeheim: meinSchluessel.signGeheim);
       final aenderungen = <SyncAenderung>[

@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'bytes.dart';
+import 'crypto_fehler.dart';
 import 'schluessel.dart';
 import 'schluessel_speicher.dart';
 import 'sicherheitscode.dart';
@@ -18,7 +19,13 @@ class GemerkterSchluessel {
   /// Früher bestätigte Schlüssel dieser Person (vom Gerät selbst gemerkt, nicht vom Server): Sie gelten für Signaturen aus der Zeit vor einem bestätigten
   /// Schlüsselwechsel (Wraps und Nachrichten, die die Person mit dem damaligen Schlüssel signiert hat).
   final List<GemerkterSchluessel> frueher;
-  const GemerkterSchluessel(this.enc, this.sign, this.version, {this.frueher = const []});
+
+  /// Die Person steht nicht mehr in der Mitgliederliste (aus der Familie entfernt). Der Eintrag BLEIBT: Wraps, Listen und Nachrichten, die sie früher signiert hat, lassen
+  /// sich weiter prüfen (sonst wäre der Verlauf nach einem Neustart unlesbar), und ein Wiederauftauchen mit anderem Schlüssel warnt wie jeder Wechsel.
+  final bool entfernt;
+  const GemerkterSchluessel(this.enc, this.sign, this.version, {this.frueher = const [], this.entfernt = false});
+
+  GemerkterSchluessel alsEntfernt(bool wert) => GemerkterSchluessel(enc, sign, version, frueher: frueher, entfernt: wert);
 
   bool gleichWie(OeffentlicheSchluessel o) => gleicheBytes(enc, o.enc) && gleicheBytes(sign, o.sign);
 }
@@ -28,7 +35,10 @@ class SchluesselWarnung {
   final String userId;
   final GemerkterSchluessel gemerkt;
   final OeffentlicheSchluessel? aktuell;
-  const SchluesselWarnung({required this.userId, required this.gemerkt, required this.aktuell});
+
+  /// Der Server nennt eine ÄLTERE Schlüsselversion als die gemerkte (Rückfall): das gibt es im Normalbetrieb nie (die Version steigt nur) und lässt sich nicht bestätigen.
+  final bool rueckfall;
+  const SchluesselWarnung({required this.userId, required this.gemerkt, required this.aktuell, this.rueckfall = false});
 }
 
 class VertrauensPruefer {
@@ -54,6 +64,7 @@ class VertrauensPruefer {
             base64urlDekodieren(v['s'] as String),
             v['v'] as int,
             frueher: h is List ? [for (final x in h) ?eintrag(x)] : const [],
+            entfernt: v['x'] == true,
           );
         }
         return null;
@@ -74,6 +85,7 @@ class VertrauensPruefer {
     's': base64urlKodieren(k.sign),
     'v': k.version,
     if (k.frueher.isNotEmpty) 'h': [for (final f in k.frueher) _json(f)],
+    if (k.entfernt) 'x': true,
   };
 
   Future<void> _speichern(Map<String, GemerkterSchluessel> m) => speicher.schreiben(
@@ -96,15 +108,27 @@ class VertrauensPruefer {
           gemerkt[e.key] = GemerkterSchluessel(neu.enc, neu.sign, neu.version);
           geaendert = true;
         }
-      } else if (neu == null || !alt.gleichWie(neu)) {
-        warnungen.add(SchluesselWarnung(userId: e.key, gemerkt: alt, aktuell: neu));
+      } else if (neu != null && alt.gleichWie(neu)) {
+        // wieder da mit demselben Schlüssel: kein Anlass zur Warnung
+        if (alt.entfernt) {
+          gemerkt[e.key] = alt.alsEntfernt(false);
+          geaendert = true;
+        }
+      } else if (neu == null && alt.entfernt) {
+        // schon als entfernt vermerkt und ohne Schlüssel gelistet: nichts Neues
+      } else {
+        // Schlüsselwechsel oder verschwundener Schlüssel; eine ÄLTERE Version als die gemerkte ist ein Rückfall (der Server dreht zurück)
+        warnungen.add(SchluesselWarnung(userId: e.key, gemerkt: alt, aktuell: neu, rueckfall: neu != null && neu.version < alt.version));
       }
     }
-    // Personen, die nicht mehr in der Mitgliederliste stehen (entfernt), werden vergessen: ein späteres Wiederhinzufügen beginnt mit neuem Vertrauen
-    final entfernt = gemerkt.keys.where((id) => !aktuell.containsKey(id)).toList();
-    for (final id in entfernt) {
-      gemerkt.remove(id);
-      geaendert = true;
+    // Personen, die nicht mehr in der Mitgliederliste stehen, werden nur als entfernt vermerkt, nie vergessen (alte Signaturen bleiben prüfbar, ein Wiederauftauchen
+    // mit anderem Schlüssel warnt)
+    for (final id in gemerkt.keys.toList()) {
+      final k = gemerkt[id]!;
+      if (id != eigeneUserId && !aktuell.containsKey(id) && !k.entfernt) {
+        gemerkt[id] = k.alsEntfernt(true);
+        geaendert = true;
+      }
     }
     if (geaendert) await _speichern(gemerkt);
     return warnungen;
@@ -120,13 +144,18 @@ class VertrauensPruefer {
     return treffer == null ? null : OeffentlicheSchluessel(enc: treffer.enc, sign: treffer.sign, version: treffer.version);
   }
 
-  /// Übernimmt den neuen Schlüssel einer Person nach ausdrücklicher Bestätigung. Ohne neuen Schlüssel wird nur der alte vergessen.
+  /// Übernimmt den neuen Schlüssel einer Person nach ausdrücklicher Bestätigung. Ohne neuen Schlüssel wird die Person nur als entfernt vermerkt (nichts wird
+  /// vergessen). Eine ÄLTERE Schlüsselversion als die gemerkte lässt sich nie übernehmen ([CryptoFehler]).
   Future<void> akzeptieren(String userId, OeffentlicheSchluessel? neu) async {
     final gemerkt = await _laden();
     if (neu == null) {
-      gemerkt.remove(userId);
+      final alt = gemerkt[userId];
+      if (alt != null) gemerkt[userId] = alt.alsEntfernt(true);
     } else {
       final alt = gemerkt[userId];
+      if (alt != null && neu.version < alt.version) {
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Server nennt eine ältere Schlüsselversion als die bestätigte. Das gibt es normalerweise nie und lässt sich nicht bestätigen.');
+      }
       // der bisherige (bestätigte) Schlüssel bleibt für Signaturen aus der Zeit davor erhalten
       final frueher = [
         if (alt != null && !alt.gleichWie(neu)) ...[GemerkterSchluessel(alt.enc, alt.sign, alt.version), ...alt.frueher],

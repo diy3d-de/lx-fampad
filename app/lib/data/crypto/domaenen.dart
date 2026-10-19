@@ -14,6 +14,9 @@ const String kDomaeneWrap = 'lx-familyhub|wrap|v1';
 /// Signierte Mitgliederlisten einer Epoche (epochen.dart).
 const String kDomaeneMitglieder = 'lx-familyhub|members|v1';
 
+/// Verpflichtung auf einen Epochenschlüssel in der signierten Mitgliederliste (epochen.dart).
+const String kDomaeneSchluesselCommitment = 'lx-familyhub|epochkey-commit|v1';
+
 /// Ein Feld mit vorangestellter Länge (u32, BE).
 Uint8List gerahmt(List<int> feld) => verketten([u32Bytes(feld.length), feld]);
 

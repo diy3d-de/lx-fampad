@@ -290,14 +290,24 @@ class _WarnKarte extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    neu == null ? 'Der Schlüssel von $name fehlt jetzt.' : 'Der Schlüssel von $name hat sich geändert.',
+                    warnung.rueckfall
+                        ? 'Der Server nennt für $name einen ÄLTEREN Schlüssel als bisher.'
+                        : neu == null
+                        ? 'Der Schlüssel von $name fehlt jetzt.'
+                        : 'Der Schlüssel von $name hat sich geändert.',
                     style: const TextStyle(fontWeight: FontWeight.w700, color: kTextStrong),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
+            if (warnung.rueckfall)
+              const Text(
+                'Schlüsselversionen steigen nur. Ein Rückfall ist ein Hinweis auf einen Fehler oder einen Angriff auf den Server; die App akzeptiert ihn nie. Melde das dem Admin.',
+                style: TextStyle(fontSize: 13, height: 1.4, color: kText),
+              )
+            else
+              const Text(
               'Das kann vorkommen, wenn die Person ein neues Konto oder alle Geräte verloren hat. Es kann aber auch ein Angriff sein. Frage die Person und vergleiche den Sicherheitscode, '
               'bevor du den neuen Schlüssel akzeptierst. Bis dahin vertraut die App ihm nicht.',
               style: TextStyle(fontSize: 13, height: 1.4, color: kText),
@@ -306,7 +316,7 @@ class _WarnKarte extends StatelessWidget {
             Text('bisher: $alt', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
             if (neu != null) Text('neu:    $neu', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kWarn)),
             const SizedBox(height: 10),
-            ZweitKnopf(text: 'Neuen Schlüssel akzeptieren', icon: Icons.check, onPressed: onAkzeptieren),
+            if (!warnung.rueckfall) ZweitKnopf(text: 'Neuen Schlüssel akzeptieren', icon: Icons.check, onPressed: onAkzeptieren),
           ],
         ),
       ),

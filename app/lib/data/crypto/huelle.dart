@@ -3,7 +3,7 @@
 //   v (1) | alg (1) | epoch (4, BE) | sender_key_version (4, BE) | nonce (24) | signatur (64) | chiffretext (Klartext + 16 Byte Tag)
 //
 // v = 1, alg = 1: XChaCha20-Poly1305-IETF (Zufalls-Nonce) mit Ed25519-Signatur des Absenders.
-// AAD (an den Chiffretext gebunden) = "conversation_id|message_id|sender_id|epoch|sender_key_version|v" (UTF-8).
+// AAD (an den Chiffretext gebunden) = "conversation_id|message_id|sender_id|epoch|sender_key_version|reply_to|v" (UTF-8; reply_to = ID der beantworteten Nachricht oder leer).
 // Signatur = Ed25519 über  'lx-familyhub|msg|v1' | len(aad) (u32) | aad | kopf | chiffretext  (Domänentrennung, Längenrahmen; domaenen.dart),
 // mit kopf = v | alg | epoch | sender_key_version | nonce. Sie deckt also Kopf, Chiffretext und AAD ab (sonst könnte jedes Mitglied mit dem
 // Gruppenschlüssel als eine andere Person schreiben). Beim Öffnen wird zuerst die Signatur geprüft, dann entschlüsselt.
@@ -35,9 +35,12 @@ class HuellenKontext {
 
   /// Version des Signaturschlüssels des Absenders (key_version beim Server).
   final int senderKeyVersion;
-  const HuellenKontext({required this.conversationId, required this.messageId, required this.senderId, required this.epoch, required this.senderKeyVersion});
 
-  /// "conversation_id|message_id|sender_id|epoch|sender_key_version|v". Ein Trennzeichen in einer ID wäre mehrdeutig und wird abgelehnt.
+  /// Nachricht, auf die diese antwortet (leer: keine Antwort). Teil der AAD und damit der Signatur: der Server kann den Bezug einer Antwort nicht umhängen.
+  final String? antwortAuf;
+  const HuellenKontext({required this.conversationId, required this.messageId, required this.senderId, required this.epoch, required this.senderKeyVersion, this.antwortAuf});
+
+  /// "conversation_id|message_id|sender_id|epoch|sender_key_version|reply_to|v" (reply_to leer ohne Antwort). Ein Trennzeichen in einer ID wäre mehrdeutig und wird abgelehnt.
   Uint8List aad(int version) {
     for (final t in [conversationId, messageId, senderId]) {
       if (t.isEmpty || t.contains('|')) throw const CryptoFehler(CryptoFehlerArt.format, 'Ungültiger Nachrichtenkontext.');
@@ -45,7 +48,9 @@ class HuellenKontext {
     if (epoch < 0 || epoch > 0xFFFFFFFF || senderKeyVersion < 1 || senderKeyVersion > 0xFFFFFFFF) {
       throw const CryptoFehler(CryptoFehlerArt.format, 'Ungültiger Nachrichtenkontext.');
     }
-    return utf8Bytes('$conversationId|$messageId|$senderId|$epoch|$senderKeyVersion|$version');
+    final bezug = antwortAuf ?? '';
+    if (bezug.contains('|')) throw const CryptoFehler(CryptoFehlerArt.format, 'Ungültiger Nachrichtenkontext.');
+    return utf8Bytes('$conversationId|$messageId|$senderId|$epoch|$senderKeyVersion|$bezug|$version');
   }
 }
 

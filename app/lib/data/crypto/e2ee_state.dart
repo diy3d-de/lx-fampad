@@ -388,6 +388,14 @@ class E2eeController extends Notifier<E2eeState> {
         rethrow;
       }
       await _speicher.loeschen(altName);
+      // der bisherige öffentliche Schlüssel bleibt auf diesem Gerät gemerkt: eigene ältere Nachrichten und Wraps lassen sich weiter prüfen (die Historie des Servers zählt nie)
+      try {
+        final pruefer = VertrauensPruefer(_speicher, eigeneUserId: _userId);
+        await pruefer.akzeptieren(_userId, aktuell);
+        await pruefer.akzeptieren(_userId, ver);
+      } on Object {
+        // nur eine Erleichterung für alte Signaturen
+      }
       _lokal?.loeschen();
       _lokal = neu;
       await laden();
@@ -507,13 +515,15 @@ class E2eeController extends Notifier<E2eeState> {
   Future<void> warnungAkzeptieren(String userId) async {
     final w = state.warnungen.where((x) => x.userId == userId).firstOrNull;
     if (w == null) return;
+    if (w.rueckfall) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Ein Rückfall auf eine ältere Schlüsselversion lässt sich nicht bestätigen.');
     await VertrauensPruefer(_speicher, eigeneUserId: _userId).akzeptieren(userId, w.aktuell);
     await laden();
   }
 
   /// Signatur-Schlüssel eines Absenders in der Version, mit der er eine Nachricht signiert hat (Phase 2, Hülle `sender_key_version`):
   /// Die gemerkte (TOFU) Version zählt, nie ein Schlüssel vom Server; eine NEUERE Version als die gemerkte gilt erst nach Bestätigung der Warnung;
-  /// ältere Versionen (nach einem akzeptierten Wechsel) kommen aus der Schlüsselhistorie des Servers (bisher ungeprüft, nur Familienmitglieder).
+  /// ältere Versionen gelten nur, wenn dieses Gerät sie selbst früher bestätigt hat (nach einem akzeptierten Wechsel); die Historie des Servers zählt NIE (kein
+  /// ungeprüftes Nachladen: sonst könnte ein Server einen Schlüssel erfinden). Sonst "Absender nicht bestätigt".
   Future<OeffentlicheSchluessel> absenderSchluessel(String userId, int version) async {
     final pruefer = VertrauensPruefer(_speicher, eigeneUserId: _userId);
     final gemerkt = await pruefer.gemerkterSchluessel(userId);
@@ -524,7 +534,7 @@ class E2eeController extends Notifier<E2eeState> {
     if (gemerkt != null && version > gemerkt.version) {
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Absender hat einen neuen Schlüssel, den du noch nicht akzeptiert hast.');
     }
-    return _api.mitgliedSchluessel(userId, version);
+    throw const CryptoFehler(CryptoFehlerArt.signatur, 'Der Schlüssel des Absenders in dieser Version ist auf diesem Gerät nie bestätigt worden.');
   }
 }
 

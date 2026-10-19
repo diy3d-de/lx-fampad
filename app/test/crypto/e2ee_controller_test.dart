@@ -426,7 +426,7 @@ Future<void> main() async {
         expect(await speicher.lesen(personenschluesselName(_anna)), isNull, reason: 'dauerhaft unbrauchbar: entfernt');
       });
 
-      test('TOFU-Einträge entfernter Mitglieder verschwinden beim Abgleich', () async {
+      test('TOFU-Einträge entfernter Mitglieder bleiben (als entfernt) für die Prüfung alter Signaturen', () async {
         final a = await geraet(_anna, 'Anna');
         final ben = await geraet(_ben, 'Ben');
         await ben.ctrl.einrichten();
@@ -435,7 +435,8 @@ Future<void> main() async {
         expect(utf8.decode((await a.speicher.lesen('e2ee.vertrauen.$_anna'))!), contains(_ben));
         srv.entferne(_ben);
         await a.ctrl.laden();
-        expect(utf8.decode((await a.speicher.lesen('e2ee.vertrauen.$_anna'))!), isNot(contains(_ben)));
+        expect(utf8.decode((await a.speicher.lesen('e2ee.vertrauen.$_anna'))!), contains(_ben), reason: 'nicht gelöscht, nur als entfernt markiert');
+        expect((await a.ctrl.absenderSchluessel(_ben, 1)).version, 1, reason: 'alte Signaturen des entfernten Mitglieds bleiben prüfbar');
       });
 
       test('Sicherheitscode nur aus aktiven Mitgliedern (wartende zählen nicht)', () async {
@@ -466,9 +467,9 @@ Future<void> main() async {
         final v2 = await a.ctrl.absenderSchluessel(_ben, 2);
         expect(v2.version, 2);
         final v1Historie = await a.ctrl.absenderSchluessel(_ben, 1);
-        expect(v1Historie.gleichWie(v1), isTrue, reason: 'Version 1 kommt jetzt aus der Historie des Servers');
+        expect(v1Historie.gleichWie(v1), isTrue, reason: 'Version 1 kommt aus der vom Gerät gemerkten Historie');
         await expectLater(a.ctrl.absenderSchluessel(_ben, 9), throwsA(isA<CryptoFehler>()), reason: 'neuer als der gemerkte Schlüssel');
-        await expectLater(a.ctrl.absenderSchluessel(_cora, 1), throwsA(isA<ApiException>()), reason: 'Version unbekannt: 404 vom Server');
+        await expectLater(a.ctrl.absenderSchluessel(_cora, 1), throwsA(isA<CryptoFehler>()), reason: 'nie bestätigt: kein Nachladen vom Server');
       });
 
       test('Wiper: ein Fehler des Datenbank-Wipers verhindert nie das Löschen des Schlüssels; der erste Fehler wird danach geworfen', () async {

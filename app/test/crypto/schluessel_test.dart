@@ -144,9 +144,26 @@ Future<void> main() async {
       await pruefer().akzeptieren('anna', w3.aktuell);
       expect(await pruefer().pruefen({'anna': _key(3, version: 3)}), isEmpty);
       expect((await pruefer().gemerkterSchluessel('anna', version: 1))!.version, 1);
-      // Person verlässt die Familie: alles vergessen, auch die Historie
+      // Person verschwindet aus der Familie: der Eintrag bleibt als "entfernt" erhalten (alte Signaturen und Wraps bleiben prüfbar)
+      expect(await pruefer().pruefen({}), isEmpty);
+      expect((await pruefer().gemerkterSchluessel('anna', version: 1))!.version, 1);
+      expect((await pruefer().gemerkterSchluessel('anna'))!.version, 3);
+      // taucht sie mit demselben Schlüssel wieder auf, gibt es keine Warnung; mit einem anderen die normale Warnung
+      expect(await pruefer().pruefen({'anna': _key(3, version: 3)}), isEmpty);
       await pruefer().pruefen({});
-      expect(await pruefer().gemerkterSchluessel('anna', version: 1), isNull);
+      final w = await pruefer().pruefen({'anna': _key(9, version: 4)});
+      expect(w, hasLength(1));
+      expect(w.single.rueckfall, isFalse);
+    });
+
+    test('Schlüsselversion sinkt nie: ein Rückfall auf eine ältere Version wird als Rückfall gewarnt und lässt sich nicht akzeptieren', () async {
+      await pruefer().pruefen({'anna': _key(1)});
+      final w2 = (await pruefer().pruefen({'anna': _key(2, version: 2)})).single;
+      await pruefer().akzeptieren('anna', w2.aktuell);
+      final w = (await pruefer().pruefen({'anna': _key(1)})).single;
+      expect(w.rueckfall, isTrue);
+      await expectLater(pruefer().akzeptieren('anna', w.aktuell), throwsA(isA<CryptoFehler>()));
+      expect((await pruefer().gemerkterSchluessel('anna'))!.version, 2);
     });
 
     test('verschwundener Schlüssel warnt ebenfalls; Bestätigung vergisst den alten', () async {

@@ -55,8 +55,8 @@ Future<void> main() async {
             verteilerSignGeheim: (von ?? anna).signGeheim,
           );
 
-      MitgliederListe liste({int epoch = 5, List<MitgliedEintrag>? m}) =>
-          MitgliederListe.erstellen(conversationId: _conv, epoch: epoch, mitglieder: m ?? [const MitgliedEintrag(_ben, benV), const MitgliedEintrag(_anna, annaV)]);
+      MitgliederListe liste({int epoch = 5, List<MitgliedEintrag>? m, Uint8List? key}) =>
+          MitgliederListe.erstellen(conversationId: _conv, epoch: epoch, mitglieder: m ?? [const MitgliedEintrag(_ben, benV), const MitgliedEintrag(_anna, annaV)], schluesselCommitment: schluesselCommitmentBerechnen(crypto, epochenschluessel: key ?? epochenKey, conversationId: _conv, epoch: epoch));
 
       SignierteMitgliederListe signiert({MitgliederListe? l, Personenschluessel? von, int vonV = annaV, String vonId = _anna}) => EpochenVerteiler.listeSignieren(
         crypto,
@@ -83,6 +83,20 @@ Future<void> main() async {
       test('Roundtrip: Empfänger bekommt den Epochenschlüssel', () {
         expect(uebernehmen(), epochenKey);
         expect(uebernehmen(erwartet: [const MitgliedEintrag(_anna, annaV), const MitgliedEintrag(_ben, benV)]), epochenKey);
+      });
+
+      test('Schlüssel-Commitment: ein anderer Schlüssel als in der signierten Liste wird verworfen (Split-Verteilung)', () {
+        // Der Verteiler verpackt für Ben einen anderen Schlüssel, als er in die signierte Liste eingetragen hat
+        final anderer = crypto.zufall(32);
+        final listeMitAnderem = signiert(l: liste(key: anderer));
+        expect(_art(() => uebernehmen(l: listeMitAnderem)), CryptoFehlerArt.signatur);
+        expect(uebernehmen(l: signiert(l: liste(key: epochenKey))), epochenKey);
+        // Das Commitment ist Teil der Signatur: nachträglich ausgetauscht, hält die Signatur nicht mehr
+        final ok = signiert();
+        final bytes = Uint8List.fromList(base64urlDekodieren(ok.kodieren()));
+        final tauschen = SignierteMitgliederListe(liste: liste(key: anderer), verteilerId: ok.verteilerId, verteilerKeyVersion: ok.verteilerKeyVersion, signatur: ok.signatur);
+        expect(bytes, isNotEmpty);
+        expect(_art(() => uebernehmen(l: tauschen)), CryptoFehlerArt.signatur);
       });
 
       test('Transportform: kodieren und dekodieren ergibt dasselbe, Beschädigungen werden abgelehnt', () {

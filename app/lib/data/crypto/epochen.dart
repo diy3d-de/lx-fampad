@@ -77,16 +77,22 @@ class MitgliederListe {
   final int epoch;
   final List<MitgliedEintrag> mitglieder;
 
-  MitgliederListe._(this.conversationId, this.epoch, this.mitglieder);
+  /// Verpflichtung auf den Epochenschlüssel (BLAKE2b über Domäne, Konversation, Epoche und Schlüssel, 32 Byte), vom Verteiler mitsigniert: jedes Mitglied
+  /// prüft nach dem Öffnen seines Wraps, dass der Schlüssel dazu passt. So kann ein Verteiler nicht verschiedenen Mitgliedern verschiedene Schlüssel für
+  /// dieselbe Epoche geben (Split-Verteilung); der Server kann nichts austauschen.
+  final Uint8List schluesselCommitment;
 
-  factory MitgliederListe.erstellen({required String conversationId, required int epoch, required Iterable<MitgliedEintrag> mitglieder}) {
+  MitgliederListe._(this.conversationId, this.epoch, this.mitglieder, this.schluesselCommitment);
+
+  factory MitgliederListe.erstellen({required String conversationId, required int epoch, required Iterable<MitgliedEintrag> mitglieder, required Uint8List schluesselCommitment}) {
+    if (schluesselCommitment.length != 32) throw _format();
     final sortiert = [...mitglieder]..sort((a, b) => a.userId.compareTo(b.userId));
     for (var i = 0; i < sortiert.length; i++) {
       if (sortiert[i].userId.isEmpty || sortiert[i].keyVersion < 1) throw _format();
       if (i > 0 && sortiert[i].userId == sortiert[i - 1].userId) throw const CryptoFehler(CryptoFehlerArt.format, 'Eine Person steht doppelt in der Mitgliederliste.');
     }
     if (conversationId.isEmpty || epoch < 0 || epoch > 0xFFFFFFFF) throw _format();
-    return MitgliederListe._(conversationId, epoch, List.unmodifiable(sortiert));
+    return MitgliederListe._(conversationId, epoch, List.unmodifiable(sortiert), Uint8List.fromList(schluesselCommitment));
   }
 
   int? versionVon(String userId) {
@@ -99,8 +105,13 @@ class MitgliederListe {
   Uint8List get _nutzlast => verketten([
     u32Bytes(mitglieder.length),
     for (final m in mitglieder) ...[gerahmt(utf8Bytes(m.userId)), u32Bytes(m.keyVersion)],
+    gerahmt(schluesselCommitment),
   ]);
 }
+
+/// Verpflichtung auf einen Epochenschlüssel (siehe [MitgliederListe.schluesselCommitment]).
+Uint8List schluesselCommitmentBerechnen(CryptoProvider crypto, {required Uint8List epochenschluessel, required String conversationId, required int epoch}) =>
+    crypto.hash(verketten([utf8Bytes(kDomaeneSchluesselCommitment), gerahmt(utf8Bytes(conversationId)), u32Bytes(epoch), epochenschluessel]));
 
 Uint8List _listeSignaturEingabe(MitgliederListe l, String verteilerId, int verteilerVersion) => signaturEingabe(kDomaeneMitglieder, [
   utf8Bytes(l.conversationId),
@@ -126,6 +137,7 @@ class SignierteMitgliederListe {
     u32Bytes(verteilerKeyVersion),
     u32Bytes(liste.mitglieder.length),
     for (final m in liste.mitglieder) ...[gerahmt(utf8Bytes(m.userId)), u32Bytes(m.keyVersion)],
+    gerahmt(liste.schluesselCommitment),
     gerahmt(signatur),
   ]));
 
@@ -143,9 +155,10 @@ class SignierteMitgliederListe {
     for (var i = 0; i < n; i++) {
       eintraege.add(MitgliedEintrag(l.text(), l.u32()));
     }
+    final commitment = Uint8List.fromList(l.feld());
     final sig = l.feld();
     l.ende();
-    final liste = MitgliederListe.erstellen(conversationId: conv, epoch: epoch, mitglieder: eintraege);
+    final liste = MitgliederListe.erstellen(conversationId: conv, epoch: epoch, mitglieder: eintraege, schluesselCommitment: commitment);
     // kanonische Reihenfolge erzwingen: sonst wären zwei Kodierungen derselben Liste gültig
     for (var i = 0; i < eintraege.length; i++) {
       if (eintraege[i].userId != liste.mitglieder[i].userId) throw _format();
@@ -293,7 +306,7 @@ class EpochenEmpfaenger {
     if (!crypto.signaturPruefen(_listeSignaturEingabe(l, signiert.verteilerId, signiert.verteilerKeyVersion), signiert.signatur, verteiler.sign)) throw _signatur();
     if (l.versionVon(ichId) != meineKeyVersion) throw const CryptoFehler(CryptoFehlerArt.format, 'Du stehst nicht (mit deinem Schlüssel) in der Mitgliederliste.');
     if (erwarteteMitglieder != null) {
-      final erwartet = MitgliederListe.erstellen(conversationId: erwarteteConversationId, epoch: erwarteteEpoche, mitglieder: erwarteteMitglieder);
+      final erwartet = MitgliederListe.erstellen(conversationId: erwarteteConversationId, epoch: erwarteteEpoche, mitglieder: erwarteteMitglieder, schluesselCommitment: l.schluesselCommitment);
       if (erwartet.mitglieder.length != l.mitglieder.length) throw const CryptoFehler(CryptoFehlerArt.format, 'Die Mitgliederliste weicht von der erwarteten ab.');
       for (var i = 0; i < l.mitglieder.length; i++) {
         if (erwartet.mitglieder[i].userId != l.mitglieder[i].userId || erwartet.mitglieder[i].keyVersion != l.mitglieder[i].keyVersion) {
@@ -352,7 +365,7 @@ class EpochenEmpfaenger {
       meineKeyVersion: meineKeyVersion,
       erwarteteMitglieder: erwarteteMitglieder,
     );
-    return wrapOeffnen(
+    final schluessel = wrapOeffnen(
       crypto,
       wrap: wrap,
       erwarteteConversationId: erwarteteConversationId,
@@ -362,6 +375,24 @@ class EpochenEmpfaenger {
       meineKeyVersion: meineKeyVersion,
       verteiler: verteiler,
     );
+    commitmentPruefen(crypto, schluessel: schluessel, liste: liste.liste);
+    return schluessel;
+  }
+
+  /// Die Liste einer älteren Epoche, nur wenn ihre Signatur vom Verteiler stimmt (sonst null: dann gibt es keine Verpflichtung, gegen die geprüft werden kann).
+  static MitgliederListe? alteListeGeprueft(CryptoProvider crypto, {required SignierteMitgliederListe signiert, required OeffentlicheSchluessel verteiler}) {
+    if (verteiler.version != signiert.verteilerKeyVersion) return null;
+    final eingabe = _listeSignaturEingabe(signiert.liste, signiert.verteilerId, signiert.verteilerKeyVersion);
+    return crypto.signaturPruefen(eingabe, signiert.signatur, verteiler.sign) ? signiert.liste : null;
+  }
+
+  /// Der geöffnete Schlüssel muss zur signierten Verpflichtung der Mitgliederliste passen; sonst wird er verworfen (Split-Verteilung oder untergeschobene Liste).
+  static void commitmentPruefen(CryptoProvider crypto, {required Uint8List schluessel, required MitgliederListe liste}) {
+    final erwartet = schluesselCommitmentBerechnen(crypto, epochenschluessel: schluessel, conversationId: liste.conversationId, epoch: liste.epoch);
+    if (!gleicheBytes(erwartet, liste.schluesselCommitment)) {
+      loescheBytes(schluessel);
+      throw const CryptoFehler(CryptoFehlerArt.signatur, 'Der Schlüssel passt nicht zur signierten Mitgliederliste.');
+    }
   }
 
   /// Übernimmt den Schlüssel einer ÄLTEREN Epoche, die ein Mitglied beim Aufnehmen mit dem Verlauf geteilt hat ("Verlauf teilen"). Die ältere Epoche hat
@@ -381,6 +412,8 @@ class EpochenEmpfaenger {
     required Personenschluessel meinSchluessel,
     required int meineKeyVersion,
     required OeffentlicheSchluessel wrapVerteiler,
+    /// Die (bereits auf ihre Signatur geprüfte) Liste der älteren Epoche, falls bekannt: dann muss der Schlüssel zu ihrer Verpflichtung passen.
+    MitgliederListe? alteListe,
   }) {
     if (erwarteteEpoche >= aktuelleEpoche) throw const CryptoFehler(CryptoFehlerArt.format, 'Das ist keine ältere Epoche.');
     listePruefen(
@@ -395,7 +428,7 @@ class EpochenEmpfaenger {
     if (aktuelleListe.liste.versionVon(wrap.verteilerId) != wrap.verteilerKeyVersion) {
       throw const CryptoFehler(CryptoFehlerArt.signatur, 'Der Schlüssel des Verlaufs stammt nicht von einem aktuellen Mitglied.');
     }
-    return wrapOeffnen(
+    final schluessel = wrapOeffnen(
       crypto,
       wrap: wrap,
       erwarteteConversationId: erwarteteConversationId,
@@ -405,6 +438,8 @@ class EpochenEmpfaenger {
       meineKeyVersion: meineKeyVersion,
       verteiler: wrapVerteiler,
     );
+    if (alteListe != null) commitmentPruefen(crypto, schluessel: schluessel, liste: alteListe);
+    return schluessel;
   }
 
   /// Wie [uebernehmen], aber der Verteiler-Schlüssel kommt aus dem TOFU-Speicher (nie vom Server): unbekannte Verteiler werden abgelehnt.

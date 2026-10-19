@@ -60,7 +60,8 @@ Future<void> main() async {
         sender: sender ?? pub(absender),
       );
 
-      HuellenKontext mit({String? conv, String? msg, String? sender, int? epoch, int? version}) => HuellenKontext(
+      HuellenKontext mit({String? conv, String? msg, String? sender, int? epoch, int? version, String? antwort}) => HuellenKontext(
+        antwortAuf: antwort,
         conversationId: conv ?? _kontext.conversationId,
         messageId: msg ?? _kontext.messageId,
         senderId: sender ?? _kontext.senderId,
@@ -207,11 +208,22 @@ Future<void> main() async {
         expect(_art(() => versiegeln(kontext: mit(epoch: -1))), CryptoFehlerArt.format);
       });
 
-      test('AAD-Aufbau: conversation_id|message_id|sender_id|epoch|sender_key_version|v', () {
+      test('AAD-Aufbau: conversation_id|message_id|sender_id|epoch|sender_key_version|reply_to|v', () {
         expect(
           String.fromCharCodes(_kontext.aad(1)),
-          'c0000000-0000-4000-8000-000000000001|m0000000-0000-4000-8000-000000000002|u0000000-0000-4000-8000-000000000003|7|2|1',
+          'c0000000-0000-4000-8000-000000000001|m0000000-0000-4000-8000-000000000002|u0000000-0000-4000-8000-000000000003|7|2||1',
         );
+        expect(String.fromCharCodes(mit(antwort: 'q0000000-0000-4000-8000-000000000009').aad(1)), endsWith('|7|2|q0000000-0000-4000-8000-000000000009|1'));
+      });
+
+      test('Antwort-Bezug ist an Chiffretext und Signatur gebunden: der Server kann ihn nicht umhängen, weglassen oder erfinden', () {
+        final h = versiegeln(kontext: mit(antwort: 'q0000000-0000-4000-8000-000000000009'));
+        expect(oeffnen(h, kontext: mit(antwort: 'q0000000-0000-4000-8000-000000000009')), isNotEmpty);
+        for (final falsch in [null, 'q0000000-0000-4000-8000-00000000000a']) {
+          expect(_art(() => oeffnen(h, kontext: mit(antwort: falsch))), CryptoFehlerArt.signatur);
+        }
+        expect(_art(() => oeffnen(versiegeln(), kontext: mit(antwort: 'q0000000-0000-4000-8000-000000000009'))), CryptoFehlerArt.signatur);
+        expect(_art(() => versiegeln(kontext: mit(antwort: 'a|b'))), CryptoFehlerArt.format);
       });
     });
   }
