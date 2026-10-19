@@ -308,6 +308,19 @@ Future<void> main() async {
         expect(a.s.warnungen, isEmpty, reason: 'Schlüssel werden wieder beim ersten Sehen gemerkt');
       });
 
+      test('beschädigter Stand der Chat-Mitglieder (Gesamtblob oder ein Eintrag): gemeldet, Zurücksetzen löscht ihn mit', () async {
+        final a = await geraet(_anna, 'Anna');
+        await a.ctrl.einrichten();
+        for (final kaputt in ['{kaputt', '{"chat1":{"e":{"1":"h"},"b":{"x":"nicht-int"}}}', '{"chat1":{"e":[1],"b":{}}}']) {
+          await a.speicher.schreiben('e2ee.akzeptiert.$_anna', Uint8List.fromList(utf8.encode(kaputt)));
+          await a.ctrl.laden();
+          expect(a.s.vertrauenDefekt, isTrue, reason: kaputt);
+          await a.ctrl.vertrauenZuruecksetzen();
+          expect(a.s.vertrauenDefekt, isFalse);
+          expect(await a.speicher.lesen('e2ee.akzeptiert.$_anna'), isNull, reason: 'der Stand wird mit zurückgesetzt');
+        }
+      });
+
       test('libsodium nicht verfügbar: Status "nicht verfügbar" mit Meldung statt Absturz', () async {
         final a = await geraet(_anna, 'Anna', ohneSodium: true);
         expect(a.s.status, E2eeStatus.nichtVerfuegbar);

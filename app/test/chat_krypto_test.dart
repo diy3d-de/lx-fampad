@@ -301,11 +301,65 @@ Future<void> main() async {
         b.mitgliederLernen(alle);
         await b.krypto.aktualisieren();
         expect(b.krypto.schluessel(id, 2), isNull, reason: 'ohne den festgehaltenen Stand wäre Epoche 2 die erste und damit die Basis');
+        // ohne akzeptierte Epoche in diesem Lauf gilt der festgehaltene Stand: keine Blockade, sondern die Aufnahme-Abfrage
+        expect((await b.krypto.sendeEpoche(id)).wartet, isTrue);
+        final konvB = await (b.db.select(b.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        final planB = await b.krypto.rotationNoetig(konversation: konvB, teilnehmer: {anna.id, ben.id, dora.id});
+        expect(planB!.neu, {dora.id}, reason: 'Vergleich gegen die festgehaltene Liste, nicht gegen die Liste der zurückgestellten Epoche');
         // ohne festgehaltenen Stand (neues Gerät) gilt die erste lesbare Epoche als Basis (Grenze, in der Projektbeschreibung dokumentiert)
         final b2 = neuesGeraet(ben, name: 'Ben-Neu');
         await b.db.customStatement('SELECT 1');
         await abgleich([b2]);
         expect(b2.krypto.schluessel(id, 1), isNotNull);
+      });
+
+      test('beschädigter Stand eines Chats: dieser Chat wird übersprungen und gemeldet, andere Chats laufen weiter', () async {
+        final g1 = await gruppe(a, [b]);
+        final g2 = await gruppe(a, [b]);
+        await senden(a, g1, 'eins', abgleichen: [a, b]);
+        b.standDefekt.add(g1);
+        final b2 = neuesGeraet(ben, name: 'Ben-Neu');
+        b2.standDefekt.add(g1);
+        await abgleich([b2]);
+        expect(b2.krypto.standDefekt, isTrue);
+        expect(b2.krypto.schluessel(g2, 1), isNotNull, reason: 'der andere Chat ist unabhängig');
+        expect(b2.krypto.schluessel(g1, 1), isNull, reason: 'nie ohne Stand neu aufbauen');
+        // nach dem Zurücksetzen wird alles neu aufgebaut
+        b2.standDefekt.clear();
+        b2.krypto.standVergessen();
+        await abgleich([b2]);
+        expect(b2.krypto.standDefekt, isFalse);
+        expect(b2.krypto.schluessel(g1, 1), isNotNull);
+      });
+
+      test('Hash der akzeptierten Liste: ändert sich die Liste einer schon akzeptierten Epoche, gilt sie nicht mehr als akzeptiert', () async {
+        final id = await gruppe(a, [b]);
+        await senden(a, id, 'vorher', abgleichen: [a, b]);
+        final echt = b.stand[id]!;
+        expect(echt.epochen[1], isNotNull);
+        // festgehaltene Liste ohne Anna (die Epoche 1 nennt sie also als "neu"): mit passendem Hash gilt Epoche 1 als früher akzeptiert, mit falschem nicht
+        b.stand[id] = AkzeptierterStand({1: echt.epochen[1]!}, {ben.id: b.person.version});
+        b.neuStarten();
+        b.mitgliederLernen(alle);
+        await b.krypto.aktualisieren();
+        expect(b.krypto.schluessel(id, 1), isNotNull);
+        b.stand[id] = AkzeptierterStand({1: 'anderer-hash'}, {ben.id: b.person.version});
+        b.neuStarten();
+        b.mitgliederLernen(alle);
+        await b.krypto.aktualisieren();
+        expect(b.krypto.schluessel(id, 1), isNull, reason: 'Hash passt nicht: die Prüfung gegen die festgehaltene Liste greift');
+      });
+
+      test('vertrauenGeaendert verwirft zurückgestellte Epochen und öffnet sie neu', () async {
+        final id = await gruppe(a, [b]);
+        await senden(a, id, 'vorher', abgleichen: [a, b]);
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, ben.id, dora.id}));
+        await abgleich([a, b]);
+        expect(b.krypto.schluessel(id, 2), isNull);
+        b.krypto.vertrauenGeaendert();
+        await b.krypto.aktualisieren();
+        expect(b.krypto.schluessel(id, 2), isNull, reason: 'weiter zurückgestellt, aber neu bewertet');
+        expect(b.krypto.problem(id, 2), isNotNull);
       });
 
       test('Heilung auch, wenn die höchste Epoche mich gar nicht nennt; die Wiederaufnahme der Entfernten braucht ihre Bestätigung', () async {

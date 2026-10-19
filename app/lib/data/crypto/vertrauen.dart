@@ -192,14 +192,16 @@ class VertrauensPruefer {
   }
 
   /// Dauerhaft festgehaltener Stand eines Chats: akzeptierte Epochen und zuletzt akzeptierte Mitgliederliste (null: noch keiner). Beschädigt: [VertrauensAblageDefekt].
-  Future<({Set<int> epochen, Map<String, int> liste})?> standLaden(String konversationId) async {
-    final v = (await _standAlle())[konversationId];
+  Future<({Map<int, String> epochen, Map<String, int> liste})?> standLaden(String konversationId) async => _standEintrag((await _standAlle())[konversationId]);
+
+  static ({Map<int, String> epochen, Map<String, int> liste})? _standEintrag(Object? v) {
     if (v == null) return null;
-    if (v is Map && v['e'] is List && v['b'] is Map) {
-      final e = <int>{};
-      for (final x in v['e'] as List) {
-        if (x is! int) throw const VertrauensAblageDefekt();
-        e.add(x);
+    if (v is Map && v['e'] is Map && v['b'] is Map) {
+      final e = <int, String>{};
+      for (final x in (v['e'] as Map).entries) {
+        final k = x.key is String ? int.tryParse(x.key as String) : null;
+        if (k == null || x.value is! String) throw const VertrauensAblageDefekt();
+        e[k] = x.value as String;
       }
       final b = <String, int>{};
       for (final x in (v['b'] as Map).entries) {
@@ -211,9 +213,16 @@ class VertrauensPruefer {
     throw const VertrauensAblageDefekt();
   }
 
-  Future<void> standSpeichern(String konversationId, Set<int> epochen, Map<String, int> liste) async {
+  /// Prüft die ganze Ablage des akzeptierten Stands (jeden Chat); beschädigt: [VertrauensAblageDefekt].
+  Future<void> standPruefen() async {
+    for (final v in (await _standAlle()).values) {
+      _standEintrag(v);
+    }
+  }
+
+  Future<void> standSpeichern(String konversationId, Map<int, String> epochen, Map<String, int> liste) async {
     final alle = await _standAlle();
-    alle[konversationId] = {'e': (epochen.toList()..sort()), 'b': liste};
+    alle[konversationId] = {'e': {for (final k in epochen.keys.toList()..sort()) '$k': epochen[k]}, 'b': liste};
     await speicher.schreiben(_standName, utf8Bytes(jsonEncode(alle)));
   }
 

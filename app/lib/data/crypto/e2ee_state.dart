@@ -232,6 +232,7 @@ class E2eeController extends Notifier<E2eeState> {
       if (server != null) await _versionMerken(uid, server.version);
       final pruefer = VertrauensPruefer(_speicher, eigeneUserId: uid);
       final warnungen = await pruefer.pruefen({for (final m in mitglieder) m.id: m.schluessel});
+      await pruefer.standPruefen(); // ein beschädigter Stand der Chat-Mitglieder wird wie eine beschädigte Merkliste gemeldet
       final status = switch ((server, _lokal)) {
         (null, _) => E2eeStatus.keinSchluessel,
         (_, null) => E2eeStatus.geraetNichtVerbunden,

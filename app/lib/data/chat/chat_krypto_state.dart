@@ -306,6 +306,7 @@ class ChatKryptoController extends Notifier<int> {
     ref.watch(authProvider.select((s) => s.user?.id));
     ref.listen(e2eeProvider, (alt, neu) {
       if (alt?.status != neu.status || !identical(alt?.mitglieder, neu.mitglieder) || !identical(alt?.warnungen, neu.warnungen)) {
+        if (alt?.vertrauenDefekt == true && !neu.vertrauenDefekt) _krypto?.standVergessen();
         _krypto?.vertrauenGeaendert();
         // was bisher nicht lesbar war, wird mit dem neuen Stand des Vertrauens (bestätigte Warnung, neue Mitglieder) erneut versucht
         _inhalt?.fehlschlaegeVergessen();
@@ -461,6 +462,7 @@ class ChatKryptoController extends Notifier<int> {
           continue;
         }
         final geaendert = await k.aktualisieren();
+        if (k.standDefekt && !ref.read(e2eeProvider).vertrauenDefekt) unawaited(ref.read(e2eeProvider.notifier).laden());
         if (geaendert) {
           _inhalt?.fehlschlaegeVergessen();
           _anstossen();

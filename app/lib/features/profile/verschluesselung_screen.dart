@@ -105,7 +105,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     final ja = await _bestaetigen(
       'Vertrauen zurücksetzen?',
       'Dieses Gerät vergisst dann alle gemerkten Schlüssel der Familie und den Stand der Chat-Mitglieder. Danach gilt jeder Schlüssel, den der Server nennt, wieder als "beim ersten Sehen" '
-      'vertrauenswürdig: Ein falsch untergeschobener Schlüssel würde nicht auffallen. Vergleiche danach die Sicherheitscodes mit den Personen. Verschlüsselte Chats bleiben lesbar.',
+      'vertrauenswürdig: Ein falsch untergeschobener Schlüssel würde nicht auffallen. In Chats gilt die erste lesbare Epoche als Basis, und bewusst entfernte Personen könnten '
+      'ohne Rückfrage zurückkommen. Vergleiche danach die Sicherheitscodes und die Mitglieder deiner Chats mit den Personen. Verschlüsselte Chats bleiben lesbar.',
       'Vertrauen zurücksetzen',
     );
     if (!ja || !mounted) return;

@@ -14,6 +14,7 @@ import 'package:lx_fampad/data/chat/nachrichten_inhalt.dart';
 import 'package:lx_fampad/data/crypto/crypto_fehler.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
+import 'package:lx_fampad/data/crypto/vertrauen.dart' show VertrauensAblageDefekt;
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
 
@@ -64,6 +65,9 @@ class Geraet {
 
   /// Dauerhaft festgehaltener Stand der akzeptierten Chat-Mitglieder (überlebt [neuStarten], wie der Vertrauensspeicher).
   final Map<String, AkzeptierterStand> stand = {};
+
+  /// Konversationen, deren festgehaltener Stand "beschädigt" ist (Laden wirft [VertrauensAblageDefekt]).
+  final Set<String> standDefekt = {};
 
   static Geraet neu(ChatWelt welt, TestPerson person, {String? name, String? opPraefix, String Function()? neueId, void Function()? beiAenderung}) {
     final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
@@ -117,7 +121,10 @@ class Geraet {
         throw const CryptoFehler(CryptoFehlerArt.signatur, 'Absender nicht bestätigt');
       },
       jetzt: () => jetzt,
-      standLaden: (c) async => stand[c],
+      standLaden: (c) async {
+        if (standDefekt.contains(c)) throw const VertrauensAblageDefekt();
+        return stand[c];
+      },
       standSpeichern: (c, s) async => stand[c] = s,
     );
   }

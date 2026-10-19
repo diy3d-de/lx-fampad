@@ -23,6 +23,7 @@ import '../crypto/crypto_provider.dart';
 import '../crypto/epochen.dart';
 import '../crypto/huelle.dart';
 import '../crypto/schluessel.dart';
+import '../crypto/vertrauen.dart' show VertrauensAblageDefekt;
 import '../sync/sync_store.dart';
 import 'chat_ids.dart';
 import 'nachrichten_inhalt.dart';
@@ -98,9 +99,10 @@ class _Zurueck {
 }
 
 /// Was dieses Gerät je Konversation als akzeptiert festgehalten hat (dauerhaft, am Vertrauensspeicher verankert, siehe VertrauensPruefer.standLaden):
-/// die akzeptierten Epochen (die höchsten, begrenzt auf [kMaxMerkEpochen]) und die zuletzt akzeptierte Mitgliederliste.
+/// die akzeptierten Epochen (die höchsten, begrenzt auf [kMaxMerkEpochen]) mit dem SHA-256 ihrer signierten Mitgliederliste (ändert der Server die Liste einer schon
+/// akzeptierten Epoche, gilt sie nicht mehr als akzeptiert) und die zuletzt akzeptierte Mitgliederliste.
 class AkzeptierterStand {
-  final Set<int> epochen;
+  final Map<int, String> epochen;
   final Map<String, int> liste;
   const AkzeptierterStand(this.epochen, this.liste);
 }
@@ -205,6 +207,9 @@ class ChatKrypto {
     _vertrauensStempel++;
     _vertrauen.clear();
     _verteiler.clear();
+    // zurückgestellte Epochen werden mit dem neuen Stand des Vertrauens neu geöffnet (Schlüssel vorher überschreiben)
+    _verwerfenGehalten();
+    _zurueckgestellt.clear();
   }
 
   final Map<String, OeffentlicheSchluessel?> _verteiler = {};
@@ -285,11 +290,18 @@ class ChatKrypto {
       final conv = eintrag.key;
       // aufsteigend: die zuletzt akzeptierte Mitgliederliste wächst von Epoche zu Epoche
       final liste = [...eintrag.value]..sort((a, b) => a.epoche.compareTo(b.epoche));
-      final stand0 = await _standLaden(conv);
-      final vorab = stand0?.epochen ?? const <int>{};
-      final vorabMin = vorab.isEmpty ? null : vorab.reduce((a, b) => a < b ? a : b);
+      final AkzeptierterStand? stand0;
+      try {
+        stand0 = await _standLaden(conv);
+      } on VertrauensAblageDefekt {
+        // der festgehaltene Stand dieses Chats ist beschädigt: dieser Chat bleibt, wie er ist (nie ohne Stand neu aufbauen), die anderen laufen weiter
+        _standDefekt = true;
+        continue;
+      }
+      final vorab = stand0?.epochen ?? const <int, String>{};
+      final vorabMin = vorab.isEmpty ? null : vorab.keys.reduce((a, b) => a < b ? a : b);
       Map<String, int>? basis;
-      final angenommen = <int>{};
+      final angenommen = <int, String>{};
       final zurueck = <_Zurueck>[];
       final ring = _ringe.putIfAbsent(conv, _Ring.new);
       // 1. regulärer Weg: die Mitgliederliste der Epoche nennt die Person
@@ -299,7 +311,8 @@ class ChatKrypto {
       // Entscheidet über eine geöffnete Epoche (Signatur ist geprüft): angenommen (basis wird fortgeschrieben) oder zurückgestellt.
       void pruefeAnnahme(Epoche e, SignierteMitgliederListe signiert, _Zurueck? z0, Uint8List key, String marke, OeffentlicheSchluessel verteiler) {
         // schon früher von diesem Gerät akzeptiert (dauerhafter Stand), eigene Epoche, oder noch keine Basis (erste Epoche: Vertrauen beim ersten Sehen)
-        final frueherAkzeptiert = vorab.contains(e.epoche) || (vorabMin != null && e.epoche < vorabMin);
+        final hash = _listenHash(e);
+        final frueherAkzeptiert = vorab[e.epoche] == hash || (vorabMin != null && e.epoche < vorabMin);
         final b = basis ?? stand0?.liste;
         final extra = frueherAkzeptiert || b == null || signiert.verteilerId == ichId ? <String>{} : {for (final m in signiert.liste.mitglieder) m.userId}.difference(b.keys.toSet());
         if (extra.isNotEmpty) {
@@ -315,7 +328,7 @@ class ChatKrypto {
           return;
         }
         basis = _basisVon(signiert);
-        angenommen.add(e.epoche);
+        angenommen[e.epoche] = hash;
         ring.schluessel[e.epoche] = key;
         ring.stand[e.epoche] = marke;
         _probleme[conv]?.remove(e.epoche);
@@ -350,7 +363,7 @@ class ChatKrypto {
         }
         if (ring.schluessel.containsKey(e.epoche) && ring.stand[e.epoche] == marke) {
           basis = _basisVon(signiert); // war schon akzeptiert
-          angenommen.add(e.epoche);
+          angenommen[e.epoche] = _listenHash(e);
           final v = await _verteilerSchluessel(signiert.verteilerId, signiert.verteilerKeyVersion);
           if (v != null) regulaer[e.epoche] = (liste: signiert, verteiler: v);
           continue;
@@ -383,7 +396,7 @@ class ChatKrypto {
           ring.stand[z.epoche.epoche] = z.marke;
           _probleme[conv]?.remove(z.epoche.epoche);
           regulaer[z.epoche.epoche] = (liste: z.liste, verteiler: z.verteiler);
-          angenommen.add(z.epoche.epoche);
+          angenommen[z.epoche.epoche] = _listenHash(z.epoche);
           geaendert = true;
         } else {
           offen[z.epoche.epoche] = z.extra;
@@ -400,17 +413,27 @@ class ChatKrypto {
         _zurueckgestellt[conv] = offen;
       }
       if (endBasis == null) {
-        _akzeptiert.remove(conv);
+        // ohne akzeptierte Epoche in diesem Lauf gilt der festgehaltene Stand (sonst gäbe es keine Aufnahme-Abfrage und der Chat bliebe blockiert)
+        if (stand0 != null) {
+          _akzeptiert[conv] = Map.of(stand0.liste);
+        } else {
+          _akzeptiert.remove(conv);
+        }
       } else {
         _akzeptiert[conv] = endBasis;
         // dauerhaft festhalten (am Vertrauensspeicher verankert), wenn sich etwas geändert hat
         final alle = {...vorab, ...angenommen};
-        final sortiert = alle.toList()..sort();
-        final behalten = sortiert.length > kMaxMerkEpochen ? sortiert.sublist(sortiert.length - kMaxMerkEpochen).toSet() : alle;
+        final sortiert = alle.keys.toList()..sort();
+        final behalten = {for (final k in sortiert.length > kMaxMerkEpochen ? sortiert.sublist(sortiert.length - kMaxMerkEpochen) : sortiert) k: alle[k]!};
         final alt = stand0;
         final gleichListe = alt != null && alt.liste.length == endBasis.length && endBasis.entries.every((x) => alt.liste[x.key] == x.value);
-        if (alt == null || !gleichListe || behalten.length != alt.epochen.length || !behalten.containsAll(alt.epochen)) {
-          await _standSpeichern(conv, AkzeptierterStand(behalten, Map.of(endBasis)));
+        final gleicheEpochen = alt != null && behalten.length == alt.epochen.length && behalten.entries.every((x) => alt.epochen[x.key] == x.value);
+        if (alt == null || !gleichListe || !gleicheEpochen) {
+          try {
+            await _standSpeichern(conv, AkzeptierterStand(behalten, Map.of(endBasis)));
+          } on VertrauensAblageDefekt {
+            _standDefekt = true;
+          }
         }
       }
       // 2. Verlauf: ältere Epochen, die ein Mitglied beim Aufnehmen geteilt hat; Bürge ist die aktuelle, geprüfte Liste
@@ -450,6 +473,27 @@ class ChatKrypto {
     return geaendert;
   }
 
+  static String _listenHash(Epoche e) => c.sha256.convert(utf8.encode(e.mitglieder)).toString();
+
+  /// Der festgehaltene Stand (Vertrauensspeicher) war beim letzten Lauf beschädigt: der Controller meldet es der Oberfläche ("Vertrauen zurücksetzen").
+  bool get standDefekt => _standDefekt;
+  bool _standDefekt = false;
+
+  /// Der Stand wurde bewusst zurückgesetzt: alles Gemerkte im Arbeitsspeicher wird neu aufgebaut.
+  void standVergessen() {
+    _standDefekt = false;
+    _akzeptiert.clear();
+    _zurueckgestellt.clear();
+    _verwerfenGehalten();
+  }
+
+  void _verwerfenGehalten() {
+    for (final z in _gehalten.values) {
+      loescheBytes(z.key);
+    }
+    _gehalten.clear();
+  }
+
   static Map<String, int> _basisVon(SignierteMitgliederListe s) => {for (final m in s.liste.mitglieder) m.userId: m.keyVersion};
 
   String _marke(Epoche e, EpocheWrapZeile w) => c.sha256.convert(utf8.encode('${e.mitglieder}|${w.wrap}')).toString();
@@ -476,10 +520,7 @@ class ChatKrypto {
     for (final id in _ringe.keys.toList()) {
       _verwerfen(id);
     }
-    for (final z in _gehalten.values) {
-      loescheBytes(z.key);
-    }
-    _gehalten.clear();
+    _verwerfenGehalten();
     _zurueckgestellt.clear();
   }
 
