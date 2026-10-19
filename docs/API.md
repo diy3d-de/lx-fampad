@@ -138,6 +138,8 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `POST /auth/step-up/code` | alle | `{ totp }` oder `{ recoveryCode }` → `{ stepUpAt }` |
 | `GET /me` | alle | `{ user, familyId, session, csrfToken?, credentials: { passkeys, password, totp }, recoveryCodesRemaining }` |
 | `PATCH /me` | alle | `{ displayName?, colorIndex? (0–9) }` |
+| `PUT /me/avatar` | alle (nur die eigene Person) | Benutzerbild setzen. **Platzhalter:** `Content-Type: application/json`, `{ preset }` mit einer Kennung aus `V01 V08 V12 M01 M08 M13 K07 K08 K12 K13` (sonst `400`). **Foto:** Rohbytes mit `Content-Type: image/png`, `image/jpeg` oder `image/webp` (andere Typen, auch SVG: `415`). Der Server prüft die **Magic-Bytes** (muss zum Content-Type passen, sonst `400 invalid_image`) und liest die Maße aus dem Dateikopf (höchstens 1024 × 1024, sonst `400`); **Hartlimit 512 KB** nur für diese Route (`413`). Er dekodiert nichts: die App verkleinert auf ca. 512 × 512 und kodiert neu (entfernt EXIF/Standort). Strikt rate-limitiert (wie Anmeldung). → `{ avatar }` |
+| `DELETE /me/avatar` | alle | entfernt das eigene Bild (Initialen); die Version zählt hoch |
 | `GET /me/credentials` | alle | `{ credentials: [{ id, type, label, createdAt, lastUsedAt }] }` (nie Geheimnisse) |
 | `POST /me/passkeys/options` | alle, Step-up | neuer Passkey: `{ challengeId, options }` |
 | `POST /me/passkeys/verify` | alle, Step-up | `{ challengeId, response, label? }` → `{ id }` |
@@ -155,7 +157,9 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 
 | Methode, Pfad | Rolle | Beschreibung |
 | --- | --- | --- |
-| `GET /members` | alle | Antwort `{ members: [...] }`. Admins: alle Mitglieder (auch wartende) inkl. E-Mail; andere: nur aktive Mitglieder, **ohne E-Mail – außer der eigenen** |
+| `GET /members` | alle | Antwort `{ members: [...] }`. Admins: alle Mitglieder (auch wartende) inkl. E-Mail; andere: nur aktive Mitglieder, **ohne E-Mail – außer der eigenen**. Jedes Mitglied (und `user` in `GET /me`) trägt `avatar`: `null` (keines), `{ kind: "preset", id, version }` oder `{ kind: "photo", version }`; `version` zählt jede Änderung und ist der Cache-Schlüssel der Apps. Alte Apps ignorieren das Feld |
+| `GET /members/:id/avatar` | alle | Foto eines Mitglieds **derselben Familie** (fremde Familie, unbekannte Id, Platzhalter oder kein Foto: `404`). Bytes mit festem `Content-Type` (PNG/JPEG/WebP), `ETag` (`"a<version>"`) und `If-None-Match` → `304`, `Cache-Control: private, no-cache`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`. Platzhalter liefert der Server nicht (die Zeichnungen liegen in der App) |
+| `DELETE /members/:id/avatar` | admin | setzt das Bild eines Mitglieds der eigenen Familie zurück (Initialen) |
 | `PATCH /members/:id/role` | admin, Step-up | `{ role }`; **alle Sitzungen der Person werden widerrufen** (offene WebSockets schließen mit `4401`); bei **Herabstufung** werden ihre offenen Einladungen widerrufen; der letzte Admin kann nicht herabgestuft werden |
 | `POST /members/:id/approve` | admin | gibt ein wartendes Mitglied frei |
 | `POST /members/:id/reject` | admin | lehnt ein wartendes Mitglied ab: löscht die Mitgliedschaft; das Konto nur, wenn keine weitere Mitgliedschaft besteht |

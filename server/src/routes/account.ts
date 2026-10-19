@@ -19,6 +19,7 @@ import {
   startAddPasskey,
   updateProfile,
 } from '../auth/account.js';
+import { avatarMetaFor } from '../avatar/service.js';
 import { assertMayInvite, createInvite, effectiveRequireApproval, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
@@ -35,7 +36,10 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   const maxHours = ctx.config.auth.inviteMaxHours;
 
   // ----- Profil -----
-  app.get('/api/v1/me', async (req) => getMe(ctx, await auth.requireSession(req)));
+  app.get('/api/v1/me', async (req) => {
+    const me = await getMe(ctx, await auth.requireSession(req));
+    return { ...me, user: { ...me.user, avatar: (await avatarMetaFor(ctx, [me.user.id])).get(me.user.id) ?? null } };
+  });
 
   app.patch('/api/v1/me', async (req) => {
     const p = await auth.requireSession(req);
@@ -87,7 +91,11 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   app.post('/api/v1/me/recovery-codes', strikt, async (req) => ({ recoveryCodes: await regenerateRecoveryCodes(ctx, await auth.requireSession(req), meta(req)) }));
 
   // ----- Mitglieder -----
-  app.get('/api/v1/members', async (req) => ({ members: await listMembers(ctx, await auth.requireSession(req)) }));
+  app.get('/api/v1/members', async (req) => {
+    const members = await listMembers(ctx, await auth.requireSession(req));
+    const avatars = await avatarMetaFor(ctx, members.map((m) => m.id));
+    return { members: members.map((m) => ({ ...m, avatar: avatars.get(m.id) ?? null })) };
+  });
 
   app.patch('/api/v1/members/:id/role', async (req) => {
     const p = await auth.requireSession(req);

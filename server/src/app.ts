@@ -11,6 +11,7 @@ import { normalizeIp } from './net.js';
 import { AppError, registerErrorHandling } from './errors.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerAvatarRoutes } from './routes/avatar.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { Hub } from './ws/hub.js';
@@ -125,6 +126,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('authCore', authCore);
     registerAuthRoutes(app, config, authCore);
     registerAccountRoutes(app, config, authCore);
+    registerAvatarRoutes(app, config, authCore);
     registerSyncRoutes(app, config, authCore);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort

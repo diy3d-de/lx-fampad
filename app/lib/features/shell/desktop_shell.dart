@@ -12,6 +12,7 @@ import '../../widgets/sync_anzeige.dart';
 import '../profile/profile_screen.dart';
 import '../update/update_service.dart';
 import 'shell_tab.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Noch nicht gebaute Bereiche in der Seitenleiste (deaktiviert, mit "bald" markiert).
 const _kBaldBereiche = <(String, IconData)>[
@@ -239,7 +240,7 @@ class _ProfilKachel extends ConsumerWidget {
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             children: [
-              PersonAvatar(name: name, colorIndex: user?.colorIndex ?? 0, size: 32),
+              BenutzerAvatar(user: user, ersatzName: name, size: 32),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(

@@ -11,6 +11,7 @@ import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'calendar_state.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Karte eines Vorkommens: farbiger Balken (Personenfarbe des Erstellers), Titel, Zeit, Ort, Teilnehmer. Mindestens 56 px hoch.
 class VorkommenKarte extends StatelessWidget {
@@ -76,7 +77,7 @@ class VorkommenKarte extends StatelessWidget {
                               spacing: 4,
                               runSpacing: 4,
                               children: [
-                                for (final u in personen.take(4)) PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 22),
+                                for (final u in personen.take(4)) BenutzerAvatar(user: u, size: 22),
                                 if (personen.length > 4) Text('+${personen.length - 4}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                               ],
                             ),
@@ -272,7 +273,7 @@ Future<TerminAktion?> terminDetailBlatt(
                     for (final u in personen)
                       Row(
                         mainAxisSize: MainAxisSize.min,
-                        children: [PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 24), const SizedBox(width: 6), Text(u.displayName)],
+                        children: [BenutzerAvatar(user: u, size: 24), const SizedBox(width: 6), Text(u.displayName)],
                       ),
                   ],
                 ),

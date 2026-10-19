@@ -13,6 +13,7 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'einladung_neu.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 class AdminScreen extends ConsumerWidget {
   const AdminScreen({super.key});
@@ -259,7 +260,7 @@ class _MitgliedKarte extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
         child: Row(
           children: [
-            PersonAvatar(name: m.displayName, colorIndex: m.colorIndex),
+            BenutzerAvatar(user: m),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

@@ -21,7 +21,7 @@ final mitgliederProvider = FutureProvider.autoDispose<List<UserDto>>((ref) async
         if (u.status == MemberStatus.active) u,
     ];
     try {
-      await db.metaSchreiben(_kMitglieder, jsonEncode([for (final u in alle) {'id': u.id, 'displayName': u.displayName, 'colorIndex': u.colorIndex, 'role': u.role.wire, 'status': 'active'}]));
+      await db.metaSchreiben(_kMitglieder, jsonEncode([for (final u in alle) {'id': u.id, 'displayName': u.displayName, 'colorIndex': u.colorIndex, 'role': u.role.wire, 'status': 'active', if (u.avatar != null) 'avatar': u.avatar!.toJson()}]));
     } catch (_) {
       // Zwischenspeicher ist nur ein Komfort
     }

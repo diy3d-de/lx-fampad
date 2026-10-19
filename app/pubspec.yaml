@@ -66,6 +66,8 @@ flutter:
   # Zeitzonen-Daten (timezone 0.11.1, latest.tzf) für Terminserien, von der eigenen Domain (Prüfsumme in docs/VERSIONEN.md)
   assets:
     - assets/tz/latest.tzf
+    # Platzhalter-Benutzerbilder (transparente PNG, Quellen in tool/avatare/)
+    - assets/avatare/
 
   # Schriften werden mitgeliefert (SIL Open Font License, Lizenztexte liegen daneben) - kein Google-Fonts-Abruf.
   fonts:

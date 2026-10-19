@@ -90,6 +90,35 @@ enum MemberStatus {
   };
 }
 
+/// Benutzerbild einer Person (Teil von /me und /members): Platzhalter ([vorlage] gesetzt) oder Foto. [version] zählt jede Änderung.
+/// Alte Server liefern nichts (null); unbekannte Arten einer neueren Version werden zu null (Initialen), nie zu einem Fehler.
+class AvatarDto {
+  final bool istFoto;
+  final String? vorlage;
+  final int version;
+  const AvatarDto.vorlage(String id, this.version) : istFoto = false, vorlage = id;
+  const AvatarDto.foto(this.version) : istFoto = true, vorlage = null;
+
+  static AvatarDto? tolerant(Object? raw) {
+    if (raw is! Map) return null;
+    final art = raw['kind'];
+    final v = raw['version'];
+    final version = v is int ? v : 0;
+    if (art == 'photo') return AvatarDto.foto(version);
+    final id = raw['id'];
+    if (art == 'preset' && id is String && id.isNotEmpty) return AvatarDto.vorlage(id, version);
+    return null;
+  }
+
+  Json toJson() => istFoto ? {'kind': 'photo', 'version': version} : {'kind': 'preset', 'id': vorlage, 'version': version};
+
+  @override
+  bool operator ==(Object other) => other is AvatarDto && other.istFoto == istFoto && other.vorlage == vorlage && other.version == version;
+
+  @override
+  int get hashCode => Object.hash(istFoto, vorlage, version);
+}
+
 /// Person (Antwort von Anmeldung, /me und der Mitgliederliste; `email` fehlt in der Liste für Nicht-Admins).
 class UserDto {
   final String id;
@@ -98,6 +127,9 @@ class UserDto {
   final int colorIndex;
   final Role role;
   final MemberStatus status;
+
+  /// Benutzerbild (null = keines: Initialen).
+  final AvatarDto? avatar;
   const UserDto({
     required this.id,
     required this.email,
@@ -105,6 +137,7 @@ class UserDto {
     required this.colorIndex,
     required this.role,
     required this.status,
+    this.avatar,
   });
 
   factory UserDto.fromJson(Object? raw) {
@@ -116,6 +149,7 @@ class UserDto {
       colorIndex: _i(m, 'colorIndex'),
       role: Role.parse(_s(m, 'role')),
       status: MemberStatus.parse(_s(m, 'status')),
+      avatar: AvatarDto.tolerant(m['avatar']),
     );
   }
 
@@ -126,6 +160,7 @@ class UserDto {
     'colorIndex': colorIndex,
     'role': role.wire,
     'status': status.name,
+    if (avatar != null) 'avatar': avatar!.toJson(),
   };
 }
 

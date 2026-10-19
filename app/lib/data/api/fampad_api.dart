@@ -1,4 +1,6 @@
 // Endpunkte der Server-Schnittstelle (docs/API.md) als typisierte Methoden. Kein Zustand, keine UI.
+import 'dart:typed_data';
+
 import '../../constants.dart';
 import 'api_client.dart';
 import 'api_error.dart';
@@ -195,6 +197,31 @@ class FampadApi {
   // ----------------------------------------------------------- Mitglieder
 
   Future<List<UserDto>> mitglieder() async => parseListe((await client.get('/members'))['members'], UserDto.fromJson);
+
+  // ----------------------------------------------------------- Benutzerbild
+
+  /// Wählt einen Platzhalter (Kennung wie 'V01'); Antwort: das neue Bild.
+  Future<AvatarDto?> avatarVorlageSetzen(String id) async =>
+      AvatarDto.tolerant((await client.put('/me/avatar', {'preset': id}))['avatar']);
+
+  /// Lädt das (schon verkleinerte) Foto hoch; [mime] ist image/png, image/jpeg oder image/webp.
+  Future<AvatarDto?> avatarFotoHochladen(Uint8List bytes, String mime) async =>
+      AvatarDto.tolerant((await client.putBytes('/me/avatar', bytes, mime))['avatar']);
+
+  Future<void> avatarEntfernen() async {
+    await client.delete('/me/avatar');
+  }
+
+  /// Admin: setzt das Bild eines Mitglieds zurück.
+  Future<void> avatarMitgliedZuruecksetzen(String id) async {
+    await client.delete('/members/$id/avatar');
+  }
+
+  /// Foto eines Mitglieds (Bytes); 404, wenn es keines gibt.
+  Future<Uint8List> avatarFoto(String id) async {
+    final r = await client.getBytes('/members/$id/avatar');
+    return r.bytes ?? (throw ApiException.unerwarteteAntwort);
+  }
 
   Future<void> rolleAendern(String id, Role rolle) async {
     await client.patch('/members/$id/role', {'role': rolle.wire});

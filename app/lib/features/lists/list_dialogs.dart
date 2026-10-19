@@ -6,6 +6,7 @@ import '../../data/api/models.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Auswahl-Knopf (Art, Freigabe): mindestens 44 px hoch, wählbar per Tipp oder Tastatur (Tab, Leertaste/Enter); der Tastaturfokus ist sichtbar.
 class AuswahlKnopf extends StatefulWidget {
@@ -327,7 +328,7 @@ Future<String?> zuweisenBlatt(BuildContext context, {required List<UserDto> pers
           for (final p in personen)
             ListTile(
               minTileHeight: 52,
-              leading: PersonAvatar(name: p.displayName, colorIndex: p.colorIndex, size: 32),
+              leading: BenutzerAvatar(user: p, size: 32),
               title: Text(p.displayName),
               selected: p.id == aktuell,
               onTap: () => Navigator.of(c).pop(p.id),

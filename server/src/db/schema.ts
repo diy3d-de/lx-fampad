@@ -20,8 +20,15 @@ import {
   uniqueIndex,
   uuid,
   unique,
+  customType,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
+
+/** Binärdaten (bytea) als Buffer. */
+const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
+  dataType: () => 'bytea',
+  fromDriver: (v) => Buffer.from(v),
+});
 
 export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child', 'guest']);
 /** pending: per Einladung mit Freigabe registriert, darf sich erst nach Freigabe durch einen Admin anmelden. */
@@ -70,8 +77,35 @@ export const users = pgTable(
     colorIndex: integer('color_index').notNull().default(0),
     createdAt: createdAt(),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /** Benutzerbild: null = keines (Initialen), 'preset' = Platzhalter aus avatar_preset, 'photo' = Foto in user_avatars. */
+    avatarKind: text('avatar_kind'),
+    avatarPreset: text('avatar_preset'),
+    /** Zählt jede Änderung des Benutzerbilds hoch (Cache-Schlüssel und ETag der Apps). */
+    avatarVersion: integer('avatar_version').notNull().default(0),
   },
-  (t) => [uniqueIndex('users_email_lower_uq').on(sql`lower(${t.email})`)],
+  (t) => [
+    uniqueIndex('users_email_lower_uq').on(sql`lower(${t.email})`),
+    check('users_avatar_ck', sql`(${t.avatarKind} is null and ${t.avatarPreset} is null) or (${t.avatarKind} = 'preset' and ${t.avatarPreset} is not null) or (${t.avatarKind} = 'photo' and ${t.avatarPreset} is null)`),
+  ],
+);
+
+/** Hochgeladenes Benutzerfoto (klein, von der App auf etwa 512x512 verkleinert); je Person höchstens eines, Teil des normalen Datenbank-Backups. */
+export const userAvatars = pgTable(
+  'user_avatars',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    contentType: text('content_type').notNull(),
+    width: integer('width').notNull(),
+    height: integer('height').notNull(),
+    data: bytea('data').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('user_avatars_type_ck', sql`${t.contentType} in ('image/png', 'image/jpeg', 'image/webp')`),
+    check('user_avatars_size_ck', sql`octet_length(${t.data}) between 1 and 524288 and ${t.width} between 1 and 1024 and ${t.height} between 1 and 1024`),
+  ],
 );
 
 export const memberships = pgTable(
