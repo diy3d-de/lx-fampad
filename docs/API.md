@@ -1,6 +1,6 @@
 # API (Phase 1a bis 1c: Konten, Anmeldung, Sync)
 
-Stand: Phase 1c-2a (Sync-Kern mit Listen und Kalender: Termine, Teilnehmer, Ausnahmen; Konten und Anmeldung seit 1a/1b). Basis: `https://familie.lx-labs.dev/api/v1`, REST mit JSON (`Content-Type: application/json`). Der Sync (`POST /sync`) ist im Abschnitt „Sync“ beschrieben; Chat, Aufgaben und Dateien kommen als weitere Entitäten dazu. Diese Beschreibung ist Markdown statt OpenAPI; die Validierung steckt in den Zod-Schemas in
+Stand: Phase 1c-4a (Sync-Kern mit Listen, Kalender: Termine, Teilnehmer, Ausnahmen, und Aufgaben mit Unteraufgaben; Konten und Anmeldung seit 1a/1b). Basis: `https://familie.lx-labs.dev/api/v1`, REST mit JSON (`Content-Type: application/json`). Der Sync (`POST /sync`) ist im Abschnitt „Sync“ beschrieben; Chat und Dateien kommen als weitere Entitäten dazu. Diese Beschreibung ist Markdown statt OpenAPI; die Validierung steckt in den Zod-Schemas in
 `server/src/routes/` (jedes Objekt ist `strict`: unbekannte Felder führen zu `400`).
 
 ## Allgemeines
@@ -274,6 +274,8 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | `termin` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Termine ändern (alles außer `audience`) und löschen |
 | `termin_teilnehmer` | alles | erben Stufe und Besitzer des Termins: lesen, wo der Termin sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Terminen |
 | `termin_ausnahmen` | alles | wie `termin_teilnehmer` |
+| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Aufgaben ändern (alles außer `audience`) und löschen |
+| `aufgabe_punkt` | alles | erben Stufe und Besitzer der Aufgabe: lesen, wo sie sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben |
 
 Ändert sich die Freigabe einer Liste (oder eines Termins), werden ihre Einträge (Teilnehmer, Ausnahmen) neu angestoßen (neue Revision ohne Inhaltsänderung): Geräte, die sie nun sehen dürfen, bekommen sie; Geräte, die die Liste nicht mehr sehen dürfen, bekommen einen Tombstone mit `hidden: true` ohne Inhalt. Bei Rollenwechsel werden die Sitzungen widerrufen und das Flag `resync_required` der Geräte der Person gesetzt; die neue Anmeldung ist ein neues Gerät und beginnt mit einem Snapshot (die App leert außerdem bei jeder neuen Geräte-ID ihre Fachtabellen und stellt nur lokal neu angelegte, noch nicht gesendete Zeilen wieder her).
 
@@ -323,7 +325,35 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `titel`, `ort` | Text bis 200 Zeichen oder `null` | rw |
 | | `start`, `ende` | Tag oder Zeitpunkt oder `null` | rw |
 
-Neue Entitäten (Aufgaben, Chat, Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
+**Aufgaben (Phase 1c-4a)**
+
+- **Fälligkeit** wie bei Terminen: `faelligDate` (`YYYY-MM-DD`, ganztägig, keine Zeitzone) **oder** `faelligUtc` (ISO-8601, in der Antwort UTC mit Millisekunden) mit `tzid` (IANA-Zeitzone, Pflicht bei `faelligUtc`); beides gleichzeitig oder `faelligUtc` ohne `tzid` ist `invalid` (geprüft nach dem Zusammenführen jeder Änderung). Beides `null` = ohne Fälligkeit. Beim Wechsel zwischen Tag und Zeitpunkt sendet der Client alle drei Felder zusammen.
+- **Priorität** `prioritaet`: Ganzzahl 0 (keine) bis 3 (hoch). **Status:** `erledigtAt` (Zeitpunkt oder `null`) und `erledigtVon` (aktives Mitglied oder `null`; `invalid_reference` sonst); der Server setzt sie nicht selbst, der Client sendet beide beim Abhaken und `null` beim Zurücksetzen. **Zuständig:** `assigneeId` (aktives Mitglied der Familie oder `null`).
+- **Wiederholung** `wiederholung`: `daily`, `weekly`, `monthly` oder `null`; der Server prüft nur die Form und legt nie selbst eine Folgeaufgabe an. Der **Client** erzeugt sie beim Erledigen (Fälligkeit, Deckel und feste ID: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6d). Das zweite Anlegen derselben ID (zwei Geräte erledigen dieselbe Aufgabe) ist eine gewöhnliche Änderung mit denselben Werten, kein Fehler.
+- **Unteraufgaben** (`aufgabe_punkt`): `aufgabeId` (unveränderlich, Pflicht), `text` (1 bis 500 Zeichen), `doneAt` (Zeitpunkt oder `null`), `position` (Kommazahl wie bei Listeneinträgen). Sie erben Freigabe und Besitzer der Aufgabe; beim Löschen der Aufgabe werden sie per Kaskade mit Tombstone entfernt (niedrigere Revisionen vor der Aufgabe).
+- **Obergrenzen:** 5000 lebende Aufgaben je Familie, zusätzlich **500 je Besitzer für Kinder**, 100 lebende Unteraufgaben je Aufgabe (`limit_reached`). **Mitglied entfernt:** `assigneeId`, `erledigtVon` und `ownerId` werden mit Änderungseintrag auf `null` gesetzt.
+- **Erinnerung:** `erinnerungMin` (0 bis 40320 Minuten vor der Fälligkeit oder `null`) wird gespeichert und synchronisiert; die App nutzt es noch nicht (siehe Abschnitt 6d der Projektbeschreibung, Offen).
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Admin/Eltern alles; Kind: Stufe `family` lesen, nur mit Stufe `family` anlegen, **eigene** Aufgaben ändern (alles außer `audience`) und löschen | |
+| | `titel` | Text 1 bis 200 Zeichen (Pflicht) | rw |
+| | `beschreibung` | Text bis 4000 Zeichen (Standard leer) | rw |
+| | `faelligDate` | `YYYY-MM-DD` oder `null` | rw |
+| | `faelligUtc`, `tzid` | ISO-8601 mit Zeitzone (2000 bis 2200) bzw. IANA-Zeitzone, oder `null` | rw |
+| | `prioritaet` | Ganzzahl 0 bis 3 (Standard 0) | rw |
+| | `assigneeId`, `erledigtVon` | UUID eines aktiven Mitglieds oder `null` | rw |
+| | `erledigtAt` | ISO-8601 oder `null` | rw |
+| | `wiederholung` | `daily`, `weekly`, `monthly` oder `null` | rw |
+| | `erinnerungMin` | Ganzzahl 0 bis 40320 oder `null` | rw |
+| | `audience` | `parents`, `family` (Standard), `all` (wird `family`) | rw |
+| | `ownerId` | UUID oder `null` (Ersteller; bestimmt das Änderungsrecht des Kindes) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `aufgabe_punkt` | alles | erben Stufe und Besitzer der Aufgabe: lesen, wo die Aufgabe sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben (Kind) | |
+| | `aufgabeId` | UUID (Pflicht) | create |
+| | `text`, `doneAt`, `position` | siehe oben | rw |
+
+Neue Entitäten (Chat, Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
 
 ## WebSocket `/ws`
 

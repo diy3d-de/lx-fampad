@@ -2,7 +2,7 @@
 // Einladungslink-Parser, Passkey-Optionen) rufen die von der App genutzten Endpunkte einmal real auf. Seit Phase 1c gehört der Sync dazu
 // (syncVertrag, offlineOnlineVertrag): zwei Geräte derselben Person, Idempotenz, Konflikte pro Feld, Löschen gewinnt, Validierung, Rechte von
 // Kind (inklusive "hidden"-Tombstone), mehrseitiger Snapshot (> 500 Einträge, purged_rev > 0) und Geisterlisten, zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
-// das Bereinigen von Verweisen beim Entfernen eines Mitglieds. Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
+// das Bereinigen von Verweisen beim Entfernen eines Mitglieds, Kalender (kalenderVertrag) und Aufgaben (aufgabenVertrag: Folgeaufgabe mit fester ID, Rechte, Validierung). Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
 // Ablauf: frische Datenbank migrieren, 'node dist/cli/bootstrap.js --family "Familie Vertrag"' (Token aus dem Link), Server starten, dann
 //   SERVER=http://127.0.0.1:4460 INVITE_TOKEN=<Token> SERVER_DIR=<server/-Ordner mit node_modules> DATABASE_URL=postgres://… flutter test test/vertrag_test.dart
@@ -28,6 +28,8 @@ import 'package:lx_fampad/data/sync/sync_engine.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_socket.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
+import 'package:lx_fampad/data/tasks/aufgabe_logik.dart';
+import 'package:lx_fampad/data/tasks/aufgabe_repository.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/features/auth/invite_link.dart';
 import 'package:passkeys/types.dart' show AuthenticateRequestType, RegisterRequestType;
@@ -576,6 +578,114 @@ Future<void> kalenderVertrag({
   }
 }
 
+/// Aufgaben gegen den echten Server (Phase 1c-4a): Aufgabe mit Unteraufgaben und Wiederholung auf zwei lokalen Datenbanken, Folgeaufgabe mit fester ID
+/// (beide Geräte erledigen dieselbe Aufgabe: genau eine Folgeaufgabe), Validierung, Rechte des Kindes, Löschen räumt Unteraufgaben auf.
+Future<void> aufgabenVertrag({
+  required Gegenstelle a,
+  required Gegenstelle b,
+  required Gegenstelle kind,
+  required String kindId,
+  required String adminId,
+}) async {
+  schritt('Aufgaben: Aufgabe mit Unteraufgaben und Wiederholung auf zwei lokalen Datenbanken (A legt an, B sieht dasselbe)');
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  tzdata.initializeTimeZones();
+  AppDatabase neueDb() => AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  final dbA = neueDb(), dbB = neueDb();
+  addTearDown(dbA.close);
+  addTearDown(dbB.close);
+  final storeA = SyncStore(dbA), storeB = SyncStore(dbB);
+  final engineA = SyncEngine(store: storeA, api: a.api, geraeteId: () async => geraetId(a));
+  final engineB = SyncEngine(store: storeB, api: b.api, geraeteId: () async => geraetId(b));
+  final heute = DateTime.now();
+  final repoA = AufgabeRepository(db: dbA, store: storeA, ich: () => adminId, beiAenderung: () {}, jetzt: () => heute);
+  final repoB = AufgabeRepository(db: dbB, store: storeB, ich: () => adminId, beiAenderung: () {}, jetzt: () => heute);
+  // die lokalen Datenbanken holen zuerst, was schon da ist (Listen, Termine ...): Aufgaben gibt es noch keine
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+
+  final tagWand = DateTime.utc(heute.year, heute.month, heute.day);
+  final id = await repoA.anlegen(AufgabeEingabe(
+    titel: 'Altglas wegbringen',
+    beschreibung: 'Container an der Ecke',
+    faellig: tagWand,
+    prioritaet: AufgabePrio.hoch,
+    zustaendig: kindId,
+    wiederholung: AufgabeWdh.woechentlich,
+    punkte: const [PunktEingabe(id: '00000000-0000-4000-8000-0000000000a1', text: 'Flaschen sammeln'), PunktEingabe(id: '00000000-0000-4000-8000-0000000000a2', text: 'Deckel ab', erledigt: true)],
+  ));
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  final beiB = (await dbB.select(dbB.aufgaben).get()).singleWhere((t) => t.id == id);
+  expect([beiB.titel, beiB.prioritaet, beiB.assigneeId, beiB.wiederholung, beiB.ownerId], ['Altglas wegbringen', 3, kindId, 'weekly', adminId]);
+  expect(beiB.faelligDate, tagText(tagWand));
+  expect((await dbB.select(dbB.aufgabePunkte).get()).map((p) => p.inhalt).toSet(), {'Flaschen sammeln', 'Deckel ab'});
+
+  schritt('Aufgaben: beide Geräte erledigen dieselbe wiederkehrende Aufgabe (eine Folgeaufgabe, kein Fehler)');
+  await repoA.erledigt((await dbA.select(dbA.aufgaben).get()).singleWhere((t) => t.id == id), true);
+  await repoB.erledigt(beiB, true);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final rb = await engineB.abgleichen();
+  expect(rb.ok, isTrue);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final folgeId = folgeAufgabeId(id);
+  for (final db in [dbA, dbB]) {
+    final alle = await db.select(db.aufgaben).get();
+    expect(alle, hasLength(2));
+    final folge = alle.singleWhere((t) => t.id == folgeId);
+    expect([folge.titel, folge.erledigtAt, folge.assigneeId, folge.wiederholung], ['Altglas wegbringen', null, kindId, 'weekly']);
+    expect(alle.singleWhere((t) => t.id == id).erledigtAt, isNotNull);
+    expect((await db.select(db.aufgabePunkte).get()).where((p) => p.aufgabeId == folgeId && p.doneAt == null), hasLength(2));
+  }
+  expect(await storeA.offeneAnzahl(), 0);
+  expect(await storeB.offeneAnzahl(), 0);
+
+  schritt('Aufgaben: der Server lehnt ungültige Aufgaben ab (Fälligkeit, Zeitzone, Priorität, Wiederholung, Längen, Person), nichts landet im Datenbestand');
+  final vorher = (await alleSeiten(a)).where((c) => c.entity == 'aufgabe').length;
+  for (final schlecht in <Map<String, dynamic>>[
+    {'titel': 'T', 'faelligDate': '2027-02-30'},
+    {'titel': 'T', 'faelligDate': '2027-03-01', 'faelligUtc': '2027-03-01T08:00:00Z', 'tzid': 'Europe/Berlin'},
+    {'titel': 'T', 'faelligUtc': '2027-03-01T08:00:00Z'},
+    {'titel': 'T', 'faelligUtc': '2027-03-01T08:00:00Z', 'tzid': 'Mars/Olympus'},
+    {'titel': 'T', 'prioritaet': 7},
+    {'titel': 'T', 'wiederholung': 'yearly'},
+    {'titel': 'x' * 201},
+    {'titel': 'T', 'erinnerungMin': -5},
+  ]) {
+    final r = await syncen(a, [neu('aufgabe', neueUuid(), schlecht)]);
+    expect(r.rejected.single.code, 'invalid', reason: '$schlecht');
+  }
+  final fremdePerson = await syncen(a, [neu('aufgabe', neueUuid(), {'titel': 'T', 'assigneeId': neueUuid()})]);
+  expect(fremdePerson.rejected.single.code, 'invalid_reference');
+  expect((await alleSeiten(a)).where((c) => c.entity == 'aufgabe').length, vorher);
+
+  schritt('Aufgaben: Rechte des Kindes gegen den echten Server');
+  final privat = neueUuid(), eltern = neueUuid();
+  expect((await syncen(a, [neu('aufgabe', privat, {'titel': 'Nur Eltern', 'audience': 'parents'}), neu('aufgabe', eltern, {'titel': 'Für alle', 'audience': 'all'})])).rejected, isEmpty);
+  final eigene = neueUuid();
+  final eigeneOp = neu('aufgabe', eigene, {'titel': 'Kinder-Aufgabe', 'assigneeId': kindId});
+  expect((await syncen(kind, [eigeneOp])).acked, [eigeneOp.opId]);
+  expect((await syncen(kind, [aender('aufgabe', eigene, {'erledigtAt': DateTime.now().toUtc().toIso8601String(), 'erledigtVon': kindId}, 1)])).rejected, isEmpty);
+  expect((await syncen(kind, [aender('aufgabe', eltern, {'titel': 'Hack'}, 1)])).rejected.single.code, 'forbidden');
+  expect((await syncen(kind, [aender('aufgabe', privat, {'titel': 'Hack'}, 1)])).rejected.single.code, 'not_found');
+  expect((await syncen(kind, [neu('aufgabe', neueUuid(), {'titel': 'Geheim', 'audience': 'parents'})])).rejected.single.code, 'forbidden');
+  expect((await syncen(kind, [neu('aufgabe_punkt', neueUuid(), {'aufgabeId': eltern, 'text': 'x'})])).rejected.single.code, 'forbidden');
+  final kindSicht = (await alleSeiten(kind)).where((c) => c.entity == 'aufgabe').map((c) => c.id);
+  expect(kindSicht, isNot(contains(privat)));
+  expect(kindSicht, containsAll([eltern, eigene]));
+
+  schritt('Aufgaben: Löschen räumt die Unteraufgaben auf beiden Geräten ab');
+  await syncen(a, [weg('aufgabe', privat, 1), weg('aufgabe', eltern, 1), weg('aufgabe', eigene, 1)]);
+  await repoA.loeschen(id);
+  await repoA.loeschen(folgeId);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  for (final db in [dbA, dbB]) {
+    expect(await db.select(db.aufgaben).get(), isEmpty);
+    expect(await db.select(db.aufgabePunkte).get(), isEmpty);
+  }
+}
+
 void main() {
   test('Vertrag App <-> echter Server', timeout: const Timeout(Duration(minutes: 8)), () async {
     // ---------------------------------------------------------------- Anmeldeoptionen ohne Anmeldung
@@ -891,6 +1001,7 @@ void main() {
     await syncVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
     await offlineOnlineVertrag(a: admin, b: adminB);
     await kalenderVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
+    await aufgabenVertrag(a: admin, b: adminB, kind: kind3, kindId: kindId, adminId: adminId);
     await snapshotVertrag(a: admin, b: adminB, gast: web);
 
     // ---------------------------------------------------------------- Zurücksetzen, Entfernen, Geräte, Abmelden
