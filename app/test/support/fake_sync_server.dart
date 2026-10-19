@@ -138,6 +138,8 @@ class FakeSyncServer {
     'list_item': ('list', 'listId'),
     'termin_teilnehmer': ('termin', 'terminId'),
     'termin_ausnahmen': ('termin', 'terminId'),
+    'nachricht': ('konversation', 'konversationId'),
+    'lesestand': ('konversation', 'konversationId'),
   };
 
   static Map<String, dynamic> _terminStandard(String owner) => {
@@ -154,6 +156,13 @@ class FakeSyncServer {
     'icalUid': null,
     'audience': 'family',
     'ownerId': owner,
+  };
+
+  /// Vom Server gesetzte Felder des Chats (Besitzer bzw. Autor ist die schreibende Person).
+  static Map<String, dynamic> _chatStandard(String entity, String person) => switch (entity) {
+    'konversation' => {'titel': '', 'teilnehmer': <String>[], 'ownerId': person},
+    'nachricht' => {'autorId': person, 'antwortAuf': null, 'bearbeitetAt': null},
+    _ => const {},
   };
 
   Map<String, dynamic> _ab(String code) => {'status': 'rejected', 'code': code, 'conflicts': <Map<String, dynamic>>[]};
@@ -183,6 +192,7 @@ class FakeSyncServer {
         if (o['entity'] == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdAdmin},
         if (o['entity'] == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
         if (o['entity'] == 'termin') ..._terminStandard(fixIdAdmin),
+        ..._chatStandard(o['entity'] as String, fixIdAdmin),
         ...fields,
       }, ++rev);
       for (final f in fields.keys) {
@@ -209,6 +219,8 @@ class FakeSyncServer {
     if (geaendert.isNotEmpty) {
       z.rev = ++rev;
       z.fields = {...z.fields, ...geaendert};
+      // der Server setzt die Zeit der Bearbeitung
+      if (z.entity == 'nachricht' && geaendert.containsKey('text')) z.fields['bearbeitetAt'] = DateTime.now().toUtc().toIso8601String();
       for (final f in geaendert.keys) {
         z.fieldRevs[f] = z.rev;
       }
@@ -245,6 +257,7 @@ class FakeSyncServer {
         if (entity == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdKind},
         if (entity == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
         if (entity == 'termin') ..._terminStandard(fixIdKind),
+        ..._chatStandard(entity, fixIdKind),
         ...fields,
       }, ++rev);
       zeilen[key] = z;

@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 import '../../constants.dart';
 import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/chat/chat_repository.dart';
+import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../data/lists/members.dart';
@@ -16,6 +18,7 @@ import '../../ui/widgets.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
+import '../chat/chat_anzeige.dart';
 import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
 import '../update/update_banner.dart';
@@ -165,7 +168,7 @@ class _Raster extends StatelessWidget {
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 16, crossAxisSpacing: 16, mainAxisExtent: 300 * skala),
           children: const [
             _TermineKarte(),
-            _BaldKarte(label: '// chat · familie', icon: Icons.chat_bubble_outline, titel: 'Noch keine Nachrichten', hinweis: 'Der Chat kommt in einer späteren Phase.', tab: 2),
+            _ChatKarte(),
             _EinkaufKarte(),
             _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
             _BaldKarte(label: '// aufgaben', icon: Icons.task_alt_outlined, titel: 'Noch keine Aufgaben', hinweis: 'Aufgaben kommen in einer späteren Phase.'),
@@ -246,6 +249,73 @@ class _Karte extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Letzte Chats mit den neuesten Nachrichten (lokale Datenbank, auch offline); es erscheinen nur Chats, die die Person sehen darf
+/// (der Server liefert nichts anderes). Tippen öffnet den Chat-Bereich.
+class _ChatKarte extends ConsumerWidget {
+  const _ChatKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final async = ref.watch(chatUebersichtProvider);
+    final mitglieder = chatMitglieder(ref, async.value ?? const <ChatEintrag>[]);
+    final ich = ref.watch(authProvider.select((s) => s.user?.id));
+    final inhalt = ref.watch(nachrichtenInhaltProvider);
+    final fehler = async.hasError;
+    final laedt = !fehler && !async.hasValue;
+    final mitNachricht = [for (final e in async.value ?? const <ChatEintrag>[]) if (e.letzte != null) e]..sort((a, b) => b.aktivitaet.compareTo(a.aktivitaet));
+    final ungelesen = mitNachricht.fold<int>(0, (s, e) => s + e.ungelesen);
+    return _Karte(
+      label: '// chat · familie',
+      zaehler: ungelesen > 0 ? '$ungelesen neu' : null,
+      semantik: fehler
+          ? 'Chat, nicht geladen. Öffnen'
+          : laedt
+          ? 'Chat, lädt. Öffnen'
+          : mitNachricht.isEmpty
+          ? 'Chat, noch keine Nachrichten. Öffnen'
+          : 'Chat, $ungelesen ungelesen. Öffnen',
+      onTap: () => ref.read(shellTabProvider.notifier).waehlen(kChatTab),
+      child: fehler
+          ? _fehler('Der Chat konnte nicht geladen werden.')
+          : laedt
+          ? _laedt()
+          : mitNachricht.isEmpty
+          ? const EmptyState(icon: Icons.chat_bubble_outline, title: 'Noch keine Nachrichten', hint: 'Schreib die erste Nachricht an die Familie.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final e in mitNachricht.take(4))
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: Row(
+                      children: [
+                        ChatAvatar(
+                          art: e.art,
+                          person: e.art == ChatArt.direct ? mitglieder[e.teilnehmer.where((t) => t != ich).firstOrNull] : null,
+                          name: chatName(e.konversation, e.teilnehmer, mitglieder, ich, inhalt),
+                          size: 32,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(chatName(e.konversation, e.teilnehmer, mitglieder, ich, inhalt), maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: e.ungelesen > 0 ? FontWeight.w800 : FontWeight.w600)),
+                              Text(chatVorschau(e, mitglieder, ich, inhalt), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: kTextMuted)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(zeitKurz(e.letzte!.createdAt), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+    );
+  }
 }
 
 /// Karte für einen Bereich, den es noch nicht gibt: sauberer Leerzustand statt erfundener Daten.
