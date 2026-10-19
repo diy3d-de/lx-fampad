@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../constants.dart';
 import '../../ui/widgets.dart';
-import '../../widgets/sync_indicator.dart';
+import '../../widgets/kopfzeile.dart';
 
 /// Chat: Kopf, leerer Verlauf und Eingabezeile. Phase 0: Eingabe gesperrt.
 class ChatScreen extends StatelessWidget {
@@ -11,10 +10,7 @@ class ChatScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Column(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 16, 12, 12),
-            child: ScreenHeader(title: 'Chat', actions: [StatusPill('● offline', color: kTextMuted), SyncIndicator()]),
-          ),
+          const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 12), child: TabKopfzeile(title: 'Chat')),
           const Expanded(
             child: EmptyState(
               icon: Icons.chat_bubble_outline,

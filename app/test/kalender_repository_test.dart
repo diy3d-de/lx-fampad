@@ -117,8 +117,8 @@ void main() {
       // Server hat alles bestätigt
       await g.db.delete(g.db.outbox).go();
       await g.store.sinceRevSetzen(5);
-      await g.db.customStatement("UPDATE termine SET rev = 3");
-      await g.db.customStatement("UPDATE termin_teilnehmer SET rev = 4");
+      await g.db.customStatement('UPDATE termine SET rev = 3');
+      await g.db.customStatement('UPDATE termin_teilnehmer SET rev = 4');
       await g.repo.alleAendern(id, zeit(titel: 'Kinderturnen', teilnehmer: {'u-ich', 'u-oma'}));
       final ops = await g.ausgang();
       final termin = ops.firstWhere((o) => o.entity == 'termin');
@@ -132,7 +132,7 @@ void main() {
     test('Umschalten auf ganztägig sendet alle Zeitfelder gemeinsam', () async {
       final id = await g.repo.anlegen(zeit());
       await g.db.delete(g.db.outbox).go();
-      await g.db.customStatement("UPDATE termine SET rev = 3");
+      await g.db.customStatement('UPDATE termine SET rev = 3');
       await g.repo.alleAendern(id, TerminEingabe(titel: 'Training', ganztaegig: true, startWand: tag(2026, 10, 20), endeWand: tag(2026, 10, 21)));
       final f = jsonDecode((await g.ausgang()).single.fieldsJson) as Map<String, dynamic>;
       expect(f.keys.toSet(), {'ganztaegig', 'startUtc', 'endUtc', 'tzid', 'startDate', 'endDate'});

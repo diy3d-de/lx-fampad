@@ -79,6 +79,8 @@ void main() {
       // Kalender: Monat wechseln und Tag antippen darf nichts brechen
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
       await tester.pump();
+      await tester.tap(find.text('Monat'));
+      await tester.pump();
       await tester.tap(find.byTooltip('Nächster Monat'));
       await tester.pump();
       await tester.tap(find.text('15').hitTestable());

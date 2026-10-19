@@ -1,0 +1,297 @@
+// Bausteine des Kalenders: Karte eines Vorkommens, Personenfilter, Ansichtswechsel, Wahl "nur dieses / dieses und folgende / alle" und das
+// Detailblatt eines Termins.
+import 'package:flutter/material.dart';
+
+import '../../constants.dart';
+import '../../data/api/models.dart';
+import '../../data/calendar/expansion.dart';
+import '../../data/calendar/wiederholung.dart';
+import '../../data/calendar/zeitzonen.dart';
+import '../../data/lists/members.dart';
+import '../../ui/widgets.dart';
+import '../lists/list_dialogs.dart' show AuswahlKnopf;
+import 'calendar_state.dart';
+
+/// Karte eines Vorkommens: farbiger Balken (Personenfarbe des Erstellers), Titel, Zeit, Ort, Teilnehmer. Mindestens 56 px hoch.
+class VorkommenKarte extends StatelessWidget {
+  final Vorkommen v;
+  final DateTime tag;
+  final Mitglieder mitglieder;
+  final Set<String> teilnehmer;
+  final VoidCallback onTap;
+  const VorkommenKarte({super.key, required this.v, required this.tag, required this.mitglieder, required this.teilnehmer, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final farbe = terminFarbe(v, mitglieder);
+    final zeit = zeitText(v, tag);
+    final personen = [for (final id in teilnehmer) ?mitglieder[id]];
+    return Semantics(
+      button: true,
+      label: '${v.titel}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}',
+      excludeSemantics: true,
+      child: LxCard(
+        padding: EdgeInsets.zero,
+        onTap: onTap,
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(width: 4, color: farbe),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 36),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(v.titel, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            ),
+                            if (v.serie) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.repeat, size: 14, color: kTextMuted)),
+                            if (v.geaendert) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.edit_outlined, size: 14, color: kTextMuted)),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                        if (v.ort.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.place_outlined, size: 13, color: kTextFaint),
+                                const SizedBox(width: 4),
+                                Expanded(child: Text(v.ort, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, color: kTextMuted))),
+                              ],
+                            ),
+                          ),
+                        if (personen.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: [
+                                for (final u in personen.take(4)) PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 22),
+                                if (personen.length > 4) Text('+${personen.length - 4}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                              ],
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Umschalter Agenda | Monat | Woche.
+class AnsichtUmschalter extends StatelessWidget {
+  final KalenderAnsicht aktiv;
+  final void Function(KalenderAnsicht) onWahl;
+  const AnsichtUmschalter({super.key, required this.aktiv, required this.onWahl});
+
+  @override
+  Widget build(BuildContext context) => Wrap(
+    spacing: 8,
+    runSpacing: 8,
+    children: [for (final a in KalenderAnsicht.values) AuswahlKnopf(text: a.label, gewaehlt: a == aktiv, onTap: () => onWahl(a))],
+  );
+}
+
+/// Filter je Person: "Alle" und eine Auswahl-Kapsel je Mitglied in seiner Farbe.
+class PersonenFilter extends StatelessWidget {
+  final List<UserDto> personen;
+  final Set<String> gewaehlt;
+  final void Function(String id) onPerson;
+  final VoidCallback onAlle;
+  const PersonenFilter({super.key, required this.personen, required this.gewaehlt, required this.onPerson, required this.onAlle});
+
+  @override
+  Widget build(BuildContext context) {
+    if (personen.length < 2) return const SizedBox.shrink();
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        AuswahlKnopf(text: 'Alle', gewaehlt: gewaehlt.isEmpty, onTap: onAlle),
+        for (final u in personen) PersonKapsel(u: u, gewaehlt: gewaehlt.contains(u.id), onTap: () => onPerson(u.id)),
+      ],
+    );
+  }
+}
+
+class PersonKapsel extends StatelessWidget {
+  final UserDto u;
+  final bool gewaehlt;
+  final VoidCallback onTap;
+  final String? beschriftung;
+  const PersonKapsel({super.key, required this.u, required this.gewaehlt, required this.onTap, this.beschriftung});
+
+  @override
+  Widget build(BuildContext context) {
+    final farbe = personColor(u.colorIndex);
+    return Semantics(
+      button: true,
+      selected: gewaehlt,
+      label: beschriftung ?? 'Termine von ${u.displayName}',
+      excludeSemantics: true,
+      onTap: onTap,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: onTap,
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: gewaehlt ? farbe.withValues(alpha: 0.16) : null,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: gewaehlt ? farbe : kBorder),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: farbe)),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 160),
+                child: Text(u.displayName.split(RegExp(r'\s+')).first, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: gewaehlt ? kText : kTextMuted)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Wie weit eine Änderung an einer Serie gilt.
+enum SerieUmfang {
+  dieses('Nur dieses Vorkommen'),
+  folgende('Dieses und alle folgenden'),
+  alle('Alle Vorkommen');
+
+  final String label;
+  const SerieUmfang(this.label);
+}
+
+/// Fragt bei einem Serientermin, wie weit die Aktion gilt. Null = abgebrochen. Beim ersten Vorkommen entfällt "dieses und folgende".
+Future<SerieUmfang?> serieUmfangFragen(BuildContext context, {required String titel, required bool erstes}) => showModalBottomSheet<SerieUmfang>(
+  context: context,
+  isScrollControlled: true,
+  builder: (ctx) => SafeArea(
+    child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const MonoLabel('// serie'),
+          const SizedBox(height: 4),
+          Text(titel, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kTextStrong)),
+          const SizedBox(height: 12),
+          for (final u in SerieUmfang.values)
+            if (!(erstes && u == SerieUmfang.folgende))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: OutlinedButton(onPressed: () => Navigator.of(ctx).pop(u), child: Align(alignment: Alignment.centerLeft, child: Text(u.label))),
+              ),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+        ],
+      ),
+    ),
+  ),
+);
+
+/// Aktion im Detailblatt.
+enum TerminAktion { bearbeiten, loeschen }
+
+/// Detailblatt eines Vorkommens: alle Angaben, Bearbeiten und Löschen (nur wer darf).
+Future<TerminAktion?> terminDetailBlatt(
+  BuildContext context, {
+  required Vorkommen v,
+  required Mitglieder mitglieder,
+  required Set<String> teilnehmer,
+  required bool darfAendern,
+}) => showModalBottomSheet<TerminAktion>(
+  context: context,
+  isScrollControlled: true,
+  builder: (ctx) {
+    final t = v.termin;
+    final farbe = terminFarbe(v, mitglieder);
+    final ersteller = mitglieder[t.ownerId];
+    final wdh = t.rrule == null ? null : Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid));
+    final personen = [for (final id in teilnehmer) ?mitglieder[id]];
+    Widget zeile(IconData icon, String text) => Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [Icon(icon, size: 18, color: kTextMuted), const SizedBox(width: 12), Expanded(child: Text(text))],
+      ),
+    );
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              children: [
+                Container(width: 4, height: 18, color: farbe),
+                const SizedBox(width: 8),
+                MonoLabel(v.geaendert ? '// termin · geändert' : '// termin', color: farbe),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(v.titel, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong)),
+            const SizedBox(height: 14),
+            zeile(Icons.schedule, datumZeitText(v)),
+            if (v.ort.isNotEmpty) zeile(Icons.place_outlined, v.ort),
+            if (wdh != null && wdh.wiederholt) zeile(Icons.repeat, wdh.beschreibung()),
+            if (t.erinnerungMin != null) zeile(Icons.notifications_none, erinnerungText(t.erinnerungMin)),
+            if (t.beschreibung.isNotEmpty) zeile(Icons.notes, t.beschreibung),
+            if (personen.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    const Icon(Icons.group_outlined, size: 18, color: kTextMuted),
+                    for (final u in personen)
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 24), const SizedBox(width: 6), Text(u.displayName)],
+                      ),
+                  ],
+                ),
+              ),
+            if (ersteller != null) zeile(Icons.person_outline, 'Angelegt von ${ersteller.displayName}'),
+            const SizedBox(height: 8),
+            if (darfAendern) ...[
+              FilledButton.icon(onPressed: () => Navigator.of(ctx).pop(TerminAktion.bearbeiten), icon: const Icon(Icons.edit_outlined), label: const Text('Bearbeiten')),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(ctx).pop(TerminAktion.loeschen),
+                icon: const Icon(Icons.delete_outline, color: kDanger),
+                label: const Text('Löschen', style: TextStyle(color: kDanger)),
+              ),
+            ] else
+              const Text('Du darfst diesen Termin nicht ändern.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+          ],
+        ),
+      ),
+    );
+  },
+);
