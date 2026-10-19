@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/app_database.dart';
+import '../../data/auth/auth_state.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
@@ -12,6 +13,16 @@ import '../profile/profile_screen.dart';
 import '../shell/shell_tab.dart';
 import '../update/update_banner.dart';
 
+/// Begrüßung mit Vorname: erstes Wort des Anzeigenamens, bei leerem Namen nur "Hallo"; sehr lange Namen werden gekürzt.
+String begruessung(String? anzeigename) {
+  final wort = (anzeigename ?? '').trim().split(RegExp(r'\s+')).first;
+  if (wort.isEmpty) return 'Hallo';
+  // Graphem-sicher kürzen (Emoji und kombinierte Zeichen werden nicht mitten im Zeichen geschnitten)
+  final zeichen = wort.characters;
+  final kurz = zeichen.length > 20 ? '${zeichen.take(19)}…' : wort;
+  return 'Hallo, $kurz';
+}
+
 /// Start: Begrüßung, Sync-Status, Schnellzugriffe, Einkaufsliste (echte Daten), "Als Nächstes".
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -19,6 +30,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(syncProvider);
+    final name = ref.watch(authProvider.select((s) => s.user?.displayName));
     final heute = DateFormat('E, d. MMM', 'de_DE').format(DateTime.now()).toLowerCase();
     final verbunden = sync.status == SyncStatus.synchron;
     final farbe = switch (sync.status) {
@@ -39,7 +51,7 @@ class HomeScreen extends ConsumerWidget {
       children: [
         ScreenHeader(
           label: '// $heute',
-          title: 'Hallo',
+          title: begruessung(name),
           actions: [
             const SyncIndicator(),
             IconButton(

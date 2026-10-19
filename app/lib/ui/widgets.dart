@@ -74,6 +74,8 @@ class ScreenHeader extends StatelessWidget {
                 if (label != null) ...[MonoLabel(label!), const SizedBox(height: 4)],
                 Text(
                   title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.65, color: kTextStrong),
                 ),
               ],

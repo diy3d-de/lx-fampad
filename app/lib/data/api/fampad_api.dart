@@ -142,6 +142,22 @@ class FampadApi {
     await client.delete('/me/passkeys/$id');
   }
 
+  /// Passwort + TOTP nachträglich einrichten: Schritt 1 (Passwort prüfen, Schlüssel erzeugen), Schritt 2 (Code bestätigen). Beide mit Step-up.
+  Future<PasswordStart> passwortEinrichtenStart(String passwort) async =>
+      PasswordStart.fromJson(await client.post('/me/password/start', {'password': passwort}));
+
+  Future<void> passwortEinrichtenFertig({required String challengeId, required String code}) async {
+    await client.post('/me/password/complete', {'challengeId': challengeId, 'code': code});
+  }
+
+  Future<void> passwortAendern(String passwort) async {
+    await client.post('/me/password/change', {'password': passwort});
+  }
+
+  Future<void> passwortEntfernen() async {
+    await client.delete('/me/password');
+  }
+
   Future<List<String>> neueWiederherstellungscodes() async {
     final r = await client.post('/me/recovery-codes', const {});
     final codes = r['recoveryCodes'];

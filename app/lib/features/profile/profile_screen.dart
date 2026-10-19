@@ -13,6 +13,7 @@ import '../auth/auth_widgets.dart';
 import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import 'devices_screen.dart';
+import 'password_screen.dart';
 import 'passkeys_screen.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
@@ -220,6 +221,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           titel: 'Passwort und Zwei-Faktor (TOTP)',
           untertitel: me == null ? 'wird geladen …' : (me.hasPassword && me.hasTotp ? 'authenticator-app' : 'nicht eingerichtet'),
           status: me != null && me.hasPassword && me.hasTotp ? const RollenPille('an', farbe: kTerminal) : null,
+          onTap: me == null ? null : () => _oeffne(const PasswordScreen()),
         ),
         EinstellungsZeile(
           icon: Icons.key_outlined,

@@ -6,6 +6,7 @@
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
 // Ablauf: frische Datenbank migrieren, 'node dist/cli/bootstrap.js --family "Familie Vertrag"' (Token aus dem Link), Server starten, dann
 //   SERVER=http://127.0.0.1:4460 INVITE_TOKEN=<Token> SERVER_DIR=<server/-Ordner mit node_modules> DATABASE_URL=postgres://… flutter test test/vertrag_test.dart
+// Der Server braucht für den Lauf hohe Sync-Limits (SYNC_RATE_LIMIT_MAX, SYNC_REQ_*, SYNC_OPS_*), sonst antwortet der Sync mit 429.
 // (die Datei dazu aus tool/ nach test/ kopieren; sie initialisiert kein Widget-Binding, damit HTTP echt läuft).
 import 'dart:io';
 
@@ -644,6 +645,11 @@ void main() {
     final neueCodes = await admin.api.neueWiederherstellungscodes();
     expect(neueCodes, hasLength(10));
     expect((await admin.api.ich()).recoveryCodesRemaining, 10);
+
+    schritt('Passwort nachträglich: Pfade, Step-up und Fehlercodes (Admin hat schon Passwort und nur diesen Zugang)');
+    await expectLater(admin.api.passwortEinrichtenStart('Noch-ein-Passwort-123'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'password_exists')));
+    await expectLater(admin.api.passwortAendern('kurz'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'weak_password')));
+    await expectLater(admin.api.passwortEntfernen(), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'last_credential')));
 
     // ---------------------------------------------------------------- Refresh (echte Rotation)
     schritt('Refresh: abgelaufenes Access-Token, fünf gleichzeitige Aufrufe -> genau EIN POST /auth/refresh, Rotation gespeichert');
