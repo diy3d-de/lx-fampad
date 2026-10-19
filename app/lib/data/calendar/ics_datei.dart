@@ -6,6 +6,7 @@ import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'ics_lesen_stub.dart' if (dart.library.io) 'ics_lesen_io.dart';
 import 'ics_parser.dart';
 
 /// Eine ausgewählte Datei: Name, Größe (wenn ohne Lesen bekannt) und Inhalt als Strom.
@@ -22,7 +23,13 @@ typedef IcsDateiWaehler = Future<IcsDatei?> Function();
 Future<IcsDatei?> _systemPicker() async {
   final f = await FilePicker.pickFile(type: FileType.custom, allowedExtensions: const ['ics', 'ical', 'icalendar', 'ifb'], dialogTitle: 'ICS-Datei wählen');
   if (f == null) return null;
-  return IcsDatei(name: f.name, laenge: f.lengthSync(), bytes: f.readAsByteStream());
+  int? laenge;
+  try {
+    laenge = f.lengthSync() ?? await f.length(); // im Web kennt der Browser die Größe der Datei, ohne sie zu lesen
+  } catch (_) {
+    laenge = null; // der Strom wird beim Lesen ohnehin bei 5 MB abgebrochen
+  }
+  return IcsDatei(name: f.name, laenge: laenge, bytes: f.readAsByteStream());
 }
 
 final icsDateiWaehlerProvider = Provider<IcsDateiWaehler>((ref) => _systemPicker);
@@ -38,3 +45,8 @@ Future<Uint8List> leseBegrenzt(Stream<Uint8List> quelle, {int max = kIcsMaxBytes
   }
   return b.takeBytes();
 }
+
+/// Liest die ICS-Datei abseits des UI-Threads (Android: Isolate, Web: Etappen). Für Tests überschreibbar.
+typedef IcsLeser = Future<IcsErgebnis> Function(Uint8List bytes, void Function(double)? fortschritt);
+
+final icsLeserProvider = Provider<IcsLeser>((ref) => (bytes, fortschritt) => icsLesenImHintergrund(bytes, fortschritt: fortschritt));

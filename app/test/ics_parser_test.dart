@@ -6,6 +6,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/calendar/ics_datei.dart';
+import 'package:lx_fampad/data/calendar/ics_lesen_io.dart';
 import 'package:lx_fampad/data/calendar/ics_parser.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
@@ -261,6 +262,104 @@ void main() {
       expect([b.startDate, b.endDate], ['2026-12-01', '2026-12-02']);
       final c = _eins('BEGIN:VEVENT\r\nUID:3\r\nDTSTART;VALUE=DATE:20261201\r\nSUMMARY:a\r\nEND:VEVENT');
       expect(c.endDate, '2026-12-02');
+    });
+
+    test('Jahresgrenzen: Ausnahmen außerhalb 2000 bis 2199 entfallen mit Hinweis, ganztägiges Ende wird auf 31.12.2199 gekürzt', () {
+      final e = _text(_cal('BEGIN:VEVENT\r\nUID:1\r\nDTSTART:20261201T100000Z\r\nRRULE:FREQ=WEEKLY\r\nEXDATE:19990101T100000Z,20261208T100000Z\r\nSUMMARY:a\r\nEND:VEVENT\r\n'
+          'BEGIN:VEVENT\r\nUID:1\r\nRECURRENCE-ID:22501201T100000Z\r\nDTSTART:22501201T110000Z\r\nSUMMARY:fern\r\nEND:VEVENT'));
+      final t = e.termine.single;
+      expect(t.ausnahmen.map((a) => a.schluessel), ['2026-12-08T10:00:00Z']);
+      expect(e.hinweise.any((h) => h.text.contains('außerhalb der Jahre')), isTrue);
+      final k = _text(_cal('BEGIN:VEVENT\r\nUID:2\r\nDTSTART;VALUE=DATE:21991230\r\nDTEND;VALUE=DATE:22000105\r\nSUMMARY:Ende\r\nEND:VEVENT\r\n'
+          'BEGIN:VEVENT\r\nUID:3\r\nDTSTART;VALUE=DATE:21991231\r\nDTEND;VALUE=DATE:22000101\r\nSUMMARY:Letzter Tag\r\nEND:VEVENT'));
+      final ende = k.termine.firstWhere((x) => x.uid == '2');
+      expect(ende.endDate, '2199-12-31');
+      expect(k.hinweise.any((h) => h.titel == 'Ende' && h.text.contains('gekürzt')), isTrue);
+      final letzter = k.termine.where((x) => x.uid == '3');
+      expect(letzter, isEmpty, reason: 'ein Tag am 31.12.2199 braucht das Ende 2200-01-01, das der Server ablehnt');
+    });
+
+    test('Emoji bleiben heil (❤️, 👨‍👩‍👧), Zero-Width-, Tag- und Variantenzeichen verschwinden', () {
+      final t = _eins('BEGIN:VEVENT\r\nUID:e\r\nDTSTART:20261201T100000Z\r\nSUMMARY:❤️ 👨‍👩‍👧 a​b‍c⁠d؜e${String.fromCharCode(0xE0041)}f︎g 1️⃣\r\nEND:VEVENT');
+      expect(t.titel, '❤️ 👨‍👩‍👧 abcdefg 1️⃣');
+    });
+
+    test('Entfalten auf Byte-Ebene: eine Faltung mitten in einem Mehrbyte-Zeichen zerstört es nicht', () {
+      final b = BytesBuilder()
+        ..add(utf8.encode('BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:f\r\nDTSTART:20261201T100000Z\r\nSUMMARY:Gr'))
+        ..add([0xC3])
+        ..add(utf8.encode('\r\n '))
+        ..add([0xBC, 0xC3])
+        ..add(utf8.encode('\n \n\t'))
+        ..add([0x9F])
+        ..add(utf8.encode('e 🎂\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n'));
+      expect(icsLesen(b.takeBytes()).termine.single.titel, 'Grüße 🎂');
+    });
+
+    test('sehr viele verschiedene Eigenschaften je Termin werden gedeckelt, der Termin bleibt lesbar', () {
+      final props = [for (var i = 0; i < 400; i++) 'X-P$i:v'].join('\r\n');
+      final t = _eins('BEGIN:VEVENT\r\nUID:p\r\nDTSTART:20261201T100000Z\r\nSUMMARY:viele\r\n$props\r\nEND:VEVENT');
+      expect(t.titel, 'viele');
+    });
+
+    test('Hinweisliste wird bei 5000 gekappt', () {
+      final b = StringBuffer();
+      for (var i = 0; i < 5000; i++) {
+        b.write('BEGIN:VEVENT\r\nUID:c$i\r\nSTATUS:CANCELLED\r\nDTSTART:20261201T100000Z\r\nSUMMARY:T$i\r\nEND:VEVENT\r\n');
+      }
+      b.write('BEGIN:VEVENT\r\nUID:zuviel\r\nSUMMARY:x\r\nEND:VEVENT\r\n');
+      final e = _text(_cal(b.toString()));
+      expect(e.hinweise.length, lessThanOrEqualTo(kIcsMaxHinweise + 1));
+      expect(e.hinweise.last.text, contains('weitere Hinweise'));
+    });
+
+    test('Serie mit Beginn in UTC wird in der Familienzone gerechnet, mit Hinweis', () {
+      final e = _text(_cal('BEGIN:VEVENT\r\nUID:u\r\nDTSTART:20261003T080000Z\r\nDTEND:20261003T090000Z\r\nRRULE:FREQ=WEEKLY;UNTIL=20261231\r\nSUMMARY:UTC-Serie\r\nEND:VEVENT'));
+      final t = e.termine.single;
+      expect(t.tzid, 'Europe/Berlin');
+      expect(t.startUtc, DateTime.utc(2026, 10, 3, 8));
+      expect(t.rrule, 'FREQ=WEEKLY;UNTIL=20261231T225959Z');
+      expect(e.hinweise.any((h) => h.text.contains('UTC')), isTrue);
+    });
+
+    test('EXDATE und RECURRENCE-ID ohne TZID nutzen die Zone des Beginns', () {
+      final t = _eins('BEGIN:VEVENT\r\nUID:z\r\nDTSTART;TZID=America/New_York:20261201T100000\r\nDTEND;TZID=America/New_York:20261201T110000\r\n'
+          'RRULE:FREQ=WEEKLY\r\nEXDATE:20261208T100000\r\nSUMMARY:NY-Serie\r\nEND:VEVENT');
+      expect(t.ausnahmen.single.schluessel, '2026-12-08T15:00:00Z');
+    });
+
+    test('mehr als 500 EXDATE: gekürzt mit Hinweis', () {
+      final tage = [for (var i = 0; i < 600; i++) DateTime.utc(2027, 1, 1).add(Duration(days: i))];
+      final liste = tage.map((d) => '${d.year}${d.month.toString().padLeft(2, '0')}${d.day.toString().padLeft(2, '0')}T100000Z').join(',');
+      final e = _text(_cal('BEGIN:VEVENT\r\nUID:x\r\nDTSTART:20261201T100000Z\r\nRRULE:FREQ=DAILY\r\nEXDATE:$liste\r\nSUMMARY:x\r\nEND:VEVENT'));
+      expect(e.termine.single.ausnahmen, hasLength(kIcsMaxAusnahmen));
+      expect(e.hinweise.any((h) => h.text.contains('EXDATE')), isTrue);
+    });
+
+    test('Ersatz-UID berücksichtigt Ende und Beschreibung; lange UIDs werden nicht vor dem Hashen gekürzt', () {
+      String ev(String extra) => 'BEGIN:VEVENT\r\nDTSTART:20261201T100000Z\r\nSUMMARY:Gleich\r\n$extra\r\nEND:VEVENT';
+      expect(_eins(ev('DESCRIPTION:A')).uid, isNot(_eins(ev('DESCRIPTION:B')).uid));
+      expect(_eins(ev('DTEND:20261201T110000Z')).uid, isNot(_eins(ev('DTEND:20261201T120000Z')).uid));
+      String lang(String ende) => 'BEGIN:VEVENT\r\nUID:${'u' * 450}$ende\r\nDTSTART:20261201T100000Z\r\nSUMMARY:l\r\nEND:VEVENT';
+      expect(_eins(lang('a')).uid, isNot(_eins(lang('b')).uid));
+    });
+
+    test('Zeit: 5000 Termine werden in angemessener Zeit gelesen (großzügige Grenze), auch im Hintergrund-Isolate', () async {
+      final b = StringBuffer();
+      for (var i = 0; i < 5000; i++) {
+        b.write('BEGIN:VEVENT\r\nUID:z$i\r\nDTSTART;TZID=Europe/Berlin:20261201T100000\r\nDTEND;TZID=Europe/Berlin:20261201T110000\r\n'
+            'RRULE:FREQ=WEEKLY;COUNT=10\r\nSUMMARY:Termin $i\r\nDESCRIPTION:${'Text ' * 40}\r\nEND:VEVENT\r\n');
+      }
+      final bytes = _bytes(_cal(b.toString()));
+      final uhr = Stopwatch()..start();
+      expect(icsLesen(bytes).termine, hasLength(5000));
+      stdout.writeln('Parser: 5000 Termine in ${uhr.elapsedMilliseconds} ms (${(bytes.length / 1024).round()} KB)');
+      expect(uhr.elapsed, lessThan(const Duration(seconds: 20)));
+      final etappen = <double>[];
+      expect((await icsLesenEtappen(bytes, fortschritt: etappen.add)).termine, hasLength(5000));
+      expect(etappen, isNotEmpty);
+      final isolate = await icsLesenImHintergrund(bytes, zonenDaten: File('assets/tz/latest.tzf').readAsBytesSync());
+      expect(isolate.termine, hasLength(5000));
     });
 
     test('Datum außerhalb 2000 bis 2199 wird übersprungen', () {

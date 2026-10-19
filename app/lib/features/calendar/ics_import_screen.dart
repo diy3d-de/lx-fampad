@@ -9,6 +9,7 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/ics_datei.dart';
+import '../../data/app_database.dart' show Termin;
 import '../../data/calendar/ics_import.dart';
 import '../../data/calendar/ics_parser.dart';
 import '../../data/calendar/termin_repository.dart';
@@ -39,6 +40,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
   String? _person;
   var _aktualisieren = false;
   var _erledigt = 0;
+  double? _lesefortschritt;
   var _gesamt = 0;
   IcsBericht? _bericht;
   final _abbruch = IcsAbbruch();
@@ -70,8 +72,9 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     try {
       final bytes = await leseBegrenzt(datei.bytes);
       if (!zeitzonenBereit() && !await zeitzonenNeuLaden()) throw const IcsFehler('Die Zeitzonen-Daten konnten nicht geladen werden. Bitte versuche es gleich noch einmal.');
-      await Future<void>.delayed(Duration.zero); // die Anzeige "wird gelesen" kommt vor der Rechenarbeit
-      final ergebnis = icsLesen(bytes);
+      final ergebnis = await ref.read(icsLeserProvider)(bytes, (p) {
+        if (mounted) setState(() => _lesefortschritt = p);
+      });
       if (!mounted) return;
       final daten = ref.read(kalenderDatenProvider);
       final user = ref.read(authProvider).user;
@@ -108,6 +111,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     final bericht = await ref.read(icsImporterProvider).importieren(
       plan,
       sicht: _sicht,
+      rechte: TerminRechte(ref.read(authProvider).user?.role ?? Role.guest, ref.read(authProvider).user?.id),
       teilnehmer: {?_person},
       aktualisieren: _aktualisieren,
       abbruch: _abbruch,
@@ -128,6 +132,34 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = TerminRechte(user?.role ?? Role.guest, user?.id);
     final plan = _plan;
+    return PopScope(
+      canPop: _phase != _Phase.laeuft,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || _phase != _Phase.laeuft) return;
+        final nav = Navigator.of(context);
+        final abbrechen = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Import abbrechen?'),
+            content: const Text('Bereits importierte Termine bleiben erhalten, der Rest wird nicht mehr importiert.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Weiter importieren')),
+              TextButton(onPressed: () => Navigator.of(ctx).pop(true), child: const Text('Abbrechen')),
+            ],
+          ),
+        );
+        if (abbrechen ?? false) {
+          // der Import hält an und zeigt den Teilbericht
+          setState(() => _abbruch.angefordert = true);
+        } else if (!mounted) {
+          nav.maybePop();
+        }
+      },
+      child: _seite(rechte, plan),
+    );
+  }
+
+  Widget _seite(TerminRechte rechte, IcsPlan? plan) {
     Widget? fuss;
     switch (_phase) {
       case _Phase.vorschau:
@@ -184,7 +216,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const LinearProgressIndicator(color: kAccent, semanticsLabel: 'Datei wird gelesen'),
+        LinearProgressIndicator(value: _lesefortschritt, color: kAccent, semanticsLabel: 'Datei wird gelesen'),
         const SizedBox(height: 12),
         Text(text, style: const TextStyle(color: kTextMuted)),
       ],
@@ -210,6 +242,24 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     }
     final w = wandUhr(t.startUtc!, familienOrt);
     return '${DateFormat('E, d. MMM y', 'de_DE').format(w)}, ${DateFormat('HH:mm').format(w)} Uhr';
+  }
+
+  /// Zusatz "(angelegt von X)", wenn der vorhandene Termin jemand anderem gehört.
+  String _fremd(Termin? t, List<UserDto> mitglieder) {
+    final besitzer = t?.ownerId;
+    if (besitzer == null || besitzer == ref.read(authProvider).user?.id) return '';
+    final name = mitglieder.where((u) => u.id == besitzer).map((u) => u.displayName).firstOrNull ?? 'jemand anderem';
+    return ' (angelegt von $name)';
+  }
+
+  static String _wannVorhanden(Termin? t) {
+    if (t == null) return '';
+    if (t.ganztaegig) {
+      final d = DateTime.tryParse('${t.startDate}T00:00:00Z');
+      return d == null ? '' : DateFormat('d. MMM y', 'de_DE').format(d);
+    }
+    if (t.startUtc == null) return '';
+    return DateFormat('d. MMM y, HH:mm', 'de_DE').format(wandUhr(t.startUtc!, familienOrt));
   }
 
   Widget _zahl(String zahl, String text, Color farbe) => Container(
@@ -320,6 +370,28 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
               value: _aktualisieren,
               onChanged: (v) => setState(() => _aktualisieren = v),
             ),
+          if (plan.geaendert > 0 && _aktualisieren) ...[
+            const SizedBox(height: 4),
+            const MonoLabel('// wird überschrieben', color: kWarn),
+            const SizedBox(height: 6),
+            LxCard(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  for (final e in plan.eintraege.where((e) => e.status == IcsStatus.geaendert).take(15))
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 3),
+                      child: Text(
+                        '${e.vorhanden?.titel ?? e.termin.titel}, ${_wannVorhanden(e.vorhanden)}${_fremd(e.vorhanden, mitglieder)}',
+                        style: const TextStyle(fontSize: 13, color: kText),
+                      ),
+                    ),
+                  if (plan.geaendert > 15) Text('… und ${plan.geaendert - 15} weitere', style: const TextStyle(color: kTextMuted, fontSize: 12)),
+                ],
+              ),
+            ),
+          ],
         ],
         const SizedBox(height: 8),
         TextButton.icon(onPressed: _waehlen, icon: const Icon(Icons.swap_horiz), label: const Text('Andere Datei wählen')),

@@ -79,7 +79,7 @@ class ApiException implements Exception {
 
   /// Baut den Fehler aus Status, Fehlercode und (optional) Retry-After in Sekunden.
   factory ApiException.vonAntwort({required int status, required String code, int? retryAfterSekunden}) {
-    final warte = retryAfterSekunden == null || retryAfterSekunden < 0 ? null : Duration(seconds: retryAfterSekunden);
+    final warte = retryAfterSekunden == null || retryAfterSekunden < 0 ? null : Duration(seconds: retryAfterSekunden > 86400 ? 86400 : retryAfterSekunden); // vor der Umrechnung gedeckelt (Überlauf)
     String wartetext(String basis) {
       if (warte == null) return basis;
       final s = warte.inSeconds;

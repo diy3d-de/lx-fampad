@@ -49,6 +49,7 @@ dev_dependencies:
   analyzer: 14.4.0
 
 # Transitive Pakete von file_picker auf Stände festhalten, die mindestens 14 Tage alt sind (Regel für neue Pakete)
+# (Versionen und Veröffentlichungsdaten: docs/VERSIONEN.md). Wiedervorlage 19.11.2026: dann sind die neueren Stände 14 Tage alt, Overrides prüfen und entfernen.
 dependency_overrides:
   android_file_picker: 2.0.0
   file_picker_darwin: 2.1.2

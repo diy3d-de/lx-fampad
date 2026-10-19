@@ -23,6 +23,7 @@ const kIcsMaxBytes = 5 * 1024 * 1024;
 const kIcsMaxTermine = 5000;
 const kIcsMaxZeilenLaenge = 100000;
 const kIcsMaxAusnahmen = 500; // wie der Server je Termin
+const kIcsMaxHinweise = 5000;
 
 /// Erinnerungen, die die App anbietet (Minuten vor Beginn); der Server erlaubt 0 bis 40320.
 const kIcsErinnerungen = <int>[0, 5, 15, 30, 60, 1440, 10080];
@@ -158,34 +159,34 @@ _Zeile? _zeileLesen(String s) {
   return _Zeile(name, params, s.substring(i + 1));
 }
 
-/// Zeilen entfalten (Fortsetzungszeilen beginnen mit Leerzeichen oder Tab); LF, CRLF und CR als Zeilenende.
-List<String> _entfalten(String text) {
-  final ergebnis = <String>[];
-  StringBuffer? aktuell;
-  var zu = false; // aktuelle Zeile ist schon zu lang: Rest verwerfen
-  void abschliessen() {
-    final a = aktuell;
-    if (a != null && a.isNotEmpty) ergebnis.add(a.toString());
-    aktuell = null;
-    zu = false;
-  }
-
-  for (final roh in const LineSplitter().convert(text)) {
-    if (roh.isEmpty) continue;
-    final c = roh.codeUnitAt(0);
-    if ((c == 0x20 || c == 0x09) && aktuell != null) {
-      if (!zu) {
-        aktuell!.write(roh.substring(1));
-        if (aktuell!.length > kIcsMaxZeilenLaenge) zu = true;
+/// Zeilen entfalten auf Byte-Ebene, BEVOR dekodiert wird (sonst könnte eine Faltung mitten in einem Mehrbyte-Zeichen es zerstören):
+/// Fortsetzungszeilen beginnen mit Leerzeichen oder Tab; LF, CRLF und CR gelten als Zeilenende. Zu lange Zeilen werden gekürzt.
+List<String> _zeilen(Uint8List bytes) {
+  final out = Uint8List(bytes.length);
+  var n = 0, i = 0;
+  final len = bytes.length;
+  while (i < len) {
+    final c = bytes[i];
+    if (c == 0x0D || c == 0x0A) {
+      var j = i + 1;
+      if (c == 0x0D && j < len && bytes[j] == 0x0A) j++;
+      if (j < len && (bytes[j] == 0x20 || bytes[j] == 0x09)) {
+        i = j + 1; // Fortsetzung: Zeilenumbruch und genau ein Leerzeichen entfallen
+        continue;
       }
-    } else {
-      abschliessen();
-      aktuell = StringBuffer(roh.length > kIcsMaxZeilenLaenge ? roh.substring(0, kIcsMaxZeilenLaenge) : roh);
-      zu = roh.length >= kIcsMaxZeilenLaenge;
+      out[n++] = 0x0A;
+      i = j;
+      continue;
     }
+    out[n++] = c;
+    i++;
   }
-  abschliessen();
-  return ergebnis;
+  var text = utf8.decode(Uint8List.sublistView(out, 0, n), allowMalformed: true);
+  if (text.startsWith('\uFEFF')) text = text.substring(1);
+  return [
+    for (final l in text.split('\n'))
+      if (l.isNotEmpty) (l.length > kIcsMaxZeilenLaenge ? l.substring(0, kIcsMaxZeilenLaenge) : l),
+  ];
 }
 
 // ------------------------------------------------------------------------------------------------ Text
@@ -207,23 +208,62 @@ String _entmaskieren(String s) {
   return b.toString();
 }
 
-/// Steuerzeichen, Richtungszeichen und einzelne Surrogate entfernen, auf [max] Zeichen (UTF-16) kürzen. [mehrzeilig]: Zeilenumbrüche bleiben,
-/// sonst werden sie zu Leerzeichen.
+/// Grob: ist [r] ein Emoji bzw. Symbol, hinter dem ein Variantenwähler (U+FE0F) oder ein Zero-Width-Joiner (U+200D) zu einer Emoji-Folge gehört?
+bool _emoji(int r) =>
+    (r >= 0x1F000 && r <= 0x1FAFF) ||
+    (r >= 0x2190 && r <= 0x2BFF) ||
+    r == 0x203C ||
+    r == 0x2049 ||
+    r == 0x2122 ||
+    r == 0x2139 ||
+    r == 0x3030 ||
+    r == 0x303D ||
+    r == 0x3297 ||
+    r == 0x3299 ||
+    r == 0xA9 ||
+    r == 0xAE ||
+    r == 0x20E3;
+
+/// Steuerzeichen, Richtungs-, Zero-Width- und Tag-Zeichen, Variantenwähler und einzelne Surrogate entfernen, auf [max] Zeichen (UTF-16)
+/// kürzen. Emoji bleiben heil: U+FE0F (Emoji-Darstellung) und U+200D (Verbinder) bleiben nur innerhalb von Emoji-Folgen (z. B. ❤️ und 👨‍👩‍👧).
+/// [mehrzeilig]: Zeilenumbrüche bleiben, sonst werden sie zu Leerzeichen.
 String _bereinigen(String s, {required int max, bool mehrzeilig = false}) {
   final b = StringBuffer();
   var laenge = 0;
   var letztesLeer = true;
-  for (final r in s.runes) {
-    int? ausgabe = r;
-    if (r == 0x0A || r == 0x2028 || r == 0x2029 || r == 0x85) {
+  var vorher = 0; // zuletzt ausgegebenes Zeichen
+  final r = s.runes.toList(growable: false);
+  for (var i = 0; i < r.length; i++) {
+    final c = r[i];
+    int? ausgabe = c;
+    if (c == 0x0A || c == 0x2028 || c == 0x2029 || c == 0x85) {
       ausgabe = mehrzeilig ? 0x0A : 0x20;
-    } else if (r == 0x09 || r == 0x0D) {
+    } else if (c == 0x09 || c == 0x0D) {
       ausgabe = 0x20;
-    } else if (r < 0x20 || (r >= 0x7F && r <= 0x9F)) {
+    } else if (c < 0x20 || (c >= 0x7F && c <= 0x9F)) {
       ausgabe = null;
-    } else if (r >= 0xD800 && r <= 0xDFFF) {
+    } else if (c >= 0xD800 && c <= 0xDFFF) {
       ausgabe = null;
-    } else if (r == 0xFFFE || r == 0xFFFF || (r >= 0x202A && r <= 0x202E) || (r >= 0x2066 && r <= 0x2069) || r == 0x200E || r == 0x200F || r == 0xFEFF) {
+    } else if (c == 0xFE0F) {
+      final keycap = (vorher >= 0x30 && vorher <= 0x39) || vorher == 0x23 || vorher == 0x2A;
+      if (!(_emoji(vorher) || keycap)) ausgabe = null;
+    } else if (c == 0x200D) {
+      final naechstes = i + 1 < r.length ? r[i + 1] : 0;
+      if (!(_emoji(vorher) || vorher == 0xFE0F) || !_emoji(naechstes)) ausgabe = null;
+    } else if (c == 0xFFFE ||
+        c == 0xFFFF ||
+        (c >= 0x202A && c <= 0x202E) ||
+        (c >= 0x2066 && c <= 0x2069) ||
+        c == 0x200E ||
+        c == 0x200F ||
+        c == 0xFEFF ||
+        c == 0x200B ||
+        c == 0x200C ||
+        c == 0x2060 ||
+        c == 0x061C ||
+        c == 0x180E ||
+        (c >= 0xE0000 && c <= 0xE007F) ||
+        (c >= 0xFE00 && c <= 0xFE0E)) {
       ausgabe = null;
     }
     if (ausgabe == null) continue;
@@ -237,6 +277,7 @@ String _bereinigen(String s, {required int max, bool mehrzeilig = false}) {
     if (laenge + n > max) break;
     b.writeCharCode(ausgabe);
     laenge += n;
+    vorher = ausgabe;
   }
   return b.toString().trim();
 }
@@ -550,12 +591,14 @@ class _Anfang {
   DateTime get instant => wert.datum ? wert.wand : (wert.utc ? wert.wand : instantAusWand(wert.wand, ortFuer(zone)));
 }
 
-_Anfang? _zeitLesen(_Zeile? z, _Zonen zonen) {
+/// [standard]: Zone für Angaben ohne TZID (EXDATE, RECURRENCE-ID und Ende nutzen die Zone des Beginns); sonst die Familienzone.
+_Anfang? _zeitLesen(_Zeile? z, _Zonen zonen, {String? standard}) {
   if (z == null) return null;
   var dz = _datumZeit(z.wert);
   if (dz == null) return null;
   if (z.params['VALUE']?.toUpperCase() == 'DATE' && !dz.datum) dz = _DatumZeit(true, DateTime.utc(dz.wand.year, dz.wand.month, dz.wand.day), false);
-  return _Anfang(dz, dz.utc ? 'UTC' : zonen.aufloesen(z.params['TZID']));
+  final tzid = z.params['TZID'];
+  return _Anfang(dz, dz.utc ? 'UTC' : ((tzid == null || tzid.trim().isEmpty) && standard != null ? standard : zonen.aufloesen(tzid)));
 }
 
 bool _jahrOk(int y) => y >= _kMinJahr && y <= _kMaxJahr;
@@ -591,11 +634,27 @@ class _Gruppe {
 /// Liest [bytes] als ICS-Datei. Wirft [IcsFehler] bei zu großer, leerer oder unbrauchbarer Datei; einzelne kaputte Termine
 /// landen als Hinweis im Ergebnis.
 IcsErgebnis icsLesen(Uint8List bytes) {
+  final aus = <IcsErgebnis>[];
+  for (final _ in _lesen(bytes, aus)) {}
+  return aus.single;
+}
+
+/// Wie [icsLesen], aber in Etappen: zwischen den Etappen wird der Ereignisschleife Luft gelassen (Web: kein Einfrieren der Oberfläche).
+/// [fortschritt] bekommt Werte von 0 bis 1.
+Future<IcsErgebnis> icsLesenEtappen(Uint8List bytes, {void Function(double)? fortschritt}) async {
+  final aus = <IcsErgebnis>[];
+  for (final p in _lesen(bytes, aus)) {
+    fortschritt?.call(p);
+    await Future<void>.delayed(Duration.zero);
+  }
+  return aus.single;
+}
+
+/// Der eigentliche Leser als Erzeuger: liefert zwischendurch den Fortschritt (0 bis 1) und legt das Ergebnis am Ende in [aus].
+Iterable<double> _lesen(Uint8List bytes, List<IcsErgebnis> aus) sync* {
   if (bytes.length > kIcsMaxBytes) throw const IcsFehler('Die Datei ist größer als 5 MB.');
   if (!zeitzonenBereit()) throw const IcsFehler('Die Zeitzonen-Daten sind nicht geladen. Bitte versuche es gleich noch einmal.');
-  var text = utf8.decode(bytes, allowMalformed: true);
-  if (text.startsWith('﻿')) text = text.substring(1);
-  final zeilen = _entfalten(text);
+  final zeilen = _zeilen(bytes);
 
   final hinweise = <IcsHinweis>[];
   final dateiZonen = <String>{};
@@ -607,7 +666,9 @@ IcsErgebnis icsLesen(Uint8List bytes) {
   _Ereignis? aktuell;
   var ignoriere = false;
 
+  var zeilenNr = 0;
   for (final roh in zeilen) {
+    if (++zeilenNr % 5000 == 0) yield 0.4 * zeilenNr / zeilen.length;
     final z = _zeileLesen(roh);
     if (z == null) continue;
     if (z.name == 'BEGIN') {
@@ -643,8 +704,11 @@ IcsErgebnis icsLesen(Uint8List bytes) {
     if (stapel.isEmpty || ignoriere) continue;
     final oben = stapel.last;
     if (oben == 'VEVENT' && aktuell != null) {
-      final liste = aktuell.eigenschaften.putIfAbsent(z.name, () => []);
-      if (liste.length < 200) liste.add(z);
+      final eig = aktuell.eigenschaften;
+      if (eig.containsKey(z.name) || eig.length < 100) {
+        final liste = eig.putIfAbsent(z.name, () => []);
+        if (liste.length < 200) liste.add(z);
+      }
     } else if (oben == 'VALARM' && aktuell != null && stapel.length >= 2 && stapel[stapel.length - 2] == 'VEVENT') {
       if (z.name == 'TRIGGER' && aktuell.alarme.length < 20) aktuell.alarme.add(z);
     } else if (oben == 'VTIMEZONE' && z.name == 'TZID') {
@@ -660,13 +724,16 @@ IcsErgebnis icsLesen(Uint8List bytes) {
   var folge = 0;
   for (final e in ereignisse) {
     folge++;
+    if (folge % 500 == 0) yield 0.4 + 0.1 * folge / ereignisse.length;
     try {
       final summe = _bereinigen(_entmaskieren(e.erste('SUMMARY')?.wert ?? ''), max: 200);
-      var uid = _bereinigen(e.erste('UID')?.wert ?? '', max: 400);
+      var uid = _bereinigen(e.erste('UID')?.wert ?? '', max: kIcsMaxZeilenLaenge);
       if (uid.isEmpty) {
-        uid = _ersatzUid('$summe|${e.erste('DTSTART')?.wert}|${e.erste('RRULE')?.wert}|${e.erste('RECURRENCE-ID')?.wert}');
+        uid = _ersatzUid(
+          '$summe|${e.erste('DTSTART')?.wert}|${e.erste('DTEND')?.wert}|${e.erste('RRULE')?.wert}|${e.erste('RECURRENCE-ID')?.wert}|${e.erste('DESCRIPTION')?.wert}',
+        );
       } else if (uid.length > 255) {
-        uid = _ersatzUid(uid);
+        uid = _ersatzUid(uid); // der Hash über die ganze UID, nicht über einen gekürzten Anfang
       }
       final g = gruppen.putIfAbsent(uid, () => _Gruppe(uid));
       if (e.erste('RECURRENCE-ID') != null) {
@@ -691,7 +758,9 @@ IcsErgebnis icsLesen(Uint8List bytes) {
   }
 
   final termine = <IcsTermin>[];
+  var gruppeNr = 0;
   for (final g in gruppen.values) {
+    if (++gruppeNr % 100 == 0) yield 0.5 + 0.5 * gruppeNr / gruppen.length;
     try {
       if (g.master == null) {
         // nur abweichende Vorkommen ohne Serie (z. B. eingeladene Einzeltermine): jedes für sich übernehmen
@@ -712,7 +781,13 @@ IcsErgebnis icsLesen(Uint8List bytes) {
     final bekannt = zonen.ausDatei.contains(name);
     hinweise.add(IcsHinweis(null, 'Zeitzone „$name“ ist ${bekannt ? 'nicht umsetzbar' : 'unbekannt'}: $n Termin${n == 1 ? '' : 'e'} als Europe/Berlin gelesen'));
   });
-  return IcsErgebnis(termine: termine, hinweise: hinweise, gelesen: gelesen > kIcsMaxTermine ? kIcsMaxTermine : gelesen, abgeschnitten: abgeschnitten);
+  if (hinweise.length > kIcsMaxHinweise) {
+    final rest = hinweise.length - kIcsMaxHinweise;
+    hinweise.removeRange(kIcsMaxHinweise, hinweise.length);
+    hinweise.add(IcsHinweis(null, '… und $rest weitere Hinweise'));
+  }
+  aus.add(IcsErgebnis(termine: termine, hinweise: hinweise, gelesen: gelesen > kIcsMaxTermine ? kIcsMaxTermine : gelesen, abgeschnitten: abgeschnitten));
+  yield 1;
 }
 
 IcsTermin? _einzelnerTermin(
@@ -740,6 +815,9 @@ IcsTermin? _einzelnerTermin(
   final ganzt = start.wert.datum;
   var startWand = start.wert.wand;
   var zone = start.zone;
+  // Serien mit Beginn in UTC (Z) rechnen in der Wanduhr der Familienzone (10 Uhr bleibt über die Zeitumstellung 10 Uhr)
+  final utcSerie = !ganzt && start.wert.utc && !ohneRegel && e.erste('RRULE') != null;
+  if (utcSerie) zone = kFamilienZone;
 
   // Wiederholungsregel
   String? regel;
@@ -777,7 +855,7 @@ IcsTermin? _einzelnerTermin(
   if (verschoben) hin('Beginn vor dem Jahr 2000, die jährliche Serie beginnt im Jahr 2000');
 
   // Ende
-  final dtend = _zeitLesen(e.erste('DTEND'), zonen);
+  final dtend = _zeitLesen(e.erste('DTEND'), zonen, standard: start.wert.utc ? null : start.zone);
   final dauer = e.erste('DURATION') == null ? null : _dauer(e.erste('DURATION')!.wert);
   final verschiebung = verschoben ? startWand.difference(start.wert.wand) : Duration.zero;
 
@@ -793,7 +871,15 @@ IcsTermin? _einzelnerTermin(
       final tage = (dauer.inHours / 24).ceil();
       ende = DateTime.utc(s.year, s.month, s.day + (tage < 1 ? 1 : tage));
     }
-    if (!_jahrOk(ende.year) && ende.year != _kMaxJahr + 1) {
+    if (ende.year > _kMaxJahr) {
+      // der Server erlaubt als Ende höchstens den 31.12.2199
+      ende = DateTime.utc(_kMaxJahr, 12, 31);
+      if (!ende.isAfter(s)) {
+        weg('Ende liegt außerhalb der Jahre $_kMinJahr bis $_kMaxJahr');
+        return null;
+      }
+      hin('Das Ende lag nach 2199 und wurde auf den 31.12.2199 gekürzt');
+    } else if (ende.year < _kMinJahr) {
       weg('Ende liegt außerhalb der Jahre $_kMinJahr bis $_kMaxJahr');
       return null;
     }
@@ -801,7 +887,8 @@ IcsTermin? _einzelnerTermin(
     endDate = tagText(ende);
   } else {
     // Z-Zeiten: einmalige Termine in der Familienzone, Serien in UTC (die Regel rechnet in dieser Zone)
-    zone = start.wert.utc ? (istSerie ? 'UTC' : kFamilienZone) : zone;
+    zone = start.wert.utc ? kFamilienZone : zone;
+    if (utcSerie && istSerie) hin('Die Serie ist in UTC angegeben und wird in der Familienzone (Europe/Berlin) gerechnet: die Uhrzeit bleibt über die Zeitumstellung gleich');
     final ort = ortFuer(zone);
     final s = start.wert.utc ? startWand : instantAusWand(startWand, ort);
     DateTime en = s;
@@ -831,7 +918,9 @@ IcsTermin? _einzelnerTermin(
   final ausnahmen = <String, IcsAusnahme>{};
   if (istSerie) {
     final ort = ortFuer(tzid ?? kFamilienZone);
-    String? schluessel(_Anfang? a) {
+    final stdZone = tzid ?? kFamilienZone; // Angaben ohne TZID nutzen die Zone des Beginns
+    var jahrHinweis = false;
+    String? schluesselRoh(_Anfang? a) {
       if (a == null) return null;
       if (ganzt) return tagText(DateTime.utc(a.wert.wand.year, a.wert.wand.month, a.wert.wand.day));
       if (a.wert.datum) {
@@ -842,17 +931,36 @@ IcsTermin? _einzelnerTermin(
       return zeitSchluessel(a.wert.utc ? a.wert.wand : instantAusWand(a.wert.wand, ortFuer(a.zone)));
     }
 
+    // Schlüssel außerhalb der Jahre 2000 bis 2199 lehnt der Server ab: auslassen
+    String? schluessel(_Anfang? a) {
+      final k = schluesselRoh(a);
+      if (k != null && !_jahrOk(int.parse(k.substring(0, 4)))) {
+        if (!jahrHinweis) {
+          jahrHinweis = true;
+          hin('Ausnahmen außerhalb der Jahre $_kMinJahr bis $_kMaxJahr wurden ausgelassen');
+        }
+        return null;
+      }
+      return k;
+    }
+
+    var exdateGekuerzt = false;
+
     for (final z in e.alle('EXDATE')) {
       for (final teil in z.wert.split(',')) {
-        if (ausnahmen.length >= kIcsMaxAusnahmen) break;
-        final a = _zeitLesen(_Zeile('EXDATE', z.params, teil.trim()), zonen);
+        if (ausnahmen.length >= kIcsMaxAusnahmen) {
+          exdateGekuerzt = true;
+          break;
+        }
+        final a = _zeitLesen(_Zeile('EXDATE', z.params, teil.trim()), zonen, standard: stdZone);
         final k = schluessel(a);
         if (k != null) ausnahmen[k] = IcsAusnahme(schluessel: k, abgesagt: true);
       }
     }
+    if (exdateGekuerzt) hin('Mehr als $kIcsMaxAusnahmen abgesagte Vorkommen (EXDATE), der Rest wurde nicht übernommen');
     for (final o in ueberschreibungen) {
       try {
-        final k = schluessel(_zeitLesen(o.erste('RECURRENCE-ID'), zonen));
+        final k = schluessel(_zeitLesen(o.erste('RECURRENCE-ID'), zonen, standard: stdZone));
         if (k == null) continue;
         if (o.erste('RECURRENCE-ID')!.params['RANGE']?.toUpperCase() == 'THISANDFUTURE') {
           hin('„Dieses und alle folgenden“ einer Serie wird nicht unterstützt, nur das genannte Vorkommen wurde geändert');
@@ -867,10 +975,10 @@ IcsTermin? _einzelnerTermin(
         }
         final t = _bereinigen(_entmaskieren(o.erste('SUMMARY')?.wert ?? ''), max: 200);
         final ortText = o.erste('LOCATION') == null ? null : _bereinigen(_entmaskieren(o.erste('LOCATION')!.wert), max: 200);
-        final os = _zeitLesen(o.erste('DTSTART'), zonen);
+        final os = _zeitLesen(o.erste('DTSTART'), zonen, standard: stdZone);
         String? neuStart, neuEnde;
         if (os != null && os.wert.datum == ganzt) {
-          final oe = _zeitLesen(o.erste('DTEND'), zonen);
+          final oe = _zeitLesen(o.erste('DTEND'), zonen, standard: stdZone);
           final od = o.erste('DURATION') == null ? null : _dauer(o.erste('DURATION')!.wert);
           final String urspruenglichEnde;
           final String sk;
@@ -898,7 +1006,7 @@ IcsTermin? _einzelnerTermin(
             ek = zeitSchluessel(ei);
           }
           // nur eine echte Verschiebung (anderer Beginn oder andere Dauer) wird als Ausnahme gespeichert
-          if (sk != k || ek != urspruenglichEnde) {
+          if ((sk != k || ek != urspruenglichEnde) && _jahrOk(int.parse(sk.substring(0, 4))) && _jahrOk(int.parse(ek.substring(0, 4)))) {
             neuStart = sk;
             neuEnde = ek;
           }

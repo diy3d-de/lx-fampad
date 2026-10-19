@@ -132,7 +132,7 @@ void main() {
 
     sync.starten();
     final uhr = Stopwatch()..start();
-    final bericht = await importer.importieren(plan, sicht: TerminSicht.family);
+    final bericht = await importer.importieren(plan, sicht: TerminSicht.family, rechte: TerminRechte(Role.admin, adminId));
     stdout.writeln('lokal geschrieben: ${bericht.neu} Termine in ${uhr.elapsed}');
     var letzterStatus = '';
     final ausgangStore = container.read(syncStoreProvider);

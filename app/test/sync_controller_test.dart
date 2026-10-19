@@ -180,6 +180,71 @@ void main() {
     expect(c.read(syncProvider).status, SyncStatus.synchron);
   });
 
+  /// Startet den Sync mit [fehler] in der Warteschlange des Fake-Servers und Retry-After [sekunden].
+  Future<void> mitFehlern(WidgetTester tester, List<(int, String)> fehler, int sekunden) async {
+    env = await angemeldeteUmgebung();
+    env.sync.fehlerQueue.addAll(fehler);
+    env.sync.retryAfterWert = sekunden;
+    c = ProviderContainer(overrides: [...env.overrides, syncZufallProvider.overrideWithValue(_FesterZufall())]);
+    sync = c.read(syncProvider.notifier)..starten();
+    await ruhe(tester);
+  }
+
+  lauf('429 mit Retry-After 0: keine Dauerschleife, mindestens der Backoff-Start (2 s)', (tester) async {
+    await mitFehlern(tester, [(429, 'rate_limited')], 0);
+    expect(anfragen(), 1);
+    await ruhe(tester, const Duration(milliseconds: 1500));
+    expect(anfragen(), 1, reason: 'Mindestwartezeit 2 s, nicht 0,25 s');
+    await ruhe(tester, const Duration(seconds: 2));
+    expect(anfragen(), 2);
+  });
+
+  for (final sekunden in [3600, 9007199254740991]) {
+    lauf('429 mit Retry-After $sekunden: höchstens 5 Minuten warten, Status "fehler" mit Hinweis, kein Überlauf', (tester) async {
+      await mitFehlern(tester, [(429, 'rate_limited')], sekunden);
+      expect(c.read(syncProvider).status, SyncStatus.fehler);
+      expect(c.read(syncProvider).meldung, contains('bremst'));
+      await ruhe(tester, const Duration(minutes: 4));
+      expect(anfragen(), 1);
+      await ruhe(tester, const Duration(minutes: 1, seconds: 5));
+      expect(anfragen(), 2);
+      expect(c.read(syncProvider).status, SyncStatus.synchron);
+    });
+  }
+
+  lauf('503 mit Retry-After: alter Backoff-Pfad (Fehler, mindestens die Wartezeit des Servers)', (tester) async {
+    await mitFehlern(tester, [(503, 'server_busy')], 7);
+    expect(c.read(syncProvider).status, SyncStatus.fehler);
+    await ruhe(tester, const Duration(seconds: 6));
+    expect(anfragen(), 1);
+    await ruhe(tester, const Duration(seconds: 2));
+    expect(anfragen(), 2);
+  });
+
+  lauf('429 too_many_attempts (Sperre der Anmeldung) nimmt den Backoff-Pfad, nicht das Mengenlimit', (tester) async {
+    await mitFehlern(tester, [(429, 'too_many_attempts')], 7);
+    expect(c.read(syncProvider).status, SyncStatus.fehler);
+    expect(c.read(syncProvider).meldung, isNot(contains('bremst')));
+  });
+
+  lauf('viele 429 ohne Fortschritt: nach fünf Wiederholungen Status "fehler" mit Hinweis, bei Erfolg wieder normal', (tester) async {
+    await mitFehlern(tester, [for (var i = 0; i < 6; i++) (429, 'rate_limited')], 7);
+    expect(c.read(syncProvider).status, SyncStatus.laeuft);
+    await ruhe(tester, const Duration(seconds: 40));
+    expect(c.read(syncProvider).status, SyncStatus.fehler);
+    expect(c.read(syncProvider).meldung, contains('bremst'));
+    expect(c.read(syncProvider).beschaeftigt, isFalse, reason: 'ein App-Update darf nicht dauerhaft blockiert sein');
+    await ruhe(tester, const Duration(seconds: 20));
+    expect(c.read(syncProvider).status, SyncStatus.synchron);
+  });
+
+  lauf('stoppen() während der Wartezeit: kein weiterer Abgleich danach', (tester) async {
+    await mitFehlern(tester, [(429, 'rate_limited')], 7);
+    sync.stoppen();
+    await ruhe(tester, const Duration(seconds: 30));
+    expect(anfragen(), 1);
+  });
+
   lauf('alle 3 Minuten wird abgeglichen', (tester) async {
     await start(tester);
     await ruhe(tester, const Duration(minutes: 3));

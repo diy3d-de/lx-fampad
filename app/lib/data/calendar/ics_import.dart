@@ -26,7 +26,10 @@ class IcsPlanEintrag {
 
   /// ID des vorhandenen Termins ([IcsStatus.vorhanden], [IcsStatus.geaendert]).
   final String? vorhandenId;
-  const IcsPlanEintrag(this.termin, this.status, {this.grund, this.vorhandenId});
+
+  /// Der vorhandene Termin (für die Vorschau: was würde überschrieben, und wem gehört er).
+  final Termin? vorhanden;
+  const IcsPlanEintrag(this.termin, this.status, {this.grund, this.vorhandenId, this.vorhanden});
 }
 
 class IcsPlan {
@@ -93,6 +96,8 @@ Map<String, dynamic> _unterschiede(Termin alt, IcsTermin neu) {
 
 Map<String, dynamic> _ausnahmeFelder(IcsAusnahme a) => {'abgesagt': a.abgesagt, 'titel': a.titel, 'start': a.start, 'ende': a.ende, 'ort': a.ort};
 
+bool _leereAusnahme(TerminAusnahme z) => !z.abgesagt && z.titel == null && z.start == null && z.ende == null && z.ort == null;
+
 bool _ausnahmeGleich(TerminAusnahme z, IcsAusnahme a) => z.abgesagt == a.abgesagt && z.titel == a.titel && z.start == a.start && z.ende == a.ende && z.ort == a.ort;
 
 /// Plan für den Import: Duplikate über die UID, Obergrenzen (5000 Termine je Familie, 500 je Kind), Rechte zum Aktualisieren.
@@ -103,10 +108,14 @@ IcsPlan icsPlanen(
   required TerminRechte rechte,
 }) {
   final nachUid = <String, Termin>{};
+  final mehrfach = <String>{};
   for (final t in bestehende) {
     final u = t.icalUid;
-    if (u != null) nachUid.putIfAbsent(u, () => t);
+    if (u == null) continue;
+    if (nachUid.containsKey(u)) mehrfach.add(u);
+    nachUid.putIfAbsent(u, () => t);
   }
+  final hinweise = [...datei.hinweise];
   final eigene = bestehende.where((t) => t.ownerId != null && t.ownerId == rechte.userId).length;
   var platzFamilie = kMaxTermineFamilie - bestehende.length;
   var platzKind = kMaxTermineKind - eigene;
@@ -117,13 +126,17 @@ IcsPlan icsPlanen(
     if (alt != null) {
       final d = _unterschiede(alt, t);
       final zeilen = {for (final z in ausnahmen[alt.id] ?? const <TerminAusnahme>[]) z.originalStart: z};
-      final ausnahmenGleich = t.ausnahmen.every((a) => zeilen[a.schluessel] != null && _ausnahmeGleich(zeilen[a.schluessel]!, a));
+      final dateiSchluessel = {for (final a in t.ausnahmen) a.schluessel};
+      var ausnahmenGleich = t.ausnahmen.every((a) => zeilen[a.schluessel] != null && _ausnahmeGleich(zeilen[a.schluessel]!, a));
+      // Ausnahmen, die es nur in der App gibt, würden beim Aktualisieren zurückgesetzt: das ist eine Änderung
+      if (zeilen.values.any((z) => !dateiSchluessel.contains(z.originalStart) && !_leereAusnahme(z))) ausnahmenGleich = false;
+      if (mehrfach.contains(t.uid)) hinweise.add(IcsHinweis(t.titel, 'Diese UID gibt es in der App mehrfach, es wird der erste Termin verglichen'));
       if (d.isEmpty && ausnahmenGleich) {
-        eintraege.add(IcsPlanEintrag(t, IcsStatus.vorhanden, vorhandenId: alt.id));
+        eintraege.add(IcsPlanEintrag(t, IcsStatus.vorhanden, vorhandenId: alt.id, vorhanden: alt));
       } else if (!rechte.darfAendern(alt)) {
-        eintraege.add(IcsPlanEintrag(t, IcsStatus.vorhanden, grund: 'Schon vorhanden, aber von jemand anderem angelegt (nicht änderbar)', vorhandenId: alt.id));
+        eintraege.add(IcsPlanEintrag(t, IcsStatus.vorhanden, grund: 'Schon vorhanden, aber von jemand anderem angelegt (nicht änderbar)', vorhandenId: alt.id, vorhanden: alt));
       } else {
-        eintraege.add(IcsPlanEintrag(t, IcsStatus.geaendert, vorhandenId: alt.id));
+        eintraege.add(IcsPlanEintrag(t, IcsStatus.geaendert, vorhandenId: alt.id, vorhanden: alt));
       }
       continue;
     }
@@ -137,7 +150,7 @@ IcsPlan icsPlanen(
       eintraege.add(IcsPlanEintrag(t, IcsStatus.neu));
     }
   }
-  return IcsPlan(eintraege: eintraege, hinweise: datei.hinweise, abgeschnitten: datei.abgeschnitten);
+  return IcsPlan(eintraege: eintraege, hinweise: hinweise, abgeschnitten: datei.abgeschnitten);
 }
 
 class IcsBericht {
@@ -173,6 +186,7 @@ class IcsImporter {
   Future<IcsBericht> importieren(
     IcsPlan plan, {
     required TerminSicht sicht,
+    required TerminRechte rechte,
     Set<String> teilnehmer = const {},
     bool aktualisieren = false,
     void Function(int erledigt, int gesamt)? fortschritt,
@@ -201,8 +215,14 @@ class IcsImporter {
           await db.transaction(() => _anlegen(e.termin, sicht, teilnehmer));
           neu++;
         } else {
-          await db.transaction(() => _aktualisieren(e.vorhandenId!, e.termin));
-          akt++;
+          // die Rechte werden hier noch einmal gegen den aktuellen Stand geprüft (zwischen Vorschau und Import kann sich etwas ändern)
+          final alt = await (db.select(db.termine)..where((x) => x.id.equals(e.vorhandenId!))).getSingleOrNull();
+          if (alt == null || !rechte.darfAendern(alt)) {
+            probleme.add(IcsHinweis(e.termin.titel, 'Nicht aktualisiert: keine Berechtigung oder inzwischen gelöscht', uebersprungen: true));
+          } else {
+            await db.transaction(() => _aktualisieren(e.vorhandenId!, e.termin));
+            akt++;
+          }
         }
       } catch (_) {
         probleme.add(IcsHinweis(e.termin.titel, 'Konnte nicht gespeichert werden', uebersprungen: true));
@@ -242,6 +262,13 @@ class IcsImporter {
         await store.aendern('termin_ausnahmen', ausnahmeId(id, a.schluessel), {'terminId': id, 'originalStart': a.schluessel, ..._ausnahmeFelder(a)});
       } else if (!_ausnahmeGleich(z, a)) {
         await store.aendern('termin_ausnahmen', z.id, _ausnahmeFelder(a));
+      }
+    }
+    // Ausnahmen, die es in der Datei nicht (mehr) gibt, werden zurückgesetzt (die Zeile bleibt, ihre feste ID kann nie neu vergeben werden)
+    final inDatei = {for (final a in t.ausnahmen) a.schluessel};
+    for (final z in zeilen) {
+      if (!inDatei.contains(z.originalStart) && !_leereAusnahme(z)) {
+        await store.aendern('termin_ausnahmen', z.id, {'abgesagt': false, 'titel': null, 'start': null, 'ende': null, 'ort': null});
       }
     }
   }

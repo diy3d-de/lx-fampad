@@ -58,7 +58,7 @@ class SyncState {
   });
 
   /// Während eines Abgleichs oder mit offenen Änderungen darf kein App-Update installiert werden.
-  bool get beschaeftigt => status == SyncStatus.laeuft || offeneAenderungen > 0;
+  bool get beschaeftigt => status == SyncStatus.laeuft || (offeneAenderungen > 0 && status != SyncStatus.fehler);
 
   SyncState copyWith({
     SyncStatus? status,
@@ -125,6 +125,9 @@ class SyncController extends Notifier<SyncState> {
   bool _aktiv = false;
   bool _vordergrund = true;
   int _fehlversuche = 0;
+
+  /// Aufeinanderfolgende Mengenlimit-Wartezeiten (429) ohne Fortschritt.
+  int _limitFolge = 0;
   int _hinweisId = 0;
   int _bekannteRev = 0;
 
@@ -157,6 +160,7 @@ class SyncController extends Notifier<SyncState> {
     _aktiv = true;
     _generation++;
     _fehlversuche = 0;
+    _limitFolge = 0;
     _geraetVersuche = 0;
     _bekannteRev = 0;
     _gemeldeteRev = 0;
@@ -304,6 +308,7 @@ class SyncController extends Notifier<SyncState> {
     switch (e.ausgang) {
       case SyncAusgang.ok:
         _fehlversuche = 0;
+        _limitFolge = 0;
         _geraetVersuche = 0;
         _backoffTimer?.cancel();
         _backoffTimer = null;
@@ -332,9 +337,15 @@ class SyncController extends Notifier<SyncState> {
       case SyncAusgang.offline:
         state = state.copyWith(status: SyncStatus.offline, meldung: e.meldung, hinweise: hinweise);
         _backoffPlanen(e);
-      case SyncAusgang.ueberlastet when e.warten != null:
-        // Mengenlimit mit Wartezeit (z. B. großer Import): kein Fehler, der Abgleich läuft nach der Wartezeit weiter
-        state = state.copyWith(status: SyncStatus.laeuft, hinweise: hinweise);
+      case SyncAusgang.ueberlastet when e.mengenlimit:
+        // Mengenlimit mit Wartezeit (z. B. großer Import): läuft nach der Wartezeit weiter. Bei langer Wartezeit oder vielen Wiederholungen
+        // ohne Fortschritt wird es nicht still als "läuft" gezeigt, sondern als Hinweis (und blockiert dann kein App-Update).
+        _limitFolge = e.ops > 0 ? 1 : _limitFolge + 1;
+        final sek = _limitWartezeit(e).inSeconds;
+        final lang = sek > 60 || _limitFolge > 5;
+        state = lang
+            ? state.copyWith(status: SyncStatus.fehler, meldung: 'Der Server bremst gerade (zu viele Anfragen). Nächster Versuch in $sek s.', hinweise: hinweise)
+            : state.copyWith(status: SyncStatus.laeuft, meldungLoeschen: true, hinweise: hinweise);
         _backoffPlanen(e);
       case SyncAusgang.ueberlastet || SyncAusgang.fehler:
         state = state.copyWith(status: SyncStatus.fehler, meldung: e.meldung, hinweise: hinweise);
@@ -342,13 +353,19 @@ class SyncController extends Notifier<SyncState> {
     }
   }
 
+  /// Wartezeit bei einem Mengenlimit: die Angabe des Servers, mindestens der Backoff-Start (kein Dauerlauf bei Retry-After 0), höchstens 5 min.
+  Duration _limitWartezeit(SyncErgebnis e) {
+    final minSek = _zeiten.backoffStart.inSeconds < 1 ? 1 : _zeiten.backoffStart.inSeconds;
+    return Duration(seconds: (e.warten?.inSeconds ?? 0).clamp(minSek, 300));
+  }
+
   /// Nächster Versuch nach 2 s, 4 s, 8 s ... höchstens 5 min (mit ±50 % Zufall); bei 429/503 mindestens die Wartezeit des Servers.
   void _backoffPlanen(SyncErgebnis e, {bool kurz = false}) {
     if (!_aktiv) return;
     // Mengenlimit des Servers (429 mit Retry-After, z. B. bei einem großen Import): genau so lange warten wie genannt (plus bis zu 1 s Zufall)
     // und nicht hochschaukeln, sonst dauert ein Import mit vielen Änderungen ein Vielfaches der nötigen Zeit.
-    if (e.ausgang == SyncAusgang.ueberlastet && e.warten != null) {
-      final warte = e.warten! + Duration(milliseconds: 250 + (ref.read(syncZufallProvider).nextDouble() * 750).round());
+    if (e.mengenlimit) {
+      final warte = _limitWartezeit(e) + Duration(milliseconds: 250 + (ref.read(syncZufallProvider).nextDouble() * 750).round());
       _backoffTimer?.cancel();
       _backoffTimer = Timer(warte, () {
         _backoffTimer = null;

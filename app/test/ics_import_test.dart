@@ -14,11 +14,13 @@ import 'package:lx_fampad/data/calendar/ics_datei.dart';
 import 'package:lx_fampad/data/calendar/ics_import.dart';
 import 'package:lx_fampad/data/calendar/ics_parser.dart';
 import 'package:lx_fampad/data/calendar/termin_repository.dart';
+import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'support/harness.dart';
 
+final _admin = TerminRechte(Role.admin, 'user-1');
 Uint8List _fixture(String n) => File('test/fixtures/ics/$n').readAsBytesSync();
 
 class _Geraet {
@@ -62,7 +64,7 @@ void main() {
       final e = icsLesen(_fixture('familywall.ics'));
       final plan = await g.plan(e);
       expect(plan.neu, e.termine.length);
-      final b = await g.importer.importieren(plan, sicht: TerminSicht.all, teilnehmer: {'user-2'});
+      final b = await g.importer.importieren(plan, sicht: TerminSicht.all, rechte: _admin, teilnehmer: {'user-2'});
       expect(b.neu, e.termine.length);
       expect(g.geaendert, 1);
       final alle = await g.termine();
@@ -81,12 +83,12 @@ void main() {
     test('erneuter Import legt keine Duplikate an', () async {
       final g = _Geraet();
       final e = icsLesen(_fixture('familywall.ics'));
-      await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family);
+      await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin);
       final davor = (await g.termine()).length;
       final plan2 = await g.plan(e);
       expect(plan2.neu, 0);
       expect(plan2.vorhanden, e.termine.length);
-      final b = await g.importer.importieren(plan2, sicht: TerminSicht.family);
+      final b = await g.importer.importieren(plan2, sicht: TerminSicht.family, rechte: _admin);
       expect(b.neu, 0);
       expect(b.vorhanden, e.termine.length);
       expect((await g.termine()).length, davor);
@@ -96,14 +98,14 @@ void main() {
     test('geänderte Termine werden nur auf Wunsch aktualisiert', () async {
       final g = _Geraet();
       final e1 = _ics('A', 'Alt');
-      await g.importer.importieren(await g.plan(e1), sicht: TerminSicht.family);
+      await g.importer.importieren(await g.plan(e1), sicht: TerminSicht.family, rechte: _admin);
       final e2 = _ics('A', 'Neu');
       final plan = await g.plan(e2);
       expect(plan.geaendert, 1);
-      var b = await g.importer.importieren(plan, sicht: TerminSicht.family);
+      var b = await g.importer.importieren(plan, sicht: TerminSicht.family, rechte: _admin);
       expect(b.aktualisiert, 0);
       expect((await g.termine()).single.titel, 'Alt');
-      b = await g.importer.importieren(plan, sicht: TerminSicht.family, aktualisieren: true);
+      b = await g.importer.importieren(plan, sicht: TerminSicht.family, rechte: _admin, aktualisieren: true);
       expect(b.aktualisiert, 1);
       expect((await g.termine()).single.titel, 'Neu');
     });
@@ -122,7 +124,7 @@ void main() {
       final admin = await g.plan(viele);
       expect(admin.neu, 520);
       // vorhandener Termin eines anderen, Kind darf ihn nicht ändern
-      await g.importer.importieren(await g.plan(_ics('F', 'Alt')), sicht: TerminSicht.family);
+      await g.importer.importieren(await g.plan(_ics('F', 'Alt')), sicht: TerminSicht.family, rechte: _admin);
       final fremd = (await g.termine()).single;
       await (g.db.update(g.db.termine)..where((t) => t.id.equals(fremd.id))).write(const TermineCompanion(ownerId: Value('anderer')));
       final p = await g.plan(_ics('F', 'Neu'), rolle: Role.child);
@@ -142,13 +144,71 @@ void main() {
         gelesen: 3,
         abgeschnitten: false,
       );
-      final b = await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family);
+      final b = await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin);
       expect(b.neu, 2);
       expect(b.uebersprungen.single.titel, 'kaputt');
       final abbruch = IcsAbbruch()..angefordert = true;
-      final b2 = await _Geraet().importer.importieren(await g.plan(e), sicht: TerminSicht.family, abbruch: abbruch);
+      final b2 = await _Geraet().importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin, abbruch: abbruch);
       expect(b2.abgebrochen, isTrue);
       expect(b2.neu, 0);
+    });
+  });
+
+  group('Aktualisieren und Ablehnungen', () {
+    test('Aktualisieren prüft die Rechte beim Schreiben noch einmal; Plan nennt den vorhandenen Termin', () async {
+      final g = _Geraet();
+      await g.importer.importieren(await g.plan(_ics('A', 'Alt')), sicht: TerminSicht.family, rechte: _admin);
+      final plan = await g.plan(_ics('A', 'Neu'));
+      expect(plan.eintraege.single.status, IcsStatus.geaendert);
+      expect(plan.eintraege.single.vorhanden?.titel, 'Alt');
+      await (g.db.update(g.db.termine)).write(const TermineCompanion(ownerId: Value('anderer')));
+      final b = await g.importer.importieren(plan, sicht: TerminSicht.family, rechte: TerminRechte(Role.child, 'user-1'), aktualisieren: true);
+      expect(b.aktualisiert, 0);
+      expect(b.uebersprungen.single.text, contains('keine Berechtigung'));
+      expect((await g.termine()).single.titel, 'Alt');
+    });
+
+    test('Aktualisieren setzt Ausnahmen zurück, die es in der Datei nicht mehr gibt; vorher zeigt der Plan eine Änderung', () async {
+      String serie(String exdate) =>
+          'BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:s\r\nDTSTART:20261201T100000Z\r\nDTEND:20261201T110000Z\r\nRRULE:FREQ=WEEKLY\r\n$exdate\r\nSUMMARY:Serie\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n';
+      IcsErgebnis lies(String t) => icsLesen(Uint8List.fromList(utf8.encode(t)));
+      final g = _Geraet();
+      await g.importer.importieren(await g.plan(lies(serie('EXDATE:20261208T100000Z'))), sicht: TerminSicht.family, rechte: _admin);
+      expect((await g.db.select(g.db.terminAusnahmen).get()).single.abgesagt, isTrue);
+      final plan = await g.plan(lies(serie('')));
+      expect(plan.geaendert, 1);
+      await g.importer.importieren(plan, sicht: TerminSicht.family, rechte: _admin, aktualisieren: true);
+      expect((await g.db.select(g.db.terminAusnahmen).get()).single.abgesagt, isFalse);
+    });
+
+    test('mehrere vorhandene Termine mit derselben UID: Hinweis im Plan', () async {
+      final g = _Geraet();
+      await g.importer.importieren(await g.plan(_ics('D', 'Eins')), sicht: TerminSicht.family, rechte: _admin);
+      final alt = (await g.termine()).single;
+      await g.db.into(g.db.termine).insert(alt.copyWith(id: 'zweiter', rev: 1).toCompanion(false));
+      final plan = await g.plan(_ics('D', 'Eins'));
+      expect(plan.hinweise.any((h) => h.text.contains('mehrfach')), isTrue);
+    });
+
+    test('abgelehnte Op (invalid) blockiert den Ausgang nicht: sie wird verworfen und der Termin weicht', () async {
+      final g = _Geraet();
+      await g.importer.importieren(await g.plan(_ics('R', 'Zu viel')), sicht: TerminSicht.family, rechte: _admin);
+      final ops = await g.db.select(g.db.outbox).get();
+      final termin = ops.firstWhere((o) => o.entity == 'termin');
+      final antwort = SyncResult(
+        resyncNoetig: false,
+        rev: 1,
+        acked: const [],
+        rejected: [SyncRejected(termin.opId, 'invalid')],
+        conflicts: const [],
+        changes: const [],
+        hasMore: false,
+        next: 0,
+        snapshotRev: null,
+        serverTime: null,
+      );
+      await g.store.uebernehmen(antwort, ops);
+      expect(await g.store.offeneAnzahl(), 0);
     });
   });
 
@@ -156,7 +216,8 @@ void main() {
     for (final skala in [1.0, 1.5]) {
       testWidgets('Import-Ablauf mit FamilyWall-Auszug, 360 px, Textskala $skala', (tester) async {
         final env = await angemeldeteUmgebung();
-        env.extraOverrides.add(icsDateiWaehlerProvider.overrideWithValue(() async => IcsDatei(name: 'familywall.ics', bytes: Stream.value(_fixture('familywall.ics')))));
+        env.extraOverrides.addAll([icsLeserProvider.overrideWithValue((b, f) async => icsLesen(b)),
+          icsDateiWaehlerProvider.overrideWithValue(() async => IcsDatei(name: 'familywall.ics', bytes: Stream.value(_fixture('familywall.ics'))))]);
         await starteApp(tester, env, skala: skala);
         await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
         await warte(tester);
@@ -182,7 +243,8 @@ void main() {
 
     testWidgets('keine ICS-Datei: verständliche Meldung statt Absturz', (tester) async {
       final env = await angemeldeteUmgebung();
-      env.extraOverrides.add(icsDateiWaehlerProvider.overrideWithValue(() async => IcsDatei(name: 'x.ics', bytes: Stream.value(Uint8List.fromList([1, 2, 3])))));
+      env.extraOverrides.addAll([icsLeserProvider.overrideWithValue((b, f) async => icsLesen(b)),
+          icsDateiWaehlerProvider.overrideWithValue(() async => IcsDatei(name: 'x.ics', bytes: Stream.value(Uint8List.fromList([1, 2, 3]))))]);
       await starteApp(tester, env);
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
       await warte(tester);

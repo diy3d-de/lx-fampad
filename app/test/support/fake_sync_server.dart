@@ -29,6 +29,9 @@ class FakeSyncServer {
   /// Nächste Antworten als Fehler (Status, Code); danach wieder normal.
   final List<(int, String)> fehlerQueue = [];
 
+  /// Retry-After (Sekunden) der Fehler 429/503 aus [fehlerQueue].
+  int retryAfterWert = 7;
+
   /// Antwort für die nächste Anfrage als resync_required.
   bool resyncNaechste = false;
 
@@ -47,7 +50,7 @@ class FakeSyncServer {
       if (offline) throw http.ClientException('offline');
       if (fehlerQueue.isNotEmpty) {
         final (status, code) = fehlerQueue.removeAt(0);
-        return fehler(status, code, retryAfter: status == 429 || status == 503 ? 7 : null);
+        return fehler(status, code, retryAfter: status == 429 || status == 503 ? retryAfterWert : null);
       }
       final antwort = verarbeiten(req.json);
       if (antwortVerlieren) {

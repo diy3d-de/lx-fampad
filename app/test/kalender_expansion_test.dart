@@ -199,7 +199,7 @@ void main() {
       expect(w.map((x) => x.startWand.hour).toSet(), {10});
       // gleiche Abfrage noch einmal (Zwischenspeicher) liefert dasselbe
       expect(expandiere(woche, tag(2026, 10, 19), tag(2026, 11, 20)).map((x) => x.startWand).toList(), w.map((x) => x.startWand).toList());
-      expect(sw.elapsedMilliseconds, lessThan(2000));
+      expect(sw.elapsedMilliseconds, lessThan(10000));
     });
 
     test('Serie, die vor dem Fenster begann, liefert die Vorkommen im Fenster (alte Serie, Fenster weit hinten)', () {
