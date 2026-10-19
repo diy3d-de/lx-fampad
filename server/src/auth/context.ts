@@ -28,6 +28,8 @@ export interface AuthContext {
   log: Logger;
   /** Wird nach jedem Widerruf aufgerufen; app.ts hängt den WebSocket-Hub ein. */
   onRevoke: (event: RevokeEvent) => void;
+  /** Wird nach dem Commit einer Änderung im Sync aufgerufen (neue Revision der Familie); app.ts hängt den WebSocket-Hub ein. */
+  onRev: (familyId: string, rev: number) => void;
 }
 
 /** Angaben zur Anfrage, die ins Audit-Log und in die Fehlversuchs-Zähler fließen. */

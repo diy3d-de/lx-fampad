@@ -3,6 +3,8 @@ import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import { and, asc, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import { credentials, devices, invites, memberships, sessions, users, wsTickets } from '../db/schema.js';
 import { AppError } from '../errors.js';
+import { defaultRegistry } from '../sync/index.js';
+import { detachMemberRefs } from '../sync/refs.js';
 import { writeAudit } from './audit.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
@@ -139,17 +141,20 @@ async function removeFromFamily(
   tx: Executor,
   input: { familyId: string; userId: string; actorId: string; reason: string },
   meta: RequestMeta,
-): Promise<void> {
+): Promise<number | null> {
   await revokeOpenInvitesBy(ctx, tx, { familyId: input.familyId, creatorId: input.userId, actorId: input.actorId, reason: input.reason }, meta);
   await tx
     .update(invites)
     .set({ revokedAt: ctx.now() })
     .where(and(eq(invites.familyId, input.familyId), eq(invites.userId, input.userId), isNull(invites.usedAt), isNull(invites.revokedAt)));
+  // Verweise (Zuständigkeit, Besitzer) mit Änderungseintrag lösen, bevor die Person verschwindet (sonst räumt nur der Fremdschlüssel still auf)
+  const rev = await detachMemberRefs(tx, defaultRegistry, { familyId: input.familyId, userId: input.userId, now: ctx.now() });
   await tx.delete(memberships).where(and(eq(memberships.familyId, input.familyId), eq(memberships.userId, input.userId)));
   const [other] = await tx.select({ id: memberships.id }).from(memberships).where(eq(memberships.userId, input.userId)).limit(1);
   if (!other) await tx.delete(users).where(eq(users.id, input.userId));
   // offene WebSockets der Person schließen
   ctx.onRevoke({ kind: 'user', userId: input.userId });
+  return rev;
 }
 
 export async function rejectMember(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
@@ -167,14 +172,17 @@ export async function removeMember(ctx: AuthContext, p: SessionPrincipal, target
   requireStepUp(ctx, p);
   if (targetId === p.userId) throw new AppError(409, 'cannot_remove_self', 'Du kannst dich nicht selbst entfernen.');
   const target = await memberOf(ctx, p, targetId);
+  let syncRev: number | null = null;
   await ctx.db.transaction(async (tx) => {
     await tx.select({ id: memberships.id }).from(memberships).where(and(eq(memberships.familyId, p.familyId), eq(memberships.role, 'admin'))).for('update');
     if (target.role === 'admin' && (await activeAdminCount(tx, p.familyId)) <= 1) {
       throw new AppError(409, 'last_admin', 'Der letzte Admin kann nicht entfernt werden.');
     }
-    await removeFromFamily(ctx, tx, { familyId: p.familyId, userId: targetId, actorId: p.userId, reason: 'member_removed' }, meta);
+    syncRev = await removeFromFamily(ctx, tx, { familyId: p.familyId, userId: targetId, actorId: p.userId, reason: 'member_removed' }, meta);
     await writeAudit(ctx, tx, { event: 'member_removed', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, role: target.role } });
   });
+  // die Verweise der Person wurden im Sync bereinigt: die Geräte der Familie erfahren die neue Revision
+  if (syncRev !== null) ctx.onRev(p.familyId, syncRev);
 }
 
 /**

@@ -157,13 +157,6 @@ describe('GET /api/v1/version', () => {
   });
 });
 
-describe('Platzhalter-Schnittstellen', () => {
-  it('POST /api/v1/sync ist in Phase 0 nicht implementiert', async () => {
-    const res = await (await start()).inject({ method: 'POST', url: '/api/v1/sync', payload: {} });
-    expect(res.statusCode).toBe(501);
-  });
-});
-
 describe('Rate-Limit', () => {
   it('begrenzt alle Routen je IP', async () => {
     const instance = await start({ env: { RATE_LIMIT_MAX: '3' } });
@@ -398,14 +391,18 @@ describe('Fehlerhandler', () => {
         cb();
       },
     });
-    const instance = await start({ env: { LOG_LEVEL: 'error' }, logStream });
+    app = await buildApp({ config: loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'error', AUTH_SECRET_KEY: TEST_KEY }), logStream });
+    // eine ändernde Route ohne Datenbank, nur um den Umgang mit kaputten Eingaben zu prüfen
+    app.post('/api/v1/test-eingabe', async () => ({ ok: true }));
+    await app.ready();
+    const instance = app;
     const missing = await instance.inject('/api/v1/gibt-es-nicht');
     expect(missing.json()).toEqual({ error: 'not_found', message: 'Nicht gefunden.' });
-    const bad = await instance.inject({ method: 'POST', url: '/api/v1/sync', headers: { 'content-type': 'application/json' }, payload: '{kaputt' });
+    const bad = await instance.inject({ method: 'POST', url: '/api/v1/test-eingabe', headers: { 'content-type': 'application/json' }, payload: '{kaputt' });
     expect(bad.statusCode).toBe(400);
     expect(bad.json()).toEqual({ error: 'invalid_request', message: 'Ungültige Eingabe.' });
     expect(bad.payload).not.toMatch(/JSON|token|position/i);
-    const wrongType = await instance.inject({ method: 'POST', url: '/api/v1/sync', headers: { 'content-type': 'application/xml' }, payload: '<x/>' });
+    const wrongType = await instance.inject({ method: 'POST', url: '/api/v1/test-eingabe', headers: { 'content-type': 'application/xml' }, payload: '<x/>' });
     expect(wrongType.statusCode).toBe(415);
     expect(wrongType.json().error).toBe('unsupported_media_type');
   });

@@ -7,6 +7,7 @@ import {
   boolean,
   check,
   date,
+  doublePrecision,
   foreignKey,
   index,
   integer,
@@ -27,6 +28,8 @@ export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child', 'gu
 export const memberStatus = pgEnum('member_status', ['active', 'pending']);
 export const credentialType = pgEnum('credential_type', ['passkey', 'totp', 'password']);
 export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom']);
+/** Wer eine Liste sehen darf: nur Eltern, die Familie (ohne Gäste) oder alle (auch Gäste, "freigegeben"). */
+export const listAudience = pgEnum('list_audience', ['parents', 'family', 'all']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
@@ -49,6 +52,11 @@ export const families = pgTable('families', {
   name: text('name').notNull(),
   /** Zuletzt vergebene Revision; wird in der Transaktion hochgezählt (UPDATE ... RETURNING). */
   currentRev: bigint('current_rev', { mode: 'number' }).notNull().default(0),
+  /**
+   * Höchste Revision, für die Tombstones bzw. Protokolleinträge bereits entfernt wurden. Ein Gerät mit sinceRev darunter
+   * kennt eventuell Löschungen nicht mehr und muss neu synchronisieren (resync_required).
+   */
+  purgedRev: bigint('purged_rev', { mode: 'number' }).notNull().default(0),
   createdAt: createdAt(),
 });
 
@@ -312,11 +320,20 @@ export const appliedOps = pgTable(
     familyId: familyRef(),
     opId: uuid('op_id').notNull(),
     deviceId: uuid('device_id').references(() => devices.id, { onDelete: 'set null' }),
-    /** Revision, unter der die Op übernommen wurde (null: abgelehnt, Antwort bleibt gleich). */
+    /** Revision, unter der die Op übernommen wurde (null: abgelehnt oder ohne Wirkung). */
     rev: bigint('rev', { mode: 'number' }),
+    /** acked (übernommen, ggf. mit Konflikten) | rejected (abgelehnt, dann code). Ein wiederholter Upload liefert dasselbe Ergebnis. */
+    status: text('status').notNull().default('acked'),
+    code: text('code'),
+    /** Konflikte der Op (Felder mit Serverwert), damit eine Wiederholung dieselbe Antwort bekommt. */
+    conflicts: jsonb('conflicts').$type<Array<{ fields: Record<string, unknown>; serverRev: number }>>().notNull().default([]),
     createdAt: createdAt(),
   },
-  (t) => [primaryKey({ columns: [t.familyId, t.opId] }), index('applied_ops_created_idx').on(t.createdAt)],
+  (t) => [
+    primaryKey({ columns: [t.familyId, t.opId] }),
+    index('applied_ops_created_idx').on(t.createdAt),
+    check('applied_ops_status_ck', sql`${t.status} in ('acked', 'rejected')`),
+  ],
 );
 
 /** Änderungsprotokoll: pro Familie fortlaufende Revision, Löschungen bleiben als Tombstone stehen. */
@@ -328,6 +345,8 @@ export const changeLog = pgTable(
     entity: text('entity').notNull(),
     entityId: uuid('entity_id').notNull(),
     tombstone: boolean('tombstone').notNull().default(false),
+    /** Anlage der Entität (false: Änderung); für die Erkennung "nicht mehr sichtbar" (Freigabe zurückgenommen). */
+    created: boolean('created').notNull().default(false),
     /** Geänderte Felder mit neuen Werten (leer bei Tombstone). */
     changes: jsonb('changes').$type<Record<string, unknown>>().notNull().default({}),
     authorId: uuid('author_id').references(() => users.id, { onDelete: 'set null' }),
@@ -337,6 +356,9 @@ export const changeLog = pgTable(
   (t) => [
     primaryKey({ columns: [t.familyId, t.rev] }),
     index('change_log_entity_idx').on(t.familyId, t.entity, t.entityId),
+    index('change_log_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.tombstone}`),
   ],
 );
 
@@ -406,10 +428,23 @@ export const lists = pgTable(
     familyId: familyRef(),
     name: text('name').notNull(),
     kind: listKind('kind').notNull().default('custom'),
+    audience: listAudience('audience').notNull().default('family'),
+    /** Wer die Liste angelegt hat (setzt der Server; Kinder dürfen nur eigene Listen ändern). Wird beim Entfernen der Person NULL. */
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     ...syncColumns(),
   },
-  (t) => [index('lists_family_rev_idx').on(t.familyId, t.rev), unique('lists_family_id_uq').on(t.familyId, t.id)],
+  (t) => [
+    index('lists_family_rev_idx').on(t.familyId, t.rev),
+    index('lists_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('lists_owner_idx')
+      .on(t.familyId, t.ownerId)
+      .where(sql`${t.ownerId} is not null`),
+    unique('lists_family_id_uq').on(t.familyId, t.id),
+    check('lists_name_len_ck', sql`char_length(${t.name}) <= 100`),
+  ],
 );
 
 /** Listeneinträge werden einzeln synchronisiert (Abhaken gewinnt nicht gegen gleichzeitiges Umbenennen). */
@@ -422,7 +457,8 @@ export const listItems = pgTable(
     text: text('text').notNull(),
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
     doneAt: timestamp('done_at', { withTimezone: true }),
-    position: integer('position').notNull().default(0),
+    /** Sortierung innerhalb der Liste: Kommazahl, neue Position zwischen zwei Nachbarn = Mittelwert (nur das verschobene Feld ändert sich). */
+    position: doublePrecision('position').notNull().default(0),
     createdAt: createdAt(),
     ...syncColumns(),
   },
@@ -430,6 +466,14 @@ export const listItems = pgTable(
     foreignKey({ columns: [t.familyId, t.listId], foreignColumns: [lists.familyId, lists.id] }).onDelete('cascade'),
     index('list_items_list_idx').on(t.listId),
     index('list_items_family_rev_idx').on(t.familyId, t.rev),
+    index('list_items_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('list_items_assignee_idx')
+      .on(t.familyId, t.assigneeId)
+      .where(sql`${t.assigneeId} is not null`),
+    check('list_items_text_len_ck', sql`char_length(${t.text}) <= 500`),
+    check('list_items_position_ck', sql`${t.position} between -1e12 and 1e12`),
   ],
 );
 

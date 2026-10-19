@@ -11,7 +11,7 @@ import { normalizeIp } from './net.js';
 import { AppError, registerErrorHandling } from './errors.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerAuthRoutes } from './routes/auth.js';
-import { registerPlaceholderRoutes } from './routes/placeholders.js';
+import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { Hub } from './ws/hub.js';
 import { registerWebSocketRoute, WS_CLOSE_UNAUTHENTICATED } from './ws/route.js';
@@ -119,15 +119,16 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
   const hub = new Hub();
   app.decorate('hub', hub);
   registerSystemRoutes(app, { config, pingDb });
-  registerPlaceholderRoutes(app);
   let auth: AuthService = authOverride ?? noAuth;
   if (db) {
     const authCore = new Auth({ db, config, log: app.log, ...(now ? { now } : {}) });
     app.decorate('authCore', authCore);
     registerAuthRoutes(app, config, authCore);
     registerAccountRoutes(app, config, authCore);
+    registerSyncRoutes(app, config, authCore);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
+    authCore.ctx.onRev = (familyId, rev) => hub.notifyRev(familyId, rev);
     authCore.ctx.onRevoke = (e) => {
       if (e.kind === 'session') hub.closeSession(e.sessionId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');
       else if (e.kind === 'device') hub.closeDevice(e.deviceId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');

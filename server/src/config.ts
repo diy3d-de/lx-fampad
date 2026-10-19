@@ -1,6 +1,7 @@
 // Konfiguration ausschließlich über Umgebungsvariablen (siehe .env.example).
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { MIN_PROTOCOL_VERSION } from './version.js';
 
 /** Zeiten und Grenzen der Anmeldung (Standardwerte, nur Tests überschreiben sie). */
 export interface AuthConfig {
@@ -61,6 +62,8 @@ export interface Config {
   wsMessageWindowMs: number;
   filesDir: string;
   minAppVersion: string;
+  /** Älteste Protokollversion, die der Server noch bedient (darunter: 426 update_required). */
+  minProtocolVersion: number;
   webVersion: string | undefined;
   /** Datei, deren Inhalt die Version des ausgelieferten Web-Builds ist (schreibt deploy-web.sh). */
   webVersionFile: string | undefined;
@@ -69,6 +72,8 @@ export interface Config {
   rateLimitMax: number;
   /** Anfragen je Minute und IP für /api/v1/auth/* und /api/v1/ws-ticket. */
   authRateLimitMax: number;
+  /** Anfragen je Minute und IP für POST /api/v1/sync. */
+  syncRateLimitMax: number;
   /** Zeitlimit für die Datenbankprüfung in /api/v1/health. */
   healthTimeoutMs: number;
   /** Gleichzeitige WebSocket-Verbindungen je IP. */
@@ -195,11 +200,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     wsMessageWindowMs: positiveInt(env, 'WS_MESSAGE_WINDOW_MS', 10_000),
     filesDir: env.FILES_DIR ?? './data/files',
     minAppVersion,
+    minProtocolVersion: positiveInt(env, 'MIN_PROTOCOL_VERSION', MIN_PROTOCOL_VERSION),
     webVersion: env.WEB_VERSION || undefined,
     webVersionFile: env.WEB_VERSION_FILE || undefined,
     logLevel: level as Config['logLevel'],
     rateLimitMax: positiveInt(env, 'RATE_LIMIT_MAX', 300),
     authRateLimitMax: positiveInt(env, 'AUTH_RATE_LIMIT_MAX', 10),
+    syncRateLimitMax: positiveInt(env, 'SYNC_RATE_LIMIT_MAX', 120),
     healthTimeoutMs: positiveInt(env, 'HEALTH_TIMEOUT_MS', 2000),
     wsMaxPerIp: positiveInt(env, 'WS_MAX_PER_IP', 10),
     wsPingIntervalMs: positiveInt(env, 'WS_PING_INTERVAL_MS', 30_000),
