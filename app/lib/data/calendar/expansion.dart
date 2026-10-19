@@ -144,14 +144,19 @@ int vorkommenVor(String rrule, {required DateTime startWand, required DateTime v
   return regel.getInstances(start: startWand, before: vorWand).take(kMaxVorkommen).length;
 }
 
-/// Zeitbudget je Regel und Abfrage (Schutz vor Rechenlast durch Regeln aus dem Netz).
-const _kBudgetMs = 150;
+/// Obergrenze der geprüften Kandidaten je Regel und Abfrage (deterministischer Schutz vor Regeln ohne Treffer, kein Zeitbudget).
+const kMaxKandidaten = 20000;
 final _cache = <String, List<DateTime>>{};
 const _kCacheMax = 256;
 
-/// Instanzen der Regel ab [nach] (nie vor dem Beginn; `after` des Pakets muss mindestens `start` sein), bis [vor] (ausschließlich), höchstens
-/// [kMaxVorkommen] und innerhalb des Zeitbudgets. Tägliche und wöchentliche Regeln ohne COUNT starten nahe am Fenster (um ganze Perioden
-/// verschoben, Wochentag und Wochenraster bleiben gleich), statt jede Instanz seit dem Beginn zu rechnen. Ergebnisse werden zwischengespeichert.
+/// Für Tests: Zahl der geprüften Kandidaten der letzten Berechnung und ob der Kandidatendeckel gegriffen hat (dann nicht zwischengespeichert).
+int letzteKandidaten = 0;
+bool letzteGekuerzt = false;
+
+/// Instanzen der Regel ab [nach] (nie vor dem Beginn), bis [vor] (ausschließlich), höchstens [kMaxVorkommen] Treffer und [kMaxKandidaten]
+/// geprüfte Kandidaten. Tägliche und wöchentliche Regeln ohne COUNT starten nahe am Fenster (um ganze Perioden verschoben, Wochentag
+/// und Wochenraster bleiben gleich); COUNT-Serien zählen immer ab dem Beginn. Ein durch den Kandidatendeckel gekürztes Ergebnis wird
+/// nie zwischengespeichert, vollständige Ergebnisse schon.
 List<DateTime> _instanzen(String text, RecurrenceRule regel, DateTime start, DateTime nach, DateTime vor) {
   if (vor.isBefore(start)) return const []; // Serie beginnt erst nach dem Fenster (das Paket verlangt before >= start)
   final key = '$text|$start|$nach|$vor';
@@ -165,13 +170,23 @@ List<DateTime> _instanzen(String text, RecurrenceRule regel, DateTime start, Dat
     if (k > 0) s = start.add(Duration(days: k * periode));
   }
   final out = <DateTime>[];
-  final uhr = Stopwatch()..start();
-  for (final m in regel.getInstances(start: s, after: nach.isAfter(s) ? nach : s, includeAfter: true, before: vor)) {
+  var kandidaten = 0;
+  var gekuerzt = false;
+  for (final m in regel.getInstances(start: s, before: vor)) {
+    if (++kandidaten > kMaxKandidaten) {
+      gekuerzt = true;
+      break;
+    }
+    if (m.isBefore(nach)) continue;
     out.add(m);
-    if (out.length >= kMaxVorkommen || uhr.elapsedMilliseconds > _kBudgetMs) break;
+    if (out.length >= kMaxVorkommen) break;
   }
-  if (_cache.length >= _kCacheMax) _cache.remove(_cache.keys.first);
-  _cache[key] = out;
+  letzteKandidaten = kandidaten;
+  letzteGekuerzt = gekuerzt;
+  if (!gekuerzt) {
+    if (_cache.length >= _kCacheMax) _cache.remove(_cache.keys.first);
+    _cache[key] = out;
+  }
   return out;
 }
 

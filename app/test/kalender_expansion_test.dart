@@ -199,8 +199,31 @@ void main() {
       expect(w.map((x) => x.startWand.hour).toSet(), {10});
       // gleiche Abfrage noch einmal (Zwischenspeicher) liefert dasselbe
       expect(expandiere(woche, tag(2026, 10, 19), tag(2026, 11, 20)).map((x) => x.startWand).toList(), w.map((x) => x.startWand).toList());
-      // nur ein Schutz gegen Hänger (der Deckel selbst steckt im Zeitbudget und in den Obergrenzen des Codes); eine enge Wanduhr-Grenze wäre unter Last flaky
+      // nur ein Schutz gegen Hänger (die Deckel sind deterministisch: kMaxVorkommen, Horizont, kMaxKandidaten); eine enge Wanduhr-Grenze wäre unter Last flaky
       expect(sw.elapsedMilliseconds, lessThan(60000));
+    });
+
+    test('Deckel ist deterministisch: täglich ab 2026 ergibt genau 1000, ungekürzt und aus dem Zwischenspeicher gleich', () {
+      final t = termin(startUtc: '2026-10-20T08:00:00Z', endUtc: '2026-10-20T09:00:00Z', rrule: 'FREQ=DAILY');
+      for (var i = 0; i < 3; i++) {
+        expect(expandiere(t, tag(2026, 10, 20), tag(2031, 10, 1)), hasLength(kMaxVorkommen));
+        expect(letzteGekuerzt, isFalse);
+      }
+    });
+
+    test('unerfüllbare Regel endet schnell mit leerem Ergebnis, die Zahl der Kandidaten ist begrenzt', () {
+      for (final r in ['FREQ=DAILY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=MONTHLY;BYMONTH=2;BYMONTHDAY=31']) {
+        final t = termin(ganztaegig: true, startDate: '2026-02-01', endDate: '2026-02-02', rrule: r);
+        expect(expandiere(t, tag(2026, 1, 1), tag(2031, 1, 1)), isEmpty, reason: r);
+        expect(letzteKandidaten, lessThanOrEqualTo(kMaxKandidaten + 1), reason: r);
+      }
+    });
+
+    test('COUNT-Serie zählt ab dem Beginn, auch bei spätem Fenster', () {
+      final t = termin(ganztaegig: true, startDate: '2026-01-01', endDate: '2026-01-02', rrule: 'FREQ=DAILY;COUNT=10');
+      final v = expandiere(t, tag(2026, 1, 5), tag(2026, 3, 1));
+      expect(v.map((e) => e.startWand.day).toList(), [5, 6, 7, 8, 9, 10]);
+      expect(letzteGekuerzt, isFalse);
     });
 
     test('Serie, die vor dem Fenster begann, liefert die Vorkommen im Fenster (alte Serie, Fenster weit hinten)', () {
