@@ -18,6 +18,7 @@ export type AuditEvent =
   | 'avatar_reset'
   | 'member_reset'
   | 'role_changed'
+  | 'family_role_set'
   | 'login_ok'
   | 'login_failed'
   | 'device_added'

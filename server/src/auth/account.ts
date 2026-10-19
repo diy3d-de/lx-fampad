@@ -1,7 +1,7 @@
 // Konto-Verwaltung nach der Anmeldung: Profil, Mitglieder, Geräte, Anmeldedaten, Wiederherstellungs-Codes, WebSocket-Tickets.
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import { and, asc, count, eq, gt, isNull, sql } from 'drizzle-orm';
-import { credentials, devices, invites, memberships, sessions, users, wsTickets } from '../db/schema.js';
+import { credentials, devices, type FamilyRole, invites, memberships, sessions, users, wsTickets } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { defaultRegistry } from '../sync/index.js';
 import { detachMemberRefs } from '../sync/refs.js';
@@ -34,8 +34,20 @@ export async function getMe(ctx: AuthContext, p: SessionPrincipal) {
     .select({ type: credentials.type })
     .from(credentials)
     .where(and(eq(credentials.userId, p.userId), isNull(credentials.revokedAt)));
+  const [fr] = await ctx.db
+    .select({ familyRole: memberships.familyRole })
+    .from(memberships)
+    .where(and(eq(memberships.familyId, account.familyId), eq(memberships.userId, p.userId)));
   return {
-    user: { id: account.userId, email: account.email, displayName: account.displayName, colorIndex: account.colorIndex, role: account.role, status: account.status },
+    user: {
+      id: account.userId,
+      email: account.email,
+      displayName: account.displayName,
+      colorIndex: account.colorIndex,
+      role: account.role,
+      status: account.status,
+      familyRole: fr?.familyRole ?? null,
+    },
     familyId: account.familyId,
     session: { id: p.sessionId, deviceId: p.deviceId, stepUpAt: p.stepUpAt },
     ...(p.via === 'cookie' ? { csrfToken: csrfTokenFor(ctx, p.sessionId) } : {}),
@@ -65,17 +77,44 @@ interface MemberRow {
   colorIndex: number;
   role: Role;
   status: 'active' | 'pending';
+  familyRole: string | null;
 }
 
-/** Alle sehen aktive Mitglieder (ohne E-Mail); Admins zusätzlich E-Mail und wartende Mitglieder. */
-export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promise<Array<Omit<MemberView, 'email'> & { email?: string }>> {
+/** Alle sehen aktive Mitglieder (ohne E-Mail); Admins zusätzlich E-Mail und wartende Mitglieder. `familyRole` ist reine Anzeige. */
+export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promise<Array<Omit<MemberView, 'email'> & { email?: string; familyRole: string | null }>> {
   const rows: MemberRow[] = await ctx.db
-    .select({ id: users.id, email: users.email, displayName: users.displayName, colorIndex: users.colorIndex, role: memberships.role, status: memberships.status })
+    .select({
+      id: users.id,
+      email: users.email,
+      displayName: users.displayName,
+      colorIndex: users.colorIndex,
+      role: memberships.role,
+      status: memberships.status,
+      familyRole: memberships.familyRole,
+    })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .where(and(eq(memberships.familyId, p.familyId), isNull(users.disabledAt), p.role === 'admin' ? undefined : eq(memberships.status, 'active')))
     .orderBy(asc(users.displayName));
-  return rows.map((r) => (p.role === 'admin' || r.id === p.userId ? r : { id: r.id, displayName: r.displayName, colorIndex: r.colorIndex, role: r.role, status: r.status }));
+  return rows.map((r) => (p.role === 'admin' || r.id === p.userId ? r : { id: r.id, displayName: r.displayName, colorIndex: r.colorIndex, role: r.role, status: r.status, familyRole: r.familyRole }));
+}
+
+/**
+ * Setzt die Familienrolle (reine Anzeige, keine Rechte): jedes Mitglied für sich, ein Admin für jedes Mitglied der eigenen Familie.
+ * `null` löscht sie. Fremde Familien und Nicht-Mitglieder ergeben 404, andere Mitglieder ohne Admin-Recht 403.
+ */
+export async function setFamilyRole(ctx: AuthContext, p: SessionPrincipal, targetId: string, familyRole: FamilyRole | null, meta: RequestMeta): Promise<void> {
+  if (targetId !== p.userId) {
+    requireAdmin(p);
+    await memberOf(ctx, p, targetId);
+  }
+  const done = await ctx.db
+    .update(memberships)
+    .set({ familyRole })
+    .where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)))
+    .returning({ id: memberships.id });
+  if (done.length === 0) throw notFound();
+  await writeAudit(ctx, ctx.db, { event: 'family_role_set', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, to: familyRole } });
 }
 
 async function memberOf(ctx: AuthContext, p: SessionPrincipal, userId: string): Promise<Account> {
