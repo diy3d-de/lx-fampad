@@ -174,6 +174,12 @@ class AppDatabase extends _$AppDatabase {
         await m.createIndex(terminTeilnehmerTerminIdx);
         await m.createIndex(terminAusnahmenTerminIdx);
       }
+      // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
+      // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
+      // vollständigen Snapshot (Upsert; offene lokale Änderungen und der Ausgang bleiben). deviceId, ownerUserId, members bleiben.
+      if (from < 3) {
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
     },
   );
 
