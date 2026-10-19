@@ -77,7 +77,10 @@ jobs:
       # erzeugt lib/data/app_database.g.dart (drift), die Datei ist nicht eingecheckt (sauberer Checkout: keine Altlasten)
       - run: dart run build_runner build
       - run: flutter analyze
+      # libsodium (Build-Hook) muss in der CI laden: sonst würden die Kryptotests still übersprungen
       - run: flutter test
+        env:
+          SODIUM_ERFORDERLICH: '1'
       - run: flutter build web --release --no-web-resources-cdn
       - name: Gebaute Web-Binärdateien sind die geprüften
         run: sed -E 's# (\*?)web/# \1build/web/#' web-assets.sha256 | sha256sum -c

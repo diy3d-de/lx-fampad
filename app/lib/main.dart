@@ -6,6 +6,7 @@ import 'app.dart';
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
 import 'data/calendar/zeitzonen.dart';
+import 'data/crypto/e2ee_state.dart';
 import 'data/database_provider.dart';
 import 'data/sync_state.dart';
 import 'features/auth/adresszeile.dart';
@@ -28,7 +29,15 @@ Future<void> main() async {
         inviteIntakeProvider.overrideWith(() => InviteIntake(vorhanden: link != null, anfang: link?.token)),
         // Abmelden leert die lokale Datenbank (Listen, Ausgang, Sync-Zustand); vorher wird der Sync angehalten, damit eine noch
         // laufende Antwort nicht in die geleerte Datenbank schreibt
-        localDataWiperProvider.overrideWith(lokaleDatenWiper),
+        // zusätzlich verschwindet der geheime E2EE-Personenschlüssel vom Gerät (Wiederverbinden per QR oder Wiederherstellungsschlüssel)
+        localDataWiperProvider.overrideWith((ref) {
+          final daten = lokaleDatenWiper(ref);
+          final schluessel = e2eeDatenWiper(ref);
+          return () async {
+            await daten();
+            await schluessel();
+          };
+        }),
         // merkt den Besitzer der lokalen Daten: nur bei einer ANDEREN Person wird beim Anmelden geleert (nicht nach Sitzungsverlust)
         localDataOwnerProvider.overrideWith((ref) => DatenbankBesitzer(ref.read(appDatabaseProvider))),
       ],

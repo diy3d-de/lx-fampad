@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
@@ -14,6 +15,7 @@ import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import 'devices_screen.dart';
 import 'password_screen.dart';
+import 'verschluesselung_screen.dart';
 import 'passkeys_screen.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
@@ -72,7 +74,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(ref.read(authProvider.notifier).neuLaden()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref.read(authProvider.notifier).neuLaden());
+      // Stand der Verschlüsselung für die Warnanzeige (Schlüsselwechsel) in der Zeile unten
+      unawaited(ref.read(e2eeProvider.notifier).laden());
+    });
   }
 
   void _oeffne(Widget seite) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => seite));
@@ -229,6 +235,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           untertitel: me == null ? 'wird geladen …' : '${me.recoveryCodesRemaining} übrig · neue erzeugen',
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
+        VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
         EinstellungsZeile(
           icon: Icons.phone_android,
           titel: 'Angemeldete Geräte',

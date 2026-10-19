@@ -19,6 +19,8 @@
 <body>
   <!-- Passkeys (WebAuthn): selbst gehostetes JS-Bündel des Pakets passkeys_web (Prüfsumme in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md). Muss vor dem Flutter-Start laden. -->
   <script src="passkeys-bundle.js"></script>
+  <!-- libsodium.js (Sumo-Variante, Paket sodium 4.1.1+2 / libsodium.js 0.8.4) für die Ende-zu-Ende-Verschlüsselung: selbst gehostet, Prüfsumme in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md. Enthält die WASM-Datei eingebettet (CSP: wasm-unsafe-eval). Muss vor dem Flutter-Start laden. -->
+  <script src="sodium.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

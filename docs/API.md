@@ -155,7 +155,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 
 | Methode, Pfad | Rolle | Beschreibung |
 | --- | --- | --- |
-| `GET /members` | alle | Antwort `{ members: [...] }`. Admins: alle Mitglieder (auch wartende) inkl. E-Mail; andere: nur aktive Mitglieder, **ohne E-Mail – außer der eigenen** |
+| `GET /members` | alle | Antwort `{ members: [...] }`. Admins: alle Mitglieder (auch wartende) inkl. E-Mail; andere: nur aktive Mitglieder, **ohne E-Mail – außer der eigenen**. Jedes Mitglied trägt zusätzlich `publicEncKey`, `publicSignKey` (je 32 Byte Base64url) und `keyVersion` (alle drei `null`, solange die Person keine E2EE-Schlüssel eingerichtet hat) |
 | `PATCH /members/:id/role` | admin, Step-up | `{ role }`; **alle Sitzungen der Person werden widerrufen** (offene WebSockets schließen mit `4401`); bei **Herabstufung** werden ihre offenen Einladungen widerrufen; der letzte Admin kann nicht herabgestuft werden |
 | `POST /members/:id/approve` | admin | gibt ein wartendes Mitglied frei |
 | `POST /members/:id/reject` | admin | lehnt ein wartendes Mitglied ab: löscht die Mitgliedschaft; das Konto nur, wenn keine weitere Mitgliedschaft besteht |
@@ -170,6 +170,21 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `GET /invites` | admin (alle), parent (eigene) | `{ invites: [{ id, role, status: open\|used\|revoked\|locked\|expired, createdAt, expiresAt, hasPin, requireApproval, reset, createdBy, usedBy }] }` ohne Token und PIN |
 | `POST /invites/:id/revoke` | wie oben | widerruft eine offene Einladung; wer die Rolle der Einladung nicht (mehr) einladen darf, bekommt `403` |
 | `POST /invites/:id/extend` | wie oben | `{ hours }` → `{ expiresAt }`: setzt die Gültigkeit auf **das spätere** von bisheriger Ablaufzeit und jetzt + `hours` (**verkürzt nie**; höchstens 7 Tage je Aufruf); gesperrte Einladungen bleiben gesperrt; Rollenprüfung wie bei `revoke` |
+
+### E2EE-Schlüssel (Phase 1 der Ende-zu-Ende-Verschlüsselung)
+
+Alles nur für die angemeldete Person selbst (Familien- und Personenfilter: fremde Daten gibt es hier nicht), strenges Rate-Limit (wie die Anmeldung). Blobs sind für den Server undurchsichtiger Base64url-Text;
+der Server sieht nie ein Geheimnis. Schlüsselmaterial erscheint nie im Log. Kodierung: Schlüssel und Suchkennung = genau 32 Byte als Base64url **ohne** `=` (43 Zeichen, kanonisch).
+
+| Methode, Pfad | Rolle | Beschreibung |
+| --- | --- | --- |
+| `GET /me/keys` | alle | `{ keys: { publicEncKey, publicSignKey, keyVersion } \| null, hasBackup }` (`hasBackup`: eine Sicherung zur aktuellen `keyVersion` liegt vor) |
+| `POST /me/keys` | alle | `{ publicEncKey, publicSignKey }` legt das erste Schlüsselpaar an → `{ keys }` (`keyVersion` 1); gibt es schon eines `409 keys_exist`. Audit `key_created` |
+| `PUT /me/keys` | alle, Step-up | `{ publicEncKey, publicSignKey }` **Schlüsselwechsel** (Totalverlust, Verdacht): `keyVersion` steigt um 1, Sicherung und offene Übertragungen entfallen → `{ keys }`; ohne Schlüssel `404`. Die anderen Geräte der Familie warnen. Audit `key_rotated` |
+| `PUT /me/key-backup` | alle, Step-up | `{ blob (bis 2048 Zeichen), keyVersion }` legt die Sicherung ab oder ersetzt sie; `409 no_keys` ohne Schlüssel, `409 key_version_mismatch` bei veralteter Version. Audit `backup_set` |
+| `GET /me/key-backup` | alle, Step-up | `{ blob, keyVersion }`; `404` ohne Sicherung. Audit `key_backup_read` |
+| `POST /me/key-transfer` | alle | `{ lookup (32 Byte Base64url), blob (bis 1024 Zeichen) }` → `{ expiresAt, ttlSec: 120 }`: Übertragung für ein neues Gerät; höchstens eine offene je Person (eine neue ersetzt sie); gespeichert wird nur der SHA-256-Hash von `lookup`. `409 no_keys` ohne Schlüssel |
+| `POST /me/key-transfer/claim` | alle | `{ lookup }` → `{ blob, keyVersion }`: löst **genau einmal** ein (atomar), nur durch dieselbe Person, nur vor Ablauf. Jeder Fehlschlag (unbekannt, abgelaufen, schon eingelöst, fremde Person) antwortet gleich mit `404 not_found`. Audit `transfer_claimed` |
 
 ## Sync `POST /api/v1/sync`
 
@@ -335,5 +350,5 @@ Neue Entitäten (Aufgaben, Chat, Dateien) tragen sich im Entitäten-Register des
 
 Ereignisse (`audit_log.event`; `invite_expired` einmal je Ablauf einer nicht gesperrten, nicht benutzten, nicht widerrufenen Einladung, ausgelöst vom stündlichen Aufräum-Job, nie beim Abruf): `bootstrap_created`, `invite_created`, `invite_used`, `invite_revoked`, `invite_extended`, `invite_expired`, `invite_pin_failed`, `invite_locked`,
 `member_registered`, `member_approved`, `member_rejected`, `member_removed`, `member_reset`, `role_changed`, `login_ok`, `login_failed`, `device_added`, `device_removed`, `logout`, `logout_all`,
-`session_reuse_detected`, `session_refresh_retry`, `step_up_ok`, `step_up_failed`, `passkey_added`, `passkey_removed`, `passkey_counter_regression`, `recovery_codes_created`, `recovery_code_used`, `ws_auth_failed`.
+`session_reuse_detected`, `session_refresh_retry`, `step_up_ok`, `step_up_failed`, `passkey_added`, `passkey_removed`, `passkey_counter_regression`, `recovery_codes_created`, `recovery_code_used`, `ws_auth_failed`, `key_created`, `key_rotated`, `backup_set`, `key_backup_read`, `transfer_claimed`.
 Die IP-Adresse steht höchstens 7 Tage im Eintrag; Token, Passwörter, PINs und Codes werden nie protokolliert.

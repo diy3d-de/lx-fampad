@@ -41,6 +41,8 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | qr_flutter | 4.1.0 | Phase 1b: QR-Codes für Einladungen und TOTP-Einrichtung, erzeugt in der App (letzte Version, 14.05.2023) |
 | web | 1.1.1 | Phase 1b: `history.replaceState` und `hashchange` für den Einladungslink (bisher nur transitiv) |
 | passkeys | 2.23.1 | Phase 1b im Einsatz (14.09.2026). Android per Credential Manager, Web per JS-Bündel (siehe unten, selbst gehostet). `assetlinks.json` mit allen Signatur-Fingerprints: `deploy/assetlinks.json.template`, Anleitung `deploy/README.md` Abschnitt 9. Transitiv: passkeys_android 2.14.1, passkeys_web 2.10.1, passkeys_platform_interface 2.10.0 (alle 14.09.2026), passkeys_darwin/windows/doctor, package_info_plus 10.2.2 (01.10.2026), win32 6.4.0 |
+| sodium | 4.1.1+2 | E2EE Phase 1 im Einsatz (29.09.2026; 4.1.2 vom 14.10.2026 war zum Stichtag jünger als 14 Tage; BSD-3-Clause/ISC-Lizenz des Pakets, libsodium selbst ISC). Dart-Bindings für libsodium 1.0.22: **Android/Desktop** baut die native Bibliothek per Build-Hook aus dem mitgelieferten Quelltext (braucht beim Bauen einen C-Compiler bzw. das NDK: CI und Release-Build haben sie; lokal unter Windows ohne Visual Studio: `NIX_SKIP_SODIUM_BUILD_HOOKS=1` setzen, dann laufen die libsodium-Tests dort nicht, sondern in Linux/CI), **Web** nutzt `web/sodium.js` (Sumo-Variante, libsodium.js 0.8.4, selbst gehostet, siehe unten). `sodium_libs` ist veraltet und wird nicht benutzt. Nur geprüfte libsodium-Funktionen, keine eigenen Primitive (`docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 9a) |
+| (transitiv zu sodium) | archive 4.3.0 (13.09.2026), freezed_annotation 3.1.0 (02.07.2025), html 0.15.7 (28.08.2026), csslib 1.0.2 (29.10.2024), posix 6.5.2 (24.07.2026) | Alle mindestens 14 Tage alt (Stand 19.10.2026). `archive` ist in `app/pubspec.yaml` unter `dependency_overrides` auf 4.3.0 festgehalten (4.5.2 vom 13.10.2026 ist zu jung; sodium verlangt `^4.3.0`; archive nutzt nur das Werkzeug `sodium:update_web`). **Wiedervorlage 19.11.2026:** prüfen, ob der Override entfallen kann |
 | unifiedpush / unifiedpush_android | 6.2.0 / 3.5.0 | nur Android |
 | maplibre | 0.3.6 | Ersatz für flutter_map + PMTiles-Vektor (veraltet); pre-1.0 |
 | geolocator | 14.1.1 | Vordergrunddienst eingebaut |
@@ -69,19 +71,24 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 
 ## Prüfsummen eingecheckter Binärdateien (Web)
 
-`app/web/sqlite3.wasm` gehört zu sqlite3 **3.7.0** (in `app/pubspec.yaml` fest gepinnt, `pubspec.lock` eingecheckt); `app/web/drift_worker.js` zu drift 2.35.1. `app/web/passkeys-bundle.js` gehört zu passkeys_web 2.10.1 (siehe oben). Beim Aktualisieren von sqlite3 oder drift beide Dateien und diese Prüfsummen gemeinsam ändern. Die CI und `deploy/deploy-web.sh` prüfen sie mit `sha256sum -c app/web-assets.sha256`.
+`app/web/sqlite3.wasm` gehört zu sqlite3 **3.7.0** (in `app/pubspec.yaml` fest gepinnt, `pubspec.lock` eingecheckt); `app/web/drift_worker.js` zu drift 2.35.1. `app/web/passkeys-bundle.js` gehört zu passkeys_web 2.10.1 (siehe oben), `app/web/sodium.js` zu sodium 4.1.1+2 (siehe unten). Beim Aktualisieren von sqlite3 oder drift beide Dateien und diese Prüfsummen gemeinsam ändern. Die CI und `deploy/deploy-web.sh` prüfen sie mit `sha256sum -c app/web-assets.sha256`.
 
 | Datei | SHA-256 |
 | --- | --- |
 | `sqlite3.wasm` | `fbcd2e8214f9231ea961e1b7706a22dd1194cfbfe6f26f13841b5aa7a0be1a1f` |
 | `drift_worker.js` | `fe5f13be0526f78293796aefb9a29d3823a2dbdbf1bccd3f0faeb90eaaafd72a` |
 | `passkeys-bundle.js` | `4ae8f64edcf3c6f31c28edadcbe77cc40bfabdfae74c1f683cd9c0f525a8b47e` |
+| `sodium.js` | `dedbeb3a33be1cf9d1b923832c5f188f990a6ed543f94eae366c5e73aed3c34e` |
 
 Zeitzonen-Daten: `app/assets/tz/latest.tzf` ist die unveränderte Datei `lib/data/latest.tzf` aus timezone **0.11.1** (liegt im Flutter-Asset-Bündel, nicht unter `web/`; daher nicht in `web-assets.sha256`). Beim Aktualisieren von timezone die Datei aus dem Paket neu kopieren und diese Prüfsumme ändern: `e67e57be5d320b54e96381b59fdc2e7b0ec803b7e1be98621e445312cf5f295e` (SHA-256).
 
 ### Passkey-JS-Bündel (Web)
 
 `app/web/passkeys-bundle.js` (16486 Byte) stammt aus dem Paket **passkeys_web 2.10.1**: Für diese Version gibt es kein veröffentlichtes `bundle.js` (die GitHub-Releases enthalten keine Dateien; die Anleitung des Pakets verweist auf ein altes von 2.4.0), daher wird es aus dem mitgelieferten Quelltext gebaut: Ordner `javascript/` des Pakets (im Pub-Cache) kopieren, `npm ci --ignore-scripts`, `npx rollup -c` (Ausgabe `dist/bundle.js`, `@github/webauthn-json` 2.1.1 aus dem mitgelieferten Lockfile). Es enthält keine Fremd-Adressen (nur einen W3C-Verweis im Kommentar). `web/index.html` bindet es per `<script src="passkeys-bundle.js">` ein (CSP `script-src 'self'`). `.gitattributes` führt es als binär, damit die Prüfsumme nicht durch Zeilenenden-Umwandlung bricht. Bei einem Update von passkeys/passkeys_web neu bauen und die Prüfsumme unten ändern.
+
+### libsodium.js (Web)
+
+`app/web/sodium.js` (1318067 Byte) ist die **Sumo-Variante** von libsodium.js **0.8.4** (Commit `a79e5ddbbcfd130e27dcbbda1b5ba072c7a9787d`), geladen mit `dart run sodium:update_web --sumo --no-edit-index` (das Werkzeug des Pakets sodium 4.1.1+2 prüft die SHA-512 `d95956f041be5bcf8a9644027e3f4866138903a38f8fe84fdb0410a0076b0121e201379b8966281b2105c67b7c85e79df6e8a68eab0eea9a8dea48bfdaf0cd2a`; lokal ohne C-Compiler mit `NIX_SKIP_SODIUM_BUILD_HOOKS=1`). Die Datei enthält keine Fremd-Adressen, kein `eval`/`new Function` und die WASM-Datei eingebettet (CSP: `script-src 'self' 'wasm-unsafe-eval'`, schon vorhanden). `web/index.html` bindet sie per `<script src="sodium.js">` **vor** dem Flutter-Start ein. `.gitattributes` führt sie als binär. Bei einem Update von sodium neu laden und die Prüfsummen (diese Tabelle und `app/web-assets.sha256`) ändern.
 
 ## Auflagen aus der Recherche
 

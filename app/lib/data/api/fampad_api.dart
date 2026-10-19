@@ -3,6 +3,7 @@ import '../../constants.dart';
 import 'api_client.dart';
 import 'api_error.dart';
 import '../sync/sync_models.dart';
+import '../crypto/schluessel.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -170,6 +171,32 @@ class FampadApi {
   Future<void> geraetAbmelden(String id) async {
     await client.delete('/devices/$id');
   }
+
+  // ----------------------------------------------------------- E2EE-Schlüssel (docs/API.md, Abschnitt E2EE)
+
+  Future<EigeneSchluesselDto> eigeneSchluessel() async => EigeneSchluesselDto.fromJson(await client.get('/me/keys'));
+
+  Future<OeffentlicheSchluessel> schluesselAnlegen({required String enc, required String sign}) async =>
+      schluesselAusAntwort(await client.post('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign}));
+
+  /// Schlüsselwechsel (Step-up): ersetzt das öffentliche Paar, die Schlüsselversion steigt, Sicherung und Übertragung entfallen.
+  Future<OeffentlicheSchluessel> schluesselWechseln({required String enc, required String sign}) async =>
+      schluesselAusAntwort(await client.put('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign}));
+
+  Future<void> sicherungAblegen({required String blob, required int keyVersion}) async {
+    await client.put('/me/key-backup', {'blob': blob, 'keyVersion': keyVersion});
+  }
+
+  Future<BlobDto> sicherungAbrufen() async => BlobDto.fromJson(await client.get('/me/key-backup'));
+
+  /// Gibt die Ablaufzeit zurück (2 Minuten).
+  Future<DateTime> uebertragungAnlegen({required String suchkennung, required String blob}) async {
+    final r = await client.post('/me/key-transfer', {'lookup': suchkennung, 'blob': blob});
+    final t = r['expiresAt'];
+    return t is String ? (DateTime.tryParse(t) ?? DateTime.now()) : DateTime.now();
+  }
+
+  Future<BlobDto> uebertragungEinloesen(String suchkennung) async => BlobDto.fromJson(await client.post('/me/key-transfer/claim', {'lookup': suchkennung}));
 
   // ----------------------------------------------------------- Sync
 
