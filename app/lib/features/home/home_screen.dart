@@ -16,19 +16,25 @@ import '../../data/lists/list_repository.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
+import '../../widgets/sync_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
 import '../update/update_banner.dart';
 
-/// Begrüßung mit Vorname: erstes Wort des Anzeigenamens, bei leerem Namen nur "Hallo"; sehr lange Namen werden gekürzt.
-String begruessung(String? anzeigename) {
+/// Vorname für die Begrüßung: erstes Wort des Anzeigenamens, sehr lange Namen werden gekürzt; null bei leerem Namen.
+String? vorname(String? anzeigename) {
   final wort = (anzeigename ?? '').trim().split(RegExp(r'\s+')).first;
-  if (wort.isEmpty) return 'Hallo';
+  if (wort.isEmpty) return null;
   // Graphem-sicher kürzen (Emoji und kombinierte Zeichen werden nicht mitten im Zeichen geschnitten)
   final zeichen = wort.characters;
-  final kurz = zeichen.length > 20 ? '${zeichen.take(19)}…' : wort;
-  return 'Hallo, $kurz';
+  return zeichen.length > 20 ? '${zeichen.take(19)}…' : wort;
+}
+
+/// Begrüßung mit Vorname; bei leerem Namen nur "Hallo".
+String begruessung(String? anzeigename) {
+  final v = vorname(anzeigename);
+  return v == null ? 'Hallo' : 'Hallo, $v';
 }
 
 /// Start: Begrüßung, Sync-Status, Schnellzugriffe, Einkaufsliste (echte Daten), "Als Nächstes".
@@ -40,19 +46,7 @@ class HomeScreen extends ConsumerWidget {
     final sync = ref.watch(syncProvider);
     final name = ref.watch(authProvider.select((s) => s.user?.displayName));
     final verbunden = sync.status == SyncStatus.synchron;
-    final farbe = switch (sync.status) {
-      SyncStatus.synchron => kTerminal,
-      SyncStatus.fehler => kDanger,
-      _ => kTextMuted,
-    };
-    final statusText = switch (sync.status) {
-      SyncStatus.synchron => sync.offeneAenderungen > 0 ? 'synchron · ${sync.offeneAenderungen} offen' : 'synchron',
-      SyncStatus.laeuft => 'gleiche ab …',
-      SyncStatus.offline => sync.offeneAenderungen > 0 ? 'offline · ${sync.offeneAenderungen} offen' : 'offline',
-      SyncStatus.fehler => 'abgleich fehlgeschlagen',
-      SyncStatus.updateNoetig => 'update nötig',
-      SyncStatus.getrennt => 'nicht verbunden',
-    };
+    final (statusText, farbe) = syncAnzeige(sync);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       children: [

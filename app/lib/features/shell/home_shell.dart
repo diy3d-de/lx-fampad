@@ -10,9 +10,11 @@ import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
 import '../files/files_screen.dart';
+import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
 import '../update/update_service.dart';
+import 'desktop_shell.dart';
 import 'shell_tab.dart';
 
 /// Rahmen der angemeldeten App: Glow-Hintergrund, die fünf Tabs und die Material-3-NavigationBar.
@@ -24,7 +26,17 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
-  static const _screens = <Widget>[HomeScreen(), CalendarScreen(), ChatScreen(), FilesScreen(), ListsScreen()];
+  // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
+  // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
+  final _keys = List.generate(4, (_) => GlobalKey());
+  late final _screens = <Widget>[
+    const HomeScreen(),
+    CalendarScreen(key: _keys[0]),
+    ChatScreen(key: _keys[1]),
+    FilesScreen(key: _keys[2]),
+    ListsScreen(key: _keys[3]),
+  ];
+  late final _desktopScreens = <Widget>[const DesktopHome(), ..._screens.sublist(1)];
 
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;
@@ -73,6 +85,14 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final tab = ref.watch(shellTabProvider);
+    return LayoutBuilder(builder: (context, c) {
+      // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
+      if (c.maxWidth >= kDesktopBreakpoint) return DesktopShell(screens: _desktopScreens);
+      return _mobil(updateDa, tab);
+    });
+  }
+
+  Widget _mobil(bool updateDa, int tab) {
     return Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
