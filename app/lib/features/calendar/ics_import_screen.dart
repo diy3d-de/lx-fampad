@@ -85,7 +85,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       if (!mounted) return;
       final daten = ref.read(kalenderDatenProvider);
       final user = ref.read(authProvider).user;
-      final plan = icsPlanen(ergebnis, bestehende: daten.termine, ausnahmen: daten.ausnahmen, rechte: TerminRechte(user?.role ?? Role.guest, user?.id));
+      final plan = icsPlanen(ergebnis, bestehende: daten.termine, ausnahmen: daten.ausnahmen, rechte: TerminRechte(user?.role ?? Role.child, user?.id));
       setState(() {
         _plan = plan;
         _phase = _Phase.vorschau;
@@ -120,7 +120,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     final bericht = await ref.read(icsImporterProvider).importieren(
       plan,
       sicht: _sicht,
-      rechte: TerminRechte(ref.read(authProvider).user?.role ?? Role.guest, ref.read(authProvider).user?.id),
+      rechte: TerminRechte(ref.read(authProvider).user?.role ?? Role.child, ref.read(authProvider).user?.id),
       teilnehmer: {?_person},
       aktualisieren: _aktualisieren,
       abbruch: _abbruch,
@@ -139,7 +139,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
   Widget build(BuildContext context) {
     ref.watch(kalenderDatenProvider); // hält die lokalen Termine für den Abgleich der UIDs bereit
     final user = ref.watch(authProvider.select((a) => a.user));
-    final rechte = TerminRechte(user?.role ?? Role.guest, user?.id);
+    final rechte = TerminRechte(user?.role ?? Role.child, user?.id);
     final plan = _plan;
     return PopScope(
       canPop: _phase != _Phase.laeuft,

@@ -34,7 +34,7 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
   }
 
   /** Einladung erzeugen (als `by`) und per Passwort einlösen; gibt den neuen Client zurück. */
-  async function addMember(by: Client, role: 'admin' | 'parent' | 'child' | 'guest', email: string, extra: Record<string, unknown> = {}) {
+  async function addMember(by: Client, role: 'admin' | 'parent' | 'child', email: string, extra: Record<string, unknown> = {}) {
     const inv = await by.post('/api/v1/invites', { role, ...extra });
     expect(inv.status, JSON.stringify(inv.json)).toBe(200);
     const reg = await world.registerPassword(inv.json.invite.token, { email, displayName: email.split('@')[0] });
@@ -87,22 +87,23 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
   });
 
   describe('Einladungen', () => {
-    it('Admin lädt jede Rolle ein; Eltern nur Kinder und Gäste; Kinder und Gäste gar nicht', async () => {
+    it('Admin lädt jede Rolle ein; Eltern nur Kinder; Kinder gar nicht; die Rolle "guest" gibt es nicht', async () => {
       const { client: admin } = await adminPassword();
       expect((await admin.post('/api/v1/invites', { role: 'admin' })).status).toBe(200);
       expect((await admin.post('/api/v1/invites', { role: 'parent' })).status).toBe(200);
       const parent = await addMember(admin, 'parent', 'mama@example.org');
       expect((await parent.client.post('/api/v1/invites', { role: 'child' })).status).toBe(200);
-      expect((await parent.client.post('/api/v1/invites', { role: 'guest' })).status).toBe(200);
+      expect((await parent.client.post('/api/v1/invites', { role: 'guest' })).status).toBe(400);
+      expect((await admin.post('/api/v1/invites', { role: 'guest' })).status).toBe(400);
       expect((await parent.client.post('/api/v1/invites', { role: 'admin' })).status).toBe(403);
       expect((await parent.client.post('/api/v1/invites', { role: 'parent' })).status).toBe(403);
       const child = await addMember(admin, 'child', 'kind@example.org');
-      expect((await child.client.post('/api/v1/invites', { role: 'guest' })).status).toBe(403);
+      expect((await child.client.post('/api/v1/invites', { role: 'child' })).status).toBe(403);
       expect((await child.client.get('/api/v1/invites')).status).toBe(403);
     });
 
     it('ist ohne Anmeldung nicht möglich', async () => {
-      expect((await world.client().post('/api/v1/invites', { role: 'guest' })).status).toBe(401);
+      expect((await world.client().post('/api/v1/invites', { role: 'child' })).status).toBe(401);
     });
 
     it('Standard 24 Stunden, höchstens 7 Tage; Token ≥128 Bit, nur der Hash gespeichert', async () => {
@@ -172,7 +173,7 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
 
     it('Admin sieht die Liste ohne Token und PIN; Eltern sehen nur eigene Einladungen', async () => {
       const { client: admin } = await adminPassword();
-      const created = await admin.post('/api/v1/invites', { role: 'guest', pin: true });
+      const created = await admin.post('/api/v1/invites', { role: 'child', pin: true });
       const parent = await addMember(admin, 'parent', 'mama@example.org');
       await parent.client.post('/api/v1/invites', { role: 'child' });
       const list = await admin.get('/api/v1/invites');
@@ -182,7 +183,7 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
       expect(text).not.toContain('tokenHash');
       expect(text).not.toContain('pinHash');
       expect(list.json.invites.length).toBeGreaterThanOrEqual(3);
-      expect(list.json.invites.find((i: { id: string }) => i.id === created.json.invite.id)).toMatchObject({ role: 'guest', status: 'open', hasPin: true, requireApproval: true });
+      expect(list.json.invites.find((i: { id: string }) => i.id === created.json.invite.id)).toMatchObject({ role: 'child', status: 'open', hasPin: true, requireApproval: false });
       const mine = await parent.client.get('/api/v1/invites');
       expect(mine.json.invites).toHaveLength(1);
       expect(mine.json.invites[0].role).toBe('child');
@@ -264,9 +265,11 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
       expect(reg.complete?.status).toBe(200);
     });
 
-    it('Freigabe: Gäste sind standardmäßig pending und können sich erst nach Freigabe anmelden', async () => {
+    it('Freigabe auf ausdrücklichen Wunsch: pending, Anmeldung erst nach Freigabe; ohne Wunsch sofort aktiv', async () => {
       const { client: admin } = await adminPassword();
-      const guest = await addMember(admin, 'guest', 'oma@example.org');
+      const sofort = await addMember(admin, 'child', 'sofort@example.org');
+      expect(sofort.complete?.json.status).toBe('active');
+      const guest = await addMember(admin, 'child', 'oma@example.org', { requireApproval: true });
       expect(guest.complete?.json.status).toBe('pending');
       expect(guest.complete?.json.session).toBeUndefined();
       expect(guest.recoveryCodes).toHaveLength(10);
@@ -281,7 +284,7 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
       const members = await admin.get('/api/v1/members');
       const pending = members.json.members.find((m: { email: string }) => m.email === 'oma@example.org');
       expect(pending.status).toBe('pending');
-      // Eltern/Gäste sehen wartende Mitglieder nicht; nur Admins können freigeben
+      // Wartende Mitglieder sehen nur Mitglieder nicht; nur Admins können freigeben
       expect((await guest.client.post(`/api/v1/members/${pending.id}/approve`)).status).toBe(401);
 
       expect((await admin.post(`/api/v1/members/${pending.id}/approve`)).status).toBe(200);
@@ -293,15 +296,15 @@ describe.each(backends)('Anmeldung ($name)', (backend) => {
 
     it('Freigabe ablehnen entfernt das Mitglied; require_approval lässt sich je Einladung setzen', async () => {
       const { client: admin } = await adminPassword();
-      const g = await addMember(admin, 'guest', 'oma@example.org');
+      const g = await addMember(admin, 'child', 'oma@example.org', { requireApproval: true });
       const id = (await admin.get('/api/v1/members')).json.members.find((m: { email: string }) => m.email === 'oma@example.org').id;
       expect((await admin.post(`/api/v1/members/${id}/reject`)).status).toBe(200);
       expect((await harness.db.select().from(schema.users).where(eq(schema.users.email, 'oma@example.org'))).length).toBe(0);
       expect(g.recoveryCodes.length).toBe(10);
-      // Kind mit Freigabe, Gast ohne Freigabe
+      // Kind mit Freigabe, Kind ohne Freigabe
       const kind = await addMember(admin, 'child', 'kind@example.org', { requireApproval: true });
       expect(kind.complete?.json.status).toBe('pending');
-      const gast = await addMember(admin, 'guest', 'gast@example.org', { requireApproval: false });
+      const gast = await addMember(admin, 'child', 'gast@example.org', { requireApproval: false });
       expect(gast.complete?.json.status).toBe('active');
       expect(await auditEvents()).toContain('member_rejected');
     });

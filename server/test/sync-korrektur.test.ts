@@ -44,7 +44,7 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
   });
   beforeEach(async () => {
     await resetSync(world);
-    for (const d of [fam.admin, fam.parent, fam.child, fam.guest]) {
+    for (const d of [fam.admin, fam.parent, fam.child]) {
       d.sinceRev = 0;
       d.snapshotRev = undefined;
     }
@@ -144,9 +144,9 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
       expect(plain.json.changes.map((c: Json) => c.rev)).toEqual([3, 4]);
     });
 
-    it('Folgeseite filtert nach der Rolle (Gast sieht keine Listen für die Familie)', async () => {
-      await makeLists(fam.admin, 6);
-      const res = await fam.guest.pull(2);
+    it('Folgeseite filtert nach der Rolle (Kind sieht keine Listen nur für Eltern)', async () => {
+      for (let i = 0; i < 6; i++) await fam.admin.sync([upsert('list', randomUUID(), { name: `E${i}`, audience: 'parents' })]);
+      const res = await fam.child.pull(2);
       expect(res).toEqual([]);
     });
   });
@@ -154,13 +154,13 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
   const currentRev = async () => Number((await rows(world, sql`select current_rev from families`))[0]?.current_rev);
 
   describe('Geisterlisten', () => {
-    it('Freigabe entzogen und danach gelöscht: der Gast bekommt einen hidden-Tombstone (auch wenn er den Zwischenstand nie sah)', async () => {
+    it('Freigabe entzogen und danach gelöscht: das Kind bekommt einen hidden-Tombstone (auch wenn er den Zwischenstand nie sah)', async () => {
       const lid = randomUUID();
-      await fam.admin.sync([upsert('list', lid, { name: 'Oma-Liste', audience: 'all' })]);
-      await fam.guest.pull(); // Gast kennt die Liste
+      await fam.admin.sync([upsert('list', lid, { name: 'Oma-Liste', audience: 'family' })]);
+      await fam.child.pull(); // Kind kennt die Liste
       await fam.admin.sync([upsert('list', lid, { audience: 'parents' }, 1)], { sinceRev: 1 });
       await fam.admin.sync([remove('list', lid, 2)], { sinceRev: 2 });
-      const changes = await fam.guest.pull();
+      const changes = await fam.child.pull();
       expect(changes).toEqual([{ rev: 3, entity: 'list', id: lid, tombstone: true, hidden: true, fields: {} }]);
       expect(JSON.stringify(changes)).not.toContain('Oma-Liste');
     });
@@ -169,8 +169,8 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
       const lid = randomUUID();
       await fam.admin.sync([upsert('list', lid, { name: 'Nur Eltern', audience: 'parents' })]);
       await fam.admin.sync([remove('list', lid, 1)], { sinceRev: 1 });
-      expect(await fam.guest.pull()).toEqual([]); // Snapshot (sinceRev 0): nichts
-      const delta = await fam.guest.sync([], { sinceRev: 1 });
+      expect(await fam.child.pull()).toEqual([]); // Snapshot (sinceRev 0): nichts
+      const delta = await fam.child.sync([], { sinceRev: 1 });
       expect(listsOf(delta.json.changes)).toEqual([{ rev: 2, entity: 'list', id: lid, tombstone: true, hidden: true, fields: {} }]);
       // Eltern sehen einen normalen Tombstone
       const parent = await fam.parent.sync([], { sinceRev: 1 });
@@ -180,11 +180,11 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
     it('Einträge einer entzogenen und gelöschten Liste: hidden-Tombstones für Liste und Einträge', async () => {
       const lid = randomUUID();
       const iid = randomUUID();
-      await fam.admin.sync([upsert('list', lid, { name: 'X', audience: 'all' }), upsert('list_item', iid, { listId: lid, text: 'a' })]);
-      await fam.guest.pull();
+      await fam.admin.sync([upsert('list', lid, { name: 'X', audience: 'family' }), upsert('list_item', iid, { listId: lid, text: 'a' })]);
+      await fam.child.pull();
       await fam.admin.sync([upsert('list', lid, { audience: 'parents' }, 1)], { sinceRev: 2 });
       await fam.admin.sync([remove('list', lid, 3)], { sinceRev: 4 });
-      const changes = await fam.guest.pull();
+      const changes = await fam.child.pull();
       expect(changes.map((c) => `${c.entity}:${c.hidden}`).sort()).toEqual(['list:true', 'list_item:true']);
     });
   });
@@ -192,7 +192,7 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
   describe('Erzwungene Neusynchronisierung (devices.resync_required)', () => {
     it('ein Rollenwechsel setzt das Flag der Geräte der Person', async () => {
       const extra = await extraMember(world, fam.admin, 'child', 'zweites-kind@example.org'); // ein Rollenwechsel beendet die Sitzungen der Person
-      const res = await fam.admin.client.patch(`/api/v1/members/${extra.userId}/role`, { role: 'guest' });
+      const res = await fam.admin.client.patch(`/api/v1/members/${extra.userId}/role`, { role: 'parent' });
       expect(res.status).toBe(200);
       const flags = await rows(world, sql`select user_id, resync_required from devices`);
       expect(flags.filter((f) => f.resync_required).map((f) => f.user_id)).toEqual([extra.userId]);
@@ -373,24 +373,21 @@ describe.each(backends)('Korrekturrunde Sync ($name)', (backend) => {
     }
     const revs = (m: Json[]) => m.filter((x) => x.type === 'rev').map((x) => x.rev);
 
-    it('Liste nur für Eltern: Kind und Gast hören nichts; für die Familie: kein Gast; freigegeben: alle', async () => {
+    it('Liste nur für Eltern: das Kind hört nichts; für die Familie: alle; Freigabe zurückgenommen: das Kind erfährt es', async () => {
       const parent = await connect(fam.parent);
       const child = await connect(fam.child);
-      const guest = await connect(fam.guest);
       const lid = randomUUID();
       await fam.admin.sync([upsert('list', lid, { name: 'Eltern', audience: 'parents' })]);
       await wait(150);
-      expect([revs(parent), revs(child), revs(guest)]).toEqual([[1], [], []]);
+      expect([revs(parent), revs(child)]).toEqual([[1], []]);
       await fam.admin.sync([upsert('list', lid, { audience: 'family' }, 1)], { sinceRev: 1 });
       await wait(150);
-      expect([revs(parent), revs(child), revs(guest)]).toEqual([[1, 2], [2], []]);
-      await fam.admin.sync([upsert('list', lid, { audience: 'all' }, 2)], { sinceRev: 2 });
+      expect([revs(parent), revs(child)]).toEqual([[1, 2], [2]]);
+      // Freigabe zurückgenommen: das Kind muss es erfahren (hidden-Tombstone), obwohl es danach nichts mehr sieht
+      await fam.admin.sync([upsert('list', lid, { audience: 'parents' }, 2)], { sinceRev: 2 });
       await wait(150);
-      expect([revs(parent), revs(child), revs(guest)]).toEqual([[1, 2, 3], [2, 3], [3]]);
-      // Freigabe zurückgenommen: der Gast muss es erfahren (hidden-Tombstone), obwohl er danach nichts mehr sieht
-      await fam.admin.sync([upsert('list', lid, { audience: 'parents' }, 3)], { sinceRev: 3 });
-      await wait(150);
-      expect([revs(parent), revs(child), revs(guest)]).toEqual([[1, 2, 3, 4], [2, 3, 4], [3, 4]]);
+      expect([revs(parent), revs(child)]).toEqual([[1, 2, 3], [2, 3]]);
     });
+
   });
 });

@@ -82,13 +82,12 @@ export interface Family {
   adminKey: TestAuthenticator;
   parent: Device;
   child: Device;
-  guest: Device;
   familyId: string;
   /** Meldet die Person (Passkey) auf einem weiteren Gerät an. */
-  secondDevice(person: 'admin' | 'parent' | 'child' | 'guest'): Promise<Device>;
+  secondDevice(person: 'admin' | 'parent' | 'child'): Promise<Device>;
 }
 
-async function passkeyMember(world: World, by: Client, role: 'parent' | 'child' | 'guest', email: string) {
+async function passkeyMember(world: World, by: Client, role: 'parent' | 'child', email: string) {
   const inv = await by.post('/api/v1/invites', { role });
   if (inv.status !== 200) throw new Error(`Einladung fehlgeschlagen: ${JSON.stringify(inv.json)}`);
   const reg = await world.registerPasskey(inv.json.invite.token, { email, displayName: email.split('@')[0] ?? email });
@@ -103,18 +102,17 @@ async function passkeyMember(world: World, by: Client, role: 'parent' | 'child' 
 }
 
 /** Weiteres Mitglied (Passkey) mit eigenem Gerät, z. B. für Tests, die Mitglieder entfernen. */
-export async function extraMember(world: World, admin: Device, role: 'parent' | 'child' | 'guest', email: string): Promise<Device> {
+export async function extraMember(world: World, admin: Device, role: 'parent' | 'child', email: string): Promise<Device> {
   const reg = await passkeyMember(world, admin.client, role, email);
   return deviceOf(world, reg.client);
 }
 
-/** Familie mit Admin, Elternteil, Kind und Gast (alle per Passkey, damit sich Geräte beliebig oft anmelden lassen). */
+/** Familie mit Admin, Elternteil und Kind (alle per Passkey, damit sich Geräte beliebig oft anmelden lassen). */
 export async function createFamily(world: World): Promise<Family> {
   const a = await adminPasskey(world);
   const parent = await passkeyMember(world, a.client, 'parent', 'mama@example.org');
   const child = await passkeyMember(world, a.client, 'child', 'kind@example.org');
-  const guest = await passkeyMember(world, a.client, 'guest', 'oma@example.org');
-  const keys = { admin: a.authenticator, parent: parent.authenticator, child: child.authenticator, guest: guest.authenticator };
+  const keys = { admin: a.authenticator, parent: parent.authenticator, child: child.authenticator };
   const admin = await deviceOf(world, a.client);
   const me = await a.client.get('/api/v1/me');
   const family: Family = {
@@ -122,7 +120,6 @@ export async function createFamily(world: World): Promise<Family> {
     adminKey: a.authenticator,
     parent: await deviceOf(world, parent.client),
     child: await deviceOf(world, child.client),
-    guest: await deviceOf(world, guest.client),
     familyId: me.json.familyId as string,
     async secondDevice(person) {
       const c = world.client('203.0.113.77');

@@ -7,13 +7,12 @@
 //  - Was eine Rolle nicht lesen darf, gibt es für sie nicht: Ändern/Löschen eines nicht lesbaren Datensatzes antwortet `not_found`
 //    (nie `forbidden`, sonst ließe sich die Existenz erraten), auch bei einer fremden Familie (die Abfragen sind an die Familie gebunden).
 //  - Rechte hängen an der Rolle der Sitzung (nie an Angaben des Clients).
-//  - Gäste sehen nur ausdrücklich freigegebene Datensätze (Stufe `all`); Kinder sehen Stufe `family` und `all`, aber nichts, was
-//    nur für Eltern gedacht ist; Eltern und Admins sehen alles.
+//  - Kinder sehen Stufe `family`, aber nichts, was nur für Eltern gedacht ist; Eltern und Admins sehen alles. Gäste gibt es nicht.
 import type { Role } from '../auth/types.js';
 
-/** Wer einen Datensatz sehen darf: nur Eltern/Admins, die Familie ohne Gäste, oder alle einschließlich Gäste ("freigegeben"). */
-export type Audience = 'parents' | 'family' | 'all';
-export const AUDIENCES: readonly Audience[] = ['parents', 'family', 'all'];
+/** Wer einen Datensatz sehen darf: nur Eltern/Admins oder die ganze Familie. */
+export type Audience = 'parents' | 'family';
+export const AUDIENCES: readonly Audience[] = ['parents', 'family'];
 
 export type Action = 'read' | 'create' | 'update' | 'delete';
 
@@ -52,13 +51,12 @@ export interface RoleRule {
 
 export type Rules = Readonly<Record<Role, RoleRule>>;
 
-export const ROLES: readonly Role[] = ['admin', 'parent', 'child', 'guest'];
+export const ROLES: readonly Role[] = ['admin', 'parent', 'child'];
 
 /** Rollen, die eine Freigabe-Stufe sehen. */
 export const AUDIENCE_ROLES: Readonly<Record<Audience, readonly Role[]>> = {
   parents: ['admin', 'parent'],
   family: ['admin', 'parent', 'child'],
-  all: ['admin', 'parent', 'child', 'guest'],
 };
 
 export const sees = (role: Role, audience: Audience): boolean => AUDIENCE_ROLES[audience].includes(role);

@@ -28,7 +28,7 @@ class EinladungsWahl {
   const EinladungsWahl(this.rolle, this.stunden, this.pin, this.freigabe);
 }
 
-/// Bottom-Sheet "Neue Einladung". [eigeneRolle] bestimmt die wählbaren Rollen (Eltern: nur Kind und Gast).
+/// Bottom-Sheet "Neue Einladung". [eigeneRolle] bestimmt die wählbaren Rollen (Eltern: nur Kind).
 Future<EinladungsWahl?> neueEinladungWaehlen(BuildContext context, Role eigeneRolle) => showModalBottomSheet<EinladungsWahl>(
   context: context,
   isScrollControlled: true,
@@ -50,11 +50,8 @@ class _EinladungsBlattState extends State<_EinladungsBlatt> {
   bool _pin = false;
   bool? _freigabeWahl;
 
-  bool get _istAdmin => widget.eigeneRolle == Role.admin;
-
-  /// Gäste brauchen die Freigabe immer, außer ein Admin verzichtet ausdrücklich darauf.
-  bool get _freigabe => _freigabeWahl ?? (_rolle == Role.guest);
-  bool get _freigabeAenderbar => _rolle != Role.guest || _istAdmin;
+  /// Freigabe durch einen Admin gibt es nur auf ausdrücklichen Wunsch (Standard: aus).
+  bool get _freigabe => _freigabeWahl ?? false;
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -77,10 +74,7 @@ class _EinladungsBlattState extends State<_EinladungsBlatt> {
                 ChoiceChip(
                   label: Text(r.label),
                   selected: _rolle == r,
-                  onSelected: (_) => setState(() {
-                    _rolle = r;
-                    _freigabeWahl = null;
-                  }),
+                  onSelected: (_) => setState(() => _rolle = r),
                 ),
             ],
           ),
@@ -109,19 +103,15 @@ class _EinladungsBlattState extends State<_EinladungsBlatt> {
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
             value: _freigabe,
-            onChanged: _freigabeAenderbar ? (v) => setState(() => _freigabeWahl = v) : null,
+            onChanged: (v) => setState(() => _freigabeWahl = v),
             title: const Text('Freigabe durch Admin'),
-            subtitle: Text(
-              _freigabeAenderbar
-                  ? 'Das neue Mitglied kann sich erst nach deiner Freigabe anmelden.'
-                  : 'Gäste werden immer von einem Admin freigegeben.',
-            ),
+            subtitle: const Text('Das neue Mitglied kann sich erst nach der Freigabe durch einen Admin anmelden.'),
           ),
           const SizedBox(height: 12),
           HauptKnopf(
             text: 'Einladung erstellen',
             icon: Icons.qr_code_2,
-            onPressed: () => Navigator.of(context).pop(EinladungsWahl(_rolle, _stunden, _pin, _freigabeAenderbar ? _freigabe : null)),
+            onPressed: () => Navigator.of(context).pop(EinladungsWahl(_rolle, _stunden, _pin, _freigabe ? true : null)),
           ),
         ],
       ),

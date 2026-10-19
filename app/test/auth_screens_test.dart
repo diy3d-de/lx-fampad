@@ -304,13 +304,13 @@ void main() {
       expect(zwischenablage.single, codes().join('\n'));
     });
 
-    testWidgets('Gast mit Freigabe und PIN: pending -> Warte-Bildschirm, keine Token', (tester) async {
+    testWidgets('Einladung mit Freigabe und PIN: pending -> Warte-Bildschirm, keine Token', (tester) async {
       final server = FakeServer()
         ..json('POST /auth/invites/lookup', {
-          'invite': {..._lookupOk['invite']! as Map<String, dynamic>, 'role': 'guest', 'pinRequired': true, 'requireApproval': true},
+          'invite': {..._lookupOk['invite']! as Map<String, dynamic>, 'role': 'child', 'pinRequired': true, 'requireApproval': true},
         })
         ..json('POST /auth/invites/passkey/options', {'challengeId': 'c-9', 'options': webauthnOptionen()})
-        ..json('POST /auth/invites/passkey/complete', {'member': userJson(role: 'guest', status: 'pending', name: 'Oma'), 'status': 'pending', 'recoveryCodes': codes()});
+        ..json('POST /auth/invites/passkey/complete', {'member': userJson(role: 'child', status: 'pending', name: 'Oma'), 'status': 'pending', 'recoveryCodes': codes()});
       final env = await zurEinladung(tester, server);
       await eingeben(tester, 'Einladungslink', link());
       await tippeText(tester, 'Einladung prüfen');
@@ -628,7 +628,7 @@ void main() {
       expect(find.text('123456'), findsOneWidget);
     });
 
-    testWidgets('Einladungen: Liste, erstellen (Gast mit PIN), QR + Link + PIN nur einmal, Zwischenablage nur auf Klick', (tester) async {
+    testWidgets('Einladungen: Liste, erstellen (Elternteil mit PIN und Freigabe), QR + Link + PIN nur einmal, Zwischenablage nur auf Klick', (tester) async {
       final zwischenablage = <String>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
         if (call.method == 'Clipboard.setData') zwischenablage.add((call.arguments as Map)['text'] as String);
@@ -641,12 +641,13 @@ void main() {
       expect(find.text('// einladungen (3)'.toUpperCase()), findsOneWidget);
 
       await tippeText(tester, 'Neue Einladung');
-      await tippe(tester, find.widgetWithText(ChoiceChip, 'Gast'));
+      await tippe(tester, find.widgetWithText(ChoiceChip, 'Elternteil'));
       await tippe(tester, find.widgetWithText(ChoiceChip, '6 Stunden'));
       await tippe(tester, find.widgetWithText(SwitchListTile, 'PIN verlangen'));
+      await tippe(tester, find.widgetWithText(SwitchListTile, 'Freigabe durch Admin'));
       await tippeText(tester, 'Einladung erstellen');
       final body = server.anfragen('POST /invites').single.json;
-      expect(body, {'role': 'guest', 'hours': 6, 'pin': true, 'requireApproval': true});
+      expect(body, {'role': 'parent', 'hours': 6, 'pin': true, 'requireApproval': true});
 
       expect(find.text('Einladung erstellt'), findsOneWidget);
       expect(find.byType(QrImageView), findsOneWidget);
@@ -689,28 +690,29 @@ void main() {
       await tippe(tester, find.widgetWithText(TextButton, 'Widerrufen'));
       expect(server.anfragen('POST /invites/i1/revoke'), hasLength(1));
 
-      await tippe(tester, find.byTooltip('Aktionen für die Gast-Einladung'));
+      await tippe(tester, find.byTooltip('Aktionen für die Elternteil-Einladung'));
       await tippeText(tester, 'Verlängern');
       await tippeText(tester, 'Noch 3 Tage gültig');
       expect(server.anfragen('POST /invites/i2/extend').single.json, {'hours': 72});
     });
 
-    testWidgets('Eltern: nur Einladungen für Kind und Gast, keine Mitglieder-Verwaltung', (tester) async {
+    testWidgets('Eltern: nur Einladungen für Kinder (kein Gast), keine Mitglieder-Verwaltung', (tester) async {
       final server = standardServer(role: 'parent');
       await zumAdmin(tester, role: 'parent', server: server);
       expect(find.byType(TabBar), findsNothing);
       expect(server.anfragen('GET /members'), isEmpty);
       await tippeText(tester, 'Neue Einladung');
       expect(find.widgetWithText(ChoiceChip, 'Kind'), findsOneWidget);
-      expect(find.widgetWithText(ChoiceChip, 'Gast'), findsOneWidget);
+      expect(find.widgetWithText(ChoiceChip, 'Gast'), findsNothing);
       expect(find.widgetWithText(ChoiceChip, 'Admin'), findsNothing);
       expect(find.widgetWithText(ChoiceChip, 'Elternteil'), findsNothing);
-      // Gäste werden für Eltern immer freigegeben: Schalter gesperrt, wird nicht gesendet
-      await tippe(tester, find.widgetWithText(ChoiceChip, 'Gast'));
-      expect(tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Freigabe durch Admin')).onChanged, isNull);
+      // Freigabe nur auf Wunsch: ohne Schalter wird sie nicht gesendet
+      expect(tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Freigabe durch Admin')).value, isFalse);
+      await tippeText(tester, 'Einladung erstellen');
+      expect(server.anfragen('POST /invites').single.json, {'role': 'child', 'hours': 24, 'pin': false});
     });
 
-    testWidgets('Kinder und Gäste sehen keinen Bereich "Familie"', (tester) async {
+    testWidgets('Kinder sehen keinen Bereich "Familie"', (tester) async {
       final env = await angemeldeteUmgebung(role: 'child');
       await starteApp(tester, env);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));

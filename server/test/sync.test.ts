@@ -23,7 +23,7 @@ describe.each(backends)('Sync ($name)', (backend) => {
   });
   beforeEach(async () => {
     await resetSync(world);
-    fam.admin.sinceRev = fam.parent.sinceRev = fam.child.sinceRev = fam.guest.sinceRev = 0;
+    fam.admin.sinceRev = fam.parent.sinceRev = fam.child.sinceRev = 0;
   });
 
   const listId = () => randomUUID();

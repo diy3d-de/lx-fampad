@@ -1,7 +1,7 @@
 // Vertragsprüfung gegen den ECHTEN Server (gebauter Server aus server/, PostgreSQL 17): die App-Klassen (ApiClient, FampadApi, DTOs,
 // Einladungslink-Parser, Passkey-Optionen) rufen die von der App genutzten Endpunkte einmal real auf. Seit Phase 1c gehört der Sync dazu
 // (syncVertrag, offlineOnlineVertrag): zwei Geräte derselben Person, Idempotenz, Konflikte pro Feld, Löschen gewinnt, Validierung, Rechte von
-// Kind und Gast (inklusive "hidden"-Tombstone), mehrseitiger Snapshot (> 500 Einträge, purged_rev > 0) und Geisterlisten, zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
+// Kind (inklusive "hidden"-Tombstone), mehrseitiger Snapshot (> 500 Einträge, purged_rev > 0) und Geisterlisten, zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
 // das Bereinigen von Verweisen beim Entfernen eines Mitglieds. Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
 // Ablauf: frische Datenbank migrieren, 'node dist/cli/bootstrap.js --family "Familie Vertrag"' (Token aus dem Link), Server starten, dann
@@ -243,28 +243,29 @@ Future<void> syncVertrag({
     throwsA(isA<ApiException>().having((e) => e.status, 'status', 409).having((e) => e.code, 'code', 'device_mismatch')),
   );
 
-  schritt('Sync: Rechte (Gast sieht nur Freigegebenes, Kind begrenzt, nicht sichtbare Datensätze unauffindbar)');
+  schritt('Sync: Rechte (Kind begrenzt, nicht sichtbare Datensätze unauffindbar, alte Eingabe "all" = family)');
   final lid2 = neueUuid(), iid2 = neueUuid();
   await syncen(a, [neu('list', lid2, {'name': 'Grillfest', 'audience': 'parents'}), neu('list_item', iid2, {'listId': lid2, 'text': 'Würstchen'})]);
   expect((await syncen(gast, [])).changes.where((c) => c.id == lid2), isEmpty);
   expect((await syncen(kind, [])).changes.where((c) => c.id == lid2), isEmpty);
-  final gastNeu = neu('list', neueUuid(), {'name': 'Gast-Liste'});
-  expect((await syncen(gast, [gastNeu])).rejected.single.code, 'forbidden');
   final gastAendern = aender('list', lid2, {'name': 'Gehackt'}, 1);
   expect((await syncen(gast, [gastAendern])).rejected.single.code, 'not_found');
-  final kindAll = neu('list', neueUuid(), {'name': 'Kind-Liste', 'audience': 'all'});
-  expect((await syncen(kind, [kindAll])).rejected.single.code, 'forbidden');
+  final kindEltern = neu('list', neueUuid(), {'name': 'Kind-Liste', 'audience': 'parents'});
+  expect((await syncen(kind, [kindEltern])).rejected.single.code, 'forbidden');
+  // alte Apps senden "all": der Server speichert und liefert "family"
+  final kindAlt = neu('list', neueUuid(), {'name': 'Alte App', 'audience': 'all'});
+  expect((await syncen(kind, [kindAlt])).acked, [kindAlt.opId]);
+  expect((await alleSeiten(kind)).firstWhere((c) => c.id == kindAlt.id).fields['audience'], 'family');
   final kindFamilie = neu('list', neueUuid(), {'name': 'Kinderliste'});
   expect((await syncen(kind, [kindFamilie])).acked, [kindFamilie.opId]);
-  // Freigabe für alle: der Gast sieht Liste und Eintrag und darf abhaken, aber nichts ändern
-  final freigabe = await syncen(a, [aender('list', lid2, {'audience': 'all'}, 1)]);
+  // Freigabe für die Familie: die zweite Person (Kind) sieht Liste und Eintrag
+  final freigabe = await syncen(a, [aender('list', lid2, {'audience': 'family'}, 1)]);
   expect(freigabe.rejected, isEmpty);
   final gastSicht = await syncen(gast, []);
   expect(gastSicht.changes.map((c) => c.id), containsAll([lid2, iid2]));
   final itemSicht = gastSicht.changes.firstWhere((c) => c.id == iid2);
   expect((await syncen(gast, [aender('list_item', iid2, {'doneAt': doneAt}, itemSicht.rev)], since: gastSicht.rev)).acked, hasLength(1));
-  expect((await syncen(gast, [aender('list_item', iid2, {'text': 'Hack'}, itemSicht.rev)], since: gastSicht.rev)).rejected.single.code, 'forbidden');
-  // Freigabe zurückgenommen: der Gast bekommt einen "hidden"-Tombstone ohne Inhalt
+  // Freigabe zurückgenommen: die Person bekommt einen "hidden"-Tombstone ohne Inhalt
   final stand = (await syncen(gast, [], since: gastSicht.rev)).rev;
   await syncen(a, [aender('list', lid2, {'audience': 'parents'}, freigabe.rev)]);
   final versteckt = await syncen(gast, [], since: stand);
@@ -385,10 +386,10 @@ Future<void> snapshotVertrag({required Gegenstelle a, required Gegenstelle b, re
     await purgedRevSetzen(altPurged);
   }
 
-  schritt('Sync: Geisterliste (Freigabe entzogen, danach gelöscht): der Gast bekommt einen hidden-Tombstone, auch für Einträge');
+  schritt('Sync: Geisterliste (Freigabe entzogen, danach gelöscht): die zweite Person bekommt einen hidden-Tombstone, auch für Einträge');
   final geist = neueUuid(), geistItem = neueUuid();
   final vorGeist = (await syncen(a, [])).rev;
-  await syncen(a, [neu('list', geist, {'name': 'Oma-Liste', 'audience': 'all'}), neu('list_item', geistItem, {'listId': geist, 'text': 'Strickzeug'})]);
+  await syncen(a, [neu('list', geist, {'name': 'Oma-Liste', 'audience': 'family'}), neu('list_item', geistItem, {'listId': geist, 'text': 'Strickzeug'})]);
   final gVorher = await syncen(gast, [], since: vorGeist);
   expect(gVorher.changes.map((c) => c.id), containsAll([geist, geistItem]));
   final listeRev = gVorher.changes.firstWhere((c) => c.id == geist).rev;
@@ -461,7 +462,7 @@ Future<void> offlineOnlineVertrag({required Gegenstelle a, required Gegenstelle 
 }
 
 /// Kalender gegen den echten Server (Phase 1c-2a): Termin mit Serie, Teilnehmern und Ausnahme auf zwei lokalen Datenbanken, Validierung
-/// (RRULE, Zeitzone, Zeiten), Rechte von Kind und Gast, Serie löschen räumt Kinder auf.
+/// (RRULE, Zeitzone, Zeiten), Rechte des Kindes, Serie löschen räumt Kinder auf.
 Future<void> kalenderVertrag({
   required Gegenstelle a,
   required Gegenstelle b,
@@ -540,7 +541,7 @@ Future<void> kalenderVertrag({
     expect(r.rejected.single.code, 'invalid', reason: '$schlecht');
   }
 
-  schritt('Kalender: Rechte von Kind und Gast gegen den echten Server');
+  schritt('Kalender: Rechte des Kindes gegen den echten Server (alte Eingabe "all" = family)');
   final privat = neueUuid(), frei = neueUuid(), eltern = neueUuid();
   expect((await syncen(a, [neu('termin', privat, {...zeit, 'audience': 'parents'}), neu('termin', frei, {...zeit, 'titel': 'Für alle', 'audience': 'all'}), neu('termin', eltern, zeit)])).rejected, isEmpty);
   final kindTerminId = neueUuid();
@@ -556,11 +557,10 @@ Future<void> kalenderVertrag({
   expect(kindSicht, isNot(contains(privat)));
   expect(kindSicht, contains(eltern));
   expect((await syncen(a, [neu('termin_teilnehmer', neueUuid(), {'terminId': frei, 'userId': kindId})])).rejected, isEmpty);
-  final gastAlles = await alleSeiten(gast);
-  expect(gastAlles.where((c) => c.entity == 'termin_teilnehmer'), isEmpty, reason: 'Gäste sehen nicht, wer teilnimmt');
-  final gastSicht = gastAlles.where((c) => c.entity == 'termin').toList();
-  expect(gastSicht.map((c) => c.id), [frei]);
-  expect((await syncen(gast, [neu('termin', neueUuid(), zeit)])).rejected.single.code, 'forbidden');
+  final zweitSicht = (await alleSeiten(gast)).where((c) => c.entity == 'termin').toList();
+  expect(zweitSicht.map((c) => c.id), containsAll([frei, eltern]));
+  expect(zweitSicht.map((c) => c.id), isNot(contains(privat)));
+  expect(zweitSicht.firstWhere((c) => c.id == frei).fields['audience'], 'family', reason: 'alte Eingabe "all" wird family');
 
   schritt('Kalender: Serie löschen räumt Teilnehmer und Ausnahmen auf beiden Geräten ab');
   // die Probetermine der Rechteprüfung zuerst entfernen (die lokalen Datenbanken bekommen sie sonst auch)
@@ -677,9 +677,10 @@ void main() {
     // Kinder verwalten keine Einladungen
     await expectLater(kind.api.einladungen(), throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)));
 
-    schritt('Gast-Einladung (Freigabe Standard): pending, Anmeldung 403 account_pending, Freigabe, dann Anmeldung');
-    final gastInv = await admin.api.einladungErstellen(rolle: Role.guest, stunden: 6, pin: false);
+    schritt('Einladung mit Freigabe auf Wunsch: pending, Anmeldung 403 account_pending, Freigabe, dann Anmeldung; die Rolle guest gibt es nicht');
+    final gastInv = await admin.api.einladungErstellen(rolle: Role.child, stunden: 6, pin: false, freigabe: true);
     expect(gastInv.requireApproval, isTrue);
+    await expectLater(admin.client.post('/invites', {'role': 'guest', 'hours': 1, 'pin': false}), throwsA(isA<ApiException>().having((e) => e.status, 'status', 400)));
     final gast = Gegenstelle(name: 'Omas Tablet');
     final gStart = await gast.api.passwortRegistrierungStart(token: gastInv.token, passwort: 'Gast-Passwort-1234', email: 'oma@beispiel.de', anzeigename: 'Oma');
     final gReg = await gast.api.passwortRegistrierungFertig(challengeId: gStart.challengeId, code: await frischerCode(gStart.totpSecret));
@@ -697,7 +698,7 @@ void main() {
     await admin.api.freigeben(oma.id);
     // Beobachtung: der Server verbraucht den Code schon bei der abgelehnten Anmeldung (pending) -> der zweite Code wird gebraucht
     final omaLogin = await gast.api.passwortAnmelden(email: 'oma@beispiel.de', passwort: 'Gast-Passwort-1234', wiederherstellungscode: gReg.recoveryCodes[1]);
-    expect(omaLogin.user.role, Role.guest);
+    expect(omaLogin.user.role, Role.child);
     expect(omaLogin.session.istApp, isTrue);
     await gast.client.sitzungUebernehmen(omaLogin.session);
     // Nicht-Admins sehen E-Mails anderer nicht
@@ -706,7 +707,7 @@ void main() {
     expect(sichtKind.firstWhere((m) => m.id == kindId).email, 'ben@beispiel.de');
 
     schritt('Verlängern (verkürzt nie), Widerrufen');
-    final extra = await admin.api.einladungErstellen(rolle: Role.guest, stunden: 24, pin: false);
+    final extra = await admin.api.einladungErstellen(rolle: Role.child, stunden: 24, pin: false);
     final vorher = (await admin.api.einladungen()).firstWhere((i) => i.id == extra.id).expiresAt;
     final neu = await admin.api.einladungVerlaengern(extra.id, 1);
     expect(neu.isBefore(vorher.subtract(const Duration(seconds: 1))), isFalse, reason: 'verkürzt nie');
@@ -754,11 +755,11 @@ void main() {
       Gegenstelle().api.wiederherstellungAnmelden(email: 'ben@beispiel.de', code: kReg.recoveryCodes.first),
       throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials').having((e) => e.message, 'message', isNot(contains('Code ist'))) ),
     );
-    // Eltern: Kind-/Gast-Einladungen ja, Elternteil nein
-    final nachRolle = await kind2.api.einladungErstellen(rolle: Role.guest, stunden: 1, pin: false);
-    expect(nachRolle.requireApproval, isTrue, reason: 'Eltern: Gäste immer mit Freigabe');
+    // Eltern: Kind-Einladungen ja (ohne Freigabe, wenn nicht verlangt), Elternteil nein
+    final nachRolle = await kind2.api.einladungErstellen(rolle: Role.child, stunden: 1, pin: false);
+    expect(nachRolle.requireApproval, isFalse);
     await expectLater(kind2.api.einladungErstellen(rolle: Role.parent, stunden: 1, pin: false), throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)));
-    await expectLater(kind2.api.rolleAendern(adminId, Role.guest), throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)));
+    await expectLater(kind2.api.rolleAendern(adminId, Role.child), throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)));
 
     schritt('Neue Wiederherstellungscodes (Step-up), alte entfallen');
     final neueCodes = await admin.api.neueWiederherstellungscodes();
@@ -863,7 +864,7 @@ void main() {
     final webMe = await web.api.ich();
     expect(webMe.csrfToken, w.session.csrfToken);
     expect(webMe.user.displayName, 'Oma');
-    // ändernde Anfrage mit CSRF-Header klappt (Gast: Profil ändern)
+    // ändernde Anfrage mit CSRF-Header klappt (Profil ändern)
     await web.api.profilAendern(anzeigename: 'Oma Erna');
     // ohne CSRF-Header: 403 csrf_invalid
     web.client.csrfSetzen(null);
@@ -872,7 +873,7 @@ void main() {
     expect((await web.api.geraete()).any((d) => d.current && d.platform == 'web'), isTrue);
 
     // ---------------------------------------------------------------- Sync (Phase 1c)
-    schritt('Sync: zweites Gerät des Admin, Kind wieder als Kind (Rolle ändern widerruft die Sitzungen), Gast per Cookie');
+    schritt('Sync: zweites Gerät des Admin, Kind wieder als Kind (Rolle ändern widerruft die Sitzungen), zweite Person (Oma, Kind-Rolle) per Cookie');
     final adminB = Gegenstelle(name: 'Zweitgerät B');
     final adminBLogin = await mitWarten(() => adminB.api.passwortAnmelden(email: 'anna@beispiel.de', passwort: 'Contract-Passwort-12', wiederherstellungscode: neueCodes[5]));
     await adminB.client.sitzungUebernehmen(adminBLogin.session);
@@ -903,7 +904,7 @@ void main() {
     expect(RegisterRequestType.fromJson(normalisiereOptionen(rpk.options)).user.displayName, 'Ben');
 
     schritt('Mitglied ablehnen / entfernen');
-    final g2 = await admin.api.einladungErstellen(rolle: Role.guest, stunden: 1, pin: false);
+    final g2 = await admin.api.einladungErstellen(rolle: Role.child, stunden: 1, pin: false, freigabe: true);
     final g2c = Gegenstelle();
     final g2s = await g2c.api.passwortRegistrierungStart(token: g2.token, passwort: 'Gast2-Passwort-123', email: 'opa@beispiel.de', anzeigename: 'Opa');
     await g2c.api.passwortRegistrierungFertig(challengeId: g2s.challengeId, code: await frischerCode(g2s.totpSecret));
