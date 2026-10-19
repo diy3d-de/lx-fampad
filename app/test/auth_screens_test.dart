@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:passkeys/exceptions.dart' as pk;
+import 'package:lx_fampad/constants.dart' show kApkDownloadUrl;
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/features/auth/invite_intake.dart';
 import 'package:lx_fampad/features/auth/qr_anzeige.dart';
@@ -624,7 +625,7 @@ void main() {
       await tippe(tester, find.widgetWithText(TextButton, 'Zurücksetzen'));
       expect(server.anfragen('POST /members/$fixIdKind/reset').single.json, {'hours': 72, 'pin': true});
       expect(find.text('Zurücksetzen für Ben'), findsOneWidget);
-      expect(find.byType(QrImageView), findsOneWidget);
+      expect(find.byType(QrImageView), findsNWidgets(2)); // Einladung + Download-Link der App
       expect(find.text('123456'), findsOneWidget);
     });
 
@@ -650,8 +651,8 @@ void main() {
       expect(body, {'role': 'parent', 'hours': 6, 'pin': true, 'requireApproval': true});
 
       expect(find.text('Einladung erstellt'), findsOneWidget);
-      expect(find.byType(QrImageView), findsOneWidget);
-      expect(tester.widget<QrAnzeige>(find.byType(QrAnzeige)).daten, 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+      expect(find.byType(QrImageView), findsNWidgets(2)); // Einladung + Download-Link der App
+      expect(tester.widgetList<QrAnzeige>(find.byType(QrAnzeige)).map((q) => q.daten), ['https://familie.lx-labs.dev/#/einladung/$fixToken', kApkDownloadUrl]);
       expect(find.text('123456'), findsOneWidget);
       expect(zwischenablage, isEmpty);
       await tippeText(tester, 'Link kopieren');
