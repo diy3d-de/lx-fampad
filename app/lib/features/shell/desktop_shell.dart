@@ -4,9 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/sync_anzeige.dart';
 import '../profile/profile_screen.dart';
 import '../update/update_service.dart';
 import 'shell_tab.dart';
@@ -17,25 +19,6 @@ const _kBaldBereiche = <(String, IconData)>[
   ('Fotos', Icons.photo_library_outlined),
   ('Orte', Icons.place_outlined),
 ];
-
-/// Anzahl der Geräte der Person (GET /devices); null, solange unbekannt oder nicht erreichbar.
-final geraeteAnzahlProvider = FutureProvider.autoDispose<int?>((ref) async {
-  try {
-    return (await ref.watch(apiProvider).geraete()).length;
-  } catch (_) {
-    return null;
-  }
-});
-
-/// Text und Farbe des Sync-Zustands (Fußzeile).
-(String, Color) syncAnzeige(SyncState s) => switch (s.status) {
-  SyncStatus.synchron => (s.offeneAenderungen > 0 ? 'synchron · ${s.offeneAenderungen} offen' : 'synchron', kTerminal),
-  SyncStatus.laeuft => ('gleiche ab …', kTextMuted),
-  SyncStatus.offline => (s.offeneAenderungen > 0 ? 'offline · ${s.offeneAenderungen} offen' : 'offline', kTextMuted),
-  SyncStatus.fehler => ('abgleich fehlgeschlagen', kDanger),
-  SyncStatus.updateNoetig => ('update nötig', kWarn),
-  SyncStatus.getrennt => ('nicht verbunden', kTextMuted),
-};
 
 class DesktopShell extends ConsumerWidget {
   /// Bereiche in Reihenfolge von [kTabs]; Index 0 ist die Desktop-Startseite.
@@ -57,12 +40,17 @@ class DesktopShell extends ConsumerWidget {
                 child: Column(
                   children: [
                     Expanded(
-                      child: tab == 0
-                          ? Align(
+                      // ein einziger Stapel: der Zustand der Bereiche bleibt beim Tab-Wechsel erhalten
+                      child: IndexedStack(
+                        index: tab,
+                        children: [
+                          for (var i = 0; i < screens.length; i++)
+                            Align(
                               alignment: Alignment.topCenter,
-                              child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: kMaxContentWidthDesktop), child: screens[0]),
-                            )
-                          : LxContentWidth(child: IndexedStack(index: tab - 1, children: screens.sublist(1))),
+                              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 ? kMaxContentWidthDesktop : kMaxContentWidth), child: screens[i]),
+                            ),
+                        ],
+                      ),
                     ),
                     const _Fusszeile(),
                   ],
@@ -188,6 +176,8 @@ class _NavEintrag extends StatelessWidget {
         button: true,
         selected: gewaehlt,
         enabled: !bald,
+        focusable: !bald,
+        onTap: bald ? null : onTap,
         label: bald ? '$label, kommt bald' : label,
         excludeSemantics: true,
         child: Material(
@@ -238,6 +228,8 @@ class _ProfilKachel extends ConsumerWidget {
     final name = user?.displayName ?? 'Profil';
     return Semantics(
       button: true,
+      focusable: true,
+      onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
       label: 'Profil und Einstellungen, $name${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
       excludeSemantics: true,
       child: LxCard(

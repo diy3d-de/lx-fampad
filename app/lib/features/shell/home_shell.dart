@@ -26,9 +26,17 @@ class HomeShell extends ConsumerStatefulWidget {
 }
 
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
-  static const _screens = <Widget>[HomeScreen(), CalendarScreen(), ChatScreen(), FilesScreen(), ListsScreen()];
-
-  static const _desktopScreens = <Widget>[DesktopHome(), CalendarScreen(), ChatScreen(), FilesScreen(), ListsScreen()];
+  // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
+  // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
+  final _keys = List.generate(4, (_) => GlobalKey());
+  late final _screens = <Widget>[
+    const HomeScreen(),
+    CalendarScreen(key: _keys[0]),
+    ChatScreen(key: _keys[1]),
+    FilesScreen(key: _keys[2]),
+    ListsScreen(key: _keys[3]),
+  ];
+  late final _desktopScreens = <Widget>[const DesktopHome(), ..._screens.sublist(1)];
 
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;

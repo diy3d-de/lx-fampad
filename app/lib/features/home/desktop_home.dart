@@ -10,6 +10,7 @@ import '../../data/auth/auth_state.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../data/lists/members.dart';
+import '../../data/api/api_error.dart';
 import '../../data/api/models.dart';
 import '../../ui/widgets.dart';
 import '../lists/list_dialogs.dart';
@@ -20,8 +21,8 @@ import 'home_screen.dart';
 /// "Guten Morgen/Tag/Abend, Vorname" (bei leerem Namen nur die Tageszeit-Begrüßung).
 String tagesgruss(String? anzeigename, DateTime jetzt) {
   final gruss = jetzt.hour < 11 ? 'Guten Morgen' : (jetzt.hour < 18 ? 'Guten Tag' : 'Guten Abend');
-  final b = begruessung(anzeigename); // "Hallo" oder "Hallo, Vorname"
-  return b.length > 5 ? '$gruss${b.substring(5)}' : gruss;
+  final v = vorname(anzeigename);
+  return v == null ? gruss : '$gruss, $v';
 }
 
 class DesktopHome extends ConsumerWidget {
@@ -50,12 +51,23 @@ class _Kopfzeile extends ConsumerWidget {
   const _Kopfzeile({required this.label, required this.gruss});
 
   Future<void> _neueListe(BuildContext context, WidgetRef ref) async {
+    // alles Nötige vor dem await lesen: danach kann das Widget schon weg sein
     final u = ref.read(authProvider).user;
+    final repo = ref.read(listenRepositoryProvider);
+    final gewaehlt = ref.read(gewaehlteListeProvider.notifier);
+    final tab = ref.read(shellTabProvider.notifier);
+    final messenger = ScaffoldMessenger.of(context);
     final a = await neueListeDialog(context, ListenRechte(u?.role ?? Role.guest, u?.id));
-    if (a == null) return;
-    final id = await ref.read(listenRepositoryProvider).listeAnlegen(name: a.name, art: a.art, sicht: a.sicht);
-    ref.read(gewaehlteListeProvider.notifier).waehlen(id);
-    ref.read(shellTabProvider.notifier).waehlen(kListenTab);
+    if (a == null || !context.mounted) return;
+    try {
+      final id = await repo.listeAnlegen(name: a.name, art: a.art, sicht: a.sicht);
+      gewaehlt.waehlen(id);
+      tab.waehlen(kListenTab);
+    } on ApiException catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text(e.message)));
+    } catch (_) {
+      messenger.showSnackBar(const SnackBar(content: Text('Die Liste konnte nicht angelegt werden.')));
+    }
   }
 
   @override
@@ -151,10 +163,10 @@ class _Raster extends StatelessWidget {
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 16, crossAxisSpacing: 16, mainAxisExtent: 300 * skala),
           children: const [
             _BaldKarte(label: '// heute & morgen', icon: Icons.calendar_month_outlined, titel: 'Noch keine Termine', hinweis: 'Der Kalender kommt in Phase 1c-2.', tab: 1),
-            _BaldKarte(label: '// chat · familie', icon: Icons.chat_bubble_outline, titel: 'Noch keine Nachrichten', hinweis: 'Der Chat kommt in einer der nächsten Phasen von Phase 1.', tab: 2),
+            _BaldKarte(label: '// chat · familie', icon: Icons.chat_bubble_outline, titel: 'Noch keine Nachrichten', hinweis: 'Der Chat kommt in einer späteren Phase.', tab: 2),
             _EinkaufKarte(),
-            _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer der nächsten Phasen von Phase 1.', tab: 3),
-            _BaldKarte(label: '// aufgaben', icon: Icons.task_alt_outlined, titel: 'Noch keine Aufgaben', hinweis: 'Aufgaben kommen in einer der nächsten Phasen von Phase 1.'),
+            _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
+            _BaldKarte(label: '// aufgaben', icon: Icons.task_alt_outlined, titel: 'Noch keine Aufgaben', hinweis: 'Aufgaben kommen in einer späteren Phase.'),
             _FamilieKarte(),
           ],
         );
@@ -176,6 +188,8 @@ class _Karte extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     container: true,
     button: onTap != null,
+    focusable: onTap != null,
+    onTap: onTap,
     label: semantik,
     excludeSemantics: onTap != null,
     child: LxCard(
@@ -190,7 +204,14 @@ class _Karte extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          Expanded(child: ClipRect(child: child)),
+          // Überstand wird nicht abgeschnitten, sondern scrollt innerhalb der Karte
+          Expanded(
+            child: LayoutBuilder(
+              builder: (context, c) => SingleChildScrollView(
+                child: ConstrainedBox(constraints: BoxConstraints(minHeight: c.maxHeight), child: child),
+              ),
+            ),
+          ),
         ],
       ),
     ),
@@ -215,27 +236,47 @@ class _BaldKarte extends ConsumerWidget {
   );
 }
 
+/// Kartenkörper für Laden und Fehler (kein falscher Leerzustand, solange Daten fehlen).
+Widget _laedt() => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+Widget _fehler(String text) => Text(text, style: const TextStyle(color: kDanger));
+
 /// Einkaufsliste mit echten Daten: offene Einträge der ersten Einkaufsliste (lokale Datenbank, auch offline).
 class _EinkaufKarte extends ConsumerWidget {
   const _EinkaufKarte();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final listen = ref.watch(listenProvider).value ?? const <Liste>[];
-    final alle = ref.watch(alleEintraegeProvider).value ?? const <Listeneintrag>[];
+    final u = ref.watch(authProvider.select((s) => s.user));
+    final darfAnlegen = ListenRechte(u?.role ?? Role.guest, u?.id).darfListeAnlegen;
+    final listenAsync = ref.watch(listenProvider);
+    final eintraegeAsync = ref.watch(alleEintraegeProvider);
+    final fehler = listenAsync.hasError || eintraegeAsync.hasError;
+    final laedt = !fehler && (!listenAsync.hasValue || !eintraegeAsync.hasValue);
+    final listen = listenAsync.value ?? const <Liste>[];
+    final alle = eintraegeAsync.value ?? const <Listeneintrag>[];
     final einkauf = listen.where((l) => l.kind == 'shopping').firstOrNull;
     final offen = einkauf == null ? <Listeneintrag>[] : sortiereEintraege(alle.where((e) => e.listId == einkauf.id && e.doneAt == null).toList());
     final erledigt = einkauf == null ? 0 : alle.where((e) => e.listId == einkauf.id && e.doneAt != null).length;
     return _Karte(
       label: '// einkaufsliste',
-      zaehler: einkauf == null ? null : '${offen.length} offen',
-      semantik: einkauf == null ? 'Einkaufsliste, noch keine Liste. Öffnen' : 'Einkaufsliste, ${offen.length} offen. Öffnen',
+      zaehler: !fehler && !laedt && einkauf != null ? '${offen.length} offen' : null,
+      semantik: fehler
+          ? 'Einkaufsliste, nicht geladen. Öffnen'
+          : laedt
+          ? 'Einkaufsliste, lädt. Öffnen'
+          : einkauf == null
+          ? 'Einkaufsliste, noch keine Liste. Öffnen'
+          : 'Einkaufsliste, ${offen.length} offen. Öffnen',
       onTap: () {
         if (einkauf != null) ref.read(gewaehlteListeProvider.notifier).waehlen(einkauf.id);
         ref.read(shellTabProvider.notifier).waehlen(kListenTab);
       },
-      child: einkauf == null
-          ? const Text('Noch keine Einkaufsliste – klicken zum Anlegen', style: TextStyle(color: kTextMuted))
+      child: fehler
+          ? _fehler('Die Einkaufsliste konnte nicht geladen werden.')
+          : laedt
+          ? _laedt()
+          : einkauf == null
+          ? Text(darfAnlegen ? 'Noch keine Einkaufsliste – klicken zum Anlegen' : 'Noch keine Einkaufsliste', style: const TextStyle(color: kTextMuted))
           : offen.isEmpty
           ? Text(erledigt == 0 ? 'Nichts auf der Liste' : 'Alles erledigt', style: const TextStyle(color: kTextMuted))
           : Column(
@@ -265,35 +306,38 @@ class _FamilieKarte extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
+    final async = ref.watch(mitgliederProvider);
+    final mitglieder = async.value ?? const <UserDto>[];
+    final bereit = async.hasValue;
     return _Karte(
       label: '// familie & orte',
-      zaehler: mitglieder.isEmpty ? null : '${mitglieder.length}',
-      semantik: 'Familie, ${mitglieder.length} Mitglieder. Standort kommt später',
+      zaehler: bereit && mitglieder.isNotEmpty ? '${mitglieder.length}' : null,
+      semantik: bereit ? 'Familie, ${mitglieder.length} Mitglieder. Standort kommt später' : 'Familie. Standort kommt später',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: mitglieder.isEmpty
-                ? const Text('Keine Mitglieder geladen', style: TextStyle(color: kTextMuted))
-                : ListView(
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      for (final u in mitglieder.take(5))
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: Row(
-                            children: [
-                              PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 32),
-                              const SizedBox(width: 10),
-                              Expanded(child: Text(u.displayName, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                              Text(u.role.label.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-          ),
+          if (async.hasError)
+            _fehler('Die Mitglieder konnten nicht geladen werden.')
+          else if (!bereit)
+            SizedBox(height: 120, child: _laedt())
+          else if (mitglieder.isEmpty)
+            const Text('Keine Mitglieder geladen', style: TextStyle(color: kTextMuted))
+          else ...[
+            for (final u in mitglieder.take(5))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 32),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(u.displayName, maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    Text(u.role.label.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  ],
+                ),
+              ),
+            if (mitglieder.length > 5) Text('+ ${mitglieder.length - 5} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          ],
+          const SizedBox(height: 8),
           const Row(
             children: [
               Icon(Icons.place_outlined, size: 16, color: kTextFaint),
