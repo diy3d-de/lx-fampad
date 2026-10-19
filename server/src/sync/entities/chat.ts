@@ -14,11 +14,13 @@
 //    löschen (Moderation), nie in privaten Chats (die sie nicht sehen).
 //  - Lesestand: nur die eigene Zeile les- und schreibbar.
 // Inhalte (`text`, `titel`) sind für den Server undurchsichtige Zeichenketten (E2EE-vorbereitet): nur Länge und Zeichensatz werden geprüft.
+import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { konversationen, lesestand, nachrichten } from '../../db/schema.js';
 import { safeString } from '../../routes/util.js';
 import { ROLES, type Actor, type Facts, type RoleRule, type Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
+import { direktChatId, familienchatId, istUuidV4, lesestandId } from './chat-ids.js';
 import { iso, timestamp, uuid } from './common.js';
 
 export const KONVERSATION_ARTEN = ['family', 'direct', 'group'] as const;
@@ -27,6 +29,15 @@ export const MAX_GRUPPE = 20;
 /** Obergrenze des undurchsichtigen Nachrichtentextes (Zeichen; die Hülle für spätere Verschlüsselung braucht Platz). */
 export const MAX_NACHRICHT = 16384;
 export const MAX_TITEL = 512;
+/** Erlaubte Versionen der Inhaltshülle (`p1:` Klartext; `e1:` Ende-zu-Ende folgt, dann kommt der Wert hier dazu). */
+export const ENC_VERSIONEN = ['p1'] as const;
+/** Lebende Nachrichten je Konversation. */
+export const MAX_NACHRICHTEN_JE_KONVERSATION = 20_000;
+/** Teilnehmerwechsel je Person und Minute. */
+export const TEILNEHMER_WECHSEL_PRO_MINUTE = 10;
+/** Text je Person: Byte-Kontingent je Stunde und Tag. */
+export const TEXT_BYTES_PRO_STUNDE = 1_048_576;
+export const TEXT_BYTES_PRO_TAG = 4_194_304;
 /** Neue Nachrichten je Person und Minute. */
 export const NACHRICHTEN_PRO_MINUTE = 60;
 
@@ -74,6 +85,8 @@ export const konversationEntity: EntityDef = {
   table: konversationen,
   fields: {
     art: { access: 'create', schema: z.enum(KONVERSATION_ARTEN), required: true },
+    // Version der Inhaltshülle der Nachrichten (Präfix `p1:`); unveränderlich, damit ein Chat später nicht auf Klartext zurückgestuft werden kann
+    encVersion: { access: 'create', schema: z.enum(ENC_VERSIONEN), defaultValue: 'p1' },
     titel: { access: 'rw', schema: opaque(MAX_TITEL, 0), defaultValue: '', blank: '' },
     // bleibt auch im Tombstone erhalten: die Löschung bleibt dadurch für Teilnehmer sichtbar und für alle anderen unsichtbar
     teilnehmer: { access: 'rw', schema: teilnehmerListe, defaultValue: [], memberRef: true },
@@ -81,13 +94,31 @@ export const konversationEntity: EntityDef = {
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },
   rules: konversationRules,
-  visibilityFields: ['teilnehmer'],
   userRefs: ['ownerId'],
   memberArray: { field: 'teilnehmer', keepMin: () => 2 },
   lostSight: (before: Row, after: Row): string[] => {
     const rest = new Set(strings(after.teilnehmer));
     return strings(before.teilnehmer).filter((u) => !rest.has(u));
   },
+  gainedSight: (before: Row, after: Row): string[] => {
+    const vorher = new Set(strings(before.teilnehmer));
+    return strings(after.teilnehmer).filter((u) => !vorher.has(u));
+  },
+  updateRate: { fields: ['teilnehmer'], perMinute: TEILNEHMER_WECHSEL_PRO_MINUTE },
+  // feste IDs: Familienchat und Direktchat nur mit der aus Familie bzw. Paar abgeleiteten ID, Gruppen mit Zufalls-UUID (Version 4)
+  idValid: (id: string, values: Row, _actor: Actor, familyId: string): boolean => {
+    const t = strings(values.teilnehmer);
+    switch (values.art) {
+      case 'family':
+        return id === familienchatId(familyId);
+      case 'direct':
+        return t.length === 2 && id === direktChatId(t[0]!, t[1]!);
+      default:
+        return istUuidV4(id);
+    }
+  },
+  // Familienchat und Direktchat dürfen nach dem Löschen (z. B. Person entfernt) mit derselben ID neu angelegt werden
+  revive: (row: Row): boolean => row.art !== 'group',
   facts: (row: Row): Facts => ({
     audience: 'family',
     ownerId: (row.ownerId as string | null) ?? null,
@@ -135,7 +166,28 @@ export const nachrichtEntity: EntityDef = {
   factsForCreate: (actor: Actor, _values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: actor.userId }),
   onCreate: (actor: Actor): Row => ({ autorId: actor.userId }),
   onUpdate: (changed: Row, now: Date): Row => ('text' in changed ? { bearbeitetAt: now } : {}),
-  rate: { field: 'autorId', perMinute: NACHRICHTEN_PRO_MINUTE },
+  rate: { field: 'autorId', perMinute: NACHRICHTEN_PRO_MINUTE, bytes: { field: 'text', perHour: TEXT_BYTES_PRO_STUNDE, perDay: TEXT_BYTES_PRO_TAG } },
+  updateRate: { fields: ['text'], perMinute: NACHRICHTEN_PRO_MINUTE },
+  scrubOnUpdate: ['text'],
+  maxLive: { per: 'parent', max: MAX_NACHRICHTEN_JE_KONVERSATION },
+  // Hülle passend zur Konversation (kein Zurückstufen auf Klartext) und eine Antwort verweist nur auf eine Nachricht derselben Konversation
+  validate: async (env, row: Row): Promise<boolean> => {
+    const [k] = await env.tx
+      .select({ enc: konversationen.encVersion })
+      .from(konversationen)
+      .where(and(eq(konversationen.familyId, env.familyId), eq(konversationen.id, String(row.konversationId))))
+      .limit(1);
+    if (!k || !String(row.text).startsWith(`${k.enc}:`)) return false;
+    if (typeof row.antwortAuf === 'string') {
+      const [ziel] = await env.tx
+        .select({ id: nachrichten.id })
+        .from(nachrichten)
+        .where(and(eq(nachrichten.familyId, env.familyId), eq(nachrichten.id, row.antwortAuf), eq(nachrichten.konversationId, String(row.konversationId))))
+        .limit(1);
+      if (!ziel) return false;
+    }
+    return true;
+  },
 };
 
 // ---------------------------------------------------------------- Lesestand
@@ -154,6 +206,12 @@ export const lesestandEntity: EntityDef = {
   rules: lesestandRules,
   parent: { entity: 'konversation', field: 'konversationId' },
   memberOwned: 'userId',
+  // feste ID je Person und Konversation; nur der Besitzer erfährt von Änderungen; der Lesestand geht nie zurück (der Server behält den größeren Wert)
+  idValid: (id: string, values: Row): boolean => id === lesestandId(String(values.konversationId), String(values.userId)),
+  revive: (): boolean => true,
+  ownerOnlyNotify: true,
+  onUpdate: (changed: Row, _now: Date, before: Row): Row =>
+    changed.gelesenBis instanceof Date && before.gelesenBis instanceof Date && changed.gelesenBis.getTime() <= before.gelesenBis.getTime() ? { gelesenBis: undefined } : {},
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.userId as string | null) ?? null }),
   factsForCreate: (_actor: Actor, values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (values.userId as string | undefined) ?? null }),
   maxLive: { per: 'parent', max: 50 },

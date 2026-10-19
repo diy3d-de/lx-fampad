@@ -683,6 +683,8 @@ export const konversationen = pgTable(
     familyId: familyRef(),
     art: konversationArt('art').notNull(),
     titel: text('titel').notNull().default(''),
+    /** Version der Inhaltshülle der Nachrichten dieser Konversation (Präfix `p1:`); unveränderlich: schützt später vor dem Zurückstufen verschlüsselter Chats. */
+    encVersion: text('enc_version').notNull().default('p1'),
     teilnehmer: uuid('teilnehmer')
       .array()
       .notNull()

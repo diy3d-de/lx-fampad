@@ -133,7 +133,10 @@ export function rolesThatMayRead(rules: Rules, facts: Facts): Role[] {
   });
 }
 
-/** Personen, die einen auf Teilnehmer beschränkten Datensatz sehen (die Benachrichtigung geht nur an sie); undefined: Sicht nach Rollen. */
-export function usersThatMayRead(facts: Facts): readonly string[] | undefined {
-  return facts.participants;
+/**
+ * Personen unter `members` (aktive Mitglieder der Familie mit Rolle), die den Datensatz lesen dürfen: je Person über `mayRead` gefiltert, also für Privatchats
+ * nur Teilnehmer (nie über die Rolle) und für den Familienchat ausdrücklich alle Mitglieder mit Sicht. Grundlage für gezielte Benachrichtigungen (Push).
+ */
+export function usersThatMayRead(rules: Rules, facts: Facts, members: readonly Actor[]): string[] {
+  return members.filter((m) => mayRead(rules, m, facts)).map((m) => m.userId);
 }

@@ -4,6 +4,7 @@ CREATE TABLE "konversationen" (
 	"family_id" uuid NOT NULL,
 	"art" "konversation_art" NOT NULL,
 	"titel" text DEFAULT '' NOT NULL,
+	"enc_version" text DEFAULT 'p1' NOT NULL,
 	"teilnehmer" uuid[] DEFAULT '{}'::uuid[] NOT NULL,
 	"owner_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,

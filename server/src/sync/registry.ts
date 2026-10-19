@@ -4,6 +4,7 @@
 import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core';
 import { getTableColumns } from 'drizzle-orm';
 import type { z } from 'zod';
+import type { Executor } from '../auth/context.js';
 import type { Role } from '../auth/types.js';
 import type { Actor, Facts, Rules } from './permissions.js';
 
@@ -60,10 +61,27 @@ export interface EntityDef {
   maxLive?: { per: 'family' | 'parent'; max: number };
   /** Zusätzliche, entitätsspezifische Sperre je Aktion (z. B. Direktchats nicht löschen, Teilnehmer nicht ändern); false = `forbidden`. `after` nur bei `update` (Stand nach dem Zusammenführen). */
   guard?(action: 'update' | 'delete', before: Row, after?: Row): boolean;
-  /** Vom Server gesetzte Werte, wenn eine Änderung die genannten Felder berührt (z. B. Zeit der Bearbeitung). */
-  onUpdate?(changed: Row, now: Date): Row;
+  /**
+   * Vom Server gesetzte Werte, wenn eine Änderung bestimmte Felder berührt (z. B. Zeit der Bearbeitung). Ein Wert `undefined` verwirft die Änderung dieses
+   * Feldes (z. B. der Lesestand geht nie zurück); `before` ist der Stand vor der Änderung.
+   */
+  onUpdate?(changed: Row, now: Date, before: Row): Row;
+  /** Prüft die ID eines neuen Datensatzes (feste, aus Inhalten abgeleitete IDs; Schutz vor dem Belegen fremder IDs); false = `invalid`. */
+  idValid?(id: string, values: Row, actor: Actor, familyId: string): boolean;
+  /** Darf ein gelöschter Datensatz mit fester ID durch erneutes Anlegen (mit Baserev 0) wieder aufleben? */
+  revive?(row: Row): boolean;
+  /** Prüfung gegen andere Datensätze (gleiche Konversation, Inhaltsversion) beim Anlegen und nach dem Zusammenführen einer Änderung; false = `invalid`. */
+  validate?(env: { tx: Executor; familyId: string }, row: Row): Promise<boolean>;
+  /** Personen, die durch diese Änderung die Sicht auf den Datensatz GEWINNEN; sie bekommen den bisherigen Inhalt (begrenzt) mit dem Änderungsstrom. */
+  gainedSight?(before: Row, after: Row): readonly string[];
+  /** Felder, die nach einer Änderung aus älteren Protokolleinträgen des Datensatzes entfernt werden (ersetzte Inhalte bleiben nicht im Protokoll). */
+  scrubOnUpdate?: readonly string[];
+  /** Mengenbegrenzung für Änderungen: höchstens `perMinute` Änderungen je Person, die eines der Felder berühren. */
+  updateRate?: { fields: readonly string[]; perMinute: number };
+  /** Der WebSocket-Hinweis geht nur an den Besitzer (facts.ownerId), nie an andere; verschwundene Zeilen erzeugen keinen Tombstone für Dritte. */
+  ownerOnlyNotify?: boolean;
   /** Mengenbegrenzung je Person und Minute: höchstens `perMinute` neue Datensätze, deren `field` (Spalte mit der Person) die Person ist; `createdAt` zählt. */
-  rate?: { field: string; perMinute: number };
+  rate?: { field: string; perMinute: number; bytes?: { field: string; perHour: number; perDay: number } };
   /**
    * Spalte mit einer Liste von Mitglieds-IDs, die den Datensatz sichtbar machen (Teilnehmer). Verlässt eine Person die Familie, wird sie aus der Liste
    * entfernt; bleiben weniger als `keepMin(row)` übrig, wird der Datensatz gelöscht (Tombstone).

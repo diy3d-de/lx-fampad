@@ -1,5 +1,5 @@
 {
-  "id": "01ed7b57-99e2-4938-8cd8-efd628e0bad4",
+  "id": "398df786-62b2-44a4-a2d4-55e4f2e01f16",
   "prevId": "c96cb2e9-7a69-424b-9196-9d215cf4f36d",
   "version": "7",
   "dialect": "postgresql",
@@ -1298,6 +1298,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "''"
+        },
+        "enc_version": {
+          "name": "enc_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'p1'"
         },
         "teilnehmer": {
           "name": "teilnehmer",
