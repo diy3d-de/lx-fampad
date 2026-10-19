@@ -34,16 +34,22 @@ export const occurrenceStamp = z.union([calendarDate, timestamp.transform((d) =>
 
 const isDateStamp = (s: string): boolean => s.length === 10;
 
+/**
+ * IANA-Zeitzone: muss der Laufzeit bekannt sein und in der Schreibweise der IANA-Datenbank stehen (Groß-/Kleinschreibung: die Zeitzonen-Datenbank
+ * der App unterscheidet sie, "europe/berlin" fiele dort auf die Familienzone zurück). Ältere Namen (z. B. Asia/Kolkata) bleiben erlaubt.
+ */
+export function isIanaTimeZone(s: string): boolean {
+  try {
+    const resolved = new Intl.DateTimeFormat('en', { timeZone: s }).resolvedOptions().timeZone;
+    return resolved === s || resolved.toLowerCase() !== s.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
 const tzid = safeString()
   .pipe(z.string().min(1).max(64).regex(/^[A-Za-z][A-Za-z0-9_+\-/]*$/))
-  .refine((s) => {
-    try {
-      new Intl.DateTimeFormat('en', { timeZone: s });
-      return true;
-    } catch {
-      return false;
-    }
-  }, 'unbekannte Zeitzone');
+  .refine(isIanaTimeZone, 'unbekannte Zeitzone');
 
 const rrule = safeString().pipe(z.string().min(1).max(RRULE_MAX_LENGTH)).refine(isValidRrule, 'ungültige Wiederholungsregel');
 const freeText = (max: number) => safeString().pipe(z.string().trim().max(max));
@@ -64,7 +70,15 @@ const terminRules: Rules = {
   guest: { read: 'shared', create: 'none', update: 'none', delete: 'none' },
 };
 
-/** Teilnehmer und Ausnahmen: Rechte des Termins (Freigabe und Besitzer werden vererbt). */
+/** Teilnehmer: wie der Termin, aber Gäste sehen nicht, wer teilnimmt (Kennungen der Familienmitglieder gehören nicht zu einem freigegebenen Termin). */
+const teilnehmerRules: Rules = {
+  admin: fullAccess,
+  parent: fullAccess,
+  child: { read: 'shared', create: 'own', update: 'own', delete: 'own' },
+  guest: { read: 'none', create: 'none', update: 'none', delete: 'none' },
+};
+
+/** Ausnahmen: Rechte des Termins (Freigabe und Besitzer werden vererbt); Gäste brauchen sie, um Absagen und Verschiebungen zu sehen. */
 const childRules: Rules = {
   admin: fullAccess,
   parent: fullAccess,
@@ -117,6 +131,8 @@ export const terminEntity: EntityDef = {
   onCreate: (actor: Actor): Row => ({ ownerId: actor.userId }),
   check: terminTimesValid,
   maxLive: { per: 'family', max: 5000 },
+  // ein Kinderkonto kann die Familienobergrenze nicht allein füllen
+  ownerLimit: { field: 'ownerId', roles: ['child'], max: 500 },
 };
 
 export const terminTeilnehmerEntity: EntityDef = {
@@ -127,8 +143,9 @@ export const terminTeilnehmerEntity: EntityDef = {
     userId: { access: 'create', schema: uuid, required: true, memberRef: true },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },
-  rules: childRules,
+  rules: teilnehmerRules,
   parent: { entity: 'termin', field: 'terminId' },
+  memberOwned: 'userId',
   facts: inherited,
   factsForCreate: inheritedForCreate,
   maxLive: { per: 'parent', max: 50 },
@@ -142,7 +159,8 @@ export function ausnahmeValid(row: Row): boolean {
   const start = row.start;
   const ende = row.ende;
   for (const v of [start, ende]) if (typeof v === 'string' && isDateStamp(v) !== kind) return false;
-  if (typeof start === 'string' && typeof ende === 'string' && ende < start) return false;
+  // ganztägig ist das Ende exklusiv (mindestens der Folgetag), sonst nicht vor dem Beginn
+  if (typeof start === 'string' && typeof ende === 'string' && (kind ? ende <= start : ende < start)) return false;
   return true;
 }
 

@@ -555,7 +555,10 @@ Future<void> kalenderVertrag({
   final kindSicht = (await alleSeiten(kind)).where((c) => c.entity == 'termin').map((c) => c.id);
   expect(kindSicht, isNot(contains(privat)));
   expect(kindSicht, contains(eltern));
-  final gastSicht = (await alleSeiten(gast)).where((c) => c.entity == 'termin').toList();
+  expect((await syncen(a, [neu('termin_teilnehmer', neueUuid(), {'terminId': frei, 'userId': kindId})])).rejected, isEmpty);
+  final gastAlles = await alleSeiten(gast);
+  expect(gastAlles.where((c) => c.entity == 'termin_teilnehmer'), isEmpty, reason: 'Gäste sehen nicht, wer teilnimmt');
+  final gastSicht = gastAlles.where((c) => c.entity == 'termin').toList();
   expect(gastSicht.map((c) => c.id), [frei]);
   expect((await syncen(gast, [neu('termin', neueUuid(), zeit)])).rejected.single.code, 'forbidden');
 

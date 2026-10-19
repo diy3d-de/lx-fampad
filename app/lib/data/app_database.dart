@@ -170,6 +170,9 @@ class AppDatabase extends _$AppDatabase {
         await m.createTable(termine);
         await m.createTable(terminTeilnehmer);
         await m.createTable(terminAusnahmen);
+        // createTable legt die @TableIndex-Indizes nicht mit an
+        await m.createIndex(terminTeilnehmerTerminIdx);
+        await m.createIndex(terminAusnahmenTerminIdx);
       }
     },
   );

@@ -53,6 +53,14 @@ class TerminEingabe {
   });
 }
 
+/// Die Zeitzonen-Daten fehlen: Anlegen und Ändern würde Uhrzeiten und Sommerzeit falsch speichern.
+class ZeitzonenFehlen implements Exception {
+  const ZeitzonenFehlen();
+
+  @override
+  String toString() => 'Zeitzonen-Daten nicht geladen';
+}
+
 /// Feste ID einer Ausnahme aus Termin und ursprünglichem Beginn (UUID-Form, SHA-1 wie Version 5): zwei Geräte, die dasselbe Vorkommen
 /// ändern, schreiben dieselbe Zeile.
 String ausnahmeId(String terminId, String schluessel) {
@@ -101,6 +109,10 @@ class TerminRepository {
 
   // ------------------------------------------------------------------ Termin
 
+  void _pruefeZeit() {
+    if (!zeitzonenBereit()) throw const ZeitzonenFehlen();
+  }
+
   Map<String, dynamic> _felder(TerminEingabe e) {
     final ort = familienOrt;
     if (e.ganztaegig) {
@@ -136,6 +148,7 @@ class TerminRepository {
   }
 
   Future<String> anlegen(TerminEingabe e) async {
+    _pruefeZeit();
     final id = _neueId();
     await store.aendern('termin', id, _felder(e), nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
     for (final u in e.teilnehmer) {
@@ -146,10 +159,13 @@ class TerminRepository {
   }
 
   /// Ändert den Termin selbst (bei Serien: alle Vorkommen). Gesendet werden nur die tatsächlich geänderten Felder, damit gleichzeitige
-  /// Änderungen anderer Felder auf anderen Geräten nicht kollidieren.
-  Future<void> alleAendern(String id, TerminEingabe e) async {
+  /// Änderungen anderer Felder auf anderen Geräten nicht kollidieren. Ändern sich Beginn, Art oder Regel einer Serie, verlieren die Schlüssel
+  /// ihrer Ausnahmen ihre Bedeutung: bei reiner Änderung der Uhrzeit ziehen sie mit, sonst werden sie zurückgesetzt. Liefert, wie viele Ausnahmen
+  /// dabei zurückgesetzt wurden (die Oberfläche weist darauf hin).
+  Future<int> alleAendern(String id, TerminEingabe e) async {
+    _pruefeZeit();
     final alt = await (db.select(db.termine)..where((t) => t.id.equals(id))).getSingleOrNull();
-    if (alt == null) return;
+    if (alt == null) return 0;
     final neu = _felder(e);
     final bisher = <String, dynamic>{
       'titel': alt.titel,
@@ -165,6 +181,9 @@ class TerminRepository {
       'erinnerungMin': alt.erinnerungMin,
       'audience': alt.audience,
     };
+    // Ein Termin in einer anderen Zeitzone (z. B. später importiert) behält sie, solange sein Beginn derselbe Zeitpunkt bleibt
+    // (sonst änderte sich seine Wanduhrzeit in Serien über die Zeitumstellung).
+    if (!alt.ganztaegig && alt.tzid != null && alt.tzid != kFamilienZone && neu['startUtc'] == bisher['startUtc']) neu['tzid'] = alt.tzid;
     final geaendert = {for (final k in neu.keys) if (neu[k] != bisher[k]) k: neu[k]};
     // beim Umschalten ganztägig <-> Zeit gehören die Felder der Art zusammen (der Server prüft das Ganze)
     if (geaendert.containsKey('ganztaegig') || geaendert.keys.any(const {'startUtc', 'endUtc', 'tzid', 'startDate', 'endDate'}.contains)) {
@@ -172,9 +191,55 @@ class TerminRepository {
         geaendert[k] = neu[k];
       }
     }
+    final verworfen = await _ausnahmenAnpassen(alt, neu);
     if (geaendert.isNotEmpty) await store.aendern('termin', id, geaendert);
     await _teilnehmerAbgleichen(id, e.teilnehmer);
     beiAenderung();
+    return verworfen;
+  }
+
+  static bool _leer(TerminAusnahme a) => !a.abgesagt && a.titel == null && a.start == null && a.ende == null && a.ort == null;
+
+  /// Setzt eine Ausnahme zurück (alle Felder leer). Die Zeile wird nie gelöscht: ihre feste ID bliebe sonst als Tombstone am Server stehen und
+  /// ließe sich für dasselbe Vorkommen nicht wieder verwenden.
+  Future<void> _ausnahmeLeeren(TerminAusnahme a) async {
+    if (_leer(a)) return;
+    await store.aendern('termin_ausnahmen', a.id, {'abgesagt': false, 'titel': null, 'start': null, 'ende': null, 'ort': null});
+  }
+
+  /// Passt die Ausnahmen an einen geänderten Termin an (siehe [alleAendern]). Liefert die Zahl der zurückgesetzten Ausnahmen.
+  Future<int> _ausnahmenAnpassen(Termin alt, Map<String, dynamic> neu) async {
+    if (alt.rrule == null) return 0;
+    final alle = await (db.select(db.terminAusnahmen)..where((a) => a.terminId.equals(alt.id))).get();
+    final lebend = alle.where((a) => !_leer(a)).toList();
+    if (lebend.isEmpty) return 0;
+    Future<int> verwerfen() async {
+      for (final a in lebend) {
+        await _ausnahmeLeeren(a);
+      }
+      return lebend.length;
+    }
+
+    if (alt.ganztaegig != (neu['ganztaegig'] as bool) || alt.rrule != neu['rrule']) return verwerfen();
+    if (alt.ganztaegig) return alt.startDate == neu['startDate'] ? 0 : verwerfen();
+    if (alt.startUtc == null || neu['startUtc'] == null) return verwerfen();
+    final ortAlt = ortFuer(alt.tzid);
+    final ortNeu = ortFuer(neu['tzid'] as String?);
+    final altWand = wandUhr(alt.startUtc!, ortAlt);
+    final neuWand = wandUhr(DateTime.parse(neu['startUtc'] as String), ortNeu);
+    if (alt.tzid != neu['tzid']) return verwerfen();
+    if (altWand == neuWand) return 0;
+    // nur die Uhrzeit hat sich geändert (derselbe Tag): die Schlüssel ziehen um, Absagen und Änderungen bleiben an ihrem Vorkommen
+    if (altWand.year != neuWand.year || altWand.month != neuWand.month || altWand.day != neuWand.day) return verwerfen();
+    final delta = neuWand.difference(altWand);
+    for (final a in lebend) {
+      final wandAlt = wandUhr(DateTime.parse(a.originalStart), ortAlt);
+      final neuerSchluessel = zeitSchluessel(instantAusWand(wandAlt.add(delta), ortAlt));
+      if (neuerSchluessel == a.originalStart) continue;
+      await _ausnahmeSchreiben(alt.id, neuerSchluessel, {'abgesagt': a.abgesagt, 'titel': a.titel, 'start': a.start, 'ende': a.ende, 'ort': a.ort});
+      await _ausnahmeLeeren(a);
+    }
+    return 0;
   }
 
   Future<void> _teilnehmerAbgleichen(String terminId, Set<String> soll) async {
@@ -213,21 +278,23 @@ class TerminRepository {
     beiAenderung();
   }
 
-  /// Nur dieses Vorkommen ändern: Titel, Ort, Beginn und Ende (Wanduhr der Familienzone). Unveränderte Felder bleiben ohne Überschreibung.
+  /// Nur dieses Vorkommen ändern: Titel, Ort, Beginn und Ende (Wanduhr der Familienzone). Verglichen wird immer mit dem URSPRÜNGLICHEN
+  /// Vorkommen der Serie (nicht mit einer schon verschobenen Anzeige): eine Änderung nur des Titels lässt eine frühere Verschiebung bestehen,
+  /// und ein zurück auf die ursprüngliche Zeit hebt sie auf. Ist die Zeit geändert, werden Beginn und Ende gemeinsam gespeichert.
   Future<void> vorkommenAendern(Vorkommen v, TerminEingabe e) async {
+    _pruefeZeit();
     final t = v.termin;
     final ortZone = familienOrt;
     String stempel(DateTime wand) => e.ganztaegig ? tagText(wand) : zeitSchluessel(instantAusWand(wand, ortZone));
     final startNeu = stempel(e.startWand);
     final endeNeu = stempel(e.endeWand);
-    final startAlt = stempel(v.startWand);
-    final endeAlt = stempel(v.endeWand);
+    final zeitGeaendert = startNeu != stempel(v.originalStartWand) || endeNeu != stempel(v.originalEndeWand);
     await _ausnahmeSchreiben(t.id, v.schluessel, {
       'abgesagt': false,
       'titel': e.titel.trim() == t.titel ? null : e.titel.trim(),
       'ort': e.ort.trim() == t.ort ? null : e.ort.trim(),
-      'start': startNeu == startAlt ? null : startNeu,
-      'ende': endeNeu == endeAlt && startNeu == startAlt ? null : endeNeu,
+      'start': zeitGeaendert ? startNeu : null,
+      'ende': zeitGeaendert ? endeNeu : null,
     });
     beiAenderung();
   }
@@ -247,8 +314,14 @@ class TerminRepository {
     return t.ganztaegig ? v.schluessel == t.startDate : (t.startUtc != null && v.schluessel == zeitSchluessel(t.startUtc!));
   }
 
+  /// Tag des ursprünglichen Beginns (Kalendertag der Wanduhr der Familienzone, bei Zeitterminen in der Zeitzone des Termins).
+  DateTime _originalTag(Vorkommen v) => v.termin.ganztaegig ? v.originalStartWand : _tagVon(wandUhr(v.originalStartUtc, ortFuer(v.termin.tzid)));
+
+  static DateTime _tagVon(DateTime w) => DateTime.utc(w.year, w.month, w.day);
+
+  /// Kürzt die Serie bis vor das ursprüngliche Vorkommen (nicht vor eine womöglich verschobene Anzeige).
   Future<void> _serieKuerzen(Termin t, Vorkommen v) async {
-    final regel = regelBis(t.rrule!, ganztaegig: t.ganztaegig, startUtc: v.startUtc, tag: v.ersterTag);
+    final regel = regelBis(t.rrule!, ganztaegig: t.ganztaegig, startUtc: v.originalStartUtc, tag: _originalTag(v));
     await store.aendern('termin', t.id, {'rrule': regel});
   }
 
@@ -258,36 +331,41 @@ class TerminRepository {
       await store.loeschen('termin', v.termin.id);
     } else {
       await _serieKuerzen(v.termin, v);
-      // Ausnahmen ab diesem Vorkommen sind überflüssig
+      // Ausnahmen ab diesem Vorkommen sind überflüssig: zurücksetzen statt löschen (die feste ID bliebe sonst als Tombstone stehen)
       final alle = await (db.select(db.terminAusnahmen)..where((a) => a.terminId.equals(v.termin.id))).get();
       for (final a in alle) {
-        if (a.originalStart.compareTo(v.schluessel) >= 0) await store.loeschen('termin_ausnahmen', a.id);
+        if (a.originalStart.compareTo(v.schluessel) >= 0) await _ausnahmeLeeren(a);
       }
     }
     beiAenderung();
   }
 
   /// Dieses und alle folgenden Vorkommen ändern: die alte Serie endet vor diesem Vorkommen, ab dort beginnt eine neue Serie mit [e]
-  /// (dessen Beginn ist der Beginn des geänderten Vorkommens). Das erste Vorkommen: die ganze Serie wird geändert.
+  /// (dessen Beginn ist der Beginn des geänderten Vorkommens). Das erste Vorkommen: die ganze Serie wird geändert (Liefert dann null).
+  ///
+  /// Der neue Teil gehört der Person, die ihn anlegt (der Server setzt den Ersteller aus der Sitzung), auch wenn die alte Serie jemand anderem gehörte;
+  /// eine Änderung durch Eltern an der Serie eines Kindes macht den neuen Teil also zu einem Elterntermin (das Kind ändert ihn nicht mehr).
   Future<String?> folgendeAendern(Vorkommen v, TerminEingabe e) async {
+    _pruefeZeit();
     final t = v.termin;
     if (t.rrule == null || istErstes(v)) {
       await alleAendern(t.id, e);
       return null;
     }
     final ausnahmenAlt = await (db.select(db.terminAusnahmen)..where((a) => a.terminId.equals(t.id))).get();
-    // Bleibt die Regel (und die Uhrzeit) wie sie war, behalten die Ausnahmen ab hier ihre Bedeutung und ziehen mit um.
+    // Bleibt die Regel (und der ursprüngliche Beginn) wie sie war, behalten die Ausnahmen ab hier ihre Bedeutung und ziehen mit um.
     final regelGleich = e.rrule == t.rrule;
-    final uhrzeitGleich = e.ganztaegig == t.ganztaegig && e.startWand == v.startWand;
+    final beginnGleich = e.ganztaegig == t.ganztaegig && e.startWand == v.originalStartWand;
     var rrule = e.rrule;
     final anzahl = t.rrule == null ? null : regelAnzahl(t.rrule!);
     if (regelGleich && anzahl != null && rrule != null) {
+      final ort = ortFuer(t.tzid);
       final davor = vorkommenVor(
         t.rrule!,
-        startWand: t.ganztaegig ? tagAusText(t.startDate)! : wandUhr(t.startUtc!, ortFuer(t.tzid)),
-        vorWand: t.ganztaegig ? v.ersterTag : wandUhr(v.startUtc, ortFuer(t.tzid)),
+        startWand: t.ganztaegig ? tagAusText(t.startDate)! : wandUhr(t.startUtc!, ort),
+        vorWand: t.ganztaegig ? v.originalStartWand : wandUhr(v.originalStartUtc, ort),
         ganztaegig: t.ganztaegig,
-        ort: ortFuer(t.tzid),
+        ort: ort,
       );
       rrule = regelMitAnzahl(rrule, (anzahl - davor).clamp(1, kMaxAnzahl));
     }
@@ -304,13 +382,13 @@ class TerminRepository {
       erinnerungMin: e.erinnerungMin,
       sicht: e.sicht,
     ));
-    await store.aendern('termin', neuId, felder, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': t.ownerId ?? ich()});
+    await store.aendern('termin', neuId, felder, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
     for (final u in e.teilnehmer) {
       await store.aendern('termin_teilnehmer', _neueId(), {'terminId': neuId, 'userId': u});
     }
     for (final a in ausnahmenAlt) {
       if (a.originalStart.compareTo(v.schluessel) < 0) continue;
-      if (regelGleich && uhrzeitGleich) {
+      if (regelGleich && beginnGleich && !_leer(a)) {
         await store.aendern('termin_ausnahmen', ausnahmeId(neuId, a.originalStart), {
           'terminId': neuId,
           'originalStart': a.originalStart,
@@ -321,7 +399,7 @@ class TerminRepository {
           'ort': a.ort,
         });
       }
-      await store.loeschen('termin_ausnahmen', a.id);
+      await _ausnahmeLeeren(a);
     }
     beiAenderung();
     return neuId;

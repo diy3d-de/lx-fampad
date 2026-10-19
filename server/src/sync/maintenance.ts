@@ -63,6 +63,14 @@ export async function runSyncMaintenance(ctx: Pick<AuthContext, 'db' | 'now'>, r
           purgedRev = Math.max(purgedRev, ...gone.map((g) => Number(g.rev)));
         }
         const table = sql.identifier(getTableName(def.table));
+        // Tombstone-Einträge ohne Zeile (die Zeile ging per Fremdschlüssel-Kaskade weg): nach der Aufbewahrungsfrist entfernen
+        const verwaist = await tx.execute<{ rev: number }>(sql`
+          delete from change_log cl
+          where cl.family_id = ${familyId} and cl.entity = ${def.name} and cl.tombstone and cl.created_at < ${cutoff.toISOString()}::timestamptz
+            and not exists (select 1 from ${table} t where t.id = cl.entity_id and t.family_id = cl.family_id)
+          returning cl.rev`);
+        report.logEntriesPurged += verwaist.rows.length;
+        for (const r of verwaist.rows) purgedRev = Math.max(purgedRev, Number(r.rev));
         // ersetzte Einträge nach der Aufbewahrungsfrist
         const old = await tx.execute<{ rev: number }>(sql`
           delete from change_log cl

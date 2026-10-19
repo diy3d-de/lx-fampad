@@ -5,9 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
+import 'package:lx_fampad/data/calendar/wiederholung.dart' show wochentagKurz;
 import 'package:lx_fampad/data/calendar/zeitzonen.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
+import 'package:lx_fampad/features/home/desktop_home.dart';
+import 'package:lx_fampad/features/lists/list_dialogs.dart' show AuswahlKnopf;
 import 'package:lx_fampad/features/profile/profile_screen.dart';
+import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/update/update_banner.dart';
 import 'package:lx_fampad/features/update/update_service.dart';
 import 'package:lx_fampad/ui/widgets.dart';
@@ -54,11 +58,16 @@ void main() {
   tzdata.initializeTimeZones();
   setUpAll(testVorbereiten);
 
-  Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', void Function(TestUmgebung env)? vorher, double skala = 1.0, String tab = 'Kalender'}) async {
+  Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', void Function(TestUmgebung env)? vorher, double skala = 1.0, String tab = 'Kalender', Size groesse = const Size(360, 800)}) async {
     final env = await angemeldeteUmgebung(role: role);
     vorher?.call(env);
-    await starteApp(tester, env, skala: skala);
-    await zumTab(tester, tab);
+    final container = await starteApp(tester, env, skala: skala, groesse: groesse);
+    if (groesse.width >= kDesktopBreakpoint) {
+      container.read(shellTabProvider.notifier).waehlen(kTabs.indexWhere((t) => t.label == tab)); // Desktop: Seitenleiste statt NavigationBar
+      await warte(tester);
+    } else {
+      await zumTab(tester, tab);
+    }
     return env;
   }
 
@@ -320,6 +329,148 @@ void main() {
   testWidgets('Startseite ohne Termine: Hinweis', (tester) async {
     await start(tester, tab: 'Start');
     expect(find.text('Keine anstehenden Termine'), findsOneWidget);
+  });
+
+  // ------------------------------------------------------------------------------------------------ Korrekturrunde
+
+  for (final breite in [360.0, 390.0]) {
+    for (final skala in [1.0, 1.5]) {
+      testWidgets('Auswahl-Knöpfe stehen nebeneinander und stapeln sich nicht (Breite $breite, Textskala $skala); Touch-Ziele >= 44 px', (tester) async {
+        await start(tester, skala: skala, groesse: Size(breite, 900), vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Zahnarzt')));
+        final verfuegbar = breite - 40; // Seitenrand 2 x 20
+        final alle = ['Agenda', 'Monat', 'Woche'];
+        final rects = [for (final a in alle) tester.getRect(find.widgetWithText(AuswahlKnopf, a))];
+        for (var i = 0; i < alle.length; i++) {
+          expect(rects[i].width, lessThan(verfuegbar * 0.6), reason: '${alle[i]} füllt die ganze Zeile (gestapelt)');
+          expect(rects[i].height, greaterThanOrEqualTo(44));
+        }
+        if (skala == 1.0) expect(rects.map((r) => r.top).toSet(), hasLength(1), reason: 'bei normaler Schrift in einer Zeile');
+        // Personenfilter: Alle und die Personen nebeneinander
+        final alleKnopf = tester.getRect(find.widgetWithText(AuswahlKnopf, 'Alle'));
+        final anna = tester.getRect(find.bySemanticsLabel('Termine von Anna'));
+        expect(alleKnopf.width, lessThan(verfuegbar * 0.6));
+        if (skala == 1.0) expect(alleKnopf.top, anna.top, reason: 'Filter in einer Zeile');
+        final neu = tester.getSize(find.widgetWithText(FilledButton, 'Neuer Termin'));
+        expect(neu.height, greaterThanOrEqualTo(44));
+        expect(neu.width, lessThan(verfuegbar));
+        // Editor: Erinnerung, Freigabe, Wiederholungsblatt
+        await tippeText(tester, 'Neuer Termin');
+        for (final k in tester.widgetList<AuswahlKnopf>(find.byType(AuswahlKnopf))) {
+          final r = tester.getRect(find.byWidget(k));
+          expect(r.width, lessThan(verfuegbar * 0.8), reason: '${k.text} gestapelt');
+          expect(r.height, greaterThanOrEqualTo(44));
+        }
+        final keine = tester.getRect(find.widgetWithText(AuswahlKnopf, 'Keine'));
+        final startzeit = tester.getRect(find.widgetWithText(AuswahlKnopf, 'Zur Startzeit'));
+        if (skala == 1.0) expect(keine.top, startzeit.top, reason: 'Erinnerungen nebeneinander');
+        final anlegen = tester.getSize(find.widgetWithText(FilledButton, 'Termin anlegen'));
+        expect(anlegen.height, greaterThanOrEqualTo(44));
+        await tippeText(tester, 'Einmalig');
+        await tippeText(tester, 'Wöchentlich');
+        final tage = [for (final t in wochentagKurz) tester.getRect(find.widgetWithText(AuswahlKnopf, t))];
+        for (final r in tage) {
+          expect(r.width, lessThan(verfuegbar * 0.5));
+        }
+        expect(tage.map((r) => r.top).toSet().length, lessThan(tage.length), reason: 'Wochentage nicht einzeln untereinander');
+        final fertig = tester.getSize(find.widgetWithText(FilledButton, 'Fertig'));
+        expect(fertig.height, greaterThanOrEqualTo(44));
+        pruefeLayout(tester, 'Wiederholungsblatt');
+      });
+    }
+  }
+
+  testWidgets('Auswahl-Knöpfe auch im Desktop-Layout nebeneinander (1000 px); Kalender dort ohne doppelte Profil-/Sync-Knöpfe in der Kopfzeile', (tester) async {
+    await start(tester, groesse: const Size(1000, 900));
+    final rects = [for (final a in ['Agenda', 'Monat', 'Woche']) tester.getRect(find.widgetWithText(AuswahlKnopf, a))];
+    expect(rects.map((r) => r.top).toSet(), hasLength(1));
+    expect(rects.every((r) => r.width < 200), isTrue);
+    // Desktop: Datum und Titel bleiben, Sync (Fußzeile) und Profil (Seitenleiste) stehen schon woanders
+    expect(find.text('// ${kopfzeilenDatum()}'.toUpperCase()), findsOneWidget);
+    expect(find.text('Kalender'), findsWidgets);
+    expect(find.byType(ProfilButton), findsNothing);
+    expect(find.byType(SyncIndicator), findsNothing);
+    expect(find.textContaining('sync: '), findsOneWidget);
+    pruefeLayout(tester, 'Kalender Desktop');
+  });
+
+  testWidgets('Desktop-Startseite: "Heute & morgen" zeigt echte Termine statt Leerzustand und öffnet den Kalender', (tester) async {
+    await start(tester, tab: 'Start', groesse: const Size(1440, 900), vorher: (e) {
+      e.sync.andereAendert('termin', _t1, _zeittermin('Zahnarzt heute', tage: 0, stunde: 23));
+      e.sync.andereAendert('termin', _t2, _zeittermin('Elternabend morgen', tage: 1, stunde: 19));
+      e.sync.andereAendert('termin', _t3, _zeittermin('Erst übermorgen', tage: 2, stunde: 9));
+    });
+    expect(find.byType(DesktopHome), findsOneWidget);
+    expect(find.text('Zahnarzt heute'), findsOneWidget);
+    expect(find.text('Elternabend morgen'), findsOneWidget);
+    expect(find.text('Erst übermorgen'), findsNothing, reason: 'nur heute und morgen');
+    expect(find.text('Heute und morgen steht nichts an.'), findsNothing);
+    expect(find.textContaining('heute · '), findsOneWidget);
+    expect(find.textContaining('morgen · '), findsOneWidget);
+    await tippeText(tester, 'Elternabend morgen');
+    expect(tester.widget<IndexedStack>(find.byType(IndexedStack).first).index, 1, reason: 'Kalender-Tab');
+  });
+
+  testWidgets('Wochenserie: Beginn auf einen anderen Wochentag verschieben passt die Wochentage der Wiederholung an (F1), auch bei "dieses und folgende"', (tester) async {
+    final morgen = DateTime.utc(heuteTag().year, heuteTag().month, heuteTag().day + 1);
+    // Wochentage der Serie: der des Beginns und einer zwei Tage später
+    final w1 = morgen.weekday;
+    final w2 = (w1 + 1) % 7 + 1;
+    const kuerzel = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'];
+    final env = await start(tester, vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY;BYDAY=${kuerzel[w1 - 1]},${kuerzel[w2 - 1]}')));
+    await tippe(tester, find.text('Chor').first);
+    await tippeText(tester, 'Bearbeiten');
+    await tippeText(tester, 'Alle Vorkommen');
+    expect(find.textContaining('Wöchentlich (${[for (final t in ([w1, w2]..sort())) wochentagKurz[t - 1]].join(', ')})'), findsOneWidget);
+    // Beginn um einen Tag verschieben (Datumsauswahl)
+    final ziel = morgen.add(const Duration(days: 1)).month == morgen.month ? morgen.add(const Duration(days: 1)) : morgen.subtract(const Duration(days: 1));
+    await tippe(tester, find.bySemanticsLabel(RegExp('^Beginn Datum')));
+    await tippe(tester, find.descendant(of: find.byType(DatePickerDialog), matching: find.text('${ziel.day}')));
+    await tippeText(tester, 'OK');
+    final erwartet = ({w1, w2}..remove(morgen.weekday)..add(ziel.weekday)).toList()..sort();
+    expect(find.textContaining('Wöchentlich (${[for (final t in erwartet) wochentagKurz[t - 1]].join(', ')})'), findsOneWidget);
+    await tippeText(tester, 'Speichern');
+    await warte(tester, 8);
+    final rrule = (await env.db.select(env.db.termine).get()).single.rrule!;
+    expect(rrule, 'FREQ=WEEKLY;BYDAY=${[for (final t in erwartet) kuerzel[t - 1]].join(',')}');
+  });
+
+  testWidgets('Zeitzonen-Daten fehlen: Speichern wird gesperrt mit Hinweis, ein neuer Versuch klappt', (tester) async {
+    final env = await start(tester);
+    await tippeText(tester, 'Neuer Termin');
+    await eingeben(tester, 'Titel', 'Arzt');
+    zeitzonenBereitUeberschreibung = false;
+    addTearDown(() => zeitzonenBereitUeberschreibung = null);
+    await tippeText(tester, 'Termin anlegen');
+    await warte(tester, 8);
+    expect(find.textContaining('Zeitzonen-Daten konnten nicht geladen werden'), findsOneWidget);
+    expect(await env.db.select(env.db.termine).get(), isEmpty);
+    zeitzonenBereitUeberschreibung = null;
+    await tippeText(tester, 'Termin anlegen');
+    await warte(tester, 8);
+    expect((await env.db.select(env.db.termine).get()).single.titel, 'Arzt');
+  });
+
+  testWidgets('Alle ändern bei einer Serie mit Ausnahme und neuer Regel: Hinweis auf zurückgesetzte Ausnahmen', (tester) async {
+    final env = await start(tester, vorher: (e) {
+      e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY'));
+      e.sync.andereAendert('termin_ausnahmen', 'cccccccc-1111-4111-8111-111111111111', {'terminId': _t1, 'originalStart': _zeit(7, 10).replaceFirst('.000Z', 'Z'), 'abgesagt': true});
+    });
+    await tippe(tester, find.text('Chor').first);
+    await tippeText(tester, 'Bearbeiten');
+    await tippeText(tester, 'Alle Vorkommen');
+    await tippeText(tester, 'Wöchentlich');
+    await tippeText(tester, 'Täglich');
+    await tippeText(tester, 'Fertig');
+    await tippeText(tester, 'Speichern');
+    await warte(tester, 8);
+    expect(find.textContaining('Eine Ausnahme der Serie wurde zurückgesetzt'), findsOneWidget);
+    expect((await env.db.select(env.db.terminAusnahmen).get()).every((a) => !a.abgesagt), isTrue);
+  });
+
+  testWidgets('Minutentakt: die Startseite hält einen Zeitgeber, der mit dem Widget endet', (tester) async {
+    await start(tester, tab: 'Start');
+    await tester.pump(const Duration(minutes: 1, seconds: 1));
+    expect(tester.takeException(), isNull);
   });
 
   for (final skala in [1.0, 1.5]) {

@@ -8,15 +8,13 @@ import '../../constants.dart';
 import '../../data/app_database.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
-import '../../data/calendar/expansion.dart';
 import '../../data/calendar/termin_repository.dart';
-import '../../data/calendar/zeitzonen.dart';
-import '../../data/lists/members.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_anzeige.dart';
+import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
@@ -209,12 +207,10 @@ class _NaechsteKarte extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final daten = ref.watch(kalenderDatenProvider);
-    final mitglieder = Mitglieder(daten.termine.isEmpty ? const [] : (ref.watch(mitgliederProvider).value ?? const []));
-    final jetzt = wandUhr(DateTime.now().toUtc(), familienOrt);
-    final heute = heuteTag();
-    final alle = vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: heute, bisWand: heute.add(const Duration(days: 60)));
-    // vorbei ist ein Zeittermin, dessen Ende vor jetzt liegt; ganztägige Termine bleiben den ganzen Tag
-    final kommende = [for (final v in alle) if (v.endeWand.isAfter(jetzt) || (v.endeWand == v.startWand && !v.startWand.isBefore(jetzt))) v];
+    final mitglieder = mitgliederFuer(ref, daten);
+    final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+    final heute = heuteTag(jetzt);
+    final kommende = anstehende(daten, jetzt);
     final zeigen = kommende.take(4).toList();
     return Semantics(
       button: true,
@@ -230,30 +226,7 @@ class _NaechsteKarte extends ConsumerWidget {
             if (zeigen.isEmpty)
               const Text('Keine anstehenden Termine', style: TextStyle(color: kTextMuted))
             else
-              for (final v in zeigen)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(width: 4, height: 34, margin: const EdgeInsets.only(right: 10), decoration: BoxDecoration(color: terminFarbe(v, mitglieder), borderRadius: BorderRadius.circular(2))),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(v.titel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            Text(
-                              '${v.ersterTag == heute ? 'heute' : DateFormat('E, d. MMM', 'de_DE').format(v.ersterTag).toLowerCase()} · ${zeitText(v)}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              for (final v in zeigen) AnstehenderTermin(v: v, mitglieder: mitglieder, heute: heute),
             if (kommende.length > zeigen.length) Text('+ ${kommende.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
           ],
         ),

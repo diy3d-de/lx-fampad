@@ -1,5 +1,5 @@
 // Startseite im Desktop-Layout: Kopfzeile (Datum, Begrüßung, Suche, Benachrichtigungen, "+ Neu") und Karten-Raster.
-// Echte Daten gibt es für Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
+// Echte Daten gibt es für Termine, Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +13,9 @@ import '../../data/lists/members.dart';
 import '../../data/api/api_error.dart';
 import '../../data/api/models.dart';
 import '../../ui/widgets.dart';
+import '../../data/calendar/termin_repository.dart';
+import '../calendar/calendar_anzeige.dart';
+import '../calendar/calendar_state.dart';
 import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
 import '../update/update_banner.dart';
@@ -162,7 +165,7 @@ class _Raster extends StatelessWidget {
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 16, crossAxisSpacing: 16, mainAxisExtent: 300 * skala),
           children: const [
-            _BaldKarte(label: '// heute & morgen', icon: Icons.calendar_month_outlined, titel: 'Noch keine Termine', hinweis: 'Der Kalender kommt in Phase 1c-2.', tab: 1),
+            _TermineKarte(),
             _BaldKarte(label: '// chat · familie', icon: Icons.chat_bubble_outline, titel: 'Noch keine Nachrichten', hinweis: 'Der Chat kommt in einer späteren Phase.', tab: 2),
             _EinkaufKarte(),
             _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
@@ -171,6 +174,34 @@ class _Raster extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+/// "Heute & morgen" mit echten Terminen (lokale Datenbank, auch offline); Tippen öffnet den Kalender.
+class _TermineKarte extends ConsumerWidget {
+  const _TermineKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final daten = ref.watch(kalenderDatenProvider);
+    final mitglieder = mitgliederFuer(ref, daten);
+    final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+    final heute = heuteTag(jetzt);
+    final morgenEnde = heute.add(const Duration(days: 2));
+    // heute und morgen: Vorkommen, die vor dem Ende von morgen beginnen
+    final liste = [for (final v in anstehende(daten, jetzt, tage: 2)) if (v.startWand.isBefore(morgenEnde)) v];
+    return _Karte(
+      label: '// heute & morgen',
+      zaehler: liste.isEmpty ? null : '${liste.length}',
+      semantik: liste.isEmpty ? 'Heute und morgen: keine Termine. Kalender öffnen' : 'Heute und morgen: ${liste.length} Termine. Kalender öffnen',
+      onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),
+      child: liste.isEmpty
+          ? const EmptyState(icon: Icons.event_available_outlined, title: 'Keine Termine', hint: 'Heute und morgen steht nichts an.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [for (final v in liste) AnstehenderTermin(v: v, mitglieder: mitglieder, heute: heute)],
+            ),
     );
   }
 }

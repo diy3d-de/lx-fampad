@@ -208,10 +208,13 @@ void main() {
       expect(neuT.titel, 'Neu ab 27.10.');
       expect(neuT.startUtc!.toUtc(), DateTime.utc(2026, 10, 27, 9)); // 10 Uhr Berlin nach der Umstellung
       expect(neuT.ownerId, 'u-ich');
-      final a = await g.ausnahmen();
+      final a = (await g.ausnahmen()).where((x) => x.terminId == neu).toList();
       expect(a, hasLength(1));
-      expect(a.single.terminId, neu);
       expect(a.single.originalStart, spaeter.schluessel);
+      expect(a.single.abgesagt, isTrue);
+      // die Ausnahme der alten Serie bleibt als leere Zeile stehen (nicht gelöscht: ihre feste ID wäre sonst am Server verbraucht)
+      final altA = (await g.ausnahmen()).where((x) => x.terminId == id).single;
+      expect([altA.abgesagt, altA.titel, altA.start, altA.ende, altA.ort], [false, null, null, null, null]);
       expect((await g.teilnehmer()).where((z) => z.terminId == neu).map((z) => z.userId), ['u-kind']);
       final nach = await laden();
       final tage = vorkommenImFenster(termine: nach.termine, ausnahmen: nach.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 11, 20), jetzt: tag(2026, 10, 19));
@@ -235,13 +238,102 @@ void main() {
       expect(await g.alleTermine(), isEmpty);
     });
 
-    test('dieses und folgende löschen: die Serie endet davor, Ausnahmen danach entfallen', () async {
+    test('dieses und folgende löschen: die Serie endet davor, Ausnahmen danach werden zurückgesetzt (nicht gelöscht) und bleiben wiederverwendbar', () async {
       final (id, v, daten) = await serie();
       final spaeter = vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 12, 1), jetzt: tag(2026, 10, 19))[3];
       await g.repo.vorkommenAbsagen(spaeter);
       await g.repo.folgendeLoeschen(v);
       expect((await g.termin(id))!.rrule, 'FREQ=WEEKLY;BYDAY=TU;UNTIL=20261027T085959Z');
-      expect(await g.ausnahmen(), isEmpty);
+      final nachher = await g.ausnahmen();
+      expect(nachher, hasLength(1));
+      expect([nachher.single.abgesagt, nachher.single.titel], [false, null]);
+      // dasselbe Vorkommen noch einmal ändern: dieselbe Zeile (dieselbe ID), keine zweite
+      await g.repo.vorkommenAbsagen(spaeter);
+      final wieder = await g.ausnahmen();
+      expect(wieder, hasLength(1));
+      expect(wieder.single.id, nachher.single.id);
+      expect(wieder.single.abgesagt, isTrue);
+    });
+
+    Vorkommen vorkommenMit(KalenderDaten d, String schluessel) =>
+        vorkommenImFenster(termine: d.termine, ausnahmen: d.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 12, 1), jetzt: tag(2026, 10, 19)).firstWhere((x) => x.schluessel == schluessel);
+
+    test('verschobenes Vorkommen: nur den Titel ändern lässt die Verschiebung bestehen; zurück auf die ursprüngliche Zeit hebt sie auf', () async {
+      final (_, v, _) = await serie();
+      await g.repo.vorkommenAendern(v, zeit(start: tag(2026, 10, 28, 15), ende: tag(2026, 10, 28, 16)));
+      final v2 = vorkommenMit(await laden(), v.schluessel);
+      expect(v2.startWand, tag(2026, 10, 28, 15));
+      expect(v2.originalStartWand, tag(2026, 10, 27, 10));
+      expect(v2.originalEndeWand, tag(2026, 10, 27, 11));
+      // der Editor zeigt die verschobene Zeit: nur der Titel ändert sich
+      await g.repo.vorkommenAendern(v2, zeit(titel: 'Sondertraining', start: v2.startWand, ende: v2.endeWand));
+      var a = (await g.ausnahmen()).single;
+      expect([a.titel, a.start, a.ende], ['Sondertraining', '2026-10-28T14:00:00Z', '2026-10-28T15:00:00Z']);
+      // zurück auf die ursprüngliche Zeit und den Serientitel: keine Überschreibung mehr
+      await g.repo.vorkommenAendern(v2, zeit(titel: 'Training', start: v2.originalStartWand, ende: v2.originalEndeWand));
+      a = (await g.ausnahmen()).single;
+      expect([a.titel, a.start, a.ende, a.abgesagt], [null, null, null, false]);
+    });
+
+    test('dieses und folgende bei einem verschobenen Vorkommen: Serie endet vor dem URSPRÜNGLICHEN Beginn, COUNT zählt bis dahin', () async {
+      final (id, v, _) = await serie(rrule: 'FREQ=WEEKLY;BYDAY=TU;COUNT=6');
+      await g.repo.vorkommenAendern(v, zeit(start: tag(2026, 10, 30, 8), ende: tag(2026, 10, 30, 9)));
+      final v2 = vorkommenMit(await laden(), v.schluessel);
+      expect(v2.startWand.day, 30);
+      final neu = await g.repo.folgendeAendern(v2, zeit(titel: 'Neu', start: v2.startWand, ende: v2.endeWand, rrule: 'FREQ=WEEKLY;BYDAY=TU;COUNT=6'));
+      expect((await g.termin(id))!.rrule, 'FREQ=WEEKLY;BYDAY=TU;UNTIL=20261027T085959Z', reason: 'UNTIL vor dem ursprünglichen 27.10., nicht vor dem verschobenen 30.10.');
+      expect((await g.termin(neu!))!.rrule, 'FREQ=WEEKLY;BYDAY=TU;COUNT=5');
+      // die verschobene Ausnahme gehört zur alten Serie und wird zurückgesetzt (der neue Beginn ist ein anderer)
+      expect((await g.ausnahmen()).every((x) => x.terminId == id && x.titel == null && x.start == null), isTrue);
+    });
+
+    test('dieses und folgende löschen bei einem verschobenen Vorkommen: UNTIL vor dem ursprünglichen Beginn', () async {
+      final (id, v, _) = await serie();
+      await g.repo.vorkommenAendern(v, zeit(start: tag(2026, 10, 30, 8), ende: tag(2026, 10, 30, 9)));
+      final v2 = vorkommenMit(await laden(), v.schluessel);
+      await g.repo.folgendeLoeschen(v2);
+      expect((await g.termin(id))!.rrule, 'FREQ=WEEKLY;BYDAY=TU;UNTIL=20261027T085959Z');
+    });
+
+    test('alle ändern: nur die Uhrzeit: die Absage zieht mit; Regel geändert: Ausnahmen werden zurückgesetzt und gemeldet', () async {
+      final (id, v, _) = await serie();
+      await g.repo.vorkommenAbsagen(v); // 27.10.
+      final verw = await g.repo.alleAendern(id, zeit(start: tag(2026, 10, 20, 11), ende: tag(2026, 10, 20, 12), rrule: 'FREQ=WEEKLY;BYDAY=TU'));
+      expect(verw, 0);
+      final nach = await laden();
+      final tage = vorkommenImFenster(termine: nach.termine, ausnahmen: nach.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 11, 11), jetzt: tag(2026, 10, 19));
+      expect(tage.map((x) => '${x.startWand.day}@${x.startWand.hour}').toList(), ['20@11', '3@11', '10@11'], reason: 'der 27. bleibt abgesagt, jetzt um 11 Uhr');
+      expect((await g.ausnahmen()).where((a) => a.abgesagt).single.originalStart, '2026-10-27T10:00:00Z');
+      // Regel geändert: bestehende Absage gilt nicht mehr, der Aufrufer erfährt es
+      final verw2 = await g.repo.alleAendern(id, zeit(start: tag(2026, 10, 20, 11), ende: tag(2026, 10, 20, 12), rrule: 'FREQ=DAILY'));
+      expect(verw2, 1);
+      expect((await g.ausnahmen()).every((a) => !a.abgesagt && a.titel == null), isTrue);
+      // anderer Starttag: ebenfalls zurückgesetzt
+      await g.repo.vorkommenAbsagen(vorkommenMit(await laden(), '2026-10-27T10:00:00Z'));
+      final verw3 = await g.repo.alleAendern(id, zeit(start: tag(2026, 10, 21, 11), ende: tag(2026, 10, 21, 12), rrule: 'FREQ=DAILY'));
+      expect(verw3, 1);
+    });
+
+    test('Zeitzonen-Daten fehlen: Anlegen, Ändern und Serien teilen werden gesperrt, Absagen (nur Schlüssel) nicht', () async {
+      final (id, v, _) = await serie();
+      zeitzonenBereitUeberschreibung = false;
+      addTearDown(() => zeitzonenBereitUeberschreibung = null);
+      expect(g.repo.anlegen(zeit()), throwsA(isA<ZeitzonenFehlen>()));
+      expect(g.repo.alleAendern(id, zeit(titel: 'x', rrule: 'FREQ=WEEKLY;BYDAY=TU')), throwsA(isA<ZeitzonenFehlen>()));
+      expect(g.repo.vorkommenAendern(v, zeit(titel: 'x')), throwsA(isA<ZeitzonenFehlen>()));
+      expect(g.repo.folgendeAendern(v, zeit(titel: 'x', rrule: 'FREQ=WEEKLY;BYDAY=TU')), throwsA(isA<ZeitzonenFehlen>()));
+      expect((await g.alleTermine()).single.titel, 'Training');
+      zeitzonenBereitUeberschreibung = null;
+      await g.repo.anlegen(zeit(titel: 'Wieder da'));
+      expect(await g.alleTermine(), hasLength(2));
+    });
+
+    test('Serie teilen: der neue Teil gehört der Person, die ihn anlegt (nicht dem alten Ersteller)', () async {
+      final (id, v, _) = await serie();
+      await g.db.customStatement("UPDATE termine SET owner_id = 'u-kind'");
+      final neu = await g.repo.folgendeAendern(vorkommenMit(await laden(), v.schluessel), zeit(titel: 'Neu', start: v.startWand, ende: v.endeWand, rrule: 'FREQ=WEEKLY;BYDAY=TU'));
+      expect((await g.termin(id))!.ownerId, 'u-kind');
+      expect((await g.termin(neu!))!.ownerId, 'u-ich');
     });
   });
 
@@ -340,6 +432,16 @@ void main() {
       expect(await g.ausnahmen(), isEmpty);
     });
 
+    test('abgelehntes Anlegen eines Teilnehmers mit not_found (gibt es schon): kein Hinweis "gelöscht", die lokale Kopie weicht', () async {
+      final id = await g.repo.anlegen(zeit(teilnehmer: {'u-kind'}));
+      final gesendet = await g.store.naechsteOps(50);
+      final tn = gesendet.firstWhere((o) => o.entity == 'termin_teilnehmer');
+      final bericht = await g.store.uebernehmen(antwort(rev: 2, acked: [gesendet.first.opId], rejected: [SyncRejected(tn.opId, 'not_found')]), gesendet);
+      expect(bericht.hinweise, isEmpty);
+      expect(await g.teilnehmer(), isEmpty);
+      expect(await g.termin(id), isNotNull);
+    });
+
     test('Konflikt im Titel: Stand des Servers gilt, Hinweis nennt den Termin; abgelehnte Ausnahme an gelöschtem Termin: Hinweis', () async {
       await g.store.uebernehmen(antwort(rev: 1, changes: [termin('t-1', 1)]), const []);
       await g.repo.alleAendern('t-1', zeit(titel: 'Eigener Titel', start: tag(2026, 10, 20, 10), ende: tag(2026, 10, 20, 11)));
@@ -363,6 +465,9 @@ void main() {
         ort: '',
         geaendert: false,
         serie: true,
+        originalStartWand: tag(2026, 10, 27, 10),
+        originalEndeWand: tag(2026, 10, 27, 11),
+        originalStartUtc: DateTime.utc(2026, 10, 27, 9),
       ));
       final neu = await g.store.naechsteOps(50);
       final a = neu.firstWhere((o) => o.entity == 'termin_ausnahmen');

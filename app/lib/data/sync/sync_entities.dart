@@ -42,6 +42,10 @@ abstract class SyncEntity {
   /// Texte für Hinweise bei abgelehnten Änderungen ("Die Liste wurde gelöscht" / "Die Liste ist voll").
   String get elternGeloescht => 'Die Liste wurde gelöscht.';
   String get grenzeErreicht => 'Die Liste ist voll';
+
+  /// Teilnehmer und Ausnahmen sind je Ziel nur einmal erlaubt: ein abgelehntes Anlegen mit `not_found` heißt dann "gibt es schon" (der Stand
+  /// des Servers kommt mit dem Abgleich), nicht "wurde gelöscht".
+  bool get eindeutigBeiAnlage => false;
 }
 
 DateTime? _zeit(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
@@ -273,6 +277,9 @@ class TerminTeilnehmerEntitaet extends SyncEntity {
   String get grenzeErreicht => 'Der Termin hat zu viele Teilnehmer';
 
   @override
+  bool get eindeutigBeiAnlage => true;
+
+  @override
   bool kannAnlegen(Json fields) => _text(fields['terminId']) != null && _text(fields['userId']) != null;
 
   Selectable<TerminTeilnehmerZeile> _zeile(AppDatabase db, String id) => db.select(db.terminTeilnehmer)..where((t) => t.id.equals(id));
@@ -318,6 +325,9 @@ class TerminAusnahmenEntitaet extends SyncEntity {
 
   @override
   String get grenzeErreicht => 'Die Serie hat zu viele Ausnahmen';
+
+  @override
+  bool get eindeutigBeiAnlage => true;
 
   @override
   bool kannAnlegen(Json fields) => _text(fields['terminId']) != null && _text(fields['originalStart']) != null;

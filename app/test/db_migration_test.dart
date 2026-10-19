@@ -49,6 +49,9 @@ void main() {
     expect(await db.select(db.termine).get(), isEmpty);
     expect(await db.select(db.terminTeilnehmer).get(), isEmpty);
     expect(await db.select(db.terminAusnahmen).get(), isEmpty);
+    // die Indizes der neuen Tabellen sind auch beim Upgrade da (nicht nur bei einer frischen Datenbank)
+    final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
+    expect(indizes, containsAll(['termin_teilnehmer_termin_idx', 'termin_ausnahmen_termin_idx', 'list_items_list_idx', 'outbox_entity_idx']));
     expect(raw.select('PRAGMA user_version').single.values.first, 3);
   });
 
@@ -59,6 +62,8 @@ void main() {
     addTearDown(db.close);
     await db.besitzerSetzen('u1');
     final tabellen = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")) r['name']];
+    final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
+    expect(indizes, containsAll(['termin_teilnehmer_termin_idx', 'termin_ausnahmen_termin_idx']));
     expect(tabellen, containsAll(['sync_meta', 'outbox', 'lists', 'list_items', 'termine', 'termin_teilnehmer', 'termin_ausnahmen']));
     expect(raw.select('PRAGMA user_version').single.values.first, 3);
   });

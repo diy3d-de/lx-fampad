@@ -284,6 +284,10 @@ class SyncStore {
     final name = await def.anzeigename(db, z.entityId) ?? 'Ein Eintrag';
     final neu = z.baseRev == 0 && z.op == 'upsert';
     switch (code) {
+      case 'not_found' when neu && def.eindeutigBeiAnlage:
+        // gibt es für dieses Ziel schon (z. B. dieselbe Person oder dasselbe Vorkommen von einem anderen Gerät): die lokale Kopie weicht der des Servers
+        await _entferneBaum(z.entity, z.entityId);
+        bericht.neuLaden = true;
       case 'deleted' || 'not_found' || 'parent_deleted':
         if (z.op == 'delete') return; // schon weg: nichts zu tun
         await _entferneBaum(z.entity, z.entityId);

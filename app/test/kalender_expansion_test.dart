@@ -179,6 +179,29 @@ void main() {
       expect(expandiere(muell, tag(2026, 10, 1), tag(2026, 11, 1)), hasLength(1));
     });
 
+    test('Rechenlast: unerfüllbare Regel, sehr alte Serie und wiederholte Abfragen bleiben schnell und liefern das Richtige', () {
+      final sw = Stopwatch()..start();
+      // 30. Februar gibt es nie (der Server lehnt die Regel ab; aus anderen Quellen könnte sie kommen)
+      final nie = termin(ganztaegig: true, startDate: '2026-02-01', endDate: '2026-02-02', rrule: 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30');
+      expect(expandiere(nie, tag(2026, 1, 1), tag(2031, 1, 1)).length, lessThanOrEqualTo(1));
+      // tägliche Serie seit 2002: das Fenster liegt 24 Jahre hinter dem Beginn
+      final alt = termin(ganztaegig: true, startDate: '2002-01-01', endDate: '2002-01-02', rrule: 'FREQ=DAILY;INTERVAL=3');
+      final v = expandiere(alt, tag(2026, 10, 19), tag(2026, 10, 26));
+      // Tage seit 1.1.2002 teilbar durch 3
+      for (final x in v) {
+        expect(x.startWand.difference(DateTime.utc(2002, 1, 1)).inDays % 3, 0, reason: '${x.startWand}');
+      }
+      expect(v, isNotEmpty);
+      // wöchentlich mit Wochentagen, 20 Jahre alt: die Wochentage stimmen
+      final woche = termin(startUtc: '2006-10-17T08:00:00Z', endUtc: '2006-10-17T09:00:00Z', rrule: 'FREQ=WEEKLY;INTERVAL=2;BYDAY=TU,TH');
+      final w = expandiere(woche, tag(2026, 10, 19), tag(2026, 11, 20));
+      expect(w.every((x) => x.startWand.weekday == DateTime.tuesday || x.startWand.weekday == DateTime.thursday), isTrue);
+      expect(w.map((x) => x.startWand.hour).toSet(), {10});
+      // gleiche Abfrage noch einmal (Zwischenspeicher) liefert dasselbe
+      expect(expandiere(woche, tag(2026, 10, 19), tag(2026, 11, 20)).map((x) => x.startWand).toList(), w.map((x) => x.startWand).toList());
+      expect(sw.elapsedMilliseconds, lessThan(2000));
+    });
+
     test('Serie, die vor dem Fenster begann, liefert die Vorkommen im Fenster (alte Serie, Fenster weit hinten)', () {
       final t = termin(startUtc: '2024-01-02T09:00:00Z', endUtc: '2024-01-02T10:00:00Z', rrule: 'FREQ=WEEKLY;BYDAY=TU');
       final v = expandiere(t, tag(2026, 10, 19), tag(2026, 10, 26));
@@ -264,6 +287,34 @@ void main() {
         expect(w.zuRrule(startTag: tag(2026, 10, 20), ganztaegig: false, ort: berlin), r);
         expect(w.wiederholt, isTrue);
       }
+    });
+
+    test('Regel-Rundlauf: negative Monatstage, Listen und nicht zum Beginn passende Monatsregeln bleiben eigene Regeln', () {
+      for (final (r, start) in [
+        ('FREQ=MONTHLY;BYDAY=-1MO', tag(2026, 10, 20)), // Beginn ist ein Dienstag: nicht abbildbar
+        ('FREQ=MONTHLY;BYDAY=2MO', tag(2026, 10, 20)),
+        ('FREQ=MONTHLY;BYMONTHDAY=-1', tag(2026, 10, 31)),
+        ('FREQ=MONTHLY;BYMONTHDAY=15', tag(2026, 10, 20)),
+        ('FREQ=MONTHLY;BYMONTHDAY=1,15', tag(2026, 10, 1)),
+      ]) {
+        final w = Wiederholung.ausRrule(r, ganztaegig: false, ort: ortFuer(kFamilienZone), startTag: start);
+        expect(w.eigeneRegel, r, reason: r);
+        expect(w.zuRrule(startTag: start, ganztaegig: false, ort: ortFuer(kFamilienZone)), r, reason: 'unverändert gespeichert');
+      }
+      // passende bleiben abbildbar
+      for (final (r, start) in [('FREQ=MONTHLY;BYDAY=-1TH', tag(2026, 10, 29)), ('FREQ=MONTHLY;BYDAY=3TU', tag(2026, 10, 20)), ('FREQ=MONTHLY;BYMONTHDAY=20', tag(2026, 10, 20))]) {
+        expect(Wiederholung.ausRrule(r, ganztaegig: false, ort: ortFuer(kFamilienZone), startTag: start).eigeneRegel, isNull, reason: r);
+      }
+    });
+
+    test('Wochentage wandern mit dem Beginn (F1); leere Auswahl, andere Arten und eigene Regeln bleiben', () {
+      const w = Wiederholung(art: WdhArt.woechentlich, wochentage: {2, 4}); // Di, Do
+      expect(w.wochentageNachStart(tag(2026, 10, 20), tag(2026, 10, 21)).wochentage, {3, 4}); // Beginn Di -> Mi
+      expect(w.wochentageNachStart(tag(2026, 10, 20), tag(2026, 10, 22)).wochentage, {4}); // Di -> Do: Do war schon dabei
+      expect(w.wochentageNachStart(tag(2026, 10, 20), tag(2026, 10, 27)).wochentage, {2, 4}); // gleicher Wochentag
+      expect(w.wochentageNachStart(tag(2026, 10, 19), tag(2026, 10, 21)).wochentage, {2, 3, 4}); // Mo war nicht dabei: neuer kommt hinzu
+      expect(const Wiederholung(art: WdhArt.woechentlich).wochentageNachStart(tag(2026, 10, 20), tag(2026, 10, 21)).wochentage, isEmpty);
+      expect(const Wiederholung(art: WdhArt.taeglich).wochentageNachStart(tag(2026, 10, 20), tag(2026, 10, 21)).wochentage, isEmpty);
     });
 
     test('Serie kürzen: UNTIL eine Sekunde vor dem Vorkommen, COUNT entfällt', () {

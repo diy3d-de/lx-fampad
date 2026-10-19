@@ -3,8 +3,9 @@ import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { isValidRrule } from '../src/sync/rrule.js';
+import { runSyncMaintenance } from '../src/sync/maintenance.js';
 import { authorize, mayRead, type Actor, type Audience, type Decision, type Facts } from '../src/sync/permissions.js';
-import { ausnahmeValid, terminAusnahmeEntity, terminEntity, terminTeilnehmerEntity, terminTimesValid } from '../src/sync/entities/termine.js';
+import { ausnahmeValid, isIanaTimeZone, terminAusnahmeEntity, terminEntity, terminTeilnehmerEntity, terminTimesValid } from '../src/sync/entities/termine.js';
 import type { Role } from '../src/auth/types.js';
 import { backends, World, type Harness } from './helpers.js';
 import { createFamily, extraMember, remove, resetSync, upsert, type Family, type Json } from './sync-kit.js';
@@ -61,12 +62,28 @@ describe('RRULE-Prüfung', () => {
       expect(isValidRrule(r), r).toBe(false);
   });
 
+  it('lehnt unerfüllbare Kombinationen ab (30. Februar, 31. April), erlaubt mögliche', () => {
+    for (const r of ['FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=30', 'FREQ=YEARLY;BYMONTH=4;BYMONTHDAY=31', 'FREQ=YEARLY;BYMONTH=2,4,6,9,11;BYMONTHDAY=31', 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-30']) {
+      expect(isValidRrule(r), r).toBe(false);
+    }
+    for (const r of ['FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=29', 'FREQ=MONTHLY;BYMONTHDAY=31', 'FREQ=YEARLY;BYMONTH=1,2;BYMONTHDAY=31', 'FREQ=MONTHLY;BYMONTHDAY=-1']) {
+      expect(isValidRrule(r), r).toBe(true);
+    }
+  });
+
   it('bleibt bei bösartigen Eingaben schnell (kein ReDoS)', () => {
     const start = Date.now();
     for (const r of ['FREQ=WEEKLY;BYDAY=' + 'MO,'.repeat(5000), 'FREQ=DAILY;' + 'A'.repeat(100_000), '1'.repeat(200_000) + '=', 'FREQ=MONTHLY;BYMONTHDAY=' + '-1,'.repeat(100_000)]) {
       expect(isValidRrule(r)).toBe(false);
     }
     expect(Date.now() - start).toBeLessThan(500);
+  });
+});
+
+describe('Zeitzonen-Prüfung', () => {
+  it('kanonische Schreibweise Pflicht, bekannte ältere Namen erlaubt', () => {
+    for (const z of ['Europe/Berlin', 'America/New_York', 'UTC', 'Asia/Kolkata', 'Europe/Kyiv']) expect(isIanaTimeZone(z), z).toBe(true);
+    for (const z of ['europe/berlin', 'EUROPE/BERLIN', 'Mars/Olympus', 'utc ']) expect(isIanaTimeZone(z), z).toBe(false);
   });
 });
 
@@ -87,6 +104,8 @@ describe('Zeitmodell (Stimmigkeit)', () => {
     expect(ausnahmeValid({ originalStart: '2026-10-20T08:00:00Z', start: '2026-10-21', ende: null })).toBe(false);
     expect(ausnahmeValid({ originalStart: '2026-10-20', start: '2026-10-21', ende: '2026-10-22' })).toBe(true);
     expect(ausnahmeValid({ originalStart: '2026-10-20', start: '2026-10-22', ende: '2026-10-21' })).toBe(false);
+    expect(ausnahmeValid({ originalStart: '2026-10-20', start: '2026-10-22', ende: '2026-10-22' })).toBe(false); // ganztägig: Ende exklusiv
+    expect(ausnahmeValid({ originalStart: '2026-10-20T08:00:00Z', start: '2026-10-20T09:00:00Z', ende: '2026-10-20T09:00:00Z' })).toBe(true);
   });
 });
 
@@ -130,9 +149,17 @@ describe('Rechte-Regeltabelle: Termine', () => {
       expect(act(def, 'delete', 'child', facts('family', 'u-other'))).toBe('forbidden');
       expect(act(def, 'update', 'child', facts('parents', 'u-self'))).toBe('not_found');
       expect(act(def, 'create', 'guest', facts('all', 'u-self'))).toBe('forbidden');
-      expect(act(def, 'update', 'guest', facts('all'))).toBe('forbidden');
-      expect(act(def, 'delete', 'guest', facts('all'))).toBe('forbidden');
+      // Gäste dürfen Teilnehmer gar nicht lesen (dann nicht_found), Ausnahmen lesen sie (dann verboten)
+      const erwartet = def === terminTeilnehmerEntity ? 'not_found' : 'forbidden';
+      expect(act(def, 'update', 'guest', facts('all'))).toBe(erwartet);
+      expect(act(def, 'delete', 'guest', facts('all'))).toBe(erwartet);
     }
+  });
+
+  it('Teilnehmer: Gäste lesen nichts (Kennungen der Familie), Ausnahmen lesen sie', () => {
+    expect(mayRead(terminTeilnehmerEntity.rules, actor('guest'), facts('all'))).toBe(false);
+    expect(mayRead(terminAusnahmeEntity.rules, actor('guest'), facts('all'))).toBe(true);
+    expect(mayRead(terminTeilnehmerEntity.rules, actor('child'), facts('family'))).toBe(true);
   });
 
   it('Gäste sehen nur freigegebene Termine und ändern nichts', () => {
@@ -354,13 +381,15 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
       expect((await fam.child.sync([upsert('termin_teilnehmer', randomUUID(), { terminId: eigen, userId: fam.admin.userId })])).json.rejected).toEqual([]);
     });
 
-    it('Gäste sehen nur freigegebene Termine (samt Teilnehmern) und ändern nichts', async () => {
+    it('Gäste sehen nur freigegebene Termine und deren Ausnahmen, aber nicht die Teilnehmer, und ändern nichts', async () => {
       const privat = await anlegen(fam.admin);
       const frei = await anlegen(fam.admin, zeit({ audience: 'all', titel: 'Oma-Besuch' }));
       await fam.admin.sync([upsert('termin_teilnehmer', randomUUID(), { terminId: frei, userId: fam.guest.userId })]);
       const seen = await fam.guest.pull();
       expect(seen.filter((c) => c.entity === 'termin').map((c) => c.id)).toEqual([frei]);
-      expect(seen.filter((c) => c.entity === 'termin_teilnehmer')).toHaveLength(1);
+      expect(seen.filter((c) => c.entity === 'termin_teilnehmer')).toHaveLength(0);
+      const top = upsert('termin_teilnehmer', randomUUID(), { terminId: frei, userId: fam.guest.userId });
+      expect((await fam.guest.sync([top])).json.rejected).toEqual([{ opId: top.opId, code: 'forbidden' }]);
       const op = upsert('termin', frei, { titel: 'x' }, 2);
       expect((await fam.guest.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'forbidden' }]);
       const op2 = upsert('termin', privat, { titel: 'x' }, 1);
@@ -390,6 +419,56 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
     const changes = await fam.admin.pull();
     expect(changes.find((c) => c.id === id)?.fields.ownerId).toBeNull();
   });
+
+  it('Mitglied entfernt: seine Teilnehmer-Zeilen kommen als Tombstone bei den Geräten an (obwohl die Zeile per Kaskade verschwindet)', async () => {
+    const extra = await extraMember(world, fam.admin, 'parent', 'opa@example.org');
+    const id = await anlegen(fam.admin);
+    const tn = randomUUID();
+    const andere = randomUUID();
+    expect((await fam.admin.sync([upsert('termin_teilnehmer', tn, { terminId: id, userId: extra.userId }), upsert('termin_teilnehmer', andere, { terminId: id, userId: fam.child.userId })])).json.rejected).toEqual([]);
+    await fam.parent.pull();
+    expect((await rows(world, sql`select count(*)::int as n from termin_teilnehmer where termin_id = ${id}`))[0]?.n).toBe(2);
+    const del = await fam.admin.client.del(`/api/v1/members/${extra.userId}`);
+    expect(del.status, JSON.stringify(del.json)).toBe(200);
+    expect(await rows(world, sql`select 1 from termin_teilnehmer where id = ${tn}`)).toHaveLength(0); // Kaskade hat die Zeile entfernt
+    const spaeter = await fam.parent.pull();
+    const grab = spaeter.find((c) => c.entity === 'termin_teilnehmer' && c.id === tn);
+    expect(grab?.tombstone).toBe(true);
+    expect(spaeter.some((c) => c.id === andere)).toBe(false); // die andere Person bleibt unberührt
+    // Wartung räumt den verwaisten Eintrag nach der Aufbewahrungsfrist
+    await world.db.execute(sql`update change_log set created_at = '2000-01-01T00:00:00Z' where entity_id = ${tn}`);
+    await runSyncMaintenance(world.auth.ctx);
+    expect(await rows(world, sql`select 1 from change_log where entity_id = ${tn}`)).toHaveLength(0);
+  });
+
+  it('Feste Ausnahme-ID nach Tombstone: Wiederverwenden wird abgelehnt (deleted), Zurücksetzen statt Löschen bleibt möglich', async () => {
+    const id = await anlegen(fam.admin, zeit({ rrule: 'FREQ=WEEKLY' }));
+    const aid = randomUUID();
+    const felder = { terminId: id, originalStart: '2026-10-27T08:00:00Z' };
+    expect((await fam.admin.sync([upsert('termin_ausnahmen', aid, { ...felder, abgesagt: true })])).json.rejected).toEqual([]);
+    // Zurücksetzen (alle Felder leer) ist eine normale Änderung und lässt die Zeile leben
+    const reset = upsert('termin_ausnahmen', aid, { abgesagt: false, titel: null, start: null, ende: null, ort: null }, 2);
+    expect((await fam.admin.sync([reset])).json.rejected).toEqual([]);
+    expect((await fam.admin.sync([upsert('termin_ausnahmen', aid, { abgesagt: true }, 3)])).json.rejected).toEqual([]);
+    // gelöscht: dieselbe ID ist danach verbraucht
+    expect((await fam.admin.sync([remove('termin_ausnahmen', aid, 4)])).json.rejected).toEqual([]);
+    const wieder = upsert('termin_ausnahmen', aid, { ...felder, abgesagt: true });
+    expect((await fam.admin.sync([wieder])).json.rejected).toEqual([{ opId: wieder.opId, code: 'deleted' }]);
+    // eine neue ID für dasselbe Vorkommen geht, solange die alte Zeile gelöscht ist
+    const neu = upsert('termin_ausnahmen', randomUUID(), { ...felder, abgesagt: true });
+    expect((await fam.admin.sync([neu])).json.rejected).toEqual([]);
+  });
+
+  it('Kinder: höchstens 500 lebende Termine je Besitzer (zusätzlich zum Familienlimit); Eltern nicht begrenzt', async () => {
+    const zeilen = Array.from({ length: 500 }, (_, i) => `('${randomUUID()}', '${fam.familyId}', 'K${i}', false, now(), now() + interval '1 hour', 'Europe/Berlin', '${fam.child.userId}', ${i + 1})`);
+    await world.db.execute(
+      sql.raw(`insert into termine (id, family_id, titel, ganztaegig, start_utc, end_utc, tzid, owner_id, rev) values ${zeilen.join(',')}`),
+    );
+    const op = upsert('termin', randomUUID(), zeit());
+    expect((await fam.child.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'limit_reached' }]);
+    const eltern = upsert('termin', randomUUID(), zeit());
+    expect((await fam.admin.sync([eltern])).json.rejected).toEqual([]);
+  }, 60_000);
 
   it('Obergrenze: höchstens 500 Ausnahmen je Serie', async () => {
     const id = await anlegen(fam.admin, zeit({ rrule: 'FREQ=DAILY' }));

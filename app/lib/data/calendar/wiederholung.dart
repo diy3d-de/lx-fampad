@@ -119,7 +119,10 @@ class Wiederholung {
   }
 
   /// Liest eine Regel. Was sich nicht abbilden lässt, ergibt [eigeneRegel].
-  static Wiederholung ausRrule(String? rrule, {required bool ganztaegig, required tz.Location ort}) {
+  ///
+  /// [startTag] (Beginn des Termins): Regeln, die an den Beginn gebunden sind (monatlich am Tag X bzw. am n-ten Wochentag), lassen sich nur
+  /// abbilden, wenn sie zu ihm passen; sonst würde das Speichern sie stillschweigend umschreiben.
+  static Wiederholung ausRrule(String? rrule, {required bool ganztaegig, required tz.Location ort, DateTime? startTag}) {
     if (rrule == null || rrule.isEmpty) return keine;
     final eigene = Wiederholung(art: WdhArt.woechentlich, eigeneRegel: rrule);
     final teile = <String, String>{};
@@ -146,11 +149,21 @@ class Wiederholung {
         }
       } else if (art == WdhArt.monatlich && RegExp(r'^(-1|[1-4])(MO|TU|WE|TH|FR|SA|SU)$').hasMatch(byday)) {
         modus = MonatsModus.wochentag;
+        if (startTag != null) {
+          final nr = (startTag.day - 1) ~/ 7 + 1;
+          final soll = '${nr >= 5 ? -1 : nr}${_wochentagKuerzel[startTag.weekday - 1]}';
+          if (byday != soll) return eigene;
+        }
       } else {
         return eigene;
       }
     }
-    if (teile.containsKey('BYMONTHDAY') && (art != WdhArt.monatlich || byday != null || int.tryParse(teile['BYMONTHDAY']!) == null)) return eigene;
+    if (teile.containsKey('BYMONTHDAY')) {
+      final tag = int.tryParse(teile['BYMONTHDAY']!);
+      // nur ein einzelner positiver Tag; negative Tage (-1 = letzter) und Listen bleiben eigene Regeln
+      if (art != WdhArt.monatlich || byday != null || tag == null || tag < 1) return eigene;
+      if (startTag != null && tag != startTag.day) return eigene;
+    }
     var ende = WdhEnde.nie;
     DateTime? bis;
     var anzahl = 10;
@@ -169,6 +182,15 @@ class Wiederholung {
       bis = DateTime.utc(tag.year, tag.month, tag.day);
     }
     return Wiederholung(art: art, intervall: intervall, wochentage: wochentage, modus: modus, ende: ende, bis: bis, anzahl: anzahl);
+  }
+
+  /// Verschiebt sich der Beginn auf einen anderen Wochentag, wandert dieser Wochentag auch in der Auswahl (sonst bliebe der alte stehen und der neue
+  /// Beginn passte nicht zur Regel). Andere Arten und leere Auswahl (= Wochentag des Beginns) bleiben unverändert.
+  Wiederholung wochentageNachStart(DateTime altTag, DateTime neuTag) {
+    if (eigeneRegel != null || art != WdhArt.woechentlich || wochentage.isEmpty || altTag.weekday == neuTag.weekday) return this;
+    final neu = {...wochentage}..remove(altTag.weekday);
+    neu.add(neuTag.weekday);
+    return kopie(wochentage: neu);
   }
 
   /// Kurzbeschreibung für die Oberfläche ("Jeden 2. Tag", "Wöchentlich: Mo, Mi").

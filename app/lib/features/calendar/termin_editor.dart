@@ -44,6 +44,11 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   var _startZeit = const TimeOfDay(hour: 9, minute: 0);
   var _endZeit = const TimeOfDay(hour: 10, minute: 0);
   var _wdh = Wiederholung.keine;
+  // Die Regel wird nur neu geschrieben, wenn sich Wiederholung, Beginn-Tag oder Art geändert haben; sonst bleibt der gespeicherte Text unverändert
+  // (Rundlauf: COUNT/UNTIL und fremde Formen gehen nicht verloren).
+  var _wdhGeaendert = false;
+  late DateTime _startTagUrsprung;
+  late bool _ganztaegigUrsprung;
   int? _erinnerung;
   var _teilnehmer = <String>{};
   var _sicht = TerminSicht.family;
@@ -65,6 +70,8 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       _endTag = tag;
       _startZeit = TimeOfDay(hour: stunde, minute: 0);
       _endZeit = TimeOfDay(hour: stunde + 1, minute: 0);
+      _startTagUrsprung = _startTag;
+      _ganztaegigUrsprung = false;
       return;
     }
     final t = v.termin;
@@ -83,10 +90,12 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     _titel.text = widget.umfang == SerieUmfang.alle ? t.titel : v.titel;
     _ort.text = widget.umfang == SerieUmfang.alle ? t.ort : v.ort;
     _beschreibung.text = t.beschreibung;
-    _wdh = Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid));
+    _wdh = Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid), startTag: _startTag);
     _erinnerung = t.erinnerungMin;
     _teilnehmer = daten.teilnehmerIds(t.id);
     _sicht = ListenSicht.von(t.audience);
+    _startTagUrsprung = _startTag;
+    _ganztaegigUrsprung = _ganztaegig;
   }
 
   /// Beginn und Ende des Termins selbst (bei Serien: des ersten Vorkommens) in der Wanduhr der Familienzone.
@@ -113,7 +122,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       context: context,
       initialDate: DateTime(aktuell.year, aktuell.month, aktuell.day),
       firstDate: DateTime(2000),
-      lastDate: DateTime(2199, 12, 31),
+      lastDate: DateTime(2199, 12, 30), // ein ganztägiger Termin braucht ein exklusives Ende, das noch vor 2200 liegt
       locale: const Locale('de', 'DE'),
     );
     return d == null ? null : DateTime.utc(d.year, d.month, d.day);
@@ -129,7 +138,11 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   void _startAendern(DateTime tag, TimeOfDay zeit) {
     final alt = _startWand;
     final dauer = _endeWand.difference(alt);
+    // verschiebt sich der Beginn auf einen anderen Wochentag, wandert der Wochentag der wöchentlichen Auswahl mit
+    final neueWdh = _wdh.wochentageNachStart(_startTag, tag);
+    if (neueWdh.wochentage.toList().join() != _wdh.wochentage.toList().join()) _wdhGeaendert = true;
     setState(() {
+      _wdh = neueWdh;
       _startTag = tag;
       _startZeit = zeit;
       if (_ganztaegig) {
@@ -145,6 +158,9 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   }
 
   Future<void> _speichern() async {
+    final repo = ref.read(terminRepositoryProvider);
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
     final titel = _titel.text.trim();
     if (titel.isEmpty) {
       setState(() => _fehler = 'Gib dem Termin einen Titel.');
@@ -156,8 +172,21 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       setState(() => _fehler = 'Das Ende liegt vor dem Beginn.');
       return;
     }
+    // Zeitzonen-Daten fehlen: Anlegen und Ändern würde Uhrzeiten falsch speichern. Neuer Versuch, sonst Hinweis (Speichern wiederholt ihn).
+    if (!zeitzonenBereit() && !await zeitzonenNeuLaden()) {
+      if (mounted) setState(() => _fehler = 'Die Zeitzonen-Daten konnten nicht geladen werden, der Termin wurde nicht gespeichert. Bitte versuche es gleich noch einmal (Speichern wiederholt das Laden).');
+      return;
+    }
     final startTag = DateTime.utc(start.year, start.month, start.day);
-    final rrule = _nurDieses ? null : _wdh.zuRrule(startTag: startTag, ganztaegig: _ganztaegig, ort: familienOrt);
+    final original = widget.vorkommen?.termin;
+    final String? rrule;
+    if (_nurDieses) {
+      rrule = null;
+    } else if (original != null && !_wdhGeaendert && startTag == _startTagUrsprung && _ganztaegig == _ganztaegigUrsprung) {
+      rrule = original.rrule; // unverändert: genau der gespeicherte Text
+    } else {
+      rrule = _wdh.zuRrule(startTag: startTag, ganztaegig: _ganztaegig, ort: familienOrt);
+    }
     final e = TerminEingabe(
       titel: titel,
       ort: _ort.text,
@@ -170,27 +199,40 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       sicht: _sicht,
       teilnehmer: _teilnehmer,
     );
-    final repo = ref.read(terminRepositoryProvider);
-    final nav = Navigator.of(context);
     final v = widget.vorkommen;
-    if (v == null) {
-      await repo.anlegen(e);
-    } else {
-      switch (widget.umfang) {
-        case SerieUmfang.alle:
-          await repo.alleAendern(v.termin.id, e);
-        case SerieUmfang.dieses:
-          await repo.vorkommenAendern(v, e);
-        case SerieUmfang.folgende:
-          await repo.folgendeAendern(v, e);
+    try {
+      if (v == null) {
+        await repo.anlegen(e);
+      } else {
+        switch (widget.umfang) {
+          case SerieUmfang.alle:
+            final verworfen = await repo.alleAendern(v.termin.id, e);
+            if (verworfen > 0) {
+              messenger
+                ..hideCurrentSnackBar()
+                ..showSnackBar(SnackBar(content: Text(verworfen == 1 ? 'Eine Ausnahme der Serie wurde zurückgesetzt, weil sich Beginn oder Wiederholung geändert haben.' : '$verworfen Ausnahmen der Serie wurden zurückgesetzt, weil sich Beginn oder Wiederholung geändert haben.')));
+            }
+          case SerieUmfang.dieses:
+            await repo.vorkommenAendern(v, e);
+          case SerieUmfang.folgende:
+            await repo.folgendeAendern(v, e);
+        }
       }
+    } on ZeitzonenFehlen {
+      if (mounted) setState(() => _fehler = 'Die Zeitzonen-Daten fehlen, der Termin wurde nicht gespeichert. Bitte versuche es noch einmal.');
+      return;
     }
     if (mounted) nav.pop();
   }
 
   Future<void> _wiederholungWaehlen() async {
     final w = await wiederholungBlatt(context, _wdh, startTag: _startTag, ganztaegig: _ganztaegig);
-    if (w != null) setState(() => _wdh = w);
+    if (w != null) {
+      setState(() {
+        _wdh = w;
+        _wdhGeaendert = true;
+      });
+    }
   }
 
   @override
@@ -286,6 +328,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
                   ? null
                   : (v) => setState(() {
                       _ganztaegig = v;
+                      _wdhGeaendert = true; // UNTIL hat je nach Art ein anderes Format
                       if (_endTag.isBefore(_startTag)) _endTag = _startTag;
                     }),
             ),
@@ -470,7 +513,7 @@ class _WiederholungBlattState extends State<_WiederholungBlatt> {
                           context: context,
                           initialDate: DateTime(widget.startTag.year, widget.startTag.month, widget.startTag.day).add(const Duration(days: 30)),
                           firstDate: DateTime(widget.startTag.year, widget.startTag.month, widget.startTag.day),
-                          lastDate: DateTime(2199, 12, 31),
+                          lastDate: DateTime(2199, 12, 30),
                           locale: const Locale('de', 'DE'),
                         );
                         if (d != null) setState(() => _w = w.kopie(ende: WdhEnde.bis, bis: DateTime.utc(d.year, d.month, d.day)));

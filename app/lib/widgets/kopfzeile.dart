@@ -1,9 +1,11 @@
 // Gemeinsame Kopfzeile aller Tabs: Datum als Mono-Label ("// do, 22. okt"), Titel des Tabs, Sync-Indikator und Profil-Knopf. Nur der Titel
 // ist je Tab verschieden; Datum, Indikator und Profil-Menü stehen überall gleich und gleich angeordnet (Start, Kalender, Chat, Dateien, Listen).
+// Im Desktop-Layout (ab kDesktopBreakpoint) zeigen Seitenleiste (Profil) und Fußzeile (Sync) beides schon: dort bleiben Datum und Titel.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../constants.dart';
 import '../data/auth/auth_state.dart';
 import '../features/profile/profile_screen.dart';
 import '../ui/widgets.dart';
@@ -20,7 +22,8 @@ class TabKopfzeile extends StatelessWidget {
   Widget build(BuildContext context) => ScreenHeader(
     label: '// ${kopfzeilenDatum()}',
     title: title,
-    actions: const [SyncIndicator(), ProfilButton()],
+    // Desktop-Layout: Sync-Zustand steht in der Fußzeile, das Profil unten in der Seitenleiste (nicht doppelt)
+    actions: MediaQuery.sizeOf(context).width >= kDesktopBreakpoint ? const [] : const [SyncIndicator(), ProfilButton()],
   );
 }
 

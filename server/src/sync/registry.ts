@@ -4,6 +4,7 @@
 import type { AnyPgColumn, AnyPgTable } from 'drizzle-orm/pg-core';
 import { getTableColumns } from 'drizzle-orm';
 import type { z } from 'zod';
+import type { Role } from '../auth/types.js';
 import type { Actor, Facts, Rules } from './permissions.js';
 
 /** Eine Zeile aus der Datenbank (Schlüssel = Eigenschaftsnamen der Drizzle-Tabelle, also camelCase). */
@@ -43,6 +44,10 @@ export interface EntityDef {
   visibilityFields?: readonly string[];
   /** Spalten mit Mitglieds-IDs, die beim Entfernen des Mitglieds auf NULL gesetzt werden (mit Änderungseintrag). */
   userRefs?: readonly string[];
+  /** Spalte mit der Mitglieds-ID, die den Datensatz bestimmt (z. B. Teilnehmer): beim Entfernen der Person wird er mit Tombstone gelöscht, die Geräte erfahren es. */
+  memberOwned?: string;
+  /** Obergrenze lebender Datensätze je Besitzer (`field` = Besitzer-Spalte) für bestimmte Rollen, zusätzlich zu `maxLive` (Schutz vor Überlauf durch ein einzelnes Konto). */
+  ownerLimit?: { field: string; roles: readonly Role[]; max: number };
   /** Fakten (Freigabe-Stufe, Besitzer) eines vorhandenen Datensatzes; `parent` sind die Fakten der übergeordneten Entität. */
   facts(row: Row, parent: Facts | null): Facts;
   /** Fakten eines Datensatzes, der angelegt werden soll. */

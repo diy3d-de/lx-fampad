@@ -4,6 +4,7 @@
 // Erlaubt: FREQ (DAILY, WEEKLY, MONTHLY, YEARLY), INTERVAL (1-999), COUNT (1-1000) oder UNTIL (nicht beide), BYDAY (je Tag MO..SU, bei
 // MONTHLY/YEARLY mit Zahl -5..5 davor), BYMONTHDAY (-31..31 ohne 0), BYMONTH (1-12), BYSETPOS (-5..5 ohne 0), WKST.
 // Abgelehnt: SECONDLY/MINUTELY/HOURLY, BYHOUR/BYMINUTE/BYSECOND, BYYEARDAY/BYWEEKNO, Präfix "RRULE:", Kleinbuchstaben, doppelte Teile.
+const MONTH_DAYS = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]; // Februar mit Schaltjahr
 export const RRULE_MAX_LENGTH = 300;
 export const RRULE_MAX_COUNT = 1000;
 const MAX_LIST = 31;
@@ -59,6 +60,15 @@ function numberList(value: string, min: number, max: number, allowZero: boolean)
   return items.length <= MAX_LIST && items.every((i) => intInRange(i, min, max, allowZero));
 }
 
+/** Gibt es überhaupt einen Monat mit einem passenden Tag (BYMONTH und BYMONTHDAY, z. B. nicht 30. Februar)? Sonst suchte der Client vergeblich. */
+function satisfiable(parts: string[]): boolean {
+  const value = (key: string): string[] | undefined => parts.find((p) => p.startsWith(key + '='))?.slice(key.length + 1).split(',');
+  const days = value('BYMONTHDAY');
+  if (!days) return true;
+  const months = (value('BYMONTH') ?? MONTH_DAYS.map((_, i) => String(i + 1))).map(Number);
+  return months.some((m) => days.some((d) => Math.abs(Number(d)) <= (MONTH_DAYS[m - 1] ?? 0)));
+}
+
 /** Ist `text` eine zulässige Wiederholungsregel? */
 export function isValidRrule(text: string): boolean {
   if (text.length === 0 || text.length > RRULE_MAX_LENGTH) return false;
@@ -109,6 +119,7 @@ export function isValidRrule(text: string): boolean {
   }
   if (freq === '') return false;
   if (seen.has('COUNT') && seen.has('UNTIL')) return false;
+  if (!satisfiable(parts)) return false;
   if (freq !== 'MONTHLY' && freq !== 'YEARLY') {
     const byday = parts.find((p) => p.startsWith('BYDAY='));
     if (byday && !dayList(byday.slice(6), false)) return false;

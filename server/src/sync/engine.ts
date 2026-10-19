@@ -224,6 +224,15 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     if ((n?.n ?? 0) >= def.maxLive.max) return rejected('limit_reached');
   }
 
+  if (def.ownerLimit && def.ownerLimit.roles.includes(env.actor.role)) {
+    const c = syncColumns(def);
+    const [n] = await env.tx
+      .select({ n: count() })
+      .from(def.table)
+      .where(and(eq(c.familyId, env.familyId), isNull(c.deletedAt), eq(columnOf(def, def.ownerLimit.field), env.actor.userId)));
+    if ((n?.n ?? 0) >= def.ownerLimit.max) return rejected('limit_reached');
+  }
+
   const rev = env.revs.rev + 1; // erst nach erfolgreichem Einfügen vergeben (sonst entstünde eine Lücke)
   const fieldRevs: Record<string, number> = {};
   for (const [name, f] of Object.entries(def.fields)) if (f.access !== 'server') fieldRevs[name] = rev;

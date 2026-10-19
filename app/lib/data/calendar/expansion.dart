@@ -39,6 +39,12 @@ class Vorkommen implements Comparable<Vorkommen> {
   /// Zu diesem Vorkommen gibt es eine Ausnahme, die etwas ändert.
   final bool geaendert;
   final bool serie;
+
+  /// Beginn und Ende des URSPRÜNGLICHEN Vorkommens (vor einer Verschiebung durch eine Ausnahme), Wanduhr der Familienzone bzw. Zeitpunkt.
+  /// Serien teilen, kürzen und Ausnahmen vergleichen immer gegen diese Werte, nie gegen die (womöglich verschobene) Anzeige.
+  final DateTime originalStartWand;
+  final DateTime originalEndeWand;
+  final DateTime originalStartUtc;
   const Vorkommen({
     required this.termin,
     required this.schluessel,
@@ -50,6 +56,9 @@ class Vorkommen implements Comparable<Vorkommen> {
     required this.ort,
     required this.geaendert,
     required this.serie,
+    required this.originalStartWand,
+    required this.originalEndeWand,
+    required this.originalStartUtc,
   });
 
   /// Erster Kalendertag, an dem das Vorkommen stattfindet.
@@ -135,9 +144,35 @@ int vorkommenVor(String rrule, {required DateTime startWand, required DateTime v
   return regel.getInstances(start: startWand, before: vorWand).take(kMaxVorkommen).length;
 }
 
-/// Instanzen der Regel ab [nach] (nie vor dem Beginn; `after` des Pakets muss mindestens `start` sein), bis [vor] (ausschließlich).
-Iterable<DateTime> _instanzen(RecurrenceRule regel, DateTime start, DateTime nach, DateTime vor) =>
-    regel.getInstances(start: start, after: nach.isAfter(start) ? nach : start, includeAfter: true, before: vor).take(kMaxVorkommen);
+/// Zeitbudget je Regel und Abfrage (Schutz vor Rechenlast durch Regeln aus dem Netz).
+const _kBudgetMs = 150;
+final _cache = <String, List<DateTime>>{};
+const _kCacheMax = 256;
+
+/// Instanzen der Regel ab [nach] (nie vor dem Beginn; `after` des Pakets muss mindestens `start` sein), bis [vor] (ausschließlich), höchstens
+/// [kMaxVorkommen] und innerhalb des Zeitbudgets. Tägliche und wöchentliche Regeln ohne COUNT starten nahe am Fenster (um ganze Perioden
+/// verschoben, Wochentag und Wochenraster bleiben gleich), statt jede Instanz seit dem Beginn zu rechnen. Ergebnisse werden zwischengespeichert.
+List<DateTime> _instanzen(String text, RecurrenceRule regel, DateTime start, DateTime nach, DateTime vor) {
+  final key = '$text|$start|$nach|$vor';
+  final bekannt = _cache[key];
+  if (bekannt != null) return bekannt;
+  var s = start;
+  final tageProPeriode = regel.frequency == Frequency.daily ? 1 : (regel.frequency == Frequency.weekly ? 7 : 0);
+  if (tageProPeriode > 0 && regel.count == null && nach.isAfter(start)) {
+    final periode = tageProPeriode * regel.actualInterval;
+    final k = nach.difference(start).inDays ~/ periode - 1;
+    if (k > 0) s = start.add(Duration(days: k * periode));
+  }
+  final out = <DateTime>[];
+  final uhr = Stopwatch()..start();
+  for (final m in regel.getInstances(start: s, after: nach.isAfter(s) ? nach : s, includeAfter: true, before: vor)) {
+    out.add(m);
+    if (out.length >= kMaxVorkommen || uhr.elapsedMilliseconds > _kBudgetMs) break;
+  }
+  if (_cache.length >= _kCacheMax) _cache.remove(_cache.keys.first);
+  _cache[key] = out;
+  return out;
+}
 
 /// Alle Vorkommen der Termine im Fenster [vonWand, bisWand) (Wanduhr der Familienzone), sortiert.
 List<Vorkommen> vorkommenImFenster({
@@ -170,7 +205,8 @@ List<Vorkommen> _vorkommenVon(Termin t, List<TerminAusnahme> ausnahmen, DateTime
     if (a != null && a.abgesagt) return;
     var su = startUtc;
     var s = startWand;
-    var e = t.ganztaegig ? startWand.add(dauer) : wandUhr(startUtc.add(dauer), berlin);
+    final originalEnde = t.ganztaegig ? startWand.add(dauer) : wandUhr(startUtc.add(dauer), berlin);
+    var e = originalEnde;
     var titel = t.titel;
     var ort = t.ort;
     var geaendert = false;
@@ -224,6 +260,9 @@ List<Vorkommen> _vorkommenVon(Termin t, List<TerminAusnahme> ausnahmen, DateTime
         ort: ort,
         geaendert: geaendert,
         serie: serie,
+        originalStartWand: startWand,
+        originalEndeWand: originalEnde,
+        originalStartUtc: startUtc,
       ),
     );
   }
@@ -239,7 +278,7 @@ List<Vorkommen> _vorkommenVon(Termin t, List<TerminAusnahme> ausnahmen, DateTime
       return out;
     }
     final von = vonWand.subtract(tage + const Duration(days: 1));
-    for (final m in _instanzen(regel, start, von, bisWand)) {
+    for (final m in _instanzen(t.rrule!, regel, start, von, bisWand)) {
       aufnehmen(schluessel: tagText(m), startWand: m, startUtc: instantAusWand(m, berlin), dauer: tage, serie: true);
     }
     return out;
@@ -258,7 +297,7 @@ List<Vorkommen> _vorkommenVon(Termin t, List<TerminAusnahme> ausnahmen, DateTime
   // Fenster in die Wanduhr des Termins übersetzen (mit Spielraum für Zeitzonen-Unterschiede und die Dauer)
   final von = vonWand.subtract(dauer + const Duration(days: 2));
   final bis = bisWand.add(const Duration(days: 2));
-  for (final m in _instanzen(regel, wandUhr(su, ort), von, bis)) {
+  for (final m in _instanzen('${t.rrule}|${t.tzid}', regel, wandUhr(su, ort), von, bis)) {
     final inst = instantAusWand(m, ort);
     aufnehmen(schluessel: zeitSchluessel(inst), startWand: wandUhr(inst, berlin), startUtc: inst, dauer: dauer, serie: true);
   }
