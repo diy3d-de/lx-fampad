@@ -1,12 +1,13 @@
 # /etc/ntfy/server.yml - eigener ntfy-Server für UnifiedPush (lx-fampad)
-# Bei Änderungen: sudo systemctl restart ntfy
+# Wird von deploy/einrichtung-ntfy.sh installiert (root:ntfy, 0640). Bei Änderungen: sudo systemctl restart ntfy
 base-url: "https://ntfy.familie.lx-labs.dev"
-# Nur lokal lauschen; Caddy leitet weiter und terminiert TLS
+# Nur lokal lauschen; Caddy leitet weiter und terminiert TLS. Derselbe Port steht in deploy/ntfy/ntfy.caddy.
 listen-http: "127.0.0.1:2586"
 behind-proxy: true
 
-# Zugriff: standardmäßig alles verboten. Anonymes Schreiben nur auf up*-Topics (UnifiedPush),
-# Lesen nur mit Benutzer (siehe deploy/README.md, Abschnitt ntfy).
+# Zugriff: standardmäßig alles verboten (auch anonym). Der Familien-Server bekommt ein Token nur mit Schreibrecht auf
+# 'fampad-*' (einrichtung-ntfy.sh). Anonymes Schreiben auf up*-Topics (UnifiedPush) und Lesen je Handy
+# stellst du bewusst selbst ein (deploy/README.md, Abschnitt ntfy).
 auth-file: "/var/lib/ntfy/user.db"
 auth-default-access: "deny-all"
 enable-login: true
@@ -17,10 +18,14 @@ enable-reservations: false
 cache-file: "/var/cache/ntfy/cache.db"
 cache-duration: "12h"
 
+# Anhänge AUS: kein attachment-cache-dir gesetzt (Meldungen enthalten nie Inhalte, keine Dateien auf dem Server)
+
 # Kein Firebase/Google, kein ntfy.sh-Upstream: Push läuft nur über den eigenen Server
 web-root: "disable"
 
 # Missbrauchsgrenzen
 visitor-request-limit-burst: 60
 visitor-request-limit-replenish: "5s"
+visitor-subscription-limit: 30
 message-size-limit: "4k"
+log-level: "warn"
