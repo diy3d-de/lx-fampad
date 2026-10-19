@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/push/push_state.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
@@ -19,6 +20,7 @@ import 'password_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
 import 'push_screen.dart';
+import 'verschluesselung_screen.dart';
 import 'passkeys_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -78,7 +80,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(ref.read(authProvider.notifier).neuLaden()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref.read(authProvider.notifier).neuLaden());
+      // Stand der Verschlüsselung für die Warnanzeige (Schlüsselwechsel) in der Zeile unten
+      unawaited(ref.read(e2eeProvider.notifier).laden());
+    });
   }
 
   void _oeffne(Widget seite) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => seite));
@@ -120,15 +126,51 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   }
 
   Future<void> _abmelden({required bool ueberall}) async {
-    final ja = await _bestaetigen(
-      ueberall ? 'Überall abmelden?' : 'Abmelden?',
-      ueberall
-          ? 'Alle deine Geräte werden abgemeldet, auch dieses. Lokale Daten auf diesem Gerät werden gelöscht.'
-          : 'Du wirst auf diesem Gerät abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.',
-      ueberall ? 'Überall abmelden' : 'Abmelden',
-    );
+    final titel = ueberall ? 'Überall abmelden?' : 'Abmelden?';
+    final text = ueberall
+        ? 'Alle deine Geräte werden abgemeldet, auch dieses. Lokale Daten auf diesem Gerät werden gelöscht.'
+        : 'Du wirst auf diesem Gerät abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.';
+    final knopf = ueberall ? 'Überall abmelden' : 'Abmelden';
+    // Der Verschlüsselungsschlüssel verschwindet beim Abmelden von diesem Gerät: Ohne Sicherung ist er danach (außer auf einem anderen verbundenen Gerät) weg.
+    final e2ee = ref.read(e2eeProvider);
+    final ja = e2ee.status == E2eeStatus.bereit ? await _abmeldenMitSchluessel(titel, text, knopf, gesichert: e2ee.hatSicherung) : await _bestaetigen(titel, text, knopf);
     if (!ja || !mounted) return;
     await _abmeldenAusfuehren(ueberall: ueberall);
+  }
+
+  /// Dialog mit Warnung zum Schlüssel; ohne Sicherung wird "Erst sichern" angeboten (öffnet die Verschlüsselung statt abzumelden).
+  Future<bool> _abmeldenMitSchluessel(String titel, String text, String knopf, {required bool gesichert}) async {
+    final antwort = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(titel),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(text),
+            const SizedBox(height: 12),
+            Text(
+              gesichert
+                  ? 'Dein Verschlüsselungsschlüssel wird von diesem Gerät gelöscht. Um dieses Gerät wieder zu verbinden, brauchst du deinen Wiederherstellungsschlüssel oder ein anderes verbundenes Gerät.'
+                  : 'Dein Schlüssel wird von diesem Gerät gelöscht und ist nicht gesichert: Danach lässt er sich nur über ein anderes verbundenes Gerät zurückholen, sonst bleibt nur, einen neuen Schlüssel zu erzeugen (alte verschlüsselte Inhalte sind dann nicht mehr lesbar).',
+              style: TextStyle(color: gesichert ? kTextMuted : kDanger, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop('abbrechen'), child: const Text('Abbrechen')),
+          if (!gesichert) TextButton(onPressed: () => Navigator.of(ctx).pop('sichern'), child: const Text('Erst sichern')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop('ja'), style: TextButton.styleFrom(foregroundColor: kDanger), child: Text(knopf)),
+        ],
+      ),
+    );
+    if (antwort == 'sichern' && mounted) {
+      _oeffne(const VerschluesselungScreen());
+      return false;
+    }
+    return antwort == 'ja';
   }
 
   Future<void> _abmeldenAusfuehren({required bool ueberall, bool nurLokal = false}) async {
@@ -239,6 +281,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           untertitel: me == null ? 'wird geladen …' : '${me.recoveryCodesRemaining} übrig · neue erzeugen',
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
+        VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
         EinstellungsZeile(
           icon: Icons.phone_android,
           titel: 'Angemeldete Geräte',

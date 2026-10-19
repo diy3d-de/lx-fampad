@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/api/api_error.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/crypto/crypto_fehler.dart';
 import '../../data/passkey_service.dart';
 import '../../ui/widgets.dart';
 
@@ -345,6 +346,7 @@ String fehlerText(Object e) {
   if (e is ApiException) return e.message;
   if (e is PasskeyException) return e.message;
   if (e is EingabeFehler) return e.message;
+  if (e is CryptoFehler) return e.meldung;
   return 'Das hat nicht geklappt. Bitte versuche es noch einmal.';
 }
 

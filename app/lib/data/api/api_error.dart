@@ -183,6 +183,10 @@ class ApiException implements Exception {
     'multiple_families': 'Dieses Konto gehört zu mehreren Familien. Das geht hier noch nicht.',
     'already_bootstrapped': 'Die Familie ist schon eingerichtet.',
     'not_found': 'Das wurde nicht gefunden.',
+    'keys_exist': 'Für dein Konto gibt es schon einen Schlüssel.',
+    'no_keys': 'Du hast die Verschlüsselung noch nicht eingerichtet.',
+    'transfer_conflict': 'Das hat gerade nicht geklappt. Bitte versuche es noch einmal.',
+    'key_version_mismatch': 'Der Schlüssel hat sich inzwischen geändert. Bitte öffne die Ansicht neu.',
     'payload_too_large': 'Die Anfrage ist zu groß.',
     'device_mismatch': 'Dieses Gerät passt nicht mehr zur Anmeldung. Bitte versuche es gleich noch einmal.',
     'invalid_endpoint':

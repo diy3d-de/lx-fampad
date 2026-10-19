@@ -362,9 +362,9 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 - Server in Deutschland (netcup), keine Tracker, keine eingebetteten Fremdinhalte, Schriften selbst gehostet.
 - **Verschlüsselung:** TLS 1.3 für alle Verbindungen; Dateien auf dem Server mit AES-256-GCM (Schlüssel pro
   Datei, verpackt mit einem Hauptschlüssel außerhalb des Datenverzeichnisses); Backups mit restic verschlüsselt.
-- **Ende-zu-Ende-Verschlüsselung** ist für Phase 1 bewusst **nicht** vorgesehen (für den Chat ist sie geplant; die Schnittstelle dafür ist vorbereitet, Abschnitt 6c; bis dahin ist der Inhalt für den Server-Betreiber lesbar, private Chats sind nur für Admins und Eltern unlesbar): Sie würde Suche,
-  Vorschaubilder, Wiederherstellung durch den Admin stark erschweren. Für den Tresor ist sie
-  in Phase 3 als Option zu prüfen.
+- **Ende-zu-Ende-Verschlüsselung (E2EE)** gibt es für den **Chat** (Abschnitt 9a; Phase 1 legt die Schlüsselverwaltung, die
+  Nachrichten folgen in Phase 2). Alle anderen Bereiche (Kalender, Listen, Aufgaben, Dateien) bleiben serverseitig lesbar: E2EE würde dort Suche,
+  Vorschaubilder und Wiederherstellung durch den Admin stark erschweren. Für den Tresor ist sie in Phase 3 als Option zu prüfen.
 - **Push-Nachrichten** enthalten keinen Inhalt („Neue Nachricht in Familie“), Details holt die App selbst.
 - **Standorte:** nur mit ausdrücklicher Zustimmung der Person selbst, mit gewählter Dauer, jederzeit
   beendbar; Positionen werden nach Ende der Freigabe sofort gelöscht, laufende höchstens 2 Stunden als Spur
@@ -377,6 +377,106 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
   Dateitypen begrenzt.
 - **Rechtliches:** eigene Datenschutzerklärung für lx-fampad (Kinderdaten, Standort, Web Push über den
   Browser-Dienst), Löschkonzept (Konto löschen, Familie löschen, Export aller Daten als ZIP).
+
+## 9a. Ende-zu-Ende-Verschlüsselung (E2EE)
+
+**Stand:** Phase 1 (Grundlage) ist gebaut: Schlüsselverwaltung in Server und App. Es gibt noch **keine** verschlüsselten Nachrichten; der Chat
+entsteht parallel und wird erst in Phase 2 (Epochen und Gruppenschlüssel, Nachrichten) an die Verschlüsselung angeschlossen und erst damit
+an die Familie freigegeben.
+
+### Entscheidungen
+
+- **Eigenes, schlankes Schema auf geprüften libsodium-Bausteinen. Kein eigener Ratchet, keine eigenen Primitive.** Paket `sodium` (siehe
+  `docs/VERSIONEN.md`; die Variante `sodium_libs` ist veraltet). Verwendet werden nur: XChaCha20-Poly1305-IETF (Verschlüsseln mit AAD), Ed25519
+  (Signaturen), X25519 mit Sealed Box (Schlüsselverteilung, Phase 2), BLAKE2b (Ableitung) und der Zufallsgenerator von libsodium.
+- **Personenschlüssel statt Geräteschlüssel:** Jede Person hat ein Schlüsselset (X25519 für Sealed Boxes, Ed25519 für Signaturen), das **alle ihre
+  Geräte teilen**. Der geheime Teil sind zwei 32-Byte-Seeds (64 Byte); alles Weitere wird daraus abgeleitet. Das vermeidet eine Verteilung
+  der Gruppenschlüssel an jedes einzelne Gerät.
+- **Der Server hält nie ein Geheimnis.** Er speichert je Person die öffentlichen Schlüssel samt Versionszähler `key_version` (`person_keys`),
+  einen undurchsichtigen Sicherungs-Blob (`key_backups`) und kurzlebige Übertragungs-Blobs (`key_transfers`).
+
+### Schlüssel auf dem Gerät
+
+- Android: `flutter_secure_storage` (Android Keystore). Web: Die Schlüsselbytes liegen mit AES-GCM verschlüsselt in IndexedDB; der Wrapper-Schlüssel ist ein
+  per WebCrypto erzeugter, **nicht exportierbarer** `CryptoKey` (ebenfalls in IndexedDB). **Ehrlich:** Das schützt vor dem Auslesen des Speichers
+  (Profilordner, Sicherung des Browserprofils), **nicht vor Schadcode in der Seite (XSS)**: der könnte den Wrapper-Schlüssel benutzen. Dagegen hilft nur die strenge
+  CSP (`deploy/Caddyfile`: `script-src 'self'`, keine Fremd-Skripte). `libsodium.js` (`web/sodium.js`, Sumo-Variante) wird selbst gehostet
+  (Prüfsumme in `app/web-assets.sha256`); sie enthält die WASM-Datei eingebettet und braucht deshalb `'wasm-unsafe-eval'` in der CSP, das dort
+  für CanvasKit und `sqlite3.wasm` ohnehin steht (keine CSP-Änderung nötig, im Browser geprüft: keine CSP-Verletzung).
+- **Abmelden** (ausdrücklich) und Personenwechsel entfernen den geheimen Schlüssel vom Gerät; die gemerkten öffentlichen Schlüssel (TOFU) bleiben.
+  Nach erneutem Anmelden wird das Gerät wieder verbunden (QR oder Wiederherstellungsschlüssel).
+
+### Wiederherstellungsschlüssel
+
+- 32 Byte Zufall, angezeigt als 14 Vierergruppen Base32 (A-Z, 2-7) mit 3 Byte Prüfsumme (SHA-256 mit Verwendungszweck: erkennt Tippfehler und Verwechslung mit
+  dem Übertragungscode). Er wird **einmal** bei der Einrichtung angezeigt (Bildschirmschutz/FLAG_SECURE, Zwischenablage nur auf Klick); das Weiterkommen
+  verlangt die Abfrage zweier zufälliger Gruppen.
+- Er verschlüsselt (XChaCha20-Poly1305, Schlüssel = BLAKE2b-256 über einen festen Zweck, geschlüsselt mit dem Wiederherstellungsschlüssel) ein Backup des
+  Personenschlüssels. AAD = `lx-fampad|key-backup|v1|user_id|key_version`. Der Server bekommt nur den Blob. Der Schlüssel ist 256 Bit stark, deshalb gibt es
+  keine Passphrase und kein Argon2id.
+- **Es gibt bewusst keinen Nachschlüssel für Admins.** Wer alle Geräte und den Wiederherstellungsschlüssel verliert, kann die bisherigen verschlüsselten Inhalte nicht
+  mehr lesen und erzeugt einen neuen Schlüssel (`PUT /me/keys`, Step-up): die anderen sehen dann die Warnung unten.
+
+### Neues Gerät verbinden
+
+- **Per QR/Code (Übertragung):** Das vorhandene Gerät erzeugt ein 32-Byte-Einmalgeheimnis S und leitet daraus eine **Suchkennung** (geht an den Server) und einen **Verpackungsschlüssel**
+  (bleibt auf den Geräten) ab. Der Personenschlüssel wird damit verschlüsselt und als Blob über den Server gereicht: **2 Minuten gültig, einmal einlösbar** (atomar, `DELETE ... RETURNING`),
+  nur durch dieselbe Person; höchstens eine offene je Person. S steht nur im QR (`LXK1:` + 56 Zeichen) bzw. im abtippbaren Code (14 Vierergruppen), nie auf dem Server.
+  Android scannt (`mobile_scanner`), im Web wird der Code getippt oder eingefügt (der Web-Scanner würde ein CDN laden).
+- **Mit Wiederherstellungsschlüssel:** Die Sicherung wird abgerufen (Step-up) und lokal entschlüsselt. Das Gerät prüft, dass der Schlüssel zu den öffentlichen Schlüsseln beim Server passt.
+
+### Hülle (versioniert, für Chat-Nachrichten in Phase 2)
+
+`v (1) | alg (1) | epoch (4, BE) | sender_key_version (4, BE) | nonce (24) | signatur (64) | chiffretext`, Base64url ohne Auffüllzeichen. `v = 1`, `alg = 1` (XChaCha20-Poly1305-IETF, Zufalls-Nonce).
+**AAD** = `conversation_id|message_id|sender_id|epoch|sender_key_version|v`. **Signatur** (Ed25519 des Absenders) = über `'lx-familyhub|msg|v1' | len(aad) (u32) | aad | kopf | chiffretext`
+(Domänentrennung und Längenrahmen, `app/lib/data/crypto/domaenen.dart`; kopf = v, alg, epoch, sender_key_version, nonce). Sie deckt also Kopf, Chiffretext und AAD ab (sonst könnte jedes Mitglied mit dem Gruppenschlüssel
+als eine andere Person schreiben). Beim Öffnen wird zuerst die Signatur geprüft, dann entschlüsselt. Der Empfänger liest `sender_key_version` aus der Hülle und prüft die Signatur gegen den
+Schlüssel **genau dieser Version** (gemerkter TOFU-Schlüssel oder Historie des Servers), auch nach einem Schlüsselwechsel des Absenders. Der Nonce-Wächter im Code ist kein Garant (nur im Prozess, nur diese
+Instanz): die Sicherheit beruht auf 192-Bit-Zufalls-Nonces.
+
+### Schlüsselhistorie
+
+Beim Schlüsselwechsel wandert der alte öffentliche Stand in `person_key_history` (nur anhängend: keine Änderungs- oder Löschroute, Zeilen verschwinden nur mit dem Konto; `user_id`, `key_version`, `enc_key`,
+`sign_key`, `valid_from`, `valid_until`). `GET /members` liefert weiter nur die aktuellen Schlüssel; `GET /members/:id/keys?version=N` liefert eine Version (aktuell oder früher), ohne `version` alle (nur Familienmitglieder,
+sonst 404). So bleiben Signaturen älterer Nachrichten prüfbar. **Vertrauensgrenze:** Der gemerkte (TOFU) Schlüssel zählt immer selbst; ältere Versionen kommen vom Server und sind nicht durch den TOFU-Speicher
+gedeckt (ein bösartiger Admin könnte eine alte Version fälschen: das betrifft nur Altnachrichten und ist durch Vergleichen des Sicherheitscodes damals nicht abgedeckt). Ehemalige Mitglieder liefern keine Historie mehr.
+Schlüsselwechsel und Übertragung prüfen die dem Client bekannte Version serverseitig (`expectedKeyVersion`, `keyVersion`, bei Abweichung 409), damit zwei Geräte sich nicht gegenseitig überschreiben.
+
+### Vertrauensmodell
+
+- **Geschützt:** Datenleck auf dem Server (Datenbank, Dateisystem), der Hoster und gestohlene Backups: sie enthalten nur Chiffretext, öffentliche Schlüssel und Blobs, die ohne
+  Wiederherstellungsschlüssel bzw. Einmalgeheimnis wertlos sind.
+- **Nicht geschützt:** Metadaten (wer schreibt wann in welcher Konversation, Größen, Zeitpunkte, Mitgliederliste). Ein **bösartiger Admin des Servers** (oder wer den Server übernimmt) kann
+  einer Person einen falschen öffentlichen Schlüssel unterschieben, **solange niemand den Sicherheitscode vergleicht**. Schadcode im Browser (XSS) und ein kompromittiertes Gerät
+  (Schlüssel liegt dort) liegen außerhalb des Schutzes.
+- **Vertrauen beim ersten Sehen (TOFU):** Jedes Gerät merkt sich den ersten öffentlichen Schlüssel jeder Person. Ändert er sich oder verschwindet er, zeigt die App eine
+  deutliche Warnung (Profil > Verschlüsselung, Hinweis in der Profilzeile); der neue Schlüssel gilt erst nach „Neuen Schlüssel akzeptieren“ (mit Bestätigungsdialog).
+- **Sicherheitscode:** SHA-256 über alle öffentlichen Schlüssel (sortiert nach Personen-ID), angezeigt als 30 Ziffern in 6 Gruppen, dazu je Person 20 Ziffern. Zum freiwilligen
+  Vergleichen außerhalb der App (vorlesen, Treffen). Er ändert sich bei jedem Schlüsselwechsel.
+
+### Server (Phase 1)
+
+Tabellen `person_keys`, `person_key_history`, `key_backups`, `key_transfers` (Migration 0009); Routen `GET/POST/PUT /me/keys`, `PUT/GET /me/key-backup`, `POST /me/key-transfer`, `POST /me/key-transfer/claim`,
+`GET /members/:id/keys`, Schlüssel in `GET /members` (Einzelheiten `docs/API.md`). Alles hinter der Sitzung, strenges Rate-Limit, Step-up für Sicherung (Ablegen und Abrufen) und Schlüsselwechsel,
+Audit-Ereignisse `key_created`, `key_rotated`, `backup_set`, `key_backup_read`, `transfer_claimed` (nie Schlüsselmaterial im Log).
+
+### Phase 2: Protokoll (Bausteine gebaut, noch ohne Chat-Integration)
+
+Die reinen, getesteten Funktionen stehen in `app/lib/data/crypto/epochen.dart`; der Chat setzt später nur noch auf sie auf.
+
+- **Epochenschlüssel-Wrap:** Der Verteiler (ein Mitglied der Konversation) erzeugt je Epoche einen 32-Byte-Epochenschlüssel und verpackt ihn für **jeden** Empfänger als Sealed Box an dessen aktuellen X25519-Schlüssel. Er signiert (Ed25519,
+  Domäne `'lx-familyhub|wrap|v1'`, alle Felder längengerahmt) `conversation_id, epoch, recipient_id, recipient_key_version, distributor_id, distributor_key_version, SHA-256(Sealed Box)`. Die Signatur deckt den Hash der Sealed Box ab:
+  Der Server kann weder eine fremde Box unterschieben noch einen Wrap in eine andere Konversation, Epoche oder an eine andere Person umlenken.
+- **Signierte Mitgliederliste der Epoche:** sortierte `(user_id, key_version)`-Paare, vom Verteiler signiert (Domäne `'lx-familyhub|members|v1'`, kanonisch: sortiert, ohne Doppelte). Der Empfänger übernimmt einen Epochenschlüssel **nur**, wenn
+  Wrap und Liste vom selben Verteiler stammen, dessen Signatur gegen den **im TOFU-Speicher gemerkten** Schlüssel stimmt (nie ein Schlüssel vom Server; unbekannte Verteiler werden abgelehnt), beide zur erwarteten Konversation und Epoche passen und die Liste ihn
+  selbst mit seiner Schlüsselversion enthält (optional muss sie exakt der eigenen Sicht der Mitglieder entsprechen). Das hindert den Server daran, Mitglieder unbemerkt einzuschleusen.
+- **Rotation bei Mitgliederwechsel:** Wird ein Mitglied entfernt (oder wechselt jemand seinen Schlüssel), erzeugt ein verbleibendes Mitglied eine **neue Epoche** mit neuem Schlüssel, neuer Liste und Wraps nur für die verbleibenden Mitglieder; ausgeschiedene
+  Mitglieder lesen neue Nachrichten nicht mehr. Hinzufügen eines Mitglieds: neue Epoche (ohne Historie) oder, wenn die Gruppe es erlaubt, zusätzlich die älteren Epochenschlüssel.
+- **Historie für neue Mitglieder:** Nur wenn es für die Konversation eingestellt ist, verpackt der Verteiler zusätzlich die **älteren** Epochenschlüssel für das neue Mitglied (je Epoche ein eigener signierter Wrap, derselbe Aufbau). Die ältere Epoche hat das
+  neue Mitglied nicht in ihrer Liste: Es akzeptiert sie nur, wenn die aktuelle signierte Liste es enthält und der Verteiler in der Liste der älteren Epoche stand. Ohne diese Einstellung bleibt alte Historie für Neue unlesbar.
+- **Pflicht für die UI (Phase 2):** Beim Hinzufügen zu einer Konversation müssen die Mitglieder (Namen, Schlüsselversion) angezeigt und zum **Vergleichen des Sicherheitscodes** aufgefordert werden (Profil > Verschlüsselung); Schlüsselwechsel
+  anderer Mitglieder warnen wie in Phase 1 (TOFU) und gelten erst nach Bestätigung. Die UI folgt in Phase 2 zusammen mit dem Chat.
+- Offen in Phase 2: Speicherung und Abruf der Wraps/Listen auf dem Server (undurchsichtige Blobs je Konversation und Epoche), Chat-Nachrichten in der Hülle, Freigabe des Chats an die Familie.
 
 ## 10. Betrieb auf dem VPS
 
@@ -412,6 +512,8 @@ Design-Tokens aus `lx-labs/src/styles/global.css` werden als `ThemeData`/`ColorS
 | **1 – Kern (MVP)** | Konten, Einladungen, Passkey + Passwort/2FA, Sync-Protokoll, Kalender, Chat, Listen, Aufgaben, Dateien, Startseite, Push, Android-OTA | Familie nutzt die App im Alltag |
 | **2 – Ausbau** | Tresor, Pinnwand, Fotos & Alben, Essensplan & Rezepte, Kontakte, Suche, Standort & Karte | Funktionsumfang nahe FamilyWall |
 | **3 – Extras** | Orte, Budget, ICS/CalDAV-Import, Daten-Export, E2EE-Option für den Tresor | voller Umfang |
+
+Zwischenstand E2EE: **Phase 1 der Ende-zu-Ende-Verschlüsselung** (Schlüsselverwaltung, Abschnitt 9a) ist gebaut; Phase 2 (Gruppenschlüssel, Chat-Nachrichten) folgt nach dem Chat-Kern.
 
 Phase 1 läuft in Teilen: **1a** Konten und Anmeldung (Server), **1b** Anmeldung in der App, **1c-1** Sync-Kern und Listen (Server und App, Abschnitt 6a), **1c-2a** Kalender-Kern (Termine, Teilnehmer, Ausnahmen, Wiederholungen, Agenda/Monat/Woche; Abschnitt 6b) auf demselben Kern, **1c-3a** Chat-Kern (Familienchat, Direktchats, Gruppen, Lesestand; Abschnitt 6c), danach Push (1c-3b), Aufgaben, Dateien (Anhänge 1c-4) (Erinnerungen und Geburtstage des Kalenders folgen mit Push bzw. Import).
 

@@ -30,6 +30,7 @@ dependencies:
   passkeys: 2.23.1
   mobile_scanner: 7.4.2
   qr_flutter: 4.1.0
+  sodium: 4.1.1+2
   web: 1.1.1
   # WebSocket-Client für den Revisionshinweis des Sync (Reconnect mit Backoff baut data/sync/sync_socket.dart selbst)
   web_socket_channel: 3.0.3
@@ -56,6 +57,8 @@ dev_dependencies:
 # Transitive Pakete von file_picker auf Stände festhalten, die mindestens 14 Tage alt sind (Regel für neue Pakete)
 # (Versionen und Veröffentlichungsdaten: docs/VERSIONEN.md). Wiedervorlage 19.11.2026: dann sind die neueren Stände 14 Tage alt, Overrides prüfen und entfernen.
 dependency_overrides:
+  # archive (nur vom Werkzeug sodium:update_web genutzt): 4.5.2 ist zu jung (Regel: mind. 14 Tage), sodium verlangt ^4.3.0
+  archive: 4.3.0
   android_file_picker: 2.0.0
   file_picker_darwin: 2.1.2
   file_picker_linux: 2.0.1
