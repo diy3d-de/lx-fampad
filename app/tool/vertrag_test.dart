@@ -347,6 +347,31 @@ void main() {
     await nachher.store.writeTokens((await spaeter2.store.readTokens())!);
     await expectLater(nachher.api.ich(), throwsA(isA<ApiException>().having((e) => e.kind, 'kind', ApiErrorKind.nichtAngemeldet)));
 
+    schritt('Toleranzfenster: dieselbe Geräte-ID legt das gerade rotierte Token noch einmal vor (Antwort ging verloren) -> neues Paar, Familie bleibt');
+    final tol = Gegenstelle(name: 'Toleranz');
+    final tolLogin = await tol.api.passwortAnmelden(email: 'anna@beispiel.de', passwort: 'Contract-Passwort-12', wiederherstellungscode: neueCodes[4]);
+    await tol.client.sitzungUebernehmen(tolLogin.session);
+    final t0 = (await tol.store.readTokens())!;
+    Future<SessionDto> rotiere() async => SessionDto.fromJson(
+      (await tol.client.post('/auth/refresh', {'refreshToken': t0.refreshToken, 'deviceId': t0.deviceId}, false))['session'],
+    );
+    final erste = await rotiere();
+    final zweite = await rotiere(); // gleich noch einmal, innerhalb von 30 Sekunden
+    expect(zweite.refreshToken, isNot(erste.refreshToken));
+    StoredTokens aus(SessionDto s) => StoredTokens(
+      accessToken: s.accessToken!,
+      accessExpiresAt: s.accessExpiresAt!,
+      refreshToken: s.refreshToken!,
+      refreshExpiresAt: s.refreshExpiresAt!,
+      deviceId: s.deviceId,
+    );
+    final lebt = Gegenstelle(name: 'Toleranz-neu');
+    await lebt.store.writeTokens(aus(zweite));
+    expect((await lebt.api.ich()).user.email, 'anna@beispiel.de');
+    final tot = Gegenstelle(name: 'Toleranz-alt');
+    await tot.store.writeTokens(aus(erste));
+    await expectLater(tot.api.ich(), throwsA(isA<ApiException>().having((e) => e.kind, 'kind', ApiErrorKind.nichtAngemeldet)));
+
     // ---------------------------------------------------------------- Sperre / Fehlermeldungen
     schritt('Falsche Anmeldung: invalid_credentials, nach mehreren Fehlversuchen too_many_attempts mit Retry-After');
     final falsch = Gegenstelle();

@@ -5,7 +5,7 @@
       "namespace": "android_app",
       "package_name": "dev.lx_labs.fampad",
       "sha256_cert_fingerprints": [
-        "AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99"
+        "RELEASE-SHA256-FINGERPRINT-EINTRAGEN (Format AA:BB:...; nur der Release-Schluessel, nie der Debug-Schluessel, siehe deploy/README.md Abschnitt 9)"
       ]
     }
   }
