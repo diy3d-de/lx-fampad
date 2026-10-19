@@ -63,6 +63,7 @@ Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Frei
 
 ## F. Danach (Betrieb)
 
-- [ ] Backup-Job (`pg_dump` + Dateien, restic) einrichten und eine Wiederherstellung testen.
+- [ ] Backup einrichten (`deploy/backup/einrichtung-backup.sh`, `docs/BACKUP.md`: age-Schlüssel, NAS-Schlüssel, 3 Befehle) und eine Wiederherstellung testen (`docs/WIEDERHERSTELLUNG.md`, `deploy/backup/wiederherstellung-test.sh`).
+- [ ] Swapdatei einrichten (`sudo bash deploy/einrichtung-swap.sh --dry-run`, dann ohne Option): 2 GB RAM, derzeit kein Swap.
 - [ ] journald-Begrenzung (7 Tage) ist bereits aus Schritt 5 aktiv: `journalctl --disk-usage` und `cat /etc/systemd/journald.conf.d/lx-retention.conf` kontrollieren.
 - [ ] Datenschutzerklärung veröffentlichen, bevor andere Personen das System nutzen.

@@ -1,0 +1,29 @@
+[Unit]
+Description=lx-fampad: verschlüsselte Sicherung (Datenbank + Konfiguration)
+After=postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/lx-fampad-backup
+# Der Lauf braucht root (Lesen aller Dateien, Wechsel zu postgres per runuser). Der Rest ist eingeschränkt.
+ProtectSystem=strict
+# /var/lib/ntfy: sqlite3 .backup braucht für SQLite-WAL-Dateien Schreibzugriff (-shm), es wird nichts verändert; "-" = ignorieren, wenn ntfy fehlt
+ReadWritePaths=/var/backups/lx-fampad /dev/shm -/var/lib/ntfy
+RuntimeDirectory=lx-fampad-backup
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+SystemCallArchitectures=native
+MemoryMax=512M
+Nice=10
+IOSchedulingClass=idle
+TimeoutStartSec=2h

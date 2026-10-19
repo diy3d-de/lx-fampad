@@ -27,6 +27,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | eslint / @eslint/js / typescript-eslint | 10.12.0 / 10.0.1 / 8.71.0 | |
 | Vitest | 5.0.3 | |
 | ntfy | 2.28.0 (2.31.1 ab 31.10.) | eigene Subdomain, `deny-all`, UnifiedPush-Topics `up*` |
+| age | 1.2.1 (Debian 13) | Backups: Verschlüsselung der Sicherungen (`age`/`age-keygen`, Debian-Paket), nur Server-Skripte; kein npm-Paket. `rsync` (3.5.0, Debian 13: enthält `rrsync`) und `sqlite3` aus Debian für Pull und ntfy-Sicherung |
 
 ## App
 
