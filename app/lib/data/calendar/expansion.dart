@@ -153,6 +153,7 @@ const _kCacheMax = 256;
 /// [kMaxVorkommen] und innerhalb des Zeitbudgets. Tägliche und wöchentliche Regeln ohne COUNT starten nahe am Fenster (um ganze Perioden
 /// verschoben, Wochentag und Wochenraster bleiben gleich), statt jede Instanz seit dem Beginn zu rechnen. Ergebnisse werden zwischengespeichert.
 List<DateTime> _instanzen(String text, RecurrenceRule regel, DateTime start, DateTime nach, DateTime vor) {
+  if (vor.isBefore(start)) return const []; // Serie beginnt erst nach dem Fenster (das Paket verlangt before >= start)
   final key = '$text|$start|$nach|$vor';
   final bekannt = _cache[key];
   if (bekannt != null) return bekannt;
