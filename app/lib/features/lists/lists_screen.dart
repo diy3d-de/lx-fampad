@@ -10,7 +10,8 @@ import '../../data/lists/list_rights.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
-import '../../widgets/sync_indicator.dart';
+import '../../widgets/sync_hinweise.dart';
+import '../../widgets/kopfzeile.dart';
 import 'list_dialogs.dart';
 
 /// Listen (Einkauf, Packliste, eigene Listen): Liste wählen, Einträge anlegen, abhaken, bearbeiten, zuweisen, löschen.
@@ -101,7 +102,6 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
   @override
   Widget build(BuildContext context) {
     final listenWert = ref.watch(listenProvider);
-    final sync = ref.watch(syncProvider);
     final rechte = _rechte();
     ref.watch(authProvider.select((a) => a.user?.id)); // bei Personenwechsel neu bauen
     final gewaehlt = ref.watch(gewaehlteListeProvider);
@@ -114,16 +114,9 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          ScreenHeader(
-            title: 'Listen',
-            actions: [
-              StatusPill(sync.live ? '● live' : '● offline', color: sync.live ? kTerminal : kTextMuted),
-              const SyncIndicator(),
-            ],
-          ),
+          const TabKopfzeile(title: 'Listen'),
           const SizedBox(height: 12),
-          _StatusLeiste(sync),
-          for (final h in sync.hinweise) _HinweisBox(h, onClose: () => ref.read(syncProvider.notifier).hinweisSchliessen(h.id)),
+          const SyncHinweise(),
           ...switch (listenWert) {
             AsyncError() when !listenWert.hasValue => const [
               EmptyState(icon: Icons.error_outline, title: 'Listen nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.'),
@@ -170,80 +163,6 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
 }
 
 // ------------------------------------------------------------------------------------------------ Teile
-
-class _StatusLeiste extends StatelessWidget {
-  final SyncState sync;
-  const _StatusLeiste(this.sync);
-
-  @override
-  Widget build(BuildContext context) {
-    final offen = sync.offeneAenderungen;
-    final String? text = switch (sync.status) {
-      SyncStatus.offline => offen > 0 ? 'Offline – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} später abgeglichen.' : 'Offline – Änderungen werden später abgeglichen.',
-      SyncStatus.fehler => 'Der Abgleich hat nicht geklappt. Deine Änderungen bleiben gespeichert und werden erneut gesendet.',
-      SyncStatus.updateNoetig => 'Bitte aktualisiere die App, damit der Abgleich wieder funktioniert.',
-      _ => null,
-    };
-    if (text == null) return const SizedBox.shrink();
-    final farbe = sync.status == SyncStatus.offline ? kTextMuted : (sync.status == SyncStatus.fehler ? kDanger : kWarn);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Semantics(
-        liveRegion: true,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: farbe.withValues(alpha: 0.08),
-            border: Border.all(color: farbe.withValues(alpha: 0.4)),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              Icon(sync.status == SyncStatus.offline ? Icons.cloud_off : Icons.error_outline, size: 16, color: farbe),
-              const SizedBox(width: 10),
-              Expanded(child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: farbe))),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _HinweisBox extends StatelessWidget {
-  final SyncMeldung hinweis;
-  final VoidCallback onClose;
-  const _HinweisBox(this.hinweis, {required this.onClose});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 12),
-    child: Semantics(
-      liveRegion: true,
-      container: true,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 48),
-        padding: const EdgeInsets.only(left: 14),
-        decoration: BoxDecoration(
-          color: kWarn.withValues(alpha: 0.08),
-          border: Border.all(color: kWarn.withValues(alpha: 0.4)),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.info_outline, size: 16, color: kWarn),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Padding(padding: const EdgeInsets.symmetric(vertical: 10), child: Text(hinweis.text, style: const TextStyle(fontSize: 13))),
-            ),
-            IconButton(tooltip: 'Hinweis schließen', icon: const Icon(Icons.close, size: 18), onPressed: onClose),
-          ],
-        ),
-      ),
-    ),
-  );
-}
 
 /// Reiter der Listen (waagerecht scrollbar) und der Knopf "Neue Liste".
 class _Reiter extends StatelessWidget {

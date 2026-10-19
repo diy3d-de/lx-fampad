@@ -210,6 +210,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   }
   const decision = authorize(def.rules, 'create', env.actor, def.factsForCreate(env.actor, values, parentFacts), Object.keys(supplied), values);
   if (decision !== 'ok') return rejected(decision);
+  if (def.check && !def.check(values)) return rejected('invalid');
 
   for (const [name, f] of Object.entries(def.fields)) {
     const v = values[name];
@@ -223,6 +224,15 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     if ((n?.n ?? 0) >= def.maxLive.max) return rejected('limit_reached');
   }
 
+  if (def.ownerLimit && def.ownerLimit.roles.includes(env.actor.role)) {
+    const c = syncColumns(def);
+    const [n] = await env.tx
+      .select({ n: count() })
+      .from(def.table)
+      .where(and(eq(c.familyId, env.familyId), isNull(c.deletedAt), eq(columnOf(def, def.ownerLimit.field), env.actor.userId)));
+    if ((n?.n ?? 0) >= def.ownerLimit.max) return rejected('limit_reached');
+  }
+
   const rev = env.revs.rev + 1; // erst nach erfolgreichem Einfügen vergeben (sonst entstünde eine Lücke)
   const fieldRevs: Record<string, number> = {};
   for (const [name, f] of Object.entries(def.fields)) if (f.access !== 'server') fieldRevs[name] = rev;
@@ -231,9 +241,9 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const inserted = await env.tx
     .insert(def.table)
     .values(row as never)
-    .onConflictDoNothing({ target: c.id })
+    .onConflictDoNothing() // jede Eindeutigkeit (ID, aktive Teilnehmer/Ausnahmen) ergibt eine Ablehnung, nie einen Datenbankfehler
     .returning({ id: c.id });
-  // die ID gehört einem fremden Datensatz (auch einer anderen Familie): nicht verraten, dass es ihn gibt
+  // die ID gehört einem fremden Datensatz (auch einer anderen Familie) oder der Datensatz gibt es schon: nicht verraten, was davon
   if (inserted.length === 0) return rejected('not_found');
   env.revs.next();
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: true, changes: wireRow(def, row) });
@@ -284,6 +294,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
   const conflicts = Object.keys(lost).length > 0 ? [{ fields: lost, serverRev: Number(row.rev) }] : [];
   if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
 
+  if (def.check && !def.check({ ...row, ...changed })) return rejected('invalid');
   for (const [name, value] of Object.entries(changed)) {
     if (def.fields[name]?.memberRef && typeof value === 'string' && !(await isActiveMember(env.tx, env.familyId, value))) {
       return rejected('invalid_reference');

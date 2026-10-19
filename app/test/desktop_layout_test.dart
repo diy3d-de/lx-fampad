@@ -34,7 +34,7 @@ void main() {
       for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben', '// familie & orte']) {
         expect(find.text(l.toUpperCase()), findsOneWidget, reason: l);
       }
-      expect(find.textContaining('kommt in Phase 1c-2'), findsOneWidget);
+      expect(find.text('Heute und morgen steht nichts an.'), findsOneWidget); // Termine-Karte ohne Termine
       expect(find.textContaining('sync: '), findsOneWidget);
       expect(find.textContaining('geräte: '), findsOneWidget);
       expect(find.textContaining('verbindung: '), findsOneWidget);

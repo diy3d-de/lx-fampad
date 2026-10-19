@@ -231,7 +231,7 @@ class SyncStore {
       final def = entitaeten[c.entity];
       if (def == null || await def.rev(db, c.id) == null) continue;
       await def.schreiben(db, c.id, c.fields, ueberspringen: (offen.werte['${c.entity}/${c.id}'] ?? const {}).keys.toSet());
-      final text = c.fields.keys.any((f) => f == 'name' || f == 'text');
+      final text = c.fields.keys.any((f) => f == 'name' || f == 'text' || f == 'titel');
       if (text) {
         final n = await def.anzeigename(db, c.id);
         bericht.hinweise.add(SyncHinweis('${n ?? 'Ein Eintrag'} wurde gleichzeitig auf einem anderen Gerät geändert. Dessen Stand gilt.'));
@@ -284,12 +284,16 @@ class SyncStore {
     final name = await def.anzeigename(db, z.entityId) ?? 'Ein Eintrag';
     final neu = z.baseRev == 0 && z.op == 'upsert';
     switch (code) {
+      case 'not_found' when neu && def.eindeutigBeiAnlage:
+        // gibt es für dieses Ziel schon (z. B. dieselbe Person oder dasselbe Vorkommen von einem anderen Gerät): die lokale Kopie weicht der des Servers
+        await _entferneBaum(z.entity, z.entityId);
+        bericht.neuLaden = true;
       case 'deleted' || 'not_found' || 'parent_deleted':
         if (z.op == 'delete') return; // schon weg: nichts zu tun
         await _entferneBaum(z.entity, z.entityId);
         bericht.hinweise.add(
           SyncHinweis(
-            code == 'parent_deleted' ? '$name konnte nicht gespeichert werden: Die Liste wurde gelöscht.' : '$name wurde auf einem anderen Gerät gelöscht. Deine Änderung wurde nicht übernommen.',
+            code == 'parent_deleted' ? '$name konnte nicht gespeichert werden: ${def.elternGeloescht}' : '$name wurde auf einem anderen Gerät gelöscht. Deine Änderung wurde nicht übernommen.',
           ),
         );
       case 'forbidden':
@@ -299,7 +303,7 @@ class SyncStore {
         bericht.hinweise.add(SyncHinweis('Die zugewiesene Person gehört nicht mehr zur Familie. $name wurde nicht geändert.'));
         await _zuruecknehmen(z, neu, bericht);
       case 'limit_reached':
-        bericht.hinweise.add(SyncHinweis('Die Liste ist voll: $name konnte nicht gespeichert werden.'));
+        bericht.hinweise.add(SyncHinweis('${def.grenzeErreicht}: $name konnte nicht gespeichert werden.'));
         await _zuruecknehmen(z, neu, bericht);
       case 'duplicate_op':
         break; // Wiederholung eines fremden Aufrufs: nichts zu tun

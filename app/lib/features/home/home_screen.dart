@@ -1,16 +1,22 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/app_database.dart';
+import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/calendar/termin_repository.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_anzeige.dart';
-import '../../widgets/sync_indicator.dart';
-import '../profile/profile_screen.dart';
+import '../calendar/calendar_anzeige.dart';
+import '../calendar/calendar_state.dart';
+import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
 import '../update/update_banner.dart';
 
@@ -37,24 +43,12 @@ class HomeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(syncProvider);
     final name = ref.watch(authProvider.select((s) => s.user?.displayName));
-    final heute = DateFormat('E, d. MMM', 'de_DE').format(DateTime.now()).toLowerCase();
     final verbunden = sync.status == SyncStatus.synchron;
     final (statusText, farbe) = syncAnzeige(sync);
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       children: [
-        ScreenHeader(
-          label: '// $heute',
-          title: begruessung(name),
-          actions: [
-            const SyncIndicator(),
-            IconButton(
-              tooltip: 'Profil und Sicherheit',
-              icon: const Icon(Icons.account_circle_outlined),
-              onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
-            ),
-          ],
-        ),
+        TabKopfzeile(title: begruessung(name)),
         const SizedBox(height: 20),
         const UpdateAnzeige(),
         Container(
@@ -94,7 +88,7 @@ class HomeScreen extends ConsumerWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           children: const [
-            _Schnellzugriff('Termin', Icons.calendar_today_outlined),
+            _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
             _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
             _Schnellzugriff('Foto', Icons.image_outlined),
             _Schnellzugriff('Datei', Icons.upload_outlined),
@@ -103,16 +97,7 @@ class HomeScreen extends ConsumerWidget {
         const SizedBox(height: 20),
         const _EinkaufKarte(),
         const SizedBox(height: 20),
-        const LxCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              MonoLabel('// als nächstes'),
-              SizedBox(height: 12),
-              Text('Keine anstehenden Termine', style: TextStyle(color: kTextMuted)),
-            ],
-          ),
-        ),
+        const _NaechsteKarte(),
       ],
     );
   }
@@ -122,12 +107,26 @@ class _Schnellzugriff extends ConsumerWidget {
   final String label;
   final IconData icon;
   final bool zumListenTab;
-  const _Schnellzugriff(this.label, this.icon, {this.zumListenTab = false});
+  final bool zumTerminEditor;
+  const _Schnellzugriff(this.label, this.icon, {this.zumListenTab = false, this.zumTerminEditor = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => LxCard(
         padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-        onTap: () => zumListenTab ? ref.read(shellTabProvider.notifier).waehlen(kListenTab) : zeigePhase1Hinweis(context),
+        onTap: () {
+          if (zumListenTab) {
+            ref.read(shellTabProvider.notifier).waehlen(kListenTab);
+          } else if (zumTerminEditor) {
+            final u = ref.read(authProvider).user;
+            if (TerminRechte(u?.role ?? Role.guest, u?.id).darfAnlegen) {
+              unawaited(terminEditorOeffnen(context));
+            } else {
+              ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
+            }
+          } else {
+            zeigePhase1Hinweis(context);
+          }
+        },
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -194,6 +193,41 @@ class _EinkaufKarte extends ConsumerWidget {
                 ),
               if (offen.length > 4) Text('+ ${offen.length - 4} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Karte "Als Nächstes": die nächsten Termine aus der lokalen Datenbank (auch offline), laufende zuerst. Tippen öffnet den Kalender.
+class _NaechsteKarte extends ConsumerWidget {
+  const _NaechsteKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final daten = ref.watch(kalenderDatenProvider);
+    final mitglieder = mitgliederFuer(ref, daten);
+    final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+    final heute = heuteTag(jetzt);
+    final kommende = anstehende(daten, jetzt);
+    final zeigen = kommende.take(4).toList();
+    return Semantics(
+      button: true,
+      label: zeigen.isEmpty ? 'Als Nächstes: keine anstehenden Termine. Kalender öffnen' : 'Als Nächstes: ${zeigen.length} Termine. Kalender öffnen',
+      excludeSemantics: true,
+      child: LxCard(
+        onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const MonoLabel('// als nächstes'),
+            const SizedBox(height: 12),
+            if (zeigen.isEmpty)
+              const Text('Keine anstehenden Termine', style: TextStyle(color: kTextMuted))
+            else
+              for (final v in zeigen) AnstehenderTermin(v: v, mitglieder: mitglieder, heute: heute),
+            if (kommende.length > zeigen.length) Text('+ ${kommende.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
           ],
         ),
       ),

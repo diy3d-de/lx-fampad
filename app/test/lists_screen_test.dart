@@ -230,7 +230,7 @@ void main() {
     await tippeText(tester, 'Ben');
     await warte(tester, 8);
     expect((await eintraege(env)).single.assigneeId, fixIdKind);
-    final avatar = tester.widget<PersonAvatar>(find.byType(PersonAvatar));
+    final avatar = tester.widget<PersonAvatar>(find.byType(PersonAvatar).last); // der erste ist das Profilbild der Kopfzeile
     expect(avatar.name, 'Ben');
     expect(avatar.colorIndex, 3);
     expect(find.byTooltip('Zuständig: Ben. Ändern'), findsOneWidget);
@@ -239,7 +239,8 @@ void main() {
     await tippeText(tester, 'Niemand');
     await warte(tester, 8);
     expect((await eintraege(env)).single.assigneeId, isNull);
-    expect(find.byType(PersonAvatar), findsNothing);
+    expect(find.byType(PersonAvatar), findsWidgets, reason: 'nur noch die Profilbilder der Kopfzeilen');
+    expect(find.byTooltip('Zuweisen'), findsOneWidget);
   });
 
   testWidgets('Liste umbenennen, Freigabe ändern (Admin), löschen mit Rückfrage', (tester) async {
@@ -333,13 +334,13 @@ void main() {
     expect(find.text('Alle (auch Gäste)'), findsOneWidget);
   });
 
-  testWidgets('offline: Hinweisleiste, Pille "offline", Änderungen bleiben und werden gezählt; danach wieder synchron', (tester) async {
+  testWidgets('offline: Hinweisleiste, Sync-Symbol, Änderungen bleiben und werden gezählt; danach wieder synchron', (tester) async {
     final env = await start(tester, vorher: (e) {
       e.sync.offline = true;
       e.sockets.scheitern = 99; // ohne Netz gibt es auch keinen WebSocket
     });
     expect(find.textContaining('Offline – Änderungen werden später abgeglichen'), findsOneWidget);
-    expect(find.text('● offline'), findsOneWidget);
+    expect(find.byTooltip('Offline'), findsWidgets);
     await listeAnlegen(tester, 'Einkauf');
     await eintragSchreiben(tester, 'Milch');
     expect(find.byTooltip('Offline, 2 Änderungen offen'), findsWidgets);

@@ -374,62 +374,125 @@ export const changeLog = pgTable(
   ],
 );
 
-export const events = pgTable(
-  'events',
+/**
+ * Termine (Phase 1c-2a). Familienzeitzone ist fest Europe/Berlin; jeder Zeittermin trägt aber seine IANA-Zeitzone (`tzid`), in der die
+ * Wiederholung gerechnet wird (Wanduhrzeit der Zeitzone, Sommerzeit bleibt erhalten).
+ *  - Zeittermine: `start_utc`/`end_utc` (Zeitpunkte) + `tzid`.
+ *  - Ganztägige Termine: `start_date`/`end_date` (Kalendertage ohne Uhrzeit und Zeitzone, Ende exklusiv wie in iCalendar).
+ *  - `rrule`: RFC-5545-Text ohne Präfix (UNTIL bei Zeitterminen in UTC, bei ganztägigen als Datum).
+ * Die Felder der jeweils anderen Art dürfen als Rest stehen bleiben (beim Umschalten); maßgeblich ist `ganztaegig`.
+ */
+export const termine = pgTable(
+  'termine',
   {
     id: id(),
     familyId: familyRef(),
-    title: text('title').notNull(),
-    description: text('description'),
-    location: text('location'),
-    /** Zeitgebundene Termine: Zeitpunkt (UTC). Bei ganztägigen Terminen null, dann gelten starts_on/ends_on. */
-    startsAt: timestamp('starts_at', { withTimezone: true }),
-    endsAt: timestamp('ends_at', { withTimezone: true }),
-    /** Ganztägige Termine sind Kalendertage ohne Uhrzeit und Zeitzone (ends_on einschließlich). */
-    startsOn: date('starts_on', { mode: 'string' }),
-    endsOn: date('ends_on', { mode: 'string' }),
-    allDay: boolean('all_day').notNull().default(false),
-    /** Wiederholung als RRULE-Text (RFC 5545). */
+    titel: text('titel').notNull(),
+    ort: text('ort').notNull().default(''),
+    beschreibung: text('beschreibung').notNull().default(''),
+    ganztaegig: boolean('ganztaegig').notNull().default(false),
+    startUtc: timestamp('start_utc', { withTimezone: true }),
+    endUtc: timestamp('end_utc', { withTimezone: true }),
+    tzid: text('tzid'),
+    startDate: date('start_date', { mode: 'string' }),
+    endDate: date('end_date', { mode: 'string' }),
     rrule: text('rrule'),
-    remindMinutes: integer('remind_minutes'),
+    /** Erinnerung in Minuten vor dem Beginn (null: keine); wird mit dem Termin synchronisiert. */
+    erinnerungMin: integer('erinnerung_min'),
+    /** UID aus iCalendar für den späteren Import (Duplikaterkennung). */
+    icalUid: text('ical_uid'),
+    /** Wer den Termin sehen darf (wie bei Listen); Standard: die Familie ohne Gäste. */
+    audience: listAudience('audience').notNull().default('family'),
+    /** Wer den Termin angelegt hat (setzt der Server, bestimmt die Personenfarbe; Kinder ändern nur eigene Termine). */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
-    index('events_family_start_idx').on(t.familyId, t.startsAt),
-    index('events_family_start_on_idx').on(t.familyId, t.startsOn),
-    index('events_family_rev_idx').on(t.familyId, t.rev),
-    unique('events_family_id_uq').on(t.familyId, t.id),
+    index('termine_family_start_idx').on(t.familyId, t.startUtc),
+    index('termine_family_rev_idx').on(t.familyId, t.rev),
+    index('termine_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('termine_owner_idx')
+      .on(t.familyId, t.ownerId)
+      .where(sql`${t.ownerId} is not null`),
+    index('termine_ical_uid_idx')
+      .on(t.familyId, t.icalUid)
+      .where(sql`${t.icalUid} is not null`),
+    unique('termine_family_id_uq').on(t.familyId, t.id),
+    check('termine_titel_len_ck', sql`char_length(${t.titel}) <= 200`),
+    check('termine_ort_len_ck', sql`char_length(${t.ort}) <= 200`),
+    check('termine_beschreibung_len_ck', sql`char_length(${t.beschreibung}) <= 4000`),
+    check('termine_rrule_len_ck', sql`${t.rrule} is null or char_length(${t.rrule}) <= 300`),
+    check('termine_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
     check(
-      'events_time_kind_ck',
-      sql`(${t.allDay} and ${t.startsOn} is not null and ${t.startsAt} is null and ${t.endsAt} is null)
-        or (not ${t.allDay} and ${t.startsAt} is not null and ${t.startsOn} is null and ${t.endsOn} is null)`,
+      'termine_zeit_ck',
+      sql`(${t.ganztaegig} and ${t.startDate} is not null and ${t.endDate} is not null and ${t.endDate} > ${t.startDate})
+        or (not ${t.ganztaegig} and ${t.startUtc} is not null and ${t.endUtc} is not null and ${t.tzid} is not null and ${t.endUtc} >= ${t.startUtc})`,
     ),
-    check('events_end_on_ck', sql`${t.endsOn} is null or ${t.endsOn} >= ${t.startsOn}`),
   ],
 );
 
 /** Teilnehmer eines Termins: je Person eine Zeile mit Sync-Spalten (Hinzufügen/Entfernen konfliktfrei). */
-export const eventAttendees = pgTable(
-  'event_attendees',
+export const terminTeilnehmer = pgTable(
+  'termin_teilnehmer',
   {
     id: id(),
     familyId: familyRef(),
-    eventId: uuid('event_id').notNull(),
+    terminId: uuid('termin_id').notNull(),
     userId: uuid('user_id').notNull(),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
-    foreignKey({ columns: [t.familyId, t.eventId], foreignColumns: [events.familyId, events.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.terminId], foreignColumns: [termine.familyId, termine.id] }).onDelete('cascade'),
     foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     // eine aktive Zeile je Person und Termin; entfernte Teilnehmer bleiben als Tombstone stehen
-    uniqueIndex('event_attendees_active_uq')
-      .on(t.eventId, t.userId)
+    uniqueIndex('termin_teilnehmer_active_uq')
+      .on(t.terminId, t.userId)
       .where(sql`${t.deletedAt} is null`),
-    index('event_attendees_user_idx').on(t.userId),
-    index('event_attendees_family_rev_idx').on(t.familyId, t.rev),
+    index('termin_teilnehmer_user_idx').on(t.userId),
+    index('termin_teilnehmer_family_rev_idx').on(t.familyId, t.rev),
+    index('termin_teilnehmer_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+  ],
+);
+
+/**
+ * Ausnahmen einer Terminserie: eine Zeile je (Termin, Beginn des ursprünglichen Vorkommens). `original_start` ist unveränderlich:
+ * bei Zeitterminen der Beginn in UTC (`YYYY-MM-DDTHH:MM:SSZ`), bei ganztägigen das Datum (`YYYY-MM-DD`). `abgesagt` blendet das Vorkommen
+ * aus; die übrigen Felder überschreiben (null: unverändert). Wird nur noch geändert, nicht gelöscht (Zurücksetzen = alle Felder leer).
+ */
+export const terminAusnahmen = pgTable(
+  'termin_ausnahmen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    terminId: uuid('termin_id').notNull(),
+    originalStart: text('original_start').notNull(),
+    abgesagt: boolean('abgesagt').notNull().default(false),
+    titel: text('titel'),
+    start: text('start'),
+    ende: text('ende'),
+    ort: text('ort'),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.terminId], foreignColumns: [termine.familyId, termine.id] }).onDelete('cascade'),
+    uniqueIndex('termin_ausnahmen_active_uq')
+      .on(t.terminId, t.originalStart)
+      .where(sql`${t.deletedAt} is null`),
+    index('termin_ausnahmen_family_rev_idx').on(t.familyId, t.rev),
+    index('termin_ausnahmen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('termin_ausnahmen_original_len_ck', sql`char_length(${t.originalStart}) between 10 and 20`),
+    check('termin_ausnahmen_titel_len_ck', sql`${t.titel} is null or char_length(${t.titel}) <= 200`),
+    check('termin_ausnahmen_ort_len_ck', sql`${t.ort} is null or char_length(${t.ort}) <= 200`),
+    check('termin_ausnahmen_zeit_len_ck', sql`(${t.start} is null or char_length(${t.start}) between 10 and 20) and (${t.ende} is null or char_length(${t.ende}) between 10 and 20)`),
   ],
 );
 

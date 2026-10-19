@@ -106,6 +106,12 @@ export async function pullChanges(
       for (const e of page) {
         const def = registry.get(e.entity);
         const row = rows.get(e.entity)?.get(e.entityId);
+        if (def && !row && e.tombstone && !snapshotMode) {
+          // Zeile ist weg (Fremdschlüssel-Kaskade beim Entfernen eines Mitglieds), der Tombstone-Eintrag bleibt: die Geräte sollen ihre Kopie entfernen
+          // (nur die ID wird sichtbar, nie ein Inhalt; wie beim "hidden"-Tombstone unsichtbar gelöschter Datensätze)
+          changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
+          continue;
+        }
         if (!def || !row) continue; // unbekannte Entität oder bereits bereinigt
         const visible = mayRead(def.rules, actor, factsFrom(registry, rows, def, row));
         const current = Number(row.rev) === e.rev; // sonst ersetzt durch einen späteren Eintrag

@@ -157,7 +157,10 @@ class PersonAvatar extends StatelessWidget {
   final String name;
   final int colorIndex;
   final double size;
-  const PersonAvatar({super.key, required this.name, required this.colorIndex, this.size = 40});
+
+  /// Benutzerbild (vorgesehen); fehlt es, zeigt der Kreis die Initialen.
+  final ImageProvider<Object>? bild;
+  const PersonAvatar({super.key, required this.name, required this.colorIndex, this.size = 40, this.bild});
 
   @override
   Widget build(BuildContext context) {
@@ -171,8 +174,11 @@ class PersonAvatar extends StatelessWidget {
           shape: BoxShape.circle,
           color: farbe.withValues(alpha: 0.18),
           border: Border.all(color: farbe.withValues(alpha: 0.6)),
+          image: bild == null ? null : DecorationImage(image: bild!, fit: BoxFit.cover),
         ),
-        child: Text(personInitials(name), style: TextStyle(fontFamily: kFontMono, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
+        child: bild != null
+            ? null
+            : Text(personInitials(name), style: TextStyle(fontFamily: kFontMono, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
       ),
     );
   }

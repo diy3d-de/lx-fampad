@@ -7,6 +7,20 @@ import '../../ui/widgets.dart';
 import 'seite_neu_laden.dart';
 import 'update_service.dart';
 
+/// Hinweis, wenn nach dem Tippen auf "Installieren" nichts passiert (Android blockiert den Installer bei aktiver automatischer Sperre).
+const kInstallierenHinweis = 'Passiert nach dem Tippen auf Installieren nichts, schalte vorübergehend die Automatische Sperre (Android-Einstellungen) aus.';
+
+/// Hinweistext unter dem Installieren-Knopf (Android, solange das Update bereitliegt).
+class InstallierenHinweis extends StatelessWidget {
+  const InstallierenHinweis({super.key});
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.only(top: 8),
+    child: Text(kInstallierenHinweis, style: TextStyle(fontSize: 12, height: 1.35, color: kTextMuted)),
+  );
+}
+
 /// Was die Karte zeigt: Titel, Beschriftung und Aktion des Knopfes (beides null = nur Text).
 typedef _Anzeige = (String? titel, String? aktion, VoidCallback? onTap);
 
@@ -39,15 +53,21 @@ class UpdateAnzeige extends ConsumerWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: LxCard(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(
-              u.phase == UpdatePhase.fehler && !u.webNeu ? Icons.error_outline : Icons.system_update,
-              color: u.phase == UpdatePhase.fehler && !u.webNeu ? kDanger : kAccent,
+            Row(
+              children: [
+                Icon(
+                  u.phase == UpdatePhase.fehler && !u.webNeu ? Icons.error_outline : Icons.system_update,
+                  color: u.phase == UpdatePhase.fehler && !u.webNeu ? kDanger : kAccent,
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text(titel, style: const TextStyle(fontFamily: kFontMono, fontSize: 12))),
+                if (aktion != null) TextButton(onPressed: onTap, child: Text(aktion)),
+              ],
             ),
-            const SizedBox(width: 12),
-            Expanded(child: Text(titel, style: const TextStyle(fontFamily: kFontMono, fontSize: 12))),
-            if (aktion != null) TextButton(onPressed: onTap, child: Text(aktion)),
+            if (!kIsWeb && !u.webNeu && u.phase == UpdatePhase.bereit) const InstallierenHinweis(),
           ],
         ),
       ),
@@ -94,6 +114,7 @@ class PflichtUpdateSeite extends ConsumerWidget {
                     const SizedBox(height: 24),
                     if (!kIsWeb && u.phase == UpdatePhase.laedt) Text('Lade Update ${(u.fortschritt * 100).round()} %'),
                     if (aktion != null) FilledButton(onPressed: onTap, child: Text(aktion)),
+                    if (!kIsWeb && u.phase == UpdatePhase.bereit) const InstallierenHinweis(),
                     if (!kIsWeb && u.info == null && aktion == null && u.phase != UpdatePhase.pruefe)
                       TextButton(onPressed: ctrl.pruefen, child: const Text('Erneut prüfen')),
                   ],

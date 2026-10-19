@@ -1,5 +1,5 @@
 // Lokale Datenbank (drift, SQLite; im Web WASM mit OPFS bzw. IndexedDB-Fallback).
-// Enthält die lokale Kopie der Familiendaten (Listen und Einträge), den Ausgang (outbox) und den Sync-Zustand (sync_meta).
+// Enthält die lokale Kopie der Familiendaten (Listen, Einträge, Termine), den Ausgang (outbox) und den Sync-Zustand (sync_meta).
 // Die Oberfläche liest und schreibt nur hier; der Abgleich mit dem Server läuft im Hintergrund (data/sync/).
 // Die Datei app_database.g.dart wird erzeugt: dart run build_runner build
 import 'package:drift/drift.dart';
@@ -82,13 +82,80 @@ class ListenEintraege extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege])
+/// Termine (Phase 1c-2a). Zeittermine: `startUtc`/`endUtc` + `tzid`; ganztägige: `startDate`/`endDate` (Text `YYYY-MM-DD`, Ende exklusiv).
+@DataClassName('Termin')
+class Termine extends Table {
+  @override
+  String get tableName => 'termine';
+
+  TextColumn get id => text()();
+  TextColumn get titel => text()();
+  TextColumn get ort => text().withDefault(const Constant(''))();
+  TextColumn get beschreibung => text().withDefault(const Constant(''))();
+  BoolColumn get ganztaegig => boolean().withDefault(const Constant(false))();
+  DateTimeColumn get startUtc => dateTime().nullable()();
+  DateTimeColumn get endUtc => dateTime().nullable()();
+  TextColumn get tzid => text().nullable()();
+  TextColumn get startDate => text().nullable()();
+  TextColumn get endDate => text().nullable()();
+  TextColumn get rrule => text().nullable()();
+  IntColumn get erinnerungMin => integer().nullable()();
+  TextColumn get icalUid => text().nullable()();
+
+  /// parents | family | all (wie bei Listen)
+  TextColumn get audience => text().withDefault(const Constant('family'))();
+  TextColumn get ownerId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Teilnehmer eines Termins: eine Zeile je Person.
+@DataClassName('TerminTeilnehmerZeile')
+@TableIndex(name: 'termin_teilnehmer_termin_idx', columns: {#terminId})
+class TerminTeilnehmer extends Table {
+  @override
+  String get tableName => 'termin_teilnehmer';
+
+  TextColumn get id => text()();
+  TextColumn get terminId => text()();
+  TextColumn get userId => text()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Ausnahmen einer Serie: eine Zeile je Vorkommen (`originalStart`: UTC-Zeitpunkt oder Tag), abgesagt oder mit Überschreibungen.
+@DataClassName('TerminAusnahme')
+@TableIndex(name: 'termin_ausnahmen_termin_idx', columns: {#terminId})
+class TerminAusnahmen extends Table {
+  @override
+  String get tableName => 'termin_ausnahmen';
+
+  TextColumn get id => text()();
+  TextColumn get terminId => text()();
+  TextColumn get originalStart => text()();
+  BoolColumn get abgesagt => boolean().withDefault(const Constant(false))();
+  TextColumn get titel => text().nullable()();
+  TextColumn get start => text().nullable()();
+  TextColumn get ende => text().nullable()();
+  TextColumn get ort => text().nullable()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
-  /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at.
+  /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at. Version 3 (Phase 1c-2a): Termine, Teilnehmer, Ausnahmen.
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -99,6 +166,13 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.deleteTable('outbox');
         await m.createAll();
+      } else if (from < 3) {
+        await m.createTable(termine);
+        await m.createTable(terminTeilnehmer);
+        await m.createTable(terminAusnahmen);
+        // createTable legt die @TableIndex-Indizes nicht mit an
+        await m.createIndex(terminTeilnehmerTerminIdx);
+        await m.createIndex(terminAusnahmenTerminIdx);
       }
     },
   );

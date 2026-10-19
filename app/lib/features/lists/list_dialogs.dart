@@ -39,15 +39,19 @@ class _AuswahlKnopfState extends State<AuswahlKnopf> {
         onTap: widget.onTap,
         onFocusChange: (f) => setState(() => _fokus = f),
         child: Container(
-          constraints: const BoxConstraints(minHeight: 44),
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-          alignment: Alignment.center,
           decoration: BoxDecoration(
             color: gewaehlt ? kAccentSoft : null,
             borderRadius: BorderRadius.circular(10),
             border: Border.all(color: _fokus ? kAccent : (gewaehlt ? kAccent.withValues(alpha: 0.4) : kBorder), width: _fokus ? 2 : 1),
           ),
-          child: Text(widget.text, style: TextStyle(fontSize: 14, fontWeight: gewaehlt ? FontWeight.w600 : FontWeight.w400, color: gewaehlt ? kAccent : kTextMuted)),
+          // Align mit widthFactor: der Knopf ist so breit wie sein Text (Container mit alignment füllte die ganze Breite und stapelte die Knöpfe in einem Wrap)
+          child: Align(
+            alignment: Alignment.center,
+            widthFactor: 1,
+            child: Text(widget.text, style: TextStyle(fontSize: 14, fontWeight: gewaehlt ? FontWeight.w600 : FontWeight.w400, color: gewaehlt ? kAccent : kTextMuted)),
+          ),
         ),
       ),
     );

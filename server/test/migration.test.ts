@@ -94,8 +94,9 @@ const TABLES = [
   'devices',
   'applied_ops',
   'change_log',
-  'events',
-  'event_attendees',
+  'termine',
+  'termin_teilnehmer',
+  'termin_ausnahmen',
   'lists',
   'list_items',
   'tasks',
@@ -163,7 +164,7 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
   });
 
   it('versieht änderbare Tabellen mit Sync-Spalten', async () => {
-    const syncTables = ['events', 'event_attendees', 'lists', 'list_items', 'tasks', 'files', 'messages', 'message_reactions', 'message_reads'];
+    const syncTables = ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'lists', 'list_items', 'tasks', 'files', 'messages', 'message_reactions', 'message_reads'];
     for (const t of syncTables) {
       const cols = (
         await rows<{ column_name: string }>(
@@ -184,10 +185,10 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
     expect(cols).not.toContain('read_by');
     const eventCols = (
       await rows<{ column_name: string }>(
-        sql`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'events'`,
+        sql`select column_name from information_schema.columns where table_schema = 'public' and table_name = 'termine'`,
       )
     ).map((r) => r.column_name);
-    expect(eventCols).not.toContain('attendee_ids');
+    expect(eventCols).not.toContain('teilnehmer_ids');
   });
 
   it('kennt die Rollen admin, parent, child, guest', async () => {
@@ -214,7 +215,7 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
 
   it('erzwingt eindeutige Revisionen je Familie', async () => {
     const { familyId } = await seed();
-    const entry = { familyId, rev: 1, entity: 'events', entityId: randomUUID(), tombstone: true };
+    const entry = { familyId, rev: 1, entity: 'termin', entityId: randomUUID(), tombstone: true };
     await db.insert(schema.changeLog).values(entry);
     await expect(db.insert(schema.changeLog).values(entry)).rejects.toThrow();
   });
@@ -348,51 +349,63 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
   });
 
   describe('Termine', () => {
-    const base = { title: 'Termin', rev: 1 };
+    const base = { titel: 'Termin', rev: 1 };
+    const zeit = { ganztaegig: false, startUtc: new Date('2026-10-18T08:00:00Z'), endUtc: new Date('2026-10-18T09:00:00Z'), tzid: 'Europe/Berlin' };
 
-    it('speichert ganztägige Termine als Datum ohne Uhrzeit und Zeitzone', async () => {
+    it('speichert ganztägige Termine als Datum ohne Uhrzeit und Zeitzone (Ende exklusiv)', async () => {
       const { familyId } = await seed();
       const e = one(await db
-        .insert(schema.events)
-        .values({ ...base, familyId, allDay: true, startsOn: '2026-12-24', endsOn: '2026-12-26' })
+        .insert(schema.termine)
+        .values({ ...base, familyId, ganztaegig: true, startDate: '2026-12-24', endDate: '2026-12-27' })
         .returning());
-      expect(e.startsOn).toBe('2026-12-24');
-      expect(e.startsAt).toBeNull();
+      expect(e.startDate).toBe('2026-12-24');
+      expect(e.startUtc).toBeNull();
       const t = await rows<{ data_type: string }>(
-        sql`select data_type from information_schema.columns where table_name = 'events' and column_name = 'starts_on'`,
+        sql`select data_type from information_schema.columns where table_name = 'termine' and column_name = 'start_date'`,
       );
       expect(t[0]?.data_type).toBe('date');
     });
 
-    it('speichert zeitgebundene Termine mit Zeitpunkt', async () => {
+    it('speichert zeitgebundene Termine mit Zeitpunkten und Zeitzone', async () => {
       const { familyId } = await seed();
-      await db.insert(schema.events).values({ ...base, familyId, startsAt: new Date('2026-10-18T08:00:00Z') });
+      const e = one(await db.insert(schema.termine).values({ ...base, familyId, ...zeit }).returning());
+      expect(e.tzid).toBe('Europe/Berlin');
     });
 
     it('lehnt widersprüchliche Termine ab', async () => {
       const { familyId } = await seed();
       // ganztägig ohne Datum
-      await expect(db.insert(schema.events).values({ ...base, familyId, allDay: true })).rejects.toThrow();
-      // ganztägig mit Uhrzeit
+      await expect(db.insert(schema.termine).values({ ...base, familyId, ganztaegig: true })).rejects.toThrow();
+      // ganztägig mit Ende am selben Tag (Ende ist exklusiv)
       await expect(
-        db.insert(schema.events).values({ ...base, familyId, allDay: true, startsOn: '2026-12-24', startsAt: new Date() }),
+        db.insert(schema.termine).values({ ...base, familyId, ganztaegig: true, startDate: '2026-12-24', endDate: '2026-12-24' }),
       ).rejects.toThrow();
-      // zeitgebunden ohne Zeitpunkt
-      await expect(db.insert(schema.events).values({ ...base, familyId })).rejects.toThrow();
+      // zeitgebunden ohne Zeitpunkt oder ohne Zeitzone
+      await expect(db.insert(schema.termine).values({ ...base, familyId })).rejects.toThrow();
+      await expect(db.insert(schema.termine).values({ ...base, familyId, ...zeit, tzid: null })).rejects.toThrow();
       // Ende vor Beginn
-      await expect(
-        db.insert(schema.events).values({ ...base, familyId, allDay: true, startsOn: '2026-12-24', endsOn: '2026-12-23' }),
-      ).rejects.toThrow();
+      await expect(db.insert(schema.termine).values({ ...base, familyId, ...zeit, endUtc: new Date('2026-10-18T07:00:00Z') })).rejects.toThrow();
     });
 
     it('speichert Teilnehmer je Person und entfernt sie mit dem Termin', async () => {
       const { familyId, userId } = await seed();
-      const e = one(await db.insert(schema.events).values({ ...base, familyId, startsAt: new Date() }).returning());
-      const row = { familyId, eventId: e.id, userId, rev: 2 };
-      await db.insert(schema.eventAttendees).values(row);
-      await expect(db.insert(schema.eventAttendees).values(row)).rejects.toThrow();
-      await db.delete(schema.events).where(sql`id = ${e.id}`);
-      expect(await rows(sql`select 1 from event_attendees where event_id = ${e.id}`)).toHaveLength(0);
+      const e = one(await db.insert(schema.termine).values({ ...base, familyId, ...zeit }).returning());
+      const row = { familyId, terminId: e.id, userId, rev: 2 };
+      await db.insert(schema.terminTeilnehmer).values(row);
+      await expect(db.insert(schema.terminTeilnehmer).values(row)).rejects.toThrow();
+      await db.delete(schema.termine).where(sql`id = ${e.id}`);
+      expect(await rows(sql`select 1 from termin_teilnehmer where termin_id = ${e.id}`)).toHaveLength(0);
+    });
+
+    it('speichert je Vorkommen einer Serie höchstens eine Ausnahme', async () => {
+      const { familyId } = await seed();
+      const e = one(await db.insert(schema.termine).values({ ...base, familyId, ...zeit, rrule: 'FREQ=WEEKLY' }).returning());
+      const row = { familyId, terminId: e.id, originalStart: '2026-10-25T08:00:00Z', abgesagt: true, rev: 2 };
+      await db.insert(schema.terminAusnahmen).values(row);
+      await expect(db.insert(schema.terminAusnahmen).values(row)).rejects.toThrow();
+      await db.insert(schema.terminAusnahmen).values({ ...row, originalStart: '2026-11-01T08:00:00Z' });
+      await db.delete(schema.termine).where(sql`id = ${e.id}`);
+      expect(await rows(sql`select 1 from termin_ausnahmen where termin_id = ${e.id}`)).toHaveLength(0);
     });
   });
 

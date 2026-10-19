@@ -22,6 +22,8 @@ import 'package:lx_fampad/data/api/fampad_api.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
+import 'package:lx_fampad/data/calendar/expansion.dart';
+import 'package:lx_fampad/data/calendar/termin_repository.dart';
 import 'package:lx_fampad/data/sync/sync_engine.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_socket.dart';
@@ -29,6 +31,7 @@ import 'package:lx_fampad/data/sync/sync_store.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/features/auth/invite_link.dart';
 import 'package:passkeys/types.dart' show AuthenticateRequestType, RegisterRequestType;
+import 'package:timezone/data/latest_all.dart' as tzdata;
 
 final server = Platform.environment['SERVER'] ?? 'http://127.0.0.1:4460';
 final adminToken = Platform.environment['INVITE_TOKEN']!;
@@ -457,6 +460,122 @@ Future<void> offlineOnlineVertrag({required Gegenstelle a, required Gegenstelle 
   expect(await storeB.offeneAnzahl(), 0);
 }
 
+/// Kalender gegen den echten Server (Phase 1c-2a): Termin mit Serie, Teilnehmern und Ausnahme auf zwei lokalen Datenbanken, Validierung
+/// (RRULE, Zeitzone, Zeiten), Rechte von Kind und Gast, Serie löschen räumt Kinder auf.
+Future<void> kalenderVertrag({
+  required Gegenstelle a,
+  required Gegenstelle b,
+  required Gegenstelle gast,
+  required Gegenstelle kind,
+  required String kindId,
+  required String adminId,
+}) async {
+  schritt('Kalender: Serie mit Teilnehmer und abgesagtem Vorkommen auf zwei lokalen Datenbanken (A legt an, B sieht dasselbe)');
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  tzdata.initializeTimeZones();
+  AppDatabase neueDb() => AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  final dbA = neueDb(), dbB = neueDb();
+  addTearDown(dbA.close);
+  addTearDown(dbB.close);
+  final storeA = SyncStore(dbA), storeB = SyncStore(dbB);
+  final engineA = SyncEngine(store: storeA, api: a.api, geraeteId: () async => geraetId(a));
+  final engineB = SyncEngine(store: storeB, api: b.api, geraeteId: () async => geraetId(b));
+  final repoA = TerminRepository(db: dbA, store: storeA, ich: () => adminId, beiAenderung: () {});
+  final repoB = TerminRepository(db: dbB, store: storeB, ich: () => adminId, beiAenderung: () {});
+
+  DateTime tag(int y, int m, int d, [int h = 0]) => DateTime.utc(y, m, d, h);
+  // Dienstag 10 Uhr Berlin, über die Zeitumstellung hinweg (25.10.2026)
+  final id = await repoA.anlegen(
+    TerminEingabe(titel: 'Chorprobe', ort: 'Aula', ganztaegig: false, startWand: tag(2027, 3, 23, 10), endeWand: tag(2027, 3, 23, 11), rrule: 'FREQ=WEEKLY;BYDAY=TU', erinnerungMin: 30, teilnehmer: {kindId, adminId}),
+  );
+  List<Vorkommen> vorkommen(AppDatabase db, List<Termin> t, List<TerminAusnahme> au) => vorkommenImFenster(
+    termine: t,
+    ausnahmen: {for (final x in au) x.terminId: au.where((y) => y.terminId == x.terminId).toList()},
+    vonWand: tag(2027, 3, 20),
+    bisWand: tag(2027, 4, 20),
+    jetzt: tag(2027, 3, 1),
+  );
+  final erste = vorkommen(dbA, await dbA.select(dbA.termine).get(), const []);
+  expect(erste.map((v) => v.startWand.day).toList(), [23, 30, 6, 13]);
+  expect(erste.map((v) => v.startUtc.hour).toList(), [9, 8, 8, 8], reason: 'Sommerzeit ab 28.3.2027: 10 Uhr bleibt 10 Uhr');
+  await repoA.vorkommenAbsagen(erste[1]);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  final beiB = (await dbB.select(dbB.termine).get()).singleWhere((t) => t.id == id);
+  expect([beiB.titel, beiB.ort, beiB.tzid, beiB.erinnerungMin, beiB.ownerId, beiB.audience], ['Chorprobe', 'Aula', 'Europe/Berlin', 30, adminId, 'family']);
+  expect(beiB.rrule, 'FREQ=WEEKLY;BYDAY=TU');
+  expect((await dbB.select(dbB.terminTeilnehmer).get()).map((z) => z.userId).toSet(), {kindId, adminId});
+  final auB = await dbB.select(dbB.terminAusnahmen).get();
+  expect(auB.single.id, ausnahmeId(id, erste[1].schluessel));
+  expect(vorkommen(dbB, [beiB], auB).map((v) => v.startWand.day).toList(), [23, 6, 13], reason: 'B rechnet dasselbe: das zweite Vorkommen ist abgesagt');
+
+  schritt('Kalender: B ändert nur dieses Vorkommen und dieses und folgende (Serie wird geteilt), A sieht beides');
+  final vorkB = vorkommen(dbB, [beiB], auB);
+  await repoB.vorkommenAendern(vorkB[1], TerminEingabe(titel: 'Chorprobe (Sonder)', ort: 'Aula', ganztaegig: false, startWand: tag(2027, 4, 6, 18), endeWand: tag(2027, 4, 6, 19)));
+  final neuId = await repoB.folgendeAendern(
+    vorkB[2],
+    TerminEingabe(titel: 'Chorprobe neu', ort: 'Halle', ganztaegig: false, startWand: vorkB[2].startWand, endeWand: vorkB[2].endeWand, rrule: 'FREQ=WEEKLY;BYDAY=TU', teilnehmer: {adminId}),
+  );
+  expect((await engineB.abgleichen()).ok, isTrue);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final termineA = await dbA.select(dbA.termine).get();
+  expect(termineA, hasLength(2));
+  expect(termineA.singleWhere((t) => t.id == id).rrule, contains('UNTIL='));
+  expect(termineA.singleWhere((t) => t.id == neuId).titel, 'Chorprobe neu');
+  final tageA = vorkommen(dbA, termineA, await dbA.select(dbA.terminAusnahmen).get());
+  expect(tageA.map((v) => '${v.titel}@${v.startWand.day}').toList(), ['Chorprobe@23', 'Chorprobe (Sonder)@6', 'Chorprobe neu@13']);
+
+  schritt('Kalender: der Server lehnt ungültige Termine ab (RRULE, Zeitzone, Zeiten, Längen), nichts landet im Datenbestand');
+  final zeit = {'titel': 'T', 'ganztaegig': false, 'startUtc': '2027-04-01T08:00:00.000Z', 'endUtc': '2027-04-01T09:00:00.000Z', 'tzid': 'Europe/Berlin'};
+  for (final schlecht in <Map<String, dynamic>>[
+    {...zeit, 'rrule': 'FREQ=SECONDLY'},
+    {...zeit, 'rrule': 'FREQ=DAILY;COUNT=99999'},
+    {...zeit, 'tzid': 'Mars/Olympus'},
+    {...zeit, 'endUtc': '2027-04-01T07:00:00.000Z'},
+    {...zeit, 'titel': 'x' * 201},
+    {'titel': 'Tag', 'ganztaegig': true, 'startDate': '2027-04-01', 'endDate': '2027-04-01'},
+  ]) {
+    final op = neu('termin', neueUuid(), schlecht);
+    final r = await syncen(a, [op]);
+    expect(r.rejected.single.code, 'invalid', reason: '$schlecht');
+  }
+
+  schritt('Kalender: Rechte von Kind und Gast gegen den echten Server');
+  final privat = neueUuid(), frei = neueUuid(), eltern = neueUuid();
+  expect((await syncen(a, [neu('termin', privat, {...zeit, 'audience': 'parents'}), neu('termin', frei, {...zeit, 'titel': 'Für alle', 'audience': 'all'}), neu('termin', eltern, zeit)])).rejected, isEmpty);
+  final kindTerminId = neueUuid();
+  final kindOp = neu('termin', kindTerminId, {...zeit, 'titel': 'Kinder-Termin'});
+  expect((await syncen(kind, [kindOp])).acked, [kindOp.opId]);
+  final fremd = await syncen(kind, [aender('termin', eltern, {'titel': 'Hack'}, 1)]);
+  expect(fremd.rejected.single.code, 'forbidden');
+  final geheim = await syncen(kind, [aender('termin', privat, {'titel': 'Hack'}, 1)]);
+  expect(geheim.rejected.single.code, 'not_found');
+  final tn = await syncen(kind, [neu('termin_teilnehmer', neueUuid(), {'terminId': eltern, 'userId': kindId})]);
+  expect(tn.rejected.single.code, 'forbidden');
+  final kindSicht = (await alleSeiten(kind)).where((c) => c.entity == 'termin').map((c) => c.id);
+  expect(kindSicht, isNot(contains(privat)));
+  expect(kindSicht, contains(eltern));
+  expect((await syncen(a, [neu('termin_teilnehmer', neueUuid(), {'terminId': frei, 'userId': kindId})])).rejected, isEmpty);
+  final gastAlles = await alleSeiten(gast);
+  expect(gastAlles.where((c) => c.entity == 'termin_teilnehmer'), isEmpty, reason: 'Gäste sehen nicht, wer teilnimmt');
+  final gastSicht = gastAlles.where((c) => c.entity == 'termin').toList();
+  expect(gastSicht.map((c) => c.id), [frei]);
+  expect((await syncen(gast, [neu('termin', neueUuid(), zeit)])).rejected.single.code, 'forbidden');
+
+  schritt('Kalender: Serie löschen räumt Teilnehmer und Ausnahmen auf beiden Geräten ab');
+  // die Probetermine der Rechteprüfung zuerst entfernen (die lokalen Datenbanken bekommen sie sonst auch)
+  await syncen(a, [weg('termin', privat, 1), weg('termin', frei, 1), weg('termin', eltern, 1), weg('termin', kindTerminId, 1)]);
+  await repoA.alleLoeschen(neuId!);
+  await repoA.alleLoeschen(id);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  for (final db in [dbA, dbB]) {
+    expect(await db.select(db.termine).get(), isEmpty);
+    expect(await db.select(db.terminTeilnehmer).get(), isEmpty);
+    expect(await db.select(db.terminAusnahmen).get(), isEmpty);
+  }
+}
+
 void main() {
   test('Vertrag App <-> echter Server', timeout: const Timeout(Duration(minutes: 8)), () async {
     // ---------------------------------------------------------------- Anmeldeoptionen ohne Anmeldung
@@ -770,6 +889,7 @@ void main() {
     await kind3.client.sitzungUebernehmen(k3.session);
     await syncVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
     await offlineOnlineVertrag(a: admin, b: adminB);
+    await kalenderVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
     await snapshotVertrag(a: admin, b: adminB, gast: web);
 
     // ---------------------------------------------------------------- Zurücksetzen, Entfernen, Geräte, Abmelden

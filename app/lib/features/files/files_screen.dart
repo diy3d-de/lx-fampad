@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 import '../../ui/widgets.dart';
-import '../../widgets/sync_indicator.dart';
+import '../../widgets/kopfzeile.dart';
 
 /// Dateien: Einstiege (Fotos & Alben, Tresor) und leere Liste "zuletzt". Phase 0: ohne Funktion.
 class FilesScreen extends StatelessWidget {
@@ -12,7 +12,7 @@ class FilesScreen extends StatelessWidget {
   Widget build(BuildContext context) => ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
         children: const [
-          ScreenHeader(title: 'Dateien', actions: [SyncIndicator()]),
+          TabKopfzeile(title: 'Dateien'),
           SizedBox(height: 16),
           _Einstieg(icon: Icons.photo_library_outlined, titel: 'Fotos & Alben', untertitel: 'folgt in Phase 2'),
           SizedBox(height: 10),
