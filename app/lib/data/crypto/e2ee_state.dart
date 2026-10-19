@@ -104,6 +104,9 @@ class E2eeController extends Notifier<E2eeState> {
 
   @override
   E2eeState build() {
+    // Dieselbe Notifier-Instanz wird nach invalidate neu gebaut: den Schlüssel der bisherigen Person nie behalten
+    _lokal?.loeschen();
+    _lokal = null;
     ref.onDispose(() => _lokal?.loeschen());
     return const E2eeState.laedt();
   }
