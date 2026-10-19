@@ -80,6 +80,28 @@ enum Role {
   };
 }
 
+/// Familienrolle: reine Anzeige (z. B. "Elternteil" neben "Admin"), ändert keine Rechte. Unbekannte Werte einer neueren Version werden
+/// zu null (nicht angezeigt), nie zu einem Fehler.
+enum FamilyRole {
+  vater('vater', 'Vater'),
+  mutter('mutter', 'Mutter'),
+  elternteil('elternteil', 'Elternteil'),
+  kind('kind', 'Kind'),
+  grosseltern('grosseltern', 'Großeltern'),
+  sonstige('sonstige', 'Sonstige');
+
+  final String wire;
+  final String label;
+  const FamilyRole(this.wire, this.label);
+
+  static FamilyRole? tolerant(Object? raw) {
+    for (final r in FamilyRole.values) {
+      if (r.wire == raw) return r;
+    }
+    return null;
+  }
+}
+
 enum MemberStatus {
   active,
   pending;
@@ -131,6 +153,9 @@ class UserDto {
 
   /// Benutzerbild (null = keines: Initialen).
   final AvatarDto? avatar;
+
+  /// Familienrolle (reine Anzeige; null = nicht gesetzt, auch bei alten Servern).
+  final FamilyRole? familyRole;
   const UserDto({
     required this.id,
     required this.email,
@@ -139,6 +164,7 @@ class UserDto {
     required this.role,
     required this.status,
     this.avatar,
+    this.familyRole,
   });
 
   factory UserDto.fromJson(Object? raw) {
@@ -151,6 +177,7 @@ class UserDto {
       role: Role.parse(_s(m, 'role')),
       status: MemberStatus.parse(_s(m, 'status')),
       avatar: AvatarDto.tolerant(m['avatar']),
+      familyRole: FamilyRole.tolerant(m['familyRole']),
     );
   }
 
@@ -162,6 +189,7 @@ class UserDto {
     'role': role.wire,
     'status': status.name,
     if (avatar != null) 'avatar': avatar!.toJson(),
+    if (familyRole != null) 'familyRole': familyRole!.wire,
   };
 }
 
