@@ -1,4 +1,4 @@
-package dev.lx_labs.familienzentrale
+package dev.lx_labs.fampad
 
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -33,6 +33,6 @@ class UpdateReceiver : BroadcastReceiver() {
     }
 
     companion object {
-        const val ACTION = "dev.lx_labs.familienzentrale.INSTALL_RESULT"
+        const val ACTION = "dev.lx_labs.fampad.INSTALL_RESULT"
     }
 }

@@ -4,10 +4,10 @@
   <base href="$FLUTTER_BASE_HREF">
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="description" content="Familienzentrale: Kalender, Chat, Listen und Dateien, selbst gehostet.">
+  <meta name="description" content="lx-fampad: Kalender, Chat, Listen und Dateien, selbst gehostet.">
   <meta name="theme-color" content="#090A0F">
   <meta name="color-scheme" content="dark">
-  <title>Familienzentrale</title>
+  <title>lx-fampad</title>
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
   <link rel="manifest" href="manifest.json">
@@ -17,6 +17,8 @@
   </style>
 </head>
 <body>
+  <!-- Passkeys (WebAuthn): selbst gehostetes JS-Bündel des Pakets passkeys_web (Prüfsumme in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md). Muss vor dem Flutter-Start laden. -->
+  <script src="passkeys-bundle.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

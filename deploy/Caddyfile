@@ -2,16 +2,16 @@
 # Caddy holt die HTTPS-Zertifikate automatisch (Let's Encrypt).
 # Voraussetzung: Die DNS-Einträge "familie" und "ntfy.familie" (A, DNS only) zeigen auf diesen Server.
 #
-# Einbinden: Datei nach /etc/caddy/conf.d/familie.caddy kopieren; im Haupt-Caddyfile (/etc/caddy/Caddyfile) steht dafür die Zeile
+# Einbinden: Datei nach /etc/caddy/conf.d/fampad.caddy kopieren; im Haupt-Caddyfile (/etc/caddy/Caddyfile) steht dafür die Zeile
 #   import /etc/caddy/conf.d/*.caddy
 # Ein Deploy von lx-labs überschreibt das Haupt-Caddyfile; dauerhaft gehört die Zeile in lx-labs/deploy/Caddyfile
 # (Ablauf mit Sicherung und Prüfung: deploy/README.md, Schritt 6). Übernehmen einer geänderten Datei:
-#   sudo cp ~/lx-familienzentrale/deploy/Caddyfile /etc/caddy/conf.d/familie.caddy
+#   sudo cp ~/lx-fampad/deploy/Caddyfile /etc/caddy/conf.d/fampad.caddy
 #   caddy validate --config /etc/caddy/Caddyfile && sudo systemctl reload caddy
 # Der Snippet-Name ist mit Präfix versehen, damit er nicht mit Snippets anderer importierter Dateien kollidiert.
 
 # Gemeinsame Sicherheits-Header (CSP/COOP/COEP gelten nur für die Web-App, siehe unten)
-(familie_sicherheit) {
+(fampad_sicherheit) {
 	header {
 		# Nur noch per HTTPS aufrufen (1 Jahr)
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
@@ -28,7 +28,7 @@
 
 familie.lx-labs.dev {
 	encode zstd gzip
-	import familie_sicherheit
+	import fampad_sicherheit
 
 	header {
 		# wasm-unsafe-eval: CanvasKit und sqlite3.wasm (drift). unsafe-inline nur bei style-src: Flutter Web setzt
@@ -52,7 +52,7 @@ familie.lx-labs.dev {
 
 	# Android-Update-Kanal: latest.json (signiert) und APK. Immer frisch prüfen lassen.
 	handle_path /releases/* {
-		root * /srv/familie/releases
+		root * /srv/fampad/releases
 		header Cache-Control "no-cache"
 		@apk path *.apk
 		header @apk Content-Type "application/vnd.android.package-archive"
@@ -61,20 +61,20 @@ familie.lx-labs.dev {
 
 	# assetlinks.json (Android) und apple-app-site-association (iOS, später) für Passkeys
 	handle_path /.well-known/* {
-		root * /srv/familie/well-known
+		root * /srv/fampad/well-known
 		file_server
 	}
 
 	# Fallback-Schriften für Flutter Web (fontFallbackBaseUrl in web/flutter_bootstrap.js), siehe deploy/README.md
 	handle_path /font-fallback/* {
-		root * /srv/familie/font-fallback
+		root * /srv/fampad/font-fallback
 		header Cache-Control "public, max-age=604800"
 		file_server
 	}
 
 	# Flutter-Web-Build (aktuelle Version per Symlink). Per ETag prüfen lassen, damit Updates sofort greifen.
 	handle {
-		root * /srv/familie/web/current
+		root * /srv/fampad/web/current
 		header Cache-Control "no-cache"
 		try_files {path} /index.html
 		file_server
@@ -84,6 +84,6 @@ familie.lx-labs.dev {
 # Eigener ntfy-Server (UnifiedPush). Meldungen enthalten nie Inhalte.
 ntfy.familie.lx-labs.dev {
 	encode zstd gzip
-	import familie_sicherheit
+	import fampad_sicherheit
 	reverse_proxy 127.0.0.1:2586
 }

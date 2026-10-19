@@ -6,6 +6,7 @@ import '../../constants.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_indicator.dart';
+import '../profile/profile_screen.dart';
 import '../update/update_banner.dart';
 
 /// Start: Begrüßung, Sync-Status, Schnellzugriffe, "Als Nächstes". Phase 0: ohne Daten.
@@ -21,7 +22,18 @@ class HomeScreen extends ConsumerWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       children: [
-        ScreenHeader(label: '// $heute', title: 'Hallo', actions: const [SyncIndicator()]),
+        ScreenHeader(
+          label: '// $heute',
+          title: 'Hallo',
+          actions: [
+            const SyncIndicator(),
+            IconButton(
+              tooltip: 'Profil und Sicherheit',
+              icon: const Icon(Icons.account_circle_outlined),
+              onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+            ),
+          ],
+        ),
         const SizedBox(height: 20),
         const UpdateAnzeige(),
         Container(

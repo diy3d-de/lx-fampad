@@ -1,6 +1,6 @@
-# Gepinnte Versionen (Phase 0)
+# Gepinnte Versionen (Phase 0, 1a und 1b)
 
-Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Quelle: Research-Teammate.
+Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlichungsdatum in der Spalte „Hinweis“ bei den Paketen von Phase 1a, geprüft mit `npm view <Paket> time`). Alle Versionen sind exakt gepinnt (kein `^`, kein `~`); Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Quelle: Research-Teammate.
 
 ## Server
 
@@ -12,9 +12,10 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 | @fastify/websocket | 11.3.3 | Auth über Session-Cookie beim Upgrade oder Einmal-Ticket |
 | drizzle-orm / drizzle-kit | 0.45.3 / 0.31.11 | 1.0 noch RC; kein `db.query` (Relational v1) |
 | PostgreSQL | 17 (Debian 13, Debian-Repo) | entschieden 18.10.2026 |
-| @simplewebauthn/server | 14.0.3 | Registrierung: `supportedAlgorithmIDs` auf klassische Algorithmen setzen |
-| otplib | 13.5.0 | API ≠ v12; Replay-Schutz über `afterTimeStep` |
-| argon2 | 0.45.1 | Argon2id, Prebuilds |
+| @simplewebauthn/server | 14.0.3 | Phase 1a im Einsatz (veröffentlicht 25.09.2026). `supportedAlgorithmIDs` = ES256/RS256, UV Pflicht, Attestation `none`; Antworten werden im Test mit einem eigenen Test-Authenticator erzeugt |
+| otplib | 13.5.0 | Phase 1a im Einsatz (21.08.2026). API ≠ v12 (funktionale `verify`/`generate`, `epochTolerance`); Replay-Schutz über `afterTimeStep` und atomares Fortschreiben von `credentials.last_time_step` |
+| argon2 | 0.45.1 | Phase 1a im Einsatz (21.07.2026). Argon2id (32 MiB, t=3, p=1). Native Prebuilds liegen im Paket: läuft auch mit `npm ci --ignore-scripts` (deploy.sh), auf Debian 13/glibc x64 noch nicht auf dem echten Server geprüft |
+| zod | 4.6.5 | Phase 1a: Eingabevalidierung der Routen (13.09.2026). 4.6.6 (11.10.) und 4.6.7 (12.10.) waren zum Stichtag jünger als 14 Tage |
 | @tus/server / @tus/file-store | 2.4.5 / 2.1.1 | Teil-Uploads liegen unverschlüsselt: nach `onUploadFinish` verschlüsselt ablegen |
 | sharp | 0.35.5 | |
 | pg / @types/pg | 8.23.1 / 8.23.1 | node-postgres; Pool mit Fehler-Handler und Verbindungs-Timeout |
@@ -35,8 +36,11 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 | flutter_riverpod | 3.4.3 | |
 | drift / drift_dev | 2.35.1 | Web: COOP/COEP-Header für OPFS, sonst IndexedDB-Fallback |
 | drift_flutter / sqlite3 | 0.3.1 / 3.7.0 | `sqlite3.wasm` zur Version passend |
-| flutter_secure_storage | 11.2.0 | im Web nicht für Tokens nutzen (nur HttpOnly-Cookie) |
-| passkeys | 2.23.1 | `assetlinks.json` mit allen Signatur-Fingerprints, `bundle.js` selbst hosten |
+| flutter_secure_storage | 11.2.0 | Phase 1b im Einsatz (16.09.2026): Access-/Refresh-Token und Geräte-ID der Android-App im Keystore; im Web nicht genutzt (nur HttpOnly-Cookie, `MemoryTokenStore`) |
+| mobile_scanner | 7.4.2 | Phase 1b: QR-Scan für Einladungen, **nur Android** (14.09.2026). Auf dem Web-Pfad nie aufgerufen (der Web-Scanner lädt Skripte von einem CDN, das die CSP verbietet); ML Kit arbeitet auf dem Gerät, das Bild verlässt es nicht. Manifest-Berechtigung CAMERA kommt aus dem Paket |
+| qr_flutter | 4.1.0 | Phase 1b: QR-Codes für Einladungen und TOTP-Einrichtung, erzeugt in der App (letzte Version, 14.05.2023) |
+| web | 1.1.1 | Phase 1b: `history.replaceState` und `hashchange` für den Einladungslink (bisher nur transitiv) |
+| passkeys | 2.23.1 | Phase 1b im Einsatz (14.09.2026). Android per Credential Manager, Web per JS-Bündel (siehe unten, selbst gehostet). `assetlinks.json` mit allen Signatur-Fingerprints: `deploy/assetlinks.json.template`, Anleitung `deploy/README.md` Abschnitt 9. Transitiv: passkeys_android 2.14.1, passkeys_web 2.10.1, passkeys_platform_interface 2.10.0 (alle 14.09.2026), passkeys_darwin/windows/doctor, package_info_plus 10.2.2 (01.10.2026), win32 6.4.0 |
 | unifiedpush / unifiedpush_android | 6.2.0 / 3.5.0 | nur Android |
 | maplibre | 0.3.6 | Ersatz für flutter_map + PMTiles-Vektor (veraltet); pre-1.0 |
 | geolocator | 14.1.1 | Vordergrunddienst eingebaut |
@@ -61,12 +65,17 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter. Lockfiles (`pa
 
 ## Prüfsummen eingecheckter Binärdateien (Web)
 
-`app/web/sqlite3.wasm` gehört zu sqlite3 **3.7.0** (in `app/pubspec.yaml` fest gepinnt, `pubspec.lock` eingecheckt); `app/web/drift_worker.js` zu drift 2.35.1. Beim Aktualisieren von sqlite3 oder drift beide Dateien und diese Prüfsummen gemeinsam ändern. Die CI und `deploy/deploy-web.sh` prüfen sie mit `sha256sum -c app/web-assets.sha256`.
+`app/web/sqlite3.wasm` gehört zu sqlite3 **3.7.0** (in `app/pubspec.yaml` fest gepinnt, `pubspec.lock` eingecheckt); `app/web/drift_worker.js` zu drift 2.35.1. `app/web/passkeys-bundle.js` gehört zu passkeys_web 2.10.1 (siehe oben). Beim Aktualisieren von sqlite3 oder drift beide Dateien und diese Prüfsummen gemeinsam ändern. Die CI und `deploy/deploy-web.sh` prüfen sie mit `sha256sum -c app/web-assets.sha256`.
 
 | Datei | SHA-256 |
 | --- | --- |
 | `sqlite3.wasm` | `fbcd2e8214f9231ea961e1b7706a22dd1194cfbfe6f26f13841b5aa7a0be1a1f` |
 | `drift_worker.js` | `fe5f13be0526f78293796aefb9a29d3823a2dbdbf1bccd3f0faeb90eaaafd72a` |
+| `passkeys-bundle.js` | `4ae8f64edcf3c6f31c28edadcbe77cc40bfabdfae74c1f683cd9c0f525a8b47e` |
+
+### Passkey-JS-Bündel (Web)
+
+`app/web/passkeys-bundle.js` (16486 Byte) stammt aus dem Paket **passkeys_web 2.10.1**: Für diese Version gibt es kein veröffentlichtes `bundle.js` (die GitHub-Releases enthalten keine Dateien; die Anleitung des Pakets verweist auf ein altes von 2.4.0), daher wird es aus dem mitgelieferten Quelltext gebaut: Ordner `javascript/` des Pakets (im Pub-Cache) kopieren, `npm ci --ignore-scripts`, `npx rollup -c` (Ausgabe `dist/bundle.js`, `@github/webauthn-json` 2.1.1 aus dem mitgelieferten Lockfile). Es enthält keine Fremd-Adressen (nur einen W3C-Verweis im Kommentar). `web/index.html` bindet es per `<script src="passkeys-bundle.js">` ein (CSP `script-src 'self'`). `.gitattributes` führt es als binär, damit die Prüfsumme nicht durch Zeilenenden-Umwandlung bricht. Bei einem Update von passkeys/passkeys_web neu bauen und die Prüfsumme unten ändern.
 
 ## Auflagen aus der Recherche
 

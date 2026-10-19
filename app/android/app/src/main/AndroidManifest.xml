@@ -1,13 +1,25 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- App-Updates vom eigenen Update-Kanal per PackageInstaller installieren (Android fragt einmalig nach der Erlaubnis) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Das Paket passkeys_android bringt CREDENTIAL_MANAGER_SET_ORIGIN mit. Das ist eine privilegierte Berechtigung (nur für
+         Browser/System-Apps, die den Origin einer fremden Seite setzen); eine normale App bekommt sie nie, und der Paketcode
+         setzt keinen Origin. Sie wird entfernt, damit die App nichts anfordert, was sie weder braucht noch bekommen kann.
+         Passkeys der App (Origin android:apk-key-hash:...) sind davon nicht betroffen. Siehe deploy/README.md, Abschnitt 9. -->
+    <uses-permission android:name="android.permission.CREDENTIAL_MANAGER_SET_ORIGIN" tools:node="remove" />
+    <!-- Kamera nur für den QR-Scan der Einladung; ohne Kamera (z. B. Tablet ohne Rückkamera) bleibt die App installierbar.
+         mobile_scanner trägt dieselbe Angabe ein; sie steht hier ausdrücklich, damit sie nicht von einem Plugin-Update abhängt. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
     <!-- Nur TLS: kein Klartext-Verkehr (familie.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
     <application
-        android:label="Familienzentrale"
+        android:label="lx-fampad"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
         android:usesCleartextTraffic="false">
         <!-- Ergebnis der Update-Installation (PackageInstaller); nur intern erreichbar -->
         <receiver
@@ -26,9 +38,23 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Flutters eigenes Deep-Linking aus: Einladungslinks verarbeitet die App selbst (Fragment mit Token) -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Einladungslinks: https://familie.lx-labs.dev/#/einladung/<token>. Android reicht das Fragment mit durch; die App liest
+                 es (MainActivity.linkAus). autoVerify: Android prüft beim Installieren https://familie.lx-labs.dev/.well-known/assetlinks.json
+                 und öffnet den Link bei Übereinstimmung direkt in der App, ohne Auswahldialog. Solange die Datei nicht (oder mit einem
+                 anderen Fingerprint) ausgeliefert wird, schlägt die Prüfung still fehl: Der Link öffnet dann weiter im Browser bzw. mit
+                 Nachfrage. Reihenfolge und Prüfung: deploy/README.md, Abschnitt 9. Host und Pfad stehen auch in MainActivity.kt
+                 und in der Konstante kInviteHost (lib/constants.dart). -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="familie.lx-labs.dev" android:path="/"/>
             </intent-filter>
         </activity>
         <!-- Nicht löschen: wird vom Flutter-Tool zur Erzeugung von GeneratedPluginRegistrant.java gebraucht -->

@@ -1,8 +1,8 @@
 {
   "comment": "Erzeugt mit tools/update-manifest.mjs und einem Wegwerf-Testschluessel (privater Schluessel verworfen)",
-  "publicKey": "fn0gmpCL9UDA4FaCscVL6ENkWoroU44thXeuB8vusCE=",
+  "publicKey": "SqTWpCrC+mUcQzO9b6eAEyrXN//H3+zNZ1/1loBqGwU=",
   "manifest": {
-    "payload": "{\"packageName\":\"dev.lx_labs.familienzentrale\",\"version\":\"0.2.0\",\"versionCode\":2,\"minVersion\":\"0.1.0\",\"apk\":\"lx-familienzentrale-0.2.0.apk\",\"sha256\":\"85f76e61cdeed6222c7d9961868b7ae5b25daf65013b801ca12a80d37b8e333a\",\"size\":21,\"notes\":\"Fixture ä ö ü – Umlaute prüfen UTF-8\",\"issuedAt\":\"2026-10-18T12:00:00.000Z\",\"keyId\":\"testschluessel\"}",
-    "signature": "NauYrI+HWa/R+USvx2B/dDE0a9izTKEzWUpNFFos8VfUgHi2TQ/7sETGnlWS5jMIKZyZQe46Zp9uY4e+PqKTDQ=="
+    "payload": "{\"packageName\":\"dev.lx_labs.fampad\",\"version\":\"0.2.0\",\"versionCode\":2,\"minVersion\":\"0.1.0\",\"apk\":\"dev-lx_labs-fampad-0.2.0.apk\",\"sha256\":\"85f76e61cdeed6222c7d9961868b7ae5b25daf65013b801ca12a80d37b8e333a\",\"size\":21,\"notes\":\"Fixture ä ö ü – Umlaute prüfen UTF-8\",\"issuedAt\":\"2026-10-18T12:00:00.000Z\",\"keyId\":\"testschluessel\"}",
+    "signature": "HiRqDq3h/jUrmxpIrtBhBQ1iTXspwb8o7R6bnGbOdMKt5Mh8SoifFRabj/LCHnwTdF0xtqI3WgMst4qCrKxUAA=="
   }
 }

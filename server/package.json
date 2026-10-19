@@ -1,9 +1,9 @@
 {
-  "name": "lx-familie-server",
+  "name": "lx-fampad-server",
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "lx-familienzentrale: API, Sync und WebSocket",
+  "description": "lx-fampad: API, Sync und WebSocket",
   "engines": {
     "node": ">=24.21.0 <25"
   },
@@ -15,14 +15,19 @@
     "migrate": "node --env-file-if-exists=.env dist/db/migrate-cli.js",
     "db:generate": "drizzle-kit generate",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bootstrap": "node --env-file-if-exists=.env dist/cli/bootstrap.js"
   },
   "dependencies": {
     "@fastify/rate-limit": "11.2.0",
     "@fastify/websocket": "11.3.3",
+    "@simplewebauthn/server": "14.0.3",
+    "argon2": "0.45.1",
     "drizzle-orm": "0.45.3",
     "fastify": "5.12.5",
-    "pg": "8.23.1"
+    "otplib": "13.5.0",
+    "pg": "8.23.1",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",

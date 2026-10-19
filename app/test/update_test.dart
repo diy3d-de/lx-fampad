@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lx_familienzentrale/constants.dart';
-import 'package:lx_familienzentrale/features/update/update_service.dart';
-import 'package:lx_familienzentrale/features/update/versions.dart';
+import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/features/update/update_service.dart';
+import 'package:lx_fampad/features/update/versions.dart';
 
 // Testschlüssel nur für diese Datei (feste Saat, damit der Test reproduzierbar ist). Er signiert nur Testmanifeste.
 final _seed = List<int>.generate(32, (i) => i + 1);
@@ -32,7 +32,7 @@ final gueltig = <String, Object?>{
   'version': '0.2.0',
   'versionCode': 2,
   'minVersion': '0.1.0',
-  'apk': 'lx-familienzentrale-0.2.0.apk',
+  'apk': 'dev-lx_labs-fampad-0.2.0.apk',
   'sha256': 'a' * 64,
   'size': 1234,
   'notes': 'Neu',
@@ -131,7 +131,7 @@ void main() {
       final info = await _parse(await _manifest(gueltig, key), verifier);
       expect(info.version, '0.2.0');
       expect(info.versionCode, 2);
-      expect(info.apkUrl.path, endsWith('/android/lx-familienzentrale-0.2.0.apk'));
+      expect(info.apkUrl.path, endsWith('/android/dev-lx_labs-fampad-0.2.0.apk'));
       expect(info.pflichtFuer('0.0.9'), isTrue);
       expect(info.pflichtFuer('0.1.0'), isFalse);
     });
@@ -240,7 +240,7 @@ void main() {
   group('ServerVersion', () {
     test('liest /api/v1/version und erkennt Pflicht-Updates', () {
       final v = ServerVersion.fromJson({
-        'service': 'lx-familie',
+        'service': 'lx-fampad',
         'protocolVersion': 1,
         'minProtocolVersion': 1,
         'minAppVersion': '0.3.0',

@@ -1,0 +1,48 @@
+# Datenbank-Migrationen mit der Migrationsrolle (Eigentümer, darf DDL). Läuft vor jedem Start von lx-fampad.service
+# (Requires=/After= dort) und als einmaliger Auftrag; der Dienst selbst hat nur die Laufzeitrolle (SELECT/INSERT/UPDATE/DELETE).
+# Geladen wird NUR /etc/lx-fampad/migrate.env (root:root, 0600; enthält MIGRATION_DATABASE_URL): weder AUTH_SECRET_KEY noch die
+# Zugangsdaten der Laufzeitrolle gelangen in diesen Prozess (migrate-cli braucht keine weitere Konfiguration). Fehlt die Datei,
+# scheitert die Einheit mit klarer Meldung (einrichtung-auth.sh legt sie an) und damit auch der Start von lx-fampad.service.
+# Installation: siehe deploy/README.md, Abschnitt "Datenbank-Rollen trennen".
+
+[Unit]
+Description=lx-fampad Datenbank-Migrationen
+After=network.target postgresql.service
+Wants=postgresql.service
+
+[Service]
+Type=oneshot
+User=lx-fampad
+Group=lx-fampad
+WorkingDirectory=/srv/fampad/server
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/lx-fampad/migrate.env
+ExecStart=/usr/bin/node dist/db/migrate-cli.js
+TimeoutStartSec=120
+
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+UMask=0077
+MemoryMax=256M

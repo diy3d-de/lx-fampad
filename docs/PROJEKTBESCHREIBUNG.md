@@ -1,4 +1,4 @@
-# lx-familienzentrale – Projektbeschreibung
+# lx-fampad – Projektbeschreibung
 
 Stand: 18.10.2026 · Status: Konzept · Mockups: [`docs/mockups/`](mockups/) und Design-Canvas (claude.ai, privat)
 
@@ -20,7 +20,7 @@ dem eigenen Server in Deutschland und bei keinem Dritten.
 | Rolle | Rechte |
 | --- | --- |
 | **Admin** (ein Elternteil) | Familie verwalten, Mitglieder einladen und entfernen, Speicher, alle Rechte der Eltern |
-| **Elternteil** | Alles lesen und schreiben, Zugriff auf den Tresor, Kinderkonten verwalten |
+| **Elternteil** | Alles lesen und schreiben, Zugriff auf den Tresor, Kind-Einladungen anlegen (Zurücksetzen und Entfernen von Konten vorerst nur Admin, Entscheidung 19.10.2026) |
 | **Kind** | Eigene und freigegebene Inhalte; kein Tresor; Ortsfreigabe nur mit Zustimmung der Eltern |
 | **Gast** (z. B. Großeltern) | Nur freigegebene Bereiche (z. B. ein Album, ein Kalender, ein Chat) |
 
@@ -61,7 +61,7 @@ Die Spalte „Phase“ legt die Reihenfolge fest (siehe Abschnitt 11).
 
 | Bereich | Funktionen | Phase |
 | --- | --- | --- |
-| **Konten & Familie** | Registrierung per Einladung (Link/QR), Profile, Farbe je Mitglied, Rollen | 1 |
+| **Konten & Familie** | Registrierung per Einladung (Link/QR, optional mit PIN und Freigabe), Profile, Farbe je Mitglied, Rollen | 1 (Server: 1a) |
 | **Kalender** | Gemeinsame und persönliche Kalender, Termine mit Teilnehmern, Wiederholungen (RRULE), Erinnerungen, Monat/Woche/Agenda, Filter je Person, Geburtstage | 1 |
 | **Chat** | Familien-Chat, Gruppen, Einzelchats, Bilder/Dateien, Lesebestätigung, Reaktionen, Push | 1 |
 | **Listen** | Einkaufsliste, Packlisten, beliebige Listen; Abhaken in Echtzeit, Zuständigkeit | 1 |
@@ -133,7 +133,7 @@ Mindestversionen: Android 9 (API 28, nötig für Passkeys über Credential Manag
    ▲             │                                       ├─▶ API + WebSocket :4400    │
    │             │                                       └─▶ /releases (OTA-Dateien)  │
    │             │   API ──▶ PostgreSQL 17 (nur localhost)                            │
-   │             │   API ──▶ Dateiablage /srv/familie/files (verschlüsselt)           │
+   │             │   API ──▶ Dateiablage /srv/fampad/files (verschlüsselt)           │
    │             │   Backup: restic, verschlüsselt, auf externes Ziel                  │
    │             └────────────────────────────────────────────────────────────────────┘
    └──── Push über eigenen ntfy-Server (UnifiedPush) – nur „es gibt Neues“, kein Inhalt
@@ -189,25 +189,87 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
 
 ## 7. Anmeldung und Konten
 
-- **Passkey als Standard.** Bei der Registrierung legt jede Person einen Passkey an (Handy, Windows Hello,
-  Sicherheitsschlüssel). Für Passkeys in der App braucht `familie.lx-labs.dev` die Dateien
-  `/.well-known/assetlinks.json` (Android) und `/.well-known/apple-app-site-association` (iOS).
-- **Passwort nur mit 2FA.** Wer statt Passkey ein Passwort nutzt, muss TOTP (Authenticator-App) einrichten.
-  Passwörter mit **Argon2id**, Prüfung gegen bekannte geleakte Passwörter (k-Anonymität, optional).
-- **Wiederherstellung:** 10 Einmal-Codes beim Einrichten (nur als Hash gespeichert, `recovery_codes`, mit Einlöse-Zeitpunkt);
-  zusätzlich kann ein Admin ein Mitglied zurücksetzen (neue Einladung). Keine Wiederherstellung per SMS.
-- **Einladungen** per Link oder QR-Code, einmalig, 7 Tage gültig, an eine Rolle gebunden. Es gibt keine offene
-  Registrierung.
-- **Sitzungen:**
-  - Web: Session-Cookie `HttpOnly; Secure; SameSite=Strict`, CSRF-Schutz.
-  - App: Access-Token (15 min) + Refresh-Token mit Rotation und Wiederverwendungs-Erkennung, gebunden an das
-    Gerät; Ablage in `flutter_secure_storage`. Beim Einlösen setzt der Server `used_at` und `rotated_to`; wird ein bereits
-    eingelöstes Token erneut vorgelegt, widerruft er die ganze Token-Familie und schreibt einen Eintrag ins Audit-Log.
-  - Geräteliste in den Einstellungen, jedes Gerät einzeln abmeldbar.
-- **Erneute Bestätigung** (Passkey oder 2FA) für Tresor, Rollenänderungen, Löschen der Familie, neue Passkeys.
-- **Schutz:** Rate-Limits für Anmeldung und 2FA, verzögerte Sperre nach Fehlversuchen, Audit-Log
-  sicherheitsrelevanter Ereignisse (Anmeldung, neues Gerät, Rollen), Hinweis per Mail bei neuem Gerät.
-- Kinderkonten legen die Eltern an; Kinder melden sich mit Passkey auf ihrem eigenen Gerät an.
+Umgesetzt in Phase 1a (Server) und Phase 1b (App: Anmeldung, Einladungen, Konto, Admin; Abschnitt "App-Teil (Phase 1b)" unten). Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.
+
+### Grundsätze
+
+- **Passkey als Standard.** Jede Person kann einen Passkey einrichten (Handy, Windows Hello, Sicherheitsschlüssel). Server: `@simplewebauthn/server`, nur klassische Algorithmen (ES256, RS256),
+  Nutzerprüfung (UV) und auffindbare Passkeys Pflicht, Attestation `none`, Challenge serverseitig gespeichert (5 Minuten, einmal einlösbar), `signCount` wird geprüft (Rückgang = abgelehnt und im Audit-Log).
+  RP-ID `familie.lx-labs.dev` (konfigurierbar, `WEBAUTHN_RP_ID`). Für Passkeys in der App braucht `familie.lx-labs.dev` die Dateien `/.well-known/assetlinks.json` (Android) und
+  `/.well-known/apple-app-site-association` (iOS); die Android-Origin der App kommt über `WEBAUTHN_ORIGINS`.
+- **Passwort nur mit TOTP.** Wer statt Passkey ein Passwort nutzt, richtet bei der Registrierung TOTP ein (die Code-Bestätigung ist Pflicht, sonst entsteht kein Konto). Passwörter mit **Argon2id**
+  (32 MiB, 3 Durchgänge; höchstens 2 gleichzeitig, Warteschlange begrenzt, bei Überlast `503`), mindestens 12 Zeichen (einstellbar, nie unter 10). Das TOTP-Geheimnis liegt **AES-256-GCM-verschlüsselt** in der Datenbank (Schlüssel `AUTH_SECRET_KEY` außerhalb der Datenbank, an die Benutzer-ID gebunden).
+  Teilschlüssel entstehen per HKDF-SHA256 aus `AUTH_SECRET_KEY` mit dem festen Domänen-Label `lx-fampad/<Zweck>` (`KDF_DOMAIN`, nie ändern; Known-Answer-Test). Replay-Schutz: Der zuletzt akzeptierte Zeitschritt wird atomar fortgeschrieben; derselbe Code gilt nie zweimal. Die Prüfung gegen geleakte Passwörter (k-Anonymität) ist **nicht** umgesetzt (optional, offen).
+- **Wiederherstellung:** 10 Einmal-Codes (`XXXX-XXXX-XXXX-XXXX`, rund 78 Bit) beim Einrichten, gespeichert als **HMAC-SHA256 mit dem Server-Schlüssel** (`recovery_codes`, mit Einlöse-Zeitpunkt). Ein Code genügt für die
+  Anmeldung (die Sitzung gilt als frisch bestätigt, damit ein neuer Passkey eingerichtet werden kann) oder ersetzt bei Passwort-Konten den TOTP-Code. Admins können ein Mitglied **zurücksetzen** (alle
+  Anmeldedaten, Codes und Sitzungen werden widerrufen, eine neue Einladung für dasselbe Konto entsteht); der Betreiber kann das auch per Kommandozeile (`--reset`). Keine Wiederherstellung per SMS.
+- **Keine offene Registrierung.** Der Server bedient genau eine Familie.
+
+### Ablauf
+
+1. **Erstinstallation:** Der Betreiber ruft auf dem Server `node dist/cli/bootstrap.js` auf. Das legt die Familie und eine Einladung für den ersten Admin an und gibt den Link aus
+   (Einmaltoken, 7 Tage). Läuft die Einladung ab, ersetzt ein erneuter Aufruf sie; nach dem Einlösen ist der Weg gesperrt.
+2. **Einladen:** Admins erzeugen Einladungen für jede Rolle (Admin-Einladungen verlangen zusätzlich eine frische Bestätigung); Eltern nur für Kinder und Gäste (und verwalten nur ihre eigenen Einladungen).
+   - **Token:** 256 Bit aus dem CSPRNG, in der Datenbank nur der SHA-256-Hash, einmalig, Rolle fest. Der Link trägt das Token im **URL-Fragment** (`https://familie.lx-labs.dev/#/einladung/<token>`), nie als Pfad oder Query,
+     damit es in keinem Server-, Proxy- oder Caddy-Log landet; die App sendet es nur im POST-Body. Der QR-Code kodiert denselben Link (die Grafik erzeugt die App).
+   - **Gültigkeit:** Standard 24 Stunden, einstellbar bis 7 Tage; Admins (und Eltern für ihre eigenen Einladungen für Kinder/Gäste) können widerrufen oder (auch Abgelaufene) verlängern; Verlängern **verkürzt nie**. Wird eine Person herabgestuft oder entfernt, werden ihre offenen Einladungen widerrufen.
+   - **PIN (optional):** 6 Ziffern aus dem CSPRNG, nur als HMAC gespeichert, dem Einladenden einmalig bei der Erstellung angezeigt und getrennt weiterzugeben. Jeder Versuch wird **vor** dem Vergleich atomar gezählt;
+     nach 5 Fehlversuchen ist die Einladung gesperrt.
+   - **Freigabe (optional):** Mit `requireApproval` (Standard für Gäste) wird das neue Mitglied `pending` und kann sich erst nach Freigabe durch einen Admin anmelden. Die Freigabe bei Gästen abzuschalten darf nur ein Admin; für Eltern erzwingt der Server sie.
+3. **Annehmen:** Die eingeladene Person prüft die Einladung (`lookup`), wählt Passkey oder Passwort+TOTP, bestätigt den Besitz (Passkey-Antwort bzw. TOTP-Code) und bekommt erst dann das Konto, die
+   Wiederherstellungs-Codes und (wenn nicht `pending`) eine Sitzung. Alles geschieht in einer Transaktion; die Einladung wird dabei atomar verbraucht (parallele Einlösungen: genau eine gewinnt).
+4. **Anmelden:** Passkey (ohne Kontoangabe), Passwort+TOTP oder Wiederherstellungs-Code. Alle Fehlschläge antworten gleich (`invalid_credentials`); unbekannte Konten rechnen gegen einen Platzhalter-Hash (keine Konto-Enumeration per Antwort oder Zeit).
+   **Reihenfolge bei Passwort und Wiederherstellungs-Code:** (1) Passwort bzw. Code prüfen, (2) gesperrte Konten wie ein falsches Passwort behandeln (`invalid_credentials`, nichts verbraucht), (3) den zweiten Faktor nur **prüfen** (TOTP-Zeitschritt bzw. Code unverbraucht), (4) erst jetzt die Statusprüfung: `pending` ergibt `403 account_pending` und verbraucht nichts (die Antwort verrät den Status also nur dem, der Passwort **und** zweiten Faktor kennt), (5) bei aktivem Konto wird der Faktor in **derselben Transaktion** wie die Sitzungserstellung verbraucht; scheitert das (parallel eingelöst), gibt es `invalid_credentials` und keine Sitzung.
+5. **Sitzungen:**
+   - **Web:** Cookie `__Host-lxsid` (`Secure; HttpOnly; SameSite=Strict`, ohne Domain; Token 256 Bit, in der Datenbank nur der Hash). CSRF-Schutz doppelt: ein fremder `Origin` wird abgelehnt, und jede ändernde Anfrage
+     braucht `X-CSRF-Token` (aus der Sitzungs-ID abgeleitet). 30 Tage absolut, 7 Tage Leerlauf.
+   - **App:** Access-Token (HMAC-signiert, 15 min, prüft zusätzlich die Sitzung in der Datenbank und wirkt nach einem Widerruf daher sofort nicht mehr) + Refresh-Token mit Rotation. Beim Einlösen setzt der Server `used_at` und
+     `rotated_to`; ein erneut vorgelegtes Token widerruft die **ganze `token_family`** und schreibt `session_reuse_detected` ins Audit-Log. Das Refresh-Token ist an die Geräte-ID gebunden; die absolute Dauer (90 Tage) bleibt
+     bei der Rotation erhalten, im Leerlauf (30 Tage) läuft es ab. Ablage in `flutter_secure_storage` (App, Phase 1b). **Ausnahme:** kurzes Toleranzfenster für eine verlorene Antwort (nächster Absatz).
+   - **Geräteliste** (`GET /devices`), jedes Gerät einzeln abmeldbar, „überall abmelden“. Bei **Rollenwechsel** werden alle Sitzungen der Person widerrufen.
+6. **Erneute Bestätigung (Step-up):** wiederverwendbare Prüfung (`requireStepUp`, 5 Minuten) für Tresor, Rollenänderung, Mitglied entfernen/zurücksetzen, Admin-Einladung, neuen Passkey und neue Wiederherstellungs-Codes.
+   Bestätigt wird per Passkey, TOTP oder Wiederherstellungs-Code; die Anmeldung selbst zählt als frische Bestätigung.
+7. **WebSocket:** `POST /api/v1/ws-ticket` liefert ein Einmal-Ticket (256 Bit, 30 s, nur der Hash gespeichert, atomar einlösbar). Der Socket löst es in der ersten Nachricht ein; Browser mit Cookie sind beim Upgrade angemeldet.
+   Fehlgeschlagene Anmeldungen am WebSocket zählen gegen die IP (verzögerte Sperre schon vor dem Upgrade). Nachrichtenlimit je Socket sowie Verbindungslimit je IP (IPv6: je /64) und je Person werden ohne Wettlauf gezählt.
+   Der Hub kennt die Verbindungen je Person, Sitzung und Gerät: Abmelden, Gerät entfernen, Rollenwechsel und Entfernen schließen sie sofort (Code `4401`); bei jedem Ping wird die Sitzung erneut geprüft und die Rolle aktualisiert.
+8. **Schutz:** Strengere Rate-Limits für Anmelde-, 2FA- und Ticket-Routen; Fehlversuche je IP (IPv6: /64), je Konto und je Paar Konto+IP mit verzögerter Sperre (Paar ab 5, IP ab 20, Konto ab 10 Fehlversuchen 30 s, verdoppelt bis **höchstens 90 s**; Schlüssel nur als HMAC gespeichert; Passkey-Anmeldungen hängen nicht an der Konto-Sperre, Anmeldung und Step-up teilen einen Konto-Schlüssel); Challenge-Erzeugung ohne Anmeldung je IP-Präfix und global begrenzt; Eingaben mit NUL oder einzelnen Surrogaten werden abgelehnt; im Log stehen bei Datenbankfehlern nie SQL-Parameter;
+   Audit-Log sicherheitsrelevanter Ereignisse (Anmeldung, neues Gerät, Rollen, Zurücksetzen, Einladungen, Fehlversuche, Wiederverwendung); eigener Fehlerhandler ohne interne Meldungen.
+   Die IP im Audit-Log wird nach 7 Tagen entfernt, die Einträge nach 365 Tagen gelöscht (Aufräum-Job beim Start und **stündlich**; er bereinigt auch Sitzungen, Challenges, Tickets und Fehlversuche).
+   **Nicht umgesetzt:** Hinweis per Mail bei neuem Gerät (es gibt noch keinen Mail-Versand; das Audit-Log hält `device_added` fest).
+9. **Familiengrenze:** Alle Abfragen sind auf die Familie der Sitzung begrenzt; Verweise auf Personen laufen über zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships`
+   (Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen, Lesebestätigungen), sodass die Datenbank Verweise über Familiengrenzen verhindert.
+- Kinderkonten legen die Eltern per Einladung an; Kinder melden sich mit Passkey auf ihrem eigenen Gerät an.
+
+### Toleranzfenster für ein gerade rotiertes Refresh-Token (Sicherheitsbetrachtung)
+
+**Problem.** Geht die Antwort auf `POST /auth/refresh` verloren (Funkloch nach dem Senden, App wird beendet), hat der Server das Token eingelöst, die App kennt das neue Paar aber nicht. Ohne Fenster wäre jede dieser Wiederholungen eine „Wiederverwendung“ und würde die Token-Familie widerrufen: die Person müsste sich neu anmelden.
+
+**Regel (`refreshSession`, `regrantRefresh` in `server/src/auth/sessions.ts`).** Eine Wiederholung wird bedient, wenn **alle** Bedingungen gelten: höchstens **30 s** seit dem Einlösen (festes Fenster ab `used_at`, `refreshGraceSec`), **dieselbe Geräte-ID** wie beim Einlösen und die **Nachfolgerin ist noch unbenutzt** (nicht eingelöst, nicht widerrufen). Dann wird die erste, nie angekommene Nachfolgerin widerrufen und **genau eine** neue ausgestellt (gleiche Familie, gleiche absolute Ablaufzeit, `rotated_to` zeigt auf die neue); Audit `session_refresh_retry`. Die Zeilen der eingelösten Sitzung und der Nachfolgerin werden mit `FOR UPDATE` gesperrt: gleichzeitige Wiederholungen laufen nacheinander und lassen nie zwei lebende Nachfolger entstehen. Alles andere bleibt Widerruf der ganzen Familie (`session_reuse_detected`): nach 30 s, andere Geräte-ID, benutzte oder widerrufene Nachfolgerin.
+
+**Warum das sicher genug ist (Security-Sicht).**
+- Wer ein gestohlenes Refresh-Token nutzen will, braucht **zusätzlich die Geräte-ID** (UUID, liegt nur im Keystore der App und wird nirgends außer im Refresh-Aufruf gesendet). Ein Dieb mit nur dem Token scheitert wie bisher und löst den Widerruf aus.
+- Hat ein Dieb Token **und** Geräte-ID (also vollen Zugriff auf den Keystore des Geräts), kann er ohnehin das aktuelle Token selbst einlösen; das Fenster verschafft ihm nichts, was er nicht schon hätte. Er hat höchstens 30 s ab dem letzten Einlösen Zeit, danach (oder sobald die Nachfolgerin benutzt wird) greift die Erkennung wie zuvor.
+- Die Nachfolgerin wird beim Wiederholen **widerrufen**: wer das neue Paar schon hat (legitimes Gerät, dessen Antwort doch ankam) verliert es, statt dass zwei Äste der Familie parallel weiterleben. Der legitime Fall ist harmlos (die App legte das Token nur vor, weil sie das neue nie bekam); im Diebstahlsfall wird der Dieb zum alleinigen Besitzer, das legitime Gerät fällt bei seinem nächsten Refresh heraus (`invalid_token`, Anmeldung neu) und der Vorfall bleibt im Audit sichtbar (`session_refresh_retry` ohne passenden Verlust-Hinweis der App). Das Fenster ist bewusst kurz und nicht gleitend.
+- Das Fenster ist ein Kompromiss zwischen Verfügbarkeit (keine erzwungene Neuanmeldung nach einem Funkloch) und Erkennung. Abschalten: `refreshGraceSec` auf 0 (Konstante in `server/src/config.ts`).
+- Die App ändert ihr Verhalten nicht: sie wiederholt ein Refresh-Token **nicht auf Verdacht**, sondern nur, wenn sicher ist, dass die Anfrage den Server nie erreichte (Fehler beim Verbindungsaufbau); bei unklarem Ausgang (Zeitlimit der Antwort, Abbruch nach dem Senden) meldet sie ab. Eine einmalige Wiederholung im Fenster ließe sich später clientseitig ergänzen (siehe „Später“).
+
+Tests: `server/test/auth-login.test.ts` (Fenster, Rand 30 s, außerhalb, falsche Geräte-ID, Nachfolgerin benutzt, parallele Wiederholungen).
+
+### App-Teil (Phase 1b)
+
+Code: `app/lib/data/api/` (ApiClient, Endpunkte, DTOs, Token-Ablage), `app/lib/data/auth/auth_state.dart` (Riverpod), `app/lib/features/auth|profile|admin/`.
+
+- **API-Client:** `http` gegen `kApiBase`. Web: HttpOnly-Cookie (gleiche Domain), `X-CSRF-Token` (aus der Sitzungsantwort bzw. `GET /me`) an jeder ändernden Anfrage, nichts in `localStorage`. Android: Access-Token als Bearer, Access- und Refresh-Token in `flutter_secure_storage`; Erneuerung kurz vor Ablauf oder nach einem 401 **nur bei den Codes `unauthenticated`/`invalid_token`**; andere 401-Fachcodes (z. B. `step_up_failed`) lösen weder Erneuerung noch einen zweiten Versuch aus (der Versuch zählte sonst doppelt gegen die Sperre). **Refresh wird serialisiert** (ein Future für alle Aufrufer) und bei unklarem Ausgang (Zeitüberschreitung der Antwort, Abbruch nach dem Senden) **nicht wiederholt**: Das Token könnte eingelöst sein, und der Server widerruft bei Wiederverwendung die ganze Familie (Ausnahme: Toleranzfenster, der Client verlässt sich aber nicht darauf). Die lokale Sitzung wird dann verworfen und die Person meldet sich neu an. Nur ein `VerbindungsaufbauFehler` (Verbindung kam nicht zustande: kein Netz, DNS, abgelehnt, TLS, Zeitlimit beim Aufbau von 10 s) lässt die Token unangetastet. Die Einstufung hängt nur vom **Typ** der Ausnahme ab (nie vom Meldungstext): Auf Android öffnet ein eigener Client (`PhasenClient`, `app/lib/data/api/http_client_io.dart`) die Verbindung getrennt vom Senden; die Zeitgrenze für die Antwort (20 s) bleibt davon getrennt. Eine **Sitzungsgeneration** im Client verwirft späte Ergebnisse: eine Erneuerung, die erst nach Abmelden oder Personenwechsel zurückkommt, schreibt keine Token mehr zurück und beendet auch die neue Sitzung nicht. Gerätename, Plattform, Version und die gespeicherte Geräte-ID gehen bei Anmeldung und Registrierung mit.
+- **Fehler:** Einheitliche `ApiException` mit fester deutscher Meldung je Fehlercode (nie Servertext oder Systemmeldung). 401 mit `unauthenticated`/`invalid_token` an geschützten Stellen = zurück zur Anmeldung; 429/`too_many_attempts` und 503 `server_busy` zeigen die Wartezeit aus `Retry-After`; `step_up_required` öffnet den Bestätigungsdialog (Passkey, TOTP oder Wiederherstellungscode) und wiederholt die Aktion einmal.
+- **Zustand:** `AuthStatus` prüfe / abgemeldet / angemeldet / wartend (Freigabe) / Verbindungsfehler; das Pflicht-Update (`updateProvider`) hat Vorrang. Start: `GET /me`; ohne Netz **oder bei Serverstörung** (503 `server_busy`, 429, 5xx, auch eine HTML-Fehlerseite von Caddy bei 502) startet die Android-App mit dem gespeicherten Profil (Name, E-Mail, Rolle, Farbe im Keystore). Jeder Ausgang von `start()` ist ein Zustand ohne Ladeanzeige (`catch`-Zweig: Fehlerseite mit "Erneut versuchen", nie ein Endlos-Spinner; `SecureTokenStore` fängt beim Lesen alle Ausnahmen ab, löscht den unlesbaren Eintrag und liefert null). Im Web ist ein 401 beim Start der Normalfall (Erstbesuch) und zeigt **keinen** Hinweis "Sitzung abgelaufen" (die Konsole meldet das 401 weiterhin: ein Browser kann ein `HttpOnly`-Cookie nicht vorab prüfen, ein Merker-Flag wäre nicht zuverlässig).
+  - **Abmelden** (`AuthController.abmelden`): Android: Serverfehler oder offline werden toleriert, das Token wird lokal gelöscht, die Person erfährt es ("nur auf diesem Gerät abgemeldet; die Sitzung bleibt auf dem Server bis zum Ablauf gültig, beendbar unter Angemeldete Geräte"). Web: bei Serverfehler wird **nicht** als abgemeldet angezeigt (Fehler, "Erneut versuchen", "Trotzdem nur lokal abmelden" mit Warnung, dass die Sitzung auf dem Server gültig bleibt). Ist die Sitzung dort schon beendet (401), gilt es als abgemeldet. Der Zustand geht in jedem Fall, in dem nicht geworfen wird, auf abgemeldet (`try/finally`), auch wenn das Löschen der Daten scheitert (die Person wird informiert).
+  - **Lokale Daten:** Ausdrückliches Abmelden (und "Überall abmelden", Gerät in der Liste entfernen) leert die Datenbank über den Hook `localDataWiperProvider` (Phase 1c ergänzt die Fachtabellen). Ein **Sitzungsverlust** (abgelaufen, widerrufen, Erneuerung gescheitert) löscht Token und Profil, **leert die Datenbank nicht**: Sie kann ungesendete Änderungen (Outbox) enthalten, die nach einer erneuten Anmeldung derselben Person nicht verloren gehen sollen. Die Datenbank merkt sich die Benutzer-ID ihres Besitzers (`sync_meta.ownerUserId`, Hook `localDataOwnerProvider`); meldet sich eine **andere** Person an (Anmeldung, Registrierung, Start mit fremder Sitzung), wird sie vorher geleert; scheitert das, wird die Anmeldung abgebrochen. Dokumentiert in `docs/DATENSCHUTZ-ENTWURF.md`, Abschnitt 6 (das Profil im Keystore enthält auch die E-Mail-Adresse).
+  - **Späte Antworten:** Ein Generationszähler im `AuthController` verwirft Antworten von `GET /me`, die erst nach Abmelden oder Personenwechsel eintreffen (Bedingung: weiterhin angemeldet und gleiche `user.id`).
+- **Einladung annehmen:** Web: `/#/einladung/<token>` wird in `main()` gelesen und sofort mit `history.replaceState` (unter Mitgabe des vorhandenen `history.state`, damit Flutters Verlaufszähler und die Zurück-Taste heil bleiben) aus der Adresszeile entfernt, auch bei ungültigem Token. Wird ein Link in einen **schon offenen Tab** eingefügt, entsteht ein `popstate` (die Engine springt daraufhin selbst mit `history.go(-1)` zurück, deshalb horcht der Client auf `popstate` **und** `hashchange`: nur im ersten sieht er das Fragment sicher) und der Link wird ebenso sofort entfernt. Flutters Router bekommt das Token **nie**: Die App hat keine benannten Routen (alle Seiten per `Navigator.push` ohne Namen); ein `WidgetsBindingObserver` schluckt alle Pfadmeldungen des Browsers (`didPushRouteInformation`), sodass kein Routenname mit Token in Adresszeile oder Verlauf zurückgeschrieben wird. Der frühere Umweg über eine Route, die sich selbst schließt (`_SofortZurueck`/`maybePop`, mit einem Wettlauf gegen die Einladungsseite), ist entfallen. Doppelte Meldungen desselben Links (Adresszeile und Routenmeldung) fängt der Intake ab. Geprüft im echten Chrome: nach Kaltstart und nach Einfügen in einen offenen Tab stehen weder `location.href` noch der Navigationsverlauf mit Token da; die Zurück-Taste führt zur Anmeldeseite. Android: Link einfügen, QR scannen (`mobile_scanner`, nur Android) oder Intent (`https://familie.lx-labs.dev/` mit Fragment; nur Links mit Fragment `#/einladung` zählen, andere Links der Domain ignoriert die App; ein Link im Status "wartend" öffnet die Einladung). Das Token bleibt im Arbeitsspeicher und geht nur im POST-Body zum Server. Ablauf: prüfen, PIN/Name/E-Mail, Passkey oder Passwort + TOTP (Secret und QR des otpauth-URI), Wiederherstellungscodes (einmalig; ohne Bestätigung "gespeichert" geht es nicht weiter; die Sitzung wird erst danach übernommen), bei `pending` der Warte-Bildschirm.
+- **Passkeys:** Paket `passkeys` (Android: Credential Manager, Web: selbst gehostetes `web/passkeys-bundle.js`). Fehler (abgebrochen, kein Support, Google Play-Dienste fehlen, Domain nicht verknüpft) zeigen klare Meldungen mit dem Weg zu Passwort + TOTP. Voraussetzungen auf dem Server: `assetlinks.json` und `WEBAUTHN_ORIGINS` (`deploy/README.md`, Abschnitt 9).
+- **Konto und Admin:** Profil/Sicherheit (Passkeys hinzufügen/entfernen, neue Wiederherstellungscodes, Geräteliste mit einzelnem Abmelden), Admin: Mitglieder (Rolle, entfernen, zurücksetzen, freigeben/ablehnen) und Einladungen (erstellen mit Rolle/Gültigkeit/PIN/Freigabe, QR + Link + PIN einmalig, verlängern, widerrufen). Eltern sehen nur die Einladungen für Kinder und Gäste (Rolle aus `/me`; der Server erzwingt es ohnehin).
+- **Datenschutz in der App:** keine Token im Log, `FLAG_SECURE` auf Seiten mit Geheimnissen (Kotlin merkt sich den Wunsch und setzt das Flag in `onCreate`/`onResume` neu), Zwischenablage nur auf Klick und für Geheimnisse (Codes, PIN, TOTP-Schlüssel, Einladungslink) mit `EXTRA_IS_SENSITIVE`, `onNewIntent` ersetzt den Intent. Manifest: `autoVerify="true"` am Einladungs-Filter, Backup komplett aus (`allowBackup=false` plus leere `dataExtractionRules`/`fullBackupContent`), Kamera nicht erforderlich, die privilegierte Berechtigung `CREDENTIAL_MANAGER_SET_ORIGIN` des Passkey-Pakets wird entfernt (`tools:node="remove"`; das Paket setzt keinen Origin, und eine normale App bekäme sie ohnehin nie). Passwortfelder liegen in einer `AutofillGroup` (Web: `<form>`; Passwortmanager erkennen E-Mail und Passwort; die Chrome-Meldung "Password field is not contained in a form" erscheint nur noch bei eingeschalteter Bedienungshilfe, weil Flutter die Eingabe dann außerhalb eines Formulars aufbaut).
+- **Bedienung:** Ein abgebrochener Passkey-Dialog ist keine Fehlermeldung (neutraler Hinweis). Nach einer erfolgreichen Aktion (Einladung erstellen, Passkey, Mitglied) ist ein Fehler beim Neuladen der Liste kein Fehler der Aktion (Hinweis "Liste konnte nicht aktualisiert werden", Erfolg bleibt Erfolg). Listen werden pro Eintrag gelesen: ein unbekannter Wert (Rolle, Status einer neueren Server-Version) lässt nur diesen Eintrag weg. Der Step-up-Dialog lässt sich nicht per Tipp daneben und, solange der Passkey-Dialog läuft, nicht per Zurück schließen. Lange Überschriften (z. B. "Wiederherstellungscodes") werden bis auf 18 px verkleinert, statt mitten im Wort umzubrechen. Die Hinweiszeile unter der Anmeldung zeigt den Host aus `API_BASE` bzw. der Seitenadresse; `kInviteHost` kommt aus `--dart-define=INVITE_HOST`.
 
 ## 8. Updates (OTA)
 
@@ -241,7 +303,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 - **Server-Härtung:** PostgreSQL nur auf localhost, eigener Systembenutzer und systemd-Dienst, Firewall
   unverändert (nur SSH/HTTP/HTTPS), Sicherheits-Header und strenge CSP über Caddy, Upload-Größen und
   Dateitypen begrenzt.
-- **Rechtliches:** eigene Datenschutzerklärung für die Familienzentrale (Kinderdaten, Standort, Web Push über den
+- **Rechtliches:** eigene Datenschutzerklärung für lx-fampad (Kinderdaten, Standort, Web Push über den
   Browser-Dienst), Löschkonzept (Konto löschen, Familie löschen, Export aller Daten als ZIP).
 
 ## 10. Betrieb auf dem VPS
@@ -249,7 +311,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 - DNS bei Cloudflare: `familie` A-Record auf die Server-IP, **DNS only** (graue Wolke) wie lx-labs.dev.
 - Caddy: zusätzlicher Site-Block `familie.lx-labs.dev` (statische Web-App, Reverse Proxy `/api` und `/ws`
   auf `127.0.0.1:4400`, `/releases`, `/.well-known`).
-- Dienst `lx-familie.service` unter eigenem Benutzer, Daten unter `/srv/familie/`.
+- Dienst `lx-fampad.service` unter eigenem Benutzer, Daten unter `/srv/fampad/`.
 - Backups: nächtlich `pg_dump` + Dateien mit restic auf ein externes Ziel, Aufbewahrung 7 Tage / 4 Wochen /
   6 Monate, Wiederherstellung einmal pro Quartal testen.
 - Monitoring: `/api/v1/health`, Speicherplatz-Warnung, Log-Rotation; keine IP-Adressen länger als 7 Tage.
@@ -259,7 +321,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 ## 11. Projektstruktur (geplant)
 
 ```
-lx-familienzentrale/
+lx-fampad/
   server/          Node/Fastify-API, Sync, Auth, Dateien, WebSocket, Drizzle-Schema und Migrationen
   app/             Flutter (Android, Web; iOS später): lib/data (drift, sync), lib/features/<bereich>, lib/ui (Tokens)
   deploy/          Caddy-Site, systemd-Dienst, deploy.sh, Backup-Skripte, Anleitung
@@ -287,14 +349,31 @@ Jede Phase durchläuft das Team: **Research** (Bibliotheken, Plattformvorgaben) 
 
 Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören vor Beginn bzw. in den Anfang von Phase 1 (Auth, Sync, Dateien):
 
-- **WebSocket-Fehlversuche zählen:** abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
-- **Getrennte Datenbank-Rollen:** eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
-- **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen.
-- **Löschkonzept:** Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
-- **Mitgliedschafts-Prüfung bei Schema-Verweisen:** wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
-- **Recovery-Codes:** nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
-- **WebSocket-Limits atomar:** Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
-- **Eigener Fehlerhandler:** einheitliche Fehlerantworten ohne interne Details (keine Stacktraces oder Meldungen von Bibliotheken), Fehler nur im Log.
+- ~~**WebSocket-Fehlversuche zählen:**~~ erledigt in Phase 1a: abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
+- ~~**Getrennte Datenbank-Rollen:**~~ erledigt in Phase 1a (`lx_fampad_migrate` / `lx_fampad`, `deploy/README.md`): eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
+- **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen. Dazu in `ci.yml` einen Schritt `npm audit --omit=dev` für den Server aufnehmen (Produktivabhängigkeiten).
+- **Später (Befunde aus Phase 1a, bewusst zurückgestellt):**
+  - **Audit-Log nur anhängen:** Die Laufzeitrolle darf `audit_log` heute ändern und löschen (der Aufräum-Job braucht das). Besser: Laufzeit nur `INSERT`/`SELECT`, Bereinigung über eine eigene Rolle oder einen Datenbank-Job.
+  - **`AUTH_SECRET_KEY`: Key-ID und Rotation:** Gespeicherte HMACs und TOTP-Geheimnisse tragen keine Schlüsselkennung; eine Rotation ist daher nicht möglich. Key-ID im Format (z. B. `v1.<kid>.…`) und Neuverschlüsselung vorsehen.
+  - **Bootstrap und Zurücksetzen (`bootstrap.js`) nicht als root aus einem für `lx` schreibbaren Verzeichnis:** Der Aufruf liest Code aus `/srv/fampad/server` (Gruppe `lx-fampad`, `lx` schreibt dort bei jedem Deployment) und läuft mit `sudo`. Stattdessen eine root-eigene, unveränderliche Kopie oder eine eigene Einheit verwenden.
+  - **Tresor- und „Familie löschen“-Endpunkte** nur mit Step-up (`requireStepUp`), sobald sie entstehen.
+  - **Hinweis per Mail bei neuem Gerät** (setzt Mail-Versand voraus), falls gewünscht.
+  - **Prüfung gegen geleakte Passwörter (HIBP, k-Anonymität)** optional.
+  - **Fragment-Token im Client (Phase 1b):** Das Einladungs-Token steht im URL-Fragment; der Client liest es und entfernt es sofort mit `history.replaceState` aus der Adresszeile (Verlauf, Screenshots, Referrer); erledigt, auch für Links in einem schon offenen Tab (Abschnitt "App-Teil").
+  - **App, später (aus Review und Test von Phase 1b, bewusst zurückgestellt):**
+    - **Teilen** von Einladung/PIN über die Android-Freigabe (`share_plus`; heute nur Kopieren auf Klick, vertraulich markiert).
+    - **„Gerät vertrauen“** (Anmeldung auf einem vertrauten Gerät dauerhaft ohne zweiten Faktor bzw. längere Step-up-Gültigkeit).
+    - **Lokale Browser-Datenbank beim Abmelden vollständig entfernen** (`secure_delete`, OPFS-Datei löschen statt nur Zeilen leeren), siehe `DATENSCHUTZ-ENTWURF.md`, Abschnitt 6.
+    - **`FLAG_SECURE` optional global** (Einstellung "Bildschirmfotos sperren" für die ganze App, nicht nur Geheimnis-Seiten).
+    - **Wiederherstellungscodes: Hinweis "noch nicht bestätigt"** im Profil, wenn die Person die Codes beim Anlegen nicht als gespeichert bestätigt hat (heute erzwingt der Ablauf die Bestätigung, aber ein Abbruch danach ist nicht sichtbar).
+    - **`qr_flutter` 4.1.0 (Wartung):** das Paket wird kaum noch gepflegt; Ersatz oder eigener QR-Painter prüfen.
+    - **Refresh-Wiederholung im Toleranzfenster (Client):** bei unklarem Ausgang einmal innerhalb von 25 s mit demselben Token und derselben Geräte-ID wiederholen, statt abzumelden (der Server bedient das seit Phase 1b); bewusst noch nicht gebaut, weil die Abwägung aus dem Abschnitt "Toleranzfenster" erst Erfahrung braucht.
+    - **Sitzungsverlust und lokale Daten:** siehe `DATENSCHUTZ-ENTWURF.md` ([Prüfen]); in Phase 1c mit dem Ausgang (Outbox) neu bewerten.
+- **Löschkonzept (teilweise erledigt):** `audit_log` (IP 7 Tage, Einträge 365 Tage) ist geregelt und wird aufgeräumt; offen bleibt `change_log.changes` (Sync, Phase 1c). Aufbewahrung und Löschung von `audit_log` und `change_log.changes` festlegen (personenbezogene Inhalte in Änderungsprotokollen, IP-Spalte höchstens 7 Tage).
+- **Mitgliedschafts-Prüfung bei Schema-Verweisen (teilweise erledigt):** Zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships` gelten für Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen und Lesebestätigungen. Für Verweise mit `ON DELETE SET NULL` (`events.owner_id`, `*.assignee_id`, `messages.sender_id`, `files.uploaded_by`, `change_log.author_id`) geht das nicht (die Familien-Spalte würde mit auf NULL gesetzt); sie prüft der Sync serverseitig (Phase 1c). Ursprünglich: wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
+- ~~**Recovery-Codes:**~~ erledigt in Phase 1a (HMAC-SHA256 mit Server-Schlüssel): nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
+- ~~**WebSocket-Limits atomar:**~~ erledigt in Phase 1a: Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
+- ~~**Eigener Fehlerhandler:**~~ erledigt in Phase 1a: einheitliche Fehlerantworten ohne interne Details (keine Stacktraces oder Meldungen von Bibliotheken), Fehler nur im Log.
 
 ## 13. Offene Entscheidungen
 

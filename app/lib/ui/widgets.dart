@@ -149,3 +149,29 @@ class StatusPill extends StatelessWidget {
         child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: color)),
       );
 }
+
+/// Runder Avatar mit Initialen in der Personenfarbe.
+class PersonAvatar extends StatelessWidget {
+  final String name;
+  final int colorIndex;
+  final double size;
+  const PersonAvatar({super.key, required this.name, required this.colorIndex, this.size = 40});
+
+  @override
+  Widget build(BuildContext context) {
+    final farbe = personColor(colorIndex);
+    return ExcludeSemantics(
+      child: Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: farbe.withValues(alpha: 0.18),
+          border: Border.all(color: farbe.withValues(alpha: 0.6)),
+        ),
+        child: Text(personInitials(name), style: TextStyle(fontFamily: kFontMono, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
+      ),
+    );
+  }
+}

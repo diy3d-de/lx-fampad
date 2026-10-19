@@ -16,7 +16,7 @@ node tools/update-manifest.mjs keygen ~/lx-update-key.pem     # Pfad außerhalb 
 
 Das Skript schreibt den privaten Schlüssel (PEM, Rechte 0600) und gibt den öffentlichen Schlüssel (Base64, 32 Byte) aus.
 
-1. Den öffentlichen Schlüssel in `kUpdatePublicKey` eintragen und `kUpdateKeyId` ändern (z. B. `familie-2026-1`; bei Schlüsselwechsel hochzählen). Der eingecheckte Wert ist ein **Platzhalter** ohne privaten Gegenpart: Solange er drinsteht, nimmt die App kein Manifest an.
+1. Den öffentlichen Schlüssel in `kUpdatePublicKey` eintragen und `kUpdateKeyId` ändern (z. B. `fampad-2026-1`; bei Schlüsselwechsel hochzählen). Der eingecheckte Wert ist ein **Platzhalter** ohne privaten Gegenpart: Solange er drinsteht, nimmt die App kein Manifest an.
 2. Den Inhalt von `~/lx-update-key.pem` als Secret `UPDATE_SIGNING_KEY` in der CI hinterlegen und eine Sicherung offline aufbewahren (geht der Schlüssel verloren, lassen sich Apps nur noch per Neuinstallation aktualisieren).
 3. App bauen und installieren (die Schlüssel-Konstanten sind Teil der App).
 
@@ -24,14 +24,14 @@ Das Skript schreibt den privaten Schlüssel (PEM, Rechte 0600) und gibt den öff
 
 ```bash
 node tools/update-manifest.mjs sign \
-  --apk build/app/outputs/flutter-apk/dev-lx_labs-familienzentrale-0.2.0.apk \
+  --apk build/app/outputs/flutter-apk/dev-lx_labs-fampad-0.2.0.apk \
   --version 0.2.0 --version-code 2 --min-version 0.1.0 \
-  --key-id familie-2026-1 --notes "Kurzer Text für die Release-Notes" \
+  --key-id fampad-2026-1 --notes "Kurzer Text für die Release-Notes" \
   --out latest.json                                           # privater Schlüssel aus $UPDATE_SIGNING_KEY oder --key-file
 ```
 
 `--version-code` muss mit dem `versionCode` der APK übereinstimmen. Der Release-Workflow (`.github/workflows/release.yml`, `deploy/README.md` Abschnitt 10) leitet ihn aus dem Tag ab (`major*1000000 + minor*1000 + patch`, also `v0.2.0` gibt 2000) und baut die APK mit `--build-number`; von Hand muss man beides gleich setzen. Der Dateiname der APK steht im Manifest und darf nur
-aus `A-Z a-z 0-9 . _ -` bestehen. Hochladen: erst die APK, dann `latest.json` nach `/srv/familie/releases/android/` (siehe `deploy/README.md`, Abschnitt 9).
+aus `A-Z a-z 0-9 . _ -` bestehen. Hochladen: erst die APK, dann `latest.json` nach `/srv/fampad/releases/android/` (siehe `deploy/README.md`, Abschnitt 9).
 
 Format: `{ "payload": "<JSON-Text>", "signature": "<Base64, 64 Byte>" }`. Signiert wird genau der Text in `payload`; er enthält `packageName`, `version`, `versionCode`,
 `minVersion`, `apk`, `sha256`, `size`, `notes`, `issuedAt` und `keyId`. Die App lehnt falsche Signaturen, fremde Paketnamen und Schlüssel-IDs, kleinere `versionCode`s als die installierte,

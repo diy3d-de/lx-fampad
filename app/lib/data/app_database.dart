@@ -33,8 +33,24 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
+  /// Leert alle Tabellen (beim Abmelden). Phase 1c hängt hier die Fachtabellen ein, sie stehen in [allTables].
+  Future<void> alleDatenLoeschen() => transaction(() async {
+    for (final t in allTables) {
+      await delete(t).go();
+    }
+  });
+
+  static const _kBesitzer = 'ownerUserId';
+
+  /// Benutzer-ID der Person, der die lokalen Daten gehören (liegt in sync_meta und verschwindet mit [alleDatenLoeschen]).
+  Future<String?> besitzerLesen() async =>
+      (await (select(syncMeta)..where((t) => t.key.equals(_kBesitzer))).getSingleOrNull())?.value;
+
+  Future<void> besitzerSetzen(String userId) =>
+      into(syncMeta).insertOnConflictUpdate(SyncMetaCompanion.insert(key: _kBesitzer, value: userId));
+
   static QueryExecutor _openConnection() => driftDatabase(
-        name: 'lx_familie',
+        name: 'lx_fampad',
         // sqlite3.wasm und drift_worker.js liegen in web/ (keine CDN-Abrufe), Versionen siehe docs/VERSIONEN.md
         web: DriftWebOptions(
           sqlite3Wasm: Uri.parse('sqlite3.wasm'),

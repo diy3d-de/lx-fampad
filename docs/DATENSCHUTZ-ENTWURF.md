@@ -1,18 +1,18 @@
-# Datenschutzerklärung – Entwurf (Familienzentrale)
+# Datenschutzerklärung – Entwurf (lx-fampad)
 
-Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0
+Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0, 1a (Konten und Anmeldung im Server) und 1b (App: Anmeldung, Einladungen, Konto)
 und die in `docs/PROJEKTBESCHREIBUNG.md` festgelegten Phasen 1 bis 3. Vor dem Echtbetrieb mit Dritten (Großeltern, Gäste) von einer
-fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte „Stand“: **Ist** = heute umgesetzt, **Geplant** = Phase 1 bis 3.
+fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte „Stand“: **Ist** = heute umgesetzt (Server, Anmelde-Teil der App), **Geplant** = Phase 1 (App, Sync, Fachbereiche) bis 3.
 
 ## 1. Verantwortlicher und Geltungsbereich
 
-- Verantwortlich: **[Name, Anschrift, E-Mail des Betreibers]** (Privatperson, betreibt die Familienzentrale für die eigene Familie).
+- Verantwortlich: **[Name, Anschrift, E-Mail des Betreibers]** (Privatperson, betreibt lx-fampad für die eigene Familie).
 - Geltungsbereich: Web-App (`familie.lx-labs.dev`), Android-App, Server, Push-Dienst (`ntfy.familie.lx-labs.dev`).
 - **[Prüfen]** Haushaltsausnahme (Art. 2 Abs. 2 lit. c DSGVO): Rein familiäre Nutzung fällt eventuell nicht unter die DSGVO. Sobald
   Personen außerhalb des Haushalts teilnehmen (Großeltern als Gäste) oder der Betreiber die Daten für andere verwaltet, ist vorsorglich so zu
   handeln, als gelte sie. Dieser Entwurf geht vom vorsichtigen Fall aus.
 
-## 2. Überblick: Was die Familienzentrale nicht tut
+## 2. Überblick: Was lx-fampad nicht tut
 
 Keine Werbung, keine Tracker, keine Statistik-Dienste, keine KI-Auswertung der Familiendaten, keine öffentlichen Profile, keine
 eingebetteten Fremdinhalte (Schriften, Karten und Skripte kommen von der eigenen Domain; die Content-Security-Policy in `deploy/Caddyfile`
@@ -23,10 +23,13 @@ verbietet Fremdadressen). Es gibt keinen Service Worker und keine Cookies außer
 | Daten | Zweck | Stand | Rechtsgrundlage (Vorschlag) |
 | --- | --- | --- | --- |
 | Verbindungsdaten: IP-Adresse, Zeitpunkt, aufgerufener Pfad (ohne Query), Statuscode, Antwortzeit in den **Server-Logs** | Betrieb, Fehlersuche, Missbrauchsabwehr | Ist (Details: Abschnitt 4) | Art. 6 Abs. 1 lit. f (berechtigtes Interesse an sicherem Betrieb) |
-| Konto: Name, E-Mail, Farbe, Rolle, Familienzugehörigkeit | Anmeldung, Zuordnung der Inhalte | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b bzw. lit. f |
-| Anmeldedaten: Passkey (öffentlicher Schlüssel), Passwort (Argon2id-Hash), TOTP-Geheimnis (verschlüsselt), Wiederherstellungs-Codes (nur Hash) | Anmeldung | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b |
-| Geräte und Sitzungen: Gerätename, Plattform, App-Version, letzte Aktivität, Sitzungs-Token (nur Hash) | Geräteverwaltung, Abmelden einzelner Geräte | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b, f |
-| Sicherheitsprotokoll (Audit-Log): Anmeldung, neues Gerät, Rollenänderung, eingelöster Wiederherstellungs-Code, ggf. IP-Adresse | Missbrauchserkennung | Tabelle vorbereitet (Ist), Befüllung Phase 1 | Art. 6 Abs. 1 lit. f |
+| Konto: Name, E-Mail, Farbe, Rolle, Familienzugehörigkeit, Status (aktiv / wartet auf Freigabe) | Anmeldung, Zuordnung der Inhalte | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b bzw. lit. f |
+| Anmeldedaten: Passkey (Credential-ID, öffentlicher Schlüssel, Zähler), Passwort (Argon2id-Hash), TOTP-Geheimnis (AES-256-GCM-verschlüsselt, Schlüssel außerhalb der Datenbank), Wiederherstellungs-Codes (nur HMAC-Hash, mit Einlöse-Zeitpunkt) | Anmeldung | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b |
+| Einladungen: Rolle, Ersteller, Gültigkeit, Token (nur SHA-256-Hash), optionale PIN (nur HMAC-Hash), Zähler der PIN-Fehlversuche, Zeitpunkte (benutzt, widerrufen, gesperrt) | Aufnahme neuer Mitglieder | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b, f |
+| Geräte und Sitzungen: Gerätename (bei Browsern grob aus dem User-Agent, z. B. „Chrome auf Windows“), Plattform, App-Version, Zeitpunkte (angelegt, zuletzt aktiv, abgelaufen, widerrufen), Sitzungs-Token (nur Hash), Anmeldeart | Geräteverwaltung, Abmelden einzelner Geräte | Ist (Phase 1a) | Art. 6 Abs. 1 lit. b, f |
+| Sicherheitsprotokoll (Audit-Log): Einladung erstellt/benutzt/widerrufen/abgelaufen, PIN-Fehlversuche, Anmeldung (auch fehlgeschlagen), neues Gerät, Rollenänderung, Zurücksetzen, Freigabe/Ablehnung, Wiederherstellungs-Code eingelöst, Wiederverwendung eines Refresh-Tokens, fehlgeschlagene WebSocket-Anmeldung, jeweils mit Zeitpunkt, handelnder Person und IP-Adresse | Missbrauchserkennung, Nachvollziehbarkeit | Ist (Phase 1a); nie Passwörter, Tokens, PINs oder Codes | Art. 6 Abs. 1 lit. f |
+| Fehlversuchs-Zähler (`login_attempts`): Schlüssel aus einem HMAC der IP (IPv6: des /64-Präfixes), der E-Mail-Adresse bzw. des Paares aus beidem (keine Klartext-Werte), Anzahl, Zeitpunkte, Sperre | Schutz vor Raten von Passwörtern, Codes und PINs | Ist (Phase 1a) | Art. 6 Abs. 1 lit. f |
+| Kurzlebige Anmeldezustände: WebAuthn-Challenges, angefangene Registrierungen (Name, E-Mail, Passwort-Hash und verschlüsseltes TOTP-Geheimnis bis zum Abschluss), WebSocket-Tickets (nur Hash) | Ablauf der Anmeldung | Ist (Phase 1a), Löschung nach wenigen Minuten bzw. 30 Sekunden | Art. 6 Abs. 1 lit. b |
 | Inhalte: Termine, Chat-Nachrichten (inkl. Lesebestätigungen, Reaktionen), Listen, Aufgaben, Dateien | eigentliche Funktion | Geplant (Phase 1), Fotos u. a. Phase 2 | Art. 6 Abs. 1 lit. b |
 | Standort (Live-Teilen) | Funktion „Standort teilen“ | Geplant (Phase 2) | Art. 6 Abs. 1 lit. a (Einwilligung, Abschnitt 8) |
 | Push-Endpunkt je Gerät (UnifiedPush/Web Push), enthält nie Inhalte | Benachrichtigung „es gibt Neues“ | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b, f |
@@ -46,7 +49,7 @@ Eine Ende-zu-Ende-Verschlüsselung gibt es in Phase 1 bewusst nicht; der Betreib
   Das Journal gilt für alle Dienste des Servers, also auch für andere Projekte auf demselben VPS.
 - **Im Arbeitsspeicher:** Begrenzungen (Rate-Limit, Verbindungen je IP) halten IP-Adressen nur flüchtig im Speicher des Prozesses; sie werden
   nicht gespeichert und gehen beim Neustart verloren.
-- **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt, danach leert ein Aufräum-Job die Spalte **[Phase 1 umsetzen]**.
+- **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt; ein Aufräum-Job (beim Start des Servers und danach **stündlich**) leert die Spalte. Die Fehlversuchs-Zähler enthalten keine Klartext-IP (nur einen HMAC) und werden gelöscht, sobald ihr Zählfenster (15 Minuten) ohne neuen Fehlversuch abgelaufen und keine Sperre mehr aktiv ist, spätestens bei einem der stündlichen Läufe. Offene WebAuthn-Challenges (auch angefangene Registrierungen mit Passwort-Hash und verschlüsseltem TOTP-Geheimnis) und WebSocket-Tickets werden nach Ablauf ebenfalls stündlich gelöscht.
 - **[Prüfen]** Der Hoster (netcup) kann auf Netzwerkebene eigene Verbindungsdaten erfassen (Abschnitt 5).
 
 ## 5. Empfänger und Auftragsverarbeiter
@@ -64,10 +67,16 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 
 ## 6. Cookies, lokale Speicherung, Aktualisierung
 
-- **Web:** Nach der Anmeldung (Phase 1) ein Session-Cookie `HttpOnly; Secure; SameSite=Strict`; technisch notwendig, daher ohne Einwilligungsabfrage
+- **Web:** Nach der Anmeldung ein Session-Cookie `__Host-lxsid` (`HttpOnly; Secure; SameSite=Strict`, ohne Domain); technisch notwendig, daher ohne Einwilligungsabfrage
   (§ 25 Abs. 2 Nr. 2 TDDDG). Die Web-App legt zudem eine lokale Datenbank im Browser an (OPFS/IndexedDB, Offline-Betrieb); sie bleibt auf dem Gerät und wird mit dem Server abgeglichen.
   Kein Service Worker, keine Tracking-Cookies, kein Local-Storage zu Analysezwecken.
-- **Android:** Sitzungs-Token im Android-Keystore (`flutter_secure_storage`, **geplant**, noch nicht eingebaut; ab Phase 1), lokale SQLite-Datenbank; Datensicherung durch Android ist abgeschaltet (`allowBackup=false`).
+- **Android:** Access-/Refresh-Token, Geräte-ID und das zuletzt bekannte **Profil mit Name, E-Mail-Adresse, Rolle und Farbe** (für den Start ohne Netz) im Android-Keystore (`flutter_secure_storage`, Phase 1b), dazu eine lokale SQLite-Datenbank. Das Profil enthält also personenbezogene Daten (auch die E-Mail-Adresse); der Keystore schützt sie hardwaregestützt und app-gebunden. Die Datensicherung durch Android ist abgeschaltet (`allowBackup=false`, leere Regeln für Cloud-Backup und Geräte-Übertragung: nichts verlässt das Gerät über Android-Backups). Im Web wird nichts in `localStorage` abgelegt (nur die Sitzung im HttpOnly-Cookie). Bildschirmfotos sind auf Seiten mit Geheimnissen (TOTP-Schlüssel, Wiederherstellungscodes, Einladungs-PIN) gesperrt; die Zwischenablage wird nur auf ausdrücklichen Klick befüllt, Android 13+ wird sie dabei als vertraulich markiert (keine Vorschau).
+- **Löschverhalten auf dem Gerät (Android und Web):**
+  - **Ausdrückliches Abmelden** (Profil, „Überall abmelden“, Gerät in der Geräteliste entfernen): Token, Profil und lokale Datenbank werden gelöscht. Ist der Server dabei nicht erreichbar, wird trotzdem lokal abgemeldet und die Person darauf hingewiesen: Die Sitzung bleibt dann auf dem Server bis zum Ablauf gültig (in der Geräteliste später beendbar). Im Web wird bei einem Serverfehler **nicht** als abgemeldet angezeigt (das Cookie lässt sich nur über den Server löschen); die Person kann es wiederholen oder bewusst nur lokal abmelden.
+  - **Sitzungsverlust** (Sitzung abgelaufen, widerrufen, Erneuerung gescheitert): Token und Profil im Keystore werden gelöscht, die **lokale Datenbank bleibt bewusst erhalten**: Sie kann noch nicht gesendete Änderungen enthalten, die nach einer erneuten Anmeldung derselben Person nicht verloren gehen sollen. Die Datenbank merkt sich die Benutzer-ID ihres Besitzers; **meldet sich eine andere Person an, wird sie vor der Anmeldung vollständig geleert.** Wer das Gerät nach einem Sitzungsverlust weitergibt, sollte sich vorher ausdrücklich abmelden bzw. die App-Daten löschen. **[Prüfen]** Ob diese Abwägung (Datenverlust vermeiden gegenüber Daten bleiben bis zur nächsten Anmeldung) für den Echtbetrieb passt; in Phase 1c wird sie mit dem Ausgang der Synchronisation (Outbox) neu bewertet.
+  - Im Browser wird die lokale Datenbank beim Abmelden geleert (alle Zeilen gelöscht). Die Datei im Browser-Speicher (OPFS) wird dabei **nicht** physisch überschrieben oder entfernt; ein vollständiges Entfernen (`secure_delete`) ist für später vorgemerkt. Wer das Gerät nicht allein nutzt, sollte die Websitedaten im Browser löschen.
+- **Kamera (Android):** Nur für das Scannen eines Einladungs-QR-Codes, nur solange der Scan-Bildschirm offen ist; die Erkennung läuft auf dem Gerät, Bilder werden weder gespeichert noch übertragen.
+- **Einladungslinks:** Das Token steht im Fragment (`#/…`) und wird nicht an den Server gesendet; die Web-App entfernt es sofort aus der Adresszeile (`history.replaceState`) und sendet es nur im Anfragekörper.
 - **App-Update (Android):** Die App ruft `familie.lx-labs.dev/releases/android/latest.json` und die APK von der eigenen Domain ab (die Verbindungsdaten aus Abschnitt 4 fallen an);
   das Manifest ist signiert, Prüfung auf dem Gerät. Zusätzlich liest die App `/api/v1/version`. Es werden keine Gerätekennungen übertragen.
 
@@ -99,21 +108,25 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 | Daten | Aufbewahrung |
 | --- | --- |
 | Server-Logs (journald), Client-IP | 7 Tage |
-| `audit_log.ip` | 7 Tage, danach geleert; der Eintrag selbst **[Prüfen: z. B. 12 Monate]** |
-| Sitzungen und Geräte | bis Abmeldung/Ablauf; abgelaufene Sitzungen werden aufgeräumt **[Phase 1]** |
-| Einladungen | 7 Tage gültig, einmalig |
+| `audit_log.ip` | 7 Tage, danach geleert (Aufräum-Job) |
+| `audit_log`-Einträge | 365 Tage (Voreinstellung `AUDIT_RETENTION_DAYS`) **[Prüfen: Dauer festlegen]**, danach gelöscht |
+| Sitzungen und Geräte | Cookie-Sitzung höchstens 30 Tage (7 Tage Leerlauf), App-Sitzung höchstens 90 Tage (30 Tage Leerlauf); abgelaufene Sitzungen löscht der Aufräum-Job einen Tag nach Ablauf, widerrufene nach 30 Tagen, abgemeldete Geräte nach 30 Tagen |
+| Einladungen | 24 Stunden Standard, höchstens 7 Tage gültig, einmalig; nie benutzte, abgelaufene Einladungen werden nach 30 Tagen gelöscht, benutzte bleiben als Nachweis (ohne Token) |
+| WebAuthn-Challenges, angefangene Registrierungen | 5 Minuten (gelöscht beim nächsten stündlichen Lauf) |
+| WebSocket-Tickets | 30 Sekunden (gelöscht beim nächsten stündlichen Lauf) |
+| Fehlversuchs-Zähler | 15 Minuten nach dem letzten Fehlversuch (sofern nicht mehr gesperrt), gelöscht beim nächsten stündlichen Lauf |
 | Chat, Termine, Listen, Dateien | bis zum Löschen durch die Nutzer; gelöschte Einträge bleiben als **Tombstone** (ohne Inhalt) im Änderungsprotokoll, bis alle Geräte sie kennen |
 | Standortdaten | nach Ende der Freigabe sofort gelöscht |
 | ntfy-Zwischenspeicher | 12 Stunden |
 | Backups (restic, verschlüsselt, externes Ziel) | täglich 7, wöchentlich 4, monatlich 6 Stück **[Phase 1]**; gelöschte Daten verschwinden spätestens nach Ablauf der letzten Sicherung |
 
 Löschkonzept (Phase 1 bis 3): Konto löschen (entfernt Anmeldedaten, Geräte, Sitzungen, Wiederherstellungs-Codes; Inhalte werden dem Betreiber zugeordnet oder auf Wunsch gelöscht), Familie löschen
-(entfernt alle Daten der Familie per Datenbank-Kaskade), Export aller Daten als ZIP (Auskunft/Übertragbarkeit).
+(entfernt alle Daten der Familie per Datenbank-Kaskade), Export aller Daten als ZIP (Auskunft/Übertragbarkeit). Umgesetzt in Phase 1a ist das **Entfernen eines Mitglieds** durch einen Admin (löscht die Mitgliedschaft samt Geräten und Sitzungen und, da der Server genau eine Familie bedient, auch das Konto mit Anmeldedaten und Wiederherstellungs-Codes; offene Einladungen der Person werden widerrufen) sowie das **Ablehnen** wartender Mitglieder. **Audit-Einträge bleiben bis zum Ablauf der Aufbewahrungsfrist (365 Tage) bestehen:** Der Verweis auf das Konto (`actor_id`) wird beim Löschen geleert; in den Einzelheiten der Einträge bleibt die frühere interne Benutzer-ID als **Pseudonym** stehen (keine Namen, keine E-Mail-Adressen, nach 7 Tagen auch keine IP). Das ist nicht „anonymisiert“ im strengen Sinn, solange die Zuordnung über andere Quellen (z. B. Sicherungen) möglich wäre.
 
 ## 11. Sicherheitsmaßnahmen (Auszug)
 
 TLS für alle Verbindungen (HSTS); Server in Deutschland **[Prüfen: Standort des netcup-Rechenzentrums und Vertragsunterlagen bestätigen]**; PostgreSQL nur lokal erreichbar; eigener Systembenutzer, gehärteter systemd-Dienst mit Speicher- und Prozessgrenzen; Konfiguration und Geheimnisse nur für root lesbar; strenge
-Sicherheits-Header und Content-Security-Policy; Rate-Limits für Anmeldung und Schnittstellen; Origin-Prüfung am WebSocket; Passkeys und Argon2id; Sitzungs-Wiederverwendungs-Erkennung; Dateien AES-256-GCM
+Sicherheits-Header und Content-Security-Policy; Rate-Limits für Anmeldung und Schnittstellen; Origin-Prüfung am WebSocket und bei ändernden Anfragen, CSRF-Token; Passkeys und Argon2id; TOTP-Geheimnisse verschlüsselt (AES-256-GCM); Wiederherstellungs-Codes und PINs nur als HMAC; getrennte Datenbank-Rollen (Migration/Betrieb); Sitzungs-Wiederverwendungs-Erkennung; verzögerte Sperre nach Fehlversuchen; Dateien AES-256-GCM
 (Phase 1); signierte App-Updates (Ed25519); Backups verschlüsselt.
 
 ## 12. Rechte der Betroffenen
@@ -124,4 +137,4 @@ Anfragen an den Verantwortlichen (Abschnitt 1). **[Prüfen]** zuständige Aufsic
 ## 13. Änderungen
 
 Diese Erklärung wird mit jeder Phase angepasst; die jeweils geltende Fassung steht in der App unter „Einstellungen“ **[Phase 1]**. Offene Punkte vor dem Echtbetrieb: Betreiberangaben (Abschnitt 1), AVV mit netcup,
-Einwilligungstexte für Kinder und Standort, Aufbewahrungsdauer des Audit-Logs, Aufsichtsbehörde.
+Einwilligungstexte für Kinder und Standort, Aufbewahrungsdauer des Audit-Logs, Aufsichtsbehörde. Hinweis zu Phase 1a: Ein E-Mail-Hinweis bei neuem Gerät ist noch **nicht** umgesetzt (kein Mail-Versand); sobald er kommt, ist der Mail-Dienst in Abschnitt 5 zu ergänzen.

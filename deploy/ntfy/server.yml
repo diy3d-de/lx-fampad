@@ -1,4 +1,4 @@
-# /etc/ntfy/server.yml - eigener ntfy-Server für UnifiedPush (Familienzentrale)
+# /etc/ntfy/server.yml - eigener ntfy-Server für UnifiedPush (lx-fampad)
 # Bei Änderungen: sudo systemctl restart ntfy
 base-url: "https://ntfy.familie.lx-labs.dev"
 # Nur lokal lauschen; Caddy leitet weiter und terminiert TLS

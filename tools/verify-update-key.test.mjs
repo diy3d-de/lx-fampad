@@ -12,7 +12,7 @@ const pubA = rawPublicKey(a.publicKey).toString('base64');
 const quelle = (id, pub) => `const kUpdatePublicKey = '${pub}';\nconst kUpdateKeyId = ${id};\n`;
 
 test('akzeptiert passenden Schlüssel mit echter ID', () => {
-  assert.equal(checkKey(quelle("'familie-2026-1'", pubA), pemA), 'familie-2026-1');
+  assert.equal(checkKey(quelle("'fampad-2026-1'", pubA), pemA), 'fampad-2026-1');
 });
 
 test('lehnt den Platzhalter ab (Verweis und Textwert)', () => {

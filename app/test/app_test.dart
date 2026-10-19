@@ -1,33 +1,31 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:intl/date_symbol_data_local.dart';
-import 'package:lx_familienzentrale/app.dart';
-import 'package:lx_familienzentrale/constants.dart';
-import 'package:lx_familienzentrale/features/calendar/calendar_screen.dart';
-import 'package:lx_familienzentrale/features/chat/chat_screen.dart';
-import 'package:lx_familienzentrale/features/files/files_screen.dart';
-import 'package:lx_familienzentrale/features/home/home_screen.dart';
-import 'package:lx_familienzentrale/features/lists/lists_screen.dart';
+import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/features/calendar/calendar_screen.dart';
+import 'package:lx_fampad/features/chat/chat_screen.dart';
+import 'package:lx_fampad/features/files/files_screen.dart';
+import 'package:lx_fampad/features/home/home_screen.dart';
+import 'package:lx_fampad/features/lists/lists_screen.dart';
+
+import 'support/fake_server.dart';
+import 'support/harness.dart';
+import 'support/test_app.dart';
 
 void main() {
-  setUpAll(() => initializeDateFormatting('de_DE'));
+  TestWidgetsFlutterBinding.ensureInitialized();
+  setUpAll(testVorbereiten);
 
-  Future<void> start(WidgetTester tester) async {
-    await tester.pumpWidget(const ProviderScope(child: FamilienzentraleApp()));
-    await tester.pump();
-  }
-
-  testWidgets('zeigt zuerst die Platzhalter-Anmeldung', (tester) async {
-    await start(tester);
+  testWidgets('ohne gespeicherte Anmeldung erscheint die Anmeldung (kein Zugriff auf die Tabs)', (tester) async {
+    final env = TestUmgebung(FakeServer());
+    await starteApp(tester, env);
     expect(find.text('Mit Passkey anmelden'), findsOneWidget);
     expect(find.byType(NavigationBar), findsNothing);
+    expect(env.server.log.where((r) => r.path == '/me'), isEmpty, reason: 'ohne Token kein Serveraufruf');
   });
 
-  testWidgets('Vorschau öffnet die fünf Tabs und zeigt nach jedem Wechsel genau den gewählten Tab', (tester) async {
-    await start(tester);
-    await tester.tap(find.text('Vorschau ohne Anmeldung (Phase 0)'));
-    await tester.pump();
+  testWidgets('angemeldet öffnet die fünf Tabs und zeigt nach jedem Wechsel genau den gewählten Tab', (tester) async {
+    final env = await angemeldeteUmgebung();
+    await starteApp(tester, env);
 
     expect(find.byType(NavigationBar), findsOneWidget);
     for (final tab in kTabs) {
@@ -58,10 +56,29 @@ void main() {
   });
 
   testWidgets('Sync-Indikator meldet den Zustand ohne Server', (tester) async {
-    await start(tester);
-    await tester.tap(find.text('Vorschau ohne Anmeldung (Phase 0)'));
-    await tester.pump();
+    final env = await angemeldeteUmgebung();
+    await starteApp(tester, env);
     expect(find.byTooltip('Nicht verbunden'), findsWidgets);
     expect(find.text('nicht verbunden'), findsOneWidget);
+  });
+
+  testWidgets('wartendes Konto sieht den Warte-Bildschirm, nicht die App', (tester) async {
+    final server = FakeServer()..json('GET /me', meJson(role: 'guest', status: 'pending'));
+    final env = TestUmgebung(server);
+    await env.angemeldet();
+    await starteApp(tester, env);
+    expect(find.textContaining('Fast geschafft'), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+  });
+
+  testWidgets('Verbindungsfehler beim Start ohne gespeichertes Profil: Meldung und "Erneut versuchen"', (tester) async {
+    final server = FakeServer()..on('GET /me', (_) => fehler(503, 'server_busy', retryAfter: 4));
+    final env = TestUmgebung(server);
+    await env.angemeldet();
+    await starteApp(tester, env);
+    expect(find.textContaining('ausgelastet'), findsOneWidget);
+    server.json('GET /me', meJson());
+    await tippeText(tester, 'Erneut versuchen');
+    expect(find.byType(NavigationBar), findsOneWidget);
   });
 }
