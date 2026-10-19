@@ -70,6 +70,14 @@ class ApiException implements Exception {
     message: 'Der Server antwortet nicht. Bitte versuche es gleich noch einmal.',
   );
 
+  /// Hintergrund-Abgleich ohne Refresh-Erlaubnis und abgelaufenes Access-Token: wie "kein Netz", die Sitzung bleibt unberührt.
+  static const zugangAbgelaufen = ApiException(
+    kind: ApiErrorKind.netzwerk,
+    status: 0,
+    code: 'access_expired',
+    message: 'Die Anmeldung muss erst in der App erneuert werden.',
+  );
+
   static const unerwarteteAntwort = ApiException(
     kind: ApiErrorKind.protokoll,
     status: 0,
@@ -102,6 +110,10 @@ class ApiException implements Exception {
         retryAfter: warte,
         message: wartetext('Zu viele Versuche.'),
       );
+    }
+    // Push ist auf dem Server nicht eingerichtet: kein Überlast-Hinweis (503 ist hier ein dauerhafter Zustand)
+    if (code == 'push_unavailable') {
+      return ApiException(kind: ApiErrorKind.sonstiges, status: status, code: code, message: _texte[code]!);
     }
     if (status == 503) {
       return ApiException(
@@ -173,6 +185,12 @@ class ApiException implements Exception {
     'not_found': 'Das wurde nicht gefunden.',
     'payload_too_large': 'Die Anfrage ist zu groß.',
     'device_mismatch': 'Dieses Gerät passt nicht mehr zur Anmeldung. Bitte versuche es gleich noch einmal.',
+    'invalid_endpoint':
+        'Der Push-Endpunkt gehört nicht zum Familien-Server. Trage in der ntfy-App unter Einstellungen den Standardserver https://ntfy.familie.lx-labs.dev ein und schalte Benachrichtigungen dann neu ein.',
+    'endpoint_in_use': 'Dieser Push-Endpunkt ist schon vergeben. Schalte Benachrichtigungen aus und wieder ein.',
+    'push_unavailable': 'Push ist auf dem Server noch nicht eingerichtet.',
+    'no_endpoint': 'Für dieses Gerät ist Push noch nicht angemeldet.',
+    'no_device': 'Für diese Anmeldung gibt es kein Gerät. Melde dich neu an.',
     'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
   };
 }

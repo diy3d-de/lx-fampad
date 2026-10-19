@@ -378,8 +378,9 @@ cat <<'EOF'
 EOF
 cat <<EOF
 Danach:  sudo systemctl restart lx-fampad
-Der Push-Versand selbst kommt mit Phase 1c-3; bis dahin liest der Server die Werte nicht aus.
+Der Familien-Server liest die Werte beim Start (ohne sie ist Push still aus).
 
-UnifiedPush: Rechte auf up*-Topics (Server schreibt, Handys lesen) sind bewusst NICHT gesetzt, Schritt für 1c-3; siehe deploy/README.md, Abschnitt 7.
+UnifiedPush: Rechte auf up*-Topics (Server schreibt, Handys lesen) setzt das nächste Skript:  sudo bash ~/lx-fampad/deploy/einrichtung-ntfy-up.sh
+Siehe deploy/README.md, Abschnitt 7.
 Rückbau: sudo rm /etc/caddy/conf.d/ntfy.caddy && sudo systemctl reload caddy   (Details: deploy/README.md)
 EOF

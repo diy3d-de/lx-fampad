@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/chat/chat_repository.dart';
+import '../../data/push/push_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
@@ -53,7 +54,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     _ersteUpdatePruefung = Timer(const Duration(seconds: 3), _updatePruefen);
     // Sync-Dienst: Abgleich beim Start, WebSocket und Zeitgeber laufen, solange die angemeldete Oberfläche offen ist
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(syncProvider.notifier).starten();
+      if (!mounted) return;
+      ref.read(syncProvider.notifier).starten();
+      // Push (nur Android): Zustand laden und, falls eingeschaltet, bei jedem Start erneut beim Verteiler registrieren
+      unawaited(ref.read(pushProvider.notifier).starten());
     });
   }
 

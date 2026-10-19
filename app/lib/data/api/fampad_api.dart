@@ -173,6 +173,24 @@ class FampadApi {
     await client.delete('/devices/$id');
   }
 
+  // ----------------------------------------------------------- Push (nur Android)
+
+  Future<PushStatusDto> pushStatus() async => PushStatusDto.fromJson(await client.get('/me/push'));
+
+  /// Meldet den UnifiedPush-Endpunkt dieses Geräts an (ersetzt einen früheren). Der Server prüft Host und Pfad streng.
+  Future<void> pushAnmelden(String endpunkt) async {
+    await client.put('/me/push', {'endpoint': endpunkt});
+  }
+
+  Future<void> pushLoeschen() async {
+    await client.delete('/me/push');
+  }
+
+  /// Der Server schickt einen Wecker (ohne Inhalt) an dieses Gerät.
+  Future<void> pushTest() async {
+    await client.post('/me/push/test');
+  }
+
   // ----------------------------------------------------------- Sync
 
   /// Ops hochladen und Änderungen seit [sinceRev] abholen (docs/API.md, POST /sync). Antwort immer 200; Fehler sind [ApiException]

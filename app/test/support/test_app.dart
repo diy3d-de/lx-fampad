@@ -74,7 +74,9 @@ class TestUmgebung {
   bool wiperEcht = false;
   bool besitzerInDb = false;
   final owner = MemoryLocalDataOwner();
-  late final ApiClient client = ApiClient(client: server.client, store: store, web: web, base: 'https://familie.test');
+  /// false: der Client löst nie das Refresh-Token ein (Hintergrund-Abgleich); vor dem ersten Zugriff auf [client] setzen.
+  bool refreshErlaubt = true;
+  late final ApiClient client = ApiClient(client: server.client, store: store, web: web, base: 'https://familie.test', refreshErlaubt: refreshErlaubt);
 
   TestUmgebung(this.server, {this.web = false, MemoryTokenStore? store, FakePasskeys? passkeys})
     : store = store ?? MemoryTokenStore(),

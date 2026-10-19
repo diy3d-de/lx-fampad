@@ -295,6 +295,8 @@ class AppDatabase extends _$AppDatabase {
   static QueryExecutor _openConnection() => driftDatabase(
     name: 'lx_fampad',
     // sqlite3.wasm und drift_worker.js liegen in web/ (keine CDN-Abrufe), Versionen siehe docs/VERSIONEN.md
+    // zwei Engines (Oberfläche und Hintergrund-Start) können dieselbe Datei öffnen: kurz warten statt sofort "database is locked"
+    native: DriftNativeOptions(setup: (db) => db.execute('PRAGMA busy_timeout = 5000')),
     web: DriftWebOptions(sqlite3Wasm: Uri.parse('sqlite3.wasm'), driftWorker: Uri.parse('drift_worker.js')),
   );
 }

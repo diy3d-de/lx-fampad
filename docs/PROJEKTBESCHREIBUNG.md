@@ -249,6 +249,16 @@ Technische Beschreibung der Felder, Prüfungen und Rechte: `docs/API.md`, Abschn
   - **Bildschirmschutz:** Direkt- und Gruppenchats sind in der Android-App durch `FLAG_SECURE` gegen Bildschirmfotos geschützt (Web und Desktop: ohne Wirkung); der Familienchat nicht.
 - **Offen:** Push (1c-3b), Anhänge und Bilder (1c-4), Reaktionen (die Platzhaltertabellen `messages`, `message_reactions`, `message_reads` aus Phase 0 bleiben ungenutzt bis dahin), Ende-zu-Ende-Verschlüsselung (Verfahren in Recherche), Lesebestätigung je Nachricht (jetzt nur Lesestand je Chat), Suche. Bekannte Grenzen: Der Familienchat entsteht erst, wenn jemand den Chat-Bereich öffnet. Zwei Geräte derselben Person, die denselben Lesestand zugleich weiterschreiben, können sich einmal überschreiben (der Server-Stand gewinnt, das nächste Öffnen korrigiert). Beim Aufnehmen in eine Gruppe wird jede Nachricht neu angestoßen (bei sehr langen Verläufen entsprechend viele Protokolleinträge).
 
+### 6d. Umsetzung (Push: UnifiedPush-Wecker, Android)
+
+Technische Beschreibung: `docs/API.md`, Abschnitt „Push“; Einrichtung: `deploy/README.md`, Abschnitt 7.
+
+- **Prinzip:** Push ist nur ein **Wecker ohne Inhalt**. Der Server weckt die betroffenen Geräte über den eigenen ntfy (`NTFY_URL` per Loopback, Token `fampad-server`); die App gleicht danach per Sync ab und zeigt selbst lokale Benachrichtigungen (Schnittstelle `EreignisBenachrichtiger.neueEreignisse(rev)`, die Umsetzung mit `flutter_local_notifications` kommt aus dem Erinnerungs-Zweig und benutzt denselben Kanal).
+- **Verteiler:** UnifiedPush mit der ntfy-App (`unifiedpush` 6.2.0 / `unifiedpush_android` 3.4.1); kein eingebetteter FCM-Verteiler, kein Google. Auf dem Handy: ntfy-App installieren, Standardserver `https://ntfy.familie.lx-labs.dev`, Benutzer `fampad-family` (gemeinsamer Lese-Benutzer), danach in der App Profil, Benachrichtigungen.
+- **Sicherheit:** Das Gerät meldet seinen Endpunkt (`PUT /me/push`); akzeptiert wird nur `https://<ntfy-Host>/up<12–64 Zeichen>[?up=1]` (Rohtext-Prüfung), gespeichert nur das Topic je Gerät, gesendet wird **nie** an die gemeldete URL, sondern an die Loopback-URL. Rechte in ntfy: Server write-only auf `fampad-*` und `up*`, Familie read-only auf `up*`, anonym nichts.
+- **Auslöser:** nach jedem Commit einer Änderung im Sync, für Geräte mit passender Rolle (wie der WebSocket-Hinweis), ohne das auslösende Gerät (die anderen Geräte derselben Person werden geweckt, der `EreignisBenachrichtiger` zeigt eigene Änderungen nicht an), ohne Geräte mit lebendiger WebSocket-Verbindung (mit einmaliger Nachprüfung nach der Ping-Frist), entprellt (höchstens ein Wecker je Gerät und 10 s). Erweiterungsstelle für Teilnehmer-Filter (Privatchats): `PushService.addRecipientFilter`.
+- **Hintergrund-Start:** Das Plugin startet bei einem Wecker ohne laufende App eine Engine ohne Oberfläche (`main(["--unifiedpush-bg"])`); sie gleicht nur ab. Ist das nicht robust (Prozess wird früh beendet), holt die App beim nächsten Öffnen nach (der Sync läuft bei jedem Start).
+
 ## 7. Anmeldung und Konten
 
 Umgesetzt in Phase 1a (Server) und Phase 1b (App: Anmeldung, Einladungen, Konto, Admin; Abschnitt "App-Teil (Phase 1b)" unten). Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.

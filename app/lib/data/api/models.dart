@@ -491,3 +491,24 @@ class DeviceInfo {
 
   Json toJson() => {if (id != null) 'id': id, 'name': name, 'platform': platform, if (appVersion != null && appVersion!.isNotEmpty) 'appVersion': appVersion};
 }
+
+/// Push-Status dieses Geräts laut Server (GET /me/push).
+class PushStatusDto {
+  /// Der Server hat Push eingerichtet (NTFY_URL/NTFY_TOKEN).
+  final bool available;
+  final bool registered;
+  final bool active;
+  final DateTime? lastOkAt;
+  const PushStatusDto({required this.available, required this.registered, required this.active, required this.lastOkAt});
+
+  factory PushStatusDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final ok = m['lastOkAt'];
+    return PushStatusDto(
+      available: m['available'] == true,
+      registered: m['registered'] == true,
+      active: m['active'] == true,
+      lastOkAt: ok is String ? DateTime.tryParse(ok) : null,
+    );
+  }
+}

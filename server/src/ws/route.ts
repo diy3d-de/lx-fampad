@@ -152,6 +152,7 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
 
     socket.on('pong', () => {
       alive = true;
+      hub.touch(socket);
     });
     socket.on('error', (err: Error) => req.log.warn({ err }, 'WebSocket-Fehler'));
     socket.once('close', () => {
@@ -189,6 +190,7 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       .catch((err: unknown) => req.log.warn({ err }, 'WebSocket-Anmeldung fehlgeschlagen'));
 
     socket.on('message', (raw: Buffer) => {
+      hub.touch(socket);
       // Nachrichtenlimit je Socket (feste Zeitfenster)
       const now = Date.now();
       if (now - windowStart >= config.wsMessageWindowMs) {

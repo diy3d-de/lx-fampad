@@ -1,11 +1,13 @@
 // Profil und Sicherheit (Mockup "Sicherheit & System"): Zugänge, Wiederherstellungscodes, Geräte, Familie (Admin/Eltern), Abmelden.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/push/push_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
@@ -16,6 +18,7 @@ import 'erinnerungen_screen.dart';
 import 'password_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
+import 'push_screen.dart';
 import 'passkeys_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -243,6 +246,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        // Push gibt es nur in der Android-App (UnifiedPush über die ntfy-App)
+        if (!kIsWeb)
+          Consumer(
+            builder: (context, ref, _) {
+              final push = ref.watch(pushProvider);
+              return EinstellungsZeile(
+                icon: Icons.notifications_outlined,
+                titel: 'Benachrichtigungen',
+                untertitel: push.gewuenscht ? (push.angemeldet ? 'push aktiv' : 'wird eingerichtet') : 'aus',
+                status: push.gewuenscht && push.angemeldet ? const RollenPille('an', farbe: kTerminal) : null,
+                onTap: () => _oeffne(const PushScreen()),
+              );
+            },
+          ),
         EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kAppName', untertitel: 'version und update', onTap: () => _oeffne(const UeberScreen())),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),
