@@ -11,6 +11,12 @@ import 'schluessel.dart';
 import 'schluessel_speicher.dart';
 import 'sicherheitscode.dart';
 
+/// Die Ablage der gemerkten Schlüssel (oder des akzeptierten Stands der Chats) ist beschädigt. Sie wird nie stillschweigend durch eine leere ersetzt (sonst würde jeder
+/// Schlüssel neu "beim ersten Sehen" vertraut); die Oberfläche bietet ein bewusstes Zurücksetzen mit Warnung an.
+class VertrauensAblageDefekt extends CryptoFehler {
+  const VertrauensAblageDefekt() : super(CryptoFehlerArt.format, 'Die gemerkten Schlüssel dieses Geräts sind beschädigt und nicht lesbar.');
+}
+
 class GemerkterSchluessel {
   final Uint8List enc;
   final Uint8List sign;
@@ -54,7 +60,7 @@ class VertrauensPruefer {
     if (bytes == null) return {};
     try {
       final raw = jsonDecode(utf8.decode(bytes));
-      if (raw is! Map) throw const CryptoFehler(CryptoFehlerArt.format, 'Die gemerkten Schlüssel sind nicht lesbar.');
+      if (raw is! Map) throw const VertrauensAblageDefekt();
       final out = <String, GemerkterSchluessel>{};
       GemerkterSchluessel? eintrag(Object? v) {
         if (v is Map && v['e'] is String && v['s'] is String && v['v'] is int) {
@@ -79,7 +85,7 @@ class VertrauensPruefer {
       rethrow;
     } on Object {
       // nie wie "noch nichts gemerkt" behandeln: sonst würde die Merkliste überschrieben und jeder Schlüssel neu vertraut
-      throw const CryptoFehler(CryptoFehlerArt.format, 'Die gemerkten Schlüssel sind nicht lesbar.');
+      throw const VertrauensAblageDefekt();
     }
   }
 
@@ -167,6 +173,55 @@ class VertrauensPruefer {
       gemerkt[userId] = GemerkterSchluessel(neu.enc, neu.sign, neu.version, frueher: frueher);
     }
     await _speichern(gemerkt);
+  }
+
+  String get _standName => 'e2ee.akzeptiert.$eigeneUserId';
+
+  Future<Map<String, Object?>> _standAlle() async {
+    final bytes = await speicher.lesen(_standName);
+    if (bytes == null) return {};
+    try {
+      final raw = jsonDecode(utf8.decode(bytes));
+      if (raw is! Map) throw const VertrauensAblageDefekt();
+      return {for (final e in raw.entries) if (e.key is String) e.key as String: e.value};
+    } on VertrauensAblageDefekt {
+      rethrow;
+    } on Object {
+      throw const VertrauensAblageDefekt();
+    }
+  }
+
+  /// Dauerhaft festgehaltener Stand eines Chats: akzeptierte Epochen und zuletzt akzeptierte Mitgliederliste (null: noch keiner). Beschädigt: [VertrauensAblageDefekt].
+  Future<({Set<int> epochen, Map<String, int> liste})?> standLaden(String konversationId) async {
+    final v = (await _standAlle())[konversationId];
+    if (v == null) return null;
+    if (v is Map && v['e'] is List && v['b'] is Map) {
+      final e = <int>{};
+      for (final x in v['e'] as List) {
+        if (x is! int) throw const VertrauensAblageDefekt();
+        e.add(x);
+      }
+      final b = <String, int>{};
+      for (final x in (v['b'] as Map).entries) {
+        if (x.key is! String || x.value is! int) throw const VertrauensAblageDefekt();
+        b[x.key as String] = x.value as int;
+      }
+      return (epochen: e, liste: b);
+    }
+    throw const VertrauensAblageDefekt();
+  }
+
+  Future<void> standSpeichern(String konversationId, Set<int> epochen, Map<String, int> liste) async {
+    final alle = await _standAlle();
+    alle[konversationId] = {'e': (epochen.toList()..sort()), 'b': liste};
+    await speicher.schreiben(_standName, utf8Bytes(jsonEncode(alle)));
+  }
+
+  /// Bewusstes Zurücksetzen (nach einer beschädigten Ablage): vergisst ALLE gemerkten Schlüssel und den akzeptierten Stand der Chats. Danach gilt wieder "beim ersten
+  /// Sehen"; die Sicherheitscodes sollten mit den Personen verglichen werden.
+  Future<void> zuruecksetzen() async {
+    await speicher.loeschen(_name);
+    await speicher.loeschen(_standName);
   }
 
   /// Sicherheitscode des gemerkten Schlüssels (zum Vergleich "alt gegen neu").

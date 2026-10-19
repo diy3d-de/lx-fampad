@@ -431,6 +431,11 @@ class ChatKryptoController extends Notifier<int> {
       gemerkt: (u, {version}) => pruefer.gemerkterSchluessel(u, version: version),
       serverSchluessel: _serverSchluessel,
       absenderSchluessel: (u, v) => e2ee.absenderSchluessel(u, v),
+      standLaden: (konv) async {
+        final s = await pruefer.standLaden(konv);
+        return s == null ? null : AkzeptierterStand(s.epochen, s.liste);
+      },
+      standSpeichern: (konv, s) => pruefer.standSpeichern(konv, s.epochen, s.liste),
     );
     _krypto = neu;
     _kEnc = Uint8List.fromList(pk.encOeffentlich);

@@ -92,6 +92,9 @@ class E2eeState {
   final List<UserDto> mitglieder;
   final List<SchluesselWarnung> warnungen;
 
+  /// Die Ablage der gemerkten Schlüssel ist beschädigt: Die Oberfläche bietet "Vertrauen zurücksetzen" an.
+  final bool vertrauenDefekt;
+
   /// Familien-Sicherheitscode (leer, solange niemand Schlüssel hat).
   final String sicherheitscode;
 
@@ -102,6 +105,7 @@ class E2eeState {
     this.hatSicherung = false,
     this.mitglieder = const [],
     this.warnungen = const [],
+    this.vertrauenDefekt = false,
     this.sicherheitscode = '',
   });
 
@@ -246,6 +250,14 @@ class E2eeController extends Notifier<E2eeState> {
             if (m.schluessel != null && m.status == MemberStatus.active) MitgliedSchluessel(m.id, m.schluessel!),
         ]),
       );
+    } on VertrauensAblageDefekt {
+      if (ref.mounted) {
+        state = const E2eeState(
+          status: E2eeStatus.nichtVerfuegbar,
+          vertrauenDefekt: true,
+          meldung: 'Die gemerkten Schlüssel der Familie sind auf diesem Gerät beschädigt. Aus Sicherheitsgründen werden sie nicht stillschweigend ersetzt. Du kannst das Vertrauen zurücksetzen und die Schlüssel danach neu prüfen.',
+        );
+      }
     } on CryptoFehler catch (e) {
       if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.meldung);
     } on SchluesselSpeicherFehler {
@@ -508,6 +520,12 @@ class E2eeController extends Notifier<E2eeState> {
     await _speicher.loeschen(personenschluesselAltName(_userId));
     _lokal?.loeschen();
     _lokal = null;
+    await laden();
+  }
+
+  /// Bewusstes Zurücksetzen der gemerkten Schlüssel nach einer beschädigten Ablage (die Oberfläche warnt vorher).
+  Future<void> vertrauenZuruecksetzen() async {
+    await VertrauensPruefer(_speicher, eigeneUserId: _userId).zuruecksetzen();
     await laden();
   }
 

@@ -291,6 +291,23 @@ Future<void> main() async {
         expect(a.ctrl.lokalerSchluessel, isNull);
       });
 
+      test('beschädigte Vertrauensablage: klare Meldung, nichts wird überschrieben; bewusstes Zurücksetzen heilt', () async {
+        final a = await geraet(_anna, 'Anna');
+        final ben = await geraet(_ben, 'Ben');
+        await ben.ctrl.einrichten();
+        await a.ctrl.einrichten();
+        await a.speicher.schreiben('e2ee.vertrauen.$_anna', Uint8List.fromList(utf8.encode('{kaputt')));
+        await a.ctrl.laden();
+        expect(a.s.status, E2eeStatus.nichtVerfuegbar);
+        expect(a.s.vertrauenDefekt, isTrue);
+        expect(a.s.meldung, contains('beschädigt'));
+        expect(utf8.decode((await a.speicher.lesen('e2ee.vertrauen.$_anna'))!), '{kaputt', reason: 'nicht still überschrieben');
+        await a.ctrl.vertrauenZuruecksetzen();
+        expect(a.s.vertrauenDefekt, isFalse);
+        expect(a.s.status, E2eeStatus.bereit);
+        expect(a.s.warnungen, isEmpty, reason: 'Schlüssel werden wieder beim ersten Sehen gemerkt');
+      });
+
       test('libsodium nicht verfügbar: Status "nicht verfügbar" mit Meldung statt Absturz', () async {
         final a = await geraet(_anna, 'Anna', ohneSodium: true);
         expect(a.s.status, E2eeStatus.nichtVerfuegbar);

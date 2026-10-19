@@ -101,6 +101,17 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     await ausfuehren(_c.lokalenSchluesselVerwerfen);
   }
 
+  Future<void> _vertrauenZuruecksetzen() async {
+    final ja = await _bestaetigen(
+      'Vertrauen zurücksetzen?',
+      'Dieses Gerät vergisst dann alle gemerkten Schlüssel der Familie und den Stand der Chat-Mitglieder. Danach gilt jeder Schlüssel, den der Server nennt, wieder als "beim ersten Sehen" '
+      'vertrauenswürdig: Ein falsch untergeschobener Schlüssel würde nicht auffallen. Vergleiche danach die Sicherheitscodes mit den Personen. Verschlüsselte Chats bleiben lesbar.',
+      'Vertrauen zurücksetzen',
+    );
+    if (!ja || !mounted) return;
+    await ausfuehren(_c.vertrauenZuruecksetzen);
+  }
+
   Future<void> _akzeptieren(SchluesselWarnung w, String name) async {
     final ja = await _bestaetigen(
       'Neuen Schlüssel akzeptieren?',
@@ -159,7 +170,10 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         return [
           MeldungsBox(s.meldung ?? 'Die Verschlüsselung ist gerade nicht verfügbar.'),
           const SizedBox(height: 12),
-          ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: laeuft ? null : () => unawaited(_c.laden())),
+          if (s.vertrauenDefekt)
+            ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen)
+          else
+            ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: laeuft ? null : () => unawaited(_c.laden())),
         ];
       case E2eeStatus.keinSchluessel:
         return [

@@ -62,6 +62,9 @@ class Geraet {
   /// Früher bestätigte Schlüssel ("userId:version"), vom Gerät selbst gemerkt.
   final Map<String, OeffentlicheSchluessel> frueher = {};
 
+  /// Dauerhaft festgehaltener Stand der akzeptierten Chat-Mitglieder (überlebt [neuStarten], wie der Vertrauensspeicher).
+  final Map<String, AkzeptierterStand> stand = {};
+
   static Geraet neu(ChatWelt welt, TestPerson person, {String? name, String? opPraefix, String Function()? neueId, void Function()? beiAenderung}) {
     final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
     final geraete = name ?? person.name;
@@ -114,6 +117,8 @@ class Geraet {
         throw const CryptoFehler(CryptoFehlerArt.signatur, 'Absender nicht bestätigt');
       },
       jetzt: () => jetzt,
+      standLaden: (c) async => stand[c],
+      standSpeichern: (c, s) async => stand[c] = s,
     );
   }
 

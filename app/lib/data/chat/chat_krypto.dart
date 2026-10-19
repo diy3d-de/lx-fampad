@@ -93,9 +93,20 @@ class _Zurueck {
   final String marke;
   final SignierteMitgliederListe liste;
   final OeffentlicheSchluessel verteiler;
-  final Set<String> extra;
+  Set<String> extra;
   _Zurueck(this.epoche, this.key, this.marke, this.liste, this.verteiler, this.extra);
 }
+
+/// Was dieses Gerät je Konversation als akzeptiert festgehalten hat (dauerhaft, am Vertrauensspeicher verankert, siehe VertrauensPruefer.standLaden):
+/// die akzeptierten Epochen (die höchsten, begrenzt auf [kMaxMerkEpochen]) und die zuletzt akzeptierte Mitgliederliste.
+class AkzeptierterStand {
+  final Set<int> epochen;
+  final Map<String, int> liste;
+  const AkzeptierterStand(this.epochen, this.liste);
+}
+
+/// Wie viele akzeptierte Epochen je Konversation gemerkt werden (ältere gelten, wenn das Gerät schon welche akzeptiert hatte, als bereits gesehen).
+const kMaxMerkEpochen = 64;
 
 class _Ring {
   final Map<int, Uint8List> schluessel = {};
@@ -129,11 +140,19 @@ class ChatKrypto {
   final Map<String, _Ring> _ringe = {};
   final Map<String, Map<int, NichtLesbarGrund>> _probleme = {};
 
-  /// Zuletzt AKZEPTIERTE Mitgliederliste je Konversation (Person -> Schlüsselversion) und alle Personen, die dieses Gerät je in einer akzeptierten Liste gesehen hat.
-  /// Eine neue Epoche gilt nur, wenn sie keine Person enthält, die diesem Gerät unbekannt ist und die es nicht selbst aufgenommen hat (eigene Epoche): sonst könnte ein
-  /// Teilnehmer ungefragt eine unbestätigte Person einschleusen.
+  /// Zuletzt AKZEPTIERTE Mitgliederliste je Konversation (Person -> Schlüsselversion). Eine neue Epoche gilt nur, wenn sie keine Person enthält, die in dieser Liste fehlt
+  /// und die dieses Gerät nicht selbst aufgenommen hat (eigene Epoche): sonst könnte ein Teilnehmer ungefragt eine unbestätigte (oder bewusst entfernte) Person einschleusen.
   final Map<String, Map<String, int>> _akzeptiert = {};
-  final Map<String, Set<String>> _bekannt = {};
+
+  /// Wegen unbekannter Personen zurückgestellte Epochen (Schlüssel nur im Arbeitsspeicher, "Konversation:Epoche"): sie werden nicht bei jedem Lauf neu geöffnet.
+  final Map<String, _Zurueck> _gehalten = {};
+
+  /// Zurückgestellte Epochen je Konversation mit ihren zusätzlichen Personen (für die Entscheidung: Aufnahme-Abfrage statt Heilung).
+  final Map<String, Map<int, Set<String>>> _zurueckgestellt = {};
+
+  /// Dauerhafter Stand (Vertrauensspeicher); ohne Angabe nur leer.
+  final Future<AkzeptierterStand?> Function(String konversationId) _standLaden;
+  final Future<void> Function(String konversationId, AkzeptierterStand stand) _standSpeichern;
 
   /// Zählt jede Änderung des Vertrauens (neue gemerkte Schlüssel, Mitgliederliste): bis dahin gescheiterte Wraps werden dann erneut versucht.
   int _vertrauensStempel = 0;
@@ -174,8 +193,12 @@ class ChatKrypto {
     required this.serverSchluessel,
     required this.absenderSchluessel,
     DateTime Function()? jetzt,
+    Future<AkzeptierterStand?> Function(String konversationId)? standLaden,
+    Future<void> Function(String konversationId, AkzeptierterStand stand)? standSpeichern,
   }) : _huelle = HuellenCodec(crypto),
-       _jetzt = jetzt ?? DateTime.now;
+       _jetzt = jetzt ?? DateTime.now,
+       _standLaden = standLaden ?? ((_) async => null),
+       _standSpeichern = standSpeichern ?? ((_, _) async {});
 
   /// Der Stand des Vertrauens hat sich geändert (neuer Abgleich der Mitglieder, bestätigte Warnung): Gescheitertes wird beim nächsten [aktualisieren] erneut geprüft.
   void vertrauenGeaendert() {
@@ -262,13 +285,45 @@ class ChatKrypto {
       final conv = eintrag.key;
       // aufsteigend: die zuletzt akzeptierte Mitgliederliste wächst von Epoche zu Epoche
       final liste = [...eintrag.value]..sort((a, b) => a.epoche.compareTo(b.epoche));
+      final stand0 = await _standLaden(conv);
+      final vorab = stand0?.epochen ?? const <int>{};
+      final vorabMin = vorab.isEmpty ? null : vorab.reduce((a, b) => a < b ? a : b);
       Map<String, int>? basis;
-      final bekannt = <String>{};
+      final angenommen = <int>{};
       final zurueck = <_Zurueck>[];
       final ring = _ringe.putIfAbsent(conv, _Ring.new);
       // 1. regulärer Weg: die Mitgliederliste der Epoche nennt die Person
       final regulaer = <int, ({SignierteMitgliederListe liste, OeffentlicheSchluessel verteiler})>{};
       final spaeter = <Epoche>[];
+
+      // Entscheidet über eine geöffnete Epoche (Signatur ist geprüft): angenommen (basis wird fortgeschrieben) oder zurückgestellt.
+      void pruefeAnnahme(Epoche e, SignierteMitgliederListe signiert, _Zurueck? z0, Uint8List key, String marke, OeffentlicheSchluessel verteiler) {
+        // schon früher von diesem Gerät akzeptiert (dauerhafter Stand), eigene Epoche, oder noch keine Basis (erste Epoche: Vertrauen beim ersten Sehen)
+        final frueherAkzeptiert = vorab.contains(e.epoche) || (vorabMin != null && e.epoche < vorabMin);
+        final b = basis ?? stand0?.liste;
+        final extra = frueherAkzeptiert || b == null || signiert.verteilerId == ichId ? <String>{} : {for (final m in signiert.liste.mitglieder) m.userId}.difference(b.keys.toSet());
+        if (extra.isNotEmpty) {
+          if (z0 != null) {
+            z0.extra = extra;
+            zurueck.add(z0);
+          } else {
+            final z = _Zurueck(e, key, marke, signiert, verteiler, extra);
+            _gehalten['$conv:${e.epoche}'] = z;
+            zurueck.add(z);
+          }
+          _problem(conv, e.epoche, NichtLesbarGrund.schluesselFehlt);
+          return;
+        }
+        basis = _basisVon(signiert);
+        angenommen.add(e.epoche);
+        ring.schluessel[e.epoche] = key;
+        ring.stand[e.epoche] = marke;
+        _probleme[conv]?.remove(e.epoche);
+        regulaer[e.epoche] = (liste: signiert, verteiler: verteiler);
+        _gehalten.remove('$conv:${e.epoche}');
+        geaendert = true;
+      }
+
       for (final e in liste) {
         final w = wrapNach['$conv:${e.epoche}'];
         if (w == null) {
@@ -295,50 +350,68 @@ class ChatKrypto {
         }
         if (ring.schluessel.containsKey(e.epoche) && ring.stand[e.epoche] == marke) {
           basis = _basisVon(signiert); // war schon akzeptiert
-          bekannt.addAll(basis.keys);
+          angenommen.add(e.epoche);
           final v = await _verteilerSchluessel(signiert.verteilerId, signiert.verteilerKeyVersion);
           if (v != null) regulaer[e.epoche] = (liste: signiert, verteiler: v);
           continue;
         }
+        // schon geöffnet und zurückgestellt: nicht erneut öffnen, nur neu entscheiden
+        final gehalten = _gehalten['$conv:${e.epoche}'];
+        if (gehalten != null) {
+          if (gehalten.marke == marke) {
+            pruefeAnnahme(e, signiert, gehalten, gehalten.key, marke, gehalten.verteiler);
+            continue;
+          }
+          loescheBytes(gehalten.key);
+          _gehalten.remove('$conv:${e.epoche}');
+        }
         if (_gescheitertBei['$conv:${e.epoche}:$marke'] == _vertrauensStempel) continue;
         final r = await _regulaerOeffnen(conv, e, w, signiert);
         if (r != null) {
-          // Die Signatur ist geprüft. Personen, die dieses Gerät nicht kennt, gelten nur, wenn es die Epoche selbst angelegt hat (dann hat es sie aufgenommen).
-          final extra = basis == null || signiert.verteilerId == ichId ? <String>{} : {for (final m in signiert.liste.mitglieder) m.userId}.difference(bekannt);
-          if (extra.isNotEmpty) {
-            zurueck.add(_Zurueck(e, r.key, marke, signiert, r.verteiler, extra));
-            _problem(conv, e.epoche, NichtLesbarGrund.schluesselFehlt);
-            continue;
-          }
-          basis = _basisVon(signiert);
-          bekannt.addAll(basis.keys);
-          ring.schluessel[e.epoche] = r.key;
-          ring.stand[e.epoche] = marke;
-          _probleme[conv]?.remove(e.epoche);
-          regulaer[e.epoche] = (liste: signiert, verteiler: r.verteiler);
-          geaendert = true;
+          pruefeAnnahme(e, signiert, null, r.key, marke, r.verteiler);
         } else {
           _gescheitertBei['$conv:${e.epoche}:$marke'] = _vertrauensStempel;
         }
       }
       // zurückgestellte Epochen gelten nachträglich, wenn ihre zusätzlichen Personen inzwischen in der akzeptierten Liste stehen (z. B. durch die eigene Aufnahme)
+      final offen = <int, Set<String>>{};
+      final endBasis = basis;
       for (final z in zurueck) {
-        if (z.extra.every(bekannt.contains)) {
+        if (endBasis != null && z.extra.every(endBasis.containsKey)) {
+          _gehalten.remove('$conv:${z.epoche.epoche}');
           ring.schluessel[z.epoche.epoche] = z.key;
           ring.stand[z.epoche.epoche] = z.marke;
           _probleme[conv]?.remove(z.epoche.epoche);
           regulaer[z.epoche.epoche] = (liste: z.liste, verteiler: z.verteiler);
+          angenommen.add(z.epoche.epoche);
           geaendert = true;
         } else {
-          loescheBytes(z.key);
+          offen[z.epoche.epoche] = z.extra;
         }
       }
-      if (basis == null) {
-        _akzeptiert.remove(conv);
-        _bekannt.remove(conv);
+      // gehaltene Epochen, die es nicht mehr gibt, vergessen (Schlüssel überschreiben)
+      for (final k in _gehalten.keys.where((k) => k.startsWith('$conv:')).toList()) {
+        final ep = int.tryParse(k.substring(conv.length + 1));
+        if (ep == null || !offen.containsKey(ep)) loescheBytes(_gehalten.remove(k)!.key);
+      }
+      if (offen.isEmpty) {
+        _zurueckgestellt.remove(conv);
       } else {
-        _akzeptiert[conv] = basis;
-        _bekannt[conv] = bekannt;
+        _zurueckgestellt[conv] = offen;
+      }
+      if (endBasis == null) {
+        _akzeptiert.remove(conv);
+      } else {
+        _akzeptiert[conv] = endBasis;
+        // dauerhaft festhalten (am Vertrauensspeicher verankert), wenn sich etwas geändert hat
+        final alle = {...vorab, ...angenommen};
+        final sortiert = alle.toList()..sort();
+        final behalten = sortiert.length > kMaxMerkEpochen ? sortiert.sublist(sortiert.length - kMaxMerkEpochen).toSet() : alle;
+        final alt = stand0;
+        final gleichListe = alt != null && alt.liste.length == endBasis.length && endBasis.entries.every((x) => alt.liste[x.key] == x.value);
+        if (alt == null || !gleichListe || behalten.length != alt.epochen.length || !behalten.containsAll(alt.epochen)) {
+          await _standSpeichern(conv, AkzeptierterStand(behalten, Map.of(endBasis)));
+        }
       }
       // 2. Verlauf: ältere Epochen, die ein Mitglied beim Aufnehmen geteilt hat; Bürge ist die aktuelle, geprüfte Liste
       if (regulaer.isNotEmpty) {
@@ -392,7 +465,10 @@ class ChatKrypto {
     }
     _probleme.remove(conv);
     _akzeptiert.remove(conv);
-    _bekannt.remove(conv);
+    _zurueckgestellt.remove(conv);
+    for (final k in _gehalten.keys.where((k) => k.startsWith('$conv:')).toList()) {
+      loescheBytes(_gehalten.remove(k)!.key);
+    }
   }
 
   /// Vergisst alle Schlüssel im Arbeitsspeicher (Abmelden, Schlüsselwechsel).
@@ -400,6 +476,11 @@ class ChatKrypto {
     for (final id in _ringe.keys.toList()) {
       _verwerfen(id);
     }
+    for (final z in _gehalten.values) {
+      loescheBytes(z.key);
+    }
+    _gehalten.clear();
+    _zurueckgestellt.clear();
   }
 
   Future<({Uint8List key, OeffentlicheSchluessel verteiler})?> _regulaerOeffnen(String conv, Epoche e, EpocheWrapZeile w, SignierteMitgliederListe signiert) async {
@@ -513,11 +594,11 @@ class ChatKrypto {
     if (hoechste.rev == 0) return (epoche: null, wartet: true);
     final key = schluessel(konversationId, hoechste.epoche);
     if (key == null) return (epoche: null, wartet: true);
-    // nur an Personen, die dieses Gerät kennt (akzeptierte Liste): eine Epoche mit unbestätigten Personen wird nicht benutzt
-    final bekannt = _bekannt[konversationId];
+    // nur an Personen der akzeptierten Liste: eine Epoche mit unbestätigten Personen wird nicht benutzt
+    final basis = _akzeptiert[konversationId];
     try {
       final ids = SignierteMitgliederListe.dekodieren(hoechste.mitglieder).liste.mitglieder.map((m) => m.userId);
-      if (bekannt == null || !ids.every(bekannt.contains)) return (epoche: null, wartet: true);
+      if (basis == null || !ids.every(basis.containsKey)) return (epoche: null, wartet: true);
     } on CryptoFehler {
       return (epoche: null, wartet: true);
     }
@@ -747,6 +828,21 @@ class ChatKrypto {
     // nur Teilnehmer, die aktive Mitglieder sind (alle Mitglieder beim Familienchat)
     final sollen = konversation.art == _familie ? aktiv.keys.toSet() : teilnehmer.where(aktiv.containsKey).toSet();
     if (!sollen.contains(ichId) && konversation.art != _familie) return null;
+    // Eine Epoche, die nur wegen Personen zurückgestellt ist, die jemand aufnehmen will, ist nicht vergiftet: keine Heilung (die würde die Aufgenommenen wieder
+    // hinauswerfen), sondern die Aufnahme-Abfrage. Heilung gibt es für Unlesbares und für Epochen mit Personen, die niemand aufnehmen will.
+    if (heilung) {
+      final zg = _zurueckgestellt[konversation.id]?[letzte.epoche];
+      if (zg != null) {
+        var alleGewollt = true;
+        for (final u in zg) {
+          if (!sollen.contains(u) || await vertrauenswuerdig(u) == null) {
+            alleGewollt = false;
+            break;
+          }
+        }
+        if (alleGewollt) heilung = false;
+      }
+    }
     _fehltSeit.removeWhere((u, _) => aktiv.containsKey(u));
     final entfernt = <String>{};
     for (final u in liste.keys) {
