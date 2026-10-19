@@ -1,8 +1,8 @@
 // E2EE-Schlüsselverwaltung (Phase 1): öffentliche Personenschlüssel, opake Schlüsselsicherung, kurzlebige Geräte-Übertragung.
 // Der Server sieht und speichert nie ein Geheimnis: Blobs sind für ihn undurchsichtiger Text (mit Wiederherstellungsschlüssel bzw.
 // Einmalschlüssel verschlüsselt, beides nur auf den Geräten). Alles gehört zur angemeldeten Person; Blobs und Schlüssel erscheinen nie im Log.
-import { and, eq, gt, sql } from 'drizzle-orm';
-import { keyBackups, keyTransfers, personKeys } from '../db/schema.js';
+import { and, asc, eq, gt, isNull } from 'drizzle-orm';
+import { keyBackups, keyTransfers, memberships, personKeyHistory, personKeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, RequestMeta } from './context.js';
@@ -47,17 +47,28 @@ export async function createKeys(ctx: AuthContext, p: SessionPrincipal, input: {
 
 /**
  * Schlüsselwechsel (Verlust aller Geräte ohne Wiederherstellung, Verdacht auf Kompromittierung): key_version steigt, Sicherung und
- * offene Übertragungen gehören zum alten Schlüssel und werden verworfen. Mit Step-up; die Apps der anderen warnen vor dem Wechsel.
+ * offene Übertragungen gehören zum alten Schlüssel und werden verworfen; der alte Stand wandert in die (nur anhängende) Historie.
+ * `expectedKeyVersion` ist die Version, die der Client kennt: weicht sie ab (anderes Gerät war schneller), antwortet der Server mit 409.
+ * Mit Step-up; die Apps der anderen warnen vor dem Wechsel.
  */
-export async function rotateKeys(ctx: AuthContext, p: SessionPrincipal, input: { publicEncKey: string; publicSignKey: string }, meta: RequestMeta): Promise<PublicKeys> {
+export async function rotateKeys(
+  ctx: AuthContext,
+  p: SessionPrincipal,
+  input: { publicEncKey: string; publicSignKey: string; expectedKeyVersion: number },
+  meta: RequestMeta,
+): Promise<PublicKeys> {
   requireStepUp(ctx, p);
   return ctx.db.transaction(async (tx) => {
-    const rows = await tx
+    const [alt] = await tx.select().from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
+    if (!alt) throw notFound();
+    if (alt.keyVersion !== input.expectedKeyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
+    const now = ctx.now();
+    await tx.insert(personKeyHistory).values({ userId: p.userId, keyVersion: alt.keyVersion, encKey: alt.publicEncKey, signKey: alt.publicSignKey, validFrom: alt.updatedAt, validUntil: now });
+    const [row] = await tx
       .update(personKeys)
-      .set({ publicEncKey: input.publicEncKey, publicSignKey: input.publicSignKey, keyVersion: sql`${personKeys.keyVersion} + 1`, updatedAt: ctx.now() })
+      .set({ publicEncKey: input.publicEncKey, publicSignKey: input.publicSignKey, keyVersion: alt.keyVersion + 1, updatedAt: now })
       .where(eq(personKeys.userId, p.userId))
       .returning({ publicEncKey: personKeys.publicEncKey, publicSignKey: personKeys.publicSignKey, keyVersion: personKeys.keyVersion });
-    const row = rows[0];
     if (!row) throw notFound();
     await tx.delete(keyBackups).where(eq(keyBackups.userId, p.userId));
     await tx.delete(keyTransfers).where(eq(keyTransfers.userId, p.userId));
@@ -81,41 +92,101 @@ export async function setBackup(ctx: AuthContext, p: SessionPrincipal, input: { 
   });
 }
 
-/** Opake Schlüsselsicherung abrufen (Step-up); jeder Abruf wird protokolliert. */
+/**
+ * Opake Schlüsselsicherung abrufen (Step-up). Abruf und Audit-Eintrag stehen in einer Transaktion: Gelingt das Protokollieren
+ * nicht, gibt es auch keine Sicherung (lieber ein Fehler als ein unprotokollierter Abruf).
+ */
 export async function getBackup(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta): Promise<{ blob: string; keyVersion: number }> {
   requireStepUp(ctx, p);
-  const [b] = await ctx.db.select({ blob: keyBackups.blob, keyVersion: keyBackups.keyVersion }).from(keyBackups).where(eq(keyBackups.userId, p.userId));
-  if (!b) throw notFound();
-  await writeAudit(ctx, ctx.db, { event: 'key_backup_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion } });
-  return b;
+  return ctx.db.transaction(async (tx) => {
+    const [b] = await tx.select({ blob: keyBackups.blob, keyVersion: keyBackups.keyVersion }).from(keyBackups).where(eq(keyBackups.userId, p.userId));
+    if (!b) throw notFound();
+    await writeAudit(ctx, tx, { event: 'key_backup_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion } });
+    return b;
+  });
 }
 
-/** Übertragung für ein neues Gerät anlegen (ersetzt eine offene). `lookup` ist die vom Gerät abgeleitete Suchkennung, nie der Einmalschlüssel. */
-export async function createTransfer(ctx: AuthContext, p: SessionPrincipal, input: { lookup: string; blob: string }): Promise<{ expiresAt: string; ttlSec: number }> {
+/** PostgreSQL-Fehler "unique_violation" (auch von drizzle verpackt, `cause`). */
+function istEindeutigkeitsfehler(e: unknown): boolean {
+  const x = e as { code?: unknown; cause?: { code?: unknown } } | null;
+  return x?.code === '23505' || x?.cause?.code === '23505';
+}
+
+/**
+ * Übertragung für ein neues Gerät anlegen (ersetzt eine offene). `lookup` ist die vom Gerät abgeleitete Suchkennung, nie der Einmalschlüssel.
+ * `keyVersion` ist die Version, zu der der Blob gehört: stimmt sie nicht mit dem Server überein (Schlüssel inzwischen gewechselt), 409.
+ * Kollidiert die Suchkennung mit der einer anderen Person (praktisch ausgeschlossen), antwortet der Server mit 409 statt 500.
+ */
+export async function createTransfer(
+  ctx: AuthContext,
+  p: SessionPrincipal,
+  input: { lookup: string; blob: string; keyVersion: number },
+): Promise<{ expiresAt: string; ttlSec: number }> {
   const now = ctx.now();
   const expiresAt = new Date(now.getTime() + KEY_TRANSFER_TTL_SEC * 1000);
-  await ctx.db.transaction(async (tx) => {
-    const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
-    if (!k) throw new AppError(409, 'no_keys', 'Du hast noch keinen Schlüssel eingerichtet.');
-    await tx
-      .insert(keyTransfers)
-      .values({ userId: p.userId, lookupHash: sha256Hex(input.lookup), blob: input.blob, keyVersion: k.v, createdAt: now, expiresAt })
-      .onConflictDoUpdate({ target: keyTransfers.userId, set: { lookupHash: sha256Hex(input.lookup), blob: input.blob, keyVersion: k.v, createdAt: now, expiresAt } });
-  });
+  const lookupHash = sha256Hex(input.lookup);
+  try {
+    await ctx.db.transaction(async (tx) => {
+      const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
+      if (!k) throw new AppError(409, 'no_keys', 'Du hast noch keinen Schlüssel eingerichtet.');
+      if (k.v !== input.keyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
+      await tx
+        .insert(keyTransfers)
+        .values({ userId: p.userId, lookupHash, blob: input.blob, keyVersion: k.v, createdAt: now, expiresAt })
+        .onConflictDoUpdate({ target: keyTransfers.userId, set: { lookupHash, blob: input.blob, keyVersion: k.v, createdAt: now, expiresAt } });
+    });
+  } catch (e) {
+    if (istEindeutigkeitsfehler(e)) throw new AppError(409, 'transfer_conflict', 'Bitte versuche es noch einmal.');
+    throw e;
+  }
   return { expiresAt: expiresAt.toISOString(), ttlSec: KEY_TRANSFER_TTL_SEC };
 }
 
 /**
  * Übertragung einlösen: genau einmal (DELETE ... RETURNING), nur durch dieselbe Person, nur vor Ablauf. Jeder Fehlschlag (unbekannt,
- * abgelaufen, schon eingelöst, fremde Person) antwortet gleich mit 404.
+ * abgelaufen, schon eingelöst, fremde Person) antwortet gleich mit 404. Einlösen und Audit-Eintrag stehen in einer Transaktion: Scheitert
+ * das Protokollieren, bleibt die Übertragung erhalten (der Client sieht einen Fehler und kann es innerhalb der Frist wiederholen).
  */
 export async function claimTransfer(ctx: AuthContext, p: SessionPrincipal, input: { lookup: string }, meta: RequestMeta): Promise<{ blob: string; keyVersion: number }> {
-  const rows = await ctx.db
-    .delete(keyTransfers)
-    .where(and(eq(keyTransfers.userId, p.userId), eq(keyTransfers.lookupHash, sha256Hex(input.lookup)), gt(keyTransfers.expiresAt, ctx.now())))
-    .returning({ blob: keyTransfers.blob, keyVersion: keyTransfers.keyVersion });
-  const row = rows[0];
-  if (!row) throw notFound();
-  await writeAudit(ctx, ctx.db, { event: 'transfer_claimed', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
-  return row;
+  return ctx.db.transaction(async (tx) => {
+    const rows = await tx
+      .delete(keyTransfers)
+      .where(and(eq(keyTransfers.userId, p.userId), eq(keyTransfers.lookupHash, sha256Hex(input.lookup)), gt(keyTransfers.expiresAt, ctx.now())))
+      .returning({ blob: keyTransfers.blob, keyVersion: keyTransfers.keyVersion });
+    const row = rows[0];
+    if (!row) throw notFound();
+    await writeAudit(ctx, tx, { event: 'transfer_claimed', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
+    return row;
+  });
+}
+
+export interface MemberKeyVersion {
+  publicEncKey: string;
+  publicSignKey: string;
+  keyVersion: number;
+  validFrom: string;
+  /** null = aktuelle Version. */
+  validUntil: string | null;
+}
+
+/**
+ * Öffentliche Schlüssel eines Familienmitglieds samt Historie (zum Prüfen alter Signaturen). Nur Mitglieder der eigenen Familie (sonst 404,
+ * auch für unbekannte IDs und Deaktivierte); mit `version` genau diese Version (aktuell oder aus der Historie), sonst alle, aufsteigend.
+ */
+export async function getMemberKeys(ctx: AuthContext, p: SessionPrincipal, targetId: string, version?: number): Promise<{ userId: string; keys: MemberKeyVersion[] }> {
+  const [m] = await ctx.db
+    .select({ id: memberships.userId })
+    .from(memberships)
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId), isNull(users.disabledAt)));
+  if (!m) throw notFound();
+  const [cur] = await ctx.db.select().from(personKeys).where(eq(personKeys.userId, targetId));
+  const hist = await ctx.db.select().from(personKeyHistory).where(eq(personKeyHistory.userId, targetId)).orderBy(asc(personKeyHistory.keyVersion));
+  const all: MemberKeyVersion[] = [
+    ...hist.map((h) => ({ publicEncKey: h.encKey, publicSignKey: h.signKey, keyVersion: h.keyVersion, validFrom: h.validFrom.toISOString(), validUntil: h.validUntil.toISOString() })),
+    ...(cur ? [{ publicEncKey: cur.publicEncKey, publicSignKey: cur.publicSignKey, keyVersion: cur.keyVersion, validFrom: cur.updatedAt.toISOString(), validUntil: null }] : []),
+  ];
+  const keys = version === undefined ? all : all.filter((k) => k.keyVersion === version);
+  if (version !== undefined && keys.length === 0) throw notFound();
+  return { userId: targetId, keys };
 }

@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error.dart';
+import '../api/fampad_api.dart';
 import '../api/models.dart';
 import '../auth/auth_state.dart';
 import 'bytes.dart';
@@ -33,10 +34,32 @@ String personenschluesselName(String userId) => 'e2ee.pk.$userId';
 /// (ein neues Anmelden verlangt dann wieder "Gerät verbinden"). Die gemerkten öffentlichen Schlüssel (TOFU) bleiben, damit ein Abmelden
 /// kein Weg ist, einen Schlüsselwechsel unbemerkt zu lassen.
 Future<void> Function() e2eeDatenWiper(Ref ref) => () async {
-  await ref.read(schluesselSpeicherProvider).loescheMitPraefix('e2ee.pk.');
-  // Zustand und der Schlüssel im Arbeitsspeicher gehören der bisherigen Person: verwerfen (das Notifier-Ende überschreibt die Bytes)
-  ref.invalidate(e2eeProvider);
+  try {
+    await ref.read(schluesselSpeicherProvider).loescheMitPraefix('e2ee.pk.');
+  } finally {
+    // Zustand und der Schlüssel im Arbeitsspeicher gehören der bisherigen Person: verwerfen (der Neuaufbau überschreibt die Bytes), auch wenn das Löschen scheiterte
+    ref.invalidate(e2eeProvider);
+  }
 };
+
+/// Führt alle [wiper] unabhängig voneinander aus (ein Fehler eines Wipers hindert die anderen nie, z. B. darf ein Datenbankfehler das Löschen des
+/// Personenschlüssels nicht verhindern) und wirft danach den ersten Fehler.
+Future<void> Function() wiperVerkettet(List<Future<void> Function()> wiper) => () async {
+  Object? erster;
+  StackTrace? stapel;
+  for (final w in wiper) {
+    try {
+      await w();
+    } on Object catch (e, st) {
+      erster ??= e;
+      stapel ??= st;
+    }
+  }
+  if (erster != null) Error.throwWithStackTrace(erster, stapel!);
+};
+
+/// Name des Zwischenstands beim Schlüsselwechsel: der bisherige Schlüssel bleibt bis zur Gewissheit über den Ausgang auf dem Gerät.
+String personenschluesselAltName(String userId) => 'e2ee.pk.$userId.alt';
 
 enum E2eeStatus {
   /// Wird geprüft.
@@ -118,6 +141,7 @@ class E2eeController extends Notifier<E2eeState> {
   }
 
   SchluesselSpeicher get _speicher => ref.read(schluesselSpeicherProvider);
+  FampadApi get _api => ref.read(apiProvider);
 
   Future<CryptoProvider> _krypto() async {
     try {
@@ -129,14 +153,23 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
+  /// Liest den lokalen Schlüssel. Fehlt er, null. Ein eindeutig dauerhaft unbrauchbarer Eintrag wird entfernt (null); ein vorübergehender
+  /// Fehler des Speichers geht weiter, der Eintrag bleibt (ein späterer Versuch kann klappen).
   Future<Personenschluessel?> _lokalLaden(CryptoProvider crypto) async {
-    final bytes = await _speicher.lesen(personenschluesselName(_userId));
+    final name = personenschluesselName(_userId);
+    final Uint8List? bytes;
+    try {
+      bytes = await _speicher.lesen(name);
+    } on SchluesselSpeicherFehler catch (e) {
+      if (!e.dauerhaft) rethrow;
+      await _speicher.loeschen(name);
+      return null;
+    }
     if (bytes == null) return null;
     try {
       return Personenschluessel.ausBytes(crypto, bytes);
     } on CryptoFehler {
-      // unbrauchbarer Eintrag: wie nicht vorhanden behandeln und entfernen
-      await _speicher.loeschen(personenschluesselName(_userId));
+      await _speicher.loeschen(name);
       return null;
     } finally {
       loescheBytes(bytes);
@@ -146,17 +179,20 @@ class E2eeController extends Notifier<E2eeState> {
   /// Öffentliche Schlüssel dieses Geräts (null, wenn keiner da ist); für die Phase 2 (Signieren, Entschlüsseln).
   Personenschluessel? get lokalerSchluessel => _lokal;
 
+  /// Frischer Stand des eigenen Schlüssels beim Server (nie aus dem Zustand).
+  Future<OeffentlicheSchluessel?> _serverSchluessel() async => (await _api.eigeneSchluessel()).schluessel;
+
   /// Lädt Schlüsselstand, Mitglieder und Warnungen neu.
   Future<void> laden() async {
     final uid = ref.read(authProvider).user?.id;
     if (uid == null) return;
     try {
       final crypto = await _krypto();
-      final api = ref.read(apiProvider);
-      final eigene = await api.eigeneSchluessel();
-      final mitglieder = await api.mitglieder();
+      final eigene = await _api.eigeneSchluessel();
+      final mitglieder = await _api.mitglieder();
       if (!ref.mounted) return;
       _lokal = await _lokalLaden(crypto);
+      await _zwischenstandAufloesen(crypto, eigene.schluessel);
       final server = eigene.schluessel;
       final pruefer = VertrauensPruefer(_speicher, eigeneUserId: uid);
       final warnungen = await pruefer.pruefen({for (final m in mitglieder) m.id: m.schluessel});
@@ -172,16 +208,72 @@ class E2eeController extends Notifier<E2eeState> {
         hatSicherung: eigene.hatSicherung,
         mitglieder: mitglieder,
         warnungen: warnungen,
-        sicherheitscode: familienSicherheitscode([for (final m in mitglieder) if (m.schluessel != null) MitgliedSchluessel(m.id, m.schluessel!)]),
+        // nur aktive Mitglieder: wartende gehören noch nicht zur Familie
+        sicherheitscode: familienSicherheitscode([
+          for (final m in mitglieder)
+            if (m.schluessel != null && m.status == MemberStatus.active) MitgliedSchluessel(m.id, m.schluessel!),
+        ]),
       );
     } on CryptoFehler catch (e) {
       if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.meldung);
+    } on SchluesselSpeicherFehler {
+      if (ref.mounted) state = const E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: 'Der Schlüsselspeicher dieses Geräts ist gerade nicht lesbar. Bitte versuche es gleich noch einmal.');
     } on ApiException catch (e) {
       if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.message);
     }
   }
 
   static bool _passt(Personenschluessel lokal, OeffentlicheSchluessel server) => server.gleichWie(lokal.oeffentlich(server.version));
+
+  /// Räumt einen liegengebliebenen Zwischenstand eines Schlüsselwechsels auf (Verbindung brach nach dem Absenden ab, App wurde beendet):
+  /// passt der Schlüssel des Servers zum neuen lokalen, kann der alte weg; passt er zum alten, ist der Wechsel nicht angekommen und der alte gilt wieder.
+  Future<void> _zwischenstandAufloesen(CryptoProvider crypto, OeffentlicheSchluessel? server) async {
+    final altName = personenschluesselAltName(_userId);
+    final Uint8List? roh;
+    try {
+      roh = await _speicher.lesen(altName);
+    } on SchluesselSpeicherFehler {
+      return;
+    }
+    if (roh == null) return;
+    Personenschluessel? alt;
+    try {
+      alt = Personenschluessel.ausBytes(crypto, roh);
+    } on CryptoFehler {
+      await _speicher.loeschen(altName);
+      return;
+    } finally {
+      loescheBytes(roh);
+    }
+    final neuPasst = server != null && _lokal != null && _passt(_lokal!, server);
+    final altPasst = server != null && _passt(alt, server);
+    if (neuPasst) {
+      alt.loeschen();
+      await _speicher.loeschen(altName);
+    } else if (altPasst) {
+      await _speicher.schreiben(personenschluesselName(_userId), alt.exportieren());
+      _lokal?.loeschen();
+      _lokal = alt;
+      await _speicher.loeschen(altName);
+    } else {
+      alt.loeschen();
+    }
+  }
+
+  /// Unklarer Ausgang (Netzfehler nach dem Absenden): fragt den Server frisch und entscheidet daran, ob der Schlüssel [eigener] dort angekommen ist.
+  /// Gelingt auch diese Abfrage nicht, bleibt der Zustand unklar: nichts wird zurückgerollt (der Schlüssel geht nie verloren) und der Aufrufer
+  /// meldet das; das nächste Laden entscheidet.
+  Future<bool> _angekommen(Personenschluessel eigener) async {
+    try {
+      final s = await _serverSchluessel();
+      return s != null && _passt(eigener, s);
+    } on ApiException {
+      throw const CryptoFehler(
+        CryptoFehlerArt.schluessel,
+        'Die Verbindung brach ab, ob der Schlüssel gespeichert wurde, ist unklar. Öffne die Seite in einem Moment neu: Sie klärt das.',
+      );
+    }
+  }
 
   /// Erstmalige Einrichtung: Schlüssel erzeugen (oder einen vorhandenen lokalen veröffentlichen), auf dem Gerät ablegen und beim Server
   /// eintragen. Liefert den Wiederherstellungsschlüssel zum einmaligen Anzeigen; die Sicherung legt [sicherungAblegen] danach an.
@@ -191,11 +283,29 @@ class E2eeController extends Notifier<E2eeState> {
     final vorhanden = _lokal ?? await _lokalLaden(crypto);
     final schluessel = vorhanden ?? Personenschluessel.erzeugen(crypto);
     if (vorhanden == null) await _speicher.schreiben(name, schluessel.exportieren());
-    final OeffentlicheSchluessel ver;
+    Future<void> zurueck() async {
+      if (vorhanden == null) {
+        await _speicher.loeschen(name);
+        schluessel.loeschen();
+      }
+    }
+
+    OeffentlicheSchluessel ver;
     try {
-      ver = await ref.read(apiProvider).schluesselAnlegen(enc: schluessel.oeffentlich(1).encBase64, sign: schluessel.oeffentlich(1).signBase64);
+      ver = await _api.schluesselAnlegen(enc: schluessel.oeffentlich(1).encBase64, sign: schluessel.oeffentlich(1).signBase64);
+    } on ApiException catch (e) {
+      if (!e.istNetzwerk) {
+        await zurueck();
+        rethrow;
+      }
+      // Netzfehler: vielleicht hat der Server den Schlüssel schon gespeichert
+      if (!await _angekommen(schluessel)) {
+        await zurueck();
+        rethrow;
+      }
+      ver = (await _serverSchluessel())!;
     } on Object {
-      if (vorhanden == null) await _speicher.loeschen(name);
+      await zurueck();
       rethrow;
     }
     _lokal = schluessel;
@@ -204,27 +314,55 @@ class E2eeController extends Notifier<E2eeState> {
   }
 
   /// Neuer Schlüssel nach Totalverlust (kein Gerät, kein Wiederherstellungsschlüssel) oder bei Verdacht auf Kompromittierung. Mit Step-up
-  /// (UI). Frühere verschlüsselte Inhalte lassen sich damit NICHT lesen. Die anderen Mitglieder werden gewarnt.
+  /// (UI). Frühere verschlüsselte Inhalte lassen sich damit NICHT lesen. Die anderen Mitglieder werden gewarnt. Der Server prüft die Version, die
+  /// dieses Gerät frisch von ihm erfahren hat (409, wenn ein anderes Gerät schneller war).
   Future<Einrichtung> schluesselWechseln() async {
     final crypto = await _krypto();
     final name = personenschluesselName(_userId);
+    final altName = personenschluesselAltName(_userId);
+    final aktuell = await _serverSchluessel();
+    if (aktuell == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast die Verschlüsselung noch nicht eingerichtet.');
     final alt = await _speicher.lesen(name);
     final neu = Personenschluessel.erzeugen(crypto);
-    await _speicher.schreiben(name, neu.exportieren());
-    final OeffentlicheSchluessel ver;
     try {
-      ver = await ref.read(apiProvider).schluesselWechseln(enc: neu.oeffentlich(1).encBase64, sign: neu.oeffentlich(1).signBase64);
-    } on Object {
-      if (alt == null) {
-        await _speicher.loeschen(name);
-      } else {
-        await _speicher.schreiben(name, alt);
+      // der bisherige Schlüssel bleibt als Zwischenstand liegen, bis der Ausgang feststeht
+      if (alt != null) await _speicher.schreiben(altName, alt);
+      await _speicher.schreiben(name, neu.exportieren());
+      Future<void> zurueck() async {
+        if (alt == null) {
+          await _speicher.loeschen(name);
+        } else {
+          await _speicher.schreiben(name, alt);
+        }
+        await _speicher.loeschen(altName);
+        neu.loeschen();
       }
-      rethrow;
+
+      OeffentlicheSchluessel ver;
+      try {
+        ver = await _api.schluesselWechseln(enc: neu.oeffentlich(1).encBase64, sign: neu.oeffentlich(1).signBase64, erwarteteVersion: aktuell.version);
+      } on ApiException catch (e) {
+        if (!e.istNetzwerk) {
+          await zurueck();
+          rethrow;
+        }
+        if (!await _angekommen(neu)) {
+          await zurueck();
+          rethrow;
+        }
+        ver = (await _serverSchluessel())!;
+      } on Object {
+        await zurueck();
+        rethrow;
+      }
+      await _speicher.loeschen(altName);
+      _lokal?.loeschen();
+      _lokal = neu;
+      await laden();
+      return Einrichtung(Wiederherstellung.neuerSchluessel(crypto), ver.version);
+    } finally {
+      if (alt != null) loescheBytes(alt);
     }
-    _lokal = neu;
-    await laden();
-    return Einrichtung(Wiederherstellung.neuerSchluessel(crypto), ver.version);
   }
 
   /// Legt die Sicherung (Personenschlüssel, mit dem Wiederherstellungsschlüssel verschlüsselt) beim Server ab. Mit Step-up (UI).
@@ -239,25 +377,27 @@ class E2eeController extends Notifier<E2eeState> {
       userId: _userId,
       keyVersion: e.keyVersion,
     );
-    await ref.read(apiProvider).sicherungAblegen(blob: blob, keyVersion: e.keyVersion);
+    await _api.sicherungAblegen(blob: blob, keyVersion: e.keyVersion);
     await laden();
   }
 
   /// Neuen Wiederherstellungsschlüssel für den vorhandenen Personenschlüssel erzeugen (ersetzt die alte Sicherung nach [sicherungAblegen]).
   Future<Einrichtung> neuerWiederherstellungsschluessel() async {
     final crypto = await _krypto();
-    final s = state.serverSchluessel;
+    final s = await _serverSchluessel();
     if (_lokal == null || s == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät gibt es keinen Schlüssel.');
     return Einrichtung(Wiederherstellung.neuerSchluessel(crypto), s.version);
   }
 
+  /// Übernimmt einen empfangenen Schlüssel erst, wenn er zum FRISCH vom Server geholten öffentlichen Schlüssel passt.
   Future<void> _lokalUebernehmen(Personenschluessel schluessel, int keyVersion) async {
-    final server = state.serverSchluessel ?? (await ref.read(apiProvider).eigeneSchluessel()).schluessel;
+    final server = await _serverSchluessel();
     if (server == null || server.version != keyVersion || !server.gleichWie(schluessel.oeffentlich(server.version))) {
       schluessel.loeschen();
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüssel passt nicht mehr zu deinem Konto (er wurde inzwischen gewechselt).');
     }
     await _speicher.schreiben(personenschluesselName(_userId), schluessel.exportieren());
+    _lokal?.loeschen();
     _lokal = schluessel;
     await laden();
   }
@@ -266,62 +406,66 @@ class E2eeController extends Notifier<E2eeState> {
   Future<void> mitWiederherstellungVerbinden(String eingabe) async {
     final crypto = await _krypto();
     final wk = Wiederherstellung.lesen(eingabe);
-    final blob = await ref.read(apiProvider).sicherungAbrufen();
-    final Sicherung sicherung;
     try {
-      sicherung = Wiederherstellung.sicherungOeffnen(crypto, blob: blob.blob, wiederherstellungsschluessel: wk, userId: _userId);
-    } on CryptoFehler catch (e) {
-      if (e.art == CryptoFehlerArt.entschluesselung) {
-        throw const CryptoFehler(CryptoFehlerArt.entschluesselung, 'Der Wiederherstellungsschlüssel passt nicht zu deiner Sicherung.');
+      final blob = await _api.sicherungAbrufen();
+      final Sicherung sicherung;
+      try {
+        sicherung = Wiederherstellung.sicherungOeffnen(crypto, blob: blob.blob, wiederherstellungsschluessel: wk, userId: _userId);
+      } on CryptoFehler catch (e) {
+        if (e.art == CryptoFehlerArt.entschluesselung) {
+          throw const CryptoFehler(CryptoFehlerArt.entschluesselung, 'Der Wiederherstellungsschlüssel passt nicht zu deiner Sicherung.');
+        }
+        rethrow;
       }
-      rethrow;
+      await _lokalUebernehmen(sicherung.schluessel, sicherung.keyVersion);
     } finally {
       loescheBytes(wk);
     }
-    await _lokalUebernehmen(sicherung.schluessel, sicherung.keyVersion);
   }
 
-  /// Auf dem vorhandenen Gerät: Übertragung für ein neues Gerät anlegen (2 Minuten gültig, einmal einlösbar).
+  /// Auf dem vorhandenen Gerät: Übertragung für ein neues Gerät anlegen (2 Minuten gültig, einmal einlösbar). Die Schlüsselversion kommt frisch
+  /// vom Server und geht mit; der Server weist sie bei Abweichung zurück.
   Future<UebertragungsAnzeige> uebertragungAnbieten() async {
     final crypto = await _krypto();
     final schluessel = _lokal;
-    final server = state.serverSchluessel;
+    final server = await _serverSchluessel();
     if (schluessel == null || server == null || !_passt(schluessel, server)) {
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Dieses Gerät hat keinen passenden Schlüssel zum Übertragen.');
     }
     final angebot = Uebertragung.anbieten(crypto, schluessel: schluessel, userId: _userId, keyVersion: server.version);
-    final bis = await ref.read(apiProvider).uebertragungAnlegen(suchkennung: angebot.suchkennung, blob: angebot.blob);
-    final anzeige = UebertragungsAnzeige(qrText: Uebertragung.qrText(angebot.geheimnis), codeText: Uebertragung.codeText(angebot.geheimnis), gueltigBis: bis);
-    loescheBytes(angebot.geheimnis);
-    return anzeige;
+    try {
+      final bis = await _api.uebertragungAnlegen(suchkennung: angebot.suchkennung, blob: angebot.blob, keyVersion: server.version);
+      return UebertragungsAnzeige(qrText: Uebertragung.qrText(angebot.geheimnis), codeText: Uebertragung.codeText(angebot.geheimnis), gueltigBis: bis);
+    } finally {
+      loescheBytes(angebot.geheimnis);
+    }
   }
 
   /// Auf dem neuen Gerät: QR-Text oder Code einlesen, Übertragung beim Server einlösen und den Schlüssel übernehmen.
   Future<void> uebertragungAnnehmen(String eingabe) async {
     final crypto = await _krypto();
     final geheimnis = Uebertragung.geheimnisLesen(eingabe);
-    final BlobDto blob;
     try {
-      blob = await ref.read(apiProvider).uebertragungEinloesen(Uebertragung.suchkennung(crypto, geheimnis));
-    } on ApiException catch (e) {
-      loescheBytes(geheimnis);
-      if (e.status == 404) {
-        throw const CryptoFehler(CryptoFehlerArt.format, 'Der Code ist abgelaufen oder schon benutzt. Zeige auf dem anderen Gerät einen neuen an.');
+      final BlobDto blob;
+      try {
+        blob = await _api.uebertragungEinloesen(Uebertragung.suchkennung(crypto, geheimnis));
+      } on ApiException catch (e) {
+        if (e.status == 404) {
+          throw const CryptoFehler(CryptoFehlerArt.format, 'Der Code ist abgelaufen oder schon benutzt. Zeige auf dem anderen Gerät einen neuen an.');
+        }
+        rethrow;
       }
-      rethrow;
-    }
-    final Personenschluessel schluessel;
-    try {
-      schluessel = Uebertragung.oeffnen(crypto, blob: blob.blob, geheimnis: geheimnis, userId: _userId, keyVersion: blob.keyVersion);
+      final schluessel = Uebertragung.oeffnen(crypto, blob: blob.blob, geheimnis: geheimnis, userId: _userId, keyVersion: blob.keyVersion);
+      await _lokalUebernehmen(schluessel, blob.keyVersion);
     } finally {
       loescheBytes(geheimnis);
     }
-    await _lokalUebernehmen(schluessel, blob.keyVersion);
   }
 
   /// Entfernt den Schlüssel von diesem Gerät (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden.
   Future<void> lokalenSchluesselVerwerfen() async {
     await _speicher.loeschen(personenschluesselName(_userId));
+    await _speicher.loeschen(personenschluesselAltName(_userId));
     _lokal?.loeschen();
     _lokal = null;
     await laden();
@@ -333,6 +477,18 @@ class E2eeController extends Notifier<E2eeState> {
     if (w == null) return;
     await VertrauensPruefer(_speicher, eigeneUserId: _userId).akzeptieren(userId, w.aktuell);
     await laden();
+  }
+
+  /// Signatur-Schlüssel eines Absenders in der Version, mit der er eine Nachricht signiert hat (Phase 2, Hülle `sender_key_version`):
+  /// Die gemerkte (TOFU) Version zählt, nie ein Schlüssel vom Server; eine NEUERE Version als die gemerkte gilt erst nach Bestätigung der Warnung;
+  /// ältere Versionen (nach einem akzeptierten Wechsel) kommen aus der Schlüsselhistorie des Servers (bisher ungeprüft, nur Familienmitglieder).
+  Future<OeffentlicheSchluessel> absenderSchluessel(String userId, int version) async {
+    final gemerkt = await VertrauensPruefer(_speicher, eigeneUserId: _userId).gemerkterSchluessel(userId);
+    if (gemerkt != null && gemerkt.version == version) return gemerkt;
+    if (gemerkt != null && version > gemerkt.version) {
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Absender hat einen neuen Schlüssel, den du noch nicht akzeptiert hast.');
+    }
+    return _api.mitgliedSchluessel(userId, version);
   }
 }
 

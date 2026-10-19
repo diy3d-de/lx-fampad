@@ -180,8 +180,17 @@ class FampadApi {
       schluesselAusAntwort(await client.post('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign}));
 
   /// Schlüsselwechsel (Step-up): ersetzt das öffentliche Paar, die Schlüsselversion steigt, Sicherung und Übertragung entfallen.
-  Future<OeffentlicheSchluessel> schluesselWechseln({required String enc, required String sign}) async =>
-      schluesselAusAntwort(await client.put('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign}));
+  /// [erwarteteVersion] ist die dem Client bekannte Version (409, wenn ein anderes Gerät schneller war).
+  Future<OeffentlicheSchluessel> schluesselWechseln({required String enc, required String sign, required int erwarteteVersion}) async =>
+      schluesselAusAntwort(await client.put('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign, 'expectedKeyVersion': erwarteteVersion}));
+
+  /// Öffentlicher Schlüssel eines Familienmitglieds in einer bestimmten Version (Historie des Servers; für alte Signaturen).
+  Future<OeffentlicheSchluessel> mitgliedSchluessel(String userId, int version) async {
+    final r = await client.get('/members/$userId/keys?version=$version');
+    final keys = r['keys'];
+    if (keys is! List || keys.length != 1) throw ApiException.unerwarteteAntwort;
+    return schluesselAusAntwort({'keys': keys.first});
+  }
 
   Future<void> sicherungAblegen({required String blob, required int keyVersion}) async {
     await client.put('/me/key-backup', {'blob': blob, 'keyVersion': keyVersion});
@@ -190,8 +199,8 @@ class FampadApi {
   Future<BlobDto> sicherungAbrufen() async => BlobDto.fromJson(await client.get('/me/key-backup'));
 
   /// Gibt die Ablaufzeit zurück (2 Minuten).
-  Future<DateTime> uebertragungAnlegen({required String suchkennung, required String blob}) async {
-    final r = await client.post('/me/key-transfer', {'lookup': suchkennung, 'blob': blob});
+  Future<DateTime> uebertragungAnlegen({required String suchkennung, required String blob, required int keyVersion}) async {
+    final r = await client.post('/me/key-transfer', {'lookup': suchkennung, 'blob': blob, 'keyVersion': keyVersion});
     final t = r['expiresAt'];
     return t is String ? (DateTime.tryParse(t) ?? DateTime.now()) : DateTime.now();
   }

@@ -1,5 +1,5 @@
 {
-  "id": "4a8ec849-23aa-4b75-a3f1-92b32e98eae3",
+  "id": "87415a4a-ea23-409a-b0c8-16dba0fc8c7c",
   "prevId": "c96cb2e9-7a69-424b-9196-9d215cf4f36d",
   "version": "7",
   "dialect": "postgresql",
@@ -2533,6 +2533,77 @@
           ]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.person_key_history": {
+      "name": "person_key_history",
+      "schema": "",
+      "columns": {
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_version": {
+          "name": "key_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "enc_key": {
+          "name": "enc_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sign_key": {
+          "name": "sign_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "valid_until": {
+          "name": "valid_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "person_key_history_user_id_users_id_fk": {
+          "name": "person_key_history_user_id_users_id_fk",
+          "tableFrom": "person_key_history",
+          "tableTo": "users",
+          "columnsFrom": [
+            "user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "person_key_history_user_id_key_version_pk": {
+          "name": "person_key_history_user_id_key_version_pk",
+          "columns": [
+            "user_id",
+            "key_version"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

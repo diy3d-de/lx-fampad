@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/api/models.dart' show MemberStatus;
 import '../../data/auth/auth_state.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/sicherheitscode.dart';
@@ -321,7 +322,7 @@ class _SicherheitscodeKarte extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final mitSchluessel = state.mitglieder.where((m) => m.schluessel != null).toList();
+    final mitSchluessel = state.mitglieder.where((m) => m.schluessel != null && m.status == MemberStatus.active).toList();
     return LxCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

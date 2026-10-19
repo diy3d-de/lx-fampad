@@ -99,16 +99,30 @@ Future<List<(String, CryptoProvider)>> kryptoVarianten() async {
 }
 
 CryptoProvider? _echt;
+Object? _echtFehler;
 bool _versucht = false;
 
-/// libsodium oder null (z. B. lokal unter Windows ohne C-Compiler für den Build-Hook).
-Future<CryptoProvider?> echtesSodium() async {
-  if (_versucht) return _echt;
-  _versucht = true;
+/// Lädt libsodium über [lader]. Ist libsodium [erforderlich] (CI), ist ein Ladefehler ein Fehler (nie ein stilles Überspringen), sonst null.
+Future<CryptoProvider?> ladeEchtesSodium(Future<CryptoProvider> Function() lader, {required bool erforderlich}) async {
   try {
-    _echt = await SodiumCryptoProvider.laden();
+    return await lader();
   } on Object {
-    if (Platform.environment['SODIUM_ERFORDERLICH'] == '1') rethrow;
+    if (erforderlich) rethrow;
+    return null;
   }
+}
+
+/// libsodium oder null (z. B. lokal unter Windows ohne C-Compiler für den Build-Hook). Mit SODIUM_ERFORDERLICH=1 wirft jeder Aufruf, wenn das Laden scheitert.
+Future<CryptoProvider?> echtesSodium() async {
+  final erforderlich = Platform.environment['SODIUM_ERFORDERLICH'] == '1';
+  if (!_versucht) {
+    _versucht = true;
+    try {
+      _echt = await ladeEchtesSodium(SodiumCryptoProvider.laden, erforderlich: erforderlich);
+    } on Object catch (e) {
+      _echtFehler = e;
+    }
+  }
+  if (_echtFehler != null) throw _echtFehler!;
   return _echt;
 }

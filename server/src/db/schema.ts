@@ -112,6 +112,25 @@ export const personKeys = pgTable(
   (t) => [check('person_keys_version_pos', sql`${t.keyVersion} >= 1`)],
 );
 
+/**
+ * E2EE: Historie früherer öffentlicher Schlüssel (nur anhängend: es gibt keine Änderungs- oder Löschroute, Zeilen verschwinden nur mit dem Konto).
+ * Beim Schlüsselwechsel wandert der alte Stand hierher; so lassen sich Signaturen älterer Nachrichten gegen die damalige key_version prüfen.
+ */
+export const personKeyHistory = pgTable(
+  'person_key_history',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    keyVersion: integer('key_version').notNull(),
+    encKey: text('enc_key').notNull(),
+    signKey: text('sign_key').notNull(),
+    validFrom: timestamp('valid_from', { withTimezone: true }).notNull(),
+    validUntil: timestamp('valid_until', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.keyVersion] })],
+);
+
 /** E2EE: opake Sicherung des Personenschlüssels (mit dem Wiederherstellungsschlüssel verschlüsselt, der Server kann sie nicht lesen). */
 export const keyBackups = pgTable('key_backups', {
   userId: uuid('user_id')

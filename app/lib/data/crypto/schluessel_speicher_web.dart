@@ -54,7 +54,19 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
     tx.oncomplete = ((web.Event _) => fertig.complete()).toJS;
     tx.onerror = ((web.Event _) => fertig.isCompleted ? null : fertig.completeError(StateError('IndexedDB-Fehler.'))).toJS;
     tx.onabort = ((web.Event _) => fertig.isCompleted ? null : fertig.completeError(StateError('IndexedDB abgebrochen.'))).toJS;
-    final ergebnis = await aktion(tx.objectStore(_speicher));
+    // Schlägt die Aktion fehl, wird die Transaktion abgebrochen und ihr Abschluss-Future entschärft (sonst bliebe ein unbehandelter Fehler zurück)
+    final T ergebnis;
+    try {
+      ergebnis = await aktion(tx.objectStore(_speicher));
+    } on Object {
+      try {
+        tx.abort();
+      } on Object {
+        // schon beendet
+      }
+      unawaited(fertig.future.then<void>((_) {}, onError: (_) {}));
+      rethrow;
+    }
     await fertig.future;
     return ergebnis;
   }
@@ -75,19 +87,27 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
 
   JSAny _alg(Uint8List iv, String name) => {'name': 'AES-GCM', 'iv': iv, 'additionalData': utf8Bytes(name)}.jsify()!;
 
+  /// null nur, wenn der Eintrag nicht existiert. IndexedDB-Fehler sind vorübergehend (der Eintrag bleibt), eine fehlgeschlagene
+  /// Entschlüsselung (Eintrag oder Wrapper-Schlüssel beschädigt/vertauscht) ist dauerhaft.
   @override
   Future<Uint8List?> lesen(String name) async {
+    final JSAny? roh;
+    final web.CryptoKey key;
     try {
-      final roh = await _transaktion(false, (s) => _anfrage(s.get('$_eintrag$name'.toJS)));
+      roh = await _transaktion(false, (s) => _anfrage(s.get('$_eintrag$name'.toJS)));
       if (roh == null || roh.isUndefined) return null;
+      key = await _wrapSchluessel();
+    } on Object {
+      throw const SchluesselSpeicherFehler('IndexedDB nicht lesbar', dauerhaft: false);
+    }
+    try {
       final obj = roh as JSObject;
       final iv = (obj.getProperty('iv'.toJS)! as JSUint8Array).toDart;
       final ct = obj.getProperty('ct'.toJS)! as JSArrayBuffer;
-      final key = await _wrapSchluessel();
       final klar = (await _subtle.decrypt(_alg(iv, name), key, ct).toDart)! as JSArrayBuffer;
       return Uint8List.fromList(klar.toDart.asUint8List());
     } on Object {
-      return null;
+      throw const SchluesselSpeicherFehler('Schlüsseleintrag nicht entschlüsselbar', dauerhaft: true);
     }
   }
 

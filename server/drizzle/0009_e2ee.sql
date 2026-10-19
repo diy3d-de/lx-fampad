@@ -16,6 +16,16 @@ CREATE TABLE "key_transfers" (
 	CONSTRAINT "key_transfers_lookup_hash_unique" UNIQUE("lookup_hash")
 );
 --> statement-breakpoint
+CREATE TABLE "person_key_history" (
+	"user_id" uuid NOT NULL,
+	"key_version" integer NOT NULL,
+	"enc_key" text NOT NULL,
+	"sign_key" text NOT NULL,
+	"valid_from" timestamp with time zone NOT NULL,
+	"valid_until" timestamp with time zone NOT NULL,
+	CONSTRAINT "person_key_history_user_id_key_version_pk" PRIMARY KEY("user_id","key_version")
+);
+--> statement-breakpoint
 CREATE TABLE "person_keys" (
 	"user_id" uuid PRIMARY KEY NOT NULL,
 	"public_enc_key" text NOT NULL,
@@ -28,4 +38,5 @@ CREATE TABLE "person_keys" (
 --> statement-breakpoint
 ALTER TABLE "key_backups" ADD CONSTRAINT "key_backups_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "key_transfers" ADD CONSTRAINT "key_transfers_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "person_key_history" ADD CONSTRAINT "person_key_history_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "person_keys" ADD CONSTRAINT "person_keys_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;

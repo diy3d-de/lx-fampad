@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/crypto/bytes.dart';
 import '../../data/crypto/code32.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/wiederherstellung.dart';
@@ -40,6 +41,8 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
 
   @override
   void dispose() {
+    // der Schlüssel war nur für diese Anzeige im Arbeitsspeicher
+    loescheBytes(widget.einrichtung.wiederherstellungsschluessel);
     for (final c in _eingaben) {
       c.dispose();
     }

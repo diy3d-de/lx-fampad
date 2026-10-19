@@ -394,9 +394,20 @@ an die Familie freigegeben.
 
 ### Hülle (versioniert, für Chat-Nachrichten in Phase 2)
 
-`v (1) | alg (1) | epoch (4, BE) | nonce (24) | signatur (64) | chiffretext`, Base64url ohne Auffüllzeichen. `v = 1`, `alg = 1` (XChaCha20-Poly1305-IETF, Zufalls-Nonce,
-senderseitige Prüfung gegen Nonce-Wiederverwendung). **AAD** = `conversation_id|message_id|sender_id|epoch|v`. Die **Ed25519-Signatur des Absenders** deckt Kopf, Chiffretext und AAD ab
-(sonst könnte jedes Mitglied mit dem Gruppenschlüssel als eine andere Person schreiben). Beim Öffnen wird zuerst die Signatur geprüft, dann entschlüsselt.
+`v (1) | alg (1) | epoch (4, BE) | sender_key_version (4, BE) | nonce (24) | signatur (64) | chiffretext`, Base64url ohne Auffüllzeichen. `v = 1`, `alg = 1` (XChaCha20-Poly1305-IETF, Zufalls-Nonce).
+**AAD** = `conversation_id|message_id|sender_id|epoch|sender_key_version|v`. **Signatur** (Ed25519 des Absenders) = über `'lx-familyhub|msg|v1' | len(aad) (u32) | aad | kopf | chiffretext`
+(Domänentrennung und Längenrahmen, `app/lib/data/crypto/domaenen.dart`; kopf = v, alg, epoch, sender_key_version, nonce). Sie deckt also Kopf, Chiffretext und AAD ab (sonst könnte jedes Mitglied mit dem Gruppenschlüssel
+als eine andere Person schreiben). Beim Öffnen wird zuerst die Signatur geprüft, dann entschlüsselt. Der Empfänger liest `sender_key_version` aus der Hülle und prüft die Signatur gegen den
+Schlüssel **genau dieser Version** (gemerkter TOFU-Schlüssel oder Historie des Servers), auch nach einem Schlüsselwechsel des Absenders. Der Nonce-Wächter im Code ist kein Garant (nur im Prozess, nur diese
+Instanz): die Sicherheit beruht auf 192-Bit-Zufalls-Nonces.
+
+### Schlüsselhistorie
+
+Beim Schlüsselwechsel wandert der alte öffentliche Stand in `person_key_history` (nur anhängend: keine Änderungs- oder Löschroute, Zeilen verschwinden nur mit dem Konto; `user_id`, `key_version`, `enc_key`,
+`sign_key`, `valid_from`, `valid_until`). `GET /members` liefert weiter nur die aktuellen Schlüssel; `GET /members/:id/keys?version=N` liefert eine Version (aktuell oder früher), ohne `version` alle (nur Familienmitglieder,
+sonst 404). So bleiben Signaturen älterer Nachrichten prüfbar. **Vertrauensgrenze:** Der gemerkte (TOFU) Schlüssel zählt immer selbst; ältere Versionen kommen vom Server und sind nicht durch den TOFU-Speicher
+gedeckt (ein bösartiger Admin könnte eine alte Version fälschen: das betrifft nur Altnachrichten und ist durch Vergleichen des Sicherheitscodes damals nicht abgedeckt). Ehemalige Mitglieder liefern keine Historie mehr.
+Schlüsselwechsel und Übertragung prüfen die dem Client bekannte Version serverseitig (`expectedKeyVersion`, `keyVersion`, bei Abweichung 409), damit zwei Geräte sich nicht gegenseitig überschreiben.
 
 ### Vertrauensmodell
 
@@ -412,14 +423,27 @@ senderseitige Prüfung gegen Nonce-Wiederverwendung). **AAD** = `conversation_id
 
 ### Server (Phase 1)
 
-Tabellen `person_keys`, `key_backups`, `key_transfers` (Migration 0009); Routen `GET/POST/PUT /me/keys`, `PUT/GET /me/key-backup`, `POST /me/key-transfer`, `POST /me/key-transfer/claim`,
-Schlüssel in `GET /members` (Einzelheiten `docs/API.md`). Alles hinter der Sitzung, strenges Rate-Limit, Step-up für Sicherung (Ablegen und Abrufen) und Schlüsselwechsel,
+Tabellen `person_keys`, `person_key_history`, `key_backups`, `key_transfers` (Migration 0009); Routen `GET/POST/PUT /me/keys`, `PUT/GET /me/key-backup`, `POST /me/key-transfer`, `POST /me/key-transfer/claim`,
+`GET /members/:id/keys`, Schlüssel in `GET /members` (Einzelheiten `docs/API.md`). Alles hinter der Sitzung, strenges Rate-Limit, Step-up für Sicherung (Ablegen und Abrufen) und Schlüsselwechsel,
 Audit-Ereignisse `key_created`, `key_rotated`, `backup_set`, `key_backup_read`, `transfer_claimed` (nie Schlüsselmaterial im Log).
 
-### Phase 2 (offen)
+### Phase 2: Protokoll (Bausteine gebaut, noch ohne Chat-Integration)
 
-Epochen und Gruppenschlüssel je Konversation (Verteilung per Sealed Box an die Personenschlüssel, neue Epoche bei Mitgliederwechsel; Familienchat-Historie für neue Mitglieder, Gruppen einstellbar),
-Chat-Nachrichten in der Hülle, Freigabe des Chats an die Familie.
+Die reinen, getesteten Funktionen stehen in `app/lib/data/crypto/epochen.dart`; der Chat setzt später nur noch auf sie auf.
+
+- **Epochenschlüssel-Wrap:** Der Verteiler (ein Mitglied der Konversation) erzeugt je Epoche einen 32-Byte-Epochenschlüssel und verpackt ihn für **jeden** Empfänger als Sealed Box an dessen aktuellen X25519-Schlüssel. Er signiert (Ed25519,
+  Domäne `'lx-familyhub|wrap|v1'`, alle Felder längengerahmt) `conversation_id, epoch, recipient_id, recipient_key_version, distributor_id, distributor_key_version, SHA-256(Sealed Box)`. Die Signatur deckt den Hash der Sealed Box ab:
+  Der Server kann weder eine fremde Box unterschieben noch einen Wrap in eine andere Konversation, Epoche oder an eine andere Person umlenken.
+- **Signierte Mitgliederliste der Epoche:** sortierte `(user_id, key_version)`-Paare, vom Verteiler signiert (Domäne `'lx-familyhub|members|v1'`, kanonisch: sortiert, ohne Doppelte). Der Empfänger übernimmt einen Epochenschlüssel **nur**, wenn
+  Wrap und Liste vom selben Verteiler stammen, dessen Signatur gegen den **im TOFU-Speicher gemerkten** Schlüssel stimmt (nie ein Schlüssel vom Server; unbekannte Verteiler werden abgelehnt), beide zur erwarteten Konversation und Epoche passen und die Liste ihn
+  selbst mit seiner Schlüsselversion enthält (optional muss sie exakt der eigenen Sicht der Mitglieder entsprechen). Das hindert den Server daran, Mitglieder unbemerkt einzuschleusen.
+- **Rotation bei Mitgliederwechsel:** Wird ein Mitglied entfernt (oder wechselt jemand seinen Schlüssel), erzeugt ein verbleibendes Mitglied eine **neue Epoche** mit neuem Schlüssel, neuer Liste und Wraps nur für die verbleibenden Mitglieder; ausgeschiedene
+  Mitglieder lesen neue Nachrichten nicht mehr. Hinzufügen eines Mitglieds: neue Epoche (ohne Historie) oder, wenn die Gruppe es erlaubt, zusätzlich die älteren Epochenschlüssel.
+- **Historie für neue Mitglieder:** Nur wenn es für die Konversation eingestellt ist, verpackt der Verteiler zusätzlich die **älteren** Epochenschlüssel für das neue Mitglied (je Epoche ein eigener signierter Wrap, derselbe Aufbau). Die ältere Epoche hat das
+  neue Mitglied nicht in ihrer Liste: Es akzeptiert sie nur, wenn die aktuelle signierte Liste es enthält und der Verteiler in der Liste der älteren Epoche stand. Ohne diese Einstellung bleibt alte Historie für Neue unlesbar.
+- **Pflicht für die UI (Phase 2):** Beim Hinzufügen zu einer Konversation müssen die Mitglieder (Namen, Schlüsselversion) angezeigt und zum **Vergleichen des Sicherheitscodes** aufgefordert werden (Profil > Verschlüsselung); Schlüsselwechsel
+  anderer Mitglieder warnen wie in Phase 1 (TOFU) und gelten erst nach Bestätigung. Die UI folgt in Phase 2 zusammen mit dem Chat.
+- Offen in Phase 2: Speicherung und Abruf der Wraps/Listen auf dem Server (undurchsichtige Blobs je Konversation und Epoche), Chat-Nachrichten in der Hülle, Freigabe des Chats an die Familie.
 
 ## 10. Betrieb auf dem VPS
 

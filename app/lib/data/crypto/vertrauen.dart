@@ -35,6 +35,7 @@ class VertrauensPruefer {
   String get _name => 'e2ee.vertrauen.$eigeneUserId';
 
   Future<Map<String, GemerkterSchluessel>> _laden() async {
+    // Lesefehler des Speichers (Keystore, IndexedDB) gehen weiter: ein Fehler darf nie wie "noch nichts gemerkt" aussehen und die Merkliste überschreiben
     final bytes = await speicher.lesen(_name);
     if (bytes == null) return {};
     try {
@@ -76,8 +77,20 @@ class VertrauensPruefer {
         warnungen.add(SchluesselWarnung(userId: e.key, gemerkt: alt, aktuell: neu));
       }
     }
+    // Personen, die nicht mehr in der Mitgliederliste stehen (entfernt), werden vergessen: ein späteres Wiederhinzufügen beginnt mit neuem Vertrauen
+    final entfernt = gemerkt.keys.where((id) => !aktuell.containsKey(id)).toList();
+    for (final id in entfernt) {
+      gemerkt.remove(id);
+      geaendert = true;
+    }
     if (geaendert) await _speichern(gemerkt);
     return warnungen;
+  }
+
+  /// Der gemerkte Schlüssel einer Person (null, wenn keiner gemerkt ist): Grundlage für Signaturprüfungen (nie der Schlüssel vom Server).
+  Future<OeffentlicheSchluessel?> gemerkterSchluessel(String userId) async {
+    final k = (await _laden())[userId];
+    return k == null ? null : OeffentlicheSchluessel(enc: k.enc, sign: k.sign, version: k.version);
   }
 
   /// Übernimmt den neuen Schlüssel einer Person nach ausdrücklicher Bestätigung. Ohne neuen Schlüssel wird nur der alte vergessen.

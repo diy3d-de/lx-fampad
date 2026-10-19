@@ -7,7 +7,20 @@ import 'dart:typed_data';
 
 export 'schluessel_speicher_stub.dart' if (dart.library.js_interop) 'schluessel_speicher_web.dart' if (dart.library.io) 'schluessel_speicher_io.dart';
 
-/// Schlüssel-Wert-Ablage für kleine Geheimnisse. Lesen liefert null, wenn der Eintrag fehlt oder nicht lesbar ist.
+/// Fehler des Schlüsselspeichers beim Lesen. [dauerhaft]: der Eintrag ist eindeutig und für immer unbrauchbar (Entschlüsselung scheitert,
+/// z. B. Keystore-Schlüssel verloren, oder kaputte Daten); sonst vorübergehend (Keystore gesperrt, Datenbank nicht erreichbar): der Eintrag
+/// darf dann NICHT gelöscht werden, ein späterer Versuch kann klappen.
+class SchluesselSpeicherFehler implements Exception {
+  final bool dauerhaft;
+  final String meldung;
+  const SchluesselSpeicherFehler(this.meldung, {required this.dauerhaft});
+
+  @override
+  String toString() => 'SchluesselSpeicherFehler(dauerhaft: $dauerhaft): $meldung';
+}
+
+/// Schlüssel-Wert-Ablage für kleine Geheimnisse. [lesen] liefert **null nur, wenn der Eintrag nicht existiert**; jeder andere Fehlschlag wirft
+/// einen [SchluesselSpeicherFehler] (dauerhaft oder vorübergehend). Die Ablage löscht beim Lesen nie von sich aus.
 abstract interface class SchluesselSpeicher {
   Future<Uint8List?> lesen(String name);
   Future<void> schreiben(String name, Uint8List bytes);

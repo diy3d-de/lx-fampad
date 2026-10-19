@@ -19,7 +19,7 @@ import {
   startAddPasskey,
   updateProfile,
 } from '../auth/account.js';
-import { claimTransfer, createKeys, createTransfer, getBackup, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
+import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
 import { assertMayInvite, createInvite, effectiveRequireApproval, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
@@ -99,7 +99,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   app.put('/api/v1/me/keys', strikt, async (req) => {
     const p = await auth.requireSession(req);
-    return { keys: await rotateKeys(ctx, p, parse(keysBody, req.body), meta(req)) };
+    return { keys: await rotateKeys(ctx, p, parse(keysBody.extend({ expectedKeyVersion: z.number().int().min(1) }).strict(), req.body), meta(req)) };
   });
 
   app.put('/api/v1/me/key-backup', strikt, async (req) => {
@@ -112,7 +112,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   app.post('/api/v1/me/key-transfer', strikt, async (req) => {
     const p = await auth.requireSession(req);
-    return createTransfer(ctx, p, parse(z.object({ lookup: b64urlKey, blob: b64urlBlob(1024) }).strict(), req.body));
+    return createTransfer(ctx, p, parse(z.object({ lookup: b64urlKey, blob: b64urlBlob(1024), keyVersion: z.number().int().min(1) }).strict(), req.body));
   });
 
   app.post('/api/v1/me/key-transfer/claim', strikt, async (req) => {
@@ -121,6 +121,14 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   });
 
   // ----- Mitglieder -----
+  // Öffentliche Schlüssel eines Mitglieds samt Historie (alte Signaturen prüfen); nur Familie, sonst 404
+  app.get('/api/v1/members/:id/keys', async (req) => {
+    const p = await auth.requireSession(req);
+    const { id } = parse(idParams, req.params);
+    const q = parse(z.object({ version: z.coerce.number().int().min(1).optional() }).strict(), req.query);
+    return getMemberKeys(ctx, p, id, q.version);
+  });
+
   app.get('/api/v1/members', async (req) => ({ members: await listMembers(ctx, await auth.requireSession(req)) }));
 
   app.patch('/api/v1/members/:id/role', async (req) => {

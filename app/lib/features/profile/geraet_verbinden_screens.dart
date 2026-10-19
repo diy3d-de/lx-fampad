@@ -8,7 +8,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../constants.dart';
+import '../../data/crypto/crypto_fehler.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/crypto/uebertragung.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/qr_anzeige.dart';
@@ -217,16 +219,26 @@ class _UebertragungScanScreenState extends State<_UebertragungScanScreen> {
 
   void _erkannt(BarcodeCapture capture) {
     if (_fertig || !mounted) return;
+    String? hinweis;
     for (final b in capture.barcodes) {
       final text = b.rawValue ?? '';
-      if (text.toUpperCase().startsWith('LXK1:')) {
-        _fertig = true;
-        unawaited(_controller.stop());
-        Navigator.of(context).pop(text);
-        return;
+      if (!text.toUpperCase().startsWith('LXK1:')) continue;
+      // Prüfsumme sofort prüfen: ein beschädigter oder fremder Code löst nichts am Server aus
+      try {
+        Uebertragung.geheimnisLesen(text);
+      } on CryptoFehler catch (e) {
+        hinweis = e.art == CryptoFehlerArt.pruefsumme ? 'Der QR-Code ist beschädigt oder unvollständig. Bitte scanne ihn noch einmal.' : 'Das ist kein gültiger QR-Code zum Verbinden eines Geräts.';
+        continue;
       }
+      _fertig = true;
+      unawaited(_controller.stop());
+      Navigator.of(context).pop(text);
+      return;
     }
-    if (capture.barcodes.isNotEmpty && _hinweis == null) setState(() => _hinweis = 'Das ist kein QR-Code zum Verbinden eines Geräts.');
+    if (capture.barcodes.isNotEmpty) {
+      final neu = hinweis ?? 'Das ist kein QR-Code zum Verbinden eines Geräts.';
+      if (_hinweis != neu) setState(() => _hinweis = neu);
+    }
   }
 
   @override
