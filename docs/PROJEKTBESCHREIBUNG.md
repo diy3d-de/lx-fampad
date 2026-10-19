@@ -1,4 +1,4 @@
-# lx-fampad – Projektbeschreibung
+# lx-familyhub – Projektbeschreibung
 
 Stand: 19.10.2026 · Status: Konzept, umgesetzt bis Phase 1c-1 (Sync-Kern und Listen) · Mockups: [`docs/mockups/`](mockups/) und Design-Canvas (claude.ai, privat)
 

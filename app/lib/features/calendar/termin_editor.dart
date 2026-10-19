@@ -371,7 +371,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
           if (_erinnerung != null && _benachrichtigungenFehlen) ...[
             const SizedBox(height: 6),
             const Text(
-              'Auf diesem Gerät sind Benachrichtigungen für lx-fampad nicht erlaubt: Die Erinnerung wird nicht angezeigt.',
+              'Auf diesem Gerät sind Benachrichtigungen für $kAppName nicht erlaubt: Die Erinnerung wird nicht angezeigt.',
               style: TextStyle(fontSize: 12, color: kWarn),
             ),
             LinkKnopf('Benachrichtigungen erlauben', icon: Icons.notifications_active_outlined, onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ErinnerungenScreen()))),

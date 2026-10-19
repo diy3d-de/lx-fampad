@@ -65,7 +65,7 @@ class MainActivity : FlutterActivity() {
     /** Kopiert Text als vertraulich (EXTRA_IS_SENSITIVE, Android 13+: keine Vorschau; ältere Versionen ignorieren den Hinweis). */
     private fun geheimKopieren(text: String): Boolean {
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
-        val clip = ClipData.newPlainText("lx-fampad", text)
+        val clip = ClipData.newPlainText("lx-familyhub", text)
         // Konstante als Text, damit der Code auch mit älteren compileSdk übersetzt (ClipDescription.EXTRA_IS_SENSITIVE ab API 33)
         clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
         clipboard.setPrimaryClip(clip)

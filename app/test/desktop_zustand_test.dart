@@ -40,7 +40,7 @@ void main() {
     expect(find.byType(NavigationBar), findsOneWidget);
     await groesseAendern(tester, const Size(900, 800));
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('lx-fampad'), findsOneWidget);
+    expect(find.text('lx-familyhub'), findsOneWidget);
     await groesseAendern(tester, const Size(899, 800));
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(tester.takeException(), isNull);

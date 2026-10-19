@@ -18,6 +18,7 @@
 //    die zum Öffnen der App auffordert; beim Öffnen wird das Fenster erneuert.
 import 'package:timezone/timezone.dart' as tz;
 
+import '../../constants.dart';
 import '../calendar/expansion.dart';
 import '../calendar/termin_repository.dart' show KalenderDaten;
 import '../calendar/zeitzonen.dart';
@@ -187,7 +188,7 @@ List<GeplanteErinnerung> planeErinnerungen({
       id: kAuslaufHinweisPlanId,
       zeit: fenster.last.zeit.add(kAuslaufHinweisAbstand),
       titel: 'Erinnerungen laufen aus',
-      text: 'Öffne lx-fampad, damit neue Terminerinnerungen geplant werden.',
+      text: 'Öffne $kAppName, damit neue Terminerinnerungen geplant werden.',
       payload: '',
     ),
   );

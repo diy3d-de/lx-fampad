@@ -16,7 +16,7 @@ const _geheimnis = 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP';
 Map<String, dynamic> _startAntwort() => {
   'challengeId': 'c-pw',
   'totpSecret': _geheimnis,
-  'totpUri': 'otpauth://totp/lx-fampad:anna%40beispiel.de?secret=$_geheimnis&issuer=lx-fampad',
+  'totpUri': 'otpauth://totp/lx-familyhub:anna%40beispiel.de?secret=$_geheimnis&issuer=lx-familyhub',
 };
 
 /// Server, bei dem /me den aktuellen Stand der Zugänge liefert (ändert sich nach Einrichten/Entfernen).

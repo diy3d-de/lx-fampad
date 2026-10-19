@@ -90,7 +90,7 @@ class _Seitenleiste extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('lx-fampad', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.55, color: kTextStrong)),
+                  Text(kAppName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.55, color: kTextStrong)),
                   SizedBox(height: 2),
                   Text(kInviteHost, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                 ],

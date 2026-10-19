@@ -104,7 +104,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
       kinder: [
         if (!verfuegbar && !laedt) ...[
           const MeldungsBox(
-            'Erinnerungen gibt es nur in der Android-App. Im Browser zeigt lx-fampad keine Benachrichtigungen an.',
+            'Erinnerungen gibt es nur in der Android-App. Im Browser zeigt $kAppName keine Benachrichtigungen an.',
             fehler: false,
           ),
         ] else if (laedt) ...[
@@ -142,7 +142,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           ),
           if (s != null && !s.erlaubt) ...[
             const SizedBox(height: 12),
-            const MeldungsBox('Benachrichtigungen sind für lx-fampad noch nicht erlaubt. Ohne diese Erlaubnis zeigt Android keine Erinnerungen an.'),
+            const MeldungsBox('Benachrichtigungen sind für $kAppName noch nicht erlaubt. Ohne diese Erlaubnis zeigt Android keine Erinnerungen an.'),
             const SizedBox(height: 8),
             HauptKnopf(text: 'Benachrichtigungen erlauben', icon: Icons.notifications_active_outlined, laeuft: _beschaeftigt, onPressed: _erlauben),
             const SizedBox(height: 4),
@@ -181,9 +181,9 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           const LxCard(
             child: Text(
               'Manche Geräte (zum Beispiel von Samsung) schicken Apps im Hintergrund in den Ruhezustand und verzögern oder verschlucken dann '
-              'Erinnerungen. Nimm lx-fampad deshalb aus dem Akkuschutz: Einstellungen, Akku, Hintergrundnutzungsgrenzen, bei '
-              '"Nie automatisch in Ruhezustand versetzte Apps" lx-fampad hinzufügen, und die Funktion zum automatischen Ruhezustand ungenutzter Apps '
-              'für lx-fampad ausschalten. Die Bezeichnungen unterscheiden sich je nach Gerät und Android-Version.',
+              'Erinnerungen. Nimm $kAppName deshalb aus dem Akkuschutz: Einstellungen, Akku, Hintergrundnutzungsgrenzen, bei '
+              '"Nie automatisch in Ruhezustand versetzte Apps" $kAppName hinzufügen, und die Funktion zum automatischen Ruhezustand ungenutzter Apps '
+              'für $kAppName ausschalten. Die Bezeichnungen unterscheiden sich je nach Gerät und Android-Version.',
               style: TextStyle(fontSize: 13, color: kTextMuted),
             ),
           ),

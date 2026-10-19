@@ -184,7 +184,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     publicUrl,
     auth: {
       rpId,
-      rpName: env.WEBAUTHN_RP_NAME?.trim() || 'lx-fampad',
+      rpName: env.WEBAUTHN_RP_NAME?.trim() || 'lx-familyhub',
       extraOrigins: (env.WEBAUTHN_ORIGINS ?? '')
         .split(',')
         .map((o) => o.trim())

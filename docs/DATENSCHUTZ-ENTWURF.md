@@ -1,4 +1,4 @@
-# Datenschutzerklärung – Entwurf (lx-fampad)
+# Datenschutzerklärung – Entwurf (lx-familyhub)
 
 Stand: 18.10.2026 · Status: **Entwurf, keine Rechtsberatung.** Er beschreibt das tatsächliche Verhalten der Software in Phase 0, 1a (Konten und Anmeldung im Server), 1b (App: Anmeldung, Einladungen, Konto) und 1c-1 (Sync-Kern und Listen)
 und die in `docs/PROJEKTBESCHREIBUNG.md` festgelegten Phasen 1 bis 3. Vor dem Echtbetrieb mit Dritten (z. B. Großeltern als Familienmitglieder) von einer
