@@ -86,12 +86,22 @@ void main() {
       expect(tester.takeException(), isNull, reason: 'Kalender bedienen');
       expect(kleineZiele(tester), isEmpty, reason: 'Kalender nach Bedienung');
 
-      // Listen: Reiter wechseln
+      // Listen: leerer Zustand, Liste anlegen, Eintrag hinzufügen (Layout und Ziele)
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Listen')));
       await tester.pump();
-      await tester.tap(find.text('Packliste'));
-      await tester.pump();
+      expect(find.text('Noch keine Liste'), findsOneWidget);
+      expect(kleineZiele(tester), isEmpty, reason: 'Listen leer');
+      await tester.tap(find.text('Liste anlegen'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(find.widgetWithText(TextField, 'Name der Liste'), 'Wocheneinkauf mit einem ziemlich langen Namen');
+      await tester.tap(find.text('Anlegen'));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.enterText(find.byType(TextField).last, 'Milch und etwas, das mit einem sehr langen Text in mehrere Zeilen umbricht');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.textContaining('Milch und etwas'), findsOneWidget);
       expect(tester.takeException(), isNull, reason: 'Listen bedienen');
+      expect(kleineZiele(tester), isEmpty, reason: 'Listen mit Eintrag');
     });
   }
 

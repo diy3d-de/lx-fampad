@@ -26,6 +26,9 @@ enum ApiErrorKind {
   /// Antwort entspricht nicht der Schnittstelle.
   protokoll,
 
+  /// Der Server spricht ein neueres Protokoll: die App muss aktualisiert werden (426 update_required).
+  updateNoetig,
+
   /// Alles andere (Eingabe falsch, Konflikt, nicht erlaubt, Serverfehler ...).
   sonstiges,
 }
@@ -109,6 +112,14 @@ class ApiException implements Exception {
         message: wartetext('Der Server ist gerade ausgelastet.'),
       );
     }
+    if (status == 426 || code == 'update_required') {
+      return ApiException(
+        kind: ApiErrorKind.updateNoetig,
+        status: status,
+        code: code,
+        message: 'Bitte aktualisiere die App, damit der Abgleich wieder funktioniert.',
+      );
+    }
     if (code == 'account_pending') {
       return ApiException(
         kind: ApiErrorKind.kontoWartet,
@@ -159,6 +170,7 @@ class ApiException implements Exception {
     'already_bootstrapped': 'Die Familie ist schon eingerichtet.',
     'not_found': 'Das wurde nicht gefunden.',
     'payload_too_large': 'Die Anfrage ist zu groß.',
+    'device_mismatch': 'Dieses Gerät passt nicht mehr zur Anmeldung. Bitte versuche es gleich noch einmal.',
     'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
   };
 }

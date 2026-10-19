@@ -1,13 +1,20 @@
 // Aufbau von Provider-Überschreibungen für Tests: Fake-Server, Speicher im Arbeitsspeicher, Fake-Passkeys.
+import 'package:drift/drift.dart' show DatabaseConnection;
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:lx_fampad/data/api/api_client.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
+import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
+import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/providers.dart';
+import 'package:lx_fampad/data/sync_state.dart';
 
 import 'fake_server.dart';
+import 'fake_socket.dart';
+import 'fake_sync_server.dart';
 
 class FakePasskeys implements PasskeyService {
   bool da = true;
@@ -55,6 +62,13 @@ class TestUmgebung {
   final bool web;
   int geloescht = 0;
 
+  /// Lokale Datenbank (im Arbeitsspeicher), Sync-Fake und WebSocket-Fake dieser Umgebung.
+  // Abfrage-Streams sofort schließen: sonst bleiben nach dem Abbau des Widget-Baums Timer von drift stehen (Flutter-Test bricht dann ab)
+  final AppDatabase db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  final FakeSyncServer sync = FakeSyncServer();
+  final FakeSocketFabrik sockets = FakeSocketFabrik();
+  SyncZeiten zeiten = const SyncZeiten();
+
   /// Wirft der Wiper (lokale Daten löschen)? Zählt trotzdem als Aufruf.
   bool wiperFehler = false;
   final owner = MemoryLocalDataOwner();
@@ -62,7 +76,9 @@ class TestUmgebung {
 
   TestUmgebung(this.server, {this.web = false, MemoryTokenStore? store, FakePasskeys? passkeys})
     : store = store ?? MemoryTokenStore(),
-      passkeys = passkeys ?? FakePasskeys();
+      passkeys = passkeys ?? FakePasskeys() {
+    if (!server.routes.containsKey('POST /sync')) sync.registrieren(server);
+  }
 
   /// Legt gültige App-Token ab (angemeldetes Gerät).
   Future<void> angemeldet() => store.writeTokens(
@@ -85,6 +101,9 @@ class TestUmgebung {
       if (wiperFehler) throw StateError('Löschen fehlgeschlagen');
     }),
     localDataOwnerProvider.overrideWithValue(owner),
+    appDatabaseProvider.overrideWithValue(db),
+    syncSocketOeffnerProvider.overrideWithValue(sockets.oeffner),
+    syncZeitenProvider.overrideWithValue(zeiten),
   ];
 
   ProviderContainer container() {

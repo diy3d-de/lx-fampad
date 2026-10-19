@@ -55,11 +55,20 @@ void main() {
     }
   });
 
-  testWidgets('Sync-Indikator meldet den Zustand ohne Server', (tester) async {
+  testWidgets('Sync-Indikator und Startseite melden "synchron", sobald der Abgleich gelaufen ist', (tester) async {
     final env = await angemeldeteUmgebung();
     await starteApp(tester, env);
-    expect(find.byTooltip('Nicht verbunden'), findsWidgets);
-    expect(find.text('nicht verbunden'), findsOneWidget);
+    expect(find.byTooltip('Synchron. Tippen zum Abgleichen'), findsWidgets);
+    expect(find.text('synchron'), findsOneWidget);
+    expect(env.sync.anfragen, isNotEmpty, reason: 'beim Start wird sofort abgeglichen');
+  });
+
+  testWidgets('ohne Netz zeigt der Sync-Indikator offline, die lokalen Daten bleiben bedienbar', (tester) async {
+    final env = await angemeldeteUmgebung();
+    env.sync.offline = true;
+    await starteApp(tester, env);
+    expect(find.byTooltip('Offline'), findsWidgets);
+    expect(find.text('offline'), findsOneWidget);
   });
 
   testWidgets('wartendes Konto sieht den Warte-Bildschirm, nicht die App', (tester) async {

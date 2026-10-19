@@ -1,6 +1,8 @@
 // Endpunkte der Server-Schnittstelle (docs/API.md) als typisierte Methoden. Kein Zustand, keine UI.
+import '../../constants.dart';
 import 'api_client.dart';
 import 'api_error.dart';
+import '../sync/sync_models.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -151,6 +153,26 @@ class FampadApi {
 
   Future<void> geraetAbmelden(String id) async {
     await client.delete('/devices/$id');
+  }
+
+  // ----------------------------------------------------------- Sync
+
+  /// Ops hochladen und Änderungen seit [sinceRev] abholen (docs/API.md, POST /sync). Antwort immer 200; Fehler sind [ApiException]
+  /// (426: Update nötig, 409 device_mismatch, 429/503: später wieder).
+  Future<SyncResult> sync({required String deviceId, required int sinceRev, required List<SyncOp> ops, int? limit}) async => SyncResult.fromJson(
+    await client.post('/sync', {
+      'protocolVersion': kProtocolVersion,
+      'deviceId': deviceId,
+      'sinceRev': sinceRev,
+      'limit': ?limit,
+      'ops': [for (final o in ops) o.toJson()],
+    }),
+  );
+
+  /// Einmal-Ticket für den WebSocket.
+  Future<String> wsTicket() async {
+    final t = (await client.post('/ws-ticket', const {}))['ticket'];
+    return t is String ? t : throw ApiException.unerwarteteAntwort;
   }
 
   // ----------------------------------------------------------- Mitglieder
