@@ -361,7 +361,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
 | `konversation` | `art` | `family`, `direct`, `group` (Pflicht) | create |
-| | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), auch das Wiederbeleben einer gelöschten Konversation setzt sie nicht neu | create |
+| | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), beim Wiederbeleben einer gelöschten Konversation gilt die Hülle der Neuanlage (`e1`, auch aus einem `p1`-Altbestand) | create |
 | | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
 | | `teilnehmer` | Liste von UUIDs (sortiert, eindeutig; Familienchat leer, Direktchat 2, Gruppe 2 bis 20) | rw (nur Gruppen) |
 | | `ownerId` | UUID oder `null` (anlegende Person) | server |
