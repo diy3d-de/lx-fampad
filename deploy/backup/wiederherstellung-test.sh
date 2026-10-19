@@ -14,7 +14,9 @@
 #     --identity DATEI   privater age-Schlüssel (AGE-SECRET-KEY-…)
 #     --run-dir ORDNER   ein Sicherungsordner (mit db-*.dump.age, config-*.tar.age, SHA256SUMS)
 #     --as-postgres      psql/pg_restore als Benutzer postgres ausführen (nur Server)
-#     --keep             Wegwerf-Datenbank am Ende NICHT löschen (zum Nachsehen; danach von Hand: dropdb lx_fampad_restoretest)
+#     --keep             Wegwerf-Datenbank am Ende NICHT löschen (zum Nachsehen; sie enthält dann ALLE personenbezogenen Daten im Klartext: danach
+#                        sofort von Hand löschen: dropdb lx_fampad_restoretest)
+# Bevorzugt auf dem eigenen Rechner mit einem eigenen, lokalen PostgreSQL-Cluster (nicht auf dem Produktivserver, nicht in einem geteilten Cluster).
 set -Eeuo pipefail
 
 SCRATCH_DB=lx_fampad_restoretest      # fest; nie ein anderer Name
@@ -63,7 +65,7 @@ aufraeumen() {
   if [ "$DROP_ON_EXIT" = 1 ] && [ "$KEEP" = 0 ]; then
     PSQL -c "DROP DATABASE IF EXISTS $SCRATCH_DB WITH (FORCE)" >/dev/null 2>&1 && echo "==> Wegwerf-Datenbank $SCRATCH_DB gelöscht." || echo "WARNUNG: $SCRATCH_DB konnte nicht gelöscht werden (von Hand: dropdb $SCRATCH_DB)" >&2
   elif [ "$DROP_ON_EXIT" = 1 ]; then
-    echo "==> --keep: $SCRATCH_DB bleibt bestehen. Löschen: dropdb $SCRATCH_DB"
+    echo "==> --keep: $SCRATCH_DB bleibt bestehen und enthält personenbezogene Daten im Klartext. Sofort danach löschen: dropdb $SCRATCH_DB"
   fi
   exit "$rc"
 }

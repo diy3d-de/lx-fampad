@@ -14,7 +14,7 @@ DNS (Cloudflare) und zum Server-Anbieter (netcup). Ohne den privaten age-Schlüs
 | **`AUTH_SECRET_KEY`** und übrige Konfiguration | `/etc/lx-fampad/env` | ja, `config-*.tar.age` (+ Passwortmanager) | nicht ersetzbar: ohne ihn sind TOTP-Geheimnisse (AES-GCM) und alle HMACs (Einladungs-PINs, Wiederherstellungs-Codes) unbrauchbar; Passkeys und Passwörter bleiben nutzbar |
 | `migrate.env`, `ntfy-token`, `ntfy-family-password` | `/etc/lx-fampad/` | ja | Passwörter/Token neu erzeugbar (siehe unten) |
 | Caddy-Dateien des Projekts | `/etc/caddy/conf.d/{fampad,ntfy}.caddy` | ja | aus `deploy/` des Repositories neu erzeugbar (`einrichtung-2.sh`, `einrichtung-ntfy.sh`) |
-| Haupt-Caddyfile | `/etc/caddy/Caddyfile` | nur als Referenz | **gehört lx-labs.dev**: aus dem lx-labs-Repository, nie aus dieser Sicherung zurückspielen |
+| Haupt-Caddyfile | `/etc/caddy/Caddyfile` | **nein** (kann Geheimnisse von lx-labs enthalten) | **gehört lx-labs.dev**: aus dem lx-labs-Repository, nie aus dieser Sicherung zurückspielen |
 | ntfy: Benutzer, Zugriffsrechte, Token | `/var/lib/ntfy/user.db`, `/etc/ntfy/server.yml` | ja | neu anlegbar, aber alle Handys müssten ihre ntfy-Anmeldung neu einrichten |
 | systemd-Units, sudoers, journald-Begrenzung | `/etc/systemd/system/lx-fampad*`, `/etc/sudoers.d/lx-fampad` | ja | aus `deploy/` neu erzeugbar |
 | Android-Update-Kanal | `/srv/fampad/releases/android` | `latest.json` + neueste APK | aus GitHub Releases neu erzeugbar |
@@ -25,6 +25,8 @@ DNS (Cloudflare) und zum Server-Anbieter (netcup). Ohne den privaten age-Schlüs
 | lx-labs.dev | eigenes Projekt | nein | eigenes Deploy/Backup von lx-labs |
 
 ## 2. Wiederherstellungstest (halbjährlich, ohne Risiko)
+
+Bevorzugt **auf deinem eigenen Rechner mit einem eigenen, lokalen PostgreSQL** (nicht im Produktivcluster, nicht in einem geteilten Cluster): die Wegwerf-Datenbank enthält alle personenbezogenen Daten im Klartext, ebenso eine mit `--keep` stehen gelassene. Das Rollen-Skript `globals.sql` im Konfigurationsarchiv gehört nicht in den Test.
 
 Prüft: Schlüssel passt, Sicherung ist unbeschädigt, Datenbank lässt sich einspielen, `AUTH_SECRET_KEY` ist enthalten. Fasst Produktivdaten nie an.
 
@@ -164,4 +166,4 @@ Die WebAuthn-RP-ID (`familie.lx-labs.dev`) bleibt gleich, deshalb funktionieren 
 | Falsche Datenbank eingespielt | Schritt 9 wiederholen (verwirft die Datenbank erneut); die Sicherungen auf dem NAS bleiben unverändert |
 | `age: no identity matched` | falscher privater Schlüssel (andere Sicherung/anderer Empfänger): zweiten Schlüssel versuchen |
 | Sicherung beschädigt (Prüfsumme) | nächstältere Sicherung vom NAS nehmen (14 tägliche, 8 wöchentliche, 12 monatliche) |
-| Haupt-Caddyfile überschrieben | nur aus dem lx-labs-Repository herstellen; diese Sicherung enthält es nur als Referenz |
+| Haupt-Caddyfile überschrieben | nur aus dem lx-labs-Repository herstellen; diese Sicherung enthält es nicht |

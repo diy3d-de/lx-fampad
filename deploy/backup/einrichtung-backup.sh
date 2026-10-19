@@ -19,19 +19,23 @@
 # Optionen:
 #   --age-recipient 'age1…'      öffentlicher age-Schlüssel (mehrfach erlaubt, empfohlen: Hauptschlüssel + Ersatzschlüssel)
 #   --age-recipient-file DATEI   Datei mit age1…-Zeilen
+#   --age-recipient-config 'age1…'  optional, mehrfach: eigene Empfänger NUR für config-*.tar.age (enthält AUTH_SECRET_KEY); der Dump bleibt für
+#                                die --age-recipient-Schlüssel, so trennt der Schlüssel die Daten vom Hauptschlüssel (| --age-recipient-config-file DATEI)
 #   --nas-pubkey 'ssh-ed25519 …' öffentlicher SSH-Schlüssel des NAS (eine Zeile)   | --nas-pubkey-file DATEI
-#   --nas-ip IP[,IP…]            Adresse(n) des NAS (Beschränkung "from=" im authorized_keys)
+#   --nas-ip IP[,IP…]            Adresse(n) des NAS ("from=" im authorized_keys): gültige IPv4/IPv6-Adresse oder CIDR (mindestens /16 bzw. /48)
 #   --dry-run                    nur Prüfungen
 #   --ohne-systemd               nur für Tests/Container: keine systemctl-Aufrufe, Selbsttest ruft das Skript direkt auf
 # Beim ersten Lauf sind age-Empfänger, NAS-Schlüssel und NAS-IP Pflicht; bei Wiederholung dürfen sie fehlen (vorhandene bleiben).
 # WICHTIG: In tmux/screen starten. ACHTUNG: Das Skript läuft als root und kopiert Dateien aus dem (für lx schreibbaren) Checkout nach
 # /usr/local/sbin und /etc: vorher `git -C ~/lx-fampad log -3 --stat` und `git -C ~/lx-fampad status --short deploy` ansehen.
 set -Eeuo pipefail
+export PATH=/usr/local/sbin:/usr/sbin:/usr/bin:/sbin:/bin
 
 BACKUP_USER=lxbackup
 OUT_DIR=/var/backups/lx-fampad
 CONF_DIR=/etc/lx-fampad-backup
 RECIPIENTS="$CONF_DIR/recipients.txt"
+RECIPIENTS_CONFIG="$CONF_DIR/recipients-config.txt"
 CONF="$CONF_DIR/backup.conf"
 BIN=/usr/local/sbin/lx-fampad-backup
 UNIT_DIR=/etc/systemd/system
@@ -43,6 +47,7 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 DRY=0
 NO_SYSTEMD=0
 RECIP_ARGS=()
+RECIP_CFG_ARGS=()
 NAS_KEY_ARG=""
 NAS_IP=""
 
@@ -55,6 +60,10 @@ while [ $# -gt 0 ]; do
     --age-recipient-file) [ $# -ge 2 ] || { echo "--age-recipient-file braucht einen Wert" >&2; exit 2; }
       [ -r "$2" ] || { echo "Datei nicht lesbar: $2" >&2; exit 2; }
       while IFS= read -r l || [ -n "$l" ]; do l="${l%$'\r'}"; case "$l" in ''|'#'*) ;; *) RECIP_ARGS+=("$l") ;; esac; done < "$2"; shift ;;
+    --age-recipient-config) [ $# -ge 2 ] || { echo "--age-recipient-config braucht einen Wert" >&2; exit 2; }; RECIP_CFG_ARGS+=("$2"); shift ;;
+    --age-recipient-config-file) [ $# -ge 2 ] || { echo "--age-recipient-config-file braucht einen Wert" >&2; exit 2; }
+      [ -r "$2" ] || { echo "Datei nicht lesbar: $2" >&2; exit 2; }
+      while IFS= read -r l || [ -n "$l" ]; do l="${l%$'\r'}"; case "$l" in ''|'#'*) ;; *) RECIP_CFG_ARGS+=("$l") ;; esac; done < "$2"; shift ;;
     --nas-pubkey) [ $# -ge 2 ] || { echo "--nas-pubkey braucht einen Wert" >&2; exit 2; }; NAS_KEY_ARG="$2"; shift ;;
     --nas-pubkey-file) [ $# -ge 2 ] || { echo "--nas-pubkey-file braucht einen Wert" >&2; exit 2; }
       [ -r "$2" ] || { echo "Datei nicht lesbar: $2" >&2; exit 2; }
@@ -82,6 +91,8 @@ UNDO=()              # Einträge "restore|<Ziel>|<Sicherung>" oder "remove|<Ziel
 USER_CREATED=0
 DIR_CREATED=""       # Verzeichnisse, die dieser Lauf neu angelegt hat (nur wenn leer wieder entfernt)
 TIMER_ENABLED_NOW=0
+TIMER_WAR_ENABLED=0  # Zustand des Timers VOR diesem Lauf (der Rückfall setzt nur zurück, was dieser Lauf geändert hat)
+TIMER_WAR_AKTIV=0
 ARMED=0
 
 aufraeumen() { if [ -n "$WORK" ]; then rm -rf -- "$WORK"; fi; return 0; }
@@ -90,7 +101,10 @@ zuruecksetzen() {
   set +e
   ARMED=0
   echo "!!  Fehler: Änderungen dieses Laufs werden zurückgenommen." >&2
-  if [ "$TIMER_ENABLED_NOW" = 1 ] && [ "$NO_SYSTEMD" = 0 ]; then systemctl disable --now lx-fampad-backup.timer >/dev/null 2>&1; fi
+  if [ "$TIMER_ENABLED_NOW" = 1 ] && [ "$NO_SYSTEMD" = 0 ]; then
+    if [ "$TIMER_WAR_AKTIV" = 0 ]; then systemctl stop lx-fampad-backup.timer >/dev/null 2>&1; fi
+    if [ "$TIMER_WAR_ENABLED" = 0 ]; then systemctl disable lx-fampad-backup.timer >/dev/null 2>&1; fi
+  fi
   local i e
   for ((i=${#UNDO[@]}-1; i>=0; i--)); do
     e="${UNDO[$i]}"
@@ -99,7 +113,11 @@ zuruecksetzen() {
       remove\|*)  IFS='|' read -r _ dst <<<"$e"; rm -f "$dst" ;;
     esac
   done
-  if [ "$USER_CREATED" = 1 ]; then userdel "$BACKUP_USER" 2>/dev/null; rm -rf "$HOME_DIR"; fi
+  if [ "$USER_CREATED" = 1 ]; then
+    userdel "$BACKUP_USER" 2>/dev/null; rm -rf "$HOME_DIR"
+    # Ablage nicht mit einer verwaisten Gruppen-ID zurücklassen
+    if [ -d "$OUT_DIR" ]; then chown -R root:root "$OUT_DIR"; chmod 0700 "$OUT_DIR"; fi
+  fi
   for d in $DIR_CREATED; do rmdir "$d" 2>/dev/null; done
   if [ "$NO_SYSTEMD" = 0 ]; then systemctl daemon-reload; fi
   echo "    Zurückgesetzt. Bereits erzeugte Sicherungen unter $OUT_DIR bleiben erhalten. Ursache beheben und das Skript erneut ausführen." >&2
@@ -131,6 +149,9 @@ put() {
     bak="$WORK/undo-$(printf '%s' "$dst" | sha256sum | cut -c1-16)"
     cp -p "$dst" "$bak"
     cp -p "$dst" "$dst.vor-backup.$STAMP"
+    # nur die 3 neuesten Altkopien behalten
+    find "$(dirname "$dst")" -maxdepth 1 -name "$(basename "$dst").vor-backup.*" -printf '%f\n' | sort -r | tail -n +4 \
+      | while IFS= read -r old; do rm -f -- "$(dirname "$dst")/$old"; done
     UNDO+=("restore|$dst|$bak")
   else
     UNDO+=("remove|$dst")
@@ -157,9 +178,10 @@ info "Skript lx-fampad-backup.sh: sha256 $(sha256sum "$SRC_SCRIPT" | cut -c1-16)
 
 # Empfänger: age1… (X25519) – einen privaten Schlüssel nie annehmen
 RECIP_RE='^age1[02-9ac-hj-np-z]{58}$'
-for r in "${RECIP_ARGS[@]+"${RECIP_ARGS[@]}"}"; do
-  if [[ "$r" == AGE-SECRET-KEY* ]]; then fehler "Das ist ein PRIVATER age-Schlüssel. Der gehört nie auf den Server. Nur den öffentlichen (age1…) übergeben."; fi
-  [[ "$r" =~ $RECIP_RE ]] || fehler "Ungültiger age-Empfänger: '$r' (erwartet age1… mit 62 Zeichen, von age-keygen oder 'age-keygen -y')"
+for r in "${RECIP_ARGS[@]+"${RECIP_ARGS[@]}"}" "${RECIP_CFG_ARGS[@]+"${RECIP_CFG_ARGS[@]}"}"; do
+  # die Meldungen geben den übergebenen Wert nie vollständig aus (könnte ein Geheimnis sein)
+  if [[ "${r^^}" == *AGE-SECRET-KEY* ]]; then fehler "Das ist ein PRIVATER age-Schlüssel. Der gehört nie auf den Server. Nur den öffentlichen (age1…) übergeben."; fi
+  [[ "$r" =~ $RECIP_RE ]] || fehler "Ungültiger age-Empfänger: '${r:0:8}…' (erwartet age1… mit 62 Zeichen, von age-keygen oder 'age-keygen -y')"
 done
 if [ "${#RECIP_ARGS[@]}" -eq 0 ] && [ ! -s "$RECIPIENTS" ]; then
   fehler "Kein age-Empfänger: --age-recipient 'age1…' angeben (Schlüssel auf dem NAS/PC erzeugen: age-keygen, siehe docs/BACKUP.md)"
@@ -177,12 +199,45 @@ if [ -n "$NAS_KEY_ARG" ]; then
   printf '%s\n' "$NAS_LINE_KEY" | ssh-keygen -l -f /dev/stdin >/dev/null 2>&1 || fehler "ssh-keygen erkennt den Schlüssel nicht"
   case "$NAS_LINE_KEY" in ssh-rsa*) info "Hinweis: RSA-Schlüssel; ed25519 wäre besser (ssh-keygen -t ed25519).";; esac
 fi
+# NAS-Adresse: per Parser (nicht per Sperrliste). Ergebnis ist die kanonische Schreibweise; so landet nur Geprüftes im authorized_keys.
+# Zulässig: einzelne IPv4/IPv6-Adresse oder Netz (CIDR, keine gesetzten Hostbits) mit Präfix mindestens /16 (IPv4) bzw. /48 (IPv6).
+# Abgelehnt: unspezifizierte/Multicast-/IPv4-mapped-Adressen, führende Nullen, Leerzeichen, Anführungszeichen, alles andere.
+ip_pruefen() {
+  python3 -I -c '
+import ipaddress, sys
+s = sys.argv[1]
+if s != s.strip() or not s or any(c in s for c in " \t\"\x27\\,*?!#") :
+    sys.exit("Zeichen nicht erlaubt")
+try:
+    n = ipaddress.ip_network(s, strict=True)
+except ValueError as e:
+    sys.exit("keine gültige Adresse/CIDR: %s" % e)
+if n.network_address.is_unspecified or n.network_address.is_multicast or n.network_address.is_reserved:
+    sys.exit("unspezifizierte/Multicast-/reservierte Adresse")
+if n.version == 6 and (n.network_address.ipv4_mapped is not None or n.network_address.sixtofour is not None or n.network_address.teredo is not None):
+    sys.exit("IPv4-mapped/6to4/Teredo nicht erlaubt")
+mn = 16 if n.version == 4 else 48
+if n.prefixlen < mn:
+    sys.exit("Netz zu groß (Präfix /%d, erlaubt ab /%d)" % (n.prefixlen, mn))
+print(str(n.network_address) if n.num_addresses == 1 else str(n))
+' "$1"
+}
+NAS_FROM=""
 if [ -n "$NAS_IP" ]; then
+  command -v python3 >/dev/null || fehler "python3 fehlt (wird für die Adressprüfung und von rrsync gebraucht)"
   IFS=',' read -ra IPS <<<"$NAS_IP"
+  [ "${#IPS[@]}" -le 4 ] || fehler "höchstens 4 NAS-Adressen"
   for ip in "${IPS[@]}"; do
-    { [[ "$ip" =~ ^[0-9a-fA-F:.]+(/[0-9]{1,3})?$ ]] && [[ "$ip" == *.* || "$ip" == *:* ]]; } || fehler "Ungültige NAS-Adresse: '$ip' (IPv4/IPv6, optional mit /Präfix; mehrere mit Komma)"
-    case "$ip" in 0.0.0.0*|::|'::/0') fehler "NAS-Adresse '$ip' erlaubt jeden Absender" ;; esac
+    CANON="$(ip_pruefen "$ip" 2>&1)" || fehler "Ungültige NAS-Adresse '${ip:0:45}': $CANON"
+    NAS_FROM="${NAS_FROM:+$NAS_FROM,}$CANON"
+    case "$CANON" in
+      127.*|::1) info "Hinweis: $CANON ist eine Loopback-Adresse (nur für Tests sinnvoll)." ;;
+      10.*|192.168.*|172.1[6-9].*|172.2?.*|172.3[01].*|fc*|fd*) info "WARNUNG: $CANON ist eine private Adresse: der Server sieht das NAS mit der öffentlichen Adresse des Anschlusses (sofern kein VPN). Passt die Adresse?" ;;
+    esac
+    if ! ip route get "${CANON%%/*}" >/dev/null 2>&1; then info "WARNUNG: für $CANON gibt es keine Route auf diesem Server (ip route get)."; fi
+    if grep -qw "${CANON%%/*}" <<<"$(ip -o addr show)"; then info "WARNUNG: $CANON ist eine Adresse dieses Servers."; fi
   done
+  NAS_IP="$NAS_FROM"
 fi
 if [ ! -s "$AUTH_KEYS" ] || ! grep -q rrsync "$AUTH_KEYS" 2>/dev/null; then
   { [ -n "$NAS_LINE_KEY" ] && [ -n "$NAS_IP" ]; } || fehler "Erster Lauf: --nas-pubkey und --nas-ip sind Pflicht (öffentlicher SSH-Schlüssel und Adresse des NAS)"
@@ -198,11 +253,24 @@ NEED_PKG=()
 for p in age rsync sqlite3; do dpkg -s "$p" >/dev/null 2>&1 || NEED_PKG+=("$p"); done
 if [ "${#NEED_PKG[@]}" -gt 0 ]; then
   info "Pakete fehlen: ${NEED_PKG[*]} (werden installiert; Candidate: $(for p in "${NEED_PKG[@]}"; do printf '%s=%s ' "$p" "$(apt-cache policy "$p" 2>/dev/null | awk '/Candidate:/{print $2}')"; done))"
-  for p in "${NEED_PKG[@]}"; do apt-cache policy "$p" 2>/dev/null | grep -q 'Candidate: [^(]' || fehler "Paket $p ist in den apt-Quellen nicht verfügbar (apt-get update?)"; done
+  for p in "${NEED_PKG[@]}"; do
+    POL="$(apt-cache policy "$p" 2>/dev/null || true)"   # nicht per Pipe an grep -q (SIGPIPE würde unter pipefail als Fehler zählen)
+    grep -q 'Candidate: [^(]' <<<"$POL" || fehler "Paket $p ist in den apt-Quellen nicht verfügbar (apt-get update?)"
+  done
 else
   info "age, rsync, sqlite3 vorhanden."
 fi
-[ -x "$RRSYNC" ] || [ "$DRY" = 1 ] || [ "${#NEED_PKG[@]}" -gt 0 ] || fehler "rrsync nicht gefunden (Paket rsync)"
+# rrsync ist ein Python-Skript: ohne python3 läuft der erzwungene Befehl nicht
+command -v python3 >/dev/null || fehler "python3 fehlt (rrsync und die Adressprüfung brauchen es): apt install python3-minimal"
+if [ "${#NEED_PKG[@]}" -gt 0 ]; then
+  # Simulation: zeigt, was apt wirklich installieren würde (auch bei --dry-run, ohne etwas zu ändern)
+  SIM="$(apt-get -s install --no-install-recommends "${NEED_PKG[@]}" 2>&1)" || { echo "$SIM" >&2; fehler "apt-get -s install schlägt fehl (apt-Quellen/Sperre?)"; }
+  info "apt-Simulation:"; { grep -E '^Inst ' <<<"$SIM" || true; } | sed 's/^/        /'
+  if grep -q '^Remv ' <<<"$SIM"; then fehler "apt würde Pakete entfernen, Abbruch: $(grep '^Remv ' <<<"$SIM" | tr '\n' ' ')"; fi
+elif [ ! -x "$RRSYNC" ]; then
+  fehler "rrsync nicht gefunden (Paket rsync: $(dpkg -s rsync 2>/dev/null | awk '/^Version:/{print $2}'))"
+fi
+if dpkg -s needrestart >/dev/null 2>&1; then info "needrestart ist installiert: apt läuft mit NEEDRESTART_MODE=l (nur auflisten, keine Dienste neu starten)."; fi
 if command -v sshd >/dev/null; then
   SSHD_T="$(sshd -T 2>/dev/null || true)"
   if [ -n "$SSHD_T" ]; then
@@ -241,6 +309,7 @@ if [ "$DRY" = 1 ]; then
   echo "    - Benutzer $BACKUP_USER, $OUT_DIR (root:$BACKUP_USER 0750), $CONF_DIR"
   echo "    - $BIN, ${UNIT_DIR}/lx-fampad-backup.{service,timer} (täglich ca. 03:30 Uhr)"
   [ "${#RECIP_ARGS[@]}" -eq 0 ] || echo "    - ${#RECIP_ARGS[@]} age-Empfänger nach $RECIPIENTS"
+  [ "${#RECIP_CFG_ARGS[@]}" -eq 0 ] || echo "    - ${#RECIP_CFG_ARGS[@]} eigene Empfänger für die Konfiguration nach $RECIPIENTS_CONFIG"
   [ -z "$NAS_LINE_KEY" ] || echo "    - $AUTH_KEYS: restrict,from=\"$NAS_IP\",command=\"$RRSYNC -ro $OUT_DIR\" $NAS_LINE_KEY"
   echo "    - Selbsttest mit Probelauf"
   exit 0
@@ -253,7 +322,8 @@ ARMED=1
 # --- 2. Pakete ---------------------------------------------------------------------------------------------------------------------------
 echo "==> 2/6 Pakete"
 if [ "${#NEED_PKG[@]}" -gt 0 ]; then
-  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${NEED_PKG[@]}"
+  # needrestart (falls vorhanden) soll nur auflisten, nie Dienste (sshd, postgresql, lx-labs) neu starten
+  env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=l NEEDRESTART_SUSPEND=1 apt-get install -y --no-install-recommends "${NEED_PKG[@]}"
 else
   info "nichts zu installieren."
 fi
@@ -285,6 +355,11 @@ if [ "${#RECIP_ARGS[@]}" -gt 0 ]; then
   put "$WORK/recipients.txt" "$RECIPIENTS" 0644 root:root
 fi
 grep -qE '^age1[02-9ac-hj-np-z]{58}$' "$RECIPIENTS" || fehler "$RECIPIENTS enthält keinen gültigen Empfänger"
+if [ "${#RECIP_CFG_ARGS[@]}" -gt 0 ]; then
+  { echo "# Öffentliche age-Schlüssel NUR für config-*.tar.age (enthält AUTH_SECRET_KEY). Zum Aufheben dieser Trennung die Datei löschen."
+    printf '%s\n' "${RECIP_CFG_ARGS[@]}" | awk '!s[$0]++'; } > "$WORK/recipients-config.txt"
+  put "$WORK/recipients-config.txt" "$RECIPIENTS_CONFIG" 0644 root:root
+fi
 if [ ! -e "$CONF" ]; then
   cat > "$WORK/backup.conf" <<'EOF'
 # Einstellungen für /usr/local/sbin/lx-fampad-backup (Shell-Syntax, nur root darf schreiben). Standardwerte stehen im Skript.
@@ -302,6 +377,9 @@ if [ "$NO_SYSTEMD" = 0 ]; then
   if command -v systemd-analyze >/dev/null; then
     systemd-analyze verify "$UNIT_DIR/lx-fampad-backup.service" "$UNIT_DIR/lx-fampad-backup.timer" || fehler "systemd-analyze verify meldet Fehler"
   fi
+  # Zustand merken: der Rückfall nimmt nur zurück, was dieser Lauf geändert hat
+  if systemctl is-enabled --quiet lx-fampad-backup.timer 2>/dev/null; then TIMER_WAR_ENABLED=1; fi
+  if systemctl is-active --quiet lx-fampad-backup.timer 2>/dev/null; then TIMER_WAR_AKTIV=1; fi
   systemctl enable --now lx-fampad-backup.timer
   TIMER_ENABLED_NOW=1
   info "Timer: $(systemctl list-timers lx-fampad-backup.timer --no-legend 2>/dev/null | head -1)"
@@ -342,7 +420,12 @@ as_bu() { runuser -u "$BACKUP_USER" -- "$@"; }
 as_bu cat "$OUT_DIR/$LATEST/SHA256SUMS" >/dev/null || fehler "$BACKUP_USER kann die Sicherung nicht lesen"
 if as_bu sh -c "( touch '$OUT_DIR/probe' ) 2>/dev/null"; then rm -f "$OUT_DIR/probe"; fehler "$BACKUP_USER darf in $OUT_DIR schreiben"; fi
 if as_bu sh -c "touch '$OUT_DIR/$LATEST/probe' 2>/dev/null"; then rm -f "$OUT_DIR/$LATEST/probe"; fehler "$BACKUP_USER darf im Sicherungsordner schreiben"; fi
-if as_bu sh -c "rm -f '$OUT_DIR/$LATEST/SHA256SUMS' 2>/dev/null; test ! -e '$OUT_DIR/$LATEST/SHA256SUMS'"; then fehler "$BACKUP_USER konnte eine Datei löschen"; fi
+# Löschversuch an einer Probe-Datei (nie an einer echten Sicherungsdatei)
+PROBE="$OUT_DIR/$LATEST/.rechteprobe"
+install -m 0640 -o root -g "$BACKUP_USER" /dev/null "$PROBE"
+as_bu sh -c "rm -f '$PROBE' 2>/dev/null; chmod 0777 '$PROBE' 2>/dev/null; true"
+if [ ! -e "$PROBE" ] || [ "$(stat -c %a "$PROBE")" != 640 ]; then rm -f "$PROBE"; fehler "$BACKUP_USER konnte eine Datei löschen oder ändern"; fi
+rm -f "$PROBE"
 if as_bu cat /etc/lx-fampad/env >/dev/null 2>&1; then fehler "$BACKUP_USER kann /etc/lx-fampad/env lesen"; fi
 if as_bu cat /etc/shadow >/dev/null 2>&1; then fehler "$BACKUP_USER kann /etc/shadow lesen"; fi
 if as_bu sh -c "( echo x >> '$AUTH_KEYS' ) 2>/dev/null"; then fehler "$BACKUP_USER darf seinen authorized_keys ändern"; fi
@@ -371,6 +454,11 @@ ARMED=0
 echo
 echo "Fertig. Nächste Schritte:"
 echo "  - Vom NAS testen:  rsync -a -e 'ssh -i <Schlüssel>' $BACKUP_USER@<Server>:/ <Zielordner>/   (docs/BACKUP.md, Abschnitt NAS einrichten)"
-echo "  - Entschlüsselung einmal testen: deploy/backup/wiederherstellung-test.sh (docs/WIEDERHERSTELLUNG.md)"
+echo
+echo "!!  WICHTIG: Der Server kann die Sicherung NICHT entschlüsseln und prüft nicht, ob der private Schlüssel zum Empfänger passt."
+echo "!!  Teste noch HEUTE mit dem privaten age-Schlüssel (am besten auf deinem PC mit einer vom NAS geholten Sicherung):"
+echo "!!    deploy/backup/wiederherstellung-test.sh --identity <schlüssel> --run-dir <ordner>   (docs/WIEDERHERSTELLUNG.md)"
+echo "!!  Ohne bestandenen Test ist die Sicherung ungeprüft; ein Tippfehler im Schlüssel macht alles unlesbar."
+echo
 echo "  - Status: sudo cat $OUT_DIR/status;  Timer: systemctl list-timers lx-fampad-backup.timer;  Log: journalctl -u lx-fampad-backup"
 echo "  - Rückbau: docs/BACKUP.md, Abschnitt Rückbau"

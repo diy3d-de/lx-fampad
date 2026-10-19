@@ -351,7 +351,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 - Caddy: zusätzlicher Site-Block `familie.lx-labs.dev` (statische Web-App, Reverse Proxy `/api` und `/ws`
   auf `127.0.0.1:4400`, `/releases`, `/.well-known`).
 - Dienst `lx-fampad.service` unter eigenem Benutzer, Daten unter `/srv/fampad/`.
-- Backups (umgesetzt, `docs/BACKUP.md`, `docs/WIEDERHERSTELLUNG.md`): täglich 03:30 `pg_dump` + Konfiguration, mit age verschlüsselt, auf dem Server die letzten 3 Tage; das NAS holt per rsync/SSH ab (nur lesen, der Server kennt das NAS nicht) und hält 14 tägliche + 8 wöchentliche + 12 monatliche Stände; Wiederherstellung halbjährlich testen. Dateiablage (`/srv/fampad/files`) später (inkrementell).
+- Backups (umgesetzt, `docs/BACKUP.md`, `docs/WIEDERHERSTELLUNG.md`): täglich 03:30 `pg_dump` + Konfiguration, mit age verschlüsselt, auf dem Server die letzten 3 Tage; das NAS holt per rsync/SSH ab (nur lesen; der Server hält keine Zugangsdaten zum NAS, nur dessen IP und öffentlichen Schlüssel) und hält 14 tägliche + 8 wöchentliche + 12 monatliche Stände; Wiederherstellung halbjährlich testen. Dateiablage (`/srv/fampad/files`) später (inkrementell).
 - Monitoring: `/api/v1/health`, Speicherplatz-Warnung, Log-Rotation; keine IP-Adressen länger als 7 Tage.
 - Vor Phase 1 prüfen: RAM, CPU und freier Speicher des VPS reichen für PostgreSQL, Vorschaubilder und das
   Dateivolumen (Fotos/Videos wachsen schnell).

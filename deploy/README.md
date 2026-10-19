@@ -396,7 +396,7 @@ Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewah
 
 ## Backups
 
-Täglich 03:30 (UTC-Zeitstempel in den Namen) sichert `lx-fampad-backup.timer` die Datenbank (`pg_dump -Fc`) und die Konfiguration (`/etc/lx-fampad` mit `AUTH_SECRET_KEY`, Caddy-Dateien des Projekts, ntfy, Units) **verschlüsselt mit age** nach `/var/backups/lx-fampad/` (die letzten 3 Läufe). Das **NAS holt ab** (rsync über SSH, Benutzer `lxbackup`, erzwungenes `rrsync -ro`, nur lesen); der Server kennt das NAS nicht und hält keine Zugangsdaten dazu. Den privaten age-Schlüssel gibt es nur beim Betreiber (Passwortmanager/Ausdruck), nie auf dem Server. Einrichtung, NAS-Seite (Synology, QNAP, Linux), Überwachung und Rückbau: [`docs/BACKUP.md`](../docs/BACKUP.md); Neuaufbau, Umzug, Wiederherstellungstest: [`docs/WIEDERHERSTELLUNG.md`](../docs/WIEDERHERSTELLUNG.md).
+Täglich 03:30 (UTC-Zeitstempel in den Namen) sichert `lx-fampad-backup.timer` die Datenbank (`pg_dump -Fc`) und die Konfiguration (`/etc/lx-fampad` mit `AUTH_SECRET_KEY`, Caddy-Dateien des Projekts, ntfy, Units) **verschlüsselt mit age** nach `/var/backups/lx-fampad/` (die letzten 3 Läufe). Das **NAS holt ab** (rsync über SSH, Benutzer `lxbackup`, erzwungenes `rrsync -ro`, nur lesen); der Server hält keine Zugangsdaten zum NAS (nur dessen IP und öffentlichen Schlüssel). Den privaten age-Schlüssel gibt es nur beim Betreiber (Passwortmanager/Ausdruck), nie auf dem Server. Einrichtung, NAS-Seite (Synology, QNAP, Linux), Überwachung und Rückbau: [`docs/BACKUP.md`](../docs/BACKUP.md); Neuaufbau, Umzug, Wiederherstellungstest: [`docs/WIEDERHERSTELLUNG.md`](../docs/WIEDERHERSTELLUNG.md).
 
 ```bash
 sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh --dry-run --age-recipient 'age1…' --nas-pubkey 'ssh-ed25519 AAAA…' --nas-ip <NAS-IP>   # prüfen
@@ -404,11 +404,11 @@ sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh            --age-recip
 systemctl list-timers lx-fampad-backup.timer && sudo cat /var/backups/lx-fampad/status
 ```
 
-Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern alles Neue zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh}`.
+Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern die in diesem Lauf angelegten oder geänderten Dateien, Units, den Benutzer und den Timer-Zustand zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh}`.
 
 ### Swap
 
-Der Server hat 2 GB RAM und keinen Swap. `sudo bash ~/lx-fampad/deploy/einrichtung-swap.sh --dry-run`, dann ohne `--dry-run`: legt `/swapfile` (1 GB, 0600) an, trägt sie in `/etc/fstab` ein (nur wenn es fehlt) und setzt `vm.swappiness=10` (`/etc/sysctl.d/99-lx-fampad-swap.conf`). Idempotent, prüft den freien Platz (1 GB + 4 GB Reserve), nimmt eine halb angelegte Datei bei Fehlern zurück. Prüfen: `swapon --show`, `free -m`. Rückbau steht im Kopf des Skripts.
+Der Server hat 2 GB RAM und keinen Swap. `sudo bash ~/lx-fampad/deploy/einrichtung-swap.sh --dry-run`, dann ohne `--dry-run`: legt `/swapfile` (1 GB, 0600) an, trägt sie in `/etc/fstab` ein (nur wenn es fehlt; baut eine Kopie mit Zeilenumbruch-Prüfung, prüft sie mit `findmnt --verify`, ersetzt erst dann, testet mit `swapon -a`, stellt bei Fehler die Sicherung `/etc/fstab.vor-swap` zurück) und setzt `vm.swappiness=10` (`/etc/sysctl.d/99-lx-fampad-swap.conf`). Idempotent, prüft den freien Platz (1 GB + 4 GB Reserve), nimmt eine halb angelegte Datei bei Fehlern zurück. Prüfen: `swapon --show`, `free -m`. Rückbau steht im Kopf des Skripts.
 
 ## Nützliche Befehle auf dem Server
 

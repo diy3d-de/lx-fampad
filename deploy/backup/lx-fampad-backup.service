@@ -9,9 +9,10 @@ ExecStart=/usr/local/sbin/lx-fampad-backup
 # Der Lauf braucht root (Lesen aller Dateien, Wechsel zu postgres per runuser). Der Rest ist eingeschränkt.
 ProtectSystem=strict
 # /var/lib/ntfy: sqlite3 .backup braucht für SQLite-WAL-Dateien Schreibzugriff (-shm), es wird nichts verändert; "-" = ignorieren, wenn ntfy fehlt
-ReadWritePaths=/var/backups/lx-fampad /dev/shm -/var/lib/ntfy
-RuntimeDirectory=lx-fampad-backup
+ReadWritePaths=/var/backups/lx-fampad /dev/shm /run/lock -/var/lib/ntfy
 ProtectHome=true
+ProtectProc=invisible
+UMask=0077
 PrivateTmp=true
 ProtectKernelTunables=true
 ProtectKernelModules=true

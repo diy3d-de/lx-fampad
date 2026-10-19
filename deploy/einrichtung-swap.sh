@@ -28,14 +28,25 @@ done
 
 tue() { if [ "$DRY" = 1 ]; then echo "    [dry-run] $*"; else "$@"; fi; }
 fehler() { echo "FEHLER: $*" >&2; exit 1; }
-ANGELEGT=0
+FSTAB="${LXB_FSTAB:-/etc/fstab}"          # nur für Tests überschreibbar
+NO_ACT="${LXB_SWAP_NO_ACTIVATE:-0}"       # nur für Tests im Container (kein mkswap/swapon)
+ANGELEGT=0        # 1: diese Swapdatei stammt aus diesem Lauf (wird bei Fehler entfernt)
+FSTAB_GEAENDERT=0 # 1: fstab wurde in diesem Lauf geändert (wird bei Fehler aus der Sicherung zurückgespielt)
 zurueck() {
   local rc=$?
   trap - EXIT
-  if [ "$rc" -ne 0 ] && [ "$ANGELEGT" = 1 ]; then
-    echo "!!  Fehler: halb angelegte Swapdatei wird entfernt." >&2
-    swapoff "$SWAPFILE" 2>/dev/null || true
-    rm -f "$SWAPFILE"
+  if [ "$rc" -ne 0 ]; then
+    set +e
+    if [ "$FSTAB_GEAENDERT" = 1 ] && [ -f "$FSTAB.vor-swap" ]; then
+      echo "!!  Fehler: $FSTAB wird aus der Sicherung zurückgespielt." >&2
+      cp -p "$FSTAB.vor-swap" "$FSTAB"
+    fi
+    rm -f "$FSTAB.neu"
+    if [ "$ANGELEGT" = 1 ]; then
+      echo "!!  Fehler: angelegte Swapdatei wird entfernt." >&2
+      swapoff "$SWAPFILE" 2>/dev/null
+      rm -f "$SWAPFILE"
+    fi
   fi
   exit "$rc"
 }
@@ -57,45 +68,63 @@ if [ "$AKTIV" = 0 ]; then
   echo "    Dateisystem: $FSTYPE"
   case "$FSTYPE" in btrfs|zfs) fehler "Swapdatei auf $FSTYPE braucht Sonderbehandlung, bitte von Hand einrichten." ;; esac
 fi
-FSTAB_HAT=0; grep -qE '^[[:space:]]*/swapfile[[:space:]]' /etc/fstab && FSTAB_HAT=1
+[ -f "$FSTAB" ] || fehler "$FSTAB fehlt"
+FSTAB_HAT=0; if grep -qE '^[[:space:]]*/swapfile[[:space:]]' "$FSTAB"; then FSTAB_HAT=1; fi
 echo "    fstab-Eintrag: $([ "$FSTAB_HAT" = 1 ] && echo vorhanden || echo fehlt)"
 if [ -f "$SYSCTL" ] && grep -qx 'vm.swappiness=10' "$SYSCTL"; then echo "    swappiness-Datei vorhanden."; fi
 
 echo "==> Anlegen"
 if [ "$AKTIV" = 0 ]; then
-  ANGELEGT=1
-  if [ "$DRY" = 1 ]; then ANGELEGT=0; fi
+  if [ "$DRY" = 0 ]; then ANGELEGT=1; fi
   tue install -m 0600 -o root -g root /dev/null "$SWAPFILE"
-  tue dd if=/dev/zero of="$SWAPFILE" bs=1M count="$SIZE_MB" status=none
+  tue ionice -c3 dd if=/dev/zero of="$SWAPFILE" bs=1M count="$SIZE_MB" status=none
   tue chmod 0600 "$SWAPFILE"
-  tue mkswap -q "$SWAPFILE"
-  tue swapon "$SWAPFILE"
-  if [ "$DRY" = 0 ]; then echo "    $SWAPFILE ($SIZE_MB MB) aktiviert."; fi
+  if [ "$NO_ACT" = 0 ]; then
+    tue mkswap -q "$SWAPFILE"
+    tue swapon "$SWAPFILE"
+    if [ "$DRY" = 0 ]; then echo "    $SWAPFILE ($SIZE_MB MB) aktiviert."; fi
+  fi
 fi
 if [ "$FSTAB_HAT" = 0 ]; then
   if [ "$DRY" = 1 ]; then
-    echo "    [dry-run] /etc/fstab: '/swapfile none swap sw 0 0' anhängen (Sicherung /etc/fstab.vor-swap)"
+    echo "    [dry-run] $FSTAB: Kopie bauen, '/swapfile none swap sw 0 0' anhängen (mit Zeilenumbruch-Prüfung), findmnt --verify, erst dann ersetzen (Sicherung $FSTAB.vor-swap)"
   else
-    cp -p /etc/fstab /etc/fstab.vor-swap
-    printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
-    echo "    fstab ergänzt (Sicherung: /etc/fstab.vor-swap)."
+    cp -p "$FSTAB" "$FSTAB.vor-swap"
+    cp -p "$FSTAB" "$FSTAB.neu"
+    # fehlt der Zeilenumbruch am Ende, würde der Eintrag an die letzte Zeile geklebt
+    if [ -s "$FSTAB.neu" ] && [ -n "$(tail -c1 "$FSTAB.neu")" ]; then echo >> "$FSTAB.neu"; fi
+    printf '%s\n' '/swapfile none swap sw 0 0' >> "$FSTAB.neu"
+    RC_ALT=0; findmnt --verify --tab-file "$FSTAB" >/dev/null 2>&1 || RC_ALT=$?
+    RC_NEU=0; VERIFY="$(findmnt --verify --tab-file "$FSTAB.neu" 2>&1)" || RC_NEU=$?
+    if [ "$RC_NEU" -gt "$RC_ALT" ]; then echo "$VERIFY" >&2; fehler "findmnt --verify meldet Fehler in der neuen fstab; $FSTAB bleibt unverändert."; fi
+    FSTAB_GEAENDERT=1
+    mv -f "$FSTAB.neu" "$FSTAB"
+    echo "    fstab ergänzt (Sicherung: $FSTAB.vor-swap)."
   fi
 fi
 if [ "$DRY" = 1 ]; then
   echo "    [dry-run] $SYSCTL: vm.swappiness=10"
 else
   printf '%s\n' '# lx-fampad: Swap nur im Notfall nutzen' 'vm.swappiness=10' > "$SYSCTL"
-  sysctl -q -p "$SYSCTL"
+  if [ "$NO_ACT" = 0 ]; then sysctl -q -p "$SYSCTL"; fi
 fi
-ANGELEGT=0
 
 if [ "$DRY" = 0 ]; then
   echo "==> Prüfung"
-  swapon --show
+  if [ "$NO_ACT" = 0 ]; then
+    # fstab-Probe: aus und über die fstab wieder ein, genau wie beim Neustart
+    swapoff "$SWAPFILE"
+    swapon -a || fehler "swapon -a mit der neuen fstab schlägt fehl"
+    swapon --show=NAME --noheadings | grep -qx "$SWAPFILE" || fehler "$SWAPFILE ist nach swapon -a nicht aktiv"
+    swapon --show
+    [ "$(sysctl -n vm.swappiness)" = 10 ] || fehler "vm.swappiness ist nicht 10"
+  fi
   [ "$(stat -c '%a %U' "$SWAPFILE")" = "600 root" ] || fehler "$SWAPFILE hat falsche Rechte"
-  [ "$(sysctl -n vm.swappiness)" = 10 ] || fehler "vm.swappiness ist nicht 10"
   free -m
-  echo "Fertig. Neustart-Test: nach dem nächsten Neustart zeigt 'swapon --show' die Datei wieder."
+  ANGELEGT=0
+  FSTAB_GEAENDERT=0
+  rm -f "$FSTAB.neu"
+  echo "Fertig. Neustart-Test: nach dem nächsten Neustart zeigt 'swapon --show' die Datei wieder. Sicherung der alten fstab: $FSTAB.vor-swap"
 else
   echo "==> Trockenlauf beendet, nichts verändert."
 fi
