@@ -1,4 +1,4 @@
-# Gepinnte Versionen (Phase 0, 1a und 1b)
+# Gepinnte Versionen (Phase 0 bis 1c)
 
 Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlichungsdatum in der Spalte „Hinweis“ bei den Paketen von Phase 1a, geprüft mit `npm view <Paket> time`). Alle Versionen sind exakt gepinnt (kein `^`, kein `~`); Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Quelle: Research-Teammate.
 
@@ -44,7 +44,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | unifiedpush / unifiedpush_android | 6.2.0 / 3.5.0 | nur Android |
 | maplibre | 0.3.6 | Ersatz für flutter_map + PMTiles-Vektor (veraltet); pre-1.0 |
 | geolocator | 14.1.1 | Vordergrunddienst eingebaut |
-| web_socket_channel | 3.0.3 | Reconnect selbst bauen |
+| web_socket_channel | 3.0.3 | Phase 1c im Einsatz (direkte Abhängigkeit seit 1c; stand schon vorher als transitive Abhängigkeit im Lockfile): WebSocket-Client des Sync (`app/lib/data/sync/sync_socket.dart`), Reconnect mit Backoff und Jitter selbst gebaut; läuft auf Android und im Web |
 | http | 1.6.0 | Update-Prüfung und APK-Download |
 | crypto | 3.0.7 | SHA-256 der APK |
 | cryptography | 2.9.0 | Ed25519-Prüfung des Update-Manifests (reines Dart, auch im Web); 21.11.2025 |

@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
-import { MIN_PROTOCOL_VERSION, PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
+import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 
 export interface SystemDeps {
   config: Config;
@@ -53,7 +53,7 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: S
       service: 'lx-fampad',
       version: SERVER_VERSION,
       protocolVersion: PROTOCOL_VERSION,
-      minProtocolVersion: MIN_PROTOCOL_VERSION,
+      minProtocolVersion: config.minProtocolVersion,
       minAppVersion: config.minAppVersion,
       webVersion: await readWebVersion(config),
     };

@@ -158,6 +158,9 @@ class UpdateController extends Notifier<UpdateState> {
 
   Future<int> _versionCode() async => await _channel.invokeMethod<int>('appVersionCode') ?? 0;
 
+  /// Der Sync meldet 426 (Protokoll zu alt): ab jetzt Pflicht-Update, bis die App aktualisiert ist.
+  void pflichtSetzen() => state = state.copyWith(pflicht: true);
+
   /// Lädt die installierte Version für die Anzeige (ohne Android-Kanal, z. B. in Tests, bleibt sie leer).
   Future<void> init() async {
     if (kIsWeb) return;

@@ -3,7 +3,7 @@
 // PostgreSQL, wenn TEST_DATABASE_URL gesetzt ist (CI: PostgreSQL 17; lokal z. B. postgres://postgres@127.0.0.1:54329/postgres).
 // Für die echte Datenbank wird je Lauf eine frische Datenbank angelegt und danach gelöscht.
 import { PGlite } from '@electric-sql/pglite';
-import { sql } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { drizzle as drizzlePg, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
 import { drizzle as drizzleLite } from 'drizzle-orm/pglite';
@@ -298,6 +298,26 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
         db.insert(schema.listItems).values({ familyId: b.familyId, listId: list.id, text: 'Milch', rev: 1 }),
       ).rejects.toThrow();
       await db.insert(schema.listItems).values({ familyId: a.familyId, listId: list.id, text: 'Milch', rev: 1 });
+    });
+
+    it('Sync (Migration 0002): Standardwerte, Freigabe-Stufe, Kommazahlen und Längengrenzen', async () => {
+      const a = await seed();
+      const family = one(await db.select().from(schema.families).where(eq(schema.families.id, a.familyId)));
+      expect(family.purgedRev).toBe(0);
+      const list = one(await db.insert(schema.lists).values({ familyId: a.familyId, name: 'Einkauf', rev: 1 }).returning());
+      expect(list.audience).toBe('family');
+      expect(list.ownerId).toBeNull();
+      await expect(db.insert(schema.lists).values({ familyId: a.familyId, name: 'x', rev: 1, audience: 'alle' as never })).rejects.toThrow();
+      await expect(db.insert(schema.lists).values({ familyId: a.familyId, name: 'x'.repeat(101), rev: 1 })).rejects.toThrow();
+      const item = one(await db.insert(schema.listItems).values({ familyId: a.familyId, listId: list.id, text: 'Milch', position: 1.5, rev: 1 }).returning());
+      expect(item.position).toBe(1.5);
+      await expect(db.insert(schema.listItems).values({ familyId: a.familyId, listId: list.id, text: 'x'.repeat(501), rev: 1 })).rejects.toThrow();
+      await expect(db.insert(schema.listItems).values({ familyId: a.familyId, listId: list.id, text: 'x', position: 1e13, rev: 1 })).rejects.toThrow();
+      const log = one(await db.insert(schema.changeLog).values({ familyId: a.familyId, rev: 1, entity: 'list', entityId: list.id }).returning());
+      expect(log.created).toBe(false);
+      const op = one(await db.insert(schema.appliedOps).values({ familyId: a.familyId, opId: randomUUID() }).returning());
+      expect(op).toMatchObject({ status: 'acked', code: null, conflicts: [] });
+      await expect(db.insert(schema.appliedOps).values({ familyId: a.familyId, opId: randomUUID(), status: 'vielleicht' })).rejects.toThrow();
     });
 
     it('verhindert Sitzungen mit Gerät einer fremden Familie', async () => {

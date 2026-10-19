@@ -3,6 +3,7 @@
 // bereinigen, abgelaufene Einladungen protokollieren. Kurzlebiges (Challenges, Tickets, Fehlversuche) bleibt so höchstens
 // rund eine Stunde über seinen Ablauf hinaus in der Datenbank.
 import { and, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
 import { auditLog, invites, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
@@ -21,6 +22,7 @@ export interface PurgeReport {
   attemptsDeleted: number;
   invitesExpired: number;
   invitesDeleted: number;
+  sync: SyncPurgeReport;
 }
 
 export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
@@ -63,6 +65,8 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     .where(and(lt(loginAttempts.lastFailedAt, attemptsBefore), sql`(${loginAttempts.lockedUntil} is null or ${loginAttempts.lockedUntil} < ${now.toISOString()}::timestamptz)`))
     .returning({ k: loginAttempts.key });
 
+  const sync = await runSyncMaintenance(ctx);
+
   return {
     auditIpCleared: ipCleared.length,
     auditDeleted: auditGone.length,
@@ -72,6 +76,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     attemptsDeleted: attempts.length,
     invitesExpired: expired.length,
     invitesDeleted: invitesGone.length,
+    sync,
   };
 }
 

@@ -4,8 +4,8 @@ Selbst gehostete Familien-Zentrale nach dem Vorbild von FamilyWall: gemeinsamer 
 (später Fotos, Karte, Tresor u. a.). Läuft im Browser und als Android-App, offline-fähig, mit Echtzeit-Abgleich.
 Die Daten bleiben auf dem eigenen Server in Deutschland (`familie.lx-labs.dev`).
 
-**Status: Phase 0 (Gerüst).** Server, Datenbankschema, Flutter-App mit Theme und Navigation sowie die Deploy-Konfiguration stehen;
-Anmeldung, Sync und Fachfunktionen folgen in Phase 1.
+**Status: Phase 1c-1.** Server, Datenbankschema, Konten und Anmeldung (Passkey, Passwort + 2FA, Einladungen), Flutter-App mit Anmeldung, Sync-Kern
+(offline-first, Konflikte pro Feld, WebSocket-Hinweis) und den **Listen** als erstem Fachbereich stehen; Kalender, Chat, Aufgaben und Dateien folgen auf demselben Kern.
 
 | Ordner | Inhalt |
 | --- | --- |

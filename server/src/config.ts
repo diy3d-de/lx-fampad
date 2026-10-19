@@ -1,6 +1,8 @@
 // Konfiguration ausschließlich über Umgebungsvariablen (siehe .env.example).
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { MAX_OPS } from './sync/types.js';
+import { MIN_PROTOCOL_VERSION } from './version.js';
 
 /** Zeiten und Grenzen der Anmeldung (Standardwerte, nur Tests überschreiben sie). */
 export interface AuthConfig {
@@ -61,6 +63,8 @@ export interface Config {
   wsMessageWindowMs: number;
   filesDir: string;
   minAppVersion: string;
+  /** Älteste Protokollversion, die der Server noch bedient (darunter: 426 update_required). */
+  minProtocolVersion: number;
   webVersion: string | undefined;
   /** Datei, deren Inhalt die Version des ausgelieferten Web-Builds ist (schreibt deploy-web.sh). */
   webVersionFile: string | undefined;
@@ -69,6 +73,18 @@ export interface Config {
   rateLimitMax: number;
   /** Anfragen je Minute und IP für /api/v1/auth/* und /api/v1/ws-ticket. */
   authRateLimitMax: number;
+  /** Anfragen je Minute und IP für POST /api/v1/sync. */
+  syncRateLimitMax: number;
+  /** Mengenbegrenzung des Sync je Gerät (je Person das Dreifache): Fassungsvermögen und Auffüllung je Minute für Ops und für Anfragen. */
+  syncOpsBurst: number;
+  syncOpsPerMinute: number;
+  syncReqBurst: number;
+  syncReqPerMinute: number;
+  /** Höchstzahl Ops je Gerät in 24 Stunden (zählt applied_ops, auch abgelehnte). */
+  syncOpsPerDay: number;
+  /** Zeitlimits einer Op in der Datenbank (Sperre auf die Familienzeile, Anweisung); danach 503 mit Retry-After. */
+  syncLockTimeoutMs: number;
+  syncStatementTimeoutMs: number;
   /** Zeitlimit für die Datenbankprüfung in /api/v1/health. */
   healthTimeoutMs: number;
   /** Gleichzeitige WebSocket-Verbindungen je IP. */
@@ -88,6 +104,13 @@ function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number): nu
   if (raw === undefined || raw === '') return fallback;
   const n = Number(raw);
   if (!Number.isInteger(n) || n < 1) throw new Error(`${name} ungültig: ${raw}`);
+  return n;
+}
+
+/** Fassungsvermögen der Op-Bucket: mindestens so groß wie die größte Anfrage (MAX_OPS), sonst ginge sie nie durch. */
+function syncOpsBurst(env: NodeJS.ProcessEnv): number {
+  const n = positiveInt(env, 'SYNC_OPS_BURST', 100);
+  if (n < MAX_OPS) throw new Error(`SYNC_OPS_BURST ungültig: mindestens ${MAX_OPS}`);
   return n;
 }
 
@@ -195,11 +218,20 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     wsMessageWindowMs: positiveInt(env, 'WS_MESSAGE_WINDOW_MS', 10_000),
     filesDir: env.FILES_DIR ?? './data/files',
     minAppVersion,
+    minProtocolVersion: positiveInt(env, 'MIN_PROTOCOL_VERSION', MIN_PROTOCOL_VERSION),
     webVersion: env.WEB_VERSION || undefined,
     webVersionFile: env.WEB_VERSION_FILE || undefined,
     logLevel: level as Config['logLevel'],
     rateLimitMax: positiveInt(env, 'RATE_LIMIT_MAX', 300),
     authRateLimitMax: positiveInt(env, 'AUTH_RATE_LIMIT_MAX', 10),
+    syncRateLimitMax: positiveInt(env, 'SYNC_RATE_LIMIT_MAX', 120),
+    syncOpsBurst: syncOpsBurst(env),
+    syncOpsPerMinute: positiveInt(env, 'SYNC_OPS_PER_MINUTE', 120),
+    syncReqBurst: positiveInt(env, 'SYNC_REQ_BURST', 30),
+    syncReqPerMinute: positiveInt(env, 'SYNC_REQ_PER_MINUTE', 120),
+    syncOpsPerDay: positiveInt(env, 'SYNC_OPS_PER_DAY', 5000),
+    syncLockTimeoutMs: positiveInt(env, 'SYNC_LOCK_TIMEOUT_MS', 5000),
+    syncStatementTimeoutMs: positiveInt(env, 'SYNC_STATEMENT_TIMEOUT_MS', 10_000),
     healthTimeoutMs: positiveInt(env, 'HEALTH_TIMEOUT_MS', 2000),
     wsMaxPerIp: positiveInt(env, 'WS_MAX_PER_IP', 10),
     wsPingIntervalMs: positiveInt(env, 'WS_PING_INTERVAL_MS', 30_000),

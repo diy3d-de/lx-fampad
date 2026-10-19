@@ -1,0 +1,14 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+/// Gewählter Tab der Navigationsleiste (Reihenfolge wie [kTabs]); Karten der Startseite wechseln darüber in einen Bereich.
+class ShellTab extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void waehlen(int index) => state = index;
+}
+
+final shellTabProvider = NotifierProvider<ShellTab, int>(ShellTab.new);
+
+/// Index des Listen-Tabs in [kTabs].
+const kListenTab = 4;

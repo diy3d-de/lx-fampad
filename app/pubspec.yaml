@@ -31,6 +31,8 @@ dependencies:
   mobile_scanner: 7.4.2
   qr_flutter: 4.1.0
   web: 1.1.1
+  # WebSocket-Client für den Revisionshinweis des Sync (Reconnect mit Backoff baut data/sync/sync_socket.dart selbst)
+  web_socket_channel: 3.0.3
 
 dev_dependencies:
   flutter_test:

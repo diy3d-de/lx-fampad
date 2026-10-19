@@ -123,6 +123,12 @@ describe.each(backends)('WebSocket-Anmeldung ($name)', (backend) => {
       s.ws.send(JSON.stringify({ type: 'auth', ticket: `falsches-ticket-${i}` }));
       expect(await s.closed).toBe(WS_CLOSE_UNAUTHENTICATED);
     }
+    // der Server schließt den Socket, ohne auf das Zählen des Fehlversuchs zu warten: erst warten, bis alle drei gezählt sind
+    for (let i = 0; i < 100; i++) {
+      const rows = await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from login_attempts where fail_count >= 3`);
+      if (rows.rows[0]?.n === 1) break;
+      await wait(50);
+    }
     await expect(open(w, { ip: '192.0.2.50' })).rejects.toThrow(/429/);
     // andere IPs sind nicht betroffen
     await open(w, { ip: '192.0.2.51' });

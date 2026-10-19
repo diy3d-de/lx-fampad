@@ -13,6 +13,7 @@ import '../files/files_screen.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
 import '../update/update_service.dart';
+import 'shell_tab.dart';
 
 /// Rahmen der angemeldeten App: Glow-Hintergrund, die fünf Tabs und die Material-3-NavigationBar.
 class HomeShell extends ConsumerStatefulWidget {
@@ -25,24 +26,30 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   static const _screens = <Widget>[HomeScreen(), CalendarScreen(), ChatScreen(), FilesScreen(), ListsScreen()];
 
-  int _tab = 0;
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;
+  late final SyncController _sync;
 
   @override
   void initState() {
     super.initState();
+    _sync = ref.read(syncProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     ref.read(updateProvider.notifier).init();
     // erste Update-Prüfung kurz nach dem Start (Pflicht-Updates sollen früh auffallen), danach beim Zurückkehren in die App
     _ersteUpdatePruefung = Timer(const Duration(seconds: 3), _updatePruefen);
-    WidgetsBinding.instance.addPostFrameCallback((_) => ref.read(syncProvider.notifier).synchronisieren());
+    // Sync-Dienst: Abgleich beim Start, WebSocket und Zeitgeber laufen, solange die angemeldete Oberfläche offen ist
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) ref.read(syncProvider.notifier).starten();
+    });
   }
 
   @override
   void dispose() {
     _ersteUpdatePruefung?.cancel();
     WidgetsBinding.instance.removeObserver(this);
+    // Abmelden oder Sitzungsverlust: kein Abgleich mehr (der Ausgang bleibt in der Datenbank)
+    _sync.stoppen(zustandAendern: false); // mitten im Abbau des Widget-Baums keinen Zustand ändern
     super.dispose();
   }
 
@@ -53,8 +60,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
+    // WebSocket und Zeitgeber nur im Vordergrund; bei der Rückkehr sofort abgleichen
+    unawaited(ref.read(syncProvider.notifier).vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive));
     if (s != AppLifecycleState.resumed) return;
-    ref.read(syncProvider.notifier).synchronisieren();
     final l = _letztePruefung;
     // Web: häufiger, der Hinweis "Neue Version - neu laden" ist billig (eine kleine JSON-Abfrage)
     final abstand = kIsWeb ? const Duration(minutes: 15) : const Duration(hours: 6);
@@ -64,14 +72,15 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
+    final tab = ref.watch(shellTabProvider);
     return Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
-        child: SafeArea(child: LxContentWidth(child: IndexedStack(index: _tab, children: _screens))),
+        child: SafeArea(child: LxContentWidth(child: IndexedStack(index: tab, children: _screens))),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
+        selectedIndex: tab,
+        onDestinationSelected: (i) => ref.read(shellTabProvider.notifier).waehlen(i),
         destinations: [
           for (var i = 0; i < kTabs.length; i++)
             NavigationDestination(

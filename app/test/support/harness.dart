@@ -1,6 +1,7 @@
 // Widget-Test-Hilfen: Schriften laden, App mit Fake-Server starten, tippen/warten, Layoutprüfung (360 px, Textskala, Touch-Ziele).
 import 'dart:io';
 
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -35,6 +36,7 @@ void kanalMocken() {
 
 /// Lädt die echten Schriften (die Test-Standardschrift Ahem hat andere Breiten) und die deutschen Datumsformate.
 Future<void> testVorbereiten() async {
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   await initializeDateFormatting('de_DE');
   for (final (familie, datei) in [('Inter', 'assets/fonts/Inter.ttf'), ('JetBrainsMono', 'assets/fonts/JetBrainsMono.ttf')]) {
     final lader = FontLoader(familie)..addFont(Future.value(ByteData.sublistView(File(datei).readAsBytesSync())));

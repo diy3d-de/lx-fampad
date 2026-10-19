@@ -172,6 +172,12 @@ export class World {
       PUBLIC_URL: ORIGIN,
       AUTH_RATE_LIMIT_MAX: '100000',
       RATE_LIMIT_MAX: '100000',
+      // Mengenbegrenzung des Sync je Gerät/Person: in Tests weit offen (die Test-Uhr läuft nicht von selbst), Grenzentests setzen eigene Werte
+      SYNC_OPS_BURST: '100000',
+      SYNC_OPS_PER_MINUTE: '100000',
+      SYNC_REQ_BURST: '100000',
+      SYNC_REQ_PER_MINUTE: '100000',
+      SYNC_OPS_PER_DAY: '100000',
       ...env,
     });
     const holder: { world?: World } = {};

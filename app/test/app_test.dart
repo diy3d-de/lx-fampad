@@ -6,6 +6,7 @@ import 'package:lx_fampad/features/chat/chat_screen.dart';
 import 'package:lx_fampad/features/files/files_screen.dart';
 import 'package:lx_fampad/features/home/home_screen.dart';
 import 'package:lx_fampad/features/lists/lists_screen.dart';
+import 'package:lx_fampad/features/update/update_banner.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -55,11 +56,32 @@ void main() {
     }
   });
 
-  testWidgets('Sync-Indikator meldet den Zustand ohne Server', (tester) async {
+  testWidgets('Sync-Indikator und Startseite melden "synchron", sobald der Abgleich gelaufen ist', (tester) async {
     final env = await angemeldeteUmgebung();
     await starteApp(tester, env);
-    expect(find.byTooltip('Nicht verbunden'), findsWidgets);
-    expect(find.text('nicht verbunden'), findsOneWidget);
+    expect(find.byTooltip('Synchron. Tippen zum Abgleichen'), findsWidgets);
+    expect(find.text('synchron'), findsOneWidget);
+    expect(env.sync.anfragen, isNotEmpty, reason: 'beim Start wird sofort abgeglichen');
+  });
+
+  testWidgets('ohne Netz zeigt der Sync-Indikator offline, die lokalen Daten bleiben bedienbar', (tester) async {
+    final env = await angemeldeteUmgebung();
+    env.sync.offline = true;
+    await starteApp(tester, env);
+    expect(find.byTooltip('Offline'), findsWidgets);
+    expect(find.text('offline'), findsOneWidget);
+  });
+
+  testWidgets('426 vom Sync (Protokoll zu alt): die Pflicht-Update-Seite ersetzt die App, es folgt kein weiterer Abgleich', (tester) async {
+    final env = await angemeldeteUmgebung();
+    env.sync.fehlerQueue.add((426, 'update_required'));
+    await starteApp(tester, env);
+    await warte(tester, 10);
+    expect(find.byType(PflichtUpdateSeite), findsOneWidget);
+    expect(find.byType(NavigationBar), findsNothing);
+    final n = env.server.anfragen('POST /sync').length;
+    await tester.pump(const Duration(minutes: 10));
+    expect(env.server.anfragen('POST /sync').length, n);
   });
 
   testWidgets('wartendes Konto sieht den Warte-Bildschirm, nicht die App', (tester) async {

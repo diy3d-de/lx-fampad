@@ -4,7 +4,7 @@ Selbst gehostete Familien-Zentrale (Kalender, Chat, Listen, Aufgaben, Dateien, s
 Web und Android aus einer Flutter-Codebasis, Server auf dem netcup-VPS von lx-labs.dev. Domain: **familie.lx-labs.dev**.
 Sprache aller Inhalte, UI-Texte und Commit-Nachrichten: **Deutsch**, Ansprache per **du**. Verbindliche Beschreibung: `docs/PROJEKTBESCHREIBUNG.md`, Versionen: `docs/VERSIONEN.md`, Mockups: `docs/mockups/`.
 
-Stand: **Phase 1b** (Server: Konten und Anmeldung seit 1a; App: Anmeldung, Einladungen, Konto, Admin; Sync in 1c). Fahrplan in `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 12; Endpunkte in `docs/API.md`.
+Stand: **Phase 1c-1** (Server: Konten und Anmeldung seit 1a, Sync-Kern; App: Anmeldung, Einladungen, Konto, Admin seit 1b, Sync und **Listen** in 1c-1; Kalender, Chat, Aufgaben, Dateien folgen als eigene Teile auf demselben Kern). Fahrplan in `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 12; Endpunkte in `docs/API.md`.
 
 ## Stack
 
@@ -21,7 +21,7 @@ npm ci
 npm run dev          # tsx watch, liest .env
 npm run lint         # ESLint
 npm run typecheck    # tsc --noEmit
-npm test             # Vitest (Schema- und Anmelde-Tests laufen gegen PGlite; mit TEST_DATABASE_URL=postgres://… zusätzlich gegen echtes PostgreSQL)
+npm test             # Vitest (Schema-, Anmelde- und Sync-Tests laufen gegen PGlite; mit TEST_DATABASE_URL=postgres://… zusätzlich gegen echtes PostgreSQL 17, dort auch die Parallelitäts-Tests)
 npm run build        # nach dist/
 npm run db:generate  # neue Migration aus src/db/schema.ts erzeugen (drizzle/)
 npm run migrate      # Migrationen anwenden (MIGRATION_DATABASE_URL, sonst DATABASE_URL; nach build)
@@ -34,7 +34,7 @@ flutter analyze
 flutter test
 flutter run -d chrome
 flutter build web --release --no-web-resources-cdn
-# Vertragsprüfung gegen den echten Server (nicht Teil von flutter test): app/tool/vertrag_test.dart, Ablauf im Dateikopf
+# Vertragsprüfung gegen den echten Server (nicht Teil von flutter test): app/tool/vertrag_test.dart (Anmeldung und seit 1c der Sync mit zwei Geräten, Konflikten, Rechten, WebSocket, mehrseitigem Snapshot bei purged_rev > 0, Geisterliste), Ablauf im Dateikopf
 
 # Werkzeuge (Repo-Wurzel)
 node --test "tools/*.test.mjs"                                      # Test der Manifest-Signatur
@@ -54,25 +54,25 @@ server/
   src/app.ts           Fastify-App (buildApp, ohne Port; für Tests)
   src/server.ts        Start, Datenbank, Shutdown
   src/errors.ts        AppError + eigener Fehlerhandler (nie interne Meldungen)
-  src/routes/          system.ts (health, version), auth.ts (/api/v1/auth/*), account.ts (/me, /members, /invites, /devices, /ws-ticket), util.ts (Zod-Hilfen, Sitzungsantwort), placeholders.ts (/sync: 501 bis Phase 1c)
+  src/routes/          system.ts (health, version), auth.ts (/api/v1/auth/*), account.ts (/me, /members, /invites, /devices, /ws-ticket), sync.ts (POST /sync), util.ts (Zod-Hilfen, Sitzungsantwort)
   src/ws/              WebSocket /ws (Origin-Prüfung, Ticket-Anmeldung, Anmeldefrist, Server-Ping, Nachrichten-/Verbindungslimits atomar), Hub je Familie
   src/auth/            Anmeldung: invites, register, login, sessions (Cookie, Access-/Refresh-Token mit Rotation und 30-s-Toleranzfenster für verlorene Antworten, Step-up), account (Mitglieder, Geräte, Anmeldedaten, WS-Tickets), lockout, audit, maintenance (Aufräum-Job), bootstrap, crypto/password/totp/webauthn/recovery/challenges, service (Auth)
   src/cli/             bootstrap.ts (Erstinstallation, Notfall-Zurücksetzen)
-  src/sync/            nur Typen (Phase 1c)
+  src/sync/            Sync-Kern: registry.ts (Entitäten-Register: Felder, Rechte, Beziehungen), permissions.ts (zentrales Rechte-Modell, Rollen mit Sicht für die WebSocket-Hinweise), engine.ts (Ops: Idempotenz, Konflikte pro Feld, Löschen mit Kaskade, Zeitlimits), limits.ts (Token-Buckets je Gerät und Person), pull.ts (Änderungsstrom, mehrseitiger Snapshot mit snapshotRev, Resync, "hidden"), refs.ts (Verweise auf entfernte Mitglieder), maintenance.ts (Tombstones, Protokoll, applied_ops), types.ts (Protokoll), entities/lists.ts (Listen und Einträge), index.ts (Register)
   src/db/              schema.ts (Drizzle), index.ts (Pool), migrate-cli.ts (Migrationsrolle)
   drizzle/             erzeugte SQL-Migrationen (einchecken)
-  test/                Vitest: api.test.ts (Routen, Rate-Limit, WebSocket, Konfiguration, Fehlerhandler), migration.test.ts (Schema), auth.test.ts (Bootstrap, Einladungen), auth-login.test.ts (Anmeldearten, Sitzungen, Step-up, Sperren, Familiengrenze, Aufräumen), ws-auth.test.ts (Tickets, Limits), hardening.test.ts (Log ohne Parameter, ungültige Zeichen, IPv6, Aufräumen, Einladungsrechte, WebSocket-Widerruf), crypto.test.ts (Known-Answer der Schlüsselableitung, IP, Serializer, Zeichen); authenticator.ts (simulierter WebAuthn-Authenticator), helpers.ts (Backends PGlite/PostgreSQL, Welt mit Uhr)
+  test/                Vitest: api.test.ts (Routen, Rate-Limit, WebSocket, Konfiguration, Fehlerhandler), migration.test.ts (Schema), auth.test.ts (Bootstrap, Einladungen), auth-login.test.ts (Anmeldearten, Sitzungen, Step-up, Sperren, Familiengrenze, Aufräumen), ws-auth.test.ts (Tickets, Limits), sync.test.ts / sync-rights.test.ts / sync-ops.test.ts / sync-korrektur.test.ts (Sync: Idempotenz, Konflikte, Löschen, Seiten, Parallelität, Validierung; Rechte-Regeltabelle, IDOR, Freigabe; WebSocket, Wartung, Limits; mehrseitiger Snapshot, Geisterlisten, Neusynchronisierung, Token-Buckets, Konfliktwerte, Zeitlimits, WebSocket nur an Rollen mit Sicht; Hilfen in sync-kit.ts), hardening.test.ts (Log ohne Parameter, ungültige Zeichen, IPv6, Aufräumen, Einladungsrechte, WebSocket-Widerruf), crypto.test.ts (Known-Answer der Schlüsselableitung, IP, Serializer, Zeichen); authenticator.ts (simulierter WebAuthn-Authenticator), helpers.ts (Backends PGlite/PostgreSQL, Welt mit Uhr)
 app/
   lib/constants.dart   Design-Tokens, Personenfarben, Tabs, Konstanten
   lib/data/api/        ApiClient (Cookie+CSRF / Bearer+Refresh, Sitzungsgeneration), FampadApi (Endpunkte), Modelle (DTOs, Listen pro Eintrag tolerant), ApiException (deutsche Meldungen, VerbindungsaufbauFehler), Token-Ablage, http_client_io/stub (Android: Verbindungsaufbau getrennt vom Senden)
   lib/data/auth/       auth_state.dart (AuthStatus, AuthController mit Generationszähler, Hooks localDataWiperProvider/localDataOwnerProvider; Daten nur bei ausdrücklichem Abmelden oder anderer Person leeren); lib/data/passkey_service.dart, system_channel.dart (Android-Kanal: Gerätename, FLAG_SECURE, Links)
   lib/ui/              theme.dart (Material 3), widgets.dart (Glow-Hintergrund, Karten, Labels)
-  lib/data/            drift-Datenbank, Provider, Sync-Zustand
-  lib/features/<bereich>/  shell, home, calendar, chat, files, lists, auth (Login, Einladung, Codes, Warten, Step-up), profile (Profil, Passkeys, Geräte), admin (Mitglieder, Einladungen), update (Manifest-Prüfung Ed25519, Download, Pflicht-Update)
+  lib/data/            drift-Datenbank (Version 2: Listen, Einträge, Outbox, Sync-Meta), sync_state.dart (Sync-Dienst: Auslöser, Backoff, Zustand für den Indikator), sync/ (sync_store: lokale Änderungen + Antwort übernehmen, sync_engine: ein Abgleichslauf, sync_socket: WebSocket-Client, sync_entities: Entitäten-Register des Clients, sync_models), lists/ (Repository, Rechte der Oberfläche, Mitglieder)
+  lib/features/<bereich>/  shell, home, calendar, chat, files, lists (Listen real seit 1c-1), auth (Login, Einladung, Codes, Warten, Step-up), profile (Profil, Passkeys, Geräte), admin (Mitglieder, Einladungen), update (Manifest-Prüfung Ed25519, Download, Pflicht-Update)
   lib/widgets/         bereichsübergreifende Widgets (Sync-Indikator)
   web/                 index.html, flutter_bootstrap.js, sqlite3.wasm, drift_worker.js, Icons
   android/             applicationId dev.lx_labs.fampad, MainActivity + UpdateReceiver (Update per PackageInstaller)
-  test/                app_test (Tabs), update_test, mobile_layout_test + auth_layout_test (360 px, Textskala 1.5, Touch-Ziele), api_client_test, http_client_test (echte Sockets), auth_state_test, auth_screens_test, auth_flows_test (Einladungslinks, Abmelden, Step-up, Neuladen), models_test, invite_link_test, token_store_passkey_test; support/ (Fake-Server mit MockClient, Beispielantworten)
+  test/                sync_store_test, sync_engine_test, sync_controller_test, sync_indicator_test, sync_socket_test, sync_auth_test, db_migration_test, lists_screen_test (Sync-Kern gegen Fake-Server/-Socket, Migration, Listen-UI mit Layout 360 px/Textskala 1.5), app_test (Tabs), update_test, mobile_layout_test + auth_layout_test (360 px, Textskala 1.5, Touch-Ziele), api_client_test, http_client_test (echte Sockets), auth_state_test, auth_screens_test, auth_flows_test (Einladungslinks, Abmelden, Step-up, Neuladen), models_test, invite_link_test, token_store_passkey_test; support/ (Fake-Server mit MockClient, Beispielantworten)
   tool/                vertrag_test.dart (App-Klassen gegen den echten Server)
 deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, umbenennung-server.sh (einmalig), ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md
@@ -111,7 +111,10 @@ Vorbild ist **lx-urlaubsplanung** (`src/app/globals.css`, `mobile/lib/main.dart`
 - Fremdschlüssel zwischen familiengebundenen Tabellen sind zusammengesetzt `(family_id, id)`; Ziel-Tabellen brauchen dafür `unique(...)` (kein `uniqueIndex`, drizzle-kit legt Fremdschlüssel vor den Indizes an). Schema-Änderungen: `src/db/schema.ts` ändern, `npm run db:generate`, erzeugte Dateien in `drizzle/` einchecken. Nie eine eingecheckte Migration nachträglich ändern.
 - App: ein Bereich = ein Ordner unter `lib/features/`; Zustand mit Riverpod; keine Netzwerk- oder dart:io-Zugriffe in Code, der im Web läuft, ohne bedingten Import (siehe `features/update/apk_downloader*.dart`).
 - Anmeldung (Server): Geheimnisse nur gehasht oder verschlüsselt (Tokens/Tickets SHA-256, Passwörter Argon2id, Codes/PINs HMAC, TOTP AES-256-GCM); Einmal-Einlösungen immer atomar (`UPDATE/DELETE … RETURNING`, Zählen vor dem Vergleich); alle Fehlschläge der Anmeldung antworten gleich; jede Route, die Familiendaten liefert, filtert über die Familie der Sitzung (fremde Objekte = 404); neue Prüfungen für sensible Aktionen über `requireStepUp`. Datenbank-Rollen: Laufzeit nur DML (`DATABASE_URL`), Migrationen mit `MIGRATION_DATABASE_URL`.
-- Offline-first: UI schreibt in die lokale DB/Outbox und wartet nie auf den Server (Sync-Protokoll: Projektbeschreibung Abschnitt 6).
+- Offline-first: UI schreibt in die lokale DB/Outbox und wartet nie auf den Server (Sync-Protokoll: Projektbeschreibung Abschnitt 6 und 6a, `docs/API.md`, Abschnitt „Sync“).
+- Neue Sync-Entität (Termine, Aufgaben, Chat, Dateien): Tabelle mit `syncColumns()` und `family_id` (Migration), Eintrag im **Register des Servers** (`server/src/sync/entities/*.ts` + `index.ts`: Felder mit Zod-Prüfung, Rechte-Regel je Rolle, Elternbeziehung, `userRefs`, Obergrenzen) und im **Register der App** (`app/lib/data/sync/sync_entities.dart` + drift-Tabelle + Repository); Protokoll, Rechte-Modell und Engine bleiben unverändert. Rechte nie in Routen oder Engine, nur in der Regeltabelle (`sync/permissions.ts`); nicht lesbare Datensätze ergeben `not_found`. Jede Op wird feldweise geprüft (kein `any`, keine Inhalte im Log); Verweise auf Mitglieder (`ON DELETE SET NULL`) prüft die Engine und bereinigt `sync/refs.ts`.
+- Sync (App): lokale Änderungen nur über `SyncStore.aendern/loeschen` (Tabelle + Ausgang in einer Transaktion), Serverantworten nur über `SyncStore.uebernehmen`; ein Abgleich läuft immer nur einzeln (`SyncController`), 401 nie in der Sync-Schleife wiederholen, vor dem Leeren der Datenbank den Sync anhalten (`lokaleDatenWiper`).
+- Widget-Tests mit drift: Datenbank mit `DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true)` anlegen (sonst bleiben Timer von drift stehen), Hilfen in `test/support/test_app.dart`.
 - App-Anmeldung: Token nie loggen oder in localStorage legen; Refresh nie parallel oder blind wiederholen (Familien-Widerruf); Einladungs-Token nur im Fragment/POST-Body; Screens mit Geheimnissen in `BildschirmSchutz` (FLAG_SECURE); Zwischenablage nur auf Klick; Meldungen nur aus `ApiException`/`PasskeyException` (keine Servertexte).
 - Datenschutz: keine Tracker, keine Fremd-Einbindungen (Schriften, Karten, Skripte), Push ohne Inhalte, Standort nur durch die Person selbst. CSP in `deploy/Caddyfile` nicht lockern, ohne Security zu fragen.
 - `applicationId` (`dev.lx_labs.fampad`) und Android-Signaturschlüssel nie ändern.
