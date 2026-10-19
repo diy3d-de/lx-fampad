@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
+import '../../data/geraete_anzahl.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../ui/widgets.dart';
@@ -30,6 +31,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
   Future<void> _laden() => ausfuehren(() async {
     final g = await ref.read(apiProvider).geraete();
     if (mounted) setState(() => _geraete = g);
+    if (mounted) ref.invalidate(geraeteAnzahlProvider);
   });
 
   Future<void> _abmelden(DeviceDto d) async {
@@ -65,6 +67,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
       await neuLadenMitHinweis(() async {
         final g = await ref.read(apiProvider).geraete();
         if (mounted) setState(() => _geraete = g);
+        if (mounted) ref.invalidate(geraeteAnzahlProvider);
       });
     }
   }

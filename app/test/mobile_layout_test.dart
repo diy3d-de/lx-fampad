@@ -105,8 +105,8 @@ void main() {
     });
   }
 
-  testWidgets('Desktop-Breite: Inhalt bleibt auf kMaxContentWidth begrenzt und zentriert', (tester) async {
-    tester.view.physicalSize = const Size(1600, 900);
+  testWidgets('Breites Tablet (unter dem Desktop-Umbruch): Inhalt bleibt auf kMaxContentWidth begrenzt und zentriert', (tester) async {
+    tester.view.physicalSize = const Size(800, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
@@ -115,7 +115,7 @@ void main() {
 
     final stack = tester.getRect(find.byType(IndexedStack));
     expect(stack.width, kMaxContentWidth);
-    expect(stack.center.dx, closeTo(800, 0.5));
+    expect(stack.center.dx, closeTo(400, 0.5));
   });
 }
 
