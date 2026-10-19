@@ -144,6 +144,7 @@ export class Client {
   get = (url: string, o?: RequestOptions) => this.request('GET', url, o);
   post = (url: string, body?: unknown, o: RequestOptions = {}) => this.request('POST', url, { ...o, body: body ?? {} });
   patch = (url: string, body?: unknown) => this.request('PATCH', url, { body: body ?? {} });
+  put = (url: string, body?: unknown) => this.request('PUT', url, { body: body ?? {} });
   del = (url: string) => this.request('DELETE', url);
 
   /** Übernimmt eine Sitzungsantwort (`session` aus der API). */

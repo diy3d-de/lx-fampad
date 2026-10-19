@@ -30,6 +30,10 @@ const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
   fromDriver: (v) => Buffer.from(v),
 });
 
+/** Reine Anzeige-Familienrolle (ändert keine Rechte); feste Liste, in der Datenbank per CHECK abgesichert. */
+export const FAMILY_ROLES = ['vater', 'mutter', 'elternteil', 'kind', 'grosseltern', 'sonstige'] as const;
+export type FamilyRole = (typeof FAMILY_ROLES)[number];
+
 export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child']);
 /** pending: per Einladung mit Freigabe registriert, darf sich erst nach Freigabe durch einen Admin anmelden. */
 export const memberStatus = pgEnum('member_status', ['active', 'pending']);
@@ -118,12 +122,15 @@ export const memberships = pgTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     role: memberRole('role').notNull(),
     status: memberStatus('status').notNull().default('active'),
+    /** Nur Anzeige (z. B. "Elternteil" neben Admin); null = nicht gesetzt. */
+    familyRole: text('family_role'),
     createdAt: createdAt(),
   },
   (t) => [
     // Ziel der zusammengesetzten Fremdschlüssel (family_id, user_id): Verweise auf Personen bleiben in der Familie
     unique('memberships_family_user_uq').on(t.familyId, t.userId),
     index('memberships_user_idx').on(t.userId),
+    check('memberships_family_role_ck', sql`${t.familyRole} is null or ${t.familyRole} in ('vater', 'mutter', 'elternteil', 'kind', 'grosseltern', 'sonstige')`),
   ],
 );
 
