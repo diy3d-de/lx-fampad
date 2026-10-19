@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/lists/list_repository.dart';
+import 'package:lx_fampad/data/sync_state.dart';
 import 'package:lx_fampad/features/lists/list_dialogs.dart';
 import 'package:lx_fampad/ui/widgets.dart';
 
@@ -352,7 +353,11 @@ void main() {
   });
 
   testWidgets('Serverfehler: Fehlerleiste, Änderungen bleiben gespeichert', (tester) async {
-    await start(tester, vorher: (e) => e.sync.fehlerQueue.add((500, 'internal_error')));
+    // langer Backoff: sonst gelingt der Wiederholversuch (1-3 s, mit Zufallsanteil) noch während des Wartens und löscht die Fehlerleiste
+    await start(tester, vorher: (e) {
+      e.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
+      e.sync.fehlerQueue.add((500, 'internal_error'));
+    });
     expect(find.textContaining('Der Abgleich hat nicht geklappt'), findsOneWidget);
     expect(find.byIcon(Icons.cloud_off), findsWidgets);
   });
