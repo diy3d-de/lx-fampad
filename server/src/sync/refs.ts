@@ -1,3 +1,5 @@
+// WICHTIG: Jede neue Entität, die auf Mitglieder verweist (Chat-Absender, Datei-Uploader, Aufgaben-Zuständige u. a.), muss ihre Spalten in
+// `userRefs` (bzw. `memberOwned`) im Register eintragen, sonst bleibt der Verweis beim Entfernen einer Person ohne Änderungseintrag.
 // Verweise auf Mitglieder bereinigen, wenn eine Person die Familie verlässt: Spalten wie `assignee_id` oder `owner_id` werden NULL,
 // jede betroffene Zeile bekommt eine neue Revision und einen Änderungseintrag (die Geräte erfahren es über den Sync). Die Fremdschlüssel
 // haben zwar ON DELETE SET NULL, das ändert aber weder Revision noch Protokoll; deshalb läuft diese Bereinigung VOR dem Löschen der Person

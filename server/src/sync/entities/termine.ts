@@ -5,7 +5,7 @@
 //
 // Rechte (siehe sync/permissions.ts):
 //  - Admin/Eltern: alles.
-//  - Kind: sieht Termine der Stufe `family` und `all`; darf Termine anlegen (nur Stufe `family`) und eigene ändern oder löschen
+//  - Kind: sieht Termine der Stufe `family`; darf Termine anlegen (nur Stufe `family`) und eigene ändern oder löschen
 //    (Freigabe nicht änderbar). Teilnehmer und Ausnahmen erben Freigabe und Besitzer des Termins: ein Kind pflegt sie nur an eigenen Terminen.
 import { z } from 'zod';
 import { termine, terminAusnahmen, terminTeilnehmer } from '../../db/schema.js';

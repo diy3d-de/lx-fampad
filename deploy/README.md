@@ -369,6 +369,13 @@ Der Android-Build wird außerdem bei jedem Push und Pull Request als Debug-APK g
 
 ## Updates veröffentlichen
 
+**VOR dem Deploy von Migration 0005 (Gäste entfallen):** Sicherung ziehen und prüfen, ob Gäste existieren. Die Migration löscht Gast-Konten und ist nicht umkehrbar; der Rückfall von `deploy.sh` stellt die Datenbank nicht zurück.
+
+```bash
+sudo -u postgres pg_dump lx_fampad > ~/lx_fampad-vor-0005.sql
+sudo -u postgres psql lx_fampad -c "select count(*) from memberships where role='guest';"
+```
+
 ```bash
 git push                                                       # PC
 ssh lx-labs bash lx-fampad/deploy/deploy.sh          # Server: pull, bauen, neu starten, Health-Check
