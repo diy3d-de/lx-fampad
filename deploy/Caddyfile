@@ -81,9 +81,6 @@ familie.lx-labs.dev {
 	}
 }
 
-# Eigener ntfy-Server (UnifiedPush). Meldungen enthalten nie Inhalte.
-ntfy.familie.lx-labs.dev {
-	encode zstd gzip
-	import fampad_sicherheit
-	reverse_proxy 127.0.0.1:2586
-}
+# ntfy.familie.lx-labs.dev gehört NICHT in diese Datei: Der Site-Block liegt eigenständig in deploy/ntfy/ntfy.caddy und wird nur von
+# deploy/einrichtung-ntfy.sh nach /etc/caddy/conf.d/ntfy.caddy installiert (sonst doppelte Site-Definition beim Caddy-Start;
+# deploy.sh und einrichtung-2.sh fassen ntfy.caddy nie an). Referenz: Reverse-Proxy auf 127.0.0.1:2586, kein encode (Streaming).

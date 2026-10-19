@@ -1,0 +1,18 @@
+# /etc/caddy/conf.d/ntfy.caddy - eigener ntfy-Server (UnifiedPush) für lx-fampad.
+# Wird NUR von deploy/einrichtung-ntfy.sh nach /etc/caddy/conf.d/ntfy.caddy kopiert (mit Sicherung, Prüfung und Rückfall).
+# Bewusst eigenständig (kein Snippet aus fampad.caddy): Die Datei bleibt gültig, auch wenn fampad.caddy geändert wird.
+# Das Haupt-Caddyfile (lx-labs.dev) wird dafür nie angefasst; es bindet conf.d/*.caddy bereits per import ein.
+ntfy.familie.lx-labs.dev {
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		X-Frame-Options "DENY"
+		-Server
+		-Via
+	}
+	# Kein encode: ntfy streamt (SSE/JSON/WebSocket), Kompression würde das Ausliefern verzögern
+	reverse_proxy 127.0.0.1:2586 {
+		flush_interval -1
+	}
+}

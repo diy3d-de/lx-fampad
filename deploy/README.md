@@ -15,11 +15,11 @@ Browser/App ──HTTPS──▶ Caddy :443 ─┬─ familie.lx-labs.dev
 
 Dateien in diesem Ordner:
 
-- `Caddyfile` – Site-Blöcke `familie.lx-labs.dev` und `ntfy.familie.lx-labs.dev` mit strengen Sicherheits-Headern
+- `Caddyfile` – Site-Block `familie.lx-labs.dev` mit strengen Sicherheits-Headern (ntfy liegt eigenständig in `ntfy/ntfy.caddy`)
 - `lx-fampad.service` – systemd-Dienst der API (eigener Benutzer, gehärtet, Speicher-/Prozessgrenzen); `lx-fampad-migrate.service` führt vor jedem Start die Migrationen mit der Migrationsrolle aus; `einrichtung-auth.sh` richtet Schlüssel und Datenbank-Rollen ein
 - `deploy.sh` – läuft auf dem Server: Code holen, Server bauen (`npm ci --ignore-scripts`), nur Produktivpakete übertragen, Dienst neu starten, Health-Check mit `"db":"ok"`
 - `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
-- `ntfy/server.yml` – ntfy-Konfiguration (deny-all, nur `up*`-Topics beschreibbar)
+- `einrichtung-ntfy.sh` – richtet ntfy ein (Installation, Härtung, Token, `ntfy.caddy`; Abschnitt 7); `ntfy/server.yml` (deny-all), `ntfy/ntfy.caddy` (eigene Caddy-Datei)
 
 Verzeichnisse auf dem Server:
 
@@ -237,31 +237,58 @@ Caddy holt danach die Zertifikate für beide Domains. Bis die Web-App hochgelade
 
 ### 7. ntfy (UnifiedPush)
 
-ntfy ist **2.28.0** gepinnt (2.31.1 ab 31.10.). Installation aus dem offiziellen Debian-Repository von ntfy, Version festhalten.
-
-Paketquelle einrichten und **vor dem Installieren den Schlüssel prüfen**. Die Anleitung steht in der offiziellen Dokumentation (<https://docs.ntfy.sh/install/>, Abschnitt Debian/Ubuntu-Repository), dort auch der Fingerabdruck. Beim Erstellen dieser Anleitung nannte die Seite die Quelle `https://archive.ntfy.sh/apt` (der ältere Name `archive.heckel.io` ist abgelöst) und den Fingerabdruck `55BA 774A 6F5E E674 31E4 B6B7 CFDB 962D 4F1E C4AF`. **Den aktuellen Wert selbst auf docs.ntfy.sh nachlesen und vergleichen**; bei Abweichung abbrechen.
+Ein Skript richtet alles ein, idempotent, mit demselben Schutz für lx-labs.dev wie Schritt 6. **In tmux oder screen starten** (oder mit `sudo systemd-run --scope bash …`), damit ein SSH-Abbruch den Lauf nicht mitten in der Caddy-Änderung beendet; fängt das Skript ein HUP/INT/TERM, läuft der Rückfall trotzdem.
 
 ```bash
-sudo mkdir -p /etc/apt/keyrings
-sudo curl -fsSL -o /etc/apt/keyrings/ntfy.gpg https://archive.ntfy.sh/apt/keyring.gpg
-gpg --show-keys --with-fingerprint /etc/apt/keyrings/ntfy.gpg      # Fingerabdruck mit der Dokumentation vergleichen
-# erst wenn er übereinstimmt:
-echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ntfy.gpg] https://archive.ntfy.sh/apt stable main" | sudo tee /etc/apt/sources.list.d/ntfy.list
-sudo apt update && apt-cache policy ntfy          # 2.28.0 muss in der Liste stehen
-sudo apt install -y ntfy=2.28.0 && sudo apt-mark hold ntfy
-
-sudo cp ~/lx-fampad/deploy/ntfy/server.yml /etc/ntfy/server.yml
-sudo mkdir -p /var/lib/ntfy /var/cache/ntfy && sudo chown ntfy:ntfy /var/lib/ntfy /var/cache/ntfy
-sudo systemctl enable --now ntfy
+sudo bash ~/lx-fampad/deploy/einrichtung-ntfy.sh --dry-run   # nur prüfen, verändert nichts
+sudo bash ~/lx-fampad/deploy/einrichtung-ntfy.sh
 ```
 
-Zugriff: Standard ist **deny-all**. Nur `up*`-Topics (UnifiedPush) dürfen anonym beschrieben werden; gelesen wird mit einem Benutzer je Handy:
+**Voraussetzungen:** Schritt 6 ist erledigt (Importzeile `import /etc/caddy/conf.d/*.caddy` im Haupt-Caddyfile; fehlt sie, bricht das Skript ab und ergänzt sie **nicht** selbst, dann zuerst `einrichtung-2.sh`), `lx-labs.dev` antwortet, und der DNS-Eintrag `ntfy.familie` (A, ggf. AAAA; DNS only) zeigt auf eine globale Adresse dieses Servers. Das Skript prüft das vor jeder Änderung und bricht sonst mit klarer Meldung ab.
+
+**Reihenfolge im Skript:**
+
+1. Prüfungen (Importzeile, `lx-labs.dev`, DNS-Adressen gegen die lokalen globalen Adressen, Port 2586 frei, `ntfy.familie.lx-labs.dev` ist in keiner anderen Caddy-Datei schon definiert). Bei einem Fehler wird nichts verändert.
+2. Installation von ntfy **2.28.0** (exakt gepinnt, Release vom 27.08.2026) aus dem offiziellen apt-Repository `archive.ntfy.sh`. Gewählt gegenüber dem GitHub-.deb, weil das Repository signiert ist: Das Skript vergleicht den Schlüssel-Fingerabdruck `55BA 774A 6F5E E674 31E4 B6B7 CFDB 962D 4F1E C4AF` (vorher auf <https://docs.ntfy.sh/install/> gegenlesen) und bricht bei Abweichung ab; die GitHub-Releases haben keine Signatur. `/etc/apt/preferences.d/ntfy` sorgt dafür, dass aus diesem Repository nur das Paket `ntfy` kommt (Pin-Priority 1 für alles andere). Führt das Repository die Version nicht mehr, fällt das Skript auf das Release-.deb mit gepinnter SHA-256 zurück. Danach `apt-mark hold ntfy`.
+3. Systembenutzer `ntfy`, `/var/lib/ntfy` (Benutzerdatenbank), `/var/cache/ntfy` (Nachrichten-Cache 12 h, **Anhänge aus**), `/etc/ntfy/server.yml` aus `deploy/ntfy/server.yml` (deny-all, nur `127.0.0.1:2586`, `behind-proxy`, Rate-Limits; eine abweichende bisherige Datei wird mit Zeitstempel gesichert), systemd-Härtung als Drop-in `/etc/systemd/system/ntfy.service.d/haertung.conf`, Dienst starten und lokal prüfen.
+4. ntfy-Benutzer `fampad-server` (Rolle `user`, kein Admin, Passwort wird nicht gespeichert) mit **Token**, das nur auf `fampad-*` schreiben darf (zum Publizieren). Das Token liegt in `/etc/lx-fampad/ntfy-token` (root, 0600) und erscheint weder im Log noch in der Prozessliste. Lokale Rechteprobe: anonym 401/403, `fampad-*` 200, anderes Topic 401/403.
+5. Caddy: nur `/etc/caddy/conf.d/ntfy.caddy` aus `deploy/ntfy/ntfy.caddy` (eigenständige Datei, nicht `fampad.caddy`; `deploy.sh` und `einrichtung-2.sh` fassen sie nie an). Das Haupt-Caddyfile wird **nie geschrieben**, nur zum Nachlesen gesichert (`/etc/caddy/Caddyfile.vor-ntfy.<Zeitstempel>`). Ablauf: die Kandidat-Datei zuerst allein mit `caddy validate` prüfen, dann atomar installieren (erst `ntfy.caddy.neu`, dann umbenennen), danach Vollvalidierung mit allem Importierten, erst dann `reload`, danach `https://lx-labs.dev`, `https://familie.lx-labs.dev/api/v1/health` und `https://ntfy.familie.lx-labs.dev` (inkl. Rechteprobe) prüfen.
+
+**Bei Fehlern ab Schritt 5** (Validierung, Reload, eine der Prüfungen, Strg+C, SSH-Abbruch): automatischer Rückfall. Die vorherige `ntfy.caddy` kommt zurück, gab es keine, wird sie entfernt; dann `reload` und Prüfung von `lx-labs.dev`. Fehler in Schritt 1 bis 4 lassen Caddy unberührt (ntfy selbst bleibt dann installiert; das Skript lässt sich gefahrlos wiederholen). Danach Ursache klären (`journalctl -u caddy -n 50`, `journalctl -u ntfy -n 50`) und erneut starten. **Nach einem Zertifikatsfehler mindestens 1 Stunde warten** (Let's-Encrypt-Limit für Fehlversuche), vorher DNS prüfen.
+
+**In `/etc/lx-fampad/env` eintragen** (das Skript ändert die Datei nicht und gibt das Token nicht aus). Der Dienst `lx-fampad` läuft mit `IPAddressDeny=any` und darf nur nach localhost, deshalb ist `NTFY_URL` die Loopback-Adresse, nicht die öffentliche URL. systemd liest die env-Datei als root; `/etc/lx-fampad/ntfy-token` muss für den Dienst-Benutzer `lx-fampad` nicht lesbar sein. Das Skript nennt am Ende diesen Befehl (hängt nur an, wenn `NTFY_*` fehlt, und ergänzt vorher einen fehlenden Zeilenumbruch am Dateiende, damit `AUTH_SECRET_KEY` nie verfälscht wird):
 
 ```bash
-sudo ntfy access '*' 'up*' write-only                 # der Familien-Server und Apps dürfen Weckrufe senden
-sudo ntfy user add handy-anna                         # fragt ein Passwort ab; je Handy ein Benutzer
-sudo ntfy access handy-anna 'up*' read-only
-sudo ntfy access                                      # Übersicht prüfen
+sudo sh -c 'f=/etc/lx-fampad/env; if grep -qE "^NTFY_(URL|TOKEN)=" "$f"; then echo "NTFY_* schon vorhanden, nichts geändert"; else [ -z "$(tail -c1 "$f")" ] || echo >> "$f"; printf "NTFY_URL=http://127.0.0.1:2586\nNTFY_TOKEN=%s\n" "$(cat /etc/lx-fampad/ntfy-token)" >> "$f"; fi'
+sudo systemctl restart lx-fampad
+```
+
+Der Server liest die Werte erst mit dem Push-Versand (Phase 1c-3).
+
+**Prüfen:**
+
+```bash
+sudo systemctl status ntfy
+curl -fsS https://ntfy.familie.lx-labs.dev/v1/health                                          # {"healthy":true}
+curl -s -o /dev/null -w '%{http_code}\n' -d x https://ntfy.familie.lx-labs.dev/fampad-test    # 401 oder 403 (anonym verboten)
+sudo -u ntfy ntfy access --config /etc/ntfy/server.yml                                        # Rechteübersicht
+sudo ls -l /etc/lx-fampad/ntfy-token                                                          # -rw------- root root
+curl -sI https://lx-labs.dev | head -1
+```
+
+**Token rotieren:** Das Token läuft nicht ab. Neues Token: `sudo -u ntfy ntfy token --config /etc/ntfy/server.yml list` (altes ansehen), `sudo rm /etc/lx-fampad/ntfy-token`, Skript erneut starten (legt ein neues an), danach das alte widerrufen (`sudo -u ntfy ntfy token --config /etc/ntfy/server.yml remove fampad-server <altes-tk_…>`), `NTFY_TOKEN` in der env-Datei ersetzen und `lx-fampad` neu starten.
+
+**Version aktualisieren:** Aktuell ist **2.28.0** gepinnt; **2.29.0** darf frühestens ab 21.10. (14 Tage nach Veröffentlichung) übernommen werden. Sicher aktualisieren: Release-Datum prüfen, neuen Fingerabdruck und Version auf docs.ntfy.sh gegenlesen, dann `NTFY_VERSION` (und `NTFY_DEB_SHA256` für den Fallback) im Skript anheben, per PR mergen; auf dem Server `sudo apt-mark unhold ntfy && sudo apt-get update && sudo apt-get install ntfy=<neu> && sudo apt-mark hold ntfy && sudo systemctl restart ntfy`, anschließend `curl https://ntfy.familie.lx-labs.dev/v1/health`. Das Skript lässt eine andere installierte Version unangetastet.
+
+**Rückbau:** `sudo rm /etc/caddy/conf.d/ntfy.caddy && sudo systemctl reload caddy` (lx-labs.dev und familie bleiben unberührt), `sudo systemctl disable --now ntfy`. Daten liegen unter `/var/lib/ntfy`.
+
+**Zugriff für Handys (UnifiedPush):** Standard ist **deny-all**, auch für anonyme Zugriffe. Das Token des Familien-Servers schreibt nur auf `fampad-*`. Rechte auf `up*`-Topics (Server schreibt, Handys lesen) sind bewusst **nicht** gesetzt und gehören zum Push-Versand in 1c-3. Dann etwa:
+
+```bash
+sudo -u ntfy ntfy user add handy-anna                                     # fragt ein Passwort ab; je Handy ein Benutzer
+sudo -u ntfy ntfy access handy-anna 'up*' read-only
+sudo -u ntfy ntfy access fampad-server 'up*' write-only                   # Server darf Weckrufe senden
+sudo -u ntfy ntfy access                                                  # Übersicht prüfen
 ```
 
 Auf dem Handy: ntfy-App als UnifiedPush-Verteiler installieren, Server `https://ntfy.familie.lx-labs.dev` und den Benutzer eintragen. Die Meldungen enthalten nie Inhalte („es gibt Neues“).
