@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/push/push_state.dart';
 import '../../data/crypto/e2ee_state.dart';
@@ -106,6 +107,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
         ),
       ) ??
       false;
+
+  Future<void> _familienrolle(FamilyRole? aktuell) async {
+    final wahl = await familienrolleWaehlen(context, titel: 'Familienrolle', aktuell: aktuell);
+    if (wahl == null || wahl.rolle == aktuell || !mounted) return;
+    final ok = await ausfuehren(() => ref.read(apiProvider).familienrolleSetzen(wahl.rolle));
+    if (ok && mounted) await ref.read(authProvider.notifier).neuLaden();
+  }
 
   Future<void> _neueCodes() async {
     final ja = await _bestaetigen(
@@ -235,7 +243,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                       if (user.email != null)
                         Text(user.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
                       const SizedBox(height: 6),
-                      RollenPille(user.role.label),
+                      Wrap(spacing: 6, runSpacing: 4, children: rollenPillen(user.role, user.familyRole)),
                       const SizedBox(height: 6),
                       const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
                     ],
@@ -258,7 +266,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           const SizedBox(height: 8),
           LinkKnopf('Trotzdem nur lokal abmelden', onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall, nurLokal: true)),
         ],
-        const SizedBox(height: 20),
+        if (user != null) ...[
+          const SizedBox(height: 12),
+          EinstellungsZeile(
+            icon: Icons.family_restroom,
+            titel: 'Familienrolle',
+            untertitel: 'nur anzeige, ändert keine rechte',
+            status: user.familyRole == null ? null : RollenPille(user.familyRole!.label, farbe: kTextMuted),
+            onTap: laeuft || auth.offline ? null : () => _familienrolle(user.familyRole),
+          ),
+        ],
+        const SizedBox(height: 12),
         const MonoLabel('// sicherheit'),
         const SizedBox(height: 8),
         EinstellungsZeile(

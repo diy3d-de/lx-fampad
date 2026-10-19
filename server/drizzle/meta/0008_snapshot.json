@@ -1,6 +1,6 @@
 {
-  "id": "97f96e43-5b2d-47f8-a57c-576154294d11",
-  "prevId": "f013e1cc-6b67-4d4e-81a1-78aeb6573428",
+  "id": "f013e1cc-6b67-4d4e-81a1-78aeb6573428",
+  "prevId": "81e09907-e5ee-4225-ac3c-cf6035d1f9bd",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -2234,6 +2234,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "family_role": {
+          "name": "family_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2293,7 +2299,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "memberships_family_role_ck": {
+          "name": "memberships_family_role_ck",
+          "value": "\"memberships\".\"family_role\" is null or \"memberships\".\"family_role\" in ('vater', 'mutter', 'elternteil', 'kind', 'grosseltern', 'sonstige')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.message_reactions": {
@@ -3081,134 +3092,6 @@
         "nachrichten_text_len_ck": {
           "name": "nachrichten_text_len_ck",
           "value": "char_length(\"nachrichten\".\"text\") <= 16384"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.push_endpoints": {
-      "name": "push_endpoints",
-      "schema": "",
-      "columns": {
-        "device_id": {
-          "name": "device_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "family_id": {
-          "name": "family_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "topic": {
-          "name": "topic",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_ok_at": {
-          "name": "last_ok_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_at": {
-          "name": "last_error_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fail_count": {
-          "name": "fail_count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "disabled_at": {
-          "name": "disabled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "push_endpoints_family_idx": {
-          "name": "push_endpoints_family_idx",
-          "columns": [
-            {
-              "expression": "family_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "push_endpoints_family_id_families_id_fk": {
-          "name": "push_endpoints_family_id_families_id_fk",
-          "tableFrom": "push_endpoints",
-          "tableTo": "families",
-          "columnsFrom": [
-            "family_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "push_endpoints_family_id_device_id_devices_family_id_id_fk": {
-          "name": "push_endpoints_family_id_device_id_devices_family_id_id_fk",
-          "tableFrom": "push_endpoints",
-          "tableTo": "devices",
-          "columnsFrom": [
-            "family_id",
-            "device_id"
-          ],
-          "columnsTo": [
-            "family_id",
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "push_endpoints_topic_uq": {
-          "name": "push_endpoints_topic_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "topic"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "push_endpoints_topic_ck": {
-          "name": "push_endpoints_topic_ck",
-          "value": "\"push_endpoints\".\"topic\" ~ '^up[A-Za-z0-9_-]{12,64}$'"
         }
       },
       "isRLSEnabled": false

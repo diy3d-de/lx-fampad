@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../ui/widgets.dart';
+import '../auth/app_download.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/qr_anzeige.dart';
 
@@ -163,6 +164,8 @@ class EinladungErstelltSeite extends StatelessWidget {
             const SizedBox(height: 8),
             ZweitKnopf(text: 'PIN kopieren', icon: Icons.copy, onPressed: () => inZwischenablage(context, einladung.pin!, 'PIN kopiert.', geheim: true)),
           ],
+          const SizedBox(height: 20),
+          const AppInstallierenBlock(),
           const SizedBox(height: 16),
           const MeldungsBox(
             'Link und PIN werden nur jetzt angezeigt. Später siehst du in der Liste nur den Status der Einladung. Du kannst sie dort verlängern oder widerrufen.',

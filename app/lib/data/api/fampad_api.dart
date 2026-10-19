@@ -277,6 +277,16 @@ class FampadApi {
     return r.bytes ?? (throw ApiException.unerwarteteAntwort);
   }
 
+  /// Eigene Familienrolle setzen (reine Anzeige); null löscht sie.
+  Future<void> familienrolleSetzen(FamilyRole? rolle) async {
+    await client.put('/me/family-role', {'familyRole': rolle?.wire});
+  }
+
+  /// Admin: Familienrolle eines Mitglieds setzen (reine Anzeige, ohne Step-up); null löscht sie.
+  Future<void> familienrolleMitglied(String id, FamilyRole? rolle) async {
+    await client.put('/members/$id/family-role', {'familyRole': rolle?.wire});
+  }
+
   Future<void> rolleAendern(String id, Role rolle) async {
     await client.patch('/members/$id/role', {'role': rolle.wire});
   }

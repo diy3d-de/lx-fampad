@@ -1,6 +1,6 @@
 {
-  "id": "8e4a4a6c-3f33-435e-a887-553e68e2e9f5",
-  "prevId": "97f96e43-5b2d-47f8-a57c-576154294d11",
+  "id": "97f96e43-5b2d-47f8-a57c-576154294d11",
+  "prevId": "f013e1cc-6b67-4d4e-81a1-78aeb6573428",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1268,137 +1268,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.key_backups": {
-      "name": "key_backups",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "blob": {
-          "name": "blob",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_version": {
-          "name": "key_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "key_backups_user_id_users_id_fk": {
-          "name": "key_backups_user_id_users_id_fk",
-          "tableFrom": "key_backups",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.key_transfers": {
-      "name": "key_transfers",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "lookup_hash": {
-          "name": "lookup_hash",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "blob": {
-          "name": "blob",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_version": {
-          "name": "key_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "key_transfers_user_id_users_id_fk": {
-          "name": "key_transfers_user_id_users_id_fk",
-          "tableFrom": "key_transfers",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "key_transfers_lookup_hash_unique": {
-          "name": "key_transfers_lookup_hash_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "lookup_hash"
-          ]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.konversationen": {
       "name": "konversationen",
       "schema": "",
@@ -2365,6 +2234,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "now()"
+        },
+        "family_role": {
+          "name": "family_role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -2424,7 +2299,12 @@
         }
       },
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "memberships_family_role_ck": {
+          "name": "memberships_family_role_ck",
+          "value": "\"memberships\".\"family_role\" is null or \"memberships\".\"family_role\" in ('vater', 'mutter', 'elternteil', 'kind', 'grosseltern', 'sonstige')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.message_reactions": {
@@ -3212,148 +3092,6 @@
         "nachrichten_text_len_ck": {
           "name": "nachrichten_text_len_ck",
           "value": "char_length(\"nachrichten\".\"text\") <= 16384"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.person_key_history": {
-      "name": "person_key_history",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_version": {
-          "name": "key_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "enc_key": {
-          "name": "enc_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "sign_key": {
-          "name": "sign_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "valid_from": {
-          "name": "valid_from",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "valid_until": {
-          "name": "valid_until",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "person_key_history_user_id_users_id_fk": {
-          "name": "person_key_history_user_id_users_id_fk",
-          "tableFrom": "person_key_history",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "person_key_history_user_id_key_version_pk": {
-          "name": "person_key_history_user_id_key_version_pk",
-          "columns": [
-            "user_id",
-            "key_version"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.person_keys": {
-      "name": "person_keys",
-      "schema": "",
-      "columns": {
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "public_enc_key": {
-          "name": "public_enc_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "public_sign_key": {
-          "name": "public_sign_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "key_version": {
-          "name": "key_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "person_keys_user_id_users_id_fk": {
-          "name": "person_keys_user_id_users_id_fk",
-          "tableFrom": "person_keys",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "person_keys_version_pos": {
-          "name": "person_keys_version_pos",
-          "value": "\"person_keys\".\"key_version\" >= 1"
         }
       },
       "isRLSEnabled": false

@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/api/api_error.dart';
+import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/crypto/crypto_fehler.dart';
 import '../../data/passkey_service.dart';
@@ -304,6 +305,48 @@ class RollenPille extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => StatusPill(text, color: farbe);
+}
+
+/// Pillen einer Person: Rolle (Rechte) und daneben, falls gesetzt, die Familienrolle (reine Anzeige, neutrale Farbe).
+/// Entspricht die Familienrolle dem Rollennamen (Elternteil bei Elternteil), erscheint sie nicht doppelt.
+List<Widget> rollenPillen(Role rolle, FamilyRole? familienrolle) => [
+  RollenPille(rolle.label),
+  if (familienrolle != null && familienrolle.label != rolle.label) RollenPille(familienrolle.label, farbe: kTextMuted),
+];
+
+/// Auswahl der Familienrolle (reine Anzeige, ändert keine Rechte). Ergebnis: null = abgebrochen, sonst die Wahl
+/// (`rolle` null = "Keine Angabe").
+Future<({FamilyRole? rolle})?> familienrolleWaehlen(BuildContext context, {required String titel, required FamilyRole? aktuell}) {
+  Widget zeile(BuildContext ctx, String text, FamilyRole? wert) => SimpleDialogOption(
+    onPressed: () => Navigator.of(ctx).pop((rolle: wert)),
+    child: Semantics(
+      selected: wert == aktuell,
+      child: SizedBox(
+        height: 44,
+        child: Row(
+          children: [
+            Icon(wert == aktuell ? Icons.radio_button_checked : Icons.radio_button_unchecked, size: 20, color: kAccent),
+            const SizedBox(width: 12),
+            Expanded(child: Text(text)),
+          ],
+        ),
+      ),
+    ),
+  );
+  return showDialog<({FamilyRole? rolle})>(
+    context: context,
+    builder: (ctx) => SimpleDialog(
+      title: Text(titel),
+      children: [
+        const Padding(
+          padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+          child: Text('nur anzeige, ändert keine rechte', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+        ),
+        for (final r in FamilyRole.values) zeile(ctx, r.label, r),
+        zeile(ctx, 'Keine Angabe', null),
+      ],
+    ),
+  );
 }
 
 /// Hält FLAG_SECURE (Android: kein Bildschirmfoto, keine Vorschau in der App-Übersicht), solange das Widget im Baum ist.

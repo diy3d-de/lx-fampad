@@ -16,9 +16,11 @@ import {
   removeMember,
   removePasskey,
   resetMember,
+  setFamilyRole,
   startAddPasskey,
   updateProfile,
 } from '../auth/account.js';
+import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
@@ -30,6 +32,7 @@ import { AppError } from '../errors.js';
 import { b64urlBlob, b64urlKey, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child']);
+const familyRoleBody = z.object({ familyRole: z.enum(FAMILY_ROLES).nullable() }).strict();
 
 export function registerAccountRoutes(app: FastifyInstance, config: Config, auth: Auth): void {
   const ctx = auth.ctx;
@@ -46,6 +49,13 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     const p = await auth.requireSession(req);
     const body = parse(z.object({ displayName: displayNameSchema.optional(), colorIndex: z.number().int().min(0).max(9).optional() }).strict(), req.body);
     await updateProfile(ctx, p, body);
+    return { ok: true };
+  });
+
+  // Familienrolle: reine Anzeige (keine Rechte), jedes Mitglied für sich
+  app.put('/api/v1/me/family-role', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await setFamilyRole(ctx, p, p.userId, parse(familyRoleBody, req.body).familyRole, meta(req));
     return { ok: true };
   });
 
@@ -144,6 +154,14 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     const { id } = parse(idParams, req.params);
     const body = parse(z.object({ role }).strict(), req.body);
     await changeRole(ctx, p, id, body.role, meta(req));
+    return { ok: true };
+  });
+
+  // Admin setzt die Familienrolle (reine Anzeige) eines Mitglieds; ohne Step-up, da ohne Wirkung auf Rechte
+  app.put('/api/v1/members/:id/family-role', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    const { id } = parse(idParams, req.params);
+    await setFamilyRole(ctx, p, id, parse(familyRoleBody, req.body).familyRole, meta(req));
     return { ok: true };
   });
 

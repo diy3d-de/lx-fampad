@@ -10,6 +10,7 @@ import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_anzeige.dart';
+import '../auth/auth_widgets.dart';
 import '../profile/profile_screen.dart';
 import '../update/update_service.dart';
 import 'shell_tab.dart';
@@ -237,7 +238,7 @@ class _ProfilKachel extends ConsumerWidget {
       button: true,
       focusable: true,
       onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
-      label: 'Profil und Einstellungen, $name${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
+      label: 'Profil und Einstellungen, $name${user == null ? '' : ', ${[user.role.label, if (user.familyRole != null && user.familyRole!.label != user.role.label) user.familyRole!.label].join(' und ')}'}${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
       excludeSemantics: true,
       child: LxCard(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -254,6 +255,11 @@ class _ProfilKachel extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (user != null) ...[
+                      const SizedBox(height: 2),
+                      Wrap(spacing: 4, runSpacing: 2, children: rollenPillen(user.role, user.familyRole)),
+                      const SizedBox(height: 2),
+                    ],
                     Text(
                       art == null || art.isEmpty ? 'einstellungen' : art,
                       maxLines: 1,

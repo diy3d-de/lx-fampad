@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
+import '../../data/auth/auth_state.dart' show systemChannelProvider;
+import '../../data/erinnerungen/erinnerung_dienst.dart';
 import '../../data/push/push_plattform.dart';
 import '../../data/push/push_state.dart';
 import '../../ui/widgets.dart';
@@ -22,10 +24,68 @@ class PushScreen extends ConsumerStatefulWidget {
   ConsumerState<PushScreen> createState() => _PushScreenState();
 }
 
-class _PushScreenState extends ConsumerState<PushScreen> {
+class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObserver {
+  bool _erlaubnisBeschaeftigt = false;
+  int _chatKanal = -1;
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Zurück aus den Systemeinstellungen: Berechtigung und Kanal neu lesen.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed) {
+      ref.invalidate(erinnerungStatusProvider);
+      unawaited(_kanalLesen());
+    }
+  }
+
+  Future<void> _kanalLesen() async {
+    int k;
+    try {
+      k = await ref.read(systemChannelProvider).chatKanalWichtigkeit();
+    } catch (_) {
+      k = -1;
+    }
+    if (mounted) setState(() => _chatKanal = k);
+  }
+
+  Future<void> _einstellungen() async {
+    var ok = false;
+    try {
+      ok = await ref.read(erinnerungPortProvider).systemEinstellungenOeffnen();
+    } catch (_) {}
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('Die Einstellungen ließen sich nicht öffnen. Öffne die Android-Einstellungen, dort Apps, $kAppName, Benachrichtigungen.')));
+    }
+  }
+
+  /// Fragt die Erlaubnis an; zeigt Android keinen Dialog mehr (dauerhaft verweigert), führt der Weg direkt in die Einstellungen.
+  Future<void> _erlauben() async {
+    setState(() => _erlaubnisBeschaeftigt = true);
+    try {
+      await ref.read(erinnerungDienstProvider).berechtigungAnfragen();
+    } finally {
+      if (mounted) {
+        setState(() => _erlaubnisBeschaeftigt = false);
+        ref.invalidate(erinnerungStatusProvider);
+      }
+    }
+    if (!mounted) return;
+    final st = await ref.read(erinnerungStatusProvider.future);
+    if (mounted && !st.erlaubt && !st.fragbar && !st.unbekannt) await _einstellungen();
+  }
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_kanalLesen());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(ref.read(pushProvider.notifier).laden());
     });
@@ -47,6 +107,42 @@ class _PushScreenState extends ConsumerState<PushScreen> {
       ),
     );
     if (gewaehlt != null && mounted) await ref.read(pushProvider.notifier).verteilerWaehlen(gewaehlt);
+  }
+
+  /// Ohne Benachrichtigungs-Erlaubnis (Android 13+) oder mit abgeschaltetem Chat-Kanal zeigt Android nichts an, obwohl der Wecker ankommt.
+  List<Widget> _erlaubnisHinweise() {
+    final st = ref.watch(erinnerungStatusProvider).asData?.value;
+    final gesperrt = st != null && st.verfuegbar && !st.erlaubt && !st.unbekannt;
+    final kanalAus = _chatKanal == 0;
+    if (!gesperrt && !kanalAus) return const [];
+    return [
+      const SizedBox(height: 12),
+      MeldungsBox(
+        gesperrt
+            ? 'Android zeigt für $kAppName keine Benachrichtigungen an. Erlaube sie, damit neue Nachrichten bei dir ankommen.'
+            : 'Der Kanal "Chat-Nachrichten" ist in den Android-Einstellungen ausgeschaltet. Schalte ihn ein, damit neue Nachrichten bei dir ankommen.',
+      ),
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: Wrap(
+          spacing: 8,
+          children: [
+            if (gesperrt && st.fragbar)
+              FilledButton(
+                style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+                onPressed: _erlaubnisBeschaeftigt ? null : () => unawaited(_erlauben()),
+                child: const Text('Erlauben'),
+              ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+              onPressed: () => unawaited(_einstellungen()),
+              child: const Text('Einstellungen öffnen'),
+            ),
+          ],
+        ),
+      ),
+    ];
   }
 
   @override
@@ -102,6 +198,7 @@ class _PushScreenState extends ConsumerState<PushScreen> {
               ),
             ),
           ),
+          ..._erlaubnisHinweise(),
           if (z.fehler != null) ...[const SizedBox(height: 12), MeldungsBox(z.fehler!)],
           if (z.verteilerFehlt) ...[
             const SizedBox(height: 12),

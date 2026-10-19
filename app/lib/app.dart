@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
 import 'data/chat/chat_krypto_state.dart';
+import 'data/lists/members.dart' show mitgliederAktualisierungProvider;
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
 import 'features/auth/auth_widgets.dart';
@@ -111,6 +112,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     ref.watch(erinnerungSteuerungProvider);
     // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten
     ref.watch(chatKryptoSteuerungProvider);
+    ref.watch(mitgliederAktualisierungProvider);
     ref.listen(authProvider.select((s) => s.status), (alt, neu) {
       // Sitzung weg oder Konto wartet: alle offenen Unterseiten (Profil, Admin ...) schließen
       if (alt != neu && neu != AuthStatus.angemeldet) {
