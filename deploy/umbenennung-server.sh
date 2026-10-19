@@ -328,13 +328,21 @@ $aenderungen"
     # -------------------------------------------------------------- 9. Dienst starten
     schritt "9/12 Dienst lx-fampad starten (Migrationen laufen davor)"
     systemctl enable "$NEU_NAME.service"
-    systemctl start "$NEU_NAME.service"
-    ok=0
-    for i in $(seq 1 30); do
-      if curl -fsS --max-time 3 http://127.0.0.1:4400/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then ok=1; echo "    lokal online mit Datenbank nach ${i}s"; break; fi
-      sleep 1
-    done
-    [ "$ok" -eq 1 ] || { journalctl -u "$NEU_NAME" -n 30 --no-pager >&2 || true; abbruch "Dienst antwortet nicht mit \"db\":\"ok\"."; }
+    if [ ! -f "/etc/$NEU_NAME/migrate.env" ]; then
+      # Phase-0-Bestand: Die neuen Einheiten verlangen migrate.env und AUTH_SECRET_KEY (legt einrichtung-auth.sh an),
+      # und der installierte Code kennt die Anmeldung noch nicht. Starten wäre sinnlos; erst einrichtung-auth.sh + deploy.sh.
+      PHASE0_BESTAND=1
+      echo "    Phase-0-Bestand (keine migrate.env): der Dienst wird hier NICHT gestartet."
+      echo "    Er startet nach 'einrichtung-auth.sh' und 'deploy.sh' (Hinweise am Ende)."
+    else
+      systemctl start "$NEU_NAME.service"
+      ok=0
+      for i in $(seq 1 30); do
+        if curl -fsS --max-time 3 http://127.0.0.1:4400/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then ok=1; echo "    lokal online mit Datenbank nach ${i}s"; break; fi
+        sleep 1
+      done
+      [ "$ok" -eq 1 ] || { journalctl -u "$NEU_NAME" -n 30 --no-pager >&2 || true; abbruch "Dienst antwortet nicht mit \"db\":\"ok\"."; }
+    fi
 
     # -------------------------------------------------------------- 10. Caddy
     schritt "10/12 Caddy: familie.caddy -> fampad.caddy"
@@ -416,26 +424,38 @@ $aenderungen"
 
   # ---------------------------------------------------------------- 12. Abschlussprüfung
   schritt "12/12 Abschlussprüfung"
-  systemctl is-active --quiet "$NEU_NAME" || abbruch "lx-fampad.service ist nicht aktiv."
+  if [ ! -f "/etc/$NEU_NAME/migrate.env" ]; then PHASE0_BESTAND=1; fi
+  if [ "${PHASE0_BESTAND:-0}" -ne 1 ]; then
+    systemctl is-active --quiet "$NEU_NAME" || abbruch "lx-fampad.service ist nicht aktiv."
+  fi
   systemctl is-active --quiet lx-labs || abbruch "lx-labs ist nicht aktiv."
   systemctl is-active --quiet caddy || abbruch "caddy ist nicht aktiv."
   for u in "$ALT_NAME" "$ALT_NAME-migrate"; do
     [ ! -e "/etc/systemd/system/$u.service" ] || abbruch "Alte Einheit $u.service ist noch installiert."
   done
-  ok=0
-  for i in $(seq 1 30); do
-    if curl -fsS --max-time 5 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then ok=1; break; fi
-    sleep 2
-  done
-  [ "$ok" -eq 1 ] || abbruch "https://familie.lx-labs.dev/api/v1/health liefert nicht \"db\":\"ok\" (Rückbau: deploy/README.md)."
-  echo "    https://familie.lx-labs.dev/api/v1/health: \"db\":\"ok\""
+  if [ "${PHASE0_BESTAND:-0}" -ne 1 ]; then
+    ok=0
+    for i in $(seq 1 30); do
+      if curl -fsS --max-time 5 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then ok=1; break; fi
+      sleep 2
+    done
+    [ "$ok" -eq 1 ] || abbruch "https://familie.lx-labs.dev/api/v1/health liefert nicht \"db\":\"ok\" (Rückbau: deploy/README.md)."
+    echo "    https://familie.lx-labs.dev/api/v1/health: \"db\":\"ok\""
+  else
+    echo "    familie.lx-labs.dev bleibt bis zum Start des Dienstes ohne Antwort der API (Phase-0-Bestand, siehe unten)."
+  fi
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://lx-labs.dev || true)
   [ "$code" = "200" ] || abbruch "https://lx-labs.dev liefert $code statt 200."
   echo "    https://lx-labs.dev: $code"
   echo
   echo "Fertig. Nächste Schritte als Benutzer lx:"
   echo "  1. Neu anmelden (oder 'newgrp $NEU_NAME'), damit die umbenannte Gruppe in der Sitzung gilt."
-  echo "  2. cd ~/lx-fampad && bash deploy/deploy.sh      # neuen Code bauen und ausrollen"
+  if [ "${PHASE0_BESTAND:-0}" -eq 1 ]; then
+    echo "  2a. sudo bash ~/lx-fampad/deploy/einrichtung-auth.sh   # Schlüssel, getrennte Datenbankrollen, migrate.env (VOR deploy.sh)"
+    echo "  2b. cd ~/lx-fampad && bash deploy/deploy.sh            # neuen Code bauen, ausrollen und den Dienst starten"
+  else
+    echo "  2. cd ~/lx-fampad && bash deploy/deploy.sh      # neuen Code bauen und ausrollen"
+  fi
   echo "  3. Auf dem PC die ssh-Aufrufe anpassen (ssh lx-labs bash lx-fampad/deploy/deploy.sh)."
   if [ -n "$BACKUP_DIR" ]; then
     echo "Sicherung (nach einigen Tagen ohne Auffälligkeiten löschen, spätestens nach 14 Tagen; sie enthält Anmeldedaten):"
