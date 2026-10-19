@@ -40,6 +40,8 @@ dependencies:
   file_picker: 13.1.0
   # Lokale Terminerinnerungen (nur Android; Web bekommt keine). 22.3.2 (12.10.2026) war zum Stichtag jünger als 14 Tage
   flutter_local_notifications: 22.3.1
+  # Karte ohne Fremd-Anbieter (Spike, docs/KARTE-SPIKE.md): MapLibre, Kacheln als PMTiles vom eigenen Server
+  maplibre: 0.3.6
 
 dev_dependencies:
   flutter_test:
@@ -68,6 +70,8 @@ flutter:
   # Zeitzonen-Daten (timezone 0.11.1, latest.tzf) für Terminserien, von der eigenen Domain (Prüfsumme in docs/VERSIONEN.md)
   assets:
     - assets/tz/latest.tzf
+    # Karten-Stil (Protomaps, dunkel; Spike docs/KARTE-SPIKE.md), erzeugt von tools/karte/make-style.mjs
+    - assets/karte/style.json
     # Platzhalter-Benutzerbilder (transparente PNG, Quellen in tool/avatare/)
     - assets/avatare/
 

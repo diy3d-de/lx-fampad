@@ -4,3 +4,8 @@
 *.png binary
 app/web/passkeys-bundle.js binary
 *.tzf binary
+app/web/karte/maplibre-gl-csp.js binary
+app/web/karte/maplibre-gl-csp-worker.js binary
+app/web/karte/pmtiles.js binary
+app/web/karte/maplibre-gl.css binary
+*.pbf binary

@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../auth/auth_widgets.dart';
+import '../karte/karte_spike_screen.dart';
 import '../update/update_service.dart';
 import 'profile_screen.dart' show EinstellungsZeile;
 
@@ -85,6 +86,8 @@ class UeberScreen extends ConsumerWidget {
         : server == null
             ? 'nicht erreichbar'
             : '${server.version != null ? 'Server ${server.version}' : 'Server'} · Protokoll ${server.protocolVersion}';
+    // Karten-Spike: nur für Administratoren und Debug-Builds, kein normaler Tab
+    final zeigeKarte = kDebugMode || ref.watch(authProvider.select((s) => s.istAdmin));
     final pruefend = update.phase == UpdatePhase.pruefe || update.phase == UpdatePhase.laedt;
     return AuthSeite(
       label: '// app',
@@ -122,6 +125,13 @@ class UeberScreen extends ConsumerWidget {
             onTap: () => unawaited(inZwischenablage(context, kApkDownloadUrl, 'Download-Link kopiert.')),
           ),
         ),
+        if (zeigeKarte)
+          EinstellungsZeile(
+            icon: Icons.map_outlined,
+            titel: 'Karte (Test)',
+            untertitel: 'Spike für Standort teilen, nur für Admins',
+            onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const KarteSpikeScreen())),
+          ),
         const SizedBox(height: 4),
         ZweitKnopf(
           text: 'Nach Update suchen',

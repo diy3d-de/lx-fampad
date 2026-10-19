@@ -11,6 +11,8 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.json">
+  <!-- Karte: selbst gehostetes MapLibre (CSP-Build) mit eigenem Worker; Prüfsummen in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md -->
+  <link rel="stylesheet" href="karte/maplibre-gl.css">
   <!-- Keine Inline-Skripte und keine Fremd-Adressen: passt zur strengen CSP (deploy/Caddyfile) -->
   <style>
     html, body { margin: 0; height: 100%; background: #090A0F; }
@@ -19,6 +21,10 @@
 <body>
   <!-- Passkeys (WebAuthn): selbst gehostetes JS-Bündel des Pakets passkeys_web (Prüfsumme in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md). Muss vor dem Flutter-Start laden. -->
   <script src="passkeys-bundle.js"></script>
+  <!-- Karte (maplibre_web erwartet die globalen Objekte maplibregl und pmtiles): alles von der eigenen Domain -->
+  <script src="karte/maplibre-gl-csp.js"></script>
+  <script src="karte/pmtiles.js"></script>
+  <script src="karte/karte-init.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

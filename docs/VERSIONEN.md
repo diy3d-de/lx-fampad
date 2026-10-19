@@ -42,7 +42,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | web | 1.1.1 | Phase 1b: `history.replaceState` und `hashchange` für den Einladungslink (bisher nur transitiv) |
 | passkeys | 2.23.1 | Phase 1b im Einsatz (14.09.2026). Android per Credential Manager, Web per JS-Bündel (siehe unten, selbst gehostet). `assetlinks.json` mit allen Signatur-Fingerprints: `deploy/assetlinks.json.template`, Anleitung `deploy/README.md` Abschnitt 9. Transitiv: passkeys_android 2.14.1, passkeys_web 2.10.1, passkeys_platform_interface 2.10.0 (alle 14.09.2026), passkeys_darwin/windows/doctor, package_info_plus 10.2.2 (01.10.2026), win32 6.4.0 |
 | unifiedpush / unifiedpush_android | 6.2.0 / 3.5.0 | nur Android |
-| maplibre | 0.3.6 | Ersatz für flutter_map + PMTiles-Vektor (veraltet); pre-1.0 |
+| maplibre | 0.3.6 | Karten-Spike im Einsatz (veröffentlicht 25.08.2026, BSD-3; pre-1.0): MapLibre für Android (maplibre_android 0.3.6, Native SDK 13.5.2) und Web (maplibre_web 0.3.6, gl-js). Transitiv neu: geobase 1.5.0, html 0.15.7, pointer_interceptor 0.10.1+3, url_launcher 6.3.3 (02.10.2026, 17 Tage) mit Plattformpaketen, proj4dart, mgrs_dart, wkt_parser, lists, unicode, csslib (alle älter als 14 Tage); Gradle löste dabei code_assets, native_toolchain_c und objective_c auf ältere Stände auf. Siehe Abschnitt Karte |
 | geolocator | 14.1.1 | Vordergrunddienst eingebaut |
 | web_socket_channel | 3.0.3 | Phase 1c im Einsatz (direkte Abhängigkeit seit 1c; stand schon vorher als transitive Abhängigkeit im Lockfile): WebSocket-Client des Sync (`app/lib/data/sync/sync_socket.dart`), Reconnect mit Backoff und Jitter selbst gebaut; läuft auf Android und im Web |
 | rrule | 0.2.18 | Phase 1c-2a im Einsatz (06.01.2026, Apache-2.0): Terminserien expandieren (`app/lib/data/calendar/expansion.dart`). Kennt **keine Zeitzonen** (rechnet mit `DateTime.utc`): die Wanduhrzeit der Termin-Zeitzone wird als UTC getarnt expandiert und danach mit timezone umgerechnet. Transitiv: time 2.1.6 (07.12.2025) |
@@ -84,6 +84,15 @@ Zeitzonen-Daten: `app/assets/tz/latest.tzf` ist die unveränderte Datei `lib/dat
 ### Passkey-JS-Bündel (Web)
 
 `app/web/passkeys-bundle.js` (16486 Byte) stammt aus dem Paket **passkeys_web 2.10.1**: Für diese Version gibt es kein veröffentlichtes `bundle.js` (die GitHub-Releases enthalten keine Dateien; die Anleitung des Pakets verweist auf ein altes von 2.4.0), daher wird es aus dem mitgelieferten Quelltext gebaut: Ordner `javascript/` des Pakets (im Pub-Cache) kopieren, `npm ci --ignore-scripts`, `npx rollup -c` (Ausgabe `dist/bundle.js`, `@github/webauthn-json` 2.1.1 aus dem mitgelieferten Lockfile). Es enthält keine Fremd-Adressen (nur einen W3C-Verweis im Kommentar). `web/index.html` bindet es per `<script src="passkeys-bundle.js">` ein (CSP `script-src 'self'`). `.gitattributes` führt es als binär, damit die Prüfsumme nicht durch Zeilenenden-Umwandlung bricht. Bei einem Update von passkeys/passkeys_web neu bauen und die Prüfsumme unten ändern.
+
+## Karte (Spike, docs/KARTE-SPIKE.md)
+
+- **maplibre-gl-js 5.24.0** (23.04.2026, BSD-3), Dateien `maplibre-gl-csp.js`, `maplibre-gl-csp-worker.js`, `maplibre-gl.css` aus dem npm-Paket unverändert nach `app/web/karte/` (CSP-Build, Worker per `setWorkerUrl` in `karte-init.js`, kein `blob:`); 5.x laut Leitfaden von maplibre_web (`^5.0`), 6.x bewusst nicht.
+- **pmtiles 4.5.0** (10.08.2026, BSD-3): `pmtiles.js` aus dem npm-Paket nach `app/web/karte/`.
+- **Android**: `org.maplibre.gl:android-sdk-opengl` fest **13.5.2** (23.09.2026) per `resolutionStrategy.force` in `app/android/app/build.gradle.kts` (das Paket verlangt `13.5.+`; 13.5.3 vom 08.10.2026 war zu jung). Gradle-Plugin `org.jlleitschuh.gradle.ktlint` **14.2.0** (12.03.2026) in `app/android/settings.gradle.kts`, weil maplibre_android es anwendet, aber nicht mitbringt.
+- **Werkzeuge** (nicht im Repo, `tools/karte/README.md`): go-pmtiles 1.31.2 (22.07.2026), `@protomaps/basemaps` 5.7.2 (10.03.2026, BSD-3, Stil-Generator), basemaps-assets Commit 028c18f (Schriften Noto Sans, OFL 1.1; Sprites v4).
+- **Daten**: Protomaps-Basemap-Build 20261019 (Schema 4.15.2), OpenStreetMap-Daten unter ODbL, Attribution "© OpenStreetMap-Mitwirkende" in der Karte.
+- Prüfsummen (in `app/web-assets.sha256`): `maplibre-gl-csp.js` `a1f1847bac64aa00acbf80fbb79b2c5af24d8eecaaa5e2ad14080fab81f1de95`, `maplibre-gl-csp-worker.js` `f950e7b15c49c8b9c7bb52136df2a2df2f6f03b83b8927774573fc98b067f7f0`, `pmtiles.js` `caf981bc46f6327ee7e65d5dc964d89d38a69f60edca2bd4c5c890c21b554c6c`, `maplibre-gl.css` `ab1e70d59ec40465bae7e7030da2f3ccf28133fd502e62bd598eefbadfd7a732`.
 
 ## Platzhalter-Benutzerbilder
 

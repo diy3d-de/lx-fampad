@@ -76,6 +76,12 @@ gradle.taskGraph.whenReady {
     }
 }
 
+// Das Flutter-Paket maplibre_android 0.3.6 verlangt "android-sdk-opengl:13.5.+" (schwebende Version). Fest auf 13.5.2 (23.09.2026,
+// älter als 14 Tage; 13.5.3 vom 08.10.2026 war zum Stichtag zu jung): reproduzierbarer Build, siehe docs/VERSIONEN.md.
+configurations.all {
+    resolutionStrategy.force("org.maplibre.gl:android-sdk-opengl:13.5.2")
+}
+
 dependencies {
     implementation("androidx.core:core:1.16.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
