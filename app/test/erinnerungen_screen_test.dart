@@ -22,11 +22,12 @@ void main() {
   late MemoryErinnerungSpeicher speicher;
   late TestUmgebung env;
 
-  Future<void> oeffnen(WidgetTester tester, {double skala = 1.0, bool verfuegbar = true, bool erlaubt = true, bool exakt = true, bool mitTermin = false}) async {
+  Future<void> oeffnen(WidgetTester tester, {double skala = 1.0, bool verfuegbar = true, bool erlaubt = true, bool exakt = true, bool mitTermin = false, bool dauerhaft = false}) async {
     port = FakeErinnerungPort()
       ..verfuegbar = verfuegbar
       ..erlaubt = erlaubt
-      ..exakt = exakt;
+      ..exakt = exakt
+      ..dauerhaft = dauerhaft;
     speicher = MemoryErinnerungSpeicher();
     env = await angemeldeteUmgebung();
     env.extraOverrides.addAll([erinnerungPortProvider.overrideWithValue(port), erinnerungSpeicherProvider.overrideWithValue(speicher)]);
@@ -130,7 +131,7 @@ void main() {
 
   testWidgets('keine genauen Alarme: Hinweis auf mögliche Verspätung', (tester) async {
     await oeffnen(tester, exakt: false);
-    expect(find.textContaining('Genaue Alarme sind auf diesem Gerät nicht erlaubt'), findsOneWidget);
+    expect(find.textContaining('Genaue Alarme ("Alarme & Erinnerungen") sind auf diesem Gerät nicht erlaubt'), findsOneWidget);
   });
 
   testWidgets('Standard-Vorlaufzeit wählen: wird lokal gespeichert', (tester) async {
@@ -148,13 +149,6 @@ void main() {
     expect(find.textContaining('in 10 Sekunden'), findsWidgets);
   });
 
-  testWidgets('Testbenachrichtigung ohne Berechtigung und ohne Zustimmung: nichts geplant', (tester) async {
-    await oeffnen(tester, erlaubt: false);
-    port.anfrageErteilt = false;
-    await tippeText(tester, 'Testbenachrichtigung in 10 Sekunden');
-    expect(port.anfragen, greaterThan(0));
-    expect(port.tests, isEmpty);
-  });
 
   for (final skala in [1.0, 1.5]) {
     testWidgets('Termin-Editor Textskala $skala: ohne Berechtigung steht ein Hinweis mit Link, mit Berechtigung nicht', (tester) async {
@@ -178,6 +172,107 @@ void main() {
       }
     });
   }
+
+  testWidgets('Testbenachrichtigung ohne Berechtigung: Knopf gesperrt, keine versteckte Anfrage', (tester) async {
+    await oeffnen(tester, erlaubt: false);
+    final knopf = find.ancestor(of: find.text('Testbenachrichtigung in 10 Sekunden'), matching: find.byType(OutlinedButton));
+    expect(tester.widget<OutlinedButton>(knopf).onPressed, isNull);
+    expect(port.anfragen, 0);
+    expect(port.tests, isEmpty);
+  });
+
+  testWidgets('Testbenachrichtigung mit Berechtigung wird geplant', (tester) async {
+    await oeffnen(tester);
+    await tippeText(tester, 'Testbenachrichtigung in 10 Sekunden');
+    expect(port.tests, hasLength(1));
+  });
+
+  for (final skala in [1.0, 1.5]) {
+    testWidgets('Dauerhaft verweigert (Textskala $skala): Weg führt in die Einstellungen, kein Dialog-Knopf', (tester) async {
+      await oeffnen(tester, skala: skala, erlaubt: false, dauerhaft: true);
+      expect(find.textContaining('fragt nicht mehr danach'), findsOneWidget);
+      expect(find.text('In den Einstellungen erlauben'), findsOneWidget);
+      final e = find.ancestor(of: find.text('In den Einstellungen erlauben'), matching: find.byType(FilledButton)).evaluate().first;
+      expect((e.renderObject! as RenderBox).size.height, greaterThanOrEqualTo(44));
+      await tippeText(tester, 'In den Einstellungen erlauben');
+      expect(port.systemEinstellungen, 1);
+      expect(port.anfragen, 0);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Systemeinstellungen nicht zu öffnen: verständlicher Hinweis mit dem Weg', (tester) async {
+    await oeffnen(tester, erlaubt: false);
+    port.systemOk = false;
+    await tippeText(tester, 'Systemeinstellungen öffnen');
+    expect(find.textContaining('Apps, lx-familyhub, Benachrichtigungen'), findsOneWidget);
+  });
+
+  testWidgets('Rückkehr in den Vordergrund: nachträglich erlaubt wird erkannt und nachgeplant, ohne Neustart', (tester) async {
+    await oeffnen(tester, erlaubt: false, mitTermin: true);
+    expect(find.textContaining('noch nicht erlaubt'), findsOneWidget);
+    expect(find.textContaining('erlaubt ja'), findsNothing);
+    final geplant = port.planungen.length;
+    port.erlaubt = true; // Person erlaubt es in den Android-Einstellungen
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await warte(tester, 10);
+    expect(find.textContaining('noch nicht erlaubt'), findsNothing);
+    expect(find.text('Benachrichtigungen sind erlaubt.'), findsOneWidget);
+    expect(port.planungen.length, greaterThan(geplant), reason: 'Planung wird nach dem Erlauben neu gesetzt');
+    final knopf = find.ancestor(of: find.text('Testbenachrichtigung in 10 Sekunden'), matching: find.byType(OutlinedButton));
+    expect(tester.widget<OutlinedButton>(knopf).onPressed, isNotNull);
+  });
+
+  testWidgets('Diagnose-Zeile zeigt nur Zustände', (tester) async {
+    await oeffnen(tester, mitTermin: true);
+    final text = tester.widget<Text>(find.byKey(const Key('erinnerung-diagnose'))).data!;
+    expect(text, contains('erlaubt ja'));
+    expect(text, contains('plugin ja'));
+    expect(text, isNot(contains('Zahnarzt')));
+  });
+
+  testWidgets('Status unbekannt: eigener Hinweis, Test-Knopf bleibt, "Erneut prüfen" liest neu', (tester) async {
+    await oeffnen(tester, erlaubt: false);
+    port.statusUnbekannt = true;
+    await tester.pumpWidget(const SizedBox());
+    await oeffnen(tester, erlaubt: false);
+    port.statusUnbekannt = true;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await warte(tester, 10);
+    expect(find.textContaining('ließ sich nicht prüfen'), findsOneWidget);
+    final knopf = find.ancestor(of: find.text('Testbenachrichtigung in 10 Sekunden'), matching: find.byType(OutlinedButton));
+    expect(tester.widget<OutlinedButton>(knopf).onPressed, isNotNull);
+    port.statusUnbekannt = false;
+    port.erlaubt = true;
+    await tippeText(tester, 'Erneut prüfen');
+    expect(find.text('Benachrichtigungen sind erlaubt.'), findsOneWidget);
+  });
+
+  testWidgets('Knopf "erlauben" ohne Dialog (dauerhaft verweigert, Status erst danach bekannt): führt direkt in die Einstellungen', (tester) async {
+    await oeffnen(tester, erlaubt: false);
+    port.dauerhaft = true; // Android zeigt keinen Dialog; erst nach dem Versuch ist das erkennbar
+    await tippeText(tester, 'Benachrichtigungen erlauben');
+    expect(port.systemEinstellungen, 1);
+    expect(find.text('In den Einstellungen erlauben'), findsOneWidget);
+  });
+
+  testWidgets('Mehrfaches schnelles Zurückkehren: kein Fehler, Status stimmt danach', (tester) async {
+    await oeffnen(tester, erlaubt: false, mitTermin: true);
+    port.erlaubt = true;
+    for (var i = 0; i < 3; i++) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    }
+    await warte(tester, 12);
+    expect(find.text('Benachrichtigungen sind erlaubt.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('Web: nur Hinweis, keine Bedienelemente', (tester) async {
     await oeffnen(tester, verfuegbar: false);
