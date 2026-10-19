@@ -308,7 +308,8 @@ describe.each(backends)('Passwort + TOTP nachträglich ($name)', (backend) => {
     await reStepUp(c, a);
     const res = await Promise.all([c.post('/api/v1/me/password/change', { password: PW2 }), c.post('/api/v1/me/password/change', { password: PW })]);
     expect(res.some((r) => r.status === 200)).toBe(true);
-    for (const r of res) expect([200, 403]).toContain(r.status);
+    // 409 no_password: die zweite Anfrage sieht den gerade getauschten Eintrag nicht (READ COMMITTED), der Client wiederholt einfach
+    for (const r of res) expect([200, 403, 409]).toContain(r.status);
     expect(await active('password')).toBe(1);
   });
 });
