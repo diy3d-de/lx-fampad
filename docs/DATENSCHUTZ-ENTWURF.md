@@ -70,7 +70,9 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 - **Web:** Nach der Anmeldung ein Session-Cookie `__Host-lxsid` (`HttpOnly; Secure; SameSite=Strict`, ohne Domain); technisch notwendig, daher ohne Einwilligungsabfrage
   (§ 25 Abs. 2 Nr. 2 TDDDG). Die Web-App legt zudem eine lokale Datenbank im Browser an (OPFS/IndexedDB, Offline-Betrieb); sie bleibt auf dem Gerät und wird mit dem Server abgeglichen.
   Kein Service Worker, keine Tracking-Cookies, kein Local-Storage zu Analysezwecken.
-- **Android:** Sitzungs-Token im Android-Keystore (`flutter_secure_storage`, **geplant**, noch nicht eingebaut; ab Phase 1), lokale SQLite-Datenbank; Datensicherung durch Android ist abgeschaltet (`allowBackup=false`).
+- **Android:** Access-/Refresh-Token, Geräte-ID und das zuletzt bekannte Profil (Name, Rolle, Farbe; für den Start ohne Netz) im Android-Keystore (`flutter_secure_storage`, Phase 1b), lokale SQLite-Datenbank; Datensicherung durch Android ist abgeschaltet (`allowBackup=false`). Beim Abmelden werden Token und lokale Datenbank gelöscht. Im Web wird nichts in `localStorage` abgelegt (nur die Sitzung im HttpOnly-Cookie). Bildschirmfotos sind auf Seiten mit Geheimnissen (TOTP-Schlüssel, Wiederherstellungscodes, Einladungs-PIN) gesperrt; die Zwischenablage wird nur auf ausdrücklichen Klick befüllt.
+- **Kamera (Android):** Nur für das Scannen eines Einladungs-QR-Codes, nur solange der Scan-Bildschirm offen ist; die Erkennung läuft auf dem Gerät, Bilder werden weder gespeichert noch übertragen.
+- **Einladungslinks:** Das Token steht im Fragment (`#/…`) und wird nicht an den Server gesendet; die Web-App entfernt es sofort aus der Adresszeile (`history.replaceState`) und sendet es nur im Anfragekörper.
 - **App-Update (Android):** Die App ruft `familie.lx-labs.dev/releases/android/latest.json` und die APK von der eigenen Domain ab (die Verbindungsdaten aus Abschnitt 4 fallen an);
   das Manifest ist signiert, Prüfung auf dem Gerät. Zusätzlich liest die App `/api/v1/version`. Es werden keine Gerätekennungen übertragen.
 

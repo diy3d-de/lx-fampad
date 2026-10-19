@@ -189,7 +189,7 @@ Dateiinhalte – die werden bei Bedarf oder „offline verfügbar“ geladen).
 
 ## 7. Anmeldung und Konten
 
-Umgesetzt in Phase 1a (Server); die App folgt in Phase 1b. Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.
+Umgesetzt in Phase 1a (Server) und Phase 1b (App: Anmeldung, Einladungen, Konto, Admin; Abschnitt "App-Teil (Phase 1b)" unten). Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.
 
 ### Grundsätze
 
@@ -238,6 +238,18 @@ Umgesetzt in Phase 1a (Server); die App folgt in Phase 1b. Endpunkte: [`API.md`]
 9. **Familiengrenze:** Alle Abfragen sind auf die Familie der Sitzung begrenzt; Verweise auf Personen laufen über zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships`
    (Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen, Lesebestätigungen), sodass die Datenbank Verweise über Familiengrenzen verhindert.
 - Kinderkonten legen die Eltern per Einladung an; Kinder melden sich mit Passkey auf ihrem eigenen Gerät an.
+
+### App-Teil (Phase 1b)
+
+Code: `app/lib/data/api/` (ApiClient, Endpunkte, DTOs, Token-Ablage), `app/lib/data/auth/auth_state.dart` (Riverpod), `app/lib/features/auth|profile|admin/`.
+
+- **API-Client:** `http` gegen `kApiBase`. Web: HttpOnly-Cookie (gleiche Domain), `X-CSRF-Token` (aus der Sitzungsantwort bzw. `GET /me`) an jeder ändernden Anfrage, nichts in `localStorage`. Android: Access-Token als Bearer, Access- und Refresh-Token in `flutter_secure_storage`; Erneuerung kurz vor Ablauf oder nach einem 401. **Refresh wird serialisiert** (ein Future für alle Aufrufer) und bei unklarem Ausgang (Zeitüberschreitung, Abbruch nach dem Senden) **nicht wiederholt**: Das Token könnte eingelöst sein, und der Server widerruft bei Wiederverwendung die ganze Familie. Die lokale Sitzung wird dann verworfen und die Person meldet sich neu an; nur Fehler vor dem Senden (kein Netz, DNS, Verbindung abgelehnt, TLS) lassen die Token unangetastet. Gerätename, Plattform, Version und die gespeicherte Geräte-ID gehen bei Anmeldung und Registrierung mit.
+- **Fehler:** Einheitliche `ApiException` mit fester deutscher Meldung je Fehlercode (nie Servertext oder Systemmeldung). 401 an geschützten Stellen = zurück zur Anmeldung; 429/`too_many_attempts` und 503 `server_busy` zeigen die Wartezeit aus `Retry-After`; `step_up_required` öffnet den Bestätigungsdialog (Passkey, TOTP oder Wiederherstellungscode) und wiederholt die Aktion einmal.
+- **Zustand:** `AuthStatus` prüfe / abgemeldet / angemeldet / wartend (Freigabe) / Verbindungsfehler; das Pflicht-Update (`updateProvider`) hat Vorrang. Start: `GET /me`; ohne Netz startet die Android-App mit dem gespeicherten Profil. Abmelden und "Überall abmelden" löschen die Token und rufen den Hook `localDataWiperProvider` (leert die drift-Datenbank, Phase 1c ergänzt die Fachtabellen). Ein Sitzungsverlust von außen (Widerruf) leert die lokalen Daten **nicht** (ungesendete Änderungen); meldet sich danach eine andere Person an, muss Phase 1c bereinigen.
+- **Einladung annehmen:** Web: `/#/einladung/<token>` wird in `main()` gelesen und sofort mit `history.replaceState` entfernt (auch bei ungültigem Token und bei späterem `hashchange`). Android: Link einfügen, QR scannen (`mobile_scanner`, nur Android) oder Intent (`https://familie.lx-labs.dev/` mit Fragment). Das Token bleibt im Arbeitsspeicher und geht nur im POST-Body zum Server. Ablauf: prüfen, PIN/Name/E-Mail, Passkey oder Passwort + TOTP (Secret und QR des otpauth-URI), Wiederherstellungscodes (einmalig; ohne Bestätigung "gespeichert" geht es nicht weiter; die Sitzung wird erst danach übernommen), bei `pending` der Warte-Bildschirm.
+- **Passkeys:** Paket `passkeys` (Android: Credential Manager, Web: selbst gehostetes `web/passkeys-bundle.js`). Fehler (abgebrochen, kein Support, Google Play-Dienste fehlen, Domain nicht verknüpft) zeigen klare Meldungen mit dem Weg zu Passwort + TOTP. Voraussetzungen auf dem Server: `assetlinks.json` und `WEBAUTHN_ORIGINS` (`deploy/README.md`, Abschnitt 9).
+- **Konto und Admin:** Profil/Sicherheit (Passkeys hinzufügen/entfernen, neue Wiederherstellungscodes, Geräteliste mit einzelnem Abmelden), Admin: Mitglieder (Rolle, entfernen, zurücksetzen, freigeben/ablehnen) und Einladungen (erstellen mit Rolle/Gültigkeit/PIN/Freigabe, QR + Link + PIN einmalig, verlängern, widerrufen). Eltern sehen nur die Einladungen für Kinder und Gäste (Rolle aus `/me`; der Server erzwingt es ohnehin).
+- **Datenschutz in der App:** keine Token im Log, `FLAG_SECURE` auf Seiten mit Geheimnissen, Zwischenablage nur auf Klick.
 
 ## 8. Updates (OTA)
 

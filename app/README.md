@@ -21,6 +21,7 @@ flutter build apk --release --dart-define=API_BASE=https://familie.lx-labs.dev
 
 - `lib/constants.dart`: Design-Tokens (Farben, Personenfarben, Schriften, Tabs). Keine Farbwerte in Widgets.
 - `lib/ui/`: Theme (Material 3), Glow-Hintergrund, gemeinsame Widgets.
-- `lib/data/`: drift-Datenbank (Sync-Meta, Outbox), Provider, Sync-Zustand.
-- `lib/features/<bereich>/`: Screens je Tab, Anmeldung, Update (OTA).
+- `lib/data/`: drift-Datenbank (Sync-Meta, Outbox), Provider, Sync-Zustand; `api/` und `auth/`: API-Client, Anmeldezustand, Passkeys (Phase 1b).
+- `lib/features/<bereich>/`: Screens je Tab, Anmeldung/Einladung (`auth`), Profil, Admin, Update (OTA).
+- `tool/vertrag_test.dart`: prüft die App-Klassen gegen einen echten Server (Ablauf im Dateikopf).
 - `web/`: `sqlite3.wasm` (sqlite3 3.7.0) und `drift_worker.js` (drift 2.35.1) liegen eingecheckt im Ordner, damit nichts von einem CDN geladen wird. Bei Versionswechsel von drift/sqlite3 beide Dateien aus den GitHub-Releases (`simolus3/sqlite3.dart`, `simolus3/drift`) ersetzen.

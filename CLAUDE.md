@@ -4,12 +4,12 @@ Selbst gehostete Familien-Zentrale (Kalender, Chat, Listen, Aufgaben, Dateien, s
 Web und Android aus einer Flutter-Codebasis, Server auf dem netcup-VPS von lx-labs.dev. Domain: **familie.lx-labs.dev**.
 Sprache aller Inhalte, UI-Texte und Commit-Nachrichten: **Deutsch**, Ansprache per **du**. Verbindliche Beschreibung: `docs/PROJEKTBESCHREIBUNG.md`, Versionen: `docs/VERSIONEN.md`, Mockups: `docs/mockups/`.
 
-Stand: **Phase 1a** (Server: Konten und Anmeldung; die App folgt in 1b, Sync in 1c). Fahrplan in `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 12; Endpunkte in `docs/API.md`.
+Stand: **Phase 1b** (Server: Konten und Anmeldung seit 1a; App: Anmeldung, Einladungen, Konto, Admin; Sync in 1c). Fahrplan in `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 12; Endpunkte in `docs/API.md`.
 
 ## Stack
 
 - **Server** (`server/`): Node 24.21.0, TypeScript 6.0.3, Fastify 5.12.5, `@fastify/websocket` 11.3.3, Drizzle ORM 0.45.3 (+ drizzle-kit 0.31.11), PostgreSQL 17, Vitest 5.0.3, ESLint. Anmeldung: `@simplewebauthn/server` 14.0.3 (Passkeys), `argon2` 0.45.1 (Argon2id), `otplib` 13.5.0 (TOTP), `zod` 4.6.5 (Eingabevalidierung). Konfiguration nur über Umgebungsvariablen (`server/.env.example`); ohne `NODE_ENV` gilt `production` (fail-closed), unbekannte Werte brechen den Start ab, lokal `NODE_ENV=development` in `.env`. In `production` ist `AUTH_SECRET_KEY` Pflicht (Hauptschlüssel für TOTP-Verschlüsselung und HMACs, nie in der Datenbank, nie ändern).
-- **App** (`app/`): Flutter 3.47.6 / Dart 3.13.5 (Android + Web, kein iOS), Riverpod 3.4.3, drift 2.35.1 (SQLite, im Web WASM/OPFS). Web ohne CDN: `--no-web-resources-cdn`, Schriften gebündelt, `fontFallbackBaseUrl` auf die eigene Domain. `analyzer` (14.4.0) und `sqlite3` (3.7.0, passend zu `web/sqlite3.wasm`) sind bewusst gepinnt; `app/web-assets.sha256` hält die Prüfsummen der Web-Binärdateien.
+- **App** (`app/`): Flutter 3.47.6 / Dart 3.13.5 (Android + Web, kein iOS), Riverpod 3.4.3, drift 2.35.1 (SQLite, im Web WASM/OPFS); Anmeldung: `flutter_secure_storage` 11.2.0, `passkeys` 2.23.1 (Web: selbst gehostetes `web/passkeys-bundle.js`), `mobile_scanner` 7.4.2 (QR-Scan, nur Android), `qr_flutter` 4.1.0. Web ohne CDN: `--no-web-resources-cdn`, Schriften gebündelt, `fontFallbackBaseUrl` auf die eigene Domain. `analyzer` (14.4.0) und `sqlite3` (3.7.0, passend zu `web/sqlite3.wasm`) sind bewusst gepinnt; `app/web-assets.sha256` hält die Prüfsummen der Web-Binärdateien (inkl. `passkeys-bundle.js`).
 - **Deploy** (`deploy/`): Caddy (Site `familie.lx-labs.dev`, ntfy auf `ntfy.familie.lx-labs.dev`), systemd-Dienst `lx-fampad`, `deploy.sh`, `deploy-web.sh`. Einrichtung: `deploy/README.md`.
 - **Versionen sind exakt gepinnt** (kein `^`, kein `~`), Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Neue Pakete nur mit Version, die mindestens 14 Tage alt ist; in `docs/VERSIONEN.md` eintragen.
 
@@ -34,6 +34,7 @@ flutter analyze
 flutter test
 flutter run -d chrome
 flutter build web --release --no-web-resources-cdn
+# Vertragsprüfung gegen den echten Server (nicht Teil von flutter test): app/tool/vertrag_test.dart, Ablauf im Dateikopf
 
 # Werkzeuge (Repo-Wurzel)
 node --test "tools/*.test.mjs"                                      # Test der Manifest-Signatur
@@ -63,13 +64,16 @@ server/
   test/                Vitest: api.test.ts (Routen, Rate-Limit, WebSocket, Konfiguration, Fehlerhandler), migration.test.ts (Schema), auth.test.ts (Bootstrap, Einladungen), auth-login.test.ts (Anmeldearten, Sitzungen, Step-up, Sperren, Familiengrenze, Aufräumen), ws-auth.test.ts (Tickets, Limits), hardening.test.ts (Log ohne Parameter, ungültige Zeichen, IPv6, Aufräumen, Einladungsrechte, WebSocket-Widerruf), crypto.test.ts (Known-Answer der Schlüsselableitung, IP, Serializer, Zeichen); authenticator.ts (simulierter WebAuthn-Authenticator), helpers.ts (Backends PGlite/PostgreSQL, Welt mit Uhr)
 app/
   lib/constants.dart   Design-Tokens, Personenfarben, Tabs, Konstanten
+  lib/data/api/        ApiClient (Cookie+CSRF / Bearer+Refresh), FampadApi (Endpunkte), Modelle (DTOs), ApiException (deutsche Meldungen), Token-Ablage
+  lib/data/auth/       auth_state.dart (AuthStatus, AuthController, Provider, Hook localDataWiperProvider); lib/data/passkey_service.dart, system_channel.dart (Android-Kanal: Gerätename, FLAG_SECURE, Links)
   lib/ui/              theme.dart (Material 3), widgets.dart (Glow-Hintergrund, Karten, Labels)
   lib/data/            drift-Datenbank, Provider, Sync-Zustand
-  lib/features/<bereich>/  shell, home, calendar, chat, files, lists, login, update (Manifest-Prüfung Ed25519, Download, Pflicht-Update)
+  lib/features/<bereich>/  shell, home, calendar, chat, files, lists, auth (Login, Einladung, Codes, Warten, Step-up), profile (Profil, Passkeys, Geräte), admin (Mitglieder, Einladungen), update (Manifest-Prüfung Ed25519, Download, Pflicht-Update)
   lib/widgets/         bereichsübergreifende Widgets (Sync-Indikator)
   web/                 index.html, flutter_bootstrap.js, sqlite3.wasm, drift_worker.js, Icons
   android/             applicationId dev.lx_labs.fampad, MainActivity + UpdateReceiver (Update per PackageInstaller)
-  test/                app_test (Tabs), update_test (Ed25519, Manifest), mobile_layout_test (360 px, Textskala 1.5, Touch-Ziele)
+  test/                app_test (Tabs), update_test, mobile_layout_test + auth_layout_test (360 px, Textskala 1.5, Touch-Ziele), api_client_test, auth_state_test, auth_screens_test, models_test, invite_link_test, token_store_passkey_test; support/ (Fake-Server mit MockClient, Beispielantworten)
+  tool/                vertrag_test.dart (App-Klassen gegen den echten Server)
 deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, umbenennung-server.sh (einmalig), ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md
 docs/                  Projektbeschreibung, Versionen, Datenschutz-Entwurf, Mockups
@@ -96,6 +100,7 @@ Vorbild ist **lx-urlaubsplanung** (`src/app/globals.css`, `mobile/lib/main.dart`
 - App: ein Bereich = ein Ordner unter `lib/features/`; Zustand mit Riverpod; keine Netzwerk- oder dart:io-Zugriffe in Code, der im Web läuft, ohne bedingten Import (siehe `features/update/apk_downloader*.dart`).
 - Anmeldung (Server): Geheimnisse nur gehasht oder verschlüsselt (Tokens/Tickets SHA-256, Passwörter Argon2id, Codes/PINs HMAC, TOTP AES-256-GCM); Einmal-Einlösungen immer atomar (`UPDATE/DELETE … RETURNING`, Zählen vor dem Vergleich); alle Fehlschläge der Anmeldung antworten gleich; jede Route, die Familiendaten liefert, filtert über die Familie der Sitzung (fremde Objekte = 404); neue Prüfungen für sensible Aktionen über `requireStepUp`. Datenbank-Rollen: Laufzeit nur DML (`DATABASE_URL`), Migrationen mit `MIGRATION_DATABASE_URL`.
 - Offline-first: UI schreibt in die lokale DB/Outbox und wartet nie auf den Server (Sync-Protokoll: Projektbeschreibung Abschnitt 6).
+- App-Anmeldung: Token nie loggen oder in localStorage legen; Refresh nie parallel oder blind wiederholen (Familien-Widerruf); Einladungs-Token nur im Fragment/POST-Body; Screens mit Geheimnissen in `BildschirmSchutz` (FLAG_SECURE); Zwischenablage nur auf Klick; Meldungen nur aus `ApiException`/`PasskeyException` (keine Servertexte).
 - Datenschutz: keine Tracker, keine Fremd-Einbindungen (Schriften, Karten, Skripte), Push ohne Inhalte, Standort nur durch die Person selbst. CSP in `deploy/Caddyfile` nicht lockern, ohne Security zu fragen.
 - `applicationId` (`dev.lx_labs.fampad`) und Android-Signaturschlüssel nie ändern.
 - Geheimnisse (`.env`, `key.properties`, Keystores, Signaturschlüssel des Update-Manifests) nie einchecken. `kUpdatePublicKey` ist bis zum ersten Release ein Platzhalter (siehe `tools/README.md`).
