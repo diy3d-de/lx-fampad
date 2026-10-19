@@ -54,7 +54,7 @@ Stand: Phase 1c-1 (Sync-Kern mit Listen; Konten und Anmeldung seit 1a/1b). Basis
 | `invite_not_open` | 409 | widerrufen/verlängern, aber die Einladung ist nicht (mehr) offen |
 | `multiple_families` / `already_bootstrapped` | 409 | nur beim Einrichten per CLI (`npm run bootstrap`), nicht über die HTTP-API: mehr als eine Familie vorhanden bzw. Familie schon eingerichtet |
 | `rate_limited` / `too_many_attempts` | 429 | Rate-Limit bzw. verzögerte Sperre; `Retry-After` in Sekunden |
-| `server_busy` | 503 | Passwort-Berechnung ausgelastet; es wird kein Fehlversuch gezählt |
+| `server_busy` | 503 | Passwort-Berechnung ausgelastet (es wird kein Fehlversuch gezählt) bzw. beim Sync: die Familie ist gerade gesperrt oder die Anweisung lief zu lange (`Retry-After`, nichts wurde geändert) |
 | `internal_error` | 500 | unerwarteter Fehler |
 
 **Sitzungsende aus Sicht der App:** Nur `401 unauthenticated` und `401 invalid_token` bedeuten, dass die Sitzung ungültig ist (die App erneuert dann einmal bzw. meldet ab). Alle anderen 401-Fachcodes (`step_up_failed`, `invalid_credentials`) beenden die Sitzung nicht und werden nicht wiederholt.
@@ -84,7 +84,7 @@ Antworten der API tragen `Cache-Control: no-store`.
 
 Dann widerruft der Server die erste, nie angekommene Nachfolgerin und stellt **genau ein** neues Paar aus (immer nur ein lebender Nachfolger je Familie; Audit-Ereignis `session_refresh_retry`). Mehrfache und gleichzeitige Wiederholungen im Fenster sind erlaubt und werden nacheinander bedient (Zeilensperre); es bleibt bei einem lebenden Nachfolger. Alles andere bleibt **echte Wiederverwendung** und widerruft die ganze Familie: Wiederholung nach mehr als 30 Sekunden, von einer anderen `deviceId`, oder nachdem die Nachfolgerin schon benutzt wurde. Das Fenster ersetzt kein Wiederholen auf Verdacht: Die App sendet ein Refresh-Token nur dann erneut, wenn sicher ist, dass die Anfrage den Server nie erreichte (Fehler beim Verbindungsaufbau); bei unklarem Ausgang meldet sie ab. Sicherheitsbetrachtung: PROJEKTBESCHREIBUNG.md, Abschnitt 7.
 
-**Rate-Limits:** 300 Anfragen/min je IP insgesamt; `/auth/*`, `/ws-ticket`, `/invites` (POST), `/members/:id/reset` und `/me/passkeys/*` strenger (10/min); `POST /sync` 120/min je IP (`SYNC_RATE_LIMIT_MAX`). Zusätzlich zählt der Server
+**Rate-Limits:** 300 Anfragen/min je IP insgesamt; `/auth/*`, `/ws-ticket`, `/invites` (POST), `/members/:id/reset` und `/me/passkeys/*` strenger (10/min); `POST /sync` 120/min je IP (`SYNC_RATE_LIMIT_MAX`) und zusätzlich je Gerät und Person (Abschnitt „Sync“, Limits). Zusätzlich zählt der Server
 Fehlversuche (Passwort, TOTP, Wiederherstellungs-Code, Step-up) je **IP**, je **Konto** und je **Paar aus Konto und IP** und sperrt verzögert: Konto+IP ab 5, IP ab 20, Konto ab 10 Fehlversuchen
 30 s, danach doppelt so lang, **höchstens 90 s** (so lässt sich ein fremdes Konto nicht lange aussperren; die tippende IP ist früher dran als das Konto). Anmeldung und Step-up teilen sich denselben Konto-Schlüssel.
 **Passkey-Anmeldungen hängen nicht an der Konto-Sperre** (nur IP-Sperre). IPv6-Adressen gelten als **/64-Präfix** (IP-Sperre, Rate-Limit, Verbindungslimit am WebSocket); IPv4-in-IPv6 als IPv4.
@@ -177,6 +177,7 @@ Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleic
   "deviceId": "<Geräte-ID der Sitzung>",
   "sinceRev": 17,
   "limit": 500,
+  "snapshotRev": 40,
   "ops": [
     { "opId": "<UUID>", "op": "upsert", "entity": "list_item", "id": "<UUID>", "baseRev": 12,
       "fields": { "text": "Hafermilch", "doneAt": "2026-10-19T10:00:00.000Z" } },
@@ -188,8 +189,9 @@ Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleic
 - `protocolVersion`: Version, die der Client spricht (Ganzzahl ab 1). Ist sie kleiner als `minProtocolVersion` (`GET /api/v1/version`, Einstellung `MIN_PROTOCOL_VERSION`), antwortet der Server mit `426 update_required`; die App zeigt dann die Pflicht-Update-Seite.
 - `deviceId`: muss die Geräte-ID der Sitzung sein (`session.deviceId` aus der Anmeldung bzw. `/me`), sonst `409 device_mismatch` (die App lädt dann `/me` neu).
 - `sinceRev`: letzte Revision, die der Client vollständig kennt (`0` = nichts, der Server liefert den Snapshot). Der Server merkt sie als `devices.last_rev`.
-- `limit` (optional, 1 bis 500, Standard 500): Änderungen je Antwortseite.
-- `ops`: höchstens **200** je Aufruf, in der Reihenfolge ihrer Entstehung. Der Körper ist höchstens **1 MB** groß (sonst `413 payload_too_large`).
+- `limit` (optional, 1 bis 500, Standard 500): Protokolleinträge je Antwortseite (ersetzte Stände werden übersprungen, die Seite kann daher weniger `changes` enthalten).
+- `snapshotRev` (optional): nur in den Folgeanfragen eines mehrseitigen Snapshots, genau der Wert aus der Antwort der ersten Seite (siehe unten). Dann ist `sinceRev` der Cursor.
+- `ops`: höchstens **50** je Aufruf, in der Reihenfolge ihrer Entstehung. Der Körper ist höchstens **1 MB** groß (sonst `413 payload_too_large`).
 - Je Op: `opId` (vom Client vergebene UUID, macht den Upload wiederholbar), `op` (`upsert` oder `delete`), `entity`, `id` (vom Client vergebene UUID), `baseRev` (Revision des Datensatzes, auf der die Änderung aufbaut; `0` = neu angelegt) und bei `upsert` die **geänderten** Felder in `fields`. Eine Op mit unbekanntem Feld, falschem Wert, zu langem Text oder ungültigen Zeichen (NUL, einzelnes Surrogat) wird als `invalid` abgelehnt, ohne die anderen Ops zu blockieren. Fehlt die `opId` oder ist sie keine UUID, ist die ganze Anfrage ungültig (`400`).
 
 **Antwort** (immer `200`, wenn die Anfrage gültig und die Person angemeldet ist)
@@ -207,6 +209,7 @@ Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleic
   ],
   "hasMore": false,
   "next": 21,
+  "snapshotRev": 21,
   "serverTime": "2026-10-19T10:00:01.000Z"
 }
 ```
@@ -214,24 +217,25 @@ Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleic
 - `status`: `ok` oder `resync_required` (siehe unten). `rev`: aktueller Stand der Familie zum Zeitpunkt der Abfrage.
 - `acked`: Ops, die der Server übernommen hat (auch ohne Wirkung, z. B. gleicher Wert; auch **mit Konflikten**: die nicht umstrittenen Felder wurden übernommen) und die er bei einem wiederholten Upload erneut bestätigt. `rejected`: Ops, die nicht angewendet wurden, mit Grund (Tabelle unten). Der Client nimmt beide aus seinem Ausgang.
 - `conflicts`: Felder einer Op, die **nicht** übernommen wurden, weil sie seit `baseRev` anderswo geändert wurden; `fields` nennt den **Serverstand** dieser Felder, `serverRev` die Revision des Datensatzes. Der Client übernimmt den Serverwert (und weist die Person darauf hin).
-- `changes`: Änderungen seit `sinceRev`, **stabil nach `rev` sortiert**, höchstens `limit` Einträge je Seite. Geliefert wird jeweils der **aktuelle Stand** des Datensatzes (nur der letzte Eintrag je Datensatz; `fields` enthält alle Felder), bei `tombstone: true` ohne Inhalt. Mit `hidden: true` verschwindet der Datensatz nur für diese Person (Freigabe zurückgenommen), der Client entfernt ihn lokal. Bei `sinceRev: 0` (Snapshot) gibt es keine Tombstones. Die eigenen Änderungen des Geräts kommen ebenfalls zurück (so lernt der Client die neue Revision des Datensatzes).
+- `changes`: Änderungen seit `sinceRev`, **stabil nach `rev` sortiert**, höchstens `limit` Einträge je Seite. Geliefert wird jeweils der **aktuelle Stand** des Datensatzes (nur der letzte Eintrag je Datensatz; `fields` enthält alle Felder), bei `tombstone: true` ohne Inhalt. Mit `hidden: true` verschwindet der Datensatz nur für diese Person (Freigabe zurückgenommen), der Client entfernt ihn lokal. Bei `sinceRev: 0` (Snapshot) gibt es keine Tombstones. Auch ein **gelöschter** Datensatz, den die Person nicht (mehr) sehen darf, kommt (nur im Delta, `sinceRev > 0`) als `hidden`-Tombstone: eine Liste, die erst für die Person unsichtbar gemacht und dann gelöscht wurde, bliebe sonst als Geist in ihrer App stehen. Das verrät die ID eines gelöschten, nie sichtbaren Datensatzes (nie Inhalt; siehe Datenschutz-Entwurf). Die eigenen Änderungen des Geräts kommen ebenfalls zurück (so lernt der Client die neue Revision des Datensatzes).
 - `hasMore` / `next`: gibt es mehr als `limit` Änderungen, ist `hasMore` `true` und `next` das `sinceRev` der nächsten Anfrage (ohne Ops). Sonst gilt `rev` als neues `sinceRev`. Ops werden nur in der ersten Anfrage gesendet.
-- **`resync_required`**: Der Client ist zu weit zurück (`sinceRev` liegt vor `families.purged_rev`: Tombstones bzw. Protokolleinträge wurden schon bereinigt) oder ihm eilt die Datenbank voraus (`sinceRev` größer als der Stand des Servers, z. B. nach einem Zurückspielen). Die Antwort enthält keine `changes`; die mitgesendeten Ops sind trotzdem angewendet und bestätigt. Der Client leert die lokalen Fachtabellen (der Ausgang bleibt) und beginnt mit `sinceRev: 0` von vorn.
-- Der Aufruf ändert `devices.last_rev` (auf das gesendete `sinceRev`) und `last_seen_at` des Geräts.
+- **Mehrseitiger Snapshot (`snapshotRev`):** Die erste Seite (`sinceRev: 0`) legt die Ziel-Revision fest (Stand der Familie) und nennt sie als `snapshotRev`, solange weitere Seiten folgen. Der Client sendet sie mit `sinceRev: next` zurück. Folgeseiten prüfen **nie** gegen `purged_rev` (ein Snapshot braucht keine Tombstones, Bereinigung während des Laufs kann ihn nicht brechen), liefern nur Einträge bis zur Ziel-Revision, **nie Tombstones** und schreiben `devices.last_rev` nicht fort. Ist die letzte Seite erreicht und die Familie inzwischen weitergekommen, antwortet der Server mit `hasMore: true`, `next` = Ziel-Revision und **ohne** `snapshotRev`: der Client fährt mit einem normalen Lauf ab dort fort (Änderungen während des Snapshots kommen als Delta). Ein `snapshotRev` über dem Stand der Familie ergibt `resync_required`; ein `snapshotRev` kleiner oder gleich `sinceRev` wird ignoriert. Der Client speichert `snapshotRev` mit dem Cursor (ein unterbrochener Snapshot wird fortgesetzt) und löscht es bei `resync_required`, Gerätewechsel und Abschluss.
+- **`resync_required`**: Der Client ist zu weit zurück (`sinceRev` liegt vor `families.purged_rev`: Tombstones bzw. Protokolleinträge wurden schon bereinigt; gilt nicht für Folgeseiten eines Snapshots), ihm eilt die Datenbank voraus (`sinceRev` größer als der Stand des Servers, z. B. nach einem Zurückspielen) oder seine Sicht hat sich geändert (`devices.resync_required`, gesetzt beim Rollenwechsel der Person; das Gerät kennt Datensätze, die es jetzt nicht mehr sehen dürfte). Das Flag gilt, bis das Gerät mit `sinceRev: 0` neu beginnt (und die Rolle seither unverändert ist). Die Antwort enthält keine `changes`; die mitgesendeten Ops sind trotzdem angewendet und bestätigt. Der Client leert die lokalen Fachtabellen (der Ausgang bleibt) und beginnt mit `sinceRev: 0` von vorn.
+- Der Aufruf ändert `devices.last_rev` (auf das gesendete `sinceRev`, nicht bei Folgeseiten eines Snapshots) und `last_seen_at` des Geräts.
 
 **Entscheidungen**
 
-- **Idempotenz:** Jede Op läuft in einer eigenen Transaktion; die `opId` wird in `applied_ops` gespeichert (mit Ergebnis und Konflikten). Eine wiederholte Op (Antwort ging verloren) erhöht die Revision nicht und liefert dasselbe Ergebnis. Eine `opId`, die von einem **anderen Gerät** stammt, wird mit `duplicate_op` abgelehnt. `applied_ops` wird nach 90 Tagen bereinigt.
+- **Idempotenz:** Jede Op läuft in einer eigenen Transaktion; die `opId` wird in `applied_ops` gespeichert (mit Ergebnis, Ziel der Op und den **Namen** der Konfliktfelder, nie mit Werten). Eine wiederholte Op (Antwort ging verloren) erhöht die Revision nicht und liefert dasselbe Ergebnis; Konfliktwerte werden dabei neu gelesen und die Rechte neu geprüft (wer den Datensatz inzwischen nicht mehr sehen darf oder wenn er gelöscht ist, bekommt keine Werte). Eine `opId`, die von einem **anderen Gerät** stammt, wird mit `duplicate_op` abgelehnt. `applied_ops` wird nach 90 Tagen bereinigt, **abgelehnte** Ops schon nach 7 Tagen.
 - **Revisionen:** je Familie fortlaufend und lückenlos (die Familienzeile wird je Op gesperrt, `families.current_rev` atomar fortgeschrieben; gleichzeitige Syncs laufen nacheinander). Jede Änderung schreibt einen Eintrag in `change_log` und setzt `field_revs` je geänderten Feld.
 - **Konflikte, Last-write-wins pro Feld:** Ein Feld einer `upsert`-Op **verliert**, wenn seine `field_rev` größer als `baseRev` ist (jemand hat es seit der Basis des Clients geändert) und diese Änderung **nicht vom selben Gerät** stammt. Der Serverwert bleibt und steht in `conflicts`. Reihenfolge bestimmt der Server, nie die Uhr des Clients. Felder, die nur eine Seite geändert hat, werden zusammengeführt (Abhaken gewinnt nicht gegen gleichzeitiges Umbenennen). Ein gleicher Wert ist kein Konflikt. Mehrere Ops desselben Geräts mit gleichem `baseRev` kollidieren nicht miteinander.
 - **Löschen gewinnt:** `delete` wirkt immer (auch gegen gleichzeitige Änderungen) und ist wiederholbar. Ein `upsert` auf einen gelöschten Datensatz wird mit `deleted` abgelehnt. Das Löschen einer Liste löscht ihre Einträge mit (je ein Tombstone, die der Einträge mit kleineren Revisionen). Beim Löschen werden Inhalte sofort überschrieben und im `change_log` geleert.
-- **Anlegen:** `upsert` auf eine unbekannte `id` mit `baseRev: 0` legt an (Pflichtfelder nötig); mit `baseRev > 0` ist der Datensatz inzwischen bereinigt (`not_found`). Eine ID, die schon einer fremden Familie gehört, ergibt `id_taken` (ohne weitere Angaben).
+- **Anlegen:** `upsert` auf eine unbekannte `id` mit `baseRev: 0` legt an (Pflichtfelder nötig); mit `baseRev > 0` ist der Datensatz inzwischen bereinigt (`not_found`). Eine ID, die schon einem fremden Datensatz (auch einer anderen Familie) gehört, ergibt `not_found` (verrät nicht, dass es sie gibt).
 - **Verweise:** Verweise auf Mitglieder (`assigneeId`) müssen auf ein **aktives Mitglied der eigenen Familie** zeigen (`invalid_reference`), `listId` auf eine vorhandene, sichtbare, nicht gelöschte Liste.
 - **Sortierung:** `position` ist eine Kommazahl; eine neue Position liegt zwischen den Nachbarn (Mittelwert, neue Einträge oben: kleiner als alle offenen). Nur das verschobene Feld ändert sich; Gleichstand entscheidet die Anlegezeit, dann die ID. Wertebereich ±10^12.
 - **Obergrenzen:** 200 lebende Listen je Familie, 1000 lebende Einträge je Liste (`limit_reached`).
 - **Mitglied entfernen:** Verweise der Person (`assigneeId`, `ownerId`) werden mit einem Änderungseintrag auf `null` gesetzt und die Geräte per WebSocket benachrichtigt; Mitglieder selbst sind keine Sync-Entität.
 - **Wartung** (stündlich): Tombstones werden entfernt, wenn alle aktiven (nicht abgemeldeten) Geräte der Familie sie kennen (`last_rev` >= Revision) oder sie älter als 90 Tage sind; dabei steigt `families.purged_rev`. Ersetzte Protokolleinträge verschwinden nach 90 Tagen. Gerät mit neuer Geräte-ID (neue Anmeldung): die App beginnt mit einem Snapshot.
-- **Limits:** höchstens 120 Aufrufe je Minute und IP (`SYNC_RATE_LIMIT_MAX`, sonst `429 rate_limited` mit `Retry-After`), 200 Ops, 1 MB. Inhalte werden nie geloggt.
+- **Limits:** höchstens 120 Aufrufe je Minute und IP (`SYNC_RATE_LIMIT_MAX`), **50 Ops** je Aufruf, 1 MB. Zusätzlich ein Token-Bucket **je Gerät** und **je Person** (Person = Dreifaches): Anfragen (`SYNC_REQ_BURST` 30, `SYNC_REQ_PER_MINUTE` 120) und Ops (`SYNC_OPS_BURST` 100, mindestens 50, `SYNC_OPS_PER_MINUTE` 120; eine Anfrage kostet 1, jede Op 1) sowie eine Tagesobergrenze je Gerät (`SYNC_OPS_PER_DAY`, 5000 Ops in 24 Stunden, gezählt über `applied_ops`). Reicht der Bucket nicht, wird die **ganze** Anfrage mit `429 rate_limited` und `Retry-After` abgewiesen (nichts wird halb verarbeitet; der Client wiederholt später dieselben Ops). Jede Op läuft mit `lock_timeout` (5 s) und `statement_timeout` (10 s); wird die Sperre der Familie nicht rechtzeitig frei oder dauert die Anweisung zu lange, antwortet der Sync mit `503 server_busy` und `Retry-After` (die Op ist dann nicht angewendet). Inhalte werden nie geloggt.
 
 **Gründe einer Ablehnung (`rejected[].code`)**
 
@@ -244,11 +248,10 @@ Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleic
 | `deleted` | Der Datensatz wurde gelöscht |
 | `parent_deleted` | Die übergeordnete Liste wurde gelöscht |
 | `invalid_reference` | Verweis auf ein Mitglied, das nicht (mehr) zur Familie gehört |
-| `id_taken` | Die ID gehört schon zu einem fremden Datensatz |
 | `limit_reached` | Obergrenze erreicht |
 | `duplicate_op` | Die `opId` wurde von einem anderen Gerät benutzt |
 
-Fehler der Anfrage selbst: `400 invalid_request` (Umschlag, zu viele Ops, ungültige `opId`), `401 unauthenticated`, `403 csrf_invalid`, `409 device_mismatch`, `413 payload_too_large`, `426 update_required`, `429 rate_limited`.
+Fehler der Anfrage selbst: `400 invalid_request` (Umschlag, zu viele Ops, ungültige `opId`), `401 unauthenticated`, `403 csrf_invalid`, `409 device_mismatch`, `413 payload_too_large`, `426 update_required`, `429 rate_limited`, `503 server_busy` (siehe Limits).
 
 **Rechte (zentrales Modell, `server/src/sync/permissions.ts`)**
 
@@ -259,7 +262,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | `list` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufen `family`/`all` lesen; anlegen nur mit Stufe `family`; **eigene** Listen umbenennen (`name`, `kind`) und löschen | nur Stufe `all` lesen |
 | `list_item` | alles | in sichtbaren Listen lesen, anlegen, ändern, abhaken, zuweisen, löschen | in freigegebenen Listen lesen und **abhaken** (`doneAt`); sonst nichts |
 
-Ändert sich die Freigabe einer Liste, werden ihre Einträge neu angestoßen (neue Revision ohne Inhaltsänderung): Geräte, die sie nun sehen dürfen, bekommen sie; Geräte, die die Liste nicht mehr sehen dürfen, bekommen einen Tombstone mit `hidden: true` ohne Inhalt. Bei Rollenwechsel werden die Sitzungen widerrufen; die neue Anmeldung ist ein neues Gerät und beginnt mit einem Snapshot.
+Ändert sich die Freigabe einer Liste, werden ihre Einträge neu angestoßen (neue Revision ohne Inhaltsänderung): Geräte, die sie nun sehen dürfen, bekommen sie; Geräte, die die Liste nicht mehr sehen dürfen, bekommen einen Tombstone mit `hidden: true` ohne Inhalt. Bei Rollenwechsel werden die Sitzungen widerrufen und das Flag `resync_required` der Geräte der Person gesetzt; die neue Anmeldung ist ein neues Gerät und beginnt mit einem Snapshot (die App leert außerdem bei jeder neuen Geräte-ID ihre Fachtabellen und stellt nur lokal neu angelegte, noch nicht gesendete Zeilen wieder her).
 
 **Entitäten** (Namen und Felder in der Schnittstelle; `rw` = vom Client beschreibbar, `create` = nur beim Anlegen, `server` = nur der Server)
 
@@ -284,7 +287,7 @@ Neue Entitäten (Termine, Aufgaben, Chat, Dateien) tragen sich im Entitäten-Reg
 1. `POST /ws-ticket` (angemeldet) → `{ ticket }`.
 2. `wss://familie.lx-labs.dev/ws` öffnen (kein Ticket in der URL!); der Server sendet `{type:"hello", protocolVersion, serverVersion}`.
 3. Als **erste Nachricht** `{ "type": "auth", "ticket": "<ticket>" }` senden (innerhalb von 5 s). Antwort `{type:"ready"}`; bei ungültigem, abgelaufenem oder schon benutztem Ticket schließt der Server mit Code `4401` und zählt den Fehlversuch gegen die IP.
-   Danach meldet der Server nach **jedem Commit einer Änderung** im Sync allen Sockets der Familie `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat, und an Gäste, die den Datensatz nicht sehen). Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
+   Danach meldet der Server nach **jedem Commit einer Änderung** im Sync den Sockets der Familie, **deren Rolle die Änderung sehen darf**, `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat). Wer einen Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab; entzieht eine Änderung die Sicht (Freigabe zurückgenommen), erfahren es die Rollen vorher und nachher. Das Bereinigen von Verweisen beim Entfernen eines Mitglieds geht an alle Rollen. Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
 4. Browser mit gültigem Session-Cookie sind schon beim Upgrade angemeldet.
 5. Limits: Nachrichten je Socket (30 je 10 s, sonst Code `4429`), Verbindungen je IP (IPv6: je /64; 10, vor dem Upgrade `429`) und je Person (8, Code `4429`).
 6. **Widerruf:** Abmelden, Gerät entfernen, „überall abmelden“, Rollenwechsel und Entfernen schließen die betroffenen Sockets sofort mit Code `4401`. Zusätzlich prüft der Server bei jedem Ping (30 s), ob Sitzung und Mitgliedschaft noch gelten (sonst `4401`), und hält die Rolle der Verbindung aktuell.

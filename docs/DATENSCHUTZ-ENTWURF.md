@@ -32,7 +32,7 @@ verbietet Fremdadressen). Es gibt keinen Service Worker und keine Cookies außer
 | Kurzlebige Anmeldezustände: WebAuthn-Challenges, angefangene Registrierungen (Name, E-Mail, Passwort-Hash und verschlüsseltes TOTP-Geheimnis bis zum Abschluss), WebSocket-Tickets (nur Hash) | Ablauf der Anmeldung | Ist (Phase 1a), Löschung nach wenigen Minuten bzw. 30 Sekunden | Art. 6 Abs. 1 lit. b |
 | Inhalte: **Listen und Einträge** (Listenname, Eintragstext, Zuständigkeit, Zeitpunkt „erledigt“, Freigabe-Stufe, wer die Liste angelegt hat) | eigentliche Funktion | **Ist (Phase 1c-1)** | Art. 6 Abs. 1 lit. b |
 | Inhalte: Termine, Chat-Nachrichten (inkl. Lesebestätigungen, Reaktionen), Aufgaben, Dateien | eigentliche Funktion | Geplant (Phase 1), Fotos u. a. Phase 2 | Art. 6 Abs. 1 lit. b |
-| Sync-Protokoll: Änderungsprotokoll (`change_log`: Revision, Art und ID des Datensatzes, geänderte Felder mit Inhalt, Autor, Gerät, Zeitpunkt), verarbeitete Ops (`applied_ops`: op_id, Gerät, Ergebnis), Gerätestand (`devices.last_rev`) | Abgleich der Geräte, wiederholbares Senden, Echtzeit | Ist (Phase 1c-1); Aufbewahrung Abschnitt 10 | Art. 6 Abs. 1 lit. b, f |
+| Sync-Protokoll: Änderungsprotokoll (`change_log`: Revision, Art und ID des Datensatzes, geänderte Felder mit Inhalt, Autor, Gerät, Zeitpunkt), verarbeitete Ops (`applied_ops`: op_id, Gerät, Ergebnis, Art und ID des Ziel-Datensatzes, bei Konflikten nur die **Namen** der betroffenen Felder, nie ihre Werte), Gerätestand (`devices.last_rev`, `devices.resync_required`) | Abgleich der Geräte, wiederholbares Senden, Echtzeit | Ist (Phase 1c-1); Aufbewahrung Abschnitt 10 | Art. 6 Abs. 1 lit. b, f |
 | Standort (Live-Teilen) | Funktion „Standort teilen“ | Geplant (Phase 2) | Art. 6 Abs. 1 lit. a (Einwilligung, Abschnitt 8) |
 | Push-Endpunkt je Gerät (UnifiedPush/Web Push), enthält nie Inhalte | Benachrichtigung „es gibt Neues“ | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b, f |
 
@@ -119,8 +119,8 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 | Fehlversuchs-Zähler | 15 Minuten nach dem letzten Fehlversuch (sofern nicht mehr gesperrt), gelöscht beim nächsten stündlichen Lauf |
 | Listen und Einträge (Phase 1c-1), später Chat, Termine, Aufgaben, Dateien | bis zum Löschen durch die Nutzer. Beim Löschen werden die **Inhalte sofort überschrieben** und alle Inhalte der zugehörigen `change_log`-Einträge geleert; zurück bleibt ein **Tombstone** ohne Inhalt (ID, Revision, Zeitpunkt), bis alle aktiven Geräte der Familie ihn kennen, **spätestens 90 Tage**; dann wird er samt Protokolleintrag gelöscht. Wird ein Mitglied entfernt, werden Verweise auf es (Zuständigkeit, Besitzer) geleert |
 | `change_log` (Sync): Einträge, die nicht mehr den aktuellen Stand ihres Datensatzes zeigen | 90 Tage, dann gelöscht (der aktuelle Stand je Datensatz steht ohnehin in der Fachtabelle) |
-| `applied_ops` (verarbeitete Client-Operationen) | 90 Tage, dann gelöscht |
-| Gerätestand `devices.last_rev` | solange das Gerät angemeldet ist; abgemeldete Geräte zählen für die Tombstone-Bereinigung nicht mehr |
+| `applied_ops` (verarbeitete Client-Operationen: op_id, Gerät, Ergebnis, Ziel, Namen von Konfliktfeldern) | übernommene 90 Tage, **abgelehnte 7 Tage**, dann gelöscht. Konfliktwerte werden nicht gespeichert (sie könnten sonst Inhalte erhalten, die eine Person inzwischen nicht mehr sehen darf; eine Wiederholung liest den aktuellen Stand und prüft die Rechte neu) |
+| Gerätestand `devices.last_rev`, `devices.resync_required` | solange das Gerät angemeldet ist; abgemeldete Geräte zählen für die Tombstone-Bereinigung nicht mehr |
 | Standortdaten | nach Ende der Freigabe sofort gelöscht |
 | ntfy-Zwischenspeicher | 12 Stunden |
 | Backups (restic, verschlüsselt, externes Ziel) | täglich 7, wöchentlich 4, monatlich 6 Stück **[Phase 1]**; gelöschte Daten verschwinden spätestens nach Ablauf der letzten Sicherung |
