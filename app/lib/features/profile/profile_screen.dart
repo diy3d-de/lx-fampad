@@ -63,6 +63,11 @@ class ProfileScreen extends ConsumerStatefulWidget {
 }
 
 class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZustand<ProfileScreen> {
+  /// Web: Das Abmelden auf dem Server ist gescheitert. Die Person gilt weiter als angemeldet und kann es erneut versuchen
+  /// oder nur lokal abmelden (die Sitzung bleibt dann auf dem Server bis zum Ablauf gültig).
+  bool _abmeldenGescheitert = false;
+  bool _abmeldenUeberall = false;
+
   @override
   void initState() {
     super.initState();
@@ -116,9 +121,44 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
       ueberall ? 'Überall abmelden' : 'Abmelden',
     );
     if (!ja || !mounted) return;
+    await _abmeldenAusfuehren(ueberall: ueberall);
+  }
+
+  Future<void> _abmeldenAusfuehren({required bool ueberall, bool nurLokal = false}) async {
     final nav = Navigator.of(context);
-    await ref.read(authProvider.notifier).abmelden(ueberall: ueberall);
+    final messenger = ScaffoldMessenger.of(context);
+    AbmeldeErgebnis? ergebnis;
+    setState(() {
+      _abmeldenGescheitert = false;
+      _abmeldenUeberall = ueberall;
+    });
+    final ok = await ausfuehren(() async {
+      ergebnis = await ref.read(authProvider.notifier).abmelden(ueberall: ueberall, nurLokal: nurLokal);
+    });
+    if (!ok) {
+      // Web bei Serverfehler (oder unerwarteter Fehler): NICHT als abgemeldet anzeigen, Fehler + Wiederholen anbieten
+      if (mounted) setState(() => _abmeldenGescheitert = true);
+      return;
+    }
     nav.popUntil((r) => r.isFirst);
+    final e = ergebnis;
+    if (e != null && !e.serverAbgemeldet) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            duration: Duration(seconds: 8),
+            content: Text(
+              'Du wurdest nur auf diesem Gerät abgemeldet: Der Server war nicht erreichbar. Die Sitzung dort bleibt bis zum Ablauf gültig; '
+              'du kannst sie später unter "Angemeldete Geräte" beenden.',
+            ),
+          ),
+        );
+    } else if (e != null && !e.lokalSauber) {
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text('Lokale Daten auf diesem Gerät konnten nicht vollständig gelöscht werden.')));
+    }
   }
 
   @override
@@ -153,7 +193,18 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
             ),
           ),
         if (auth.offline) ...[const SizedBox(height: 12), const MeldungsBox('Keine Verbindung zum Server. Einstellungen sind erst wieder online verfügbar.')],
-        if (fehler != null) ...[const SizedBox(height: 12), MeldungsBox(fehler!)],
+        if (fehler != null && !_abmeldenGescheitert) ...[const SizedBox(height: 12), MeldungsBox(fehler!)],
+        if (_abmeldenGescheitert) ...[
+          const SizedBox(height: 12),
+          const MeldungsBox(
+            'Du bist noch angemeldet: Das Abmelden auf dem Server hat nicht geklappt. Versuche es erneut. '
+            'Wenn du nur lokal abmeldest, bleibt die Sitzung auf dem Server bis zum Ablauf gültig und ist beim nächsten Laden der Seite möglicherweise wieder aktiv.',
+          ),
+          const SizedBox(height: 8),
+          ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall)),
+          const SizedBox(height: 8),
+          LinkKnopf('Trotzdem nur lokal abmelden', onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall, nurLokal: true)),
+        ],
         const SizedBox(height: 20),
         const MonoLabel('// sicherheit'),
         const SizedBox(height: 8),

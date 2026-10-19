@@ -190,7 +190,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
         enableSuggestions: false,
         onSubmitted: (_) => _linkPruefen(),
         style: const TextStyle(fontFamily: kFontMono, fontSize: 13),
-        decoration: const InputDecoration(labelText: 'Einladungslink', hintText: 'https://$kInviteHost/#/einladung/…'),
+        decoration: InputDecoration(labelText: 'Einladungslink', hintText: 'https://$kInviteHost/#/einladung/…'),
       ),
       const SizedBox(height: 12),
       HauptKnopf(text: 'Einladung prüfen', laeuft: laeuft, onPressed: _linkPruefen),
@@ -205,7 +205,9 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
 
   Widget _formular(InviteLookup info) {
     final bis = DateFormat('d. MMM, HH:mm', 'de_DE').format(info.expiresAt.toLocal());
-    return Column(
+    // AutofillGroup (im Web ein <form>): Passwortmanager bieten ein neues Passwort an und speichern es mit der E-Mail
+    return AutofillGroup(
+      child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         LxCard(
@@ -262,7 +264,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
             controller: _email,
             keyboardType: TextInputType.emailAddress,
             textInputAction: TextInputAction.next,
-            autofillHints: const [AutofillHints.email],
+            autofillHints: const [AutofillHints.username, AutofillHints.email],
             decoration: const InputDecoration(labelText: 'E-Mail'),
           ),
           const SizedBox(height: 16),
@@ -325,6 +327,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
           ),
         ),
       ],
+    ),
     );
   }
 
@@ -346,15 +349,18 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
         const SizedBox(height: 12),
         const MonoLabel('// schlüssel', color: kTextMuted),
         const SizedBox(height: 4),
-        SelectableText(
-          _gruppiert(start.totpSecret),
-          style: const TextStyle(fontFamily: kFontMono, fontSize: 15, letterSpacing: 1.2, color: kAccent),
+        Semantics(
+          label: 'Schlüssel für die Authenticator-App',
+          child: SelectableText(
+            _gruppiert(start.totpSecret),
+            style: const TextStyle(fontFamily: kFontMono, fontSize: 15, letterSpacing: 1.2, color: kAccent),
+          ),
         ),
         const SizedBox(height: 8),
         ZweitKnopf(
           text: 'Schlüssel kopieren',
           icon: Icons.copy,
-          onPressed: () => inZwischenablage(context, start.totpSecret, 'Schlüssel kopiert.'),
+          onPressed: () => inZwischenablage(context, start.totpSecret, 'Schlüssel kopiert.', geheim: true),
         ),
         const SizedBox(height: 16),
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],

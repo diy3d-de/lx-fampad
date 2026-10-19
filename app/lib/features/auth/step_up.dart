@@ -17,7 +17,8 @@ Future<T?> mitStepUp<T>(BuildContext context, WidgetRef ref, Future<T> Function(
     if (!e.istStepUp) rethrow;
   }
   if (!context.mounted) return null;
-  final ok = await showDialog<bool>(context: context, builder: (_) => const StepUpDialog());
+  // Nicht per Tipp daneben schließbar: sonst bliebe ein laufender Passkey-Dialog ohne Empfänger zurück
+  final ok = await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => const StepUpDialog());
   if (ok != true) return null;
   return aktion();
 }
@@ -72,7 +73,10 @@ class _StepUpDialogState extends ConsumerState<StepUpDialog> with AktionsZustand
     final passkeys = me == null || me.passkeys > 0;
     final totp = me == null || me.hasTotp;
     final codeSichtbar = totp || _mitWiederherstellungscode || !passkeys;
-    return AlertDialog(
+    // Zurück-Taste/Geste ist gesperrt, solange eine Aktion (z. B. der Passkey-Dialog) läuft
+    return PopScope(
+      canPop: !laeuft,
+      child: AlertDialog(
       title: const Text('Bitte bestätigen'),
       scrollable: true,
       content: Column(
@@ -118,6 +122,7 @@ class _StepUpDialogState extends ConsumerState<StepUpDialog> with AktionsZustand
         ],
       ),
       actions: [TextButton(onPressed: laeuft ? null : () => Navigator.of(context).pop(false), child: const Text('Abbrechen'))],
+      ),
     );
   }
 }

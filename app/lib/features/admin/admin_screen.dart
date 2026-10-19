@@ -65,10 +65,12 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
     unawaited(_laden());
   }
 
-  Future<void> _laden() => ausfuehren(() async {
+  Future<void> _ladeListe() async {
     final m = await ref.read(apiProvider).mitglieder();
     if (mounted) setState(() => _mitglieder = m);
-  });
+  }
+
+  Future<void> _laden() => ausfuehren(_ladeListe);
 
   Future<void> _aktion(UserDto m, _Aktion a) async {
     switch (a) {
@@ -108,15 +110,17 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
       case _Aktion.zuruecksetzen:
         final opt = await _zuruecksetzenWaehlen(m);
         if (opt == null || !mounted) return;
-        await ausfuehren(() async {
+        var erledigt = false;
+        final ok = await ausfuehren(() async {
           final inv = await mitStepUp(context, ref, () => ref.read(apiProvider).mitgliedZuruecksetzen(m.id, stunden: opt.$1, pin: opt.$2));
           if (inv == null || !mounted) return;
+          erledigt = true;
           await Navigator.of(context).push<void>(
             MaterialPageRoute(builder: (_) => EinladungErstelltSeite(einladung: inv, rolle: m.role, fuer: m.displayName)),
           );
-          final liste = await ref.read(apiProvider).mitglieder();
-          if (mounted) setState(() => _mitglieder = liste);
         });
+        // Zugang ist zurückgesetzt: ein Fehler beim Neuladen der Liste ändert daran nichts
+        if (ok && erledigt && mounted) await neuLadenMitHinweis(_ladeListe);
       case _Aktion.freigeben:
         await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).freigeben(m.id), stepUp: false), erfolg: '${m.displayName} ist freigegeben.');
       case _Aktion.ablehnen:
@@ -140,12 +144,10 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
     var erledigt = false;
     final ok = await ausfuehren(() async {
       final r = await aktion();
-      if (r != true || !mounted) return;
-      erledigt = true;
-      final m = await ref.read(apiProvider).mitglieder();
-      if (mounted) setState(() => _mitglieder = m);
+      if (r == true) erledigt = true;
     });
-    if (ok && erledigt && mounted) zeigeHinweis(context, erfolg);
+    // Erfolg und Neuladen der Liste getrennt: scheitert nur das Neuladen, war die Aktion trotzdem erfolgreich
+    if (ok && erledigt && mounted) await neuLadenMitHinweis(_ladeListe, erfolg: erfolg);
   }
 
   Future<bool> _frage(String titel, String text, String knopf) async =>
@@ -312,24 +314,28 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
     unawaited(_laden());
   }
 
-  Future<void> _laden() => ausfuehren(() async {
+  Future<void> _ladeListe() async {
     final l = await ref.read(apiProvider).einladungen();
     if (mounted) setState(() => _liste = l);
-  });
+  }
+
+  Future<void> _laden() => ausfuehren(_ladeListe);
 
   Future<void> _neu() async {
     final wahl = await neueEinladungWaehlen(context, widget.rolle);
     if (wahl == null || !mounted) return;
-    await ausfuehren(() async {
+    var erledigt = false;
+    final ok = await ausfuehren(() async {
       final api = ref.read(apiProvider);
       Future<CreatedInvite> erzeugen() => api.einladungErstellen(rolle: wahl.rolle, stunden: wahl.stunden, pin: wahl.pin, freigabe: wahl.freigabe);
       // Admin-Einladungen verlangen eine frische Bestätigung (Step-up)
       final inv = await mitStepUp(context, ref, erzeugen);
       if (inv == null || !mounted) return;
+      erledigt = true;
       await Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => EinladungErstelltSeite(einladung: inv, rolle: wahl.rolle)));
-      final l = await api.einladungen();
-      if (mounted) setState(() => _liste = l);
     });
+    // Die Einladung existiert: ein Fehler beim Neuladen der Liste ist kein Fehler beim Erstellen
+    if (ok && erledigt && mounted) await neuLadenMitHinweis(_ladeListe);
   }
 
   Future<void> _widerrufen(InviteDto i) async {
@@ -345,11 +351,8 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
       ),
     );
     if (ja != true || !mounted) return;
-    await ausfuehren(() async {
-      await ref.read(apiProvider).einladungWiderrufen(i.id);
-      final l = await ref.read(apiProvider).einladungen();
-      if (mounted) setState(() => _liste = l);
-    });
+    final ok = await ausfuehren(() => ref.read(apiProvider).einladungWiderrufen(i.id));
+    if (ok && mounted) await neuLadenMitHinweis(_ladeListe);
   }
 
   Future<void> _verlaengern(InviteDto i) async {
@@ -364,11 +367,8 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
       ),
     );
     if (stunden == null || !mounted) return;
-    await ausfuehren(() async {
-      await ref.read(apiProvider).einladungVerlaengern(i.id, stunden);
-      final l = await ref.read(apiProvider).einladungen();
-      if (mounted) setState(() => _liste = l);
-    });
+    final ok = await ausfuehren(() => ref.read(apiProvider).einladungVerlaengern(i.id, stunden));
+    if (ok && mounted) await neuLadenMitHinweis(_ladeListe);
   }
 
   @override

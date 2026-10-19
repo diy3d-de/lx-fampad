@@ -1,5 +1,6 @@
 // Einladungslink-Parser: Fragment-Form, reines Token, ungültige Formen.
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/features/auth/invite_link.dart';
 
 void main() {
@@ -73,5 +74,30 @@ void main() {
     expect(istEinladungsFragment('#/einladung/kaputt'), isTrue);
     expect(istEinladungsFragment('#/kalender'), isFalse);
     expect(istEinladungsFragment(''), isFalse);
+  });
+
+  group('istEinladungsLink', () {
+    test('nur Links mit Fragment #/einladung zählen', () {
+      expect(istEinladungsLink('https://familie.lx-labs.dev/#/einladung/abc'), isTrue);
+      expect(istEinladungsLink('https://familie.lx-labs.dev/#/einladung'), isTrue);
+      expect(istEinladungsLink('https://familie.lx-labs.dev/'), isFalse);
+      expect(istEinladungsLink('https://familie.lx-labs.dev'), isFalse);
+      expect(istEinladungsLink('https://familie.lx-labs.dev/#/kalender'), isFalse);
+      expect(istEinladungsLink('https://familie.lx-labs.dev/einladung/abc'), isFalse);
+      expect(istEinladungsLink(''), isFalse);
+    });
+  });
+
+  group('serverKennzeile', () {
+    test('Android: Host und TLS aus API_BASE', () {
+      expect(serverKennzeile(api: 'https://familie.beispiel.de', web: false), '● familie.beispiel.de · tls 1.3');
+    });
+    test('Web: Adresse der Seite; ohne https keine TLS-Angabe', () {
+      expect(serverKennzeile(api: '', seite: Uri.parse('https://fam.test/'), web: true), '● fam.test · tls 1.3');
+      expect(serverKennzeile(api: '', seite: Uri.parse('http://localhost:8080/'), web: true), '● localhost');
+    });
+    test('ohne Angaben: Standard-Domain', () {
+      expect(serverKennzeile(api: '', web: false), '● $kInviteHost · tls 1.3');
+    });
   });
 }

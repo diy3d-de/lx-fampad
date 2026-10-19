@@ -107,11 +107,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
         const SizedBox(height: 28),
         if (hinweis != null && fehler == null) ...[MeldungsBox(hinweis, fehler: false), const SizedBox(height: 16)],
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 16)],
-        ...switch (_schritt) {
-          _Schritt.start => _start(),
-          _Schritt.code => _codeSchritt(),
-          _Schritt.wiederherstellung => _nurWiederherstellungSchritt(),
-        },
+        // AutofillGroup (im Web ein <form>): Passwortmanager erkennen Anmeldename und Passwort, und Chrome meldet kein
+        // "Password field is not contained in a form" mehr. Beim Verlassen der Seite (erfolgreiche Anmeldung) wird der Kontext gespeichert.
+        AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: switch (_schritt) {
+              _Schritt.start => _start(),
+              _Schritt.code => _codeSchritt(),
+              _Schritt.wiederherstellung => _nurWiederherstellungSchritt(),
+            },
+          ),
+        ),
       ],
       fussleiste: Column(
         mainAxisSize: MainAxisSize.min,
@@ -121,7 +128,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
             icon: kIsWeb ? Icons.link : Icons.qr_code_scanner,
             onPressed: laeuft ? null : _einladung,
           ),
-          const StatusPill('● $kInviteHost · tls 1.3'),
+          StatusPill(serverKennzeile()),
         ],
       ),
     );

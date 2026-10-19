@@ -66,11 +66,7 @@ class AuthSeite extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
                         if (label != null) ...[MonoLabel(label!), const SizedBox(height: 4)],
-                        if (titel != null)
-                          Text(
-                            titel!,
-                            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.65, color: kTextStrong),
-                          ),
+                        if (titel != null) _SeitenTitel(titel!, maxBreite: maxBreite - 48),
                         if (titel != null) const SizedBox(height: 16),
                         ...kinder,
                       ],
@@ -85,6 +81,35 @@ class AuthSeite extends StatelessWidget {
       ),
       ),
     ),
+  );
+}
+
+/// Seitentitel: 26 px; ein einzelnes langes Wort (z. B. "Wiederherstellungscodes") würde auf 360 px mitten im Wort umbrechen,
+/// deshalb wird die Schrift gerade so weit verkleinert (mindestens 18 px), dass das längste Wort in eine Zeile passt.
+class _SeitenTitel extends StatelessWidget {
+  final String text;
+  final double maxBreite;
+  const _SeitenTitel(this.text, {required this.maxBreite});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, box) {
+      final breite = box.maxWidth.isFinite ? box.maxWidth : maxBreite;
+      final skala = MediaQuery.textScalerOf(context);
+      final laengstes = text.split(RegExp(r'\s+')).fold<String>('', (a, w) => w.length > a.length ? w : a);
+      // gemessen wird mit demselben Stil wie beim Zeichnen (Schriftfamilie des Themes, sonst wäre die Messung zu schmal)
+      TextStyle stilFuer(double groesse) =>
+          DefaultTextStyle.of(context).style.merge(TextStyle(fontSize: groesse, fontWeight: FontWeight.w800, letterSpacing: -0.65, color: kTextStrong));
+      var groesse = 26.0;
+      while (groesse > 18) {
+        final p = TextPainter(text: TextSpan(text: laengstes, style: stilFuer(groesse)), textDirection: TextDirection.ltr, textScaler: skala)..layout();
+        final passt = p.width * 1.02 <= breite; // kleine Reserve für Rundung
+        p.dispose();
+        if (passt) break;
+        groesse -= 1;
+      }
+      return Text(text, style: stilFuer(groesse));
+    },
   );
 }
 
@@ -328,10 +353,10 @@ mixin AktionsZustand<T extends StatefulWidget> on State<T> {
   bool laeuft = false;
   String? fehler;
 
-  /// Führt [aktion] aus; Fehler landen in [fehler] (außer abgebrochene Passkey-Dialoge: nur ein Hinweis).
-  /// Gibt true zurück, wenn die Aktion ohne Fehler endete.
+  /// Führt [aktion] aus; Fehler landen in [fehler]. Ein vom Nutzer selbst abgebrochener Passkey-Dialog ist kein Fehler: nur ein
+  /// kurzer Hinweis, kein roter Kasten. Gibt true zurück, wenn die Aktion ohne Fehler endete.
   Future<bool> ausfuehren(Future<void> Function() aktion) async {
-    if (laeuft) return false;
+    if (!mounted || laeuft) return false;
     setState(() {
       laeuft = true;
       fehler = null;
@@ -342,13 +367,32 @@ mixin AktionsZustand<T extends StatefulWidget> on State<T> {
       return true;
     } catch (e) {
       if (mounted) {
-        setState(() {
-          laeuft = false;
-          fehler = fehlerText(e);
-        });
+        if (e is PasskeyException && e.abgebrochen) {
+          setState(() => laeuft = false);
+          zeigeHinweis(context, e.message);
+        } else {
+          setState(() {
+            laeuft = false;
+            fehler = fehlerText(e);
+          });
+        }
       }
       return false;
     }
+  }
+
+  /// Lädt nach einer erfolgreich abgeschlossenen Aktion die Liste neu und meldet dann [erfolg]. Scheitert nur das Neuladen, ist die
+  /// Aktion trotzdem gelungen: kein Fehlerkasten, nur ein Zusatz im Hinweis (die Liste lässt sich per Ziehen aktualisieren).
+  Future<void> neuLadenMitHinweis(Future<void> Function() laden, {String? erfolg}) async {
+    var aktuell = true;
+    try {
+      await laden();
+    } catch (_) {
+      aktuell = false;
+    }
+    if (!mounted) return;
+    final text = [?erfolg, if (!aktuell) 'Die Liste konnte nicht aktualisiert werden. Ziehe zum Aktualisieren nach unten.'].join(' ');
+    if (text.isNotEmpty) zeigeHinweis(context, text);
   }
 }
 
@@ -358,8 +402,14 @@ void zeigeHinweis(BuildContext context, String text) {
     ..showSnackBar(SnackBar(content: Text(text)));
 }
 
-/// Kopiert Text auf ausdrücklichen Wunsch in die Zwischenablage (nie automatisch).
-Future<void> inZwischenablage(BuildContext context, String text, String bestaetigung) async {
-  await Clipboard.setData(ClipboardData(text: text));
+/// Kopiert Text auf ausdrücklichen Wunsch in die Zwischenablage (nie automatisch). [geheim]: Codes, PIN, Schlüssel und Einladungslinks;
+/// Android markiert sie als vertraulich (EXTRA_IS_SENSITIVE: keine Vorschau, kein Eintrag in Zwischenablage-Verläufen).
+Future<void> inZwischenablage(BuildContext context, String text, String bestaetigung, {bool geheim = false}) async {
+  var erledigt = false;
+  if (geheim) {
+    final kanal = ProviderScope.containerOf(context, listen: false).read(systemChannelProvider);
+    erledigt = await kanal.geheimKopieren(text);
+  }
+  if (!erledigt) await Clipboard.setData(ClipboardData(text: text));
   if (context.mounted) zeigeHinweis(context, bestaetigung);
 }

@@ -1,5 +1,7 @@
 // QR-Scan für Einladungen (nur Android; im Web gibt es nur das Einfügen des Links, weil der Web-Scanner Skripte von
 // einem CDN laden würde). Die Kamera wird nur in diesem Screen genutzt; das Bild verlässt das Gerät nicht.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -26,11 +28,14 @@ class _QrScanScreenState extends State<QrScanScreen> {
   }
 
   void _erkannt(BarcodeCapture capture) {
-    if (_fertig) return;
+    // Der Scanner meldet Treffer mehrfach und auch noch kurz nach dem Schließen: nur der erste gültige zählt, und nur solange
+    // die Seite noch steht.
+    if (_fertig || !mounted) return;
     for (final b in capture.barcodes) {
       final token = parseInviteToken(b.rawValue ?? '');
       if (token != null) {
         _fertig = true;
+        unawaited(_controller.stop());
         Navigator.of(context).pop(token);
         return;
       }

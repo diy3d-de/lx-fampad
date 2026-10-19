@@ -75,7 +75,8 @@ class _RecoveryCodesScreenState extends ConsumerState<RecoveryCodesScreen> with 
           ZweitKnopf(
             text: 'Alle Codes kopieren',
             icon: Icons.copy,
-            onPressed: () => inZwischenablage(context, widget.codes.join('\n'), 'Codes kopiert. Lege sie sicher ab und lösche sie aus der Zwischenablage.'),
+            onPressed: () =>
+                inZwischenablage(context, widget.codes.join('\n'), 'Codes kopiert. Lege sie sicher ab und lösche sie aus der Zwischenablage.', geheim: true),
           ),
           const SizedBox(height: 8),
           const Text(

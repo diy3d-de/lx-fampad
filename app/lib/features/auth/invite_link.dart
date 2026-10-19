@@ -37,3 +37,9 @@ String? parseInviteToken(String eingabe, {String? erlaubterHost = kInviteHost}) 
 
 /// true, wenn das Fragment wie ein Einladungs-Fragment aussieht (auch mit ungültigem Token): wird dann aus der Adresszeile entfernt.
 bool istEinladungsFragment(String fragment) => fragment.startsWith('#/einladung');
+
+/// true, wenn der Link ein Einladungs-Fragment trägt (`…#/einladung…`). Alle anderen Links der Domain (Startseite, Pfade) sind keine Einladung.
+bool istEinladungsLink(String link) {
+  final hash = link.indexOf('#');
+  return hash >= 0 && istEinladungsFragment(link.substring(hash));
+}

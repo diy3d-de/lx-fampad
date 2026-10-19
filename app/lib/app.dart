@@ -28,12 +28,16 @@ class FampadApp extends ConsumerStatefulWidget {
   ConsumerState<FampadApp> createState() => _FampadAppState();
 }
 
-class _FampadAppState extends ConsumerState<FampadApp> {
+class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserver {
   StreamSubscription<String>? _links;
 
   @override
   void initState() {
     super.initState();
+    // Die App hat keine benannten Routen. Meldet der Browser einen neuen Pfad (Einfügen eines Einladungslinks in einen schon offenen
+    // Tab, Vor/Zurück), wird das hier abgefangen, BEVOR Flutters Navigator daraus eine Route mit dem Token als Namen macht, die
+    // ihn in Adresszeile und Verlauf zurückschreiben könnte. Der Link selbst wird unten über das hashchange-Ereignis verarbeitet.
+    WidgetsBinding.instance.addObserver(this);
     // Einladungslink in einem schon offenen Browser-Tab (Fragment ändert sich): wird sofort aus der Adresszeile entfernt
     aufEinladungInAdresszeileHoeren((l) => ref.read(inviteIntakeProvider.notifier).eingegangen(l.token));
     final kanal = ref.read(systemChannelProvider);
@@ -50,12 +54,27 @@ class _FampadAppState extends ConsumerState<FampadApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     unawaited(_links?.cancel());
     super.dispose();
   }
 
-  /// Link, mit dem Android die App geöffnet hat (https://familie.lx-labs.dev/#/einladung/…).
-  void _linkVonAussen(String link) => ref.read(inviteIntakeProvider.notifier).eingegangen(parseInviteToken(link));
+  /// Pfadmeldung des Browsers. Sie wird immer verschluckt (keine Route). Enthält sie einen Einladungslink, geht das Token von hier
+  /// in den Speicher, falls das Fragment schon aus der Adresszeile verschwunden war, bevor der Listener in adresszeile_web.dart es las
+  /// (Flutters Engine springt nach einer unbekannten Adresse mit history.go(-1) zurück). Doppelte Meldungen fängt der Intake ab.
+  @override
+  Future<bool> didPushRouteInformation(RouteInformation routeInformation) async {
+    final pfad = routeInformation.uri.toString();
+    if (istEinladungsFragment('#$pfad')) ref.read(inviteIntakeProvider.notifier).eingegangen(parseInviteToken('#$pfad'));
+    return true;
+  }
+
+  /// Link, mit dem Android die App geöffnet hat (https://familie.lx-labs.dev/#/einladung/…). Nur Einladungslinks (Fragment
+  /// #/einladung…) zählen; andere Links der Domain (z. B. nur die Startseite, die verifizierte App Links ebenfalls öffnen) ignoriert die App.
+  void _linkVonAussen(String link) {
+    if (!istEinladungsLink(link)) return;
+    ref.read(inviteIntakeProvider.notifier).eingegangen(parseInviteToken(link));
+  }
 
   void _einladungVerarbeiten() {
     final link = ref.read(inviteIntakeProvider);
@@ -63,13 +82,16 @@ class _FampadAppState extends ConsumerState<FampadApp> {
     final status = ref.read(authProvider).status;
     if (status == AuthStatus.pruefe) return; // erst wenn klar ist, ob schon jemand angemeldet ist
     ref.read(inviteIntakeProvider.notifier).verbraucht();
+    // Ein Post-Frame-Callback läuft nur, wenn ein Frame kommt; hier ändert sich vorher kein Widget (Link kommt von außen),
+    // deshalb wird ein Frame ausdrücklich angefordert. Sonst bliebe der Link bis zur nächsten Eingabe liegen.
+    WidgetsBinding.instance.scheduleFrame();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final nav = _navigatorKey.currentState;
       final messenger = _messengerKey.currentState;
       if (nav == null) return;
       if (link.token == null) {
         messenger?.showSnackBar(const SnackBar(content: Text('Der Einladungslink ist ungültig.')));
-      } else if (status == AuthStatus.abgemeldet || status == AuthStatus.verbindungsfehler) {
+      } else if (status == AuthStatus.abgemeldet || status == AuthStatus.verbindungsfehler || status == AuthStatus.wartend) {
         nav.popUntil((r) => r.isFirst);
         nav.push<void>(MaterialPageRoute(builder: (_) => InviteScreen(token: link.token)));
       } else {
@@ -104,16 +126,10 @@ class _FampadAppState extends ConsumerState<FampadApp> {
       ],
       theme: buildTheme(),
       // Der Startpfad der Adresszeile (Web: /einladung/<token>) wird ignoriert: der Link wird über den Intake verarbeitet.
+      // Alle Seiten werden direkt (unbenannt) mit Navigator.push geöffnet; ein Token steht nie in einem Routennamen.
       onGenerateInitialRoutes: (_) => [MaterialPageRoute<void>(builder: (_) => const _Einstieg())],
-      // Meldet der Browser später einen Pfad (z. B. /einladung/<token> nach dem Einfügen in die Adresszeile), kein Fehler:
-      // das Token geht in den Intake, die Seite schließt sich sofort wieder.
-      onGenerateRoute: (settings) {
-        final name = settings.name ?? '';
-        if (name.startsWith('/einladung')) {
-          ref.read(inviteIntakeProvider.notifier).eingegangen(parseInviteToken('#$name'));
-        }
-        return MaterialPageRoute<void>(builder: (_) => const _SofortZurueck());
-      },
+      // Formal nötig (MaterialApp verlangt eine Routenquelle). Unerreichbar, weil didPushRouteInformation alle Pfadmeldungen schluckt.
+      onUnknownRoute: (_) => MaterialPageRoute<void>(builder: (_) => const _Einstieg()),
     );
   }
 }
@@ -164,24 +180,4 @@ class _Verbindungsfehler extends ConsumerWidget {
       HauptKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: ref.read(authProvider.notifier).start),
     ],
   );
-}
-
-class _SofortZurueck extends StatefulWidget {
-  const _SofortZurueck();
-
-  @override
-  State<_SofortZurueck> createState() => _SofortZurueckState();
-}
-
-class _SofortZurueckState extends State<_SofortZurueck> {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) Navigator.of(context).maybePop();
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
 }

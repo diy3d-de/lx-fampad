@@ -34,15 +34,18 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
     );
   }
 
+  Future<void> _ladeListe() async {
+    final z = await ref.read(apiProvider).zugaenge();
+    if (mounted) setState(() => _zugaenge = z);
+  }
+
   Future<void> _laden() async {
-    await ausfuehren(() async {
-      final z = await ref.read(apiProvider).zugaenge();
-      if (mounted) setState(() => _zugaenge = z);
-    });
+    await ausfuehren(_ladeListe);
   }
 
   Future<void> _hinzufuegen() async {
-    await ausfuehren(() async {
+    var erledigt = false;
+    final ok = await ausfuehren(() async {
       final api = ref.read(apiProvider);
       final label = await _geraeteLabel();
       if (!mounted) return;
@@ -51,11 +54,13 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
       if (ch == null) return;
       final antwort = await ref.read(passkeyServiceProvider).erstellen(ch.options);
       await api.passkeyHinzufuegen(challengeId: ch.challengeId, antwort: antwort, bezeichnung: label);
-      final z = await api.zugaenge();
-      if (mounted) setState(() => _zugaenge = z);
-      unawaited(ref.read(authProvider.notifier).neuLaden());
-      if (mounted) zeigeHinweis(context, 'Passkey hinzugefügt.');
+      erledigt = true;
     });
+    // Der Passkey ist angelegt: scheitert nur das Neuladen der Liste, bleibt es ein Erfolg
+    if (ok && erledigt && mounted) {
+      unawaited(ref.read(authProvider.notifier).neuLaden());
+      await neuLadenMitHinweis(_ladeListe, erfolg: 'Passkey hinzugefügt.');
+    }
   }
 
   Future<String?> _geraeteLabel() async {
@@ -76,17 +81,19 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
       ),
     );
     if (ja != true || !mounted) return;
-    await ausfuehren(() async {
+    var erledigt = false;
+    final ok = await ausfuehren(() async {
       final api = ref.read(apiProvider);
       final fertig = await mitStepUp<bool>(context, ref, () async {
         await api.passkeyEntfernen(c.id);
         return true;
       });
-      if (fertig != true) return;
-      final z = await api.zugaenge();
-      if (mounted) setState(() => _zugaenge = z);
-      unawaited(ref.read(authProvider.notifier).neuLaden());
+      erledigt = fertig == true;
     });
+    if (ok && erledigt && mounted) {
+      unawaited(ref.read(authProvider.notifier).neuLaden());
+      await neuLadenMitHinweis(_ladeListe);
+    }
   }
 
   @override

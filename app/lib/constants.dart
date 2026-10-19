@@ -108,8 +108,31 @@ const kUpdateChannel = 'dev.lx_labs.fampad/update';
 /// Methodenkanal zu MainActivity.kt für Gerätename, Bildschirmfoto-Schutz und Einladungs-Links.
 const kSystemChannel = 'dev.lx_labs.fampad/system';
 
-/// Host der Einladungslinks (`https://familie.lx-labs.dev/#/einladung/<token>`).
-const kInviteHost = 'familie.lx-labs.dev';
+/// Host der Einladungslinks (`https://<host>/#/einladung/<token>`). Beim Build mit --dart-define=INVITE_HOST=… setzen (Standard:
+/// familie.lx-labs.dev). Er gehört zur selben Domain wie API_BASE; in AndroidManifest.xml (Intent-Filter) und MainActivity.kt steht
+/// dieselbe Domain (deploy/README.md, Abschnitt 9).
+const kInviteHost = String.fromEnvironment('INVITE_HOST', defaultValue: 'familie.lx-labs.dev');
+
+/// Kennzeile unter der Anmeldung ("● host · tls 1.3"): Host aus API_BASE (Android) bzw. der Adresse der Seite (Web); die
+/// TLS-Angabe nur bei https. Parameter für Tests überschreibbar.
+String serverKennzeile({String api = kApiBase, Uri? seite, bool? web}) {
+  var host = '';
+  var https = false;
+  final u = api.isEmpty ? null : Uri.tryParse(api);
+  if (u != null && u.host.isNotEmpty) {
+    host = u.host;
+    https = u.scheme == 'https';
+  } else if (web ?? kIsWeb) {
+    final s = seite ?? Uri.base;
+    host = s.host;
+    https = s.scheme == 'https';
+  }
+  if (host.isEmpty) {
+    host = kInviteHost;
+    https = true;
+  }
+  return '● $host${https ? ' · tls 1.3' : ''}';
+}
 
 /// Navigationsziele (Reihenfolge = Reihenfolge in der NavigationBar).
 class NavTab {

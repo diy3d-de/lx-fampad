@@ -20,7 +20,19 @@ class InviteIntake extends Notifier<EingehenderLink?> {
   @override
   EingehenderLink? build() => _anfangVorhanden ? EingehenderLink(_anfang, ++_zaehler) : null;
 
-  void eingegangen(String? token) => state = EingehenderLink(token, ++_zaehler);
+  String? _letztesToken;
+  DateTime _letzteZeit = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Meldet einen eingegangenen Link. Derselbe Link kurz hintereinander (Adresszeile und Routenmeldung des Browsers melden
+  /// dasselbe Einfügen) zählt nur einmal.
+  void eingegangen(String? token) {
+    final jetzt = DateTime.now();
+    final fenster = Duration(seconds: token == null ? 1 : 5);
+    if (_letzteZeit.millisecondsSinceEpoch > 0 && token == _letztesToken && jetzt.difference(_letzteZeit) < fenster) return;
+    _letztesToken = token;
+    _letzteZeit = jetzt;
+    state = EingehenderLink(token, ++_zaehler);
+  }
 
   void verbraucht() => state = null;
 }

@@ -13,17 +13,22 @@ AdresszeilenLink? einladungAusAdresszeileNehmen() {
   final hash = loc.hash;
   if (!istEinladungsFragment(hash)) return null;
   final token = parseInviteToken(hash, erlaubterHost: null);
-  web.window.history.replaceState(null, '', '${loc.pathname}${loc.search}');
+  // Den vorhandenen History-Zustand mitgeben: Flutter hält darin seinen Verlaufszähler (sonst gerät die Zurück-Taste durcheinander)
+  web.window.history.replaceState(web.window.history.state, '', '${loc.pathname}${loc.search}');
   return (token: token);
 }
 
-/// Wird ein Einladungslink in einen schon offenen Tab eingefügt (hashchange), landet er ebenfalls hier und wird entfernt.
+/// Wird ein Einladungslink in einen schon offenen Tab eingefügt (Fragment-Navigation im selben Dokument), wird er hier gelesen und
+/// ebenfalls sofort aus der Adresszeile entfernt.
+///
+/// Gehört zu popstate UND hashchange: Flutters Web-Engine reagiert auf popstate und löst dabei selbst history.go(-1) aus. Dieser
+/// Sprung ist asynchron, deshalb sieht ein popstate-Listener das Fragment noch sicher; bei hashchange könnte es schon weg sein
+/// (dann ginge der Link verloren). Wer zuerst kommt, entfernt das Fragment; der zweite findet keins mehr.
 void aufEinladungInAdresszeileHoeren(void Function(AdresszeilenLink link) beiLink) {
-  web.window.addEventListener(
-    'hashchange',
-    ((web.Event _) {
-      final l = einladungAusAdresszeileNehmen();
-      if (l != null) beiLink(l);
-    }).toJS,
-  );
+  final listener = ((web.Event _) {
+    final l = einladungAusAdresszeileNehmen();
+    if (l != null) beiLink(l);
+  }).toJS;
+  web.window.addEventListener('popstate', listener);
+  web.window.addEventListener('hashchange', listener);
 }

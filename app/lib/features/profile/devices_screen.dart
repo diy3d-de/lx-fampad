@@ -50,16 +50,22 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
     );
     if (ja != true || !mounted) return;
     final nav = Navigator.of(context);
-    final ok = await ausfuehren(() async {
-      await ref.read(apiProvider).geraetAbmelden(d.id);
-      if (!d.current) {
+    final messenger = ScaffoldMessenger.of(context);
+    final ok = await ausfuehren(() => ref.read(apiProvider).geraetAbmelden(d.id));
+    if (!ok) return;
+    if (d.current) {
+      final e = await ref.read(authProvider.notifier).dieseSitzungBeendet();
+      nav.popUntil((r) => r.isFirst);
+      if (!e.lokalSauber) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Lokale Daten auf diesem Gerät konnten nicht vollständig gelöscht werden.')));
+      }
+    } else {
+      await neuLadenMitHinweis(() async {
         final g = await ref.read(apiProvider).geraete();
         if (mounted) setState(() => _geraete = g);
-      }
-    });
-    if (ok && d.current) {
-      await ref.read(authProvider.notifier).dieseSitzungBeendet();
-      nav.popUntil((r) => r.isFirst);
+      });
     }
   }
 
