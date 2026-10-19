@@ -26,6 +26,7 @@ import '../auth/auth_state.dart';
 import '../providers.dart';
 import '../sync/sync_engine.dart';
 import '../sync_state.dart';
+import 'chat_benachrichtiger_provider.dart';
 import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
 import 'push_wecker.dart';
@@ -36,6 +37,8 @@ const kPushHintergrundArgument = '--unifiedpush-bg';
 /// Container des Hintergrund-Abgleichs: der API-Client darf nie das Refresh-Token einlösen.
 ProviderContainer hintergrundContainer() => ProviderContainer(
   overrides: [
+    // lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
+    ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
     apiClientProvider.overrideWith((ref) => ApiClient(client: ref.watch(httpClientProvider), store: ref.watch(tokenStoreProvider), refreshErlaubt: false)),
   ],
 );

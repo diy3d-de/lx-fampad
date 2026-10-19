@@ -384,6 +384,44 @@ Future<void> main() async {
         expect(await text(b, id, alt), '<warte auf Schlüssel>');
       });
 
+      test('Verteiler wechselt den Schlüssel und alle bestätigen: seine älteren Epochen bleiben nach einem Neustart lesbar (früher bestätigter Schlüssel), sonst nicht', () async {
+        final id = await gruppe(b, [a, c]); // Ben verteilt die Epoche 1 mit seinem ersten Schlüssel
+        final alt = await senden(b, id, 'aus der Zeit davor', abgleichen: [b, a, c]);
+        final bensAlterSchluessel = ben.oeffentlich;
+        ben.schluesselWechseln(welt);
+        // Anna bestätigt Bens neuen Schlüssel (der alte bleibt als früher bestätigter gemerkt)
+        a.frueher['${ben.id}:1'] = bensAlterSchluessel;
+        a.tofu[ben.id] = ben.oeffentlich;
+        a.mitgliederLernen(alle);
+        a.neuStarten();
+        await a.krypto.aktualisieren();
+        expect(a.krypto.schluessel(id, 1), isNotNull);
+        expect(await text(a, id, alt), 'aus der Zeit davor');
+        // Cora hat den alten Schlüssel nicht als früher bestätigt: sie kann die Epoche nach dem Neustart nicht mehr prüfen
+        c.tofu[ben.id] = ben.oeffentlich;
+        c.mitgliederLernen(alle);
+        c.neuStarten();
+        await c.krypto.aktualisieren();
+        expect(c.krypto.schluessel(id, 1), isNull);
+        expect(c.krypto.problem(id, 1), isNotNull);
+      });
+
+      test('gleichzeitige Aktualisierungen stören sich nicht (der Controller, der Abgleich und die Oberfläche rufen sie unabhängig auf)', () async {
+        final id = await gruppe(a, [b]);
+        await senden(a, id, 'eins', abgleichen: [a, b]);
+        b.neuStarten();
+        final ergebnisse = await Future.wait([for (var i = 0; i < 5; i++) b.krypto.aktualisieren()]);
+        expect(ergebnisse.where((x) => x), hasLength(1), reason: 'nur der erste Lauf öffnet den Schlüssel');
+        expect((await lesbar(b, id)), ['eins']);
+      });
+
+      test('ein Listeneintrag, der mit l1: beginnt, geht normal hinaus; nur lokaler Klartext einer Chat-Nachricht bleibt zurück', () async {
+        await a.store.aendern('list', 'l-1', {'name': 'l1:Einkauf'});
+        await a.store.aendern('nachricht', 'n-1', {'konversationId': 'k', 'text': 'l1:geheim'}, nurLokal: {'createdAt': a.jetzt.toIso8601String()});
+        final ops = await a.store.naechsteOps(10);
+        expect([for (final o in ops) o.entity], ['list'], reason: 'die Nachricht mit lokalem Klartext hält zurück');
+      });
+
       test('Mitglieder ohne Schlüssel: Gruppe und Direktchat verlangen ihn, der Familienchat nimmt sie später per neuer Epoche auf', () async {
         // Dora hat noch keinen Schlüssel eingerichtet
         for (final g in [a, b, c]) {

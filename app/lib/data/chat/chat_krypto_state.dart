@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show TableUpdateQuery;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/models.dart';
 import '../app_database.dart';
 import '../auth/auth_state.dart';
+import '../crypto/bytes.dart';
 import '../crypto/crypto_fehler.dart';
 import '../crypto/crypto_provider.dart';
 import '../crypto/e2ee_state.dart';
@@ -177,7 +179,8 @@ final chatKryptoSteuerungProvider = Provider<void>((ref) {
 
 class ChatKryptoController extends Notifier<int> {
   ChatKrypto? _krypto;
-  Personenschluessel? _kSchluessel;
+  Uint8List? _kEnc;
+  Uint8List? _kSign;
   int? _kVersion;
   String? _kBesitzer;
   E2eeNachrichtenInhalt? _inhalt;
@@ -314,7 +317,8 @@ class ChatKryptoController extends Notifier<int> {
     final version = ref.read(e2eeProvider).serverSchluessel?.version ?? await e2ee.letzteBekannteVersion();
     if (version == null) return null;
     final vorhanden = _krypto;
-    if (vorhanden != null && identical(_kSchluessel, pk) && _kVersion == version && _kBesitzer == ich) return vorhanden;
+    // derselbe Personenschlüssel (E2eeController.laden() liest ihn jedes Mal neu ein: nach den öffentlichen Teilen vergleichen, nicht nach dem Objekt)
+    if (vorhanden != null && _kVersion == version && _kBesitzer == ich && _kEnc != null && gleicheBytes(_kEnc!, pk.encOeffentlich) && gleicheBytes(_kSign!, pk.signOeffentlich)) return vorhanden;
     vorhanden?.vergessen();
     final CryptoProvider cp;
     try {
@@ -330,12 +334,13 @@ class ChatKryptoController extends Notifier<int> {
       ichId: ich,
       meinSchluessel: pk,
       meineKeyVersion: version,
-      gemerkt: pruefer.gemerkterSchluessel,
+      gemerkt: (u, {version}) => pruefer.gemerkterSchluessel(u, version: version),
       serverSchluessel: _serverSchluessel,
       absenderSchluessel: (u, v) => e2ee.absenderSchluessel(u, v),
     );
     _krypto = neu;
-    _kSchluessel = pk;
+    _kEnc = Uint8List.fromList(pk.encOeffentlich);
+    _kSign = Uint8List.fromList(pk.signOeffentlich);
     _kVersion = version;
     _kBesitzer = ich;
     return neu;

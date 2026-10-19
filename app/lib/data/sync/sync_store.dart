@@ -45,13 +45,13 @@ abstract interface class OpVorbereiter {
   Future<String?> vorbereiten(OutboxData op);
 }
 
-/// Ein lokaler Klartext (`l1:`) darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet).
-bool _hatLokalenKlartext(String fieldsJson) {
-  if (!fieldsJson.contains('l1:')) return false;
+/// Ein lokaler Klartext (`l1:`) einer Chat-Nachricht darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet). Nur das Feld
+/// `text` der Entität `nachricht` zählt (ein Listeneintrag, der mit "l1:" beginnt, ist ein ganz normaler Text).
+bool _hatLokalenKlartext(OutboxData z) {
+  if (z.entity != 'nachricht' || !z.fieldsJson.contains('l1:')) return false;
   try {
-    final f = jsonDecode(fieldsJson);
-    if (f is! Map) return false;
-    return f.values.any((v) => v is String && v.startsWith('l1:'));
+    final f = jsonDecode(z.fieldsJson);
+    return f is Map && f['text'] is String && (f['text'] as String).startsWith('l1:');
   } catch (_) {
     return true;
   }
@@ -99,7 +99,7 @@ class SyncStore {
   Future<bool> hatAltenKlartext(Duration alter) async {
     final grenze = _jetzt().subtract(alter);
     for (final z in await (db.select(db.outbox)..where((o) => o.entity.equals('nachricht') & o.createdAt.isSmallerOrEqualValue(grenze))).get()) {
-      if (_hatLokalenKlartext(z.fieldsJson)) return true;
+      if (_hatLokalenKlartext(z)) return true;
     }
     return false;
   }
@@ -228,7 +228,7 @@ class SyncStore {
           geaendert[z.id] = felder;
         }
       }
-      if (_hatLokalenKlartext(op.fieldsJson)) break;
+      if (_hatLokalenKlartext(op)) break;
       bereit.add(op);
     }
     return db.transaction(() async {

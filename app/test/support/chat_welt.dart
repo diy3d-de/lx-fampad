@@ -59,6 +59,9 @@ class Geraet {
   /// Gemerkte (TOFU) Schlüssel.
   final Map<String, OeffentlicheSchluessel> tofu = {};
 
+  /// Früher bestätigte Schlüssel ("userId:version"), vom Gerät selbst gemerkt.
+  final Map<String, OeffentlicheSchluessel> frueher = {};
+
   static Geraet neu(ChatWelt welt, TestPerson person, {String? name, String? opPraefix, String Function()? neueId, void Function()? beiAenderung}) {
     final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
     final geraete = name ?? person.name;
@@ -96,7 +99,11 @@ class Geraet {
       ichId: person.id,
       meinSchluessel: person.pk,
       meineKeyVersion: person.version,
-      gemerkt: (u) async => tofu[u],
+      gemerkt: (u, {version}) async {
+        final k = tofu[u];
+        if (k == null || version == null || version == k.version) return k;
+        return frueher['$u:$version'];
+      },
       serverSchluessel: () => karte,
       absenderSchluessel: (u, version) async {
         final s = tofu[u];

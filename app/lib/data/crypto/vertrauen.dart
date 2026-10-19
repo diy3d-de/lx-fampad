@@ -14,7 +14,11 @@ class GemerkterSchluessel {
   final Uint8List enc;
   final Uint8List sign;
   final int version;
-  const GemerkterSchluessel(this.enc, this.sign, this.version);
+
+  /// Früher bestätigte Schlüssel dieser Person (vom Gerät selbst gemerkt, nicht vom Server): Sie gelten für Signaturen aus der Zeit vor einem bestätigten
+  /// Schlüsselwechsel (Wraps und Nachrichten, die die Person mit dem damaligen Schlüssel signiert hat).
+  final List<GemerkterSchluessel> frueher;
+  const GemerkterSchluessel(this.enc, this.sign, this.version, {this.frueher = const []});
 
   bool gleichWie(OeffentlicheSchluessel o) => gleicheBytes(enc, o.enc) && gleicheBytes(sign, o.sign);
 }
@@ -42,10 +46,22 @@ class VertrauensPruefer {
       final raw = jsonDecode(utf8.decode(bytes));
       if (raw is! Map) return {};
       final out = <String, GemerkterSchluessel>{};
-      raw.forEach((k, v) {
-        if (k is String && v is Map && v['e'] is String && v['s'] is String && v['v'] is int) {
-          out[k] = GemerkterSchluessel(base64urlDekodieren(v['e'] as String), base64urlDekodieren(v['s'] as String), v['v'] as int);
+      GemerkterSchluessel? eintrag(Object? v) {
+        if (v is Map && v['e'] is String && v['s'] is String && v['v'] is int) {
+          final h = v['h'];
+          return GemerkterSchluessel(
+            base64urlDekodieren(v['e'] as String),
+            base64urlDekodieren(v['s'] as String),
+            v['v'] as int,
+            frueher: h is List ? [for (final x in h) ?eintrag(x)] : const [],
+          );
         }
+        return null;
+      }
+
+      raw.forEach((k, v) {
+        final e = eintrag(v);
+        if (k is String && e != null) out[k] = e;
       });
       return out;
     } on Object {
@@ -53,9 +69,16 @@ class VertrauensPruefer {
     }
   }
 
+  static Map<String, Object?> _json(GemerkterSchluessel k) => {
+    'e': base64urlKodieren(k.enc),
+    's': base64urlKodieren(k.sign),
+    'v': k.version,
+    if (k.frueher.isNotEmpty) 'h': [for (final f in k.frueher) _json(f)],
+  };
+
   Future<void> _speichern(Map<String, GemerkterSchluessel> m) => speicher.schreiben(
     _name,
-    utf8Bytes(jsonEncode({for (final e in m.entries) e.key: {'e': base64urlKodieren(e.value.enc), 's': base64urlKodieren(e.value.sign), 'v': e.value.version}})),
+    utf8Bytes(jsonEncode({for (final e in m.entries) e.key: _json(e.value)})),
   );
 
   /// Gleicht die aktuellen Schlüssel der Mitglieder mit den gemerkten ab. Unbekannte Personen werden gemerkt (ohne Warnung), Abweichungen
@@ -87,10 +110,14 @@ class VertrauensPruefer {
     return warnungen;
   }
 
-  /// Der gemerkte Schlüssel einer Person (null, wenn keiner gemerkt ist): Grundlage für Signaturprüfungen (nie der Schlüssel vom Server).
-  Future<OeffentlicheSchluessel?> gemerkterSchluessel(String userId) async {
+  /// Der gemerkte Schlüssel einer Person (null, wenn keiner gemerkt ist): Grundlage für Signaturprüfungen (nie der Schlüssel vom Server). Mit [version]
+  /// der Schlüssel genau dieser Version, wenn das Gerät ihn früher bestätigt hat (vor einem bestätigten Schlüsselwechsel); sonst null.
+  Future<OeffentlicheSchluessel?> gemerkterSchluessel(String userId, {int? version}) async {
     final k = (await _laden())[userId];
-    return k == null ? null : OeffentlicheSchluessel(enc: k.enc, sign: k.sign, version: k.version);
+    if (k == null) return null;
+    GemerkterSchluessel? treffer = k;
+    if (version != null && version != k.version) treffer = k.frueher.where((f) => f.version == version).firstOrNull;
+    return treffer == null ? null : OeffentlicheSchluessel(enc: treffer.enc, sign: treffer.sign, version: treffer.version);
   }
 
   /// Übernimmt den neuen Schlüssel einer Person nach ausdrücklicher Bestätigung. Ohne neuen Schlüssel wird nur der alte vergessen.
@@ -99,7 +126,13 @@ class VertrauensPruefer {
     if (neu == null) {
       gemerkt.remove(userId);
     } else {
-      gemerkt[userId] = GemerkterSchluessel(neu.enc, neu.sign, neu.version);
+      final alt = gemerkt[userId];
+      // der bisherige (bestätigte) Schlüssel bleibt für Signaturen aus der Zeit davor erhalten
+      final frueher = [
+        if (alt != null && !alt.gleichWie(neu)) ...[GemerkterSchluessel(alt.enc, alt.sign, alt.version), ...alt.frueher],
+        if (alt != null && alt.gleichWie(neu)) ...alt.frueher,
+      ];
+      gemerkt[userId] = GemerkterSchluessel(neu.enc, neu.sign, neu.version, frueher: frueher);
     }
     await _speichern(gemerkt);
   }

@@ -126,6 +126,29 @@ Future<void> main() async {
       expect(await pruefer().pruefen({'anna': _key(3, version: 3)}), hasLength(1));
     });
 
+    test('ein bestätigter Wechsel behält die früheren Schlüssel: Signaturen aus der Zeit davor lassen sich weiter prüfen (nur vom Gerät gemerkt)', () async {
+      await pruefer().pruefen({'anna': _key(1)});
+      final w2 = (await pruefer().pruefen({'anna': _key(2, version: 2)})).single;
+      await pruefer().akzeptieren('anna', w2.aktuell);
+      final w3 = (await pruefer().pruefen({'anna': _key(3, version: 3)})).single;
+      await pruefer().akzeptieren('anna', w3.aktuell);
+      expect((await pruefer().gemerkterSchluessel('anna'))!.version, 3);
+      expect((await pruefer().gemerkterSchluessel('anna', version: 3))!.version, 3);
+      for (final v in [1, 2]) {
+        final k = await pruefer().gemerkterSchluessel('anna', version: v);
+        expect(k!.version, v);
+        expect(k.gleichWie(_key(v, version: v)), isTrue, reason: 'genau der damals bestätigte Schlüssel');
+      }
+      expect(await pruefer().gemerkterSchluessel('anna', version: 7), isNull, reason: 'eine nie bestätigte Version gibt es nicht');
+      // dieselbe Bestätigung noch einmal verdoppelt nichts, und die Historie überlebt das nächste Prüfen
+      await pruefer().akzeptieren('anna', w3.aktuell);
+      expect(await pruefer().pruefen({'anna': _key(3, version: 3)}), isEmpty);
+      expect((await pruefer().gemerkterSchluessel('anna', version: 1))!.version, 1);
+      // Person verlässt die Familie: alles vergessen, auch die Historie
+      await pruefer().pruefen({});
+      expect(await pruefer().gemerkterSchluessel('anna', version: 1), isNull);
+    });
+
     test('verschwundener Schlüssel warnt ebenfalls; Bestätigung vergisst den alten', () async {
       await pruefer().pruefen({'anna': _key(1)});
       final w = (await pruefer().pruefen({'anna': null})).single;

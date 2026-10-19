@@ -3,11 +3,14 @@
 // (syncVertrag, offlineOnlineVertrag): zwei Geräte derselben Person, Idempotenz, Konflikte pro Feld, Löschen gewinnt, Validierung, Rechte von
 // Kind (inklusive "hidden"-Tombstone), mehrseitiger Snapshot (> 500 Einträge, purged_rev > 0) und Geisterlisten, zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
 // das Bereinigen von Verweisen beim Entfernen eines Mitglieds. Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
+// Der Chat-Teil (e2eeChatVertrag) prüft die Ende-zu-Ende-Verschlüsselung mit drei Personen und zwei Geräten; er benutzt libsodium, wo vorhanden (Linux/Docker, SODIUM_ERFORDERLICH=1),
+// sonst den Fake aus test/support/fake_crypto.dart (gleiche Protokolle, Drahtformat unabhängig vom Verfahren).
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
 // Ablauf: frische Datenbank migrieren, 'node dist/cli/bootstrap.js --family "Familie Vertrag"' (Token aus dem Link), Server starten, dann
 //   SERVER=http://127.0.0.1:4460 INVITE_TOKEN=<Token> SERVER_DIR=<server/-Ordner mit node_modules> DATABASE_URL=postgres://… flutter test test/vertrag_test.dart
 // Der Server braucht für den Lauf hohe Sync-Limits (SYNC_RATE_LIMIT_MAX, SYNC_REQ_*, SYNC_OPS_*), sonst antwortet der Sync mit 429.
 // (die Datei dazu aus tool/ nach test/ kopieren; sie initialisiert kein Widget-Binding, damit HTTP echt läuft).
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show DatabaseConnection, driftRuntimeOptions;
@@ -24,6 +27,11 @@ import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
 import 'package:lx_fampad/data/chat/chat_ids.dart';
+import 'package:lx_fampad/data/chat/chat_krypto.dart';
+import 'package:lx_fampad/data/chat/chat_krypto_state.dart';
+import 'package:lx_fampad/data/crypto/bytes.dart';
+import 'package:lx_fampad/data/crypto/crypto_provider.dart';
+import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
 import 'package:lx_fampad/data/chat/nachrichten_inhalt.dart';
 import 'package:lx_fampad/data/calendar/termin_repository.dart';
@@ -35,6 +43,9 @@ import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/features/auth/invite_link.dart';
 import 'package:passkeys/types.dart' show AuthenticateRequestType, RegisterRequestType;
 import 'package:timezone/data/latest_all.dart' as tzdata;
+
+import '../test/support/chat_welt.dart' show TestPerson;
+import '../test/support/fake_crypto.dart' show kryptoVarianten;
 
 final server = Platform.environment['SERVER'] ?? 'http://127.0.0.1:4460';
 final adminToken = Platform.environment['INVITE_TOKEN']!;
@@ -350,12 +361,12 @@ Future<String> chatVertrag({
 
   schritt('Chat: Familienchat anlegen, Kind sieht ihn, der Gast nicht, ein zweiter wird abgelehnt');
   final famId = familienchatId((await a.api.ich()).familyId);
-  final famOp = neu('konversation', famId, {'art': 'family'});
+  final famOp = neu('konversation', famId, {'art': 'family', 'encVersion': 'p1'});
   final fam = await syncen(a, [famOp]);
   expect(fam.rejected, isEmpty);
   expect(fam.acked, [famOp.opId]);
   expect((await alleSeiten(kind)).where((c) => c.id == famId), hasLength(1));
-  expect(chat(await alleSeiten(gast)), isEmpty, reason: 'Gäste sind nicht Teil des Familienchats');
+  expect(chat(await alleSeiten(gast)).where((c) => c.entity == 'konversation').map((c) => c.id), [famId], reason: 'die zweite Person (Oma) ist Mitglied und sieht den Familienchat');
   // ein zweiter (andere ID als die aus der Familie abgeleitete) ist ungültig: kein Hinweis darauf, ob es ihn schon gibt
   expect((await syncen(kind, [neu('konversation', neueUuid(), {'art': 'family'})])).rejected.single.code, 'invalid');
   final famRev = (await alleSeiten(a)).firstWhere((c) => c.id == famId).rev;
@@ -383,16 +394,16 @@ Future<String> chatVertrag({
 
   schritt('Chat: Direktchat Kind/Admin (feste ID je Paar); Direktchat Kind/Cora ist für den Admin unsichtbar und unveränderbar (not_found)');
   final dm = direktChatId(kindId, adminId);
-  final dmOp = neu('konversation', dm, {'art': 'direct', 'teilnehmer': [kindId, adminId]..sort()});
+  final dmOp = neu('konversation', dm, {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [kindId, adminId]..sort()});
   expect((await syncen(kind, [dmOp])).acked, [dmOp.opId]);
   // dasselbe Paar mit anderer ID und aus der anderen Richtung: abgelehnt; dieselbe ID noch einmal: ohne Wirkung
-  expect((await syncen(a, [neu('konversation', neueUuid(), {'art': 'direct', 'teilnehmer': [adminId, kindId]})])).rejected.single.code, 'invalid');
+  expect((await syncen(a, [neu('konversation', neueUuid(), {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [adminId, kindId]})])).rejected.single.code, 'invalid');
   // Squatting: die ID des Paares Admin/Cora kann das Kind nicht für einen eigenen Chat belegen
-  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'teilnehmer': [kindId, coraId]})])).rejected.single.code, 'invalid');
-  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'teilnehmer': [adminId, coraId]})])).rejected.single.code, 'forbidden');
-  expect((await syncen(a, [neu('konversation', dm, {'art': 'direct', 'teilnehmer': [adminId, kindId]})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [kindId, coraId]})])).rejected.single.code, 'invalid');
+  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [adminId, coraId]})])).rejected.single.code, 'forbidden');
+  expect((await syncen(a, [neu('konversation', dm, {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [adminId, kindId]})])).rejected, isEmpty);
   final privatId = direktChatId(kindId, coraId);
-  expect((await syncen(kind, [neu('konversation', privatId, {'art': 'direct', 'teilnehmer': [kindId, coraId]})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('konversation', privatId, {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [kindId, coraId]})])).rejected, isEmpty);
   final geheimMsg = neueUuid();
   expect((await syncen(kind, [neu('nachricht', geheimMsg, {'konversationId': privatId, 'text': 'p1:GEHEIM-TEXT'})])).rejected, isEmpty);
   for (final g in [a, b]) {
@@ -411,11 +422,11 @@ Future<String> chatVertrag({
   expect(angriff.rejected.map((x) => x.code), List.filled(5, 'not_found'));
   expect(angriff.changes.where((c) => c.id == privatId || c.id == geheimMsg), isEmpty);
   expect(chat(await alleSeiten(cora)).where((c) => c.entity == 'konversation').map((c) => c.id), unorderedEquals([famId, privatId]));
-  expect(chat(await alleSeiten(gast)), isEmpty);
+  expect(chat(await alleSeiten(gast)).where((c) => c.entity == 'konversation').map((c) => c.id), [famId], reason: 'Privatchats sieht Oma nicht');
 
   schritt('Chat: Gruppe, Teilnehmer entfernen -> hidden-Tombstone nur für die entfernte Person, Außenstehende erfahren nichts');
   final gruppe = neueUuid();
-  expect((await syncen(kind, [neu('konversation', gruppe, {'art': 'group', 'titel': 'p1:Ausflug', 'teilnehmer': [kindId, adminId, coraId]..sort()})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('konversation', gruppe, {'art': 'group', 'encVersion': 'p1', 'titel': 'p1:Ausflug', 'teilnehmer': [kindId, adminId, coraId]..sort()})])).rejected, isEmpty);
   final vorA = (await syncen(a, [])).rev;
   final vorCora = (await syncen(cora, [])).rev;
   final gRev = (await alleSeiten(kind)).firstWhere((c) => c.id == gruppe).rev;
@@ -429,41 +440,224 @@ Future<String> chatVertrag({
   expect((await alleSeiten(gast, since: vorCora)).where((c) => c.id == gruppe), isEmpty);
   expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': 'p1:x'})])).rejected.single.code, 'not_found');
 
-  schritt('Chat: zwei lokale Datenbanken mit ChatRepository: A sendet, B sieht es; Lesestand von B erreicht A');
-  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
-  AppDatabase neueDb() => AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
-  final dbA = neueDb(), dbB = neueDb();
-  addTearDown(dbA.close);
-  addTearDown(dbB.close);
-  final storeA = SyncStore(dbA), storeB = SyncStore(dbB);
-  final engineA = SyncEngine(store: storeA, api: a.api, geraeteId: () async => geraetId(a));
-  final engineB = SyncEngine(store: storeB, api: b.api, geraeteId: () async => geraetId(b));
-  ChatRepository repo(AppDatabase db, SyncStore s) =>
-      ChatRepository(db: db, store: s, inhalt: const KlartextHuelle(), ich: () => adminId, familie: () => 'unbekannt', beiAenderung: () {});
-  final repoA = repo(dbA, storeA), repoB = repo(dbB, storeB);
-  expect((await engineA.abgleichen()).ok, isTrue);
-  expect((await engineB.abgleichen()).ok, isTrue);
-  // Direktchat mit dem Kind: dieselbe ID wie die des Kindes, also kein zweiter
-  expect(await repoA.direktChat(kindId), dm);
-  expect(await repoB.direktChat(kindId), dm);
-  final gesendet = (await repoA.senden(dm, 'Hallo Ben 👋'))!;
-  expect((await engineA.abgleichen()).ok, isTrue);
-  expect((await engineB.abgleichen()).ok, isTrue);
-  final beiB = await (dbB.select(dbB.nachrichten)..where((n) => n.id.equals(gesendet))).getSingle();
-  expect([beiB.inhalt, beiB.autorId, beiB.rev > 0], ['p1:Hallo Ben 👋', adminId, true]);
-  expect((await dbA.select(dbA.konversationen).get()).where((k) => k.art == 'direct').map((k) => k.id), [dm], reason: 'der Privatchat Kind/Cora ist nicht bei A');
-  // das Kind schreibt zurück: bei A und B ungelesen
-  await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': dm, 'text': 'p1:Hi Mama'})]);
-  expect((await engineA.abgleichen()).ok, isTrue);
-  expect((await engineB.abgleichen()).ok, isTrue);
-  expect(await repoA.ungelesenGesamt(adminId).first, greaterThanOrEqualTo(1));
-  final vorher = await repoB.ungelesenGesamt(adminId).first;
-  await repoB.gelesenSetzen(dm);
-  expect((await engineB.abgleichen()).ok, isTrue);
-  expect((await engineA.abgleichen()).ok, isTrue);
-  final dmEintrag = (await repoA.uebersicht(adminId).first).firstWhere((e) => e.id == dm);
-  expect(dmEintrag.ungelesen, 0, reason: 'der Lesestand von B gilt auch auf A (vorher B: $vorher ungelesen)');
+  await e2eeChatVertrag(a: a, b: b, kind: kind, cora: cora, adminId: adminId, kindId: kindId, coraId: coraId, altChatId: dm);
   return dm;
+}
+
+/// Abfrage der Datenbank (nur lesen, JSON-Zeilen), um zu prüfen, was der Server wirklich speichert.
+Future<List<dynamic>> dbAbfrage(String sql) async {
+  final r = await Process.run('node', [
+    '-e',
+    'const pg=require(\x27pg\x27);(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();'
+        'const r=await c.query(process.env.ABFRAGE);console.log(JSON.stringify(r.rows));await c.end()})()',
+  ], workingDirectory: serverDir, environment: {'DATABASE_URL': datenbank, 'ABFRAGE': sql});
+  expect(r.exitCode, 0, reason: '${r.stderr}');
+  return jsonDecode((r.stdout as String).trim()) as List<dynamic>;
+}
+
+/// Ein Gerät mit eigener lokaler Datenbank, SyncStore, SyncEngine (mit dem echten Ausgang-Vorbereiter), ChatKrypto und ChatRepository gegen den echten Server.
+class E2eeGeraet {
+  final Gegenstelle g;
+  final TestPerson person;
+  final AppDatabase db;
+  final SyncStore store;
+  late final SyncEngine engine;
+  late final ChatKrypto krypto;
+  late final ChatRepository repo;
+  final Map<String, OeffentlicheSchluessel> tofu = {};
+  Map<String, OeffentlicheSchluessel?>? karte;
+
+  E2eeGeraet._(this.g, this.person, this.db, this.store);
+
+  static Future<E2eeGeraet> neu(Gegenstelle g, TestPerson person, CryptoProvider crypto) async {
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+    final e = E2eeGeraet._(g, person, db, SyncStore(db));
+    e.krypto = ChatKrypto(
+      crypto: crypto,
+      db: db,
+      store: e.store,
+      ichId: person.id,
+      meinSchluessel: person.pk,
+      meineKeyVersion: person.version,
+      gemerkt: (u, {version}) async => e.tofu[u],
+      serverSchluessel: () => e.karte,
+      absenderSchluessel: (u, v) async => e.tofu[u]?.version == v ? e.tofu[u]! : await g.api.mitgliedSchluessel(u, v),
+    );
+    e.engine = SyncEngine(
+      store: e.store,
+      api: g.api,
+      geraeteId: () async => geraetId(g),
+      vorbereiter: ChatOpVorbereiter(db: db, krypto: () async => e.krypto),
+    );
+    e.repo = ChatRepository(
+      db: db,
+      store: e.store,
+      inhalt: const KlartextHuelle(),
+      krypto: () async => e.krypto,
+      ich: () => person.id,
+      familie: () => null,
+      beiAenderung: () {},
+    );
+    return e;
+  }
+
+  /// Mitglieder und ihre öffentlichen Schlüssel vom Server (Vertrauen beim ersten Sehen: neue Personen werden gemerkt).
+  Future<void> mitgliederLernen() async {
+    final mitglieder = await g.api.mitglieder();
+    karte = {
+      for (final m in mitglieder)
+        if (m.status == MemberStatus.active) m.id: m.schluessel,
+    };
+    for (final m in mitglieder) {
+      if (m.id != person.id && m.schluessel != null) tofu.putIfAbsent(m.id, () => m.schluessel!);
+    }
+    krypto.vertrauenGeaendert();
+  }
+
+  /// Abgleich wie die App: senden, übernehmen, Schlüsselbund auffrischen, bis nichts mehr zu tun ist.
+  Future<void> abgleichen() async {
+    for (var i = 0; i < 4; i++) {
+      final r = await engine.abgleichen();
+      expect(r.ok, isTrue, reason: 'Abgleich: ${r.ausgang} ${r.meldung}');
+      await krypto.aktualisieren();
+    }
+  }
+
+  Future<String> lesen(String konversationId, String nachrichtId) async {
+    final n = await (db.select(db.nachrichten)..where((x) => x.id.equals(nachrichtId))).getSingle();
+    final d = await krypto.nachrichtOeffnen(konversationId: konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt);
+    return d.lesbar ? d.text : '<${d.hinweis}>';
+  }
+}
+
+/// Chat Ende-zu-Ende (E2EE Phase 2) gegen den echten Server: drei Personen mit Schlüsseln, Gruppe, zwei Geräte, Admin liest Privatchat nicht, Server sieht nur Chiffretext
+/// und Wraps, Entfernen rotiert, gleichzeitige Rotation (erster gewinnt), p1 in e1 wird abgelehnt, nur der Empfänger bekommt seinen Wrap.
+Future<void> e2eeChatVertrag({
+  required Gegenstelle a,
+  required Gegenstelle b,
+  required Gegenstelle kind,
+  required Gegenstelle cora,
+  required String adminId,
+  required String kindId,
+  required String coraId,
+  required String altChatId,
+}) async {
+  final (cname, crypto) = (await kryptoVarianten()).last;
+  stdout.writeln('    Krypto: $cname');
+  final annaP = TestPerson(adminId, 'Anna', crypto);
+  final benP = TestPerson(kindId, 'Ben', crypto);
+  final coraP = TestPerson(coraId, 'Cora', crypto);
+
+  schritt('Chat Ende-zu-Ende: Schlüssel einrichten (öffentliche Schlüssel beim Server), Mitglieder und Schlüssel kommen mit /members');
+  for (final (g, p) in [(a, annaP), (kind, benP), (cora, coraP)]) {
+    final k = await g.api.schluesselAnlegen(enc: p.oeffentlich.encBase64, sign: p.oeffentlich.signBase64);
+    expect(k.version, 1);
+  }
+  final annaA = await E2eeGeraet.neu(a, annaP, crypto);
+  final annaB = await E2eeGeraet.neu(b, annaP, crypto); // zweites Gerät derselben Person: derselbe Personenschlüssel
+  final ben = await E2eeGeraet.neu(kind, benP, crypto);
+  final coraG = await E2eeGeraet.neu(cora, coraP, crypto);
+  final alle = [annaA, annaB, ben, coraG];
+  for (final g in alle) {
+    addTearDown(g.db.close);
+    await g.mitgliederLernen();
+    expect(g.karte!.length, greaterThanOrEqualTo(3));
+  }
+  Future<void> abgleich(Iterable<E2eeGeraet> gs) async {
+    for (var runde = 0; runde < 2; runde++) {
+      for (final g in gs) {
+        await g.abgleichen();
+      }
+    }
+  }
+
+  schritt('Chat Ende-zu-Ende: Gruppe aus drei Personen (Epoche 1, ein Wrap je Person), A sendet, alle lesen, zwei Geräte von Anna lesen dasselbe');
+  final gruppe = await annaA.repo.gruppeAnlegen([kindId, coraId], name: 'Vertrag-Gruppe');
+  await abgleich(alle);
+  final m1 = (await annaA.repo.senden(gruppe, 'GEHEIMER-TEXT-123 👋'))!;
+  await abgleich(alle);
+  for (final g in alle) {
+    expect(await g.lesen(gruppe, m1), 'GEHEIMER-TEXT-123 👋', reason: g.person.name);
+  }
+  expect(gleicheBytes(annaA.krypto.schluessel(gruppe, 1)!, annaB.krypto.schluessel(gruppe, 1)!), isTrue, reason: 'zwei Geräte, gleiche Epochenschlüssel');
+
+  schritt('Chat Ende-zu-Ende: der Server speichert nur Chiffretext, Mitgliederliste und Wraps (kein Klartext, kein Schlüssel)');
+  final texte = await dbAbfrage("select text from nachrichten where konversation_id = '$gruppe'");
+  expect(texte, hasLength(1));
+  expect(texte.single['text'], startsWith('e1:'));
+  expect(texte.single['text'], isNot(contains('GEHEIM')));
+  expect(await dbAbfrage("select 1 from konversation_epochen where konversation_id = '$gruppe'"), hasLength(1));
+  expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe'"), hasLength(3));
+  expect(await dbAbfrage("select 1 from change_log where changes::text like '%GEHEIMER%'"), isEmpty, reason: 'nie Klartext im Änderungsprotokoll');
+  expect(await dbAbfrage("select 1 from nachrichten where text like 'l1:%' or text like 'p1:%' and konversation_id = '$gruppe'"), isEmpty);
+
+  schritt('Chat Ende-zu-Ende: nur der Empfänger bekommt seinen Wrap; Epochen sehen nur Teilnehmer');
+  for (final g in [annaA, ben, coraG]) {
+    final alleChanges = await alleSeiten(g.g);
+    final wraps = alleChanges.where((c) => c.entity == 'epoche_wrap' && c.fields['konversationId'] == gruppe);
+    expect(wraps.map((c) => c.fields['empfaengerId']).toSet(), {g.person.id}, reason: g.person.name);
+  }
+
+  schritt('Chat Ende-zu-Ende: Admin liest einen Privatchat von Kind und Cora nicht (kein Wrap, keine Epoche, keine Nachricht)');
+  // (das Paar Kind/Cora hat aus den Klartext-Schritten oben schon einen p1-Direktchat: hier eine verschlüsselte Zweiergruppe)
+  final privat = await ben.repo.gruppeAnlegen([coraId], name: 'Privat');
+  await abgleich([ben, coraG]);
+  final pm = (await ben.repo.senden(privat, 'NUR-FUER-CORA'))!;
+  await abgleich([ben, coraG]);
+  expect(await coraG.lesen(privat, pm), 'NUR-FUER-CORA');
+  for (final g in [annaA, annaB]) {
+    await abgleich([g]);
+    final seiten = await alleSeiten(g.g);
+    expect(seiten.where((c) => c.id == privat || c.fields['konversationId'] == privat), isEmpty, reason: 'weder Chat noch Epoche, Wrap oder Nachricht');
+    expect(g.krypto.schluessel(privat, 1), isNull);
+  }
+  // auch ein Angriff auf die Epochen eines fremden Chats scheitert unauffindbar
+  final angriff = await syncen(a, [
+    neu('epoche', epocheId(privat, 2), {'konversationId': privat, 'epoche': 2, 'mitglieder': 'A' * 200}),
+    neu('epoche_wrap', wrapId(privat, 1, adminId), {'konversationId': privat, 'epoche': 1, 'empfaengerId': adminId, 'wrap': 'B' * 100}),
+  ]);
+  expect(angriff.rejected.map((x) => x.code), ['not_found', 'not_found']);
+
+  schritt('Chat Ende-zu-Ende: p1 (Klartext) in einem verschlüsselten Chat wird abgelehnt, die Hülle wird nur in Form geprüft');
+  expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': 'p1:Klartext'})])).rejected.single.code, 'invalid');
+  expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': 'e1:kurz'})])).rejected.single.code, 'invalid');
+  expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': 'l1:Lokal'})])).rejected.single.code, 'invalid');
+  final rev = (await alleSeiten(a)).firstWhere((c) => c.id == gruppe).rev;
+  expect((await syncen(a, [aender('konversation', gruppe, {'encVersion': 'p1'}, rev)])).rejected.single.code, 'invalid', reason: 'kein Zurückstufen');
+
+  schritt('Chat Ende-zu-Ende: Cora wird entfernt: neue Epoche nur für Anna und Ben, Cora liest Neues nicht');
+  await annaA.repo.teilnehmerAendern(gruppe, weg: {coraId});
+  await abgleich([annaA, ben, coraG]);
+  expect(await dbAbfrage("select 1 from konversation_epochen where konversation_id = '$gruppe'"), hasLength(2));
+  final wraps2 = await dbAbfrage("select empfaenger_id from epoche_wraps where konversation_id = '$gruppe' and epoche = 2");
+  expect({for (final w in wraps2) w['empfaenger_id']}, {adminId, kindId});
+  final m2 = (await annaA.repo.senden(gruppe, 'NACH-DEM-ENTFERNEN'))!;
+  await abgleich([annaA, ben, coraG]);
+  expect(await ben.lesen(gruppe, m2), 'NACH-DEM-ENTFERNEN');
+  expect(coraG.krypto.epochenMitSchluessel(gruppe), isEmpty, reason: 'Cora bekommt den hidden-Tombstone, die Konversation samt Schlüsseln verschwindet bei ihr');
+  expect((await alleSeiten(cora)).where((c) => c.id == gruppe || c.fields['konversationId'] == gruppe), isEmpty);
+
+  schritt('Chat Ende-zu-Ende: gleichzeitige Rotation zweier Geräte: der erste gewinnt, der zweite übernimmt dessen Epoche und sendet damit');
+  for (final g in [annaA, ben]) {
+    await g.store.aendernMehrere(await g.krypto.epocheErstellen(konversationId: gruppe, mitglieder: {adminId, kindId}));
+  }
+  final m3 = (await ben.repo.senden(gruppe, 'NACH-DER-ROTATION'))!;
+  await annaA.abgleichen(); // Anna gewinnt Epoche 3
+  await abgleich([ben, annaA]);
+  expect(await dbAbfrage("select 1 from konversation_epochen where konversation_id = '$gruppe' and epoche = 3"), hasLength(1));
+  expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and epoche = 3"), hasLength(2));
+  expect(await annaA.lesen(gruppe, m3), 'NACH-DER-ROTATION');
+  expect(await ben.lesen(gruppe, m3), 'NACH-DER-ROTATION');
+  expect(gleicheBytes(ben.krypto.schluessel(gruppe, 3)!, annaA.krypto.schluessel(gruppe, 3)!), isTrue);
+
+  schritt('Chat Ende-zu-Ende: Lesestand des zweiten Geräts gilt auch auf dem ersten');
+  await abgleich([annaB]); // erst den Stand holen (die Nachricht von Ben), dann lesen
+  expect((await annaB.repo.uebersicht(adminId).first).firstWhere((e) => e.id == gruppe).ungelesen, greaterThan(0));
+  await annaB.repo.gelesenSetzen(gruppe);
+  await abgleich([annaB, annaA]);
+  expect((await annaA.repo.uebersicht(adminId).first).firstWhere((e) => e.id == gruppe).ungelesen, 0);
+  expect(altChatId, isNotEmpty);
 }
 
 /// Mehrseitiger Snapshot (mehr als 500 Einträge) bei purged_rev > 0 und Geisterlisten gegen den echten Server.

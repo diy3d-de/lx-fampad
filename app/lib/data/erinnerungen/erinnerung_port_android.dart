@@ -9,6 +9,9 @@ import 'package:timezone/timezone.dart' as tz;
 import 'erinnerung_planung.dart';
 import 'erinnerung_port.dart';
 
+/// Hat dieser Prozess das Plugin schon eingerichtet (mit dem Rückruf beim Tippen auf eine Erinnerung)? Dann richtet es der Chat nicht noch einmal ein.
+bool erinnerungPluginInitialisiert = false;
+
 const _kKanalId = 'terminerinnerungen';
 const _kKanalName = 'Terminerinnerungen';
 const _kKanalBeschreibung = 'Erinnerungen an Termine aus dem Familienkalender. Sie werden auf diesem Gerät berechnet und nicht über einen Server verschickt.';
@@ -73,6 +76,7 @@ class AndroidErinnerungPort implements ErinnerungPort {
           false,
     );
     if (ok != true) return false;
+    erinnerungPluginInitialisiert = true;
     final kanal = await _sicher<bool>(() async {
       await _android?.createNotificationChannel(
         const AndroidNotificationChannel(_kKanalId, _kKanalName, description: _kKanalBeschreibung, importance: Importance.high),

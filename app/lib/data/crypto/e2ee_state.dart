@@ -515,8 +515,12 @@ class E2eeController extends Notifier<E2eeState> {
   /// Die gemerkte (TOFU) Version zählt, nie ein Schlüssel vom Server; eine NEUERE Version als die gemerkte gilt erst nach Bestätigung der Warnung;
   /// ältere Versionen (nach einem akzeptierten Wechsel) kommen aus der Schlüsselhistorie des Servers (bisher ungeprüft, nur Familienmitglieder).
   Future<OeffentlicheSchluessel> absenderSchluessel(String userId, int version) async {
-    final gemerkt = await VertrauensPruefer(_speicher, eigeneUserId: _userId).gemerkterSchluessel(userId);
+    final pruefer = VertrauensPruefer(_speicher, eigeneUserId: _userId);
+    final gemerkt = await pruefer.gemerkterSchluessel(userId);
     if (gemerkt != null && gemerkt.version == version) return gemerkt;
+    // ein früher bestätigter Schlüssel dieser Person (vor einem bestätigten Wechsel) ist auch vom Gerät selbst gemerkt, nicht vom Server
+    final frueher = await pruefer.gemerkterSchluessel(userId, version: version);
+    if (frueher != null) return frueher;
     if (gemerkt != null && version > gemerkt.version) {
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Absender hat einen neuen Schlüssel, den du noch nicht akzeptiert hast.');
     }

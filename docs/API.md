@@ -346,11 +346,11 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 **Chat (Phase 1c-3a)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6c.
 
 - **Sichtbarkeit:** Direkt- und Gruppenchats (`konversation` mit `art` `direct`/`group`) sehen **nur ihre Teilnehmer**, auch Admin und Eltern nicht; Nachrichten und Lesestände erben das. Für alle anderen existiert die ID nicht: Ändern, Löschen und Anlegen darunter ergeben `not_found` (auch mit IDs einer fremden Familie), der Änderungsstrom liefert nichts, auch keinen Tombstone. Der Familienchat (`art` `family`, genau einer je Familie) gehört allen aktiven Mitgliedern. Wer aus einer Gruppe entfernt wird (`teilnehmer` geändert), bekommt einen `hidden`-Tombstone der Konversation (die App entfernt sie samt Nachrichten und Lesestand); wer nie dabei war, nichts.
-- **Inhalt ist undurchsichtig:** `text` (Nachricht) und `titel` (Gruppenname) prüft der Server nur auf Länge und Zeichensatz (kein NUL, keine einzelnen Surrogate), nicht auf Inhalt, und trimmt nichts. Die App schickt `p1:` + Klartext, später `e1:` + Base64-Chiffre. Der Server wertet Inhalte nie aus (kein Suchendpunkt, kein Log, keine Vorschau).
-- **Familienchat anlegen:** `upsert konversation {art: "family"}` von jeder Rolle; ohne `titel` und `teilnehmer`. Die ID ist **vorgeschrieben**: SHA-256 von `lx-fampad:familienchat:<familyId>`, die ersten 16 Byte mit Version 5 und Variante 10xx als UUID (`server/src/sync/entities/chat-ids.ts`, gleich in der App); jede andere ID ist `invalid`. Dieselbe ID noch einmal ist eine Wiederholung ohne Wirkung. Danach ist er für Clients unveränderlich (`forbidden`) und nicht löschbar.
+- - **Inhalt ist undurchsichtig und verschlüsselt (E2EE Phase 2):** `text` einer Nachricht ist in jeder neuen Konversation eine **verschlüsselte Hülle** `e1:` + Base64url (Aufbau und Verfahren: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a). Der Server prüft nur die **Form**: Präfix passend zur Konversation (`encVersion`), nur Base64url-Zeichen, mindestens 153 Zeichen (Kopf 114 Byte + Tag), höchstens 16 384 Zeichen; er entschlüsselt, prüft, loggt und indiziert nie etwas (kein Suchendpunkt, keine Vorschau). **Klartext `p1:` ist in einer `e1`-Konversation `invalid`** (Downgrade-Schutz); `p1` gilt nur für Altbestand (`encVersion` `p1`, nur lesbar, die App schreibt dort nicht mehr). `l1:` (lokaler Klartext im Ausgang der App) lehnt der Server ab. `titel` (Gruppenname) bleibt `p1:` + Klartext: der Name ist sichtbarer Metadatenwert (wie die Teilnehmerliste).
+- **Familienchat anlegen:** `upsert konversation {art: "family"}` von jeder Rolle; ohne `titel` und `teilnehmer`; verschlüsselt (`encVersion` `e1` ist der Standard, ein Client kann `p1` nur für Altbestände senden). Die ID ist **vorgeschrieben**: SHA-256 von `lx-fampad:familienchat:<familyId>`, die ersten 16 Byte mit Version 5 und Variante 10xx als UUID (`server/src/sync/entities/chat-ids.ts`, gleich in der App); jede andere ID ist `invalid`. Dieselbe ID noch einmal ist eine Wiederholung ohne Wirkung. Danach ist er für Clients unveränderlich (`forbidden`) und nicht löschbar.
 - **Direktchat:** `art: "direct"`, `teilnehmer` = genau die zwei Personen (anlegende Person dabei, nur aktive Mitglieder der Familie, sonst `forbidden` bzw. `invalid_reference`); die Liste wird sortiert und ohne Doppelte gespeichert. Je Paar ein Chat: die ID ist vorgeschrieben (`direkt:<kleinere Nutzer-ID>:<größere>`, kleingeschrieben und sortiert), jede andere ist `invalid`; dieselbe ID noch einmal ist ein Update ohne Änderung. Wurde der Chat gelöscht (Person entfernt), belebt ein erneutes Anlegen mit derselben ID ihn wieder. Unveränderlich, nicht löschbar.
 - **Gruppe:** `art: "group"` (ID: Zufalls-UUID Version 4, abgeleitete IDs mit Nibble 5 sind reserviert), 2 bis 20 `teilnehmer` (anlegende Person dabei), `titel` optional. Jeder Teilnehmer ändert `titel` und `teilnehmer`; löschen darf nur die anlegende Person (`ownerId`). Bleiben nach dem Entfernen eines Mitglieds aus der Familie weniger als zwei Teilnehmer, wird die Gruppe gelöscht.
-- **Nachrichten:** schreiben darf jede Person mit Sicht, `autorId` und Zeit setzt der Server. **Bearbeiten (nur `text`) und Löschen nur der Autor** (`forbidden`); Ausnahme: **Admins löschen im Familienchat auch fremde Nachrichten**, nie in privaten Chats. `bearbeitetAt` setzt der Server beim Ändern des Textes. `antwortAuf` (nur beim Anlegen) muss eine Nachricht **derselben Konversation** sein, sonst `invalid`; `text` muss mit der Hülle der Konversation beginnen (`encVersion`, heute `p1:`), sonst `invalid`. Beim Bearbeiten wird ältere Text-Fassung aus dem Protokoll entfernt. Mengenbegrenzung: höchstens 60 neue Nachrichten und 60 Text-Änderungen je Person und Minute, Text je Person höchstens 1 MiB je Stunde und 4 MiB je Tag, 20 000 lebende Nachrichten je Konversation, 10 Teilnehmerwechsel je Person und Minute (`limit_reached`).
+- **Nachrichten:** schreiben darf jede Person mit Sicht, `autorId` und Zeit setzt der Server. **Bearbeiten (nur `text`) und Löschen nur der Autor** (`forbidden`); Ausnahme: **Admins löschen im Familienchat auch fremde Nachrichten**, nie in privaten Chats. `bearbeitetAt` setzt der Server beim Ändern des Textes. `antwortAuf` (nur beim Anlegen) muss eine Nachricht **derselben Konversation** sein, sonst `invalid`; `text` muss mit der Hülle der Konversation beginnen (`encVersion` `e1:` oder, nur für Altbestand, `p1:`) und bei `e1` die Form einer verschlüsselten Hülle haben, sonst `invalid`. Beim Bearbeiten wird ältere Text-Fassung aus dem Protokoll entfernt. Mengenbegrenzung: höchstens 60 neue Nachrichten und 60 Text-Änderungen je Person und Minute, Text je Person höchstens 1 MiB je Stunde und 4 MiB je Tag, 20 000 lebende Nachrichten je Konversation, 10 Teilnehmerwechsel je Person und Minute (`limit_reached`).
 - **Lesestand:** eine Zeile je Person und Konversation (`userId` muss die eigene sein), `gelesenBis` = Zeit (`createdAt`) der letzten gelesenen fremden Nachricht. Nur die eigene Zeile ist les- und schreibbar; die ID ist vorgeschrieben (`lesestand:<Konversation>:<Person>`), jede andere ist `invalid`. `gelesenBis` geht nie zurück (ein kleinerer Wert wird verworfen). Nur der Besitzer erfährt per WebSocket von Änderungen.
 - **Obergrenzen:** 500 lebende Konversationen je Familie, 100 je anlegender Person (`limit_reached`).
 - **Mitglied entfernt:** aus Teilnehmerlisten genommen; Direktchats und Gruppen mit weniger als zwei Übrigen mit Tombstone gelöscht; `autorId` der Nachrichten wird `null`; Lesestand der Person wird gelöscht (Tombstone).
@@ -359,18 +359,41 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
 | `konversation` | `art` | `family`, `direct`, `group` (Pflicht) | create |
-| | `encVersion` | Version der Inhaltshülle, heute nur `p1` (Standard `p1`) | create |
+| | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`) | create |
 | | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
 | | `teilnehmer` | Liste von UUIDs (sortiert, eindeutig; Familienchat leer, Direktchat 2, Gruppe 2 bis 20) | rw (nur Gruppen) |
 | | `ownerId` | UUID oder `null` (anlegende Person) | server |
 | | `createdAt` | ISO-8601 (UTC) | server |
 | `nachricht` | `konversationId` | UUID (Pflicht) | create |
-| | `text` | undurchsichtiger Text, 1 bis 16 384 Zeichen (Pflicht) | rw (nur Autor) |
+| | `text` | Hülle `e1:`+Base64url (153 bis 16 384 Zeichen) bzw. `p1:`+Text im Altbestand (Pflicht); für den Server undurchsichtig | rw (nur Autor) |
 | | `antwortAuf` | UUID oder `null` | create |
 | | `autorId` | UUID oder `null` (nach Entfernen der Person) | server |
 | | `bearbeitetAt`, `createdAt` | ISO-8601 (UTC) oder `null` | server |
 | `lesestand` | `konversationId`, `userId` | UUID (Pflicht) | create |
 | | `gelesenBis` | ISO-8601 mit Zeitzone (Pflicht) | rw |
+
+**Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
+Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
+
+- **`epoche`:** je (Konversation, Epoche) genau eine Zeile mit **vorgeschriebener ID** (`epoche:<Konversation>:<Nummer>`, SHA-256 mit Präfix `lx-fampad:`, Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`); jede andere ID ist `invalid`.
+  **Der erste Schreiber gewinnt:** wer eine schon vorhandene Epoche mit anderem Inhalt anlegt, wird mit `invalid` abgelehnt (die identische Wiederholung wird bestätigt); der Verlierer einer gleichzeitigen Rotation übernimmt
+  die Epoche des Gewinners aus dem Änderungsstrom. Lückenlos: Epoche N gibt es erst, wenn N-1 da ist (sonst `invalid`). Alle Teilnehmer der Konversation lesen sie (im Familienchat alle aktiven Mitglieder), Nichtteilnehmer erfahren nichts
+  (`not_found`, auch für Admins); unveränderlich, nicht löschbar (verschwindet nur mit der Konversation). Höchstens 1000 je Konversation, 20 neue je Person und Minute (`limit_reached`).
+- **`epoche_wrap`:** der für **eine Person** verpackte Epochenschlüssel (Sealed Box plus Signatur des Verteilers). Je (Konversation, Epoche, Empfänger) genau eine Zeile mit vorgeschriebener ID (`wrap:<Konversation>:<Nummer>:<Empfänger>`), der erste gewinnt
+  (ein zweiter ist `not_found`, "gibt es schon"), unveränderlich. **Nur der Empfänger liest seinen Wrap** (auch der Verteiler, die anderen Teilnehmer und Admins nicht), der WebSocket-Hinweis geht nur an ihn. Anlegen darf jeder Teilnehmer;
+  die Epoche muss es geben, der Empfänger muss Teilnehmer sein (Familienchat: aktives Mitglied), sonst `invalid`. Verlässt die Person die Familie, verschwinden ihre Wraps (Tombstone für ihre Geräte). Höchstens 20 000 je Konversation, 400 neue je Person und Minute.
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `epoche` | `konversationId` | UUID (Pflicht) | create |
+| | `epoche` | Ganzzahl 1 bis 100 000 (Pflicht) | create |
+| | `mitglieder` | vom Verteiler signierte Mitgliederliste der Epoche, Base64url bis 16 384 Zeichen (Pflicht, undurchsichtig) | create |
+| | `verteilerId`, `createdAt` | UUID bzw. ISO-8601 (UTC), vom Server | server |
+| `epoche_wrap` | `konversationId` | UUID (Pflicht) | create |
+| | `epoche` | Ganzzahl 1 bis 100 000 (Pflicht) | create |
+| | `empfaengerId` | UUID des Empfängers (Pflicht, aktives Mitglied) | create |
+| | `wrap` | Base64url bis 4096 Zeichen (Pflicht, undurchsichtig) | create |
+| | `verteilerId`, `createdAt` | vom Server | server |
 
 Neue Entitäten (Aufgaben, Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
 

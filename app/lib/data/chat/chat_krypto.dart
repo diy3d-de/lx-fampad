@@ -81,8 +81,9 @@ class ChatKrypto {
   final Personenschluessel meinSchluessel;
   final int meineKeyVersion;
 
-  /// Gemerkter (TOFU) Schlüssel einer Person; null, wenn keiner gemerkt ist. Die eigene Person wird nie gemerkt.
-  final Future<OeffentlicheSchluessel?> Function(String userId) gemerkt;
+  /// Gemerkter (TOFU) Schlüssel einer Person; null, wenn keiner gemerkt ist. Die eigene Person wird nie gemerkt. Mit `version` der Schlüssel dieser Version, wenn das
+  /// Gerät ihn früher bestätigt hat (vor einem bestätigten Schlüsselwechsel der Person).
+  final Future<OeffentlicheSchluessel?> Function(String userId, {int? version}) gemerkt;
 
   /// Aktuelle Schlüssel der aktiven Mitglieder laut Server (Wert null: Person hat keinen eingerichtet; fehlt die Person, ist sie kein aktives Mitglied).
   /// Die ganze Abbildung ist null, solange der Stand nicht bekannt ist (offline): dann gilt für das Lesen und Anlegen der gemerkte Schlüssel allein, Wechsel der
@@ -116,7 +117,16 @@ class ChatKrypto {
        _jetzt = jetzt ?? DateTime.now;
 
   /// Der Stand des Vertrauens hat sich geändert (neuer Abgleich der Mitglieder, bestätigte Warnung): Gescheitertes wird beim nächsten [aktualisieren] erneut geprüft.
-  void vertrauenGeaendert() => _vertrauensStempel++;
+  void vertrauenGeaendert() {
+    _vertrauensStempel++;
+    _vertrauen.clear();
+    _verteiler.clear();
+  }
+
+  final Map<String, OeffentlicheSchluessel?> _verteiler = {};
+
+  /// Zwischenspeicher der vertrauenswürdigen Schlüssel (der Schlüsselspeicher ist langsam; gültig bis [vertrauenGeaendert]).
+  final Map<String, OeffentlicheSchluessel?> _vertrauen = {};
 
   // ------------------------------------------------------------------ Vertrauen
 
@@ -125,7 +135,10 @@ class ChatKrypto {
   /// Schlüssel für Signaturprüfungen des Verteilers: die eigene Person mit dem eigenen aktuellen Schlüssel, sonst der gemerkte (nie vom Server).
   Future<OeffentlicheSchluessel?> _verteilerSchluessel(String userId, int version) async {
     if (userId == ichId) return version == meineKeyVersion ? _ich : null;
-    return gemerkt(userId); // die Version prüft EpochenEmpfaenger (Wrap und Liste nennen die Version des Verteilers)
+    final key = '$userId:$version';
+    if (_verteiler.containsKey(key)) return _verteiler[key];
+    // der gemerkte Schlüssel dieser Version (der aktuelle oder ein früher bestätigter); die Version prüft EpochenEmpfaenger (Wrap und Liste nennen sie)
+    return _verteiler[key] = await gemerkt(userId, version: version) ?? await gemerkt(userId);
   }
 
   /// Alle aktiven Mitglieder der Familie (laut letztem Abgleich mit dem Server); ohne diesen Stand nur die eigene Person.
@@ -134,19 +147,31 @@ class ChatKrypto {
   /// Schlüssel, an die dieses Gerät verteilt: gemerkt UND gleich dem aktuellen Schlüssel des Servers (eine ungeprüfte Änderung zählt nicht). Die eigene Person immer.
   Future<OeffentlicheSchluessel?> vertrauenswuerdig(String userId) async {
     if (userId == ichId) return _ich;
+    if (_vertrauen.containsKey(userId)) return _vertrauen[userId];
     final g = await gemerkt(userId);
-    if (g == null) return null;
-    final karte = serverSchluessel();
-    if (karte == null) return g;
-    final s = karte[userId];
-    if (s == null || !g.gleichWie(s)) return null;
-    return g;
+    OeffentlicheSchluessel? ergebnis;
+    if (g != null) {
+      final karte = serverSchluessel();
+      final s = karte?[userId];
+      ergebnis = karte == null || (s != null && g.gleichWie(s)) ? g : null;
+    }
+    _vertrauen[userId] = ergebnis;
+    return ergebnis;
   }
 
   // ------------------------------------------------------------------ Schlüsselbund
 
-  /// Öffnet die Wraps der eigenen Person und merkt die Epochenschlüssel (nur Arbeitsspeicher). Liefert true, wenn sich etwas geändert hat.
-  Future<bool> aktualisieren() async {
+  Future<void> _kette = Future<void>.value();
+
+  /// Öffnet die Wraps der eigenen Person und merkt die Epochenschlüssel (nur Arbeitsspeicher). Liefert true, wenn sich etwas geändert hat. Läufe laufen nie
+  /// gleichzeitig (der Controller, der Abgleich und die Oberfläche rufen es unabhängig voneinander auf).
+  Future<bool> aktualisieren() {
+    final f = _kette.then((_) => _aktualisieren());
+    _kette = f.then((_) {}, onError: (Object _) {});
+    return f;
+  }
+
+  Future<bool> _aktualisieren() async {
     final epochen = await db.select(db.konversationEpochen).get();
     final wraps = await (db.select(db.epocheWraps)..where((w) => w.empfaengerId.equals(ichId))).get();
     final konversationen = {for (final k in await db.select(db.konversationen).get()) k.id: k};
@@ -204,8 +229,6 @@ class ChatKrypto {
         if (_gescheitertBei['$conv:${e.epoche}:$marke'] == _vertrauensStempel) continue;
         final r = await _regulaerOeffnen(conv, e, w, signiert);
         if (r != null) {
-          final alt = ring.schluessel[e.epoche];
-          if (alt != null) loescheBytes(alt); // alter Eintrag (bei geänderter Marke) wird ersetzt
           ring.schluessel[e.epoche] = r.key;
           ring.stand[e.epoche] = marke;
           _probleme[conv]?.remove(e.epoche);

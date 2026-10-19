@@ -1,4 +1,4 @@
-// Phase-2-Bausteine (reine Funktionen, noch ohne Chat-Integration): Verteilung des Epochenschlüssels einer Konversation.
+// Phase-2-Bausteine (reine Funktionen; der Chat setzt in data/chat/chat_krypto.dart darauf auf): Verteilung des Epochenschlüssels einer Konversation.
 //
 // Epochenschlüssel-Wrap: Der Verteiler (ein Mitglied) verpackt den 32-Byte-Epochenschlüssel für jeden Empfänger als Sealed Box an dessen X25519-Schlüssel
 // und signiert (Ed25519, Domäne 'lx-familyhub|wrap|v1', längengerahmt) conversation_id, epoch, recipient_id, recipient_key_version, distributor_id,

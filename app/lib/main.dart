@@ -9,7 +9,9 @@ import 'data/chat/chat_krypto_state.dart';
 import 'data/calendar/zeitzonen.dart';
 import 'data/crypto/e2ee_state.dart';
 import 'data/database_provider.dart';
+import 'data/push/chat_benachrichtiger_provider.dart';
 import 'data/push/push_hintergrund.dart';
+import 'data/push/push_wecker.dart';
 import 'data/push/push_state.dart';
 import 'data/sync_state.dart';
 import 'features/auth/adresszeile.dart';
@@ -40,6 +42,8 @@ Future<void> main(List<String> args) async {
         // zusätzlich verschwindet der geheime E2EE-Personenschlüssel vom Gerät (Wiederverbinden per QR oder Wiederherstellungsschlüssel)
         // unabhängig voneinander: ein Fehler beim Leeren der Datenbank darf das Löschen des Schlüssels nie verhindern (und umgekehrt)
         localDataWiperProvider.overrideWith((ref) => wiperVerkettet([lokaleDatenWiper(ref), e2eeDatenWiper(ref), () async => ref.invalidate(chatKryptoProvider)])),
+        // nach einem Push-Wecker: lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
+        ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
         // Abmelden meldet auch den Push-Endpunkt ab (Server und ntfy-App)
         pushAbmeldenProvider.overrideWith((ref) => ({required bool serverLoeschen}) => ref.read(pushProvider.notifier).beimAbmelden(serverLoeschen: serverLoeschen)),
         // merkt den Besitzer der lokalen Daten: nur bei einer ANDEREN Person wird beim Anmelden geleert (nicht nach Sitzungsverlust)

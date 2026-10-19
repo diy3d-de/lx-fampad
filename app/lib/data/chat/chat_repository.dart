@@ -250,13 +250,14 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
   /// Legt den Familienchat an, falls es lokal keinen gibt (die erste App, die ihn nicht findet; feste ID, daher auch bei gleichzeitigem Anlegen
   /// auf mehreren Geräten nur einer). Erst nach einem erfolgreichen Abgleich aufrufen. Verschlüsselt (e1): die erste Epoche geht an alle aktiven Mitglieder, die ihre
   /// Verschlüsselung eingerichtet haben (die übrigen kommen mit einer neuen Epoche dazu, sobald sie so weit sind). Ohne eigenen Schlüssel passiert nichts.
-  Future<void> familienchatSicherstellen() async {
+  /// Liefert true, wenn es den Familienchat lokal gibt (schon vorher oder jetzt angelegt); false, wenn es noch nicht ging (kein Schlüssel bereit).
+  Future<bool> familienchatSicherstellen() async {
     final fam = familie();
-    if (fam == null) return;
+    if (fam == null) return false;
     final da = await (db.select(db.konversationen)..where((k) => k.art.equals(ChatArt.family.wire))).get();
-    if (da.isNotEmpty) return;
+    if (da.isNotEmpty) return true;
     final k = await krypto();
-    if (k == null) return;
+    if (k == null) return false;
     final id = familienchatId(fam);
     final alle = k.aktiveMitglieder();
     final epoche = await k.epocheErstellen(konversationId: id, mitglieder: alle, unvertrauteAuslassen: true);
@@ -265,6 +266,7 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
       ...epoche,
     ]);
     beiAenderung();
+    return true;
   }
 
   /// Gibt es den Direktchat mit dieser Person schon (lokal)?
@@ -379,8 +381,9 @@ final chatRepositoryProvider = Provider<ChatRepository>((ref) {
   return ChatRepository(
     db: ref.watch(appDatabaseProvider),
     store: ref.watch(syncStoreProvider),
-    inhalt: ref.watch(nachrichtenInhaltProvider),
-    krypto: ref.read(chatKryptoProvider.notifier).krypto,
+    // nur für Gruppennamen (p1): das Repository darf sich nicht mit jeder entschlüsselten Nachricht neu aufbauen (sonst starten alle Datenbank-Streams neu)
+    inhalt: const KlartextHuelle(),
+    krypto: () => ref.read(chatKryptoProvider.notifier).krypto(),
     ich: () => ref.read(authProvider).user?.id,
     familie: () => ref.read(authProvider).me?.familyId,
     beiAenderung: () => ref.read(syncProvider.notifier).lokaleAenderung(),

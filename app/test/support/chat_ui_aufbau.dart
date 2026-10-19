@@ -92,7 +92,7 @@ class ChatUiAufbau {
       ichId: anna.id,
       meinSchluessel: anna.pk,
       meineKeyVersion: anna.version,
-      gemerkt: (u) async => _tofu[u],
+      gemerkt: (u, {version}) async => _tofu[u],
       serverSchluessel: () => null,
       absenderSchluessel: (u, v) async => _tofu[u]!,
     );

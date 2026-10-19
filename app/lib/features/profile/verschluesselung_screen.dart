@@ -1,5 +1,5 @@
 // Profil > Verschlüsselung (Phase 1 der Ende-zu-Ende-Verschlüsselung): Status, Einrichtung, neues Gerät verbinden, Sicherheitscode,
-// Warnungen bei Schlüsselwechsel. Es gibt noch keine verschlüsselten Nachrichten; diese Seite verwaltet nur die Schlüssel.
+// Warnungen bei Schlüsselwechsel. Die Schlüssel schützen die Chats (Ende-zu-Ende); diese Seite verwaltet sie.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -122,8 +122,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       maxBreite: kMaxContentWidth,
       kinder: [
         const Text(
-          'Mit einem persönlichen Schlüssel, der nur auf deinen Geräten liegt, werden Inhalte später so geschützt, dass sie nicht einmal der Server lesen kann. '
-          'Zurzeit richtest du hier nur die Schlüssel ein; verschlüsselte Nachrichten folgen.',
+          'Mit einem persönlichen Schlüssel, der nur auf deinen Geräten liegt, werden deine Chat-Nachrichten so geschützt, dass sie nicht einmal der Server lesen kann. '
+          'Ohne eingerichteten Schlüssel kannst du Chats nicht lesen und nicht schreiben.',
           style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
         ),
         const SizedBox(height: 16),

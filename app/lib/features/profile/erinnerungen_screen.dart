@@ -133,7 +133,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Titel auf Sperrbildschirm zeigen', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
-                'aus: gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort erst nach dem Entsperren',
+                'aus: gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort (und der Chat-Name neuer Nachrichten) erst nach dem Entsperren',
                 style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
               ),
               value: einst.sperrbildschirmTitel,

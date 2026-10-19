@@ -57,7 +57,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     // der Familienchat ist verschlüsselt: ohne eingerichteten Schlüssel gibt es ihn noch nicht (der Hinweis im Chat-Bereich führt zum Einrichten)
     if (ref.read(e2eeProvider).status != E2eeStatus.bereit) return;
     _familienchatGeprueft = true;
-    unawaited(ref.read(chatRepositoryProvider).familienchatSicherstellen());
+    unawaited(
+      ref.read(chatRepositoryProvider).familienchatSicherstellen().then((ok) {
+        // noch nicht möglich (Schlüssel noch nicht bereit): beim nächsten Auslöser erneut versuchen
+        if (!ok) _familienchatGeprueft = false;
+      }),
+    );
   }
 
   Future<void> _neuerChat(bool zweiSpalten) async {
