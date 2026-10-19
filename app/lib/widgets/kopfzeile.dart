@@ -9,6 +9,7 @@ import '../constants.dart';
 import '../data/auth/auth_state.dart';
 import '../features/profile/profile_screen.dart';
 import '../ui/widgets.dart';
+import 'benutzer_avatar.dart';
 import 'sync_indicator.dart';
 
 /// Datum der Kopfzeile in Kleinschreibung ("do, 22. okt").
@@ -27,8 +28,8 @@ class TabKopfzeile extends StatelessWidget {
   );
 }
 
-/// Profil-Knopf der Kopfzeile: zeigt das Benutzerbild der Person. Solange es keines gibt (Platzhalter), stehen die Initialen in der
-/// Personenfarbe im Kreis; ohne angemeldete Person ein Symbol. [bild] ist für das spätere Benutzerbild (Avatar) vorgesehen.
+/// Profil-Knopf der Kopfzeile: zeigt das Benutzerbild der Person (Platzhalter-Zeichnung oder Foto). Solange es keines gibt, stehen die
+/// Initialen in der Personenfarbe im Kreis; ohne angemeldete Person ein Symbol. [bild] überschreibt das Bild (nur für Tests/Vorschau).
 class ProfilButton extends ConsumerWidget {
   final ImageProvider<Object>? bild;
   const ProfilButton({super.key, this.bild});
@@ -51,7 +52,7 @@ class ProfilButton extends ConsumerWidget {
             child: Center(
               child: user == null
                   ? const Icon(Icons.account_circle_outlined)
-                  : PersonAvatar(name: user.displayName, colorIndex: user.colorIndex, size: 34, bild: bild),
+                  : bild != null ? PersonAvatar(name: user.displayName, colorIndex: user.colorIndex, size: 34, bild: bild) : BenutzerAvatar(user: user, size: 34),
             ),
           ),
         ),

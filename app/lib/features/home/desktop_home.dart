@@ -20,6 +20,7 @@ import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
 import '../update/update_banner.dart';
 import 'home_screen.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// "Guten Morgen/Tag/Abend, Vorname" (bei leerem Namen nur die Tageszeit-Begrüßung).
 String tagesgruss(String? anzeigename, DateTime jetzt) {
@@ -357,7 +358,7 @@ class _FamilieKarte extends ConsumerWidget {
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Row(
                   children: [
-                    PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 32),
+                    BenutzerAvatar(user: u, size: 32),
                     const SizedBox(width: 10),
                     Expanded(child: Text(u.displayName, maxLines: 1, overflow: TextOverflow.ellipsis)),
                     Text(u.role.label.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),

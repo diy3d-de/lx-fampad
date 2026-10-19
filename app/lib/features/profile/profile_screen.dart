@@ -14,7 +14,9 @@ import '../auth/step_up.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
 import 'password_screen.dart';
+import 'profilbild_screen.dart';
 import 'passkeys_screen.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
 class EinstellungsZeile extends StatelessWidget {
@@ -174,9 +176,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
       kinder: [
         if (user != null)
           LxCard(
+            onTap: () => _oeffne(const ProfilbildScreen()),
             child: Row(
               children: [
-                PersonAvatar(name: user.displayName, colorIndex: user.colorIndex, size: 48),
+                Semantics(label: 'Profilbild ändern', button: true, child: BenutzerAvatar(user: user, size: 56)),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -187,9 +190,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                         Text(user.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
                       const SizedBox(height: 6),
                       RollenPille(user.role.label),
+                      const SizedBox(height: 6),
+                      const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
                     ],
                   ),
                 ),
+                const Icon(Icons.chevron_right, size: 20, color: kTextMuted),
               ],
             ),
           ),

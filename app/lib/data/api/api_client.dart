@@ -36,6 +36,13 @@ enum SessionLostReason {
   unsicher,
 }
 
+/// Antwort von [ApiClient.getBytes]: `bytes` ist null, wenn der Server mit 304 antwortete (Zwischenspeicher gilt weiter).
+class BytesAntwort {
+  final Uint8List? bytes;
+  final String? etag;
+  const BytesAntwort(this.bytes, this.etag);
+}
+
 class ApiClient {
   final http.Client _client;
   final TokenStore _store;
@@ -137,20 +144,48 @@ class ApiClient {
   Future<Json> get(String path, {bool auth = true}) => _anfrage('GET', path, null, auth);
   Future<Json> post(String path, [Object? body, bool auth = true]) => _anfrage('POST', path, body ?? const <String, dynamic>{}, auth);
   Future<Json> patch(String path, Object body) => _anfrage('PATCH', path, body, true);
+  Future<Json> put(String path, Object body) => _anfrage('PUT', path, body, true);
   Future<Json> delete(String path) => _anfrage('DELETE', path, null, true);
 
-  Future<Json> _anfrage(String method, String path, Object? body, bool auth) async {
+  /// Sendet rohe Bytes (z. B. ein Bild) mit festem Content-Type; die Antwort ist wie sonst JSON.
+  Future<Json> putBytes(String path, Uint8List bytes, String contentType) => _anfrage('PUT', path, null, true, rohdaten: bytes, contentType: contentType);
+
+  /// Lädt rohe Bytes. Mit [etag] kann der Server mit 304 antworten (dann ist [BytesAntwort.bytes] null).
+  Future<BytesAntwort> getBytes(String path, {String? etag}) async {
     final gen = _gen;
+    final res = await _senden('GET', path, null, true, extraKopf: {'accept': 'image/*', 'if-none-match': ?etag});
+    if (res.statusCode == 304) return BytesAntwort(null, etag);
+    if (res.statusCode == 200) return BytesAntwort(res.bodyBytes, res.headers['etag']);
+    await _auswerten(res, true, gen); // wirft den passenden Fehler
+    throw ApiException.unerwarteteAntwort;
+  }
+
+  Future<Json> _anfrage(String method, String path, Object? body, bool auth, {Uint8List? rohdaten, String? contentType}) async {
+    final gen = _gen;
+    final res = await _senden(method, path, body, auth, rohdaten: rohdaten, contentType: contentType);
+    return _auswerten(res, auth, gen);
+  }
+
+  /// Eine Anfrage inklusive einmaliger Erneuerung bei abgelehntem Access-Token; die Antwort wird nicht ausgewertet.
+  Future<http.Response> _senden(
+    String method,
+    String path,
+    Object? body,
+    bool auth, {
+    Uint8List? rohdaten,
+    String? contentType,
+    Map<String, String> extraKopf = const {},
+  }) async {
     var gesendetesToken = await _vorbereiten(auth);
-    var res = await _einmal(method, path, body, auth, gesendetesToken);
+    var res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
     if (auth && res.statusCode == 401 && !_web && gesendetesToken != null && _istSitzungsCode(_fehlercode(res))) {
       // Access-Token abgelehnt (z. B. abgelaufen/Uhr): einmal erneuern, aber nur, wenn nicht schon jemand anderes erneuert hat.
       // Andere 401-Fachcodes (step_up_failed ...) bleiben, wie sie sind: kein Erneuern, kein zweiter Versuch.
       await _nachUnauthorized(gesendetesToken);
       gesendetesToken = (await _tokenLaden())?.accessToken;
-      res = await _einmal(method, path, body, auth, gesendetesToken);
+      res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
     }
-    return _auswerten(res, auth, gen);
+    return res;
   }
 
   /// 401-Codes, die "Sitzung bzw. Token ungültig" bedeuten (alle anderen 401 sind Fachfehler der Aktion).
@@ -183,13 +218,24 @@ class ApiClient {
     return t.accessToken;
   }
 
-  Future<http.Response> _einmal(String method, String path, Object? body, bool auth, String? accessToken) async {
-    final headers = <String, String>{'accept': 'application/json'};
+  Future<http.Response> _einmal(
+    String method,
+    String path,
+    Object? body,
+    bool auth,
+    String? accessToken, [
+    Uint8List? rohdaten,
+    String? contentType,
+    Map<String, String> extraKopf = const {},
+  ]) async {
+    final headers = <String, String>{'accept': 'application/json', ...extraKopf};
     if (body != null) headers['content-type'] = 'application/json';
+    if (rohdaten != null && contentType != null) headers['content-type'] = contentType;
     if (accessToken != null) headers['authorization'] = 'Bearer $accessToken';
     if (_web && auth && method != 'GET' && _csrf != null) headers['x-csrf-token'] = _csrf!;
     final request = http.Request(method, _uri(path))..headers.addAll(headers);
     if (body != null) request.body = jsonEncode(body);
+    if (rohdaten != null) request.bodyBytes = rohdaten;
     try {
       final streamed = await _client.send(request).timeout(_timeout);
       return await http.Response.fromStream(streamed).timeout(_timeout);

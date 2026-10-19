@@ -76,7 +76,7 @@ describe.each(targets)('Migration 0005: Gäste entfallen (%s)', (_name, open) =>
     cpSync(full, tmp, { recursive: true });
     const journalPath = join(tmp, 'meta', '_journal.json');
     const journal = JSON.parse(readFileSync(journalPath, 'utf8')) as { entries: Array<{ tag: string }> };
-    journal.entries = journal.entries.filter((e) => !e.tag.startsWith('0005'));
+    journal.entries = journal.entries.filter((e) => Number(e.tag.slice(0, 4)) < 5); // 0005 und spätere kommen erst beim zweiten Migrieren
     writeFileSync(journalPath, JSON.stringify(journal));
     await b.migrate(tmp);
 

@@ -201,6 +201,9 @@ class AppDatabase extends _$AppDatabase {
 
   Future<void> metaSchreiben(String key, String value) => into(syncMeta).insertOnConflictUpdate(SyncMetaCompanion.insert(key: key, value: value));
 
+  /// Schlüssel mit dem Präfix (ohne die LIKE-Zeichen % und _, z. B. 'avatar:').
+  Future<List<String>> metaSchluesselMit(String prefix) async => [for (final r in await (select(syncMeta)..where((t) => t.key.like('$prefix%'))).get()) r.key];
+
   Future<void> metaLoeschen(String key) => (delete(syncMeta)..where((t) => t.key.equals(key))).go();
 
   static QueryExecutor _openConnection() => driftDatabase(

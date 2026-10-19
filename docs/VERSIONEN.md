@@ -85,6 +85,10 @@ Zeitzonen-Daten: `app/assets/tz/latest.tzf` ist die unveränderte Datei `lib/dat
 
 `app/web/passkeys-bundle.js` (16486 Byte) stammt aus dem Paket **passkeys_web 2.10.1**: Für diese Version gibt es kein veröffentlichtes `bundle.js` (die GitHub-Releases enthalten keine Dateien; die Anleitung des Pakets verweist auf ein altes von 2.4.0), daher wird es aus dem mitgelieferten Quelltext gebaut: Ordner `javascript/` des Pakets (im Pub-Cache) kopieren, `npm ci --ignore-scripts`, `npx rollup -c` (Ausgabe `dist/bundle.js`, `@github/webauthn-json` 2.1.1 aus dem mitgelieferten Lockfile). Es enthält keine Fremd-Adressen (nur einen W3C-Verweis im Kommentar). `web/index.html` bindet es per `<script src="passkeys-bundle.js">` ein (CSP `script-src 'self'`). `.gitattributes` führt es als binär, damit die Prüfsumme nicht durch Zeilenenden-Umwandlung bricht. Bei einem Update von passkeys/passkeys_web neu bauen und die Prüfsumme unten ändern.
 
+## Platzhalter-Benutzerbilder
+
+Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07, K08, K12, K13) stammen aus dem eigenen Mockup `docs/mockups/avatare.html` (eigene Zeichnungen des Projekts, keine Fremdquelle) und stehen unter der Lizenz des Projekts. Quellen (SVG) und Render-Skript: `app/tool/avatare/`.
+
 ## Auflagen aus der Recherche
 
 - Flutter Web: `--no-web-resources-cdn`, Schriften (Inter, JetBrains Mono) bündeln, `fontFallbackBaseUrl` auf eigene Domain, CSP mit `'wasm-unsafe-eval'`. Im Network-Tab prüfen, dass nichts von Google lädt.
