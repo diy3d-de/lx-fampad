@@ -6,19 +6,25 @@
 // Regeln (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6b, "Erinnerungen"):
 //  - Quelle ist `Termin.erinnerungMin` (Minuten VOR dem Beginn, null = keine). Serien erinnern an jedem Vorkommen; abgesagte Vorkommen
 //    nicht; verschobene Vorkommen (Ausnahme) zur neuen Zeit; einen geänderten Titel/Ort der Ausnahme zeigt die Erinnerung.
-//  - Zeittermine: Beginn (echter Zeitpunkt) minus Minuten, also eine absolute Dauer: "1 Tag vorher" sind 24 Stunden, auch über die
-//    Zeitumstellung (die Wiederholung selbst bleibt in der Wanduhr, siehe expansion.dart).
-//  - Ganztägige Termine haben keine Uhrzeit: Bezugspunkt ist 09:00 Uhr (Familienzone) am ersten Tag, davon werden die Minuten
+//  - Zeittermine: Beginn (echter Zeitpunkt) minus Vorlaufzeit. Ganze Tage der Vorlaufzeit (1440, 10080 ...) werden in der Wanduhr der
+//    Familienzone gerechnet, wie bei ganztägigen Terminen: "1 Tag vorher" bei einem Termin um 10:00 ist am Vortag um 10:00, auch über die
+//    Zeitumstellung. Der Rest (Minuten, Stunden) ist eine absolute Dauer.
+//  - Ganztägige Termine haben keine Uhrzeit: Bezugspunkt ist 09:00 Uhr (Familienzone) am ersten Tag, davon wird die Vorlaufzeit
 //    abgezogen. "Zur Startzeit" = 09:00 am Tag, "1 Tag vorher" = 09:00 am Vortag, "1 Woche vorher" = 09:00 sieben Tage davor.
-//  - Nur Termine, die die angemeldete Person betreffen: sie ist Ersteller oder Teilnehmer (oder der Termin hat keinen Ersteller).
-//    Andere Familientermine erscheinen im Kalender, lösen aber keine Benachrichtigung aus.
+//  - Nur Termine, die die angemeldete Person betreffen: sie ist Ersteller oder Teilnehmer. Ein Termin ohne Ersteller erinnert nur seine
+//    Teilnehmer. Andere Familientermine erscheinen im Kalender, lösen aber keine Benachrichtigung aus.
 //  - Vergangenes wird übersprungen (Zeitpunkt der Erinnerung muss in der Zukunft liegen).
+//  - Gibt es mehr Erinnerungen als das Fenster fasst, steht als letzter Platz eine Hinweis-Benachrichtigung ("Erinnerungen laufen aus"),
+//    die zum Öffnen der App auffordert; beim Öffnen wird das Fenster erneuert.
+import 'package:timezone/timezone.dart' as tz;
+
 import '../calendar/expansion.dart';
 import '../calendar/termin_repository.dart' show KalenderDaten;
 import '../calendar/zeitzonen.dart';
 
-/// Wie viele Erinnerungen höchstens gleichzeitig beim Betriebssystem geplant sind.
-const kErinnerungFenster = 60;
+/// Wie viele Erinnerungen höchstens gleichzeitig beim Betriebssystem geplant sind (ohne Hinweis). Android begrenzt die Alarme je App
+/// (Samsung rund 500); mit Reserve für andere Alarme der App bleibt es bei 300.
+const kErinnerungFenster = 300;
 
 /// Uhrzeit (Familienzone), auf die sich Erinnerungen ganztägiger Termine beziehen.
 const kGanztaegigStunde = 9;
@@ -28,6 +34,9 @@ const kErinnerungHorizontTage = 366;
 
 /// Größte Vorlaufzeit, die der Server erlaubt (4 Wochen); erweitert das Betrachtungsfenster.
 const kMaxVorlaufMin = 40320;
+
+/// Zeit des Hinweises "Erinnerungen laufen aus" nach der letzten geplanten Erinnerung.
+const kAuslaufHinweisAbstand = Duration(minutes: 1);
 
 /// Mindestabstand zwischen "jetzt" und einer Erinnerung (sonst gilt sie als vergangen).
 const kMindestAbstand = Duration(seconds: 5);
@@ -49,9 +58,13 @@ class GeplanteErinnerung {
   bool gleich(GeplanteErinnerung o) => id == o.id && zeit == o.zeit && titel == o.titel && text == o.text && payload == o.payload;
 }
 
-/// Alle IDs der Erinnerungen liegen in diesem Bereich; kleinere Werte sind für andere Zwecke reserviert (Testbenachrichtigung = 1).
+/// Alle IDs der Erinnerungen liegen in diesem Bereich; kleinere Werte sind für andere Zwecke reserviert (Testbenachrichtigung = 1,
+/// Hinweis "Erinnerungen laufen aus" = 2).
 const kErinnerungIdMin = 1000;
 const _kIdMax = 0x7fffffff;
+
+/// ID des Hinweises "Erinnerungen laufen aus" (gleicher Wert wie kAuslaufHinweisId in erinnerung_port.dart).
+const kAuslaufHinweisPlanId = 2;
 
 /// Stabile ID aus Termin und Schlüssel des Vorkommens (FNV-1a, 32 Bit).
 int erinnerungId(String terminId, String schluessel) {
@@ -65,11 +78,13 @@ int erinnerungId(String terminId, String schluessel) {
 /// Inhalt für das Tippen auf die Benachrichtigung: `termin|<Termin-ID>|<Tag YYYY-MM-DD>`.
 String erinnerungPayload(String terminId, DateTime tag) => 'termin|$terminId|${tagText(tag)}';
 
-/// Liest das Ergebnis von [erinnerungPayload]; null bei einem unbekannten Format. Nie eine Ausnahme.
+final _uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
+
+/// Liest das Ergebnis von [erinnerungPayload]; null bei einem unbekannten Format (die Termin-ID muss eine UUID sein). Nie eine Ausnahme.
 ({String terminId, DateTime tag})? erinnerungPayloadLesen(String? payload) {
   if (payload == null) return null;
   final teile = payload.split('|');
-  if (teile.length != 3 || teile[0] != 'termin' || teile[1].isEmpty) return null;
+  if (teile.length != 3 || teile[0] != 'termin' || !_uuid.hasMatch(teile[1])) return null;
   final tag = tagAusText(teile[2]);
   if (tag == null) return null;
   return (terminId: teile[1], tag: tag);
@@ -95,13 +110,27 @@ String erinnerungInhalt(Vorkommen v, DateTime erinnerungTag) {
   return ort.isEmpty ? '$tag, $zeit' : '$tag, $zeit · $ort';
 }
 
-/// Betrifft der Termin die Person [ich]? Ersteller oder Teilnehmer; ein Termin ohne Ersteller (sollte nicht vorkommen) gilt für alle.
+/// Betrifft der Termin die Person [ich]? Ersteller oder Teilnehmer; ein Termin ohne Ersteller erinnert nur seine Teilnehmer.
 bool betrifftPerson(String? ownerId, Set<String> teilnehmer, String? ich) {
   if (ich == null) return false;
-  return ownerId == null || ownerId == ich || teilnehmer.contains(ich);
+  return ownerId == ich || teilnehmer.contains(ich);
 }
 
-/// Die nächsten Erinnerungen ab [jetzt], zeitlich sortiert, höchstens [maxAnzahl]. Reine Funktion der Daten und der Uhr.
+/// Zeitpunkt der Erinnerung: ganze Tage in der Wanduhr der Familienzone, der Rest als absolute Dauer. [beginn] ist bei ganztägigen
+/// Terminen 09:00 Uhr am ersten Tag.
+DateTime _erinnerungsZeit(DateTime beginn, int min, tz.Location ort) {
+  final tage = min ~/ 1440;
+  final rest = min % 1440;
+  var zeit = beginn;
+  if (tage > 0) {
+    final w = wandUhr(beginn, ort);
+    zeit = instantAusWand(DateTime.utc(w.year, w.month, w.day - tage, w.hour, w.minute, w.second), ort);
+  }
+  return zeit.subtract(Duration(minutes: rest));
+}
+
+/// Die nächsten Erinnerungen ab [jetzt], zeitlich sortiert, höchstens [maxAnzahl] (danach, falls es mehr gäbe, der Hinweis "Erinnerungen
+/// laufen aus"). Reine Funktion der Daten und der Uhr.
 List<GeplanteErinnerung> planeErinnerungen({
   required KalenderDaten daten,
   required String? ich,
@@ -132,7 +161,7 @@ List<GeplanteErinnerung> planeErinnerungen({
     } else {
       beginn = v.startUtc;
     }
-    final zeit = beginn.subtract(Duration(minutes: min));
+    final zeit = _erinnerungsZeit(beginn, min, berlin);
     if (!zeit.isAfter(grenze)) continue;
     final id = erinnerungId(v.termin.id, v.schluessel);
     if (!ids.add(id)) continue; // ID-Kollision (praktisch ausgeschlossen): die frühere Erinnerung bleibt
@@ -151,5 +180,16 @@ List<GeplanteErinnerung> planeErinnerungen({
     final c = a.zeit.compareTo(b.zeit);
     return c != 0 ? c : a.id.compareTo(b.id);
   });
-  return out.length > maxAnzahl ? out.sublist(0, maxAnzahl) : out;
+  if (out.length <= maxAnzahl) return out;
+  final fenster = out.sublist(0, maxAnzahl);
+  fenster.add(
+    GeplanteErinnerung(
+      id: kAuslaufHinweisPlanId,
+      zeit: fenster.last.zeit.add(kAuslaufHinweisAbstand),
+      titel: 'Erinnerungen laufen aus',
+      text: 'Öffne lx-fampad, damit neue Terminerinnerungen geplant werden.',
+      payload: '',
+    ),
+  );
+  return fenster;
 }

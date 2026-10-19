@@ -23,6 +23,7 @@ Termin termin({
   String? rrule,
   int? erinnerungMin = 15,
   String? ownerId = ich,
+  String tzid = 'Europe/Berlin',
 }) => Termin(
   id: id,
   titel: titel,
@@ -31,7 +32,7 @@ Termin termin({
   ganztaegig: ganztaegig,
   startUtc: startUtc == null ? null : DateTime.parse(startUtc),
   endUtc: endUtc == null ? null : DateTime.parse(endUtc),
-  tzid: ganztaegig ? null : 'Europe/Berlin',
+  tzid: ganztaegig ? null : tzid,
   startDate: startDate,
   endDate: endDate,
   rrule: rrule,
@@ -63,6 +64,11 @@ KalenderDaten daten(List<Termin> termine, {List<TerminAusnahme> ausnahmen = cons
 List<GeplanteErinnerung> plane(KalenderDaten d, {DateTime? zeit, int max = kErinnerungFenster, String? person = ich}) =>
     planeErinnerungen(daten: d, ich: person, jetzt: zeit ?? jetzt, maxAnzahl: max);
 
+/// Ohne den Hinweis "Erinnerungen laufen aus" am Ende eines vollen Fensters.
+List<GeplanteErinnerung> echte(List<GeplanteErinnerung> r) => r.where((e) => e.id != kAuslaufHinweisPlanId).toList();
+
+const terminUuid = '3f2b8c1e-9d4a-4b6f-8a1c-2e7d5f0a9b13';
+
 void main() {
   tzdata.initializeTimeZones();
 
@@ -81,7 +87,7 @@ void main() {
       final morgen = plane(daten([termin(startUtc: '2026-10-21T08:00:00Z', endUtc: '2026-10-21T09:00:00Z', erinnerungMin: 1440)]));
       expect(morgen.single.text, 'Morgen, 10:00');
       final woche = plane(daten([termin(startUtc: '2026-10-29T08:00:00Z', endUtc: '2026-10-29T09:00:00Z', erinnerungMin: 10080)]));
-      expect(woche.single.zeit, DateTime.utc(2026, 10, 22, 8)); // 29.10. 09:00 Berlin (Winterzeit) = 08:00 UTC; eine Woche = 168 Stunden, absolut
+      expect(woche.single.zeit, DateTime.utc(2026, 10, 22, 7)); // ganze Tage in der Wanduhr: 22.10. 09:00 Berlin (Sommerzeit) = 07:00 UTC, nicht 168 Stunden
       expect(woche.single.text, 'Do, 29. Okt, 09:00');
     });
 
@@ -91,6 +97,24 @@ void main() {
         expect(r, hasLength(1), reason: '$m Minuten');
         expect(r.single.zeit, DateTime.utc(2026, 11, 20, 8).subtract(Duration(minutes: m)));
       }
+    });
+
+    test('ganze Tage der Vorlaufzeit rechnen in der Wanduhr: "1 Tag vorher" über die Zeitumstellung bleibt dieselbe Uhrzeit', () {
+      // So 25.10.2026 10:00 Berlin (Winterzeit, 09:00 UTC); die Umstellung war in der Nacht: Vortag 10:00 Berlin = 08:00 UTC (Sommerzeit)
+      final r = plane(daten([termin(startUtc: '2026-10-25T09:00:00Z', endUtc: '2026-10-25T10:00:00Z', erinnerungMin: 1440)]));
+      expect(r.single.zeit, DateTime.utc(2026, 10, 24, 8));
+      expect(r.single.text, 'Morgen, 10:00');
+      // 1 Tag und 30 Minuten: Wanduhr-Tag, der Rest absolut
+      final r2 = plane(daten([termin(startUtc: '2026-10-25T09:00:00Z', endUtc: '2026-10-25T10:00:00Z', erinnerungMin: 1470)]));
+      expect(r2.single.zeit, DateTime.utc(2026, 10, 24, 7, 30));
+    });
+
+    test('Termin in einer anderen Zeitzone (New York): Serie rechnet in deren Wanduhr, Anzeige in Familienzeit', () {
+      // dienstags 10:00 New York: 20.10. EDT (UTC-4) = 14:00 UTC, ab 1.11. EST (UTC-5) = 15:00 UTC
+      final ny = termin(startUtc: '2026-10-20T14:00:00Z', endUtc: '2026-10-20T15:00:00Z', rrule: 'FREQ=WEEKLY', erinnerungMin: 0, tzid: 'America/New_York');
+      final r = echte(plane(daten([ny]), max: 3));
+      expect(r.map((e) => e.zeit).toList(), [DateTime.utc(2026, 10, 20, 14), DateTime.utc(2026, 10, 27, 14), DateTime.utc(2026, 11, 3, 15)]);
+      expect(r.first.text, 'Heute, 16:00'); // 14:00 UTC = 16:00 in Berlin
     });
 
     test('keine Erinnerung (null) und negative Werte planen nichts', () {
@@ -124,6 +148,13 @@ void main() {
       expect(plane(daten([fremd], teilnehmer: {'t1': ['u-dritter', ich]})), hasLength(1));
     });
 
+    test('Termin ohne Ersteller erinnert nur seine Teilnehmer', () {
+      final ohne = termin(ownerId: null, startUtc: '2026-10-20T12:30:00Z', endUtc: '2026-10-20T13:30:00Z');
+      expect(plane(daten([ohne])), isEmpty);
+      expect(plane(daten([ohne], teilnehmer: {'t1': ['u-dritter']})), isEmpty);
+      expect(plane(daten([ohne], teilnehmer: {'t1': [ich]})), hasLength(1));
+    });
+
     test('eigener Termin: Erinnerung, auch mit anderen Teilnehmern', () {
       expect(plane(daten([termin(startUtc: '2026-10-20T12:30:00Z', endUtc: '2026-10-20T13:30:00Z')], teilnehmer: {'t1': ['u-dritter']})), hasLength(1));
     });
@@ -134,7 +165,7 @@ void main() {
     final serie = termin(startUtc: '2026-10-20T08:00:00Z', endUtc: '2026-10-20T09:00:00Z', rrule: 'FREQ=WEEKLY;BYDAY=TU', erinnerungMin: 60);
 
     test('jedes Vorkommen erinnert in der Wanduhrzeit; über die Zeitumstellung bleibt es 10 Uhr', () {
-      final r = plane(daten([serie]), max: 3);
+      final r = echte(plane(daten([serie]), max: 3));
       expect(r.map((e) => e.zeit).toList(), [
         DateTime.utc(2026, 10, 20, 7), // 09:00 Berlin (CEST)
         DateTime.utc(2026, 10, 27, 8), // 09:00 Berlin (CET)
@@ -144,22 +175,24 @@ void main() {
     });
 
     test('Vorkommen haben verschiedene IDs, dieselbe Planung ergibt dieselben IDs', () {
-      final a = plane(daten([serie]), max: 5);
-      final b = plane(daten([serie]), max: 5);
+      final a = echte(plane(daten([serie]), max: 5));
+      final b = echte(plane(daten([serie]), max: 5));
       expect(a.map((e) => e.id).toSet(), hasLength(5));
       expect(a.map((e) => e.id).toList(), b.map((e) => e.id).toList());
       expect(a.every((e) => e.id >= kErinnerungIdMin && e.id <= 0x7fffffff), isTrue);
     });
 
     test('abgesagtes Vorkommen erscheint nicht', () {
-      final r = plane(daten([serie], ausnahmen: [ausnahme('t1', '2026-10-27T09:00:00Z', abgesagt: true)]), max: 3);
+      final r = echte(plane(daten([serie], ausnahmen: [ausnahme('t1', '2026-10-27T09:00:00Z', abgesagt: true)]), max: 3));
       expect(r.map((e) => e.zeit).toList(), [DateTime.utc(2026, 10, 20, 7), DateTime.utc(2026, 11, 3, 8), DateTime.utc(2026, 11, 10, 8)]);
     });
 
     test('verschobenes Vorkommen erinnert zur neuen Zeit, mit geändertem Titel', () {
-      final r = plane(
-        daten([serie], ausnahmen: [ausnahme('t1', '2026-10-27T09:00:00Z', start: '2026-10-27T13:00:00Z', ende: '2026-10-27T14:00:00Z', titel: 'Zahnarzt (später)')]),
-        max: 2,
+      final r = echte(
+        plane(
+          daten([serie], ausnahmen: [ausnahme('t1', '2026-10-27T09:00:00Z', start: '2026-10-27T13:00:00Z', ende: '2026-10-27T14:00:00Z', titel: 'Zahnarzt (später)')]),
+          max: 2,
+        ),
       );
       expect(r[1].zeit, DateTime.utc(2026, 10, 27, 12));
       expect(r[1].titel, 'Zahnarzt (später)');
@@ -204,7 +237,7 @@ void main() {
     });
 
     test('wöchentliche ganztägige Serie über die Zeitumstellung bleibt 09:00 Uhr', () {
-      final r = plane(daten([termin(ganztaegig: true, startDate: '2026-10-20', endDate: '2026-10-21', rrule: 'FREQ=WEEKLY', erinnerungMin: 0)]), max: 2);
+      final r = echte(plane(daten([termin(ganztaegig: true, startDate: '2026-10-20', endDate: '2026-10-21', rrule: 'FREQ=WEEKLY', erinnerungMin: 0)]), max: 2));
       expect(r[0].zeit, DateTime.utc(2026, 10, 20, 7));
       expect(r[1].zeit, DateTime.utc(2026, 10, 27, 8));
     });
@@ -213,18 +246,38 @@ void main() {
   group('Fenster', () {
     final taeglich = termin(startUtc: '2026-10-20T08:00:00Z', endUtc: '2026-10-20T09:00:00Z', rrule: 'FREQ=DAILY', erinnerungMin: 15);
 
-    test('höchstens kErinnerungFenster, zeitlich sortiert, beginnend mit der nächsten', () {
+    test('höchstens kErinnerungFenster (300) plus Hinweis als letzter Platz, zeitlich sortiert, beginnend mit der nächsten', () {
       final r = plane(daten([taeglich]));
-      expect(r, hasLength(kErinnerungFenster));
+      expect(kErinnerungFenster, 300);
+      expect(r, hasLength(kErinnerungFenster + 1));
       expect(r.first.zeit, DateTime.utc(2026, 10, 20, 7, 45));
-      for (var i = 1; i < r.length; i++) {
-        expect(r[i].zeit.isAfter(r[i - 1].zeit), isTrue);
+      final echt = echte(r);
+      expect(echt, hasLength(kErinnerungFenster));
+      for (var i = 1; i < echt.length; i++) {
+        expect(echt[i].zeit.isAfter(echt[i - 1].zeit), isTrue);
       }
+      final hinweis = r.last;
+      expect(hinweis.id, kAuslaufHinweisPlanId);
+      expect(hinweis.titel, 'Erinnerungen laufen aus');
+      expect(hinweis.zeit, echt.last.zeit.add(kAuslaufHinweisAbstand));
+      expect(erinnerungPayloadLesen(hinweis.payload), isNull, reason: 'der Hinweis öffnet nur die App');
+    });
+
+    test('ohne Überlauf kein Hinweis; Fenster rollt mit der Zeit weiter (über 60 hinaus)', () {
+      final c = termin(startUtc: '2026-10-20T08:00:00Z', endUtc: '2026-10-20T09:00:00Z', rrule: 'FREQ=DAILY;COUNT=100', erinnerungMin: 0);
+      final alle = plane(daten([c]));
+      expect(alle, hasLength(100));
+      expect(alle.any((e) => e.id == kAuslaufHinweisPlanId), isFalse);
+      final spaeter = plane(daten([taeglich]), zeit: DateTime.utc(2027, 1, 15, 10));
+      final heute = plane(daten([taeglich]));
+      expect(echte(spaeter), hasLength(kErinnerungFenster));
+      expect(spaeter.first.zeit.isAfter(DateTime.utc(2027, 1, 15, 10)), isTrue);
+      expect(spaeter.first.zeit.isAfter(heute.last.zeit), isFalse, reason: 'das spätere Fenster beginnt weit nach dem ersten, überlappt sich aber nicht mit "vor jetzt"');
     });
 
     test('mehrere Termine: das Fenster zählt über alle zusammen', () {
       final zweiter = termin(id: 't2', titel: 'Training', startUtc: '2026-10-20T15:00:00Z', endUtc: '2026-10-20T16:00:00Z', rrule: 'FREQ=DAILY', erinnerungMin: 15);
-      final r = plane(daten([taeglich, zweiter]), max: 10);
+      final r = echte(plane(daten([taeglich, zweiter]), max: 10));
       expect(r, hasLength(10));
       expect(r.map((e) => e.titel).toSet(), {'Zahnarzt', 'Training'});
       expect(r.where((e) => e.titel == 'Zahnarzt'), hasLength(5));
@@ -249,11 +302,11 @@ void main() {
 
   group('Payload', () {
     test('Rundlauf und Ablehnung falscher Formate', () {
-      final p = erinnerungPayload('abc', DateTime.utc(2026, 10, 20));
+      final p = erinnerungPayload(terminUuid, DateTime.utc(2026, 10, 20));
       final g = erinnerungPayloadLesen(p)!;
-      expect(g.terminId, 'abc');
+      expect(g.terminId, terminUuid);
       expect(g.tag, DateTime.utc(2026, 10, 20));
-      for (final falsch in [null, '', 'x|y|z', 'termin||2026-10-20', 'termin|abc|20.10.2026', 'termin|abc', 'termin|a|2026-10-20|x']) {
+      for (final falsch in [null, '', 'x|y|z', 'termin||2026-10-20', 'termin|abc|2026-10-20', 'termin|$terminUuid|20.10.2026', 'termin|$terminUuid', 'termin|$terminUuid|2026-10-20|x', 'termin|../../x|2026-10-20', 'termin|${terminUuid}0|2026-10-20']) {
         expect(erinnerungPayloadLesen(falsch), isNull, reason: '$falsch');
       }
     });

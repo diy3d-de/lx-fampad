@@ -20,6 +20,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <!-- Android 12 und 12L (API 31 und 32) kennen USE_EXACT_ALARM noch nicht: dort gilt die ältere Erlaubnis, die damals ohne Nachfrage erteilt wird -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <!-- Nur TLS: kein Klartext-Verkehr (familie.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
     <application
         android:label="lx-fampad"

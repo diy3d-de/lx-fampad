@@ -59,10 +59,13 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
     setState(() => _beschaeftigt = true);
     try {
       var status = await ref.read(erinnerungStatusProvider.future);
+      if (!mounted) return;
       if (!status.erlaubt) {
         await dienst.berechtigungAnfragen();
+        if (!mounted) return;
         ref.invalidate(erinnerungStatusProvider);
         status = await ref.read(erinnerungStatusProvider.future);
+        if (!mounted) return;
       }
       if (!status.erlaubt) {
         messenger
@@ -70,10 +73,18 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           ..showSnackBar(const SnackBar(content: Text('Benachrichtigungen sind nicht erlaubt. Erlaube sie oben oder in den Systemeinstellungen.')));
         return;
       }
-      await dienst.testSenden();
+      final ok = await dienst.testSenden();
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('Die Testbenachrichtigung kommt in 10 Sekunden. Du kannst die App jetzt verlassen oder den Bildschirm sperren.')));
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              ok
+                  ? 'Die Testbenachrichtigung kommt in 10 Sekunden. Du kannst die App jetzt verlassen oder den Bildschirm sperren.'
+                  : 'Die Testbenachrichtigung konnte nicht geplant werden.',
+            ),
+          ),
+        );
     } finally {
       if (mounted) setState(() => _beschaeftigt = false);
     }
@@ -112,11 +123,21 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
               title: const Text('Erinnerungen auf diesem Gerät', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text('Terminerinnerungen anzeigen', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
               value: einst.an,
-              onChanged: (v) async {
-                await ref.read(erinnerungEinstellungenProvider.notifier).anSetzen(v);
-                // sofort angleichen (die Oberfläche hinter diesem Bildschirm ist pausiert und reagiert erst nach dem Zurückgehen)
-                unawaited(ref.read(erinnerungDienstProvider).abgleichen());
-              },
+              onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).anSetzen(v)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          LxCard(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              title: const Text('Titel auf Sperrbildschirm zeigen', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                'aus: gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort erst nach dem Entsperren',
+                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              ),
+              value: einst.sperrbildschirmTitel,
+              onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).sperrbildschirmSetzen(v)),
             ),
           ),
           if (s != null && !s.erlaubt) ...[
@@ -151,7 +172,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           ),
           const SizedBox(height: 6),
           const Text(
-            'Gilt nur als Vorgabe im Termin-Editor und nur auf diesem Gerät. Ganztägige Termine erinnern ab 09:00 Uhr: "1 Tag" bedeutet 09:00 Uhr am Vortag.',
+            'Gilt nur als Vorgabe im Termin-Editor und nur auf diesem Gerät. Ganztägige Termine erinnern ab 09:00 Uhr: "1 Tag" bedeutet 09:00 Uhr am Vortag. Bei Terminen mit Uhrzeit heißt "1 Tag": am Vortag zur selben Uhrzeit.',
             style: TextStyle(fontSize: 12, color: kTextMuted),
           ),
           const SizedBox(height: 20),

@@ -8,7 +8,6 @@ import '../../constants.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
-import '../calendar/erinnerung_steuerung.dart';
 import '../chat/chat_screen.dart';
 import '../files/files_screen.dart';
 import '../home/desktop_home.dart';
@@ -85,7 +84,6 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   @override
   Widget build(BuildContext context) {
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
-    ref.watch(erinnerungSteuerungProvider); // Terminerinnerungen (Android) aktuell halten
     final tab = ref.watch(shellTabProvider);
     return LayoutBuilder(builder: (context, c) {
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil

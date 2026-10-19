@@ -105,6 +105,13 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 - Android: UnifiedPush über die ntfy-App als Verteiler und den eigenen ntfy-Server; der Server merkt sich Meldungen höchstens 12 Stunden (`cache-duration`), schreibt nur auf `up*`-Topics und gibt Leserechte nur an angemeldete Geräte.
 - Web: Web Push mit eigenen VAPID-Schlüsseln über den Push-Dienst des Browsers (Abschnitt 5). Das Abonnement ist freiwillig und im Browser widerrufbar.
 
+### 9a. Lokale Terminerinnerungen (Android)
+
+- Erinnerungen an Termine werden **auf dem Gerät** aus den lokal gespeicherten Terminen berechnet und vom Betriebssystem angezeigt. Es gibt dafür keinen Server-Aufruf, keinen Push-Dienst und keine Weitergabe; die Einstellungen (an/aus, Vorlaufzeit, Sperrbildschirm) liegen nur auf dem Gerät.
+- Erinnert wird nur an Termine, bei denen die Person Ersteller oder Teilnehmer ist.
+- **Sperrbildschirm:** Standardmäßig sind die Benachrichtigungen als privat gekennzeichnet; auf dem gesperrten Gerät steht dann nur ein neutraler Hinweis, Titel und Ort (die Gesundheits-, Schul- oder Arztangaben enthalten können) erscheinen erst nach dem Entsperren. Wer Titel auf dem Sperrbildschirm sehen möchte, schaltet das in Profil, Erinnerungen ein.
+- Die geplanten Benachrichtigungen (Titel, Zeit, Ort) speichert das Android-System in der App-internen Ablage des Geräts. Beim Abmelden, beim Wechsel des Kontos und beim Leeren der lokalen Daten werden sie entfernt; bei bloßem Sitzungsverlust bleiben sie zusammen mit den lokalen Daten bestehen.
+
 ## 10. Speicherdauer und Löschung
 
 | Daten | Aufbewahrung |

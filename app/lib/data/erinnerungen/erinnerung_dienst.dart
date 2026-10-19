@@ -1,9 +1,16 @@
+// ignore_for_file: prefer_initializing_formals
 // Dienst für Terminerinnerungen: hält die Planung des Geräts im Gleichklang mit den lokalen Kalenderdaten.
-//  - Auslöser: Start der angemeldeten Oberfläche, jede Änderung der lokalen Termine (auch durch den Sync), Rückkehr in die App,
-//    Änderung der Einstellungen. Nach Neustart des Geräts und App-Update setzt das Plugin seine gespeicherten Alarme selbst neu
-//    (ScheduledNotificationBootReceiver); das Fenster wird beim nächsten App-Start aufgefrischt.
+//  - Auslöser (verdrahtet in features/calendar/erinnerung_steuerung.dart, am App-Wurzel-Widget, das nie pausiert): Start der App, jede
+//    Änderung der lokalen Termine (auch durch den Sync, entprellt), Rückkehr in die App, Änderung der Einstellungen, Anmeldung/Abmeldung.
+//    Nach Neustart des Geräts und App-Update setzt das Plugin seine gespeicherten Alarme selbst neu (ScheduledNotificationBootReceiver);
+//    das Fenster wird beim nächsten App-Start aufgefrischt.
 //  - Ein Lauf berechnet das Fenster (erinnerung_planung.dart) und gleicht das Gerät daran an. Läuft schon einer, wird danach genau einmal
-//    wiederholt (kein Zeitgeber nötig). Ändert sich das Fenster nicht, bleibt das Betriebssystem unberührt.
+//    wiederholt. Ändert sich weder Fenster noch Genauigkeit noch Sperrbildschirm-Einstellung, bleibt das Betriebssystem unberührt.
+//  - Scheitert das Plugin (Aufruf liefert false oder wirft), gilt der Zustand NICHT als gesetzt: ein einmaliger Wiederholversuch folgt
+//    nach einer Pause, ansonsten der nächste Auslöser.
+//  - Konto: Ohne Anmeldung (abgemeldet, ohne Sitzungsverlust) und bei einem anderen Konto als beim letzten Mal werden alle Erinnerungen
+//    gelöscht; bei Sitzungsverlust bleiben sie (die lokalen Daten bleiben ebenfalls). Beim Leeren der lokalen Daten ruft der Wiper
+//    [alleEntfernen] auf; ein laufender Planungslauf wird dabei abgewartet und kann danach nichts mehr setzen.
 //  - Erinnerungen entstehen nur lokal: kein Server, kein Push, nichts verlässt das Gerät.
 import 'dart:async';
 
@@ -21,6 +28,13 @@ final erinnerungPortProvider = Provider<ErinnerungPort>((ref) => erinnerungPortE
 /// Uhr (für Tests überschreibbar).
 final erinnerungUhrProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
+/// Wartezeit, bis Änderungen der Termine zu einem Abgleich führen (ein ICS-Import oder Sync ändert viele Zeilen nacheinander).
+/// Duration.zero = sofort (Tests).
+final erinnerungEntprellenProvider = Provider<Duration>((ref) => const Duration(milliseconds: 500));
+
+/// Pause vor dem einmaligen Wiederholversuch nach einem Fehler.
+final erinnerungWiederholenProvider = Provider<Duration>((ref) => const Duration(seconds: 30));
+
 /// Wird beim Tippen auf eine Benachrichtigung aufgerufen (Tag und Termin aus dem Inhalt); die Oberfläche hängt hier die Navigation ein.
 typedef ErinnerungGeoeffnet = void Function(({String terminId, DateTime tag}) ziel);
 
@@ -28,11 +42,18 @@ class ErinnerungDienst {
   final Ref _ref;
   final ErinnerungPort port;
   final DateTime Function() _jetzt;
+  final Duration _entprellen;
+  final Duration _wiederholAbstand;
   bool _laeuft = false;
   bool _nochmal = false;
   bool _bereit = false;
   bool _startGelesen = false;
   bool _beendet = false;
+  bool _gesperrt = false;
+  bool _wiederholt = false;
+  Future<void>? _aktuell;
+  Timer? _entprellTimer;
+  Timer? _wiederholTimer;
 
   /// Das Betriebssystem hat sicher keine Erinnerungen von uns mehr (nach Löschen oder leerer Planung).
   bool _leer = false;
@@ -40,84 +61,174 @@ class ErinnerungDienst {
   /// Navigation beim Tippen auf eine Benachrichtigung (setzt features/calendar/erinnerung_steuerung.dart).
   ErinnerungGeoeffnet? beiGeoeffnet;
 
-  /// Zuletzt an das Betriebssystem übergebene Planung (null: noch nichts gesetzt).
+  /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
+  bool? _letzteExakt;
+  bool? _letzteSperre;
 
-  ErinnerungDienst(this._ref, {required this.port, required DateTime Function() jetzt}) : _jetzt = jetzt; // ignore: prefer_initializing_formals
+  ErinnerungDienst(this._ref, {required this.port, required DateTime Function() jetzt, required Duration entprellen, required Duration wiederholen})
+    : _jetzt = jetzt,
+      _entprellen = entprellen,
+      _wiederholAbstand = wiederholen;
 
   /// Zuletzt geplante Erinnerungen (für Anzeige und Tests).
   List<GeplanteErinnerung> get geplant => _letzte ?? const [];
 
-  void beenden() => _beendet = true;
+  void beenden() {
+    _beendet = true;
+    _entprellTimer?.cancel();
+    _wiederholTimer?.cancel();
+  }
 
-  /// Gleicht die Planung an. Mehrfache Aufrufe während eines Laufs ergeben genau einen weiteren Lauf.
-  Future<void> abgleichen() async {
+  /// Abgleich nach einer Änderung der Termine, mit Wartezeit (viele Änderungen hintereinander ergeben einen Lauf).
+  void entprellt() {
     if (_beendet || !port.verfuegbar) return;
-    if (_laeuft) {
-      _nochmal = true;
+    if (_entprellen == Duration.zero) {
+      unawaited(abgleichen());
       return;
     }
+    _entprellTimer?.cancel();
+    _entprellTimer = Timer(_entprellen, () => unawaited(abgleichen()));
+  }
+
+  /// Gleicht die Planung an. Mehrfache Aufrufe während eines Laufs ergeben genau einen weiteren Lauf; der Aufrufer kann das Ende abwarten.
+  Future<void> abgleichen() {
+    if (_beendet || !port.verfuegbar) return Future.value();
+    if (_laeuft) {
+      _nochmal = true;
+      return _aktuell ?? Future.value();
+    }
     _laeuft = true;
+    return _aktuell = _schleife();
+  }
+
+  Future<void> _schleife() async {
+    var fehler = false;
     try {
       do {
         _nochmal = false;
-        await _lauf();
+        try {
+          fehler = !await _lauf();
+        } catch (_) {
+          // Erinnerungen sind Zusatz: ein Fehler beim Planen darf nichts anderes stören; der Zustand gilt als unbekannt
+          _letzte = null;
+          fehler = true;
+        }
       } while (_nochmal && !_beendet);
-    } catch (_) {
-      // Erinnerungen sind Zusatz: ein Fehler beim Planen darf nichts anderes stören; der nächste Auslöser versucht es erneut
-      _letzte = null;
     } finally {
       _laeuft = false;
     }
+    if (!fehler) {
+      _wiederholt = false;
+    } else if (!_wiederholt && !_beendet) {
+      _wiederholt = true; // genau ein Wiederholversuch
+      _wiederholTimer?.cancel();
+      _wiederholTimer = Timer(_wiederholAbstand, () => unawaited(abgleichen()));
+    }
   }
 
-  Future<void> _lauf() async {
+  /// Ein Lauf. true = erledigt (oder nichts zu tun), false = das Plugin hat versagt.
+  Future<bool> _lauf() async {
     await _ref.read(erinnerungEinstellungenProvider.notifier).bereit;
-    if (_beendet) return;
+    if (_beendet) return true;
     if (!_bereit) {
-      await port.initialisieren(beiTipp: _getippt);
-      _bereit = true;
+      _bereit = await port.initialisieren(beiTipp: _getippt);
+      if (!_bereit) return false;
       if (!_startGelesen) {
         _startGelesen = true;
         _getippt(await port.startPayload());
       }
     }
-    final einst = _ref.read(erinnerungEinstellungenProvider);
     final auth = _ref.read(authProvider);
-    if (!einst.an || !auth.angemeldet) {
-      if (!einst.an) await _loeschen();
-      return;
-    }
+    // Ohne Konto (nie angemeldet oder ausdrücklich abgemeldet): nichts darf stehen bleiben. Sitzungsverlust (Hinweis) und die Prüfung
+    // beim Start lassen alles unberührt.
+    if (auth.status == AuthStatus.abgemeldet && auth.hinweis == null) return _loeschen();
+    if (!auth.angemeldet) return true;
+    final ich = auth.user?.id;
+    if (ich == null) return true;
+    final einst = _ref.read(erinnerungEinstellungenProvider);
+    if (!await _kontoPruefen(ich)) return false;
+    if (!einst.an) return _loeschen();
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
-    if (!_datenDa()) return;
-    final plan = planeErinnerungen(daten: _ref.read(kalenderDatenProvider), ich: auth.user?.id, jetzt: _jetzt());
-    final alt = _letzte;
-    if (alt != null && alt.length == plan.length && [for (var i = 0; i < plan.length; i++) alt[i].gleich(plan[i])].every((b) => b)) return;
+    if (!_datenDa()) return true;
     final exakt = await port.exakteAlarmeMoeglich();
-    await port.planen(plan, exakt: exakt);
+    final plan = planeErinnerungen(daten: _ref.read(kalenderDatenProvider), ich: ich, jetzt: _jetzt());
+    final alt = _letzte;
+    final gleich =
+        alt != null &&
+        _letzteExakt == exakt &&
+        _letzteSperre == einst.sperrbildschirmTitel &&
+        alt.length == plan.length &&
+        [for (var i = 0; i < plan.length; i++) alt[i].gleich(plan[i])].every((b) => b);
+    if (gleich) return true;
+    if (_gesperrt || _beendet) return true; // ein Abmelden/Leeren ist im Gange: nichts mehr setzen
+    final ok = await port.planen(plan, exakt: exakt, sperrbildschirmTitel: einst.sperrbildschirmTitel);
+    if (!ok) {
+      _letzte = null;
+      return false;
+    }
     _letzte = plan;
+    _letzteExakt = exakt;
+    _letzteSperre = einst.sperrbildschirmTitel;
     _leer = plan.isEmpty;
+    return true;
+  }
+
+  /// Gelten die geplanten Erinnerungen einer anderen Person (anderes Konto auf diesem Gerät)? Dann alles löschen. Merkt sich das Konto.
+  Future<bool> _kontoPruefen(String ich) async {
+    final speicher = _ref.read(erinnerungSpeicherProvider);
+    String? bisher;
+    try {
+      bisher = (await speicher.lesen())[kErinnerungKontoSchluessel];
+    } catch (_) {
+      return true; // Speicher nicht lesbar: nichts ableiten
+    }
+    if (bisher == ich) return true;
+    if (bisher != null && bisher.isNotEmpty) {
+      _letzte = null;
+      _leer = false;
+      if (!await _loeschen()) return false;
+    }
+    try {
+      await speicher.schreiben(kErinnerungKontoSchluessel, ich);
+    } catch (_) {}
+    return true;
   }
 
   bool _datenDa() =>
       _ref.read(termineProvider).hasValue && _ref.read(terminAusnahmenProvider).hasValue && _ref.read(terminTeilnehmerProvider).hasValue;
 
-  Future<void> _loeschen() async {
-    if (_leer) return;
-    await port.alleLoeschen();
-    _leer = true;
-    _letzte = const [];
+  Future<bool> _loeschen() async {
+    if (_leer) return true;
+    final ok = await port.alleLoeschen();
+    if (ok) {
+      _leer = true;
+      _letzte = const [];
+    }
+    return ok;
   }
 
-  /// Alle Erinnerungen dieses Geräts entfernen (Abmelden); die nächste Anmeldung plant neu.
+  /// Alle Erinnerungen dieses Geräts entfernen (Abmelden, Leeren der lokalen Daten). Wartet einen laufenden Planungslauf ab; solange das
+  /// Entfernen läuft, setzt kein Lauf etwas Neues. Die nächste Anmeldung plant neu.
   Future<void> alleEntfernen() async {
     if (_beendet || !port.verfuegbar) return;
+    _gesperrt = true;
     try {
-      await port.initialisieren(beiTipp: _getippt);
-      await port.alleLoeschen();
-    } catch (_) {}
-    _letzte = null;
-    _leer = true;
+      try {
+        await _aktuell;
+      } catch (_) {}
+      if (!_bereit) _bereit = await port.initialisieren(beiTipp: _getippt);
+      if (!_bereit) return;
+      final ok = await port.alleLoeschen();
+      _letzte = null;
+      _letzteExakt = null;
+      _letzteSperre = null;
+      if (ok) _leer = true;
+    } catch (_) {
+      _letzte = null;
+    } finally {
+      _gesperrt = false;
+    }
   }
 
   void _getippt(String? payload) {
@@ -128,7 +239,7 @@ class ErinnerungDienst {
 
   /// Berechtigung für Benachrichtigungen anfragen (nur auf Wunsch der Person); plant danach neu.
   Future<bool> berechtigungAnfragen() async {
-    await port.initialisieren(beiTipp: _getippt);
+    _bereit = _bereit || await port.initialisieren(beiTipp: _getippt);
     final ok = await port.benachrichtigungenAnfragen();
     _letzte = null;
     unawaited(abgleichen());
@@ -137,20 +248,27 @@ class ErinnerungDienst {
 
   Future<ErinnerungStatus> status() async {
     if (!port.verfuegbar) return const ErinnerungStatus(verfuegbar: false);
-    await port.initialisieren(beiTipp: _getippt);
+    _bereit = _bereit || await port.initialisieren(beiTipp: _getippt);
     return ErinnerungStatus(verfuegbar: true, erlaubt: await port.benachrichtigungenErlaubt(), exakt: await port.exakteAlarmeMoeglich());
   }
 
-  /// Testbenachrichtigung in [wartezeit] (Standard 10 Sekunden).
-  Future<void> testSenden({Duration wartezeit = const Duration(seconds: 10)}) async {
-    await port.initialisieren(beiTipp: _getippt);
+  /// Testbenachrichtigung in [wartezeit] (Standard 10 Sekunden). true = geplant.
+  Future<bool> testSenden({Duration wartezeit = const Duration(seconds: 10)}) async {
+    _bereit = _bereit || await port.initialisieren(beiTipp: _getippt);
+    if (!_bereit) return false;
     final exakt = await port.exakteAlarmeMoeglich();
-    await port.testPlanen(wartezeit, exakt: exakt);
+    return port.testPlanen(wartezeit, exakt: exakt, sperrbildschirmTitel: _ref.read(erinnerungEinstellungenProvider).sperrbildschirmTitel);
   }
 }
 
 final erinnerungDienstProvider = Provider<ErinnerungDienst>((ref) {
-  final d = ErinnerungDienst(ref, port: ref.watch(erinnerungPortProvider), jetzt: ref.watch(erinnerungUhrProvider));
+  final d = ErinnerungDienst(
+    ref,
+    port: ref.watch(erinnerungPortProvider),
+    jetzt: ref.watch(erinnerungUhrProvider),
+    entprellen: ref.watch(erinnerungEntprellenProvider),
+    wiederholen: ref.watch(erinnerungWiederholenProvider),
+  );
   ref.onDispose(d.beenden);
   return d;
 });

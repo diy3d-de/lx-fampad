@@ -1,6 +1,7 @@
 // Einstellungen der Terminerinnerungen: gelten nur für dieses Gerät, liegen lokal (nie auf dem Server, nie synchronisiert).
 //  - an: Erinnerungen auf diesem Gerät planen (Standard: an; die Berechtigung für Benachrichtigungen wird erst in den Einstellungen
 //    angefragt, nicht beim ersten Start).
+//  - sperrbildschirmTitel: Titel und Ort dürfen auf dem Sperrbildschirm erscheinen (Standard: aus, dort steht dann nur ein neutraler Hinweis).
 //  - standardVorlauf: Vorlaufzeit, die der Editor für NEUE Termine vorbelegt (null = keine Erinnerung).
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,16 +13,21 @@ const kStandardVorlaeufe = <int?>[null, 15, 60, 1440];
 class ErinnerungEinstellungen {
   final bool an;
   final int? standardVorlauf;
-  const ErinnerungEinstellungen({this.an = true, this.standardVorlauf});
+  final bool sperrbildschirmTitel;
+  const ErinnerungEinstellungen({this.an = true, this.standardVorlauf, this.sperrbildschirmTitel = false});
 
-  ErinnerungEinstellungen kopie({bool? an, Object? standardVorlauf = _keine}) =>
-      ErinnerungEinstellungen(an: an ?? this.an, standardVorlauf: identical(standardVorlauf, _keine) ? this.standardVorlauf : standardVorlauf as int?);
+  ErinnerungEinstellungen kopie({bool? an, Object? standardVorlauf = _keine, bool? sperrbildschirmTitel}) => ErinnerungEinstellungen(
+    an: an ?? this.an,
+    standardVorlauf: identical(standardVorlauf, _keine) ? this.standardVorlauf : standardVorlauf as int?,
+    sperrbildschirmTitel: sperrbildschirmTitel ?? this.sperrbildschirmTitel,
+  );
 
   @override
-  bool operator ==(Object other) => other is ErinnerungEinstellungen && other.an == an && other.standardVorlauf == standardVorlauf;
+  bool operator ==(Object other) =>
+      other is ErinnerungEinstellungen && other.an == an && other.standardVorlauf == standardVorlauf && other.sperrbildschirmTitel == sperrbildschirmTitel;
 
   @override
-  int get hashCode => Object.hash(an, standardVorlauf);
+  int get hashCode => Object.hash(an, standardVorlauf, sperrbildschirmTitel);
 }
 
 const Object _keine = Object();
@@ -34,6 +40,10 @@ abstract class ErinnerungSpeicher {
 
 const _kAn = 'erinnerung_an';
 const _kVorlauf = 'erinnerung_vorlauf';
+const _kSperre = 'erinnerung_sperrbildschirm';
+
+/// Schlüssel der Person, für die die geplanten Erinnerungen dieses Geräts gelten (der Dienst löscht sie bei einem anderen Konto).
+const kErinnerungKontoSchluessel = 'erinnerung_konto';
 
 /// Android: im Keystore-gestützten Speicher der App (dieselbe Abhängigkeit wie die Anmeldung; keine zusätzliche Bibliothek).
 class SicherErinnerungSpeicher implements ErinnerungSpeicher {
@@ -44,7 +54,9 @@ class SicherErinnerungSpeicher implements ErinnerungSpeicher {
   Future<Map<String, String>> lesen() async {
     final an = await _s.read(key: _kAn);
     final v = await _s.read(key: _kVorlauf);
-    return {_kAn: ?an, _kVorlauf: ?v};
+    final sp = await _s.read(key: _kSperre);
+    final k = await _s.read(key: kErinnerungKontoSchluessel);
+    return {_kAn: ?an, _kVorlauf: ?v, _kSperre: ?sp, kErinnerungKontoSchluessel: ?k};
   }
 
   @override
@@ -82,29 +94,51 @@ class ErinnerungEinstellungenNotifier extends Notifier<ErinnerungEinstellungen> 
     return const ErinnerungEinstellungen();
   }
 
+  // Was die Person schon gesetzt hat, bevor das Lesen fertig war: überschreibt das spätere Ergebnis des Lesens nicht
+  bool _anGesetzt = false;
+  bool _vorlaufGesetzt = false;
+  bool _sperreGesetzt = false;
+
   Future<void> _laden() async {
-    ErinnerungEinstellungen neu = const ErinnerungEinstellungen();
+    var neu = const ErinnerungEinstellungen();
     try {
       final m = await ref.read(erinnerungSpeicherProvider).lesen();
       final an = m[_kAn];
       final v = m[_kVorlauf];
       final vorlauf = v == null || v.isEmpty ? null : int.tryParse(v);
-      neu = ErinnerungEinstellungen(an: an != 'nein', standardVorlauf: kStandardVorlaeufe.contains(vorlauf) ? vorlauf : null);
+      neu = ErinnerungEinstellungen(
+        an: an != 'nein',
+        standardVorlauf: kStandardVorlaeufe.contains(vorlauf) ? vorlauf : null,
+        sperrbildschirmTitel: m[_kSperre] == 'ja',
+      );
     } catch (_) {
       // Speicher nicht lesbar: Standardwerte
     }
     if (!ref.mounted) return;
-    state = neu;
+    final jetzt = state;
+    state = ErinnerungEinstellungen(
+      an: _anGesetzt ? jetzt.an : neu.an,
+      standardVorlauf: _vorlaufGesetzt ? jetzt.standardVorlauf : neu.standardVorlauf,
+      sperrbildschirmTitel: _sperreGesetzt ? jetzt.sperrbildschirmTitel : neu.sperrbildschirmTitel,
+    );
   }
 
   Future<void> anSetzen(bool an) async {
+    _anGesetzt = true;
     state = state.kopie(an: an);
     await _schreiben(_kAn, an ? 'ja' : 'nein');
   }
 
   Future<void> vorlaufSetzen(int? minuten) async {
+    _vorlaufGesetzt = true;
     state = state.kopie(standardVorlauf: minuten);
     await _schreiben(_kVorlauf, minuten?.toString() ?? '');
+  }
+
+  Future<void> sperrbildschirmSetzen(bool zeigen) async {
+    _sperreGesetzt = true;
+    state = state.kopie(sperrbildschirmTitel: zeigen);
+    await _schreiben(_kSperre, zeigen ? 'ja' : 'nein');
   }
 
   Future<void> _schreiben(String k, String v) async {

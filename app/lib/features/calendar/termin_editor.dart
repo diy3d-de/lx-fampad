@@ -12,12 +12,14 @@ import '../../data/calendar/expansion.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
+import '../../data/erinnerungen/erinnerung_dienst.dart' show erinnerungStatusProvider;
 import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/lists/list_repository.dart' show ListenSicht;
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
+import '../profile/erinnerungen_screen.dart';
 import 'calendar_state.dart';
 import 'kalender_widgets.dart';
 
@@ -54,6 +56,12 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   var _teilnehmer = <String>{};
   var _sicht = TerminSicht.family;
   String? _fehler;
+
+  /// Android: Benachrichtigungen sind nicht erlaubt (Android 13+ fragt erst auf Wunsch); sonst (Web, erlaubt, unbekannt) false.
+  bool get _benachrichtigungenFehlen {
+    final st = ref.watch(erinnerungStatusProvider).value;
+    return st != null && st.verfuegbar && !st.erlaubt;
+  }
 
   bool get _neu => widget.vorkommen == null;
   bool get _nurDieses => !_neu && widget.umfang == SerieUmfang.dieses;
@@ -360,6 +368,14 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
                 AuswahlKnopf(text: m == null ? 'Keine' : erinnerungText(m).replaceAll(' vorher', ''), gewaehlt: _erinnerung == m, onTap: () => setState(() => _erinnerung = m)),
             ],
           ),
+          if (_erinnerung != null && _benachrichtigungenFehlen) ...[
+            const SizedBox(height: 6),
+            const Text(
+              'Auf diesem Gerät sind Benachrichtigungen für lx-fampad nicht erlaubt: Die Erinnerung wird nicht angezeigt.',
+              style: TextStyle(fontSize: 12, color: kWarn),
+            ),
+            LinkKnopf('Benachrichtigungen erlauben', icon: Icons.notifications_active_outlined, onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ErinnerungenScreen()))),
+          ],
           const SizedBox(height: 12),
           if (mitglieder.isNotEmpty) ...[
             const MonoLabel('Teilnehmer'),

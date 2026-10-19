@@ -56,6 +56,8 @@ android {
             // bewusst kein Rückfall auf den Debug-Schlüssel: ohne key.properties gibt es keine Signatur,
             // und der Build bricht unten mit einer klaren Meldung ab
             signingConfig = signingConfigs.findByName("release")
+            // Regeln für R8 (flutter_local_notifications braucht Gson/TypeToken, siehe proguard-rules.pro)
+            proguardFiles("proguard-rules.pro")
         }
     }
 }
