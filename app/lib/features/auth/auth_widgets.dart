@@ -339,7 +339,7 @@ Future<({FamilyRole? rolle})?> familienrolleWaehlen(BuildContext context, {requi
       children: [
         const Padding(
           padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Text('Nur eine Anzeige, ändert keine Rechte.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          child: Text('nur anzeige, ändert keine rechte', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
         ),
         for (final r in FamilyRole.values) zeile(ctx, r.label, r),
         zeile(ctx, 'Keine Angabe', null),

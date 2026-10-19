@@ -77,7 +77,7 @@ void main() {
       return jsonAntwort({'ok': true});
     });
     await tippe(tester, find.text('Familienrolle'));
-    expect(find.text('Nur eine Anzeige, ändert keine Rechte.'), findsOneWidget);
+    expect(find.text('nur anzeige, ändert keine rechte'), findsNWidgets(2));
     expect(kleineZiele(tester), isEmpty);
     await tippe(tester, find.text('Mutter'));
     final puts = server.anfragen('PUT /me/family-role');
@@ -119,5 +119,13 @@ void main() {
     expect(find.text('Admin'), findsOneWidget);
     expect(find.text('Elternteil'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Desktop-Seitenleiste bei Textskala 1.5: zwei Pillen in der Profilkachel ohne Überlauf', (tester) async {
+    final env = await angemeldeteUmgebung(server: _server(eigene: 'elternteil'));
+    await starteApp(tester, env, groesse: const Size(1280, 800), skala: 1.5);
+    expect(find.text('Admin'), findsOneWidget);
+    expect(find.text('Elternteil'), findsOneWidget);
+    pruefeLayout(tester, 'Desktop-Profilkachel mit zwei Pillen');
   });
 }

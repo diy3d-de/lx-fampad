@@ -59,6 +59,8 @@ describe.each(backends)('Familienrolle ($name)', (backend) => {
     const sicht = (await kind.client.get('/api/v1/members')).json.members as Array<{ id: string; familyRole: string; email?: string }>;
     expect(sicht.find((m) => m.id === adminId)?.familyRole).toBe('vater');
     expect(sicht.find((m) => m.id === kindId)?.familyRole).toBe('sonstige');
+    // gekürzte Zeile für Nicht-Admins: familyRole bleibt, E-Mail der anderen fehlt
+    expect(sicht.find((m) => m.id === adminId)).not.toHaveProperty('email');
   });
 
   it('Admin setzt die Familienrolle anderer Mitglieder; das Audit-Ereignis enthält nur ID und festen Wert', async () => {
@@ -100,6 +102,22 @@ describe.each(backends)('Familienrolle ($name)', (backend) => {
     const [m] = await harness.db.select().from(schema.memberships).where(eq(schema.memberships.userId, user.id));
     expect(m?.familyRole).toBeNull();
     expect((await a.client.put('/api/v1/members/00000000-0000-4000-8000-000000000000/family-role', { familyRole: 'vater' })).status).toBe(404);
+  });
+
+  it('Rate-Limit: beide Routen strikt (11. Anfrage je Route und IP gibt 429)', async () => {
+    const strict = await World.create(harness.db, { AUTH_RATE_LIMIT_MAX: '10', RATE_LIMIT_MAX: '1000' });
+    try {
+      const a = await adminPassword(strict);
+      const { byMail } = await ids(a);
+      const adminId = byMail(a.email);
+      for (const url of ['/api/v1/me/family-role', `/api/v1/members/${adminId}/family-role`]) {
+        const codes: number[] = [];
+        for (let i = 0; i < 11; i++) codes.push((await a.client.put(url, { familyRole: 'vater' })).status);
+        expect(codes, url).toEqual([...Array(10).fill(200), 429]);
+      }
+    } finally {
+      await strict.close();
+    }
   });
 
   it('ohne Anmeldung 401', async () => {

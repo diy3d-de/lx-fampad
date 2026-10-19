@@ -104,17 +104,16 @@ export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promis
  * `null` löscht sie. Fremde Familien und Nicht-Mitglieder ergeben 404, andere Mitglieder ohne Admin-Recht 403.
  */
 export async function setFamilyRole(ctx: AuthContext, p: SessionPrincipal, targetId: string, familyRole: FamilyRole | null, meta: RequestMeta): Promise<void> {
-  if (targetId !== p.userId) {
-    requireAdmin(p);
-    await memberOf(ctx, p, targetId);
-  }
-  const done = await ctx.db
-    .update(memberships)
-    .set({ familyRole })
-    .where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)))
-    .returning({ id: memberships.id });
-  if (done.length === 0) throw notFound();
-  await writeAudit(ctx, ctx.db, { event: 'family_role_set', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, to: familyRole } });
+  if (targetId !== p.userId) requireAdmin(p);
+  await ctx.db.transaction(async (tx) => {
+    const done = await tx
+      .update(memberships)
+      .set({ familyRole })
+      .where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)))
+      .returning({ id: memberships.id });
+    if (done.length === 0) throw notFound();
+    await writeAudit(ctx, tx, { event: 'family_role_set', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, to: familyRole } });
+  });
 }
 
 async function memberOf(ctx: AuthContext, p: SessionPrincipal, userId: string): Promise<Account> {

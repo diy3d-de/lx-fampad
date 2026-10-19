@@ -27,7 +27,7 @@ Der Server bedient **genau eine Familie** (die eigene). Es gibt keine Mandanten,
 keine offene Registrierung; Zugriff haben ausschließlich eingeladene Familienmitglieder (Admin, Elternteil, Kind). **Gäste gibt es nicht** (Entscheidung 19.10.2026: Rolle, Gast-Einladung und Gast-Freigaben entfallen; Migration 0005 entfernt vorhandene Gast-Konten). Im Datenmodell bleibt
 eine `family_id` bewusst erhalten, damit sich später mehrere Familien nachrüsten ließen.
 
-**Familienrolle (reine Anzeige):** Zusätzlich zur Rolle hat jedes Mitglied eine optionale Familienrolle (Vater, Mutter, Elternteil, Kind, Großeltern, Sonstige; `memberships.family_role`, Migration 0012). Sie erscheint als zweite, neutrale Pille neben der Rollenpille (z. B. „Admin“ und „Elternteil“; bei gleichem Namen wie die Rolle nur einmal) in Mitgliederliste, Profil und Seitenleiste. Jede Person setzt ihre eigene, der Admin die der anderen. Sie ändert **keine** Rechte, Sichtbarkeit, Chat-, Push- oder Kalender-Logik.
+**Familienrolle (reine Anzeige):** Zusätzlich zur Rolle hat jedes Mitglied eine optionale Familienrolle (Vater, Mutter, Elternteil, Kind, Großeltern, Sonstige; `memberships.family_role`, Migration 0007). Sie erscheint als zweite, neutrale Pille neben der Rollenpille (z. B. „Admin“ und „Elternteil“; bei gleichem Namen wie die Rolle nur einmal) in Mitgliederliste, Profil und Seitenleiste. Jede Person setzt ihre eigene (der Admin seine im Profil), der Admin zusätzlich die der anderen (Mitgliederliste, „Familienrolle ändern“). Sie ändert **keine** Rechte, Sichtbarkeit, Chat-, Push- oder Kalender-Logik.
 
 ### Design: Vorbild lx-urlaubsplanung
 

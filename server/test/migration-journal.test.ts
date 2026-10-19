@@ -113,9 +113,9 @@ describe('Migration auf bestehender Datenbank', () => {
   }, 60_000);
 });
 
-describe('Migration 0012 (Familienrolle) auf bestehender Datenbank', () => {
+describe('Migration 0007 (Familienrolle) auf bestehender Datenbank', () => {
   async function pruefen(partial: (dir: string) => Promise<void>, voll: () => Promise<void>, q: (s: string) => Promise<Array<Record<string, unknown>>>) {
-    const davor = journalRaw.entries.findIndex((e) => e.tag.startsWith('0012'));
+    const davor = journalRaw.entries.findIndex((e) => e.tag.startsWith('0007'));
     const dir = teilordner(davor);
     try {
       await partial(dir);
