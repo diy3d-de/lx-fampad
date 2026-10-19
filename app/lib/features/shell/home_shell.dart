@@ -61,7 +61,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
     // WebSocket und Zeitgeber nur im Vordergrund; bei der Rückkehr sofort abgleichen
-    ref.read(syncProvider.notifier).vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive);
+    unawaited(ref.read(syncProvider.notifier).vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive));
     if (s != AppLifecycleState.resumed) return;
     final l = _letztePruefung;
     // Web: häufiger, der Hinweis "Neue Version - neu laden" ist billig (eine kleine JSON-Abfrage)

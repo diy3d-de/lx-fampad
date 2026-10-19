@@ -19,7 +19,7 @@ class SyncOp {
 class SyncRejected {
   final String opId;
 
-  /// Grund (`invalid`, `forbidden`, `not_found`, `deleted`, `parent_deleted`, `invalid_reference`, `id_taken`, `limit_reached`,
+  /// Grund (`invalid`, `forbidden`, `not_found`, `deleted`, `parent_deleted`, `invalid_reference`, `limit_reached`,
   /// `duplicate_op`, `unknown_entity`); unbekannte Werte bleiben erhalten und gelten als allgemeine Ablehnung.
   final String code;
   const SyncRejected(this.opId, this.code);
@@ -57,6 +57,9 @@ class SyncResult {
   final List<SyncChange> changes;
   final bool hasMore;
   final int next;
+
+  /// Nur solange ein mehrseitiger Snapshot läuft: Ziel-Revision, die in den Folgeanfragen als `snapshotRev` zurückgesendet wird.
+  final int? snapshotRev;
   final DateTime? serverTime;
   const SyncResult({
     required this.resyncNoetig,
@@ -67,6 +70,7 @@ class SyncResult {
     required this.changes,
     required this.hasMore,
     required this.next,
+    this.snapshotRev,
     required this.serverTime,
   });
 
@@ -127,6 +131,7 @@ class SyncResult {
       ),
       hasMore: m['hasMore'] == true,
       next: m['next'] is int ? m['next'] as int : 0,
+      snapshotRev: m['snapshotRev'] is int ? m['snapshotRev'] as int : null,
       serverTime: m['serverTime'] is String ? DateTime.tryParse(m['serverTime'] as String) : null,
     );
   }

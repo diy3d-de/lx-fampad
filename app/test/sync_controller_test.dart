@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
+import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/lists/list_repository.dart';
 import 'package:lx_fampad/data/sync_state.dart';
 import 'package:lx_fampad/features/update/update_service.dart';
@@ -225,7 +226,9 @@ void main() {
     final n = anfragen();
     await ruhe(tester, const Duration(minutes: 20));
     expect(anfragen(), n, reason: 'kein Wiederholen ohne Sitzung');
-    expect(c.read(syncProvider).offeneAenderungen, 1);
+    expect(c.read(syncProvider).offeneAenderungen, 0, reason: 'der Dienst ist gestoppt und der Zustand zurückgesetzt');
+    expect(await c.read(syncStoreProvider).offeneAnzahl(), 1, reason: 'der Ausgang bleibt');
+    expect(sync.aktiv, isFalse);
   });
 
   lauf('426: Pflicht-Update-Seite, kein weiterer Versuch', (tester) async {
@@ -255,6 +258,109 @@ void main() {
     expect(anfragen(), n + 1);
     expect(env.sockets.sockets, hasLength(2));
     expect(c.read(syncProvider).live, isTrue);
+  });
+
+  lauf('Hintergrund mit offenem Ausgang: vor dem Wechsel wird einmal abgeglichen; ohne offene Änderungen nicht', (tester) async {
+    await start(tester);
+    final repo = c.read(listenRepositoryProvider);
+    await repo.listeAnlegen(name: 'Einkauf'); // die Entprellung (2 s) würde erst nach dem Wechsel greifen
+    final n = anfragen();
+    unawaited(sync.vordergrund(false));
+    await ruhe(tester);
+    expect(anfragen(), n + 1, reason: 'ein Abgleich vor dem Hintergrund');
+    expect(env.sync.zeilen, isNotEmpty, reason: 'die Änderung ist beim Server');
+    expect(await c.read(syncStoreProvider).offeneAnzahl(), 0);
+    expect(env.sockets.letzter.geschlossen, isTrue);
+    await ruhe(tester, const Duration(minutes: 10));
+    expect(anfragen(), n + 1, reason: 'im Hintergrund kein Zeitgeber');
+    unawaited(sync.vordergrund(true));
+    await ruhe(tester);
+    // erneut in den Hintergrund ohne offene Änderungen: kein zusätzlicher Abgleich vor dem Wechsel
+    final m = anfragen();
+    unawaited(sync.vordergrund(false));
+    await ruhe(tester);
+    expect(anfragen(), m);
+  });
+
+  lauf('Hintergrund, während der Abgleich vor dem Wechsel noch läuft: kehrt die App zurück, gilt der Wechsel nach vorn', (tester) async {
+    await start(tester);
+    final repo = c.read(listenRepositoryProvider);
+    await repo.listeAnlegen(name: 'Einkauf');
+    final tor = Completer<void>();
+    env.server.on('POST /sync', (req) async {
+      await tor.future;
+      return jsonAntwort(env.sync.verarbeiten(req.json));
+    });
+    unawaited(sync.vordergrund(false));
+    await ruhe(tester);
+    unawaited(sync.vordergrund(true)); // zurück, bevor der Abgleich fertig ist
+    await ruhe(tester);
+    tor.complete();
+    await ruhe(tester, const Duration(seconds: 1));
+    expect(env.sockets.letzter.geschlossen, isFalse, reason: 'der Socket bleibt, die App ist im Vordergrund');
+    expect(c.read(syncProvider).live, isTrue);
+  });
+
+  lauf('stoppen setzt den Zustand zurück und vergisst die bekannte Revision; ein neuer Start beginnt sauber', (tester) async {
+    await start(tester);
+    env.sync.andereAendert('list', '11111111-1111-4111-8111-111111111111', {'name': 'Von drüben'});
+    env.sync.andereAendert('list', '11111111-1111-4111-8111-111111111112', {'name': 'Noch eine'});
+    env.sockets.letzter.vomServer({'type': 'rev', 'rev': env.sync.rev});
+    await ruhe(tester);
+    expect(c.read(syncProvider).letzterAbgleich, isNotNull);
+    sync.stoppen();
+    expect(c.read(syncProvider).status, SyncStatus.getrennt);
+    expect(c.read(syncProvider).letzterAbgleich, isNull);
+    expect(c.read(syncProvider).hinweise, isEmpty);
+    expect(c.read(syncProvider).live, isFalse);
+    // anderer Server-Stand (andere Person, niedrigere Revision): der Hinweis darf nicht an der alten Revision scheitern
+    await c.read(appDatabaseProvider).alleDatenLoeschen();
+    env.sync.zeilen.clear();
+    env.sync.rev = 0;
+    sync.starten();
+    await ruhe(tester);
+    expect(c.read(syncProvider).status, SyncStatus.synchron);
+    final vorher = anfragen();
+    env.sync.andereAendert('list', '11111111-1111-4111-8111-111111111113', {'name': 'Neu'});
+    env.sockets.letzter.vomServer({'type': 'rev', 'rev': env.sync.rev});
+    await ruhe(tester);
+    expect(anfragen(), vorher + 1, reason: 'Revision 1 ist neuer als der Stand dieses Starts, auch wenn die Sitzung davor schon weiter war');
+    expect((await env.db.select(env.db.listen).get()).single.name, 'Neu');
+  });
+
+  lauf('der Hinweis auf die eigene Änderung während des Laufs löst keinen Zusatzlauf aus', (tester) async {
+    await start(tester);
+    final repo = c.read(listenRepositoryProvider);
+    await repo.listeAnlegen(name: 'Einkauf');
+    final n = anfragen();
+    env.server.on('POST /sync', (req) {
+      final antwort = env.sync.verarbeiten(req.json);
+      // der Server meldet allen Geräten (auch dem Absender) die neue Revision, noch bevor die Antwort ankommt
+      env.sockets.letzter.vomServer({'type': 'rev', 'rev': env.sync.rev});
+      return jsonAntwort(antwort);
+    });
+    await sync.synchronisieren(manuell: true);
+    await ruhe(tester, const Duration(seconds: 1));
+    expect(anfragen(), n + 1);
+  });
+
+  lauf('ein Hinweis auf eine fremde Änderung während des Laufs wird nicht verschluckt: danach folgt ein Lauf', (tester) async {
+    await start(tester);
+    final n = anfragen();
+    var erster = true;
+    env.server.on('POST /sync', (req) {
+      final antwort = env.sync.verarbeiten(req.json); // Stand vor der fremden Änderung
+      if (erster) {
+        erster = false;
+        env.sync.andereAendert('list', '11111111-1111-4111-8111-111111111111', {'name': 'Von drüben'});
+        env.sockets.letzter.vomServer({'type': 'rev', 'rev': env.sync.rev});
+      }
+      return jsonAntwort(antwort);
+    });
+    await sync.synchronisieren(manuell: true);
+    await ruhe(tester, const Duration(seconds: 1));
+    expect(anfragen(), n + 2);
+    expect((await env.db.select(env.db.listen).get()).single.name, 'Von drüben');
   });
 
   lauf('stoppen: keine Abgleiche mehr, kein Socket', (tester) async {

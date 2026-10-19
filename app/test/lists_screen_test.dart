@@ -1,9 +1,12 @@
 // Listen-Tab und Startseite mit echten (lokalen) Daten: anlegen, abhaken, bearbeiten, zuweisen, löschen, Rollen, Offline, Hinweise,
 // Pull-to-refresh, Layout bei 360 px und Textskala 1.5.
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/app_database.dart';
+import 'package:lx_fampad/data/lists/list_repository.dart';
+import 'package:lx_fampad/features/lists/list_dialogs.dart';
 import 'package:lx_fampad/ui/widgets.dart';
 
 import 'support/fake_server.dart';
@@ -52,6 +55,95 @@ void main() {
   Future<void> eigeneListe(TestUmgebung env, {String id = _l1, String name = 'Einkauf', String kind = 'shopping', String audience = 'family'}) async {
     env.sync.andereAendert('list', id, {'name': name, 'kind': kind, 'audience': audience});
   }
+
+  /// Beschriftung des Elements, das gerade den Tastaturfokus hat (Feld, Auswahl-Knopf oder Dialog-Knopf).
+  String? fokusBezeichnung() {
+    final ctx = FocusManager.instance.primaryFocus?.context;
+    if (ctx == null) return null;
+    String? gefunden;
+    ctx.visitAncestorElements((e) {
+      final w = e.widget;
+      if (w is AuswahlKnopf) {
+        gefunden = 'auswahl:${w.text}';
+        return false;
+      }
+      if (w is TextField) {
+        gefunden = 'feld:${w.decoration?.labelText}';
+        return false;
+      }
+      if (w is ButtonStyleButton) {
+        final t = find.descendant(of: find.byWidget(w), matching: find.byType(Text)).evaluate().map((x) => (x.widget as Text).data).firstOrNull;
+        gefunden = 'knopf:$t';
+        return false;
+      }
+      return true;
+    });
+    return gefunden;
+  }
+
+  testWidgets('Dialog „Neue Liste“: Fokus im Namensfeld, Tab läuft Name, Art, Freigabe, Abbrechen, Anlegen; Leertaste wählt, Enter legt an', (tester) async {
+    final env = await start(tester);
+    await tippeText(tester, 'Liste anlegen');
+    await warte(tester);
+    expect(fokusBezeichnung(), 'feld:Name der Liste', reason: 'Cursor steht sofort im Namensfeld');
+    final erwartet = [
+      'auswahl:Einkauf',
+      'auswahl:Packliste',
+      'auswahl:Eigene Liste',
+      // Admin darf die Freigabe wählen
+      for (final s in ['Nur Eltern', 'Familie', 'Alle (auch Gäste)']) 'auswahl:$s',
+      'knopf:Abbrechen',
+      'knopf:Anlegen',
+    ];
+    final tatsaechlich = <String?>[];
+    for (var i = 0; i < erwartet.length; i++) {
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      tatsaechlich.add(fokusBezeichnung());
+    }
+    expect(tatsaechlich, erwartet);
+    // Umschalt+Tab geht zurück
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
+    await tester.pump();
+    expect(fokusBezeichnung(), 'knopf:Abbrechen');
+    // zurück zum Namen, schreiben, mit Enter anlegen
+    await tester.enterText(find.byType(TextField), 'Mit Tastatur');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await warte(tester, 10);
+    expect((await env.db.select(env.db.listen).get()).single.name, 'Mit Tastatur');
+  });
+
+  testWidgets('Dialog „Neue Liste“: per Tab zu „Packliste“, Leertaste wählt, der Fokus ist sichtbar, Enter im Namensfeld legt an', (tester) async {
+    final env = await start(tester);
+    await tippeText(tester, 'Liste anlegen');
+    await warte(tester);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(fokusBezeichnung(), 'auswahl:Packliste');
+    final rahmen = tester.widget<Container>(find.descendant(of: find.widgetWithText(AuswahlKnopf, 'Packliste'), matching: find.byType(Container)).first);
+    expect(((rahmen.decoration as BoxDecoration).border as Border).top.width, 2, reason: 'sichtbarer Fokus');
+    await tester.sendKeyEvent(LogicalKeyboardKey.space);
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), 'Koffer');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await warte(tester, 10);
+    final l = (await env.db.select(env.db.listen).get()).single;
+    expect([l.name, l.kind], ['Koffer', 'packing']);
+  });
+
+  testWidgets('Lesefehler der Einträge: Hinweis statt einer scheinbar leeren Liste', (tester) async {
+    await start(tester, vorher: (e) {
+      eigeneListe(e);
+      e.extraOverrides.add(eintraegeProvider(_l1).overrideWith((ref) => Stream<List<Listeneintrag>>.error(StateError('kaputt'))));
+    });
+    await tester.tap(find.text('Einkauf').first);
+    await warte(tester, 8);
+    expect(find.text('Einträge nicht lesbar'), findsOneWidget);
+    expect(find.text('Noch nichts drauf'), findsNothing);
+  });
 
   testWidgets('Leerzustand: Hinweis und Knopf zum Anlegen', (tester) async {
     await start(tester);

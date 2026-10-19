@@ -93,6 +93,9 @@ class TestUmgebung {
     ),
   );
 
+  /// Zusätzliche Überschreibungen einzelner Tests (z. B. ein Stream, der einen Lesefehler meldet).
+  final List<Override> extraOverrides = [];
+
   List<Override> get overrides => [
     httpClientProvider.overrideWithValue(server.client),
     tokenStoreProvider.overrideWithValue(store),
@@ -111,6 +114,7 @@ class TestUmgebung {
     appDatabaseProvider.overrideWithValue(db),
     syncSocketOeffnerProvider.overrideWithValue(sockets.oeffner),
     syncZeitenProvider.overrideWithValue(zeiten),
+    ...extraOverrides,
   ];
 
   ProviderContainer container() {

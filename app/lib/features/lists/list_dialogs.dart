@@ -7,35 +7,46 @@ import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../ui/widgets.dart';
 
-/// Auswahl-Knopf (Art, Freigabe): mindestens 44 px hoch, wählbar per Tipp.
-class AuswahlKnopf extends StatelessWidget {
+/// Auswahl-Knopf (Art, Freigabe): mindestens 44 px hoch, wählbar per Tipp oder Tastatur (Tab, Leertaste/Enter); der Tastaturfokus ist sichtbar.
+class AuswahlKnopf extends StatefulWidget {
   final String text;
   final bool gewaehlt;
   final VoidCallback onTap;
   const AuswahlKnopf({super.key, required this.text, required this.gewaehlt, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    selected: gewaehlt,
-    label: text,
-    excludeSemantics: true,
-    child: InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: gewaehlt ? kAccentSoft : null,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: gewaehlt ? kAccent.withValues(alpha: 0.4) : kBorder),
+  State<AuswahlKnopf> createState() => _AuswahlKnopfState();
+}
+
+class _AuswahlKnopfState extends State<AuswahlKnopf> {
+  var _fokus = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final gewaehlt = widget.gewaehlt;
+    return Semantics(
+      button: true,
+      selected: gewaehlt,
+      label: widget.text,
+      excludeSemantics: true,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(10),
+        onTap: widget.onTap,
+        onFocusChange: (f) => setState(() => _fokus = f),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: gewaehlt ? kAccentSoft : null,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _fokus ? kAccent : (gewaehlt ? kAccent.withValues(alpha: 0.4) : kBorder), width: _fokus ? 2 : 1),
+          ),
+          child: Text(widget.text, style: TextStyle(fontSize: 14, fontWeight: gewaehlt ? FontWeight.w600 : FontWeight.w400, color: gewaehlt ? kAccent : kTextMuted)),
         ),
-        child: Text(text, style: TextStyle(fontSize: 14, fontWeight: gewaehlt ? FontWeight.w600 : FontWeight.w400, color: gewaehlt ? kAccent : kTextMuted)),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class NeueListeAngaben {

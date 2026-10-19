@@ -20,6 +20,7 @@ SyncResult antwort({
   bool hasMore = false,
   int next = 0,
   bool resync = false,
+  int? snapshotRev,
 }) => SyncResult(
   resyncNoetig: resync,
   rev: rev,
@@ -29,6 +30,7 @@ SyncResult antwort({
   changes: changes,
   hasMore: hasMore,
   next: next,
+  snapshotRev: snapshotRev,
   serverTime: null,
 );
 
@@ -166,6 +168,87 @@ void main() {
       await store.loeschen('list_item', _i1);
       final ops = await ausgang();
       expect([for (final o in ops) o.op], ['upsert', 'delete']);
+    });
+  });
+
+  group('Korrekturrunde', () {
+    test('Verschmelzen nur bei gleicher baseRev: ist die Zeile inzwischen weitergekommen, wird die neue Änderung eine eigene Op', () async {
+      await synchronisiert();
+      await store.aendern('list_item', _i1, {'text': 'A'}); // baseRev 2, ungesendet
+      // eine Änderung des Servers (anderes Feld) wird übernommen: die Zeile steht jetzt auf Revision 7
+      await store.uebernehmen(antwort(rev: 7, changes: [aenderung('list_item', _i1, {'position': 3}, 7)]), const []);
+      await store.aendern('list_item', _i1, {'text': 'B'});
+      final ops = await ausgang();
+      expect(ops, hasLength(2));
+      expect([for (final o in ops) o.baseRev], [2, 7]);
+      expect(ops.first.fieldsJson, contains('"A"'));
+      expect(ops.last.fieldsJson, contains('"B"'));
+      // gleiche Revision: weiter verschmolzen
+      await store.aendern('list_item', _i1, {'text': 'C'});
+      expect(await ausgang(), hasLength(2));
+      expect((await ausgang()).last.fieldsJson, contains('"C"'));
+    });
+
+    test('Gerätewechsel stellt offline angelegte Zeilen wieder her (der Ausgang würde sie sonst erst beim Senden zurückbringen)', () async {
+      await store.geraetZuordnen('geraet-a');
+      await synchronisiert();
+      await store.aendern('list', 'neu-1', {'name': 'Offline angelegt', 'kind': 'custom', 'audience': 'family'}, nurLokal: {'createdAt': '2026-10-19T08:00:00.000Z'});
+      await store.aendern('list_item', 'neu-2', {'listId': 'neu-1', 'text': 'Eintrag'}, nurLokal: {'createdAt': '2026-10-19T08:00:00.000Z'});
+      expect(await store.geraetZuordnen('geraet-b'), isTrue);
+      expect(await liste(_l1), isNull, reason: 'Stand des alten Geräts verworfen');
+      expect((await liste('neu-1'))?.name, 'Offline angelegt');
+      expect((await eintrag('neu-2'))?.inhalt, 'Eintrag');
+      expect(await ausgang(), hasLength(2));
+      expect(await store.sinceRev(), 0);
+    });
+
+    test('Löschen einer Zeile, deren Anlage bestätigt wurde, deren Stand aber noch fehlt (rev 0): delete-Op, nicht nur lokal', () async {
+      await store.aendern('list', _l1, {'name': 'Einkauf'}, nurLokal: {'createdAt': '2026-10-19T08:00:00.000Z'});
+      final gesendet = await store.naechsteOps(10);
+      // Bestätigung ohne den Stand der Zeile (er folgt auf einer späteren Seite des Stroms)
+      await store.uebernehmen(antwort(rev: 9, acked: [gesendet.single.opId], hasMore: true, next: 3), gesendet);
+      expect((await liste(_l1))?.rev, greaterThan(0), reason: 'dem Server bekannt');
+      await store.loeschen('list', _l1);
+      final ops = await ausgang();
+      expect(ops.single.op, 'delete');
+    });
+
+    test('Löschen einer Zeile, deren Anlage gesendet, aber nie bestätigt wurde: delete-Op', () async {
+      await store.aendern('list', _l1, {'name': 'Einkauf'}, nurLokal: {'createdAt': '2026-10-19T08:00:00.000Z'});
+      await store.naechsteOps(10);
+      await store.loeschen('list', _l1);
+      expect([for (final o in await ausgang()) o.op], ['upsert', 'delete']);
+    });
+
+    test('Snapshot-Cursor: snapshotRev bleibt bei weiteren Seiten gemerkt und endet mit der letzten Seite, nach resync und beim Neuaufsetzen', () async {
+      expect(await store.snapshotRev(), isNull);
+      await store.uebernehmen(antwort(rev: 20, hasMore: true, next: 5, snapshotRev: 20, changes: [aenderung('list', _l1, listeVomServer(), 5)]), const []);
+      expect(await store.sinceRev(), 5);
+      expect(await store.snapshotRev(), 20);
+      await store.uebernehmen(antwort(rev: 20, hasMore: true, next: 12, snapshotRev: 20), const []);
+      expect(await store.snapshotRev(), 20);
+      // letzte Seite des Snapshots: weiter im normalen Lauf ab der Ziel-Revision, kein snapshotRev mehr
+      await store.uebernehmen(antwort(rev: 22, hasMore: true, next: 20), const []);
+      expect(await store.snapshotRev(), isNull);
+      expect(await store.sinceRev(), 20);
+      // resync_required beendet einen laufenden Snapshot
+      await store.uebernehmen(antwort(rev: 30, hasMore: true, next: 5, snapshotRev: 30), const []);
+      await store.uebernehmen(antwort(rev: 31, resync: true), const []);
+      expect(await store.snapshotRev(), isNull);
+      expect(await store.sinceRev(), 0);
+      // Gerätewechsel ebenso
+      await store.geraetZuordnen('geraet-a');
+      await store.uebernehmen(antwort(rev: 30, hasMore: true, next: 5, snapshotRev: 30), const []);
+      await store.geraetZuordnen('geraet-b');
+      expect(await store.snapshotRev(), isNull);
+    });
+
+    test('hidden-Tombstone (Freigabe entzogen, danach gelöscht) entfernt die lokale Kopie samt Einträgen ohne Hinweis', () async {
+      await synchronisiert();
+      final b = await store.uebernehmen(antwort(rev: 9, changes: [grab('list', _l1, 9, hidden: true)]), const []);
+      expect(await liste(_l1), isNull);
+      expect(await eintrag(_i1), isNull);
+      expect(b.hinweise, isEmpty);
     });
   });
 

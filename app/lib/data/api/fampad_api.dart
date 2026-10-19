@@ -158,13 +158,14 @@ class FampadApi {
   // ----------------------------------------------------------- Sync
 
   /// Ops hochladen und Änderungen seit [sinceRev] abholen (docs/API.md, POST /sync). Antwort immer 200; Fehler sind [ApiException]
-  /// (426: Update nötig, 409 device_mismatch, 429/503: später wieder).
-  Future<SyncResult> sync({required String deviceId, required int sinceRev, required List<SyncOp> ops, int? limit}) async => SyncResult.fromJson(
+  /// (426: Update nötig, 409 device_mismatch, 429/503: später wieder). [snapshotRev]: Ziel-Revision eines laufenden mehrseitigen Snapshots.
+  Future<SyncResult> sync({required String deviceId, required int sinceRev, required List<SyncOp> ops, int? limit, int? snapshotRev}) async => SyncResult.fromJson(
     await client.post('/sync', {
       'protocolVersion': kProtocolVersion,
       'deviceId': deviceId,
       'sinceRev': sinceRev,
       'limit': ?limit,
+      'snapshotRev': ?snapshotRev,
       'ops': [for (final o in ops) o.toJson()],
     }),
   );

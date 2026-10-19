@@ -1,7 +1,7 @@
 // Vertragsprüfung gegen den ECHTEN Server (gebauter Server aus server/, PostgreSQL 17): die App-Klassen (ApiClient, FampadApi, DTOs,
 // Einladungslink-Parser, Passkey-Optionen) rufen die von der App genutzten Endpunkte einmal real auf. Seit Phase 1c gehört der Sync dazu
 // (syncVertrag, offlineOnlineVertrag): zwei Geräte derselben Person, Idempotenz, Konflikte pro Feld, Löschen gewinnt, Validierung, Rechte von
-// Kind und Gast (inklusive "hidden"-Tombstone), zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
+// Kind und Gast (inklusive "hidden"-Tombstone), mehrseitiger Snapshot (> 500 Einträge, purged_rev > 0) und Geisterlisten, zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
 // das Bereinigen von Verweisen beim Entfernen eines Mitglieds. Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
 // Ablauf: frische Datenbank migrieren, 'node dist/cli/bootstrap.js --family "Familie Vertrag"' (Token aus dem Link), Server starten, dann
@@ -290,6 +290,113 @@ Future<void> syncVertrag({
   }
   expect(wsRevs, contains(nachSync.rev), reason: 'der Hub meldet die neue Revision nach dem Commit');
   socket.stop();
+}
+
+/// Setzt families.purged_rev in der Datenbank (simuliert, dass der Server Tombstones bereinigt hat). Liefert den bisherigen Wert.
+Future<int> purgedRevSetzen(int? rev) async {
+  final r = await Process.run('node', [
+    '-e',
+    "const pg=require('pg');(async()=>{const c=new pg.Client({connectionString:process.env.DATABASE_URL});await c.connect();"
+        "const alt=(await c.query('select purged_rev from families')).rows[0].purged_rev;"
+        "if(process.env.NEU_PURGED!==undefined)await c.query('update families set purged_rev = \$1',[Number(process.env.NEU_PURGED)]);"
+        'console.log(alt);await c.end()})()',
+  ], workingDirectory: serverDir, environment: {'DATABASE_URL': datenbank, 'NEU_PURGED': ?(rev?.toString())});
+  expect(r.exitCode, 0, reason: '${r.stderr}');
+  return int.parse((r.stdout as String).trim());
+}
+
+/// Alle Änderungen ab Revision [since] über alle Seiten (bei 0 als Snapshot mit snapshotRev).
+Future<List<SyncChange>> alleSeiten(Gegenstelle g, {int since = 0}) async {
+  final dev = await geraetId(g);
+  final alle = <SyncChange>[];
+  var seite = await g.api.sync(deviceId: dev, sinceRev: since, ops: const []);
+  alle.addAll(seite.changes);
+  for (var i = 0; seite.hasMore && i < 50; i++) {
+    seite = await g.api.sync(deviceId: dev, sinceRev: seite.next, ops: const [], snapshotRev: seite.snapshotRev);
+    expect(seite.resyncNoetig, isFalse);
+    alle.addAll(seite.changes);
+  }
+  return alle;
+}
+
+/// Mehrseitiger Snapshot (mehr als 500 Einträge) bei purged_rev > 0 und Geisterlisten gegen den echten Server.
+Future<void> snapshotVertrag({required Gegenstelle a, required Gegenstelle b, required Gegenstelle gast}) async {
+  schritt('Sync: Snapshot über mehrere Seiten (> 500 Einträge) bei purged_rev > 0: Folgeseiten nie resync_required, snapshotRev, Delta danach');
+  final lid = neueUuid();
+  await syncen(a, [neu('list', lid, {'name': 'Großliste'})]);
+  final ids = <String>[];
+  for (var block = 0; block < 11; block++) {
+    final ops = [
+      for (var i = 0; i < 50; i++) () {
+        final id = neueUuid();
+        ids.add(id);
+        return neu('list_item', id, {'listId': lid, 'text': 'Eintrag ${block * 50 + i}', 'position': (block * 50 + i).toDouble()});
+      }(),
+    ];
+    final r = await syncen(a, ops);
+    expect(r.acked, hasLength(50));
+  }
+  final stand = (await syncen(a, [])).rev;
+  final altPurged = await purgedRevSetzen(stand - 1); // jeder Cursor der Folgeseiten liegt darunter: der alte Server hätte resync_required geantwortet
+  try {
+    final dev = await geraetId(b);
+    final erste = await b.api.sync(deviceId: dev, sinceRev: 0, ops: const [], limit: 200);
+    expect(erste.resyncNoetig, isFalse);
+    expect(erste.hasMore, isTrue);
+    expect(erste.snapshotRev, stand);
+    expect(erste.changes.length, inInclusiveRange(1, 200), reason: 'Seiten zählen Protokolleinträge, ersetzte Stände fehlen');
+    final gesehen = <String>{for (final c in erste.changes) c.id};
+    // zwischen den Seiten ändert die Familie etwas: Umbenennen und eine neue Liste (kommen im Delta nach dem Snapshot)
+    final neueListe = neueUuid();
+    await syncen(a, [aender('list', lid, {'name': 'Großliste (umbenannt)'}, 1), neu('list', neueListe, {'name': 'Neu während des Snapshots'})]);
+    var seite = erste;
+    var seiten = 1;
+    while (seite.hasMore) {
+      final folge = seite.snapshotRev != null;
+      seite = await b.api.sync(deviceId: dev, sinceRev: seite.next, ops: const [], limit: 200, snapshotRev: seite.snapshotRev);
+      expect(seite.resyncNoetig, isFalse, reason: 'Folgeseite $seiten: nie resync_required');
+      if (folge) expect(seite.changes.where((c) => c.tombstone), isEmpty);
+      gesehen.addAll(seite.changes.map((c) => c.id));
+      seiten++;
+      expect(seiten, lessThan(20));
+    }
+    expect(seiten, greaterThanOrEqualTo(4));
+    expect(gesehen, containsAll(ids));
+    expect(gesehen, contains(neueListe), reason: 'der Delta-Lauf nach dem Snapshot holt die Änderung während des Snapshots');
+    expect(seite.rev, greaterThan(stand));
+
+    // dasselbe mit den echten App-Klassen (SyncEngine + SyncStore, Seitengröße 200)
+    driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+    final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+    addTearDown(db.close);
+    final store = SyncStore(db);
+    final engine = SyncEngine(store: store, api: b.api, geraeteId: () async => dev, seite: 200);
+    final e = await engine.abgleichen();
+    expect(e.ok, isTrue);
+    expect((await db.select(db.listenEintraege).get()).where((x) => x.listId == lid), hasLength(ids.length));
+    expect((await db.select(db.listen).get()).where((l) => l.id == lid).single.name, 'Großliste (umbenannt)');
+    expect(await store.snapshotRev(), isNull);
+    expect(await store.sinceRev(), seite.rev);
+  } finally {
+    await purgedRevSetzen(altPurged);
+  }
+
+  schritt('Sync: Geisterliste (Freigabe entzogen, danach gelöscht): der Gast bekommt einen hidden-Tombstone, auch für Einträge');
+  final geist = neueUuid(), geistItem = neueUuid();
+  final vorGeist = (await syncen(a, [])).rev;
+  await syncen(a, [neu('list', geist, {'name': 'Oma-Liste', 'audience': 'all'}), neu('list_item', geistItem, {'listId': geist, 'text': 'Strickzeug'})]);
+  final gVorher = await syncen(gast, [], since: vorGeist);
+  expect(gVorher.changes.map((c) => c.id), containsAll([geist, geistItem]));
+  final listeRev = gVorher.changes.firstWhere((c) => c.id == geist).rev;
+  final entzogen = await syncen(a, [aender('list', geist, {'audience': 'parents'}, listeRev)], since: gVorher.rev);
+  final nachEntzug = entzogen.changes.firstWhere((c) => c.id == geist).rev;
+  await syncen(a, [weg('list', geist, nachEntzug)], since: entzogen.rev);
+  final gNachher = await syncen(gast, [], since: gVorher.rev);
+  final versteckt = gNachher.changes.where((c) => c.id == geist || c.id == geistItem).toList();
+  expect(versteckt, hasLength(2));
+  expect(versteckt.every((c) => c.tombstone && c.hidden && c.fields.isEmpty), isTrue);
+  // ein Neustart (Snapshot) kennt die Liste nicht mehr, auch nicht als Tombstone
+  expect((await alleSeiten(gast)).where((c) => c.id == geist || c.id == geistItem), isEmpty);
 }
 
 /// Offline/online mit echter lokaler Datenbank: zwei Geräte (SyncStore + SyncEngine) ändern gleichzeitig, eines war offline.
@@ -657,6 +764,7 @@ void main() {
     await kind3.client.sitzungUebernehmen(k3.session);
     await syncVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
     await offlineOnlineVertrag(a: admin, b: adminB);
+    await snapshotVertrag(a: admin, b: adminB, gast: web);
 
     // ---------------------------------------------------------------- Zurücksetzen, Entfernen, Geräte, Abmelden
     schritt('Zurücksetzen: neue Einladung für dasselbe Konto (lookup zeigt reset + Name)');
@@ -682,7 +790,7 @@ void main() {
     schritt('Sync: Verweise auf das entfernte Mitglied sind mit Änderungseintrag bereinigt');
     final bereinigt = await syncen(adminB, [], since: vorEntfernenRev);
     expect(bereinigt.rev, greaterThan(vorEntfernenRev));
-    final kaffee = (await syncen(adminB, [])).changes.firstWhere((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee');
+    final kaffee = (await alleSeiten(adminB)).firstWhere((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee');
     expect(kaffee.fields['assigneeId'], isNull);
     expect(bereinigt.changes.any((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee'), isTrue, reason: 'die Änderung kommt über den Strom');
     await expectLater(admin.api.mitgliedEntfernen(adminId), throwsA(isA<ApiException>()));

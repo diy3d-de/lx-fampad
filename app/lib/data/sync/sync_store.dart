@@ -51,6 +51,7 @@ class SyncStore {
 
   static const kSinceRev = 'sinceRev';
   static const kDeviceId = 'deviceId';
+  static const kSnapshotRev = 'snapshotRev';
 
   SyncEntity _entitaet(String name) => entitaeten[name] ?? (throw ArgumentError('Unbekannte Entität: $name'));
 
@@ -59,6 +60,11 @@ class SyncStore {
   Future<int> sinceRev() async => int.tryParse(await db.metaLesen(kSinceRev) ?? '') ?? 0;
 
   Future<void> sinceRevSetzen(int rev) => db.metaSchreiben(kSinceRev, '$rev');
+
+  /// Ziel-Revision eines laufenden mehrseitigen Snapshots (null: keiner läuft). Mit [sinceRev] als Cursor wird er fortgesetzt.
+  Future<int?> snapshotRev() async => int.tryParse(await db.metaLesen(kSnapshotRev) ?? '');
+
+  Future<void> _snapshotRevSetzen(int? rev) => rev == null ? db.metaLoeschen(kSnapshotRev) : db.metaSchreiben(kSnapshotRev, '$rev');
 
   /// Anzahl noch nicht bestätigter Änderungen (live).
   Stream<int> offeneAenderungen() {
@@ -72,18 +78,14 @@ class SyncStore {
   }
 
   /// Ordnet die lokalen Daten diesem Gerät zu. Wechselt die Geräte-ID (neue Anmeldung, z. B. nach Rollenwechsel), beruht der lokale
-  /// Stand auf einem anderen Gerät beim Server: die Fachtabellen werden geleert und neu geladen (der Ausgang bleibt erhalten).
+  /// Stand auf einem anderen Gerät beim Server: die Fachtabellen werden geleert und neu geladen (der Ausgang bleibt erhalten; lokal
+  /// neu angelegte, noch unbestätigte Zeilen werden wiederhergestellt, damit sie nicht bis zum Senden verschwinden).
   /// Liefert true, wenn geleert wurde.
   Future<bool> geraetZuordnen(String deviceId) => db.transaction(() async {
     final bisher = await db.metaLesen(kDeviceId);
     if (bisher == deviceId) return false;
     final geleert = bisher != null;
-    if (geleert) {
-      for (final e in entitaeten.values) {
-        await e.leeren(db);
-      }
-      await sinceRevSetzen(0);
-    }
+    if (geleert) await _neuAufsetzen();
     await db.metaSchreiben(kDeviceId, deviceId);
     return geleert;
   });
@@ -102,8 +104,10 @@ class SyncStore {
           ..orderBy([(o) => OrderingTerm.desc(o.id)])
           ..limit(1))
         .getSingleOrNull();
-    if (offen != null) {
-      // noch nicht gesendet: mit der früheren Änderung verschmelzen (später gewinnt je Feld), baseRev bleibt
+    if (offen != null && offen.baseRev == (rev ?? 0)) {
+      // noch nicht gesendet und auf derselben Revision aufgebaut: mit der früheren Änderung verschmelzen (später gewinnt je Feld).
+      // Ist die Zeile inzwischen weitergekommen (Änderung des Servers übernommen), baut die neue Änderung auf der neuen Revision
+      // auf und wird eine eigene Op: sonst würde sie mit der alten baseRev einen Konflikt vortäuschen.
       final alt = jsonDecode(offen.fieldsJson) as Map<String, dynamic>;
       await (db.update(db.outbox)..where((o) => o.id.equals(offen.id))).write(OutboxCompanion(fieldsJson: Value(jsonEncode({...alt, ...fields}))));
       return;
@@ -120,6 +124,8 @@ class SyncStore {
     final rev = await def.rev(db, id);
     if (rev == null) return;
     final baum = await _baum(entity, id);
+    // rev 0: der Server hat die Zeile nie bestätigt (uebernehmen setzt bei der Bestätigung einer Anlage mindestens 1). Wurde die Anlage
+    // schon gesendet, aber nicht bestätigt (Antwort verloren), kennt der Server die Zeile womöglich: dann braucht er die Löschung.
     final gesendet = await (db.select(db.outbox)
           ..where((o) => o.entity.equals(entity) & o.entityId.equals(id) & o.sentAt.isNotNull()))
         .get();
@@ -202,6 +208,13 @@ class SyncStore {
     // 1. bestätigte Ops aus dem Ausgang nehmen
     for (final id in r.acked) {
       await (db.delete(db.outbox)..where((o) => o.opId.equals(id))).go();
+      // Anlage bestätigt: die Zeile ist dem Server bekannt, auch wenn ihr Stand erst auf einer späteren Seite des Stroms folgt
+      // (rev 0 hieße "nie gesendet"; ein späteres Löschen würde dann ohne Op verschwinden und beim Server stehen bleiben)
+      final z = opVon[id];
+      final def = z == null ? null : entitaeten[z.entity];
+      if (z != null && def != null && z.op == 'upsert' && z.baseRev == 0 && await def.rev(db, z.entityId) == 0) {
+        await def.schreiben(db, z.entityId, const {}, rev: 1);
+      }
     }
 
     // 2. abgelehnte Ops: nicht still verwerfen, sondern sichtbar machen
@@ -261,6 +274,7 @@ class SyncStore {
 
     // 6. Fortschritt: bei weiteren Seiten bis zur letzten gelieferten, sonst bis zum Stand der Familie
     await sinceRevSetzen(r.hasMore ? r.next : r.rev);
+    await _snapshotRevSetzen(r.hasMore ? r.snapshotRev : null);
     return bericht;
   });
 
@@ -318,6 +332,7 @@ class SyncStore {
       await e.leeren(db);
     }
     await sinceRevSetzen(0);
+    await _snapshotRevSetzen(null);
     final offen = await _offen();
     final angelegt = await (db.select(db.outbox)
           ..where((o) => o.op.equals('upsert') & o.baseRev.equals(0))

@@ -346,7 +346,9 @@ class _ListeAnsicht extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final eintraege = ref.watch(eintraegeProvider(liste.id)).value ?? const <Listeneintrag>[];
+    final eintraegeWert = ref.watch(eintraegeProvider(liste.id));
+    final eintraege = eintraegeWert.value ?? const <Listeneintrag>[];
+    final lesefehler = eintraegeWert.hasError && !eintraegeWert.hasValue; // sonst sähe ein Lesefehler wie eine leere Liste aus
     final sortiert = sortiereEintraege(eintraege);
     final erledigt = eintraege.where((e) => e.doneAt != null).length;
     final gesamt = eintraege.length;
@@ -414,7 +416,9 @@ class _ListeAnsicht extends ConsumerWidget {
           ),
         ],
         const SizedBox(height: 16),
-        if (sortiert.isEmpty)
+        if (lesefehler)
+          const EmptyState(icon: Icons.error_outline, title: 'Einträge nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
+        else if (sortiert.isEmpty)
           const EmptyState(icon: Icons.checklist_outlined, title: 'Noch nichts drauf', hint: 'Schreib oben auf, was auf die Liste soll.')
         else
           for (final e in sortiert)

@@ -76,18 +76,34 @@ class FakeSyncServer {
       _uebernehmen(r, opId, acked, rejected, conflicts);
     }
     final since = body['sinceRev'] as int;
-    if (resyncNaechste || (since > 0 && since < purgedRev)) {
+    // mehrseitiger Snapshot wie beim echten Server: Folgeseiten (sinceRev = Cursor, snapshotRev = Ziel) prüfen nie gegen purgedRev und
+    // liefern keine Tombstones; die letzte Seite verweist auf den normalen Lauf ab dem Ziel, wenn die Familie weitergekommen ist
+    final snapshotAnfrage = body['snapshotRev'] as int?;
+    final folgeseite = since > 0 && snapshotAnfrage != null && snapshotAnfrage > since;
+    final snapshotModus = folgeseite || since == 0;
+    final ziel = folgeseite ? snapshotAnfrage : rev;
+    if (resyncNaechste || (!folgeseite && since > 0 && since < purgedRev) || since > rev || ziel > rev) {
       resyncNaechste = false;
       return _antwort('resync_required', acked, rejected, conflicts, const [], false, 0);
     }
     final limit = (seitenMax != null && seitenMax! < (body['limit'] as int? ?? 500)) ? seitenMax! : (body['limit'] as int? ?? 500);
-    final alle = zeilen.values.where((z) => z.rev > since && !(since == 0 && z.geloescht)).toList()..sort((a, b) => a.rev.compareTo(b.rev));
+    final alle = zeilen.values.where((z) => z.rev > since && z.rev <= ziel && !(snapshotModus && z.geloescht)).toList()..sort((a, b) => a.rev.compareTo(b.rev));
     final seite = alle.take(limit).toList();
-    final hasMore = alle.length > limit;
-    return _antwort('ok', acked, rejected, conflicts, [
-      for (final z in seite)
-        {'rev': z.rev, 'entity': z.entity, 'id': z.id, 'tombstone': z.geloescht, 'fields': z.geloescht ? <String, dynamic>{} : z.fields},
-    ], hasMore, hasMore ? seite.last.rev : rev);
+    final mehr = alle.length > limit;
+    final hasMore = mehr || (snapshotModus && rev > ziel);
+    return _antwort(
+      'ok',
+      acked,
+      rejected,
+      conflicts,
+      [
+        for (final z in seite)
+          {'rev': z.rev, 'entity': z.entity, 'id': z.id, 'tombstone': z.geloescht, 'fields': z.geloescht ? <String, dynamic>{} : z.fields},
+      ],
+      hasMore,
+      hasMore ? (mehr ? seite.last.rev : ziel) : rev,
+      snapshotRev: mehr && snapshotModus ? ziel : null,
+    );
   }
 
   void _uebernehmen(Map<String, dynamic> r, String opId, List<String> acked, List<Map<String, dynamic>> rejected, List<Map<String, dynamic>> conflicts) {
@@ -101,7 +117,7 @@ class FakeSyncServer {
     }
   }
 
-  Map<String, dynamic> _antwort(String status, List<String> acked, List<Map<String, dynamic>> rejected, List<Map<String, dynamic>> conflicts, List<Map<String, dynamic>> changes, bool hasMore, int next) => {
+  Map<String, dynamic> _antwort(String status, List<String> acked, List<Map<String, dynamic>> rejected, List<Map<String, dynamic>> conflicts, List<Map<String, dynamic>> changes, bool hasMore, int next, {int? snapshotRev}) => {
     'status': status,
     'rev': rev,
     'acked': acked,
@@ -110,6 +126,7 @@ class FakeSyncServer {
     'changes': changes,
     'hasMore': hasMore,
     'next': next,
+    'snapshotRev': ?snapshotRev,
     'serverTime': DateTime.now().toUtc().toIso8601String(),
   };
 

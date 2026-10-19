@@ -53,7 +53,7 @@ class SyncEngine {
   final int maxOps;
   final int seite;
 
-  SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 200, this.seite = 500});
+  SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 50, this.seite = 500});
 
   /// [abgebrochen] wird nach jeder Antwort geprüft: ist der Dienst inzwischen gestoppt (Abmelden löscht die Datenbank), wird nichts mehr
   /// in die lokalen Tabellen geschrieben.
@@ -68,7 +68,8 @@ class SyncEngine {
       for (var runde = 0; runde < 300; runde++) {
         final ops = await store.naechsteOps(maxOps);
         final since = await store.sinceRev();
-        final res = await api.sync(deviceId: dev, sinceRev: since, ops: [for (final o in ops) SyncStore.alsOp(o)], limit: seite);
+        final snapshot = since > 0 ? await store.snapshotRev() : null; // läuft ein mehrseitiger Snapshot, ist sinceRev nur der Cursor
+        final res = await api.sync(deviceId: dev, sinceRev: since, ops: [for (final o in ops) SyncStore.alsOp(o)], limit: seite, snapshotRev: snapshot);
         if (abgebrochen?.call() ?? false) return SyncErgebnis(SyncAusgang.abgebrochen, hinweise: hinweise, ops: gesendet);
         final bericht = await store.uebernehmen(res, ops);
         hinweise.addAll(bericht.hinweise);

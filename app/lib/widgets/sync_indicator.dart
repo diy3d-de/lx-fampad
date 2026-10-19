@@ -44,6 +44,8 @@ class SyncIndicator extends ConsumerWidget {
       onPressed: () async {
         final messenger = ScaffoldMessenger.of(context);
         await ref.read(syncProvider.notifier).synchronisieren(manuell: true);
+        // der Abgleich kann länger dauern: inzwischen weg (Seitenwechsel, Abmelden), dann weder ref noch messenger anfassen
+        if (!context.mounted) return;
         final s = ref.read(syncProvider);
         messenger.hideCurrentSnackBar();
         messenger.showSnackBar(

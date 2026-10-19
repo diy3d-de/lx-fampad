@@ -127,6 +127,12 @@ class SyncController extends Notifier<SyncState> {
   int _fehlversuche = 0;
   int _hinweisId = 0;
   int _bekannteRev = 0;
+
+  /// Höchste per WebSocket gemeldete Revision, die während eines Laufs eintraf (der Lauf kennt sie womöglich noch nicht).
+  int _gemeldeteRev = 0;
+
+  /// Zählt Wechsel zwischen Vorder- und Hintergrund: ein Wechsel, der auf den Abgleich vor dem Hintergrund wartet, wird durch einen neueren überholt.
+  int _wechsel = 0;
   int _geraetVersuche = 0;
 
   /// Zählt Starts und Stopps: eine Antwort, die erst nach dem Stopp eintrifft, wird nicht mehr in die Datenbank geschrieben.
@@ -152,10 +158,13 @@ class SyncController extends Notifier<SyncState> {
     _generation++;
     _fehlversuche = 0;
     _geraetVersuche = 0;
+    _bekannteRev = 0;
+    _gemeldeteRev = 0;
+    _nochmal = false;
     _offenSub = ref.read(syncStoreProvider).offeneAenderungen().listen((n) {
       if (_aktiv) state = state.copyWith(offeneAenderungen: n);
     });
-    state = state.copyWith(status: SyncStatus.synchron, live: false, meldungLoeschen: true);
+    state = const SyncState(status: SyncStatus.synchron);
     _vordergrundStarten();
     unawaited(synchronisieren());
   }
@@ -167,7 +176,11 @@ class SyncController extends Notifier<SyncState> {
     _aktiv = false;
     _generation++;
     _aufraeumen();
-    if (zustandAendern) state = state.copyWith(status: SyncStatus.getrennt, live: false, meldungLoeschen: true);
+    _bekannteRev = 0;
+    _gemeldeteRev = 0;
+    _nochmal = false;
+    // nichts vom bisherigen Zustand (Hinweise, offene Änderungen, letzter Abgleich) überlebt das Abmelden oder einen Personenwechsel
+    if (zustandAendern) state = const SyncState();
   }
 
   void _aufraeumen() {
@@ -182,8 +195,21 @@ class SyncController extends Notifier<SyncState> {
   }
 
   /// App im Vordergrund (true) bzw. im Hintergrund (false): der WebSocket und die Zeitgeber laufen nur im Vordergrund.
-  void vordergrund(bool vorn) {
+  /// Vor dem Wechsel in den Hintergrund wird einmal abgeglichen, wenn Änderungen im Ausgang warten (im Hintergrund laufen keine Zeitgeber:
+  /// sonst blieben sie bis zur Rückkehr liegen). Kehrt die App währenddessen zurück, gilt nur der neuere Wechsel.
+  Future<void> vordergrund(bool vorn) async {
+    final wechsel = ++_wechsel;
     if (_vordergrund == vorn) return;
+    if (!vorn && _aktiv && (state.offeneAenderungen > 0 || await ref.read(syncStoreProvider).offeneAnzahl() > 0)) {
+      _entprellen?.cancel();
+      _entprellen = null;
+      try {
+        await synchronisieren();
+      } catch (_) {
+        // der Abgleich meldet Fehler selbst über den Zustand; hier zählt nur, dass der Wechsel weitergeht
+      }
+      if (wechsel != _wechsel) return;
+    }
     _vordergrund = vorn;
     if (!_aktiv) return;
     if (vorn) {
@@ -208,7 +234,14 @@ class SyncController extends Notifier<SyncState> {
     _socket = SyncSocket(
       ticket: () => ref.read(apiProvider).wsTicket(),
       beiRev: (rev) {
-        if (rev > _bekannteRev) unawaited(synchronisieren());
+        if (rev <= _bekannteRev) return;
+        // während eines Laufs: nur merken (der Hinweis auf die eigene Änderung käme sonst als Zusatzlauf; eine fremde Änderung
+        // erkennt synchronisieren() danach daran, dass der Lauf die Revision nicht erreicht hat)
+        if (_laeuft != null) {
+          if (rev > _gemeldeteRev) _gemeldeteRev = rev;
+          return;
+        }
+        unawaited(synchronisieren());
       },
       beiStatus: (live) {
         if (_aktiv && state.live != live) state = state.copyWith(live: live);
@@ -250,11 +283,13 @@ class SyncController extends Notifier<SyncState> {
     try {
       e = await lauf;
     } finally {
-      _laeuft = null;
+      if (identical(_laeuft, lauf)) _laeuft = null; // ein neuer Lauf nach Stopp und Neustart bleibt stehen
     }
-    if (!_aktiv) return;
+    // gestoppt (oder gestoppt und neu gestartet): das Ergebnis gehört zu einer früheren Sitzung
+    if (!_aktiv || generation != _generation) return;
     _ergebnis(e);
-    if (_nochmal && (e.ok || e.ausgang == SyncAusgang.abgebrochen)) {
+    final fremdeRev = e.ok && _gemeldeteRev > _bekannteRev; // ein Hinweis traf ein, den dieser Lauf nicht mehr erfasst hat
+    if ((_nochmal || fremdeRev) && (e.ok || e.ausgang == SyncAusgang.abgebrochen)) {
       _nochmal = false;
       if (_aktiv) await synchronisieren();
     }
@@ -278,8 +313,9 @@ class SyncController extends Notifier<SyncState> {
         // der Dienst wurde gestoppt (oder neu gestartet): nichts mehr zu melden, der nächste Lauf folgt von selbst
         state = state.copyWith(status: SyncStatus.synchron);
       case SyncAusgang.sitzungVerloren:
-        // kein Wiederholen: der Auth-Zustand führt zur Anmeldung; nach erneuter Anmeldung startet HomeShell den Dienst neu
-        state = state.copyWith(status: SyncStatus.getrennt, meldungLoeschen: true, hinweise: hinweise);
+        // kein Wiederholen: der Auth-Zustand führt zur Anmeldung; der Dienst stoppt ganz (Zeitgeber, Socket, Zustand), damit er nach
+        // erneuter Anmeldung (HomeShell startet ihn dann) sauber neu beginnt
+        stoppen();
       case SyncAusgang.updateNoetig:
         // Pflicht-Update: Update-Seite statt App; Zeitgeber und Socket enden, bis die App aktualisiert und neu gestartet ist
         ref.read(updateProvider.notifier).pflichtSetzen();
