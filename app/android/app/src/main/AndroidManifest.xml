@@ -12,6 +12,9 @@
          mobile_scanner trägt dieselbe Angabe ein; sie steht hier ausdrücklich, damit sie nicht von einem Plugin-Update abhängt. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Push (UnifiedPush, ntfy-App als Verteiler): unifiedpush_android bringt über die Bibliothek org.unifiedpush.android:connector selbst die
+         Berechtigung WAKE_LOCK, die <queries> für Verteiler, den Empfänger MessagingReceiverImpl und den Dienst UnifiedPushService ins Manifest. Hier ist
+         nichts einzutragen; nach dem Debug-Build den gemergten Manifest prüfen (docs/VERSIONEN.md, Zeile unifiedpush). -->
     <!-- Nur TLS: kein Klartext-Verkehr (familie.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
     <application
         android:label="lx-fampad"

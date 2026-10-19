@@ -137,6 +137,7 @@ class ApiClient {
   Future<Json> get(String path, {bool auth = true}) => _anfrage('GET', path, null, auth);
   Future<Json> post(String path, [Object? body, bool auth = true]) => _anfrage('POST', path, body ?? const <String, dynamic>{}, auth);
   Future<Json> patch(String path, Object body) => _anfrage('PATCH', path, body, true);
+  Future<Json> put(String path, Object body) => _anfrage('PUT', path, body, true);
   Future<Json> delete(String path) => _anfrage('DELETE', path, null, true);
 
   Future<Json> _anfrage(String method, String path, Object? body, bool auth) async {

@@ -34,7 +34,7 @@ verbietet Fremdadressen). Es gibt keinen Service Worker und keine Cookies außer
 | Inhalte: Termine, Chat-Nachrichten (inkl. Lesebestätigungen, Reaktionen), Aufgaben, Dateien | eigentliche Funktion | Geplant (Phase 1), Fotos u. a. Phase 2 | Art. 6 Abs. 1 lit. b |
 | Sync-Protokoll: Änderungsprotokoll (`change_log`: Revision, Art und ID des Datensatzes, geänderte Felder mit Inhalt, Autor, Gerät, Zeitpunkt), verarbeitete Ops (`applied_ops`: op_id, Gerät, Ergebnis, Art und ID des Ziel-Datensatzes, bei Konflikten nur die **Namen** der betroffenen Felder, nie ihre Werte), Gerätestand (`devices.last_rev`, `devices.resync_required`) | Abgleich der Geräte, wiederholbares Senden, Echtzeit | Ist (Phase 1c-1); Aufbewahrung Abschnitt 10 | Art. 6 Abs. 1 lit. b, f |
 | Standort (Live-Teilen) | Funktion „Standort teilen“ | Geplant (Phase 2) | Art. 6 Abs. 1 lit. a (Einwilligung, Abschnitt 8) |
-| Push-Endpunkt je Gerät (UnifiedPush/Web Push), enthält nie Inhalte | Benachrichtigung „es gibt Neues“ | Geplant (Phase 1) | Art. 6 Abs. 1 lit. b, f |
+| Push-Endpunkt je Gerät (UnifiedPush: nur das zufällige Topic `up…` des eigenen ntfy, Tabelle `push_endpoints`, mit Zeitpunkten des letzten Erfolgs/Fehlers und Fehlerzähler); Web Push später | Benachrichtigung „es gibt Neues“ | **Ist (Branch phase-push, Android)**; Web Push geplant | Art. 6 Abs. 1 lit. b, f |
 
 Alle Inhalte liegen in einer PostgreSQL-Datenbank und im Dateisystem des Servers (Dateien später mit AES-256-GCM verschlüsselt).
 Eine Ende-zu-Ende-Verschlüsselung gibt es in Phase 1 bewusst nicht; der Betreiber kann als Administrator technisch auf Inhalte zugreifen.
@@ -102,6 +102,7 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 ## 9. Push-Benachrichtigungen
 
 - Meldungen enthalten **nie Inhalt** („Neue Nachricht in Familie“); Details holt die App nach dem Wecken selbst.
+- **Push-Inhalt ist leer:** Der Wecker besteht aus einem festen Wort ohne Text, Titel, Tags oder Namen; weder Inhalt noch Absender noch Anlass sind erkennbar. Der Familien-Server sendet nur an die **eigene** ntfy-Instanz (Loopback); an die vom Gerät gemeldete Adresse sendet er nie. **Kein Google:** Der eingebettete FCM-Verteiler von UnifiedPush ist nicht eingebunden, die App setzt eine selbst installierte ntfy-App als Verteiler voraus. Empfänger sind nur die Geräte der Familie, deren Rolle die Änderung sehen darf; die auslösende Person wird nicht geweckt. Beim Abmelden, Entfernen des Geräts oder des Mitglieds wird der Endpunkt gelöscht; ein Endpunkt, den ntfy als ungültig meldet, wird deaktiviert.
 - Android: UnifiedPush über die ntfy-App als Verteiler und den eigenen ntfy-Server; der Server merkt sich Meldungen höchstens 12 Stunden (`cache-duration`), schreibt nur auf `up*`-Topics und gibt Leserechte nur an angemeldete Geräte.
 - Web: Web Push mit eigenen VAPID-Schlüsseln über den Push-Dienst des Browsers (Abschnitt 5). Das Abonnement ist freiwillig und im Browser widerrufbar.
 

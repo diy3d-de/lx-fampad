@@ -1,12 +1,14 @@
 // Profil und Sicherheit (Mockup "Sicherheit & System"): Zugänge, Wiederherstellungscodes, Geräte, Familie (Admin/Eltern), Abmelden.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/push/push_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
@@ -14,6 +16,7 @@ import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import 'devices_screen.dart';
 import 'password_screen.dart';
+import 'push_screen.dart';
 import 'passkeys_screen.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
@@ -235,6 +238,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           untertitel: 'einzeln abmelden',
           onTap: () => _oeffne(const DevicesScreen()),
         ),
+        // Push gibt es nur in der Android-App (UnifiedPush über die ntfy-App)
+        if (!kIsWeb)
+          Consumer(
+            builder: (context, ref, _) {
+              final push = ref.watch(pushProvider);
+              return EinstellungsZeile(
+                icon: Icons.notifications_outlined,
+                titel: 'Benachrichtigungen',
+                untertitel: push.gewuenscht ? (push.angemeldet ? 'push aktiv' : 'wird eingerichtet') : 'aus',
+                status: push.gewuenscht && push.angemeldet ? const RollenPille('an', farbe: kTerminal) : null,
+                onTap: () => _oeffne(const PushScreen()),
+              );
+            },
+          ),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),
           const MonoLabel('// familie'),

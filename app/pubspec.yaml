@@ -38,6 +38,9 @@ dependencies:
   timezone: 0.11.1
   # ICS-Import: Dateiauswahl über den System-Picker (Android ohne Speicherberechtigung, Web: Browser-Dialog)
   file_picker: 13.1.0
+  # Push: UnifiedPush (ntfy-App als Verteiler, kein Google), nur Android; unifiedpush_android pinnt die native Seite
+  unifiedpush: 6.2.0
+  unifiedpush_android: 3.5.0
 
 dev_dependencies:
   flutter_test:
@@ -59,6 +62,9 @@ dependency_overrides:
   windows_file_picker: 2.0.0
   petitparser: 7.0.2
   xml: 7.0.1
+  # unifiedpush 6.2.0 zieht unifiedpush_linux (dbus ^0.7.11), file_picker_linux 2.0.1 braucht dbus ^0.8.0; Linux wird nie gebaut (nur Android + Web),
+  # der Linux-Code beider Pakete wird nicht übersetzt: der Override löst nur den Versionskonflikt (dbus 0.8.0 vom 16.09.2026, ohnehin im Lockfile)
+  dbus: 0.8.0
 
 flutter:
   uses-material-design: true
