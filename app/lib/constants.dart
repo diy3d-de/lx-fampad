@@ -79,13 +79,12 @@ const kProtocolVersion = 1;
 /// Paketname der App; das signierte Update-Manifest muss genau diesen Namen tragen.
 const kPackageName = 'dev.lx_labs.fampad';
 
-/// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64). PLATZHALTER: Der zugehörige private
-/// Schlüssel existiert nicht, daher wird kein Manifest akzeptiert. Vor dem ersten Release durch den echten
-/// Schlüssel ersetzen, siehe tools/README.md ("Update-Schlüssel erzeugen"). Der private Schlüssel gehört nie ins Repo.
-const kUpdatePublicKey = 't0zasQh0NHzkm8Xk7o4+StCnrNd1+ewgY9U4EmlhF18=';
+/// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64), erzeugt am 19.10.2026. Der private
+/// Schlüssel liegt nur als CI-Secret UPDATE_SIGNING_KEY und in der Sicherung des Betreibers, nie im Repo.
+const kUpdatePublicKey = 'kXAm22X6wnuxrYe/KEdukPD5r+pN4HpQHmUzDX3VoeM=';
 
 /// Kennung des Schlüssels (keyId im signierten Manifest); beim Schlüsselwechsel hochzählen.
-const kUpdateKeyId = kPlatzhalterKeyId;
+const kUpdateKeyId = 'fampad-1';
 
 /// Kennung des Platzhalter-Schlüssels. Solange [kUpdateKeyId] diesen Wert hat, lehnt die App jedes Update-Manifest hart ab
 /// (auch ein Manifest, das jemand mit dem Platzhalter-Schlüssel oder einer Schlüssel-ID "platzhalter" signiert).
