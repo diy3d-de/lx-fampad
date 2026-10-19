@@ -149,13 +149,66 @@ class TerminAusnahmen extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen])
+/// Aufgaben (Phase 1c-4a). Fälligkeit: ein Tag (`faelligDate`, Text `YYYY-MM-DD`) ODER ein Zeitpunkt (`faelligUtc` + `tzid`), beides leer = ohne.
+@DataClassName('Aufgabe')
+class Aufgaben extends Table {
+  @override
+  String get tableName => 'aufgaben';
+
+  TextColumn get id => text()();
+  TextColumn get titel => text()();
+  TextColumn get beschreibung => text().withDefault(const Constant(''))();
+  TextColumn get faelligDate => text().nullable()();
+  DateTimeColumn get faelligUtc => dateTime().nullable()();
+  TextColumn get tzid => text().nullable()();
+
+  /// 0 keine, 1 niedrig, 2 mittel, 3 hoch
+  IntColumn get prioritaet => integer().withDefault(const Constant(0))();
+  TextColumn get assigneeId => text().nullable()();
+  DateTimeColumn get erledigtAt => dateTime().nullable()();
+  TextColumn get erledigtVon => text().nullable()();
+
+  /// daily | weekly | monthly | null
+  TextColumn get wiederholung => text().nullable()();
+  IntColumn get erinnerungMin => integer().nullable()();
+
+  /// parents | family (wie bei Listen)
+  TextColumn get audience => text().withDefault(const Constant('family'))();
+  TextColumn get ownerId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Unteraufgaben (Checkliste) einer Aufgabe; `position` wie bei Listeneinträgen.
+@DataClassName('AufgabePunkt')
+@TableIndex(name: 'aufgabe_punkte_aufgabe_idx', columns: {#aufgabeId})
+class AufgabePunkte extends Table {
+  @override
+  String get tableName => 'aufgabe_punkte';
+
+  TextColumn get id => text()();
+  TextColumn get aufgabeId => text()();
+  TextColumn get inhalt => text().named('text')();
+  DateTimeColumn get doneAt => dateTime().nullable()();
+  RealColumn get position => real().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Aufgaben, AufgabePunkte])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at. Version 3 (Phase 1c-2a): Termine, Teilnehmer, Ausnahmen.
+  /// Version 4 (Phase 1c-4a): Aufgaben und Unteraufgaben.
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -166,18 +219,25 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.deleteTable('outbox');
         await m.createAll();
-      } else if (from < 3) {
-        await m.createTable(termine);
-        await m.createTable(terminTeilnehmer);
-        await m.createTable(terminAusnahmen);
-        // createTable legt die @TableIndex-Indizes nicht mit an
-        await m.createIndex(terminTeilnehmerTerminIdx);
-        await m.createIndex(terminAusnahmenTerminIdx);
+      } else {
+        if (from < 3) {
+          await m.createTable(termine);
+          await m.createTable(terminTeilnehmer);
+          await m.createTable(terminAusnahmen);
+          // createTable legt die @TableIndex-Indizes nicht mit an
+          await m.createIndex(terminTeilnehmerTerminIdx);
+          await m.createIndex(terminAusnahmenTerminIdx);
+        }
+        if (from < 4) {
+          await m.createTable(aufgaben);
+          await m.createTable(aufgabePunkte);
+          await m.createIndex(aufgabePunkteAufgabeIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
       // vollständigen Snapshot (Upsert; offene lokale Änderungen und der Ausgang bleiben). deviceId, ownerUserId, members bleiben.
-      if (from < 3) {
+      if (from < 4) {
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
     },

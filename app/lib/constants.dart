@@ -150,6 +150,7 @@ const kTabs = <NavTab>[
   NavTab('Chat', Icons.chat_bubble_outline, Icons.chat_bubble),
   NavTab('Dateien', Icons.folder_outlined, Icons.folder),
   NavTab('Listen', Icons.checklist_outlined, Icons.checklist),
+  NavTab('Aufgaben', Icons.task_alt_outlined, Icons.task_alt),
 ];
 
 /// Ab dieser Fensterbreite zeigt die App das Desktop-Layout (Seitenleiste, Karten-Raster); darunter bleibt es mobil.

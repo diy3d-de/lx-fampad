@@ -385,6 +385,157 @@ class TerminAusnahmenEntitaet extends SyncEntity {
   Future<void> leeren(AppDatabase db) => db.delete(db.terminAusnahmen).go();
 }
 
+
+class AufgabenEntitaet extends SyncEntity {
+  @override
+  String get name => 'aufgabe';
+
+  @override
+  List<KindLink> get kinder => const [KindLink('aufgabe_punkt', 'aufgabeId')];
+
+  @override
+  String get elternGeloescht => 'Die Aufgabe wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Es gibt zu viele Aufgaben';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['titel']) != null;
+
+  Selectable<Aufgabe> _zeile(AppDatabase db, String id) => db.select(db.aufgaben)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async {
+    final n = (await _zeile(db, id).getSingleOrNull())?.titel;
+    return n == null ? null : 'Aufgabe „$n“';
+  }
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    if (vorhanden == null) {
+      await db.into(db.aufgaben).insert(
+        AufgabenCompanion.insert(
+          id: id,
+          titel: _text(fields['titel']) ?? '',
+          createdAt: _zeit(fields['createdAt']) ?? DateTime.now(),
+          beschreibung: Value(_text(fields['beschreibung']) ?? ''),
+          faelligDate: Value(_text(fields['faelligDate'])),
+          faelligUtc: Value(_zeit(fields['faelligUtc'])),
+          tzid: Value(_text(fields['tzid'])),
+          prioritaet: Value(_int(fields['prioritaet']) ?? 0),
+          assigneeId: Value(_text(fields['assigneeId'])),
+          erledigtAt: Value(_zeit(fields['erledigtAt'])),
+          erledigtVon: Value(_text(fields['erledigtVon'])),
+          wiederholung: Value(_text(fields['wiederholung'])),
+          erinnerungMin: Value(_int(fields['erinnerungMin'])),
+          audience: Value(_text(fields['audience']) ?? 'family'),
+          ownerId: Value(_text(fields['ownerId'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.aufgaben)..where((t) => t.id.equals(id))).write(
+      AufgabenCompanion(
+        titel: setze('titel') ? Value(_text(fields['titel']) ?? vorhanden.titel) : const Value.absent(),
+        beschreibung: setze('beschreibung') ? Value(_text(fields['beschreibung']) ?? '') : const Value.absent(),
+        faelligDate: setze('faelligDate') ? Value(_text(fields['faelligDate'])) : const Value.absent(),
+        faelligUtc: setze('faelligUtc') ? Value(_zeit(fields['faelligUtc'])) : const Value.absent(),
+        tzid: setze('tzid') ? Value(_text(fields['tzid'])) : const Value.absent(),
+        prioritaet: setze('prioritaet') ? Value(_int(fields['prioritaet']) ?? 0) : const Value.absent(),
+        assigneeId: setze('assigneeId') ? Value(_text(fields['assigneeId'])) : const Value.absent(),
+        erledigtAt: setze('erledigtAt') ? Value(_zeit(fields['erledigtAt'])) : const Value.absent(),
+        erledigtVon: setze('erledigtVon') ? Value(_text(fields['erledigtVon'])) : const Value.absent(),
+        wiederholung: setze('wiederholung') ? Value(_text(fields['wiederholung'])) : const Value.absent(),
+        erinnerungMin: setze('erinnerungMin') ? Value(_int(fields['erinnerungMin'])) : const Value.absent(),
+        audience: setze('audience') ? Value(_text(fields['audience']) ?? vorhanden.audience) : const Value.absent(),
+        ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
+        createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.aufgaben)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.aufgaben).go();
+}
+
+class AufgabePunkteEntitaet extends SyncEntity {
+  @override
+  String get name => 'aufgabe_punkt';
+
+  @override
+  String get elternGeloescht => 'Die Aufgabe wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Die Aufgabe hat zu viele Unteraufgaben';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['aufgabeId']) != null && _text(fields['text']) != null;
+
+  Selectable<AufgabePunkt> _zeile(AppDatabase db, String id) => db.select(db.aufgabePunkte)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async {
+    final n = (await _zeile(db, id).getSingleOrNull())?.inhalt;
+    return n == null ? null : 'Unteraufgabe „$n“';
+  }
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    double? zahl(Object? v) => v is num ? v.toDouble() : null;
+    if (vorhanden == null) {
+      await db.into(db.aufgabePunkte).insert(
+        AufgabePunkteCompanion.insert(
+          id: id,
+          aufgabeId: _text(fields['aufgabeId']) ?? '',
+          inhalt: _text(fields['text']) ?? '',
+          createdAt: _zeit(fields['createdAt']) ?? DateTime.now(),
+          doneAt: Value(_zeit(fields['doneAt'])),
+          position: Value(zahl(fields['position']) ?? 0),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.aufgabePunkte)..where((t) => t.id.equals(id))).write(
+      AufgabePunkteCompanion(
+        inhalt: setze('text') ? Value(_text(fields['text']) ?? vorhanden.inhalt) : const Value.absent(),
+        doneAt: setze('doneAt') ? Value(_zeit(fields['doneAt'])) : const Value.absent(),
+        position: setze('position') ? Value(zahl(fields['position']) ?? vorhanden.position) : const Value.absent(),
+        createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.aufgabePunkte)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'aufgabeId'
+      ? const []
+      : [for (final r in await (db.select(db.aufgabePunkte)..where((t) => t.aufgabeId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.aufgabePunkte).go();
+}
+
 /// Alle synchronisierten Entitäten des Clients.
 final Map<String, SyncEntity> syncEntities = {
   for (final e in <SyncEntity>[
@@ -393,6 +544,8 @@ final Map<String, SyncEntity> syncEntities = {
     TermineEntitaet(),
     TerminTeilnehmerEntitaet(),
     TerminAusnahmenEntitaet(),
+    AufgabenEntitaet(),
+    AufgabePunkteEntitaet(),
   ])
     e.name: e,
 };

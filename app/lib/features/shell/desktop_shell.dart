@@ -16,7 +16,6 @@ import '../../widgets/benutzer_avatar.dart';
 
 /// Noch nicht gebaute Bereiche in der Seitenleiste (deaktiviert, mit "bald" markiert).
 const _kBaldBereiche = <(String, IconData)>[
-  ('Aufgaben', Icons.task_alt_outlined),
   ('Fotos', Icons.photo_library_outlined),
   ('Orte', Icons.place_outlined),
 ];

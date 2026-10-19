@@ -13,11 +13,12 @@ import '../files/files_screen.dart';
 import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
+import '../tasks/tasks_screen.dart';
 import '../update/update_service.dart';
 import 'desktop_shell.dart';
 import 'shell_tab.dart';
 
-/// Rahmen der angemeldeten App: Glow-Hintergrund, die fünf Tabs und die Material-3-NavigationBar.
+/// Rahmen der angemeldeten App: Glow-Hintergrund, die sechs Tabs und die Material-3-NavigationBar.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -28,13 +29,14 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(4, (_) => GlobalKey());
+  final _keys = List.generate(5, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
     ChatScreen(key: _keys[1]),
     FilesScreen(key: _keys[2]),
     ListsScreen(key: _keys[3]),
+    TasksScreen(key: _keys[4]),
   ];
   late final _desktopScreens = <Widget>[const DesktopHome(), ..._screens.sublist(1)];
 
