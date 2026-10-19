@@ -55,7 +55,11 @@ class ServerVersion {
   final int minProtocolVersion;
   final String minAppVersion;
   final String? webVersion;
+
+  /// Version des Servers (Anzeige im Bereich "Über"); null bei älteren Servern.
+  final String? version;
   const ServerVersion({
+    this.version,
     required this.protocolVersion,
     required this.minProtocolVersion,
     required this.minAppVersion,
@@ -68,8 +72,10 @@ class ServerVersion {
     final minProtocol = json['minProtocolVersion'];
     final minApp = json['minAppVersion'];
     final web = json['webVersion'];
+    final ver = json['version'];
     if (protocol is! int || minProtocol is! int || minApp is! String || !isVersion(minApp)) return null;
     return ServerVersion(
+      version: ver is String && ver.isNotEmpty && ver.length <= 40 ? ver : null,
       protocolVersion: protocol,
       minProtocolVersion: minProtocol,
       minAppVersion: minApp,
@@ -157,6 +163,21 @@ class UpdateController extends Notifier<UpdateState> {
   }
 
   Future<int> _versionCode() async => await _channel.invokeMethod<int>('appVersionCode') ?? 0;
+
+  /// Installierte Version und Build-Nummer für den Bereich "Über" (Web und Tests ohne Kanal: null).
+  Future<(String?, int?)> installierteAngaben() async {
+    if (kIsWeb) return (null, null);
+    try {
+      return (await _version(), await _versionCode());
+    } on PlatformException {
+      return (null, null);
+    } on MissingPluginException {
+      return (null, null);
+    }
+  }
+
+  /// Version des Servers (öffentlich für den Bereich "Über"); null bei jedem Fehler.
+  Future<ServerVersion?> serverVersion() => _serverVersion();
 
   /// Der Sync meldet 426 (Protokoll zu alt): ab jetzt Pflicht-Update, bis die App aktualisiert ist.
   void pflichtSetzen() => state = state.copyWith(pflicht: true);
