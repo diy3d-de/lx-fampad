@@ -76,9 +76,21 @@ app/
   tool/                vertrag_test.dart (App-Klassen gegen den echten Server)
 deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, umbenennung-server.sh (einmalig), ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md
+branding/              icon.svg (Master, „lx“ als Pfade), play-store-icon-512.png, make-icons.mjs (Generator)
 docs/                  Projektbeschreibung, Versionen, Datenschutz-Entwurf, Mockups
 .github/workflows/     ci.yml: Server (Lint, Typen, Tests, Build), App (analyze, test), Android-Debug-Build; release.yml: APK bauen/signieren, Manifest, Release-Entwurf (deploy/README.md, Abschnitt 10)
 ```
+
+## Icon neu erzeugen
+
+Master: `branding/icon.svg` (120×120, „lx“ aus dem Inter-Variable-Font bei wght 800 als Pfade, vier Personenpunkte im Haus). Alle PNGs entstehen aus `branding/make-icons.mjs`:
+
+```bash
+mkdir C:/lxq/icontool && cd C:/lxq/icontool && npm i opentype.js sharp   # Werkzeuge außerhalb des Repos
+cd <Repo> && ICON_TOOLS=C:/lxq/icontool node branding/make-icons.mjs
+```
+
+Schreibt: `branding/icon.svg`, `branding/play-store-icon-512.png`, `app/web/{favicon.png,icons/*}` (Icon-192/512, Icon-maskable-192/512, apple-touch-icon), Android `mipmap-*/ic_launcher(_round).png` und die Adaptiv-Ebenen `drawable-nodpi/ic_launcher_{background,foreground,monochrome}.png` (`mipmap-anydpi-v26/*.xml` ist von Hand und bleibt). Änderungen am Entwurf nur im Skript machen; danach Vorschau (`ICON_TOOLS/prev`) ansehen, bei 48 und 24 px prüfen. Maskable/adaptiv/Play: Inhalt auf 74 % in der Safe-Zone. `app/web-assets.sha256` ist nicht betroffen (listet keine Icons).
 
 ## Design-Regeln (verbindlich)
 
