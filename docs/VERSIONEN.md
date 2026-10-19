@@ -45,6 +45,8 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | maplibre | 0.3.6 | Ersatz für flutter_map + PMTiles-Vektor (veraltet); pre-1.0 |
 | geolocator | 14.1.1 | Vordergrunddienst eingebaut |
 | web_socket_channel | 3.0.3 | Phase 1c im Einsatz (direkte Abhängigkeit seit 1c; stand schon vorher als transitive Abhängigkeit im Lockfile): WebSocket-Client des Sync (`app/lib/data/sync/sync_socket.dart`), Reconnect mit Backoff und Jitter selbst gebaut; läuft auf Android und im Web |
+| rrule | 0.2.18 | Phase 1c-2a im Einsatz (06.01.2026, Apache-2.0): Terminserien expandieren (`app/lib/data/calendar/expansion.dart`). Kennt **keine Zeitzonen** (rechnet mit `DateTime.utc`): die Wanduhrzeit der Termin-Zeitzone wird als UTC getarnt expandiert und danach mit timezone umgerechnet. Transitiv: time 2.1.6 (07.12.2025) |
+| timezone | 0.11.1 | Phase 1c-2a im Einsatz (29.06.2026; 0.11.2 vom 12.10.2026 war zum Stichtag jünger als 14 Tage): Zeitzonen-Daten für Sommerzeit. Gebündelt wird `latest.tzf` (alle Zonen bis 2037, 253760 Byte) als Asset `app/assets/tz/latest.tzf` (kein CDN, kein Abruf von Dritten); abweichend von der Vorrecherche nicht die Variante `10y` (nur rund 2020 bis 2030), weil der Horizont der Serien 5 Jahre beträgt. Prüfsumme siehe unten; die Dateien `lib/data/*.dart` des Pakets (Daten als Dart-Code) werden nicht eingebunden |
 | http | 1.6.0 | Update-Prüfung und APK-Download |
 | crypto | 3.0.7 | SHA-256 der APK |
 | cryptography | 2.9.0 | Ed25519-Prüfung des Update-Manifests (reines Dart, auch im Web); 21.11.2025 |
@@ -72,6 +74,8 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | `sqlite3.wasm` | `fbcd2e8214f9231ea961e1b7706a22dd1194cfbfe6f26f13841b5aa7a0be1a1f` |
 | `drift_worker.js` | `fe5f13be0526f78293796aefb9a29d3823a2dbdbf1bccd3f0faeb90eaaafd72a` |
 | `passkeys-bundle.js` | `4ae8f64edcf3c6f31c28edadcbe77cc40bfabdfae74c1f683cd9c0f525a8b47e` |
+
+Zeitzonen-Daten: `app/assets/tz/latest.tzf` ist die unveränderte Datei `lib/data/latest.tzf` aus timezone **0.11.1** (liegt im Flutter-Asset-Bündel, nicht unter `web/`; daher nicht in `web-assets.sha256`). Beim Aktualisieren von timezone die Datei aus dem Paket neu kopieren und diese Prüfsumme ändern: `e67e57be5d320b54e96381b59fdc2e7b0ec803b7e1be98621e445312cf5f295e` (SHA-256).
 
 ### Passkey-JS-Bündel (Web)
 
