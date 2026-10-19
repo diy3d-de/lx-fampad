@@ -71,6 +71,8 @@ class TestUmgebung {
 
   /// Wirft der Wiper (lokale Daten löschen)? Zählt trotzdem als Aufruf.
   bool wiperFehler = false;
+  bool wiperEcht = false;
+  bool besitzerInDb = false;
   final owner = MemoryLocalDataOwner();
   late final ApiClient client = ApiClient(client: server.client, store: store, web: web, base: 'https://familie.test');
 
@@ -96,11 +98,16 @@ class TestUmgebung {
     tokenStoreProvider.overrideWithValue(store),
     apiClientProvider.overrideWithValue(client),
     passkeyServiceProvider.overrideWithValue(passkeys),
-    localDataWiperProvider.overrideWithValue(() async {
-      geloescht++;
-      if (wiperFehler) throw StateError('Löschen fehlgeschlagen');
-    }),
-    localDataOwnerProvider.overrideWithValue(owner),
+    // wiperEcht: der echte Wiper der App (Sync anhalten, Datenbank leeren) statt des zählenden Fakes
+    if (wiperEcht)
+      localDataWiperProvider.overrideWith(lokaleDatenWiper)
+    else
+      localDataWiperProvider.overrideWithValue(() async {
+        geloescht++;
+        if (wiperFehler) throw StateError('Löschen fehlgeschlagen');
+      }),
+    // besitzerInDb: wie in der App der Besitzer in sync_meta der echten (hier: In-Memory-)Datenbank
+    localDataOwnerProvider.overrideWithValue(besitzerInDb ? DatenbankBesitzer(db) : owner),
     appDatabaseProvider.overrideWithValue(db),
     syncSocketOeffnerProvider.overrideWithValue(sockets.oeffner),
     syncZeitenProvider.overrideWithValue(zeiten),

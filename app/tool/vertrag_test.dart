@@ -1,11 +1,16 @@
 // Vertragsprüfung gegen den ECHTEN Server (gebauter Server aus server/, PostgreSQL 17): die App-Klassen (ApiClient, FampadApi, DTOs,
-// Einladungslink-Parser, Passkey-Optionen) rufen die von der App genutzten Endpunkte einmal real auf.
+// Einladungslink-Parser, Passkey-Optionen) rufen die von der App genutzten Endpunkte einmal real auf. Seit Phase 1c gehört der Sync dazu
+// (syncVertrag, offlineOnlineVertrag): zwei Geräte derselben Person, Idempotenz, Konflikte pro Feld, Löschen gewinnt, Validierung, Rechte von
+// Kind und Gast (inklusive "hidden"-Tombstone), zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
+// das Bereinigen von Verweisen beim Entfernen eines Mitglieds. Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
 // Ablauf: frische Datenbank migrieren, 'node dist/cli/bootstrap.js --family "Familie Vertrag"' (Token aus dem Link), Server starten, dann
 //   SERVER=http://127.0.0.1:4460 INVITE_TOKEN=<Token> SERVER_DIR=<server/-Ordner mit node_modules> DATABASE_URL=postgres://… flutter test test/vertrag_test.dart
 // (die Datei dazu aus tool/ nach test/ kopieren; sie initialisiert kein Widget-Binding, damit HTTP echt läuft).
 import 'dart:io';
 
+import 'package:drift/drift.dart' show DatabaseConnection, driftRuntimeOptions;
+import 'package:drift/native.dart';
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -15,6 +20,11 @@ import 'package:lx_fampad/data/api/api_error.dart';
 import 'package:lx_fampad/data/api/fampad_api.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
+import 'package:lx_fampad/data/app_database.dart';
+import 'package:lx_fampad/data/sync/sync_engine.dart';
+import 'package:lx_fampad/data/sync/sync_models.dart';
+import 'package:lx_fampad/data/sync/sync_socket.dart';
+import 'package:lx_fampad/data/sync/sync_store.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/features/auth/invite_link.dart';
 import 'package:passkeys/types.dart' show AuthenticateRequestType, RegisterRequestType;
@@ -123,6 +133,221 @@ Future<void> stepUpAltern() async {
 }
 
 void schritt(String s) => stdout.writeln('--- $s');
+
+/// Wiederholt einen Aufruf, solange das Konto nach den Fehlversuchen verzögert gesperrt ist (wartet laut Retry-After).
+Future<T> mitWarten<T>(Future<T> Function() aufruf) async {
+  for (var versuch = 0;; versuch++) {
+    try {
+      return await aufruf();
+    } on ApiException catch (e) {
+      if (e.kind != ApiErrorKind.zuVieleAnfragen || versuch >= 3) rethrow;
+      stdout.writeln('    warte ${e.retryAfter!.inSeconds + 1} s (Retry-After)');
+      await Future<void>.delayed(e.retryAfter! + const Duration(seconds: 1));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------- Sync (Phase 1c)
+
+Future<String> geraetId(Gegenstelle g) async {
+  final fest = await g.store.readDeviceId();
+  if (fest != null && fest.isNotEmpty) return fest;
+  return (await g.api.ich()).sessionDeviceId!;
+}
+
+Future<SyncResult> syncen(Gegenstelle g, List<SyncOp> ops, {int since = 0, int? limit}) async =>
+    g.api.sync(deviceId: await geraetId(g), sinceRev: since, ops: ops, limit: limit);
+
+SyncOp neu(String entity, String id, Map<String, dynamic> fields) => SyncOp(opId: neueUuid(), op: 'upsert', entity: entity, id: id, fields: fields);
+SyncOp aender(String entity, String id, Map<String, dynamic> fields, int baseRev) =>
+    SyncOp(opId: neueUuid(), op: 'upsert', entity: entity, id: id, fields: fields, baseRev: baseRev);
+SyncOp weg(String entity, String id, int baseRev) => SyncOp(opId: neueUuid(), op: 'delete', entity: entity, id: id, baseRev: baseRev);
+
+/// Das Sync-Protokoll gegen den echten Server: zwei Geräte, Konflikte, Löschen, Rechte, Validierung, WebSocket.
+Future<void> syncVertrag({
+  required Gegenstelle a,
+  required Gegenstelle b,
+  required Gegenstelle gast,
+  required Gegenstelle kind,
+  required String kindId,
+  required String adminId,
+}) async {
+  schritt('Sync: Liste + Eintrag anlegen (Gerät A), Antwort im Format von docs/API.md');
+  final lid = neueUuid(), iid = neueUuid();
+  final opListe = neu('list', lid, {'name': 'Einkauf', 'kind': 'shopping'});
+  final opItem = neu('list_item', iid, {'listId': lid, 'text': 'Milch', 'position': 1.5});
+  final r1 = await syncen(a, [opListe, opItem]);
+  expect(r1.resyncNoetig, isFalse);
+  expect(r1.acked, [opListe.opId, opItem.opId]);
+  expect(r1.rejected, isEmpty);
+  expect(r1.conflicts, isEmpty);
+  expect(r1.changes.map((c) => c.entity), ['list', 'list_item']);
+  expect(r1.changes.last.fields, containsPair('text', 'Milch'));
+  expect(r1.changes.last.fields['position'], 1.5);
+  final startRev = r1.rev;
+  expect(r1.hasMore, isFalse);
+
+  schritt('Sync: Idempotenz (dieselben Ops noch einmal) -> dieselbe Bestätigung, keine neue Revision');
+  final r1b = await syncen(a, [opListe, opItem]);
+  expect(r1b.acked, r1.acked);
+  expect(r1b.rev, startRev);
+
+  schritt('Sync: Gerät B (zweite Sitzung derselben Person) holt den Snapshot und danach nichts mehr');
+  final snap = await syncen(b, []);
+  expect(snap.changes.map((c) => c.id).toSet(), {lid, iid});
+  final liste = snap.changes.firstWhere((c) => c.id == lid);
+  expect(liste.fields['audience'], 'family');
+  expect(liste.fields['ownerId'], adminId);
+  expect((await syncen(b, [], since: snap.rev)).changes, isEmpty);
+  final itemRev = snap.changes.firstWhere((c) => c.id == iid).rev;
+
+  schritt('Sync: verschiedene Felder gleichzeitig (Text auf A, Abhaken auf B) bleiben beide; dasselbe Feld: später eintreffende Änderung verliert');
+  final doneAt = DateTime.utc(2026, 10, 19, 10).toIso8601String();
+  await syncen(a, [aender('list_item', iid, {'text': 'Hafermilch'}, itemRev)]);
+  final rB = await syncen(b, [aender('list_item', iid, {'doneAt': doneAt}, itemRev)]);
+  expect(rB.conflicts, isEmpty);
+  final merged = rB.changes.firstWhere((c) => c.id == iid);
+  expect(merged.fields['text'], 'Hafermilch');
+  expect(merged.fields['doneAt'], isNotNull);
+  final konflikt = await syncen(b, [aender('list_item', iid, {'text': 'Barista-Hafermilch'}, itemRev)]);
+  expect(konflikt.acked, hasLength(1));
+  expect(konflikt.conflicts.single.fields, {'text': 'Hafermilch'});
+  expect(konflikt.conflicts.single.serverRev, greaterThan(itemRev));
+
+  schritt('Sync: Löschen gewinnt gegen eine gleichzeitige Änderung (rejected deleted), Tombstone kommt bei B an');
+  await syncen(a, [weg('list_item', iid, itemRev)]);
+  final spaet = aender('list_item', iid, {'text': 'zu spät'}, itemRev);
+  final rDel = await syncen(b, [spaet], since: rB.rev);
+  expect(rDel.rejected.single.code, 'deleted');
+  expect(rDel.acked, isEmpty);
+  expect(rDel.changes.any((c) => c.id == iid && c.tombstone), isTrue);
+
+  schritt('Sync: Validierung (NUL, zu lang, unbekanntes Feld) lehnt nur die Op ab; Umschlag-Fehler 400, falsches Gerät 409');
+  final schlecht = [
+    neu('list', neueUuid(), {'name': 'a\u0000b'}),
+    neu('list', neueUuid(), {'name': 'x' * 101}),
+    neu('list', neueUuid(), {'name': 'ok', 'farbe': 'rot'}),
+  ];
+  final rBad = await syncen(a, schlecht);
+  expect(rBad.rejected.map((r) => r.code), ['invalid', 'invalid', 'invalid']);
+  await expectLater(
+    a.client.post('/sync', {'protocolVersion': 1, 'deviceId': await geraetId(a), 'sinceRev': -1, 'ops': []}),
+    throwsA(isA<ApiException>().having((e) => e.status, 'status', 400)),
+  );
+  await expectLater(
+    a.client.post('/sync', {'protocolVersion': 1, 'deviceId': neueUuid(), 'sinceRev': 0, 'ops': []}),
+    throwsA(isA<ApiException>().having((e) => e.status, 'status', 409).having((e) => e.code, 'code', 'device_mismatch')),
+  );
+
+  schritt('Sync: Rechte (Gast sieht nur Freigegebenes, Kind begrenzt, nicht sichtbare Datensätze unauffindbar)');
+  final lid2 = neueUuid(), iid2 = neueUuid();
+  await syncen(a, [neu('list', lid2, {'name': 'Grillfest', 'audience': 'parents'}), neu('list_item', iid2, {'listId': lid2, 'text': 'Würstchen'})]);
+  expect((await syncen(gast, [])).changes.where((c) => c.id == lid2), isEmpty);
+  expect((await syncen(kind, [])).changes.where((c) => c.id == lid2), isEmpty);
+  final gastNeu = neu('list', neueUuid(), {'name': 'Gast-Liste'});
+  expect((await syncen(gast, [gastNeu])).rejected.single.code, 'forbidden');
+  final gastAendern = aender('list', lid2, {'name': 'Gehackt'}, 1);
+  expect((await syncen(gast, [gastAendern])).rejected.single.code, 'not_found');
+  final kindAll = neu('list', neueUuid(), {'name': 'Kind-Liste', 'audience': 'all'});
+  expect((await syncen(kind, [kindAll])).rejected.single.code, 'forbidden');
+  final kindFamilie = neu('list', neueUuid(), {'name': 'Kinderliste'});
+  expect((await syncen(kind, [kindFamilie])).acked, [kindFamilie.opId]);
+  // Freigabe für alle: der Gast sieht Liste und Eintrag und darf abhaken, aber nichts ändern
+  final freigabe = await syncen(a, [aender('list', lid2, {'audience': 'all'}, 1)]);
+  expect(freigabe.rejected, isEmpty);
+  final gastSicht = await syncen(gast, []);
+  expect(gastSicht.changes.map((c) => c.id), containsAll([lid2, iid2]));
+  final itemSicht = gastSicht.changes.firstWhere((c) => c.id == iid2);
+  expect((await syncen(gast, [aender('list_item', iid2, {'doneAt': doneAt}, itemSicht.rev)], since: gastSicht.rev)).acked, hasLength(1));
+  expect((await syncen(gast, [aender('list_item', iid2, {'text': 'Hack'}, itemSicht.rev)], since: gastSicht.rev)).rejected.single.code, 'forbidden');
+  // Freigabe zurückgenommen: der Gast bekommt einen "hidden"-Tombstone ohne Inhalt
+  final stand = (await syncen(gast, [], since: gastSicht.rev)).rev;
+  await syncen(a, [aender('list', lid2, {'audience': 'parents'}, freigabe.rev)]);
+  final versteckt = await syncen(gast, [], since: stand);
+  final tomb = versteckt.changes.singleWhere((c) => c.entity == 'list');
+  expect(tomb.tombstone, isTrue);
+  expect(tomb.hidden, isTrue);
+  expect(tomb.fields, isEmpty);
+
+  schritt('Sync: Zuständigkeit setzen (wird beim Entfernen des Mitglieds bereinigt), WebSocket meldet "rev N"');
+  final iid3 = neueUuid();
+  await syncen(a, [neu('list_item', iid3, {'listId': lid, 'text': 'Kaffee', 'assigneeId': kindId})]);
+  final wsRevs = <int>[];
+  final socket = SyncSocket(
+    ticket: () => b.api.wsTicket(),
+    beiRev: wsRevs.add,
+    beiStatus: (_) {},
+    adresse: () => Uri.parse(server.replaceFirst('http', 'ws')).replace(path: '/ws'),
+  );
+  socket.start();
+  for (var i = 0; i < 50 && !socket.live; i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  expect(socket.live, isTrue, reason: 'WebSocket mit Ticket verbunden');
+  final nachSync = await syncen(a, [aender('list', lid, {'name': 'Wocheneinkauf'}, 1)]);
+  for (var i = 0; i < 30 && !wsRevs.contains(nachSync.rev); i++) {
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+  }
+  expect(wsRevs, contains(nachSync.rev), reason: 'der Hub meldet die neue Revision nach dem Commit');
+  socket.stop();
+}
+
+/// Offline/online mit echter lokaler Datenbank: zwei Geräte (SyncStore + SyncEngine) ändern gleichzeitig, eines war offline.
+Future<void> offlineOnlineVertrag({required Gegenstelle a, required Gegenstelle b}) async {
+  schritt('Sync offline/online: zwei lokale Datenbanken (SyncStore + SyncEngine), gleichzeitige Änderungen, Löschen');
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  AppDatabase neueDb() => AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  final dbA = neueDb(), dbB = neueDb();
+  addTearDown(dbA.close);
+  addTearDown(dbB.close);
+  final storeA = SyncStore(dbA), storeB = SyncStore(dbB);
+  final engineA = SyncEngine(store: storeA, api: a.api, geraeteId: () async => geraetId(a));
+  final engineB = SyncEngine(store: storeB, api: b.api, geraeteId: () async => geraetId(b));
+
+  final lid = neueUuid(), iid = neueUuid();
+  final jetzt = DateTime.now().toUtc().toIso8601String();
+  // A arbeitet "offline": nur lokale Änderungen
+  await storeA.aendern('list', lid, {'name': 'Packliste', 'kind': 'packing', 'audience': 'family'}, nurLokal: {'createdAt': jetzt});
+  await storeA.aendern('list_item', iid, {'listId': lid, 'text': 'Reisepässe', 'position': 0.0}, nurLokal: {'createdAt': jetzt});
+  expect(await dbA.select(dbA.listenEintraege).get(), hasLength(1));
+  expect(await storeA.offeneAnzahl(), 2);
+  // B sieht noch nichts von dieser Liste
+  expect((await engineB.abgleichen()).ok, isTrue);
+  expect((await dbB.select(dbB.listen).get()).where((l) => l.id == lid), isEmpty);
+  // A kommt online
+  final ea = await engineA.abgleichen();
+  expect(ea.ok, isTrue);
+  expect(await storeA.offeneAnzahl(), 0);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  expect((await dbB.select(dbB.listenEintraege).get()).singleWhere((e) => e.id == iid).inhalt, 'Reisepässe');
+
+  // beide ändern, B ist offline: A Text, B Abhaken; danach Konflikt auf demselben Feld
+  await storeA.aendern('list_item', iid, {'text': 'Reisepässe (alle)'});
+  await storeB.aendern('list_item', iid, {'doneAt': DateTime.now().toUtc().toIso8601String()});
+  await storeB.aendern('list_item', iid, {'text': 'Pässe'});
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final eb = await engineB.abgleichen();
+  expect(eb.ok, isTrue);
+  final beiB = (await dbB.select(dbB.listenEintraege).get()).singleWhere((e) => e.id == iid);
+  expect(beiB.doneAt, isNotNull, reason: 'Abhaken von B bleibt');
+  expect(beiB.inhalt, 'Reisepässe (alle)', reason: 'dasselbe Feld: Serverstand (A war zuerst) gilt');
+  expect(eb.hinweise, isNotEmpty);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final beiA = (await dbA.select(dbA.listenEintraege).get()).singleWhere((e) => e.id == iid);
+  expect(beiA.doneAt, isNotNull);
+  expect(beiA.inhalt, 'Reisepässe (alle)');
+
+  // A löscht die Liste, B ändert gleichzeitig einen Eintrag -> B bekommt den Hinweis, alles verschwindet
+  await storeA.loeschen('list', lid);
+  await storeB.aendern('list_item', iid, {'text': 'noch eine Änderung'});
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final eb2 = await engineB.abgleichen();
+  expect(eb2.ok, isTrue);
+  expect((await dbB.select(dbB.listen).get()).where((l) => l.id == lid), isEmpty);
+  expect((await dbB.select(dbB.listenEintraege).get()).where((e) => e.id == iid), isEmpty);
+  expect(eb2.hinweise.any((h) => h.text.contains('gelöscht')), isTrue);
+  expect(await storeB.offeneAnzahl(), 0);
+}
 
 void main() {
   test('Vertrag App <-> echter Server', timeout: const Timeout(Duration(minutes: 8)), () async {
@@ -414,6 +639,25 @@ void main() {
     web.client.csrfSetzen(webMe.csrfToken);
     expect((await web.api.geraete()).any((d) => d.current && d.platform == 'web'), isTrue);
 
+    // ---------------------------------------------------------------- Sync (Phase 1c)
+    schritt('Sync: zweites Gerät des Admin, Kind wieder als Kind (Rolle ändern widerruft die Sitzungen), Gast per Cookie');
+    final adminB = Gegenstelle(name: 'Zweitgerät B');
+    final adminBLogin = await mitWarten(() => adminB.api.passwortAnmelden(email: 'anna@beispiel.de', passwort: 'Contract-Passwort-12', wiederherstellungscode: neueCodes[5]));
+    await adminB.client.sitzungUebernehmen(adminBLogin.session);
+    try {
+      await admin.api.rolleAendern(kindId, Role.child);
+    } on ApiException catch (e) {
+      if (!e.istStepUp) rethrow;
+      await admin.api.stepUpCode(totp: await frischerCode(secretAdmin));
+      await admin.api.rolleAendern(kindId, Role.child);
+    }
+    final kind3 = Gegenstelle(name: 'Kinder-Handy 3');
+    final k3 = await kind3.api.wiederherstellungAnmelden(email: 'ben@beispiel.de', code: kReg.recoveryCodes[2]);
+    expect(k3.user.role, Role.child);
+    await kind3.client.sitzungUebernehmen(k3.session);
+    await syncVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
+    await offlineOnlineVertrag(a: admin, b: adminB);
+
     // ---------------------------------------------------------------- Zurücksetzen, Entfernen, Geräte, Abmelden
     schritt('Zurücksetzen: neue Einladung für dasselbe Konto (lookup zeigt reset + Name)');
     final resetInv = await admin.api.mitgliedZuruecksetzen(kindId, stunden: 2, pin: false);
@@ -432,8 +676,15 @@ void main() {
     final opa = (await admin.api.mitglieder()).firstWhere((m) => m.displayName == 'Opa');
     await admin.api.ablehnen(opa.id);
     expect((await admin.api.mitglieder()).any((m) => m.displayName == 'Opa'), isFalse);
+    final vorEntfernenRev = (await syncen(adminB, [])).rev;
     await admin.api.mitgliedEntfernen(kindId);
     expect((await admin.api.mitglieder()).any((m) => m.id == kindId), isFalse);
+    schritt('Sync: Verweise auf das entfernte Mitglied sind mit Änderungseintrag bereinigt');
+    final bereinigt = await syncen(adminB, [], since: vorEntfernenRev);
+    expect(bereinigt.rev, greaterThan(vorEntfernenRev));
+    final kaffee = (await syncen(adminB, [])).changes.firstWhere((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee');
+    expect(kaffee.fields['assigneeId'], isNull);
+    expect(bereinigt.changes.any((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee'), isTrue, reason: 'die Änderung kommt über den Strom');
     await expectLater(admin.api.mitgliedEntfernen(adminId), throwsA(isA<ApiException>()));
 
     schritt('Geräte: weiteres Gerät des Admin anlegen, einzeln abmelden, dann überall abmelden');

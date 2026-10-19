@@ -205,6 +205,22 @@ void main() {
     expect(b.sync.anfragen.where((r) => (r['ops'] as List).isNotEmpty).length, 3);
   });
 
+  test('abgebrochen (Abmelden während der Anfrage): die Antwort wird nicht mehr in die Datenbank geschrieben', () async {
+    await a.neueListe(_l1, 'Einkauf');
+    var abbruch = false;
+    a.server.on('POST /sync', (req) {
+      final antwort = a.sync.verarbeiten(req.json);
+      abbruch = true; // der Dienst wird gestoppt, während die Antwort unterwegs ist
+      return jsonAntwort(antwort);
+    });
+    await a.db.alleDatenLoeschen();
+    final e = await a.engine.abgleichen(abgebrochen: () => abbruch);
+    expect(e.ausgang, SyncAusgang.abgebrochen);
+    expect(await a.liste(_l1), isNull);
+    expect(await a.ausgang(), isEmpty);
+    expect(await a.store.sinceRev(), 0);
+  });
+
   group('Fehlerfälle', () {
     test('429: später wieder, mit der Wartezeit des Servers; Ausgang bleibt', () async {
       await a.neueListe(_l1, 'Einkauf');

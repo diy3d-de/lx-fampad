@@ -261,7 +261,11 @@ class _EintragBlattState extends State<_EintragBlatt> {
             onSubmitted: (_) => _speichern(),
           ),
           const SizedBox(height: 12),
-          Row(
+          // Wrap statt Row: bei großer Schrift rutscht ein Knopf in die nächste Zeile, statt zu überlaufen
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            runSpacing: 8,
             children: [
               TextButton.icon(
                 style: TextButton.styleFrom(foregroundColor: kDanger),
@@ -269,7 +273,6 @@ class _EintragBlattState extends State<_EintragBlatt> {
                 icon: const Icon(Icons.delete_outline),
                 label: const Text('Löschen'),
               ),
-              const Spacer(),
               FilledButton(onPressed: _speichern, child: const Text('Speichern')),
             ],
           ),

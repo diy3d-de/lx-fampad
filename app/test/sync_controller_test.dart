@@ -269,6 +269,30 @@ void main() {
     expect(anfragen(), n);
   });
 
+  testWidgets('Abmelden während eines Abgleichs: der Wiper hält den Sync an, die späte Antwort schreibt nichts in die geleerte Datenbank', (tester) async {
+    env = await angemeldeteUmgebung();
+    env.wiperEcht = true;
+    c = ProviderContainer(overrides: [...env.overrides, syncZufallProvider.overrideWithValue(_FesterZufall())]);
+    sync = c.read(syncProvider.notifier);
+    env.sync.andereAendert('list', '11111111-1111-4111-8111-111111111111', {'name': 'Einkauf'});
+    final tor = Completer<void>();
+    env.server.on('POST /sync', (req) async {
+      final antwort = env.sync.verarbeiten(req.json);
+      await tor.future;
+      return jsonAntwort(antwort);
+    });
+    sync.starten();
+    await ruhe(tester);
+    expect(c.read(syncProvider).status, SyncStatus.laeuft);
+    await c.read(localDataWiperProvider)(); // wie Abmelden
+    tor.complete();
+    await ruhe(tester, const Duration(seconds: 1));
+    expect(await env.db.select(env.db.listen).get(), isEmpty, reason: 'die Antwort kam nach dem Löschen und wurde verworfen');
+    expect(await env.db.select(env.db.syncMeta).get(), isEmpty);
+    expect(sync.aktiv, isFalse);
+    c.dispose();
+  });
+
   lauf('Hinweise (z. B. anderswo gelöscht) erscheinen im Zustand und lassen sich schließen; höchstens 5', (tester) async {
     await start(tester);
     final repo = c.read(listenRepositoryProvider);

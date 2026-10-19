@@ -95,6 +95,7 @@ class SyncStore {
   Future<void> aendern(String entity, String id, Json fields, {Json nurLokal = const {}}) => db.transaction(() async {
     final def = _entitaet(entity);
     final rev = await def.rev(db, id);
+    if (rev == null && !def.kannAnlegen(fields)) return; // Zeile gibt es nicht mehr (anderswo gelöscht): keine Teilzeile anlegen
     await def.schreiben(db, id, {...nurLokal, ...fields});
     final offen = await (db.select(db.outbox)
           ..where((o) => o.entity.equals(entity) & o.entityId.equals(id) & o.op.equals('upsert') & o.sentAt.isNull())

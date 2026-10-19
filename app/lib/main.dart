@@ -6,6 +6,7 @@ import 'app.dart';
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
 import 'data/database_provider.dart';
+import 'data/sync_state.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/auth/invite_intake.dart';
 
@@ -20,8 +21,9 @@ Future<void> main() async {
     ProviderScope(
       overrides: [
         inviteIntakeProvider.overrideWith(() => InviteIntake(vorhanden: link != null, anfang: link?.token)),
-        // Abmelden leert die lokale Datenbank (Phase 1c ergänzt die Fachtabellen in AppDatabase.alleDatenLoeschen)
-        localDataWiperProvider.overrideWith((ref) => () => ref.read(appDatabaseProvider).alleDatenLoeschen()),
+        // Abmelden leert die lokale Datenbank (Listen, Ausgang, Sync-Zustand); vorher wird der Sync angehalten, damit eine noch
+        // laufende Antwort nicht in die geleerte Datenbank schreibt
+        localDataWiperProvider.overrideWith(lokaleDatenWiper),
         // merkt den Besitzer der lokalen Daten: nur bei einer ANDEREN Person wird beim Anmelden geleert (nicht nach Sitzungsverlust)
         localDataOwnerProvider.overrideWith((ref) => DatenbankBesitzer(ref.read(appDatabaseProvider))),
       ],

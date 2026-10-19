@@ -69,7 +69,9 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         final ja = await bestaetigen(
           context,
           titel: 'Liste „${liste.name}“ löschen?',
-          text: anzahl == 0 ? 'Die Liste wird für alle gelöscht.' : 'Die Liste und ihre $anzahl Einträge werden für alle gelöscht.',
+          text: anzahl == 0
+              ? 'Die Liste wird für alle gelöscht.'
+              : (anzahl == 1 ? 'Die Liste und ihr Eintrag werden für alle gelöscht.' : 'Die Liste und ihre $anzahl Einträge werden für alle gelöscht.'),
           knopf: 'Löschen',
         );
         if (ja) {

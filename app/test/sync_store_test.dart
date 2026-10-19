@@ -129,6 +129,13 @@ void main() {
       expect(ops.first.opId, isNot(ops.last.opId));
     });
 
+    test('Änderung an einer Zeile, die es lokal nicht (mehr) gibt, legt keine Teilzeile und keine Op an', () async {
+      await store.aendern('list_item', _i1, {'text': 'Hafermilch'});
+      await store.aendern('list_item', _i1, {'doneAt': '2026-10-19T09:00:00.000Z'});
+      expect(await eintrag(_i1), isNull);
+      expect(await ausgang(), isEmpty);
+    });
+
     test('Löschen einer nie gesendeten Zeile verschwindet spurlos (auch die Ops der Einträge)', () async {
       await store.aendern('list', _l1, {'name': 'Einkauf'}, nurLokal: {'createdAt': '2026-10-19T08:00:00.000Z'});
       await store.aendern('list_item', _i1, {'listId': _l1, 'text': 'Milch'}, nurLokal: {'createdAt': '2026-10-19T08:00:00.000Z'});

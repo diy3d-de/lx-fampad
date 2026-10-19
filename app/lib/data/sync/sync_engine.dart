@@ -17,6 +17,9 @@ enum SyncAusgang {
   /// 426: die App ist zu alt für den Server (Pflicht-Update).
   updateNoetig,
 
+  /// Der Abgleich wurde abgebrochen (Abmelden, Stopp): die Antwort wird nicht mehr übernommen.
+  abgebrochen,
+
   /// Das Gerät passt nicht (mehr) zur Sitzung: /me neu laden, dann erneut versuchen.
   geraetFalsch,
 
@@ -52,7 +55,9 @@ class SyncEngine {
 
   SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 200, this.seite = 500});
 
-  Future<SyncErgebnis> abgleichen() async {
+  /// [abgebrochen] wird nach jeder Antwort geprüft: ist der Dienst inzwischen gestoppt (Abmelden löscht die Datenbank), wird nichts mehr
+  /// in die lokalen Tabellen geschrieben.
+  Future<SyncErgebnis> abgleichen({bool Function()? abgebrochen}) async {
     final hinweise = <SyncHinweis>[];
     var gesendet = 0;
     try {
@@ -64,6 +69,7 @@ class SyncEngine {
         final ops = await store.naechsteOps(maxOps);
         final since = await store.sinceRev();
         final res = await api.sync(deviceId: dev, sinceRev: since, ops: [for (final o in ops) SyncStore.alsOp(o)], limit: seite);
+        if (abgebrochen?.call() ?? false) return SyncErgebnis(SyncAusgang.abgebrochen, hinweise: hinweise, ops: gesendet);
         final bericht = await store.uebernehmen(res, ops);
         hinweise.addAll(bericht.hinweise);
         gesendet += res.acked.length;

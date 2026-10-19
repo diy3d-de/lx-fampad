@@ -18,6 +18,10 @@ abstract class SyncEntity {
   String get name;
   List<KindLink> get kinder => const [];
 
+  /// Reichen diese Felder, um die Zeile neu anzulegen? Ändert die Oberfläche eine Zeile, die es lokal nicht (mehr) gibt (z. B. weil sie
+  /// gerade anderswo gelöscht wurde), entsteht keine Teilzeile.
+  bool kannAnlegen(Json fields);
+
   /// Revision des Servers, auf der die lokale Zeile beruht (null: Zeile gibt es nicht; 0: noch nicht synchronisiert).
   Future<int?> rev(AppDatabase db, String id);
 
@@ -50,6 +54,9 @@ class ListenEntitaet extends SyncEntity {
 
   @override
   List<KindLink> get kinder => const [KindLink('list_item', 'listId')];
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['name']) != null;
 
   Selectable<Liste> _zeile(AppDatabase db, String id) => db.select(db.listen)..where((t) => t.id.equals(id));
 
@@ -103,6 +110,9 @@ class ListenEntitaet extends SyncEntity {
 class ListenEintraegeEntitaet extends SyncEntity {
   @override
   String get name => 'list_item';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['listId']) != null && _text(fields['text']) != null;
 
   Selectable<Listeneintrag> _zeile(AppDatabase db, String id) => db.select(db.listenEintraege)..where((t) => t.id.equals(id));
 

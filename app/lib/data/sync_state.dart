@@ -129,6 +129,9 @@ class SyncController extends Notifier<SyncState> {
   int _bekannteRev = 0;
   int _geraetVersuche = 0;
 
+  /// Zählt Starts und Stopps: eine Antwort, die erst nach dem Stopp eintrifft, wird nicht mehr in die Datenbank geschrieben.
+  int _generation = 0;
+
   SyncZeiten get _zeiten => ref.read(syncZeitenProvider);
 
   @override
@@ -146,6 +149,7 @@ class SyncController extends Notifier<SyncState> {
   void starten() {
     if (_aktiv) return;
     _aktiv = true;
+    _generation++;
     _fehlversuche = 0;
     _geraetVersuche = 0;
     _offenSub = ref.read(syncStoreProvider).offeneAenderungen().listen((n) {
@@ -161,6 +165,7 @@ class SyncController extends Notifier<SyncState> {
   void stoppen({bool zustandAendern = true}) {
     if (!_aktiv) return;
     _aktiv = false;
+    _generation++;
     _aufraeumen();
     if (zustandAendern) state = state.copyWith(status: SyncStatus.getrennt, live: false, meldungLoeschen: true);
   }
@@ -238,7 +243,8 @@ class SyncController extends Notifier<SyncState> {
       _backoffTimer = null;
     }
     state = state.copyWith(status: SyncStatus.laeuft);
-    final lauf = ref.read(syncEngineProvider).abgleichen();
+    final generation = _generation;
+    final lauf = ref.read(syncEngineProvider).abgleichen(abgebrochen: () => !_aktiv || generation != _generation);
     _laeuft = lauf;
     final SyncErgebnis e;
     try {
@@ -248,9 +254,9 @@ class SyncController extends Notifier<SyncState> {
     }
     if (!_aktiv) return;
     _ergebnis(e);
-    if (_nochmal) {
+    if (_nochmal && (e.ok || e.ausgang == SyncAusgang.abgebrochen)) {
       _nochmal = false;
-      if (e.ok && _aktiv) await synchronisieren();
+      if (_aktiv) await synchronisieren();
     }
   }
 
@@ -268,6 +274,9 @@ class SyncController extends Notifier<SyncState> {
         _backoffTimer = null;
         if (e.rev > _bekannteRev) _bekannteRev = e.rev;
         state = state.copyWith(status: SyncStatus.synchron, letzterAbgleich: DateTime.now(), meldungLoeschen: true, hinweise: hinweise);
+      case SyncAusgang.abgebrochen:
+        // der Dienst wurde gestoppt (oder neu gestartet): nichts mehr zu melden, der nächste Lauf folgt von selbst
+        state = state.copyWith(status: SyncStatus.synchron);
       case SyncAusgang.sitzungVerloren:
         // kein Wiederholen: der Auth-Zustand führt zur Anmeldung; nach erneuter Anmeldung startet HomeShell den Dienst neu
         state = state.copyWith(status: SyncStatus.getrennt, meldungLoeschen: true, hinweise: hinweise);
@@ -309,6 +318,13 @@ class SyncController extends Notifier<SyncState> {
 }
 
 final syncProvider = NotifierProvider<SyncController, SyncState>(SyncController.new);
+
+/// Für localDataWiperProvider (main.dart): hält den Sync an und löscht dann alle lokalen Daten (Listen, Ausgang, Sync-Zustand). Der Stopp
+/// kommt zuerst, damit eine noch laufende Antwort des Servers nicht in die geleerte Datenbank geschrieben wird.
+Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
+  ref.read(syncProvider.notifier).stoppen();
+  await ref.read(appDatabaseProvider).alleDatenLoeschen();
+};
 
 /// Fehlermeldung für die Anzeige (nie Interna).
 String syncMeldungFuer(SyncState s) {
