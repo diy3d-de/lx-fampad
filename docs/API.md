@@ -143,9 +143,9 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `POST /me/passkeys/verify` | alle, Step-up | `{ challengeId, response, label? }` → `{ id }` |
 | `DELETE /me/passkeys/:id` | alle, Step-up | entfernt einen Passkey; der letzte Zugang bleibt (`409 last_credential`) |
 | `POST /me/password/start` | alle, Step-up | `{ password }` (min. 12 Zeichen; nur ohne vorhandenes Passwort, sonst `409 password_exists`) → `{ challengeId, totpSecret, totpUri }`; es wird noch nichts gespeichert, ein neuer Start ersetzt den offenen Vorgang |
-| `POST /me/password/complete` | alle, Step-up | `{ challengeId, code }` (6-stelliger TOTP-Code) legt Passwort und TOTP atomar an → `{ ok }`; falscher Code `400 invalid_code` (zählt gegen die Sperre, `429 too_many_attempts`), fremde/abgelaufene Challenge `400 challenge_invalid` |
-| `POST /me/password/change` | alle, Step-up | `{ password }` ersetzt das Passwort (TOTP bleibt); ohne Passwort `409 no_password` |
-| `DELETE /me/password` | alle, Step-up | entfernt Passwort und TOTP, nur wenn ein Passkey bleibt (`409 last_credential`); ohne Passwort `409 no_password` |
+| `POST /me/password/complete` | alle, Step-up | `{ challengeId, code }` (6-stelliger TOTP-Code) legt Passwort und TOTP atomar an → `{ ok }`; falscher Code `400 invalid_code` (Audit `password_setup_failed`; zählt nur gegen einen eigenen Schlüssel je Person, ab 5 Fehlversuchen `429 too_many_attempts`, nicht gegen die Anmeldung), fremde/abgelaufene Challenge `400 challenge_invalid`. Danach sind alle anderen Sitzungen der Person beendet und das Step-up der aktuellen Sitzung verbraucht |
+| `POST /me/password/change` | alle, Step-up | `{ password }` ersetzt das Passwort (TOTP bleibt); ohne Passwort `409 no_password`. Beendet alle anderen Sitzungen der Person und verbraucht das Step-up (die nächste Aktion verlangt `403 step_up_required`) |
+| `DELETE /me/password` | alle, Step-up | entfernt Passwort und TOTP, nur wenn ein Passkey bleibt (`409 last_credential`); ohne Passwort `409 no_password`. Beendet alle anderen Sitzungen, verbraucht das Step-up und verwirft offene Einrichtungsvorgänge |
 | `POST /me/recovery-codes` | alle, Step-up | `{ recoveryCodes[10] }`; die alten Codes entfallen |
 | `GET /devices` | alle | `{ devices: [{ id, name, platform, appVersion, createdAt, lastSeenAt, current }] }` |
 | `DELETE /devices/:id` | alle | meldet ein eigenes Gerät ab |

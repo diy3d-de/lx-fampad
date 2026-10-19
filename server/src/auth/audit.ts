@@ -31,6 +31,7 @@ export type AuditEvent =
   | 'passkey_removed'
   | 'passkey_counter_regression'
   | 'password_added'
+  | 'password_setup_failed'
   | 'password_changed'
   | 'password_removed'
   | 'recovery_codes_created'

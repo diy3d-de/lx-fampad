@@ -433,6 +433,11 @@ export async function markStepUp(ctx: AuthContext, sessionId: string): Promise<D
   return now;
 }
 
+/** Verbraucht das Step-up der Sitzung (nach einer sensiblen Aktion muss die Person erneut bestätigen). */
+export async function consumeStepUp(exec: Executor, sessionId: string): Promise<void> {
+  await exec.update(sessions).set({ stepUpAt: null }).where(eq(sessions.id, sessionId));
+}
+
 /** Wiederverwendbare Prüfung für Tresor, Rollenänderung, Familie löschen, neuen Passkey: wirft 403 step_up_required. */
 export function requireStepUp(ctx: AuthContext, principal: SessionPrincipal): void {
   const age = principal.stepUpAt ? ctx.now().getTime() - principal.stepUpAt.getTime() : Number.POSITIVE_INFINITY;

@@ -7,15 +7,18 @@ import { credentials, webauthnChallenges } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import { peekChallenge, saveChallenge, takeChallenge } from './challenges.js';
-import type { AuthContext, RequestMeta } from './context.js';
+import type { AuthContext, Db, RequestMeta } from './context.js';
 import { randomToken } from './crypto.js';
 import { findAccountById } from './login.js';
-import { assertNotLocked, loginKeys, recordLoginFailure } from './lockout.js';
+import { assertNotLocked, clearFailures, recordFailure } from './lockout.js';
 import { assertPasswordPolicy, hashPassword } from './password.js';
 import { isUniqueViolation } from './register.js';
-import { requireStepUp } from './sessions.js';
+import { consumeStepUp, requireStepUp, revokeAllForUser } from './sessions.js';
 import { checkTotp, newTotpSecret, totpUri } from './totp.js';
 import type { SessionPrincipal } from './types.js';
+
+/** Eigener Sperrschlüssel für falsche Bestätigungscodes beim Einrichten (zählt nicht gegen die Anmeldung der Person). */
+const setupKey = (ctx: AuthContext, userId: string) => `pwsetup:${ctx.keys.hmac('password-setup', userId)}`;
 
 const notFound = () => new AppError(404, 'not_found');
 const challengeInvalid = () => new AppError(400, 'challenge_invalid', 'Der Vorgang ist abgelaufen. Bitte neu beginnen.');
@@ -36,12 +39,14 @@ export async function startAddPassword(ctx: AuthContext, p: SessionPrincipal, in
   const passwordHash = await hashPassword(input.password);
   const secret = newTotpSecret();
   // je Person höchstens ein offener Einrichtungsvorgang (ein neuer Start ersetzt den alten)
-  await ctx.db.delete(webauthnChallenges).where(and(eq(webauthnChallenges.userId, p.userId), eq(webauthnChallenges.purpose, 'add_password')));
-  const challengeId = await saveChallenge(ctx, {
-    purpose: 'add_password',
-    challenge: randomToken(16),
-    userId: p.userId,
-    data: { passwordHash, totpSecretEnc: ctx.keys.encrypt('totp', secret, `totp:${p.userId}`) },
+  const challengeId = await ctx.db.transaction(async (tx) => {
+    await tx.delete(webauthnChallenges).where(and(eq(webauthnChallenges.userId, p.userId), eq(webauthnChallenges.purpose, 'add_password')));
+    return saveChallenge({ ...ctx, db: tx as unknown as Db }, {
+      purpose: 'add_password',
+      challenge: randomToken(16),
+      userId: p.userId,
+      data: { passwordHash, totpSecretEnc: ctx.keys.encrypt('totp', secret, `totp:${p.userId}`) },
+    });
   });
   return { challengeId, totpSecret: secret, totpUri: totpUri(secret, account.email, ctx.config.auth.rpName) };
 }
@@ -51,7 +56,7 @@ export async function finishAddPassword(ctx: AuthContext, p: SessionPrincipal, i
   requireStepUp(ctx, p);
   const account = await findAccountById(ctx, p.userId, p.familyId);
   if (!account) throw notFound();
-  await assertNotLocked(ctx, loginKeys(ctx, meta.ip, account.email));
+  await assertNotLocked(ctx, [setupKey(ctx, p.userId)]);
   const peek = await peekChallenge(ctx, input.challengeId, 'add_password');
   // fremde Challenges verhalten sich wie abgelaufene
   if (!peek || peek.userId !== p.userId) throw challengeInvalid();
@@ -59,7 +64,8 @@ export async function finishAddPassword(ctx: AuthContext, p: SessionPrincipal, i
   const secret = ctx.keys.decrypt('totp', data.totpSecretEnc, `totp:${p.userId}`);
   const step = await checkTotp(secret, input.code, ctx.now());
   if (step === null) {
-    await recordLoginFailure(ctx, meta.ip, account.email);
+    await recordFailure(ctx, setupKey(ctx, p.userId), ctx.config.auth.lockoutPairThreshold);
+    await writeAudit(ctx, ctx.db, { event: 'password_setup_failed', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
     throw new AppError(400, 'invalid_code', 'Der Code stimmt nicht. Bitte erneut versuchen.');
   }
   // erst jetzt einlösen (atomar); parallele Doppel-Abschlüsse scheitern hier
@@ -73,7 +79,10 @@ export async function finishAddPassword(ctx: AuthContext, p: SessionPrincipal, i
         { userId: p.userId, type: 'totp', secret: data.totpSecretEnc, lastTimeStep: step, createdAt: now },
       ]);
       await writeAudit(ctx, tx, { event: 'password_added', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
+      await revokeAllForUser(ctx, tx, p.userId, { exceptSessionId: p.sessionId });
+      await consumeStepUp(tx, p.sessionId);
     });
+    await clearFailures(ctx, setupKey(ctx, p.userId));
   } catch (err) {
     if (isUniqueViolation(err)) throw passwordExists();
     throw err;
@@ -99,6 +108,8 @@ export async function changePassword(ctx: AuthContext, p: SessionPrincipal, inpu
     await tx.update(credentials).set({ revokedAt: now }).where(eq(credentials.id, old.id));
     await tx.insert(credentials).values({ userId: p.userId, type: 'password', secret: passwordHash, createdAt: now });
     await writeAudit(ctx, tx, { event: 'password_changed', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
+    await revokeAllForUser(ctx, tx, p.userId, { exceptSessionId: p.sessionId });
+    await consumeStepUp(tx, p.sessionId);
   });
 }
 
@@ -119,6 +130,9 @@ export async function removePassword(ctx: AuthContext, p: SessionPrincipal, meta
     for (const c of own.filter((x) => x.type === 'password' || x.type === 'totp')) {
       await tx.update(credentials).set({ revokedAt: now }).where(eq(credentials.id, c.id));
     }
+    await tx.delete(webauthnChallenges).where(and(eq(webauthnChallenges.userId, p.userId), eq(webauthnChallenges.purpose, 'add_password')));
     await writeAudit(ctx, tx, { event: 'password_removed', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
+    await revokeAllForUser(ctx, tx, p.userId, { exceptSessionId: p.sessionId });
+    await consumeStepUp(tx, p.sessionId);
   });
 }
