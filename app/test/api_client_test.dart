@@ -174,7 +174,7 @@ void main() {
       var offline = true;
       final server = FakeServer()
         ..on('POST /auth/refresh', (_) async {
-          if (offline) throw http.ClientException('Failed host lookup: familie.test');
+          if (offline) throw VerbindungsaufbauFehler('Failed host lookup: familie.test');
           return jsonAntwort({'session': appSession(access: 'access-2', refresh: 'refresh-2')});
         })
         ..json('GET /me', meJson());
@@ -216,6 +216,109 @@ void main() {
       await expectLater(client.get('/me'), throwsA(isA<ApiException>()));
       expect(verloren, isTrue);
       expect(server.log, isEmpty);
+    });
+  });
+
+  group('401-Fachcodes und Sitzungswechsel', () {
+    test('step_up_failed (401 mit Fachcode): keine Erneuerung, kein zweiter Versuch, die Sitzung bleibt', () async {
+      final server = FakeServer()..on('POST /auth/step-up/code', (_) => fehler(401, 'step_up_failed'));
+      final (client, store) = await angemeldeterClient(server);
+      var verloren = false;
+      client.onSessionLost = (_) => verloren = true;
+      await expectLater(
+        client.post('/auth/step-up/code', {'totp': '123456'}),
+        throwsA(isA<ApiException>().having((e) => e.code, 'code', 'step_up_failed').having((e) => e.kind, 'kind', ApiErrorKind.sonstiges)),
+      );
+      expect(server.anfragen('POST /auth/step-up/code'), hasLength(1), reason: 'ein zweiter Versuch zählte doppelt gegen die Sperre');
+      expect(server.anfragen('POST /auth/refresh'), isEmpty);
+      expect(verloren, isFalse);
+      expect((await store.readTokens())!.refreshToken, 'refresh-1');
+    });
+
+    test('andere 401-Fachcodes (invalid_credentials) und 401 ohne Code (Proxy-Seite) erneuern nicht und beenden die Sitzung nicht', () async {
+      for (final antwort in [fehler(401, 'invalid_credentials'), http.Response('<html>Unauthorized</html>', 401)]) {
+        final server = FakeServer()..on('GET /x', (_) => antwort);
+        final (client, store) = await angemeldeterClient(server);
+        var verloren = false;
+        client.onSessionLost = (_) => verloren = true;
+        await expectLater(client.get('/x'), throwsA(isA<ApiException>()));
+        expect(server.anfragen('GET /x'), hasLength(1));
+        expect(server.anfragen('POST /auth/refresh'), isEmpty);
+        expect(verloren, isFalse);
+        expect(await store.readTokens(), isNotNull);
+      }
+    });
+
+    test('401 invalid_token: einmal erneuern und wiederholen', () async {
+      var n = 0;
+      final server = FakeServer()
+        ..on('GET /me', (r) => ++n == 1 ? fehler(401, 'invalid_token') : jsonAntwort(meJson()))
+        ..json('POST /auth/refresh', {'session': appSession(access: 'access-2', refresh: 'refresh-2')});
+      final (client, _) = await angemeldeterClient(server);
+      await client.get('/me');
+      expect(n, 2);
+      expect(server.anfragen('POST /auth/refresh'), hasLength(1));
+    });
+
+    test('Abmelden während einer Erneuerung: das Ergebnis wird verworfen, die Token werden nicht zurückgeschrieben', () async {
+      final freigabe = Completer<void>();
+      final server = FakeServer()
+        ..on('POST /auth/refresh', (_) async {
+          await freigabe.future;
+          return jsonAntwort({'session': appSession(access: 'access-2', refresh: 'refresh-2')});
+        })
+        ..json('GET /me', meJson());
+      final (client, store) = await angemeldeterClient(server, accessBis: DateTime.now().subtract(const Duration(minutes: 1)));
+      var verloren = false;
+      client.onSessionLost = (_) => verloren = true;
+      final aufruf = client.get('/me');
+      final erwartet = expectLater(aufruf, throwsA(isA<ApiException>().having((e) => e.kind, 'kind', ApiErrorKind.nichtAngemeldet)));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await client.sitzungVerwerfen(); // Person meldet sich ab
+      freigabe.complete();
+      await erwartet;
+      expect(await store.readTokens(), isNull, reason: 'abgemeldet bleibt abgemeldet');
+      expect(verloren, isFalse);
+      expect(server.anfragen('GET /me'), isEmpty);
+    });
+
+    test('Eine alte Erneuerung, die erst nach einer neuen Anmeldung scheitert, beendet die neue Sitzung nicht', () async {
+      final freigabe = Completer<void>();
+      final server = FakeServer()
+        ..on('POST /auth/refresh', (_) async {
+          await freigabe.future;
+          return fehler(401, 'invalid_token');
+        })
+        ..json('GET /me', meJson());
+      final (client, store) = await angemeldeterClient(server, accessBis: DateTime.now().subtract(const Duration(minutes: 1)));
+      var verloren = false;
+      client.onSessionLost = (_) => verloren = true;
+      final aufruf = client.get('/me');
+      final erwartet = expectLater(aufruf, throwsA(isA<ApiException>()));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await client.sitzungUebernehmen(SessionDto.fromJson(appSession(access: 'neu-a', refresh: 'neu-r'))); // Personenwechsel
+      freigabe.complete();
+      await erwartet;
+      expect(verloren, isFalse);
+      expect((await store.readTokens())!.refreshToken, 'neu-r');
+    });
+
+    test('Eine späte 401-Antwort einer alten Sitzung beendet die neue Sitzung nicht (Web)', () async {
+      final freigabe = Completer<void>();
+      final server = FakeServer()
+        ..on('GET /me', (_) async {
+          await freigabe.future;
+          return fehler(401, 'unauthenticated');
+        });
+      final (client, _) = await angemeldeterClient(server, web: true);
+      var verloren = false;
+      client.onSessionLost = (_) => verloren = true;
+      final erwartet = expectLater(client.get('/me'), throwsA(isA<ApiException>()));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await client.sitzungUebernehmen(SessionDto.fromJson(webSession()));
+      freigabe.complete();
+      await erwartet;
+      expect(verloren, isFalse);
     });
   });
 
@@ -313,9 +416,11 @@ void main() {
     });
   });
 
-  test('vorDemSenden erkennt nur sichere Fälle', () {
-    expect(vorDemSenden(http.ClientException('Failed host lookup: x')), isTrue);
-    expect(vorDemSenden(http.ClientException('Connection refused')), isTrue);
+  test('vorDemSenden entscheidet nach dem Typ der Ausnahme, nie nach dem Text', () {
+    expect(vorDemSenden(VerbindungsaufbauFehler('irgendein Text')), isTrue);
+    // gleicher Text wie ein Verbindungsfehler, aber kein VerbindungsaufbauFehler: unklarer Ausgang
+    expect(vorDemSenden(http.ClientException('Failed host lookup: x')), isFalse);
+    expect(vorDemSenden(http.ClientException('Connection refused')), isFalse);
     expect(vorDemSenden(http.ClientException('Connection reset by peer')), isFalse);
     expect(vorDemSenden(http.ClientException('Connection closed before full header was received')), isFalse);
     expect(vorDemSenden(TimeoutException('x')), isFalse);

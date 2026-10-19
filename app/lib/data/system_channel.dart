@@ -45,6 +45,9 @@ class SystemChannel {
   /// Link, mit dem die App gestartet wurde (einmalig; danach null).
   Future<String?> startLink() => _aufrufen<String>('initialLink');
 
+  /// Kopiert einen Geheimtext als "vertraulich" in die Zwischenablage (Android 13+: keine Vorschau). false = nicht möglich (Web, Tests).
+  Future<bool> geheimKopieren(String text) async => (await _aufrufen<bool>('copySensitive', {'text': text})) == true;
+
   /// Schaltet den Bildschirmfoto-Schutz (FLAG_SECURE) ein; zählt verschachtelte Aufrufe mit.
   Future<void> schuetzen() async {
     _geschuetzt++;

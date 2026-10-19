@@ -169,21 +169,16 @@ ApiException netzwerkFehler(Object e) {
   return ApiException.keineVerbindung;
 }
 
-/// true, wenn der Fehler mit Sicherheit auftrat, BEVOR die Anfrage den Server erreichen konnte
-/// (kein Netz, Adresse nicht auflösbar, Verbindung abgelehnt). Dann ist ein erneuter Versuch gefahrlos.
-/// Bei Zeitüberschreitung oder Abbruch mitten in der Übertragung ist unklar, ob der Server die Anfrage verarbeitet hat
-/// (beim Refresh-Token wäre ein blindes Wiederholen fatal: der Server widerruft bei Wiederverwendung die ganze Familie).
-bool vorDemSenden(Object e) {
-  if (e is TimeoutException) return false;
-  // TLS-Aushandlung scheitert, bevor irgendeine Anfrage gesendet wird (dart:io ist hier nicht importierbar: Web)
-  if (e.runtimeType.toString().contains('HandshakeException')) return true;
-  if (e is http.ClientException) {
-    final m = e.message.toLowerCase();
-    return m.contains('failed host lookup') ||
-        m.contains('connection refused') ||
-        m.contains('network is unreachable') ||
-        m.contains('no route to host') ||
-        m.contains('no address associated');
-  }
-  return false;
+/// Der Verbindungsaufbau scheiterte (Adresse nicht auflösbar, Verbindung abgelehnt, Netz weg, TLS-Aushandlung, Zeitlimit beim
+/// Aufbau), bevor irgendein Byte der Anfrage gesendet wurde. Wirft der Android-Client ([PhasenClient]); der Browser-Client kann
+/// das nicht unterscheiden.
+class VerbindungsaufbauFehler extends http.ClientException {
+  VerbindungsaufbauFehler(super.message, [super.uri]);
 }
+
+/// true, wenn der Fehler mit Sicherheit auftrat, BEVOR die Anfrage den Server erreichen konnte ([VerbindungsaufbauFehler]).
+/// Dann ist ein erneuter Versuch gefahrlos. Bei Zeitüberschreitung der Antwort oder Abbruch mitten in der Übertragung ist unklar,
+/// ob der Server die Anfrage verarbeitet hat (beim Refresh-Token wäre ein blindes Wiederholen riskant: der Server widerruft bei
+/// Wiederverwendung die Token-Familie, nur ein kurzes Toleranzfenster fängt eine verlorene Antwort auf).
+/// Die Einstufung hängt nur vom Typ der Ausnahme ab, nie vom Meldungstext.
+bool vorDemSenden(Object e) => e is VerbindungsaufbauFehler;

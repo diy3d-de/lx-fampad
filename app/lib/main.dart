@@ -22,6 +22,8 @@ Future<void> main() async {
         inviteIntakeProvider.overrideWith(() => InviteIntake(vorhanden: link != null, anfang: link?.token)),
         // Abmelden leert die lokale Datenbank (Phase 1c ergänzt die Fachtabellen in AppDatabase.alleDatenLoeschen)
         localDataWiperProvider.overrideWith((ref) => () => ref.read(appDatabaseProvider).alleDatenLoeschen()),
+        // merkt den Besitzer der lokalen Daten: nur bei einer ANDEREN Person wird beim Anmelden geleert (nicht nach Sitzungsverlust)
+        localDataOwnerProvider.overrideWith((ref) => DatenbankBesitzer(ref.read(appDatabaseProvider))),
       ],
       child: const FampadApp(),
     ),

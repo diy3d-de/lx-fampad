@@ -125,4 +125,27 @@ void main() {
       expect(f, throwsA(isA<ApiException>().having((e) => e.kind, 'kind', ApiErrorKind.protokoll)));
     }
   });
+
+  group('Listen sind pro Eintrag tolerant', () {
+    test('Eintrag mit unbekannter Rolle, unbekanntem Status oder fehlendem Feld wird übersprungen, der Rest bleibt', () {
+      final liste = parseListe([
+        userJson(),
+        userJson(role: 'superuser', name: 'Neu'),
+        userJson(status: 'suspended', name: 'Neu2'),
+        {'id': 'x'},
+        'kein Objekt',
+        userJson(id: 'z', name: 'Ben', role: 'child'),
+      ], UserDto.fromJson);
+      expect(liste.map((u) => u.displayName), ['Anna', 'Ben']);
+    });
+
+    test('Einladungen mit unbekanntem Status werden übersprungen', () {
+      final l = parseListe([einladungJson(), einladungJson(id: 'i2', status: 'archived'), einladungJson(id: 'i3', status: 'used')], InviteDto.fromJson);
+      expect(l.map((i) => i.id), ['i1', 'i3']);
+    });
+
+    test('Ist die Antwort gar keine Liste, bleibt es ein Fehler', () {
+      expect(() => parseListe({'a': 1}, UserDto.fromJson), throwsA(isA<ApiException>()));
+    });
+  });
 }

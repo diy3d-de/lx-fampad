@@ -54,6 +54,10 @@ class TestUmgebung {
   final FakePasskeys passkeys;
   final bool web;
   int geloescht = 0;
+
+  /// Wirft der Wiper (lokale Daten löschen)? Zählt trotzdem als Aufruf.
+  bool wiperFehler = false;
+  final owner = MemoryLocalDataOwner();
   late final ApiClient client = ApiClient(client: server.client, store: store, web: web, base: 'https://familie.test');
 
   TestUmgebung(this.server, {this.web = false, MemoryTokenStore? store, FakePasskeys? passkeys})
@@ -76,7 +80,11 @@ class TestUmgebung {
     tokenStoreProvider.overrideWithValue(store),
     apiClientProvider.overrideWithValue(client),
     passkeyServiceProvider.overrideWithValue(passkeys),
-    localDataWiperProvider.overrideWithValue(() async => geloescht++),
+    localDataWiperProvider.overrideWithValue(() async {
+      geloescht++;
+      if (wiperFehler) throw StateError('Löschen fehlgeschlagen');
+    }),
+    localDataOwnerProvider.overrideWithValue(owner),
   ];
 
   ProviderContainer container() {

@@ -1,4 +1,5 @@
 // Token-Speicher (flutter_secure_storage mit Mock) und Passkey-Hilfen (Optionen normalisieren, Fehler abbilden).
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
@@ -51,6 +52,28 @@ void main() {
       expect(await s.readProfile(), isNull);
       FlutterSecureStorage.setMockInitialValues({'lx_fampad_tokens': '{"a":1}'});
       expect(await SecureTokenStore().readTokens(), isNull);
+    });
+  });
+
+  group('SecureTokenStore bei Keystore-Fehlern', () {
+    test('PlatformException beim Lesen (z. B. BadPaddingException): Eintrag gelöscht, null, kein Absturz', () async {
+      final kaputt = _KaputterKeystore();
+      final s = SecureTokenStore(kaputt);
+      expect(await s.readTokens(), isNull);
+      expect(await s.readProfile(), isNull);
+      expect(kaputt.geloescht, containsAll(['lx_fampad_tokens', 'lx_fampad_profile']));
+      expect(await s.readDeviceId(), isNull);
+    });
+
+    test('auch wenn das Löschen scheitert, kommt null zurück', () async {
+      final s = SecureTokenStore(_KaputterKeystore(loeschenScheitert: true));
+      expect(await s.readTokens(), isNull);
+    });
+
+    test('Abmelden versucht beide Einträge zu löschen, auch wenn der erste Fehler wirft', () async {
+      final kaputt = _KaputterKeystore(loeschenScheitert: true);
+      await expectLater(SecureTokenStore(kaputt).clearTokens(), throwsA(isA<PlatformException>()));
+      expect(kaputt.versuche, ['lx_fampad_tokens', 'lx_fampad_profile']);
     });
   });
 
@@ -131,4 +154,25 @@ void main() {
       expect(e.message, contains('Passwort mit Code'));
     });
   });
+}
+
+/// FlutterSecureStorage, dessen Lesen mit einer PlatformException scheitert (Keystore-Schlüssel nicht mehr nutzbar).
+class _KaputterKeystore extends Fake implements FlutterSecureStorage {
+  final bool loeschenScheitert;
+  final geloescht = <String>[];
+  final versuche = <String>[];
+  _KaputterKeystore({this.loeschenScheitert = false});
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) {
+    final key = invocation.namedArguments[#key] as String?;
+    if (invocation.memberName == #read) return Future<String?>.error(PlatformException(code: 'Exception encountered', message: 'BadPaddingException'));
+    if (invocation.memberName == #delete) {
+      versuche.add(key ?? '');
+      if (loeschenScheitert) return Future<void>.error(PlatformException(code: 'delete'));
+      geloescht.add(key ?? '');
+      return Future<void>.value();
+    }
+    return super.noSuchMethod(invocation);
+  }
 }

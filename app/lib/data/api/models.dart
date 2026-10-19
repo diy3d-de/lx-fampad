@@ -13,6 +13,21 @@ List<Json> asJsonList(Object? v) {
   return [for (final e in v) asJson(e)];
 }
 
+/// Liest eine Liste Eintrag für Eintrag: Ein Eintrag, den die App nicht versteht (z. B. unbekannte Rolle oder unbekannter Status
+/// einer neueren Server-Version), wird übersprungen, statt die ganze Liste zu verwerfen. Ist die Antwort keine Liste, bleibt es ein Fehler.
+List<T> parseListe<T>(Object? v, T Function(Object? raw) eintrag) {
+  if (v is! List) _fehler();
+  final out = <T>[];
+  for (final e in v) {
+    try {
+      out.add(eintrag(e));
+    } on ApiException {
+      // unbekannter oder fehlerhafter Eintrag: überspringen
+    }
+  }
+  return out;
+}
+
 String _s(Json m, String k) {
   final v = m[k];
   return v is String ? v : _fehler();

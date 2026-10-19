@@ -17,12 +17,17 @@ const minZiel = 44.0;
 /// Aufrufe des System-Kanals (Gerätename, Bildschirmschutz ...) seit dem Start der App im Test.
 final kanalAufrufe = <MethodCall>[];
 
+/// Antwortet die Android-Seite auf "copySensitive" mit Erfolg (sonst fällt die App auf die normale Zwischenablage zurück)?
+bool kanalGeheimOk = false;
+
 /// Ersetzt die Android-Seite des System-Kanals (ohne Mock bliebe ein Kanalaufruf im Test hängen).
 void kanalMocken() {
   kanalAufrufe.clear();
+  kanalGeheimOk = false;
   final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
   messenger.setMockMethodCallHandler(const MethodChannel(kSystemChannel), (call) async {
     kanalAufrufe.add(call);
+    if (call.method == 'copySensitive') return kanalGeheimOk;
     return call.method == 'deviceName' ? 'Pixel 9' : null;
   });
   addTearDown(() => messenger.setMockMethodCallHandler(const MethodChannel(kSystemChannel), null));

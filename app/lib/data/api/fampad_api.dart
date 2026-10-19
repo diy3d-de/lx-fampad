@@ -126,7 +126,7 @@ class FampadApi {
   }
 
   Future<List<CredentialDto>> zugaenge() async =>
-      [for (final m in asJsonList((await client.get('/me/credentials'))['credentials'])) CredentialDto.fromJson(m)];
+      parseListe((await client.get('/me/credentials'))['credentials'], CredentialDto.fromJson);
 
   Future<ChallengeDto> passkeyHinzufuegenOptionen() async => ChallengeDto.fromJson(await client.post('/me/passkeys/options', const {}));
 
@@ -147,7 +147,7 @@ class FampadApi {
     return [for (final c in codes) c is String ? c : throw ApiException.unerwarteteAntwort];
   }
 
-  Future<List<DeviceDto>> geraete() async => [for (final m in asJsonList((await client.get('/devices'))['devices'])) DeviceDto.fromJson(m)];
+  Future<List<DeviceDto>> geraete() async => parseListe((await client.get('/devices'))['devices'], DeviceDto.fromJson);
 
   Future<void> geraetAbmelden(String id) async {
     await client.delete('/devices/$id');
@@ -155,7 +155,7 @@ class FampadApi {
 
   // ----------------------------------------------------------- Mitglieder
 
-  Future<List<UserDto>> mitglieder() async => [for (final m in asJsonList((await client.get('/members'))['members'])) UserDto.fromJson(m)];
+  Future<List<UserDto>> mitglieder() async => parseListe((await client.get('/members'))['members'], UserDto.fromJson);
 
   Future<void> rolleAendern(String id, Role rolle) async {
     await client.patch('/members/$id/role', {'role': rolle.wire});
@@ -181,7 +181,7 @@ class FampadApi {
   /// Der Server antwortet mit `{ invites: [...] }` (docs/API.md nennt nur die Liste).
   Future<List<InviteDto>> einladungen() async {
     final r = await client.get('/invites');
-    return [for (final m in asJsonList(r['invites'])) InviteDto.fromJson(m)];
+    return parseListe(r['invites'], InviteDto.fromJson);
   }
 
   Future<CreatedInvite> einladungErstellen({required Role rolle, required int stunden, required bool pin, bool? freigabe}) async =>

@@ -7,10 +7,15 @@
 //
 // Refresh-Regeln (der Server erkennt Wiederverwendung strikt und widerruft die ganze Token-Familie):
 //   - Erneuerungen laufen nie parallel: alle Aufrufer warten auf dieselbe Anfrage (ein Future).
-//   - Bricht die Verbindung ab, ohne dass sicher ist, ob der Server die Anfrage bekam (Zeitüberschreitung, Abbruch mitten
-//     in der Übertragung), wird das Refresh-Token NICHT erneut gesendet (es könnte schon eingelöst sein). Die lokale Sitzung
-//     wird verworfen und die Person meldet sich neu an. Nur Fehler vor dem Senden (kein Netz, Adresse nicht auflösbar) lassen
-//     die Token unangetastet; der nächste Aufruf versucht es dann wieder.
+//   - Bricht die Verbindung ab, ohne dass sicher ist, ob der Server die Anfrage bekam (Zeitüberschreitung der Antwort, Abbruch
+//     mitten in der Übertragung), wird das Refresh-Token NICHT erneut gesendet (es könnte schon eingelöst sein). Die lokale
+//     Sitzung wird verworfen und die Person meldet sich neu an. Nur Fehler beim Verbindungsaufbau (VerbindungsaufbauFehler:
+//     kein Netz, Adresse nicht auflösbar, abgelehnt, Zeitlimit beim Aufbau) lassen die Token unangetastet; der nächste Aufruf
+//     versucht es dann wieder. Die Einstufung hängt nur vom Typ der Ausnahme ab (api_error.dart), nie vom Text.
+//   - 401 führt nur bei den Codes unauthenticated/invalid_token zu Erneuerung und Wiederholung (andere 401-Fachcodes wie
+//     step_up_failed zählen serverseitig gegen die Sperre und werden nie wiederholt).
+//   - Sitzungsgeneration: Melden sich Person oder Sitzung ab bzw. um, während eine Erneuerung oder Anfrage läuft, verfällt deren
+//     Ergebnis (kein Zurückschreiben alter Token, keine Abmeldung der neuen Sitzung).
 //   - Token erscheinen nie in Logs oder Fehlermeldungen.
 import 'dart:async';
 import 'dart:convert';
@@ -47,6 +52,9 @@ class ApiClient {
   String? _csrf;
   Future<void>? _refresh;
 
+  /// Zählt Sitzungswechsel (Anmelden, Verwerfen). Späte Ergebnisse alter Sitzungen werden damit erkannt und verworfen.
+  int _gen = 0;
+
   ApiClient({
     required this._client,
     required this._store,
@@ -72,6 +80,12 @@ class ApiClient {
 
   /// Übernimmt die Sitzung aus einer Anmeldeantwort (Web: CSRF-Token, App: Token in den sicheren Speicher).
   Future<void> sitzungUebernehmen(SessionDto s) async {
+    _gen++; // neue Sitzung: laufende Erneuerungen und Anfragen der alten verfallen
+    _refresh = null;
+    await _sitzungSchreiben(s);
+  }
+
+  Future<void> _sitzungSchreiben(SessionDto s) async {
     if (!s.istApp) {
       _csrf = s.csrfToken;
       return;
@@ -92,6 +106,8 @@ class ApiClient {
 
   /// Verwirft alle lokalen Sitzungsdaten (kein Serveraufruf).
   Future<void> sitzungVerwerfen() async {
+    _gen++; // eine gerade laufende Erneuerung darf nichts mehr zurückschreiben
+    _refresh = null;
     _csrf = null;
     _tokens = null;
     _tokensGeladen = true;
@@ -109,7 +125,9 @@ class ApiClient {
     return _tokens;
   }
 
-  Future<void> _verloren(SessionLostReason grund) async {
+  /// Verwirft die Sitzung und meldet den Verlust. Gehört der Anlass zu einer älteren Sitzung ([gen] weicht ab), passiert nichts.
+  Future<void> _verloren(SessionLostReason grund, int gen) async {
+    if (gen != _gen) return;
     await sitzungVerwerfen();
     onSessionLost?.call(grund);
   }
@@ -122,16 +140,21 @@ class ApiClient {
   Future<Json> delete(String path) => _anfrage('DELETE', path, null, true);
 
   Future<Json> _anfrage(String method, String path, Object? body, bool auth) async {
+    final gen = _gen;
     var gesendetesToken = await _vorbereiten(auth);
     var res = await _einmal(method, path, body, auth, gesendetesToken);
-    if (auth && res.statusCode == 401 && !_web && gesendetesToken != null) {
-      // Access-Token abgelehnt (z. B. abgelaufen/Uhr): einmal erneuern, aber nur, wenn nicht schon jemand anderes erneuert hat
+    if (auth && res.statusCode == 401 && !_web && gesendetesToken != null && _istSitzungsCode(_fehlercode(res))) {
+      // Access-Token abgelehnt (z. B. abgelaufen/Uhr): einmal erneuern, aber nur, wenn nicht schon jemand anderes erneuert hat.
+      // Andere 401-Fachcodes (step_up_failed ...) bleiben, wie sie sind: kein Erneuern, kein zweiter Versuch.
       await _nachUnauthorized(gesendetesToken);
       gesendetesToken = (await _tokenLaden())?.accessToken;
       res = await _einmal(method, path, body, auth, gesendetesToken);
     }
-    return _auswerten(res, auth);
+    return _auswerten(res, auth, gen);
   }
+
+  /// 401-Codes, die "Sitzung bzw. Token ungültig" bedeuten (alle anderen 401 sind Fachfehler der Aktion).
+  static bool _istSitzungsCode(String code) => code == 'unauthenticated' || code == 'invalid_token';
 
   /// Gibt das zu sendende Access-Token zurück (App) und erneuert es bei Bedarf.
   Future<String?> _vorbereiten(bool auth) async {
@@ -176,7 +199,7 @@ class ApiClient {
     }
   }
 
-  Future<Json> _auswerten(http.Response res, bool auth) async {
+  Future<Json> _auswerten(http.Response res, bool auth, int gen) async {
     final status = res.statusCode;
     Object? daten;
     if (res.bodyBytes.isNotEmpty) {
@@ -194,10 +217,10 @@ class ApiClient {
     final code = daten is Map && daten['error'] is String ? daten['error'] as String : '';
     final retry = int.tryParse(res.headers['retry-after'] ?? '');
     final fehler = ApiException.vonAntwort(status: status, code: code, retryAfterSekunden: retry);
-    // 401 an einer geschützten Stelle = Sitzung weg (Anmeldefehler "invalid_credentials" bei auth:false nicht)
-    if (auth && status == 401 && code != 'step_up_failed') {
-      await _verloren(SessionLostReason.abgelaufen);
-      throw ApiException(kind: ApiErrorKind.nichtAngemeldet, status: 401, code: code.isEmpty ? 'unauthenticated' : code, message: fehler.message);
+    // 401 mit Sitzungscode an einer geschützten Stelle = Sitzung weg (Fachfehler wie step_up_failed oder invalid_credentials nicht)
+    if (auth && status == 401 && _istSitzungsCode(code)) {
+      await _verloren(SessionLostReason.abgelaufen, gen);
+      throw ApiException(kind: ApiErrorKind.nichtAngemeldet, status: 401, code: code, message: fehler.message);
     }
     throw fehler;
   }
@@ -215,18 +238,22 @@ class ApiClient {
   Future<void> _erneuern() {
     final laufend = _refresh;
     if (laufend != null) return laufend;
-    final f = _erneuernEinmal().whenComplete(() => _refresh = null);
+    late final Future<void> f;
+    f = _erneuernEinmal().whenComplete(() {
+      if (identical(_refresh, f)) _refresh = null;
+    });
     _refresh = f;
     return f;
   }
 
   Future<void> _erneuernEinmal() async {
+    final gen = _gen;
     final t = await _tokenLaden();
     if (t == null) {
       throw const ApiException(kind: ApiErrorKind.nichtAngemeldet, status: 401, code: 'unauthenticated', message: 'Du bist nicht angemeldet.');
     }
     if (!t.refreshExpiresAt.isAfter(_now())) {
-      await _verloren(SessionLostReason.abgelaufen);
+      await _verloren(SessionLostReason.abgelaufen, gen);
       throw const ApiException(
         kind: ApiErrorKind.nichtAngemeldet,
         status: 401,
@@ -244,7 +271,7 @@ class ApiClient {
     } catch (e) {
       if (vorDemSenden(e)) throw ApiException.keineVerbindung; // Token unangetastet, später erneut versuchen
       // Unklar, ob der Server das Token eingelöst hat: nicht wiederholen, sondern neu anmelden
-      await _verloren(SessionLostReason.unsicher);
+      await _verloren(SessionLostReason.unsicher, gen);
       throw const ApiException(
         kind: ApiErrorKind.nichtAngemeldet,
         status: 0,
@@ -253,15 +280,17 @@ class ApiClient {
       );
     }
     if (res.statusCode == 200) {
+      // Wurde die Sitzung inzwischen beendet oder ersetzt (Abmelden, Personenwechsel), verfällt das Ergebnis: nichts zurückschreiben
+      if (gen != _gen) throw _sitzungGeaendert;
       try {
         final daten = jsonDecode(utf8.decode(res.bodyBytes));
         final s = SessionDto.fromJson(asJson(daten)['session']);
         if (!s.istApp) throw ApiException.unerwarteteAntwort;
-        await sitzungUebernehmen(s);
+        await _sitzungSchreiben(s);
         return;
       } catch (_) {
         // Antwort unlesbar oder Speichern fehlgeschlagen: das alte Token ist verbraucht
-        await _verloren(SessionLostReason.unsicher);
+        await _verloren(SessionLostReason.unsicher, gen);
         throw const ApiException(
           kind: ApiErrorKind.nichtAngemeldet,
           status: 0,
@@ -274,14 +303,21 @@ class ApiClient {
     final retry = int.tryParse(res.headers['retry-after'] ?? '');
     final fehler = ApiException.vonAntwort(status: res.statusCode, code: code, retryAfterSekunden: retry);
     if (res.statusCode == 401 || res.statusCode == 400 || res.statusCode == 403 || res.statusCode == 404) {
-      await _verloren(SessionLostReason.abgelaufen);
+      await _verloren(SessionLostReason.abgelaufen, gen);
       throw ApiException(kind: ApiErrorKind.nichtAngemeldet, status: res.statusCode, code: code, message: 'Deine Anmeldung ist abgelaufen. Bitte melde dich neu an.');
     }
     // 429/503/5xx: der Server hat das Token nicht eingelöst (Fehler vor der Verarbeitung bzw. Transaktion zurückgerollt)
     throw fehler;
   }
 
-  String _fehlercode(http.Response res) {
+  static const _sitzungGeaendert = ApiException(
+    kind: ApiErrorKind.nichtAngemeldet,
+    status: 401,
+    code: 'session_changed',
+    message: 'Du bist nicht angemeldet.',
+  );
+
+  static String _fehlercode(http.Response res) {
     try {
       final d = jsonDecode(utf8.decode(res.bodyBytes));
       if (d is Map && d['error'] is String) return d['error'] as String;

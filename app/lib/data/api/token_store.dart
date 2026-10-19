@@ -46,7 +46,7 @@ abstract class TokenStore {
   /// Geräte-ID der letzten Anmeldung (wird bei der nächsten mitgesendet, damit der Server das Gerät wiedererkennt).
   Future<String?> readDeviceId();
 
-  /// Profil der letzten Sitzung für den Offline-Start (kein Geheimnis: Name, Rolle, Farbe).
+  /// Profil der letzten Sitzung für den Offline-Start (Name, E-Mail, Rolle, Farbe; liegt im Keystore, wird beim Abmelden gelöscht).
   Future<Map<String, dynamic>?> readProfile();
   Future<void> writeProfile(Map<String, dynamic> profile);
 }
@@ -82,6 +82,9 @@ class MemoryTokenStore implements TokenStore {
   Future<void> writeProfile(Map<String, dynamic> profile) async => _profile = profile;
 }
 
+/// Android Keystore über flutter_secure_storage. Das Lesen fängt ALLE Fehler ab (PlatformException, BadPaddingException nach
+/// Keystore-Verlust oder Backup-Wiederherstellung, kaputtes JSON ...): der unlesbare Eintrag wird gelöscht und die Person gilt als
+/// nicht angemeldet (null), statt dass die App beim Start hängt oder abstürzt.
 class SecureTokenStore implements TokenStore {
   static const _kTokens = 'lx_fampad_tokens';
   static const _kDevice = 'lx_fampad_device_id';
@@ -90,16 +93,26 @@ class SecureTokenStore implements TokenStore {
   final FlutterSecureStorage _s;
   SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
 
-  @override
-  Future<StoredTokens?> readTokens() async {
-    final raw = await _s.read(key: _kTokens);
-    if (raw == null) return null;
+  /// Liest und decodiert einen Eintrag; bei jedem Fehler wird er gelöscht und null geliefert.
+  Future<T?> _lesen<T>(String key, T? Function(Object? json) lesen) async {
     try {
-      return StoredTokens.fromJson(jsonDecode(raw));
-    } on FormatException {
-      return null;
+      final raw = await _s.read(key: key);
+      if (raw == null) return null;
+      final wert = lesen(jsonDecode(raw));
+      if (wert != null) return wert;
+    } catch (_) {
+      // unlesbar (Keystore-Schlüssel weg, beschädigte Daten ...): wie nicht vorhanden behandeln
     }
+    try {
+      await _s.delete(key: key);
+    } catch (_) {
+      // auch Löschen kann scheitern; der nächste Start versucht es erneut
+    }
+    return null;
   }
+
+  @override
+  Future<StoredTokens?> readTokens() => _lesen(_kTokens, StoredTokens.fromJson);
 
   @override
   Future<void> writeTokens(StoredTokens tokens) async {
@@ -109,24 +122,29 @@ class SecureTokenStore implements TokenStore {
 
   @override
   Future<void> clearTokens() async {
-    await _s.delete(key: _kTokens);
-    await _s.delete(key: _kProfile);
+    // beide Einträge versuchen, auch wenn der erste Fehler wirft; der erste Fehler geht danach weiter
+    Object? erster;
+    for (final key in [_kTokens, _kProfile]) {
+      try {
+        await _s.delete(key: key);
+      } catch (e) {
+        erster ??= e;
+      }
+    }
+    if (erster != null) throw erster;
   }
 
   @override
-  Future<String?> readDeviceId() => _s.read(key: _kDevice);
-
-  @override
-  Future<Map<String, dynamic>?> readProfile() async {
-    final raw = await _s.read(key: _kProfile);
-    if (raw == null) return null;
+  Future<String?> readDeviceId() async {
     try {
-      final v = jsonDecode(raw);
-      return v is Map<String, dynamic> ? v : null;
-    } on FormatException {
+      return await _s.read(key: _kDevice);
+    } catch (_) {
       return null;
     }
   }
+
+  @override
+  Future<Map<String, dynamic>?> readProfile() => _lesen(_kProfile, (v) => v is Map<String, dynamic> ? v : null);
 
   @override
   Future<void> writeProfile(Map<String, dynamic> profile) => _s.write(key: _kProfile, value: jsonEncode(profile));
