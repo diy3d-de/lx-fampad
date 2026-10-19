@@ -173,6 +173,11 @@ export const devices = pgTable(
      * change_log dürfen erst entfernt werden, wenn alle Geräte der Familie sie mit last_rev kennen.
      */
     lastRev: bigint('last_rev', { mode: 'number' }).notNull().default(0),
+    /**
+     * Das Gerät muss neu synchronisieren (sinceRev 0), weil sich seine Sicht geändert hat (Rolle gewechselt, Mitglied entfernt):
+     * der Sync antwortet resync_required, bis das Gerät mit sinceRev 0 neu beginnt. Der Client leert dann seine Fachtabellen.
+     */
+    resyncRequired: boolean('resync_required').notNull().default(false),
     createdAt: createdAt(),
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     /** Abgemeldetes Gerät: erscheint nicht mehr in der Liste; der Aufräum-Job löscht die Zeile später. */
@@ -325,13 +330,20 @@ export const appliedOps = pgTable(
     /** acked (übernommen, ggf. mit Konflikten) | rejected (abgelehnt, dann code). Ein wiederholter Upload liefert dasselbe Ergebnis. */
     status: text('status').notNull().default('acked'),
     code: text('code'),
-    /** Konflikte der Op (Felder mit Serverwert), damit eine Wiederholung dieselbe Antwort bekommt. */
-    conflicts: jsonb('conflicts').$type<Array<{ fields: Record<string, unknown>; serverRev: number }>>().notNull().default([]),
+    /**
+     * Konflikte der Op: nur die Namen der Felder, die nicht übernommen wurden (nie Werte: Werte könnten bei einer Wiederholung
+     * Inhalte offenlegen, die die Person inzwischen nicht mehr sehen darf). Eine Wiederholung prüft die Rechte neu und liefert den aktuellen Stand.
+     */
+    conflicts: jsonb('conflicts').$type<Array<{ fields: string[]; serverRev: number }>>().notNull().default([]),
+    /** Ziel der Op (für die Konflikt-Antwort einer Wiederholung). */
+    entity: text('entity'),
+    entityId: uuid('entity_id'),
     createdAt: createdAt(),
   },
   (t) => [
     primaryKey({ columns: [t.familyId, t.opId] }),
     index('applied_ops_created_idx').on(t.createdAt),
+    index('applied_ops_device_idx').on(t.deviceId, t.createdAt),
     check('applied_ops_status_ck', sql`${t.status} in ('acked', 'rejected')`),
   ],
 );

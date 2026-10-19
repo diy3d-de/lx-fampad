@@ -104,6 +104,8 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
       throw new AppError(409, 'last_admin', 'Der letzte Admin kann nicht herabgestuft werden.');
     }
     await tx.update(memberships).set({ role }).where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)));
+    // die Sicht der Person auf die Daten ändert sich: ihre Geräte müssen den lokalen Stand verwerfen und neu synchronisieren
+    await tx.update(devices).set({ resyncRequired: true }).where(and(eq(devices.familyId, p.familyId), eq(devices.userId, targetId)));
     // Rollenwechsel: alle Sitzungen der Person enden (auch ihre WebSockets), sie meldet sich mit der neuen Rolle neu an
     await revokeAllForUser(ctx, tx, targetId);
     // Herabgestuft: ihre noch offenen Einladungen (mit der alten Rolle erstellt) enden ebenfalls

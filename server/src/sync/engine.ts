@@ -10,10 +10,12 @@
 //    bleibt, die Antwort nennt ihn in `conflicts`. Die Reihenfolge bestimmt der Server, nie die Uhr des Clients.
 //  - Verschiedene Felder verschiedener Geräte werden zusammengeführt (Abhaken gewinnt nicht gegen Umbenennen).
 //  - Löschen gewinnt: ein Update auf einen gelöschten Datensatz wird mit `deleted` abgelehnt, ein Löschen wirkt immer.
-import { and, count, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { AuthContext, Executor } from '../auth/context.js';
 import { appliedOps, changeLog, families, memberships } from '../db/schema.js';
-import { authorize, mayRead, type Actor, type Facts } from './permissions.js';
+import type { Role } from '../auth/types.js';
+import { AppError } from '../errors.js';
+import { authorize, mayRead, rolesThatMayRead, type Actor, type Facts } from './permissions.js';
 import { columnOf, syncColumns, type EntityDef, type Registry, type Row } from './registry.js';
 import type { ConflictOut, ParsedOp, RejectCode } from './types.js';
 
@@ -23,6 +25,8 @@ export interface OpOutcome {
   /** Revision, unter der die Op übernommen wurde (null: ohne Wirkung oder abgelehnt). */
   rev: number | null;
   conflicts: Array<{ fields: Record<string, unknown>; serverRev: number }>;
+  /** Rollen, die die Änderung (vorher oder nachher) sehen dürfen; nur bei einer frisch angewendeten Op mit Wirkung. */
+  roles?: Role[];
 }
 
 const rejected = (code: RejectCode): OpOutcome => ({ status: 'rejected', code, rev: null, conflicts: [] });
@@ -229,10 +233,11 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     .values(row as never)
     .onConflictDoNothing({ target: c.id })
     .returning({ id: c.id });
-  if (inserted.length === 0) return rejected('id_taken');
+  // die ID gehört einem fremden Datensatz (auch einer anderen Familie): nicht verraten, dass es ihn gibt
+  if (inserted.length === 0) return rejected('not_found');
   env.revs.next();
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: true, changes: wireRow(def, row) });
-  return { status: 'acked', rev, conflicts: [] };
+  return { status: 'acked', rev, conflicts: [], roles: rolesThatMayRead(def.rules, def.factsForCreate(env.actor, values, parentFacts)) };
 }
 
 async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, supplied: Row): Promise<OpOutcome> {
@@ -296,9 +301,11 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
   const wireChanges: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(changed)) wireChanges[name] = wireValue(def, name, value) ?? null;
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: false, changes: wireChanges });
+  // wer die Änderung sehen darf: Sicht vorher und nachher (bei geänderter Freigabe erfahren auch die, die die Sicht verlieren, davon)
+  const roles = [...new Set([...rolesThatMayRead(def.rules, facts), ...rolesThatMayRead(def.rules, await factsOf(env, def, { ...row, ...changed }))])];
   // Freigabe geändert: untergeordnete Datensätze neu anstoßen, damit Geräte, die sie jetzt sehen dürfen, sie bekommen
   if (def.visibilityFields?.some((f) => f in changed)) await touchChildren(env, def, op.id);
-  return { status: 'acked', rev, conflicts };
+  return { status: 'acked', rev, conflicts, roles };
 }
 
 async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Promise<OpOutcome> {
@@ -309,7 +316,7 @@ async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Pro
   if (row.deletedAt) return { status: 'acked', rev: null, conflicts: [] }; // schon gelöscht: nichts zu tun
   if (decision !== 'ok') return rejected(decision);
   const rev = await tombstoneTree(env, def, row);
-  return { status: 'acked', rev, conflicts: [] };
+  return { status: 'acked', rev, conflicts: [], roles: rolesThatMayRead(def.rules, facts) };
 }
 
 /** Bewertet eine Op im Rahmen einer geöffneten Transaktion (die Familienzeile ist gesperrt). */
@@ -337,48 +344,98 @@ export interface AppliedOp {
   committedRev: number | null;
 }
 
-/** Wendet eine Op an (eine Transaktion, idempotent über applied_ops). */
+/** Zeitlimits einer Op in der Datenbank (Millisekunden). */
+export interface OpTimeouts {
+  lockMs: number;
+  statementMs: number;
+}
+
+/** PostgreSQL-Fehlercode (auch aus der Ursache, in die Drizzle den Fehler einpackt). */
+function pgCode(err: unknown): string | undefined {
+  for (let e: unknown = err, depth = 0; e && typeof e === 'object' && depth < 4; e = (e as { cause?: unknown }).cause, depth++) {
+    const code = (e as { code?: unknown }).code;
+    if (typeof code === 'string') return code;
+  }
+  return undefined;
+}
+
+const busy = () => new AppError(503, 'server_busy', 'Der Server ist gerade ausgelastet. Bitte gleich erneut versuchen.', { 'retry-after': '2' });
+
+/**
+ * Konflikte einer wiederholten Op: gespeichert sind nur Feldnamen. Die Rechte werden neu geprüft; wer den Datensatz inzwischen nicht mehr
+ * sehen darf (oder wenn er gelöscht ist), bekommt keine Werte. Sonst gilt der aktuelle Stand des Servers.
+ */
+async function replayConflicts(
+  env: Pick<EngineEnv, 'tx' | 'registry' | 'familyId' | 'actor'>,
+  prior: { entity: string | null; entityId: string | null; conflicts: Array<{ fields: string[]; serverRev: number }> },
+  op: ParsedOp,
+): Promise<OpOutcome['conflicts']> {
+  if (prior.conflicts.length === 0) return [];
+  const def = env.registry.get(prior.entity ?? op.entity);
+  if (!def) return [];
+  const row = await loadRow(env.tx, def, env.familyId, prior.entityId ?? op.id);
+  if (!row || row.deletedAt || !mayRead(def.rules, env.actor, await factsOf(env, def, row))) return [];
+  return prior.conflicts.map((c) => ({
+    fields: Object.fromEntries(c.fields.filter((f) => Object.hasOwn(def.fields, f)).map((f) => [f, wireValue(def, f, row[f]) ?? null])),
+    serverRev: Number(row.rev),
+  }));
+}
+
+/** Wendet eine Op an (eine Transaktion, idempotent über applied_ops; Zeitlimits: Überlast wird zu 503 statt zu hängenden Anfragen). */
 export async function applyOp(
   ctx: Pick<AuthContext, 'db' | 'now'>,
   registry: Registry,
-  input: { actor: Actor; familyId: string; deviceId: string | null; op: ParsedOp },
+  input: { actor: Actor; familyId: string; deviceId: string | null; op: ParsedOp; timeouts?: OpTimeouts },
 ): Promise<AppliedOp> {
-  const { actor, familyId, deviceId, op } = input;
-  return ctx.db.transaction(async (tx) => {
-    // Sperre: ab hier ist der Schreiber der einzige dieser Familie bis zum Commit
-    const [family] = await tx.select({ rev: families.currentRev }).from(families).where(eq(families.id, familyId)).for('update');
-    if (!family) return { outcome: rejected('not_found'), committedRev: null };
-    const [prior] = await tx
-      .select()
-      .from(appliedOps)
-      .where(and(eq(appliedOps.familyId, familyId), eq(appliedOps.opId, op.opId)));
-    if (prior) {
-      if (prior.deviceId !== deviceId) return { outcome: rejected('duplicate_op'), committedRev: null };
-      const outcome: OpOutcome = {
-        status: prior.status === 'rejected' ? 'rejected' : 'acked',
-        ...(prior.code ? { code: prior.code as RejectCode } : {}),
-        rev: prior.rev,
-        conflicts: prior.conflicts,
-      };
-      return { outcome, committedRev: null };
-    }
-    const revs = new RevCounter(family.rev);
-    const env: EngineEnv = { tx, registry, familyId, actor, deviceId, authorId: actor.userId, now: ctx.now(), revs };
-    const outcome = await evaluateOp(env, op);
-    if (outcome.status === 'rejected' && revs.changed) throw new Error('Abgelehnte Op hat eine Revision vergeben');
-    if (revs.changed) await tx.update(families).set({ currentRev: revs.rev }).where(eq(families.id, familyId));
-    await tx.insert(appliedOps).values({
-      familyId,
-      opId: op.opId,
-      deviceId,
-      rev: outcome.rev,
-      status: outcome.status,
-      code: outcome.code ?? null,
-      conflicts: outcome.conflicts,
-      createdAt: env.now,
+  const { actor, familyId, deviceId, op, timeouts } = input;
+  try {
+    return await ctx.db.transaction(async (tx) => {
+      if (timeouts) {
+        await tx.execute(sql`select set_config('lock_timeout', ${String(timeouts.lockMs)}, true), set_config('statement_timeout', ${String(timeouts.statementMs)}, true)`);
+      }
+      // Sperre: ab hier ist der Schreiber der einzige dieser Familie bis zum Commit
+      const [family] = await tx.select({ rev: families.currentRev }).from(families).where(eq(families.id, familyId)).for('update');
+      if (!family) return { outcome: rejected('not_found'), committedRev: null };
+      const [prior] = await tx
+        .select()
+        .from(appliedOps)
+        .where(and(eq(appliedOps.familyId, familyId), eq(appliedOps.opId, op.opId)));
+      if (prior) {
+        if (prior.deviceId !== deviceId) return { outcome: rejected('duplicate_op'), committedRev: null };
+        const outcome: OpOutcome = {
+          status: prior.status === 'rejected' ? 'rejected' : 'acked',
+          ...(prior.code ? { code: prior.code as RejectCode } : {}),
+          rev: prior.rev,
+          conflicts: prior.status === 'rejected' ? [] : await replayConflicts({ tx, registry, familyId, actor }, prior, op),
+        };
+        return { outcome, committedRev: null };
+      }
+      const revs = new RevCounter(family.rev);
+      const env: EngineEnv = { tx, registry, familyId, actor, deviceId, authorId: actor.userId, now: ctx.now(), revs };
+      const outcome = await evaluateOp(env, op);
+      if (outcome.status === 'rejected' && revs.changed) throw new Error('Abgelehnte Op hat eine Revision vergeben');
+      if (revs.changed) await tx.update(families).set({ currentRev: revs.rev }).where(eq(families.id, familyId));
+      await tx.insert(appliedOps).values({
+        familyId,
+        opId: op.opId,
+        deviceId,
+        rev: outcome.rev,
+        status: outcome.status,
+        code: outcome.code ?? null,
+        // nur die Namen der Felder, nie die Werte (siehe schema.ts)
+        conflicts: outcome.conflicts.map((c) => ({ fields: Object.keys(c.fields), serverRev: c.serverRev })),
+        entity: op.entity,
+        entityId: op.id,
+        createdAt: env.now,
+      });
+      return { outcome, committedRev: revs.changed ? revs.rev : null };
     });
-    return { outcome, committedRev: revs.changed ? revs.rev : null };
-  });
+  } catch (err) {
+    // 55P03: Sperre nicht rechtzeitig bekommen, 57014: Anweisung zu lange gelaufen
+    const code = pgCode(err);
+    if (code === '55P03' || code === '57014') throw busy();
+    throw err;
+  }
 }
 
 export function toConflicts(op: ParsedOp, outcome: OpOutcome): ConflictOut[] {

@@ -4,7 +4,13 @@
 // Der Strom ist zustandsbasiert: das change_log nennt, WAS sich seit sinceRev geändert hat; geliefert wird der aktuelle Stand des
 // Datensatzes (nur der jeweils letzte Eintrag je Datensatz; ersetzte Einträge werden übersprungen). Bei sinceRev 0 ist das der
 // Snapshot (ohne Tombstones). Verliert eine Person die Sicht auf einen Datensatz (Freigabe zurückgenommen), bekommt sie einen
-// Tombstone mit `hidden` (nur die ID, kein Inhalt), damit die App ihre Kopie entfernt.
+// Tombstone mit `hidden` (nur die ID, kein Inhalt), damit die App ihre Kopie entfernt. Dasselbe gilt für gelöschte Datensätze, die die
+// Person nicht (mehr) sehen darf: sonst bliebe eine zuvor sichtbare, dann unsichtbar gemachte und gelöschte Liste als Geist stehen.
+// Das verrät IDs nie sichtbarer gelöschter Datensätze (siehe docs/DATENSCHUTZ-ENTWURF.md).
+//
+// Mehrseitiger Snapshot: Die erste Seite (sinceRev 0) legt die Ziel-Revision fest (Stand der Familie) und nennt sie als `snapshotRev`.
+// Folgeseiten senden sie zurück (sinceRev ist der Cursor): sie prüfen nie gegen purged_rev (Tombstones sind für einen Snapshot ohne
+// Belang), liefern nur Einträge bis zur Ziel-Revision und nie Tombstones. Danach beginnt der normale Delta-Lauf ab der Ziel-Revision.
 import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
 import type { AuthContext, Executor } from '../auth/context.js';
 import { changeLog, families } from '../db/schema.js';
@@ -19,6 +25,8 @@ export interface PullResult {
   changes: ChangeOut[];
   hasMore: boolean;
   next: number;
+  /** Nur bei einem laufenden Snapshot (es folgen weitere Seiten). */
+  snapshotRev?: number;
 }
 
 type RowMap = Map<string, Map<string, Row>>;
@@ -54,7 +62,7 @@ function factsFrom(registry: Registry, rows: RowMap, def: EntityDef, row: Row): 
 export async function pullChanges(
   ctx: Pick<AuthContext, 'db'>,
   registry: Registry,
-  input: { actor: Actor; familyId: string; sinceRev: number; limit: number },
+  input: { actor: Actor; familyId: string; sinceRev: number; limit: number; snapshotRev?: number | undefined; forceResync?: boolean },
 ): Promise<PullResult> {
   const { actor, familyId, sinceRev, limit } = input;
   // eine Momentaufnahme für Stand der Familie, Protokoll und Zeilen
@@ -62,19 +70,30 @@ export async function pullChanges(
     async (tx) => {
       const [family] = await tx.select({ rev: families.currentRev, purged: families.purgedRev }).from(families).where(eq(families.id, familyId));
       if (!family) return { status: 'ok' as const, rev: 0, changes: [], hasMore: false, next: 0 };
-      // Gerät kennt Löschungen nicht mehr (bereinigt) oder ist "aus der Zukunft" (Datenbank zurückgespielt): von vorn beginnen
-      if (sinceRev > family.rev || (sinceRev > 0 && sinceRev < family.purged)) {
-        return { status: 'resync_required' as const, rev: family.rev, changes: [], hasMore: false, next: 0 };
-      }
+      const resync = { status: 'resync_required' as const, rev: family.rev, changes: [], hasMore: false, next: 0 };
+      // die Sicht des Geräts hat sich geändert (Rolle gewechselt): alles verwerfen und neu beginnen
+      if (input.forceResync) return resync;
+      // laufender Snapshot: Folgeseite (sinceRev ist der Cursor, snapshotRev die Ziel-Revision); sonst Start oder normaler Delta-Lauf
+      const following = sinceRev > 0 && input.snapshotRev !== undefined && input.snapshotRev > sinceRev;
+      const snapshotMode = following || sinceRev === 0;
+      const target = following ? (input.snapshotRev as number) : family.rev;
+      // "aus der Zukunft" (Datenbank zurückgespielt): von vorn beginnen
+      if (sinceRev > family.rev || target > family.rev) return resync;
+      // Gerät kennt Löschungen nicht mehr (bereinigt): von vorn beginnen (ein laufender Snapshot braucht keine Tombstones)
+      if (!following && sinceRev > 0 && sinceRev < family.purged) return resync;
       const entries = await tx
         .select()
         .from(changeLog)
-        .where(and(eq(changeLog.familyId, familyId), gt(changeLog.rev, sinceRev), lte(changeLog.rev, family.rev)))
+        .where(and(eq(changeLog.familyId, familyId), gt(changeLog.rev, sinceRev), lte(changeLog.rev, target)))
         .orderBy(asc(changeLog.rev))
         .limit(limit + 1);
-      const hasMore = entries.length > limit;
-      const page = hasMore ? entries.slice(0, limit) : entries;
-      const next = hasMore ? (page[limit - 1]?.rev ?? sinceRev) : family.rev;
+      const more = entries.length > limit;
+      const page = more ? entries.slice(0, limit) : entries;
+      // Seite voll: weiter ab dem letzten Eintrag. Letzte Seite eines Snapshots: ist die Familie weitergekommen, folgt der Delta-Lauf ab der Ziel-Revision.
+      const cursor = more ? (page[limit - 1]?.rev ?? sinceRev) : target;
+      const hasMore = more || (snapshotMode && family.rev > target);
+      const next = hasMore ? cursor : family.rev;
+      const snapshotRev = more && snapshotMode ? target : undefined;
 
       const rows: RowMap = new Map();
       for (const def of registry.list()) {
@@ -89,15 +108,22 @@ export async function pullChanges(
         const row = rows.get(e.entity)?.get(e.entityId);
         if (!def || !row) continue; // unbekannte Entität oder bereits bereinigt
         const visible = mayRead(def.rules, actor, factsFrom(registry, rows, def, row));
+        const current = Number(row.rev) === e.rev; // sonst ersetzt durch einen späteren Eintrag
         if (visible) {
-          if (Number(row.rev) !== e.rev) continue; // ersetzt durch einen späteren Eintrag
+          if (!current) continue;
           if (row.deletedAt) {
-            if (sinceRev > 0) changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, fields: {} });
+            if (!snapshotMode) changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, fields: {} });
           } else {
             changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: false, fields: wireRow(def, row) });
           }
+        } else if (!snapshotMode && row.deletedAt) {
+          // gelöscht und nicht sichtbar: die Person kannte den Datensatz womöglich vorher (Sicht inzwischen entzogen)
+          if (current && e.tombstone && !hiddenSent.has(`${e.entity}:${e.entityId}`)) {
+            hiddenSent.add(`${e.entity}:${e.entityId}`);
+            changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
+          }
         } else if (
-          sinceRev > 0 &&
+          !snapshotMode &&
           !e.created &&
           !e.tombstone &&
           def.visibilityFields?.some((f) => f in e.changes) &&
@@ -107,7 +133,7 @@ export async function pullChanges(
           changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
         }
       }
-      return { status: 'ok' as const, rev: family.rev, changes, hasMore, next };
+      return { status: 'ok' as const, rev: family.rev, changes, hasMore, next, ...(snapshotRev !== undefined ? { snapshotRev } : {}) };
     },
     { isolationLevel: 'repeatable read', accessMode: 'read only' },
   );

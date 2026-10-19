@@ -3,7 +3,7 @@
 //    oder sie älter als 90 Tage sind. Mit ihnen verschwinden ihre Protokolleinträge.
 //  - Ersetzte Protokolleinträge (nicht mehr der aktuelle Stand ihres Datensatzes) werden nach 90 Tagen entfernt.
 //  - Inhalte (change_log.changes) gelöschter Datensätze sind schon beim Löschen geleert; der Job stellt das als Sicherheitsnetz nochmals her.
-//  - Verarbeitete Ops (applied_ops) werden nach 90 Tagen entfernt.
+//  - Verarbeitete Ops (applied_ops) werden nach 90 Tagen entfernt, abgelehnte schon nach 7 Tagen.
 //  - families.purged_rev merkt sich die höchste entfernte Revision: Geräte, die dahinter zurückliegen, müssen neu synchronisieren.
 import { and, eq, inArray, isNotNull, lt, or, sql } from 'drizzle-orm';
 import { getTableName } from 'drizzle-orm';
@@ -11,7 +11,7 @@ import type { AuthContext } from '../auth/context.js';
 import { appliedOps, changeLog, devices, families } from '../db/schema.js';
 import { defaultRegistry } from './index.js';
 import { syncColumns, type EntityDef, type Registry } from './registry.js';
-import { RETENTION_DAYS } from './types.js';
+import { REJECTED_RETENTION_DAYS, RETENTION_DAYS } from './types.js';
 
 const DAY_MS = 86_400_000;
 
@@ -82,7 +82,11 @@ export async function runSyncMaintenance(ctx: Pick<AuthContext, 'db' | 'now'>, r
       if (purgedRev > family.purged) await tx.update(families).set({ purgedRev }).where(eq(families.id, familyId));
     });
   }
-  const ops = await ctx.db.delete(appliedOps).where(lt(appliedOps.createdAt, cutoff)).returning({ id: appliedOps.opId });
+  const rejectedCutoff = new Date(now.getTime() - REJECTED_RETENTION_DAYS * DAY_MS);
+  const ops = await ctx.db
+    .delete(appliedOps)
+    .where(or(lt(appliedOps.createdAt, cutoff), and(eq(appliedOps.status, 'rejected'), lt(appliedOps.createdAt, rejectedCutoff))))
+    .returning({ id: appliedOps.opId });
   report.opsPurged = ops.length;
   return report;
 }

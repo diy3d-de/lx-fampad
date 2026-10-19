@@ -2,6 +2,7 @@ import type { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import type { Config } from '../config.js';
 import type * as schema from '../db/schema.js';
 import type { KeyRing } from './crypto.js';
+import type { Role } from './types.js';
 
 export type Db = NodePgDatabase<typeof schema>;
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
@@ -29,7 +30,7 @@ export interface AuthContext {
   /** Wird nach jedem Widerruf aufgerufen; app.ts hängt den WebSocket-Hub ein. */
   onRevoke: (event: RevokeEvent) => void;
   /** Wird nach dem Commit einer Änderung im Sync aufgerufen (neue Revision der Familie); app.ts hängt den WebSocket-Hub ein. */
-  onRev: (familyId: string, rev: number) => void;
+  onRev: (familyId: string, rev: number, roles?: readonly Role[]) => void;
 }
 
 /** Angaben zur Anfrage, die ins Audit-Log und in die Fehlversuchs-Zähler fließen. */

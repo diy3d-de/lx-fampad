@@ -2,11 +2,13 @@
 import { z } from 'zod';
 
 /** Höchstzahl Ops je Aufruf und Änderungen je Seite (Obergrenzen; Antworten und Anfragen bleiben klein). */
-export const MAX_OPS = 200;
+export const MAX_OPS = 50;
 export const MAX_PAGE = 500;
 export const DEFAULT_PAGE = 500;
 /** Tombstones, ersetzte Protokolleinträge und verarbeitete Ops werden spätestens nach so vielen Tagen entfernt. */
 export const RETENTION_DAYS = 90;
+/** Abgelehnte Ops enthalten nichts Wiederverwertbares und werden früher entfernt. */
+export const REJECTED_RETENTION_DAYS = 7;
 
 /** Gründe, aus denen eine Op abgelehnt wird (`rejected[].code`). Stabil: die App ordnet jedem Code eine Meldung zu. */
 export const REJECT_CODES = [
@@ -24,8 +26,6 @@ export const REJECT_CODES = [
   'parent_deleted',
   /** Ein Verweis zeigt auf ein Mitglied, das nicht (mehr) zur Familie gehört. */
   'invalid_reference',
-  /** Die ID gehört schon zu einem fremden Datensatz. */
-  'id_taken',
   /** Obergrenze erreicht (Listen je Familie, Einträge je Liste). */
   'limit_reached',
   /** Die op_id wurde von einem anderen Gerät benutzt. */
@@ -40,6 +40,8 @@ export const syncHead = z
     deviceId: z.uuid(),
     sinceRev: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
     limit: z.number().int().min(1).max(MAX_PAGE).optional(),
+    /** Ziel-Revision eines laufenden mehrseitigen Snapshots (aus der Antwort der ersten Seite; sinceRev ist dann der Cursor). */
+    snapshotRev: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER).optional(),
   })
   .strict();
 export const opList = z.array(z.unknown()).max(MAX_OPS);
@@ -89,5 +91,7 @@ export interface SyncResponse {
   hasMore: boolean;
   /** Bei `hasMore`: das `sinceRev` der nächsten Anfrage. */
   next: number;
+  /** Nur solange ein mehrseitiger Snapshot läuft: Ziel-Revision, die der Client in den Folgeanfragen als `snapshotRev` mitsendet. */
+  snapshotRev?: number;
   serverTime: string;
 }

@@ -455,7 +455,7 @@ describe.each(backends)('Sync ($name)', (backend) => {
         { ...head, deviceId: 'abc' },
         { ...head, ops: 'nein' },
         { ...head, limit: 501 },
-        { ...head, ops: Array.from({ length: 201 }, () => upsert('list', randomUUID(), { name: 'x' })) },
+        { ...head, ops: Array.from({ length: 51 }, () => upsert('list', randomUUID(), { name: 'x' })) },
         { ...head, ops: [{ op: 'upsert' }] },
         { ...head, ops: [{ ...upsert('list', randomUUID(), { name: 'x' }), opId: 'keine-uuid' }] },
         { ...head, deviceId: 'a\u0000b' },
@@ -467,10 +467,14 @@ describe.each(backends)('Sync ($name)', (backend) => {
       for (const body of [[], null]) expect((await fam.admin.raw(body as never)).status).toBe(400);
     });
 
-    it('genau 200 Ops sind erlaubt', async () => {
-      const ops = Array.from({ length: 200 }, (_, i) => upsert('list', randomUUID(), { name: `L${i}` }));
-      const res = await fam.admin.sync(ops, { limit: 1 });
-      expect(res.status).toBe(200);
+    it('genau 50 Ops sind erlaubt, 51 nicht', async () => {
+      const batch = (n: number, from: number) => Array.from({ length: n }, (_, i) => upsert('list', randomUUID(), { name: `L${from + i}` }));
+      expect((await fam.admin.sync(batch(51, 0))).status).toBe(400);
+      for (let i = 0; i < 4; i++) {
+        const res = await fam.admin.sync(batch(50, i * 50), { limit: 1 });
+        expect(res.status).toBe(200);
+        expect(res.json.acked).toHaveLength(50);
+      }
       // Obergrenze lebender Listen: 200 sind erreicht, die nächste wird abgelehnt
       const more = upsert('list', randomUUID(), { name: 'zu viel' });
       expect((await fam.admin.sync([more])).json.rejected).toEqual([{ opId: more.opId, code: 'limit_reached' }]);

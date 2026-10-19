@@ -282,10 +282,10 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
       expect((await rows(world, sql`select text from list_items where id = ${foreign.itemId}`))[0]?.text).toBe('Fremder Eintrag');
     });
 
-    it('Anlegen mit einer ID, die einer fremden Familie gehört: id_taken (ohne Inhalt)', async () => {
+    it('Anlegen mit einer ID, die einer fremden Familie gehört: not_found (verrät nichts)', async () => {
       const op = upsert('list', foreign.listId, { name: 'Meins' });
       const res = await fam.admin.sync([op]);
-      expect(res.json.rejected).toEqual([{ opId: op.opId, code: 'id_taken' }]);
+      expect(res.json.rejected).toEqual([{ opId: op.opId, code: 'not_found' }]);
       expect(JSON.stringify(res.json)).not.toContain('Geheim');
       // keine Revision verbraucht, keine Lücke
       expect(res.json.rev).toBe(0);

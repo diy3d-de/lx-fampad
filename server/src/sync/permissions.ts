@@ -107,3 +107,14 @@ export function authorize(
   }
   return 'ok';
 }
+
+/**
+ * Rollen, die einen Datensatz mit diesen Fakten möglicherweise lesen (für die Benachrichtigung per WebSocket; im Zweifel großzügig:
+ * Regeln mit Geltungsbereich `own` zählen als lesbar). Wer den Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab.
+ */
+export function rolesThatMayRead(rules: Rules, facts: Facts): Role[] {
+  return ROLES.filter((role) => {
+    const scope = rules[role].read;
+    return scope === 'all' || scope === 'own' || (scope === 'shared' && sees(role, facts.audience));
+  });
+}

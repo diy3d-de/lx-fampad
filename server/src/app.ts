@@ -128,7 +128,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     registerSyncRoutes(app, config, authCore);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
-    authCore.ctx.onRev = (familyId, rev) => hub.notifyRev(familyId, rev);
+    authCore.ctx.onRev = (familyId, rev, roles) => hub.notifyRev(familyId, rev, roles);
     authCore.ctx.onRevoke = (e) => {
       if (e.kind === 'session') hub.closeSession(e.sessionId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');
       else if (e.kind === 'device') hub.closeDevice(e.deviceId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');

@@ -21,6 +21,8 @@ export const remove = (entity: string, id: string, baseRev = 0, opId: string = r
 /** Ein Gerät einer Person: Client (Cookie + CSRF) mit Geräte-ID und dem, was es vom Server schon kennt. */
 export class Device {
   sinceRev = 0;
+  /** Ziel-Revision eines laufenden mehrseitigen Snapshots (aus der Antwort der Seite davor). */
+  snapshotRev: number | undefined;
   constructor(
     readonly world: World,
     readonly client: Client,
@@ -35,15 +37,19 @@ export class Device {
   }
 
   /** Sync mit Ops; `sinceRev` ist der Stand dieses Geräts und wird nicht automatisch fortgeschrieben (außer mit follow). */
-  async sync(ops: Op[] = [], opts: { sinceRev?: number; limit?: number; follow?: boolean; protocolVersion?: number } = {}): Promise<Res> {
+  async sync(ops: Op[] = [], opts: { sinceRev?: number; limit?: number; follow?: boolean; protocolVersion?: number; snapshotRev?: number } = {}): Promise<Res> {
     const res = await this.raw({
       protocolVersion: opts.protocolVersion ?? 1,
       deviceId: this.deviceId,
       sinceRev: opts.sinceRev ?? this.sinceRev,
       ...(opts.limit ? { limit: opts.limit } : {}),
+      ...((opts.snapshotRev ?? this.snapshotRev) !== undefined ? { snapshotRev: opts.snapshotRev ?? this.snapshotRev } : {}),
       ops,
     });
-    if (opts.follow && res.status === 200 && res.json.status === 'ok') this.sinceRev = res.json.hasMore ? res.json.next : res.json.rev;
+    if (opts.follow && res.status === 200 && res.json.status === 'ok') {
+      this.sinceRev = res.json.hasMore ? res.json.next : res.json.rev;
+      this.snapshotRev = res.json.snapshotRev;
+    }
     return res;
   }
 
@@ -53,7 +59,10 @@ export class Device {
     for (let i = 0; i < 100; i++) {
       const res = await this.sync([], { limit, follow: true });
       if (res.status !== 200) throw new Error(`Sync fehlgeschlagen: ${res.status} ${JSON.stringify(res.json)}`);
-      if (res.json.status === 'resync_required') throw new Error('resync_required');
+      if (res.json.status === 'resync_required') {
+        this.snapshotRev = undefined;
+        throw new Error('resync_required');
+      }
       all.push(...res.json.changes);
       if (!res.json.hasMore) return all;
     }
@@ -129,7 +138,7 @@ export async function createFamily(world: World): Promise<Family> {
 export async function resetSync(world: World): Promise<void> {
   await world.db.execute(sql`truncate table change_log, applied_ops, list_items, lists`);
   await world.db.execute(sql`update families set current_rev = 0, purged_rev = 0`);
-  await world.db.execute(sql`update devices set last_rev = 0`);
+  await world.db.execute(sql`update devices set last_rev = 0, resync_required = false`);
 }
 
 export const items = (changes: Json[]) => changes.filter((c) => c.entity === 'list_item');
