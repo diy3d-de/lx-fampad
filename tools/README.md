@@ -31,7 +31,7 @@ node tools/update-manifest.mjs sign \
 ```
 
 `--version-code` muss mit dem `versionCode` der APK übereinstimmen. Der Release-Workflow (`.github/workflows/release.yml`, `deploy/README.md` Abschnitt 10) leitet ihn aus dem Tag ab (`major*1000000 + minor*1000 + patch`, also `v0.2.0` gibt 2000) und baut die APK mit `--build-number`; von Hand muss man beides gleich setzen. Der Dateiname der APK steht im Manifest und darf nur
-aus `A-Z a-z 0-9 . _ -` bestehen. Hochladen: erst die APK, dann `latest.json` nach `/srv/fampad/releases/android/` (siehe `deploy/README.md`, Abschnitt 9).
+aus `A-Z a-z 0-9 . _ -` bestehen. Hochladen: erst die APK, dann `latest.json` nach `/srv/fampad/releases/android/` (siehe `deploy/README.md`, Abschnitt 9). Zusätzlich die APK als `lx-familyhub-latest.apk` kopieren (stabiler Download-Link für neue Mitglieder, `kApkDownloadUrl`; nicht Teil des signierten Manifests, die App aktualisiert sich weiter über `latest.json`).
 
 Format: `{ "payload": "<JSON-Text>", "signature": "<Base64, 64 Byte>" }`. Signiert wird genau der Text in `payload`; er enthält `packageName`, `version`, `versionCode`,
 `minVersion`, `apk`, `sha256`, `size`, `notes`, `issuedAt` und `keyId`. Die App lehnt falsche Signaturen, fremde Paketnamen und Schlüssel-IDs, kleinere `versionCode`s als die installierte,
