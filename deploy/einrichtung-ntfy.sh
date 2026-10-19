@@ -13,6 +13,8 @@
 #
 # Aufruf auf dem Server als Benutzer lx:   sudo bash ~/lx-fampad/deploy/einrichtung-ntfy.sh [--dry-run]
 #   --dry-run  macht nur die Prüfungen und schreibt/installiert/lädt nichts.
+# WICHTIG: In tmux/screen starten (oder: sudo systemd-run --scope bash <Skript>), damit ein SSH-Abbruch den Lauf nicht mitten in der
+# Caddy-Änderung beendet. Fängt das Skript ein HUP/INT/TERM, läuft der Rückfall trotzdem.
 set -Eeuo pipefail
 
 # --- Festwerte ---------------------------------------------------------------------------------------------------------
@@ -31,7 +33,6 @@ TOKEN_FILE=/etc/lx-fampad/ntfy-token
 ENV_FILE=/etc/lx-fampad/env
 CADDYFILE=/etc/caddy/Caddyfile
 SITE=/etc/caddy/conf.d/ntfy.caddy
-FAMPAD_SITE=/etc/caddy/conf.d/fampad.caddy
 IMPORT_RE='^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy'
 STAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_MAIN="/etc/caddy/Caddyfile.vor-ntfy.${STAMP}"   # nur Sicherung zum Nachlesen; das Haupt-Caddyfile wird nie zurückgeschrieben
@@ -62,9 +63,11 @@ aufraeumen() { [ -n "$WORK" ] && rm -rf "$WORK"; return 0; }
 
 # Rückfall: nur ntfy.caddy (vorherige Fassung oder entfernen), nie das Haupt-Caddyfile
 zuruecksetzen() {
-  trap - ERR INT TERM
+  trap - ERR INT TERM HUP
+  set +e
   ARMED=0
   echo "!!  Fehler: ntfy.caddy wird zurückgesetzt." >&2
+  rm -f "$SITE.neu"
   if [ "$HAD_SITE" = 1 ] && [ -f "$BACKUP_SITE" ]; then
     cp -p "$BACKUP_SITE" "$SITE" || rm -f "$SITE"
   else
@@ -73,6 +76,7 @@ zuruecksetzen() {
   systemctl reload caddy || true
   echo "    lx-labs.dev:  $(curl -sI --max-time 10 https://lx-labs.dev 2>/dev/null | head -1)" >&2
   echo "    Haupt-Caddyfile wurde nicht verändert. Ursache: journalctl -u caddy -n 50; danach das Skript erneut ausführen." >&2
+  echo "    Schlug das Zertifikat fehl: mindestens 1 Stunde warten (Let's-Encrypt-Limit für Fehlversuche), dann erneut." >&2
   aufraeumen
   exit 1
 }
@@ -85,14 +89,14 @@ bei_fehler() {
   exit "$code"
 }
 bei_abbruch() {
-  trap - ERR INT TERM
+  trap - ERR INT TERM HUP
   echo "!!  Abbruch." >&2
   if [ "$ARMED" = 1 ]; then zuruecksetzen; fi
   aufraeumen
   exit 130
 }
 trap 'bei_fehler $LINENO' ERR
-trap bei_abbruch INT TERM
+trap bei_abbruch INT TERM HUP
 trap aufraeumen EXIT
 
 tue() { if [ "$DRY" = 1 ]; then echo "    [dry-run] $*"; else "$@"; fi; }
@@ -105,7 +109,7 @@ echo "==> 1/6 Prüfungen$([ "$DRY" = 1 ] && echo ' (Trockenlauf: es wird nichts 
 # shellcheck disable=SC1091
 . /etc/os-release
 [ "${ID:-}" = debian ] || echo "    Hinweis: Debian erwartet, gefunden: ${ID:-unbekannt}"
-for b in curl caddy systemctl ss runuser install sha256sum awk; do
+for b in curl caddy systemctl ss ip runuser install sha256sum awk; do
   command -v "$b" >/dev/null || fehler "$b fehlt"
 done
 [ -f "$SRC_YML" ] && [ -f "$SRC_CADDY" ] || fehler "deploy/ntfy/server.yml oder ntfy.caddy fehlt (Repository $REPO aktuell? git pull)"
@@ -126,16 +130,24 @@ EOF
 fi
 echo "    Importzeile im Haupt-Caddyfile vorhanden."
 
-# fampad.caddy darf keinen aktiven ntfy-Block enthalten (doppelte Site-Definition)
-if [ -f "$FAMPAD_SITE" ] && grep -qE '^ntfy\.familie\.lx-labs\.dev' "$FAMPAD_SITE"; then
-  fehler "$FAMPAD_SITE enthält schon einen aktiven ntfy-Block (doppelte Site-Definition). Block dort entfernen (alles ab '^ntfy.familie') und neu starten."
-fi
+# Keine andere Caddy-Datei (auch nicht fampad.caddy oder das Haupt-Caddyfile) darf die Site schon definieren (doppelte Site-Definition)
+DUP="$(grep -rlE '^[[:space:]]*ntfy\.familie\.lx-labs\.dev([[:space:],{]|$)' /etc/caddy --include='*.caddy' --include=Caddyfile || true)"
+DUP="$(grep -vxF "$SITE" <<<"$DUP" || true)"
+[ -z "$DUP" ] || fehler "ntfy.familie.lx-labs.dev ist schon definiert in: $DUP (Block dort entfernen, dann neu starten; $SITE ist die einzige vorgesehene Stelle)"
 
 curl -fsI --max-time 10 https://lx-labs.dev >/dev/null || fehler "lx-labs.dev antwortet schon vor der Änderung nicht, Abbruch"
 echo "    lx-labs.dev antwortet."
 curl -fsS --max-time 10 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' \
   || echo "    Hinweis: familie.lx-labs.dev/api/v1/health antwortet nicht mit db ok (wird nur nach der Änderung zur Gegenprobe benutzt)."
-getent hosts "$NTFY_HOST" >/dev/null || fehler "DNS für $NTFY_HOST fehlt (A-Eintrag, nur DNS/graue Wolke); ohne ihn gibt es kein Zertifikat"
+# DNS: A (und AAAA, falls vorhanden) von $NTFY_HOST müssen auf globale Adressen DIESES Servers zeigen, sonst scheitert das Zertifikat
+LOCAL_IPS="$(ip -o addr show scope global | awk '{split($4,a,"/"); print a[1]}')"
+DNS4="$(getent ahostsv4 "$NTFY_HOST" | awk '{print $1}' | sort -u || true)"
+[ -n "$DNS4" ] || fehler "DNS: kein A-Eintrag für $NTFY_HOST (nur DNS/graue Wolke); ohne ihn gibt es kein Zertifikat"
+DNS6="$(getent ahostsv6 "$NTFY_HOST" | awk '{print $1}' | grep -vi '^::ffff:' | sort -u || true)"
+for a in $DNS4 $DNS6; do
+  grep -qxiF "$a" <<<"$LOCAL_IPS" || fehler "DNS: $NTFY_HOST zeigt auf $a, das ist keine globale Adresse dieses Servers (lokal: $(tr '\n' ' ' <<<"$LOCAL_IPS")). Eintrag korrigieren (A/AAAA), DNS-Verbreitung abwarten, neu starten. Nichts wurde verändert."
+done
+echo "    DNS: $NTFY_HOST -> $(tr '\n' ' ' <<<"$DNS4 $DNS6")(lokal)."
 if [ -d /etc/lx-fampad ]; then echo "    /etc/lx-fampad vorhanden."; else
   if [ "$DRY" = 1 ]; then echo "    Hinweis: /etc/lx-fampad fehlt (Teil 1 der Einrichtung)."; else fehler "/etc/lx-fampad fehlt (Teil 1 der Einrichtung)"; fi
 fi
@@ -179,8 +191,19 @@ else
   install -m 644 -o root -g root "$WORK/ntfy.gpg" /etc/apt/keyrings/ntfy.gpg
   echo "    Schlüssel-Fingerabdruck geprüft: $NTFY_FPR"
   echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/ntfy.gpg] $NTFY_APT_URL stable main" > /etc/apt/sources.list.d/ntfy.list
+  # Pin: Pakete kommen nur dann aus archive.ntfy.sh, wenn es ntfy selbst ist
+  cat > /etc/apt/preferences.d/ntfy <<'EOF'
+Package: *
+Pin: origin archive.ntfy.sh
+Pin-Priority: 1
+
+Package: ntfy
+Pin: origin archive.ntfy.sh
+Pin-Priority: 500
+EOF
   apt-get update -qq
-  if apt-cache madison ntfy | awk '{print $3}' | grep -Fxq "$NTFY_VERSION"; then
+  VERS="$(apt-cache madison ntfy | awk '{print $3}')"
+  if grep -Fxq "$NTFY_VERSION" <<<"$VERS"; then
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "ntfy=$NTFY_VERSION"
   else
     echo "    $NTFY_VERSION steht nicht (mehr) im Repository; Fallback: Release-.deb mit gepinnter SHA-256."
@@ -233,7 +256,7 @@ UMask=0077
 EOF
 chmod 644 /etc/systemd/system/ntfy.service.d/haertung.conf
 systemctl daemon-reload
-systemctl enable ntfy >/dev/null 2>&1
+systemctl enable ntfy >/dev/null
 systemctl restart ntfy
 LOCAL="http://127.0.0.1:${NTFY_PORT}"
 OK=0
@@ -249,23 +272,29 @@ echo "    ntfy läuft auf 127.0.0.1:${NTFY_PORT}."
 
 # --- 4. Benutzer und Token für den Familien-Server ---------------------------------------------------------------------------
 echo "==> 4/6 Benutzer $PUSH_USER und Token (nur Schreibrecht auf '$PUSH_TOPICS')"
+# ntfy 2.28.0: --config ist Flag des Elternbefehls (ntfy user --config X add ...); Syntax und Ausgabeformat gegen v2.28.0 geprüft.
+# Die Befehle lesen/schreiben direkt user.db (nach dem Start des Dienstes vorhanden). Fehler werden nicht verschluckt.
 CFG=/etc/ntfy/server.yml
-if runuser -u "$NTFY_USER" -- ntfy user list --config "$CFG" 2>/dev/null | grep -q "user ${PUSH_USER} "; then
+ntfy_als_ntfy() { runuser -u "$NTFY_USER" -- ntfy "$@"; }
+ULIST="$(ntfy_als_ntfy user --config "$CFG" list)"
+if grep -q "^user ${PUSH_USER} " <<<"$ULIST"; then
   echo "    Benutzer vorhanden."
 else
   # Passwort wird nie benutzt oder gespeichert (Zugriff nur per Token); Rolle user, nicht admin
   PW="$(head -c 32 /dev/urandom | base64 | tr -d '/+=\n')"
-  NTFY_PASSWORD="$PW" runuser -u "$NTFY_USER" -- ntfy user add --config "$CFG" --role=user "$PUSH_USER" >/dev/null
+  NTFY_PASSWORD="$PW" ntfy_als_ntfy user --config "$CFG" add --role=user "$PUSH_USER" >/dev/null
   unset PW
   echo "    Benutzer angelegt."
 fi
-runuser -u "$NTFY_USER" -- ntfy access --config "$CFG" "$PUSH_USER" "$PUSH_TOPICS" write-only >/dev/null
+ntfy_als_ntfy access --config "$CFG" "$PUSH_USER" "$PUSH_TOPICS" write-only >/dev/null
 echo "    Zugriff: $PUSH_USER darf nur auf '$PUSH_TOPICS' schreiben."
 
 TOKEN=""
 if [ -s "$TOKEN_FILE" ]; then
   TOKEN="$(head -n1 "$TOKEN_FILE" | tr -d '[:space:]')"
-  if runuser -u "$NTFY_USER" -- ntfy token list --config "$CFG" "$PUSH_USER" 2>/dev/null | grep -Fq "$TOKEN"; then
+  # 'token list' zeigt alle Tokens je Benutzer: "user NAME" und darunter "- tk_… (Label), expires …"
+  TLIST="$(ntfy_als_ntfy token --config "$CFG" list)"
+  if [[ "$TOKEN" =~ ^tk_[A-Za-z0-9]+$ ]] && grep -Fq -- "- $TOKEN " <<<"$TLIST"; then
     echo "    Token in $TOKEN_FILE ist gültig, bleibt unverändert."
   else
     echo "    Token in $TOKEN_FILE ist dem Server unbekannt, wird ersetzt."
@@ -273,7 +302,8 @@ if [ -s "$TOKEN_FILE" ]; then
   fi
 fi
 if [ -z "$TOKEN" ]; then
-  OUT="$(runuser -u "$NTFY_USER" -- ntfy token add --config "$CFG" --label=lx-fampad "$PUSH_USER")"
+  # ohne Ablauf (Token darf nur auf fampad-* schreiben, Datei root-only); Rotation: README Abschnitt 7
+  OUT="$(ntfy_als_ntfy token --config "$CFG" add --label=lx-fampad "$PUSH_USER")"
   TOKEN="$(grep -o 'tk_[A-Za-z0-9]\+' <<<"$OUT" | head -n1)"
   [ -n "$TOKEN" ] || fehler "Token konnte nicht angelegt werden"
   install -d -m 755 -o root -g root /etc/lx-fampad
@@ -287,10 +317,11 @@ unset OUT
 # Lokale Probe der Rechte (Token nie in der Prozessliste: curl liest die Kopfzeile von stdin)
 http_code() { curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$@" || true; }
 mit_token() { printf 'header = "Authorization: Bearer %s"\n' "$TOKEN" | curl -s -o /dev/null -w '%{http_code}' --max-time 10 -K - -d 'Prüfung' "$1" || true; }
-[ "$(http_code -d x "$LOCAL/fampad-pruefung")" = 403 ] || fehler "anonymes Schreiben ist nicht verboten (erwartet 403)"
+ist_verboten() { [ "$1" = 401 ] || [ "$1" = 403 ]; }
+ist_verboten "$(http_code -d x "$LOCAL/fampad-pruefung")" || fehler "anonymes Schreiben ist nicht verboten (erwartet 401/403)"
 [ "$(mit_token "$LOCAL/fampad-pruefung")" = 200 ] || fehler "Token darf nicht auf fampad-* schreiben"
-[ "$(mit_token "$LOCAL/fremdes-topic")" = 403 ] || fehler "Token darf außerhalb von fampad-* schreiben (erwartet 403)"
-echo "    Rechteprobe bestanden (anonym 403, fampad-* 200, fremdes Topic 403)."
+ist_verboten "$(mit_token "$LOCAL/fremdes-topic")" || fehler "Token darf außerhalb von fampad-* schreiben (erwartet 401/403)"
+echo "    Rechteprobe bestanden (anonym 401/403, fampad-* 200, fremdes Topic 401/403)."
 
 # --- 5. Caddy: nur ntfy.caddy ----------------------------------------------------------------------------------------------
 echo "==> 5/6 Caddy ($SITE)"
@@ -298,8 +329,14 @@ mkdir -p /etc/caddy/conf.d
 cp -p "$CADDYFILE" "$BACKUP_MAIN"
 echo "    Sicherung des Haupt-Caddyfiles (nur zum Nachlesen): $BACKUP_MAIN"
 if [ "$HAD_SITE" = 1 ]; then cp -p "$SITE" "$BACKUP_SITE"; echo "    Sicherung der bisherigen ntfy.caddy: $BACKUP_SITE"; fi
+# Kandidat zuerst allein prüfen (vor jeder Änderung an /etc/caddy/conf.d)
+cp "$SRC_CADDY" "$WORK/ntfy.caddy"
+caddy validate --config "$WORK/ntfy.caddy" --adapter caddyfile
 ARMED=1
-install -m 644 -o root -g root "$SRC_CADDY" "$SITE"
+# atomar: erst unter einem Namen ohne .caddy-Endung (wird nicht importiert), dann umbenennen
+install -m 644 -o root -g root "$SRC_CADDY" "$SITE.neu"
+mv -f "$SITE.neu" "$SITE"
+# Vollvalidierung mit allem Importierten (Haupt-Caddyfile + conf.d)
 caddy validate --config "$CADDYFILE" --adapter caddyfile
 systemctl reload caddy
 sleep 3
@@ -314,30 +351,35 @@ for _ in $(seq 1 45); do
 done
 [ "$OK" = 1 ] || { echo "    $NTFY_HOST antwortet nicht über HTTPS (DNS/Zertifikat?)." >&2; false; }
 echo "    $NTFY_HOST antwortet über HTTPS."
-[ "$(http_code -d x "https://${NTFY_HOST}/fampad-pruefung")" = 403 ] || { echo "    anonymes Schreiben über HTTPS nicht verboten" >&2; false; }
+ist_verboten "$(http_code -d x "https://${NTFY_HOST}/fampad-pruefung")" || { echo "    anonymes Schreiben über HTTPS nicht verboten" >&2; false; }
 [ "$(mit_token "https://${NTFY_HOST}/fampad-pruefung")" = 200 ] || { echo "    Token-Schreiben über HTTPS schlägt fehl" >&2; false; }
 curl -fsI --max-time 10 https://lx-labs.dev >/dev/null
 curl -fsS --max-time 10 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' \
   || { echo "    familie.lx-labs.dev antwortet nicht mehr mit db ok" >&2; false; }
 [ "$(sha256sum "$CADDYFILE" | cut -d' ' -f1)" = "$MAIN_SUM" ] || { echo "    Haupt-Caddyfile hat sich während des Laufs geändert (nicht durch dieses Skript)" >&2; false; }
 ARMED=0
-trap - ERR INT TERM
+trap - ERR INT TERM HUP
 echo "    lx-labs.dev:      $(curl -sI --max-time 10 https://lx-labs.dev | head -1)"
 echo "    familie.lx-labs.dev: ok"
 
 cat <<EOF
 
-Fertig. ntfy $NTFY_VERSION läuft unter https://${NTFY_HOST} (Standard: deny-all).
+Fertig. ntfy $NTFY_VERSION läuft unter https://${NTFY_HOST} (Standard: deny-all); der Familien-Server spricht es über Loopback an.
 
-In /etc/lx-fampad/env eintragen (das Skript ändert die Datei nicht; das Token bleibt in $TOKEN_FILE, root, 0600):
-    NTFY_URL=https://${NTFY_HOST}
+In /etc/lx-fampad/env eintragen (das Skript ändert die Datei nicht). Der Dienst lx-fampad darf nur nach localhost (IPAddressDeny=any),
+deshalb Loopback statt der öffentlichen URL. Das Token lädt systemd als root aus der env-Datei; $TOKEN_FILE muss für den Dienst nicht lesbar sein.
+    NTFY_URL=http://127.0.0.1:${NTFY_PORT}
     NTFY_TOKEN=<Inhalt von $TOKEN_FILE>
-Ohne das Token auf dem Bildschirm auszugeben, hängt dieser Befehl beide Zeilen an (nur ausführen, wenn NTFY_* dort noch fehlt):
-    sudo sh -c 'printf "NTFY_URL=https://${NTFY_HOST}\nNTFY_TOKEN=%s\n" "\$(cat $TOKEN_FILE)" >> $ENV_FILE'
-$(grep -qE '^(NTFY_URL|NTFY_TOKEN)=' "$ENV_FILE" 2>/dev/null && echo "ACHTUNG: $ENV_FILE enthält schon NTFY_*-Zeilen; prüfen und nicht doppelt anhängen.")
+$(grep -qE '^(NTFY_URL|NTFY_TOKEN)=' "$ENV_FILE" 2>/dev/null && echo "ACHTUNG: $ENV_FILE enthält schon NTFY_*-Zeilen; prüfen, der Befehl unten hängt dann nichts an.")
+Sicherer Befehl (zeigt das Token nicht an, ergänzt bei Bedarf den Zeilenumbruch am Dateiende, hängt nur an, wenn NTFY_* fehlt):
+EOF
+cat <<'EOF'
+    sudo sh -c 'f=/etc/lx-fampad/env; if grep -qE "^NTFY_(URL|TOKEN)=" "$f"; then echo "NTFY_* schon vorhanden, nichts geändert"; else [ -z "$(tail -c1 "$f")" ] || echo >> "$f"; printf "NTFY_URL=http://127.0.0.1:2586\nNTFY_TOKEN=%s\n" "$(cat /etc/lx-fampad/ntfy-token)" >> "$f"; fi'
+EOF
+cat <<EOF
 Danach:  sudo systemctl restart lx-fampad
 Der Push-Versand selbst kommt mit Phase 1c-3; bis dahin liest der Server die Werte nicht aus.
 
-UnifiedPush: Anonymes Schreiben auf up*-Topics und Lesen je Handy sind bewusst NICHT freigegeben; siehe deploy/README.md, Abschnitt 7.
+UnifiedPush: Rechte auf up*-Topics (Server schreibt, Handys lesen) sind bewusst NICHT gesetzt, Schritt für 1c-3; siehe deploy/README.md, Abschnitt 7.
 Rückbau: sudo rm /etc/caddy/conf.d/ntfy.caddy && sudo systemctl reload caddy   (Details: deploy/README.md)
 EOF
