@@ -260,6 +260,7 @@ void main() {
       expect(gesendet.length, lessThan(kAvatarZielBytes));
       expect(gesendet.length, lessThan(quelle.length ~/ 1)); // nicht das Original
       expect(find.byType(ProfilbildScreen), findsNothing);
+      await tester.pump(const Duration(minutes: 2)); // offene Zeitgeber des Abgleichs auslaufen lassen
     });
 
     testWidgets('Foto über 10 MB: verständliche Meldung, nichts wird hochgeladen', (tester) async {
@@ -283,6 +284,7 @@ void main() {
       await warte(tester);
       expect(find.textContaining('JPEG, PNG oder WebP'), findsOneWidget);
       expect(server.anfragen('PUT /me/avatar'), isEmpty);
+      await tester.pump(const Duration(minutes: 2));
     });
 
     testWidgets('Abbruch der Dateiauswahl ist kein Fehler', (tester) async {
