@@ -275,7 +275,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
           runSpacing: 8,
           children: [
             SizedBox(
-              width: 200,
+              width: 190,
               child: wahl(
                 label: '$label Datum',
                 text: datum.format(tag),
@@ -287,7 +287,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
             ),
             if (!_ganztaegig)
               SizedBox(
-                width: 120,
+                width: 112,
                 child: wahl(
                   label: '$label Uhrzeit',
                   text: zeit.format(context),
