@@ -166,6 +166,29 @@ void main() {
     expect(a.sync.anfragen.last['sinceRev'], a.sync.rev, reason: 'fragt ab dem bekannten Stand');
   });
 
+  test('nach dem Update (Sync-Fortschritt zurückgesetzt): zuvor übersprungene Termine kommen per Snapshot, ausstehende Ops gehen raus', () async {
+    const t1 = '33333333-3333-4333-8333-333333333333';
+    a.sync.andereAendert('list', _l1, {'name': 'Alt', 'kind': 'shopping'});
+    a.sync.andereAendert('termin', t1, {'titel': 'Zahnarzt'});
+    await a.engine.abgleichen();
+    // alte App: Termin ohne Definition übersprungen, Cursor trotzdem vorgerückt
+    await a.db.delete(a.db.termine).go();
+    expect(await a.db.select(a.db.termine).get(), isEmpty);
+    await a.engine.abgleichen();
+    expect(await a.db.select(a.db.termine).get(), isEmpty, reason: 'ohne Reset kommt er nie');
+    await a.neuerEintrag(_i1, 'Milch');
+    // Migration: sinceRev/snapshotRev gelöscht
+    await a.db.metaLoeschen(SyncStore.kSinceRev);
+    await a.db.metaLoeschen(SyncStore.kSnapshotRev);
+    final e = await a.engine.abgleichen();
+    expect(e.ok, isTrue);
+    expect((await a.db.select(a.db.termine).get()).map((t) => t.id), [t1]);
+    expect((await a.liste(_l1))?.name, 'Alt');
+    expect(await a.eintrag(_i1), isNotNull);
+    expect(a.sync.anfragen.where((r) => r['sinceRev'] == 0), isNotEmpty);
+    expect(await a.ausgang(), isEmpty);
+  });
+
   test('resync_required: lokale Tabellen werden neu geladen, offene Änderungen bleiben darüber erhalten', () async {
     await a.neueListe(_l1, 'Einkauf');
     await a.neuerEintrag(_i1, 'Milch');
