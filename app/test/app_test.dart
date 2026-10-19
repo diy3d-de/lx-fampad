@@ -36,7 +36,7 @@ void main() {
     // Die Tabs liegen in einem IndexedStack: alle Seiten sind im Baum, sichtbar (und bedienbar) ist nur die gewählte.
     // Der Titel im Tab-Inhalt (nicht die Beschriftung der NavigationBar) muss zum gewählten Tab passen.
     final seiten = <Type>[HomeScreen, CalendarScreen, ChatScreen, FilesScreen, ListsScreen];
-    final titel = ['Hallo', 'Kalender', 'Chat', 'Dateien', 'Listen'];
+    final titel = ['Hallo, Anna', 'Kalender', 'Chat', 'Dateien', 'Listen'];
 
     for (var tab = 0; tab < kTabs.length; tab++) {
       if (tab > 0) {

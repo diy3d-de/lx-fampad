@@ -162,6 +162,8 @@ class ApiException implements Exception {
     'registration_failed': 'Die Registrierung ist mit diesen Angaben nicht möglich. Prüfe sie oder frage bei der Familie nach.',
     'last_admin': 'Der letzte Admin kann nicht herabgestuft oder entfernt werden.',
     'last_credential': 'Das ist dein letzter Zugang. Lege zuerst einen anderen an.',
+    'password_exists': 'Für dein Konto gibt es schon ein Passwort. Du kannst es ändern.',
+    'no_password': 'Für dein Konto ist noch kein Passwort eingerichtet.',
     'no_passkey': 'Für dein Konto ist noch kein Passkey eingerichtet.',
     'passkey_exists': 'Für dieses Gerät gibt es schon einen Passkey.',
     'not_pending': 'Dieses Mitglied wartet nicht auf eine Freigabe.',
