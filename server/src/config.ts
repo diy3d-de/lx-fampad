@@ -116,9 +116,19 @@ function ntfyUrl(env: NodeJS.ProcessEnv): string | undefined {
   return u.origin;
 }
 
+/** In Produktion nur Loopback (der Wecker trägt das Token; ein fremdes Ziel wäre eine Token-Abgabe). */
+const LOOPBACK_HOSTS = ['127.0.0.1', '[::1]', 'localhost'];
+
+function ntfyUrlPruefen(url: string | undefined, nodeEnv: Config['env']): string | undefined {
+  if (url !== undefined && nodeEnv === 'production' && !LOOPBACK_HOSTS.includes(new URL(url).hostname === '::1' ? '[::1]' : new URL(url).hostname)) {
+    throw new Error('NTFY_URL muss in Produktion eine Loopback-Adresse sein (127.0.0.1, [::1] oder localhost)');
+  }
+  return url;
+}
+
 function ntfyPublicHost(env: NodeJS.ProcessEnv): string {
   const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familie.lx-labs.dev').toLowerCase();
-  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
   return host;
 }
 
@@ -260,7 +270,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     syncLockTimeoutMs: positiveInt(env, 'SYNC_LOCK_TIMEOUT_MS', 5000),
     syncStatementTimeoutMs: positiveInt(env, 'SYNC_STATEMENT_TIMEOUT_MS', 10_000),
     healthTimeoutMs: positiveInt(env, 'HEALTH_TIMEOUT_MS', 2000),
-    ntfyUrl: ntfyUrl(env),
+    ntfyUrl: ntfyUrlPruefen(ntfyUrl(env), nodeEnv),
     ntfyToken: env.NTFY_TOKEN?.trim() || undefined,
     ntfyPublicHost: ntfyPublicHost(env),
     wsMaxPerIp: positiveInt(env, 'WS_MAX_PER_IP', 10),

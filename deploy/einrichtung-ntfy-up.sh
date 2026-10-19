@@ -48,21 +48,29 @@ echo "==> 1/3 Prüfungen$([ "$DRY" = 1 ] && echo ' (Trockenlauf)')"
 for b in ntfy curl runuser install head base64 tr; do command -v "$b" >/dev/null || fehler "$b fehlt"; done
 [ -f "$CFG" ] || fehler "$CFG fehlt (zuerst einrichtung-ntfy.sh)"
 systemctl is-active --quiet ntfy || fehler "Dienst ntfy läuft nicht (zuerst einrichtung-ntfy.sh)"
-curl -fsS --max-time 5 "$LOCAL/v1/health" | grep -q '"healthy":true' || fehler "ntfy antwortet lokal nicht"
+# erst in eine Variable (bei "curl | grep -q" bricht pipefail ab, sobald grep früh schließt)
+GESUND="$(curl -fsS --max-time 5 "$LOCAL/v1/health" 2>/dev/null || true)"
+grep -q '"healthy":true' <<<"$GESUND" || fehler "ntfy antwortet lokal nicht"
 [ -s "$TOKEN_FILE" ] || fehler "$TOKEN_FILE fehlt (zuerst einrichtung-ntfy.sh)"
 ntfy_als_ntfy() { runuser -u "$NTFY_USER" -- ntfy "$@"; }
 ULIST="$(ntfy_als_ntfy user --config "$CFG" list)"
 grep -q "^user ${PUSH_USER} " <<<"$ULIST" || fehler "ntfy-Benutzer $PUSH_USER fehlt (zuerst einrichtung-ntfy.sh)"
 HAVE_FAMILY=0; grep -q "^user ${FAMILY_USER} " <<<"$ULIST" && HAVE_FAMILY=1
-echo "    ntfy läuft, $PUSH_USER vorhanden, $FAMILY_USER: $([ "$HAVE_FAMILY" = 1 ] && echo vorhanden || echo neu)."
+# Rolle des vorhandenen Benutzers (muss "user" sein, nie admin): Zeile "user NAME (role: user, tier: none)"
+FAMILY_ROLE="$(sed -n "s/^user ${FAMILY_USER} (role: \([a-z]*\),.*/\1/p" <<<"$ULIST" | head -n1)"
+echo "    ntfy läuft, $PUSH_USER vorhanden, $FAMILY_USER: $([ "$HAVE_FAMILY" = 1 ] && echo "vorhanden (Rolle ${FAMILY_ROLE:-unbekannt})" || echo neu)."
 if [ "$DRY" = 1 ]; then
   echo "==> Trockenlauf beendet. Geplant: $FAMILY_USER anlegen/prüfen, Passwort nach $PW_FILE (root, 0600), '$UP_TOPICS': $PUSH_USER write-only, $FAMILY_USER read-only."
   exit 0
 fi
 
 echo "==> 2/3 Benutzer $FAMILY_USER und Rechte"
+if [ "$HAVE_FAMILY" = 1 ] && [ "$FAMILY_ROLE" != user ]; then
+  ntfy_als_ntfy user --config "$CFG" change-role "$FAMILY_USER" user >/dev/null
+  echo "    Rolle von $FAMILY_USER war '${FAMILY_ROLE:-unbekannt}', jetzt 'user' (kein Admin)."
+fi
 neues_passwort() { head -c 24 /dev/urandom | base64 | tr -d '/+=\n'; }
-speichern() { install -d -m 755 -o root -g root /etc/lx-fampad; ( umask 077; printf '%s\n' "$1" > "$PW_FILE" ); chown root:root "$PW_FILE"; chmod 600 "$PW_FILE"; }
+speichern() { [ -d /etc/lx-fampad ] || install -d -m 755 -o root -g root /etc/lx-fampad; ( umask 077; printf '%s\n' "$1" > "$PW_FILE" ); chown root:root "$PW_FILE"; chmod 600 "$PW_FILE"; }
 if [ "$HAVE_FAMILY" = 0 ]; then
   PW="$(neues_passwort)"
   NTFY_PASSWORD="$PW" ntfy_als_ntfy user --config "$CFG" add --role=user "$FAMILY_USER" >/dev/null
@@ -106,5 +114,6 @@ Fertig. In der ntfy-App jedes Handys eintragen (Einstellungen > Standardserver b
     Server:    https://${NTFY_HOST}
     Benutzer:  ${FAMILY_USER}
     Passwort:  sudo cat ${PW_FILE}      (nur Betreiber; der Familie persönlich weitergeben, nicht per Chat)
+Nach jedem Entfernen eines Mitglieds (oder verlorenem Handy) das Passwort wechseln:  sudo bash ~/lx-fampad/deploy/einrichtung-ntfy-up.sh --rotate
 Der Server braucht nichts Neues: NTFY_URL/NTFY_TOKEN stehen schon in /etc/lx-fampad/env (Abschnitt 7); danach  sudo systemctl restart lx-fampad.
 EOT

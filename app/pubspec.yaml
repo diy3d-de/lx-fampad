@@ -40,7 +40,7 @@ dependencies:
   file_picker: 13.1.0
   # Push: UnifiedPush (ntfy-App als Verteiler, kein Google), nur Android; unifiedpush_android pinnt die native Seite
   unifiedpush: 6.2.0
-  unifiedpush_android: 3.5.0
+  unifiedpush_android: 3.4.1
 
 dev_dependencies:
   flutter_test:

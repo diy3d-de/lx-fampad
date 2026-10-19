@@ -138,7 +138,10 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
       config,
       log: app.log,
       now: authCore.ctx.now,
-      hasLiveSocket: (deviceId) => hub.hasDevice(deviceId),
+      hasLiveSocket: (deviceId, maxIdleMs) => hub.hasDevice(deviceId, maxIdleMs),
+      // lebendig = Lebenszeichen innerhalb von 1,5 Ping-Intervallen; Nachprüfung kurz danach
+      liveFensterMs: Math.round(config.wsPingIntervalMs * 1.5),
+      nachpruefenMs: Math.round(config.wsPingIntervalMs * 1.5) + 1000,
       ...(pushFetch ? { fetch: pushFetch } : {}),
       ...(pushMinIntervalMs !== undefined ? { minIntervalMs: pushMinIntervalMs } : {}),
     });

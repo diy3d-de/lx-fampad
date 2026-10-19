@@ -6,9 +6,10 @@ import type { AddressInfo } from 'node:net';
 import { sql } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
+import { loadConfig } from '../src/config.js';
 import { topicFromEndpoint } from '../src/push/endpoint.js';
 import { MAX_FAILS, WAKE_BODY } from '../src/push/service.js';
-import { backends, World, type Harness } from './helpers.js';
+import { backends, TEST_KEY, World, type Harness } from './helpers.js';
 import { createFamily, extraMember, resetSync, upsert, type Device, type Family, type Json } from './sync-kit.js';
 
 const HOST = 'ntfy.familie.lx-labs.dev';
@@ -76,6 +77,24 @@ describe('topicFromEndpoint (SSRF-Prüfung)', () => {
   });
 });
 
+describe('Konfiguration Push', () => {
+  const basis = { NODE_ENV: 'production', AUTH_SECRET_KEY: TEST_KEY, PUBLIC_URL: 'https://familie.lx-labs.dev' };
+  it('NTFY_URL: in Produktion nur Loopback, sonst Startabbruch; in Entwicklung/Test frei', () => {
+    for (const ok of ['http://127.0.0.1:2586', 'http://localhost:2586', 'http://[::1]:2586']) expect(loadConfig({ ...basis, NTFY_URL: ok }).ntfyUrl).toBeDefined();
+    for (const bad of ['http://10.0.0.5:2586', 'https://ntfy.familie.lx-labs.dev', 'http://127.0.0.1.evil.example:2586', 'http://169.254.169.254']) {
+      expect(() => loadConfig({ ...basis, NTFY_URL: bad })).toThrow(/Loopback/);
+    }
+    expect(loadConfig({ ...basis, NODE_ENV: 'test', NTFY_URL: 'http://10.0.0.5:2586' }).ntfyUrl).toBe('http://10.0.0.5:2586');
+    expect(() => loadConfig({ ...basis, NTFY_URL: 'http://user:pw@127.0.0.1:2586' })).toThrow();
+  });
+  it('NTFY_PUBLIC_HOST: Punkte müssen echte Punkte sein', () => {
+    expect(loadConfig({ ...basis, NODE_ENV: 'test' }).ntfyPublicHost).toBe('ntfy.familie.lx-labs.dev');
+    for (const bad of ['ntfyxfamilie', 'ntfy_familie.example', 'a b.example', '.example.org', 'example..org']) {
+      expect(() => loadConfig({ ...basis, NODE_ENV: 'test', NTFY_PUBLIC_HOST: bad })).toThrow(/NTFY_PUBLIC_HOST/);
+    }
+  });
+});
+
 interface Call {
   url: string;
   method: string;
@@ -105,7 +124,7 @@ describe.each(backends)('Push ($name)', (backend) => {
     });
     await new Promise<void>((resolve) => ntfy.listen(0, '127.0.0.1', resolve));
     const port = (ntfy.address() as AddressInfo).port;
-    world = await World.create(harness.db, { NTFY_URL: `http://127.0.0.1:${port}`, NTFY_TOKEN: TOKEN, AUTH_RATE_LIMIT_MAX: '100000' }, { pushMinIntervalMs: 0 });
+    world = await World.create(harness.db, { NTFY_URL: `http://127.0.0.1:${port}`, NTFY_TOKEN: TOKEN, AUTH_RATE_LIMIT_MAX: '100000', WS_PING_INTERVAL_MS: '300', WS_AUTH_TIMEOUT_MS: '60000' }, { pushMinIntervalMs: 0 });
     await world.app.listen({ host: '127.0.0.1', port: 0 });
     fam = await createFamily(world);
   }, 120_000);
@@ -119,7 +138,11 @@ describe.each(backends)('Push ($name)', (backend) => {
     await resetSync(world);
     await world.db.execute(sql`truncate table push_endpoints`);
     world.app.push?.reset();
-    if (world.app.push) world.app.push.minIntervalMs = 0;
+    if (world.app.push) {
+      world.app.push.minIntervalMs = 0;
+      world.app.push.fehlerPauseMs = 300;
+      world.app.push.authPauseMs = 300;
+    }
     calls = [];
     reply = { status: 200 };
   });
@@ -182,8 +205,10 @@ describe.each(backends)('Push ($name)', (backend) => {
     it('IDOR: ein Topic gehört einem Gerät; fremde Geräte lassen sich weder überschreiben noch löschen', async () => {
       const t = await register(fam.child);
       const steal = await put(fam.parent, endpointOf(t));
-      expect(steal.status).toBe(409);
-      expect(steal.json.error).toBe('endpoint_in_use');
+      // wie ein ungültiger Endpunkt (verrät nicht, dass das Topic vergeben ist)
+      const ungueltig = await put(fam.parent, `https://evil.example/${t}`);
+      expect(steal.status).toBe(400);
+      expect(steal.json).toEqual(ungueltig.json);
       // Löschen trifft nur das eigene Gerät: das Gerät des Elternteils hat keinen Endpunkt, der des Kindes bleibt
       await fam.parent.client.del('/api/v1/me/push');
       expect((await rows(sql`select topic from push_endpoints`)).map((r) => r.topic)).toEqual([t]);
@@ -344,14 +369,14 @@ describe.each(backends)('Push ($name)', (backend) => {
       expect((await topicsPosted()).sort()).toContain(tChild);
     });
 
-    it('Absender: auch sein zweites Gerät wird nicht geweckt', async () => {
+    it('Absender: nur das auslösende Gerät wird ausgenommen, das zweite Gerät derselben Person wird geweckt', async () => {
       const second = await fam.secondDevice('admin');
-      await register(second);
-      await register(fam.admin);
-      await register(fam.parent);
+      const tSecond = await register(second);
+      const tAdmin = await register(fam.admin);
       await change(fam.admin);
       expect(await until(() => calls.length >= 1)).toBe(true);
-      expect(await topicsPosted()).toHaveLength(1);
+      expect(await topicsPosted()).toEqual([tSecond]);
+      expect(calls.map((c) => c.url)).not.toContain(`/${tAdmin}`);
     });
 
     it('kein Push an ein Gerät mit aktiver WebSocket-Verbindung, danach schon', async () => {
@@ -368,7 +393,7 @@ describe.each(backends)('Push ($name)', (backend) => {
       });
       ws.send(JSON.stringify({ type: 'auth', ticket }));
       await ready;
-      expect(world.app.hub.hasDevice(fam.parent.deviceId)).toBe(true);
+      expect(world.app.hub.hasDevice(fam.parent.deviceId, 450)).toBe(true);
       await change(fam.admin);
       expect(await until(() => calls.length >= 1)).toBe(true);
       expect(await topicsPosted()).toEqual([tChild]);
@@ -378,6 +403,26 @@ describe.each(backends)('Push ($name)', (backend) => {
       expect(await until(() => !world.app.hub.hasDevice(fam.parent.deviceId))).toBe(true);
       await change(fam.admin);
       expect(await until(() => calls.length >= 2)).toBe(true);
+    });
+
+    it('halbtoter Socket (kein Pong mehr) verschluckt den Wecker nicht: er kommt nach der Ping-Frist', async () => {
+      const t = await register(fam.parent);
+      const { port } = world.app.server.address() as AddressInfo;
+      const ticket = (await fam.parent.client.post('/api/v1/ws-ticket')).json.ticket as string;
+      // autoPong aus: der Client antwortet nicht mehr auf Pings (Funkloch, Standby)
+      const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { 'x-forwarded-for': '203.0.113.10' }, autoPong: false });
+      sockets.push(ws);
+      const ready = new Promise<void>((resolve) => ws.on('message', (raw: Buffer) => JSON.parse(raw.toString('utf8')).type === 'ready' && resolve()));
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', () => resolve());
+        ws.once('error', reject);
+      });
+      ws.send(JSON.stringify({ type: 'auth', ticket }));
+      await ready;
+      await change(fam.admin); // Verbindung gilt noch als lebendig: kein sofortiger Wecker
+      expect(calls).toHaveLength(0);
+      expect(await until(() => calls.length >= 1, 4000)).toBe(true); // Nachprüfung nach Ablauf der Ping-Frist
+      expect(calls[0]?.url).toBe(`/${t}`);
     });
 
     it('Entprellung: erster Wecker sofort, Änderungen dazwischen werden zu genau einem weiteren zusammengefasst', async () => {
@@ -442,9 +487,35 @@ describe.each(backends)('Push ($name)', (backend) => {
       expect(await until(() => calls.length === 1)).toBe(true);
     });
 
-    it(`wiederholte 5xx: nach ${MAX_FAILS} Fehlschlägen deaktiviert, ohne Wiederholung innerhalb eines Wecks`, async () => {
+    it('5xx von ntfy (z. B. Neustart): kein Zählen je Endpunkt, globale Pause, nichts wird deaktiviert; danach geht es weiter', async () => {
+      await register(fam.parent);
       await register(fam.child);
+      await register(fam.guest);
+      world.app.push!.fehlerPauseMs = 1500;
       reply = { status: 503 };
+      await change(fam.admin, 'all');
+      expect(await until(() => calls.length >= 3)).toBe(true);
+      await wait(60);
+      const vorher = calls.length;
+      for (let i = 0; i < MAX_FAILS + 2; i++) await change(fam.admin, 'all');
+      await wait(60);
+      expect(calls.length).toBe(vorher); // Pause: keine weiteren Versuche
+      const alle = await rows(sql`select disabled_at, fail_count from push_endpoints`);
+      expect(alle).toHaveLength(3);
+      for (const r of alle) {
+        expect(r.disabled_at).toBeNull();
+        expect(r.fail_count).toBe(0);
+      }
+      reply = { status: 200 };
+      await wait(1600); // Pause (1,5 s) vorbei
+      await change(fam.admin, 'all');
+      expect(await until(() => calls.length >= vorher + 3)).toBe(true);
+      await wait(100);
+    });
+
+    it('gezielte 4xx (z. B. 400) zählen je Endpunkt: nach MAX_FAILS in Folge deaktiviert', async () => {
+      await register(fam.child);
+      reply = { status: 400 };
       for (let i = 0; i < MAX_FAILS; i++) {
         await change(fam.admin);
         expect(await until(() => calls.length === i + 1)).toBe(true);
@@ -453,6 +524,31 @@ describe.each(backends)('Push ($name)', (backend) => {
       const [row] = await rows(sql`select disabled_at, fail_count from push_endpoints`);
       expect(row?.fail_count).toBe(MAX_FAILS);
       expect(row?.disabled_at).not.toBeNull();
+    });
+
+    it('Timer prüft die Pause neu: wird sie verlängert, wird mit der Restdauer neu geplant', async () => {
+      await register(fam.parent);
+      await register(fam.child);
+      world.app.push!.minIntervalMs = 0;
+      const svc = world.app.push as unknown as { backoffUntil: number };
+      svc.backoffUntil = Date.now() + 250; // Pause läuft: beide Geräte bekommen einen Timer
+      await change(fam.admin);
+      await wait(60);
+      expect(calls).toHaveLength(0);
+      svc.backoffUntil = Date.now() + 800; // Pause verlängert
+      await wait(300); // der ursprüngliche Ablauf (250 ms) ist vorbei
+      expect(calls).toHaveLength(0);
+      expect(await until(() => calls.length >= 2, 3000)).toBe(true);
+    });
+
+    it('Test-Wecker respektiert die globale Pause', async () => {
+      await register(fam.child);
+      reply = { status: 503 };
+      expect((await fam.child.client.post('/api/v1/me/push/test')).json.result).toBe('failed');
+      reply = { status: 200 };
+      expect((await fam.child.client.post('/api/v1/me/push/test')).json.result).toBe('failed'); // Pause läuft noch
+      await wait(350);
+      expect((await fam.child.client.post('/api/v1/me/push/test')).json.result).toBe('sent');
     });
 
     it('ein Erfolg setzt den Fehlerzähler zurück', async () => {
@@ -477,7 +573,7 @@ describe.each(backends)('Push ($name)', (backend) => {
       expect(await topicsPosted(300)).toHaveLength(1);
     });
 
-    it('401/403 (Token/Rechte falsch): Endpunkt bleibt aktiv, Versand pausiert', async () => {
+    it('401/403 (Token/Rechte falsch): Endpunkt bleibt aktiv, Versand pausiert, danach genau ein zusammengefasster Wecker', async () => {
       await register(fam.child);
       reply = { status: 403 };
       await change(fam.admin);
@@ -486,6 +582,14 @@ describe.each(backends)('Push ($name)', (backend) => {
       const [row] = await rows(sql`select disabled_at, fail_count from push_endpoints`);
       expect(row?.disabled_at).toBeNull();
       expect(row?.fail_count).toBe(0);
+      reply = { status: 200 };
+      await change(fam.admin); // während der Pause: zusammengefasst mit dem geplanten
+      await change(fam.admin);
+      await wait(100);
+      expect(calls).toHaveLength(1);
+      expect(await until(() => calls.length === 2, 2000)).toBe(true);
+      await wait(400);
+      expect(calls).toHaveLength(2);
     });
 
     it('429 mit Retry-After: kein Fehler des Geräts, ein zusammengefasster Wecker nach der Pause', async () => {
@@ -506,7 +610,7 @@ describe.each(backends)('Push ($name)', (backend) => {
       expect(row?.fail_count).toBe(0);
     });
 
-    it('nicht erreichbares ntfy: kein Absturz, Fehler wird gezählt, Antwort des Sync bleibt 200', async () => {
+    it('nicht erreichbares ntfy: kein Absturz, globale Pause statt Zählen, Antwort des Sync bleibt 200', async () => {
       await register(fam.child);
       const svc = world.app.push as unknown as { o: { config: { ntfyUrl: string } } };
       const old = svc.o.config.ntfyUrl;
@@ -515,8 +619,10 @@ describe.each(backends)('Push ($name)', (backend) => {
         const res = await change(fam.admin);
         expect(res.status).toBe(200);
         await wait(300);
-        const [row] = await rows(sql`select fail_count from push_endpoints`);
-        expect(row?.fail_count).toBe(1);
+        const [row] = await rows(sql`select fail_count, disabled_at, last_error_at from push_endpoints`);
+        expect(row?.fail_count).toBe(0);
+        expect(row?.disabled_at).toBeNull();
+        expect(row?.last_error_at).not.toBeNull();
       } finally {
         svc.o.config.ntfyUrl = old;
       }

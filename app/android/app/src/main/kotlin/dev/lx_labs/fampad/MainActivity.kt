@@ -37,6 +37,13 @@ class MainActivity : FlutterActivity() {
         private var secureWunsch = false
     }
 
+    /**
+     * Start-Argumente der Dart-Seite nie aus einem Intent übernehmen: Das Argument "--unifiedpush-bg" (Hintergrund-Start ohne Oberfläche,
+     * lib/data/push/push_hintergrund.dart) setzt allein das UnifiedPush-Plugin in seiner eigenen Engine. Sonst könnte eine fremde App die
+     * sichtbare Oberfläche mit dem Argument starten (dann liefe nur der Abgleich, die App bliebe leer).
+     */
+    override fun getDartEntrypointArgs(): List<String>? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         startLink = linkAus(intent)

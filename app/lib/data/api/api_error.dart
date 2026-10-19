@@ -70,6 +70,14 @@ class ApiException implements Exception {
     message: 'Der Server antwortet nicht. Bitte versuche es gleich noch einmal.',
   );
 
+  /// Hintergrund-Abgleich ohne Refresh-Erlaubnis und abgelaufenes Access-Token: wie "kein Netz", die Sitzung bleibt unberührt.
+  static const zugangAbgelaufen = ApiException(
+    kind: ApiErrorKind.netzwerk,
+    status: 0,
+    code: 'access_expired',
+    message: 'Die Anmeldung muss erst in der App erneuert werden.',
+  );
+
   static const unerwarteteAntwort = ApiException(
     kind: ApiErrorKind.protokoll,
     status: 0,

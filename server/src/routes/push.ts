@@ -52,7 +52,8 @@ export function registerPushRoutes(app: FastifyInstance, config: Config, auth: A
     if (!topic) throw new AppError(400, 'invalid_endpoint', 'Der Push-Endpunkt ist ungültig.');
     // ein Topic gehört genau einem Gerät (fremdes Topic kann nicht übernommen werden)
     const [taken] = await ctx.db.select({ d: pushEndpoints.deviceId }).from(pushEndpoints).where(and(eq(pushEndpoints.topic, topic), ne(pushEndpoints.deviceId, deviceId)));
-    if (taken) throw new AppError(409, 'endpoint_in_use', 'Dieser Push-Endpunkt ist schon vergeben.');
+    // fremdes Topic: Antwort wie bei ungültigem Endpunkt (verrät nicht, dass es das Topic gibt)
+    if (taken) throw new AppError(400, 'invalid_endpoint', 'Der Push-Endpunkt ist ungültig.');
     const now = ctx.now();
     try {
       await ctx.db
@@ -63,7 +64,7 @@ export function registerPushRoutes(app: FastifyInstance, config: Config, auth: A
           set: { topic, updatedAt: now, failCount: 0, disabledAt: null, lastErrorAt: null, lastOkAt: null },
         });
     } catch (err: unknown) {
-      if (isUniqueViolation(err)) throw new AppError(409, 'endpoint_in_use', 'Dieser Push-Endpunkt ist schon vergeben.');
+      if (isUniqueViolation(err)) throw new AppError(400, 'invalid_endpoint', 'Der Push-Endpunkt ist ungültig.');
       throw err;
     }
     return { ok: true };
@@ -76,7 +77,7 @@ export function registerPushRoutes(app: FastifyInstance, config: Config, auth: A
     return { ok: true };
   });
 
-  // Test-Wecker an das eigene Gerät; die App zeigt, ob er ankommt
+  // Test-Wecker an das eigene Gerät; die App zeigt, ob etwas ankommt
   app.post('/api/v1/me/push/test', strikt, async (req) => {
     const p = await auth.requireSession(req);
     const result = await push.sendeTest(deviceOf(p), p.familyId);

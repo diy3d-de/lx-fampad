@@ -95,6 +95,9 @@ class PushZustand {
 
 final pushPlattformProvider = Provider<PushPlattform>((ref) => neuePushPlattform());
 
+/// Mindestabstand zwischen zwei Abgleichen nach Weckern bei laufender App (Tests: kürzer).
+final pushWeckerAbstandProvider = Provider<Duration>((ref) => const Duration(seconds: 10));
+
 /// Wie lange der Test auf das Eintreffen des Weckers wartet (Tests: kürzer).
 final pushTestWartezeitProvider = Provider<Duration>((ref) => const Duration(seconds: 20));
 
@@ -109,8 +112,24 @@ class PushController extends Notifier<PushZustand> {
   bool _initialisiert = false;
   Completer<void>? _testWecker;
 
+  /// Nach einem abgelehnten Endpunkt (fremdes Topic, ungültig) wird genau einmal neu registriert (der Verteiler vergibt ein neues Topic).
+  bool _neuVersucht = false;
+
+  /// Meldet der Verteiler kurz nach unserer eigenen Abmeldung "abgemeldet", ist das keine Abmeldung durch ihn.
+  DateTime _eigeneAbmeldung = DateTime.fromMillisecondsSinceEpoch(0);
+
+  WeckerLauf? _weckerLauf;
+
   @override
-  PushZustand build() => PushZustand(unterstuetzt: ref.read(pushPlattformProvider).unterstuetzt);
+  PushZustand build() {
+    ref.onDispose(() => _weckerLauf?.beenden());
+    return PushZustand(unterstuetzt: ref.read(pushPlattformProvider).unterstuetzt);
+  }
+
+  Future<void> _verteilerAbmelden() {
+    _eigeneAbmeldung = DateTime.now();
+    return _p.abmelden();
+  }
 
   Future<void> _initialisieren() async {
     if (_initialisiert) return;
@@ -166,6 +185,7 @@ class PushController extends Notifier<PushZustand> {
   Future<void> einschalten() async {
     if (!state.unterstuetzt || state.beschaeftigt) return;
     state = state.copyWith(beschaeftigt: true, fehlerLoeschen: true, verteilerFehlt: false, auswahl: const [], testLoeschen: true);
+    _neuVersucht = false;
     try {
       await _initialisieren();
       var v = await _p.aktuellerVerteiler();
@@ -222,7 +242,7 @@ class PushController extends Notifier<PushZustand> {
     } catch (_) {}
     try {
       await ref.read(appDatabaseProvider).metaSchreiben(kPushAn, '0');
-      await _p.abmelden();
+      await _verteilerAbmelden();
     } catch (_) {}
     if (ref.mounted) state = state.copyWith(beschaeftigt: false, gewuenscht: false, angemeldet: false, fehler: fehler);
   }
@@ -254,9 +274,22 @@ class PushController extends Notifier<PushZustand> {
     if (!ref.mounted || !state.gewuenscht) return;
     try {
       await ref.read(apiProvider).pushAnmelden(url);
+      _neuVersucht = false;
       if (ref.mounted) state = state.copyWith(angemeldet: true, fehlerLoeschen: true);
       await laden();
     } on ApiException catch (e) {
+      // Der Server lehnt den Endpunkt ab (ungültig, falscher ntfy-Server oder das Topic gehört schon einem Gerät, 409 endpoint_in_use):
+      // genau einmal abmelden und neu registrieren, damit der Verteiler ein neues Topic vergibt. Hilft das nicht, bleibt die Meldung stehen.
+      if ((e.hatCode('invalid_endpoint') || e.hatCode('endpoint_in_use')) && !_neuVersucht) {
+        _neuVersucht = true;
+        try {
+          await _verteilerAbmelden();
+          await _p.registrieren();
+          return;
+        } catch (_) {
+          // fällt auf die Meldung zurück
+        }
+      }
       if (ref.mounted) state = state.copyWith(angemeldet: false, fehler: e.message);
     } catch (_) {
       if (ref.mounted) state = state.copyWith(angemeldet: false, fehler: 'Der Endpunkt konnte nicht beim Server angemeldet werden.');
@@ -265,6 +298,7 @@ class PushController extends Notifier<PushZustand> {
 
   Future<void> _verteilerHatAbgemeldet() async {
     if (!ref.mounted) return;
+    if (DateTime.now().difference(_eigeneAbmeldung) < const Duration(seconds: 5)) return; // Folge unserer eigenen Abmeldung
     try {
       await ref.read(apiProvider).pushLoeschen();
     } catch (_) {}
@@ -281,13 +315,17 @@ class PushController extends Notifier<PushZustand> {
     state = state.copyWith(letzterWecker: DateTime.now());
     final t = _testWecker;
     if (t != null && !t.isCompleted) t.complete();
-    try {
-      await weckerAbgleichen(
-        store: ref.read(syncStoreProvider),
-        abgleich: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
-        ereignisse: ref.read(ereignisBenachrichtigerProvider),
-      );
-    } catch (_) {}
+    // gedrosselt und serialisiert: höchstens ein Abgleich je Mindestabstand, auch bei einer Flut von Weckern
+    (_weckerLauf ??= WeckerLauf(abstand: ref.read(pushWeckerAbstandProvider), lauf: _weckerAbgleich)).ausloesen();
+  }
+
+  Future<void> _weckerAbgleich() async {
+    if (!ref.mounted) return;
+    await weckerAbgleichen(
+      store: ref.read(syncStoreProvider),
+      abgleich: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
+      ereignisse: ref.read(ereignisBenachrichtigerProvider),
+    );
   }
 
   /// Beim Abmelden (Hook in auth_state.dart): Endpunkt beim Server löschen (nur wenn die Sitzung noch gilt) und beim Verteiler abmelden.
@@ -299,7 +337,7 @@ class PushController extends Notifier<PushZustand> {
       } catch (_) {}
     }
     try {
-      await _p.abmelden();
+      await _verteilerAbmelden();
     } catch (_) {}
     if (ref.mounted) state = PushZustand(unterstuetzt: state.unterstuetzt, geladen: state.geladen);
   }

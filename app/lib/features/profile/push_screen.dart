@@ -173,7 +173,10 @@ class _TestAnzeige extends StatelessWidget {
   @override
   Widget build(BuildContext context) => switch (test) {
     PushTest.laeuft => const MeldungsBox('Der Server sendet den Wecker … warte kurz.', fehler: false),
-    PushTest.angekommen => const MeldungsBox('Der Test-Wecker ist angekommen. Push funktioniert auf diesem Gerät.', fehler: false),
+    PushTest.angekommen => const MeldungsBox(
+      'Der Test-Wecker ist angekommen. Push funktioniert auf diesem Gerät.\n(Hinweis: Das heißt nur, dass etwas angekommen ist; ob es von deinem Server kam, zeigt der Test nicht.)',
+      fehler: false,
+    ),
     PushTest.nichtAngekommen => const MeldungsBox(
       'Der Server hat den Wecker gesendet, aber hier ist nichts angekommen. Prüfe die ntfy-App (Server, Benutzer) und die Akku-Einstellungen unten.',
     ),

@@ -2,8 +2,18 @@
 // Das Gerät holt sich daraufhin per Sync, was es sehen darf, und zeigt selbst eine lokale Benachrichtigung.
 //
 // Ablauf von weckeGeraete(): Familien-Revision gestiegen -> Empfänger bestimmen (Geräte mit Endpunkt, aktive Mitglieder, deren Rolle die
-// Änderung sehen darf; nicht die Person, die sie ausgelöst hat; keine Geräte mit offener WebSocket-Verbindung; zusätzliche Filter) ->
-// je Gerät entprellt senden (höchstens ein Wecker je Gerät und Mindestabstand; was dazwischen anfällt, wird zu einem zusammengefasst).
+// Änderung sehen darf; nicht das auslösende GERÄT; zusätzliche Filter) -> je Gerät entprellt senden (höchstens ein Wecker je Gerät und
+// Mindestabstand; was dazwischen anfällt, wird zu einem zusammengefasst).
+//
+// Entscheidungen:
+//  - Absender: Ausgeschlossen wird nur das auslösende Gerät. Die anderen Geräte derselben Person werden geweckt und gleichen ab; ob
+//    daraufhin eine Anzeige erscheint, entscheidet der EreignisBenachrichtiger der App (eigene Änderungen zeigt er nicht an).
+//  - Offene WebSocket-Verbindung: Ein Gerät, dessen Verbindung kürzlich Lebenszeichen zeigte (Pong/Nachricht innerhalb von
+//    `liveFensterMs`), bekommt den Rev-Hinweis über den Socket und keinen Push. Damit ein halbtoter Socket (Funkloch, Standby) keinen
+//    Wecker verschluckt, wird nach Ablauf der Ping-Frist (`nachpruefenMs`) einmal nachgeprüft und dann gesendet, wenn keine lebendige
+//    Verbindung mehr da ist.
+//  - Fehler von ntfy: Netz, Zeitlimit und 5xx sind Störungen des ntfy, nicht des Geräts: globale Pause (kein Zählen je Endpunkt, damit
+//    ein ntfy-Neustart nicht alle Endpunkte deaktiviert). Nur 404/410 deaktivieren sofort, übrige 4xx zählen (5 in Folge).
 //
 // ERWEITERUNGSSTELLE (Chat, später Kalender/Aufgaben): Die Rollen-Sicht (Audience) kennt jeder Datensatz über die Sync-Regeltabelle und
 // kommt als `roles` in das Ereignis. Was Rollen nicht ausdrücken können (Privatchats: nur Teilnehmer), liefert ein Empfängerfilter:
@@ -24,7 +34,7 @@ export interface WakeEvent {
   rev: number;
   /** Rollen, die die Änderung sehen dürfen (fehlt: alle). */
   roles?: readonly Role[] | undefined;
-  /** Auslöser: dessen Person (und damit alle ihre Geräte) wird nicht geweckt. */
+  /** Auslöser: dessen Gerät wird nicht geweckt (die anderen Geräte der Person schon). */
   origin?: RevOrigin | undefined;
 }
 
@@ -38,44 +48,60 @@ export interface PushOptions {
   config: Config;
   log: Logger;
   now: () => Date;
-  /** Hat das Gerät eine offene WebSocket-Verbindung? */
-  hasLiveSocket: (deviceId: string) => boolean;
+  /** Hat das Gerät eine lebendige WebSocket-Verbindung (mit Lebenszeichen innerhalb von `maxIdleMs`)? */
+  hasLiveSocket: (deviceId: string, maxIdleMs: number) => boolean;
   fetch?: typeof fetch;
   /** Mindestabstand zwischen zwei Weckern an dasselbe Gerät (Standard 10 s). */
   minIntervalMs?: number;
   /** Zeitlimit eines Sendeversuchs (Standard 5 s). */
   timeoutMs?: number;
+  /** Eine Verbindung gilt als lebendig, wenn sie in diesem Zeitraum ein Lebenszeichen zeigte (Standard 45 s = 1,5 Ping-Intervalle). */
+  liveFensterMs?: number;
+  /** Wartezeit bis zur Nachprüfung eines wegen offener Verbindung nicht gesendeten Weckers (Standard 46 s). */
+  nachpruefenMs?: number;
 }
 
-/** Aufeinanderfolgende Fehlschläge, ab denen ein Endpunkt deaktiviert wird. */
+/** Aufeinanderfolgende gezielte 4xx-Fehler, ab denen ein Endpunkt deaktiviert wird. */
 export const MAX_FAILS = 5;
 const DEFAULT_MIN_INTERVAL_MS = 10_000;
 const DEFAULT_TIMEOUT_MS = 5000;
 const DEFAULT_BACKOFF_MS = 60_000;
 const MAX_BACKOFF_MS = 10 * 60_000;
-const CONFIG_BACKOFF_MS = 5 * 60_000;
+/** Neue Planungen eines Weckers nach einer Pause (429, 401/403), je ursprünglichem Auslöser. */
+const MAX_RETRIES = 2;
+const STATE_MAX_AGE_MS = 60_000;
 
-type SendOutcome = 'ok' | 'gone' | 'fail' | 'rate_limited' | 'config';
+type SendOutcome = 'ok' | 'gone' | 'client' | 'rate_limited' | 'auth' | 'pause';
 
 interface DeviceState {
   lastSent: number;
   timer?: NodeJS.Timeout | undefined;
+  recheck?: NodeJS.Timeout | undefined;
 }
 
 export class PushService {
   private readonly filters: RecipientFilter[] = [];
   private readonly state = new Map<string, DeviceState>();
-  /** Mindestabstand der Wecker je Gerät (Tests stellen ihn um). */
-  minIntervalMs: number;
+  private readonly testSent = new Map<string, number>();
   private readonly timeout: number;
   private readonly doFetch: typeof fetch;
   private backoffUntil = 0;
   private warnedOff = false;
   private closed = false;
 
+  /** Mindestabstand der Wecker je Gerät (Tests stellen ihn um). */
+  minIntervalMs: number;
+  liveFensterMs: number;
+  nachpruefenMs: number;
+  /** Globale Pause nach Netz-/5xx-Fehlern bzw. nach 401/403 (Tests stellen sie um). */
+  fehlerPauseMs = 30_000;
+  authPauseMs = 5 * 60_000;
+
   constructor(private readonly o: PushOptions) {
     this.minIntervalMs = o.minIntervalMs ?? DEFAULT_MIN_INTERVAL_MS;
     this.timeout = o.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.liveFensterMs = o.liveFensterMs ?? 45_000;
+    this.nachpruefenMs = o.nachpruefenMs ?? 46_000;
     this.doFetch = o.fetch ?? fetch;
   }
 
@@ -97,16 +123,27 @@ export class PushService {
 
   /** Verwirft Entprellung und Backoff (Tests). */
   reset(): void {
-    for (const s of this.state.values()) if (s.timer) clearTimeout(s.timer);
+    for (const s of this.state.values()) {
+      if (s.timer) clearTimeout(s.timer);
+      if (s.recheck) clearTimeout(s.recheck);
+    }
     this.state.clear();
+    this.testSent.clear();
     this.backoffUntil = 0;
   }
 
   /** Beim Herunterfahren: offene Timer löschen. */
   close(): void {
     this.closed = true;
-    for (const s of this.state.values()) if (s.timer) clearTimeout(s.timer);
-    this.state.clear();
+    this.reset();
+  }
+
+  /** Entfernt Zustände von Geräten, die lange nichts mehr bekamen (die Map wächst sonst mit jedem je geweckten Gerät). */
+  private prune(): void {
+    const now = Date.now();
+    const alt = Math.max(this.minIntervalMs, STATE_MAX_AGE_MS);
+    for (const [id, s] of this.state) if (!s.timer && !s.recheck && now - s.lastSent > alt) this.state.delete(id);
+    for (const [id, t] of this.testSent) if (now - t > alt) this.testSent.delete(id);
   }
 
   /** Geräte der Familie wecken, die die Änderung betrifft. Wirft nie (Fehler gehen ins Log). */
@@ -114,6 +151,7 @@ export class PushService {
     if (this.closed) return;
     if (!this.enabled) return this.logStatusOnce();
     try {
+      this.prune();
       const rows = await this.o.db
         .select({ deviceId: pushEndpoints.deviceId, userId: devices.userId })
         .from(pushEndpoints)
@@ -126,7 +164,8 @@ export class PushService {
             isNull(devices.revokedAt),
             eq(memberships.status, 'active'),
             ev.roles ? inArray(memberships.role, [...ev.roles]) : undefined,
-            ev.origin ? ne(devices.userId, ev.origin.userId) : undefined,
+            // nur das auslösende GERÄT (ohne Geräteangabe wird niemand ausgenommen)
+            ev.origin?.deviceId ? ne(devices.id, ev.origin.deviceId) : undefined,
           ),
         );
       let allowed = undefined as ReadonlySet<string> | undefined;
@@ -138,38 +177,64 @@ export class PushService {
       }
       for (const row of rows) {
         if (allowed && !allowed.has(row.userId)) continue;
-        if (this.o.hasLiveSocket(row.deviceId)) continue;
-        this.schedule(row.deviceId);
+        if (this.live(row.deviceId)) this.nachpruefen(row.deviceId);
+        else this.schedule(row.deviceId);
       }
     } catch (err: unknown) {
       this.o.log.error({ err }, 'Push: Empfänger konnten nicht bestimmt werden');
     }
   }
 
-  /** Entprellt: sofort senden, wenn der Mindestabstand eingehalten ist, sonst genau einen Wecker später (zusammengefasst). */
-  private schedule(deviceId: string): void {
-    const now = Date.now();
+  private live(deviceId: string): boolean {
+    return this.o.hasLiveSocket(deviceId, this.liveFensterMs);
+  }
+
+  /** Ein wegen offener Verbindung nicht gesendeter Wecker wird nach Ablauf der Ping-Frist einmal nachgeprüft (genau ein Timer je Gerät). */
+  private nachpruefen(deviceId: string): void {
+    const st = this.state.get(deviceId) ?? { lastSent: 0 };
+    this.state.set(deviceId, st);
+    if (st.recheck) return;
+    st.recheck = setTimeout(() => {
+      st.recheck = undefined;
+      if (this.closed) return;
+      if (!this.live(deviceId)) this.schedule(deviceId);
+    }, this.nachpruefenMs);
+    st.recheck.unref();
+  }
+
+  /** Entprellt: sofort senden, wenn Mindestabstand und globale Pause es erlauben, sonst genau einen Wecker später (zusammengefasst). */
+  private schedule(deviceId: string, versuch = 0): void {
     const st = this.state.get(deviceId) ?? { lastSent: 0 };
     this.state.set(deviceId, st);
     if (st.timer) return; // es ist schon einer geplant: zusammenfassen
-    const wait = Math.max(0, st.lastSent + this.minIntervalMs - now, this.backoffUntil - now);
-    if (wait === 0) {
-      st.lastSent = now;
-      void this.deliver(deviceId);
+    const warten = () => Math.max(0, st.lastSent + this.minIntervalMs - Date.now(), this.backoffUntil - Date.now());
+    const w = warten();
+    if (w === 0) {
+      st.lastSent = Date.now();
+      void this.deliver(deviceId, versuch);
       return;
     }
-    st.timer = setTimeout(() => {
+    const aufruf = () => {
+      // die Pause kann sich verlängert haben (neue Fehler, größeres Retry-After): mit der Restdauer neu planen
+      const rest = warten();
+      if (rest > 0) {
+        st.timer = setTimeout(aufruf, rest);
+        st.timer.unref();
+        return;
+      }
       st.timer = undefined;
       st.lastSent = Date.now();
-      void this.deliver(deviceId);
-    }, wait);
+      void this.deliver(deviceId, versuch);
+    };
+    st.timer = setTimeout(aufruf, w);
     st.timer.unref();
   }
 
-  /** Sendet an ein Gerät (liest den aktuellen Endpunkt, prüft nochmals auf offene Verbindung) und verbucht das Ergebnis. */
-  private async deliver(deviceId: string): Promise<void> {
+  /** Sendet an ein Gerät (liest den aktuellen Endpunkt) und verbucht das Ergebnis. */
+  private async deliver(deviceId: string, versuch: number): Promise<void> {
     try {
-      if (this.closed || this.o.hasLiveSocket(deviceId)) return;
+      if (this.closed) return;
+      if (this.live(deviceId)) return this.nachpruefen(deviceId);
       const [ep] = await this.o.db
         .select({ topic: pushEndpoints.topic, failCount: pushEndpoints.failCount })
         .from(pushEndpoints)
@@ -177,16 +242,21 @@ export class PushService {
       if (!ep) return;
       const outcome = await this.send(ep.topic);
       await this.record(deviceId, outcome, ep.failCount);
-      if (outcome === 'rate_limited') this.schedule(deviceId); // ein zusammengefasster Wecker nach dem Backoff
+      // nach einer Pause (429, 401/403) genau ein zusammengefasster Wecker; Netz-/5xx-Fehler werden nicht wiederholt (der nächste Auslöser weckt)
+      if ((outcome === 'rate_limited' || outcome === 'auth') && versuch < MAX_RETRIES) this.schedule(deviceId, versuch + 1);
     } catch (err: unknown) {
       this.o.log.error({ err }, 'Push: Versand fehlgeschlagen');
     }
   }
 
+  private pause(ms: number): void {
+    this.backoffUntil = Math.max(this.backoffUntil, Date.now() + Math.min(ms, MAX_BACKOFF_MS));
+  }
+
   /** POST an die Loopback-URL (nie an die vom Gerät gemeldete URL) mit Token; das Topic wurde beim Anmelden streng geprüft. */
   private async send(topic: string): Promise<SendOutcome> {
     const { ntfyUrl, ntfyToken } = this.o.config;
-    if (!ntfyUrl || !ntfyToken) return 'config';
+    if (!ntfyUrl || !ntfyToken) return 'auth';
     try {
       const res = await this.doFetch(`${ntfyUrl}/${topic}`, {
         method: 'POST',
@@ -200,19 +270,24 @@ export class PushService {
       if (res.status === 404 || res.status === 410) return 'gone';
       if (res.status === 429) {
         const ra = Number(res.headers.get('retry-after'));
-        const ms = Number.isFinite(ra) && ra > 0 ? ra * 1000 : DEFAULT_BACKOFF_MS;
-        this.backoffUntil = Math.max(this.backoffUntil, Date.now() + Math.min(ms, MAX_BACKOFF_MS));
+        this.pause(Number.isFinite(ra) && ra > 0 ? ra * 1000 : DEFAULT_BACKOFF_MS);
         return 'rate_limited';
       }
       if (res.status === 401 || res.status === 403) {
-        // Token/ACL falsch: Fehler des Betriebs, nicht des Geräts; Endpunkte bleiben, Versand pausiert
-        this.backoffUntil = Math.max(this.backoffUntil, Date.now() + CONFIG_BACKOFF_MS);
+        // Token/ACL falsch: Fehler des Betriebs, nicht des Geräts; Endpunkte bleiben, der Versand pausiert
+        this.pause(this.authPauseMs);
         this.o.log.error({ status: res.status }, 'Push: ntfy lehnt das Token ab (Rechte auf up* prüfen)');
-        return 'config';
+        return 'auth';
       }
-      return 'fail'; // übrige 4xx und 5xx: kein Retry
+      if (res.status >= 500) {
+        this.pause(this.fehlerPauseMs);
+        return 'pause';
+      }
+      return 'client'; // übrige 4xx: kein Retry, zählt gegen den Endpunkt
     } catch {
-      return 'fail'; // Netzwerkfehler, Zeitlimit
+      // Netzwerkfehler oder Zeitlimit: Störung des ntfy (Neustart), nicht des Endpunkts
+      this.pause(this.fehlerPauseMs);
+      return 'pause';
     }
   }
 
@@ -223,17 +298,20 @@ export class PushService {
       await this.o.db.update(pushEndpoints).set({ lastOkAt: now, failCount: 0 }).where(where);
     } else if (outcome === 'gone') {
       await this.o.db.update(pushEndpoints).set({ disabledAt: now, lastErrorAt: now, failCount: failCount + 1 }).where(where);
-    } else if (outcome === 'fail') {
+    } else if (outcome === 'client') {
       const next = failCount + 1;
       await this.o.db
         .update(pushEndpoints)
         .set({ lastErrorAt: now, failCount: next, ...(next >= MAX_FAILS ? { disabledAt: now } : {}) })
         .where(where);
+    } else if (outcome === 'pause') {
+      // nur zur Anzeige, ohne den Zähler zu erhöhen
+      await this.o.db.update(pushEndpoints).set({ lastErrorAt: now }).where(where);
     }
-    // rate_limited und config: kein Fehler des Endpunkts
+    // rate_limited und auth: kein Fehler des Endpunkts
   }
 
-  /** Test-Wecker für das Gerät der Sitzung (Einstellungen): sofort, aber höchstens einer je Mindestabstand und Gerät. */
+  /** Test-Wecker für das Gerät der Sitzung (Einstellungen): sofort, höchstens einer je Mindestabstand und Gerät, nicht während einer Pause. */
   async sendeTest(deviceId: string, familyId: string): Promise<TestResult> {
     if (!this.enabled) return 'push_off';
     const [ep] = await this.o.db
@@ -242,11 +320,11 @@ export class PushService {
       .where(and(eq(pushEndpoints.deviceId, deviceId), eq(pushEndpoints.familyId, familyId)));
     if (!ep) return 'no_endpoint';
     if (ep.disabledAt) return 'disabled';
-    const st = this.state.get(deviceId) ?? { lastSent: 0 };
-    this.state.set(deviceId, st);
     const now = Date.now();
-    if (now - st.lastSent < this.minIntervalMs) return 'rate_limited';
-    st.lastSent = now;
+    if (now < this.backoffUntil) return 'failed';
+    const letzter = this.testSent.get(deviceId) ?? 0;
+    if (now - letzter < this.minIntervalMs) return 'rate_limited';
+    this.testSent.set(deviceId, now);
     const outcome = await this.send(ep.topic);
     await this.record(deviceId, outcome, ep.failCount);
     return outcome === 'ok' ? 'sent' : 'failed';

@@ -44,6 +44,11 @@ class ApiClient {
   final DateTime Function() _now;
   final Duration _timeout;
 
+  /// false (Hintergrund-Abgleich nach einem Push-Wecker): nie das Refresh-Token einlösen und nie Token verwerfen. Ist das Access-Token
+  /// abgelaufen oder wird es abgelehnt, endet die Anfrage mit einem Verbindungsfehler; der nächste Start der App gleicht ab. So kann
+  /// ein zweiter Prozess oder eine zweite Engine nie ein Refresh-Token doppelt einlösen (der Server würde die ganze Familie widerrufen).
+  final bool _refreshErlaubt;
+
   /// Wird aufgerufen, wenn die Sitzung nicht mehr gültig ist (Zustand wird "abgemeldet").
   void Function(SessionLostReason reason)? onSessionLost;
 
@@ -62,6 +67,7 @@ class ApiClient {
     String? base,
     DateTime Function()? now,
     this._timeout = const Duration(seconds: 20),
+    this._refreshErlaubt = true,
   }) : _web = web ?? kIsWeb,
        _base = base ?? kApiBase,
        _now = now ?? DateTime.now;
@@ -145,6 +151,8 @@ class ApiClient {
     var gesendetesToken = await _vorbereiten(auth);
     var res = await _einmal(method, path, body, auth, gesendetesToken);
     if (auth && res.statusCode == 401 && !_web && gesendetesToken != null && _istSitzungsCode(_fehlercode(res))) {
+      // ohne Refresh-Erlaubnis (Hintergrund): weder erneuern noch die Sitzung verwerfen, nur melden, dass es jetzt nicht geht
+      if (!_refreshErlaubt) throw ApiException.zugangAbgelaufen;
       // Access-Token abgelehnt (z. B. abgelaufen/Uhr): einmal erneuern, aber nur, wenn nicht schon jemand anderes erneuert hat.
       // Andere 401-Fachcodes (step_up_failed ...) bleiben, wie sie sind: kein Erneuern, kein zweiter Versuch.
       await _nachUnauthorized(gesendetesToken);
@@ -168,6 +176,11 @@ class ApiClient {
         code: 'unauthenticated',
         message: 'Du bist nicht angemeldet.',
       );
+    }
+    if (!_refreshErlaubt) {
+      // nur mit einem noch gültigen Access-Token (mit Reserve für die Laufzeit der Anfrage), sonst ohne Tokenzugriff beenden
+      if (!t.accessExpiresAt.subtract(const Duration(seconds: 5)).isAfter(_now())) throw ApiException.zugangAbgelaufen;
+      return t.accessToken;
     }
     if (!t.accessExpiresAt.subtract(_vorlauf).isAfter(_now())) {
       await _erneuern();
