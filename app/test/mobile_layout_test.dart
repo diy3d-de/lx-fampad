@@ -1,5 +1,5 @@
 // Mobilansicht: 360 px Breite (kleinstes unterstütztes Handy) bei Textskalierung 1.0 und 1.5 über Anmeldung und
-// alle fünf Tabs. Geprüft werden: keine Layoutfehler (Overflow u. ä.) und Touch-Ziele von mindestens 44 px.
+// alle fünf Tabs (angemeldet über den Fake-Server; Anmeldung und Konto-Screens: auth_layout_test.dart). Geprüft werden: keine Layoutfehler (Overflow u. ä.) und Touch-Ziele von mindestens 44 px.
 // Die echten Schriften werden geladen, weil die Standardschrift der Tests (Ahem) andere Breiten hat.
 import 'dart:io';
 
@@ -10,6 +10,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:lx_fampad/app.dart';
 import 'package:lx_fampad/constants.dart';
+
+import 'support/fake_server.dart';
+import 'support/test_app.dart';
 
 const _breite = 360.0;
 const _minZiel = 44.0;
@@ -56,20 +59,14 @@ void main() {
   }
 
   for (final skala in [1.0, 1.5]) {
-    testWidgets('360 px Breite, Textskalierung $skala: Anmeldung und alle Tabs ohne Layoutfehler, Ziele >= 44 px', (tester) async {
+    testWidgets('360 px Breite, Textskalierung $skala: alle Tabs ohne Layoutfehler, Ziele >= 44 px', (tester) async {
       tester.view.physicalSize = const Size(_breite, 800);
       tester.view.devicePixelRatio = 1.0;
       tester.platformDispatcher.textScaleFactorTestValue = skala;
       addTearDown(tester.view.reset);
       addTearDown(tester.platformDispatcher.clearAllTestValues);
 
-      await tester.pumpWidget(const ProviderScope(child: FampadApp()));
-      await tester.pump();
-      expect(tester.takeException(), isNull, reason: 'Anmeldung');
-      expect(kleineZiele(tester), isEmpty, reason: 'Anmeldung');
-
-      await tester.tap(find.text('Vorschau ohne Anmeldung (Phase 0)'));
-      await tester.pump();
+      await _angemeldetStarten(tester);
       expect(tester.takeException(), isNull, reason: 'Start');
 
       for (var i = 0; i < kTabs.length; i++) {
@@ -103,16 +100,24 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(const ProviderScope(child: FampadApp()));
-    await tester.pump();
-    await tester.tap(find.text('Vorschau ohne Anmeldung (Phase 0)'));
-    await tester.pump();
+    await _angemeldetStarten(tester);
     expect(tester.takeException(), isNull);
 
     final stack = tester.getRect(find.byType(IndexedStack));
     expect(stack.width, kMaxContentWidth);
     expect(stack.center.dx, closeTo(800, 0.5));
   });
+}
+
+Future<void> _angemeldetStarten(WidgetTester tester) async {
+  final env = TestUmgebung(standardServer());
+  await env.angemeldet();
+  final container = env.container();
+  addTearDown(container.dispose);
+  await tester.pumpWidget(UncontrolledProviderScope(container: container, child: const FampadApp()));
+  for (var i = 0; i < 5; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
 }
 
 bool _hatVorfahr(Element element, bool Function(Widget) test) {
