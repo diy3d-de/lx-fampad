@@ -26,6 +26,11 @@ dependencies:
   cryptography: 2.9.0
   # an sqlite3.wasm gebunden (web/sqlite3.wasm, Prüfsumme in docs/VERSIONEN.md): beide immer zusammen ändern
   sqlite3: 3.7.0
+  flutter_secure_storage: 11.2.0
+  passkeys: 2.23.1
+  mobile_scanner: 7.4.2
+  qr_flutter: 4.1.0
+  web: 1.1.1
 
 dev_dependencies:
   flutter_test:

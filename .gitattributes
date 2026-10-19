@@ -2,3 +2,4 @@
 *.bat text eol=crlf
 *.ttf binary
 *.png binary
+app/web/passkeys-bundle.js binary
