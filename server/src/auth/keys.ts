@@ -62,6 +62,8 @@ export async function rotateKeys(
     const [alt] = await tx.select().from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
     if (!alt) throw notFound();
     if (alt.keyVersion !== input.expectedKeyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
+    // dieselben Schlüssel unter höherer Version wären ein stiller Versionssprung ohne neuen Schlüssel: abgelehnt
+    if (alt.publicEncKey === input.publicEncKey && alt.publicSignKey === input.publicSignKey) throw new AppError(409, 'keys_unchanged', 'Der neue Schlüssel entspricht dem bisherigen.');
     const now = ctx.now();
     await tx.insert(personKeyHistory).values({ userId: p.userId, keyVersion: alt.keyVersion, encKey: alt.publicEncKey, signKey: alt.publicSignKey, validFrom: alt.updatedAt, validUntil: now });
     const [row] = await tx

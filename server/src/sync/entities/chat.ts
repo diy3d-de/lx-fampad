@@ -122,8 +122,8 @@ export const konversationEntity: EntityDef = {
   },
   // Familienchat und Direktchat dürfen nach dem Löschen (z. B. Person entfernt) mit derselben ID neu angelegt werden
   revive: (row: Row): boolean => row.art !== 'group',
-  // die Hülle bleibt beim Wiederbeleben, wie sie war (ein belebter Altbestand wird nie zu einem anderen Chat)
-  reviveKeep: ['encVersion'],
+  // Beim Wiederbeleben gilt die Hülle der Neuanlage (e1): die Nachrichten und Epochen des gelöschten Chats bleiben Tombstones, ein belebter Klartext-Altbestand (p1) wäre sonst
+  // dauerhaft unbenutzbar, weil der Server in p1 nichts Neues annimmt
   facts: (row: Row): Facts => ({
     audience: 'family',
     ownerId: (row.ownerId as string | null) ?? null,

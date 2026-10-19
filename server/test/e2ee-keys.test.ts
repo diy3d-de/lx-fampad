@@ -96,6 +96,17 @@ describe.each(backends)('E2EE-Schlüssel ($name)', (backend) => {
     expect(await auditEvents(world)).toContain('key_rotated');
   });
 
+  it('Schlüsselwechsel mit denselben Schlüsseln: 409, nichts ändert sich', async () => {
+    const { a } = await two();
+    const k1 = keys();
+    await a.post('/api/v1/me/keys', k1);
+    const r = await a.put('/api/v1/me/keys', { ...k1, expectedKeyVersion: 1 });
+    expect(r.status).toBe(409);
+    expect(r.json.error).toBe('keys_unchanged');
+    expect((await a.get('/api/v1/me/keys')).json.keys).toEqual({ ...k1, keyVersion: 1 });
+    expect(await world.count('person_key_history')).toBe(0);
+  });
+
   it('Wechsel ohne vorhandenen Schlüssel: 404', async () => {
     const { a } = await two();
     expect((await a.put('/api/v1/me/keys', { ...keys(), expectedKeyVersion: 1 })).status).toBe(404);

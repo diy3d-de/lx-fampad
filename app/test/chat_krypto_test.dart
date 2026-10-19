@@ -215,8 +215,63 @@ Future<void> main() async {
         await abgleich([a, b, c, d]);
         expect(await text(d, id, alt), 'altes Geheimnis');
         expect(d.krypto.epochenMitSchluessel(id), [1, 2, 3]);
-        // Cora kam ohne Verlauf dazu (Epoche 2 ohne Epoche 1)
-        expect(c.krypto.epochenMitSchluessel(id), [2, 3]);
+        // Cora kam ohne Verlauf dazu (Epoche 2 ohne Epoche 1); Dora kennt sie noch nicht: Epoche 3 wartet auf ihre Bestätigung
+        expect(c.krypto.epochenMitSchluessel(id), [2]);
+        expect((await c.krypto.sendeEpoche(id)).wartet, isTrue);
+        final konv = await (c.db.select(c.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        final plan = await c.krypto.rotationNoetig(konversation: konv, teilnehmer: {anna.id, ben.id, cora.id, dora.id});
+        expect(plan!.neu, {dora.id});
+        await c.store.aendernMehrere(await c.krypto.epocheErstellen(konversationId: id, mitglieder: plan.mitglieder));
+        await abgleich([a, b, c, d]);
+        // mit der Bestätigung ist die zurückgestellte Epoche 3 nachträglich gültig
+        expect(c.krypto.epochenMitSchluessel(id), [2, 3, 4]);
+        expect((await c.krypto.sendeEpoche(id)).wartet, isFalse);
+      });
+
+      test('eingeschleuste unbestätigte Person: eine Epoche mit ihr wird nicht geöffnet, nicht benutzt; Heilung nach der Frist ersetzt sie ohne sie', () async {
+        final id = await gruppe(a, [b]);
+        await senden(a, id, 'vorher', abgleichen: [a, b]);
+        // Anna (oder wer ihr Gerät hat) legt Epoche 2 mit Dora an, die Ben nie bestätigt hat
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, ben.id, dora.id}));
+        await abgleich([a, b]);
+        expect(b.krypto.schluessel(id, 2), isNull);
+        expect(b.krypto.problem(id, 2), isNotNull);
+        expect((await b.krypto.sendeEpoche(id)).wartet, isTrue, reason: 'nicht an eine Liste mit einer unbestätigten Person senden');
+        expect(await b.krypto.nachrichtVersiegeln(konversationId: id, nachrichtId: 'x', klartext: 'geheim'), isNull);
+        final konv = await (b.db.select(b.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        // Dora ist keine Teilnehmerin: nach der Frist ersetzt Ben die Epoche durch eine ohne sie
+        expect(await b.krypto.rotationNoetig(konversation: konv, teilnehmer: {anna.id, ben.id}), isNull, reason: 'erst nach der Frist');
+        // wäre Dora Teilnehmerin, käme die Aufnahme-Abfrage
+        final mitDora = await b.krypto.rotationNoetig(konversation: konv, teilnehmer: {anna.id, ben.id, dora.id});
+        expect(mitDora!.neu, {dora.id});
+        expect(mitDora.automatisch, isFalse);
+        b.jetzt = b.jetzt.add(ChatKrypto.heilungsFrist + const Duration(seconds: 1));
+        final plan = await b.krypto.rotationNoetig(konversation: konv, teilnehmer: {anna.id, ben.id, dora.id});
+        expect(plan!.heilung, isTrue);
+        expect(plan.automatischeMitglieder, {anna.id, ben.id}, reason: 'automatisch nie an die Unbestätigte');
+        await b.store.aendernMehrere(await b.krypto.epocheErstellen(konversationId: id, mitglieder: plan.automatischeMitglieder));
+        await abgleich([b, a]);
+        final neu = await senden(b, id, 'danach', abgleichen: [b, a]);
+        expect(await text(a, id, neu), 'danach');
+      });
+
+      test('Heilung auch, wenn die höchste Epoche mich gar nicht nennt: nach der Frist legt ein Gerät mit früheren Schlüsseln eine neue an', () async {
+        final id = await gruppe(a, [b, c]);
+        await senden(a, id, 'vorher', abgleichen: [a, b, c]);
+        // Cora legt Epoche 2 nur für sich und Anna an: Ben fehlt in der Liste
+        await c.store.aendernMehrere(await c.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, cora.id}));
+        await abgleich([c, a, b]);
+        expect(b.krypto.schluessel(id, 2), isNull);
+        final konv = await (b.db.select(b.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        final alle3 = {anna.id, ben.id, cora.id};
+        expect(await b.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3), isNull, reason: 'erst nach der Frist');
+        b.jetzt = b.jetzt.add(ChatKrypto.heilungsFrist + const Duration(seconds: 1));
+        final plan = await b.krypto.rotationNoetig(konversation: konv, teilnehmer: alle3);
+        expect(plan!.heilung, isTrue);
+        await b.store.aendernMehrere(await b.krypto.epocheErstellen(konversationId: id, mitglieder: plan.automatischeMitglieder));
+        await abgleich([b, a, c]);
+        final neu = await senden(b, id, 'geheilt', abgleichen: [b, a, c]);
+        expect(await text(c, id, neu), 'geheilt');
       });
 
       test('Wrap und Mitgliederliste: Server schiebt einen Wrap aus einer anderen Konversation unter: nicht übernommen, nicht lesbar', () async {

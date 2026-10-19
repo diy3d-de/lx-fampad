@@ -193,12 +193,22 @@ Future<void> main() async {
       expect(await anderes.pruefen({'anna': _key(2)}), isEmpty, reason: 'eigene Merkliste je Konto');
     });
 
-    test('beschädigte Ablage wird wie leer behandelt', () async {
+    test('beschädigte Ablage ist ein Fehler, nie "noch nichts gemerkt" (die Merkliste wird nicht überschrieben)', () async {
       await speicher.schreiben('e2ee.vertrauen.ich', utf8Bytes('{kaputt'));
-      expect(await pruefer().pruefen({'anna': _key(1)}), isEmpty);
-      expect(await pruefer().pruefen({'anna': _key(2)}), hasLength(1));
+      await expectLater(pruefer().pruefen({'anna': _key(1)}), throwsA(isA<CryptoFehler>()));
+      await expectLater(pruefer().gemerkterSchluessel('anna'), throwsA(isA<CryptoFehler>()));
       await speicher.schreiben('e2ee.vertrauen.ich', Uint8List.fromList(utf8.encode('[1,2]')));
-      expect(await pruefer().pruefen({'anna': _key(1)}), isEmpty);
+      await expectLater(pruefer().pruefen({'anna': _key(1)}), throwsA(isA<CryptoFehler>()));
+      expect(utf8.decode((await speicher.lesen('e2ee.vertrauen.ich'))!), '[1,2]', reason: 'nichts überschrieben');
+    });
+
+    test('höhere Schlüsselversion bei gleichem Schlüssel wird still übernommen, ohne Warnung', () async {
+      await pruefer().pruefen({'anna': _key(1)});
+      expect(await pruefer().pruefen({'anna': _key(1, version: 4)}), isEmpty);
+      expect((await pruefer().gemerkterSchluessel('anna'))!.version, 4);
+      // die ältere Version ist danach nur noch ein Rückfall
+      expect((await pruefer().pruefen({'anna': _key(1, version: 2)})), isEmpty, reason: 'gleicher Schlüssel: keine Warnung, die gemerkte Version bleibt');
+      expect((await pruefer().gemerkterSchluessel('anna'))!.version, 4);
     });
 
     test('Sicherheitscode des gemerkten Schlüssels passt zum Personen-Code', () async {

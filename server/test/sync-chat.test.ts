@@ -643,7 +643,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       expect(codes(await fam.parent.sync([upsertK(a, { encVersion: 'p1' }, await revOf('konversationen', a))]))).toEqual(['invalid']);
     });
 
-    it('Altbestand p1: lesbar, aber der Server nimmt nichts Neues mehr an (Nachricht, Bearbeiten); Wiederbeleben setzt die Hülle nicht neu', async () => {
+    it('Altbestand p1: lesbar, aber der Server nimmt nichts Neues mehr an (Nachricht, Bearbeiten); Wiederbeleben macht daraus einen e1-Chat', async () => {
       const konv = await direkt(fam.parent, fam.child);
       const { id } = await nachricht(fam.parent, konv, E1('vorher'));
       // Altbestand simulieren: die Zeile stammt aus einer Zeit, in der Klartext-Chats noch angelegt werden durften
@@ -652,11 +652,13 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       expect(codes((await nachricht(fam.parent, konv, E1('neu'))).res)).toEqual(['invalid']);
       expect(codes((await nachricht(fam.parent, konv, 'p1:neu')).res)).toEqual(['invalid']);
       expect(codes(await fam.parent.sync([upsert('nachricht', id, { text: 'p1:geändert' }, await revOf('nachrichten', id))]))).toEqual(['invalid']);
-      // Direktchat gelöscht (Person entfernt) und neu angelegt: bleibt p1, wird nicht heimlich zu e1
+      // Direktchat gelöscht (Person entfernt) und neu angelegt: wird zu e1 (sonst wäre er dauerhaft unbenutzbar), neue Nachrichten gehen dann
       await world.db.execute(sql`update konversationen set deleted_at = now(), rev = rev + 1 where id = ${konv}`);
+      await world.db.execute(sql`update nachrichten set deleted_at = now(), rev = rev + 1 where konversation_id = ${konv}`);
       const neuAnlage = await fam.parent.sync([upsertK(konv, { art: 'direct', teilnehmer: [fam.parent.userId, fam.child.userId] })]);
       expect(neuAnlage.json.rejected).toEqual([]);
-      expect((await rows(sql`select enc_version from konversationen where id = ${konv}`))[0]?.enc_version).toBe('p1');
+      expect((await rows(sql`select enc_version from konversationen where id = ${konv}`))[0]?.enc_version).toBe('e1');
+      expect(codes((await nachricht(fam.parent, konv, E1('nach dem Wiederbeleben'))).res)).toEqual([]);
     });
 
     it('Lesestand geht nie zurück', async () => {

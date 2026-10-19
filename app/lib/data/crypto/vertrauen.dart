@@ -54,7 +54,7 @@ class VertrauensPruefer {
     if (bytes == null) return {};
     try {
       final raw = jsonDecode(utf8.decode(bytes));
-      if (raw is! Map) return {};
+      if (raw is! Map) throw const CryptoFehler(CryptoFehlerArt.format, 'Die gemerkten Schlüssel sind nicht lesbar.');
       final out = <String, GemerkterSchluessel>{};
       GemerkterSchluessel? eintrag(Object? v) {
         if (v is Map && v['e'] is String && v['s'] is String && v['v'] is int) {
@@ -75,8 +75,11 @@ class VertrauensPruefer {
         if (k is String && e != null) out[k] = e;
       });
       return out;
+    } on CryptoFehler {
+      rethrow;
     } on Object {
-      return {};
+      // nie wie "noch nichts gemerkt" behandeln: sonst würde die Merkliste überschrieben und jeder Schlüssel neu vertraut
+      throw const CryptoFehler(CryptoFehlerArt.format, 'Die gemerkten Schlüssel sind nicht lesbar.');
     }
   }
 
@@ -109,9 +112,9 @@ class VertrauensPruefer {
           geaendert = true;
         }
       } else if (neu != null && alt.gleichWie(neu)) {
-        // wieder da mit demselben Schlüssel: kein Anlass zur Warnung
-        if (alt.entfernt) {
-          gemerkt[e.key] = alt.alsEntfernt(false);
+        // wieder da mit demselben Schlüssel: kein Anlass zur Warnung; eine höhere Version bei gleichem Schlüssel wird still übernommen
+        if (alt.entfernt || neu.version > alt.version) {
+          gemerkt[e.key] = GemerkterSchluessel(alt.enc, alt.sign, neu.version > alt.version ? neu.version : alt.version, frueher: alt.frueher);
           geaendert = true;
         }
       } else if (neu == null && alt.entfernt) {
