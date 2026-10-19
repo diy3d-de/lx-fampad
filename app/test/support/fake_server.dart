@@ -123,7 +123,7 @@ Map<String, dynamic> neueEinladungJson({bool pin = true}) => {
 
 Map<String, dynamic> webauthnOptionen() => {
   'challenge': 'Y2hhbGxlbmdl',
-  'rp': {'name': 'lx-fampad', 'id': 'familie.lx-labs.dev'},
+  'rp': {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'},
   'user': {'id': 'dXNlcg', 'name': 'anna@beispiel.de', 'displayName': 'Anna'},
   'pubKeyCredParams': [
     {'alg': -7, 'type': 'public-key'},

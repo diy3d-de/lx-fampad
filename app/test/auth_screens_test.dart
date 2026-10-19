@@ -253,7 +253,7 @@ void main() {
       final start = server.anfragen('POST /auth/invites/passkey/options').single.json;
       expect(start, {'token': fixToken, 'email': 'ben@beispiel.de', 'displayName': 'Ben'});
       expect(env.passkeys.erstellt, 1);
-      expect(env.passkeys.letzteOptionen!['rp'], {'name': 'lx-fampad', 'id': 'familie.lx-labs.dev'});
+      expect(env.passkeys.letzteOptionen!['rp'], {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'});
       final fertig = server.anfragen('POST /auth/invites/passkey/complete').single.json;
       expect(fertig['challengeId'], 'c-9');
       expect(fertig['client'], 'app');
@@ -335,7 +335,7 @@ void main() {
         ..json('POST /auth/invites/password/start', {
           'challengeId': 'c-10',
           'totpSecret': 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
-          'totpUri': 'otpauth://totp/lx-fampad:ben%40beispiel.de?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=lx-fampad',
+          'totpUri': 'otpauth://totp/lx-familyhub:ben%40beispiel.de?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=lx-familyhub',
         });
       final env = await zurEinladung(tester, server);
       env.passkeys.fehler = const PasskeyException(PasskeyFehler.nichtUnterstuetzt, 'Dieses Gerät oder dieser Browser unterstützt keine Passkeys. Du kannst stattdessen Passwort mit Code nutzen.');

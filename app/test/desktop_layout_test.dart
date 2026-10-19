@@ -24,7 +24,7 @@ void main() {
       final handle = tester.ensureSemantics();
       await start(tester, groesse);
       expect(find.byType(NavigationBar), findsNothing);
-      expect(find.text('lx-fampad'), findsOneWidget);
+      expect(find.text('lx-familyhub'), findsOneWidget);
       expect(find.text(kInviteHost), findsOneWidget);
       for (final t in kTabs) {
         expect(navEintrag(t.label), findsOneWidget, reason: t.label);
@@ -64,7 +64,7 @@ void main() {
   testWidgets('600 px: mobil mit NavigationBar, ohne Seitenleiste', (tester) async {
     await start(tester, const Size(600, 900));
     expect(find.byType(NavigationBar), findsOneWidget);
-    expect(find.text('lx-fampad'), findsNothing);
+    expect(find.text('lx-familyhub'), findsNothing);
     expect(find.textContaining('Hallo'), findsWidgets);
   });
 

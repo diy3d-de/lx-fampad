@@ -32,7 +32,7 @@ void main() {
         ..json('POST /auth/invites/password/start', {
           'challengeId': 'c-10',
           'totpSecret': 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP',
-          'totpUri': 'otpauth://totp/lx-fampad:ben%40beispiel.de?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=lx-fampad',
+          'totpUri': 'otpauth://totp/lx-familyhub:ben%40beispiel.de?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=lx-familyhub',
         })
         ..json('POST /auth/invites/password/complete', {
           'member': userJson(role: 'child', status: 'pending', name: 'Oma'),

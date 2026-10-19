@@ -1,4 +1,4 @@
-# lx-fampad
+# lx-familyhub
 
 Selbst gehostete Familien-Zentrale nach dem Vorbild von FamilyWall: gemeinsamer Kalender, Chat, Listen, Aufgaben und Dateien
 (später Fotos, Karte, Tresor u. a.). Läuft im Browser und als Android-App, offline-fähig, mit Echtzeit-Abgleich.
