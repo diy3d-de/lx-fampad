@@ -1,6 +1,8 @@
 // Entitäten-Register des Clients (Gegenstück zu server/src/sync/registry.ts): Jede synchronisierte Tabelle meldet sich hier mit
 // ihrem Namen in der Schnittstelle, ihren untergeordneten Entitäten und dem Schreiben/Entfernen von Zeilen an. Store und
 // Service arbeiten nur über diese Beschreibung; ein neuer Fachbereich (Termine, Aufgaben, ...) trägt sich in [syncEntities] ein.
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
 import '../api/models.dart';
@@ -385,6 +387,200 @@ class TerminAusnahmenEntitaet extends SyncEntity {
   Future<void> leeren(AppDatabase db) => db.delete(db.terminAusnahmen).go();
 }
 
+List<String>? _liste(Object? v) => v is List ? [for (final x in v) if (x is String) x] : null;
+
+/// Konversation des Chats. Direkt- und Gruppenchats sehen nur ihre Teilnehmer (der Server liefert nichts anderes); verliert die Person die
+/// Sicht, kommt ein `hidden`-Tombstone und der Store entfernt die Konversation samt Nachrichten und Lesestand.
+class KonversationEntitaet extends SyncEntity {
+  @override
+  String get name => 'konversation';
+
+  @override
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId')];
+
+  @override
+  String get elternGeloescht => 'Der Chat wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Es gibt zu viele Chats';
+
+  /// Familienchat und Direktchat gibt es je Familie bzw. Paar nur einmal.
+  @override
+  bool get eindeutigBeiAnlage => true;
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['art']) != null;
+
+  Selectable<Konversation> _zeile(AppDatabase db, String id) => db.select(db.konversationen)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Der Chat';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    if (vorhanden == null) {
+      await db.into(db.konversationen).insert(
+        KonversationenCompanion.insert(
+          id: id,
+          art: _text(fields['art']) ?? 'group',
+          createdAt: _zeit(fields['createdAt']) ?? DateTime.now(),
+          titel: Value(_text(fields['titel']) ?? ''),
+          teilnehmerJson: Value(jsonEncode(_liste(fields['teilnehmer']) ?? const <String>[])),
+          ownerId: Value(_text(fields['ownerId'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.konversationen)..where((t) => t.id.equals(id))).write(
+      KonversationenCompanion(
+        titel: setze('titel') ? Value(_text(fields['titel']) ?? '') : const Value.absent(),
+        teilnehmerJson: setze('teilnehmer') && _liste(fields['teilnehmer']) != null ? Value(jsonEncode(_liste(fields['teilnehmer']))) : const Value.absent(),
+        ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
+        createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.konversationen)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.konversationen).go();
+}
+
+class NachrichtEntitaet extends SyncEntity {
+  @override
+  String get name => 'nachricht';
+
+  @override
+  String get elternGeloescht => 'Der Chat wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Du hast zu schnell viele Nachrichten gesendet';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['konversationId']) != null && _text(fields['text']) != null;
+
+  Selectable<Nachricht> _zeile(AppDatabase db, String id) => db.select(db.nachrichten)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  // nie der Inhalt: Hinweise sollen nichts Privates auf den Bildschirm bringen
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Die Nachricht';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    if (vorhanden == null) {
+      await db.into(db.nachrichten).insert(
+        NachrichtenCompanion.insert(
+          id: id,
+          konversationId: _text(fields['konversationId']) ?? '',
+          inhalt: _text(fields['text']) ?? '',
+          createdAt: _zeit(fields['createdAt']) ?? DateTime.now(),
+          autorId: Value(_text(fields['autorId'])),
+          antwortAuf: Value(_text(fields['antwortAuf'])),
+          bearbeitetAt: Value(_zeit(fields['bearbeitetAt'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.nachrichten)..where((t) => t.id.equals(id))).write(
+      NachrichtenCompanion(
+        inhalt: setze('text') ? Value(_text(fields['text']) ?? vorhanden.inhalt) : const Value.absent(),
+        autorId: setze('autorId') ? Value(_text(fields['autorId'])) : const Value.absent(),
+        antwortAuf: setze('antwortAuf') ? Value(_text(fields['antwortAuf'])) : const Value.absent(),
+        bearbeitetAt: setze('bearbeitetAt') ? Value(_zeit(fields['bearbeitetAt'])) : const Value.absent(),
+        createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.nachrichten)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'konversationId'
+      ? const []
+      : [for (final r in await (db.select(db.nachrichten)..where((t) => t.konversationId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.nachrichten).go();
+}
+
+class LesestandEntitaet extends SyncEntity {
+  @override
+  String get name => 'lesestand';
+
+  @override
+  String get elternGeloescht => 'Der Chat wurde gelöscht.';
+
+  /// Eine Zeile je Person und Chat: ein abgelehntes Anlegen heißt "gibt es schon" (der Stand des Servers kommt mit dem Abgleich).
+  @override
+  bool get eindeutigBeiAnlage => true;
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['konversationId']) != null && _text(fields['userId']) != null && _zeit(fields['gelesenBis']) != null;
+
+  Selectable<Lesestand> _zeile(AppDatabase db, String id) => db.select(db.lesestaende)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Der Lesestand';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    if (vorhanden == null) {
+      await db.into(db.lesestaende).insert(
+        LesestaendeCompanion.insert(
+          id: id,
+          konversationId: _text(fields['konversationId']) ?? '',
+          userId: _text(fields['userId']) ?? '',
+          gelesenBis: _zeit(fields['gelesenBis']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.lesestaende)..where((t) => t.id.equals(id))).write(
+      LesestaendeCompanion(
+        gelesenBis: setze('gelesenBis') && _zeit(fields['gelesenBis']) != null ? Value(_zeit(fields['gelesenBis'])!) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.lesestaende)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'konversationId'
+      ? const []
+      : [for (final r in await (db.select(db.lesestaende)..where((t) => t.konversationId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.lesestaende).go();
+}
+
 /// Alle synchronisierten Entitäten des Clients.
 final Map<String, SyncEntity> syncEntities = {
   for (final e in <SyncEntity>[
@@ -393,6 +589,9 @@ final Map<String, SyncEntity> syncEntities = {
     TermineEntitaet(),
     TerminTeilnehmerEntitaet(),
     TerminAusnahmenEntitaet(),
+    KonversationEntitaet(),
+    NachrichtEntitaet(),
+    LesestandEntitaet(),
   ])
     e.name: e,
 };

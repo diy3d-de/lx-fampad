@@ -78,7 +78,7 @@ describe('Rechte-Modell (Regeltabelle)', () => {
       for (const role of ROLES) {
         const rule = def.rules[role];
         expect(rule, `${def.name}/${role}`).toBeDefined();
-        for (const action of ['read', 'create', 'update', 'delete'] as const) expect(['none', 'all', 'shared', 'own']).toContain(rule[action]);
+        for (const action of ['read', 'create', 'update', 'delete'] as const) expect(['none', 'all', 'shared', 'own', 'own_or_open']).toContain(rule[action]);
         // Lesen ist Voraussetzung für Ändern und Löschen
         if (rule.read === 'none') expect([rule.update, rule.delete]).toEqual(['none', 'none']);
       }

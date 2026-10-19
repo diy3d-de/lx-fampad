@@ -28,7 +28,7 @@ export interface FieldDef {
   defaultValue?: unknown;
   /** Wert, den ein Tombstone behält (Inhalte werden beim Löschen überschrieben); fehlt: Wert bleibt (nötig für Rechte/Beziehungen). */
   blank?: unknown;
-  /** Das Feld enthält eine Mitglieds-ID (`users.id`): sie muss zu einem aktiven Mitglied DER Familie gehören. */
+  /** Das Feld enthält eine Mitglieds-ID (`users.id`) oder eine Liste davon: jede muss zu einem aktiven Mitglied DER Familie gehören. */
   memberRef?: boolean;
 }
 
@@ -58,6 +58,19 @@ export interface EntityDef {
   check?(row: Row): boolean;
   /** Obergrenzen lebender Datensätze (Schutz vor Überlauf). `per: 'parent'` zählt je übergeordnetem Datensatz. */
   maxLive?: { per: 'family' | 'parent'; max: number };
+  /** Zusätzliche, entitätsspezifische Sperre je Aktion (z. B. Direktchats nicht löschen, Teilnehmer nicht ändern); false = `forbidden`. `after` nur bei `update` (Stand nach dem Zusammenführen). */
+  guard?(action: 'update' | 'delete', before: Row, after?: Row): boolean;
+  /** Vom Server gesetzte Werte, wenn eine Änderung die genannten Felder berührt (z. B. Zeit der Bearbeitung). */
+  onUpdate?(changed: Row, now: Date): Row;
+  /** Mengenbegrenzung je Person und Minute: höchstens `perMinute` neue Datensätze, deren `field` (Spalte mit der Person) die Person ist; `createdAt` zählt. */
+  rate?: { field: string; perMinute: number };
+  /**
+   * Spalte mit einer Liste von Mitglieds-IDs, die den Datensatz sichtbar machen (Teilnehmer). Verlässt eine Person die Familie, wird sie aus der Liste
+   * entfernt; bleiben weniger als `keepMin(row)` übrig, wird der Datensatz gelöscht (Tombstone).
+   */
+  memberArray?: { field: string; keepMin(row: Row): number };
+  /** Personen, die durch diese Änderung die Sicht auf den Datensatz verlieren; nur sie bekommen den `hidden`-Tombstone (nie Unbeteiligte). */
+  lostSight?(before: Row, after: Row): readonly string[];
 }
 
 /** Spalten, die jede synchronisierte Tabelle hat (siehe syncColumns in db/schema.ts). */

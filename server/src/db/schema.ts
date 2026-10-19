@@ -31,6 +31,8 @@ export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom']);
 /** Wer eine Liste sehen darf: nur Eltern, die Familie (ohne Gäste) oder alle (auch Gäste, "freigegeben"). */
 export const listAudience = pgEnum('list_audience', ['parents', 'family', 'all']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
+/** Art einer Konversation: der Familienchat (genau einer je Familie), ein Direktchat (zwei Personen) oder eine Gruppe. */
+export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -666,5 +668,111 @@ export const messageReads = pgTable(
     uniqueIndex('message_reads_message_user_uq').on(t.messageId, t.userId),
     index('message_reads_user_idx').on(t.userId),
     index('message_reads_family_rev_idx').on(t.familyId, t.rev),
+  ],
+);
+
+/**
+ * Konversationen des Chats (Phase 1c-3a). `teilnehmer` (sortierte, eindeutige Mitglieds-IDs) bestimmt, wer Direkt- und Gruppenchats sieht:
+ * nur sie, auch Admins nicht (sync/permissions.ts, Facts.participants). Im Familienchat ist die Liste leer, ihn sieht die ganze Familie.
+ * `titel` ist ein undurchsichtiger Text (der Server wertet ihn nie aus; später verschlüsselbar).
+ */
+export const konversationen = pgTable(
+  'konversationen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    art: konversationArt('art').notNull(),
+    titel: text('titel').notNull().default(''),
+    teilnehmer: uuid('teilnehmer')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    /** Wer die Konversation angelegt hat (setzt der Server; null beim Familienchat und nach dem Entfernen der Person). */
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    index('konversationen_family_rev_idx').on(t.familyId, t.rev),
+    index('konversationen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('konversationen_owner_idx')
+      .on(t.familyId, t.ownerId)
+      .where(sql`${t.ownerId} is not null`),
+    unique('konversationen_family_id_uq').on(t.familyId, t.id),
+    // genau ein Familienchat je Familie, ein Direktchat je Paar (Teilnehmer sind sortiert gespeichert)
+    uniqueIndex('konversationen_family_chat_uq')
+      .on(t.familyId)
+      .where(sql`${t.art} = 'family' and ${t.deletedAt} is null`),
+    uniqueIndex('konversationen_direct_uq')
+      .on(t.familyId, t.teilnehmer)
+      .where(sql`${t.art} = 'direct' and ${t.deletedAt} is null`),
+    check('konversationen_titel_len_ck', sql`char_length(${t.titel}) <= 512`),
+    check(
+      'konversationen_teilnehmer_ck',
+      sql`(${t.art} = 'family' and cardinality(${t.teilnehmer}) = 0)
+        or (${t.art} = 'direct' and cardinality(${t.teilnehmer}) = 2)
+        or (${t.art} = 'group' and cardinality(${t.teilnehmer}) between 2 and 20)`,
+    ),
+  ],
+);
+
+/**
+ * Nachrichten. `text` ist ein undurchsichtiger String (Hülle mit Versionspräfix, siehe docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6c): der
+ * Server prüft nur die Länge und wertet den Inhalt nie aus (kein Volltext, keine Vorschau, kein Log). Der Autor wird beim Entfernen NULL.
+ */
+export const nachrichten = pgTable(
+  'nachrichten',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    autorId: uuid('autor_id').references(() => users.id, { onDelete: 'set null' }),
+    text: text('text').notNull(),
+    /** Antwort auf eine andere Nachricht (nur die ID; der Client zeigt das Zitat, wenn er die Nachricht kennt). */
+    antwortAuf: uuid('antwort_auf'),
+    /** Zeitpunkt der letzten Bearbeitung des Textes (setzt der Server). */
+    bearbeitetAt: timestamp('bearbeitet_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('nachrichten_konversation_idx').on(t.familyId, t.konversationId, t.createdAt),
+    index('nachrichten_family_rev_idx').on(t.familyId, t.rev),
+    index('nachrichten_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('nachrichten_autor_idx')
+      .on(t.familyId, t.autorId, t.createdAt)
+      .where(sql`${t.autorId} is not null`),
+    check('nachrichten_text_len_ck', sql`char_length(${t.text}) <= 16384`),
+  ],
+);
+
+/** Lesestand: je Person und Konversation eine Zeile, nur für die Person selbst sichtbar. `gelesenBis` = Zeit (createdAt) der letzten gelesenen Nachricht. */
+export const lesestand = pgTable(
+  'lesestand',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    gelesenBis: timestamp('gelesen_bis', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('lesestand_active_uq')
+      .on(t.konversationId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('lesestand_user_idx').on(t.userId),
+    index('lesestand_family_rev_idx').on(t.familyId, t.rev),
+    index('lesestand_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
   ],
 );

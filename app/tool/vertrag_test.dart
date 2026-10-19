@@ -23,6 +23,9 @@ import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
+import 'package:lx_fampad/data/chat/chat_ids.dart';
+import 'package:lx_fampad/data/chat/chat_repository.dart';
+import 'package:lx_fampad/data/chat/nachrichten_inhalt.dart';
 import 'package:lx_fampad/data/calendar/termin_repository.dart';
 import 'package:lx_fampad/data/sync/sync_engine.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
@@ -321,6 +324,139 @@ Future<List<SyncChange>> alleSeiten(Gegenstelle g, {int since = 0}) async {
     alle.addAll(seite.changes);
   }
   return alle;
+}
+
+/// Chat (Phase 1c-3a) gegen den echten Server: Familienchat (einer je Familie), Direktchats nur für ihre Teilnehmer (der Admin sieht den Chat
+/// von Kind und Gast nicht), Gruppen mit hidden-Tombstone nur für die entfernte Person, undurchsichtiger Inhalt, Lesestand über zwei Geräte.
+/// Liefert die ID des Direktchats Admin/Kind (für die Prüfung beim Entfernen des Kindes).
+Future<String> chatVertrag({
+  required Gegenstelle a,
+  required Gegenstelle b,
+  required Gegenstelle gast,
+  required Gegenstelle kind,
+  required String kindId,
+  required String adminId,
+}) async {
+  // eine dritte Person (Elternteil): der Chat von Kind und Cora ist für den Admin unsichtbar (der Gast ist nie Teil von Chats)
+  final coraInv = await a.api.einladungErstellen(rolle: Role.parent, stunden: 1, pin: false);
+  final cora = Gegenstelle(name: 'Cora');
+  final coraStart = await cora.api.passwortRegistrierungStart(token: coraInv.token, passwort: 'Cora-Passwort-1234', email: 'cora@beispiel.de', anzeigename: 'Cora');
+  final coraReg = await cora.api.passwortRegistrierungFertig(challengeId: coraStart.challengeId, code: await frischerCode(coraStart.totpSecret));
+  expect(coraReg.status, MemberStatus.active);
+  await cora.client.sitzungUebernehmen(coraReg.session!);
+  final coraId = coraReg.member.id;
+  Iterable<SyncChange> chat(Iterable<SyncChange> l) => l.where((c) => const {'konversation', 'nachricht', 'lesestand'}.contains(c.entity));
+
+  schritt('Chat: Familienchat anlegen, Kind sieht ihn, der Gast nicht, ein zweiter wird abgelehnt');
+  final famId = neueUuid();
+  final famOp = neu('konversation', famId, {'art': 'family'});
+  final fam = await syncen(a, [famOp]);
+  expect(fam.rejected, isEmpty);
+  expect(fam.acked, [famOp.opId]);
+  expect((await alleSeiten(kind)).where((c) => c.id == famId), hasLength(1));
+  expect(chat(await alleSeiten(gast)), isEmpty, reason: 'Gäste sind nicht Teil des Familienchats');
+  expect((await syncen(kind, [neu('konversation', neueUuid(), {'art': 'family'})])).rejected.single.code, 'not_found');
+  final famRev = (await alleSeiten(a)).firstWhere((c) => c.id == famId).rev;
+  expect((await syncen(a, [aender('konversation', famId, {'titel': 'p1:Neu'}, famRev)])).rejected.single.code, 'forbidden');
+  expect((await syncen(a, [weg('konversation', famId, famRev)])).rejected.single.code, 'forbidden');
+
+  schritt('Chat: Nachrichten sind undurchsichtig (e1:-Hülle bleibt unverändert), Länge, Autor und Zeit setzt der Server');
+  final m1 = neueUuid();
+  final r1 = await syncen(kind, [neu('nachricht', m1, {'konversationId': famId, 'text': 'e1:QUJDREVGRw=='})]);
+  expect(r1.rejected, isEmpty);
+  final gesehen = (await alleSeiten(a)).firstWhere((c) => c.id == m1);
+  expect(gesehen.fields['text'], 'e1:QUJDREVGRw==');
+  expect(gesehen.fields['autorId'], kindId);
+  expect(gesehen.fields['createdAt'], isNotNull);
+  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'x' * 16385})])).rejected.single.code, 'invalid');
+  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'p1:x', 'autorId': adminId})])).rejected.single.code, 'invalid');
+  // nur der Autor bearbeitet; der Admin darf im Familienchat fremde Nachrichten löschen
+  expect((await syncen(a, [aender('nachricht', m1, {'text': 'p1:gefälscht'}, gesehen.rev)])).rejected.single.code, 'forbidden');
+  final m2 = neueUuid();
+  await syncen(kind, [neu('nachricht', m2, {'konversationId': famId, 'text': 'p1:weg damit'})]);
+  final rev2 = (await alleSeiten(a)).firstWhere((c) => c.id == m2).rev;
+  expect((await syncen(a, [weg('nachricht', m2, rev2)])).acked, hasLength(1));
+
+  schritt('Chat: Direktchat Kind/Admin (feste ID je Paar); Direktchat Kind/Cora ist für den Admin unsichtbar und unveränderbar (not_found)');
+  final dm = direktChatId(kindId, adminId);
+  final dmOp = neu('konversation', dm, {'art': 'direct', 'teilnehmer': [kindId, adminId]..sort()});
+  expect((await syncen(kind, [dmOp])).acked, [dmOp.opId]);
+  // dasselbe Paar mit anderer ID und aus der anderen Richtung: abgelehnt; dieselbe ID noch einmal: ohne Wirkung
+  expect((await syncen(a, [neu('konversation', neueUuid(), {'art': 'direct', 'teilnehmer': [adminId, kindId]})])).rejected.single.code, 'not_found');
+  expect((await syncen(a, [neu('konversation', dm, {'art': 'direct', 'teilnehmer': [adminId, kindId]})])).rejected, isEmpty);
+  final privatId = direktChatId(kindId, coraId);
+  expect((await syncen(kind, [neu('konversation', privatId, {'art': 'direct', 'teilnehmer': [kindId, coraId]})])).rejected, isEmpty);
+  final geheimMsg = neueUuid();
+  expect((await syncen(kind, [neu('nachricht', geheimMsg, {'konversationId': privatId, 'text': 'p1:GEHEIM-TEXT'})])).rejected, isEmpty);
+  for (final g in [a, b]) {
+    final alle = await alleSeiten(g);
+    expect(alle.where((c) => c.id == privatId || c.id == geheimMsg), isEmpty, reason: 'auch der Admin sieht fremde Privatchats nicht');
+    expect(alle.where((c) => c.id == dm), hasLength(1));
+  }
+  final privRev = (await alleSeiten(kind)).firstWhere((c) => c.id == privatId).rev;
+  final angriff = await syncen(a, [
+    aender('konversation', privatId, {'titel': 'p1:x'}, privRev),
+    weg('konversation', privatId, privRev),
+    neu('nachricht', neueUuid(), {'konversationId': privatId, 'text': 'p1:Einschleusen'}),
+    aender('nachricht', geheimMsg, {'text': 'p1:x'}, 1),
+    weg('nachricht', geheimMsg, 1),
+  ]);
+  expect(angriff.rejected.map((x) => x.code), List.filled(5, 'not_found'));
+  expect(angriff.changes.where((c) => c.id == privatId || c.id == geheimMsg), isEmpty);
+  expect(chat(await alleSeiten(cora)).where((c) => c.entity == 'konversation').map((c) => c.id), unorderedEquals([famId, privatId]));
+  expect(chat(await alleSeiten(gast)), isEmpty);
+
+  schritt('Chat: Gruppe, Teilnehmer entfernen -> hidden-Tombstone nur für die entfernte Person, Außenstehende erfahren nichts');
+  final gruppe = neueUuid();
+  expect((await syncen(kind, [neu('konversation', gruppe, {'art': 'group', 'titel': 'p1:Ausflug', 'teilnehmer': [kindId, adminId, coraId]..sort()})])).rejected, isEmpty);
+  final vorA = (await syncen(a, [])).rev;
+  final vorCora = (await syncen(cora, [])).rev;
+  final gRev = (await alleSeiten(kind)).firstWhere((c) => c.id == gruppe).rev;
+  expect((await syncen(kind, [aender('konversation', gruppe, {'teilnehmer': [kindId, coraId]..sort()}, gRev)])).rejected, isEmpty);
+  final nachA = await syncen(a, [], since: vorA);
+  expect(nachA.changes.where((c) => c.id == gruppe).map((c) => (c.tombstone, c.hidden)), [(true, true)]);
+  final nachCora = await syncen(cora, [], since: vorCora);
+  expect(nachCora.changes.where((c) => c.id == gruppe && c.tombstone), isEmpty, reason: 'wer drin bleibt, bekommt die Änderung, keinen Tombstone');
+  expect(nachCora.changes.where((c) => c.id == gruppe && !c.tombstone), hasLength(1));
+  // wer nie drin war (der Gast), erfährt nichts: kein Tombstone mit der ID
+  expect((await alleSeiten(gast, since: vorCora)).where((c) => c.id == gruppe), isEmpty);
+  expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': 'p1:x'})])).rejected.single.code, 'not_found');
+
+  schritt('Chat: zwei lokale Datenbanken mit ChatRepository: A sendet, B sieht es; Lesestand von B erreicht A');
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
+  AppDatabase neueDb() => AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+  final dbA = neueDb(), dbB = neueDb();
+  addTearDown(dbA.close);
+  addTearDown(dbB.close);
+  final storeA = SyncStore(dbA), storeB = SyncStore(dbB);
+  final engineA = SyncEngine(store: storeA, api: a.api, geraeteId: () async => geraetId(a));
+  final engineB = SyncEngine(store: storeB, api: b.api, geraeteId: () async => geraetId(b));
+  ChatRepository repo(AppDatabase db, SyncStore s) =>
+      ChatRepository(db: db, store: s, inhalt: const KlartextHuelle(), ich: () => adminId, familie: () => 'unbekannt', beiAenderung: () {});
+  final repoA = repo(dbA, storeA), repoB = repo(dbB, storeB);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  // Direktchat mit dem Kind: dieselbe ID wie die des Kindes, also kein zweiter
+  expect(await repoA.direktChat(kindId), dm);
+  expect(await repoB.direktChat(kindId), dm);
+  final gesendet = (await repoA.senden(dm, 'Hallo Ben 👋'))!;
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  final beiB = await (dbB.select(dbB.nachrichten)..where((n) => n.id.equals(gesendet))).getSingle();
+  expect([beiB.inhalt, beiB.autorId, beiB.rev > 0], ['p1:Hallo Ben 👋', adminId, true]);
+  expect((await dbA.select(dbA.konversationen).get()).where((k) => k.art == 'direct').map((k) => k.id), [dm], reason: 'der Privatchat Kind/Cora ist nicht bei A');
+  // das Kind schreibt zurück: bei A und B ungelesen
+  await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': dm, 'text': 'p1:Hi Mama'})]);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  expect(await repoA.ungelesenGesamt(adminId).first, greaterThanOrEqualTo(1));
+  final vorher = await repoB.ungelesenGesamt(adminId).first;
+  await repoB.gelesenSetzen(dm);
+  expect((await engineB.abgleichen()).ok, isTrue);
+  expect((await engineA.abgleichen()).ok, isTrue);
+  final dmEintrag = (await repoA.uebersicht(adminId).first).firstWhere((e) => e.id == dm);
+  expect(dmEintrag.ungelesen, 0, reason: 'der Lesestand von B gilt auch auf A (vorher B: $vorher ungelesen)');
+  return dm;
 }
 
 /// Mehrseitiger Snapshot (mehr als 500 Einträge) bei purged_rev > 0 und Geisterlisten gegen den echten Server.
@@ -891,6 +1027,7 @@ void main() {
     await offlineOnlineVertrag(a: admin, b: adminB);
     await kalenderVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
     await snapshotVertrag(a: admin, b: adminB, gast: web);
+    final chatDm = await chatVertrag(a: admin, b: adminB, gast: web, kind: kind3, kindId: kindId, adminId: adminId);
 
     // ---------------------------------------------------------------- Zurücksetzen, Entfernen, Geräte, Abmelden
     schritt('Zurücksetzen: neue Einladung für dasselbe Konto (lookup zeigt reset + Name)');
@@ -919,6 +1056,8 @@ void main() {
     final kaffee = (await alleSeiten(adminB)).firstWhere((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee');
     expect(kaffee.fields['assigneeId'], isNull);
     expect(bereinigt.changes.any((c) => c.entity == 'list_item' && c.fields['text'] == 'Kaffee'), isTrue, reason: 'die Änderung kommt über den Strom');
+    // Chat: der Direktchat mit dem entfernten Kind ist für den Admin als gelöscht markiert (Tombstone, nicht hidden)
+    expect(bereinigt.changes.where((c) => c.id == chatDm).map((c) => (c.tombstone, c.hidden)), [(true, false)]);
     await expectLater(admin.api.mitgliedEntfernen(adminId), throwsA(isA<ApiException>()));
 
     schritt('Geräte: weiteres Gerät des Admin anlegen, einzeln abmelden, dann überall abmelden');

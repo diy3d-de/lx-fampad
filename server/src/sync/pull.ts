@@ -14,7 +14,7 @@
 import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
 import type { AuthContext, Executor } from '../auth/context.js';
 import { changeLog, families } from '../db/schema.js';
-import { wireRow } from './engine.js';
+import { LOST_SIGHT, wireRow } from './engine.js';
 import { mayRead, type Actor, type Facts } from './permissions.js';
 import { syncColumns, type EntityDef, type Registry, type Row } from './registry.js';
 import type { ChangeOut } from './types.js';
@@ -113,7 +113,11 @@ export async function pullChanges(
           continue;
         }
         if (!def || !row) continue; // unbekannte Entität oder bereits bereinigt
-        const visible = mayRead(def.rules, actor, factsFrom(registry, rows, def, row));
+        const facts = factsFrom(registry, rows, def, row);
+        const visible = mayRead(def.rules, actor, facts);
+        // auf Teilnehmer beschränkte Datensätze: Unbeteiligte erfahren nie etwas (auch keine ID); wer die Sicht verliert, bekommt den Tombstone,
+        // weil die Löschung für Teilnehmer sichtbar bleibt (Teilnehmerliste im Tombstone bleibt erhalten) und der Entzug im Protokoll vermerkt ist
+        const restricted = facts.participants !== undefined;
         const current = Number(row.rev) === e.rev; // sonst ersetzt durch einen späteren Eintrag
         if (visible) {
           if (!current) continue;
@@ -121,6 +125,12 @@ export async function pullChanges(
             if (!snapshotMode) changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, fields: {} });
           } else {
             changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: false, fields: wireRow(def, row) });
+          }
+        } else if (restricted) {
+          const lost = e.changes[LOST_SIGHT];
+          if (!snapshotMode && Array.isArray(lost) && lost.includes(actor.userId) && !hiddenSent.has(`${e.entity}:${e.entityId}`)) {
+            hiddenSent.add(`${e.entity}:${e.entityId}`);
+            changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
           }
         } else if (!snapshotMode && row.deletedAt) {
           // gelöscht und nicht sichtbar: die Person kannte den Datensatz womöglich vorher (Sicht inzwischen entzogen)

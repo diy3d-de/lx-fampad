@@ -95,11 +95,18 @@ export class Hub {
     if (e) e.role = role;
   }
 
-  /** Meldet den Geräten der Familie die neue Revision; mit `roles` nur denen, deren Rolle die Änderung sehen darf (unbekannte Rolle: im Zweifel ja). */
-  notifyRev(familyId: string, rev: number, roles?: readonly Role[]): void {
+  /**
+   * Meldet den Geräten der Familie die neue Revision; mit `roles` und/oder `users` nur denen, deren Rolle die Änderung sehen darf (unbekannte
+   * Rolle: im Zweifel ja) oder die ausdrücklich genannt sind (Chat: Teilnehmer; Unbeteiligte erfahren nicht einmal, dass es etwas Neues gibt).
+   */
+  notifyRev(familyId: string, rev: number, roles?: readonly Role[], users?: readonly string[]): void {
     const msg = JSON.stringify({ type: 'rev', rev } satisfies ServerMessage);
     for (const e of this.byFamily.get(familyId) ?? []) {
-      if (roles && e.role && !roles.includes(e.role)) continue;
+      if (roles) {
+        const byUser = users?.includes(e.userId) === true;
+        const byRole = roles.length > 0 && (!e.role || roles.includes(e.role));
+        if (!byUser && !byRole) continue;
+      }
       if (e.socket.readyState === e.socket.OPEN) e.socket.send(msg);
     }
   }

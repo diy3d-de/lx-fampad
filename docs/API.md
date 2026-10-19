@@ -319,14 +319,42 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `titel`, `ort` | Text bis 200 Zeichen oder `null` | rw |
 | | `start`, `ende` | Tag oder Zeitpunkt oder `null` | rw |
 
-Neue Entitäten (Aufgaben, Chat, Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
+**Chat (Phase 1c-3a)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6c.
+
+- **Sichtbarkeit:** Direkt- und Gruppenchats (`konversation` mit `art` `direct`/`group`) sehen **nur ihre Teilnehmer**, auch Admin und Eltern nicht; Nachrichten und Lesestände erben das. Für alle anderen existiert die ID nicht: Ändern, Löschen und Anlegen darunter ergeben `not_found` (auch mit IDs einer fremden Familie), der Änderungsstrom liefert nichts, auch keinen Tombstone. Der Familienchat (`art` `family`, genau einer je Familie) gehört allen aktiven Mitgliedern. Wer aus einer Gruppe entfernt wird (`teilnehmer` geändert), bekommt einen `hidden`-Tombstone der Konversation (die App entfernt sie samt Nachrichten und Lesestand); wer nie dabei war, nichts.
+- **Inhalt ist undurchsichtig:** `text` (Nachricht) und `titel` (Gruppenname) prüft der Server nur auf Länge und Zeichensatz (kein NUL, keine einzelnen Surrogate), nicht auf Inhalt, und trimmt nichts. Die App schickt `p1:` + Klartext, später `e1:` + Base64-Chiffre. Der Server wertet Inhalte nie aus (kein Suchendpunkt, kein Log, keine Vorschau).
+- **Familienchat anlegen:** `upsert konversation {art: "family"}` von jeder Rolle; ohne `titel` und `teilnehmer`. Ein zweiter (andere ID) wird mit `not_found` abgelehnt (eindeutiger Index), dieselbe ID noch einmal ist eine Wiederholung ohne Wirkung. Danach ist er für Clients unveränderlich (`forbidden`) und nicht löschbar.
+- **Direktchat:** `art: "direct"`, `teilnehmer` = genau die zwei Personen (anlegende Person dabei, nur aktive Mitglieder der Familie, sonst `forbidden` bzw. `invalid_reference`); die Liste wird sortiert und ohne Doppelte gespeichert. Je Paar ein Chat: ein zweiter mit anderer ID ergibt `not_found`, dieselbe ID ist ein Update ohne Änderung (die App leitet die ID aus dem Paar ab). Unveränderlich, nicht löschbar.
+- **Gruppe:** `art: "group"`, 2 bis 20 `teilnehmer` (anlegende Person dabei), `titel` optional. Jeder Teilnehmer ändert `titel` und `teilnehmer`; löschen darf nur die anlegende Person (`ownerId`). Bleiben nach dem Entfernen eines Mitglieds aus der Familie weniger als zwei Teilnehmer, wird die Gruppe gelöscht.
+- **Nachrichten:** schreiben darf jede Person mit Sicht, `autorId` und Zeit setzt der Server. **Bearbeiten (nur `text`) und Löschen nur der Autor** (`forbidden`); Ausnahme: **Admins löschen im Familienchat auch fremde Nachrichten**, nie in privaten Chats. `bearbeitetAt` setzt der Server beim Ändern des Textes. `antwortAuf` (nur beim Anlegen) nennt nur eine ID; der Server prüft nicht, ob es sie gibt (die App zeigt das Zitat nur, wenn sie die Nachricht kennt). Mengenbegrenzung: höchstens 60 neue Nachrichten je Person und Minute (`limit_reached`).
+- **Lesestand:** eine Zeile je Person und Konversation (`userId` muss die eigene sein), `gelesenBis` = Zeit (`createdAt`) der letzten gelesenen fremden Nachricht. Nur die eigene Zeile ist les- und schreibbar; ein zweites Anlegen für dieselbe Person und Konversation ergibt `not_found` (die App leitet die ID daraus ab).
+- **Obergrenzen:** 500 lebende Konversationen je Familie, 100 je anlegender Person (`limit_reached`).
+- **Mitglied entfernt:** aus Teilnehmerlisten genommen; Direktchats und Gruppen mit weniger als zwei Übrigen mit Tombstone gelöscht; `autorId` der Nachrichten wird `null`; Lesestand der Person wird gelöscht (Tombstone).
+- **WebSocket:** `rev N` zu privaten Chats geht nur an die Teilnehmer (nach Person), zum Familienchat an alle Rollen mit Sicht.
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `konversation` | `art` | `family`, `direct`, `group` (Pflicht) | create |
+| | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
+| | `teilnehmer` | Liste von UUIDs (sortiert, eindeutig; Familienchat leer, Direktchat 2, Gruppe 2 bis 20) | rw (nur Gruppen) |
+| | `ownerId` | UUID oder `null` (anlegende Person) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `nachricht` | `konversationId` | UUID (Pflicht) | create |
+| | `text` | undurchsichtiger Text, 1 bis 16 384 Zeichen (Pflicht) | rw (nur Autor) |
+| | `antwortAuf` | UUID oder `null` | create |
+| | `autorId` | UUID oder `null` (nach Entfernen der Person) | server |
+| | `bearbeitetAt`, `createdAt` | ISO-8601 (UTC) oder `null` | server |
+| `lesestand` | `konversationId`, `userId` | UUID (Pflicht) | create |
+| | `gelesenBis` | ISO-8601 mit Zeitzone (Pflicht) | rw |
+
+Neue Entitäten (Aufgaben, Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
 
 ## WebSocket `/ws`
 
 1. `POST /ws-ticket` (angemeldet) → `{ ticket }`.
 2. `wss://familie.lx-labs.dev/ws` öffnen (kein Ticket in der URL!); der Server sendet `{type:"hello", protocolVersion, serverVersion}`.
 3. Als **erste Nachricht** `{ "type": "auth", "ticket": "<ticket>" }` senden (innerhalb von 5 s). Antwort `{type:"ready"}`; bei ungültigem, abgelaufenem oder schon benutztem Ticket schließt der Server mit Code `4401` und zählt den Fehlversuch gegen die IP.
-   Danach meldet der Server nach **jedem Commit einer Änderung** im Sync den Sockets der Familie, **deren Rolle die Änderung sehen darf**, `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat). Wer einen Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab; entzieht eine Änderung die Sicht (Freigabe zurückgenommen), erfahren es die Rollen vorher und nachher. Das Bereinigen von Verweisen beim Entfernen eines Mitglieds geht an alle Rollen. Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
+   Danach meldet der Server nach **jedem Commit einer Änderung** im Sync den Sockets der Familie, **deren Rolle die Änderung sehen darf**, `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat). Wer einen Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab; entzieht eine Änderung die Sicht (Freigabe zurückgenommen), erfahren es die Rollen vorher und nachher. Das Bereinigen von Verweisen beim Entfernen eines Mitglieds geht an alle Rollen. Änderungen an **Privatchats** (Direkt- und Gruppenchats) gehen nur an deren Teilnehmer (nach Person, nicht nach Rolle). Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
 4. Browser mit gültigem Session-Cookie sind schon beim Upgrade angemeldet.
 5. Limits: Nachrichten je Socket (30 je 10 s, sonst Code `4429`), Verbindungen je IP (IPv6: je /64; 10, vor dem Upgrade `429`) und je Person (8, Code `4429`).
 6. **Widerruf:** Abmelden, Gerät entfernen, „überall abmelden“, Rollenwechsel und Entfernen schließen die betroffenen Sockets sofort mit Code `4401`. Zusätzlich prüft der Server bei jedem Ping (30 s), ob Sitzung und Mitgliedschaft noch gelten (sonst `4401`), und hält die Rolle der Verbindung aktuell.

@@ -9,6 +9,8 @@
 //  - Rechte hängen an der Rolle der Sitzung (nie an Angaben des Clients).
 //  - Gäste sehen nur ausdrücklich freigegebene Datensätze (Stufe `all`); Kinder sehen Stufe `family` und `all`, aber nichts, was
 //    nur für Eltern gedacht ist; Eltern und Admins sehen alles.
+//  - Teilnehmer-Sichtbarkeit (Chat): Nennen die Fakten `participants`, sieht den Datensatz NUR, wer dort steht. Das ist eine harte Grenze vor jeder
+//    Regel (auch `all`): kein Rollen-Durchgriff, Admins und Eltern sehen private Chats nicht. Ohne `participants` gilt die Freigabe-Stufe.
 import type { Role } from '../auth/types.js';
 
 /** Wer einen Datensatz sehen darf: nur Eltern/Admins, die Familie ohne Gäste, oder alle einschließlich Gäste ("freigegeben"). */
@@ -22,9 +24,12 @@ export type Action = 'read' | 'create' | 'update' | 'delete';
  *  - `none`: nie,
  *  - `all`: jeder Datensatz,
  *  - `shared`: Datensätze, die für die Rolle freigegeben sind (Stufe passt),
- *  - `own`: Datensätze, deren Besitzer die Person ist.
+ *  - `own`: Datensätze, deren Besitzer die Person ist,
+ *  - `own_or_open`: eigene Datensätze, und alle, die nicht auf Teilnehmer beschränkt sind (Admin darf im Familienchat fremde Nachrichten löschen,
+ *    nie in privaten Chats).
+ * Jeder Bereich außer `none` gilt nur innerhalb der Teilnehmer-Grenze (siehe oben).
  */
-export type Scope = 'none' | 'all' | 'shared' | 'own';
+export type Scope = 'none' | 'all' | 'shared' | 'own' | 'own_or_open';
 
 export interface Actor {
   userId: string;
@@ -35,6 +40,8 @@ export interface Actor {
 export interface Facts {
   audience: Audience;
   ownerId: string | null;
+  /** Nur diese Personen sehen den Datensatz (Direkt-/Gruppenchat und alles darunter); fehlt: es gilt `audience` (Familienchat). */
+  participants?: readonly string[] | undefined;
 }
 
 export interface RoleRule {
@@ -63,7 +70,11 @@ export const AUDIENCE_ROLES: Readonly<Record<Audience, readonly Role[]>> = {
 
 export const sees = (role: Role, audience: Audience): boolean => AUDIENCE_ROLES[audience].includes(role);
 
+/** Steht die Person in der Teilnehmerliste (oder gibt es keine)? */
+export const isParticipant = (actor: Actor, facts: Facts): boolean => facts.participants === undefined || facts.participants.includes(actor.userId);
+
 export function scopeAllows(scope: Scope, actor: Actor, facts: Facts): boolean {
+  if (!isParticipant(actor, facts)) return false;
   switch (scope) {
     case 'all':
       return true;
@@ -71,6 +82,8 @@ export function scopeAllows(scope: Scope, actor: Actor, facts: Facts): boolean {
       return sees(actor.role, facts.audience);
     case 'own':
       return facts.ownerId !== null && facts.ownerId === actor.userId;
+    case 'own_or_open':
+      return sees(actor.role, facts.audience) && (facts.participants === undefined || (facts.ownerId !== null && facts.ownerId === actor.userId));
     case 'none':
       return false;
   }
@@ -113,8 +126,14 @@ export function authorize(
  * Regeln mit Geltungsbereich `own` zählen als lesbar). Wer den Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab.
  */
 export function rolesThatMayRead(rules: Rules, facts: Facts): Role[] {
+  if (facts.participants !== undefined) return []; // Teilnehmer-Sichtbarkeit: nie über Rollen, siehe usersThatMayRead
   return ROLES.filter((role) => {
     const scope = rules[role].read;
     return scope === 'all' || scope === 'own' || (scope === 'shared' && sees(role, facts.audience));
   });
+}
+
+/** Personen, die einen auf Teilnehmer beschränkten Datensatz sehen (die Benachrichtigung geht nur an sie); undefined: Sicht nach Rollen. */
+export function usersThatMayRead(facts: Facts): readonly string[] | undefined {
+  return facts.participants;
 }

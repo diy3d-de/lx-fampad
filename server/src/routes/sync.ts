@@ -57,6 +57,7 @@ export function registerSyncRoutes(app: FastifyInstance, config: Config, auth: A
       const conflicts: ConflictOut[] = [];
       let newest: number | null = null;
       const roles = new Set<Role>();
+      const users = new Set<string>();
       for (const raw of ops) {
         const parsed = opEnvelope.safeParse(raw);
         if (!parsed.success) {
@@ -77,10 +78,11 @@ export function registerSyncRoutes(app: FastifyInstance, config: Config, auth: A
         if (done.committedRev !== null) {
           newest = Math.max(newest ?? 0, done.committedRev);
           for (const r of done.outcome.roles ?? (['admin', 'parent', 'child', 'guest'] as const)) roles.add(r);
+          for (const u of done.outcome.users ?? []) users.add(u);
         }
       }
       // nach dem Commit: die Geräte der Familie, deren Rolle die Änderung sieht, erfahren die neue Revision (ohne Inhalt)
-      if (newest !== null) ctx.onRev(p.familyId, newest, [...roles]);
+      if (newest !== null) ctx.onRev(p.familyId, newest, [...roles], [...users]);
 
       const pulled = await pullChanges(ctx, registry, { actor, familyId: p.familyId, sinceRev: head.sinceRev, limit: head.limit ?? DEFAULT_PAGE,
         snapshotRev: head.snapshotRev,

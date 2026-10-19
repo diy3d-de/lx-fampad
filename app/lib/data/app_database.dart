@@ -149,13 +149,71 @@ class TerminAusnahmen extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen])
+/// Konversationen des Chats (Phase 1c-3a): `art` family | direct | group. `titel` ist ein undurchsichtiger Text (Hülle mit Versionspräfix,
+/// siehe data/chat/nachrichten_inhalt.dart). `teilnehmerJson`: sortierte Mitglieds-IDs als JSON-Liste (beim Familienchat leer).
+@DataClassName('Konversation')
+class Konversationen extends Table {
+  @override
+  String get tableName => 'konversationen';
+
+  TextColumn get id => text()();
+  TextColumn get art => text()();
+  TextColumn get titel => text().withDefault(const Constant(''))();
+  TextColumn get teilnehmerJson => text().named('teilnehmer').withDefault(const Constant('[]'))();
+  TextColumn get ownerId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Nachrichten. `inhalt` ist der undurchsichtige Text der Schnittstelle (Klartext-Hülle `p1:…`, später verschlüsselt `e1:…`), lesbar nur über
+/// `NachrichtenInhalt`. `rev` 0 heißt: noch nicht vom Server bestätigt ("wird gesendet").
+@DataClassName('Nachricht')
+@TableIndex(name: 'nachrichten_konversation_idx', columns: {#konversationId, #createdAt})
+class Nachrichten extends Table {
+  @override
+  String get tableName => 'nachrichten';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get autorId => text().nullable()();
+  TextColumn get inhalt => text().named('text')();
+  TextColumn get antwortAuf => text().nullable()();
+  DateTimeColumn get bearbeitetAt => dateTime().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Lesestand der angemeldeten Person je Konversation (nur die eigene Zeile kommt vom Server): `gelesenBis` = Zeit der zuletzt gelesenen Nachricht.
+@DataClassName('Lesestand')
+@TableIndex(name: 'lesestand_konversation_idx', columns: {#konversationId})
+class Lesestaende extends Table {
+  @override
+  String get tableName => 'lesestand';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get userId => text()();
+  DateTimeColumn get gelesenBis => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at. Version 3 (Phase 1c-2a): Termine, Teilnehmer, Ausnahmen.
+  /// Version 4 (Phase 1c-3a): Chat (Konversationen, Nachrichten, Lesestand).
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -166,13 +224,22 @@ class AppDatabase extends _$AppDatabase {
       if (from < 2) {
         await m.deleteTable('outbox');
         await m.createAll();
-      } else if (from < 3) {
-        await m.createTable(termine);
-        await m.createTable(terminTeilnehmer);
-        await m.createTable(terminAusnahmen);
-        // createTable legt die @TableIndex-Indizes nicht mit an
-        await m.createIndex(terminTeilnehmerTerminIdx);
-        await m.createIndex(terminAusnahmenTerminIdx);
+      } else {
+        if (from < 3) {
+          await m.createTable(termine);
+          await m.createTable(terminTeilnehmer);
+          await m.createTable(terminAusnahmen);
+          // createTable legt die @TableIndex-Indizes nicht mit an
+          await m.createIndex(terminTeilnehmerTerminIdx);
+          await m.createIndex(terminAusnahmenTerminIdx);
+        }
+        if (from < 4) {
+          await m.createTable(konversationen);
+          await m.createTable(nachrichten);
+          await m.createTable(lesestaende);
+          await m.createIndex(nachrichtenKonversationIdx);
+          await m.createIndex(lesestandKonversationIdx);
+        }
       }
     },
   );
