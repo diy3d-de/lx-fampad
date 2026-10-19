@@ -38,6 +38,22 @@ function valid(mime: AvatarMime, width: number, height: number): ImageInfo | nul
 function png(b: Buffer): ImageInfo | null {
   // erster Block muss IHDR mit Länge 13 sein
   if (b.readUInt32BE(8) !== 13 || b.toString('latin1', 12, 16) !== 'IHDR') return null;
+  // Blockkette bis IEND durchlaufen: keine Fremdbytes nach dem Ende, keine Animation (acTL = APNG), keine abgeschnittene Datei
+  let i = 8;
+  let ende = false;
+  while (i + 12 <= b.length) {
+    const len = b.readUInt32BE(i);
+    const type = b.toString('latin1', i + 4, i + 8);
+    if (type === 'acTL') return null;
+    const next = i + 12 + len;
+    if (len > 0x7fffffff || next > b.length) return null;
+    i = next;
+    if (type === 'IEND') {
+      ende = true;
+      break;
+    }
+  }
+  if (!ende || i !== b.length) return null;
   return valid('image/png', b.readUInt32BE(16), b.readUInt32BE(20));
 }
 
@@ -80,6 +96,9 @@ function webp(b: Buffer): ImageInfo | null {
     const bits = b.readUInt32LE(21);
     return valid('image/webp', (bits & 0x3fff) + 1, ((bits >>> 14) & 0x3fff) + 1);
   }
-  if (chunk === 'VP8X') return valid('image/webp', b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1);
+  if (chunk === 'VP8X') {
+    if ((b[20] ?? 0) & 0x02) return null; // Animationsbit: animiertes WebP
+    return valid('image/webp', b.readUIntLE(24, 3) + 1, b.readUIntLE(27, 3) + 1);
+  }
   return null;
 }

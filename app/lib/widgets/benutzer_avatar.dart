@@ -28,6 +28,6 @@ class BenutzerAvatar extends ConsumerWidget {
       return PersonAvatar(name: name, colorIndex: farbe, size: size, bild: v == null ? null : AssetImage(v.asset), bildAufFarbe: true);
     }
     final foto = ref.watch(avatarFotoProvider((userId: u.id, version: a.version))).value;
-    return PersonAvatar(name: name, colorIndex: farbe, size: size, bild: foto == null ? null : MemoryImage(foto));
+    return PersonAvatar(name: name, colorIndex: farbe, size: size, bild: foto == null ? null : ResizeImage.resizeIfNeeded((size * (MediaQuery.maybeDevicePixelRatioOf(context) ?? 1)).ceil(), null, MemoryImage(foto)));
   }
 }

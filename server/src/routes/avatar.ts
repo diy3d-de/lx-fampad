@@ -1,13 +1,15 @@
 // Benutzerbild: PUT/DELETE /api/v1/me/avatar, GET /api/v1/members/:id/avatar, DELETE /api/v1/members/:id/avatar (Admin: zurücksetzen).
 // Fachlogik in src/avatar/. Der Upload ist eine Binär-Anfrage (Content-Type image/png|jpeg|webp) mit hartem Größenlimit nur für diese Route.
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { AVATAR_MAX_BYTES, AVATAR_MIMES, inspectImage, isAvatarPreset } from '../avatar/image.js';
 import { assertMemberOfFamily, clearAvatar, loadPhoto, photoVersion, setPhoto, setPreset } from '../avatar/service.js';
+import { writeAudit } from '../auth/audit.js';
 import type { Auth } from '../auth/service.js';
+import type { SessionPrincipal } from '../auth/types.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { idParams, parse, strictLimit } from './util.js';
+import { idParams, meta, parse, strictLimit } from './util.js';
 
 const presetBody = z.object({ preset: z.string().max(8) }).strict();
 
@@ -16,14 +18,19 @@ const etagOf = (version: number) => `"a${version}"`;
 export function registerAvatarRoutes(app: FastifyInstance, config: Config, auth: Auth): void {
   const ctx = auth.ctx;
   const strikt = strictLimit(config);
+  // Anmeldung vor dem Einlesen des Bodys (onRequest läuft vor dem Parser): Unangemeldete laden nichts hoch
+  const principals = new WeakMap<FastifyRequest, SessionPrincipal>();
+  const onRequest = async (req: FastifyRequest) => {
+    principals.set(req, await auth.requireSession(req));
+  };
 
   // eigener Kapselbereich: Binär-Parser (nur Bild-Typen) gelten nur hier, alles andere (auch SVG) endet mit 415
   void app.register(async (scope) => {
     scope.addContentTypeParser([...AVATAR_MIMES], { parseAs: 'buffer', bodyLimit: AVATAR_MAX_BYTES }, (_req, body, done) => done(null, body));
 
     // Platzhalter wählen (JSON {"preset":"V01"}) oder Foto hochladen (Rohbytes); nur die eigene Person
-    scope.put('/api/v1/me/avatar', { ...strikt, bodyLimit: AVATAR_MAX_BYTES }, async (req) => {
-      const p = await auth.requireSession(req);
+    scope.put('/api/v1/me/avatar', { ...strikt, bodyLimit: AVATAR_MAX_BYTES, onRequest }, async (req) => {
+      const p = principals.get(req) ?? (await auth.requireSession(req));
       const type = (req.headers['content-type'] ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
       if (type === 'application/json') {
         const { preset } = parse(presetBody, req.body);
@@ -52,6 +59,7 @@ export function registerAvatarRoutes(app: FastifyInstance, config: Config, auth:
       const { id } = parse(idParams, req.params);
       await assertMemberOfFamily(ctx, p, id);
       await clearAvatar(ctx, id);
+      await writeAudit(ctx, ctx.db, { event: 'avatar_reset', familyId: p.familyId, actorId: p.userId, ip: meta(req).ip, detail: { target: id } });
       return { ok: true };
     });
 

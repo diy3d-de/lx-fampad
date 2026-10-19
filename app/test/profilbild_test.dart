@@ -75,6 +75,9 @@ Future<void> wartebis(WidgetTester tester, Finder f) async {
   }
 }
 
+/// Das Anzeige-Bild kommt skaliert (ResizeImage um das MemoryImage).
+ImageProvider? _ohneResize(ImageProvider? i) => i is ResizeImage ? i.imageProvider : i;
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(testVorbereiten);
@@ -370,7 +373,7 @@ void main() {
       final env = TestUmgebung(server);
       await env.angemeldet();
       await zeige(tester, env, person(avatar: foto));
-      expect(bildDerAnzeige(tester), isA<MemoryImage>());
+      expect(_ohneResize(bildDerAnzeige(tester)), isA<MemoryImage>());
       expect(server.anfragen('GET /members/$fixIdKind/avatar'), hasLength(1));
       // lokal gespeichert (sync_meta): "Version:base64"
       expect((await env.db.metaLesen('avatar:$fixIdKind'))!.startsWith('3:'), isTrue);
@@ -379,7 +382,7 @@ void main() {
       server.routes.remove('GET /members/$fixIdKind/avatar');
       await tester.pumpWidget(const SizedBox());
       await zeige(tester, env, person(avatar: foto));
-      expect(bildDerAnzeige(tester), isA<MemoryImage>());
+      expect(_ohneResize(bildDerAnzeige(tester)), isA<MemoryImage>());
       expect(server.anfragen('GET /members/$fixIdKind/avatar'), hasLength(1));
     });
 
@@ -392,7 +395,7 @@ void main() {
       await env.angemeldet();
       await env.db.metaSchreiben('avatar:$fixIdKind', '2:${base64Encode(png)}');
       await zeige(tester, env, person(avatar: foto)); // Version 3 gewünscht, 2 lokal
-      expect(bildDerAnzeige(tester), isA<MemoryImage>());
+      expect(_ohneResize(bildDerAnzeige(tester)), isA<MemoryImage>());
       expect(tester.takeException(), isNull);
     });
 

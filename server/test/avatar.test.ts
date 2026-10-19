@@ -3,17 +3,21 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { AVATAR_MAX_BYTES, AVATAR_PRESETS, inspectImage } from '../src/avatar/image.js';
 import * as schema from '../src/db/schema.js';
-import { addMember, adminPassword, backends, type Client, World, type Harness } from './helpers.js';
+import { addMember, adminPassword, auditEvents, backends, type Client, World, type Harness } from './helpers.js';
 
 // ---- synthetische Bilddateien (nur der Kopf zählt: der Server dekodiert nichts) ----
 function png(w: number, h: number, pad = 0): Buffer {
   const head = Buffer.alloc(33);
+  const idat = Buffer.alloc(12 + pad);
+  idat.writeUInt32BE(pad, 0);
+  idat.write('IDAT', 4, 'latin1');
+  const iend = Buffer.from([0, 0, 0, 0, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82]);
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(head, 0);
   head.writeUInt32BE(13, 8);
   head.write('IHDR', 12, 'latin1');
   head.writeUInt32BE(w, 16);
   head.writeUInt32BE(h, 20);
-  return Buffer.concat([head, Buffer.alloc(pad, 1)]);
+  return Buffer.concat([head, idat, iend]);
 }
 function jpeg(w: number, h: number): Buffer {
   const app0 = Buffer.from([0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0x01, 0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00]);
@@ -46,6 +50,22 @@ describe('Bild-Prüfung', () => {
     expect(inspectImage(png(0, 10))).toBeNull();
     expect(inspectImage(jpeg(2000, 10))).toBeNull();
     expect(inspectImage(png(10, 10).subarray(0, 20))).toBeNull();
+    // PNG: Fremdbytes nach IEND, abgeschnitten, APNG
+    expect(inspectImage(Buffer.concat([png(10, 10), Buffer.from('<svg/>')]))).toBeNull();
+    expect(inspectImage(png(10, 10).subarray(0, png(10, 10).length - 5))).toBeNull();
+    const apng = Buffer.concat([png(10, 10).subarray(0, 33), Buffer.from([0, 0, 0, 8, 0x61, 0x63, 0x54, 0x4c, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0]), png(10, 10).subarray(33)]);
+    expect(inspectImage(apng)).toBeNull();
+    // WebP: Animationsbit im VP8X-Kopf
+    const vp8x = Buffer.alloc(30);
+    vp8x.write('RIFF', 0, 'latin1');
+    vp8x.writeUInt32LE(22, 4);
+    vp8x.write('WEBPVP8X', 8, 'latin1');
+    vp8x.writeUInt32LE(10, 16);
+    vp8x.writeUIntLE(63, 24, 3);
+    vp8x.writeUIntLE(63, 27, 3);
+    expect(inspectImage(vp8x)).toMatchObject({ mime: 'image/webp', width: 64 });
+    vp8x[20] = 0x02;
+    expect(inspectImage(vp8x)).toBeNull();
     expect(inspectImage(jpeg(10, 10).subarray(0, 12))).toBeNull();
   });
 });
@@ -139,7 +159,7 @@ describe.each(backends)('Benutzerbild ($name)', (backend) => {
 
   it('Größenlimit 512 KB gilt hart für diese Route (413), knapp darunter geht', async () => {
     const { mama } = await familie();
-    const ok = await upload(mama.client, png(512, 512, AVATAR_MAX_BYTES - 33), 'image/png');
+    const ok = await upload(mama.client, png(512, 512, AVATAR_MAX_BYTES - 57), 'image/png');
     expect(ok.status).toBe(200);
     const big = await upload(mama.client, png(512, 512, AVATAR_MAX_BYTES), 'image/png');
     expect(big.status).toBe(413);
@@ -187,6 +207,8 @@ describe.each(backends)('Benutzerbild ($name)', (backend) => {
     // ohne Anmeldung
     expect((await world.client().get(`/api/v1/members/${id}/avatar`)).status).toBe(401);
     expect((await world.client().request('PUT', '/api/v1/me/avatar', { body: { preset: 'V01' } })).status).toBe(401);
+    // Unangemeldet wird auch ein großer Upload vor dem Einlesen mit 401 abgewiesen
+    expect((await upload(world.client(), png(64, 64, 100_000), 'image/png')).status).toBe(401);
   });
 
   it('Familiengrenze (IDOR): fremde Familie und unbekannte Ids = 404; Admin darf nur eigene Familie zurücksetzen', async () => {
@@ -217,6 +239,7 @@ describe.each(backends)('Benutzerbild ($name)', (backend) => {
     expect(await world.count('user_avatars')).toBe(1);
     expect((await a.client.del(`/api/v1/members/${kindId}/avatar`)).status).toBe(200);
     expect(await world.count('user_avatars')).toBe(0);
+    expect((await auditEvents(world)).filter((e) => e === 'avatar_reset')).toHaveLength(1);
     expect((await kind.client.get('/api/v1/me')).json.user.avatar).toBeNull();
   });
 

@@ -23,7 +23,8 @@ class ProfilbildScreen extends ConsumerStatefulWidget {
   ConsumerState<ProfilbildScreen> createState() => _ProfilbildScreenState();
 }
 
-class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen> with AktionsZustand<ProfilbildScreen> {
+class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen>
+    with AktionsZustand<ProfilbildScreen> {
   int _reiter = 0;
   String? _vorlage;
   AufbereitetesBild? _foto;
@@ -57,8 +58,7 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen> with Aktion
 
   Future<void> _uebernehmen() async {
     final api = ref.read(apiProvider);
-    final nav = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+    final danach = _danachVorbereiten();
     final foto = _reiter == 1 ? _foto : null;
     final vorlage = _reiter == 0 ? _vorlage : null;
     if (foto == null && vorlage == null) return;
@@ -70,26 +70,32 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen> with Aktion
       }
     });
     if (!ok) return;
-    await _danach(nav, messenger, 'Profilbild gespeichert.');
+    await danach('Profilbild gespeichert.');
   }
 
   Future<void> _entfernen() async {
     final api = ref.read(apiProvider);
-    final nav = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
+    final danach = _danachVorbereiten();
     final ok = await ausfuehren(() => api.avatarEntfernen());
     if (!ok) return;
-    await _danach(nav, messenger, 'Profilbild entfernt. Es erscheinen wieder deine Initialen.');
+    await danach('Profilbild entfernt. Es erscheinen wieder deine Initialen.');
   }
 
   /// Profil und Mitgliederliste neu laden (neue Bildversion), dann zurück. Scheitert nur das Neuladen, ist das Bild trotzdem gespeichert.
-  Future<void> _danach(NavigatorState nav, ScaffoldMessengerState messenger, String hinweis) async {
-    await ref.read(authProvider.notifier).neuLaden();
-    ref.invalidate(mitgliederProvider);
-    if (nav.mounted) nav.pop();
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(hinweis)));
+  /// Erfasst alles, was nach dem Warten gebraucht wird, VOR dem Warten (nach dem Schließen des Bildschirms ist kein ref mehr erlaubt).
+  Future<void> Function(String) _danachVorbereiten() {
+    final nav = Navigator.of(context);
+    final messenger = ScaffoldMessenger.of(context);
+    final auth = ref.read(authProvider.notifier);
+    final container = ProviderScope.containerOf(context, listen: false);
+    return (hinweis) async {
+      await auth.neuLaden();
+      container.invalidate(mitgliederProvider);
+      if (nav.mounted) nav.pop();
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(hinweis)));
+    };
   }
 
   @override
@@ -100,117 +106,179 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen> with Aktion
     final aktuell = user?.avatar;
     final vorschauVorlage = _reiter == 0 ? avatarVorlage(_vorlage) : null;
     final vorschauFoto = _reiter == 1 ? _foto : null;
-    final kannUebernehmen = !laeuft && (_reiter == 0 ? _vorlage != null : _foto != null);
-    return AuthSeite(
-      label: '// profil',
-      titel: 'Profilbild ändern',
-      maxBreite: kMaxContentWidth,
-      kinder: [
-        LxCard(
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: kAccent, width: 2)),
-                child: Semantics(
-                  label: 'Vorschau deines Profilbilds',
-                  image: true,
-                  child: vorschauFoto != null
-                      ? PersonAvatar(name: name, colorIndex: farbe, size: 88, bild: MemoryImage(vorschauFoto.bytes))
-                      : vorschauVorlage != null
-                      ? PersonAvatar(name: name, colorIndex: farbe, size: 88, bild: AssetImage(vorschauVorlage.asset), bildAufFarbe: true)
-                      : BenutzerAvatar(user: user, size: 88),
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const MonoLabel('// vorschau', color: kTextMuted),
-                    const SizedBox(height: 4),
-                    Text(name, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: kTextStrong)),
-                    const SizedBox(height: 2),
-                    Text(
-                      vorschauFoto != null
-                          ? 'eigenes Foto'
-                          : vorschauVorlage != null
-                          ? vorschauVorlage.name
-                          : (aktuell == null ? 'noch kein Bild' : 'aktuelles Bild'),
-                      style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        _Reiter(aktiv: _reiter, onWechsel: (i) => setState(() => _reiter = i)),
-        const SizedBox(height: 16),
-        if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
-        if (_reiter == 0)
-          for (final g in AvatarGruppe.values) ...[
-            MonoLabel('// ${g.label.toLowerCase()}', color: kTextMuted),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final v in kAvatarVorlagen.where((v) => v.gruppe == g))
-                  _VorlagenKnopf(
-                    vorlage: v,
-                    colorIndex: farbe,
-                    name: name,
-                    gewaehlt: _vorlage == v.id,
-                    onTap: laeuft ? null : () => setState(() => _vorlage = v.id),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ]
-        else ...[
+    final kannUebernehmen =
+        !laeuft && (_reiter == 0 ? _vorlage != null : _foto != null);
+    // Während des Speicherns/Verarbeitens nicht zurück: der Vorgang soll nicht ohne Bildschirm weiterlaufen
+    return PopScope(
+      canPop: !laeuft,
+      child: AuthSeite(
+        label: '// profil',
+        titel: 'Profilbild ändern',
+        maxBreite: kMaxContentWidth,
+        kinder: [
           LxCard(
-            padding: const EdgeInsets.all(20),
-            child: Column(
+            child: Row(
               children: [
-                const Icon(Icons.upload_file_outlined, size: 40, color: kAccent),
-                const SizedBox(height: 8),
-                Text(
-                  _foto == null ? 'Foto auswählen' : (_fotoName ?? 'Foto'),
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w600, color: kTextStrong),
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: kAccent, width: 2),
+                  ),
+                  child: Semantics(
+                    label: 'Vorschau deines Profilbilds',
+                    image: true,
+                    child: vorschauFoto != null
+                        ? PersonAvatar(
+                            name: name,
+                            colorIndex: farbe,
+                            size: 88,
+                            bild: MemoryImage(vorschauFoto.bytes),
+                          )
+                        : vorschauVorlage != null
+                        ? PersonAvatar(
+                            name: name,
+                            colorIndex: farbe,
+                            size: 88,
+                            bild: AssetImage(vorschauVorlage.asset),
+                            bildAufFarbe: true,
+                          )
+                        : BenutzerAvatar(user: user, size: 88),
+                  ),
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  _foto == null
-                      ? 'Das Bild wird rund zugeschnitten und verkleinert (höchstens 10 MB). Standortdaten im Foto werden dabei entfernt.'
-                      : 'Zugeschnitten auf ${_foto!.kante} x ${_foto!.kante} Pixel (${(_foto!.bytes.length / 1024).round()} KB). Standortdaten sind entfernt.',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 13, color: kTextMuted),
-                ),
-                const SizedBox(height: 12),
-                ZweitKnopf(
-                  text: _foto == null ? 'Foto auswählen' : 'Anderes Foto wählen',
-                  icon: Icons.photo_library_outlined,
-                  onPressed: laeuft ? null : _fotoWaehlen,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const MonoLabel('// vorschau', color: kTextMuted),
+                      const SizedBox(height: 4),
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: kTextStrong,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        vorschauFoto != null
+                            ? 'eigenes Foto'
+                            : vorschauVorlage != null
+                            ? vorschauVorlage.name
+                            : (aktuell == null
+                                  ? 'noch kein Bild'
+                                  : 'aktuelles Bild'),
+                        style: const TextStyle(
+                          fontFamily: kFontMono,
+                          fontSize: 12,
+                          color: kTextMuted,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 16),
-        ],
-        HauptKnopf(text: 'Übernehmen', icon: Icons.check, laeuft: laeuft, onPressed: kannUebernehmen ? _uebernehmen : null),
-        const SizedBox(height: 8),
-        if (aktuell != null)
-          OutlinedButton.icon(
-            onPressed: laeuft ? null : _entfernen,
-            style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: const BorderSide(color: kDanger), minimumSize: const Size.fromHeight(48)),
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Bild entfernen'),
+          _Reiter(
+            aktiv: _reiter,
+            onWechsel: (i) => setState(() => _reiter = i),
           ),
-        LinkKnopf('Abbrechen', onPressed: laeuft ? null : () => Navigator.of(context).maybePop()),
-      ],
+          const SizedBox(height: 16),
+          if (fehler != null) ...[
+            MeldungsBox(fehler!),
+            const SizedBox(height: 12),
+          ],
+          if (_reiter == 0)
+            for (final g in AvatarGruppe.values) ...[
+              MonoLabel('// ${g.label.toLowerCase()}', color: kTextMuted),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final v in kAvatarVorlagen.where((v) => v.gruppe == g))
+                    _VorlagenKnopf(
+                      vorlage: v,
+                      colorIndex: farbe,
+                      name: name,
+                      gewaehlt: _vorlage == v.id,
+                      onTap: laeuft
+                          ? null
+                          : () => setState(() => _vorlage = v.id),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+            ]
+          else ...[
+            LxCard(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                children: [
+                  const Icon(
+                    Icons.upload_file_outlined,
+                    size: 40,
+                    color: kAccent,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    _foto == null ? 'Foto auswählen' : (_fotoName ?? 'Foto'),
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      color: kTextStrong,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _foto == null
+                        ? 'Das Bild wird rund zugeschnitten und verkleinert (höchstens 10 MB). Standortdaten im Foto werden dabei entfernt.'
+                        : 'Zugeschnitten auf ${_foto!.kante} x ${_foto!.kante} Pixel (${(_foto!.bytes.length / 1024).round()} KB). Standortdaten sind entfernt.'
+                              '${_foto!.verkleinert ? ' Das Foto ist sehr detailreich oder klein, deshalb ist das Bild etwas kleiner und weniger scharf.' : ''}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 13, color: kTextMuted),
+                  ),
+                  const SizedBox(height: 12),
+                  ZweitKnopf(
+                    text: _foto == null
+                        ? 'Foto auswählen'
+                        : 'Anderes Foto wählen',
+                    icon: Icons.photo_library_outlined,
+                    onPressed: laeuft ? null : _fotoWaehlen,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+          HauptKnopf(
+            text: 'Übernehmen',
+            icon: Icons.check,
+            laeuft: laeuft,
+            onPressed: kannUebernehmen ? _uebernehmen : null,
+          ),
+          const SizedBox(height: 8),
+          if (aktuell != null)
+            OutlinedButton.icon(
+              onPressed: laeuft ? null : _entfernen,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: kDanger,
+                side: const BorderSide(color: kDanger),
+                minimumSize: const Size.fromHeight(48),
+              ),
+              icon: const Icon(Icons.delete_outline),
+              label: const Text('Bild entfernen'),
+            ),
+          LinkKnopf(
+            'Abbrechen',
+            onPressed: laeuft ? null : () => Navigator.of(context).maybePop(),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -224,7 +292,11 @@ class _Reiter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(4),
-    decoration: BoxDecoration(color: kBgElevated, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+    decoration: BoxDecoration(
+      color: kBgElevated,
+      border: Border.all(color: kBorder),
+      borderRadius: BorderRadius.circular(12),
+    ),
     child: Row(
       children: [
         for (final (i, text) in const ['Platzhalter', 'Eigenes Foto'].indexed)
@@ -246,7 +318,12 @@ class _Reiter extends StatelessWidget {
                       child: Text(
                         text,
                         textAlign: TextAlign.center,
-                        style: TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w600, fontSize: 13, color: aktiv == i ? kOnAccent : kTextMuted),
+                        style: TextStyle(
+                          fontFamily: kFontMono,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                          color: aktiv == i ? kOnAccent : kTextMuted,
+                        ),
                       ),
                     ),
                   ),
@@ -265,7 +342,13 @@ class _VorlagenKnopf extends StatelessWidget {
   final String name;
   final bool gewaehlt;
   final VoidCallback? onTap;
-  const _VorlagenKnopf({required this.vorlage, required this.colorIndex, required this.name, required this.gewaehlt, required this.onTap});
+  const _VorlagenKnopf({
+    required this.vorlage,
+    required this.colorIndex,
+    required this.name,
+    required this.gewaehlt,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -284,9 +367,18 @@ class _VorlagenKnopf extends StatelessWidget {
           padding: const EdgeInsets.all(3),
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            border: Border.all(color: gewaehlt ? kAccent : Colors.transparent, width: 2),
+            border: Border.all(
+              color: gewaehlt ? kAccent : Colors.transparent,
+              width: 2,
+            ),
           ),
-          child: PersonAvatar(name: name, colorIndex: colorIndex, size: 62, bild: AssetImage(vorlage.asset), bildAufFarbe: true),
+          child: PersonAvatar(
+            name: name,
+            colorIndex: colorIndex,
+            size: 62,
+            bild: AssetImage(vorlage.asset),
+            bildAufFarbe: true,
+          ),
         ),
       ),
     ),
