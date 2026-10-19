@@ -16,7 +16,7 @@ Release-Builds:
 # Web: ohne CDN-Abrufe (CanvasKit lokal), Schriften gebündelt, Fallback-Schriften von der eigenen Domain
 flutter build web --release --no-web-resources-cdn
 # Android (APK für den eigenen Update-Kanal; Signatur über android/key.properties, nicht eingecheckt)
-flutter build apk --release --dart-define=API_BASE=https://familie.lx-labs.dev
+flutter build apk --release --dart-define=API_BASE=https://familie.lx-labs.dev --dart-define=INVITE_HOST=familie.lx-labs.dev
 ```
 
 - `lib/constants.dart`: Design-Tokens (Farben, Personenfarben, Schriften, Tabs). Keine Farbwerte in Widgets.

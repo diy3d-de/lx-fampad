@@ -56,7 +56,7 @@ server/
   src/errors.ts        AppError + eigener Fehlerhandler (nie interne Meldungen)
   src/routes/          system.ts (health, version), auth.ts (/api/v1/auth/*), account.ts (/me, /members, /invites, /devices, /ws-ticket), util.ts (Zod-Hilfen, Sitzungsantwort), placeholders.ts (/sync: 501 bis Phase 1c)
   src/ws/              WebSocket /ws (Origin-Prüfung, Ticket-Anmeldung, Anmeldefrist, Server-Ping, Nachrichten-/Verbindungslimits atomar), Hub je Familie
-  src/auth/            Anmeldung: invites, register, login, sessions (Cookie, Access-/Refresh-Token, Step-up), account (Mitglieder, Geräte, Anmeldedaten, WS-Tickets), lockout, audit, maintenance (Aufräum-Job), bootstrap, crypto/password/totp/webauthn/recovery/challenges, service (Auth)
+  src/auth/            Anmeldung: invites, register, login, sessions (Cookie, Access-/Refresh-Token mit Rotation und 30-s-Toleranzfenster für verlorene Antworten, Step-up), account (Mitglieder, Geräte, Anmeldedaten, WS-Tickets), lockout, audit, maintenance (Aufräum-Job), bootstrap, crypto/password/totp/webauthn/recovery/challenges, service (Auth)
   src/cli/             bootstrap.ts (Erstinstallation, Notfall-Zurücksetzen)
   src/sync/            nur Typen (Phase 1c)
   src/db/              schema.ts (Drizzle), index.ts (Pool), migrate-cli.ts (Migrationsrolle)
@@ -64,15 +64,15 @@ server/
   test/                Vitest: api.test.ts (Routen, Rate-Limit, WebSocket, Konfiguration, Fehlerhandler), migration.test.ts (Schema), auth.test.ts (Bootstrap, Einladungen), auth-login.test.ts (Anmeldearten, Sitzungen, Step-up, Sperren, Familiengrenze, Aufräumen), ws-auth.test.ts (Tickets, Limits), hardening.test.ts (Log ohne Parameter, ungültige Zeichen, IPv6, Aufräumen, Einladungsrechte, WebSocket-Widerruf), crypto.test.ts (Known-Answer der Schlüsselableitung, IP, Serializer, Zeichen); authenticator.ts (simulierter WebAuthn-Authenticator), helpers.ts (Backends PGlite/PostgreSQL, Welt mit Uhr)
 app/
   lib/constants.dart   Design-Tokens, Personenfarben, Tabs, Konstanten
-  lib/data/api/        ApiClient (Cookie+CSRF / Bearer+Refresh), FampadApi (Endpunkte), Modelle (DTOs), ApiException (deutsche Meldungen), Token-Ablage
-  lib/data/auth/       auth_state.dart (AuthStatus, AuthController, Provider, Hook localDataWiperProvider); lib/data/passkey_service.dart, system_channel.dart (Android-Kanal: Gerätename, FLAG_SECURE, Links)
+  lib/data/api/        ApiClient (Cookie+CSRF / Bearer+Refresh, Sitzungsgeneration), FampadApi (Endpunkte), Modelle (DTOs, Listen pro Eintrag tolerant), ApiException (deutsche Meldungen, VerbindungsaufbauFehler), Token-Ablage, http_client_io/stub (Android: Verbindungsaufbau getrennt vom Senden)
+  lib/data/auth/       auth_state.dart (AuthStatus, AuthController mit Generationszähler, Hooks localDataWiperProvider/localDataOwnerProvider; Daten nur bei ausdrücklichem Abmelden oder anderer Person leeren); lib/data/passkey_service.dart, system_channel.dart (Android-Kanal: Gerätename, FLAG_SECURE, Links)
   lib/ui/              theme.dart (Material 3), widgets.dart (Glow-Hintergrund, Karten, Labels)
   lib/data/            drift-Datenbank, Provider, Sync-Zustand
   lib/features/<bereich>/  shell, home, calendar, chat, files, lists, auth (Login, Einladung, Codes, Warten, Step-up), profile (Profil, Passkeys, Geräte), admin (Mitglieder, Einladungen), update (Manifest-Prüfung Ed25519, Download, Pflicht-Update)
   lib/widgets/         bereichsübergreifende Widgets (Sync-Indikator)
   web/                 index.html, flutter_bootstrap.js, sqlite3.wasm, drift_worker.js, Icons
   android/             applicationId dev.lx_labs.fampad, MainActivity + UpdateReceiver (Update per PackageInstaller)
-  test/                app_test (Tabs), update_test, mobile_layout_test + auth_layout_test (360 px, Textskala 1.5, Touch-Ziele), api_client_test, auth_state_test, auth_screens_test, models_test, invite_link_test, token_store_passkey_test; support/ (Fake-Server mit MockClient, Beispielantworten)
+  test/                app_test (Tabs), update_test, mobile_layout_test + auth_layout_test (360 px, Textskala 1.5, Touch-Ziele), api_client_test, http_client_test (echte Sockets), auth_state_test, auth_screens_test, auth_flows_test (Einladungslinks, Abmelden, Step-up, Neuladen), models_test, invite_link_test, token_store_passkey_test; support/ (Fake-Server mit MockClient, Beispielantworten)
   tool/                vertrag_test.dart (App-Klassen gegen den echten Server)
 deploy/                Caddyfile, lx-fampad.service + lx-fampad-migrate.service, einrichtung-1/2/auth.sh, deploy.sh, deploy-web.sh, umbenennung-server.sh (einmalig), ntfy/server.yml, README.md
 tools/                 update-manifest.mjs (Ed25519-Signatur des Update-Manifests), README.md

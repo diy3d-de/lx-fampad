@@ -1,11 +1,15 @@
 package dev.lx_labs.fampad
 
 import android.app.PendingIntent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.PersistableBundle
 import android.provider.Settings
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
@@ -20,20 +24,52 @@ import java.io.File
  * Zweiter Kanal (lib/data/system_channel.dart): Gerätename, Bildschirmfoto-Schutz (FLAG_SECURE) für Screens mit
  * Geheimnissen und Einladungs-Links (https://familie.lx-labs.dev/#/einladung/<token>), mit denen die App geöffnet wird.
  * Das Token im Link wird nie protokolliert.
+ *
+ * FLAG_SECURE: Der Wunsch aus Dart wird gemerkt und in onCreate/onResume neu gesetzt (die Activity kann neu erstellt werden,
+ * z. B. nach Prozess-Tod oder Konfigurationswechsel; das Fenster-Flag geht dabei verloren).
  */
 class MainActivity : FlutterActivity() {
     private var systemChannel: MethodChannel? = null
     private var startLink: String? = null
 
+    companion object {
+        /** Zuletzt von Dart gewünschter Zustand von FLAG_SECURE; als Klassenvariable, damit eine neu erstellte Activity ihn kennt. */
+        private var secureWunsch = false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         startLink = linkAus(intent)
+        secureAnwenden()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        secureAnwenden()
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        // der neue Intent ersetzt den alten (sonst liefert getIntent() später den Start-Intent)
+        setIntent(intent)
         val link = linkAus(intent)
         if (link != null) systemChannel?.invokeMethod("link", link)
+    }
+
+    /** Setzt FLAG_SECURE entsprechend dem zuletzt von Dart gewünschten Zustand. */
+    private fun secureAnwenden() {
+        if (secureWunsch) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    /** Kopiert Text als vertraulich (EXTRA_IS_SENSITIVE, Android 13+: keine Vorschau; ältere Versionen ignorieren den Hinweis). */
+    private fun geheimKopieren(text: String): Boolean {
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager ?: return false
+        val clip = ClipData.newPlainText("lx-fampad", text)
+        // Konstante als Text, damit der Code auch mit älteren compileSdk übersetzt (ClipDescription.EXTRA_IS_SENSITIVE ab API 33)
+        clip.description.extras = PersistableBundle().apply { putBoolean("android.content.extra.IS_SENSITIVE", true) }
+        clipboard.setPrimaryClip(clip)
+        return true
     }
 
     /** Nur Links der eigenen Domain (https). Die Daten werden aus dem Intent entfernt, damit sie nicht erneut gelesen werden. */
@@ -63,10 +99,13 @@ class MainActivity : FlutterActivity() {
                         startLink = null
                     }
                     "setSecure" -> {
-                        val secure = call.argument<Boolean>("secure") == true
-                        if (secure) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
-                        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        secureWunsch = call.argument<Boolean>("secure") == true
+                        secureAnwenden()
                         result.success(null)
+                    }
+                    "copySensitive" -> {
+                        val text = call.argument<String>("text")
+                        result.success(if (text == null) false else geheimKopieren(text))
                     }
                     else -> result.notImplemented()
                 }

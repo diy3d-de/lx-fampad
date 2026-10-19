@@ -33,6 +33,7 @@ concurrency:
 
 env:
   API_BASE: https://familie.lx-labs.dev
+  INVITE_HOST: familie.lx-labs.dev
   RELEASES_BASE: https://familie.lx-labs.dev/releases
 
 jobs:
@@ -128,7 +129,7 @@ jobs:
         run: |
           flutter build apk --release \
             --build-name="$VERSION" --build-number="$VERSION_CODE" \
-            --dart-define=API_BASE="$API_BASE" --dart-define=RELEASES_BASE="$RELEASES_BASE"
+            --dart-define=API_BASE="$API_BASE" --dart-define=INVITE_HOST="$INVITE_HOST" --dart-define=RELEASES_BASE="$RELEASES_BASE"
 
       - name: Schlüssel wieder löschen
         if: always()
