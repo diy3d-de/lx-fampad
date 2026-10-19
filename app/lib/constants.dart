@@ -148,3 +148,12 @@ const kTabs = <NavTab>[
   NavTab('Dateien', Icons.folder_outlined, Icons.folder),
   NavTab('Listen', Icons.checklist_outlined, Icons.checklist),
 ];
+
+/// Ab dieser Fensterbreite zeigt die App das Desktop-Layout (Seitenleiste, Karten-Raster); darunter bleibt es mobil.
+const kDesktopBreakpoint = 900.0;
+
+/// Inhaltsbreite der Startseite im Desktop-Layout (die übrigen Bereiche bleiben bei [kMaxContentWidth]).
+const kMaxContentWidthDesktop = 1200.0;
+
+/// Breite der Seitenleiste im Desktop-Layout.
+const kSidebarWidth = 248.0;
