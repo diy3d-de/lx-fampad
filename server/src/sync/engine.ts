@@ -29,6 +29,8 @@ export interface OpOutcome {
   roles?: Role[];
   /** Personen, die die Änderung sehen dürfen, wenn der Datensatz auf Teilnehmer beschränkt ist (dann ist `roles` leer). */
   users?: string[];
+  /** false: kein Push-Wecker (nur der WebSocket-Hinweis), z. B. Lesestand und Schlüssel-Wraps: sie betreffen nur die eigene Person. */
+  wake?: boolean;
 }
 
 /** Schlüssel im Protokolleintrag (change_log.changes): Personen, die durch die Änderung die Sicht verloren haben (siehe EntityDef.lostSight). */
@@ -101,7 +103,7 @@ const sameValue = (def: EntityDef, field: string, a: unknown, b: unknown): boole
   JSON.stringify(wireValue(def, field, a) ?? null) === JSON.stringify(wireValue(def, field, b) ?? null);
 
 /** Wer die Änderung erfährt: Rollen (Sicht nach Freigabe) und Personen (Sicht nach Teilnehmerliste), jeweils über alle genannten Stände vereinigt. */
-function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: string[] } {
+function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: string[]; wake: boolean } {
   const roles = new Set<Role>();
   const users = new Set<string>();
   for (const f of facts) {
@@ -112,7 +114,7 @@ function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: 
     for (const r of rolesThatMayRead(def.rules, f)) roles.add(r);
     for (const u of f.participants ?? []) users.add(u);
   }
-  return { roles: [...roles], users: [...users] };
+  return { roles: [...roles], users: [...users], wake: !def.ownerOnlyNotify };
 }
 
 /** Prüft einen Wert, der eine Mitglieds-ID oder eine Liste davon ist: alle müssen aktive Mitglieder der Familie sein. */
@@ -245,7 +247,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const decision = authorize(def.rules, 'create', env.actor, def.factsForCreate(env.actor, values, parentFacts), Object.keys(supplied), values);
   if (decision !== 'ok') return rejected(decision);
   if (def.check && !def.check(values)) return rejected('invalid');
-  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId }, { ...values, id: op.id }))) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor }, { ...values, id: op.id }))) return rejected('invalid');
 
   for (const [name, f] of Object.entries(def.fields)) {
     const v = values[name];
@@ -257,6 +259,22 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     if (def.maxLive.per === 'parent' && def.parent && parentId) where.push(eq(columnOf(def, def.parent.field), parentId));
     const [n] = await env.tx.select({ n: count() }).from(def.table).where(and(...where));
     if ((n?.n ?? 0) >= def.maxLive.max) return rejected('limit_reached');
+  }
+
+  if (def.ownerPerParent && def.parent && parentId) {
+    const c = syncColumns(def);
+    const [n] = await env.tx
+      .select({ n: count() })
+      .from(def.table)
+      .where(
+        and(
+          eq(c.familyId, env.familyId),
+          isNull(c.deletedAt),
+          eq(columnOf(def, def.parent.field), parentId),
+          eq(columnOf(def, def.ownerPerParent.field), env.actor.userId),
+        ),
+      );
+    if ((n?.n ?? 0) >= def.ownerPerParent.max) return rejected('limit_reached');
   }
 
   if (def.ownerLimit && def.ownerLimit.roles.includes(env.actor.role)) {
@@ -276,6 +294,13 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
       .from(def.table)
       .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), since)));
     if ((n?.n ?? 0) >= def.rate.perMinute) return rejected('limit_reached');
+    if (def.rate.perHour !== undefined) {
+      const [h] = await env.tx
+        .select({ n: count() })
+        .from(def.table)
+        .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), new Date(env.now.getTime() - 3_600_000))));
+      if ((h?.n ?? 0) >= def.rate.perHour) return rejected('limit_reached');
+    }
     // Byte-Kontingent je Person (Stunde und Tag) über die Länge des Inhalts
     const b = def.rate.bytes;
     if (b) {
@@ -302,7 +327,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const inserted = revive
     ? await env.tx
         .update(def.table)
-        .set({ ...row, deletedAt: null } as never)
+        .set({ ...Object.fromEntries(Object.entries(row).filter(([k]) => !(def.reviveKeep ?? []).includes(k))), deletedAt: null } as never)
         .where(and(eq(c.familyId, env.familyId), eq(c.id, op.id)))
         .returning({ id: c.id })
     : await env.tx
@@ -315,7 +340,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   env.revs.next();
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: true, changes: wireRow(def, row) });
   const to = recipients(def, def.factsForCreate(env.actor, values, parentFacts));
-  return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users };
+  return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users, wake: to.wake };
 }
 
 async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, supplied: Row): Promise<OpOutcome> {
@@ -370,7 +395,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
     }
     if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
   }
-  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId }, { ...row, ...changed }))) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor }, { ...row, ...changed }))) return rejected('invalid');
   // Mengenbegrenzung für Änderungen (z. B. Teilnehmerwechsel, Text-Bearbeitungen): gezählt wird im Änderungsprotokoll
   if (def.updateRate && def.updateRate.fields.some((f) => f in changed)) {
     const fieldList = sql.join(def.updateRate.fields.map((f) => sql`${f}`), sql`, `);
@@ -422,7 +447,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
   const to = recipients(def, facts, await factsOf(env, def, { ...row, ...changed }));
   // Freigabe geändert: untergeordnete Datensätze neu anstoßen, damit Geräte, die sie jetzt sehen dürfen, sie bekommen
   if (def.visibilityFields?.some((f) => f in changed)) await touchChildren(env, def, op.id);
-  return { status: 'acked', rev, conflicts, roles: to.roles, users: to.users };
+  return { status: 'acked', rev, conflicts, roles: to.roles, users: to.users, wake: to.wake };
 }
 
 async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Promise<OpOutcome> {
@@ -435,7 +460,7 @@ async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Pro
   if (def.guard && !def.guard('delete', row)) return rejected('forbidden');
   const rev = await tombstoneTree(env, def, row);
   const to = recipients(def, facts);
-  return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users };
+  return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users, wake: to.wake };
 }
 
 /** Bewertet eine Op im Rahmen einer geöffneten Transaktion (die Familienzeile ist gesperrt). */

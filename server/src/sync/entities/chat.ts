@@ -88,7 +88,8 @@ export const konversationEntity: EntityDef = {
   fields: {
     art: { access: 'create', schema: z.enum(KONVERSATION_ARTEN), required: true },
     // Version der Inhaltshülle der Nachrichten (Präfix `e1:` oder `p1:`); unveränderlich, damit ein Chat nicht auf Klartext zurückgestuft werden kann. Neue Chats: e1.
-    encVersion: { access: 'create', schema: z.enum(ENC_VERSIONEN), defaultValue: 'e1' },
+    // Neue Konversationen gibt es nur verschlüsselt: `p1` ist reiner Altbestand (lesbar, nichts Neues darin) und lässt sich nicht mehr anlegen
+    encVersion: { access: 'create', schema: z.literal('e1'), defaultValue: 'e1' },
     titel: { access: 'rw', schema: opaque(MAX_TITEL, 0), defaultValue: '', blank: '' },
     // bleibt auch im Tombstone erhalten: die Löschung bleibt dadurch für Teilnehmer sichtbar und für alle anderen unsichtbar
     teilnehmer: { access: 'rw', schema: teilnehmerListe, defaultValue: [], memberRef: true },
@@ -121,6 +122,8 @@ export const konversationEntity: EntityDef = {
   },
   // Familienchat und Direktchat dürfen nach dem Löschen (z. B. Person entfernt) mit derselben ID neu angelegt werden
   revive: (row: Row): boolean => row.art !== 'group',
+  // die Hülle bleibt beim Wiederbeleben, wie sie war (ein belebter Altbestand wird nie zu einem anderen Chat)
+  reviveKeep: ['encVersion'],
   facts: (row: Row): Facts => ({
     audience: 'family',
     ownerId: (row.ownerId as string | null) ?? null,
@@ -179,7 +182,8 @@ export const nachrichtEntity: EntityDef = {
       .from(konversationen)
       .where(and(eq(konversationen.familyId, env.familyId), eq(konversationen.id, String(row.konversationId))))
       .limit(1);
-    if (!k || !String(row.text).startsWith(`${k.enc}:`)) return false;
+    // in Klartext-Altbestand (`p1`) nimmt der Server nichts Neues mehr an
+    if (!k || k.enc !== 'e1' || !String(row.text).startsWith(`${k.enc}:`)) return false;
     // verschlüsselte Hülle: nur die Form (Zeichensatz Base64url, Mindestlänge), nie der Inhalt; Klartext `p1:` ist in e1-Konversationen schon durch das Präfix ausgeschlossen
     if (k.enc === 'e1' && !(String(row.text).length >= E1_MIN && /^e1:[A-Za-z0-9_-]+$/.test(String(row.text)))) return false;
     if (typeof row.antwortAuf === 'string') {

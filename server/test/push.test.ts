@@ -9,7 +9,7 @@ import WebSocket from 'ws';
 import { loadConfig } from '../src/config.js';
 import { topicFromEndpoint } from '../src/push/endpoint.js';
 import { MAX_FAILS, WAKE_BODY } from '../src/push/service.js';
-import { familienchatId } from '../src/sync/entities/chat-ids.js';
+import { familienchatId, lesestandId } from '../src/sync/entities/chat-ids.js';
 import { backends, TEST_KEY, World, type Harness } from './helpers.js';
 import { createFamily, extraMember, resetSync, upsert, type Device, type Family, type Json } from './sync-kit.js';
 
@@ -545,6 +545,40 @@ describe.each(backends)('Push ($name)', (backend) => {
       await change(fam.admin, 'all');
       expect(await until(() => calls.length >= vorher + 3)).toBe(true);
       await wait(100);
+    });
+
+    it('5xx von ntfy: der Wecker wird nach der Pause genau einmal erneut gesendet (ein ntfy-Neustart verschluckt ihn nicht)', async () => {
+      const t = await register(fam.child);
+      world.app.push!.fehlerPauseMs = 300;
+      reply = { status: 503 };
+      await change(fam.admin);
+      expect(await until(() => calls.length >= 1)).toBe(true);
+      reply = { status: 200 };
+      expect(await until(() => calls.length >= 2, 4000)).toBe(true);
+      expect(await topicsPosted(100)).toEqual([t, t]);
+      // und nur einmal: bleibt ntfy gestört, gibt es keinen endlosen Versuch
+      calls = [];
+      world.app.push!.reset();
+      world.app.push!.fehlerPauseMs = 200;
+      reply = { status: 503 };
+      await change(fam.admin);
+      await wait(1500);
+      expect(calls.length).toBeLessThanOrEqual(2);
+    });
+
+    it('reine Lesestand-Änderungen wecken niemanden (nur der WebSocket-Hinweis): sie betreffen nur die eigene Person', async () => {
+      await register(fam.admin);
+      await register(fam.parent);
+      await register(await fam.secondDevice('child'));
+      const id = familienchatId(fam.familyId);
+      expect((await fam.child.sync([upsert('konversation', id, { art: 'family' })])).json.rejected).toEqual([]);
+      expect(await until(() => calls.length >= 2)).toBe(true);
+      calls = [];
+      world.app.push!.reset();
+      const res = await fam.child.sync([upsert('lesestand', lesestandId(id, fam.child.userId), { konversationId: id, userId: fam.child.userId, gelesenBis: '2026-10-19T09:00:00.000Z' })]);
+      expect(res.json.rejected).toEqual([]);
+      await wait(400);
+      expect(calls).toHaveLength(0);
     });
 
     it('gezielte 4xx (z. B. 400) zählen je Endpunkt: nach MAX_FAILS in Folge deaktiviert', async () => {

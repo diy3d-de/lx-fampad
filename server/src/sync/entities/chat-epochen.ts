@@ -10,7 +10,7 @@
 //  - Ob Wrap und Mitgliederliste echt sind, prüft allein der Empfänger (Signatur gegen den gemerkten Schlüssel des Verteilers): ein Server oder Admin kann nichts
 //    unterschieben, nur Wraps verwerfen oder blockieren (Verfügbarkeit, nicht Vertraulichkeit).
 // Verteilt wird nur in verschlüsselten Konversationen (`enc_version` e1).
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, max } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Executor } from '../../auth/context.js';
 import { epocheWraps, konversationen, konversationEpochen } from '../../db/schema.js';
@@ -30,8 +30,13 @@ export const MAX_WRAP = 4096;
 /** Wraps je Konversation (lebende Zeilen). */
 export const MAX_WRAPS = 20_000;
 /** Neue Epochen und Wraps je Person und Minute. */
-export const EPOCHEN_PRO_MINUTE = 20;
-export const WRAPS_PRO_MINUTE = 400;
+export const EPOCHEN_PRO_MINUTE = 3;
+export const EPOCHEN_PRO_STUNDE = 12;
+export const WRAPS_PRO_MINUTE = 100;
+export const WRAPS_PRO_STUNDE = 800;
+/** Epochen und Wraps je Konversation und anlegender Person (ein Teilnehmer verbraucht die Obergrenze der Konversation nie allein). */
+export const MAX_EPOCHEN_JE_PERSON = 100;
+export const MAX_WRAPS_JE_PERSON = 2000;
 
 const base64url = (min: number, max: number) => safeString().pipe(z.string().min(min).max(max).regex(/^[A-Za-z0-9_-]+$/));
 const epochenNummer = z.number().int().min(1).max(100_000);
@@ -93,7 +98,10 @@ export const epocheEntity: EntityDef = {
   factsForCreate: (_actor: Actor, _values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: null }),
   onCreate: (actor: Actor): Row => ({ verteilerId: actor.userId }),
   maxLive: { per: 'parent', max: MAX_EPOCHEN },
-  rate: { field: 'verteilerId', perMinute: EPOCHEN_PRO_MINUTE },
+  rate: { field: 'verteilerId', perMinute: EPOCHEN_PRO_MINUTE, perHour: EPOCHEN_PRO_STUNDE },
+  ownerPerParent: { field: 'verteilerId', max: MAX_EPOCHEN_JE_PERSON },
+  // feste ID: nach dem Wiederbeleben eines gelöschten Direktchats (selbe ID) bekommt er wieder Epochen
+  revive: (): boolean => true,
   // nur in verschlüsselten Konversationen und lückenlos (Epoche N erst nach N-1)
   validate: async (env, row: Row): Promise<boolean> => {
     const konversationId = String(row.konversationId);
@@ -130,13 +138,36 @@ export const epocheWrapEntity: EntityDef = {
   factsForCreate: (_actor: Actor, values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (values.empfaengerId as string | undefined) ?? null }),
   onCreate: (actor: Actor): Row => ({ verteilerId: actor.userId }),
   maxLive: { per: 'parent', max: MAX_WRAPS },
-  rate: { field: 'verteilerId', perMinute: WRAPS_PRO_MINUTE },
+  rate: { field: 'verteilerId', perMinute: WRAPS_PRO_MINUTE, perHour: WRAPS_PRO_STUNDE },
+  ownerPerParent: { field: 'verteilerId', max: MAX_WRAPS_JE_PERSON },
+  ownerColumn: 'empfaengerId',
+  revive: (): boolean => true,
   // nur in verschlüsselten Konversationen, für eine vorhandene Epoche und an einen Teilnehmer (Familienchat: jedes aktive Mitglied, das prüft memberRef)
   validate: async (env, row: Row): Promise<boolean> => {
     const konversationId = String(row.konversationId);
     const k = await e1Konversation(env, konversationId);
     if (!k) return false;
     if (k.art !== 'family' && !k.teilnehmer.map((u) => u.toLowerCase()).includes(String(row.empfaengerId).toLowerCase())) return false;
-    return epocheDa(env, konversationId, Number(row.epoche));
+    // Wraps der HÖCHSTEN Epoche nur von deren Verteiler (sonst könnte ein Teilnehmer sie mit Müll vorab belegen: der erste gewinnt); ältere Epochen darf jeder
+    // Teilnehmer für neu Aufgenommene nachreichen ("Verlauf teilen", signiert vom Weitergebenden, der Empfänger prüft)
+    const [epoche] = await env.tx
+      .select({ verteilerId: konversationEpochen.verteilerId })
+      .from(konversationEpochen)
+      .where(
+        and(
+          eq(konversationEpochen.familyId, env.familyId),
+          eq(konversationEpochen.konversationId, konversationId),
+          eq(konversationEpochen.epoche, Number(row.epoche)),
+          isNull(konversationEpochen.deletedAt),
+        ),
+      )
+      .limit(1);
+    if (!epoche) return false;
+    const [hoechste] = await env.tx
+      .select({ n: max(konversationEpochen.epoche) })
+      .from(konversationEpochen)
+      .where(and(eq(konversationEpochen.familyId, env.familyId), eq(konversationEpochen.konversationId, konversationId), isNull(konversationEpochen.deletedAt)));
+    if (Number(row.epoche) === (hoechste?.n ?? 0) && epoche.verteilerId !== env.actor.userId) return false;
+    return true;
   },
 };

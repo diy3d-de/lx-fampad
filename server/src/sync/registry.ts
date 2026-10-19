@@ -71,7 +71,13 @@ export interface EntityDef {
   /** Darf ein gelöschter Datensatz mit fester ID durch erneutes Anlegen (mit Baserev 0) wieder aufleben? */
   revive?(row: Row): boolean;
   /** Prüfung gegen andere Datensätze (gleiche Konversation, Inhaltsversion) beim Anlegen und nach dem Zusammenführen einer Änderung; false = `invalid`. */
-  validate?(env: { tx: Executor; familyId: string }, row: Row): Promise<boolean>;
+  validate?(env: { tx: Executor; familyId: string; actor: Actor }, row: Row): Promise<boolean>;
+  /** Felder, die beim Wiederbeleben einer gelöschten Zeile mit fester ID NICHT neu gesetzt werden (z. B. die Hülle `encVersion` eines Chats). */
+  reviveKeep?: readonly string[];
+  /** Spalte mit der Person, der der Datensatz gehört (Empfänger): der Verlauf für neu Aufgenommene wird schon in der Abfrage darauf beschränkt, damit fremde Zeilen die eigenen nicht verdrängen. */
+  ownerColumn?: string;
+  /** Obergrenze lebender Datensätze je Elternteil UND anlegender Person (`field` = Spalte mit der Person): ein Teilnehmer kann das Limit der Konversation nicht allein verbrauchen. */
+  ownerPerParent?: { field: string; max: number };
   /** Personen, die durch diese Änderung die Sicht auf den Datensatz GEWINNEN; sie bekommen den bisherigen Inhalt (begrenzt) mit dem Änderungsstrom. */
   gainedSight?(before: Row, after: Row): readonly string[];
   /** Felder, die nach einer Änderung aus älteren Protokolleinträgen des Datensatzes entfernt werden (ersetzte Inhalte bleiben nicht im Protokoll). */
@@ -81,7 +87,7 @@ export interface EntityDef {
   /** Der WebSocket-Hinweis geht nur an den Besitzer (facts.ownerId), nie an andere; verschwundene Zeilen erzeugen keinen Tombstone für Dritte. */
   ownerOnlyNotify?: boolean;
   /** Mengenbegrenzung je Person und Minute: höchstens `perMinute` neue Datensätze, deren `field` (Spalte mit der Person) die Person ist; `createdAt` zählt. */
-  rate?: { field: string; perMinute: number; bytes?: { field: string; perHour: number; perDay: number } };
+  rate?: { field: string; perMinute: number; perHour?: number; bytes?: { field: string; perHour: number; perDay: number } };
   /**
    * Spalte mit einer Liste von Mitglieds-IDs, die den Datensatz sichtbar machen (Teilnehmer). Verlässt eine Person die Familie, wird sie aus der Liste
    * entfernt; bleiben weniger als `keepMin(row)` übrig, wird der Datensatz gelöscht (Tombstone).

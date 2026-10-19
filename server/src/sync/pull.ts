@@ -165,7 +165,15 @@ export async function pullChanges(
           const kids = (await tx
             .select()
             .from(child.table)
-            .where(and(eq(cc.familyId, familyId), eq(columnOf(child, child.parent.field), String(h.row.id)), isNull(cc.deletedAt)))
+            // Zeilen, die nur der Besitzer liest (Wraps, Lesestand), schon hier auf ihn beschränken: fremde Zeilen dürfen die eigenen nicht aus dem Limit drängen
+            .where(
+              and(
+                eq(cc.familyId, familyId),
+                eq(columnOf(child, child.parent.field), String(h.row.id)),
+                isNull(cc.deletedAt),
+                child.ownerColumn ? eq(columnOf(child, child.ownerColumn), actor.userId) : undefined,
+              ),
+            )
             .orderBy(desc(columnOf(child, 'createdAt')), desc(cc.id))
             .limit(HISTORY_LIMIT)) as Row[];
           for (const k of kids.reverse()) {

@@ -3,7 +3,7 @@
 import { randomUUID } from 'node:crypto';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { epocheId, familienchatId, wrapId } from '../src/sync/entities/chat-ids.js';
+import { direktChatId, epocheId, familienchatId, wrapId } from '../src/sync/entities/chat-ids.js';
 import { epocheEntity, epocheWrapEntity, MAX_EPOCHEN_LISTE, MAX_WRAP } from '../src/sync/entities/chat-epochen.js';
 import { authorize, mayRead, type Actor, type Facts } from '../src/sync/permissions.js';
 import { backends, World, type Harness } from './helpers.js';
@@ -71,6 +71,11 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
     expect(res.json.rejected, JSON.stringify(res.json.rejected)).toEqual([]);
     return id;
   }
+  /** Macht eine Konversation zum Klartext-Altbestand (so etwas lässt sich nicht mehr anlegen; die Zeile stammt dann aus früherer Zeit). */
+  const altbestand = async (konv: string): Promise<string> => {
+    await world.db.execute(sql`update konversationen set enc_version = 'p1' where id = ${konv}`);
+    return konv;
+  };
   const epoche = (konv: string, n: number, mitglieder = BLOB(200)) => upsert('epoche', epocheId(konv, n), { konversationId: konv, epoche: n, mitglieder });
   const wrap = (konv: string, n: number, empfaenger: Device | string, blob = BLOB()) => {
     const emp = typeof empfaenger === 'string' ? empfaenger : empfaenger.userId;
@@ -95,15 +100,15 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect(codes(await fam.parent.sync([upsert('nachricht', id, { text: E1(300) }, rev)]))).toEqual([]);
     });
 
-    it('die Version ist beim Anlegen wählbar, danach unveränderlich (kein Zurückstufen auf Klartext)', async () => {
+    it('die Version ist beim Anlegen nur e1, danach unveränderlich (kein Zurückstufen auf Klartext)', async () => {
       const konv = await gruppe(fam.parent, [fam.child]);
       const rev = Number((await rows(sql`select rev from konversationen where id = ${konv}`))[0]?.rev);
       expect(codes(await fam.parent.sync([upsert('konversation', konv, { encVersion: 'p1' }, rev)]))).toEqual(['invalid']);
       expect((await rows(sql`select enc_version from konversationen where id = ${konv}`))[0]?.enc_version).toBe('e1');
       expect(codes(await fam.parent.sync([upsert('konversation', randomUUID(), { art: 'group', encVersion: 'e9', teilnehmer: [fam.parent.userId, fam.child.userId] })]))).toEqual(['invalid']);
-      // Altbestand p1 bleibt Klartext (nur dort ist `p1:` gültig, `e1:` nicht)
-      const alt = await gruppe(fam.parent, [fam.child], { encVersion: 'p1' });
-      expect(codes(await fam.parent.sync([upsert('nachricht', randomUUID(), { konversationId: alt, text: 'p1:alt' })]))).toEqual([]);
+      // Altbestand p1: der Server nimmt dort nichts Neues an (weder Klartext noch Hülle)
+      const alt = await altbestand(await gruppe(fam.parent, [fam.child]));
+      expect(codes(await fam.parent.sync([upsert('nachricht', randomUUID(), { konversationId: alt, text: 'p1:alt' })]))).toEqual(['invalid']);
       expect(codes(await fam.parent.sync([upsert('nachricht', randomUUID(), { konversationId: alt, text: E1() })]))).toEqual(['invalid']);
     });
 
@@ -135,7 +140,7 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect(codes(await fam.parent.sync([upsert('epoche', epocheId(konv, 3), { konversationId: konv, epoche: 3, mitglieder: 'A'.repeat(MAX_EPOCHEN_LISTE + 1) })]))).toEqual(['invalid']);
       expect(codes(await fam.parent.sync([upsert('epoche', epocheId(konv, 0), { konversationId: konv, epoche: 0, mitglieder: BLOB() })]))).toEqual(['invalid']);
       // Altbestand (Klartext) bekommt keine Epochen
-      const alt = await gruppe(fam.parent, [fam.child], { encVersion: 'p1' });
+      const alt = await altbestand(await gruppe(fam.parent, [fam.child]));
       expect(codes(await fam.parent.sync([epoche(alt, 1)]))).toEqual(['invalid']);
     });
 
@@ -198,7 +203,7 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect(codes(await fam.child.sync([wrap(konv, 1, fam.child, BLOB(160))]))).not.toEqual([]);
       expect((await rows(sql`select wrap from epoche_wraps where konversation_id = ${konv}`))).toEqual([{ wrap: BLOB(150) }]);
       // Altbestand: keine Wraps
-      const alt = await gruppe(fam.parent, [fam.child], { encVersion: 'p1' });
+      const alt = await altbestand(await gruppe(fam.parent, [fam.child]));
       expect(codes(await fam.parent.sync([wrap(alt, 1, fam.child)]))).toEqual(['invalid']);
     });
 
@@ -240,6 +245,60 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect((await fam.parent.sync([remove('konversation', konv, rev)])).json.acked).toHaveLength(1);
       expect(await rows(sql`select 1 from konversation_epochen where konversation_id = ${konv} and deleted_at is null`)).toHaveLength(0);
       expect(await rows(sql`select 1 from epoche_wraps where konversation_id = ${konv} and deleted_at is null`)).toHaveLength(0);
+    });
+  });
+  describe('Härtung: vergiftete Epochen, Wiederbeleben, Raten, Verlauf', () => {
+    it('Wraps der höchsten Epoche nur vom Verteiler dieser Epoche; ältere Epochen darf jeder Teilnehmer nachreichen; jeder Teilnehmer kann die nächste Epoche anlegen (Selbstheilung)', async () => {
+      const konv = await gruppe(fam.parent, [fam.child, fam.admin]);
+      expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), wrap(konv, 1, fam.admin)]))).toEqual([]);
+      // das Kind legt Epoche 2 an, ohne einen gültigen Wrap zu verteilen (vergiftet) ...
+      expect(codes(await fam.child.sync([epoche(konv, 2, BLOB(210))]))).toEqual([]);
+      // ... und niemand sonst kann die Wraps dieser Epoche mit Müll vorab belegen oder an ihrer Stelle verteilen
+      expect(codes(await fam.parent.sync([wrap(konv, 2, fam.parent, BLOB(111))]))).toEqual(['invalid']);
+      expect(codes(await fam.admin.sync([wrap(konv, 2, fam.admin, BLOB(111))]))).toEqual(['invalid']);
+      // ältere Epochen (Verlauf teilen) darf jeder Teilnehmer nachreichen: hier hat Epoche 1 für den Admin schon einen Wrap, also wird der zweite abgelehnt, aber nicht als "ungültig"
+      expect(codes(await fam.parent.sync([wrap(konv, 1, fam.admin, BLOB(130))]))).not.toEqual(['invalid']);
+      // Selbstheilung: ein Teilnehmer legt Epoche 3 an (lückenlos) und verteilt sie selbst
+      expect(codes(await fam.parent.sync([epoche(konv, 3, BLOB(230)), wrap(konv, 3, fam.parent), wrap(konv, 3, fam.child), wrap(konv, 3, fam.admin)]))).toEqual([]);
+      expect(await rows(sql`select 1 from epoche_wraps where konversation_id = ${konv} and epoche = 3`)).toHaveLength(3);
+    });
+
+    it('Epochen je Person und Stunde begrenzt (limit_reached); Wiederbeleben eines Direktchats lässt auch Epochen und Wraps mit derselben ID wieder zu', async () => {
+      const konv = await gruppe(fam.parent, [fam.child]);
+      for (let n = 1; n <= 12; n++) {
+        expect(codes(await fam.parent.sync([epoche(konv, n)])), `Epoche ${n}`).toEqual([]);
+        world.advance(61_000);
+      }
+      expect(codes(await fam.parent.sync([epoche(konv, 13)]))).toEqual(['limit_reached']);
+      // nach einer Stunde wieder frei
+      world.advance(3_600_000);
+      expect(codes(await fam.parent.sync([epoche(konv, 13)]))).toEqual([]);
+    });
+
+    it('Wiederbeleben: ein gelöschter Direktchat bekommt mit denselben festen IDs neue Epochen und Wraps', async () => {
+      // gelöscht (z. B. weil die andere Person entfernt wurde) und neu angelegt: derselbe Chat mit denselben festen IDs
+      const dm2 = direktChatId(fam.parent.userId, fam.child.userId);
+      expect((await fam.parent.sync([upsert('konversation', dm2, { art: 'direct', teilnehmer: [fam.parent.userId, fam.child.userId] })])).json.rejected).toEqual([]);
+      expect(codes(await fam.parent.sync([epoche(dm2, 1), wrap(dm2, 1, fam.parent), wrap(dm2, 1, fam.child)]))).toEqual([]);
+      await world.db.execute(sql`update konversationen set deleted_at = now(), rev = rev + 1 where id = ${dm2}`);
+      await world.db.execute(sql`update konversation_epochen set deleted_at = now(), rev = rev + 1 where konversation_id = ${dm2}`);
+      await world.db.execute(sql`update epoche_wraps set deleted_at = now(), rev = rev + 1 where konversation_id = ${dm2}`);
+      expect((await fam.parent.sync([upsert('konversation', dm2, { art: 'direct', teilnehmer: [fam.parent.userId, fam.child.userId] })])).json.rejected).toEqual([]);
+      expect(codes(await fam.parent.sync([epoche(dm2, 1, BLOB(222)), wrap(dm2, 1, fam.parent, BLOB(131)), wrap(dm2, 1, fam.child, BLOB(132))]))).toEqual([]);
+      expect(await rows(sql`select wrap from epoche_wraps where konversation_id = ${dm2} and deleted_at is null order by wrap`)).toEqual([{ wrap: BLOB(131) }, { wrap: BLOB(132) }]);
+    });
+
+    it('Verlauf für neu Aufgenommene: die eigenen Wraps kommen immer, auch wenn andere Zeilen das Limit füllen (Abfrage schon auf den Empfänger beschränkt)', async () => {
+      const konv = await gruppe(fam.parent, [fam.child]);
+      expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child)]))).toEqual([]);
+      // viele neuere fremde Wraps (Direkt in der Datenbank, damit die Rate nicht greift)
+      await world.db.execute(sql`insert into epoche_wraps (id, family_id, konversation_id, epoche, empfaenger_id, wrap, rev, field_revs, created_at)
+        select gen_random_uuid(), ${fam.familyId}::uuid, ${konv}::uuid, 100 + g, ${fam.child.userId}::uuid, ${BLOB(100)}, 1, '{}'::jsonb, now() + g * interval '1 second' from generate_series(1, 600) g`);
+      const rev = Number((await rows(sql`select rev from konversationen where id = ${konv}`))[0]?.rev);
+      expect((await fam.parent.sync([upsert('konversation', konv, { teilnehmer: [fam.parent.userId, fam.child.userId, fam.admin.userId].sort() }, rev), epoche(konv, 2), wrap(konv, 2, fam.admin), wrap(konv, 1, fam.admin, BLOB(140))])).json.rejected).toEqual([]);
+      const adminSicht = await fam.admin.pull();
+      expect(adminSicht.filter((c) => c.entity === 'epoche_wrap').map((c) => c.fields.epoche).sort()).toEqual([1, 2]);
+      expect(adminSicht.filter((c) => c.entity === 'epoche')).toHaveLength(2);
     });
   });
 });

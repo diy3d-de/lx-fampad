@@ -248,8 +248,10 @@ export class PushService {
       if (!ep) return;
       const outcome = await this.send(ep.topic);
       await this.record(deviceId, outcome, ep.failCount);
-      // nach einer Pause (429, 401/403) genau ein zusammengefasster Wecker; Netz-/5xx-Fehler werden nicht wiederholt (der nächste Auslöser weckt)
+      // nach einer Pause (429, 401/403) genau ein zusammengefasster Wecker; Netz-/5xx-Fehler einmal nach der Pause
       if ((outcome === 'rate_limited' || outcome === 'auth') && versuch < MAX_RETRIES) this.schedule(deviceId, versuch + 1);
+      // Netzfehler und 5xx (ntfy-Neustart): nach der globalen Pause genau einmal erneut, sonst ginge ein Wecker verloren, bis der nächste Auslöser kommt
+      else if (outcome === 'pause' && versuch === 0) this.schedule(deviceId, 1);
     } catch (err: unknown) {
       this.o.log.error({ err }, 'Push: Versand fehlgeschlagen');
     }
