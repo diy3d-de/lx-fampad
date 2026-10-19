@@ -8,7 +8,8 @@ import 'package:timezone/timezone.dart' as tz;
 /// Zeitzone der Familie: Anzeige und Tagesgrenzen richten sich immer nach ihr, nicht nach dem Gerät.
 const kFamilienZone = 'Europe/Berlin';
 
-const _kAsset = 'assets/tz/latest.tzf';
+/// Asset mit den Zeitzonen-Daten (auch der ICS-Import gibt sie an einen Isolate weiter).
+const kZeitzonenAsset = 'assets/tz/latest.tzf';
 
 bool _geladen = false;
 
@@ -42,7 +43,7 @@ Future<bool> zeitzonenNeuLaden({Future<ByteData> Function()? lader}) async {
 /// Lädt die Zeitzonen-Daten einmalig (vor `runApp`). [lader] ist für Tests überschreibbar.
 Future<void> zeitzonenLaden({Future<ByteData> Function()? lader}) async {
   if (_geladen && zeitzonenBereit()) return;
-  final daten = await (lader ?? () => rootBundle.load(_kAsset))();
+  final daten = await (lader ?? () => rootBundle.load(kZeitzonenAsset))();
   tz.initializeDatabase(daten.buffer.asUint8List(daten.offsetInBytes, daten.lengthInBytes));
   _geladen = true;
 }

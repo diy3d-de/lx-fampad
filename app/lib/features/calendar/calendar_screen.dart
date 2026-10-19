@@ -14,6 +14,7 @@ import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../lists/list_dialogs.dart' show bestaetigen;
 import 'calendar_state.dart';
+import 'ics_import_screen.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
 
@@ -49,13 +50,17 @@ class CalendarScreen extends ConsumerWidget {
           PersonenFilter(personen: personen, gewaehlt: auswahl.personen, onPerson: notifier.person, onAlle: notifier.alle),
           if (personen.length >= 2) const SizedBox(height: 12),
           if (rechte.darfAnlegen)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: FilledButton.icon(
-                onPressed: () => terminEditorOeffnen(context, tag: auswahl.ansicht == KalenderAnsicht.agenda ? null : auswahl.tag),
-                icon: const Icon(Icons.add),
-                label: const Text('Neuer Termin'),
-              ),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                FilledButton.icon(
+                  onPressed: () => terminEditorOeffnen(context, tag: auswahl.ansicht == KalenderAnsicht.agenda ? null : auswahl.tag),
+                  icon: const Icon(Icons.add),
+                  label: const Text('Neuer Termin'),
+                ),
+                OutlinedButton.icon(onPressed: () => icsImportOeffnen(context), icon: const Icon(Icons.upload_file), label: const Text('Importieren')),
+              ],
             ),
           const SizedBox(height: 16),
           switch (auswahl.ansicht) {

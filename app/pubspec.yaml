@@ -36,6 +36,8 @@ dependencies:
   # Terminserien: rrule expandiert (rechnet ohne Zeitzonen, siehe data/calendar/expansion.dart), timezone liefert die Zeitzonen-Daten (Sommerzeit)
   rrule: 0.2.18
   timezone: 0.11.1
+  # ICS-Import: Dateiauswahl über den System-Picker (Android ohne Speicherberechtigung, Web: Browser-Dialog)
+  file_picker: 13.1.0
 
 dev_dependencies:
   flutter_test:
@@ -45,6 +47,18 @@ dev_dependencies:
   build_runner: 2.16.1
   # analyzer 14.5.0 ist zu jung (Regel: mind. 14 Tage) und bricht build_runner 2.16.1: bis auf Weiteres festhalten
   analyzer: 14.4.0
+
+# Transitive Pakete von file_picker auf Stände festhalten, die mindestens 14 Tage alt sind (Regel für neue Pakete)
+# (Versionen und Veröffentlichungsdaten: docs/VERSIONEN.md). Wiedervorlage 19.11.2026: dann sind die neueren Stände 14 Tage alt, Overrides prüfen und entfernen.
+dependency_overrides:
+  android_file_picker: 2.0.0
+  file_picker_darwin: 2.1.2
+  file_picker_linux: 2.0.1
+  file_picker_platform_interface: 4.0.0
+  file_picker_web: 4.0.0
+  windows_file_picker: 2.0.0
+  petitparser: 7.0.2
+  xml: 7.0.1
 
 flutter:
   uses-material-design: true

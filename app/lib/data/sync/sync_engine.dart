@@ -37,9 +37,12 @@ class SyncErgebnis {
   final String? meldung;
   final int ops;
 
+  /// 429 des Sync-Mengenlimits (`rate_limited`) mit Wartezeit: der Abgleich wartet genau so lange, ohne den Backoff hochzuschaukeln.
+  final bool mengenlimit;
+
   /// Stand der Familie laut Server nach dem letzten Aufruf (0: unbekannt).
   final int rev;
-  const SyncErgebnis(this.ausgang, {this.hinweise = const [], this.warten, this.meldung, this.ops = 0, this.rev = 0});
+  const SyncErgebnis(this.ausgang, {this.hinweise = const [], this.warten, this.meldung, this.ops = 0, this.rev = 0, this.mengenlimit = false});
 
   bool get ok => ausgang == SyncAusgang.ok;
 }
@@ -99,7 +102,14 @@ class SyncEngine {
       ApiErrorKind.netzwerk => SyncErgebnis(SyncAusgang.offline, hinweise: hinweise, meldung: e.message, ops: ops),
       ApiErrorKind.nichtAngemeldet => SyncErgebnis(SyncAusgang.sitzungVerloren, hinweise: hinweise, meldung: e.message, ops: ops),
       ApiErrorKind.updateNoetig => SyncErgebnis(SyncAusgang.updateNoetig, hinweise: hinweise, meldung: e.message, ops: ops),
-      ApiErrorKind.zuVieleAnfragen || ApiErrorKind.serverBusy => SyncErgebnis(SyncAusgang.ueberlastet, hinweise: hinweise, warten: e.retryAfter, meldung: e.message, ops: ops),
+      ApiErrorKind.zuVieleAnfragen || ApiErrorKind.serverBusy => SyncErgebnis(
+        SyncAusgang.ueberlastet,
+        hinweise: hinweise,
+        warten: e.retryAfter,
+        meldung: e.message,
+        ops: ops,
+        mengenlimit: e.kind == ApiErrorKind.zuVieleAnfragen && e.code == 'rate_limited' && e.retryAfter != null,
+      ),
       _ => SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: e.message, ops: ops),
     };
   }
