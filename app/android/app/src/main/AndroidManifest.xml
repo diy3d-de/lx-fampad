@@ -12,6 +12,14 @@
          mobile_scanner trägt dieselbe Angabe ein; sie steht hier ausdrücklich, damit sie nicht von einem Plugin-Update abhängt. -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <!-- Lokale Terminerinnerungen (Plugin flutter_local_notifications; alles bleibt auf dem Gerät, kein Push-Dienst).
+         POST_NOTIFICATIONS: Laufzeit-Abfrage ab Android 13, nur auf Wunsch in Profil, Erinnerungen (nicht beim ersten Start).
+         RECEIVE_BOOT_COMPLETED: das Plugin setzt die Alarme nach einem Neustart neu.
+         USE_EXACT_ALARM: genaue Alarme für Kalender-Erinnerungen ohne Nachfrage (Kalender-App, Verteilung außerhalb eines Stores);
+         fehlt die Erlaubnis, plant die App ungenau. Das Plugin trägt POST_NOTIFICATIONS und VIBRATE ebenfalls ein (Merge-Bericht prüfen). -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <!-- Nur TLS: kein Klartext-Verkehr (familie.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
     <application
         android:label="lx-fampad"
@@ -26,6 +34,16 @@
         <receiver
             android:name=".UpdateReceiver"
             android:exported="false" />
+        <!-- Terminerinnerungen: zeigt geplante Benachrichtigungen an und setzt sie nach Neustart/App-Update neu (nur intern erreichbar) -->
+        <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" android:exported="false" />
+        <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
+            </intent-filter>
+        </receiver>
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -13,6 +13,7 @@ import '../auth/auth_widgets.dart';
 import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import 'devices_screen.dart';
+import 'erinnerungen_screen.dart';
 import 'password_screen.dart';
 import 'passkeys_screen.dart';
 
@@ -235,6 +236,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           untertitel: 'einzeln abmelden',
           onTap: () => _oeffne(const DevicesScreen()),
         ),
+        EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),
           const MonoLabel('// familie'),

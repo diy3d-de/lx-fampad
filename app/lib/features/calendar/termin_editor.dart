@@ -12,6 +12,7 @@ import '../../data/calendar/expansion.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
+import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/lists/list_repository.dart' show ListenSicht;
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
@@ -72,6 +73,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       _endZeit = TimeOfDay(hour: stunde + 1, minute: 0);
       _startTagUrsprung = _startTag;
       _ganztaegigUrsprung = false;
+      _erinnerung = ref.read(erinnerungEinstellungenProvider).standardVorlauf; // lokale Vorgabe dieses Geräts
       return;
     }
     final t = v.termin;
