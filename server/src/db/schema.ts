@@ -586,23 +586,81 @@ export const listItems = pgTable(
   ],
 );
 
-export const tasks = pgTable(
-  'tasks',
+/**
+ * Aufgaben (To-dos, Phase 1c-4a). Fälligkeit wie bei Terminen: ein Kalendertag (`faellig_date`, ganztägig) ODER ein Zeitpunkt in UTC
+ * (`faellig_utc`) mit IANA-Zeitzone (`tzid`); beides leer = ohne Fälligkeit. Wiederholung einfach (täglich/wöchentlich/monatlich): Beim Erledigen
+ * legt der Client die nächste Aufgabe an (feste ID aus der erledigten Aufgabe), der Server prüft nur die Form.
+ */
+export const aufgaben = pgTable(
+  'aufgaben',
   {
     id: id(),
     familyId: familyRef(),
-    title: text('title').notNull(),
-    dueAt: timestamp('due_at', { withTimezone: true }),
+    titel: text('titel').notNull(),
+    beschreibung: text('beschreibung').notNull().default(''),
+    faelligDate: date('faellig_date', { mode: 'string' }),
+    faelligUtc: timestamp('faellig_utc', { withTimezone: true }),
+    tzid: text('tzid'),
+    /** 0 keine, 1 niedrig, 2 mittel, 3 hoch. */
+    prioritaet: integer('prioritaet').notNull().default(0),
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
-    doneAt: timestamp('done_at', { withTimezone: true }),
-    rrule: text('rrule'),
-    remindMinutes: integer('remind_minutes'),
+    erledigtAt: timestamp('erledigt_at', { withTimezone: true }),
+    erledigtVon: uuid('erledigt_von').references(() => users.id, { onDelete: 'set null' }),
+    /** daily, weekly, monthly oder leer. */
+    wiederholung: text('wiederholung'),
+    /** Erinnerung in Minuten vor der Fälligkeit (null: keine). */
+    erinnerungMin: integer('erinnerung_min'),
+    audience: listAudience('audience').notNull().default('family'),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
-    index('tasks_family_due_idx').on(t.familyId, t.dueAt),
-    index('tasks_family_rev_idx').on(t.familyId, t.rev),
+    index('aufgaben_family_rev_idx').on(t.familyId, t.rev),
+    index('aufgaben_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('aufgaben_owner_idx')
+      .on(t.familyId, t.ownerId)
+      .where(sql`${t.ownerId} is not null`),
+    index('aufgaben_assignee_idx')
+      .on(t.familyId, t.assigneeId)
+      .where(sql`${t.assigneeId} is not null`),
+    unique('aufgaben_family_id_uq').on(t.familyId, t.id),
+    check('aufgaben_titel_len_ck', sql`char_length(${t.titel}) <= 200`),
+    check('aufgaben_beschreibung_len_ck', sql`char_length(${t.beschreibung}) <= 4000`),
+    check('aufgaben_prioritaet_ck', sql`${t.prioritaet} between 0 and 3`),
+    check('aufgaben_wiederholung_ck', sql`${t.wiederholung} is null or ${t.wiederholung} in ('daily', 'weekly', 'monthly')`),
+    check('aufgaben_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
+    check(
+      'aufgaben_faellig_ck',
+      sql`(${t.faelligDate} is null or ${t.faelligUtc} is null) and (${t.faelligUtc} is null or ${t.tzid} is not null)`,
+    ),
+  ],
+);
+
+/** Unteraufgaben (Checkliste) einer Aufgabe, einzeln synchronisiert wie Listeneinträge. */
+export const aufgabePunkte = pgTable(
+  'aufgabe_punkte',
+  {
+    id: id(),
+    familyId: familyRef(),
+    aufgabeId: uuid('aufgabe_id').notNull(),
+    text: text('text').notNull(),
+    doneAt: timestamp('done_at', { withTimezone: true }),
+    position: doublePrecision('position').notNull().default(0),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.aufgabeId], foreignColumns: [aufgaben.familyId, aufgaben.id] }).onDelete('cascade'),
+    index('aufgabe_punkte_aufgabe_idx').on(t.aufgabeId),
+    index('aufgabe_punkte_family_rev_idx').on(t.familyId, t.rev),
+    index('aufgabe_punkte_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('aufgabe_punkte_text_len_ck', sql`char_length(${t.text}) <= 500`),
+    check('aufgabe_punkte_position_ck', sql`${t.position} between -1e12 and 1e12`),
   ],
 );
 

@@ -50,6 +50,13 @@
       "when": 1792426961932,
       "tag": "0006_benutzerbild",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792426962932,
+      "tag": "0010_aufgaben",
+      "breakpoints": true
     }
   ]
 }
