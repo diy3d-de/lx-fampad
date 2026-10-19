@@ -95,7 +95,8 @@ muss `2025-12-31` ausgeben), `sha256sum`. Das Skript [`deploy/backup/nas/lx-famp
 1. holt neue Ordner mit `rsync -a --partial` (**ohne `--delete`**: das NAS behält, was einmal da war; gelöscht wird nur durch die Rotation) nach `<Ziel>/archiv/`,
 2. prüft jeden neuen Ordner mit `sha256sum -c SHA256SUMS`,
 3. schlägt Alarm (Exit ≠ 0, Meldung), wenn die neueste Sicherung älter als 36 Stunden ist, eine Prüfsumme nicht stimmt oder der Server `last_result=fehler` meldet,
-4. rotiert: **14 tägliche, 8 wöchentliche (ISO-Woche), 12 monatliche**; je Zeitraum bleibt die neueste, die 3 neuesten immer.
+4. rotiert: **14 tägliche, 8 wöchentliche (ISO-Woche), 12 monatliche**; je Zeitraum bleibt der **älteste** Ordner (so verdrängt eine später eingeschleuste, formal gültige Fälschung nie den echten Ordner), Ordner der letzten 2 Tage und der neueste bleiben immer. Gelöscht wird nur, wenn danach an mindestens 3 verschiedenen Tagen geprüfte, plausibel große Ordner bleiben.
+5. prüft alle 7 Tage das **gesamte Archiv** erneut mit `sha256sum -c` (stille Veränderung), nimmt nur eine `status`-Datei bis 4 KB im Format `schluessel=wert` an und schlägt Alarm bei veraltetem Stand; ein zweiter gleichzeitiger Lauf wird abgewiesen (`flock`, Exit 75).
 
 Zusätzlich: Ausführungszeitlimit 2 h (`timeout`), SSH mit `ConnectTimeout=30` und `ServerAlive*` (hängende Verbindungen enden), rsync nur mit `-rt --no-links --no-perms --no-owner --no-group --no-devices --no-specials --max-size`, Warnung bei rsync < 3.4.0 (CVE-2024-12086), Alarm bei freiem Platz < 2 GB am Ziel. Fehlt GNU-`date -d` (BusyBox), bricht das Skript mit Alarm ab, statt still falsch zu rechnen.
 
@@ -154,6 +155,10 @@ WantedBy=timers.target
 ```
 `systemctl --user enable --now lx-fampad-pull.timer`; `loginctl enable-linger <benutzer>`; Fehlschlag sichtbar mit `systemctl --user --failed` (mit `OnFailure=` eine Mail auslösen).
 
+### NAS-Snapshots (Pflicht) und regelmäßiger Test-Restore
+
+**Richte auf dem NAS Snapshots des Zielordners ein** (Synology: Snapshot Replication, Btrfs, z. B. täglich, 14 Tage Aufbewahrung, Snapshots nicht über die Freigabe löschbar) oder eine zweite, unabhängige Kopie (Hyper Backup auf USB/Cloud). Sie sind die Rückfallebene, wenn das Pull-Skript, die Rotation oder ein manipulierter Server doch etwas Falsches ins Archiv bringt. Zusätzlich **alle 6 Monate einen Test-Restore** (`WIEDERHERSTELLUNG.md`, Abschnitt 2) mit einer Sicherung aus dem *NAS-Archiv*, nicht vom Server: nur das beweist, dass Schlüssel und Inhalt stimmen.
+
 ### Zeitplan
 
 Server **03:30** (plus bis zu 5 Minuten Zufallsverzögerung, die Sicherung dauert derzeit Sekunden), NAS **04:30**. Das NAS sollte nie vor 04:00 holen. Verpasst der Server den Lauf (aus), holt `Persistent=true` ihn beim Start nach.
@@ -163,6 +168,15 @@ Server **03:30** (plus bis zu 5 Minuten Zufallsverzögerung, die Sicherung dauer
 - Das Pull-Skript prüft das **Alter** der neuesten Sicherung (aus dem Ordnernamen) und die **Statusdatei** des Servers; älter als 36 h oder `last_result=fehler` ist ein Alarm (Exit ≠ 0).
 - Läuft das NAS-Skript selbst nicht mehr (NAS aus, Aufgabe deaktiviert), meldet sich nichts: einmal im Monat im NAS-Archiv nachsehen, ob der neueste Ordner von gestern ist. Idee für später: ein ntfy-Wecker, der die Statusdatei liest und den Admin erinnert (nicht umgesetzt).
 - Auf dem Server: `sudo cat /var/backups/lx-fampad/status` (`last_success_utc`, `last_result`), `systemctl status lx-fampad-backup.service`.
+
+### Bei Alarm: verdächtige Ordner, Uhr-Sprung
+
+- **"nicht neuer als der neueste bekannte"**: Der Server bietet einen Ordner an, der älter ist als alles Gesehene. Ursachen: Uhr des Servers ging zurück (Zeitsprung), ein Angreifer, oder ein Lauf wurde nachgeholt. Ansehen: `ssh` auf den Server und `ls -l /var/backups/lx-fampad`, `date -u`, `journalctl -u lx-fampad-backup`. Meist reicht: Uhr korrigieren, den betroffenen Ordner auf dem Server löschen (`sudo rm -r`) und mit `sudo systemctl start lx-fampad-backup.service` neu sichern; der neue Ordner ist dann wieder neuer als alles Bekannte. Einen echten, aber alt datierten Ordner nimmt das Skript bewusst nie an.
+- **"Datum in der Zukunft"**: Uhr des Servers vorgestellt oder gefälscht. Uhr korrigieren (`timedatectl`); den Zukunftsordner auf dem Server löschen (`sudo rm -r`), sonst bleibt der Alarm.
+- **"mehr als N Ordner am <Tag>"**: zu viele manuelle Läufe oder Fälschung. Überzählige Ordner auf dem Server löschen oder `LXB_MAX_PER_DAY` bewusst erhöhen.
+- **"steht nicht in SHA256SUMS" / "unerwartete Datei" / Prüfsumme**: Der Ordner wird nicht übernommen. Server prüfen, Sicherung neu erzeugen (`sudo systemctl start lx-fampad-backup.service`), den fehlerhaften Ordner dort löschen.
+- **"Volltiefenprüfung" / "seit der Prüfung geändert"**: Das NAS-Archiv selbst wurde verändert oder ist beschädigt: aus dem Snapshot/der zweiten Kopie wiederherstellen.
+- Ein vom Skript verworfener Ordner kommt beim nächsten Lauf wieder; er blockiert (Alarm), bis die Ursache auf dem Server behoben ist. `gesehen.txt` wird nur durch angenommene Ordner ergänzt.
 
 ### Ohne Skript (nur zum Verständnis)
 
@@ -195,7 +209,7 @@ sudo rm -rf /etc/lx-fampad-backup /var/backups/lx-fampad        # löscht die Si
 
 - Wer den Server übernimmt, kann Sicherungen lesen (verschlüsselt, ohne privaten Schlüssel nutzlos) und die der letzten 3 Tage löschen, **nicht** die auf dem NAS.
 - Wer das NAS übernimmt, hat nur verschlüsselte Dateien; der Server hält keine Zugangsdaten zum NAS (nur dessen IP und öffentlichen Schlüssel).
-- Ehrlich gesagt: Ein übernommener Server kann Sicherungen auf dem NAS **nicht löschen**; er kann dem Pull-Skript aber Müll oder Fälschungen anbieten und versuchen, Speicherplatz und Rotation zu missbrauchen. Das ist nur durch die folgenden Gegenmaßnahmen begrenzt, nicht ausgeschlossen. **Empfehlung: zusätzlich NAS-Snapshots** (Synology: Snapshot Replication / Btrfs-Snapshots, 14 Tage, nicht von der Freigabe aus löschbar), dann ist auch ein Fehler des Pull-Skripts oder der Rotation reparierbar. Das Pull-Skript holt zuerst in ein Staging-Verzeichnis und nimmt nur Ordner mit Namen `YYYYMMDD-HHMMSS` und den Dateien `db-/config-/files-*.age` und `SHA256SUMS` an; bereits bekannte Ordner (Archiv und `gesehen.txt`) holt rsync gar nicht erst, sie sind also nicht überschreibbar; die Prüfmarke `.geprueft` (Hash der `SHA256SUMS`) setzt nur das NAS. Neue Ordner müssen **neuer** sein als alles bisher Gesehene, sonst Alarm (so lässt sich die Rotation nicht mit gefälschten, alt datierten Ordnern vergiften). Weitere Grenzen: nur reguläre Dateien bis `LXB_MAX_FILE_SIZE` (2 GB), Vorabprüfung der Übertragungsgröße (`LXB_MAX_PULL_MB`, 1 GB), Prüfsummen, lehnt Ordner mit Datum in der Zukunft ab (Alarm), bricht bei zu vielen Ordnern/zu großem Archiv ab und rotiert nur, wenn danach mindestens 3 geprüfte, plausibel große Ordner bleiben.
+- Ehrlich gesagt: Ein übernommener Server kann Sicherungen auf dem NAS **nicht löschen**, die Rotation und der Speicherplatz sind aber **nicht garantiert vergiftungssicher**: Das Skript erschwert es nur (älteste je Zeitraum, höchstens 6 Ordner je Tag, nur Ordner neuer als alles Gesehene, Größengrenzen), schließt es nicht aus; er kann dem Pull-Skript aber Müll oder Fälschungen anbieten und versuchen, Speicherplatz und Rotation zu missbrauchen. Das ist nur durch die folgenden Gegenmaßnahmen begrenzt, nicht ausgeschlossen. **Empfehlung: zusätzlich NAS-Snapshots** (Synology: Snapshot Replication / Btrfs-Snapshots, 14 Tage, nicht von der Freigabe aus löschbar), dann ist auch ein Fehler des Pull-Skripts oder der Rotation reparierbar. Das Pull-Skript holt zuerst in ein Staging-Verzeichnis und nimmt nur Ordner mit Namen `YYYYMMDD-HHMMSS` und den Dateien `db-/config-/files-*.age` und `SHA256SUMS` an; bereits bekannte Ordner (Archiv und `gesehen.txt`) holt rsync gar nicht erst, sie sind also nicht überschreibbar; die Prüfmarke `.geprueft` (Hash der `SHA256SUMS`) setzt nur das NAS. Neue Ordner müssen **neuer** sein als alles bisher Gesehene, sonst Alarm (so lässt sich die Rotation nicht mit gefälschten, alt datierten Ordnern vergiften). Weitere Grenzen: nur reguläre Dateien bis `LXB_MAX_FILE_SIZE` (2 GB), Vorabprüfung der Übertragungsgröße (`LXB_MAX_PULL_MB`, 1 GB), Prüfsummen, lehnt Ordner mit Datum in der Zukunft ab (Alarm), bricht bei zu vielen Ordnern/zu großem Archiv ab und rotiert nur, wenn danach mindestens 3 geprüfte, plausibel große Ordner bleiben.
 - Zeitzonen: der Timer läuft nach der Systemzeit des Servers (`timedatectl`), die Ordnernamen und die Rotation rechnen in **UTC**; bei Sommerzeit verschiebt sich 03:30 Ortszeit entsprechend gegenüber den Namen.
 - Der NAS-Schlüssel kann auf dem Server nur lesen (`rrsync -ro`, `restrict`, `from=`); `~lxbackup` und `authorized_keys` gehören root, der Benutzer kann sie nicht ändern.
 - Ein Server-Fehler (Datenbank leer, Platte voll, age kaputt) bricht ab, statt eine leere/halbe Sicherung zu veröffentlichen; ein stiller Ausfall fällt über das Alter auf dem NAS auf.
