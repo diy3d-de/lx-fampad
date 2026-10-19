@@ -93,11 +93,13 @@ describe('Migration auf bestehender Datenbank', () => {
   it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: 0004 -> 0005 -> 0006', async () => {
     const name = `lx_mig_${randomUUID().replaceAll('-', '')}`;
     const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    admin.on('error', () => undefined); // 57P01 beim Aufräumen ist erwartet
     await admin.connect();
     await admin.query(`create database ${name}`);
     const url = new URL(process.env.TEST_DATABASE_URL as string);
     url.pathname = `/${name}`;
     const pool = new pg.Pool({ connectionString: url.toString(), max: 2 });
+    pool.on('error', () => undefined);
     const db = drizzlePg(pool);
     try {
       await pruefen(
@@ -151,11 +153,13 @@ describe('Migration 0007 (Familienrolle) auf bestehender Datenbank', () => {
   it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: Altdaten bleiben, family_role ist null, CHECK greift', async () => {
     const name = `lx_mig_${randomUUID().replaceAll('-', '')}`;
     const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    admin.on('error', () => undefined); // 57P01 beim Aufräumen ist erwartet
     await admin.connect();
     await admin.query(`create database ${name}`);
     const url = new URL(process.env.TEST_DATABASE_URL as string);
     url.pathname = `/${name}`;
     const pool = new pg.Pool({ connectionString: url.toString(), max: 2 });
+    pool.on('error', () => undefined);
     const db = drizzlePg(pool);
     try {
       await pruefen(
