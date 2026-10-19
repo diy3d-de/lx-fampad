@@ -6,15 +6,3 @@ final httpClientProvider = Provider<http.Client>((ref) {
   ref.onDispose(client.close);
   return client;
 });
-
-/// Platzhalter-Anmeldung (Phase 0): nur ein Schalter, keine echte Prüfung.
-/// Phase 1 ersetzt das durch Passkey/Passwort+2FA und Sitzungsverwaltung.
-class AuthController extends Notifier<bool> {
-  @override
-  bool build() => false;
-
-  void signInPreview() => state = true;
-  void signOut() => state = false;
-}
-
-final authProvider = NotifierProvider<AuthController, bool>(AuthController.new);

@@ -1,0 +1,189 @@
+// Fehler des API-Clients mit verständlichen deutschen Meldungen. Gezeigt wird nie ein Text vom Server oder eine
+// Systemmeldung (Interna), sondern nur die hier festgelegte Meldung je Fehlercode.
+import 'dart:async';
+
+import 'package:http/http.dart' as http;
+
+enum ApiErrorKind {
+  /// Keine Verbindung / Zeitüberschreitung.
+  netzwerk,
+
+  /// Nicht angemeldet bzw. Sitzung abgelaufen (401 an einer geschützten Stelle).
+  nichtAngemeldet,
+
+  /// Erneute Bestätigung nötig (403 step_up_required).
+  stepUpNoetig,
+
+  /// Zu viele Anfragen / verzögerte Sperre (429).
+  zuVieleAnfragen,
+
+  /// Server überlastet (503 server_busy).
+  serverBusy,
+
+  /// Konto wartet auf Freigabe (403 account_pending).
+  kontoWartet,
+
+  /// Antwort entspricht nicht der Schnittstelle.
+  protokoll,
+
+  /// Alles andere (Eingabe falsch, Konflikt, nicht erlaubt, Serverfehler ...).
+  sonstiges,
+}
+
+class ApiException implements Exception {
+  final ApiErrorKind kind;
+  final int status;
+
+  /// Fehlercode des Servers (z. B. `invalid_credentials`), leer bei Netzwerkfehlern.
+  final String code;
+
+  /// Meldung für die Anzeige (Deutsch, ohne Interna).
+  final String message;
+
+  /// Wartezeit bei 429/503 (Header `Retry-After`).
+  final Duration? retryAfter;
+
+  const ApiException({required this.kind, required this.status, required this.code, required this.message, this.retryAfter});
+
+  bool get istStepUp => kind == ApiErrorKind.stepUpNoetig;
+  bool get istNetzwerk => kind == ApiErrorKind.netzwerk;
+
+  bool hatCode(String c) => code == c;
+
+  @override
+  String toString() => 'ApiException($status $code)';
+
+  static const keineVerbindung = ApiException(
+    kind: ApiErrorKind.netzwerk,
+    status: 0,
+    code: 'network',
+    message: 'Keine Verbindung zum Server. Prüfe dein Netz und versuche es erneut.',
+  );
+
+  static const zeitueberschreitung = ApiException(
+    kind: ApiErrorKind.netzwerk,
+    status: 0,
+    code: 'timeout',
+    message: 'Der Server antwortet nicht. Bitte versuche es gleich noch einmal.',
+  );
+
+  static const unerwarteteAntwort = ApiException(
+    kind: ApiErrorKind.protokoll,
+    status: 0,
+    code: 'protocol',
+    message: 'Die Antwort des Servers war unerwartet. Vielleicht ist ein Update der App nötig.',
+  );
+
+  /// Baut den Fehler aus Status, Fehlercode und (optional) Retry-After in Sekunden.
+  factory ApiException.vonAntwort({required int status, required String code, int? retryAfterSekunden}) {
+    final warte = retryAfterSekunden == null || retryAfterSekunden < 0 ? null : Duration(seconds: retryAfterSekunden);
+    String wartetext(String basis) {
+      if (warte == null) return basis;
+      final s = warte.inSeconds;
+      return '$basis Bitte warte ${s == 1 ? 'eine Sekunde' : '$s Sekunden'}.';
+    }
+
+    if (code == 'step_up_required') {
+      return ApiException(
+        kind: ApiErrorKind.stepUpNoetig,
+        status: status,
+        code: code,
+        message: 'Bitte bestätige diese Aktion noch einmal mit Passkey oder Code.',
+      );
+    }
+    if (status == 429 || code == 'too_many_attempts' || code == 'rate_limited') {
+      return ApiException(
+        kind: ApiErrorKind.zuVieleAnfragen,
+        status: status,
+        code: code,
+        retryAfter: warte,
+        message: wartetext('Zu viele Versuche.'),
+      );
+    }
+    if (status == 503) {
+      return ApiException(
+        kind: ApiErrorKind.serverBusy,
+        status: status,
+        code: code,
+        retryAfter: warte,
+        message: wartetext('Der Server ist gerade ausgelastet.'),
+      );
+    }
+    if (code == 'account_pending') {
+      return ApiException(
+        kind: ApiErrorKind.kontoWartet,
+        status: status,
+        code: code,
+        message: 'Dein Konto wartet noch auf die Freigabe durch einen Admin.',
+      );
+    }
+    final text = _texte[code];
+    final kind = (status == 401 && (code == 'unauthenticated' || code == 'invalid_token'))
+        ? ApiErrorKind.nichtAngemeldet
+        : ApiErrorKind.sonstiges;
+    return ApiException(kind: kind, status: status, code: code, message: text ?? _nachStatus(status));
+  }
+
+  static String _nachStatus(int status) {
+    if (status == 401) return 'Du bist nicht angemeldet.';
+    if (status == 403) return 'Dazu fehlt dir die Berechtigung.';
+    if (status == 404) return 'Das wurde nicht gefunden.';
+    if (status == 409) return 'Das ist so gerade nicht möglich.';
+    if (status == 413) return 'Die Anfrage ist zu groß.';
+    if (status >= 500) return 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.';
+    return 'Die Eingabe wurde abgelehnt. Bitte prüfe sie.';
+  }
+
+  static const _texte = <String, String>{
+    'invalid_request': 'Die Eingabe ist nicht gültig. Bitte prüfe sie.',
+    'invalid_credentials': 'Die Anmeldung hat nicht geklappt. Prüfe E-Mail, Passwort und Code.',
+    'unauthenticated': 'Du bist nicht angemeldet.',
+    'invalid_token': 'Deine Anmeldung ist abgelaufen. Bitte melde dich neu an.',
+    'step_up_failed': 'Die Bestätigung hat nicht geklappt. Bitte versuche es noch einmal.',
+    'forbidden': 'Dazu fehlt dir die Berechtigung.',
+    'csrf_invalid': 'Die Anfrage wurde abgelehnt. Bitte lade die Seite neu.',
+    'origin_not_allowed': 'Die Anfrage wurde abgelehnt. Bitte lade die Seite neu.',
+    'invite_invalid': 'Die Einladung ist ungültig oder abgelaufen, oder die PIN stimmt nicht.',
+    'invite_not_open': 'Die Einladung ist nicht mehr offen.',
+    'weak_password': 'Das Passwort ist zu schwach. Nimm mindestens 12 Zeichen.',
+    'challenge_invalid': 'Der Vorgang ist abgelaufen. Bitte beginne noch einmal von vorn.',
+    'invalid_code': 'Der Code stimmt nicht. Prüfe ihn und versuche es noch einmal.',
+    'registration_failed': 'Die Registrierung ist mit diesen Angaben nicht möglich. Prüfe sie oder frage bei der Familie nach.',
+    'last_admin': 'Der letzte Admin kann nicht herabgestuft oder entfernt werden.',
+    'last_credential': 'Das ist dein letzter Zugang. Lege zuerst einen anderen an.',
+    'no_passkey': 'Für dein Konto ist noch kein Passkey eingerichtet.',
+    'passkey_exists': 'Für dieses Gerät gibt es schon einen Passkey.',
+    'not_pending': 'Dieses Mitglied wartet nicht auf eine Freigabe.',
+    'cannot_remove_self': 'Du kannst dich nicht selbst entfernen.',
+    'multiple_families': 'Dieses Konto gehört zu mehreren Familien. Das geht hier noch nicht.',
+    'already_bootstrapped': 'Die Familie ist schon eingerichtet.',
+    'not_found': 'Das wurde nicht gefunden.',
+    'payload_too_large': 'Die Anfrage ist zu groß.',
+    'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
+  };
+}
+
+/// Wandelt Fehler beim Senden in einen [ApiException] um.
+ApiException netzwerkFehler(Object e) {
+  if (e is TimeoutException) return ApiException.zeitueberschreitung;
+  return ApiException.keineVerbindung;
+}
+
+/// true, wenn der Fehler mit Sicherheit auftrat, BEVOR die Anfrage den Server erreichen konnte
+/// (kein Netz, Adresse nicht auflösbar, Verbindung abgelehnt). Dann ist ein erneuter Versuch gefahrlos.
+/// Bei Zeitüberschreitung oder Abbruch mitten in der Übertragung ist unklar, ob der Server die Anfrage verarbeitet hat
+/// (beim Refresh-Token wäre ein blindes Wiederholen fatal: der Server widerruft bei Wiederverwendung die ganze Familie).
+bool vorDemSenden(Object e) {
+  if (e is TimeoutException) return false;
+  // TLS-Aushandlung scheitert, bevor irgendeine Anfrage gesendet wird (dart:io ist hier nicht importierbar: Web)
+  if (e.runtimeType.toString().contains('HandshakeException')) return true;
+  if (e is http.ClientException) {
+    final m = e.message.toLowerCase();
+    return m.contains('failed host lookup') ||
+        m.contains('connection refused') ||
+        m.contains('network is unreachable') ||
+        m.contains('no route to host') ||
+        m.contains('no address associated');
+  }
+  return false;
+}

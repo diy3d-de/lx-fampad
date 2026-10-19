@@ -33,6 +33,13 @@ class AppDatabase extends _$AppDatabase {
   @override
   int get schemaVersion => 1;
 
+  /// Leert alle Tabellen (beim Abmelden). Phase 1c hängt hier die Fachtabellen ein, sie stehen in [allTables].
+  Future<void> alleDatenLoeschen() => transaction(() async {
+    for (final t in allTables) {
+      await delete(t).go();
+    }
+  });
+
   static QueryExecutor _openConnection() => driftDatabase(
         name: 'lx_fampad',
         // sqlite3.wasm und drift_worker.js liegen in web/ (keine CDN-Abrufe), Versionen siehe docs/VERSIONEN.md

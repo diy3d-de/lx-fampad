@@ -1,0 +1,442 @@
+// Datenmodelle der Server-Schnittstelle (docs/API.md). Parsing ist streng bei Pflichtfeldern und tolerant bei
+// zusätzlichen Feldern; Abweichungen werden zu ApiException.unerwarteteAntwort (keine Interna im UI).
+import 'api_error.dart';
+
+typedef Json = Map<String, dynamic>;
+
+Never _fehler() => throw ApiException.unerwarteteAntwort;
+
+Json asJson(Object? v) => v is Map<String, dynamic> ? v : _fehler();
+
+List<Json> asJsonList(Object? v) {
+  if (v is! List) _fehler();
+  return [for (final e in v) asJson(e)];
+}
+
+String _s(Json m, String k) {
+  final v = m[k];
+  return v is String ? v : _fehler();
+}
+
+String? _sn(Json m, String k) {
+  final v = m[k];
+  if (v == null) return null;
+  return v is String ? v : _fehler();
+}
+
+int _i(Json m, String k) {
+  final v = m[k];
+  return v is int ? v : _fehler();
+}
+
+bool _b(Json m, String k) {
+  final v = m[k];
+  return v is bool ? v : _fehler();
+}
+
+DateTime _t(Json m, String k) => DateTime.tryParse(_s(m, k)) ?? _fehler();
+
+DateTime? _tn(Json m, String k) {
+  final v = _sn(m, k);
+  return v == null ? null : (DateTime.tryParse(v) ?? _fehler());
+}
+
+enum Role {
+  admin('admin', 'Admin', 3),
+  parent('parent', 'Elternteil', 2),
+  child('child', 'Kind', 1),
+  guest('guest', 'Gast', 0);
+
+  final String wire;
+  final String label;
+
+  /// Rang wie auf dem Server (ROLE_RANK): höher = mehr Rechte.
+  final int rang;
+  const Role(this.wire, this.label, this.rang);
+
+  static Role parse(String s) => Role.values.firstWhere((r) => r.wire == s, orElse: () => _fehler());
+
+  /// Rollen, die diese Rolle einladen darf (Admin: alle, Eltern: nur Kinder und Gäste).
+  List<Role> get darfEinladen => switch (this) {
+    Role.admin => Role.values,
+    Role.parent => const [Role.child, Role.guest],
+    _ => const [],
+  };
+}
+
+enum MemberStatus {
+  active,
+  pending;
+
+  static MemberStatus parse(String s) => switch (s) {
+    'active' => MemberStatus.active,
+    'pending' => MemberStatus.pending,
+    _ => _fehler(),
+  };
+}
+
+/// Person (Antwort von Anmeldung, /me und der Mitgliederliste; `email` fehlt in der Liste für Nicht-Admins).
+class UserDto {
+  final String id;
+  final String? email;
+  final String displayName;
+  final int colorIndex;
+  final Role role;
+  final MemberStatus status;
+  const UserDto({
+    required this.id,
+    required this.email,
+    required this.displayName,
+    required this.colorIndex,
+    required this.role,
+    required this.status,
+  });
+
+  factory UserDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return UserDto(
+      id: _s(m, 'id'),
+      email: _sn(m, 'email'),
+      displayName: _s(m, 'displayName'),
+      colorIndex: _i(m, 'colorIndex'),
+      role: Role.parse(_s(m, 'role')),
+      status: MemberStatus.parse(_s(m, 'status')),
+    );
+  }
+
+  Json toJson() => {
+    'id': id,
+    'email': email,
+    'displayName': displayName,
+    'colorIndex': colorIndex,
+    'role': role.wire,
+    'status': status.name,
+  };
+}
+
+/// Sitzung aus den Antworten der Anmeldung (`session`): Web (Cookie + CSRF) oder App (Token).
+class SessionDto {
+  final bool istApp;
+  final String? csrfToken;
+  final String? accessToken;
+  final DateTime? accessExpiresAt;
+  final String? refreshToken;
+  final DateTime? refreshExpiresAt;
+  final DateTime? expiresAt;
+  final String deviceId;
+  const SessionDto({
+    required this.istApp,
+    this.csrfToken,
+    this.accessToken,
+    this.accessExpiresAt,
+    this.refreshToken,
+    this.refreshExpiresAt,
+    this.expiresAt,
+    required this.deviceId,
+  });
+
+  factory SessionDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final kind = _s(m, 'kind');
+    if (kind == 'web') {
+      return SessionDto(istApp: false, csrfToken: _s(m, 'csrfToken'), expiresAt: _t(m, 'expiresAt'), deviceId: _s(m, 'deviceId'));
+    }
+    if (kind == 'app') {
+      return SessionDto(
+        istApp: true,
+        accessToken: _s(m, 'accessToken'),
+        accessExpiresAt: _t(m, 'accessExpiresAt'),
+        refreshToken: _s(m, 'refreshToken'),
+        refreshExpiresAt: _t(m, 'refreshExpiresAt'),
+        deviceId: _s(m, 'deviceId'),
+      );
+    }
+    _fehler();
+  }
+}
+
+/// Antwort von Passkey-/Passwort-/Wiederherstellungs-Anmeldung.
+class LoginResult {
+  final UserDto user;
+  final SessionDto session;
+
+  /// Nur bei der Anmeldung per Wiederherstellungscode.
+  final int? recoveryCodesRemaining;
+  const LoginResult({required this.user, required this.session, this.recoveryCodesRemaining});
+
+  factory LoginResult.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final rest = m['recoveryCodesRemaining'];
+    return LoginResult(
+      user: UserDto.fromJson(m['user']),
+      session: SessionDto.fromJson(m['session']),
+      recoveryCodesRemaining: rest is int ? rest : null,
+    );
+  }
+}
+
+/// `GET /me`
+class MeDto {
+  final UserDto user;
+  final String familyId;
+  final String? sessionDeviceId;
+  final DateTime? stepUpAt;
+  final String? csrfToken;
+  final int passkeys;
+  final bool hasPassword;
+  final bool hasTotp;
+  final int recoveryCodesRemaining;
+  const MeDto({
+    required this.user,
+    required this.familyId,
+    required this.sessionDeviceId,
+    required this.stepUpAt,
+    required this.csrfToken,
+    required this.passkeys,
+    required this.hasPassword,
+    required this.hasTotp,
+    required this.recoveryCodesRemaining,
+  });
+
+  factory MeDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final session = asJson(m['session']);
+    final creds = asJson(m['credentials']);
+    final step = session['stepUpAt'];
+    return MeDto(
+      user: UserDto.fromJson(m['user']),
+      familyId: _s(m, 'familyId'),
+      sessionDeviceId: _sn(session, 'deviceId'),
+      stepUpAt: step is String ? DateTime.tryParse(step) : null,
+      csrfToken: _sn(m, 'csrfToken'),
+      passkeys: _i(creds, 'passkeys'),
+      hasPassword: _b(creds, 'password'),
+      hasTotp: _b(creds, 'totp'),
+      recoveryCodesRemaining: _i(m, 'recoveryCodesRemaining'),
+    );
+  }
+}
+
+class DeviceDto {
+  final String id;
+  final String name;
+  final String platform;
+  final String? appVersion;
+  final DateTime createdAt;
+  final DateTime? lastSeenAt;
+  final bool current;
+  const DeviceDto({
+    required this.id,
+    required this.name,
+    required this.platform,
+    required this.appVersion,
+    required this.createdAt,
+    required this.lastSeenAt,
+    required this.current,
+  });
+
+  factory DeviceDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return DeviceDto(
+      id: _s(m, 'id'),
+      name: _s(m, 'name'),
+      platform: _s(m, 'platform'),
+      appVersion: _sn(m, 'appVersion'),
+      createdAt: _t(m, 'createdAt'),
+      lastSeenAt: _tn(m, 'lastSeenAt'),
+      current: _b(m, 'current'),
+    );
+  }
+}
+
+class CredentialDto {
+  final String id;
+  final String type;
+  final String? label;
+  final DateTime createdAt;
+  final DateTime? lastUsedAt;
+  const CredentialDto({required this.id, required this.type, required this.label, required this.createdAt, required this.lastUsedAt});
+
+  bool get istPasskey => type == 'passkey';
+
+  factory CredentialDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return CredentialDto(id: _s(m, 'id'), type: _s(m, 'type'), label: _sn(m, 'label'), createdAt: _t(m, 'createdAt'), lastUsedAt: _tn(m, 'lastUsedAt'));
+  }
+}
+
+enum InviteStatus {
+  open('offen'),
+  used('benutzt'),
+  revoked('widerrufen'),
+  locked('gesperrt'),
+  expired('abgelaufen');
+
+  final String label;
+  const InviteStatus(this.label);
+
+  static InviteStatus parse(String s) => InviteStatus.values.firstWhere((e) => e.name == s, orElse: () => _fehler());
+}
+
+/// Eintrag der Einladungsliste (ohne Token und PIN).
+class InviteDto {
+  final String id;
+  final Role role;
+  final InviteStatus status;
+  final DateTime createdAt;
+  final DateTime expiresAt;
+  final bool hasPin;
+  final bool requireApproval;
+  final bool reset;
+  final String? createdBy;
+  final String? usedBy;
+  const InviteDto({
+    required this.id,
+    required this.role,
+    required this.status,
+    required this.createdAt,
+    required this.expiresAt,
+    required this.hasPin,
+    required this.requireApproval,
+    required this.reset,
+    required this.createdBy,
+    required this.usedBy,
+  });
+
+  factory InviteDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return InviteDto(
+      id: _s(m, 'id'),
+      role: Role.parse(_s(m, 'role')),
+      status: InviteStatus.parse(_s(m, 'status')),
+      createdAt: _t(m, 'createdAt'),
+      expiresAt: _t(m, 'expiresAt'),
+      hasPin: _b(m, 'hasPin'),
+      requireApproval: _b(m, 'requireApproval'),
+      reset: _b(m, 'reset'),
+      createdBy: _sn(m, 'createdBy'),
+      usedBy: _sn(m, 'usedBy'),
+    );
+  }
+}
+
+/// Frisch erzeugte Einladung: Token (im Link) und PIN erscheinen nur hier.
+class CreatedInvite {
+  final String id;
+  final String token;
+  final String link;
+  final String? pin;
+  final DateTime expiresAt;
+  final bool requireApproval;
+  const CreatedInvite({
+    required this.id,
+    required this.token,
+    required this.link,
+    required this.pin,
+    required this.expiresAt,
+    required this.requireApproval,
+  });
+
+  factory CreatedInvite.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return CreatedInvite(
+      id: _s(m, 'id'),
+      token: _s(m, 'token'),
+      link: _s(m, 'link'),
+      pin: _sn(m, 'pin'),
+      expiresAt: _t(m, 'expiresAt'),
+      requireApproval: _b(m, 'requireApproval'),
+    );
+  }
+}
+
+/// `POST /auth/invites/lookup`
+class InviteLookup {
+  final Role role;
+  final bool pinRequired;
+  final bool requireApproval;
+  final String familyName;
+  final bool reset;
+  final String? displayName;
+  final DateTime expiresAt;
+  const InviteLookup({
+    required this.role,
+    required this.pinRequired,
+    required this.requireApproval,
+    required this.familyName,
+    required this.reset,
+    required this.displayName,
+    required this.expiresAt,
+  });
+
+  factory InviteLookup.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return InviteLookup(
+      role: Role.parse(_s(m, 'role')),
+      pinRequired: _b(m, 'pinRequired'),
+      requireApproval: _b(m, 'requireApproval'),
+      familyName: _s(m, 'familyName'),
+      reset: _b(m, 'reset'),
+      displayName: _sn(m, 'displayName'),
+      expiresAt: _t(m, 'expiresAt'),
+    );
+  }
+}
+
+/// WebAuthn-Optionen mit Challenge-ID (Registrierung, Anmeldung, Step-up, neuer Passkey).
+class ChallengeDto {
+  final String challengeId;
+  final Json options;
+  const ChallengeDto({required this.challengeId, required this.options});
+
+  factory ChallengeDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return ChallengeDto(challengeId: _s(m, 'challengeId'), options: asJson(m['options']));
+  }
+}
+
+/// `POST /auth/invites/password/start`
+class PasswordStart {
+  final String challengeId;
+  final String totpSecret;
+  final String totpUri;
+  const PasswordStart({required this.challengeId, required this.totpSecret, required this.totpUri});
+
+  factory PasswordStart.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return PasswordStart(challengeId: _s(m, 'challengeId'), totpSecret: _s(m, 'totpSecret'), totpUri: _s(m, 'totpUri'));
+  }
+}
+
+/// Ergebnis der Registrierung (Passkey oder Passwort): Wiederherstellungscodes erscheinen nur hier.
+class RegistrationResult {
+  final UserDto member;
+  final MemberStatus status;
+  final List<String> recoveryCodes;
+  final SessionDto? session;
+  const RegistrationResult({required this.member, required this.status, required this.recoveryCodes, required this.session});
+
+  factory RegistrationResult.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final codes = m['recoveryCodes'];
+    if (codes is! List) _fehler();
+    final session = m['session'];
+    return RegistrationResult(
+      member: UserDto.fromJson(m['member']),
+      status: MemberStatus.parse(_s(m, 'status')),
+      recoveryCodes: [for (final c in codes) c is String ? c : _fehler()],
+      session: session == null ? null : SessionDto.fromJson(session),
+    );
+  }
+}
+
+/// Gerätedaten, die bei Anmeldung und Registrierung mitgesendet werden.
+class DeviceInfo {
+  final String? id;
+  final String name;
+  final String platform;
+  final String? appVersion;
+  const DeviceInfo({this.id, required this.name, required this.platform, this.appVersion});
+
+  Json toJson() => {if (id != null) 'id': id, 'name': name, 'platform': platform, if (appVersion != null && appVersion!.isNotEmpty) 'appVersion': appVersion};
+}

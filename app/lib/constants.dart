@@ -105,6 +105,12 @@ void pruefeBasisAdressen({bool? debug, bool? android, String api = kApiBase, Str
 /// Methodenkanal zu MainActivity.kt (Version abfragen, APK installieren).
 const kUpdateChannel = 'dev.lx_labs.fampad/update';
 
+/// Methodenkanal zu MainActivity.kt für Gerätename, Bildschirmfoto-Schutz und Einladungs-Links.
+const kSystemChannel = 'dev.lx_labs.fampad/system';
+
+/// Host der Einladungslinks (`https://familie.lx-labs.dev/#/einladung/<token>`).
+const kInviteHost = 'familie.lx-labs.dev';
+
 /// Navigationsziele (Reihenfolge = Reihenfolge in der NavigationBar).
 class NavTab {
   final String label;
