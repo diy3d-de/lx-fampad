@@ -64,6 +64,7 @@ class ErinnerungDienst {
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
   bool? _letzteExakt;
+  bool? _letzteErlaubt;
   bool? _letzteSperre;
 
   ErinnerungDienst(this._ref, {required this.port, required DateTime Function() jetzt, required Duration entprellen, required Duration wiederholen})
@@ -152,6 +153,12 @@ class ErinnerungDienst {
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
     if (!_datenDa()) return true;
     final exakt = await port.exakteAlarmeMoeglich();
+    // Wurde die Erlaubnis nachträglich erteilt (oder entzogen), alles neu setzen: kein App-Neustart nötig
+    final erlaubt = await port.benachrichtigungenErlaubt();
+    if (_letzteErlaubt != null && _letzteErlaubt != erlaubt) {
+      _letzte = null;
+      _leer = false;
+    }
     final plan = planeErinnerungen(daten: _ref.read(kalenderDatenProvider), ich: ich, jetzt: _jetzt());
     final alt = _letzte;
     final gleich =
@@ -169,6 +176,7 @@ class ErinnerungDienst {
     }
     _letzte = plan;
     _letzteExakt = exakt;
+    _letzteErlaubt = erlaubt;
     _letzteSperre = einst.sperrbildschirmTitel;
     _leer = plan.isEmpty;
     return true;
@@ -222,6 +230,7 @@ class ErinnerungDienst {
       final ok = await port.alleLoeschen();
       _letzte = null;
       _letzteExakt = null;
+      _letzteErlaubt = null;
       _letzteSperre = null;
       if (ok) _leer = true;
     } catch (_) {
@@ -249,7 +258,20 @@ class ErinnerungDienst {
   Future<ErinnerungStatus> status() async {
     if (!port.verfuegbar) return const ErinnerungStatus(verfuegbar: false);
     _bereit = _bereit || await port.initialisieren(beiTipp: _getippt);
-    return ErinnerungStatus(verfuegbar: true, erlaubt: await port.benachrichtigungenErlaubt(), exakt: await port.exakteAlarmeMoeglich());
+    final s = await port.benachrichtigungsStatus();
+    return ErinnerungStatus(
+      verfuegbar: true,
+      erlaubt: s == BenachrichtigungsStatus.erlaubt,
+      fragbar: s != BenachrichtigungsStatus.gesperrt,
+      unbekannt: s == BenachrichtigungsStatus.unbekannt,
+      exakt: await port.exakteAlarmeMoeglich(),
+    );
+  }
+
+  /// Zustände für die Diagnose-Zeile (keine Inhalte). [bereit] ist der Zustand des Plugins im Port.
+  Future<ErinnerungDiagnose> diagnose() async {
+    if (!port.verfuegbar) return const ErinnerungDiagnose();
+    return port.diagnose();
   }
 
   /// Testbenachrichtigung in [wartezeit] (Standard 10 Sekunden). true = geplant.
@@ -278,7 +300,15 @@ class ErinnerungStatus {
   final bool verfuegbar;
   final bool erlaubt;
   final bool exakt;
-  const ErinnerungStatus({required this.verfuegbar, this.erlaubt = false, this.exakt = false});
+
+  /// Nicht erlaubt, aber Android zeigt den Dialog noch (sonst führt nur der Weg in die Einstellungen weiter).
+  final bool fragbar;
+
+  /// Der Status ließ sich nicht lesen (Systemaufruf gescheitert): nicht als "verweigert" anzeigen.
+  final bool unbekannt;
+  const ErinnerungStatus({required this.verfuegbar, this.erlaubt = false, this.exakt = false, this.fragbar = true, this.unbekannt = false});
 }
+
+final erinnerungDiagnoseProvider = FutureProvider.autoDispose<ErinnerungDiagnose>((ref) => ref.read(erinnerungDienstProvider).diagnose());
 
 final erinnerungStatusProvider = FutureProvider.autoDispose<ErinnerungStatus>((ref) => ref.read(erinnerungDienstProvider).status());

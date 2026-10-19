@@ -53,10 +53,20 @@ class FakeErinnerungPort implements ErinnerungPort {
   @override
   Future<bool> benachrichtigungenErlaubt() async => erlaubt;
 
+  /// Android zeigt keinen Dialog mehr (dauerhaft verweigert): Anfragen ändern nichts.
+  bool dauerhaft = false;
+
+  /// Ob sich die Systemeinstellungen öffnen lassen.
+  bool systemOk = true;
+
+  @override
+  Future<BenachrichtigungsStatus> benachrichtigungsStatus() async =>
+      erlaubt ? BenachrichtigungsStatus.erlaubt : (dauerhaft ? BenachrichtigungsStatus.gesperrt : BenachrichtigungsStatus.fragbar);
+
   @override
   Future<bool> benachrichtigungenAnfragen() async {
     anfragen++;
-    if (anfrageErteilt) erlaubt = true;
+    if (anfrageErteilt && !dauerhaft) erlaubt = true;
     return erlaubt;
   }
 
@@ -93,5 +103,20 @@ class FakeErinnerungPort implements ErinnerungPort {
   }
 
   @override
-  Future<void> systemEinstellungenOeffnen() async => systemEinstellungen++;
+  Future<bool> alarmEinstellungenOeffnen() async {
+    alarmEinstellungen++;
+    return systemOk;
+  }
+
+  int alarmEinstellungen = 0;
+
+  @override
+  Future<ErinnerungDiagnose> diagnose() async =>
+      ErinnerungDiagnose(bereit: initOk, erlaubt: erlaubt, kanal: erlaubt ? 4 : 0, exakt: exakt, geplant: letzte?.length ?? 0);
+
+  @override
+  Future<bool> systemEinstellungenOeffnen() async {
+    systemEinstellungen++;
+    return systemOk;
+  }
 }

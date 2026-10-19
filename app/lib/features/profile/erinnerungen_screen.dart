@@ -38,7 +38,34 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
   /// Zurück aus den Systemeinstellungen: Berechtigung neu lesen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) ref.invalidate(erinnerungStatusProvider);
+    if (s == AppLifecycleState.resumed) {
+      ref.invalidate(erinnerungStatusProvider);
+      ref.invalidate(erinnerungDiagnoseProvider);
+    }
+  }
+
+  void _hinweis(String text) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  /// Öffnet die Benachrichtigungseinstellungen; scheitert das, steht der Weg als Text da.
+  Future<void> _einstellungen({bool alarme = false}) async {
+    final port = ref.read(erinnerungPortProvider);
+    bool ok;
+    try {
+      ok = alarme ? await port.alarmEinstellungenOeffnen() : await port.systemEinstellungenOeffnen();
+    } catch (_) {
+      ok = false;
+    }
+    if (!ok && mounted) {
+      _hinweis(
+        alarme
+            ? 'Die Einstellungen ließen sich nicht öffnen. Öffne die Android-Einstellungen, dort Apps, $kAppName, "Alarme & Erinnerungen".'
+            : 'Die Einstellungen ließen sich nicht öffnen. Öffne die Android-Einstellungen, dort Apps, $kAppName, Benachrichtigungen.',
+      );
+    }
   }
 
   Future<void> _erlauben() async {
@@ -49,6 +76,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
       if (mounted) {
         setState(() => _beschaeftigt = false);
         ref.invalidate(erinnerungStatusProvider);
+        ref.invalidate(erinnerungDiagnoseProvider);
       }
     }
   }
@@ -58,15 +86,11 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
     final dienst = ref.read(erinnerungDienstProvider);
     setState(() => _beschaeftigt = true);
     try {
-      var status = await ref.read(erinnerungStatusProvider.future);
+      // Frisch lesen (die Person kann die Erlaubnis in den Einstellungen geändert haben); keine versteckte Anfrage, die einen der zwei
+      // Dialoge verbrauchen würde
+      ref.invalidate(erinnerungStatusProvider);
+      final status = await ref.read(erinnerungStatusProvider.future);
       if (!mounted) return;
-      if (!status.erlaubt) {
-        await dienst.berechtigungAnfragen();
-        if (!mounted) return;
-        ref.invalidate(erinnerungStatusProvider);
-        status = await ref.read(erinnerungStatusProvider.future);
-        if (!mounted) return;
-      }
       if (!status.erlaubt) {
         messenger
           ..hideCurrentSnackBar()
@@ -142,18 +166,35 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           ),
           if (s != null && !s.erlaubt) ...[
             const SizedBox(height: 12),
-            const MeldungsBox('Benachrichtigungen sind für $kAppName noch nicht erlaubt. Ohne diese Erlaubnis zeigt Android keine Erinnerungen an.'),
+            MeldungsBox(
+              s.unbekannt
+                  ? 'Ob Benachrichtigungen für $kAppName erlaubt sind, ließ sich nicht prüfen. Unten steht die Diagnose; du kannst es erneut versuchen '
+                        'oder in den Android-Einstellungen nachsehen.'
+                  : s.fragbar
+                  ? 'Benachrichtigungen sind für $kAppName noch nicht erlaubt. Ohne diese Erlaubnis zeigt Android keine Erinnerungen an.'
+                  : 'Benachrichtigungen sind für $kAppName ausgeschaltet, und Android fragt nicht mehr danach. Erlaube sie in den Android-Einstellungen '
+                        '(Apps, $kAppName, Benachrichtigungen; auch die Kategorie "Terminerinnerungen" muss an sein). '
+                        'Danach kommst du hierher zurück, die App erkennt die Änderung selbst.',
+            ),
             const SizedBox(height: 8),
-            HauptKnopf(text: 'Benachrichtigungen erlauben', icon: Icons.notifications_active_outlined, laeuft: _beschaeftigt, onPressed: _erlauben),
-            const SizedBox(height: 4),
-            LinkKnopf('Systemeinstellungen öffnen', onPressed: () => unawaited(ref.read(erinnerungPortProvider).systemEinstellungenOeffnen())),
+            if (s.fragbar) ...[
+              HauptKnopf(text: 'Benachrichtigungen erlauben', icon: Icons.notifications_active_outlined, laeuft: _beschaeftigt, onPressed: _erlauben),
+              const SizedBox(height: 4),
+              LinkKnopf('Systemeinstellungen öffnen', onPressed: () => unawaited(_einstellungen())),
+            ] else
+              HauptKnopf(text: 'In den Einstellungen erlauben', icon: Icons.settings_outlined, onPressed: () => unawaited(_einstellungen())),
           ],
-          if (s != null && s.erlaubt && !s.exakt) ...[
+          if (s != null && s.erlaubt) ...[
+            const SizedBox(height: 12),
+            const MeldungsBox('Benachrichtigungen sind erlaubt.', fehler: false),
+          ],
+          if (s != null && !s.exakt) ...[
             const SizedBox(height: 12),
             const MeldungsBox(
-              'Genaue Alarme sind auf diesem Gerät nicht erlaubt. Erinnerungen können dadurch einige Minuten später kommen.',
+              'Genaue Alarme ("Alarme & Erinnerungen") sind auf diesem Gerät nicht erlaubt. Erinnerungen können dadurch einige Minuten später kommen.',
               fehler: false,
             ),
+            LinkKnopf('Alarme & Erinnerungen öffnen', onPressed: () => unawaited(_einstellungen(alarme: true))),
           ],
           const SizedBox(height: 20),
           const MonoLabel('// vorlaufzeit für neue termine'),
@@ -188,9 +229,42 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             ),
           ),
           const SizedBox(height: 16),
-          ZweitKnopf(text: 'Testbenachrichtigung in 10 Sekunden', icon: Icons.notifications_none, onPressed: _beschaeftigt ? null : _test),
+          ZweitKnopf(
+            text: 'Testbenachrichtigung in 10 Sekunden',
+            icon: Icons.notifications_none,
+            onPressed: _beschaeftigt || (s != null && !s.erlaubt) ? null : _test,
+          ),
+          const SizedBox(height: 16),
+          const _DiagnoseZeile(),
         ],
       ],
+    );
+  }
+}
+
+/// Kleine Diagnose: nur Zustände (keine Titel oder Inhalte), hilfreich bei der Fehlersuche.
+class _DiagnoseZeile extends ConsumerWidget {
+  const _DiagnoseZeile();
+
+  static String _kanal(int k) => switch (k) {
+    -1 => 'unbekannt',
+    0 => 'aus',
+    _ => 'an ($k)',
+  };
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final d = ref.watch(erinnerungDiagnoseProvider).value;
+    if (d == null) return const SizedBox.shrink();
+    String ja(bool b) => b ? 'ja' : 'nein';
+    return Semantics(
+      label: 'Diagnose der Erinnerungen',
+      child: Text(
+        '// diagnose: erlaubt ${ja(d.erlaubt)} · kanal ${_kanal(d.kanal)} · genaue alarme ${ja(d.exakt)} · plugin ${ja(d.bereit)} · '
+        'geplant ${d.geplant < 0 ? '?' : d.geplant}${d.fehler == null ? '' : ' · fehler ${d.fehler}'}',
+        key: const Key('erinnerung-diagnose'),
+        style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+      ),
     );
   }
 }
