@@ -149,6 +149,18 @@ class TerminAusnahmen extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Zeitpunkt als Millisekunden (INTEGER). drift speichert DateTime sonst nur in ganzen Sekunden; im Chat entscheiden Millisekunden über Reihenfolge und
+/// "ungelesen" (Server-Zeiten haben Millisekunden). Nur die Chat-Tabellen nutzen das; Listen und Kalender bleiben unverändert.
+class MsDatumConverter extends TypeConverter<DateTime, int> {
+  const MsDatumConverter();
+
+  @override
+  DateTime fromSql(int fromDb) => DateTime.fromMillisecondsSinceEpoch(fromDb);
+
+  @override
+  int toSql(DateTime value) => value.millisecondsSinceEpoch;
+}
+
 /// Konversationen des Chats (Phase 1c-3a): `art` family | direct | group. `titel` ist ein undurchsichtiger Text (Hülle mit Versionspräfix,
 /// siehe data/chat/nachrichten_inhalt.dart). `teilnehmerJson`: sortierte Mitglieds-IDs als JSON-Liste (beim Familienchat leer).
 @DataClassName('Konversation')
@@ -161,7 +173,7 @@ class Konversationen extends Table {
   TextColumn get titel => text().withDefault(const Constant(''))();
   TextColumn get teilnehmerJson => text().named('teilnehmer').withDefault(const Constant('[]'))();
   TextColumn get ownerId => text().nullable()();
-  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
   IntColumn get rev => integer().withDefault(const Constant(0))();
 
   @override
@@ -181,8 +193,8 @@ class Nachrichten extends Table {
   TextColumn get autorId => text().nullable()();
   TextColumn get inhalt => text().named('text')();
   TextColumn get antwortAuf => text().nullable()();
-  DateTimeColumn get bearbeitetAt => dateTime().nullable()();
-  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get bearbeitetAt => integer().map(const MsDatumConverter()).nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
   IntColumn get rev => integer().withDefault(const Constant(0))();
 
   @override
@@ -199,7 +211,7 @@ class Lesestaende extends Table {
   TextColumn get id => text()();
   TextColumn get konversationId => text()();
   TextColumn get userId => text()();
-  DateTimeColumn get gelesenBis => dateTime()();
+  IntColumn get gelesenBis => integer().map(const MsDatumConverter())();
   IntColumn get rev => integer().withDefault(const Constant(0))();
 
   @override
@@ -211,9 +223,9 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at. Version 3 (Phase 1c-2a): Termine, Teilnehmer, Ausnahmen.
-  /// Version 4 (Phase 1c-3a): Chat (Konversationen, Nachrichten, Lesestand).
+  /// Version 4 (Phase 1c-3a): Chat (Konversationen, Nachrichten, Lesestand). Version 5: Chat-Zeiten in Millisekunden.
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -239,6 +251,13 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(lesestaende);
           await m.createIndex(nachrichtenKonversationIdx);
           await m.createIndex(lesestandKonversationIdx);
+        }
+        if (from == 4) {
+          // Sekunden -> Millisekunden; danach alles neu laden, damit die Zeiten die volle Auflösung des Servers haben
+          await customStatement('UPDATE konversationen SET created_at = created_at * 1000');
+          await customStatement('UPDATE nachrichten SET created_at = created_at * 1000, bearbeitet_at = bearbeitet_at * 1000');
+          await customStatement('UPDATE lesestand SET gelesen_bis = gelesen_bis * 1000');
+          await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
         }
       }
     },

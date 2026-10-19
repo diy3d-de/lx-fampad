@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/chat/chat_ids.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
+import 'package:lx_fampad/data/sync_state.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -333,6 +334,93 @@ void main() {
     pruefeLayout(tester, 'Liste mit langen Texten');
     await tippeText(tester, 'Ein sehr langer Gruppenname der nicht in eine Zeile passt');
     pruefeLayout(tester, 'Verlauf lang');
+  });
+
+  testWidgets('Gruppe: Teilnehmer ändern warnt, dass Neue den bisherigen Verlauf sehen; erst nach Bestätigung wird gespeichert', (tester) async {
+    final env = await start(tester, vorher: grundstand);
+    await tippeText(tester, 'Wochenendausflug');
+    await tester.tap(find.byTooltip('Gruppe verwalten'));
+    await warte(tester);
+    await tippeText(tester, 'Teilnehmer ändern');
+    // die Gruppe hat Anna (ich), Ben und Cora; Cora wird abgewählt, dann wieder dazu
+    await tippeText(tester, 'Cora Berger');
+    await tippeText(tester, 'Übernehmen');
+    await warte(tester, 10);
+    var g = await (env.db.select(env.db.konversationen)..where((k) => k.id.equals('bbbbbbbb-0000-4000-8000-0000000000b1'))).getSingle();
+    expect(teilnehmerIds(g), [fixIdAdmin, fixIdKind]..sort(), reason: 'Entfernen braucht keine Warnung');
+    await tester.tap(find.byTooltip('Gruppe verwalten'));
+    await warte(tester);
+    await tippeText(tester, 'Teilnehmer ändern');
+    await tippeText(tester, 'Cora Berger');
+    await tippeText(tester, 'Übernehmen');
+    expect(find.text('Neue Mitglieder sehen den bisherigen Verlauf der Gruppe.'), findsOneWidget);
+    await tippeText(tester, 'Abbrechen');
+    g = await (env.db.select(env.db.konversationen)..where((k) => k.id.equals('bbbbbbbb-0000-4000-8000-0000000000b1'))).getSingle();
+    expect(teilnehmerIds(g), isNot(contains(_cora)));
+    await tester.tap(find.byTooltip('Gruppe verwalten'));
+    await warte(tester);
+    await tippeText(tester, 'Teilnehmer ändern');
+    await tippeText(tester, 'Cora Berger');
+    await tippeText(tester, 'Übernehmen');
+    await tippeText(tester, 'Hinzufügen');
+    await warte(tester, 10);
+    g = await (env.db.select(env.db.konversationen)..where((k) => k.id.equals('bbbbbbbb-0000-4000-8000-0000000000b1'))).getSingle();
+    expect(teilnehmerIds(g), contains(_cora));
+  });
+
+  testWidgets('Bildschirmschutz (FLAG_SECURE): private Chats ja, der Familienchat nein', (tester) async {
+    await start(tester, vorher: grundstand);
+    int schutz() => kanalAufrufe.where((c) => c.method == 'setSecure' && (c.arguments as Map)['secure'] == true).length;
+    await tippeText(tester, 'Cora: Ich kann das machen');
+    expect(schutz(), 0, reason: 'Familienchat: frei');
+    await tester.tap(find.byTooltip('Zurück zur Chatliste'));
+    await warte(tester);
+    await tippeText(tester, 'Kommst du zum Training?');
+    expect(schutz(), 1, reason: 'Direktchat: geschützt');
+    await tester.tap(find.byTooltip('Zurück zur Chatliste'));
+    await warte(tester);
+    expect(kanalAufrufe.where((c) => c.method == 'setSecure').last.arguments, {'secure': false});
+  });
+
+  testWidgets('Zitat: eine Antwort auf eine Nachricht einer anderen Konversation zeigt den Text nicht', (tester) async {
+    await start(tester, vorher: (env) {
+      grundstand(env);
+      env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-0000000000cc', {
+        'konversationId': _famChat,
+        'text': 'p1:Bezug auf fremden Chat',
+        'autorId': fixIdKind,
+        'antwortAuf': 'a0000000-0000-4000-8000-000000000003', // Nachricht des Direktchats
+        'createdAt': vor(1),
+      });
+    });
+    await tippeText(tester, 'Ben: Bezug auf fremden Chat');
+    expect(find.text('Nachricht nicht verfügbar'), findsOneWidget);
+    expect(find.text('Kommst du zum Training?'), findsNothing);
+  });
+
+  testWidgets('Desktop: Lesestand nur bei sichtbarem Chat-Bereich; beim Zurückwechseln wird nachgeholt', (tester) async {
+    final env = await angemeldeteUmgebung();
+    grundstand(env);
+    final container = await starteApp(tester, env, groesse: const Size(1280, 800));
+    final nav = find.bySemanticsLabel(RegExp('^Navigation'));
+    await tester.tap(find.descendant(of: nav, matching: find.text('Chat')));
+    await warte(tester);
+    await tippeText(tester, 'Kommst du zum Training?');
+    await warte(tester, 10);
+    final repo = container.read(chatRepositoryProvider);
+    expect(await repo.ungelesenGesamt(fixIdAdmin).first, 2, reason: 'nur der Direktchat ist gelesen, die 2 im Familienchat nicht');
+    // in einen anderen Bereich wechseln; eine neue Nachricht im offenen Verlauf kommt an, ohne dass jemand sie sieht
+    await tester.tap(find.descendant(of: nav, matching: find.text('Start')));
+    await warte(tester);
+    final dm = direktChatId(fixIdAdmin, fixIdKind);
+    env.sync.andereAendert('nachricht', 'a0000000-0000-4000-8000-0000000000dd', {'konversationId': dm, 'text': 'p1:Bist du da?', 'autorId': fixIdKind, 'createdAt': vor(0)});
+    await container.read(syncProvider.notifier).synchronisieren(manuell: true);
+    await warte(tester, 10);
+    expect((await env.db.select(env.db.nachrichten).get()).length, 4, reason: 'neue Nachricht angekommen');
+    expect(await repo.ungelesenGesamt(fixIdAdmin).first, 3, reason: 'nicht als gelesen markiert, solange der Chat nicht zu sehen ist');
+    await tester.tap(find.descendant(of: nav, matching: find.text('Chat')));
+    await warte(tester, 10);
+    expect(await repo.ungelesenGesamt(fixIdAdmin).first, 2, reason: 'beim Zurückwechseln gelesen');
   });
 
   group('Desktop', () {

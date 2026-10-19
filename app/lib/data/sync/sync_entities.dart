@@ -48,6 +48,9 @@ abstract class SyncEntity {
   /// Teilnehmer und Ausnahmen sind je Ziel nur einmal erlaubt: ein abgelehntes Anlegen mit `not_found` heißt dann "gibt es schon" (der Stand
   /// des Servers kommt mit dem Abgleich), nicht "wurde gelöscht".
   bool get eindeutigBeiAnlage => false;
+
+  /// Bei `limit_reached` (Mengenbegrenzung des Servers) bleibt eine neue Zeile erhalten und wird später erneut gesendet, statt zu verschwinden.
+  bool get bleibtBeiLimit => false;
 }
 
 DateTime? _zeit(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
@@ -465,6 +468,9 @@ class NachrichtEntitaet extends SyncEntity {
 
   @override
   String get grenzeErreicht => 'Du hast zu schnell viele Nachrichten gesendet';
+
+  @override
+  bool get bleibtBeiLimit => true;
 
   @override
   bool kannAnlegen(Json fields) => _text(fields['konversationId']) != null && _text(fields['text']) != null;

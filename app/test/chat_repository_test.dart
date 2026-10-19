@@ -116,6 +116,14 @@ void main() {
       expect(direktChatId(_ich, _ben), matches(RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$')));
     });
 
+    test('Known-Answer: feste Vektoren (identisch zum Server, server/test/sync-chat.test.ts)', () {
+      expect(uuidAusSchluessel('probe'), '81574b3c-f2b4-59af-819d-78a1be8fc7d4');
+      expect(familienchatId(_fam), 'd75c7bdb-240f-5445-80e0-1a0e0cebb5a5');
+      expect(direktChatId(_ich, _ben), 'c410b67b-94c8-5ea8-bb7b-782f4c0ebcbc');
+      expect(direktChatId(_ben, _ich), 'c410b67b-94c8-5ea8-bb7b-782f4c0ebcbc');
+      expect(lesestandId('k1', _ich), '9a36a4d2-7fa9-5a56-9d92-e8db827e177c');
+    });
+
     test('Familienchat- und Lesestand-ID sind stabil und verschieden', () {
       expect(familienchatId(_fam), familienchatId(_fam));
       expect(lesestandId('k1', _ich), lesestandId('K1', _ich.toUpperCase()));
@@ -300,6 +308,87 @@ void main() {
       await vomServer([aenderung('konversation', 'fam', konvJson('family'), 1), aenderung('nachricht', 'n2', nachrichtJson('fam', 'Eigene', autor: _ich), 2)]);
       await repo.gelesenSetzen('fam');
       expect(await ausgang(), isEmpty);
+    });
+  });
+
+  group('Millisekunden, Reihenfolge und Zustellung', () {
+    String ms(int sek, int milli) => DateTime.utc(2026, 10, 19, 8, 0, sek, milli).toIso8601String();
+
+    test('Zeiten unter einer Sekunde bleiben erhalten: Reihenfolge und "ungelesen" stimmen', () async {
+      await vomServer([
+        aenderung('konversation', 'dm', konvJson('direct', teilnehmer: [_ich, _ben]..sort()), 1),
+        aenderung('nachricht', 'a', {...nachrichtJson('dm', 'zweite'), 'createdAt': ms(10, 700)}, 3),
+        aenderung('nachricht', 'b', {...nachrichtJson('dm', 'erste'), 'createdAt': ms(10, 200)}, 2),
+      ]);
+      expect([for (final n in await repo.nachrichten('dm').first) n.id], ['b', 'a']);
+      expect((await repo.nachrichten('dm').first).first.createdAt.millisecondsSinceEpoch % 1000, 200);
+      await repo.gelesenSetzen('dm');
+      final bis = (await db.select(db.lesestaende).getSingle()).gelesenBis;
+      expect(bis.toUtc(), DateTime.utc(2026, 10, 19, 8, 0, 10, 700));
+      expect(jsonDecode((await ausgang()).single.fieldsJson)['gelesenBis'], DateTime.utc(2026, 10, 19, 8, 0, 10, 700).toIso8601String());
+      expect(await repo.ungelesenGesamt(_ich).first, 0);
+      // eine weitere Nachricht in DERSELBEN Sekunde, aber später: ungelesen (mit Sekundenauflösung wäre sie "gelesen")
+      await vomServer([aenderung('nachricht', 'c', {...nachrichtJson('dm', 'dritte'), 'createdAt': ms(10, 900)}, 4)]);
+      expect(await repo.ungelesenGesamt(_ich).first, 1);
+      expect((await repo.uebersicht(_ich).first).single.letzte?.id, 'c');
+    });
+
+    test('gleiche Zeit: Zustellreihenfolge des Servers (Revision), unbestätigte eigene Nachricht zuletzt', () async {
+      await vomServer([
+        aenderung('konversation', 'fam', konvJson('family'), 1),
+        aenderung('nachricht', 'x2', {...nachrichtJson('fam', 'x2'), 'createdAt': ms(10, 500)}, 9),
+        aenderung('nachricht', 'x1', {...nachrichtJson('fam', 'x1'), 'createdAt': ms(10, 500)}, 8),
+      ]);
+      jetzt = DateTime.utc(2026, 10, 19, 8, 0, 10, 500);
+      final eigene = (await repo.senden('fam', 'eigene'))!;
+      expect([for (final n in await repo.nachrichten('fam').first) n.id], ['x1', 'x2', eigene]);
+      expect((await repo.juengste(1).first).single.id, eigene);
+    });
+
+    test('Nachrichten über 16 384 Einheiten gehen nie raus (UTF-16 wie auf dem Server)', () async {
+      await vomServer([aenderung('konversation', 'fam', konvJson('family'), 1)]);
+      await expectLater(repo.senden('fam', 'a' * 16385), throwsA(isA<NachrichtZuLang>()));
+      await expectLater(repo.senden('fam', '👨‍👩‍👧‍👦' * 2000), throwsA(isA<NachrichtZuLang>()));
+      expect(await nachrichten(), isEmpty);
+      expect(await ausgang(), isEmpty);
+      expect(await repo.senden('fam', 'a' * 4000), isNotNull);
+    });
+
+    test('Teilnehmer ändern geht vom Stand der Konversation aus (nur genannte Personen)', () async {
+      await vomServer([aenderung('konversation', 'g', konvJson('group', teilnehmer: [_ich, _ben]..sort()), 1)]);
+      await repo.teilnehmerAendern('g', hinzu: {_cora});
+      var k = await (db.select(db.konversationen)..where((t) => t.id.equals('g'))).getSingle();
+      expect(teilnehmerIds(k), [_ich, _ben, _cora]..sort());
+      // zwischendurch ändert jemand anderes die Liste; das Entfernen von _ben lässt _cora stehen
+      await vomServer([aenderung('konversation', 'g', {...konvJson('group', teilnehmer: [_ich, _ben, _cora]..sort()), 'ownerId': _ich}, 2)]);
+      await repo.teilnehmerAendern('g', weg: {_ben});
+      k = await (db.select(db.konversationen)..where((t) => t.id.equals('g'))).getSingle();
+      expect(teilnehmerIds(k), [_ich, _cora]..sort());
+    });
+
+    test('limit_reached: die Nachricht bleibt erhalten und kommt mit neuer op_id wieder in den Ausgang', () async {
+      await vomServer([aenderung('konversation', 'fam', konvJson('family'), 1)]);
+      final id = (await repo.senden('fam', 'wichtig'))!;
+      final gesendet = await store.naechsteOps(10);
+      final r = SyncResult(
+        resyncNoetig: false,
+        rev: 1,
+        acked: const [],
+        rejected: [SyncRejected(gesendet.single.opId, 'limit_reached')],
+        conflicts: const [],
+        changes: const [],
+        hasMore: false,
+        next: 0,
+        snapshotRev: null,
+        serverTime: null,
+      );
+      final bericht = await store.uebernehmen(r, gesendet);
+      expect((await nachrichten()).single.id, id);
+      final op = (await ausgang()).single;
+      expect(op.opId, isNot(gesendet.single.opId));
+      expect(op.entity, 'nachricht');
+      expect(jsonDecode(op.fieldsJson)['text'], 'p1:wichtig');
+      expect(bericht.hinweise.single.text, contains('wird später gesendet'));
     });
   });
 

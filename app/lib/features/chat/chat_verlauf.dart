@@ -14,7 +14,9 @@ import '../../data/chat/chat_repository.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
+import '../auth/auth_widgets.dart' show BildschirmSchutz;
 import '../lists/list_dialogs.dart';
+import '../shell/shell_tab.dart';
 import 'chat_anzeige.dart';
 import 'personen_wahl.dart';
 
@@ -68,6 +70,9 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
   /// Lesestand setzen, solange der Chat offen, im Vordergrund und am Ende gelesen ist.
   void _markieren() {
     if (!mounted || !_amEnde) return;
+    // nur wenn der Chat wirklich zu sehen ist: Chat-Bereich gewählt und diese Seite oben (nicht hinter Profil o. Ä.)
+    if (ref.read(shellTabProvider) != kChatTab) return;
+    if (ModalRoute.of(context)?.isCurrent == false) return;
     final s = WidgetsBinding.instance.lifecycleState;
     if (s != null && s != AppLifecycleState.resumed) return;
     unawaited(_repo.gelesenSetzen(_id));
@@ -83,10 +88,25 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       _antwort = null;
       _bearbeitet = null;
     });
-    if (bearbeitet != null) {
-      await _repo.bearbeiten(bearbeitet.id, t);
-    } else {
-      await _repo.senden(_id, t, antwortAuf: antwort?.id);
+    try {
+      if (bearbeitet != null) {
+        await _repo.bearbeiten(bearbeitet.id, t);
+      } else {
+        await _repo.senden(_id, t, antwortAuf: antwort?.id);
+      }
+    } on NachrichtZuLang {
+      // nichts gesendet: der Text bleibt im Feld
+      if (mounted) {
+        _text.text = t;
+        setState(() {
+          _antwort = antwort;
+          _bearbeitet = bearbeitet;
+        });
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(const SnackBar(content: Text('Die Nachricht ist zu lang. Bitte kürze sie.')));
+      }
+      return;
     }
     if (mounted && _scroll.hasClients) unawaited(_scroll.animateTo(0, duration: const Duration(milliseconds: 150), curve: Curves.easeOut));
   }
@@ -149,8 +169,26 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         final wahl = await Navigator.of(context).push<PersonenAuswahl>(
           MaterialPageRoute(builder: (_) => PersonenWahlSeite(modus: PersonenWahlModus.teilnehmer, vorgewaehlt: {...teilnehmer}..remove(ich))),
         );
-        if (wahl == null) return;
-        if (ich != null) await _repo.teilnehmerSetzen(k.id, [ich, ...wahl.personen]);
+        if (wahl == null || !mounted) return;
+        final bisher = {...teilnehmer}..remove(ich);
+        final hinzu = wahl.personen.difference(bisher);
+        final weg = bisher.difference(wahl.personen);
+        if (hinzu.isEmpty && weg.isEmpty) return;
+        if (hinzu.isNotEmpty) {
+          final ok = await showDialog<bool>(
+            context: context,
+            builder: (c) => AlertDialog(
+              title: const Text('Neue Mitglieder hinzufügen?'),
+              content: const Text('Neue Mitglieder sehen den bisherigen Verlauf der Gruppe.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.of(c).pop(false), child: const Text('Abbrechen')),
+                FilledButton(onPressed: () => Navigator.of(c).pop(true), child: const Text('Hinzufügen')),
+              ],
+            ),
+          );
+          if (ok != true) return;
+        }
+        await _repo.teilnehmerAendern(k.id, hinzu: hinzu, weg: weg);
       case 'verlassen':
         if (teilnehmer.length <= 2) {
           messenger
@@ -160,7 +198,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         }
         final ja = await bestaetigen(context, titel: 'Gruppe verlassen?', text: 'Du siehst die Gruppe danach nicht mehr, bis dich jemand wieder aufnimmt.', knopf: 'Verlassen');
         if (!ja || ich == null) return;
-        await _repo.teilnehmerSetzen(k.id, [...teilnehmer.where((t) => t != ich)]);
+        await _repo.teilnehmerAendern(k.id, weg: {ich});
         _schliessen();
       case 'loeschen':
         final ja = await bestaetigen(context, titel: 'Gruppe löschen?', text: 'Die Gruppe und alle Nachrichten werden für alle gelöscht.', knopf: 'Löschen');
@@ -173,6 +211,10 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
   @override
   Widget build(BuildContext context) {
     ref.listen(nachrichtenProvider(_id), (_, _) => WidgetsBinding.instance.addPostFrameCallback((_) => _markieren()));
+    // beim Zurückwechseln in den Chat-Bereich gilt der Verlauf erst jetzt als gelesen
+    ref.listen(shellTabProvider, (_, t) {
+      if (t == kChatTab) WidgetsBinding.instance.addPostFrameCallback((_) => _markieren());
+    });
     final user = ref.watch(authProvider.select((s) => s.user));
     final ich = user?.id;
     final rechte = ChatRechte(user?.role ?? Role.child, ich);
@@ -234,7 +276,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
           : null,
     );
 
-    return Column(
+    final seite = Column(
       children: [
         _Kopf(
           beiSchliessen: widget.zurueckPfeil ? widget.beiSchliessen : null,
@@ -273,7 +315,9 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     final zeigeName = !eigen && art != ChatArt.direct && !(davor is Nachricht && davor.autorId == n.autorId);
                     final d = inhalt.dekodieren(n.inhalt);
                     final autor = mitglieder[n.autorId];
-                    final zitat = n.antwortAuf == null ? null : nachId[n.antwortAuf];
+                    // ein Zitat zeigt nur eine Nachricht derselben Konversation (der Server prüft das ebenfalls)
+                    final zitatKandidat = n.antwortAuf == null ? null : nachId[n.antwortAuf];
+                    final zitat = zitatKandidat != null && zitatKandidat.konversationId == n.konversationId ? zitatKandidat : null;
                     return _Blase(
                       nachricht: n,
                       eigen: eigen,
@@ -295,6 +339,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         eingabe,
       ],
     );
+    // private Chats (Direkt, Gruppe): kein Bildschirmfoto (Android, FLAG_SECURE; Web und Desktop ohne Wirkung); der Familienchat bleibt frei
+    return art == ChatArt.family ? seite : BildschirmSchutz(child: seite);
   }
 }
 

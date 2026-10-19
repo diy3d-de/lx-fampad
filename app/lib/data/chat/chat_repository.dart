@@ -15,6 +15,14 @@ import '../sync_state.dart';
 import 'chat_ids.dart';
 import 'nachrichten_inhalt.dart';
 
+/// Größte Nachricht in der Schnittstelle (UTF-16-Einheiten, wie auf dem Server).
+const kMaxNachrichtWire = 16384;
+
+/// Die Nachricht ist zu lang für den Server (die Oberfläche zeigt einen Hinweis).
+class NachrichtZuLang implements Exception {
+  const NachrichtZuLang();
+}
+
 /// Art einer Konversation.
 enum ChatArt {
   family('family'),
@@ -105,7 +113,7 @@ class ChatRepository {
   Stream<List<ChatEintrag>> uebersicht(String me) {
     const sql = '''
 SELECT k.id AS kid,
-  (SELECT n.id FROM nachrichten n WHERE n.konversation_id = k.id ORDER BY n.created_at DESC, n.id DESC LIMIT 1) AS letzte_id,
+  (SELECT n.id FROM nachrichten n WHERE n.konversation_id = k.id ORDER BY n.created_at DESC, CASE WHEN n.rev = 0 THEN 1 ELSE 0 END DESC, n.rev DESC, n.id DESC LIMIT 1) AS letzte_id,
   (SELECT COUNT(*) FROM nachrichten n WHERE n.konversation_id = k.id AND (n.autor_id IS NULL OR n.autor_id <> ?1)
      AND n.created_at > COALESCE((SELECT l.gelesen_bis FROM lesestand l WHERE l.konversation_id = k.id AND l.user_id = ?1 LIMIT 1), 0)) AS ungelesen
 FROM konversationen k''';
@@ -149,13 +157,25 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
   Stream<List<Nachricht>> nachrichten(String konversationId) =>
       (db.select(db.nachrichten)
             ..where((n) => n.konversationId.equals(konversationId))
-            ..orderBy([(n) => OrderingTerm.asc(n.createdAt), (n) => OrderingTerm.asc(n.id)]))
+            ..orderBy(_reihenfolge(aufsteigend: true)))
           .watch();
+
+  /// Reihenfolge der Nachrichten: Zeit (Millisekunden), bei gleicher Zeit die Zustellreihenfolge des Servers (Revision; noch nicht bestätigte zuletzt), dann die ID.
+  /// Eine eigene, noch nicht bestätigte Nachricht trägt die Zeit dieses Geräts und springt mit der Bestätigung an die Serverzeit.
+  static List<OrderingTerm Function($NachrichtenTable)> _reihenfolge({required bool aufsteigend}) {
+    final modus = aufsteigend ? OrderingMode.asc : OrderingMode.desc;
+    return [
+      (n) => OrderingTerm(expression: n.createdAt, mode: modus),
+      (n) => OrderingTerm(expression: CustomExpression<int>('CASE WHEN rev = 0 THEN 1 ELSE 0 END'), mode: modus),
+      (n) => OrderingTerm(expression: n.rev, mode: modus),
+      (n) => OrderingTerm(expression: n.id, mode: modus),
+    ];
+  }
 
   /// Die jüngsten Nachrichten über alle sichtbaren Konversationen (Startseite).
   Stream<List<Nachricht>> juengste(int anzahl) =>
       (db.select(db.nachrichten)
-            ..orderBy([(n) => OrderingTerm.desc(n.createdAt), (n) => OrderingTerm.desc(n.id)])
+            ..orderBy(_reihenfolge(aufsteigend: false))
             ..limit(anzahl))
           .watch();
 
@@ -165,21 +185,30 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
   Future<String?> senden(String konversationId, String text, {String? antwortAuf}) async {
     final t = text.trim();
     if (t.isEmpty) return null;
+    final kodiert = inhalt.kodieren(t);
+    _laengePruefen(t, kodiert);
     final id = _neueId();
     await store.aendern(
       'nachricht',
       id,
-      {'konversationId': konversationId, 'text': inhalt.kodieren(t), 'antwortAuf': ?antwortAuf},
+      {'konversationId': konversationId, 'text': kodiert, 'antwortAuf': ?antwortAuf},
       nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'autorId': ich()},
     );
     beiAenderung();
     return id;
   }
 
+  /// Länge in UTF-16-Einheiten wie auf dem Server (Eingabefeld und Server zählen sonst verschieden: Emoji sind 2 bis 11 Einheiten): zu lang wird nie gesendet.
+  static void _laengePruefen(String klartext, String kodiert) {
+    if (klartext.length > kMaxNachrichtenZeichen * 2 || kodiert.length > kMaxNachrichtWire) throw const NachrichtZuLang();
+  }
+
   Future<void> bearbeiten(String nachrichtId, String text) async {
     final t = text.trim();
     if (t.isEmpty) return;
-    await store.aendern('nachricht', nachrichtId, {'text': inhalt.kodieren(t)}, nurLokal: {'bearbeitetAt': zeitFuerServer(_jetzt())});
+    final kodiert = inhalt.kodieren(t);
+    _laengePruefen(t, kodiert);
+    await store.aendern('nachricht', nachrichtId, {'text': kodiert}, nurLokal: {'bearbeitetAt': zeitFuerServer(_jetzt())});
     beiAenderung();
   }
 
@@ -238,6 +267,14 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
     beiAenderung();
   }
 
+  /// Teilnehmer ändern: ausgehend vom aktuellen Stand der Konversation (nicht von der Mitgliederliste) werden nur die genannten Personen hinzugefügt oder entfernt.
+  Future<void> teilnehmerAendern(String id, {Set<String> hinzu = const {}, Set<String> weg = const {}}) async {
+    final k = await (db.select(db.konversationen)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (k == null) return;
+    final neu = {...teilnehmerIds(k), ...hinzu}..removeAll(weg);
+    await teilnehmerSetzen(id, neu.toList());
+  }
+
   Future<void> teilnehmerSetzen(String id, List<String> teilnehmer) async {
     await store.aendern('konversation', id, {'teilnehmer': ({...teilnehmer}.toList()..sort())});
     beiAenderung();
@@ -260,8 +297,9 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
               ..addColumns([neueste])
               ..where(db.nachrichten.konversationId.equals(konversationId) & (db.nachrichten.autorId.isNull() | db.nachrichten.autorId.equals(me).not())))
             .getSingle();
-    final bis = z.read(neueste);
-    if (bis == null) return;
+    final ms = z.read(neueste);
+    if (ms == null) return;
+    final bis = DateTime.fromMillisecondsSinceEpoch(ms);
     final id = lesestandId(konversationId, me);
     final aktuell = await (db.select(db.lesestaende)..where((l) => l.id.equals(id))).getSingleOrNull();
     if (aktuell != null && !bis.isAfter(aktuell.gelesenBis)) return;
