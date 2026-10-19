@@ -645,6 +645,11 @@ void main() {
     expect(neueCodes, hasLength(10));
     expect((await admin.api.ich()).recoveryCodesRemaining, 10);
 
+    schritt('Passwort nachträglich: Pfade, Step-up und Fehlercodes (Admin hat schon Passwort und nur diesen Zugang)');
+    await expectLater(admin.api.passwortEinrichtenStart('Noch-ein-Passwort-123'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'password_exists')));
+    await expectLater(admin.api.passwortAendern('kurz'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'weak_password')));
+    await expectLater(admin.api.passwortEntfernen(), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'last_credential')));
+
     // ---------------------------------------------------------------- Refresh (echte Rotation)
     schritt('Refresh: abgelaufenes Access-Token, fünf gleichzeitige Aufrufe -> genau EIN POST /auth/refresh, Rotation gespeichert');
     // eigenes Gerät (eigene Token-Familie), damit der Admin-Zugang des Tests unberührt bleibt
