@@ -17,7 +17,7 @@ Stand: Phase 1c-1 (Sync-Kern mit Listen; Konten und Anmeldung seit 1a/1b). Basis
 | 401 | nicht angemeldet (`unauthenticated`), Anmeldedaten falsch (`invalid_credentials`, immer dieselbe Antwort, egal ob das Konto existiert), `invalid_token` (Refresh), `step_up_failed` |
 | 403 | `forbidden`, `csrf_invalid`, `origin_not_allowed`, `step_up_required`, `account_pending` |
 | 404 | nicht gefunden (`not_found`, auch für Objekte einer fremden Familie) |
-| 409 | Konflikt (`last_admin`, `last_credential`, `invite_not_open`, `registration_failed`, `no_passkey`, `passkey_exists`, `not_pending`, `cannot_remove_self`, `device_mismatch`, ...) |
+| 409 | Konflikt (`last_admin`, `last_credential`, `invite_not_open`, `registration_failed`, `no_passkey`, `passkey_exists`, `password_exists`, `no_password`, `not_pending`, `cannot_remove_self`, `device_mismatch`, ...) |
 | 413 / 415 | Body zu groß (`payload_too_large`, beim Sync über 1 MB) / kein JSON (`unsupported_media_type`) |
 | 426 | `update_required`: die Protokollversion des Clients ist zu alt (nur `/sync`); die App zeigt die Pflicht-Update-Seite |
 | 429 | Rate-Limit (`rate_limited`) oder verzögerte Sperre nach Fehlversuchen (`too_many_attempts`, Header `Retry-After` in Sekunden) |
@@ -32,7 +32,7 @@ Stand: Phase 1c-1 (Sync-Kern mit Listen; Konten und Anmeldung seit 1a/1b). Basis
 | `invite_invalid` | 400 | Einladung unbekannt, benutzt, widerrufen, gesperrt, abgelaufen oder PIN falsch (immer dieselbe Antwort) |
 | `weak_password` | 400 | Passwort kürzer als die Mindestlänge (12) |
 | `challenge_invalid` | 400 | Challenge unbekannt, abgelaufen oder schon benutzt |
-| `invalid_code` | 400 | TOTP-Bestätigung bei der Registrierung falsch |
+| `invalid_code` | 400 | TOTP-Bestätigung bei der Registrierung bzw. beim nachträglichen Einrichten von Passwort + TOTP falsch |
 | `registration_failed` | 400 / 409 | Registrierung mit diesen Angaben nicht möglich (z. B. E-Mail schon vergeben; keine Auskunft, warum) |
 | `unauthenticated` | 401 | keine gültige Sitzung (kein/ungültiges Cookie oder Access-Token) |
 | `invalid_token` | 401 | Refresh-Token ungültig, abgelaufen, widerrufen oder wiederverwendet |
@@ -47,6 +47,8 @@ Stand: Phase 1c-1 (Sync-Kern mit Listen; Konten und Anmeldung seit 1a/1b). Basis
 | `last_credential` | 409 | der letzte Zugang einer Person kann nicht entfernt werden |
 | `no_passkey` | 409 | Step-up per Passkey, aber die Person hat keinen Passkey |
 | `passkey_exists` | 409 | dieser Authenticator ist schon als Passkey eingerichtet |
+| `password_exists` | 409 | für das Konto gibt es schon ein Passwort (stattdessen ändern) |
+| `no_password` | 409 | für das Konto ist kein Passwort eingerichtet (ändern/entfernen nicht möglich) |
 | `not_pending` | 409 | freigeben/ablehnen, aber das Mitglied wartet nicht auf Freigabe |
 | `cannot_remove_self` | 409 | Admin will sich selbst entfernen |
 | `device_mismatch` | 409 | `/sync`: die `deviceId` im Körper passt nicht zur Sitzung (die App lädt `/me` neu und versucht es erneut) |
@@ -140,6 +142,10 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `POST /me/passkeys/options` | alle, Step-up | neuer Passkey: `{ challengeId, options }` |
 | `POST /me/passkeys/verify` | alle, Step-up | `{ challengeId, response, label? }` → `{ id }` |
 | `DELETE /me/passkeys/:id` | alle, Step-up | entfernt einen Passkey; der letzte Zugang bleibt (`409 last_credential`) |
+| `POST /me/password/start` | alle, Step-up | `{ password }` (min. 12 Zeichen; nur ohne vorhandenes Passwort, sonst `409 password_exists`) → `{ challengeId, totpSecret, totpUri }`; es wird noch nichts gespeichert, ein neuer Start ersetzt den offenen Vorgang |
+| `POST /me/password/complete` | alle, Step-up | `{ challengeId, code }` (6-stelliger TOTP-Code) legt Passwort und TOTP atomar an → `{ ok }`; falscher Code `400 invalid_code` (zählt gegen die Sperre, `429 too_many_attempts`), fremde/abgelaufene Challenge `400 challenge_invalid` |
+| `POST /me/password/change` | alle, Step-up | `{ password }` ersetzt das Passwort (TOTP bleibt); ohne Passwort `409 no_password` |
+| `DELETE /me/password` | alle, Step-up | entfernt Passwort und TOTP, nur wenn ein Passkey bleibt (`409 last_credential`); ohne Passwort `409 no_password` |
 | `POST /me/recovery-codes` | alle, Step-up | `{ recoveryCodes[10] }`; die alten Codes entfallen |
 | `GET /devices` | alle | `{ devices: [{ id, name, platform, appVersion, createdAt, lastSeenAt, current }] }` |
 | `DELETE /devices/:id` | alle | meldet ein eigenes Gerät ab |

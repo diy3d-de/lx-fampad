@@ -20,11 +20,12 @@ import {
   updateProfile,
 } from '../auth/account.js';
 import { assertMayInvite, createInvite, effectiveRequireApproval, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
+import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { clearCookie, displayNameSchema, idParams, labelSchema, meta, parse, registrationResponseSchema, strictLimit, uuid } from './util.js';
+import { clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child', 'guest']);
 
@@ -56,6 +57,30 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   app.delete('/api/v1/me/passkeys/:id', async (req) => {
     const p = await auth.requireSession(req);
     await removePasskey(ctx, p, parse(idParams, req.params).id, meta(req));
+    return { ok: true };
+  });
+
+  // Passwort + TOTP nachträglich (alles mit Step-up): hinzufügen in zwei Schritten, ändern, entfernen
+  app.post('/api/v1/me/password/start', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    return startAddPassword(ctx, p, parse(z.object({ password: passwordSchema }).strict(), req.body));
+  });
+
+  app.post('/api/v1/me/password/complete', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await finishAddPassword(ctx, p, parse(z.object({ challengeId: uuid, code: codeSchema }).strict(), req.body), meta(req));
+    return { ok: true };
+  });
+
+  app.post('/api/v1/me/password/change', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await changePassword(ctx, p, parse(z.object({ password: passwordSchema }).strict(), req.body), meta(req));
+    return { ok: true };
+  });
+
+  app.delete('/api/v1/me/password', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await removePassword(ctx, p, meta(req));
     return { ok: true };
   });
 

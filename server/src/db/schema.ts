@@ -275,7 +275,7 @@ export const webauthnChallenges = pgTable(
   'webauthn_challenges',
   {
     id: id(),
-    /** login | register_passkey | register_password | add_passkey | step_up */
+    /** login | register_passkey | register_password | add_passkey | add_password | step_up */
     purpose: text('purpose').notNull(),
     challenge: text('challenge').notNull(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),
