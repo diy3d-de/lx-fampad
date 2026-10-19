@@ -290,9 +290,8 @@ void main() {
     pruefeLayout(tester, 'Woche');
   });
 
-  testWidgets('Rechte: Gäste legen nichts an; Kinder ändern keine fremden Termine', (tester) async {
-    await start(tester, role: 'guest', vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Zahnarzt', audience: 'all')));
-    expect(find.text('Neuer Termin'), findsNothing);
+  testWidgets('Rechte: Kinder ändern keine fremden Termine', (tester) async {
+    await start(tester, role: 'child', vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Zahnarzt', owner: fixIdKind)));
     await tippeText(tester, 'Zahnarzt');
     expect(find.text('Bearbeiten'), findsNothing);
     expect(find.text('Du darfst diesen Termin nicht ändern.'), findsOneWidget);

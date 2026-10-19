@@ -30,3 +30,85 @@ describe('Migrations-Journal', () => {
     for (let i = 1; i < nummern.length; i++) expect(nummern[i] as number).toBeGreaterThan(nummern[i - 1] as number);
   });
 });
+
+// ---- Aktualisierung bestehender Datenbanken: 0004 -> 0005 -> 0006 behält Daten und wendet jede Migration an ----
+import { PGlite } from '@electric-sql/pglite';
+import { sql } from 'drizzle-orm';
+import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
+import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
+import { drizzle as drizzleLite } from 'drizzle-orm/pglite';
+import { migrate as migrateLite } from 'drizzle-orm/pglite/migrator';
+import { cpSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import pg from 'pg';
+
+/** Kopie des Migrationsordners, die nur die ersten `anzahl` Einträge des Journals kennt. */
+function teilordner(anzahl: number): string {
+  const dir = mkdtempSync(`${tmpdir()}/lx-mig-`);
+  mkdirSync(`${dir}/meta`);
+  const kept = journalRaw.entries.slice(0, anzahl);
+  for (const e of kept) cpSync(`${migrationsFolder}/${e.tag}.sql`, `${dir}/${e.tag}.sql`);
+  writeFileSync(`${dir}/meta/_journal.json`, JSON.stringify({ ...journalRaw, entries: kept }));
+  return dir;
+}
+const journalRaw = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: Entry[] };
+
+describe('Migration auf bestehender Datenbank', () => {
+  type Exec = (q: string) => Promise<Array<Record<string, unknown>>>;
+  async function pruefen(partial: (dir: string) => Promise<void>, voll: () => Promise<void>, q: Exec) {
+    const bis4 = journalRaw.entries.findIndex((e) => e.tag.startsWith('0004')) + 1;
+    const d4 = teilordner(bis4);
+    const d5 = teilordner(bis4 + 1);
+    try {
+      await partial(d4); // Stand 0004 (Gäste-Rolle noch vorhanden)
+      const uid = randomUUID();
+      await q(`insert into users (id, email, display_name) values ('${uid}', 'alt@example.org', 'Alt')`);
+      await partial(d5); // 0005: ohne Gäste
+      await voll(); // 0006: Benutzerbild
+      const rows = await q(`select display_name, avatar_kind, avatar_preset, avatar_version from users where id = '${uid}'`);
+      expect(rows[0]).toMatchObject({ display_name: 'Alt', avatar_kind: null, avatar_preset: null, avatar_version: 0 });
+      const t = await q(`select to_regclass('public.user_avatars') as t`);
+      expect(t[0]?.t).toBe('user_avatars');
+    } finally {
+      rmSync(d4, { recursive: true, force: true });
+      rmSync(d5, { recursive: true, force: true });
+    }
+  }
+
+  it('PGlite: 0004 -> 0005 -> 0006', async () => {
+    const client = new PGlite();
+    const db = drizzleLite(client);
+    try {
+      await pruefen(
+        (dir) => migrateLite(db, { migrationsFolder: dir }),
+        () => migrateLite(db, { migrationsFolder }),
+        async (q) => (await db.execute(sql.raw(q))).rows as Array<Record<string, unknown>>,
+      );
+    } finally {
+      await client.close();
+    }
+  }, 60_000);
+
+  it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: 0004 -> 0005 -> 0006', async () => {
+    const name = `lx_mig_${randomUUID().replaceAll('-', '')}`;
+    const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await admin.connect();
+    await admin.query(`create database ${name}`);
+    const url = new URL(process.env.TEST_DATABASE_URL as string);
+    url.pathname = `/${name}`;
+    const pool = new pg.Pool({ connectionString: url.toString(), max: 2 });
+    const db = drizzlePg(pool);
+    try {
+      await pruefen(
+        (dir) => migratePg(db, { migrationsFolder: dir }),
+        () => migratePg(db, { migrationsFolder }),
+        async (q) => (await pool.query(q)).rows as Array<Record<string, unknown>>,
+      );
+    } finally {
+      await pool.end();
+      await admin.query(`drop database ${name} with (force)`);
+      await admin.end();
+    }
+  }, 60_000);
+});

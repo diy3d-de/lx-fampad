@@ -1,6 +1,6 @@
 {
-  "id": "9034dc52-200c-4896-89c6-035707a5c82e",
-  "prevId": "c96cb2e9-7a69-424b-9196-9d215cf4f36d",
+  "id": "60136212-c16a-4760-a792-5790ce0d4dcf",
+  "prevId": "ba4319ed-8dd3-48fc-855a-bd1db0856381",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -3991,8 +3991,7 @@
       "schema": "public",
       "values": [
         "parents",
-        "family",
-        "all"
+        "family"
       ]
     },
     "public.list_kind": {
@@ -4010,8 +4009,7 @@
       "values": [
         "admin",
         "parent",
-        "child",
-        "guest"
+        "child"
       ]
     },
     "public.member_status": {

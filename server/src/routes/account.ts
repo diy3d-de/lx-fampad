@@ -20,7 +20,7 @@ import {
   updateProfile,
 } from '../auth/account.js';
 import { avatarMetaFor } from '../avatar/service.js';
-import { assertMayInvite, createInvite, effectiveRequireApproval, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
+import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
@@ -28,7 +28,7 @@ import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
 import { clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
-const role = z.enum(['admin', 'parent', 'child', 'guest']);
+const role = z.enum(['admin', 'parent', 'child']);
 
 export function registerAccountRoutes(app: FastifyInstance, config: Config, auth: Auth): void {
   const ctx = auth.ctx;
@@ -133,7 +133,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     return { ok: true };
   });
 
-  // ----- Einladungen (Admin; Eltern nur Kinder/Gäste und nur die eigenen) -----
+  // ----- Einladungen (Admin; Eltern nur Kinder und nur die eigenen) -----
   app.get('/api/v1/invites', async (req) => {
     const p = await auth.requireSession(req);
     if (p.role !== 'admin' && p.role !== 'parent') throw new AppError(403, 'forbidden', 'Dazu fehlt dir die Berechtigung.');
@@ -155,8 +155,8 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     );
     assertMayInvite(p.role, body.role);
     if (body.role === 'admin') requireStepUp(ctx, p);
-    // Gast-Einladungen brauchen die Freigabe, außer ein Admin verzichtet ausdrücklich darauf (Nicht-Admins: immer erzwungen)
-    const requireApproval = effectiveRequireApproval(p.role, body.role, body.requireApproval);
+    // Freigabe durch einen Admin ist nur auf ausdrücklichen Wunsch nötig (Standard: nein)
+    const requireApproval = body.requireApproval;
     // Einladung samt PIN-Hash und Audit-Eintrag in einer Transaktion
     const invite = await ctx.db.transaction((tx) =>
       createInvite(ctx, tx, { familyId: p.familyId, role: body.role, hours: body.hours, withPin: body.pin, requireApproval, createdBy: p.userId }, meta(req)),

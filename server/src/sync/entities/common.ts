@@ -15,3 +15,9 @@ export const timestamp = safeString()
 
 export const uuid = z.uuid();
 export const trimmed = (max: number) => safeString().pipe(z.string().trim().min(1).max(max));
+
+/**
+ * Freigabe-Stufe als Eingabe: die Stufe "all" (früher: auch Gäste) gibt es nicht mehr; Apps bis 0.2.0 senden sie noch und
+ * bekommen "family" (die ganze Familie). Gespeichert und ausgeliefert wird nur noch "parents" oder "family".
+ */
+export const AUDIENCE_INPUT = z.enum(['parents', 'family', 'all']).transform((v) => (v === 'all' ? ('family' as const) : v));

@@ -358,7 +358,7 @@ void main() {
       rev: 1,
     );
 
-    test('Eltern alles, Kinder nur eigene und nur Familie, Gäste nichts', () {
+    test('Eltern alles, Kinder nur eigene und nur Familie', () {
       for (final r in [Role.admin, Role.parent]) {
         final rechte = TerminRechte(r, 'u1');
         expect(rechte.darfAnlegen && rechte.darfAendern(termin('u2')) && rechte.darfFreigabeAendern, isTrue);
@@ -371,9 +371,6 @@ void main() {
       expect(kind.darfAendern(termin(null)), isFalse);
       expect(kind.darfFreigabeAendern, isFalse);
       expect(kind.freigaben, [TerminSicht.family]);
-      const gast = TerminRechte(Role.guest, 'u3');
-      expect(gast.darfAnlegen, isFalse);
-      expect(gast.darfAendern(termin('u3')), isFalse);
     });
   });
 

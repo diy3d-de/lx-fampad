@@ -59,8 +59,7 @@ DateTime? _tn(Json m, String k) {
 enum Role {
   admin('admin', 'Admin', 3),
   parent('parent', 'Elternteil', 2),
-  child('child', 'Kind', 1),
-  guest('guest', 'Gast', 0);
+  child('child', 'Kind', 1);
 
   final String wire;
   final String label;
@@ -69,12 +68,14 @@ enum Role {
   final int rang;
   const Role(this.wire, this.label, this.rang);
 
-  static Role parse(String s) => Role.values.firstWhere((r) => r.wire == s, orElse: () => _fehler());
+  /// Die frühere Rolle "guest" (Server vor Migration 0005) gilt als Kind: die geringsten Rechte. Andere unbekannte Werte lassen die
+  /// Zeile einer Liste aus (siehe parseListe) und lösen sonst einen Antwortfehler aus, nie einen Absturz.
+  static Role parse(String s) => s == 'guest' ? Role.child : Role.values.firstWhere((r) => r.wire == s, orElse: () => _fehler());
 
-  /// Rollen, die diese Rolle einladen darf (Admin: alle, Eltern: nur Kinder und Gäste).
+  /// Rollen, die diese Rolle einladen darf (Admin: alle, Eltern: nur Kinder).
   List<Role> get darfEinladen => switch (this) {
     Role.admin => Role.values,
-    Role.parent => const [Role.child, Role.guest],
+    Role.parent => const [Role.child],
     _ => const [],
   };
 }

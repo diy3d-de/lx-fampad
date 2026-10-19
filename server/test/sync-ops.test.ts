@@ -52,7 +52,7 @@ describe.each(backends)('Sync im Betrieb ($name)', (backend) => {
   });
   beforeEach(async () => {
     await resetSync(world);
-    for (const d of [fam.admin, fam.parent, fam.child, fam.guest]) d.sinceRev = 0;
+    for (const d of [fam.admin, fam.parent, fam.child]) d.sinceRev = 0;
   });
   afterEach(() => {
     world.advance(0);
@@ -156,7 +156,7 @@ describe.each(backends)('Sync im Betrieb ($name)', (backend) => {
       world.advance(2 * DAY);
       expect((await runSyncMaintenance(world.auth.ctx)).tombstonesPurged).toBe(2);
       world.advance(-91 * DAY);
-      expect((await fam.guest.sync([], { sinceRev: 1 })).json.status).toBe('resync_required');
+      expect((await fam.child.sync([], { sinceRev: 1 })).json.status).toBe('resync_required');
     });
 
     it('abgemeldete Geräte halten Tombstones nicht fest; ohne aktive Geräte werden alle entfernt', async () => {

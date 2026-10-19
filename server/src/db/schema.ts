@@ -30,13 +30,13 @@ const bytea = customType<{ data: Buffer; driverData: Buffer | Uint8Array }>({
   fromDriver: (v) => Buffer.from(v),
 });
 
-export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child', 'guest']);
+export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child']);
 /** pending: per Einladung mit Freigabe registriert, darf sich erst nach Freigabe durch einen Admin anmelden. */
 export const memberStatus = pgEnum('member_status', ['active', 'pending']);
 export const credentialType = pgEnum('credential_type', ['passkey', 'totp', 'password']);
 export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom']);
-/** Wer eine Liste sehen darf: nur Eltern, die Familie (ohne Gäste) oder alle (auch Gäste, "freigegeben"). */
-export const listAudience = pgEnum('list_audience', ['parents', 'family', 'all']);
+/** Wer eine Liste oder einen Termin sehen darf: nur Eltern/Admins oder die ganze Familie (Eingaben alter Apps mit "all" werden auf "family" abgebildet). */
+export const listAudience = pgEnum('list_audience', ['parents', 'family']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
@@ -435,7 +435,7 @@ export const termine = pgTable(
     erinnerungMin: integer('erinnerung_min'),
     /** UID aus iCalendar für den späteren Import (Duplikaterkennung). */
     icalUid: text('ical_uid'),
-    /** Wer den Termin sehen darf (wie bei Listen); Standard: die Familie ohne Gäste. */
+    /** Wer den Termin sehen darf (wie bei Listen); Standard: die Familie. */
     audience: listAudience('audience').notNull().default('family'),
     /** Wer den Termin angelegt hat (setzt der Server, bestimmt die Personenfarbe; Kinder ändern nur eigene Termine). */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),

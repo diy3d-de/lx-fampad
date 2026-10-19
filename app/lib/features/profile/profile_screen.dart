@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
-import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
@@ -248,7 +247,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           EinstellungsZeile(
             icon: Icons.group_outlined,
             titel: auth.istAdmin ? 'Mitglieder und Einladungen' : 'Einladungen',
-            untertitel: auth.istAdmin ? 'verwalten' : 'für Kinder und Gäste',
+            untertitel: auth.istAdmin ? 'verwalten' : 'für Kinder',
             onTap: () => _oeffne(const AdminScreen()),
           ),
         ],
@@ -263,10 +262,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           icon: const Icon(Icons.phonelink_erase),
           label: const Text('Überall abmelden'),
         ),
-        if (user?.role == Role.guest) ...[
-          const SizedBox(height: 12),
-          const Text('Als Gast siehst du nur die für dich freigegebenen Bereiche.', style: TextStyle(fontSize: 13, color: kTextMuted)),
-        ],
       ],
     );
   }

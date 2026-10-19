@@ -81,7 +81,7 @@ void main() {
   });
 
   test('Start: /me meldet Status pending -> wartend', () async {
-    final server = FakeServer()..json('GET /me', meJson(role: 'guest', status: 'pending'));
+    final server = FakeServer()..json('GET /me', meJson(role: 'child', status: 'pending'));
     final env = TestUmgebung(server);
     await env.angemeldet();
     final c = env.container();
@@ -240,7 +240,7 @@ void main() {
     c = env.container();
     addTearDown(c.dispose);
     await c.read(authProvider.notifier).registrierungAbschliessen(
-      RegistrationResult.fromJson({'member': userJson(role: 'guest', status: 'pending'), 'status': 'pending', 'recoveryCodes': codes()}),
+      RegistrationResult.fromJson({'member': userJson(role: 'child', status: 'pending'), 'status': 'pending', 'recoveryCodes': codes()}),
     );
     expect(c.read(authProvider).status, AuthStatus.wartend);
     expect(await env.store.readTokens(), isNull);

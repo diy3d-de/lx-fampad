@@ -50,7 +50,7 @@ class Listen extends Table {
   /// shopping | packing | custom
   TextColumn get kind => text().withDefault(const Constant('custom'))();
 
-  /// Wer sie sieht: parents | family | all (inklusive Gäste)
+  /// Wer sie sieht: parents | family (frühere Werte "all" gelten als family)
   TextColumn get audience => text().withDefault(const Constant('family'))();
   TextColumn get ownerId => text().nullable()();
   DateTimeColumn get createdAt => dateTime()();
