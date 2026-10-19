@@ -36,6 +36,13 @@
       "when": 1792410540676,
       "tag": "0004_kalender",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792428036345,
+      "tag": "0009_e2ee",
+      "breakpoints": true
     }
   ]
 }

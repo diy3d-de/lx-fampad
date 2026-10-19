@@ -93,6 +93,52 @@ export const memberships = pgTable(
   ],
 );
 
+/**
+ * E2EE: öffentliche Personenschlüssel (ein Paar je Person, alle Geräte teilen es): X25519 für Sealed Boxes, Ed25519 für
+ * Signaturen, je 32 Byte als Base64url. Der Server hält nie ein Geheimnis; key_version zählt Wechsel (die Apps warnen davor).
+ */
+export const personKeys = pgTable(
+  'person_keys',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicEncKey: text('public_enc_key').notNull(),
+    publicSignKey: text('public_sign_key').notNull(),
+    keyVersion: integer('key_version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check('person_keys_version_pos', sql`${t.keyVersion} >= 1`)],
+);
+
+/** E2EE: opake Sicherung des Personenschlüssels (mit dem Wiederherstellungsschlüssel verschlüsselt, der Server kann sie nicht lesen). */
+export const keyBackups = pgTable('key_backups', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  blob: text('blob').notNull(),
+  /** Zu welcher key_version des Personenschlüssels die Sicherung gehört. */
+  keyVersion: integer('key_version').notNull(),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * E2EE: kurzlebige Geräte-Übertragung des Personenschlüssels (QR). Gespeichert wird nur der Hash der Suchkennung; der Blob ist mit
+ * einem Einmalschlüssel verschlüsselt, den der Server nie sieht. Höchstens eine je Person, einmal einlösbar (DELETE ... RETURNING).
+ */
+export const keyTransfers = pgTable('key_transfers', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  lookupHash: text('lookup_hash').notNull().unique(),
+  blob: text('blob').notNull(),
+  keyVersion: integer('key_version').notNull(),
+  createdAt: createdAt(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 /** Anmeldedaten je Benutzer (nicht je Familie): Passkey, TOTP-Geheimnis oder Argon2id-Passwort-Hash. */
 export const credentials = pgTable(
   'credentials',
