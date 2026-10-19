@@ -95,7 +95,7 @@ WebSocket-Anmeldefehler zählen mit. Die Erzeugung von Challenges ohne Anmeldung
 **Eingaben:** Zeichenketten mit NUL (`\u0000`) oder einzelnen Surrogaten (`\ud800`) werden überall (auch verschachtelt und in Schlüsseln) mit `400 invalid_request` abgelehnt.
 **Überlast:** Sind alle Passwort-Berechnungen (Argon2id, 2 gleichzeitig) und die Warteschlange (16) belegt, antwortet der Server `503 server_busy` mit `Retry-After` (kein Fehlversuch wird gezählt).
 
-**Rollen:** `admin`, `parent`, `child`, `guest`. Alle Zugriffe sind auf die eigene Familie begrenzt; Objekte einer fremden Familie liefern `404`.
+**Rollen:** `admin`, `parent`, `child`. Die frühere Rolle `guest` (Gast) gibt es seit Migration 0005 nicht mehr; Zugriff haben nur eingeladene Familienmitglieder. Eine Einladung mit `role: "guest"` ergibt `400 invalid_request`. Alle Zugriffe sind auf die eigene Familie begrenzt; Objekte einer fremden Familie liefern `404`.
 
 ## Einladung einlösen (ohne Anmeldung)
 
@@ -166,7 +166,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 
 | Methode, Pfad | Rolle | Beschreibung |
 | --- | --- | --- |
-| `POST /invites` | admin (alle Rollen, Admin-Einladung mit Step-up), parent (nur `child`, `guest`) | `{ role, hours? (1–168, Standard 24), pin? (bool), requireApproval? }` → `{ invite: { id, token, link, pin?, expiresAt, requireApproval } }`. **Token und PIN erscheinen nur in dieser Antwort.** Gäste sind standardmäßig `requireApproval`, andere nicht; **`requireApproval: false` bei Gästen darf nur ein Admin** (für Eltern erzwingt der Server `true`). |
+| `POST /invites` | admin (alle Rollen, Admin-Einladung mit Step-up), parent (nur `child`) | `{ role, hours? (1–168, Standard 24), pin? (bool), requireApproval? }` → `{ invite: { id, token, link, pin?, expiresAt, requireApproval } }`. **Token und PIN erscheinen nur in dieser Antwort.** Gäste sind standardmäßig `requireApproval`, andere nicht; **`requireApproval: false` bei Gästen darf nur ein Admin** (für Eltern erzwingt der Server `true`). |
 | `GET /invites` | admin (alle), parent (eigene) | `{ invites: [{ id, role, status: open\|used\|revoked\|locked\|expired, createdAt, expiresAt, hasPin, requireApproval, reset, createdBy, usedBy }] }` ohne Token und PIN |
 | `POST /invites/:id/revoke` | wie oben | widerruft eine offene Einladung; wer die Rolle der Einladung nicht (mehr) einladen darf, bekommt `403` |
 | `POST /invites/:id/extend` | wie oben | `{ hours }` → `{ expiresAt }`: setzt die Gültigkeit auf **das spätere** von bisheriger Ablaufzeit und jetzt + `hours` (**verkürzt nie**; höchstens 7 Tage je Aufruf); gesperrte Einladungen bleiben gesperrt; Rollenprüfung wie bei `revoke` |
@@ -261,15 +261,15 @@ Fehler der Anfrage selbst: `400 invalid_request` (Umschlag, zu viele Ops, ungül
 
 **Rechte (zentrales Modell, `server/src/sync/permissions.ts`)**
 
-Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Admins, `family`: Familie ohne Gäste, `all`: auch Gäste; Standard `family`) und einen Besitzer. Was eine Rolle nicht lesen darf, gibt es für sie nicht: Ändern und Löschen ergeben `not_found`, im Änderungsstrom fehlt es.
+Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Admins, `family`: die ganze Familie; Standard `family`). **Rückwärtskompatibel:** die frühere Stufe `all` (auch Gäste) nimmt der Server in Eingaben weiter an (Apps bis 0.2.0 senden sie) und speichert und liefert sie als `family` und einen Besitzer. Was eine Rolle nicht lesen darf, gibt es für sie nicht: Ändern und Löschen ergeben `not_found`, im Änderungsstrom fehlt es.
 
-| Entität | Admin, Elternteil | Kind | Gast |
-| --- | --- | --- | --- |
-| `list` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufen `family`/`all` lesen; anlegen nur mit Stufe `family`; **eigene** Listen umbenennen (`name`, `kind`) und löschen | nur Stufe `all` lesen |
-| `list_item` | alles | in sichtbaren Listen lesen, anlegen, ändern, abhaken, zuweisen, löschen | in freigegebenen Listen lesen und **abhaken** (`doneAt`); sonst nichts |
-| `termin` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufen `family`/`all` lesen; anlegen nur mit Stufe `family`; **eigene** Termine ändern (alles außer `audience`) und löschen | nur Stufe `all` lesen |
-| `termin_teilnehmer` | alles | erben Stufe und Besitzer des Termins: lesen, wo der Termin sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Terminen | **nichts** (die Kennungen der Familienmitglieder gehören nicht zu einem freigegebenen Termin; Ändern ergibt `not_found`) |
-| `termin_ausnahmen` | alles | wie `termin_teilnehmer` | nur lesen (Absagen und Verschiebungen sind Teil des Termins) |
+| Entität | Admin, Elternteil | Kind |
+| --- | --- | --- |
+| `list` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Listen umbenennen (`name`, `kind`) und löschen |
+| `list_item` | alles | in sichtbaren Listen lesen, anlegen, ändern, abhaken, zuweisen, löschen |
+| `termin` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Termine ändern (alles außer `audience`) und löschen |
+| `termin_teilnehmer` | alles | erben Stufe und Besitzer des Termins: lesen, wo der Termin sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Terminen |
+| `termin_ausnahmen` | alles | wie `termin_teilnehmer` |
 
 Ändert sich die Freigabe einer Liste (oder eines Termins), werden ihre Einträge (Teilnehmer, Ausnahmen) neu angestoßen (neue Revision ohne Inhaltsänderung): Geräte, die sie nun sehen dürfen, bekommen sie; Geräte, die die Liste nicht mehr sehen dürfen, bekommen einen Tombstone mit `hidden: true` ohne Inhalt. Bei Rollenwechsel werden die Sitzungen widerrufen und das Flag `resync_required` der Geräte der Person gesetzt; die neue Anmeldung ist ein neues Gerät und beginnt mit einem Snapshot (die App leert außerdem bei jeder neuen Geräte-ID ihre Fachtabellen und stellt nur lokal neu angelegte, noch nicht gesendete Zeilen wieder her).
 
@@ -277,12 +277,12 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
-| `list` | `name` | Text 1 bis 100 Zeichen (Pflicht) | rw |
+| `list` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Listen umbenennen (`name`, `kind`) und löschen |
 | | `kind` | `shopping`, `packing`, `custom` (Standard) | rw |
 | | `audience` | `parents`, `family` (Standard), `all` | rw |
 | | `ownerId` | UUID oder `null` | server (die anlegende Person) |
 | | `createdAt` | ISO-8601 (UTC) | server |
-| `list_item` | `listId` | UUID der Liste (Pflicht) | create |
+| `list_item` | alles | in sichtbaren Listen lesen, anlegen, ändern, abhaken, zuweisen, löschen |
 | | `text` | Text 1 bis 500 Zeichen (Pflicht) | rw |
 | | `assigneeId` | UUID eines aktiven Mitglieds oder `null` | rw |
 | | `doneAt` | ISO-8601 mit Zeitzone (2000 bis 2200) oder `null` (offen) | rw |
@@ -300,7 +300,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
-| `termin` | `titel` | Text 1 bis 200 Zeichen (Pflicht) | rw |
+| `termin` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Termine ändern (alles außer `audience`) und löschen |
 | | `ort`, `beschreibung` | Text bis 200 bzw. 4000 Zeichen (Standard leer) | rw |
 | | `ganztaegig` | Wahrheitswert (Standard `false`) | rw |
 | | `startUtc`, `endUtc` | ISO-8601 mit Zeitzone (2000 bis 2200) oder `null` | rw |
@@ -312,8 +312,8 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `audience` | `parents`, `family` (Standard), `all` | rw |
 | | `ownerId` | UUID oder `null` (bestimmt die Personenfarbe) | server |
 | | `createdAt` | ISO-8601 (UTC) | server |
-| `termin_teilnehmer` | `terminId`, `userId` | UUID (Pflicht) | create |
-| `termin_ausnahmen` | `terminId` | UUID des Termins (Pflicht) | create |
+| `termin_teilnehmer` | alles | erben Stufe und Besitzer des Termins: lesen, wo der Termin sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Terminen |
+| `termin_ausnahmen` | alles | wie `termin_teilnehmer` |
 | | `originalStart` | Tag oder Zeitpunkt, siehe oben (Pflicht) | create |
 | | `abgesagt` | Wahrheitswert (Standard `false`) | rw |
 | | `titel`, `ort` | Text bis 200 Zeichen oder `null` | rw |

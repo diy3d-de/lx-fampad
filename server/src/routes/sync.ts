@@ -76,7 +76,7 @@ export function registerSyncRoutes(app: FastifyInstance, config: Config, auth: A
         }
         if (done.committedRev !== null) {
           newest = Math.max(newest ?? 0, done.committedRev);
-          for (const r of done.outcome.roles ?? (['admin', 'parent', 'child', 'guest'] as const)) roles.add(r);
+          for (const r of done.outcome.roles ?? (['admin', 'parent', 'child'] as const)) roles.add(r);
         }
       }
       // nach dem Commit: die Geräte der Familie, deren Rolle die Änderung sieht, erfahren die neue Revision (ohne Inhalt)

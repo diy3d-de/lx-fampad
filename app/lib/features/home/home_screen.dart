@@ -118,7 +118,7 @@ class _Schnellzugriff extends ConsumerWidget {
             ref.read(shellTabProvider.notifier).waehlen(kListenTab);
           } else if (zumTerminEditor) {
             final u = ref.read(authProvider).user;
-            if (TerminRechte(u?.role ?? Role.guest, u?.id).darfAnlegen) {
+            if (TerminRechte(u?.role ?? Role.child, u?.id).darfAnlegen) {
               unawaited(terminEditorOeffnen(context));
             } else {
               ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);

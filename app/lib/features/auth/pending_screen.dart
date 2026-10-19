@@ -6,7 +6,7 @@ import '../../data/auth/auth_state.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 
-/// Konto ist angelegt, wartet aber auf die Freigabe durch einen Admin (Gast-Einladungen, "Freigabe erforderlich").
+/// Konto ist angelegt, wartet aber auf die Freigabe durch einen Admin (Einladung mit "Freigabe durch Admin").
 class PendingScreen extends ConsumerWidget {
   const PendingScreen({super.key});
 

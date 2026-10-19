@@ -15,13 +15,13 @@ import '../sync_state.dart';
 /// Wer eine Liste sieht.
 enum ListenSicht {
   parents('parents', 'Nur Eltern'),
-  family('family', 'Familie'),
-  all('all', 'Alle (auch Gäste)');
+  family('family', 'Familie');
 
   final String wire;
   final String label;
   const ListenSicht(this.wire, this.label);
 
+  /// Unbekannte Werte (auch das frühere "all" = auch Gäste) gelten als Familie.
   static ListenSicht von(String wire) => values.firstWhere((s) => s.wire == wire, orElse: () => ListenSicht.family);
 }
 

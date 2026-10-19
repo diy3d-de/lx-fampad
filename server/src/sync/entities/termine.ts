@@ -7,15 +7,13 @@
 //  - Admin/Eltern: alles.
 //  - Kind: sieht Termine der Stufe `family` und `all`; darf Termine anlegen (nur Stufe `family`) und eigene ändern oder löschen
 //    (Freigabe nicht änderbar). Teilnehmer und Ausnahmen erben Freigabe und Besitzer des Termins: ein Kind pflegt sie nur an eigenen Terminen.
-//  - Gast: sieht nur freigegebene Termine (Stufe `all`), sonst nichts.
 import { z } from 'zod';
 import { termine, terminAusnahmen, terminTeilnehmer } from '../../db/schema.js';
 import { safeString } from '../../routes/util.js';
 import type { Actor, Facts, Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
 import { isValidRrule, RRULE_MAX_LENGTH } from '../rrule.js';
-import { iso, timestamp, trimmed, uuid } from './common.js';
-import { LIST_AUDIENCES } from './lists.js';
+import { AUDIENCE_INPUT, iso, timestamp, trimmed, uuid } from './common.js';
 
 /** Kalendertag `YYYY-MM-DD` (echtes Datum, Jahr 2000 bis 2199). */
 export const calendarDate = safeString()
@@ -67,23 +65,20 @@ const terminRules: Rules = {
     updateFields: ['titel', 'ort', 'beschreibung', 'ganztaegig', 'startUtc', 'endUtc', 'tzid', 'startDate', 'endDate', 'rrule', 'erinnerungMin', 'icalUid'],
     limits: { audience: ['family'] },
   },
-  guest: { read: 'shared', create: 'none', update: 'none', delete: 'none' },
 };
 
-/** Teilnehmer: wie der Termin, aber Gäste sehen nicht, wer teilnimmt (Kennungen der Familienmitglieder gehören nicht zu einem freigegebenen Termin). */
+/** Teilnehmer: wie der Termin. */
 const teilnehmerRules: Rules = {
   admin: fullAccess,
   parent: fullAccess,
   child: { read: 'shared', create: 'own', update: 'own', delete: 'own' },
-  guest: { read: 'none', create: 'none', update: 'none', delete: 'none' },
 };
 
-/** Ausnahmen: Rechte des Termins (Freigabe und Besitzer werden vererbt); Gäste brauchen sie, um Absagen und Verschiebungen zu sehen. */
+/** Ausnahmen: Rechte des Termins (Freigabe und Besitzer werden vererbt). */
 const childRules: Rules = {
   admin: fullAccess,
   parent: fullAccess,
   child: { read: 'shared', create: 'own', update: 'own', delete: 'own' },
-  guest: { read: 'shared', create: 'none', update: 'none', delete: 'none' },
 };
 
 const inherited = (_row: Row, parent: Facts | null): Facts => parent ?? { audience: 'parents', ownerId: null };
@@ -119,7 +114,7 @@ export const terminEntity: EntityDef = {
     rrule: { access: 'rw', schema: rrule.nullable(), defaultValue: null, blank: null },
     erinnerungMin: { access: 'rw', schema: z.number().int().min(0).max(40320).nullable(), defaultValue: null },
     icalUid: { access: 'rw', schema: trimmed(255).nullable(), defaultValue: null, blank: null },
-    audience: { access: 'rw', schema: z.enum(LIST_AUDIENCES), defaultValue: 'family' },
+    audience: { access: 'rw', schema: AUDIENCE_INPUT, defaultValue: 'family' },
     ownerId: { access: 'server', schema: uuid.nullable() },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },

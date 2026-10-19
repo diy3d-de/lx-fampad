@@ -28,7 +28,7 @@ class CalendarScreen extends ConsumerWidget {
     final auswahl = ref.watch(kalenderAuswahlProvider);
     final daten = ref.watch(kalenderDatenProvider);
     final user = ref.watch(authProvider.select((a) => a.user));
-    final rechte = TerminRechte(user?.role ?? Role.guest, user?.id);
+    final rechte = TerminRechte(user?.role ?? Role.child, user?.id);
     // Mitglieder (Farben, Filter) erst laden, wenn es Termine gibt
     final personen = daten.termine.isEmpty ? const <UserDto>[] : (ref.watch(mitgliederProvider).value ?? const <UserDto>[]);
     final mitglieder = Mitglieder(personen);

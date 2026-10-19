@@ -443,8 +443,8 @@ class TerminRechte {
 
   bool get _erwachsen => rolle == Role.admin || rolle == Role.parent;
 
-  /// Gäste legen keine Termine an.
-  bool get darfAnlegen => rolle != Role.guest;
+  /// Alle Rollen legen Termine an; Kinder nur Familientermine.
+  bool get darfAnlegen => true;
 
   /// Eltern alle, Kinder nur ihre eigenen.
   bool darfAendern(Termin t) => _erwachsen || (rolle == Role.child && userId != null && t.ownerId == userId);

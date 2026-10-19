@@ -85,7 +85,7 @@ void main() {
   });
 
   testWidgets('wartendes Konto sieht den Warte-Bildschirm, nicht die App', (tester) async {
-    final server = FakeServer()..json('GET /me', meJson(role: 'guest', status: 'pending'));
+    final server = FakeServer()..json('GET /me', meJson(role: 'child', status: 'pending'));
     final env = TestUmgebung(server);
     await env.angemeldet();
     await starteApp(tester, env);

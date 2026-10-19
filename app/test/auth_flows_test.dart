@@ -73,7 +73,7 @@ void main() {
 
     testWidgets('Konto wartet auf Freigabe: die Einladung öffnet sich, KEIN "Du bist schon angemeldet"', (tester) async {
       final server = FakeServer()
-        ..json('GET /me', meJson(role: 'guest', status: 'pending'))
+        ..json('GET /me', meJson(role: 'child', status: 'pending'))
         ..json('POST /auth/invites/lookup', _lookupOk);
       final env = TestUmgebung(server);
       await env.angemeldet();

@@ -1,4 +1,4 @@
-// Härtung Phase 1a: Logging ohne SQL-Parameter, ungültige Zeichen, Gast-Freigabe, IPv6, Challenge-Begrenzung, stündliches Aufräumen,
+// Härtung Phase 1a: Logging ohne SQL-Parameter, ungültige Zeichen, Freigabe, IPv6, Challenge-Begrenzung, stündliches Aufräumen,
 // Einladungsrechte, Mitglied entfernen, Routenprüfung (/%61pi), Sitzungswiderruf.
 import { and, eq, isNull } from 'drizzle-orm';
 import { Writable } from 'node:stream';
@@ -202,28 +202,23 @@ describe.each(backends)('Härtung ($name)', (backend) => {
     });
   });
 
-  // ---------- 3. Gast-Freigabe ----------
+  // ---------- 3. Freigabe ----------
 
-  describe('Gast-Einladungen: Freigabe nur für Admins abschaltbar', () => {
-    it('Nicht-Admins können requireApproval bei Gästen nicht abschalten, Admins schon', async () => {
+  describe('Einladungen: Freigabe nur auf ausdrücklichen Wunsch', () => {
+    it('ohne Angabe keine Freigabe nötig; auf Wunsch wartet das neue Mitglied; die Rolle "guest" wird abgelehnt', async () => {
       const a = await adminPassword(world);
       const mama = await addMember(world, a.client, 'parent', 'mama@example.org');
-      const viaParent = await mama.client.post('/api/v1/invites', { role: 'guest', requireApproval: false });
+      const standard = await mama.client.post('/api/v1/invites', { role: 'child' });
+      expect(standard.json.invite.requireApproval).toBe(false);
+      const viaParent = await mama.client.post('/api/v1/invites', { role: 'child', requireApproval: true });
       expect(viaParent.status).toBe(200);
       expect(viaParent.json.invite.requireApproval).toBe(true);
       const lookup = await world.client('198.51.100.7').post('/api/v1/auth/invites/lookup', { token: viaParent.json.invite.token });
       expect(lookup.json.invite.requireApproval).toBe(true);
-      // der Gast wartet auf die Freigabe
       const reg = await world.registerPassword(viaParent.json.invite.token, { email: 'gast@example.org' });
       expect(reg.complete?.json.status).toBe('pending');
       expect(reg.complete?.json.session).toBeUndefined();
-
-      const viaAdminDefault = await a.client.post('/api/v1/invites', { role: 'guest' });
-      expect(viaAdminDefault.json.invite.requireApproval).toBe(true);
-      const viaAdmin = await a.client.post('/api/v1/invites', { role: 'guest', requireApproval: false });
-      expect(viaAdmin.json.invite.requireApproval).toBe(false);
-      // Kinder darf die Mutter weiterhin ohne Freigabe einladen
-      expect((await mama.client.post('/api/v1/invites', { role: 'child', requireApproval: false })).json.invite.requireApproval).toBe(false);
+      expect((await a.client.post('/api/v1/invites', { role: 'guest' })).status).toBe(400);
     });
   });
 
@@ -441,16 +436,16 @@ describe.each(backends)('Härtung ($name)', (backend) => {
       expect((await a.client.get('/api/v1/members')).json.members.some((m: { id: string }) => m.id === id)).toBe(false);
     });
 
-    it('Ablehnen wartender Gäste: Konto nur ohne weitere Mitgliedschaft löschen', async () => {
+    it('Ablehnen wartender Mitglieder: Konto nur ohne weitere Mitgliedschaft löschen', async () => {
       const a = await adminPassword(world);
-      const inv = await a.client.post('/api/v1/invites', { role: 'guest' });
+      const inv = await a.client.post('/api/v1/invites', { role: 'child', requireApproval: true });
       const reg = await world.registerPassword(inv.json.invite.token, { email: 'gast@example.org' });
       expect(reg.complete?.json.status).toBe('pending');
       const id = await memberId('gast@example.org');
       await secondMembership(id);
       expect((await a.client.post(`/api/v1/members/${id}/reject`)).status).toBe(200);
       expect(await memberId('gast@example.org')).toBe(id);
-      const inv2 = await a.client.post('/api/v1/invites', { role: 'guest' });
+      const inv2 = await a.client.post('/api/v1/invites', { role: 'child', requireApproval: true });
       await world.registerPassword(inv2.json.invite.token, { email: 'gast2@example.org' });
       const id2 = await memberId('gast2@example.org');
       expect((await a.client.post(`/api/v1/members/${id2}/reject`)).status).toBe(200);

@@ -1,5 +1,5 @@
 // Admin-Bereich: Mitglieder (Liste, Rolle ändern, entfernen, zurücksetzen, freigeben/ablehnen) und Einladungen
-// (erstellen, offene auflisten, verlängern, widerrufen). Eltern sehen nur die Einladungen für Kinder und Gäste.
+// (erstellen, offene auflisten, verlängern, widerrufen). Eltern sehen nur die Einladungen für Kinder.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -20,7 +20,7 @@ class AdminScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final istAdmin = ref.watch(authProvider.select((s) => s.istAdmin));
-    final rolle = ref.watch(authProvider.select((s) => s.rolle)) ?? Role.guest;
+    final rolle = ref.watch(authProvider.select((s) => s.rolle)) ?? Role.child;
     final inhalt = istAdmin
         ? TabBarView(children: [const _MitgliederTab(), _EinladungenTab(rolle: rolle)])
         : _EinladungenTab(rolle: rolle);

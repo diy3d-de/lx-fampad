@@ -79,14 +79,14 @@ void main() {
       final e = icsLesen(_fixture('familywall.ics'));
       final plan = await g.plan(e);
       expect(plan.neu, e.termine.length);
-      final b = await g.importer.importieren(plan, sicht: TerminSicht.all, rechte: _admin, teilnehmer: {'user-2'});
+      final b = await g.importer.importieren(plan, sicht: TerminSicht.parents, rechte: _admin, teilnehmer: {'user-2'});
       expect(b.neu, e.termine.length);
       expect(g.geaendert, 1);
       final alle = await g.termine();
       expect(alle, hasLength(e.termine.length));
       final madrid = alle.firstWhere((t) => t.icalUid == 'event/1011');
       expect(madrid.tzid, 'Europe/Madrid');
-      expect(madrid.audience, 'all');
+      expect(madrid.audience, 'parents');
       expect(madrid.ownerId, 'user-1');
       final serie = alle.firstWhere((t) => t.icalUid == 'event/1007');
       expect((await g.db.select(g.db.terminAusnahmen).get()).where((a) => a.terminId == serie.id), hasLength(4));

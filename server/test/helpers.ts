@@ -285,7 +285,7 @@ export async function adminPasskey(world: World, email = 'admin@example.org') {
 }
 
 /** Einladung erzeugen (als `by`) und per Passwort einlösen. */
-export async function addMember(world: World, by: Client, role: 'admin' | 'parent' | 'child' | 'guest', email: string, extra: Record<string, unknown> = {}) {
+export async function addMember(world: World, by: Client, role: 'admin' | 'parent' | 'child', email: string, extra: Record<string, unknown> = {}) {
   const inv = await by.post('/api/v1/invites', { role, ...extra });
   if (inv.status !== 200) throw new Error(`Einladung fehlgeschlagen: ${JSON.stringify(inv.json)}`);
   const reg = await world.registerPassword(inv.json.invite.token, { email, displayName: email.split('@')[0] });

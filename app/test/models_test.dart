@@ -39,21 +39,21 @@ void main() {
     final aktiv = RegistrationResult.fromJson({'member': userJson(), 'status': 'active', 'recoveryCodes': codes(), 'session': appSession()});
     expect(aktiv.recoveryCodes, hasLength(10));
     expect(aktiv.session, isNotNull);
-    final wartend = RegistrationResult.fromJson({'member': userJson(role: 'guest', status: 'pending'), 'status': 'pending', 'recoveryCodes': codes()});
+    final wartend = RegistrationResult.fromJson({'member': userJson(role: 'child', status: 'pending'), 'status': 'pending', 'recoveryCodes': codes()});
     expect(wartend.status, MemberStatus.pending);
     expect(wartend.session, isNull);
   });
 
   test('Einladung prüfen (lookup)', () {
     final l = InviteLookup.fromJson({
-      'role': 'guest',
+      'role': 'child',
       'pinRequired': true,
       'requireApproval': true,
       'familyName': 'Familie Beispiel',
       'reset': false,
       'expiresAt': '2026-10-19T12:00:00.000Z',
     });
-    expect(l.role, Role.guest);
+    expect(l.role, Role.child);
     expect(l.pinRequired && l.requireApproval, isTrue);
     expect(l.displayName, isNull);
     final r = InviteLookup.fromJson({
@@ -99,12 +99,14 @@ void main() {
     expect(c.options['rp'], {'name': 'lx-fampad', 'id': 'familie.lx-labs.dev'});
   });
 
-  test('Rollen: Wire-Namen, Beschriftung und Einladungsrechte (Eltern nur Kind und Gast)', () {
+  test('Rollen: Wire-Namen, Beschriftung und Einladungsrechte (Eltern nur Kind); unbekannte Werte (alter Server: "guest") gelten als Kind', () {
     expect(Role.parse('parent').label, 'Elternteil');
     expect(Role.admin.darfEinladen, Role.values);
-    expect(Role.parent.darfEinladen, [Role.child, Role.guest]);
+    expect(Role.parent.darfEinladen, [Role.child]);
     expect(Role.child.darfEinladen, isEmpty);
-    expect(Role.guest.darfEinladen, isEmpty);
+    expect(Role.values.map((r) => r.wire), ['admin', 'parent', 'child']);
+    expect(Role.parse('guest'), Role.child);
+    expect(UserDto.fromJson(userJson(role: 'guest')).role, Role.child);
   });
 
   test('Gerätedaten: id nur, wenn bekannt', () {

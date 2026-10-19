@@ -1,7 +1,7 @@
 // Schnittstellen zwischen Anmeldung (src/auth/), WebSocket (src/ws/) und später dem Sync (src/sync/).
 import type { FastifyRequest } from 'fastify';
 
-export type Role = 'admin' | 'parent' | 'child' | 'guest';
+export type Role = 'admin' | 'parent' | 'child';
 
 /** Angemeldete Person samt Familie und Rolle. */
 export interface Principal {

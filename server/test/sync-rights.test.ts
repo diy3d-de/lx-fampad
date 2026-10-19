@@ -13,13 +13,14 @@ const actor = (role: Role, userId = 'u-self'): Actor => ({ role, userId });
 const facts = (audience: Audience, ownerId: string | null = null): Facts => ({ audience, ownerId });
 
 describe('Rechte-Modell (Regeltabelle)', () => {
-  it('Freigabe-Stufen: Eltern sehen alles, Kinder nicht "nur Eltern", Gäste nur "alle"', () => {
+  it('Freigabe-Stufen: Eltern sehen alles, Kinder nicht "nur Eltern"; Gäste und die Stufe "all" gibt es nicht', () => {
     const seen = Object.fromEntries(AUDIENCES.map((a) => [a, ROLES.filter((r) => sees(r, a))]));
     expect(seen).toEqual({
       parents: ['admin', 'parent'],
       family: ['admin', 'parent', 'child'],
-      all: ['admin', 'parent', 'child', 'guest'],
     });
+    expect([...ROLES]).toEqual(['admin', 'parent', 'child']);
+    for (const def of defaultRegistry.list()) expect(Object.keys(def.rules).sort(), def.name).toEqual(['admin', 'child', 'parent']);
   });
 
   const act = (entity: typeof listEntity, action: 'create' | 'update' | 'delete', role: Role, f: Facts, fields: string[] = [], values: Json = {}): Decision =>
@@ -30,7 +31,7 @@ describe('Rechte-Modell (Regeltabelle)', () => {
       for (const a of AUDIENCES) {
         expect(mayRead(listEntity.rules, actor(role), facts(a))).toBe(true);
         expect(act(listEntity, 'create', role, facts(a), ['name', 'audience'], { audience: a })).toBe('ok');
-        expect(act(listEntity, 'update', role, facts(a), ['name', 'audience'], { audience: 'all' })).toBe('ok');
+        expect(act(listEntity, 'update', role, facts(a), ['name', 'audience'], { audience: 'parents' })).toBe('ok');
         expect(act(listEntity, 'delete', role, facts(a))).toBe('ok');
       }
     }
@@ -38,10 +39,9 @@ describe('Rechte-Modell (Regeltabelle)', () => {
 
   it('Listen: Kinder legen nur "family"-Listen an und ändern/löschen nur eigene (ohne Freigabe zu ändern)', () => {
     expect(act(listEntity, 'create', 'child', facts('family', 'u-self'), ['name'], { audience: 'family' })).toBe('ok');
-    expect(act(listEntity, 'create', 'child', facts('all', 'u-self'), ['name', 'audience'], { audience: 'all' })).toBe('forbidden');
     expect(act(listEntity, 'create', 'child', facts('parents', 'u-self'), ['name', 'audience'], { audience: 'parents' })).toBe('forbidden');
     expect(act(listEntity, 'update', 'child', facts('family', 'u-self'), ['name', 'kind'], { name: 'x' })).toBe('ok');
-    expect(act(listEntity, 'update', 'child', facts('family', 'u-self'), ['audience'], { audience: 'all' })).toBe('forbidden');
+    expect(act(listEntity, 'update', 'child', facts('family', 'u-self'), ['audience'], { audience: 'parents' })).toBe('forbidden');
     expect(act(listEntity, 'update', 'child', facts('family', 'u-other'), ['name'])).toBe('forbidden');
     expect(act(listEntity, 'update', 'child', facts('parents', 'u-self'), ['name'])).toBe('not_found');
     expect(act(listEntity, 'delete', 'child', facts('family', 'u-self'))).toBe('ok');
@@ -51,26 +51,11 @@ describe('Rechte-Modell (Regeltabelle)', () => {
     expect(mayRead(listEntity.rules, actor('child'), facts('family'))).toBe(true);
   });
 
-  it('Listen: Gäste sehen nur freigegebene Listen und dürfen nichts anlegen, ändern oder löschen', () => {
-    expect(mayRead(listEntity.rules, actor('guest'), facts('all'))).toBe(true);
-    expect(mayRead(listEntity.rules, actor('guest'), facts('family'))).toBe(false);
-    expect(act(listEntity, 'create', 'guest', facts('family', 'u-self'), ['name'])).toBe('forbidden');
-    expect(act(listEntity, 'update', 'guest', facts('all'), ['name'])).toBe('forbidden');
-    expect(act(listEntity, 'delete', 'guest', facts('all'))).toBe('forbidden');
-    expect(act(listEntity, 'update', 'guest', facts('family'), ['name'])).toBe('not_found');
-  });
-
-  it('Einträge erben die Freigabe; Gäste dürfen nur abhaken, Kinder in sichtbaren Listen alles', () => {
+  it('Einträge erben die Freigabe; Kinder dürfen in sichtbaren Listen alles', () => {
     expect(act(listItemEntity, 'create', 'child', facts('family'), ['listId', 'text'])).toBe('ok');
     expect(act(listItemEntity, 'create', 'child', facts('parents'), ['listId', 'text'])).toBe('forbidden');
     expect(act(listItemEntity, 'update', 'child', facts('parents'), ['text'])).toBe('not_found');
-    expect(act(listItemEntity, 'delete', 'child', facts('all'))).toBe('ok');
-    expect(act(listItemEntity, 'update', 'guest', facts('all'), ['doneAt'])).toBe('ok');
-    expect(act(listItemEntity, 'update', 'guest', facts('all'), ['text'])).toBe('forbidden');
-    expect(act(listItemEntity, 'update', 'guest', facts('all'), ['doneAt', 'assigneeId'])).toBe('forbidden');
-    expect(act(listItemEntity, 'update', 'guest', facts('family'), ['doneAt'])).toBe('not_found');
-    expect(act(listItemEntity, 'create', 'guest', facts('all'), ['listId', 'text'])).toBe('forbidden');
-    expect(act(listItemEntity, 'delete', 'guest', facts('all'))).toBe('forbidden');
+    expect(act(listItemEntity, 'delete', 'child', facts('family'))).toBe('ok');
   });
 
   it('jede Entität im Register hat für jede Rolle eine vollständige Regel', () => {
@@ -102,7 +87,7 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
   });
   beforeEach(async () => {
     await resetSync(world);
-    for (const d of [fam.admin, fam.parent, fam.child, fam.guest]) d.sinceRev = 0;
+    for (const d of [fam.admin, fam.parent, fam.child]) d.sinceRev = 0;
   });
 
   const list = async (by = fam.admin, fields: Json = {}) => {
@@ -120,16 +105,32 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
       const owner = (await fam.child.pull()).find((c) => c.id === id)?.fields.ownerId;
       expect(owner).toBe(fam.child.userId);
       expect((await fam.child.sync([upsert('list', id, { name: 'Umbenannt' }, 1)], { sinceRev: 1 })).json.acked).toHaveLength(1);
-      const op = upsert('list', id, { audience: 'all' }, 2);
+      const op = upsert('list', id, { audience: 'parents' }, 2);
       expect(await rejection(fam.child, op)).toEqual([{ opId: op.opId, code: 'forbidden' }]);
       expect((await fam.child.sync([remove('list', id, 2)], { sinceRev: 2 })).json.acked).toHaveLength(1);
     });
 
-    it('Kind darf keine Listen für "alle" oder "nur Eltern" anlegen', async () => {
-      for (const audience of ['all', 'parents']) {
-        const op = upsert('list', randomUUID(), { name: 'x', audience });
-        expect(await rejection(fam.child, op)).toEqual([{ opId: op.opId, code: 'forbidden' }]);
-      }
+    it('Kind darf keine Listen "nur für Eltern" anlegen', async () => {
+      const op = upsert('list', randomUUID(), { name: 'x', audience: 'parents' });
+      expect(await rejection(fam.child, op)).toEqual([{ opId: op.opId, code: 'forbidden' }]);
+    });
+
+    it('alte Apps senden die Stufe "all": sie wird als "family" gespeichert und ausgeliefert (Liste; Termin siehe sync-kalender.test.ts), Ändern ebenso', async () => {
+      const id = randomUUID();
+      const res = await fam.parent.sync([upsert('list', id, { name: 'Alt', audience: 'all' })]);
+      expect(res.json.rejected).toEqual([]);
+      expect((await rows(world, sql`select audience from lists where id = ${id}`))[0]?.audience).toBe('family');
+      expect((await fam.child.pull()).find((c) => c.id === id)?.fields.audience).toBe('family');
+      await fam.parent.sync([upsert('list', id, { audience: 'parents' }, 1)], { sinceRev: 1 });
+      const back = await fam.parent.sync([upsert('list', id, { audience: 'all' }, 2)], { sinceRev: 2 });
+      expect(back.json.rejected).toEqual([]);
+      expect((await rows(world, sql`select audience from lists where id = ${id}`))[0]?.audience).toBe('family');
+      // ein Kind darf mit der alten Eingabe "all" (= family) eine eigene Liste anlegen
+      const own = randomUUID();
+      expect((await fam.child.sync([upsert('list', own, { name: 'Kind alt', audience: 'all' })])).json.rejected).toEqual([]);
+      // unbekannte Stufen bleiben ungültig
+      const bad = upsert('list', randomUUID(), { name: 'x', audience: 'guests' });
+      expect(await rejection(fam.parent, bad)).toEqual([{ opId: bad.opId, code: 'invalid' }]);
     });
 
     it('Kind darf fremde Listen weder umbenennen noch löschen, sieht sie aber; Besitzer kann nicht gesetzt werden', async () => {
@@ -143,30 +144,20 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
       expect(await rejection(fam.child, owner)).toEqual([{ opId: owner.opId, code: 'invalid' }]);
     });
 
-    it('Gast legt nichts an und löscht nichts', async () => {
-      const op = upsert('list', randomUUID(), { name: 'x' });
-      expect(await rejection(fam.guest, op)).toEqual([{ opId: op.opId, code: 'forbidden' }]);
-      const id = await list(fam.admin, { audience: 'all' });
-      const del = remove('list', id, 1);
-      expect(await rejection(fam.guest, del)).toEqual([{ opId: del.opId, code: 'forbidden' }]);
-    });
-
-    it('Sichtbarkeit im Änderungsstrom: nur Eltern / Familie / alle', async () => {
+    it('Sichtbarkeit im Änderungsstrom: nur Eltern / Familie', async () => {
       const onlyParents = await list(fam.admin, { audience: 'parents', name: 'Geschenke' });
       const family = await list(fam.admin, { audience: 'family', name: 'Einkauf' });
-      const everyone = await list(fam.admin, { audience: 'all', name: 'Grillfest' });
       const ids = async (d: typeof fam.admin) => {
         d.sinceRev = 0;
         return (await d.pull()).map((c) => c.id).sort();
       };
-      expect(await ids(fam.parent)).toEqual([onlyParents, family, everyone].sort());
-      expect(await ids(fam.child)).toEqual([family, everyone].sort());
-      expect(await ids(fam.guest)).toEqual([everyone]);
+      expect(await ids(fam.parent)).toEqual([onlyParents, family].sort());
+      expect(await ids(fam.child)).toEqual([family]);
     });
 
     it('nicht sichtbare Datensätze sind für die Rolle nicht auffindbar: Ändern, Löschen, Eintrag anlegen ergeben not_found', async () => {
       const secret = await list(fam.admin, { audience: 'parents' });
-      for (const who of [fam.child, fam.guest]) {
+      for (const who of [fam.child]) {
         const ops = [upsert('list', secret, { name: 'x' }, 1), remove('list', secret, 1), upsert('list_item', randomUUID(), { listId: secret, text: 'x' })];
         const rejected = (await who.sync(ops)).json.rejected as Array<{ code: string }>;
         expect(rejected.map((r) => r.code)).toEqual(['not_found', 'not_found', 'not_found']);
@@ -176,27 +167,6 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
   });
 
   describe('Einträge', () => {
-    it('Gast darf in freigegebenen Listen abhaken, aber nichts anderes', async () => {
-      const lid = await list(fam.admin, { audience: 'all' });
-      const iid = randomUUID();
-      await fam.admin.sync([upsert('list_item', iid, { listId: lid, text: 'Salat' })]);
-      await fam.guest.pull();
-      const done = upsert('list_item', iid, { doneAt: '2026-10-19T10:00:00.000Z' }, 2);
-      expect((await fam.guest.sync([done])).json.acked).toEqual([done.opId]);
-      for (const op of [upsert('list_item', iid, { text: 'Hack' }, 2), upsert('list_item', randomUUID(), { listId: lid, text: 'neu' }), remove('list_item', iid, 2)]) {
-        expect(await rejection(fam.guest, op)).toEqual([{ opId: op.opId, code: 'forbidden' }]);
-      }
-    });
-
-    it('Gast sieht und ändert Einträge nicht freigegebener Listen nicht', async () => {
-      const lid = await list(fam.admin, { audience: 'family' });
-      const iid = randomUUID();
-      await fam.admin.sync([upsert('list_item', iid, { listId: lid, text: 'intern' })]);
-      expect(await fam.guest.pull()).toEqual([]);
-      const op = upsert('list_item', iid, { doneAt: '2026-10-19T10:00:00.000Z' }, 2);
-      expect(await rejection(fam.guest, op)).toEqual([{ opId: op.opId, code: 'not_found' }]);
-    });
-
     it('Kind legt in Familienlisten Einträge an, ändert und löscht sie; in Elternlisten nicht', async () => {
       const lid = await list(fam.admin, { audience: 'family' });
       const iid = randomUUID();
@@ -209,24 +179,21 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
     });
 
     it('Freigabe zurückgenommen: das Gerät bekommt einen "hidden"-Tombstone, bei erneuter Freigabe wieder alles', async () => {
-      const lid = await list(fam.admin, { audience: 'all', name: 'Grillfest' });
+      const lid = await list(fam.admin, { audience: 'family', name: 'Grillfest' });
       const iid = randomUUID();
       await fam.admin.sync([upsert('list_item', iid, { listId: lid, text: 'Würstchen' })]);
-      expect((await fam.guest.pull()).map((c) => c.entity).sort()).toEqual(['list', 'list_item']);
-      await fam.child.pull();
+      expect((await fam.child.pull()).map((c) => c.entity).sort()).toEqual(['list', 'list_item']);
 
       await fam.admin.sync([upsert('list', lid, { audience: 'parents' }, 1)], { sinceRev: 2 });
-      const hidden = await fam.guest.pull();
+      const hidden = await fam.child.pull();
       expect(hidden).toEqual([{ rev: 3, entity: 'list', id: lid, tombstone: true, hidden: true, fields: {} }]);
-      // das Kind (Stufe "family" wäre sichtbar, "parents" nicht) bekommt es ebenfalls
-      expect((await fam.child.pull()).filter((c) => c.hidden)).toHaveLength(1);
 
       // spätere Änderungen an der unsichtbaren Liste verraten nichts
       await fam.admin.sync([upsert('list', lid, { name: 'Geheim' }, 3)], { sinceRev: 4 });
-      expect(await fam.guest.pull()).toEqual([]);
+      expect(await fam.child.pull()).toEqual([]);
 
-      await fam.admin.sync([upsert('list', lid, { audience: 'all' }, 5)], { sinceRev: 5 });
-      const back = await fam.guest.pull();
+      await fam.admin.sync([upsert('list', lid, { audience: 'family' }, 5)], { sinceRev: 5 });
+      const back = await fam.child.pull();
       expect(back.map((c) => [c.entity, c.tombstone])).toEqual([
         ['list', false],
         ['list_item', false],
@@ -235,9 +202,9 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
     });
 
     it('ein Gerät, das eine nie sichtbare Liste nicht kannte, bekommt bei sinceRev 0 keine Tombstones', async () => {
-      const lid = await list(fam.admin, { audience: 'all' });
+      const lid = await list(fam.admin, { audience: 'family' });
       await fam.admin.sync([upsert('list', lid, { audience: 'parents' }, 1)], { sinceRev: 1 });
-      expect(await fam.guest.pull()).toEqual([]);
+      expect(await fam.child.pull()).toEqual([]);
     });
   });
 
@@ -258,13 +225,13 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
       await world.db.execute(sql`insert into families (id, name, current_rev) values (${familyId}, 'Fremd', 7)`);
       await world.db.execute(sql`insert into users (id, email, display_name) values (${userId}, 'fremd@example.org', 'Fremd')`);
       await world.db.execute(sql`insert into memberships (family_id, user_id, role) values (${familyId}, ${userId}, 'admin')`);
-      await world.db.execute(sql`insert into lists (id, family_id, name, audience, rev, field_revs) values (${listId}, ${familyId}, 'Geheim', 'all', 7, '{"name":7}')`);
+      await world.db.execute(sql`insert into lists (id, family_id, name, audience, rev, field_revs) values (${listId}, ${familyId}, 'Geheim', 'family', 7, '{"name":7}')`);
       await world.db.execute(sql`insert into list_items (id, family_id, list_id, text, rev, field_revs) values (${itemId}, ${familyId}, ${listId}, 'Fremder Eintrag', 7, '{"text":7}')`);
       foreign = { listId, itemId, familyId, userId };
     });
 
     it('Ändern, Löschen und Anlegen mit IDs einer fremden Familie: nichts passiert, keine Auskunft', async () => {
-      for (const who of [fam.admin, fam.parent, fam.child, fam.guest]) {
+      for (const who of [fam.admin, fam.parent, fam.child]) {
         const ops = [
           upsert('list', foreign.listId, { name: 'Gehackt' }, 7),
           remove('list', foreign.listId, 7),
@@ -292,7 +259,7 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
     });
 
     it('fremde Datensätze erscheinen nie im Änderungsstrom, auch nicht mit sinceRev 0', async () => {
-      for (const who of [fam.admin, fam.guest]) {
+      for (const who of [fam.admin, fam.child]) {
         const all = await who.sync([], { sinceRev: 0 });
         expect(JSON.stringify(all.json)).not.toContain('Geheim');
         expect(JSON.stringify(all.json)).not.toContain('Fremder');
@@ -320,7 +287,7 @@ describe.each(backends)('Rechte im Sync ($name)', (backend) => {
       const pendingUser = randomUUID();
       const familyId = fam.familyId;
       await world.db.execute(sql`insert into users (id, email, display_name) values (${pendingUser}, 'wartet@example.org', 'Wartet')`);
-      await world.db.execute(sql`insert into memberships (family_id, user_id, role, status) values (${familyId}, ${pendingUser}, 'guest', 'pending')`);
+      await world.db.execute(sql`insert into memberships (family_id, user_id, role, status) values (${familyId}, ${pendingUser}, 'child', 'pending')`);
       const op = upsert('list_item', randomUUID(), { listId: lid, text: 'x', assigneeId: pendingUser });
       expect(await rejection(fam.admin, op)).toEqual([{ opId: op.opId, code: 'invalid_reference' }]);
     });

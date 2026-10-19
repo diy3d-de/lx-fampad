@@ -60,7 +60,7 @@ class _Kopfzeile extends ConsumerWidget {
     final gewaehlt = ref.read(gewaehlteListeProvider.notifier);
     final tab = ref.read(shellTabProvider.notifier);
     final messenger = ScaffoldMessenger.of(context);
-    final a = await neueListeDialog(context, ListenRechte(u?.role ?? Role.guest, u?.id));
+    final a = await neueListeDialog(context, ListenRechte(u?.role ?? Role.child, u?.id));
     if (a == null || !context.mounted) return;
     try {
       final id = await repo.listeAnlegen(name: a.name, art: a.art, sicht: a.sicht);
@@ -75,7 +75,6 @@ class _Kopfzeile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rolle = ref.watch(authProvider.select((s) => s.user?.role)) ?? Role.guest;
     return Wrap(
       alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -121,8 +120,7 @@ class _Kopfzeile extends ConsumerWidget {
                 ..hideCurrentSnackBar()
                 ..showSnackBar(const SnackBar(content: Text('Benachrichtigungen kommen mit Push in einer späteren Phase'))),
             ),
-            if (rolle != Role.guest)
-              PopupMenuButton<String>(
+            PopupMenuButton<String>(
                 tooltip: 'Neu anlegen',
                 color: kSurface,
                 onSelected: (_) => _neueListe(context, ref),
@@ -278,7 +276,7 @@ class _EinkaufKarte extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final u = ref.watch(authProvider.select((s) => s.user));
-    final darfAnlegen = ListenRechte(u?.role ?? Role.guest, u?.id).darfListeAnlegen;
+    final darfAnlegen = ListenRechte(u?.role ?? Role.child, u?.id).darfListeAnlegen;
     final listenAsync = ref.watch(listenProvider);
     final eintraegeAsync = ref.watch(alleEintraegeProvider);
     final fehler = listenAsync.hasError || eintraegeAsync.hasError;

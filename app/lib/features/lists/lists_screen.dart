@@ -38,7 +38,7 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
 
   ListenRechte _rechte() {
     final u = ref.read(authProvider).user;
-    return ListenRechte(u?.role ?? Role.guest, u?.id);
+    return ListenRechte(u?.role ?? Role.child, u?.id);
   }
 
   Future<void> _listeAnlegen() async {
