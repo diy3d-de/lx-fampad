@@ -49,6 +49,8 @@ export interface EntityDef {
   factsForCreate(actor: Actor, values: Row, parent: Facts | null): Facts;
   /** Vom Server gesetzte Werte beim Anlegen (z. B. Besitzer = anlegende Person). */
   onCreate?(actor: Actor): Row;
+  /** Prüft den Datensatz als Ganzes (Felder untereinander, z. B. Ende nach Beginn) beim Anlegen und nach dem Zusammenführen einer Änderung; false = `invalid`. */
+  check?(row: Row): boolean;
   /** Obergrenzen lebender Datensätze (Schutz vor Überlauf). `per: 'parent'` zählt je übergeordnetem Datensatz. */
   maxLive?: { per: 'family' | 'parent'; max: number };
 }

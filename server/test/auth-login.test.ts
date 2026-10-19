@@ -920,9 +920,9 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
       await expect(harness.db.insert(schema.devices).values({ familyId: own.id, userId: user.id, name: 'x', platform: 'web' })).rejects.toThrow();
       await expect(harness.db.insert(schema.wsTickets).values({ tokenHash: 'h2', familyId: fam.id, userId: adminUser.id, sessionId: '00000000-0000-4000-8000-000000000000', expiresAt: farFuture })).rejects.toThrow();
       // Termin-Teilnehmer: Person aus Familie A bei Termin von Familie B
-      const [ev] = await harness.db.insert(schema.events).values({ familyId: fam.id, title: 'x', allDay: true, startsOn: '2026-10-20', rev: 1 }).returning();
-      await expect(harness.db.insert(schema.eventAttendees).values({ familyId: fam.id, eventId: ev?.id ?? '', userId: adminUser.id, rev: 2 })).rejects.toThrow();
-      await expect(harness.db.insert(schema.eventAttendees).values({ familyId: fam.id, eventId: ev?.id ?? '', userId: user.id, rev: 2 })).resolves.toBeDefined();
+      const [ev] = await harness.db.insert(schema.termine).values({ familyId: fam.id, titel: 'x', ganztaegig: true, startDate: '2026-10-20', endDate: '2026-10-21', rev: 1 }).returning();
+      await expect(harness.db.insert(schema.terminTeilnehmer).values({ familyId: fam.id, terminId: ev?.id ?? '', userId: adminUser.id, rev: 2 })).rejects.toThrow();
+      await expect(harness.db.insert(schema.terminTeilnehmer).values({ familyId: fam.id, terminId: ev?.id ?? '', userId: user.id, rev: 2 })).resolves.toBeDefined();
     });
 
     it('WebSocket-Tickets und Sitzungen tragen die Familie des Ausstellers', async () => {

@@ -9,23 +9,9 @@
 // nur ein Feld eines Eintrags, gleichzeitige Verschiebungen verschiedener Einträge kollidieren nicht.
 import { z } from 'zod';
 import { listItems, lists } from '../../db/schema.js';
-import { safeString } from '../../routes/util.js';
 import type { Actor, Facts, Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
-
-const iso = (v: unknown): unknown => (v instanceof Date ? v.toISOString() : v);
-
-const MIN_DATE = Date.parse('2000-01-01T00:00:00Z');
-const MAX_DATE = Date.parse('2200-01-01T00:00:00Z');
-
-/** ISO-8601-Zeitpunkt (mit Zeitzone) im sinnvollen Bereich -> Date. */
-const timestamp = safeString()
-  .pipe(z.iso.datetime({ offset: true }))
-  .transform((s) => new Date(s))
-  .refine((d) => d.getTime() >= MIN_DATE && d.getTime() < MAX_DATE, 'Zeitpunkt außerhalb des Bereichs');
-
-const uuid = z.uuid();
-const trimmed = (max: number) => safeString().pipe(z.string().trim().min(1).max(max));
+import { iso, timestamp, trimmed, uuid } from './common.js';
 
 export const LIST_KINDS = ['shopping', 'packing', 'custom'] as const;
 export const LIST_AUDIENCES = ['parents', 'family', 'all'] as const;
