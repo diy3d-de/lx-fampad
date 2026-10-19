@@ -14,6 +14,7 @@ import '../auth/step_up.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
 import 'password_screen.dart';
+import 'ueber_screen.dart';
 import 'passkeys_screen.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
@@ -236,6 +237,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kUeberAppName', untertitel: 'version und update', onTap: () => _oeffne(const UeberScreen())),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),
           const MonoLabel('// familie'),

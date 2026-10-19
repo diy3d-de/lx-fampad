@@ -273,7 +273,7 @@ class _Fusszeile extends ConsumerWidget {
     final sync = ref.watch(syncProvider);
     final geraete = ref.watch(geraeteAnzahlProvider).value;
     final installiert = ref.watch(updateProvider.select((u) => u.installierteVersion));
-    final version = installiert ?? (kWebVersion.isNotEmpty ? kWebVersion : null);
+    final version = installiert ?? (kWebVersion.isNotEmpty ? kWebVersion : 'dev');
     final (text, farbe) = syncAnzeige(sync);
     const stil = TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted);
     return Container(
@@ -289,7 +289,7 @@ class _Fusszeile extends ConsumerWidget {
             Text.rich(TextSpan(children: [TextSpan(text: '● ', style: TextStyle(color: farbe)), TextSpan(text: 'sync: $text')]), style: stil),
             Text('geräte: ${geraete ?? '–'}', style: stil),
             Text('verbindung: ${sync.live ? 'live' : 'ohne live'}', style: stil),
-            Text('version: ${version ?? '–'}', style: stil),
+            Text('version: $version', style: stil),
           ],
         ),
       ),

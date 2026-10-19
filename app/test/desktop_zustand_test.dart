@@ -165,7 +165,7 @@ void main() {
     await warte(tester, 10);
     expect(find.textContaining('sync: '), findsOneWidget);
     expect(find.textContaining('verbindung: '), findsOneWidget);
-    expect(find.textContaining('version: '), findsOneWidget);
+    expect(find.text('version: dev'), findsOneWidget, reason: 'ohne WEB_VERSION-define Fallback dev, nie "–"');
   });
 
   test('syncAnzeige: Text und Farbe je Zustand (eine Quelle für Mobil und Desktop)', () {
