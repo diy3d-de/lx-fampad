@@ -442,11 +442,17 @@ exec $RRSYNC -ro $OUT_DIR
 EOF
 chmod 0755 "$WORK/fakessh"
 PULL="$WORK/pull"; mkdir -m 0700 "$PULL"; chown "$BACKUP_USER" "$PULL"
-as_bu rsync -a -e "$WORK/fakessh" "x:/" "$PULL/" || fehler "Abholung über rrsync fehlgeschlagen"
+# Dieselben Optionen wie nas/lx-fampad-pull.sh (synchron halten): der Selbsttest soll zeigen, dass rrsync sie wirklich akzeptiert
+PULL_OPTS=(-rt --no-links --no-perms --no-owner --no-group --no-devices --no-specials --max-size=2G
+  --exclude='.geprueft' --exclude='.partial' --exclude='.tmp-*'
+  --include='/[0-9]*-[0-9]*/' --include='/[0-9]*-[0-9]*/db-*.dump.age' --include='/[0-9]*-[0-9]*/config-*.tar.age'
+  --include='/[0-9]*-[0-9]*/files-*.tar.age' --include='/[0-9]*-[0-9]*/SHA256SUMS' --include='/status' --include='/LATEST' --exclude='*')
+as_bu rsync "${PULL_OPTS[@]}" --stats -e "$WORK/fakessh" "x:/" "$PULL/" >"$WORK/pull.out" 2>&1 || { cat "$WORK/pull.out" >&2; fehler "Abholung über rrsync mit den Pull-Optionen fehlgeschlagen"; }
+[ -f "$PULL/$LATEST/SHA256SUMS" ] || fehler "Abholung lieferte den Sicherungsordner nicht"
 ( cd "$PULL/$LATEST" && as_bu sha256sum -c --strict --quiet SHA256SUMS ) || fehler "abgeholte Dateien weichen ab"
-if as_bu rsync -a -e "$WORK/fakessh" "x:/../../etc/passwd" "$PULL/" >/dev/null 2>&1; then fehler "rrsync lässt Pfade außerhalb des Verzeichnisses zu"; fi
+if as_bu rsync "${PULL_OPTS[@]}" -e "$WORK/fakessh" "x:/../../etc/passwd" "$PULL/" >/dev/null 2>&1; then fehler "rrsync lässt Pfade außerhalb des Verzeichnisses zu"; fi
 echo probe > "$PULL/probe-upload"
-if as_bu rsync -a -e "$WORK/fakessh" "$PULL/probe-upload" "x:/probe-upload" >/dev/null 2>&1; then fehler "rrsync erlaubt Hochladen (nicht read-only)"; fi
+if as_bu rsync -rt -e "$WORK/fakessh" "$PULL/probe-upload" "x:/probe-upload" >/dev/null 2>&1; then fehler "rrsync erlaubt Hochladen (nicht read-only)"; fi
 [ ! -e "$OUT_DIR/probe-upload" ] || fehler "Upload ist angekommen"
 info "ok: Abholung funktioniert, Pfade außerhalb und Hochladen werden abgelehnt."
 

@@ -44,8 +44,12 @@ zurueck() {
     rm -f "$FSTAB.neu"
     if [ "$ANGELEGT" = 1 ]; then
       echo "!!  Fehler: angelegte Swapdatei wird entfernt." >&2
-      swapoff "$SWAPFILE" 2>/dev/null
-      rm -f "$SWAPFILE"
+      # nur löschen, wenn swapoff gelang oder die Datei gar nicht aktiv ist (sonst läge ein aktiver Swap unter dem Dateisystem weg)
+      if swapoff "$SWAPFILE" 2>/dev/null || ! swapon --show=NAME --noheadings | grep -qx "$SWAPFILE"; then
+        rm -f "$SWAPFILE"
+      else
+        echo "!!  WARNUNG: swapoff $SWAPFILE schlug fehl, die aktive Swapdatei bleibt bestehen (von Hand prüfen)." >&2
+      fi
     fi
   fi
   exit "$rc"
@@ -56,6 +60,9 @@ echo "==> Prüfungen$([ "$DRY" = 1 ] && echo ' (Trockenlauf)')"
 echo "    RAM: $(free -m | awk '/^Mem:/{print $2" MB gesamt, "$7" MB verfügbar"}'); Swap jetzt: $(free -m | awk '/^Swap:/{print $2" MB"}')"
 AKTIV=0
 if swapon --show=NAME --noheadings | grep -qx "$SWAPFILE"; then AKTIV=1; echo "    $SWAPFILE ist schon aktiv."; fi
+if [ "$AKTIV" = 1 ] && [ "$(stat -c '%a %U' "$SWAPFILE")" != "600 root" ]; then
+  fehler "$SWAPFILE ist aktiv, hat aber nicht die Rechte 0600 root (chmod 600 $SWAPFILE von Hand; das Skript ändert eine laufende Swapdatei nicht)"
+fi
 if [ "$AKTIV" = 0 ] && [ -e "$SWAPFILE" ]; then
   fehler "$SWAPFILE existiert, ist aber nicht aktiv. Prüfen (ls -l $SWAPFILE); das Skript überschreibt nichts."
 fi
@@ -112,10 +119,14 @@ fi
 if [ "$DRY" = 0 ]; then
   echo "==> Prüfung"
   if [ "$NO_ACT" = 0 ]; then
-    # fstab-Probe: aus und über die fstab wieder ein, genau wie beim Neustart
-    swapoff "$SWAPFILE"
-    swapon -a || fehler "swapon -a mit der neuen fstab schlägt fehl"
-    swapon --show=NAME --noheadings | grep -qx "$SWAPFILE" || fehler "$SWAPFILE ist nach swapon -a nicht aktiv"
+    if [ "$AKTIV" = 0 ]; then
+      # fstab-Probe (nur für die in diesem Lauf angelegte Datei): aus und über die fstab wieder ein, genau wie beim Neustart
+      swapoff "$SWAPFILE"
+      swapon -a || fehler "swapon -a mit der neuen fstab schlägt fehl"
+    else
+      echo "    $SWAPFILE war schon aktiv: die Probe mit swapoff/swapon wird übersprungen (laufender Swap bleibt unangetastet); fstab-Prüfung per findmnt --verify."
+    fi
+    swapon --show=NAME --noheadings | grep -qx "$SWAPFILE" || fehler "$SWAPFILE ist nicht aktiv"
     swapon --show
     [ "$(sysctl -n vm.swappiness)" = 10 ] || fehler "vm.swappiness ist nicht 10"
   fi
