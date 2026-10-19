@@ -170,6 +170,12 @@ class Aufgaben extends Table {
 
   /// daily | weekly | monthly | null
   TextColumn get wiederholung => text().nullable()();
+
+  /// Wunschtag des Monats (1 bis 31) bei monatlicher Wiederholung, bleibt in der Kette erhalten
+  IntColumn get wiederholungTag => integer().nullable()();
+
+  /// ID der Folgeaufgabe, die beim Erledigen entstand (abgeleitet oder, bei belegter ID, zufällig)
+  TextColumn get folgeId => text().nullable()();
   IntColumn get erinnerungMin => integer().nullable()();
 
   /// parents | family (wie bei Listen)

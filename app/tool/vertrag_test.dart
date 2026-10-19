@@ -665,7 +665,11 @@ Future<void> aufgabenVertrag({
   final eigene = neueUuid();
   final eigeneOp = neu('aufgabe', eigene, {'titel': 'Kinder-Aufgabe', 'assigneeId': kindId});
   expect((await syncen(kind, [eigeneOp])).acked, [eigeneOp.opId]);
-  expect((await syncen(kind, [aender('aufgabe', eigene, {'erledigtAt': DateTime.now().toUtc().toIso8601String(), 'erledigtVon': kindId}, 1)])).rejected, isEmpty);
+  expect((await syncen(kind, [aender('aufgabe', eigene, {'erledigtAt': DateTime.now().toUtc().toIso8601String()}, 900000000)])).rejected, isEmpty);
+  // erledigtVon setzt der Server: ein Client-Wert ist ungültig, das Erledigen setzt den Akteur
+  expect((await syncen(kind, [aender('aufgabe', eigene, {'erledigtVon': adminId}, 2)])).rejected.single.code, 'invalid');
+  final vonKind = (await alleSeiten(kind)).firstWhere((c) => c.id == eigene);
+  expect(vonKind.fields['erledigtVon'], kindId);
   expect((await syncen(kind, [aender('aufgabe', eltern, {'titel': 'Hack'}, 1)])).rejected.single.code, 'forbidden');
   expect((await syncen(kind, [aender('aufgabe', privat, {'titel': 'Hack'}, 1)])).rejected.single.code, 'not_found');
   expect((await syncen(kind, [neu('aufgabe', neueUuid(), {'titel': 'Geheim', 'audience': 'parents'})])).rejected.single.code, 'forbidden');
@@ -673,6 +677,22 @@ Future<void> aufgabenVertrag({
   final kindSicht = (await alleSeiten(kind)).where((c) => c.entity == 'aufgabe').map((c) => c.id);
   expect(kindSicht, isNot(contains(privat)));
   expect(kindSicht, containsAll([eltern, eigene]));
+
+  schritt('Aufgaben: zugewiesenes Kind setzt nur Status und Häkchen; alles andere, Anlegen/Löschen von Unteraufgaben und Löschen verboten');
+  final zugew = neueUuid(), zugewPunkt = neueUuid();
+  expect((await syncen(a, [neu('aufgabe', zugew, {'titel': 'Zugewiesen', 'assigneeId': kindId}), neu('aufgabe_punkt', zugewPunkt, {'aufgabeId': zugew, 'text': 'Schritt'})])).rejected, isEmpty);
+  final jetzt = DateTime.now().toUtc().toIso8601String();
+  final okOp = aender('aufgabe', zugew, {'erledigtAt': jetzt}, 900000000);
+  expect((await syncen(kind, [okOp])).acked, [okOp.opId]);
+  expect((await syncen(kind, [aender('aufgabe_punkt', zugewPunkt, {'doneAt': jetzt}, 900000000)])).rejected, isEmpty);
+  expect((await alleSeiten(kind)).firstWhere((c) => c.id == zugew).fields['erledigtVon'], kindId);
+  for (final f in <Map<String, dynamic>>[{'titel': 'x'}, {'assigneeId': kindId}, {'audience': 'parents'}]) {
+    expect((await syncen(kind, [aender('aufgabe', zugew, f, 2)])).rejected.single.code, 'forbidden', reason: '$f');
+  }
+  expect((await syncen(kind, [weg('aufgabe', zugew, 2)])).rejected.single.code, 'forbidden');
+  expect((await syncen(kind, [aender('aufgabe_punkt', zugewPunkt, {'text': 'neu'}, 2)])).rejected.single.code, 'forbidden');
+  expect((await syncen(kind, [neu('aufgabe_punkt', neueUuid(), {'aufgabeId': zugew, 'text': 'mehr'})])).rejected.single.code, 'forbidden');
+  await syncen(a, [weg('aufgabe', zugew, 1)]);
 
   schritt('Aufgaben: Löschen räumt die Unteraufgaben auf beiden Geräten ab');
   await syncen(a, [weg('aufgabe', privat, 1), weg('aufgabe', eltern, 1), weg('aufgabe', eigene, 1)]);

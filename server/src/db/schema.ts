@@ -606,6 +606,10 @@ export const aufgaben = pgTable(
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
     erledigtAt: timestamp('erledigt_at', { withTimezone: true }),
     erledigtVon: uuid('erledigt_von').references(() => users.id, { onDelete: 'set null' }),
+    /** ID der Folgeaufgabe, die beim Erledigen entstand (der Client wählt sie: abgeleitet oder, bei belegter ID, zufällig). */
+    folgeId: uuid('folge_id'),
+    /** Wunschtag des Monats (1 bis 31) bei monatlicher Wiederholung: bleibt in der Kette erhalten (der 31. wird im Februar der 28., im März wieder der 31.). */
+    wiederholungTag: integer('wiederholung_tag'),
     /** daily, weekly, monthly oder leer. */
     wiederholung: text('wiederholung'),
     /** Erinnerung in Minuten vor der Fälligkeit (null: keine). */
@@ -631,6 +635,7 @@ export const aufgaben = pgTable(
     check('aufgaben_beschreibung_len_ck', sql`char_length(${t.beschreibung}) <= 4000`),
     check('aufgaben_prioritaet_ck', sql`${t.prioritaet} between 0 and 3`),
     check('aufgaben_wiederholung_ck', sql`${t.wiederholung} is null or ${t.wiederholung} in ('daily', 'weekly', 'monthly')`),
+    check('aufgaben_wdh_tag_ck', sql`${t.wiederholungTag} is null or ${t.wiederholungTag} between 1 and 31`),
     check('aufgaben_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
     check(
       'aufgaben_faellig_ck',

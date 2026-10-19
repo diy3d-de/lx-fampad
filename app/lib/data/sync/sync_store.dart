@@ -302,6 +302,14 @@ class SyncStore {
     if (def == null) return;
     final name = await def.anzeigename(db, z.entityId) ?? 'Ein Eintrag';
     final neu = z.baseRev == 0 && z.op == 'upsert';
+    if (neu && {'not_found', 'deleted', 'forbidden', 'parent_deleted'}.contains(code)) {
+      final eigener = await def.ablehnungsHinweis(db, z.entityId, code);
+      if (eigener != null) {
+        await _entferneBaum(z.entity, z.entityId);
+        if (eigener.isNotEmpty) bericht.hinweise.add(SyncHinweis(eigener));
+        return;
+      }
+    }
     switch (code) {
       case 'not_found' when neu && def.eindeutigBeiAnlage:
         // gibt es für dieses Ziel schon (z. B. dieselbe Person oder dasselbe Vorkommen von einem anderen Gerät): die lokale Kopie weicht der des Servers

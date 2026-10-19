@@ -3,10 +3,12 @@
 // Fälligkeit wie bei Terminen: ein Kalendertag (`faelligDate`, ganztägig) ODER ein Zeitpunkt in UTC (`faelligUtc`) mit IANA-Zeitzone (`tzid`).
 // Wiederholung einfach (`daily`/`weekly`/`monthly`): Beim Erledigen legt der Client die nächste Aufgabe an; der Server prüft nur die Form.
 //
-// Rechte (siehe sync/permissions.ts), wie bei Terminen:
+// Rechte (siehe sync/permissions.ts), wie bei Terminen, dazu die zuständige Person:
 //  - Admin/Eltern: alles.
 //  - Kind: sieht Aufgaben der Stufe `family`; darf Aufgaben anlegen (nur Stufe `family`) und eigene ändern oder löschen (Freigabe nicht änderbar).
-//    Unteraufgaben erben Freigabe und Besitzer der Aufgabe.
+//    Unteraufgaben erben Freigabe, Besitzer und Zuständige der Aufgabe.
+//  - Zuständige Person (auch Kind): darf NUR den Erledigt-Status (`erledigtAt`) der ihr zugewiesenen Aufgabe und das Häkchen (`doneAt`) ihrer
+//    Unteraufgaben setzen; Titel, Fälligkeit, Zuständige, Freigabe und Löschen bleiben dem Besitzer bzw. den Eltern. `erledigtVon` setzt der Server.
 import { z } from 'zod';
 import { aufgabePunkte, aufgaben } from '../../db/schema.js';
 import type { Actor, Facts, Rules } from '../permissions.js';
@@ -35,18 +37,21 @@ const aufgabeRules: Rules = {
       'prioritaet',
       'assigneeId',
       'erledigtAt',
-      'erledigtVon',
+      'folgeId',
       'wiederholung',
+      'wiederholungTag',
       'erinnerungMin',
     ],
     limits: { audience: ['family'] },
+    // zuständige Kinder dürfen nur den Erledigt-Status setzen (erledigtVon setzt der Server)
+    assignedFields: ['erledigtAt', 'folgeId'],
   },
 };
 
 const punktRules: Rules = {
   admin: fullAccess,
   parent: fullAccess,
-  child: { read: 'shared', create: 'own', update: 'own', delete: 'own' },
+  child: { read: 'shared', create: 'own', update: 'own', delete: 'own', assignedFields: ['doneAt'] },
 };
 
 /** Stimmigkeit der Fälligkeit (entspricht `aufgaben_faellig_ck`): Tag oder Zeitpunkt, nie beides; ein Zeitpunkt braucht eine Zeitzone. */
@@ -70,7 +75,11 @@ export const aufgabeEntity: EntityDef = {
     prioritaet: { access: 'rw', schema: z.number().int().min(0).max(3), defaultValue: 0, blank: 0 },
     assigneeId: { access: 'rw', schema: uuid.nullable(), defaultValue: null, blank: null, memberRef: true },
     erledigtAt: { access: 'rw', schema: timestamp.nullable(), defaultValue: null, blank: null, toWire: iso },
-    erledigtVon: { access: 'rw', schema: uuid.nullable(), defaultValue: null, blank: null, memberRef: true },
+    // setzt der Server (Akteur beim Erledigen, sonst leer): der Client sendet es nie (sonst invalid)
+    erledigtVon: { access: 'server', schema: uuid.nullable(), blank: null },
+    // ID der beim Erledigen angelegten Folgeaufgabe (der Client setzt sie mit dem Erledigen; verhindert doppelte Folgeaufgaben)
+    folgeId: { access: 'rw', schema: uuid.nullable(), defaultValue: null, blank: null },
+    wiederholungTag: { access: 'rw', schema: z.number().int().min(1).max(31).nullable(), defaultValue: null, blank: null },
     wiederholung: { access: 'rw', schema: z.enum(AUFGABE_WIEDERHOLUNGEN).nullable(), defaultValue: null, blank: null },
     erinnerungMin: { access: 'rw', schema: z.number().int().min(0).max(40320).nullable(), defaultValue: null },
     audience: { access: 'rw', schema: AUDIENCE_INPUT, defaultValue: 'family' },
@@ -80,13 +89,20 @@ export const aufgabeEntity: EntityDef = {
   rules: aufgabeRules,
   visibilityFields: ['audience'],
   userRefs: ['ownerId', 'assigneeId', 'erledigtVon'],
-  facts: (row: Row): Facts => ({ audience: row.audience as Facts['audience'], ownerId: (row.ownerId as string | null) ?? null }),
-  factsForCreate: (actor: Actor, values: Row): Facts => ({ audience: (values.audience as Facts['audience'] | undefined) ?? 'family', ownerId: actor.userId }),
+  facts: (row: Row): Facts => ({ audience: row.audience as Facts['audience'], ownerId: (row.ownerId as string | null) ?? null, assigneeId: (row.assigneeId as string | null) ?? null }),
+  factsForCreate: (actor: Actor, values: Row): Facts => ({
+    audience: (values.audience as Facts['audience'] | undefined) ?? 'family',
+    ownerId: actor.userId,
+    assigneeId: (values.assigneeId as string | null | undefined) ?? null,
+  }),
   onCreate: (actor: Actor): Row => ({ ownerId: actor.userId }),
+  derive: (actor: Actor, changed: Row): Row => (changed.erledigtAt === undefined ? {} : { erledigtVon: changed.erledigtAt === null ? null : actor.userId }),
   check: aufgabeFaelligValid,
-  maxLive: { per: 'family', max: 5000 },
-  // ein Kinderkonto kann die Familienobergrenze nicht allein füllen
-  ownerLimit: { field: 'ownerId', roles: ['child'], max: 500 },
+  // Obergrenze für OFFENE Aufgaben (Erledigte füllen sie nicht); alle lebenden zusammen höchstens 20000
+  maxLive: { per: 'family', max: 5000, openColumn: 'erledigtAt' },
+  maxFamily: 20000,
+  // ein Kinderkonto kann die Familienobergrenze nicht allein füllen (zählt nur offene)
+  ownerLimit: { field: 'ownerId', roles: ['child'], max: 500, openColumn: 'erledigtAt' },
 };
 
 export const aufgabePunktEntity: EntityDef = {
@@ -104,4 +120,5 @@ export const aufgabePunktEntity: EntityDef = {
   facts: (_row: Row, parent: Facts | null): Facts => parent ?? { audience: 'parents', ownerId: null },
   factsForCreate: (_actor: Actor, _values: Row, parent: Facts | null): Facts => parent ?? { audience: 'parents', ownerId: null },
   maxLive: { per: 'parent', max: 100 },
+  maxFamily: 50000,
 };

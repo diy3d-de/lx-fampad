@@ -220,23 +220,28 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     const c = syncColumns(def);
     const where = [eq(c.familyId, env.familyId), isNull(c.deletedAt)];
     if (def.maxLive.per === 'parent' && def.parent && parentId) where.push(eq(columnOf(def, def.parent.field), parentId));
+    if (def.maxLive.openColumn) where.push(isNull(columnOf(def, def.maxLive.openColumn)));
     const [n] = await env.tx.select({ n: count() }).from(def.table).where(and(...where));
     if ((n?.n ?? 0) >= def.maxLive.max) return rejected('limit_reached');
+  }
+  if (def.maxFamily !== undefined) {
+    const c = syncColumns(def);
+    const [n] = await env.tx.select({ n: count() }).from(def.table).where(and(eq(c.familyId, env.familyId), isNull(c.deletedAt)));
+    if ((n?.n ?? 0) >= def.maxFamily) return rejected('limit_reached');
   }
 
   if (def.ownerLimit && def.ownerLimit.roles.includes(env.actor.role)) {
     const c = syncColumns(def);
-    const [n] = await env.tx
-      .select({ n: count() })
-      .from(def.table)
-      .where(and(eq(c.familyId, env.familyId), isNull(c.deletedAt), eq(columnOf(def, def.ownerLimit.field), env.actor.userId)));
+    const ownerWhere = [eq(c.familyId, env.familyId), isNull(c.deletedAt), eq(columnOf(def, def.ownerLimit.field), env.actor.userId)];
+    if (def.ownerLimit.openColumn) ownerWhere.push(isNull(columnOf(def, def.ownerLimit.openColumn)));
+    const [n] = await env.tx.select({ n: count() }).from(def.table).where(and(...ownerWhere));
     if ((n?.n ?? 0) >= def.ownerLimit.max) return rejected('limit_reached');
   }
 
   const rev = env.revs.rev + 1; // erst nach erfolgreichem Einfügen vergeben (sonst entstünde eine Lücke)
   const fieldRevs: Record<string, number> = {};
   for (const [name, f] of Object.entries(def.fields)) if (f.access !== 'server') fieldRevs[name] = rev;
-  const row: Row = { ...values, ...(def.onCreate?.(env.actor) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
+  const row: Row = { ...values, ...(def.onCreate?.(env.actor) ?? {}), ...(def.derive?.(env.actor, values) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
   const c = syncColumns(def);
   const inserted = await env.tx
     .insert(def.table)
@@ -294,6 +299,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
   const conflicts = Object.keys(lost).length > 0 ? [{ fields: lost, serverRev: Number(row.rev) }] : [];
   if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
 
+  Object.assign(changed, def.derive?.(env.actor, changed) ?? {});
   if (def.check && !def.check({ ...row, ...changed })) return rejected('invalid');
   for (const [name, value] of Object.entries(changed)) {
     if (def.fields[name]?.memberRef && typeof value === 'string' && !(await isActiveMember(env.tx, env.familyId, value))) {

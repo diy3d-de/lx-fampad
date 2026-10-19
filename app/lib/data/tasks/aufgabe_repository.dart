@@ -3,7 +3,8 @@
 //
 // Wiederholung: Wird eine wiederkehrende Aufgabe erledigt, legt der Client die nächste an (Fälligkeit siehe naechsteFaelligkeit). Die ID der
 // Folgeaufgabe ist fest aus der erledigten Aufgabe abgeleitet: erledigen zwei Geräte dieselbe Aufgabe, schreiben beide dieselbe Zeile, es
-// entsteht nie eine doppelte Folgeaufgabe. Die Unteraufgaben der Folgeaufgabe bekommen feste IDs aus ihrer ID und der des Originals.
+// entsteht nie eine doppelte Folgeaufgabe. Ist die abgeleitete ID schon belegt (berechenbar: jemand könnte sie vorab anlegen), nimmt die App
+// eine zufällige und merkt sie sich in `folgeId` der erledigten Aufgabe. Die Unteraufgaben der Folgeaufgabe bekommen feste IDs aus ihrer ID und der des Originals.
 import 'dart:async';
 import 'dart:convert';
 
@@ -134,6 +135,7 @@ class AufgabeRepository {
       'assigneeId': e.zustaendig,
       // Wiederholung braucht eine Fälligkeit (sonst gäbe es keine nächste)
       'wiederholung': f == null ? null : e.wiederholung.wire,
+      'wiederholungTag': f != null && e.wiederholung == AufgabeWdh.monatlich ? f.day : null,
       'audience': e.sicht.wire,
     };
   }
@@ -206,58 +208,123 @@ class AufgabeRepository {
     'prioritaet' => wert == a.prioritaet,
     'assigneeId' => wert == a.assigneeId,
     'wiederholung' => wert == a.wiederholung,
+    'wiederholungTag' => wert == a.wiederholungTag,
     'audience' => wert == a.audience,
     _ => false,
   };
 
-  /// Haken setzen oder entfernen. Beim Erledigen einer wiederkehrenden Aufgabe entsteht die nächste (einmalig, feste ID).
+  final _laufend = <String>{};
+
+  /// Haken setzen oder entfernen. Beim Erledigen einer wiederkehrenden Aufgabe entsteht die nächste (einmalig, siehe [folgeAufgabeId]); beim
+  /// Zurücknehmen verschwindet die noch offene, unveränderte Folgeaufgabe wieder. Ein zweiter Tipp, während der erste noch läuft, tut nichts
+  /// (und liest vor dem Schreiben den aktuellen Stand: ist die Aufgabe schon so, wie gewünscht, passiert nichts).
   Future<void> erledigt(Aufgabe a, bool erledigt) async {
-    final jetzt = _jetzt();
-    final aenderungen = <SyncAenderung>[
-      SyncAenderung('aufgabe', a.id, {'erledigtAt': erledigt ? zeitFuerServer(jetzt) : null, 'erledigtVon': erledigt ? ich() : null}),
-    ];
-    if (erledigt) aenderungen.addAll(await _folgeaufgabe(a, jetzt));
-    await store.aendernMehrere(aenderungen);
-    beiAenderung();
+    if (!_laufend.add(a.id)) return;
+    try {
+      final frisch = await (db.select(db.aufgaben)..where((t) => t.id.equals(a.id))).getSingleOrNull();
+      if (frisch == null || istErledigt(frisch) == erledigt) return;
+      final jetzt = _jetzt();
+      final folge = erledigt ? await _folgeaufgabe(frisch, jetzt) : (aenderungen: const <SyncAenderung>[], id: null as String?);
+      await store.aendernMehrere([
+        SyncAenderung(
+          'aufgabe',
+          frisch.id,
+          {'erledigtAt': erledigt ? zeitFuerServer(jetzt) : null, 'folgeId': ?folge.id},
+          // erledigtVon setzt der Server (Akteur); lokal sofort nachgeführt
+          nurLokal: {'erledigtVon': erledigt ? ich() : null},
+        ),
+        ...folge.aenderungen,
+      ]);
+      if (!erledigt) await _folgeZuruecknehmen(frisch);
+      beiAenderung();
+    } finally {
+      _laufend.remove(a.id);
+    }
   }
 
-  Future<List<SyncAenderung>> _folgeaufgabe(Aufgabe a, DateTime jetzt) async {
+  Future<bool> _gibt(String id) async => await (db.select(db.aufgaben)..where((t) => t.id.equals(id))).getSingleOrNull() != null;
+
+  /// Die Folgeaufgabe einer Aufgabe, die gerade erledigt wird (Änderungen + ID für `folgeId` der Vorlage); ohne Änderungen, wenn keine entsteht.
+  /// ID: abgeleitet aus der Vorlage (zwei Geräte schreiben dieselbe Zeile). Ist sie schon belegt (jemand hat die berechenbare ID vorab angelegt,
+  /// oder die Folgeaufgabe wurde gelöscht), nimmt die App eine zufällige: die Wiederholung lässt sich so nicht blockieren.
+  Future<({List<SyncAenderung> aenderungen, String? id})> _folgeaufgabe(Aufgabe a, DateTime jetzt) async {
+    const keine = (aenderungen: <SyncAenderung>[], id: null as String?);
     final wdh = AufgabeWdh.von(a.wiederholung);
     final basis = faelligWand(a);
-    if (wdh == AufgabeWdh.keine || basis == null) return const [];
-    if (a.faelligUtc != null && !zeitzonenBereit()) return const []; // ohne Zeitzonen-Daten keine falsche Uhrzeit
-    final id = folgeAufgabeId(a.id);
-    if (await (db.select(db.aufgaben)..where((t) => t.id.equals(id))).getSingleOrNull() != null) return const []; // gibt es schon
-    final naechste = naechsteFaelligkeit(basisWand: basis, wdh: wdh, mitUhrzeit: a.faelligUtc != null, jetzt: jetzt);
-    if (naechste == null) return const []; // Deckel erreicht
+    if (wdh == AufgabeWdh.keine || basis == null) return keine;
+    if (a.faelligUtc != null && !zeitzonenBereit()) return keine; // ohne Zeitzonen-Daten keine falsche Uhrzeit
+    final String id;
+    if (a.folgeId != null) {
+      if (await _gibt(a.folgeId!)) return keine; // gibt es schon (z. B. von einem anderen Gerät)
+      id = _neueId(); // die frühere ID ist verbraucht (Folgeaufgabe gelöscht oder abgelehnt)
+    } else {
+      final abgeleitet = folgeAufgabeId(a.id);
+      id = await _gibt(abgeleitet) ? _neueId() : abgeleitet;
+    }
     final mitUhr = a.faelligUtc != null;
+    final wunschTag = wdh == AufgabeWdh.monatlich ? (a.wiederholungTag ?? basis.day) : null;
+    final naechste = naechsteFaelligkeit(basisWand: basis, wdh: wdh, mitUhrzeit: mitUhr, jetzt: jetzt, wunschTag: wunschTag);
+    if (naechste == null) return keine;
     final punkte = sortierePunkte(await (db.select(db.aufgabePunkte)..where((t) => t.aufgabeId.equals(a.id))).get());
-    return [
-      SyncAenderung(
-        'aufgabe',
-        id,
-        {
-          'titel': a.titel,
-          'beschreibung': a.beschreibung,
-          'faelligDate': mitUhr ? null : tagText(naechste),
-          'faelligUtc': mitUhr ? zeitFuerServer(instantAusWand(naechste, ortFuer(a.tzid))) : null,
-          'tzid': mitUhr ? (a.tzid ?? kFamilienZone) : null,
-          'prioritaet': a.prioritaet,
-          'assigneeId': a.assigneeId,
-          'wiederholung': a.wiederholung,
-          'erinnerungMin': a.erinnerungMin,
-          'audience': a.audience,
-        },
-        nurLokal: {'createdAt': zeitFuerServer(jetzt), 'ownerId': ich()},
-      ),
-      for (var i = 0; i < punkte.length; i++)
+    return (
+      aenderungen: [
         SyncAenderung(
-          'aufgabe_punkt',
-          folgePunktId(id, punkte[i].id),
-          {'aufgabeId': id, 'text': punkte[i].inhalt, 'position': i.toDouble()},
-          nurLokal: {'createdAt': zeitFuerServer(jetzt)},
+          'aufgabe',
+          id,
+          {
+            'titel': a.titel,
+            'beschreibung': a.beschreibung,
+            'faelligDate': mitUhr ? null : tagText(naechste),
+            'faelligUtc': mitUhr ? zeitFuerServer(instantAusWand(naechste, ortFuer(a.tzid))) : null,
+            'tzid': mitUhr ? (a.tzid ?? kFamilienZone) : null,
+            'prioritaet': a.prioritaet,
+            'assigneeId': a.assigneeId,
+            'wiederholung': a.wiederholung,
+            'wiederholungTag': wunschTag,
+            'erinnerungMin': a.erinnerungMin,
+            'audience': a.audience,
+          },
+          nurLokal: {'createdAt': zeitFuerServer(jetzt), 'ownerId': ich()},
         ),
-    ];
+        for (var i = 0; i < punkte.length; i++)
+          SyncAenderung(
+            'aufgabe_punkt',
+            folgePunktId(id, punkte[i].id),
+            {'aufgabeId': id, 'text': punkte[i].inhalt, 'position': i.toDouble()},
+            nurLokal: {'createdAt': zeitFuerServer(jetzt)},
+          ),
+      ],
+      id: id,
+    );
+  }
+
+  /// Aufgabe wieder geöffnet: die Folgeaufgabe, die beim Erledigen entstand, wird gelöscht, solange sie offen und unverändert ist
+  /// (gleiche Angaben und Unteraufgaben ohne Haken). Hat jemand sie schon bearbeitet oder erledigt, bleibt sie. Die `folgeId` der Vorlage
+  /// bleibt stehen (die ID ist verbraucht: beim nächsten Erledigen wird eine neue Folgeaufgabe mit anderer ID angelegt).
+  Future<void> _folgeZuruecknehmen(Aufgabe a) async {
+    final id = a.folgeId;
+    if (id == null) return;
+    final f = await (db.select(db.aufgaben)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (f == null || istErledigt(f)) return;
+    final vorlage = (await (db.select(db.aufgabePunkte)..where((t) => t.aufgabeId.equals(a.id))).get()).map((p) => p.inhalt).toList()..sort();
+    final folge = await (db.select(db.aufgabePunkte)..where((t) => t.aufgabeId.equals(f.id))).get();
+    final unveraendert = f.titel == a.titel &&
+        f.beschreibung == a.beschreibung &&
+        f.prioritaet == a.prioritaet &&
+        f.assigneeId == a.assigneeId &&
+        f.audience == a.audience &&
+        f.wiederholung == a.wiederholung &&
+        folge.every((p) => p.doneAt == null) &&
+        (folge.map((p) => p.inhalt).toList()..sort()).join('\u0000') == vorlage.join('\u0000');
+    if (unveraendert) await store.loeschen('aufgabe', f.id);
+  }
+
+  /// Löscht alle übergebenen (erledigten) Aufgaben mit ihren Unteraufgaben; die Oberfläche übergibt nur, was die Person löschen darf.
+  Future<void> erledigteLoeschen(List<Aufgabe> aufgaben) async {
+    for (final a in aufgaben) {
+      if (istErledigt(a)) await store.loeschen('aufgabe', a.id);
+    }
+    beiAenderung();
   }
 
   Future<void> punktErledigt(String id, bool erledigt) async {
@@ -307,6 +374,9 @@ class AufgabeRechte {
 
   /// Eltern alle, Kinder nur ihre eigenen (Abhaken, Bearbeiten, Löschen, Unteraufgaben).
   bool darfAendern(Aufgabe a) => _erwachsen || (rolle == Role.child && userId != null && a.ownerId == userId);
+
+  /// Abhaken (und Haken der Unteraufgaben): wer ändern darf, und die zuständige Person (auch ein Kind) bei der ihr zugewiesenen Aufgabe.
+  bool darfStatus(Aufgabe a) => darfAendern(a) || (userId != null && a.assigneeId == userId);
 
   bool get darfFreigabeAendern => _erwachsen;
 

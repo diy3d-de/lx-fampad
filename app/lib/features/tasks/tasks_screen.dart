@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +34,7 @@ class TasksScreen extends ConsumerStatefulWidget {
 class _TasksScreenState extends ConsumerState<TasksScreen> {
   final _neu = TextEditingController();
   final _fokus = FocusNode();
+  final _weg = <String>{}; // weggewischte Aufgaben: sofort ausgeblendet
 
   @override
   void dispose() {
@@ -50,6 +53,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final ich = ref.read(authProvider).user?.id;
     // in der Ansicht "Meine" bzw. einer Person: gleich dieser Person zuweisen, sonst wäre die neue Aufgabe sofort weggefiltert
     final zu = ansicht.person ?? (ansicht.filter == AufgabeFilter.meine ? ich : null);
+    // in der Ansicht "Erledigt" wäre die neue (offene) Aufgabe unsichtbar: zurück zu "Offen"
+    if (ansicht.filter == AufgabeFilter.erledigt) ref.read(aufgabenAnsichtProvider.notifier).filter(AufgabeFilter.offen);
     await _repo.schnellAnlegen(text, zustaendig: zu);
     if (mounted) _fokus.requestFocus();
   }
@@ -100,6 +105,16 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     ref.read(aufgabenAnsichtProvider.notifier).person(wahl.isEmpty ? null : wahl);
   }
 
+  Future<void> _erledigteLoeschen(List<Aufgabe> erledigte) async {
+    final ja = await bestaetigen(
+      context,
+      titel: erledigte.length == 1 ? 'Erledigte Aufgabe löschen?' : '${erledigte.length} erledigte Aufgaben löschen?',
+      text: 'Sie werden für alle gelöscht.',
+      knopf: 'Löschen',
+    );
+    if (ja) await _repo.erledigteLoeschen(erledigte);
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider.select((a) => a.user));
@@ -107,106 +122,135 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final aufgabenWert = ref.watch(aufgabenProvider);
     final daten = ref.watch(aufgabenDatenProvider);
     final ansicht = ref.watch(aufgabenAnsichtProvider);
-    final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+    // der Minutentakt baut die Liste nur neu, wenn sich etwas ändert: der Tag wechselt oder eine Aufgabe wird überfällig
+    ref.watch(
+      minutenTaktProvider.select((v) {
+        final t = v.value ?? DateTime.now();
+        return '${tagVon(t).toIso8601String()}|${[for (final a in daten.aufgaben) if (istUeberfaellig(a, t)) a.id].join(',')}';
+      }),
+    );
+    final jetzt = DateTime.now();
     final mitgliederListe = daten.aufgaben.isEmpty ? const <UserDto>[] : (ref.watch(mitgliederProvider).value ?? const <UserDto>[]);
     final mitglieder = Mitglieder(mitgliederListe);
 
-    final sichtbar = sortiereAufgaben(filtereAufgaben(daten.aufgaben, filter: ansicht.filter, person: ansicht.person, ich: user?.id), ansicht.sortierung);
+    final sichtbar = [
+      for (final a in sortiereAufgaben(filtereAufgaben(daten.aufgaben, filter: ansicht.filter, person: ansicht.person, ich: user?.id), ansicht.sortierung))
+        if (!_weg.contains(a.id)) a, // gerade weggewischt: sofort weg, auch wenn die Datenbank noch nachzieht
+    ];
     final offen = daten.aufgaben.where((a) => !istErledigt(a)).length;
     final erledigt = daten.aufgaben.length - offen;
     final lesefehler = aufgabenWert.hasError && !aufgabenWert.hasValue;
     final ladend = !aufgabenWert.hasValue && !aufgabenWert.hasError;
+    final loeschbar = ansicht.filter == AufgabeFilter.erledigt ? [for (final a in sichtbar) if (rechte.darfAendern(a)) a] : const <Aufgabe>[];
+
+    final kopf = <Widget>[
+      const TabKopfzeile(title: 'Aufgaben'),
+      const SizedBox(height: 12),
+      const SyncHinweise(),
+      if (rechte.darfAnlegen) ...[
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _neu,
+                focusNode: _fokus,
+                maxLength: 200,
+                textInputAction: TextInputAction.done,
+                textCapitalization: TextCapitalization.sentences,
+                onSubmitted: (_) => _hinzufuegen(),
+                decoration: const InputDecoration(hintText: 'Neue Aufgabe', counterText: ''),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton.filled(tooltip: 'Aufgabe hinzufügen', onPressed: _hinzufuegen, icon: const Icon(Icons.add)),
+            IconButton(tooltip: 'Aufgabe mit Details anlegen', onPressed: () => aufgabeEditorOeffnen(context), icon: const Icon(Icons.tune, color: kAccent)),
+          ],
+        ),
+        const SizedBox(height: 12),
+      ],
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final f in AufgabeFilter.values) AuswahlKnopf(text: f.label, gewaehlt: ansicht.filter == f, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).filter(f)),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          if (mitgliederListe.length > 1)
+            _PersonFilter(person: mitglieder[ansicht.person], aktiv: ansicht.person != null, onTap: () => _personWaehlen(mitgliederListe, ansicht.person)),
+          for (final s in AufgabeSortierung.values)
+            AuswahlKnopf(text: 'Nach ${s.label}', gewaehlt: ansicht.sortierung == s, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).sortierung(s)),
+        ],
+      ),
+      const SizedBox(height: 8),
+      if (daten.aufgaben.isNotEmpty) Text('$offen offen · $erledigt erledigt', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+      if (loeschbar.isNotEmpty)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            style: TextButton.styleFrom(foregroundColor: kDanger, minimumSize: const Size(44, 44)),
+            onPressed: () => _erledigteLoeschen(loeschbar),
+            icon: const Icon(Icons.delete_sweep_outlined),
+            label: Text(loeschbar.length == 1 ? 'Erledigte löschen' : 'Erledigte löschen (${loeschbar.length})'),
+          ),
+        ),
+      const SizedBox(height: 8),
+      if (lesefehler)
+        const EmptyState(icon: Icons.error_outline, title: 'Aufgaben nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
+      else if (ladend)
+        const Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))
+      else if (daten.aufgaben.isEmpty)
+        const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
+      else if (sichtbar.isEmpty)
+        EmptyState(
+          icon: Icons.filter_alt_off_outlined,
+          title: ansicht.filter == AufgabeFilter.erledigt ? 'Noch nichts erledigt' : 'Nichts gefunden',
+          hint: switch (ansicht.filter) {
+            AufgabeFilter.meine => 'Dir ist gerade nichts zugewiesen.',
+            AufgabeFilter.offen => 'Es ist nichts mehr offen.',
+            AufgabeFilter.erledigt => 'Erledigte Aufgaben erscheinen hier.',
+            AufgabeFilter.alle => 'Für diese Person gibt es keine Aufgaben.',
+          },
+        ),
+    ];
 
     return RefreshIndicator(
       color: kAccent,
       backgroundColor: kSurface,
       onRefresh: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
-      child: ListView(
+      // Kopf und Zeilen in einer lazy gebauten Liste: bei vielen Aufgaben werden nur die sichtbaren Zeilen gebaut
+      child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        children: [
-          const TabKopfzeile(title: 'Aufgaben'),
-          const SizedBox(height: 12),
-          const SyncHinweise(),
-          if (rechte.darfAnlegen) ...[
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _neu,
-                    focusNode: _fokus,
-                    maxLength: 200,
-                    textInputAction: TextInputAction.done,
-                    textCapitalization: TextCapitalization.sentences,
-                    onSubmitted: (_) => _hinzufuegen(),
-                    decoration: const InputDecoration(hintText: 'Neue Aufgabe', counterText: ''),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                IconButton.filled(tooltip: 'Aufgabe hinzufügen', onPressed: _hinzufuegen, icon: const Icon(Icons.add)),
-                IconButton(tooltip: 'Aufgabe mit Details anlegen', onPressed: () => aufgabeEditorOeffnen(context), icon: const Icon(Icons.tune, color: kAccent)),
-              ],
-            ),
-            const SizedBox(height: 12),
-          ],
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final f in AufgabeFilter.values) AuswahlKnopf(text: f.label, gewaehlt: ansicht.filter == f, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).filter(f)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              if (mitgliederListe.length > 1)
-                _PersonFilter(person: mitglieder[ansicht.person], aktiv: ansicht.person != null, onTap: () => _personWaehlen(mitgliederListe, ansicht.person)),
-              for (final s in AufgabeSortierung.values)
-                AuswahlKnopf(text: 'Nach ${s.label}', gewaehlt: ansicht.sortierung == s, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).sortierung(s)),
-            ],
-          ),
-          const SizedBox(height: 8),
-          if (daten.aufgaben.isNotEmpty)
-            Text('$offen offen · $erledigt erledigt', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-          const SizedBox(height: 8),
-          if (lesefehler)
-            const EmptyState(icon: Icons.error_outline, title: 'Aufgaben nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
-          else if (ladend)
-            const Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))
-          else if (daten.aufgaben.isEmpty)
-            const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
-          else if (sichtbar.isEmpty)
-            EmptyState(
-              icon: Icons.filter_alt_off_outlined,
-              title: ansicht.filter == AufgabeFilter.erledigt ? 'Noch nichts erledigt' : 'Nichts gefunden',
-              hint: switch (ansicht.filter) {
-                AufgabeFilter.meine => 'Dir ist gerade nichts zugewiesen.',
-                AufgabeFilter.offen => 'Es ist nichts mehr offen.',
-                AufgabeFilter.erledigt => 'Erledigte Aufgaben erscheinen hier.',
-                AufgabeFilter.alle => 'Für diese Person gibt es keine Aufgaben.',
+        itemCount: kopf.length + (lesefehler || ladend ? 0 : sichtbar.length),
+        itemBuilder: (context, i) {
+          if (i < kopf.length) return kopf[i];
+          final a = sichtbar[i - kopf.length];
+          return Padding(
+            key: ValueKey('aufgabe-${a.id}'),
+            padding: const EdgeInsets.only(bottom: 6),
+            child: _Zeile(
+              aufgabe: a,
+              punkte: daten.punkteVon(a.id),
+              darf: rechte.darfAendern(a),
+              statusDarf: rechte.darfStatus(a),
+              person: mitglieder[a.assigneeId],
+              jetzt: jetzt,
+              onHaken: () => _repo.erledigt(a, !istErledigt(a)),
+              onOeffnen: () => aufgabeEditorOeffnen(context, aufgabe: a),
+              onLoeschenFragen: () => _loeschenFragen(a),
+              onLoeschen: () {
+                setState(() => _weg.add(a.id));
+                unawaited(_loeschen(a));
               },
-            )
-          else
-            for (final a in sichtbar)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 6),
-                child: _Zeile(
-                  key: ValueKey('aufgabe-${a.id}'),
-                  aufgabe: a,
-                  punkte: daten.punkteVon(a.id),
-                  darf: rechte.darfAendern(a),
-                  person: mitglieder[a.assigneeId],
-                  jetzt: jetzt,
-                  onHaken: () => _repo.erledigt(a, !istErledigt(a)),
-                  onOeffnen: () => aufgabeEditorOeffnen(context, aufgabe: a),
-                  onLoeschenFragen: () => _loeschenFragen(a),
-                  onLoeschen: () => _loeschen(a),
-                ),
-              ),
-        ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -259,6 +303,7 @@ class _Zeile extends StatelessWidget {
   final Aufgabe aufgabe;
   final List<AufgabePunkt> punkte;
   final bool darf;
+  final bool statusDarf;
   final UserDto? person;
   final DateTime jetzt;
   final VoidCallback onHaken;
@@ -266,10 +311,10 @@ class _Zeile extends StatelessWidget {
   final Future<bool> Function() onLoeschenFragen;
   final VoidCallback onLoeschen;
   const _Zeile({
-    super.key,
     required this.aufgabe,
     required this.punkte,
     required this.darf,
+    required this.statusDarf,
     required this.person,
     required this.jetzt,
     required this.onHaken,
@@ -321,17 +366,17 @@ class _Zeile extends StatelessWidget {
         children: [
           Semantics(
             checked: erledigt,
-            enabled: darf,
+            enabled: statusDarf,
             label: erledigt ? '${a.titel}, erledigt. Zum Zurücksetzen tippen' : '${a.titel}, offen. Zum Abhaken tippen',
             excludeSemantics: true,
-            onTap: darf ? onHaken : null,
+            onTap: statusDarf ? onHaken : null,
             child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: darf ? onHaken : null,
+              onTap: statusDarf ? onHaken : null,
               child: SizedBox(
                 width: 48,
                 height: 56,
-                child: Icon(erledigt ? Icons.check_box : Icons.check_box_outline_blank, color: erledigt ? kTerminal : (darf ? kTextMuted : kTextFaint)),
+                child: Icon(erledigt ? Icons.check_box : Icons.check_box_outline_blank, color: erledigt ? kTerminal : (statusDarf ? kTextMuted : kTextFaint)),
               ),
             ),
           ),

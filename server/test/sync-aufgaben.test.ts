@@ -53,6 +53,31 @@ describe('Rechte-Regeltabelle: Aufgaben', () => {
     expect(act(aufgabeEntity, 'delete', 'child', facts('parents', 'u-other'))).toBe('not_found');
   });
 
+  it('Zuständige Person: nur Erledigt-Status der zugewiesenen Aufgabe, nichts sonst (Feldgrenzen)', () => {
+    const zugewiesen: Facts = { audience: 'family', ownerId: 'u-eltern', assigneeId: 'u-self' };
+    const fremd: Facts = { audience: 'family', ownerId: 'u-eltern', assigneeId: 'u-other' };
+    const ohne: Facts = { audience: 'family', ownerId: 'u-eltern', assigneeId: null };
+    expect(act(aufgabeEntity, 'update', 'child', zugewiesen, ['erledigtAt'], { erledigtAt: new Date() })).toBe('ok');
+    expect(act(aufgabeEntity, 'update', 'child', zugewiesen, ['erledigtAt', 'titel'])).toBe('forbidden');
+    for (const f of ['titel', 'faelligDate', 'assigneeId', 'audience', 'prioritaet', 'wiederholung', 'beschreibung']) {
+      expect(act(aufgabeEntity, 'update', 'child', zugewiesen, [f]), f).toBe('forbidden');
+    }
+    expect(act(aufgabeEntity, 'update', 'child', zugewiesen, [])).toBe('forbidden');
+    expect(act(aufgabeEntity, 'delete', 'child', zugewiesen)).toBe('forbidden');
+    expect(act(aufgabeEntity, 'update', 'child', fremd, ['erledigtAt'])).toBe('forbidden');
+    expect(act(aufgabeEntity, 'update', 'child', ohne, ['erledigtAt'])).toBe('forbidden');
+    expect(act(aufgabeEntity, 'update', 'child', { ...zugewiesen, audience: 'parents' }, ['erledigtAt'])).toBe('not_found');
+    // Unteraufgaben: nur das Häkchen, kein Anlegen/Löschen/Umschreiben
+    expect(act(aufgabePunktEntity, 'update', 'child', zugewiesen, ['doneAt'])).toBe('ok');
+    expect(act(aufgabePunktEntity, 'update', 'child', zugewiesen, ['doneAt', 'text'])).toBe('forbidden');
+    expect(act(aufgabePunktEntity, 'update', 'child', zugewiesen, ['position'])).toBe('forbidden');
+    expect(act(aufgabePunktEntity, 'create', 'child', zugewiesen)).toBe('forbidden');
+    expect(act(aufgabePunktEntity, 'delete', 'child', zugewiesen)).toBe('forbidden');
+    expect(act(aufgabePunktEntity, 'update', 'child', fremd, ['doneAt'])).toBe('forbidden');
+    // Eltern unverändert alles
+    expect(act(aufgabeEntity, 'update', 'parent', fremd, ['titel', 'assigneeId'])).toBe('ok');
+  });
+
   it('Unteraufgaben: Kinder nur an eigenen Aufgaben (geerbt)', () => {
     expect(act(aufgabePunktEntity, 'create', 'child', facts('family', 'u-self'))).toBe('ok');
     expect(act(aufgabePunktEntity, 'create', 'child', facts('family', 'u-other'))).toBe('forbidden');
@@ -148,17 +173,19 @@ describe.each(backends)('Aufgaben-Sync ($name)', (backend) => {
     expect((await fam.admin.sync([wechsel])).json.rejected).toEqual([]);
   });
 
-  it('Zuständige und Erledigt-von müssen aktive Mitglieder der Familie sein', async () => {
+  it('Zuständige müssen aktive Mitglieder der Familie sein; erledigtVon setzt der Server (Client-Wert ist invalid)', async () => {
     const op = upsert('aufgabe', randomUUID(), aufgabe({ assigneeId: randomUUID() }));
     expect((await fam.admin.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'invalid_reference' }]);
-    const op2 = upsert('aufgabe', randomUUID(), aufgabe({ erledigtVon: randomUUID(), erledigtAt: '2026-10-20T08:00:00Z' }));
-    expect((await fam.admin.sync([op2])).json.rejected).toEqual([{ opId: op2.opId, code: 'invalid_reference' }]);
+    const op2 = upsert('aufgabe', randomUUID(), aufgabe({ erledigtVon: fam.parent.userId, erledigtAt: '2026-10-20T08:00:00Z' }));
+    expect((await fam.admin.sync([op2])).json.rejected).toEqual([{ opId: op2.opId, code: 'invalid' }]);
+    const id = await anlegen(fam.parent, aufgabe({ erledigtAt: '2026-10-20T08:00:00Z' }));
+    expect((await rows(world, sql`select erledigt_von from aufgaben where id = ${id}`))[0]?.erledigt_von).toBe(fam.parent.userId);
   });
 
   it('Abhaken und Umbenennen auf verschiedenen Geräten werden zusammengeführt, dasselbe Feld: letzte Änderung gewinnt', async () => {
     const id = await anlegen();
     const eltern2 = await fam.secondDevice('parent');
-    expect((await fam.admin.sync([upsert('aufgabe', id, { erledigtAt: '2026-10-20T08:00:00Z', erledigtVon: fam.admin.userId }, 1)])).json.conflicts).toEqual([]);
+    expect((await fam.admin.sync([upsert('aufgabe', id, { erledigtAt: '2026-10-20T08:00:00Z' }, 1)])).json.conflicts).toEqual([]);
     expect((await eltern2.sync([upsert('aufgabe', id, { titel: 'Papiermüll' }, 1)])).json.conflicts).toEqual([]);
     const r = await fam.parent.sync([upsert('aufgabe', id, { prioritaet: 2, titel: 'Altglas' }, 1)]);
     expect(r.json.conflicts).toHaveLength(1);
@@ -202,10 +229,51 @@ describe.each(backends)('Aufgaben-Sync ($name)', (backend) => {
     expect((await fam.child.sync([frei])).json.rejected).toEqual([{ opId: frei.opId, code: 'forbidden' }]);
     const eltern = await fam.child.sync([upsert('aufgabe', randomUUID(), aufgabe({ audience: 'parents' }))]);
     expect(eltern.json.rejected).toHaveLength(1);
-    expect((await fam.child.sync([upsert('aufgabe', eigen, { erledigtAt: '2026-10-20T08:00:00Z', erledigtVon: fam.child.userId }, 1)])).json.rejected).toEqual([]);
+    expect((await fam.child.sync([upsert('aufgabe', eigen, { erledigtAt: '2026-10-20T08:00:00Z' }, 1)])).json.rejected).toEqual([]);
     expect((await fam.child.pull()).map((c) => c.id).sort()).toEqual([eigen, vonEltern].sort());
     const punkt = upsert('aufgabe_punkt', randomUUID(), { aufgabeId: vonEltern, text: 'x' });
     expect((await fam.child.sync([punkt])).json.rejected).toEqual([{ opId: punkt.opId, code: 'forbidden' }]);
+  });
+
+  it('Zugewiesenes Kind: setzt Status und Häkchen, erledigtVon = Kind (Server), sonst alles verboten; nicht Zugewiesene bleiben draußen', async () => {
+    const id = await anlegen(fam.admin, aufgabe({ assigneeId: fam.child.userId }));
+    const andere = await anlegen(fam.admin, aufgabe({ assigneeId: fam.parent.userId }));
+    const p = randomUUID();
+    expect((await fam.admin.sync([upsert('aufgabe_punkt', p, { aufgabeId: id, text: 'Eins' })])).json.rejected).toEqual([]);
+    const von = async (aid: string) => (await rows(world, sql`select erledigt_von from aufgaben where id = ${aid}`))[0]?.erledigt_von;
+    const ok = await fam.child.sync([upsert('aufgabe', id, { erledigtAt: '2026-10-20T08:00:00Z' }, 1)]);
+    expect(ok.json.rejected).toEqual([]);
+    expect(await von(id)).toBe(fam.child.userId);
+    // Zurücksetzen leert erledigtVon
+    expect((await fam.child.sync([upsert('aufgabe', id, { erledigtAt: null }, 3)])).json.rejected).toEqual([]);
+    expect(await von(id)).toBeNull();
+    // Häkchen der Unteraufgabe
+    expect((await fam.child.sync([upsert('aufgabe_punkt', p, { doneAt: '2026-10-20T08:00:00Z' }, 3)])).json.rejected).toEqual([]);
+    // alles andere: verboten (Spoofing von erledigtVon: invalid)
+    const faelle: [Json, string][] = [
+      [{ titel: 'x' }, 'forbidden'],
+      [{ assigneeId: fam.child.userId }, 'forbidden'],
+      [{ audience: 'parents' }, 'forbidden'],
+      [{ erledigtAt: '2026-10-20T08:00:00Z', titel: 'x' }, 'forbidden'],
+      [{ erledigtVon: fam.parent.userId }, 'invalid'],
+    ];
+    for (const [f, code] of faelle) {
+      const op = upsert('aufgabe', id, f, 4);
+      expect((await fam.child.sync([op])).json.rejected, JSON.stringify(f)).toEqual([{ opId: op.opId, code }]);
+    }
+    const loeschen = remove('aufgabe', id, 4);
+    expect((await fam.child.sync([loeschen])).json.rejected).toEqual([{ opId: loeschen.opId, code: 'forbidden' }]);
+    const textOp = upsert('aufgabe_punkt', p, { text: 'neu' }, 4);
+    expect((await fam.child.sync([textOp])).json.rejected).toEqual([{ opId: textOp.opId, code: 'forbidden' }]);
+    const neuPunkt = upsert('aufgabe_punkt', randomUUID(), { aufgabeId: id, text: 'x' });
+    expect((await fam.child.sync([neuPunkt])).json.rejected).toEqual([{ opId: neuPunkt.opId, code: 'forbidden' }]);
+    // einer anderen Person zugewiesen: verboten
+    const fremd = upsert('aufgabe', andere, { erledigtAt: '2026-10-20T08:00:00Z' }, 2);
+    expect((await fam.child.sync([fremd])).json.rejected).toEqual([{ opId: fremd.opId, code: 'forbidden' }]);
+    // nur für Eltern sichtbar, dem Kind zugewiesen: für das Kind nicht vorhanden
+    const geheim = await anlegen(fam.admin, aufgabe({ assigneeId: fam.child.userId, audience: 'parents' }));
+    const g = upsert('aufgabe', geheim, { erledigtAt: '2026-10-20T08:00:00Z' }, 1);
+    expect((await fam.child.sync([g])).json.rejected).toEqual([{ opId: g.opId, code: 'not_found' }]);
   });
 
   it('Freigabe zurücknehmen: das Kind bekommt einen Tombstone (hidden), Unteraufgaben verschwinden mit', async () => {
@@ -218,7 +286,7 @@ describe.each(backends)('Aufgaben-Sync ($name)', (backend) => {
 
   it('Mitglied entfernt: Zuständige, Erledigt-von und Ersteller werden bereinigt (mit Änderungseintrag), die Aufgabe bleibt', async () => {
     const extra = await extraMember(world, fam.admin, 'parent', 'papa@example.org');
-    const id = await anlegen(extra, aufgabe({ assigneeId: extra.userId, erledigtAt: '2026-10-20T08:00:00Z', erledigtVon: extra.userId }));
+    const id = await anlegen(extra, aufgabe({ assigneeId: extra.userId, erledigtAt: '2026-10-20T08:00:00Z' }));
     const res = await fam.admin.client.del(`/api/v1/members/${extra.userId}`);
     expect(res.status, JSON.stringify(res.json)).toBe(200);
     const [t] = await rows(world, sql`select owner_id, assignee_id, erledigt_von from aufgaben where id = ${id}`);
@@ -234,6 +302,45 @@ describe.each(backends)('Aufgaben-Sync ($name)', (backend) => {
     expect((await fam.child.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'limit_reached' }]);
     expect((await fam.admin.sync([upsert('aufgabe', randomUUID(), aufgabe())])).json.rejected).toEqual([]);
   }, 60_000);
+
+  it('Obergrenzen zählen nur OFFENE Aufgaben (Erledigte füllen sie nicht); alle lebenden zusammen höchstens 20000; Unteraufgaben höchstens 50000 je Familie', async () => {
+    const zeilen = Array.from({ length: 500 }, (_, i) => `('${randomUUID()}', '${fam.familyId}', 'K${i}', '${fam.child.userId}', now(), ${i + 1})`);
+    await world.db.execute(sql.raw(`insert into aufgaben (id, family_id, titel, owner_id, erledigt_at, rev) values ${zeilen.join(',')}`));
+    const op = upsert('aufgabe', randomUUID(), aufgabe());
+    expect((await fam.child.sync([op])).json.rejected).toEqual([]); // 500 erledigte zählen nicht
+    // Gesamtgrenze: auf 20000 lebende auffüllen
+    await world.db.execute(
+      sql.raw(`insert into aufgaben (id, family_id, titel, erledigt_at, rev) select gen_random_uuid(), '${fam.familyId}', 'x', now(), 1000 + g from generate_series(1, 19499) g`),
+    );
+    const voll = upsert('aufgabe', randomUUID(), aufgabe());
+    expect((await fam.admin.sync([voll])).json.rejected).toEqual([{ opId: voll.opId, code: 'limit_reached' }]);
+  }, 120_000);
+
+  it('Unteraufgaben: höchstens 50000 je Familie', async () => {
+    const id = await anlegen();
+    await world.db.execute(
+      sql.raw(`insert into aufgabe_punkte (id, family_id, aufgabe_id, text, rev) select gen_random_uuid(), '${fam.familyId}', '${id}', 'p', 1000 + g from generate_series(1, 50000) g`),
+    );
+    const id2 = await anlegen();
+    const op = upsert('aufgabe_punkt', randomUUID(), { aufgabeId: id2, text: 'zu viel' });
+    expect((await fam.admin.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'limit_reached' }]);
+  }, 120_000);
+
+  it('Folge-ID und Wunschtag der Wiederholung: gespeichert und geprüft; ein Zuständiger setzt die Folge-ID mit dem Erledigen', async () => {
+    const folge = randomUUID();
+    const id = await anlegen(fam.admin, aufgabe({ faelligDate: '2026-10-31', wiederholung: 'monthly', wiederholungTag: 31, assigneeId: fam.child.userId }));
+    const ch = (await fam.parent.pull()).find((c) => c.id === id);
+    expect(ch?.fields).toMatchObject({ wiederholungTag: 31, folgeId: null });
+    const ok = upsert('aufgabe', id, { erledigtAt: '2026-10-31T08:00:00Z', folgeId: folge }, 1);
+    expect((await fam.child.sync([ok])).json.rejected).toEqual([]);
+    expect((await rows(world, sql`select folge_id from aufgaben where id = ${id}`))[0]?.folge_id).toBe(folge);
+    for (const f of [{ wiederholungTag: 0 }, { wiederholungTag: 32 }, { wiederholungTag: 1.5 }, { folgeId: 'kein-uuid' }]) {
+      const op = upsert('aufgabe', id, f, 2);
+      expect((await fam.admin.sync([op])).json.rejected, JSON.stringify(f)).toEqual([{ opId: op.opId, code: 'invalid' }]);
+    }
+    const t = upsert('aufgabe', id, { wiederholungTag: 15 }, 2);
+    expect((await fam.child.sync([t])).json.rejected).toEqual([{ opId: t.opId, code: 'forbidden' }]);
+  });
 
   it('feste ID einer Folgeaufgabe von zwei Geräten: die zweite Op ist eine Änderung, keine Doppelung', async () => {
     const id = randomUUID();

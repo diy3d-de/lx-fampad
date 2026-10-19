@@ -1,5 +1,5 @@
 {
-  "id": "6a70f104-84ac-4a13-8165-e1a0764b0b18",
+  "id": "e0716250-eece-4ba7-b20e-ad946dc82ae5",
   "prevId": "60136212-c16a-4760-a792-5790ce0d4dcf",
   "version": "7",
   "dialect": "postgresql",
@@ -567,6 +567,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "folge_id": {
+          "name": "folge_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "wiederholung_tag": {
+          "name": "wiederholung_tag",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "wiederholung": {
           "name": "wiederholung",
           "type": "text",
@@ -798,6 +810,10 @@
         "aufgaben_wiederholung_ck": {
           "name": "aufgaben_wiederholung_ck",
           "value": "\"aufgaben\".\"wiederholung\" is null or \"aufgaben\".\"wiederholung\" in ('daily', 'weekly', 'monthly')"
+        },
+        "aufgaben_wdh_tag_ck": {
+          "name": "aufgaben_wdh_tag_ck",
+          "value": "\"aufgaben\".\"wiederholung_tag\" is null or \"aufgaben\".\"wiederholung_tag\" between 1 and 31"
         },
         "aufgaben_erinnerung_ck": {
           "name": "aufgaben_erinnerung_ck",

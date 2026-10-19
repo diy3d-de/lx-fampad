@@ -43,6 +43,10 @@ abstract class SyncEntity {
   String get elternGeloescht => 'Die Liste wurde gelöscht.';
   String get grenzeErreicht => 'Die Liste ist voll';
 
+  /// Eigener Hinweistext, wenn der Server das Anlegen dieser Zeile ablehnt (`not_found`, `deleted`, `forbidden`, `parent_deleted`); die Zeile ist
+  /// zu diesem Zeitpunkt noch lokal da. null = die üblichen Texte, leerer Text = kein Hinweis.
+  Future<String?> ablehnungsHinweis(AppDatabase db, String id, String code) async => null;
+
   /// Teilnehmer und Ausnahmen sind je Ziel nur einmal erlaubt: ein abgelehntes Anlegen mit `not_found` heißt dann "gibt es schon" (der Stand
   /// des Servers kommt mit dem Abgleich), nicht "wurde gelöscht".
   bool get eindeutigBeiAnlage => false;
@@ -399,6 +403,15 @@ class AufgabenEntitaet extends SyncEntity {
   @override
   String get grenzeErreicht => 'Es gibt zu viele Aufgaben';
 
+  /// Wird eine Folgeaufgabe abgelehnt (ihre ID war schon belegt, gelöscht oder nicht erlaubt), ist das kein Löschen auf einem anderen Gerät.
+  @override
+  Future<String?> ablehnungsHinweis(AppDatabase db, String id, String code) async {
+    if (code != 'not_found' && code != 'deleted' && code != 'forbidden') return null;
+    final vorlage = await (db.select(db.aufgaben)..where((t) => t.folgeId.equals(id))).getSingleOrNull();
+    if (vorlage == null) return null;
+    return 'Die nächste Aufgabe der Wiederholung „${vorlage.titel}“ konnte nicht angelegt werden. Hake sie zurück und wieder ab, dann versucht die App es erneut.';
+  }
+
   @override
   bool kannAnlegen(Json fields) => _text(fields['titel']) != null;
 
@@ -432,6 +445,8 @@ class AufgabenEntitaet extends SyncEntity {
           erledigtAt: Value(_zeit(fields['erledigtAt'])),
           erledigtVon: Value(_text(fields['erledigtVon'])),
           wiederholung: Value(_text(fields['wiederholung'])),
+          wiederholungTag: Value(_int(fields['wiederholungTag'])),
+          folgeId: Value(_text(fields['folgeId'])),
           erinnerungMin: Value(_int(fields['erinnerungMin'])),
           audience: Value(_text(fields['audience']) ?? 'family'),
           ownerId: Value(_text(fields['ownerId'])),
@@ -453,6 +468,8 @@ class AufgabenEntitaet extends SyncEntity {
         erledigtAt: setze('erledigtAt') ? Value(_zeit(fields['erledigtAt'])) : const Value.absent(),
         erledigtVon: setze('erledigtVon') ? Value(_text(fields['erledigtVon'])) : const Value.absent(),
         wiederholung: setze('wiederholung') ? Value(_text(fields['wiederholung'])) : const Value.absent(),
+        wiederholungTag: setze('wiederholungTag') ? Value(_int(fields['wiederholungTag'])) : const Value.absent(),
+        folgeId: setze('folgeId') ? Value(_text(fields['folgeId'])) : const Value.absent(),
         erinnerungMin: setze('erinnerungMin') ? Value(_int(fields['erinnerungMin'])) : const Value.absent(),
         audience: setze('audience') ? Value(_text(fields['audience']) ?? vorhanden.audience) : const Value.absent(),
         ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
@@ -478,6 +495,15 @@ class AufgabePunkteEntitaet extends SyncEntity {
 
   @override
   String get grenzeErreicht => 'Die Aufgabe hat zu viele Unteraufgaben';
+
+  /// Unteraufgaben einer abgelehnten Folgeaufgabe: der Hinweis steht schon bei der Aufgabe selbst.
+  @override
+  Future<String?> ablehnungsHinweis(AppDatabase db, String id, String code) async {
+    if (code != 'not_found' && code != 'parent_deleted') return null;
+    final z = await (db.select(db.aufgabePunkte)..where((t) => t.id.equals(id))).getSingleOrNull();
+    if (z == null) return '';
+    return await (db.select(db.aufgaben)..where((t) => t.id.equals(z.aufgabeId))).getSingleOrNull() == null ? '' : null;
+  }
 
   @override
   bool kannAnlegen(Json fields) => _text(fields['aufgabeId']) != null && _text(fields['text']) != null;

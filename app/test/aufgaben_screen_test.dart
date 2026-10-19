@@ -2,6 +2,7 @@
 // Löschen mit Rückfrage, Rechte der Kinder, Startseiten-Karten, Desktop-Seitenleiste; bei 360 px Breite und Textskala 1.0 und 1.5.
 import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/app_database.dart';
@@ -296,6 +297,105 @@ void main() {
       expect(find.text('// aufgaben'.toUpperCase()), findsOneWidget);
     });
   }
+
+  testWidgets('Kind: zugewiesene Aufgabe der Eltern kann abgehakt werden (Haken bedienbar, Unteraufgaben-Häkchen wirken sofort), sonst bleibt sie schreibgeschützt', (tester) async {
+    final env = await start(tester, role: 'child', groesse: const Size(360, 1400), vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Zimmer saugen', zu: fixIdAdmin, owner: fixIdKind));
+      e.sync.andereAendert('aufgabe_punkt', 'cccccccc-1111-4111-8111-111111111111', {'aufgabeId': _a1, 'text': 'Teppich', 'position': 0});
+      e.sync.andereAendert('aufgabe', _a2, _aufgabe('Nicht meine', zu: fixIdKind, owner: fixIdKind));
+    });
+    // Editor: Hinweis "zugewiesen", Felder gesperrt, Unteraufgabe abhakbar
+    await tippeText(tester, 'Zimmer saugen');
+    expect(find.textContaining('Diese Aufgabe ist dir zugewiesen'), findsOneWidget);
+    expect(find.text('Speichern'), findsNothing);
+    expect(find.text('Aufgabe löschen'), findsNothing);
+    expect(tester.widget<TextField>(find.widgetWithText(TextField, 'Titel')).enabled, isFalse);
+    await tippe(tester, find.byIcon(Icons.check_box_outline_blank));
+    final punkt = (await env.db.select(env.db.aufgabePunkte).get()).single;
+    expect(punkt.doneAt, isNotNull);
+    await tippe(tester, find.byTooltip('Zurück'));
+    // Liste: die zugewiesene Aufgabe lässt sich abhaken, die fremde nicht
+    final haken = find.byIcon(Icons.check_box_outline_blank);
+    expect(haken, findsNWidgets(2));
+    await tippe(tester, haken.first);
+    final alle = await dbAufgaben(env);
+    expect(alle.where((a) => a.erledigtAt != null).map((a) => a.id), [_a1]);
+    expect(alle.singleWhere((a) => a.id == _a1).erledigtVon, fixIdAdmin);
+    final op = (await env.db.select(env.db.outbox).get()).where((o) => o.entity == 'aufgabe' && o.entityId == _a1).map((o) => o.fieldsJson).join();
+    expect(op, isNot(contains('erledigtVon')));
+    pruefeLayout(tester, 'Kind zugewiesen');
+  });
+
+  testWidgets('Editor: Warnung, wenn die zuständige Person (Kind) eine nur für Eltern sichtbare Aufgabe nicht sehen darf', (tester) async {
+    await start(tester, groesse: const Size(360, 1800));
+    await tippeDirekt(tester, find.byTooltip('Aufgabe mit Details anlegen'));
+    expect(find.textContaining('nur für Eltern sichtbar'), findsNothing);
+    await tippeDirekt(tester, find.text('Ben'));
+    await tippeDirekt(tester, find.text('Nur Eltern'));
+    expect(find.textContaining('Die Aufgabe ist nur für Eltern sichtbar, die zuständige Person ist ein Kind'), findsOneWidget);
+    await tippeDirekt(tester, find.text('Familie'));
+    expect(find.textContaining('nur für Eltern sichtbar'), findsNothing);
+  });
+
+  testWidgets('Erledigt-Ansicht: "Erledigte löschen" mit Rückfrage; Schnell-Anlegen dort wechselt auf "Offen"', (tester) async {
+    final env = await start(tester, vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Fertig 1', erledigt: true));
+      e.sync.andereAendert('aufgabe', _a2, _aufgabe('Fertig 2', erledigt: true));
+      e.sync.andereAendert('aufgabe', _a3, _aufgabe('Offen 1'));
+    });
+    expect(find.textContaining('Erledigte löschen'), findsNothing);
+    await tippeText(tester, 'Erledigt');
+    expect(find.text('Erledigte löschen (2)'), findsOneWidget);
+    await tippeText(tester, 'Erledigte löschen (2)');
+    expect(find.text('2 erledigte Aufgaben löschen?'), findsOneWidget);
+    await tippeText(tester, 'Abbrechen');
+    expect(await dbAufgaben(env), hasLength(3));
+    await tester.enterText(find.widgetWithText(TextField, 'Neue Aufgabe'), 'Neu im Erledigt-Filter');
+    await tippe(tester, find.byTooltip('Aufgabe hinzufügen'));
+    expect(find.text('Neu im Erledigt-Filter'), findsOneWidget, reason: 'zurück auf Offen: die neue Aufgabe ist sichtbar');
+    await tippeText(tester, 'Erledigt');
+    await tippeText(tester, 'Erledigte löschen (2)');
+    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
+    expect((await dbAufgaben(env)).map((a) => a.titel).toSet(), {'Offen 1', 'Neu im Erledigt-Filter'});
+  });
+
+  testWidgets('Wischen: die Zeile ist sofort weg, auch bevor die Datenbank nachzieht', (tester) async {
+    final env = await start(tester, vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Weg 1'));
+      e.sync.andereAendert('aufgabe', _a2, _aufgabe('Bleibt'));
+    });
+    await tester.drag(find.text('Weg 1'), const Offset(-300, 0));
+    await warte(tester);
+    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
+    expect(find.text('Weg 1'), findsNothing);
+    expect(find.text('Bleibt'), findsOneWidget);
+    expect((await dbAufgaben(env)).map((a) => a.titel), ['Bleibt']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Viele Aufgaben: die Liste baut nur sichtbare Zeilen (lazy)', (tester) async {
+    await start(tester, vorher: (e) {
+      for (var i = 0; i < 200; i++) {
+        e.sync.andereAendert('aufgabe', 'dddddddd-0000-4000-8000-${i.toString().padLeft(12, '0')}', _aufgabe('Aufgabe $i', tage: i));
+      }
+    });
+    final gebaut = find.byIcon(Icons.check_box_outline_blank).evaluate().length;
+    expect(gebaut, greaterThan(3));
+    expect(gebaut, lessThan(40), reason: 'nicht alle 200 Zeilen sind gebaut');
+    expect(find.text('200 offen · 0 erledigt'), findsOneWidget);
+  });
+
+  testWidgets('Sechs Navigationsziele bei 360 px und Textskala 1.5: kein Label abgeschnitten, Touch-Ziele >= 44 px', (tester) async {
+    await start(tester, skala: 1.5, tab: 'Start');
+    for (final t in kTabs) {
+      final p = find.descendant(of: find.byType(NavigationBar), matching: find.text(t.label));
+      expect(p, findsOneWidget, reason: t.label);
+      final ro = tester.renderObject<RenderParagraph>(p);
+      expect(ro.didExceedMaxLines, isFalse, reason: 'Label ${t.label} abgeschnitten');
+      expect(ro.size.width, lessThanOrEqualTo(360 / kTabs.length + 0.5), reason: 'Label ${t.label} breiter als sein Ziel');
+    }
+    pruefeLayout(tester, 'Sechs Tabs');
+  });
 
   testWidgets('Startseite mobil: Karte "Aufgaben" zeigt Überfälliges und bald Fälliges, Tippen öffnet den Bereich', (tester) async {
     await start(tester, tab: 'Start', vorher: (e) {

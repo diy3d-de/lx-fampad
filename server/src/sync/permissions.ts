@@ -34,6 +34,8 @@ export interface Actor {
 export interface Facts {
   audience: Audience;
   ownerId: string | null;
+  /** Zuständige Person (Aufgaben; Unteraufgaben erben sie): darf mit `assignedFields` auch fremde Datensätze in diesen Feldern ändern. */
+  assigneeId?: string | null;
 }
 
 export interface RoleRule {
@@ -45,6 +47,8 @@ export interface RoleRule {
   createFields?: readonly string[];
   /** Felder, die die Rolle ändern darf (fehlt: alle vom Client beschreibbaren Felder). */
   updateFields?: readonly string[];
+  /** Felder, die die Rolle an Datensätzen ändern darf, deren zuständige Person (`facts.assigneeId`) sie ist, auch wenn `update` sonst nicht gilt (z. B. Kinder: Erledigt-Status). Nur diese Felder, nichts sonst. */
+  assignedFields?: readonly string[];
   /** Erlaubte Werte je Feld, z. B. Kinder: `audience` nur `family`. Gilt beim Anlegen und Ändern. */
   limits?: Readonly<Record<string, readonly unknown[]>>;
 }
@@ -95,8 +99,19 @@ export function authorize(
 ): Decision {
   const rule = rules[actor.role];
   if (action !== 'create' && !scopeAllows(rule.read, actor, facts)) return 'not_found';
-  if (!scopeAllows(rule[action], actor, facts)) return 'forbidden';
-  const allowed = action === 'create' ? rule.createFields : action === 'update' ? rule.updateFields : undefined;
+  const scoped = scopeAllows(rule[action], actor, facts);
+  // zuständige Person: nur die freigegebenen Felder (assignedFields), nie Anlegen/Löschen
+  const assigned =
+    !scoped &&
+    action === 'update' &&
+    rule.assignedFields !== undefined &&
+    facts.assigneeId !== undefined &&
+    facts.assigneeId !== null &&
+    facts.assigneeId === actor.userId &&
+    fields.length > 0 &&
+    fields.every((f) => rule.assignedFields?.includes(f));
+  if (!scoped && !assigned) return 'forbidden';
+  const allowed = assigned ? undefined : action === 'create' ? rule.createFields : action === 'update' ? rule.updateFields : undefined;
   if (allowed && fields.some((f) => !allowed.includes(f))) return 'forbidden';
   if (action !== 'delete' && rule.limits) {
     for (const [field, permitted] of Object.entries(rule.limits)) {

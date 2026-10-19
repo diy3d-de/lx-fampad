@@ -144,11 +144,22 @@ void main() {
       expect(naechsteFaelligkeit(basisWand: tag(2026, 10, 19, 9, 30), wdh: AufgabeWdh.taeglich, mitUhrzeit: true, jetzt: jetzt), tag(2026, 10, 20, 9, 30));
     });
 
-    test('einmalig und Deckel: keine Folgeaufgabe', () {
+    test('einmalig: keine Folgeaufgabe; uralte Fälligkeit: gerechnet statt gezählt, nächste Fälligkeit ab heute (kein stilles Abbrechen)', () {
       expect(naechsteFaelligkeit(basisWand: tag(2026, 10, 19), wdh: AufgabeWdh.keine, mitUhrzeit: false, jetzt: jetzt), isNull);
-      // sechs Jahre in der Vergangenheit, täglich: mehr als kMaxWiederholSchritte Schritte bis heute
-      expect(naechsteFaelligkeit(basisWand: tag(2020, 1, 1), wdh: AufgabeWdh.taeglich, mitUhrzeit: false, jetzt: jetzt), isNull);
-      expect(kMaxWiederholSchritte, 1000);
+      expect(naechsteFaelligkeit(basisWand: tag(2020, 1, 1), wdh: AufgabeWdh.taeglich, mitUhrzeit: false, jetzt: jetzt), tag(2026, 10, 20));
+      expect(naechsteFaelligkeit(basisWand: tag(1999, 3, 1), wdh: AufgabeWdh.woechentlich, mitUhrzeit: false, jetzt: jetzt), tag(2026, 10, 26)); // beide Montage: das Raster bleibt
+      expect(naechsteFaelligkeit(basisWand: tag(2001, 5, 31), wdh: AufgabeWdh.monatlich, mitUhrzeit: false, jetzt: jetzt, wunschTag: 31), tag(2026, 10, 31));
+      expect(naechsteFaelligkeit(basisWand: tag(2020, 1, 1, 9, 30), wdh: AufgabeWdh.taeglich, mitUhrzeit: true, jetzt: jetzt), tag(2026, 10, 20, 9, 30));
+    });
+
+    test('Monatsende mit Wunschtag in der Kette', () {
+      var basis = tag(2026, 1, 31);
+      final soll = [tag(2026, 2, 28), tag(2026, 3, 31), tag(2026, 4, 30), tag(2026, 5, 31)];
+      for (final s in soll) {
+        final n = naechsteFaelligkeit(basisWand: basis, wdh: AufgabeWdh.monatlich, mitUhrzeit: false, jetzt: DateTime.utc(basis.year, basis.month, basis.day, 8), wunschTag: 31);
+        expect(n, s);
+        basis = n!;
+      }
     });
 
     test('unbekannte Wiederholung gilt als einmalig, unbekannte Priorität als keine', () {
@@ -321,6 +332,173 @@ void main() {
     });
   });
 
+  group('Wiederholung: Kette, Zurücknehmen, belegte IDs', () {
+    late Geraet g;
+    setUp(() => g = Geraet('u-ich'));
+    tearDown(() => g.db.close());
+
+    AufgabeEingabe monatlich(DateTime faellig, {List<PunktEingabe> punkte = const []}) =>
+        AufgabeEingabe(titel: 'Miete', faellig: faellig, wiederholung: AufgabeWdh.monatlich, punkte: punkte);
+
+    Future<Aufgabe> offeneFolge(String vorlageId) async => (await g.alle()).singleWhere((a) => a.id != vorlageId && a.titel != 'Besetzt' && a.erledigtAt == null);
+
+    test('Monatsende über mehrere Schritte: der Wunschtag 31 bleibt in der Kette (Feb 28, Mär 31, Apr 30, Mai 31)', () async {
+      var id = await g.repo.anlegen(monatlich(tag(2026, 1, 31)));
+      g.jetzt = DateTime.utc(2026, 1, 31, 8);
+      final erwartet = ['2026-02-28', '2026-03-31', '2026-04-30', '2026-05-31'];
+      for (final soll in erwartet) {
+        await g.repo.erledigt((await g.a(id))!, true);
+        final folge = await offeneFolge(id);
+        expect([folge.faelligDate, folge.wiederholungTag], [soll, 31]);
+        id = folge.id;
+        g.jetzt = DateTime.utc(int.parse(soll.substring(0, 4)), int.parse(soll.substring(5, 7)), int.parse(soll.substring(8, 10)), 8);
+      }
+    });
+
+    test('Zurücknehmen: die offene, unveränderte Folgeaufgabe (mit Unteraufgaben) verschwindet; erneutes Erledigen legt eine neue an', () async {
+      final id = await g.repo.anlegen(monatlich(tag(2026, 10, 19), punkte: const [PunktEingabe(id: 'p-1', text: 'Dauerauftrag prüfen')]));
+      await g.repo.erledigt((await g.a(id))!, true);
+      final folge1 = await offeneFolge(id);
+      expect(folge1.id, folgeAufgabeId(id));
+      expect((await g.a(id))!.folgeId, folge1.id);
+      await g.repo.erledigt((await g.a(id))!, false);
+      expect(await g.a(folge1.id), isNull);
+      expect((await g.punkte()).where((p) => p.aufgabeId == folge1.id), isEmpty);
+      expect((await g.alle()).map((a) => a.id), [id]);
+      expect((await g.a(id))!.folgeId, folge1.id, reason: 'die verbrauchte ID bleibt vermerkt');
+      await g.repo.erledigt((await g.a(id))!, true);
+      final folge2 = await offeneFolge(id);
+      expect(folge2.id, isNot(folge1.id), reason: 'die gelöschte Kennung ist auf dem Server verbraucht: neue Kennung');
+      expect((await g.a(id))!.folgeId, folge2.id);
+      expect((await g.punkte()).where((p) => p.aufgabeId == folge2.id), hasLength(1));
+    });
+
+    test('Zurücknehmen lässt eine bearbeitete oder erledigte Folgeaufgabe stehen', () async {
+      final id = await g.repo.anlegen(monatlich(tag(2026, 10, 19)));
+      await g.repo.erledigt((await g.a(id))!, true);
+      final folge = await offeneFolge(id);
+      await g.store.aendern('aufgabe', folge.id, {'titel': 'Miete (Nachzahlung)'});
+      await g.repo.erledigt((await g.a(id))!, false);
+      expect((await g.a(folge.id))!.titel, 'Miete (Nachzahlung)');
+      await g.repo.erledigt((await g.a(id))!, true); // gibt es schon (folgeId zeigt auf eine vorhandene Zeile): nichts Neues
+      expect(await g.alle(), hasLength(2));
+    });
+
+    test('Squatting: ist die abgeleitete ID schon belegt, nimmt die App eine zufällige; die Wiederholung bleibt nicht stehen', () async {
+      final id = await g.repo.anlegen(monatlich(tag(2026, 10, 19)));
+      // ein anderes Mitglied hat die berechenbare ID vorab angelegt (kommt per Abgleich)
+      await g.store.uebernehmen(
+        antwort(rev: 1, changes: [
+          SyncChange(rev: 1, entity: 'aufgabe', id: folgeAufgabeId(id), tombstone: false, hidden: false, fields: const {
+            'titel': 'Besetzt',
+            'beschreibung': '',
+            'faelligDate': null,
+            'faelligUtc': null,
+            'tzid': null,
+            'prioritaet': 0,
+            'assigneeId': null,
+            'erledigtAt': null,
+            'wiederholung': null,
+            'audience': 'family',
+            'ownerId': 'u-fremd',
+            'createdAt': '2026-10-01T08:00:00.000Z',
+          }),
+        ]),
+        const [],
+      );
+      await g.repo.erledigt((await g.a(id))!, true);
+      final folge = await offeneFolge(id);
+      expect(folge.id, isNot(folgeAufgabeId(id)));
+      expect(folge.titel, 'Miete');
+      expect((await g.a(id))!.folgeId, folge.id);
+      expect((await g.a(folgeAufgabeId(id)))!.titel, 'Besetzt');
+    });
+
+    test('Abgeleitete ID beim Server verbraucht/nicht erlaubt: Hinweis nennt die Wiederholung (nicht "auf einem anderen Gerät gelöscht"), Unteraufgaben still', () async {
+      final id = await g.repo.anlegen(monatlich(tag(2026, 10, 19), punkte: const [PunktEingabe(id: 'p-1', text: 'a')]));
+      await g.db.delete(g.db.outbox).go();
+      await g.db.customStatement('UPDATE aufgaben SET rev = 3');
+      await g.db.customStatement('UPDATE aufgabe_punkte SET rev = 3');
+      await g.repo.erledigt((await g.a(id))!, true);
+      final gesendet = await g.store.naechsteOps(50);
+      final folgeOp = gesendet.firstWhere((o) => o.entity == 'aufgabe' && o.entityId == folgeAufgabeId(id));
+      final punktOp = gesendet.firstWhere((o) => o.entity == 'aufgabe_punkt');
+      final bericht = await g.store.uebernehmen(
+        antwort(rev: 4, rejected: [SyncRejected(folgeOp.opId, 'deleted'), SyncRejected(punktOp.opId, 'parent_deleted')]),
+        gesendet,
+      );
+      expect(bericht.hinweise, hasLength(1));
+      expect(bericht.hinweise.single.text, contains('nächste Aufgabe der Wiederholung „Miete“'));
+      expect(bericht.hinweise.single.text, isNot(contains('anderen Gerät')));
+      expect(await g.a(folgeAufgabeId(id)), isNull);
+      // erneutes Abhaken (Haken weg, wieder dran): neue Kennung
+      await g.repo.erledigt((await g.a(id))!, false);
+      await g.repo.erledigt((await g.a(id))!, true);
+      expect((await offeneFolge(id)).id, isNot(folgeAufgabeId(id)));
+    });
+
+    test('Doppeltipp auf den Haken legt nur eine Folgeaufgabe an', () async {
+      final id = await g.repo.anlegen(monatlich(tag(2026, 10, 19)));
+      final a = (await g.a(id))!;
+      await Future.wait([g.repo.erledigt(a, true), g.repo.erledigt(a, true)]);
+      await g.repo.erledigt(a, true); // veralteter Stand der Oberfläche: die Aufgabe ist schon erledigt
+      expect(await g.alle(), hasLength(2));
+      expect((await g.ausgang()).where((o) => o.entity == 'aufgabe').length, 2); // Vorlage (verschmolzen) + Folge
+    });
+
+    test('Ausgang enthält erledigtVon nie (der Server setzt es), lokal steht es sofort da', () async {
+      final id = await g.repo.schnellAnlegen('x');
+      await g.db.delete(g.db.outbox).go();
+      await g.db.customStatement('UPDATE aufgaben SET rev = 2');
+      await g.repo.erledigt((await g.a(id))!, true);
+      final f = jsonDecode((await g.ausgang()).single.fieldsJson) as Map<String, dynamic>;
+      expect(f.containsKey('erledigtVon'), isFalse);
+      expect(f.keys, contains('erledigtAt'));
+      expect((await g.a(id))!.erledigtVon, 'u-ich');
+    });
+
+    test('Fremde Vorlage: die Folgeaufgabe gehört der Person, die erledigt (der Server setzt den Besitzer aus der Sitzung)', () async {
+      await g.store.uebernehmen(
+        antwort(rev: 1, changes: const [
+          SyncChange(rev: 1, entity: 'aufgabe', id: 'fremd-1', tombstone: false, hidden: false, fields: {
+            'titel': 'Von Mama',
+            'beschreibung': '',
+            'faelligDate': '2026-10-19',
+            'faelligUtc': null,
+            'tzid': null,
+            'prioritaet': 0,
+            'assigneeId': 'u-ich',
+            'erledigtAt': null,
+            'wiederholung': 'weekly',
+            'audience': 'family',
+            'ownerId': 'u-mama',
+            'createdAt': '2026-10-01T08:00:00.000Z',
+          }),
+        ]),
+        const [],
+      );
+      await g.repo.erledigt((await g.a('fremd-1'))!, true);
+      final folge = (await g.a(folgeAufgabeId('fremd-1')))!;
+      expect([folge.ownerId, folge.assigneeId], ['u-ich', 'u-ich']);
+    });
+
+    test('Zeitumstellung: die Wandzeit 02:30 gibt es am 29.3.2026 nicht, die Folgeaufgabe fällt auf 03:30 (Sommerzeit) statt zu scheitern', () async {
+      final id = await g.repo.anlegen(AufgabeEingabe(titel: 'Nachtschicht', faellig: tag(2026, 3, 28, 2, 30), mitUhrzeit: true, wiederholung: AufgabeWdh.taeglich));
+      g.jetzt = DateTime.utc(2026, 3, 28, 6);
+      await g.repo.erledigt((await g.a(id))!, true);
+      expect((await offeneFolge(id)).faelligUtc!.toUtc(), DateTime.utc(2026, 3, 29, 1, 30)); // 03:30 MESZ
+    });
+
+    test('Erledigte löschen: nur Erledigte, mit Unteraufgaben', () async {
+      final a1 = await g.repo.anlegen(AufgabeEingabe(titel: 'a', punkte: const [PunktEingabe(id: 'p-1', text: 'x')]));
+      final a2 = await g.repo.schnellAnlegen('b');
+      await g.repo.erledigt((await g.a(a1))!, true);
+      await g.repo.erledigteLoeschen(await g.alle());
+      expect((await g.alle()).map((a) => a.id), [a2]);
+      expect(await g.punkte(), isEmpty);
+    });
+  });
+
   group('Rechte der Oberfläche', () {
     test('Eltern alles, Kinder nur eigene und nur Familie', () {
       for (final r in [Role.admin, Role.parent]) {
@@ -335,6 +513,16 @@ void main() {
       expect(kind.darfAendern(aufgabe()), isFalse);
       expect(kind.darfFreigabeAendern, isFalse);
       expect(kind.freigaben, [AufgabeSicht.family]);
+    });
+
+    test('Status: wer ändern darf, und die zuständige Person (auch ein Kind) bei ihrer Aufgabe', () {
+      const kind = AufgabeRechte(Role.child, 'u1');
+      expect(kind.darfStatus(aufgabe(ownerId: 'u2', assigneeId: 'u1')), isTrue);
+      expect(kind.darfAendern(aufgabe(ownerId: 'u2', assigneeId: 'u1')), isFalse);
+      expect(kind.darfStatus(aufgabe(ownerId: 'u2', assigneeId: 'u3')), isFalse);
+      expect(kind.darfStatus(aufgabe(ownerId: 'u2')), isFalse);
+      expect(kind.darfStatus(aufgabe(ownerId: 'u1')), isTrue);
+      expect(const AufgabeRechte(Role.parent, 'p').darfStatus(aufgabe(ownerId: 'u2', assigneeId: 'u1')), isTrue);
     });
   });
 

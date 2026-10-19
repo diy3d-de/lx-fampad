@@ -1,5 +1,7 @@
 // Aufgabe anlegen, ansehen und bearbeiten (eine Seite, wie der Termin-Editor). Zeiten sind Wanduhrzeiten der Familienzone (Europe/Berlin).
 // Wer die Aufgabe nicht ändern darf (ein Kind bei fremden Aufgaben), sieht sie schreibgeschützt.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -118,6 +120,12 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     setState(() => _punkte.add(_PunktZeile(ref.read(aufgabeRepositoryProvider).neuePunktId(), t, false)));
   }
 
+  void _punktUmschalten(int i, {required bool sofort}) {
+    final p = _punkte[i];
+    setState(() => p.erledigt = !p.erledigt);
+    if (sofort) unawaited(ref.read(aufgabeRepositoryProvider).punktErledigt(p.id, p.erledigt));
+  }
+
   AufgabeEingabe _eingabe() {
     final tag = _tag;
     return AufgabeEingabe(
@@ -203,6 +211,8 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = AufgabeRechte(user?.role ?? Role.child, user?.id);
     final darf = _neu ? rechte.darfAnlegen : rechte.darfAendern(widget.aufgabe!);
+    // zuständige Person ohne Änderungsrecht: Unteraufgaben abhaken ist erlaubt (wirkt sofort), alles andere nicht
+    final statusDarf = !darf && !_neu && rechte.darfStatus(widget.aufgabe!);
     final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
     final datum = DateFormat('E, d. MMM y', 'de_DE');
     final heute = tagVon(DateTime.now());
@@ -243,7 +253,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
       fussleiste: darf ? FilledButton(onPressed: _speichert ? null : _speichern, child: Text(_neu ? 'Aufgabe anlegen' : 'Speichern')) : null,
       kinder: [
         if (!darf) ...[
-          const MeldungsBox('Du darfst diese Aufgabe ansehen, aber nicht ändern.', fehler: false),
+          MeldungsBox(statusDarf ? 'Diese Aufgabe ist dir zugewiesen: du kannst sie abhaken und ihre Unteraufgaben erledigen, aber nicht ändern.' : 'Du darfst diese Aufgabe ansehen, aber nicht ändern.', fehler: false),
           const SizedBox(height: 12),
         ],
         if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
@@ -329,6 +339,10 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           ),
           const SizedBox(height: 16),
         ],
+        if (_zustaendig != null && _sicht == AufgabeSicht.parents && mitglieder.any((u) => u.id == _zustaendig && u.role == Role.child)) ...[
+          const Text('Achtung: Die Aufgabe ist nur für Eltern sichtbar, die zuständige Person ist ein Kind und sieht sie deshalb nicht.', style: TextStyle(fontSize: 12, color: kWarn)),
+          const SizedBox(height: 12),
+        ],
         const MonoLabel('// priorität'),
         const SizedBox(height: 6),
         Wrap(
@@ -363,13 +377,13 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
               children: [
                 Semantics(
                   checked: _punkte[i].erledigt,
-                  enabled: darf,
+                  enabled: darf || statusDarf,
                   label: 'Unteraufgabe ${_punkte[i].text.text}, ${_punkte[i].erledigt ? 'erledigt' : 'offen'}',
                   excludeSemantics: true,
-                  onTap: darf ? () => setState(() => _punkte[i].erledigt = !_punkte[i].erledigt) : null,
+                  onTap: darf || statusDarf ? () => _punktUmschalten(i, sofort: statusDarf) : null,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(12),
-                    onTap: darf ? () => setState(() => _punkte[i].erledigt = !_punkte[i].erledigt) : null,
+                    onTap: darf || statusDarf ? () => _punktUmschalten(i, sofort: statusDarf) : null,
                     child: SizedBox(width: 48, height: 48, child: Icon(_punkte[i].erledigt ? Icons.check_box : Icons.check_box_outline_blank, color: _punkte[i].erledigt ? kTerminal : kTextMuted)),
                   ),
                 ),

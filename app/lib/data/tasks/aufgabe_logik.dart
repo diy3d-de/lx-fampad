@@ -8,7 +8,7 @@ import '../lists/list_repository.dart' show ListenSicht;
 /// Wer eine Aufgabe sieht (gleiche Stufen wie bei Listen und Terminen).
 typedef AufgabeSicht = ListenSicht;
 
-/// Obergrenze der Rechenschritte beim Suchen der nächsten Fälligkeit (Deckel gegen Endlosschleifen bei absurden Eingaben).
+/// Sicherheitsgrenze für die Feinjustierung beim Suchen der nächsten Fälligkeit (die Schätzung trifft auf höchstens ein, zwei Schritte genau).
 const kMaxWiederholSchritte = 1000;
 
 enum AufgabePrio {
@@ -78,33 +78,53 @@ bool istHeuteFaellig(Aufgabe a, DateTime jetzt) {
   return w != null && DateTime.utc(w.year, w.month, w.day) == tagVon(jetzt) && !istUeberfaellig(a, jetzt);
 }
 
-DateTime _schritt(DateTime basis, AufgabeWdh wdh, int k) {
+/// Der [k]-te Schritt der Wiederholung ab [basis] (Wanduhr, UTC-Markierung). Monatlich vom [wunschTag] aus (Standard: Tag der Basis): der 31.
+/// wird im Februar der 28./29., im März aber wieder der 31.
+DateTime _schritt(DateTime basis, AufgabeWdh wdh, int k, int? wunschTag) {
   switch (wdh) {
     case AufgabeWdh.taeglich:
       return basis.add(Duration(days: k));
     case AufgabeWdh.woechentlich:
       return basis.add(Duration(days: 7 * k));
     case AufgabeWdh.monatlich:
-      // vom ursprünglichen Tag des Monats aus (der 31. wird im Februar der 28./29., im März aber wieder der 31.)
       final m = basis.month - 1 + k;
       final jahr = basis.year + m ~/ 12;
       final monat = m % 12 + 1;
       final letzter = DateTime.utc(jahr, monat + 1, 0).day;
-      return DateTime.utc(jahr, monat, basis.day < letzter ? basis.day : letzter, basis.hour, basis.minute);
+      final tag = wunschTag ?? basis.day;
+      return DateTime.utc(jahr, monat, tag < letzter ? tag : letzter, basis.hour, basis.minute);
     case AufgabeWdh.keine:
       return basis;
   }
 }
 
-/// Fälligkeit der Folgeaufgabe: der erste Schritt ab [basisWand], der nach heute (Tag) bzw. nach jetzt (mit Uhrzeit) liegt.
-/// Null bei "einmalig" oder wenn der Deckel [kMaxWiederholSchritte] erreicht ist.
-DateTime? naechsteFaelligkeit({required DateTime basisWand, required AufgabeWdh wdh, required bool mitUhrzeit, required DateTime jetzt}) {
+/// Fälligkeit der Folgeaufgabe: der erste Schritt ab [basisWand], der nach heute (Tag) bzw. nach jetzt (mit Uhrzeit) liegt. Es wird gerechnet,
+/// nicht gezählt: auch eine uralte Fälligkeit ergibt die nächste Fälligkeit ab heute (keine Schleife über tausende Schritte, kein stilles
+/// Abbrechen). [wunschTag]: Tag des Monats, der in der Kette erhalten bleibt (nur monatlich). Null nur bei "einmalig".
+DateTime? naechsteFaelligkeit({required DateTime basisWand, required AufgabeWdh wdh, required bool mitUhrzeit, required DateTime jetzt, int? wunschTag}) {
   if (wdh == AufgabeWdh.keine) return null;
   final jetztWand = wandUhr(jetzt.toUtc(), familienOrt);
   final heute = DateTime.utc(jetztWand.year, jetztWand.month, jetztWand.day);
-  for (var k = 1; k <= kMaxWiederholSchritte; k++) {
-    final c = _schritt(basisWand, wdh, k);
-    if (mitUhrzeit ? c.isAfter(jetztWand) : c.isAfter(heute)) return c;
+  bool danach(DateTime c) => mitUhrzeit ? c.isAfter(jetztWand) : c.isAfter(heute);
+  // Startschritt aus dem Abstand schätzen, dann höchstens ein paar Schritte feinjustieren
+  final bis = mitUhrzeit ? jetztWand : heute;
+  var k = 1;
+  switch (wdh) {
+    case AufgabeWdh.taeglich:
+      k = bis.difference(basisWand).inDays;
+    case AufgabeWdh.woechentlich:
+      k = bis.difference(basisWand).inDays ~/ 7;
+    case AufgabeWdh.monatlich:
+      k = (bis.year - basisWand.year) * 12 + bis.month - basisWand.month;
+    case AufgabeWdh.keine:
+      break;
+  }
+  if (k < 1) k = 1;
+  // Schätzung kann einen Schritt zu hoch sein (z. B. Tag im Monat noch nicht erreicht): einen zurück beginnen
+  if (k > 1) k -= 1;
+  for (var i = 0; i < kMaxWiederholSchritte; i++, k++) {
+    final c = _schritt(basisWand, wdh, k, wunschTag);
+    if (danach(c)) return c;
   }
   return null;
 }
@@ -142,27 +162,31 @@ List<Aufgabe> filtereAufgaben(List<Aufgabe> alle, {required AufgabeFilter filter
       a,
 ];
 
-int _faelligVergleich(Aufgabe a, Aufgabe b) {
-  final x = faelligWand(a);
-  final y = faelligWand(b);
-  if (x == null && y == null) return 0;
-  if (x == null) return 1; // ohne Fälligkeit nach hinten
-  if (y == null) return -1;
-  return x.compareTo(y);
-}
-
-/// Sortiert: offene vor erledigten; offene nach Fälligkeit (dann Priorität) bzw. Priorität (dann Fälligkeit), erledigte nach Erledigung (neueste zuerst).
+/// Sortiert: offene vor erledigten; offene nach Fälligkeit (dann Priorität) bzw. Priorität (dann Fälligkeit), erledigte nach Erledigung (neueste
+/// zuerst). Die Fälligkeit (Zeitzonen-Umrechnung) wird je Aufgabe nur einmal berechnet, nicht bei jedem Vergleich.
 List<Aufgabe> sortiereAufgaben(List<Aufgabe> alle, AufgabeSortierung art) {
+  final faellig = {for (final a in alle) a.id: faelligWand(a)};
   int stabil(Aufgabe a, Aufgabe b) {
     final t = a.createdAt.compareTo(b.createdAt);
     return t != 0 ? t : a.id.compareTo(b.id);
   }
 
+  int nachFaelligkeit(Aufgabe a, Aufgabe b) {
+    final x = faellig[a.id];
+    final y = faellig[b.id];
+    if (x == null && y == null) return 0;
+    if (x == null) return 1; // ohne Fälligkeit nach hinten
+    if (y == null) return -1;
+    return x.compareTo(y);
+  }
+
   final offen = alle.where((a) => !istErledigt(a)).toList()
     ..sort((a, b) {
+      final f = nachFaelligkeit(a, b);
+      final p = b.prioritaet.compareTo(a.prioritaet);
       final c = switch (art) {
-        AufgabeSortierung.faelligkeit => _faelligVergleich(a, b) != 0 ? _faelligVergleich(a, b) : b.prioritaet.compareTo(a.prioritaet),
-        AufgabeSortierung.prioritaet => b.prioritaet.compareTo(a.prioritaet) != 0 ? b.prioritaet.compareTo(a.prioritaet) : _faelligVergleich(a, b),
+        AufgabeSortierung.faelligkeit => f != 0 ? f : p,
+        AufgabeSortierung.prioritaet => p != 0 ? p : f,
       };
       return c != 0 ? c : stabil(a, b);
     });

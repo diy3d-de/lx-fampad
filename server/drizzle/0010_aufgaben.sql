@@ -27,6 +27,8 @@ CREATE TABLE "aufgaben" (
 	"assignee_id" uuid,
 	"erledigt_at" timestamp with time zone,
 	"erledigt_von" uuid,
+	"folge_id" uuid,
+	"wiederholung_tag" integer,
 	"wiederholung" text,
 	"erinnerung_min" integer,
 	"audience" "list_audience" DEFAULT 'family' NOT NULL,
@@ -41,6 +43,7 @@ CREATE TABLE "aufgaben" (
 	CONSTRAINT "aufgaben_beschreibung_len_ck" CHECK (char_length("aufgaben"."beschreibung") <= 4000),
 	CONSTRAINT "aufgaben_prioritaet_ck" CHECK ("aufgaben"."prioritaet" between 0 and 3),
 	CONSTRAINT "aufgaben_wiederholung_ck" CHECK ("aufgaben"."wiederholung" is null or "aufgaben"."wiederholung" in ('daily', 'weekly', 'monthly')),
+	CONSTRAINT "aufgaben_wdh_tag_ck" CHECK ("aufgaben"."wiederholung_tag" is null or "aufgaben"."wiederholung_tag" between 1 and 31),
 	CONSTRAINT "aufgaben_erinnerung_ck" CHECK ("aufgaben"."erinnerung_min" is null or "aufgaben"."erinnerung_min" between 0 and 40320),
 	CONSTRAINT "aufgaben_faellig_ck" CHECK (("aufgaben"."faellig_date" is null or "aufgaben"."faellig_utc" is null) and ("aufgaben"."faellig_utc" is null or "aufgaben"."tzid" is not null))
 );

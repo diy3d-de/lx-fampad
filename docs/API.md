@@ -274,8 +274,8 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | `termin` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Termine ändern (alles außer `audience`) und löschen |
 | `termin_teilnehmer` | alles | erben Stufe und Besitzer des Termins: lesen, wo der Termin sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Terminen |
 | `termin_ausnahmen` | alles | wie `termin_teilnehmer` |
-| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Aufgaben ändern (alles außer `audience`) und löschen |
-| `aufgabe_punkt` | alles | erben Stufe und Besitzer der Aufgabe: lesen, wo sie sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben |
+| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Aufgaben ändern (alles außer `audience`) und löschen; an **zugewiesenen** nur `erledigtAt`/`folgeId` |
+| `aufgabe_punkt` | alles | erben Stufe, Besitzer und Zuständige der Aufgabe: lesen, wo sie sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben; an **zugewiesenen** nur `doneAt` ändern |
 
 Ändert sich die Freigabe einer Liste (oder eines Termins), werden ihre Einträge (Teilnehmer, Ausnahmen) neu angestoßen (neue Revision ohne Inhaltsänderung): Geräte, die sie nun sehen dürfen, bekommen sie; Geräte, die die Liste nicht mehr sehen dürfen, bekommen einen Tombstone mit `hidden: true` ohne Inhalt. Bei Rollenwechsel werden die Sitzungen widerrufen und das Flag `resync_required` der Geräte der Person gesetzt; die neue Anmeldung ist ein neues Gerät und beginnt mit einem Snapshot (die App leert außerdem bei jeder neuen Geräte-ID ihre Fachtabellen und stellt nur lokal neu angelegte, noch nicht gesendete Zeilen wieder her).
 
@@ -328,28 +328,33 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 **Aufgaben (Phase 1c-4a)**
 
 - **Fälligkeit** wie bei Terminen: `faelligDate` (`YYYY-MM-DD`, ganztägig, keine Zeitzone) **oder** `faelligUtc` (ISO-8601, in der Antwort UTC mit Millisekunden) mit `tzid` (IANA-Zeitzone, Pflicht bei `faelligUtc`); beides gleichzeitig oder `faelligUtc` ohne `tzid` ist `invalid` (geprüft nach dem Zusammenführen jeder Änderung). Beides `null` = ohne Fälligkeit. Beim Wechsel zwischen Tag und Zeitpunkt sendet der Client alle drei Felder zusammen.
-- **Priorität** `prioritaet`: Ganzzahl 0 (keine) bis 3 (hoch). **Status:** `erledigtAt` (Zeitpunkt oder `null`) und `erledigtVon` (aktives Mitglied oder `null`; `invalid_reference` sonst); der Server setzt sie nicht selbst, der Client sendet beide beim Abhaken und `null` beim Zurücksetzen. **Zuständig:** `assigneeId` (aktives Mitglied der Familie oder `null`).
+- **Priorität** `prioritaet`: Ganzzahl 0 (keine) bis 3 (hoch). **Status:** `erledigtAt` (Zeitpunkt oder `null`) und `erledigtVon` (aktives Mitglied oder `null`; `invalid_reference` sonst); `erledigtVon` ist ein **Server-Feld**: der Server setzt es beim Setzen von `erledigtAt` auf den Akteur (Sitzung) und beim Zurücksetzen auf `null`; sendet der Client es, ist die Op `invalid`. **Zuständig:** `assigneeId` (aktives Mitglied der Familie oder `null`).
 - **Wiederholung** `wiederholung`: `daily`, `weekly`, `monthly` oder `null`; der Server prüft nur die Form und legt nie selbst eine Folgeaufgabe an. Der **Client** erzeugt sie beim Erledigen (Fälligkeit, Deckel und feste ID: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6d). Das zweite Anlegen derselben ID (zwei Geräte erledigen dieselbe Aufgabe) ist eine gewöhnliche Änderung mit denselben Werten, kein Fehler.
 - **Unteraufgaben** (`aufgabe_punkt`): `aufgabeId` (unveränderlich, Pflicht), `text` (1 bis 500 Zeichen), `doneAt` (Zeitpunkt oder `null`), `position` (Kommazahl wie bei Listeneinträgen). Sie erben Freigabe und Besitzer der Aufgabe; beim Löschen der Aufgabe werden sie per Kaskade mit Tombstone entfernt (niedrigere Revisionen vor der Aufgabe).
-- **Obergrenzen:** 5000 lebende Aufgaben je Familie, zusätzlich **500 je Besitzer für Kinder**, 100 lebende Unteraufgaben je Aufgabe (`limit_reached`). **Mitglied entfernt:** `assigneeId`, `erledigtVon` und `ownerId` werden mit Änderungseintrag auf `null` gesetzt.
+- **Obergrenzen:** 5000 **offene** (nicht erledigte) Aufgaben je Familie, zusätzlich **500 offene je Besitzer für Kinder**; alle lebenden Aufgaben (auch erledigte) zusammen höchstens 20000 je Familie; 100 lebende Unteraufgaben je Aufgabe und 50000 je Familie (`limit_reached`). **Mitglied entfernt:** `assigneeId`, `erledigtVon` und `ownerId` werden mit Änderungseintrag auf `null` gesetzt.
+- **Zuständige Person:** Wer in `assigneeId` steht (auch ein Kind), darf an der Aufgabe **nur** `erledigtAt` und `folgeId` ändern und an ihren Unteraufgaben nur `doneAt`; jede weitere Änderung, Anlegen/Löschen von Unteraufgaben und Löschen der Aufgabe sind `forbidden`, eine für die Person nicht sichtbare Aufgabe `not_found`. Sonst gilt die Tabelle unten.
+- **Folgeaufgabe:** `folgeId` (UUID oder `null`) nennt die beim Erledigen angelegte Folgeaufgabe (abgeleitet, bei belegter ID zufällig); `wiederholungTag` (1 bis 31 oder `null`) ist der Wunschtag des Monats bei `monthly` und bleibt in der Kette erhalten.
 - **Erinnerung:** `erinnerungMin` (0 bis 40320 Minuten vor der Fälligkeit oder `null`) wird gespeichert und synchronisiert; die App nutzt es noch nicht (siehe Abschnitt 6d der Projektbeschreibung, Offen).
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
-| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Admin/Eltern alles; Kind: Stufe `family` lesen, nur mit Stufe `family` anlegen, **eigene** Aufgaben ändern (alles außer `audience`) und löschen | |
+| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Admin/Eltern alles; Kind: Stufe `family` lesen, nur mit Stufe `family` anlegen, **eigene** Aufgaben ändern (alles außer `audience`) und löschen, an **zugewiesenen** nur `erledigtAt`/`folgeId` | |
 | | `titel` | Text 1 bis 200 Zeichen (Pflicht) | rw |
 | | `beschreibung` | Text bis 4000 Zeichen (Standard leer) | rw |
 | | `faelligDate` | `YYYY-MM-DD` oder `null` | rw |
 | | `faelligUtc`, `tzid` | ISO-8601 mit Zeitzone (2000 bis 2200) bzw. IANA-Zeitzone, oder `null` | rw |
 | | `prioritaet` | Ganzzahl 0 bis 3 (Standard 0) | rw |
-| | `assigneeId`, `erledigtVon` | UUID eines aktiven Mitglieds oder `null` | rw |
-| | `erledigtAt` | ISO-8601 oder `null` | rw |
+| | `assigneeId` | UUID eines aktiven Mitglieds oder `null` | rw |
+| | `erledigtAt` | ISO-8601 oder `null` (auch die zuständige Person darf es setzen) | rw |
+| | `erledigtVon` | UUID oder `null` (Server: Akteur beim Erledigen) | server |
+| | `folgeId` | UUID oder `null` (Folgeaufgabe, auch die zuständige Person darf es setzen) | rw |
+| | `wiederholungTag` | Ganzzahl 1 bis 31 oder `null` (Wunschtag, `monthly`) | rw |
 | | `wiederholung` | `daily`, `weekly`, `monthly` oder `null` | rw |
 | | `erinnerungMin` | Ganzzahl 0 bis 40320 oder `null` | rw |
 | | `audience` | `parents`, `family` (Standard), `all` (wird `family`) | rw |
 | | `ownerId` | UUID oder `null` (Ersteller; bestimmt das Änderungsrecht des Kindes) | server |
 | | `createdAt` | ISO-8601 (UTC) | server |
-| `aufgabe_punkt` | alles | erben Stufe und Besitzer der Aufgabe: lesen, wo die Aufgabe sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben (Kind) | |
+| `aufgabe_punkt` | alles | erben Stufe, Besitzer und Zuständige der Aufgabe: lesen, wo die Aufgabe sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben (Kind); an zugewiesenen nur `doneAt` | |
 | | `aufgabeId` | UUID (Pflicht) | create |
 | | `text`, `doneAt`, `position` | siehe oben | rw |
 
