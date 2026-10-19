@@ -112,6 +112,7 @@ class AndroidErinnerungPort implements ErinnerungPort {
       if (s.enabled) return BenachrichtigungsStatus.erlaubt;
       return s.canAsk ? BenachrichtigungsStatus.fragbar : BenachrichtigungsStatus.gesperrt;
     }
+    letzterFehler = 'systemkanal';
     // Rückfall: Plugin (kennt den Dialog-Zustand nicht, Anfragen ist dann der einzige Weg)
     await _sicherBereit();
     final an = await _sicher<bool>(() async => await _android?.areNotificationsEnabled());

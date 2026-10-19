@@ -56,12 +56,16 @@ class FakeErinnerungPort implements ErinnerungPort {
   /// Android zeigt keinen Dialog mehr (dauerhaft verweigert): Anfragen ändern nichts.
   bool dauerhaft = false;
 
+  /// Der Systemaufruf scheitert (Status nicht lesbar).
+  bool statusUnbekannt = false;
+
   /// Ob sich die Systemeinstellungen öffnen lassen.
   bool systemOk = true;
 
   @override
-  Future<BenachrichtigungsStatus> benachrichtigungsStatus() async =>
-      erlaubt ? BenachrichtigungsStatus.erlaubt : (dauerhaft ? BenachrichtigungsStatus.gesperrt : BenachrichtigungsStatus.fragbar);
+  Future<BenachrichtigungsStatus> benachrichtigungsStatus() async => statusUnbekannt
+      ? BenachrichtigungsStatus.unbekannt
+      : erlaubt ? BenachrichtigungsStatus.erlaubt : (dauerhaft ? BenachrichtigungsStatus.gesperrt : BenachrichtigungsStatus.fragbar);
 
   @override
   Future<bool> benachrichtigungenAnfragen() async {

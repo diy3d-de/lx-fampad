@@ -79,6 +79,13 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
         ref.invalidate(erinnerungDiagnoseProvider);
       }
     }
+    if (!mounted) return;
+    // Hat Android keinen Dialog gezeigt (dauerhaft verweigert, auch nach einem Update ohne gemerkte Anfrage): direkt in die Einstellungen
+    final st = await ref.read(erinnerungStatusProvider.future);
+    if (mounted && !st.erlaubt && !st.fragbar && !st.unbekannt) {
+      _hinweis('Android zeigt die Abfrage nicht mehr. Erlaube die Benachrichtigungen in den Einstellungen.');
+      await _einstellungen();
+    }
   }
 
   Future<void> _test() async {
@@ -180,6 +187,14 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             if (s.fragbar) ...[
               HauptKnopf(text: 'Benachrichtigungen erlauben', icon: Icons.notifications_active_outlined, laeuft: _beschaeftigt, onPressed: _erlauben),
               const SizedBox(height: 4),
+              if (s.unbekannt)
+                LinkKnopf(
+                  'Erneut prüfen',
+                  onPressed: () {
+                    ref.invalidate(erinnerungStatusProvider);
+                    ref.invalidate(erinnerungDiagnoseProvider);
+                  },
+                ),
               LinkKnopf('Systemeinstellungen öffnen', onPressed: () => unawaited(_einstellungen())),
             ] else
               HauptKnopf(text: 'In den Einstellungen erlauben', icon: Icons.settings_outlined, onPressed: () => unawaited(_einstellungen())),
@@ -188,7 +203,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             const SizedBox(height: 12),
             const MeldungsBox('Benachrichtigungen sind erlaubt.', fehler: false),
           ],
-          if (s != null && !s.exakt) ...[
+          if (s != null && s.bereit && !s.exakt) ...[
             const SizedBox(height: 12),
             const MeldungsBox(
               'Genaue Alarme ("Alarme & Erinnerungen") sind auf diesem Gerät nicht erlaubt. Erinnerungen können dadurch einige Minuten später kommen.',
@@ -232,7 +247,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           ZweitKnopf(
             text: 'Testbenachrichtigung in 10 Sekunden',
             icon: Icons.notifications_none,
-            onPressed: _beschaeftigt || (s != null && !s.erlaubt) ? null : _test,
+            onPressed: _beschaeftigt || (s != null && !s.erlaubt && !s.unbekannt) ? null : _test,
           ),
           const SizedBox(height: 16),
           const _DiagnoseZeile(),
@@ -260,7 +275,7 @@ class _DiagnoseZeile extends ConsumerWidget {
     return Semantics(
       label: 'Diagnose der Erinnerungen',
       child: Text(
-        '// diagnose: erlaubt ${ja(d.erlaubt)} · kanal ${_kanal(d.kanal)} · genaue alarme ${ja(d.exakt)} · plugin ${ja(d.bereit)} · '
+        '// diagnose: erlaubt ${ja(d.erlaubt)} · kategorie ${_kanal(d.kanal)} · genaue alarme ${ja(d.exakt)} · plugin ${ja(d.bereit)} · '
         'geplant ${d.geplant < 0 ? '?' : d.geplant}${d.fehler == null ? '' : ' · fehler ${d.fehler}'}',
         key: const Key('erinnerung-diagnose'),
         style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),

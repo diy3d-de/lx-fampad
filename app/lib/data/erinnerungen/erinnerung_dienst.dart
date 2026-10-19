@@ -154,8 +154,10 @@ class ErinnerungDienst {
     if (!_datenDa()) return true;
     final exakt = await port.exakteAlarmeMoeglich();
     // Wurde die Erlaubnis nachträglich erteilt (oder entzogen), alles neu setzen: kein App-Neustart nötig
-    final erlaubt = await port.benachrichtigungenErlaubt();
-    if (_letzteErlaubt != null && _letzteErlaubt != erlaubt) {
+    final bs = await port.benachrichtigungsStatus();
+    final erlaubt = bs == BenachrichtigungsStatus.erlaubt;
+    // "unbekannt" (Systemaufruf kurz gescheitert) ändert nichts: keine Neuplanung durch ein kurzes Scheitern
+    if (bs != BenachrichtigungsStatus.unbekannt && _letzteErlaubt != null && _letzteErlaubt != erlaubt) {
       _letzte = null;
       _leer = false;
     }
@@ -176,7 +178,7 @@ class ErinnerungDienst {
     }
     _letzte = plan;
     _letzteExakt = exakt;
-    _letzteErlaubt = erlaubt;
+    if (bs != BenachrichtigungsStatus.unbekannt) _letzteErlaubt = erlaubt;
     _letzteSperre = einst.sperrbildschirmTitel;
     _leer = plan.isEmpty;
     return true;
@@ -264,6 +266,7 @@ class ErinnerungDienst {
       erlaubt: s == BenachrichtigungsStatus.erlaubt,
       fragbar: s != BenachrichtigungsStatus.gesperrt,
       unbekannt: s == BenachrichtigungsStatus.unbekannt,
+      bereit: _bereit,
       exakt: await port.exakteAlarmeMoeglich(),
     );
   }
@@ -306,7 +309,10 @@ class ErinnerungStatus {
 
   /// Der Status ließ sich nicht lesen (Systemaufruf gescheitert): nicht als "verweigert" anzeigen.
   final bool unbekannt;
-  const ErinnerungStatus({required this.verfuegbar, this.erlaubt = false, this.exakt = false, this.fragbar = true, this.unbekannt = false});
+
+  /// Das Plugin ist bereit (sonst sind Angaben zu genauen Alarmen nicht belastbar).
+  final bool bereit;
+  const ErinnerungStatus({required this.verfuegbar, this.erlaubt = false, this.exakt = false, this.fragbar = true, this.unbekannt = false, this.bereit = true});
 }
 
 final erinnerungDiagnoseProvider = FutureProvider.autoDispose<ErinnerungDiagnose>((ref) => ref.read(erinnerungDienstProvider).diagnose());

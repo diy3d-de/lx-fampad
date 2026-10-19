@@ -101,4 +101,13 @@ void main() {
     expect(await p.benachrichtigungsStatus(), BenachrichtigungsStatus.unbekannt);
     expect((await p.diagnose()).fehler, isNotNull);
   });
+
+  test('Alarm-Einstellungen scheitern: Rückfall auf die Benachrichtigungseinstellungen', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger.setMockMethodCallHandler(kanal, (call) async {
+      aufrufe.add(call.method);
+      return call.method == 'openExactAlarmSettings' ? false : true;
+    });
+    expect(await AndroidErinnerungPort().alarmEinstellungenOeffnen(), isTrue);
+    expect(aufrufe, ['openExactAlarmSettings', 'openNotificationSettings']);
+  });
 }

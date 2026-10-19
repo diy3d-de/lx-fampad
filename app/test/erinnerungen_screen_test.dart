@@ -236,6 +236,44 @@ void main() {
     expect(text, isNot(contains('Zahnarzt')));
   });
 
+  testWidgets('Status unbekannt: eigener Hinweis, Test-Knopf bleibt, "Erneut prüfen" liest neu', (tester) async {
+    await oeffnen(tester, erlaubt: false);
+    port.statusUnbekannt = true;
+    await tester.pumpWidget(const SizedBox());
+    await oeffnen(tester, erlaubt: false);
+    port.statusUnbekannt = true;
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await warte(tester, 10);
+    expect(find.textContaining('ließ sich nicht prüfen'), findsOneWidget);
+    final knopf = find.ancestor(of: find.text('Testbenachrichtigung in 10 Sekunden'), matching: find.byType(OutlinedButton));
+    expect(tester.widget<OutlinedButton>(knopf).onPressed, isNotNull);
+    port.statusUnbekannt = false;
+    port.erlaubt = true;
+    await tippeText(tester, 'Erneut prüfen');
+    expect(find.text('Benachrichtigungen sind erlaubt.'), findsOneWidget);
+  });
+
+  testWidgets('Knopf "erlauben" ohne Dialog (dauerhaft verweigert, Status erst danach bekannt): führt direkt in die Einstellungen', (tester) async {
+    await oeffnen(tester, erlaubt: false);
+    port.dauerhaft = true; // Android zeigt keinen Dialog; erst nach dem Versuch ist das erkennbar
+    await tippeText(tester, 'Benachrichtigungen erlauben');
+    expect(port.systemEinstellungen, 1);
+    expect(find.text('In den Einstellungen erlauben'), findsOneWidget);
+  });
+
+  testWidgets('Mehrfaches schnelles Zurückkehren: kein Fehler, Status stimmt danach', (tester) async {
+    await oeffnen(tester, erlaubt: false, mitTermin: true);
+    port.erlaubt = true;
+    for (var i = 0; i < 3; i++) {
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    }
+    await warte(tester, 12);
+    expect(find.text('Benachrichtigungen sind erlaubt.'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Web: nur Hinweis, keine Bedienelemente', (tester) async {
     await oeffnen(tester, verfuegbar: false);
     expect(find.textContaining('nur in der Android-App'), findsOneWidget);

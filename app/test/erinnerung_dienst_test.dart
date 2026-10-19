@@ -92,6 +92,18 @@ void main() {
     await ruhe();
   });
 
+  test('Status "unbekannt" (Systemaufruf scheitert kurz): keine Neuplanung; echter Wechsel plant neu', () async {
+    final n = port.planungen.length;
+    port.statusUnbekannt = true;
+    await c.read(erinnerungDienstProvider).abgleichen();
+    await ruhe();
+    expect(port.planungen.length, n);
+    port.statusUnbekannt = false;
+    port.erlaubt = false;
+    await c.read(erinnerungDienstProvider).abgleichen();
+    await bis(() => port.planungen.length > n, grund: 'Neuplanung nach echtem Wechsel');
+  });
+
   test('erste Planung ohne Termine ist leer (räumt Altlasten ab)', () {
     expect(port.planungen.first, isEmpty);
     expect(port.exaktFlags.first, isTrue);
