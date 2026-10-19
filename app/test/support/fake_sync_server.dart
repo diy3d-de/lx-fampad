@@ -130,6 +130,29 @@ class FakeSyncServer {
     'serverTime': DateTime.now().toUtc().toIso8601String(),
   };
 
+  /// Untergeordnete Entitäten: Name -> (Elternteil, Feld).
+  static const _eltern = {
+    'list_item': ('list', 'listId'),
+    'termin_teilnehmer': ('termin', 'terminId'),
+    'termin_ausnahmen': ('termin', 'terminId'),
+  };
+
+  static Map<String, dynamic> _terminStandard(String owner) => {
+    'ort': '',
+    'beschreibung': '',
+    'ganztaegig': false,
+    'startUtc': null,
+    'endUtc': null,
+    'tzid': null,
+    'startDate': null,
+    'endDate': null,
+    'rrule': null,
+    'erinnerungMin': null,
+    'icalUid': null,
+    'audience': 'family',
+    'ownerId': owner,
+  };
+
   Map<String, dynamic> _ab(String code) => {'status': 'rejected', 'code': code, 'conflicts': <Map<String, dynamic>>[]};
   Map<String, dynamic> _ok([List<Map<String, dynamic>> conflicts = const []]) => {'status': 'acked', 'conflicts': conflicts};
 
@@ -146,8 +169,9 @@ class FakeSyncServer {
     final fields = (o['fields'] as Map<String, dynamic>);
     if (z == null) {
       if (baseRev > 0) return _ab('not_found');
-      if (o['entity'] == 'list_item') {
-        final l = zeilen['list/${fields['listId']}'];
+      final eltern = _eltern[o['entity']];
+      if (eltern != null) {
+        final l = zeilen['${eltern.$1}/${fields[eltern.$2]}'];
         if (l == null) return _ab('not_found');
         if (l.geloescht) return _ab('parent_deleted');
       }
@@ -155,6 +179,7 @@ class FakeSyncServer {
         'createdAt': DateTime.now().toUtc().toIso8601String(),
         if (o['entity'] == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdAdmin},
         if (o['entity'] == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
+        if (o['entity'] == 'termin') ..._terminStandard(fixIdAdmin),
         ...fields,
       }, ++rev);
       for (final f in fields.keys) {
@@ -195,8 +220,9 @@ class FakeSyncServer {
     z.rev = ++rev;
     z.fields = {};
     // untergeordnete Einträge zuerst (niedrigere Revisionen wären im echten Server so; hier genügt ein Tombstone je Eintrag)
-    if (z.entity == 'list') {
-      for (final k in zeilen.values.where((k) => k.entity == 'list_item' && k.fields['listId'] == z.id && !k.geloescht).toList()) {
+    for (final e in _eltern.entries) {
+      if (e.value.$1 != z.entity) continue;
+      for (final k in zeilen.values.where((k) => k.entity == e.key && k.fields[e.value.$2] == z.id && !k.geloescht).toList()) {
         k.geloescht = true;
         k.rev = ++rev;
         k.fields = {};
@@ -215,6 +241,7 @@ class FakeSyncServer {
         'createdAt': DateTime.now().toUtc().toIso8601String(),
         if (entity == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdKind},
         if (entity == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
+        if (entity == 'termin') ..._terminStandard(fixIdKind),
         ...fields,
       }, ++rev);
       zeilen[key] = z;

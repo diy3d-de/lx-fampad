@@ -38,10 +38,16 @@ abstract class SyncEntity {
   Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => const [];
 
   Future<void> leeren(AppDatabase db);
+
+  /// Texte für Hinweise bei abgelehnten Änderungen ("Die Liste wurde gelöscht" / "Die Liste ist voll").
+  String get elternGeloescht => 'Die Liste wurde gelöscht.';
+  String get grenzeErreicht => 'Die Liste ist voll';
 }
 
 DateTime? _zeit(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
 String? _text(Object? v) => v is String ? v : null;
+bool? _bool(Object? v) => v is bool ? v : null;
+int? _int(Object? v) => v is int ? v : null;
 
 String _iso(DateTime t) => t.toUtc().toIso8601String();
 
@@ -171,7 +177,212 @@ class ListenEintraegeEntitaet extends SyncEntity {
   Future<void> leeren(AppDatabase db) => db.delete(db.listenEintraege).go();
 }
 
+class TermineEntitaet extends SyncEntity {
+  @override
+  String get name => 'termin';
+
+  @override
+  List<KindLink> get kinder => const [KindLink('termin_teilnehmer', 'terminId'), KindLink('termin_ausnahmen', 'terminId')];
+
+  @override
+  String get elternGeloescht => 'Der Termin wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Es gibt zu viele Termine';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['titel']) != null && (fields['startUtc'] != null || fields['startDate'] != null);
+
+  Selectable<Termin> _zeile(AppDatabase db, String id) => db.select(db.termine)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async {
+    final n = (await _zeile(db, id).getSingleOrNull())?.titel;
+    return n == null ? null : 'Termin „$n“';
+  }
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    if (vorhanden == null) {
+      await db.into(db.termine).insert(
+        TermineCompanion.insert(
+          id: id,
+          titel: _text(fields['titel']) ?? '',
+          createdAt: _zeit(fields['createdAt']) ?? DateTime.now(),
+          ort: Value(_text(fields['ort']) ?? ''),
+          beschreibung: Value(_text(fields['beschreibung']) ?? ''),
+          ganztaegig: Value(_bool(fields['ganztaegig']) ?? false),
+          startUtc: Value(_zeit(fields['startUtc'])),
+          endUtc: Value(_zeit(fields['endUtc'])),
+          tzid: Value(_text(fields['tzid'])),
+          startDate: Value(_text(fields['startDate'])),
+          endDate: Value(_text(fields['endDate'])),
+          rrule: Value(_text(fields['rrule'])),
+          erinnerungMin: Value(_int(fields['erinnerungMin'])),
+          icalUid: Value(_text(fields['icalUid'])),
+          audience: Value(_text(fields['audience']) ?? 'family'),
+          ownerId: Value(_text(fields['ownerId'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.termine)..where((t) => t.id.equals(id))).write(
+      TermineCompanion(
+        titel: setze('titel') ? Value(_text(fields['titel']) ?? vorhanden.titel) : const Value.absent(),
+        ort: setze('ort') ? Value(_text(fields['ort']) ?? '') : const Value.absent(),
+        beschreibung: setze('beschreibung') ? Value(_text(fields['beschreibung']) ?? '') : const Value.absent(),
+        ganztaegig: setze('ganztaegig') ? Value(_bool(fields['ganztaegig']) ?? vorhanden.ganztaegig) : const Value.absent(),
+        startUtc: setze('startUtc') ? Value(_zeit(fields['startUtc'])) : const Value.absent(),
+        endUtc: setze('endUtc') ? Value(_zeit(fields['endUtc'])) : const Value.absent(),
+        tzid: setze('tzid') ? Value(_text(fields['tzid'])) : const Value.absent(),
+        startDate: setze('startDate') ? Value(_text(fields['startDate'])) : const Value.absent(),
+        endDate: setze('endDate') ? Value(_text(fields['endDate'])) : const Value.absent(),
+        rrule: setze('rrule') ? Value(_text(fields['rrule'])) : const Value.absent(),
+        erinnerungMin: setze('erinnerungMin') ? Value(_int(fields['erinnerungMin'])) : const Value.absent(),
+        icalUid: setze('icalUid') ? Value(_text(fields['icalUid'])) : const Value.absent(),
+        audience: setze('audience') ? Value(_text(fields['audience']) ?? vorhanden.audience) : const Value.absent(),
+        ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
+        createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.termine)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.termine).go();
+}
+
+class TerminTeilnehmerEntitaet extends SyncEntity {
+  @override
+  String get name => 'termin_teilnehmer';
+
+  @override
+  String get elternGeloescht => 'Der Termin wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Der Termin hat zu viele Teilnehmer';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['terminId']) != null && _text(fields['userId']) != null;
+
+  Selectable<TerminTeilnehmerZeile> _zeile(AppDatabase db, String id) => db.select(db.terminTeilnehmer)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Teilnehmer';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    if (vorhanden == null) {
+      await db.into(db.terminTeilnehmer).insert(
+        TerminTeilnehmerCompanion.insert(id: id, terminId: _text(fields['terminId']) ?? '', userId: _text(fields['userId']) ?? '', rev: Value(rev ?? 0)),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    // terminId und userId sind unveränderlich
+    if (rev != null) await (db.update(db.terminTeilnehmer)..where((t) => t.id.equals(id))).write(TerminTeilnehmerCompanion(rev: Value(rev)));
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.terminTeilnehmer)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'terminId'
+      ? const []
+      : [for (final r in await (db.select(db.terminTeilnehmer)..where((t) => t.terminId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.terminTeilnehmer).go();
+}
+
+class TerminAusnahmenEntitaet extends SyncEntity {
+  @override
+  String get name => 'termin_ausnahmen';
+
+  @override
+  String get elternGeloescht => 'Der Termin wurde gelöscht.';
+
+  @override
+  String get grenzeErreicht => 'Die Serie hat zu viele Ausnahmen';
+
+  @override
+  bool kannAnlegen(Json fields) => _text(fields['terminId']) != null && _text(fields['originalStart']) != null;
+
+  Selectable<TerminAusnahme> _zeile(AppDatabase db, String id) => db.select(db.terminAusnahmen)..where((t) => t.id.equals(id));
+
+  @override
+  Future<int?> rev(AppDatabase db, String id) async => (await _zeile(db, id).getSingleOrNull())?.rev;
+
+  @override
+  Future<String?> anzeigename(AppDatabase db, String id) async => await _zeile(db, id).getSingleOrNull() == null ? null : 'Ausnahme eines Termins';
+
+  @override
+  Future<void> schreiben(AppDatabase db, String id, Json fields, {int? rev, Set<String> ueberspringen = const {}}) async {
+    final vorhanden = await _zeile(db, id).getSingleOrNull();
+    bool setze(String f) => fields.containsKey(f) && !ueberspringen.contains(f);
+    if (vorhanden == null) {
+      await db.into(db.terminAusnahmen).insert(
+        TerminAusnahmenCompanion.insert(
+          id: id,
+          terminId: _text(fields['terminId']) ?? '',
+          originalStart: _text(fields['originalStart']) ?? '',
+          abgesagt: Value(_bool(fields['abgesagt']) ?? false),
+          titel: Value(_text(fields['titel'])),
+          start: Value(_text(fields['start'])),
+          ende: Value(_text(fields['ende'])),
+          ort: Value(_text(fields['ort'])),
+          rev: Value(rev ?? 0),
+        ),
+        mode: InsertMode.insertOrReplace,
+      );
+      return;
+    }
+    await (db.update(db.terminAusnahmen)..where((t) => t.id.equals(id))).write(
+      TerminAusnahmenCompanion(
+        abgesagt: setze('abgesagt') ? Value(_bool(fields['abgesagt']) ?? vorhanden.abgesagt) : const Value.absent(),
+        titel: setze('titel') ? Value(_text(fields['titel'])) : const Value.absent(),
+        start: setze('start') ? Value(_text(fields['start'])) : const Value.absent(),
+        ende: setze('ende') ? Value(_text(fields['ende'])) : const Value.absent(),
+        ort: setze('ort') ? Value(_text(fields['ort'])) : const Value.absent(),
+        rev: rev != null ? Value(rev) : const Value.absent(),
+      ),
+    );
+  }
+
+  @override
+  Future<void> entfernen(AppDatabase db, String id) => (db.delete(db.terminAusnahmen)..where((t) => t.id.equals(id))).go();
+
+  @override
+  Future<List<String>> kindIds(AppDatabase db, String feld, String elternId) async => feld != 'terminId'
+      ? const []
+      : [for (final r in await (db.select(db.terminAusnahmen)..where((t) => t.terminId.equals(elternId))).get()) r.id];
+
+  @override
+  Future<void> leeren(AppDatabase db) => db.delete(db.terminAusnahmen).go();
+}
+
 /// Alle synchronisierten Entitäten des Clients.
 final Map<String, SyncEntity> syncEntities = {
-  for (final e in <SyncEntity>[ListenEntitaet(), ListenEintraegeEntitaet()]) e.name: e,
+  for (final e in <SyncEntity>[
+    ListenEntitaet(),
+    ListenEintraegeEntitaet(),
+    TermineEntitaet(),
+    TerminTeilnehmerEntitaet(),
+    TerminAusnahmenEntitaet(),
+  ])
+    e.name: e,
 };

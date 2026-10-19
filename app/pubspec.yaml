@@ -33,6 +33,9 @@ dependencies:
   web: 1.1.1
   # WebSocket-Client für den Revisionshinweis des Sync (Reconnect mit Backoff baut data/sync/sync_socket.dart selbst)
   web_socket_channel: 3.0.3
+  # Terminserien: rrule expandiert (rechnet ohne Zeitzonen, siehe data/calendar/expansion.dart), timezone liefert die Zeitzonen-Daten (Sommerzeit)
+  rrule: 0.2.18
+  timezone: 0.11.1
 
 dev_dependencies:
   flutter_test:
@@ -45,6 +48,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  # Zeitzonen-Daten (timezone 0.11.1, latest.tzf) für Terminserien, von der eigenen Domain (Prüfsumme in docs/VERSIONEN.md)
+  assets:
+    - assets/tz/latest.tzf
 
   # Schriften werden mitgeliefert (SIL Open Font License, Lizenztexte liegen daneben) - kein Google-Fonts-Abruf.
   fonts:

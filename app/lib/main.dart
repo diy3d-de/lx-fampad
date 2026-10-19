@@ -5,6 +5,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'app.dart';
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
+import 'data/calendar/zeitzonen.dart';
 import 'data/database_provider.dart';
 import 'data/sync_state.dart';
 import 'features/auth/adresszeile.dart';
@@ -14,6 +15,10 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   pruefeBasisAdressen();
   await initializeDateFormatting('de_DE');
+  // Zeitzonen-Daten für Terminserien (Asset der App; schlägt das Laden fehl, rechnet die Anzeige mit UTC statt abzustürzen)
+  try {
+    await zeitzonenLaden();
+  } catch (_) {}
   // Web: Ein Einladungslink (#/einladung/<token>) wird sofort gelesen und aus der Adresszeile entfernt (history.replaceState),
   // noch bevor die Oberfläche startet. Das Token bleibt nur im Arbeitsspeicher.
   final link = einladungAusAdresszeileNehmen();
