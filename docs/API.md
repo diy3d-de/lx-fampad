@@ -166,7 +166,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 
 | Methode, Pfad | Rolle | Beschreibung |
 | --- | --- | --- |
-| `POST /invites` | admin (alle Rollen, Admin-Einladung mit Step-up), parent (nur `child`) | `{ role, hours? (1–168, Standard 24), pin? (bool), requireApproval? }` → `{ invite: { id, token, link, pin?, expiresAt, requireApproval } }`. **Token und PIN erscheinen nur in dieser Antwort.** Gäste sind standardmäßig `requireApproval`, andere nicht; **`requireApproval: false` bei Gästen darf nur ein Admin** (für Eltern erzwingt der Server `true`). |
+| `POST /invites` | admin (alle Rollen, Admin-Einladung mit Step-up), parent (nur `child`) | `{ role, hours? (1–168, Standard 24), pin? (bool), requireApproval? }` → `{ invite: { id, token, link, pin?, expiresAt, requireApproval } }`. **Token und PIN erscheinen nur in dieser Antwort.** `requireApproval` ist standardmäßig `false`; `true` verlangt die Freigabe des neuen Mitglieds durch einen Admin. |
 | `GET /invites` | admin (alle), parent (eigene) | `{ invites: [{ id, role, status: open\|used\|revoked\|locked\|expired, createdAt, expiresAt, hasPin, requireApproval, reset, createdBy, usedBy }] }` ohne Token und PIN |
 | `POST /invites/:id/revoke` | wie oben | widerruft eine offene Einladung; wer die Rolle der Einladung nicht (mehr) einladen darf, bekommt `403` |
 | `POST /invites/:id/extend` | wie oben | `{ hours }` → `{ expiresAt }`: setzt die Gültigkeit auf **das spätere** von bisheriger Ablaufzeit und jetzt + `hours` (**verkürzt nie**; höchstens 7 Tage je Aufruf); gesperrte Einladungen bleiben gesperrt; Rollenprüfung wie bei `revoke` |
@@ -261,7 +261,7 @@ Fehler der Anfrage selbst: `400 invalid_request` (Umschlag, zu viele Ops, ungül
 
 **Rechte (zentrales Modell, `server/src/sync/permissions.ts`)**
 
-Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Admins, `family`: die ganze Familie; Standard `family`). **Rückwärtskompatibel:** die frühere Stufe `all` (auch Gäste) nimmt der Server in Eingaben weiter an (Apps bis 0.2.0 senden sie) und speichert und liefert sie als `family` und einen Besitzer. Was eine Rolle nicht lesen darf, gibt es für sie nicht: Ändern und Löschen ergeben `not_found`, im Änderungsstrom fehlt es.
+Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Admins, `family`: die ganze Familie; Standard `family`). **Rückwärtskompatibel:** die frühere Stufe `all` (auch Gäste) nimmt der Server in Eingaben weiter an (Apps bis 0.2.0 senden sie) und speichert und liefert sie als `family`. **Verhaltenswechsel (Migration 0005):** Apps vor 0.2.1 senden evtl. `all`; ein Kind darf damit jetzt eine eigene Liste/einen eigenen Termin anlegen (vorher `forbidden`), es wird `family`. Jeder Datensatz hat außerdem einen Besitzer. Was eine Rolle nicht lesen darf, gibt es für sie nicht: Ändern und Löschen ergeben `not_found`, im Änderungsstrom fehlt es.
 
 | Entität | Admin, Elternteil | Kind |
 | --- | --- | --- |

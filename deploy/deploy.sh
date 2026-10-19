@@ -32,6 +32,12 @@ echo "==> Produktivpakete installieren (npm ci --omit=dev --ignore-scripts)"
 cp package.json package-lock.json "$STAGE/"
 (cd "$STAGE" && npm ci --omit=dev --ignore-scripts --no-fund --no-audit)
 
+if [ -f drizzle/0005_ohne_gaeste.sql ] && [ ! -f "$TARGET/drizzle/0005_ohne_gaeste.sql" ]; then
+  echo "==> ACHTUNG: Migration 0005 (Gäste entfallen) steht an. Sie löscht Gast-Konten, ist nicht umkehrbar und wird bei Fehler NICHT zurückgerollt." >&2
+  echo "    Vorher: sudo -u postgres pg_dump lx_fampad > ~/lx_fampad-vor-0005.sql (deploy/README.md, Updates veröffentlichen). Abbruch mit Strg+C in 15 s." >&2
+  sleep 15
+fi
+
 echo "==> nach $TARGET übertragen"
 mkdir -p "$TARGET"
 # Vorversion sichern (für den automatischen Rückfall). Das Verzeichnis legt die Einrichtung an (README, Schritt 2),

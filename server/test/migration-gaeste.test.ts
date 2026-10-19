@@ -60,7 +60,9 @@ if (process.env.TEST_DATABASE_URL) targets.push(['PostgreSQL (echt)', () => post
 
 const id = () => randomUUID();
 const F = id();
-const [A, P, C, G, H] = [id(), id(), id(), id(), id()];
+const [A, P, C, G, H, G3, A2] = [id(), id(), id(), id(), id(), id(), id()];
+const F2 = id();
+const [T3, TN3] = [id(), id()];
 const [L1, L2, L3, L4, I1, T1, T2, TN1, TN2] = [id(), id(), id(), id(), id(), id(), id(), id(), id()];
 
 describe.each(targets)('Migration 0005: Gäste entfallen (%s)', (_name, open) => {
@@ -80,11 +82,17 @@ describe.each(targets)('Migration 0005: Gäste entfallen (%s)', (_name, open) =>
 
     const q = (s: ReturnType<typeof sql>) => b.rows(s);
     await q(sql`insert into families (id, name, current_rev) values (${F}, 'Familie', 20)`);
-    for (const [uid, mail] of [[A, 'a'], [P, 'p'], [C, 'c'], [G, 'oma'], [H, 'wartend']] as const) {
+    for (const [uid, mail] of [[A, 'a'], [P, 'p'], [C, 'c'], [G, 'oma'], [H, 'wartend'], [G3, 'doppelt'], [A2, 'a2']] as const) {
       await q(sql`insert into users (id, email, display_name) values (${uid}, ${`${mail}@example.org`}, ${mail})`);
     }
     await q(sql`insert into memberships (family_id, user_id, role) values (${F}, ${A}, 'admin'), (${F}, ${P}, 'parent'), (${F}, ${C}, 'child'), (${F}, ${G}, 'guest')`);
     await q(sql`insert into memberships (family_id, user_id, role, status) values (${F}, ${H}, 'guest', 'pending')`);
+    // Gast, der in einer zweiten Familie Mitglied ist; gelöschter Termin mit Gast als Teilnehmer; offene Einladung des wartenden Gastes
+    await q(sql`insert into families (id, name, current_rev) values (${F2}, 'Zweite', 5)`);
+    await q(sql`insert into memberships (family_id, user_id, role) values (${F2}, ${A2}, 'admin'), (${F2}, ${G3}, 'child'), (${F}, ${G3}, 'guest')`);
+    await q(sql`insert into termine (id, family_id, titel, ganztaegig, start_date, end_date, audience, rev, field_revs, deleted_at) values (${T3}, ${F}, '', true, '2026-10-20', '2026-10-21', 'all', 10, '{}', now())`);
+    await q(sql`insert into termin_teilnehmer (id, family_id, termin_id, user_id, rev, field_revs, deleted_at) values (${TN3}, ${F}, ${T3}, ${G}, 10, '{}', now())`);
+    await q(sql`insert into invites (family_id, role, token_hash, expires_at, created_by) values (${F}, 'child', 'i5', now() + interval '1 day', ${H})`);
     const dev = id();
     await q(sql`insert into devices (id, family_id, user_id, name, platform) values (${dev}, ${F}, ${G}, 'Omas Handy', 'android')`);
     await q(sql`insert into sessions (family_id, user_id, device_id, token_hash, expires_at) values (${F}, ${G}, ${dev}, ${'hash-g'}, now() + interval '1 day')`);
@@ -129,9 +137,18 @@ describe.each(targets)('Migration 0005: Gäste entfallen (%s)', (_name, open) =>
     expect(await b.rows(sql`select 1 from devices where user_id = ${G}`)).toHaveLength(0);
   });
 
+  it('Randfälle: Gast mit zweiter Familie behält sein Konto, gelöschter Termin mit Gast-Teilnahme, zweite Familie unberührt', async () => {
+    expect(await b.rows(sql`select 1 from users where id = ${G3}`)).toHaveLength(1);
+    expect(await b.rows(sql`select 1 from memberships where family_id = ${F2} and user_id = ${G3} and role = 'child'`)).toHaveLength(1);
+    expect(await b.rows(sql`select 1 from memberships where family_id = ${F} and user_id = ${G3}`)).toHaveLength(0);
+    expect(await b.rows(sql`select 1 from termin_teilnehmer where id = ${TN3}`)).toHaveLength(0);
+    expect((await b.rows<{ audience: string }>(sql`select audience from termine where id = ${T3}`))[0]?.audience).toBe('family');
+    expect(Number((await b.rows<{ current_rev: string }>(sql`select current_rev from families where id = ${F2}`))[0]?.current_rev)).toBe(5);
+  });
+
   it('Audit-Eintrag je entferntem Gast', async () => {
     const audit = await b.rows<{ detail: { target: string; role: string } }>(sql`select detail from audit_log where family_id = ${F} and event = 'member_removed'`);
-    expect(audit.map((a) => a.detail.target).sort()).toEqual([G, H].sort());
+    expect(audit.map((a) => a.detail.target).sort()).toEqual([G, H, G3].sort());
     expect(audit.every((a) => a.detail.role === 'guest')).toBe(true);
   });
 
@@ -140,6 +157,7 @@ describe.each(targets)('Migration 0005: Gäste entfallen (%s)', (_name, open) =>
     expect(inv.find((i) => i.token_hash === 'i1')).toMatchObject({ revoked: true });
     expect(inv.find((i) => i.token_hash === 'i2')).toMatchObject({ revoked: true });
     expect(inv.find((i) => i.token_hash === 'i3')?.role).toBe('child');
+    expect(inv.find((i) => i.token_hash === 'i5')).toMatchObject({ revoked: true });
     expect(inv.find((i) => i.token_hash === 'i4')).toMatchObject({ role: 'child', revoked: false });
   });
 
