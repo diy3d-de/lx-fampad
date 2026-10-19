@@ -5,7 +5,9 @@ import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -14,10 +16,62 @@ import java.io.File
 /**
  * Kanal für App-Updates (lib/features/update/update_service.dart): Version abfragen und die heruntergeladene,
  * bereits geprüfte APK per PackageInstaller-Session installieren (statt ACTION_VIEW mit FileProvider).
+ *
+ * Zweiter Kanal (lib/data/system_channel.dart): Gerätename, Bildschirmfoto-Schutz (FLAG_SECURE) für Screens mit
+ * Geheimnissen und Einladungs-Links (https://familie.lx-labs.dev/#/einladung/<token>), mit denen die App geöffnet wird.
+ * Das Token im Link wird nie protokolliert.
  */
 class MainActivity : FlutterActivity() {
+    private var systemChannel: MethodChannel? = null
+    private var startLink: String? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        startLink = linkAus(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val link = linkAus(intent)
+        if (link != null) systemChannel?.invokeMethod("link", link)
+    }
+
+    /** Nur Links der eigenen Domain (https). Die Daten werden aus dem Intent entfernt, damit sie nicht erneut gelesen werden. */
+    private fun linkAus(intent: Intent?): String? {
+        if (intent?.action != Intent.ACTION_VIEW) return null
+        val data = intent.data ?: return null
+        if (data.scheme != "https" || data.host != "familie.lx-labs.dev") return null
+        val link = data.toString()
+        intent.data = null
+        return link
+    }
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        systemChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.fampad/system").also { kanal ->
+            kanal.setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "deviceName" -> {
+                        val hersteller = Build.MANUFACTURER ?: ""
+                        val modell = Build.MODEL ?: ""
+                        val name = if (modell.startsWith(hersteller, ignoreCase = true)) modell else "$hersteller $modell"
+                        result.success(name.trim().take(60))
+                    }
+                    "appVersion" -> result.success(packageManager.getPackageInfo(packageName, 0).versionName)
+                    "initialLink" -> {
+                        result.success(startLink)
+                        startLink = null
+                    }
+                    "setSecure" -> {
+                        val secure = call.argument<Boolean>("secure") == true
+                        if (secure) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
+                        else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.fampad/update")
             .setMethodCallHandler { call, result ->
                 when (call.method) {

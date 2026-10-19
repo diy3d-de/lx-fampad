@@ -26,9 +26,20 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- Flutters eigenes Deep-Linking aus: Einladungslinks verarbeitet die App selbst (Fragment mit Token) -->
+            <meta-data android:name="flutter_deeplinking_enabled" android:value="false" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+            <!-- Einladungslinks: https://familie.lx-labs.dev/#/einladung/<token>. Android reicht das Fragment mit durch; die App liest
+                 es (MainActivity.linkAus). Ohne autoVerify fragt Android nach, womit der Link geöffnet wird. Für verifizierte App Links
+                 (Passkeys brauchen dieselbe Zuordnung) siehe deploy/README.md, Abschnitt Android-Zuordnung. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="https" android:host="familie.lx-labs.dev" android:path="/"/>
             </intent-filter>
         </activity>
         <!-- Nicht löschen: wird vom Flutter-Tool zur Erzeugung von GeneratedPluginRegistrant.java gebraucht -->
