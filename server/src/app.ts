@@ -11,6 +11,8 @@ import { normalizeIp } from './net.js';
 import { AppError, registerErrorHandling } from './errors.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerAuthRoutes } from './routes/auth.js';
+import { registerPushRoutes } from './routes/push.js';
+import { PushService } from './push/service.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { Hub } from './ws/hub.js';
@@ -22,6 +24,8 @@ declare module 'fastify' {
     authCore?: Auth;
     /** Offene WebSocket-Verbindungen (Tests prüfen daran Rollen und Schließen). */
     hub: Hub;
+    /** Push-Wecker (nur mit Datenbank); Chat & Co. hängen hier ihren Empfängerfilter ein (push/service.ts). */
+    push?: PushService;
   }
 }
 
@@ -34,6 +38,9 @@ export interface AppDeps {
   auth?: AuthService;
   /** Nur Tests: austauschbare Uhr. */
   now?: () => Date;
+  /** Nur Tests: ntfy ersetzen (Fake-HTTP) und Mindestabstand der Wecker verkürzen. */
+  pushFetch?: typeof fetch;
+  pushMinIntervalMs?: number;
   /** Nur für Tests: Ziel des Logs (Standard: stdout). */
   logStream?: Writable;
 }
@@ -63,7 +70,7 @@ export function isApiRequest(req: FastifyRequest): boolean {
   }
 }
 
-export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       config.logLevel === 'silent'
@@ -126,9 +133,26 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     registerAuthRoutes(app, config, authCore);
     registerAccountRoutes(app, config, authCore);
     registerSyncRoutes(app, config, authCore);
+    const push = new PushService({
+      db,
+      config,
+      log: app.log,
+      now: authCore.ctx.now,
+      hasLiveSocket: (deviceId) => hub.hasDevice(deviceId),
+      ...(pushFetch ? { fetch: pushFetch } : {}),
+      ...(pushMinIntervalMs !== undefined ? { minIntervalMs: pushMinIntervalMs } : {}),
+    });
+    app.decorate('push', push);
+    push.logStatusOnce();
+    app.addHook('onClose', async () => push.close());
+    registerPushRoutes(app, config, authCore, push);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
-    authCore.ctx.onRev = (familyId, rev, roles) => hub.notifyRev(familyId, rev, roles);
+    authCore.ctx.onRev = (familyId, rev, roles, origin) => {
+      hub.notifyRev(familyId, rev, roles);
+      // Push nur für Änderungen einer Person (Sync); nicht an deren Geräte, nicht an Geräte mit offener Verbindung
+      if (origin) void push.weckeGeraete({ familyId, rev, roles, origin });
+    };
     authCore.ctx.onRevoke = (e) => {
       if (e.kind === 'session') hub.closeSession(e.sessionId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');
       else if (e.kind === 'device') hub.closeDevice(e.deviceId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');

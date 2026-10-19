@@ -89,6 +89,11 @@ export class Hub {
     return this.closeAll(this.byUser.get(userId), code, reason, exceptSessionId ? (e) => e.sessionId === exceptSessionId : undefined);
   }
 
+  /** Hat das Gerät gerade eine offene (angemeldete) WebSocket-Verbindung? Dann braucht es keinen Push. */
+  hasDevice(deviceId: string): boolean {
+    return (this.byDevice.get(deviceId)?.size ?? 0) > 0;
+  }
+
   /** Aktualisiert die gemerkte Rolle einer Verbindung. */
   setRole(socket: WebSocket, role: Role): void {
     const e = this.entries.get(socket);

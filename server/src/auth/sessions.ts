@@ -2,7 +2,7 @@
 // Jede Zeile in "sessions" ist ein Cookie bzw. ein Refresh-Token; die Rotation erzeugt eine Nachfolgezeile in derselben token_family.
 import { and, eq, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
-import { devices, memberships, sessions, users } from '../db/schema.js';
+import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
@@ -287,6 +287,11 @@ export async function authenticateRequest(ctx: AuthContext, req: FastifyRequest)
 
 // ---------- Widerrufen ----------
 
+/** Löscht die Push-Endpunkte aller abgemeldeten Geräte der Person (ein ausgenommenes, noch aktives Gerät behält seinen). */
+async function dropPushEndpoints(exec: Executor, userId: string): Promise<void> {
+  await exec.delete(pushEndpoints).where(inArray(pushEndpoints.deviceId, exec.select({ id: devices.id }).from(devices).where(and(eq(devices.userId, userId), isNotNull(devices.revokedAt)))));
+}
+
 /** Widerruft alle Sitzungen der Person (und markiert ihre Geräte als abgemeldet); optional eine Sitzung ausnehmen. */
 export async function revokeAllForUser(ctx: AuthContext, exec: Executor, userId: string, opts: { exceptSessionId?: string } = {}): Promise<void> {
   const now = ctx.now();
@@ -301,6 +306,7 @@ export async function revokeAllForUser(ctx: AuthContext, exec: Executor, userId:
   const deviceIds = [...new Set(hit.map((h) => h.deviceId).filter((d): d is string => !!d && d !== keepDevice))];
   if (deviceIds.length > 0) await exec.update(devices).set({ revokedAt: now }).where(and(inArray(devices.id, deviceIds), isNull(devices.revokedAt)));
   if (!opts.exceptSessionId) await exec.update(devices).set({ revokedAt: now }).where(and(eq(devices.userId, userId), isNull(devices.revokedAt)));
+  await dropPushEndpoints(exec, userId);
   ctx.onRevoke({ kind: 'user', userId, exceptSessionId: opts.exceptSessionId });
 }
 
@@ -309,6 +315,7 @@ export async function revokeDevice(ctx: AuthContext, exec: Executor, deviceId: s
   const now = ctx.now();
   await exec.update(sessions).set({ revokedAt: now }).where(and(eq(sessions.deviceId, deviceId), isNull(sessions.revokedAt)));
   await exec.update(devices).set({ revokedAt: now }).where(and(eq(devices.id, deviceId), isNull(devices.revokedAt)));
+  await exec.delete(pushEndpoints).where(eq(pushEndpoints.deviceId, deviceId));
   ctx.onRevoke({ kind: 'device', deviceId });
 }
 

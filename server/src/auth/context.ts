@@ -20,6 +20,12 @@ export type RevokeEvent =
   | { kind: 'device'; deviceId: string }
   | { kind: 'session'; sessionId: string };
 
+/** Wer eine Änderung ausgelöst hat (Push: weder die Person noch ihre Geräte werden geweckt). Fehlt die Angabe, gibt es keinen Push. */
+export interface RevOrigin {
+  userId: string;
+  deviceId: string | null;
+}
+
 /** Gemeinsamer Kontext aller Auth-Funktionen. `now` ist austauschbar (Tests). */
 export interface AuthContext {
   db: Db;
@@ -30,7 +36,7 @@ export interface AuthContext {
   /** Wird nach jedem Widerruf aufgerufen; app.ts hängt den WebSocket-Hub ein. */
   onRevoke: (event: RevokeEvent) => void;
   /** Wird nach dem Commit einer Änderung im Sync aufgerufen (neue Revision der Familie); app.ts hängt den WebSocket-Hub ein. */
-  onRev: (familyId: string, rev: number, roles?: readonly Role[]) => void;
+  onRev: (familyId: string, rev: number, roles?: readonly Role[], origin?: RevOrigin) => void;
 }
 
 /** Angaben zur Anfrage, die ins Audit-Log und in die Fehlversuchs-Zähler fließen. */

@@ -192,6 +192,34 @@ export const devices = pgTable(
   ],
 );
 
+/**
+ * UnifiedPush-Endpunkt je Gerät (Wecker ohne Inhalt, siehe docs/API.md "Push"). Gespeichert wird nur das Topic aus dem Endpunkt
+ * (ntfy: "up" + 12 Zeichen); gepostet wird nie an die vom Gerät gemeldete URL, sondern an die Loopback-URL des eigenen ntfy.
+ * Die Zeile verschwindet mit dem Gerät (ON DELETE CASCADE) und beim Abmelden/Widerruf (explizit gelöscht).
+ */
+export const pushEndpoints = pgTable(
+  'push_endpoints',
+  {
+    deviceId: uuid('device_id').primaryKey(),
+    familyId: familyRef(),
+    topic: text('topic').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    lastOkAt: timestamp('last_ok_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    /** Aufeinanderfolgende Fehlschläge; ab der Grenze (push/service.ts) wird der Endpunkt deaktiviert. */
+    failCount: integer('fail_count').notNull().default(0),
+    /** Deaktiviert (ntfy meldet 404/410 oder wiederholte Fehler): kein Versand, bis das Gerät sich neu anmeldet (PUT /me/push). */
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.deviceId], foreignColumns: [devices.familyId, devices.id] }).onDelete('cascade'),
+    unique('push_endpoints_topic_uq').on(t.topic),
+    index('push_endpoints_family_idx').on(t.familyId),
+    check('push_endpoints_topic_ck', sql`${t.topic} ~ '^up[A-Za-z0-9_-]{12,64}$'`),
+  ],
+);
+
 export const sessions = pgTable(
   'sessions',
   {

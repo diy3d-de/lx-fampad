@@ -80,7 +80,7 @@ export function registerSyncRoutes(app: FastifyInstance, config: Config, auth: A
         }
       }
       // nach dem Commit: die Geräte der Familie, deren Rolle die Änderung sieht, erfahren die neue Revision (ohne Inhalt)
-      if (newest !== null) ctx.onRev(p.familyId, newest, [...roles]);
+      if (newest !== null) ctx.onRev(p.familyId, newest, [...roles], { userId: p.userId, deviceId: p.deviceId });
 
       const pulled = await pullChanges(ctx, registry, { actor, familyId: p.familyId, sinceRev: head.sinceRev, limit: head.limit ?? DEFAULT_PAGE,
         snapshotRev: head.snapshotRev,
