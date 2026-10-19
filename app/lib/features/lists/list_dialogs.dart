@@ -28,6 +28,11 @@ class _AuswahlKnopfState extends State<AuswahlKnopf> {
       button: true,
       selected: gewaehlt,
       label: widget.text,
+      // fokussierbar und bedienbar auch für Bedienhilfen (Screenreader, Tab im Browser): sonst stünde der Fokus auf einem Element, das
+      // der Semantikbaum nicht kennt
+      focusable: true,
+      focused: _fokus,
+      onTap: widget.onTap,
       excludeSemantics: true,
       child: InkWell(
         borderRadius: BorderRadius.circular(10),
