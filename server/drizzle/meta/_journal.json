@@ -71,6 +71,13 @@
       "when": 1792432200000,
       "tag": "0009_e2ee",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792438699925,
+      "tag": "0010_e2ee_chat",
+      "breakpoints": true
     }
   ]
 }

@@ -29,8 +29,10 @@ export const MAX_GRUPPE = 20;
 /** Obergrenze des undurchsichtigen Nachrichtentextes (Zeichen; die Hülle für spätere Verschlüsselung braucht Platz). */
 export const MAX_NACHRICHT = 16384;
 export const MAX_TITEL = 512;
-/** Erlaubte Versionen der Inhaltshülle (`p1:` Klartext; `e1:` Ende-zu-Ende folgt, dann kommt der Wert hier dazu). */
-export const ENC_VERSIONEN = ['p1'] as const;
+/** Erlaubte Versionen der Inhaltshülle: `e1:` Ende-zu-Ende verschlüsselt (Standard, die App legt nur noch solche Chats an), `p1:` Klartext (nur Altbestand). */
+export const ENC_VERSIONEN = ['p1', 'e1'] as const;
+/** Kleinste und größte Länge einer verschlüsselten Hülle `e1:` in Zeichen (Kopf 114 Byte + Chiffretext mit Tag, Base64url; der Server prüft nur die Form). */
+export const E1_MIN = 3 + 150;
 /** Lebende Nachrichten je Konversation. */
 export const MAX_NACHRICHTEN_JE_KONVERSATION = 20_000;
 /** Teilnehmerwechsel je Person und Minute. */
@@ -51,7 +53,7 @@ const teilnehmerListe = z
   .transform((l) => [...new Set(l.map((u) => u.toLowerCase()))].sort());
 
 /** Dieselbe Regel für alle Rollen (Rollen spielen bei privaten Chats keine Rolle); das Rechte-Modell erzwingt die Teilnehmer-Grenze selbst. */
-function forAllRoles(rule: RoleRule, admin: Partial<RoleRule> = {}): Rules {
+export function forAllRoles(rule: RoleRule, admin: Partial<RoleRule> = {}): Rules {
   const rules = Object.fromEntries(ROLES.map((r) => [r, rule])) as unknown as Record<string, RoleRule>;
   rules.admin = { ...rule, ...admin };
   return rules as unknown as Rules;
@@ -85,8 +87,8 @@ export const konversationEntity: EntityDef = {
   table: konversationen,
   fields: {
     art: { access: 'create', schema: z.enum(KONVERSATION_ARTEN), required: true },
-    // Version der Inhaltshülle der Nachrichten (Präfix `p1:`); unveränderlich, damit ein Chat später nicht auf Klartext zurückgestuft werden kann
-    encVersion: { access: 'create', schema: z.enum(ENC_VERSIONEN), defaultValue: 'p1' },
+    // Version der Inhaltshülle der Nachrichten (Präfix `e1:` oder `p1:`); unveränderlich, damit ein Chat nicht auf Klartext zurückgestuft werden kann. Neue Chats: e1.
+    encVersion: { access: 'create', schema: z.enum(ENC_VERSIONEN), defaultValue: 'e1' },
     titel: { access: 'rw', schema: opaque(MAX_TITEL, 0), defaultValue: '', blank: '' },
     // bleibt auch im Tombstone erhalten: die Löschung bleibt dadurch für Teilnehmer sichtbar und für alle anderen unsichtbar
     teilnehmer: { access: 'rw', schema: teilnehmerListe, defaultValue: [], memberRef: true },
@@ -178,6 +180,8 @@ export const nachrichtEntity: EntityDef = {
       .where(and(eq(konversationen.familyId, env.familyId), eq(konversationen.id, String(row.konversationId))))
       .limit(1);
     if (!k || !String(row.text).startsWith(`${k.enc}:`)) return false;
+    // verschlüsselte Hülle: nur die Form (Zeichensatz Base64url, Mindestlänge), nie der Inhalt; Klartext `p1:` ist in e1-Konversationen schon durch das Präfix ausgeschlossen
+    if (k.enc === 'e1' && !(String(row.text).length >= E1_MIN && /^e1:[A-Za-z0-9_-]+$/.test(String(row.text)))) return false;
     if (typeof row.antwortAuf === 'string') {
       const [ziel] = await env.tx
         .select({ id: nachrichten.id })

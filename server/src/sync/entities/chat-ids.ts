@@ -21,5 +21,12 @@ export function direktChatId(a: string, b: string): string {
 
 export const lesestandId = (konversationId: string, userId: string): string => uuidAusSchluessel(`lesestand:${konversationId.toLowerCase()}:${userId.toLowerCase()}`);
 
+/** Feste ID der Epoche einer Konversation (je Konversation und Epoche genau eine: der erste Schreiber gewinnt). */
+export const epocheId = (konversationId: string, epoche: number): string => uuidAusSchluessel(`epoche:${konversationId.toLowerCase()}:${epoche}`);
+
+/** Feste ID des Schlüssel-Wraps einer Epoche für eine Person. */
+export const wrapId = (konversationId: string, epoche: number, empfaengerId: string): string =>
+  uuidAusSchluessel(`wrap:${konversationId.toLowerCase()}:${epoche}:${empfaengerId.toLowerCase()}`);
+
 /** Zufalls-UUID Version 4 (Gruppen, Nachrichten). */
 export const istUuidV4 = (id: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);

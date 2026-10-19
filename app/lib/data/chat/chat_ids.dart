@@ -24,3 +24,10 @@ String direktChatId(String a, String b) {
 
 /// ID des Lesestands einer Person in einem Chat.
 String lesestandId(String konversationId, String userId) => uuidAusSchluessel('lesestand:${konversationId.toLowerCase()}:${userId.toLowerCase()}');
+
+/// ID der Epoche einer Konversation (je Konversation und Epoche genau eine: der erste Schreiber gewinnt).
+String epocheId(String konversationId, int epoche) => uuidAusSchluessel('epoche:${konversationId.toLowerCase()}:$epoche');
+
+/// ID des Schlüssel-Wraps einer Epoche für eine Person.
+String wrapId(String konversationId, int epoche, String empfaengerId) =>
+    uuidAusSchluessel('wrap:${konversationId.toLowerCase()}:$epoche:${empfaengerId.toLowerCase()}');

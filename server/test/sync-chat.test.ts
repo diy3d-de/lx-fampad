@@ -16,6 +16,9 @@ import { createFamily, extraMember, remove, resetSync, upsert, type Device, type
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const actor = (role: Role, userId: string): Actor => ({ role, userId });
 
+/** Konversation anlegen/ändern; neue Konversationen dieser Testdatei sind Klartext-Chats (`p1`, Altbestand): die Hülle `e1` prüft sync-e2ee-chat.test.ts. */
+const upsertK = (id: string, fields: Json, baseRev = 0, opId?: string) => upsert('konversation', id, 'art' in fields ? { encVersion: 'p1', ...fields } : fields, baseRev, opId);
+
 describe('Chat: Rechte-Modell (Regeltabelle)', () => {
   const ADMIN = 'u-admin';
   const A = 'u-a';
@@ -145,19 +148,19 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
 
   async function familienchat(by: Device = fam.admin): Promise<string> {
     const id = familienchatId(fam.familyId);
-    const res = await by.sync([upsert('konversation', id, { art: 'family' })]);
+    const res = await by.sync([upsertK(id, { art: 'family' })]);
     expect(res.json.rejected, JSON.stringify(res.json.rejected)).toEqual([]);
     return id;
   }
   async function direkt(by: Device, other: Device): Promise<string> {
     const id = direktChatId(by.userId, other.userId);
-    const res = await by.sync([upsert('konversation', id, { art: 'direct', teilnehmer: [by.userId, other.userId] })]);
+    const res = await by.sync([upsertK(id, { art: 'direct', teilnehmer: [by.userId, other.userId] })]);
     expect(res.json.rejected, JSON.stringify(res.json.rejected)).toEqual([]);
     return id;
   }
   async function gruppe(by: Device, members: Device[], titel = 'p1:Gruppe'): Promise<string> {
     const id = randomUUID();
-    const res = await by.sync([upsert('konversation', id, { art: 'group', titel, teilnehmer: [by.userId, ...members.map((m) => m.userId)] })]);
+    const res = await by.sync([upsertK(id, { art: 'group', titel, teilnehmer: [by.userId, ...members.map((m) => m.userId)] })]);
     expect(res.json.rejected, JSON.stringify(res.json.rejected)).toEqual([]);
     return id;
   }
@@ -173,20 +176,20 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       expect((await fam.admin.pull()).filter((c) => c.entity === 'konversation').map((c) => c.id)).toEqual([id]);
       expect(ids(await fam.parent.pull(), 'konversation')).toEqual([id]);
       // zweiter Familienchat mit anderer ID: eindeutiger Index, antwortet wie "gibt es schon" (not_found)
-      const zweiter = await fam.admin.sync([upsert('konversation', randomUUID(), { art: 'family' })]);
+      const zweiter = await fam.admin.sync([upsertK(randomUUID(), { art: 'family' })]);
       expect(codes(zweiter)).toEqual(['invalid']); // andere ID als die abgeleitete: ungültig, nie ein Hinweis darauf, dass es ihn schon gibt
       // dieselbe ID noch einmal (zweites Gerät, gleiche Op): ohne Wirkung
-      const noch = await fam.parent.sync([upsert('konversation', id, { art: 'family' })]);
+      const noch = await fam.parent.sync([upsertK(id, { art: 'family' })]);
       expect(noch.json.rejected).toEqual([]);
       expect(await rows(sql`select count(*)::int as n from konversationen where art = 'family'`)).toEqual([{ n: 1 }]);
     });
 
     it('Familienchat hat weder Namen noch Teilnehmer, ist unveränderlich und nicht löschbar', async () => {
-      expect(codes(await fam.admin.sync([upsert('konversation', randomUUID(), { art: 'family', titel: 'x' })]))).toEqual(['invalid']);
-      expect(codes(await fam.admin.sync([upsert('konversation', randomUUID(), { art: 'family', teilnehmer: [fam.admin.userId] })]))).toEqual(['invalid']);
+      expect(codes(await fam.admin.sync([upsertK(randomUUID(), { art: 'family', titel: 'x' })]))).toEqual(['invalid']);
+      expect(codes(await fam.admin.sync([upsertK(randomUUID(), { art: 'family', teilnehmer: [fam.admin.userId] })]))).toEqual(['invalid']);
       const id = await familienchat();
       const rev = await revOf('konversationen', id);
-      expect(codes(await fam.admin.sync([upsert('konversation', id, { titel: 'Umbenannt' }, rev)]))).toEqual(['forbidden']);
+      expect(codes(await fam.admin.sync([upsertK(id, { titel: 'Umbenannt' }, rev)]))).toEqual(['forbidden']);
       expect(codes(await fam.admin.sync([remove('konversation', id, rev)]))).toEqual(['forbidden']);
     });
 
@@ -220,7 +223,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       const rev = await revOf('konversationen', konv);
       const mrev = await revOf('nachrichten', mid);
       const res = await fam.admin.sync([
-        upsert('konversation', konv, { titel: 'x' }, rev),
+        upsertK(konv, { titel: 'x' }, rev),
         remove('konversation', konv, rev),
         upsert('nachricht', mid, { text: 'p1:x' }, mrev),
         remove('nachricht', mid, mrev),
@@ -234,27 +237,27 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
 
     it('je Paar genau ein Direktchat (auch mit vertauschter Reihenfolge); Teilnehmer werden sortiert gespeichert', async () => {
       const konv = await direkt(fam.parent, fam.child);
-      const zweiter = await fam.child.sync([upsert('konversation', randomUUID(), { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] })]);
+      const zweiter = await fam.child.sync([upsertK(randomUUID(), { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] })]);
       expect(codes(zweiter)).toEqual(['invalid']);
       const [row] = await rows(sql`select teilnehmer from konversationen where id = ${konv}`);
       expect([...(row?.teilnehmer as string[])]).toEqual([fam.parent.userId, fam.child.userId].sort());
       // dieselbe ID von der anderen Seite (zweites Gerät, gleicher Paar-Schlüssel): ohne Wirkung
-      const gleich = await fam.child.sync([upsert('konversation', konv, { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] })]);
+      const gleich = await fam.child.sync([upsertK(konv, { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] })]);
       expect(gleich.json.rejected).toEqual([]);
       // anderes Paar geht
       await direkt(fam.child, fam.admin);
     });
 
     it('Prüfung bei der Anlage: Ersteller muss dabei sein, genau zwei, nur Familienmitglieder, kein Name', async () => {
-      const ohneMich = await fam.child.sync([upsert('konversation', direktChatId(fam.parent.userId, fam.admin.userId), { art: 'direct', teilnehmer: [fam.parent.userId, fam.admin.userId] })]);
+      const ohneMich = await fam.child.sync([upsertK(direktChatId(fam.parent.userId, fam.admin.userId), { art: 'direct', teilnehmer: [fam.parent.userId, fam.admin.userId] })]);
       expect(codes(ohneMich)).toEqual(['forbidden']);
-      const drei = await fam.child.sync([upsert('konversation', randomUUID(), { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId, fam.admin.userId] })]);
+      const drei = await fam.child.sync([upsertK(randomUUID(), { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId, fam.admin.userId] })]);
       expect(codes(drei)).toEqual(['invalid']);
-      const allein = await fam.child.sync([upsert('konversation', randomUUID(), { art: 'direct', teilnehmer: [fam.child.userId, fam.child.userId] })]);
+      const allein = await fam.child.sync([upsertK(randomUUID(), { art: 'direct', teilnehmer: [fam.child.userId, fam.child.userId] })]);
       expect(codes(allein)).toEqual(['invalid']);
-      const fremd = await fam.child.sync([upsert('konversation', direktChatId(fam.child.userId, 'ffffffff-0000-4000-8000-0000000000aa'), { art: 'direct', teilnehmer: [fam.child.userId, 'ffffffff-0000-4000-8000-0000000000aa'] })]);
+      const fremd = await fam.child.sync([upsertK(direktChatId(fam.child.userId, 'ffffffff-0000-4000-8000-0000000000aa'), { art: 'direct', teilnehmer: [fam.child.userId, 'ffffffff-0000-4000-8000-0000000000aa'] })]);
       expect(codes(fremd)).toEqual(['invalid_reference']);
-      const mitName = await fam.child.sync([upsert('konversation', direktChatId(fam.child.userId, fam.parent.userId), { art: 'direct', titel: 'p1:x', teilnehmer: [fam.child.userId, fam.parent.userId] })]);
+      const mitName = await fam.child.sync([upsertK(direktChatId(fam.child.userId, fam.parent.userId), { art: 'direct', titel: 'p1:x', teilnehmer: [fam.child.userId, fam.parent.userId] })]);
       expect(codes(mitName)).toEqual(['invalid']);
       expect(await rows(sql`select count(*)::int as n from konversationen`)).toEqual([{ n: 0 }]);
     });
@@ -262,7 +265,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
     it('Direktchat ist unveränderlich und wird nicht gelöscht', async () => {
       const konv = await direkt(fam.parent, fam.child);
       const rev = await revOf('konversationen', konv);
-      expect(codes(await fam.parent.sync([upsert('konversation', konv, { teilnehmer: [fam.parent.userId, fam.admin.userId] }, rev)]))).toEqual(['forbidden']);
+      expect(codes(await fam.parent.sync([upsertK(konv, { teilnehmer: [fam.parent.userId, fam.admin.userId] }, rev)]))).toEqual(['forbidden']);
       expect(codes(await fam.parent.sync([remove('konversation', konv, rev)]))).toEqual(['forbidden']);
     });
   });
@@ -360,7 +363,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       const konv = await gruppe(fam.parent, [fam.child]);
       await nachricht(fam.child, konv);
       expect(await fam.admin.pull()).toEqual([]);
-      await fam.parent.sync([upsert('konversation', konv, { titel: 'p1:Neu' }, await revOf('konversationen', konv))], { sinceRev: 0 });
+      await fam.parent.sync([upsertK(konv, { titel: 'p1:Neu' }, await revOf('konversationen', konv))], { sinceRev: 0 });
       expect(await fam.admin.pull()).toEqual([]);
       const snapshot = await (await fam.admin.sync([], { sinceRev: 0 })).json;
       expect(JSON.stringify(snapshot)).not.toContain(konv);
@@ -374,7 +377,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
 
       // Admin wird aufgenommen
       const teilnehmer = [fam.parent.userId, fam.child.userId, fam.admin.userId];
-      expect((await fam.parent.sync([upsert('konversation', konv, { teilnehmer }, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
+      expect((await fam.parent.sync([upsertK(konv, { teilnehmer }, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
       const joined = await fam.admin.pull();
       expect(ids(joined, 'konversation')).toEqual([konv]);
       expect(ids(joined, 'nachricht')).toEqual([mid]);
@@ -382,7 +385,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       // Kind verlässt die Gruppe (entfernt sich selbst)
       await fam.child.pull();
       const rest = [fam.parent.userId, fam.admin.userId];
-      expect((await fam.child.sync([upsert('konversation', konv, { teilnehmer: rest }, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
+      expect((await fam.child.sync([upsertK(konv, { teilnehmer: rest }, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
       const childView = await fam.child.pull();
       expect(childView).toEqual([expect.objectContaining({ entity: 'konversation', id: konv, tombstone: true, hidden: true, fields: {} })]);
       // wer nie drin war, bekommt keinen hidden-Tombstone: ein Außenstehender sieht nichts
@@ -399,7 +402,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       const konv = await gruppe(fam.parent, [fam.child]);
       await fam.child.pull();
       const rev = await revOf('konversationen', konv);
-      expect((await fam.child.sync([upsert('konversation', konv, { titel: 'p1:Von Kind' }, rev)])).json.acked).toHaveLength(1);
+      expect((await fam.child.sync([upsertK(konv, { titel: 'p1:Von Kind' }, rev)])).json.acked).toHaveLength(1);
       expect(codes(await fam.child.sync([remove('konversation', konv, rev + 1)]))).toEqual(['forbidden']);
       expect((await fam.parent.sync([remove('konversation', konv, rev + 1)])).json.acked).toHaveLength(1);
       // Tombstone erreicht die Teilnehmer, nicht den Admin
@@ -407,13 +410,13 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       expect(await fam.admin.pull()).toEqual([]);
 
       const viele = Array.from({ length: 20 }, () => randomUUID());
-      const zuViele = await fam.parent.sync([upsert('konversation', randomUUID(), { art: 'group', teilnehmer: [fam.parent.userId, ...viele] })]);
+      const zuViele = await fam.parent.sync([upsertK(randomUUID(), { art: 'group', teilnehmer: [fam.parent.userId, ...viele] })]);
       expect(codes(zuViele)).toEqual(['invalid']);
     });
 
     it('Kinder dürfen Gruppen anlegen; Gruppe mit weniger als zwei Personen nicht; Obergrenze je Person', async () => {
       await gruppe(fam.child, [fam.parent, fam.admin]);
-      expect(codes(await fam.child.sync([upsert('konversation', randomUUID(), { art: 'group', teilnehmer: [fam.child.userId] })]))).toEqual(['invalid']);
+      expect(codes(await fam.child.sync([upsertK(randomUUID(), { art: 'group', teilnehmer: [fam.child.userId] })]))).toEqual(['invalid']);
     });
   });
 
@@ -486,7 +489,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       // Admin sieht von all dem nichts Privates
       expect(ids(await fam.admin.pull()).filter((i) => [dm, g2, g3].includes(i))).toEqual([]);
       // die entfernte Person ist kein gültiger Teilnehmer mehr
-      const wieder = await fam.child.sync([upsert('konversation', direktChatId(fam.child.userId, opa.userId), { art: 'direct', teilnehmer: [fam.child.userId, opa.userId] })]);
+      const wieder = await fam.child.sync([upsertK(direktChatId(fam.child.userId, opa.userId), { art: 'direct', teilnehmer: [fam.child.userId, opa.userId] })]);
       expect(codes(wieder)).toEqual(['invalid_reference']);
     });
   });
@@ -507,11 +510,11 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
     it('Squatting: nur die abgeleitete ID ist gültig (immer invalid, kein Hinweis auf vorhandene Datensätze)', async () => {
       // Familienchat mit der ID einer anderen Familie, Direktchat mit der ID eines anderen Paares, Lesestand mit fremder ID, Gruppe mit reserviertem Nibble 5
       const fremdPaar = direktChatId(fam.parent.userId, fam.admin.userId);
-      expect(codes(await fam.child.sync([upsert('konversation', familienchatId('ffffffff-0000-4000-8000-00000000000f'), { art: 'family' })]))).toEqual(['invalid']);
-      expect(codes(await fam.child.sync([upsert('konversation', fremdPaar, { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] })]))).toEqual(['invalid']);
-      expect(codes(await fam.child.sync([upsert('konversation', uuidAusSchluessel('egal'), { art: 'group', teilnehmer: [fam.child.userId, fam.parent.userId] })]))).toEqual(['invalid']);
+      expect(codes(await fam.child.sync([upsertK(familienchatId('ffffffff-0000-4000-8000-00000000000f'), { art: 'family' })]))).toEqual(['invalid']);
+      expect(codes(await fam.child.sync([upsertK(fremdPaar, { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] })]))).toEqual(['invalid']);
+      expect(codes(await fam.child.sync([upsertK(uuidAusSchluessel('egal'), { art: 'group', teilnehmer: [fam.child.userId, fam.parent.userId] })]))).toEqual(['invalid']);
       // das Paar Eltern/Admin selbst kann das Kind auch mit der richtigen ID nicht anlegen (nicht dabei)
-      expect(codes(await fam.child.sync([upsert('konversation', fremdPaar, { art: 'direct', teilnehmer: [fam.parent.userId, fam.admin.userId] })]))).toEqual(['forbidden']);
+      expect(codes(await fam.child.sync([upsertK(fremdPaar, { art: 'direct', teilnehmer: [fam.parent.userId, fam.admin.userId] })]))).toEqual(['forbidden']);
       // ... und belegen kann es die ID des Paares auch nicht vorab: das Paar legt später seinen Chat an
       expect(await direkt(fam.parent, fam.admin)).toBe(fremdPaar);
       const konv = await familienchat();
@@ -528,7 +531,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       await world.db.execute(sql`update nachrichten set deleted_at = now(), text = '', rev = rev + 10 where id = ${mid}`);
       await world.db.execute(sql`update lesestand set deleted_at = now(), rev = rev + 10 where id = ${lid}`);
       await world.db.execute(sql`update konversationen set deleted_at = now(), rev = rev + 10 where id = ${konv}`);
-      const neu = upsert('konversation', konv, { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] });
+      const neu = upsertK(konv, { art: 'direct', teilnehmer: [fam.child.userId, fam.parent.userId] });
       expect((await fam.child.sync([neu])).json.acked).toEqual([neu.opId]);
       expect((await rows(sql`select deleted_at from konversationen where id = ${konv}`))[0]?.deleted_at).toBeNull();
       const lneu = upsert('lesestand', lid, lsFelder(konv, fam.child.userId, '2026-10-19T09:00:00.000Z'));
@@ -543,7 +546,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       // eine Gruppe wird nicht wiederbelebt (ihre ID ist zufällig)
       const g = await gruppe(fam.child, [fam.parent]);
       await fam.child.sync([remove('konversation', g, await revOf('konversationen', g))]);
-      expect(codes(await fam.child.sync([upsert('konversation', g, { art: 'group', teilnehmer: [fam.child.userId, fam.parent.userId] })]))).toEqual(['deleted']);
+      expect(codes(await fam.child.sync([upsertK(g, { art: 'group', teilnehmer: [fam.child.userId, fam.parent.userId] })]))).toEqual(['deleted']);
     });
 
     it('Aufnehmen in eine Gruppe schreibt keine Nachricht neu; die neue Person bekommt nur die jüngsten 500 (Historie), die anderen nichts doppelt', async () => {
@@ -553,14 +556,14 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
         select gen_random_uuid(), ${fam.familyId}::uuid, ${konv}::uuid, 'p1:n' || g, 1, '{}'::jsonb, now() - (600 - g) * interval '1 second' from generate_series(1, 600) g`);
       const maxVorher = await rows(sql`select max(rev)::int as r, count(*)::int as n from nachrichten where konversation_id = ${konv}`);
       await fam.parent.pull();
-      expect((await fam.parent.sync([upsert('konversation', konv, { teilnehmer: [fam.parent.userId, fam.child.userId, fam.admin.userId] }, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
+      expect((await fam.parent.sync([upsertK(konv, { teilnehmer: [fam.parent.userId, fam.child.userId, fam.admin.userId] }, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
       expect(await rows(sql`select max(rev)::int as r, count(*)::int as n from nachrichten where konversation_id = ${konv}`)).toEqual(maxVorher);
       const kind = fam.child;
       await kind.pull();
       const bobby = await extraMember(world, fam.admin, 'child', 'neu2@example.org');
       await bobby.pull();
       const rev = await revOf('konversationen', konv);
-      expect((await fam.parent.sync([upsert('konversation', konv, { teilnehmer: [fam.parent.userId, fam.child.userId, fam.admin.userId, bobby.userId] }, rev)])).json.acked).toHaveLength(1);
+      expect((await fam.parent.sync([upsertK(konv, { teilnehmer: [fam.parent.userId, fam.child.userId, fam.admin.userId, bobby.userId] }, rev)])).json.acked).toHaveLength(1);
       const verlauf = (await bobby.pull()).filter((c) => c.entity === 'nachricht');
       expect(verlauf).toHaveLength(500);
       // keiner der anderen bekommt die Nachrichten noch einmal
@@ -581,13 +584,13 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       const ohne = [fam.parent.userId, fam.child.userId, fam.admin.userId];
       let letztes: string[] = [];
       for (let i = 0; i < 11; i++) {
-        const res = await fam.parent.sync([upsert('konversation', konv, { teilnehmer: i % 2 === 0 ? ohne : mit }, rev)]);
+        const res = await fam.parent.sync([upsertK(konv, { teilnehmer: i % 2 === 0 ? ohne : mit }, rev)]);
         letztes = codes(res);
         if (letztes.length === 0) rev = await revOf('konversationen', konv);
       }
       expect(letztes).toEqual(['limit_reached']);
       world.advance(61_000);
-      expect((await fam.parent.sync([upsert('konversation', konv, { teilnehmer: mit }, rev)])).json.rejected).toEqual([]);
+      expect((await fam.parent.sync([upsertK(konv, { teilnehmer: mit }, rev)])).json.rejected).toEqual([]);
     });
 
     it('Text-Kontingent: je Person höchstens 1 MiB in der Stunde', async () => {
@@ -630,9 +633,9 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       // Bearbeiten ohne Hülle ist ebenfalls ungültig
       expect(codes(await fam.parent.sync([upsert('nachricht', ma, { text: 'Klartext' }, await revOf('nachrichten', ma))]))).toEqual(['invalid']);
       // die Version lässt sich beim Anlegen nur auf bekannte Werte setzen
-      expect(codes(await fam.parent.sync([upsert('konversation', randomUUID(), { art: 'group', encVersion: 'e1', teilnehmer: [fam.parent.userId, fam.child.userId] })]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([upsert('konversation', randomUUID(), { art: 'group', encVersion: 'e9', teilnehmer: [fam.parent.userId, fam.child.userId] })]))).toEqual(['invalid']);
       expect((await rows(sql`select enc_version from konversationen where id = ${a}`))[0]?.enc_version).toBe('p1');
-      expect(codes(await fam.parent.sync([upsert('konversation', a, { encVersion: 'p1' }, await revOf('konversationen', a))]))).toEqual([]);
+      expect(codes(await fam.parent.sync([upsertK(a, { encVersion: 'p1' }, await revOf('konversationen', a))]))).toEqual([]);
     });
 
     it('Lesestand geht nie zurück', async () => {
@@ -650,7 +653,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       await fam.admin.pull();
       await nachricht(fam.child, konv, 'p1:Text');
       const rev = await revOf('konversationen', konv);
-      expect((await fam.child.sync([upsert('konversation', konv, { teilnehmer: [fam.child.userId, fam.parent.userId] }, rev)])).json.acked).toHaveLength(1);
+      expect((await fam.child.sync([upsertK(konv, { teilnehmer: [fam.child.userId, fam.parent.userId] }, rev)])).json.acked).toHaveLength(1);
       expect((await fam.child.sync([remove('konversation', konv, await revOf('konversationen', konv))])).json.acked).toHaveLength(1);
       const spaeter = await fam.admin.pull();
       expect(spaeter.filter((c) => c.id === konv)).toEqual([expect.objectContaining({ tombstone: true, hidden: true })]);
@@ -706,19 +709,19 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       const res = await fam.admin.sync([
         upsert('nachricht', randomUUID(), { konversationId: konvId, text: 'p1:x' }),
         upsert('lesestand', lesestandId(konvId, fam.admin.userId), { konversationId: konvId, userId: fam.admin.userId, gelesenBis: '2026-10-19T08:00:00.000Z' }),
-        upsert('konversation', konvId, { titel: 'x' }, 5),
+        upsertK(konvId, { titel: 'x' }, 5),
         remove('konversation', konvId, 5),
-        upsert('konversation', konvId, { art: 'direct', teilnehmer: [fam.admin.userId, fam.child.userId] }),
+        upsertK(konvId, { art: 'direct', teilnehmer: [fam.admin.userId, fam.child.userId] }),
       ]);
       // die fünfte Op belegt eine fremde ID: ungültig (die ID ist nicht die aus dem Paar abgeleitete), nie ein Hinweis auf den fremden Datensatz
       expect(codes(res)).toEqual(['not_found', 'not_found', 'not_found', 'not_found', 'invalid']);
       // Verweis auf ein Mitglied einer fremden Familie
-      expect(codes(await fam.admin.sync([upsert('konversation', direktChatId(fam.admin.userId, userId), { art: 'direct', teilnehmer: [fam.admin.userId, userId] })]))).toEqual(['invalid_reference']);
+      expect(codes(await fam.admin.sync([upsertK(direktChatId(fam.admin.userId, userId), { art: 'direct', teilnehmer: [fam.admin.userId, userId] })]))).toEqual(['invalid_reference']);
       await world.db.execute(sql`delete from families where name = 'Fremd2'`);
       await world.db.execute(sql`delete from users where email = 'fremd2@example.org'`);
 
       // Obergrenze je Person (100): ab der 101. Gruppe limit_reached
-      const mk = () => upsert('konversation', randomUUID(), { art: 'group', teilnehmer: [fam.child.userId, fam.parent.userId] });
+      const mk = () => upsertK(randomUUID(), { art: 'group', teilnehmer: [fam.child.userId, fam.parent.userId] });
       for (let i = 0; i < 100; i += 50) expect((await fam.child.sync(Array.from({ length: 50 }, mk))).json.rejected).toEqual([]);
       expect(codes(await fam.child.sync([mk()]))).toEqual(['limit_reached']);
     });

@@ -9,6 +9,7 @@ import WebSocket from 'ws';
 import { loadConfig } from '../src/config.js';
 import { topicFromEndpoint } from '../src/push/endpoint.js';
 import { MAX_FAILS, WAKE_BODY } from '../src/push/service.js';
+import { familienchatId } from '../src/sync/entities/chat-ids.js';
 import { backends, TEST_KEY, World, type Harness } from './helpers.js';
 import { createFamily, extraMember, resetSync, upsert, type Device, type Family, type Json } from './sync-kit.js';
 
@@ -363,6 +364,43 @@ describe.each(backends)('Push ($name)', (backend) => {
       await change(fam.admin, 'all');
       expect(await until(() => calls.length >= 2)).toBe(true);
       expect((await topicsPosted()).sort()).toContain(tChild);
+    });
+
+    it('Privatchat: nur Teilnehmer werden geweckt (nie Admin oder Eltern ohne Teilnehmerschaft), der Familienchat weckt alle Rollen; Wecker ohne Inhalt', async () => {
+      const tAdmin = await register(fam.admin);
+      const tParent = await register(fam.parent);
+      const tChild = await register(fam.child);
+      const konv = randomUUID();
+      // Direktchat Elternteil und Kind: Absender ist das Elternteil, geweckt wird nur das Kind (nicht der Admin)
+      expect((await fam.parent.sync([upsert('konversation', konv, { art: 'group', teilnehmer: [fam.parent.userId, fam.child.userId] })])).json.rejected).toEqual([]);
+      expect(await until(() => calls.length >= 1)).toBe(true);
+      expect(await topicsPosted()).toEqual([tChild]);
+      calls = [];
+      world.app.push!.reset();
+      const e1 = `e1:${"A".repeat(200)}`;
+      expect((await fam.parent.sync([upsert('nachricht', randomUUID(), { konversationId: konv, text: e1 })])).json.rejected).toEqual([]);
+      expect(await until(() => calls.length >= 1)).toBe(true);
+      const posted = await topicsPosted();
+      expect(posted).toEqual([tChild]);
+      expect(posted).not.toContain(tAdmin);
+      for (const c of calls) {
+        expect(c.body).toBe(WAKE_BODY);
+        expect(c.body).not.toContain("AAAA");
+      }
+      // eine Gruppe mit Kind und Admin: das Elternteil schreibt, geweckt werden beide Teilnehmer, aber keine Unbeteiligten
+      calls = [];
+      world.app.push!.reset();
+      const gruppe = randomUUID();
+      expect((await fam.child.sync([upsert('konversation', gruppe, { art: 'group', teilnehmer: [fam.child.userId, fam.admin.userId] })])).json.rejected).toEqual([]);
+      expect(await until(() => calls.length >= 1)).toBe(true);
+      expect(await topicsPosted()).toEqual([tAdmin]);
+      expect(await topicsPosted(0)).not.toContain(tParent);
+      // Familienchat: alle Rollen mit Sicht (außer dem Absender)
+      calls = [];
+      world.app.push!.reset();
+      expect((await fam.child.sync([upsert('konversation', familienchatId(fam.familyId), { art: 'family' })])).json.rejected).toEqual([]);
+      expect(await until(() => calls.length >= 2)).toBe(true);
+      expect((await topicsPosted()).sort()).toEqual([tAdmin, tParent].sort());
     });
 
     it('Absender: nur das auslösende Gerät wird ausgenommen, das zweite Gerät derselben Person wird geweckt', async () => {

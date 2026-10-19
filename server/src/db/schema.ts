@@ -810,8 +810,8 @@ export const konversationen = pgTable(
     familyId: familyRef(),
     art: konversationArt('art').notNull(),
     titel: text('titel').notNull().default(''),
-    /** Version der Inhaltshülle der Nachrichten dieser Konversation (Präfix `p1:`); unveränderlich: schützt später vor dem Zurückstufen verschlüsselter Chats. */
-    encVersion: text('enc_version').notNull().default('p1'),
+    /** Version der Inhaltshülle der Nachrichten dieser Konversation (`e1:` Ende-zu-Ende verschlüsselt, Standard; `p1:` Klartext nur für Altbestand); unveränderlich: schützt vor dem Zurückstufen verschlüsselter Chats. */
+    encVersion: text('enc_version').notNull().default('e1'),
     teilnehmer: uuid('teilnehmer')
       .array()
       .notNull()
@@ -903,5 +903,76 @@ export const lesestand = pgTable(
     index('lesestand_tombstone_idx')
       .on(t.familyId, t.rev)
       .where(sql`${t.deletedAt} is not null`),
+  ],
+);
+
+/**
+ * Epochen einer verschlüsselten Konversation (E2EE Phase 2): je Epoche genau eine Zeile (feste, abgeleitete ID; der erste Schreiber gewinnt). `mitglieder` ist die
+ * vom Verteiler signierte Mitgliederliste der Epoche als undurchsichtiger Text (der Server wertet sie nie aus). Kein Schlüsselmaterial.
+ */
+export const konversationEpochen = pgTable(
+  'konversation_epochen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    epoche: integer('epoche').notNull(),
+    /** Wer die Epoche angelegt hat (setzt der Server; für die Mengenbegrenzung). */
+    verteilerId: uuid('verteiler_id').references(() => users.id, { onDelete: 'set null' }),
+    mitglieder: text('mitglieder').notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    unique('konversation_epochen_family_id_uq').on(t.familyId, t.id),
+    uniqueIndex('konversation_epochen_uq')
+      .on(t.familyId, t.konversationId, t.epoche)
+      .where(sql`${t.deletedAt} is null`),
+    index('konversation_epochen_family_rev_idx').on(t.familyId, t.rev),
+    index('konversation_epochen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('konversation_epochen_verteiler_idx')
+      .on(t.familyId, t.verteilerId, t.createdAt)
+      .where(sql`${t.verteilerId} is not null`),
+    check('konversation_epochen_epoche_ck', sql`${t.epoche} between 1 and 100000`),
+    check('konversation_epochen_len_ck', sql`char_length(${t.mitglieder}) <= 16384`),
+  ],
+);
+
+/**
+ * Für eine Person verpackter Epochenschlüssel (E2EE Phase 2): Sealed Box plus Signatur des Verteilers, als undurchsichtiger Text. Nur der Empfänger liest seine Zeile.
+ * Je (Konversation, Epoche, Empfänger) genau eine (feste, abgeleitete ID; der erste gewinnt).
+ */
+export const epocheWraps = pgTable(
+  'epoche_wraps',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    epoche: integer('epoche').notNull(),
+    empfaengerId: uuid('empfaenger_id').notNull(),
+    verteilerId: uuid('verteiler_id').references(() => users.id, { onDelete: 'set null' }),
+    wrap: text('wrap').notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.empfaengerId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('epoche_wraps_uq')
+      .on(t.familyId, t.konversationId, t.epoche, t.empfaengerId)
+      .where(sql`${t.deletedAt} is null`),
+    index('epoche_wraps_empfaenger_idx').on(t.familyId, t.empfaengerId),
+    index('epoche_wraps_family_rev_idx').on(t.familyId, t.rev),
+    index('epoche_wraps_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('epoche_wraps_verteiler_idx')
+      .on(t.familyId, t.verteilerId, t.createdAt)
+      .where(sql`${t.verteilerId} is not null`),
+    check('epoche_wraps_epoche_ck', sql`${t.epoche} between 1 and 100000`),
+    check('epoche_wraps_len_ck', sql`char_length(${t.wrap}) <= 4096`),
   ],
 );
