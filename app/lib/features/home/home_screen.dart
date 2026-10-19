@@ -17,7 +17,9 @@ import '../update/update_banner.dart';
 String begruessung(String? anzeigename) {
   final wort = (anzeigename ?? '').trim().split(RegExp(r'\s+')).first;
   if (wort.isEmpty) return 'Hallo';
-  final kurz = wort.length > 20 ? '${wort.substring(0, 19)}…' : wort;
+  // Graphem-sicher kürzen (Emoji und kombinierte Zeichen werden nicht mitten im Zeichen geschnitten)
+  final zeichen = wort.characters;
+  final kurz = zeichen.length > 20 ? '${zeichen.take(19)}…' : wort;
   return 'Hallo, $kurz';
 }
 

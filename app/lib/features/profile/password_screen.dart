@@ -1,8 +1,6 @@
 // Passwort und Zwei-Faktor (TOTP) nachträglich einrichten, ändern oder entfernen (alles mit Step-up).
 // Einrichten in zwei Stufen wie bei der Einladung: Passwort eingeben -> QR/Schlüssel anzeigen und mit dem 6-stelligen Code bestätigen.
 // Entfernen geht nur, solange noch ein Passkey als Zugang bleibt (Server: 409 last_credential).
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -32,6 +30,9 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
   /// Schritt 1 erledigt: Schlüssel zum Bestätigen (nur im Speicher, nie auf der Platte).
   PasswordStart? _start;
 
+  /// Nach Erfolg gilt der neue Stand sofort, auch wenn das Neuladen von /me scheitert oder noch läuft (null = Stand aus /me).
+  bool? _passwortLokal;
+
   @override
   void dispose() {
     for (final c in [_pw, _pw2, _code]) {
@@ -54,6 +55,23 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
     fehler = null;
   });
 
+  /// Lädt /me neu und prüft, ob der erwartete Stand angekommen ist. Scheitert das Neuladen, gilt lokal der erwartete Stand
+  /// (Knöpfe passen dazu) und die Person bekommt einen Hinweis. Gibt zurück, ob die Anzeige aktuell ist.
+  Future<bool> _nachErfolg({required bool hatPasswort}) async {
+    _passwortLokal = hatPasswort;
+    try {
+      await ref.read(authProvider.notifier).neuLaden();
+    } catch (_) {
+      // wie ein Fehlschlag behandeln: unten wird der Stand geprüft
+    }
+    final me = ref.read(authProvider).me;
+    final aktuell = me != null && me.hasPassword == hatPasswort;
+    if (aktuell) _passwortLokal = null;
+    return aktuell;
+  }
+
+  String _hinweis(String text, bool aktuell) => aktuell ? text : '$text Die Anzeige wird beim nächsten Laden aktualisiert.';
+
   Future<void> _einrichtenStart() async {
     PasswordStart? start;
     final ok = await ausfuehren(() async {
@@ -61,6 +79,9 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
       start = await mitStepUp(context, ref, () => ref.read(apiProvider).passwortEinrichtenStart(_pw.text));
     });
     if (ok && start != null && mounted) {
+      // das Passwort wird nicht mehr gebraucht (der Server hält nur den Hash)
+      _pw.clear();
+      _pw2.clear();
       setState(() {
         _start = start;
         _modus = _Modus.totp;
@@ -70,6 +91,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
 
   Future<void> _einrichtenFertig() async {
     var erledigt = false;
+    var aktuell = true;
     final ok = await ausfuehren(() async {
       if (!RegExp(r'^\d{6}$').hasMatch(_code.text)) throw const EingabeFehler('Bitte gib den 6-stelligen Code aus der Authenticator-App ein.');
       final id = _start!.challengeId;
@@ -78,16 +100,17 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         return true;
       });
       erledigt = fertig == true;
+      if (erledigt) aktuell = await _nachErfolg(hatPasswort: true);
     });
     if (ok && erledigt && mounted) {
-      unawaited(ref.read(authProvider.notifier).neuLaden());
       _zurueck();
-      zeigeHinweis(context, 'Passwort und Zwei-Faktor sind eingerichtet.');
+      zeigeHinweis(context, _hinweis('Passwort und Zwei-Faktor sind eingerichtet.', aktuell));
     }
   }
 
   Future<void> _aendern() async {
     var erledigt = false;
+    var aktuell = true;
     final ok = await ausfuehren(() async {
       _pruefePasswort();
       final fertig = await mitStepUp<bool>(context, ref, () async {
@@ -95,22 +118,28 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         return true;
       });
       erledigt = fertig == true;
+      if (erledigt) aktuell = await _nachErfolg(hatPasswort: true);
     });
     if (ok && erledigt && mounted) {
       _zurueck();
-      zeigeHinweis(context, 'Passwort geändert.');
+      zeigeHinweis(context, _hinweis('Passwort geändert.', aktuell));
     }
   }
 
   Future<void> _entfernen() async {
+    var aktuell = true;
     final ja = await showDialog<bool>(
       context: context,
-      builder: (_) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Passwort entfernen?'),
         content: const Text('Passwort und Zwei-Faktor (TOTP) werden gelöscht. Du meldest dich danach nur noch mit Passkey an.'),
         actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), style: TextButton.styleFrom(foregroundColor: kDanger), child: const Text('Entfernen')),
+          TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Abbrechen')),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: kDanger),
+            child: const Text('Entfernen'),
+          ),
         ],
       ),
     );
@@ -122,35 +151,35 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         return true;
       });
       erledigt = fertig == true;
+      if (erledigt) aktuell = await _nachErfolg(hatPasswort: false);
     });
     if (ok && erledigt && mounted) {
-      unawaited(ref.read(authProvider.notifier).neuLaden());
-      zeigeHinweis(context, 'Passwort und Zwei-Faktor wurden entfernt.');
+      zeigeHinweis(context, _hinweis('Passwort und Zwei-Faktor wurden entfernt.', aktuell));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final me = ref.watch(authProvider.select((s) => s.me));
-    final hatPasswort = me != null && me.hasPassword;
+    final hatPasswort = _passwortLokal ?? (me != null && me.hasPassword);
     final Widget inhalt = switch (_modus) {
       _Modus.totp => _totpStufe(_start!),
       _Modus.passwortFeld => _passwortFeld(hatPasswort),
-      _Modus.uebersicht => _uebersicht(me),
+      _Modus.uebersicht => _uebersicht(me, hatPasswort),
     };
+    // Zurück in der Übersicht verlässt den Screen; in den Stufen geht es erst zur Übersicht (und leert Passwort und Code)
     return PopScope(
-      canPop: !laeuft,
-      child: AuthSeite(
-        label: '// zugänge',
-        titel: 'Passwort & Zwei-Faktor',
-        maxBreite: kMaxContentWidth,
-        kinder: [inhalt],
+      canPop: !laeuft && _modus == _Modus.uebersicht,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop && !laeuft) _zurueck();
+      },
+      child: BildschirmSchutz(
+        child: AuthSeite(label: '// zugänge', titel: 'Passwort & Zwei-Faktor', maxBreite: kMaxContentWidth, kinder: [inhalt]),
       ),
     );
   }
 
-  Widget _uebersicht(MeDto? me) {
-    final aktiv = me != null && me.hasPassword;
+  Widget _uebersicht(MeDto? me, bool aktiv) {
     final passkeys = me?.passkeys ?? 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -168,7 +197,10 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
               const Icon(Icons.verified_user_outlined, color: kAccent),
               const SizedBox(width: 12),
               Expanded(
-                child: Text(me == null ? 'wird geladen …' : (aktiv ? 'Passwort und Authenticator sind eingerichtet' : 'Noch nicht eingerichtet'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                child: Text(
+                  me == null ? 'wird geladen …' : (aktiv ? 'Passwort und Authenticator sind eingerichtet' : 'Noch nicht eingerichtet'),
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
               if (aktiv) const RollenPille('an', farbe: kTerminal),
             ],
@@ -182,7 +214,11 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: laeuft || passkeys == 0 ? null : _entfernen,
-            style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: BorderSide(color: passkeys == 0 ? kBorder : kDanger), minimumSize: const Size.fromHeight(48)),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: kDanger,
+              side: BorderSide(color: passkeys == 0 ? kBorder : kDanger),
+              minimumSize: const Size.fromHeight(48),
+            ),
             icon: const Icon(Icons.delete_outline),
             label: const Text('Passwort und Zwei-Faktor entfernen', textAlign: TextAlign.center),
           ),
@@ -195,7 +231,10 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
           ],
         ],
         const SizedBox(height: 8),
-        const Text('Zum Einrichten, Ändern und Entfernen bestätigst du noch einmal mit einem bestehenden Zugang.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+        const Text(
+          'Zum Einrichten, Ändern und Entfernen bestätigst du noch einmal mit einem bestehenden Zugang.',
+          style: TextStyle(fontSize: 12, color: kTextMuted),
+        ),
       ],
     );
   }
@@ -236,40 +275,47 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
     ),
   );
 
-  Widget _totpStufe(PasswordStart start) => BildschirmSchutz(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Align(alignment: Alignment.centerLeft, child: RollenPille('authenticator einrichten', farbe: kNeural)),
-        const SizedBox(height: 12),
-        const Text(
-          'Scanne den QR-Code mit einer Authenticator-App (z. B. Aegis, 2FAS oder Google Authenticator) '
-          'oder gib den Schlüssel von Hand ein. Danach bestätigst du mit dem 6-stelligen Code.',
-          style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
+  Widget _totpStufe(PasswordStart start) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      const Align(
+        alignment: Alignment.centerLeft,
+        child: RollenPille('authenticator einrichten', farbe: kNeural),
+      ),
+      const SizedBox(height: 12),
+      const Text(
+        'Scanne den QR-Code mit einer Authenticator-App (z. B. Aegis, 2FAS oder Google Authenticator) '
+        'oder gib den Schlüssel von Hand ein. Danach bestätigst du mit dem 6-stelligen Code.',
+        style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
+      ),
+      const SizedBox(height: 16),
+      QrAnzeige(daten: start.totpUri, beschreibung: 'QR-Code zum Einrichten des Authenticators'),
+      const SizedBox(height: 12),
+      const MonoLabel('// schlüssel', color: kTextMuted),
+      const SizedBox(height: 4),
+      Semantics(
+        label: 'Schlüssel für die Authenticator-App',
+        child: SelectableText(
+          _gruppiert(start.totpSecret),
+          style: const TextStyle(fontFamily: kFontMono, fontSize: 15, letterSpacing: 1.2, color: kAccent),
         ),
-        const SizedBox(height: 16),
-        QrAnzeige(daten: start.totpUri, beschreibung: 'QR-Code zum Einrichten des Authenticators'),
-        const SizedBox(height: 12),
-        const MonoLabel('// schlüssel', color: kTextMuted),
-        const SizedBox(height: 4),
-        Semantics(
-          label: 'Schlüssel für die Authenticator-App',
-          child: SelectableText(
-            _gruppiert(start.totpSecret),
-            style: const TextStyle(fontFamily: kFontMono, fontSize: 15, letterSpacing: 1.2, color: kAccent),
-          ),
-        ),
-        const SizedBox(height: 8),
-        ZweitKnopf(text: 'Schlüssel kopieren', icon: Icons.copy, onPressed: () => inZwischenablage(context, start.totpSecret, 'Schlüssel kopiert.', geheim: true)),
-        const SizedBox(height: 16),
-        if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
-        CodeFeld(controller: _code, label: 'Code aus der Authenticator-App', onSubmitted: (_) => _einrichtenFertig()),
-        const SizedBox(height: 12),
-        HauptKnopf(text: 'Bestätigen und einrichten', laeuft: laeuft, onPressed: _einrichtenFertig),
-        const SizedBox(height: 8),
-        Center(child: LinkKnopf('zurück', icon: Icons.arrow_back, onPressed: laeuft ? null : _zurueck)),
-      ],
-    ),
+      ),
+      const SizedBox(height: 8),
+      ZweitKnopf(
+        text: 'Schlüssel kopieren',
+        icon: Icons.copy,
+        onPressed: () => inZwischenablage(context, start.totpSecret, 'Schlüssel kopiert.', geheim: true),
+      ),
+      const SizedBox(height: 16),
+      if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
+      CodeFeld(controller: _code, label: 'Code aus der Authenticator-App', onSubmitted: (_) => _einrichtenFertig()),
+      const SizedBox(height: 12),
+      HauptKnopf(text: 'Bestätigen und einrichten', laeuft: laeuft, onPressed: _einrichtenFertig),
+      const SizedBox(height: 8),
+      Center(
+        child: LinkKnopf('zurück', icon: Icons.arrow_back, onPressed: laeuft ? null : _zurueck),
+      ),
+    ],
   );
 
   static String _gruppiert(String s) {
