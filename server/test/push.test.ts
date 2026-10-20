@@ -439,6 +439,82 @@ describe.each(backends)('Push ($name)', (backend) => {
       expect(await until(() => calls.length >= 2)).toBe(true);
     });
 
+    describe('Standort-Wecker', () => {
+      const openSocket = async (d: Device, ip: string, loc: boolean) => {
+        const { port } = world.app.server.address() as AddressInfo;
+        const ticket = (await d.client.post('/api/v1/ws-ticket')).json.ticket as string;
+        const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { 'x-forwarded-for': ip } });
+        sockets.push(ws);
+        const ready = new Promise<void>((resolve) => ws.on('message', (raw: Buffer) => JSON.parse(raw.toString('utf8')).type === 'ready' && resolve()));
+        await new Promise<void>((resolve, reject) => {
+          ws.once('open', () => resolve());
+          ws.once('error', reject);
+        });
+        ws.send(JSON.stringify({ type: 'auth', ticket }));
+        await ready;
+        if (loc) ws.send(JSON.stringify({ type: 'loc_hello' }));
+        await wait(60);
+        return ws;
+      };
+      const SHARE = '11111111-1111-4111-8111-111111111111';
+      const locStart = (recipients: string[], shareId = SHARE) => ({ type: 'loc_start', shareId, endsAt: Date.now() + 3_600_000, recipients: recipients.map((userId) => ({ userId, wrap: 'wrapAAAA_bbbb' })) });
+
+      it('weckt nur Geräte der genannten Personen, mit dem festen Wecker ohne Inhalt (nichts von Standort, Name oder Titel)', async () => {
+        const tParent = await register(fam.parent);
+        await register(fam.child);
+        await world.app.push?.weckeStandort(fam.familyId, [fam.parent.userId]);
+        expect(await until(() => calls.length >= 1)).toBe(true);
+        expect(await topicsPosted()).toEqual([tParent]);
+        expect(calls[0]?.body).toBe(WAKE_BODY);
+        for (const h of ['title', 'tags', 'x-title', 'x-tags', 'priority', 'click', 'attach', 'actions']) expect(calls[0]?.headers[h]).toBeUndefined();
+      });
+
+      it('kein Wecker an Geräte mit offener Verbindung, auch nicht mit der des Standort-Kanals', async () => {
+        await register(fam.parent);
+        const tChild = await register(fam.child);
+        await openSocket(fam.parent, '203.0.113.20', true); // nur Standort-Kanal (loc_hello)
+        expect(world.app.hub.hasDevice(fam.parent.deviceId)).toBe(false); // für den Sync-Wecker zählt sie nicht ...
+        expect(world.app.hub.hasAnySocket(fam.parent.deviceId)).toBe(true); // ... für den Standort-Wecker schon
+        await world.app.push?.weckeStandort(fam.familyId, [fam.parent.userId, fam.child.userId]);
+        expect(await until(() => calls.length >= 1)).toBe(true);
+        expect(await topicsPosted()).toEqual([tChild]);
+      });
+
+      it('Start einer Freigabe weckt die Empfänger ohne Verbindung; Verlängern, Ende und erneuter Start innerhalb von 10 Minuten wecken nicht erneut', async () => {
+        const tChild = await register(fam.child);
+        await register(fam.parent);
+        const alice = await openSocket(fam.admin, '203.0.113.21', true);
+        const ctrl: Array<Record<string, unknown>> = [];
+        alice.on('message', (raw: Buffer) => ctrl.push(JSON.parse(raw.toString('utf8'))));
+        alice.send(JSON.stringify(locStart([fam.child.userId])));
+        expect(await until(() => calls.length >= 1)).toBe(true);
+        expect(await topicsPosted()).toEqual([tChild]);
+        expect(calls[0]?.body).toBe(WAKE_BODY);
+        calls = [];
+        alice.send(JSON.stringify({ type: 'loc_extend', shareId: SHARE, endsAt: Date.now() + 7_200_000 }));
+        await wait(100);
+        alice.send(JSON.stringify({ type: 'loc_stop', shareId: SHARE }));
+        await wait(100);
+        const share2 = '22222222-2222-4222-8222-222222222222';
+        alice.send(JSON.stringify(locStart([fam.child.userId], share2)));
+        await wait(300);
+        expect(ctrl.some((m) => m.type === 'loc_started' && m.shareId === share2)).toBe(true);
+        expect(calls).toHaveLength(0); // Entprellung je Sender und Empfänger
+      });
+
+      it('ein Empfänger mit offener Verbindung bekommt loc_start über den Socket und keinen Wecker', async () => {
+        await register(fam.child);
+        const alice = await openSocket(fam.admin, '203.0.113.22', true);
+        const kid = await openSocket(fam.child, '203.0.113.23', true);
+        const got: Array<Record<string, unknown>> = [];
+        kid.on('message', (raw: Buffer) => got.push(JSON.parse(raw.toString('utf8'))));
+        alice.send(JSON.stringify(locStart([fam.child.userId])));
+        await wait(300);
+        expect(got.some((m) => m.type === 'loc_start')).toBe(true);
+        expect(calls).toHaveLength(0);
+      });
+    });
+
     it('halbtoter Socket (kein Pong mehr) verschluckt den Wecker nicht: er kommt nach der Ping-Frist', async () => {
       const t = await register(fam.parent);
       const { port } = world.app.server.address() as AddressInfo;

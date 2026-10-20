@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_state.dart';
 import '../calendar/termin_repository.dart';
+import '../standort/standort_hinweis.dart' show kStandortPayload;
 import '../tasks/aufgabe_repository.dart' show aufgabenProvider;
 import 'erinnerung_einstellungen.dart';
 import 'erinnerung_planung.dart';
@@ -65,6 +66,9 @@ class ErinnerungDienst {
 
   /// Navigation beim Tippen auf die Erinnerung einer Aufgabe (Aufgaben-ID).
   void Function(String aufgabeId)? beiAufgabeGeoeffnet;
+
+  /// Tipp auf die Benachrichtigung "Standort geteilt": die Standort-Seite öffnen.
+  void Function()? beiStandortGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -255,6 +259,10 @@ class ErinnerungDienst {
 
   void _getippt(String? payload) {
     if (_beendet) return;
+    if (payload == kStandortPayload) {
+      beiStandortGeoeffnet?.call();
+      return;
+    }
     final aufgabe = aufgabeErinnerungPayloadLesen(payload);
     if (aufgabe != null) {
       beiAufgabeGeoeffnet?.call(aufgabe);

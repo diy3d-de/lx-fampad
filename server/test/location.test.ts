@@ -106,6 +106,66 @@ describe('Rechte-Regel locationRecipients', () => {
   });
 });
 
+describe('Push-Wecker-Haken (onWake)', () => {
+  const wakes: Array<{ familyId: string; userIds: string[] }> = [];
+  const spy = (a: FastifyInstance) => {
+    wakes.length = 0;
+    (a.location as { onWake?: (f: string, u: string[]) => void }).onWake = (familyId, userIds) => wakes.push({ familyId, userIds });
+  };
+
+  it('Start meldet die Empfänger (nur Familie und Personen); Verlängern, Position, Beenden und Wiederverbinden melden nichts', async () => {
+    const a = await start();
+    spy(a);
+    const [alice, , kid] = [await connect('alice'), await connect('bob'), await connect('kid')];
+    await send(alice, startMsg([[BOB, 'w1'], [KID, 'w2']]));
+    expect(wakes).toEqual([{ familyId: 'f1', userIds: [BOB, KID] }]);
+    clock += 2000;
+    await send(alice, { type: 'loc_pos', shareId: SHARE, packet: 'AAAA_bbbb-1' });
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: clock + 7_200_000 });
+    await connect('alice2'); // Wiederverbinden eines Geräts
+    await send(kid, { type: 'loc_hello' });
+    await send(alice, { type: 'loc_stop', shareId: SHARE });
+    expect(wakes).toHaveLength(1);
+  });
+
+  it('Entprellung: je Sender und Empfänger höchstens alle 10 Minuten; neue Empfänger werden trotzdem geweckt', async () => {
+    const a = await start();
+    spy(a);
+    const alice = await connect('alice');
+    await send(alice, startMsg([[BOB, 'w1']]));
+    await send(alice, { type: 'loc_stop', shareId: SHARE });
+    clock += 5 * 60_000;
+    const share2 = uid(101);
+    await send(alice, startMsg([[BOB, 'w1'], [KID, 'w2']], { shareId: share2, endsAt: clock + 3_600_000 }));
+    expect(wakes.map((w) => w.userIds)).toEqual([[BOB], [KID]]); // Bob wurde vor 5 Minuten geweckt, Kid noch nie
+    await send(alice, { type: 'loc_stop', shareId: share2 });
+    clock += 6 * 60_000; // Bob: 11 Minuten her, Kid: 6 Minuten
+    const share3 = uid(102);
+    await send(alice, startMsg([[BOB, 'w1'], [KID, 'w2']], { shareId: share3, endsAt: clock + 3_600_000 }));
+    expect(wakes.map((w) => w.userIds)).toEqual([[BOB], [KID], [BOB]]);
+  });
+
+  it('abgelehnte Starts (falsche Empfänger) wecken niemanden', async () => {
+    const a = await start();
+    spy(a);
+    const alice = await connect('alice');
+    await send(alice, startMsg([[EVE, 'w']]));
+    await send(alice, startMsg([[ALICE, 'w']]));
+    expect(wakes).toHaveLength(0);
+  });
+
+  it('ein Fehler im Wecker-Haken lässt die Freigabe gelten', async () => {
+    const a = await start();
+    (a.location as { onWake?: () => void }).onWake = () => {
+      throw new Error('kaputt');
+    };
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    await send(alice, startMsg([[BOB, 'w1']]));
+    expect(alice.of('loc_started')).toHaveLength(1);
+    expect(bob.of('loc_start')).toHaveLength(1);
+  });
+});
+
 describe('WebSocket-Kanal "loc"', () => {
   it('Start: nur die gewählten Empfänger bekommen ihren eigenen Wrap, Unbeteiligte und andere Familien nichts', async () => {
     await start();

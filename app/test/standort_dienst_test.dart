@@ -3,14 +3,19 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show DatabaseConnection;
+import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/models.dart';
+import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
+import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart';
+import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart';
 import 'package:lx_fampad/data/sync/sync_socket.dart';
@@ -89,11 +94,12 @@ class _Geraet {
   /// Schlüssel, denen dieses Gerät vertraut (TOFU); fehlt eine Person, ist sie unbestätigt.
   final Map<String, OeffentlicheSchluessel> vertraut = {};
 
-  _Geraet(this.id, CryptoProvider crypto, this.version, this.jetzt, {UserDto? user, StandortZeiten zeiten = const StandortZeiten()}) : pk = Personenschluessel.erzeugen(crypto) {
+  _Geraet(this.id, CryptoProvider crypto, this.version, this.jetzt, {UserDto? user, StandortZeiten zeiten = const StandortZeiten(), StandortBenachrichtiger? hinweis}) : pk = Personenschluessel.erzeugen(crypto) {
     c = ProviderContainer(
       overrides: <Override>[
         authProvider.overrideWith(() => _FakeAuth(user ?? _user(id, 'Person', Role.parent))),
         standortPortProvider.overrideWithValue(port),
+        if (hinweis != null) standortBenachrichtigerProvider.overrideWithValue(hinweis),
         standortUhrProvider.overrideWith((ref) => () => jetzt),
         standortZeitenProvider.overrideWithValue(zeiten),
         standortSchluesselProvider.overrideWith(
@@ -160,6 +166,23 @@ Future<void> pumpen([int n = 6]) async {
 }
 
 /// Der "Server": gibt Nachrichten von [von] an die Empfänger weiter (wie server/src/location/service.ts, nur das Nötigste).
+class _HinweisAnzeige implements StandortAnzeigePort {
+  final gezeigt = <({int id, String titel, String text})>[];
+  final entfernt = <int>[];
+  @override
+  Future<bool> initialisieren() async => true;
+  @override
+  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, Duration? verfall}) async {
+    gezeigt.add((id: id, titel: titel, text: text));
+    return true;
+  }
+
+  @override
+  Future<void> entfernen(int id) async => entfernt.add(id);
+  @override
+  Future<void> alleEntfernen() async {}
+}
+
 class _Relay {
   final Map<String, _Geraet> geraete;
   _Relay(this.geraete);
@@ -205,11 +228,19 @@ Future<void> main() async {
       late _Geraet anna;
       late _Geraet ben;
       late _Relay relay;
+      late AppDatabase hinweisDb;
+      late _HinweisAnzeige anzeige;
+      var vordergrund = true;
       const zeiten = StandortZeiten(takt: Duration(milliseconds: 20), verbindungsFrist: Duration(milliseconds: 300), startFrist: Duration(milliseconds: 400), herzschlag: Duration(milliseconds: 25));
 
       setUp(() async {
         anna = _Geraet(_anna, crypto, 3, start, user: _user(_anna, 'Anna', Role.parent), zeiten: zeiten);
-        ben = _Geraet(_ben, crypto, 2, start, user: _user(_ben, 'Ben', Role.child), zeiten: zeiten);
+        hinweisDb = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
+        await hinweisDb.metaSchreiben('members', jsonEncode([{'id': _anna, 'displayName': 'Anna', 'colorIndex': 0, 'role': 'parent', 'status': 'active'}]));
+        anzeige = _HinweisAnzeige();
+        vordergrund = true;
+        final hinweis = StandortBenachrichtiger(db: hinweisDb, anzeige: anzeige, speicher: MemoryErinnerungSpeicher(), ich: () async => _ben, istVordergrund: () => vordergrund, jetzt: () => start);
+        ben = _Geraet(_ben, crypto, 2, start, user: _user(_ben, 'Ben', Role.child), zeiten: zeiten, hinweis: hinweis);
         anna.vertraut[_ben] = ben.pk.oeffentlich(2);
         ben.vertraut[_anna] = anna.pk.oeffentlich(3);
         relay = _Relay({_anna: anna, _ben: ben});
@@ -217,9 +248,10 @@ Future<void> main() async {
         await ben.starten();
       });
 
-      tearDown(() {
+      tearDown(() async {
         anna.schliessen();
         ben.schliessen();
+        await hinweisDb.close();
       });
 
       Future<void> teilenAnna({Set<String> an = const {_ben}, Duration dauer = const Duration(hours: 1)}) async {
@@ -239,6 +271,36 @@ Future<void> main() async {
         expect(ben.st.geteilt.keys, [_anna]);
         expect(ben.st.geteilt[_anna]!.hatPosition, isFalse);
         expect(ben.st.geteilt[_anna]!.ungeprueft, isFalse);
+      });
+
+      test('Hinweis: neue Freigabe im Vordergrund meldet die Oberfläche (einmal), im Hintergrund die System-Benachrichtigung ohne Standort; Ende entfernt sie', () async {
+        await teilenAnna();
+        expect(ben.c.read(standortHinweisProvider)?.von, _anna);
+        expect(ben.c.read(standortHinweisProvider)?.nr, 1);
+        expect(anzeige.gezeigt, isEmpty); // Vordergrund: nur die Oberfläche
+        // Nachreichung derselben Freigabe (Wiederverbinden): kein zweiter Hinweis
+        ben.socket.vomServer({'type': 'loc_start', 'from': _anna, 'shareId': relay.letzteShare, 'endsAt': start.add(const Duration(hours: 1)).millisecondsSinceEpoch, 'wrap': 'x'});
+        await pumpen();
+        expect(ben.c.read(standortHinweisProvider)?.nr, 1);
+        await anna.ctrl.beenden();
+        await relay.weiter(anna);
+        expect(anzeige.entfernt, [standortBenachrichtigungsId(_anna)]);
+      });
+
+      test('Hinweis im Hintergrund: lokale Benachrichtigung "Standort geteilt" mit dem Namen aus der Mitgliederliste, ohne Position', () async {
+        vordergrund = false;
+        await teilenAnna();
+        await pumpen();
+        expect(anzeige.gezeigt, hasLength(1));
+        expect(anzeige.gezeigt.single.titel, 'Standort geteilt');
+        expect(anzeige.gezeigt.single.text, 'Anna teilt seinen Standort.');
+        expect(anzeige.gezeigt.single.id, standortBenachrichtigungsId(_anna));
+        expect(ben.c.read(standortHinweisProvider), isNull);
+        anna.port.ctrl.add(PositionEreignis(_pos(start)));
+        await pumpen();
+        await relay.weiter(anna);
+        expect(anzeige.gezeigt, hasLength(1)); // Positionen lösen nichts aus
+        expect(jsonEncode([for (final g in anzeige.gezeigt) g.text]), isNot(contains('48.13')));
       });
 
       test('Position: verschlüsselt gesendet, Empfänger zeigt Genauigkeit und Messzeit; der Klartext steht nicht in der Nachricht', () async {

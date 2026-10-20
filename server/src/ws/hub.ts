@@ -114,6 +114,13 @@ export class Hub {
     return false;
   }
 
+  /** Hat das Gerät irgendeine offene Verbindung mit Lebenszeichen, auch die des Standort-Kanals? Dann erreicht eine Freigabe es ohne Push. */
+  hasAnySocket(deviceId: string, maxIdleMs?: number): boolean {
+    const now = Date.now();
+    for (const e of this.byDevice.get(deviceId) ?? []) if (maxIdleMs === undefined || now - e.lastActivity <= maxIdleMs) return true;
+    return false;
+  }
+
   /** Merkt ein Lebenszeichen der Verbindung (Pong, Nachricht). */
   touch(socket: WebSocket): void {
     const e = this.entries.get(socket);

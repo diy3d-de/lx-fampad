@@ -52,6 +52,8 @@ export interface PushOptions {
   now: () => Date;
   /** Hat das Gerät eine lebendige WebSocket-Verbindung (mit Lebenszeichen innerhalb von `maxIdleMs`)? */
   hasLiveSocket: (deviceId: string, maxIdleMs: number) => boolean;
+  /** Wie [hasLiveSocket], aber auch Verbindungen des Standort-Kanals zählen (Standort-Wecker); fehlt: wie [hasLiveSocket]. */
+  hasAnySocket?: (deviceId: string, maxIdleMs: number) => boolean;
   fetch?: typeof fetch;
   /** Mindestabstand zwischen zwei Weckern an dasselbe Gerät (Standard 10 s). */
   minIntervalMs?: number;
@@ -188,6 +190,32 @@ export class PushService {
       }
     } catch (err: unknown) {
       this.o.log.error({ err }, 'Push: Empfänger konnten nicht bestimmt werden');
+    }
+  }
+
+  /**
+   * Standort-Wecker: jemand hat eine Freigabe an [userIds] gestartet. Geweckt werden Geräte dieser Personen mit Endpunkt, die keine lebendige Verbindung
+   * irgendeiner Art haben (sonst bekommen sie `loc_start` über den Socket). Gleicher fester Wecker wie sonst (kein Name, kein Titel, kein Hinweis auf
+   * den Standort): die App gleicht ab und fragt den Standort-Kanal kurz selbst ab. Entprellung je Gerät wie bei jedem Wecker. Wirft nie.
+   */
+  async weckeStandort(familyId: string, userIds: readonly string[]): Promise<void> {
+    if (this.closed || userIds.length === 0) return;
+    if (!this.enabled) return this.logStatusOnce();
+    try {
+      this.prune();
+      const rows = await this.o.db
+        .select({ deviceId: pushEndpoints.deviceId })
+        .from(pushEndpoints)
+        .innerJoin(devices, and(eq(devices.familyId, pushEndpoints.familyId), eq(devices.id, pushEndpoints.deviceId)))
+        .innerJoin(memberships, and(eq(memberships.familyId, devices.familyId), eq(memberships.userId, devices.userId)))
+        .where(and(eq(pushEndpoints.familyId, familyId), isNull(pushEndpoints.disabledAt), isNull(devices.revokedAt), eq(memberships.status, 'active'), inArray(devices.userId, [...userIds])));
+      const erreichbar = this.o.hasAnySocket ?? this.o.hasLiveSocket;
+      for (const row of rows) {
+        if (erreichbar(row.deviceId, this.liveFensterMs)) continue;
+        this.schedule(row.deviceId);
+      }
+    } catch (err: unknown) {
+      this.o.log.error({ err }, 'Push: Standort-Wecker konnten nicht bestimmt werden');
     }
   }
 

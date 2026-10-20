@@ -479,7 +479,7 @@ Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher*
 | Nachricht | Inhalt |
 | --- | --- |
 | `loc_started` / `loc_active` | `{ shareId, endsAt }` an den Sender: bestätigt Start bzw. Verlängern; `loc_active` kommt außerdem, wenn sich das Sendergerät innerhalb der Schonfrist wieder verbindet. |
-| `loc_start` | `{ from, shareId, endsAt, wrap }` an **jeden Empfänger einzeln, nur mit dessen eigenem Wrap**; ein später verbundener Empfänger bekommt es beim Anmelden nachgereicht, danach die letzte Position als `loc_pos`. |
+| `loc_start` | `{ from, shareId, endsAt, wrap }` an **jeden Empfänger einzeln, nur mit dessen eigenem Wrap** (Empfänger ohne offene Verbindung weckt der Server zusätzlich per Push-Wecker ohne Inhalt, je Sender und Empfänger höchstens alle 10 Minuten, nie bei Verlängern, Wiederverbinden oder Beenden; die App holt `loc_start` dann bei einer Kurzverbindung ab und meldet es lokal); ein später verbundener Empfänger bekommt es beim Anmelden nachgereicht, danach die letzte Position als `loc_pos`. |
 | `loc_extend` | `{ from, shareId, endsAt }` an die Empfänger, wenn der Sender verlängert. |
 | `loc_pos` | `{ from, shareId, packet }` an die Empfänger der Freigabe (nie an den Sender, nie an Unbeteiligte oder andere Familien). |
 | `loc_stop` | `{ from, shareId, reason }` an Empfänger und Sender; `reason`: `stopped`, `expired`, `disconnected`, `removed`, `replaced`. |

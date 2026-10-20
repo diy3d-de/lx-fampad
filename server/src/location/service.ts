@@ -20,6 +20,8 @@ export const MAX_PACKET_LENGTH = 1024;
 /** Freigaben, die ein Mitglied in diesem Zeitraum starten darf (Missbrauchsschutz gegen Dauerfeuer). */
 const START_WINDOW_MS = 10 * 60 * 1000;
 const START_MAX = 10;
+/** Pause, bevor dieselbe Person dieselben Empfänger wieder per Push wecken darf (eine Freigabe, die neu startet oder ersetzt wird, weckt nicht erneut). */
+const WAKE_COOLDOWN_MS = 10 * 60 * 1000;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const BASE64URL = /^[A-Za-z0-9_-]+$/;
@@ -69,6 +71,14 @@ export class LocationService {
   private readonly shares = new Map<string, Share>();
   private readonly byOwner = new Map<string, Share>();
   private readonly starts = new Map<string, number[]>();
+  /** Letzter Wecker je Sender und Empfänger (`Familie:Sender:Empfänger` -> Zeit), nur im Arbeitsspeicher. */
+  private readonly lastWake = new Map<string, number>();
+
+  /**
+   * Haken für den Push-Wecker (app.ts): wird nur beim Start einer Freigabe mit den Empfängern aufgerufen, die in den letzten 10 Minuten nicht schon von dieser
+   * Person geweckt wurden. Nie bei Verlängern, Wiederverbinden, Ende; nie mit Inhalt (nur Familie und Empfänger).
+   */
+  onWake: ((familyId: string, userIds: string[]) => void) | undefined;
   private timer: NodeJS.Timeout | null = null;
   private readonly now: () => number;
 
@@ -89,6 +99,7 @@ export class LocationService {
     this.shares.clear();
     this.byOwner.clear();
     this.starts.clear();
+    this.lastWake.clear();
   }
 
   /** Anzahl aktiver Freigaben (Tests, Diagnose; nie Inhalte). */
@@ -168,7 +179,27 @@ export class LocationService {
     for (const [userId, wrap] of share.recipients) {
       this.deps.hub.sendToUsers(share.familyId, [userId], { type: 'loc_start', from: share.ownerId, shareId: share.id, endsAt, wrap });
     }
+    this.weckeEmpfaenger(share, now);
     return { ok: true };
+  }
+
+  /** Push-Wecker an die Empfänger, die nicht schon vor Kurzem von diesem Sender geweckt wurden (Entprellung 10 Minuten je Sender und Empfänger). */
+  private weckeEmpfaenger(s: Share, now: number): void {
+    if (!this.onWake) return;
+    const ids: string[] = [];
+    for (const userId of s.recipients.keys()) {
+      const key = `${s.familyId}:${s.ownerId}:${userId}`;
+      const letzter = this.lastWake.get(key);
+      if (letzter !== undefined && now - letzter < WAKE_COOLDOWN_MS) continue;
+      this.lastWake.set(key, now);
+      ids.push(userId);
+    }
+    if (ids.length === 0) return;
+    try {
+      this.onWake(s.familyId, ids);
+    } catch (err: unknown) {
+      this.deps.log?.warn({ err }, 'Standort-Wecker fehlgeschlagen');
+    }
   }
 
   /** Die Freigabe, wenn sie dieser Sitzung (Person und Gerät) gehört; sonst null (für Fremde gibt es sie nicht). */
@@ -285,6 +316,7 @@ export class LocationService {
     const recheckMs = opts.recheckMs ?? this.deps.sweepMs * 12;
     const now = this.now();
     for (const [id, zeiten] of this.starts) if (zeiten.every((t) => now - t >= START_WINDOW_MS)) this.starts.delete(id);
+    for (const [key, t] of this.lastWake) if (now - t >= WAKE_COOLDOWN_MS) this.lastWake.delete(key);
     const toCheck: Share[] = [];
     for (const s of [...this.shares.values()]) {
       if (now >= s.endsAt) this.end(s, 'expired');

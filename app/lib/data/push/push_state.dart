@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error.dart';
 import '../auth/auth_state.dart';
 import '../database_provider.dart';
+import '../standort/standort_abruf.dart';
 import '../sync_state.dart';
 import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
@@ -326,6 +327,11 @@ class PushController extends Notifier<PushZustand> {
       abgleich: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
       ereignisse: ref.read(ereignisBenachrichtigerProvider),
     );
+    // Standortfreigaben: kurzer Abruf des Standort-Kanals (nur im Hintergrund; im Vordergrund hat die App `loc_start` über ihre Verbindung)
+    if (!ref.mounted) return;
+    try {
+      await ref.read(standortAbrufProvider).abfragen();
+    } catch (_) {}
   }
 
   /// Beim Abmelden (Hook in auth_state.dart): Endpunkt beim Server löschen (nur wenn die Sitzung noch gilt) und beim Verteiler abmelden.

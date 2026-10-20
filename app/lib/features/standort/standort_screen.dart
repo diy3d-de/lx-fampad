@@ -14,6 +14,7 @@ import '../../data/database_provider.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/lists/members.dart';
 import '../../data/standort/standort_dienst.dart';
+import '../../data/standort/standort_hinweis.dart';
 import '../../data/standort/standort_modelle.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -39,10 +40,19 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
   Set<String>? _gewaehlt;
   var _beschaeftigt = false;
 
+  late final StandortSeiteOffen _offen;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    // Die Person sieht die Freigaben jetzt selbst: Hinweise verschwinden, und solange diese Seite (gepusht) offen ist, kommen keine neuen Hinweise
+    _offen = ref.read(standortSeiteOffenProvider.notifier);
+    final hinweis = ref.read(standortBenachrichtigerProvider);
+    Future.microtask(() {
+      if (!widget.eingebettet) _offen.setzen(true);
+      unawaited(hinweis.alleEntfernen());
+    });
     // Alter und Restzeit ("vor 3 Min", "noch 40 Min") aktuell halten
     _auffrischen = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) setState(() {});
@@ -51,6 +61,15 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
 
   @override
   void dispose() {
+    if (!widget.eingebettet) {
+      Future.microtask(() {
+        try {
+          _offen.setzen(false);
+        } catch (_) {
+          // der Container ist schon abgebaut (Abmelden)
+        }
+      });
+    }
     WidgetsBinding.instance.removeObserver(this);
     _auffrischen?.cancel();
     super.dispose();
