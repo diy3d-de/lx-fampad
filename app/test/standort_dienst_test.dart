@@ -159,9 +159,11 @@ class _Geraet {
   void schliessen() => c.dispose();
 }
 
+/// Lässt den Ereignisschleifen-Lauf der Fakes (Sockets, Timer, Futures) abarbeiten. Wartet mindestens [n] mal 10 ms; die Zeit ist echte Zeit,
+/// daher großzügig (unter Last brauchen mehrere verkettete Futures länger als im Leerlauf).
 Future<void> pumpen([int n = 6]) async {
   for (var i = 0; i < n; i++) {
-    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await Future<void>.delayed(const Duration(milliseconds: 10));
   }
 }
 
@@ -231,7 +233,8 @@ Future<void> main() async {
       late AppDatabase hinweisDb;
       late _HinweisAnzeige anzeige;
       var vordergrund = true;
-      const zeiten = StandortZeiten(takt: Duration(milliseconds: 20), verbindungsFrist: Duration(milliseconds: 300), startFrist: Duration(milliseconds: 400), herzschlag: Duration(milliseconds: 25));
+      // Takt und Herzschlag kurz (Tests warten nicht lange); die Fristen sind reine Obergrenzen und großzügig: unter Last (CI, viele Prozesse) dürfen sie nicht vor der Antwort des Fake-Servers ablaufen
+      const zeiten = StandortZeiten(takt: Duration(milliseconds: 20), verbindungsFrist: Duration(seconds: 1), startFrist: Duration(seconds: 6), herzschlag: Duration(milliseconds: 25));
 
       setUp(() async {
         anna = _Geraet(_anna, crypto, 3, start, user: _user(_anna, 'Anna', Role.parent), zeiten: zeiten);
@@ -546,6 +549,7 @@ Future<void> main() async {
         expect(anna.st.phase, StandortPhase.aus);
 
         anna.port.startFehler = null;
+        anna.sockets.scheitern = 1000; // jeder Wiederverbindungsversuch scheitert: sonst käme die Verbindung vor Ablauf der Frist von selbst zurück (Zeit-Abhängigkeit)
         anna.socket.serverSchliesst(1006);
         await pumpen(2);
         expect(await anna.ctrl.teilen(dauer: const Duration(hours: 1), empfaenger: {_ben}), isFalse);
