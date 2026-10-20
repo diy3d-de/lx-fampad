@@ -2,6 +2,7 @@
 // Kennt weder Oberfläche noch Zeitgeber (Wiederholen, Backoff, Auslöser: sync_state.dart); wirft nie, sondern meldet ein Ergebnis.
 import '../api/api_error.dart';
 import '../api/fampad_api.dart';
+import '../app_database.dart';
 import 'sync_store.dart';
 
 enum SyncAusgang {
@@ -56,7 +57,10 @@ class SyncEngine {
   final int maxOps;
   final int seite;
 
-  SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 50, this.seite = 500});
+  /// Bereitet Ops vor dem Senden vor (Chat: verschlüsseln); null: unverändert senden.
+  final OpVorbereiter? vorbereiter;
+
+  SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 50, this.seite = 500, this.vorbereiter});
 
   /// [abgebrochen] wird nach jeder Antwort geprüft: ist der Dienst inzwischen gestoppt (Abmelden löscht die Datenbank), wird nichts mehr
   /// in die lokalen Tabellen geschrieben.
@@ -68,8 +72,11 @@ class SyncEngine {
       if (dev == null) return const SyncErgebnis(SyncAusgang.geraetFalsch); // Geräte-ID noch unbekannt (/me wird nachgeladen)
       await store.geraetZuordnen(dev);
       var rev = 0;
+      // Klartext, der lange im Ausgang wartet (offline geschrieben): erst den Stand des Servers holen (neue Epoche?), dann verschlüsseln und senden
+      final vorab = vorbereiter != null && await store.hatAltenKlartext(const Duration(seconds: 20));
       for (var runde = 0; runde < 300; runde++) {
-        final ops = await store.naechsteOps(maxOps);
+        final nurAbholen = vorab && runde == 0;
+        final ops = nurAbholen ? const <OutboxData>[] : await store.naechsteOps(maxOps, vorbereiter: vorbereiter);
         final since = await store.sinceRev();
         final snapshot = since > 0 ? await store.snapshotRev() : null; // läuft ein mehrseitiger Snapshot, ist sinceRev nur der Cursor
         final res = await api.sync(deviceId: dev, sinceRev: since, ops: [for (final o in ops) SyncStore.alsOp(o)], limit: seite, snapshotRev: snapshot);
@@ -83,7 +90,7 @@ class SyncEngine {
         if (ops.isNotEmpty && res.acked.isEmpty && res.rejected.isEmpty && !res.resyncNoetig && !res.hasMore) {
           return SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: 'Der Server hat die Änderungen nicht bestätigt.', ops: gesendet);
         }
-        if (bericht.resync || bericht.neuLaden || res.hasMore) continue;
+        if (nurAbholen || bericht.resync || bericht.neuLaden || res.hasMore) continue;
         if (await store.offeneAnzahl() > 0 && ops.isNotEmpty) continue; // weitere Ops (mehr als eine Anfrage voll oder neu dazugekommen)
         return SyncErgebnis(SyncAusgang.ok, hinweise: hinweise, ops: gesendet, rev: rev);
       }

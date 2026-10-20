@@ -17,6 +17,9 @@ class Req {
 
   Map<String, dynamic> get json => body is Map<String, dynamic> ? body as Map<String, dynamic> : <String, dynamic>{};
   String get key => '$method $path';
+
+  /// Query-Parameter der Anfrage (nur für Fakes, die sie auswerten).
+  Map<String, String> query = const {};
 }
 
 typedef Handler = FutureOr<http.Response> Function(Req req);
@@ -41,7 +44,7 @@ class FakeServer {
     Object? body;
     // JSON wird gelesen, andere Inhalte (z. B. ein hochgeladenes Bild) bleiben rohe Bytes
     if (request.bodyBytes.isNotEmpty) body = (request.headers['content-type'] ?? '').contains('json') ? jsonDecode(request.body) : request.bodyBytes;
-    final req = Req(request.method, uri.path.replaceFirst('/api/v1', ''), request.headers, body);
+    final req = Req(request.method, uri.path.replaceFirst('/api/v1', ''), request.headers, body)..query = uri.queryParameters;
     log.add(req);
     final h = routes[req.key];
     if (h == null) return fehler(404, 'not_found');

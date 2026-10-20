@@ -12,8 +12,12 @@ import { AppError, registerErrorHandling } from './errors.js';
 import { registerAccountRoutes } from './routes/account.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAvatarRoutes } from './routes/avatar.js';
+import { registerPushRoutes } from './routes/push.js';
+import { PushService } from './push/service.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
+import { dbDirectory } from './location/directory.js';
+import { LocationService, type MemberDirectory } from './location/service.js';
 import { Hub } from './ws/hub.js';
 import { registerWebSocketRoute, WS_CLOSE_UNAUTHENTICATED } from './ws/route.js';
 
@@ -23,6 +27,10 @@ declare module 'fastify' {
     authCore?: Auth;
     /** Offene WebSocket-Verbindungen (Tests prüfen daran Rollen und Schließen). */
     hub: Hub;
+    /** Standort teilen: flüchtiger Kanal, nur Prozessspeicher. */
+    location: LocationService;
+    /** Push-Wecker (nur mit Datenbank); Chat & Co. hängen hier ihren Empfängerfilter ein (push/service.ts). */
+    push?: PushService;
   }
 }
 
@@ -35,6 +43,13 @@ export interface AppDeps {
   auth?: AuthService;
   /** Nur Tests: austauschbare Uhr. */
   now?: () => Date;
+  /** Nur Tests: Mitglieder für den Standort-Kanal statt der Datenbank (ohne Datenbank und ohne dies kennt der Kanal niemanden). */
+  memberDirectory?: MemberDirectory;
+  /** Nur Tests: Zugriff auf den Standort-Dienst (Prüfung per Hand statt Zeitgeber). */
+  locationClock?: () => number;
+  /** Nur Tests: ntfy ersetzen (Fake-HTTP) und Mindestabstand der Wecker verkürzen. */
+  pushFetch?: typeof fetch;
+  pushMinIntervalMs?: number;
   /** Nur für Tests: Ziel des Logs (Standard: stdout). */
   logStream?: Writable;
 }
@@ -64,7 +79,7 @@ export function isApiRequest(req: FastifyRequest): boolean {
   }
 }
 
-export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, memberDirectory, locationClock }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       config.logLevel === 'silent'
@@ -119,6 +134,20 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
 
   const hub = new Hub();
   app.decorate('hub', hub);
+  const location = new LocationService({
+    hub,
+    directory: memberDirectory ?? (db ? dbDirectory(db) : async () => []),
+    ...(locationClock ? { now: locationClock } : {}),
+    maxDurationMs: config.locMaxDurationMs,
+    maxSharesPerFamily: config.locMaxSharesPerFamily,
+    minIntervalMs: config.locMinIntervalMs,
+    graceMs: config.locGraceMs,
+    sweepMs: config.locSweepMs,
+    log: app.log,
+  });
+  app.decorate('location', location);
+  location.startTimer();
+  app.addHook('onClose', async () => location.close());
   registerSystemRoutes(app, { config, pingDb });
   let auth: AuthService = authOverride ?? noAuth;
   if (db) {
@@ -128,16 +157,38 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     registerAccountRoutes(app, config, authCore);
     registerAvatarRoutes(app, config, authCore);
     registerSyncRoutes(app, config, authCore);
+    const push = new PushService({
+      db,
+      config,
+      log: app.log,
+      now: authCore.ctx.now,
+      hasLiveSocket: (deviceId, maxIdleMs) => hub.hasDevice(deviceId, maxIdleMs),
+      // lebendig = Lebenszeichen innerhalb von 1,5 Ping-Intervallen; Nachprüfung kurz danach
+      liveFensterMs: Math.round(config.wsPingIntervalMs * 1.5),
+      nachpruefenMs: Math.round(config.wsPingIntervalMs * 1.5) + 1000,
+      ...(pushFetch ? { fetch: pushFetch } : {}),
+      ...(pushMinIntervalMs !== undefined ? { minIntervalMs: pushMinIntervalMs } : {}),
+    });
+    app.decorate('push', push);
+    push.logStatusOnce();
+    app.addHook('onClose', async () => push.close());
+    registerPushRoutes(app, config, authCore, push);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
-    authCore.ctx.onRev = (familyId, rev, roles) => hub.notifyRev(familyId, rev, roles);
+    authCore.ctx.onRev = (familyId, rev, roles, users, origin) => {
+      hub.notifyRev(familyId, rev, roles, users);
+      // Push nur für Änderungen einer Person (Sync); nicht an deren Gerät, nicht an Geräte mit offener Verbindung
+      if (origin) void push.weckeGeraete({ familyId, rev, roles, users, origin });
+    };
     authCore.ctx.onRevoke = (e) => {
+      // eine widerrufene Sitzung, ein entferntes Gerät oder Mitglied beendet das Teilen sofort (nicht erst nach der Schonfrist)
+      location.revoke(e);
       if (e.kind === 'session') hub.closeSession(e.sessionId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');
       else if (e.kind === 'device') hub.closeDevice(e.deviceId, WS_CLOSE_UNAUTHENTICATED, 'session_ended');
       else hub.closeUser(e.userId, WS_CLOSE_UNAUTHENTICATED, 'session_ended', e.exceptSessionId);
     };
   }
-  registerWebSocketRoute(app, config, { auth, hub });
+  registerWebSocketRoute(app, config, { auth, hub, location });
 
   return app;
 }

@@ -138,6 +138,9 @@ class FakeSyncServer {
     'list_item': ('list', 'listId'),
     'termin_teilnehmer': ('termin', 'terminId'),
     'termin_ausnahmen': ('termin', 'terminId'),
+    'aufgabe_punkt': ('aufgabe', 'aufgabeId'),
+    'nachricht': ('konversation', 'konversationId'),
+    'lesestand': ('konversation', 'konversationId'),
   };
 
   static Map<String, dynamic> _terminStandard(String owner) => {
@@ -154,6 +157,28 @@ class FakeSyncServer {
     'icalUid': null,
     'audience': 'family',
     'ownerId': owner,
+  };
+
+  static Map<String, dynamic> _aufgabeStandard(String owner) => {
+    'beschreibung': '',
+    'faelligDate': null,
+    'faelligUtc': null,
+    'tzid': null,
+    'prioritaet': 0,
+    'assigneeId': null,
+    'erledigtAt': null,
+    'erledigtVon': null,
+    'wiederholung': null,
+    'erinnerungMin': null,
+    'audience': 'family',
+    'ownerId': owner,
+  };
+
+  /// Vom Server gesetzte Felder des Chats (Besitzer bzw. Autor ist die schreibende Person).
+  static Map<String, dynamic> _chatStandard(String entity, String person) => switch (entity) {
+    'konversation' => {'titel': '', 'teilnehmer': <String>[], 'ownerId': person},
+    'nachricht' => {'autorId': person, 'antwortAuf': null, 'bearbeitetAt': null},
+    _ => const {},
   };
 
   Map<String, dynamic> _ab(String code) => {'status': 'rejected', 'code': code, 'conflicts': <Map<String, dynamic>>[]};
@@ -183,6 +208,9 @@ class FakeSyncServer {
         if (o['entity'] == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdAdmin},
         if (o['entity'] == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
         if (o['entity'] == 'termin') ..._terminStandard(fixIdAdmin),
+        if (o['entity'] == 'aufgabe') ..._aufgabeStandard(fixIdAdmin),
+        if (o['entity'] == 'aufgabe_punkt') ...{'doneAt': null, 'position': 0},
+        ..._chatStandard(o['entity'] as String, fixIdAdmin),
         ...fields,
       }, ++rev);
       for (final f in fields.keys) {
@@ -209,6 +237,8 @@ class FakeSyncServer {
     if (geaendert.isNotEmpty) {
       z.rev = ++rev;
       z.fields = {...z.fields, ...geaendert};
+      // der Server setzt die Zeit der Bearbeitung
+      if (z.entity == 'nachricht' && geaendert.containsKey('text')) z.fields['bearbeitetAt'] = DateTime.now().toUtc().toIso8601String();
       for (final f in geaendert.keys) {
         z.fieldRevs[f] = z.rev;
       }
@@ -245,6 +275,9 @@ class FakeSyncServer {
         if (entity == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdKind},
         if (entity == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
         if (entity == 'termin') ..._terminStandard(fixIdKind),
+        if (entity == 'aufgabe') ..._aufgabeStandard(fixIdKind),
+        if (entity == 'aufgabe_punkt') ...{'doneAt': null, 'position': 0},
+        ..._chatStandard(entity, fixIdKind),
         ...fields,
       }, ++rev);
       zeilen[key] = z;

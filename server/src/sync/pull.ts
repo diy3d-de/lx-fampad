@@ -11,12 +11,15 @@
 // Mehrseitiger Snapshot: Die erste Seite (sinceRev 0) legt die Ziel-Revision fest (Stand der Familie) und nennt sie als `snapshotRev`.
 // Folgeseiten senden sie zurück (sinceRev ist der Cursor): sie prüfen nie gegen purged_rev (Tombstones sind für einen Snapshot ohne
 // Belang), liefern nur Einträge bis zur Ziel-Revision und nie Tombstones. Danach beginnt der normale Delta-Lauf ab der Ziel-Revision.
-import { and, asc, eq, gt, inArray, lte } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, lte } from 'drizzle-orm';
 import type { AuthContext, Executor } from '../auth/context.js';
 import { changeLog, families } from '../db/schema.js';
-import { wireRow } from './engine.js';
+import { GAINED_SIGHT, LOST_SIGHT, wireRow } from './engine.js';
 import { mayRead, type Actor, type Facts } from './permissions.js';
-import { syncColumns, type EntityDef, type Registry, type Row } from './registry.js';
+import { columnOf, syncColumns, type EntityDef, type Registry, type Row } from './registry.js';
+
+/** Wie viele der jüngsten Nachrichten eine neu aufgenommene Person mit dem Änderungsstrom bekommt (ein Snapshot liefert später den ganzen Verlauf). */
+const HISTORY_LIMIT = 500;
 import type { ChangeOut } from './types.js';
 
 export interface PullResult {
@@ -103,24 +106,38 @@ export async function pullChanges(
 
       const changes: ChangeOut[] = [];
       const hiddenSent = new Set<string>();
+      const history: Array<{ def: EntityDef; row: Row; facts: Facts }> = [];
       for (const e of page) {
         const def = registry.get(e.entity);
         const row = rows.get(e.entity)?.get(e.entityId);
-        if (def && !row && e.tombstone && !snapshotMode) {
+        if (def && !row && e.tombstone && !snapshotMode && !def.ownerOnlyNotify) {
           // Zeile ist weg (Fremdschlüssel-Kaskade beim Entfernen eines Mitglieds), der Tombstone-Eintrag bleibt: die Geräte sollen ihre Kopie entfernen
           // (nur die ID wird sichtbar, nie ein Inhalt; wie beim "hidden"-Tombstone unsichtbar gelöschter Datensätze)
           changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
           continue;
         }
         if (!def || !row) continue; // unbekannte Entität oder bereits bereinigt
-        const visible = mayRead(def.rules, actor, factsFrom(registry, rows, def, row));
+        const facts = factsFrom(registry, rows, def, row);
+        const visible = mayRead(def.rules, actor, facts);
+        // auf Teilnehmer beschränkte Datensätze: Unbeteiligte erfahren nie etwas (auch keine ID); wer die Sicht verliert, bekommt den Tombstone,
+        // weil die Löschung für Teilnehmer sichtbar bleibt (Teilnehmerliste im Tombstone bleibt erhalten) und der Entzug im Protokoll vermerkt ist
+        const restricted = facts.participants !== undefined;
         const current = Number(row.rev) === e.rev; // sonst ersetzt durch einen späteren Eintrag
+        // wer durch diese Änderung die Sicht gewonnen hat (in eine Gruppe aufgenommen), bekommt den bisherigen Inhalt: die jüngsten Kinder, begrenzt
+        const gained = e.changes[GAINED_SIGHT];
+        if (visible && !snapshotMode && !row.deletedAt && Array.isArray(gained) && gained.includes(actor.userId)) history.push({ def, row, facts });
         if (visible) {
           if (!current) continue;
           if (row.deletedAt) {
             if (!snapshotMode) changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, fields: {} });
           } else {
             changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: false, fields: wireRow(def, row) });
+          }
+        } else if (restricted) {
+          const lost = e.changes[LOST_SIGHT];
+          if (!snapshotMode && Array.isArray(lost) && lost.includes(actor.userId) && !hiddenSent.has(`${e.entity}:${e.entityId}`)) {
+            hiddenSent.add(`${e.entity}:${e.entityId}`);
+            changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
           }
         } else if (!snapshotMode && row.deletedAt) {
           // gelöscht und nicht sichtbar: die Person kannte den Datensatz womöglich vorher (Sicht inzwischen entzogen)
@@ -137,6 +154,34 @@ export async function pullChanges(
         ) {
           hiddenSent.add(`${e.entity}:${e.entityId}`);
           changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, hidden: true, fields: {} });
+        }
+      }
+      // Verlauf für neu aufgenommene Personen: je Elternteil die jüngsten Kinder (HISTORY_LIMIT), mit ihrer echten Revision; schon gelieferte nicht doppelt
+      const sent = new Set(changes.map((c) => `${c.entity}:${c.id}`));
+      for (const h of history) {
+        for (const child of registry.childrenOf(h.def.name)) {
+          if (!child.parent) continue;
+          const cc = syncColumns(child);
+          const kids = (await tx
+            .select()
+            .from(child.table)
+            // Zeilen, die nur der Besitzer liest (Wraps, Lesestand), schon hier auf ihn beschränken: fremde Zeilen dürfen die eigenen nicht aus dem Limit drängen
+            .where(
+              and(
+                eq(cc.familyId, familyId),
+                eq(columnOf(child, child.parent.field), String(h.row.id)),
+                isNull(cc.deletedAt),
+                child.ownerColumn ? eq(columnOf(child, child.ownerColumn), actor.userId) : undefined,
+              ),
+            )
+            .orderBy(desc(columnOf(child, 'createdAt')), desc(cc.id))
+            .limit(HISTORY_LIMIT)) as Row[];
+          for (const k of kids.reverse()) {
+            const key = `${child.name}:${String(k.id)}`;
+            if (sent.has(key) || !mayRead(child.rules, actor, child.facts(k, h.facts))) continue;
+            sent.add(key);
+            changes.push({ rev: Number(k.rev), entity: child.name, id: String(k.id), tombstone: false, fields: wireRow(child, k) });
+          }
         }
       }
       return { status: 'ok' as const, rev: family.rev, changes, hasMore, next, ...(snapshotRev !== undefined ? { snapshotRev } : {}) };

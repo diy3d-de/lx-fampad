@@ -14,6 +14,7 @@ import '../features/update/update_service.dart';
 import 'auth/auth_state.dart';
 import 'database_provider.dart';
 import 'erinnerungen/erinnerung_dienst.dart';
+import 'chat/chat_krypto_state.dart';
 import 'sync/sync_engine.dart';
 import 'sync/sync_socket.dart';
 import 'sync/sync_store.dart';
@@ -103,10 +104,18 @@ final syncSocketOeffnerProvider = Provider<SocketOeffner?>((ref) => null);
 
 final syncStoreProvider = Provider<SyncStore>((ref) => SyncStore(ref.watch(appDatabaseProvider)));
 
+/// Bereitet Ops vor dem Senden vor (Chat: verschlüsselt). Der Hintergrund-Abgleich eines Push-Weckers setzt hier null: dort gibt es keine Chat-Verschlüsselung
+/// (kein Schlüsselbund, keine Controller); Chat-Klartext im Ausgang bleibt dann liegen und geht erst beim nächsten Start der App hinaus.
+final opVorbereiterProvider = Provider<OpVorbereiter?>(
+  (ref) => ChatOpVorbereiter(db: ref.watch(appDatabaseProvider), krypto: () => ref.read(chatKryptoProvider.notifier).krypto()),
+);
+
 final syncEngineProvider = Provider<SyncEngine>((ref) {
   return SyncEngine(
     store: ref.watch(syncStoreProvider),
     api: ref.watch(apiProvider),
+    // Chat: Klartext im Ausgang wird erst beim Senden verschlüsselt (mit der dann aktuellen Epoche)
+    vorbereiter: ref.watch(opVorbereiterProvider),
     geraeteId: () async {
       final aus = ref.read(authProvider).me?.sessionDeviceId;
       if (aus != null && aus.isNotEmpty) return aus;

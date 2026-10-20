@@ -16,8 +16,11 @@ import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_anzeige.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
+import '../tasks/aufgaben_anzeige.dart';
+import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
+import '../standort/standort_start_karte.dart';
 import '../update/update_banner.dart';
 
 /// Vorname für die Begrüßung: erstes Wort des Anzeigenamens, sehr lange Namen werden gekürzt; null bei leerem Namen.
@@ -98,6 +101,10 @@ class HomeScreen extends ConsumerWidget {
         const _EinkaufKarte(),
         const SizedBox(height: 20),
         const _NaechsteKarte(),
+        const SizedBox(height: 20),
+        const _AufgabenKarte(),
+        const SizedBox(height: 20),
+        const StandortStartKarte(),
       ],
     );
   }
@@ -193,6 +200,40 @@ class _EinkaufKarte extends ConsumerWidget {
                 ),
               if (offen.length > 4) Text('+ ${offen.length - 4} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
             ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Karte "Aufgaben": überfällige und bald fällige offene Aufgaben (lokale Datenbank, auch offline). Tippen öffnet die Aufgaben.
+class _AufgabenKarte extends ConsumerWidget {
+  const _AufgabenKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alle = ref.watch(aufgabenProvider).value ?? const <Aufgabe>[];
+    final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+    final faellig = startseitenAufgaben(alle, jetzt, nurFaellig: true);
+    final zeigen = faellig.take(4).toList();
+    final mitglieder = mitgliederFuerAufgaben(ref, zeigen);
+    return Semantics(
+      button: true,
+      label: zeigen.isEmpty ? 'Aufgaben: nichts fällig. Aufgaben öffnen' : 'Aufgaben: ${faellig.length} fällig. Aufgaben öffnen',
+      excludeSemantics: true,
+      child: LxCard(
+        onTap: () => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const MonoLabel('// aufgaben'),
+            const SizedBox(height: 12),
+            if (zeigen.isEmpty)
+              Text(alle.any((a) => a.erledigtAt == null) ? 'Nichts fällig' : 'Keine offenen Aufgaben', style: const TextStyle(color: kTextMuted))
+            else
+              for (final a in zeigen) AufgabeKurzzeile(aufgabe: a, mitglieder: mitglieder, jetzt: jetzt),
+            if (faellig.length > zeigen.length) Text('+ ${faellig.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
           ],
         ),
       ),

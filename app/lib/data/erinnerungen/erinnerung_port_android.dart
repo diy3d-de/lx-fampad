@@ -6,8 +6,12 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import '../system_channel.dart';
 import 'erinnerung_planung.dart';
 import 'erinnerung_port.dart';
+
+/// Hat dieser Prozess das Plugin schon eingerichtet (mit dem Rückruf beim Tippen auf eine Erinnerung)? Dann richtet es der Chat nicht noch einmal ein.
+bool erinnerungPluginInitialisiert = false;
 
 const _kKanalId = 'terminerinnerungen';
 const _kKanalName = 'Terminerinnerungen';
@@ -36,7 +40,10 @@ NotificationDetails _details({required bool sperrbildschirmTitel}) => Notificati
 
 class AndroidErinnerungPort implements ErinnerungPort {
   final _plugin = FlutterLocalNotificationsPlugin();
+  final SystemChannel _system;
   var _bereit = false;
+
+  AndroidErinnerungPort({SystemChannel? system}) : _system = system ?? SystemChannel();
   void Function(String payload)? _beiTipp;
 
   AndroidFlutterLocalNotificationsPlugin? get _android => _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
@@ -44,14 +51,20 @@ class AndroidErinnerungPort implements ErinnerungPort {
   @override
   bool get verfuegbar => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  /// Art des letzten gescheiterten Aufrufs (nur Typ bzw. Fehlercode, nie Inhalte) für die Diagnose-Zeile.
+  String? letzterFehler;
+
   Future<T?> _sicher<T>(Future<T?> Function() f) async {
     try {
       return await f();
     } on MissingPluginException {
+      letzterFehler = 'MissingPlugin';
       return null;
-    } on PlatformException {
+    } on PlatformException catch (e) {
+      letzterFehler = 'Platform:${e.code}';
       return null;
-    } catch (_) {
+    } catch (e) {
+      letzterFehler = e.runtimeType.toString();
       return null;
     }
   }
@@ -73,6 +86,7 @@ class AndroidErinnerungPort implements ErinnerungPort {
           false,
     );
     if (ok != true) return false;
+    erinnerungPluginInitialisiert = true;
     final kanal = await _sicher<bool>(() async {
       await _android?.createNotificationChannel(
         const AndroidNotificationChannel(_kKanalId, _kKanalName, description: _kKanalBeschreibung, importance: Importance.high),
@@ -91,18 +105,44 @@ class AndroidErinnerungPort implements ErinnerungPort {
     return d.notificationResponse?.payload;
   }
 
+  /// Stellt das Plugin bereit, falls der erste Versuch scheiterte (Berechtigung und Einstellungen dürfen nicht an einem früheren Fehler hängen).
+  Future<bool> _sicherBereit() async => _bereit || await initialisieren(beiTipp: _beiTipp ?? (_) {});
+
   @override
-  Future<bool> benachrichtigungenErlaubt() async => _bereit && await _sicher<bool>(() async => await _android?.areNotificationsEnabled()) == true;
+  Future<BenachrichtigungsStatus> benachrichtigungsStatus() async {
+    // Eigener Kanal zuerst: er liest Berechtigung, Systemschalter und Kanal direkt und kennt "dauerhaft verweigert"
+    final s = await _sicher<({bool enabled, bool canAsk, int kanal})>(() => _system.benachrichtigungsStatus());
+    if (s != null) {
+      if (s.enabled) return BenachrichtigungsStatus.erlaubt;
+      return s.canAsk ? BenachrichtigungsStatus.fragbar : BenachrichtigungsStatus.gesperrt;
+    }
+    letzterFehler = 'systemkanal';
+    // Rückfall: Plugin (kennt den Dialog-Zustand nicht, Anfragen ist dann der einzige Weg)
+    await _sicherBereit();
+    final an = await _sicher<bool>(() async => await _android?.areNotificationsEnabled());
+    // null = der Aufruf selbst ist gescheitert (Plugin fehlt/nicht bereit): "unbekannt", nie als "nicht erlaubt" verbucht
+    if (an == null) return BenachrichtigungsStatus.unbekannt;
+    return an ? BenachrichtigungsStatus.erlaubt : BenachrichtigungsStatus.fragbar;
+  }
+
+  @override
+  Future<bool> benachrichtigungenErlaubt() async => await benachrichtigungsStatus() == BenachrichtigungsStatus.erlaubt;
 
   @override
   Future<bool> benachrichtigungenAnfragen() async {
-    if (!_bereit) return false;
+    if (await benachrichtigungsStatus() == BenachrichtigungsStatus.erlaubt) return true;
+    await _sicherBereit();
+    await _sicher<bool>(() async {
+      await _system.benachrichtigungAngefragt();
+      return true;
+    });
     await _sicher<bool>(() async => await _android?.requestNotificationsPermission());
     return benachrichtigungenErlaubt();
   }
 
   @override
-  Future<bool> exakteAlarmeMoeglich() async => _bereit && await _sicher<bool>(() async => await _android?.canScheduleExactNotifications()) == true;
+  Future<bool> exakteAlarmeMoeglich() async =>
+      await _sicherBereit() && await _sicher<bool>(() async => await _android?.canScheduleExactNotifications()) == true;
 
   /// Setzt eine Benachrichtigung. Liefert (gesetzt, genauBlieb): ohne Erlaubnis für genaue Alarme (Fehlercode des Plugins) wird sofort
   /// ungenau gesetzt und genauBlieb ist false.
@@ -207,8 +247,32 @@ class AndroidErinnerungPort implements ErinnerungPort {
   }
 
   @override
-  Future<void> systemEinstellungenOeffnen() async {
-    if (!_bereit) return;
-    await _sicher<bool>(() async => await _android?.openAppNotificationSettings());
+  Future<bool> alarmEinstellungenOeffnen() async {
+    if (await _sicher<bool>(() => _system.alarmEinstellungenOeffnen()) == true) return true;
+    return systemEinstellungenOeffnen();
+  }
+
+  @override
+  Future<ErinnerungDiagnose> diagnose() async {
+    final bereit = await _sicherBereit();
+    final s = await _sicher<({bool enabled, bool canAsk, int kanal})>(() => _system.benachrichtigungsStatus());
+    final erlaubt = s?.enabled ?? await benachrichtigungenErlaubt();
+    final offen = bereit ? await _sicher<List<PendingNotificationRequest>>(() => _plugin.pendingNotificationRequests()) : null;
+    return ErinnerungDiagnose(
+      bereit: bereit,
+      erlaubt: erlaubt,
+      kanal: s?.kanal ?? -1,
+      exakt: await exakteAlarmeMoeglich(),
+      geplant: offen?.where((p) => p.id != kTestBenachrichtigungId).length ?? -1,
+      fehler: letzterFehler,
+    );
+  }
+
+  @override
+  Future<bool> systemEinstellungenOeffnen() async {
+    // Eigener Aufruf ohne resolveActivity (das Plugin liefert ab Android 11 wegen der Paketsichtbarkeit sonst still false), Rückfall Plugin
+    if (await _sicher<bool>(() => _system.benachrichtigungsEinstellungenOeffnen()) == true) return true;
+    await _sicherBereit();
+    return await _sicher<bool>(() async => await _android?.openAppNotificationSettings()) == true;
   }
 }

@@ -29,7 +29,7 @@ void main() {
       for (final t in kTabs) {
         expect(navEintrag(t.label), findsOneWidget, reason: t.label);
       }
-      expect(find.text('bald'), findsNWidgets(3));
+      expect(find.text('bald'), findsNWidgets(2)); // Fotos, Orte (Aufgaben gibt es seit 1c-4a)
       expect(find.textContaining(RegExp('^Guten (Morgen|Tag|Abend)')), findsOneWidget);
       for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben', '// familie & orte']) {
         expect(find.text(l.toUpperCase()), findsOneWidget, reason: l);
@@ -76,7 +76,7 @@ void main() {
     await tester.tap(find.text('Start').first);
     await warte(tester);
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
-    await tester.tap(find.text('Aufgaben').first, warnIfMissed: false);
+    await tester.tap(find.text('Fotos').first, warnIfMissed: false);
     await warte(tester);
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
     // Karte "Zuletzt geteilt" führt in Dateien

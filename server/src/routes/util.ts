@@ -71,6 +71,13 @@ export const passwordSchema = safeString().pipe(z.string().min(1).max(256));
 /** Code/Token als Text mit fester Längengrenze. */
 export const boundedString = (min: number, max: number) => safeString().pipe(z.string().min(min).max(max));
 export const displayNameSchema = text(60);
+/** 32 Byte als Base64url ohne Auffüllzeichen (43 Zeichen, kanonisch): öffentliche Schlüssel, Suchkennung der Übertragung. */
+export const b64urlKey = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{43}$/)
+  .refine((s) => Buffer.from(s, 'base64url').toString('base64url') === s);
+/** Undurchsichtiger verschlüsselter Blob (Base64url) mit Längengrenze. */
+export const b64urlBlob = (max: number) => z.string().min(32).max(max).regex(/^[A-Za-z0-9_-]+$/);
 export const pinSchema = z.string().regex(/^\d{6}$/);
 export const codeSchema = z.string().regex(/^\d{6}$/);
 

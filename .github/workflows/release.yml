@@ -6,7 +6,7 @@
 #   sign    sieht nur UPDATE_SIGNING_KEY; läuft in der Environment "release" (manuelle Freigabe), baut selbst nichts
 #   draft   hat nur das GITHUB_TOKEN (contents: write); legt den Entwurf an
 #   deploy  sieht nur den SSH-Schlüssel; Environment "vps-deploy" (manuelle Freigabe); nur auf ausdrücklichen Wunsch
-# Alle Aktionen sind auf Commit-SHA gepinnt (Version im Kommentar). Es gibt keine Drittanbieter-Aktion außer subosito/flutter-action.
+# Alle Aktionen sind auf Commit-SHA gepinnt (Version im Kommentar). Es gibt keine Drittanbieter-Aktion außer subosito/flutter-action. Caches: im build-Job (Gradle) nur actions/cache/restore (kein Speichern), geschrieben werden sie von ci.yml.
 name: Release (Android)
 
 on:
@@ -73,6 +73,22 @@ jobs:
             echo "apk_name=dev-lx_labs-fampad-$v.apk"
           } >> "$GITHUB_OUTPUT"
 
+      # Die Version steht in pubspec.yaml und server/package.json und wird VOR dem Release dort gesetzt (Web-App und Server zeigen sie an, die APK bekommt ihre
+      # Version zusätzlich über --build-name). Weicht sie von der Release-Version ab, bricht der Lauf ab, statt eine inkonsistente Auslieferung zu bauen.
+      - name: pubspec.yaml und package.json müssen zur Release-Version passen
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          p=$(grep -E '^version:' app/pubspec.yaml | head -1 | sed -E 's/version:[[:space:]]*//; s/\+.*//')
+          s=$(grep -m1 '"version"' server/package.json | sed -E 's/.*"version": *"([^"]+)".*/\1/')
+          if [ "$p" != "$VERSION" ] || [ "$s" != "$VERSION" ]; then
+            echo "::error::Release-Version $VERSION, aber app/pubspec.yaml hat $p und server/package.json hat $s. Version dort setzen und committen, dann erneut taggen."
+            exit 1
+          fi
+
+      # Speicherplatz: NDK, libsodium-Build für alle ABIs und APK füllen die Platte des Runners; ungenutzte Vorinstallationen entfernen (wie in ci.yml)
+      - run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk/27* /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift /usr/local/.ghcup && df -h /
+
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -88,6 +104,14 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      # Gradle-Cache, ebenfalls nur lesen (gleicher Schlüssel wie in ci.yml, Treffer vom Standardzweig)
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('app/android/**/*.gradle*', 'app/android/gradle/wrapper/gradle-wrapper.properties', 'app/pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
       # pubspec.lock ist eingecheckt: nichts neu auflösen
       - name: Pakete (Lockfile erzwingen)
         working-directory: app

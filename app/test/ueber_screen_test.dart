@@ -76,6 +76,19 @@ void main() {
     expect(web.kurz, 'lx-familyhub dev · Web');
   });
 
+  testWidgets('Web mit Bundle-Kennung: lesbare Versionsnummer und Build-Kennung getrennt', (tester) async {
+    final w = webVersionTeilen('0.4.0-20261020055100');
+    expect(w.version, '0.4.0');
+    expect(w.kennung, '20261020055100');
+    expect(webVersionTeilen('dev'), (version: 'dev', kennung: null));
+    expect(webVersionTeilen('0.4.0'), (version: '0.4.0', kennung: null));
+    final info = UeberInfo(version: w.version, webBuild: w.kennung, plattform: 'Web');
+    await oeffnen(tester, info);
+    expect(find.text('$kAppName 0.4.0'), findsOneWidget);
+    expect(find.text('build 20261020055100 · Web'), findsOneWidget);
+    expect(info.kurz, 'lx-familyhub 0.4.0 (20261020055100) · Web');
+  });
+
   testWidgets('Nach Update suchen: Prüfung läuft ohne Absturz und meldet Ergebnis', (tester) async {
     await oeffnen(tester, android);
     await tippeText(tester, 'Nach Update suchen');

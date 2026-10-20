@@ -1,6 +1,6 @@
 # API (Phase 1a bis 1c: Konten, Anmeldung, Sync)
 
-Stand: Phase 1c-2a (Sync-Kern mit Listen und Kalender: Termine, Teilnehmer, Ausnahmen; Konten und Anmeldung seit 1a/1b). Basis: `https://familie.lx-labs.dev/api/v1`, REST mit JSON (`Content-Type: application/json`). Der Sync (`POST /sync`) ist im Abschnitt „Sync“ beschrieben; Chat, Aufgaben und Dateien kommen als weitere Entitäten dazu. Diese Beschreibung ist Markdown statt OpenAPI; die Validierung steckt in den Zod-Schemas in
+Stand: Phase 1c-4a (Sync-Kern mit Listen, Kalender: Termine, Teilnehmer, Ausnahmen, und Aufgaben mit Unteraufgaben; Konten und Anmeldung seit 1a/1b). Basis: `https://familie.lx-labs.dev/api/v1`, REST mit JSON (`Content-Type: application/json`). Der Sync (`POST /sync`) ist im Abschnitt „Sync“ beschrieben; Chat und Dateien kommen als weitere Entitäten dazu. Diese Beschreibung ist Markdown statt OpenAPI; die Validierung steckt in den Zod-Schemas in
 `server/src/routes/` (jedes Objekt ist `strict`: unbekannte Felder führen zu `400`).
 
 ## Allgemeines
@@ -86,7 +86,7 @@ Antworten der API tragen `Cache-Control: no-store`.
 
 Dann widerruft der Server die erste, nie angekommene Nachfolgerin und stellt **genau ein** neues Paar aus (immer nur ein lebender Nachfolger je Familie; Audit-Ereignis `session_refresh_retry`). Mehrfache und gleichzeitige Wiederholungen im Fenster sind erlaubt und werden nacheinander bedient (Zeilensperre); es bleibt bei einem lebenden Nachfolger. Alles andere bleibt **echte Wiederverwendung** und widerruft die ganze Familie: Wiederholung nach mehr als 30 Sekunden, von einer anderen `deviceId`, oder nachdem die Nachfolgerin schon benutzt wurde. Das Fenster ersetzt kein Wiederholen auf Verdacht: Die App sendet ein Refresh-Token nur dann erneut, wenn sicher ist, dass die Anfrage den Server nie erreichte (Fehler beim Verbindungsaufbau); bei unklarem Ausgang meldet sie ab. Sicherheitsbetrachtung: PROJEKTBESCHREIBUNG.md, Abschnitt 7.
 
-**Rate-Limits:** 300 Anfragen/min je IP insgesamt; `/auth/*`, `/ws-ticket`, `/invites` (POST), `/members/:id/reset` und `/me/passkeys/*` strenger (10/min); `POST /sync` 120/min je IP (`SYNC_RATE_LIMIT_MAX`) und zusätzlich je Gerät und Person (Abschnitt „Sync“, Limits). Zusätzlich zählt der Server
+**Rate-Limits:** 300 Anfragen/min je IP insgesamt; `/auth/*`, `/ws-ticket`, `/invites` (POST), `/members/:id/reset`, `PUT /me/family-role`, `PUT /members/:id/family-role` und `/me/passkeys/*` strenger (10/min); `POST /sync` 120/min je IP (`SYNC_RATE_LIMIT_MAX`) und zusätzlich je Gerät und Person (Abschnitt „Sync“, Limits). Zusätzlich zählt der Server
 Fehlversuche (Passwort, TOTP, Wiederherstellungs-Code, Step-up) je **IP**, je **Konto** und je **Paar aus Konto und IP** und sperrt verzögert: Konto+IP ab 5, IP ab 20, Konto ab 10 Fehlversuchen
 30 s, danach doppelt so lang, **höchstens 90 s** (so lässt sich ein fremdes Konto nicht lange aussperren; die tippende IP ist früher dran als das Konto). Anmeldung und Step-up teilen sich denselben Konto-Schlüssel.
 **Passkey-Anmeldungen hängen nicht an der Konto-Sperre** (nur IP-Sperre). IPv6-Adressen gelten als **/64-Präfix** (IP-Sperre, Rate-Limit, Verbindungslimit am WebSocket); IPv4-in-IPv6 als IPv4.
@@ -136,7 +136,8 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `POST /auth/step-up/passkey/options` | alle | `{ challengeId, options }` (nur die eigenen Passkeys) |
 | `POST /auth/step-up/passkey/verify` | alle | `{ challengeId, response }` → `{ stepUpAt }` |
 | `POST /auth/step-up/code` | alle | `{ totp }` oder `{ recoveryCode }` → `{ stepUpAt }` |
-| `GET /me` | alle | `{ user, familyId, session, csrfToken?, credentials: { passkeys, password, totp }, recoveryCodesRemaining }` |
+| `GET /me` | alle | `{ user (mit `familyRole`: String oder `null`), familyId, session, csrfToken?, credentials: { passkeys, password, totp }, recoveryCodesRemaining }` |
+| `PUT /me/family-role` | alle (nur die eigene Person) | `{ familyRole }` mit `vater`, `mutter`, `elternteil`, `kind`, `grosseltern`, `sonstige` oder `null` (löscht). **Reine Anzeige**, ändert keine Rechte, Sichtbarkeit oder Sync; sonst `400`. Strikt rate-limitiert, Audit `family_role_set` (nur Ziel-ID und fester Wert). |
 | `PATCH /me` | alle | `{ displayName?, colorIndex? (0–9) }` |
 | `PUT /me/avatar` | alle (nur die eigene Person; die Anmeldung wird vor dem Einlesen des Bodys geprüft, `401` ohne Upload) | Benutzerbild setzen. **Platzhalter:** `Content-Type: application/json`, `{ preset }` mit einer Kennung aus `V01 V08 V12 M01 M08 M13 K07 K08 K12 K13` (sonst `400`). **Foto:** Rohbytes mit `Content-Type: image/png`, `image/jpeg` oder `image/webp` (andere Typen, auch SVG: `415`). Animierte Bilder (APNG, animiertes WebP), Fremdbytes nach dem PNG-Ende und abgeschnittene Dateien werden abgelehnt (`400 invalid_image`). Der Server prüft die **Magic-Bytes** (muss zum Content-Type passen, sonst `400 invalid_image`) und liest die Maße aus dem Dateikopf (höchstens 1024 × 1024, sonst `400`); **Hartlimit 512 KB** nur für diese Route (`413`). Er dekodiert nichts: die App verkleinert auf ca. 512 × 512 und kodiert neu (entfernt EXIF/Standort). Strikt rate-limitiert (wie Anmeldung). → `{ avatar }` |
 | `DELETE /me/avatar` | alle | entfernt das eigene Bild (Initialen); die Version zählt hoch |
@@ -152,14 +153,19 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `GET /devices` | alle | `{ devices: [{ id, name, platform, appVersion, createdAt, lastSeenAt, current }] }` |
 | `DELETE /devices/:id` | alle | meldet ein eigenes Gerät ab |
 | `POST /ws-ticket` | alle | `{ ticket, expiresInSec: 30 }`: Einmal-Ticket (256 Bit) für den WebSocket |
+| `GET /me/push` | alle | Push-Stand **dieses Geräts**: `{ available, server, registered, active, lastOkAt, lastErrorAt }` (`available`: der Server hat Push eingerichtet) |
+| `PUT /me/push` | alle | `{ endpoint }`: UnifiedPush-Endpunkt dieses Geräts anmelden oder ersetzen (siehe Abschnitt „Push“); `400 invalid_endpoint` (auch für ein Topic, das schon einem anderen Gerät gehört: gleiche Antwort, damit die Existenz eines Topics nicht verraten wird), `503 push_unavailable` (Push nicht eingerichtet) |
+| `DELETE /me/push` | alle | Endpunkt dieses Geräts löschen (idempotent) |
+| `POST /me/push/test` | alle | schickt einen Test-Wecker an dieses Gerät: `{ result: "sent" \| "failed" \| "disabled" }`; `409 no_endpoint`, `429` (höchstens alle 10 s je Gerät) |
 
 ### Mitglieder
 
 | Methode, Pfad | Rolle | Beschreibung |
 | --- | --- | --- |
-| `GET /members` | alle | Antwort `{ members: [...] }`. Admins: alle Mitglieder (auch wartende) inkl. E-Mail; andere: nur aktive Mitglieder, **ohne E-Mail – außer der eigenen**. Jedes Mitglied (und `user` in `GET /me`) trägt `avatar`: `null` (keines), `{ kind: "preset", id, version }` oder `{ kind: "photo", version }`; `version` zählt jede Änderung und ist der Cache-Schlüssel der Apps. Alte Apps ignorieren das Feld |
+| `GET /members` | alle | Antwort `{ members: [...] }`. Admins: alle Mitglieder (auch wartende) inkl. E-Mail; andere: nur aktive Mitglieder, **ohne E-Mail – außer der eigenen**. Jedes Mitglied (und `user` in `GET /me`) trägt `avatar`: `null` (keines), `{ kind: "preset", id, version }` oder `{ kind: "photo", version }`; `version` zählt jede Änderung und ist der Cache-Schlüssel der Apps. Alte Apps ignorieren das Feld. Zusätzlich tragen sie `publicEncKey`, `publicSignKey` (je 32 Byte Base64url) und `keyVersion` (alle drei `null`, solange die Person keine E2EE-Schlüssel eingerichtet hat) |
 | `GET /members/:id/avatar` | alle | Foto eines Mitglieds **derselben Familie** (fremde Familie, unbekannte Id, Platzhalter oder kein Foto: `404`). Bytes mit festem `Content-Type` (PNG/JPEG/WebP), `ETag` (`"a<version>"`) und `If-None-Match` → `304`, `Cache-Control: private, no-cache`, `X-Content-Type-Options: nosniff`, `Content-Security-Policy: default-src 'none'; sandbox`. Platzhalter liefert der Server nicht (die Zeichnungen liegen in der App) |
 | `DELETE /members/:id/avatar` | admin | setzt das Bild eines Mitglieds der eigenen Familie zurück (Initialen); Audit-Ereignis `avatar_reset`. Die Antworten von Anmeldung, Registrierung und Refresh enthalten `avatar` **nicht**: die App lädt danach `GET /me` (`neuLaden`) |
+| `PUT /members/:id/family-role` | admin (sonst `403`, außer für die eigene ID) | `{ familyRole }` wie bei `PUT /me/family-role`, für ein Mitglied der eigenen Familie (fremde oder unbekannte ID `404`); ohne Step-up, da ohne Wirkung auf Rechte. Strikt rate-limitiert. |
 | `PATCH /members/:id/role` | admin, Step-up | `{ role }`; **alle Sitzungen der Person werden widerrufen** (offene WebSockets schließen mit `4401`); bei **Herabstufung** werden ihre offenen Einladungen widerrufen; der letzte Admin kann nicht herabgestuft werden |
 | `POST /members/:id/approve` | admin | gibt ein wartendes Mitglied frei |
 | `POST /members/:id/reject` | admin | lehnt ein wartendes Mitglied ab: löscht die Mitgliedschaft; das Konto nur, wenn keine weitere Mitgliedschaft besteht |
@@ -174,6 +180,22 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `GET /invites` | admin (alle), parent (eigene) | `{ invites: [{ id, role, status: open\|used\|revoked\|locked\|expired, createdAt, expiresAt, hasPin, requireApproval, reset, createdBy, usedBy }] }` ohne Token und PIN |
 | `POST /invites/:id/revoke` | wie oben | widerruft eine offene Einladung; wer die Rolle der Einladung nicht (mehr) einladen darf, bekommt `403` |
 | `POST /invites/:id/extend` | wie oben | `{ hours }` → `{ expiresAt }`: setzt die Gültigkeit auf **das spätere** von bisheriger Ablaufzeit und jetzt + `hours` (**verkürzt nie**; höchstens 7 Tage je Aufruf); gesperrte Einladungen bleiben gesperrt; Rollenprüfung wie bei `revoke` |
+
+### E2EE-Schlüssel (Phase 1 der Ende-zu-Ende-Verschlüsselung)
+
+Alles nur für die angemeldete Person selbst (Familien- und Personenfilter: fremde Daten gibt es hier nicht), strenges Rate-Limit (wie die Anmeldung). Blobs sind für den Server undurchsichtiger Base64url-Text;
+der Server sieht nie ein Geheimnis. Schlüsselmaterial erscheint nie im Log. Kodierung: Schlüssel und Suchkennung = genau 32 Byte als Base64url **ohne** `=` (43 Zeichen, kanonisch).
+
+| Methode, Pfad | Rolle | Beschreibung |
+| --- | --- | --- |
+| `GET /me/keys` | alle | `{ keys: { publicEncKey, publicSignKey, keyVersion } \| null, hasBackup }` (`hasBackup`: eine Sicherung zur aktuellen `keyVersion` liegt vor) |
+| `POST /me/keys` | alle | `{ publicEncKey, publicSignKey }` legt das erste Schlüsselpaar an → `{ keys }` (`keyVersion` 1); gibt es schon eines `409 keys_exist`. Audit `key_created` |
+| `PUT /me/keys` | alle, Step-up | `{ publicEncKey, publicSignKey, expectedKeyVersion }` **Schlüsselwechsel** (Totalverlust, Verdacht): `expectedKeyVersion` ist die dem Client bekannte Version (andere → `409 key_version_mismatch`, identische Schlüssel → `409 keys_unchanged`, es ändert sich nichts); `keyVersion` steigt um 1, der alte Stand wandert in die Schlüsselhistorie, Sicherung und offene Übertragungen entfallen → `{ keys }`; ohne Schlüssel `404`. Die anderen Geräte der Familie warnen. Audit `key_rotated` |
+| `PUT /me/key-backup` | alle, Step-up | `{ blob (bis 2048 Zeichen), keyVersion }` legt die Sicherung ab oder ersetzt sie; `409 no_keys` ohne Schlüssel, `409 key_version_mismatch` bei veralteter Version. Audit `backup_set` |
+| `GET /me/key-backup` | alle, Step-up | `{ blob, keyVersion }`; `404` ohne Sicherung. Audit `key_backup_read` |
+| `GET /members/:id/keys` | alle | `?version=N` (optional): `{ userId, keys: [{ publicEncKey, publicSignKey, keyVersion, validFrom, validUntil }] }` mit der Version N (aktuell: `validUntil: null`, sonst aus der Historie), ohne `version` alle Versionen aufsteigend. Nur Mitglieder der eigenen Familie; unbekannte ID, unbekannte Version, Fremde und Entfernte: `404`; ungültige Eingabe `400`. Zum Prüfen alter Signaturen (`sender_key_version`) |
+| `POST /me/key-transfer` | alle | `{ lookup (32 Byte Base64url), blob (bis 1024 Zeichen), keyVersion }` (`keyVersion` muss zur aktuellen Version passen, sonst `409 key_version_mismatch`; kollidiert die Suchkennung mit der einer anderen Person `409 transfer_conflict`) → `{ expiresAt, ttlSec: 120 }`: Übertragung für ein neues Gerät; höchstens eine offene je Person (eine neue ersetzt sie); gespeichert wird nur der SHA-256-Hash von `lookup`. `409 no_keys` ohne Schlüssel |
+| `POST /me/key-transfer/claim` | alle | `{ lookup }` → `{ blob, keyVersion }`: löst **genau einmal** ein (atomar), nur durch dieselbe Person, nur vor Ablauf. Jeder Fehlschlag (unbekannt, abgelaufen, schon eingelöst, fremde Person) antwortet gleich mit `404 not_found`. Audit `transfer_claimed` |
 
 ## Sync `POST /api/v1/sync`
 
@@ -274,6 +296,8 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | `termin` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Termine ändern (alles außer `audience`) und löschen |
 | `termin_teilnehmer` | alles | erben Stufe und Besitzer des Termins: lesen, wo der Termin sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Terminen |
 | `termin_ausnahmen` | alles | wie `termin_teilnehmer` |
+| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Aufgaben ändern (alles außer `audience`) und löschen; an **zugewiesenen** nur `erledigtAt`/`folgeId` |
+| `aufgabe_punkt` | alles | erben Stufe, Besitzer und Zuständige der Aufgabe: lesen, wo sie sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben; an **zugewiesenen** nur `doneAt` ändern |
 
 Ändert sich die Freigabe einer Liste (oder eines Termins), werden ihre Einträge (Teilnehmer, Ausnahmen) neu angestoßen (neue Revision ohne Inhaltsänderung): Geräte, die sie nun sehen dürfen, bekommen sie; Geräte, die die Liste nicht mehr sehen dürfen, bekommen einen Tombstone mit `hidden: true` ohne Inhalt. Bei Rollenwechsel werden die Sitzungen widerrufen und das Flag `resync_required` der Geräte der Person gesetzt; die neue Anmeldung ist ein neues Gerät und beginnt mit einem Snapshot (die App leert außerdem bei jeder neuen Geräte-ID ihre Fachtabellen und stellt nur lokal neu angelegte, noch nicht gesendete Zeilen wieder her).
 
@@ -323,21 +347,149 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `titel`, `ort` | Text bis 200 Zeichen oder `null` | rw |
 | | `start`, `ende` | Tag oder Zeitpunkt oder `null` | rw |
 
-Neue Entitäten (Aufgaben, Chat, Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
+**Chat (Phase 1c-3a)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6c.
+
+- **Sichtbarkeit:** Direkt- und Gruppenchats (`konversation` mit `art` `direct`/`group`) sehen **nur ihre Teilnehmer**, auch Admin und Eltern nicht; Nachrichten und Lesestände erben das. Für alle anderen existiert die ID nicht: Ändern, Löschen und Anlegen darunter ergeben `not_found` (auch mit IDs einer fremden Familie), der Änderungsstrom liefert nichts, auch keinen Tombstone. Der Familienchat (`art` `family`, genau einer je Familie) gehört allen aktiven Mitgliedern. Wer aus einer Gruppe entfernt wird (`teilnehmer` geändert), bekommt einen `hidden`-Tombstone der Konversation (die App entfernt sie samt Nachrichten und Lesestand); wer nie dabei war, nichts.
+- - **Inhalt ist undurchsichtig und verschlüsselt (E2EE Phase 2):** `text` einer Nachricht ist in jeder neuen Konversation eine **verschlüsselte Hülle** `e1:` + Base64url (Aufbau und Verfahren: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a). Der Server prüft nur die **Form**: Präfix passend zur Konversation (`encVersion`), nur Base64url-Zeichen, mindestens 153 Zeichen (Kopf 114 Byte + Tag), höchstens 16 384 Zeichen; er entschlüsselt, prüft, loggt und indiziert nie etwas (kein Suchendpunkt, keine Vorschau). **Klartext `p1:` ist in einer `e1`-Konversation `invalid`** (Downgrade-Schutz); `p1` gilt nur für Altbestand (`encVersion` `p1`, nur lesbar, die App schreibt dort nicht mehr). `l1:` (lokaler Klartext im Ausgang der App) lehnt der Server ab. `titel` (Gruppenname) bleibt `p1:` + Klartext: der Name ist sichtbarer Metadatenwert (wie die Teilnehmerliste).
+- **Familienchat anlegen:** `upsert konversation {art: "family"}` von jeder Rolle; ohne `titel` und `teilnehmer`; verschlüsselt (`encVersion` `e1` ist der Standard, ein Client kann `p1` nur für Altbestände senden). Die ID ist **vorgeschrieben**: SHA-256 von `lx-fampad:familienchat:<familyId>`, die ersten 16 Byte mit Version 5 und Variante 10xx als UUID (`server/src/sync/entities/chat-ids.ts`, gleich in der App); jede andere ID ist `invalid`. Dieselbe ID noch einmal ist eine Wiederholung ohne Wirkung. Danach ist er für Clients unveränderlich (`forbidden`) und nicht löschbar.
+- **Direktchat:** `art: "direct"`, `teilnehmer` = genau die zwei Personen (anlegende Person dabei, nur aktive Mitglieder der Familie, sonst `forbidden` bzw. `invalid_reference`); die Liste wird sortiert und ohne Doppelte gespeichert. Je Paar ein Chat: die ID ist vorgeschrieben (`direkt:<kleinere Nutzer-ID>:<größere>`, kleingeschrieben und sortiert), jede andere ist `invalid`; dieselbe ID noch einmal ist ein Update ohne Änderung. Wurde der Chat gelöscht (Person entfernt), belebt ein erneutes Anlegen mit derselben ID ihn wieder. Unveränderlich, nicht löschbar.
+- **Gruppe:** `art: "group"` (ID: Zufalls-UUID Version 4, abgeleitete IDs mit Nibble 5 sind reserviert), 2 bis 20 `teilnehmer` (anlegende Person dabei), `titel` optional. Jeder Teilnehmer ändert `titel` und `teilnehmer`; löschen darf nur die anlegende Person (`ownerId`). Bleiben nach dem Entfernen eines Mitglieds aus der Familie weniger als zwei Teilnehmer, wird die Gruppe gelöscht.
+- **Nachrichten:** schreiben darf jede Person mit Sicht, `autorId` und Zeit setzt der Server. **Bearbeiten (nur `text`) und Löschen nur der Autor** (`forbidden`); Ausnahme: **Admins löschen im Familienchat auch fremde Nachrichten**, nie in privaten Chats. `bearbeitetAt` setzt der Server beim Ändern des Textes. `antwortAuf` (nur beim Anlegen) muss eine Nachricht **derselben Konversation** sein, sonst `invalid`; `text` muss mit der Hülle der Konversation beginnen (`encVersion` `e1:` oder, nur für Altbestand, `p1:`) und bei `e1` die Form einer verschlüsselten Hülle haben, sonst `invalid`. Beim Bearbeiten wird ältere Text-Fassung aus dem Protokoll entfernt. Mengenbegrenzung: höchstens 60 neue Nachrichten und 60 Text-Änderungen je Person und Minute, Text je Person höchstens 1 MiB je Stunde und 4 MiB je Tag, 20 000 lebende Nachrichten je Konversation, 10 Teilnehmerwechsel je Person und Minute (`limit_reached`).
+- **Lesestand:** eine Zeile je Person und Konversation (`userId` muss die eigene sein), `gelesenBis` = Zeit (`createdAt`) der letzten gelesenen fremden Nachricht. Schreiben nur die eigene Zeile, **lesen alle Teilnehmer der Konversation** (Lesebestätigung; Familienchat: alle Mitglieder); die ID ist vorgeschrieben (`lesestand:<Konversation>:<Person>`), jede andere ist `invalid`. `gelesenBis` geht nie zurück (ein kleinerer Wert wird verworfen). Die Teilnehmer erfahren per WebSocket von Änderungen (kein Push-Wecker).
+- **Obergrenzen:** 500 lebende Konversationen je Familie, 100 je anlegender Person (`limit_reached`).
+- **Mitglied entfernt:** aus Teilnehmerlisten genommen; Direktchats und Gruppen mit weniger als zwei Übrigen mit Tombstone gelöscht; `autorId` der Nachrichten wird `null`; Lesestand der Person wird gelöscht (Tombstone).
+- **WebSocket:** `rev N` zu privaten Chats geht nur an die Teilnehmer (nach Person), zum Familienchat an alle Rollen mit Sicht.
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `konversation` | `art` | `family`, `direct`, `group` (Pflicht) | create |
+| | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), beim Wiederbeleben einer gelöschten Konversation gilt die Hülle der Neuanlage (`e1`, auch aus einem `p1`-Altbestand) | create |
+| | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
+| | `teilnehmer` | Liste von UUIDs (sortiert, eindeutig; Familienchat leer, Direktchat 2, Gruppe 2 bis 20) | rw (nur Gruppen) |
+| | `ownerId` | UUID oder `null` (anlegende Person) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `nachricht` | `konversationId` | UUID (Pflicht) | create |
+| | `text` | Hülle `e1:`+Base64url (153 bis 16 384 Zeichen) bzw. `p1:`+Text im Altbestand (Pflicht); für den Server undurchsichtig | rw (nur Autor) |
+| | `antwortAuf` | UUID oder `null` | create |
+| | `autorId` | UUID oder `null` (nach Entfernen der Person) | server |
+| | `bearbeitetAt`, `createdAt` | ISO-8601 (UTC) oder `null` | server |
+| `lesestand` | `konversationId`, `userId` | UUID (Pflicht) | create |
+| | `gelesenBis` | ISO-8601 mit Zeitzone (Pflicht) | rw |
+
+**Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
+Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
+
+- **`epoche`:** je (Konversation, Epoche) genau eine Zeile mit **vorgeschriebener ID** (`epoche:<Konversation>:<Nummer>`, SHA-256 mit Präfix `lx-fampad:`, Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`); jede andere ID ist `invalid`.
+  **Der erste Schreiber gewinnt:** wer eine schon vorhandene Epoche mit anderem Inhalt anlegt, wird mit `invalid` abgelehnt (die identische Wiederholung wird bestätigt); der Verlierer einer gleichzeitigen Rotation übernimmt
+  die Epoche des Gewinners aus dem Änderungsstrom. Lückenlos: Epoche N gibt es erst, wenn N-1 da ist (sonst `invalid`). Alle Teilnehmer der Konversation lesen sie (im Familienchat alle aktiven Mitglieder), Nichtteilnehmer erfahren nichts
+  (`not_found`, auch für Admins); unveränderlich, nicht löschbar (verschwindet nur mit der Konversation). Höchstens 1000 je Konversation, 20 neue je Person und Minute (`limit_reached`).
+- **Grenzen für Epochen und Wraps:** Epochen je Person höchstens 3 je Minute und 12 je Stunde, höchstens 100 lebende je Konversation und Person (insgesamt 1000); Wraps höchstens 100 je Minute und 800 je Stunde, 2000 lebende je Konversation und Person (`limit_reached`). Wraps der **höchsten** Epoche nimmt der Server nur vom Verteiler dieser Epoche an (`forbidden`); für ältere Epochen (Verlauf teilen) darf jedes Mitglied Wraps anlegen. Eine gelöschte Epoche oder ein gelöschter Wrap lässt sich mit derselben ID wieder anlegen (Wiederbeleben). Im Verlauf für neu Aufgenommene liefert der Server die eigenen Wraps immer (Abfrage nach Empfänger, kein Verdrängen durch fremde Zeilen). Wraps und Lesestand lösen keinen Push-Wecker aus.
+- **`epoche_wrap`:** der für **eine Person** verpackte Epochenschlüssel (Sealed Box plus Signatur des Verteilers). Je (Konversation, Epoche, Empfänger) genau eine Zeile mit vorgeschriebener ID (`wrap:<Konversation>:<Nummer>:<Empfänger>`), der erste gewinnt
+  (ein zweiter ist `not_found`, "gibt es schon"), unveränderlich. **Nur der Empfänger liest seinen Wrap** (auch der Verteiler, die anderen Teilnehmer und Admins nicht), der WebSocket-Hinweis geht nur an ihn. Anlegen darf jeder Teilnehmer;
+  die Epoche muss es geben, der Empfänger muss Teilnehmer sein (Familienchat: aktives Mitglied), sonst `invalid`. Verlässt die Person die Familie, verschwinden ihre Wraps (Tombstone für ihre Geräte). Höchstens 20 000 je Konversation, 400 neue je Person und Minute.
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `epoche` | `konversationId` | UUID (Pflicht) | create |
+| | `epoche` | Ganzzahl 1 bis 100 000 (Pflicht) | create |
+| | `mitglieder` | vom Verteiler signierte Mitgliederliste der Epoche, Base64url bis 16 384 Zeichen (Pflicht, undurchsichtig) | create |
+| | `verteilerId`, `createdAt` | UUID bzw. ISO-8601 (UTC), vom Server | server |
+| `epoche_wrap` | `konversationId` | UUID (Pflicht) | create |
+| | `epoche` | Ganzzahl 1 bis 100 000 (Pflicht) | create |
+| | `empfaengerId` | UUID des Empfängers (Pflicht, aktives Mitglied) | create |
+| | `wrap` | Base64url bis 4096 Zeichen (Pflicht, undurchsichtig) | create |
+| | `verteilerId`, `createdAt` | vom Server | server |
+
+**Aufgaben (Phase 1c-4a)**
+
+- **Fälligkeit** wie bei Terminen: `faelligDate` (`YYYY-MM-DD`, ganztägig, keine Zeitzone) **oder** `faelligUtc` (ISO-8601, in der Antwort UTC mit Millisekunden) mit `tzid` (IANA-Zeitzone, Pflicht bei `faelligUtc`); beides gleichzeitig oder `faelligUtc` ohne `tzid` ist `invalid` (geprüft nach dem Zusammenführen jeder Änderung). Beides `null` = ohne Fälligkeit. Beim Wechsel zwischen Tag und Zeitpunkt sendet der Client alle drei Felder zusammen.
+- **Priorität** `prioritaet`: Ganzzahl 0 (keine) bis 3 (hoch). **Status:** `erledigtAt` (Zeitpunkt oder `null`) und `erledigtVon` (aktives Mitglied oder `null`; `invalid_reference` sonst); `erledigtVon` ist ein **Server-Feld**: der Server setzt es beim Setzen von `erledigtAt` auf den Akteur (Sitzung) und beim Zurücksetzen auf `null`; sendet der Client es, ist die Op `invalid`. **Zuständig:** `assigneeId` (aktives Mitglied der Familie oder `null`).
+- **Wiederholung** `wiederholung`: `daily`, `weekly`, `monthly` oder `null`; der Server prüft nur die Form und legt nie selbst eine Folgeaufgabe an. Der **Client** erzeugt sie beim Erledigen (Fälligkeit, Deckel und feste ID: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6e). Das zweite Anlegen derselben ID (zwei Geräte erledigen dieselbe Aufgabe) ist eine gewöhnliche Änderung mit denselben Werten, kein Fehler.
+- **Unteraufgaben** (`aufgabe_punkt`): `aufgabeId` (unveränderlich, Pflicht), `text` (1 bis 500 Zeichen), `doneAt` (Zeitpunkt oder `null`), `position` (Kommazahl wie bei Listeneinträgen). Sie erben Freigabe und Besitzer der Aufgabe; beim Löschen der Aufgabe werden sie per Kaskade mit Tombstone entfernt (niedrigere Revisionen vor der Aufgabe).
+- **Obergrenzen:** 5000 **offene** (nicht erledigte) Aufgaben je Familie, zusätzlich **500 offene je Besitzer für Kinder**; alle lebenden Aufgaben (auch erledigte) zusammen höchstens 20000 je Familie; 100 lebende Unteraufgaben je Aufgabe und 50000 je Familie (`limit_reached`). **Mitglied entfernt:** `assigneeId`, `erledigtVon` und `ownerId` werden mit Änderungseintrag auf `null` gesetzt.
+- **Zuständige Person:** Wer in `assigneeId` steht (auch ein Kind), darf an der Aufgabe **nur** `erledigtAt` und `folgeId` ändern und an ihren Unteraufgaben nur `doneAt`; jede weitere Änderung, Anlegen/Löschen von Unteraufgaben und Löschen der Aufgabe sind `forbidden`, eine für die Person nicht sichtbare Aufgabe `not_found`. Sonst gilt die Tabelle unten.
+- **Folgeaufgabe:** `folgeId` (UUID oder `null`) nennt die beim Erledigen angelegte Folgeaufgabe (abgeleitet, bei belegter ID zufällig); `wiederholungTag` (1 bis 31 oder `null`) ist der Wunschtag des Monats bei `monthly` und bleibt in der Kette erhalten.
+- **Erinnerung:** `erinnerungMin` (0 bis 40320 Minuten vor der Fälligkeit oder `null`) wird gespeichert und synchronisiert; die App nutzt es noch nicht (siehe Abschnitt 6e der Projektbeschreibung, Offen).
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `aufgabe` | lesen, anlegen, ändern, löschen, Freigabe ändern | Admin/Eltern alles; Kind: Stufe `family` lesen, nur mit Stufe `family` anlegen, **eigene** Aufgaben ändern (alles außer `audience`) und löschen, an **zugewiesenen** nur `erledigtAt`/`folgeId` | |
+| | `titel` | Text 1 bis 200 Zeichen (Pflicht) | rw |
+| | `beschreibung` | Text bis 4000 Zeichen (Standard leer) | rw |
+| | `faelligDate` | `YYYY-MM-DD` oder `null` | rw |
+| | `faelligUtc`, `tzid` | ISO-8601 mit Zeitzone (2000 bis 2200) bzw. IANA-Zeitzone, oder `null` | rw |
+| | `prioritaet` | Ganzzahl 0 bis 3 (Standard 0) | rw |
+| | `assigneeId` | UUID eines aktiven Mitglieds oder `null` | rw |
+| | `erledigtAt` | ISO-8601 oder `null` (auch die zuständige Person darf es setzen) | rw |
+| | `erledigtVon` | UUID oder `null` (Server: Akteur beim Erledigen) | server |
+| | `folgeId` | UUID oder `null` (Folgeaufgabe, auch die zuständige Person darf es setzen) | rw |
+| | `wiederholungTag` | Ganzzahl 1 bis 31 oder `null` (Wunschtag, `monthly`) | rw |
+| | `wiederholung` | `daily`, `weekly`, `monthly` oder `null` | rw |
+| | `erinnerungMin` | Ganzzahl 0 bis 40320 oder `null` | rw |
+| | `audience` | `parents`, `family` (Standard), `all` (wird `family`) | rw |
+| | `ownerId` | UUID oder `null` (Ersteller; bestimmt das Änderungsrecht des Kindes) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `aufgabe_punkt` | alles | erben Stufe, Besitzer und Zuständige der Aufgabe: lesen, wo die Aufgabe sichtbar ist; anlegen, ändern, löschen nur an **eigenen** Aufgaben (Kind); an zugewiesenen nur `doneAt` | |
+| | `aufgabeId` | UUID (Pflicht) | create |
+| | `text`, `doneAt`, `position` | siehe oben | rw |
+
+Neue Entitäten (Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
+
+## Push (UnifiedPush, nur Android)
+
+Push ist ein **Wecker ohne Inhalt**: kein Text, kein Titel, keine Tags, keine Namen. Das Gerät gleicht danach per `POST /sync` ab und zeigt selbst eine lokale Benachrichtigung. Der Server veröffentlicht auf dem eigenen ntfy (`NTFY_URL`, Loopback) mit dem Token `NTFY_TOKEN`; fehlt eines von beiden, ist Push still aus (ein Hinweis im Log, kein Fehler, `GET /me/push` meldet `available: false`).
+
+- **Endpunkt melden (`PUT /me/push`)**: Das Gerät gehört immer zur Sitzung (nie eine ID im Body, der Body ist strikt). Akzeptiert wird nur ein Endpunkt der Form `https://<NTFY_PUBLIC_HOST>/up<12–64 Zeichen [A-Za-z0-9_-]>`, optional mit `?up=1` (so meldet ihn die ntfy-App: Präfix `up` plus 12 Zeichen); kein Port, keine Zugangsdaten, kein Fragment, keine Prozent-Kodierung, kein weiterer Pfad, keine IP. Geprüft wird auf dem Rohtext (kein URL-Parser). Gespeichert wird nur das Topic (`push_endpoints`, je Gerät eine Zeile). **Gepostet wird nie an die gemeldete URL**, sondern an `NTFY_URL` + Topic (SSRF-Schutz). Ein Topic gehört einem Gerät (bei fremdem Topic dieselbe Antwort `400 invalid_endpoint` wie bei ungültigem; die App meldet dann einmal ab und registriert neu, damit der Verteiler ein neues Topic vergibt); eine Neuanmeldung ersetzt den alten Endpunkt (Rotation) und aktiviert einen deaktivierten wieder. Strikt rate-limitiert wie die Anmeldung.
+- **Auslöser**: Steigt die Revision der Familie durch eine Änderung im Sync, bekommen die Geräte einen Wecker, deren Person (1) aktiv ist und deren Rolle die Änderung sehen darf (dieselbe Rollen-Sicht wie beim WebSocket-Hinweis `rev`), (2) nicht das Gerät ist, das die Änderung ausgelöst hat (die anderen Geräte derselben Person werden geweckt und gleichen ab; ob danach eine Anzeige erscheint, entscheidet der `EreignisBenachrichtiger` der App, eigene Änderungen zeigt er nicht an), (3) keine lebendige WebSocket-Verbindung hat (Lebenszeichen, also Pong oder Nachricht, innerhalb von 1,5 Ping-Intervallen; ein wegen offener Verbindung nicht gesendeter Wecker wird nach Ablauf der Ping-Frist einmal nachgeprüft und dann gesendet, wenn die Verbindung nicht mehr lebendig ist), (4) vom Empfängerfilter zugelassen ist (siehe unten). Das Entfernen eines Mitglieds (Bereinigen von Verweisen) löst keinen Push aus.
+- **Entprellung je Gerät**: höchstens ein Wecker je 10 s; was dazwischen anfällt, wird zu genau einem weiteren zusammengefasst. ntfy-`429` (mit `Retry-After`, höchstens 10 min) pausiert den Versand und fasst zusammen, ohne den Endpunkt zu bestrafen. `401/403` von ntfy (Token oder Rechte falsch) pausiert 5 min und lässt die Endpunkte unberührt (Betriebsfehler, im Log). Kein Wiederholen bei 4xx.
+- **Netz-/5xx-Fehler** (Zeitlimit 5 s eingeschlossen) sind Störungen des ntfy, nicht des Geräts: globale Pause von 30 s, kein Zählen je Endpunkt (ein ntfy-Neustart deaktiviert keine Endpunkte), kein Wiederholen. Nach `429` und `401/403` wird je Gerät genau ein zusammengefasster Wecker nach der Pause neu geplant; ein Timer prüft die Pause beim Ablauf neu (wurde sie verlängert, wartet er die Restdauer).
+- **Deaktivierung**: ntfy-`404/410` deaktiviert den Endpunkt sofort, 5 aufeinanderfolgende gezielte 4xx-Antworten (z. B. 400) ebenso; ein Erfolg setzt den Zähler zurück. Wieder aktiv durch erneutes `PUT /me/push`.
+- **Löschen**: Abmelden (`/auth/logout`, `logout-all`, Gerät entfernen, Mitglied entfernen, Widerruf) löscht den Endpunkt; zusätzlich Fremdschlüssel `ON DELETE CASCADE` auf dem Gerät.
+- **Empfängerfilter (Erweiterungsstelle für Chat)**: `app.push.addRecipientFilter(async (ev) => userIds | null)` (`server/src/push/service.ts`). `ev` trägt `familyId`, `rev`, `roles` (Rollen-Sicht) und `origin`. Der Chat liefert damit die Teilnehmer (Privatchats: nur diese); mehrere Filter wirken als Schnitt, `null` heißt keine Einschränkung. Ohne Filter gilt allein die Rollen-Sicht.
+- **Test-Wecker** (`POST /me/push/test`) respektiert die globale Pause und hat ein eigenes Limit je Gerät. In der App heißt „angekommen“ nur, dass etwas ankam (es ist kein Herkunftsnachweis).
+- **App**: `unifiedpush` initialisiert bei jedem Start (auch beim Hintergrund-Start durch das Plugin, `main(["--unifiedpush-bg"])`: nur abgleichen, keine Oberfläche); bei jedem Start erneut `register`; Hintergrund-Läufe dürfen **nie** das Refresh-Token einlösen (ApiClient `refreshErlaubt: false`: ist das Access-Token abgelaufen, endet der Lauf ohne Tokenzugriff, der nächste Start der App gleicht ab), laufen einzeln (Single-Flight) und höchstens alle 10 s (Wecker dazwischen werden zu einem Lauf), mit Höchstdauer 25 s; `onNewEndpoint` -> `PUT /me/push`; `onMessage` (Inhalt wird verworfen) -> Abgleich, danach die Schnittstelle `EreignisBenachrichtiger.neueEreignisse(rev, vorher)` (`app/lib/data/push/push_wecker.dart`) für lokale Benachrichtigungen (der Erinnerungs-Zweig hängt dort seine Umsetzung ein).
 
 ## WebSocket `/ws`
 
 1. `POST /ws-ticket` (angemeldet) → `{ ticket }`.
 2. `wss://familie.lx-labs.dev/ws` öffnen (kein Ticket in der URL!); der Server sendet `{type:"hello", protocolVersion, serverVersion}`.
 3. Als **erste Nachricht** `{ "type": "auth", "ticket": "<ticket>" }` senden (innerhalb von 5 s). Antwort `{type:"ready"}`; bei ungültigem, abgelaufenem oder schon benutztem Ticket schließt der Server mit Code `4401` und zählt den Fehlversuch gegen die IP.
-   Danach meldet der Server nach **jedem Commit einer Änderung** im Sync den Sockets der Familie, **deren Rolle die Änderung sehen darf**, `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat). Wer einen Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab; entzieht eine Änderung die Sicht (Freigabe zurückgenommen), erfahren es die Rollen vorher und nachher. Das Bereinigen von Verweisen beim Entfernen eines Mitglieds geht an alle Rollen. Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
+   Danach meldet der Server nach **jedem Commit einer Änderung** im Sync den Sockets der Familie, **deren Rolle die Änderung sehen darf**, `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat). Wer einen Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab; entzieht eine Änderung die Sicht (Freigabe zurückgenommen), erfahren es die Rollen vorher und nachher. Das Bereinigen von Verweisen beim Entfernen eines Mitglieds geht an alle Rollen. Änderungen an **Privatchats** (Direkt- und Gruppenchats) gehen nur an deren Teilnehmer (nach Person, nicht nach Rolle). Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
 4. Browser mit gültigem Session-Cookie sind schon beim Upgrade angemeldet.
 5. Limits: Nachrichten je Socket (30 je 10 s, sonst Code `4429`), Verbindungen je IP (IPv6: je /64; 10, vor dem Upgrade `429`) und je Person (8, Code `4429`).
 6. **Widerruf:** Abmelden, Gerät entfernen, „überall abmelden“, Rollenwechsel und Entfernen schließen die betroffenen Sockets sofort mit Code `4401`. Zusätzlich prüft der Server bei jedem Ping (30 s), ob Sitzung und Mitgliedschaft noch gelten (sonst `4401`), und hält die Rolle der Verbindung aktuell.
+7. **Standort teilen:** zusätzliche Nachrichten `loc_*`, siehe Abschnitt „Standort“ unten.
+
+## Standort (WebSocket `loc_*`, flüchtig)
+
+Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher** des Servers: keine Tabelle, keine Migration, kein Backup, keine Historie, nichts im Log (nicht einmal Kennungen von Freigaben). Der Server reicht opake Pakete weiter; Wrap und Paket sind für ihn Base64url-Zeichenketten, geprüft werden nur Form (`^[A-Za-z0-9_-]+$`) und Länge. Aufbau und Verfahren: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6f. Alle `loc_*`-Nachrichten brauchen eine angemeldete Verbindung (vorher `error` `unauthenticated`) und zählen für das Nachrichtenlimit je Socket. `loc_start`, `loc_pos`, `loc_extend` und `loc_stop` werden je Socket der Reihe nach verarbeitet.
+
+**Client → Server**
+
+| Nachricht | Inhalt und Regeln |
+| --- | --- |
+| `loc_start` | `{ shareId (UUID, vom Client), endsAt (Epoch-ms, in der Zukunft, höchstens `LOC_MAX_DURATION_MS` = 12 h ab jetzt), recipients: [{ userId, wrap }] }`. 1 bis 30 Empfänger, jede ID einmal, **nur aktive Mitglieder der Familie der Sitzung, nie die Person selbst** (Regel `locationRecipients` in `sync/permissions.ts`; Mitglieder kommen aus der Datenbank). Eine neue Freigabe **ersetzt** die alte derselben Person (die alte endet mit `replaced`). Antwort `loc_started`. |
+| `loc_pos` | `{ shareId, packet }`, Paket ≤ 1024 Zeichen. Nur vom **Gerät, das gestartet hat** (gleiche Person und Gerät). Mindestabstand je Freigabe `LOC_MIN_INTERVAL_MS` (1000), sonst `loc_error` `rate_limited` (das Paket wird verworfen, nichts endet). |
+| `loc_extend` | `{ shareId, endsAt }`, gleiche Grenzen wie beim Start. Antwort `loc_active`. |
+| `loc_hello` | `{}`. Die Verbindung gehört dem Standort-Kanal der App: der Server zählt sie weder als „Gerät ist live“ (Push) noch schickt er ihr `rev`-Hinweise. |
+| `loc_stop` | `{ shareId }`. Beendet; Empfänger bekommen `loc_stop` mit `reason: "stopped"`. |
+
+**Server → Client**
+
+| Nachricht | Inhalt |
+| --- | --- |
+| `loc_started` / `loc_active` | `{ shareId, endsAt }` an den Sender: bestätigt Start bzw. Verlängern; `loc_active` kommt außerdem, wenn sich das Sendergerät innerhalb der Schonfrist wieder verbindet. |
+| `loc_start` | `{ from, shareId, endsAt, wrap }` an **jeden Empfänger einzeln, nur mit dessen eigenem Wrap**; ein später verbundener Empfänger bekommt es beim Anmelden nachgereicht, danach die letzte Position als `loc_pos`. |
+| `loc_extend` | `{ from, shareId, endsAt }` an die Empfänger, wenn der Sender verlängert. |
+| `loc_pos` | `{ from, shareId, packet }` an die Empfänger der Freigabe (nie an den Sender, nie an Unbeteiligte oder andere Familien). |
+| `loc_stop` | `{ from, shareId, reason }` an Empfänger und Sender; `reason`: `stopped`, `expired`, `disconnected`, `removed`, `replaced`. |
+| `loc_error` | `{ code, shareId? }`: `bad_request`, `bad_duration`, `bad_recipients`, `share_exists`, `rate_limited`, `too_many_shares`, `forbidden`, `unknown_share` (auch für fremde Freigaben und Sendungen vom falschen Gerät), `unavailable`. |
+
+**Auto-Ende:** Ablauf (`endsAt`), `loc_stop`, Widerruf (Abmelden, Gerät oder Mitglied entfernen, Rollenwechsel: sofort), **Sendergerät länger als `LOC_GRACE_MS` (90 s) ohne Verbindung**, Sender nicht mehr aktives Mitglied. Entfernte Empfänger werden bei der regelmäßigen Prüfung (Abstand 12 × `LOC_SWEEP_MS`) aus der Freigabe genommen. **Limits:** 10 Starts je Person in 10 Minuten, `LOC_MAX_SHARES_PER_FAMILY` (50) Freigaben je Familie, Wrap ≤ 1024 und Paket ≤ 1024 Zeichen. Einstellungen: `server/.env.example`.
 
 ## Audit-Log
 
 Ereignisse (`audit_log.event`; `invite_expired` einmal je Ablauf einer nicht gesperrten, nicht benutzten, nicht widerrufenen Einladung, ausgelöst vom stündlichen Aufräum-Job, nie beim Abruf): `bootstrap_created`, `invite_created`, `invite_used`, `invite_revoked`, `invite_extended`, `invite_expired`, `invite_pin_failed`, `invite_locked`,
 `member_registered`, `member_approved`, `member_rejected`, `member_removed`, `member_reset`, `role_changed`, `login_ok`, `login_failed`, `device_added`, `device_removed`, `logout`, `logout_all`,
-`session_reuse_detected`, `session_refresh_retry`, `step_up_ok`, `step_up_failed`, `passkey_added`, `passkey_removed`, `passkey_counter_regression`, `recovery_codes_created`, `recovery_code_used`, `ws_auth_failed`.
+`session_reuse_detected`, `session_refresh_retry`, `step_up_ok`, `step_up_failed`, `passkey_added`, `passkey_removed`, `passkey_counter_regression`, `recovery_codes_created`, `recovery_code_used`, `ws_auth_failed`, `key_created`, `key_rotated`, `backup_set`, `key_backup_read`, `transfer_claimed`.
 Die IP-Adresse steht höchstens 7 Tage im Eintrag; Token, Passwörter, PINs und Codes werden nie protokolliert.

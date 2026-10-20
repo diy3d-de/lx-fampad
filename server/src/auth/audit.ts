@@ -18,6 +18,7 @@ export type AuditEvent =
   | 'avatar_reset'
   | 'member_reset'
   | 'role_changed'
+  | 'family_role_set'
   | 'login_ok'
   | 'login_failed'
   | 'device_added'
@@ -37,7 +38,12 @@ export type AuditEvent =
   | 'password_removed'
   | 'recovery_codes_created'
   | 'recovery_code_used'
-  | 'ws_auth_failed';
+  | 'ws_auth_failed'
+  | 'key_created'
+  | 'key_rotated'
+  | 'backup_set'
+  | 'key_backup_read'
+  | 'transfer_claimed';
 
 export interface AuditEntry {
   event: AuditEvent;

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Das Statusleisten-Symbol der Erinnerungen wird nur per Name aus Dart geladen (AndroidInitializationSettings('ic_stat_notify')).
+     Ohne diese Angabe entfernt der Ressourcen-Shrinker es im Release-Build; initialize() des Plugins scheitert dann (invalid_icon). -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_notify" />

@@ -4,19 +4,21 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_anzeige.dart';
+import '../auth/auth_widgets.dart';
 import '../profile/profile_screen.dart';
+import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
 /// Noch nicht gebaute Bereiche in der Seitenleiste (deaktiviert, mit "bald" markiert).
 const _kBaldBereiche = <(String, IconData)>[
-  ('Aufgaben', Icons.task_alt_outlined),
   ('Fotos', Icons.photo_library_outlined),
   ('Orte', Icons.place_outlined),
 ];
@@ -48,7 +50,7 @@ class DesktopShell extends ConsumerWidget {
                           for (var i = 0; i < screens.length; i++)
                             Align(
                               alignment: Alignment.topCenter,
-                              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 ? kMaxContentWidthDesktop : kMaxContentWidth), child: screens[i]),
+                              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 || i == kChatTab ? kMaxContentWidthDesktop : kMaxContentWidth), child: screens[i]),
                             ),
                         ],
                       ),
@@ -73,6 +75,7 @@ class _Seitenleiste extends ConsumerWidget {
     final tab = ref.watch(shellTabProvider);
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final anzahl = ref.watch(mitgliederProvider).value?.length;
+    final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -142,6 +145,7 @@ class _Seitenleiste extends ConsumerWidget {
                         label: kTabs[i].label,
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
+                        zaehler: i == kChatTab ? ungelesen : 0,
                         onTap: () => ref.read(shellTabProvider.notifier).waehlen(i),
                       ),
                     const SizedBox(height: 8),
@@ -165,8 +169,11 @@ class _NavEintrag extends StatelessWidget {
   final bool gewaehlt;
   final bool bald;
   final bool badge;
+
+  /// Anzahl ungelesener Nachrichten (0: kein Zeichen).
+  final int zaehler;
   final VoidCallback? onTap;
-  const _NavEintrag({required this.icon, required this.label, required this.gewaehlt, this.bald = false, this.badge = false, this.onTap});
+  const _NavEintrag({required this.icon, required this.label, required this.gewaehlt, this.bald = false, this.badge = false, this.zaehler = 0, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -179,7 +186,7 @@ class _NavEintrag extends StatelessWidget {
         enabled: !bald,
         focusable: !bald,
         onTap: bald ? null : onTap,
-        label: bald ? '$label, kommt bald' : label,
+        label: bald ? '$label, kommt bald' : (zaehler > 0 ? '$label, $zaehler ungelesen' : label),
         excludeSemantics: true,
         child: Material(
           color: gewaehlt ? kAccentSoft : Colors.transparent,
@@ -194,7 +201,7 @@ class _NavEintrag extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
-                  Badge(isLabelVisible: badge, child: Icon(icon, size: 20, color: farbe)),
+                  Badge(isLabelVisible: badge || zaehler > 0, label: zaehler > 0 ? Text(zaehler > 99 ? '99+' : '$zaehler') : null, child: Icon(icon, size: 20, color: farbe)),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: farbe)),
@@ -231,7 +238,7 @@ class _ProfilKachel extends ConsumerWidget {
       button: true,
       focusable: true,
       onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
-      label: 'Profil und Einstellungen, $name${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
+      label: 'Profil und Einstellungen, $name${user == null ? '' : ', ${[user.role.label, if (user.familyRole != null && user.familyRole!.label != user.role.label) user.familyRole!.label].join(' und ')}'}${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
       excludeSemantics: true,
       child: LxCard(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -248,6 +255,11 @@ class _ProfilKachel extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (user != null) ...[
+                      const SizedBox(height: 2),
+                      Wrap(spacing: 4, runSpacing: 2, children: rollenPillen(user.role, user.familyRole)),
+                      const SizedBox(height: 2),
+                    ],
                     Text(
                       art == null || art.isEmpty ? 'einstellungen' : art,
                       maxLines: 1,
@@ -274,7 +286,7 @@ class _Fusszeile extends ConsumerWidget {
     final sync = ref.watch(syncProvider);
     final geraete = ref.watch(geraeteAnzahlProvider).value;
     final installiert = ref.watch(updateProvider.select((u) => u.installierteVersion));
-    final version = installiert ?? (kWebVersion.isNotEmpty ? kWebVersion : 'dev');
+    final version = installiert ?? (kWebVersion.isNotEmpty ? webVersionTeilen(kWebVersion).version : 'dev');
     final (text, farbe) = syncAnzeige(sync);
     const stil = TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted);
     return Container(

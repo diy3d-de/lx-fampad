@@ -1,7 +1,7 @@
 # Datensicherung von lx-fampad
 
 Der Server sichert sich täglich selbst, verschlüsselt, und **das NAS holt die Sicherung ab** (Pull). Der Server hält **keine Zugangsdaten zum NAS** (er kennt nur dessen IP und den öffentlichen SSH-Schlüssel); der NAS-Schlüssel kann dort nur lesen. Ein übernommener Server kann Sicherungen auf dem NAS deshalb **nicht löschen**; Rotation und Speicherplatz des NAS sind aber nur durch die Gegenmaßnahmen im Pull-Skript geschützt (nur reguläre Dateien, Größen- und Mengengrenzen, Zukunftsdaten = Alarm, Rotation löscht nur bei genug geprüften Ordnern).
-Wiederherstellung: [`WIEDERHERSTELLUNG.md`](WIEDERHERSTELLUNG.md). Datenschutz: `DATENSCHUTZ-ENTWURF.md`, Abschnitt 10.
+Schritt für Schritt einrichten: [`BACKUP-EINRICHTUNG-SCHRITTE.md`](BACKUP-EINRICHTUNG-SCHRITTE.md). Wiederherstellung: [`WIEDERHERSTELLUNG.md`](WIEDERHERSTELLUNG.md). Datenschutz: `DATENSCHUTZ-ENTWURF.md`, Abschnitt 10.
 
 ```
 VPS 03:30  lx-fampad-backup.timer ─▶ pg_dump | age ─▶ /var/backups/lx-fampad/<UTC-Zeit>/{db,config}-….age  (3 Tage)
@@ -19,8 +19,8 @@ NAS 04:30  rsync über SSH (Benutzer lxbackup, nur lesen) ─▶ NAS-Archiv ─�
 | `/etc/ntfy/server.yml`, `/var/lib/ntfy/*.db` (Benutzer/Tokens) | dito | SQLite online per `sqlite3 .backup` (konsistent, ohne den Dienst zu stoppen; Zwischenkopie nur im RAM) |
 | systemd-Units `lx-fampad*`, Drop-ins von ntfy, sudoers, journald-Begrenzung | dito | |
 | `/srv/fampad/well-known`, `releases/android/latest.json` + neueste APK | dito | APK ist aus GitHub Releases neu erzeugbar; abschaltbar mit `INCLUDE_APK=0` (spart ca. 90 MB je Tag und Kopie) |
-| `/srv/fampad/files` (Dateiablage) | `files-<Zeit>.tar.age` | **aus**, bis die Ablage genutzt wird (`INCLUDE_FILES=1` in `/etc/lx-fampad-backup/backup.conf`). Bei großen Datenmengen später inkrementell (restic/borg) lösen |
-| **nicht gesichert** | | Web-Build, `server/` (kommen aus `deploy.sh`), Schriften; lx-labs.dev (eigenes Projekt); **Standortdaten nie** (der Server speichert sie nicht, ein Pfad dafür ist nicht vorgesehen) |
+| `/srv/fampad/files` (Dateiablage) | `files-<Zeit>.tar.age` | **aus**, bis die Ablage genutzt wird (`INCLUDE_FILES=1` in `/etc/lx-fampad-backup/backup.conf`). Bei großen Datenmengen später inkrementell (restic/borg; das Verzeichnis `karte` gehört nicht dazu) lösen |
+| **nicht gesichert** | | Web-Build, `server/` (kommen aus `deploy.sh`), Schriften; **`/srv/fampad/karte`** (Kartendatei, 1 bis 5 GB, jederzeit neu erzeugbar: bewusst ausgenommen, steht in keiner Sicherungsliste und nicht in `files-*.tar.age`); lx-labs.dev (eigenes Projekt); **Standortdaten nie** (der Server speichert sie nicht, ein Pfad dafür ist nicht vorgesehen) |
 
 Alles ist mit **age** verschlüsselt (X25519, ChaCha20-Poly1305), nur mit öffentlichen Schlüsseln. Die Sicherung enthält persönliche Daten und
 `AUTH_SECRET_KEY`; deshalb liegt nie eine unverschlüsselte *Datei* auf Platte, NAS oder Übertragungsweg: der Dump läuft durch eine Pipe, die ntfy-Zwischenkopie und `globals.sql` nur im RAM (`/dev/shm`, 0700). Grenze: Pipe-Puffer und RAM-Dateien können bei Speichermangel in den **Swap** geraten (`einrichtung-swap.sh` legt eine Swapdatei an); wer das ausschließen will, verschlüsselt den Swap (dm-crypt mit Zufallsschlüssel, `crypttab`) oder lässt `vm.swappiness=10` und genug RAM frei. Optional trennst du die Schlüssel: `--age-recipient-config` gibt nur `config-*.tar.age` (mit `AUTH_SECRET_KEY`) an einen **eigenen** Schlüssel; wer den Dump-Schlüssel hat, kann dann nicht die Anmeldegeheimnisse entschlüsseln (und umgekehrt); für eine Wiederherstellung brauchst du beide. Der **private** Schlüssel liegt nie auf dem Server.

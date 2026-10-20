@@ -449,4 +449,32 @@ void main() {
       expect(await db.metaLesen(SyncStore.kDeviceId), isNull);
     });
   });
+
+  test('limit_reached bei einem Epochen-Wrap: er bleibt erhalten und kommt mit neuer op_id wieder in den Ausgang; andere Ablehnungen verwerfen still', () async {
+    final felder = {'konversationId': 'k1', 'epoche': 1, 'empfaengerId': 'u2', 'wrap': 'AAAA'};
+    await store.aendern('epoche_wrap', 'w1', felder);
+    final gesendet = await store.naechsteOps(10);
+    await store.uebernehmen(antwort(rejected: [SyncRejected(gesendet.single.opId, 'limit_reached')]), gesendet);
+    final op = (await db.select(db.outbox).get()).single;
+    expect(op.entity, 'epoche_wrap');
+    expect(op.opId, isNot(gesendet.single.opId));
+    expect((await db.select(db.epocheWraps).get()).single.id, 'w1', reason: 'die Zeile bleibt');
+    // ein anderer Grund (hier: gibt es schon) verwirft sie still
+    final nochmal = await store.naechsteOps(10);
+    await store.uebernehmen(antwort(rejected: [SyncRejected(nochmal.single.opId, 'not_found')]), nochmal);
+    expect(await db.select(db.epocheWraps).get(), isEmpty);
+  });
+
+  test('Ausgang: eine nicht vorbereitbare Op hält nur die Ops derselben Entität zurück, alle anderen gehen weiter', () async {
+    await store.aendern('nachricht', 'n1', {'konversationId': 'k', 'text': 'l1:x'}, nurLokal: {'createdAt': DateTime.utc(2026, 10, 19).toIso8601String()});
+    await store.aendern('list', _l1, {'name': 'Einkauf', 'kind': 'shopping', 'audience': 'family'});
+    await store.aendern('nachricht', 'n1', {'text': 'l1:y'});
+    final ops = await store.naechsteOps(10, vorbereiter: _Haelt());
+    expect([for (final o in ops) o.entity], ['list']);
+  });
+}
+
+class _Haelt implements OpVorbereiter {
+  @override
+  Future<String?> vorbereiten(OutboxData op) async => op.entity == 'nachricht' ? null : op.fieldsJson;
 }

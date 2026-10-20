@@ -1,11 +1,15 @@
 // Profil und Sicherheit (Mockup "Sicherheit & System"): Zugänge, Wiederherstellungscodes, Geräte, Familie (Admin/Eltern), Abmelden.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/push/push_state.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
@@ -16,6 +20,8 @@ import 'erinnerungen_screen.dart';
 import 'password_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
+import 'push_screen.dart';
+import 'verschluesselung_screen.dart';
 import 'passkeys_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -75,7 +81,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(ref.read(authProvider.notifier).neuLaden()));
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(ref.read(authProvider.notifier).neuLaden());
+      // Stand der Verschlüsselung für die Warnanzeige (Schlüsselwechsel) in der Zeile unten
+      unawaited(ref.read(e2eeProvider.notifier).laden());
+    });
   }
 
   void _oeffne(Widget seite) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => seite));
@@ -98,6 +108,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
       ) ??
       false;
 
+  Future<void> _familienrolle(FamilyRole? aktuell) async {
+    final wahl = await familienrolleWaehlen(context, titel: 'Familienrolle', aktuell: aktuell);
+    if (wahl == null || wahl.rolle == aktuell || !mounted) return;
+    final ok = await ausfuehren(() => ref.read(apiProvider).familienrolleSetzen(wahl.rolle));
+    if (ok && mounted) await ref.read(authProvider.notifier).neuLaden();
+  }
+
   Future<void> _neueCodes() async {
     final ja = await _bestaetigen(
       'Neue Wiederherstellungscodes?',
@@ -117,15 +134,51 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   }
 
   Future<void> _abmelden({required bool ueberall}) async {
-    final ja = await _bestaetigen(
-      ueberall ? 'Überall abmelden?' : 'Abmelden?',
-      ueberall
-          ? 'Alle deine Geräte werden abgemeldet, auch dieses. Lokale Daten auf diesem Gerät werden gelöscht.'
-          : 'Du wirst auf diesem Gerät abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.',
-      ueberall ? 'Überall abmelden' : 'Abmelden',
-    );
+    final titel = ueberall ? 'Überall abmelden?' : 'Abmelden?';
+    final text = ueberall
+        ? 'Alle deine Geräte werden abgemeldet, auch dieses. Lokale Daten auf diesem Gerät werden gelöscht.'
+        : 'Du wirst auf diesem Gerät abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.';
+    final knopf = ueberall ? 'Überall abmelden' : 'Abmelden';
+    // Der Verschlüsselungsschlüssel verschwindet beim Abmelden von diesem Gerät: Ohne Sicherung ist er danach (außer auf einem anderen verbundenen Gerät) weg.
+    final e2ee = ref.read(e2eeProvider);
+    final ja = e2ee.status == E2eeStatus.bereit ? await _abmeldenMitSchluessel(titel, text, knopf, gesichert: e2ee.hatSicherung) : await _bestaetigen(titel, text, knopf);
     if (!ja || !mounted) return;
     await _abmeldenAusfuehren(ueberall: ueberall);
+  }
+
+  /// Dialog mit Warnung zum Schlüssel; ohne Sicherung wird "Erst sichern" angeboten (öffnet die Verschlüsselung statt abzumelden).
+  Future<bool> _abmeldenMitSchluessel(String titel, String text, String knopf, {required bool gesichert}) async {
+    final antwort = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(titel),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(text),
+            const SizedBox(height: 12),
+            Text(
+              gesichert
+                  ? 'Dein Verschlüsselungsschlüssel wird von diesem Gerät gelöscht. Um dieses Gerät wieder zu verbinden, brauchst du deinen Wiederherstellungsschlüssel oder ein anderes verbundenes Gerät.'
+                  : 'Dein Schlüssel wird von diesem Gerät gelöscht und ist nicht gesichert: Danach lässt er sich nur über ein anderes verbundenes Gerät zurückholen, sonst bleibt nur, einen neuen Schlüssel zu erzeugen (alte verschlüsselte Inhalte sind dann nicht mehr lesbar).',
+              style: TextStyle(color: gesichert ? kTextMuted : kDanger, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop('abbrechen'), child: const Text('Abbrechen')),
+          if (!gesichert) TextButton(onPressed: () => Navigator.of(ctx).pop('sichern'), child: const Text('Erst sichern')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop('ja'), style: TextButton.styleFrom(foregroundColor: kDanger), child: Text(knopf)),
+        ],
+      ),
+    );
+    if (antwort == 'sichern' && mounted) {
+      _oeffne(const VerschluesselungScreen());
+      return false;
+    }
+    return antwort == 'ja';
   }
 
   Future<void> _abmeldenAusfuehren({required bool ueberall, bool nurLokal = false}) async {
@@ -190,7 +243,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                       if (user.email != null)
                         Text(user.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
                       const SizedBox(height: 6),
-                      RollenPille(user.role.label),
+                      Wrap(spacing: 6, runSpacing: 4, children: rollenPillen(user.role, user.familyRole)),
                       const SizedBox(height: 6),
                       const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
                     ],
@@ -213,7 +266,17 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           const SizedBox(height: 8),
           LinkKnopf('Trotzdem nur lokal abmelden', onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall, nurLokal: true)),
         ],
-        const SizedBox(height: 20),
+        if (user != null) ...[
+          const SizedBox(height: 12),
+          EinstellungsZeile(
+            icon: Icons.family_restroom,
+            titel: 'Familienrolle',
+            untertitel: 'nur anzeige, ändert keine rechte',
+            status: user.familyRole == null ? null : RollenPille(user.familyRole!.label, farbe: kTextMuted),
+            onTap: laeuft || auth.offline ? null : () => _familienrolle(user.familyRole),
+          ),
+        ],
+        const SizedBox(height: 12),
         const MonoLabel('// sicherheit'),
         const SizedBox(height: 8),
         EinstellungsZeile(
@@ -236,6 +299,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           untertitel: me == null ? 'wird geladen …' : '${me.recoveryCodesRemaining} übrig · neue erzeugen',
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
+        VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
         EinstellungsZeile(
           icon: Icons.phone_android,
           titel: 'Angemeldete Geräte',
@@ -243,6 +307,20 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        // Push gibt es nur in der Android-App (UnifiedPush über die ntfy-App)
+        if (!kIsWeb)
+          Consumer(
+            builder: (context, ref, _) {
+              final push = ref.watch(pushProvider);
+              return EinstellungsZeile(
+                icon: Icons.notifications_outlined,
+                titel: 'Benachrichtigungen',
+                untertitel: push.gewuenscht ? (push.angemeldet ? 'push aktiv' : 'wird eingerichtet') : 'aus',
+                status: push.gewuenscht && push.angemeldet ? const RollenPille('an', farbe: kTerminal) : null,
+                onTap: () => _oeffne(const PushScreen()),
+              );
+            },
+          ),
         EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kAppName', untertitel: 'version und update', onTap: () => _oeffne(const UeberScreen())),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),

@@ -31,8 +31,8 @@ jobs:
     env:
       TEST_DATABASE_URL: postgres://postgres:ci@127.0.0.1:5432/postgres
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
           cache: npm
@@ -47,8 +47,8 @@ jobs:
     name: Werkzeuge (Manifest-Signatur)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.21.0
       - run: node --test "tools/*.test.mjs"
@@ -60,8 +60,8 @@ jobs:
       run:
         working-directory: app
     steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
           flutter-version: 3.47.6
           channel: stable
@@ -77,7 +77,10 @@ jobs:
       # erzeugt lib/data/app_database.g.dart (drift), die Datei ist nicht eingecheckt (sauberer Checkout: keine Altlasten)
       - run: dart run build_runner build
       - run: flutter analyze
+      # libsodium (Build-Hook) muss in der CI laden: sonst würden die Kryptotests still übersprungen
       - run: flutter test
+        env:
+          SODIUM_ERFORDERLICH: '1'
       - run: flutter build web --release --no-web-resources-cdn
       - name: Gebaute Web-Binärdateien sind die geprüften
         run: sed -E 's# (\*?)web/# \1build/web/#' web-assets.sha256 | sha256sum -c
@@ -93,6 +96,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      # Speicherplatz: NDK-Download, libsodium-Build für alle ABIs und die APK füllen die Platte des Runners ("No space left on device"); ungenutzte Vorinstallationen entfernen
+      - run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android/sdk/ndk/27* /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift /usr/local/.ghcup && df -h /
+        working-directory: .
       - uses: actions/setup-java@de7274f081f381c8f8158605e0321c36c376e2e6 # v6.0.1
         with:
           distribution: temurin
@@ -105,6 +111,14 @@ jobs:
       # Android-SDK ist auf dem Runner vorinstalliert; nur die Lizenzen bestätigen
       - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
         working-directory: .
+      # Gradle-Cache (nur Abhängigkeiten und Wrapper; NDK/CMake bewusst nicht, die Platte ist knapp)
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('app/android/**/*.gradle*', 'app/android/gradle/wrapper/gradle-wrapper.properties', 'app/pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
       - run: flutter pub get --enforce-lockfile
       - run: dart run build_runner build
       # Debug-APK ist mit dem Debug-Schlüssel signiert und wird nicht veröffentlicht; prüft nur, dass der Android-Build läuft

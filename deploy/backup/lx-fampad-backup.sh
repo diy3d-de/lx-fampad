@@ -166,6 +166,7 @@ PATHS=()
 MISSING=()
 add() { local p; for p in "$@"; do if [ -e "$p" ]; then PATHS+=("${p#/}"); else MISSING+=("$p"); fi; done; }
 add /etc/lx-fampad                                   # env, migrate.env (AUTH_SECRET_KEY!), ntfy-token, ntfy-family-password
+# /srv/fampad/karte (Kartendatei, 1-5 GB, neu erzeugbar) steht bewusst in KEINER Liste (auch nicht bei INCLUDE_FILES: dort nur srv/fampad/files)
 # Das Haupt-Caddyfile (/etc/caddy/Caddyfile) gehört lx-labs.dev und kann deren Geheimnisse enthalten: bewusst NICHT in dieser Sicherung
 add /etc/caddy/conf.d/*.caddy                        # fampad.caddy, ntfy.caddy
 add /etc/ntfy/server.yml
