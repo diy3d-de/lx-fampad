@@ -11,6 +11,8 @@ import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/providers.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart' show standortPortProvider;
+import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart' show MemoryErinnerungSpeicher;
+import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
 import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKartenBuilder, standortKartenBuilderProvider;
 import 'package:lx_fampad/data/sync_state.dart';
@@ -101,6 +103,9 @@ class TestUmgebung {
   /// Zusätzliche Überschreibungen einzelner Tests (z. B. ein Stream, der einen Lesefehler meldet).
   final List<Override> extraOverrides = [];
 
+  /// Anzeige der Standort-Benachrichtigungen (Standard: keine).
+  StandortAnzeigePort standortAnzeige = const KeineStandortAnzeige();
+
   /// Gerätedienst fürs Standort teilen (Standard: keiner, wie im Browser).
   StandortPort standortPort = const KeinStandortPort();
 
@@ -128,6 +133,10 @@ class TestUmgebung {
     // Standort teilen: kein Gerätedienst im Test (der Kanal zur Android-Seite fehlt dort)
     standortPortProvider.overrideWithValue(standortPort),
     standortKartenBuilderProvider.overrideWithValue(standortKarte),
+    // Standort-Hinweise: im Test gilt die App als im Vordergrund (kein Kurzabruf des Standort-Kanals nach einem Wecker, keine System-Benachrichtigung)
+    standortBenachrichtigerProvider.overrideWithValue(
+      StandortBenachrichtiger(db: db, anzeige: standortAnzeige, speicher: MemoryErinnerungSpeicher(), ich: () async => null, istVordergrund: () => true),
+    ),
     ...extraOverrides,
   ];
 

@@ -3,7 +3,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/push/push_state.dart';
+import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart';
 import 'package:lx_fampad/features/profile/push_screen.dart';
 import 'package:lx_fampad/ui/theme.dart';
@@ -20,6 +22,7 @@ void main() {
   late TestUmgebung env;
   late FakePush fake;
   var registriert = false;
+  late MemoryErinnerungSpeicher speicher;
 
   Future<ProviderContainer> zeige(WidgetTester tester, Widget seite, {double skala = 1.0, bool unterstuetzt = true, Duration wartezeit = const Duration(milliseconds: 200)}) async {
     tester.view.physicalSize = const Size(360, 800);
@@ -41,10 +44,12 @@ void main() {
     });
     env.server.on('POST /me/push/test', (_) => jsonAntwort({'result': 'sent'}));
     fake = FakePush()..unterstuetzt = unterstuetzt;
+    speicher = MemoryErinnerungSpeicher();
     final c = ProviderContainer(
       overrides: [
         ...env.overrides,
         pushPlattformProvider.overrideWithValue(fake),
+        erinnerungSpeicherProvider.overrideWithValue(speicher),
         pushTestWartezeitProvider.overrideWithValue(wartezeit),
       ],
     );
@@ -59,7 +64,7 @@ void main() {
     await zeige(tester, const PushScreen());
     expect(find.text('Benachrichtigungen'), findsOneWidget);
     expect(find.text('Auf diesem Gerät benachrichtigen'), findsOneWidget);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(tester.widget<Switch>(find.byType(Switch).first).value, isFalse);
     expect(find.textContaining(kNtfyServerUrl), findsOneWidget);
     expect(find.textContaining('Nie schlafende Apps'), findsOneWidget);
     expect(find.textContaining('Automatische Sperre'), findsOneWidget);
@@ -69,11 +74,28 @@ void main() {
     pruefeLayout(tester, 'Push aus');
   });
 
+  testWidgets('Standortfreigaben melden: Standard an, Schalter wird lokal gespeichert (nie auf dem Server), Text nennt den Datenschutz', (tester) async {
+    final c = await zeige(tester, const PushScreen());
+    expect(find.text('Standortfreigaben melden'), findsOneWidget);
+    expect(find.textContaining('nie den Standort'), findsOneWidget);
+    final schalter = find.byType(Switch).last;
+    expect(tester.widget<Switch>(schalter).value, isTrue);
+    await tippe(tester, schalter);
+    await warte(tester);
+    expect(tester.widget<Switch>(schalter).value, isFalse);
+    expect(speicher.daten[kStandortHinweisSchluessel], 'aus');
+    expect(c.read(standortHinweisAnProvider).value, isFalse);
+    await tippe(tester, schalter);
+    await warte(tester);
+    expect(speicher.daten[kStandortHinweisSchluessel], 'an');
+    pruefeLayout(tester, 'Standortfreigaben melden');
+  });
+
   testWidgets('einschalten: registriert, Status "angemeldet", danach Test-Wecker mit Ergebnis "angekommen"', (tester) async {
     final c = await zeige(tester, const PushScreen(), wartezeit: const Duration(seconds: 30));
-    await tippe(tester, find.byType(Switch));
+    await tippe(tester, find.byType(Switch).first);
     await warte(tester);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isTrue);
+    expect(tester.widget<Switch>(find.byType(Switch).first).value, isTrue);
     expect(fake.registriert, 1);
     expect(find.text('ntfy'), findsOneWidget); // Verteiler im Status
     expect(c.read(pushProvider).angemeldet, isTrue);
@@ -88,24 +110,24 @@ void main() {
     // dem Test-Wecker folgt ein Abgleich-Versuch ohne angemeldeten Sync-Dienst: keine Ausnahme
     expect(tester.takeException(), isNull);
     // ausschalten
-    await tippe(tester, find.byType(Switch));
+    await tippe(tester, find.byType(Switch).first);
     await warte(tester);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(tester.widget<Switch>(find.byType(Switch).first).value, isFalse);
     expect(registriert, isFalse);
   });
 
   testWidgets('ohne ntfy-App: Hinweis statt Fehler-Absturz', (tester) async {
     await zeige(tester, const PushScreen());
     fake.installiert = [];
-    await tippe(tester, find.byType(Switch));
+    await tippe(tester, find.byType(Switch).first);
     expect(find.textContaining('keine ntfy-App installiert'), findsOneWidget);
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(tester.widget<Switch>(find.byType(Switch).first).value, isFalse);
   });
 
   testWidgets('mehrere Verteiler: Auswahldialog, nach der Wahl wird registriert', (tester) async {
     await zeige(tester, const PushScreen());
     fake.installiert = ['io.heckel.ntfy', 'org.andere.verteiler'];
-    await tippe(tester, find.byType(Switch));
+    await tippe(tester, find.byType(Switch).first);
     expect(find.text('Verteiler wählen'), findsOneWidget);
     await tippe(tester, find.text('org.andere.verteiler'));
     await warte(tester);
@@ -122,7 +144,7 @@ void main() {
 
   testWidgets('Layout 360 px bei Textskala 1.5: Schalter an, Fehler, Test-Ergebnis', (tester) async {
     await zeige(tester, const PushScreen(), skala: 1.5);
-    await tippe(tester, find.byType(Switch));
+    await tippe(tester, find.byType(Switch).first);
     await warte(tester);
     await tippe(tester, find.widgetWithText(OutlinedButton, 'Test-Wecker senden'));
     await tester.pump(const Duration(milliseconds: 400));

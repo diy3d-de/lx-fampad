@@ -49,6 +49,9 @@ const _kAufgaben = 'erinnerung_aufgaben';
 /// Schlüssel der Einstellung "Titel auf dem Sperrbildschirm zeigen" (gilt auch für die Chat-Benachrichtigungen).
 const kSperrbildschirmSchluessel = _kSperre;
 
+/// Schlüssel der Einstellung "Standortfreigaben melden" (lokal; "aus" schaltet die Hinweise ab).
+const kStandortHinweisSchluessel = 'standort_hinweis';
+
 /// Schlüssel der Person, für die die geplanten Erinnerungen dieses Geräts gelten (der Dienst löscht sie bei einem anderen Konto).
 const kErinnerungKontoSchluessel = 'erinnerung_konto';
 
@@ -64,7 +67,8 @@ class SicherErinnerungSpeicher implements ErinnerungSpeicher {
     final sp = await _s.read(key: _kSperre);
     final au = await _s.read(key: _kAufgaben);
     final k = await _s.read(key: kErinnerungKontoSchluessel);
-    return {_kAn: ?an, _kVorlauf: ?v, _kSperre: ?sp, _kAufgaben: ?au, kErinnerungKontoSchluessel: ?k};
+    final sh = await _s.read(key: kStandortHinweisSchluessel);
+    return {_kAn: ?an, _kVorlauf: ?v, _kSperre: ?sp, _kAufgaben: ?au, kErinnerungKontoSchluessel: ?k, kStandortHinweisSchluessel: ?sh};
   }
 
   @override

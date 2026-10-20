@@ -26,6 +26,7 @@ import '../api/api_error.dart';
 import '../auth/auth_state.dart';
 import '../providers.dart';
 import '../sync/sync_engine.dart';
+import '../standort/standort_abruf.dart';
 import '../sync_state.dart';
 import 'chat_benachrichtiger_provider.dart';
 import 'push_plattform.dart';
@@ -81,6 +82,14 @@ Future<WeckerLauf?> pushHintergrundStarten({
           },
           ereignisse: ereignisse ?? c.read(ereignisBenachrichtigerProvider),
         );
+        // Standortfreigaben: der Wecker enthält nichts, die App fragt den Standort-Kanal kurz ab und meldet neue Freigaben lokal
+        if (!abgebrochen) {
+          try {
+            await c.read(standortAbrufProvider).abfragen();
+          } catch (_) {
+            // Zusatz: ein Fehler hier darf den Wecker nicht stören
+          }
+        }
       } finally {
         abgebrochen = true;
         c.dispose();

@@ -11,6 +11,7 @@ import '../../data/auth/auth_state.dart' show systemChannelProvider;
 import '../../data/erinnerungen/erinnerung_dienst.dart';
 import '../../data/push/push_plattform.dart';
 import '../../data/push/push_state.dart';
+import '../../data/standort/standort_hinweis.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 
@@ -208,6 +209,8 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
             const SizedBox(height: 12),
             const MeldungsBox('Der Server hat Push noch nicht eingerichtet. Frage den Admin der Familie.', fehler: false),
           ],
+          const SizedBox(height: 12),
+          const _StandortHinweisZeile(),
           const SizedBox(height: 20),
           const MonoLabel('// status'),
           const SizedBox(height: 8),
@@ -238,6 +241,43 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
         const SizedBox(height: 8),
         const LxCard(child: _Anleitung()),
       ],
+    );
+  }
+}
+
+/// Schalter "Standortfreigaben melden": gilt nur für dieses Gerät, der Server erfährt ihn nicht (er weckt immer, die App unterdrückt den Hinweis).
+class _StandortHinweisZeile extends ConsumerWidget {
+  const _StandortHinweisZeile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final an = ref.watch(standortHinweisAnProvider).value ?? true;
+    return LxCard(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Row(
+          children: [
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Standortfreigaben melden', style: TextStyle(fontWeight: FontWeight.w600)),
+                  Text(
+                    'Du bekommst einen Hinweis, wenn jemand seinen Standort mit dir teilt. Er zeigt nur den Namen, nie den Standort, und entsteht auf diesem Gerät. Die Person erfährt nichts davon.',
+                    style: TextStyle(fontSize: 12, color: kTextMuted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Semantics(
+              label: 'Standortfreigaben melden',
+              toggled: an,
+              child: Switch(value: an, onChanged: (v) => unawaited(ref.read(standortHinweisAnProvider.notifier).setzen(v))),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

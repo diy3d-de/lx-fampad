@@ -165,6 +165,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
       log: app.log,
       now: authCore.ctx.now,
       hasLiveSocket: (deviceId, maxIdleMs) => hub.hasDevice(deviceId, maxIdleMs),
+      hasAnySocket: (deviceId, maxIdleMs) => hub.hasAnySocket(deviceId, maxIdleMs),
       // lebendig = Lebenszeichen innerhalb von 1,5 Ping-Intervallen; Nachprüfung kurz danach
       liveFensterMs: Math.round(config.wsPingIntervalMs * 1.5),
       nachpruefenMs: Math.round(config.wsPingIntervalMs * 1.5) + 1000,
@@ -173,6 +174,8 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     });
     app.decorate('push', push);
     push.logStatusOnce();
+    // Standort-Freigabe gestartet: Empfänger ohne offene Verbindung per Push wecken (ohne Inhalt)
+    location.onWake = (familyId, userIds) => void push.weckeStandort(familyId, userIds);
     app.addHook('onClose', async () => push.close());
     registerPushRoutes(app, config, authCore, push);
     auth = authOverride ?? authCore;

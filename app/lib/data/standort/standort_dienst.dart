@@ -21,6 +21,7 @@ import '../lists/members.dart';
 import '../sync/sync_socket.dart';
 import '../sync/sync_store.dart' show neueUuid;
 import '../sync_state.dart' show syncSocketOeffnerProvider, syncZufallProvider;
+import 'standort_hinweis.dart';
 import 'standort_krypto.dart';
 import 'standort_modelle.dart';
 import 'standort_port.dart';
@@ -622,6 +623,7 @@ class StandortController extends Notifier<StandortState> {
     void ungeprueft() {
       _empfang.remove(von)?.vergessen();
       state = state.kopie(geteilt: {...state.geteilt, von: GeteiltePosition(userId: von, shareId: shareId, endetAt: ende, ungeprueft: true)});
+      unawaited(_hinweis(von, shareId, ende));
     }
 
     try {
@@ -645,10 +647,21 @@ class StandortController extends Notifier<StandortState> {
       alt?.vergessen();
       _empfang[von] = e;
       state = state.kopie(geteilt: {...state.geteilt, von: GeteiltePosition(userId: von, shareId: shareId, endetAt: e.freigabeEnde)});
+      unawaited(_hinweis(von, shareId, e.freigabeEnde));
     } on CryptoFehler {
       ungeprueft();
     } catch (_) {
       ungeprueft();
+    }
+  }
+
+  /// Neue Freigabe einer anderen Person: Hinweis (im Hintergrund als System-Benachrichtigung, im Vordergrund dezent in der App). Je Freigabe nur einmal.
+  Future<void> _hinweis(String von, String shareId, DateTime ende) async {
+    try {
+      final erg = await ref.read(standortBenachrichtigerProvider).freigabe(von: von, shareId: shareId, endsAt: ende);
+      if (erg == HinweisErgebnis.vordergrund && ref.mounted) ref.read(standortHinweisProvider.notifier).melden(von);
+    } catch (_) {
+      // Zusatz: ein Fehler hier darf den Empfang nicht stören
     }
   }
 
@@ -693,6 +706,11 @@ class StandortController extends Notifier<StandortState> {
     final e = _empfang[von];
     final eintrag = state.geteilt[von];
     if (eintrag == null || eintrag.shareId != shareId) return;
+    try {
+      unawaited(ref.read(standortBenachrichtigerProvider).beendet(von));
+    } catch (_) {
+      // Zusatz (Benachrichtigung entfernen): nie den Empfang stören
+    }
     if (e != null && e.shareId == shareId) {
       _merkeBeendet(e);
       _empfang.remove(von)?.vergessen();

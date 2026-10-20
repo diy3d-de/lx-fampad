@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/push/push_state.dart';
 import '../../data/standort/standort_dienst.dart';
+import '../../data/standort/standort_hinweis.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
@@ -46,6 +47,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   // Standort (Karte, Kacheln, Zeitgeber) wird erst beim ersten Öffnen gebaut und bleibt danach im Stapel (Zustand erhalten)
   bool _standortBesucht = false;
   List<Widget> get _desktopScreens => [const DesktopHome(), ..._screens.sublist(1), if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink()];
+
+  /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
+  bool _desktopLayout = false;
 
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;
@@ -104,7 +108,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final tab = ref.watch(shellTabProvider);
     final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
+    // Standortfreigaben: Tipp auf die Benachrichtigung bzw. "Ansehen" öffnet die Standort-Seite; im Vordergrund ein dezenter Hinweis
+    ref.listen(standortOeffnenProvider, (_, _) => _standortOeffnen());
+    ref.listen(standortHinweisProvider, (_, h) {
+      if (h != null) _standortHinweisZeigen(h);
+    });
+    ref.listen(shellTabProvider, (_, t) {
+      if (t == kStandortTab) unawaited(ref.read(standortBenachrichtigerProvider).alleEntfernen());
+    });
     return LayoutBuilder(builder: (context, c) {
+      _desktopLayout = c.maxWidth >= kDesktopBreakpoint;
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
       if (c.maxWidth >= kDesktopBreakpoint) {
         if (tab == kStandortTab) _standortBesucht = true;
@@ -113,6 +126,27 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
       return _mobil(updateDa, tab < kTabs.length ? tab : 0, ungelesen);
     });
+  }
+
+  /// Öffnet die Standort-Seite: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite (nicht doppelt).
+  void _standortOeffnen() {
+    if (!mounted) return;
+    if (_desktopLayout) {
+      ref.read(shellTabProvider.notifier).waehlen(kStandortTab);
+    } else if (!ref.read(standortSeiteOffenProvider)) {
+      unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const StandortScreen())));
+    }
+  }
+
+  /// Dezenter Hinweis im Vordergrund, außer die Standort-Seite ist selbst zu sehen.
+  void _standortHinweisZeigen(StandortHinweis h) {
+    if (!mounted) return;
+    final sichtbar = ref.read(standortSeiteOffenProvider) || (_desktopLayout && ref.read(shellTabProvider) == kStandortTab);
+    if (sichtbar) return;
+    final name = ref.read(standortMitgliederProvider)[h.von]?.displayName ?? 'Jemand';
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('$name teilt seinen Standort'), action: SnackBarAction(label: 'Ansehen', onPressed: _standortOeffnen)));
   }
 
   Widget _mobil(bool updateDa, int tab, int ungelesen) {

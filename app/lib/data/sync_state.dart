@@ -14,6 +14,7 @@ import '../features/update/update_service.dart';
 import 'auth/auth_state.dart';
 import 'database_provider.dart';
 import 'erinnerungen/erinnerung_dienst.dart';
+import 'standort/standort_hinweis.dart';
 import 'chat/chat_krypto_state.dart';
 import 'sync/sync_engine.dart';
 import 'sync/sync_socket.dart';
@@ -421,6 +422,10 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   // Terminerinnerungen des Geräts gehören zu den lokalen Daten: weg damit (fehlerfrei, ein Problem hier darf das Leeren nicht stoppen)
   try {
     await ref.read(erinnerungDienstProvider).alleEntfernen();
+  } catch (_) {}
+  // schon gezeigte Standort-Benachrichtigungen (Name der teilenden Person) bleiben nicht auf dem Gerät stehen
+  try {
+    await ref.read(standortBenachrichtigerProvider).alleEntfernen();
   } catch (_) {}
   await ref.read(appDatabaseProvider).alleDatenLoeschen();
 };

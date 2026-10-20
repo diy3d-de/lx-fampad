@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/standort/standort_screen.dart';
 
@@ -134,6 +135,57 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
+
+  group('Hinweis auf eine Standortfreigabe', () {
+    ProviderContainer container(WidgetTester tester) => ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first));
+
+    testWidgets('Desktop: dezenter Hinweis mit "Ansehen" wechselt in den Standort-Bereich', (tester) async {
+      await start(tester, const Size(1200, 800));
+      container(tester).read(standortHinweisProvider.notifier).melden('unbekannt');
+      await warte(tester);
+      expect(find.text('Jemand teilt seinen Standort'), findsOneWidget);
+      await tester.tap(find.text('Ansehen'));
+      await warte(tester);
+      expect(container(tester).read(shellTabProvider), kStandortTab);
+      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+    });
+
+    testWidgets('kein Hinweis, solange der Standort-Bereich selbst zu sehen ist', (tester) async {
+      await start(tester, const Size(1200, 800));
+      container(tester).read(shellTabProvider.notifier).waehlen(kStandortTab);
+      await warte(tester);
+      container(tester).read(standortHinweisProvider.notifier).melden('unbekannt');
+      await warte(tester);
+      expect(find.text('Jemand teilt seinen Standort'), findsNothing);
+    });
+
+    testWidgets('mobil: "Ansehen" und der Tipp auf die Benachrichtigung öffnen die Standort-Seite (nicht doppelt), die Navigationsleiste hat keinen Standort-Tab', (tester) async {
+      await start(tester, const Size(360, 800));
+      container(tester).read(standortHinweisProvider.notifier).melden('unbekannt');
+      await warte(tester);
+      expect(find.text('Jemand teilt seinen Standort'), findsOneWidget);
+      await tester.tap(find.text('Ansehen'));
+      await warte(tester);
+      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(find.byTooltip('Zurück'), findsOneWidget);
+      // solange die Seite offen ist, kein weiterer Hinweis und keine zweite Seite
+      container(tester).read(standortHinweisProvider.notifier).melden('unbekannt');
+      container(tester).read(standortOeffnenProvider.notifier).anfordern();
+      await warte(tester);
+      expect(find.text('Jemand teilt seinen Standort'), findsNothing);
+      expect(find.byTooltip('Zurück'), findsOneWidget);
+      await tester.tap(find.byTooltip('Zurück'));
+      await warte(tester);
+      expect(container(tester).read(standortSeiteOffenProvider), isFalse);
+    });
+
+    testWidgets('Tipp auf die Benachrichtigung (Anforderung) im Desktop wählt den Bereich', (tester) async {
+      await start(tester, const Size(1200, 800));
+      container(tester).read(standortOeffnenProvider.notifier).anfordern();
+      await warte(tester);
+      expect(container(tester).read(shellTabProvider), kStandortTab);
+    });
+  });
 
   testWidgets('Startseite (Desktop): die Standort-Karte wechselt in den Bereich statt eine Seite zu öffnen', (tester) async {
     await start(tester, const Size(1440, 900));
