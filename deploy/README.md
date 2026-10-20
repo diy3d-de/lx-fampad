@@ -406,7 +406,7 @@ Die Standort-Seite zeigt die Karte nur, wenn die Kartendatei auf dem Server lieg
 4. **Prüfen:** `sudo bash deploy/einrichtung-karte.sh` (idempotent, ändert nichts mehr, macht den Range-Test: 206, PMTiles-Kennung, kein `Content-Encoding`, ETag) oder von Hand: `curl -s -o /dev/null -w '%{http_code}\n' -r 0-15 https://familie.lx-labs.dev/karte-daten/westerwald.pmtiles` muss `206` liefern. In der App (neu laden) zeigt die Standort-Seite danach die Karte, sobald jemand teilt.
 5. **Rückbau:** Block `handle_path /karte-daten/*` aus `/etc/caddy/conf.d/fampad.caddy` entfernen (das Skript nennt die Sicherungsdatei), `caddy validate`, `sudo systemctl reload caddy`; Datei löschen.
 
-Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-Block im Caddyfile), Kachel-Anfragen werden also nicht mitgeschrieben; `journalctl` hält Caddy-Fehlermeldungen höchstens 7 Tage (Abschnitt „Logs und Datenschutz“).
+Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-Block in `deploy/Caddyfile`; **vor dem Deploy auf dem Server bestätigen**, dass auch Haupt-Caddyfile und `conf.d/` keinen für familie.lx-labs.dev setzen: `sudo grep -rn "log" /etc/caddy/Caddyfile /etc/caddy/conf.d/`), Kachel-Anfragen werden also nicht mitgeschrieben; `journalctl` hält Caddy-Fehlermeldungen höchstens 7 Tage (Abschnitt „Logs und Datenschutz“).
 
 ## Updates veröffentlichen
 

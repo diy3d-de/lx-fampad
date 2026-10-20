@@ -141,16 +141,59 @@ void main() {
       expect(gesehen!.headers['Range'], 'bytes=0-126');
     });
 
-    test('Der Bereich kommt aus dem Kopf der Datei (175 km, später ganz Deutschland ohne neue App); Unsinn gilt als ganze Welt', () async {
+    test('Der Bereich kommt aus dem Kopf der Datei (175 km, später ganz Deutschland ohne neue App); Unsinn ist ungültig', () async {
       final b = await bereichPruefen((r) => http.Response.bytes(pmtiles, 206));
       expect(b!.west, closeTo(5.49, 1e-6));
       expect(b.nord, closeTo(52.14, 1e-6));
       final de = await bereichPruefen((r) => http.Response.bytes(kopf(5.85, 47.27, 15.03, 55.07), 206));
       expect(de!.enthaelt(52.5, 13.4), isTrue); // Berlin
       expect(de.enthaelt(48.14, 11.58), isTrue); // München
-      final welt = await bereichPruefen((r) => http.Response.bytes(kopf(0, 0, 0, 0), 206));
-      expect(welt!.enthaelt(10, 10), isTrue);
+      // unsinnige Bereiche (alles 0, Ost vor West, außerhalb der Erde) gelten als keine brauchbare Datei
+      expect(await bereichPruefen((r) => http.Response.bytes(kopf(0, 0, 0, 0), 206)), isNull);
+      expect(await bereichPruefen((r) => http.Response.bytes(kopf(10, 48, 5, 52), 206)), isNull);
+      expect(await bereichPruefen((r) => http.Response.bytes(kopf(-200, 48, 5, 52), 206)), isNull);
       expect(await bereichPruefen((r) => http.Response.bytes(kopf(5, 48, 10, 52, version: 2), 206)), isNull);
+    });
+
+    test('Ein Server, der trotz Range-Anfrage 200 mit der ganzen Datei liefert, wird nach dem Status verworfen: der Körper wird nicht gelesen', () async {
+      var gezogen = 0;
+      var abgebrochen = false;
+      Stream<List<int>> riesig() async* {
+        try {
+          while (true) {
+            gezogen += 1 << 20;
+            yield Uint8List(1 << 20);
+            await Future<void>.delayed(Duration.zero);
+          }
+        } finally {
+          abgebrochen = true;
+        }
+      }
+
+      final c = ProviderContainer(overrides: [httpClientProvider.overrideWithValue(MockClient.streaming((r, _) async => http.StreamedResponse(riesig(), 200)))]);
+      addTearDown(c.dispose);
+      expect(await c.read(karteDateiProvider.future), isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(gezogen, lessThan(8 << 20), reason: 'höchstens ein paar Stücke, nie die ganze Datei');
+      expect(abgebrochen, isTrue);
+    });
+
+    test('Ein 206 mit endlosem Körper (Kopf stimmt): nach 127 Byte ist Schluss, der Rest wird nicht gelesen', () async {
+      var gezogen = 0;
+      Stream<List<int>> endlos() async* {
+        yield pmtiles;
+        while (true) {
+          gezogen += 1 << 20;
+          yield Uint8List(1 << 20);
+          await Future<void>.delayed(Duration.zero);
+        }
+      }
+
+      final c = ProviderContainer(overrides: [httpClientProvider.overrideWithValue(MockClient.streaming((r, _) async => http.StreamedResponse(endlos(), 206)))]);
+      addTearDown(c.dispose);
+      expect((await c.read(karteDateiProvider.future))!.west, closeTo(5.49, 1e-6));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(gezogen, 0);
     });
 
     test('404, index.html mit 200 (Fang-Block der Web-App), 200 ohne Range, Fehler: nicht vorhanden', () async {
