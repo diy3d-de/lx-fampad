@@ -8,6 +8,8 @@ import 'constants.dart';
 import 'data/auth/auth_state.dart';
 import 'data/chat/chat_krypto_state.dart';
 import 'data/lists/members.dart' show mitgliederAktualisierungProvider;
+import 'data/push/chat_benachrichtigung_raeumen.dart';
+import 'widgets/ungelesen_titel.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
 import 'features/auth/auth_widgets.dart';
@@ -113,6 +115,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten
     ref.watch(chatKryptoSteuerungProvider);
     ref.watch(mitgliederAktualisierungProvider);
+    ref.watch(chatBenachrichtigungenRaeumenProvider);
+    ref.watch(ungelesenTitelProvider);
     ref.listen(authProvider.select((s) => s.status), (alt, neu) {
       // Sitzung weg oder Konto wartet: alle offenen Unterseiten (Profil, Admin ...) schließen
       if (alt != neu && neu != AuthStatus.angemeldet) {

@@ -63,7 +63,7 @@ void main() {
 
   test('geänderte Profilbild-Version kommt mit dem Abgleich an; ein Verbindungsfehler-Merker für Fotos wird dabei gelöscht (erneuter Versuch)', () async {
     final speicher = c.read(avatarSpeicherProvider);
-    speicher.fehlversuche['${fixIdKind}:1'] = DateTime.now();
+    speicher.fehlversuche['$fixIdKind:1'] = DateTime.now();
     env.server.json('GET /members', {
       'members': [
         userJson(),
