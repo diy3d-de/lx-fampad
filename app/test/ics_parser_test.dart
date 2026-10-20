@@ -153,7 +153,7 @@ void main() {
 
     test('Emoji, Umlaute und Escapes', () {
       expect(t('event/1009').titel, 'Geburtstag 40 🎂');
-      expect(t('event/1010').ort, 'Flughafenstraße 100, 90411 Nürnberg');
+      expect(t('event/1010').ort, 'Musterstraße 1, 12345 Musterstadt');
       expect(t('event/1008').beschreibung, contains('Donnerstag, 06.08.2026\nim Raum'));
     });
 

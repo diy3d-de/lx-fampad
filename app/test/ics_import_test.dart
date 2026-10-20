@@ -105,7 +105,7 @@ void main() {
       expect(spy.transaktionen, lessThan(e.termine.length), reason: 'Etappen statt einer Transaktion je Termin');
       expect((await g.db.select(g.db.terminAusnahmen).get()), isNotEmpty);
       // Aktualisieren mit geänderter Datei
-      final geaendert = icsLesen(Uint8List.fromList(utf8.encode(utf8.decode(_fixture('familywall.ics')).replaceAll('SUMMARY:Physio', 'SUMMARY:Physio neu'))));
+      final geaendert = icsLesen(Uint8List.fromList(utf8.encode(utf8.decode(_fixture('familywall.ics')).replaceAll('SUMMARY:Termin 1', 'SUMMARY:Termin 1 neu'))));
       final plan = await g.plan(geaendert);
       expect(plan.geaendert, 1);
       final b2 = await g.importer.importieren(plan, sicht: TerminSicht.family, rechte: _admin, aktualisieren: true);
@@ -276,7 +276,7 @@ void main() {
         pruefeLayout(tester, 'Start');
         await tester.tap(find.text('ICS-Datei auswählen'));
         await warte(tester, 12);
-        expect(find.text('Windparkfest'), findsOneWidget);
+        expect(find.text('Sommerfest'), findsOneWidget);
         expect(find.textContaining('Termine importieren'), findsOneWidget);
         pruefeLayout(tester, 'Vorschau');
         await tester.tap(find.textContaining('Termine importieren'));
