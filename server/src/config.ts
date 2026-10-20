@@ -53,6 +53,8 @@ export interface Config {
   port: number;
   /** Laufzeit-Rolle (nur DML). */
   databaseUrl: string | undefined;
+  /** Zeitlimit je Datenbankanweisung im Laufzeit-Pool (Millisekunden). */
+  dbStatementTimeoutMs: number;
   /** Migrationsrolle (DDL, Eigentümer); nur migrate-cli. Ohne Angabe gilt databaseUrl (Rückfall für bestehende Installationen). */
   migrationDatabaseUrl: string | undefined;
   publicUrl: string;
@@ -107,6 +109,7 @@ export interface Config {
   locMaxPerMinute: number;
   locGraceMs: number;
   locSweepMs: number;
+  locDirectoryTimeoutMs: number;
 }
 
 /** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
@@ -226,6 +229,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? '127.0.0.1',
     port,
     databaseUrl: env.DATABASE_URL || undefined,
+    dbStatementTimeoutMs: positiveInt(env, 'DB_STATEMENT_TIMEOUT_MS', 30_000),
     migrationDatabaseUrl: env.MIGRATION_DATABASE_URL || undefined,
     publicUrl,
     auth: {
@@ -291,6 +295,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locMaxPerMinute: positiveInt(env, 'LOC_MAX_PER_MINUTE', 40),
     locGraceMs: positiveInt(env, 'LOC_GRACE_MS', 90_000),
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
+    locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
   };
 }
 

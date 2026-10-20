@@ -94,6 +94,21 @@ void main() {
     expect(env.server.anfragen('GET /members').length, n1);
   });
 
+  test('Hinweis des Servers (members_changed) lädt neu, auch innerhalb der 60 Sekunden; zu frühe Hinweise werden gebündelt nachgeholt', () async {
+    neuesMitglied();
+    jetzt = jetzt.add(const Duration(seconds: 6));
+    c.read(mitgliederHinweisProvider.notifier).hinweis();
+    await bis(() => anzahl() == 3, 'Mitglied nach Hinweis');
+    final n1 = env.server.anfragen('GET /members').length;
+    // zwei Hinweise kurz nach der Ladung: eine einzige weitere Ladung nach dem Mindestabstand
+    c.read(mitgliederHinweisProvider.notifier).hinweis();
+    c.read(mitgliederHinweisProvider.notifier).hinweis();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(env.server.anfragen('GET /members').length, n1);
+    await Future<void>.delayed(const Duration(seconds: 5, milliseconds: 300));
+    expect(env.server.anfragen('GET /members').length, n1 + 1);
+  });
+
   test('Fehler beim Laden: der Zwischenstand bleibt', () async {
     neuesMitglied();
     jetzt = jetzt.add(const Duration(seconds: 61));

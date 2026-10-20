@@ -24,6 +24,7 @@ void main() {
   late List<int> revs;
   late List<bool> status;
   var tickets = 0;
+  var mitgliederHinweise = 0;
   Object? ticketFehler;
 
   SyncSocket neu({double zufall = 0.5, Duration ping = const Duration(seconds: 25), Duration pong = const Duration(seconds: 10)}) {
@@ -35,6 +36,7 @@ void main() {
       },
       beiRev: revs.add,
       beiStatus: status.add,
+      beiMitglieder: () => mitgliederHinweise++,
       oeffner: fabrik.oeffner,
       zufall: _FesterZufall(zufall),
       adresse: () => Uri.parse('wss://familie.test/ws'),
@@ -48,6 +50,7 @@ void main() {
     revs = [];
     status = [];
     tickets = 0;
+    mitgliederHinweise = 0;
     ticketFehler = null;
   });
 
@@ -70,9 +73,11 @@ void main() {
     fabrik.letzter.vomServer({'type': 'rev', 'rev': 7});
     fabrik.letzter.vomServer({'type': 'rev', 'rev': 8});
     fabrik.letzter.vomServer({'type': 'unbekannt'});
+    fabrik.letzter.vomServer({'type': 'members_changed'});
     fabrik.letzter.vomServer({'type': 'rev', 'rev': 'kaputt'});
     await tester.pump();
     expect(revs, [7, 8]);
+    expect(mitgliederHinweise, 1);
     s.stop();
     expect(s.live, isFalse);
     expect(status, [true, false]);

@@ -35,7 +35,9 @@ export function registerAvatarRoutes(app: FastifyInstance, config: Config, auth:
       if (type === 'application/json') {
         const { preset } = parse(presetBody, req.body);
         if (!isAvatarPreset(preset)) throw new AppError(400, 'invalid_request', 'Dieses Bild gibt es nicht.');
-        return { avatar: await setPreset(ctx, p.userId, preset) };
+        const avatar = await setPreset(ctx, p.userId, preset);
+        ctx.onMembersChanged(p.familyId);
+        return { avatar };
       }
       if (!(AVATAR_MIMES as readonly string[]).includes(type)) throw new AppError(415, 'unsupported_media_type', 'Erlaubt sind PNG, JPEG und WebP.');
       const body = req.body;
@@ -43,12 +45,15 @@ export function registerAvatarRoutes(app: FastifyInstance, config: Config, auth:
       // Maßgeblich sind die Magic-Bytes; der Content-Type muss dazu passen
       const info = inspectImage(body);
       if (!info || info.mime !== type) throw new AppError(400, 'invalid_image', 'Erlaubt sind PNG, JPEG und WebP bis 1024 x 1024 Pixel.');
-      return { avatar: await setPhoto(ctx, p.userId, body, info) };
+      const avatar = await setPhoto(ctx, p.userId, body, info);
+      ctx.onMembersChanged(p.familyId);
+      return { avatar };
     });
 
     scope.delete('/api/v1/me/avatar', async (req) => {
       const p = await auth.requireSession(req);
       await clearAvatar(ctx, p.userId);
+      ctx.onMembersChanged(p.familyId);
       return { ok: true };
     });
 
@@ -59,6 +64,7 @@ export function registerAvatarRoutes(app: FastifyInstance, config: Config, auth:
       const { id } = parse(idParams, req.params);
       await assertMemberOfFamily(ctx, p, id);
       await clearAvatar(ctx, id);
+      ctx.onMembersChanged(p.familyId);
       await writeAudit(ctx, ctx.db, { event: 'avatar_reset', familyId: p.familyId, actorId: p.userId, ip: meta(req).ip, detail: { target: id } });
       return { ok: true };
     });

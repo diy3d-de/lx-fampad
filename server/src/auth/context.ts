@@ -36,6 +36,8 @@ export interface AuthContext {
   /** Wird nach jedem Widerruf aufgerufen; app.ts hängt den WebSocket-Hub ein. */
   onRevoke: (event: RevokeEvent) => void;
   /** Wird nach dem Commit einer Änderung im Sync aufgerufen (neue Revision der Familie); app.ts hängt den WebSocket-Hub ein. */
+  /** Wird nach dem Commit einer Änderung der Mitglieder aufgerufen (Beitritt, Freigabe, Entfernen, Rolle, Familienrolle, Name, Farbe, Bild, Schlüssel); app.ts hängt den WebSocket-Hub ein. Nur ein Hinweis, nie Inhalt. */
+  onMembersChanged: (familyId: string) => void;
   onRev: (familyId: string, rev: number, roles?: readonly Role[], users?: readonly string[], origin?: RevOrigin) => void;
 }
 

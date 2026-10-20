@@ -35,7 +35,7 @@ aus `A-Z a-z 0-9 . _ -` bestehen. Hochladen: erst die APK, dann `latest.json` na
 
 Format: `{ "payload": "<JSON-Text>", "signature": "<Base64, 64 Byte>" }`. Signiert wird genau der Text in `payload`; er enthält `packageName`, `version`, `versionCode`,
 `minVersion`, `apk`, `sha256`, `size`, `notes`, `issuedAt` und `keyId`. Die App lehnt falsche Signaturen, fremde Paketnamen und Schlüssel-IDs, kleinere `versionCode`s als die installierte,
-zu alte (über 365 Tage) oder in der Zukunft liegende Manifeste und Größen über 200 MB ab.
+zu alte (über 365 Tage) oder in der Zukunft liegende Manifeste und Größen über 60 MB ab.
 
 ### Prüfung vor dem Signieren (CI)
 

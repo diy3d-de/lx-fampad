@@ -10,7 +10,7 @@ const config = loadConfig();
 // der Pool entsteht vor der App; Fehler gehen erst ins App-Log, sobald es existiert
 const logRef: { current?: FastifyBaseLogger } = {};
 const database = config.databaseUrl
-  ? createDb(config.databaseUrl, (err) => (logRef.current ? logRef.current.error({ err }, 'Fehler im Datenbank-Pool') : console.error('Fehler im Datenbank-Pool', serializeErr(err))))
+  ? createDb(config.databaseUrl, (err) => (logRef.current ? logRef.current.error({ err }, 'Fehler im Datenbank-Pool') : console.error('Fehler im Datenbank-Pool', serializeErr(err))), config.dbStatementTimeoutMs)
   : undefined;
 
 const app = await buildApp({

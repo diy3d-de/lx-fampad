@@ -33,6 +33,8 @@ class SyncSocket {
 
   /// Weitere Nachrichten des Servers, die der Sync nicht selbst auswertet (Standort teilen: `loc_*`); sonst null.
   final void Function(Map<String, Object?> nachricht)? beiNachricht;
+  /// Hinweis "Mitglieder geändert" (`members_changed`, ohne Inhalt): die Mitgliederliste neu laden; sonst null.
+  final void Function()? beiMitglieder;
   final SocketOeffner _oeffner;
   final Random _zufall;
   final Duration pingAbstand;
@@ -46,6 +48,7 @@ class SyncSocket {
     required this.beiRev,
     required this.beiStatus,
     this.beiNachricht,
+    this.beiMitglieder,
     SocketOeffner? oeffner,
     Random? zufall,
     Uri Function()? adresse,
@@ -189,6 +192,8 @@ class SyncSocket {
       case 'pong':
         _pongTimer?.cancel();
         _pongTimer = null;
+      case 'members_changed':
+        beiMitglieder?.call();
       case final String art when art.startsWith('loc_'):
         final h = beiNachricht;
         if (h != null) h(msg.cast<String, Object?>());
