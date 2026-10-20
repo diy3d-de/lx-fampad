@@ -2,6 +2,7 @@ package dev.lx_labs.fampad
 
 import android.os.Handler
 import android.os.Looper
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.EventChannel
 
 /**
@@ -11,6 +12,13 @@ import io.flutter.plugin.common.EventChannel
  */
 object StandortBruecke {
     private val haupt = Handler(Looper.getMainLooper())
+
+    /** Schlüssel der Engine im FlutterEngineCache (MainActivity). */
+    const val ENGINE_ID = "lx_fampad_haupt"
+
+    /** Gibt es gerade eine Activity (sichtbare Oberfläche)? */
+    @Volatile
+    var activityDa: Boolean = false
 
     /** Zuhörer auf der Dart-Seite (nur im Hauptthread lesen und schreiben). */
     var senke: EventChannel.EventSink? = null
@@ -25,6 +33,21 @@ object StandortBruecke {
 
     @Volatile
     var laeuft: Boolean = false
+
+    /**
+     * Der Dienst ist beendet. War dabei keine Oberfläche mehr da (das Teilen lief nur noch im Hintergrund), wird die Engine samt Dart-Seite und
+     * Schlüsseln im Arbeitsspeicher beendet. Kurz verzögert, damit die Dart-Seite noch ein "loc_stop" senden kann.
+     */
+    fun dienstBeendet() {
+        haupt.postDelayed({
+            if (!laeuft && !activityDa) {
+                val cache = FlutterEngineCache.getInstance()
+                val engine = cache.get(ENGINE_ID)
+                cache.remove(ENGINE_ID)
+                engine?.destroy()
+            }
+        }, 5_000L)
+    }
 
     fun ereignis(daten: Map<String, Any?>) {
         haupt.post { senke?.success(daten) }

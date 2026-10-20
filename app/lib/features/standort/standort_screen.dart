@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/database_provider.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/lists/members.dart';
 import '../../data/standort/standort_dienst.dart';
@@ -28,7 +29,7 @@ class StandortScreen extends ConsumerStatefulWidget {
   ConsumerState<StandortScreen> createState() => _StandortScreenState();
 }
 
-class _StandortScreenState extends ConsumerState<StandortScreen> {
+class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBindingObserver {
   Timer? _auffrischen;
   var _dauer = 1;
   Set<String>? _gewaehlt;
@@ -37,6 +38,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Alter und Restzeit ("vor 3 Min", "noch 40 Min") aktuell halten
     _auffrischen = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) setState(() {});
@@ -45,8 +47,46 @@ class _StandortScreenState extends ConsumerState<StandortScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _auffrischen?.cancel();
     super.dispose();
+  }
+
+  /// Zurück aus den Android-Einstellungen: Stand der Akkuoptimierung neu lesen.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed) ref.invalidate(akkuUneingeschraenktProvider);
+  }
+
+  /// Beim ersten Teilen mit eingeschränktem Akku (Samsung: "Optimiert") einmal ausdrücklich fragen; danach genügt der Hinweis auf der Seite.
+  /// Liefert false, wenn die Person abbricht.
+  Future<bool> _akkuHinweis() async {
+    final port = ref.read(standortPortProvider);
+    final db = ref.read(appDatabaseProvider);
+    if (await port.akkuUneingeschraenkt() != false) return true;
+    if (await db.metaLesen(kAkkuHinweisGezeigt) != null) return true;
+    await db.metaSchreiben(kAkkuHinweisGezeigt, '1');
+    if (!mounted) return false;
+    final antwort = await showDialog<String>(
+      context: context,
+      builder: (c) => AlertDialog(
+        backgroundColor: kSurface,
+        title: const Text('Akku: Teilen im Hintergrund'),
+        content: const Text(
+          'Android bremst Apps im Hintergrund, vor allem bei gesperrtem Bildschirm (bei Samsung: Akku "Optimiert"). Dann bricht das Teilen ab. '
+          'Erlaube $kAppName, ohne Einschränkung zu laufen (Akku: "Nicht eingeschränkt").',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(c).pop('nein'), child: const Text('Trotzdem teilen')),
+          FilledButton(onPressed: () => Navigator.of(c).pop('ja'), child: const Text('Erlauben')),
+        ],
+      ),
+    );
+    if (antwort == 'ja') {
+      await port.akkuAnfragen();
+      ref.invalidate(akkuUneingeschraenktProvider);
+    }
+    return antwort != null;
   }
 
   DateTime get _jetzt => ref.read(standortUhrProvider)();
@@ -56,6 +96,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> {
     final waehlen = _gewaehlt ?? const <String>{};
     setState(() => _beschaeftigt = true);
     try {
+      if (!await _akkuHinweis()) return;
       final ok = await ref.read(standortProvider.notifier).teilen(dauer: dauer, empfaenger: waehlen);
       if (!ok && mounted) {
         final m = ref.read(standortProvider).meldung;
@@ -456,36 +497,60 @@ class _Zeile2 extends StatelessWidget {
   );
 }
 
-/// Hinweis zum Akkuschutz einiger Hersteller (Samsung u. a.): Er kann Apps im Hintergrund beenden und damit das Teilen bei gesperrtem Bildschirm.
+/// Merkt, dass der Hinweis zum Akkuschutz schon einmal gezeigt wurde (sync_meta, nur dieses Gerät).
+const kAkkuHinweisGezeigt = 'standort.akkuHinweis';
+
+/// Akkuschutz einiger Hersteller (Samsung u. a.): Er kann Apps im Hintergrund bremsen und damit das Teilen bei gesperrtem Bildschirm. Zeigt den Stand
+/// (aus Sicht von Android) und führt zum Systemdialog bzw. zu den Einstellungen.
 class _AkkuHinweis extends ConsumerWidget {
   const _AkkuHinweis();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => LxCard(
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const MonoLabel('// akku'),
-        const SizedBox(height: 8),
-        const Text(
-          'Bei manchen Handys (zum Beispiel Samsung) beendet der Akkuschutz Apps im Hintergrund. Dann stoppt das Teilen, sobald der Bildschirm aus ist. '
-          'Nimm $kAppName in den Akku-Einstellungen aus der Optimierung heraus (bei Samsung: Akku, Hintergrundnutzungsbegrenzungen, Nie schlafende Apps).',
-          style: TextStyle(fontSize: 13, color: kTextMuted, height: 1.4),
-        ),
-        const SizedBox(height: 4),
-        LinkKnopf(
-          'Akku-Einstellungen öffnen',
-          icon: Icons.battery_saver_outlined,
-          onPressed: () async {
-            final ok = await ref.read(standortPortProvider).akkuEinstellungenOeffnen();
-            if (!ok && context.mounted) {
-              ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(const SnackBar(content: Text('Die Einstellungen ließen sich nicht öffnen. Öffne die Android-Einstellungen, dort Apps und Akku.')));
-            }
-          },
-        ),
-      ],
-    ),
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stand = ref.watch(akkuUneingeschraenktProvider).value;
+    return LxCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const MonoLabel('// akku'),
+          const SizedBox(height: 8),
+          if (stand == true)
+            const Text('Akku: nicht eingeschränkt. Das Teilen läuft auch bei gesperrtem Bildschirm weiter.', style: TextStyle(fontSize: 13, color: kTerminal, height: 1.4))
+          else ...[
+            if (stand == false) ...[
+              const MeldungsBox('Der Akku ist für diese App eingeschränkt ("Optimiert"). Das Teilen kann im Hintergrund oder bei gesperrtem Bildschirm abbrechen.'),
+              const SizedBox(height: 8),
+            ],
+            const Text(
+              'Bei manchen Handys (zum Beispiel Samsung) beendet der Akkuschutz Apps im Hintergrund. Stelle $kAppName auf "Nicht eingeschränkt" '
+              '(bei Samsung: Einstellungen, Akku, Hintergrundnutzungsbegrenzungen, Nie schlafende Apps; oder App-Info, Akku, Nicht eingeschränkt).',
+              style: TextStyle(fontSize: 13, color: kTextMuted, height: 1.4),
+            ),
+            const SizedBox(height: 4),
+            if (stand == false)
+              ZweitKnopf(
+                text: 'Ohne Einschränkung erlauben',
+                icon: Icons.battery_charging_full_outlined,
+                onPressed: () async {
+                  await ref.read(standortPortProvider).akkuAnfragen();
+                  ref.invalidate(akkuUneingeschraenktProvider);
+                },
+              ),
+            LinkKnopf(
+              'Akku-Einstellungen öffnen',
+              icon: Icons.battery_saver_outlined,
+              onPressed: () async {
+                final ok = await ref.read(standortPortProvider).akkuEinstellungenOeffnen();
+                if (!ok && context.mounted) {
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(const SnackBar(content: Text('Die Einstellungen ließen sich nicht öffnen. Öffne die Android-Einstellungen, dort Apps und Akku.')));
+                }
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }

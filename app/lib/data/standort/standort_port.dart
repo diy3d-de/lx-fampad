@@ -92,6 +92,12 @@ abstract class StandortPort {
 
   Future<bool> einstellungenOeffnen();
   Future<bool> akkuEinstellungenOeffnen();
+
+  /// Ist die App von der Akkuoptimierung ausgenommen ("Nicht eingeschränkt")? null: unbekannt oder nicht Android.
+  Future<bool?> akkuUneingeschraenkt();
+
+  /// Öffnet den Systemdialog, die App von der Akkuoptimierung auszunehmen (die Person bestätigt selbst), sonst die Einstellungen. false: ließ sich nicht öffnen.
+  Future<bool> akkuAnfragen();
 }
 
 /// Ohne Wirkung: Web und alle Plattformen ohne Standort-Dienst.
@@ -118,6 +124,10 @@ class KeinStandortPort implements StandortPort {
   Future<bool> einstellungenOeffnen() async => false;
   @override
   Future<bool> akkuEinstellungenOeffnen() async => false;
+  @override
+  Future<bool?> akkuUneingeschraenkt() async => null;
+  @override
+  Future<bool> akkuAnfragen() async => false;
 }
 
 /// Android: spricht den Kotlin-Dienst an. Fehler der Kanäle werden abgefangen und als "nicht gelungen" gemeldet.
@@ -217,6 +227,12 @@ class AndroidStandortPort implements StandortPort {
 
   @override
   Future<bool> akkuEinstellungenOeffnen() async => await _sicher(() => _methoden.invokeMethod<bool>('akkuEinstellungenOeffnen')) ?? false;
+
+  @override
+  Future<bool?> akkuUneingeschraenkt() => _sicher(() => _methoden.invokeMethod<bool>('akkuUneingeschraenkt'));
+
+  @override
+  Future<bool> akkuAnfragen() async => await _sicher(() => _methoden.invokeMethod<bool>('akkuAnfragen')) ?? false;
 }
 
 /// Der Anschluss ans Gerät; in Tests wird er überschrieben.

@@ -308,13 +308,14 @@ class StandortService : Service() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // App aus der Liste der letzten Apps gewischt: die Dart-Seite ist weg, es gibt nichts mehr zu teilen
-        beenden()
+        // App aus der Liste der letzten Apps gewischt: Die Engine mit der Dart-Seite bleibt am Leben (MainActivity), das Teilen läuft mit der sichtbaren
+        // Benachrichtigung weiter und lässt sich dort beenden. Ohne die Dart-Seite (Prozess beendet) endet der Dienst über das fehlende Lebenszeichen.
         super.onTaskRemoved(rootIntent)
     }
 
     override fun onDestroy() {
         aufraeumen()
+        StandortBruecke.dienstBeendet()
         super.onDestroy()
     }
 }
