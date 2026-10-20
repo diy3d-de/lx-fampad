@@ -22,3 +22,9 @@ Uint8List gerahmt(List<int> feld) => verketten([u32Bytes(feld.length), feld]);
 
 /// Signatureingabe = Präfix, dann jedes Feld längengerahmt.
 Uint8List signaturEingabe(String domaene, List<List<int>> felder) => verketten([utf8Bytes(domaene), for (final f in felder) gerahmt(f)]);
+
+/// Signierte Schlüssel-Freigabe beim Standort teilen (standort_krypto.dart).
+const String kDomaeneStandortFreigabe = 'lx-familyhub|loc-share|v1';
+
+/// Signierte Standort-Pakete (standort_krypto.dart).
+const String kDomaeneStandortPaket = 'lx-familyhub|loc-pos|v1';

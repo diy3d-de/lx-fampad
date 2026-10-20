@@ -10,6 +10,8 @@ import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/providers.dart';
+import 'package:lx_fampad/data/standort/standort_dienst.dart' show standortPortProvider;
+import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
 import 'package:lx_fampad/data/sync_state.dart';
 
 import 'fake_server.dart';
@@ -98,6 +100,9 @@ class TestUmgebung {
   /// Zusätzliche Überschreibungen einzelner Tests (z. B. ein Stream, der einen Lesefehler meldet).
   final List<Override> extraOverrides = [];
 
+  /// Gerätedienst fürs Standort teilen (Standard: keiner, wie im Browser).
+  StandortPort standortPort = const KeinStandortPort();
+
   List<Override> get overrides => [
     httpClientProvider.overrideWithValue(server.client),
     tokenStoreProvider.overrideWithValue(store),
@@ -116,6 +121,8 @@ class TestUmgebung {
     appDatabaseProvider.overrideWithValue(db),
     syncSocketOeffnerProvider.overrideWithValue(sockets.oeffner),
     syncZeitenProvider.overrideWithValue(zeiten),
+    // Standort teilen: kein Gerätedienst im Test (der Kanal zur Android-Seite fehlt dort)
+    standortPortProvider.overrideWithValue(standortPort),
     ...extraOverrides,
   ];
 

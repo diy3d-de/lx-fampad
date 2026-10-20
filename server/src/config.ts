@@ -98,6 +98,13 @@ export interface Config {
   wsPingIntervalMs: number;
   /** Frist, in der sich ein WebSocket nach dem Verbinden anmelden muss. */
   wsAuthTimeoutMs: number;
+  /** Standort teilen (nur Prozessspeicher): längste Dauer einer Freigabe, Freigaben je Familie, Mindestabstand der Positionen je Freigabe,
+   *  Schonfrist nach Verbindungsverlust des Senders, Abstand der Prüfung (Ablauf, Mitgliedschaft). */
+  locMaxDurationMs: number;
+  locMaxSharesPerFamily: number;
+  locMinIntervalMs: number;
+  locGraceMs: number;
+  locSweepMs: number;
 }
 
 /** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
@@ -276,6 +283,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     wsMaxPerIp: positiveInt(env, 'WS_MAX_PER_IP', 10),
     wsPingIntervalMs: positiveInt(env, 'WS_PING_INTERVAL_MS', 30_000),
     wsAuthTimeoutMs: positiveInt(env, 'WS_AUTH_TIMEOUT_MS', 5000),
+    locMaxDurationMs: positiveInt(env, 'LOC_MAX_DURATION_MS', 12 * 60 * 60 * 1000),
+    locMaxSharesPerFamily: positiveInt(env, 'LOC_MAX_SHARES_PER_FAMILY', 50),
+    locMinIntervalMs: positiveInt(env, 'LOC_MIN_INTERVAL_MS', 1000),
+    locGraceMs: positiveInt(env, 'LOC_GRACE_MS', 90_000),
+    locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
   };
 }
 

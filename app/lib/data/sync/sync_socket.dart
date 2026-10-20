@@ -30,6 +30,9 @@ class SyncSocket {
   final Future<String> Function() ticket;
   final void Function(int rev) beiRev;
   final void Function(bool live) beiStatus;
+
+  /// Weitere Nachrichten des Servers, die der Sync nicht selbst auswertet (Standort teilen: `loc_*`); sonst null.
+  final void Function(Map<String, Object?> nachricht)? beiNachricht;
   final SocketOeffner _oeffner;
   final Random _zufall;
   final Duration pingAbstand;
@@ -42,6 +45,7 @@ class SyncSocket {
     required this.ticket,
     required this.beiRev,
     required this.beiStatus,
+    this.beiNachricht,
     SocketOeffner? oeffner,
     Random? zufall,
     Uri Function()? adresse,
@@ -185,6 +189,21 @@ class SyncSocket {
       case 'pong':
         _pongTimer?.cancel();
         _pongTimer = null;
+      case final String art when art.startsWith('loc_'):
+        final h = beiNachricht;
+        if (h != null) h(msg.cast<String, Object?>());
+    }
+  }
+
+  /// Sendet eine Nachricht, wenn die Verbindung angemeldet ist (false: nicht verbunden, nichts wird gepuffert).
+  bool senden(Map<String, Object?> nachricht) {
+    final k = _kanal;
+    if (!_live || k == null) return false;
+    try {
+      k.sink.add(jsonEncode(nachricht));
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -36,6 +36,7 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private var systemChannel: MethodChannel? = null
     private var startLink: String? = null
+    private var standort: StandortKanal? = null
 
     companion object {
         /** Zuletzt von Dart gewünschter Zustand von FLAG_SECURE; als Klassenvariable, damit eine neu erstellte Activity ihn kennt. */
@@ -72,6 +73,17 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         val link = linkAus(intent)
         if (link != null) systemChannel?.invokeMethod("link", link)
+    }
+
+    override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
+        standort?.abbauen()
+        standort = null
+        super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        standort?.beiBerechtigung(requestCode)
     }
 
     /** Setzt FLAG_SECURE entsprechend dem zuletzt von Dart gewünschten Zustand. */
@@ -165,6 +177,8 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // Standort teilen (Vordergrunddienst, Berechtigungen, Ereignisse): StandortKanal.kt
+        standort = StandortKanal(this).also { it.einrichten(flutterEngine) }
         systemChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.fampad/system").also { kanal ->
             kanal.setMethodCallHandler { call, result ->
                 when (call.method) {

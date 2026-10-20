@@ -24,6 +24,8 @@ import '../lists/list_dialogs.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../shell/shell_tab.dart';
+import '../standort/standort_start_karte.dart';
+import '../../data/standort/standort_dienst.dart';
 import '../update/update_banner.dart';
 import 'home_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -176,6 +178,7 @@ class _Raster extends StatelessWidget {
             _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
             _AufgabenKarte(),
             _FamilieKarte(),
+            _StandortKarte(),
           ],
         );
       },
@@ -317,6 +320,23 @@ class _ChatKarte extends ConsumerWidget {
                   ),
               ],
             ),
+    );
+  }
+}
+
+/// Standort teilen: ein Satz zum Stand, Tippen öffnet die Standort-Seite.
+class _StandortKarte extends ConsumerWidget {
+  const _StandortKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(standortProvider);
+    final text = standortKurzstatus(st, st.geteilt.isEmpty ? const <String, UserDto>{} : ref.watch(standortMitgliederProvider));
+    return _Karte(
+      label: '// standort',
+      semantik: 'Standort. $text. Öffnen',
+      onTap: () => standortOeffnen(context),
+      child: EmptyState(icon: st.teilt ? Icons.my_location : Icons.location_on_outlined, title: text, hint: st.teilt ? 'Tippen zum Beenden oder Verlängern.' : 'Tippen, um deinen Standort zu teilen.'),
     );
   }
 }
