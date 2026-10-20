@@ -1,5 +1,5 @@
 // Standort teilen: eigenes Teilen starten und beenden, Liste der Personen, die gerade mit mir teilen (Name, Genauigkeit, Alter der Position,
-// "zuletzt gesehen vor …"). Alles flüchtig und Ende-zu-Ende verschlüsselt (Erklärung im Text, Verfahren: docs/PROJEKTBESCHREIBUNG.md, 6e).
+// "zuletzt gesehen vor …"). Alles flüchtig und Ende-zu-Ende verschlüsselt (Erklärung im Text, Verfahren: docs/PROJEKTBESCHREIBUNG.md, 6f).
 // Eine Karte kommt später über [standortKartenBuilderProvider] (standort_karte.dart) oberhalb der Liste dazu.
 import 'dart:async';
 

@@ -260,15 +260,74 @@ class Lesestaende extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps])
+/// Aufgaben (Phase 1c-4a). Fälligkeit: ein Tag (`faelligDate`, Text `YYYY-MM-DD`) ODER ein Zeitpunkt (`faelligUtc` + `tzid`), beides leer = ohne.
+@DataClassName('Aufgabe')
+class Aufgaben extends Table {
+  @override
+  String get tableName => 'aufgaben';
+
+  TextColumn get id => text()();
+  TextColumn get titel => text()();
+  TextColumn get beschreibung => text().withDefault(const Constant(''))();
+  TextColumn get faelligDate => text().nullable()();
+  DateTimeColumn get faelligUtc => dateTime().nullable()();
+  TextColumn get tzid => text().nullable()();
+
+  /// 0 keine, 1 niedrig, 2 mittel, 3 hoch
+  IntColumn get prioritaet => integer().withDefault(const Constant(0))();
+  TextColumn get assigneeId => text().nullable()();
+  DateTimeColumn get erledigtAt => dateTime().nullable()();
+  TextColumn get erledigtVon => text().nullable()();
+
+  /// daily | weekly | monthly | null
+  TextColumn get wiederholung => text().nullable()();
+
+  /// Wunschtag des Monats (1 bis 31) bei monatlicher Wiederholung, bleibt in der Kette erhalten
+  IntColumn get wiederholungTag => integer().nullable()();
+
+  /// ID der Folgeaufgabe, die beim Erledigen entstand (abgeleitet oder, bei belegter ID, zufällig)
+  TextColumn get folgeId => text().nullable()();
+  IntColumn get erinnerungMin => integer().nullable()();
+
+  /// parents | family (wie bei Listen)
+  TextColumn get audience => text().withDefault(const Constant('family'))();
+  TextColumn get ownerId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Unteraufgaben (Checkliste) einer Aufgabe; `position` wie bei Listeneinträgen.
+@DataClassName('AufgabePunkt')
+@TableIndex(name: 'aufgabe_punkte_aufgabe_idx', columns: {#aufgabeId})
+class AufgabePunkte extends Table {
+  @override
+  String get tableName => 'aufgabe_punkte';
+
+  TextColumn get id => text()();
+  TextColumn get aufgabeId => text()();
+  TextColumn get inhalt => text().named('text')();
+  DateTimeColumn get doneAt => dateTime().nullable()();
+  RealColumn get position => real().withDefault(const Constant(0))();
+  DateTimeColumn get createdAt => dateTime()();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   /// Version 2 (Phase 1c): Fachtabellen für Listen, Ausgang mit op_id und sent_at. Version 3 (Phase 1c-2a): Termine, Teilnehmer, Ausnahmen.
   /// Version 4 (Phase 1c-3a): Chat (Konversationen, Nachrichten, Lesestand). Version 5: Chat-Zeiten in Millisekunden.
   /// Version 6 (E2EE Phase 2): `enc_version` der Konversationen, Epochen und Schlüssel-Wraps.
+  /// Version 7 (Phase 1c-4a): Aufgaben und Unteraufgaben.
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -311,6 +370,11 @@ class AppDatabase extends _$AppDatabase {
           await m.createIndex(konversationEpochenIdx);
           await m.createIndex(epocheWrapsIdx);
         }
+        if (from < 7) {
+          await m.createTable(aufgaben);
+          await m.createTable(aufgabePunkte);
+          await m.createIndex(aufgabePunkteAufgabeIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -323,6 +387,10 @@ class AppDatabase extends _$AppDatabase {
             await customStatement('DELETE FROM $tabelle WHERE rev > 0');
           }
         }
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from >= 6 && from < 7) {
+        // Version 7 legt nur die Aufgaben-Tabellen an; ohne Reset kämen schon vorhandene Aufgaben nie an.
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
     },

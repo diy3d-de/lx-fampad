@@ -13,6 +13,9 @@ final shellTabProvider = NotifierProvider<ShellTab, int>(ShellTab.new);
 /// Index des Listen-Tabs in [kTabs].
 const kListenTab = 4;
 
+/// Index des Aufgaben-Tabs in [kTabs].
+const kAufgabenTab = 5;
+
 /// Index des Kalender-Tabs in [kTabs].
 const kKalenderTab = 1;
 

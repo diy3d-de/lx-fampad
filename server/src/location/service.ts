@@ -1,4 +1,4 @@
-// Standort teilen: flüchtiger, vom Server nur weitergereichter Kanal (siehe docs/API.md, Abschnitt "Standort", und docs/PROJEKTBESCHREIBUNG.md, 6e).
+// Standort teilen: flüchtiger, vom Server nur weitergereichter Kanal (siehe docs/API.md, Abschnitt "Standort", und docs/PROJEKTBESCHREIBUNG.md, 6f).
 //
 // Grundsätze:
 //  - **Nur Prozessspeicher.** Keine Datenbank, keine Datei, kein Backup, keine Historie; ein Neustart des Dienstes beendet alle Freigaben.

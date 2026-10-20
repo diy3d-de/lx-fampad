@@ -138,6 +138,7 @@ class FakeSyncServer {
     'list_item': ('list', 'listId'),
     'termin_teilnehmer': ('termin', 'terminId'),
     'termin_ausnahmen': ('termin', 'terminId'),
+    'aufgabe_punkt': ('aufgabe', 'aufgabeId'),
     'nachricht': ('konversation', 'konversationId'),
     'lesestand': ('konversation', 'konversationId'),
   };
@@ -154,6 +155,21 @@ class FakeSyncServer {
     'rrule': null,
     'erinnerungMin': null,
     'icalUid': null,
+    'audience': 'family',
+    'ownerId': owner,
+  };
+
+  static Map<String, dynamic> _aufgabeStandard(String owner) => {
+    'beschreibung': '',
+    'faelligDate': null,
+    'faelligUtc': null,
+    'tzid': null,
+    'prioritaet': 0,
+    'assigneeId': null,
+    'erledigtAt': null,
+    'erledigtVon': null,
+    'wiederholung': null,
+    'erinnerungMin': null,
     'audience': 'family',
     'ownerId': owner,
   };
@@ -192,6 +208,8 @@ class FakeSyncServer {
         if (o['entity'] == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdAdmin},
         if (o['entity'] == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
         if (o['entity'] == 'termin') ..._terminStandard(fixIdAdmin),
+        if (o['entity'] == 'aufgabe') ..._aufgabeStandard(fixIdAdmin),
+        if (o['entity'] == 'aufgabe_punkt') ...{'doneAt': null, 'position': 0},
         ..._chatStandard(o['entity'] as String, fixIdAdmin),
         ...fields,
       }, ++rev);
@@ -257,6 +275,8 @@ class FakeSyncServer {
         if (entity == 'list') ...{'kind': 'custom', 'audience': 'family', 'ownerId': fixIdKind},
         if (entity == 'list_item') ...{'assigneeId': null, 'doneAt': null, 'position': 0},
         if (entity == 'termin') ..._terminStandard(fixIdKind),
+        if (entity == 'aufgabe') ..._aufgabeStandard(fixIdKind),
+        if (entity == 'aufgabe_punkt') ...{'doneAt': null, 'position': 0},
         ..._chatStandard(entity, fixIdKind),
         ...fields,
       }, ++rev);

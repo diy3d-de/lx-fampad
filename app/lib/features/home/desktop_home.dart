@@ -1,5 +1,5 @@
 // Startseite im Desktop-Layout: Kopfzeile (Datum, Begrüßung, Suche, Benachrichtigungen, "+ Neu") und Karten-Raster.
-// Echte Daten gibt es für Termine, Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
+// Echte Daten gibt es für Termine, Aufgaben, Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -18,8 +18,11 @@ import '../../ui/widgets.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
+import '../../data/tasks/aufgabe_logik.dart';
 import '../chat/chat_anzeige.dart';
 import '../lists/list_dialogs.dart';
+import '../../data/tasks/aufgabe_repository.dart';
+import '../tasks/aufgaben_anzeige.dart';
 import '../shell/shell_tab.dart';
 import '../standort/standort_start_karte.dart';
 import '../../data/standort/standort_dienst.dart';
@@ -173,7 +176,7 @@ class _Raster extends StatelessWidget {
             _ChatKarte(),
             _EinkaufKarte(),
             _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
-            _BaldKarte(label: '// aufgaben', icon: Icons.task_alt_outlined, titel: 'Noch keine Aufgaben', hinweis: 'Aufgaben kommen in einer späteren Phase.'),
+            _AufgabenKarte(),
             _FamilieKarte(),
             _StandortKarte(),
           ],
@@ -413,6 +416,48 @@ class _EinkaufKarte extends ConsumerWidget {
                       ],
                     ),
                   ),
+                if (offen.length > 6) Text('+ ${offen.length - 6} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              ],
+            ),
+    );
+  }
+}
+
+/// Aufgaben mit echten Daten: offene Aufgaben nach Fälligkeit, Überfälliges rot (lokale Datenbank, auch offline). Tippen öffnet den Aufgaben-Tab.
+class _AufgabenKarte extends ConsumerWidget {
+  const _AufgabenKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wert = ref.watch(aufgabenProvider);
+    final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+    final fehler = wert.hasError && !wert.hasValue;
+    final laedt = !wert.hasValue && !wert.hasError;
+    final alle = wert.value ?? const <Aufgabe>[];
+    final offen = startseitenAufgaben(alle, jetzt);
+    final mitglieder = mitgliederFuerAufgaben(ref, offen);
+    final ueberfaellig = offen.where((a) => istUeberfaellig(a, jetzt)).length;
+    return _Karte(
+      label: '// aufgaben',
+      zaehler: fehler || laedt || offen.isEmpty ? null : (ueberfaellig > 0 ? '${offen.length} offen · $ueberfaellig überfällig' : '${offen.length} offen'),
+      semantik: fehler
+          ? 'Aufgaben, nicht geladen. Öffnen'
+          : laedt
+          ? 'Aufgaben, lädt. Öffnen'
+          : offen.isEmpty
+          ? 'Aufgaben: nichts offen. Öffnen'
+          : 'Aufgaben, ${offen.length} offen, davon $ueberfaellig überfällig. Öffnen',
+      onTap: () => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab),
+      child: fehler
+          ? _fehler('Die Aufgaben konnten nicht geladen werden.')
+          : laedt
+          ? _laedt()
+          : offen.isEmpty
+          ? EmptyState(icon: Icons.task_alt_outlined, title: alle.isEmpty ? 'Noch keine Aufgaben' : 'Alles erledigt', hint: alle.isEmpty ? 'Lege im Bereich Aufgaben die erste an.' : 'Es ist nichts mehr offen.')
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final a in offen.take(6)) AufgabeKurzzeile(aufgabe: a, mitglieder: mitglieder, jetzt: jetzt),
                 if (offen.length > 6) Text('+ ${offen.length - 6} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
               ],
             ),

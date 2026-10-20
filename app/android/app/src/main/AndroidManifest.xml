@@ -25,7 +25,7 @@
     <!-- Push (UnifiedPush, ntfy-App als Verteiler): unifiedpush_android bringt über die Bibliothek org.unifiedpush.android:connector selbst die
          Berechtigung WAKE_LOCK, die <queries> für Verteiler, den Empfänger MessagingReceiverImpl und den Dienst UnifiedPushService ins Manifest. Hier ist
          nichts einzutragen; nach dem Debug-Build den gemergten Manifest prüfen (docs/VERSIONEN.md, Zeile unifiedpush). -->
-    <!-- Standort teilen (flüchtig, Ende-zu-Ende verschlüsselt, nur auf Tipp der Person, siehe docs/PROJEKTBESCHREIBUNG.md, 6e): Standort nur im Vordergrund
+    <!-- Standort teilen (flüchtig, Ende-zu-Ende verschlüsselt, nur auf Tipp der Person, siehe docs/PROJEKTBESCHREIBUNG.md, 6f): Standort nur im Vordergrund
          (FINE und COARSE; ACCESS_BACKGROUND_LOCATION gibt es bewusst nicht), dazu ein Vordergrunddienst vom Typ "location" mit ständiger Benachrichtigung und
          eine Wecksperre, die der Dienst nur bis zur Ablaufzeit hält. Der Dienst wird nur aus der sichtbaren App gestartet. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
