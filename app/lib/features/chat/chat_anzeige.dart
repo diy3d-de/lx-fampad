@@ -78,6 +78,11 @@ String uhrzeit(DateTime t) => DateFormat('HH:mm', 'de_DE').format(t);
 
 /// Text der Lesebestätigung (Tooltip und Screenreader): "wird gesendet", "gesendet", "gelesen" bzw. in Gruppen, wer gelesen hat.
 String leseBeschreibung(LeseInfo i, String Function(String id) name) {
+  final basis = _leseBasis(i, name);
+  return i.geschaetzt && i.zustand != LeseZustand.wirdGesendet ? '$basis (Empfänger nur geschätzt)' : basis;
+}
+
+String _leseBasis(LeseInfo i, String Function(String id) name) {
   switch (i.zustand) {
     case LeseZustand.wirdGesendet:
       return 'wird gesendet';

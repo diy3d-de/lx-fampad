@@ -32,6 +32,26 @@ void main() {
     expect(leseInfo(nachricht: _n(t: t), empfaenger: {'b', 'c'}, gelesenBis: {'b': t, 'x': t}).zustand, LeseZustand.gesendet);
   });
 
+  test('Empfänger zum Sendezeitpunkt: ein später hinzugekommenes Mitglied nimmt keine Haken zurück', () {
+    final epochen = {1: {'ich', 'b', 'c'}, 2: {'ich', 'b', 'c', 'd'}};
+    final e1 = empfaengerZurNachricht(epoche: 1, epochen: epochen, ich: 'ich', aktuell: {'b', 'c', 'd'}, gelesenBis: {'b': t, 'c': t});
+    expect(e1.empfaenger, {'b', 'c'});
+    expect(e1.geschaetzt, isFalse);
+    expect(leseInfo(nachricht: _n(t: t), empfaenger: e1.empfaenger, gelesenBis: {'b': t, 'c': t}).zustand, LeseZustand.gelesen);
+    // Nachricht der Epoche 2: Dora gehört dazu und hat noch nicht gelesen
+    final e2 = empfaengerZurNachricht(epoche: 2, epochen: epochen, ich: 'ich', aktuell: {'b', 'c', 'd'}, gelesenBis: {'b': t, 'c': t});
+    expect(leseInfo(nachricht: _n(t: t), empfaenger: e2.empfaenger, gelesenBis: {'b': t, 'c': t}).zustand, LeseZustand.gesendet);
+  });
+
+  test('Epoche nicht ableitbar: nur Teilnehmer mit Lesestand, als geschätzt gekennzeichnet', () {
+    final r = empfaengerZurNachricht(epoche: null, epochen: const {}, ich: 'ich', aktuell: {'b', 'c', 'd'}, gelesenBis: {'b': t, 'c': t});
+    expect(r.empfaenger, {'b', 'c'});
+    expect(r.geschaetzt, isTrue);
+    final unbekannt = empfaengerZurNachricht(epoche: 7, epochen: {1: {'ich', 'b'}}, ich: 'ich', aktuell: {'b'}, gelesenBis: const {});
+    expect(unbekannt.geschaetzt, isTrue);
+    expect(unbekannt.empfaenger, isEmpty);
+  });
+
   test('ohne Empfänger (allein im Chat): bleibt bei gesendet', () {
     expect(leseInfo(nachricht: _n(t: t), empfaenger: const {}, gelesenBis: const {}).zustand, LeseZustand.gesendet);
   });

@@ -109,7 +109,7 @@ void main() {
     await nachricht('eigen', 'dm', _ich, 3);
     await nachricht('neu', 'dm', _ben, 9);
     await benachrichtiger().neueEreignisse(9, vorher: 8);
-    expect(anzeige.gezeigt.single.titel, 'Neue Nachricht', reason: 'Titel zählt nur, was mit diesem Abgleich kam');
+    expect(anzeige.gezeigt.single.titel, '3 neue Nachrichten', reason: 'Titel und Zahl am Symbol kommen aus derselben Zahl');
     expect(anzeige.gezeigt.single.anzahl, 3);
     // eigener Lesestand bis nach den älteren Nachrichten (alle um 09:00): nur noch die später entstandene zählt
     anzeige.gezeigt.clear();
@@ -119,12 +119,30 @@ void main() {
     expect(anzeige.gezeigt.single.anzahl, 1);
   });
 
+  test('erster Abgleich (vorher 0: Neuinstallation oder zurückgesetzter Sync-Fortschritt) meldet den alten Verlauf nicht', () async {
+    await konv('fam', 'family');
+    for (var i = 0; i < 5; i++) {
+      await nachricht('n$i', 'fam', _ben, 3 + i);
+    }
+    await benachrichtiger().neueEreignisse(10, vorher: 0);
+    expect(anzeige.gezeigt, isEmpty);
+    expect(anzeige.initialisiert, 0);
+  });
+
+  test('schon gelesene Nachrichten (Lesestand auf einem anderen Gerät) melden nichts', () async {
+    await konv('fam', 'family');
+    await nachricht('n1', 'fam', _ben, 5);
+    await db.into(db.lesestaende).insert(LesestaendeCompanion.insert(id: 'ls', konversationId: 'fam', userId: _ich, gelesenBis: DateTime.utc(2026, 10, 19, 9)));
+    await benachrichtiger().neueEreignisse(5, vorher: 4);
+    expect(anzeige.gezeigt, isEmpty);
+  });
+
   test('Gruppe ohne Namen und unbekannte Person: neutrale Bezeichnung statt Inhalt', () async {
     await konv('g', 'group', teilnehmer: [_ich, _ben, _cora]);
     await konv('dm2', 'direct', teilnehmer: [_ich, 'unbekannt-0000']);
     await nachricht('a', 'g', _ben, 5);
     await nachricht('b', 'dm2', 'unbekannt-0000', 6);
-    await benachrichtiger().neueEreignisse(6, vorher: 0);
+    await benachrichtiger().neueEreignisse(6, vorher: 1);
     expect(anzeige.gezeigt.map((z) => z.text).toSet(), {'in einer Gruppe', 'in einem Direktchat'});
   });
 

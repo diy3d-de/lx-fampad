@@ -551,6 +551,27 @@ void main() {
       expect(find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').contains('1 von 2')), findsOneWidget);
     });
 
+    testWidgets('Familienchat: ein später hinzugekommenes Mitglied ohne Lesestand setzt gelesene Nachrichten nicht auf einen Haken zurück', (tester) async {
+      await start(tester, vorher: (env, a) async {
+        await grundstand(env, a);
+        env.server.json('GET /members', {
+          'members': [
+            userJson(),
+            userJson(id: fixIdKind, role: 'child', name: 'Ben', email: 'ben@beispiel.de'),
+            userJson(id: _cora, role: 'parent', name: 'Cora Berger', email: 'cora@beispiel.de'),
+            userJson(id: 'dddddddd-0000-4000-8000-0000000000d1', role: 'child', name: 'Dora Neu', email: 'dora@beispiel.de'),
+          ],
+        });
+        await a.nachricht(_famChat, 'a0000000-0000-4000-8000-000000000008', a.anna, 'Alle gelesen', vor(2));
+        for (final p in [fixIdKind, _cora]) {
+          env.sync.andereAendert('lesestand', lesestandId(_famChat, p), {'konversationId': _famChat, 'userId': p, 'gelesenBis': vor(1)});
+        }
+      });
+      await tippeText(tester, 'Du: Alle gelesen');
+      expect(find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('gelesen von allen')), findsOneWidget);
+      expect(find.byIcon(Icons.done_all), findsOneWidget);
+    });
+
     testWidgets('Direktchat und Chatliste zeigen das Benutzerbild des Partners (Platzhalter), nicht nur Initialen', (tester) async {
       await start(tester, vorher: (env, a) async {
         await grundstand(env, a);

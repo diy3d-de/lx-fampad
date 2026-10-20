@@ -77,8 +77,11 @@ final mitgliederAktualisierungProvider = Provider<void>((ref) {
     if (zuletzt != null && jetzt.difference(zuletzt!) < kMitgliederMinAbstand) return;
     zuletzt = jetzt;
     // Fotos, die wegen eines Verbindungsfehlers beim älteren Stand geblieben sind, werden erneut versucht; Fotos im Speicher bleiben (die Version steht in /members)
-    ref.read(avatarSpeicherProvider).fehlversuche.clear();
-    ref.invalidate(avatarFotoProvider);
+    final speicher = ref.read(avatarSpeicherProvider);
+    if (speicher.fehlversuche.isNotEmpty) {
+      speicher.fehlversuche.clear();
+      ref.invalidate(avatarFotoProvider);
+    }
     ref.invalidate(mitgliederProvider);
   }
 

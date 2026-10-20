@@ -65,6 +65,8 @@ class ChatBenachrichtiger implements EreignisBenachrichtiger {
   @override
   Future<void> neueEreignisse(int rev, {required int vorher}) async {
     if (istVordergrund()) return;
+    // vorher <= 0: der erste Abgleich (Neuinstallation, zurückgesetzter Sync-Fortschritt) bringt den ganzen Verlauf: das ist nichts Neues
+    if (vorher <= 0) return;
     final me = await ich();
     if (me == null) return;
     // Nachrichten, die mit diesem Abgleich kamen (Revision zwischen vorher und rev), nicht von mir und nicht von einem entfernten Mitglied (ohne Absender)
@@ -85,13 +87,16 @@ class ChatBenachrichtiger implements EreignisBenachrichtiger {
     for (final e in nachKonv.entries) {
       final k = konversationen[e.key];
       if (k == null) continue;
+      // nur, was der eigene Lesestand noch nicht abdeckt (auf einem anderen Gerät schon Gelesenes meldet nichts); Titel und Zahl am Symbol kommen aus derselben Zahl
+      final ungelesen = await _ungelesen(e.key, me);
+      if (ungelesen <= 0) continue;
       final name = _chatName(k, mitglieder, me);
       await anzeige.zeigen(
         id: chatBenachrichtigungsId(e.key),
-        titel: e.value == 1 ? 'Neue Nachricht' : '${e.value} neue Nachrichten',
+        titel: ungelesen == 1 ? 'Neue Nachricht' : '$ungelesen neue Nachrichten',
         text: 'in $name',
         sperrbildschirmTitel: sperre,
-        anzahl: await _ungelesen(e.key, me),
+        anzahl: ungelesen,
       );
     }
   }

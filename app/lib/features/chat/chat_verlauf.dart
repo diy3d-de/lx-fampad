@@ -12,6 +12,7 @@ import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/chat/chat_krypto.dart' show ChatKrypto;
 import '../../data/chat/lese_status.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
@@ -271,6 +272,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     // Lesebestätigung: Lesestände der anderen Teilnehmer (Familienchat: alle aktiven Mitglieder)
     final gelesenBis = {for (final l in ref.watch(lesestaendeProvider(_id)).value ?? const <Lesestand>[]) l.userId: l.gelesenBis};
     final empfaenger = {if (art == ChatArt.family) ...mitglieder.alle.map((u) => u.id) else ...teilnehmer}..remove(ich);
+    final epochenMitglieder = epochenEmpfaenger(ref.watch(epochenListenProvider(_id)).value ?? const <Epoche>[]);
     String leseName(String id) => mitglieder[id]?.displayName ?? 'Unbekannt';
 
     // Verlauf mit Datumstrennern (chronologisch), umgekehrt angezeigt: neueste unten
@@ -358,7 +360,9 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     // ein Zitat zeigt nur eine Nachricht derselben Konversation (der Server prüft das ebenfalls)
                     final zitatKandidat = n.antwortAuf == null ? null : nachId[n.antwortAuf];
                     final zitat = zitatKandidat != null && zitatKandidat.konversationId == n.konversationId ? zitatKandidat : null;
-                    final lese = eigen ? leseInfo(nachricht: n, empfaenger: empfaenger, gelesenBis: gelesenBis) : null;
+                    // Empfänger zum Sendezeitpunkt (Mitglieder der Epoche der Nachricht), nicht der heutige Stand
+                    final zumZeitpunkt = eigen ? empfaengerZurNachricht(epoche: ChatKrypto.huellenEpoche(n.inhalt), epochen: epochenMitglieder, ich: ich ?? '', aktuell: empfaenger, gelesenBis: gelesenBis) : null;
+                    final lese = zumZeitpunkt == null ? null : leseInfo(nachricht: n, empfaenger: zumZeitpunkt.empfaenger, gelesenBis: gelesenBis, geschaetzt: zumZeitpunkt.geschaetzt);
                     return _Blase(
                       nachricht: n,
                       lese: lese,
