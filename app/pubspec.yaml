@@ -84,6 +84,7 @@ flutter:
     - assets/tz/latest.tzf
     # Karten-Stil (Protomaps, dunkel; Spike docs/KARTE-SPIKE.md), erzeugt von tools/karte/make-style.mjs
     - assets/karte/style.json
+    - assets/karte/style-hell.json
     # Platzhalter-Benutzerbilder (transparente PNG, Quellen in tool/avatare/)
     - assets/avatare/
 
