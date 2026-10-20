@@ -20,6 +20,7 @@ Dateien in diesem Ordner:
 - `deploy.sh` – läuft auf dem Server: Code holen, Server bauen (`npm ci --ignore-scripts`), nur Produktivpakete übertragen, Dienst neu starten, Health-Check mit `"db":"ok"`
 - `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
 - `einrichtung-ntfy.sh` – richtet ntfy ein (Installation, Härtung, Token, `ntfy.caddy`; Abschnitt 7); `ntfy/server.yml` (deny-all), `ntfy/ntfy.caddy` (eigene Caddy-Datei)
+- `backup/` – tägliche verschlüsselte Sicherung (age) und Einrichtung, Wiederherstellungstest, Pull-Skript für das NAS (Abschnitt "Backups"); `einrichtung-swap.sh` – Swapdatei
 
 Verzeichnisse auf dem Server:
 
@@ -409,6 +410,24 @@ Die Begrenzung wird in Schritt 5 eingerichtet (vor dem ersten Start des Dienstes
 
 Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewahrung), also auch für lx-labs und Caddy. Der Caddyfile schreibt keine Zugriffslogs (kein `log`-Block); wer sie einschaltet, muss Rotation und Aufbewahrung ebenfalls auf 7 Tage begrenzen. Was lx-fampad sonst speichert, steht in `docs/DATENSCHUTZ-ENTWURF.md`.
 
+## Backups
+
+Täglich 03:30 (UTC-Zeitstempel in den Namen) sichert `lx-fampad-backup.timer` die Datenbank (`pg_dump -Fc`) und die Konfiguration (`/etc/lx-fampad` mit `AUTH_SECRET_KEY`, Caddy-Dateien des Projekts, ntfy, Units) **verschlüsselt mit age** nach `/var/backups/lx-fampad/` (die letzten 3 Läufe). Das **NAS holt ab** (rsync über SSH, Benutzer `lxbackup`, erzwungenes `rrsync -ro`, nur lesen); der Server hält keine Zugangsdaten zum NAS (nur dessen IP und öffentlichen Schlüssel). Den privaten age-Schlüssel gibt es nur beim Betreiber (Passwortmanager/Ausdruck), nie auf dem Server. Einrichtung, NAS-Seite (Synology, QNAP, Linux), Überwachung und Rückbau: [`docs/BACKUP.md`](../docs/BACKUP.md); Neuaufbau, Umzug, Wiederherstellungstest: [`docs/WIEDERHERSTELLUNG.md`](../docs/WIEDERHERSTELLUNG.md).
+
+```bash
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh --dry-run --age-recipient 'age1…' --nas-pubkey 'ssh-ed25519 AAAA…' --nas-ip <NAS-IP>   # prüfen
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh            --age-recipient 'age1…' --nas-pubkey 'ssh-ed25519 AAAA…' --nas-ip <NAS-IP>   # einrichten + Probelauf
+systemctl list-timers lx-fampad-backup.timer && sudo cat /var/backups/lx-fampad/status
+```
+
+**Schritt-für-Schritt-Anleitung zum Einrichten:** [`docs/BACKUP-EINRICHTUNG-SCHRITTE.md`](../docs/BACKUP-EINRICHTUNG-SCHRITTE.md). Nicht gesichert wird u. a. `/srv/fampad/karte` (Kartendatei, neu erzeugbar).
+
+Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern die in diesem Lauf angelegten oder geänderten Dateien, Units, den Benutzer und den Timer-Zustand zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh}`.
+
+### Swap
+
+Der Server hat 2 GB RAM und keinen Swap. `sudo bash ~/lx-fampad/deploy/einrichtung-swap.sh --dry-run`, dann ohne `--dry-run`: legt `/swapfile` (1 GB, 0600) an, trägt sie in `/etc/fstab` ein (nur wenn es fehlt; baut eine Kopie mit Zeilenumbruch-Prüfung, prüft sie mit `findmnt --verify`, ersetzt erst dann, testet mit `swapon -a`, stellt bei Fehler die Sicherung `/etc/fstab.vor-swap` zurück) und setzt `vm.swappiness=10` (`/etc/sysctl.d/99-lx-fampad-swap.conf`). Idempotent, prüft den freien Platz (1 GB + 4 GB Reserve), nimmt eine halb angelegte Datei bei Fehlern zurück. Prüfen: `swapon --show`, `free -m`. Rückbau steht im Kopf des Skripts.
+
 ## Nützliche Befehle auf dem Server
 
 | Befehl | Zweck |
@@ -421,7 +440,7 @@ Das gilt für alle Dienste auf dem Server (journald hat eine gemeinsame Aufbewah
 
 ## Noch offen (spätere Phasen)
 
-- Backups: nächtlich `pg_dump` + `/srv/fampad/files` mit restic auf ein externes Ziel; Wiederherstellung quartalsweise testen
+- Backups der Dateiablage (`/srv/fampad/files`): erst wenn sie genutzt wird (`INCLUDE_FILES=1`, später inkrementell); Datenbank und Konfiguration sind erledigt, siehe Abschnitt "Backups"
 - Speicherplatz-Warnung; Aufbewahrung von IP-Adressen in der Datenbank (`audit_log.ip`) höchstens 7 Tage (Aufräum-Job in Phase 1)
 - Hauptschlüssel für die Dateiverschlüsselung außerhalb von `/srv/fampad/files` ablegen (Phase 1)
 
