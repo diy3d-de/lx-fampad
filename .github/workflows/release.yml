@@ -151,7 +151,8 @@ jobs:
           VERSION: ${{ steps.v.outputs.version }}
           VERSION_CODE: ${{ steps.v.outputs.version_code }}
         run: |
-          flutter build apk --release \
+          # nur arm64-v8a (deploy/README.md, Abschnitt 10): 24 statt 127 MB; 32-Bit-Geräte sind ausgeschlossen
+          flutter build apk --release --target-platform android-arm64 \
             --build-name="$VERSION" --build-number="$VERSION_CODE" \
             --dart-define=API_BASE="$API_BASE" --dart-define=INVITE_HOST="$INVITE_HOST" --dart-define=RELEASES_BASE="$RELEASES_BASE"
 
@@ -165,6 +166,10 @@ jobs:
         run: |
           mkdir -p out
           cp app/build/app/outputs/flutter-apk/app-release.apk "out/$APK_NAME"
+          # Schutz gegen eine wieder aufgeblähte APK: nur arm64-v8a, unter 40 MB (0.5.1 mit allen ABIs: 127 MB)
+          abis=$(unzip -Z1 "out/$APK_NAME" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u | tr '\n' ' ')
+          [ "$abis" = "arm64-v8a " ] || { echo "APK enthält ABIs '$abis' statt nur arm64-v8a" >&2; exit 1; }
+          [ "$(stat -c %s "out/$APK_NAME")" -lt 41943040 ] || { echo "APK größer als 40 MB" >&2; exit 1; }
           apksigner=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
           "$apksigner" verify --print-certs "out/$APK_NAME"     # zeigt den SHA-256 des Zertifikats (für assetlinks.json)
           (cd out && sha256sum "$APK_NAME" | tee "$APK_NAME.sha256")
