@@ -31,7 +31,7 @@ describe('Migrations-Journal', () => {
   });
 });
 
-// ---- Aktualisierung bestehender Datenbanken: 0004 -> 0005 -> 0006 behält Daten und wendet jede Migration an ----
+// ---- Aktualisierung bestehender Datenbanken: 0004 bis 0011, einzeln angewendet, behält Daten und wendet jede Migration an ----
 import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
@@ -58,25 +58,43 @@ describe('Migration auf bestehender Datenbank', () => {
   type Exec = (q: string) => Promise<Array<Record<string, unknown>>>;
   async function pruefen(partial: (dir: string) => Promise<void>, voll: () => Promise<void>, q: Exec) {
     const bis4 = journalRaw.entries.findIndex((e) => e.tag.startsWith('0004')) + 1;
-    const d4 = teilordner(bis4);
-    const d5 = teilordner(bis4 + 1);
+    const ordner: string[] = [];
     try {
+      const d4 = teilordner(bis4);
+      ordner.push(d4);
       await partial(d4); // Stand 0004 (Gäste-Rolle noch vorhanden)
       const uid = randomUUID();
+      const fid = randomUUID();
       await q(`insert into users (id, email, display_name) values ('${uid}', 'alt@example.org', 'Alt')`);
-      await partial(d5); // 0005: ohne Gäste
-      await voll(); // 0006: Benutzerbild
+      await q(`insert into families (id, name) values ('${fid}', 'Altfamilie')`);
+      await q(`insert into memberships (family_id, user_id, role) values ('${fid}', '${uid}', 'child')`);
+      // jede weitere Migration einzeln (0005 bis zuletzt), die Altdaten bleiben jedes Mal erhalten
+      const tags = journalRaw.entries.slice(bis4).map((e) => e.tag);
+      expect(tags.map((x) => x.slice(0, 4))).toEqual(['0005', '0006', '0007', '0008', '0009', '0010', '0011']);
+      for (let i = 1; i < tags.length; i++) {
+        const d = teilordner(bis4 + i);
+        ordner.push(d);
+        await partial(d);
+        const m = await q(`select display_name from users where id = '${uid}'`);
+        expect(m[0]?.display_name, tags[i - 1]).toBe('Alt');
+      }
+      await voll();
       const rows = await q(`select display_name, avatar_kind, avatar_preset, avatar_version from users where id = '${uid}'`);
       expect(rows[0]).toMatchObject({ display_name: 'Alt', avatar_kind: null, avatar_preset: null, avatar_version: 0 });
-      const t = await q(`select to_regclass('public.user_avatars') as t`);
-      expect(t[0]?.t).toBe('user_avatars');
+      const mem = await q(`select role from memberships where family_id = '${fid}' and user_id = '${uid}'`);
+      expect(mem[0]?.role).toBe('child');
+      // die Familienrolle (0007) ist neben den Chat-, Push- und Schlüssel-Tabellen erhalten
+      expect((await q(`select family_role from memberships where family_id = '${fid}' and user_id = '${uid}'`))[0]).toEqual({ family_role: null });
+      for (const tabelle of ['user_avatars', 'konversationen', 'nachrichten', 'lesestand', 'push_endpoints', 'person_keys', 'person_key_history', 'key_backups', 'key_transfers', 'konversation_epochen', 'epoche_wraps']) {
+        const r = await q(`select to_regclass('public.${tabelle}') as t`);
+        expect(r[0]?.t, tabelle).toBe(tabelle);
+      }
     } finally {
-      rmSync(d4, { recursive: true, force: true });
-      rmSync(d5, { recursive: true, force: true });
+      for (const d of ordner) rmSync(d, { recursive: true, force: true });
     }
   }
 
-  it('PGlite: 0004 -> 0005 -> 0006', async () => {
+  it('PGlite: 0004 -> 0005 -> … -> 0011 (je Schritt mit Altdaten)', async () => {
     const client = new PGlite();
     const db = drizzleLite(client);
     try {
@@ -90,7 +108,7 @@ describe('Migration auf bestehender Datenbank', () => {
     }
   }, 60_000);
 
-  it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: 0004 -> 0005 -> 0006', async () => {
+  it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: 0004 -> 0005 -> … -> 0011 (je Schritt mit Altdaten)', async () => {
     const name = `lx_mig_${randomUUID().replaceAll('-', '')}`;
     const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
     admin.on('error', () => undefined); // 57P01 beim Aufräumen ist erwartet

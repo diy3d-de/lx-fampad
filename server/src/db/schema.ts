@@ -42,6 +42,8 @@ export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom']);
 /** Wer eine Liste oder einen Termin sehen darf: nur Eltern/Admins oder die ganze Familie (Eingaben alter Apps mit "all" werden auf "family" abgebildet). */
 export const listAudience = pgEnum('list_audience', ['parents', 'family']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
+/** Art einer Konversation: der Familienchat (genau einer je Familie), ein Direktchat (zwei Personen) oder eine Gruppe. */
+export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -133,6 +135,71 @@ export const memberships = pgTable(
     check('memberships_family_role_ck', sql`${t.familyRole} is null or ${t.familyRole} in ('vater', 'mutter', 'elternteil', 'kind', 'grosseltern', 'sonstige')`),
   ],
 );
+
+/**
+ * E2EE: öffentliche Personenschlüssel (ein Paar je Person, alle Geräte teilen es): X25519 für Sealed Boxes, Ed25519 für
+ * Signaturen, je 32 Byte als Base64url. Der Server hält nie ein Geheimnis; key_version zählt Wechsel (die Apps warnen davor).
+ */
+export const personKeys = pgTable(
+  'person_keys',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    publicEncKey: text('public_enc_key').notNull(),
+    publicSignKey: text('public_sign_key').notNull(),
+    keyVersion: integer('key_version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [check('person_keys_version_pos', sql`${t.keyVersion} >= 1`)],
+);
+
+/**
+ * E2EE: Historie früherer öffentlicher Schlüssel (nur anhängend: es gibt keine Änderungs- oder Löschroute, Zeilen verschwinden nur mit dem Konto).
+ * Beim Schlüsselwechsel wandert der alte Stand hierher; so lassen sich Signaturen älterer Nachrichten gegen die damalige key_version prüfen.
+ */
+export const personKeyHistory = pgTable(
+  'person_key_history',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    keyVersion: integer('key_version').notNull(),
+    encKey: text('enc_key').notNull(),
+    signKey: text('sign_key').notNull(),
+    validFrom: timestamp('valid_from', { withTimezone: true }).notNull(),
+    validUntil: timestamp('valid_until', { withTimezone: true }).notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.keyVersion] })],
+);
+
+/** E2EE: opake Sicherung des Personenschlüssels (mit dem Wiederherstellungsschlüssel verschlüsselt, der Server kann sie nicht lesen). */
+export const keyBackups = pgTable('key_backups', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  blob: text('blob').notNull(),
+  /** Zu welcher key_version des Personenschlüssels die Sicherung gehört. */
+  keyVersion: integer('key_version').notNull(),
+  createdAt: createdAt(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * E2EE: kurzlebige Geräte-Übertragung des Personenschlüssels (QR). Gespeichert wird nur der Hash der Suchkennung; der Blob ist mit
+ * einem Einmalschlüssel verschlüsselt, den der Server nie sieht. Höchstens eine je Person, einmal einlösbar (DELETE ... RETURNING).
+ */
+export const keyTransfers = pgTable('key_transfers', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  lookupHash: text('lookup_hash').notNull().unique(),
+  blob: text('blob').notNull(),
+  keyVersion: integer('key_version').notNull(),
+  createdAt: createdAt(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+});
 
 /** Anmeldedaten je Benutzer (nicht je Familie): Passkey, TOTP-Geheimnis oder Argon2id-Passwort-Hash. */
 export const credentials = pgTable(
@@ -230,6 +297,34 @@ export const devices = pgTable(
     index('devices_family_idx').on(t.familyId),
     // Ziel der zusammengesetzten Fremdschlüssel (family_id, device_id): eine Sitzung gehört nie zu einem fremden Gerät
     unique('devices_family_id_uq').on(t.familyId, t.id),
+  ],
+);
+
+/**
+ * UnifiedPush-Endpunkt je Gerät (Wecker ohne Inhalt, siehe docs/API.md "Push"). Gespeichert wird nur das Topic aus dem Endpunkt
+ * (ntfy: "up" + 12 Zeichen); gepostet wird nie an die vom Gerät gemeldete URL, sondern an die Loopback-URL des eigenen ntfy.
+ * Die Zeile verschwindet mit dem Gerät (ON DELETE CASCADE) und beim Abmelden/Widerruf (explizit gelöscht).
+ */
+export const pushEndpoints = pgTable(
+  'push_endpoints',
+  {
+    deviceId: uuid('device_id').primaryKey(),
+    familyId: familyRef(),
+    topic: text('topic').notNull(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    lastOkAt: timestamp('last_ok_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    /** Aufeinanderfolgende Fehlschläge; ab der Grenze (push/service.ts) wird der Endpunkt deaktiviert. */
+    failCount: integer('fail_count').notNull().default(0),
+    /** Deaktiviert (ntfy meldet 404/410 oder wiederholte Fehler): kein Versand, bis das Gerät sich neu anmeldet (PUT /me/push). */
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.deviceId], foreignColumns: [devices.familyId, devices.id] }).onDelete('cascade'),
+    unique('push_endpoints_topic_uq').on(t.topic),
+    index('push_endpoints_family_idx').on(t.familyId),
+    check('push_endpoints_topic_ck', sql`${t.topic} ~ '^up[A-Za-z0-9_-]{12,64}$'`),
   ],
 );
 
@@ -707,5 +802,184 @@ export const messageReads = pgTable(
     uniqueIndex('message_reads_message_user_uq').on(t.messageId, t.userId),
     index('message_reads_user_idx').on(t.userId),
     index('message_reads_family_rev_idx').on(t.familyId, t.rev),
+  ],
+);
+
+/**
+ * Konversationen des Chats (Phase 1c-3a). `teilnehmer` (sortierte, eindeutige Mitglieds-IDs) bestimmt, wer Direkt- und Gruppenchats sieht:
+ * nur sie, auch Admins nicht (sync/permissions.ts, Facts.participants). Im Familienchat ist die Liste leer, ihn sieht die ganze Familie.
+ * `titel` ist ein undurchsichtiger Text (der Server wertet ihn nie aus; später verschlüsselbar).
+ */
+export const konversationen = pgTable(
+  'konversationen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    art: konversationArt('art').notNull(),
+    titel: text('titel').notNull().default(''),
+    /** Version der Inhaltshülle der Nachrichten dieser Konversation (`e1:` Ende-zu-Ende verschlüsselt, Standard; `p1:` Klartext nur für Altbestand); unveränderlich: schützt vor dem Zurückstufen verschlüsselter Chats. */
+    encVersion: text('enc_version').notNull().default('e1'),
+    teilnehmer: uuid('teilnehmer')
+      .array()
+      .notNull()
+      .default(sql`'{}'::uuid[]`),
+    /** Wer die Konversation angelegt hat (setzt der Server; null beim Familienchat und nach dem Entfernen der Person). */
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    index('konversationen_family_rev_idx').on(t.familyId, t.rev),
+    index('konversationen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('konversationen_owner_idx')
+      .on(t.familyId, t.ownerId)
+      .where(sql`${t.ownerId} is not null`),
+    unique('konversationen_family_id_uq').on(t.familyId, t.id),
+    // genau ein Familienchat je Familie, ein Direktchat je Paar (Teilnehmer sind sortiert gespeichert)
+    uniqueIndex('konversationen_family_chat_uq')
+      .on(t.familyId)
+      .where(sql`${t.art} = 'family' and ${t.deletedAt} is null`),
+    uniqueIndex('konversationen_direct_uq')
+      .on(t.familyId, t.teilnehmer)
+      .where(sql`${t.art} = 'direct' and ${t.deletedAt} is null`),
+    check('konversationen_titel_len_ck', sql`char_length(${t.titel}) <= 512`),
+    check(
+      'konversationen_teilnehmer_ck',
+      sql`(${t.art} = 'family' and cardinality(${t.teilnehmer}) = 0)
+        or (${t.art} = 'direct' and cardinality(${t.teilnehmer}) = 2)
+        or (${t.art} = 'group' and cardinality(${t.teilnehmer}) between 2 and 20)`,
+    ),
+  ],
+);
+
+/**
+ * Nachrichten. `text` ist ein undurchsichtiger String (Hülle mit Versionspräfix, siehe docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6c): der
+ * Server prüft nur die Länge und wertet den Inhalt nie aus (kein Volltext, keine Vorschau, kein Log). Der Autor wird beim Entfernen NULL.
+ */
+export const nachrichten = pgTable(
+  'nachrichten',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    autorId: uuid('autor_id').references(() => users.id, { onDelete: 'set null' }),
+    text: text('text').notNull(),
+    /** Antwort auf eine andere Nachricht (nur die ID; der Client zeigt das Zitat, wenn er die Nachricht kennt). */
+    antwortAuf: uuid('antwort_auf'),
+    /** Zeitpunkt der letzten Bearbeitung des Textes (setzt der Server). */
+    bearbeitetAt: timestamp('bearbeitet_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('nachrichten_konversation_idx').on(t.familyId, t.konversationId, t.createdAt),
+    index('nachrichten_family_rev_idx').on(t.familyId, t.rev),
+    index('nachrichten_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('nachrichten_autor_idx')
+      .on(t.familyId, t.autorId, t.createdAt)
+      .where(sql`${t.autorId} is not null`),
+    check('nachrichten_text_len_ck', sql`char_length(${t.text}) <= 16384`),
+  ],
+);
+
+/** Lesestand: je Person und Konversation eine Zeile, nur für die Person selbst sichtbar. `gelesenBis` = Zeit (createdAt) der letzten gelesenen Nachricht. */
+export const lesestand = pgTable(
+  'lesestand',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    gelesenBis: timestamp('gelesen_bis', { withTimezone: true }).notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('lesestand_active_uq')
+      .on(t.konversationId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('lesestand_user_idx').on(t.userId),
+    index('lesestand_family_rev_idx').on(t.familyId, t.rev),
+    index('lesestand_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+  ],
+);
+
+/**
+ * Epochen einer verschlüsselten Konversation (E2EE Phase 2): je Epoche genau eine Zeile (feste, abgeleitete ID; der erste Schreiber gewinnt). `mitglieder` ist die
+ * vom Verteiler signierte Mitgliederliste der Epoche als undurchsichtiger Text (der Server wertet sie nie aus). Kein Schlüsselmaterial.
+ */
+export const konversationEpochen = pgTable(
+  'konversation_epochen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    epoche: integer('epoche').notNull(),
+    /** Wer die Epoche angelegt hat (setzt der Server; für die Mengenbegrenzung). */
+    verteilerId: uuid('verteiler_id').references(() => users.id, { onDelete: 'set null' }),
+    mitglieder: text('mitglieder').notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    unique('konversation_epochen_family_id_uq').on(t.familyId, t.id),
+    uniqueIndex('konversation_epochen_uq')
+      .on(t.familyId, t.konversationId, t.epoche)
+      .where(sql`${t.deletedAt} is null`),
+    index('konversation_epochen_family_rev_idx').on(t.familyId, t.rev),
+    index('konversation_epochen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('konversation_epochen_verteiler_idx')
+      .on(t.familyId, t.verteilerId, t.createdAt)
+      .where(sql`${t.verteilerId} is not null`),
+    check('konversation_epochen_epoche_ck', sql`${t.epoche} between 1 and 100000`),
+    check('konversation_epochen_len_ck', sql`char_length(${t.mitglieder}) <= 16384`),
+  ],
+);
+
+/**
+ * Für eine Person verpackter Epochenschlüssel (E2EE Phase 2): Sealed Box plus Signatur des Verteilers, als undurchsichtiger Text. Nur der Empfänger liest seine Zeile.
+ * Je (Konversation, Epoche, Empfänger) genau eine (feste, abgeleitete ID; der erste gewinnt).
+ */
+export const epocheWraps = pgTable(
+  'epoche_wraps',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    epoche: integer('epoche').notNull(),
+    empfaengerId: uuid('empfaenger_id').notNull(),
+    verteilerId: uuid('verteiler_id').references(() => users.id, { onDelete: 'set null' }),
+    wrap: text('wrap').notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.empfaengerId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('epoche_wraps_uq')
+      .on(t.familyId, t.konversationId, t.epoche, t.empfaengerId)
+      .where(sql`${t.deletedAt} is null`),
+    index('epoche_wraps_empfaenger_idx').on(t.familyId, t.empfaengerId),
+    index('epoche_wraps_family_rev_idx').on(t.familyId, t.rev),
+    index('epoche_wraps_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('epoche_wraps_verteiler_idx')
+      .on(t.familyId, t.verteilerId, t.createdAt)
+      .where(sql`${t.verteilerId} is not null`),
+    check('epoche_wraps_epoche_ck', sql`${t.epoche} between 1 and 100000`),
+    check('epoche_wraps_len_ck', sql`char_length(${t.wrap}) <= 4096`),
   ],
 );

@@ -1,7 +1,7 @@
 // Konto-Verwaltung nach der Anmeldung: Profil, Mitglieder, Geräte, Anmeldedaten, Wiederherstellungs-Codes, WebSocket-Tickets.
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import { and, asc, count, eq, gt, isNull, sql } from 'drizzle-orm';
-import { credentials, devices, type FamilyRole, invites, memberships, sessions, users, wsTickets } from '../db/schema.js';
+import { credentials, devices, type FamilyRole, invites, memberships, personKeys, sessions, users, wsTickets } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { defaultRegistry } from '../sync/index.js';
 import { detachMemberRefs } from '../sync/refs.js';
@@ -77,11 +77,21 @@ interface MemberRow {
   colorIndex: number;
   role: Role;
   status: 'active' | 'pending';
+  publicEncKey: string | null;
+  publicSignKey: string | null;
+  keyVersion: number | null;
   familyRole: string | null;
 }
 
+/** Öffentliche E2EE-Schlüssel eines Mitglieds (null, solange die Person keine eingerichtet hat). */
+interface MemberKeys {
+  publicEncKey: string | null;
+  publicSignKey: string | null;
+  keyVersion: number | null;
+}
+
 /** Alle sehen aktive Mitglieder (ohne E-Mail); Admins zusätzlich E-Mail und wartende Mitglieder. `familyRole` ist reine Anzeige. */
-export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promise<Array<Omit<MemberView, 'email'> & { email?: string; familyRole: string | null }>> {
+export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promise<Array<Omit<MemberView, 'email'> & { email?: string; familyRole: string | null } & MemberKeys>> {
   const rows: MemberRow[] = await ctx.db
     .select({
       id: users.id,
@@ -90,13 +100,22 @@ export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promis
       colorIndex: users.colorIndex,
       role: memberships.role,
       status: memberships.status,
+      publicEncKey: personKeys.publicEncKey,
+      publicSignKey: personKeys.publicSignKey,
+      keyVersion: personKeys.keyVersion,
       familyRole: memberships.familyRole,
     })
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
+    .leftJoin(personKeys, eq(personKeys.userId, users.id))
     .where(and(eq(memberships.familyId, p.familyId), isNull(users.disabledAt), p.role === 'admin' ? undefined : eq(memberships.status, 'active')))
     .orderBy(asc(users.displayName));
-  return rows.map((r) => (p.role === 'admin' || r.id === p.userId ? r : { id: r.id, displayName: r.displayName, colorIndex: r.colorIndex, role: r.role, status: r.status, familyRole: r.familyRole }));
+  return rows.map(({ publicEncKey, publicSignKey, keyVersion, ...r }) => {
+    const keys: MemberKeys = { publicEncKey, publicSignKey, keyVersion };
+    return p.role === 'admin' || r.id === p.userId
+      ? { ...r, ...keys }
+      : { id: r.id, displayName: r.displayName, colorIndex: r.colorIndex, role: r.role, status: r.status, familyRole: r.familyRole, ...keys };
+  });
 }
 
 /**

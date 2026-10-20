@@ -4,7 +4,7 @@
 // rund eine Stunde über seinen Ablauf hinaus in der Datenbank.
 import { and, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
-import { auditLog, invites, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
+import { auditLog, invites, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
 import { purgeSessions } from './sessions.js';
@@ -19,6 +19,7 @@ export interface PurgeReport {
   sessionsDeleted: number;
   challengesDeleted: number;
   ticketsDeleted: number;
+  keyTransfersDeleted: number;
   attemptsDeleted: number;
   invitesExpired: number;
   invitesDeleted: number;
@@ -58,6 +59,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
   const sessionsDeleted = await purgeSessions(ctx);
   const challenges = await ctx.db.delete(webauthnChallenges).where(lt(webauthnChallenges.expiresAt, now)).returning({ id: webauthnChallenges.id });
   const tickets = await ctx.db.delete(wsTickets).where(lt(wsTickets.expiresAt, now)).returning({ h: wsTickets.tokenHash });
+  const transfers = await ctx.db.delete(keyTransfers).where(lt(keyTransfers.expiresAt, now)).returning({ u: keyTransfers.userId });
   // Fehlversuche zählen nur innerhalb des Fensters; ältere ohne laufende Sperre sind wirkungslos
   const attemptsBefore = new Date(now.getTime() - ctx.config.auth.lockoutWindowSec * 1000);
   const attempts = await ctx.db
@@ -73,6 +75,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     sessionsDeleted,
     challengesDeleted: challenges.length,
     ticketsDeleted: tickets.length,
+    keyTransfersDeleted: transfers.length,
     attemptsDeleted: attempts.length,
     invitesExpired: expired.length,
     invitesDeleted: invitesGone.length,

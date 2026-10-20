@@ -43,9 +43,17 @@ class MainActivity : FlutterActivity() {
 
         /** Kanal der Terminerinnerungen (lib/data/erinnerungen/erinnerung_port_android.dart); muss dort identisch sein. */
         private const val ERINNERUNG_KANAL = "terminerinnerungen"
+        private const val CHAT_KANAL = "chat_nachrichten"
         private const val PREFS = "lx_fampad_system"
         private const val PREF_ANGEFRAGT = "benachrichtigung_angefragt"
     }
+
+    /**
+     * Start-Argumente der Dart-Seite nie aus einem Intent übernehmen: Das Argument "--unifiedpush-bg" (Hintergrund-Start ohne Oberfläche,
+     * lib/data/push/push_hintergrund.dart) setzt allein das UnifiedPush-Plugin in seiner eigenen Engine. Sonst könnte eine fremde App die
+     * sichtbare Oberfläche mit dem Argument starten (dann liefe nur der Abgleich, die App bliebe leer).
+     */
+    override fun getDartEntrypointArgs(): List<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -105,6 +113,10 @@ class MainActivity : FlutterActivity() {
     /** Wichtigkeit des Kanals der Erinnerungen (0 = aus, 4 = hoch); -1 = Kanal (noch) nicht angelegt. */
     private fun kanalWichtigkeit(): Int =
         (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.getNotificationChannel(ERINNERUNG_KANAL)?.importance ?: -1
+
+    /** Wichtigkeit des Kanals der Chat-Benachrichtigungen (0 = aus); -1 = Kanal (noch) nicht angelegt. Eigener Kanal: die Person kann ihn getrennt von den Erinnerungen abschalten. */
+    private fun chatKanalWichtigkeit(): Int =
+        (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.getNotificationChannel(CHAT_KANAL)?.importance ?: -1
 
     /** Öffnet "Alarme & Erinnerungen" der App (Android 12+), Rückfall die App-Info. */
     private fun alarmEinstellungenOeffnen(): Boolean {
@@ -180,6 +192,7 @@ class MainActivity : FlutterActivity() {
                                 "channelImportance" to kanalWichtigkeit(),
                             ),
                         )
+                    "chatChannelImportance" -> result.success(chatKanalWichtigkeit())
                     "openExactAlarmSettings" -> result.success(alarmEinstellungenOeffnen())
                     "notificationAsked" -> {
                         getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(PREF_ANGEFRAGT, true).apply()

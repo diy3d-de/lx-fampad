@@ -22,13 +22,14 @@ import {
 } from '../auth/account.js';
 import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
+import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
+import { b64urlBlob, b64urlKey, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child']);
 const familyRoleBody = z.object({ familyRole: z.enum(FAMILY_ROLES).nullable() }).strict();
@@ -100,7 +101,48 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   app.post('/api/v1/me/recovery-codes', strikt, async (req) => ({ recoveryCodes: await regenerateRecoveryCodes(ctx, await auth.requireSession(req), meta(req)) }));
 
+  // ----- E2EE-Schlüssel (Phase 1): öffentliche Personenschlüssel, opake Sicherung, Geräte-Übertragung -----
+  app.get('/api/v1/me/keys', async (req) => getOwnKeys(ctx, await auth.requireSession(req)));
+
+  const keysBody = z.object({ publicEncKey: b64urlKey, publicSignKey: b64urlKey }).strict();
+
+  app.post('/api/v1/me/keys', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    return { keys: await createKeys(ctx, p, parse(keysBody, req.body), meta(req)) };
+  });
+
+  app.put('/api/v1/me/keys', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    return { keys: await rotateKeys(ctx, p, parse(keysBody.extend({ expectedKeyVersion: z.number().int().min(1) }).strict(), req.body), meta(req)) };
+  });
+
+  app.put('/api/v1/me/key-backup', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await setBackup(ctx, p, parse(z.object({ blob: b64urlBlob(2048), keyVersion: z.number().int().min(1) }).strict(), req.body), meta(req));
+    return { ok: true };
+  });
+
+  app.get('/api/v1/me/key-backup', strikt, async (req) => getBackup(ctx, await auth.requireSession(req), meta(req)));
+
+  app.post('/api/v1/me/key-transfer', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    return createTransfer(ctx, p, parse(z.object({ lookup: b64urlKey, blob: b64urlBlob(1024), keyVersion: z.number().int().min(1) }).strict(), req.body));
+  });
+
+  app.post('/api/v1/me/key-transfer/claim', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    return claimTransfer(ctx, p, parse(z.object({ lookup: b64urlKey }).strict(), req.body), meta(req));
+  });
+
   // ----- Mitglieder -----
+  // Öffentliche Schlüssel eines Mitglieds samt Historie (alte Signaturen prüfen); nur Familie, sonst 404
+  app.get('/api/v1/members/:id/keys', async (req) => {
+    const p = await auth.requireSession(req);
+    const { id } = parse(idParams, req.params);
+    const q = parse(z.object({ version: z.coerce.number().int().min(1).optional() }).strict(), req.query);
+    return getMemberKeys(ctx, p, id, q.version);
+  });
+
   app.get('/api/v1/members', async (req) => {
     const members = await listMembers(ctx, await auth.requireSession(req));
     const avatars = await avatarMetaFor(ctx, members.map((m) => m.id));

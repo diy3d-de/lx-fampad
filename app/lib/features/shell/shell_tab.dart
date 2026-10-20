@@ -15,3 +15,6 @@ const kListenTab = 4;
 
 /// Index des Kalender-Tabs in [kTabs].
 const kKalenderTab = 1;
+
+/// Index des Chat-Tabs in [kTabs].
+const kChatTab = 2;

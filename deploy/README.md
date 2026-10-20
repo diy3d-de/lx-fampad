@@ -263,7 +263,7 @@ sudo sh -c 'f=/etc/lx-fampad/env; if grep -qE "^NTFY_(URL|TOKEN)=" "$f"; then ec
 sudo systemctl restart lx-fampad
 ```
 
-Der Server liest die Werte erst mit dem Push-Versand (Phase 1c-3).
+Der Server liest die Werte seit dem Push-Versand (Branch phase-push): ohne beide Werte ist Push still aus (ein Hinweis im Log). Mit beiden Werten und dem Skript aus „Push für die Handys“ unten ist Push an.
 
 **Prüfen:**
 
@@ -282,16 +282,30 @@ curl -sI https://lx-labs.dev | head -1
 
 **Rückbau:** `sudo rm /etc/caddy/conf.d/ntfy.caddy && sudo systemctl reload caddy` (lx-labs.dev und familie bleiben unberührt), `sudo systemctl disable --now ntfy`. Daten liegen unter `/var/lib/ntfy`.
 
-**Zugriff für Handys (UnifiedPush):** Standard ist **deny-all**, auch für anonyme Zugriffe. Das Token des Familien-Servers schreibt nur auf `fampad-*`. Rechte auf `up*`-Topics (Server schreibt, Handys lesen) sind bewusst **nicht** gesetzt und gehören zum Push-Versand in 1c-3. Dann etwa:
+**Push für die Handys (UnifiedPush):** Standard von ntfy ist **deny-all**, auch anonym. Das Skript `einrichtung-ntfy-up.sh` (nur ntfy-CLI, **kein** Caddy, `/etc/lx-fampad/env` bleibt unberührt, idempotent, `--dry-run`) setzt die Rechte für die `up*`-Topics der Handys:
 
 ```bash
-sudo -u ntfy ntfy user add handy-anna                                     # fragt ein Passwort ab; je Handy ein Benutzer
-sudo -u ntfy ntfy access handy-anna 'up*' read-only
-sudo -u ntfy ntfy access fampad-server 'up*' write-only                   # Server darf Weckrufe senden
-sudo -u ntfy ntfy access                                                  # Übersicht prüfen
+sudo bash ~/lx-fampad/deploy/einrichtung-ntfy-up.sh --dry-run   # nur prüfen
+sudo bash ~/lx-fampad/deploy/einrichtung-ntfy-up.sh
 ```
 
-Auf dem Handy: ntfy-App als UnifiedPush-Verteiler installieren, Server `https://ntfy.familie.lx-labs.dev` und den Benutzer eintragen. Die Meldungen enthalten nie Inhalte („es gibt Neues“).
+- `fampad-server` (Token des Familien-Servers) bekommt **write-only** auf `up*` (zusätzlich zu `fampad-*`): Der Server sendet die Wecker mit Token, **nie anonym**.
+- Neuer Benutzer `fampad-family` bekommt **read-only** auf `up*` mit einem **gemeinsamen, zufällig erzeugten Passwort** (liegt root-only in `/etc/lx-fampad/ntfy-family-password`, wird nie angezeigt). Die ntfy-App der Handys ist nur Empfänger (Verteiler) und abonniert ihr `up<Zufall>`-Topic; sie braucht deshalb Leserecht, aber kein Schreibrecht.
+- **Begründung der Entscheidung:** Anonymes Lesen oder Schreiben auf `up*` ist unnötig offen. Die Topic-Namen (`up` + 12 Zufallszeichen) sind zwar nicht erratbar, sollen aber nicht die einzige Hürde sein. Ein gemeinsamer Lese-Benutzer für die Familie genügt, weil er nichts senden kann und die Wecker keinen Inhalt tragen; je Handy ein Benutzer wäre mehr Pflegeaufwand ohne Gewinn. **Passwort wechseln mit `--rotate` nach jedem Entfernen eines Mitglieds und wenn ein Handy verloren geht**, danach in allen ntfy-Apps der Familie neu eintragen (das Passwort ist ein gemeinsames Familien-Konto: Wer es kennt, kann die inhaltslosen Wecker der `up*`-Topics lesen, deren Namen er kennt).
+- Das Skript prüft zum Schluss lokal und über HTTPS: anonym 401/403 (Lesen und Schreiben), Server schreibt 200, `fampad-family` liest 200 und schreibt 401/403 sowie liest `fampad-*` nicht.
+- Syntax gegen `binwiederhier/ntfy:v2.28.0` im Docker-Container geprüft (`ntfy access --config CFG USER TOPIC PERM`, Flags vor dem Unterbefehl; `ntfy user change-pass` liest `NTFY_PASSWORD`).
+
+**Was jede Person in der ntfy-App eintragen muss** (die App auf dem Handy; das Passwort gibt der Betreiber persönlich weiter, es steht per `sudo cat /etc/lx-fampad/ntfy-family-password` bereit):
+
+1. ntfy-App installieren, **bevorzugt aus F-Droid** (oder GitHub-Release): Diese Fassung hat keine Firebase-Bestandteile. Die Fassung aus Google Play bringt Google-Dienste (Firebase) mit; sie funktioniert, passt aber nicht zum Ziel „kein Google“. Keinen eingebetteten FCM-Verteiler benutzen.
+2. In der ntfy-App: Einstellungen, **Standardserver** auf `https://ntfy.familie.lx-labs.dev` stellen, **bevor** in lx-fampad Push eingeschaltet wird. Sonst liegt der UnifiedPush-Endpunkt auf ntfy.sh, und der Familien-Server lehnt ihn ab (`invalid_endpoint`).
+3. In der ntfy-App Benutzer `fampad-family` und das Passwort eintragen (Einstellungen, Benutzer verwalten).
+4. In lx-fampad: Profil, **Benachrichtigungen**, einschalten, dann **Test-Wecker senden**.
+5. Akku: ntfy und lx-fampad **unbegrenzt/ohne Einschränkung** laufen lassen. Samsung: Einstellungen, Akku, Hintergrundnutzungsbegrenzungen, „Nie schlafende Apps“ (beide Apps eintragen) und „Automatische Sperre“ für diese Apps abschalten.
+
+**Hinweis zu Fremd-Weckern:** Das Plugin hängt eine exportierte Empfänger-Komponente in das Manifest (Verteiler sind fremde Apps). Sie verwirft jede Nachricht ohne gültiges Registrierungs-Token (zufällig je Registrierung, nur dem Verteiler bekannt; Quelltext `MessagingReceiver.onReceive` der Connector-Bibliothek geprüft). Zusätzlich drosselt die App Hintergrund-Abgleiche auf einen je 10 s und `MainActivity` übernimmt keine Start-Argumente aus Intents.
+
+**Server-Betrieb Push:** `NTFY_URL`, `NTFY_TOKEN` (siehe oben) und optional `NTFY_PUBLIC_HOST` (Standard `ntfy.familie.lx-labs.dev`: Host, den gemeldete Endpunkte haben müssen). Der Wecker geht per Loopback an `NTFY_URL` (der Dienst hat `IPAddressDeny=any` mit `IPAddressAllow=localhost`). Migration `0009_push` kommt mit dem normalen `deploy.sh`. Prüfen: `journalctl -u lx-fampad | grep -i push` (kein „Push ist aus“); in der App Profil, Benachrichtigungen, Test-Wecker.
 
 ### 8. Web-App hochladen
 

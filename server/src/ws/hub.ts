@@ -20,6 +20,8 @@ export interface Subject {
 interface Entry extends Subject {
   familyId: string;
   socket: WebSocket;
+  /** Zeitpunkt der letzten Lebenszeichen (Anmeldung, Nachricht, Pong): eine tote Verbindung gilt für Push bald nicht mehr als offen. */
+  lastActivity: number;
 }
 
 function addTo<K>(map: Map<K, Set<Entry>>, key: K, entry: Entry): void {
@@ -44,7 +46,7 @@ export class Hub {
   private readonly entries = new Map<WebSocket, Entry>();
 
   add(familyId: string, socket: WebSocket, subject: Subject): void {
-    const entry: Entry = { ...subject, familyId, socket };
+    const entry: Entry = { ...subject, familyId, socket, lastActivity: Date.now() };
     this.entries.set(socket, entry);
     addTo(this.byFamily, familyId, entry);
     addTo(this.byUser, subject.userId, entry);
@@ -89,17 +91,37 @@ export class Hub {
     return this.closeAll(this.byUser.get(userId), code, reason, exceptSessionId ? (e) => e.sessionId === exceptSessionId : undefined);
   }
 
+  /** Hat das Gerät gerade eine offene (angemeldete) WebSocket-Verbindung? Dann braucht es keinen Push. */
+  hasDevice(deviceId: string, maxIdleMs?: number): boolean {
+    const now = Date.now();
+    for (const e of this.byDevice.get(deviceId) ?? []) if (maxIdleMs === undefined || now - e.lastActivity <= maxIdleMs) return true;
+    return false;
+  }
+
+  /** Merkt ein Lebenszeichen der Verbindung (Pong, Nachricht). */
+  touch(socket: WebSocket): void {
+    const e = this.entries.get(socket);
+    if (e) e.lastActivity = Date.now();
+  }
+
   /** Aktualisiert die gemerkte Rolle einer Verbindung. */
   setRole(socket: WebSocket, role: Role): void {
     const e = this.entries.get(socket);
     if (e) e.role = role;
   }
 
-  /** Meldet den Geräten der Familie die neue Revision; mit `roles` nur denen, deren Rolle die Änderung sehen darf (unbekannte Rolle: im Zweifel ja). */
-  notifyRev(familyId: string, rev: number, roles?: readonly Role[]): void {
+  /**
+   * Meldet den Geräten der Familie die neue Revision; mit `roles` und/oder `users` nur denen, deren Rolle die Änderung sehen darf (unbekannte
+   * Rolle: im Zweifel ja) oder die ausdrücklich genannt sind (Chat: Teilnehmer; Unbeteiligte erfahren nicht einmal, dass es etwas Neues gibt).
+   */
+  notifyRev(familyId: string, rev: number, roles?: readonly Role[], users?: readonly string[]): void {
     const msg = JSON.stringify({ type: 'rev', rev } satisfies ServerMessage);
     for (const e of this.byFamily.get(familyId) ?? []) {
-      if (roles && e.role && !roles.includes(e.role)) continue;
+      if (roles) {
+        const byUser = users?.includes(e.userId) === true;
+        const byRole = roles.length > 0 && (!e.role || roles.includes(e.role));
+        if (!byUser && !byRole) continue;
+      }
       if (e.socket.readyState === e.socket.OPEN) e.socket.send(msg);
     }
   }

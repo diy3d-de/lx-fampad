@@ -76,6 +76,12 @@ gradle.taskGraph.whenReady {
     }
 }
 
+// tink und tink-android enthalten dieselben Klassen ("Duplicate class com.google.crypto.tink"): flutter_secure_storage bringt tink-android, der UnifiedPush-Connector
+// zieht tink. tink-android genügt für beide, das reine tink wird überall ausgeschlossen.
+configurations.all {
+    exclude(group = "com.google.crypto.tink", module = "tink")
+}
+
 dependencies {
     implementation("androidx.core:core:1.16.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")

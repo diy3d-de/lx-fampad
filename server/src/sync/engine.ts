@@ -10,7 +10,7 @@
 //    bleibt, die Antwort nennt ihn in `conflicts`. Die Reihenfolge bestimmt der Server, nie die Uhr des Clients.
 //  - Verschiedene Felder verschiedener Geräte werden zusammengeführt (Abhaken gewinnt nicht gegen Umbenennen).
 //  - Löschen gewinnt: ein Update auf einen gelöschten Datensatz wird mit `deleted` abgelehnt, ein Löschen wirkt immer.
-import { and, count, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { AuthContext, Executor } from '../auth/context.js';
 import { appliedOps, changeLog, families, memberships } from '../db/schema.js';
 import type { Role } from '../auth/types.js';
@@ -27,7 +27,16 @@ export interface OpOutcome {
   conflicts: Array<{ fields: Record<string, unknown>; serverRev: number }>;
   /** Rollen, die die Änderung (vorher oder nachher) sehen dürfen; nur bei einer frisch angewendeten Op mit Wirkung. */
   roles?: Role[];
+  /** Personen, die die Änderung sehen dürfen, wenn der Datensatz auf Teilnehmer beschränkt ist (dann ist `roles` leer). */
+  users?: string[];
+  /** false: kein Push-Wecker (nur der WebSocket-Hinweis), z. B. Lesestand und Schlüssel-Wraps: sie betreffen nur die eigene Person. */
+  wake?: boolean;
 }
+
+/** Schlüssel im Protokolleintrag (change_log.changes): Personen, die durch die Änderung die Sicht verloren haben (siehe EntityDef.lostSight). */
+export const LOST_SIGHT = '__lostSight';
+/** Wie LOST_SIGHT: Personen, die durch die Änderung die Sicht gewonnen haben (sie bekommen den bisherigen Inhalt beim Abgleich). */
+export const GAINED_SIGHT = '__gainedSight';
 
 const rejected = (code: RejectCode): OpOutcome => ({ status: 'rejected', code, rev: null, conflicts: [] });
 
@@ -92,6 +101,30 @@ export function wireRow(def: EntityDef, row: Row): Record<string, unknown> {
 
 const sameValue = (def: EntityDef, field: string, a: unknown, b: unknown): boolean =>
   JSON.stringify(wireValue(def, field, a) ?? null) === JSON.stringify(wireValue(def, field, b) ?? null);
+
+/** Wer die Änderung erfährt: Rollen (Sicht nach Freigabe) und Personen (Sicht nach Teilnehmerliste), jeweils über alle genannten Stände vereinigt. */
+function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: string[]; wake: boolean } {
+  const roles = new Set<Role>();
+  const users = new Set<string>();
+  for (const f of facts) {
+    if (def.ownerOnlyNotify) {
+      if (f.ownerId) users.add(f.ownerId);
+      continue;
+    }
+    for (const r of rolesThatMayRead(def.rules, f)) roles.add(r);
+    for (const u of f.participants ?? []) users.add(u);
+  }
+  return { roles: [...roles], users: [...users], wake: !def.ownerOnlyNotify };
+}
+
+/** Prüft einen Wert, der eine Mitglieds-ID oder eine Liste davon ist: alle müssen aktive Mitglieder der Familie sein. */
+async function memberRefsValid(tx: Executor, familyId: string, value: unknown): Promise<boolean> {
+  if (typeof value === 'string') return isActiveMember(tx, familyId, value);
+  if (Array.isArray(value)) {
+    for (const v of value) if (typeof v !== 'string' || !(await isActiveMember(tx, familyId, v))) return false;
+  }
+  return true;
+}
 
 async function isActiveMember(tx: Executor, familyId: string, userId: string): Promise<boolean> {
   const rows = await tx
@@ -167,7 +200,8 @@ export async function tombstoneTree(env: EngineEnv, def: EntityDef, row: Row): P
     .where(and(eq(c.familyId, env.familyId), eq(c.id, String(row.id))));
   await env.tx
     .update(changeLog)
-    .set({ changes: {} })
+    // Inhalte weg; nur der Vermerk, wer die Sicht verloren hat, bleibt (sonst bliebe die Gruppe bei einem Gerät, das den Entzug noch nicht kannte, als Geist stehen)
+    .set({ changes: sql`case when ${changeLog.changes} ? '__lostSight' then jsonb_build_object('__lostSight', ${changeLog.changes} -> '__lostSight') else '{}'::jsonb end` })
     .where(and(eq(changeLog.familyId, env.familyId), eq(changeLog.entity, def.name), eq(changeLog.entityId, String(row.id))));
   await logChange(env, { def, id: String(row.id), rev, tombstone: true, created: false, changes: {} });
   return rev;
@@ -189,13 +223,15 @@ function parseFields(def: EntityDef, raw: Record<string, unknown>): ParsedFields
   return { ok: true, values };
 }
 
-async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Row): Promise<OpOutcome> {
+async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Row, revive?: Row): Promise<OpOutcome> {
   const values: Row = { ...supplied };
   for (const [name, f] of Object.entries(def.fields)) {
     if (f.access === 'server' || values[name] !== undefined) continue;
     if (f.required) return rejected('invalid');
     if (f.defaultValue !== undefined) values[name] = f.defaultValue;
   }
+  // feste, abgeleitete IDs: jede andere ID ist ungültig (immer `invalid`, kein Orakel darüber, wer sie schon belegt hat)
+  if (def.idValid && !def.idValid(op.id, values, env.actor, env.familyId)) return rejected('invalid');
   // übergeordneter Datensatz: vorhanden, lesbar, nicht gelöscht
   let parentFacts: Facts | null = null;
   let parentId: string | undefined;
@@ -211,10 +247,11 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const decision = authorize(def.rules, 'create', env.actor, def.factsForCreate(env.actor, values, parentFacts), Object.keys(supplied), values);
   if (decision !== 'ok') return rejected(decision);
   if (def.check && !def.check(values)) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor }, { ...values, id: op.id }))) return rejected('invalid');
 
   for (const [name, f] of Object.entries(def.fields)) {
     const v = values[name];
-    if (f.memberRef && typeof v === 'string' && !(await isActiveMember(env.tx, env.familyId, v))) return rejected('invalid_reference');
+    if (f.memberRef && !(await memberRefsValid(env.tx, env.familyId, v))) return rejected('invalid_reference');
   }
   if (def.maxLive) {
     const c = syncColumns(def);
@@ -222,6 +259,22 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     if (def.maxLive.per === 'parent' && def.parent && parentId) where.push(eq(columnOf(def, def.parent.field), parentId));
     const [n] = await env.tx.select({ n: count() }).from(def.table).where(and(...where));
     if ((n?.n ?? 0) >= def.maxLive.max) return rejected('limit_reached');
+  }
+
+  if (def.ownerPerParent && def.parent && parentId) {
+    const c = syncColumns(def);
+    const [n] = await env.tx
+      .select({ n: count() })
+      .from(def.table)
+      .where(
+        and(
+          eq(c.familyId, env.familyId),
+          isNull(c.deletedAt),
+          eq(columnOf(def, def.parent.field), parentId),
+          eq(columnOf(def, def.ownerPerParent.field), env.actor.userId),
+        ),
+      );
+    if ((n?.n ?? 0) >= def.ownerPerParent.max) return rejected('limit_reached');
   }
 
   if (def.ownerLimit && def.ownerLimit.roles.includes(env.actor.role)) {
@@ -233,21 +286,61 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     if ((n?.n ?? 0) >= def.ownerLimit.max) return rejected('limit_reached');
   }
 
+  if (def.rate) {
+    const c = syncColumns(def);
+    const since = new Date(env.now.getTime() - 60_000);
+    const [n] = await env.tx
+      .select({ n: count() })
+      .from(def.table)
+      .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), since)));
+    if ((n?.n ?? 0) >= def.rate.perMinute) return rejected('limit_reached');
+    if (def.rate.perHour !== undefined) {
+      const [h] = await env.tx
+        .select({ n: count() })
+        .from(def.table)
+        .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), new Date(env.now.getTime() - 3_600_000))));
+      if ((h?.n ?? 0) >= def.rate.perHour) return rejected('limit_reached');
+    }
+    // Byte-Kontingent je Person (Stunde und Tag) über die Länge des Inhalts
+    const b = def.rate.bytes;
+    if (b) {
+      const incoming = Buffer.byteLength(String(values[b.field] ?? ''), 'utf8');
+      for (const [span, max] of [
+        [3_600_000, b.perHour],
+        [86_400_000, b.perDay],
+      ] as const) {
+        const [used] = await env.tx
+          .select({ n: sql<string>`coalesce(sum(octet_length(${columnOf(def, b.field)})), 0)::text` })
+          .from(def.table)
+          .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), new Date(env.now.getTime() - span))));
+        if (Number(used?.n ?? 0) + incoming > max) return rejected('limit_reached');
+      }
+    }
+  }
+
   const rev = env.revs.rev + 1; // erst nach erfolgreichem Einfügen vergeben (sonst entstünde eine Lücke)
   const fieldRevs: Record<string, number> = {};
   for (const [name, f] of Object.entries(def.fields)) if (f.access !== 'server') fieldRevs[name] = rev;
   const row: Row = { ...values, ...(def.onCreate?.(env.actor) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
   const c = syncColumns(def);
-  const inserted = await env.tx
-    .insert(def.table)
-    .values(row as never)
-    .onConflictDoNothing() // jede Eindeutigkeit (ID, aktive Teilnehmer/Ausnahmen) ergibt eine Ablehnung, nie einen Datenbankfehler
-    .returning({ id: c.id });
+  // Wiederbeleben: der gelöschte Datensatz mit fester ID wird zu einem neuen (Tombstone verschwindet, Kinder bleiben gelöscht)
+  const inserted = revive
+    ? await env.tx
+        .update(def.table)
+        .set({ ...Object.fromEntries(Object.entries(row).filter(([k]) => !(def.reviveKeep ?? []).includes(k))), deletedAt: null } as never)
+        .where(and(eq(c.familyId, env.familyId), eq(c.id, op.id)))
+        .returning({ id: c.id })
+    : await env.tx
+        .insert(def.table)
+        .values(row as never)
+        .onConflictDoNothing() // jede Eindeutigkeit (ID, aktive Teilnehmer/Ausnahmen) ergibt eine Ablehnung, nie einen Datenbankfehler
+        .returning({ id: c.id });
   // die ID gehört einem fremden Datensatz (auch einer anderen Familie) oder der Datensatz gibt es schon: nicht verraten, was davon
   if (inserted.length === 0) return rejected('not_found');
   env.revs.next();
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: true, changes: wireRow(def, row) });
-  return { status: 'acked', rev, conflicts: [], roles: rolesThatMayRead(def.rules, def.factsForCreate(env.actor, values, parentFacts)) };
+  const to = recipients(def, def.factsForCreate(env.actor, values, parentFacts));
+  return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users, wake: to.wake };
 }
 
 async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, supplied: Row): Promise<OpOutcome> {
@@ -257,6 +350,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
   if (decision === 'not_found') return rejected('not_found');
   if (row.deletedAt) return rejected('deleted');
   if (decision !== 'ok') return rejected(decision);
+  if (def.guard && !def.guard('update', row, { ...row, ...supplied })) return rejected('forbidden');
 
   // unveränderliche Felder (access 'create') dürfen nur denselben Wert wiederholen
   const wanted: Row = {};
@@ -294,11 +388,36 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
   const conflicts = Object.keys(lost).length > 0 ? [{ fields: lost, serverRev: Number(row.rev) }] : [];
   if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
 
-  if (def.check && !def.check({ ...row, ...changed })) return rejected('invalid');
-  for (const [name, value] of Object.entries(changed)) {
-    if (def.fields[name]?.memberRef && typeof value === 'string' && !(await isActiveMember(env.tx, env.familyId, value))) {
-      return rejected('invalid_reference');
+  if (def.onUpdate) {
+    for (const [k, v] of Object.entries(def.onUpdate(changed, env.now, row))) {
+      if (v === undefined) delete changed[k];
+      else changed[k] = v;
     }
+    if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
+  }
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor }, { ...row, ...changed }))) return rejected('invalid');
+  // Mengenbegrenzung für Änderungen (z. B. Teilnehmerwechsel, Text-Bearbeitungen): gezählt wird im Änderungsprotokoll
+  if (def.updateRate && def.updateRate.fields.some((f) => f in changed)) {
+    const fieldList = sql.join(def.updateRate.fields.map((f) => sql`${f}`), sql`, `);
+    const [n] = await env.tx
+      .select({ n: count() })
+      .from(changeLog)
+      .where(
+        and(
+          eq(changeLog.familyId, env.familyId),
+          eq(changeLog.entity, def.name),
+          eq(changeLog.authorId, env.actor.userId),
+          eq(changeLog.created, false),
+          gt(changeLog.createdAt, new Date(env.now.getTime() - 60_000)),
+          sql`${changeLog.changes} ?| array[${fieldList}]::text[]`,
+        ),
+      );
+    if ((n?.n ?? 0) >= def.updateRate.perMinute) return rejected('limit_reached');
+  }
+  if (def.check && !def.check({ ...row, ...changed })) return rejected('invalid');
+  if (def.guard && !def.guard('update', row, { ...row, ...changed })) return rejected('forbidden');
+  for (const [name, value] of Object.entries(changed)) {
+    if (def.fields[name]?.memberRef && !(await memberRefsValid(env.tx, env.familyId, value))) return rejected('invalid_reference');
   }
 
   const rev = env.revs.next();
@@ -311,12 +430,24 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
     .where(and(eq(c.familyId, env.familyId), eq(c.id, op.id)));
   const wireChanges: Record<string, unknown> = {};
   for (const [name, value] of Object.entries(changed)) wireChanges[name] = wireValue(def, name, value) ?? null;
+  // wer durch diese Änderung die Sicht verliert (nur diese Personen bekommen später den hidden-Tombstone; steht nur im Protokoll, nie in einer Antwort)
+  const gone = def.lostSight?.(row, { ...row, ...changed }) ?? [];
+  if (gone.length > 0) wireChanges[LOST_SIGHT] = [...gone];
+  const gained = def.gainedSight?.(row, { ...row, ...changed }) ?? [];
+  if (gained.length > 0) wireChanges[GAINED_SIGHT] = [...gained];
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: false, changes: wireChanges });
   // wer die Änderung sehen darf: Sicht vorher und nachher (bei geänderter Freigabe erfahren auch die, die die Sicht verlieren, davon)
-  const roles = [...new Set([...rolesThatMayRead(def.rules, facts), ...rolesThatMayRead(def.rules, await factsOf(env, def, { ...row, ...changed }))])];
+  // ersetzte Inhalte bleiben nicht in älteren Protokolleinträgen (der Stand steht in der Fachtabelle; Protokolle brauchen nur die Feldnamen)
+  for (const field of def.scrubOnUpdate ?? []) {
+    if (!(field in changed)) continue;
+    await env.tx.execute(
+      sql`update change_log set changes = changes - ${field}::text where family_id = ${env.familyId} and entity = ${def.name} and entity_id = ${op.id} and rev < ${rev}`,
+    );
+  }
+  const to = recipients(def, facts, await factsOf(env, def, { ...row, ...changed }));
   // Freigabe geändert: untergeordnete Datensätze neu anstoßen, damit Geräte, die sie jetzt sehen dürfen, sie bekommen
   if (def.visibilityFields?.some((f) => f in changed)) await touchChildren(env, def, op.id);
-  return { status: 'acked', rev, conflicts, roles };
+  return { status: 'acked', rev, conflicts, roles: to.roles, users: to.users, wake: to.wake };
 }
 
 async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Promise<OpOutcome> {
@@ -326,8 +457,10 @@ async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Pro
   if (decision === 'not_found') return rejected('not_found');
   if (row.deletedAt) return { status: 'acked', rev: null, conflicts: [] }; // schon gelöscht: nichts zu tun
   if (decision !== 'ok') return rejected(decision);
+  if (def.guard && !def.guard('delete', row)) return rejected('forbidden');
   const rev = await tombstoneTree(env, def, row);
-  return { status: 'acked', rev, conflicts: [], roles: rolesThatMayRead(def.rules, facts) };
+  const to = recipients(def, facts);
+  return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users, wake: to.wake };
 }
 
 /** Bewertet eine Op im Rahmen einer geöffneten Transaktion (die Familienzeile ist gesperrt). */
@@ -346,6 +479,8 @@ export async function evaluateOp(env: EngineEnv, op: ParsedOp): Promise<OpOutcom
     if (op.baseRev > 0) return rejected('not_found');
     return create(env, def, op, parsed.values);
   }
+  // gelöschter Datensatz mit fester ID (z. B. Direktchat nach Entfernen der Person): erneutes Anlegen belebt ihn wieder
+  if (row.deletedAt && op.baseRev === 0 && def.revive?.(row)) return create(env, def, op, parsed.values, row);
   return update(env, def, op, row, parsed.values);
 }
 

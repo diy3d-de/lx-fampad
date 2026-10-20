@@ -58,6 +58,9 @@ class SystemChannel {
     return (enabled: r['enabled'] == true, canAsk: r['canAsk'] == true, kanal: k is int ? k : -1);
   }
 
+  /// Wichtigkeit des Kanals der Chat-Benachrichtigungen (0 = aus, -1 = nicht angelegt oder nicht lesbar).
+  Future<int> chatKanalWichtigkeit() async => (await _aufrufen<int>('chatChannelImportance')) ?? -1;
+
   /// Öffnet "Alarme & Erinnerungen" der App (Rückfall App-Info). false = nicht möglich.
   Future<bool> alarmEinstellungenOeffnen() async => (await _aufrufen<bool>('openExactAlarmSettings')) == true;
 

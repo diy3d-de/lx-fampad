@@ -5,6 +5,7 @@ import '../../constants.dart';
 import 'api_client.dart';
 import 'api_error.dart';
 import '../sync/sync_models.dart';
+import '../crypto/schluessel.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -172,6 +173,59 @@ class FampadApi {
   Future<void> geraetAbmelden(String id) async {
     await client.delete('/devices/$id');
   }
+
+  // ----------------------------------------------------------- Push (nur Android)
+
+  Future<PushStatusDto> pushStatus() async => PushStatusDto.fromJson(await client.get('/me/push'));
+
+  /// Meldet den UnifiedPush-Endpunkt dieses Geräts an (ersetzt einen früheren). Der Server prüft Host und Pfad streng.
+  Future<void> pushAnmelden(String endpunkt) async {
+    await client.put('/me/push', {'endpoint': endpunkt});
+  }
+
+  Future<void> pushLoeschen() async {
+    await client.delete('/me/push');
+  }
+
+  /// Der Server schickt einen Wecker (ohne Inhalt) an dieses Gerät.
+  Future<void> pushTest() async {
+    await client.post('/me/push/test');
+  }
+
+  // ----------------------------------------------------------- E2EE-Schlüssel (docs/API.md, Abschnitt E2EE)
+
+  Future<EigeneSchluesselDto> eigeneSchluessel() async => EigeneSchluesselDto.fromJson(await client.get('/me/keys'));
+
+  Future<OeffentlicheSchluessel> schluesselAnlegen({required String enc, required String sign}) async =>
+      schluesselAusAntwort(await client.post('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign}));
+
+  /// Schlüsselwechsel (Step-up): ersetzt das öffentliche Paar, die Schlüsselversion steigt, Sicherung und Übertragung entfallen.
+  /// [erwarteteVersion] ist die dem Client bekannte Version (409, wenn ein anderes Gerät schneller war).
+  Future<OeffentlicheSchluessel> schluesselWechseln({required String enc, required String sign, required int erwarteteVersion}) async =>
+      schluesselAusAntwort(await client.put('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign, 'expectedKeyVersion': erwarteteVersion}));
+
+  /// Öffentlicher Schlüssel eines Familienmitglieds in einer bestimmten Version (Historie des Servers; für alte Signaturen).
+  Future<OeffentlicheSchluessel> mitgliedSchluessel(String userId, int version) async {
+    final r = await client.get('/members/$userId/keys?version=$version');
+    final keys = r['keys'];
+    if (keys is! List || keys.length != 1) throw ApiException.unerwarteteAntwort;
+    return schluesselAusAntwort({'keys': keys.first});
+  }
+
+  Future<void> sicherungAblegen({required String blob, required int keyVersion}) async {
+    await client.put('/me/key-backup', {'blob': blob, 'keyVersion': keyVersion});
+  }
+
+  Future<BlobDto> sicherungAbrufen() async => BlobDto.fromJson(await client.get('/me/key-backup'));
+
+  /// Gibt die Ablaufzeit zurück (2 Minuten).
+  Future<DateTime> uebertragungAnlegen({required String suchkennung, required String blob, required int keyVersion}) async {
+    final r = await client.post('/me/key-transfer', {'lookup': suchkennung, 'blob': blob, 'keyVersion': keyVersion});
+    final t = r['expiresAt'];
+    return t is String ? (DateTime.tryParse(t) ?? DateTime.now()) : DateTime.now();
+  }
+
+  Future<BlobDto> uebertragungEinloesen(String suchkennung) async => BlobDto.fromJson(await client.post('/me/key-transfer/claim', {'lookup': suchkennung}));
 
   // ----------------------------------------------------------- Sync
 

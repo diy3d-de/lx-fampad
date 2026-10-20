@@ -38,6 +38,25 @@ class UebernahmeBericht {
   bool resync = false;
 }
 
+/// Bereitet eine Op unmittelbar vor dem Senden vor (Chat: Klartext `l1:` wird zur verschlüsselten Hülle `e1:`, mit der zu diesem Zeitpunkt aktuellen Epoche).
+abstract interface class OpVorbereiter {
+  /// Liefert die Felder (JSON-Text), die gesendet werden sollen, oder null: diese Op kann jetzt nicht gesendet werden. Dann bleibt sie im Ausgang und alle
+  /// späteren Ops warten ebenfalls (die Reihenfolge bleibt erhalten).
+  Future<String?> vorbereiten(OutboxData op);
+}
+
+/// Ein lokaler Klartext (`l1:`) einer Chat-Nachricht darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet). Nur das Feld
+/// `text` der Entität `nachricht` zählt (ein Listeneintrag, der mit "l1:" beginnt, ist ein ganz normaler Text).
+bool _hatLokalenKlartext(OutboxData z) {
+  if (z.entity != 'nachricht' || !z.fieldsJson.contains('l1:')) return false;
+  try {
+    final f = jsonDecode(z.fieldsJson);
+    return f is Map && f['text'] is String && (f['text'] as String).startsWith('l1:');
+  } catch (_) {
+    return true;
+  }
+}
+
 /// Eine lokale Änderung für [SyncStore.aendernMehrere].
 class SyncAenderung {
   final String entity;
@@ -74,6 +93,16 @@ class SyncStore {
   Future<int?> snapshotRev() async => int.tryParse(await db.metaLesen(kSnapshotRev) ?? '');
 
   Future<void> _snapshotRevSetzen(int? rev) => rev == null ? db.metaLoeschen(kSnapshotRev) : db.metaSchreiben(kSnapshotRev, '$rev');
+
+  /// Wartet im Ausgang Klartext (`l1:`) länger als [alter] (das Gerät war offline)? Dann holt der Abgleich zuerst den Stand des Servers (vielleicht gab es inzwischen
+  /// eine neue Epoche) und verschlüsselt erst danach mit der dann aktuellen.
+  Future<bool> hatAltenKlartext(Duration alter) async {
+    final grenze = _jetzt().subtract(alter);
+    for (final z in await (db.select(db.outbox)..where((o) => o.entity.equals('nachricht') & o.createdAt.isSmallerOrEqualValue(grenze))).get()) {
+      if (_hatLokalenKlartext(z)) return true;
+    }
+    return false;
+  }
 
   /// Anzahl noch nicht bestätigter Änderungen (live).
   Stream<int> offeneAenderungen() {
@@ -175,16 +204,59 @@ class SyncStore {
   // ------------------------------------------------------------------ Senden
 
   /// Die nächsten Ops (älteste zuerst), als gesendet markiert. Schon gesendete, noch nicht bestätigte Ops gehen erneut mit (gleiche op_id).
-  Future<List<OutboxData>> naechsteOps(int max) => db.transaction(() async {
-    final zeilen = await (db.select(db.outbox)
-          ..orderBy([(o) => OrderingTerm.asc(o.id)])
-          ..limit(max))
-        .get();
-    if (zeilen.isNotEmpty) {
-      await (db.update(db.outbox)..where((o) => o.id.isIn([for (final z in zeilen) z.id]))).write(OutboxCompanion(sentAt: Value(_jetzt())));
+  /// Mit [vorbereiter] wird jede Op vor dem Senden vorbereitet (Chat: verschlüsselt). Ist eine Op nicht sendbar, bleibt sie im Ausgang und mit ihr alle
+  /// späteren Ops DERSELBEN Entität/ID (Reihenfolge je Datensatz); alle anderen Ops gehen weiter (sonst könnte eine wartende Nachricht die Epoche blockieren,
+  /// auf die sie selbst wartet). Ein lokaler Klartext (`l1:`) wird nie ausgeliefert.
+  Future<List<OutboxData>> naechsteOps(int max, {OpVorbereiter? vorbereiter}) async {
+    final zeilen = await (db.select(db.outbox)..orderBy([(o) => OrderingTerm.asc(o.id)])).get();
+    final bereit = <OutboxData>[];
+    final geaendert = <int, String>{};
+    final zurueck = <String>{};
+    for (final z in zeilen) {
+      if (bereit.length >= max) break;
+      final key = '${z.entity}/${z.entityId}';
+      if (zurueck.contains(key)) continue;
+      var op = z;
+      if (vorbereiter != null) {
+        String? felder;
+        try {
+          felder = await vorbereiter.vorbereiten(z);
+        } catch (_) {
+          felder = null; // eine fehlgeschlagene Vorbereitung hält die Op zurück, sie geht nie unvorbereitet hinaus
+        }
+        if (felder == null) {
+          zurueck.add(key);
+          continue;
+        }
+        if (felder != z.fieldsJson) {
+          op = z.copyWith(fieldsJson: felder);
+          geaendert[z.id] = felder;
+        }
+      }
+      if (_hatLokalenKlartext(op)) {
+        zurueck.add(key);
+        continue;
+      }
+      bereit.add(op);
     }
-    return zeilen;
-  });
+    return db.transaction(() async {
+      final gesendet = <OutboxData>[];
+      for (final op in bereit) {
+        final neu = geaendert[op.id];
+        if (neu != null) {
+          // nur schreiben, wenn die Zeile inzwischen nicht weiter geändert wurde (eine Bearbeitung vom Benutzer gewinnt: die Op bleibt dann für den nächsten Lauf)
+          final alt = zeilen.firstWhere((z) => z.id == op.id).fieldsJson;
+          final n = await (db.update(db.outbox)..where((o) => o.id.equals(op.id) & o.fieldsJson.equals(alt))).write(OutboxCompanion(fieldsJson: Value(neu)));
+          if (n == 0) break;
+        }
+        gesendet.add(op);
+      }
+      if (gesendet.isNotEmpty) {
+        await (db.update(db.outbox)..where((o) => o.id.isIn([for (final z in gesendet) z.id]))).write(OutboxCompanion(sentAt: Value(_jetzt())));
+      }
+      return gesendet;
+    });
+  }
 
   static SyncOp alsOp(OutboxData z) =>
       SyncOp(opId: z.opId, op: z.op, entity: z.entity, id: z.entityId, fields: jsonDecode(z.fieldsJson) as Map<String, dynamic>, baseRev: z.baseRev);
@@ -250,7 +322,7 @@ class SyncStore {
       final def = entitaeten[c.entity];
       if (def == null || await def.rev(db, c.id) == null) continue;
       await def.schreiben(db, c.id, c.fields, ueberspringen: (offen.werte['${c.entity}/${c.id}'] ?? const {}).keys.toSet());
-      final text = c.fields.keys.any((f) => f == 'name' || f == 'text' || f == 'titel');
+      final text = c.fields.keys.any((f) => f == 'name' || f == 'text' || f == 'titel' || f == 'teilnehmer');
       if (text) {
         final n = await def.anzeigename(db, c.id);
         bericht.hinweise.add(SyncHinweis('${n ?? 'Ein Eintrag'} wurde gleichzeitig auf einem anderen Gerät geändert. Dessen Stand gilt.'));
@@ -302,6 +374,12 @@ class SyncStore {
     if (def == null) return;
     final name = await def.anzeigename(db, z.entityId) ?? 'Ein Eintrag';
     final neu = z.baseRev == 0 && z.op == 'upsert';
+    // Normalfall "der erste gewinnt" (gleichzeitige Rotation des Epochenschlüssels): still verwerfen, den Stand des Servers neu laden
+    if (def.abgelehntStill && neu && code != 'duplicate_op' && !(code == 'limit_reached' && def.bleibtBeiLimit)) {
+      await _entferneBaum(z.entity, z.entityId);
+      bericht.neuLaden = true;
+      return;
+    }
     switch (code) {
       case 'not_found' when neu && def.eindeutigBeiAnlage:
         // gibt es für dieses Ziel schon (z. B. dieselbe Person oder dasselbe Vorkommen von einem anderen Gerät): die lokale Kopie weicht der des Servers
@@ -321,6 +399,12 @@ class SyncStore {
       case 'invalid_reference':
         bericht.hinweise.add(SyncHinweis('Die zugewiesene Person gehört nicht mehr zur Familie. $name wurde nicht geändert.'));
         await _zuruecknehmen(z, neu, bericht);
+      case 'limit_reached' when def.bleibtBeiLimit && z.op == 'upsert':
+        // Nachrichten gehen nicht verloren: dieselbe Änderung kommt mit neuer op_id wieder in den Ausgang (der nächste Abgleich versucht es erneut)
+        await db.into(db.outbox).insert(
+          OutboxCompanion.insert(opId: _neueOpId(), op: z.op, entity: z.entity, entityId: z.entityId, fieldsJson: Value(z.fieldsJson), baseRev: Value(z.baseRev), createdAt: Value(_jetzt())),
+        );
+        bericht.hinweise.add(SyncHinweis('${def.grenzeErreicht}: $name wird später gesendet.'));
       case 'limit_reached':
         bericht.hinweise.add(SyncHinweis('${def.grenzeErreicht}: $name konnte nicht gespeichert werden.'));
         await _zuruecknehmen(z, neu, bericht);

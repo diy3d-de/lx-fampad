@@ -89,10 +89,47 @@ export interface Config {
   healthTimeoutMs: number;
   /** Gleichzeitige WebSocket-Verbindungen je IP. */
   wsMaxPerIp: number;
+  /** Push (UnifiedPush über das eigene ntfy): Loopback-URL und Token; fehlt eines, ist Push still aus. */
+  ntfyUrl: string | undefined;
+  ntfyToken: string | undefined;
+  /** Host, den gemeldete UnifiedPush-Endpunkte haben müssen (SSRF-Schutz; gepostet wird nie dorthin, sondern an ntfyUrl). */
+  ntfyPublicHost: string;
   /** Abstand der Server-Pings; bleibt ein Pong bis zum nächsten Ping aus, wird die Verbindung getrennt. */
   wsPingIntervalMs: number;
   /** Frist, in der sich ein WebSocket nach dem Verbinden anmelden muss. */
   wsAuthTimeoutMs: number;
+}
+
+/** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
+function ntfyUrl(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.NTFY_URL?.trim();
+  if (!raw) return undefined;
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error('NTFY_URL ungültig');
+  }
+  if ((u.protocol !== 'http:' && u.protocol !== 'https:') || u.username || u.password || u.search || u.hash || u.pathname !== '/') {
+    throw new Error('NTFY_URL ungültig (nur http(s)://Host[:Port] ohne Zugangsdaten und Pfad)');
+  }
+  return u.origin;
+}
+
+/** In Produktion nur Loopback (der Wecker trägt das Token; ein fremdes Ziel wäre eine Token-Abgabe). */
+const LOOPBACK_HOSTS = ['127.0.0.1', '[::1]', 'localhost'];
+
+function ntfyUrlPruefen(url: string | undefined, nodeEnv: Config['env']): string | undefined {
+  if (url !== undefined && nodeEnv === 'production' && !LOOPBACK_HOSTS.includes(new URL(url).hostname === '::1' ? '[::1]' : new URL(url).hostname)) {
+    throw new Error('NTFY_URL muss in Produktion eine Loopback-Adresse sein (127.0.0.1, [::1] oder localhost)');
+  }
+  return url;
+}
+
+function ntfyPublicHost(env: NodeJS.ProcessEnv): string {
+  const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familie.lx-labs.dev').toLowerCase();
+  if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
+  return host;
 }
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
@@ -233,6 +270,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     syncLockTimeoutMs: positiveInt(env, 'SYNC_LOCK_TIMEOUT_MS', 5000),
     syncStatementTimeoutMs: positiveInt(env, 'SYNC_STATEMENT_TIMEOUT_MS', 10_000),
     healthTimeoutMs: positiveInt(env, 'HEALTH_TIMEOUT_MS', 2000),
+    ntfyUrl: ntfyUrlPruefen(ntfyUrl(env), nodeEnv),
+    ntfyToken: env.NTFY_TOKEN?.trim() || undefined,
+    ntfyPublicHost: ntfyPublicHost(env),
     wsMaxPerIp: positiveInt(env, 'WS_MAX_PER_IP', 10),
     wsPingIntervalMs: positiveInt(env, 'WS_PING_INTERVAL_MS', 30_000),
     wsAuthTimeoutMs: positiveInt(env, 'WS_AUTH_TIMEOUT_MS', 5000),

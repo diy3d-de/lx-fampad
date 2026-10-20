@@ -1,5 +1,6 @@
 // Datenmodelle der Server-Schnittstelle (docs/API.md). Parsing ist streng bei Pflichtfeldern und tolerant bei
 // zusätzlichen Feldern; Abweichungen werden zu ApiException.unerwarteteAntwort (keine Interna im UI).
+import '../crypto/schluessel.dart';
 import 'api_error.dart';
 
 typedef Json = Map<String, dynamic>;
@@ -154,6 +155,9 @@ class UserDto {
   /// Benutzerbild (null = keines: Initialen).
   final AvatarDto? avatar;
 
+  /// Öffentliche Verschlüsselungsschlüssel (null, solange die Person keine eingerichtet hat oder der Server keine liefert).
+  final OeffentlicheSchluessel? schluessel;
+
   /// Familienrolle (reine Anzeige; null = nicht gesetzt, auch bei alten Servern).
   final FamilyRole? familyRole;
   const UserDto({
@@ -164,6 +168,7 @@ class UserDto {
     required this.role,
     required this.status,
     this.avatar,
+    this.schluessel,
     this.familyRole,
   });
 
@@ -177,6 +182,7 @@ class UserDto {
       role: Role.parse(_s(m, 'role')),
       status: MemberStatus.parse(_s(m, 'status')),
       avatar: AvatarDto.tolerant(m['avatar']),
+      schluessel: _schluessel(m),
       familyRole: FamilyRole.tolerant(m['familyRole']),
     );
   }
@@ -518,4 +524,65 @@ class DeviceInfo {
   const DeviceInfo({this.id, required this.name, required this.platform, this.appVersion});
 
   Json toJson() => {if (id != null) 'id': id, 'name': name, 'platform': platform, if (appVersion != null && appVersion!.isNotEmpty) 'appVersion': appVersion};
+}
+
+/// Push-Status dieses Geräts laut Server (GET /me/push).
+class PushStatusDto {
+  /// Der Server hat Push eingerichtet (NTFY_URL/NTFY_TOKEN).
+  final bool available;
+  final bool registered;
+  final bool active;
+  final DateTime? lastOkAt;
+  const PushStatusDto({required this.available, required this.registered, required this.active, required this.lastOkAt});
+
+  factory PushStatusDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final ok = m['lastOkAt'];
+    return PushStatusDto(
+      available: m['available'] == true,
+      registered: m['registered'] == true,
+      active: m['active'] == true,
+      lastOkAt: ok is String ? DateTime.tryParse(ok) : null,
+    );
+  }
+}
+
+/// Öffentliche Schlüssel aus den Feldern publicEncKey/publicSignKey/keyVersion (alle drei oder keiner; ungültige Form zählt als "keine").
+OeffentlicheSchluessel? _schluessel(Json m) {
+  final enc = m['publicEncKey'], sign = m['publicSignKey'], v = m['keyVersion'];
+  if (enc is! String || sign is! String || v is! int) return null;
+  try {
+    return OeffentlicheSchluessel.ausBase64(enc: enc, sign: sign, version: v);
+  } on Object {
+    return null;
+  }
+}
+
+/// Antwort von GET /me/keys.
+class EigeneSchluesselDto {
+  final OeffentlicheSchluessel? schluessel;
+  final bool hatSicherung;
+  const EigeneSchluesselDto({required this.schluessel, required this.hatSicherung});
+
+  factory EigeneSchluesselDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final k = m['keys'];
+    return EigeneSchluesselDto(schluessel: k == null ? null : _schluesselStreng(asJson(k)), hatSicherung: _b(m, 'hasBackup'));
+  }
+}
+
+OeffentlicheSchluessel _schluesselStreng(Json m) => _schluessel(m) ?? _fehler();
+
+/// Antwort auf das Anlegen oder Wechseln des Schlüssels.
+OeffentlicheSchluessel schluesselAusAntwort(Json r) => _schluesselStreng(asJson(r['keys']));
+
+/// Blob samt Schlüsselversion (Sicherung abrufen, Übertragung einlösen).
+class BlobDto {
+  final String blob;
+  final int keyVersion;
+  const BlobDto({required this.blob, required this.keyVersion});
+  factory BlobDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return BlobDto(blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'));
+  }
 }
