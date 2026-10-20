@@ -5,6 +5,8 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show Factory;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +32,12 @@ final karteStilProvider = Provider<Future<String> Function()>((ref) {
 
 /// Nur für Tests: statt der echten Karte (MapLibre läuft im Widget-Test nicht) eine Attrappe mit denselben Nadeln, Knöpfen und Infos.
 final karteAttrappeProvider = Provider<bool>((ref) => false);
+
+/// Nur für Tests: die Attrappe meldet nie "Stil geladen" (wie eine Karte, die auf dem Gerät leer bleibt).
+final karteAttrappeLaedtNieProvider = Provider<bool>((ref) => false);
+
+/// Wie lange die Karte auf "Stil geladen" wartet, bevor statt einer leeren Fläche eine Meldung erscheint.
+final karteLadeFristProvider = Provider<Duration>((ref) => const Duration(seconds: 10));
 
 /// Höhe der Karte auf der Seite.
 const double kKarteHoehe = 320;
@@ -85,6 +93,12 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   Set<String> _angepasst = {};
   Timer? _auffrischen;
 
+  /// Stil geladen (MapLibre meldet "fertig"): erst dann gibt es Nadeln und Kreise; ohne Stil zeigt die Karte nach [karteLadeFristProvider] eine Meldung.
+  bool _geladen = false;
+  bool _zeitueberschreitung = false;
+  Timer? _ladeTimer;
+  Key _kartenSchluessel = UniqueKey();
+
   /// Bereich der Kartendatei (aus ihrem Kopf), gesetzt, sobald die Karte gebaut wird.
   KartenBereich _bereich = KartenBereich.westerburg175;
 
@@ -101,6 +115,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _auffrischen?.cancel();
+    _ladeTimer?.cancel();
     _anim.dispose();
     super.dispose();
   }
@@ -114,6 +129,31 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   void _nochmalPruefen() {
     final d = ref.read(karteDateiProvider);
     if (!d.isLoading && (d.hasError || d.value == null)) ref.invalidate(karteDateiProvider);
+  }
+
+  void _stilGeladen() {
+    _ladeTimer?.cancel();
+    if (mounted && !_geladen) setState(() => _geladen = true);
+  }
+
+  /// Wartet auf "Stil geladen"; bleibt die Meldung aus (Kacheln oder Stil kommen nicht an, Darstellung scheitert), erscheint nach der Frist eine Meldung.
+  void _ladeFristStarten() {
+    if (_geladen || _ladeTimer?.isActive == true || _zeitueberschreitung) return;
+    _ladeTimer = Timer(ref.read(karteLadeFristProvider), () {
+      if (mounted && !_geladen) setState(() => _zeitueberschreitung = true);
+    });
+  }
+
+  /// "Erneut versuchen" nach einer Zeitüberschreitung: neue Karten-Ansicht, neuer Stil.
+  void _neuVersuchen() {
+    _ladeTimer?.cancel();
+    setState(() {
+      _zeitueberschreitung = false;
+      _geladen = ref.read(karteAttrappeProvider) && !ref.read(karteAttrappeLaedtNieProvider);
+      _kartenSchluessel = UniqueKey();
+      _stil = null;
+    });
+    ref.invalidate(karteDateiProvider);
   }
 
   /// "Erneut prüfen" auch bei einem Fehler beim Laden des Stils: der gemerkte Fehler-Future wird verworfen.
@@ -263,6 +303,10 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
     _bereich = bereich;
     // in der Attrappe (Tests) braucht es keinen Stil
     _stil ??= ref.read(karteStilProvider)();
+    final attrappe = ref.read(karteAttrappeProvider);
+    // die Attrappe (Tests) gilt als geladen, außer sie soll nie laden
+    if (attrappe && !ref.read(karteAttrappeLaedtNieProvider)) _geladen = true;
+    _ladeFristStarten();
     final eintraege = _eintraege();
     if (_nach.isEmpty && eintraege.isNotEmpty) _ziele(eintraege);
     final jetzt = ref.read(standortUhrProvider)();
@@ -273,7 +317,8 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
 
     List<Marker> marker() => [
       for (final e in eintraege)
-        if (bereich.enthaelt(e.lat, e.lng))
+        // ohne geladene Karte keine Nadeln (keine Nadeln auf leerer Fläche)
+        if (_geladen && bereich.enthaelt(e.lat, e.lng))
           Marker(
             point: () {
               final p = _gezeigt(e.id, _Punkt(e.lat, e.lng));
@@ -306,12 +351,16 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                           maxZoom: 17,
                           maxBounds: LngLatBounds(longitudeWest: bereich.west, longitudeEast: bereich.ost, latitudeSouth: bereich.sued, latitudeNorth: bereich.nord),
                         ),
+                        key: _kartenSchluessel,
                         onMapCreated: _kartenFertig,
+                        onStyleLoaded: (_) => _stilGeladen(),
+                        // die Karte bekommt alle Gesten, auch in der scrollenden Seite (sonst scrollt jede Wischgeste die Seite statt die Karte zu bewegen)
+                        gestureRecognizers: {Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new)},
                         layers: [
                           PolygonLayer(
                             polygons: [
                               for (final e in eintraege)
-                                if (bereich.enthaelt(e.lat, e.lng) && e.genauigkeit != null && e.genauigkeit! > 3)
+                                if (_geladen && bereich.enthaelt(e.lat, e.lng) && e.genauigkeit != null && e.genauigkeit! > 3)
                                   () {
                                     final p = _gezeigt(e.id, _Punkt(e.lat, e.lng));
                                     return Feature(geometry: Polygon.from([kreisRing(p.lat, p.lng, e.genauigkeit!)]));
@@ -324,7 +373,16 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                         children: [WidgetLayer(markers: marker())],
                       ),
               ),
-              if (ausserhalb.isNotEmpty)
+              if (_zeitueberschreitung && !_geladen)
+                Positioned.fill(
+                  child: _NichtEingerichtet(
+                    titel: 'Karte konnte nicht geladen werden',
+                    text: 'Kartenstil oder Kacheln kamen nicht an (Verbindung?).',
+                    knopf: 'Erneut versuchen',
+                    onNeuPruefen: _neuVersuchen,
+                  ),
+                ),
+              if (ausserhalb.isNotEmpty && _geladen)
                 Positioned(
                   left: 8,
                   top: 8,
@@ -368,7 +426,8 @@ class _NichtEingerichtet extends StatelessWidget {
   final String titel;
   final String text;
   final VoidCallback onNeuPruefen;
-  const _NichtEingerichtet({this.titel = 'Karte noch nicht eingerichtet', this.text = 'Die Kartendaten sind auf dem Server noch nicht hinterlegt.', required this.onNeuPruefen});
+  final String knopf;
+  const _NichtEingerichtet({this.knopf = 'Erneut prüfen', this.titel = 'Karte noch nicht eingerichtet', this.text = 'Die Kartendaten sind auf dem Server noch nicht hinterlegt.', required this.onNeuPruefen});
 
   @override
   Widget build(BuildContext context) => _Rahmen(
@@ -384,7 +443,7 @@ class _NichtEingerichtet extends StatelessWidget {
             Text(titel, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
             Text('$text Die Liste unten zeigt weiterhin alle Positionen.', textAlign: TextAlign.center, style: const TextStyle(color: kTextMuted, fontSize: 13)),
-            LinkKnopf('Erneut prüfen', icon: Icons.refresh, onPressed: onNeuPruefen),
+            LinkKnopf(knopf, icon: Icons.refresh, onPressed: onNeuPruefen),
           ],
         ),
       ),

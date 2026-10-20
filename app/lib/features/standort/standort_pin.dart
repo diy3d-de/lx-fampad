@@ -46,7 +46,8 @@ class StandortPin extends StatelessWidget {
             top: PinMaler.kopfMitteY - kPinBild / 2,
             width: kPinBild,
             height: kPinBild,
-            child: ClipOval(child: BenutzerAvatar(user: user, ersatzName: name, size: kPinBild)),
+            // dunkle Scheibe unter dem Bild: die Initialen haben die Personenfarbe und wären sonst auf der gleichfarbigen Nadel unsichtbar
+            child: ClipOval(child: ColoredBox(color: kSurface, child: BenutzerAvatar(user: user, ersatzName: name, size: kPinBild))),
           ),
         ],
       ),

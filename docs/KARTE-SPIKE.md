@@ -4,6 +4,13 @@
 
 # Karten-Spike (Vorarbeit für „Standort teilen“)
 
+## Release-Build (Ursache der leeren Karte in v0.5.0)
+
+In v0.5.0 (Release-APK) blieb die Karte auf Android leer (graue Fläche, keine Nadeln, die Seite scrollte statt die Karte zu bewegen), im Web und im Debug-Build ging sie. **Ursache:** R8 (Code-Verkleinerung, nur im Release-Build) hat die abstrakten Methoden der Flutter-Schnittstelle `io.flutter.plugin.platform.PlatformView` entfernt (`getView`, `dispose` ...), weil kein Java-Code sie "benutzt". Das maplibre-Paket ruft sie aber über die Dart-JNI-Brücke (`PlatformView.implement` in `jni.g.dart`) auf; ohne die Methoden liefert die Brücke `null`, und `PlatformViewsController.createPlatformView` wirft eine NullPointerException (logcat: `PlatformException(error, null, null, java.lang.NullPointerException`). **Behebung:** Keep-Regeln in `app/android/app/proguard-rules.pro` (`PlatformView`, `PlatformViewFactory`, `ActivityPluginBinding`, `PluginRegistry`, dazu die Klassen des Plugins `com.github.josxha.maplibre.**`, `org.maplibre.**` und `com.github.dart_lang.jni.**`, die das Paket nur zum Teil selbst mitbringt). **Prüfung:** `tools/release-pruefung.sh` (CI-Schritt im Android-Job) baut einen Release-APK mit Wegwerf-Schlüssel und prüft das Manifest (INTERNET, kein ACCESS_BACKGROUND_LOCATION) und R8s `usage.txt` (nichts von `PlatformView`/dem Plugin entfernt). Auf dem Emulator reproduzieren: `app/tool/karte_demo.dart` (nur die Karte mit zwei Beispielpersonen, ohne Anmeldung, gegen den echten Kartenserver): `flutter build apk --release --target-platform android-x64 -t tool/karte_demo.dart`, `adb logcat`.
+
+**Fehlersicht:** Meldet MapLibre nicht binnen 10 s "Stil geladen" (Kartenstil oder Kacheln kommen nicht an, Darstellung scheitert), ersetzt eine Meldung "Karte konnte nicht geladen werden" mit "Erneut versuchen" die leere Fläche; Nadeln und Genauigkeitskreise erscheinen erst mit geladener Karte. Gesten: Die Karte bekommt alle Wischgesten (`EagerGestureRecognizer`), die Seite scrollt nicht mehr, solange der Finger auf der Karte liegt.
+
+
 Stand: 19.10.2026, Branch `spike-karte`. Kein Standort-Feature, keine Server- oder Datenbankänderung. Frage: Geht eine Karte komplett ohne Fremd-Einbindung, im Web und auf Android?
 
 **Ergebnis: Ja.** Web (unter der echten CSP, ohne CSP-Änderung) und Android (Emulator, `pmtiles://` über HTTP mit Range) zeigen die Protomaps-Karte vollständig vom eigenen Host. Der Beispielpunkt mit Genauigkeitskreis, Zoom und die ODbL-Attribution funktionieren.

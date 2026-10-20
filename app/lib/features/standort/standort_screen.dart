@@ -16,6 +16,7 @@ import '../../data/lists/members.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_modelle.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/benutzer_avatar.dart';
 import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
 import '../chat/chat_krypto_ui.dart' show personKryptoHindernis;
@@ -304,7 +305,7 @@ class _Auswahlzeile extends StatelessWidget {
         constraints: const BoxConstraints(minHeight: 52),
         child: Row(
           children: [
-            PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 32),
+            BenutzerAvatar(user: u, ersatzName: u.displayName, size: 32),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -436,7 +437,7 @@ class _Zeile extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             children: [
-              PersonAvatar(name: name, colorIndex: nutzer?.colorIndex ?? 0, size: 36),
+              BenutzerAvatar(user: nutzer, ersatzName: name, size: 36),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
@@ -490,7 +491,7 @@ class StandortDetail extends StatelessWidget {
           children: [
             Row(
               children: [
-                PersonAvatar(name: name, colorIndex: nutzer?.colorIndex ?? 0, size: 44),
+                BenutzerAvatar(user: nutzer, ersatzName: name, size: 44),
                 const SizedBox(width: 12),
                 Expanded(child: Text(name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kTextStrong))),
               ],
