@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ENTWURF (nicht ausgeführt, nicht auf dem Server getestet): Auslieferung der Kartenkacheln (PMTiles) unter https://familie.lx-labs.dev/karte-daten/
+# Einrichtung der Auslieferung der Kartenkacheln (PMTiles) unter https://familie.lx-labs.dev/karte-daten/
 # (docs/KARTE-SPIKE.md, tools/karte/README.md). Idempotent, Muster wie einrichtung-ntfy.sh / einrichtung-2.sh.
 #   1. Vorabprüfungen (nichts wird verändert, wenn eine fehlschlägt)
 #   2. Ordner /srv/fampad/karte anlegen (Besitzer: der aufrufende Benutzer, damit "scp" ohne sudo dorthin kopieren kann)
@@ -10,6 +10,7 @@
 # Die CSP (Content-Security-Policy) in deploy/Caddyfile bleibt unverändert: die Karte lädt alles von der eigenen Domain (connect-src 'self').
 #
 # Aufruf auf dem Server als Benutzer lx:   sudo bash ~/lx-fampad/deploy/einrichtung-karte.sh [--dry-run]
+#   Immer zuerst mit --dry-run (nichts wird verändert), erst danach ohne.
 #   --dry-run  macht nur die Prüfungen, zeigt die geplante Änderung als Diff und schreibt/lädt nichts.
 # WICHTIG: In tmux/screen starten (oder: sudo systemd-run --scope bash <Skript>), damit ein SSH-Abbruch den Lauf nicht mitten in der Caddy-Änderung beendet.
 #
@@ -95,6 +96,20 @@ if ! grep -q "$MARKER" "$FRAGMENT" || ! grep -q "root \* $KARTE_DIR" "$FRAGMENT"
 grep -qsE "$IMPORT_RE" "$CADDYFILE" || fehler "In $CADDYFILE fehlt 'import /etc/caddy/conf.d/*.caddy' (zuerst einrichtung-2.sh, Schritt 6 in deploy/README.md). Das Skript ändert das Haupt-Caddyfile nie."
 curl -fsI --max-time 10 https://lx-labs.dev >/dev/null || fehler "lx-labs.dev antwortet schon vor der Änderung nicht, Abbruch"
 echo "    lx-labs.dev antwortet."
+# Platz: Die Datei ist je nach Ausschnitt 1 bis 5 GB groß; beim Einspielen liegen kurz alte und neue Datei nebeneinander (Austausch per Umbenennen).
+# Verlangt werden deshalb 20 GB frei (MIN_FREI_GB ändert das); eine vorhandene Datei muss plausibel sein (1 MB bis 8 GB, PMTiles-Kennung).
+MIN_FREI_GB="${MIN_FREI_GB:-20}"
+FREI_GB="$(df -BG --output=avail /srv 2>/dev/null | tail -1 | tr -dc '0-9' || true)"
+[ -n "$FREI_GB" ] || fehler "freien Platz auf /srv nicht ermittelt"
+[ "$FREI_GB" -ge "$MIN_FREI_GB" ] || fehler "Nur ${FREI_GB} GB frei auf /srv, verlangt sind ${MIN_FREI_GB} GB (Datei plus Reserve für den Austausch)"
+echo "    Platz auf /srv: ${FREI_GB} GB frei (verlangt ${MIN_FREI_GB} GB)."
+if [ -f "$KARTE_DIR/$PMTILES_NAME" ]; then
+  GROESSE="$(stat -c %s "$KARTE_DIR/$PMTILES_NAME")"
+  { [ "$GROESSE" -ge 1048576 ] && [ "$GROESSE" -le 8589934592 ]; } || fehler "$KARTE_DIR/$PMTILES_NAME ist ${GROESSE} Byte groß (erwartet 1 MB bis 8 GB): unvollständig hochgeladen?"
+  head -c 7 "$KARTE_DIR/$PMTILES_NAME" | grep -q 'PMTiles' || fehler "$KARTE_DIR/$PMTILES_NAME beginnt nicht mit der PMTiles-Kennung"
+  [ "$(stat -c %a "$KARTE_DIR/$PMTILES_NAME")" = 644 ] || echo "    Hinweis: Die Datei sollte Rechte 644 haben (chmod 644), sonst liefert Caddy sie nicht aus."
+  echo "    vorhandene Datei: $((GROESSE / 1048576)) MB."
+fi
 # Der Fang-Block "handle {" muss genau einmal als Block der Site vorkommen, sonst weiß das Skript nicht, wohin der Karten-Block gehört
 N="$(grep -cE '^	handle \{$' "$SITE" || true)"
 [ "$N" = 1 ] || fehler "$SITE enthält $N Zeilen '<Tab>handle {' (erwartet genau 1); Aufbau der Datei hat sich geändert, Block von Hand einfügen"
@@ -158,6 +173,7 @@ if [ -s "$KARTE_DIR/$PMTILES_NAME" ]; then
   ! grep -qi '^content-encoding:' "$WORK/h.txt" || { echo "    Antwort ist komprimiert (Content-Encoding): Range-Anfragen würden brechen" >&2; false; }
   grep -qi '^etag:' "$WORK/h.txt" || { echo "    kein ETag" >&2; false; }
   echo "    Range-Anfrage: 206, PMTiles-Kennung, kein Content-Encoding, ETag vorhanden."
+  echo "    Die App liest den Kartenbereich aus dem Kopf der Datei: ein größerer Ausschnitt später braucht weder App- noch Skript-Änderung."
 else
   C="$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 "$URL" || true)"
   echo "    $KARTE_DIR/$PMTILES_NAME liegt noch nicht dort (HTTP $C, erwartet 404). Datei einspielen: tools/karte/README.md."

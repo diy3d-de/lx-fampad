@@ -82,12 +82,13 @@ void main() {
       expect(karteOrigin(base: '', api: '', web: false), 'https://familie.lx-labs.dev');
     });
 
-    test('Kartenbereich: 175 km um Westerburg; Mitte drin, Paris, Nordsee und Alpen draußen', () {
-      expect(imKartenBereich(50.5612, 7.9741), isTrue);
-      expect(imKartenBereich(50.1109, 8.6821), isTrue); // Frankfurt
-      expect(imKartenBereich(48.8566, 2.3522), isFalse); // Paris
-      expect(imKartenBereich(53.5, 8.0), isFalse); // Nordsee
-      expect(imKartenBereich(47.5, 8.0), isFalse); // Alpenrand
+    test('Kartenbereich (Vorgabe 175 km um Westerburg): Mitte drin, Paris, Nordsee und Alpen draußen', () {
+      const b = KartenBereich.westerburg175;
+      expect(b.enthaelt(50.5612, 7.9741), isTrue);
+      expect(b.enthaelt(50.1109, 8.6821), isTrue); // Frankfurt
+      expect(b.enthaelt(48.8566, 2.3522), isFalse); // Paris
+      expect(b.enthaelt(53.5, 8.0), isFalse); // Nordsee
+      expect(b.enthaelt(47.5, 8.0), isFalse); // Alpenrand
     });
 
     test('Genauigkeitskreis: geschlossener Ring mit dem gewünschten Radius in Metern', () {
@@ -104,13 +105,28 @@ void main() {
   });
 
   group('Verfügbarkeit der Kartendatei', () {
-    Future<bool> pruefen(http.Response Function(http.Request) antwort) async {
+    Future<KartenBereich?> bereichPruefen(http.Response Function(http.Request) antwort) async {
       final c = ProviderContainer(overrides: [httpClientProvider.overrideWithValue(MockClient((r) async => antwort(r)))]);
       addTearDown(c.dispose);
-      return c.read(karteVerfuegbarProvider.future);
+      return c.read(karteDateiProvider.future);
     }
 
-    final pmtiles = Uint8List.fromList([...'PMTiles'.codeUnits, 3, 0, 0, 0, 0, 0, 0, 0, 0]);
+    Future<bool> pruefen(http.Response Function(http.Request) antwort) async => (await bereichPruefen(antwort)) != null;
+
+    /// Kopf einer PMTiles-Datei (127 Byte) mit dem Bereich west/süd/ost/nord (Grad).
+    Uint8List kopf(double west, double sued, double ost, double nord, {int version = 3}) {
+      final b = Uint8List(127);
+      b.setRange(0, 7, 'PMTiles'.codeUnits);
+      b[7] = version;
+      final d = ByteData.sublistView(b);
+      d.setInt32(102, (west * 1e7).round(), Endian.little);
+      d.setInt32(106, (sued * 1e7).round(), Endian.little);
+      d.setInt32(110, (ost * 1e7).round(), Endian.little);
+      d.setInt32(114, (nord * 1e7).round(), Endian.little);
+      return b;
+    }
+
+    final pmtiles = kopf(5.49, 48.99, 10.45, 52.14);
 
     test('206 mit PMTiles-Kennung: vorhanden; die Anfrage ist eine Range-Anfrage auf die Datei', () async {
       http.Request? gesehen;
@@ -122,7 +138,19 @@ void main() {
         isTrue,
       );
       expect(gesehen!.url.path, '/karte-daten/westerwald.pmtiles');
-      expect(gesehen!.headers['Range'], 'bytes=0-15');
+      expect(gesehen!.headers['Range'], 'bytes=0-126');
+    });
+
+    test('Der Bereich kommt aus dem Kopf der Datei (175 km, später ganz Deutschland ohne neue App); Unsinn gilt als ganze Welt', () async {
+      final b = await bereichPruefen((r) => http.Response.bytes(pmtiles, 206));
+      expect(b!.west, closeTo(5.49, 1e-6));
+      expect(b.nord, closeTo(52.14, 1e-6));
+      final de = await bereichPruefen((r) => http.Response.bytes(kopf(5.85, 47.27, 15.03, 55.07), 206));
+      expect(de!.enthaelt(52.5, 13.4), isTrue); // Berlin
+      expect(de.enthaelt(48.14, 11.58), isTrue); // München
+      final welt = await bereichPruefen((r) => http.Response.bytes(kopf(0, 0, 0, 0), 206));
+      expect(welt!.enthaelt(10, 10), isTrue);
+      expect(await bereichPruefen((r) => http.Response.bytes(kopf(5, 48, 10, 52, version: 2), 206)), isNull);
     });
 
     test('404, index.html mit 200 (Fang-Block der Web-App), 200 ohne Range, Fehler: nicht vorhanden', () async {
@@ -132,7 +160,7 @@ void main() {
       expect(await pruefen((r) => http.Response.bytes(Uint8List.fromList(List.filled(16, 1)), 206)), isFalse);
       final c = ProviderContainer(overrides: [httpClientProvider.overrideWithValue(MockClient((r) async => throw http.ClientException('offline')))]);
       addTearDown(c.dispose);
-      expect(await c.read(karteVerfuegbarProvider.future), isFalse);
+      expect(await c.read(karteDateiProvider.future), isNull);
     });
   });
 
@@ -203,7 +231,7 @@ void main() {
             standortProvider.overrideWith(() => _Steuerung(zustand ?? const StandortState())),
             standortUhrProvider.overrideWith((ref) => () => jetzt),
             karteAttrappeProvider.overrideWithValue(true),
-            karteVerfuegbarProvider.overrideWith((ref) async => verfuegbar),
+            karteDateiProvider.overrideWith((ref) async => verfuegbar ? KartenBereich.westerburg175 : null),
           ],
           child: MaterialApp(
             theme: buildTheme(),

@@ -485,7 +485,7 @@ Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher*
 | `loc_stop` | `{ from, shareId, reason }` an Empfänger und Sender; `reason`: `stopped`, `expired`, `disconnected`, `removed`, `replaced`. |
 | `loc_error` | `{ code, shareId? }`: `bad_request`, `bad_duration`, `bad_recipients`, `share_exists`, `rate_limited`, `too_many_shares`, `forbidden`, `unknown_share` (auch für fremde Freigaben und Sendungen vom falschen Gerät), `unavailable`. |
 
-**Auto-Ende:** Ablauf (`endsAt`), `loc_stop`, Widerruf (Abmelden, Gerät oder Mitglied entfernen, Rollenwechsel: sofort), **Sendergerät länger als `LOC_GRACE_MS` (90 s) ohne Verbindung**, Sender nicht mehr aktives Mitglied. Entfernte Empfänger werden bei der regelmäßigen Prüfung (Abstand 12 × `LOC_SWEEP_MS`) aus der Freigabe genommen. **Limits:** 10 Starts je Person in 10 Minuten, `LOC_MAX_SHARES_PER_FAMILY` (50) Freigaben je Familie, Wrap ≤ 1024 und Paket ≤ 1024 Zeichen. Einstellungen: `server/.env.example`.
+**Auto-Ende:** Ablauf (`endsAt`), `loc_stop`, Widerruf (Abmelden, Gerät oder Mitglied entfernen, Rollenwechsel: sofort), **Sendergerät länger als `LOC_GRACE_MS` (90 s) ohne Verbindung**, Sender nicht mehr aktives Mitglied. Entfernte Empfänger werden bei der regelmäßigen Prüfung (Abstand 12 × `LOC_SWEEP_MS`) aus der Freigabe genommen. **Limits:** 10 Starts je Person in 10 Minuten, `LOC_MAX_PER_MINUTE` (40) Positionen je Freigabe und Minute (Gleitfenster; die App sendet höchstens alle 3 s, also 20 je Minute; darüber `loc_error` `rate_limited`), Mindestabstand `LOC_MIN_INTERVAL_MS` (1 s), `LOC_MAX_SHARES_PER_FAMILY` (50) Freigaben je Familie, Wrap ≤ 1024 und Paket ≤ 1024 Zeichen. Einstellungen: `server/.env.example`.
 
 ## Audit-Log
 

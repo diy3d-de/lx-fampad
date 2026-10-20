@@ -77,6 +77,9 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   Set<String> _angepasst = {};
   Timer? _auffrischen;
 
+  /// Bereich der Kartendatei (aus ihrem Kopf), gesetzt, sobald die Karte gebaut wird.
+  KartenBereich _bereich = KartenBereich.westerburg175;
+
   @override
   void initState() {
     super.initState();
@@ -157,7 +160,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
     _einpassenWennNeu();
   }
 
-  List<KartenEintrag> _imBereich(List<KartenEintrag> l) => [for (final e in l) if (imKartenBereich(e.lat, e.lng)) e];
+  List<KartenEintrag> _imBereich(List<KartenEintrag> l) => [for (final e in l) if (_bereich.enthaelt(e.lat, e.lng)) e];
 
   /// Passt die Kamera an, wenn jemand dazugekommen oder weggegangen ist (nicht bei jeder Bewegung: die Person darf selbst schieben).
   void _einpassenWennNeu() {
@@ -219,30 +222,31 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
 
   @override
   Widget build(BuildContext context) {
-    final verfuegbar = ref.watch(karteVerfuegbarProvider);
+    final datei = ref.watch(karteDateiProvider);
     return SizedBox(
       height: kKarteHoehe,
-      child: verfuegbar.when(
+      child: datei.when(
         loading: () => const _Rahmen(child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)))),
         error: (_, _) => const _NichtEingerichtet(),
-        data: (da) => da ? _karte(context) : const _NichtEingerichtet(),
+        data: (bereich) => bereich == null ? const _NichtEingerichtet() : _karte(context, bereich),
       ),
     );
   }
 
-  Widget _karte(BuildContext context) {
+  Widget _karte(BuildContext context, KartenBereich bereich) {
+    _bereich = bereich;
     // in der Attrappe (Tests) braucht es keinen Stil
     _stil ??= ref.read(karteAttrappeProvider) ? Future.value('{}') : _ladeStil();
     final eintraege = _eintraege();
     if (_nach.isEmpty && eintraege.isNotEmpty) _ziele(eintraege);
     final jetzt = ref.read(standortUhrProvider)();
-    final ausserhalb = [for (final e in eintraege) if (!imKartenBereich(e.lat, e.lng) && !e.eigene) e.name];
+    final ausserhalb = [for (final e in eintraege) if (!bereich.enthaelt(e.lat, e.lng) && !e.eigene) e.name];
     final gewaehlt = eintraege.where((e) => e.id == _gewaehlt).firstOrNull;
     final hatEigene = eintraege.any((e) => e.eigene);
 
     List<Marker> marker() => [
       for (final e in eintraege)
-        if (imKartenBereich(e.lat, e.lng))
+        if (bereich.enthaelt(e.lat, e.lng))
           Marker(
             point: () {
               final p = _gezeigt(e.id, _Punkt(e.lat, e.lng));
@@ -273,14 +277,14 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                           initZoom: 8,
                           minZoom: 5,
                           maxZoom: 17,
-                          maxBounds: LngLatBounds(longitudeWest: kKarteWest, longitudeEast: kKarteOst, latitudeSouth: kKarteSued, latitudeNorth: kKarteNord),
+                          maxBounds: LngLatBounds(longitudeWest: bereich.west, longitudeEast: bereich.ost, latitudeSouth: bereich.sued, latitudeNorth: bereich.nord),
                         ),
                         onMapCreated: _kartenFertig,
                         layers: [
                           PolygonLayer(
                             polygons: [
                               for (final e in eintraege)
-                                if (imKartenBereich(e.lat, e.lng) && e.genauigkeit != null && e.genauigkeit! > 3)
+                                if (bereich.enthaelt(e.lat, e.lng) && e.genauigkeit != null && e.genauigkeit! > 3)
                                   () {
                                     final p = _gezeigt(e.id, _Punkt(e.lat, e.lng));
                                     return Feature(geometry: Polygon.from([kreisRing(p.lat, p.lng, e.genauigkeit!)]));
@@ -349,7 +353,7 @@ class _NichtEingerichtet extends ConsumerWidget {
           const Text('Karte noch nicht eingerichtet', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
           Text('$text Die Liste unten zeigt weiterhin alle Positionen.', textAlign: TextAlign.center, style: const TextStyle(color: kTextMuted, fontSize: 13)),
-          LinkKnopf('Erneut prüfen', icon: Icons.refresh, onPressed: () => ref.invalidate(karteVerfuegbarProvider)),
+          LinkKnopf('Erneut prüfen', icon: Icons.refresh, onPressed: () => ref.invalidate(karteDateiProvider)),
         ],
       ),
     ),

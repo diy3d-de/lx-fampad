@@ -12,19 +12,31 @@ Werkzeuge für die Karte (Spike, Ergebnis in `docs/KARTE-SPIKE.md`). Nichts davo
 
 ## Kacheln erzeugen (Quartals-Update)
 
-Ausschnitt um Westerburg (50,56 N / 7,97 E, etwa 100 km Umkreis), Zoom bis 14, Quelle: aktuelle Protomaps-Basemap (Build-Liste: https://build-metadata.protomaps.dev/builds.json, Doku https://docs.protomaps.com/basemaps/downloads):
+Standard: **175 km Umkreis um Westerburg** (50,56 N / 7,97 E), Zoom bis 14, Quelle: aktuelle Protomaps-Basemap (Build-Liste: https://build-metadata.protomaps.dev/builds.json, Doku https://docs.protomaps.com/basemaps/downloads):
 
 ```bash
 PMTILES=/pfad/zu/pmtiles tools/karte/extract.sh [JJJJMMTT] neu.pmtiles
-# bbox 6.5,49.6,9.5,51.5 (min_lon,min_lat,max_lon,max_lat), maxzoom 14; Ergebnis ca. 420 MB, Dauer etwa 20 s
+# Standard: bbox 5.49,48.99,10.45,52.14 (min_lon,min_lat,max_lon,max_lat = lat +/- 1,575 Grad, lon +/- 1,575/cos(50,56 Grad) = +/- 2,48 Grad), maxzoom 14
+# gemessen (Build 20261019): 68 938 Kacheln, **1,1 GB** (1 104 045 147 Byte), Dauer etwa 30 s
+DRY_RUN=1 PMTILES=… tools/karte/extract.sh      # nur schätzen (Kachelzahl, Größe), nichts schreiben
+
+# ganz Deutschland als Umriss statt Rechteck (gemessen: 206 683 Kacheln, ca. 2,5 GB, etwa 1 Minute):
+REGION=tools/karte/deutschland.geojson PMTILES=… tools/karte/extract.sh 20261019 deutschland.pmtiles
+# beliebiges anderes Rechteck: BBOX="min_lon,min_lat,max_lon,max_lat"; höchste Zoomstufe: MAXZOOM=14
 ```
 
-Einspielen auf dem Server (Ordner und Caddy-Block einmalig durch `deploy/einrichtung-karte.sh`):
+**Der Kartenbereich steht im Kopf der Datei** (min/max Länge und Breite); die App liest ihn von dort. Ein späterer Wechsel auf einen größeren Ausschnitt (z. B. ganz Deutschland) ist deshalb nur ein neuer Aufruf von `extract.sh` und ein neuer Upload: weder App noch Server-Skripte ändern sich (das Skript prüft nur 1 MB bis 8 GB und 20 GB freien Platz).
+
+`deutschland.geojson`: Umriss der Bundesrepublik, abgeleitet aus **Natural Earth 1:10m Admin 0 Countries** (Public Domain, naturalearthdata.com; Eintrag ADM0_A3 = DEU), Koordinaten auf vier Nachkommastellen (ca. 10 m) gerundet, 3027 Punkte, 52 KB. Die Datei wird nur beim Erzeugen gebraucht, nicht von der App.
+
+Einspielen auf dem Server (Ordner und Caddy-Block einmalig durch `deploy/einrichtung-karte.sh`, Schritt für Schritt: `deploy/README.md`, Abschnitt 11):
 
 ```bash
-scp neu.pmtiles lx-labs:/srv/fampad/karte/neu.pmtiles
-ssh lx-labs 'mv -f /srv/fampad/karte/neu.pmtiles /srv/fampad/karte/westerwald.pmtiles'   # atomar (gleiches Dateisystem)
+rsync -avP --partial --inplace neu.pmtiles lx-labs:/srv/fampad/karte/neu.pmtiles   # bei Abbruch wiederholen: setzt fort (scp: von vorn)
+ssh lx-labs 'chmod 644 /srv/fampad/karte/neu.pmtiles && mv -f /srv/fampad/karte/neu.pmtiles /srv/fampad/karte/westerwald.pmtiles'   # atomar (gleiches Dateisystem)
 ```
+
+`chmod 644` ist nötig: sonst kann Caddy die Datei nicht lesen (404/403, in der App steht "Karte noch nicht eingerichtet"). Die Datei gehört nicht ins Backup (neu erzeugbar; das Backup umfasst nur `pg_dump` und `/srv/fampad/files`).
 
 Der ETag ändert sich mit der Datei; laufende Karten laden beim nächsten Start neu. Quartalsweise wiederholen (Protomaps baut täglich; OSM-Daten ändern sich laufend, für Standort teilen genügt alle 3 Monate).
 

@@ -384,6 +384,30 @@ Der Workflow `.github/workflows/release.yml` läuft bei einem Tag `v*` (z. B. `v
 
 Der Android-Build wird außerdem bei jedem Push und Pull Request als Debug-APK geprüft (`.github/workflows/ci.yml`, Job `android-debug`).
 
+### 11. Karte (Kartenkacheln)
+
+Die Standort-Seite zeigt die Karte nur, wenn die Kartendatei auf dem Server liegt. **Bis dahin** steht dort „Karte noch nicht eingerichtet“, die Liste funktioniert; ein Deploy vor diesen Schritten schadet also nichts. Die Datei (`westerwald.pmtiles`, bei 175 km Umkreis um Westerburg ca. 1,1 GB) gehört nicht ins Repository und nicht in die Datensicherung (sie ist jederzeit neu erzeugbar; das Backup umfasst nur `pg_dump` und `/srv/fampad/files`).
+
+1. **Datei erzeugen** (Entwicklungsrechner, siehe `tools/karte/README.md`): `PMTILES=… tools/karte/extract.sh 20261019 westerwald.pmtiles` (ca. 1,1 GB, etwa eine halbe Minute; schätzen ohne Schreiben: `DRY_RUN=1`).
+2. **Server vorbereiten** (als `lx` auf dem Server, in tmux; **Haupt-Caddyfile wird nie geändert**, nur `conf.d/fampad.caddy`, mit Rückfall und Prüfung von lx-labs.dev):
+   ```bash
+   cd ~/lx-fampad && git pull
+   sudo bash deploy/einrichtung-karte.sh --dry-run     # zeigt Prüfungen und die geplante Änderung, schreibt nichts
+   sudo bash deploy/einrichtung-karte.sh               # legt /srv/fampad/karte an, fügt den Block ein, validiert, lädt Caddy neu
+   ```
+   Das Skript verlangt 20 GB freien Platz auf `/srv`. Der Karten-Block steht seit dieser Version auch in `deploy/Caddyfile`: ein späteres `deploy.sh`-Hinweis-`cp` entfernt ihn nicht mehr.
+3. **Hochladen** (Entwicklungsrechner; `rsync` setzt nach einem Abbruch fort, `scp` beginnt von vorn):
+   ```bash
+   rsync -avP --partial --inplace westerwald.pmtiles lx-labs:/srv/fampad/karte/neu.pmtiles
+   # ohne rsync: scp westerwald.pmtiles lx-labs:/srv/fampad/karte/neu.pmtiles
+   ssh lx-labs 'chmod 644 /srv/fampad/karte/neu.pmtiles && mv -f /srv/fampad/karte/neu.pmtiles /srv/fampad/karte/westerwald.pmtiles'
+   ```
+   **`chmod 644` ist nötig** (die Datei gehört `lx`, Caddy läuft als anderer Benutzer); das Umbenennen auf demselben Dateisystem ist atomar (laufende Karten lesen kurz mit der alten Datei weiter, nach dem ETag-Wechsel mit der neuen).
+4. **Prüfen:** `sudo bash deploy/einrichtung-karte.sh` (idempotent, ändert nichts mehr, macht den Range-Test: 206, PMTiles-Kennung, kein `Content-Encoding`, ETag) oder von Hand: `curl -s -o /dev/null -w '%{http_code}\n' -r 0-15 https://familie.lx-labs.dev/karte-daten/westerwald.pmtiles` muss `206` liefern. In der App (neu laden) zeigt die Standort-Seite danach die Karte, sobald jemand teilt.
+5. **Rückbau:** Block `handle_path /karte-daten/*` aus `/etc/caddy/conf.d/fampad.caddy` entfernen (das Skript nennt die Sicherungsdatei), `caddy validate`, `sudo systemctl reload caddy`; Datei löschen.
+
+Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-Block im Caddyfile), Kachel-Anfragen werden also nicht mitgeschrieben; `journalctl` hält Caddy-Fehlermeldungen höchstens 7 Tage (Abschnitt „Logs und Datenschutz“).
+
 ## Updates veröffentlichen
 
 **VOR dem Deploy von Migration 0005 (Gäste entfallen):** Sicherung ziehen und prüfen, ob Gäste existieren. Die Migration löscht Gast-Konten und ist nicht umkehrbar. **Dieser Deploy wird bei Fehler nicht automatisch zurückgerollt:** der Rückfall von `deploy.sh` spielt nur den Code zurück, nicht die Datenbank (ein alter Server würde zudem `audience 'all'` in die neue Enum-Spalte schreiben und mit 500 antworten). Wiederherstellung per Dump.

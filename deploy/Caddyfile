@@ -72,6 +72,14 @@ familie.lx-labs.dev {
 		file_server
 	}
 
+	# Kartenkacheln (eine PMTiles-Datei, Erzeugung und Einspielen: tools/karte/README.md, Einrichtung des Ordners: deploy/einrichtung-karte.sh).
+	# file_server beantwortet Range-Anfragen nativ (206), das ETag erkennt die neu eingespielte Datei. Gleiche Domain: kein CORS, keine CSP-Änderung.
+	handle_path /karte-daten/* {
+		root * /srv/fampad/karte
+		header Cache-Control "no-cache"
+		file_server
+	}
+
 	# Flutter-Web-Build (aktuelle Version per Symlink). Per ETag prüfen lassen, damit Updates sofort greifen.
 	handle {
 		root * /srv/fampad/web/current

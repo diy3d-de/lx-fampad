@@ -14,14 +14,21 @@ const kKarteStatischPfad = '/karte';
 /// Kacheln: eine PMTiles-Datei, vom Caddy mit Range-Anfragen ausgeliefert.
 const kKarteKachelPfad = '/karte-daten/westerwald.pmtiles';
 
-/// Bereich der PMTiles-Datei (min/max Länge und Breite): Westerburg (50,56 N / 7,97 E) +/- 175 km. Außerhalb gibt es keine Kacheln.
-const kKarteWest = 5.49;
-const kKarteOst = 10.45;
-const kKarteSued = 48.99;
-const kKarteNord = 52.14;
+/// Umschließendes Rechteck der Kartendatei (steht im Kopf der PMTiles-Datei, siehe karte_verfuegbar.dart). Außerhalb gibt es keine Kacheln.
+/// Die App kennt keinen festen Bereich: ein späterer Wechsel auf eine größere Datei (z. B. ganz Deutschland) braucht keine neue App.
+class KartenBereich {
+  final double west;
+  final double ost;
+  final double sued;
+  final double nord;
+  const KartenBereich({required this.west, required this.ost, required this.sued, required this.nord});
 
-/// Liegt der Punkt im Bereich der Kartendatei?
-bool imKartenBereich(double lat, double lng) => lat >= kKarteSued && lat <= kKarteNord && lng >= kKarteWest && lng <= kKarteOst;
+  /// Westerburg (50,56 N / 7,97 E) +/- 175 km: der Bereich der ersten Datei (Vorgabe für Tests und als Rückfall).
+  static const westerburg175 = KartenBereich(west: 5.49, ost: 10.45, sued: 48.99, nord: 52.14);
+
+  /// Liegt der Punkt im Bereich der Kartendatei?
+  bool enthaelt(double lat, double lng) => lat >= sued && lat <= nord && lng >= west && lng <= ost;
+}
 
 /// Quelle für die Attribution (ODbL). Steht zusätzlich im Style (sources.protomaps.attribution).
 const kKarteAttribution = '© OpenStreetMap-Mitwirkende';
