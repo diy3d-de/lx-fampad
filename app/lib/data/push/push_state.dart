@@ -11,6 +11,7 @@ import '../api/api_error.dart';
 import '../auth/auth_state.dart';
 import '../database_provider.dart';
 import '../standort/standort_abruf.dart';
+import '../standort/standort_hinweis.dart';
 import '../sync_state.dart';
 import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
@@ -314,6 +315,7 @@ class PushController extends Notifier<PushZustand> {
   Future<void> _wecker() async {
     if (!ref.mounted) return;
     state = state.copyWith(letzterWecker: DateTime.now());
+    unawaited(standortDiagnoseSchreiben(ref.read(appDatabaseProvider), kDiagWecker, 'laufende_app', DateTime.now()));
     final t = _testWecker;
     if (t != null && !t.isCompleted) t.complete();
     // gedrosselt und serialisiert: höchstens ein Abgleich je Mindestabstand, auch bei einer Flut von Weckern
@@ -322,11 +324,15 @@ class PushController extends Notifier<PushZustand> {
 
   Future<void> _weckerAbgleich() async {
     if (!ref.mounted) return;
-    await weckerAbgleichen(
-      store: ref.read(syncStoreProvider),
-      abgleich: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
-      ereignisse: ref.read(ereignisBenachrichtigerProvider),
-    );
+    try {
+      await weckerAbgleichen(
+        store: ref.read(syncStoreProvider),
+        abgleich: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
+        ereignisse: ref.read(ereignisBenachrichtigerProvider),
+      );
+    } catch (_) {
+      // ein Fehler des Abgleichs darf den Standort-Abruf nicht verhindern
+    }
     // Standortfreigaben: kurzer Abruf des Standort-Kanals (nur im Hintergrund; im Vordergrund hat die App `loc_start` über ihre Verbindung)
     if (!ref.mounted) return;
     try {

@@ -445,6 +445,30 @@ void main() {
       expect(find.text('Du'), findsOneWidget);
     });
 
+    testWidgets('Folgen: mit einer einzigen Person an (Knopf aktiv, Tooltip "Folgen beenden"), Tippen schaltet aus und wieder an; 44 px Touch-Ziel', (tester) async {
+      await zeige(tester, [teilt(_ben)]);
+      expect(find.byTooltip('Folgen beenden'), findsOneWidget);
+      expect(find.byIcon(Icons.gps_fixed), findsOneWidget);
+      final groesse = tester.getSize(find.widgetWithIcon(IconButton, Icons.gps_fixed));
+      expect(groesse.width, greaterThanOrEqualTo(44));
+      expect(groesse.height, greaterThanOrEqualTo(44));
+      await tippe(tester, find.byTooltip('Folgen beenden'));
+      expect(find.byTooltip('Folgen'), findsOneWidget);
+      expect(find.byIcon(Icons.gps_not_fixed), findsOneWidget);
+      await tippe(tester, find.byTooltip('Folgen'));
+      expect(find.byTooltip('Folgen beenden'), findsOneWidget);
+    });
+
+    testWidgets('Folgen: bei mehreren Personen ohne Auswahl gesperrt; Tipp auf eine Nadel wählt sie und schaltet Folgen an; "Alle zeigen" schaltet aus', (tester) async {
+      await zeige(tester, [teilt(_ben), teilt(_cora)]);
+      expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.gps_not_fixed)).onPressed, isNull);
+      await tippe(tester, find.byType(StandortPin).first);
+      expect(find.byTooltip('Folgen beenden'), findsOneWidget);
+      await tippe(tester, find.byTooltip('Alle zeigen'));
+      expect(find.byTooltip('Folgen'), findsOneWidget);
+      expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.gps_not_fixed)).onPressed, isNotNull); // eine Person ist noch gewählt
+    });
+
     testWidgets('Außerhalb des Kartenbereichs: Hinweis, keine Nadel; die Person bleibt in der Liste (hier: nicht Teil der Karte)', (tester) async {
       await zeige(tester, [teilt(_ben), teilt(_cora, lat: 48.8566, lng: 2.3522)]);
       expect(find.byType(StandortPin), findsOneWidget);

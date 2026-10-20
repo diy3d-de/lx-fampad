@@ -12,6 +12,7 @@ export type Executor = Db | Tx;
 export interface Logger {
   warn(obj: object, msg?: string): void;
   error(obj: object, msg?: string): void;
+  info?(obj: object, msg?: string): void;
 }
 
 /** Sitzungen, die gerade widerrufen wurden (der WebSocket-Hub schließt daraufhin die zugehörigen Verbindungen). */

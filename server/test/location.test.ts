@@ -145,6 +145,21 @@ describe('Push-Wecker-Haken (onWake)', () => {
     expect(wakes.map((w) => w.userIds)).toEqual([[BOB], [KID], [BOB]]);
   });
 
+  it('Die 10 Minuten zählen nur für Empfänger, die der Push-Dienst anpeilen konnte (ohne Endpunkt oder offene Verbindung bleibt die Frist frei)', async () => {
+    const a = await start();
+    const calls: string[][] = [];
+    (a.location as { onWake?: (f: string, u: string[]) => Promise<ReadonlySet<string>> }).onWake = async (_f, userIds) => {
+      calls.push(userIds);
+      return new Set([BOB]); // nur Bob hatte einen Endpunkt
+    };
+    const alice = await connect('alice');
+    await send(alice, startMsg([[BOB, 'w1'], [KID, 'w2']]));
+    await send(alice, { type: 'loc_stop', shareId: SHARE });
+    clock += 60_000;
+    await send(alice, startMsg([[BOB, 'w1'], [KID, 'w2']], { shareId: uid(103), endsAt: clock + 3_600_000 }));
+    expect(calls).toEqual([[BOB, KID], [KID]]); // Bob ist gedrosselt, Kid wurde nie wirklich geweckt
+  });
+
   it('abgelehnte Starts (falsche Empfänger) wecken niemanden', async () => {
     const a = await start();
     spy(a);

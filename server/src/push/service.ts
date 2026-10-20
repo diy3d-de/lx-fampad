@@ -198,25 +198,43 @@ export class PushService {
    * irgendeiner Art haben (sonst bekommen sie `loc_start` über den Socket). Gleicher fester Wecker wie sonst (kein Name, kein Titel, kein Hinweis auf
    * den Standort): die App gleicht ab und fragt den Standort-Kanal kurz selbst ab. Entprellung je Gerät wie bei jedem Wecker. Wirft nie.
    */
-  async weckeStandort(familyId: string, userIds: readonly string[]): Promise<void> {
-    if (this.closed || userIds.length === 0) return;
-    if (!this.enabled) return this.logStatusOnce();
+  async weckeStandort(familyId: string, userIds: readonly string[]): Promise<ReadonlySet<string>> {
+    const geweckt = new Set<string>();
+    if (this.closed || userIds.length === 0) return geweckt;
+    if (!this.enabled) {
+      this.logStatusOnce();
+      return geweckt;
+    }
     try {
       this.prune();
       const rows = await this.o.db
-        .select({ deviceId: pushEndpoints.deviceId })
+        .select({ deviceId: pushEndpoints.deviceId, userId: devices.userId })
         .from(pushEndpoints)
         .innerJoin(devices, and(eq(devices.familyId, pushEndpoints.familyId), eq(devices.id, pushEndpoints.deviceId)))
         .innerJoin(memberships, and(eq(memberships.familyId, devices.familyId), eq(memberships.userId, devices.userId)))
         .where(and(eq(pushEndpoints.familyId, familyId), isNull(pushEndpoints.disabledAt), isNull(devices.revokedAt), eq(memberships.status, 'active'), inArray(devices.userId, [...userIds])));
       const erreichbar = this.o.hasAnySocket ?? this.o.hasLiveSocket;
+      const imFenster = (id: string) => erreichbar(id, this.liveFensterMs);
+      let sofort = 0;
+      let nachpruefung = 0;
       for (const row of rows) {
-        if (erreichbar(row.deviceId, this.liveFensterMs)) continue;
-        this.schedule(row.deviceId);
+        geweckt.add(row.userId);
+        // Eine Verbindung mit Lebenszeichen im Fenster kann halbtot sein (Handy gerade gesperrt, Funkloch): einmal nach der Ping-Frist nachprüfen,
+        // statt den Wecker still zu verschlucken. Die Freigabe läuft dann noch; die App holt sie beim Abruf nachgereicht ab.
+        if (imFenster(row.deviceId)) {
+          this.nachpruefen(row.deviceId, imFenster);
+          nachpruefung++;
+        } else {
+          this.schedule(row.deviceId);
+          sofort++;
+        }
       }
+      // inhaltsfrei: nur Zähler, keine Kennungen
+      this.o.log.info?.({ empfaenger: userIds.length, mitEndpunkt: geweckt.size, geraete: rows.length, sofort, nachpruefung, ohneEndpunkt: userIds.length - geweckt.size }, 'Standort-Wecker');
     } catch (err: unknown) {
       this.o.log.error({ err }, 'Push: Standort-Wecker konnten nicht bestimmt werden');
     }
+    return geweckt;
   }
 
   private live(deviceId: string): boolean {
@@ -224,14 +242,14 @@ export class PushService {
   }
 
   /** Ein wegen offener Verbindung nicht gesendeter Wecker wird nach Ablauf der Ping-Frist einmal nachgeprüft (genau ein Timer je Gerät). */
-  private nachpruefen(deviceId: string): void {
+  private nachpruefen(deviceId: string, erreichbar: (deviceId: string) => boolean = (id) => this.live(id)): void {
     const st = this.state.get(deviceId) ?? { lastSent: 0 };
     this.state.set(deviceId, st);
     if (st.recheck) return;
     st.recheck = setTimeout(() => {
       st.recheck = undefined;
       if (this.closed) return;
-      if (!this.live(deviceId)) this.schedule(deviceId);
+      if (!erreichbar(deviceId)) this.schedule(deviceId);
     }, this.nachpruefenMs);
     st.recheck.unref();
   }

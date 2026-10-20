@@ -77,7 +77,8 @@ const kHinweisAbstand = Duration(minutes: 10);
 const _kAbrufZeit = 'standort_abruf_zeit';
 
 /// Mindestabstand zwischen zwei Kurzabrufen: jeder holt ein WebSocket-Ticket, und die Anmelde-Grenze je IP ist knapp (die Familie teilt oft eine Adresse).
-const kAbrufAbstand = Duration(seconds: 60);
+/// Höchstens 2 Tickets je Minute und Gerät; ein längerer Abstand ließ einen Standort-Wecker hinter einem Chat-Wecker kurz davor ohne Abruf.
+const kAbrufAbstand = Duration(seconds: 30);
 
 enum HinweisErgebnis {
   /// Nichts zu melden (aus, schon gemeldet, abgelaufen, eigene Freigabe, keine Erlaubnis).
@@ -140,25 +141,30 @@ class StandortBenachrichtiger {
 
   /// Meldet eine laufende Freigabe von [von] (aus `loc_start`). Idempotent je Freigabe.
   Future<HinweisErgebnis> freigabe({required String von, required String shareId, required DateTime endsAt}) async {
+    Future<HinweisErgebnis> ergebnis(String code, HinweisErgebnis e) async {
+      await standortDiagnoseSchreiben(db, kDiagHinweis, code, jetzt());
+      return e;
+    }
+
     try {
       final me = await ich();
-      if (me == null || me == von) return HinweisErgebnis.nichts;
-      if (!await aktiv()) return HinweisErgebnis.nichts;
+      if (me == null || me == von) return await ergebnis('eigene', HinweisErgebnis.nichts);
+      if (!await aktiv()) return await ergebnis('aus', HinweisErgebnis.nichts);
       final rest = endsAt.difference(jetzt());
-      if (rest <= Duration.zero) return HinweisErgebnis.nichts;
-      if (await db.metaLesen(_buchSchluessel(von)) == shareId) return HinweisErgebnis.nichts;
+      if (rest <= Duration.zero) return await ergebnis('abgelaufen', HinweisErgebnis.nichts);
+      if (await db.metaLesen(_buchSchluessel(von)) == shareId) return await ergebnis('schon_gemeldet', HinweisErgebnis.nichts);
       // eine andere Freigabe derselben Person kurz nach dem letzten Hinweis: kein neuer Hinweis (sie erscheint in der Liste, sobald die App offen ist)
       final letzter = int.tryParse(await db.metaLesen(_zeitSchluessel(von)) ?? '');
       if (letzter != null) {
         final seit = jetzt().millisecondsSinceEpoch - letzter;
-        if (seit >= 0 && seit < kHinweisAbstand.inMilliseconds) return HinweisErgebnis.nichts;
+        if (seit >= 0 && seit < kHinweisAbstand.inMilliseconds) return await ergebnis('abstand', HinweisErgebnis.nichts);
       }
       if (istVordergrund()) {
         await db.metaSchreiben(_buchSchluessel(von), shareId);
         await db.metaSchreiben(_zeitSchluessel(von), '${jetzt().millisecondsSinceEpoch}');
-        return HinweisErgebnis.vordergrund;
+        return await ergebnis('im_vordergrund', HinweisErgebnis.vordergrund);
       }
-      if (!await anzeige.initialisieren()) return HinweisErgebnis.nichts;
+      if (!await anzeige.initialisieren()) return await ergebnis('keine_erlaubnis', HinweisErgebnis.nichts);
       final name = await _name(von);
       final ok = await anzeige.zeigen(
         id: standortBenachrichtigungsId(von),
@@ -167,10 +173,10 @@ class StandortBenachrichtiger {
         sperrbildschirmTitel: await _sperrbildschirmTitel(),
         verfall: rest,
       );
-      if (!ok) return HinweisErgebnis.nichts;
+      if (!ok) return await ergebnis('anzeige_fehlgeschlagen', HinweisErgebnis.nichts);
       await db.metaSchreiben(_buchSchluessel(von), shareId);
       await db.metaSchreiben(_zeitSchluessel(von), '${jetzt().millisecondsSinceEpoch}');
-      return HinweisErgebnis.system;
+      return await ergebnis('gezeigt', HinweisErgebnis.system);
     } catch (_) {
       return HinweisErgebnis.nichts; // eine Benachrichtigung ist Zusatz: nie den Ablauf stören
     }
@@ -180,6 +186,14 @@ class StandortBenachrichtiger {
   Future<void> beendet(String von) async {
     try {
       await anzeige.entfernen(standortBenachrichtigungsId(von));
+    } catch (_) {}
+  }
+
+  /// Legt den Android-Kanal "Standortfreigaben" an (beim Start der App, wie bei Chat und Terminerinnerungen), damit er in den Systemeinstellungen steht und die Person ihn
+  /// einstellen kann, bevor die erste Freigabe kommt. Ohne Erlaubnis für Benachrichtigungen bleibt es beim Kanal; Fehler sind egal.
+  Future<void> kanalAnlegen() async {
+    try {
+      await anzeige.initialisieren();
     } catch (_) {}
   }
 
@@ -202,6 +216,74 @@ class StandortBenachrichtiger {
     return 'Jemand';
   }
 }
+
+// ---------------------------------------------------------------- Diagnose (ohne Inhalte: nur Zeitpunkt und Code)
+
+/// Schlüssel in sync_meta: letzter Wecker, letzter Abruf des Standort-Kanals, letzte Entscheidung über einen Hinweis.
+const kDiagWecker = 'diag_wecker';
+const kDiagAbruf = 'diag_abruf';
+const kDiagHinweis = 'diag_hinweis';
+
+/// Merkt Zeitpunkt und Code (nie Namen, Kennungen oder Orte). Fehler beim Speichern sind egal.
+Future<void> standortDiagnoseSchreiben(AppDatabase db, String schluessel, String code, DateTime zeit) async {
+  try {
+    await db.metaSchreiben(schluessel, '${zeit.millisecondsSinceEpoch}|$code');
+  } catch (_) {}
+}
+
+class StandortDiagnoseEintrag {
+  final DateTime zeit;
+  final String code;
+  const StandortDiagnoseEintrag(this.zeit, this.code);
+
+  static StandortDiagnoseEintrag? lesen(String? wert) {
+    if (wert == null) return null;
+    final i = wert.indexOf('|');
+    final ms = int.tryParse(i < 0 ? wert : wert.substring(0, i));
+    if (ms == null) return null;
+    return StandortDiagnoseEintrag(DateTime.fromMillisecondsSinceEpoch(ms), i < 0 ? '' : wert.substring(i + 1));
+  }
+}
+
+class StandortDiagnose {
+  final StandortDiagnoseEintrag? wecker;
+  final StandortDiagnoseEintrag? abruf;
+  final StandortDiagnoseEintrag? hinweis;
+  const StandortDiagnose({this.wecker, this.abruf, this.hinweis});
+}
+
+/// Lesbare Texte zu den Codes (feste Sätze, keine Servertexte).
+String standortDiagnoseText(String code) => switch (code) {
+  'ok' => 'Verbindung ok, nichts Neues',
+  'freigaben' => 'Freigabe(n) abgeholt',
+  'aus' => 'Hinweise ausgeschaltet',
+  'im_vordergrund' => 'App war offen (Hinweis in der App)',
+  'gestartet' => 'gestartet, aber nicht zu Ende gekommen (Android hat den Hintergrund-Start beendet?)',
+  'gedrosselt' => 'übersprungen: vor weniger als 30 Sekunden schon abgefragt',
+  'keine_verbindung' => 'keine Verbindung (Netz oder Anmeldung abgelaufen: öffne die App einmal)',
+  'fehler' => 'Fehler',
+  'gezeigt' => 'Benachrichtigung gezeigt',
+  'schon_gemeldet' => 'schon gemeldet',
+  'abstand' => 'unterdrückt: weniger als 10 Minuten nach dem letzten Hinweis dieser Person',
+  'abgelaufen' => 'Freigabe schon abgelaufen',
+  'eigene' => 'eigene Freigabe',
+  'keine_erlaubnis' => 'Android zeigt keine Benachrichtigungen (Erlaubnis oder Kanal aus)',
+  'anzeige_fehlgeschlagen' => 'Anzeige fehlgeschlagen',
+  _ => code,
+};
+
+final standortDiagnoseProvider = FutureProvider.autoDispose<StandortDiagnose>((ref) async {
+  final db = ref.watch(appDatabaseProvider);
+  try {
+    return StandortDiagnose(
+      wecker: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagWecker)),
+      abruf: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagAbruf)),
+      hinweis: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagHinweis)),
+    );
+  } catch (_) {
+    return const StandortDiagnose();
+  }
+});
 
 final standortAnzeigePortProvider = Provider<StandortAnzeigePort>((ref) => standortAnzeigePortErzeugen());
 

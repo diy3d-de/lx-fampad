@@ -211,6 +211,8 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
           ],
           const SizedBox(height: 12),
           const _StandortHinweisZeile(),
+          const SizedBox(height: 8),
+          const _StandortDiagnoseKarte(),
           const SizedBox(height: 20),
           const MonoLabel('// status'),
           const SizedBox(height: 8),
@@ -280,6 +282,51 @@ class _StandortHinweisZeile extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Diagnose ohne Inhalte: wann zuletzt ein Wecker kam, ob und wie der Standort-Kanal abgefragt wurde, was aus dem letzten Hinweis wurde (nur Zeit und Code).
+class _StandortDiagnoseKarte extends ConsumerWidget {
+  const _StandortDiagnoseKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final d = ref.watch(standortDiagnoseProvider).asData?.value ?? const StandortDiagnose();
+    String zeit(StandortDiagnoseEintrag? e) => e == null ? 'noch nie' : DateFormat('dd.MM. HH:mm:ss', 'de_DE').format(e.zeit);
+    String wecker(StandortDiagnoseEintrag? e) => e == null ? 'noch kein Wecker erhalten' : '${zeit(e)} (${e.code == 'hintergrund' ? 'App im Hintergrund gestartet' : 'App lief schon'})';
+    String mitCode(StandortDiagnoseEintrag? e) => e == null ? 'noch nie' : '${zeit(e)}: ${standortDiagnoseText(e.code)}';
+    return LxCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const MonoLabel('// diagnose standortfreigaben'),
+          const SizedBox(height: 8),
+          _DiagZeile('Letzter Wecker', wecker(d.wecker)),
+          _DiagZeile('Letzter Abruf des Standort-Kanals', mitCode(d.abruf)),
+          _DiagZeile('Letzter Hinweis', mitCode(d.hinweis)),
+          const SizedBox(height: 4),
+          const Text('Nur Zeitpunkte und Ergebnis, nie Namen oder Orte.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiagZeile extends StatelessWidget {
+  final String titel;
+  final String wert;
+  const _DiagZeile(this.titel, this.wert);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(titel, style: const TextStyle(fontSize: 13)),
+        Text(wert, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+      ],
+    ),
+  );
 }
 
 class _StatusZeile extends StatelessWidget {

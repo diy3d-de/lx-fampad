@@ -123,13 +123,44 @@ void main() {
       expect(anzeige.gezeigt, hasLength(3));
     });
 
-    test('Kurzabruf: höchstens einmal je 60 Sekunden und Gerät (auch über Prozesse), der Zeitpunkt wird beim Start gebucht', () async {
+    test('Kurzabruf: höchstens einmal je 30 Sekunden und Gerät (auch über Prozesse), der Zeitpunkt wird beim Start gebucht', () async {
       expect(await benachrichtiger().abrufErlaubt(), isTrue);
       expect(await benachrichtiger().abrufErlaubt(), isFalse); // anderer Prozess, gleiche Datenbank
-      jetzt = jetzt.add(const Duration(seconds: 59));
+      jetzt = jetzt.add(const Duration(seconds: 29));
       expect(await benachrichtiger().abrufErlaubt(), isFalse);
       jetzt = jetzt.add(const Duration(seconds: 2));
       expect(await benachrichtiger().abrufErlaubt(), isTrue);
+    });
+
+    test('Kanal wird beim Start angelegt (initialisieren), auch ohne dass je eine Freigabe kam', () async {
+      await benachrichtiger().kanalAnlegen();
+      expect(anzeige.initialisiert, 1);
+      expect(anzeige.gezeigt, isEmpty);
+    });
+
+    test('Diagnose: jede Entscheidung über einen Hinweis wird mit Zeitpunkt und Code gemerkt (nie Name oder Kennung)', () async {
+      final b = benachrichtiger();
+      Future<String?> code() async => StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagHinweis))?.code;
+      await b.freigabe(von: _ben, shareId: 's1', endsAt: ende());
+      expect(await code(), 'gezeigt');
+      await b.freigabe(von: _ben, shareId: 's1', endsAt: ende());
+      expect(await code(), 'schon_gemeldet');
+      await b.freigabe(von: _ben, shareId: 's2', endsAt: ende());
+      expect(await code(), 'abstand');
+      await b.freigabe(von: _cora, shareId: 'c1', endsAt: jetzt.subtract(const Duration(seconds: 1)));
+      expect(await code(), 'abgelaufen');
+      anzeige.erlaubt = false;
+      await b.freigabe(von: _cora, shareId: 'c2', endsAt: ende());
+      expect(await code(), 'keine_erlaubnis');
+      speicher.daten[kStandortHinweisSchluessel] = 'aus';
+      await b.freigabe(von: _cora, shareId: 'c3', endsAt: ende());
+      expect(await code(), 'aus');
+      final roh = await db.metaLesen(kDiagHinweis);
+      expect(roh, isNot(contains(_ben)));
+      expect(roh, isNot(contains('Ben')));
+      for (final c in ['ok', 'freigaben', 'aus', 'gedrosselt', 'keine_verbindung', 'gezeigt', 'abstand', 'keine_erlaubnis', 'gestartet']) {
+        expect(standortDiagnoseText(c), isNot(c), reason: c);
+      }
     });
 
     test('Einstellung aus: nichts, auch nicht im Vordergrund; Standard ist an', () async {
@@ -245,6 +276,22 @@ void main() {
       await abruf().abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(seconds: 5), aufbauFrist: const Duration(milliseconds: 200));
       expect(t.elapsedMilliseconds, lessThan(2000));
       expect(sockets.sockets.length, lessThan(4));
+    });
+
+    test('Diagnose des Abrufs: Verbindung ok mit Freigabe, ohne Freigabe, gedrosselt, keine Verbindung', () async {
+      Future<String?> code() async => StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagAbruf))?.code;
+      await mitServer((a) => a.abfragen(stille: const Duration(milliseconds: 100), hoechstens: const Duration(seconds: 3)), (s) => s.vomServer({'type': 'loc_start', 'from': _ben, 'shareId': 's1', 'endsAt': ende().millisecondsSinceEpoch, 'wrap': 'AAAA'}));
+      expect(await code(), 'freigaben');
+      await abruf().abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(milliseconds: 300), aufbauFrist: const Duration(milliseconds: 100));
+      expect(await code(), 'gedrosselt');
+      jetzt = jetzt.add(const Duration(minutes: 1));
+      sockets.scheitern = 100;
+      await abruf().abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(milliseconds: 500), aufbauFrist: const Duration(milliseconds: 150));
+      expect(await code(), 'keine_verbindung');
+      jetzt = jetzt.add(const Duration(minutes: 1));
+      sockets.scheitern = 0;
+      await mitServer((a) => a.abfragen(stille: const Duration(milliseconds: 100), hoechstens: const Duration(seconds: 3)), (_) {});
+      expect(await code(), 'ok');
     });
 
     test('Hinweise aus oder App im Vordergrund: keine Verbindung', () async {
