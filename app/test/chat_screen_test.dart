@@ -2,6 +2,7 @@
 // am Tab, nicht lesbare Nachrichten, Layout bei 360 px / Textskala 1.5, Desktop-Zweispalter und Chat-Karte der Startseite.
 import 'dart:async';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -587,6 +588,89 @@ void main() {
       expect(ben().bild, isA<AssetImage>());
       await tippeText(tester, 'Kommst du zum Training?');
       expect(tester.widgetList<PersonAvatar>(find.byType(PersonAvatar)).where((p) => p.name == 'Ben' && p.bild != null), isNotEmpty, reason: 'auch in der Kopfzeile des Verlaufs');
+    });
+  });
+
+  group('Ausgang: Fehlerzustand', () {
+    Future<void> sendeAbgelehnt(WidgetTester tester, TestUmgebung env) async {
+      await tippeText(tester, 'Kommst du zum Training?');
+      env.sync.ablehnung = (op) => op['entity'] == 'nachricht' ? 'forbidden' : null;
+      await tester.enterText(eingabe(), 'Das klappt nicht');
+      await tester.pump();
+      await tippe(tester, find.byTooltip('Senden'));
+      await tester.pump(const Duration(seconds: 40));
+      await warte(tester, 10);
+    }
+
+    testWidgets('abgelehnte Nachricht bleibt mit Fehlersymbol (kDanger, Tooltip deutsch), Aktionen Erneut senden / Verwerfen; 360 px, Textskala 1.5', (tester) async {
+      final env = await start(tester, skala: 1.5, vorher: grundstand);
+      await sendeAbgelehnt(tester, env);
+      expect(find.text('Das klappt nicht'), findsOneWidget, reason: 'die Nachricht verschwindet nicht');
+      expect(find.text('nicht gesendet · tippen'), findsOneWidget);
+      final symbol = tester.widget<Icon>(find.byIcon(Icons.error_outline));
+      expect(symbol.color, kDanger);
+      expect(symbol.semanticLabel, startsWith('Senden fehlgeschlagen'));
+      expect(find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Senden fehlgeschlagen')), findsOneWidget);
+      final op = (await env.db.select(env.db.outbox).get()).single;
+      expect(op.fehlerCode, 'forbidden');
+      expect(tester.widget<Text>(find.text('nicht gesendet · tippen')).style?.color, kDanger);
+      pruefeLayout(tester, 'abgelehnte Nachricht');
+      await tippeText(tester, 'Das klappt nicht');
+      expect(find.text('Erneut senden'), findsOneWidget);
+      expect(find.text('Verwerfen'), findsOneWidget);
+      expect(find.text('Text kopieren'), findsOneWidget);
+      expect(find.text('Antworten'), findsNothing);
+      expect(find.textContaining('Senden fehlgeschlagen.'), findsOneWidget);
+      pruefeLayout(tester, 'Aktionen der abgelehnten Nachricht');
+    });
+
+    testWidgets('Erneut senden: dieselbe Nachricht geht noch einmal hinaus, keine zweite entsteht', (tester) async {
+      final env = await start(tester, vorher: grundstand);
+      await sendeAbgelehnt(tester, env);
+      final id = (await alleNachrichten(env)).firstWhere((n) => n.autorId == fixIdAdmin).id;
+      env.sync.ablehnung = null;
+      await tippeText(tester, 'Das klappt nicht');
+      await tippeText(tester, 'Erneut senden');
+      await tester.pump(const Duration(seconds: 40));
+      await warte(tester, 10);
+      expect(find.text('nicht gesendet · tippen'), findsNothing);
+      expect(find.text('wird gesendet'), findsNothing);
+      final eigene = (await alleNachrichten(env)).where((n) => n.autorId == fixIdAdmin);
+      expect(eigene.map((n) => n.id), [id]);
+      expect(eigene.single.rev, greaterThan(0));
+      expect(env.sync.zeilen.values.where((z) => z.entity == 'nachricht' && z.fields['autorId'] == fixIdAdmin), hasLength(1));
+      expect(await env.db.select(env.db.outbox).get(), isEmpty);
+    });
+
+    testWidgets('Verwerfen: Nachricht und Op verschwinden, nichts geht zum Server', (tester) async {
+      final env = await start(tester, vorher: grundstand);
+      await sendeAbgelehnt(tester, env);
+      await tippeText(tester, 'Das klappt nicht');
+      await tippeText(tester, 'Verwerfen');
+      await warte(tester);
+      expect(find.text('Das klappt nicht'), findsNothing);
+      expect((await alleNachrichten(env)).where((n) => n.autorId == fixIdAdmin), isEmpty);
+      expect(await env.db.select(env.db.outbox).get(), isEmpty);
+      expect(env.sync.zeilen.values.where((z) => z.entity == 'nachricht' && z.fields['autorId'] == fixIdAdmin), isEmpty);
+    });
+
+    testWidgets('hängt: nach mehr als zwei Minuten ohne Fortschritt ein sanfter Hinweis statt des Fehlers', (tester) async {
+      final env = await start(tester, vorher: grundstand);
+      await tippeText(tester, 'Kommst du zum Training?');
+      env.sync.offline = true;
+      await tester.enterText(eingabe(), 'Warte auf Netz');
+      await tester.pump();
+      await tippe(tester, find.byTooltip('Senden'));
+      await warte(tester, 10);
+      expect(find.text('wird gesendet'), findsOneWidget);
+      expect(find.text('wartet auf Verbindung oder Schlüssel'), findsNothing);
+      await (env.db.update(env.db.outbox)).write(OutboxCompanion(createdAt: Value(DateTime.now().subtract(const Duration(minutes: 3)))));
+      await warte(tester, 10);
+      expect(find.text('wartet auf Verbindung oder Schlüssel'), findsOneWidget);
+      expect(find.text('wird gesendet'), findsNothing);
+      expect(find.text('nicht gesendet · tippen'), findsNothing);
+      expect(tester.widget<Icon>(find.byIcon(Icons.schedule)).color, kWarn);
+      pruefeLayout(tester, 'hängende Nachricht');
     });
   });
 }

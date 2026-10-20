@@ -46,6 +46,10 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
   Nachricht? _bearbeitet;
   bool _amEnde = true;
 
+  /// Neuzeichnen, sobald eine ungesendete Nachricht als "hängt" gilt (die Uhr allein löst keine Änderung der Datenbank aus).
+  Timer? _tick;
+  DateTime? _tickZiel;
+
   String get _id => widget.konversationId;
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
 
@@ -61,7 +65,19 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     _scroll.dispose();
     _text.dispose();
     _fokus.dispose();
+    _tick?.cancel();
     super.dispose();
+  }
+
+  void _planeTick(DateTime? ziel, DateTime jetzt) {
+    if (ziel == null) return;
+    if (_tickZiel != null && !_tickZiel!.isAfter(ziel) && _tickZiel!.isAfter(jetzt)) return; // ein früherer Zeitpunkt ist schon geplant
+    _tick?.cancel();
+    _tickZiel = ziel;
+    _tick = Timer(ziel.difference(jetzt) + const Duration(seconds: 1), () {
+      _tickZiel = null;
+      if (mounted) setState(() {});
+    });
   }
 
   /// Der Verlauf ist umgekehrt (neueste unten = Offset 0): "am Ende" heißt nahe 0.
@@ -127,7 +143,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     if (mounted && _scroll.hasClients) unawaited(_scroll.animateTo(0, duration: const Duration(milliseconds: 150), curve: Curves.easeOut));
   }
 
-  Future<void> _aktionen(Nachricht n, ChatArt art, ChatRechte rechte, bool lesbar, String text) async {
+  Future<void> _aktionen(Nachricht n, ChatArt art, ChatRechte rechte, bool lesbar, String text, {LeseInfo? lese}) async {
+    final abgelehnt = lese?.zustand == LeseZustand.abgelehnt;
     final aktion = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: kSurface,
@@ -136,16 +153,44 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _AktionsZeile(icon: Icons.reply, text: 'Antworten', wert: 'antworten', c: c),
-            if (lesbar) _AktionsZeile(icon: Icons.copy_outlined, text: 'Text kopieren', wert: 'kopieren', c: c),
-            if (lesbar && rechte.darfBearbeiten(n)) _AktionsZeile(icon: Icons.edit_outlined, text: 'Bearbeiten', wert: 'bearbeiten', c: c),
-            if (rechte.darfLoeschen(n, art)) _AktionsZeile(icon: Icons.delete_outline, text: 'Löschen', wert: 'loeschen', c: c, gefahr: true),
+            if (abgelehnt) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.error_outline, color: kDanger, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Semantics(
+                        liveRegion: true,
+                        child: Text('Senden fehlgeschlagen. ${ablehnungsGrund(lese?.fehlerCode)}', style: const TextStyle(fontSize: 14, height: 1.4, color: kText)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _AktionsZeile(icon: Icons.refresh, text: 'Erneut senden', wert: 'erneut', c: c),
+              if (lesbar) _AktionsZeile(icon: Icons.copy_outlined, text: 'Text kopieren', wert: 'kopieren', c: c),
+              _AktionsZeile(icon: Icons.delete_outline, text: 'Verwerfen', wert: 'verwerfen', c: c, gefahr: true),
+            ] else ...[
+              _AktionsZeile(icon: Icons.reply, text: 'Antworten', wert: 'antworten', c: c),
+              if (lesbar) _AktionsZeile(icon: Icons.copy_outlined, text: 'Text kopieren', wert: 'kopieren', c: c),
+              if (lesbar && rechte.darfBearbeiten(n)) _AktionsZeile(icon: Icons.edit_outlined, text: 'Bearbeiten', wert: 'bearbeiten', c: c),
+              if (rechte.darfLoeschen(n, art)) _AktionsZeile(icon: Icons.delete_outline, text: 'Löschen', wert: 'loeschen', c: c, gefahr: true),
+            ],
           ],
         ),
       ),
     );
     if (!mounted || aktion == null) return;
     switch (aktion) {
+      case 'erneut':
+        await _repo.erneutSenden(n.id);
+      case 'verwerfen':
+        if (_bearbeitet?.id == n.id) setState(() => _bearbeitet = null);
+        if (_antwort?.id == n.id) setState(() => _antwort = null);
+        await _repo.verwerfen(n.id);
       case 'antworten':
         setState(() {
           _antwort = n;
@@ -272,6 +317,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     // Lesebestätigung: Lesestände der anderen Teilnehmer (Familienchat: alle aktiven Mitglieder)
     final gelesenBis = {for (final l in ref.watch(lesestaendeProvider(_id)).value ?? const <Lesestand>[]) l.userId: l.gelesenBis};
     final empfaenger = {if (art == ChatArt.family) ...mitglieder.alle.map((u) => u.id) else ...teilnehmer}..remove(ich);
+    final ausgang = ref.watch(nachrichtenAusgangProvider).value ?? const <String, OutboxData>{};
+    final jetzt = DateTime.now();
     final epochenMitglieder = epochenEmpfaenger(ref.watch(epochenListenProvider(_id)).value ?? const <Epoche>[]);
     String leseName(String id) => mitglieder[id]?.displayName ?? 'Unbekannt';
 
@@ -362,7 +409,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     final zitat = zitatKandidat != null && zitatKandidat.konversationId == n.konversationId ? zitatKandidat : null;
                     // Empfänger zum Sendezeitpunkt (Mitglieder der Epoche der Nachricht), nicht der heutige Stand
                     final zumZeitpunkt = eigen ? empfaengerZurNachricht(epoche: ChatKrypto.huellenEpoche(n.inhalt), epochen: epochenMitglieder, ich: ich ?? '', aktuell: empfaenger, gelesenBis: gelesenBis) : null;
-                    final lese = zumZeitpunkt == null ? null : leseInfo(nachricht: n, empfaenger: zumZeitpunkt.empfaenger, gelesenBis: gelesenBis, geschaetzt: zumZeitpunkt.geschaetzt);
+                    final lese = zumZeitpunkt == null ? null : leseInfo(nachricht: n, empfaenger: zumZeitpunkt.empfaenger, gelesenBis: gelesenBis, geschaetzt: zumZeitpunkt.geschaetzt, ausgang: ausgang[n.id], jetzt: jetzt);
+                    if (lese != null && lese.ungesendet) _planeTick(haengtAb(ausgang[n.id], jetzt), jetzt);
                     return _Blase(
                       nachricht: n,
                       lese: lese,
@@ -378,7 +426,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                               autor: zitat == null ? '' : (zitat.autorId == ich ? 'Du' : (mitglieder[zitat.autorId]?.displayName ?? 'Unbekannt')),
                               text: zitat == null ? 'Nachricht nicht verfügbar' : nachrichtKurztext(zitat, inhalt),
                             ),
-                      onTap: () => _aktionen(n, art, rechte, d.lesbar, d.text),
+                      onTap: () => _aktionen(n, art, rechte, d.lesbar, d.text, lese: lese),
                     );
                   },
                 ),
@@ -513,7 +561,7 @@ class _Blase extends StatelessWidget {
     final lesbar = inhalt.lesbar;
     final zeit = uhrzeit(nachricht.createdAt);
     final bearbeitet = nachricht.bearbeitetAt != null;
-    final beschreibung = '${eigen ? 'Du' : autorName}, $zeit${gesendet ? (lese == null ? '' : ', $leseText') : ', wird gesendet'}${bearbeitet ? ', bearbeitet' : ''}: $text';
+    final beschreibung = '${eigen ? 'Du' : autorName}, $zeit${lese != null ? ', $leseText' : (gesendet ? '' : ', wird gesendet')}${bearbeitet ? ', bearbeitet' : ''}: $text';
     return Padding(
       padding: EdgeInsets.only(top: zeigeName ? 8 : 2, bottom: 2),
       child: Align(
@@ -572,7 +620,7 @@ class _Blase extends StatelessWidget {
                             alignment: WrapAlignment.end,
                             children: [
                               if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
-                              if (!gesendet && eigen) const Text('wird gesendet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                              if (!gesendet && eigen) _SendeText(lese: lese),
                               Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
                               if (lese != null) LeseHaken(info: lese!, text: leseText),
                             ],
@@ -588,6 +636,22 @@ class _Blase extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// Zustandstext einer noch nicht bestätigten eigenen Nachricht: "wird gesendet", sanfter Hinweis bei "hängt", Fehler bei "abgelehnt".
+class _SendeText extends StatelessWidget {
+  final LeseInfo? lese;
+  const _SendeText({required this.lese});
+
+  @override
+  Widget build(BuildContext context) {
+    final (text, farbe) = switch (lese?.zustand) {
+      LeseZustand.haengt => ('wartet auf Verbindung oder Schlüssel', kWarn),
+      LeseZustand.abgelehnt => ('nicht gesendet · tippen', kDanger),
+      _ => ('wird gesendet', kTextMuted),
+    };
+    return ExcludeSemantics(child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: farbe)));
   }
 }
 

@@ -244,6 +244,21 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
     beiAenderung();
   }
 
+  /// Die noch offenen Ops eigener Nachrichten im Ausgang, je Nachricht (für "wartet", "hängt", "abgelehnt"). Abgelehnte Nachrichten stehen mit Fehler-Code darin.
+  Stream<Map<String, OutboxData>> ausgang() => (db.select(db.outbox)
+        ..where((o) => o.entity.equals('nachricht') & o.op.equals('upsert'))
+        ..orderBy([(o) => OrderingTerm.asc(o.id)]))
+      .watch()
+      .map((l) => {for (final o in l) o.entityId: o});
+
+  /// Abgelehnte Nachricht erneut senden: dieselbe Nachricht (feste ID) kommt mit neuer op_id wieder in die Warteschlange, es entsteht kein Duplikat.
+  Future<void> erneutSenden(String nachrichtId) async {
+    if (await store.erneutSenden('nachricht', nachrichtId)) beiAenderung();
+  }
+
+  /// Nachricht verwerfen: löscht die lokale Nachricht und ihre Op im Ausgang (der Server kennt sie nicht, es geht nichts hinaus).
+  Future<void> verwerfen(String nachrichtId) => loeschen(nachrichtId);
+
   // ------------------------------------------------------------------ Konversationen
 
   /// Der Chat braucht Verschlüsselung: ohne eingerichtete Schlüssel dieser Person geht nichts.
@@ -413,6 +428,9 @@ final chatUngelesenProvider = StreamProvider<int>((ref) {
 final konversationProvider = StreamProvider.autoDispose.family<Konversation?, String>((ref, id) => ref.watch(chatRepositoryProvider).konversation(id));
 
 final nachrichtenProvider = StreamProvider.autoDispose.family<List<Nachricht>, String>((ref, id) => ref.watch(chatRepositoryProvider).nachrichten(id));
+
+/// Ausgang eigener Nachrichten (Zustand ungesendeter Nachrichten).
+final nachrichtenAusgangProvider = StreamProvider.autoDispose<Map<String, OutboxData>>((ref) => ref.watch(chatRepositoryProvider).ausgang());
 
 final epochenListenProvider = StreamProvider.autoDispose.family<List<Epoche>, String>((ref, id) => ref.watch(chatRepositoryProvider).epochenListen(id));
 

@@ -98,21 +98,22 @@ class SyncStore {
   /// eine neue Epoche) und verschlüsselt erst danach mit der dann aktuellen.
   Future<bool> hatAltenKlartext(Duration alter) async {
     final grenze = _jetzt().subtract(alter);
-    for (final z in await (db.select(db.outbox)..where((o) => o.entity.equals('nachricht') & o.createdAt.isSmallerOrEqualValue(grenze))).get()) {
+    for (final z in await (db.select(db.outbox)..where((o) => o.entity.equals('nachricht') & o.fehlerCode.isNull() & o.createdAt.isSmallerOrEqualValue(grenze))).get()) {
       if (_hatLokalenKlartext(z)) return true;
     }
     return false;
   }
 
-  /// Anzahl noch nicht bestätigter Änderungen (live).
+  /// Anzahl noch nicht bestätigter Änderungen (live). Abgelehnte Ops (Fehler, warten auf die Entscheidung der Person) zählen nicht mit: sie senden nichts mehr
+  /// und der Sync-Indikator soll deshalb nicht dauerhaft "offen" melden (der Fehler steht an der Nachricht selbst).
   Stream<int> offeneAenderungen() {
     final anzahl = db.outbox.id.count();
-    return (db.selectOnly(db.outbox)..addColumns([anzahl])).map((r) => r.read(anzahl) ?? 0).watchSingle();
+    return (db.selectOnly(db.outbox)..addColumns([anzahl])..where(db.outbox.fehlerCode.isNull())).map((r) => r.read(anzahl) ?? 0).watchSingle();
   }
 
   Future<int> offeneAnzahl() async {
     final anzahl = db.outbox.id.count();
-    return (await (db.selectOnly(db.outbox)..addColumns([anzahl])).map((r) => r.read(anzahl) ?? 0).getSingle());
+    return (await (db.selectOnly(db.outbox)..addColumns([anzahl])..where(db.outbox.fehlerCode.isNull())).map((r) => r.read(anzahl) ?? 0).getSingle());
   }
 
   /// Ordnet die lokalen Daten diesem Gerät zu. Wechselt die Geräte-ID (neue Anmeldung, z. B. nach Rollenwechsel), beruht der lokale
@@ -148,7 +149,7 @@ class SyncStore {
     if (rev == null && !def.kannAnlegen(fields)) return; // Zeile gibt es nicht mehr (anderswo gelöscht): keine Teilzeile anlegen
     await def.schreiben(db, id, {...nurLokal, ...fields});
     final offen = await (db.select(db.outbox)
-          ..where((o) => o.entity.equals(entity) & o.entityId.equals(id) & o.op.equals('upsert') & o.sentAt.isNull())
+          ..where((o) => o.entity.equals(entity) & o.entityId.equals(id) & o.op.equals('upsert') & o.sentAt.isNull() & o.fehlerCode.isNull())
           ..orderBy([(o) => OrderingTerm.desc(o.id)])
           ..limit(1))
         .getSingleOrNull();
@@ -216,6 +217,10 @@ class SyncStore {
       if (bereit.length >= max) break;
       final key = '${z.entity}/${z.entityId}';
       if (zurueck.contains(key)) continue;
+      if (z.fehlerCode != null) {
+        zurueck.add(key); // abgelehnt: wartet auf "Erneut senden" oder "Verwerfen"; spätere Ops derselben Zeile warten mit
+        continue;
+      }
       var op = z;
       if (vorbereiter != null) {
         String? felder;
@@ -311,6 +316,7 @@ class SyncStore {
     // 2. abgelehnte Ops: nicht still verwerfen, sondern sichtbar machen
     for (final a in r.rejected) {
       final z = opVon[a.opId];
+      if (z != null && await _alsFehlerBehalten(z, a.code)) continue;
       await (db.delete(db.outbox)..where((o) => o.opId.equals(a.opId))).go();
       if (z == null) continue;
       await _abgelehnt(z, a.code, bericht);
@@ -367,6 +373,30 @@ class SyncStore {
     await sinceRevSetzen(r.hasMore ? r.next : r.rev);
     await _snapshotRevSetzen(r.hasMore ? r.snapshotRev : null);
     return bericht;
+  });
+
+  /// Eine abgelehnte NEUE Zeile einer Entität mit [SyncEntity.fehlerBleibtSichtbar] (Chat-Nachricht) bleibt lokal und im Ausgang, markiert mit dem Grund-Code
+  /// (nie ein Inhalt). Gelöschte Eltern, Wiederholungen und die Mengenbegrenzung (die Nachricht wird später erneut gesendet) gehen den üblichen Weg.
+  Future<bool> _alsFehlerBehalten(OutboxData z, String code) async {
+    final def = entitaeten[z.entity];
+    if (def == null || !def.fehlerBleibtSichtbar || z.op != 'upsert' || z.baseRev != 0) return false;
+    if (const {'duplicate_op', 'deleted', 'parent_deleted'}.contains(code) || (code == 'limit_reached' && def.bleibtBeiLimit)) return false;
+    if (await def.rev(db, z.entityId) == null) return false;
+    final kurz = RegExp(r'^[a-z_]{1,40}$').hasMatch(code) ? code : 'unbekannt';
+    await (db.update(db.outbox)..where((o) => o.opId.equals(z.opId))).write(OutboxCompanion(fehlerCode: Value(kurz), sentAt: const Value(null)));
+    return true;
+  }
+
+  /// Erneut senden: alle abgelehnten Ops dieser Zeile kommen mit neuer op_id wieder in die Warteschlange (die Zeile hat eine feste ID: der Server legt sie
+  /// höchstens einmal an, kein Duplikat). Liefert true, wenn es etwas zu senden gab.
+  Future<bool> erneutSenden(String entity, String id) => db.transaction(() async {
+    final zeilen = await (db.select(db.outbox)..where((o) => o.entity.equals(entity) & o.entityId.equals(id) & o.fehlerCode.isNotNull())).get();
+    for (final z in zeilen) {
+      await (db.update(db.outbox)..where((o) => o.id.equals(z.id))).write(
+        OutboxCompanion(opId: Value(_neueOpId()), fehlerCode: const Value(null), sentAt: const Value(null), createdAt: Value(_jetzt())),
+      );
+    }
+    return zeilen.isNotEmpty;
   });
 
   Future<void> _abgelehnt(OutboxData z, String code, UebernahmeBericht bericht) async {
