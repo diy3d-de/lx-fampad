@@ -572,7 +572,8 @@ describe.each(backends)('Push ($name)', (backend) => {
       await register(await fam.secondDevice('child'));
       const id = familienchatId(fam.familyId);
       expect((await fam.child.sync([upsert('konversation', id, { art: 'family' })])).json.rejected).toEqual([]);
-      expect(await until(() => calls.length >= 2)).toBe(true);
+      // alle drei Geräte (Admin, Eltern, zweites Kind-Gerät) abwarten, sonst landet ein später Wecker nach dem Zurücksetzen
+      expect(await until(() => calls.length >= 3)).toBe(true);
       calls = [];
       world.app.push!.reset();
       const res = await fam.child.sync([upsert('lesestand', lesestandId(id, fam.child.userId), { konversationId: id, userId: fam.child.userId, gelesenBis: '2026-10-19T09:00:00.000Z' })]);

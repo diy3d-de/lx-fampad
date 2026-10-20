@@ -7,6 +7,15 @@ import { WS_CLOSE_RATE_LIMIT, WS_CLOSE_UNAUTHENTICATED } from '../src/ws/route.j
 import { adminPassword, backends, Client, World, type Harness } from './helpers.js';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+/** Wartet bedingt (Polling mit Frist) statt fest; liefert den letzten Wert der Bedingung. */
+async function until(cond: () => boolean | Promise<boolean>, ms = 10_000): Promise<boolean> {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await cond()) return true;
+    await wait(10);
+  }
+  return cond();
+}
 
 describe.each(backends)('WebSocket-Anmeldung ($name)', (backend) => {
   let harness: Harness;
@@ -97,8 +106,7 @@ describe.each(backends)('WebSocket-Anmeldung ($name)', (backend) => {
     const ticket = await ticketFor(a.client);
     const one = await open(w);
     one.ws.send(JSON.stringify({ type: 'auth', ticket }));
-    await wait(300);
-    expect(isReady(one.messages)).toBe(true);
+    expect(await until(() => isReady(one.messages))).toBe(true);
     expect(one.ws.readyState).toBe(WebSocket.OPEN);
 
     const two = await open(w, { ip: '203.0.113.11' });
@@ -111,8 +119,7 @@ describe.each(backends)('WebSocket-Anmeldung ($name)', (backend) => {
     const w = await start();
     const a = await adminPassword(w);
     const s = await open(w, { cookie: a.client.cookie });
-    await wait(300);
-    expect(isReady(s.messages)).toBe(true);
+    expect(await until(() => isReady(s.messages))).toBe(true);
   });
 
   it('abgelehnte Tickets zählen gegen die IP: danach wird schon das Upgrade abgewiesen', async () => {
@@ -123,16 +130,18 @@ describe.each(backends)('WebSocket-Anmeldung ($name)', (backend) => {
       s.ws.send(JSON.stringify({ type: 'auth', ticket: `falsches-ticket-${i}` }));
       expect(await s.closed).toBe(WS_CLOSE_UNAUTHENTICATED);
     }
-    // der Server schließt den Socket, ohne auf das Zählen des Fehlversuchs zu warten: erst warten, bis alle drei gezählt sind
-    for (let i = 0; i < 100; i++) {
-      const rows = await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from login_attempts where fail_count >= 3`);
-      if (rows.rows[0]?.n === 1) break;
-      await wait(50);
-    }
+    // der Server schließt den Socket, ohne auf das Zählen des Fehlversuchs zu warten: erst warten, bis die Sperre gesetzt ist
+    // (fail_count wird vor locked_until geschrieben, darum auf locked_until warten)
+    const locked = await until(async () => {
+      const rows = await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from login_attempts where fail_count >= 3 and locked_until is not null`);
+      return rows.rows[0]?.n === 1;
+    });
+    expect(locked).toBe(true);
     await expect(open(w, { ip: '192.0.2.50' })).rejects.toThrow(/429/);
     // andere IPs sind nicht betroffen
     await open(w, { ip: '192.0.2.51' });
-    expect(await w.count('audit_log')).toBeGreaterThanOrEqual(3);
+    // das Audit-Protokoll folgt dem Zählen asynchron
+    expect(await until(async () => (await w.count('audit_log')) >= 3)).toBe(true);
   });
 
   it('Nachrichtenlimit je Socket: zu viele Nachrichten schließen die Verbindung', async () => {
@@ -157,18 +166,22 @@ describe.each(backends)('WebSocket-Anmeldung ($name)', (backend) => {
     const a = await adminPassword(w);
     const one = await open(w);
     one.ws.send(JSON.stringify({ type: 'auth', ticket: await ticketFor(a.client) }));
-    await wait(300);
-    expect(isReady(one.messages)).toBe(true);
+    expect(await until(() => isReady(one.messages))).toBe(true);
     const two = await open(w, { ip: '203.0.113.12' });
     two.ws.send(JSON.stringify({ type: 'auth', ticket: await ticketFor(a.client) }));
     expect(await two.closed).toBe(WS_CLOSE_RATE_LIMIT);
     // nach dem Schließen der ersten ist wieder Platz
     one.ws.close();
     await one.closed;
-    await wait(100);
-    const three = await open(w, { ip: '203.0.113.13' });
-    three.ws.send(JSON.stringify({ type: 'auth', ticket: await ticketFor(a.client) }));
-    await wait(300);
-    expect(isReady(three.messages)).toBe(true);
+    // der Server gibt den Platz erst beim eigenen Schließen frei: bis zur Frist erneut versuchen
+    let ready = false;
+    const end = Date.now() + 10_000;
+    for (let i = 0; !ready && Date.now() < end; i++) {
+      const three = await open(w, { ip: `203.0.113.${20 + i}` });
+      three.ws.send(JSON.stringify({ type: 'auth', ticket: await ticketFor(a.client) }));
+      ready = await until(() => isReady(three.messages) || three.ws.readyState !== WebSocket.OPEN, 3000).then(() => isReady(three.messages));
+      if (!ready) await wait(20);
+    }
+    expect(ready).toBe(true);
   });
 });
