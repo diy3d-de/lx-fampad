@@ -12,7 +12,7 @@
 //    entfernen), löschen nur, wer sie angelegt hat.
 //  - Nachricht: schreiben jede Person mit Sicht; bearbeiten und löschen nur der Autor. Ausnahme: Admins dürfen im Familienchat fremde Nachrichten
 //    löschen (Moderation), nie in privaten Chats (die sie nicht sehen).
-//  - Lesestand: nur die eigene Zeile les- und schreibbar.
+//  - Lesestand: von allen Teilnehmern lesbar (Lesebestätigung), schreibbar nur die eigene Zeile.
 // Inhalte (`text`, `titel`) sind für den Server undurchsichtige Zeichenketten (E2EE-vorbereitet): nur Länge und Zeichensatz werden geprüft.
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
@@ -200,7 +200,8 @@ export const nachrichtEntity: EntityDef = {
 
 // ---------------------------------------------------------------- Lesestand
 
-const lesestandRules = forAllRoles({ read: 'own', create: 'own', update: 'own', delete: 'none' });
+// Lesen: alle Teilnehmer der Konversation (Lesebestätigung: zwei Haken an eigenen Nachrichten); Anlegen und Ändern nur die eigene Zeile
+const lesestandRules = forAllRoles({ read: 'shared', create: 'own', update: 'own', delete: 'none' });
 
 export const lesestandEntity: EntityDef = {
   name: 'lesestand',
@@ -214,10 +215,10 @@ export const lesestandEntity: EntityDef = {
   rules: lesestandRules,
   parent: { entity: 'konversation', field: 'konversationId' },
   memberOwned: 'userId',
-  // feste ID je Person und Konversation; nur der Besitzer erfährt von Änderungen; der Lesestand geht nie zurück (der Server behält den größeren Wert)
+  // feste ID je Person und Konversation; die Teilnehmer erfahren per WebSocket von Änderungen (kein Push-Wecker); der Lesestand geht nie zurück (der Server behält den größeren Wert)
   idValid: (id: string, values: Row): boolean => id === lesestandId(String(values.konversationId), String(values.userId)),
   revive: (): boolean => true,
-  ownerOnlyNotify: true,
+  noWake: true,
   onUpdate: (changed: Row, _now: Date, before: Row): Row =>
     changed.gelesenBis instanceof Date && before.gelesenBis instanceof Date && changed.gelesenBis.getTime() <= before.gelesenBis.getTime() ? { gelesenBis: undefined } : {},
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.userId as string | null) ?? null }),

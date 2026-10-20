@@ -5,12 +5,15 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/chat/chat_ids.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
 import 'package:lx_fampad/data/crypto/huelle.dart';
 import 'package:lx_fampad/data/sync_state.dart';
+
+import 'package:lx_fampad/ui/widgets.dart' show PersonAvatar;
 
 import 'support/chat_ui_aufbau.dart';
 import 'support/fake_server.dart';
@@ -501,6 +504,68 @@ void main() {
     testWidgets('Startseite: Chat-Karte ohne Nachrichten zeigt den Leerzustand', (tester) async {
       await start(tester, groesse: gross, chat: false);
       expect(find.text('Noch keine Nachrichten'), findsOneWidget);
+    });
+  });
+
+  group('Lesebestätigung (Haken) und Profilbilder im Chat', () {
+    final dm = direktChatId(fixIdAdmin, fixIdKind);
+
+    Future<void> mitEigenerNachricht(TestUmgebung env, ChatUiAufbau a, {String? benGelesenBis}) async {
+      await grundstand(env, a);
+      await a.nachricht(dm, 'a0000000-0000-4000-8000-000000000009', a.anna, 'Ja, ich komme', vor(5));
+      if (benGelesenBis != null) {
+        env.sync.andereAendert('lesestand', lesestandId(dm, fixIdKind), {'konversationId': dm, 'userId': fixIdKind, 'gelesenBis': benGelesenBis});
+      }
+    }
+
+    testWidgets('eigene Nachricht, beim Server angekommen: ein Haken ("gesendet"), nach dem Lesestand des Partners zwei ("gelesen")', (tester) async {
+      await start(tester, vorher: (env, a) => mitEigenerNachricht(env, a));
+      await tippeText(tester, 'Du: Ja, ich komme');
+      expect(find.byTooltip('gesendet'), findsOneWidget);
+      expect(find.byTooltip('gelesen'), findsNothing);
+      expect(find.byIcon(Icons.check), findsOneWidget);
+      expect(find.byIcon(Icons.done_all), findsNothing);
+      pruefeLayout(tester, 'Chatverlauf mit Haken');
+    });
+
+    testWidgets('Lesestand des Partners nach der Nachricht: zwei Haken in der Akzentfarbe; ein älterer Lesestand zählt nicht', (tester) async {
+      await start(tester, vorher: (env, a) => mitEigenerNachricht(env, a, benGelesenBis: vor(1)));
+      await tippeText(tester, 'Du: Ja, ich komme');
+      expect(find.byTooltip('gelesen'), findsOneWidget);
+      final haken = tester.widget<Icon>(find.byIcon(Icons.done_all));
+      expect(haken.color, kAccent);
+      await tester.pumpWidget(const SizedBox());
+      await start(tester, vorher: (env, a) => mitEigenerNachricht(env, a, benGelesenBis: vor(8)));
+      await tippeText(tester, 'Du: Ja, ich komme');
+      expect(find.byTooltip('gesendet'), findsOneWidget);
+    });
+
+    testWidgets('Familienchat: zwei Haken erst, wenn ALLE anderen gelesen haben', (tester) async {
+      await start(tester, vorher: (env, a) async {
+        await grundstand(env, a);
+        await a.nachricht(_famChat, 'a0000000-0000-4000-8000-000000000008', a.anna, 'Ich bin zu Hause', vor(2));
+        env.sync.andereAendert('lesestand', lesestandId(_famChat, fixIdKind), {'konversationId': _famChat, 'userId': fixIdKind, 'gelesenBis': vor(1)});
+      });
+      await tippeText(tester, 'Du: Ich bin zu Hause');
+      expect(find.byTooltip('gelesen'), findsNothing, reason: 'Cora hat noch nicht gelesen');
+      expect(find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').contains('1 von 2')), findsOneWidget);
+    });
+
+    testWidgets('Direktchat und Chatliste zeigen das Benutzerbild des Partners (Platzhalter), nicht nur Initialen', (tester) async {
+      await start(tester, vorher: (env, a) async {
+        await grundstand(env, a);
+        env.server.json('GET /members', {
+          'members': [
+            userJson(),
+            {...userJson(id: fixIdKind, role: 'child', name: 'Ben', email: 'ben@beispiel.de'), 'avatar': {'kind': 'preset', 'id': 'V01', 'version': 1}},
+            userJson(id: _cora, role: 'parent', name: 'Cora Berger', email: 'cora@beispiel.de'),
+          ],
+        });
+      });
+      PersonAvatar ben() => tester.widgetList<PersonAvatar>(find.byType(PersonAvatar)).firstWhere((p) => p.name == 'Ben');
+      expect(ben().bild, isA<AssetImage>());
+      await tippeText(tester, 'Kommst du zum Training?');
+      expect(tester.widgetList<PersonAvatar>(find.byType(PersonAvatar)).where((p) => p.name == 'Ben' && p.bild != null), isNotEmpty, reason: 'auch in der Kopfzeile des Verlaufs');
     });
   });
 }

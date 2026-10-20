@@ -4,6 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
+import 'package:lx_fampad/data/avatar/avatar_foto.dart';
 import 'package:lx_fampad/data/lists/members.dart';
 import 'package:lx_fampad/data/sync_state.dart';
 
@@ -58,6 +59,21 @@ void main() {
     jetzt = jetzt.add(const Duration(seconds: 61));
     await c.read(syncProvider.notifier).synchronisieren(manuell: true);
     await bis(() => anzahl() == 3, 'Mitglied nach Abgleich');
+  });
+
+  test('geänderte Profilbild-Version kommt mit dem Abgleich an; ein Verbindungsfehler-Merker für Fotos wird dabei gelöscht (erneuter Versuch)', () async {
+    final speicher = c.read(avatarSpeicherProvider);
+    speicher.fehlversuche['${fixIdKind}:1'] = DateTime.now();
+    env.server.json('GET /members', {
+      'members': [
+        userJson(),
+        {...userJson(id: fixIdKind, role: 'child', name: 'Ben', email: 'ben@beispiel.de'), 'avatar': {'kind': 'photo', 'version': 2}},
+      ],
+    });
+    jetzt = jetzt.add(const Duration(seconds: 61));
+    await c.read(syncProvider.notifier).synchronisieren(manuell: true);
+    await bis(() => c.read(mitgliederProvider).value?.any((u) => u.avatar?.version == 2) ?? false, 'neue Bildversion');
+    expect(speicher.fehlversuche, isEmpty);
   });
 
   test('Rückkehr in die App lädt neu, aber höchstens alle 60 Sekunden', () async {

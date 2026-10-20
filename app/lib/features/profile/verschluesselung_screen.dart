@@ -12,6 +12,7 @@ import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/sicherheitscode.dart';
 import '../../data/crypto/vertrauen.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/benutzer_avatar.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'geraet_verbinden_screens.dart';
@@ -380,7 +381,7 @@ class _SicherheitscodeKarte extends StatelessWidget {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          PersonAvatar(name: m.displayName, colorIndex: m.colorIndex, size: 32),
+                          BenutzerAvatar(user: m, size: 32),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(

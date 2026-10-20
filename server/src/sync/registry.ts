@@ -90,6 +90,8 @@ export interface EntityDef {
   updateRate?: { fields: readonly string[]; perMinute: number };
   /** Der WebSocket-Hinweis geht nur an den Besitzer (facts.ownerId), nie an andere; verschwundene Zeilen erzeugen keinen Tombstone für Dritte. */
   ownerOnlyNotify?: boolean;
+  /** Die Änderung geht als WebSocket-Hinweis an alle, die den Datensatz lesen dürfen, weckt aber nie per Push (Lesestand). */
+  noWake?: boolean;
   /** Mengenbegrenzung je Person und Minute: höchstens `perMinute` neue Datensätze, deren `field` (Spalte mit der Person) die Person ist; `createdAt` zählt. */
   rate?: { field: string; perMinute: number; perHour?: number; bytes?: { field: string; perHour: number; perDay: number } };
   /**
