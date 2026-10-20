@@ -66,11 +66,6 @@ jobs:
           flutter-version: 3.47.6
           channel: stable
           cache: true
-      # Pub-Cache (flutter-action cached nur das SDK, sein Schlüssel hängt nicht an pubspec.lock); nur öffentliche Pakete
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
       # pubspec.lock ist eingecheckt: die CI darf nichts neu auflösen (analyzer 14.5.0 bricht build_runner 2.16.1)
       - run: flutter pub get --enforce-lockfile
       # eingecheckte Binärdateien des Webs prüfen (sqlite3.wasm passend zu sqlite3 3.7.0, drift_worker.js)
@@ -116,11 +111,6 @@ jobs:
       # Android-SDK ist auf dem Runner vorinstalliert; nur die Lizenzen bestätigen
       - run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
         working-directory: .
-      # Pub-Cache (flutter-action cached nur das SDK, sein Schlüssel hängt nicht an pubspec.lock); nur öffentliche Pakete
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.pub-cache
-          key: pub-${{ runner.os }}-${{ hashFiles('app/pubspec.lock') }}
       # Gradle-Cache (nur Abhängigkeiten und Wrapper; NDK/CMake bewusst nicht, die Platte ist knapp)
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
