@@ -99,7 +99,8 @@ const TABLES = [
   'termin_ausnahmen',
   'lists',
   'list_items',
-  'tasks',
+  'aufgaben',
+  'aufgabe_punkte',
   'messages',
   'message_reactions',
   'message_reads',
@@ -167,7 +168,7 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
   });
 
   it('versieht änderbare Tabellen mit Sync-Spalten', async () => {
-    const syncTables = ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'lists', 'list_items', 'tasks', 'files', 'messages', 'message_reactions', 'message_reads', 'konversationen', 'nachrichten', 'lesestand'];
+    const syncTables = ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'lists', 'list_items', 'aufgaben', 'aufgabe_punkte', 'files', 'messages', 'message_reactions', 'message_reads', 'konversationen', 'nachrichten', 'lesestand'];
     for (const t of syncTables) {
       const cols = (
         await rows<{ column_name: string }>(

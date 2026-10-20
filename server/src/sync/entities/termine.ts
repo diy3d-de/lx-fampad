@@ -45,12 +45,12 @@ export function isIanaTimeZone(s: string): boolean {
   }
 }
 
-const tzid = safeString()
+export const tzid = safeString()
   .pipe(z.string().min(1).max(64).regex(/^[A-Za-z][A-Za-z0-9_+\-/]*$/))
   .refine(isIanaTimeZone, 'unbekannte Zeitzone');
 
 const rrule = safeString().pipe(z.string().min(1).max(RRULE_MAX_LENGTH)).refine(isValidRrule, 'ungültige Wiederholungsregel');
-const freeText = (max: number) => safeString().pipe(z.string().trim().max(max));
+export const freeText = (max: number) => safeString().pipe(z.string().trim().max(max));
 
 const fullAccess = { read: 'all', create: 'all', update: 'all', delete: 'all' } as const;
 

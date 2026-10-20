@@ -48,17 +48,21 @@ export interface EntityDef {
   /** Spalte mit der Mitglieds-ID, die den Datensatz bestimmt (z. B. Teilnehmer): beim Entfernen der Person wird er mit Tombstone gelöscht, die Geräte erfahren es. */
   memberOwned?: string;
   /** Obergrenze lebender Datensätze je Besitzer (`field` = Besitzer-Spalte) für bestimmte Rollen, zusätzlich zu `maxLive` (Schutz vor Überlauf durch ein einzelnes Konto). */
-  ownerLimit?: { field: string; roles: readonly Role[]; max: number };
+  ownerLimit?: { field: string; roles: readonly Role[]; max: number; /** wie bei `maxLive.openColumn` */ openColumn?: string };
   /** Fakten (Freigabe-Stufe, Besitzer) eines vorhandenen Datensatzes; `parent` sind die Fakten der übergeordneten Entität. */
   facts(row: Row, parent: Facts | null): Facts;
   /** Fakten eines Datensatzes, der angelegt werden soll. */
   factsForCreate(actor: Actor, values: Row, parent: Facts | null): Facts;
   /** Vom Server gesetzte Werte beim Anlegen (z. B. Besitzer = anlegende Person). */
   onCreate?(actor: Actor): Row;
+  /** Vom Server abgeleitete Werte aus einer Änderung (beim Anlegen und Ändern), z. B. wer eine Aufgabe erledigt hat = Akteur. Kommt nur mit, was `changed` (bzw. die neue Zeile) enthält. */
+  derive?(actor: Actor, changed: Row): Row;
   /** Prüft den Datensatz als Ganzes (Felder untereinander, z. B. Ende nach Beginn) beim Anlegen und nach dem Zusammenführen einer Änderung; false = `invalid`. */
   check?(row: Row): boolean;
   /** Obergrenzen lebender Datensätze (Schutz vor Überlauf). `per: 'parent'` zählt je übergeordnetem Datensatz. */
-  maxLive?: { per: 'family' | 'parent'; max: number };
+  maxLive?: { per: 'family' | 'parent'; max: number; /** Spalte: gezählt werden nur Datensätze, bei denen sie leer ist (z. B. erledigte Aufgaben zählen nicht). */ openColumn?: string };
+  /** Zusätzliche Obergrenze aller lebenden Datensätze der Familie (auch bei `per: 'parent'`, auch die, die `openColumn` ausnimmt). */
+  maxFamily?: number;
   /** Zusätzliche, entitätsspezifische Sperre je Aktion (z. B. Direktchats nicht löschen, Teilnehmer nicht ändern); false = `forbidden`. `after` nur bei `update` (Stand nach dem Zusammenführen). */
   guard?(action: 'update' | 'delete', before: Row, after?: Row): boolean;
   /**
