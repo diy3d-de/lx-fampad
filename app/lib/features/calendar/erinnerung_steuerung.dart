@@ -12,6 +12,7 @@ import '../../data/erinnerungen/erinnerung_dienst.dart';
 import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/tasks/aufgabe_repository.dart' show aufgabenProvider;
 import '../shell/shell_tab.dart';
+import '../tasks/tasks_state.dart' show aufgabeOeffnenProvider;
 import 'calendar_state.dart';
 
 /// Hält den Dienst am Laufen: löst den Abgleich bei Start, bei Änderung der Termine (entprellt, auch durch Sync und ICS-Import), bei
@@ -25,7 +26,10 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
       ..tag(ziel.tag);
     ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
   };
-  dienst.beiAufgabeGeoeffnet = (_) => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+  dienst.beiAufgabeGeoeffnet = (id) {
+    ref.read(aufgabeOeffnenProvider.notifier).setzen(id);
+    ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+  };
   void los() => unawaited(dienst.abgleichen());
   ref.listen(kalenderDatenProvider, (_, _) => dienst.entprellt());
   ref.listen(aufgabenProvider, (_, _) => dienst.entprellt());

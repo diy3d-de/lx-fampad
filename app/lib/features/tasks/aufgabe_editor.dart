@@ -209,6 +209,15 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     if (mounted) nav.pop();
   }
 
+  /// Wer die Erinnerung bekommt: die zuständige Person, ohne Zuständige die Person, die die Aufgabe anlegt (bei einer Wiederholung die, die sie erledigt).
+  String _erinnerungHinweis(String? ich, List<UserDto> mitglieder) {
+    final z = _zustaendig;
+    if (z == null) return 'Ohne Zuständige erinnert nur die Person, die die Aufgabe angelegt hat (bei einer Wiederholung die, die sie erledigt).';
+    if (z == ich) return 'Die Erinnerung kommt auf deinem Gerät.';
+    final name = mitglieder.where((u) => u.id == z).map((u) => u.displayName).firstOrNull ?? 'die zuständige Person';
+    return 'Erinnert nur $name, nicht dich.';
+  }
+
   @override
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider.select((a) => a.user));
@@ -384,7 +393,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           if (_erinnerung != null) ...[
             const SizedBox(height: 6),
             Text(
-              '${_mitUhrzeit ? '' : 'Ohne Uhrzeit gilt 09:00 Uhr am Fälligkeitstag. '}Die Erinnerung kommt auf dem Gerät der zuständigen Person, ohne Zuständige auf dem Gerät der Person, die die Aufgabe angelegt hat.',
+              '${_mitUhrzeit ? '' : 'Ohne Uhrzeit gilt 09:00 Uhr am Fälligkeitstag. '}${_erinnerungHinweis(user?.id, mitglieder)}',
               style: const TextStyle(fontSize: 12, color: kTextMuted),
             ),
           ],

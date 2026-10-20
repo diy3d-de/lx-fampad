@@ -15,6 +15,7 @@ import 'package:lx_fampad/data/tasks/aufgabe_logik.dart';
 import 'package:lx_fampad/data/tasks/aufgabe_repository.dart';
 import 'package:lx_fampad/features/calendar/erinnerung_steuerung.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
+import 'package:lx_fampad/features/tasks/tasks_state.dart' show aufgabeOeffnenProvider;
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'support/fake_erinnerung_port.dart';
@@ -108,6 +109,11 @@ void main() {
       expect(plane([aufgabe(faelligDate: tag, zu: 'u-kind', owner: ich)]), isEmpty);
       expect(plane([aufgabe(faelligDate: tag, zu: ich)], person: null), isEmpty);
       expect(aufgabeBetrifftPerson(null, null, ich), isFalse);
+    });
+
+    test('Horizont wie bei Terminen: Erinnerungen jenseits von 366 Tagen werden noch nicht geplant', () {
+      expect(plane([aufgabe(faelligDate: '2027-10-10', min: 0)]), hasLength(1));
+      expect(plane([aufgabe(faelligDate: '2027-11-20', min: 0)]), isEmpty);
     });
 
     test('Payload: nur UUIDs, nie eine Ausnahme', () {
@@ -318,11 +324,18 @@ void main() {
       expect(c2.read(erinnerungEinstellungenProvider).aufgabenAn, isFalse);
     });
 
-    test('Tippen auf die Erinnerung öffnet den Aufgaben-Tab', () async {
+    test('Aufgaben-Erinnerungen aus: Dienst plant auch ohne geladene Aufgaben', () async {
+      await c.read(erinnerungEinstellungenProvider.notifier).aufgabenAnSetzen(false);
+      await ruhe();
+      expect(port.letzte, isNotNull);
+    });
+
+    test('Tippen auf die Erinnerung öffnet den Aufgaben-Tab und merkt die Aufgabe zum Öffnen', () async {
       await env.db.into(env.db.aufgaben).insert(zeile(a1));
       await bis(() => port.letzte?.length == 1);
       port.tippe('aufgabe|$a1');
       expect(c.read(shellTabProvider), kAufgabenTab);
+      expect(c.read(aufgabeOeffnenProvider), a1);
     });
   });
 }

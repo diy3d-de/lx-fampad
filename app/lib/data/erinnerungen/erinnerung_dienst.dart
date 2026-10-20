@@ -156,7 +156,7 @@ class ErinnerungDienst {
     if (!await _kontoPruefen(ich)) return false;
     if (!einst.an) return _loeschen();
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
-    if (!_datenDa()) return true;
+    if (!_datenDa(einst.aufgabenAn)) return true;
     final exakt = await port.exakteAlarmeMoeglich();
     // Wurde die Erlaubnis nachträglich erteilt (oder entzogen), alles neu setzen: kein App-Neustart nötig
     final bs = await port.benachrichtigungsStatus();
@@ -215,9 +215,9 @@ class ErinnerungDienst {
     return true;
   }
 
-  bool _datenDa() =>
+  bool _datenDa(bool mitAufgaben) =>
       _ref.read(termineProvider).hasValue && _ref.read(terminAusnahmenProvider).hasValue && _ref.read(terminTeilnehmerProvider).hasValue &&
-      _ref.read(aufgabenProvider).hasValue;
+      (!mitAufgaben || _ref.read(aufgabenProvider).hasValue);
 
   Future<bool> _loeschen() async {
     if (_leer) return true;

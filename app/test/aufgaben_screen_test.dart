@@ -2,6 +2,7 @@
 // Löschen mit Rückfrage, Rechte der Kinder, Startseiten-Karten, Desktop-Seitenleiste; bei 360 px Breite und Textskala 1.0 und 1.5.
 import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
@@ -14,6 +15,7 @@ import 'package:lx_fampad/features/lists/list_dialogs.dart' show AuswahlKnopf;
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/tasks/aufgabe_editor.dart';
 import 'package:lx_fampad/features/tasks/tasks_screen.dart';
+import 'package:lx_fampad/features/tasks/tasks_state.dart' show aufgabeOeffnenProvider;
 import 'package:lx_fampad/widgets/kopfzeile.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
@@ -206,6 +208,31 @@ void main() {
       expect((await dbAufgaben(env)).single.erinnerungMin, 60);
     });
   }
+
+  testWidgets('Tippen auf eine Aufgaben-Erinnerung öffnet den Editor der Aufgabe; unbekannte ID bleibt beim Tab', (tester) async {
+    await start(tester, vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Steuer', tage: 3, owner: fixIdAdmin));
+    });
+    final c = ProviderScope.containerOf(tester.element(find.byType(TasksScreen)));
+    c.read(aufgabeOeffnenProvider.notifier).setzen(_a4);
+    await warte(tester);
+    expect(find.byType(AufgabeEditor), findsNothing);
+    expect(c.read(aufgabeOeffnenProvider), isNull);
+    c.read(aufgabeOeffnenProvider.notifier).setzen(_a1);
+    await warte(tester);
+    expect(find.byType(AufgabeEditor), findsOneWidget);
+    expect(find.text('Steuer'), findsOneWidget);
+  });
+
+  testWidgets('Editor: Hinweis, wer die Erinnerung bekommt (andere Zuständige, keine Zuständige, ich)', (tester) async {
+    await start(tester, groesse: const Size(360, 2400));
+    await tippeDirekt(tester, find.byTooltip('Aufgabe mit Details anlegen'));
+    await tippeDirekt(tester, find.text('Morgen'));
+    await tippeDirekt(tester, find.text('1 Stunde vorher'));
+    expect(find.textContaining('Ohne Zuständige erinnert nur die Person, die die Aufgabe angelegt hat'), findsOneWidget);
+    await tippeDirekt(tester, find.text('Ben'));
+    expect(find.textContaining('Erinnert nur Ben, nicht dich.'), findsOneWidget);
+  });
 
   testWidgets('Editor: Erinnerung gefüllt beim Bearbeiten, Fälligkeit entfernen blendet sie aus und speichert keine', (tester) async {
     final env = await start(tester, groesse: const Size(360, 2400), vorher: (e) {

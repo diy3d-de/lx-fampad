@@ -215,6 +215,7 @@ List<GeplanteErinnerung> planeErinnerungen({
       ),
     );
   }
+  final horizont = jetztUtc.add(const Duration(days: kErinnerungHorizontTage));
   for (final a in aufgaben) {
     final min = a.erinnerungMin;
     if (min == null || min < 0 || istErledigt(a) || !aufgabeBetrifftPerson(a.assigneeId, a.ownerId, ich)) continue;
@@ -223,7 +224,7 @@ List<GeplanteErinnerung> planeErinnerungen({
     final mitUhr = a.faelligUtc != null;
     final beginn = mitUhr ? a.faelligUtc!.toUtc() : instantAusWand(DateTime.utc(wand.year, wand.month, wand.day, kGanztaegigStunde), berlin);
     final zeit = _erinnerungsZeit(beginn, min, berlin);
-    if (!zeit.isAfter(grenze)) continue;
+    if (!zeit.isAfter(grenze) || zeit.isAfter(horizont)) continue; // gleicher Horizont wie bei Terminen
     final id = erinnerungId(a.id, 'aufgabe');
     if (!ids.add(id)) continue;
     final w = wandUhr(zeit, berlin);

@@ -37,6 +37,22 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   final _weg = <String>{}; // weggewischte Aufgaben: sofort ausgeblendet
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _oeffnenPruefen());
+  }
+
+  /// Tippen auf eine Aufgaben-Erinnerung: öffnet den Editor der Aufgabe, sobald die Daten geladen sind (unbekannte ID: nur der Tab).
+  void _oeffnenPruefen() {
+    if (!mounted) return;
+    final id = ref.read(aufgabeOeffnenProvider);
+    if (id == null || !ref.read(aufgabenProvider).hasValue) return;
+    ref.read(aufgabeOeffnenProvider.notifier).setzen(null);
+    final a = ref.read(aufgabenDatenProvider).aufgabe(id);
+    if (a != null) unawaited(aufgabeEditorOeffnen(context, aufgabe: a));
+  }
+
+  @override
   void dispose() {
     _neu.dispose();
     _fokus.dispose();
@@ -117,6 +133,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(aufgabeOeffnenProvider, (_, _) => _oeffnenPruefen());
+    ref.listen(aufgabenProvider, (_, _) => _oeffnenPruefen());
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = AufgabeRechte(user?.role ?? Role.child, user?.id);
     final aufgabenWert = ref.watch(aufgabenProvider);
