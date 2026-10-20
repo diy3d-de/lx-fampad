@@ -263,12 +263,13 @@ Future<void> main() async {
         anna.port.ctrl.add(PositionEreignis(_pos(start)));
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), hasLength(1));
-        // 3 s später, 100 m weiter: noch zu früh
+        // 3 s später, 100 m weiter: noch zu früh (Intervall 5 s, Toleranz 0,5 s)
         anna.jetzt = start.add(const Duration(seconds: 3));
         anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1382)));
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), isEmpty);
         // 6 s, 100 m weiter: Bewegung
+        // (4,6 s würden schon gehen: Android liefert knapp vor Ablauf, siehe Test zur Toleranz)
         anna.jetzt = start.add(const Duration(seconds: 6));
         anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1382)));
         await pumpen();
@@ -289,6 +290,21 @@ Future<void> main() async {
         final nach = await relay.weiter(anna);
         expect(nach.where((m) => m['type'] == 'loc_pos'), isNotEmpty);
         expect(ben.st.geteilt[_anna]!.messzeit!.toUtc(), start.add(const Duration(seconds: 25)));
+      });
+
+      test('Toleranz: eine Messung kurz (unter 0,5 s) vor Ablauf des Intervalls wird noch gesendet, eine deutlich frühere nicht', () async {
+        await teilenAnna();
+        anna.port.ctrl.add(PositionEreignis(_pos(start)));
+        await pumpen();
+        expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), hasLength(1));
+        anna.jetzt = start.add(const Duration(milliseconds: 4000));
+        anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1382)));
+        await pumpen();
+        expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), isEmpty);
+        anna.jetzt = start.add(const Duration(milliseconds: 4600));
+        anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1384)));
+        await pumpen();
+        expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), hasLength(1));
       });
 
       test('Beenden: Empfänger erfahren es, der Dienst stoppt, kein Rest im Zustand', () async {
@@ -552,6 +568,18 @@ Future<void> main() async {
       expect(standardEmpfaenger(alle[0], alle), {_ben, _cora, 'd'});
       expect(standardEmpfaenger(alle[1], alle), {_anna, 'd'});
       expect(standardEmpfaenger(alle[3], alle), {_anna, _ben, _cora});
+    });
+
+    test('Takt: Intervall und Wiederholung in Ruhe (Genau und Normal 30 s, Sparsam 60 s)', () {
+      expect(StandortTakt.genau.intervall, const Duration(seconds: 3));
+      expect(StandortTakt.normal.intervall, const Duration(seconds: 5));
+      expect(StandortTakt.sparsam.intervall, const Duration(seconds: 15));
+      expect(StandortTakt.genau.ruhe, const Duration(seconds: 30));
+      expect(StandortTakt.normal.ruhe, const Duration(seconds: 30));
+      expect(StandortTakt.sparsam.ruhe, const Duration(seconds: 60));
+      expect(bewegungsSchwelle(null), 5);
+      expect(bewegungsSchwelle(40), 20);
+      expect(bewegungsSchwelle(500), 30);
     });
 
     test('Abstand in Metern (Haversine)', () {

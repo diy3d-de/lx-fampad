@@ -95,7 +95,8 @@ final standortSocketFabrikProvider = Provider<StandortSocketFabrik>((ref) {
     beiNachricht: beiNachricht,
     oeffner: ref.read(syncSocketOeffnerProvider),
     zufall: ref.read(syncZufallProvider),
-    // nach einem Verbindungsabbruch (Netzwechsel) schnell wieder da: der Server wartet nur 90 s, bevor er die Freigabe beendet
+    // nach einem Verbindungsabbruch (Netzwechsel) schnell wieder da: der Server wartet nur 90 s, bevor er die Freigabe beendet.
+    // Höchstens 15 s Grundabstand, mit Zufallsanteil (Jitter +/- 50 %) also bis etwa 22 s zwischen zwei Versuchen.
     backoffMax: const Duration(seconds: 15),
   );
 });
@@ -505,12 +506,16 @@ class StandortController extends Notifier<StandortState> {
     final zeit = _letzterVersandZeit;
     if (letzte != null && zeit != null) {
       final seit = jetzt.difference(zeit);
-      if (seit < _sendeTakt.intervall) return;
+      // Android liefert Messungen oft knapp vor Ablauf des Intervalls: ohne Toleranz würde jede zweite verworfen (halbe Rate)
+      if (seit < _sendeTakt.intervall - kStandortTaktToleranz) return;
       final bewegt = abstandMeter(letzte.breite, letzte.laenge, p.breite, p.laenge) >= bewegungsSchwelle(p.genauigkeit);
       if (!bewegt && seit < _sendeTakt.ruhe) return;
     }
     await _senden();
   }
+
+  /// Wie viel früher als das Intervall eine Messung noch gesendet wird.
+  static const kStandortTaktToleranz = Duration(milliseconds: 500);
 
   Future<void> _senden() async {
     final sender = _sender;

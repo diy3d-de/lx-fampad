@@ -20,8 +20,8 @@ enum StandortTakt {
 
   Duration get intervall => Duration(seconds: sekunden);
 
-  /// Wiederholung ohne Bewegung: 30 s, im sparsamen Modus 60 s (also mindestens das Doppelte des Intervalls).
-  Duration get ruhe => Duration(seconds: sekunden * 2 > 30 ? sekunden * 2 : 30);
+  /// Wiederholung ohne Bewegung: 30 s, im sparsamen Modus 60 s (mindestens 30 s, sonst das Vierfache des Intervalls).
+  Duration get ruhe => Duration(seconds: sekunden * 4 > 30 ? sekunden * 4 : 30);
 }
 
 const kStandortTaktStandard = StandortTakt.normal;

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart';
 import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart';
+import 'package:lx_fampad/features/karte/karte_verfuegbar.dart';
 import 'package:lx_fampad/features/standort/standort_karte.dart';
 
 import 'support/fake_server.dart';
@@ -108,6 +109,8 @@ void main() {
       ],
     });
     steuerung = _TestSteuerung(zustand);
+    // die echte Karte fragt die Kartendatei auf dem Server ab: hier "gibt es nicht" (404)
+    if (karte == standortKartenStandard) env.extraOverrides.add(karteDateiProvider.overrideWith((ref) async => null));
     env.standortKarte = karte;
     env.standortPort = verfuegbar ? (port ?? _Port()) : const KeinStandortPort();
     env.extraOverrides.addAll([
@@ -304,6 +307,10 @@ void main() {
     await tippe(tester, find.text('Standort teilen'));
     await tippe(tester, find.text('Erlauben'));
     expect(port.anfragen, 1);
+    expect(steuerung.gestartetMit, isNull, reason: 'erst nach der Rückkehr aus dem Systemdialog');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await warte(tester);
     expect(steuerung.gestartetMit, const Duration(hours: 1));
   });
 

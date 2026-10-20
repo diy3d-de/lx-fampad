@@ -56,8 +56,15 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
   /// Zurück aus den Android-Einstellungen: Stand der Akkuoptimierung neu lesen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) ref.invalidate(akkuUneingeschraenktProvider);
+    if (s == AppLifecycleState.resumed) {
+      ref.invalidate(akkuUneingeschraenktProvider);
+      final w = _rueckkehr;
+      if (w != null && !w.isCompleted) w.complete();
+    }
   }
+
+  /// Wartet auf die Rückkehr aus dem Systemdialog (Akku): ein Vordergrunddienst darf erst aus der sichtbaren App gestartet werden.
+  Completer<void>? _rueckkehr;
 
   /// Beim ersten Teilen mit eingeschränktem Akku (Samsung: "Optimiert") einmal ausdrücklich fragen; danach genügt der Hinweis auf der Seite.
   /// Liefert false, wenn die Person abbricht.
@@ -84,7 +91,12 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
       ),
     );
     if (antwort == 'ja') {
-      await port.akkuAnfragen();
+      final warten = _rueckkehr = Completer<void>();
+      if (await port.akkuAnfragen()) {
+        // der Systemdialog liegt über der App: erst nach der Rückkehr geht es weiter (sonst startet der Dienst aus dem Hintergrund und scheitert)
+        await warten.future.timeout(const Duration(seconds: 60), onTimeout: () {});
+      }
+      _rueckkehr = null;
       ref.invalidate(akkuUneingeschraenktProvider);
     }
     return antwort != null;

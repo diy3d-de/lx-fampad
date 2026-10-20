@@ -51,6 +51,19 @@ final _png = Uint8List.fromList([
   0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0xF8, 0xFF, 0xFF, 0x3F, 0x00, 0x05, 0xFE, 0x02, 0xFE, 0xA7, 0x35, 0x81, 0x84, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
 ]);
 
+/// Kopf einer PMTiles-Datei (127 Byte, Version 3) mit dem Bereich west/süd/ost/nord in Grad.
+Uint8List _kopfBytes(double west, double sued, double ost, double nord) {
+  final b = Uint8List(127);
+  b.setRange(0, 7, 'PMTiles'.codeUnits);
+  b[7] = 3;
+  final d = ByteData.sublistView(b);
+  d.setInt32(102, (west * 1e7).round(), Endian.little);
+  d.setInt32(106, (sued * 1e7).round(), Endian.little);
+  d.setInt32(110, (ost * 1e7).round(), Endian.little);
+  d.setInt32(114, (nord * 1e7).round(), Endian.little);
+  return b;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(testVorbereiten);
@@ -203,7 +216,20 @@ void main() {
       expect(await pruefen((r) => http.Response.bytes(Uint8List.fromList(List.filled(16, 1)), 206)), isFalse);
       final c = ProviderContainer(overrides: [httpClientProvider.overrideWithValue(MockClient((r) async => throw http.ClientException('offline')))]);
       addTearDown(c.dispose);
-      expect(await c.read(karteDateiProvider.future), isNull);
+      // ein Netzfehler ist kein "nicht vorhanden": Fehlerzustand, damit die Seite es von selbst wieder versucht
+      await expectLater(c.read(karteDateiProvider.future), throwsA(isA<http.ClientException>()));
+    });
+
+    test('Serverfehler (5xx) ist ein Fehlerzustand, 404 und 403 sind "nicht vorhanden"', () async {
+      Future<KartenBereich?> mit(int status) {
+        final c = ProviderContainer(overrides: [httpClientProvider.overrideWithValue(MockClient((r) async => http.Response('x', status)))]);
+        addTearDown(c.dispose);
+        return c.read(karteDateiProvider.future);
+      }
+
+      expect(await mit(404), isNull);
+      expect(await mit(403), isNull);
+      await expectLater(mit(502), throwsA(isA<http.ClientException>()));
     });
   });
 
@@ -259,6 +285,8 @@ void main() {
       bool verfuegbar = true,
       StandortState? zustand,
       double skala = 1.0,
+      Future<String> Function()? stil,
+      http.Client? httpClient,
     }) async {
       tester.view.physicalSize = const Size(360, 800);
       tester.view.devicePixelRatio = 1.0;
@@ -274,7 +302,8 @@ void main() {
             standortProvider.overrideWith(() => _Steuerung(zustand ?? const StandortState())),
             standortUhrProvider.overrideWith((ref) => () => jetzt),
             karteAttrappeProvider.overrideWithValue(true),
-            karteDateiProvider.overrideWith((ref) async => verfuegbar ? KartenBereich.westerburg175 : null),
+            karteStilProvider.overrideWithValue(stil ?? () async => '{}'),
+            if (httpClient == null) karteDateiProvider.overrideWith((ref) async => verfuegbar ? KartenBereich.westerburg175 : null) else httpClientProvider.overrideWithValue(httpClient),
           ],
           child: MaterialApp(
             theme: buildTheme(),
@@ -353,7 +382,63 @@ void main() {
       });
     }
 
-    testWidgets('Ohne Kartendatei: Layout 360 px, Textskala 1.5', (tester) async {
+    testWidgets('Netzfehler ist "Karte nicht erreichbar" (nicht "nicht eingerichtet"); "Erneut prüfen" und die Rückkehr in die App versuchen es wieder', (tester) async {
+      var online = false;
+      // MockClient liefert über echte Ereignisschleifen: im Widget-Test mit kurzer echter Wartezeit abwarten
+      Future<void> netz(WidgetTester t) async {
+        await warte(t);
+        await t.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+        await warte(t);
+      }
+
+      final client = MockClient((r) async {
+        if (!online) throw http.ClientException('offline');
+        return http.Response.bytes(_kopfBytes(5.49, 48.99, 10.45, 52.14), 206);
+      });
+      await zeige(tester, [teilt(_ben)], httpClient: client);
+      await netz(tester);
+      expect(find.text('Karte nicht erreichbar'), findsOneWidget);
+      expect(find.text('Karte noch nicht eingerichtet'), findsNothing);
+      online = true;
+      await tippe(tester, find.text('Erneut prüfen'));
+      await netz(tester);
+      expect(find.byType(StandortPin), findsOneWidget);
+      // und wieder weg, dann Rückkehr in die App
+      online = false;
+      await zeige(tester, [teilt(_ben)], httpClient: client);
+      await netz(tester);
+      expect(find.text('Karte nicht erreichbar'), findsOneWidget);
+      online = true;
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await netz(tester);
+      expect(find.byType(StandortPin), findsOneWidget);
+    });
+
+    testWidgets('Fehler beim Laden des Stils: "Erneut prüfen" lädt ihn neu (der Fehler bleibt nicht gemerkt)', (tester) async {
+      var versuche = 0;
+      await zeige(tester, [teilt(_ben)], stil: () async {
+        if (++versuche == 1) throw StateError('kaputt');
+        return '{}';
+      });
+      expect(find.textContaining('Der Kartenstil konnte nicht geladen werden'), findsOneWidget);
+      await tippe(tester, find.text('Erneut prüfen'));
+      expect(versuche, 2);
+      expect(find.byType(StandortPin), findsOneWidget);
+    });
+
+    testWidgets('Eigene Position außerhalb des Kartenbereichs: Hinweis "Du", "Auf mich zentrieren" gesperrt', (tester) async {
+      await zeige(
+        tester,
+        [teilt(_ben)],
+        zustand: StandortState(phase: StandortPhase.teilt, endetAt: jetzt.add(const Duration(hours: 1)), eigene: GeraetePosition(breite: 40.0, laenge: 3.0, zeit: jetzt)),
+      );
+      expect(find.textContaining('Du: außerhalb des Kartenbereichs'), findsOneWidget);
+      expect(find.byType(StandortPin), findsOneWidget);
+      expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.my_location)).onPressed, isNull);
+    });
+
+    testWidgets('Ohne Kartendatei: Layout 360 px, Textskala 1.5 (auch bei geringer Höhe ohne Überlauf)', (tester) async {
       await zeige(tester, [teilt(_ben)], verfuegbar: false, skala: 1.5);
       expect(tester.takeException(), isNull);
       expect(kleineZiele(tester), isEmpty);

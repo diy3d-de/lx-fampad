@@ -20,6 +20,14 @@ import '../karte/karte_config.dart';
 import '../karte/karte_verfuegbar.dart';
 import 'standort_pin.dart';
 
+/// Lädt den Kartenstil (Asset mit den Adressen des eigenen Servers); Tests überschreiben es.
+final karteStilProvider = Provider<Future<String> Function()>((ref) {
+  return () async {
+    final vorlage = await rootBundle.loadString('assets/karte/style.json');
+    return karteStyleAusVorlage(vorlage, karteOrigin());
+  };
+});
+
 /// Nur für Tests: statt der echten Karte (MapLibre läuft im Widget-Test nicht) eine Attrappe mit denselben Nadeln, Knöpfen und Infos.
 final karteAttrappeProvider = Provider<bool>((ref) => false);
 
@@ -67,7 +75,7 @@ class _Punkt {
   static _Punkt lerp(_Punkt a, _Punkt b, double t) => _Punkt(a.lat + (b.lat - a.lat) * t, a.lng + (b.lng - a.lng) * t);
 }
 
-class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTickerProviderStateMixin {
+class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..addListener(() => setState(() {}));
   final Map<String, _Punkt> _von = {};
   final Map<String, _Punkt> _nach = {};
@@ -83,6 +91,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _auffrischen = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) setState(() {});
     });
@@ -90,14 +99,27 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _auffrischen?.cancel();
     _anim.dispose();
     super.dispose();
   }
 
-  Future<String> _ladeStil() async {
-    final vorlage = await rootBundle.loadString('assets/karte/style.json');
-    return karteStyleAusVorlage(vorlage, karteOrigin());
+  /// Rückkehr in die App: Gab es die Datei nicht oder war der Server nicht erreichbar, noch einmal nachsehen (eine Anfrage).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState s) {
+    if (s == AppLifecycleState.resumed) _nochmalPruefen();
+  }
+
+  void _nochmalPruefen() {
+    final d = ref.read(karteDateiProvider);
+    if (!d.isLoading && (d.hasError || d.value == null)) ref.invalidate(karteDateiProvider);
+  }
+
+  /// "Erneut prüfen" auch bei einem Fehler beim Laden des Stils: der gemerkte Fehler-Future wird verworfen.
+  void _neuPruefen() {
+    setState(() => _stil = null);
+    ref.invalidate(karteDateiProvider);
   }
 
   List<KartenEintrag> _eintraege() {
@@ -223,12 +245,16 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   @override
   Widget build(BuildContext context) {
     final datei = ref.watch(karteDateiProvider);
+    // die Verbindung steht wieder: Karte noch einmal suchen
+    ref.listen(standortProvider.select((s) => s.verbunden), (_, verbunden) {
+      if (verbunden) _nochmalPruefen();
+    });
     return SizedBox(
       height: kKarteHoehe,
       child: datei.when(
         loading: () => const _Rahmen(child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)))),
-        error: (_, _) => const _NichtEingerichtet(),
-        data: (bereich) => bereich == null ? const _NichtEingerichtet() : _karte(context, bereich),
+        error: (_, _) => _NichtEingerichtet(titel: 'Karte nicht erreichbar', text: 'Der Kartenserver ließ sich nicht erreichen (Verbindung?).', onNeuPruefen: _neuPruefen),
+        data: (bereich) => bereich == null ? _NichtEingerichtet(onNeuPruefen: _neuPruefen) : _karte(context, bereich),
       ),
     );
   }
@@ -236,13 +262,14 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   Widget _karte(BuildContext context, KartenBereich bereich) {
     _bereich = bereich;
     // in der Attrappe (Tests) braucht es keinen Stil
-    _stil ??= ref.read(karteAttrappeProvider) ? Future.value('{}') : _ladeStil();
+    _stil ??= ref.read(karteStilProvider)();
     final eintraege = _eintraege();
     if (_nach.isEmpty && eintraege.isNotEmpty) _ziele(eintraege);
     final jetzt = ref.read(standortUhrProvider)();
-    final ausserhalb = [for (final e in eintraege) if (!bereich.enthaelt(e.lat, e.lng) && !e.eigene) e.name];
+    final ausserhalb = [for (final e in eintraege) if (!bereich.enthaelt(e.lat, e.lng)) e.eigene ? 'Du' : e.name];
     final gewaehlt = eintraege.where((e) => e.id == _gewaehlt).firstOrNull;
-    final hatEigene = eintraege.any((e) => e.eigene);
+    // "Auf mich zentrieren" nur, wenn die eigene Position auf der Karte liegt
+    final hatEigene = eintraege.any((e) => e.eigene && bereich.enthaelt(e.lat, e.lng));
 
     List<Marker> marker() => [
       for (final e in eintraege)
@@ -262,7 +289,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
       child: FutureBuilder<String>(
         future: _stil,
         builder: (context, snap) {
-          if (snap.hasError) return const _NichtEingerichtet(text: 'Der Kartenstil konnte nicht geladen werden.');
+          if (snap.hasError) return _NichtEingerichtet(titel: 'Karte nicht verfügbar', text: 'Der Kartenstil konnte nicht geladen werden.', onNeuPruefen: _neuPruefen);
           if (!snap.hasData) return const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)));
           final attrappe = ref.watch(karteAttrappeProvider);
           return Stack(
@@ -337,24 +364,29 @@ class _Rahmen extends StatelessWidget {
 }
 
 /// Ersatz, solange es keine Kartendatei gibt: kein Fehler, die Liste zeigt weiter alles.
-class _NichtEingerichtet extends ConsumerWidget {
+class _NichtEingerichtet extends StatelessWidget {
+  final String titel;
   final String text;
-  const _NichtEingerichtet({this.text = 'Die Kartendaten sind auf dem Server noch nicht hinterlegt.'});
+  final VoidCallback onNeuPruefen;
+  const _NichtEingerichtet({this.titel = 'Karte noch nicht eingerichtet', this.text = 'Die Kartendaten sind auf dem Server noch nicht hinterlegt.', required this.onNeuPruefen});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) => _Rahmen(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.map_outlined, size: 36, color: kTextFaint),
-          const SizedBox(height: 8),
-          const Text('Karte noch nicht eingerichtet', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text('$text Die Liste unten zeigt weiterhin alle Positionen.', textAlign: TextAlign.center, style: const TextStyle(color: kTextMuted, fontSize: 13)),
-          LinkKnopf('Erneut prüfen', icon: Icons.refresh, onPressed: () => ref.invalidate(karteDateiProvider)),
-        ],
+  Widget build(BuildContext context) => _Rahmen(
+    // scrollbar: bei kleiner Höhe oder großer Schrift (Textskala 1.5) darf nichts überlaufen
+    child: Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.map_outlined, size: 32, color: kTextFaint),
+            const SizedBox(height: 6),
+            Text(titel, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Text('$text Die Liste unten zeigt weiterhin alle Positionen.', textAlign: TextAlign.center, style: const TextStyle(color: kTextMuted, fontSize: 13)),
+            LinkKnopf('Erneut prüfen', icon: Icons.refresh, onPressed: onNeuPruefen),
+          ],
+        ),
       ),
     ),
   );

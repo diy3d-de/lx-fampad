@@ -23,16 +23,17 @@ KartenBereich? pmtilesBereich(Uint8List kopf) {
   return KartenBereich(west: west, ost: ost, sued: sued, nord: nord);
 }
 
-/// Der Bereich der Kartendatei auf dem Server, null = keine (brauchbare) Datei. Einmal je App-Lauf; "Erneut prüfen" ruft `ref.invalidate` auf.
-/// Fehler und Zeitüberschreitung zählen als "nicht vorhanden".
-final karteDateiProvider = FutureProvider<KartenBereich?>((ref) async {
-  final client = ref.read(httpClientProvider);
-  try {
-    return await _kopfLesen(client).timeout(const Duration(seconds: 8));
-  } catch (_) {
-    return null;
-  }
-});
+/// Der Bereich der Kartendatei auf dem Server; **null = es gibt (noch) keine brauchbare Datei** (404, Rechte, kein PMTiles-Kopf, unsinniger Bereich).
+/// Ein **Fehler** (Netz, Zeitüberschreitung, Serverfehler) ist ein Fehlerzustand und kein "nicht vorhanden": die Seite sagt dann "Karte nicht erreichbar"
+/// und versucht es von selbst wieder (Rückkehr in die App, Verbindung steht wieder) oder auf "Erneut prüfen". Einmal je App-Lauf gemerkt, sonst `ref.invalidate`.
+final karteDateiProvider = FutureProvider<KartenBereich?>(
+  (ref) async {
+    final client = ref.read(httpClientProvider);
+    return _kopfLesen(client).timeout(const Duration(seconds: 8));
+  },
+  // Riverpod wiederholt fehlgeschlagene Provider von selbst; hier entscheiden die Seite (Rückkehr, Verbindung, "Erneut prüfen") und die Person
+  retry: (_, _) => null,
+);
 
 /// Liest nur den Kopf: Die Antwort wird als Strom gelesen und nach [kPmtilesKopfLaenge] Byte abgebrochen, eine andere Antwort als 206 sofort verworfen.
 /// Antwortet ein Proxy oder Server trotz Range-Anfrage mit 200 und der ganzen Datei (hier über 1 GB), landet sie nie im Arbeitsspeicher
@@ -41,6 +42,10 @@ Future<KartenBereich?> _kopfLesen(http.Client client) async {
   final anfrage = http.Request('GET', Uri.parse('${karteOrigin()}$kKarteKachelPfad'))..headers['Range'] = 'bytes=0-${kPmtilesKopfLaenge - 1}';
   final antwort = await client.send(anfrage);
   // 206 mit einem unsinnig großen Körper (mehr als der angeforderte Kopf) ist ebenfalls keine brauchbare Antwort
+  if (antwort.statusCode >= 500) {
+    await antwort.stream.listen(null).cancel();
+    throw http.ClientException('Kartenserver: ${antwort.statusCode}');
+  }
   if (antwort.statusCode != 206 || (antwort.contentLength != null && antwort.contentLength! > kPmtilesKopfLaenge)) {
     await antwort.stream.listen(null).cancel();
     return null;
