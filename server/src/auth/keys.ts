@@ -32,7 +32,7 @@ export async function getOwnKeys(ctx: AuthContext, p: SessionPrincipal): Promise
 
 /** Erstes Schlüsselpaar der Person anlegen; gibt es schon eines, 409 (Wechsel nur über rotateKeys mit Step-up). */
 export async function createKeys(ctx: AuthContext, p: SessionPrincipal, input: { publicEncKey: string; publicSignKey: string }, meta: RequestMeta): Promise<PublicKeys> {
-  return ctx.db.transaction(async (tx) => {
+  const created = await ctx.db.transaction(async (tx) => {
     const rows = await tx
       .insert(personKeys)
       .values({ userId: p.userId, publicEncKey: input.publicEncKey, publicSignKey: input.publicSignKey, keyVersion: 1, createdAt: ctx.now(), updatedAt: ctx.now() })
@@ -43,6 +43,8 @@ export async function createKeys(ctx: AuthContext, p: SessionPrincipal, input: {
     await writeAudit(ctx, tx, { event: 'key_created', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
     return row;
   });
+  ctx.onMembersChanged(p.familyId);
+  return created;
 }
 
 /**
@@ -58,7 +60,7 @@ export async function rotateKeys(
   meta: RequestMeta,
 ): Promise<PublicKeys> {
   requireStepUp(ctx, p);
-  return ctx.db.transaction(async (tx) => {
+  const rotated = await ctx.db.transaction(async (tx) => {
     const [alt] = await tx.select().from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
     if (!alt) throw notFound();
     if (alt.keyVersion !== input.expectedKeyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
@@ -77,6 +79,9 @@ export async function rotateKeys(
     await writeAudit(ctx, tx, { event: 'key_rotated', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
     return row;
   });
+  // andere Geräte erfahren den Schlüsselwechsel (TOFU-Warnung) ohne Neustart
+  ctx.onMembersChanged(p.familyId);
+  return rotated;
 }
 
 /** Opake Schlüsselsicherung ablegen oder ersetzen (Step-up). Sie muss zur aktuellen key_version gehören. */

@@ -144,6 +144,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     maxPerMinute: config.locMaxPerMinute,
     graceMs: config.locGraceMs,
     sweepMs: config.locSweepMs,
+    directoryTimeoutMs: config.locDirectoryTimeoutMs,
     log: app.log,
   });
   app.decorate('location', location);
@@ -181,6 +182,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
       // Push nur für Änderungen einer Person (Sync); nicht an deren Gerät, nicht an Geräte mit offener Verbindung
       if (origin) void push.weckeGeraete({ familyId, rev, roles, users, origin });
     };
+    authCore.ctx.onMembersChanged = (familyId) => hub.notifyMembersChanged(familyId);
     authCore.ctx.onRevoke = (e) => {
       // eine widerrufene Sitzung, ein entferntes Gerät oder Mitglied beendet das Teilen sofort (nicht erst nach der Schonfrist)
       location.revoke(e);

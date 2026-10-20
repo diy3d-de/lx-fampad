@@ -107,6 +107,7 @@ export interface Config {
   locMaxPerMinute: number;
   locGraceMs: number;
   locSweepMs: number;
+  locDirectoryTimeoutMs: number;
 }
 
 /** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
@@ -291,6 +292,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locMaxPerMinute: positiveInt(env, 'LOC_MAX_PER_MINUTE', 40),
     locGraceMs: positiveInt(env, 'LOC_GRACE_MS', 90_000),
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
+    locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
   };
 }
 

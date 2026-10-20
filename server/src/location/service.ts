@@ -55,6 +55,8 @@ export interface LocationDeps {
   maxPerMinute: number;
   graceMs: number;
   sweepMs: number;
+  /** Zeitlimit für die Mitgliederprüfung (hängende Datenbank); Standard 5 s. */
+  directoryTimeoutMs?: number;
   log?: { warn(obj: unknown, msg?: string): void };
 }
 
@@ -134,7 +136,13 @@ export class LocationService {
     if (!this.allowStart(p.userId, now)) return { ok: false, code: 'rate_limited' };
 
     // Empfänger gegen die Mitglieder der Familie der Sitzung prüfen (nie gegen Angaben des Clients)
-    const members = await this.deps.directory(p.familyId);
+    let members: Awaited<ReturnType<MemberDirectory>>;
+    try {
+      members = await this.members(p.familyId);
+    } catch (err: unknown) {
+      this.deps.log?.warn({ err }, 'Mitgliederprüfung des Standorts fehlgeschlagen');
+      return { ok: false, code: 'unavailable' };
+    }
     if (!members.some((m) => m.userId === p.userId)) return { ok: false, code: 'forbidden' };
     const { allowed, rejected } = locationRecipients({ userId: p.userId, role: p.role }, members, [...wraps.keys()]);
     if (rejected.length > 0 || allowed.length === 0) return { ok: false, code: 'bad_recipients' };
@@ -169,6 +177,17 @@ export class LocationService {
       this.deps.hub.sendToUsers(share.familyId, [userId], { type: 'loc_start', from: share.ownerId, shareId: share.id, endsAt, wrap });
     }
     return { ok: true };
+  }
+
+  /** Mitglieder mit Zeitlimit: ein hängender Datenbankaufruf blockiert weder Prüflauf noch die Nachrichtenkette eines Sockets. */
+  private members(familyId: string): Promise<Awaited<ReturnType<MemberDirectory>>> {
+    const ms = this.deps.directoryTimeoutMs ?? 5000;
+    let timer: NodeJS.Timeout | undefined;
+    const limit = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error('Zeitlimit der Mitgliederprüfung')), ms);
+      timer.unref();
+    });
+    return Promise.race([this.deps.directory(familyId), limit]).finally(() => clearTimeout(timer));
   }
 
   /** Die Freigabe, wenn sie dieser Sitzung (Person und Gerät) gehört; sonst null (für Fremde gibt es sie nicht). */
@@ -291,10 +310,19 @@ export class LocationService {
       else if (s.graceUntil !== null && now >= s.graceUntil) this.end(s, 'disconnected');
       else if (now - s.lastRecheckAt >= recheckMs) toCheck.push(s);
     }
-    const families = new Map<string, Awaited<ReturnType<MemberDirectory>>>();
+    const families = new Map<string, Awaited<ReturnType<MemberDirectory>> | null>();
     for (const s of toCheck) {
-      if (!families.has(s.familyId)) families.set(s.familyId, await this.deps.directory(s.familyId));
-      const members = families.get(s.familyId) as Awaited<ReturnType<MemberDirectory>>;
+      if (!families.has(s.familyId)) {
+        try {
+          families.set(s.familyId, await this.members(s.familyId));
+        } catch (err: unknown) {
+          // Prüfung nicht möglich: Freigabe bleibt (Ablauf und Schonfrist gelten oben weiter), nächster Lauf versucht es erneut
+          this.deps.log?.warn({ err }, 'Mitgliederprüfung des Standorts fehlgeschlagen');
+          families.set(s.familyId, null);
+        }
+      }
+      const members = families.get(s.familyId);
+      if (!members) continue;
       if (this.shares.get(s.id) !== s) continue;
       s.lastRecheckAt = now;
       if (!members.some((m) => m.userId === s.ownerId)) {

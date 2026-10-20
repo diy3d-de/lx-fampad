@@ -197,12 +197,14 @@ async function completeRegistration(
   },
 ): Promise<RegistrationResult> {
   const { identity: id, meta } = input;
+  let joinedFamily: string | undefined;
   try {
-    return await ctx.db.transaction(async (tx) => {
+    const result = await ctx.db.transaction(async (tx) => {
       // Einladungszeile sperren: parallele Abschlüsse derselben Einladung warten hier, der zweite scheitert in consumeInvite
       const [inviteRow] = await tx.select().from(invites).where(eq(invites.id, id.inviteId)).for('update');
       if (!inviteRow) throw INVALID_INVITE();
       const familyId = inviteRow.familyId;
+      joinedFamily = familyId;
       let role: Role = inviteRow.role;
       let status: 'active' | 'pending';
       let colorIndex: number;
@@ -253,6 +255,9 @@ async function completeRegistration(
       });
       return { member, status, recoveryCodes, session };
     });
+    // neue Person (oder zurückgesetztes Konto): die Geräte der Familie laden die Mitgliederliste neu
+    if (joinedFamily) ctx.onMembersChanged(joinedFamily);
+    return result;
   } catch (err) {
     if (isUniqueViolation(err)) throw registrationFailed();
     throw err;

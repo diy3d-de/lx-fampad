@@ -124,6 +124,15 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
   );
 });
 
+/// Zählt die Hinweise des Servers "Mitglieder geändert" (WebSocket `members_changed`); [mitgliederAktualisierungProvider] lädt dann die Liste neu.
+class MitgliederHinweis extends Notifier<int> {
+  @override
+  int build() => 0;
+  void hinweis() => state++;
+}
+
+final mitgliederHinweisProvider = NotifierProvider<MitgliederHinweis, int>(MitgliederHinweis.new);
+
 class SyncController extends Notifier<SyncState> {
   Timer? _entprellen;
   Timer? _periodisch;
@@ -259,6 +268,9 @@ class SyncController extends Notifier<SyncState> {
       },
       beiStatus: (live) {
         if (_aktiv && state.live != live) state = state.copyWith(live: live);
+      },
+      beiMitglieder: () {
+        if (_aktiv) ref.read(mitgliederHinweisProvider.notifier).hinweis();
       },
       oeffner: ref.read(syncSocketOeffnerProvider),
       zufall: ref.read(syncZufallProvider),
