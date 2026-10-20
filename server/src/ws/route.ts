@@ -3,6 +3,7 @@ import type { AuthService, Principal } from '../auth/types.js';
 import { isLax, type Config } from '../config.js';
 import { normalizeIp } from '../net.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
+import type { LocationResult, LocationService } from '../location/service.js';
 import type { Hub, ServerMessage } from './hub.js';
 
 /** Schließcode: nicht (rechtzeitig) angemeldet. */
@@ -23,6 +24,8 @@ function send(socket: { send(data: string): void }, msg: ServerMessage): void {
 export interface WebSocketDeps {
   auth: AuthService;
   hub: Hub;
+  /** Standort teilen (flüchtig); fehlt: die loc_*-Nachrichten sind nicht unterstützt. */
+  location?: LocationService | undefined;
 }
 
 /** Zähler, bei dem Prüfen und Erhöhen in einem synchronen Schritt geschehen (kein Wettlauf zwischen Anfragen). */
@@ -67,7 +70,7 @@ interface Reservation {
  * gegen die IP. Je Socket gilt ein Nachrichtenlimit, je Person ein Verbindungslimit. Der Server pingt alle
  * [Config.wsPingIntervalMs]; bleibt das Pong aus, wird getrennt.
  */
-export function registerWebSocketRoute(app: FastifyInstance, config: Config, { auth, hub }: WebSocketDeps): void {
+export function registerWebSocketRoute(app: FastifyInstance, config: Config, { auth, hub, location }: WebSocketDeps): void {
   const allowedOrigin = new URL(config.publicUrl).origin;
   const lax = isLax(config);
   const perIp = new Counter();
@@ -158,6 +161,7 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
     socket.once('close', () => {
       clearTimeout(authTimer);
       clearInterval(pingTimer);
+      location?.onClose(socket);
       perIp.release(ipKey);
       if (userKey) perUser.release(userKey);
     });
@@ -179,6 +183,11 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       clearTimeout(authTimer);
       hub.add(p.familyId, socket, { userId: p.userId, sessionId: p.sessionId, deviceId: p.deviceId, role: p.role });
       send(socket, { type: 'ready' });
+      location?.onConnect(p, socket);
+    };
+
+    const locationReply = (result: LocationResult, shareId: unknown) => {
+      if (!result.ok) send(socket, { type: 'loc_error', code: result.code, ...(typeof shareId === 'string' && shareId.length <= 64 ? { shareId } : {}) });
     };
 
     send(socket, { type: 'hello', protocolVersion: PROTOCOL_VERSION, serverVersion: SERVER_VERSION });
@@ -228,6 +237,21 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
           });
       } else if (!principal) {
         send(socket, { type: 'error', code: 'unauthenticated' });
+      } else if (location && typeof msg.type === 'string' && msg.type.startsWith('loc_')) {
+        const p = principal;
+        const m = msg as Record<string, unknown>;
+        if (msg.type === 'loc_pos') locationReply(location.position(p, m), m.shareId);
+        else if (msg.type === 'loc_stop') locationReply(location.stop(p, m), m.shareId);
+        else if (msg.type === 'loc_extend') locationReply(location.extend(p, socket, m), m.shareId);
+        else if (msg.type === 'loc_start') {
+          location
+            .start(p, socket, m)
+            .then((r) => locationReply(r, m.shareId))
+            .catch((err: unknown) => {
+              req.log.warn({ err }, 'Standort-Freigabe fehlgeschlagen');
+              send(socket, { type: 'loc_error', code: 'unavailable' });
+            });
+        } else send(socket, { type: 'error', code: 'unsupported' });
       } else {
         send(socket, { type: 'error', code: 'unsupported' });
       }

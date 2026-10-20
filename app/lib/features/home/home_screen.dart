@@ -18,6 +18,7 @@ import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
+import '../standort/standort_start_karte.dart';
 import '../update/update_banner.dart';
 
 /// Vorname für die Begrüßung: erstes Wort des Anzeigenamens, sehr lange Namen werden gekürzt; null bei leerem Namen.
@@ -98,6 +99,8 @@ class HomeScreen extends ConsumerWidget {
         const _EinkaufKarte(),
         const SizedBox(height: 20),
         const _NaechsteKarte(),
+        const SizedBox(height: 20),
+        const StandortStartKarte(),
       ],
     );
   }

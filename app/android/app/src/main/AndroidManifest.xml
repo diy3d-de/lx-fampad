@@ -25,6 +25,17 @@
     <!-- Push (UnifiedPush, ntfy-App als Verteiler): unifiedpush_android bringt über die Bibliothek org.unifiedpush.android:connector selbst die
          Berechtigung WAKE_LOCK, die <queries> für Verteiler, den Empfänger MessagingReceiverImpl und den Dienst UnifiedPushService ins Manifest. Hier ist
          nichts einzutragen; nach dem Debug-Build den gemergten Manifest prüfen (docs/VERSIONEN.md, Zeile unifiedpush). -->
+    <!-- Standort teilen (flüchtig, Ende-zu-Ende verschlüsselt, nur auf Tipp der Person, siehe docs/PROJEKTBESCHREIBUNG.md, 6e): Standort nur im Vordergrund
+         (FINE und COARSE; ACCESS_BACKGROUND_LOCATION gibt es bewusst nicht), dazu ein Vordergrunddienst vom Typ "location" mit ständiger Benachrichtigung und
+         eine Wecksperre, die der Dienst nur bis zur Ablaufzeit hält. Der Dienst wird nur aus der sichtbaren App gestartet. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- GPS ist keine Voraussetzung für die Installation (Tablets, Netzwerk-Ortung genügt) -->
+    <uses-feature android:name="android.hardware.location" android:required="false" />
+    <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <!-- Nur TLS: kein Klartext-Verkehr (familie.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
     <application
         android:label="lx-familyhub"
@@ -49,6 +60,11 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        <!-- Standort teilen: Vordergrunddienst, nur intern erreichbar; beendet sich selbst bei Ablauf, ohne Lebenszeichen der App und beim Wischen der App -->
+        <service
+            android:name=".StandortService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

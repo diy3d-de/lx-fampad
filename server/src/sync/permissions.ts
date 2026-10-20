@@ -138,3 +138,18 @@ export function rolesThatMayRead(rules: Rules, facts: Facts): Role[] {
 export function usersThatMayRead(rules: Rules, facts: Facts, members: readonly Actor[]): string[] {
   return members.filter((m) => mayRead(rules, m, facts)).map((m) => m.userId);
 }
+
+/**
+ * Standort teilen (flüchtiger Kanal, kein Sync): Wer darf einem Mitglied die eigene Position schicken?
+ *
+ * Die Freigabe geht immer von der Person selbst aus (nie angefordert oder eingeschaltet von anderen); sie wählt die Empfänger. Eine Rolle
+ * schränkt weder Senden noch Empfangen ein (auch Kinder wählen selbst; "an Eltern" ist nur die Voreinstellung der App). Es zählen nur
+ * **aktive Mitglieder der eigenen Familie** (`members` kommt vom Server, nie vom Client), nie die Person selbst. Alles andere wird abgelehnt.
+ */
+export function locationRecipients(sender: Actor, members: readonly Actor[], chosen: readonly string[]): { allowed: string[]; rejected: string[] } {
+  const active = new Set(members.map((m) => m.userId));
+  const allowed: string[] = [];
+  const rejected: string[] = [];
+  for (const id of new Set(chosen)) (id !== sender.userId && active.has(id) ? allowed : rejected).push(id);
+  return { allowed, rejected };
+}

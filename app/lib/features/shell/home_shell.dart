@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/push/push_state.dart';
+import '../../data/standort/standort_dienst.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
@@ -43,11 +44,13 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;
   late final SyncController _sync;
+  late final StandortController _standort;
 
   @override
   void initState() {
     super.initState();
     _sync = ref.read(syncProvider.notifier);
+    _standort = ref.read(standortProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     ref.read(updateProvider.notifier).init();
     // erste Update-Prüfung kurz nach dem Start (Pflicht-Updates sollen früh auffallen), danach beim Zurückkehren in die App
@@ -58,6 +61,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(syncProvider.notifier).starten();
       // Push (nur Android): Zustand laden und, falls eingeschaltet, bei jedem Start erneut beim Verteiler registrieren
       unawaited(ref.read(pushProvider.notifier).starten());
+      // Standort teilen: Empfang der Freigaben anderer (die Verbindung steht nur im Vordergrund oder solange du teilst)
+      _standort.starten();
     });
   }
 
@@ -67,6 +72,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     WidgetsBinding.instance.removeObserver(this);
     // Abmelden oder Sitzungsverlust: kein Abgleich mehr (der Ausgang bleibt in der Datenbank)
     _sync.stoppen(zustandAendern: false); // mitten im Abbau des Widget-Baums keinen Zustand ändern
+    _standort.anhalten();
     super.dispose();
   }
 
@@ -79,6 +85,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   void didChangeAppLifecycleState(AppLifecycleState s) {
     // WebSocket und Zeitgeber nur im Vordergrund; bei der Rückkehr sofort abgleichen
     unawaited(ref.read(syncProvider.notifier).vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive));
+    _standort.vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive);
     if (s != AppLifecycleState.resumed) return;
     final l = _letztePruefung;
     // Web: häufiger, der Hinweis "Neue Version - neu laden" ist billig (eine kleine JSON-Abfrage)

@@ -7,7 +7,14 @@ export type ServerMessage =
   | { type: 'ready' }
   | { type: 'pong' }
   | { type: 'rev'; rev: number }
-  | { type: 'error'; code: string };
+  | { type: 'error'; code: string }
+  // Standort teilen (flüchtig, opake Pakete; docs/API.md, Abschnitt "Standort")
+  | { type: 'loc_started'; shareId: string; endsAt: number }
+  | { type: 'loc_active'; shareId: string; endsAt: number }
+  | { type: 'loc_start'; from: string; shareId: string; endsAt: number; wrap: string }
+  | { type: 'loc_pos'; from: string; shareId: string; packet: string }
+  | { type: 'loc_stop'; from: string; shareId: string; reason: string }
+  | { type: 'loc_error'; code: string; shareId?: string };
 
 /** Wer hinter einer Verbindung steckt (für gezieltes Schließen bei Abmeldung, Widerruf, Rollenwechsel). */
 export interface Subject {
@@ -123,6 +130,16 @@ export class Hub {
         if (!byUser && !byRole) continue;
       }
       if (e.socket.readyState === e.socket.OPEN) e.socket.send(msg);
+    }
+  }
+
+  /** Schickt eine Nachricht an alle offenen Verbindungen der genannten Personen **dieser Familie** (nie familienübergreifend). */
+  sendToUsers(familyId: string, userIds: readonly string[], msg: ServerMessage): void {
+    const json = JSON.stringify(msg);
+    for (const userId of userIds) {
+      for (const e of this.byUser.get(userId) ?? []) {
+        if (e.familyId === familyId && e.socket.readyState === e.socket.OPEN) e.socket.send(json);
+      }
     }
   }
 

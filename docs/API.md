@@ -423,6 +423,32 @@ Push ist ein **Wecker ohne Inhalt**: kein Text, kein Titel, keine Tags, keine Na
 4. Browser mit gültigem Session-Cookie sind schon beim Upgrade angemeldet.
 5. Limits: Nachrichten je Socket (30 je 10 s, sonst Code `4429`), Verbindungen je IP (IPv6: je /64; 10, vor dem Upgrade `429`) und je Person (8, Code `4429`).
 6. **Widerruf:** Abmelden, Gerät entfernen, „überall abmelden“, Rollenwechsel und Entfernen schließen die betroffenen Sockets sofort mit Code `4401`. Zusätzlich prüft der Server bei jedem Ping (30 s), ob Sitzung und Mitgliedschaft noch gelten (sonst `4401`), und hält die Rolle der Verbindung aktuell.
+7. **Standort teilen:** zusätzliche Nachrichten `loc_*`, siehe Abschnitt „Standort“ unten.
+
+## Standort (WebSocket `loc_*`, flüchtig)
+
+Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher** des Servers: keine Tabelle, keine Migration, kein Backup, keine Historie, nichts im Log (nicht einmal Kennungen von Freigaben). Der Server reicht opake Pakete weiter; Wrap und Paket sind für ihn Base64url-Zeichenketten, geprüft werden nur Form (`^[A-Za-z0-9_-]+$`) und Länge. Aufbau und Verfahren: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6e. Alle `loc_*`-Nachrichten brauchen eine angemeldete Verbindung (vorher `error` `unauthenticated`) und zählen für das Nachrichtenlimit je Socket.
+
+**Client → Server**
+
+| Nachricht | Inhalt und Regeln |
+| --- | --- |
+| `loc_start` | `{ shareId (UUID, vom Client), endsAt (Epoch-ms, in der Zukunft, höchstens `LOC_MAX_DURATION_MS` = 12 h ab jetzt), recipients: [{ userId, wrap }] }`. 1 bis 30 Empfänger, jede ID einmal, **nur aktive Mitglieder der Familie der Sitzung, nie die Person selbst** (Regel `locationRecipients` in `sync/permissions.ts`; Mitglieder kommen aus der Datenbank). Eine neue Freigabe **ersetzt** die alte derselben Person (die alte endet mit `replaced`). Antwort `loc_started`. |
+| `loc_pos` | `{ shareId, packet }`, Paket ≤ 1024 Zeichen. Nur vom **Gerät, das gestartet hat** (gleiche Person und Gerät). Mindestabstand je Freigabe `LOC_MIN_INTERVAL_MS` (1000), sonst `loc_error` `rate_limited` (das Paket wird verworfen, nichts endet). |
+| `loc_extend` | `{ shareId, endsAt }`, gleiche Grenzen wie beim Start. Antwort `loc_active`. |
+| `loc_stop` | `{ shareId }`. Beendet; Empfänger bekommen `loc_stop` mit `reason: "stopped"`. |
+
+**Server → Client**
+
+| Nachricht | Inhalt |
+| --- | --- |
+| `loc_started` / `loc_active` | `{ shareId, endsAt }` an den Sender: bestätigt Start bzw. Verlängern; `loc_active` kommt außerdem, wenn sich das Sendergerät innerhalb der Schonfrist wieder verbindet. |
+| `loc_start` | `{ from, shareId, endsAt, wrap }` an **jeden Empfänger einzeln, nur mit dessen eigenem Wrap**; ein später verbundener Empfänger bekommt es beim Anmelden nachgereicht, danach die letzte Position als `loc_pos`. |
+| `loc_pos` | `{ from, shareId, packet }` an die Empfänger der Freigabe (nie an den Sender, nie an Unbeteiligte oder andere Familien). |
+| `loc_stop` | `{ from, shareId, reason }` an Empfänger und Sender; `reason`: `stopped`, `expired`, `disconnected`, `removed`, `replaced`. |
+| `loc_error` | `{ code, shareId? }`: `bad_request`, `bad_duration`, `bad_recipients`, `share_exists`, `rate_limited`, `too_many_shares`, `forbidden`, `unknown_share` (auch für fremde Freigaben und Sendungen vom falschen Gerät), `unavailable`. |
+
+**Auto-Ende:** Ablauf (`endsAt`), `loc_stop`, Widerruf (Abmelden, Gerät oder Mitglied entfernen, Rollenwechsel: sofort), **Sendergerät länger als `LOC_GRACE_MS` (90 s) ohne Verbindung**, Sender nicht mehr aktives Mitglied. Entfernte Empfänger werden bei der regelmäßigen Prüfung (Abstand 12 × `LOC_SWEEP_MS`) aus der Freigabe genommen. **Limits:** 10 Starts je Person in 10 Minuten, `LOC_MAX_SHARES_PER_FAMILY` (50) Freigaben je Familie, Wrap ≤ 1024 und Paket ≤ 1024 Zeichen. Einstellungen: `server/.env.example`.
 
 ## Audit-Log
 
