@@ -136,7 +136,7 @@ Mindestversionen: Android 9 (API 28, nötig für Passkeys über Credential Manag
    │             │                                       └─▶ /releases (OTA-Dateien)  │
    │             │   API ──▶ PostgreSQL 17 (nur localhost)                            │
    │             │   API ──▶ Dateiablage /srv/fampad/files (verschlüsselt)           │
-   │             │   Backup: restic, verschlüsselt, auf externes Ziel                  │
+   │             │   Backup: pg_dump + age, NAS holt ab (docs/BACKUP.md)            │
    │             └────────────────────────────────────────────────────────────────────┘
    └──── Push über eigenen ntfy-Server (UnifiedPush) – nur „es gibt Neues“, kein Inhalt
 ```
@@ -389,7 +389,7 @@ verständliche Fehlertexte (offline / Zugang / sonstiges).
 
 - Server in Deutschland (netcup), keine Tracker, keine eingebetteten Fremdinhalte, Schriften selbst gehostet.
 - **Verschlüsselung:** TLS 1.3 für alle Verbindungen; Dateien auf dem Server mit AES-256-GCM (Schlüssel pro
-  Datei, verpackt mit einem Hauptschlüssel außerhalb des Datenverzeichnisses); Backups mit restic verschlüsselt.
+  Datei, verpackt mit einem Hauptschlüssel außerhalb des Datenverzeichnisses); Backups mit age verschlüsselt (privater Schlüssel nie auf dem Server).
 - **Ende-zu-Ende-Verschlüsselung (E2EE)** gibt es für den **Chat** (Abschnitt 9a; seit v0.3.0 sind alle Chat-Nachrichten so geschützt). Alle anderen Bereiche (Kalender, Listen, Aufgaben, Dateien) bleiben serverseitig lesbar: E2EE würde dort Suche,
   Vorschaubilder und Wiederherstellung durch den Admin stark erschweren. Für den Tresor ist sie in Phase 3 als Option zu prüfen.
 - **Push-Nachrichten** enthalten keinen Inhalt („Neue Nachricht in Familie“), Details holt die App selbst.
@@ -528,8 +528,7 @@ Wraps und Listen brauchen genau das, was der Sync schon kann (Offline-Schreiben,
 - Caddy: zusätzlicher Site-Block `familie.lx-labs.dev` (statische Web-App, Reverse Proxy `/api` und `/ws`
   auf `127.0.0.1:4400`, `/releases`, `/.well-known`).
 - Dienst `lx-fampad.service` unter eigenem Benutzer, Daten unter `/srv/fampad/`.
-- Backups: nächtlich `pg_dump` + Dateien mit restic auf ein externes Ziel, Aufbewahrung 7 Tage / 4 Wochen /
-  6 Monate, Wiederherstellung einmal pro Quartal testen.
+- Backups (umgesetzt, `docs/BACKUP.md`, `docs/WIEDERHERSTELLUNG.md`): täglich 03:30 `pg_dump` + Konfiguration, mit age verschlüsselt, auf dem Server die letzten 3 Tage; das NAS holt per rsync/SSH ab (nur lesen; der Server hält keine Zugangsdaten zum NAS, nur dessen IP und öffentlichen Schlüssel) und hält 14 tägliche + 8 wöchentliche + 12 monatliche Stände; Wiederherstellung halbjährlich testen. Dateiablage (`/srv/fampad/files`) später (inkrementell).
 - Monitoring: `/api/v1/health`, Speicherplatz-Warnung, Log-Rotation; keine IP-Adressen länger als 7 Tage.
 - Vor Phase 1 prüfen: RAM, CPU und freier Speicher des VPS reichen für PostgreSQL, Vorschaubilder und das
   Dateivolumen (Fotos/Videos wachsen schnell).
@@ -591,7 +590,7 @@ Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören
     - **`qr_flutter` 4.1.0 (Wartung):** das Paket wird kaum noch gepflegt; Ersatz oder eigener QR-Painter prüfen.
     - **Refresh-Wiederholung im Toleranzfenster (Client):** bei unklarem Ausgang einmal innerhalb von 25 s mit demselben Token und derselben Geräte-ID wiederholen, statt abzumelden (der Server bedient das seit Phase 1b); bewusst noch nicht gebaut, weil die Abwägung aus dem Abschnitt "Toleranzfenster" erst Erfahrung braucht.
     - **Sitzungsverlust und lokale Daten:** in Phase 1c mit dem Ausgang (Outbox) neu bewertet und **beibehalten**: Ein Sitzungsverlust lässt Daten und Ausgang stehen (sonst gingen ungesendete Änderungen verloren), nach erneuter Anmeldung derselben Person geht der Ausgang raus; eine andere Person bekommt die Daten nie zu sehen (vorher geleert). Offen bleibt die Datenschutz-Abwägung ([Prüfen] in `DATENSCHUTZ-ENTWURF.md`, Abschnitt 6) und das physische Entfernen der Browser-Datei beim Abmelden (siehe oben).
-- ~~**Löschkonzept:**~~ erledigt in Phase 1c-1: `audit_log` (IP 7 Tage, Einträge 365 Tage) wird aufgeräumt; beim Löschen eines Sync-Datensatzes werden seine Inhalte und alle Inhalte seiner `change_log`-Einträge sofort geleert, Tombstones verschwinden, sobald alle aktiven Geräte sie kennen, spätestens nach 90 Tagen; ersetzte Protokolleinträge und verarbeitete Ops nach 90 Tagen (Abschnitt 6a, `DATENSCHUTZ-ENTWURF.md`, Abschnitt 10). Offen: Aufbewahrung der aktuellen Inhalte in Datenbank-Sicherungen (restic) und das Löschen eines ganzen Kontos mit seinen Inhalten.
+- ~~**Löschkonzept:**~~ erledigt in Phase 1c-1: `audit_log` (IP 7 Tage, Einträge 365 Tage) wird aufgeräumt; beim Löschen eines Sync-Datensatzes werden seine Inhalte und alle Inhalte seiner `change_log`-Einträge sofort geleert, Tombstones verschwinden, sobald alle aktiven Geräte sie kennen, spätestens nach 90 Tagen; ersetzte Protokolleinträge und verarbeitete Ops nach 90 Tagen (Abschnitt 6a, `DATENSCHUTZ-ENTWURF.md`, Abschnitt 10). Aufbewahrung der Inhalte in Datenbank-Sicherungen: 3 Tage Server, bis ca. 13 Monate NAS (siehe `docs/BACKUP.md`). Offen: und das Löschen eines ganzen Kontos mit seinen Inhalten.
 - **Mitgliedschafts-Prüfung bei Schema-Verweisen (für Listen erledigt in Phase 1c-1: der Sync prüft `assigneeId` auf ein aktives Mitglied der Familie und bereinigt Verweise beim Entfernen; die übrigen Entitäten ziehen mit ihren Registereinträgen nach):** Zusammengesetzte Fremdschlüssel `(family_id, user_id)` auf `memberships` gelten für Sitzungen, Geräte, Tickets, Termin-Teilnehmer, Reaktionen und Lesebestätigungen. Für Verweise mit `ON DELETE SET NULL` (`events.owner_id`, `*.assignee_id`, `messages.sender_id`, `files.uploaded_by`, `change_log.author_id`) geht das nicht (die Familien-Spalte würde mit auf NULL gesetzt); sie prüft der Sync serverseitig (Phase 1c). Ursprünglich: wo Zeilen auf andere Datensätze verweisen (Personen, Listen, Dateien), serverseitig prüfen, dass das Ziel zur selben Familie bzw. Mitgliedschaft gehört, nicht nur per Fremdschlüssel.
 - ~~**Recovery-Codes:**~~ erledigt in Phase 1a (HMAC-SHA256 mit Server-Schlüssel): nicht mit einem schnellen Hash speichern, sondern mit Argon2 oder als HMAC mit serverseitigem Schlüssel.
 - ~~**WebSocket-Limits atomar:**~~ erledigt in Phase 1a: Nachrichtenrate und Verbindungslimit je IP/Benutzer ohne Wettlauf (Prüfen und Zählen in einem Schritt).
