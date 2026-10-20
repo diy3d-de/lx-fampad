@@ -58,6 +58,9 @@ final standortSchluesselProvider = Provider<Future<StandortSchluessel?> Function
 
 final standortPortProvider = Provider<StandortPort>((ref) => standortPortErzeugen());
 
+/// Akkuoptimierung der App (true = nicht eingeschränkt, false = Android darf das Teilen im Hintergrund bremsen, null = unbekannt). Die Seite lädt neu, wenn die App zurückkehrt.
+final akkuUneingeschraenktProvider = FutureProvider.autoDispose<bool?>((ref) => ref.read(standortPortProvider).akkuUneingeschraenkt());
+
 final standortUhrProvider = Provider<DateTime Function()>((ref) => DateTime.now);
 
 /// Abstand der Zeitgeber (Lebenszeichen an den Dienst, Prüfung auf Ablauf, erneutes Senden der Position); in Tests verkürzt.
@@ -100,6 +103,8 @@ final standortSocketFabrikProvider = Provider<StandortSocketFabrik>((ref) {
     beiNachricht: beiNachricht,
     oeffner: ref.read(syncSocketOeffnerProvider),
     zufall: ref.read(syncZufallProvider),
+    // nach einem Verbindungsabbruch (Netzwechsel) schnell wieder da: der Server wartet nur 90 s, bevor er die Freigabe beendet
+    backoffMax: const Duration(seconds: 15),
   );
 });
 

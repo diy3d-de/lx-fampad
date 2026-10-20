@@ -67,6 +67,10 @@ class _FakePort implements StandortPort {
   Future<bool> einstellungenOeffnen() async => true;
   @override
   Future<bool> akkuEinstellungenOeffnen() async => true;
+  @override
+  Future<bool?> akkuUneingeschraenkt() async => true;
+  @override
+  Future<bool> akkuAnfragen() async => true;
 }
 
 UserDto _user(String id, String name, Role r) => UserDto(id: id, email: null, displayName: name, colorIndex: 1, role: r, status: MemberStatus.active);

@@ -76,9 +76,21 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        standort?.abbauen()
+        standort?.abbauen(neuAufbau = isChangingConfigurations)
         standort = null
         super.cleanUpFlutterEngine(flutterEngine)
+    }
+
+    /**
+     * Zurück-Taste an der Wurzel: Während geteilt wird, geht die App nur in den Hintergrund (die Activity bleibt, das Teilen läuft weiter), statt
+     * sich zu beenden. Sonst wie bisher.
+     */
+    override fun popSystemNavigator(): Boolean {
+        if (StandortBruecke.laeuft) {
+            moveTaskToBack(true)
+            return true
+        }
+        return super.popSystemNavigator()
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {

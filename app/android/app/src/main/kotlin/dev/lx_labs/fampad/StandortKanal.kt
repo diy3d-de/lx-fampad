@@ -8,6 +8,7 @@ import android.content.pm.PackageManager
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -57,6 +58,14 @@ class StandortKanal(private val activity: Activity) {
                     oeffnen(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||
                         oeffnen(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${activity.packageName}"))),
                 )
+                // true = die App ist von der Akkuoptimierung ausgenommen ("Nicht eingeschränkt"); false = Android (One UI: "Optimiert") darf sie im Hintergrund bremsen
+                "akkuUneingeschraenkt" -> result.success(akkuUneingeschraenkt())
+                // Systemdialog "Im Hintergrund ohne Einschränkung ausführen?" (nur diese App, die Person bestätigt selbst); sonst die Liste der Einstellungen
+                "akkuAnfragen" -> result.success(
+                    oeffnen(Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:${activity.packageName}"))) ||
+                        oeffnen(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) ||
+                        oeffnen(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${activity.packageName}"))),
+                )
                 else -> result.notImplemented()
             }
         }
@@ -73,12 +82,14 @@ class StandortKanal(private val activity: Activity) {
         )
     }
 
-    /** Beim Abbau der Engine: niemand hört mehr zu (der Dienst beendet sich dann über das fehlende Lebenszeichen). */
-    fun abbauen() {
+    /**
+     * Beim Abbau der Engine: niemand hört mehr zu. Ist die Oberfläche wirklich weg (nicht nur neu aufgebaut, z. B. nach einer Konfigurationsänderung),
+     * gibt es nichts mehr zu teilen: den Dienst gleich beenden statt auf die Frist des Lebenszeichens zu warten.
+     */
+    fun abbauen(neuAufbau: Boolean) {
         StandortBruecke.senke = null
         offeneAnfrage = null
-        // Die Oberfläche (Dart-Seite) ist weg, also gibt es nichts mehr zu teilen: den Dienst gleich beenden statt auf die Frist des Lebenszeichens zu warten
-        activity.stopService(Intent(activity, StandortService::class.java))
+        if (!neuAufbau) activity.stopService(Intent(activity, StandortService::class.java))
     }
 
     private fun hat(permission: String) = ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
@@ -91,6 +102,13 @@ class StandortKanal(private val activity: Activity) {
             false
         }
     }
+
+    private fun akkuUneingeschraenkt(): Boolean =
+        try {
+            (activity.getSystemService(Context.POWER_SERVICE) as PowerManager).isIgnoringBatteryOptimizations(activity.packageName)
+        } catch (_: Exception) {
+            false
+        }
 
     private fun status(): Map<String, Any> =
         mapOf(
