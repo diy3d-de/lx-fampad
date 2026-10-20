@@ -97,12 +97,13 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 
 ## 8. Standort
 
-- Standort wird **nur von der Person selbst** geteilt; niemand kann ihn einschalten oder anfordern (Eltern können Kindern nur eine Erinnerung schicken).
+- Standort wird **nur von der Person selbst** geteilt; niemand kann ihn einschalten oder anfordern (eine Erinnerung der Eltern an Kinder ist künftig denkbar, noch nicht gebaut).
 - Dauer vor dem Start wählbar (15 Minuten, 1 Stunde, 8 Stunden, „bis ich beende“); Beenden jederzeit mit einem Tipp. Solange geteilt wird, zeigt Android eine ständige Benachrichtigung (Vordergrunddienst).
 - Der Server **speichert keine Positionen und keine Bewegungsspur**: Positionen sind Ende-zu-Ende verschlüsselt (nur die gewählten Familienmitglieder können sie lesen), der Server reicht die verschlüsselten Pakete nur weiter und hält im Arbeitsspeicher allenfalls das letzte Paket, solange die Freigabe läuft. Mit dem Ende der Freigabe (Beenden, Ablauf, Abmelden, Verbindungsverlust des Senders, Neustart des Dienstes) ist alles weg. Die Ablaufzeit gilt auch am Server (höchstens 12 Stunden), nicht nur im Gerät. Die App hält Positionen anderer nur im Arbeitsspeicher; sie überleben die App nicht.
 - **Sichtbar bleibt für den Betreiber:** wer mit wem teilt, Beginn und Ende, Takt und Größe der Pakete und die IP-Adresse der Verbindung (Metadaten, nicht im Log).
 - Die Freigabe geht an die gesamte Familie oder ausgewählte Mitglieder.
 - Die App fordert nur das Standortrecht **im Vordergrund** an (kein Recht für den Hintergrund) und startet beim Teilen einen Vordergrunddienst mit ständiger Benachrichtigung, in der man jederzeit beenden kann. Es werden keine Google-Dienste und keine Fremdbibliothek zur Ortung verwendet (Android-LocationManager). Rechtsgrundlage: Einwilligung (Art. 6 Abs. 1 lit. a, Widerruf jederzeit durch Beenden).
+- **Kein Vorwärtsgeheimnis:** Der Sitzungsschlüssel ist an den langlebigen Personenschlüssel des Empfängers gebunden. Wer später dessen geheimen Schlüssel erlangt und verschlüsselte Pakete aufgezeichnet hat, könnte sie nachträglich lesen.
 - **Empfänger** können eine Position sehen, abfotografieren oder weitergeben; die Verschlüsselung schützt vor dem Server, nicht vor den Empfängern. Kinder wählen selbst, mit wem sie teilen (Voreinstellung: Eltern); niemand kann das Teilen erzwingen oder aus der Ferne einschalten.
 - Kartenkacheln liefert der eigene Server; weder Google noch OpenStreetMap-Server erfahren den Standort.
 

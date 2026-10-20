@@ -213,6 +213,79 @@ describe('WebSocket-Kanal "loc"', () => {
     expect(alice.of('loc_error').map((m) => m.code)).toEqual(['unknown_share']);
   });
 
+  it('Start-Race: schließt der Sender während der Mitgliederprüfung, läuft sofort die Schonfrist', async () => {
+    await start({ LOC_GRACE_MS: '30000' });
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    const echt = app!.location as unknown as { deps: { directory: (familyId: string) => Promise<unknown> } };
+    const orig = echt.deps.directory;
+    echt.deps.directory = async () => {
+      alice.ws.close();
+      await wait(80);
+      return orig('f1');
+    };
+    await send(alice, startMsg([[BOB, 'w']]));
+    await wait(150);
+    expect(app?.location.size).toBe(1);
+    clock += 31_000;
+    await app?.location.sweep();
+    await wait(60);
+    expect(app?.location.size).toBe(0);
+    expect(bob.of('loc_stop').map((m) => m.reason)).toEqual(['disconnected']);
+  });
+
+  it('loc_hello: eine Standort-Verbindung zählt nicht als lebendiges Gerät (Push) und bekommt keine Revisionshinweise', async () => {
+    await start();
+    const alice = await connect('alice');
+    expect(app?.hub.hasDevice('dev-alice-1')).toBe(true);
+    await send(alice, { type: 'loc_hello' });
+    expect(app?.hub.hasDevice('dev-alice-1')).toBe(false);
+    app?.hub.notifyRev('f1', 5);
+    await wait(50);
+    expect(alice.of('rev')).toEqual([]);
+    const zweite = await connect('alice');
+    expect(app?.hub.hasDevice('dev-alice-1')).toBe(true);
+    app?.hub.notifyRev('f1', 6);
+    await wait(50);
+    expect(zweite.of('rev')).toHaveLength(1);
+  });
+
+  it('loc_stop direkt nach loc_start überholt es nicht: die Freigabe entsteht nicht', async () => {
+    await start();
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    const echt = app!.location as unknown as { deps: { directory: (familyId: string) => Promise<unknown> } };
+    const orig = echt.deps.directory;
+    echt.deps.directory = async (f: string) => {
+      await wait(100);
+      return orig(f);
+    };
+    alice.ws.send(JSON.stringify(startMsg([[BOB, 'w']])));
+    alice.ws.send(JSON.stringify({ type: 'loc_stop', shareId: SHARE }));
+    await wait(350);
+    expect(alice.of('loc_error')).toEqual([]);
+    expect(app?.location.size).toBe(0);
+    expect(bob.of('loc_start')).toHaveLength(1);
+    expect(bob.of('loc_stop')).toHaveLength(1);
+  });
+
+  it('Verlängern: auch die Empfänger erfahren das neue Ende', async () => {
+    await start();
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    await send(alice, startMsg([[BOB, 'w']]));
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: clock + 2 * 3_600_000 });
+    expect(bob.of('loc_extend')).toEqual([{ type: 'loc_extend', from: ALICE, shareId: SHARE, endsAt: clock + 7_200_000 }]);
+  });
+
+  it('Verlängern nach Ablauf: unknown_share, die Freigabe endet', async () => {
+    await start();
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    await send(alice, startMsg([[BOB, 'w']], { endsAt: clock + 60_000 }));
+    clock += 61_000;
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: clock + 3_600_000 });
+    expect(alice.of('loc_error').map((m) => m.code)).toEqual(['unknown_share']);
+    expect(app?.location.size).toBe(0);
+    expect(bob.of('loc_stop').map((m) => m.reason)).toEqual(['expired']);
+  });
+
   it('Verlängern geht nur bis zur Obergrenze', async () => {
     await start();
     const alice = await connect('alice');

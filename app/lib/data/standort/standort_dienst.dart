@@ -203,6 +203,15 @@ class StandortController extends Notifier<StandortState> {
   DateTime? _letzterVersandZeit;
   final Map<String, StandortEmpfaenger> _empfang = {};
 
+  /// Beendete Freigaben anderer (Kennung -> Ende), nur im Arbeitsspeicher und nur bis zu ihrem Ende: ein später eingespieltes `loc_start` mit bekannter
+  /// Kennung (Server oder Dritte spielen einen alten Wrap erneut ein) lässt die Freigabe nicht wieder aufleben.
+  final Map<String, DateTime> _beendet = {};
+
+  void _merkeBeendet(StandortEmpfaenger e) {
+    final deckel = _jetzt().add(kStandortHoechstdauer);
+    _beendet[e.shareId] = e.freigabeEnde.isAfter(deckel) ? deckel : e.freigabeEnde;
+  }
+
   DateTime _jetzt() => ref.read(standortUhrProvider)();
   late StandortPort _portRef;
   StandortPort get _port => _portRef;
@@ -278,6 +287,8 @@ class StandortController extends Notifier<StandortState> {
   void _beiStatus(bool live) {
     if (!_aktiv) return;
     if (state.verbunden != live) state = state.kopie(verbunden: live);
+    // diese Verbindung gehört dem Standort-Kanal: der Server zählt sie nicht als "Gerät ist live" (sonst blieben Push-Hinweise im Hintergrund aus)
+    if (live) _socket?.senden({'type': 'loc_hello'});
     // nach dem Wiederverbinden gilt sofort die neueste Position (nichts wurde in der Zwischenzeit gepuffert)
     if (live && state.phase == StandortPhase.teilt) unawaited(_senden());
   }
@@ -291,6 +302,9 @@ class StandortController extends Notifier<StandortState> {
     state = state.kopie(phase: StandortPhase.startet, meldungLoeschen: true, empfaenger: const {}, ausgelassen: const {});
     Future<bool> scheitern(String meldung, {bool dienstStoppen = false}) async {
       if (lauf != _lauf) return false;
+      // auch in der Startphase: ein schon gesendetes loc_start soll am Server nicht stehen bleiben
+      final sid = _shareId;
+      if (sid != null) _socket?.senden({'type': 'loc_stop', 'shareId': sid});
       if (dienstStoppen) await _port.stoppen();
       _sender?.vergessen();
       _sender = null;
@@ -343,7 +357,11 @@ class StandortController extends Notifier<StandortState> {
       _letzterVersandZeit = null;
 
       final fehler = await _port.starten(ende);
-      if (lauf != _lauf) return false;
+      if (lauf != _lauf) {
+        // zwischendurch beendet: ein inzwischen gestarteter Dienst darf nicht weiterlaufen
+        if (fehler == null) await _port.stoppen();
+        return false;
+      }
       if (fehler != null) {
         return await scheitern(switch (fehler) {
           StartFehler.keineBerechtigung => 'Ohne die Erlaubnis für den Standort kann ich ihn nicht teilen.',
@@ -420,7 +438,9 @@ class StandortController extends Notifier<StandortState> {
     };
     if (neu.length != alt.length) {
       for (final id in alt.keys.where((id) => !neu.containsKey(id))) {
-        _empfang.remove(id)?.vergessen();
+        final e = _empfang.remove(id);
+        if (e != null) _merkeBeendet(e);
+        e?.vergessen();
       }
       state = state.kopie(geteilt: neu);
     }
@@ -537,12 +557,46 @@ class StandortController extends Notifier<StandortState> {
           }
         }
       case 'loc_start':
-        unawaited(_empfangStart(m));
+        _inKette(m, () => _empfangStart(m));
       case 'loc_pos':
-        _empfangPosition(m);
+        _inKette(m, () => _empfangPosition(m));
+      case 'loc_extend':
+        _inKette(m, () => _empfangVerlaengert(m));
       case 'loc_stop':
-        _empfangStop(m);
+        _inKette(m, () => _empfangStop(m));
     }
+  }
+
+  /// Nachrichten eines Absenders der Reihe nach: das Öffnen des Wraps ist asynchron, ein danach eintreffendes loc_pos oder loc_stop darf es nicht überholen
+  /// (sonst ginge die erste Position verloren oder es bliebe ein Eintrag nach dem Stopp stehen).
+  final Map<String, Future<void>> _kette = {};
+
+  void _inKette(Map<String, Object?> m, FutureOr<void> Function() f) {
+    final von = m['from'];
+    if (von is! String) return;
+    final vorher = _kette[von] ?? Future<void>.value();
+    late Future<void> neu;
+    neu = vorher.then((_) => f()).catchError((Object _) {}).whenComplete(() {
+      if (identical(_kette[von], neu)) _kette.remove(von);
+    });
+    _kette[von] = neu;
+  }
+
+  void _empfangVerlaengert(Map<String, Object?> m) {
+    final von = m['from'];
+    final shareId = m['shareId'];
+    final x = m['endsAt'];
+    final e = von is String ? _empfang[von] : null;
+    final eintrag = von is String ? state.geteilt[von] : null;
+    if (von is! String || shareId is! String || x is! int || e == null || eintrag == null || e.shareId != shareId) return;
+    // nur vorwärts und nie über die Höchstdauer; maßgeblich bleibt das signierte Ende in den Paketen
+    final jetzt = _jetzt();
+    var ende = DateTime.fromMillisecondsSinceEpoch(x);
+    final deckel = jetzt.add(kStandortHoechstdauer);
+    if (ende.isAfter(deckel)) ende = deckel;
+    if (!ende.isAfter(eintrag.endetAt)) return;
+    e.freigabeEnde = ende;
+    state = state.kopie(geteilt: {...state.geteilt, von: eintrag.mitEnde(ende)});
   }
 
   Future<void> _empfangStart(Map<String, Object?> m) async {
@@ -552,6 +606,9 @@ class StandortController extends Notifier<StandortState> {
     final endsAt = m['endsAt'];
     final ich = _ich;
     if (von is! String || shareId is! String || wrap is! String || endsAt is! int || ich == null || von == ich) return;
+    final jetztZeit = _jetzt();
+    _beendet.removeWhere((_, ende) => !ende.isAfter(jetztZeit));
+    if (_beendet.containsKey(shareId)) return; // schon beendet
     final vorhanden = _empfang[von];
     if (vorhanden != null && vorhanden.shareId == shareId) return; // Nachreichung nach dem Wiederverbinden
     final jetzt = _jetzt();
@@ -579,7 +636,9 @@ class StandortController extends Notifier<StandortState> {
         sender: sender,
         jetzt: jetzt,
       );
-      _empfang.remove(von)?.vergessen();
+      final alt = _empfang.remove(von);
+      if (alt != null) _merkeBeendet(alt);
+      alt?.vergessen();
       _empfang[von] = e;
       state = state.kopie(geteilt: {...state.geteilt, von: GeteiltePosition(userId: von, shareId: shareId, endetAt: e.freigabeEnde)});
     } on CryptoFehler {
@@ -630,7 +689,10 @@ class StandortController extends Notifier<StandortState> {
     final e = _empfang[von];
     final eintrag = state.geteilt[von];
     if (eintrag == null || eintrag.shareId != shareId) return;
-    if (e != null && e.shareId == shareId) _empfang.remove(von)?.vergessen();
+    if (e != null && e.shareId == shareId) {
+      _merkeBeendet(e);
+      _empfang.remove(von)?.vergessen();
+    }
     state = state.kopie(geteilt: {
       for (final x in state.geteilt.entries)
         if (x.key != von) x.key: x.value,
@@ -646,6 +708,7 @@ class StandortController extends Notifier<StandortState> {
       e.vergessen();
     }
     _empfang.clear();
+    _beendet.clear();
     _ich = ref.read(authProvider).user?.id;
     state = const StandortState();
     if (_ich == null) {

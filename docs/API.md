@@ -427,7 +427,7 @@ Push ist ein **Wecker ohne Inhalt**: kein Text, kein Titel, keine Tags, keine Na
 
 ## Standort (WebSocket `loc_*`, flüchtig)
 
-Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher** des Servers: keine Tabelle, keine Migration, kein Backup, keine Historie, nichts im Log (nicht einmal Kennungen von Freigaben). Der Server reicht opake Pakete weiter; Wrap und Paket sind für ihn Base64url-Zeichenketten, geprüft werden nur Form (`^[A-Za-z0-9_-]+$`) und Länge. Aufbau und Verfahren: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6e. Alle `loc_*`-Nachrichten brauchen eine angemeldete Verbindung (vorher `error` `unauthenticated`) und zählen für das Nachrichtenlimit je Socket.
+Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher** des Servers: keine Tabelle, keine Migration, kein Backup, keine Historie, nichts im Log (nicht einmal Kennungen von Freigaben). Der Server reicht opake Pakete weiter; Wrap und Paket sind für ihn Base64url-Zeichenketten, geprüft werden nur Form (`^[A-Za-z0-9_-]+$`) und Länge. Aufbau und Verfahren: `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 6e. Alle `loc_*`-Nachrichten brauchen eine angemeldete Verbindung (vorher `error` `unauthenticated`) und zählen für das Nachrichtenlimit je Socket. `loc_start`, `loc_pos`, `loc_extend` und `loc_stop` werden je Socket der Reihe nach verarbeitet.
 
 **Client → Server**
 
@@ -436,6 +436,7 @@ Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher*
 | `loc_start` | `{ shareId (UUID, vom Client), endsAt (Epoch-ms, in der Zukunft, höchstens `LOC_MAX_DURATION_MS` = 12 h ab jetzt), recipients: [{ userId, wrap }] }`. 1 bis 30 Empfänger, jede ID einmal, **nur aktive Mitglieder der Familie der Sitzung, nie die Person selbst** (Regel `locationRecipients` in `sync/permissions.ts`; Mitglieder kommen aus der Datenbank). Eine neue Freigabe **ersetzt** die alte derselben Person (die alte endet mit `replaced`). Antwort `loc_started`. |
 | `loc_pos` | `{ shareId, packet }`, Paket ≤ 1024 Zeichen. Nur vom **Gerät, das gestartet hat** (gleiche Person und Gerät). Mindestabstand je Freigabe `LOC_MIN_INTERVAL_MS` (1000), sonst `loc_error` `rate_limited` (das Paket wird verworfen, nichts endet). |
 | `loc_extend` | `{ shareId, endsAt }`, gleiche Grenzen wie beim Start. Antwort `loc_active`. |
+| `loc_hello` | `{}`. Die Verbindung gehört dem Standort-Kanal der App: der Server zählt sie weder als „Gerät ist live“ (Push) noch schickt er ihr `rev`-Hinweise. |
 | `loc_stop` | `{ shareId }`. Beendet; Empfänger bekommen `loc_stop` mit `reason: "stopped"`. |
 
 **Server → Client**
@@ -444,6 +445,7 @@ Standort teilen läuft **nur über den WebSocket** und **nur im Prozessspeicher*
 | --- | --- |
 | `loc_started` / `loc_active` | `{ shareId, endsAt }` an den Sender: bestätigt Start bzw. Verlängern; `loc_active` kommt außerdem, wenn sich das Sendergerät innerhalb der Schonfrist wieder verbindet. |
 | `loc_start` | `{ from, shareId, endsAt, wrap }` an **jeden Empfänger einzeln, nur mit dessen eigenem Wrap**; ein später verbundener Empfänger bekommt es beim Anmelden nachgereicht, danach die letzte Position als `loc_pos`. |
+| `loc_extend` | `{ from, shareId, endsAt }` an die Empfänger, wenn der Sender verlängert. |
 | `loc_pos` | `{ from, shareId, packet }` an die Empfänger der Freigabe (nie an den Sender, nie an Unbeteiligte oder andere Familien). |
 | `loc_stop` | `{ from, shareId, reason }` an Empfänger und Sender; `reason`: `stopped`, `expired`, `disconnected`, `removed`, `replaced`. |
 | `loc_error` | `{ code, shareId? }`: `bad_request`, `bad_duration`, `bad_recipients`, `share_exists`, `rate_limited`, `too_many_shares`, `forbidden`, `unknown_share` (auch für fremde Freigaben und Sendungen vom falschen Gerät), `unavailable`. |

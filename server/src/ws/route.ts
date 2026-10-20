@@ -186,6 +186,8 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       location?.onConnect(p, socket);
     };
 
+    // Standort-Nachrichten je Socket der Reihe nach (loc_start wartet auf die Mitgliederprüfung: ein danach gesendetes loc_stop darf es nicht überholen)
+    let locKette: Promise<void> = Promise.resolve();
     const locationReply = (result: LocationResult, shareId: unknown) => {
       if (!result.ok) send(socket, { type: 'loc_error', code: result.code, ...(typeof shareId === 'string' && shareId.length <= 64 ? { shareId } : {}) });
     };
@@ -240,15 +242,18 @@ export function registerWebSocketRoute(app: FastifyInstance, config: Config, { a
       } else if (location && typeof msg.type === 'string' && msg.type.startsWith('loc_')) {
         const p = principal;
         const m = msg as Record<string, unknown>;
-        if (msg.type === 'loc_pos') locationReply(location.position(p, m), m.shareId);
-        else if (msg.type === 'loc_stop') locationReply(location.stop(p, m), m.shareId);
-        else if (msg.type === 'loc_extend') locationReply(location.extend(p, socket, m), m.shareId);
-        else if (msg.type === 'loc_start') {
-          location
-            .start(p, socket, m)
-            .then((r) => locationReply(r, m.shareId))
+        const art = msg.type;
+        if (art === 'loc_hello') hub.markLoc(socket);
+        else if (art === 'loc_pos' || art === 'loc_stop' || art === 'loc_extend' || art === 'loc_start') {
+          locKette = locKette
+            .then(async () => {
+              if (art === 'loc_pos') locationReply(location.position(p, m), m.shareId);
+              else if (art === 'loc_stop') locationReply(location.stop(p, m), m.shareId);
+              else if (art === 'loc_extend') locationReply(location.extend(p, socket, m), m.shareId);
+              else locationReply(await location.start(p, socket, m), m.shareId);
+            })
             .catch((err: unknown) => {
-              req.log.warn({ err }, 'Standort-Freigabe fehlgeschlagen');
+              req.log.warn({ err }, 'Standort-Nachricht fehlgeschlagen');
               send(socket, { type: 'loc_error', code: 'unavailable' });
             });
         } else send(socket, { type: 'error', code: 'unsupported' });

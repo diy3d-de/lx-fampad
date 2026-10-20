@@ -177,6 +177,10 @@ class _Relay {
           for (final g in geraete.values.where((g) => g.id != von.id)) {
             g.socket.vomServer({'type': 'loc_pos', 'from': von.id, 'shareId': m['shareId'], 'packet': m['packet']});
           }
+        case 'loc_extend':
+          for (final g in geraete.values.where((g) => g.id != von.id)) {
+            g.socket.vomServer({'type': 'loc_extend', 'from': von.id, 'shareId': m['shareId'], 'endsAt': m['endsAt']});
+          }
         case 'loc_stop':
           for (final g in geraete.values.where((g) => g.id != von.id)) {
             g.socket.vomServer({'type': 'loc_stop', 'from': von.id, 'shareId': m['shareId'], 'reason': 'stopped'});
@@ -350,6 +354,53 @@ Future<void> main() async {
         ben.socket.vomServer({'type': 'loc_pos', 'from': _anna, 'shareId': relay.letzteShare, 'packet': erste['packet']});
         await pumpen();
         expect(ben.st.geteilt[_anna]!.breite, 48.2);
+      });
+
+      test('Die Standort-Verbindung meldet sich beim Server als solche (loc_hello)', () async {
+        expect(anna.socket.gesendet.where((m) => m['type'] == 'loc_hello'), hasLength(1));
+      });
+
+      test('Verlängern: der Empfänger übernimmt das neue Ende', () async {
+        await teilenAnna();
+        final vorher = ben.st.geteilt[_anna]!.endetAt;
+        await anna.ctrl.verlaengern(const Duration(hours: 2));
+        await relay.weiter(anna);
+        expect(ben.st.geteilt[_anna]!.endetAt.isAfter(vorher), isTrue);
+      });
+
+      test('Reihenfolge beim Empfänger: loc_pos und loc_stop direkt nach loc_start gehen nicht verloren und hinterlassen keinen Geist', () async {
+        final f = anna.ctrl.teilen(dauer: const Duration(hours: 1), empfaenger: {_ben});
+        await pumpen();
+        final start1 = anna.neueNachrichten().singleWhere((m) => m['type'] == 'loc_start');
+        anna.socket.vomServer({'type': 'loc_started', 'shareId': start1['shareId'], 'endsAt': start1['endsAt']});
+        await pumpen();
+        expect(await f, isTrue);
+        anna.port.ctrl.add(PositionEreignis(_pos(start)));
+        await pumpen();
+        final pos = anna.neueNachrichten().singleWhere((m) => m['type'] == 'loc_pos');
+        final wrap = (start1['recipients'] as List).first['wrap'];
+        ben.socket.vomServer({'type': 'loc_start', 'from': _anna, 'shareId': start1['shareId'], 'endsAt': start1['endsAt'], 'wrap': wrap});
+        ben.socket.vomServer({'type': 'loc_pos', 'from': _anna, 'shareId': start1['shareId'], 'packet': pos['packet']});
+        await pumpen();
+        expect(ben.st.geteilt[_anna]!.hatPosition, isTrue);
+        ben.socket.vomServer({'type': 'loc_stop', 'from': _anna, 'shareId': start1['shareId'], 'reason': 'stopped'});
+        await pumpen();
+        expect(ben.st.geteilt, isEmpty);
+      });
+
+      test('Eine beendete Freigabe lebt durch ein erneut eingespieltes loc_start nicht wieder auf', () async {
+        await teilenAnna();
+        anna.port.ctrl.add(PositionEreignis(_pos(start)));
+        await pumpen();
+        await relay.weiter(anna);
+        final wrap = anna.socket.gesendet.lastWhere((m) => m['type'] == 'loc_start')['recipients'][0]['wrap'];
+        final share = relay.letzteShare;
+        await anna.ctrl.beenden();
+        await relay.weiter(anna);
+        expect(ben.st.geteilt, isEmpty);
+        ben.socket.vomServer({'type': 'loc_start', 'from': _anna, 'shareId': share, 'endsAt': start.add(const Duration(hours: 1)).millisecondsSinceEpoch, 'wrap': wrap});
+        await pumpen();
+        expect(ben.st.geteilt, isEmpty);
       });
 
       test('Empfang: Pakete einer anderen Freigabe oder von einer anderen Person werden ignoriert', () async {

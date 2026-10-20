@@ -152,8 +152,9 @@ export class LocationService {
       endsAt,
       recipients: new Map(allowed.map((id) => [id, wraps.get(id) as string])),
       lastPacket: null,
-      senderSockets: new Set([socket]),
-      graceUntil: null,
+      // schloss sich die Verbindung während der Prüfung der Mitglieder, gibt es keinen Sender-Socket mehr: die Schonfrist läuft sofort
+      senderSockets: new Set(socket.readyState === socket.OPEN ? [socket] : []),
+      graceUntil: socket.readyState === socket.OPEN ? null : now + this.deps.graceMs,
       lastPosAt: 0,
       lastRecheckAt: now,
     };
@@ -199,10 +200,16 @@ export class LocationService {
   extend(p: Principal, socket: WebSocket, msg: { shareId?: unknown; endsAt?: unknown }): LocationResult {
     const s = this.own(p, msg.shareId);
     if (!s) return { ok: false, code: 'unknown_share' };
+    if (this.now() >= s.endsAt) {
+      this.end(s, 'expired');
+      return { ok: false, code: 'unknown_share' };
+    }
     const endsAt = this.checkEndsAt(msg.endsAt, this.now());
     if (endsAt === null) return { ok: false, code: 'bad_duration' };
     s.endsAt = endsAt;
     sendTo(socket, { type: 'loc_active', shareId: s.id, endsAt });
+    // auch die Empfänger erfahren das neue Ende (sonst ließen sie den Eintrag lokal zum alten Ende ablaufen)
+    this.deps.hub.sendToUsers(s.familyId, [...s.recipients.keys()], { type: 'loc_extend', from: s.ownerId, shareId: s.id, endsAt });
     return { ok: true };
   }
 
@@ -255,8 +262,22 @@ export class LocationService {
 
   /** Periodische Prüfung: Ablauf, Schonfrist des Senders und (alle `recheckMs`) die Mitgliedschaft von Sender und Empfängern. */
   async sweep(opts: { recheckMs?: number } = {}): Promise<void> {
+    // nicht überlappen: ein langsamer Datenbankzugriff darf keine zweite Prüfung auslösen
+    if (this.sweeping) return;
+    this.sweeping = true;
+    try {
+      await this.sweepInnen(opts);
+    } finally {
+      this.sweeping = false;
+    }
+  }
+
+  private sweeping = false;
+
+  private async sweepInnen(opts: { recheckMs?: number }): Promise<void> {
     const recheckMs = opts.recheckMs ?? this.deps.sweepMs * 12;
     const now = this.now();
+    for (const [id, zeiten] of this.starts) if (zeiten.every((t) => now - t >= START_WINDOW_MS)) this.starts.delete(id);
     const toCheck: Share[] = [];
     for (const s of [...this.shares.values()]) {
       if (now >= s.endsAt) this.end(s, 'expired');

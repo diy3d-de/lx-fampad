@@ -59,6 +59,8 @@ class GeteiltePosition {
 
   bool abgelaufen(DateTime jetzt) => !endetAt.isAfter(jetzt);
 
+  GeteiltePosition mitEnde(DateTime ende) => GeteiltePosition(userId: userId, shareId: shareId, endetAt: ende, breite: breite, laenge: laenge, genauigkeit: genauigkeit, messzeit: messzeit, ungeprueft: ungeprueft);
+
   GeteiltePosition mitPosition({required double breite, required double laenge, double? genauigkeit, required DateTime messzeit, required DateTime endetAt}) => GeteiltePosition(
     userId: userId,
     shareId: shareId,

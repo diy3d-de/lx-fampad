@@ -13,6 +13,7 @@ export type ServerMessage =
   | { type: 'loc_active'; shareId: string; endsAt: number }
   | { type: 'loc_start'; from: string; shareId: string; endsAt: number; wrap: string }
   | { type: 'loc_pos'; from: string; shareId: string; packet: string }
+  | { type: 'loc_extend'; from: string; shareId: string; endsAt: number }
   | { type: 'loc_stop'; from: string; shareId: string; reason: string }
   | { type: 'loc_error'; code: string; shareId?: string };
 
@@ -29,6 +30,8 @@ interface Entry extends Subject {
   socket: WebSocket;
   /** Zeitpunkt der letzten Lebenszeichen (Anmeldung, Nachricht, Pong): eine tote Verbindung gilt für Push bald nicht mehr als offen. */
   lastActivity: number;
+  /** Verbindung des Standort-Kanals (die App meldet sich mit loc_hello): zählt weder als "Gerät ist live" für Push noch für Revisionshinweise. */
+  loc?: boolean;
 }
 
 function addTo<K>(map: Map<K, Set<Entry>>, key: K, entry: Entry): void {
@@ -98,10 +101,16 @@ export class Hub {
     return this.closeAll(this.byUser.get(userId), code, reason, exceptSessionId ? (e) => e.sessionId === exceptSessionId : undefined);
   }
 
+  /** Markiert die Verbindung als Standort-Verbindung (loc_hello). */
+  markLoc(socket: WebSocket): void {
+    const e = this.entries.get(socket);
+    if (e) e.loc = true;
+  }
+
   /** Hat das Gerät gerade eine offene (angemeldete) WebSocket-Verbindung? Dann braucht es keinen Push. */
   hasDevice(deviceId: string, maxIdleMs?: number): boolean {
     const now = Date.now();
-    for (const e of this.byDevice.get(deviceId) ?? []) if (maxIdleMs === undefined || now - e.lastActivity <= maxIdleMs) return true;
+    for (const e of this.byDevice.get(deviceId) ?? []) if (!e.loc && (maxIdleMs === undefined || now - e.lastActivity <= maxIdleMs)) return true;
     return false;
   }
 
@@ -124,6 +133,7 @@ export class Hub {
   notifyRev(familyId: string, rev: number, roles?: readonly Role[], users?: readonly string[]): void {
     const msg = JSON.stringify({ type: 'rev', rev } satisfies ServerMessage);
     for (const e of this.byFamily.get(familyId) ?? []) {
+      if (e.loc) continue;
       if (roles) {
         const byUser = users?.includes(e.userId) === true;
         const byRole = roles.length > 0 && (!e.role || roles.includes(e.role));

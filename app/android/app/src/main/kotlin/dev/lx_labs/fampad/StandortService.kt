@@ -103,6 +103,13 @@ class StandortService : Service() {
                 val neu = intent.getLongExtra(EXTRA_ENDE, 0L)
                 if (StandortBruecke.laeuft && neu > System.currentTimeMillis()) {
                     ende = neu
+                    // die Wecksperre gilt nur bis zur alten Endzeit: neu setzen
+                    try {
+                        wakeLock?.takeIf { it.isHeld }?.release()
+                    } catch (_: Exception) {
+                        // schon freigegeben
+                    }
+                    wachbleiben()
                     meldungZeigen()
                 }
             }
@@ -119,7 +126,20 @@ class StandortService : Service() {
     }
 
     private fun starten(endeMs: Long) {
-        if (StandortBruecke.laeuft) return
+        if (StandortBruecke.laeuft) {
+          // schon laufender Dienst (z. B. neue Oberfläche nach Zurück-Taste): Endzeit übernehmen statt sie zu ignorieren
+          if (endeMs > System.currentTimeMillis()) {
+              ende = endeMs
+              StandortBruecke.stopAngefordert = false
+              try {
+                  wakeLock?.takeIf { it.isHeld }?.release()
+              } catch (_: Exception) {
+              }
+              wachbleiben()
+              meldungZeigen()
+          }
+          return
+        }
         // Wer den Dienst mit startForegroundService startet, muss startForeground rechtzeitig aufrufen (sonst stürzt die App ab): zuerst die
         // Benachrichtigung, dann erst prüfen (eine bereits vergangene Endzeit beendet den Dienst gleich wieder)
         ende = maxOf(endeMs, System.currentTimeMillis() + 1_000L)

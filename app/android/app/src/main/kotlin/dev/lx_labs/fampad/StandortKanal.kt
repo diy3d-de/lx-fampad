@@ -77,6 +77,8 @@ class StandortKanal(private val activity: Activity) {
     fun abbauen() {
         StandortBruecke.senke = null
         offeneAnfrage = null
+        // Die Oberfläche (Dart-Seite) ist weg, also gibt es nichts mehr zu teilen: den Dienst gleich beenden statt auf die Frist des Lebenszeichens zu warten
+        activity.stopService(Intent(activity, StandortService::class.java))
     }
 
     private fun hat(permission: String) = ContextCompat.checkSelfPermission(activity, permission) == PackageManager.PERMISSION_GRANTED
