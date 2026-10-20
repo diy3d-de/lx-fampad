@@ -49,7 +49,11 @@ Future<Uint8List> pinPng(PinBildAngaben a) async {
   if (a.kopfBild != null) {
     try {
       final codec = await ui.instantiateImageCodec(a.kopfBild!, targetWidth: (kPinBild * kPinBildMassstab).round());
-      bild = (await codec.getNextFrame()).image;
+      try {
+        bild = (await codec.getNextFrame()).image;
+      } finally {
+        codec.dispose();
+      }
     } catch (_) {
       bild = null; // unlesbares Bild: Initialen
     }
@@ -70,12 +74,69 @@ Future<Uint8List> pinPng(PinBildAngaben a) async {
   canvas.restore();
   if (a.veraltet) canvas.restore();
   final bildFertig = await rec.endRecording().toImage((w * kPinBildMassstab).round(), (h * kPinBildMassstab).round());
-  final bytes = await bildFertig.toByteData(format: ui.ImageByteFormat.png);
-  return bytes!.buffer.asUint8List();
+  try {
+    final bytes = await bildFertig.toByteData(format: ui.ImageByteFormat.png);
+    return bytes!.buffer.asUint8List();
+  } finally {
+    bildFertig.dispose();
+    bild?.dispose();
+  }
 }
 
 /// Trifft ein Tipp auf [tipp] (Bildschirmpunkt) die Nadel, deren Spitze auf [spitze] liegt? Die Nadel steht über der Spitze: Rechteck [kPinGroesse].
 bool pinGetroffen(ui.Offset tipp, ui.Offset spitze) {
   final rect = ui.Rect.fromLTRB(spitze.dx - kPinGroesse.width / 2, spitze.dy - kPinGroesse.height, spitze.dx + kPinGroesse.width / 2, spitze.dy);
   return rect.contains(tipp);
+}
+
+/// Buch über die Nadel-Bilder im Kartenstil (Web), ohne Karte testbar: je Person genau ein Bild im Stil, nichts doppelt, nichts bleibt liegen.
+/// Die Karte erzeugt das Bild, wenn [anfordern] true liefert, und meldet das Ergebnis mit [fertig]; die zurückgegebenen Kennungen entfernt sie aus dem Stil.
+class PinBildCache {
+  /// Fertig im Stil: Person -> Bild-Kennung.
+  final Map<String, String> bereit = {};
+  final Map<String, String> _gewuenscht = {};
+  final Set<String> _laeuft = {};
+  final Set<String> _gescheitert = {};
+
+  /// Die Person soll das Bild [id] zeigen. True: es muss erzeugt werden (läuft noch nicht, ist nicht fertig, schlug nicht schon fehl).
+  bool anfordern(String person, String id) {
+    _gewuenscht[person] = id;
+    if (bereit[person] == id || _laeuft.contains(id) || _gescheitert.contains(id)) return false;
+    _laeuft.add(id);
+    return true;
+  }
+
+  /// Ergebnis der Erzeugung. [ok]: das Bild liegt im Stil. Liefert die Kennungen, die jetzt aus dem Stil zu entfernen sind
+  /// (das abgelöste Bild der Person, oder das neue selbst, wenn die Person inzwischen etwas anderes zeigen soll oder weg ist).
+  List<String> fertig(String person, String id, {required bool ok}) {
+    _laeuft.remove(id);
+    if (!ok) {
+      _gescheitert.add(id);
+      return const [];
+    }
+    if (_gewuenscht[person] != id) return [id];
+    final alt = bereit[person];
+    bereit[person] = id;
+    return [if (alt != null && alt != id) alt];
+  }
+
+  /// Personen, die nicht mehr auf der Karte stehen: ihre Bilder gehören entfernt (Liefert die Kennungen).
+  List<String> aufraeumen(Set<String> personen) {
+    final weg = [for (final p in {..._gewuenscht.keys, ...bereit.keys}) if (!personen.contains(p)) p];
+    final ids = <String>[];
+    for (final p in weg) {
+      _gewuenscht.remove(p);
+      final b = bereit.remove(p);
+      if (b != null) ids.add(b);
+    }
+    return ids;
+  }
+
+  /// Neue Karten-Ansicht (anderer Stil): nichts gilt mehr.
+  void leeren() {
+    bereit.clear();
+    _gewuenscht.clear();
+    _laeuft.clear();
+    _gescheitert.clear();
+  }
 }

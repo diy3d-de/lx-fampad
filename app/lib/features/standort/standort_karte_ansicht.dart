@@ -94,10 +94,9 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   MapController? _ctrl;
 
   /// Nur Web: Die Nadeln sind dort Symbole der Karte selbst (WebGL), nicht Flutter-Widgets darüber. Flutter zeichnet nach einer Kartenbewegung erst im
-  /// nächsten Bild neu, die Nadeln "schwammen" deshalb beim Ziehen. [_style] nimmt die Bilder auf, [_bildBereit] merkt je Person das fertige Bild.
+  /// nächsten Bild neu, die Nadeln "schwammen" deshalb beim Ziehen. [_style] nimmt die Bilder auf, [_bilder] führt Buch über die Bilder je Person.
   StyleController? _style;
-  final Map<String, String> _bildBereit = {};
-  final Set<String> _bildLaeuft = {};
+  final PinBildCache _bilder = PinBildCache();
   String? _gewaehlt;
   Set<String> _angepasst = {};
   Timer? _auffrischen;
@@ -166,8 +165,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
       _kartenSchluessel = UniqueKey();
       _stil = null;
       _style = null;
-      _bildBereit.clear();
-      _bildLaeuft.clear();
+      _bilder.leeren();
     });
     ref.invalidate(karteDateiProvider);
   }
@@ -309,39 +307,63 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
     }
   }
 
-  /// Sorgt dafür, dass zu jeder Nadel ein Bild im Kartenstil liegt (Web). Fertig: [_bildBereit] hat die Bild-Kennung, die Karte zeichnet neu.
+  /// Entfernt abgelöste Bilder aus dem Stil, kurz verzögert: Die Karte stellt die Symbole erst im nächsten Bild auf das neue Bild um.
+  void _bilderEntfernen(StyleController style, List<String> ids) {
+    if (ids.isEmpty) return;
+    Future<void>.delayed(const Duration(milliseconds: 600), () async {
+      for (final id in ids) {
+        try {
+          await style.removeImage(id);
+        } catch (_) {
+          // schon weg (neue Karten-Ansicht): nichts zu tun
+        }
+      }
+    });
+  }
+
+  /// Sorgt dafür, dass zu jeder Nadel genau ein passendes Bild im Kartenstil liegt (Web); Buchführung in [PinBildCache].
+  /// Fertig: die Karte zeichnet neu. Das Vorgängerbild und die Bilder gegangener Personen werden entfernt, fehlgeschlagene Bilder nicht erneut versucht.
   void _bilderSichern(List<KartenEintrag> eintraege, DateTime jetzt) {
     final style = _style;
     if (style == null) return;
+    _bilderEntfernen(style, _bilder.aufraeumen({for (final e in eintraege) e.id}));
     for (final e in eintraege) {
       final a = e.user?.avatar;
       final veraltet = !e.eigene && jetzt.difference(e.messzeit) >= kStandortVeraltetNach;
       final gewaehlt = e.id == _gewaehlt;
       final id = 'pin-${e.id}-${Object.hash(e.farbIndex, e.name, a?.istFoto, a?.vorlage, a?.version, veraltet, gewaehlt, e.eigene)}';
-      if (_bildBereit[e.id] == id || !_bildLaeuft.add(id)) continue;
+      if (!_bilder.anfordern(e.id, id)) continue;
       unawaited(() async {
+        var ok = false;
         try {
           final k = await _kopfBild(e.user);
           final png = await pinPng(PinBildAngaben(farbIndex: e.farbIndex, name: e.name, kopfBild: k.bytes, bildAufFarbe: k.aufFarbe, veraltet: veraltet, gewaehlt: gewaehlt, eigene: e.eigene));
-          if (!mounted || _style != style) return;
-          await style.addImage(id, png);
-          if (mounted && _style == style) setState(() => _bildBereit[e.id] = id);
+          if (mounted && _style == style) {
+            await style.addImage(id, png);
+            ok = true;
+          }
         } catch (_) {
           // Bild nicht möglich: diese Nadel fehlt, der Rest der Karte bleibt benutzbar
-        } finally {
-          _bildLaeuft.remove(id);
         }
+        if (_style != style) return; // neue Karten-Ansicht: der Stil ist weg, das Buch wurde geleert
+        final weg = _bilder.fertig(e.id, id, ok: ok);
+        _bilderEntfernen(style, weg);
+        if (mounted && ok) setState(() {});
       }());
     }
   }
+
+  /// Stabile Reihenfolge der Ebenen: nach Kennung. Die Ebenen der Karte hängen an ihrer Stelle in der Liste; ein Umsortieren (etwa die gewählte Person ans Ende)
+  /// würde bei jedem Animationsschritt Ebenen neu aufbauen. Die Auswahl zeigt das Bild (Rand), nicht die Reihenfolge.
+  List<KartenEintrag> _nachId(List<KartenEintrag> l) => [...l]..sort((a, b) => a.id.compareTo(b.id));
 
   /// Tipp auf die Karte (Web): die getroffene Nadel (bei Überdeckung die vorderste) wählen oder abwählen.
   void _kartenEreignis(MapEvent ev, List<KartenEintrag> eintraege) {
     final c = _ctrl;
     if (ev is! MapEventClick || c == null || !_geladen) return;
-    final liste = [...eintraege.where((e) => e.id != _gewaehlt), ...eintraege.where((e) => e.id == _gewaehlt)];
-    for (final e in liste.reversed) {
-      if (!_bereich.enthaelt(e.lat, e.lng) || _bildBereit[e.id] == null) continue;
+    // vorderste Nadel zuerst: die Karte zeichnet die Symbole in der Reihenfolge der Ebenen (nach Kennung, siehe [_nachId])
+    for (final e in _nachId(eintraege).reversed) {
+      if (!_bereich.enthaelt(e.lat, e.lng) || _bilder.bereit[e.id] == null) continue;
       final p = _gezeigt(e.id, _Punkt(e.lat, e.lng));
       if (pinGetroffen(ev.screenPoint, c.toScreenLocation(Geographic(lon: p.lng, lat: p.lat)))) {
         setState(() => _gewaehlt = _gewaehlt == e.id ? null : e.id);
@@ -385,8 +407,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
     if (_nach.isEmpty && eintraege.isNotEmpty) _ziele(eintraege);
     final jetzt = ref.read(standortUhrProvider)();
     final glPins = kIsWeb && !attrappe;
-    // gewählte Nadel zuletzt (liegt oben)
-    final geordnet = [...eintraege.where((e) => e.id != _gewaehlt), ...eintraege.where((e) => e.id == _gewaehlt)];
+    final geordnet = _nachId(eintraege);
     if (glPins && _geladen) _bilderSichern(eintraege, jetzt);
     final ausserhalb = [for (final e in eintraege) if (!bereich.enthaelt(e.lat, e.lng)) e.eigene ? 'Du' : e.name];
     final gewaehlt = eintraege.where((e) => e.id == _gewaehlt).firstOrNull;
@@ -453,7 +474,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                           ),
                           if (glPins)
                             for (final e in geordnet)
-                              if (_geladen && bereich.enthaelt(e.lat, e.lng) && _bildBereit[e.id] != null)
+                              if (_geladen && bereich.enthaelt(e.lat, e.lng) && _bilder.bereit[e.id] != null)
                                 MarkerLayer(
                                   points: [
                                     () {
@@ -461,11 +482,12 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                                       return Feature(geometry: Point(Geographic(lon: p.lng, lat: p.lat)));
                                     }(),
                                   ],
-                                  iconImage: _bildBereit[e.id],
+                                  iconImage: _bilder.bereit[e.id],
                                   iconAnchor: IconAnchor.bottom,
                                   iconAllowOverlap: true,
                                   iconIgnorePlacement: true,
                                   iconSize: 1 / kPinBildMassstab,
+                                  // Ausrichtung zur Bildschirmfläche (Vorgabe 'auto' = viewport für Punktsymbole): die Nadel bleibt auch bei gedrehter oder geneigter Karte aufrecht
                                 ),
                         ],
                         // Android: Nadeln als Flutter-Widgets über der Karte (dort bewegen sich Karte und Widgets im selben Bild)

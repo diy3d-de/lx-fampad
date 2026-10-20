@@ -39,4 +39,58 @@ void main() {
     expect(pinGetroffen(const ui.Offset(200, 230), spitze), isFalse);
     expect(pinGetroffen(const ui.Offset(260, 280), spitze), isFalse);
   });
+
+  group('PinBildCache', () {
+    test('anfordern: neu ja, laufend/fertig nein; Ergebnis löst das Vorgängerbild ab', () {
+      final c = PinBildCache();
+      expect(c.anfordern('a', 'a1'), isTrue);
+      expect(c.anfordern('a', 'a1'), isFalse); // läuft schon
+      expect(c.fertig('a', 'a1', ok: true), isEmpty);
+      expect(c.bereit['a'], 'a1');
+      expect(c.anfordern('a', 'a1'), isFalse); // fertig
+      expect(c.anfordern('a', 'a2'), isTrue);
+      expect(c.fertig('a', 'a2', ok: true), ['a1']); // altes Bild wird entfernt
+      expect(c.bereit['a'], 'a2');
+    });
+
+    test('Wählen, Abwählen, Wählen: nie zweimal dasselbe Bild im Stil, überholte Bilder werden entfernt', () {
+      final c = PinBildCache();
+      expect(c.anfordern('a', 'frei'), isTrue);
+      c.fertig('a', 'frei', ok: true);
+      expect(c.anfordern('a', 'gewaehlt'), isTrue); // läuft
+      expect(c.anfordern('a', 'frei'), isFalse); // wieder abgewählt: das freie Bild liegt noch im Stil
+      expect(c.fertig('a', 'gewaehlt', ok: true), ['gewaehlt']); // überholt: gleich wieder weg
+      expect(c.bereit['a'], 'frei');
+    });
+
+    test('Fehler: dieselbe Kennung wird nicht endlos neu versucht', () {
+      final c = PinBildCache();
+      expect(c.anfordern('a', 'x'), isTrue);
+      expect(c.fertig('a', 'x', ok: false), isEmpty);
+      for (var i = 0; i < 5; i++) {
+        expect(c.anfordern('a', 'x'), isFalse);
+      }
+      expect(c.bereit.containsKey('a'), isFalse);
+      expect(c.anfordern('a', 'y'), isTrue); // anderer Zustand: neuer Versuch
+    });
+
+    test('Person weg: Bild wird frei, ein noch laufendes Bild wird danach verworfen', () {
+      final c = PinBildCache();
+      c.anfordern('a', 'a1');
+      c.fertig('a', 'a1', ok: true);
+      c.anfordern('b', 'b1');
+      expect(c.aufraeumen({'a'}), isEmpty); // b hat noch kein fertiges Bild
+      expect(c.fertig('b', 'b1', ok: true), ['b1']); // b ist weg: das fertige Bild gleich entfernen
+      expect(c.aufraeumen({}), ['a1']);
+      expect(c.bereit, isEmpty);
+    });
+
+    test('leeren: alles vergessen (neue Karten-Ansicht)', () {
+      final c = PinBildCache();
+      c.anfordern('a', 'a1');
+      c.fertig('a', 'a1', ok: false);
+      c.leeren();
+      expect(c.anfordern('a', 'a1'), isTrue);
+    });
+  });
 }

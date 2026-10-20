@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
+import 'package:lx_fampad/features/standort/standort_screen.dart';
 
 import 'support/harness.dart';
 import 'support/test_app.dart';
@@ -106,6 +108,30 @@ void main() {
       expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
       expect(tester.takeException(), isNull);
       handle.dispose();
+    });
+  }
+
+  testWidgets('Standort wird erst beim ersten Öffnen gebaut (keine Karte, keine Zeitgeber im Verborgenen) und bleibt danach im Stapel', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(tester, const Size(1200, 800));
+    expect(find.byType(StandortScreen, skipOffstage: false), findsNothing);
+    await tester.tap(find.bySemanticsLabel('Standort'));
+    await warte(tester);
+    expect(find.byType(StandortScreen), findsOneWidget);
+    await tester.tap(find.bySemanticsLabel('Start'));
+    await warte(tester);
+    expect(find.byType(StandortScreen, skipOffstage: false), findsOneWidget);
+    handle.dispose();
+  });
+
+  for (final groesse in [const Size(1200, 800), const Size(900, 700)]) {
+    testWidgets('${groesse.width.toInt()} px, Textskala 1.5: Standort-Bereich ohne Layoutfehler', (tester) async {
+      await start(tester, groesse, skala: 1.5);
+      // bei Textskala 1.5 steht der Eintrag nicht ohne Scrollen in der (scrollbaren) Seitenleiste: Bereich direkt wählen
+      ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first)).read(shellTabProvider.notifier).waehlen(kStandortTab);
+      await warte(tester);
+      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
   }
 

@@ -8,12 +8,13 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../ui/widgets.dart';
+import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../shell/shell_tab.dart';
 import 'standort_screen.dart';
 
-/// Öffnet die Standort-Seite: im Desktop-Layout als Bereich der Shell (Seitenleiste und Fußzeile bleiben), mobil als eigene Seite.
+/// Öffnet die Standort-Seite: im Desktop-Layout als Bereich der Shell (Seitenleiste und Fußzeile bleiben, erkannt an der Shell über dem Aufrufer), sonst als eigene Seite.
 void standortOeffnen(BuildContext context) {
-  if (MediaQuery.sizeOf(context).width >= kDesktopBreakpoint) {
+  if (DesktopShellMarke.vorhanden(context)) {
     ProviderScope.containerOf(context).read(shellTabProvider.notifier).waehlen(kStandortTab);
     return;
   }

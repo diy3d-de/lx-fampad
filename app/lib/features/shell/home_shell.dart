@@ -43,7 +43,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     TasksScreen(key: _keys[4]),
   ];
   // Desktop: dazu Standort als Bereich neben den anderen (mobil eine eigene Seite)
-  late final _desktopScreens = <Widget>[const DesktopHome(), ..._screens.sublist(1), StandortScreen(key: _keys[5], eingebettet: true)];
+  // Standort (Karte, Kacheln, Zeitgeber) wird erst beim ersten Öffnen gebaut und bleibt danach im Stapel (Zustand erhalten)
+  bool _standortBesucht = false;
+  List<Widget> get _desktopScreens => [const DesktopHome(), ..._screens.sublist(1), if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink()];
 
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;
@@ -104,7 +106,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
     return LayoutBuilder(builder: (context, c) {
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
-      if (c.maxWidth >= kDesktopBreakpoint) return DesktopShell(screens: _desktopScreens);
+      if (c.maxWidth >= kDesktopBreakpoint) {
+        if (tab == kStandortTab) _standortBesucht = true;
+        return DesktopShell(screens: _desktopScreens);
+      }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
       return _mobil(updateDa, tab < kTabs.length ? tab : 0, ungelesen);
     });
