@@ -43,7 +43,7 @@ class _Anzeige implements StandortAnzeigePort {
 }
 
 void main() {
-  final jetzt = DateTime.utc(2026, 10, 20, 12);
+  var jetzt = DateTime.utc(2026, 10, 20, 12);
   late AppDatabase db;
   late _Anzeige anzeige;
   late MemoryErinnerungSpeicher speicher;
@@ -57,6 +57,7 @@ void main() {
     db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
     anzeige = _Anzeige();
     speicher = MemoryErinnerungSpeicher();
+    jetzt = DateTime.utc(2026, 10, 20, 12);
     vordergrund = false;
     ich = _ich;
     await db.metaSchreiben(
@@ -105,9 +106,30 @@ void main() {
       expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.system);
       expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.nichts);
       expect(await benachrichtiger().freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.nichts); // auch aus einem anderen Prozess (Buch in der Datenbank)
+      jetzt = jetzt.add(kHinweisAbstand);
       expect(await b.freigabe(von: _ben, shareId: 's2', endsAt: ende()), HinweisErgebnis.system);
       expect(anzeige.gezeigt, hasLength(2));
       expect(anzeige.gezeigt.map((g) => g.id).toSet(), hasLength(1)); // gleiche Kennung: ersetzt statt zu stapeln
+    });
+
+    test('Abstand: eine andere Freigabe derselben Person löst innerhalb von 10 Minuten keinen weiteren Hinweis aus, eine andere Person schon; danach wieder', () async {
+      final b = benachrichtiger();
+      expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.system);
+      jetzt = jetzt.add(const Duration(minutes: 5));
+      expect(await b.freigabe(von: _ben, shareId: 's2', endsAt: ende(const Duration(hours: 2))), HinweisErgebnis.nichts);
+      expect(await b.freigabe(von: _cora, shareId: 'c1', endsAt: ende(const Duration(hours: 2))), HinweisErgebnis.system);
+      jetzt = jetzt.add(const Duration(minutes: 5, seconds: 1));
+      expect(await b.freigabe(von: _ben, shareId: 's2', endsAt: ende(const Duration(hours: 2))), HinweisErgebnis.system); // die Freigabe läuft noch: jetzt kommt sie
+      expect(anzeige.gezeigt, hasLength(3));
+    });
+
+    test('Kurzabruf: höchstens einmal je 60 Sekunden und Gerät (auch über Prozesse), der Zeitpunkt wird beim Start gebucht', () async {
+      expect(await benachrichtiger().abrufErlaubt(), isTrue);
+      expect(await benachrichtiger().abrufErlaubt(), isFalse); // anderer Prozess, gleiche Datenbank
+      jetzt = jetzt.add(const Duration(seconds: 59));
+      expect(await benachrichtiger().abrufErlaubt(), isFalse);
+      jetzt = jetzt.add(const Duration(seconds: 2));
+      expect(await benachrichtiger().abrufErlaubt(), isTrue);
     });
 
     test('Einstellung aus: nichts, auch nicht im Vordergrund; Standard ist an', () async {
@@ -207,6 +229,22 @@ void main() {
       );
       expect(anzeige.gezeigt, isEmpty);
       expect(anzeige.entfernt, [standortBenachrichtigungsId(_ben)]);
+    });
+
+    test('zweiter Abruf innerhalb einer Minute: keine Verbindung, kein Ticket', () async {
+      await abruf().abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(milliseconds: 300), aufbauFrist: const Duration(milliseconds: 100));
+      final n = sockets.sockets.length;
+      expect(n, greaterThan(0));
+      await abruf().abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(milliseconds: 300), aufbauFrist: const Duration(milliseconds: 100));
+      expect(sockets.sockets.length, n);
+    });
+
+    test('Verbindung kommt nicht zustande (Ticket abgelehnt, Netz): nach der Aufbaufrist Schluss, keine endlosen Versuche', () async {
+      sockets.scheitern = 100;
+      final t = Stopwatch()..start();
+      await abruf().abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(seconds: 5), aufbauFrist: const Duration(milliseconds: 200));
+      expect(t.elapsedMilliseconds, lessThan(2000));
+      expect(sockets.sockets.length, lessThan(4));
     });
 
     test('Hinweise aus oder App im Vordergrund: keine Verbindung', () async {

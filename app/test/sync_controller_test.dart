@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/lists/list_repository.dart';
+import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/sync_state.dart';
 import 'package:lx_fampad/features/update/update_service.dart';
 
@@ -464,6 +465,22 @@ void main() {
     c.dispose();
   });
 
+  testWidgets('Abmelden (Wiper): schon gezeigte Standort-Benachrichtigungen werden entfernt', (tester) async {
+    env = await angemeldeteUmgebung();
+    env.wiperEcht = true;
+    final anzeige = _ZaehlAnzeige();
+    env.standortAnzeige = anzeige;
+    c = ProviderContainer(
+      overrides: [
+        ...env.overrides,
+        syncZufallProvider.overrideWithValue(_FesterZufall()),
+      ],
+    );
+    await c.read(localDataWiperProvider)();
+    expect(anzeige.alleEntfernt, 1);
+    c.dispose();
+  });
+
   lauf('Hinweise (z. B. anderswo gelöscht) erscheinen im Zustand und lassen sich schließen; höchstens 5', (tester) async {
     await start(tester);
     final repo = c.read(listenRepositoryProvider);
@@ -484,4 +501,16 @@ void main() {
     sync.hinweisSchliessen(hinweise.first.id);
     expect(c.read(syncProvider).hinweise, hasLength(4));
   });
+}
+
+class _ZaehlAnzeige implements StandortAnzeigePort {
+  int alleEntfernt = 0;
+  @override
+  Future<bool> initialisieren() async => false;
+  @override
+  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, Duration? verfall}) async => false;
+  @override
+  Future<void> entfernen(int id) async {}
+  @override
+  Future<void> alleEntfernen() async => alleEntfernt++;
 }

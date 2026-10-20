@@ -103,6 +103,9 @@ class TestUmgebung {
   /// Zusätzliche Überschreibungen einzelner Tests (z. B. ein Stream, der einen Lesefehler meldet).
   final List<Override> extraOverrides = [];
 
+  /// Anzeige der Standort-Benachrichtigungen (Standard: keine).
+  StandortAnzeigePort standortAnzeige = const KeineStandortAnzeige();
+
   /// Gerätedienst fürs Standort teilen (Standard: keiner, wie im Browser).
   StandortPort standortPort = const KeinStandortPort();
 
@@ -132,7 +135,7 @@ class TestUmgebung {
     standortKartenBuilderProvider.overrideWithValue(standortKarte),
     // Standort-Hinweise: im Test gilt die App als im Vordergrund (kein Kurzabruf des Standort-Kanals nach einem Wecker, keine System-Benachrichtigung)
     standortBenachrichtigerProvider.overrideWithValue(
-      StandortBenachrichtiger(db: db, anzeige: const KeineStandortAnzeige(), speicher: MemoryErinnerungSpeicher(), ich: () async => null, istVordergrund: () => true),
+      StandortBenachrichtiger(db: db, anzeige: standortAnzeige, speicher: MemoryErinnerungSpeicher(), ich: () async => null, istVordergrund: () => true),
     ),
     ...extraOverrides,
   ];

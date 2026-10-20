@@ -18,10 +18,11 @@ class StandortAbruf {
   final DateTime Function() jetzt;
   StandortAbruf({required this.fabrik, required this.benachrichtiger, DateTime Function()? jetzt}) : jetzt = jetzt ?? DateTime.now;
 
-  /// Verbindet kurz und meldet neue Freigaben. [stille]: so lange nach dem Aufbau noch auf Nachreichungen warten; [hoechstens]: Obergrenze inklusive Aufbau.
-  Future<void> abfragen({Duration stille = const Duration(seconds: 3), Duration hoechstens = const Duration(seconds: 10)}) async {
+  /// Verbindet kurz und meldet neue Freigaben (höchstens einmal je Minute und Gerät, gebucht in der lokalen Datenbank). [stille]: so lange nach dem Aufbau noch auf Nachreichungen warten; [hoechstens]: Obergrenze inklusive Aufbau.
+  Future<void> abfragen({Duration stille = const Duration(seconds: 3), Duration hoechstens = const Duration(seconds: 10), Duration aufbauFrist = const Duration(seconds: 4)}) async {
     if (benachrichtiger.istVordergrund()) return;
     if (!await benachrichtiger.aktiv()) return;
+    if (!await benachrichtiger.abrufErlaubt()) return; // höchstens einer je Minute und Gerät (WebSocket-Ticket, Anmelde-Grenze je IP)
     final fertig = Completer<void>();
     final aufgaben = <Future<void>>[];
     Timer? stilleTimer;
@@ -54,11 +55,16 @@ class StandortAbruf {
     final frist = Timer(hoechstens, () {
       if (!fertig.isCompleted) fertig.complete();
     });
+    // steht die Verbindung nach der Aufbaufrist nicht (Netz, Ticket abgelehnt, 429), ist Schluss: kein Wiederholen, jeder Versuch holt ein neues Ticket
+    final aufbau = Timer(aufbauFrist, () {
+      if (socket?.live != true && !fertig.isCompleted) fertig.complete();
+    });
     try {
       socket = fabrik(beiNachricht: beiNachricht, beiStatus: beiStatus)..start();
       await fertig.future;
     } finally {
       frist.cancel();
+      aufbau.cancel();
       stilleTimer?.cancel();
       socket?.stop();
     }

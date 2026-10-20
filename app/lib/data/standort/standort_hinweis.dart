@@ -67,6 +67,18 @@ int standortBenachrichtigungsId(String userId) {
 /// Buch der gemeldeten Freigaben (Absender -> Kennung der Freigabe) in der lokalen Datenbank.
 String _buchSchluessel(String von) => 'standort_gemeldet:$von';
 
+/// Zeitpunkt (ms) des letzten Hinweises je Absender: ein Absender, der immer wieder neu startet, löst höchstens alle [kHinweisAbstand] einen Hinweis aus.
+String _zeitSchluessel(String von) => 'standort_gemeldet_zeit:$von';
+
+/// Mindestabstand zwischen zwei Hinweisen auf Freigaben derselben Person (gilt auf dem Gerät, unabhängig von der Entprellung des Servers).
+const kHinweisAbstand = Duration(minutes: 10);
+
+/// Zeitpunkt (ms) des letzten Kurzabrufs des Standort-Kanals auf diesem Gerät (auch über Prozesse: Hintergrund-Start und laufende App).
+const _kAbrufZeit = 'standort_abruf_zeit';
+
+/// Mindestabstand zwischen zwei Kurzabrufen: jeder holt ein WebSocket-Ticket, und die Anmelde-Grenze je IP ist knapp (die Familie teilt oft eine Adresse).
+const kAbrufAbstand = Duration(seconds: 60);
+
 enum HinweisErgebnis {
   /// Nichts zu melden (aus, schon gemeldet, abgelaufen, eigene Freigabe, keine Erlaubnis).
   nichts,
@@ -109,6 +121,23 @@ class StandortBenachrichtiger {
     }
   }
 
+  /// Darf jetzt ein Kurzabruf des Standort-Kanals laufen? Höchstens einer je [kAbrufAbstand] und Gerät; der Zeitpunkt wird schon beim Start gebucht,
+  /// ein gescheiterter Abruf (Netz, 429) wird also nicht sofort wiederholt.
+  Future<bool> abrufErlaubt() async {
+    try {
+      final jetztMs = jetzt().millisecondsSinceEpoch;
+      final letzter = int.tryParse(await db.metaLesen(_kAbrufZeit) ?? '');
+      if (letzter != null) {
+        final seit = jetztMs - letzter;
+        if (seit >= 0 && seit < kAbrufAbstand.inMilliseconds) return false;
+      }
+      await db.metaSchreiben(_kAbrufZeit, '$jetztMs');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Meldet eine laufende Freigabe von [von] (aus `loc_start`). Idempotent je Freigabe.
   Future<HinweisErgebnis> freigabe({required String von, required String shareId, required DateTime endsAt}) async {
     try {
@@ -118,8 +147,15 @@ class StandortBenachrichtiger {
       final rest = endsAt.difference(jetzt());
       if (rest <= Duration.zero) return HinweisErgebnis.nichts;
       if (await db.metaLesen(_buchSchluessel(von)) == shareId) return HinweisErgebnis.nichts;
+      // eine andere Freigabe derselben Person kurz nach dem letzten Hinweis: kein neuer Hinweis (sie erscheint in der Liste, sobald die App offen ist)
+      final letzter = int.tryParse(await db.metaLesen(_zeitSchluessel(von)) ?? '');
+      if (letzter != null) {
+        final seit = jetzt().millisecondsSinceEpoch - letzter;
+        if (seit >= 0 && seit < kHinweisAbstand.inMilliseconds) return HinweisErgebnis.nichts;
+      }
       if (istVordergrund()) {
         await db.metaSchreiben(_buchSchluessel(von), shareId);
+        await db.metaSchreiben(_zeitSchluessel(von), '${jetzt().millisecondsSinceEpoch}');
         return HinweisErgebnis.vordergrund;
       }
       if (!await anzeige.initialisieren()) return HinweisErgebnis.nichts;
@@ -133,6 +169,7 @@ class StandortBenachrichtiger {
       );
       if (!ok) return HinweisErgebnis.nichts;
       await db.metaSchreiben(_buchSchluessel(von), shareId);
+      await db.metaSchreiben(_zeitSchluessel(von), '${jetzt().millisecondsSinceEpoch}');
       return HinweisErgebnis.system;
     } catch (_) {
       return HinweisErgebnis.nichts; // eine Benachrichtigung ist Zusatz: nie den Ablauf stören
