@@ -19,6 +19,7 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.embedding.engine.FlutterEngineCache
 import io.flutter.plugin.common.MethodChannel
 import java.io.File
 
@@ -57,6 +58,7 @@ class MainActivity : FlutterActivity() {
     override fun getDartEntrypointArgs(): List<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        StandortBruecke.activityDa = true
         super.onCreate(savedInstanceState)
         startLink = linkAus(intent)
         secureAnwenden()
@@ -75,8 +77,32 @@ class MainActivity : FlutterActivity() {
         if (link != null) systemChannel?.invokeMethod("link", link)
     }
 
+    override fun onDestroy() {
+        StandortBruecke.activityDa = false
+        super.onDestroy()
+    }
+
+    /**
+     * Engine überlebt die Activity, solange geteilt wird: Das Senden der Positionen läuft in der Dart-Seite dieser Engine (Verschlüsselung, WebSocket); stürbe
+     * sie mit der Activity (Zurück-Taste, Wischen, Neuaufbau), wäre das Teilen vorbei. Die Engine liegt dafür im Cache und wird beim nächsten Öffnen
+     * wiederverwendet. Ohne laufendes Teilen gilt wie bisher: Activity weg, Engine weg (Schlüssel verschwinden aus dem Arbeitsspeicher).
+     * Beendet das Teilen ohne Oberfläche, räumt [StandortBruecke.dienstBeendet] die Engine auf.
+     */
+    override fun provideFlutterEngine(context: Context): FlutterEngine? = FlutterEngineCache.getInstance().get(StandortBruecke.ENGINE_ID)
+
+    override fun shouldDestroyEngineWithHost(): Boolean = !StandortBruecke.laeuft
+
+    /** Zurück-Taste an der Wurzel: Während geteilt wird, nur in den Hintergrund (nicht beenden). */
+    override fun popSystemNavigator(): Boolean {
+        if (StandortBruecke.laeuft) {
+            moveTaskToBack(true)
+            return true
+        }
+        return super.popSystemNavigator()
+    }
+
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
-        standort?.abbauen()
+        standort?.loesen()
         standort = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
@@ -178,7 +204,8 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         // Standort teilen (Vordergrunddienst, Berechtigungen, Ereignisse): StandortKanal.kt
-        standort = StandortKanal(this).also { it.einrichten(flutterEngine) }
+        FlutterEngineCache.getInstance().put(StandortBruecke.ENGINE_ID, flutterEngine)
+        standort = StandortKanal.fuer(flutterEngine, this).also { it.activity = this }
         systemChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.fampad/system").also { kanal ->
             kanal.setMethodCallHandler { call, result ->
                 when (call.method) {

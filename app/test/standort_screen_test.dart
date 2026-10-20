@@ -52,9 +52,20 @@ class _TestSteuerung extends StandortController {
 }
 
 class _Port extends KeinStandortPort {
-  const _Port();
+  /// Stand der Akkuoptimierung aus Sicht von Android (null: unbekannt).
+  bool? akku;
+  var anfragen = 0;
+  _Port({this.akku});
   @override
   bool get verfuegbar => true;
+  @override
+  Future<bool?> akkuUneingeschraenkt() async => akku;
+  @override
+  Future<bool> akkuAnfragen() async {
+    anfragen++;
+    akku = true;
+    return true;
+  }
 }
 
 void main() {
@@ -82,6 +93,7 @@ void main() {
     double skala = 1.0,
     String role = 'admin',
     bool verfuegbar = true,
+    _Port? port,
     StandortKartenBuilder? karte,
   }) async {
     final env = await angemeldeteUmgebung(role: role);
@@ -94,7 +106,7 @@ void main() {
       ],
     });
     steuerung = _TestSteuerung(zustand);
-    env.standortPort = verfuegbar ? const _Port() : const KeinStandortPort();
+    env.standortPort = verfuegbar ? (port ?? _Port()) : const KeinStandortPort();
     env.extraOverrides.addAll([
       standortProvider.overrideWith(() => steuerung),
       standortUhrProvider.overrideWith((ref) => () => jetzt),
@@ -240,6 +252,44 @@ void main() {
     await oeffnen(tester);
     await tester.scrollUntilVisible(find.text('Akku-Einstellungen öffnen'), 200, scrollable: find.byType(Scrollable).first);
     expect(find.textContaining('Samsung'), findsOneWidget);
+  });
+
+  testWidgets('Akku eingeschränkt (Samsung "Optimiert"): Warnung auf der Seite, beim ersten Teilen ein Dialog, danach nicht mehr', (tester) async {
+    final port = _Port(akku: false);
+    await start(tester, port: port);
+    await oeffnen(tester);
+    await tester.scrollUntilVisible(find.text('Ohne Einschränkung erlauben'), 200, scrollable: find.byType(Scrollable).first);
+    expect(find.textContaining('eingeschränkt ("Optimiert")'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Standort teilen'), -200, scrollable: find.byType(Scrollable).first);
+    await tippe(tester, find.text('Standort teilen'));
+    expect(find.text('Akku: Teilen im Hintergrund'), findsOneWidget);
+    expect(steuerung.gestartetMit, isNull, reason: 'erst nach der Antwort');
+    await tippe(tester, find.text('Trotzdem teilen'));
+    expect(steuerung.gestartetMit, const Duration(hours: 1));
+    expect(port.anfragen, 0);
+    // zweiter Start: kein Dialog mehr (nur einmal je Gerät)
+    await steuerung.beenden();
+    await warte(tester);
+    await tippe(tester, find.text('Standort teilen'));
+    expect(find.text('Akku: Teilen im Hintergrund'), findsNothing);
+  });
+
+  testWidgets('Akku-Dialog: "Erlauben" öffnet den Systemdialog und teilt danach', (tester) async {
+    final port = _Port(akku: false);
+    await start(tester, port: port);
+    await oeffnen(tester);
+    await tippe(tester, find.text('Standort teilen'));
+    await tippe(tester, find.text('Erlauben'));
+    expect(port.anfragen, 1);
+    expect(steuerung.gestartetMit, const Duration(hours: 1));
+  });
+
+  testWidgets('Akku nicht eingeschränkt: kein Dialog, grüner Hinweis', (tester) async {
+    await start(tester, port: _Port(akku: true));
+    await oeffnen(tester);
+    await tippe(tester, find.text('Standort teilen'));
+    expect(find.text('Akku: Teilen im Hintergrund'), findsNothing);
+    expect(steuerung.gestartetMit, const Duration(hours: 1));
   });
 
   for (final skala in [1.0, 1.5]) {

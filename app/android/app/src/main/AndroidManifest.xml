@@ -33,6 +33,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Systemdialog "Im Hintergrund ohne Einschränkung ausführen?" (Akkuoptimierung nur für diese App, die Person bestätigt selbst); ohne das stoppt der Akkuschutz
+         vieler Hersteller (One UI) das Teilen bei gesperrtem Bildschirm -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- GPS ist keine Voraussetzung für die Installation (Tablets, Netzwerk-Ortung genügt) -->
     <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
