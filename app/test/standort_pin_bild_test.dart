@@ -9,7 +9,22 @@ import 'package:lx_fampad/features/standort/standort_pin_bild.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('Größenberechnung: logische Nadelgröße bleibt bei jeder Pixeldichte 48 x 62 (Karte rechnet Bildpixel / pixelRatio * icon-size)', () {
+    for (final dpr in [1.0, 1.25, 1.5, 2.0, 2.625, 3.0, 4.0]) {
+      final m = pinMassstab(dpr);
+      final px = pinBildPixel(m);
+      final logisch = ui.Size(px.width / dpr * pinIconSize(m, dpr), px.height / dpr * pinIconSize(m, dpr));
+      expect(logisch.width, closeTo(kPinGroesse.width, 1e-9), reason: 'dpr $dpr');
+      expect(logisch.height, closeTo(kPinGroesse.height, 0.7), reason: 'dpr $dpr'); // Höhe: Rundung auf ganze Bildpixel
+    }
+    expect(pinIconSize(pinMassstab(2), 2), 1); // Normalfall: Bild in Gerätepixeln, icon-size 1
+    expect(pinMassstab(0), 1);
+    expect(pinMassstab(double.nan), 1);
+    expect(pinMassstab(9), 4);
+  });
+
   test('pinPng: gültiges PNG in Nadelgröße mal Maßstab', () async {
+    const kPinBildMassstab = 2.0;
     final png = await pinPng(const PinBildAngaben(farbIndex: 2, name: 'Anna Beispiel'));
     expect(png.sublist(0, 4), [0x89, 0x50, 0x4e, 0x47]);
     final codec = await ui.instantiateImageCodec(png);

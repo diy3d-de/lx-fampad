@@ -28,15 +28,24 @@ class PinBildAngaben {
   String get schluessel => '$farbIndex|$name|$bildAufFarbe|${kopfBild == null ? 0 : kopfBild!.length}|${kopfBild?.fold<int>(0, (a, b) => (a * 31 + b) & 0x7fffffff) ?? 0}|$veraltet|$gewaehlt|$eigene';
 }
 
-/// Maßstab des Bildes (Pixel je logischem Pixel); die Karte zeigt es mit 1/[kPinBildMassstab], damit die Nadel scharf bleibt.
-const double kPinBildMassstab = 2;
+/// Maßstab, mit dem das Nadelbild gezeichnet wird (Bildpixel je logischem Pixel): die Pixeldichte des Bildschirms, damit die Nadel scharf bleibt.
+double pinMassstab(double dpr) => dpr.isFinite && dpr > 0 ? dpr.clamp(1.0, 4.0) : 1.0;
 
-/// Zeichnet die Nadel als PNG ([kPinGroesse] mal [kPinBildMassstab] Pixel); die Spitze liegt auf der Mitte der Unterkante.
-Future<Uint8List> pinPng(PinBildAngaben a) async {
+/// Größe des Nadelbildes in Bildpixeln.
+ui.Size pinBildPixel(double massstab) => ui.Size((kPinGroesse.width * massstab).roundToDouble(), (kPinGroesse.height * massstab).roundToDouble());
+
+/// Wert für `icon-size` der Karte. Das Web-Paket registriert jedes Bild mit `pixelRatio = devicePixelRatio`: die Karte zeigt es
+/// mit (Bildpixel / pixelRatio) mal icon-size logischen Pixeln. Damit die Nadel genau [kPinGroesse] groß wird (wie auf Android), muss icon-size
+/// = Sollbreite * pixelRatio / Bildbreite sein (bei Maßstab = pixelRatio also 1).
+double pinIconSize(double massstab, double dpr) => kPinGroesse.width * dpr / pinBildPixel(massstab).width;
+
+/// Zeichnet die Nadel als PNG ([pinBildPixel] Pixel, [kPinGroesse] logisch bei [massstab]); die Spitze liegt auf der Mitte der Unterkante.
+Future<Uint8List> pinPng(PinBildAngaben a, {double massstab = 2}) async {
   final w = kPinGroesse.width, h = kPinGroesse.height;
   final rec = ui.PictureRecorder();
-  final canvas = ui.Canvas(rec, ui.Rect.fromLTWH(0, 0, w * kPinBildMassstab, h * kPinBildMassstab));
-  canvas.scale(kPinBildMassstab);
+  final px = pinBildPixel(massstab);
+  final canvas = ui.Canvas(rec, ui.Rect.fromLTWH(0, 0, px.width, px.height));
+  canvas.scale(px.width / w, px.height / h);
   if (a.veraltet) canvas.saveLayer(ui.Rect.fromLTWH(0, 0, w, h), ui.Paint()..color = const ui.Color(0x99000000));
   PinMaler(fuellung: personColor(a.farbIndex), rand: a.gewaehlt || a.eigene ? kAccent : kTextStrong, randBreite: a.gewaehlt ? 3 : 2).paint(canvas, kPinGroesse);
   final mitte = ui.Offset(w / 2, PinMaler.kopfMitteY);
@@ -48,7 +57,7 @@ Future<Uint8List> pinPng(PinBildAngaben a) async {
   ui.Image? bild;
   if (a.kopfBild != null) {
     try {
-      final codec = await ui.instantiateImageCodec(a.kopfBild!, targetWidth: (kPinBild * kPinBildMassstab).round());
+      final codec = await ui.instantiateImageCodec(a.kopfBild!, targetWidth: (kPinBild * massstab).round());
       try {
         bild = (await codec.getNextFrame()).image;
       } finally {
@@ -73,7 +82,7 @@ Future<Uint8List> pinPng(PinBildAngaben a) async {
   }
   canvas.restore();
   if (a.veraltet) canvas.restore();
-  final bildFertig = await rec.endRecording().toImage((w * kPinBildMassstab).round(), (h * kPinBildMassstab).round());
+  final bildFertig = await rec.endRecording().toImage(px.width.round(), px.height.round());
   try {
     final bytes = await bildFertig.toByteData(format: ui.ImageByteFormat.png);
     return bytes!.buffer.asUint8List();
