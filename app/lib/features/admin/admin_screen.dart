@@ -55,7 +55,7 @@ class _MitgliederTab extends ConsumerStatefulWidget {
   ConsumerState<_MitgliederTab> createState() => _MitgliederTabState();
 }
 
-enum _Aktion { rolle, zuruecksetzen, bildZuruecksetzen, entfernen, freigeben, ablehnen }
+enum _Aktion { rolle, familienrolle, zuruecksetzen, bildZuruecksetzen, entfernen, freigeben, ablehnen }
 
 class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZustand<_MitgliederTab> {
   List<UserDto>? _mitglieder;
@@ -100,6 +100,13 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         );
         if (neu == null || neu == m.role || !mounted) return;
         await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).rolleAendern(m.id, neu)), erfolg: 'Rolle geändert.');
+      case _Aktion.familienrolle:
+        final wahl = await familienrolleWaehlen(context, titel: 'Familienrolle für ${m.displayName}', aktuell: m.familyRole);
+        if (wahl == null || wahl.rolle == m.familyRole || !mounted) return;
+        await _ausfuehrenUndLaden(
+          () => _schritt(() => ref.read(apiProvider).familienrolleMitglied(m.id, wahl.rolle), stepUp: false),
+          erfolg: 'Familienrolle geändert.',
+        );
       case _Aktion.bildZuruecksetzen:
         final bild = await _frage(
           'Profilbild zurücksetzen?',
@@ -281,7 +288,7 @@ class _MitgliedKarte extends StatelessWidget {
                   if (m.email != null)
                     Text(m.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted), overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
-                  Wrap(spacing: 6, runSpacing: 4, children: [RollenPille(m.role.label), if (wartet) const RollenPille('wartet', farbe: kWarn)]),
+                  Wrap(spacing: 6, runSpacing: 4, children: [...rollenPillen(m.role, m.familyRole), if (wartet) const RollenPille('wartet', farbe: kWarn)]),
                 ],
               ),
             ),
@@ -296,6 +303,7 @@ class _MitgliedKarte extends StatelessWidget {
                       ]
                     : [
                         const PopupMenuItem(value: _Aktion.rolle, child: Text('Rolle ändern')),
+                        const PopupMenuItem(value: _Aktion.familienrolle, child: Text('Familienrolle ändern')),
                         if (m.avatar != null) const PopupMenuItem(value: _Aktion.bildZuruecksetzen, child: Text('Profilbild zurücksetzen')),
                         const PopupMenuItem(value: _Aktion.zuruecksetzen, child: Text('Zugang zurücksetzen')),
                         const PopupMenuItem(value: _Aktion.entfernen, child: Text('Entfernen')),

@@ -81,8 +81,9 @@ export async function runSyncMaintenance(ctx: Pick<AuthContext, 'db' | 'now'>, r
         for (const r of old.rows) purgedRev = Math.max(purgedRev, Number(r.rev));
         // Sicherheitsnetz: Inhalte gelöschter Datensätze im Protokoll leeren
         const cleared = await tx.execute<{ rev: number }>(sql`
-          update change_log cl set changes = '{}'::jsonb
-          where cl.family_id = ${familyId} and cl.entity = ${def.name} and cl.changes <> '{}'::jsonb
+          update change_log cl set changes = case when cl.changes ? '__lostSight' then jsonb_build_object('__lostSight', cl.changes -> '__lostSight') else '{}'::jsonb end
+          where cl.family_id = ${familyId} and cl.entity = ${def.name}
+            and cl.changes <> case when cl.changes ? '__lostSight' then jsonb_build_object('__lostSight', cl.changes -> '__lostSight') else '{}'::jsonb end
             and exists (select 1 from ${table} t where t.id = cl.entity_id and t.family_id = cl.family_id and t.deleted_at is not null)
           returning cl.rev`);
         report.contentCleared += cleared.rows.length;

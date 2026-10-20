@@ -1,7 +1,7 @@
 // Profil > Über: Version und Build, Server und Protokoll, Kopieren, Update-Prüfung; Layout bei 360 px, Textskala 1.0/1.5.
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lx_fampad/constants.dart' show kAppName;
+import 'package:lx_fampad/constants.dart' show kApkDownloadUrl, kAppName;
 import 'package:lx_fampad/features/profile/ueber_screen.dart';
 import 'package:lx_fampad/features/update/update_service.dart';
 
@@ -53,6 +53,19 @@ void main() {
     await tippeText(tester, '$kAppName 0.2.0');
     expect(kopiert, 'lx-familyhub 0.2.0 (1002) · Android');
     expect(find.text('Versionsangabe kopiert'), findsOneWidget);
+  });
+
+  testWidgets('Zeile "App-Download-Link kopieren" kopiert den Link ohne Token', (tester) async {
+    String? kopiert;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') kopiert = (call.arguments as Map)['text'] as String;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    await oeffnen(tester, android);
+    await tippeText(tester, 'App-Download-Link kopieren');
+    expect(kopiert, kApkDownloadUrl);
+    expect(find.text('Download-Link kopiert.'), findsOneWidget);
   });
 
   testWidgets('Web: Kennung "dev" ohne Build-Nummer, Server unbekannt', (tester) async {

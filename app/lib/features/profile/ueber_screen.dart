@@ -110,6 +110,18 @@ class UeberScreen extends ConsumerWidget {
           titel: 'Update',
           untertitel: _updateText(update),
         ),
+        Semantics(
+          button: true,
+          label: 'App-Download-Link kopieren',
+          excludeSemantics: true,
+          child: EinstellungsZeile(
+            icon: Icons.link,
+            titel: 'App-Download-Link kopieren',
+            untertitel: 'zum Weitergeben der Android-App',
+            status: const Icon(Icons.copy, size: 18, color: kTextMuted),
+            onTap: () => unawaited(inZwischenablage(context, kApkDownloadUrl, 'Download-Link kopiert.')),
+          ),
+        ),
         const SizedBox(height: 4),
         ZweitKnopf(
           text: 'Nach Update suchen',

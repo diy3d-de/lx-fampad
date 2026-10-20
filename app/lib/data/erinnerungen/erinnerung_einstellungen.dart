@@ -42,6 +42,9 @@ const _kAn = 'erinnerung_an';
 const _kVorlauf = 'erinnerung_vorlauf';
 const _kSperre = 'erinnerung_sperrbildschirm';
 
+/// Schlüssel der Einstellung "Titel auf dem Sperrbildschirm zeigen" (gilt auch für die Chat-Benachrichtigungen).
+const kSperrbildschirmSchluessel = _kSperre;
+
 /// Schlüssel der Person, für die die geplanten Erinnerungen dieses Geräts gelten (der Dienst löscht sie bei einem anderen Konto).
 const kErinnerungKontoSchluessel = 'erinnerung_konto';
 

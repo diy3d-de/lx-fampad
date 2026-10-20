@@ -8,6 +8,8 @@
 //    (nie `forbidden`, sonst ließe sich die Existenz erraten), auch bei einer fremden Familie (die Abfragen sind an die Familie gebunden).
 //  - Rechte hängen an der Rolle der Sitzung (nie an Angaben des Clients).
 //  - Kinder sehen Stufe `family`, aber nichts, was nur für Eltern gedacht ist; Eltern und Admins sehen alles. Gäste gibt es nicht.
+//  - Teilnehmer-Sichtbarkeit (Chat): Nennen die Fakten `participants`, sieht den Datensatz NUR, wer dort steht. Das ist eine harte Grenze vor jeder
+//    Regel : kein Rollen-Durchgriff, Admins und Eltern sehen private Chats nicht. Ohne `participants` gilt die Freigabe-Stufe.
 import type { Role } from '../auth/types.js';
 
 /** Wer einen Datensatz sehen darf: nur Eltern/Admins oder die ganze Familie. */
@@ -21,9 +23,12 @@ export type Action = 'read' | 'create' | 'update' | 'delete';
  *  - `none`: nie,
  *  - `all`: jeder Datensatz,
  *  - `shared`: Datensätze, die für die Rolle freigegeben sind (Stufe passt),
- *  - `own`: Datensätze, deren Besitzer die Person ist.
+ *  - `own`: Datensätze, deren Besitzer die Person ist,
+ *  - `own_or_open`: eigene Datensätze, und alle, die nicht auf Teilnehmer beschränkt sind (Admin darf im Familienchat fremde Nachrichten löschen,
+ *    nie in privaten Chats).
+ * Jeder Bereich außer `none` gilt nur innerhalb der Teilnehmer-Grenze (siehe oben).
  */
-export type Scope = 'none' | 'all' | 'shared' | 'own';
+export type Scope = 'none' | 'all' | 'shared' | 'own' | 'own_or_open';
 
 export interface Actor {
   userId: string;
@@ -36,6 +41,8 @@ export interface Facts {
   ownerId: string | null;
   /** Zuständige Person (Aufgaben; Unteraufgaben erben sie): darf mit `assignedFields` auch fremde Datensätze in diesen Feldern ändern. */
   assigneeId?: string | null;
+  /** Nur diese Personen sehen den Datensatz (Direkt-/Gruppenchat und alles darunter); fehlt: es gilt `audience` (Familienchat). */
+  participants?: readonly string[] | undefined;
 }
 
 export interface RoleRule {
@@ -65,7 +72,11 @@ export const AUDIENCE_ROLES: Readonly<Record<Audience, readonly Role[]>> = {
 
 export const sees = (role: Role, audience: Audience): boolean => AUDIENCE_ROLES[audience].includes(role);
 
+/** Steht die Person in der Teilnehmerliste (oder gibt es keine)? */
+export const isParticipant = (actor: Actor, facts: Facts): boolean => facts.participants === undefined || facts.participants.includes(actor.userId);
+
 export function scopeAllows(scope: Scope, actor: Actor, facts: Facts): boolean {
+  if (!isParticipant(actor, facts)) return false;
   switch (scope) {
     case 'all':
       return true;
@@ -73,6 +84,8 @@ export function scopeAllows(scope: Scope, actor: Actor, facts: Facts): boolean {
       return sees(actor.role, facts.audience);
     case 'own':
       return facts.ownerId !== null && facts.ownerId === actor.userId;
+    case 'own_or_open':
+      return sees(actor.role, facts.audience) && (facts.participants === undefined || (facts.ownerId !== null && facts.ownerId === actor.userId));
     case 'none':
       return false;
   }
@@ -126,8 +139,17 @@ export function authorize(
  * Regeln mit Geltungsbereich `own` zählen als lesbar). Wer den Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab.
  */
 export function rolesThatMayRead(rules: Rules, facts: Facts): Role[] {
+  if (facts.participants !== undefined) return []; // Teilnehmer-Sichtbarkeit: nie über Rollen, siehe usersThatMayRead
   return ROLES.filter((role) => {
     const scope = rules[role].read;
     return scope === 'all' || scope === 'own' || (scope === 'shared' && sees(role, facts.audience));
   });
+}
+
+/**
+ * Personen unter `members` (aktive Mitglieder der Familie mit Rolle), die den Datensatz lesen dürfen: je Person über `mayRead` gefiltert, also für Privatchats
+ * nur Teilnehmer (nie über die Rolle) und für den Familienchat ausdrücklich alle Mitglieder mit Sicht. Grundlage für gezielte Benachrichtigungen (Push).
+ */
+export function usersThatMayRead(rules: Rules, facts: Facts, members: readonly Actor[]): string[] {
+  return members.filter((m) => mayRead(rules, m, facts)).map((m) => m.userId);
 }

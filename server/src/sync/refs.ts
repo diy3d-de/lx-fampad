@@ -5,7 +5,7 @@
 // haben zwar ON DELETE SET NULL, das ändert aber weder Revision noch Protokoll; deshalb läuft diese Bereinigung VOR dem Löschen der Person
 // (gelöschte Datensätze bleiben außen vor: ihr Inhalt ist ohnehin geleert, den Rest erledigt der Fremdschlüssel).
 // Datensätze, die die Person selbst bezeichnen (`memberOwned`, z. B. Termin-Teilnehmer), werden mit Tombstone gelöscht.
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { Executor } from '../auth/context.js';
 import { families } from '../db/schema.js';
 import { RevCounter, logChange, tombstoneTree, type EngineEnv } from './engine.js';
@@ -40,6 +40,28 @@ export async function detachMemberRefs(
         .from(def.table)
         .where(and(eq(c.familyId, input.familyId), eq(columnOf(def, def.memberOwned), input.userId), isNull(c.deletedAt)))) as Row[];
       for (const row of owned) await tombstoneTree(env, def, row);
+    }
+    // Teilnehmerlisten (Chat): die Person wird aus der Liste genommen; bleiben zu wenige übrig (Direktchat: immer), wird der Datensatz gelöscht
+    if (def.memberArray) {
+      const col = columnOf(def, def.memberArray.field);
+      const rows = (await tx
+        .select()
+        .from(def.table)
+        .where(and(eq(c.familyId, input.familyId), isNull(c.deletedAt), sql`${col} @> ARRAY[${input.userId}]::uuid[]`))) as Row[];
+      for (const row of rows) {
+        const rest = ((row[def.memberArray.field] as string[] | undefined) ?? []).filter((u) => u !== input.userId);
+        if (rest.length < def.memberArray.keepMin(row)) {
+          await tombstoneTree(env, def, row);
+          continue;
+        }
+        const rev = revs.next();
+        const fieldRevs = { ...((row.fieldRevs ?? {}) as Record<string, number>), [def.memberArray.field]: rev };
+        await tx
+          .update(def.table)
+          .set({ [def.memberArray.field]: rest, rev, fieldRevs, updatedAt: input.now } as never)
+          .where(and(eq(c.familyId, input.familyId), eq(c.id, String(row.id))));
+        await logChange(env, { def, id: String(row.id), rev, tombstone: false, created: false, changes: { [def.memberArray.field]: rest } });
+      }
     }
     for (const field of def.userRefs ?? []) {
       const col = columnOf(def, field);

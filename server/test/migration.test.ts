@@ -105,6 +105,9 @@ const TABLES = [
   'message_reactions',
   'message_reads',
   'files',
+  'konversationen',
+  'nachrichten',
+  'lesestand',
 ];
 
 const backends: [string, () => Promise<Backend>][] = [['PGlite', openPglite]];
@@ -165,7 +168,7 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
   });
 
   it('versieht änderbare Tabellen mit Sync-Spalten', async () => {
-    const syncTables = ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'lists', 'list_items', 'aufgaben', 'aufgabe_punkte', 'files', 'messages', 'message_reactions', 'message_reads'];
+    const syncTables = ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'lists', 'list_items', 'aufgaben', 'aufgabe_punkte', 'files', 'messages', 'message_reactions', 'message_reads', 'konversationen', 'nachrichten', 'lesestand'];
     for (const t of syncTables) {
       const cols = (
         await rows<{ column_name: string }>(
@@ -190,6 +193,36 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
       )
     ).map((r) => r.column_name);
     expect(eventCols).not.toContain('teilnehmer_ids');
+  });
+
+  it('Chat: ein Familienchat je Familie, ein Direktchat je Paar, Teilnehmerzahl je Art, Lesestand je Person und Konversation', async () => {
+    const { familyId, userId } = await seed();
+    const other = one(await db.insert(schema.users).values({ email: `${randomUUID()}@example.org`, displayName: 'Ben' }).returning()).id as string;
+    await db.insert(schema.memberships).values({ familyId, userId: other, role: 'child' });
+    const konv = (values: Partial<typeof schema.konversationen.$inferInsert>) => db.insert(schema.konversationen).values({ familyId, rev: 1, art: 'group', ...values });
+    await konv({ art: 'family' });
+    await expect(konv({ art: 'family' })).rejects.toThrow();
+    await expect(konv({ art: 'family', teilnehmer: [userId] })).rejects.toThrow();
+    const paar = [userId, other].sort();
+    await konv({ art: 'direct', teilnehmer: paar });
+    await expect(konv({ art: 'direct', teilnehmer: paar })).rejects.toThrow();
+    await expect(konv({ art: 'direct', teilnehmer: [userId] })).rejects.toThrow();
+    await expect(konv({ art: 'group', teilnehmer: [userId] })).rejects.toThrow();
+    await expect(konv({ art: 'group', teilnehmer: Array.from({ length: 21 }, () => randomUUID()) })).rejects.toThrow();
+    const gruppe = one(await konv({ art: 'group', teilnehmer: paar }).returning()).id as string;
+    // ein gelöschter Direktchat blockiert keinen neuen
+    await db.update(schema.konversationen).set({ deletedAt: new Date() }).where(sql`art = 'direct'`);
+    await konv({ art: 'direct', teilnehmer: paar });
+    // Nachrichten hängen an der Konversation (Kaskade), Text höchstens 16384 Zeichen
+    const msg = (text: string) => db.insert(schema.nachrichten).values({ familyId, konversationId: gruppe, text, rev: 2 });
+    await msg('x'.repeat(16384));
+    await expect(msg('x'.repeat(16385))).rejects.toThrow();
+    const ls = () => db.insert(schema.lesestand).values({ familyId, konversationId: gruppe, userId, gelesenBis: new Date(), rev: 3 });
+    await ls();
+    await expect(ls()).rejects.toThrow();
+    await db.delete(schema.konversationen).where(sql`id = ${gruppe}`);
+    expect(await rows(sql`select 1 from nachrichten where konversation_id = ${gruppe}`)).toHaveLength(0);
+    expect(await rows(sql`select 1 from lesestand where konversation_id = ${gruppe}`)).toHaveLength(0);
   });
 
   it('kennt die Rollen admin, parent, child (ohne guest)', async () => {

@@ -5,14 +5,25 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'app.dart';
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
+import 'data/chat/chat_krypto_state.dart';
 import 'data/calendar/zeitzonen.dart';
+import 'data/crypto/e2ee_state.dart';
 import 'data/database_provider.dart';
+import 'data/push/chat_benachrichtiger_provider.dart';
+import 'data/push/push_hintergrund.dart';
+import 'data/push/push_wecker.dart';
+import 'data/push/push_state.dart';
 import 'data/sync_state.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/auth/invite_intake.dart';
 
-Future<void> main() async {
+Future<void> main(List<String> args) async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Hintergrund-Start durch einen Push-Wecker (UnifiedPush-Dienst, App geschlossen): keine Oberfläche, nur abgleichen
+  if (args.contains(kPushHintergrundArgument)) {
+    await pushHintergrundStarten();
+    return;
+  }
   pruefeBasisAdressen();
   await initializeDateFormatting('de_DE');
   // Zeitzonen-Daten für Terminserien (Asset der App; schlägt das Laden fehl, rechnet die Anzeige mit UTC statt abzustürzen)
@@ -28,7 +39,13 @@ Future<void> main() async {
         inviteIntakeProvider.overrideWith(() => InviteIntake(vorhanden: link != null, anfang: link?.token)),
         // Abmelden leert die lokale Datenbank (Listen, Ausgang, Sync-Zustand); vorher wird der Sync angehalten, damit eine noch
         // laufende Antwort nicht in die geleerte Datenbank schreibt
-        localDataWiperProvider.overrideWith(lokaleDatenWiper),
+        // zusätzlich verschwindet der geheime E2EE-Personenschlüssel vom Gerät (Wiederverbinden per QR oder Wiederherstellungsschlüssel)
+        // unabhängig voneinander: ein Fehler beim Leeren der Datenbank darf das Löschen des Schlüssels nie verhindern (und umgekehrt)
+        localDataWiperProvider.overrideWith((ref) => wiperVerkettet([lokaleDatenWiper(ref), e2eeDatenWiper(ref), () async => ref.invalidate(chatKryptoProvider)])),
+        // nach einem Push-Wecker: lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
+        ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
+        // Abmelden meldet auch den Push-Endpunkt ab (Server und ntfy-App)
+        pushAbmeldenProvider.overrideWith((ref) => ({required bool serverLoeschen}) => ref.read(pushProvider.notifier).beimAbmelden(serverLoeschen: serverLoeschen)),
         // merkt den Besitzer der lokalen Daten: nur bei einer ANDEREN Person wird beim Anmelden geleert (nicht nach Sitzungsverlust)
         localDataOwnerProvider.overrideWith((ref) => DatenbankBesitzer(ref.read(appDatabaseProvider))),
       ],

@@ -28,7 +28,14 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   ref.listen(kalenderDatenProvider, (_, _) => dienst.entprellt());
   ref.listen(erinnerungEinstellungenProvider, (_, _) => los());
   ref.listen(authProvider.select((a) => (a.status, a.user?.id, a.hinweis)), (_, _) => los());
-  final lebenszyklus = AppLifecycleListener(onResume: los);
+  // Rückkehr (auch aus den Systemeinstellungen): Erlaubnis neu lesen, damit Anzeigen und Planung ohne Neustart nachziehen
+  final lebenszyklus = AppLifecycleListener(
+    onResume: () {
+      ref.invalidate(erinnerungStatusProvider);
+      ref.invalidate(erinnerungDiagnoseProvider);
+      los();
+    },
+  );
   ref.onDispose(lebenszyklus.dispose);
   Future.microtask(los);
 });

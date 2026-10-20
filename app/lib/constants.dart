@@ -82,6 +82,9 @@ const kAppName = 'lx-familyhub';
 
 const kPackageName = 'dev.lx_labs.fampad';
 
+/// Stabiler Download-Link der Android-App (Alias auf die neueste APK, wird beim Release-Upload angelegt). Enthält nie ein Token.
+const kApkDownloadUrl = 'https://familie.lx-labs.dev/releases/android/lx-familyhub-latest.apk';
+
 /// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64), erzeugt am 19.10.2026. Der private
 /// Schlüssel liegt nur als CI-Secret UPDATE_SIGNING_KEY und in der Sicherung des Betreibers, nie im Repo.
 const kUpdatePublicKey = 'kXAm22X6wnuxrYe/KEdukPD5r+pN4HpQHmUzDX3VoeM=';

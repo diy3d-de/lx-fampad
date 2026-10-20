@@ -1,17 +1,22 @@
 package dev.lx_labs.fampad
 
+import android.Manifest
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.PersistableBundle
 import android.provider.Settings
 import android.view.WindowManager
+import androidx.core.app.NotificationManagerCompat
+import androidx.core.content.ContextCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -35,7 +40,20 @@ class MainActivity : FlutterActivity() {
     companion object {
         /** Zuletzt von Dart gewünschter Zustand von FLAG_SECURE; als Klassenvariable, damit eine neu erstellte Activity ihn kennt. */
         private var secureWunsch = false
+
+        /** Kanal der Terminerinnerungen (lib/data/erinnerungen/erinnerung_port_android.dart); muss dort identisch sein. */
+        private const val ERINNERUNG_KANAL = "terminerinnerungen"
+        private const val CHAT_KANAL = "chat_nachrichten"
+        private const val PREFS = "lx_fampad_system"
+        private const val PREF_ANGEFRAGT = "benachrichtigung_angefragt"
     }
+
+    /**
+     * Start-Argumente der Dart-Seite nie aus einem Intent übernehmen: Das Argument "--unifiedpush-bg" (Hintergrund-Start ohne Oberfläche,
+     * lib/data/push/push_hintergrund.dart) setzt allein das UnifiedPush-Plugin in seiner eigenen Engine. Sonst könnte eine fremde App die
+     * sichtbare Oberfläche mit dem Argument starten (dann liefe nur der Abgleich, die App bliebe leer).
+     */
+    override fun getDartEntrypointArgs(): List<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -72,6 +90,69 @@ class MainActivity : FlutterActivity() {
         return true
     }
 
+    /** Darf die App Benachrichtigungen zeigen? Berechtigung (Android 13+), Systemschalter der App und der Kanal der Erinnerungen. */
+    private fun benachrichtigungenAn(): Boolean {
+        if (!NotificationManagerCompat.from(this).areNotificationsEnabled()) return false
+        val kanal = (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.getNotificationChannel(ERINNERUNG_KANAL)
+        return kanal == null || kanal.importance != NotificationManager.IMPORTANCE_NONE
+    }
+
+    /**
+     * Zeigt Android den Berechtigungsdialog noch? Nur ab Android 13, solange nicht dauerhaft verweigert: nie gefragt, oder die Person hat
+     * einmal abgelehnt (dann liefert shouldShowRequestPermissionRationale true). Nach "Nicht mehr fragen" bzw. zweiter Ablehnung kommt
+     * kein Dialog mehr, dann führt nur der Weg in die Einstellungen weiter.
+     */
+    private fun benachrichtigungFragbar(): Boolean {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return false
+        val erteilt = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        if (erteilt) return false
+        val angefragt = getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(PREF_ANGEFRAGT, false)
+        return !angefragt || shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** Wichtigkeit des Kanals der Erinnerungen (0 = aus, 4 = hoch); -1 = Kanal (noch) nicht angelegt. */
+    private fun kanalWichtigkeit(): Int =
+        (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.getNotificationChannel(ERINNERUNG_KANAL)?.importance ?: -1
+
+    /** Wichtigkeit des Kanals der Chat-Benachrichtigungen (0 = aus); -1 = Kanal (noch) nicht angelegt. Eigener Kanal: die Person kann ihn getrennt von den Erinnerungen abschalten. */
+    private fun chatKanalWichtigkeit(): Int =
+        (getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager)?.getNotificationChannel(CHAT_KANAL)?.importance ?: -1
+
+    /** Öffnet "Alarme & Erinnerungen" der App (Android 12+), Rückfall die App-Info. */
+    private fun alarmEinstellungenOeffnen(): Boolean {
+        val versuche = mutableListOf<Intent>()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            versuche.add(Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:$packageName")))
+        }
+        versuche.add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+        for (intent in versuche) {
+            try {
+                startActivity(intent)
+                return true
+            } catch (_: Exception) {
+                // nächster Versuch
+            }
+        }
+        return false
+    }
+
+    /** Öffnet die Benachrichtigungseinstellungen der App, Rückfall die App-Info. Kein resolveActivity (Paketsichtbarkeit ab Android 11). */
+    private fun benachrichtigungsEinstellungenOeffnen(): Boolean {
+        val versuche = listOf(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+        )
+        for (intent in versuche) {
+            try {
+                startActivity(intent)
+                return true
+            } catch (_: Exception) {
+                // nächster Versuch
+            }
+        }
+        return false
+    }
+
     /** Nur Links der eigenen Domain (https). Die Daten werden aus dem Intent entfernt, damit sie nicht erneut gelesen werden. */
     private fun linkAus(intent: Intent?): String? {
         if (intent?.action != Intent.ACTION_VIEW) return null
@@ -103,6 +184,21 @@ class MainActivity : FlutterActivity() {
                         secureAnwenden()
                         result.success(null)
                     }
+                    "notificationStatus" ->
+                        result.success(
+                            mapOf(
+                                "enabled" to benachrichtigungenAn(),
+                                "canAsk" to benachrichtigungFragbar(),
+                                "channelImportance" to kanalWichtigkeit(),
+                            ),
+                        )
+                    "chatChannelImportance" -> result.success(chatKanalWichtigkeit())
+                    "openExactAlarmSettings" -> result.success(alarmEinstellungenOeffnen())
+                    "notificationAsked" -> {
+                        getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(PREF_ANGEFRAGT, true).apply()
+                        result.success(null)
+                    }
+                    "openNotificationSettings" -> result.success(benachrichtigungsEinstellungenOeffnen())
                     "copySensitive" -> {
                         val text = call.argument<String>("text")
                         result.success(if (text == null) false else geheimKopieren(text))

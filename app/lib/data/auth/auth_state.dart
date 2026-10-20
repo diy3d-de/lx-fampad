@@ -73,6 +73,10 @@ class MemoryLocalDataOwner implements LocalDataOwner {
   Future<void> setzen(String userId) async => _id = userId;
 }
 
+/// Hook für Push (main.dart): beim Abmelden den Endpunkt beim Server löschen (`serverLoeschen`, solange die Sitzung noch gilt) und beim
+/// Verteiler (ntfy-App) abmelden. Standard: nichts (Tests, Web).
+final pushAbmeldenProvider = Provider<Future<void> Function({required bool serverLoeschen})>((ref) => ({required bool serverLoeschen}) async {});
+
 final localDataOwnerProvider = Provider<LocalDataOwner>((ref) => MemoryLocalDataOwner());
 
 /// Ergebnis des Abmeldens (die Person wird informiert, wenn etwas nicht vollständig geklappt hat).
@@ -314,6 +318,11 @@ class AuthController extends Notifier<AuthState> {
   Future<AbmeldeErgebnis> abmelden({bool ueberall = false, bool nurLokal = false}) async {
     var serverOk = false;
     if (!nurLokal) {
+      // Push zuerst abmelden, solange die Sitzung noch gilt (danach würde der Server das DELETE ablehnen); Fehler sind hier egal,
+      // der Server löscht den Endpunkt beim Abmelden ohnehin
+      try {
+        await ref.read(pushAbmeldenProvider)(serverLoeschen: true);
+      } catch (_) {}
       try {
         if (ueberall) {
           await _api.ueberallAbmelden();
@@ -340,6 +349,9 @@ class AuthController extends Notifier<AuthState> {
     _gen++;
     var sauber = true;
     try {
+      try {
+        await ref.read(pushAbmeldenProvider)(serverLoeschen: false);
+      } catch (_) {}
       try {
         await _client.sitzungVerwerfen();
       } catch (_) {

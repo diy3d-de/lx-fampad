@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/chat/chat_repository.dart';
+import '../../data/push/push_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
@@ -54,7 +56,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     _ersteUpdatePruefung = Timer(const Duration(seconds: 3), _updatePruefen);
     // Sync-Dienst: Abgleich beim Start, WebSocket und Zeitgeber laufen, solange die angemeldete Oberfläche offen ist
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) ref.read(syncProvider.notifier).starten();
+      if (!mounted) return;
+      ref.read(syncProvider.notifier).starten();
+      // Push (nur Android): Zustand laden und, falls eingeschaltet, bei jedem Start erneut beim Verteiler registrieren
+      unawaited(ref.read(pushProvider.notifier).starten());
     });
   }
 
@@ -87,14 +92,25 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final tab = ref.watch(shellTabProvider);
+    final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
     return LayoutBuilder(builder: (context, c) {
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
       if (c.maxWidth >= kDesktopBreakpoint) return DesktopShell(screens: _desktopScreens);
-      return _mobil(updateDa, tab);
+      return _mobil(updateDa, tab, ungelesen);
     });
   }
 
-  Widget _mobil(bool updateDa, int tab) {
+  Widget _mobil(bool updateDa, int tab, int ungelesen) {
+    // Zeichen am Tab: Update-Hinweis am Start, Anzahl ungelesener Nachrichten am Chat
+    Widget symbol(int i, IconData icon) {
+      final chat = i == kChatTab && ungelesen > 0;
+      return Badge(
+        isLabelVisible: (updateDa && i == 0) || chat,
+        label: chat ? Text(ungelesen > 99 ? '99+' : '$ungelesen') : null,
+        child: Icon(icon),
+      );
+    }
+
     return Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
@@ -106,9 +122,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         destinations: [
           for (var i = 0; i < kTabs.length; i++)
             NavigationDestination(
-              icon: Badge(isLabelVisible: updateDa && i == 0, child: Icon(kTabs[i].icon)),
-              selectedIcon: Badge(isLabelVisible: updateDa && i == 0, child: Icon(kTabs[i].selectedIcon)),
+              icon: symbol(i, kTabs[i].icon),
+              selectedIcon: symbol(i, kTabs[i].selectedIcon),
               label: kTabs[i].label,
+              tooltip: i == kChatTab && ungelesen > 0 ? 'Chat, $ungelesen ungelesen' : kTabs[i].label,
             ),
         ],
       ),

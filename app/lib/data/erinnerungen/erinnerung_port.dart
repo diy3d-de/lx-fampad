@@ -9,6 +9,25 @@ const kTestBenachrichtigungId = 1;
 /// ID der Hinweis-Benachrichtigung "Erinnerungen laufen aus" (gehört zur Planung, siehe erinnerung_planung.dart).
 const kAuslaufHinweisId = 2;
 
+/// Zustand der Benachrichtigungs-Erlaubnis: [erlaubt]; [fragbar] = nicht erlaubt, aber Android zeigt den Dialog noch (nie gefragt oder einmal
+/// abgelehnt); [gesperrt] = nicht erlaubt und kein Dialog mehr möglich (dauerhaft verweigert, Systemschalter aus): nur die Einstellungen helfen.
+/// [unbekannt] = der Systemaufruf selbst ist gescheitert (kein Ergebnis, nicht als "verweigert" werten).
+enum BenachrichtigungsStatus { erlaubt, fragbar, gesperrt, unbekannt }
+
+/// Nur Zustände für die Diagnose-Zeile (keine Inhalte): Plugin bereit, Erlaubnis, Wichtigkeit des Kanals (0 = aus, -1 = unbekannt/nicht angelegt),
+/// genaue Alarme, Anzahl geplanter Erinnerungen (-1 = unbekannt).
+class ErinnerungDiagnose {
+  final bool bereit;
+  final bool erlaubt;
+  final int kanal;
+  final bool exakt;
+  final int geplant;
+
+  /// Art des letzten gescheiterten Systemaufrufs (Typ/Fehlercode), sonst null.
+  final String? fehler;
+  const ErinnerungDiagnose({this.bereit = false, this.erlaubt = false, this.kanal = -1, this.exakt = false, this.geplant = -1, this.fehler});
+}
+
 abstract class ErinnerungPort {
   /// Gibt es auf diesem Gerät Erinnerungen? Nur Android (nicht Web).
   bool get verfuegbar;
@@ -24,7 +43,10 @@ abstract class ErinnerungPort {
   /// Darf die App Benachrichtigungen anzeigen? (Android 13+: Berechtigung POST_NOTIFICATIONS; sonst Systemschalter)
   Future<bool> benachrichtigungenErlaubt();
 
-  /// Fragt die Berechtigung ab (Android 13+: Systemdialog). Liefert, ob sie jetzt erteilt ist.
+  /// Wie [benachrichtigungenErlaubt], zusätzlich ob der Systemdialog noch möglich ist.
+  Future<BenachrichtigungsStatus> benachrichtigungsStatus();
+
+  /// Fragt die Berechtigung ab (Android 13+: Systemdialog; bei dauerhafter Verweigerung erscheint keiner). Liefert, ob sie jetzt erteilt ist.
   Future<bool> benachrichtigungenAnfragen();
 
   /// Dürfen Alarme zur genauen Zeit gesetzt werden? Ohne das fällt die Planung auf ungenaue Alarme zurück (Abweichung einige Minuten).
@@ -41,8 +63,14 @@ abstract class ErinnerungPort {
   /// Testbenachrichtigung nach [wartezeit].
   Future<bool> testPlanen(Duration wartezeit, {required bool exakt, required bool sperrbildschirmTitel});
 
-  /// Öffnet die Systemeinstellungen der App für Benachrichtigungen.
-  Future<void> systemEinstellungenOeffnen();
+  /// Öffnet die Systemeinstellungen der App für Benachrichtigungen. false = ließ sich nicht öffnen (die Oberfläche zeigt dann einen Hinweis).
+  Future<bool> systemEinstellungenOeffnen();
+
+  /// Öffnet "Alarme & Erinnerungen" der App (genaue Alarme). false = ließ sich nicht öffnen.
+  Future<bool> alarmEinstellungenOeffnen();
+
+  /// Zustände für die Diagnose-Zeile.
+  Future<ErinnerungDiagnose> diagnose();
 }
 
 /// Ohne Wirkung: Web und alle Plattformen ohne Erinnerungen.
@@ -58,6 +86,8 @@ class KeinErinnerungPort implements ErinnerungPort {
   @override
   Future<bool> benachrichtigungenErlaubt() async => false;
   @override
+  Future<BenachrichtigungsStatus> benachrichtigungsStatus() async => BenachrichtigungsStatus.gesperrt;
+  @override
   Future<bool> benachrichtigungenAnfragen() async => false;
   @override
   Future<bool> exakteAlarmeMoeglich() async => false;
@@ -68,5 +98,9 @@ class KeinErinnerungPort implements ErinnerungPort {
   @override
   Future<bool> testPlanen(Duration wartezeit, {required bool exakt, required bool sperrbildschirmTitel}) async => false;
   @override
-  Future<void> systemEinstellungenOeffnen() async {}
+  Future<bool> systemEinstellungenOeffnen() async => false;
+  @override
+  Future<bool> alarmEinstellungenOeffnen() async => false;
+  @override
+  Future<ErinnerungDiagnose> diagnose() async => const ErinnerungDiagnose();
 }

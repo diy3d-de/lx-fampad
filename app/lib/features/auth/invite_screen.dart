@@ -12,6 +12,7 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../ui/widgets.dart';
+import 'app_download.dart';
 import 'auth_widgets.dart';
 import 'invite_link.dart';
 import 'qr_anzeige.dart';
@@ -21,7 +22,11 @@ import 'recovery_codes_screen.dart';
 class InviteScreen extends ConsumerStatefulWidget {
   /// Schon bekanntes Token (aus Adresszeile, Intent oder Scan); sonst wird der Link eingegeben.
   final String? token;
-  const InviteScreen({super.key, this.token});
+
+  /// Nur für Tests: Browser/Android erzwingen (Standard: echte Plattform).
+  final bool? webAndroid;
+  final bool? webBrowser;
+  const InviteScreen({super.key, this.token, this.webAndroid, this.webBrowser});
 
   @override
   ConsumerState<InviteScreen> createState() => _InviteScreenState();
@@ -166,7 +171,9 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     } else {
       inhalt = _eingabe();
     }
-    return AuthSeite(label: '// einladung', titel: 'Einladung annehmen', kinder: [inhalt]);
+    // Hinweis auf die App nur im Browser und nur vor dem Registrieren (nicht bei Passwort-/TOTP-Stufe)
+    final hinweis = _start == null ? WillkommenAppHinweis(android: widget.webAndroid, istWeb: widget.webBrowser) : null;
+    return AuthSeite(label: '// einladung', titel: 'Einladung annehmen', kinder: [?hinweis, inhalt]);
   }
 
   // ------------------------------------------------------------ Stufe 1: Link

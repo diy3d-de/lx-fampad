@@ -48,6 +48,28 @@ class SystemChannel {
   /// Kopiert einen Geheimtext als "vertraulich" in die Zwischenablage (Android 13+: keine Vorschau). false = nicht möglich (Web, Tests).
   Future<bool> geheimKopieren(String text) async => (await _aufrufen<bool>('copySensitive', {'text': text})) == true;
 
+  /// Benachrichtigungen dieser App: [enabled] = darf anzeigen (Berechtigung, Systemschalter, Kanal), [canAsk] = Android zeigt den
+  /// Berechtigungsdialog noch. null = Kanal nicht verfügbar (Web, Tests).
+  /// [kanal]: Wichtigkeit des Erinnerungs-Kanals (0 = aus, -1 = nicht angelegt).
+  Future<({bool enabled, bool canAsk, int kanal})?> benachrichtigungsStatus() async {
+    final r = await _aufrufen<Map<Object?, Object?>>('notificationStatus');
+    if (r == null) return null;
+    final k = r['channelImportance'];
+    return (enabled: r['enabled'] == true, canAsk: r['canAsk'] == true, kanal: k is int ? k : -1);
+  }
+
+  /// Wichtigkeit des Kanals der Chat-Benachrichtigungen (0 = aus, -1 = nicht angelegt oder nicht lesbar).
+  Future<int> chatKanalWichtigkeit() async => (await _aufrufen<int>('chatChannelImportance')) ?? -1;
+
+  /// Öffnet "Alarme & Erinnerungen" der App (Rückfall App-Info). false = nicht möglich.
+  Future<bool> alarmEinstellungenOeffnen() async => (await _aufrufen<bool>('openExactAlarmSettings')) == true;
+
+  /// Merkt, dass der Berechtigungsdialog angefordert wurde (nötig, um "nie gefragt" von "dauerhaft verweigert" zu unterscheiden).
+  Future<void> benachrichtigungAngefragt() => _aufrufen<void>('notificationAsked');
+
+  /// Öffnet die Benachrichtigungseinstellungen der App (Rückfall: App-Info). false = nicht möglich.
+  Future<bool> benachrichtigungsEinstellungenOeffnen() async => (await _aufrufen<bool>('openNotificationSettings')) == true;
+
   /// Schaltet den Bildschirmfoto-Schutz (FLAG_SECURE) ein; zählt verschachtelte Aufrufe mit.
   Future<void> schuetzen() async {
     _geschuetzt++;
