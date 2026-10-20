@@ -21,3 +21,6 @@ const kKalenderTab = 1;
 
 /// Index des Chat-Tabs in [kTabs].
 const kChatTab = 2;
+
+/// Index des Standort-Bereichs in [kDesktopTabs] (nur im Desktop-Layout ein Bereich der Shell; mobil keine Tab-Leiste dafür).
+const kStandortTab = 6;

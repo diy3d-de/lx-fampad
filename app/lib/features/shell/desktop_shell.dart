@@ -23,15 +23,26 @@ const _kBaldBereiche = <(String, IconData)>[
   ('Orte', Icons.place_outlined),
 ];
 
+/// Marke im Baum: "hier ist die Desktop-Shell". So entscheidet [standortOeffnen] danach, ob der Bereich zu wählen ist (statt nach der Fensterbreite zu raten);
+/// eine gepushte Seite über der Shell liegt nicht darunter und öffnet wie mobil eine Seite.
+class DesktopShellMarke extends InheritedWidget {
+  const DesktopShellMarke({super.key, required super.child});
+
+  static bool vorhanden(BuildContext context) => context.getInheritedWidgetOfExactType<DesktopShellMarke>() != null;
+
+  @override
+  bool updateShouldNotify(DesktopShellMarke alt) => false;
+}
+
 class DesktopShell extends ConsumerWidget {
-  /// Bereiche in Reihenfolge von [kTabs]; Index 0 ist die Desktop-Startseite.
+  /// Bereiche in Reihenfolge von [kDesktopTabs]; Index 0 ist die Desktop-Startseite.
   final List<Widget> screens;
   const DesktopShell({super.key, required this.screens});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final tab = ref.watch(shellTabProvider);
-    return Scaffold(
+    final shell = Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
         child: SafeArea(
@@ -64,6 +75,7 @@ class DesktopShell extends ConsumerWidget {
         ),
       ),
     );
+    return DesktopShellMarke(child: shell);
   }
 }
 
@@ -139,10 +151,10 @@ class _Seitenleiste extends ConsumerWidget {
               child: FocusTraversalGroup(
                 child: ListView(
                   children: [
-                    for (var i = 0; i < kTabs.length; i++)
+                    for (var i = 0; i < kDesktopTabs.length; i++)
                       _NavEintrag(
-                        icon: tab == i ? kTabs[i].selectedIcon : kTabs[i].icon,
-                        label: kTabs[i].label,
+                        icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
+                        label: kDesktopTabs[i].label,
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
                         zaehler: i == kChatTab ? ungelesen : 0,
