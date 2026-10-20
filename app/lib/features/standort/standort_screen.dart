@@ -24,7 +24,9 @@ import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'standort_karte.dart';
 
 class StandortScreen extends ConsumerStatefulWidget {
-  const StandortScreen({super.key});
+  /// Im Desktop-Layout als Bereich der Shell (Seitenleiste bleibt): ohne eigenen Hintergrund, ohne Zurück-Pfeil. Sonst eigene Seite (mobil, gepusht).
+  final bool eingebettet;
+  const StandortScreen({super.key, this.eingebettet = false});
 
   @override
   ConsumerState<StandortScreen> createState() => _StandortScreenState();
@@ -141,66 +143,67 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
     final karte = ref.watch(standortKartenBuilderProvider);
     final mitPosition = [for (final p in liste) if (p.hatPosition) p];
 
+    return _huelle(
+      ListView(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        children: [
+          if (!widget.eingebettet)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: IconButton(tooltip: 'Zurück', icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).maybePop()),
+            ),
+          const TabKopfzeile(title: 'Standort'),
+          const SizedBox(height: 16),
+          const MonoLabel('// mein standort'),
+          const SizedBox(height: 8),
+          if (!port.verfuegbar)
+            const MeldungsBox('Deinen Standort teilen kannst du nur in der Android-App. Hier siehst du, wer gerade mit dir teilt.', fehler: false)
+          else if (st.teilt)
+            _Teilen(st: st, namen: namen, jetzt: jetzt)
+          else
+            _Start(
+              st: st,
+              andere: andere,
+              laedt: mitglieder.isLoading && andere.isEmpty,
+              gewaehlt: _gewaehlt ?? const {},
+              dauer: _dauer,
+              takt: _takt,
+              beschaeftigt: _beschaeftigt,
+              krypto: krypto,
+              onDauer: (i) => setState(() => _dauer = i),
+              onTakt: (t) => setState(() => _takt = t),
+              onUmschalten: (id) => setState(() {
+                final s = {...?_gewaehlt};
+                s.contains(id) ? s.remove(id) : s.add(id);
+                _gewaehlt = s;
+              }),
+              onStart: () => unawaited(_teilen(andere)),
+            ),
+          const SizedBox(height: 24),
+          const MonoLabel('// familie'),
+          const SizedBox(height: 8),
+          if (karte != null && (mitPosition.isNotEmpty || st.eigene != null && st.phase == StandortPhase.teilt)) ...[
+            karte(context, mitPosition, namen),
+            const SizedBox(height: 12),
+          ],
+          if (liste.isEmpty)
+            const LxCard(
+              child: EmptyState(icon: Icons.location_off_outlined, title: 'Niemand teilt gerade', hint: 'Wenn jemand aus der Familie seinen Standort teilt, siehst du ihn hier.'),
+            )
+          else
+            for (final p in liste) ...[_Zeile(p: p, nutzer: namen[p.userId], jetzt: jetzt), const SizedBox(height: 8)],
+          if (port.verfuegbar) ...[const SizedBox(height: 16), const _AkkuHinweis()],
+        ],
+      ),
+    );
+  }
+
+  Widget _huelle(Widget liste) {
+    if (widget.eingebettet) return Material(type: MaterialType.transparency, child: liste);
     return Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
-        child: Material(
-          type: MaterialType.transparency,
-          child: SafeArea(
-            child: LxContentWidth(
-              child: ListView(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-                children: [
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: IconButton(tooltip: 'Zurück', icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).maybePop()),
-                  ),
-                  const TabKopfzeile(title: 'Standort'),
-                  const SizedBox(height: 16),
-                  const MonoLabel('// mein standort'),
-                  const SizedBox(height: 8),
-                  if (!port.verfuegbar)
-                    const MeldungsBox('Deinen Standort teilen kannst du nur in der Android-App. Hier siehst du, wer gerade mit dir teilt.', fehler: false)
-                  else if (st.teilt)
-                    _Teilen(st: st, namen: namen, jetzt: jetzt)
-                  else
-                    _Start(
-                      st: st,
-                      andere: andere,
-                      laedt: mitglieder.isLoading && andere.isEmpty,
-                      gewaehlt: _gewaehlt ?? const {},
-                      dauer: _dauer,
-                      takt: _takt,
-                      beschaeftigt: _beschaeftigt,
-                      krypto: krypto,
-                      onDauer: (i) => setState(() => _dauer = i),
-                      onTakt: (t) => setState(() => _takt = t),
-                      onUmschalten: (id) => setState(() {
-                        final s = {...?_gewaehlt};
-                        s.contains(id) ? s.remove(id) : s.add(id);
-                        _gewaehlt = s;
-                      }),
-                      onStart: () => unawaited(_teilen(andere)),
-                    ),
-                  const SizedBox(height: 24),
-                  const MonoLabel('// familie'),
-                  const SizedBox(height: 8),
-                  if (karte != null && (mitPosition.isNotEmpty || st.eigene != null && st.phase == StandortPhase.teilt)) ...[
-                    karte(context, mitPosition, namen),
-                    const SizedBox(height: 12),
-                  ],
-                  if (liste.isEmpty)
-                    const LxCard(
-                      child: EmptyState(icon: Icons.location_off_outlined, title: 'Niemand teilt gerade', hint: 'Wenn jemand aus der Familie seinen Standort teilt, siehst du ihn hier.'),
-                    )
-                  else
-                    for (final p in liste) ...[_Zeile(p: p, nutzer: namen[p.userId], jetzt: jetzt), const SizedBox(height: 8)],
-                  if (port.verfuegbar) ...[const SizedBox(height: 16), const _AkkuHinweis()],
-                ],
-              ),
-            ),
-          ),
-        ),
+        child: Material(type: MaterialType.transparency, child: SafeArea(child: LxContentWidth(child: liste))),
       ),
     );
   }

@@ -24,7 +24,7 @@ const _kBaldBereiche = <(String, IconData)>[
 ];
 
 class DesktopShell extends ConsumerWidget {
-  /// Bereiche in Reihenfolge von [kTabs]; Index 0 ist die Desktop-Startseite.
+  /// Bereiche in Reihenfolge von [kDesktopTabs]; Index 0 ist die Desktop-Startseite.
   final List<Widget> screens;
   const DesktopShell({super.key, required this.screens});
 
@@ -139,10 +139,10 @@ class _Seitenleiste extends ConsumerWidget {
               child: FocusTraversalGroup(
                 child: ListView(
                   children: [
-                    for (var i = 0; i < kTabs.length; i++)
+                    for (var i = 0; i < kDesktopTabs.length; i++)
                       _NavEintrag(
-                        icon: tab == i ? kTabs[i].selectedIcon : kTabs[i].icon,
-                        label: kTabs[i].label,
+                        icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
+                        label: kDesktopTabs[i].label,
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
                         zaehler: i == kChatTab ? ungelesen : 0,

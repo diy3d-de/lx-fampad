@@ -16,12 +16,13 @@ import '../files/files_screen.dart';
 import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
+import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
 import '../update/update_service.dart';
 import 'desktop_shell.dart';
 import 'shell_tab.dart';
 
-/// Rahmen der angemeldeten App: Glow-Hintergrund, die sechs Tabs und die Material-3-NavigationBar.
+/// Rahmen der angemeldeten App: Glow-Hintergrund, die sechs Tabs (Desktop: dazu Standort) und die Material-3-NavigationBar.
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -32,7 +33,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(5, (_) => GlobalKey());
+  final _keys = List.generate(6, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -41,7 +42,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     ListsScreen(key: _keys[3]),
     TasksScreen(key: _keys[4]),
   ];
-  late final _desktopScreens = <Widget>[const DesktopHome(), ..._screens.sublist(1)];
+  // Desktop: dazu Standort als Bereich neben den anderen (mobil eine eigene Seite)
+  late final _desktopScreens = <Widget>[const DesktopHome(), ..._screens.sublist(1), StandortScreen(key: _keys[5], eingebettet: true)];
 
   DateTime? _letztePruefung;
   Timer? _ersteUpdatePruefung;
@@ -103,7 +105,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     return LayoutBuilder(builder: (context, c) {
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
       if (c.maxWidth >= kDesktopBreakpoint) return DesktopShell(screens: _desktopScreens);
-      return _mobil(updateDa, tab, ungelesen);
+      // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
+      return _mobil(updateDa, tab < kTabs.length ? tab : 0, ungelesen);
     });
   }
 

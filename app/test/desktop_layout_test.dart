@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
+import 'package:lx_fampad/features/shell/shell_tab.dart';
 
 import 'support/harness.dart';
 import 'support/test_app.dart';
@@ -83,6 +84,49 @@ void main() {
     await tester.tap(find.text('Noch keine Dateien'));
     await warte(tester);
     expect(find.text('// ZULETZT GETEILT'), findsNothing);
+  });
+
+  for (final groesse in [const Size(1200, 800), const Size(900, 700)]) {
+    testWidgets('${groesse.width.toInt()} px: Standort ist ein Seitenleisten-Bereich (Seitenleiste und Fußzeile bleiben), kein Zurück-Pfeil', (tester) async {
+      final handle = tester.ensureSemantics();
+      await start(tester, groesse);
+      expect(navEintrag('Standort'), findsOneWidget);
+      await tester.tap(navEintrag('Standort'));
+      await warte(tester);
+      expect(tester.widget<IndexedStack>(find.byType(IndexedStack).first).index, kStandortTab);
+      expect(find.text('lx-familyhub'), findsOneWidget); // Seitenleiste
+      expect(find.textContaining('sync: '), findsOneWidget); // Fußzeile
+      expect(find.text('Standort'), findsNWidgets(2)); // Seitenleiste + Kopfzeile des Bereichs
+      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(find.byTooltip('Zurück'), findsNothing);
+      expect(find.byType(NavigationBar), findsNothing);
+      // zurück zur Startseite über die Seitenleiste
+      await tester.tap(navEintrag('Start'));
+      await warte(tester);
+      expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      handle.dispose();
+    });
+  }
+
+  testWidgets('Startseite (Desktop): die Standort-Karte wechselt in den Bereich statt eine Seite zu öffnen', (tester) async {
+    await start(tester, const Size(1440, 900));
+    await tester.tap(find.text('// STANDORT'));
+    await warte(tester);
+    expect(find.text('// MEIN STANDORT'), findsOneWidget);
+    expect(find.text('lx-familyhub'), findsOneWidget);
+    expect(find.byTooltip('Zurück'), findsNothing);
+  });
+
+  testWidgets('Standort gewählt, Fenster wird schmal: Navigationsleiste ohne Standort-Tab, Startseite', (tester) async {
+    await start(tester, const Size(1440, 900));
+    await tester.tap(find.bySemanticsLabel('Standort'));
+    await warte(tester);
+    tester.view.physicalSize = const Size(600, 900);
+    await warte(tester);
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(find.descendant(of: find.byType(NavigationBar), matching: find.text('Standort')), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('"+ Neu" bietet eine neue Liste an', (tester) async {

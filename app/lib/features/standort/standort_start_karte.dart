@@ -8,10 +8,15 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../ui/widgets.dart';
+import '../shell/shell_tab.dart';
 import 'standort_screen.dart';
 
-/// Öffnet die Standort-Seite.
+/// Öffnet die Standort-Seite: im Desktop-Layout als Bereich der Shell (Seitenleiste und Fußzeile bleiben), mobil als eigene Seite.
 void standortOeffnen(BuildContext context) {
+  if (MediaQuery.sizeOf(context).width >= kDesktopBreakpoint) {
+    ProviderScope.containerOf(context).read(shellTabProvider.notifier).waehlen(kStandortTab);
+    return;
+  }
   unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const StandortScreen())));
 }
 
