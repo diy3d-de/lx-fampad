@@ -169,6 +169,7 @@ class _Liste extends ConsumerWidget {
     final mitglieder = chatMitglieder(ref, eintraege);
     final ich = ref.watch(authProvider.select((s) => s.user?.id));
     final inhalt = ref.watch(nachrichtenInhaltProvider);
+    final fehlerChats = ref.watch(chatsMitFehlerProvider).value ?? const <String>{};
     final gewaehlt = zweiSpalten ? ref.watch(gewaehlterChatProvider) : null;
     final direkt = [for (final e in eintraege) if (e.art == ChatArt.direct) e];
     final gruppen = [for (final e in eintraege) if (e.art == ChatArt.group) e];
@@ -183,6 +184,7 @@ class _Liste extends ConsumerWidget {
         vorschau: chatVorschau(e, mitglieder, ich, inhalt),
         person: anderer,
         gewaehlt: e.id == gewaehlt,
+        fehler: fehlerChats.contains(e.id),
         onTap: () => onOeffnen(e.id),
       );
     }
@@ -238,8 +240,11 @@ class _Kachel extends StatelessWidget {
   final String vorschau;
   final UserDto? person;
   final bool gewaehlt;
+
+  /// Eine eigene Nachricht in diesem Chat wurde abgelehnt (nicht gesendet).
+  final bool fehler;
   final VoidCallback onTap;
-  const _Kachel({required this.eintrag, required this.name, required this.vorschau, required this.person, required this.gewaehlt, required this.onTap});
+  const _Kachel({required this.eintrag, required this.name, required this.vorschau, required this.person, required this.gewaehlt, required this.fehler, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -248,7 +253,7 @@ class _Kachel extends StatelessWidget {
     return Semantics(
       button: true,
       selected: gewaehlt,
-      label: 'Chat mit $name${ungelesen > 0 ? ', $ungelesen ungelesen' : ''}${zeit.isEmpty ? '' : ', $zeit'}. $vorschau',
+      label: 'Chat mit $name${ungelesen > 0 ? ', $ungelesen ungelesen' : ''}${fehler ? ', Nachricht nicht gesendet' : ''}${zeit.isEmpty ? '' : ', $zeit'}. $vorschau',
       excludeSemantics: true,
       onTap: onTap,
       child: Material(
@@ -280,6 +285,7 @@ class _Kachel extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
                       if (zeit.isNotEmpty) Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      if (fehler) const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.error_outline, size: 18, color: kDanger)),
                       if (ungelesen > 0) ...[const SizedBox(height: 4), UngelesenZeichen(ungelesen)],
                     ],
                   ),

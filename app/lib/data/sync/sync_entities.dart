@@ -59,6 +59,10 @@ abstract class SyncEntity {
 
   /// Bei `limit_reached` (Mengenbegrenzung des Servers) bleibt eine neue Zeile erhalten und wird später erneut gesendet, statt zu verschwinden.
   bool get bleibtBeiLimit => false;
+
+  /// Eine endgültig abgelehnte NEUE Zeile dieser Entität bleibt lokal und im Ausgang als Fehler stehen (mit Grund-Code), statt zu verschwinden: die Person
+  /// entscheidet über "Erneut senden" oder "Verwerfen" (heute nur Chat-Nachrichten).
+  bool get fehlerBleibtSichtbar => false;
 }
 
 DateTime? _zeit(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
@@ -481,6 +485,9 @@ class NachrichtEntitaet extends SyncEntity {
 
   @override
   bool get bleibtBeiLimit => true;
+
+  @override
+  bool get fehlerBleibtSichtbar => true;
 
   @override
   bool kannAnlegen(Json fields) => _text(fields['konversationId']) != null && _text(fields['text']) != null;

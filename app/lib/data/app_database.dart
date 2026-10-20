@@ -36,6 +36,10 @@ class Outbox extends Table {
 
   /// Wann die Op zuletzt an den Server ging (null: noch nie). Gesendete Ops werden nicht mehr mit späteren Änderungen verschmolzen.
   DateTimeColumn get sentAt => dateTime().nullable()();
+
+  /// Kurzer Grund-Code (z. B. `forbidden`), wenn der Server die Op endgültig abgelehnt hat und sie als Fehler im Ausgang bleibt (nur neue Chat-Nachrichten,
+  /// nie ein Inhalt). Solche Ops werden nicht mehr gesendet, bis die Person "Erneut senden" wählt oder sie verwirft.
+  TextColumn get fehlerCode => text().nullable()();
 }
 
 /// Listen (Einkauf, Packliste, eigene Listen).
@@ -327,8 +331,9 @@ class AppDatabase extends _$AppDatabase {
   /// Version 6 (E2EE Phase 2): `enc_version` der Konversationen, Epochen und Schlüssel-Wraps.
   /// Version 7 (Phase 1c-4a): Aufgaben und Unteraufgaben.
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
+  /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -375,6 +380,11 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(aufgaben);
           await m.createTable(aufgabePunkte);
           await m.createIndex(aufgabePunkteAufgabeIdx);
+        }
+        if (from < 9) {
+          // nur eine Spalte (kein Sync-Reset); nur anlegen, wenn sie fehlt (erneuter Lauf nach einem abgebrochenen Update)
+          final spalten = await customSelect("PRAGMA table_info('outbox')").get();
+          if (!spalten.any((r) => r.read<String>('name') == 'fehler_code')) await m.addColumn(outbox, outbox.fehlerCode);
         }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten

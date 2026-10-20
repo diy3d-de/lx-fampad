@@ -79,13 +79,19 @@ String uhrzeit(DateTime t) => DateFormat('HH:mm', 'de_DE').format(t);
 /// Text der Lesebestätigung (Tooltip und Screenreader): "wird gesendet", "gesendet", "gelesen" bzw. in Gruppen, wer gelesen hat.
 String leseBeschreibung(LeseInfo i, String Function(String id) name) {
   final basis = _leseBasis(i, name);
-  return i.geschaetzt && i.zustand != LeseZustand.wirdGesendet ? '$basis (Empfänger nur geschätzt)' : basis;
+  return i.geschaetzt && !i.ungesendet ? '$basis (Empfänger nur geschätzt)' : basis;
 }
 
 String _leseBasis(LeseInfo i, String Function(String id) name) {
   switch (i.zustand) {
+    case LeseZustand.wartet:
+      return 'wartet auf das Senden';
     case LeseZustand.wirdGesendet:
       return 'wird gesendet';
+    case LeseZustand.haengt:
+      return 'wartet auf Verbindung oder Schlüssel';
+    case LeseZustand.abgelehnt:
+      return 'Senden fehlgeschlagen: ${ablehnungsGrund(i.fehlerCode)}';
     case LeseZustand.gelesen:
       return i.empfaenger.length <= 1 ? 'gelesen' : 'gelesen von allen: ${(i.gelesenVon.toList()..sort()).map(name).join(', ')}';
     case LeseZustand.gesendet:
@@ -103,7 +109,9 @@ class LeseHaken extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (icon, farbe) = switch (info.zustand) {
-      LeseZustand.wirdGesendet => (Icons.schedule, kTextFaint),
+      LeseZustand.wartet || LeseZustand.wirdGesendet => (Icons.schedule, kTextFaint),
+      LeseZustand.haengt => (Icons.schedule, kWarn),
+      LeseZustand.abgelehnt => (Icons.error_outline, kDanger),
       LeseZustand.gesendet => (Icons.check, kTextFaint),
       LeseZustand.gelesen => (Icons.done_all, kAccent),
     };

@@ -38,6 +38,9 @@ class FakeSyncServer {
   /// Alle Anfragen scheitern mit einem Netzwerkfehler (kein Netz).
   bool offline = false;
 
+  /// Erzwingt die Ablehnung einer Op mit diesem Code (null: normal verarbeiten); die Op wird nicht angewendet.
+  String? Function(Map<String, dynamic> op)? ablehnung;
+
   /// Wirft nach dem Verarbeiten einmal einen Fehler (Antwort geht verloren, der Server hat aber angewendet).
   bool antwortVerlieren = false;
 
@@ -185,6 +188,8 @@ class FakeSyncServer {
   Map<String, dynamic> _ok([List<Map<String, dynamic>> conflicts = const []]) => {'status': 'acked', 'conflicts': conflicts};
 
   Map<String, dynamic> _op(Map<String, dynamic> o) {
+    final erzwungen = ablehnung?.call(o);
+    if (erzwungen != null) return _ab(erzwungen);
     final key = '${o['entity']}/${o['id']}';
     final z = zeilen[key];
     final baseRev = o['baseRev'] as int;
