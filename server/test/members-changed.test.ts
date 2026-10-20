@@ -3,7 +3,10 @@ import { randomBytes } from 'node:crypto';
 import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import WebSocket from 'ws';
+import { loadConfig } from '../src/config.js';
+import { createDb } from '../src/db/index.js';
 import { Hub } from '../src/ws/hub.js';
+import { TEST_KEY } from './helpers.js';
 import { addMember, adminPassword, backends, World, type Client, type Harness } from './helpers.js';
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -98,11 +101,34 @@ describe.each(backends)('members_changed bei Änderungen ($name)', (backend) => 
     expect(kind.complete?.status).toBe(200);
   });
 
+  it('wirft der Hinweis, scheitert weder die Änderung noch die Registrierung', async () => {
+    const a = await adminPassword(world);
+    world.app.hub.notifyMembersChanged = () => {
+      throw new Error('Hub kaputt');
+    };
+    expect((await a.client.put('/api/v1/me/family-role', { familyRole: 'elternteil' })).status).toBe(200);
+    const kind = await addMember(world, a.client, 'child', 'kind@example.org');
+    expect(kind.complete?.status).toBe(200);
+    expect((await kind.client.get('/api/v1/me')).status).toBe(200);
+  });
+
   it('eine fehlgeschlagene Änderung löst keinen Hinweis aus', async () => {
     const a = await adminPassword(world);
     const l = await listen(a.client);
     expect((await a.client.put('/api/v1/me/family-role', { familyRole: 'unsinn' })).status).toBeGreaterThanOrEqual(400);
     await wait(100);
     expect(l.count()).toBe(0);
+  });
+});
+
+describe('Zeitlimit der Datenbankanweisungen', () => {
+  const env = { NODE_ENV: 'test', AUTH_SECRET_KEY: TEST_KEY };
+  it('Standard 30 s, per DB_STATEMENT_TIMEOUT_MS einstellbar, im Pool gesetzt (serverseitig und im Client)', async () => {
+    expect(loadConfig(env).dbStatementTimeoutMs).toBe(30_000);
+    expect(loadConfig({ ...env, DB_STATEMENT_TIMEOUT_MS: '7000' }).dbStatementTimeoutMs).toBe(7000);
+    const { pool } = createDb('postgres://u:p@127.0.0.1:1/x', () => {}, 7000);
+    expect(pool.options.statement_timeout).toBe(7000);
+    expect(pool.options.query_timeout).toBe(12_000);
+    await pool.end();
   });
 });

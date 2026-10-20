@@ -182,7 +182,14 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
       // Push nur für Änderungen einer Person (Sync); nicht an deren Gerät, nicht an Geräte mit offener Verbindung
       if (origin) void push.weckeGeraete({ familyId, rev, roles, users, origin });
     };
-    authCore.ctx.onMembersChanged = (familyId) => hub.notifyMembersChanged(familyId);
+    authCore.ctx.onMembersChanged = (familyId) => {
+      // nur ein Hinweis: ein Fehler hier darf nie die Anfrage (Registrierung, Änderung) scheitern lassen
+      try {
+        hub.notifyMembersChanged(familyId);
+      } catch (err: unknown) {
+        app.log.warn({ err }, 'Hinweis "Mitglieder geändert" fehlgeschlagen');
+      }
+    };
     authCore.ctx.onRevoke = (e) => {
       // eine widerrufene Sitzung, ein entferntes Gerät oder Mitglied beendet das Teilen sofort (nicht erst nach der Schonfrist)
       location.revoke(e);

@@ -53,6 +53,8 @@ export interface Config {
   port: number;
   /** Laufzeit-Rolle (nur DML). */
   databaseUrl: string | undefined;
+  /** Zeitlimit je Datenbankanweisung im Laufzeit-Pool (Millisekunden). */
+  dbStatementTimeoutMs: number;
   /** Migrationsrolle (DDL, Eigentümer); nur migrate-cli. Ohne Angabe gilt databaseUrl (Rückfall für bestehende Installationen). */
   migrationDatabaseUrl: string | undefined;
   publicUrl: string;
@@ -227,6 +229,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     host: env.HOST ?? '127.0.0.1',
     port,
     databaseUrl: env.DATABASE_URL || undefined,
+    dbStatementTimeoutMs: positiveInt(env, 'DB_STATEMENT_TIMEOUT_MS', 30_000),
     migrationDatabaseUrl: env.MIGRATION_DATABASE_URL || undefined,
     publicUrl,
     auth: {

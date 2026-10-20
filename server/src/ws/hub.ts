@@ -148,7 +148,14 @@ export class Hub {
   /** Hinweis "Mitglieder geändert" (ohne Inhalt) an alle Geräte **dieser Familie** (Standort-Verbindungen ausgenommen). */
   notifyMembersChanged(familyId: string): void {
     const msg = JSON.stringify({ type: 'members_changed' } satisfies ServerMessage);
-    for (const e of this.byFamily.get(familyId) ?? []) if (!e.loc && e.socket.readyState === e.socket.OPEN) e.socket.send(msg);
+    for (const e of this.byFamily.get(familyId) ?? []) {
+      if (e.loc || e.socket.readyState !== e.socket.OPEN) continue;
+      try {
+        e.socket.send(msg);
+      } catch {
+        // ein kaputter Socket darf die anderen nicht aufhalten (er wird über 'close' entfernt)
+      }
+    }
   }
 
   /** Schickt eine Nachricht an alle offenen Verbindungen der genannten Personen **dieser Familie** (nie familienübergreifend). */
