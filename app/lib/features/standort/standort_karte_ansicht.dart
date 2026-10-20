@@ -321,23 +321,27 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
     });
   }
 
+  /// Pixeldichte, mit der das Web-Paket die Bilder der Karte anmeldet (dieselbe Quelle wie dort: die erste Ansicht).
+  double _pixeldichte() => WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio;
+
   /// Sorgt dafür, dass zu jeder Nadel genau ein passendes Bild im Kartenstil liegt (Web); Buchführung in [PinBildCache].
   /// Fertig: die Karte zeichnet neu. Das Vorgängerbild und die Bilder gegangener Personen werden entfernt, fehlgeschlagene Bilder nicht erneut versucht.
   void _bilderSichern(List<KartenEintrag> eintraege, DateTime jetzt) {
     final style = _style;
     if (style == null) return;
+    final massstab = pinMassstab(_pixeldichte());
     _bilderEntfernen(style, _bilder.aufraeumen({for (final e in eintraege) e.id}));
     for (final e in eintraege) {
       final a = e.user?.avatar;
       final veraltet = !e.eigene && jetzt.difference(e.messzeit) >= kStandortVeraltetNach;
       final gewaehlt = e.id == _gewaehlt;
-      final id = 'pin-${e.id}-${Object.hash(e.farbIndex, e.name, a?.istFoto, a?.vorlage, a?.version, veraltet, gewaehlt, e.eigene)}';
+      final id = 'pin-${e.id}-${Object.hash(e.farbIndex, e.name, a?.istFoto, a?.vorlage, a?.version, veraltet, gewaehlt, e.eigene, massstab)}';
       if (!_bilder.anfordern(e.id, id)) continue;
       unawaited(() async {
         var ok = false;
         try {
           final k = await _kopfBild(e.user);
-          final png = await pinPng(PinBildAngaben(farbIndex: e.farbIndex, name: e.name, kopfBild: k.bytes, bildAufFarbe: k.aufFarbe, veraltet: veraltet, gewaehlt: gewaehlt, eigene: e.eigene));
+          final png = await pinPng(PinBildAngaben(farbIndex: e.farbIndex, name: e.name, kopfBild: k.bytes, bildAufFarbe: k.aufFarbe, veraltet: veraltet, gewaehlt: gewaehlt, eigene: e.eigene), massstab: massstab);
           if (mounted && _style == style) {
             await style.addImage(id, png);
             ok = true;
@@ -486,7 +490,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                                   iconAnchor: IconAnchor.bottom,
                                   iconAllowOverlap: true,
                                   iconIgnorePlacement: true,
-                                  iconSize: 1 / kPinBildMassstab,
+                                  iconSize: pinIconSize(pinMassstab(_pixeldichte()), _pixeldichte()),
                                   // Ausrichtung zur Bildschirmfläche (Vorgabe 'auto' = viewport für Punktsymbole): die Nadel bleibt auch bei gedrehter oder geneigter Karte aufrecht
                                 ),
                         ],
