@@ -36,7 +36,7 @@ rsync -avP --partial --inplace neu.pmtiles lx-labs:/srv/fampad/karte/neu.pmtiles
 ssh lx-labs 'chmod 644 /srv/fampad/karte/neu.pmtiles && mv -f /srv/fampad/karte/neu.pmtiles /srv/fampad/karte/westerwald.pmtiles'   # atomar (gleiches Dateisystem)
 ```
 
-`chmod 644` ist nötig: sonst kann Caddy die Datei nicht lesen (404/403, in der App steht "Karte noch nicht eingerichtet"). Die Datei gehört nicht ins Backup (neu erzeugbar; das Backup umfasst nur `pg_dump` und `/srv/fampad/files`).
+`chmod 644` ist nötig: sonst kann Caddy die Datei nicht lesen (404/403, in der App steht "Karte noch nicht eingerichtet"). Die Datei gehört nicht ins Backup (neu erzeugbar, bewusst ausgenommen: `docs/BACKUP.md`).
 
 Der ETag ändert sich mit der Datei; laufende Karten laden beim nächsten Start neu. Quartalsweise wiederholen (Protomaps baut täglich; OSM-Daten ändern sich laufend, für Standort teilen genügt alle 3 Monate).
 

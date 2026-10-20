@@ -1,0 +1,11 @@
+[Unit]
+Description=lx-fampad: tägliche Sicherung (ca. 03:30 Uhr)
+
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=5min
+AccuracySec=1min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
