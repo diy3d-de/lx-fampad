@@ -32,6 +32,7 @@ class StandortScreen extends ConsumerStatefulWidget {
 class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBindingObserver {
   Timer? _auffrischen;
   var _dauer = 1;
+  var _takt = kStandortTaktStandard;
   Set<String>? _gewaehlt;
   var _beschaeftigt = false;
 
@@ -97,7 +98,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
     setState(() => _beschaeftigt = true);
     try {
       if (!await _akkuHinweis()) return;
-      final ok = await ref.read(standortProvider.notifier).teilen(dauer: dauer, empfaenger: waehlen);
+      final ok = await ref.read(standortProvider.notifier).teilen(dauer: dauer, empfaenger: waehlen, takt: _takt);
       if (!ok && mounted) {
         final m = ref.read(standortProvider).meldung;
         if (m != null) {
@@ -156,9 +157,11 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
                       laedt: mitglieder.isLoading && andere.isEmpty,
                       gewaehlt: _gewaehlt ?? const {},
                       dauer: _dauer,
+                      takt: _takt,
                       beschaeftigt: _beschaeftigt,
                       krypto: krypto,
                       onDauer: (i) => setState(() => _dauer = i),
+                      onTakt: (t) => setState(() => _takt = t),
                       onUmschalten: (id) => setState(() {
                         final s = {...?_gewaehlt};
                         s.contains(id) ? s.remove(id) : s.add(id);
@@ -197,9 +200,11 @@ class _Start extends StatelessWidget {
   final bool laedt;
   final Set<String> gewaehlt;
   final int dauer;
+  final StandortTakt takt;
   final bool beschaeftigt;
   final E2eeState krypto;
   final ValueChanged<int> onDauer;
+  final ValueChanged<StandortTakt> onTakt;
   final ValueChanged<String> onUmschalten;
   final VoidCallback onStart;
   const _Start({
@@ -208,9 +213,11 @@ class _Start extends StatelessWidget {
     required this.laedt,
     required this.gewaehlt,
     required this.dauer,
+    required this.takt,
     required this.beschaeftigt,
     required this.krypto,
     required this.onDauer,
+    required this.onTakt,
     required this.onUmschalten,
     required this.onStart,
   });
@@ -237,6 +244,16 @@ class _Start extends StatelessWidget {
           const SizedBox(height: 6),
           Text('höchstens ${kStandortHoechstdauer.inHours} Stunden', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
         ],
+        const SizedBox(height: 16),
+        const MonoLabel('// aktualisierung'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final t in StandortTakt.values) AuswahlKnopf(text: t.label, gewaehlt: takt == t, onTap: () => onTakt(t))],
+        ),
+        const SizedBox(height: 6),
+        const Text('Öfter senden zeigt Bewegungen genauer, kostet aber mehr Akku. Wer still steht, meldet sich seltener.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
         const SizedBox(height: 16),
         const MonoLabel('// mit wem'),
         const SizedBox(height: 4),

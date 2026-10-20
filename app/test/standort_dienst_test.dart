@@ -48,7 +48,7 @@ class _FakePort implements StandortPort {
   @override
   Future<StandortStatus> berechtigungAnfragen() async => statusWert;
   @override
-  Future<StartFehler?> starten(DateTime e) async {
+  Future<StartFehler?> starten(DateTime e, {Duration intervall = const Duration(seconds: 5)}) async {
     if (startFehler != null) return startFehler;
     gestartet++;
     ende = e;
@@ -258,27 +258,32 @@ Future<void> main() async {
         expect(e.veraltet(start.add(const Duration(minutes: 1))), isFalse);
       });
 
-      test('Drosselung: bei Bewegung höchstens alle 10 s, in Ruhe erst nach 60 s (dann wiederholt der Takt die letzte Position)', () async {
+      test('Drosselung (Normal, 5 s): bei Bewegung höchstens alle 5 s, kleine Schritte zählen nicht, in Ruhe erst nach 30 s (dann wiederholt der Takt die letzte Position)', () async {
         await teilenAnna();
         anna.port.ctrl.add(PositionEreignis(_pos(start)));
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), hasLength(1));
-        // 5 s später, 100 m weiter: noch zu früh
-        anna.jetzt = start.add(const Duration(seconds: 5));
+        // 3 s später, 100 m weiter: noch zu früh
+        anna.jetzt = start.add(const Duration(seconds: 3));
         anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1382)));
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), isEmpty);
-        // 12 s, 100 m weiter: Bewegung
-        anna.jetzt = start.add(const Duration(seconds: 12));
+        // 6 s, 100 m weiter: Bewegung
+        anna.jetzt = start.add(const Duration(seconds: 6));
         anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1382)));
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), hasLength(1));
-        // 25 s, gleicher Ort: Ruhe, noch nichts
+        // 12 s, 2 m weiter (unter 5 m): keine Bewegung, noch nichts
+        anna.jetzt = start.add(const Duration(seconds: 12));
+        anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.13822)));
+        await pumpen();
+        expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), isEmpty);
+        // 25 s, gleicher Ort: Ruhe, noch nichts (erst nach 30 s ohne Bewegung)
         anna.jetzt = start.add(const Duration(seconds: 25));
         anna.port.ctrl.add(PositionEreignis(_pos(anna.jetzt, lat: 48.1382)));
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), isEmpty);
-        // nach 75 s ohne Versand wiederholt der Takt (auch ohne neue Messung); die Messzeit bleibt die der letzten Messung
+        // nach 74 s ohne Versand wiederholt der Takt (auch ohne neue Messung); die Messzeit bleibt die der letzten Messung
         anna.jetzt = start.add(const Duration(seconds: 80));
         await Future<void>.delayed(const Duration(milliseconds: 80));
         final nach = await relay.weiter(anna);

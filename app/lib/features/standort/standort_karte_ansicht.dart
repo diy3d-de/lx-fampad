@@ -15,7 +15,6 @@ import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_modelle.dart';
-import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart' show LinkKnopf;
 import '../karte/karte_config.dart';
 import '../karte/karte_verfuegbar.dart';
@@ -232,7 +231,8 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   }
 
   Widget _karte(BuildContext context) {
-    _stil ??= _ladeStil();
+    // in der Attrappe (Tests) braucht es keinen Stil
+    _stil ??= ref.read(karteAttrappeProvider) ? Future.value('{}') : _ladeStil();
     final eintraege = _eintraege();
     if (_nach.isEmpty && eintraege.isNotEmpty) _ziele(eintraege);
     final jetzt = ref.read(standortUhrProvider)();

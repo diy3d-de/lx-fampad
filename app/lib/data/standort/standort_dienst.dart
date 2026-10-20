@@ -193,7 +193,7 @@ class StandortController extends Notifier<StandortState> {
   String? _ich;
   bool _vordergrund = true;
   bool _aktiv = false;
-  StandortTakt _takt = kStandortTaktStandard;
+  StandortTakt _sendeTakt = kStandortTaktStandard;
 
   /// Zählt Starts und Stopps der Freigabe: späte Antworten einer früheren Freigabe werden verworfen.
   int _lauf = 0;
@@ -296,7 +296,7 @@ class StandortController extends Notifier<StandortState> {
   /// Startet das Teilen für [dauer] mit [empfaenger]. Liefert true, wenn es läuft; sonst steht der Grund in [StandortState.meldung].
   Future<bool> teilen({required Duration dauer, required Set<String> empfaenger, StandortTakt takt = kStandortTaktStandard}) async {
     if (!_aktiv || state.teilt) return false;
-    _takt = takt;
+    _sendeTakt = takt;
     final lauf = ++_lauf;
     state = state.kopie(phase: StandortPhase.startet, meldungLoeschen: true, empfaenger: const {}, ausgelassen: const {});
     Future<bool> scheitern(String meldung, {bool dienstStoppen = false}) async {
@@ -355,7 +355,7 @@ class StandortController extends Notifier<StandortState> {
       _letzteGesendet = null;
       _letzterVersandZeit = null;
 
-      final fehler = await _port.starten(ende, intervall: _takt.intervall);
+      final fehler = await _port.starten(ende, intervall: _sendeTakt.intervall);
       if (lauf != _lauf) {
         // zwischendurch beendet: ein inzwischen gestarteter Dienst darf nicht weiterlaufen
         if (fehler == null) await _port.stoppen();
@@ -426,7 +426,7 @@ class StandortController extends Notifier<StandortState> {
       return;
     }
     // Ruhe: die letzte Position wiederholen, damit die anderen sehen, dass es noch aktuell ist
-    if (lauf == _lauf && state.phase == StandortPhase.teilt && _letzterVersandZeit != null && jetzt.difference(_letzterVersandZeit!) >= _takt.ruhe) {
+    if (lauf == _lauf && state.phase == StandortPhase.teilt && _letzterVersandZeit != null && jetzt.difference(_letzterVersandZeit!) >= _sendeTakt.ruhe) {
       await _senden();
     }
     // abgelaufene Freigaben anderer verschwinden (keine Historie)
@@ -505,9 +505,9 @@ class StandortController extends Notifier<StandortState> {
     final zeit = _letzterVersandZeit;
     if (letzte != null && zeit != null) {
       final seit = jetzt.difference(zeit);
-      if (seit < _takt.intervall) return;
+      if (seit < _sendeTakt.intervall) return;
       final bewegt = abstandMeter(letzte.breite, letzte.laenge, p.breite, p.laenge) >= bewegungsSchwelle(p.genauigkeit);
-      if (!bewegt && seit < _takt.ruhe) return;
+      if (!bewegt && seit < _sendeTakt.ruhe) return;
     }
     await _senden();
   }

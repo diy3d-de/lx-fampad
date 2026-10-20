@@ -42,7 +42,7 @@ void main() {
     antwort = {'ok': true};
     final ende = DateTime.utc(2026, 10, 20, 12);
     expect(await port.starten(ende), isNull);
-    expect(aufrufe.single.arguments, {'ende': ende.millisecondsSinceEpoch});
+    expect(aufrufe.single.arguments, {'ende': ende.millisecondsSinceEpoch, 'intervall': 5000});
     antwort = {'ok': false, 'grund': 'benachrichtigungen_aus'};
     expect(await port.starten(ende), StartFehler.benachrichtigungenAus);
     antwort = {'ok': false, 'grund': 'keine_berechtigung'};
