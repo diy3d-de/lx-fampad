@@ -6,7 +6,7 @@
 #   sign    sieht nur UPDATE_SIGNING_KEY; läuft in der Environment "release" (manuelle Freigabe), baut selbst nichts
 #   draft   hat nur das GITHUB_TOKEN (contents: write); legt den Entwurf an
 #   deploy  sieht nur den SSH-Schlüssel; Environment "vps-deploy" (manuelle Freigabe); nur auf ausdrücklichen Wunsch
-# Alle Aktionen sind auf Commit-SHA gepinnt (Version im Kommentar). Es gibt keine Drittanbieter-Aktion außer subosito/flutter-action.
+# Alle Aktionen sind auf Commit-SHA gepinnt (Version im Kommentar). Es gibt keine Drittanbieter-Aktion außer subosito/flutter-action. Caches: im build-Job (Gradle) nur actions/cache/restore (kein Speichern), geschrieben werden sie von ci.yml.
 name: Release (Android)
 
 on:
@@ -91,6 +91,14 @@ jobs:
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
 
+      # Gradle-Cache, ebenfalls nur lesen (gleicher Schlüssel wie in ci.yml, Treffer vom Standardzweig)
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('app/android/**/*.gradle*', 'app/android/gradle/wrapper/gradle-wrapper.properties', 'app/pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
       # pubspec.lock ist eingecheckt: nichts neu auflösen
       - name: Pakete (Lockfile erzwingen)
         working-directory: app
