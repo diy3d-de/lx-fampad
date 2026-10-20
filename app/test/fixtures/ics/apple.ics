@@ -15,7 +15,7 @@ DESCRIPTION:Kontrolle\; Termin lang und mit Fortsetzung in der nächsten Zeile d
   Unfolding geprüft wird
 LOCATION:Praxis am Markt
 ATTENDEE;CN="Max Mustermann";PARTSTAT=ACCEPTED:mailto:max@example.org
-ORGANIZER;CN=Anna:mailto:anna@example.org
+ORGANIZER;CN=Alice:mailto:alice@example.org
 ATTACH:https://example.org/geheim.pdf
 URL:https://example.org/x
 SEQUENCE:0
