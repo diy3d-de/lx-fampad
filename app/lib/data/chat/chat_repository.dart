@@ -15,6 +15,7 @@ import '../sync_state.dart';
 import 'chat_ids.dart';
 import 'chat_krypto.dart';
 import 'chat_krypto_state.dart';
+import 'lese_status.dart';
 import 'nachrichten_inhalt.dart';
 
 /// Größte Nachricht in der Schnittstelle (UTF-16-Einheiten, wie auf dem Server).
@@ -249,7 +250,14 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
         ..where((o) => o.entity.equals('nachricht') & o.op.equals('upsert'))
         ..orderBy([(o) => OrderingTerm.asc(o.id)]))
       .watch()
-      .map((l) => {for (final o in l) o.entityId: o});
+      .map(ausgangJeNachricht);
+
+  /// Konversationen, in denen eine eigene Nachricht abgelehnt wurde (nicht gesendet): die Chatliste zeigt dafür ein Fehlersymbol.
+  Stream<Set<String>> chatsMitFehler() {
+    final q = db.select(db.outbox).join([innerJoin(db.nachrichten, db.nachrichten.id.equalsExp(db.outbox.entityId))])
+      ..where(db.outbox.entity.equals('nachricht') & db.outbox.fehlerCode.isNotNull());
+    return q.watch().map((l) => {for (final r in l) r.readTable(db.nachrichten).konversationId});
+  }
 
   /// Abgelehnte Nachricht erneut senden: dieselbe Nachricht (feste ID) kommt mit neuer op_id wieder in die Warteschlange, es entsteht kein Duplikat.
   Future<void> erneutSenden(String nachrichtId) async {
@@ -428,6 +436,8 @@ final chatUngelesenProvider = StreamProvider<int>((ref) {
 final konversationProvider = StreamProvider.autoDispose.family<Konversation?, String>((ref, id) => ref.watch(chatRepositoryProvider).konversation(id));
 
 final nachrichtenProvider = StreamProvider.autoDispose.family<List<Nachricht>, String>((ref, id) => ref.watch(chatRepositoryProvider).nachrichten(id));
+
+final chatsMitFehlerProvider = StreamProvider.autoDispose<Set<String>>((ref) => ref.watch(chatRepositoryProvider).chatsMitFehler());
 
 /// Ausgang eigener Nachrichten (Zustand ungesendeter Nachrichten).
 final nachrichtenAusgangProvider = StreamProvider.autoDispose<Map<String, OutboxData>>((ref) => ref.watch(chatRepositoryProvider).ausgang());

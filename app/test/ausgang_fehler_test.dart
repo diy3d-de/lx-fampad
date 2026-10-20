@@ -169,7 +169,20 @@ void main() {
     test('nach mehr als zwei Minuten ohne Fortschritt: hängt (gesendet oder nicht)', () {
       expect(ausgangZustand(op(alt: const Duration(minutes: 2)), jetzt: jetzt), LeseZustand.wartet);
       expect(ausgangZustand(op(alt: const Duration(minutes: 2, seconds: 1)), jetzt: jetzt), LeseZustand.haengt);
-      expect(ausgangZustand(op(alt: const Duration(minutes: 5), sentAt: jetzt), jetzt: jetzt), LeseZustand.haengt);
+      expect(ausgangZustand(op(alt: const Duration(minutes: 5), sentAt: jetzt.subtract(const Duration(minutes: 1))), jetzt: jetzt), LeseZustand.haengt);
+    });
+
+    test('gerade unterwegs (Sendeversuch vor wenigen Sekunden): nie hängt, auch bei alter Op', () {
+      expect(ausgangZustand(op(alt: const Duration(minutes: 9), sentAt: jetzt.subtract(const Duration(seconds: 5))), jetzt: jetzt), LeseZustand.wirdGesendet);
+      expect(ausgangZustand(op(alt: const Duration(minutes: 9), sentAt: jetzt.subtract(const Duration(seconds: 30))), jetzt: jetzt), LeseZustand.haengt);
+      expect(haengtAb(op(alt: const Duration(minutes: 9), sentAt: jetzt.subtract(const Duration(seconds: 5))), jetzt), jetzt.add(const Duration(seconds: 10)));
+    });
+
+    test('mehrere Ops je Nachricht: abgelehnt hat Vorrang, sonst gilt die Anlage (älteste)', () {
+      OutboxData o(int id, {String? fehler}) => OutboxData(id: id, opId: 'o$id', op: 'upsert', entity: 'nachricht', entityId: _n, fieldsJson: '{}', baseRev: 0, createdAt: jetzt, sentAt: null, fehlerCode: fehler);
+      expect(ausgangJeNachricht([o(1, fehler: 'forbidden'), o(2)])[_n]!.opId, 'o1');
+      expect(ausgangJeNachricht([o(1), o(2, fehler: 'invalid')])[_n]!.opId, 'o2');
+      expect(ausgangJeNachricht([o(1), o(2)])[_n]!.opId, 'o1');
     });
 
     test('Fehler-Code gewinnt gegen jedes Alter: abgelehnt', () {

@@ -276,6 +276,13 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
 
   @override
   Widget build(BuildContext context) {
+    // Neuzeichnen planen, sobald eine ungesendete Nachricht als "hängt" gilt
+    ref.listen(nachrichtenAusgangProvider, (_, neu) {
+      final jetzt = DateTime.now();
+      for (final o in neu.value?.values ?? const <OutboxData>[]) {
+        _planeTick(haengtAb(o, jetzt), jetzt);
+      }
+    });
     ref.listen(nachrichtenProvider(_id), (_, _) => WidgetsBinding.instance.addPostFrameCallback((_) => _markieren()));
     // beim Zurückwechseln in den Chat-Bereich gilt der Verlauf erst jetzt als gelesen
     ref.listen(shellTabProvider, (_, t) {
@@ -410,7 +417,6 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     // Empfänger zum Sendezeitpunkt (Mitglieder der Epoche der Nachricht), nicht der heutige Stand
                     final zumZeitpunkt = eigen ? empfaengerZurNachricht(epoche: ChatKrypto.huellenEpoche(n.inhalt), epochen: epochenMitglieder, ich: ich ?? '', aktuell: empfaenger, gelesenBis: gelesenBis) : null;
                     final lese = zumZeitpunkt == null ? null : leseInfo(nachricht: n, empfaenger: zumZeitpunkt.empfaenger, gelesenBis: gelesenBis, geschaetzt: zumZeitpunkt.geschaetzt, ausgang: ausgang[n.id], jetzt: jetzt);
-                    if (lese != null && lese.ungesendet) _planeTick(haengtAb(ausgang[n.id], jetzt), jetzt);
                     return _Blase(
                       nachricht: n,
                       lese: lese,

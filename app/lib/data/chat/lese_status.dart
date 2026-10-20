@@ -82,14 +82,32 @@ const kHaengtNach = Duration(minutes: 2);
 LeseZustand ausgangZustand(OutboxData? op, {required DateTime jetzt}) {
   if (op == null) return LeseZustand.wirdGesendet;
   if (op.fehlerCode != null) return LeseZustand.abgelehnt;
-  if (jetzt.difference(op.createdAt) > kHaengtNach) return LeseZustand.haengt;
+  // gerade unterwegs (Sendeversuch in den letzten Sekunden): nie "hängt"
+  final unterwegs = op.sentAt != null && jetzt.difference(op.sentAt!) <= kUnterwegsSekunden;
+  if (!unterwegs && jetzt.difference(op.createdAt) > kHaengtNach) return LeseZustand.haengt;
   return op.sentAt == null ? LeseZustand.wartet : LeseZustand.wirdGesendet;
+}
+
+/// So lange nach einem Sendeversuch gilt eine Nachricht als unterwegs (nicht als hängend).
+const kUnterwegsSekunden = Duration(seconds: 15);
+
+/// Wählt je Nachricht die Op, die ihren Zustand bestimmt: eine abgelehnte hat Vorrang (sonst überdeckte eine spätere Op den Fehler der Anlage), sonst die
+/// älteste (die Anlage). [ops] in Reihenfolge der Ausgang-ID.
+Map<String, OutboxData> ausgangJeNachricht(Iterable<OutboxData> ops) {
+  final out = <String, OutboxData>{};
+  for (final o in ops) {
+    final alt = out[o.entityId];
+    if (alt == null || (alt.fehlerCode == null && o.fehlerCode != null)) out[o.entityId] = o;
+  }
+  return out;
 }
 
 /// Zeitpunkt, ab dem eine ungesendete Nachricht als "hängt" gilt (für das Planen einer Neuzeichnung); null, wenn sie schon hängt oder abgelehnt ist.
 DateTime? haengtAb(OutboxData? op, DateTime jetzt) {
   if (op == null || op.fehlerCode != null) return null;
-  final t = op.createdAt.add(kHaengtNach);
+  var t = op.createdAt.add(kHaengtNach);
+  final unterwegs = op.sentAt?.add(kUnterwegsSekunden);
+  if (unterwegs != null && unterwegs.isAfter(t)) t = unterwegs;
   return t.isAfter(jetzt) ? t : null;
 }
 

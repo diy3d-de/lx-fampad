@@ -624,6 +624,23 @@ void main() {
       pruefeLayout(tester, 'Aktionen der abgelehnten Nachricht');
     });
 
+    testWidgets('Chatliste zeigt für einen Chat mit abgelehnter Nachricht ein Fehlersymbol (360 px, Textskala 1.5); nach Verwerfen verschwindet es', (tester) async {
+      final env = await start(tester, skala: 1.5, vorher: grundstand);
+      await sendeAbgelehnt(tester, env);
+      await tester.tap(find.byTooltip('Zurück zur Chatliste'));
+      await warte(tester);
+      expect(find.byIcon(Icons.error_outline), findsOneWidget);
+      expect(tester.widget<Icon>(find.byIcon(Icons.error_outline)).color, kDanger);
+      expect(find.bySemanticsLabel(RegExp('Nachricht nicht gesendet')), findsOneWidget);
+      pruefeLayout(tester, 'Chatliste mit Fehler');
+      await tippeText(tester, 'Ben');
+      await tippeText(tester, 'Das klappt nicht');
+      await tippeText(tester, 'Verwerfen');
+      await tester.tap(find.byTooltip('Zurück zur Chatliste'));
+      await warte(tester);
+      expect(find.byIcon(Icons.error_outline), findsNothing);
+    });
+
     testWidgets('Erneut senden: dieselbe Nachricht geht noch einmal hinaus, keine zweite entsteht', (tester) async {
       final env = await start(tester, vorher: grundstand);
       await sendeAbgelehnt(tester, env);
