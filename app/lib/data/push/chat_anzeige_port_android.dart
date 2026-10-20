@@ -19,16 +19,31 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
 
   bool get _verfuegbar => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
-  @override
-  Future<bool> initialisieren() async {
+  var _pluginBereit = false;
+
+  /// Plugin einrichten (ohne Kanal und Erlaubnis; zum Räumen genügt das).
+  Future<bool> _pluginVorbereiten() async {
     if (!_verfuegbar) return false;
-    if (_bereit) return true;
+    if (_pluginBereit) return true;
     try {
       // Hat schon die Terminerinnerung das Plugin eingerichtet (und ihren Rückruf beim Tippen gesetzt), wird nicht noch einmal initialisiert
       if (!erinnerungPluginInitialisiert) {
         final ok = await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings(_kSymbol)));
         if (ok != true) return false;
       }
+      _pluginBereit = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> initialisieren() async {
+    if (!_verfuegbar) return false;
+    if (_bereit) return true;
+    try {
+      if (!await _pluginVorbereiten()) return false;
       final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.createNotificationChannel(const AndroidNotificationChannel(_kKanalId, _kKanalName, description: _kKanalBeschreibung, importance: Importance.high));
       // ohne Erlaubnis (Android 13+, nicht gefragt oder abgelehnt) gibt es keine Anzeige; gefragt wird nur in Profil, Erinnerungen und Benachrichtigungen
@@ -45,7 +60,17 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
   }
 
   @override
-  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel}) async {
+  Future<void> entfernen(int id) async {
+    if (!await _pluginVorbereiten()) return;
+    try {
+      await _plugin.cancel(id: id);
+    } catch (_) {
+      // Zusatz: ein Fehler hier darf nichts stören
+    }
+  }
+
+  @override
+  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl}) async {
     if (!_bereit) return false;
     try {
       await _plugin.show(
@@ -58,6 +83,7 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
             _kKanalName,
             channelDescription: _kKanalBeschreibung,
             icon: _kSymbol,
+            number: anzahl != null && anzahl > 0 ? anzahl : null,
             importance: Importance.high,
             priority: Priority.high,
             category: AndroidNotificationCategory.message,

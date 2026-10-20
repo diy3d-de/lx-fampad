@@ -3,6 +3,9 @@
 # nach /srv/fampad/web/<version>; "current" zeigt danach auf die neue Version (alte bleiben zum Zurückrollen,
 # die letzten 5 werden behalten). Aufruf: deploy/deploy-web.sh   (SSH_HOST überschreibt den Alias, Standard lx-labs)
 #
+# Aufruf mit Release-Version (deploy/deploy-web.sh 0.4.0 oder RELEASE_VERSION=0.4.0, auch mit führendem v): bricht ab, wenn app/pubspec.yaml eine andere Version hat.
+# Ohne Angabe gilt ein Git-Tag auf HEAD (v*) als Release-Version; gibt es keinen, nur eine Warnung.
+#
 # Die Kennung <version> wird auf zwei Wegen bekannt gemacht, damit /api/v1/version "webVersion" liefern kann:
 #  - als Datei version.txt im Build (der Server liest WEB_VERSION_FILE=/srv/fampad/web/current/version.txt)
 #  - als --dart-define=WEB_VERSION=<version> in der App: weicht die Kennung des Servers ab, zeigt die App
@@ -15,6 +18,20 @@ SSH_HOST="${SSH_HOST:-lx-labs}"
 
 version=$(grep -E '^version:' app/pubspec.yaml | head -1 | sed -E 's/version:[[:space:]]*//; s/\+.*//')
 release="${version}-$(date +%Y%m%d%H%M%S)"
+
+erwartet="${1:-${RELEASE_VERSION:-}}"
+erwartet="${erwartet#v}"
+if [ -z "$erwartet" ]; then
+  erwartet=$(git describe --tags --exact-match HEAD 2>/dev/null | sed -n 's/^v\([0-9][0-9.]*\)$/\1/p' || true)
+fi
+if [ -n "$erwartet" ]; then
+  if [ "$erwartet" != "$version" ]; then
+    echo "Abbruch: Release-Version $erwartet, aber app/pubspec.yaml hat $version. Version in app/pubspec.yaml und server/package.json setzen und committen." >&2
+    exit 1
+  fi
+else
+  echo "Warnung: keine Release-Version angegeben (Parameter, RELEASE_VERSION oder Git-Tag): die Version $version aus app/pubspec.yaml wird nicht geprüft." >&2
+fi
 
 echo "==> Prüfsummen von sqlite3.wasm und drift_worker.js"
 (cd app && sha256sum -c web-assets.sha256)

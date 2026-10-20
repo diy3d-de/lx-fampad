@@ -7,9 +7,10 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/app_database.dart';
 import '../../data/chat/chat_repository.dart';
+import '../../data/chat/lese_status.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
-import '../../ui/widgets.dart';
+import '../../widgets/benutzer_avatar.dart';
 
 /// Name der Konversation: "Familie", die andere Person (Direktchat) oder der Gruppenname, sonst die Namen der Mitglieder ("Anna, Ben +2").
 String chatName(Konversation k, List<String> teilnehmer, Mitglieder mitglieder, String? ich, NachrichtenInhalt inhalt) {
@@ -75,6 +76,41 @@ bool gleicherTag(DateTime a, DateTime b) => a.year == b.year && a.month == b.mon
 /// Uhrzeit einer Nachricht.
 String uhrzeit(DateTime t) => DateFormat('HH:mm', 'de_DE').format(t);
 
+/// Text der Lesebestätigung (Tooltip und Screenreader): "wird gesendet", "gesendet", "gelesen" bzw. in Gruppen, wer gelesen hat.
+String leseBeschreibung(LeseInfo i, String Function(String id) name) {
+  final basis = _leseBasis(i, name);
+  return i.geschaetzt && i.zustand != LeseZustand.wirdGesendet ? '$basis (Empfänger nur geschätzt)' : basis;
+}
+
+String _leseBasis(LeseInfo i, String Function(String id) name) {
+  switch (i.zustand) {
+    case LeseZustand.wirdGesendet:
+      return 'wird gesendet';
+    case LeseZustand.gelesen:
+      return i.empfaenger.length <= 1 ? 'gelesen' : 'gelesen von allen: ${(i.gelesenVon.toList()..sort()).map(name).join(', ')}';
+    case LeseZustand.gesendet:
+      if (i.gelesenVon.isEmpty) return 'gesendet';
+      return 'gesendet, gelesen von ${i.gelesenVon.map(name).join(', ')} (${i.gelesenVon.length} von ${i.empfaenger.length})';
+  }
+}
+
+/// Haken an einer eigenen Nachricht: Uhr (wird gesendet), ein Haken (beim Server angekommen), zwei Haken in der Akzentfarbe (alle haben gelesen).
+class LeseHaken extends StatelessWidget {
+  final LeseInfo info;
+  final String text;
+  const LeseHaken({super.key, required this.info, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, farbe) = switch (info.zustand) {
+      LeseZustand.wirdGesendet => (Icons.schedule, kTextFaint),
+      LeseZustand.gesendet => (Icons.check, kTextFaint),
+      LeseZustand.gelesen => (Icons.done_all, kAccent),
+    };
+    return Tooltip(message: text, child: Icon(icon, size: 15, color: farbe, semanticLabel: text));
+  }
+}
+
 /// Avatar einer Konversation: Person (Direktchat) in der Personenfarbe, Gruppe und Familie als Symbol.
 class ChatAvatar extends StatelessWidget {
   final ChatArt art;
@@ -85,7 +121,7 @@ class ChatAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (art == ChatArt.direct) return PersonAvatar(name: person?.displayName ?? name, colorIndex: person?.colorIndex ?? 0, size: size);
+    if (art == ChatArt.direct) return BenutzerAvatar(user: person, ersatzName: name, size: size);
     final farbe = art == ChatArt.family ? kAccent : kNeural;
     return ExcludeSemantics(
       child: Container(

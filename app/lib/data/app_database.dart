@@ -326,8 +326,9 @@ class AppDatabase extends _$AppDatabase {
   /// Version 4 (Phase 1c-3a): Chat (Konversationen, Nachrichten, Lesestand). Version 5: Chat-Zeiten in Millisekunden.
   /// Version 6 (E2EE Phase 2): `enc_version` der Konversationen, Epochen und Schlüssel-Wraps.
   /// Version 7 (Phase 1c-4a): Aufgaben und Unteraufgaben.
+  /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   @override
-  int get schemaVersion => 7;
+  int get schemaVersion => 8;
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -387,6 +388,10 @@ class AppDatabase extends _$AppDatabase {
             await customStatement('DELETE FROM $tabelle WHERE rev > 0');
           }
         }
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from == 7) {
+        // Version 8 ändert keine Tabelle: bis jetzt kamen nur die eigenen Lesestände, die der anderen Teilnehmer fehlen sonst bis zu ihrer nächsten Änderung.
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

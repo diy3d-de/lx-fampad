@@ -10,6 +10,7 @@ import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/benutzer_avatar.dart';
 import 'chat_krypto_ui.dart';
 
 /// Ergebnis der Auswahl: die gewählten Personen (ohne die eigene) und der Gruppenname (leer: ohne Namen).
@@ -104,7 +105,7 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
                                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
                                       child: Row(
                                         children: [
-                                          PersonAvatar(name: u.displayName, colorIndex: u.colorIndex, size: 36),
+                                          BenutzerAvatar(user: u, size: 36),
                                           const SizedBox(width: 12),
                                           Expanded(
                                             child: Column(

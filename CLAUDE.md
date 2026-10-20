@@ -138,6 +138,7 @@ Vorbild ist **lx-urlaubsplanung** (`src/app/globals.css`, `mobile/lib/main.dart`
 - Push: nie Inhalt im Wecker (kein Titel, keine Tags); gemeldete Endpunkte nur über `push/endpoint.ts` annehmen und nie dorthin senden, sondern an `NTFY_URL`; kein eingebetteter FCM-Verteiler (Google). Teilnehmer-Filter (Chat) über `PushService.addRecipientFilter`, lokale Benachrichtigungen über `EreignisBenachrichtiger`. Die lokale Chat-Benachrichtigung (`ChatBenachrichtiger`) zeigt nie einen Nachrichteninhalt, nur „Neue Nachricht in <Chat>“; auf dem Sperrbildschirm privat, außer die Einstellung der Erinnerungen („Titel zeigen“) ist an. Der Push-Empfänger eines Chats ergibt sich aus der Sync-Regeltabelle (`users` im Ereignis: nur Teilnehmer privater Chats), nie aus Rollen allein.
 - `applicationId` (`dev.lx_labs.fampad`) und Android-Signaturschlüssel nie ändern.
 - Geheimnisse (`.env`, `key.properties`, Keystores, Signaturschlüssel des Update-Manifests) nie einchecken. `kUpdatePublicKey` ist bis zum ersten Release ein Platzhalter (siehe `tools/README.md`).
+- **Version vor jedem Release in `app/pubspec.yaml` (`x.y.z+versionCode`) und `server/package.json` (+ Lockfile) setzen**, passend zum Tag (Release-Workflow und `deploy-web.sh` prüfen es; Web-App zeigt `x.y.z` + Build-Kennung).
 - Commit-Nachrichten auf Deutsch, kurz und im Imperativ-/Beschreibungsstil. Kein Push nach `main` ohne ausdrücklichen Auftrag.
 
 ## Team

@@ -17,7 +17,12 @@ abstract class ChatAnzeigePort {
   Future<bool> initialisieren();
 
   /// Zeigt (oder ersetzt) die Benachrichtigung mit der Kennung [id]. [sperrbildschirmTitel]: Titel und Text dürfen auf dem Sperrbildschirm erscheinen.
-  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel});
+  /// [anzahl]: Zahl der ungelesenen Nachrichten dieses Chats (Android: `number` der Benachrichtigung, daraus zeigen manche Launcher, z. B. One UI, die Zahl am App-Symbol;
+  /// sonst zählt Android die aktiven Benachrichtigungen als Punkt/Zahl).
+  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl});
+
+  /// Entfernt die Benachrichtigung mit der Kennung [id] (der Chat wurde gelesen); eine nicht vorhandene ist kein Fehler.
+  Future<void> entfernen(int id);
 }
 
 class KeineChatAnzeige implements ChatAnzeigePort {
@@ -27,7 +32,10 @@ class KeineChatAnzeige implements ChatAnzeigePort {
   Future<bool> initialisieren() async => false;
 
   @override
-  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel}) async => false;
+  Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl}) async => false;
+
+  @override
+  Future<void> entfernen(int id) async {}
 }
 
 /// Kennung der Benachrichtigung einer Konversation (stabil: eine neue Nachricht im selben Chat ersetzt die bisherige statt zu stapeln).
@@ -57,6 +65,8 @@ class ChatBenachrichtiger implements EreignisBenachrichtiger {
   @override
   Future<void> neueEreignisse(int rev, {required int vorher}) async {
     if (istVordergrund()) return;
+    // vorher <= 0: der erste Abgleich (Neuinstallation, zurückgesetzter Sync-Fortschritt) bringt den ganzen Verlauf: das ist nichts Neues
+    if (vorher <= 0) return;
     final me = await ich();
     if (me == null) return;
     // Nachrichten, die mit diesem Abgleich kamen (Revision zwischen vorher und rev), nicht von mir und nicht von einem entfernten Mitglied (ohne Absender)
@@ -77,14 +87,28 @@ class ChatBenachrichtiger implements EreignisBenachrichtiger {
     for (final e in nachKonv.entries) {
       final k = konversationen[e.key];
       if (k == null) continue;
+      // nur, was der eigene Lesestand noch nicht abdeckt (auf einem anderen Gerät schon Gelesenes meldet nichts); Titel und Zahl am Symbol kommen aus derselben Zahl
+      final ungelesen = await _ungelesen(e.key, me);
+      if (ungelesen <= 0) continue;
       final name = _chatName(k, mitglieder, me);
       await anzeige.zeigen(
         id: chatBenachrichtigungsId(e.key),
-        titel: e.value == 1 ? 'Neue Nachricht' : '${e.value} neue Nachrichten',
+        titel: ungelesen == 1 ? 'Neue Nachricht' : '$ungelesen neue Nachrichten',
         text: 'in $name',
         sperrbildschirmTitel: sperre,
+        anzahl: ungelesen,
       );
     }
+  }
+
+  /// Ungelesene Nachrichten des Chats: fremde Nachrichten, die neuer sind als der eigene Lesestand (wie die Zähler in der App).
+  Future<int> _ungelesen(String konversationId, String me) async {
+    final z = await db.customSelect(
+      'SELECT COUNT(*) AS n FROM nachrichten n WHERE n.konversation_id = ?1 AND (n.autor_id IS NULL OR n.autor_id <> ?2) '
+      'AND n.created_at > COALESCE((SELECT l.gelesen_bis FROM lesestand l WHERE l.konversation_id = ?1 AND l.user_id = ?2 LIMIT 1), 0)',
+      variables: [Variable.withString(konversationId), Variable.withString(me)],
+    ).getSingle();
+    return z.read<int>('n');
   }
 
   /// Name des Chats für die Benachrichtigung: "Familie", die andere Person (Direktchat) oder der Gruppenname (sichtbarer Name, nie ein Nachrichteninhalt).

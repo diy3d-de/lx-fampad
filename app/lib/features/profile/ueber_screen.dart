@@ -14,24 +14,36 @@ import '../auth/auth_widgets.dart';
 import '../update/update_service.dart';
 import 'profile_screen.dart' show EinstellungsZeile;
 
-/// Angaben für die Anzeige. [version] ist im Web die Kennung des Bundles (WEB_VERSION, lokal "dev").
+/// Teilt die Kennung des Web-Bundles (WEB_VERSION, z. B. "0.4.0-20261020055100") in lesbare Versionsnummer und Build-Kennung. Ohne Zeitstempel (lokal "dev") bleibt
+/// alles die Version.
+({String version, String? kennung}) webVersionTeilen(String roh) {
+  final m = RegExp(r'^([0-9]+[.][0-9]+[.][0-9]+)-(.+)$').firstMatch(roh);
+  return m == null ? (version: roh, kennung: null) : (version: m.group(1)!, kennung: m.group(2));
+}
+
+/// Angaben für die Anzeige. [version] ist im Web die Versionsnummer des Bundles (lokal "dev"), [webBuild] seine Build-Kennung (Datum und Uhrzeit des Builds).
 class UeberInfo {
   final String version;
   final int? build;
+  final String? webBuild;
   final String plattform;
   final String? geraet;
   final ServerVersion? server;
-  const UeberInfo({required this.version, this.build, required this.plattform, this.geraet, this.server});
+  const UeberInfo({required this.version, this.build, this.webBuild, required this.plattform, this.geraet, this.server});
+
+  /// Build-Angabe für die Anzeige: Build-Nummer (Android) oder Build-Kennung (Web).
+  String? get buildText => build != null ? '$build' : webBuild;
 
   /// Kurzangabe für die Zwischenablage, z. B. "lx-familyhub 0.2.0 (1002) · Android".
-  String get kurz => '$kAppName $version${build != null ? ' ($build)' : ''} · $plattform';
+  String get kurz => '$kAppName $version${buildText != null ? ' ($buildText)' : ''} · $plattform';
 }
 
 final ueberInfoProvider = FutureProvider.autoDispose<UeberInfo>((ref) async {
   final update = ref.read(updateProvider.notifier);
   final server = await update.serverVersion();
   if (kIsWeb) {
-    return UeberInfo(version: kWebVersion.isNotEmpty ? kWebVersion : 'dev', plattform: 'Web', server: server);
+    final w = webVersionTeilen(kWebVersion.isNotEmpty ? kWebVersion : 'dev');
+    return UeberInfo(version: w.version, webBuild: w.kennung, plattform: 'Web', server: server);
   }
   final (version, build) = await update.installierteAngaben();
   final geraet = (await ref.read(systemChannelProvider).geraetename())?.trim();
@@ -98,7 +110,7 @@ class UeberScreen extends ConsumerWidget {
           child: EinstellungsZeile(
             icon: Icons.info_outline,
             titel: i == null ? 'wird geladen …' : '$kAppName ${i.version}',
-            untertitel: i == null ? null : [if (i.build != null) 'build ${i.build}', i.plattform].join(' · '),
+            untertitel: i == null ? null : [if (i.buildText != null) 'build ${i.buildText}', i.plattform].join(' · '),
             status: i == null ? null : const Icon(Icons.copy, size: 18, color: kTextMuted),
             onTap: i == null ? null : () => unawaited(_kopieren(context, i)),
           ),

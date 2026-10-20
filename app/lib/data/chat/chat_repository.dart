@@ -171,6 +171,12 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
             ..orderBy(_reihenfolge(aufsteigend: true)))
           .watch();
 
+  /// Lesestände der Konversation (alle Teilnehmer; der Server liefert sie den Teilnehmern): Grundlage der Lesebestätigung an eigenen Nachrichten.
+  Stream<List<Lesestand>> lesestaende(String konversationId) => (db.select(db.lesestaende)..where((l) => l.konversationId.equals(konversationId))).watch();
+
+  /// Epochen der Konversation (nur die signierten Mitgliederlisten zählen: Empfänger der Nachrichten zum Sendezeitpunkt, Lesebestätigung).
+  Stream<List<Epoche>> epochenListen(String konversationId) => (db.select(db.konversationEpochen)..where((e) => e.konversationId.equals(konversationId))).watch();
+
   /// Reihenfolge der Nachrichten: Zeit (Millisekunden), bei gleicher Zeit die Zustellreihenfolge des Servers (Revision; noch nicht bestätigte zuletzt), dann die ID.
   /// Eine eigene, noch nicht bestätigte Nachricht trägt die Zeit dieses Geräts und springt mit der Bestätigung an die Serverzeit.
   static List<OrderingTerm Function($NachrichtenTable)> _reihenfolge({required bool aufsteigend}) {
@@ -407,6 +413,11 @@ final chatUngelesenProvider = StreamProvider<int>((ref) {
 final konversationProvider = StreamProvider.autoDispose.family<Konversation?, String>((ref, id) => ref.watch(chatRepositoryProvider).konversation(id));
 
 final nachrichtenProvider = StreamProvider.autoDispose.family<List<Nachricht>, String>((ref, id) => ref.watch(chatRepositoryProvider).nachrichten(id));
+
+final epochenListenProvider = StreamProvider.autoDispose.family<List<Epoche>, String>((ref, id) => ref.watch(chatRepositoryProvider).epochenListen(id));
+
+/// Lesestände aller Teilnehmer einer Konversation (Lesebestätigung, siehe lese_status.dart).
+final lesestaendeProvider = StreamProvider.autoDispose.family<List<Lesestand>, String>((ref, id) => ref.watch(chatRepositoryProvider).lesestaende(id));
 
 final juengsteNachrichtenProvider = StreamProvider.autoDispose<List<Nachricht>>((ref) => ref.watch(chatRepositoryProvider).juengste(40));
 

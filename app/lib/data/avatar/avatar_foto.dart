@@ -3,7 +3,8 @@
 // Ändert eine Person ihr Bild, ändert sich die Version in /members und damit der Schlüssel: das neue Foto wird geladen.
 // - Nur bei Verbindungs- und Serverfehlern bleibt ein älteres Foto aus der Datenbank sichtbar; sagt der Server 404/403 (Bild entfernt,
 //   Person nicht mehr in der Familie), wird die lokale Kopie gelöscht und es gelten die Initialen.
-// - Nach einem Verbindungsfehler wird 60 Sekunden lang nicht erneut abgerufen (kein Abruf-Sturm bei jedem Neuzeichnen).
+// - Nach einem Verbindungsfehler wird 60 Sekunden lang nicht erneut abgerufen (kein Abruf-Sturm bei jedem Neuzeichnen). Danach versucht es die nächste
+//   Aktualisierung der Mitgliederliste (nach einem Abgleich, beim Zurückkehren in die App) erneut, siehe mitgliederAktualisierungProvider.
 // - Nach Abmelden oder Personenwechsel wird nichts mehr in die Datenbank geschrieben (laufende Abrufe verwerfen ihr Ergebnis).
 // - Kopien von Personen, die nicht mehr in der Mitgliederliste stehen, räumt [avatarCacheBereinigen] auf.
 // Die Datenbank wird beim Abmelden und beim Wechsel der Person geleert (damit auch diese Fotos); bei Sitzungsverlust bleibt sie bis dahin.

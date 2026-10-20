@@ -75,15 +75,17 @@ describe('Chat: Rechte-Modell (Regeltabelle)', () => {
     expect(authorize(nachrichtEntity.rules, 'delete', actor('admin', ADMIN), nachricht(privat, A))).toBe('not_found');
   });
 
-  it('Lesestand: nur die eigene Zeile', () => {
+  it('Lesestand: lesbar für Teilnehmer, schreibbar nur die eigene Zeile', () => {
     const eigen = { ...privat, ownerId: A };
     expect(authorize(lesestandEntity.rules, 'update', actor('child', A), eigen, ['gelesenBis'])).toBe('ok');
-    // die Zeile eines anderen gibt es für die Person nicht (auch nicht als Teilnehmer)
-    expect(authorize(lesestandEntity.rules, 'update', actor('child', B), eigen, ['gelesenBis'])).toBe('not_found');
+    // die Zeile eines anderen darf ein Teilnehmer lesen, aber nicht ändern; ein Nichtteilnehmer kennt sie nicht
+    expect(mayRead(lesestandEntity.rules, actor('child', B), eigen)).toBe(true);
+    expect(authorize(lesestandEntity.rules, 'update', actor('child', B), eigen, ['gelesenBis'])).toBe('forbidden');
     expect(authorize(lesestandEntity.rules, 'update', actor('admin', ADMIN), eigen, ['gelesenBis'])).toBe('not_found');
     expect(authorize(lesestandEntity.rules, 'create', actor('child', B), eigen, ['konversationId', 'userId', 'gelesenBis'])).toBe('forbidden');
-    // im Familienchat sieht auch der Admin die Zeile eines anderen nicht (Regel "own")
-    expect(mayRead(lesestandEntity.rules, actor('admin', ADMIN), { ...familie, ownerId: A })).toBe(false);
+    // im Familienchat sehen alle (auch der Admin) die Zeilen der anderen, schreiben nur die eigene
+    expect(mayRead(lesestandEntity.rules, actor('admin', ADMIN), { ...familie, ownerId: A })).toBe(true);
+    expect(authorize(lesestandEntity.rules, 'update', actor('admin', ADMIN), { ...familie, ownerId: A }, ['gelesenBis'])).toBe('forbidden');
   });
 
   it('jede Rolle hat für jede Aktion der Chat-Entitäten eine Regel', () => {
@@ -326,27 +328,29 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
   });
 
   describe('Lesestand', () => {
-    it('nur die eigene Zeile: andere sehen sie nicht und können sie nicht schreiben, für andere kann man keine anlegen', async () => {
+    it('Teilnehmer sehen die Zeile (Lesebestätigung), können sie aber nicht schreiben; für andere kann man keine anlegen', async () => {
       const konv = await direkt(fam.parent, fam.child);
       const id = lesestandId(konv, fam.child.userId);
       const ok = await fam.child.sync([upsert('lesestand', id, { konversationId: konv, userId: fam.child.userId, gelesenBis: '2026-10-19T08:00:00.000Z' })]);
       expect(ok.json.rejected).toEqual([]);
-      // der Elternteil ist Teilnehmer, sieht die Zeile des Kindes aber nicht
-      expect(ids(await fam.parent.pull(), 'lesestand')).toEqual([]);
+      // der Elternteil ist Teilnehmer und sieht die Zeile des Kindes (zwei Haken beim Absender)
+      expect(ids(await fam.parent.pull(), 'lesestand')).toEqual([id]);
+      // ein Nichtteilnehmer (Admin) sieht sie nicht
+      expect(ids(await fam.admin.pull(), 'lesestand')).toEqual([]);
       expect(ids(await fam.child.pull(), 'lesestand')).toEqual([id]);
       const rev = await revOf('lesestand', id);
-      expect(codes(await fam.parent.sync([upsert('lesestand', id, { gelesenBis: '2026-10-19T09:00:00.000Z' }, rev)]))).toEqual(['not_found']);
+      expect(codes(await fam.parent.sync([upsert('lesestand', id, { gelesenBis: '2026-10-19T09:00:00.000Z' }, rev)]))).toEqual(['forbidden']);
       const fuerAndere = await fam.parent.sync([upsert('lesestand', lesestandId(konv, fam.child.userId), { konversationId: konv, userId: fam.child.userId, gelesenBis: '2026-10-19T08:00:00.000Z' })]);
-      // die Zeile des Kindes (feste ID) gibt es für die andere Person nicht
-      expect(codes(fuerAndere)).toEqual(['not_found']);
+      // die Zeile des Kindes (feste ID) kann die andere Person nicht anlegen
+      expect(fuerAndere.json.rejected).not.toEqual([]);
       // Fortschreiben der eigenen Zeile
       expect((await fam.child.sync([upsert('lesestand', id, { gelesenBis: '2026-10-19T09:00:00.000Z' }, rev)])).json.acked).toHaveLength(1);
     });
 
-    it('im Familienchat sieht auch der Admin den Lesestand anderer nicht', async () => {
+    it('im Familienchat sehen alle den Lesestand anderer', async () => {
       const konv = await familienchat();
       await fam.child.sync([upsert('lesestand', lesestandId(konv, fam.child.userId), { konversationId: konv, userId: fam.child.userId, gelesenBis: '2026-10-19T08:00:00.000Z' })]);
-      expect(ids(await fam.admin.pull(), 'lesestand')).toEqual([]);
+      expect(ids(await fam.admin.pull(), 'lesestand')).toEqual([lesestandId(konv, fam.child.userId)]);
     });
 
     it('eine Zeile je Person und Konversation (feste ID): dieselbe ID noch einmal ist eine Wiederholung, eine andere ID ist ungültig', async () => {
@@ -686,7 +690,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       expect(JSON.stringify(await aussen.sync([], { sinceRev: 0 }).then((r) => r.json))).not.toContain(konv);
     });
 
-    it('Bestätigt eine Person ihren Lesestand, erfahren das nur ihre Geräte (WebSocket) und niemand sonst', async () => {
+    it('Bestätigt eine Person ihren Lesestand, erfahren das die Teilnehmer (WebSocket, Lesebestätigung) und niemand sonst', async () => {
       const konv = await direkt(fam.parent, fam.child);
       const { port } = world.app.server.address() as AddressInfo;
       const verbinden = async (d: Device) => {
@@ -710,7 +714,7 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       await wait(150);
       const revs = (m: Json[]) => m.filter((x) => x.type === 'rev').map((x) => x.rev);
       expect(revs(kind)).toHaveLength(1);
-      expect(revs(eltern)).toEqual([]);
+      expect(revs(eltern)).toHaveLength(1); // Teilnehmer des Direktchats
       expect(revs(admin)).toEqual([]);
     });
   });

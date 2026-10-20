@@ -114,7 +114,7 @@ function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: 
     for (const r of rolesThatMayRead(def.rules, f)) roles.add(r);
     for (const u of f.participants ?? []) users.add(u);
   }
-  return { roles: [...roles], users: [...users], wake: !def.ownerOnlyNotify };
+  return { roles: [...roles], users: [...users], wake: !def.ownerOnlyNotify && !def.noWake };
 }
 
 /** Prüft einen Wert, der eine Mitglieds-ID oder eine Liste davon ist: alle müssen aktive Mitglieder der Familie sein. */

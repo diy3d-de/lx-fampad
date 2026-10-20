@@ -12,6 +12,7 @@ import '../../ui/widgets.dart';
 import '../../widgets/sync_anzeige.dart';
 import '../auth/auth_widgets.dart';
 import '../profile/profile_screen.dart';
+import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -285,7 +286,7 @@ class _Fusszeile extends ConsumerWidget {
     final sync = ref.watch(syncProvider);
     final geraete = ref.watch(geraeteAnzahlProvider).value;
     final installiert = ref.watch(updateProvider.select((u) => u.installierteVersion));
-    final version = installiert ?? (kWebVersion.isNotEmpty ? kWebVersion : 'dev');
+    final version = installiert ?? (kWebVersion.isNotEmpty ? webVersionTeilen(kWebVersion).version : 'dev');
     final (text, farbe) = syncAnzeige(sync);
     const stil = TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted);
     return Container(

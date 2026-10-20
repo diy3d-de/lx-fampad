@@ -12,6 +12,8 @@ import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/chat/chat_krypto.dart' show ChatKrypto;
+import '../../data/chat/lese_status.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
@@ -267,6 +269,11 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     final darfSchreiben = verschluesselt && kryptoZustand.darfSchreiben;
     final liste = ref.watch(nachrichtenProvider(_id)).value ?? const <Nachricht>[];
     final nachId = {for (final n in liste) n.id: n};
+    // Lesebestätigung: Lesestände der anderen Teilnehmer (Familienchat: alle aktiven Mitglieder)
+    final gelesenBis = {for (final l in ref.watch(lesestaendeProvider(_id)).value ?? const <Lesestand>[]) l.userId: l.gelesenBis};
+    final empfaenger = {if (art == ChatArt.family) ...mitglieder.alle.map((u) => u.id) else ...teilnehmer}..remove(ich);
+    final epochenMitglieder = epochenEmpfaenger(ref.watch(epochenListenProvider(_id)).value ?? const <Epoche>[]);
+    String leseName(String id) => mitglieder[id]?.displayName ?? 'Unbekannt';
 
     // Verlauf mit Datumstrennern (chronologisch), umgekehrt angezeigt: neueste unten
     final eintraege = <Object>[];
@@ -353,8 +360,13 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     // ein Zitat zeigt nur eine Nachricht derselben Konversation (der Server prüft das ebenfalls)
                     final zitatKandidat = n.antwortAuf == null ? null : nachId[n.antwortAuf];
                     final zitat = zitatKandidat != null && zitatKandidat.konversationId == n.konversationId ? zitatKandidat : null;
+                    // Empfänger zum Sendezeitpunkt (Mitglieder der Epoche der Nachricht), nicht der heutige Stand
+                    final zumZeitpunkt = eigen ? empfaengerZurNachricht(epoche: ChatKrypto.huellenEpoche(n.inhalt), epochen: epochenMitglieder, ich: ich ?? '', aktuell: empfaenger, gelesenBis: gelesenBis) : null;
+                    final lese = zumZeitpunkt == null ? null : leseInfo(nachricht: n, empfaenger: zumZeitpunkt.empfaenger, gelesenBis: gelesenBis, geschaetzt: zumZeitpunkt.geschaetzt);
                     return _Blase(
                       nachricht: n,
+                      lese: lese,
+                      leseText: lese == null ? '' : leseBeschreibung(lese, leseName),
                       eigen: eigen,
                       autorName: eigen ? 'Du' : (autor?.displayName ?? 'Ehemaliges Mitglied'),
                       autorFarbe: autor == null ? kTextMuted : personColor(autor.colorIndex),
@@ -475,8 +487,12 @@ class _Blase extends StatelessWidget {
   final DekodierterInhalt inhalt;
   final _Zitat? zitat;
   final VoidCallback onTap;
+  final LeseInfo? lese;
+  final String leseText;
   const _Blase({
     required this.nachricht,
+    required this.lese,
+    required this.leseText,
     required this.eigen,
     required this.autorName,
     required this.autorFarbe,
@@ -497,7 +513,7 @@ class _Blase extends StatelessWidget {
     final lesbar = inhalt.lesbar;
     final zeit = uhrzeit(nachricht.createdAt);
     final bearbeitet = nachricht.bearbeitetAt != null;
-    final beschreibung = '${eigen ? 'Du' : autorName}, $zeit${gesendet ? '' : ', wird gesendet'}${bearbeitet ? ', bearbeitet' : ''}: $text';
+    final beschreibung = '${eigen ? 'Du' : autorName}, $zeit${gesendet ? (lese == null ? '' : ', $leseText') : ', wird gesendet'}${bearbeitet ? ', bearbeitet' : ''}: $text';
     return Padding(
       padding: EdgeInsets.only(top: zeigeName ? 8 : 2, bottom: 2),
       child: Align(
@@ -558,6 +574,7 @@ class _Blase extends StatelessWidget {
                               if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
                               if (!gesendet && eigen) const Text('wird gesendet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                               Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
+                              if (lese != null) LeseHaken(info: lese!, text: leseText),
                             ],
                           ),
                         ),
