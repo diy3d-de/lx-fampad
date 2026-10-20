@@ -2,20 +2,24 @@
 // Löschen mit Rückfrage, Rechte der Kinder, Startseiten-Karten, Desktop-Seitenleiste; bei 360 px Breite und Textskala 1.0 und 1.5.
 import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
+import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:lx_fampad/features/lists/list_dialogs.dart' show AuswahlKnopf;
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/tasks/aufgabe_editor.dart';
 import 'package:lx_fampad/features/tasks/tasks_screen.dart';
+import 'package:lx_fampad/features/tasks/tasks_state.dart' show aufgabeOeffnenProvider;
 import 'package:lx_fampad/widgets/kopfzeile.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
+import 'support/fake_erinnerung_port.dart';
 import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/test_app.dart';
@@ -58,6 +62,8 @@ void main() {
 
   Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', void Function(TestUmgebung env)? vorher, double skala = 1.0, String tab = 'Aufgaben', Size groesse = const Size(360, 800)}) async {
     final env = await angemeldeteUmgebung(role: role);
+    // kein Gerätedienst für Erinnerungen (sonst bleibt nach einer Änderung der Aufgaben ein Entprell-Timer stehen)
+    env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
     vorher?.call(env);
     final container = await starteApp(tester, env, skala: skala, groesse: groesse);
     if (groesse.width >= kDesktopBreakpoint) {
@@ -182,6 +188,62 @@ void main() {
     expect(punkte.map((p) => p.inhalt).toList()..sort(), ['Bett machen', 'Staub saugen']);
     expect(find.text('Zimmer aufräumen'), findsOneWidget);
     expect(find.text('0/2'), findsOneWidget);
+  });
+
+  for (final skala in [1.0, 1.5]) {
+    testWidgets('Editor, Textskala $skala: Erinnerung nur mit Fälligkeit, Auswahl wird gespeichert, Layout 360 px', (tester) async {
+      final env = await start(tester, groesse: const Size(360, 2400), skala: skala);
+      await tippeDirekt(tester, find.byTooltip('Aufgabe mit Details anlegen'));
+      expect(find.text('// ERINNERUNG'), findsNothing, reason: 'ohne Fälligkeit keine Erinnerung');
+      await tester.enterText(find.widgetWithText(TextField, 'Titel'), 'Arzt anrufen');
+      await tippeDirekt(tester, find.text('Morgen'));
+      expect(find.text('// ERINNERUNG'), findsOneWidget);
+      for (final t in ['Zur Fälligkeit', '15 Minuten vorher', '1 Stunde vorher', '1 Tag vorher']) {
+        expect(find.widgetWithText(AuswahlKnopf, t), findsOneWidget, reason: t);
+      }
+      await tippeDirekt(tester, find.text('1 Stunde vorher'));
+      expect(find.textContaining('09:00 Uhr am Fälligkeitstag'), findsOneWidget);
+      pruefeLayout(tester, 'Editor Erinnerung');
+      await tippeDirekt(tester, find.text('Aufgabe anlegen'));
+      expect((await dbAufgaben(env)).single.erinnerungMin, 60);
+    });
+  }
+
+  testWidgets('Tippen auf eine Aufgaben-Erinnerung öffnet den Editor der Aufgabe; unbekannte ID bleibt beim Tab', (tester) async {
+    await start(tester, vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Steuer', tage: 3, owner: fixIdAdmin));
+    });
+    final c = ProviderScope.containerOf(tester.element(find.byType(TasksScreen)));
+    c.read(aufgabeOeffnenProvider.notifier).setzen(_a4);
+    await warte(tester);
+    expect(find.byType(AufgabeEditor), findsNothing);
+    expect(c.read(aufgabeOeffnenProvider), isNull);
+    c.read(aufgabeOeffnenProvider.notifier).setzen(_a1);
+    await warte(tester);
+    expect(find.byType(AufgabeEditor), findsOneWidget);
+    expect(find.text('Steuer'), findsOneWidget);
+  });
+
+  testWidgets('Editor: Hinweis, wer die Erinnerung bekommt (andere Zuständige, keine Zuständige, ich)', (tester) async {
+    await start(tester, groesse: const Size(360, 2400));
+    await tippeDirekt(tester, find.byTooltip('Aufgabe mit Details anlegen'));
+    await tippeDirekt(tester, find.text('Morgen'));
+    await tippeDirekt(tester, find.text('1 Stunde vorher'));
+    expect(find.textContaining('Ohne Zuständige erinnert nur die Person, die die Aufgabe angelegt hat'), findsOneWidget);
+    await tippeDirekt(tester, find.text('Ben'));
+    expect(find.textContaining('Erinnert nur Ben, nicht dich.'), findsOneWidget);
+  });
+
+  testWidgets('Editor: Erinnerung gefüllt beim Bearbeiten, Fälligkeit entfernen blendet sie aus und speichert keine', (tester) async {
+    final env = await start(tester, groesse: const Size(360, 2400), vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, {..._aufgabe('Steuer', tage: 3, owner: fixIdAdmin), 'erinnerungMin': 1440});
+    });
+    await tippeDirekt(tester, find.text('Steuer'));
+    expect(tester.widget<AuswahlKnopf>(find.widgetWithText(AuswahlKnopf, '1 Tag vorher')).gewaehlt, isTrue);
+    await tippeDirekt(tester, find.text('Kein Datum'));
+    expect(find.text('// ERINNERUNG'), findsNothing);
+    await tippeDirekt(tester, find.text('Speichern'));
+    expect((await dbAufgaben(env)).single.erinnerungMin, isNull);
   });
 
   testWidgets('Editor: Fälligkeit mit Uhrzeit wird als UTC mit Zeitzone gespeichert', (tester) async {
