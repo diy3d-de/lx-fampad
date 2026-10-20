@@ -76,7 +76,7 @@ abstract class StandortPort {
   Future<StandortStatus> berechtigungAnfragen();
 
   /// Startet den Vordergrunddienst bis [ende]; null = gelungen, sonst der Grund.
-  Future<StartFehler?> starten(DateTime ende);
+  Future<StartFehler?> starten(DateTime ende, {Duration intervall = const Duration(seconds: 5)});
 
   /// Neue Endzeit der laufenden Freigabe (verlängern).
   Future<void> verlaengern(DateTime ende);
@@ -105,7 +105,7 @@ class KeinStandortPort implements StandortPort {
   @override
   Future<StandortStatus> berechtigungAnfragen() async => const StandortStatus();
   @override
-  Future<StartFehler?> starten(DateTime ende) async => StartFehler.dienstStart;
+  Future<StartFehler?> starten(DateTime ende, {Duration intervall = const Duration(seconds: 5)}) async => StartFehler.dienstStart;
   @override
   Future<void> verlaengern(DateTime ende) async {}
   @override
@@ -153,8 +153,8 @@ class AndroidStandortPort implements StandortPort {
   Future<StandortStatus> berechtigungAnfragen() async => _status(await _sicher(() => _methoden.invokeMethod<Object>('berechtigungAnfragen')));
 
   @override
-  Future<StartFehler?> starten(DateTime ende) async {
-    final r = await _sicher(() => _methoden.invokeMethod<Object>('start', {'ende': ende.millisecondsSinceEpoch}));
+  Future<StartFehler?> starten(DateTime ende, {Duration intervall = const Duration(seconds: 5)}) async {
+    final r = await _sicher(() => _methoden.invokeMethod<Object>('start', {'ende': ende.millisecondsSinceEpoch, 'intervall': intervall.inMilliseconds}));
     if (r is! Map) return StartFehler.dienstStart;
     if (r['ok'] == true) return null;
     return switch (r['grund']) {

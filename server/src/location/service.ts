@@ -40,6 +40,8 @@ interface Share {
   senderSockets: Set<WebSocket>;
   graceUntil: number | null;
   lastPosAt: number;
+  /** Zeitpunkte der Positionen der letzten Minute (Obergrenze je Freigabe). */
+  posZeiten: number[];
   lastRecheckAt: number;
 }
 
@@ -50,6 +52,7 @@ export interface LocationDeps {
   maxDurationMs: number;
   maxSharesPerFamily: number;
   minIntervalMs: number;
+  maxPerMinute: number;
   graceMs: number;
   sweepMs: number;
   log?: { warn(obj: unknown, msg?: string): void };
@@ -156,6 +159,7 @@ export class LocationService {
       senderSockets: new Set(socket.readyState === socket.OPEN ? [socket] : []),
       graceUntil: socket.readyState === socket.OPEN ? null : now + this.deps.graceMs,
       lastPosAt: 0,
+      posZeiten: [],
       lastRecheckAt: now,
     };
     this.shares.set(share.id, share);
@@ -184,6 +188,9 @@ export class LocationService {
     }
     if (typeof msg.packet !== 'string' || msg.packet.length === 0 || msg.packet.length > MAX_PACKET_LENGTH || !BASE64URL.test(msg.packet)) return { ok: false, code: 'bad_request' };
     if (now - s.lastPosAt < this.deps.minIntervalMs) return { ok: false, code: 'rate_limited' };
+    s.posZeiten = s.posZeiten.filter((t) => now - t < 60_000);
+    if (s.posZeiten.length >= this.deps.maxPerMinute) return { ok: false, code: 'rate_limited' };
+    s.posZeiten.push(now);
     s.lastPosAt = now;
     s.lastPacket = msg.packet;
     this.deps.hub.sendToUsers(s.familyId, [...s.recipients.keys()], { type: 'loc_pos', from: s.ownerId, shareId: s.id, packet: msg.packet });

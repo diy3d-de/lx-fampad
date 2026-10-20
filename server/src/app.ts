@@ -141,6 +141,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     maxDurationMs: config.locMaxDurationMs,
     maxSharesPerFamily: config.locMaxSharesPerFamily,
     minIntervalMs: config.locMinIntervalMs,
+    maxPerMinute: config.locMaxPerMinute,
     graceMs: config.locGraceMs,
     sweepMs: config.locSweepMs,
     log: app.log,

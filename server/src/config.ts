@@ -103,6 +103,8 @@ export interface Config {
   locMaxDurationMs: number;
   locMaxSharesPerFamily: number;
   locMinIntervalMs: number;
+  /** Höchstens so viele Positionen je Freigabe und Minute (die App sendet im schnellsten Modus alle 3 s, also 20 je Minute). */
+  locMaxPerMinute: number;
   locGraceMs: number;
   locSweepMs: number;
 }
@@ -286,6 +288,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locMaxDurationMs: positiveInt(env, 'LOC_MAX_DURATION_MS', 12 * 60 * 60 * 1000),
     locMaxSharesPerFamily: positiveInt(env, 'LOC_MAX_SHARES_PER_FAMILY', 50),
     locMinIntervalMs: positiveInt(env, 'LOC_MIN_INTERVAL_MS', 1000),
+    locMaxPerMinute: positiveInt(env, 'LOC_MAX_PER_MINUTE', 40),
     locGraceMs: positiveInt(env, 'LOC_GRACE_MS', 90_000),
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
   };

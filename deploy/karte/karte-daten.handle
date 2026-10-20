@@ -1,0 +1,9 @@
+	# Kartenkacheln (Karten-Spike, docs/KARTE-SPIKE.md): eine PMTiles-Datei aus /srv/fampad/karte/ (Erzeugung: tools/karte/README.md).
+	# file_server beantwortet Range-Anfragen nativ (206 Partial Content), ETag erkennt die neu eingespielte Datei. Gleiche Domain wie die App:
+	# kein CORS, keine CSP-Änderung (connect-src 'self'). Dieser Block wird NUR von deploy/einrichtung-karte.sh in conf.d/fampad.caddy eingefügt.
+	handle_path /karte-daten/* {
+		root * /srv/fampad/karte
+		header Cache-Control "no-cache"
+		file_server
+	}
+

@@ -128,8 +128,8 @@ class _StandortScreenState extends ConsumerState<StandortScreen> {
                   const SizedBox(height: 24),
                   const MonoLabel('// familie'),
                   const SizedBox(height: 8),
-                  if (karte != null && mitPosition.isNotEmpty) ...[
-                    SizedBox(height: 240, child: ClipRRect(borderRadius: BorderRadius.circular(14), child: karte(context, mitPosition, namen))),
+                  if (karte != null && (mitPosition.isNotEmpty || st.eigene != null && st.phase == StandortPhase.teilt)) ...[
+                    karte(context, mitPosition, namen),
                     const SizedBox(height: 12),
                   ],
                   if (liste.isEmpty)
