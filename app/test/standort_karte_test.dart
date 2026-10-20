@@ -1,10 +1,12 @@
 // Karte der Teilenden: Stil-Vorlage ohne Fremd-Adressen, Kartenbereich, Stecknadel (Spitze, Profilbild), Karte mit Attrappe statt MapLibre (Nadeln, Info beim
 // Tippen, Knöpfe, außerhalb des Kartenbereichs), Rückfall "Karte noch nicht eingerichtet" bei fehlender Datei. 360 px, Textskala 1.5.
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -19,6 +21,7 @@ import 'package:lx_fampad/data/standort/standort_dienst.dart';
 import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart';
 import 'package:lx_fampad/features/karte/karte_config.dart';
+import 'package:lx_fampad/features/karte/karte_stil.dart';
 import 'package:lx_fampad/features/karte/karte_verfuegbar.dart';
 import 'package:lx_fampad/features/standort/standort_karte_ansicht.dart';
 import 'package:lx_fampad/features/standort/standort_pin.dart';
@@ -234,6 +237,89 @@ void main() {
     });
   });
 
+  group('Kartenstil dunkel/hell', () {
+    final hellVorlage = File('assets/karte/style-hell.json').readAsStringSync();
+
+    test('Auswahl: Standard dunkel, Umschalten, unbekannte Werte ergeben null', () {
+      expect(kKartenStilStandard, KartenStil.dunkel);
+      expect(KartenStil.dunkel.anderer, KartenStil.hell);
+      expect(KartenStil.hell.anderer, KartenStil.dunkel);
+      expect(KartenStil.aus('hell'), KartenStil.hell);
+      expect(KartenStil.aus('dunkel'), KartenStil.dunkel);
+      expect(KartenStil.aus('system'), isNull);
+      expect(KartenStil.aus(null), isNull);
+      // der Knopf nennt, was er bewirkt
+      expect(KartenStil.dunkel.umschaltText, 'Helle Karte');
+      expect(KartenStil.hell.umschaltText, 'Dunkle Karte');
+    });
+
+    test('Beide Stile: nur eigene Adressen, gleiche Quelle und Schriften, eigene Sprites; der helle ist wirklich hell', () {
+      for (final stil in KartenStil.values) {
+        final vorlage = File(stil.asset).readAsStringSync();
+        final adressen = RegExp(r'https?://[^"\\\s<>]+').allMatches(vorlage).map((m) => m.group(0)!).toSet();
+        expect(adressen, {'https://www.openstreetmap.org/copyright'}, reason: stil.wert);
+        expect(vorlage, contains(kKarteAttribution), reason: stil.wert);
+        // streng wie bisher: Platzhalter werden ersetzt, jede Fremd-Adresse wird abgelehnt
+        final fertig = karteStyleAusVorlage(vorlage, 'https://familie.lx-labs.dev');
+        expect(fertig, isNot(contains('{{')));
+        expect(() => karteStyleAusVorlage(vorlage.replaceFirst('{{KARTE_BASE}}/glyphs', 'https://fremd.example/glyphs'), 'https://familie.lx-labs.dev'), throwsStateError);
+      }
+      Map<String, dynamic> lies(String t) => jsonDecode(t) as Map<String, dynamic>;
+      final dunkel = lies(vorlage), hell = lies(hellVorlage);
+      expect(dunkel['sprite'], '{{KARTE_BASE}}/sprites/black');
+      expect(hell['sprite'], '{{KARTE_BASE}}/sprites/light');
+      expect(hell['glyphs'], dunkel['glyphs']);
+      expect(hell['sources'], dunkel['sources']);
+      for (final n in ['light.json', 'light.png', 'light@2x.json', 'light@2x.png', 'black.json', 'black.png']) {
+        expect(File('web/karte/sprites/$n').existsSync(), isTrue, reason: n);
+      }
+      // Hintergrundfarbe: hell deutlich heller als dunkel
+      double helligkeit(Map<String, dynamic> st) {
+        final bg = (st['layers'] as List).cast<Map<String, dynamic>>().firstWhere((l) => l['type'] == 'background')['paint']['background-color'] as String;
+        return Color(int.parse('FF${bg.substring(1)}', radix: 16)).computeLuminance();
+      }
+      expect(helligkeit(hell), greaterThan(0.6));
+      expect(helligkeit(dunkel), lessThan(0.05));
+    });
+
+    test('Speicher: Standard, gespeicherter Wert, Wahl wird abgelegt, kaputter oder werfender Speicher stört nicht', () async {
+      Future<(ProviderContainer, KartenStilNotifier)> start(MemoryKartenStilSpeicher sp) async {
+        final c = ProviderContainer(overrides: [kartenStilSpeicherProvider.overrideWithValue(sp)]);
+        addTearDown(c.dispose);
+        final n = c.read(kartenStilProvider.notifier);
+        await n.bereit;
+        return (c, n);
+      }
+
+      var (c, n) = await start(MemoryKartenStilSpeicher());
+      expect(c.read(kartenStilProvider), KartenStil.dunkel);
+      var sp = MemoryKartenStilSpeicher('hell');
+      (c, n) = await start(sp);
+      expect(c.read(kartenStilProvider), KartenStil.hell);
+      await n.umschalten();
+      expect(c.read(kartenStilProvider), KartenStil.dunkel);
+      expect(sp.wert, 'dunkel');
+      (c, n) = await start(MemoryKartenStilSpeicher('quatsch'));
+      expect(c.read(kartenStilProvider), KartenStil.dunkel);
+      sp = MemoryKartenStilSpeicher()..wirft = true;
+      (c, n) = await start(sp);
+      expect(c.read(kartenStilProvider), KartenStil.dunkel);
+      await n.setzen(KartenStil.hell); // Speichern scheitert still, die Wahl gilt
+      expect(c.read(kartenStilProvider), KartenStil.hell);
+    });
+
+    test('Wahl vor dem Ende des Lesens wird nicht vom gespeicherten Wert überschrieben', () async {
+      final sp = MemoryKartenStilSpeicher('hell');
+      final c = ProviderContainer(overrides: [kartenStilSpeicherProvider.overrideWithValue(sp)]);
+      addTearDown(c.dispose);
+      final n = c.read(kartenStilProvider.notifier);
+      final fertig = n.setzen(KartenStil.dunkel);
+      await n.bereit;
+      await fertig;
+      expect(c.read(kartenStilProvider), KartenStil.dunkel);
+    });
+  });
+
   group('Stecknadel', () {
     test('Umriss: Spitze liegt auf der Mitte der Unterkante, Kopf ist gefüllt, Ecken sind leer', () {
       final pfad = PinMaler.umriss(kPinGroesse);
@@ -288,7 +374,8 @@ void main() {
       bool verfuegbar = true,
       StandortState? zustand,
       double skala = 1.0,
-      Future<String> Function()? stil,
+      Future<String> Function(KartenStil)? stil,
+      MemoryKartenStilSpeicher? stilSpeicher,
       bool laedtNie = false,
       http.Client? httpClient,
     }) async {
@@ -306,7 +393,8 @@ void main() {
             standortProvider.overrideWith(() => _Steuerung(zustand ?? const StandortState())),
             standortUhrProvider.overrideWith((ref) => () => jetzt),
             karteAttrappeProvider.overrideWithValue(true),
-            karteStilProvider.overrideWithValue(stil ?? () async => '{}'),
+            karteStilProvider.overrideWithValue(stil ?? (_) async => '{}'),
+            kartenStilSpeicherProvider.overrideWithValue(stilSpeicher ?? MemoryKartenStilSpeicher()),
             karteAttrappeLaedtNieProvider.overrideWithValue(laedtNie),
             karteLadeFristProvider.overrideWithValue(const Duration(seconds: 10)),
             if (httpClient == null) karteDateiProvider.overrideWith((ref) async => verfuegbar ? KartenBereich.westerburg175 : null) else httpClientProvider.overrideWithValue(httpClient),
@@ -447,7 +535,7 @@ void main() {
 
     testWidgets('Fehler beim Laden des Stils: "Erneut prüfen" lädt ihn neu (der Fehler bleibt nicht gemerkt)', (tester) async {
       var versuche = 0;
-      await zeige(tester, [teilt(_ben)], stil: () async {
+      await zeige(tester, [teilt(_ben)], stil: (_) async {
         if (++versuche == 1) throw StateError('kaputt');
         return '{}';
       });
@@ -466,6 +554,106 @@ void main() {
       expect(find.textContaining('Du: außerhalb des Kartenbereichs'), findsOneWidget);
       expect(find.byType(StandortPin), findsOneWidget);
       expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.my_location)).onPressed, isNull);
+    });
+
+    testWidgets('Stil umschalten: Knopf nennt die Wirkung, der neue Stil wird geladen, die Wahl liegt im Speicher, die Nadeln bleiben', (tester) async {
+      final geladen = <KartenStil>[];
+      final sp = MemoryKartenStilSpeicher();
+      await zeige(tester, [teilt(_ben)], stilSpeicher: sp, stil: (st) async {
+        geladen.add(st);
+        return '{}';
+      });
+      expect(geladen, [KartenStil.dunkel]);
+      expect(find.byTooltip('Helle Karte'), findsOneWidget);
+      expect(find.byTooltip('Dunkle Karte'), findsNothing);
+      expect(find.byIcon(Icons.light_mode), findsOneWidget);
+      await tippe(tester, find.byTooltip('Helle Karte'));
+      expect(geladen, [KartenStil.dunkel, KartenStil.hell]);
+      expect(sp.wert, 'hell');
+      expect(find.byTooltip('Dunkle Karte'), findsOneWidget);
+      expect(find.byIcon(Icons.dark_mode), findsOneWidget);
+      expect(find.byType(StandortPin), findsOneWidget);
+      await tippe(tester, find.byTooltip('Dunkle Karte'));
+      expect(geladen.last, KartenStil.dunkel);
+      expect(sp.wert, 'dunkel');
+    });
+
+    testWidgets('Gespeicherte Wahl hell: die Karte startet gleich mit dem hellen Stil (kein Aufblitzen des dunklen)', (tester) async {
+      final geladen = <KartenStil>[];
+      await zeige(tester, [teilt(_ben)], stilSpeicher: MemoryKartenStilSpeicher('hell'), stil: (st) async {
+        geladen.add(st);
+        return '{}';
+      });
+      expect(geladen, [KartenStil.hell]);
+      expect(find.byTooltip('Dunkle Karte'), findsOneWidget);
+    });
+
+    testWidgets('Vollbild: eine einzige Kartenfläche, Knöpfe und Nadeln bleiben, Auswahl bleibt beim Schließen, Schließen/Esc/Systemzurück beenden nur das Vollbild', (tester) async {
+      await zeige(tester, [teilt(_ben), teilt(_cora, lat: 50.6)]);
+      expect(find.byTooltip('Vollbild'), findsOneWidget);
+      await tippe(tester, find.byType(StandortPin).first);
+      expect(find.text('vor 2 Min · ± 12 m'), findsOneWidget);
+
+      await tippe(tester, find.byTooltip('Vollbild'));
+      expect(find.byTooltip('Vollbild beenden'), findsOneWidget);
+      expect(find.byIcon(Icons.fullscreen_exit), findsOneWidget);
+      expect(find.text('Karte im Vollbild', skipOffstage: false), findsOneWidget, reason: 'die Karte in der Seite ist abgebaut');
+      // genau zwei Nadeln: die der Vollbild-Karte (nie zusätzlich die der Seite)
+      expect(find.byType(StandortPin), findsNWidgets(2));
+      for (final t in ['Alle zeigen', 'Helle Karte']) {
+        expect(find.byTooltip(t), findsOneWidget, reason: t);
+      }
+      expect(find.text(kKarteAttribution), findsOneWidget);
+      expect(find.text('vor 2 Min · ± 12 m'), findsOneWidget, reason: 'die Auswahl ist mitgekommen');
+      // Stil im Vollbild umschalten, dann zurück: die Wahl gilt auch in der Seite
+      await tippe(tester, find.byTooltip('Helle Karte'));
+      await tippe(tester, find.byTooltip('Vollbild beenden'));
+      expect(find.byTooltip('Vollbild beenden'), findsNothing);
+      expect(find.text('Karte im Vollbild'), findsNothing);
+      expect(find.byTooltip('Vollbild'), findsOneWidget);
+      expect(find.byTooltip('Dunkle Karte'), findsOneWidget);
+      expect(find.byType(StandortPin), findsNWidgets(2));
+      expect(find.text('vor 2 Min · ± 12 m'), findsOneWidget, reason: 'die Auswahl blieb');
+
+      // Esc
+      await tippe(tester, find.byTooltip('Vollbild'));
+      expect(find.byTooltip('Vollbild beenden'), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await warte(tester);
+      expect(find.byTooltip('Vollbild beenden'), findsNothing);
+      expect(find.byTooltip('Vollbild'), findsOneWidget);
+
+      // Systemzurück: schließt nur das Vollbild, die Seite darunter bleibt
+      await tippe(tester, find.byTooltip('Vollbild'));
+      await tester.binding.handlePopRoute();
+      await warte(tester);
+      expect(find.byTooltip('Vollbild beenden'), findsNothing);
+      expect(find.byType(StandortKarte), findsOneWidget);
+      expect(find.byTooltip('Vollbild'), findsOneWidget);
+    });
+
+    testWidgets('Vollbild: "Auf mich zentrieren" nur mit eigener Position; Nadel antippen zeigt die Info', (tester) async {
+      await zeige(
+        tester,
+        [teilt(_ben)],
+        zustand: StandortState(phase: StandortPhase.teilt, endetAt: jetzt.add(const Duration(hours: 1)), eigene: GeraetePosition(breite: 50.55, laenge: 7.96, zeit: jetzt)),
+      );
+      await tippe(tester, find.byTooltip('Vollbild'));
+      expect(tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.my_location)).onPressed, isNotNull);
+      await tippe(tester, find.byType(StandortPin).first);
+      expect(find.byTooltip('Schließen'), findsOneWidget);
+      await tippe(tester, find.byTooltip('Schließen'));
+      expect(find.byTooltip('Schließen'), findsNothing);
+    });
+
+    testWidgets('Vollbild: Layout 360 px, Textskala 1.5, Touch-Ziele mindestens 44 px', (tester) async {
+      await zeige(tester, [teilt(_ben), teilt(_cora, lat: 50.6)], skala: 1.5);
+      expect(kleineZiele(tester), isEmpty, reason: 'in der Seite');
+      await tippe(tester, find.byTooltip('Vollbild'));
+      expect(tester.takeException(), isNull);
+      expect(kleineZiele(tester), isEmpty, reason: 'im Vollbild');
+      await tippe(tester, find.byType(StandortPin).first);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('Ohne Kartendatei: Layout 360 px, Textskala 1.5 (auch bei geringer Höhe ohne Überlauf)', (tester) async {

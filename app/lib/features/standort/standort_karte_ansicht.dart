@@ -1,11 +1,11 @@
 // Karte der Teilenden (MapLibre, Kacheln als PMTiles vom eigenen Server, siehe docs/KARTE-SPIKE.md): je teilender Person eine Stecknadel mit Profilbild
 // (dazu die eigene, solange du teilst), ein dezenter Genauigkeitskreis, Info beim Tippen (Name, "vor X", Genauigkeit), Kamera auf alle eingepasst,
-// Knopf "Auf mich zentrieren". Bewegungen werden weich animiert (kein Springen). Fehlt die Kartendatei auf dem Server, steht hier "Karte noch nicht
+// Knopf "Auf mich zentrieren", Umschalter dunkel/hell (Auswahl lokal gemerkt) und Vollbild. Bewegungen werden weich animiert (kein Springen). Fehlt die Kartendatei auf dem Server, steht hier "Karte noch nicht
 // eingerichtet" und die Liste darunter bleibt die Anzeige; Teilende außerhalb des Kartenbereichs bleiben in der Liste, die Karte nennt sie.
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show Factory, kIsWeb;
+import 'package:flutter/foundation.dart' show Factory, ValueListenable, kIsWeb;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,14 +21,15 @@ import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_modelle.dart';
 import '../auth/auth_widgets.dart' show LinkKnopf;
 import '../karte/karte_config.dart';
+import '../karte/karte_stil.dart';
 import '../karte/karte_verfuegbar.dart';
 import 'standort_pin.dart';
 import 'standort_pin_bild.dart';
 
 /// Lädt den Kartenstil (Asset mit den Adressen des eigenen Servers); Tests überschreiben es.
-final karteStilProvider = Provider<Future<String> Function()>((ref) {
-  return () async {
-    final vorlage = await rootBundle.loadString('assets/karte/style.json');
+final karteStilProvider = Provider<Future<String> Function(KartenStil stil)>((ref) {
+  return (stil) async {
+    final vorlage = await rootBundle.loadString(stil.asset);
     return karteStyleAusVorlage(vorlage, karteOrigin());
   };
 });
@@ -70,6 +71,10 @@ List<Geographic> kreisRing(double lat, double lng, double radiusMeter, {int punk
   return [...ring, ring.first];
 }
 
+typedef _KartenDaten = ({List<GeteiltePosition> positionen, Map<String, UserDto> mitglieder});
+
+/// Die Karte der Standort-Seite: in der Seite (Höhe [kKarteHoehe]) oder im Vollbild (eigene Seite über allem, ohne Ränder). Es gibt immer nur EINE Kartenfläche
+/// (auf Android höchstens eine MapLibre-Instanz): beim Wechsel wird die andere abgebaut, die neue übernimmt Kamera und Auswahl der Vorgängerin.
 class StandortKarte extends ConsumerStatefulWidget {
   final List<GeteiltePosition> positionen;
   final Map<String, UserDto> mitglieder;
@@ -79,6 +84,148 @@ class StandortKarte extends ConsumerStatefulWidget {
   ConsumerState<StandortKarte> createState() => _StandortKarteState();
 }
 
+class _StandortKarteState extends ConsumerState<StandortKarte> {
+  bool _vollbild = false;
+  MapCamera? _kamera;
+  String? _gewaehlt;
+  Route<void>? _route;
+  late final ValueNotifier<_KartenDaten> _daten = ValueNotifier((positionen: widget.positionen, mitglieder: widget.mitglieder));
+
+  @override
+  void didUpdateWidget(StandortKarte alt) {
+    super.didUpdateWidget(alt);
+    // das Vollbild liegt in einer anderen Seite: erst nach dem Bau benachrichtigen (kein Neuaufbau mitten im Bau)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _daten.value = (positionen: widget.positionen, mitglieder: widget.mitglieder);
+    });
+  }
+
+  @override
+  void dispose() {
+    final route = _route;
+    if (route != null && route.isActive) {
+      // die Seite der Karte ist weg (etwa: niemand teilt mehr): das Vollbild nicht verwaist stehen lassen
+      scheduleMicrotask(() => route.navigator?.removeRoute(route));
+    }
+    _daten.dispose();
+    super.dispose();
+  }
+
+  void _vorgaenger(MapCamera k) => _kamera = k;
+  void _auswahl(String? id) => _gewaehlt = id;
+
+  /// Öffnet das Vollbild: erst die Karte in der Seite abbauen (ein Bild lang), dann die Vollbild-Seite schieben.
+  Future<void> _oeffnen() async {
+    if (_vollbild) return;
+    setState(() => _vollbild = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    final route = PageRouteBuilder<void>(
+      opaque: true,
+      transitionDuration: Duration.zero,
+      reverseTransitionDuration: Duration.zero,
+      pageBuilder: (_, _, _) => _VollbildSeite(daten: _daten, anfangsKamera: _kamera, anfangsGewaehlt: _gewaehlt, onKamera: _vorgaenger, onGewaehlt: _auswahl),
+    );
+    _route = route;
+    await Navigator.of(context, rootNavigator: true).push(route);
+    _route = null;
+    if (mounted) setState(() => _vollbild = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_vollbild) {
+      return const SizedBox(
+        height: kKarteHoehe,
+        child: _Rahmen(child: Center(child: Text('Karte im Vollbild', style: TextStyle(color: kTextMuted, fontSize: 13)))),
+      );
+    }
+    return _KartenFlaeche(
+      positionen: widget.positionen,
+      mitglieder: widget.mitglieder,
+      vollbild: false,
+      anfangsKamera: _kamera,
+      anfangsGewaehlt: _gewaehlt,
+      onKamera: _vorgaenger,
+      onGewaehlt: _auswahl,
+      onVollbild: _oeffnen,
+    );
+  }
+}
+
+/// Die Vollbild-Seite: die Karte füllt den ganzen Bildschirm (auch hinter Statusleiste und Navigationsleiste). Systemzurück und Esc schließen nur das Vollbild.
+class _VollbildSeite extends StatelessWidget {
+  final ValueListenable<_KartenDaten> daten;
+  final MapCamera? anfangsKamera;
+  final String? anfangsGewaehlt;
+  final ValueChanged<MapCamera> onKamera;
+  final ValueChanged<String?> onGewaehlt;
+  const _VollbildSeite({required this.daten, required this.anfangsKamera, required this.anfangsGewaehlt, required this.onKamera, required this.onGewaehlt});
+
+  @override
+  Widget build(BuildContext context) {
+    final rand = MediaQuery.paddingOf(context);
+    void schliessen() => Navigator.of(context).maybePop();
+    return CallbackShortcuts(
+      bindings: {const SingleActivator(LogicalKeyboardKey.escape): schliessen},
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          backgroundColor: kBg,
+          body: Stack(
+            children: [
+              Positioned.fill(
+                child: ValueListenableBuilder<_KartenDaten>(
+                  valueListenable: daten,
+                  builder: (_, d, _) => _KartenFlaeche(
+                    positionen: d.positionen,
+                    mitglieder: d.mitglieder,
+                    vollbild: true,
+                    anfangsKamera: anfangsKamera,
+                    anfangsGewaehlt: anfangsGewaehlt,
+                    onKamera: onKamera,
+                    onGewaehlt: onGewaehlt,
+                  ),
+                ),
+              ),
+              // dezenter Schleier unter der Statusleiste: ihre Zeichen bleiben auf hellem und dunklem Stil lesbar
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                height: rand.top + 12,
+                child: IgnorePointer(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [kBg.withValues(alpha: 0.6), kBg.withValues(alpha: 0)])),
+                  ),
+                ),
+              ),
+              Positioned(left: 4 + rand.left, top: 4 + rand.top, child: _KartenKnopf(icon: Icons.fullscreen_exit, tooltip: 'Vollbild beenden', onTap: schliessen)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KartenFlaeche extends ConsumerStatefulWidget {
+  final List<GeteiltePosition> positionen;
+  final Map<String, UserDto> mitglieder;
+  final bool vollbild;
+
+  /// Kamera und Auswahl der Vorgängerin (Wechsel zwischen Seite und Vollbild): die Karte öffnet dort, nicht auf "alle zeigen".
+  final MapCamera? anfangsKamera;
+  final String? anfangsGewaehlt;
+  final ValueChanged<MapCamera>? onKamera;
+  final ValueChanged<String?>? onGewaehlt;
+  final VoidCallback? onVollbild;
+  const _KartenFlaeche({required this.positionen, required this.mitglieder, required this.vollbild, this.anfangsKamera, this.anfangsGewaehlt, this.onKamera, this.onGewaehlt, this.onVollbild});
+
+  @override
+  ConsumerState<_KartenFlaeche> createState() => _KartenFlaecheState();
+}
+
 class _Punkt {
   final double lat;
   final double lng;
@@ -86,12 +233,23 @@ class _Punkt {
   static _Punkt lerp(_Punkt a, _Punkt b, double t) => _Punkt(a.lat + (b.lat - a.lat) * t, a.lng + (b.lng - a.lng) * t);
 }
 
-class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final AnimationController _anim = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..addListener(() => setState(() {}));
   final Map<String, _Punkt> _von = {};
   final Map<String, _Punkt> _nach = {};
   Future<String>? _stil;
   MapController? _ctrl;
+
+  /// Der Stil (dunkel/hell), den die Karte gerade zeigt bzw. lädt; null, bis der erste Stil angefordert ist.
+  KartenStil? _angewandt;
+
+  /// Zählt die Stilwechsel: Teil der Bild-Kennungen der Nadeln (nach einem Wechsel melden wir sie unter neuen Namen an, ob die Karte die alten Bilder behalten hat oder nicht).
+  int _stilNr = 0;
+  List<String> _alteBilder = [];
+
+  /// Zuletzt gemeldete Kamera (für die Übergabe an die nächste Kartenfläche) und ob diese Fläche mit einer übernommenen Kamera begann.
+  MapCamera? _kamera;
+  late final bool _uebernommen = widget.anfangsKamera != null;
 
   /// Nur Web: Die Nadeln sind dort Symbole der Karte selbst (WebGL), nicht Flutter-Widgets darüber. Flutter zeichnet nach einer Kartenbewegung erst im
   /// nächsten Bild neu, die Nadeln "schwammen" deshalb beim Ziehen. [_style] nimmt die Bilder auf, [_bilder] führt Buch über die Bilder je Person.
@@ -114,6 +272,8 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _kamera = widget.anfangsKamera;
+    _gewaehlt = widget.anfangsGewaehlt;
     _auffrischen = Timer.periodic(const Duration(seconds: 20), (_) {
       if (mounted) setState(() {});
     });
@@ -145,7 +305,46 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
     final erstes = !_geladen;
     if (erstes) setState(() => _geladen = true);
     // Einpassen noch einmal mit fertiger Karte: Im Web steht beim ersten Mal (onMapCreated) die Größe der Karten-Ansicht noch nicht, das Zoomen ginge falsch aus
-    if (erstes) Future<void>.delayed(const Duration(milliseconds: 300), () => mounted ? _alleZeigen() : null);
+    // (nicht bei übernommener Kamera: die Person soll dort weitermachen, wo sie war)
+    if (erstes && !_uebernommen) Future<void>.delayed(const Duration(milliseconds: 300), () => mounted ? _alleZeigen() : null);
+    // Stilwechsel: die Bilder der Nadeln (Web) gehen mit dem alten Stil verloren und werden im neuen neu angemeldet (Neuaufbau löst _bilderSichern aus)
+    if (!erstes) {
+      final style = _style;
+      if (style != null) _bilderEntfernen(style, _alteBilder);
+      _alteBilder = [];
+      setState(() {});
+    }
+  }
+
+  /// Der Stil wurde umgeschaltet: neuen Stil laden und in die laufende Karte setzen (Kamera und Auswahl bleiben, die Nadelbilder werden neu angemeldet).
+  Future<void> _stilWechseln(KartenStil neu) async {
+    if (_angewandt == null || neu == _angewandt) return; // noch kein Stil geladen: die Karte startet gleich mit dem gewählten
+    _angewandt = neu;
+    try {
+      final json = await ref.read(karteStilProvider)(neu);
+      if (!mounted || _angewandt != neu) return; // inzwischen wieder umgeschaltet
+      final c = _ctrl;
+      if (c == null) return;
+      _style = null;
+      _alteBilder = [..._alteBilder, ..._bilder.bereit.values];
+      _stilNr++;
+      _bilder.leeren();
+      c.setStyle(json);
+    } catch (_) {
+      // Stil nicht ladbar: die Karte bleibt im bisherigen Stil
+    }
+  }
+
+  Future<String> _stilLaden() async {
+    await ref.read(kartenStilProvider.notifier).bereit; // gespeicherte Auswahl zuerst, sonst blitzt erst der Standard auf
+    final wahl = ref.read(kartenStilProvider);
+    _angewandt = wahl;
+    return ref.read(karteStilProvider)(wahl);
+  }
+
+  void _waehle(String? id) {
+    setState(() => _gewaehlt = id);
+    widget.onGewaehlt?.call(id);
   }
 
   /// Wartet auf "Stil geladen"; bleibt die Meldung aus (Kacheln oder Stil kommen nicht an, Darstellung scheitert), erscheint nach der Frist eine Meldung.
@@ -165,6 +364,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
       _kartenSchluessel = UniqueKey();
       _stil = null;
       _style = null;
+      _alteBilder = [];
       _bilder.leeren();
     });
     ref.invalidate(karteDateiProvider);
@@ -230,7 +430,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   }
 
   @override
-  void didUpdateWidget(StandortKarte alt) {
+  void didUpdateWidget(_KartenFlaeche alt) {
     super.didUpdateWidget(alt);
     _ziele(_eintraege());
     _einpassenWennNeu();
@@ -335,7 +535,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
       final a = e.user?.avatar;
       final veraltet = !e.eigene && jetzt.difference(e.messzeit) >= kStandortVeraltetNach;
       final gewaehlt = e.id == _gewaehlt;
-      final id = 'pin-${e.id}-${Object.hash(e.farbIndex, e.name, a?.istFoto, a?.vorlage, a?.version, veraltet, gewaehlt, e.eigene, massstab)}';
+      final id = 'pin-${e.id}-${Object.hash(e.farbIndex, e.name, a?.istFoto, a?.vorlage, a?.version, veraltet, gewaehlt, e.eigene, massstab, _stilNr)}';
       if (!_bilder.anfordern(e.id, id)) continue;
       unawaited(() async {
         var ok = false;
@@ -370,7 +570,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
       if (!_bereich.enthaelt(e.lat, e.lng) || _bilder.bereit[e.id] == null) continue;
       final p = _gezeigt(e.id, _Punkt(e.lat, e.lng));
       if (pinGetroffen(ev.screenPoint, c.toScreenLocation(Geographic(lon: p.lng, lat: p.lat)))) {
-        setState(() => _gewaehlt = _gewaehlt == e.id ? null : e.id);
+        _waehle(_gewaehlt == e.id ? null : e.id);
         return;
       }
     }
@@ -379,7 +579,12 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   void _kartenFertig(MapController c) {
     _ctrl = c;
     _angepasst = {};
-    _einpassenWennNeu();
+    if (_uebernommen) {
+      // Kamera der Vorgängerin übernommen: nicht neu einpassen, nur merken, wer schon berücksichtigt ist
+      _angepasst = {for (final e in _imBereich(_eintraege())) e.id};
+    } else {
+      _einpassenWennNeu();
+    }
   }
 
   @override
@@ -390,7 +595,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
       if (verbunden) _nochmalPruefen();
     });
     return SizedBox(
-      height: kKarteHoehe,
+      height: widget.vollbild ? null : kKarteHoehe,
       child: datei.when(
         loading: () => const _Rahmen(child: Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2)))),
         error: (_, _) => _NichtEingerichtet(titel: 'Karte nicht erreichbar', text: 'Der Kartenserver ließ sich nicht erreichen (Verbindung?).', onNeuPruefen: _neuPruefen),
@@ -402,7 +607,10 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
   Widget _karte(BuildContext context, KartenBereich bereich) {
     _bereich = bereich;
     // in der Attrappe (Tests) braucht es keinen Stil
-    _stil ??= ref.read(karteStilProvider)();
+    _stil ??= _stilLaden();
+    ref.listen(kartenStilProvider, (_, neu) => unawaited(_stilWechseln(neu)));
+    final stilWahl = ref.watch(kartenStilProvider);
+    final rand = widget.vollbild ? MediaQuery.paddingOf(context) : EdgeInsets.zero;
     final attrappe = ref.read(karteAttrappeProvider);
     // die Attrappe (Tests) gilt als geladen, außer sie soll nie laden
     if (attrappe && !ref.read(karteAttrappeLaedtNieProvider)) _geladen = true;
@@ -429,11 +637,12 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
             }(),
             size: kPinGroesse,
             alignment: Alignment.bottomCenter,
-            child: _PinKnopf(eintrag: e, gewaehlt: e.id == _gewaehlt, veraltet: !e.eigene && jetzt.difference(e.messzeit) >= kStandortVeraltetNach, onTap: () => setState(() => _gewaehlt = _gewaehlt == e.id ? null : e.id)),
+            child: _PinKnopf(eintrag: e, gewaehlt: e.id == _gewaehlt, veraltet: !e.eigene && jetzt.difference(e.messzeit) >= kStandortVeraltetNach, onTap: () => _waehle(_gewaehlt == e.id ? null : e.id)),
           ),
     ];
 
     return _Rahmen(
+      rund: !widget.vollbild,
       child: FutureBuilder<String>(
         future: _stil,
         builder: (context, snap) {
@@ -448,8 +657,10 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                     : MapLibreMap(
                         options: MapOptions(
                           initStyle: snap.data!,
-                          initCenter: const Geographic(lon: 7.9741, lat: 50.5612),
-                          initZoom: 8,
+                          initCenter: _kamera?.center ?? const Geographic(lon: 7.9741, lat: 50.5612),
+                          initZoom: _kamera?.zoom ?? 8,
+                          initBearing: _kamera?.bearing ?? 0,
+                          initPitch: _kamera?.pitch ?? 0,
                           minZoom: 5,
                           maxZoom: 17,
                           maxBounds: LngLatBounds(longitudeWest: bereich.west, longitudeEast: bereich.ost, latitudeSouth: bereich.sued, latitudeNorth: bereich.nord),
@@ -460,7 +671,14 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                           _style = s;
                           _stilGeladen();
                         },
-                        onEvent: glPins ? (ev) => _kartenEreignis(ev, eintraege) : null,
+                        onEvent: (ev) {
+                          if (ev is MapEventMoveCamera) {
+                            _kamera = ev.camera;
+                            widget.onKamera?.call(ev.camera);
+                          } else if (glPins) {
+                            _kartenEreignis(ev, eintraege);
+                          }
+                        },
                         // die Karte bekommt alle Gesten, auch in der scrollenden Seite (sonst scrollt jede Wischgeste die Seite statt die Karte zu bewegen)
                         gestureRecognizers: {Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new)},
                         layers: [
@@ -473,8 +691,9 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                                     return Feature(geometry: Polygon.from([kreisRing(p.lat, p.lng, e.genauigkeit!)]));
                                   }(),
                             ],
-                            color: kAccent.withValues(alpha: 0.10),
-                            outlineColor: kAccent.withValues(alpha: 0.45),
+                            // auf dem hellen Stil ist Cyan kaum zu sehen: dort Violett (Design-Token neural)
+                            color: (stilWahl.istHell ? kNeural : kAccent).withValues(alpha: stilWahl.istHell ? 0.14 : 0.10),
+                            outlineColor: (stilWahl.istHell ? kNeural : kAccent).withValues(alpha: stilWahl.istHell ? 0.75 : 0.45),
                           ),
                           if (glPins)
                             for (final e in geordnet)
@@ -509,23 +728,30 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
                 ),
               if (ausserhalb.isNotEmpty && _geladen)
                 Positioned(
-                  left: 8,
-                  top: 8,
-                  right: 64,
+                  left: widget.vollbild ? 56 + rand.left : 8,
+                  top: 8 + rand.top,
+                  right: 64 + rand.right,
                   child: _Zettel(text: '${ausserhalb.join(', ')}: außerhalb des Kartenbereichs (nur in der Liste)', farbe: kWarn),
                 ),
               Positioned(
-                right: 4,
-                top: 4,
+                right: 4 + rand.right,
+                top: 4 + rand.top,
                 child: Column(
                   children: [
+                    if (!widget.vollbild) _KartenKnopf(icon: Icons.fullscreen, tooltip: 'Vollbild', onTap: widget.onVollbild),
+                    _KartenKnopf(
+                      icon: stilWahl.istHell ? Icons.dark_mode : Icons.light_mode,
+                      tooltip: stilWahl.umschaltText,
+                      onTap: () => unawaited(ref.read(kartenStilProvider.notifier).umschalten()),
+                    ),
                     _KartenKnopf(icon: Icons.zoom_out_map, tooltip: 'Alle zeigen', onTap: () => unawaited(_alleZeigen())),
                     _KartenKnopf(icon: Icons.my_location, tooltip: 'Auf mich zentrieren', onTap: hatEigene ? () => unawaited(_aufMich()) : null),
                   ],
                 ),
               ),
-              if (gewaehlt != null) Positioned(left: 8, right: 8, bottom: 34, child: _Info(eintrag: gewaehlt, jetzt: jetzt, onSchliessen: () => setState(() => _gewaehlt = null))),
-              const Positioned(right: 8, bottom: 8, child: _Attribution()),
+              if (gewaehlt != null)
+                Positioned(left: 8 + rand.left, right: 8 + rand.right, bottom: 34 + rand.bottom, child: _Info(eintrag: gewaehlt, jetzt: jetzt, onSchliessen: () => _waehle(null))),
+              Positioned(right: 8 + rand.right, bottom: 8 + rand.bottom, child: const _Attribution()),
             ],
           );
         },
@@ -537,13 +763,18 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
 /// Rahmen wie eine Karte der Oberfläche.
 class _Rahmen extends StatelessWidget {
   final Widget child;
-  const _Rahmen({required this.child});
+
+  /// Mit Rand und runden Ecken (in der Seite); im Vollbild füllt die Karte alles.
+  final bool rund;
+  const _Rahmen({required this.child, this.rund = true});
 
   @override
-  Widget build(BuildContext context) => DecoratedBox(
-    decoration: BoxDecoration(color: kSurface, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
-    child: ClipRRect(borderRadius: BorderRadius.circular(13), child: child),
-  );
+  Widget build(BuildContext context) => rund
+      ? DecoratedBox(
+          decoration: BoxDecoration(color: kSurface, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+          child: ClipRRect(borderRadius: BorderRadius.circular(13), child: child),
+        )
+      : ColoredBox(color: kSurface, child: child);
 }
 
 /// Ersatz, solange es keine Kartendatei gibt: kein Fehler, die Liste zeigt weiter alles.

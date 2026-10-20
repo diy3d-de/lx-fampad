@@ -19,6 +19,10 @@ Stand: 19.10.2026, Branch `spike-karte`. Kein Standort-Feature, keine Server- od
 
 **Ergebnis: Ja.** Web (unter der echten CSP, ohne CSP-Änderung) und Android (Emulator, `pmtiles://` über HTTP mit Range) zeigen die Protomaps-Karte vollständig vom eigenen Host. Der Beispielpunkt mit Genauigkeitskreis, Zoom und die ODbL-Attribution funktionieren.
 
+## Stil dunkel/hell und Vollbild
+
+Zwei Stile aus `tools/karte/make-style.mjs`: `app/assets/karte/style.json` (dunkel, Protomaps "black" auf die Design-Tokens abgebildet, gegenüber v0.5 deutlich hellere Straßen, Orts- und Straßennamen) und `style-hell.json` (Protomaps "light", kühl getönt, weiße Straßen mit Rand, dunkle Beschriftung). Beide: deutsche Namen, dieselben Glyphen (Noto Sans, Latein), Sprites "black" bzw. "light" unter `web/karte/sprites/`, nur eigene Adressen (`karteStyleAusVorlage` bleibt streng und prüft beide). Umschalter und Vollbild in `standort_karte_ansicht.dart`, Auswahl lokal (`karte_stil.dart`, `sync_meta`). **Stilwechsel zur Laufzeit:** `MapController.setStyle` (Web und Android melden danach wieder "Stil geladen"); im Web behält die Karte beim Wechsel die per `addImage` angemeldeten Nadelbilder ("An image named ... already exists" bei gleichem Namen), deshalb tragen die Bild-Kennungen einen Zähler der Stilwechsel und die alten Bilder werden nach dem Wechsel entfernt. **Vollbild:** eine gepushte Route; die Karte der Seite wird vorher abgebaut (auf Android nie zwei MapLibre-Instanzen), Kamera (`MapEventMoveCamera`) und Auswahl wandern in die neue Kartenfläche (`initCenter/initZoom/initBearing`, kein erneutes "Alle zeigen"). Geprüft: Web (Chrome headless, Pixeldichte 1 und 2: Umschalten, Vollbild, Esc, Kamera bleibt, Nadeln da) und Android-Release (Emulator, `tool/karte_demo.dart`).
+
 ## Bausteine
 
 | Teil | Umsetzung |

@@ -81,6 +81,15 @@ class PinMaler extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final pfad = umriss(size);
+    // dunkle Außenkontur: die Nadel bleibt auf hellem und dunklem Kartenstil gut zu erkennen (weißer Rand allein verschwände auf Hell)
+    canvas.drawPath(
+      pfad,
+      Paint()
+        ..color = kBg.withValues(alpha: 0.7)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = randBreite + 2
+        ..strokeJoin = StrokeJoin.round,
+    );
     canvas.drawPath(pfad, Paint()..color = fuellung);
     canvas.drawPath(
       pfad,
