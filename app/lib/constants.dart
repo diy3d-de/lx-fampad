@@ -70,7 +70,7 @@ const kReleasesBase = String.fromEnvironment('RELEASES_BASE', defaultValue: 'htt
 const kWebVersion = String.fromEnvironment('WEB_VERSION', defaultValue: '');
 
 /// Obergrenze für die Größe einer Update-APK (Manifest und Download).
-const kMaxApkBytes = 200 * 1024 * 1024;
+const kMaxApkBytes = 60 * 1024 * 1024;
 
 /// Protokollversion, die diese App spricht (Server: PROTOCOL_VERSION). Ist sie kleiner als die Mindestversion
 /// des Servers (minProtocolVersion), ist ein Update Pflicht.

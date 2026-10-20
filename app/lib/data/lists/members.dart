@@ -1,5 +1,6 @@
 // Familienmitglieder für die Anzeige von Zuständigkeiten (Name und Farbe). Kommt von GET /members; die letzte Antwort liegt in
 // der lokalen Datenbank (nur ID, Name, Farbe, Rolle: keine E-Mail-Adressen), damit die Anzeige auch offline funktioniert.
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/widgets.dart' show AppLifecycleListener;
 
@@ -10,7 +11,7 @@ import '../api/models.dart';
 import '../auth/auth_state.dart';
 import '../avatar/avatar_foto.dart';
 import '../database_provider.dart';
-import '../sync_state.dart' show syncProvider;
+import '../sync_state.dart' show mitgliederHinweisProvider, syncProvider;
 
 const _kMitglieder = 'members';
 
@@ -67,14 +68,17 @@ final mitgliederUhrProvider = Provider<DateTime Function()>((ref) => DateTime.no
 /// Mindestabstand zwischen zwei Neuladungen der Mitgliederliste.
 const kMitgliederMinAbstand = Duration(seconds: 60);
 
+/// Mindestabstand bei einem Hinweis des Servers ("Mitglieder geändert"): kürzer, weil der Hinweis selten ist; ein zu früher Hinweis wird nachgeholt.
+const kMitgliederHinweisAbstand = Duration(seconds: 5);
+
 /// Lädt die Mitgliederliste neu, wenn ein Abgleich gelungen ist oder die App wieder in den Vordergrund kommt (höchstens alle 60 s), damit
 /// neue Mitglieder ohne Neustart erscheinen. Schlägt das Laden fehl, bleibt der Zwischenstand (siehe [mitgliederProvider]).
 /// Wird vom Wurzel-Widget beobachtet (lib/app.dart).
 final mitgliederAktualisierungProvider = Provider<void>((ref) {
   DateTime? zuletzt;
-  void neuLaden() {
+  void neuLaden({bool erzwingen = false}) {
     final jetzt = ref.read(mitgliederUhrProvider)();
-    if (zuletzt != null && jetzt.difference(zuletzt!) < kMitgliederMinAbstand) return;
+    if (!erzwingen && zuletzt != null && jetzt.difference(zuletzt!) < kMitgliederMinAbstand) return;
     zuletzt = jetzt;
     // Fotos, die wegen eines Verbindungsfehlers beim älteren Stand geblieben sind, werden erneut versucht; Fotos im Speicher bleiben (die Version steht in /members)
     final speicher = ref.read(avatarSpeicherProvider);
@@ -85,6 +89,23 @@ final mitgliederAktualisierungProvider = Provider<void>((ref) {
     ref.invalidate(mitgliederProvider);
   }
 
+  Timer? nachholen;
+  ref.onDispose(() => nachholen?.cancel());
+  ref.listen(mitgliederHinweisProvider, (alt, neu) {
+    if (neu == alt || !ref.read(authProvider).angemeldet) return;
+    final jetzt = ref.read(mitgliederUhrProvider)();
+    final seit = zuletzt == null ? null : jetzt.difference(zuletzt!);
+    if (seit == null || seit >= kMitgliederHinweisAbstand) {
+      nachholen?.cancel();
+      neuLaden(erzwingen: true);
+    } else {
+      // zu früh nach der letzten Ladung: einmal später nachholen (mehrere Hinweise ergeben eine Ladung)
+      nachholen?.cancel();
+      nachholen = Timer(kMitgliederHinweisAbstand - seit, () {
+        if (ref.read(authProvider).angemeldet) neuLaden(erzwingen: true);
+      });
+    }
+  });
   ref.listen(syncProvider.select((s) => s.letzterAbgleich), (alt, neu) {
     if (neu != null && neu != alt && ref.read(authProvider).angemeldet) neuLaden();
   });

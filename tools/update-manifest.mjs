@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 
 export const DEFAULT_PACKAGE_NAME = 'dev.lx_labs.fampad';
-export const MAX_APK_BYTES = 200 * 1024 * 1024;
+export const MAX_APK_BYTES = 60 * 1024 * 1024;
 
 /** Rohschlüssel (32 Byte) eines Ed25519-Public-Keys. */
 export function rawPublicKey(publicKey) {
@@ -34,7 +34,7 @@ export function buildPayload({ apkBytes, apkName, version, versionCode, minVersi
   if (!/^\d+\.\d+\.\d+$/.test(minVersion)) throw new Error(`min-version ungültig: ${minVersion}`);
   if (!Number.isInteger(versionCode) || versionCode < 1) throw new Error('version-code muss eine ganze Zahl >= 1 sein');
   if (!/^[A-Za-z0-9._-]+\.apk$/.test(apkName)) throw new Error(`Dateiname ungültig (nur A-Z a-z 0-9 . _ -, Endung .apk): ${apkName}`);
-  if (apkBytes.length < 1 || apkBytes.length > MAX_APK_BYTES) throw new Error('APK-Größe außerhalb von 1 Byte bis 200 MB');
+  if (apkBytes.length < 1 || apkBytes.length > MAX_APK_BYTES) throw new Error('APK-Größe außerhalb von 1 Byte bis 60 MB');
   if (!keyId) throw new Error('key-id fehlt');
   if (Number.isNaN(Date.parse(issuedAt))) throw new Error(`issued-at ungültig: ${issuedAt}`);
   return JSON.stringify({

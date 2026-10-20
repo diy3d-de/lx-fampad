@@ -208,7 +208,7 @@ void main() {
       }
     });
 
-    test('begrenzt die Größe auf 1 Byte bis 200 MB', () async {
+    test('begrenzt die Größe auf 1 Byte bis 60 MB', () async {
       for (final size in [0, -5, kMaxApkBytes + 1, '100', 1.5]) {
         await expectLater(_parse(await _manifest({...gueltig, 'size': size}, key), verifier), throwsException, reason: '$size');
       }

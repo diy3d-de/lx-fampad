@@ -7,6 +7,8 @@ export type ServerMessage =
   | { type: 'ready' }
   | { type: 'pong' }
   | { type: 'rev'; rev: number }
+  // die Mitglieder der Familie haben sich geändert (kein Inhalt): die App lädt die Mitgliederliste neu
+  | { type: 'members_changed' }
   | { type: 'error'; code: string }
   // Standort teilen (flüchtig, opake Pakete; docs/API.md, Abschnitt "Standort")
   | { type: 'loc_started'; shareId: string; endsAt: number }
@@ -140,6 +142,19 @@ export class Hub {
         if (!byUser && !byRole) continue;
       }
       if (e.socket.readyState === e.socket.OPEN) e.socket.send(msg);
+    }
+  }
+
+  /** Hinweis "Mitglieder geändert" (ohne Inhalt) an alle Geräte **dieser Familie** (Standort-Verbindungen ausgenommen). */
+  notifyMembersChanged(familyId: string): void {
+    const msg = JSON.stringify({ type: 'members_changed' } satisfies ServerMessage);
+    for (const e of this.byFamily.get(familyId) ?? []) {
+      if (e.loc || e.socket.readyState !== e.socket.OPEN) continue;
+      try {
+        e.socket.send(msg);
+      } catch {
+        // ein kaputter Socket darf die anderen nicht aufhalten (er wird über 'close' entfernt)
+      }
     }
   }
 

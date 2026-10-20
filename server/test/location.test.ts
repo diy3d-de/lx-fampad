@@ -401,6 +401,41 @@ describe('WebSocket-Kanal "loc"', () => {
     expect(app?.location.size).toBe(0);
   });
 
+  it('hängende Mitgliederprüfung: Start meldet unavailable, die Nachrichtenkette des Sockets läuft weiter', async () => {
+    await start({ LOC_DIRECTORY_TIMEOUT_MS: '100' });
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    const echt = app!.location as unknown as { deps: { directory: (familyId: string) => Promise<unknown> } };
+    const orig = echt.deps.directory;
+    echt.deps.directory = () => new Promise(() => undefined);
+    await send(alice, startMsg([[BOB, 'w']]));
+    await wait(250);
+    expect(alice.of('loc_error').map((m) => m.code)).toEqual(['unavailable']);
+    expect(app?.location.size).toBe(0);
+    echt.deps.directory = orig;
+    await send(alice, startMsg([[BOB, 'w']], { shareId: uid(101) }));
+    expect(alice.of('loc_started')).toHaveLength(1);
+    expect(bob.of('loc_start')).toHaveLength(1);
+  });
+
+  it('hängende Mitgliederprüfung im Prüflauf: Freigabe bleibt, Ablauf wird weiter erzwungen, nächster Lauf prüft wieder', async () => {
+    await start({ LOC_DIRECTORY_TIMEOUT_MS: '100' });
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    await send(alice, startMsg([[BOB, 'w']]));
+    const echt = app!.location as unknown as { deps: { directory: (familyId: string) => Promise<unknown> } };
+    const orig = echt.deps.directory;
+    echt.deps.directory = () => new Promise(() => undefined);
+    await app?.location.sweep({ recheckMs: 0 });
+    expect(app?.location.size).toBe(1);
+    expect(bob.of('loc_stop')).toEqual([]);
+    // der Guard ist frei: ein weiterer Lauf ist möglich und erzwingt den Ablauf trotz hängender Datenbank
+    clock += 2 * 60 * 60 * 1000;
+    await app?.location.sweep({ recheckMs: 0 });
+    await wait(60);
+    expect(app?.location.size).toBe(0);
+    expect(bob.of('loc_stop').map((m) => m.reason)).toEqual(['expired']);
+    echt.deps.directory = orig;
+  });
+
   it('Grenzen: Freigaben je Familie und Starts je Person', async () => {
     await start({ LOC_MAX_SHARES_PER_FAMILY: '1' });
     const [alice, bob] = [await connect('alice'), await connect('bob')];

@@ -66,6 +66,7 @@ export async function updateProfile(ctx: AuthContext, p: SessionPrincipal, input
   if (input.colorIndex !== undefined) set.colorIndex = input.colorIndex;
   if (Object.keys(set).length === 0) return;
   await ctx.db.update(users).set(set).where(eq(users.id, p.userId));
+  ctx.onMembersChanged(p.familyId);
 }
 
 // ---------- Mitglieder ----------
@@ -133,6 +134,7 @@ export async function setFamilyRole(ctx: AuthContext, p: SessionPrincipal, targe
     if (done.length === 0) throw notFound();
     await writeAudit(ctx, tx, { event: 'family_role_set', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, to: familyRole } });
   });
+  ctx.onMembersChanged(p.familyId);
 }
 
 async function memberOf(ctx: AuthContext, p: SessionPrincipal, userId: string): Promise<Account> {
@@ -177,6 +179,7 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
       detail: { target: targetId, from: target.role, to: role },
     });
   });
+  ctx.onMembersChanged(p.familyId);
 }
 
 export async function approveMember(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
@@ -188,6 +191,7 @@ export async function approveMember(ctx: AuthContext, p: SessionPrincipal, targe
     .returning({ id: memberships.id });
   if (done.length === 0) throw notFound();
   await writeAudit(ctx, ctx.db, { event: 'member_approved', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId } });
+  ctx.onMembersChanged(p.familyId);
 }
 
 /**
@@ -224,6 +228,7 @@ export async function rejectMember(ctx: AuthContext, p: SessionPrincipal, target
     await removeFromFamily(ctx, tx, { familyId: p.familyId, userId: targetId, actorId: p.userId, reason: 'member_rejected' }, meta);
     await writeAudit(ctx, tx, { event: 'member_rejected', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId } });
   });
+  ctx.onMembersChanged(p.familyId);
 }
 
 export async function removeMember(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
@@ -242,6 +247,7 @@ export async function removeMember(ctx: AuthContext, p: SessionPrincipal, target
   });
   // die Verweise der Person wurden im Sync bereinigt: die Geräte der Familie erfahren die neue Revision
   if (syncRev !== null) ctx.onRev(p.familyId, syncRev);
+  ctx.onMembersChanged(p.familyId);
 }
 
 /**

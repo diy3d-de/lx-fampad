@@ -22,6 +22,7 @@ export class Auth implements AuthService {
       log: deps.log ?? { warn: () => {}, error: () => {} },
       onRevoke: () => {},
       onRev: () => {},
+      onMembersChanged: () => {},
     };
   }
 
