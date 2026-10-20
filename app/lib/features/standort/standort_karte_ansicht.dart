@@ -133,7 +133,11 @@ class _StandortKarteState extends ConsumerState<StandortKarte> with SingleTicker
 
   void _stilGeladen() {
     _ladeTimer?.cancel();
-    if (mounted && !_geladen) setState(() => _geladen = true);
+    if (!mounted) return;
+    final erstes = !_geladen;
+    if (erstes) setState(() => _geladen = true);
+    // Einpassen noch einmal mit fertiger Karte: Im Web steht beim ersten Mal (onMapCreated) die Größe der Karten-Ansicht noch nicht, das Zoomen ginge falsch aus
+    if (erstes) Future<void>.delayed(const Duration(milliseconds: 300), () => mounted ? _alleZeigen() : null);
   }
 
   /// Wartet auf "Stil geladen"; bleibt die Meldung aus (Kacheln oder Stil kommen nicht an, Darstellung scheitert), erscheint nach der Frist eine Meldung.

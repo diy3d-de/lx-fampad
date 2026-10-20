@@ -1,6 +1,7 @@
 // Entwicklungswerkzeug (nicht Teil der App): zeigt nur die Standort-Karte mit zwei Beispielpersonen, ohne Anmeldung, gegen den echten Kartenserver.
-// Zum Prüfen von Release-Problemen der Karte auf Emulator/Gerät:  flutter build apk --release -t tool/karte_demo.dart  (mit lokaler Debug-Signatur,
-// die APK nie verteilen). Für Kacheln braucht das Gerät Netz; die Adresse lässt sich mit --dart-define=KARTE_BASE=... ändern.
+// Zum Prüfen von Release-Problemen der Karte auf Emulator/Gerät:  flutter build apk --release -t tool/karte_demo.dart  mit dem Wegwerf-Schlüssel, den
+// tools/release-pruefung.sh erzeugt (app/android/key.properties nur lokal und nie einchecken; die APK nie verteilen). Für Kacheln braucht das Gerät Netz;
+// die Adresse lässt sich mit --dart-define=KARTE_BASE=... ändern (Web: ein lokaler Server mit Range-Unterstützung unter /karte-daten/).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lx_fampad/data/api/models.dart';
