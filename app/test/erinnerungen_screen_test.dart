@@ -82,6 +82,20 @@ void main() {
     expect(port.geloescht, greaterThan(geloescht));
   });
 
+  testWidgets('Aufgaben-Erinnerungen: Standard an, Schalter wird lokal gespeichert; bei "Erinnerungen aus" gesperrt', (tester) async {
+    await oeffnen(tester);
+    expect(find.text('Aufgaben-Erinnerungen'), findsOneWidget);
+    final schalter = find.descendant(of: find.widgetWithText(SwitchListTile, 'Aufgaben-Erinnerungen'), matching: find.byType(Switch));
+    expect(tester.widget<Switch>(schalter).value, isTrue);
+    await tippe(tester, schalter);
+    expect(tester.widget<Switch>(schalter).value, isFalse);
+    expect(speicher.daten['erinnerung_aufgaben'], 'nein');
+    await tippe(tester, schalter);
+    expect(speicher.daten['erinnerung_aufgaben'], 'ja');
+    await tippe(tester, find.byType(Switch).first); // alle Erinnerungen aus
+    expect(tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Aufgaben-Erinnerungen')).onChanged, isNull);
+  });
+
   testWidgets('Sperrbildschirm: Standard aus, Schalter wird lokal gespeichert', (tester) async {
     await oeffnen(tester);
     expect(find.text('Titel auf Sperrbildschirm zeigen'), findsOneWidget);

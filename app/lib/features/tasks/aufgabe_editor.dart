@@ -54,6 +54,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
   String? _zustaendig;
   var _wdh = AufgabeWdh.keine;
   var _sicht = AufgabeSicht.family;
+  int? _erinnerung; // Minuten vor der Fälligkeit, null = keine
   final _punkte = <_PunktZeile>[];
   final _entsorgen = <_PunktZeile>[];
   List<AufgabePunkt> _bisherigePunkte = const [];
@@ -79,6 +80,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     _zustaendig = a.assigneeId;
     _wdh = AufgabeWdh.von(a.wiederholung);
     _sicht = AufgabeSicht.von(a.audience);
+    _erinnerung = a.erinnerungMin;
     _bisherigePunkte = sortierePunkte(ref.read(aufgabenDatenProvider).punkteVon(a.id));
     for (final p in _bisherigePunkte) {
       _punkte.add(_PunktZeile(p.id, p.inhalt, p.doneAt != null));
@@ -137,6 +139,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
       zustaendig: _zustaendig,
       wiederholung: tag == null ? AufgabeWdh.keine : _wdh,
       sicht: _sicht,
+      erinnerungMin: tag == null ? null : _erinnerung,
       punkte: [
         for (final p in _punkte)
           if (p.text.text.trim().isNotEmpty) PunktEingabe(id: p.id, text: p.text.text, erledigt: p.erledigt),
@@ -364,6 +367,26 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           if (_wdh != AufgabeWdh.keine) ...[
             const SizedBox(height: 6),
             const Text('Sobald du die Aufgabe erledigst, entsteht die nächste.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+          ],
+        ],
+        if (tag != null) ...[
+          const SizedBox(height: 16),
+          const MonoLabel('// erinnerung'),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final m in {...kAufgabeErinnerungen, if (_erinnerung != null) _erinnerung})
+                AuswahlKnopf(text: aufgabeErinnerungText(m), gewaehlt: _erinnerung == m, onTap: darf ? () => setState(() => _erinnerung = m) : nichts),
+            ],
+          ),
+          if (_erinnerung != null) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${_mitUhrzeit ? '' : 'Ohne Uhrzeit gilt 09:00 Uhr am Fälligkeitstag. '}Die Erinnerung kommt auf dem Gerät der zuständigen Person, ohne Zuständige auf dem Gerät der Person, die die Aufgabe angelegt hat.',
+              style: const TextStyle(fontSize: 12, color: kTextMuted),
+            ),
           ],
         ],
         const SizedBox(height: 16),

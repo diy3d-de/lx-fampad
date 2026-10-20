@@ -10,6 +10,7 @@ import '../../data/auth/auth_state.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/erinnerungen/erinnerung_dienst.dart';
 import '../../data/erinnerungen/erinnerung_einstellungen.dart';
+import '../../data/tasks/aufgabe_repository.dart' show aufgabenProvider;
 import '../shell/shell_tab.dart';
 import 'calendar_state.dart';
 
@@ -24,8 +25,10 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
       ..tag(ziel.tag);
     ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
   };
+  dienst.beiAufgabeGeoeffnet = (_) => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
   void los() => unawaited(dienst.abgleichen());
   ref.listen(kalenderDatenProvider, (_, _) => dienst.entprellt());
+  ref.listen(aufgabenProvider, (_, _) => dienst.entprellt());
   ref.listen(erinnerungEinstellungenProvider, (_, _) => los());
   ref.listen(authProvider.select((a) => (a.status, a.user?.id, a.hinweis)), (_, _) => los());
   // Rückkehr (auch aus den Systemeinstellungen): Erlaubnis neu lesen, damit Anzeigen und Planung ohne Neustart nachziehen

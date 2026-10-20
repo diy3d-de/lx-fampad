@@ -39,6 +39,20 @@ enum AufgabeWdh {
   static AufgabeWdh von(String? wire) => values.firstWhere((w) => w.wire == wire, orElse: () => AufgabeWdh.keine);
 }
 
+/// Vorlaufzeiten (Minuten vor der Fälligkeit), die der Editor anbietet (null = keine Erinnerung). Der Server erlaubt 0 bis 40320.
+const kAufgabeErinnerungen = <int?>[null, 0, 15, 60, 1440];
+
+/// Anzeigetext einer Vorlaufzeit ("Zur Fälligkeit", "15 Minuten vorher", "1 Tag vorher").
+String aufgabeErinnerungText(int? min) => switch (min) {
+  null => 'Keine',
+  0 => 'Zur Fälligkeit',
+  < 60 => '$min Minuten vorher',
+  60 => '1 Stunde vorher',
+  < 1440 => min % 60 == 0 ? '${min ~/ 60} Stunden vorher' : '$min Minuten vorher',
+  1440 => '1 Tag vorher',
+  _ => min % 1440 == 0 ? '${min ~/ 1440} Tage vorher' : '$min Minuten vorher',
+};
+
 /// Heutiger Tag (0 Uhr, UTC-Markierung) in der Familienzone.
 DateTime tagVon(DateTime jetzt) {
   final w = wandUhr(jetzt.toUtc(), familienOrt);

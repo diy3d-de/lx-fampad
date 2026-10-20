@@ -1,5 +1,6 @@
 // ignore_for_file: prefer_initializing_formals
-// Dienst für Terminerinnerungen: hält die Planung des Geräts im Gleichklang mit den lokalen Kalenderdaten.
+// Dienst für Termin- und Aufgabenerinnerungen: hält die Planung des Geräts im Gleichklang mit den lokalen Kalender- und Aufgabendaten
+// (ein gemeinsames Fenster, siehe erinnerung_planung.dart).
 //  - Auslöser (verdrahtet in features/calendar/erinnerung_steuerung.dart, am App-Wurzel-Widget, das nie pausiert): Start der App, jede
 //    Änderung der lokalen Termine (auch durch den Sync, entprellt), Rückkehr in die App, Änderung der Einstellungen, Anmeldung/Abmeldung.
 //    Nach Neustart des Geräts und App-Update setzt das Plugin seine gespeicherten Alarme selbst neu (ScheduledNotificationBootReceiver);
@@ -18,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_state.dart';
 import '../calendar/termin_repository.dart';
+import '../tasks/aufgabe_repository.dart' show aufgabenProvider;
 import 'erinnerung_einstellungen.dart';
 import 'erinnerung_planung.dart';
 import 'erinnerung_port.dart';
@@ -60,6 +62,9 @@ class ErinnerungDienst {
 
   /// Navigation beim Tippen auf eine Benachrichtigung (setzt features/calendar/erinnerung_steuerung.dart).
   ErinnerungGeoeffnet? beiGeoeffnet;
+
+  /// Navigation beim Tippen auf die Erinnerung einer Aufgabe (Aufgaben-ID).
+  void Function(String aufgabeId)? beiAufgabeGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -161,7 +166,12 @@ class ErinnerungDienst {
       _letzte = null;
       _leer = false;
     }
-    final plan = planeErinnerungen(daten: _ref.read(kalenderDatenProvider), ich: ich, jetzt: _jetzt());
+    final plan = planeErinnerungen(
+      daten: _ref.read(kalenderDatenProvider),
+      ich: ich,
+      jetzt: _jetzt(),
+      aufgaben: einst.aufgabenAn ? (_ref.read(aufgabenProvider).value ?? const []) : const [],
+    );
     final alt = _letzte;
     final gleich =
         alt != null &&
@@ -206,7 +216,8 @@ class ErinnerungDienst {
   }
 
   bool _datenDa() =>
-      _ref.read(termineProvider).hasValue && _ref.read(terminAusnahmenProvider).hasValue && _ref.read(terminTeilnehmerProvider).hasValue;
+      _ref.read(termineProvider).hasValue && _ref.read(terminAusnahmenProvider).hasValue && _ref.read(terminTeilnehmerProvider).hasValue &&
+      _ref.read(aufgabenProvider).hasValue;
 
   Future<bool> _loeschen() async {
     if (_leer) return true;
@@ -243,8 +254,14 @@ class ErinnerungDienst {
   }
 
   void _getippt(String? payload) {
+    if (_beendet) return;
+    final aufgabe = aufgabeErinnerungPayloadLesen(payload);
+    if (aufgabe != null) {
+      beiAufgabeGeoeffnet?.call(aufgabe);
+      return;
+    }
     final ziel = erinnerungPayloadLesen(payload);
-    if (ziel == null || _beendet) return;
+    if (ziel == null) return;
     beiGeoeffnet?.call(ziel);
   }
 

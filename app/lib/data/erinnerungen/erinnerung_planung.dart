@@ -3,6 +3,9 @@
 // Erinnerungen ab jetzt. Android begrenzt die Zahl der Alarme je App (Samsung rund 500); bei jedem Start, jedem Abgleich und jeder
 // Änderung wird das Fenster neu berechnet und das Gerät darauf angeglichen (siehe erinnerung_dienst.dart).
 //
+// Aufgaben (Abschnitt 6e) teilen sich dasselbe Fenster: offene Aufgaben mit Fälligkeit und `erinnerungMin`, die der Person zugewiesen sind
+// (oder ohne Zuständige von ihr stammen); Bezugspunkt eines Fälligkeitstags ohne Uhrzeit ist wie bei ganztägigen Terminen 09:00 Uhr.
+//
 // Regeln (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6b, "Erinnerungen"):
 //  - Quelle ist `Termin.erinnerungMin` (Minuten VOR dem Beginn, null = keine). Serien erinnern an jedem Vorkommen; abgesagte Vorkommen
 //    nicht; verschobene Vorkommen (Ausnahme) zur neuen Zeit; einen geänderten Titel/Ort der Ausnahme zeigt die Erinnerung.
@@ -19,9 +22,11 @@
 import 'package:timezone/timezone.dart' as tz;
 
 import '../../constants.dart';
+import '../app_database.dart' show Aufgabe;
 import '../calendar/expansion.dart';
 import '../calendar/termin_repository.dart' show KalenderDaten;
 import '../calendar/zeitzonen.dart';
+import '../tasks/aufgabe_logik.dart' show faelligWand, istErledigt;
 
 /// Wie viele Erinnerungen höchstens gleichzeitig beim Betriebssystem geplant sind (ohne Hinweis). Android begrenzt die Alarme je App
 /// (Samsung rund 500); mit Reserve für andere Alarme der App bleibt es bei 300.
@@ -79,6 +84,17 @@ int erinnerungId(String terminId, String schluessel) {
 /// Inhalt für das Tippen auf die Benachrichtigung: `termin|<Termin-ID>|<Tag YYYY-MM-DD>`.
 String erinnerungPayload(String terminId, DateTime tag) => 'termin|$terminId|${tagText(tag)}';
 
+/// Inhalt für das Tippen auf die Erinnerung einer Aufgabe: `aufgabe|<Aufgaben-ID>`.
+String aufgabeErinnerungPayload(String aufgabeId) => 'aufgabe|$aufgabeId';
+
+/// Liest das Ergebnis von [aufgabeErinnerungPayload]; null bei einem unbekannten Format (die ID muss eine UUID sein). Nie eine Ausnahme.
+String? aufgabeErinnerungPayloadLesen(String? payload) {
+  if (payload == null) return null;
+  final teile = payload.split('|');
+  if (teile.length != 2 || teile[0] != 'aufgabe' || !_uuid.hasMatch(teile[1])) return null;
+  return teile[1];
+}
+
 final _uuid = RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$');
 
 /// Liest das Ergebnis von [erinnerungPayload]; null bei einem unbekannten Format (die Termin-ID muss eine UUID sein). Nie eine Ausnahme.
@@ -111,6 +127,26 @@ String erinnerungInhalt(Vorkommen v, DateTime erinnerungTag) {
   return ort.isEmpty ? '$tag, $zeit' : '$tag, $zeit · $ort';
 }
 
+/// Text der Erinnerung einer Aufgabe: "Fällig heute, 14:30", "Fällig morgen", "Fällig Mi, 21. Okt". [faellig] ist die Fälligkeit (Wanduhr der
+/// Familienzone; ohne Uhrzeit 0 Uhr), [erinnerungTag] der Kalendertag, an dem die Erinnerung erscheint.
+String aufgabeErinnerungInhalt(DateTime faellig, bool mitUhrzeit, DateTime erinnerungTag) {
+  final tag = DateTime.utc(faellig.year, faellig.month, faellig.day);
+  final diff = tag.difference(DateTime.utc(erinnerungTag.year, erinnerungTag.month, erinnerungTag.day)).inDays;
+  final text = switch (diff) {
+    0 => 'heute',
+    1 => 'morgen',
+    _ => '${_wochentage[tag.weekday - 1]}, ${tag.day}. ${_monate[tag.month - 1]}',
+  };
+  return mitUhrzeit ? 'Fällig $text, ${_hhmm(faellig)}' : 'Fällig $text';
+}
+
+/// Betrifft die Aufgabe die Person [ich]? Ihr zugewiesen; ohne Zuständige nur, wenn sie die Aufgabe selbst angelegt hat. Eine Aufgabe, die
+/// jemand anderem zugewiesen ist, erinnert nur diese Person.
+bool aufgabeBetrifftPerson(String? zustaendig, String? ownerId, String? ich) {
+  if (ich == null) return false;
+  return zustaendig == null ? ownerId == ich : zustaendig == ich;
+}
+
 /// Betrifft der Termin die Person [ich]? Ersteller oder Teilnehmer; ein Termin ohne Ersteller erinnert nur seine Teilnehmer.
 bool betrifftPerson(String? ownerId, Set<String> teilnehmer, String? ich) {
   if (ich == null) return false;
@@ -137,6 +173,7 @@ List<GeplanteErinnerung> planeErinnerungen({
   required String? ich,
   required DateTime jetzt,
   int maxAnzahl = kErinnerungFenster,
+  List<Aufgabe> aufgaben = const [],
 }) {
   if (ich == null || maxAnzahl <= 0) return const [];
   final jetztUtc = jetzt.toUtc();
@@ -144,12 +181,13 @@ List<GeplanteErinnerung> planeErinnerungen({
     final m = t.erinnerungMin;
     return m != null && m >= 0 && betrifftPerson(t.ownerId, daten.teilnehmerIds(t.id), ich);
   }).toList();
-  if (mitErinnerung.isEmpty) return const [];
   final berlin = familienOrt;
   final vonWand = wandUhr(jetztUtc, berlin);
   // Beginn bis Horizont plus größte Vorlaufzeit; ab "jetzt" (auch laufende Termine kommen vor, ihre Erinnerung liegt aber in der Vergangenheit)
   final bisWand = vonWand.add(const Duration(days: kErinnerungHorizontTage + kMaxVorlaufMin ~/ 1440 + 1));
-  final vorkommen = vorkommenImFenster(termine: mitErinnerung, ausnahmen: daten.ausnahmen, vonWand: vonWand, bisWand: bisWand, jetzt: jetztUtc);
+  final vorkommen = mitErinnerung.isEmpty
+      ? const <Vorkommen>[]
+      : vorkommenImFenster(termine: mitErinnerung, ausnahmen: daten.ausnahmen, vonWand: vonWand, bisWand: bisWand, jetzt: jetztUtc);
   final grenze = jetztUtc.add(kMindestAbstand);
   final out = <GeplanteErinnerung>[];
   final ids = <int>{};
@@ -177,6 +215,29 @@ List<GeplanteErinnerung> planeErinnerungen({
       ),
     );
   }
+  for (final a in aufgaben) {
+    final min = a.erinnerungMin;
+    if (min == null || min < 0 || istErledigt(a) || !aufgabeBetrifftPerson(a.assigneeId, a.ownerId, ich)) continue;
+    final wand = faelligWand(a);
+    if (wand == null) continue;
+    final mitUhr = a.faelligUtc != null;
+    final beginn = mitUhr ? a.faelligUtc!.toUtc() : instantAusWand(DateTime.utc(wand.year, wand.month, wand.day, kGanztaegigStunde), berlin);
+    final zeit = _erinnerungsZeit(beginn, min, berlin);
+    if (!zeit.isAfter(grenze)) continue;
+    final id = erinnerungId(a.id, 'aufgabe');
+    if (!ids.add(id)) continue;
+    final w = wandUhr(zeit, berlin);
+    out.add(
+      GeplanteErinnerung(
+        id: id,
+        zeit: zeit,
+        titel: a.titel.trim().isEmpty ? 'Aufgabe' : a.titel,
+        text: aufgabeErinnerungInhalt(wand, mitUhr, DateTime.utc(w.year, w.month, w.day)),
+        payload: aufgabeErinnerungPayload(a.id),
+      ),
+    );
+  }
+  if (out.isEmpty) return const [];
   out.sort((a, b) {
     final c = a.zeit.compareTo(b.zeit);
     return c != 0 ? c : a.id.compareTo(b.id);
@@ -188,7 +249,7 @@ List<GeplanteErinnerung> planeErinnerungen({
       id: kAuslaufHinweisPlanId,
       zeit: fenster.last.zeit.add(kAuslaufHinweisAbstand),
       titel: 'Erinnerungen laufen aus',
-      text: 'Öffne $kAppName, damit neue Terminerinnerungen geplant werden.',
+      text: 'Öffne $kAppName, damit neue Erinnerungen geplant werden.',
       payload: '',
     ),
   );
