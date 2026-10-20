@@ -45,6 +45,9 @@ class AufgabeEingabe {
   final String? zustaendig;
   final AufgabeWdh wiederholung;
   final AufgabeSicht sicht;
+
+  /// Minuten vor der Fälligkeit (null = keine Erinnerung); ohne Fälligkeit wird nichts gespeichert.
+  final int? erinnerungMin;
   final List<PunktEingabe> punkte;
   const AufgabeEingabe({
     required this.titel,
@@ -55,6 +58,7 @@ class AufgabeEingabe {
     this.zustaendig,
     this.wiederholung = AufgabeWdh.keine,
     this.sicht = AufgabeSicht.family,
+    this.erinnerungMin,
     this.punkte = const [],
   });
 }
@@ -136,6 +140,7 @@ class AufgabeRepository {
       // Wiederholung braucht eine Fälligkeit (sonst gäbe es keine nächste)
       'wiederholung': f == null ? null : e.wiederholung.wire,
       'wiederholungTag': f != null && e.wiederholung == AufgabeWdh.monatlich ? f.day : null,
+      'erinnerungMin': f == null ? null : e.erinnerungMin,
       'audience': e.sicht.wire,
     };
   }
@@ -209,6 +214,7 @@ class AufgabeRepository {
     'assigneeId' => wert == a.assigneeId,
     'wiederholung' => wert == a.wiederholung,
     'wiederholungTag' => wert == a.wiederholungTag,
+    'erinnerungMin' => wert == a.erinnerungMin,
     'audience' => wert == a.audience,
     _ => false,
   };

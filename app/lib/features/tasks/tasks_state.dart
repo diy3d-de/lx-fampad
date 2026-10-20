@@ -24,4 +24,13 @@ class AufgabenAnsichtNotifier extends Notifier<AufgabenAnsicht> {
   void person(String? id) => state = id == null ? state.mit(personLeeren: true) : state.mit(person: id);
 }
 
+/// Aufgabe, die nach dem Tippen auf eine Erinnerung geöffnet werden soll (die Liste öffnet den Editor, sobald die Daten da sind).
+class AufgabeOeffnenNotifier extends Notifier<String?> {
+  @override
+  String? build() => null;
+  void setzen(String? id) => state = id;
+}
+
+final aufgabeOeffnenProvider = NotifierProvider<AufgabeOeffnenNotifier, String?>(AufgabeOeffnenNotifier.new);
+
 final aufgabenAnsichtProvider = NotifierProvider<AufgabenAnsichtNotifier, AufgabenAnsicht>(AufgabenAnsichtNotifier.new);

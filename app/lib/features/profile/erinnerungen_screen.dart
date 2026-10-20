@@ -142,8 +142,8 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
           const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
         ] else ...[
           const Text(
-            'Erinnerungen werden auf diesem Gerät aus deinen Terminen berechnet. Es läuft nichts über den Server, und es wird nichts verschickt. '
-            'Sie gelten für Termine, die du angelegt hast oder bei denen du Teilnehmer bist.',
+            'Erinnerungen werden auf diesem Gerät aus deinen Terminen und Aufgaben berechnet. Es läuft nichts über den Server, und es wird nichts verschickt. '
+            'Sie gelten für Termine, die du angelegt hast oder bei denen du Teilnehmer bist, und für Aufgaben, die dir zugewiesen sind.',
             style: TextStyle(fontSize: 13, color: kTextMuted),
           ),
           const SizedBox(height: 12),
@@ -152,9 +152,23 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             child: SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Erinnerungen auf diesem Gerät', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Terminerinnerungen anzeigen', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              subtitle: const Text('Termin- und Aufgabenerinnerungen anzeigen', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
               value: einst.an,
               onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).anSetzen(v)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          LxCard(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              title: const Text('Aufgaben-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                'Aufgaben, die dir zugewiesen sind (oder die du ohne Zuständige angelegt hast), erinnern zur eingestellten Zeit',
+                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              ),
+              value: einst.aufgabenAn,
+              onChanged: einst.an ? (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).aufgabenAnSetzen(v)) : null,
             ),
           ),
           const SizedBox(height: 8),
