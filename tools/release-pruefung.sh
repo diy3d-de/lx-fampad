@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Prüft den Release-Build der Android-App ohne Geheimnisse: baut mit einem Wegwerf-Schlüssel (wird erzeugt und gelöscht, die APK wird nie verteilt) und prüft
 #   1. Manifest: INTERNET vorhanden, kein ACCESS_BACKGROUND_LOCATION,
-#   2. R8: Die Klassen, die die Karte über JNI aufruft, wurden weder ganz noch in ihren Methoden entfernt (sonst bleibt die Karte im Release-Build leer,
+#   2. APK: nur Bibliotheken der gebauten Architektur (kein armeabi-v7a/x86_64 neben arm64-v8a: vorgefertigte Pakete bringen sonst alle ABIs mit), Bibliotheken komprimiert (useLegacyPackaging), Größe unter 40 MB,
+#   3. R8: Die Klassen, die die Karte über JNI aufruft, wurden weder ganz noch in ihren Methoden entfernt (sonst bleibt die Karte im Release-Build leer,
 #      im Debug-Build nicht sichtbar).
 # Debug-Builds laufen ohne R8 und fangen solche Fehler nicht: v0.5.0 hatte deshalb eine leere Karte (docs/KARTE-SPIKE.md, "Release-Build").
 # Aufruf aus dem Repository:  tools/release-pruefung.sh [ABI]    (ABI: android-arm64 (Standard), android-x64 für den Emulator)
@@ -42,6 +43,18 @@ df -h . | tail -1
 flutter build apk --release --target-platform "$ABI"
 
 fehler=0
+case "$ABI" in android-arm64) ERWARTET=arm64-v8a ;; android-x64) ERWARTET=x86_64 ;; android-arm) ERWARTET=armeabi-v7a ;; *) ERWARTET="" ;; esac
+apk="build/app/outputs/flutter-apk/app-release.apk"
+if [ -f "$apk" ] && [ -n "$ERWARTET" ]; then
+  abis="$(unzip -Z1 "$apk" | sed -n 's#^lib/\([^/]*\)/.*#\1#p' | sort -u | tr '\n' ' ')"
+  if [ "$abis" != "$ERWARTET " ]; then echo "FEHLER: APK enthält Bibliotheken für '$abis' statt nur '$ERWARTET' (abiFilters in app/android/app/build.gradle.kts)" >&2; fehler=1; fi
+  if unzip -v "$apk" | grep ' lib/' | grep -q ' Stored '; then echo "FEHLER: Bibliotheken in der APK unkomprimiert (useLegacyPackaging in build.gradle.kts), die APK wird doppelt so groß" >&2; fehler=1; fi
+  groesse="$(wc -c < "$apk")"
+  echo "APK: $groesse Bytes, ABIs: $abis"
+  if [ "$groesse" -gt 41943040 ]; then echo "FEHLER: APK größer als 40 MB ($groesse Bytes); 0.5.1 hatte 127 MB, Ziel etwa 24 MB" >&2; fehler=1; fi
+else
+  echo "FEHLER: $apk fehlt oder ABI '$ABI' unbekannt" >&2; fehler=1
+fi
 manifest="$(find build/app/intermediates/merged_manifest/release -name AndroidManifest.xml | head -1)"
 [ -n "$manifest" ] || { echo "FEHLER: gemergtes Release-Manifest nicht gefunden" >&2; exit 1; }
 grep -q 'android.permission.INTERNET' "$manifest" || { echo "FEHLER: INTERNET fehlt im Release-Manifest" >&2; fehler=1; }
@@ -69,5 +82,5 @@ else
   echo "FEHLER: $usage fehlt (R8 lief nicht?)" >&2; fehler=1
 fi
 
-[ "$fehler" = 0 ] && echo "Release-Prüfung bestanden (Manifest, R8-Regeln der Karte)."
+[ "$fehler" = 0 ] && echo "Release-Prüfung bestanden (Manifest, ABI und Größe der APK, R8-Regeln der Karte)."
 exit "$fehler"

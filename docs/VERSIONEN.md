@@ -72,6 +72,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | Kotlin-Plugin | 2.4.0 | `org.jetbrains.kotlin.android`, in `app/android/app/build.gradle.kts` angewendet |
 | Gradle | 9.3.1 | Wrapper |
 | androidx.core | 1.16.0 | `implementation` in `app/android/app/build.gradle.kts` (Update-Installation nutzt `PackageInstaller` ohne FileProvider) |
+| APK-Größe (ab 0.5.2) | arm64-v8a, komprimierte Bibliotheken | Release: `flutter build apk --release --target-platform android-arm64`; `abiFilters` in `app/android/app/build.gradle.kts` folgen `--target-platform` (das Flutter-Plugin setzt sie sonst immer auf alle drei ABIs, MapLibre und ML Kit bringen dann auch armeabi-v7a und x86_64 mit) und `packaging.jniLibs.useLegacyPackaging = true` (Bibliotheken deflate-komprimiert statt unkomprimiert/mmap-fähig). Messung: 0.5.1 Universal-APK 127,0 MB (arm64-v8a 39,3 MiB Bibliotheken, armeabi-v7a 32,8, x86_64 42,2); nur arm64: 47,8 MB; zusätzlich komprimiert: 23,8 MB. Installiert belegt die App dafür etwa 40 MB mehr Platz (Bibliotheken entpackt). **32-Bit-Geräte (armeabi-v7a) werden nicht mehr bedient** |
 
 ## Prüfsummen eingecheckter Binärdateien (Web)
 

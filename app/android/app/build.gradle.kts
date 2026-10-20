@@ -35,6 +35,25 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+
+        // Nur die Architekturen packen, die `flutter build apk --target-platform` verlangt. Das Flutter-Plugin setzt die abiFilters selbst immer auf
+        // alle drei ABIs (vorher, daher hier erst leeren); ohne diese Zeilen bringen vorgefertigte Pakete (MapLibre, ML Kit/mobile_scanner) trotz
+        // --target-platform alle ABIs mit (Release 0.5.1: 127 MB). Das Release baut mit android-arm64 (release.yml, deploy/README.md Abschnitt 10);
+        // ohne Angabe bleibt alles wie vorher.
+        val zielPlattformen = (project.findProperty("target-platform") as String?)
+            ?.split(",")?.map { it.trim() }.orEmpty()
+        val abiNamen = mapOf("android-arm" to "armeabi-v7a", "android-arm64" to "arm64-v8a", "android-x64" to "x86_64")
+        ndk {
+            if (zielPlattformen.isNotEmpty()) abiFilters.clear()
+            zielPlattformen.mapNotNull { abiNamen[it] }.forEach { abiFilters += it }
+        }
+    }
+
+    packaging {
+        jniLibs {
+            // Bibliotheken komprimiert im APK (Download und Update-Größe), werden bei der Installation entpackt
+            useLegacyPackaging = true
+        }
     }
 
     signingConfigs {
