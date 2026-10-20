@@ -35,7 +35,7 @@ class StandortKanal(private val activity: Activity) {
             when (call.method) {
                 "status" -> result.success(status())
                 "berechtigungAnfragen" -> berechtigungAnfragen(result)
-                "start" -> result.success(starten(call.argument<Number>("ende")?.toLong() ?: 0L))
+                "start" -> result.success(starten(call.argument<Number>("ende")?.toLong() ?: 0L, call.argument<Number>("intervall")?.toLong() ?: 5000L))
                 "verlaengern" -> {
                     val ende = call.argument<Number>("ende")?.toLong() ?: 0L
                     if (StandortBruecke.laeuft && ende > System.currentTimeMillis()) {
@@ -137,7 +137,7 @@ class StandortKanal(private val activity: Activity) {
     }
 
     /** Startet den Vordergrunddienst nur mit Erlaubnis und sichtbarer Benachrichtigung (sonst ließe sich das Teilen nicht beenden). */
-    private fun starten(ende: Long): Map<String, Any?> {
+    private fun starten(ende: Long, intervall: Long): Map<String, Any?> {
         if (ende <= System.currentTimeMillis()) return mapOf("ok" to false, "grund" to "ende")
         if (!hat(Manifest.permission.ACCESS_FINE_LOCATION) && !hat(Manifest.permission.ACCESS_COARSE_LOCATION)) return mapOf("ok" to false, "grund" to "keine_berechtigung")
         if (!NotificationManagerCompat.from(activity).areNotificationsEnabled()) return mapOf("ok" to false, "grund" to "benachrichtigungen_aus")
@@ -146,7 +146,8 @@ class StandortKanal(private val activity: Activity) {
         return try {
             ContextCompat.startForegroundService(
                 activity,
-                Intent(activity, StandortService::class.java).setAction(StandortService.ACTION_START).putExtra(StandortService.EXTRA_ENDE, ende),
+                Intent(activity, StandortService::class.java).setAction(StandortService.ACTION_START).putExtra(StandortService.EXTRA_ENDE, ende)
+                    .putExtra(StandortService.EXTRA_INTERVALL, intervall),
             )
             mapOf("ok" to true)
         } catch (_: Exception) {

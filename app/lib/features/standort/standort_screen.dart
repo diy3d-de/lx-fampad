@@ -32,6 +32,7 @@ class StandortScreen extends ConsumerStatefulWidget {
 class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBindingObserver {
   Timer? _auffrischen;
   var _dauer = 1;
+  var _takt = kStandortTaktStandard;
   Set<String>? _gewaehlt;
   var _beschaeftigt = false;
 
@@ -55,8 +56,15 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
   /// Zurück aus den Android-Einstellungen: Stand der Akkuoptimierung neu lesen.
   @override
   void didChangeAppLifecycleState(AppLifecycleState s) {
-    if (s == AppLifecycleState.resumed) ref.invalidate(akkuUneingeschraenktProvider);
+    if (s == AppLifecycleState.resumed) {
+      ref.invalidate(akkuUneingeschraenktProvider);
+      final w = _rueckkehr;
+      if (w != null && !w.isCompleted) w.complete();
+    }
   }
+
+  /// Wartet auf die Rückkehr aus dem Systemdialog (Akku): ein Vordergrunddienst darf erst aus der sichtbaren App gestartet werden.
+  Completer<void>? _rueckkehr;
 
   /// Beim ersten Teilen mit eingeschränktem Akku (Samsung: "Optimiert") einmal ausdrücklich fragen; danach genügt der Hinweis auf der Seite.
   /// Liefert false, wenn die Person abbricht.
@@ -83,7 +91,12 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
       ),
     );
     if (antwort == 'ja') {
-      await port.akkuAnfragen();
+      final warten = _rueckkehr = Completer<void>();
+      if (await port.akkuAnfragen()) {
+        // der Systemdialog liegt über der App: erst nach der Rückkehr geht es weiter (sonst startet der Dienst aus dem Hintergrund und scheitert)
+        await warten.future.timeout(const Duration(seconds: 60), onTimeout: () {});
+      }
+      _rueckkehr = null;
       ref.invalidate(akkuUneingeschraenktProvider);
     }
     return antwort != null;
@@ -97,7 +110,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
     setState(() => _beschaeftigt = true);
     try {
       if (!await _akkuHinweis()) return;
-      final ok = await ref.read(standortProvider.notifier).teilen(dauer: dauer, empfaenger: waehlen);
+      final ok = await ref.read(standortProvider.notifier).teilen(dauer: dauer, empfaenger: waehlen, takt: _takt);
       if (!ok && mounted) {
         final m = ref.read(standortProvider).meldung;
         if (m != null) {
@@ -156,9 +169,11 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
                       laedt: mitglieder.isLoading && andere.isEmpty,
                       gewaehlt: _gewaehlt ?? const {},
                       dauer: _dauer,
+                      takt: _takt,
                       beschaeftigt: _beschaeftigt,
                       krypto: krypto,
                       onDauer: (i) => setState(() => _dauer = i),
+                      onTakt: (t) => setState(() => _takt = t),
                       onUmschalten: (id) => setState(() {
                         final s = {...?_gewaehlt};
                         s.contains(id) ? s.remove(id) : s.add(id);
@@ -169,8 +184,8 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
                   const SizedBox(height: 24),
                   const MonoLabel('// familie'),
                   const SizedBox(height: 8),
-                  if (karte != null && mitPosition.isNotEmpty) ...[
-                    SizedBox(height: 240, child: ClipRRect(borderRadius: BorderRadius.circular(14), child: karte(context, mitPosition, namen))),
+                  if (karte != null && (mitPosition.isNotEmpty || st.eigene != null && st.phase == StandortPhase.teilt)) ...[
+                    karte(context, mitPosition, namen),
                     const SizedBox(height: 12),
                   ],
                   if (liste.isEmpty)
@@ -197,9 +212,11 @@ class _Start extends StatelessWidget {
   final bool laedt;
   final Set<String> gewaehlt;
   final int dauer;
+  final StandortTakt takt;
   final bool beschaeftigt;
   final E2eeState krypto;
   final ValueChanged<int> onDauer;
+  final ValueChanged<StandortTakt> onTakt;
   final ValueChanged<String> onUmschalten;
   final VoidCallback onStart;
   const _Start({
@@ -208,9 +225,11 @@ class _Start extends StatelessWidget {
     required this.laedt,
     required this.gewaehlt,
     required this.dauer,
+    required this.takt,
     required this.beschaeftigt,
     required this.krypto,
     required this.onDauer,
+    required this.onTakt,
     required this.onUmschalten,
     required this.onStart,
   });
@@ -237,6 +256,16 @@ class _Start extends StatelessWidget {
           const SizedBox(height: 6),
           Text('höchstens ${kStandortHoechstdauer.inHours} Stunden', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
         ],
+        const SizedBox(height: 16),
+        const MonoLabel('// aktualisierung'),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final t in StandortTakt.values) AuswahlKnopf(text: t.label, gewaehlt: takt == t, onTap: () => onTakt(t))],
+        ),
+        const SizedBox(height: 6),
+        const Text('Öfter senden zeigt Bewegungen genauer, kostet aber mehr Akku. Wer still steht, meldet sich seltener.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
         const SizedBox(height: 16),
         const MonoLabel('// mit wem'),
         const SizedBox(height: 4),

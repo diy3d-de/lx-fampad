@@ -74,23 +74,15 @@ class StandortZeiten {
   /// Wie lange das Starten auf eine Verbindung zum Server wartet.
   final Duration verbindungsFrist;
 
-  /// Mindestabstand zweier Positionen bei Bewegung und bei Ruhe (Wiederholung der letzten Position).
-  final Duration bewegung;
-  final Duration ruhe;
   const StandortZeiten({
     this.herzschlag = const Duration(seconds: 30),
     this.takt = const Duration(seconds: 10),
     this.startFrist = const Duration(seconds: 8),
     this.verbindungsFrist = const Duration(seconds: 5),
-    this.bewegung = const Duration(seconds: 10),
-    this.ruhe = const Duration(seconds: 60),
   });
 }
 
 final standortZeitenProvider = Provider<StandortZeiten>((ref) => const StandortZeiten());
-
-/// Ab dieser Strecke (Meter) seit der letzten gesendeten Position zählt es als Bewegung.
-const double kStandortBewegungMeter = 15;
 
 /// Öffnet die Verbindung (in Tests austauschbar).
 typedef StandortSocketFabrik = SyncSocket Function({required void Function(Map<String, Object?>) beiNachricht, required void Function(bool) beiStatus});
@@ -103,7 +95,8 @@ final standortSocketFabrikProvider = Provider<StandortSocketFabrik>((ref) {
     beiNachricht: beiNachricht,
     oeffner: ref.read(syncSocketOeffnerProvider),
     zufall: ref.read(syncZufallProvider),
-    // nach einem Verbindungsabbruch (Netzwechsel) schnell wieder da: der Server wartet nur 90 s, bevor er die Freigabe beendet
+    // nach einem Verbindungsabbruch (Netzwechsel) schnell wieder da: der Server wartet nur 90 s, bevor er die Freigabe beendet.
+    // Höchstens 15 s Grundabstand, mit Zufallsanteil (Jitter +/- 50 %) also bis etwa 22 s zwischen zwei Versuchen.
     backoffMax: const Duration(seconds: 15),
   );
 });
@@ -201,6 +194,7 @@ class StandortController extends Notifier<StandortState> {
   String? _ich;
   bool _vordergrund = true;
   bool _aktiv = false;
+  StandortTakt _sendeTakt = kStandortTaktStandard;
 
   /// Zählt Starts und Stopps der Freigabe: späte Antworten einer früheren Freigabe werden verworfen.
   int _lauf = 0;
@@ -301,8 +295,9 @@ class StandortController extends Notifier<StandortState> {
   // ------------------------------------------------------------------ Teilen
 
   /// Startet das Teilen für [dauer] mit [empfaenger]. Liefert true, wenn es läuft; sonst steht der Grund in [StandortState.meldung].
-  Future<bool> teilen({required Duration dauer, required Set<String> empfaenger}) async {
+  Future<bool> teilen({required Duration dauer, required Set<String> empfaenger, StandortTakt takt = kStandortTaktStandard}) async {
     if (!_aktiv || state.teilt) return false;
+    _sendeTakt = takt;
     final lauf = ++_lauf;
     state = state.kopie(phase: StandortPhase.startet, meldungLoeschen: true, empfaenger: const {}, ausgelassen: const {});
     Future<bool> scheitern(String meldung, {bool dienstStoppen = false}) async {
@@ -361,7 +356,7 @@ class StandortController extends Notifier<StandortState> {
       _letzteGesendet = null;
       _letzterVersandZeit = null;
 
-      final fehler = await _port.starten(ende);
+      final fehler = await _port.starten(ende, intervall: _sendeTakt.intervall);
       if (lauf != _lauf) {
         // zwischendurch beendet: ein inzwischen gestarteter Dienst darf nicht weiterlaufen
         if (fehler == null) await _port.stoppen();
@@ -432,7 +427,7 @@ class StandortController extends Notifier<StandortState> {
       return;
     }
     // Ruhe: die letzte Position wiederholen, damit die anderen sehen, dass es noch aktuell ist
-    if (lauf == _lauf && state.phase == StandortPhase.teilt && _letzterVersandZeit != null && jetzt.difference(_letzterVersandZeit!) >= _zeiten.ruhe) {
+    if (lauf == _lauf && state.phase == StandortPhase.teilt && _letzterVersandZeit != null && jetzt.difference(_letzterVersandZeit!) >= _sendeTakt.ruhe) {
       await _senden();
     }
     // abgelaufene Freigaben anderer verschwinden (keine Historie)
@@ -511,12 +506,16 @@ class StandortController extends Notifier<StandortState> {
     final zeit = _letzterVersandZeit;
     if (letzte != null && zeit != null) {
       final seit = jetzt.difference(zeit);
-      if (seit < _zeiten.bewegung) return;
-      final bewegt = abstandMeter(letzte.breite, letzte.laenge, p.breite, p.laenge) >= kStandortBewegungMeter;
-      if (!bewegt && seit < _zeiten.ruhe) return;
+      // Android liefert Messungen oft knapp vor Ablauf des Intervalls: ohne Toleranz würde jede zweite verworfen (halbe Rate)
+      if (seit < _sendeTakt.intervall - kStandortTaktToleranz) return;
+      final bewegt = abstandMeter(letzte.breite, letzte.laenge, p.breite, p.laenge) >= bewegungsSchwelle(p.genauigkeit);
+      if (!bewegt && seit < _sendeTakt.ruhe) return;
     }
     await _senden();
   }
+
+  /// Wie viel früher als das Intervall eine Messung noch gesendet wird.
+  static const kStandortTaktToleranz = Duration(milliseconds: 500);
 
   Future<void> _senden() async {
     final sender = _sender;

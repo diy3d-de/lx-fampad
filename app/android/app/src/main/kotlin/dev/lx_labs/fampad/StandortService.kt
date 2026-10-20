@@ -42,14 +42,18 @@ class StandortService : Service() {
         const val ACTION_STOP = "dev.lx_labs.fampad.standort.STOP"
         const val ACTION_UPDATE = "dev.lx_labs.fampad.standort.UPDATE"
         const val EXTRA_ENDE = "ende"
+        const val EXTRA_INTERVALL = "intervall"
         const val KANAL_ID = "standort_teilen"
         private const val NOTIFICATION_ID = 4711
         private const val HERZSCHLAG_FRIST_MS = 3 * 60 * 1000L
         private const val WACHE_MS = 15_000L
-        private const val MIN_ZEIT_MS = 5_000L
+        private const val STANDARD_ZEIT_MS = 5_000L
     }
 
     private var ende = 0L
+
+    /** Abstand der Positionen in ms (Auswahl "Aktualisierung" in der App, 3 bis 15 s). */
+    private var zeitMs = STANDARD_ZEIT_MS
     private var manager: LocationManager? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var letzte: Location? = null
@@ -98,7 +102,7 @@ class StandortService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_START -> starten(intent.getLongExtra(EXTRA_ENDE, 0L))
+            ACTION_START -> starten(intent.getLongExtra(EXTRA_ENDE, 0L), intent.getLongExtra(EXTRA_INTERVALL, STANDARD_ZEIT_MS))
             ACTION_UPDATE -> {
                 val neu = intent.getLongExtra(EXTRA_ENDE, 0L)
                 if (StandortBruecke.laeuft && neu > System.currentTimeMillis()) {
@@ -125,7 +129,8 @@ class StandortService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun starten(endeMs: Long) {
+    private fun starten(endeMs: Long, intervallMs: Long) {
+        zeitMs = intervallMs.coerceIn(1_000L, 60_000L)
         if (StandortBruecke.laeuft) {
           // schon laufender Dienst (z. B. neue Oberfläche nach Zurück-Taste): Endzeit übernehmen statt sie zu ignorieren
           if (endeMs > System.currentTimeMillis()) {
@@ -193,11 +198,11 @@ class StandortService : Service() {
         try {
             val anbieter = lm.allProviders
             if (fein && anbieter.contains(LocationManager.GPS_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, MIN_ZEIT_MS, 0f, listener, Looper.getMainLooper())
+                lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, zeitMs, 0f, listener, Looper.getMainLooper())
                 ok = true
             }
             if (anbieter.contains(LocationManager.NETWORK_PROVIDER)) {
-                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, MIN_ZEIT_MS, 0f, listener, Looper.getMainLooper())
+                lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, zeitMs, 0f, listener, Looper.getMainLooper())
                 ok = true
             }
         } catch (_: SecurityException) {

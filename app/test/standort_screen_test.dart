@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart';
 import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart';
+import 'package:lx_fampad/features/karte/karte_verfuegbar.dart';
 import 'package:lx_fampad/features/standort/standort_karte.dart';
 
 import 'support/fake_server.dart';
@@ -17,6 +18,7 @@ const _dora = '44444444-5555-4666-8777-888888888888';
 class _TestSteuerung extends StandortController {
   final StandortState anfang;
   Duration? gestartetMit;
+  StandortTakt? gestartetTakt;
   Set<String>? gestartetFuer;
   var beendet = 0;
   Duration? verlaengert;
@@ -32,7 +34,8 @@ class _TestSteuerung extends StandortController {
   void vordergrund(bool vorn) {}
 
   @override
-  Future<bool> teilen({required Duration dauer, required Set<String> empfaenger}) async {
+  Future<bool> teilen({required Duration dauer, required Set<String> empfaenger, StandortTakt takt = kStandortTaktStandard}) async {
+    gestartetTakt = takt;
     gestartetMit = dauer;
     gestartetFuer = empfaenger;
     state = StandortState(phase: StandortPhase.teilt, endetAt: DateTime.now().add(dauer), empfaenger: empfaenger, verbunden: true);
@@ -106,13 +109,15 @@ void main() {
       ],
     });
     steuerung = _TestSteuerung(zustand);
+    // die echte Karte fragt die Kartendatei auf dem Server ab: hier "gibt es nicht" (404)
+    if (karte == standortKartenStandard) env.extraOverrides.add(karteDateiProvider.overrideWith((ref) async => null));
+    env.standortKarte = karte;
     env.standortPort = verfuegbar ? (port ?? _Port()) : const KeinStandortPort();
     env.extraOverrides.addAll([
       standortProvider.overrideWith(() => steuerung),
       standortUhrProvider.overrideWith((ref) => () => jetzt),
-      if (karte != null) standortKartenBuilderProvider.overrideWithValue(karte),
     ]);
-    await starteApp(tester, env, skala: skala, groesse: const Size(360, 800));
+    await starteApp(tester, env, skala: skala, groesse: const Size(360, 1700));
   }
 
   Future<void> oeffnen(WidgetTester tester) async {
@@ -238,6 +243,27 @@ void main() {
     expect(bekommen!.single.userId, fixIdKind);
   });
 
+  testWidgets('Echte Karte ohne Kartendatei auf dem Server: Hinweis "Karte noch nicht eingerichtet", die Liste bleibt', (tester) async {
+    await start(tester, zustand: StandortState(geteilt: {fixIdKind: person(fixIdKind)}), karte: standortKartenStandard);
+    await oeffnen(tester);
+    expect(find.text('Karte noch nicht eingerichtet'), findsOneWidget);
+    expect(find.text('± 12 m · vor 2 Min'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Aktualisierung: Auswahl Genau (3 s), Normal (5 s, Standard), Sparsam (15 s) geht an die Steuerung', (tester) async {
+    await start(tester);
+    await oeffnen(tester);
+    expect(find.text('Normal (5 s)'), findsOneWidget);
+    await tippe(tester, find.text('Standort teilen'));
+    expect(steuerung.gestartetTakt, StandortTakt.normal);
+    await steuerung.beenden();
+    await warte(tester);
+    await tippe(tester, find.text('Genau (3 s)'));
+    await tippe(tester, find.text('Standort teilen'));
+    expect(steuerung.gestartetTakt, StandortTakt.genau);
+  });
+
   testWidgets('Ohne Android (Browser): Hinweis statt Startkarte, die Liste bleibt', (tester) async {
     await start(tester, verfuegbar: false, zustand: StandortState(geteilt: {fixIdKind: person(fixIdKind)}));
     await oeffnen(tester);
@@ -281,6 +307,10 @@ void main() {
     await tippe(tester, find.text('Standort teilen'));
     await tippe(tester, find.text('Erlauben'));
     expect(port.anfragen, 1);
+    expect(steuerung.gestartetMit, isNull, reason: 'erst nach der Rückkehr aus dem Systemdialog');
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await warte(tester);
     expect(steuerung.gestartetMit, const Duration(hours: 1));
   });
 

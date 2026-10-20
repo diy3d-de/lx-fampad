@@ -195,6 +195,21 @@ describe('WebSocket-Kanal "loc"', () => {
     expect(alice.of('loc_error').map((m) => m.code)).toEqual(['rate_limited', 'bad_request']);
   });
 
+  it('Obergrenze je Minute: auch bei erlaubtem Mindestabstand höchstens LOC_MAX_PER_MINUTE Positionen, danach wieder frei', async () => {
+    await start({ LOC_MAX_PER_MINUTE: '5' });
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    await send(alice, startMsg([[BOB, 'w']]));
+    for (let i = 0; i < 7; i++) {
+      clock += 2000;
+      await send(alice, { type: 'loc_pos', shareId: SHARE, packet: `p${i}` });
+    }
+    expect(bob.of('loc_pos')).toHaveLength(5);
+    expect(alice.of('loc_error').map((m) => m.code)).toEqual(['rate_limited', 'rate_limited']);
+    clock += 61_000;
+    await send(alice, { type: 'loc_pos', shareId: SHARE, packet: 'pn' });
+    expect(bob.of('loc_pos')).toHaveLength(6);
+  });
+
   it('Ablauf: nach der Endzeit endet die Freigabe von selbst (Empfänger und Sender erfahren es)', async () => {
     await start();
     const [alice, bob] = [await connect('alice'), await connect('bob')];

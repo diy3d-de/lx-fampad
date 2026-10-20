@@ -11,6 +11,8 @@
   <link rel="icon" type="image/png" href="favicon.png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <link rel="manifest" href="manifest.json">
+  <!-- Karte: selbst gehostetes MapLibre (CSP-Build) mit eigenem Worker; Prüfsummen in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md -->
+  <link rel="stylesheet" href="karte/maplibre-gl.css">
   <!-- Keine Inline-Skripte und keine Fremd-Adressen: passt zur strengen CSP (deploy/Caddyfile) -->
   <style>
     html, body { margin: 0; height: 100%; background: #090A0F; }
@@ -21,6 +23,10 @@
   <script src="passkeys-bundle.js"></script>
   <!-- libsodium.js (Sumo-Variante, Paket sodium 4.1.1+2 / libsodium.js 0.8.4) für die Ende-zu-Ende-Verschlüsselung: selbst gehostet, Prüfsumme in ../web-assets.sha256, Herkunft in docs/VERSIONEN.md. Enthält die WASM-Datei eingebettet (CSP: wasm-unsafe-eval). Muss vor dem Flutter-Start laden. -->
   <script src="sodium.js"></script>
+  <!-- Karte (maplibre_web erwartet die globalen Objekte maplibregl und pmtiles): alles von der eigenen Domain -->
+  <script src="karte/maplibre-gl-csp.js"></script>
+  <script src="karte/pmtiles.js"></script>
+  <script src="karte/karte-init.js"></script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

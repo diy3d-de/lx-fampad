@@ -80,6 +80,9 @@ gradle.taskGraph.whenReady {
 // zieht tink. tink-android genügt für beide, das reine tink wird überall ausgeschlossen.
 configurations.all {
     exclude(group = "com.google.crypto.tink", module = "tink")
+// Das Flutter-Paket maplibre_android 0.3.6 verlangt "android-sdk-opengl:13.5.+" (schwebende Version). Fest auf 13.5.2 (23.09.2026,
+// älter als 14 Tage; 13.5.3 vom 08.10.2026 war zum Stichtag zu jung): reproduzierbarer Build, siehe docs/VERSIONEN.md.
+    resolutionStrategy.force("org.maplibre.gl:android-sdk-opengl:13.5.2")
 }
 
 dependencies {

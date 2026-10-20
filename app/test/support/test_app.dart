@@ -12,6 +12,7 @@ import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/providers.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart' show standortPortProvider;
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
+import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKartenBuilder, standortKartenBuilderProvider;
 import 'package:lx_fampad/data/sync_state.dart';
 
 import 'fake_server.dart';
@@ -103,6 +104,9 @@ class TestUmgebung {
   /// Gerätedienst fürs Standort teilen (Standard: keiner, wie im Browser).
   StandortPort standortPort = const KeinStandortPort();
 
+  /// Karte der Standort-Seite (Standard: keine, nur die Liste; die echte Karte läuft im Test nicht).
+  StandortKartenBuilder? standortKarte;
+
   List<Override> get overrides => [
     httpClientProvider.overrideWithValue(server.client),
     tokenStoreProvider.overrideWithValue(store),
@@ -123,6 +127,7 @@ class TestUmgebung {
     syncZeitenProvider.overrideWithValue(zeiten),
     // Standort teilen: kein Gerätedienst im Test (der Kanal zur Android-Seite fehlt dort)
     standortPortProvider.overrideWithValue(standortPort),
+    standortKartenBuilderProvider.overrideWithValue(standortKarte),
     ...extraOverrides,
   ];
 

@@ -7,6 +7,32 @@ const Duration kStandortHoechstdauer = Duration(hours: 12);
 /// Ab diesem Alter gilt eine Position als veraltet (die Anzeige warnt: "zuletzt gesehen vor …").
 const Duration kStandortVeraltetNach = Duration(minutes: 5);
 
+/// Wie oft die Position gesendet wird, solange sich das Gerät bewegt (die Auswahl "Aktualisierung" beim Start). Je kürzer, desto mehr Akku.
+/// In Ruhe (keine Bewegung über die Schwelle) wiederholt das Gerät die Position seltener ([ruhe]), damit die anderen sehen, dass sie noch aktuell ist.
+enum StandortTakt {
+  genau('Genau (3 s)', 3),
+  normal('Normal (5 s)', 5),
+  sparsam('Sparsam (15 s)', 15);
+
+  final String label;
+  final int sekunden;
+  const StandortTakt(this.label, this.sekunden);
+
+  Duration get intervall => Duration(seconds: sekunden);
+
+  /// Wiederholung ohne Bewegung: 30 s, im sparsamen Modus 60 s (mindestens 30 s, sonst das Vierfache des Intervalls).
+  Duration get ruhe => Duration(seconds: sekunden * 4 > 30 ? sekunden * 4 : 30);
+}
+
+const kStandortTaktStandard = StandortTakt.normal;
+
+/// Mindeststrecke seit der zuletzt gesendeten Position, ab der es als Bewegung zählt: 5 m, bei ungenauer Messung die Hälfte der Genauigkeit (höchstens 30 m),
+/// sonst würde das Rauschen des GPS ständig "Bewegung" auslösen.
+double bewegungsSchwelle(double? genauigkeit) {
+  final h = (genauigkeit ?? 0) * 0.5;
+  return h < 5 ? 5 : (h > 30 ? 30 : h);
+}
+
 /// Die Auswahl der Dauer beim Start. [dauer] null = "bis ich beende": bis zur Höchstdauer.
 class StandortDauer {
   final String label;
