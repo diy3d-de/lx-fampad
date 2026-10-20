@@ -1,4 +1,4 @@
-// Kartenstil dunkel/hell: Auswahl je Gerät (nur lokal, nie auf dem Server, nie synchronisiert), gemerkt in der lokalen Datenbank (`sync_meta`).
+// Kartenstil dunkel/hell: Auswahl je Gerät (Gerätewahl, nicht je Person oder Konto; nur lokal, nie auf dem Server, nie synchronisiert), gemerkt in der lokalen Datenbank (`sync_meta`).
 // Standard ist dunkel. Die Stile entstehen aus `tools/karte/make-style.mjs` (beide mit denselben Glyphen, eigene Sprites je Thema, nur eigene Adressen).
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 

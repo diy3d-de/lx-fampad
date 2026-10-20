@@ -129,6 +129,9 @@ class _StandortKarteState extends ConsumerState<StandortKarte> {
     _route = route;
     await Navigator.of(context, rootNavigator: true).push(route);
     _route = null;
+    // Erst wenn die Vollbild-Karte wirklich abgebaut ist (zwei Bilder), die Karte der Seite neu bauen: nie zwei MapLibre-Instanzen zugleich
+    await WidgetsBinding.instance.endOfFrame;
+    await WidgetsBinding.instance.endOfFrame;
     if (mounted) setState(() => _vollbild = false);
   }
 
@@ -308,6 +311,7 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
     // (nicht bei übernommener Kamera: die Person soll dort weitermachen, wo sie war)
     if (erstes && !_uebernommen) Future<void>.delayed(const Duration(milliseconds: 300), () => mounted ? _alleZeigen() : null);
     // Stilwechsel: die Bilder der Nadeln (Web) gehen mit dem alten Stil verloren und werden im neuen neu angemeldet (Neuaufbau löst _bilderSichern aus)
+    if (erstes) unawaited(_stilAbgleichen()); // Wahl, die während des ersten Ladens getroffen wurde
     if (!erstes) {
       final style = _style;
       if (style != null) _bilderEntfernen(style, _alteBilder);
@@ -316,22 +320,33 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
     }
   }
 
-  /// Der Stil wurde umgeschaltet: neuen Stil laden und in die laufende Karte setzen (Kamera und Auswahl bleiben, die Nadelbilder werden neu angemeldet).
-  Future<void> _stilWechseln(KartenStil neu) async {
-    if (_angewandt == null || neu == _angewandt) return; // noch kein Stil geladen: die Karte startet gleich mit dem gewählten
-    _angewandt = neu;
+  bool _stilLaeuft = false;
+
+  /// Bringt die Karte auf den gewählten Stil (Gerätewahl, nicht je Person). [_angewandt] ist immer der Stil, den die Karte wirklich zeigt: Er ändert sich erst nach
+  /// erfolgreichem `setStyle`. Vorher (Karte noch nicht geladen) wird die Wahl gemerkt und nach dem Laden angewendet; bei einem Fehler bleibt die Karte im bisherigen Stil
+  /// und nichts (Nadelbilder, Zähler) wird verändert; `setStyle` läuft nur, wenn der Zielstil vom gezeigten abweicht (schnelles A-B-A kostet nichts).
+  Future<void> _stilAbgleichen() async {
+    if (_stilLaeuft || !mounted) return;
+    final attrappe = ref.read(karteAttrappeProvider);
+    _stilLaeuft = true;
     try {
-      final json = await ref.read(karteStilProvider)(neu);
-      if (!mounted || _angewandt != neu) return; // inzwischen wieder umgeschaltet
-      final c = _ctrl;
-      if (c == null) return;
-      _style = null;
-      _alteBilder = [..._alteBilder, ..._bilder.bereit.values];
-      _stilNr++;
-      _bilder.leeren();
-      c.setStyle(json);
+      while (mounted && _geladen && (_ctrl != null || attrappe)) {
+        final ziel = ref.read(kartenStilProvider);
+        if (_angewandt == null || ziel == _angewandt) return;
+        final json = await ref.read(karteStilProvider)(ziel);
+        if (!mounted || ref.read(kartenStilProvider) != ziel) continue; // inzwischen wieder umgeschaltet: neu entscheiden
+        _ctrl?.setStyle(json);
+        // erst nach erfolgreichem setStyle: Nadelbilder des alten Stils vormerken, neuer Zähler (neue Kennungen), Bilder neu anmelden
+        _style = null;
+        _alteBilder = [..._alteBilder, ..._bilder.bereit.values];
+        _stilNr++;
+        _bilder.leeren();
+        setState(() => _angewandt = ziel);
+      }
     } catch (_) {
-      // Stil nicht ladbar: die Karte bleibt im bisherigen Stil
+      // Stil nicht ladbar oder nicht setzbar: die Karte bleibt im bisherigen Stil (Knopf und Kreis zeigen ihn)
+    } finally {
+      _stilLaeuft = false;
     }
   }
 
@@ -608,8 +623,9 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
     _bereich = bereich;
     // in der Attrappe (Tests) braucht es keinen Stil
     _stil ??= _stilLaden();
-    ref.listen(kartenStilProvider, (_, neu) => unawaited(_stilWechseln(neu)));
-    final stilWahl = ref.watch(kartenStilProvider);
+    ref.listen(kartenStilProvider, (_, _) => unawaited(_stilAbgleichen()));
+    // Knopf und Kreisfarbe zeigen den Stil, den die Karte wirklich hat (bis zum ersten Laden die Wahl)
+    final KartenStil stilWahl = _angewandt ?? ref.watch(kartenStilProvider);
     final rand = widget.vollbild ? MediaQuery.paddingOf(context) : EdgeInsets.zero;
     final attrappe = ref.read(karteAttrappeProvider);
     // die Attrappe (Tests) gilt als geladen, außer sie soll nie laden
