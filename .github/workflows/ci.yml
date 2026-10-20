@@ -123,3 +123,7 @@ jobs:
       - run: dart run build_runner build
       # Debug-APK ist mit dem Debug-Schlüssel signiert und wird nicht veröffentlicht; prüft nur, dass der Android-Build läuft
       - run: flutter build apk --debug
+      # Release-Build mit Wegwerf-Schlüssel (nie verteilt): R8 läuft nur hier, nicht im Debug-Build. Fängt z. B. die leere Karte von v0.5.0 (R8 entfernte Methoden der
+      # PlatformView-Schnittstelle, die die Karte per JNI benutzt) und prüft das Release-Manifest (INTERNET da, kein Standort im Hintergrund)
+      - run: bash tools/release-pruefung.sh
+        working-directory: .

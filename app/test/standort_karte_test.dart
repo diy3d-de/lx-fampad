@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:lx_fampad/constants.dart' show kSurface;
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/avatar/avatar_foto.dart';
@@ -262,6 +263,8 @@ void main() {
 
       await zeige(_user(_ben, 'Ben Beispiel', 2));
       expect(find.text('BB'), findsOneWidget);
+      // die Initialen sitzen auf einer dunklen Scheibe: sonst wären sie in der Farbe der Nadel unsichtbar
+      expect(find.descendant(of: find.byType(StandortPin), matching: find.byWidgetPredicate((w) => w is ColoredBox && w.color == kSurface)), findsOneWidget);
       expect(tester.getSize(find.byType(StandortPin)), kPinGroesse);
       await zeige(_user(_ben, 'Ben', 2, avatar: const AvatarDto.vorlage('V01', 1)));
       expect(find.byType(Image), findsOneWidget);
@@ -286,6 +289,7 @@ void main() {
       StandortState? zustand,
       double skala = 1.0,
       Future<String> Function()? stil,
+      bool laedtNie = false,
       http.Client? httpClient,
     }) async {
       tester.view.physicalSize = const Size(360, 800);
@@ -303,6 +307,8 @@ void main() {
             standortUhrProvider.overrideWith((ref) => () => jetzt),
             karteAttrappeProvider.overrideWithValue(true),
             karteStilProvider.overrideWithValue(stil ?? () async => '{}'),
+            karteAttrappeLaedtNieProvider.overrideWithValue(laedtNie),
+            karteLadeFristProvider.overrideWithValue(const Duration(seconds: 10)),
             if (httpClient == null) karteDateiProvider.overrideWith((ref) async => verfuegbar ? KartenBereich.westerburg175 : null) else httpClientProvider.overrideWithValue(httpClient),
           ],
           child: MaterialApp(
@@ -412,6 +418,30 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await netz(tester);
+      expect(find.byType(StandortPin), findsOneWidget);
+    });
+
+    testWidgets('Karte bleibt leer (kein "Stil geladen"): keine Nadeln, nach 10 s Meldung statt leerer Fläche, "Erneut versuchen" startet neu', (tester) async {
+      await zeige(tester, [teilt(_ben)], laedtNie: true);
+      expect(find.byType(StandortPin), findsNothing, reason: 'ohne geladene Karte keine Nadeln');
+      expect(find.text('Karte konnte nicht geladen werden'), findsNothing);
+      await tester.pump(const Duration(seconds: 9));
+      expect(find.text('Karte konnte nicht geladen werden'), findsNothing);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('Karte konnte nicht geladen werden'), findsOneWidget);
+      expect(find.text('Erneut versuchen'), findsOneWidget);
+      // neuer Versuch: Meldung weg, nach der Frist wieder da (die Attrappe lädt hier nie)
+      await tester.tap(find.text('Erneut versuchen'));
+      await tester.pump();
+      expect(find.text('Karte konnte nicht geladen werden'), findsNothing);
+      await tester.pump(const Duration(seconds: 11));
+      expect(find.text('Karte konnte nicht geladen werden'), findsOneWidget);
+    });
+
+    testWidgets('Geladene Karte: keine Zeitüberschreitung, Nadeln da', (tester) async {
+      await zeige(tester, [teilt(_ben)]);
+      await tester.pump(const Duration(seconds: 15));
+      expect(find.text('Karte konnte nicht geladen werden'), findsNothing);
       expect(find.byType(StandortPin), findsOneWidget);
     });
 
