@@ -143,6 +143,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     minIntervalMs: config.locMinIntervalMs,
     maxPerMinute: config.locMaxPerMinute,
     graceMs: config.locGraceMs,
+    wakeCooldownMs: config.locWakeCooldownMs,
     sweepMs: config.locSweepMs,
     directoryTimeoutMs: config.locDirectoryTimeoutMs,
     log: app.log,
@@ -175,7 +176,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('push', push);
     push.logStatusOnce();
     // Standort-Freigabe gestartet: Empfänger ohne offene Verbindung per Push wecken (ohne Inhalt)
-    location.onWake = (familyId, userIds) => void push.weckeStandort(familyId, userIds);
+    location.onWake = (familyId, userIds) => push.weckeStandort(familyId, userIds);
     app.addHook('onClose', async () => push.close());
     registerPushRoutes(app, config, authCore, push);
     auth = authOverride ?? authCore;

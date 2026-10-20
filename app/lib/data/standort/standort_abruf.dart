@@ -18,11 +18,16 @@ class StandortAbruf {
   final DateTime Function() jetzt;
   StandortAbruf({required this.fabrik, required this.benachrichtiger, DateTime Function()? jetzt}) : jetzt = jetzt ?? DateTime.now;
 
-  /// Verbindet kurz und meldet neue Freigaben (höchstens einmal je Minute und Gerät, gebucht in der lokalen Datenbank). [stille]: so lange nach dem Aufbau noch auf Nachreichungen warten; [hoechstens]: Obergrenze inklusive Aufbau.
-  Future<void> abfragen({Duration stille = const Duration(seconds: 3), Duration hoechstens = const Duration(seconds: 10), Duration aufbauFrist = const Duration(seconds: 4)}) async {
-    if (benachrichtiger.istVordergrund()) return;
-    if (!await benachrichtiger.aktiv()) return;
-    if (!await benachrichtiger.abrufErlaubt()) return; // höchstens einer je Minute und Gerät (WebSocket-Ticket, Anmelde-Grenze je IP)
+  /// Verbindet kurz und meldet neue Freigaben (höchstens einmal je 30 Sekunden und Gerät, gebucht in der lokalen Datenbank). [stille]: so lange nach dem Aufbau noch auf Nachreichungen warten; [hoechstens]: Obergrenze inklusive Aufbau.
+  Future<void> abfragen({Duration stille = const Duration(milliseconds: 1500), Duration hoechstens = const Duration(seconds: 15), Duration aufbauFrist = const Duration(seconds: 8)}) async {
+    Future<void> notiere(String code) => standortDiagnoseSchreiben(benachrichtiger.db, kDiagAbruf, code, benachrichtiger.jetzt());
+    // wird überschrieben, sobald der Abruf zu Ende ist: bleibt "gestartet" stehen, wurde der Hintergrund-Start vorher beendet
+    await notiere('gestartet');
+    if (benachrichtiger.istVordergrund()) return notiere('im_vordergrund');
+    if (!await benachrichtiger.aktiv()) return notiere('aus');
+    if (!await benachrichtiger.abrufErlaubt()) return notiere('gedrosselt'); // höchstens einer je 30 Sekunden und Gerät (WebSocket-Ticket, Anmelde-Grenze je IP)
+    var verbunden = false;
+    var freigaben = 0;
     final fertig = Completer<void>();
     final aufgaben = <Future<void>>[];
     Timer? stilleTimer;
@@ -36,6 +41,7 @@ class StandortAbruf {
           final shareId = m['shareId'];
           final endsAt = m['endsAt'];
           if (shareId is String && endsAt is int) {
+            freigaben++;
             aufgaben.add(benachrichtiger.freigabe(von: von, shareId: shareId, endsAt: DateTime.fromMillisecondsSinceEpoch(endsAt)));
           }
         case 'loc_stop':
@@ -45,6 +51,7 @@ class StandortAbruf {
 
     void beiStatus(bool live) {
       if (!live) return;
+      verbunden = true;
       // diese Verbindung gehört dem Standort-Kanal: der Server zählt sie nicht als "Gerät ist live"
       socket?.senden({'type': 'loc_hello'});
       stilleTimer ??= Timer(stille, () {
@@ -69,6 +76,7 @@ class StandortAbruf {
       socket?.stop();
     }
     await Future.wait(aufgaben.map((a) => a.catchError((Object _) {})));
+    await notiere(!verbunden ? 'keine_verbindung' : (freigaben > 0 ? 'freigaben' : 'ok'));
   }
 }
 

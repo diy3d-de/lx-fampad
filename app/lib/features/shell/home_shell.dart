@@ -73,6 +73,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       unawaited(ref.read(pushProvider.notifier).starten());
       // Standort teilen: Empfang der Freigaben anderer (die Verbindung steht nur im Vordergrund oder solange du teilst)
       _standort.starten();
+      // Kanal "Standortfreigaben" anlegen, damit er in den Android-Einstellungen steht (sonst erst bei der ersten Freigabe)
+      unawaited(ref.read(standortBenachrichtigerProvider).kanalAnlegen());
     });
   }
 

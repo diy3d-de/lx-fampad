@@ -108,6 +108,8 @@ export interface Config {
   /** Höchstens so viele Positionen je Freigabe und Minute (die App sendet im schnellsten Modus alle 3 s, also 20 je Minute). */
   locMaxPerMinute: number;
   locGraceMs: number;
+  /** Pause, bevor derselbe Sender dieselben Empfänger wieder per Push-Wecker anstoßen darf (Standard 10 Minuten; zum Testen kürzer). */
+  locWakeCooldownMs: number;
   locSweepMs: number;
   locDirectoryTimeoutMs: number;
 }
@@ -294,6 +296,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locMinIntervalMs: positiveInt(env, 'LOC_MIN_INTERVAL_MS', 1000),
     locMaxPerMinute: positiveInt(env, 'LOC_MAX_PER_MINUTE', 40),
     locGraceMs: positiveInt(env, 'LOC_GRACE_MS', 90_000),
+    locWakeCooldownMs: positiveInt(env, 'LOC_WAKE_COOLDOWN_MS', 10 * 60 * 1000),
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
   };

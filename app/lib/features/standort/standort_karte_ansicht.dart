@@ -23,6 +23,7 @@ import '../auth/auth_widgets.dart' show LinkKnopf;
 import '../karte/karte_config.dart';
 import '../karte/karte_stil.dart';
 import '../karte/karte_verfuegbar.dart';
+import 'standort_folgen.dart';
 import 'standort_pin.dart';
 import 'standort_pin_bild.dart';
 
@@ -88,6 +89,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> {
   bool _vollbild = false;
   MapCamera? _kamera;
   String? _gewaehlt;
+  bool _folgen = true;
   Route<void>? _route;
   late final ValueNotifier<_KartenDaten> _daten = ValueNotifier((positionen: widget.positionen, mitglieder: widget.mitglieder));
 
@@ -113,6 +115,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> {
 
   void _vorgaenger(MapCamera k) => _kamera = k;
   void _auswahl(String? id) => _gewaehlt = id;
+  void _folgenMerken(bool an) => _folgen = an;
 
   /// Öffnet das Vollbild: erst die Karte in der Seite abbauen (ein Bild lang), dann die Vollbild-Seite schieben.
   Future<void> _oeffnen() async {
@@ -124,7 +127,7 @@ class _StandortKarteState extends ConsumerState<StandortKarte> {
       opaque: true,
       transitionDuration: Duration.zero,
       reverseTransitionDuration: Duration.zero,
-      pageBuilder: (_, _, _) => _VollbildSeite(daten: _daten, anfangsKamera: _kamera, anfangsGewaehlt: _gewaehlt, onKamera: _vorgaenger, onGewaehlt: _auswahl),
+      pageBuilder: (_, _, _) => _VollbildSeite(daten: _daten, anfangsKamera: _kamera, anfangsGewaehlt: _gewaehlt, anfangsFolgen: _folgen, onKamera: _vorgaenger, onGewaehlt: _auswahl, onFolgen: _folgenMerken),
     );
     _route = route;
     await Navigator.of(context, rootNavigator: true).push(route);
@@ -149,8 +152,10 @@ class _StandortKarteState extends ConsumerState<StandortKarte> {
       vollbild: false,
       anfangsKamera: _kamera,
       anfangsGewaehlt: _gewaehlt,
+      anfangsFolgen: _folgen,
       onKamera: _vorgaenger,
       onGewaehlt: _auswahl,
+      onFolgen: _folgenMerken,
       onVollbild: _oeffnen,
     );
   }
@@ -161,9 +166,11 @@ class _VollbildSeite extends StatelessWidget {
   final ValueListenable<_KartenDaten> daten;
   final MapCamera? anfangsKamera;
   final String? anfangsGewaehlt;
+  final bool anfangsFolgen;
   final ValueChanged<MapCamera> onKamera;
   final ValueChanged<String?> onGewaehlt;
-  const _VollbildSeite({required this.daten, required this.anfangsKamera, required this.anfangsGewaehlt, required this.onKamera, required this.onGewaehlt});
+  final ValueChanged<bool> onFolgen;
+  const _VollbildSeite({required this.daten, required this.anfangsKamera, required this.anfangsGewaehlt, required this.anfangsFolgen, required this.onKamera, required this.onGewaehlt, required this.onFolgen});
 
   @override
   Widget build(BuildContext context) {
@@ -186,8 +193,10 @@ class _VollbildSeite extends StatelessWidget {
                     vollbild: true,
                     anfangsKamera: anfangsKamera,
                     anfangsGewaehlt: anfangsGewaehlt,
+                    anfangsFolgen: anfangsFolgen,
                     onKamera: onKamera,
                     onGewaehlt: onGewaehlt,
+                    onFolgen: onFolgen,
                   ),
                 ),
               ),
@@ -220,10 +229,12 @@ class _KartenFlaeche extends ConsumerStatefulWidget {
   /// Kamera und Auswahl der Vorgängerin (Wechsel zwischen Seite und Vollbild): die Karte öffnet dort, nicht auf "alle zeigen".
   final MapCamera? anfangsKamera;
   final String? anfangsGewaehlt;
+  final bool anfangsFolgen;
   final ValueChanged<MapCamera>? onKamera;
   final ValueChanged<String?>? onGewaehlt;
+  final ValueChanged<bool>? onFolgen;
   final VoidCallback? onVollbild;
-  const _KartenFlaeche({required this.positionen, required this.mitglieder, required this.vollbild, this.anfangsKamera, this.anfangsGewaehlt, this.onKamera, this.onGewaehlt, this.onVollbild});
+  const _KartenFlaeche({required this.positionen, required this.mitglieder, required this.vollbild, this.anfangsKamera, this.anfangsGewaehlt, this.anfangsFolgen = true, this.onKamera, this.onGewaehlt, this.onFolgen, this.onVollbild});
 
   @override
   ConsumerState<_KartenFlaeche> createState() => _KartenFlaecheState();
@@ -259,6 +270,10 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
   StyleController? _style;
   final PinBildCache _bilder = PinBildCache();
   String? _gewaehlt;
+
+  /// "Folgen": die Karte wandert mit der gewählten (oder einzigen) Person mit. Standard an; ein Schieben oder Zoomen mit der Hand und "Alle zeigen" schalten es aus,
+  /// ein Tipp auf den Knopf oder auf die Nadel wieder an.
+  late bool _folgen = widget.anfangsFolgen;
   Set<String> _angepasst = {};
   Timer? _auffrischen;
 
@@ -358,8 +373,36 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
   }
 
   void _waehle(String? id) {
-    setState(() => _gewaehlt = id);
+    setState(() {
+      _gewaehlt = id;
+      if (id != null) _folgen = true; // Tipp auf die Nadel: dieser Person folgen
+    });
     widget.onGewaehlt?.call(id);
+    widget.onFolgen?.call(_folgen);
+    if (id != null) unawaited(_folgenZentrieren());
+  }
+
+  void _folgenSetzen(bool an) {
+    if (_folgen == an) return;
+    setState(() => _folgen = an);
+    widget.onFolgen?.call(an);
+  }
+
+  /// Wer gerade verfolgt würde: die gewählte Person, sonst die einzige auf der Karte (nur im Kartenbereich).
+  String? _folgeZiel() => folgeZiel(gewaehlt: _gewaehlt, ids: [for (final e in _imBereich(_eintraege())) e.id]);
+
+  /// Zentriert die Karte sanft auf das Ziel, der Zoom bleibt (kein Springen). Nur bei aktivem Folgen.
+  Future<void> _folgenZentrieren() async {
+    final c = _ctrl;
+    final ziel = _folgeZiel();
+    if (!_folgen || c == null || ziel == null) return;
+    final p = _nach[ziel];
+    if (p == null) return;
+    try {
+      await c.animateCamera(center: Geographic(lon: p.lng, lat: p.lat), zoom: _kamera?.zoom, nativeDuration: const Duration(milliseconds: 800));
+    } catch (_) {
+      // die Karte ist nicht bereit oder schon weg
+    }
   }
 
   /// Wartet auf "Stil geladen"; bleibt die Meldung aus (Kacheln oder Stil kommen nicht an, Darstellung scheitert), erscheint nach der Frist eine Meldung.
@@ -424,7 +467,8 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
   }
 
   /// Neue Ziele übernehmen und die Bewegung von der jetzt gezeigten Stelle aus starten.
-  void _ziele(List<KartenEintrag> eintraege) {
+  Set<String> _ziele(List<KartenEintrag> eintraege) {
+    final bewegte = <String>{};
     var bewegt = false;
     final ids = {for (final e in eintraege) e.id};
     _von.removeWhere((id, _) => !ids.contains(id));
@@ -439,16 +483,21 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
         _von[e.id] = _gezeigt(e.id, alt);
         _nach[e.id] = ziel;
         bewegt = true;
+        bewegte.add(e.id);
       }
     }
     if (bewegt) _anim.forward(from: 0);
+    return bewegte;
   }
 
   @override
   void didUpdateWidget(_KartenFlaeche alt) {
     super.didUpdateWidget(alt);
-    _ziele(_eintraege());
+    final bewegte = _ziele(_eintraege());
     _einpassenWennNeu();
+    // ein neues Standortpaket der verfolgten Person: Karte sanft mitnehmen
+    final ziel = _folgeZiel();
+    if (_folgen && ziel != null && bewegte.contains(ziel)) unawaited(_folgenZentrieren());
   }
 
   List<KartenEintrag> _imBereich(List<KartenEintrag> l) => [for (final e in l) if (_bereich.enthaelt(e.lat, e.lng)) e];
@@ -639,6 +688,7 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
     if (glPins && _geladen) _bilderSichern(eintraege, jetzt);
     final ausserhalb = [for (final e in eintraege) if (!bereich.enthaelt(e.lat, e.lng)) e.eigene ? 'Du' : e.name];
     final gewaehlt = eintraege.where((e) => e.id == _gewaehlt).firstOrNull;
+    final folgeZielJetzt = folgeZiel(gewaehlt: _gewaehlt, ids: [for (final e in eintraege) if (bereich.enthaelt(e.lat, e.lng)) e.id]);
     // "Auf mich zentrieren" nur, wenn die eigene Position auf der Karte liegt
     final hatEigene = eintraege.any((e) => e.eigene && bereich.enthaelt(e.lat, e.lng));
 
@@ -688,7 +738,9 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
                           _stilGeladen();
                         },
                         onEvent: (ev) {
-                          if (ev is MapEventMoveCamera) {
+                          if (ev is MapEventStartMoveCamera && ev.reason == CameraChangeReason.apiGesture) {
+                            _folgenSetzen(false); // die Person schiebt oder zoomt selbst
+                          } else if (ev is MapEventMoveCamera) {
                             _kamera = ev.camera;
                             widget.onKamera?.call(ev.camera);
                           } else if (glPins) {
@@ -760,8 +812,35 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
                       tooltip: stilWahl.umschaltText,
                       onTap: () => unawaited(ref.read(kartenStilProvider.notifier).umschalten()),
                     ),
-                    _KartenKnopf(icon: Icons.zoom_out_map, tooltip: 'Alle zeigen', onTap: () => unawaited(_alleZeigen())),
-                    _KartenKnopf(icon: Icons.my_location, tooltip: 'Auf mich zentrieren', onTap: hatEigene ? () => unawaited(_aufMich()) : null),
+                    _KartenKnopf(
+                      icon: _folgen && folgeZielJetzt != null ? Icons.gps_fixed : Icons.gps_not_fixed,
+                      tooltip: _folgen && folgeZielJetzt != null ? 'Folgen beenden' : 'Folgen',
+                      aktiv: _folgen && folgeZielJetzt != null,
+                      onTap: folgeZielJetzt == null
+                          ? null
+                          : () {
+                              _folgenSetzen(!_folgen);
+                              if (_folgen) unawaited(_folgenZentrieren());
+                            },
+                    ),
+                    _KartenKnopf(
+                      icon: Icons.zoom_out_map,
+                      tooltip: 'Alle zeigen',
+                      onTap: () {
+                        _folgenSetzen(false);
+                        unawaited(_alleZeigen());
+                      },
+                    ),
+                    _KartenKnopf(
+                      icon: Icons.my_location,
+                      tooltip: 'Auf mich zentrieren',
+                      onTap: hatEigene
+                          ? () {
+                              _folgenSetzen(false);
+                              unawaited(_aufMich());
+                            }
+                          : null,
+                    ),
                   ],
                 ),
               ),
@@ -850,15 +929,21 @@ class _KartenKnopf extends StatelessWidget {
   final IconData icon;
   final String tooltip;
   final VoidCallback? onTap;
-  const _KartenKnopf({required this.icon, required this.tooltip, required this.onTap});
+
+  /// Eingeschalteter Zustand (z. B. "Folgen"): Akzentrand und -fläche, zusätzlich zum Symbol und zum Tooltip.
+  final bool aktiv;
+  const _KartenKnopf({required this.icon, required this.tooltip, required this.onTap, this.aktiv = false});
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 4),
     child: Material(
-      color: kBg.withValues(alpha: 0.85),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: const BorderSide(color: kBorder)),
-      child: IconButton(icon: Icon(icon, color: onTap == null ? kTextFaint : kAccent), tooltip: tooltip, onPressed: onTap, constraints: const BoxConstraints(minWidth: 48, minHeight: 48)),
+      color: aktiv ? kAccentSoft : kBg.withValues(alpha: 0.85),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: aktiv ? kAccent : kBorder)),
+      child: Semantics(
+        toggled: aktiv ? true : null,
+        child: IconButton(icon: Icon(icon, color: onTap == null ? kTextFaint : kAccent), tooltip: tooltip, onPressed: onTap, constraints: const BoxConstraints(minWidth: 48, minHeight: 48)),
+      ),
     ),
   );
 }

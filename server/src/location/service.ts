@@ -56,10 +56,12 @@ export interface LocationDeps {
   minIntervalMs: number;
   maxPerMinute: number;
   graceMs: number;
+  /** Entprellung des Push-Weckers je Sender und Empfänger (Standard 10 Minuten). */
+  wakeCooldownMs?: number;
   sweepMs: number;
   /** Zeitlimit für die Mitgliederprüfung (hängende Datenbank); Standard 5 s. */
   directoryTimeoutMs?: number;
-  log?: { warn(obj: unknown, msg?: string): void };
+  log?: { warn(obj: unknown, msg?: string): void; info?(obj: unknown, msg?: string): void };
 }
 
 export type LocationResult = { ok: true } | { ok: false; code: string };
@@ -80,7 +82,7 @@ export class LocationService {
    * Haken für den Push-Wecker (app.ts): wird nur beim Start einer Freigabe mit den Empfängern aufgerufen, die in den letzten 10 Minuten nicht schon von dieser
    * Person geweckt wurden. Nie bei Verlängern, Wiederverbinden, Ende; nie mit Inhalt (nur Familie und Empfänger).
    */
-  onWake: ((familyId: string, userIds: string[]) => void) | undefined;
+  onWake: ((familyId: string, userIds: string[]) => void | Promise<ReadonlySet<string>>) | undefined;
   private timer: NodeJS.Timeout | null = null;
   private readonly now: () => number;
 
@@ -195,16 +197,28 @@ export class LocationService {
   private weckeEmpfaenger(s: Share, now: number): void {
     if (!this.onWake) return;
     const ids: string[] = [];
+    let gedrosselt = 0;
     for (const userId of s.recipients.keys()) {
       const key = `${s.familyId}:${s.ownerId}:${userId}`;
       const letzter = this.lastWake.get(key);
-      if (letzter !== undefined && now - letzter < WAKE_COOLDOWN_MS) continue;
-      this.lastWake.set(key, now);
+      if (letzter !== undefined && now - letzter < (this.deps.wakeCooldownMs ?? WAKE_COOLDOWN_MS)) {
+        gedrosselt++;
+        continue;
+      }
       ids.push(userId);
     }
+    // inhaltsfrei: nur Zähler
+    this.deps.log?.info?.({ empfaenger: s.recipients.size, angefragt: ids.length, gedrosselt }, 'Standort-Freigabe: Wecker');
     if (ids.length === 0) return;
+    // Die 10 Minuten zählen erst für Empfänger, die der Push-Dienst wirklich anpeilen konnte (Gerät mit Endpunkt): ein Empfänger ohne Push oder mit
+    // offener Verbindung verbraucht die Frist nicht, sonst bliebe der Wecker nach einem ersten Test ohne Wirkung stumm.
+    const buchen = (woken: ReadonlySet<string> | undefined) => {
+      for (const id of ids) if (woken === undefined || woken.has(id)) this.lastWake.set(`${s.familyId}:${s.ownerId}:${id}`, now);
+    };
     try {
-      this.onWake(s.familyId, ids);
+      const r = this.onWake(s.familyId, ids);
+      if (r instanceof Promise) r.then(buchen, (err: unknown) => this.deps.log?.warn({ err }, 'Standort-Wecker fehlgeschlagen'));
+      else buchen(undefined);
     } catch (err: unknown) {
       this.deps.log?.warn({ err }, 'Standort-Wecker fehlgeschlagen');
     }
@@ -335,7 +349,7 @@ export class LocationService {
     const recheckMs = opts.recheckMs ?? this.deps.sweepMs * 12;
     const now = this.now();
     for (const [id, zeiten] of this.starts) if (zeiten.every((t) => now - t >= START_WINDOW_MS)) this.starts.delete(id);
-    for (const [key, t] of this.lastWake) if (now - t >= WAKE_COOLDOWN_MS) this.lastWake.delete(key);
+    for (const [key, t] of this.lastWake) if (now - t >= (this.deps.wakeCooldownMs ?? WAKE_COOLDOWN_MS)) this.lastWake.delete(key);
     const toCheck: Share[] = [];
     for (const s of [...this.shares.values()]) {
       if (now >= s.endsAt) this.end(s, 'expired');

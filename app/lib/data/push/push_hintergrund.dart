@@ -26,7 +26,9 @@ import '../api/api_error.dart';
 import '../auth/auth_state.dart';
 import '../providers.dart';
 import '../sync/sync_engine.dart';
+import '../database_provider.dart';
 import '../standort/standort_abruf.dart';
+import '../standort/standort_hinweis.dart';
 import '../sync_state.dart';
 import 'chat_benachrichtiger_provider.dart';
 import 'push_plattform.dart';
@@ -67,29 +69,40 @@ Future<WeckerLauf?> pushHintergrundStarten({
       var abgebrochen = false;
       try {
         final engine = c.read(syncEngineProvider);
-        await weckerAbgleichen(
-          store: c.read(syncStoreProvider),
-          abgleich: () async {
-            await engine
-                .abgleichen(abgebrochen: () => abgebrochen)
-                .timeout(
-                  hoechstdauer,
-                  onTimeout: () {
-                    abgebrochen = true;
-                    return const SyncErgebnis(SyncAusgang.abgebrochen);
-                  },
-                );
-          },
-          ereignisse: ereignisse ?? c.read(ereignisBenachrichtigerProvider),
-        );
-        // Standortfreigaben: der Wecker enthält nichts, die App fragt den Standort-Kanal kurz ab und meldet neue Freigaben lokal
-        if (!abgebrochen) {
+        // Diagnose (ohne Inhalt): der Wecker ist angekommen
+        await standortDiagnoseSchreiben(c.read(appDatabaseProvider), kDiagWecker, 'hintergrund', DateTime.now());
+        // Der Standort-Abruf läuft gleichzeitig mit dem Abgleich: Android lässt dem Hintergrund-Start nur wenige Sekunden, ein Nacheinander (Abgleich, dann Ticket,
+        // Verbindung, Warten) würde das Fenster sprengen.
+        final standort = () async {
           try {
             await c.read(standortAbrufProvider).abfragen();
           } catch (_) {
             // Zusatz: ein Fehler hier darf den Wecker nicht stören
           }
+        }();
+        // Ein Fehler des Abgleichs (z. B. abgelaufenes Zugangstoken) darf den Standort-Abruf unten nicht verhindern
+        try {
+          await weckerAbgleichen(
+            store: c.read(syncStoreProvider),
+            abgleich: () async {
+              await engine
+                  .abgleichen(abgebrochen: () => abgebrochen)
+                  .timeout(
+                    hoechstdauer,
+                    onTimeout: () {
+                      abgebrochen = true;
+                      return const SyncErgebnis(SyncAusgang.abgebrochen);
+                    },
+                  );
+            },
+            ereignisse: ereignisse ?? c.read(ereignisBenachrichtigerProvider),
+          );
+        } catch (_) {
+          // der nächste Wecker oder Start der App gleicht ab
         }
+
+        // Standortfreigaben: der Wecker enthält nichts, die App fragt den Standort-Kanal kurz ab und meldet neue Freigaben lokal
+        await standort;
       } finally {
         abgebrochen = true;
         c.dispose();

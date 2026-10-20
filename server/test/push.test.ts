@@ -480,6 +480,23 @@ describe.each(backends)('Push ($name)', (backend) => {
         expect(await topicsPosted()).toEqual([tChild]);
       });
 
+      it('liefert die Personen mit Endpunkt zurück (nur sie verbrauchen die 10 Minuten des Senders)', async () => {
+        await register(fam.parent);
+        const geweckt = await world.app.push?.weckeStandort(fam.familyId, [fam.parent.userId, fam.child.userId]);
+        expect([...(geweckt ?? [])]).toEqual([fam.parent.userId]); // das Kind hat keinen Endpunkt
+      });
+
+      it('halbtote Verbindung (Handy gerade gesperrt): der Wecker wird nach der Ping-Frist nachgeholt, sobald die Verbindung weg ist', async () => {
+        const tParent = await register(fam.parent);
+        const ws = await openSocket(fam.parent, '203.0.113.24', true);
+        await world.app.push?.weckeStandort(fam.familyId, [fam.parent.userId]);
+        await wait(100);
+        expect(calls).toHaveLength(0); // jetzt noch lebendig
+        ws.terminate();
+        expect(await until(() => calls.length >= 1, 4000)).toBe(true); // Nachprüfung nach der Ping-Frist: Gerät nicht mehr erreichbar, Wecker geht raus
+        expect(await topicsPosted()).toEqual([tParent]);
+      });
+
       it('Start einer Freigabe weckt die Empfänger ohne Verbindung; Verlängern, Ende und erneuter Start innerhalb von 10 Minuten wecken nicht erneut', async () => {
         const tChild = await register(fam.child);
         await register(fam.parent);
