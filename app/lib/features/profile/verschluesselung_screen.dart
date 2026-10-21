@@ -5,6 +5,7 @@
 // Sicherung gesperrt; "Neuen Schlüssel erzeugen" gibt es nur im Notfallbereich hinter einer Checkliste.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -93,7 +94,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       haken: const [
         'Ich habe keinen Wiederherstellungsschlüssel.',
         'Ich habe kein anderes Gerät mit meinem Schlüssel.',
-        'Ich kenne kein Sicherungs-Passwort.',
+        'Ich kenne kein Passwort der Passwort-Sicherung.',
         'Alte Chats gehen unwiderruflich verloren.',
       ],
       wort: 'ersetzen',
@@ -111,7 +112,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     final ja = await _bestaetigen(
       'Dieses Gerät neu verbinden?',
       'Der Schlüssel auf diesem Gerät wird nicht mehr benutzt, aber nicht gelöscht: Er bleibt hier als "Alter Schlüssel" aufbewahrt. '
-      'Danach verbindest du das Gerät wieder per QR-Code von einem anderen Gerät, mit deinem Wiederherstellungsschlüssel oder mit deinem Sicherungs-Passwort.',
+      'Danach verbindest du das Gerät wieder per QR-Code von einem anderen Gerät, mit deinem Wiederherstellungsschlüssel oder mit dem Passwort deiner Passwort-Sicherung.',
       'Neu verbinden',
     );
     if (!ja || !mounted) return;
@@ -124,7 +125,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       context,
       titel: 'Alten Schlüssel verwerfen?',
       text:
-          'Dieser alte Schlüssel wird nicht benutzt. Wenn du ihn verwirfst, ist er endgültig weg. Nur ein Chat-Verlauf, der allein mit diesem alten Schlüssel lesbar war, '
+          'Die App benutzt diesen alten Schlüssel nirgends. Wenn du ihn verwirfst, ist er endgültig weg. Nur ein Chat-Verlauf, der allein mit diesem alten Schlüssel lesbar wäre, '
           'wäre dann nicht mehr zu retten.',
       wort: 'löschen',
       knopf: 'Endgültig verwerfen',
@@ -133,38 +134,49 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     await ausfuehren(() => _c.quarantaeneVerwerfen(e.name));
   }
 
-  /// "Gerät abgeben": Schlüssel UND lokale Daten löschen, abmelden. Gesperrt ohne bestätigte Sicherung (Anzeige in [_geraetAbgeben]); hier nochmals mit getipptem Wort.
+  /// "Gerät abgeben": Schlüssel UND lokale Daten löschen, abmelden. Gesperrt ohne bestätigte Sicherung (Anzeige in [_geraetAbgeben]); hier nochmals mit Haken und
+  /// getipptem Wort. Liegen frühere Schlüssel auf dem Gerät (Quarantäne, abweichender Schlüssel), gibt es einen eigenen Pflicht-Haken mit der Anzahl.
   Future<void> _geraetAbgebenAusfuehren() async {
+    final n = ref.read(e2eeProvider).fruehereSchluessel;
     final ja = await wortBestaetigen(
       context,
       titel: 'Gerät abgeben?',
       text:
           'Dein Schlüssel und alle lokalen Daten werden von diesem Gerät gelöscht, und du wirst abgemeldet. Dein Konto, deine Chats auf dem Server und deine Sicherung bleiben. '
           'Deinen Verlauf bekommst du danach nur mit deiner Sicherung oder von einem anderen Gerät mit deinem Schlüssel wieder.',
-      haken: const ['Ich weiß: Ohne meine Sicherung (Wiederherstellungsschlüssel oder Sicherungs-Passwort) kommt mein Verlauf nicht zurück.'],
+      haken: [
+        'Ich weiß: Ohne meine Sicherung (Wiederherstellungsschlüssel oder Passwort der Passwort-Sicherung) kommt mein Verlauf nicht zurück.',
+        if (n > 0)
+          n == 1
+              ? 'Auf diesem Gerät liegt noch 1 früherer Schlüssel, der nur hier existiert. Er wird ebenfalls gelöscht.'
+              : 'Auf diesem Gerät liegen noch $n frühere Schlüssel, die nur hier existieren. Sie werden ebenfalls gelöscht.',
+      ],
       wort: 'löschen',
       knopf: 'Gerät abgeben',
     );
     if (!ja || !mounted) return;
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
-    AbmeldeErgebnis? ergebnis;
+    GeraetAbgabeErgebnis? ergebnis;
     final ok = await ausfuehren(() async => ergebnis = await _c.geraetAbgeben());
     if (!ok) return; // nichts wurde gelöscht: der Grund steht im Fehlerkasten
     nav.popUntil((r) => r.isFirst);
     final e = ergebnis;
+    final teile = <String>[
+      if (e == null || e.schluesselGeloescht)
+        'Schlüssel und lokale Daten sind von diesem Gerät gelöscht, du bist abgemeldet.'
+      else
+        'Du bist abgemeldet, aber der Schlüssel konnte nicht gelöscht werden: Lösche die App-Daten oder setze das Gerät zurück. Beim nächsten Start versucht die App es noch einmal.',
+      if (e != null && !e.serverAbgemeldet)
+        'Der Server war nicht erreichbar: Die Sitzung dort bleibt bis zum Ablauf gültig; beende sie später unter "Angemeldete Geräte".',
+      if (e != null && !e.datenSauber)
+        'Die lokalen Daten ließen sich nicht vollständig löschen: Lösche zusätzlich die App-Daten oder setze das Gerät zurück.'
+      else if (kIsWeb)
+        'Im Browser wurden die Zeilen der Datenbank gelöscht, ihre Datei kann Reste enthalten: Lösche zusätzlich die Websitedaten dieser Seite.',
+    ];
     messenger
       ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          duration: const Duration(seconds: 8),
-          content: Text(
-            e != null && !e.serverAbgemeldet
-                ? 'Schlüssel und lokale Daten sind von diesem Gerät gelöscht. Der Server war nicht erreichbar: Die Sitzung dort bleibt bis zum Ablauf gültig; beende sie später unter "Angemeldete Geräte".'
-                : 'Schlüssel und lokale Daten sind von diesem Gerät gelöscht, du bist abgemeldet.',
-          ),
-        ),
-      );
+      ..showSnackBar(SnackBar(duration: const Duration(seconds: 12), content: Text(teile.join(' '))));
   }
 
   /// Weg zu einer Sicherung: die Passwort-Sicherung, wenn der Server sie anbietet, sonst der Wiederherstellungsschlüssel.
@@ -211,8 +223,6 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
         ..._warnungen(s),
         ..._inhalt(s, auth),
-        const SizedBox(height: 16),
-        const _Vertrauensmodell(),
       ],
     );
   }
@@ -244,6 +254,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen)
           else
             ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: laeuft ? null : () => unawaited(_c.laden())),
+          ..._zusatz(s),
         ];
       case E2eeStatus.keinSchluessel:
         return [
@@ -331,35 +342,71 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           ),
           const SizedBox(height: 12),
           _SicherheitscodeKarte(state: s, eigeneId: auth.user?.id),
-          ..._zusatz(s),
-          const SizedBox(height: 16),
-          _gefahr(),
+          ..._zusatz(s, notfall: true),
         ];
     }
   }
 
   static String _datum(DateTime t) => DateFormat('d. MMM yyyy', 'de_DE').format(t.toLocal());
 
-  /// Gemeinsame Abschnitte unter dem Status: Browser-Hinweis, aufbewahrte alte Schlüssel, Gerät abgeben.
-  List<Widget> _zusatz(E2eeState s) => [
+  /// Gemeinsame Abschnitte unter dem Status: Browser-Hinweis, aufbewahrte alte Schlüssel, Hinweis auf ältere Sicherungen und der eingeklappte Bereich
+  /// "Erweitert" (Gerät abgeben, bei [notfall] der Notfallbereich, Vertrauensmodell).
+  List<Widget> _zusatz(E2eeState s, {bool notfall = false}) => [
     ..._browserHinweis(s),
     ..._quarantaene(s),
-    ..._geraetAbgeben(s),
+    ..._archiv(s),
+    const SizedBox(height: 16),
+    _Erweitert(
+      children: [
+        ..._geraetAbgeben(s),
+        if (notfall) ...[const SizedBox(height: 16), _gefahr()],
+        const SizedBox(height: 16),
+        const _Vertrauensmodell(),
+      ],
+    ),
   ];
 
-  /// Web: Verweigert der Browser die dauerhafte Ablage (oder lässt sich das nicht klären), darf er die Schlüssel-Daten löschen.
+  /// Web: Hat der Browser die dauerhafte Ablage nicht zugesagt, darf er die Schlüssel-Daten löschen; ließ sich das nicht klären, steht nur das da (keine Tatsache).
   List<Widget> _browserHinweis(E2eeState s) {
-    if (s.speicherDauer != SpeicherDauer.verweigert && s.speicherDauer != SpeicherDauer.unbekannt) return const [];
-    return const [
-      SizedBox(height: 16),
-      MeldungsBox(
-        'Der Browser darf diese Daten löschen, zum Beispiel bei knappem Speicher. Installiere die App oder verbinde ein zweites Gerät, damit dein Schlüssel nicht allein hier liegt.',
-        fehler: false,
+    switch (s.speicherDauer) {
+      case SpeicherDauer.verweigert:
+        return [
+          const SizedBox(height: 16),
+          const MeldungsBox(
+            'Der Browser darf diese Daten löschen, zum Beispiel bei knappem Speicher. Installiere die App oder verbinde ein zweites Gerät, damit dein Schlüssel nicht allein hier liegt.',
+            fehler: false,
+          ),
+          const SizedBox(height: 8),
+          ZweitKnopf(text: 'Dauerhaften Speicher anfragen', icon: Icons.save_outlined, onPressed: laeuft ? null : () => ausfuehren(_c.dauerhaftenSpeicherAnfordern)),
+        ];
+      case SpeicherDauer.unbekannt:
+        return const [
+          SizedBox(height: 16),
+          Text(
+            'Ob der Browser diese Daten dauerhaft behält, ließ sich nicht klären.',
+            style: TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
+          ),
+        ];
+      case SpeicherDauer.gewaehrt:
+      case SpeicherDauer.nichtZutreffend:
+        return const [];
+    }
+  }
+
+  /// Ruhiger Hinweis: Der Server hält ältere Sicherungen (nie gelöscht).
+  List<Widget> _archiv(E2eeState s) {
+    final n = s.archivAnzahl ?? 0;
+    if (n <= 0 || s.status != E2eeStatus.bereit) return const [];
+    return [
+      const SizedBox(height: 12),
+      Text(
+        n == 1 ? '1 ältere Sicherung liegt beim Server.' : '$n ältere Sicherungen liegen beim Server.',
+        style: const TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
       ),
     ];
   }
 
-  /// Aufbewahrte alte Schlüssel dieses Geräts: nur ein Hinweis, der Schlüssel wird nie benutzt oder automatisch gelöscht.
+  /// Aufbewahrte alte Schlüssel dieses Geräts: nur ein Hinweis, die App benutzt sie nirgends und löscht sie nie automatisch.
   List<Widget> _quarantaene(E2eeState s) {
     if (s.quarantaene.isEmpty) return const [];
     final df = DateFormat('d. MMM yyyy, HH:mm', 'de_DE');
@@ -368,7 +415,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       const MonoLabel('// alter schlüssel auf diesem gerät', color: kTextMuted),
       const SizedBox(height: 8),
       const Text(
-        'Dieses Gerät hat einen früheren Schlüssel von dir aufbewahrt, statt ihn zu löschen. Er wird nicht benutzt; du musst nichts tun.',
+        'Dieses Gerät hat einen früheren Schlüssel von dir aufbewahrt, statt ihn zu löschen. Die App benutzt ihn nirgends; er liegt nur hier, bis du ihn verwirfst '
+        'oder das Gerät abgibst. Du musst nichts tun.',
         style: TextStyle(fontSize: 13, height: 1.4, color: kTextMuted),
       ),
       const SizedBox(height: 8),
@@ -396,24 +444,20 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     ];
   }
 
-  /// "Gerät abgeben – alles löschen": die einzige Aktion, die einen Schlüssel löscht. Gesperrt ohne bestätigte Sicherung beim Server.
+  /// "Gerät abgeben – alles löschen": die einzige Aktion, die einen Schlüssel löscht. Gesperrt ohne bestätigte Sicherung beim Server. Ist der Stand beim Server nicht
+  /// ladbar (Status "nicht verfügbar"), zeigt die Seite den Bereich gar nicht (nur "Erneut versuchen"); die Sperre gilt dann trotzdem im Controller.
   List<Widget> _geraetAbgeben(E2eeState s) {
     final lage = geraetAbgabeLage(s);
-    if (lage == GeraetAbgabeLage.nichtsZuLoeschen) return const [];
-    final gesperrt = switch (lage) {
-      GeraetAbgabeLage.standUnbekannt =>
-        'Gesperrt: Der Stand deiner Sicherung beim Server ließ sich gerade nicht prüfen. Ohne diese Prüfung wird nichts gelöscht.',
-      GeraetAbgabeLage.keineBestaetigteSicherung =>
-        'Gesperrt: Beim Server liegt keine bestätigte Sicherung deines Schlüssels. Ohne sie wäre dein Chat-Verlauf nach dem Löschen unwiederbringlich verloren. '
-            'Lege zuerst eine Sicherung an.',
-      _ => null,
-    };
+    if (lage == GeraetAbgabeLage.nichtsZuLoeschen || lage == GeraetAbgabeLage.standUnbekannt) return const [];
+    final gesperrt = lage == GeraetAbgabeLage.keineBestaetigteSicherung
+        ? 'Gesperrt: Beim Server liegt keine bestätigte Sicherung deines Schlüssels. Ohne sie wäre dein Chat-Verlauf nach dem Löschen unwiederbringlich verloren. '
+              'Lege zuerst eine Sicherung an.'
+        : null;
     return [
-      const SizedBox(height: 16),
       const MonoLabel('// gerät abgeben', color: kTextMuted),
       const SizedBox(height: 8),
       const Text(
-        'Wenn du dieses Gerät weitergibst oder verkaufst: Das löscht deinen Schlüssel und alle lokalen Daten von diesem Gerät und meldet dich ab. '
+        'Wenn du dieses Gerät weitergibst oder verkaufst, oder an einem gemeinsam genutzten Computer: Das löscht deinen Schlüssel und alle lokalen Daten von diesem Gerät und meldet dich ab. '
         'Normales Abmelden löscht den Schlüssel nie.',
         style: TextStyle(fontSize: 13, height: 1.4, color: kTextMuted),
       ),
@@ -427,11 +471,10 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       if (gesperrt != null) ...[
         const SizedBox(height: 8),
         Text(gesperrt, style: const TextStyle(fontSize: 13, height: 1.4, color: kWarn)),
-        const SizedBox(height: 8),
-        if (lage == GeraetAbgabeLage.keineBestaetigteSicherung && s.status == E2eeStatus.bereit)
-          ZweitKnopf(text: 'Sicherung anlegen', icon: Icons.shield_outlined, onPressed: laeuft ? null : () => _sicherungAnlegen(s))
-        else if (lage == GeraetAbgabeLage.standUnbekannt)
-          ZweitKnopf(text: 'Erneut prüfen', icon: Icons.refresh, onPressed: laeuft ? null : () => unawaited(_c.laden())),
+        if (s.status == E2eeStatus.bereit) ...[
+          const SizedBox(height: 8),
+          ZweitKnopf(text: 'Sicherung anlegen', icon: Icons.shield_outlined, onPressed: laeuft ? null : () => _sicherungAnlegen(s)),
+        ],
       ],
     ];
   }
@@ -473,10 +516,29 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       ),
       const SizedBox(height: 4),
       const Text(
-        'Letzter Ausweg, nur nach einer Checkliste: wenn dir kein Gerät, kein Wiederherstellungsschlüssel und kein Sicherungs-Passwort mehr bleibt. Alte verschlüsselte Inhalte lassen sich dann nicht mehr lesen.',
+        'Letzter Ausweg, nur nach einer Checkliste: wenn dir kein Gerät, kein Wiederherstellungsschlüssel und kein Passwort der Passwort-Sicherung mehr bleibt. Alte verschlüsselte Inhalte lassen sich dann nicht mehr lesen.',
         style: TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
       ),
     ],
+  );
+}
+
+/// Eingeklappter Bereich "Erweitert": Gerät abgeben, Notfall und Vertrauensmodell stehen nicht im Weg, sind aber da.
+class _Erweitert extends StatelessWidget {
+  final List<Widget> children;
+  const _Erweitert({required this.children});
+
+  @override
+  Widget build(BuildContext context) => Theme(
+    data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+    child: ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: const EdgeInsets.only(bottom: 8),
+      expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+      title: const Text('Erweitert', style: TextStyle(fontWeight: FontWeight.w600)),
+      subtitle: const Text('gerät abgeben · notfall · vertrauensmodell', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+      children: children,
+    ),
   );
 }
 

@@ -1,5 +1,6 @@
 // Abläufe der Verschlüsselung gegen einen In-Memory-Server mit mehreren Personen und Geräten: Einrichtung, Wiederherstellung, Übertragung
 // (Einmaligkeit, Ablauf, fremde Person), Schlüsselwechsel, Warnung bei fremdem Schlüsselwechsel, Wiper.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -33,6 +34,14 @@ class _FesterAuth extends AuthController {
   AuthState build() => AuthState(status: AuthStatus.angemeldet, user: user);
 }
 
+/// Wie [_FesterAuth], aber das Abmelden scheitert (Web: Serverfehler; die Sitzung gilt weiter).
+class _AuthAbmeldenScheitert extends _FesterAuth {
+  _AuthAbmeldenScheitert(super.user);
+  @override
+  Future<AbmeldeErgebnis> abmelden({bool ueberall = false, bool nurLokal = false}) async =>
+      throw const ApiException(kind: ApiErrorKind.netzwerk, status: 0, code: 'netzwerk', message: 'Keine Verbindung');
+}
+
 /// Ein Gerät: eigener Schlüsselspeicher, Anmeldung als [id].
 class _Geraet {
   final ProviderContainer c;
@@ -51,8 +60,8 @@ Future<void> main() async {
       late FakeE2eeServer srv;
       final geraete = <_Geraet>[];
 
-      Future<_Geraet> geraet(String id, String anzeige, {bool ohneSodium = false, MemorySchluesselSpeicher? eigenerSpeicher}) async {
-        final env = TestUmgebung(fake, store: MemoryTokenStore());
+      Future<_Geraet> geraet(String id, String anzeige, {bool ohneSodium = false, MemorySchluesselSpeicher? eigenerSpeicher, bool abmeldenScheitert = false, bool wiperFehler = false}) async {
+        final env = TestUmgebung(fake, store: MemoryTokenStore())..wiperFehler = wiperFehler;
         await env.store.writeTokens(
           StoredTokens(
             accessToken: 'access-$id',
@@ -66,7 +75,10 @@ Future<void> main() async {
         env.extraOverrides.addAll([
           cryptoProviderProvider.overrideWith((ref) async => ohneSodium ? throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'nicht verfügbar') : crypto),
           schluesselSpeicherProvider.overrideWithValue(speicher),
-          authProvider.overrideWith(() => _FesterAuth(UserDto.fromJson(userJson(id: id, name: anzeige, email: null)))),
+          authProvider.overrideWith(() {
+            final u = UserDto.fromJson(userJson(id: id, name: anzeige, email: null));
+            return abmeldenScheitert ? _AuthAbmeldenScheitert(u) : _FesterAuth(u);
+          }),
         ]);
         final c = env.container();
         addTearDown(c.dispose);
@@ -661,6 +673,9 @@ Future<void> main() async {
           expect(geraetAbgabeLage(a.s), GeraetAbgabeLage.moeglich);
           final ergebnis = await a.ctrl.geraetAbgeben();
           expect(ergebnis.serverAbgemeldet, isTrue);
+          expect(ergebnis.schluesselGeloescht, isTrue);
+          expect(ergebnis.datenSauber, isTrue);
+          expect(await a.speicher.namenMitPraefix('e2ee.loeschauftrag.'), isEmpty, reason: 'der Löschauftrag ist erledigt');
           expect(fake.anfragen('POST /auth/logout'), hasLength(1));
           expect(await a.speicher.namenMitPraefix('e2ee.pk.$_anna'), isEmpty);
           expect(await a.speicher.namenMitPraefix('e2ee.kv.$_anna'), isEmpty);
@@ -706,6 +721,95 @@ Future<void> main() async {
           expect(geraetAbgabeLage(a.s), GeraetAbgabeLage.standUnbekannt);
           expect(await a.speicher.lesen(personenschluesselName(_anna)), isNotNull);
           expect(fake.anfragen('POST /auth/logout'), isEmpty);
+        });
+
+        test('Löschen scheitert: abgemeldet, aber ehrlich "Schlüssel nicht gelöscht"; der Löschauftrag bleibt und wird beim nächsten Start abgearbeitet', () async {
+          final speicher = _WackligerSpeicher();
+          final a = await geraet(_anna, 'Anna', eigenerSpeicher: speicher);
+          final einr = await a.ctrl.einrichten();
+          await a.ctrl.sicherungAblegen(einr);
+          speicher.loeschFehler = true;
+          final ergebnis = await a.ctrl.geraetAbgeben();
+          expect(ergebnis.serverAbgemeldet, isTrue);
+          expect(ergebnis.schluesselGeloescht, isFalse);
+          expect(await speicher.lesen(personenschluesselName(_anna)), isNotNull, reason: 'der Schlüssel liegt noch da');
+          expect(await speicher.namenMitPraefix('e2ee.loeschauftrag.'), [loeschauftragName(_anna)]);
+          // nächster Start: das Löschen klappt jetzt
+          speicher.loeschFehler = false;
+          await loeschauftraegeAbarbeiten(speicher);
+          expect(await speicher.namenMitPraefix('e2ee.pk.$_anna'), isEmpty);
+          expect(await speicher.namenMitPraefix('e2ee.loeschauftrag.'), isEmpty);
+        });
+
+        test('Löschauftrag beim Start: scheitert es erneut, bleibt er; andere Personen bleiben unberührt', () async {
+          final speicher = _WackligerSpeicher();
+          await speicher.schreiben(personenschluesselName(_anna), Uint8List.fromList([1]));
+          await speicher.schreiben(personenschluesselName(_ben), Uint8List.fromList([2]));
+          await speicher.schreiben(loeschauftragName(_anna), Uint8List.fromList([1]));
+          speicher.loeschFehler = true;
+          await loeschauftraegeAbarbeiten(speicher); // wirft nie
+          expect(await speicher.namenMitPraefix('e2ee.loeschauftrag.'), [loeschauftragName(_anna)]);
+          speicher.loeschFehler = false;
+          await loeschauftraegeAbarbeiten(speicher);
+          expect(await speicher.lesen(personenschluesselName(_anna)), isNull);
+          expect(await speicher.lesen(personenschluesselName(_ben)), isNotNull, reason: 'nur die Person aus dem Auftrag');
+          expect(await speicher.namenMitPraefix('e2ee.loeschauftrag.'), isEmpty);
+        });
+
+        test('lokale Daten ließen sich nicht entfernen (lokalSauber=false): das Ergebnis sagt es', () async {
+          final a = await geraet(_anna, 'Anna', wiperFehler: true);
+          final einr = await a.ctrl.einrichten();
+          await a.ctrl.sicherungAblegen(einr);
+          final ergebnis = await a.ctrl.geraetAbgeben();
+          expect(ergebnis.datenSauber, isFalse);
+          expect(ergebnis.schluesselGeloescht, isTrue);
+        });
+
+        test('Web: Abmelden scheitert (Serverfehler): nichts wird gelöscht, kein Löschauftrag bleibt, die Sitzung gilt weiter', () async {
+          final a = await geraet(_anna, 'Anna', abmeldenScheitert: true);
+          final einr = await a.ctrl.einrichten();
+          await a.ctrl.sicherungAblegen(einr);
+          final schluessel = a.ctrl.lokalerSchluessel!.exportieren();
+          await expectLater(a.ctrl.geraetAbgeben(), throwsA(isA<ApiException>()));
+          expect(await a.speicher.lesen(personenschluesselName(_anna)), schluessel);
+          expect(await a.speicher.namenMitPraefix('e2ee.loeschauftrag.'), isEmpty);
+        });
+
+        test('Schlüsselspeicher nicht beschreibbar (Löschauftrag lässt sich nicht ablegen): es beginnt nichts', () async {
+          final a = await geraet(_anna, 'Anna');
+          final einr = await a.ctrl.einrichten();
+          await a.ctrl.sicherungAblegen(einr);
+          // ein Speicher, der nur den Löschauftrag ablehnt
+          final speicher = _WackligerSpeicher();
+          final b = await geraet(_anna, 'Anna', eigenerSpeicher: speicher);
+          await b.ctrl.mitWiederherstellungVerbinden(Wiederherstellung.anzeigen(einr.wiederherstellungsschluessel));
+          speicher.schreibFehlerPraefix = 'e2ee.loeschauftrag.';
+          await expectLater(b.ctrl.geraetAbgeben(), throwsA(isA<CryptoFehler>()));
+          expect(await speicher.lesen(personenschluesselName(_anna)), isNotNull);
+          expect(fake.anfragen('POST /auth/logout'), isEmpty);
+        });
+
+        test('Lokaler Schlüssel, den der Server nicht kennt (z. B. nach Admin-Reset): nie "nichts zu löschen", gesperrt ohne Sicherung', () async {
+          final a = await geraet(_anna, 'Anna');
+          await a.ctrl.einrichten();
+          srv.entferne(_anna);
+          srv.person(_anna, 'Anna'); // der Server kennt keinen Schlüssel mehr
+          await a.ctrl.laden();
+          expect(a.s.status, E2eeStatus.keinSchluessel);
+          expect(a.s.lokalVorhanden, isTrue);
+          expect(geraetAbgabeLage(a.s), GeraetAbgabeLage.keineBestaetigteSicherung);
+        });
+
+        test('Frühere Schlüssel: Anzahl für den Pflicht-Haken (Quarantäne und abweichender Schlüssel)', () async {
+          final a = await geraet(_anna, 'Anna');
+          await a.ctrl.einrichten();
+          expect(a.s.fruehereSchluessel, 0);
+          await a.speicher.schreiben('${quarantaenePraefix(_anna)}5', Uint8List.fromList([1]));
+          await a.speicher.schreiben('${quarantaenePraefix(_anna)}6', Uint8List.fromList([2]));
+          await a.ctrl.laden();
+          expect(a.s.fruehereSchluessel, 2);
+          const abw = E2eeState(status: E2eeStatus.abweichend, quarantaene: [QuarantaeneEintrag('x', null)]);
+          expect(abw.fruehereSchluessel, 2, reason: 'der abweichende lokale Schlüssel zählt mit');
         });
 
         test('Gerät ohne Schlüssel und ohne Quarantäne: nichts zu löschen', () async {
@@ -754,10 +858,55 @@ Future<void> main() async {
         expect(dto({'archiveCount': -1}).archivAnzahl, isNull);
       });
 
-      test('Fehlercode destructive_locked hat eine verständliche deutsche Meldung', () {
-        final e = ApiException.vonAntwort(status: 423, code: 'destructive_locked');
-        expect(e.message, contains('gesperrt'));
-        expect(e.message, isNot(contains('destructive')));
+      test('Fehlercode destructive_locked: verständliche Meldung, mit Dauer ("frühestens in …"), wenn der Server sie nennt', () {
+        final ohne = ApiException.vonAntwort(status: 423, code: 'destructive_locked');
+        expect(ohne.message, contains('gesperrt'));
+        expect(ohne.message, contains('später noch einmal'));
+        expect(ohne.message, isNot(contains('destructive')));
+        String msg(int sek) => ApiException.vonAntwort(status: 423, code: 'destructive_locked', retryAfterSekunden: sek).message;
+        expect(msg(20), contains('frühestens in einer Minute'));
+        expect(msg(300), contains('frühestens in 5 Minuten'));
+        expect(msg(3600), contains('frühestens in einer Stunde'));
+        expect(msg(3 * 3600 + 1), contains('frühestens in 4 Stunden'));
+        expect(msg(86400), contains('frühestens in 24 Stunden'));
+      });
+
+      group('Dauerhafter Browser-Speicher (nur Web, hier mit Fake)', () {
+        test('Laden fragt nur ab, wartet nie lange und fordert nie an; Einrichten (Aktion der Person) fordert genau einmal an', () async {
+          final speicher = _DauerSpeicher();
+          final a = await geraet(_anna, 'Anna', eigenerSpeicher: speicher);
+          expect(speicher.abfragen, greaterThan(0));
+          expect(speicher.anforderungen, 0, reason: 'beim Laden nie persist()');
+          expect(a.s.speicherDauer, SpeicherDauer.verweigert);
+          await a.ctrl.einrichten();
+          expect(speicher.anforderungen, 1);
+        });
+
+        test('Abfrage hängt (Zeitlimit): das Laden wartet nicht ewig, der Stand ist "unbekannt" (keine Tatsachenbehauptung)', () async {
+          final speicher = _DauerSpeicher()..haengt = true;
+          final a = await geraet(_anna, 'Anna', eigenerSpeicher: speicher);
+          expect(a.s.status, E2eeStatus.keinSchluessel, reason: 'das Laden ist trotzdem fertig geworden');
+          expect(a.s.speicherDauer, SpeicherDauer.unbekannt);
+        });
+
+        test('eigener Knopf: dauerhaftenSpeicherAnfordern fragt an und lädt neu', () async {
+          final speicher = _DauerSpeicher();
+          final a = await geraet(_anna, 'Anna', eigenerSpeicher: speicher);
+          speicher.zugesagt = true;
+          await a.ctrl.dauerhaftenSpeicherAnfordern();
+          expect(speicher.anforderungen, 1);
+          expect(a.s.speicherDauer, SpeicherDauer.gewaehrt);
+        });
+      });
+
+      test('Neu verbinden: lässt sich ein Schlüssel nicht beiseitelegen, aber er ist da, wird nichts verändert (Existenz über Lesen, nicht über den Index)', () async {
+        final speicher = _NichtVerschiebbarSpeicher();
+        final a = await geraet(_anna, 'Anna', eigenerSpeicher: speicher);
+        await a.ctrl.einrichten();
+        final bytes = await speicher.lesen(personenschluesselName(_anna));
+        await expectLater(a.ctrl.lokalenSchluesselVerwerfen(), throwsA(isA<CryptoFehler>()));
+        expect(await speicher.lesen(personenschluesselName(_anna)), bytes);
+        expect(a.ctrl.lokalerSchluessel, isNotNull);
       });
 
       test('kein Schlüsselmaterial in den Antworttexten der Fehler', () async {
@@ -773,10 +922,46 @@ Future<void> main() async {
   }
 }
 
+/// Speicher, der das Verschieben ablehnt (wie ein Keystore, der den Eintrag nicht roh herausgibt), aber lesbar ist.
+class _NichtVerschiebbarSpeicher extends MemorySchluesselSpeicher {
+  @override
+  Future<bool> verschiebe(String von, String nach) async => false;
+}
+
+/// Fake der Browser-Ablage: zählt Abfragen und Anforderungen, kann hängen.
+class _DauerSpeicher extends MemorySchluesselSpeicher {
+  int abfragen = 0;
+  int anforderungen = 0;
+  bool zugesagt = false;
+  bool haengt = false;
+
+  @override
+  Future<SpeicherDauer> dauerhaftigkeit() async {
+    abfragen++;
+    if (haengt) await Completer<void>().future;
+    return zugesagt ? SpeicherDauer.gewaehrt : SpeicherDauer.verweigert;
+  }
+
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() async {
+    anforderungen++;
+    return zugesagt ? SpeicherDauer.gewaehrt : SpeicherDauer.verweigert;
+  }
+}
+
 /// Schlüsselspeicher mit steuerbaren Fehlern (Lesen, Löschen).
 class _WackligerSpeicher extends MemorySchluesselSpeicher {
   SchluesselSpeicherFehler? fehler;
   bool loeschFehler = false;
+
+  /// Schreiben unter diesem Namenspräfix schlägt fehl.
+  String? schreibFehlerPraefix;
+
+  @override
+  Future<void> schreiben(String name, Uint8List bytes) async {
+    if (schreibFehlerPraefix != null && name.startsWith(schreibFehlerPraefix!)) throw StateError('Schreiben fehlgeschlagen');
+    return super.schreiben(name, bytes);
+  }
 
   @override
   Future<Uint8List?> lesen(String name) async {

@@ -23,9 +23,23 @@ import 'support/test_app.dart';
 /// Schlüsselspeicher mit steuerbarer Antwort auf die Frage nach dem dauerhaften Browser-Speicher.
 class _Speicher extends MemorySchluesselSpeicher {
   SpeicherDauer dauer = SpeicherDauer.nichtZutreffend;
+  int anforderungen = 0;
+  bool loeschFehler = false;
 
   @override
   Future<SpeicherDauer> dauerhaftigkeit() async => dauer;
+
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() async {
+    anforderungen++;
+    return dauer;
+  }
+
+  @override
+  Future<void> loeschen(String name) async {
+    if (loeschFehler && name.startsWith('e2ee.pk.')) throw StateError('Löschen fehlgeschlagen');
+    return super.loeschen(name);
+  }
 }
 
 class _Aufbau {
@@ -63,6 +77,9 @@ Future<void> _einrichten(WidgetTester tester) async {
 
 /// Von der Profilseite zur Seite "Verschlüsselung".
 Future<void> _zurSeite(WidgetTester tester) async => tippeText(tester, 'Verschlüsselung');
+
+/// Den eingeklappten Bereich "Erweitert" öffnen (Gerät abgeben, Notfall, Vertrauensmodell).
+Future<void> _erweitert(WidgetTester tester) async => tippeText(tester, 'Erweitert');
 
 /// Die App neu starten (der Zustand im Arbeitsspeicher geht verloren, der Schlüsselspeicher bleibt).
 Future<void> _neustart(WidgetTester tester, _Aufbau a, double skala) async {
@@ -144,11 +161,13 @@ Future<void> main() async {
     });
 
     group('Gerät abgeben ($s)', () {
-      testWidgets('ohne bestätigte Sicherung gesperrt, mit Erklärung und dem Weg "Sicherung anlegen"; nichts wird gelöscht', (tester) async {
+      testWidgets('liegt eingeklappt unter "Erweitert"; ohne bestätigte Sicherung gesperrt, mit Erklärung und dem Weg "Sicherung anlegen"; nichts wird gelöscht', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);
         await _einrichten(tester);
         await _zurSeite(tester);
+        expect(find.text('Gerät abgeben – alles löschen'), findsNothing, reason: 'eingeklappt');
+        await _erweitert(tester);
         expect(find.textContaining('Gesperrt: Beim Server liegt keine bestätigte Sicherung'), findsOneWidget);
         final knopf = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Gerät abgeben – alles löschen'));
         expect(knopf.onPressed, isNull);
@@ -161,28 +180,30 @@ Future<void> main() async {
         pruefeLayout(tester, 'Gerät abgeben gesperrt');
       });
 
-      testWidgets('Server nicht erreichbar: gesperrt ("Stand nicht prüfbar"), nie gesichert angenommen', (tester) async {
+      testWidgets('Server nicht erreichbar: der Bereich "Gerät abgeben" fehlt ganz (nur "Erneut versuchen"), nichts wird gelöscht', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);
         await _einrichten(tester);
         a.srv.sicherungEinspielen(fixIdAdmin);
         a.srv.server.on('GET /me/keys', (_) => fehler(500, 'server_error'));
         await _zurSeite(tester);
-        // ohne Stand beim Server gibt es keinen Bereich "Gerät abgeben" mit Freigabe
+        expect(find.text('Erneut versuchen'), findsOneWidget);
+        await _erweitert(tester);
         expect(find.text('Gerät abgeben – alles löschen'), findsNothing);
         expect(await _schluesselDa(a), isTrue);
       });
 
-      testWidgets('mit bestätigter Sicherung: erst Haken und getipptes Wort, dann Schlüssel UND lokale Daten weg und abgemeldet', (tester) async {
+      testWidgets('mit bestätigter Sicherung: erst Haken und getipptes Wort ("loeschen" gilt auch), dann Schlüssel UND lokale Daten weg und abgemeldet', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);
         await _einrichten(tester);
         a.srv.sicherungEinspielen(fixIdAdmin);
-        await a.speicher.schreiben('e2ee.quarantaene.$fixIdAdmin.1700000000000', Uint8List.fromList([1, 2, 3]));
         await _zurSeite(tester);
+        await _erweitert(tester);
         expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Gerät abgeben – alles löschen')).onPressed, isNotNull);
         await tippeText(tester, 'Gerät abgeben – alles löschen');
         expect(find.text('Gerät abgeben?'), findsOneWidget);
+        expect(find.byType(CheckboxListTile), findsOneWidget, reason: 'ohne frühere Schlüssel nur der eine Haken');
         expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNull, reason: 'noch kein Haken und kein Wort');
         pruefeLayout(tester, 'Gerät abgeben: Dialog');
         // nur das Wort, ohne Haken: noch gesperrt
@@ -191,10 +212,10 @@ Future<void> main() async {
         expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNull);
         // Haken, falsches Wort: gesperrt
         await tippe(tester, find.byType(CheckboxListTile));
-        await tester.enterText(find.byType(TextField).last, 'loeschen');
+        await tester.enterText(find.byType(TextField).last, 'loesch');
         await tester.pump();
         expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNull);
-        await tester.enterText(find.byType(TextField).last, ' Löschen ');
+        await tester.enterText(find.byType(TextField).last, ' Loeschen ');
         await tester.pump();
         expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNotNull);
         await tippe(tester, find.widgetWithText(TextButton, 'Gerät abgeben'));
@@ -202,8 +223,98 @@ Future<void> main() async {
         expect(a.env.geloescht, 1, reason: 'lokale Daten sind geleert');
         expect(a.srv.server.anfragen('POST /auth/logout'), hasLength(1));
         expect(await a.speicher.namenMitPraefix('e2ee.pk.$fixIdAdmin'), isEmpty);
-        expect(await a.speicher.namenMitPraefix('e2ee.quarantaene.$fixIdAdmin.'), isEmpty);
+        expect(await a.speicher.namenMitPraefix('e2ee.loeschauftrag.'), isEmpty);
+        expect(find.textContaining('Schlüssel und lokale Daten sind von diesem Gerät gelöscht, du bist abgemeldet.'), findsOneWidget);
         expect(a.srv.gespeichert(fixIdAdmin), contains('"backup":"'), reason: 'die Sicherung beim Server bleibt');
+      });
+
+      testWidgets('Quarantäne vorhanden: eigener Pflicht-Haken mit Anzahl; ohne ihn kein Abgeben; die frühen Schlüssel werden mitgelöscht', (tester) async {
+        final a = await _aufbau();
+        await starteApp(tester, a.env, skala: skala);
+        await _einrichten(tester);
+        a.srv.sicherungEinspielen(fixIdAdmin);
+        await a.speicher.schreiben('e2ee.quarantaene.$fixIdAdmin.1700000000000', Uint8List.fromList([1, 2, 3]));
+        await a.speicher.schreiben('e2ee.quarantaene.$fixIdAdmin.1700000000001', Uint8List.fromList([4]));
+        await _zurSeite(tester);
+        await _erweitert(tester);
+        await tippeText(tester, 'Gerät abgeben – alles löschen');
+        expect(find.byType(CheckboxListTile), findsNWidgets(2));
+        expect(find.text('Auf diesem Gerät liegen noch 2 frühere Schlüssel, die nur hier existieren. Sie werden ebenfalls gelöscht.'), findsOneWidget);
+        pruefeLayout(tester, 'Gerät abgeben mit Quarantäne');
+        await tippe(tester, find.byType(CheckboxListTile).at(0));
+        await tester.enterText(find.byType(TextField).last, 'löschen');
+        await tester.pump();
+        expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNull, reason: 'der Haken für die früheren Schlüssel fehlt');
+        await tippe(tester, find.byType(CheckboxListTile).at(1));
+        expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNotNull);
+        await tippe(tester, find.widgetWithText(TextButton, 'Gerät abgeben'));
+        expect(await a.speicher.namenMitPraefix('e2ee.quarantaene.$fixIdAdmin.'), isEmpty);
+        expect(await a.speicher.namenMitPraefix('e2ee.pk.$fixIdAdmin'), isEmpty);
+      });
+
+      testWidgets('abweichender Schlüssel: ebenfalls Pflicht-Haken ("noch 1 früherer Schlüssel")', (tester) async {
+        final a = await _aufbau();
+        await starteApp(tester, a.env, skala: skala);
+        await _einrichten(tester);
+        final anderer = base64urlKodieren(Uint8List.fromList(List.filled(32, 7)));
+        a.srv.setzeSchluessel(fixIdAdmin, enc: anderer, sign: anderer, version: 2);
+        a.srv.sicherungEinspielen(fixIdAdmin);
+        await _zurSeite(tester);
+        expect(find.text('Dieses Gerät neu verbinden'), findsOneWidget);
+        await _erweitert(tester);
+        await tippeText(tester, 'Gerät abgeben – alles löschen');
+        expect(find.byType(CheckboxListTile), findsNWidgets(2));
+        expect(find.text('Auf diesem Gerät liegt noch 1 früherer Schlüssel, der nur hier existiert. Er wird ebenfalls gelöscht.'), findsOneWidget);
+        await tippe(tester, find.byType(CheckboxListTile).at(0));
+        await tester.enterText(find.byType(TextField).last, 'löschen');
+        await tester.pump();
+        expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNull);
+        await tippe(tester, find.byType(CheckboxListTile).at(1));
+        expect(_textKnopf(tester, 'Gerät abgeben').onPressed, isNotNull);
+        await tippeText(tester, 'Abbrechen');
+        expect(await _schluesselDa(a), isTrue);
+      });
+
+      testWidgets('Löschen scheitert: ehrliche Meldung "Schlüssel konnte nicht gelöscht werden", der Löschauftrag bleibt', (tester) async {
+        final a = await _aufbau();
+        await starteApp(tester, a.env, skala: skala);
+        await _einrichten(tester);
+        a.srv.sicherungEinspielen(fixIdAdmin);
+        await _zurSeite(tester);
+        await _erweitert(tester);
+        a.speicher.loeschFehler = true;
+        await tippeText(tester, 'Gerät abgeben – alles löschen');
+        await tippe(tester, find.byType(CheckboxListTile));
+        await tester.enterText(find.byType(TextField).last, 'löschen');
+        await tester.pump();
+        await tippe(tester, find.widgetWithText(TextButton, 'Gerät abgeben'));
+        expect(find.text('Willkommen zurück'), findsOneWidget, reason: 'abgemeldet ist man trotzdem');
+        expect(find.textContaining('der Schlüssel konnte nicht gelöscht werden: Lösche die App-Daten oder setze das Gerät zurück'), findsOneWidget);
+        expect(find.textContaining('Schlüssel und lokale Daten sind von diesem Gerät gelöscht'), findsNothing);
+        expect(await _schluesselDa(a), isTrue);
+        expect(await a.speicher.namenMitPraefix('e2ee.loeschauftrag.'), ['e2ee.loeschauftrag.$fixIdAdmin']);
+        // nächster Start
+        a.speicher.loeschFehler = false;
+        await loeschauftraegeAbarbeiten(a.speicher);
+        expect(await _schluesselDa(a), isFalse);
+        expect(await a.speicher.namenMitPraefix('e2ee.loeschauftrag.'), isEmpty);
+      });
+
+      testWidgets('lokale Daten ließen sich nicht vollständig entfernen: die Meldung sagt es', (tester) async {
+        final a = await _aufbau();
+        a.env.wiperFehler = true;
+        await starteApp(tester, a.env, skala: skala);
+        await _einrichten(tester);
+        a.srv.sicherungEinspielen(fixIdAdmin);
+        await _zurSeite(tester);
+        await _erweitert(tester);
+        await tippeText(tester, 'Gerät abgeben – alles löschen');
+        await tippe(tester, find.byType(CheckboxListTile));
+        await tester.enterText(find.byType(TextField).last, 'löschen');
+        await tester.pump();
+        await tippe(tester, find.widgetWithText(TextButton, 'Gerät abgeben'));
+        expect(find.textContaining('Die lokalen Daten ließen sich nicht vollständig löschen: Lösche zusätzlich die App-Daten oder setze das Gerät zurück.'), findsOneWidget);
+        expect(await _schluesselDa(a), isFalse, reason: 'der Schlüssel ist trotzdem gelöscht');
       });
 
       testWidgets('"Abbrechen" im Dialog löscht nichts', (tester) async {
@@ -212,6 +323,7 @@ Future<void> main() async {
         await _einrichten(tester);
         a.srv.sicherungEinspielen(fixIdAdmin);
         await _zurSeite(tester);
+        await _erweitert(tester);
         await tippeText(tester, 'Gerät abgeben – alles löschen');
         await tippe(tester, find.byType(CheckboxListTile));
         await tester.enterText(find.byType(TextField).last, 'löschen');
@@ -225,17 +337,19 @@ Future<void> main() async {
     });
 
     group('Notfallbereich und "Gerät nicht verbunden" ($s)', () {
-      testWidgets('"Neuen Schlüssel erzeugen" nur hinter Checkliste (4 Haken) und getipptem Wort', (tester) async {
+      testWidgets('"Neuen Schlüssel erzeugen" nur unter "Erweitert", hinter Checkliste (4 Haken) und getipptem Wort', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);
         await _einrichten(tester);
         await _zurSeite(tester);
+        expect(find.textContaining('Neuen Schlüssel erzeugen'), findsNothing, reason: 'eingeklappt');
+        await _erweitert(tester);
         await tippeText(tester, 'Neuen Schlüssel erzeugen …');
         expect(find.text('Neuen Schlüssel erzeugen?'), findsOneWidget);
         expect(find.byType(CheckboxListTile), findsNWidgets(4));
         expect(find.text('Ich habe keinen Wiederherstellungsschlüssel.'), findsOneWidget);
         expect(find.text('Ich habe kein anderes Gerät mit meinem Schlüssel.'), findsOneWidget);
-        expect(find.text('Ich kenne kein Sicherungs-Passwort.'), findsOneWidget);
+        expect(find.text('Ich kenne kein Passwort der Passwort-Sicherung.'), findsOneWidget);
         expect(find.text('Alte Chats gehen unwiderruflich verloren.'), findsOneWidget);
         pruefeLayout(tester, 'Notfall-Checkliste');
         expect(_textKnopf(tester, 'Neuen Schlüssel erzeugen').onPressed, isNull);
@@ -263,6 +377,8 @@ Future<void> main() async {
         await _zurSeite(tester);
         expect(find.text('Dieses Gerät ist nicht verbunden'), findsOneWidget);
         expect(find.textContaining('Neuen Schlüssel erzeugen'), findsNothing);
+        await _erweitert(tester);
+        expect(find.textContaining('Neuen Schlüssel erzeugen'), findsNothing, reason: 'auch nicht unter "Erweitert"');
         expect(find.text('// notfall'), findsNothing);
         expect(find.text('Mit anderem Gerät verbinden'), findsOneWidget);
         expect(find.text('Gerät abgeben – alles löschen'), findsNothing, reason: 'es liegt nichts zu löschen auf diesem Gerät');
@@ -271,7 +387,7 @@ Future<void> main() async {
     });
 
     group('Aufbewahrte alte Schlüssel ($s)', () {
-      testWidgets('werden als "Alter Schlüssel auf diesem Gerät" gezeigt; Verwerfen nur mit getipptem Wort', (tester) async {
+      testWidgets('werden als "Alter Schlüssel auf diesem Gerät" gezeigt (die App benutzt sie nirgends); Verwerfen nur mit getipptem Wort', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);
         await _einrichten(tester);
@@ -279,7 +395,8 @@ Future<void> main() async {
         await a.speicher.schreiben(name, Uint8List.fromList([1, 2, 3]));
         await _zurSeite(tester);
         expect(find.textContaining('Alter Schlüssel auf diesem Gerät · seit '), findsOneWidget);
-        expect(find.textContaining('nicht benutzt; du musst nichts tun'), findsOneWidget);
+        expect(find.textContaining('Die App benutzt ihn nirgends'), findsOneWidget);
+        expect(find.textContaining('nicht benutzt; du musst nichts tun'), findsNothing);
         pruefeLayout(tester, 'Quarantäne-Eintrag');
         await tippeText(tester, 'Verwerfen');
         expect(find.text('Alten Schlüssel verwerfen?'), findsOneWidget);
@@ -315,13 +432,36 @@ Future<void> main() async {
       });
     });
 
+    group('Ältere Sicherungen beim Server ($s)', () {
+      testWidgets('"N ältere Sicherungen liegen beim Server" ruhig; ohne Archiv keine Zeile', (tester) async {
+        final a = await _aufbau();
+        a.srv.archiv = 2;
+        await starteApp(tester, a.env, skala: skala);
+        await _einrichten(tester);
+        await _zurSeite(tester);
+        expect(find.text('2 ältere Sicherungen liegen beim Server.'), findsOneWidget);
+        a.srv.archiv = 1;
+        await tester.pumpWidget(const SizedBox());
+        await starteApp(tester, a.env, skala: skala);
+        await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+        await _zurSeite(tester);
+        expect(find.text('1 ältere Sicherung liegt beim Server.'), findsOneWidget);
+        a.srv.archiv = 0;
+        await tester.pumpWidget(const SizedBox());
+        await starteApp(tester, a.env, skala: skala);
+        await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+        await _zurSeite(tester);
+        expect(find.textContaining('ältere Sicherung'), findsNothing);
+      });
+    });
+
     group('Web-Speicher ($s)', () {
-      testWidgets('Browser verweigert die dauerhafte Ablage: Hinweis; unbekannt: auch; gewährt oder Android: keiner', (tester) async {
-        for (final (dauer, hinweis) in [
-          (SpeicherDauer.verweigert, true),
-          (SpeicherDauer.unbekannt, true),
-          (SpeicherDauer.gewaehrt, false),
-          (SpeicherDauer.nichtZutreffend, false),
+      testWidgets('verweigert: Hinweis und Knopf zum Anfragen; unbekannt: nur "ließ sich nicht klären"; gewährt oder Android: nichts', (tester) async {
+        for (final (dauer, hinweis, unklar) in [
+          (SpeicherDauer.verweigert, true, false),
+          (SpeicherDauer.unbekannt, false, true),
+          (SpeicherDauer.gewaehrt, false, false),
+          (SpeicherDauer.nichtZutreffend, false, false),
         ]) {
           final a = await _aufbau(dauer: dauer);
           await tester.pumpWidget(const SizedBox());
@@ -329,9 +469,16 @@ Future<void> main() async {
           await _einrichten(tester);
           await _zurSeite(tester);
           expect(find.textContaining('Der Browser darf diese Daten löschen'), hinweis ? findsOneWidget : findsNothing, reason: '$dauer');
+          expect(find.textContaining('ließ sich nicht klären'), unklar ? findsOneWidget : findsNothing, reason: '$dauer');
           if (hinweis) {
             expect(find.textContaining('Installiere die App oder verbinde ein zweites Gerät'), findsOneWidget);
+            expect(find.widgetWithText(OutlinedButton, 'Dauerhaften Speicher anfragen'), findsOneWidget);
             pruefeLayout(tester, 'Browser-Hinweis');
+            final vorher = a.speicher.anforderungen;
+            await tippeText(tester, 'Dauerhaften Speicher anfragen');
+            expect(a.speicher.anforderungen, vorher + 1, reason: 'erst auf den Knopf, nie von selbst');
+          } else {
+            expect(find.text('Dauerhaften Speicher anfragen'), findsNothing);
           }
         }
       });
@@ -377,6 +524,8 @@ Future<void> main() async {
         // verdeckt: keine Gruppe mehr zu sehen, stattdessen das Eingabefeld
         expect(gruppen(tester), isEmpty);
         expect(find.text('Der Schlüssel ist jetzt verdeckt.'), findsOneWidget);
+        expect(find.textContaining('Nicht einfügen: Schreibe oder tippe ihn aus deiner Notiz ab.'), findsOneWidget);
+        expect(tester.widget<TextField>(find.byType(TextField)).enableIMEPersonalizedLearning, isFalse, reason: 'die Tastatur lernt den Schlüssel nicht mit');
         expect(_semantik('Der Schlüssel ist verdeckt'), findsOneWidget);
         final knopf = find.widgetWithText(FilledButton, 'Stimmt, jetzt sichern');
         expect(tester.widget<FilledButton>(knopf).onPressed, isNull);
@@ -430,7 +579,7 @@ Future<void> main() async {
                   c,
                   titel: 'Neuen Schlüssel erzeugen?',
                   text: 'Das ist der letzte Ausweg.',
-                  haken: const ['Ich habe keinen Wiederherstellungsschlüssel.', 'Ich habe kein anderes Gerät mit meinem Schlüssel.', 'Ich kenne kein Sicherungs-Passwort.', 'Alte Chats gehen unwiderruflich verloren.'],
+                  haken: const ['Ich habe keinen Wiederherstellungsschlüssel.', 'Ich habe kein anderes Gerät mit meinem Schlüssel.', 'Ich kenne kein Passwort der Passwort-Sicherung.', 'Alte Chats gehen unwiderruflich verloren.'],
                   wort: 'ersetzen',
                   knopf: 'Neuen Schlüssel erzeugen',
                 ),

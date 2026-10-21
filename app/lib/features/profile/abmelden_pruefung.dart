@@ -3,6 +3,7 @@
 // keine Warnung; die harte Warnung gehört zu "Gerät abgeben" (Profil > Verschlüsselung), der einzigen Aktion, die den Schlüssel löscht.
 // Gilt für "Abmelden", "Überall abmelden" und "Dieses Gerät abmelden"; Zwangsabmeldungen (401, Widerruf) fragen nie.
 // Ob ein Schlüssel auf dem Gerät liegt, fragt die App direkt im Schlüsselspeicher; lässt sich das nicht klären, gilt "unbekannt, evtl. vorhanden" und nie "kein Schlüssel".
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -52,7 +53,9 @@ Future<bool> abmeldenBestaetigen(
   required String text,
   required String knopf,
   bool ueberall = false,
+  bool? web,
 }) async {
+  final istWeb = web ?? kIsWeb;
   final lage = await schluesselLage(ref);
   if (!context.mounted) return false;
   final hinweis = switch (lage) {
@@ -82,6 +85,13 @@ Future<bool> abmeldenBestaetigen(
           if (hinweis != null) ...[
             const SizedBox(height: 12),
             Text(hinweis, style: const TextStyle(color: kTextMuted, height: 1.4)),
+          ],
+          if (istWeb && lage != SchluesselLage.keiner) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Auf einem gemeinsam genutzten Computer nutze „Gerät abgeben“: Normales Abmelden lässt den Schlüssel im Browser liegen.',
+              style: TextStyle(color: kTextMuted, height: 1.4),
+            ),
           ],
         ],
       ),

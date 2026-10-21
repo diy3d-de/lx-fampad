@@ -120,4 +120,7 @@ class SecureSchluesselSpeicher implements SchluesselSpeicher {
 
   @override
   Future<SpeicherDauer> dauerhaftigkeit() async => SpeicherDauer.nichtZutreffend;
+
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() async => SpeicherDauer.nichtZutreffend;
 }

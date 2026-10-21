@@ -87,6 +87,7 @@ Future<void> _dialogAllein(
   WidgetTester tester,
   E2eeState zustand, {
   bool ueberall = false,
+  bool web = false,
 }) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
@@ -111,6 +112,7 @@ Future<void> _dialogAllein(
                   text: 'Du wirst abgemeldet.',
                   knopf: 'Abmelden',
                   ueberall: ueberall,
+                  web: web,
                 ),
                 child: const Text('los'),
               ),
@@ -277,6 +279,17 @@ Future<void> main() async {
       expect(find.textContaining('Dein Schlüssel bleibt auf diesem Gerät'), findsOneWidget);
       expect(find.text('Abbrechen'), findsOneWidget);
       pruefeLayout(tester, 'Dialog 2.0 mit Hinweis');
+    });
+
+    testWidgets('Web mit Schlüssel: Hinweis auf "Gerät abgeben" für gemeinsam genutzte Computer', (tester) async {
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), web: true);
+      expect(find.textContaining('Auf einem gemeinsam genutzten Computer nutze „Gerät abgeben“'), findsOneWidget);
+      pruefeLayout(tester, 'Dialog 2.0 Web');
+    });
+
+    testWidgets('nicht im Web: kein Computer-Hinweis', (tester) async {
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit));
+      expect(find.textContaining('gemeinsam genutzten Computer'), findsNothing);
     });
 
     testWidgets('unbekannter Stand', (tester) async {

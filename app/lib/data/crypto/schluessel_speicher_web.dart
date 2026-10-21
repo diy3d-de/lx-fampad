@@ -87,22 +87,33 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
 
   JSAny _alg(Uint8List iv, String name) => {'name': 'AES-GCM', 'iv': iv, 'additionalData': utf8Bytes(name)}.jsify()!;
 
-  /// Ergebnis der Anfrage nach dauerhaftem Speicher (nur ein "gewährt" wird gemerkt: ein "verweigert" kann sich ändern).
-  SpeicherDauer? _dauer;
+  /// Ergebnis der Abfrage (je Sitzung höchstens einmal abgefragt und gemerkt) und ob `persist()` in dieser Sitzung schon gefragt wurde.
+  Future<SpeicherDauer>? _abfrage;
+  Future<SpeicherDauer>? _anforderung;
 
-  /// Fordert die dauerhafte Ablage an (`navigator.storage.persist()`): Ohne sie darf der Browser die Schlüssel bei Speicherknappheit löschen.
+  /// Nur `persisted()`: fragt nie den Nutzer. Ohne dauerhafte Ablage darf der Browser die Schlüssel bei Speicherknappheit löschen.
   @override
-  Future<SpeicherDauer> dauerhaftigkeit() async {
-    if (_dauer == SpeicherDauer.gewaehrt) return SpeicherDauer.gewaehrt;
+  Future<SpeicherDauer> dauerhaftigkeit() => _abfrage ??= () async {
     try {
-      final verwaltung = web.window.navigator.storage;
-      var ok = (await verwaltung.persisted().toDart).toDart;
-      if (!ok) ok = (await verwaltung.persist().toDart).toDart;
-      return _dauer = ok ? SpeicherDauer.gewaehrt : SpeicherDauer.verweigert;
+      final ok = (await web.window.navigator.storage.persisted().toDart).toDart;
+      return ok ? SpeicherDauer.gewaehrt : SpeicherDauer.verweigert;
     } on Object {
       return SpeicherDauer.unbekannt;
     }
-  }
+  }();
+
+  /// `persist()` nach einer Aktion der Person, höchstens einmal je Sitzung; das Ergebnis ersetzt die gemerkte Abfrage.
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() => _anforderung ??= () async {
+    try {
+      final ok = (await web.window.navigator.storage.persist().toDart).toDart;
+      final ergebnis = ok ? SpeicherDauer.gewaehrt : SpeicherDauer.verweigert;
+      _abfrage = Future.value(ergebnis);
+      return ergebnis;
+    } on Object {
+      return SpeicherDauer.unbekannt;
+    }
+  }();
 
   /// null nur, wenn der Eintrag nicht existiert. IndexedDB-Fehler sind vorübergehend (der Eintrag bleibt), eine fehlgeschlagene
   /// Entschlüsselung (Eintrag oder Wrapper-Schlüssel beschädigt/vertauscht) ist dauerhaft.
@@ -138,7 +149,6 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
     final ct = (await _subtle.encrypt(_alg(iv, name), key, bytes.toJS).toDart)! as JSArrayBuffer;
     final wert = {'iv': iv, 'ct': ct}.jsify()!;
     await _transaktion(true, (s) => _anfrage(s.put(wert, '$_eintrag$name'.toJS)));
-    unawaited(dauerhaftigkeit()); // beim Anlegen eines Schlüssels die dauerhafte Ablage anfordern (Ergebnis wird gemerkt)
   }
 
   /// Verschiebt den verschlüsselten Eintrag unverändert (ohne Entschlüsselung) und merkt sich den ursprünglichen Namen für die spätere Entschlüsselung.

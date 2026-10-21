@@ -8,6 +8,7 @@ import 'data/auth/auth_state.dart';
 import 'data/chat/chat_krypto_state.dart';
 import 'data/calendar/zeitzonen.dart';
 import 'data/crypto/e2ee_state.dart';
+import 'data/crypto/schluessel_speicher.dart';
 import 'data/database_provider.dart';
 import 'data/push/chat_benachrichtiger_provider.dart';
 import 'data/push/push_hintergrund.dart';
@@ -25,6 +26,8 @@ Future<void> main(List<String> args) async {
     return;
   }
   pruefeBasisAdressen();
+  // ein liegengebliebener Löschauftrag von "Gerät abgeben" (Löschen scheiterte) wird vor allem anderen abgearbeitet
+  await loeschauftraegeAbarbeiten(schluesselSpeicherErzeugen());
   await initializeDateFormatting('de_DE');
   // Zeitzonen-Daten für Terminserien (Asset der App; schlägt das Laden fehl, rechnet die Anzeige mit UTC statt abzustürzen)
   try {

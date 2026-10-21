@@ -70,6 +70,9 @@ class FakeE2eeServer {
   /// Meldet `GET /me/keys` die neuen Felder (pwBackupVerifiedAt, recoveryBackupAt, archiveCount)? Aus = ein älterer Server: die App darf dann nie "gesichert" annehmen.
   bool neueFelder = true;
 
+  /// Wert von `archiveCount` in `GET /me/keys` (frühere, archivierte Sicherungen).
+  int archiv = 0;
+
   /// Zuletzt per `POST /me/password/change` gesetzter authKey je Person (für Prüfungen).
   final Map<String, String> authKeys = {};
 
@@ -298,7 +301,7 @@ class FakeE2eeServer {
       : {
           if (p.pwBlob != null && p.pwVerifiziert && !p.pwStale) 'pwBackupVerifiedAt': jetzt.toIso8601String(),
           if (p.backupBlob != null && p.backupVersion == p.version) 'recoveryBackupAt': jetzt.toIso8601String(),
-          'archiveCount': 0,
+          'archiveCount': archiv,
         };
 
   Map<String, dynamic>? _keys(_Person p) => p.enc == null ? null : {'publicEncKey': p.enc, 'publicSignKey': p.sign, 'keyVersion': p.version};

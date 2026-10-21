@@ -36,9 +36,13 @@ abstract interface class SchluesselSpeicher {
   /// true: verschoben; false: es gibt ihn nicht oder er ließ sich nicht verschieben (dann bleibt er unverändert unter seinem Namen).
   Future<bool> verschiebe(String von, String nach);
 
-  /// Darf der Browser diese Daten löschen? Nur im Web von Bedeutung ([SpeicherDauer.nichtZutreffend] sonst); fordert die dauerhafte Ablage an
-  /// (`navigator.storage.persist()`) und merkt sich ein "gewährt".
+  /// Darf der Browser diese Daten löschen? Nur im Web von Bedeutung ([SpeicherDauer.nichtZutreffend] sonst). Fragt nur ab (`navigator.storage.persisted()`),
+  /// höchstens einmal je Sitzung (das Ergebnis wird gemerkt), und fragt den Nutzer nie.
   Future<SpeicherDauer> dauerhaftigkeit();
+
+  /// Fordert die dauerhafte Ablage an (`navigator.storage.persist()`). Nur nach einer Aktion der Person aufrufen (Einrichten, Verbinden, eigener Knopf), nie beim
+  /// Laden: Manche Browser fragen dabei nach. Höchstens einmal je Sitzung; weitere Aufrufe liefern das gemerkte Ergebnis.
+  Future<SpeicherDauer> dauerhaftAnfordern();
 }
 
 /// Ergebnis der Anfrage nach dauerhaftem Speicher (Web).
@@ -49,10 +53,10 @@ enum SpeicherDauer {
   /// Der Browser hat die dauerhafte Ablage zugesagt.
   gewaehrt,
 
-  /// Der Browser darf die Daten bei Speicherknappheit löschen.
+  /// Der Browser hat die dauerhafte Ablage NICHT zugesagt: Er darf die Daten bei Speicherknappheit löschen.
   verweigert,
 
-  /// Die Anfrage ließ sich nicht klären.
+  /// Die Abfrage ließ sich nicht klären (Zeitlimit, Fehler): keine Aussage, weder Entwarnung noch Warnung.
   unbekannt,
 }
 
@@ -92,4 +96,7 @@ class MemorySchluesselSpeicher implements SchluesselSpeicher {
 
   @override
   Future<SpeicherDauer> dauerhaftigkeit() async => SpeicherDauer.nichtZutreffend;
+
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() async => SpeicherDauer.nichtZutreffend;
 }

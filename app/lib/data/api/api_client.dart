@@ -274,7 +274,7 @@ class ApiClient {
       throw ApiException.unerwarteteAntwort;
     }
     final code = daten is Map && daten['error'] is String ? daten['error'] as String : '';
-    final retry = int.tryParse(res.headers['retry-after'] ?? '');
+    final retry = int.tryParse(res.headers['retry-after'] ?? '') ?? (daten is Map && daten['retryAfterSec'] is int ? daten['retryAfterSec'] as int : null);
     final fehler = ApiException.vonAntwort(status: status, code: code, retryAfterSekunden: retry);
     // 401 mit Sitzungscode an einer geschützten Stelle = Sitzung weg (Fachfehler wie step_up_failed oder invalid_credentials nicht)
     if (auth && status == 401 && _istSitzungsCode(code)) {

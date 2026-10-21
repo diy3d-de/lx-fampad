@@ -106,6 +106,44 @@ Future<void> schluesselVomGeraetLoeschen(SchluesselSpeicher speicher, String use
   if (fehler != null) Error.throwWithStackTrace(fehler, stapel!);
 }
 
+/// Löschauftrag: Vor "Gerät abgeben" wird dieser Marker abgelegt (nur die Person, nie ein Geheimnis). Scheitert das Löschen, bleibt er liegen und wird beim
+/// nächsten Start der App abgearbeitet ([loeschauftraegeAbarbeiten]); nach erfolgreichem Löschen oder wenn das Abmelden scheitert (dann ist nichts gelöscht), wird er entfernt.
+String loeschauftragName(String userId) => 'e2ee.loeschauftrag.$userId';
+
+const String _loeschauftragPraefix = 'e2ee.loeschauftrag.';
+
+/// Arbeitet liegengebliebene Löschaufträge ab (beim Start der App, vor der Anmeldung): löscht die Schlüssel der genannten Person und entfernt dann den Marker.
+/// Fehler werden verschluckt (der Marker bleibt, der nächste Start versucht es erneut).
+Future<void> loeschauftraegeAbarbeiten(SchluesselSpeicher speicher) async {
+  try {
+    for (final name in await speicher.namenMitPraefix(_loeschauftragPraefix)) {
+      final uid = name.substring(_loeschauftragPraefix.length);
+      if (uid.isEmpty) continue;
+      try {
+        await schluesselVomGeraetLoeschen(speicher, uid);
+        await speicher.loeschen(name);
+      } on Object {
+        // bleibt für den nächsten Start
+      }
+    }
+  } on Object {
+    // Speicher nicht lesbar: nichts zu tun
+  }
+}
+
+/// Ausgang von "Gerät abgeben": Was ist geschehen? Die Oberfläche sagt es ehrlich.
+class GeraetAbgabeErgebnis {
+  /// Der Server hat die Sitzung beendet (oder sie war dort schon beendet).
+  final bool serverAbgemeldet;
+
+  /// Alle Schlüssel dieser Person sind vom Gerät gelöscht. false: Das Löschen ist gescheitert; ein Löschauftrag bleibt und wird beim nächsten Start abgearbeitet.
+  final bool schluesselGeloescht;
+
+  /// Token und lokale Daten (Datenbank) wurden vollständig entfernt (Web: nur die Zeilen, nicht die Datei der Browser-Datenbank).
+  final bool datenSauber;
+  const GeraetAbgabeErgebnis({required this.serverAbgemeldet, required this.schluesselGeloescht, required this.datenSauber});
+}
+
 /// Quarantäne: Ein lokaler Schlüssel, der nicht (mehr) gelten soll (weicht vom Server ab, Speicher defekt, alter Schlüssel nach einem Wechsel), wird
 /// nie gelöscht, sondern unter diesem Namen aufbewahrt: `e2ee.quarantaene.<uid>.<Millisekunden>`.
 String quarantaenePraefix(String userId) => 'e2ee.quarantaene.$userId.';
@@ -143,7 +181,8 @@ GeraetAbgabeLage geraetAbgabeLage(E2eeState s) {
       return GeraetAbgabeLage.standUnbekannt;
     case E2eeStatus.keinSchluessel:
     case E2eeStatus.geraetNichtVerbunden:
-      if (s.quarantaene.isEmpty) return GeraetAbgabeLage.nichtsZuLoeschen;
+      // auch ein lokaler Schlüssel, den der Server nicht kennt (z. B. nach einem Zurücksetzen durch einen Admin), ist etwas zu Löschendes
+      if (s.quarantaene.isEmpty && !s.lokalVorhanden) return GeraetAbgabeLage.nichtsZuLoeschen;
     case E2eeStatus.bereit:
     case E2eeStatus.abweichend:
   }
@@ -229,6 +268,13 @@ class E2eeState {
   /// Darf der Browser die Schlüssel-Daten löschen (nur Web; sonst [SpeicherDauer.nichtZutreffend])?
   final SpeicherDauer speicherDauer;
 
+  /// Liegt auf diesem Gerät ein (lesbarer) Personenschlüssel, unabhängig davon, was der Server kennt?
+  final bool lokalVorhanden;
+
+  /// Wie viele frühere Schlüssel nur auf diesem Gerät liegen und beim "Gerät abgeben" mitgelöscht würden: die Quarantäne und, bei abweichendem Zustand, der
+  /// lokale Schlüssel selbst (er passt nicht mehr zum Konto, wäre aber vielleicht noch für älteren Verlauf nötig).
+  int get fruehereSchluessel => quarantaene.length + (status == E2eeStatus.abweichend ? 1 : 0);
+
   /// Liegt beim Server eine BESTÄTIGTE Sicherung (Passwort-Sicherung bestätigt und nicht veraltet, oder Wiederherstellungsschlüssel-Sicherung zur
   /// aktuellen Version)? Fehlt die Angabe des Servers, gilt sie als nicht bestätigt: "unbekannt" ist nie "gesichert".
   bool get sicherungBestaetigt => (pwBestaetigtAm != null && !pwSicherungVeraltet) || (hatSicherung && wiederherstellungAm != null);
@@ -250,6 +296,7 @@ class E2eeState {
     this.archivAnzahl,
     this.quarantaene = const [],
     this.speicherDauer = SpeicherDauer.nichtZutreffend,
+    this.lokalVorhanden = false,
   });
 
   const E2eeState.laedt() : this(status: E2eeStatus.laedt);
@@ -447,6 +494,7 @@ class E2eeController extends Notifier<E2eeState> {
         archivAnzahl: eigene.archivAnzahl,
         quarantaene: quarantaene,
         speicherDauer: dauer,
+        lokalVorhanden: _lokal != null,
         mitglieder: mitglieder,
         warnungen: warnungen,
         // nur aktive Mitglieder: wartende gehören noch nicht zur Familie
@@ -559,8 +607,15 @@ class E2eeController extends Notifier<E2eeState> {
       rethrow;
     }
     _lokal = schluessel;
+    unawaited(_speicher.dauerhaftAnfordern()); // Aktion der Person: der Browser darf hier nach dauerhaftem Speicher fragen (nur Web)
     await laden();
     return Einrichtung(Wiederherstellung.neuerSchluessel(crypto), ver.version);
+  }
+
+  /// Eigener Knopf in Profil > Verschlüsselung (nur Web, wenn der Browser die dauerhafte Ablage nicht zugesagt hat): fragt einmal je Sitzung nach.
+  Future<void> dauerhaftenSpeicherAnfordern() async {
+    await _speicher.dauerhaftAnfordern().timeout(const Duration(seconds: 30), onTimeout: () => SpeicherDauer.unbekannt);
+    await laden();
   }
 
   /// Neuer Schlüssel nach Totalverlust (kein Gerät, kein Wiederherstellungsschlüssel) oder bei Verdacht auf Kompromittierung. Mit Step-up
@@ -665,6 +720,7 @@ class E2eeController extends Notifier<E2eeState> {
     await _speicher.schreiben(personenschluesselName(_userId), schluessel.exportieren());
     _lokal?.loeschen();
     _lokal = schluessel;
+    unawaited(_speicher.dauerhaftAnfordern()); // Aktion der Person (Verbinden): der Browser darf nach dauerhaftem Speicher fragen (nur Web)
     await laden();
   }
 
@@ -881,10 +937,17 @@ class E2eeController extends Notifier<E2eeState> {
   Future<void> lokalenSchluesselVerwerfen() async {
     final namen = [personenschluesselName(_userId), personenschluesselAltName(_userId)];
     for (final n in namen) {
-      final vorhanden = (await _speicher.namenMitPraefix(n)).contains(n);
-      if (vorhanden && !await _inQuarantaene(n)) {
-        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüssel dieses Geräts ließ sich nicht sicher beiseitelegen. Es wurde nichts gelöscht.');
+      if (await _inQuarantaene(n)) continue;
+      // nicht verschoben: gibt es ihn nicht, ist alles gut; sonst (auch bei einem Lesefehler) bleibt er liegen und das Verbinden bricht ab
+      var da = false;
+      try {
+        final bytes = await _speicher.lesen(n);
+        da = bytes != null;
+        if (bytes != null) loescheBytes(bytes);
+      } on SchluesselSpeicherFehler {
+        da = true;
       }
+      if (da) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüssel dieses Geräts ließ sich nicht sicher beiseitelegen. Es wurde nichts gelöscht.');
     }
     _lokal?.loeschen();
     _lokal = null;
@@ -900,8 +963,9 @@ class E2eeController extends Notifier<E2eeState> {
 
   /// "Gerät abgeben": meldet ab (Sitzung, lokale Daten) und löscht danach ALLE Schlüssel dieser Person von diesem Gerät. Nur mit bestätigter Sicherung beim
   /// Server ([geraetAbgabeLage]): der Stand wird dafür frisch geladen; ist er unbekannt oder unbestätigt, wirft das einen Fehler und nichts wird gelöscht.
-  /// Scheitert das Abmelden (Web mit Serverfehler), wird ebenfalls nichts gelöscht. Die Oberfläche verlangt vorher die getippte Bestätigung.
-  Future<AbmeldeErgebnis> geraetAbgeben() async {
+  /// Scheitert das Abmelden (Web mit Serverfehler), wird ebenfalls nichts gelöscht (der Löschauftrag wird zurückgenommen). Scheitert das Löschen, bleibt ein
+  /// Löschauftrag für den nächsten Start ([loeschauftraegeAbarbeiten]) und das Ergebnis sagt es. Die Oberfläche verlangt vorher Haken und getipptes Wort.
+  Future<GeraetAbgabeErgebnis> geraetAbgeben() async {
     final uid = _userId;
     final speicher = _speicher;
     final auth = ref.read(authProvider.notifier);
@@ -916,10 +980,39 @@ class E2eeController extends Notifier<E2eeState> {
       case GeraetAbgabeLage.nichtsZuLoeschen:
         throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät liegt kein Schlüssel.');
     }
+    // Löschauftrag ablegen, bevor etwas passiert: gelingt das nicht, ist der Schlüsselspeicher nicht verlässlich, und es wird nichts begonnen
+    final marker = loeschauftragName(uid);
+    try {
+      await speicher.schreiben(marker, Uint8List.fromList([1]));
+    } on Object {
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüsselspeicher dieses Geräts ließ sich nicht beschreiben. Es wurde nichts gelöscht.');
+    }
     // Danach ist dieser Controller verworfen (der Abmelde-Wiper leert den Zustand): nur noch lokale Werte benutzen, kein ref
-    final ergebnis = await auth.abmelden();
-    await schluesselVomGeraetLoeschen(speicher, uid);
-    return ergebnis;
+    final AbmeldeErgebnis ergebnis;
+    try {
+      ergebnis = await auth.abmelden();
+    } on Object {
+      try {
+        await speicher.loeschen(marker); // nichts wurde gelöscht: der Auftrag entfällt
+      } on Object {
+        // bleibt; würde beim nächsten Start nur die Schlüssel entfernen, die zu diesem Zeitpunkt noch gesichert waren
+      }
+      rethrow;
+    }
+    var geloescht = true;
+    try {
+      await schluesselVomGeraetLoeschen(speicher, uid);
+    } on Object {
+      geloescht = false;
+    }
+    if (geloescht) {
+      try {
+        await speicher.loeschen(marker);
+      } on Object {
+        // ein übrig gebliebener Marker löscht beim nächsten Start nichts mehr
+      }
+    }
+    return GeraetAbgabeErgebnis(serverAbgemeldet: ergebnis.serverAbgemeldet, schluesselGeloescht: geloescht, datenSauber: ergebnis.lokalSauber);
   }
 
   /// Bewusstes Zurücksetzen der gemerkten Schlüssel nach einer beschädigten Ablage (die Oberfläche warnt vorher).

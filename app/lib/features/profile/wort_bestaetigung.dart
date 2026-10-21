@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 
-/// Fragt nach: [haken] müssen alle gesetzt sein (Checkliste, kann leer sein), dann muss [wort] eingetippt werden (Groß-/Kleinschreibung und Leerzeichen
-/// am Rand egal). true nur bei bestätigtem [knopf].
+/// Fragt nach: [haken] müssen alle gesetzt sein (Checkliste, kann leer sein), dann muss [wort] eingetippt werden (Groß-/Kleinschreibung, Leerzeichen
+/// am Rand und Umlaut-Umschreibung egal). true nur bei bestätigtem [knopf].
 Future<bool> wortBestaetigen(
   BuildContext context, {
   required String titel,
@@ -49,7 +49,10 @@ class _WortDialogState extends State<_WortDialog> {
     super.dispose();
   }
 
-  bool get _bereit => _gesetzt.every((b) => b) && _eingabe.text.trim().toLowerCase() == widget.wort.toLowerCase();
+  /// Klein, ohne Rand, Umlaute als Umschreibung ("löschen" und "loeschen" gelten gleich; auf manchen Tastaturen fehlt das ö).
+  static String _norm(String t) => t.trim().toLowerCase().replaceAll('ä', 'ae').replaceAll('ö', 'oe').replaceAll('ü', 'ue').replaceAll('ß', 'ss');
+
+  bool get _bereit => _gesetzt.every((b) => b) && _norm(_eingabe.text) == _norm(widget.wort);
 
   @override
   Widget build(BuildContext context) => AlertDialog(

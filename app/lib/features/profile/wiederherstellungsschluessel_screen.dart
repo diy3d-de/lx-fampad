@@ -34,13 +34,17 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
   @override
   void initState() {
     super.initState();
-    _eingabe.addListener(() => setState(() {}));
+    _eingabe.addListener(_geaendert);
   }
+
+  void _geaendert() => setState(() {});
 
   @override
   void dispose() {
     // der Schlüssel war nur für diese Anzeige im Arbeitsspeicher
     loescheBytes(widget.einrichtung.wiederherstellungsschluessel);
+    _eingabe.removeListener(_geaendert);
+    _eingabe.clear(); // die eingetippte Kopie des Schlüssels nicht im Controller liegen lassen
     _eingabe.dispose();
     super.dispose();
   }
@@ -171,7 +175,7 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
             ),
             const SizedBox(height: 12),
             const Text(
-              'Tippe den ganzen Schlüssel aus deiner Notiz ab (Groß-/Kleinschreibung, Leerzeichen und Bindestriche sind egal).',
+              'Tippe den ganzen Schlüssel aus deiner Notiz ab (Groß-/Kleinschreibung, Leerzeichen und Bindestriche sind egal). Nicht einfügen: Schreibe oder tippe ihn aus deiner Notiz ab.',
               style: TextStyle(fontSize: 14, height: 1.4, color: kText),
             ),
             const SizedBox(height: 8),
@@ -180,6 +184,7 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
               enabled: !laeuft,
               autocorrect: false,
               enableSuggestions: false,
+              enableIMEPersonalizedLearning: false,
               minLines: 3,
               maxLines: 5,
               keyboardType: TextInputType.multiline,

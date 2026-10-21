@@ -92,6 +92,7 @@ Future<void> eingeben(WidgetTester tester, String label, String wert) async {
 List<String> kleineZiele(WidgetTester tester) {
   final zu = <String>[];
   void pruefe(Element element, String name) {
+    if (!element.mounted) return; // z. B. Teile eines eingeklappten ExpansionTile, die gerade abgebaut wurden
     final box = element.renderObject;
     if (box is! RenderBox || !box.hasSize || !box.attached) return;
     var sichtbar = true;
@@ -115,14 +116,14 @@ List<String> kleineZiele(WidgetTester tester) {
   }
 
   for (final typ in <Type>[IconButton, TextButton, FilledButton, OutlinedButton, FloatingActionButton, ChoiceChip, Checkbox, Switch]) {
-    for (final element in find.byType(typ).evaluate()) {
+    for (final element in find.byType(typ).evaluate().where((e) => e.mounted)) {
       // Checkbox/Switch stecken in ListTiles mit ≥ 48 px; ihre Tipp-Fläche ist die ganze Zeile
       if ((typ == Checkbox || typ == Switch) && hatVorfahr(element, (w) => w is ListTile || w is SwitchListTile || w is CheckboxListTile)) continue;
       pruefe(element, typ.toString());
     }
   }
   for (final typ in <Type>[InkWell, InkResponse]) {
-    for (final element in find.byType(typ).evaluate()) {
+    for (final element in find.byType(typ).evaluate().where((e) => e.mounted)) {
       final w = element.widget;
       final onTap = w is InkWell ? w.onTap : (w as InkResponse).onTap;
       if (onTap == null ||
