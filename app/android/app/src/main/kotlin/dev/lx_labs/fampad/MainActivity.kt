@@ -36,7 +36,9 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private var systemChannel: MethodChannel? = null
     private var startLink: String? = null
+    private var startWidgetZiel: String? = null
     private var standort: StandortKanal? = null
+    private var heute: HeuteKanal? = null
 
     companion object {
         /** Zuletzt von Dart gewünschter Zustand von FLAG_SECURE; als Klassenvariable, damit eine neu erstellte Activity ihn kennt. */
@@ -47,6 +49,11 @@ class MainActivity : FlutterActivity() {
         private const val CHAT_KANAL = "chat_nachrichten"
         private const val PREFS = "lx_fampad_system"
         private const val PREF_ANGEFRAGT = "benachrichtigung_angefragt"
+
+        /** Tipp auf das Widget "Heute" (HeuteWidget.kt): Aktion und Ziel, nur diese festen Ziele werden angenommen. */
+        const val ACTION_WIDGET = "dev.lx_labs.fampad.WIDGET_OEFFNEN"
+        const val EXTRA_ZIEL = "ziel"
+        private val WIDGET_ZIELE = setOf("kalender", "aufgaben", "listen")
     }
 
     /**
@@ -57,6 +64,8 @@ class MainActivity : FlutterActivity() {
     override fun getDartEntrypointArgs(): List<String>? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // vor super.onCreate: dort entsteht die Flutter-Engine (configureFlutterEngine), die das Ziel für die Dart-Seite braucht
+        merkeWidgetZiel(intent)
         super.onCreate(savedInstanceState)
         startLink = linkAus(intent)
         secureAnwenden()
@@ -73,6 +82,20 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         val link = linkAus(intent)
         if (link != null) systemChannel?.invokeMethod("link", link)
+        widgetZielAus(intent)?.let { heute?.zielMelden(it) }
+    }
+
+    /** Ziel eines Tipps auf das Widget; null bei anderen Intents oder unbekanntem Ziel. Das Extra wird entfernt, damit es nicht erneut gelesen wird. */
+    private fun widgetZielAus(intent: Intent?): String? {
+        if (intent?.action != ACTION_WIDGET) return null
+        val ziel = intent.getStringExtra(EXTRA_ZIEL)
+        intent.removeExtra(EXTRA_ZIEL)
+        return if (ziel != null && ziel in WIDGET_ZIELE) ziel else null
+    }
+
+    /** Start per Tipp auf das Widget: das Ziel wartet, bis die Dart-Seite es abholt (HeuteKanal.startZiel). */
+    private fun merkeWidgetZiel(intent: Intent?) {
+        startWidgetZiel = widgetZielAus(intent)
     }
 
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
@@ -191,6 +214,12 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         // Standort teilen (Vordergrunddienst, Berechtigungen, Ereignisse): StandortKanal.kt
         standort = StandortKanal(this).also { it.einrichten(flutterEngine) }
+        // Widget "Heute" (Zusammenfassung schreiben, Tipp-Ziel): HeuteWidget.kt
+        heute = HeuteKanal(applicationContext).also {
+            it.einrichten(flutterEngine)
+            it.startZiel = startWidgetZiel
+            startWidgetZiel = null
+        }
         systemChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "dev.lx_labs.fampad/system").also { kanal ->
             kanal.setMethodCallHandler { call, result ->
                 when (call.method) {

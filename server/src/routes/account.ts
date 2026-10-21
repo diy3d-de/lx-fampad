@@ -23,13 +23,14 @@ import {
 import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
+import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { b64urlBlob, b64urlKey, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
+import { b64urlBlob, b64urlKey, b64urlBlobMin, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child']);
 const familyRoleBody = z.object({ familyRole: z.enum(FAMILY_ROLES).nullable() }).strict();
@@ -123,6 +124,23 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   });
 
   app.get('/api/v1/me/key-backup', strikt, async (req) => getBackup(ctx, await auth.requireSession(req), meta(req)));
+
+  // Passwort-Sicherung (vereinfachte Schlüsselverwaltung): nur mit Schalter E2EE_PW_BACKUP, sonst gibt es die Routen nicht (404)
+  if (config.e2eePwBackup) {
+    // kein Salt vom Client (den bestimmt der Server) und nur das feste Profil: Abweichungen ergeben 409 kdf_mismatch
+    const kdfBody = z.object({ id: z.enum(KDF_IDS), memKiB: z.number().int(), ops: z.number().int() }).strict();
+    app.put('/api/v1/me/key-backup-pw', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      const body = parse(z.object({ blob: b64urlBlobMin(96, 4096), keyVersion: z.number().int().min(1), kdf: kdfBody }).strict(), req.body);
+      return { ok: true, ...(await setPwBackup(ctx, p, body, meta(req))) };
+    });
+    app.get('/api/v1/me/key-backup-pw', strikt, async (req) => getPwBackup(ctx, await auth.requireSession(req), meta(req)));
+    app.post('/api/v1/me/key-backup-pw/verified', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      await markPwBackupVerified(ctx, p, parse(z.object({ id: uuid }).strict(), req.body).id, meta(req));
+      return { ok: true };
+    });
+  }
 
   app.post('/api/v1/me/key-transfer', strikt, async (req) => {
     const p = await auth.requireSession(req);

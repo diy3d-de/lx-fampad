@@ -6,13 +6,15 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/expansion.dart';
+import '../../data/calendar/feiertage.dart';
+import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_hinweise.dart';
-import '../lists/list_dialogs.dart' show bestaetigen;
+import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'calendar_state.dart';
 import 'ics_import_screen.dart';
 import 'kalender_widgets.dart';
@@ -49,6 +51,8 @@ class CalendarScreen extends ConsumerWidget {
           const SizedBox(height: 12),
           PersonenFilter(personen: personen, gewaehlt: auswahl.personen, onPerson: notifier.person, onAlle: notifier.alle),
           if (personen.length >= 2) const SizedBox(height: 12),
+          const _FeiertageSchalter(),
+          const SizedBox(height: 12),
           if (rechte.darfAnlegen)
             Wrap(
               spacing: 8,
@@ -80,18 +84,20 @@ Future<void> vorkommenOeffnen(BuildContext context, WidgetRef ref, Vorkommen v, 
   final aktion = await terminDetailBlatt(context, v: v, mitglieder: mitglieder, teilnehmer: daten.teilnehmerIds(v.termin.id), darfAendern: darf);
   if (aktion == null || !context.mounted) return;
   final repo = ref.read(terminRepositoryProvider);
-  final erstes = v.serie && repo.istErstes(v);
+  // Geburtstage mit Marke sind Jahresserien ohne Ausnahmen (importierte Geburtstage können welche haben und behalten die Wahl): Bearbeiten und Löschen gelten immer für den ganzen Termin
+  final serie = v.serie && !hatGeburtstagsMarke(v.termin);
+  final erstes = serie && repo.istErstes(v);
   switch (aktion) {
     case TerminAktion.bearbeiten:
       var umfang = SerieUmfang.alle;
-      if (v.serie) {
+      if (serie) {
         final u = await serieUmfangFragen(context, titel: 'Was möchtest du ändern?', erstes: erstes);
         if (u == null || !context.mounted) return;
         umfang = u;
       }
       await terminEditorOeffnen(context, v: v, umfang: umfang);
     case TerminAktion.loeschen:
-      if (v.serie) {
+      if (serie) {
         final u = await serieUmfangFragen(context, titel: 'Was möchtest du löschen?', erstes: erstes);
         if (u == null) return;
         switch (u) {
@@ -103,7 +109,7 @@ Future<void> vorkommenOeffnen(BuildContext context, WidgetRef ref, Vorkommen v, 
             await repo.alleLoeschen(v.termin.id);
         }
       } else {
-        final ja = await bestaetigen(context, titel: 'Termin „${v.titel}“ löschen?', text: 'Der Termin wird für alle gelöscht.', knopf: 'Löschen');
+        final ja = await bestaetigen(context, titel: istGeburtstag(v.termin) ? 'Geburtstag „${v.titel}“ löschen?' : 'Termin „${v.titel}“ löschen?', text: 'Der Termin wird für alle gelöscht.', knopf: 'Löschen');
         if (ja) await repo.alleLoeschen(v.termin.id);
       }
   }
@@ -154,7 +160,8 @@ class _Agenda extends ConsumerWidget {
     final heute = heuteTag();
     final bis = heute.add(Duration(days: auswahl.agendaTage));
     final tage = nachTagen(_gefiltert(auswahl, daten, heute, bis), heute, bis.subtract(const Duration(days: 1)));
-    final schluessel = tage.keys.toList()..sort();
+    final hinweise = ref.watch(tagesHinweiseProvider).fuerAgenda(heute, bis.subtract(const Duration(days: 1)));
+    final schluessel = {...tage.keys, ...hinweise.keys}.toList()..sort();
     if (schluessel.isEmpty) {
       return Column(
         children: [
@@ -171,7 +178,8 @@ class _Agenda extends ConsumerWidget {
             padding: const EdgeInsets.only(top: 4, bottom: 8),
             child: MonoLabel(tag == heute ? '${tagesLabel(tag)} · heute' : tagesLabel(tag), color: tag == heute ? kAccent : kTextMuted),
           ),
-          _tagesListe(context, ref, tag, tage[tag]!, daten, mitglieder, rechte),
+          TagesHinweisZeile(hinweise: hinweise[tag] ?? const [], mitEnde: true),
+          _tagesListe(context, ref, tag, tage[tag] ?? const <Vorkommen>[], daten, mitglieder, rechte),
         ],
         _MehrKnopf(auswahl: auswahl),
       ],
@@ -219,6 +227,7 @@ class _Monat extends ConsumerWidget {
     }
 
     final gewaehlt = tage[auswahl.tag] ?? const <Vorkommen>[];
+    final hinweise = ref.watch(tagesHinweiseProvider);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -248,12 +257,13 @@ class _Monat extends ConsumerWidget {
           physics: const NeverScrollableScrollPhysics(),
           children: [
             for (var i = 0; i < zellen; i++)
-              _zelle(i - versatz + 1, tageImMonat, monat, heute, auswahl.tag, tage, mitglieder, notifier.tag),
+              _zelle(i - versatz + 1, tageImMonat, monat, heute, auswahl.tag, tage, mitglieder, notifier.tag, hinweise),
           ],
         ),
         const SizedBox(height: 16),
         MonoLabel(tagesLabel(auswahl.tag)),
         const SizedBox(height: 12),
+        TagesHinweisZeile(hinweise: hinweise.fuerTag(auswahl.tag)),
         if (gewaehlt.isEmpty)
           const LxCard(child: Text('Keine Termine – frei!', style: TextStyle(color: kTextMuted)))
         else
@@ -262,12 +272,22 @@ class _Monat extends ConsumerWidget {
     );
   }
 
-  Widget _zelle(int n, int tageImMonat, DateTime monat, DateTime heute, DateTime gewaehlt, Map<DateTime, List<Vorkommen>> tage, Mitglieder mitglieder, void Function(DateTime) onTag) {
+  Widget _zelle(int n, int tageImMonat, DateTime monat, DateTime heute, DateTime gewaehlt, Map<DateTime, List<Vorkommen>> tage, Mitglieder mitglieder, void Function(DateTime) onTag, TagesHinweise hinweise) {
     if (n < 1 || n > tageImMonat) return const SizedBox.shrink();
     final tag = DateTime.utc(monat.year, monat.month, n);
     final liste = tage[tag] ?? const <Vorkommen>[];
     final farben = <Color>{for (final v in liste) terminFarbe(v, mitglieder)}.take(3).toList();
-    return _Tag(nummer: n, heute: tag == heute, gewaehlt: tag == gewaehlt, anzahl: liste.length, farben: farben, onTap: () => onTag(tag));
+    final hinweisListe = hinweise.fuerTag(tag);
+    return _Tag(
+      nummer: n,
+      heute: tag == heute,
+      gewaehlt: tag == gewaehlt,
+      anzahl: liste.length,
+      farben: farben,
+      feiertag: hinweisListe.any((h) => h.art == TagesHinweisArt.feiertag),
+      ferien: hinweisListe.any((h) => h.art == TagesHinweisArt.ferien),
+      onTap: () => onTag(tag),
+    );
   }
 }
 
@@ -277,14 +297,18 @@ class _Tag extends StatelessWidget {
   final bool gewaehlt;
   final int anzahl;
   final List<Color> farben;
+
+  /// Feiertag bzw. Schulferien an diesem Tag (dezente Markierung, siehe feiertage.dart).
+  final bool feiertag;
+  final bool ferien;
   final VoidCallback onTap;
-  const _Tag({required this.nummer, required this.heute, required this.gewaehlt, required this.anzahl, required this.farben, required this.onTap});
+  const _Tag({required this.nummer, required this.heute, required this.gewaehlt, required this.anzahl, required this.farben, this.feiertag = false, this.ferien = false, required this.onTap});
 
   @override
   Widget build(BuildContext context) => Semantics(
     button: true,
     selected: gewaehlt,
-    label: anzahl == 0 ? '$nummer' : '$nummer, ${anzahl == 1 ? '1 Termin' : '$anzahl Termine'}',
+    label: '$nummer${feiertag ? ', Feiertag' : ''}${ferien ? ', Schulferien' : ''}${anzahl == 0 ? '' : ', ${anzahl == 1 ? '1 Termin' : '$anzahl Termine'}'}',
     excludeSemantics: true,
     child: InkWell(
       borderRadius: BorderRadius.circular(10),
@@ -293,14 +317,14 @@ class _Tag extends StatelessWidget {
         alignment: Alignment.center,
         margin: const EdgeInsets.symmetric(horizontal: 2),
         decoration: BoxDecoration(
-          color: gewaehlt ? kAccentSoft : null,
+          color: gewaehlt ? kAccentSoft : (ferien ? kFerien.withValues(alpha: 0.08) : null),
           borderRadius: BorderRadius.circular(10),
           border: Border.all(color: heute ? kAccent : (gewaehlt ? kAccent.withValues(alpha: 0.4) : Colors.transparent)),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text('$nummer', style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: gewaehlt ? kAccent : kText)),
+            Text('$nummer', style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: gewaehlt ? kAccent : (feiertag ? kFeiertag : kText))),
             SizedBox(
               height: 6,
               child: Row(
@@ -331,6 +355,7 @@ class _Woche extends ConsumerWidget {
     final montag = auswahl.tag.subtract(Duration(days: auswahl.tag.weekday - 1));
     final naechster = montag.add(const Duration(days: 7));
     final tage = nachTagen(_gefiltert(auswahl, daten, montag, naechster), montag, naechster.subtract(const Duration(days: 1)));
+    final hinweise = ref.watch(tagesHinweiseProvider);
     final kopf = '${DateFormat('d. MMM', 'de_DE').format(montag)} – ${DateFormat('d. MMM y', 'de_DE').format(naechster.subtract(const Duration(days: 1)))}';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -360,6 +385,7 @@ class _Woche extends ConsumerWidget {
                     padding: const EdgeInsets.only(top: 8, bottom: 8),
                     child: MonoLabel(tag == heute ? '${tagesLabel(tag)} · heute' : tagesLabel(tag), color: tag == heute ? kAccent : kTextMuted),
                   ),
+                  TagesHinweisZeile(hinweise: hinweise.fuerTag(tag)),
                   if (liste.isEmpty) const Padding(padding: EdgeInsets.only(bottom: 4), child: Text('frei', style: TextStyle(color: kTextFaint))) else _tagesListe(context, ref, tag, liste, daten, mitglieder, rechte),
                 ],
               );
@@ -367,6 +393,26 @@ class _Woche extends ConsumerWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Schalter "Feiertage und Ferien" (lokal je Gerät, Standard an): zeigt Feiertage und Schulferien (Rheinland-Pfalz) als dezente Hinweise.
+class _FeiertageSchalter extends ConsumerWidget {
+  const _FeiertageSchalter();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final an = ref.watch(feiertageAnzeigenProvider);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Semantics(
+        toggled: an,
+        label: 'Feiertage und Schulferien anzeigen',
+        excludeSemantics: true,
+        onTap: () => ref.read(feiertageAnzeigenProvider.notifier).setzen(!an),
+        child: AuswahlKnopf(text: 'Feiertage & Ferien', gewaehlt: an, onTap: () => ref.read(feiertageAnzeigenProvider.notifier).setzen(!an)),
+      ),
     );
   }
 }

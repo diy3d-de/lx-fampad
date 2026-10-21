@@ -1,5 +1,5 @@
 {
-  "id": "a0a0ffe2-1768-4365-a380-265f74fb2b47",
+  "id": "f6d924f7-877c-47b0-82f2-c684bc80c626",
   "prevId": "35ebd196-5e7a-44e7-8180-195ab1ceb10e",
   "version": "7",
   "dialect": "postgresql",
@@ -4255,7 +4255,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "nachrichten_family_id_uq": {
+          "name": "nachrichten_family_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "family_id",
+            "id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "nachrichten_text_len_ck": {
@@ -4407,6 +4416,249 @@
       },
       "isRLSEnabled": false
     },
+    "public.pins": {
+      "name": "pins",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "konversation_id": {
+          "name": "konversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nachricht_id": {
+          "name": "nachricht_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gepinnt_von": {
+          "name": "gepinnt_von",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rev": {
+          "name": "rev",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_revs": {
+          "name": "field_revs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "pins_active_uq": {
+          "name": "pins_active_uq",
+          "columns": [
+            {
+              "expression": "nachricht_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"pins\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pins_konversation_idx": {
+          "name": "pins_konversation_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "konversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pins_family_rev_idx": {
+          "name": "pins_family_rev_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pins_tombstone_idx": {
+          "name": "pins_tombstone_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"pins\".\"deleted_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "pins_von_idx": {
+          "name": "pins_von_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "gepinnt_von",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"pins\".\"gepinnt_von\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "pins_family_id_families_id_fk": {
+          "name": "pins_family_id_families_id_fk",
+          "tableFrom": "pins",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pins_gepinnt_von_users_id_fk": {
+          "name": "pins_gepinnt_von_users_id_fk",
+          "tableFrom": "pins",
+          "tableTo": "users",
+          "columnsFrom": [
+            "gepinnt_von"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "pins_family_id_konversation_id_konversationen_family_id_id_fk": {
+          "name": "pins_family_id_konversation_id_konversationen_family_id_id_fk",
+          "tableFrom": "pins",
+          "tableTo": "konversationen",
+          "columnsFrom": [
+            "family_id",
+            "konversation_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "pins_family_id_nachricht_id_nachrichten_family_id_id_fk": {
+          "name": "pins_family_id_nachricht_id_nachrichten_family_id_id_fk",
+          "tableFrom": "pins",
+          "tableTo": "nachrichten",
+          "columnsFrom": [
+            "family_id",
+            "nachricht_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.push_endpoints": {
       "name": "push_endpoints",
       "schema": "",
@@ -4531,6 +4783,267 @@
         "push_endpoints_topic_ck": {
           "name": "push_endpoints_topic_ck",
           "value": "\"push_endpoints\".\"topic\" ~ '^up[A-Za-z0-9_-]{12,64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.reaktionen": {
+      "name": "reaktionen",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "konversation_id": {
+          "name": "konversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nachricht_id": {
+          "name": "nachricht_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inhalt": {
+          "name": "inhalt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rev": {
+          "name": "rev",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_revs": {
+          "name": "field_revs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "reaktionen_active_uq": {
+          "name": "reaktionen_active_uq",
+          "columns": [
+            {
+              "expression": "nachricht_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"reaktionen\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reaktionen_konversation_idx": {
+          "name": "reaktionen_konversation_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "konversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reaktionen_user_idx": {
+          "name": "reaktionen_user_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reaktionen_family_rev_idx": {
+          "name": "reaktionen_family_rev_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "reaktionen_tombstone_idx": {
+          "name": "reaktionen_tombstone_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"reaktionen\".\"deleted_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "reaktionen_family_id_families_id_fk": {
+          "name": "reaktionen_family_id_families_id_fk",
+          "tableFrom": "reaktionen",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reaktionen_family_id_konversation_id_konversationen_family_id_id_fk": {
+          "name": "reaktionen_family_id_konversation_id_konversationen_family_id_id_fk",
+          "tableFrom": "reaktionen",
+          "tableTo": "konversationen",
+          "columnsFrom": [
+            "family_id",
+            "konversation_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reaktionen_family_id_nachricht_id_nachrichten_family_id_id_fk": {
+          "name": "reaktionen_family_id_nachricht_id_nachrichten_family_id_id_fk",
+          "tableFrom": "reaktionen",
+          "tableTo": "nachrichten",
+          "columnsFrom": [
+            "family_id",
+            "nachricht_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "reaktionen_family_id_user_id_memberships_family_id_user_id_fk": {
+          "name": "reaktionen_family_id_user_id_memberships_family_id_user_id_fk",
+          "tableFrom": "reaktionen",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "family_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "reaktionen_inhalt_len_ck": {
+          "name": "reaktionen_inhalt_len_ck",
+          "value": "char_length(\"reaktionen\".\"inhalt\") <= 512"
         }
       },
       "isRLSEnabled": false
@@ -4838,6 +5351,273 @@
         "sessions_kind_ck": {
           "name": "sessions_kind_ck",
           "value": "\"sessions\".\"kind\" in ('web', 'app')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.stimmen": {
+      "name": "stimmen",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "konversation_id": {
+          "name": "konversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nachricht_id": {
+          "name": "nachricht_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inhalt": {
+          "name": "inhalt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "geaendert_at": {
+          "name": "geaendert_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rev": {
+          "name": "rev",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_revs": {
+          "name": "field_revs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "stimmen_active_uq": {
+          "name": "stimmen_active_uq",
+          "columns": [
+            {
+              "expression": "nachricht_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"stimmen\".\"deleted_at\" is null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stimmen_konversation_idx": {
+          "name": "stimmen_konversation_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "konversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stimmen_user_idx": {
+          "name": "stimmen_user_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stimmen_family_rev_idx": {
+          "name": "stimmen_family_rev_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "stimmen_tombstone_idx": {
+          "name": "stimmen_tombstone_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"stimmen\".\"deleted_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "stimmen_family_id_families_id_fk": {
+          "name": "stimmen_family_id_families_id_fk",
+          "tableFrom": "stimmen",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "stimmen_family_id_konversation_id_konversationen_family_id_id_fk": {
+          "name": "stimmen_family_id_konversation_id_konversationen_family_id_id_fk",
+          "tableFrom": "stimmen",
+          "tableTo": "konversationen",
+          "columnsFrom": [
+            "family_id",
+            "konversation_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "stimmen_family_id_nachricht_id_nachrichten_family_id_id_fk": {
+          "name": "stimmen_family_id_nachricht_id_nachrichten_family_id_id_fk",
+          "tableFrom": "stimmen",
+          "tableTo": "nachrichten",
+          "columnsFrom": [
+            "family_id",
+            "nachricht_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "stimmen_family_id_user_id_memberships_family_id_user_id_fk": {
+          "name": "stimmen_family_id_user_id_memberships_family_id_user_id_fk",
+          "tableFrom": "stimmen",
+          "tableTo": "memberships",
+          "columnsFrom": [
+            "family_id",
+            "user_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "user_id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "stimmen_inhalt_len_ck": {
+          "name": "stimmen_inhalt_len_ck",
+          "value": "char_length(\"stimmen\".\"inhalt\") <= 512"
         }
       },
       "isRLSEnabled": false
@@ -5733,147 +6513,6 @@
           "value": "(\"users\".\"avatar_kind\" is null and \"users\".\"avatar_preset\" is null) or (\"users\".\"avatar_kind\" = 'preset' and \"users\".\"avatar_preset\" is not null) or (\"users\".\"avatar_kind\" = 'photo' and \"users\".\"avatar_preset\" is null)"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.weather_credentials": {
-      "name": "weather_credentials",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "integer",
-          "primaryKey": true,
-          "notNull": true,
-          "default": 1
-        },
-        "client_id_enc": {
-          "name": "client_id_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "client_secret_enc": {
-          "name": "client_secret_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "refresh_token_enc": {
-          "name": "refresh_token_enc",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_ok_at": {
-          "name": "last_ok_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_at": {
-          "name": "last_error_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "disabled_at": {
-          "name": "disabled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "weather_credentials_single_ck": {
-          "name": "weather_credentials_single_ck",
-          "value": "\"weather_credentials\".\"id\" = 1"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.weather_samples": {
-      "name": "weather_samples",
-      "schema": "",
-      "columns": {
-        "ts": {
-          "name": "ts",
-          "type": "timestamp with time zone",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "temperature": {
-          "name": "temperature",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "humidity": {
-          "name": "humidity",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "pressure": {
-          "name": "pressure",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rain_1h": {
-          "name": "rain_1h",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "rain_24h": {
-          "name": "rain_24h",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wind_kmh": {
-          "name": "wind_kmh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "gust_kmh": {
-          "name": "gust_kmh",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "wind_angle": {
-          "name": "wind_angle",
-          "type": "double precision",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.webauthn_challenges": {

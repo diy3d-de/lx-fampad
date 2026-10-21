@@ -114,6 +114,8 @@ export interface Config {
   locDirectoryTimeoutMs: number;
   /** Wetter (Netatmo, nur Server; standardmäßig aus). */
   weather: WeatherConfig;
+  /** Vereinfachte Schlüsselverwaltung (Passwort-Sicherung, KDF-Parameter): Routen nur bei true, sonst 404 (Standard aus). */
+  e2eePwBackup: boolean;
 }
 
 export interface WeatherConfig {
@@ -157,6 +159,14 @@ function ntfyPublicHost(env: NodeJS.ProcessEnv): string {
   const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familie.lx-labs.dev').toLowerCase();
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
   return host;
+}
+
+/** Boolescher Schalter: true/1/false/0 (leer = Standard aus), alles andere bricht den Start ab. */
+function boolFlag(env: NodeJS.ProcessEnv, name: string): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === '' || raw === 'false' || raw === '0') return false;
+  if (raw === 'true' || raw === '1') return true;
+  throw new Error(`${name} ungültig: erlaubt sind true oder false`);
 }
 
 /** WEATHER_*: ohne WEATHER_ENABLED=true ist das Wetter aus; mit Schalter sind MAC und Rechteck Pflicht (fail-closed). */
@@ -333,6 +343,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
     weather: weatherConfig(env, nodeEnv),
+    e2eePwBackup: boolFlag(env, 'E2EE_PW_BACKUP'),
   };
 }
 

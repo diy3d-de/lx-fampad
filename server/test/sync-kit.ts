@@ -133,7 +133,7 @@ export async function createFamily(world: World): Promise<Family> {
 
 /** Leert alle Sync-Daten und setzt die Zähler zurück (die Familie und ihre Mitglieder bleiben). */
 export async function resetSync(world: World): Promise<void> {
-  await world.db.execute(sql`truncate table change_log, applied_ops, epoche_wraps, konversation_epochen, lesestand, aufgabe_punkte, aufgaben, nachrichten, konversationen, list_items, lists, termin_ausnahmen, termin_teilnehmer, termine`);
+  await world.db.execute(sql`truncate table change_log, applied_ops, reaktionen, stimmen, pins, epoche_wraps, konversation_epochen, lesestand, aufgabe_punkte, aufgaben, nachrichten, konversationen, list_items, lists, termin_ausnahmen, termin_teilnehmer, termine`);
   await world.db.execute(sql`update families set current_rev = 0, purged_rev = 0`);
   await world.db.execute(sql`update devices set last_rev = 0, resync_required = false`);
 }

@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Widget "Heute" (HeuteWidget.kt): dunkle Karte wie in der App (Farben aus res/values/colors.xml = Tokens aus lib/constants.dart), keine Schatten.
+     Alle Zeilen sind feste TextViews, die der Provider ein- und ausblendet (RemoteViews kennt keine dynamischen Listen ohne Dienst). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/heute_wurzel"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_hintergrund"
+    android:orientation="vertical"
+    android:padding="12dp">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.08"
+            android:text="@string/widget_heute_titel"
+            android:textColor="@color/lx_accent"
+            android:textSize="11sp" />
+
+        <TextView
+            android:id="@+id/heute_datum"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:textColor="@color/lx_text_muted"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/heute_block_termine"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:orientation="vertical">
+
+        <TextView android:id="@+id/heute_t_leer" style="@style/WidgetHeuteLeer" android:visibility="gone" />
+        <TextView android:id="@+id/heute_t1" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_t2" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_t3" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_t4" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_t5" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_t_mehr" style="@style/WidgetHeuteMehr" android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/heute_block_aufgaben"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView
+            style="@style/WidgetHeuteKopf"
+            android:text="@string/widget_heute_aufgaben" />
+
+        <TextView android:id="@+id/heute_a_leer" style="@style/WidgetHeuteLeer" android:text="@string/widget_heute_keine_aufgaben" android:visibility="gone" />
+        <TextView android:id="@+id/heute_a1" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_a2" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_a3" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_a4" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_a5" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_a_mehr" style="@style/WidgetHeuteMehr" android:visibility="gone" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/heute_block_einkauf"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <TextView android:id="@+id/heute_einkauf_kopf" style="@style/WidgetHeuteKopf" />
+        <TextView android:id="@+id/heute_e1" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_e2" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_e3" style="@style/WidgetHeuteZeile" android:visibility="gone" />
+        <TextView android:id="@+id/heute_e_mehr" style="@style/WidgetHeuteMehr" android:visibility="gone" />
+    </LinearLayout>
+</LinearLayout>

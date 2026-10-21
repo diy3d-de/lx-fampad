@@ -53,6 +53,9 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
   final Set<String>? Function() lokaleIds;
   final void Function() beiAenderung;
   final Map<String, ({String wire, DekodierterInhalt inhalt})> _cache = {};
+  final Map<String, ({String wire, DekodierterInhalt inhalt})> _zusatzCache = {};
+  // groß genug für alle Reaktionen und Stimmen sichtbarer Chats: ein ausgeworfener Eintrag würde beim nächsten Aufbau neu geöffnet (und löst wieder einen Aufbau aus)
+  static const maxZusatzCache = 5000;
 
   /// Höchstzahl der entschlüsselten Nachrichten im Arbeitsspeicher (die ältesten fliegen zuerst raus; sie werden bei Bedarf neu geöffnet).
   static const maxCache = 500;
@@ -62,6 +65,14 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
     _cache[id] = v;
     while (_cache.length > maxCache) {
       _cache.remove(_cache.keys.first);
+    }
+  }
+
+  void _merkeZusatz(String id, ({String wire, DekodierterInhalt inhalt}) v) {
+    _zusatzCache.remove(id);
+    _zusatzCache[id] = v;
+    while (_zusatzCache.length > maxZusatzCache) {
+      _zusatzCache.remove(_zusatzCache.keys.first);
     }
   }
 
@@ -86,7 +97,11 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
       // ab); ein Eintrag, den der Ausgang nicht kennt, wird nie als Text angezeigt.
       final ids = lokaleIds();
       if (ids == null) return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
-      if (n.autorId != null && n.autorId == ich() && (n.rev == 0 || ids.contains(n.id))) return DekodierterInhalt(w.substring(kPraefixLokal.length), InhaltStatus.bereit);
+      if (n.autorId != null && n.autorId == ich() && (n.rev == 0 || ids.contains(n.id))) {
+        final t = w.substring(kPraefixLokal.length);
+        if (t.startsWith('r1:') || t.startsWith('s1:')) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'ungültiger Inhalt');
+        return DekodierterInhalt(t, InhaltStatus.bereit);
+      }
       // eigene Nachricht, die der Server schon kennt, deren Text hier aber noch nicht durch die Antwort ersetzt ist: sie ist unterwegs, nicht unverschlüsselt
       if (n.autorId != null && n.autorId == ich()) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'wird gesendet');
       return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt');
@@ -98,6 +113,46 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
     }
     if (_laufend.add(n.id)) unawaited(_oeffnen(n));
     return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
+  }
+
+  @override
+  DekodierterInhalt zusatz(ZusatzRef z) {
+    final w = z.wire;
+    if (w.startsWith(kPraefixLokal)) {
+      // eigener, noch nicht gesendeter Klartext (nur im Ausgang dieses Geräts); alles andere mit `l1:` gilt nie als lesbar
+      final ids = lokaleIds();
+      if (ids == null) return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
+      if (z.userId == ich() && (z.rev == 0 || ids.contains(z.id))) return DekodierterInhalt(w.substring(kPraefixLokal.length), InhaltStatus.bereit);
+      return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt');
+    }
+    final c = _zusatzCache[z.id];
+    if (c != null && c.wire == w) {
+      _merkeZusatz(z.id, c);
+      return c.inhalt;
+    }
+    if (_laufend.add('z:${z.id}')) unawaited(_zusatzOeffnen(z));
+    return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
+  }
+
+  Future<void> _zusatzOeffnen(ZusatzRef z) async {
+    DekodierterInhalt r;
+    try {
+      final enc = await encVersion(z.konversationId);
+      if (enc != 'e1' || !z.wire.startsWith(kPraefixE1)) {
+        r = const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt, abgelehnt');
+      } else {
+        final k = await krypto();
+        r = k == null
+            ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
+            : await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.userId, wire: z.wire, antwortAuf: z.nachrichtId, art: z.art);
+      }
+      _merkeZusatz(z.id, (wire: z.wire, inhalt: r));
+    } on Object {
+      _merkeZusatz(z.id, (wire: z.wire, inhalt: const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'nicht lesbar')));
+    } finally {
+      _laufend.remove('z:${z.id}');
+    }
+    beiAenderung();
   }
 
   Future<void> _oeffnen(Nachricht n) async {
@@ -118,6 +173,8 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
         r = k == null
             ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
             : await k.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: w, antwortAuf: n.antwortAuf);
+        // Inhalte von Reaktionen und Stimmen sind nie Nachrichtentext (eine Nachricht mit diesem Präfix wird nicht angezeigt)
+        if (r.lesbar && (r.text.startsWith('r1:') || r.text.startsWith('s1:'))) r = const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'ungültiger Inhalt');
       }
       _merke(n.id, (wire: n.inhalt, inhalt: r));
     } on Object {
@@ -129,10 +186,16 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
   }
 
   /// Ergebnisse, die nicht lesbar waren, werden beim nächsten Zugriff erneut versucht (z. B. nach einem neuen Epochenschlüssel).
-  void fehlschlaegeVergessen() => _cache.removeWhere((_, v) => v.inhalt.status != InhaltStatus.bereit);
+  void fehlschlaegeVergessen() {
+    _cache.removeWhere((_, v) => v.inhalt.status != InhaltStatus.bereit);
+    _zusatzCache.removeWhere((_, v) => v.inhalt.status != InhaltStatus.bereit);
+  }
 
   /// Verwirft alles (Abmelden, Wechsel der Person, Schlüsselwechsel).
-  void leeren() => _cache.clear();
+  void leeren() {
+    _cache.clear();
+    _zusatzCache.clear();
+  }
 }
 
 /// Verschlüsselt Nachrichten im Ausgang unmittelbar vor dem Senden (Klartext `l1:` -> `e1:`), immer mit der dann aktuellen Epoche. Geht das nicht (kein Schlüssel,
@@ -144,32 +207,49 @@ class ChatOpVorbereiter implements OpVorbereiter {
 
   @override
   Future<String?> vorbereiten(OutboxData op) async {
-    if (op.entity != 'nachricht' || op.op != 'upsert') return op.fieldsJson;
+    final feld = kVerschluesselteFelder[op.entity];
+    if (feld == null || op.op != 'upsert') return op.fieldsJson;
     final Object? f = jsonDecode(op.fieldsJson);
     if (f is! Map<String, dynamic>) return op.fieldsJson;
-    final text = f['text'];
+    final text = f[feld];
     if (text is! String) return op.fieldsJson;
     final klar = text.startsWith(kPraefixLokal);
     // schon verschlüsselt: nur anfassen, wenn inzwischen eine neuere Epoche gilt (dann neu verschlüsseln); sonst unverändert
     if (!klar && !text.startsWith(kPraefixE1)) return op.fieldsJson;
-    final zeile = await (db.select(db.nachrichten)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
-    var konversationId = f['konversationId'];
-    if (konversationId is! String) konversationId = zeile?.konversationId;
-    if (konversationId is! String) return null;
-    final antwort = f.containsKey('antwortAuf') ? f['antwortAuf'] : zeile?.antwortAuf;
-    final antwortAuf = antwort is String ? antwort : null;
+    // Konversation und Bezug (Nachricht: Antwort-auf; Reaktion und Stimme: die Nachricht, auf die sie sich beziehen) aus der Op, sonst aus der lokalen Zeile
+    String? konv = f['konversationId'] is String ? f['konversationId'] as String : null;
+    String? antwortAuf;
+    switch (op.entity) {
+      case 'nachricht':
+        final zeile = await (db.select(db.nachrichten)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+        final antwort = f.containsKey('antwortAuf') ? f['antwortAuf'] : zeile?.antwortAuf;
+        antwortAuf = antwort is String ? antwort : null;
+      case 'reaktion':
+        final zeile = await (db.select(db.reaktionen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+        antwortAuf = f['nachrichtId'] is String ? f['nachrichtId'] as String : zeile?.nachrichtId;
+      case 'stimme':
+        final zeile = await (db.select(db.stimmen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+        antwortAuf = f['nachrichtId'] is String ? f['nachrichtId'] as String : zeile?.nachrichtId;
+    }
+    if (konv == null) return null;
+    final konversationId = konv;
+    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', _ => null };
+    if (op.entity != 'nachricht' && antwortAuf == null) return null;
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)
     await k.aktualisieren();
     if (!klar) {
-      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf);
+      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf, art: art);
       if (neu == null) return null;
-      return neu == text ? op.fieldsJson : jsonEncode({...f, 'text': neu});
+      return neu == text ? op.fieldsJson : jsonEncode({...f, feld: neu});
     }
-    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf);
+    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf, art: art);
     if (wire == null) return null;
-    return jsonEncode({...f, 'text': wire});
+    return jsonEncode({...f, feld: wire});
   }
 }
 
@@ -196,6 +276,9 @@ class _InhaltSicht implements NachrichtenInhalt {
 
   @override
   DekodierterInhalt nachricht(Nachricht n) => _innen.nachricht(n);
+
+  @override
+  DekodierterInhalt zusatz(ZusatzRef z) => _innen.zusatz(z);
 }
 
 /// Hält die Chat-Verschlüsselung am Laufen (am Wurzel-Widget beobachtet, dort wird er nie pausiert, siehe app.dart).
@@ -332,10 +415,11 @@ class ChatKryptoController extends Notifier<int> {
   void _outboxAuswerten(List<OutboxData> ops) {
     final ids = <String>{};
     for (final o in ops) {
-      if (o.entity != 'nachricht' || o.op != 'upsert' || !o.fieldsJson.contains(kPraefixLokal)) continue;
+      final feld = kVerschluesselteFelder[o.entity];
+      if (feld == null || o.op != 'upsert' || !o.fieldsJson.contains(kPraefixLokal)) continue;
       try {
         final f = jsonDecode(o.fieldsJson);
-        if (f is Map && f['text'] is String && (f['text'] as String).startsWith(kPraefixLokal)) ids.add(o.entityId);
+        if (f is Map && f[feld] is String && (f[feld] as String).startsWith(kPraefixLokal)) ids.add(o.entityId);
       } on FormatException {
         // unlesbarer Eintrag: zählt nicht
       }
