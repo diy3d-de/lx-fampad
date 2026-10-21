@@ -411,6 +411,7 @@ class StandortController extends Notifier<StandortState> {
     if (state.phase != StandortPhase.teilt) return;
     final lauf = _lauf;
     final h = await _port.herzschlag();
+    if (!ref.mounted) return; // Antwort kommt nach dem Abbau des Providers
     if (lauf != _lauf || state.phase != StandortPhase.teilt) return;
     if (h.stopAngefordert) {
       await beenden(grund: 'Du hast das Teilen beendet.');
