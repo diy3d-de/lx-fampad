@@ -22,6 +22,7 @@ import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
 import '../standort/standort_start_karte.dart';
 import '../update/update_banner.dart';
+import '../wetter/wetter_karte.dart';
 
 /// Vorname für die Begrüßung: erstes Wort des Anzeigenamens, sehr lange Namen werden gekürzt; null bei leerem Namen.
 String? vorname(String? anzeigename) {
@@ -104,6 +105,7 @@ class HomeScreen extends ConsumerWidget {
         const SizedBox(height: 20),
         const _AufgabenKarte(),
         const SizedBox(height: 20),
+        const WetterStartKarte(),
         const StandortStartKarte(),
       ],
     );

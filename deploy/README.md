@@ -411,6 +411,29 @@ Die Standort-Seite zeigt die Karte nur, wenn die Kartendatei auf dem Server lieg
 
 Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-Block in `deploy/Caddyfile`; **vor dem Deploy auf dem Server bestätigen**, dass auch Haupt-Caddyfile und `conf.d/` keinen für familie.lx-labs.dev setzen: `sudo grep -rn "log" /etc/caddy/Caddyfile /etc/caddy/conf.d/`), Kachel-Anfragen werden also nicht mitgeschrieben; `journalctl` hält Caddy-Fehlermeldungen höchstens 7 Tage (Abschnitt „Logs und Datenschutz“).
 
+### 12. Wetter (Netatmo, optional)
+
+Der Server holt die Werte einer öffentlichen Netatmo-Station (nur der Server, nie die App). Ohne diese Schritte ist das Wetter aus (Standard) und nichts passiert.
+
+1. **Developer-App** (einmalig, im Browser, mit deinem Netatmo-Konto): `https://dev.netatmo.com` anmelden, „My apps“, „Create“; Name und Beschreibung frei, **Scope `read_station`**. Auf der Seite der App stehen **Client ID** und **Client Secret**; der „Token generator“ (Scope `read_station` anhaken) erzeugt ein **Refresh-Token**. Diese drei Werte **nie** in Chat, Repository, Shell-Verlauf oder Dateien kopieren, sondern nur im nächsten Schritt eintippen oder einfügen. Die Nutzungsbedingungen von Netatmo (Developer Terms) vorher lesen.
+2. **Einstellungen** in `/etc/lx-fampad/env` (keine Geheimnisse; MAC und Rechteck der Station, das Rechteck klein halten, höchstens 0,5 Grad je Richtung):
+   ```
+   WEATHER_ENABLED=true
+   WEATHER_PLACE=Westerburg
+   WEATHER_STATION_MAC=aa:bb:cc:dd:ee:ff
+   WEATHER_BBOX=<lat_sw>,<lon_sw>,<lat_ne>,<lon_ne>
+   ```
+   Das Rechteck muss die Station einschließen (Südwest-Ecke, Nordost-Ecke, Dezimalgrad). Ungültige Werte brechen den Start ab (fail-closed).
+3. **Zugangsdaten eintragen** (nach `deploy.sh`, auf dem Server; die Eingabe wird nicht angezeigt, die Werte stehen danach nur verschlüsselt in der Datenbank):
+   ```bash
+   sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/weather-setup.js
+   ```
+   Das Skript fragt `client_id`, `client_secret` und `refresh_token` ab und macht einen Probeabruf (`ok` oder der Grund). `--status` zeigt den Zustand, `--remove` löscht die Zugangsdaten. Danach `sudo systemctl restart lx-fampad`.
+4. **Prüfen:** `journalctl -u lx-fampad -n 50` zeigt höchstens Codes wie `station_not_found` (MAC oder Rechteck stimmen nicht, oder die Station ist nicht öffentlich) oder `invalid_grant` (Token ungültig: Schritt 3 mit einem neuen Refresh-Token wiederholen; der Abruf ist bis dahin abgeschaltet). In der App erscheint die Kachel nach dem ersten erfolgreichen Abruf (spätestens nach 10 Minuten).
+5. **Ausschalten:** `WEATHER_ENABLED` entfernen und neu starten; die Messwerte der letzten 7 Tage bleiben in der Tabelle `weather_samples`, die Zugangsdaten löschen mit `weather-setup.js --remove`.
+
+**Netatmo rotiert das Refresh-Token bei jeder Erneuerung.** Deshalb gibt es genau einen Abruf-Takt (ein Dienstprozess); nie dieselben Zugangsdaten auf einem zweiten System (z. B. einer Test-Instanz) gleichzeitig verwenden, sonst macht ein System das Token des anderen ungültig. Der Probeabruf von `weather-setup` läuft nur, wenn `WEATHER_ENABLED=true` in der Umgebung des Befehls steht (über `--env-file`).
+
 ## Updates veröffentlichen
 
 **VOR dem Deploy von Migration 0005 (Gäste entfallen):** Sicherung ziehen und prüfen, ob Gäste existieren. Die Migration löscht Gast-Konten und ist nicht umkehrbar. **Dieser Deploy wird bei Fehler nicht automatisch zurückgerollt:** der Rückfall von `deploy.sh` spielt nur den Code zurück, nicht die Datenbank (ein alter Server würde zudem `audience 'all'` in die neue Enum-Spalte schreiben und mit 500 antworten). Wiederherstellung per Dump.

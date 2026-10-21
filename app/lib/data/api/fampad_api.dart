@@ -174,6 +174,11 @@ class FampadApi {
     await client.delete('/devices/$id');
   }
 
+  // ----------------------------------------------------------- Wetter
+
+  /// Rohe Antwort (die App legt sie für den Offline-Stand unverändert ab).
+  Future<Json> wetterRoh() => client.get('/weather');
+
   // ----------------------------------------------------------- Push (nur Android)
 
   Future<PushStatusDto> pushStatus() async => PushStatusDto.fromJson(await client.get('/me/push'));

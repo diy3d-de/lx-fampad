@@ -112,6 +112,19 @@ export interface Config {
   locWakeCooldownMs: number;
   locSweepMs: number;
   locDirectoryTimeoutMs: number;
+  /** Wetter (Netatmo, nur Server; standardmäßig aus). */
+  weather: WeatherConfig;
+}
+
+export interface WeatherConfig {
+  enabled: boolean;
+  /** Angezeigter Ortsname (nie Straße, Koordinaten oder Stations-ID). */
+  place: string;
+  /** MAC der öffentlichen Station (Filter auf die Antwort von getpublicdata); nur mit enabled. */
+  stationMac: string;
+  /** Suchrechteck für getpublicdata (klein halten: eine Anfrage liefert alle öffentlichen Stationen darin). */
+  bbox: { latSw: number; lonSw: number; latNe: number; lonNe: number };
+  pollMs: number;
 }
 
 /** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
@@ -144,6 +157,26 @@ function ntfyPublicHost(env: NodeJS.ProcessEnv): string {
   const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familie.lx-labs.dev').toLowerCase();
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
   return host;
+}
+
+/** WEATHER_*: ohne WEATHER_ENABLED=true ist das Wetter aus; mit Schalter sind MAC und Rechteck Pflicht (fail-closed). */
+function weatherConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WeatherConfig {
+  const enabled = env.WEATHER_ENABLED?.trim().toLowerCase() === 'true';
+  const pollMs = positiveInt(env, 'WEATHER_POLL_MS', 10 * 60_000);
+  const off = { enabled: false, place: '', stationMac: '', bbox: { latSw: 0, lonSw: 0, latNe: 0, lonNe: 0 }, pollMs };
+  if (!enabled) return off;
+  if (pollMs < 5 * 60_000 && nodeEnv === 'production') throw new Error('WEATHER_POLL_MS darf in Produktion nicht unter 300000 liegen');
+  const place = (env.WEATHER_PLACE?.trim() || 'Westerburg').normalize('NFC');
+  if (place.length > 60 || /[<>]/.test(place) || [...place].some((c) => c < ' ')) throw new Error('WEATHER_PLACE ungültig');
+  const mac = (env.WEATHER_STATION_MAC ?? '').trim().toLowerCase();
+  if (!/^([0-9a-f]{2}:){5}[0-9a-f]{2}$/.test(mac)) throw new Error('WEATHER_STATION_MAC fehlt oder ist ungültig (Format aa:bb:cc:dd:ee:ff)');
+  const parts = (env.WEATHER_BBOX ?? '').split(',').map((p) => Number(p.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) throw new Error('WEATHER_BBOX fehlt oder ist ungültig (Format: lat_sw,lon_sw,lat_ne,lon_ne)');
+  const [latSw, lonSw, latNe, lonNe] = parts as [number, number, number, number];
+  if (latSw >= latNe || lonSw >= lonNe || latSw < -90 || latNe > 90 || lonSw < -180 || lonNe > 180 || latNe - latSw > 0.5 || lonNe - lonSw > 0.5) {
+    throw new Error('WEATHER_BBOX ungültig (Südwest unter Nordost, höchstens 0,5 Grad je Richtung)');
+  }
+  return { enabled, place, stationMac: mac, bbox: { latSw, lonSw, latNe, lonNe }, pollMs };
 }
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
@@ -299,6 +332,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locWakeCooldownMs: positiveInt(env, 'LOC_WAKE_COOLDOWN_MS', 10 * 60 * 1000),
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
+    weather: weatherConfig(env, nodeEnv),
   };
 }
 

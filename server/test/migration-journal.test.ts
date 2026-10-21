@@ -70,7 +70,7 @@ describe('Migration auf bestehender Datenbank', () => {
       await q(`insert into memberships (family_id, user_id, role) values ('${fid}', '${uid}', 'child')`);
       // jede weitere Migration einzeln (0005 bis zuletzt), die Altdaten bleiben jedes Mal erhalten
       const tags = journalRaw.entries.slice(bis4).map((e) => e.tag);
-      expect(tags.map((x) => x.slice(0, 4))).toEqual(['0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012']);
+      expect(tags.map((x) => x.slice(0, 4))).toEqual(['0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013']);
       for (let i = 1; i < tags.length; i++) {
         const d = teilordner(bis4 + i);
         ordner.push(d);
@@ -85,7 +85,7 @@ describe('Migration auf bestehender Datenbank', () => {
       expect(mem[0]?.role).toBe('child');
       // die Familienrolle (0007) ist neben den Chat-, Push- und Schlüssel-Tabellen erhalten
       expect((await q(`select family_role from memberships where family_id = '${fid}' and user_id = '${uid}'`))[0]).toEqual({ family_role: null });
-      for (const tabelle of ['user_avatars', 'konversationen', 'nachrichten', 'lesestand', 'push_endpoints', 'person_keys', 'person_key_history', 'key_backups', 'key_transfers', 'konversation_epochen', 'epoche_wraps']) {
+      for (const tabelle of ['user_avatars', 'konversationen', 'nachrichten', 'lesestand', 'push_endpoints', 'person_keys', 'person_key_history', 'key_backups', 'key_transfers', 'konversation_epochen', 'epoche_wraps', 'weather_credentials', 'weather_samples']) {
         const r = await q(`select to_regclass('public.${tabelle}') as t`);
         expect(r[0]?.t, tabelle).toBe(tabelle);
       }
@@ -94,7 +94,7 @@ describe('Migration auf bestehender Datenbank', () => {
     }
   }
 
-  it('PGlite: 0004 -> 0005 -> … -> 0012 (je Schritt mit Altdaten)', async () => {
+  it('PGlite: 0004 -> 0005 -> … -> 0013 (je Schritt mit Altdaten)', async () => {
     const client = new PGlite();
     const db = drizzleLite(client);
     try {
@@ -108,7 +108,7 @@ describe('Migration auf bestehender Datenbank', () => {
     }
   }, 60_000);
 
-  it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: 0004 -> 0005 -> … -> 0012 (je Schritt mit Altdaten)', async () => {
+  it.skipIf(!process.env.TEST_DATABASE_URL)('PostgreSQL: 0004 -> 0005 -> … -> 0013 (je Schritt mit Altdaten)', async () => {
     const name = `lx_mig_${randomUUID().replaceAll('-', '')}`;
     const admin = new pg.Client({ connectionString: process.env.TEST_DATABASE_URL });
     admin.on('error', () => undefined); // 57P01 beim Aufräumen ist erwartet
