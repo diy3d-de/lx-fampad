@@ -419,7 +419,7 @@ Der Server holt die Werte einer öffentlichen Netatmo-Station (nur der Server, n
 2. **Einstellungen** in `/etc/lx-fampad/env` (keine Geheimnisse; MAC und Rechteck der Station, das Rechteck klein halten, höchstens 0,5 Grad je Richtung):
    ```
    WEATHER_ENABLED=true
-   WEATHER_PLACE=Westerburg
+   WEATHER_PLACE=Salz
    WEATHER_STATION_MAC=aa:bb:cc:dd:ee:ff
    WEATHER_BBOX=<lat_sw>,<lon_sw>,<lat_ne>,<lon_ne>
    ```
