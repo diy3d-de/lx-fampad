@@ -60,6 +60,13 @@ manifest="$(find build/app/intermediates/merged_manifest/release -name AndroidMa
 grep -q 'android.permission.INTERNET' "$manifest" || { echo "FEHLER: INTERNET fehlt im Release-Manifest" >&2; fehler=1; }
 if grep -q 'android.permission.ACCESS_BACKGROUND_LOCATION' "$manifest"; then echo "FEHLER: ACCESS_BACKGROUND_LOCATION im Release-Manifest (bewusst nie)" >&2; fehler=1; fi
 
+# Widget "Heute": Empfaenger im Manifest (exportiert, mit APPWIDGET_UPDATE und Provider-Beschreibung), sonst fehlt das Widget auf dem Startbildschirm
+if ! tr -d '\r' < "$manifest" | tr '\n' ' ' | grep -Eq '<receiver[^>]*dev\.lx_labs\.fampad\.HeuteWidget"[^>]*exported="true"|<receiver[^>]*exported="true"[^>]*dev\.lx_labs\.fampad\.HeuteWidget"'; then
+  echo "FEHLER: Widget-Empfaenger HeuteWidget fehlt im Release-Manifest oder ist nicht exportiert" >&2; fehler=1
+fi
+grep -q 'android.appwidget.provider' "$manifest" || { echo "FEHLER: android.appwidget.provider (Widget-Beschreibung) fehlt im Release-Manifest" >&2; fehler=1; }
+grep -q 'android.appwidget.action.APPWIDGET_UPDATE' "$manifest" || { echo "FEHLER: APPWIDGET_UPDATE fehlt im Release-Manifest" >&2; fehler=1; }
+
 usage="build/app/outputs/mapping/release/usage.txt"
 if [ -f "$usage" ]; then
   # usage.txt nennt, was R8 entfernt hat: "Klasse" allein = ganz entfernt, "Klasse:" mit Einrückungen darunter = Mitglieder entfernt
@@ -75,6 +82,11 @@ if [ -f "$usage" ]; then
       echo "FEHLER: R8 hat $klasse (ganz oder in Methoden) entfernt: Keep-Regel in app/android/app/proguard-rules.pro prüfen, die Karte bliebe leer" >&2; fehler=1
     fi
   done
+  # Widget "Heute": Empfaenger und Anzeige-Klassen duerfen nicht ganz entfernt sein (R8 wuerde sie sonst als unbenutzt streichen, das Widget bliebe leer)
+  for klasse in dev.lx_labs.fampad.HeuteWidget dev.lx_labs.fampad.HeuteAnzeige dev.lx_labs.fampad.HeuteSpeicher dev.lx_labs.fampad.HeuteKanal; do
+    muster="$(printf '%s' "$klasse" | sed 's/\./\\./g')"
+    if grep -qxE "$muster" "$usage"; then echo "FEHLER: R8 hat $klasse entfernt (Widget Heute)" >&2; fehler=1; fi
+  done
   if grep -q '^com.github.josxha.maplibre\.' "$usage"; then
     echo "FEHLER: R8 hat Klassen des maplibre-Plugins entfernt (com.github.josxha.maplibre.*)" >&2; fehler=1
   fi
@@ -82,5 +94,5 @@ else
   echo "FEHLER: $usage fehlt (R8 lief nicht?)" >&2; fehler=1
 fi
 
-[ "$fehler" = 0 ] && echo "Release-Prüfung bestanden (Manifest, ABI und Größe der APK, R8-Regeln der Karte)."
+[ "$fehler" = 0 ] && echo "Release-Prüfung bestanden (Manifest inkl. Widget-Empfänger, ABI und Größe der APK, R8-Regeln der Karte und des Widgets)."
 exit "$fehler"

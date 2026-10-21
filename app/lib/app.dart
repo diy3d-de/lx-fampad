@@ -12,6 +12,7 @@ import 'data/push/chat_benachrichtigung_raeumen.dart';
 import 'widgets/ungelesen_titel.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
+import 'features/home/heute_widget_steuerung.dart';
 import 'features/auth/auth_widgets.dart';
 import 'features/auth/invite_intake.dart';
 import 'features/auth/invite_screen.dart';
@@ -112,6 +113,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     // Terminerinnerungen (Android) aktuell halten: hier am Wurzel-Widget, das nie pausiert (hinter geöffneten Seiten pausieren Beobachter)
     ref.watch(erinnerungSteuerungProvider);
+    // Startbildschirm-Widget "Heute" (Android) aktuell halten und Tipps darauf auswerten
+    ref.watch(heuteWidgetSteuerungProvider);
     // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten
     ref.watch(chatKryptoSteuerungProvider);
     ref.watch(mitgliederAktualisierungProvider);

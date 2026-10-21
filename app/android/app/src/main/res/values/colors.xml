@@ -1,4 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="lx_bg">#090A0F</color>
+    <!-- Widget "Heute": Design-Tokens aus app/lib/constants.dart (kSurface, kBorder, kText, kTextMuted, kAccent, kDanger) -->
+    <color name="lx_surface">#13161F</color>
+    <color name="lx_border">#242936</color>
+    <color name="lx_text">#E6E8EE</color>
+    <color name="lx_text_muted">#8B93A7</color>
+    <color name="lx_accent">#00F0FF</color>
+    <color name="lx_danger">#FF5F57</color>
 </resources>
