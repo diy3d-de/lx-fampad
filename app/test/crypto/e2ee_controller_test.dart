@@ -745,7 +745,7 @@ Future<void> main() async {
           final speicher = _WackligerSpeicher();
           await speicher.schreiben(personenschluesselName(_anna), Uint8List.fromList([1]));
           await speicher.schreiben(personenschluesselName(_ben), Uint8List.fromList([2]));
-          await speicher.schreiben(loeschauftragName(_anna), Uint8List.fromList([1]));
+          await speicher.schreiben(loeschauftragName(_anna), utf8Bytes('${DateTime.now().millisecondsSinceEpoch}'));
           speicher.loeschFehler = true;
           await loeschauftraegeAbarbeiten(speicher); // wirft nie
           expect(await speicher.namenMitPraefix('e2ee.loeschauftrag.'), [loeschauftragName(_anna)]);

@@ -106,20 +106,57 @@ Future<void> schluesselVomGeraetLoeschen(SchluesselSpeicher speicher, String use
   if (fehler != null) Error.throwWithStackTrace(fehler, stapel!);
 }
 
-/// Löschauftrag: Vor "Gerät abgeben" wird dieser Marker abgelegt (nur die Person, nie ein Geheimnis). Scheitert das Löschen, bleibt er liegen und wird beim
-/// nächsten Start der App abgearbeitet ([loeschauftraegeAbarbeiten]); nach erfolgreichem Löschen oder wenn das Abmelden scheitert (dann ist nichts gelöscht), wird er entfernt.
+/// Löschauftrag: Vor "Gerät abgeben" wird dieser Marker abgelegt (Inhalt nur der Zeitpunkt in Millisekunden, nie ein Geheimnis). Scheitert das Löschen, bleibt er
+/// liegen und wird beim nächsten Start der App abgearbeitet ([loeschauftraegeAbarbeiten]); nach erfolgreichem Löschen oder wenn das Abmelden scheitert (dann ist
+/// nichts gelöscht), wird er entfernt. Er löscht NIE still: Meldet sich dieselbe Person wieder an, wird er verworfen ([loeschauftragVerwerfen]); er löscht nur,
+/// wenn keine Sitzung dieser Person aktiv ist, und verfällt nach [kLoeschauftragFrist].
 String loeschauftragName(String userId) => 'e2ee.loeschauftrag.$userId';
 
 const String _loeschauftragPraefix = 'e2ee.loeschauftrag.';
 
-/// Arbeitet liegengebliebene Löschaufträge ab (beim Start der App, vor der Anmeldung): löscht die Schlüssel der genannten Person und entfernt dann den Marker.
-/// Fehler werden verschluckt (der Marker bleibt, der nächste Start versucht es erneut).
-Future<void> loeschauftraegeAbarbeiten(SchluesselSpeicher speicher) async {
+/// Wie lange ein Löschauftrag gilt; danach wird er verworfen statt ausgeführt.
+const Duration kLoeschauftragFrist = Duration(hours: 24);
+
+Uint8List _loeschauftragInhalt(DateTime jetzt) => utf8Bytes('${jetzt.millisecondsSinceEpoch}');
+
+/// Verwirft den Löschauftrag dieser Person (z. B. nach einer erneuten Anmeldung). Fehler werden verschluckt.
+Future<void> loeschauftragVerwerfen(SchluesselSpeicher speicher, String userId) async {
   try {
-    for (final name in await speicher.namenMitPraefix(_loeschauftragPraefix)) {
+    await speicher.loeschen(loeschauftragName(userId));
+  } on Object {
+    // bleibt; läuft spätestens nach der Frist ab
+  }
+}
+
+/// Arbeitet liegengebliebene Löschaufträge ab (beim Start der App, vor der Anmeldung): löscht die Schlüssel der genannten Person und entfernt dann den Marker.
+/// Verworfen statt ausgeführt wird er, wenn er abgelaufen oder unlesbar ist oder wenn [aktiveUserId] (die Person mit gespeicherter Sitzung auf diesem Gerät)
+/// dieselbe Person nennt. Fehler beim Löschen werden verschluckt (der Marker bleibt, der nächste Start versucht es erneut, bis die Frist abläuft).
+Future<void> loeschauftraegeAbarbeiten(
+  SchluesselSpeicher speicher, {
+  Future<String?> Function()? aktiveUserId,
+  DateTime Function()? jetzt,
+}) async {
+  try {
+    final namen = await speicher.namenMitPraefix(_loeschauftragPraefix);
+    if (namen.isEmpty) return;
+    String? aktiv;
+    try {
+      aktiv = await aktiveUserId?.call();
+    } on Object {
+      aktiv = null;
+    }
+    final heute = (jetzt ?? DateTime.now)();
+    for (final name in namen) {
       final uid = name.substring(_loeschauftragPraefix.length);
       if (uid.isEmpty) continue;
       try {
+        final roh = await speicher.lesen(name);
+        final ms = roh == null ? null : int.tryParse(String.fromCharCodes(roh));
+        final abgelaufen = ms == null || heute.difference(DateTime.fromMillisecondsSinceEpoch(ms)) > kLoeschauftragFrist || ms > heute.millisecondsSinceEpoch + 60000;
+        if (abgelaufen || aktiv == uid) {
+          await speicher.loeschen(name); // verwerfen, nicht ausführen
+          continue;
+        }
         await schluesselVomGeraetLoeschen(speicher, uid);
         await speicher.loeschen(name);
       } on Object {
@@ -983,7 +1020,7 @@ class E2eeController extends Notifier<E2eeState> {
     // Löschauftrag ablegen, bevor etwas passiert: gelingt das nicht, ist der Schlüsselspeicher nicht verlässlich, und es wird nichts begonnen
     final marker = loeschauftragName(uid);
     try {
-      await speicher.schreiben(marker, Uint8List.fromList([1]));
+      await speicher.schreiben(marker, _loeschauftragInhalt(DateTime.now()));
     } on Object {
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüsselspeicher dieses Geräts ließ sich nicht beschreiben. Es wurde nichts gelöscht.');
     }
@@ -998,6 +1035,13 @@ class E2eeController extends Notifier<E2eeState> {
         // bleibt; würde beim nächsten Start nur die Schlüssel entfernen, die zu diesem Zeitpunkt noch gesichert waren
       }
       rethrow;
+    }
+    // Die Sitzung ist beendet: Der Auftrag wird mit frischem Zeitpunkt noch einmal abgelegt (eine während des Abmeldens eingetroffene Antwort könnte ihn als
+    // "bestätigte Sitzung" verworfen haben). Gelingt das nicht, wird trotzdem sofort gelöscht.
+    try {
+      await speicher.schreiben(marker, _loeschauftragInhalt(DateTime.now()));
+    } on Object {
+      // nur der Wiederholungsweg fehlt
     }
     var geloescht = true;
     try {

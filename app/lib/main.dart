@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'app.dart';
 import 'constants.dart';
+import 'data/api/token_store.dart';
 import 'data/auth/auth_state.dart';
 import 'data/chat/chat_krypto_state.dart';
 import 'data/calendar/zeitzonen.dart';
@@ -27,7 +29,11 @@ Future<void> main(List<String> args) async {
   }
   pruefeBasisAdressen();
   // ein liegengebliebener Löschauftrag von "Gerät abgeben" (Löschen scheiterte) wird vor allem anderen abgearbeitet
-  await loeschauftraegeAbarbeiten(schluesselSpeicherErzeugen());
+  // (nie still: nur ohne gespeicherte Sitzung dieser Person, nur innerhalb von 24 h; eine erneute Anmeldung verwirft ihn)
+  await loeschauftraegeAbarbeiten(
+    schluesselSpeicherErzeugen(),
+    aktiveUserId: () async => kIsWeb ? null : (await SecureTokenStore().readProfile())?['id'] as String?,
+  );
   await initializeDateFormatting('de_DE');
   // Zeitzonen-Daten für Terminserien (Asset der App; schlägt das Laden fehl, rechnet die Anzeige mit UTC statt abzustürzen)
   try {
@@ -49,6 +55,8 @@ Future<void> main(List<String> args) async {
         ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
         // Abmelden meldet auch den Push-Endpunkt ab (Server und ntfy-App)
         pushAbmeldenProvider.overrideWith((ref) => ({required bool serverLoeschen}) => ref.read(pushProvider.notifier).beimAbmelden(serverLoeschen: serverLoeschen)),
+        // eine bestätigte Sitzung verwirft einen liegengebliebenen Löschauftrag dieser Person (kein stilles Löschen nach erneuter Anmeldung)
+        sitzungBestaetigtProvider.overrideWith((ref) => (userId) => loeschauftragVerwerfen(ref.read(schluesselSpeicherProvider), userId)),
         // merkt den Besitzer der lokalen Daten: nur bei einer ANDEREN Person wird beim Anmelden geleert (nicht nach Sitzungsverlust)
         localDataOwnerProvider.overrideWith((ref) => DatenbankBesitzer(ref.read(appDatabaseProvider))),
       ],
