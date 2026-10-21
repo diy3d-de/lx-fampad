@@ -282,6 +282,8 @@ void main() {
         await starteApp(tester, env, skala: skala);
         await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
         await warte(tester);
+        await tester.tap(find.byTooltip('Mehr: Importieren, Exportieren'));
+        await warte(tester);
         await tester.tap(find.text('Importieren'));
         await warte(tester);
         expect(find.text('ICS-Datei auswählen'), findsOneWidget);
@@ -298,7 +300,7 @@ void main() {
         expect((await env.db.select(env.db.termine).get()), isNotEmpty);
         await tester.tap(find.text('Fertig'));
         await warte(tester);
-        expect(find.text('Importieren'), findsOneWidget);
+        expect(find.byTooltip('Mehr: Importieren, Exportieren'), findsOneWidget, reason: 'zurück im Kalender');
       });
     }
 
@@ -308,6 +310,8 @@ void main() {
           icsDateiWaehlerProvider.overrideWithValue(() async => IcsDatei(name: 'x.ics', bytes: Stream.value(Uint8List.fromList([1, 2, 3]))))]);
       await starteApp(tester, env);
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
+      await warte(tester);
+      await tester.tap(find.byTooltip('Mehr: Importieren, Exportieren'));
       await warte(tester);
       await tester.tap(find.text('Importieren'));
       await warte(tester);

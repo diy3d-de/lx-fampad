@@ -393,6 +393,8 @@ void main() {
         await starteApp(tester, env, skala: skala);
         await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
         await warte(tester);
+        await tester.tap(find.byTooltip('Mehr: Importieren, Exportieren'));
+        await warte(tester);
         await tester.tap(find.text('Kalender exportieren'));
         await warte(tester);
         expect(find.text('2 Termine werden exportiert.'), findsOneWidget);

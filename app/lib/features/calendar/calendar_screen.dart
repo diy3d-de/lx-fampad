@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/api/models.dart';
@@ -8,21 +7,25 @@ import '../../data/auth/auth_state.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/monat_layout.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_hinweise.dart';
-import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import '../lists/list_dialogs.dart' show bestaetigen;
 import 'calendar_state.dart';
-import 'ics_export_screen.dart';
-import 'ics_import_screen.dart';
+import 'kalender_leiste.dart';
+import 'kalender_monat.dart';
+import 'kalender_tag.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
 
 /// Kalender: Agenda (Standard), Monat und Woche, Filter je Person, Termine anlegen, ändern und löschen (auch Serien). Alles wirkt sofort
 /// auf die lokale Datenbank; der Abgleich mit dem Server läuft im Hintergrund (data/sync/).
+/// Aufbau: (einklappende) Kopfzeile, Hinweise des Abgleichs (nur bei Bedarf), schlanke Leiste mit Umschalter, darunter die Ansicht; mobil dazu
+/// der runde Knopf "Neuer Termin", im Desktop-Layout steht er in der Leiste. Das Monatsraster füllt den Rest des Bildschirms.
 class CalendarScreen extends ConsumerWidget {
   const CalendarScreen({super.key});
 
@@ -35,46 +38,75 @@ class CalendarScreen extends ConsumerWidget {
     // Mitglieder (Farben, Filter) erst laden, wenn es Termine gibt
     final personen = daten.termine.isEmpty ? const <UserDto>[] : (ref.watch(mitgliederProvider).value ?? const <UserDto>[]);
     final mitglieder = Mitglieder(personen);
-    final notifier = ref.read(kalenderAuswahlProvider.notifier);
+    final breit = MediaQuery.sizeOf(context).width >= kDesktopBreakpoint;
+    final eingeklappt = ref.watch(kalenderKopfEingeklapptProvider);
+    final kopf = ref.read(kalenderKopfEingeklapptProvider.notifier);
+    final fab = !breit && rechte.darfAnlegen;
+    final aktuelleAuswahl = auswahl;
 
-    return RefreshIndicator(
-      color: kAccent,
-      backgroundColor: kSurface,
-      onRefresh: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
-      child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+    bool beiScroll(ScrollNotification n) {
+      if (n.depth != 0 || n.metrics.axis != Axis.vertical) return false;
+      if (n is ScrollUpdateNotification) {
+        final d = n.scrollDelta ?? 0;
+        if (n.metrics.pixels <= 0) {
+          kopf.setzen(false);
+        } else if (d > 0 && n.metrics.pixels > 24 && n.metrics.maxScrollExtent > 80) {
+          kopf.setzen(true);
+        } else if (d < 0) {
+          kopf.setzen(false);
+        }
+      } else if (n is OverscrollNotification && n.overscroll < 0) {
+        kopf.setzen(false);
+      }
+      return false;
+    }
+
+    // Listen (Agenda, Woche) bleiben auch im breiten Desktop-Bereich schmal und mittig; nur das Monatsraster nutzt die ganze Breite
+    Widget schmal(Widget liste) => Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: kMaxContentWidth), child: liste));
+    final ansicht = switch (auswahl.ansicht) {
+      KalenderAnsicht.agenda => schmal(_Agenda(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, platzFuerKnopf: fab)),
+      KalenderAnsicht.monat => _Monat(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, breit: breit),
+      KalenderAnsicht.woche => schmal(_Woche(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, platzFuerKnopf: fab)),
+    };
+
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      floatingActionButton: fab
+          ? FloatingActionButton(
+              heroTag: null,
+              tooltip: 'Neuer Termin',
+              backgroundColor: kAccent,
+              foregroundColor: kOnAccent,
+              onPressed: () => neuerTerminOeffnen(context, aktuelleAuswahl),
+              child: const Icon(Icons.add),
+            )
+          : null,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const TabKopfzeile(title: 'Kalender'),
-          const SizedBox(height: 12),
-          const SyncHinweise(),
-          AnsichtUmschalter(aktiv: auswahl.ansicht, onWahl: notifier.ansicht),
-          const SizedBox(height: 12),
-          PersonenFilter(personen: personen, gewaehlt: auswahl.personen, onPerson: notifier.person, onAlle: notifier.alle),
-          if (personen.length >= 2) const SizedBox(height: 12),
-          const _FeiertageSchalter(),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              if (rechte.darfAnlegen) ...[
-                FilledButton.icon(
-                  onPressed: () => terminEditorOeffnen(context, tag: auswahl.ansicht == KalenderAnsicht.agenda ? null : auswahl.tag),
-                  icon: const Icon(Icons.add),
-                  label: const Text('Neuer Termin'),
-                ),
-                OutlinedButton.icon(onPressed: () => icsImportOeffnen(context), icon: const Icon(Icons.upload_file), label: const Text('Importieren')),
-              ],
-              OutlinedButton.icon(onPressed: () => icsExportOeffnen(context), icon: const Icon(Icons.download), label: const Text('Kalender exportieren')),
-            ],
+          AnimatedSize(
+            duration: const Duration(milliseconds: 200),
+            alignment: Alignment.topCenter,
+            child: eingeklappt
+                ? const SizedBox(width: double.infinity)
+                : const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 8), child: TabKopfzeile(title: 'Kalender')),
           ),
-          const SizedBox(height: 16),
-          switch (auswahl.ansicht) {
-            KalenderAnsicht.agenda => _Agenda(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte),
-            KalenderAnsicht.monat => _Monat(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte),
-            KalenderAnsicht.woche => _Woche(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte),
-          },
+          const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: SyncHinweise()),
+          Padding(
+            padding: breit ? const EdgeInsets.fromLTRB(20, 4, 20, 12) : EdgeInsets.zero,
+            child: KalenderLeiste(breit: breit, personen: personen, darfAnlegen: rechte.darfAnlegen, onNeu: () => neuerTerminOeffnen(context, aktuelleAuswahl)),
+          ),
+          Expanded(
+            child: NotificationListener<ScrollNotification>(
+              onNotification: beiScroll,
+              child: RefreshIndicator(
+                color: kAccent,
+                backgroundColor: kSurface,
+                onRefresh: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
+                child: ansicht,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -118,11 +150,6 @@ Future<void> vorkommenOeffnen(BuildContext context, WidgetRef ref, Vorkommen v, 
   }
 }
 
-List<Vorkommen> _gefiltert(KalenderAuswahl a, KalenderDaten daten, DateTime von, DateTime bis) => [
-  for (final v in vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: von, bisWand: bis))
-    if (passtZumFilter(v, a.personen, daten)) v,
-];
-
 Widget _tagesListe(
   BuildContext context,
   WidgetRef ref,
@@ -149,6 +176,9 @@ Widget _tagesListe(
   ],
 );
 
+/// Abstand unter den Listen: Platz für den runden Knopf "Neuer Termin" (mobil).
+EdgeInsets _listenRand(bool platzFuerKnopf) => EdgeInsets.fromLTRB(20, 8, 20, platzFuerKnopf ? 96 : 24);
+
 // ------------------------------------------------------------------------------------------------ Agenda
 
 class _Agenda extends ConsumerWidget {
@@ -156,34 +186,31 @@ class _Agenda extends ConsumerWidget {
   final KalenderDaten daten;
   final Mitglieder mitglieder;
   final TerminRechte rechte;
-  const _Agenda({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte});
+  final bool platzFuerKnopf;
+  const _Agenda({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte, required this.platzFuerKnopf});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final heute = heuteTag();
     final bis = heute.add(Duration(days: auswahl.agendaTage));
-    final tage = nachTagen(_gefiltert(auswahl, daten, heute, bis), heute, bis.subtract(const Duration(days: 1)));
+    final tage = nachTagen(gefilterteVorkommen(auswahl, daten, heute, bis, geburtstage: ref.watch(geburtstageAnzeigenProvider)), heute, bis.subtract(const Duration(days: 1)));
     final hinweise = ref.watch(tagesHinweiseProvider).fuerAgenda(heute, bis.subtract(const Duration(days: 1)));
     final schluessel = {...tage.keys, ...hinweise.keys}.toList()..sort();
-    if (schluessel.isEmpty) {
-      return Column(
-        children: [
-          const EmptyState(icon: Icons.event_available_outlined, title: 'Keine Termine', hint: 'In den nächsten Wochen steht nichts an.'),
-          _MehrKnopf(auswahl: auswahl),
-        ],
-      );
-    }
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: _listenRand(platzFuerKnopf),
       children: [
-        for (final tag in schluessel) ...[
-          Padding(
-            padding: const EdgeInsets.only(top: 4, bottom: 8),
-            child: MonoLabel(tag == heute ? '${tagesLabel(tag)} · heute' : tagesLabel(tag), color: tag == heute ? kAccent : kTextMuted),
-          ),
-          TagesHinweisZeile(hinweise: hinweise[tag] ?? const [], mitEnde: true),
-          _tagesListe(context, ref, tag, tage[tag] ?? const <Vorkommen>[], daten, mitglieder, rechte),
-        ],
+        if (schluessel.isEmpty)
+          const EmptyState(icon: Icons.event_available_outlined, title: 'Keine Termine', hint: 'In den nächsten Wochen steht nichts an.')
+        else
+          for (final tag in schluessel) ...[
+            Padding(
+              padding: const EdgeInsets.only(top: 4, bottom: 8),
+              child: MonoLabel(tag == heute ? '${tagesLabel(tag)} · heute' : tagesLabel(tag), color: tag == heute ? kAccent : kTextMuted),
+            ),
+            TagesHinweisZeile(hinweise: hinweise[tag] ?? const [], mitEnde: true),
+            _tagesListe(context, ref, tag, tage[tag] ?? const <Vorkommen>[], daten, mitglieder, rechte),
+          ],
         _MehrKnopf(auswahl: auswahl),
       ],
     );
@@ -206,140 +233,119 @@ class _MehrKnopf extends ConsumerWidget {
 
 // ------------------------------------------------------------------------------------------------ Monat
 
+/// Einträge des Rasters: Termine (Personenfarbe, Geburtstage in Geburtstagsfarbe), dazu Feiertage und Ferien als Balken.
+List<BalkenQuelle> _quellen(List<Vorkommen> liste, TagesHinweise hinweise, DateTime von, DateTime bisInklusive, Mitglieder mitglieder, {required bool mitZeit}) {
+  final out = <BalkenQuelle>[];
+  for (final v in liste) {
+    final titel = vorkommenTitel(v);
+    final einTag = v.ersterTag == v.letzterTag;
+    out.add(
+      BalkenQuelle(
+        id: '${v.termin.id}|${v.schluessel}',
+        text: mitZeit && einTag && !v.ganztaegig ? '$titel ${uhrzeitText(v.startWand)}' : titel,
+        farbe: terminFarbe(v, mitglieder),
+        art: BalkenArt.termin,
+        von: v.ersterTag,
+        bis: v.letzterTag,
+        vorkommen: v,
+        sortierung: v.ganztaegig ? '0$titel' : '1${uhrzeitText(v.startWand)}$titel',
+      ),
+    );
+  }
+  final gesehen = <TagesHinweis>{};
+  for (var t = von; !t.isAfter(bisInklusive); t = DateTime.utc(t.year, t.month, t.day + 1)) {
+    for (final h in hinweise.fuerTag(t)) {
+      if (!gesehen.add(h)) continue;
+      out.add(
+        BalkenQuelle(
+          id: '${h.art.name}|${h.name}|${h.von.toIso8601String()}',
+          text: h.name,
+          farbe: h.art == TagesHinweisArt.feiertag ? kFeiertag : kFerien,
+          art: h.art == TagesHinweisArt.feiertag ? BalkenArt.feiertag : BalkenArt.ferien,
+          von: h.von,
+          bis: h.bis,
+        ),
+      );
+    }
+  }
+  return out;
+}
+
 class _Monat extends ConsumerWidget {
   final KalenderAuswahl auswahl;
   final KalenderDaten daten;
   final Mitglieder mitglieder;
   final TerminRechte rechte;
-  const _Monat({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte});
+  final bool breit;
+  const _Monat({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte, required this.breit});
+
+  /// Ab dieser Breite steht rechts das Tagespanel, sonst öffnet ein Tipp auf einen Tag das Tagesblatt.
+  static const _panelAb = 820.0;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(kalenderAuswahlProvider.notifier);
     final heute = heuteTag();
     final monat = DateTime.utc(auswahl.tag.year, auswahl.tag.month);
-    final naechster = DateTime.utc(monat.year, monat.month + 1);
-    final tageImMonat = naechster.difference(monat).inDays;
-    final versatz = (monat.weekday - 1) % 7; // Montag = 0
-    final zellen = ((versatz + tageImMonat) / 7).ceil() * 7;
-    final tage = nachTagen(_gefiltert(auswahl, daten, monat, naechster), monat, naechster.subtract(const Duration(days: 1)));
-    final monatsname = DateFormat('MMMM yyyy', 'de_DE').format(monat);
-    void verschiebe(int m) {
-      final ziel = DateTime.utc(monat.year, monat.month + m);
-      notifier.tag(ziel);
+    final wochen = wochenDesMonats(monat);
+    final von = wochen.first;
+    final bisInklusive = DateTime.utc(wochen.last.year, wochen.last.month, wochen.last.day + 6);
+    final liste = gefilterteVorkommen(auswahl, daten, von, bisInklusive.add(const Duration(days: 1)), geburtstage: ref.watch(geburtstageAnzeigenProvider));
+    final quellen = _quellen(liste, ref.watch(tagesHinweiseProvider), von, bisInklusive, mitglieder, mitZeit: breit);
+
+    // Aktionen lesen die Daten beim Aufruf frisch (das Tagesblatt kann länger offen sein als dieser Aufbau)
+    void terminOeffnen(Vorkommen v) {
+      final d = ref.read(kalenderDatenProvider);
+      final m = Mitglieder(ref.read(mitgliederProvider).value ?? const <UserDto>[]);
+      vorkommenOeffnen(context, ref, v, d, m, rechte);
     }
 
-    final gewaehlt = tage[auswahl.tag] ?? const <Vorkommen>[];
-    final hinweise = ref.watch(tagesHinweiseProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            IconButton(tooltip: 'Vorheriger Monat', onPressed: () => verschiebe(-1), icon: const Icon(Icons.chevron_left)),
-            Expanded(
-              child: Semantics(
-                header: true,
-                child: Text(monatsname, textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontMono, fontSize: 13, color: kTextMuted)),
+    return LayoutBuilder(
+      builder: (context, c) {
+        final panel = breit && c.maxWidth >= _panelAb;
+        final raster = MonatsRaster(
+          monat: monat,
+          heute: heute,
+          gewaehlt: auswahl.tag,
+          gewaehltMarkieren: panel,
+          breit: breit,
+          quellen: quellen,
+          onTag: (tag) {
+            notifier.tag(tag);
+            ref.read(kalenderKopfEingeklapptProvider.notifier).setzen(true);
+            if (!panel) tagesBlattOeffnen(context, tag, onTermin: terminOeffnen, onNeu: () => terminEditorOeffnen(context, tag: tag));
+          },
+        );
+        if (!panel) return Padding(padding: EdgeInsets.symmetric(horizontal: breit ? 20 : 8), child: raster);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(color: kBgElevated, borderRadius: BorderRadius.circular(14), border: Border.all(color: kBorder)),
+                  clipBehavior: Clip.antiAlias,
+                  child: raster,
+                ),
               ),
-            ),
-            IconButton(tooltip: 'Nächster Monat', onPressed: () => verschiebe(1), icon: const Icon(Icons.chevron_right)),
-          ],
-        ),
-        Row(
-          children: [
-            for (final t in const ['mo', 'di', 'mi', 'do', 'fr', 'sa', 'so'])
-              Expanded(child: Center(child: Text(t, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)))),
-          ],
-        ),
-        const SizedBox(height: 6),
-        GridView(
-          // feste Höhe: Zellen 48 px hoch (Touch-Ziel), bei 360 px Breite 46 px breit
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 7, mainAxisSpacing: 4, crossAxisSpacing: 0, mainAxisExtent: 48),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: [
-            for (var i = 0; i < zellen; i++)
-              _zelle(i - versatz + 1, tageImMonat, monat, heute, auswahl.tag, tage, mitglieder, notifier.tag, hinweise),
-          ],
-        ),
-        const SizedBox(height: 16),
-        MonoLabel(tagesLabel(auswahl.tag)),
-        const SizedBox(height: 12),
-        TagesHinweisZeile(hinweise: hinweise.fuerTag(auswahl.tag)),
-        if (gewaehlt.isEmpty)
-          const LxCard(child: Text('Keine Termine – frei!', style: TextStyle(color: kTextMuted)))
-        else
-          _tagesListe(context, ref, auswahl.tag, gewaehlt, daten, mitglieder, rechte),
-      ],
+              const SizedBox(width: 20),
+              SizedBox(
+                width: 320,
+                child: Container(
+                  decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(14), border: Border.all(color: kAccent.withValues(alpha: 0.4))),
+                  padding: const EdgeInsets.all(20),
+                  child: SingleChildScrollView(
+                    child: TagesInhalt(tag: auswahl.tag, knopfUnten: true, onTermin: terminOeffnen, onNeu: () => terminEditorOeffnen(context, tag: auswahl.tag)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
-
-  Widget _zelle(int n, int tageImMonat, DateTime monat, DateTime heute, DateTime gewaehlt, Map<DateTime, List<Vorkommen>> tage, Mitglieder mitglieder, void Function(DateTime) onTag, TagesHinweise hinweise) {
-    if (n < 1 || n > tageImMonat) return const SizedBox.shrink();
-    final tag = DateTime.utc(monat.year, monat.month, n);
-    final liste = tage[tag] ?? const <Vorkommen>[];
-    final farben = <Color>{for (final v in liste) terminFarbe(v, mitglieder)}.take(3).toList();
-    final hinweisListe = hinweise.fuerTag(tag);
-    return _Tag(
-      nummer: n,
-      heute: tag == heute,
-      gewaehlt: tag == gewaehlt,
-      anzahl: liste.length,
-      farben: farben,
-      feiertag: hinweisListe.any((h) => h.art == TagesHinweisArt.feiertag),
-      ferien: hinweisListe.any((h) => h.art == TagesHinweisArt.ferien),
-      onTap: () => onTag(tag),
-    );
-  }
-}
-
-class _Tag extends StatelessWidget {
-  final int nummer;
-  final bool heute;
-  final bool gewaehlt;
-  final int anzahl;
-  final List<Color> farben;
-
-  /// Feiertag bzw. Schulferien an diesem Tag (dezente Markierung, siehe feiertage.dart).
-  final bool feiertag;
-  final bool ferien;
-  final VoidCallback onTap;
-  const _Tag({required this.nummer, required this.heute, required this.gewaehlt, required this.anzahl, required this.farben, this.feiertag = false, this.ferien = false, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    selected: gewaehlt,
-    label: '$nummer${feiertag ? ', Feiertag' : ''}${ferien ? ', Schulferien' : ''}${anzahl == 0 ? '' : ', ${anzahl == 1 ? '1 Termin' : '$anzahl Termine'}'}',
-    excludeSemantics: true,
-    child: InkWell(
-      borderRadius: BorderRadius.circular(10),
-      onTap: onTap,
-      child: Container(
-        alignment: Alignment.center,
-        margin: const EdgeInsets.symmetric(horizontal: 2),
-        decoration: BoxDecoration(
-          color: gewaehlt ? kAccentSoft : (ferien ? kFerien.withValues(alpha: 0.08) : null),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: heute ? kAccent : (gewaehlt ? kAccent.withValues(alpha: 0.4) : Colors.transparent)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text('$nummer', style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: gewaehlt ? kAccent : (feiertag ? kFeiertag : kText))),
-            SizedBox(
-              height: 6,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [for (final f in farben) Container(width: 5, height: 5, margin: const EdgeInsets.symmetric(horizontal: 1), decoration: BoxDecoration(shape: BoxShape.circle, color: f))],
-              ),
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
 }
 
 // ------------------------------------------------------------------------------------------------ Woche
@@ -349,33 +355,20 @@ class _Woche extends ConsumerWidget {
   final KalenderDaten daten;
   final Mitglieder mitglieder;
   final TerminRechte rechte;
-  const _Woche({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte});
+  final bool platzFuerKnopf;
+  const _Woche({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte, required this.platzFuerKnopf});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final notifier = ref.read(kalenderAuswahlProvider.notifier);
     final heute = heuteTag();
     final montag = auswahl.tag.subtract(Duration(days: auswahl.tag.weekday - 1));
     final naechster = montag.add(const Duration(days: 7));
-    final tage = nachTagen(_gefiltert(auswahl, daten, montag, naechster), montag, naechster.subtract(const Duration(days: 1)));
+    final tage = nachTagen(gefilterteVorkommen(auswahl, daten, montag, naechster, geburtstage: ref.watch(geburtstageAnzeigenProvider)), montag, naechster.subtract(const Duration(days: 1)));
     final hinweise = ref.watch(tagesHinweiseProvider);
-    final kopf = '${DateFormat('d. MMM', 'de_DE').format(montag)} – ${DateFormat('d. MMM y', 'de_DE').format(naechster.subtract(const Duration(days: 1)))}';
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: _listenRand(platzFuerKnopf),
       children: [
-        Row(
-          children: [
-            IconButton(tooltip: 'Vorherige Woche', onPressed: () => notifier.tag(montag.subtract(const Duration(days: 7))), icon: const Icon(Icons.chevron_left)),
-            Expanded(
-              child: Semantics(
-                header: true,
-                child: Text(kopf, textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontMono, fontSize: 13, color: kTextMuted)),
-              ),
-            ),
-            IconButton(tooltip: 'Nächste Woche', onPressed: () => notifier.tag(naechster), icon: const Icon(Icons.chevron_right)),
-          ],
-        ),
-        TextButton(onPressed: () => notifier.tag(heute), child: const Text('Heute')),
         for (var i = 0; i < 7; i++) ...[
           Builder(
             builder: (context) {
@@ -396,26 +389,6 @@ class _Woche extends ConsumerWidget {
           ),
         ],
       ],
-    );
-  }
-}
-
-/// Schalter "Feiertage und Ferien" (lokal je Gerät, Standard an): zeigt Feiertage und Schulferien (Rheinland-Pfalz) als dezente Hinweise.
-class _FeiertageSchalter extends ConsumerWidget {
-  const _FeiertageSchalter();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final an = ref.watch(feiertageAnzeigenProvider);
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Semantics(
-        toggled: an,
-        label: 'Feiertage und Schulferien anzeigen',
-        excludeSemantics: true,
-        onTap: () => ref.read(feiertageAnzeigenProvider.notifier).setzen(!an),
-        child: AuswahlKnopf(text: 'Feiertage & Ferien', gewaehlt: an, onTap: () => ref.read(feiertageAnzeigenProvider.notifier).setzen(!an)),
-      ),
     );
   }
 }

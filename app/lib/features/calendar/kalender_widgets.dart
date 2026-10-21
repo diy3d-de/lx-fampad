@@ -98,20 +98,6 @@ class VorkommenKarte extends StatelessWidget {
   }
 }
 
-/// Umschalter Agenda | Monat | Woche.
-class AnsichtUmschalter extends StatelessWidget {
-  final KalenderAnsicht aktiv;
-  final void Function(KalenderAnsicht) onWahl;
-  const AnsichtUmschalter({super.key, required this.aktiv, required this.onWahl});
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 8,
-    runSpacing: 8,
-    children: [for (final a in KalenderAnsicht.values) AuswahlKnopf(text: a.label, gewaehlt: a == aktiv, onTap: () => onWahl(a))],
-  );
-}
-
 /// Filter je Person: "Alle" und eine Auswahl-Kapsel je Mitglied in seiner Farbe.
 class PersonenFilter extends StatelessWidget {
   final List<UserDto> personen;

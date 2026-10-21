@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:lx_fampad/app.dart';
 import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
+import 'package:lx_fampad/features/calendar/calendar_state.dart' show heuteTag;
 
 import 'support/fake_server.dart';
 import 'support/test_app.dart';
@@ -83,8 +85,12 @@ void main() {
       await tester.pump();
       await tester.tap(find.byTooltip('Nächster Monat'));
       await tester.pump();
-      await tester.tap(find.text('15').hitTestable());
-      await tester.pump();
+      final h = heuteTag();
+      await tester.tap(find.byKey(ValueKey('kalender-tag-${tagText(DateTime.utc(h.year, h.month + 1, 15))}')));
+      await tester.pumpAndSettle();
+      expect(kleineZiele(tester), isEmpty, reason: 'Kalender mit Tagesblatt');
+      await tester.tapAt(const Offset(10, 10)); // Tagesblatt schließen
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: 'Kalender bedienen');
       expect(kleineZiele(tester), isEmpty, reason: 'Kalender nach Bedienung');
 

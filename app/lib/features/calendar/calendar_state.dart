@@ -67,6 +67,19 @@ class KalenderAuswahlNotifier extends Notifier<KalenderAuswahl> {
 
 final kalenderAuswahlProvider = NotifierProvider<KalenderAuswahlNotifier, KalenderAuswahl>(KalenderAuswahlNotifier.new);
 
+/// Die gemeinsame Kopfzeile (`TabKopfzeile`) ist im Kalender eingeklappt, sobald im Raster gescrollt oder getippt wird, und kommt beim
+/// Zurückscrollen an den Anfang oder beim Herunterziehen des Rasters wieder (Ausnahme der Design-Regel "Kopfzeile aller Tabs identisch").
+class KalenderKopfNotifier extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setzen(bool eingeklappt) {
+    if (state != eingeklappt) state = eingeklappt;
+  }
+}
+
+final kalenderKopfEingeklapptProvider = NotifierProvider<KalenderKopfNotifier, bool>(KalenderKopfNotifier.new);
+
 /// Passt das Vorkommen zum Personenfilter (Ersteller oder Teilnehmer)?
 bool passtZumFilter(Vorkommen v, Set<String> personen, KalenderDaten daten) {
   if (personen.isEmpty) return true;
@@ -96,6 +109,15 @@ String zeitText(Vorkommen v, [DateTime? tag]) {
   return 'ganztägig';
 }
 
+/// Zeit in der Tagesliste (Tagesblatt, Tagespanel): Beginn als Uhrzeit, sonst wie [zeitText] ("ganztägig", "bis 08:00").
+String startZeitText(Vorkommen v, DateTime tag) {
+  if (v.ganztaegig) return 'ganztägig';
+  return v.ersterTag == tag ? _hhmm(v.startWand) : zeitText(v, tag);
+}
+
+/// Uhrzeit "HH:mm" einer Wanduhr-Zeit (für Balkenbeschriftungen).
+String uhrzeitText(DateTime wand) => _hhmm(wand);
+
 /// Datum und Zeit eines Vorkommens für Detailansichten ("Di, 20. Okt 2026, 10:00–11:00").
 String datumZeitText(Vorkommen v) {
   final tag = DateFormat('EEEE, d. MMMM y', 'de_DE');
@@ -124,3 +146,9 @@ String erinnerungText(int? min) => switch (min) {
 
 const kErinnerungen = <int?>[null, 0, 5, 15, 30, 60, 1440, 10080];
 
+
+/// Vorkommen im Fenster [von] bis [bis] (Wanduhr, bis exklusiv) nach Personenfilter; ohne Geburtstage, wenn deren Anzeige ausgeschaltet ist.
+List<Vorkommen> gefilterteVorkommen(KalenderAuswahl a, KalenderDaten daten, DateTime von, DateTime bis, {bool geburtstage = true}) => [
+  for (final v in vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: von, bisWand: bis))
+    if (passtZumFilter(v, a.personen, daten) && (geburtstage || !istGeburtstag(v.termin))) v,
+];
