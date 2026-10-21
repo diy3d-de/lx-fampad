@@ -294,18 +294,23 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   if (def.rate) {
     const c = syncColumns(def);
     const since = new Date(env.now.getTime() - 60_000);
-    const [n] = await env.tx
-      .select({ n: count() })
-      .from(def.table)
-      .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), since)));
-    if ((n?.n ?? 0) >= def.rate.perMinute) return rejected('limit_reached');
-    if (def.rate.perHour !== undefined) {
-      const [h] = await env.tx
+    const zaehle = async (von: Date): Promise<number> => {
+      if (def.rate?.viaLog) {
+        // Anlegen und Wiederbeleben stehen als created im Protokoll (mit Autor): ein Umschalten derselben Zeile zählt jedes Mal
+        const [x] = await env.tx
+          .select({ n: count() })
+          .from(changeLog)
+          .where(and(eq(changeLog.familyId, env.familyId), eq(changeLog.entity, def.name), eq(changeLog.authorId, env.actor.userId), eq(changeLog.created, true), gt(changeLog.createdAt, von)));
+        return x?.n ?? 0;
+      }
+      const [x] = await env.tx
         .select({ n: count() })
         .from(def.table)
-        .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate.field), env.actor.userId), gt(columnOf(def, 'createdAt'), new Date(env.now.getTime() - 3_600_000))));
-      if ((h?.n ?? 0) >= def.rate.perHour) return rejected('limit_reached');
-    }
+        .where(and(eq(c.familyId, env.familyId), eq(columnOf(def, def.rate!.field), env.actor.userId), gt(columnOf(def, 'createdAt'), von)));
+      return x?.n ?? 0;
+    };
+    if ((await zaehle(since)) >= def.rate.perMinute) return rejected('limit_reached');
+    if (def.rate.perHour !== undefined && (await zaehle(new Date(env.now.getTime() - 3_600_000))) >= def.rate.perHour) return rejected('limit_reached');
     // Byte-Kontingent je Person (Stunde und Tag) über die Länge des Inhalts
     const b = def.rate.bytes;
     if (b) {
@@ -326,7 +331,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const rev = env.revs.rev + 1; // erst nach erfolgreichem Einfügen vergeben (sonst entstünde eine Lücke)
   const fieldRevs: Record<string, number> = {};
   for (const [name, f] of Object.entries(def.fields)) if (f.access !== 'server') fieldRevs[name] = rev;
-  const row: Row = { ...values, ...(def.onCreate?.(env.actor) ?? {}), ...(def.derive?.(env.actor, values) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
+  const row: Row = { ...values, ...(def.onCreate?.(env.actor, env.now) ?? {}), ...(def.derive?.(env.actor, values) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
   const c = syncColumns(def);
   // Wiederbeleben: der gelöschte Datensatz mit fester ID wird zu einem neuen (Tombstone verschwindet, Kinder bleiben gelöscht)
   const inserted = revive

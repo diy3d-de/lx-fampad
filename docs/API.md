@@ -376,6 +376,26 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | `lesestand` | `konversationId`, `userId` | UUID (Pflicht) | create |
 | | `gelesenBis` | ISO-8601 mit Zeitzone (Pflicht) | rw |
 
+**Reaktionen, Stimmen und Pins (Chat-Erweiterungen, Migration 0013)** · Konzept: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6c. Drei weitere Sync-Entitäten, **Kinder der Nachricht** (`parent`: `nachrichtId`): sie erben die Teilnehmer-Grenze (Privatchats nur für Teilnehmer, sonst `not_found`), werden mit der Nachricht gelöscht (Tombstones, Kinder mit niedrigerer Revision), weisen nie per Push ab (`noWake`; WebSocket-Hinweis an die Teilnehmer) und gelten nur in verschlüsselten Konversationen (`e1`); `konversationId` muss die der Nachricht sein (sonst `invalid`), die Nachricht muss leben (`parent_deleted`).
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `reaktion` | `konversationId`, `nachrichtId` | UUID (Pflicht) | create |
+| | `userId` | UUID der eigenen Person (Pflicht, aktives Mitglied) | create |
+| | `inhalt` | Hülle `e1:`+Base64url (153 bis 512 Zeichen), Klartext `r1:<Emoji>`; undurchsichtig | rw (nur die eigene Zeile) |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `stimme` | wie `reaktion` | Klartext `s1:<Nummern>` | wie `reaktion` |
+| | `geaendertAt` | ISO-8601 (UTC); der Server setzt sie bei jedem Anlegen, Wiederbeleben und Ändern von `inhalt` | server |
+| `pin` | `konversationId`, `nachrichtId` | UUID (Pflicht) | create |
+| | `gepinntVon` | UUID oder `null` (anheftende Person; nach Entfernen der Person `null`) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+
+- **Feste IDs** (SHA-256 mit Präfix `lx-fampad:`, Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`, Known-Answer-Tests auf beiden Seiten): `reaktion:<Nachricht>:<Person>`, `stimme:<Nachricht>:<Person>`, `pin:<Nachricht>` (IDs und Personen kleingeschrieben); jede andere ID ist `invalid`. Löschen ist ein Tombstone; ein erneutes Anlegen mit `baseRev` 0 belebt dieselbe Zeile wieder.
+- **Reaktion und Stimme:** je Person und Nachricht genau eine; **nur die eigene Zeile** anlegen, ändern (nur `inhalt`) und löschen (`userId` ≠ Akteur: `forbidden`, fremde Zeile ändern oder löschen: `forbidden`); lesen alle mit Sicht auf die Nachricht. `inhalt` ist für den Server undurchsichtig (nur Form `e1:[A-Za-z0-9_-]+` und Größe 153 bis 512 Zeichen; Klartext wie `👍` ist `invalid`). Verlässt die Person die Familie, verschwinden ihre Zeilen (Tombstone). Der Server kennt weder das Emoji noch die Wahl noch das Ende einer Umfrage (das steckt in der verschlüsselten Nachricht).
+- **Pin:** anlegen darf jede Person mit Sicht; im **Familienchat nur Eltern und Admins** (Kinder: `invalid`); lösen: Eltern und Admins jeden, **Kinder nur ihren eigenen** (`forbidden`); nicht änderbar; höchstens **5** lebende je Konversation (`invalid`). Der Server sieht nur die ID der angehefteten Nachricht.
+- **Grenzen:** je Nachricht höchstens 50 lebende Reaktionen und 50 Stimmen (`limit_reached`); je Person 60 neue Reaktionen je Minute und 600 je Stunde, 30 neue Stimmen je Minute und 300 je Stunde, 60 (Reaktion) bzw. 30 (Stimme) Änderungen je Minute, 10 neue Pins je Minute. Bei Reaktion und Stimme zählen Anlegen **und Wiederbeleben** (Änderungsprotokoll). Pins: Die Grenze von 5 wird unter einer Sperre der Konversationszeile geprüft (parallelitätssicher).
+- **Ältere Clients** kennen die Entitäten nicht und überspringen sie im Änderungsstrom (kein Fehler, `protocolVersion` bleibt 1).
+
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
 

@@ -169,6 +169,9 @@ class ChatWelt {
 
   int rev = 0;
   final Map<String, ServerZeile> _z = {};
+
+  /// Gelöschte Zeilen (Tombstones), die die Geräte im Änderungsstrom erfahren.
+  final List<({int rev, String entity, String id})> _tombs = [];
   final Map<String, Map<String, dynamic>> _ergebnis = {};
   final List<Map<String, dynamic>> gesehen = []; // alle Felder aller angenommenen Ops (zum Prüfen: nie Klartext)
   List<String> aktiveMitglieder = [];
@@ -227,6 +230,8 @@ class ChatWelt {
         for (final z in _z.values)
           if (z.rev > g.sinceRev && _sichtbar(z, g.person.id))
             SyncChange(rev: z.rev, entity: z.entity, id: z.id, tombstone: false, hidden: false, fields: {...z.fields}),
+        for (final t in _tombs)
+          if (t.rev > g.sinceRev) SyncChange(rev: t.rev, entity: t.entity, id: t.id, tombstone: true, hidden: false, fields: const {}),
       ]..sort((a, b) => a.rev.compareTo(b.rev));
       final res = SyncResult(
         resyncNoetig: false,
@@ -265,8 +270,14 @@ class ChatWelt {
   String? _anwenden(Geraet g, OutboxData o, Map<String, dynamic> f) {
     final key = '${o.entity}/${o.entityId}';
     if (o.op == 'delete') {
-      _z.remove(key);
-      rev++;
+      // Kaskade wie beim echten Server: Reaktionen, Stimmen und Pins hängen an der Nachricht
+      if (o.entity == 'nachricht') {
+        for (final z in [for (final z in _z.values) if (const {'reaktion', 'stimme', 'pin'}.contains(z.entity) && z.fields['nachrichtId'] == o.entityId) z]) {
+          _z.remove('${z.entity}/${z.id}');
+          _tombs.add((rev: ++rev, entity: z.entity, id: z.id));
+        }
+      }
+      if (_z.remove(key) != null) _tombs.add((rev: ++rev, entity: o.entity, id: o.entityId));
       return null;
     }
     final vorhanden = _z[key];

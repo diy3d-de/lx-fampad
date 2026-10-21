@@ -38,7 +38,11 @@ class HuellenKontext {
 
   /// Nachricht, auf die diese antwortet (leer: keine Antwort). Teil der AAD und damit der Signatur: der Server kann den Bezug einer Antwort nicht umhängen.
   final String? antwortAuf;
-  const HuellenKontext({required this.conversationId, required this.messageId, required this.senderId, required this.epoch, required this.senderKeyVersion, this.antwortAuf});
+
+  /// Art des Inhalts, wenn es nicht eine normale Nachricht ist (`r` Reaktion, `s` Stimme): geht als eigenes Feld in AAD und Signatur ein, damit eine Hülle nie als andere
+  /// Art gelesen werden kann (zusätzlich zur eigenen ID). Ohne Angabe (Nachrichten) bleibt die AAD unverändert.
+  final String? art;
+  const HuellenKontext({required this.conversationId, required this.messageId, required this.senderId, required this.epoch, required this.senderKeyVersion, this.antwortAuf, this.art});
 
   /// "conversation_id|message_id|sender_id|epoch|sender_key_version|reply_to|v" (reply_to leer ohne Antwort). Ein Trennzeichen in einer ID wäre mehrdeutig und wird abgelehnt.
   Uint8List aad(int version) {
@@ -50,7 +54,9 @@ class HuellenKontext {
     }
     final bezug = antwortAuf ?? '';
     if (bezug.contains('|')) throw const CryptoFehler(CryptoFehlerArt.format, 'Ungültiger Nachrichtenkontext.');
-    return utf8Bytes('$conversationId|$messageId|$senderId|$epoch|$senderKeyVersion|$bezug|$version');
+    final a = art;
+    if (a != null && (a.isEmpty || a.contains('|'))) throw const CryptoFehler(CryptoFehlerArt.format, 'Ungültiger Nachrichtenkontext.');
+    return utf8Bytes(a == null ? '$conversationId|$messageId|$senderId|$epoch|$senderKeyVersion|$bezug|$version' : '$conversationId|$messageId|$senderId|$epoch|$senderKeyVersion|$bezug|$a|$version');
   }
 }
 

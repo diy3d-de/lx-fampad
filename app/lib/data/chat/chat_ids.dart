@@ -31,3 +31,12 @@ String epocheId(String konversationId, int epoche) => uuidAusSchluessel('epoche:
 /// ID des Schlüssel-Wraps einer Epoche für eine Person.
 String wrapId(String konversationId, int epoche, String empfaengerId) =>
     uuidAusSchluessel('wrap:${konversationId.toLowerCase()}:$epoche:${empfaengerId.toLowerCase()}');
+
+/// ID der Reaktion einer Person auf eine Nachricht (je Person und Nachricht genau eine).
+String reaktionId(String nachrichtId, String userId) => uuidAusSchluessel('reaktion:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}');
+
+/// ID der Stimme einer Person zu einer Umfrage-Nachricht (je Person und Umfrage genau eine).
+String stimmeId(String nachrichtId, String userId) => uuidAusSchluessel('stimme:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}');
+
+/// ID der Anheftung einer Nachricht (je Nachricht genau eine).
+String pinId(String nachrichtId) => uuidAusSchluessel('pin:${nachrichtId.toLowerCase()}');

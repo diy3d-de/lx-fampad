@@ -937,6 +937,7 @@ export const nachrichten = pgTable(
     ...syncColumns(),
   },
   (t) => [
+    unique('nachrichten_family_id_uq').on(t.familyId, t.id),
     foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
     index('nachrichten_konversation_idx').on(t.familyId, t.konversationId, t.createdAt),
     index('nachrichten_family_rev_idx').on(t.familyId, t.rev),
@@ -973,6 +974,100 @@ export const lesestand = pgTable(
     index('lesestand_tombstone_idx')
       .on(t.familyId, t.rev)
       .where(sql`${t.deletedAt} is not null`),
+  ],
+);
+
+/**
+ * Reaktion einer Person auf eine Nachricht (Chat-Erweiterung, docs/PROJEKTBESCHREIBUNG.md 6c): feste ID je (Nachricht, Person). `inhalt` ist eine e1-Hülle (das Emoji
+ * ist für den Server undurchsichtig). Besitzer ist die Person; verschwindet die Person aus der Familie, verschwindet ihre Reaktion.
+ */
+export const reaktionen = pgTable(
+  'reaktionen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    nachrichtId: uuid('nachricht_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.nachrichtId], foreignColumns: [nachrichten.familyId, nachrichten.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('reaktionen_active_uq')
+      .on(t.nachrichtId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('reaktionen_konversation_idx').on(t.familyId, t.konversationId),
+    index('reaktionen_user_idx').on(t.familyId, t.userId, t.createdAt),
+    index('reaktionen_family_rev_idx').on(t.familyId, t.rev),
+    index('reaktionen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('reaktionen_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 512`),
+  ],
+);
+
+/** Stimme einer Person zu einer Umfrage-Nachricht: feste ID je (Nachricht, Person); `inhalt` ist eine e1-Hülle (gewählte Optionen, für den Server undurchsichtig). */
+export const stimmen = pgTable(
+  'stimmen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    nachrichtId: uuid('nachricht_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    /** Zeitpunkt der letzten Änderung der Stimme (setzt der Server; Grundlage für "Stimme nach Ende der Umfrage zählt nicht"). */
+    geaendertAt: timestamp('geaendert_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.nachrichtId], foreignColumns: [nachrichten.familyId, nachrichten.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('stimmen_active_uq')
+      .on(t.nachrichtId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('stimmen_konversation_idx').on(t.familyId, t.konversationId),
+    index('stimmen_user_idx').on(t.familyId, t.userId, t.createdAt),
+    index('stimmen_family_rev_idx').on(t.familyId, t.rev),
+    index('stimmen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('stimmen_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 512`),
+  ],
+);
+
+/** Angeheftete Nachricht: feste ID je Nachricht. Der Server sieht nur WELCHE Nachricht angeheftet ist, nie ihren Inhalt. `gepinntVon` wird beim Entfernen der Person NULL. */
+export const pins = pgTable(
+  'pins',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    nachrichtId: uuid('nachricht_id').notNull(),
+    gepinntVon: uuid('gepinnt_von').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.nachrichtId], foreignColumns: [nachrichten.familyId, nachrichten.id] }).onDelete('cascade'),
+    uniqueIndex('pins_active_uq')
+      .on(t.nachrichtId)
+      .where(sql`${t.deletedAt} is null`),
+    index('pins_konversation_idx').on(t.familyId, t.konversationId),
+    index('pins_family_rev_idx').on(t.familyId, t.rev),
+    index('pins_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('pins_von_idx')
+      .on(t.familyId, t.gepinntVon, t.createdAt)
+      .where(sql`${t.gepinntVon} is not null`),
   ],
 );
 
