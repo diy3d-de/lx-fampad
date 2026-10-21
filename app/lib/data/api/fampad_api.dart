@@ -250,9 +250,11 @@ class FampadApi {
     return id;
   }
 
-  Future<PwSicherungDto> pwSicherungAbrufen() async => PwSicherungDto.fromJson(await client.get('/me/key-backup-pw'));
+  /// Ruft die aktuelle (bestätigte) Passwort-Sicherung ab; mit [unbestaetigt] die eigene, noch nicht bestätigte (für den Round-Trip nach dem Ablegen).
+  Future<PwSicherungDto> pwSicherungAbrufen({bool unbestaetigt = false}) async =>
+      PwSicherungDto.fromJson(await client.get(unbestaetigt ? '/me/key-backup-pw?pending=1' : '/me/key-backup-pw'));
 
-  /// Meldet die Round-Trip-Probe als bestanden (erst danach gilt die Sicherung als verifiziert).
+  /// Meldet die Round-Trip-Probe als bestanden: erst jetzt wird die abgelegte Sicherung aktuell und ersetzt die bisherige (atomar auf dem Server).
   Future<void> pwSicherungBestaetigen(String id) async {
     await client.post('/me/key-backup-pw/verified', {'id': id});
   }

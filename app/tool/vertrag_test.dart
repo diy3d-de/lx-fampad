@@ -499,7 +499,14 @@ Future<void> pwSicherungVertrag({required Gegenstelle a, required TestPerson ann
   expect(r.keyVersion, 1);
   await expectLater(nur.abrufenUndOeffnen('Falsches-Passwort-Tisch-Wolke-Baum'), throwsA(isA<CryptoFehler>().having((e) => e.art, 'art', CryptoFehlerArt.entschluesselung)));
 
-  schritt('Passwort-Sicherung: erneutes Anlegen ersetzt (alte Zeile superseded, nie gelöscht); feste Parameter, Version geprüft');
+  schritt('Passwort-Sicherung: Abbruch nach dem Ablegen (nie bestätigt): die zuletzt verifizierte bleibt aktuell, das alte Passwort öffnet sie weiter');
+  final abgebrochen = await a.api.pwSicherungAblegen(blob: (await ablauf.vorbereiten(lokal: anna.pk, server: server, passwort: 'Nie-Bestaetigt-Wolke-Tisch-Vogel')).blob, keyVersion: 1, kdf: k1);
+  expect((await dbAbfrage("select state from key_backups_pw where user_id = '$userId' order by state")).map((z) => z['state']), ['active', 'pending']);
+  expect((await a.api.pwSicherungAbrufen()).id, id);
+  expect((await a.api.pwSicherungAbrufen(unbestaetigt: true)).id, abgebrochen);
+  expect(gleicheBytes((await nur.abrufenUndOeffnen(passwort)).schluessel.exportieren(), anna.pk.exportieren()), isTrue);
+
+  schritt('Passwort-Sicherung: erneutes Anlegen ersetzt erst nach der Bestätigung (alte Zeilen superseded, nie gelöscht); feste Parameter, Version geprüft');
   final id2 = await ablauf.ablegenUndPruefen(
     await ablauf.vorbereiten(lokal: anna.pk, server: server, passwort: 'Anderes-Passwort-Wolke-Tisch-Vogel'),
     passwort: 'Anderes-Passwort-Wolke-Tisch-Vogel',
@@ -507,7 +514,7 @@ Future<void> pwSicherungVertrag({required Gegenstelle a, required TestPerson ann
     serverVorher: server,
   );
   expect(id2, isNot(id));
-  expect((await dbAbfrage("select state from key_backups_pw where user_id = '$userId' order by created_at")).map((z) => z['state']), ['superseded', 'active']);
+  expect((await dbAbfrage("select state from key_backups_pw where user_id = '$userId' order by created_at")).map((z) => z['state']), ['superseded', 'superseded', 'active']);
   await expectLater(
     a.api.pwSicherungAblegen(blob: entwurf.blob, keyVersion: 1, kdf: const KdfDto(id: 'argon2id-v1', memKiB: 1024, ops: 1, salt: '')),
     throwsA(isA<ApiException>().having((e) => e.code, 'code', 'kdf_mismatch')),

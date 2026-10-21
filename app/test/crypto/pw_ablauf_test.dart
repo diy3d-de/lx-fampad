@@ -168,6 +168,7 @@ Future<void> main() async {
         expect(fake.anfragen('POST /me/key-backup-pw/verified'), isEmpty);
         expect(await g.speicher.lesen(_vermerk(_anna)), isNull);
         expect(g.s.pwSicherungVersion, isNull);
+        expect(srv.pwStand(_anna).blob, isNull, reason: 'nichts ist aktuell geworden');
         expect(g.s.hatSicherung, isTrue);
         // alter Weg
         final b = await geraet();
@@ -175,16 +176,42 @@ Future<void> main() async {
         expect(b.s.status, E2eeStatus.bereit);
       }, timeout: const Timeout(Duration(minutes: 2)));
 
-      test('Fehlgeschlagener zweiter Versuch entfernt den Vermerk einer früheren geprüften Sicherung', () async {
+      test('Fehlgeschlagener zweiter Versuch: die frühere geprüfte Sicherung bleibt gültig, das alte Passwort öffnet sie weiter, der Vermerk bleibt', () async {
         final (:g, einr: _) = await bestehend();
         await sichern(g);
         expect(g.s.pwSicherungVersion, 1);
+        final alt = srv.pwStand(_anna).blob;
         srv.pwAbrufVerfaelschen = (b) => 'x$b';
         final e = await g.ctrl.pwSicherungVorbereiten('Anderes-Passwort-Wolke-Tisch-Vogel');
         await expectLater(g.ctrl.pwSicherungAblegen(e, 'Anderes-Passwort-Wolke-Tisch-Vogel'), throwsA(anything));
-        expect(await g.speicher.lesen(_vermerk(_anna)), isNull);
-        expect(srv.pwStand(_anna).verifiziert, isFalse, reason: 'die neue Sicherung ist nicht bestätigt');
-      }, timeout: const Timeout(Duration(minutes: 2)));
+        srv.pwAbrufVerfaelschen = null;
+        expect(await g.speicher.lesen(_vermerk(_anna)), isNotNull);
+        expect(g.s.pwSicherungVersion, 1);
+        final st = srv.pwStand(_anna);
+        expect(st.verifiziert, isTrue, reason: 'die bisherige Sicherung bleibt die verifizierte');
+        expect(st.blob, alt);
+        expect(st.pendingBlob, isNotNull, reason: 'die neue wartet unbestätigt');
+        expect(fake.anfragen('POST /me/key-backup-pw/verified'), hasLength(1), reason: 'nur die erste wurde bestätigt');
+        // ein neues Gerät öffnet die Sicherung weiter mit dem ALTEN Passwort, das neue gilt noch nicht
+        final b = await geraet();
+        await expectLater(b.ctrl.mitPasswortVerbinden('Anderes-Passwort-Wolke-Tisch-Vogel'), _fehler(CryptoFehlerArt.entschluesselung));
+        await b.ctrl.mitPasswortVerbinden(_pw);
+        expect(b.s.status, E2eeStatus.bereit);
+      }, timeout: const Timeout(Duration(minutes: 3)));
+
+      test('Zweite Sicherung mit neuem Passwort gelingt: sie ersetzt die erste erst nach der Bestätigung', () async {
+        final (:g, einr: _) = await bestehend();
+        await sichern(g);
+        const neu = 'Anderes-Passwort-Wolke-Tisch-Vogel';
+        await sichern(g, neu);
+        final st = srv.pwStand(_anna);
+        expect(st.verifiziert, isTrue);
+        expect(st.pendingBlob, isNull);
+        final b = await geraet();
+        await expectLater(b.ctrl.mitPasswortVerbinden(_pw), _fehler(CryptoFehlerArt.entschluesselung));
+        await b.ctrl.mitPasswortVerbinden(neu);
+        expect(b.s.status, E2eeStatus.bereit);
+      }, timeout: const Timeout(Duration(minutes: 3)));
 
       test('Lokale Probe schlägt fehl (Schlüssel dieses Geräts passt nicht zum Konto): nichts wird gesendet', () async {
         final (:g, einr: _) = await bestehend();

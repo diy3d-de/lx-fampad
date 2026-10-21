@@ -33,6 +33,10 @@ class _Person {
   bool pwStale = false;
   bool pwVerifiziert = false;
   int pwAnzahl = 0;
+  // noch unbestätigte Sicherung (pending): die aktuelle bleibt bis zur Bestätigung unberührt
+  String? pwPBlob;
+  String? pwPId;
+  int pwPVersion = 0;
   _Person(this.id, this.name);
 }
 
@@ -88,6 +92,8 @@ class FakeE2eeServer {
         p.version++;
         p.backupBlob = null;
         if (p.pwBlob != null) p.pwStale = true;
+        p.pwPBlob = null;
+        p.pwPId = null;
         _transfers.removeWhere((_, t) => t.hash.startsWith('${p.id}:'));
         return jsonAntwort({'keys': _keys(p)});
       }))
@@ -116,16 +122,19 @@ class FakeE2eeServer {
         final kdf = r.json['kdf'] as Map<String, dynamic>;
         if (kdf['id'] != 'argon2id-v1' || kdf['memKiB'] != 65536 || kdf['ops'] != 3) return fehler(409, 'kdf_mismatch');
         if (r.json['keyVersion'] != p.version) return fehler(409, 'key_version_mismatch');
-        p.pwBlob = r.json['blob'] as String;
-        p.pwVersion = p.version;
-        p.pwStale = false;
-        p.pwVerifiziert = false;
-        p.pwId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
-        return jsonAntwort({'ok': true, 'id': p.pwId});
+        p.pwPBlob = r.json['blob'] as String;
+        p.pwPVersion = p.version;
+        p.pwPId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
+        return jsonAntwort({'ok': true, 'id': p.pwPId});
       }))
       ..on('GET /me/key-backup-pw', (r) => _mit(r, (p) {
         if (!pwSchalter) return fehler(404, 'not_found');
         if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (r.query['pending'] == '1') {
+          if (p.pwPBlob == null) return fehler(404, 'not_found');
+          final blob = pwAbrufVerfaelschen?.call(p.pwPBlob!) ?? p.pwPBlob!;
+          return jsonAntwort({'id': p.pwPId, 'blob': blob, 'keyVersion': p.pwPVersion, 'state': 'pending', 'kdf': _kdf(p.email ?? '')});
+        }
         if (p.pwBlob == null) return fehler(404, 'not_found');
         final blob = pwAbrufVerfaelschen?.call(p.pwBlob!) ?? p.pwBlob!;
         return jsonAntwort({'id': p.pwId, 'blob': blob, 'keyVersion': p.pwVersion, 'state': p.pwStale ? 'stale' : 'active', 'kdf': _kdf(p.email ?? '')});
@@ -133,9 +142,17 @@ class FakeE2eeServer {
       ..on('POST /me/key-backup-pw/verified', (r) => _mit(r, (p) {
         if (!pwSchalter) return fehler(404, 'not_found');
         if (stepUpNoetig) return fehler(403, 'step_up_required');
-        if (r.json['id'] != p.pwId) return fehler(404, 'not_found');
-        if (p.pwStale) return fehler(409, 'backup_not_current');
+        if (r.json['id'] == p.pwId && p.pwVerifiziert && !p.pwStale) return jsonAntwort({'ok': true});
+        if (r.json['id'] != p.pwPId || p.pwPBlob == null) return fehler(r.json['id'] == p.pwId ? 409 : 404, r.json['id'] == p.pwId ? 'backup_not_current' : 'not_found');
+        if (p.pwPVersion != p.version) return fehler(409, 'backup_not_current');
+        // atomar: pending wird aktuell, die bisherige ist ersetzt
+        p.pwBlob = p.pwPBlob;
+        p.pwVersion = p.pwPVersion;
+        p.pwId = p.pwPId;
+        p.pwStale = false;
         p.pwVerifiziert = true;
+        p.pwPBlob = null;
+        p.pwPId = null;
         return jsonAntwort({'ok': true});
       }))
       ..on('POST /me/key-transfer', (r) => _mit(r, (p) {
@@ -212,13 +229,14 @@ class FakeE2eeServer {
     p.pwVersion = version;
     p.pwStale = false;
     p.pwVerifiziert = true;
+    p.pwPBlob = null;
     p.pwId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
   }
 
   /// Zustand der Passwort-Sicherung einer Person (für Prüfungen).
-  ({String? blob, bool verifiziert, bool stale, int version, int anzahl}) pwStand(String id) {
+  ({String? blob, String? pendingBlob, bool verifiziert, bool stale, int version, int anzahl}) pwStand(String id) {
     final p = _personen[id]!;
-    return (blob: p.pwBlob, verifiziert: p.pwVerifiziert, stale: p.pwStale, version: p.pwVersion, anzahl: p.pwAnzahl);
+    return (blob: p.pwBlob, pendingBlob: p.pwPBlob, verifiziert: p.pwVerifiziert, stale: p.pwStale, version: p.pwVersion, anzahl: p.pwAnzahl);
   }
 
   /// Was der Server über eine Person gespeichert hat (für Prüfungen: nie Geheimnisse).

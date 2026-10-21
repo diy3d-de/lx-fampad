@@ -1,9 +1,10 @@
 // Ablauf der Passwort-Sicherung des Personenschlüssels (vereinfachte Schlüsselverwaltung, PR 3; Projektbeschreibung 9a). Rein additiv: berührt weder
 // den lokalen Schlüssel noch Epochen, Wraps oder den alten Weg (Wiederherstellungsschlüssel, QR). Die Sicherung gilt erst nach ZWEI Proben:
 //   1. lokale Probe (vor dem Senden): der Blob lässt sich mit dem kek öffnen und ergibt genau die öffentlichen Schlüssel, die der Server führt;
-//   2. Round-Trip (nach dem Ablegen): Blob frisch vom Server holen, Salt und Parameter prüfen, mit dem PASSWORT neu ableiten (unabhängiger Weg),
+//   2. Round-Trip (nach dem Ablegen): die abgelegte, noch unbestätigte Sicherung frisch vom Server holen, Salt und Parameter prüfen, mit dem PASSWORT neu ableiten (unabhängiger Weg),
 //      öffnen und den Schlüssel mit dem lokalen UND dem Schlüssel des Servers vergleichen.
-// Erst danach meldet die App die Sicherung beim Server als verifiziert. Der Server sieht nie Passwort, authKey oder kek (hier wird nicht einmal
+// Der Server legt sie zuerst nur als "pending" ab: die bisherige Sicherung bleibt gültig, bis die neue bestätigt ist. Erst danach meldet die App die
+// Sicherung beim Server als verifiziert (dort wird sie atomar die aktuelle und ersetzt die bisherige). Der Server sieht nie Passwort, authKey oder kek (hier wird nicht einmal
 // der authKey benutzt: der Login folgt in einem späteren Paket). Nichts davon landet im Log oder in einer Fehlermeldung.
 import '../api/fampad_api.dart';
 import '../api/models.dart';
@@ -61,11 +62,12 @@ class PwSicherungAblauf {
   }
 
   /// Schritt 2 und 3: Blob ablegen (Step-up, den die Oberfläche um den Aufruf legt), Round-Trip, dann als verifiziert melden. Gibt die Kennung der
-  /// Sicherung zurück. Bei jedem Fehler wird nichts gemeldet: die Sicherung bleibt beim Server unverifiziert (und wird beim nächsten Anlegen ersetzt).
+  /// Sicherung zurück. Bei jedem Fehler wird nichts gemeldet: die abgelegte Sicherung bleibt beim Server unbestätigt (verfällt bzw. wird beim nächsten Anlegen ersetzt),
+  /// die bisherige gilt unverändert weiter (und damit das bisherige Passwort).
   Future<String> ablegenUndPruefen(PwEntwurf e, {required String passwort, required Personenschluessel lokal, required OeffentlicheSchluessel serverVorher}) async {
     final id = await api.pwSicherungAblegen(blob: e.blob, keyVersion: e.keyVersion, kdf: e.kdf);
-    final abruf = await api.pwSicherungAbrufen();
-    if (abruf.id != id || abruf.stale || abruf.keyVersion != e.keyVersion || abruf.blob != e.blob || abruf.kdf.id != e.kdf.id || abruf.kdf.salt != e.kdf.salt) {
+    final abruf = await api.pwSicherungAbrufen(unbestaetigt: true);
+    if (abruf.id != id || abruf.stale || !abruf.pending || abruf.keyVersion != e.keyVersion || abruf.blob != e.blob || abruf.kdf.id != e.kdf.id || abruf.kdf.salt != e.kdf.salt) {
       throw _fehlerProbe;
     }
     final Personenschluessel geoeffnet;
@@ -102,6 +104,7 @@ class PwSicherungAblauf {
   /// Vergleich mit dem frisch vom Server geholten öffentlichen Schlüssel. Eine veraltete (`stale`) Sicherung enthält einen früheren Schlüssel.
   Future<({Personenschluessel schluessel, int keyVersion})> abrufenUndOeffnen(String passwort) async {
     final abruf = await api.pwSicherungAbrufen();
+    if (abruf.pending) throw const CryptoFehler(CryptoFehlerArt.format, 'Die Passwort-Sicherung ist beschädigt.');
     if (abruf.stale) {
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Die Passwort-Sicherung gehört zu einem früheren Schlüssel und passt nicht mehr zu deinem Konto.');
     }

@@ -2,11 +2,12 @@
 // Aufbewahrungsfrist löschen, abgelaufene Sitzungen, Challenges (auch angefangene Registrierungen), Tickets und Fehlversuche
 // bereinigen, abgelaufene Einladungen protokollieren. Kurzlebiges (Challenges, Tickets, Fehlversuche) bleibt so höchstens
 // rund eine Stunde über seinen Ablauf hinaus in der Datenbank.
-import { and, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
-import { auditLog, invites, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
+import { auditLog, invites, keyBackupsPw, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
+import { PW_PENDING_TTL_MS } from './keys-pw.js';
 import { purgeSessions } from './sessions.js';
 
 const DAY_MS = 86_400_000;
@@ -66,6 +67,12 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     .delete(loginAttempts)
     .where(and(lt(loginAttempts.lastFailedAt, attemptsBefore), sql`(${loginAttempts.lockedUntil} is null or ${loginAttempts.lockedUntil} < ${now.toISOString()}::timestamptz)`))
     .returning({ k: loginAttempts.key });
+
+  // unbestätigte Passwort-Sicherungen verfallen nach einer Stunde (nie löschen: die bisherige bleibt unberührt gültig)
+  await ctx.db
+    .update(keyBackupsPw)
+    .set({ state: 'superseded', updatedAt: now })
+    .where(and(eq(keyBackupsPw.state, 'pending'), lt(keyBackupsPw.createdAt, new Date(now.getTime() - PW_PENDING_TTL_MS))));
 
   const sync = await runSyncMaintenance(ctx);
 

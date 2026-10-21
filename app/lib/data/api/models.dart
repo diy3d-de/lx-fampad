@@ -590,20 +590,21 @@ class KdfDto {
   }
 }
 
-/// Antwort von GET /me/key-backup-pw. [stale]: der Personenschlüssel hat seither gewechselt (die Sicherung enthält den alten).
+/// Antwort von GET /me/key-backup-pw. [stale]: der Personenschlüssel hat seither gewechselt (die Sicherung enthält den alten). [pending]: noch nicht bestätigt.
 class PwSicherungDto {
   final String id;
   final String blob;
   final int keyVersion;
   final bool stale;
+  final bool pending;
   final KdfDto kdf;
-  const PwSicherungDto({required this.id, required this.blob, required this.keyVersion, required this.stale, required this.kdf});
+  const PwSicherungDto({required this.id, required this.blob, required this.keyVersion, required this.stale, this.pending = false, required this.kdf});
 
   factory PwSicherungDto.fromJson(Object? raw) {
     final m = asJson(raw);
     final state = _s(m, 'state');
-    if (state != 'active' && state != 'stale') throw ApiException.unerwarteteAntwort;
-    return PwSicherungDto(id: _s(m, 'id'), blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'), stale: state == 'stale', kdf: KdfDto.fromJson(m['kdf']));
+    if (state != 'active' && state != 'stale' && state != 'pending') throw ApiException.unerwarteteAntwort;
+    return PwSicherungDto(id: _s(m, 'id'), blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'), stale: state == 'stale', pending: state == 'pending', kdf: KdfDto.fromJson(m['kdf']));
   }
 }
 

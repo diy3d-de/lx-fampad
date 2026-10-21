@@ -215,14 +215,6 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
-  Future<void> _pwVermerkLoeschen() async {
-    try {
-      await _speicher.loeschen(_pwVermerkName(_userId));
-    } on Object {
-      // nur eine Anzeige; die Sicherung gilt serverseitig ohnehin erst nach der Bestätigung
-    }
-  }
-
   /// Zuletzt vom Server erfahrene Schlüsselversion dieser Person (null: nie erfahren).
   Future<int?> letzteBekannteVersion() async {
     final id = ref.read(authProvider).user?.id;
@@ -569,26 +561,18 @@ class E2eeController extends Notifier<E2eeState> {
   }
 
   /// Schritt 2 und 3 (Step-up legt die UI um den Aufruf): ablegen, Round-Trip, beim Server als verifiziert melden und erst dann auf diesem Gerät
-  /// vermerken. Scheitert etwas nach dem Senden, wird der Vermerk entfernt (die Sicherung gilt dann nicht als gesichert); ein verlangtes Step-up ist
-  /// kein Fehler (die UI wiederholt den Aufruf).
+  /// vermerken. Scheitert etwas, bleibt der bisherige Vermerk unverändert: der Server hält die bisherige Sicherung bis zur Bestätigung der neuen
+  /// gültig (das bisherige Passwort öffnet sie weiter); ein verlangtes Step-up ist kein Fehler (die UI wiederholt den Aufruf).
   Future<bool> pwSicherungAblegen(PwEntwurf entwurf, String passwort) async {
     final crypto = await _krypto();
     final lokal = _lokal ?? await _lokalLaden(crypto);
     final server = await _serverSchluessel();
     if (lokal == null || server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät gibt es keinen Schlüssel.');
+    await _pwAblauf(crypto).ablegenUndPruefen(entwurf, passwort: passwort, lokal: lokal, serverVorher: server);
     try {
-      await _pwAblauf(crypto).ablegenUndPruefen(entwurf, passwort: passwort, lokal: lokal, serverVorher: server);
-      try {
-        await _speicher.schreiben(_pwVermerkName(_userId), utf8Bytes('${entwurf.keyVersion}'));
-      } on Object {
-        // ohne Vermerk zeigt die Seite "nicht bestätigt"; die Sicherung selbst ist verifiziert
-      }
-    } on ApiException catch (e) {
-      if (!e.istStepUp) await _pwVermerkLoeschen();
-      rethrow;
+      await _speicher.schreiben(_pwVermerkName(_userId), utf8Bytes('${entwurf.keyVersion}'));
     } on Object {
-      await _pwVermerkLoeschen();
-      rethrow;
+      // ohne Vermerk zeigt die Seite "nicht bestätigt"; die Sicherung selbst ist verifiziert
     }
     await laden();
     return true;
