@@ -90,14 +90,15 @@ write_status() {   # $1 = ok|fehler, danach Schlüssel=Wert für den Erfolgsfall
   } > "$ts"
   if getent group "$BACKUP_GROUP" >/dev/null; then chgrp "$BACKUP_GROUP" "$ts"; chmod 0640 "$ts"; else chmod 0600 "$ts"; fi
   mv -f "$ts" "$OUT_DIR/status"
-  write_service_status || true
+  # Fehler der zweiten Statusdatei stehen im Journal (stderr), die Sicherung selbst scheitert deshalb nie
+  write_service_status || echo "WARNUNG: zweite Statusdatei $SERVICE_STATUS_DIR/backup.status konnte nicht geschrieben werden (Betrieb zeigt die Sicherung dann als unbekannt)" >&2
 }
 
 # Zweite Statusdatei: nur diese Schlüssel (Erfolg/Fehler, Zeiten, Größen), nichts anderes (kein Ordnername, kein Pfad); atomar; ein Fehler hier bricht nie eine Sicherung ab
 write_service_status() {
-  [ -d "$SERVICE_STATUS_DIR" ] || return 0
+  [ -d "$SERVICE_STATUS_DIR" ] || { echo "Hinweis: $SERVICE_STATUS_DIR fehlt, zweite Statusdatei übersprungen (einrichtung-status.sh ausführen)" >&2; return 1; }
   local ts="$SERVICE_STATUS_DIR/.backup.status.$$"
-  if ! grep -E '^(last_run_utc|last_run_epoch|last_result|last_success_utc|last_success_epoch|db_bytes|config_bytes|total_bytes)=[A-Za-z0-9:_.-]*$' "$OUT_DIR/status" > "$ts"; then rm -f "$ts"; return 0; fi
+  if ! grep -E '^(last_run_utc|last_run_epoch|last_result|last_success_utc|last_success_epoch|db_bytes|config_bytes|total_bytes)=[A-Za-z0-9:_.-]*$' "$OUT_DIR/status" > "$ts"; then rm -f "$ts"; echo "WARNUNG: zweite Statusdatei: keine bekannten Schlüssel in $OUT_DIR/status" >&2; return 1; fi
   if getent group "$SERVICE_GROUP" >/dev/null; then chgrp "$SERVICE_GROUP" "$ts"; chmod 0640 "$ts"; else chmod 0600 "$ts"; fi
   mv -f "$ts" "$SERVICE_STATUS_DIR/backup.status"
 }

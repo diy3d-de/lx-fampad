@@ -189,7 +189,7 @@ String familienAmpelText(SchluesselStatus s) {
   if (s.anzahl == 0) return 'keine Mitglieder';
   if (s.bereit) return 'alle grün: Stichtag-bereit';
   final teile = [if (s.rot > 0) '${s.rot} rot', if (s.gelb > 0) '${s.gelb} gelb'];
-  return '${s.gruen} von ${s.anzahl} grün (${teile.join(', ')}), noch nicht Stichtag-bereit';
+  return '${s.gruen} von ${s.anzahl} grün${teile.isEmpty ? '' : ' (${teile.join(', ')})'}, noch nicht Stichtag-bereit';
 }
 
 /// Stand des Schlüssels auf einem Gerät in einem Wort.
@@ -232,6 +232,9 @@ String warnArtText(String art) => switch (art) {
   'key' => 'Schlüssel-Ampel einer Person ist rot',
   _ => 'Hinweis des Servers',
 };
+
+/// Eine Zeile der Warnliste: der feste Text zur Art, bei mehreren (Schlüssel-Ampel mehrerer Personen) mit der Anzahl.
+String warnZeile(String art, int anzahl) => anzahl > 1 ? '${warnArtText(art)} ($anzahl)' : warnArtText(art);
 
 /// Feste Wörter der Plattform in der Geräteliste ("android" wird "Android").
 String plattformText(String p) => switch (p) {

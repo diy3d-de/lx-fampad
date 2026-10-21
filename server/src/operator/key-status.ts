@@ -68,12 +68,24 @@ export interface PersonKeyStatus {
   wayCount: number;
   devicesTotal: number;
   devicesWithKey: number;
+  /** Aktive Geräte, die überhaupt einen Schlüsselstand gemeldet haben (egal welchen, egal wann): Geräte ohne Bericht (alte App) sind für die WARNUNG "unbekannt", nicht "fehlt". */
+  devicesReported: number;
   /** Passwort noch im alten Klartext-Verfahren (nur mit Schalter E2EE_PW_BACKUP aussagekräftig). */
   legacyPassword: boolean;
   /** Anzahl archivierter Sicherungen früherer Schlüsselstände. */
   archiveCount: number;
   events: KeyEventView[];
 }
+
+/** Nur die Zusammenfassung (ohne Namen, ohne Ereignisse): für die Übersicht ohne Step-up. */
+export interface KeySummary {
+  generatedAt: string;
+  overall: Ampel;
+  ready: boolean;
+  counts: Record<Ampel, number>;
+}
+
+export const summarize = (k: KeyStatus): KeySummary => ({ generatedAt: k.generatedAt, overall: k.overall, ready: k.ready, counts: k.counts });
 
 export interface KeyStatus {
   generatedAt: string;
@@ -109,12 +121,6 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string): Prom
     .from(keyBackupsPw)
     .where(and(inArray(keyBackupsPw.userId, ids), eq(keyBackupsPw.state, 'active')));
   const modes = ctx.config.e2eePwBackup ? new Map((await passwordModes(ctx, familyId)).map((m) => [m.userId, m.mode])) : new Map<string, string>();
-  const evRows = await ctx.db
-    .select({ userId: securityEvents.userId, kind: securityEvents.kind, at: securityEvents.createdAt })
-    .from(securityEvents)
-    .where(and(eq(securityEvents.familyId, familyId), inArray(securityEvents.userId, ids), inArray(securityEvents.kind, [...KEY_EVENT_KINDS])))
-    .orderBy(desc(securityEvents.createdAt))
-    .limit(Math.max(50, ids.length * EVENTS_PER_PERSON * 8));
 
   const persons: PersonKeyStatus[] = [];
   for (const m of members) {
@@ -127,10 +133,15 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string): Prom
       pwBackup: hasKeys && pw.some((r) => r.userId === m.userId && r.keyVersion === current && r.verifiedAt !== null),
       recoveryBackup: hasKeys && recovery.some((r) => r.userId === m.userId && r.keyVersion === current),
     };
-    const events = evRows
-      .filter((e) => e.userId === m.userId)
-      .slice(0, EVENTS_PER_PERSON)
-      .map((e) => ({ kind: e.kind, at: e.at.toISOString() }));
+    // je Person abgefragt: eine Person mit vielen Ereignissen verdrängt die Ereignisse der anderen nie
+    const events = (
+      await ctx.db
+        .select({ kind: securityEvents.kind, at: securityEvents.createdAt })
+        .from(securityEvents)
+        .where(and(eq(securityEvents.familyId, familyId), eq(securityEvents.userId, m.userId), inArray(securityEvents.kind, [...KEY_EVENT_KINDS])))
+        .orderBy(desc(securityEvents.createdAt))
+        .limit(EVENTS_PER_PERSON)
+    ).map((e) => ({ kind: e.kind, at: e.at.toISOString() }));
     persons.push({
       userId: m.userId,
       displayName: m.displayName,
@@ -142,6 +153,7 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string): Prom
       wayCount: [ways.device, ways.pwBackup, ways.recoveryBackup].filter(Boolean).length,
       devicesTotal: own.length,
       devicesWithKey: withKey.length,
+      devicesReported: own.filter((d) => d.keyVersion !== null && d.reportedAt !== null).length,
       legacyPassword: modes.get(m.userId) === 'legacy',
       archiveCount: hasKeys ? await countArchive(ctx, m.userId, current ?? 0) : 0,
       events,

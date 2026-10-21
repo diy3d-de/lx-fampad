@@ -2,8 +2,12 @@
 // die Geräte des Betreibers per Push OHNE Inhalt (derselbe Wecker wie überall; die App holt danach `GET /admin/warnings` und zeigt einen festen Text).
 //
 // Regeln:
-//  - Nur Zustandswechsel warnen: ein Problem wird beim Wechsel auf "aktiv" gemeldet, danach nicht wieder, solange es besteht; geht es weg, gibt es keine Meldung.
-//  - Entprellung je Art 6 Stunden: ein Problem, das schnell weg- und wiederkommt, löst höchstens alle 6 Stunden einen Wecker aus.
+//  - Eine Warnung gilt je "Episode" (das Problem besteht seit `since`): sie wird höchstens einmal je Episode gemeldet, nicht bei jedem Lauf; geht das Problem weg, gibt es keine Meldung.
+//    Als "gemeldet" gilt eine Episode nur, wenn wirklich gewarnt wurde (`lastNotifiedAt >= since`): wurde wegen der Entprellung oder der Karenz noch nicht gewarnt, wird es
+//    im nächsten Lauf nachgeholt, sobald beides abgelaufen ist (auch eine zweite Person mit roter Ampel und ein wiederkehrendes Problem).
+//  - Entprellung je Art 6 Stunden: höchstens ein Wecker je Art in diesem Zeitraum (bei der Schlüssel-Ampel zählen alle Personen als eine Art).
+//  - Karenz der Schlüssel-Warnung: eine rote Ampel ohne jedes Gerät, das je einen Schlüsselstand gemeldet hat (alte App), wird erst nach 7 Tagen gemeldet; hat die Person ein
+//    Gerät mit gemeldeter Version und ist trotzdem rot, ist es ein echter Mangel und wird gemeldet. Die ANZEIGE bleibt rot.
 //  - "unbekannt" (Messung nicht lesbar) ist nie ein Alarm und ändert den gemerkten Zustand nicht.
 //  - Der Zustand steht in der Datenbank (`operator_alert_state`), ein Neustart wiederholt also nichts. Ist die Datenbank nicht erreichbar, gilt der Speicher des Prozesses
 //    (und die zuletzt bekannten Push-Themen), damit auch "Datenbank nicht erreichbar" gemeldet werden kann.
@@ -18,9 +22,10 @@ import { auditLog, memberships, operatorAlertState, operators, users } from '../
 import { AppError } from '../errors.js';
 import type { PushService } from '../push/service.js';
 import type { WeatherService } from '../weather/service.js';
+import { serializeErr } from '../log.js';
 import { collectKeyStatus, type KeyStatus } from './key-status.js';
 import type { Probes } from './probes.js';
-import { collectStatus, type OperatorStatus } from './status.js';
+import { BACKUP_WARN_HOURS, CERT_WARN_DAYS, collectStatus, DISK_WARN_PERCENT, type OperatorStatus } from './status.js';
 
 export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key'] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
@@ -28,9 +33,12 @@ export type AlertKind = (typeof ALERT_KINDS)[number];
 export const CHECK_INTERVAL_MS = 5 * 60_000;
 /** Je Art höchstens ein Wecker in diesem Zeitraum. */
 export const ALERT_DEBOUNCE_MS = 6 * 3_600_000;
-export const CERT_ALERT_DAYS = 14;
-export const BACKUP_ALERT_HOURS = 36;
-export const DISK_ALERT_PERCENT = 85;
+// dieselben Schwellen wie die Ansicht (status.ts), damit Seite und Warnung nie auseinanderlaufen
+export const CERT_ALERT_DAYS = CERT_WARN_DAYS;
+export const BACKUP_ALERT_HOURS = BACKUP_WARN_HOURS;
+export const DISK_ALERT_PERCENT = DISK_WARN_PERCENT;
+/** Karenz der Schlüssel-Warnung für Personen ohne ein Gerät, das je einen Schlüsselstand gemeldet hat. */
+export const KEY_ALERT_GRACE_MS = 7 * 24 * 3_600_000;
 /** Mehr als so viele fehlgeschlagene Anmeldungen innerhalb des Fensters. */
 export const LOGIN_FAIL_THRESHOLD = 20;
 export const LOGIN_FAIL_WINDOW_MS = 15 * 60_000;
@@ -42,6 +50,8 @@ export interface Condition {
   key: string;
   kind: AlertKind;
   result: AlertResult;
+  /** Erst melden, wenn das Problem so lange besteht (Karenz); 0 = sofort. */
+  graceMs: number;
 }
 
 const KEY_PREFIX = 'key:';
@@ -49,7 +59,7 @@ const KEY_PREFIX = 'key:';
 /** Wertet die Messungen aus (rein, mit Uhr als Parameter testbar). `loginFailures`/`keys` = null: nicht ermittelbar. */
 export function evaluateConditions(status: OperatorStatus, loginFailures: number | null, keys: KeyStatus | null, now: Date): Condition[] {
   const out: Condition[] = [];
-  const add = (kind: AlertKind, result: AlertResult, key: string = kind) => out.push({ key, kind, result });
+  const add = (kind: AlertKind, result: AlertResult, key: string = kind, graceMs = 0) => out.push({ key, kind, result, graceMs });
 
   // Zertifikat: weniger als 14 Tage (auch abgelaufen)
   add('cert', status.certificate === null ? 'unknown' : status.certificate.daysLeft < CERT_ALERT_DAYS ? 'active' : 'ok');
@@ -72,7 +82,14 @@ export function evaluateConditions(status: OperatorStatus, loginFailures: number
   add('logins', loginFailures === null ? 'unknown' : loginFailures > LOGIN_FAIL_THRESHOLD ? 'active' : 'ok');
 
   // Schlüssel-Ampel einer Person wird rot (nur Personen, die schon einen Schlüssel haben: wer nie angefangen hat, ist kein Verlust)
-  if (keys) for (const p of keys.persons) if (p.hasKeys) add('key', p.ampel === 'red' ? 'active' : 'ok', `${KEY_PREFIX}${p.userId}`);
+  // Geräte, die nie gemeldet haben, sind für die Warnung "unbekannt", nicht "fehlt": ohne gemeldetes Gerät gilt eine Karenz von 7 Tagen
+  if (keys) {
+    for (const p of keys.persons) {
+      if (!p.hasKeys) continue;
+      const rot = p.ampel === 'red';
+      add('key', rot ? 'active' : 'ok', `${KEY_PREFIX}${p.userId}`, rot && p.devicesReported === 0 ? KEY_ALERT_GRACE_MS : 0);
+    }
+  }
   return out;
 }
 
@@ -110,7 +127,8 @@ export interface WarningsView {
   checkedAt: string | null;
   /** Zeitpunkt des letzten Weckers der Familie (die App zeigt daraufhin einmal den festen Hinweis). */
   lastNotifiedAt: string | null;
-  active: Array<{ kind: AlertKind; since: string | null }>;
+  /** Aktive Warnungen je Art (Schlüssel-Warnungen mehrerer Personen zusammengefasst: `count` = Anzahl, `since` = die älteste). */
+  active: Array<{ kind: AlertKind; since: string | null; count: number }>;
 }
 
 export class OperatorMonitor {
@@ -161,7 +179,7 @@ export class OperatorMonitor {
         try {
           report.notified.push(...(await this.checkFamily(fam)));
         } catch (err: unknown) {
-          ctx.log.warn({ err: (err as Error).message }, 'Betreiber-Prüfung fehlgeschlagen');
+          ctx.log.warn({ err: serializeErr(err) }, 'Betreiber-Prüfung fehlgeschlagen');
         }
       }
       this.lastRunAt = ctx.now();
@@ -260,16 +278,25 @@ export class OperatorMonitor {
         if (prev?.active) await this.saveState(fam.familyId, c.key, { active: false, since: null, lastNotifiedAt: prev.lastNotifiedAt });
         continue;
       }
-      if (prev?.active) continue; // besteht schon: keine Wiederholung
+      // eine neue Episode beginnt jetzt; die bisherige Meldung (einer früheren Episode) bleibt für die Entprellung erhalten
+      let cur = prev;
+      if (!cur?.active) {
+        cur = { active: true, since: now, lastNotifiedAt: prev?.lastNotifiedAt ?? null };
+        await this.saveState(fam.familyId, c.key, cur);
+      }
+      const since = cur.since ?? now;
+      // in dieser Episode schon gewarnt: keine Wiederholung
+      if (cur.lastNotifiedAt !== null && cur.lastNotifiedAt.getTime() >= since.getTime()) continue;
+      // Karenz noch nicht abgelaufen: später nachholen
+      if (now.getTime() - since.getTime() < c.graceMs) continue;
       // Entprellung je ART (bei Schlüsselwarnungen zählen alle Personen als eine Art); in einem Lauf höchstens ein Wecker je Art
       const last = this.lastNotified(fam.familyId, c.kind);
       const debounced = last !== null && now.getTime() - last.getTime() < ALERT_DEBOUNCE_MS && now.getTime() >= last.getTime();
-      const willNotify = fam.enabledUserIds.length > 0 && !debounced && !notified.includes(c.kind);
-      await this.saveState(fam.familyId, c.key, { active: true, since: now, lastNotifiedAt: willNotify ? now : (prev?.lastNotifiedAt ?? null) });
-      if (willNotify) {
-        notified.push(c.kind);
-        await this.notify(fam, c.kind, now);
-      }
+      if (fam.enabledUserIds.length === 0 || debounced || notified.includes(c.kind)) continue; // wird nachgeholt, sobald es möglich ist
+      // erst als gemeldet führen, wenn wirklich gewarnt wurde
+      await this.saveState(fam.familyId, c.key, { active: true, since: cur.since, lastNotifiedAt: now });
+      notified.push(c.kind);
+      await this.notify(fam, c.kind, now);
     }
 
     // Zustände von Personen, die es nicht mehr gibt (oder die keinen Schlüssel mehr haben), wegräumen
@@ -312,8 +339,16 @@ export class OperatorMonitor {
     const { ctx, push } = this.deps;
     const [op] = await ctx.db.select({ enabled: operators.alertsEnabled }).from(operators).where(eq(operators.userId, p.userId));
     const rows = await ctx.db.select().from(operatorAlertState).where(eq(operatorAlertState.familyId, p.familyId));
-    const active = rows.filter((r) => r.active).map((r) => ({ kind: (r.kind.startsWith(KEY_PREFIX) ? 'key' : r.kind) as AlertKind, since: r.since?.toISOString() ?? null }));
-    const known = active.filter((a) => (ALERT_KINDS as readonly string[]).includes(a.kind));
+    const grouped = new Map<AlertKind, { since: Date | null; count: number }>();
+    for (const r of rows) {
+      if (!r.active) continue;
+      const kind = (r.kind.startsWith(KEY_PREFIX) ? 'key' : r.kind) as AlertKind;
+      if (!(ALERT_KINDS as readonly string[]).includes(kind)) continue;
+      const g = grouped.get(kind);
+      const alt = g?.since ?? null;
+      grouped.set(kind, { count: (g?.count ?? 0) + 1, since: alt && r.since ? (alt < r.since ? alt : r.since) : (alt ?? r.since) });
+    }
+    const known = [...grouped].map(([kind, g]) => ({ kind, since: g.since?.toISOString() ?? null, count: g.count }));
     const lastNotified = rows.reduce<Date | null>((m, r) => (r.lastNotifiedAt && (!m || r.lastNotifiedAt > m) ? r.lastNotifiedAt : m), null);
     return {
       enabled: op?.enabled ?? true,

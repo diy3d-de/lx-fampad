@@ -195,10 +195,13 @@ class _MitgliedKarte extends StatelessWidget {
             ],
             if (m.gesperrtSekunden != null) ...[
               const SizedBox(height: 10),
-              Row(
+              // Wrap statt Row: bei großer Schrift rutscht der Knopf in die nächste Zeile, nichts läuft über
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   StatusPill('gesperrt · ${sperreText(m.gesperrtSekunden!)}', color: kDanger),
-                  const SizedBox(width: 8),
                   TextButton(onPressed: beschaeftigt ? null : entsperren, style: TextButton.styleFrom(minimumSize: const Size(44, 44)), child: const Text('Entsperren')),
                 ],
               ),

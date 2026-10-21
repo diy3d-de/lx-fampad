@@ -233,6 +233,13 @@ describe.each(backends)('Betreiber-Ansicht ($name)', (backend) => {
     expect(warn.backup.state).toBe('warn');
     expect(warn.disk.usedPercent).toBe(90);
     expect([2, 3]).toContain(warn.certificate.daysLeft);
+    // exaktes Alter statt gerundeter Stunden (dieselbe Grenze wie die Warnung): 36 h 20 min ist schon zu alt, 35 h 40 min noch nicht; Platte erst über 85 %
+    expect((await lauf(`last_result=ok
+last_success_epoch=${ep - 36 * 3600 - 20 * 60}
+`)).backup.state).toBe('warn');
+    expect((await lauf(`last_result=ok
+last_success_epoch=${ep - 35 * 3600 - 40 * 60}
+`)).backup.state).toBe('ok');
     const fehler = await lauf(`last_result=fehler\nlast_success_epoch=${ep - 3600}\n`);
     expect(fehler.backup.state).toBe('error');
     expect(fehler.overall).toBe('error');

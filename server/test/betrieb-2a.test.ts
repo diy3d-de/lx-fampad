@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '../src/db/schema.js';
 import { ampelOf, collectKeyStatus, overallAmpel, type Ampel, type Ways } from '../src/operator/key-status.js';
 import { deviceKeyState } from '../src/operator/members.js';
-import { ALERT_DEBOUNCE_MS, evaluateConditions, OperatorMonitor } from '../src/operator/monitor.js';
+import { ALERT_DEBOUNCE_MS, evaluateConditions, KEY_ALERT_GRACE_MS, OperatorMonitor } from '../src/operator/monitor.js';
 import type { Probes } from '../src/operator/probes.js';
 import type { OperatorStatus } from '../src/operator/status.js';
 import { grantOperator } from '../src/operator/service.js';
@@ -133,6 +133,18 @@ describe('Warn-Bedingungen (rein)', () => {
     expect(r).toMatchObject({ cert: 'unknown', disk: 'unknown', backup: 'unknown', ntfy: 'unknown', logins: 'unknown' });
   });
 
+  it('Schlüssel: Karenz von 7 Tagen ohne Gerät mit gemeldeter Version; mit gemeldetem Gerät und rot sofort; nicht rot oder ohne Schlüssel nie', () => {
+    const person = (userId: string, ampel: Ampel, devicesReported: number, hasKeys = true) =>
+      ({ userId, displayName: userId, role: 'child', ampel, hasKeys, keyVersion: hasKeys ? 1 : null, ways: { device: false, pwBackup: false, recoveryBackup: false }, wayCount: 0, devicesTotal: 1, devicesWithKey: 0, devicesReported, legacyPassword: false, archiveCount: 0, events: [] }) as const;
+    const keys = { generatedAt: '', overall: 'red', ready: false, counts: { green: 0, yellow: 0, red: 3 }, persons: [person('a', 'red', 0), person('b', 'red', 1), person('c', 'yellow', 1), person('d', 'red', 0, false)] } as const;
+    const c = Object.fromEntries(evaluateConditions(status(), 0, keys as never, now).filter((x) => x.kind === 'key').map((x) => [x.key, x]));
+    expect(c['key:a']).toMatchObject({ result: 'active', graceMs: KEY_ALERT_GRACE_MS });
+    expect(c['key:b']).toMatchObject({ result: 'active', graceMs: 0 });
+    expect(c['key:c']).toMatchObject({ result: 'ok', graceMs: 0 });
+    expect(c['key:d']).toBeUndefined();
+    expect(KEY_ALERT_GRACE_MS).toBe(7 * DAY);
+  });
+
   it('Datenbank und ntfy nicht erreichbar sind aktiv; ein gemeldeter Fehlschlag ohne je einen Erfolg ebenfalls', () => {
     expect(erg(status({ database: { ok: false, latencyMs: null, sizeBytes: null, migrations: { applied: null, expected: null, latest: null, pending: null, grantMissing: false } } })).database).toBe('active');
     expect(erg(status({ services: [{ id: 'ntfy', state: 'error', detail: {} }] })).ntfy).toBe('active');
@@ -199,7 +211,7 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
 
   // ---- Rechte ----
 
-  const lesend = ['/api/v1/admin/key-status', '/api/v1/admin/members', '/api/v1/admin/warnings'];
+  const lesend = ['/api/v1/admin/key-status', '/api/v1/admin/key-status?summary=1', '/api/v1/admin/members', '/api/v1/admin/warnings'];
 
   it('Rechte-Tabelle: nur der Betreiber; Admin, Eltern, Kind 404; ohne Sitzung 401', async () => {
     const { a, zweiter, eltern, kind } = await familie();
@@ -233,7 +245,15 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
       expect(res.status, `${m} ${u}`).toBe(403);
       expect(res.json.error).toBe('step_up_required');
     }
-    expect((await a.client.get('/api/v1/admin/key-status')).status).toBe(200);
+    // die Einzelheiten je Person (Namen, Wege, Ereignisse) brauchen es, die Zusammenfassung (nur Zähler) nicht
+    const voll = await a.client.get('/api/v1/admin/key-status');
+    expect(voll.status).toBe(403);
+    expect(voll.json.error).toBe('step_up_required');
+    const kurz = await a.client.get('/api/v1/admin/key-status?summary=1');
+    expect(kurz.status).toBe(200);
+    expect(Object.keys(kurz.json).sort()).toEqual(['counts', 'generatedAt', 'overall', 'ready']);
+    expect(JSON.stringify(kurz.json)).not.toMatch(/admin|kind|@/i);
+    expect((await a.client.get('/api/v1/admin/key-status?summary=2')).status).toBe(400);
     expect((await a.client.get('/api/v1/admin/warnings')).status).toBe(200);
     await stepUp(a);
     expect((await a.client.get('/api/v1/admin/members')).status).toBe(200);
@@ -349,7 +369,7 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
     for (const verboten of [GEHEIM, 'blob', 'publicEncKey', 'publicSignKey', 'secret', 'passwordhash', 'email', '@example.org', 'token']) {
       expect(text.toLowerCase(), verboten).not.toContain(verboten.toLowerCase());
     }
-    expect(Object.keys(ks.persons[0]).sort()).toEqual(['ampel', 'archiveCount', 'devicesTotal', 'devicesWithKey', 'displayName', 'events', 'hasKeys', 'keyVersion', 'legacyPassword', 'role', 'userId', 'ways', 'wayCount'].sort());
+    expect(Object.keys(ks.persons[0]).sort()).toEqual(['ampel', 'archiveCount', 'devicesTotal', 'devicesReported', 'devicesWithKey', 'displayName', 'events', 'hasKeys', 'keyVersion', 'legacyPassword', 'role', 'userId', 'ways', 'wayCount'].sort());
   });
 
   it('Schlüsselereignisse (Art, Zeit) und Archiv-Anzahl erscheinen; altes Passwort-Verfahren wird gemeldet', async () => {
@@ -447,7 +467,7 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
     }
     expect(wecker).toHaveLength(1);
     const w = (await a.client.get('/api/v1/admin/warnings')).json;
-    expect(w.active).toEqual([{ kind: 'cert', since: expect.any(String) }]);
+    expect(w.active).toEqual([{ kind: 'cert', since: expect.any(String), count: 1 }]);
     expect(w.lastNotifiedAt).toBeTruthy();
     // der Wecker trägt nichts: nur das feste Wort, kein Titel, keine Namen
     expect(JSON.stringify(wecker)).not.toMatch(/Zertifikat|cert|admin|Betrieb/i);
@@ -508,7 +528,7 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
     aktuell = probes(world.clock, { disk: async () => null });
     world.advance(5 * MIN);
     await monitor().runOnce();
-    expect((await a.client.get('/api/v1/admin/warnings')).json.active).toEqual([{ kind: 'disk', since: expect.any(String) }]);
+    expect((await a.client.get('/api/v1/admin/warnings')).json.active).toEqual([{ kind: 'disk', since: expect.any(String), count: 1 }]);
     expect(wecker).toHaveLength(1);
   });
 
@@ -537,28 +557,97 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
     expect((await monitor().runOnce()).notified).toEqual(['logins']);
   });
 
-  it('Schlüssel-Ampel wird rot: ein Wecker; wer nie einen Schlüssel hatte, löst nichts aus; grün zurück ohne Meldung', async () => {
+  it('Schlüssel-Ampel rot MIT gemeldetem Gerät: sofort ein Wecker; wer nie einen Schlüssel hatte, löst nichts aus', async () => {
     const { a, kind } = await familie();
     await mitPush(a, 1);
-    // Mitglieder ohne Schlüssel: kein Alarm
     expect((await monitor().runOnce()).notified).toEqual([]);
-    // das Kind bekommt einen Schlüssel, aber keinen Weg: rot -> Wecker
+    // das Kind hat einen Schlüssel, sein Gerät meldet "keinen Schlüssel" (0): echter Mangel, kein Weg
     await ersteSchluessel(kind.client);
+    await kind.client.put('/api/v1/me/device-key', { keyVersion: 0 });
     world.advance(5 * MIN);
     expect((await monitor().runOnce()).notified).toEqual(['key']);
     expect(await alerts()).toEqual(['operator_alert_key']);
-    // zweiter Wecker für dieselbe Art im Entprellfenster nicht, auch nicht für eine weitere Person
-    await ersteSchluessel(a.client);
-    world.advance(5 * MIN);
-    expect((await monitor().runOnce()).notified).toEqual([]);
     expect(wecker).toHaveLength(1);
-    // Kind wird grün (Gerät + Sicherung), danach wieder rot: Wechsel, aber noch in der Entprellfrist
+    // grün (Gerät + Sicherung) und wieder weg: keine Meldung für die Rückkehr
     await kind.client.put('/api/v1/me/device-key', { keyVersion: 1 });
     await kind.client.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 });
     world.advance(5 * MIN);
+    expect((await monitor().runOnce()).notified).toEqual([]);
+    expect((await a.client.get('/api/v1/admin/warnings')).json.active).toEqual([]);
+  });
+
+  it('Karenz: rote Ampel ohne je gemeldetes Gerät wird erst nach 7 Tagen gemeldet; die Anzeige bleibt rot', async () => {
+    const { a, kind } = await familie();
+    await mitPush(a, 1);
+    await stepUp(a);
+    await ersteSchluessel(kind.client);
+    const kid = await idOf(kind);
+    expect(await ampelOfUser(a.client, kid)).toBe('red'); // Anzeige unverändert
+    for (const schritt of [5 * MIN, DAY, 5 * DAY, 90 * MIN]) {
+      world.advance(schritt);
+      aktuell = probes(world.clock); // die Messungen altern nicht mit (frische Sicherung)
+      expect((await monitor().runOnce()).notified, `nach ${schritt}`).toEqual([]);
+    }
+    expect(wecker).toEqual([]);
+    // die Warnliste zeigt die Person (aktiv), gewarnt wurde noch nicht
+    expect((await a.client.get('/api/v1/admin/warnings')).json).toMatchObject({ lastNotifiedAt: null, active: [{ kind: 'key', count: 1 }] });
+    world.advance(2 * DAY);
+    aktuell = probes(world.clock);
+    expect((await monitor().runOnce()).notified).toEqual(['key']);
+    expect(wecker).toHaveLength(1);
+    world.advance(10 * MIN);
+    aktuell = probes(world.clock);
+    expect((await monitor().runOnce()).notified).toEqual([]);
+  });
+
+  it('nachholen: nicht gemeldete Zustände (Entprellung) werden nach Ablauf gemeldet; ein wiederkehrendes Problem und eine zweite Person ebenso', async () => {
+    const { a, zweiter, eltern } = await familie();
+    await mitPush(a, 1);
+    const schlecht = () => (aktuell = probes(world.clock, { disk: async () => ({ totalBytes: 100, freeBytes: 10 }) }));
+    const gut = () => (aktuell = probes(world.clock));
+    // Problem: gemeldet (t0), weg (+5 min), wieder da (+1 h): wegen der Entprellung noch nicht gemeldet ...
+    schlecht();
+    expect((await monitor().runOnce()).notified).toEqual(['disk']);
+    world.advance(5 * MIN);
+    gut();
     await monitor().runOnce();
+    world.advance(55 * MIN);
+    schlecht();
+    expect((await monitor().runOnce()).notified).toEqual([]);
+    expect(wecker).toHaveLength(1);
+    // ... und es wird NICHT als gemeldet geführt: es besteht weiter und wird nach Ablauf der 6 Stunden nachgeholt
+    world.advance(3 * HOUR);
+    schlecht();
+    expect((await monitor().runOnce()).notified).toEqual([]);
+    world.advance(3 * HOUR);
+    schlecht();
+    expect((await monitor().runOnce()).notified).toEqual(['disk']);
+    expect(wecker).toHaveLength(2);
+    // danach keine Wiederholung
+    world.advance(10 * MIN);
+    schlecht();
+    expect((await monitor().runOnce()).notified).toEqual([]);
+    // zweite Person mit roter Ampel (jeweils mit gemeldetem Gerät ohne Schlüssel): erste wird gemeldet, die zweite nach Ablauf der Entprellung
+    gut();
+    await monitor().runOnce();
+    await ersteSchluessel(zweiter.client);
+    await zweiter.client.put('/api/v1/me/device-key', { keyVersion: 0 });
+    world.advance(5 * MIN);
+    expect((await monitor().runOnce()).notified).toEqual(['key']);
+    await ersteSchluessel(eltern.client);
+    await eltern.client.put('/api/v1/me/device-key', { keyVersion: 0 });
+    world.advance(5 * MIN);
+    expect((await monitor().runOnce()).notified).toEqual([]);
+    world.advance(ALERT_DEBOUNCE_MS);
+    expect((await monitor().runOnce()).notified).toEqual(['key']);
+    const n = wecker.length;
+    world.advance(10 * MIN);
+    expect((await monitor().runOnce()).notified).toEqual([]);
+    expect(wecker).toHaveLength(n);
+    // die Warnliste fasst die Schlüssel-Warnungen zusammen (Art mit Anzahl, kein Name)
     const w = (await a.client.get('/api/v1/admin/warnings')).json;
-    expect(w.active.map((x: { kind: string }) => x.kind)).toEqual(['key']); // nur noch die Betreiberin selbst (ohne Weg)
+    expect(w.active).toEqual([{ kind: 'key', since: expect.any(String), count: 2 }]);
+    expect(JSON.stringify(w)).not.toMatch(/admin2|mama/);
   });
 
   it('Schalter "Warnungen": aus = nie ein Wecker, der Zustand läuft weiter; Step-up und Protokoll; wieder an', async () => {
@@ -576,11 +665,11 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
     expect(wecker).toEqual([]);
     expect(await alerts()).toEqual([]);
     expect((await a.client.get('/api/v1/admin/warnings')).json).toMatchObject({ enabled: false, active: [{ kind: 'disk' }] });
-    // wieder an: ein NEUES Problem (anderer Art) wird gemeldet
+    // wieder an: ein neues Problem UND das in der Ausschaltzeit nie gemeldete (noch bestehende) werden gemeldet
     expect((await a.client.put('/api/v1/admin/warnings', { enabled: true })).json.enabled).toBe(true);
     world.advance(5 * MIN);
     aktuell = probes(world.clock, { disk: async () => ({ totalBytes: 100, freeBytes: 1 }), tlsValidTo: async () => new Date(world.clock + 2 * DAY) });
-    expect((await monitor().runOnce()).notified).toEqual(['cert']);
+    expect((await monitor().runOnce()).notified).toEqual(['cert', 'disk']);
   });
 
   it('Datenbank im Prüflauf nicht erreichbar: "database" wird gemeldet, der Lauf wirft nie', async () => {

@@ -145,7 +145,19 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       if (!mounted) return;
       ScaffoldMessenger.of(context)
         ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text(kBetriebHinweisTitel), duration: Duration(seconds: 8)));
+        ..showSnackBar(
+          SnackBar(
+            content: const Text(kBetriebHinweisTitel),
+            duration: const Duration(seconds: 8),
+            // "Öffnen" führt zum Bereich Betrieb (nur der Betreiber bekommt den Hinweis; die Prüfung steht trotzdem im Rückruf)
+            action: SnackBarAction(
+              label: 'Öffnen',
+              onPressed: () {
+                if (mounted && ref.read(authProvider).istBetreiber) unawaited(Navigator.of(context).push<void>(BetriebScreen.route()));
+              },
+            ),
+          ),
+        );
     });
     ref.listen(betriebOeffnenProvider, (_, _) {
       if (mounted && ref.read(authProvider).istBetreiber) unawaited(Navigator.of(context).push<void>(BetriebScreen.route()));

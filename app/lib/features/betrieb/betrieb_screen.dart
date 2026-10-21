@@ -320,7 +320,7 @@ class _Kacheln extends StatelessWidget {
         label: '// speicher',
         wert: platte == null ? 'unbekannt' : '${platte.belegtProzent} %',
         hinweis: platte == null ? 'nicht ermittelbar' : '${groesseText(platte.gesamt - platte.frei)} von ${groesseText(platte.gesamt)} belegt',
-        farbe: platte == null ? kTextMuted : (platte.belegtProzent >= 95 ? kDanger : (platte.belegtProzent >= 85 ? kWarn : kText)),
+        farbe: platte == null ? kTextMuted : (platte.belegtProzent >= 95 ? kDanger : (platte.belegtProzent > 85 ? kWarn : kText)),
       ),
       _Kachel(label: '// mitglieder', wert: '${s.mitglieder}', hinweis: '${s.geraete} Geräte · ${s.sitzungen} Sitzungen', farbe: kText),
     ];

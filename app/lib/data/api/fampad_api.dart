@@ -232,8 +232,8 @@ class FampadApi {
   Future<ProtokollSeite> betriebProtokoll({ProtokollArt art = ProtokollArt.alle, String? weiter, int limit = 50}) async =>
       ProtokollSeite.fromJson(await client.get('/admin/audit?category=${art.code}&limit=$limit${weiter == null ? '' : '&cursor=${Uri.encodeQueryComponent(weiter)}'}'));
 
-  /// Schlüssel-Ampel je Person und für die Familie (nur Zustände, keine Geheimnisse).
-  Future<SchluesselStatus> betriebSchluesselStatus() async => SchluesselStatus.fromJson(await client.get('/admin/key-status'));
+  /// Familienampel der Schlüssel (nur Zähler, ohne Namen und Ereignisse; ohne Step-up). Die Einzelheiten je Person stehen in [betriebMitglieder].
+  Future<SchluesselStatus> betriebSchluesselStatus() async => SchluesselStatus.fromJson(await client.get('/admin/key-status?summary=1'));
 
   /// Mitglieder und Geräte; braucht ein frisches Step-up (403 step_up_required).
   Future<BetriebMitglieder> betriebMitglieder() async => BetriebMitglieder.fromJson(await client.get('/admin/members'));

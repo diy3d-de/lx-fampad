@@ -50,28 +50,12 @@ class FamilienAmpelKarte extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           Text(familienAmpelText(s), style: TextStyle(fontWeight: FontWeight.w600, color: s.bereit ? kTerminal : kText)),
-          if (s.personen.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Wrap(
-              spacing: 8,
-              runSpacing: 6,
-              children: [
-                for (final p in s.personen)
-                  Semantics(
-                    container: true,
-                    label: '${p.name}: ${ampelText(p.ampel)}',
-                    excludeSemantics: true,
-                    child: StatusPill('${p.name} · ${ampelText(p.ampel)}', color: ampelFarbe(p.ampel)),
-                  ),
-              ],
-            ),
-          ],
           if (z.fehler != null) ...[
             const SizedBox(height: 8),
             const Text('Letzter Abruf gescheitert, angezeigt wird der letzte Stand.', style: TextStyle(fontSize: 12, color: kTextMuted)),
           ],
           const SizedBox(height: 4),
-          TextButton(onPressed: oeffneMitglieder, style: TextButton.styleFrom(minimumSize: const Size(44, 44)), child: const Text('Einzelheiten je Person')),
+          TextButton(onPressed: oeffneMitglieder, style: TextButton.styleFrom(minimumSize: const Size(44, 44)), child: const Text('Einzelheiten je Person (mit Bestätigung)')),
         ],
       );
     }
@@ -143,7 +127,7 @@ class _WarnungenKarteState extends ConsumerState<WarnungenKarte> with AktionsZus
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 child: Semantics(
                   container: true,
-                  label: 'Warnung: ${warnArtText(a.art)}${a.seit == null ? '' : ', seit ${zeitText(a.seit!, jetzt)}'}',
+                  label: 'Warnung: ${warnZeile(a.art, a.anzahl)}${a.seit == null ? '' : ', seit ${zeitText(a.seit!, jetzt)}'}',
                   excludeSemantics: true,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -154,7 +138,7 @@ class _WarnungenKarteState extends ConsumerState<WarnungenKarte> with AktionsZus
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(warnArtText(a.art), style: const TextStyle(fontWeight: FontWeight.w600)),
+                            Text(warnZeile(a.art, a.anzahl), style: const TextStyle(fontWeight: FontWeight.w600)),
                             if (a.seit != null) Text('seit ${zeitText(a.seit!, jetzt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                           ],
                         ),

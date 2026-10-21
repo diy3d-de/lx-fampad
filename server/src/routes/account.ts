@@ -114,7 +114,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   app.get('/api/v1/me/keys', async (req) => getOwnKeys(ctx, await auth.requireSession(req)));
 
   // Das Gerät meldet seinen Schlüsselstand (Betreiber-Ampel): 0 = kein Schlüssel, n = Schlüsselversion n; nur diese Zahl, nie Schlüsselmaterial
-  app.put('/api/v1/me/device-key', async (req) => {
+  app.put('/api/v1/me/device-key', strikt, async (req) => {
     const p = await auth.requireSession(req);
     await reportDeviceKey(ctx, p, parse(z.object({ keyVersion: z.number().int().min(0).max(MAX_REPORTED_KEY_VERSION) }).strict(), req.body).keyVersion);
     return { ok: true };

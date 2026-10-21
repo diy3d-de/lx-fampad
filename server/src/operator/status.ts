@@ -46,10 +46,11 @@ export interface OperatorStatus {
 
 const STARTED_AT = new Date();
 const SEMVER = /^\d+\.\d+\.\d+$/;
-const BACKUP_WARN_HOURS = 36;
+// Schwellen der Ansicht UND der Warnungen (operator/monitor.ts rechnet mit denselben Werten und demselben exakten Alter)
+export const BACKUP_WARN_HOURS = 36;
 const BACKUP_ERROR_HOURS = 72;
-const CERT_WARN_DAYS = 14;
-const DISK_WARN_PERCENT = 85;
+export const CERT_WARN_DAYS = 14;
+export const DISK_WARN_PERCENT = 85;
 const DISK_ERROR_PERCENT = 95;
 
 /** PostgreSQL 42501 (insufficient_privilege), auch wenn der Treiber den Fehler als Ursache einpackt. */
@@ -226,8 +227,10 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   let backup: OperatorStatus['backup'] = { state: 'unknown', lastSuccessAt: null, ageHours: null, totalBytes: null, lastResult: null };
   if (bs) {
     const lastMs = bs.lastSuccessEpoch !== null ? bs.lastSuccessEpoch * 1000 : null;
-    const ageHours = lastMs !== null ? Math.max(0, Math.round((now.getTime() - lastMs) / 3_600_000)) : null;
-    const state: Level = bs.lastResult === 'fehler' || ageHours === null || ageHours > BACKUP_ERROR_HOURS ? 'error' : ageHours > BACKUP_WARN_HOURS ? 'warn' : 'ok';
+    // Die Zustände rechnen mit dem exakten Alter (nicht mit den gerundeten Stunden der Anzeige): die Warnungen des Betreibers gelten für dieselbe Grenze
+    const ageMs = lastMs !== null ? Math.max(0, now.getTime() - lastMs) : null;
+    const ageHours = ageMs !== null ? Math.round(ageMs / 3_600_000) : null;
+    const state: Level = bs.lastResult === 'fehler' || ageMs === null || ageMs > BACKUP_ERROR_HOURS * 3_600_000 ? 'error' : ageMs > BACKUP_WARN_HOURS * 3_600_000 ? 'warn' : 'ok';
     backup = { state, lastSuccessAt: lastMs !== null ? new Date(lastMs).toISOString() : null, ageHours, totalBytes: bs.totalBytes, lastResult: bs.lastResult };
   }
 
@@ -237,7 +240,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   const database: ServiceStatus = { id: 'database', state: dbOk ? (migrations.pending ? 'warn' : 'ok') : 'error', detail: { latencyMs } };
   const services = [api, database, weather, ntfy, caddy];
 
-  const diskLevel: Level = diskView === null ? 'unknown' : diskView.usedPercent >= DISK_ERROR_PERCENT ? 'error' : diskView.usedPercent >= DISK_WARN_PERCENT ? 'warn' : 'ok';
+  const diskLevel: Level = diskView === null ? 'unknown' : diskView.usedPercent >= DISK_ERROR_PERCENT ? 'error' : diskView.usedPercent > DISK_WARN_PERCENT ? 'warn' : 'ok';
   const levels: Level[] = [...services.map((s) => s.state), backup.state, diskLevel];
   const overall = levels.includes('error') ? 'error' : levels.includes('warn') ? 'warn' : 'ok';
   const unknownCount = levels.filter((l) => l === 'unknown').length + (migrations.applied === null ? 1 : 0);

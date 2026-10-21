@@ -6,7 +6,7 @@
 //  - Gemeldet wird beim Start und nach jeder Änderung des Stands (Schlüssel eingerichtet, Gerät verbunden, Schlüsselwechsel), sowie beim Zurückkehren in die App,
 //    wenn die letzte Meldung über 12 Stunden her ist (der Server wertet eine Meldung 30 Tage lang als Beleg; die Shell ruft [GeraetSchluesselMelder.auffrischen]).
 //  - Solange der Stand unklar ist (wird geprüft, Verschlüsselung nicht verfügbar), wird nichts gemeldet: eine falsche "kein Schlüssel"-Meldung wäre schlimmer als keine.
-//  - Tolerant gegenüber alten Servern: 404 (Route unbekannt) oder 409 (kein Gerät zur Sitzung) beenden die Versuche für diesen Lauf der App; jeder andere Fehler
+//  - Tolerant gegenüber alten Servern: 404 (Route unbekannt) oder 409 (kein Gerät zur Sitzung) beenden die Versuche für diese Sitzung (nach Abmelden/Anmelden beginnt es neu); jeder andere Fehler
 //    (offline, Server gestört) bleibt still, der nächste Auslöser versucht es erneut.
 import 'dart:async';
 
@@ -27,27 +27,70 @@ int? geraetSchluesselStand(E2eeState s) => switch (s.status) {
 };
 
 /// Merkt, was schon gemeldet wurde (je Person und Zahl), damit nicht bei jeder Zustandsänderung gesendet wird.
+///
+/// - Kommt während eines laufenden Aufrufs ein neuer Stand, wird er gemerkt und danach nachgeholt (kein Verlust, kein paralleler Aufruf).
+/// - Das Gemerkte (und ein 404/409) gilt nur für die aktuelle Sitzung: wechselt die Geräte-Kennung (Abmelden, andere Person, neue Anmeldung), beginnt alles neu.
 class GeraetSchluesselMelder {
+  /// [sitzung] liefert die Kennung der aktuellen Sitzung (Geräte-ID aus dem Token-Speicher); ohne sie gilt eine einzige Sitzung.
+  GeraetSchluesselMelder({Future<String?> Function()? sitzung}) : _sitzung = sitzung ?? (() async => null);
+
+  final Future<String?> Function() _sitzung;
+  bool _sitzungGelesen = false;
+  String? _sitzungKennung;
   String? _gemeldet;
   DateTime? _gemeldetAm;
   bool _nichtUnterstuetzt = false;
   bool _laeuft = false;
+  ({FampadApi api, String person, int stand, bool erzwingen})? _wartend;
 
   /// Meldet [stand] für [person], wenn es neu ist (oder mit [erzwingen]). Wirft nie.
   Future<void> melden(FampadApi api, String person, int stand, {bool erzwingen = false}) async {
-    final schluessel = '$person:$stand';
-    if (_nichtUnterstuetzt || _laeuft || (!erzwingen && _gemeldet == schluessel)) return;
+    if (_laeuft) {
+      // der neueste Stand gewinnt; ein erzwungener Auftrag bleibt erzwungen
+      _wartend = (api: api, person: person, stand: stand, erzwingen: erzwingen || (_wartend?.erzwingen ?? false));
+      return;
+    }
     _laeuft = true;
+    try {
+      var auftrag = (api: api, person: person, stand: stand, erzwingen: erzwingen);
+      while (true) {
+        _wartend = null;
+        await _einmal(auftrag.api, auftrag.person, auftrag.stand, auftrag.erzwingen);
+        final naechster = _wartend;
+        if (naechster == null) break;
+        auftrag = naechster;
+      }
+    } finally {
+      _laeuft = false;
+    }
+  }
+
+  Future<void> _einmal(FampadApi api, String person, int stand, bool erzwingen) async {
+    String? kennung;
+    try {
+      kennung = await _sitzung();
+    } catch (_) {
+      kennung = null;
+    }
+    if (!_sitzungGelesen || kennung != _sitzungKennung) {
+      // andere Sitzung: nichts Gemerktes übernehmen, auch kein früheres 404/409
+      _sitzungGelesen = true;
+      _sitzungKennung = kennung;
+      _gemeldet = null;
+      _gemeldetAm = null;
+      _nichtUnterstuetzt = false;
+    }
+    final schluessel = '$person:$stand';
+    if (_nichtUnterstuetzt || (!erzwingen && _gemeldet == schluessel)) return;
     try {
       await api.geraetSchluesselMelden(stand);
       _gemeldet = schluessel;
       _gemeldetAm = DateTime.now();
     } on ApiException catch (e) {
+      // ältere Server kennen die Route nicht (404), die Sitzung hat kein Gerät (409): für diese Sitzung nicht weiter versuchen
       if (e.status == 404 || e.status == 409) _nichtUnterstuetzt = true;
     } catch (_) {
       // still: der nächste Auslöser versucht es erneut
-    } finally {
-      _laeuft = false;
     }
   }
 }
@@ -63,7 +106,9 @@ extension GeraetSchluesselAuffrischen on GeraetSchluesselMelder {
   }
 }
 
-final geraetSchluesselMelderZustandProvider = Provider<GeraetSchluesselMelder>((ref) => GeraetSchluesselMelder());
+final geraetSchluesselMelderZustandProvider = Provider<GeraetSchluesselMelder>(
+  (ref) => GeraetSchluesselMelder(sitzung: () async => (await ref.read(tokenStoreProvider).readTokens())?.deviceId),
+);
 
 /// Wird am Wurzel-Widget beobachtet (siehe app.dart).
 final geraetSchluesselMelderProvider = Provider<void>((ref) {

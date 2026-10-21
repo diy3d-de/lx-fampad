@@ -388,7 +388,7 @@ class SchluesselPerson {
   }
 }
 
-/// `GET /admin/key-status`: Schlüssel-Ampel je Person und für die Familie.
+/// `GET /admin/key-status?summary=1`: Familienampel (nur Zähler, ohne Namen und Ereignisse, ohne Step-up). Die Einzelheiten je Person liefert `/admin/members` (mit Step-up).
 class SchluesselStatus {
   final BetriebAmpel gesamt;
 
@@ -397,8 +397,10 @@ class SchluesselStatus {
   final int gruen;
   final int gelb;
   final int rot;
+
+  /// Nur gefüllt, wenn der Server Einzelheiten liefert (die Übersicht fragt nur die Zusammenfassung ab).
   final List<SchluesselPerson> personen;
-  const SchluesselStatus({required this.gesamt, required this.bereit, required this.gruen, required this.gelb, required this.rot, required this.personen});
+  const SchluesselStatus({required this.gesamt, required this.bereit, required this.gruen, required this.gelb, required this.rot, this.personen = const []});
 
   factory SchluesselStatus.fromJson(Object? raw) {
     final m = asJson(raw);
@@ -406,8 +408,8 @@ class SchluesselStatus {
     final personen = [if (m['persons'] is List) for (final p in m['persons'] as List) ?SchluesselPerson.versuchen(p)];
     return SchluesselStatus(
       gesamt: BetriebAmpel.lesen(m['overall']),
-      // Fehlt eine Angabe oder ist eine Person nicht grün, gilt die Familie nie als bereit
-      bereit: m['ready'] == true && personen.isNotEmpty && personen.every((p) => p.ampel == BetriebAmpel.gruen),
+      // Fehlt eine Angabe oder ist jemand nicht grün, gilt die Familie nie als bereit (die App glaubt `ready` nur zusammen mit den Zählern)
+      bereit: m['ready'] == true && (_zahl(counts['green']) ?? 0) > 0 && (_zahl(counts['yellow']) ?? 1) == 0 && (_zahl(counts['red']) ?? 1) == 0 && personen.every((p) => p.ampel == BetriebAmpel.gruen),
       gruen: _zahl(counts['green']) ?? personen.where((p) => p.ampel == BetriebAmpel.gruen).length,
       gelb: _zahl(counts['yellow']) ?? personen.where((p) => p.ampel == BetriebAmpel.gelb).length,
       rot: _zahl(counts['red']) ?? personen.where((p) => p.ampel == BetriebAmpel.rot).length,
@@ -415,7 +417,7 @@ class SchluesselStatus {
     );
   }
 
-  int get anzahl => personen.length;
+  int get anzahl => gruen + gelb + rot;
 }
 
 class BetriebGeraet {
@@ -529,18 +531,19 @@ class BetriebWarnungen {
   /// Zeitpunkt des letzten Weckers (die App zeigt daraufhin einmal den festen Hinweis).
   final DateTime? zuletztGewarnt;
 
-  /// Aktive Warnungen (Art, seit wann); eine Art kann mehrfach vorkommen (Schlüssel je Person).
-  final List<({String art, DateTime? seit})> aktiv;
+  /// Aktive Warnungen je Art (seit wann, wie viele: bei der Schlüssel-Ampel die Zahl der Personen). Ein älterer Server liefert keine Anzahl (dann 1).
+  final List<({String art, DateTime? seit, int anzahl})> aktiv;
   const BetriebWarnungen({required this.an, required this.pushDa, required this.gepruefteAm, required this.zuletztGewarnt, required this.aktiv});
 
   factory BetriebWarnungen.fromJson(Object? raw) {
     final m = asJson(raw);
-    final aktiv = <({String art, DateTime? seit})>[];
+    final aktiv = <({String art, DateTime? seit, int anzahl})>[];
     if (m['active'] is List) {
       for (final e in m['active'] as List) {
         if (e is! Map<String, dynamic>) continue;
         final art = _text(e['kind']);
-        if (art != null) aktiv.add((art: art, seit: _zeit(e['since'])));
+        final n = _zahl(e['count']);
+        if (art != null) aktiv.add((art: art, seit: _zeit(e['since']), anzahl: n != null && n > 0 ? n : 1));
       }
     }
     return BetriebWarnungen(

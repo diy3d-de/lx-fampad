@@ -6,7 +6,7 @@ import { z } from 'zod';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AUDIT_CATEGORIES, CURSOR_FORMAT, listAudit } from '../operator/audit-view.js';
-import { collectKeyStatus } from '../operator/key-status.js';
+import { collectKeyStatus, summarize } from '../operator/key-status.js';
 import { collectMembers, unlockMember } from '../operator/members.js';
 import { setWarningsEnabled, type OperatorMonitor } from '../operator/monitor.js';
 import type { Probes } from '../operator/probes.js';
@@ -53,10 +53,13 @@ export function registerOperatorRoutes(app: FastifyInstance, config: Config, aut
     return listAudit(ctx, p.familyId, parse(auditQuery, req.query));
   });
 
-  // Schlüssel-Ampel je Person (nur Zustände und Zeiten, keine Geheimnisse; Namen der Familie kennt jedes Mitglied ohnehin)
+  // Schlüssel-Ampel: `?summary=1` liefert nur die Zähler (grün/gelb/rot, bereit) ohne Namen und Ereignisse und braucht kein Step-up (Übersicht); die Einzelheiten je Person
+  // (Namen, Wege, Ereignisse) nur mit frischem Step-up. Nie Geheimnisse.
   app.get('/api/v1/admin/key-status', limit, async (req) => {
-    const p = await requireOperator(ctx, await auth.requireSession(req));
-    return collectKeyStatus(ctx, p.familyId);
+    const q = parse(z.object({ summary: z.literal('1').optional() }).strict(), req.query);
+    const p = await requireOperator(ctx, await auth.requireSession(req), q.summary ? {} : { stepUp: true });
+    const k = await collectKeyStatus(ctx, p.familyId);
+    return q.summary ? summarize(k) : k;
   });
 
   // Mitglieder und Geräte (Gerätenamen, Versionen, letzte Anmeldung): wie das Protokoll nur mit frischem Step-up

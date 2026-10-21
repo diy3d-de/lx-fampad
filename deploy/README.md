@@ -216,9 +216,25 @@ sudo bash ~/lx-fampad/deploy/backup/einrichtung-status.sh
 sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh      # installiert das aktualisierte Sicherungsskript (ohne Optionen: vorhandene Schlüssel bleiben)
 ```
 
-Ohne diesen Schritt zeigt die App die Sicherung als „unbekannt“ und es gibt keine Warnung „Sicherung zu alt“ (unbekannt löst nie einen Alarm aus). Pfade und Schalter der Messungen: `OPERATOR_*` in `server/.env.example`.
+Ohne diesen Schritt zeigt die App die Sicherung als „unbekannt“ und es gibt keine Warnung „Sicherung zu alt“ (unbekannt löst nie einen Alarm aus). Die Unit `lx-fampad-backup.service` läuft mit `ProtectSystem=strict` und braucht `-/var/lib/lx-fampad-status` in `ReadWritePaths`; `einrichtung-backup.sh` installiert die Unit neu und führt `daemon-reload` aus (deshalb der dritte Befehl oben). Schreibt die Sicherung die Datei nicht, steht eine Warnung im Journal (`journalctl -u lx-fampad-backup`), die Sicherung selbst scheitert deshalb nie.
+
+**Prüfliste nach dem Einrichten** (einmal auf dem Server):
+
+```bash
+sudo systemctl start lx-fampad-backup && sudo journalctl -u lx-fampad-backup -n 20 --no-pager   # keine Warnung zur zweiten Statusdatei
+stat -c '%U:%G %a %n' /var/lib/lx-fampad-status /var/lib/lx-fampad-status/backup.status       # root:lx-fampad 750 bzw. root:lx-fampad 640
+sudo cat /var/lib/lx-fampad-status/backup.status                                               # last_run_epoch ist aktuell (jetzt), last_result=ok; keine Pfade
+sudo -u lx-fampad cat /var/lib/lx-fampad-status/backup.status                                  # muss funktionieren
+sudo -u lx-fampad ls /var/backups/lx-fampad                                                    # muss mit "Permission denied" scheitern
+```
+
+In der App (Betrieb > Übersicht, „Prüfung neu starten“) steht die letzte Sicherung dann mit Uhrzeit statt „unbekannt“. Pfade und Schalter der Messungen: `OPERATOR_*` in `server/.env.example`.
 
 **Betreiber-Warnungen (Push, ohne Inhalt):** ein Prüfer im API-Prozess (alle 5 Minuten, Zustand in der Datenbank) weckt die Geräte des Betreibers per ntfy (derselbe Wecker wie überall, kein Text), wenn das Zertifikat unter 14 Tage hat, die Sicherung älter als 36 Stunden ist, Datenbank oder ntfy nicht erreichbar sind, der Platz über 85 % liegt, es mehr als 20 fehlgeschlagene Anmeldungen in 15 Minuten gibt oder die Schlüssel-Ampel einer Person rot wird. Die App zeigt dann „Betrieb: Hinweis – öffne Betrieb“; Einzelheiten stehen in der Betrieb-Ansicht. Je Art höchstens alle 6 Stunden, keine Wiederholung bei Neustart, Unbekanntes warnt nie. Voraussetzung ist eingerichtetes Push (ntfy, Gerät des Betreibers angemeldet); der Betreiber schaltet die Warnungen in der App ein oder aus (Standard an). Nichts weiter einzurichten; die Migration `0021` ist additiv.
+
+**Grenzen der Warnungen (ehrlich):** „Datenbank nicht erreichbar“ und „ntfy nicht erreichbar“ erscheinen zuverlässig nur in der Ansicht „Betrieb“, nicht als Push: der Wecker läuft selbst über dieselbe Datenbank (Push-Themen) und dasselbe ntfy. Fällt eines davon aus, kann der Hinweis ausbleiben; der Server versucht es mit den zuletzt bekannten Push-Themen, mehr nicht. Ein vollständiger Ausfall des API-Dienstes erzeugt gar keinen Hinweis (es läuft dann kein Prüfer): dafür ist eine Überwachung von außen nötig. Die Sicherungs-Warnung gilt auch nach einem fehlgeschlagenen letzten Lauf mit älterem Erfolg erst bei mehr als 36 Stunden Alter.
+
+**Reihenfolge beim Deploy (Schlüssel-Ampel):** erst die Apps der Betreiber (und der Familie) aktualisieren, dann den Server. Die Ampel stützt sich auf die Meldung der Geräte (`PUT /me/device-key`): ältere Apps melden nichts, die Anzeige zeigt dann „rot“ oder „gelb“. Die Warnung „Schlüssel-Ampel rot“ wartet deshalb bei einer Person, von der noch nie ein Gerät einen Schlüsselstand gemeldet hat, 7 Tage (Karenz), bevor sie weckt; meldet ein Gerät eine Version und die Person ist trotzdem rot, warnt sie sofort.
 
 **Migrationsstand lesen (einmalig auf dem bestehenden Server, als root):** Die Laufzeitrolle darf das Schema `drizzle` sonst nicht sehen, die Seite zeigt dann „Migrationsstand unbekannt (Grant fehlt, siehe README)“. Nur lesend und minimal, idempotent (neue Installationen erledigt `einrichtung-auth.sh`):
 

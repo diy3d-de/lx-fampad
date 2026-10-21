@@ -7,6 +7,7 @@ import 'dart:typed_data';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/api_client.dart';
 import 'package:lx_fampad/data/api/fampad_api.dart';
@@ -21,6 +22,7 @@ import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/push/chat_benachrichtiger.dart';
 import 'package:lx_fampad/features/auth/step_up.dart';
 import 'package:lx_fampad/features/betrieb/betrieb_anzeige.dart';
+import 'package:lx_fampad/features/betrieb/betrieb_screen.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -78,6 +80,12 @@ Map<String, dynamic> _keyStatus({bool bereit = false}) => {
     _person(_kim, 'Kim', bereit ? 'green' : 'yellow', device: true, recovery: bereit),
   ],
 };
+
+/// Die Zusammenfassung, die die Übersicht abfragt (`?summary=1`): nur Zähler, keine Namen, keine Ereignisse.
+Map<String, dynamic> _zusammenfassung({bool bereit = false}) {
+  final k = _keyStatus(bereit: bereit);
+  return {'generatedAt': k['generatedAt'], 'overall': k['overall'], 'ready': k['ready'], 'counts': k['counts']};
+}
 
 Map<String, dynamic> _geraet(String id, String name, {String platform = 'android', String? version = '0.7.0', String keyState = 'current', int? keyVersion = 1}) => {
   'id': id,
@@ -148,6 +156,17 @@ void main() {
       expect(SchluesselStatus.fromJson({'overall': 'green', 'ready': true, 'persons': <Object>[]}).bereit, isFalse);
     });
 
+    test('Zusammenfassung (ohne Personen): Zähler genügen, "bereit" nur bei lauter Grün; fehlende Zähler = nie bereit', () {
+      final z = SchluesselStatus.fromJson(_zusammenfassung(bereit: true));
+      expect((z.gruen, z.gelb, z.rot, z.anzahl, z.bereit), (3, 0, 0, 3, true));
+      expect(z.personen, isEmpty);
+      expect(SchluesselStatus.fromJson(_zusammenfassung()).bereit, isFalse);
+      expect(SchluesselStatus.fromJson({'overall': 'green', 'ready': true}).bereit, isFalse);
+      expect(SchluesselStatus.fromJson({'overall': 'green', 'ready': true, 'counts': {'green': 2}}).bereit, isFalse);
+      expect(SchluesselStatus.fromJson({'ready': true, 'counts': {'green': 2, 'yellow': 0, 'red': 0}}).bereit, isTrue);
+      expect(familienAmpelText(SchluesselStatus.fromJson({'counts': {'green': 2, 'yellow': 0, 'red': 1}})), '2 von 3 grün (1 rot), noch nicht Stichtag-bereit');
+    });
+
     test('tolerant: unbekannte Ampel = unbekannt (nie grün), kaputte Personen fallen weg, fehlende Felder sind leer', () {
       final s = SchluesselStatus.fromJson({
         'overall': 'lila',
@@ -192,13 +211,17 @@ void main() {
       final w = BetriebWarnungen.fromJson({
         'active': [
           {'kind': 'cert', 'since': '2026-10-21T08:00:00.000Z'},
-          {'kind': 'etwas-neues'},
+          {'kind': 'key', 'count': 2},
+          {'kind': 'etwas-neues', 'count': 0},
           {'nix': 1},
         ],
       });
+      expect(w.aktiv.map((a) => a.anzahl), [1, 2, 1]);
+      expect(warnZeile('key', 2), 'Schlüssel-Ampel einer Person ist rot (2)');
+      expect(warnZeile('cert', 1), 'Zertifikat läuft in weniger als 14 Tagen ab');
       expect(w.an, isTrue);
       expect(w.pushDa, isFalse);
-      expect(w.aktiv.map((a) => a.art), ['cert', 'etwas-neues']);
+      expect(w.aktiv.map((a) => a.art), ['cert', 'key', 'etwas-neues']);
       expect(warnArtText('etwas-neues'), 'Hinweis des Servers');
       for (final art in kWarnArten) {
         expect(warnArtText(art), isNot('Hinweis des Servers'), reason: art);
@@ -274,6 +297,52 @@ void main() {
       await m.auffrischen(api, user, bereit, abstand: Duration.zero);
       expect(server.anfragen('PUT /me/device-key'), hasLength(2));
       expect(server.anfragen('PUT /me/device-key').last.json, {'keyVersion': 2});
+    });
+
+    test('ein Stand, der während eines laufenden Aufrufs eintrifft, wird nachgeholt (nur der neueste, nie parallel)', () async {
+      final erste = Completer<void>();
+      var offen = 0;
+      var parallel = 0;
+      final gesehen = <int>[];
+      final server = FakeServer()
+        ..on('PUT /me/device-key', (r) async {
+          offen++;
+          if (offen > parallel) parallel = offen;
+          gesehen.add(r.json['keyVersion'] as int);
+          if (gesehen.length == 1) await erste.future;
+          offen--;
+          return jsonAntwort({'ok': true});
+        });
+      final api = apiMit(server);
+      final m = GeraetSchluesselMelder();
+      final lauf = m.melden(api, 'p', 1);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await m.melden(api, 'p', 2); // trifft während des ersten Aufrufs ein
+      await m.melden(api, 'p', 3); // der neueste gewinnt
+      erste.complete();
+      await lauf;
+      expect(gesehen, [1, 3]);
+      expect(parallel, 1);
+    });
+
+    test('Sitzungswechsel (andere Geräte-ID): ein früheres 404 und das Gemerkte gelten nicht mehr', () async {
+      var sitzung = 'dev-1';
+      var neuerServer = false;
+      final server = FakeServer()..on('PUT /me/device-key', (_) => neuerServer ? jsonAntwort({'ok': true}) : fehler(404, 'not_found'));
+      final api = apiMit(server);
+      final m = GeraetSchluesselMelder(sitzung: () async => sitzung);
+      await m.melden(api, 'p', 1);
+      await m.melden(api, 'p', 2); // gesperrt für diese Sitzung
+      expect(server.anfragen('PUT /me/device-key'), hasLength(1));
+      sitzung = 'dev-2'; // neu angemeldet, der Server kann es jetzt
+      neuerServer = true;
+      await m.melden(api, 'p', 2);
+      expect(server.anfragen('PUT /me/device-key'), hasLength(2));
+      await m.melden(api, 'p', 2); // dieselbe Sitzung, schon gemeldet
+      expect(server.anfragen('PUT /me/device-key'), hasLength(2));
+      sitzung = 'dev-3'; // wieder eine neue Sitzung: dieselbe Zahl wird neu gemeldet
+      await m.melden(api, 'p', 2);
+      expect(server.anfragen('PUT /me/device-key'), hasLength(3));
     });
 
     test('älterer Server (404) oder Sitzung ohne Gerät (409): keine weiteren Versuche; andere Fehler: der nächste Auslöser versucht es erneut', () async {
@@ -406,7 +475,7 @@ void main() {
     env.server.json('GET /me', {...meJson(role: 'admin', passkeys: 1, password: true, totp: true), 'operator': true});
     env.server.on('GET /admin/status', (_) => jsonAntwort(_status()));
     env.server.on('GET /admin/audit', (_) => jsonAntwort({'items': <Object>[], 'nextCursor': null}));
-    env.server.on('GET /admin/key-status', (_) => jsonAntwort(keyStatus == null ? _keyStatus() : keyStatus()));
+    env.server.on('GET /admin/key-status', (_) => jsonAntwort(keyStatus == null ? _zusammenfassung() : keyStatus()));
     env.server.on('GET /admin/members', (_) => jsonAntwort(mitglieder == null ? _members() : mitglieder()));
     env.server.on('GET /admin/warnings', (_) => jsonAntwort(warnungen == null ? _warnungen() : warnungen()));
     vorStart?.call(env);
@@ -429,8 +498,9 @@ void main() {
       expect(find.text('// SCHLÜSSEL-AMPEL'), findsOneWidget);
       expect(find.text('● gelb'), findsOneWidget);
       expect(find.text('2 von 3 grün (1 gelb), noch nicht Stichtag-bereit'), findsOneWidget);
-      expect(find.text('Anna · grün'), findsOneWidget);
-      expect(find.text('Kim · gelb'), findsOneWidget);
+      // die Übersicht kennt nur Zähler: keine Namen (die stehen auf der Seite Mitglieder, mit Bestätigung)
+      expect(find.textContaining('Anna'), findsNothing);
+      expect(env.server.anfragen('GET /admin/key-status').every((r) => r.query['summary'] == '1'), isTrue);
       await _zu(tester, find.text('// WARNUNGEN'));
       expect(find.text('// WARNUNGEN'), findsOneWidget);
       expect(find.text('Warnungen an dich'), findsOneWidget);
@@ -442,10 +512,10 @@ void main() {
     testWidgets('alle grün: "Stichtag-bereit" in Grün; aktive Warnungen mit festem Text und Zeit', (tester) async {
       await start(
         tester,
-        keyStatus: () => _keyStatus(bereit: true),
+        keyStatus: () => _zusammenfassung(bereit: true),
         warnungen: () => _warnungen(zuletzt: '2026-10-21T08:00:00.000Z', aktiv: [
           {'kind': 'cert', 'since': DateTime.now().toUtc().subtract(const Duration(hours: 2)).toIso8601String()},
-          {'kind': 'key', 'since': null},
+          {'kind': 'key', 'since': null, 'count': 2},
           {'kind': 'etwas-neues', 'since': null},
         ]),
       );
@@ -454,7 +524,7 @@ void main() {
       expect(find.text('alle grün: Stichtag-bereit'), findsOneWidget);
       await _zu(tester, find.text('// WARNUNGEN'));
       expect(find.text('Zertifikat läuft in weniger als 14 Tagen ab'), findsOneWidget);
-      expect(find.text('Schlüssel-Ampel einer Person ist rot'), findsOneWidget);
+      expect(find.text('Schlüssel-Ampel einer Person ist rot (2)'), findsOneWidget);
       expect(find.text('Hinweis des Servers'), findsOneWidget);
       expect(find.textContaining('Keine aktive Warnung'), findsNothing);
     });
@@ -514,8 +584,8 @@ void main() {
 
     testWidgets('"Einzelheiten je Person" wechselt zur Seite Mitglieder', (tester) async {
       await start(tester);
-      await _zu(tester, find.text('Einzelheiten je Person'));
-      await tippe(tester, find.text('Einzelheiten je Person'));
+      await _zu(tester, find.text('Einzelheiten je Person (mit Bestätigung)'));
+      await tippe(tester, find.text('Einzelheiten je Person (mit Bestätigung)'));
       expect(find.text('// MITGLIEDER UND GERÄTE'), findsOneWidget);
     });
   });
@@ -635,11 +705,24 @@ void main() {
     });
   });
 
+  group('Hinweis im Vordergrund', () {
+    testWidgets('fester Text mit "Öffnen", der Betrieb öffnet; sonst nichts', (tester) async {
+      await start(tester, oeffnen: false);
+      final container = ProviderScope.containerOf(tester.element(find.byType(MaterialApp)));
+      container.read(betriebHinweisProvider.notifier).zeigen();
+      await warte(tester);
+      expect(find.text('Betrieb: Hinweis – öffne Betrieb'), findsOneWidget);
+      expect(find.text('Öffnen'), findsOneWidget);
+      await tippe(tester, find.text('Öffnen'));
+      expect(find.byType(BetriebScreen), findsOneWidget);
+    });
+  });
+
   group('Layout', () {
     for (final skala in [1.0, 1.5, 2.0]) {
       testWidgets('360 px, Textskala $skala: Übersicht und Mitglieder laufen nicht über, Touch-Ziele mindestens 44 px', (tester) async {
         // erst bei normaler Schrift zur Seite, dann vergrößern: die Startseite und das Profil laufen bei 2.0 über (nicht Teil dieses Pakets)
-        await start(tester, oeffnen: false);
+        await start(tester, oeffnen: false, mitglieder: () => _members(lock: {'until': '2026-10-21T10:00:00.000Z', 'seconds': 45}));
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
         await tippe(tester, find.text('Betrieb'));
         tester.platformDispatcher.textScaleFactorTestValue = skala;
