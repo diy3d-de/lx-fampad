@@ -6,6 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
 import 'package:lx_fampad/data/calendar/geburtstag.dart';
+import 'package:lx_fampad/data/calendar/termin_repository.dart' show KalenderDaten;
+import 'package:lx_fampad/data/calendar/zeitzonen.dart';
+import 'package:lx_fampad/data/erinnerungen/erinnerung_planung.dart' show planeErinnerungen;
+import 'package:lx_fampad/features/calendar/calendar_anzeige.dart' show anstehende;
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
@@ -15,7 +19,7 @@ import 'support/test_app.dart';
 
 const _uuid = '0b0c0d0e-1111-4111-8111-111111111111';
 
-Termin _termin({String titel = 'Max', String? uid, bool ganztaegig = true, String start = '2026-02-23', String end = '2026-02-24', String? rrule = 'FREQ=YEARLY'}) => Termin(
+Termin _termin({String titel = 'Max', String? uid, bool ganztaegig = true, String start = '2026-02-23', String end = '2026-02-24', String? rrule = 'FREQ=YEARLY', int? erinnerungMin, String? ownerId}) => Termin(
   id: 't1',
   titel: titel,
   ort: '',
@@ -27,10 +31,10 @@ Termin _termin({String titel = 'Max', String? uid, bool ganztaegig = true, Strin
   startDate: start,
   endDate: end,
   rrule: rrule,
-  erinnerungMin: null,
+  erinnerungMin: erinnerungMin,
   icalUid: uid,
   audience: 'family',
-  ownerId: null,
+  ownerId: ownerId,
   createdAt: DateTime.utc(2026, 1, 1),
   rev: 1,
 );
@@ -95,6 +99,24 @@ void main() {
     expect(istGeburtstag(_termin(titel: 'Geburtstagsfeier', end: '2026-02-26')), isFalse, reason: 'mehrtägig');
     expect(istGeburtstag(_termin(titel: 'Zahnarzt')), isFalse);
     expect(istGeburtstag(_termin(titel: 'Geburtstag Eva', ganztaegig: false)), isFalse);
+  });
+
+  test('Schalttag: Geburtstag am 29.2. erscheint auch in normalen Jahren am letzten Februartag (28.2.), in Schaltjahren am 29.2.', () {
+    expect(geburtstagRegel(2, 29), 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1');
+    expect(geburtstagRegel(2, 28), 'FREQ=YEARLY');
+    final t = _termin(titel: 'Leo', uid: geburtstagUid(2016, _uuid), start: '2016-02-29', end: '2016-03-01', rrule: geburtstagRegel(2, 29));
+    final v = vorkommenImFenster(termine: [t], ausnahmen: const {}, vonWand: DateTime.utc(2026, 1, 1), bisWand: DateTime.utc(2029, 1, 1), jetzt: DateTime.utc(2026, 1, 1));
+    expect([for (final x in v) tagText(x.ersterTag)], ['2026-02-28', '2027-02-28', '2028-02-29']);
+    expect([for (final x in v) vorkommenTitel(x)], ['Leo wird 10', 'Leo wird 11', 'Leo wird 12']);
+    // Startseiten-Karte (anstehende) und Erinnerung nutzen dieselben Vorkommen
+    final daten = KalenderDaten(termine: [_termin(titel: 'Leo', uid: geburtstagUid(2016, _uuid), start: '2016-02-29', end: '2016-03-01', rrule: geburtstagRegel(2, 29), erinnerungMin: 1440, ownerId: 'me')]);
+    expect([for (final x in anstehende(daten, DateTime.utc(2027, 2, 1, 12), tage: 60)) tagText(x.ersterTag)], ['2027-02-28']);
+    final e = planeErinnerungen(daten: daten, ich: 'me', jetzt: DateTime.utc(2027, 2, 1, 12));
+    expect(e.first.titel, 'Leo wird 11');
+    expect(e.first.zeit, instantAusWand(DateTime.utc(2027, 2, 27, 9), familienOrt), reason: '1 Tag vorher, 09:00');
+    // ohne die Schalttag-Regel gäbe es 2026 und 2027 keinen Eintrag
+    final naiv = _termin(uid: geburtstagUid(2016, _uuid), start: '2016-02-29', end: '2016-03-01');
+    expect(vorkommenImFenster(termine: [naiv], ausnahmen: const {}, vonWand: DateTime.utc(2026, 1, 1), bisWand: DateTime.utc(2028, 1, 1), jetzt: DateTime.utc(2026, 1, 1)), isEmpty);
   });
 
   Future<(TestUmgebung, ProviderContainer)> start(WidgetTester tester, {String tab = 'Kalender', void Function(TestUmgebung)? vorher, Size groesse = const Size(360, 800)}) async {

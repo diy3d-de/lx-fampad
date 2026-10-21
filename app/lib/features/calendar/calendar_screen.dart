@@ -84,8 +84,8 @@ Future<void> vorkommenOeffnen(BuildContext context, WidgetRef ref, Vorkommen v, 
   final aktion = await terminDetailBlatt(context, v: v, mitglieder: mitglieder, teilnehmer: daten.teilnehmerIds(v.termin.id), darfAendern: darf);
   if (aktion == null || !context.mounted) return;
   final repo = ref.read(terminRepositoryProvider);
-  // Geburtstage sind Jahresserien ohne Ausnahmen: Bearbeiten und Löschen gelten immer für den ganzen Termin
-  final serie = v.serie && !istGeburtstag(v.termin);
+  // Geburtstage mit Marke sind Jahresserien ohne Ausnahmen (importierte Geburtstage können welche haben und behalten die Wahl): Bearbeiten und Löschen gelten immer für den ganzen Termin
+  final serie = v.serie && !hatGeburtstagsMarke(v.termin);
   final erstes = serie && repo.istErstes(v);
   switch (aktion) {
     case TerminAktion.bearbeiten:

@@ -15,6 +15,13 @@ const kGeburtstagUidPraefix = 'lxfampad-geb-';
 /// Jährliche Wiederholung eines Geburtstags.
 const kGeburtstagRegel = 'FREQ=YEARLY';
 
+/// Regel für einen Geburtstag am 29. Februar: der letzte Februartag (28. in normalen Jahren, 29. in Schaltjahren). Mit `FREQ=YEARLY` allein gäbe es
+/// nach RFC 5545 nur Vorkommen in Schaltjahren.
+const kGeburtstagRegelSchalttag = 'FREQ=YEARLY;BYMONTH=2;BYMONTHDAY=-1';
+
+/// Die Regel für einen Geburtstag am [monat]/[tag].
+String geburtstagRegel(int monat, int tag) => monat == 2 && tag == 29 ? kGeburtstagRegelSchalttag : kGeburtstagRegel;
+
 final _uidMuster = RegExp(r'^lxfampad-geb-(\d{4})-[0-9a-fA-F-]{8,}$');
 final _titelMuster = RegExp(r'geburtstag|birthday', caseSensitive: false);
 

@@ -91,37 +91,40 @@ List<TagesHinweis> ferienAusJson(String text) {
   }
 }
 
-/// Alle Hinweise (Feiertage berechnet, Ferien gelesen) für die Jahre, die der Kalender sinnvoll zeigt.
+/// Alle Hinweise: Feiertage werden für das jeweils angezeigte Jahr berechnet (kein festes Fenster, jedes Jahr ab 1583 stimmt), Ferien kommen aus dem Asset.
 class TagesHinweise {
-  final List<TagesHinweis> alle;
-  const TagesHinweise(this.alle);
-  static const leer = TagesHinweise([]);
+  final List<TagesHinweis> ferien;
+  final bool feiertageAn;
+  final Map<int, List<TagesHinweis>> _feiertage = {};
+  TagesHinweise(this.ferien, {this.feiertageAn = true});
+  static final leer = TagesHinweise(const [], feiertageAn: false);
 
-  /// Feiertage der Jahre [vonJahr] bis [bisJahr] und die übergebenen Ferien.
-  factory TagesHinweise.aus({required Iterable<TagesHinweis> ferien, required int vonJahr, required int bisJahr}) {
-    final liste = <TagesHinweis>[for (var j = vonJahr; j <= bisJahr; j++) ...feiertageRlp(j), ...ferien];
-    liste.sort((a, b) {
-      final t = a.von.compareTo(b.von);
-      return t != 0 ? t : a.art.index.compareTo(b.art.index);
-    });
-    return TagesHinweise(liste);
-  }
+  /// Wie [TagesHinweise.new] (die Jahre ergeben sich aus den abgefragten Tagen).
+  factory TagesHinweise.aus({required Iterable<TagesHinweis> ferien}) => TagesHinweise(List.of(ferien));
 
-  bool get istLeer => alle.isEmpty;
+  bool get istLeer => ferien.isEmpty && !feiertageAn;
+
+  List<TagesHinweis> _feiertageVon(int jahr) => feiertageAn ? _feiertage.putIfAbsent(jahr, () => feiertageRlp(jahr)) : const [];
 
   /// Hinweise, die an [tag] gelten (Feiertage zuerst).
   List<TagesHinweis> fuerTag(DateTime tag) => [
-    for (final h in alle)
+    for (final h in _feiertageVon(tag.year))
       if (h.faelltAuf(tag)) h,
-  ]..sort((a, b) => a.art.index.compareTo(b.art.index));
+    for (final h in ferien)
+      if (h.faelltAuf(tag)) h,
+  ];
 
   /// Agenda: Feiertage an ihrem Tag, Ferien nur am ersten sichtbaren Tag ([von] oder ihr Beginn), damit sie nicht an jedem Tag wiederholt werden.
   Map<DateTime, List<TagesHinweis>> fuerAgenda(DateTime von, DateTime bisInklusive) {
     final out = <DateTime, List<TagesHinweis>>{};
-    for (final h in alle) {
+    for (var j = von.year; j <= bisInklusive.year; j++) {
+      for (final h in _feiertageVon(j)) {
+        if (!h.von.isBefore(von) && !h.von.isAfter(bisInklusive)) out.putIfAbsent(h.von, () => []).add(h);
+      }
+    }
+    for (final h in ferien) {
       if (h.bis.isBefore(von) || h.von.isAfter(bisInklusive)) continue;
-      final tag = h.art == TagesHinweisArt.feiertag || h.von.isAfter(von) ? h.von : von;
-      out.putIfAbsent(tag, () => []).add(h);
+      out.putIfAbsent(h.von.isAfter(von) ? h.von : von, () => []).add(h);
     }
     return out;
   }
@@ -200,7 +203,5 @@ final feiertageAnzeigenProvider = NotifierProvider<FeiertageAnzeigenNotifier, bo
 /// Hinweise für die Oberfläche: leer, solange der Schalter aus ist; Feiertage sofort, Ferien sobald das Asset geladen ist.
 final tagesHinweiseProvider = Provider.autoDispose<TagesHinweise>((ref) {
   if (!ref.watch(feiertageAnzeigenProvider)) return TagesHinweise.leer;
-  final ferien = ref.watch(ferienProvider).value ?? const <TagesHinweis>[];
-  final jahr = DateTime.now().year;
-  return TagesHinweise.aus(ferien: ferien, vonJahr: jahr - 1, bisJahr: jahr + 5);
+  return TagesHinweise(ref.watch(ferienProvider).value ?? const <TagesHinweis>[]);
 });

@@ -197,6 +197,27 @@ der Server sieht nie ein Geheimnis. Schlüsselmaterial erscheint nie im Log. Kod
 | `POST /me/key-transfer` | alle | `{ lookup (32 Byte Base64url), blob (bis 1024 Zeichen), keyVersion }` (`keyVersion` muss zur aktuellen Version passen, sonst `409 key_version_mismatch`; kollidiert die Suchkennung mit der einer anderen Person `409 transfer_conflict`) → `{ expiresAt, ttlSec: 120 }`: Übertragung für ein neues Gerät; höchstens eine offene je Person (eine neue ersetzt sie); gespeichert wird nur der SHA-256-Hash von `lookup`. `409 no_keys` ohne Schlüssel |
 | `POST /me/key-transfer/claim` | alle | `{ lookup }` → `{ blob, keyVersion }`: löst **genau einmal** ein (atomar), nur durch dieselbe Person, nur vor Ablauf. Jeder Fehlschlag (unbekannt, abgelaufen, schon eingelöst, fremde Person) antwortet gleich mit `404 not_found`. Audit `transfer_claimed` |
 
+### Passwort-Sicherung des Schlüssels (vereinfachte Schlüsselverwaltung, Schalter `E2EE_PW_BACKUP`)
+
+**Nur mit `E2EE_PW_BACKUP=true` (Standard aus):** Ohne den Schalter gibt es diese Routen nicht, sie antworten wie jede unbekannte Route mit `404 not_found`; `GET /version` meldet den Stand als `features: { pwBackup: true|false }`
+(alte Apps ignorieren das Feld). Die Sicherung ist **zusätzlich** zum Wiederherstellungsschlüssel und zur Geräte-Übertragung (Abschnitt davor, unverändert). Der Server sieht nie Passwort, `authKey` oder `kek`: Der Blob ist mit dem auf dem Gerät
+abgeleiteten Schlüssel verschlüsselt und für ihn undurchsichtiger Base64url-Text. Blob und Salt erscheinen nie im Log oder Audit. Alles strikt geprüft (unbekannte Felder `400`), strenges Rate-Limit wie die Anmeldung (Standard 10 je Minute und IP).
+
+**Ableitungssatz `kdf` = `{ id, memKiB, ops, salt }`:** Es gibt ein festes Profil für alle Konten: `id: "argon2id-v1"`, `memKiB: 65536`, `ops: 3` (Wechsel nur global per Code, nie je Konto, sonst wäre das Profil ein Konto-Orakel). Der **Salt** (16 Byte, Base64url) wird **immer vom Server bestimmt**:
+HMAC über `AUTH_SECRET_KEY` aus der normalisierten E-Mail und der Salt-Generation (Standard 1, für jedes Konto). Der Client liefert nie einen Salt und keine freien Zahlen. Eine Salt-Rotation (höhere Generation) wäre eine eigene, seltene, protokollierte Aktion und ist nicht Teil dieses Pakets.
+Jede Sicherungszeile speichert ihren eigenen Satz (`kdf_id`, `mem_kib`, `ops`, `salt_generation`), ältere (ersetzte) Zeilen bleiben so lesbar.
+
+| Methode, Pfad | Rolle | Beschreibung |
+| --- | --- | --- |
+| `POST /auth/kdf-params` | ohne Anmeldung | `{ email }` → `{ kdf }`: Satz **vor** der Anmeldung. Für **jede** E-Mail (bekannt, unbekannt, deaktiviert, mit oder ohne Sicherung) dasselbe Profil und ein aus E-Mail und Generation abgeleiteter Salt, immer genau eine Abfrage: kein Orakel für die Existenz eines Kontos und kein Wechsel der Antwort beim ersten Ablegen |
+| `PUT /me/key-backup-pw` | alle, Step-up | `{ blob (96 bis 4096 Zeichen), keyVersion, kdf: { id, memKiB, ops } }` (kein Salt) → `{ ok, id }`: `kdf` muss genau dem festen Profil entsprechen (sonst `409 kdf_mismatch`). Legt eine neue Sicherung als `active` an und setzt die bisherige aktuelle auf `superseded` (alles in **einer** Transaktion mit dem Audit `key_backup_pw_set`; gleichzeitige Aufrufe laufen nacheinander). `keyVersion` muss zur aktuellen Schlüsselversion passen (`409 key_version_mismatch`), ohne Schlüssel `409 no_keys`. Alte Zeilen werden **nie gelöscht**. Die Datenbank erzwingt zusätzlich Profil (`argon2id-v1`, mindestens 65536 KiB und 3 Durchgänge) und Blob-Länge |
+| `GET /me/key-backup-pw` | alle, Step-up | `{ id, blob, keyVersion, state, kdf }` der aktuellen Sicherung (`state`: `active`, oder `stale`, wenn der Personenschlüssel seither gewechselt hat: sie enthält dann den **alten** Schlüssel und darf nie als Wiederherstellung des aktuellen gelten); `404` ohne Sicherung. Abruf und Audit `key_backup_pw_read` in einer Transaktion |
+| `POST /me/key-backup-pw/verified` | alle, Step-up | `{ id }` setzt `verified_at` der eigenen, noch aktuellen Sicherung (erst nach der Round-Trip-Probe der App); fremde oder unbekannte `id` `404`, ersetzte oder veraltete (`stale`) `409 backup_not_current`. Audit `key_backup_pw_verified` |
+
+Ein Schlüsselwechsel (`PUT /me/keys`) löscht die Passwort-Sicherung **nicht**, sondern setzt die aktuelle auf `stale` (die Schlüsselversion zählt hoch); die alte Sicherung (`key_backups`) entfällt wie bisher.
+
+**Pflichten des Clients (für die App):** (1) Beim Verschlüsseln den Satz (`id`, `memKiB`, `ops`, Salt) und `userId`, `keyVersion` als **AAD** binden. (2) Nach dem Entschlüsseln den öffentlichen Schlüssel gegen `person_keys` (Server) **und** den TOFU-Speicher prüfen, bei Abweichung nichts übernehmen. (3) Eine **feste Untergrenze** im Client (Profil `argon2id-v1`, 65536 KiB, 3 Durchgänge), nie Parameter aus der Serverantwort herabsetzen (Downgrade-Schutz). (4) `stale` nie zur Wiederherstellung benutzen und `verified` nur nach erfolgreicher Round-Trip-Probe senden.
+
 ## Sync `POST /api/v1/sync`
 
 Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleiche Anmeldung wie `/me` (Cookie + `X-CSRF-Token` oder `Authorization: Bearer`). **Die Familie und die Rolle kommen immer aus der Sitzung, nie aus dem Körper**; ein Feld `familyId` im Körper führt zu `400`. Konzept und Entscheidungen: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6.
@@ -375,6 +396,26 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `bearbeitetAt`, `createdAt` | ISO-8601 (UTC) oder `null` | server |
 | `lesestand` | `konversationId`, `userId` | UUID (Pflicht) | create |
 | | `gelesenBis` | ISO-8601 mit Zeitzone (Pflicht) | rw |
+
+**Reaktionen, Stimmen und Pins (Chat-Erweiterungen, Migration 0013)** · Konzept: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6c. Drei weitere Sync-Entitäten, **Kinder der Nachricht** (`parent`: `nachrichtId`): sie erben die Teilnehmer-Grenze (Privatchats nur für Teilnehmer, sonst `not_found`), werden mit der Nachricht gelöscht (Tombstones, Kinder mit niedrigerer Revision), weisen nie per Push ab (`noWake`; WebSocket-Hinweis an die Teilnehmer) und gelten nur in verschlüsselten Konversationen (`e1`); `konversationId` muss die der Nachricht sein (sonst `invalid`), die Nachricht muss leben (`parent_deleted`).
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `reaktion` | `konversationId`, `nachrichtId` | UUID (Pflicht) | create |
+| | `userId` | UUID der eigenen Person (Pflicht, aktives Mitglied) | create |
+| | `inhalt` | Hülle `e1:`+Base64url (153 bis 512 Zeichen), Klartext `r1:<Emoji>`; undurchsichtig | rw (nur die eigene Zeile) |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `stimme` | wie `reaktion` | Klartext `s1:<Nummern>` | wie `reaktion` |
+| | `geaendertAt` | ISO-8601 (UTC); der Server setzt sie bei jedem Anlegen, Wiederbeleben und Ändern von `inhalt` | server |
+| `pin` | `konversationId`, `nachrichtId` | UUID (Pflicht) | create |
+| | `gepinntVon` | UUID oder `null` (anheftende Person; nach Entfernen der Person `null`) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+
+- **Feste IDs** (SHA-256 mit Präfix `lx-fampad:`, Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`, Known-Answer-Tests auf beiden Seiten): `reaktion:<Nachricht>:<Person>`, `stimme:<Nachricht>:<Person>`, `pin:<Nachricht>` (IDs und Personen kleingeschrieben); jede andere ID ist `invalid`. Löschen ist ein Tombstone; ein erneutes Anlegen mit `baseRev` 0 belebt dieselbe Zeile wieder.
+- **Reaktion und Stimme:** je Person und Nachricht genau eine; **nur die eigene Zeile** anlegen, ändern (nur `inhalt`) und löschen (`userId` ≠ Akteur: `forbidden`, fremde Zeile ändern oder löschen: `forbidden`); lesen alle mit Sicht auf die Nachricht. `inhalt` ist für den Server undurchsichtig (nur Form `e1:[A-Za-z0-9_-]+` und Größe 153 bis 512 Zeichen; Klartext wie `👍` ist `invalid`). Verlässt die Person die Familie, verschwinden ihre Zeilen (Tombstone). Der Server kennt weder das Emoji noch die Wahl noch das Ende einer Umfrage (das steckt in der verschlüsselten Nachricht).
+- **Pin:** anlegen darf jede Person mit Sicht; im **Familienchat nur Eltern und Admins** (Kinder: `invalid`); lösen: Eltern und Admins jeden, **Kinder nur ihren eigenen** (`forbidden`); nicht änderbar; höchstens **5** lebende je Konversation (`invalid`). Der Server sieht nur die ID der angehefteten Nachricht.
+- **Grenzen:** je Nachricht höchstens 50 lebende Reaktionen und 50 Stimmen (`limit_reached`); je Person 60 neue Reaktionen je Minute und 600 je Stunde, 30 neue Stimmen je Minute und 300 je Stunde, 60 (Reaktion) bzw. 30 (Stimme) Änderungen je Minute, 10 neue Pins je Minute. Bei Reaktion und Stimme zählen Anlegen **und Wiederbeleben** (Änderungsprotokoll). Pins: Die Grenze von 5 wird unter einer Sperre der Konversationszeile geprüft (parallelitätssicher).
+- **Ältere Clients** kennen die Entitäten nicht und überspringen sie im Änderungsstrom (kein Fehler, `protocolVersion` bleibt 1).
 
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).

@@ -138,12 +138,12 @@ class ChatUiAufbau {
   }
 
   /// Eine echte verschlüsselte Hülle `e1:` von [autor] mit dem Epochenschlüssel von Ben (Epoche [epoche]).
-  Future<String> verschluesselt(String konversationId, String nachrichtId, TestPerson autor, String klartext, {int epoche = 1, String? antwortAuf}) async {
+  Future<String> verschluesselt(String konversationId, String nachrichtId, TestPerson autor, String klartext, {int epoche = 1, String? antwortAuf, String? art}) async {
     final key = bens.krypto.schluessel(konversationId, epoche)!;
     final wire = HuellenCodec(crypto).versiegeln(
       schluessel: key,
       klartext: utf8Bytes(klartext),
-      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autor.id, epoch: epoche, senderKeyVersion: autor.version, antwortAuf: antwortAuf),
+      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autor.id, epoch: epoche, senderKeyVersion: autor.version, antwortAuf: antwortAuf, art: art),
       signGeheim: autor.pk.signGeheim,
     );
     return '$kPraefixE1$wire';
