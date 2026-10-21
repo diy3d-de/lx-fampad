@@ -1,5 +1,6 @@
 // Zustand der Kalender-Ansicht: Ansicht (Agenda, Monat, Woche), gewählter Tag, Personenfilter; dazu die Hilfen zum Filtern und Beschriften.
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -25,16 +26,20 @@ class KalenderAuswahl {
   /// Gewählter Kalendertag (Markierung UTC, Wanduhr der Familienzone).
   final DateTime tag;
 
+  /// Angezeigter Monat (erster Tag): getrennt vom gewählten Tag, damit ein Tipp auf einen Tag des Vor- oder Folgemonats den Monat nicht wechselt.
+  final DateTime monat;
+
   /// Nur Termine dieser Personen (Ersteller oder Teilnehmer); leer = alle.
   final Set<String> personen;
 
   /// Wie viele Tage die Agenda ab heute zeigt.
   final int agendaTage;
-  const KalenderAuswahl({required this.ansicht, required this.tag, this.personen = const {}, this.agendaTage = kAgendaTage});
+  KalenderAuswahl({required this.ansicht, required this.tag, DateTime? monat, this.personen = const {}, this.agendaTage = kAgendaTage}) : monat = monat ?? DateTime.utc(tag.year, tag.month);
 
-  KalenderAuswahl kopie({KalenderAnsicht? ansicht, DateTime? tag, Set<String>? personen, int? agendaTage}) => KalenderAuswahl(
+  KalenderAuswahl kopie({KalenderAnsicht? ansicht, DateTime? tag, DateTime? monat, Set<String>? personen, int? agendaTage}) => KalenderAuswahl(
     ansicht: ansicht ?? this.ansicht,
     tag: tag ?? this.tag,
+    monat: monat ?? this.monat,
     personen: personen ?? this.personen,
     agendaTage: agendaTage ?? this.agendaTage,
   );
@@ -53,7 +58,11 @@ class KalenderAuswahlNotifier extends Notifier<KalenderAuswahl> {
   KalenderAuswahl build() => KalenderAuswahl(ansicht: KalenderAnsicht.agenda, tag: heuteTag());
 
   void ansicht(KalenderAnsicht a) => state = state.kopie(ansicht: a);
-  void tag(DateTime t) => state = state.kopie(tag: DateTime.utc(t.year, t.month, t.day));
+  /// Springt zu einem Tag und zeigt dessen Monat.
+  void tag(DateTime t) => state = state.kopie(tag: DateTime.utc(t.year, t.month, t.day), monat: DateTime.utc(t.year, t.month));
+
+  /// Wählt einen Tag, ohne den angezeigten Monat zu wechseln (Tipp auf einen Tag im Raster).
+  void waehleTag(DateTime t) => state = state.kopie(tag: DateTime.utc(t.year, t.month, t.day));
   void mehrTage() => state = state.kopie(agendaTage: state.agendaTage + kAgendaTage);
 
   void person(String id) {
@@ -70,11 +79,18 @@ final kalenderAuswahlProvider = NotifierProvider<KalenderAuswahlNotifier, Kalend
 /// Die gemeinsame Kopfzeile (`TabKopfzeile`) ist im Kalender eingeklappt, sobald im Raster gescrollt oder getippt wird, und kommt beim
 /// Zurückscrollen an den Anfang oder beim Herunterziehen des Rasters wieder (Ausnahme der Design-Regel "Kopfzeile aller Tabs identisch").
 class KalenderKopfNotifier extends Notifier<bool> {
+  Duration _zuletzt = const Duration(days: -1);
+
   @override
   bool build() => false;
 
+  /// Kurz nach einem Wechsel (Animation der Kopfzeile, die den sichtbaren Bereich ändert) kommen keine Wechsel durch Scrollen zustande.
+  bool get beruhigt => SchedulerBinding.instance.currentSystemFrameTimeStamp - _zuletzt > const Duration(milliseconds: 250);
+
   void setzen(bool eingeklappt) {
-    if (state != eingeklappt) state = eingeklappt;
+    if (state == eingeklappt) return;
+    _zuletzt = SchedulerBinding.instance.currentSystemFrameTimeStamp;
+    state = eingeklappt;
   }
 }
 

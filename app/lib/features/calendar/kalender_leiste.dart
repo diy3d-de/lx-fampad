@@ -9,6 +9,9 @@ import '../../data/api/models.dart';
 import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/monat_layout.dart';
 import '../../data/lists/members.dart';
+import '../../data/sync_state.dart';
+import '../../widgets/kopfzeile.dart' show ProfilButton;
+import '../../widgets/sync_anzeige.dart';
 import '../../ui/widgets.dart';
 import 'calendar_state.dart';
 import 'ics_export_screen.dart';
@@ -26,7 +29,7 @@ int aktiveFilter(KalenderAuswahl a, {required bool feiertage, required bool feri
     case KalenderAnsicht.agenda:
       return (haupt: 'Agenda', unter: null);
     case KalenderAnsicht.monat:
-      return (haupt: DateFormat('MMMM y', 'de_DE').format(a.tag), unter: null);
+      return (haupt: DateFormat('MMMM y', 'de_DE').format(a.monat), unter: null);
     case KalenderAnsicht.woche:
       final montag = a.tag.subtract(Duration(days: a.tag.weekday - 1));
       final sonntag = montag.add(const Duration(days: 6));
@@ -36,6 +39,9 @@ int aktiveFilter(KalenderAuswahl a, {required bool feiertage, required bool feri
       return breit ? (haupt: 'KW ${kalenderwoche(montag)} · $zeitraum', unter: null) : (haupt: 'KW ${kalenderwoche(montag)}', unter: zeitraum);
   }
 }
+
+/// Schmale Symbolknöpfe der mobilen Leiste (44 px statt 48), damit der Titel Platz behält.
+final _kompakt = IconButton.styleFrom(tapTargetSize: MaterialTapTargetSize.shrinkWrap, minimumSize: const Size(44, 44), padding: EdgeInsets.zero);
 
 class KalenderLeiste extends ConsumerWidget {
   final bool breit;
@@ -47,7 +53,7 @@ class KalenderLeiste extends ConsumerWidget {
   void _verschiebe(WidgetRef ref, KalenderAuswahl a, int richtung) {
     final n = ref.read(kalenderAuswahlProvider.notifier);
     if (a.ansicht == KalenderAnsicht.monat) {
-      n.tag(DateTime.utc(a.tag.year, a.tag.month + richtung));
+      n.tag(DateTime.utc(a.monat.year, a.monat.month + richtung));
     } else {
       n.tag(a.tag.add(Duration(days: 7 * richtung)));
     }
@@ -73,11 +79,15 @@ class KalenderLeiste extends ConsumerWidget {
     final geburtstage = ref.watch(geburtstageAnzeigenProvider);
     final aktiv = aktiveFilter(a, feiertage: feiertage, ferien: ferien, geburtstage: geburtstage);
     final nav = a.ansicht != KalenderAnsicht.agenda;
+    // Mobil: ist die Kopfzeile eingeklappt, bleiben Profil und Sync-Zustand hier erreichbar
+    final profil = !breit && ref.watch(kalenderKopfEingeklapptProvider);
     final einheit = a.ansicht == KalenderAnsicht.monat ? 'Monat' : 'Woche';
     final titel = kalenderTitel(a, breit: breit);
     final zurueck = a.ansicht == KalenderAnsicht.monat ? 'Vorheriger Monat' : 'Vorherige Woche';
     final weiter = a.ansicht == KalenderAnsicht.monat ? 'Nächster Monat' : 'Nächste Woche';
     final menue = PopupMenuButton<String>(
+      style: _kompakt,
+      padding: EdgeInsets.zero,
       tooltip: 'Mehr: Importieren, Exportieren',
       icon: const Icon(Icons.more_vert),
       onSelected: (w) {
@@ -99,9 +109,9 @@ class KalenderLeiste extends ConsumerWidget {
           children: [
             Row(
               children: [
-                if (nav) IconButton(tooltip: zurueck, onPressed: () => _verschiebe(ref, a, -1), icon: const Icon(Icons.chevron_left)),
+                if (nav) IconButton(style: _kompakt, tooltip: zurueck, onPressed: () => _verschiebe(ref, a, -1), icon: const Icon(Icons.chevron_left)),
                 Expanded(child: Padding(padding: EdgeInsets.only(left: nav ? 0 : 12), child: titelWidget)),
-                if (nav) IconButton(tooltip: weiter, onPressed: () => _verschiebe(ref, a, 1), icon: const Icon(Icons.chevron_right)),
+                if (nav) IconButton(style: _kompakt, tooltip: weiter, onPressed: () => _verschiebe(ref, a, 1), icon: const Icon(Icons.chevron_right)),
                 if (nav)
                   Tooltip(
                     message: 'Heute',
@@ -122,6 +132,7 @@ class KalenderLeiste extends ConsumerWidget {
                     ),
                   ),
                 IconButton(
+                  style: _kompakt,
                   tooltip: aktiv == 0 ? 'Filter und Anzeige' : 'Filter und Anzeige, $aktiv aktiv',
                   onPressed: () => kalenderFilterBlattOeffnen(context),
                   icon: Badge(
@@ -133,6 +144,7 @@ class KalenderLeiste extends ConsumerWidget {
                   ),
                 ),
                 menue,
+                if (profil) const _ProfilMitSync(),
               ],
             ),
             Padding(
@@ -189,6 +201,32 @@ class KalenderLeiste extends ConsumerWidget {
   }
 }
 
+/// Profil-Knopf mit kleinem Punkt für den Sync-Zustand (nur bei eingeklappter Kopfzeile, mobil).
+class _ProfilMitSync extends ConsumerWidget {
+  const _ProfilMitSync();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final (text, farbe) = syncAnzeige(ref.watch(syncProvider));
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        const ProfilButton(),
+        Positioned(
+          right: 6,
+          bottom: 6,
+          child: IgnorePointer(
+            child: Semantics(
+              label: 'Sync: $text',
+              child: Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: farbe, border: Border.all(color: kBg, width: 1.5))),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _TitelKnopf extends StatelessWidget {
   final ({String haupt, String? unter}) titel;
   final bool breit;
@@ -206,11 +244,12 @@ class _TitelKnopf extends StatelessWidget {
           titel.haupt,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: TextStyle(fontSize: breit ? 30 : 20, fontWeight: FontWeight.w800, letterSpacing: breit ? -0.9 : -0.4, color: kTextStrong, height: 1.15),
+          style: TextStyle(fontSize: breit ? 30 : 18, fontWeight: FontWeight.w800, letterSpacing: breit ? -0.9 : -0.4, color: kTextStrong, height: 1.15),
         ),
         if (titel.unter != null) Text(titel.unter!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
       ],
     );
+    final skaliert = breit ? text : FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: text);
     return Semantics(
       header: true,
       button: onTap != null,
@@ -222,7 +261,7 @@ class _TitelKnopf extends StatelessWidget {
         onTap: onTap,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
-          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Align(alignment: Alignment.centerLeft, child: text)),
+          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: Align(alignment: Alignment.centerLeft, child: skaliert)),
         ),
       ),
     );

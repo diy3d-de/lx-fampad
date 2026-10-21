@@ -43,6 +43,16 @@ class MonatsRaster extends StatelessWidget {
     final wochen = wochenDesMonats(monat);
     final kwBreite = breit ? 36.0 : 24.0;
     final mindest = _tageszeileHoehe(context, breit) + 2 * _spurHoehe(context, breit) + 2;
+    // Einträge je Tag einmal vorab (Beschriftung für Screenreader, Ferien/Feiertage als Zellenfarbe), nicht je Zelle und Aufbau
+    final proTag = <DateTime, List<BalkenQuelle>>{};
+    for (final q in quellen) {
+      for (var t = q.von.isBefore(wochen.first) ? wochen.first : q.von; !t.isAfter(q.bis) && t.isBefore(DateTime.utc(wochen.last.year, wochen.last.month, wochen.last.day + 7)); t = DateTime.utc(t.year, t.month, t.day + 1)) {
+        proTag.putIfAbsent(t, () => []).add(q);
+      }
+    }
+    for (final l in proTag.values) {
+      l.sort((a, b) => a.art.index != b.art.index ? b.art.index.compareTo(a.art.index) : a.sortierung.compareTo(b.sortierung));
+    }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -84,6 +94,7 @@ class MonatsRaster extends StatelessWidget {
                           breit: breit,
                           kwBreite: kwBreite,
                           quellen: quellen,
+                          proTag: proTag,
                           onTag: onTag,
                         ),
                       ),
@@ -107,6 +118,7 @@ class _WochenZeile extends StatelessWidget {
   final bool breit;
   final double kwBreite;
   final List<BalkenQuelle> quellen;
+  final Map<DateTime, List<BalkenQuelle>> proTag;
   final void Function(DateTime tag) onTag;
   const _WochenZeile({
     required this.montag,
@@ -117,6 +129,7 @@ class _WochenZeile extends StatelessWidget {
     required this.breit,
     required this.kwBreite,
     required this.quellen,
+    required this.proTag,
     required this.onTag,
   });
 
@@ -129,7 +142,9 @@ class _WochenZeile extends StatelessWidget {
     return LayoutBuilder(
       builder: (context, c) {
         final maxSpuren = ((c.maxHeight - tageszeile - 2) / spur).floor();
-        final layout = wochenLayout(montag: montag, quellen: quellen, maxSpuren: maxSpuren);
+        // Ferien und Feiertage nehmen auf kleinen Bildschirmen den Terminen den Platz: unter drei Spuren nur als Zellenfarbe (Streifen oben, Tönung), der Name steht im Tagesblatt
+        final kompakt = maxSpuren < 3;
+        final layout = wochenLayout(montag: montag, quellen: kompakt ? [for (final q in quellen) if (q.art == BalkenArt.termin) q] : quellen, maxSpuren: maxSpuren);
         final spaltenBreite = (c.maxWidth - kwBreite) / 7;
         final tage = [for (var i = 0; i < 7; i++) DateTime.utc(montag.year, montag.month, montag.day + i)];
         final schriftBalken = TextStyle(fontSize: breit ? 12 : 10, fontWeight: FontWeight.w600, color: kOnAccent, height: 1.0);
@@ -150,7 +165,7 @@ class _WochenZeile extends StatelessWidget {
                         ),
                       ),
                     ),
-                    for (var i = 0; i < 7; i++) Expanded(child: _tagZelle(tage[i], i, layout)),
+                    for (var i = 0; i < 7; i++) Expanded(child: _tagZelle(tage[i], i, kompakt)),
                   ],
                 ),
               ),
@@ -205,14 +220,13 @@ class _WochenZeile extends StatelessWidget {
     );
   }
 
-  Widget _tagZelle(DateTime tag, int spalte, WochenLayout layout) {
+  Widget _tagZelle(DateTime tag, int spalte, bool kompakt) {
     final istHeute = tag == heute;
     final imMonat = tag.month == monat.month && tag.year == monat.year;
     final markiert = gewaehltMarkieren && tag == gewaehlt;
-    final eintraege = [
-      for (final q in quellen)
-        if (q.faelltAuf(tag)) q,
-    ]..sort((a, b) => a.art.index != b.art.index ? b.art.index.compareTo(a.art.index) : a.sortierung.compareTo(b.sortierung));
+    final eintraege = proTag[tag] ?? const <BalkenQuelle>[];
+    final hatFerien = kompakt && eintraege.any((q) => q.art == BalkenArt.ferien);
+    final hatFeiertag = kompakt && eintraege.any((q) => q.art == BalkenArt.feiertag);
     final termine = eintraege.where((q) => q.art == BalkenArt.termin).toList();
     final hinweise = eintraege.where((q) => q.art != BalkenArt.termin).map((q) => q.art == BalkenArt.feiertag ? 'Feiertag ${q.text}' : 'Schulferien ${q.text}');
     final label = [
@@ -238,8 +252,8 @@ class _WochenZeile extends StatelessWidget {
         onTap: () => onTag(tag),
         child: Container(
           decoration: BoxDecoration(
-            color: markiert ? kAccentSoft : (istHeute ? kAccent.withValues(alpha: 0.07) : (spalte >= 5 ? kTextStrong.withValues(alpha: 0.025) : null)),
-            border: Border(left: const BorderSide(color: kBorderSoft)),
+            color: markiert ? kAccentSoft : (istHeute ? kAccent.withValues(alpha: 0.07) : (hatFerien ? kFerien.withValues(alpha: 0.14) : (spalte >= 5 ? kTextStrong.withValues(alpha: 0.025) : null))),
+            border: Border(left: const BorderSide(color: kBorderSoft), top: hatFeiertag ? const BorderSide(color: kFeiertag, width: 3) : BorderSide.none),
           ),
           foregroundDecoration: istHeute ? BoxDecoration(border: Border.all(color: kAccent)) : null,
           alignment: breit ? Alignment.topLeft : Alignment.topCenter,

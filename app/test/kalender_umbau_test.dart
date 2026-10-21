@@ -5,12 +5,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
-import 'package:lx_fampad/data/calendar/feiertage.dart' show geburtstageAnzeigenProvider;
+import 'package:lx_fampad/data/calendar/feiertage.dart' show TagesHinweis, TagesHinweisArt, ferienProvider, geburtstageAnzeigenProvider;
 import 'package:lx_fampad/data/calendar/monat_layout.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/calendar/ics_import_screen.dart';
 import 'package:lx_fampad/features/calendar/kalender_monat.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
+import 'package:lx_fampad/features/calendar/kalender_leiste.dart' show KalenderLeiste;
+import 'package:lx_fampad/features/profile/profile_screen.dart';
 import 'package:lx_fampad/widgets/kopfzeile.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
@@ -158,7 +160,7 @@ void main() {
       final raster = tester.getRect(find.byType(MonatsRaster));
       final nav = tester.getRect(find.byType(NavigationBar));
       expect(raster.bottom, lessThanOrEqualTo(nav.top + 0.5));
-      expect(raster.bottom, greaterThan(nav.top - 20), reason: 'füllt den verbleibenden Platz');
+      expect(raster.bottom, inInclusiveRange(nav.top - 90, nav.top - 60), reason: 'füllt den Platz bis auf die Reserve für den runden Knopf');
       expect(raster.top, lessThan(skala == 1.0 ? 260 : 340), reason: 'beginnt weit oben');
       pruefeLayout(tester, 'Leiste');
     });
@@ -335,7 +337,7 @@ void main() {
     expect(find.byType(TabKopfzeile), findsOneWidget);
   });
 
-  testWidgets('Rechte: Kinder sehen den runden Knopf und "Importieren" nicht anders als zuvor (anlegen erlaubt), "+ Termin" im Blatt vorhanden', (tester) async {
+  testWidgets('Kind darf anlegen: runder Knopf und "+ Termin" im Tagesblatt sind da', (tester) async {
     await start(tester, role: 'child', monat: _d(2027, 3, 10));
     expect(find.byTooltip('Neuer Termin'), findsOneWidget);
     await tippe(tester, tagZelle(_d(2027, 3, 10)));
@@ -375,6 +377,210 @@ void main() {
         expect(find.text('Freitag, 12. März'), findsOneWidget, reason: 'Tagesblatt');
       }
       pruefeLayout(tester, 'Desktop');
+    });
+  }
+
+  Map<String, dynamic> zeitUtc(String titel, String startUtc, String endUtc, {String? rrule}) => {
+    'titel': titel,
+    'ganztaegig': false,
+    'startUtc': startUtc,
+    'endUtc': endUtc,
+    'tzid': 'Europe/Berlin',
+    'rrule': ?rrule,
+    'ownerId': fixIdAdmin,
+    'audience': 'family',
+  };
+
+  /// Beschriftung (Semantics) einer Tageszelle.
+  String zellenLabel(WidgetTester tester, DateTime tag) => tester.getSemantics(tagZelle(tag)).label;
+
+  testWidgets('Zeittermin über Mitternacht und Ende genau um 0 Uhr: Tage stimmen', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(
+      tester,
+      monat: _d(2027, 3, 10),
+      vorher: (e) {
+        e.sync.andereAendert('termin', _id(1), zeitUtc('Nachtwache', '2027-03-10T21:00:00.000Z', '2027-03-11T01:00:00.000Z')); // 22:00 bis 02:00 MEZ
+        e.sync.andereAendert('termin', _id(2), zeitUtc('Bis Mitternacht', '2027-03-16T21:00:00.000Z', '2027-03-16T23:00:00.000Z')); // 22:00 bis 24:00 MEZ
+      },
+    );
+    expect(zellenLabel(tester, _d(2027, 3, 10)), contains('Nachtwache'));
+    expect(zellenLabel(tester, _d(2027, 3, 11)), contains('Nachtwache'));
+    expect(zellenLabel(tester, _d(2027, 3, 12)), contains('keine Termine'));
+    expect(zellenLabel(tester, _d(2027, 3, 16)), contains('Bis Mitternacht'));
+    expect(zellenLabel(tester, _d(2027, 3, 17)), contains('keine Termine'), reason: 'Ende um 0 Uhr zählt nicht mehr zum Folgetag');
+    handle.dispose();
+  });
+
+  testWidgets('Sommerzeitwechsel 28.3.2027: Termin über die Umstellung und Termin direkt danach liegen am richtigen Tag', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(
+      tester,
+      monat: _d(2027, 3, 10),
+      vorher: (e) {
+        e.sync.andereAendert('termin', _id(1), zeitUtc('Umstellung', '2027-03-27T22:30:00.000Z', '2027-03-28T00:30:00.000Z')); // 23:30 MEZ bis 02:30 MESZ
+        e.sync.andereAendert('termin', _id(2), zeitUtc('Danach', '2027-03-28T01:30:00.000Z', '2027-03-28T02:30:00.000Z')); // 03:30 bis 04:30 MESZ
+      },
+    );
+    expect(zellenLabel(tester, _d(2027, 3, 26)), contains('keine Termine'));
+    expect(zellenLabel(tester, _d(2027, 3, 27)), contains('Umstellung'));
+    expect(zellenLabel(tester, _d(2027, 3, 28)), allOf(contains('Umstellung'), contains('Danach'), contains('2 Termine')));
+    expect(zellenLabel(tester, _d(2027, 3, 29)), contains('keine Termine'));
+    handle.dispose();
+  });
+
+  testWidgets('Zeitumstellung 25.10.2026: Termin um 00:30 Sommerzeit gehört zum 25., nicht zum 24.', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(
+      tester,
+      monat: _d(2026, 10, 10),
+      vorher: (e) => e.sync.andereAendert('termin', _id(1), zeitUtc('Mitternacht', '2026-10-24T22:30:00.000Z', '2026-10-24T23:30:00.000Z')),
+    );
+    expect(zellenLabel(tester, _d(2026, 10, 24)), contains('keine Termine'));
+    expect(zellenLabel(tester, _d(2026, 10, 25)), contains('Mitternacht'));
+    handle.dispose();
+  });
+
+  testWidgets('abgesagtes Vorkommen einer Serie fehlt im Raster, die übrigen stehen da', (tester) async {
+    await start(
+      tester,
+      monat: _d(2027, 3, 10),
+      vorher: (e) {
+        e.sync.andereAendert('termin', _id(1), zeitUtc('Chor', '2027-03-03T17:00:00.000Z', '2027-03-03T18:00:00.000Z', rrule: 'FREQ=WEEKLY'));
+        e.sync.andereAendert('termin_ausnahmen', 'cccccccc-1111-4111-8111-111111111111', {'terminId': _id(1), 'originalStart': '2027-03-10T17:00:00Z', 'abgesagt': true});
+      },
+    );
+    expect(find.text('Chor'), findsNWidgets(4), reason: '3., 17., 24. und 31. März; der 10. ist abgesagt');
+  });
+
+  testWidgets('Ferien und Feiertage verdrängen auf kleinen Bildschirmen keine Termine: bei wenig Platz nur als Zellenfarbe', (tester) async {
+    final handle = tester.ensureSemantics();
+    Future<void> lauf(double skala, double hoehe) => start(
+      tester,
+      skala: skala,
+      groesse: Size(360, hoehe),
+      monat: _d(2026, 10, 10),
+      vorher: (e) {
+        e.feiertage = 'ja';
+        // feste Ferien statt des Assets (dessen Laden im Test von echtem Datei-Zugriff abhängt)
+        e.extraOverrides.add(ferienProvider.overrideWith((ref) async => [TagesHinweis(name: 'Herbstferien', art: TagesHinweisArt.ferien, von: _d(2026, 10, 5), bis: _d(2026, 10, 16))]));
+        e.sync.andereAendert('termin', _id(1), zeitUtc('Zahnarzt', '2026-10-07T08:00:00.000Z', '2026-10-07T09:00:00.000Z'));
+        e.sync.andereAendert('termin', _id(2), zeitUtc('Schwimmen', '2026-10-07T13:00:00.000Z', '2026-10-07T14:00:00.000Z'));
+      },
+    );
+    await lauf(1.0, 1000); // genug Höhe für drei Spuren
+    expect(find.text('Herbstferien'), findsWidgets, reason: 'genug Platz: Balken');
+    expect(find.text('Zahnarzt'), findsOneWidget);
+    expect(find.text('Schwimmen'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await lauf(1.5, 800);
+    expect(find.text('Herbstferien'), findsNothing, reason: 'wenig Spuren: keine Ferienbalken');
+    expect(find.text('Zahnarzt'), findsOneWidget);
+    expect(find.text('Schwimmen'), findsOneWidget);
+    expect(zellenLabel(tester, _d(2026, 10, 7)), contains('Schulferien Herbstferien'));
+    expect(zellenLabel(tester, _d(2026, 10, 3)), contains('Feiertag Tag der Deutschen Einheit'));
+    pruefeLayout(tester, 'Ferienwoche');
+    handle.dispose();
+  });
+
+  testWidgets('Textskala 2.0 bei 360 px: Monat, Filterblatt und Agenda ohne Layoutfehler', (tester) async {
+    await start(tester, skala: 2.0, monat: _d(2027, 3, 10), vorher: (e) => e.sync.andereAendert('termin', _id(1), zeitUtc('Zahnarzt', '2027-03-10T09:00:00.000Z', '2027-03-10T10:00:00.000Z')));
+    // die (nicht für 2.0 ausgelegte, unveränderte) Startseite meldet beim Aufbau einen Überlauf: hier zählt nur der Kalender
+    while (tester.takeException() != null) {}
+    pruefeLayout(tester, 'Monat 2.0');
+    await tippe(tester, filterKnopf);
+    pruefeLayout(tester, 'Filterblatt 2.0');
+    await tippeText(tester, 'Fertig');
+    await tippeText(tester, 'Agenda');
+    pruefeLayout(tester, 'Agenda 2.0');
+  });
+
+  testWidgets('Titel "September 2026" wird bei 360 px nicht abgeschnitten, auch bei eingeklappter Kopfzeile mit Profil-Knopf', (tester) async {
+    final (_, container) = await start(tester, monat: _d(2026, 9, 10));
+    for (final eingeklappt in [false, true]) {
+      container.read(kalenderKopfEingeklapptProvider.notifier).setzen(eingeklappt);
+      await warte(tester);
+      final titel = find.text('September 2026');
+      expect(titel, findsOneWidget);
+      expect(tester.getTopLeft(titel).dx, greaterThanOrEqualTo(tester.getBottomRight(find.byTooltip('Vorheriger Monat')).dx - 0.5));
+      expect(tester.getBottomRight(titel).dx, lessThanOrEqualTo(tester.getTopLeft(find.byTooltip('Nächster Monat')).dx + 0.5));
+      expect(find.byType(ProfilButton), findsOneWidget, reason: 'in der Kopfzeile oder (eingeklappt) in der Leiste');
+      pruefeLayout(tester, 'Leiste eingeklappt=$eingeklappt');
+    }
+  });
+
+  testWidgets('Tipp auf einen Tag des Folgemonats wechselt den Monat nicht; eingeklappt steht der Profil-Knopf in der Leiste', (tester) async {
+    final (_, container) = await start(tester, monat: _d(2027, 3, 10));
+    await tippe(tester, tagZelle(_d(2027, 4, 1)));
+    expect(find.text('Donnerstag, 1. April'), findsOneWidget, reason: 'Tagesblatt für den Tag');
+    await tester.tapAt(const Offset(10, 10));
+    await warte(tester);
+    expect(find.text('März 2027'), findsOneWidget, reason: 'der Monat bleibt');
+    expect(container.read(kalenderAuswahlProvider).tag, _d(2027, 4, 1));
+    expect(find.byType(TabKopfzeile), findsNothing);
+    expect(find.byTooltip('Profil und Sicherheit'), findsOneWidget);
+    await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+    expect(find.byType(ProfileScreen), findsOneWidget);
+  });
+
+  testWidgets('Der eingeklappte Zustand gilt nur im Kalender-Tab', (tester) async {
+    final (_, container) = await start(tester, monat: _d(2027, 3, 10));
+    container.read(kalenderKopfEingeklapptProvider.notifier).setzen(true);
+    await warte(tester);
+    expect(find.byType(TabKopfzeile), findsNothing);
+    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Start')));
+    await warte(tester);
+    expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
+  });
+
+  testWidgets('kurze Agenda: die Kopfzeile bleibt beim Scrollen stehen (kein Flackern bei knapp überlangem Inhalt)', (tester) async {
+    await start(
+      tester,
+      monatsansicht: false,
+      vorher: (e) {
+        final heute = heuteTag();
+        for (var i = 0; i < 6; i++) {
+          e.sync.andereAendert('termin', _id(i + 1), _ganztaegig('Kurz $i', heute.add(Duration(days: i)), heute.add(Duration(days: i))));
+        }
+      },
+    );
+    for (var i = 0; i < 3; i++) {
+      await tester.drag(find.byType(ListView), const Offset(0, -150));
+      await warte(tester);
+      expect(find.byType(TabKopfzeile), findsOneWidget);
+      await tester.drag(find.byType(ListView), const Offset(0, 150));
+      await warte(tester);
+      expect(find.byType(TabKopfzeile), findsOneWidget);
+    }
+  });
+
+  testWidgets('Desktop klappt die Kopfzeile nie ein (Profil und Sync stehen in der Seitenleiste)', (tester) async {
+    final (_, container) = await start(tester, groesse: const Size(1440, 900), monat: _d(2027, 3, 10));
+    await tippe(tester, tagZelle(_d(2027, 3, 12)));
+    expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
+    expect(find.text('// ${kopfzeilenDatum()}'.toUpperCase()), findsOneWidget);
+  });
+
+  for (final breit in [false, true]) {
+    testWidgets('ohne Anlegen-Recht (${breit ? 'Desktop' : 'mobil'}): kein "Importieren", kein "Neuer Termin" in der Leiste', (tester) async {
+      final env = await angemeldeteUmgebung();
+      tester.view.physicalSize = breit ? const Size(1440, 900) : const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: env.overrides,
+          child: MaterialApp(
+            theme: ThemeData(fontFamily: kFontSans),
+            home: Scaffold(body: KalenderLeiste(breit: breit, personen: const [], darfAnlegen: false, onNeu: () {})),
+          ),
+        ),
+      );
+      await warte(tester);
+      expect(find.widgetWithText(FilledButton, 'Neuer Termin'), findsNothing);
+      await tippe(tester, find.byTooltip(breit ? 'Importieren und Exportieren' : 'Mehr: Importieren, Exportieren'));
+      expect(find.text('Importieren'), findsNothing);
+      expect(find.text('Kalender exportieren'), findsOneWidget);
     });
   }
 
