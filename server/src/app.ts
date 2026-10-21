@@ -15,6 +15,8 @@ import { registerAvatarRoutes } from './routes/avatar.js';
 import { registerPushRoutes } from './routes/push.js';
 import { PushService } from './push/service.js';
 import { registerWeatherRoutes } from './routes/weather.js';
+import { registerOperatorRoutes } from './routes/operator.js';
+import type { Probes } from './operator/probes.js';
 import { WeatherService } from './weather/service.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
@@ -54,6 +56,8 @@ export interface AppDeps {
   /** Nur Tests: ntfy ersetzen (Fake-HTTP) und Mindestabstand der Wecker verkürzen. */
   pushFetch?: typeof fetch;
   pushMinIntervalMs?: number;
+  /** Nur Tests: Messungen der Betreiber-Ansicht (Dateien, TLS, ntfy) ersetzen. */
+  operatorProbes?: Partial<Probes>;
   /** Nur Tests: Netatmo ersetzen (Fake-HTTP). */
   weatherFetch?: typeof fetch;
   /** Nur für Tests: Ziel des Logs (Standard: stdout). */
@@ -85,7 +89,7 @@ export function isApiRequest(req: FastifyRequest): boolean {
   }
 }
 
-export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock, operatorProbes }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       config.logLevel === 'silent'
@@ -189,6 +193,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('weather', weather);
     app.addHook('onClose', async () => weather.close());
     registerWeatherRoutes(app, authCore, weather);
+    registerOperatorRoutes(app, config, authCore, weather, operatorProbes);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
     authCore.ctx.onRev = (familyId, rev, roles, users, origin) => {

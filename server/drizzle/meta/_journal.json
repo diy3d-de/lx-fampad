@@ -127,6 +127,13 @@
       "when": 1792582326811,
       "tag": "0017_authkey",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792589200193,
+      "tag": "0018_betreiber",
+      "breakpoints": true
     }
   ]
 }

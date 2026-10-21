@@ -47,7 +47,9 @@ export type AuditEvent =
   | 'key_backup_pw_set'
   | 'key_backup_pw_read'
   | 'key_backup_pw_verified'
-  | 'password_authkey_set';
+  | 'password_authkey_set'
+  | 'operator_granted'
+  | 'operator_revoked';
 
 export interface AuditEntry {
   event: AuditEvent;

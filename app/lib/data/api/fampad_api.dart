@@ -6,6 +6,7 @@ import 'api_client.dart';
 import 'api_error.dart';
 import '../sync/sync_models.dart';
 import '../crypto/schluessel.dart';
+import '../betrieb/betrieb_modelle.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -197,6 +198,14 @@ class FampadApi {
 
   /// Rohe Antwort (die App legt sie für den Offline-Stand unverändert ab).
   Future<Json> wetterRoh() => client.get('/weather');
+
+  // ----------------------------------------------------------- Betrieb (nur Betreiber, nur lesend)
+
+  Future<BetriebStatus> betriebStatus() async => BetriebStatus.fromJson(await client.get('/admin/status'));
+
+  /// Audit-Protokoll, seitenweise (Cursor des Servers); braucht ein frisches Step-up (403 step_up_required).
+  Future<ProtokollSeite> betriebProtokoll({ProtokollArt art = ProtokollArt.alle, String? weiter, int limit = 50}) async =>
+      ProtokollSeite.fromJson(await client.get('/admin/audit?category=${art.code}&limit=$limit${weiter == null ? '' : '&cursor=${Uri.encodeQueryComponent(weiter)}'}'));
 
   // ----------------------------------------------------------- Push (nur Android)
 

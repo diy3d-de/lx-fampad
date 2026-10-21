@@ -15,6 +15,7 @@ import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_anzeige.dart';
 import '../auth/auth_widgets.dart';
+import '../betrieb/betrieb_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
@@ -42,6 +43,7 @@ class DesktopShellMarke extends InheritedWidget {
 class _ShellBeobachter extends NavigatorObserver {
   final tiefe = ValueNotifier<int>(0);
   final konto = ValueNotifier<bool>(false);
+  final betrieb = ValueNotifier<bool>(false);
   final _routen = <Route<dynamic>>[];
 
   bool _verworfen = false;
@@ -61,12 +63,14 @@ class _ShellBeobachter extends NavigatorObserver {
     beiAenderung?.call();
     tiefe.value = _routen.length;
     konto.value = _routen.any((r) => r.settings.arguments == kKontoMarke);
+    betrieb.value = _routen.any((r) => r.settings.arguments == kBetriebMarke);
   });
 
   void verwerfen() {
     _verworfen = true;
     tiefe.dispose();
     konto.dispose();
+    betrieb.dispose();
   }
 
   @override
@@ -204,6 +208,13 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     nav.push<void>(ProfileScreen.route());
   }
 
+  /// Betreiber-Ansicht "Betrieb" (nur für den Betreiber in der Seitenleiste): wie das Konto eine Unterseite im Inhaltsbereich.
+  void _betriebOeffnen() {
+    final nav = _navKey.currentState;
+    if (nav == null || _beobachter.betrieb.value) return;
+    nav.push<void>(BetriebScreen.route());
+  }
+
   @override
   Widget build(BuildContext context) {
     // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen, sofern sie sich schließen lassen
@@ -217,7 +228,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, waehlen: _bereichWaehlen),
+              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, betrieb: _beobachter.betrieb, betriebOeffnen: _betriebOeffnen, waehlen: _bereichWaehlen),
               Expanded(
                 child: Column(
                   children: [
@@ -282,8 +293,10 @@ class _Bereiche extends ConsumerWidget {
 class _Seitenleiste extends ConsumerWidget {
   final ValueListenable<bool> konto;
   final VoidCallback kontoOeffnen;
+  final ValueListenable<bool> betrieb;
+  final VoidCallback betriebOeffnen;
   final ValueChanged<int> waehlen;
-  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.waehlen});
+  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.betrieb, required this.betriebOeffnen, required this.waehlen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -293,6 +306,7 @@ class _Seitenleiste extends ConsumerWidget {
     final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
     // Wetter nur, wenn auch die Kachel der Startseite sichtbar ist (oder der Bereich gerade offen ist, damit er beim Ausschalten nicht unter dir verschwindet)
     final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar)) || tab == kWetterTab;
+    final betreiber = ref.watch(authProvider.select((s) => s.istBetreiber));
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -368,6 +382,12 @@ class _Seitenleiste extends ConsumerWidget {
                       ),
                     const SizedBox(height: 8),
                     for (final b in _kBaldBereiche) _NavEintrag(icon: b.$2, label: b.$1, gewaehlt: false, bald: true),
+                    // nur der Betreiber des Servers sieht "Betrieb" (Konto-Flag, nicht die Rolle); öffnet wie das Konto eine Unterseite
+                    if (betreiber)
+                      ValueListenableBuilder<bool>(
+                        valueListenable: betrieb,
+                        builder: (context, offen, _) => _NavEintrag(icon: Icons.monitor_heart_outlined, label: 'Betrieb', gewaehlt: offen, onTap: betriebOeffnen),
+                      ),
                   ],
                 ),
               ),

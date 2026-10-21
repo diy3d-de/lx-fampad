@@ -52,6 +52,9 @@ class AuthState {
   Role? get rolle => user?.role;
   bool get istAdmin => rolle == Role.admin;
   bool get darfEinladen => rolle == Role.admin || rolle == Role.parent;
+
+  /// Betreiber des Servers (Konto-Flag, unabhängig von der Familienrolle): sieht den Bereich "Betrieb".
+  bool get istBetreiber => me?.betreiber ?? false;
 }
 
 /// Hook für Phase 1c: leert beim Abmelden die lokale drift-Datenbank (Sync-Zustand, Outbox, Fachdaten).
