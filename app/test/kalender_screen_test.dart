@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
+import 'package:lx_fampad/data/calendar/monat_layout.dart' show kalenderwoche;
 import 'package:lx_fampad/data/calendar/wiederholung.dart' show wochentagKurz;
 import 'package:lx_fampad/data/calendar/zeitzonen.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
@@ -296,11 +297,11 @@ void main() {
     pruefeLayout(tester, 'Monat');
   });
 
-  testWidgets('Woche: sieben Tage, blättern, "frei" bei leeren Tagen', (tester) async {
+  testWidgets('Woche: Wochenraster mit dem Termin, blättern, Heute', (tester) async {
     await start(tester, vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Wochentermin', tage: 0, stunde: 22)));
     await tippeText(tester, 'Woche');
     expect(find.text('Wochentermin'), findsOneWidget);
-    expect(find.text('frei'), findsWidgets);
+    expect(find.text('KW ${kalenderwoche(heuteTag())}'), findsOneWidget, reason: 'Wochenraster mit Kalenderwoche');
     await tippe(tester, find.byTooltip('Nächste Woche'));
     expect(find.text('Wochentermin'), findsNothing);
     await tippe(tester, find.byTooltip('Heute'));

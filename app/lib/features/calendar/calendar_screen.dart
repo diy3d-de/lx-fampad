@@ -9,6 +9,7 @@ import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/monat_layout.dart';
 import '../../data/calendar/termin_repository.dart';
+import '../../data/calendar/woche_layout.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
@@ -20,6 +21,7 @@ import 'calendar_state.dart';
 import 'kalender_leiste.dart';
 import 'kalender_monat.dart';
 import 'kalender_tag.dart';
+import 'kalender_woche.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
 
@@ -94,7 +96,7 @@ class CalendarScreen extends ConsumerWidget {
       return false;
     }
 
-    // Listen (Agenda, Woche) bleiben auch im breiten Desktop-Bereich schmal und mittig; nur das Monatsraster nutzt die ganze Breite
+    // Die Agenda bleibt auch im breiten Desktop-Bereich schmal und mittig; Monats- und Wochenraster nutzen die ganze Breite
     Widget schmal(Widget liste) => Align(
       alignment: Alignment.topCenter,
       child: ConstrainedBox(
@@ -105,7 +107,7 @@ class CalendarScreen extends ConsumerWidget {
     final ansicht = switch (auswahl.ansicht) {
       KalenderAnsicht.agenda => schmal(_Agenda(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, platzFuerKnopf: fab)),
       KalenderAnsicht.monat => _Monat(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, breit: breit, platzFuerKnopf: fab),
-      KalenderAnsicht.woche => schmal(_Woche(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, platzFuerKnopf: fab)),
+      KalenderAnsicht.woche => _Woche(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte, breit: breit, platzFuerKnopf: fab),
     };
 
     return Scaffold(
@@ -380,35 +382,43 @@ class _Monat extends ConsumerWidget {
                 ),
               ),
               const SizedBox(width: 20),
-              SizedBox(
-                width: 320,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: kSurface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kAccent.withValues(alpha: 0.4)),
-                  ),
-                  padding: const EdgeInsets.all(20),
-                  // der Scroll des Panels darf weder die Kopfzeile noch den Abgleich (Herunterziehen) auslösen
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: (_) => true,
-                    child: SingleChildScrollView(
-                      child: TagesInhalt(
-                        tag: auswahl.tag,
-                        knopfUnten: true,
-                        onTermin: terminOeffnen,
-                        onNeu: () => terminEditorOeffnen(context, tag: auswahl.tag),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              _TagesPanel(tag: auswahl.tag, onTermin: terminOeffnen, onNeu: () => terminEditorOeffnen(context, tag: auswahl.tag)),
             ],
           ),
         );
       },
     );
   }
+}
+
+// ------------------------------------------------------------------------------------------------ Tagespanel
+
+/// Tagespanel (Desktop, rechts neben dem Raster): die Termine des gewählten Tages.
+class _TagesPanel extends StatelessWidget {
+  final DateTime tag;
+  final void Function(Vorkommen v) onTermin;
+  final VoidCallback onNeu;
+  const _TagesPanel({required this.tag, required this.onTermin, required this.onNeu});
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 320,
+    child: Container(
+      decoration: BoxDecoration(
+        color: kSurface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: kAccent.withValues(alpha: 0.4)),
+      ),
+      padding: const EdgeInsets.all(20),
+      // der Scroll des Panels darf weder die Kopfzeile noch den Abgleich (Herunterziehen) auslösen
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (_) => true,
+        child: SingleChildScrollView(
+          child: TagesInhalt(tag: tag, knopfUnten: true, onTermin: onTermin, onNeu: onNeu),
+        ),
+      ),
+    ),
+  );
 }
 
 // ------------------------------------------------------------------------------------------------ Woche
@@ -418,50 +428,89 @@ class _Woche extends ConsumerWidget {
   final KalenderDaten daten;
   final Mitglieder mitglieder;
   final TerminRechte rechte;
+  final bool breit;
   final bool platzFuerKnopf;
-  const _Woche({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte, required this.platzFuerKnopf});
+  const _Woche({required this.auswahl, required this.daten, required this.mitglieder, required this.rechte, required this.breit, required this.platzFuerKnopf});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(kalenderAuswahlProvider.notifier);
     final heute = heuteTag();
     final montag = auswahl.tag.subtract(Duration(days: auswahl.tag.weekday - 1));
-    final naechster = montag.add(const Duration(days: 7));
-    final tage = nachTagen(
-      gefilterteVorkommen(auswahl, daten, montag, naechster, geburtstage: ref.watch(geburtstageAnzeigenProvider)),
-      montag,
-      naechster.subtract(const Duration(days: 1)),
-    );
-    final hinweise = ref.watch(tagesHinweiseProvider);
-    return ListView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: _listenRand(platzFuerKnopf),
-      children: [
-        for (var i = 0; i < 7; i++) ...[
-          Builder(
-            builder: (context) {
-              final tag = montag.add(Duration(days: i));
-              final liste = tage[tag] ?? const <Vorkommen>[];
-              return Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8, bottom: 8),
-                    child: MonoLabel(tag == heute ? '${tagesLabel(tag)} · heute' : tagesLabel(tag), color: tag == heute ? kAccent : kTextMuted),
-                  ),
-                  TagesHinweisZeile(hinweise: hinweise.fuerTag(tag)),
-                  if (liste.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.only(bottom: 4),
-                      child: Text('frei', style: TextStyle(color: kTextFaint)),
-                    )
-                  else
-                    _tagesListe(context, ref, tag, liste, daten, mitglieder, rechte),
-                ],
-              );
-            },
-          ),
-        ],
+    final naechster = DateTime.utc(montag.year, montag.month, montag.day + 7);
+    final sonntag = DateTime.utc(montag.year, montag.month, montag.day + 6);
+    final liste = gefilterteVorkommen(auswahl, daten, montag, naechster, geburtstage: ref.watch(geburtstageAnzeigenProvider));
+    final quellen = _quellen(
+      [
+        for (final v in liste)
+          if (gehoertInsBand(v)) v,
       ],
+      ref.watch(tagesHinweiseProvider),
+      montag,
+      sonntag,
+      mitglieder,
+      mitZeit: false,
+    );
+    final bloecke = zeitBloecke(montag, liste);
+
+    // Aktionen lesen die Daten beim Aufruf frisch (Blätter können länger offen sein als dieser Aufbau)
+    void terminOeffnen(Vorkommen v) {
+      final d = ref.read(kalenderDatenProvider);
+      final m = Mitglieder(ref.read(mitgliederProvider).value ?? const <UserDto>[]);
+      vorkommenOeffnen(context, ref, v, d, m, rechte);
+    }
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final panel = breit && c.maxWidth >= _Monat._panelAb;
+        final raster = WochenRaster(
+          montag: montag,
+          heute: heute,
+          gewaehlt: auswahl.tag,
+          gewaehltMarkieren: panel,
+          breit: breit,
+          bloecke: bloecke,
+          band: quellen,
+          farbe: (b) => terminFarbe(b.v, mitglieder),
+          jetzt: jetztWand,
+          unten: !panel && platzFuerKnopf ? 72 : 0,
+          onWoche: (r) => notifier.tag(DateTime.utc(auswahl.tag.year, auswahl.tag.month, auswahl.tag.day + 7 * r)),
+          onBlock: (b) => terminOeffnen(b.v),
+          onLeer: rechte.darfAnlegen ? (tag, minute) => terminEditorOeffnen(context, tag: tag, startMinute: minute) : null,
+          onTag: (tag) {
+            notifier.waehleTag(tag);
+            if (!panel) {
+              tagesBlattOeffnen(context, tag, onTermin: terminOeffnen, onNeu: () => terminEditorOeffnen(context, tag: tag));
+            }
+          },
+        );
+        if (!panel) return Padding(padding: EdgeInsets.symmetric(horizontal: breit ? 20 : 8), child: raster);
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: kBgElevated,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: kBorder),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: raster,
+                ),
+              ),
+              const SizedBox(width: 20),
+              _TagesPanel(
+                tag: auswahl.tag,
+                onTermin: terminOeffnen,
+                onNeu: () => terminEditorOeffnen(context, tag: auswahl.tag),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
