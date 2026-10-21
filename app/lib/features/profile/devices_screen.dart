@@ -10,6 +10,7 @@ import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import 'abmelden_pruefung.dart';
 
 /// Geräteliste: alle angemeldeten Geräte, jedes einzeln abmeldbar.
 class DevicesScreen extends ConsumerStatefulWidget {
@@ -35,22 +36,32 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
   });
 
   Future<void> _abmelden(DeviceDto d) async {
-    final ja = await showDialog<bool>(useRootNavigator: false,
-      context: context,
-      builder: (_) => AlertDialog(
-        title: Text(d.current ? 'Dieses Gerät abmelden?' : 'Gerät abmelden?'),
-        content: Text(
-          d.current
-              ? '"${d.name}" wird abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.'
-              : '"${d.name}" wird abgemeldet und muss sich neu anmelden.',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
-          TextButton(onPressed: () => Navigator.of(context).pop(true), style: TextButton.styleFrom(foregroundColor: kDanger), child: const Text('Abmelden')),
-        ],
-      ),
-    );
-    if (ja != true || !mounted) return;
+    Future<bool> einfach() async =>
+        await showDialog<bool>(useRootNavigator: false,
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text(d.current ? 'Dieses Gerät abmelden?' : 'Gerät abmelden?'),
+            content: Text(
+              d.current
+                  ? '"${d.name}" wird abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.'
+                  : '"${d.name}" wird abgemeldet und muss sich neu anmelden.',
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
+              TextButton(onPressed: () => Navigator.of(context).pop(true), style: TextButton.styleFrom(foregroundColor: kDanger), child: const Text('Abmelden')),
+            ],
+          ),
+        ) ??
+        false;
+    // Nur das eigene Gerät löscht den Schlüssel: dort die ehrliche Rückfrage (abmelden_pruefung.dart)
+    final ja = d.current
+        ? await abmeldenBestaetigen(context, ref,
+            titel: 'Dieses Gerät abmelden?',
+            text: '"${d.name}" wird abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.',
+            knopf: 'Abmelden',
+            ohneSchluessel: einfach)
+        : await einfach();
+    if (!ja || !mounted) return;
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     final ok = await ausfuehren(() => ref.read(apiProvider).geraetAbmelden(d.id));

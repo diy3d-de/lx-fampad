@@ -227,6 +227,16 @@ class FakeE2eeServer {
   /// Personen, die (noch) auf die Freigabe warten (Status pending in /members).
   final Set<String> ausstehend = {};
 
+  /// Aktuelle Schlüsselversion einer Person (für Vermerke in Tests).
+  int schluesselVersion(String id) => _personen[id]!.version;
+
+  /// Legt eine Sicherung des Wiederherstellungsschlüssels für die aktuelle Schlüsselversion ab.
+  void sicherungEinspielen(String id) {
+    final p = _personen[id]!;
+    p.backupBlob = 'x';
+    p.backupVersion = p.version;
+  }
+
   /// Person aus der Familie nehmen (verschwindet aus /members).
   void entferne(String id) => _personen.remove(id);
 

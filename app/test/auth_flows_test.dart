@@ -7,6 +7,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/crypto/e2ee_state.dart' show schluesselSpeicherProvider;
+import 'package:lx_fampad/data/crypto/schluessel_speicher.dart' show MemorySchluesselSpeicher;
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/features/auth/invite_intake.dart';
@@ -133,6 +135,8 @@ void main() {
 
   group('Abmelden in der Oberfläche', () {
     Future<void> zumProfil(WidgetTester tester, TestUmgebung env) async {
+      // Schlüsselspeicher im Arbeitsspeicher und leer: kein Personenschlüssel, also die einfache Rückfrage beim Abmelden
+      env.extraOverrides.add(schluesselSpeicherProvider.overrideWithValue(MemorySchluesselSpeicher()));
       await starteApp(tester, env);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
     }
