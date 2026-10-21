@@ -10,6 +10,7 @@ import '../../data/push/push_state.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_hinweis.dart';
 import '../../data/sync_state.dart';
+import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
@@ -20,6 +21,7 @@ import '../lists/lists_screen.dart';
 import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
 import '../update/update_service.dart';
+import '../wetter/wetter_screen.dart';
 import 'desktop_shell.dart';
 import 'shell_tab.dart';
 
@@ -34,7 +36,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(6, (_) => GlobalKey());
+  final _keys = List.generate(7, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -46,7 +48,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   // Desktop: dazu Standort als Bereich neben den anderen (mobil eine eigene Seite)
   // Standort (Karte, Kacheln, Zeitgeber) wird erst beim ersten Öffnen gebaut und bleibt danach im Stapel (Zustand erhalten)
   bool _standortBesucht = false;
-  List<Widget> get _desktopScreens => [const DesktopHome(), ..._screens.sublist(1), if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink()];
+  bool _wetterBesucht = false;
+  List<Widget> get _desktopScreens => [const DesktopHome(), ..._screens.sublist(1), if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink(), if (_wetterBesucht) WetterScreen(key: _keys[6], eingebettet: true) else const SizedBox.shrink()];
 
   /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
   bool _desktopLayout = false;
@@ -117,12 +120,15 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     ref.listen(shellTabProvider, (_, t) {
       if (t == kStandortTab) unawaited(ref.read(standortBenachrichtigerProvider).alleEntfernen());
+      // Wetter-Bereich: bei jedem Wählen frisch abfragen (wie das Öffnen der Seite mobil)
+      if (t == kWetterTab) unawaited(ref.read(wetterProvider.notifier).aktualisieren());
     });
     return LayoutBuilder(builder: (context, c) {
       _desktopLayout = c.maxWidth >= kDesktopBreakpoint;
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
       if (c.maxWidth >= kDesktopBreakpoint) {
         if (tab == kStandortTab) _standortBesucht = true;
+        if (tab == kWetterTab) _wetterBesucht = true;
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite

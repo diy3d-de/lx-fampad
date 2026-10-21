@@ -9,10 +9,14 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
 
 class WetterScreen extends ConsumerStatefulWidget {
-  const WetterScreen({super.key});
+  /// Im Desktop-Layout ein Bereich der Shell (Seitenleiste und Fußzeile bleiben): ohne eigenes Gerüst, ohne Zurück-Pfeil, mit der gemeinsamen Kopfzeile.
+  /// Die Shell fragt dann beim Wählen des Bereichs selbst frisch ab.
+  final bool eingebettet;
+  const WetterScreen({super.key, this.eingebettet = false});
 
   @override
   ConsumerState<WetterScreen> createState() => _WetterScreenState();
@@ -22,6 +26,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
   @override
   void initState() {
     super.initState();
+    if (widget.eingebettet) return;
     // beim Öffnen frisch abfragen (nicht während des Aufbaus den Zustand ändern)
     Future.microtask(() {
       if (mounted) unawaited(ref.read(wetterProvider.notifier).aktualisieren());
@@ -34,7 +39,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
     final dto = st.dto;
     final a = dto?.aktuell;
     final jetzt = DateTime.now();
-    return AuthSeite(
+    final seite = AuthSeite(
       label: '// wetter',
       titel: dto != null && dto.verfuegbar && dto.ort.isNotEmpty
           ? dto.ort
@@ -104,6 +109,19 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
           style: TextStyle(fontSize: 12, color: kTextMuted),
         ),
       ],
+    );
+    if (!widget.eingebettet) return seite;
+    return Material(
+      type: MaterialType.transparency,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        children: [
+          Row(children: [const Expanded(child: TabKopfzeile(title: 'Wetter')), ...seite.aktionen]),
+          if (dto != null && dto.verfuegbar && dto.ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel('// ${dto.ort}')],
+          const SizedBox(height: 16),
+          ...seite.kinder,
+        ],
+      ),
     );
   }
 }

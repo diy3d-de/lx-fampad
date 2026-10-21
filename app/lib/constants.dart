@@ -159,10 +159,11 @@ const kTabs = <NavTab>[
   NavTab('Aufgaben', Icons.task_alt_outlined, Icons.task_alt),
 ];
 
-/// Seitenleiste im Desktop-Layout: die Tabs der Navigationsleiste plus Standort (mobil ist Standort eine Seite, die von der Startseite aus geöffnet wird).
+/// Seitenleiste im Desktop-Layout: die Tabs der Navigationsleiste plus Standort und Wetter (mobil ist Standort eine Seite, die von der Startseite aus geöffnet wird).
 const kDesktopTabs = <NavTab>[
   ...kTabs,
   NavTab('Standort', Icons.location_on_outlined, Icons.location_on),
+  NavTab('Wetter', Icons.wb_sunny_outlined, Icons.wb_sunny),
 ];
 
 /// Ab dieser Fensterbreite zeigt die App das Desktop-Layout (Seitenleiste, Karten-Raster); darunter bleibt es mobil.

@@ -24,3 +24,6 @@ const kChatTab = 2;
 
 /// Index des Standort-Bereichs in [kDesktopTabs] (nur im Desktop-Layout ein Bereich der Shell; mobil keine Tab-Leiste dafür).
 const kStandortTab = 6;
+
+/// Index des Wetter-Bereichs in [kDesktopTabs] (nur im Desktop-Layout ein Bereich der Shell, und dort nur in der Seitenleiste, wenn die Kachel sichtbar ist; mobil eine Seite).
+const kWetterTab = 7;

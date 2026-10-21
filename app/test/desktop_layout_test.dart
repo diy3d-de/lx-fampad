@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/standort/standort_screen.dart';
+import 'package:lx_fampad/widgets/kopfzeile.dart';
 
 import 'support/harness.dart';
 import 'support/test_app.dart';
@@ -100,6 +101,8 @@ void main() {
       expect(find.text('lx-familyhub'), findsOneWidget); // Seitenleiste
       expect(find.textContaining('sync: '), findsOneWidget); // Fußzeile
       expect(find.text('Standort'), findsNWidgets(2)); // Seitenleiste + Kopfzeile des Bereichs
+      // gleicher oberer Abstand wie bei den anderen Bereichen (Kalender, Aufgaben, Listen, Chat: 16 px)
+      expect(tester.getTopLeft(find.byType(TabKopfzeile)).dy, 16);
       expect(find.text('// MEIN STANDORT'), findsOneWidget);
       expect(find.byTooltip('Zurück'), findsNothing);
       expect(find.byType(NavigationBar), findsNothing);
