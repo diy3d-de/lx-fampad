@@ -1,10 +1,13 @@
 // Bausteine des Kalenders: Karte eines Vorkommens, Personenfilter, Ansichtswechsel, Wahl "nur dieses / dieses und folgende / alle" und das
 // Detailblatt eines Termins.
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/calendar/expansion.dart';
+import '../../data/calendar/feiertage.dart';
+import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
 import '../../data/lists/members.dart';
@@ -29,7 +32,7 @@ class VorkommenKarte extends StatelessWidget {
     final personen = [for (final id in teilnehmer) ?mitglieder[id]];
     return Semantics(
       button: true,
-      label: '${v.titel}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}',
+      label: '${vorkommenTitel(v)}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}',
       excludeSemantics: true,
       child: LxCard(
         padding: EdgeInsets.zero,
@@ -51,9 +54,9 @@ class VorkommenKarte extends StatelessWidget {
                         Row(
                           children: [
                             Expanded(
-                              child: Text(v.titel, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              child: Text(vorkommenTitel(v), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                             ),
-                            if (v.serie) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.repeat, size: 14, color: kTextMuted)),
+                            if (istGeburtstag(v.termin)) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.cake_outlined, size: 16, color: kGeburtstag)) else if (v.serie) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.repeat, size: 14, color: kTextMuted)),
                             if (v.geaendert) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.edit_outlined, size: 14, color: kTextMuted)),
                           ],
                         ),
@@ -250,11 +253,11 @@ Future<TerminAktion?> terminDetailBlatt(
               children: [
                 Container(width: 4, height: 18, color: farbe),
                 const SizedBox(width: 8),
-                MonoLabel(v.geaendert ? '// termin · geändert' : '// termin', color: farbe),
+                MonoLabel(istGeburtstag(t) ? '// geburtstag' : (v.geaendert ? '// termin · geändert' : '// termin'), color: farbe),
               ],
             ),
             const SizedBox(height: 6),
-            Text(v.titel, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong)),
+            Text(vorkommenTitel(v), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong)),
             const SizedBox(height: 14),
             zeile(Icons.schedule, datumZeitText(v)),
             if (v.ort.isNotEmpty) zeile(Icons.place_outlined, v.ort),
@@ -296,3 +299,40 @@ Future<TerminAktion?> terminDetailBlatt(
     );
   },
 );
+
+/// Dezente Hinweise eines Tages (Feiertag, Schulferien): kleine Kapseln in Mono-Schrift, nicht antippbar, nicht editierbar.
+/// In der Agenda nennen Ferien das Ende ([mitEnde]), in Monat und Woche stehen sie an jedem Tag.
+class TagesHinweisZeile extends StatelessWidget {
+  final List<TagesHinweis> hinweise;
+  final bool mitEnde;
+  const TagesHinweisZeile({super.key, required this.hinweise, this.mitEnde = false});
+
+  @override
+  Widget build(BuildContext context) {
+    if (hinweise.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        children: [
+          for (final h in hinweise)
+            () {
+              final farbe = h.art == TagesHinweisArt.feiertag ? kFeiertag : kFerien;
+              final ende = mitEnde && h.art == TagesHinweisArt.ferien ? ' · bis ${DateFormat('d. MMM', 'de_DE').format(h.bis)}' : '';
+              final text = '${h.name}$ende';
+              return Semantics(
+                label: '${h.art == TagesHinweisArt.feiertag ? 'Feiertag' : 'Schulferien'}: $text',
+                excludeSemantics: true,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8), border: Border.all(color: farbe.withValues(alpha: 0.35))),
+                  child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: farbe)),
+                ),
+              );
+            }(),
+        ],
+      ),
+    );
+  }
+}

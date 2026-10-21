@@ -16,6 +16,7 @@ import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_anzeige.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
+import '../calendar/geburtstage_karte.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
@@ -101,6 +102,7 @@ class HomeScreen extends ConsumerWidget {
         const _EinkaufKarte(),
         const SizedBox(height: 20),
         const _NaechsteKarte(),
+        const GeburtstageKarte(),
         const SizedBox(height: 20),
         const _AufgabenKarte(),
         const SizedBox(height: 20),

@@ -8,6 +8,7 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/calendar/expansion.dart';
+import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/zeitzonen.dart';
 import '../../data/lists/members.dart';
@@ -62,7 +63,7 @@ class AnstehenderTermin extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(v.titel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                Text(vorkommenTitel(v), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text(
                   '$tagText · ${zeitText(v, tag)}',
                   maxLines: 1,

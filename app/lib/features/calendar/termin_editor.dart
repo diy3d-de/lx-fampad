@@ -9,12 +9,14 @@ import '../../data/api/models.dart';
 import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/expansion.dart';
+import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
 import '../../data/erinnerungen/erinnerung_dienst.dart' show erinnerungStatusProvider;
 import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/lists/list_repository.dart' show ListenSicht;
+import '../../data/sync/sync_store.dart' show neueUuid;
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
@@ -42,6 +44,10 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   final _ort = TextEditingController();
   final _beschreibung = TextEditingController();
   var _ganztaegig = false;
+  // Geburtstag: ganztägiger Jahrestag (siehe geburtstag.dart); [_geburtsdatum] trägt Monat und Tag (und das Jahr, wenn [_jahrBekannt])
+  var _geburtstag = false;
+  var _jahrBekannt = true;
+  late DateTime _geburtsdatum;
   late DateTime _startTag;
   late DateTime _endTag; // bei ganztägigen Terminen einschließlich
   var _startZeit = const TimeOfDay(hour: 9, minute: 0);
@@ -81,6 +87,9 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       _endZeit = TimeOfDay(hour: stunde + 1, minute: 0);
       _startTagUrsprung = _startTag;
       _ganztaegigUrsprung = false;
+      // Vorbelegung: heute vor zehn Jahren; am Schalttag (29.2.) auf den letzten Tag des Monats im Zieljahr begrenzt
+      final zielJahr = tag.year - 10;
+      _geburtsdatum = DateTime.utc(zielJahr, tag.month, tag.day.clamp(1, DateTime.utc(zielJahr, tag.month + 1, 0).day));
       _erinnerung = ref.read(erinnerungEinstellungenProvider).standardVorlauf; // lokale Vorgabe dieses Geräts
       return;
     }
@@ -106,6 +115,13 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     _sicht = ListenSicht.von(t.audience);
     _startTagUrsprung = _startTag;
     _ganztaegigUrsprung = _ganztaegig;
+    _geburtsdatum = DateTime.utc(_startTag.year, _startTag.month, _startTag.day);
+    if (hatGeburtstagsMarke(t)) {
+      final j = geburtsjahr(t);
+      _geburtstag = true;
+      _jahrBekannt = j != null;
+      _geburtsdatum = DateTime.utc(j ?? 2000, _startTag.month, _startTag.day);
+    }
   }
 
   /// Beginn und Ende des Termins selbst (bei Serien: des ersten Vorkommens) in der Wanduhr der Familienzone.
@@ -167,7 +183,49 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     });
   }
 
+  /// Speichert einen Geburtstag: ganztägig, jährlich, Beginn im Jahr der Geburt (frühestens 2000, der Server kennt davor keine Tage).
+  Future<void> _speichernGeburtstag() async {
+    final repo = ref.read(terminRepositoryProvider);
+    final nav = Navigator.of(context);
+    final name = _titel.text.trim();
+    if (name.isEmpty) {
+      setState(() => _fehler = 'Gib den Namen ein.');
+      return;
+    }
+    final d = _geburtsdatum;
+    final jahr = _jahrBekannt ? d.year : null;
+    final beginnJahr = jahr != null && jahr >= 2000 ? jahr : 2000;
+    final start = DateTime.utc(beginnJahr, d.month, d.day);
+    final original = widget.vorkommen?.termin;
+    final suffix = geburtstagUidSuffix(original?.icalUid) ?? neueUuid();
+    final e = TerminEingabe(
+      titel: name,
+      beschreibung: _beschreibung.text,
+      ganztaegig: true,
+      startWand: start,
+      endeWand: start.add(const Duration(days: 1)),
+      rrule: geburtstagRegel(d.month, d.day),
+      erinnerungMin: _erinnerung,
+      sicht: _sicht,
+      teilnehmer: _teilnehmer,
+      icalUid: geburtstagUid(jahr, suffix),
+    );
+    final v = widget.vorkommen;
+    try {
+      if (v == null) {
+        await repo.anlegen(e);
+      } else {
+        await repo.alleAendern(v.termin.id, e);
+      }
+    } on ZeitzonenFehlen {
+      if (mounted) setState(() => _fehler = 'Die Zeitzonen-Daten fehlen, der Geburtstag wurde nicht gespeichert. Bitte versuche es noch einmal.');
+      return;
+    }
+    if (mounted) nav.pop();
+  }
+
   Future<void> _speichern() async {
+    if (_geburtstag) return _speichernGeburtstag();
     final repo = ref.read(terminRepositoryProvider);
     final nav = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
@@ -251,7 +309,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     final rechte = TerminRechte(user?.role ?? Role.child, user?.id);
     final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
     final datum = DateFormat('E, d. MMM y', 'de_DE');
-    final titel = _neu ? 'Neuer Termin' : (_nurDieses ? 'Dieses Vorkommen' : (widget.umfang == SerieUmfang.folgende ? 'Dieses und folgende' : 'Termin bearbeiten'));
+    final titel = _geburtstag ? (_neu ? 'Neuer Geburtstag' : 'Geburtstag bearbeiten') : _neu ? 'Neuer Termin' : (_nurDieses ? 'Dieses Vorkommen' : (widget.umfang == SerieUmfang.folgende ? 'Dieses und folgende' : 'Termin bearbeiten'));
 
     Widget wahl({required String label, required String text, required VoidCallback onTap, IconData icon = Icons.event}) => Semantics(
       button: true,
@@ -317,16 +375,58 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       label: '// termin',
       titel: titel,
       maxBreite: kMaxContentWidth,
-      fussleiste: FilledButton(onPressed: _speichern, child: Text(_neu ? 'Termin anlegen' : 'Speichern')),
+      fussleiste: FilledButton(onPressed: _speichern, child: Text(_neu ? (_geburtstag ? 'Geburtstag anlegen' : 'Termin anlegen') : 'Speichern')),
       kinder: [
         if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
         TextField(
           controller: _titel,
           maxLength: 200,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(labelText: 'Titel', counterText: ''),
+          decoration: InputDecoration(labelText: _geburtstag ? 'Name' : 'Titel', counterText: ''),
         ),
         const SizedBox(height: 12),
+        if (_neu || _geburtstag)
+          Semantics(
+            toggled: _geburtstag,
+            label: 'Geburtstag',
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Geburtstag'),
+              subtitle: const Text('Ganztägig, wiederholt sich jedes Jahr'),
+              value: _geburtstag,
+              onChanged: _neu ? (v) => setState(() => _geburtstag = v) : null,
+            ),
+          ),
+        if (_geburtstag) ...[
+          const MonoLabel('Geburtsdatum'),
+          const SizedBox(height: 6),
+          wahl(
+            label: 'Geburtsdatum',
+            text: _jahrBekannt ? DateFormat('d. MMMM y', 'de_DE').format(_geburtsdatum) : DateFormat('d. MMMM', 'de_DE').format(_geburtsdatum),
+            onTap: () async {
+              final d = await showDatePicker(
+                context: context,
+                initialDate: DateTime(_geburtsdatum.year, _geburtsdatum.month, _geburtsdatum.day),
+                firstDate: DateTime(1900),
+                lastDate: DateTime.now(),
+                locale: const Locale('de', 'DE'),
+              );
+              if (d != null) setState(() => _geburtsdatum = DateTime.utc(d.year, d.month, d.day));
+            },
+          ),
+          Semantics(
+            toggled: _jahrBekannt,
+            label: 'Geburtsjahr angeben',
+            child: SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Geburtsjahr angeben'),
+              subtitle: const Text('Dann zeigt der Kalender das Alter ("wird 8")'),
+              value: _jahrBekannt,
+              onChanged: (v) => setState(() => _jahrBekannt = v),
+            ),
+          ),
+          const SizedBox(height: 4),
+        ] else ...[
         Semantics(
             toggled: _ganztaegig,
             label: 'Ganztägig',
@@ -353,11 +453,14 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
         const SizedBox(height: 16),
         TextField(controller: _ort, maxLength: 200, decoration: const InputDecoration(labelText: 'Ort', counterText: '', prefixIcon: Icon(Icons.place_outlined))),
         const SizedBox(height: 12),
+        ],
         if (!_nurDieses) ...[
-          const MonoLabel('Wiederholung'),
-          const SizedBox(height: 6),
-          wahl(label: 'Wiederholung', text: _wdh.beschreibung(), icon: Icons.repeat, onTap: _wiederholungWaehlen),
-          const SizedBox(height: 12),
+          if (!_geburtstag) ...[
+            const MonoLabel('Wiederholung'),
+            const SizedBox(height: 6),
+            wahl(label: 'Wiederholung', text: _wdh.beschreibung(), icon: Icons.repeat, onTap: _wiederholungWaehlen),
+            const SizedBox(height: 12),
+          ],
           const MonoLabel('Erinnerung'),
           const SizedBox(height: 6),
           Wrap(
