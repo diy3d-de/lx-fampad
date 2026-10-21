@@ -2,6 +2,7 @@
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/wetter/wetter_state.dart';
@@ -278,6 +279,34 @@ void main() {
     expect(find.bySemanticsLabel('Wetter'), findsNothing);
     expect(find.text('// WETTER'), findsNothing);
     handle.dispose();
+  });
+
+  for (final groesse in [const Size(360, 800), const Size(1440, 900)]) {
+    testWidgets('${groesse.width.toInt()} px: Profil schaltet "Wetter anzeigen" auch bei ausgeschalteter Kachel wieder ein', (tester) async {
+      await start(tester, groesse: groesse);
+      final c = ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first));
+      await c.read(wetterProvider.notifier).anzeigenSetzen(false);
+      await warte(tester);
+      expect(find.text('// WETTER'), findsNothing);
+      if (groesse.width < 900) {
+        await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+      } else {
+        await tippe(tester, find.byIcon(Icons.settings_outlined));
+      }
+      expect(find.text('Wetter anzeigen'), findsOneWidget);
+      await tippe(tester, find.widgetWithText(SwitchListTile, 'Wetter anzeigen'));
+      expect(c.read(wetterProvider).anzeigen, isTrue);
+      await tippe(tester, find.byTooltip('Zurück'));
+      expect(find.text('// WETTER'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Profil: Server ohne Wetter zeigt nur einen Hinweis statt des Schalters', (tester) async {
+    await start(tester, wetter: () => <String, dynamic>{'available': false});
+    await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+    expect(find.textContaining('nicht eingerichtet'), findsOneWidget);
+    expect(find.widgetWithText(SwitchListTile, 'Wetter anzeigen'), findsNothing);
   });
 
   testWidgets('Desktop: ohne Wetter keine Seitenleisten-Zeile', (tester) async {

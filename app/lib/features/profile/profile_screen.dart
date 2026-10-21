@@ -9,6 +9,7 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/push/push_state.dart';
+import '../../data/wetter/wetter_state.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
@@ -308,6 +309,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        const _WetterZeile(),
         // Startbildschirm-Widget gibt es nur in der Android-App
         if (!kIsWeb) EinstellungsZeile(icon: Icons.widgets_outlined, titel: 'Widget „Heute“', untertitel: 'startbildschirm: termine, aufgaben, liste', onTap: () => _oeffne(const HeuteWidgetScreen())),
         // Push gibt es nur in der Android-App (UnifiedPush über die ntfy-App)
@@ -348,6 +350,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           label: const Text('Überall abmelden'),
         ),
       ],
+    );
+  }
+}
+
+/// Schalter "Wetter anzeigen" (lokal je Gerät): auch bei ausgeschaltetem Wetter erreichbar, denn dann gibt es weder Kachel noch Seitenleisten-Eintrag.
+/// Meldet der Server das Wetter als nicht eingerichtet, steht nur ein Hinweis da.
+class _WetterZeile extends ConsumerWidget {
+  const _WetterZeile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(wetterProvider);
+    if (st.dto != null && !st.dto!.verfuegbar) {
+      return const EinstellungsZeile(icon: Icons.wb_sunny_outlined, titel: 'Wetter anzeigen', untertitel: 'wetter ist auf dem server nicht eingerichtet');
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: LxCard(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: SwitchListTile(
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          secondary: const Icon(Icons.wb_sunny_outlined, color: kAccent, size: 22),
+          title: const Text('Wetter anzeigen', style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: const Text('startseite und seitenleiste, nur auf diesem gerät', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          value: st.anzeigen,
+          onChanged: (v) => unawaited(ref.read(wetterProvider.notifier).anzeigenSetzen(v)),
+        ),
+      ),
     );
   }
 }
