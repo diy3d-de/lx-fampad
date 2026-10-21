@@ -8,6 +8,7 @@ import '../../data/api/models.dart';
 import '../../data/app_database.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/chat/lese_status.dart';
+import '../../data/chat/chat_zusatz_inhalt.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -33,7 +34,10 @@ String chatName(Konversation k, List<String> teilnehmer, Mitglieder mitglieder, 
 String nachrichtKurztext(Nachricht n, NachrichtenInhalt inhalt) {
   final d = inhalt.nachricht(n);
   return switch (d.status) {
-    InhaltStatus.bereit => d.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
+    InhaltStatus.bereit => switch (umfrageLesen(d.text)) {
+      final u? => umfrageKurztext(u),
+      null => d.text.replaceAll(RegExp(r'\s+'), ' ').trim(),
+    },
     InhaltStatus.wirdEntschluesselt => 'wird entschlüsselt …',
     InhaltStatus.nichtEntschluesselbar => 'Nachricht nicht lesbar',
   };
@@ -175,6 +179,12 @@ class ChatRechte {
 
   /// Löschen: eigene Nachrichten; Admins zusätzlich fremde im Familienchat (nie in privaten Chats).
   bool darfLoeschen(Nachricht n, ChatArt art) => eigene(n) || (rolle == Role.admin && art == ChatArt.family);
+
+  /// Anheften: in privaten Chats jede Person, im Familienchat nur Eltern und Admins (Kinder sehen die Anheftungen).
+  bool darfPinnen(ChatArt art) => art != ChatArt.family || rolle != Role.child;
+
+  /// Lösen: Eltern und Admins jede Anheftung, Kinder nur ihre eigene.
+  bool darfPinLoesen(ChatPin p) => rolle != Role.child || (userId != null && p.gepinntVon == userId);
 
   /// Gruppe löschen darf, wer sie angelegt hat; Name und Teilnehmer ändern alle Teilnehmer.
   bool darfGruppeLoeschen(Konversation k) => k.chatArt == ChatArt.group && userId != null && k.ownerId == userId;

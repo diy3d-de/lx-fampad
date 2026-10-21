@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 
 import '../api/models.dart';
 import '../app_database.dart';
+import 'sync_chat_zusatz.dart';
 
 /// Untergeordnete Entität: Zeilen von [entity], deren Feld [field] auf die ID des Elternteils zeigt, hängen an ihm (Löschen, Sichtbarkeit).
 class KindLink {
@@ -56,6 +57,9 @@ abstract class SyncEntity {
   /// Eigener Hinweistext, wenn der Server das Anlegen dieser Zeile ablehnt (`not_found`, `deleted`, `forbidden`, `parent_deleted`); die Zeile ist
   /// zu diesem Zeitpunkt noch lokal da. null = die üblichen Texte, leerer Text = kein Hinweis.
   Future<String?> ablehnungsHinweis(AppDatabase db, String id, String code) async => null;
+
+  /// Hinweistext, wenn eine neue Zeile mit [abgelehntStill] doch abgelehnt wurde und die Person es wissen sollte (Grenzen, fehlende Rechte); null = ganz still.
+  String? stillHinweis(String code) => null;
 
   /// Bei `limit_reached` (Mengenbegrenzung des Servers) bleibt eine neue Zeile erhalten und wird später erneut gesendet, statt zu verschwinden.
   bool get bleibtBeiLimit => false;
@@ -411,7 +415,7 @@ class KonversationEntitaet extends SyncEntity {
   String get name => 'konversation';
 
   @override
-  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId')];
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -476,6 +480,9 @@ class KonversationEntitaet extends SyncEntity {
 class NachrichtEntitaet extends SyncEntity {
   @override
   String get name => 'nachricht';
+
+  @override
+  List<KindLink> get kinder => const [KindLink('reaktion', 'nachrichtId'), KindLink('stimme', 'nachrichtId'), KindLink('pin', 'nachrichtId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -924,6 +931,9 @@ final Map<String, SyncEntity> syncEntities = {
     EpocheWrapEntitaet(),
     AufgabenEntitaet(),
     AufgabePunkteEntitaet(),
+    ReaktionEntitaet(),
+    StimmeEntitaet(),
+    PinEntitaet(),
   ])
     e.name: e,
 };

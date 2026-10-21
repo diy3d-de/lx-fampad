@@ -43,7 +43,10 @@ export type AuditEvent =
   | 'key_rotated'
   | 'backup_set'
   | 'key_backup_read'
-  | 'transfer_claimed';
+  | 'transfer_claimed'
+  | 'key_backup_pw_set'
+  | 'key_backup_pw_read'
+  | 'key_backup_pw_verified';
 
 export interface AuditEntry {
   event: AuditEvent;

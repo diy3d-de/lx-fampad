@@ -649,7 +649,7 @@ class ChatKrypto {
   // ------------------------------------------------------------------ Nachrichten
 
   /// Verschlüsselt eine Nachricht für den Versand (Hülle `e1:`); null, wenn jetzt nicht verschlüsselt werden kann (der Aufrufer wartet).
-  Future<String?> nachrichtVersiegeln({required String konversationId, required String nachrichtId, required String klartext, String? antwortAuf}) async {
+  Future<String?> nachrichtVersiegeln({required String konversationId, required String nachrichtId, required String klartext, String? antwortAuf, String? art}) async {
     final bytes = utf8.encode(klartext);
     if (bytes.length > kMaxNachrichtBytes) throw const VerschluesselungNichtBereit('Die Nachricht ist zu lang.');
     final s = await sendeEpoche(konversationId);
@@ -660,7 +660,7 @@ class ChatKrypto {
     final wire = _huelle.versiegeln(
       schluessel: key,
       klartext: Uint8List.fromList(bytes),
-      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: ichId, epoch: epoche, senderKeyVersion: meineKeyVersion, antwortAuf: antwortAuf),
+      kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: ichId, epoch: epoche, senderKeyVersion: meineKeyVersion, antwortAuf: antwortAuf, art: art),
       signGeheim: meinSchluessel.signGeheim,
     );
     return '$kPraefixE1$wire';
@@ -679,20 +679,20 @@ class ChatKrypto {
   /// Eine eigene, schon verschlüsselte Nachricht im Ausgang mit der höchsten bestätigten Epoche neu verschlüsseln, wenn inzwischen eine neuere bekannt ist (eine
   /// Rotation lag dazwischen: sonst könnte ein inzwischen entferntes Mitglied sie noch lesen). Liefert die neue Hülle, [wire] unverändert (schon aktuell oder
   /// nicht neu zu verschlüsseln) oder null (die neuere Epoche ist noch nicht bereit: die Nachricht wartet).
-  Future<String?> nachrichtNeuVersiegeln({required String konversationId, required String nachrichtId, required String wire, String? antwortAuf}) async {
+  Future<String?> nachrichtNeuVersiegeln({required String konversationId, required String nachrichtId, required String wire, String? antwortAuf, String? art}) async {
     final alt = huellenEpoche(wire);
     if (alt == null) return wire;
     final s = await sendeEpoche(konversationId);
     final neu = s.epoche;
     if (neu == null) return null;
     if (alt >= neu) return wire;
-    final d = await nachrichtOeffnen(konversationId: konversationId, nachrichtId: nachrichtId, autorId: ichId, wire: wire, antwortAuf: antwortAuf);
+    final d = await nachrichtOeffnen(konversationId: konversationId, nachrichtId: nachrichtId, autorId: ichId, wire: wire, antwortAuf: antwortAuf, art: art);
     if (!d.lesbar) return wire; // die alte Epoche lässt sich nicht mehr öffnen: es bleibt, wie es ist
-    return nachrichtVersiegeln(konversationId: konversationId, nachrichtId: nachrichtId, klartext: d.text, antwortAuf: antwortAuf);
+    return nachrichtVersiegeln(konversationId: konversationId, nachrichtId: nachrichtId, klartext: d.text, antwortAuf: antwortAuf, art: art);
   }
 
   /// Öffnet eine verschlüsselte Nachricht (`e1:`). Prüft zuerst die Signatur gegen den Schlüssel des Absenders in der Version der Hülle, entschlüsselt erst danach.
-  Future<DekodierterInhalt> nachrichtOeffnen({required String konversationId, required String nachrichtId, required String? autorId, required String wire, String? antwortAuf}) async {
+  Future<DekodierterInhalt> nachrichtOeffnen({required String konversationId, required String nachrichtId, required String? autorId, required String wire, String? antwortAuf, String? art}) async {
     if (!wire.startsWith(kPraefixE1)) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt');
     final huelle = wire.substring(kPraefixE1.length);
     if (autorId == null) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Absender nicht mehr in der Familie');
@@ -720,7 +720,7 @@ class ChatKrypto {
       final klar = _huelle.oeffnen(
         schluessel: key,
         huelle: huelle,
-        kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autorId, epoch: epoche, senderKeyVersion: senderVersion, antwortAuf: antwortAuf),
+        kontext: HuellenKontext(conversationId: konversationId, messageId: nachrichtId, senderId: autorId, epoch: epoche, senderKeyVersion: senderVersion, antwortAuf: antwortAuf, art: art),
         sender: sender,
       );
       try {

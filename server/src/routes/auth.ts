@@ -5,6 +5,7 @@ import { finishPasskeyLogin, finishPasskeyStepUp, findAccountById, loginWithPass
 import { logoutCurrent, logoutEverywhere } from '../auth/account.js';
 import { lookupInvite } from '../auth/invites.js';
 import { finishPasskeyRegistration, finishPasswordRegistration, startPasskeyRegistration, startPasswordRegistration } from '../auth/register.js';
+import { getKdfParams } from '../auth/keys-pw.js';
 import { refreshSession } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import { AppError } from '../errors.js';
@@ -80,6 +81,12 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
   });
 
   // ----- Anmeldung -----
+  // Parameter der Passwort-Ableitung vor der Anmeldung (nur mit Schalter E2EE_PW_BACKUP; sonst 404 wie jede unbekannte Route).
+  // Für unbekannte, deaktivierte und Konten ohne Eintrag kommt eine gleich geformte Fake-Antwort (kein Orakel).
+  if (config.e2eePwBackup) {
+    app.post('/api/v1/auth/kdf-params', strikt, async (req) => getKdfParams(ctx, parse(z.object({ email: emailSchema }).strict(), req.body).email));
+  }
+
   app.post('/api/v1/auth/login/passkey/options', strikt, async (req) => startPasskeyLogin(ctx, meta(req)));
 
   app.post('/api/v1/auth/login/passkey/verify', strikt, async (req, reply) => {
