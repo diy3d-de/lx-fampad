@@ -157,7 +157,8 @@ void main() {
     env.feiertage = 'nein';
     env.wiperEcht = wiperEcht;
     final port = FakeHeuteWidgetPort();
-    env.extraOverrides.addAll([heuteWidgetPortProvider.overrideWithValue(port), heuteWidgetSpeicherProvider.overrideWithValue(MemoryHeuteWidgetSpeicher(speicher))]);
+    env.heuteWidgetPort = port;
+    env.extraOverrides.add(heuteWidgetSpeicherProvider.overrideWithValue(MemoryHeuteWidgetSpeicher(speicher)));
     vorher?.call(env);
     final c = await starteApp(tester, env);
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)));
@@ -255,7 +256,8 @@ void main() {
     final env = await angemeldeteUmgebung(role: 'admin');
     env.feiertage = 'nein';
     final port = FakeHeuteWidgetPort()..start = 'aufgaben';
-    env.extraOverrides.addAll([heuteWidgetPortProvider.overrideWithValue(port), heuteWidgetSpeicherProvider.overrideWithValue(MemoryHeuteWidgetSpeicher())]);
+    env.heuteWidgetPort = port;
+    env.extraOverrides.add(heuteWidgetSpeicherProvider.overrideWithValue(MemoryHeuteWidgetSpeicher()));
     final c = await starteApp(tester, env);
     await warte(tester);
     expect(c.read(shellTabProvider), kAufgabenTab);
@@ -268,7 +270,8 @@ void main() {
       env.feiertage = 'nein';
       env.sync.andereAendert('list', _l1, {'name': 'Einkauf', 'kind': 'shopping', 'audience': 'family'});
       final port = FakeHeuteWidgetPort();
-      env.extraOverrides.addAll([heuteWidgetPortProvider.overrideWithValue(port), heuteWidgetSpeicherProvider.overrideWithValue(MemoryHeuteWidgetSpeicher())]);
+      env.heuteWidgetPort = port;
+      env.extraOverrides.add(heuteWidgetSpeicherProvider.overrideWithValue(MemoryHeuteWidgetSpeicher()));
       final c = await starteApp(tester, env, skala: skala);
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Start')));
       await warte(tester);

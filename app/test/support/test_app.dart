@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:lx_fampad/data/api/api_client.dart';
 import 'package:lx_fampad/data/calendar/feiertage.dart';
+import 'package:lx_fampad/data/heute_widget/heute_widget_port.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
@@ -113,11 +114,16 @@ class TestUmgebung {
   /// Karte der Standort-Seite (Standard: keine, nur die Liste; die echte Karte läuft im Test nicht).
   StandortKartenBuilder? standortKarte;
 
+  /// Port des Widgets "Heute" (Standard: nicht verfügbar; Tests des Widgets setzen einen verfügbaren Fake).
+  HeuteWidgetPort heuteWidgetPort = FakeHeuteWidgetPort(verfuegbar: false);
+
   /// Feiertage und Ferien im Kalender (Standard im Test: aus, damit Feiertage in den Fenstern der Kalender-Tests nichts verfälschen; 'ja' schaltet an).
   String feiertage = 'nein';
 
   List<Override> get overrides => [
     feiertageSpeicherProvider.overrideWithValue(MemoryFeiertageSpeicher(feiertage)),
+    // Widget "Heute": im Test gilt flutter_test als Android, ohne Fake würde der Kanal angesprochen und ein Entprell-Timer bliebe stehen; Tests des Widgets setzen ihren Fake über extraOverrides
+    heuteWidgetPortProvider.overrideWithValue(heuteWidgetPort),
     httpClientProvider.overrideWithValue(server.client),
     tokenStoreProvider.overrideWithValue(store),
     apiClientProvider.overrideWithValue(client),
