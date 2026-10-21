@@ -49,16 +49,19 @@ class FampadApi {
         }, false),
       );
 
+  /// Entweder [passwort] (Klartext, alter Weg) oder [authKey] (abgeleitet, das Passwort verlässt das Gerät nie); genau eins von beiden.
   Future<PasswordStart> passwortRegistrierungStart({
     required String token,
-    required String passwort,
+    String? passwort,
+    String? authKey,
     String? pin,
     String? email,
     String? anzeigename,
   }) async => PasswordStart.fromJson(
     await client.post('/auth/invites/password/start', {
       'token': token,
-      'password': passwort,
+      'password': ?passwort,
+      'authKey': ?authKey,
       if (pin != null && pin.isNotEmpty) 'pin': pin,
       'email': ?email,
       'displayName': ?anzeigename,
@@ -78,16 +81,21 @@ class FampadApi {
     await client.post('/auth/login/passkey/verify', {'challengeId': challengeId, 'response': antwort, ...await _clientFelder()}, false),
   );
 
-  /// Passwort nur mit zweitem Faktor: entweder [totp] oder [wiederherstellungscode].
+  /// Passwort nur mit zweitem Faktor: entweder [totp] oder [wiederherstellungscode]. Entweder [authKey] (abgeleitet, das Passwort verlässt das Gerät
+  /// nie) oder [passwort] (Klartext, alter Weg); mit [passwort] kann [upgradeAuthKey] den authKey des Kontos anlegen (Umstellung beim Anmelden).
   Future<LoginResult> passwortAnmelden({
     required String email,
-    required String passwort,
+    String? passwort,
+    String? authKey,
+    String? upgradeAuthKey,
     String? totp,
     String? wiederherstellungscode,
   }) async => LoginResult.fromJson(
     await client.post('/auth/login/password', {
       'email': email,
-      'password': passwort,
+      'password': ?passwort,
+      'authKey': ?authKey,
+      'upgradeAuthKey': ?upgradeAuthKey,
       'totp': ?totp,
       'recoveryCode': ?wiederherstellungscode,
       ...await _clientFelder(),
@@ -146,15 +154,26 @@ class FampadApi {
   }
 
   /// Passwort + TOTP nachträglich einrichten: Schritt 1 (Passwort prüfen, Schlüssel erzeugen), Schritt 2 (Code bestätigen). Beide mit Step-up.
-  Future<PasswordStart> passwortEinrichtenStart(String passwort) async =>
-      PasswordStart.fromJson(await client.post('/me/password/start', {'password': passwort}));
+  Future<PasswordStart> passwortEinrichtenStart({String? passwort, String? authKey}) async =>
+      PasswordStart.fromJson(await client.post('/me/password/start', {'password': ?passwort, 'authKey': ?authKey}));
 
   Future<void> passwortEinrichtenFertig({required String challengeId, required String code}) async {
     await client.post('/me/password/complete', {'challengeId': challengeId, 'code': code});
   }
 
-  Future<void> passwortAendern(String passwort) async {
-    await client.post('/me/password/change', {'password': passwort});
+  /// Neues Passwort: als [passwort] (Klartext, alter Weg) oder als abgeleiteter [authKey]; nur mit authKey kann [pwBackupId] die dazu passende, geprüfte
+  /// Passwort-Sicherung im selben Schritt (atomar) zur aktuellen machen.
+  Future<void> passwortAendern({String? passwort, String? authKey, String? pwBackupId}) async {
+    await client.post('/me/password/change', {'password': ?passwort, 'authKey': ?authKey, 'pwBackupId': ?pwBackupId});
+  }
+
+  /// Zustand der Passwort-Anmeldung je Mitglied (nur Admins, nur mit Schalter des Servers; sonst null): "legacy", "authkey" oder "none".
+  Future<PasswortModi?> passwortModi() async {
+    try {
+      return PasswortModi.fromJson(await client.get('/members/password-modes'));
+    } on ApiException {
+      return null;
+    }
   }
 
   Future<void> passwortEntfernen() async {
@@ -226,12 +245,15 @@ class FampadApi {
   // ----------------------------------------------------------- Passwort-Sicherung (nur mit Schalter E2EE_PW_BACKUP des Servers)
 
   /// Schalter des Servers aus GET /version (`features.pwBackup`). Jeder Fehler und jeder ältere Server ergibt false (die Funktion bleibt unsichtbar).
-  Future<bool> pwSicherungVerfuegbar() async {
+  Future<bool> pwSicherungVerfuegbar() async => (await serverFaehigkeiten()).pwBackup;
+
+  /// Fähigkeiten des Servers aus GET /version (`features`). Jeder Fehler und jeder ältere Server ergibt "nichts davon": die App bleibt dann beim alten Weg.
+  Future<ServerFaehigkeiten> serverFaehigkeiten() async {
     try {
       final f = (await client.get('/version', auth: false))['features'];
-      return f is Map<String, dynamic> && f['pwBackup'] == true;
+      return f is Map<String, dynamic> ? ServerFaehigkeiten.fromJson(f) : ServerFaehigkeiten.keine;
     } on ApiException {
-      return false;
+      return ServerFaehigkeiten.keine;
     }
   }
 

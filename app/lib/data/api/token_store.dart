@@ -49,7 +49,14 @@ abstract class TokenStore {
   /// Profil der letzten Sitzung für den Offline-Start (Name, E-Mail, Rolle, Farbe; liegt im Keystore, wird beim Abmelden gelöscht).
   Future<Map<String, dynamic>?> readProfile();
   Future<void> writeProfile(Map<String, dynamic> profile);
+
+  /// Konten (E-Mail in Kleinschreibung), mit denen sich diese App schon einmal per authKey angemeldet hat. Für sie sendet die App nie mehr das
+  /// Klartext-Passwort, auch wenn ein Server das provoziert (Schutz vor Herabstufung). Bleibt beim Abmelden erhalten (gehört zum Gerät, nicht zur Sitzung).
+  Future<bool> istAuthKeyKonto(String email);
+  Future<void> merkeAuthKeyKonto(String email);
 }
+
+String _kontoSchluessel(String email) => email.trim().toLowerCase();
 
 /// Für Tests und das Web (dort bleibt alles im Arbeitsspeicher des Tabs).
 class MemoryTokenStore implements TokenStore {
@@ -80,6 +87,14 @@ class MemoryTokenStore implements TokenStore {
 
   @override
   Future<void> writeProfile(Map<String, dynamic> profile) async => _profile = profile;
+
+  final Set<String> _authKeyKonten = {};
+
+  @override
+  Future<bool> istAuthKeyKonto(String email) async => _authKeyKonten.contains(_kontoSchluessel(email));
+
+  @override
+  Future<void> merkeAuthKeyKonto(String email) async => _authKeyKonten.add(_kontoSchluessel(email));
 }
 
 /// Android Keystore über flutter_secure_storage. Das Lesen fängt ALLE Fehler ab (PlatformException, BadPaddingException nach
@@ -89,6 +104,7 @@ class SecureTokenStore implements TokenStore {
   static const _kTokens = 'lx_fampad_tokens';
   static const _kDevice = 'lx_fampad_device_id';
   static const _kProfile = 'lx_fampad_profile';
+  static const _kAuthKeyKonten = 'lx_fampad_authkey_konten';
 
   final FlutterSecureStorage _s;
   SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
@@ -148,4 +164,20 @@ class SecureTokenStore implements TokenStore {
 
   @override
   Future<void> writeProfile(Map<String, dynamic> profile) => _s.write(key: _kProfile, value: jsonEncode(profile));
+
+  Future<List<String>> _konten() async =>
+      (await _lesen<List<String>>(_kAuthKeyKonten, (v) => v is List ? [for (final e in v) if (e is String) e] : null)) ?? const [];
+
+  @override
+  Future<bool> istAuthKeyKonto(String email) async => (await _konten()).contains(_kontoSchluessel(email));
+
+  @override
+  Future<void> merkeAuthKeyKonto(String email) async {
+    final k = _kontoSchluessel(email);
+    final liste = await _konten();
+    if (liste.contains(k)) return;
+    // wenige Konten pro Gerät: ältere Einträge fallen heraus
+    final neu = [...liste, k];
+    await _s.write(key: _kAuthKeyKonten, value: jsonEncode(neu.length > 20 ? neu.sublist(neu.length - 20) : neu));
+  }
 }

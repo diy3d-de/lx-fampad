@@ -5,6 +5,7 @@ import type { RequestMeta } from '../auth/context.js';
 import { clearedSessionCookie, sessionCookie, type Established } from '../auth/sessions.js';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
+import { isCanonicalAuthKey } from '../auth/authkey.js';
 import { AppError } from '../errors.js';
 
 // NUL (\u0000) lässt PostgreSQL bei text/jsonb mit einem Fehler scheitern (500), ein einzelnes Surrogat (z. B. \ud800) ist kein
@@ -68,6 +69,10 @@ export const emailSchema = safeString().pipe(z.string().trim().email().max(254))
 export const labelSchema = safeString().pipe(z.string().trim().max(60));
 /** Passwort: Länge zählt (Zeichen), sonst keine Regeln. */
 export const passwordSchema = safeString().pipe(z.string().min(1).max(256));
+/** Abgeleiteter Anmelde-Schlüssel (32 Byte, Base64url, kanonisch); ersetzt das Klartext-Passwort, siehe auth/authkey.ts. */
+export const authKeySchema = z.string().refine(isCanonicalAuthKey, 'invalid');
+/** Felder "Klartext-Passwort ODER authKey"; ob genau eins gesetzt ist und ob das Verfahren erlaubt ist, prüft assertPasswordInputAllowed. */
+export const passwordOrAuthKey = { password: passwordSchema.optional(), authKey: authKeySchema.optional() };
 /** Code/Token als Text mit fester Längengrenze. */
 export const boundedString = (min: number, max: number) => safeString().pipe(z.string().min(min).max(max));
 export const displayNameSchema = text(60);

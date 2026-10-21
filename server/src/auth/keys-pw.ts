@@ -6,7 +6,7 @@ import { and, eq, inArray, sql } from 'drizzle-orm';
 import { accountKdf, keyBackupsPw, personKeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
-import type { AuthContext, RequestMeta } from './context.js';
+import type { AuthContext, RequestMeta, Tx } from './context.js';
 import { requireStepUp } from './sessions.js';
 import type { SessionPrincipal } from './types.js';
 
@@ -165,28 +165,34 @@ export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: R
  */
 export async function markPwBackupVerified(ctx: AuthContext, p: SessionPrincipal, id: string, meta: RequestMeta): Promise<void> {
   requireStepUp(ctx, p);
-  await ctx.db.transaction(async (tx) => {
-    // gleiche Sperre wie Schlüsselwechsel und Ablegen: kein Bestätigen gegen einen gerade wechselnden Schlüssel
-    const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
-    const [row] = await tx
-      .select({ state: keyBackupsPw.state, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
-      .from(keyBackupsPw)
-      .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId)))
-      .for('update');
-    if (!row) throw notFound();
-    if (row.state === 'active' && row.verifiedAt) return; // schon bestätigt
-    if (row.state !== 'pending' || !k || k.v !== row.keyVersion) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
-    const now = ctx.now();
-    await tx
-      .update(keyBackupsPw)
-      .set({ state: 'superseded', updatedAt: now })
-      .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
-    const rows = await tx
-      .update(keyBackupsPw)
-      .set({ state: 'active', verifiedAt: now, updatedAt: now })
-      .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'pending')))
-      .returning({ keyVersion: keyBackupsPw.keyVersion });
-    if (!rows[0]) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
-    await writeAudit(ctx, tx, { event: 'key_backup_pw_verified', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: rows[0].keyVersion } });
-  });
+  await ctx.db.transaction((tx) => promotePwBackup(ctx, tx, p, id, meta));
+}
+
+/**
+ * Kern von [markPwBackupVerified] in einer vorhandenen Transaktion (auch für den Passwortwechsel: neues Passwort und die dazu passende
+ * Sicherung werden gemeinsam gültig, nie nur eins von beiden). Prüft das Step-up NICHT selbst (der Aufrufer hat es geprüft).
+ */
+export async function promotePwBackup(ctx: AuthContext, tx: Tx, p: SessionPrincipal, id: string, meta: RequestMeta): Promise<void> {
+  // gleiche Sperre wie Schlüsselwechsel und Ablegen: kein Bestätigen gegen einen gerade wechselnden Schlüssel
+  const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
+  const [row] = await tx
+    .select({ state: keyBackupsPw.state, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
+    .from(keyBackupsPw)
+    .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId)))
+    .for('update');
+  if (!row) throw notFound();
+  if (row.state === 'active' && row.verifiedAt) return; // schon bestätigt
+  if (row.state !== 'pending' || !k || k.v !== row.keyVersion) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
+  const now = ctx.now();
+  await tx
+    .update(keyBackupsPw)
+    .set({ state: 'superseded', updatedAt: now })
+    .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
+  const rows = await tx
+    .update(keyBackupsPw)
+    .set({ state: 'active', verifiedAt: now, updatedAt: now })
+    .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'pending')))
+    .returning({ keyVersion: keyBackupsPw.keyVersion });
+  if (!rows[0]) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
+  await writeAudit(ctx, tx, { event: 'key_backup_pw_verified', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: rows[0].keyVersion } });
 }

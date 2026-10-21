@@ -4,8 +4,9 @@
 //   2. Round-Trip (nach dem Ablegen): die abgelegte, noch unbestätigte Sicherung frisch vom Server holen, Salt und Parameter prüfen, mit dem PASSWORT neu ableiten (unabhängiger Weg),
 //      öffnen und den Schlüssel mit dem lokalen UND dem Schlüssel des Servers vergleichen.
 // Der Server legt sie zuerst nur als "pending" ab: die bisherige Sicherung bleibt gültig, bis die neue bestätigt ist. Erst danach meldet die App die
-// Sicherung beim Server als verifiziert (dort wird sie atomar die aktuelle und ersetzt die bisherige). Der Server sieht nie Passwort, authKey oder kek (hier wird nicht einmal
-// der authKey benutzt: der Login folgt in einem späteren Paket). Nichts davon landet im Log oder in einer Fehlermeldung.
+// Sicherung beim Server als verifiziert (dort wird sie atomar die aktuelle und ersetzt die bisherige). Der Server sieht nie Passwort, authKey oder kek.
+// Beim Passwortwechsel (PR 4) meldet die App die Sicherung nicht selbst, sondern übergibt ihre Kennung an die Passwort-Änderung: Passwort und Sicherung werden
+// dort in EINER Transaktion gültig. Nichts davon landet im Log oder in einer Fehlermeldung.
 import '../api/fampad_api.dart';
 import '../api/models.dart';
 import 'bytes.dart';
@@ -20,6 +21,14 @@ class PwEntwurf {
   final int keyVersion;
   final KdfDto kdf;
   const PwEntwurf({required this.blob, required this.keyVersion, required this.kdf});
+}
+
+/// Ergebnis der Ableitung aus dem Passwort mit den Parametern des Servers.
+class PwAbleitung {
+  final KdfDto kdf;
+  final PwKdfParams params;
+  final PwSchluessel keys;
+  const PwAbleitung({required this.kdf, required this.params, required this.keys});
 }
 
 class PwSicherungAblauf {
@@ -37,7 +46,7 @@ class PwSicherungAblauf {
   );
 
   /// Prüft Verfahren und Parameter des Servers gegen das feste Profil (kein Herabsetzen der Kosten, auch nicht durch einen manipulierten Server).
-  static PwKdfParams _parameter(KdfDto k) {
+  static PwKdfParams parameterPruefen(KdfDto k) {
     if (k.id != kKdf1ServerId) throw const CryptoFehler(CryptoFehlerArt.version, 'Der Server nutzt ein unbekanntes Verfahren der Schlüsselableitung. Bitte aktualisiere die App.');
     if (k.memKiB != kKdf1MemKiB || k.ops != kKdf1Ops) throw const CryptoFehler(CryptoFehlerArt.format, 'Ungültige Parameter der Schlüsselableitung.');
     return PwKdfParams(kdfId: kKdf1, memKiB: k.memKiB, ops: k.ops, salt: base64urlDekodieren(k.salt));
@@ -46,25 +55,45 @@ class PwSicherungAblauf {
   /// Schritt 1: Parameter und Salt vom Server holen, Blob erzeugen, lokale Probe. Es wird nichts gespeichert und nichts an die Sicherung gesendet.
   /// [lokal] muss der Schlüssel dieses Geräts sein und zu [server] (frisch geholt) passen.
   Future<PwEntwurf> vorbereiten({required Personenschluessel lokal, required OeffentlicheSchluessel server, required String passwort}) async {
+    final a = await ableiten(passwort);
+    try {
+      return entwurfMit(lokal: lokal, server: server, abgeleitet: a);
+    } finally {
+      a.keys.loeschen();
+    }
+  }
+
+  /// Salt und Parameter vom Server holen (geprüft gegen das feste Profil) und aus dem Passwort ableiten (rechenintensiv). Der Aufrufer löscht die Schlüssel
+  /// ([PwAbleitung.keys].loeschen) nach Gebrauch.
+  Future<PwAbleitung> ableiten(String passwort) async {
+    final kdf = await api.kdfParameter(email);
+    final params = parameterPruefen(kdf);
+    return PwAbleitung(kdf: kdf, params: params, keys: await PwSchluessel.ausPasswort(crypto, passwort: passwort, params: params));
+  }
+
+  /// Blob aus einer fertigen Ableitung erzeugen und lokal prüfen (keine Rechenzeit, kein Netz).
+  PwEntwurf entwurfMit({required Personenschluessel lokal, required OeffentlicheSchluessel server, required PwAbleitung abgeleitet}) {
     if (!server.gleichWie(lokal.oeffentlich(server.version))) {
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüssel dieses Geräts passt nicht zu deinem Konto. Verbinde das Gerät zuerst neu.');
     }
-    final kdf = await api.kdfParameter(email);
-    final params = _parameter(kdf);
-    final keys = await PwSchluessel.ausPasswort(crypto, passwort: passwort, params: params);
-    try {
-      final blob = PwSicherungBlob.erzeugen(crypto, schluessel: lokal, kek: keys.kek, params: params, userId: userId, keyVersion: server.version);
-      if (!PwSicherungBlob.pruefen(crypto, blob: blob, kek: keys.kek, userId: userId, erwartet: server)) throw _fehlerProbe;
-      return PwEntwurf(blob: blob, keyVersion: server.version, kdf: kdf);
-    } finally {
-      keys.loeschen();
-    }
+    final blob = PwSicherungBlob.erzeugen(crypto, schluessel: lokal, kek: abgeleitet.keys.kek, params: abgeleitet.params, userId: userId, keyVersion: server.version);
+    if (!PwSicherungBlob.pruefen(crypto, blob: blob, kek: abgeleitet.keys.kek, userId: userId, erwartet: server)) throw _fehlerProbe;
+    return PwEntwurf(blob: blob, keyVersion: server.version, kdf: abgeleitet.kdf);
   }
 
   /// Schritt 2 und 3: Blob ablegen (Step-up, den die Oberfläche um den Aufruf legt), Round-Trip, dann als verifiziert melden. Gibt die Kennung der
   /// Sicherung zurück. Bei jedem Fehler wird nichts gemeldet: die abgelegte Sicherung bleibt beim Server unbestätigt (verfällt bzw. wird beim nächsten Anlegen ersetzt),
   /// die bisherige gilt unverändert weiter (und damit das bisherige Passwort).
-  Future<String> ablegenUndPruefen(PwEntwurf e, {required String passwort, required Personenschluessel lokal, required OeffentlicheSchluessel serverVorher}) async {
+  ///
+  /// Mit [bestaetigen] = false endet der Ablauf nach dem Round-Trip, ohne die Sicherung beim Server zu bestätigen: der Aufrufer übergibt die Kennung an die
+  /// Passwort-Änderung (`pwBackupId`), die beides gemeinsam gültig macht.
+  Future<String> ablegenUndPruefen(
+    PwEntwurf e, {
+    required String passwort,
+    required Personenschluessel lokal,
+    required OeffentlicheSchluessel serverVorher,
+    bool bestaetigen = true,
+  }) async {
     final id = await api.pwSicherungAblegen(blob: e.blob, keyVersion: e.keyVersion, kdf: e.kdf);
     final abruf = await api.pwSicherungAbrufen(unbestaetigt: true);
     if (abruf.id != id || abruf.stale || !abruf.pending || abruf.keyVersion != e.keyVersion || abruf.blob != e.blob || abruf.kdf.id != e.kdf.id || abruf.kdf.salt != e.kdf.salt) {
@@ -96,7 +125,7 @@ class PwSicherungAblauf {
     } finally {
       geoeffnet.loeschen();
     }
-    await api.pwSicherungBestaetigen(id);
+    if (bestaetigen) await api.pwSicherungBestaetigen(id);
     return id;
   }
 

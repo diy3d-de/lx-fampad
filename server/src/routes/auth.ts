@@ -19,7 +19,8 @@ import {
   deviceSchema,
   displayNameSchema,
   labelSchema,
-  passwordSchema,
+  authKeySchema,
+  passwordOrAuthKey,
   emailSchema,
   meta,
   parse,
@@ -70,7 +71,7 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
   });
 
   app.post('/api/v1/auth/invites/password/start', strikt, async (req) => {
-    const body = parse(z.object({ ...identity, password: passwordSchema }).strict(), req.body);
+    const body = parse(z.object({ ...identity, ...passwordOrAuthKey }).strict(), req.body);
     return startPasswordRegistration(ctx, body, meta(req));
   });
 
@@ -100,7 +101,9 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
       z
         .object({
           email: emailSchema,
-          password: passwordSchema,
+          // Klartext (alte Apps) ODER abgeleiteter authKey; upgradeAuthKey nur mit Klartext (legacy -> authkey beim Login)
+          ...passwordOrAuthKey,
+          upgradeAuthKey: authKeySchema.optional(),
           totp: codeSchema.optional(),
           recoveryCode: boundedString(8, 40).optional(),
           client: clientSchema,

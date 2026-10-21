@@ -63,6 +63,13 @@ class FakeE2eeServer {
   /// Schalter des Servers für die Passwort-Sicherung (GET /version: features.pwBackup; aus = die Routen gibt es nicht, 404).
   bool pwSchalter = false;
 
+  /// Der Server nimmt den abgeleiteten authKey statt des Klartext-Passworts (GET /version: features.authKey) und, ob er den Klartext noch annimmt.
+  bool authKeySchalter = false;
+  bool legacyLogin = true;
+
+  /// Zuletzt per `POST /me/password/change` gesetzter authKey je Person (für Prüfungen).
+  final Map<String, String> authKeys = {};
+
   /// Verändert den Blob in der Antwort von GET /me/key-backup-pw (simuliert eine fehlerhafte Ablage).
   String Function(String blob)? pwAbrufVerfaelschen;
 
@@ -110,7 +117,27 @@ class FakeE2eeServer {
         if (p.backupBlob == null) return fehler(404, 'not_found');
         return jsonAntwort({'blob': p.backupBlob, 'keyVersion': p.backupVersion});
       }))
-      ..on('GET /version', (_) => jsonAntwort({'service': 'lx-fampad', 'features': {'pwBackup': pwSchalter}}))
+      ..on('GET /version', (_) => jsonAntwort({'service': 'lx-fampad', 'features': {'pwBackup': pwSchalter, 'authKey': authKeySchalter, 'legacyPasswordLogin': legacyLogin}}))
+      ..on('POST /me/password/change', (r) => _mit(r, (p) {
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        final authKey = r.json['authKey'];
+        if (authKey != null && !authKeySchalter) return fehler(400, 'invalid_request');
+        if (authKey == null && !legacyLogin) return fehler(403, 'legacy_login_disabled');
+        final id = r.json['pwBackupId'];
+        if (id != null) {
+          // wie der Server: Passwort und Sicherung gemeinsam, bei ungültiger Kennung passiert nichts
+          if (id != p.pwPId || p.pwPBlob == null || p.pwPVersion != p.version) return fehler(404, 'not_found');
+          p.pwBlob = p.pwPBlob;
+          p.pwVersion = p.pwPVersion;
+          p.pwId = p.pwPId;
+          p.pwStale = false;
+          p.pwVerifiziert = true;
+          p.pwPBlob = null;
+          p.pwPId = null;
+        }
+        if (authKey is String) authKeys[p.id] = authKey;
+        return jsonAntwort({'ok': true});
+      }))
       ..on('POST /auth/kdf-params', (r) {
         if (!pwSchalter) return fehler(404, 'not_found');
         return jsonAntwort({'kdf': _kdf(r.json['email'] as String)});

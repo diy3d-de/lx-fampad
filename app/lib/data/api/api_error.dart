@@ -195,6 +195,9 @@ class ApiException implements Exception {
     'push_unavailable': 'Push ist auf dem Server noch nicht eingerichtet.',
     'no_endpoint': 'Für dieses Gerät ist Push noch nicht angemeldet.',
     'no_device': 'Für diese Anmeldung gibt es kein Gerät. Melde dich neu an.',
+    'legacy_login_disabled': 'Diese App-Version ist zu alt für die Anmeldung. Bitte aktualisiere die App.',
+    'password_change_needs_update': 'Zum Ändern des Passworts brauchst du die neueste App-Version. Bitte aktualisiere die App.',
+    'backup_not_current': 'Die Passwort-Sicherung ist nicht mehr aktuell. Bitte versuche es noch einmal.',
     'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
   };
 }

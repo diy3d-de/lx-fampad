@@ -56,7 +56,7 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: S
       minProtocolVersion: config.minProtocolVersion,
       minAppVersion: config.minAppVersion,
       webVersion: await readWebVersion(config),
-      features: { pwBackup: config.e2eePwBackup },
+      features: { pwBackup: config.e2eePwBackup, authKey: config.e2eePwBackup, legacyPasswordLogin: config.auth.legacyPasswordLogin },
     };
   });
 }

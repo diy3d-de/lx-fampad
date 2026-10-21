@@ -12,6 +12,7 @@ import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken } from './crypto.js';
 import { consumeInvite, INVALID_INVITE, verifyInvite } from './invites.js';
 import { assertNotLocked, ipKey, loginKeys, recordFailure, recordLoginFailure } from './lockout.js';
+import { assertPasswordInputAllowed, AUTHKEY_ONLY, authKeyDigest, saveAuthKeyDigest } from './authkey.js';
 import { assertPasswordPolicy, hashPassword } from './password.js';
 import { createRecoveryCodes } from './recovery.js';
 import { establishSession, type DeviceInput, type Established, type SessionKind } from './sessions.js';
@@ -123,17 +124,26 @@ export async function finishPasskeyRegistration(
 
 export async function startPasswordRegistration(
   ctx: AuthContext,
-  input: { token: string; pin?: string | undefined; email?: string | undefined; displayName?: string | undefined; password: string },
+  input: { token: string; pin?: string | undefined; email?: string | undefined; displayName?: string | undefined; password?: string | undefined; authKey?: string | undefined },
   meta: RequestMeta,
 ) {
+  assertPasswordInputAllowed(ctx, input);
   const id = await resolveIdentity(ctx, input, meta);
-  assertPasswordPolicy(input.password, ctx.config.auth.minPasswordLength, id.email);
-  const [passwordHash, secret] = [await hashPassword(input.password), newTotpSecret()];
+  // Mit authKey kennt der Server das Passwort nie: Stärke und Länge prüft dann allein die App; gespeichert wird nur der Prüfwert des authKey
+  let passwordHash = AUTHKEY_ONLY;
+  let authHash: string | undefined;
+  if (input.authKey !== undefined) {
+    authHash = authKeyDigest(ctx, id.userId, input.authKey);
+  } else {
+    assertPasswordPolicy(input.password ?? '', ctx.config.auth.minPasswordLength, id.email);
+    passwordHash = await hashPassword(input.password ?? '');
+  }
+  const secret = newTotpSecret();
   const challengeId = await saveChallenge(ctx, {
     purpose: 'register_password',
     challenge: randomToken(16),
     unauthenticatedFrom: meta,
-    data: { ...id, passwordHash, totpSecretEnc: ctx.keys.encrypt('totp', secret, `totp:${id.userId}`) },
+    data: { ...id, passwordHash, ...(authHash ? { authHash } : {}), totpSecretEnc: ctx.keys.encrypt('totp', secret, `totp:${id.userId}`) },
   });
   return { challengeId, totpSecret: secret, totpUri: totpUri(secret, id.email, ctx.config.auth.rpName) };
 }
@@ -145,7 +155,7 @@ export async function finishPasswordRegistration(
 ): Promise<RegistrationResult> {
   const peek = await peekChallenge(ctx, input.challengeId, 'register_password');
   if (!peek) throw challengeInvalid();
-  const data = peek.data as unknown as Identity & { passwordHash: string; totpSecretEnc: string };
+  const data = peek.data as unknown as Identity & { passwordHash: string; authHash?: string; totpSecretEnc: string };
   await assertNotLocked(ctx, loginKeys(ctx, meta.ip, data.email));
   const secret = ctx.keys.decrypt('totp', data.totpSecretEnc, `totp:${data.userId}`);
   const step = await checkTotp(secret, input.code, ctx.now());
@@ -163,11 +173,16 @@ export async function finishPasswordRegistration(
     authMethod: 'password',
     insertCredentials: async (tx) => {
       const now = ctx.now();
-      await tx.insert(credentials).values([
-        { userId: data.userId, type: 'password', secret: data.passwordHash, createdAt: now },
-        // der bei der Einrichtung benutzte Zeitschritt zählt als verbraucht (kein Wiederverwenden desselben Codes)
-        { userId: data.userId, type: 'totp', secret: data.totpSecretEnc, lastTimeStep: step, createdAt: now },
-      ]);
+      const inserted = await tx
+        .insert(credentials)
+        .values([
+          { userId: data.userId, type: 'password', secret: data.passwordHash, createdAt: now },
+          // der bei der Einrichtung benutzte Zeitschritt zählt als verbraucht (kein Wiederverwenden desselben Codes)
+          { userId: data.userId, type: 'totp', secret: data.totpSecretEnc, lastTimeStep: step, createdAt: now },
+        ])
+        .returning({ id: credentials.id, type: credentials.type });
+      const pw = inserted.find((c) => c.type === 'password');
+      if (data.authHash && pw) await saveAuthKeyDigest(tx, { userId: data.userId, credentialId: pw.id, digest: data.authHash, now });
     },
   });
 }
