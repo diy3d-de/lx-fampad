@@ -2,6 +2,7 @@
 // Offline-Angriff auf den authKey (Argon2id, 64 MiB) nicht mit einem leicht zu ratenden Passwort entwerten. Die Prüfung läuft nur auf dem Gerät.
 import 'dart:math';
 
+import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
 import 'nfkc.dart';
 
@@ -11,6 +12,7 @@ const int kPasswortMindestlaenge = 12;
 enum PasswortProblem {
   zuKurz('Das Passwort braucht mindestens $kPasswortMindestlaenge Zeichen.'),
   enthaeltKontodaten('Das Passwort darf deine E-Mail-Adresse oder deinen Namen nicht enthalten.'),
+  ungueltigeZeichen('Das Passwort enthält ungültige Zeichen.'),
   zuHaeufig('Dieses Passwort ist zu leicht zu erraten.'),
   einfachesMuster('Das Passwort besteht aus einem einfachen Muster.');
 
@@ -54,7 +56,7 @@ const List<String> kVerboteneWoerter = [
   'test',
 ];
 
-/// Kleinschreibung und Normalisierung; bei Buchstaben nur A-Z/ä/ö/ü, ß bleibt wie es ist (genügt für die Vergleiche hier).
+/// Normalisiert (NFKC) und wandelt in Kleinschreibung (Dart `toLowerCase`, Unicode-Standardabbildung, ß bleibt ß); nur für die Vergleiche der Regeln hier, nicht für die Ableitung.
 String _klein(String s) => passwortNormalisiert(s).toLowerCase();
 
 /// Nur Buchstaben und Ziffern (für Vergleiche ohne Trennzeichen).
@@ -93,7 +95,12 @@ bool _wiederholung(String kern) {
 /// Prüft ein neues Passwort; leere Liste = in Ordnung. [email] und [anzeigename] sind die Kontodaten der Person.
 List<PasswortProblem> passwortPruefen(String passwort, {String? email, String? anzeigename}) {
   final probleme = <PasswortProblem>[];
-  final norm = passwortNormalisiert(passwort);
+  final String norm;
+  try {
+    norm = passwortNormalisiert(passwort);
+  } on CryptoFehler {
+    return [PasswortProblem.ungueltigeZeichen];
+  }
   if (norm.runes.length < kPasswortMindestlaenge) probleme.add(PasswortProblem.zuKurz);
   final klein = _klein(passwort);
   final kern = _kern(klein);
@@ -115,8 +122,9 @@ List<PasswortProblem> passwortPruefen(String passwort, {String? email, String? a
   }
   if (kontodaten.any((k) => k.isNotEmpty && kern.contains(k))) probleme.add(PasswortProblem.enthaeltKontodaten);
 
-  // Verbotsliste: das Passwort ist das Wort selbst oder das Wort macht mindestens die Hälfte aus ("passwort123456")
-  if (kVerboteneWoerter.any((w) => kern.contains(w) && w.length * 2 >= kern.length)) probleme.add(PasswortProblem.zuHaeufig);
+  final ohneZiffern = kern.replaceAll(RegExp(r'\p{N}', unicode: true), '');
+  // Verbotsliste: das Wort macht mindestens die Hälfte aus ("passwort123456") oder ist nur von Ziffern/Kürzeln umgeben ("Sommer2026!ab")
+  if (kVerboteneWoerter.any((w) => kern.contains(w) && (w.length * 2 >= kern.length || ohneZiffern.length <= w.length + 3))) probleme.add(PasswortProblem.zuHaeufig);
 
   // Muster: gleiche Zeichen/Blöcke, lange Zahlen- und Buchstabenfolgen
   if (_wiederholung(kern) || _folge(kern.runes.toList(), 6)) probleme.add(PasswortProblem.einfachesMuster);

@@ -196,3 +196,19 @@ class PwSicherungBlob {
     }
   }
 }
+
+/// Feste Zuordnung der Profil-Kennung (`kdfId`) zur Kennung, die der Server beim authKey speichert (Spalte/Feld `kdf`). Nie ändern, neue Profile bekommen
+/// eine neue Zeile.
+const String kKdf1ServerId = 'argon2id-v1';
+
+/// Server-Kennung zu einer `kdfId`; wirft [CryptoFehler] (version) bei unbekannter Kennung.
+String kdfServerId(int kdfId) {
+  if (kdfId == kKdf1) return kKdf1ServerId;
+  throw const CryptoFehler(CryptoFehlerArt.version, 'Unbekanntes Verfahren der Schlüsselableitung.');
+}
+
+/// `kdfId` zu einer Server-Kennung; wirft [CryptoFehler] (version) bei unbekannter Kennung.
+int kdfIdAusServerId(String serverId) {
+  if (serverId == kKdf1ServerId) return kKdf1;
+  throw const CryptoFehler(CryptoFehlerArt.version, 'Unbekanntes Verfahren der Schlüsselableitung.');
+}

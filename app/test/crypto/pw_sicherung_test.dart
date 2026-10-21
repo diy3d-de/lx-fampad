@@ -25,6 +25,15 @@ Future<void> main() async {
   final skipSodium = sodium == null ? 'libsodium nicht verfügbar' : null;
 
   group('Argon2id und Teilschlüssel (libsodium, Known-Answer)', () {
+    test('kdfId 1 <-> Server-Kennung argon2id-v1 (fest)', () {
+      expect(kKdf1ServerId, 'argon2id-v1');
+      expect(kdfServerId(1), 'argon2id-v1');
+      expect(kdfIdAusServerId('argon2id-v1'), 1);
+      expect(() => kdfServerId(2), _fehler(CryptoFehlerArt.version));
+      expect(() => kdfIdAusServerId('argon2id-v2'), _fehler(CryptoFehlerArt.version));
+      expect(() => kdfIdAusServerId(''), _fehler(CryptoFehlerArt.version));
+    });
+
     test('Profil kdf1 ist festgeschrieben', () {
       expect(kKdf1, 1);
       expect(kKdf1MemKiB * 1024, 67108864); // = crypto_pwhash_argon2id_MEMLIMIT_INTERACTIVE

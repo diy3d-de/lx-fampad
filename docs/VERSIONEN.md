@@ -110,7 +110,7 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 
 ## Wortliste für Passwort-Vorschläge
 
-`app/assets/crypto/wortliste.txt`: 2048 Wörter der **BIP-39 englischen Wortliste** (https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt, BIP-0039 steht unter der MIT-Lizenz), unverändert, Quelle und Lizenz im Dateikopf. Kein Paket, kein Abruf zur Laufzeit. `app/lib/data/crypto/nfkc_tabelle.dart` ist erzeugt (`tools/gen-nfkc.mjs`, Unicode-Daten der Node-Engine), nicht von Hand ändern.
+`app/assets/crypto/wortliste.txt`: 2048 Wörter der **BIP-39 englischen Wortliste** (https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt, BIP-0039 steht unter der MIT-Lizenz), unverändert, Quelle und Lizenz im Dateikopf. Kein Paket, kein Abruf zur Laufzeit. `app/lib/data/crypto/nfkc_tabelle.dart` ist erzeugt (`app/tool/gen_nfkc.mjs` aus der Unicode Character Database 16.0.0, https://www.unicode.org/Public/16.0.0/ucd/, Unicode-Lizenz), nicht von Hand ändern; `app/test/data/NormalizationTest.txt` ist die offizielle Testdatei derselben Version (nur für Tests, nicht in der App).
 
 ## Auflagen aus der Recherche
 

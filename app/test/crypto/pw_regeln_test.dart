@@ -57,6 +57,16 @@ void main() {
       expect(p('123-baum-456-haus'), isNot(contains(PasswortProblem.einfachesMuster)));
     });
 
+    test('Wort mit Ziffern/Jahr und Kürzel wird abgelehnt (Sommer2026!ab), längere Sätze nicht', () {
+      expect(p('Sommer2026!ab'), contains(PasswortProblem.zuHaeufig));
+      expect(p('Winter-2025-xy'), contains(PasswortProblem.zuHaeufig));
+      expect(p('Sommer2026 am Strand mit Eis'), isNot(contains(PasswortProblem.zuHaeufig)));
+    });
+
+    test('einzelne Surrogate: ungueltigeZeichen statt Absturz', () {
+      expect(p('abc${String.fromCharCode(0xd800)}defghijklmn'), [PasswortProblem.ungueltigeZeichen]);
+    });
+
     test('ohne Kontodaten und mit Sonderfällen keine Ausnahme', () {
       expect(passwortPruefen('dunkel-kirsche-brot-lampe'), isEmpty);
       expect(passwortPruefen('dunkel-kirsche-brot-lampe', email: '', anzeigename: ' '), isEmpty);
