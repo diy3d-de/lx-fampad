@@ -3,9 +3,10 @@
 // laufen durch dieselben Schritte (Platzhalter-Hash), damit weder Antwort noch Zeit verraten, ob ein Konto existiert.
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
 import { and, eq, isNull, sql } from 'drizzle-orm';
-import { credentials, memberships, users } from '../db/schema.js';
+import { credentials, memberships, passwordAuthkeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
+import { assertPasswordInputAllowed, AUTHKEY_ONLY, authKeyDigest, saveAuthKeyDigest, verifyAuthKey } from './authkey.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
 import type { AuthContext, Executor, RequestMeta, Tx } from './context.js';
 import { assertNotLocked, clearAccountFailures, ipKey, loginKeys, recordLoginFailure } from './lockout.js';
@@ -63,14 +64,14 @@ export async function findAccountById(ctx: AuthContext, userId: string, familyId
 const invalidCredentials = () => new AppError(401, 'invalid_credentials', 'Die Anmeldedaten sind nicht korrekt.');
 const pending = () => new AppError(403, 'account_pending', 'Dein Konto wartet noch auf die Freigabe durch einen Admin.');
 
-async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, email: string | undefined, account: Account | null): Promise<never> {
+async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, email: string | undefined, account: Account | null, via?: string): Promise<never> {
   await recordLoginFailure(ctx, meta.ip, email);
   await writeAudit(ctx, ctx.db, {
     event: 'login_failed',
     familyId: account?.familyId ?? null,
     actorId: account?.userId ?? null,
     ip: meta.ip,
-    detail: { method },
+    detail: via ? { method, via } : { method },
   });
   throw invalidCredentials();
 }
@@ -137,25 +138,52 @@ export async function verifyUserTotp(ctx: AuthContext, userId: string, code: str
 
 // ---------- Passwort + TOTP ----------
 
+/**
+ * Anmeldung mit Passwort + zweitem Faktor. Das Passwort kommt entweder als Klartext (`password`, alte Apps; nur solange
+ * AUTH_LEGACY_PASSWORD_LOGIN an ist) oder als abgeleiteter `authKey` (der Server sieht das Passwort nie). Beide Wege laufen durch dieselben
+ * Schritte, Sperren und Fehlerantworten. Mit `upgradeAuthKey` (nur zusammen mit `password`) wird nach erfolgreicher Prüfung von Passwort UND
+ * zweitem Faktor der authKey des Kontos angelegt bzw. ersetzt (legacy -> authkey), in derselben Transaktion wie die Sitzung.
+ */
 export async function loginWithPassword(
   ctx: AuthContext,
-  input: { email: string; password: string; totp?: string | undefined; recoveryCode?: string | undefined; client: SessionKind; device?: DeviceInput | undefined },
+  input: {
+    email: string;
+    password?: string | undefined;
+    authKey?: string | undefined;
+    upgradeAuthKey?: string | undefined;
+    totp?: string | undefined;
+    recoveryCode?: string | undefined;
+    client: SessionKind;
+    device?: DeviceInput | undefined;
+  },
   meta: RequestMeta,
 ): Promise<Established> {
+  assertPasswordInputAllowed(ctx, input);
+  if (input.upgradeAuthKey !== undefined && (input.password === undefined || !ctx.config.e2eePwBackup)) throw new AppError(400, 'invalid_request');
+  const via = input.authKey !== undefined ? 'authkey' : 'plain';
   await assertNotLocked(ctx, loginKeys(ctx, meta.ip, input.email));
   const account = await findAccountByEmail(ctx, input.email);
   let hash: string | null = null;
+  let authHash: string | null = null;
+  let credentialId: string | null = null;
   if (account) {
     const [c] = await ctx.db
-      .select({ secret: credentials.secret })
+      .select({ id: credentials.id, secret: credentials.secret, authHash: passwordAuthkeys.authHash })
       .from(credentials)
+      .leftJoin(passwordAuthkeys, eq(passwordAuthkeys.credentialId, credentials.id))
       .where(and(eq(credentials.userId, account.userId), eq(credentials.type, 'password'), isNull(credentials.revokedAt)));
-    hash = c?.secret ?? null;
+    // AUTHKEY_ONLY ist kein Hash: wie "kein Passwort" behandeln (Platzhalter-Rechnung), damit die Zeit nichts verrät
+    hash = c && c.secret !== AUTHKEY_ONLY ? c.secret : null;
+    authHash = c?.authHash ?? null;
+    credentialId = c?.id ?? null;
   }
-  const passwordOk = await verifyPassword(hash, input.password);
-  if (!account || !passwordOk) return failLogin(ctx, meta, 'password', input.email, account);
+  const passwordOk =
+    input.authKey !== undefined
+      ? verifyAuthKey(ctx, account && !account.disabled ? authHash : null, account?.userId ?? '', input.authKey)
+      : await verifyPassword(hash, input.password ?? '');
+  if (!account || !passwordOk) return failLogin(ctx, meta, 'password', input.email, account, via);
   // gesperrte Konten: wie ein falsches Passwort, ohne den zweiten Faktor anzufassen
-  if (account.disabled) return failLogin(ctx, meta, 'password', input.email, account);
+  if (account.disabled) return failLogin(ctx, meta, 'password', input.email, account, via);
   // Zweiter Faktor: zuerst nur prüfen; verbraucht wird er erst in der Anmelde-Transaktion, nach der Statusprüfung
   let verbrauchen: ((tx: Tx) => Promise<boolean>) | undefined;
   if (input.totp) {
@@ -171,10 +199,30 @@ export async function loginWithPassword(
       };
     }
   }
-  if (!verbrauchen) return failLogin(ctx, meta, 'password', input.email, account);
+  // Bewusst dieselbe Antwort wie bei falschem Passwort: ein eigener Fehler für "richtiger authKey, falscher zweiter Faktor" wäre ein Passwort-Orakel am zweiten Faktor vorbei
+  if (!verbrauchen) return failLogin(ctx, meta, 'password', input.email, account, via);
+  const faktor = verbrauchen;
+  const upgrade = input.upgradeAuthKey;
+  if (upgrade !== undefined && credentialId !== null) {
+    const cid = credentialId;
+    verbrauchen = async (tx) => {
+      if (!(await faktor(tx))) return false;
+      // nur wenn das geprüfte Passwort noch das aktive ist (kein Überschreiben nach einem gleichzeitigen Passwortwechsel)
+      const aktiv = await tx
+        .select({ id: credentials.id })
+        .from(credentials)
+        .where(and(eq(credentials.id, cid), isNull(credentials.revokedAt)))
+        .for('update');
+      if (aktiv.length > 0) {
+        await saveAuthKeyDigest(tx, { userId: account.userId, credentialId: cid, digest: authKeyDigest(ctx, account.userId, upgrade), now: ctx.now() });
+        await writeAudit(ctx, tx, { event: 'password_authkey_set', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { how: 'login' } });
+      }
+      return true;
+    };
+  }
   // Erst nach erfolgreicher Prüfung von Passwort UND zweitem Faktor darf die Antwort den Status verraten (403 account_pending)
   const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'password', meta, verbrauchen });
-  return est ?? failLogin(ctx, meta, 'password', input.email, account);
+  return est ?? failLogin(ctx, meta, 'password', input.email, account, via);
 }
 
 // ---------- Wiederherstellungs-Code (verlorener Passkey/TOTP) ----------

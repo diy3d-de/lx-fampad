@@ -25,12 +25,13 @@ import { avatarMetaFor } from '../avatar/service.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
+import { passwordModes } from '../auth/authkey.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { b64urlBlob, b64urlKey, b64urlBlobMin, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
+import { b64urlBlob, b64urlKey, b64urlBlobMin, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordOrAuthKey, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child']);
 const familyRoleBody = z.object({ familyRole: z.enum(FAMILY_ROLES).nullable() }).strict();
@@ -79,7 +80,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   // Passwort + TOTP nachträglich (alles mit Step-up): hinzufügen in zwei Schritten, ändern, entfernen
   app.post('/api/v1/me/password/start', strikt, async (req) => {
     const p = await auth.requireSession(req);
-    return startAddPassword(ctx, p, parse(z.object({ password: passwordSchema }).strict(), req.body));
+    return startAddPassword(ctx, p, parse(z.object(passwordOrAuthKey).strict(), req.body));
   });
 
   app.post('/api/v1/me/password/complete', strikt, async (req) => {
@@ -90,7 +91,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   app.post('/api/v1/me/password/change', strikt, async (req) => {
     const p = await auth.requireSession(req);
-    await changePassword(ctx, p, parse(z.object({ password: passwordSchema }).strict(), req.body), meta(req));
+    await changePassword(ctx, p, parse(z.object({ ...passwordOrAuthKey, pwBackupId: uuid.optional() }).strict(), req.body), meta(req));
     return { ok: true };
   });
 
@@ -171,6 +172,16 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     const avatars = await avatarMetaFor(ctx, members.map((m) => m.id));
     return { members: members.map((m) => ({ ...m, avatar: avatars.get(m.id) ?? null })) };
   });
+
+  // Nur Admins, nur lesend, nur mit Schalter E2EE_PW_BACKUP: wer sich noch mit dem alten Klartext-Verfahren anmeldet ("legacy"), als Vorbereitung des
+  // Stichtags AUTH_LEGACY_PASSWORD_LOGIN. Kein Prüfwert, nur der Zustand je Mitglied.
+  if (config.e2eePwBackup) {
+    app.get('/api/v1/members/password-modes', async (req) => {
+      const p = await auth.requireSession(req);
+      if (p.role !== 'admin') throw new AppError(403, 'forbidden', 'Dazu fehlt dir die Berechtigung.');
+      return { legacyPasswordLogin: config.auth.legacyPasswordLogin, modes: await passwordModes(ctx, p.familyId) };
+    });
+  }
 
   app.patch('/api/v1/members/:id/role', async (req) => {
     const p = await auth.requireSession(req);

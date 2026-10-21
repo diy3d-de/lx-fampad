@@ -79,7 +79,7 @@ describe('Migration auf bestehender Datenbank', () => {
       await q(`insert into memberships (family_id, user_id, role) values ('${fid}', '${uid}', 'child')`);
       // jede weitere Migration einzeln (0005 bis zuletzt), die Altdaten bleiben jedes Mal erhalten
       const tags = journalRaw.entries.slice(bis4).map((e) => e.tag);
-      expect(tags.map((x) => x.slice(0, 4))).toEqual(['0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016']);
+      expect(tags.map((x) => x.slice(0, 4))).toEqual(['0005', '0006', '0007', '0008', '0009', '0010', '0011', '0012', '0013', '0014', '0015', '0016', '0017']);
       for (let i = 1; i < tags.length; i++) {
         const d = teilordner(bis4 + i);
         ordner.push(d);

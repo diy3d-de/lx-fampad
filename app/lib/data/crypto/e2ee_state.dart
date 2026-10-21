@@ -22,6 +22,28 @@ import 'uebertragung.dart';
 import 'vertrauen.dart';
 import 'wiederherstellung.dart';
 
+/// Vorbereiteter Passwortwechsel: abgeleiteter authKey/kek des neuen Passworts und, falls möglich, die neue Passwort-Sicherung (lokal geprüft). Enthält Schlüsselmaterial:
+/// nach Gebrauch [loeschen] aufrufen.
+class PwWechselEntwurf {
+  final PwAbleitung _ableitung;
+  final PwEntwurf? sicherung;
+  PwWechselEntwurf._(this._ableitung, this.sicherung);
+
+  /// Der abgeleitete Anmelde-Schlüssel (Base64url), den der Server statt des Passworts bekommt.
+  String get authKey => _ableitung.keys.authKeyBase64;
+
+  void loeschen() => _ableitung.keys.loeschen();
+}
+
+class PwWechselErgebnis {
+  /// Die Passwort-Sicherung wurde mit dem neuen Passwort neu angelegt und gilt jetzt.
+  final bool sicherungAktualisiert;
+
+  /// Es gibt eine Passwort-Sicherung, sie gehört aber noch zum ALTEN Passwort (auf diesem Gerät fehlt der Schlüssel): bitte neu anlegen.
+  final bool sicherungVeraltet;
+  const PwWechselErgebnis({required this.sicherungAktualisiert, required this.sicherungVeraltet});
+}
+
 /// Lädt libsodium einmal (Tests ersetzen den Provider durch einen Fake).
 /// Ohne automatische Wiederholung (Riverpod 3 würde Fehler sonst mit Wartezeiten wiederholen): Scheitert das Laden, zeigt die Seite sofort "nicht verfügbar".
 final cryptoProviderProvider = FutureProvider<CryptoProvider>((ref) => SodiumCryptoProvider.laden(), retry: (_, _) => null);
@@ -576,6 +598,64 @@ class E2eeController extends Notifier<E2eeState> {
     }
     await laden();
     return true;
+  }
+
+  /// Passwortwechsel, Schritt 1 (rechenintensiv, ohne Step-up): aus dem NEUEN Passwort authKey und kek ableiten und, wenn dieses Gerät den Personenschlüssel
+  /// hat, die neue Passwort-Sicherung vorbereiten und lokal prüfen. Sendet nichts und verändert nichts. Schlüsselprobleme verhindern den Wechsel nicht
+  /// (dann gibt es keine neue Sicherung und das Ergebnis meldet es). Der Aufrufer ruft danach [PwWechselEntwurf.loeschen].
+  Future<PwWechselEntwurf> passwortWechselVorbereiten(String neuesPasswort) async {
+    final crypto = await _krypto();
+    final ablauf = _pwAblauf(crypto);
+    final a = await ablauf.ableiten(neuesPasswort);
+    PwEntwurf? sicherung;
+    try {
+      final lokal = _lokal ?? await _lokalLaden(crypto);
+      final server = lokal == null ? null : await _serverSchluessel();
+      if (lokal != null && server != null) sicherung = ablauf.entwurfMit(lokal: lokal, server: server, abgeleitet: a);
+    } on CryptoFehler {
+      sicherung = null; // Schlüssel passt nicht zum Konto o. Ä.: der Passwortwechsel läuft ohne neue Sicherung weiter
+    } on ApiException {
+      a.keys.loeschen();
+      rethrow;
+    }
+    return PwWechselEntwurf._(a, sicherung);
+  }
+
+  /// Passwortwechsel, Schritt 2 (Step-up legt die UI um den Aufruf; er darf wiederholt werden): Hat die Person eine Passwort-Sicherung und dieses Gerät den
+  /// Schlüssel, wird die neue Sicherung abgelegt und per Round-Trip geprüft, ohne sie zu bestätigen; dann ändert der Server Passwort und Sicherung in EINER
+  /// Transaktion (die alte Sicherung gilt bis dahin unverändert weiter). Scheitert die Prüfung, bleibt alles beim Alten (bisheriges Passwort, bisherige
+  /// Sicherung). Ohne Sicherung oder ohne Schlüssel auf dem Gerät wird nur das Passwort geändert; die Antwort sagt, ob die Sicherung dann veraltet ist.
+  Future<PwWechselErgebnis> passwortWechselAusfuehren(PwWechselEntwurf w, String neuesPasswort) async {
+    var hatSicherung = false;
+    try {
+      await _api.pwSicherungAbrufen();
+      hatSicherung = true;
+    } on ApiException catch (e) {
+      if (e.code != 'not_found') rethrow;
+    }
+    String? id;
+    if (hatSicherung && w.sicherung != null) {
+      final crypto = await _krypto();
+      final lokal = _lokal ?? await _lokalLaden(crypto);
+      final server = await _serverSchluessel();
+      if (lokal != null && server != null) {
+        id = await _pwAblauf(crypto).ablegenUndPruefen(w.sicherung!, passwort: neuesPasswort, lokal: lokal, serverVorher: server, bestaetigen: false);
+      }
+    }
+    await _api.passwortAendern(authKey: w.authKey, pwBackupId: id);
+    if (id != null) {
+      try {
+        await _speicher.schreiben(_pwVermerkName(_userId), utf8Bytes('${w.sicherung!.keyVersion}'));
+      } on Object {
+        // ohne Vermerk zeigt die Seite "nicht bestätigt"; die Sicherung selbst ist verifiziert
+      }
+      try {
+        await laden();
+      } on Object {
+        // nur die Anzeige
+      }
+    }
+    return PwWechselErgebnis(sicherungAktualisiert: id != null, sicherungVeraltet: hatSicherung && id == null);
   }
 
   /// Gerät ohne Schlüssel mit der Passwort-Sicherung verbinden (Step-up für den Abruf; UI). Der Schlüssel wird erst übernommen, wenn er zum

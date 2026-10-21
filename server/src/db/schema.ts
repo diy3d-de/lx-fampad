@@ -290,6 +290,34 @@ export const credentials = pgTable(
   ],
 );
 
+/**
+ * Anmeldung mit abgeleitetem `authKey` statt Klartext-Passwort (Schalter E2EE_PW_BACKUP): Prüfwert zum Passwort-Eintrag in `credentials`.
+ * Gespeichert wird nie der authKey, sondern nur ein HMAC-SHA256 (Schlüssel aus AUTH_SECRET_KEY, an die Person gebunden). Die Zeile hängt
+ * am Passwort-Eintrag: wird der ersetzt (Passwort ändern) oder entfernt, gilt der Prüfwert nicht mehr. Konten ohne Zeile sind im
+ * Zustand "legacy" (nur Klartext-Anmeldung), mit Zeile im Zustand "authkey". `salt_generation` hält fest, mit welchem Salt abgeleitet wurde.
+ */
+export const passwordAuthkeys = pgTable(
+  'password_authkeys',
+  {
+    credentialId: uuid('credential_id')
+      .primaryKey()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    authHash: text('auth_hash').notNull(),
+    kdfId: text('kdf_id').notNull().default('argon2id-v1'),
+    saltGeneration: integer('salt_generation').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('password_authkeys_user_idx').on(t.userId),
+    check('password_authkeys_hash_ck', sql`length(${t.authHash}) = 64`),
+    check('password_authkeys_kdf_ck', sql`${t.kdfId} in ('argon2id-v1') and ${t.saltGeneration} >= 1`),
+  ],
+);
+
 export const invites = pgTable(
   'invites',
   {

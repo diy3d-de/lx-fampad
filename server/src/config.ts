@@ -31,6 +31,8 @@ export interface AuthConfig {
   wsTicketTtlSec: number;
   challengeTtlSec: number;
   minPasswordLength: number;
+  /** AUTH_LEGACY_PASSWORD_LOGIN (Standard an): Anmeldung und Passwortvergabe mit Klartext-Passwort (alte Apps). Aus = nur noch mit abgeleitetem authKey (Stichtag, den die Familie setzt). */
+  legacyPasswordLogin: boolean;
   /** Fehlversuche, ab denen die verzögerte Sperre beginnt (je Konto bzw. je IP). */
   lockoutAccountThreshold: number;
   lockoutIpThreshold: number;
@@ -169,6 +171,15 @@ function boolFlag(env: NodeJS.ProcessEnv, name: string): boolean {
   throw new Error(`${name} ungültig: erlaubt sind true oder false`);
 }
 
+/** Wie [boolFlag], aber mit Standard (leer/fehlend = [standard]); alles außer true/1/false/0 bricht den Start ab (fail-closed). */
+function boolFlagDefault(env: NodeJS.ProcessEnv, name: string, standard: boolean): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === '') return standard;
+  if (raw === 'false' || raw === '0') return false;
+  if (raw === 'true' || raw === '1') return true;
+  throw new Error(`${name} ungültig: erlaubt sind true oder false`);
+}
+
 /** WEATHER_*: ohne WEATHER_ENABLED=true ist das Wetter aus; mit Schalter sind MAC und Rechteck Pflicht (fail-closed). */
 function weatherConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WeatherConfig {
   const enabled = boolFlag(env, 'WEATHER_ENABLED');
@@ -269,6 +280,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const level = env.LOG_LEVEL ?? 'info';
   if (!(LOG_LEVELS as readonly string[]).includes(level)) throw new Error(`LOG_LEVEL ungültig: ${level}`);
 
+  const e2eePwBackup = boolFlag(env, 'E2EE_PW_BACKUP');
+  const legacyPasswordLogin = boolFlagDefault(env, 'AUTH_LEGACY_PASSWORD_LOGIN', true);
+  // fail-closed: ohne authKey-Anmeldung (hängt am Schalter E2EE_PW_BACKUP) würde das Abschalten des Klartext-Logins alle Passwort-Konten aussperren
+  if (!legacyPasswordLogin && !e2eePwBackup) throw new Error('AUTH_LEGACY_PASSWORD_LOGIN=false braucht E2EE_PW_BACKUP=true (sonst kann sich niemand mehr mit Passwort anmelden)');
   return {
     env: nodeEnv,
     host: env.HOST ?? '127.0.0.1',
@@ -298,6 +313,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       wsTicketTtlSec: 30,
       challengeTtlSec: 5 * 60,
       minPasswordLength: minPasswordLength(env),
+      legacyPasswordLogin,
       lockoutAccountThreshold: 10,
       lockoutIpThreshold: 20,
       lockoutPairThreshold: 5,
@@ -343,7 +359,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
     weather: weatherConfig(env, nodeEnv),
-    e2eePwBackup: boolFlag(env, 'E2EE_PW_BACKUP'),
+    e2eePwBackup,
   };
 }
 

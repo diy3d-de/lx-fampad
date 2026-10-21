@@ -32,7 +32,9 @@ import 'package:lx_fampad/data/chat/chat_krypto_state.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
 import 'package:lx_fampad/data/crypto/crypto_fehler.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
+import 'package:lx_fampad/data/auth/passwort_anmeldung.dart';
 import 'package:lx_fampad/data/crypto/pw_ablauf.dart';
+import 'package:lx_fampad/data/crypto/pw_sicherung.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
 import 'package:lx_fampad/data/chat/nachrichten_inhalt.dart';
@@ -615,6 +617,111 @@ class E2eeGeraet {
     final d = await krypto.nachrichtOeffnen(konversationId: konversationId, nachrichtId: n.id, autorId: n.autorId, wire: n.inhalt, antwortAuf: n.antwortAuf);
     return d.lesbar ? d.text : '<${d.hinweis}>';
   }
+}
+
+/// Anmeldung und Passwortwechsel mit abgeleitetem authKey (PR 4 der vereinfachten Schlüsselverwaltung) gegen den echten Server: Konto im Altzustand (Klartext),
+/// erster Login stellt um (Fallback + upgradeAuthKey), danach nur noch authKey ohne Klartext, kein Herabstufen nach der Umstellung (ein Versuch statt zwei),
+/// Passwortwechsel mit neuem authKey (der alte und der Klartext gelten nicht mehr), Klartext-Wechsel eines umgestellten Kontos wird abgelehnt, Admin-Übersicht.
+/// Ohne Schalter E2EE_PW_BACKUP: authKey wird abgelehnt (400), der Klartext-Weg bleibt. Zweiter Faktor: Wiederherstellungscodes (kein Warten auf TOTP-Schritte).
+Future<void> authKeyVertrag({required Gegenstelle admin}) async {
+  final (cname, crypto) = (await kryptoVarianten()).last;
+  schritt('authKey-Anmeldung: Fähigkeiten des Servers (GET /version features) [Krypto: $cname]');
+  final f = await admin.api.serverFaehigkeiten();
+  const email = 'dora@beispiel.de';
+  const pw = 'Dora-Passwort-Vertrag-12';
+  final inv = await admin.api.einladungErstellen(rolle: Role.parent, stunden: 1, pin: false, freigabe: false);
+  final g1 = Gegenstelle(name: 'AuthKey-Gerät 1');
+  final start = await g1.api.passwortRegistrierungStart(token: inv.token, passwort: pw, email: email, anzeigename: 'Dora');
+  final reg = await g1.api.passwortRegistrierungFertig(challengeId: start.challengeId, code: await frischerCode(start.totpSecret));
+  final codes = [...reg.recoveryCodes];
+  final userId = reg.member.id;
+  const nullKey = 'AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+  int loginAnfragen(Gegenstelle g) => g.spion.pfade.where((p) => p.endsWith('/auth/login/password')).length;
+
+  if (!f.authKey) {
+    stdout.writeln('    Schalter E2EE_PW_BACKUP ist aus: authKey wird abgelehnt (400), Klartext geht weiter');
+    expect(f.legacyPasswortLogin, isTrue);
+    await expectLater(
+      g1.api.passwortAnmelden(email: email, authKey: nullKey, wiederherstellungscode: codes.removeLast()),
+      throwsA(isA<ApiException>().having((e) => e.status, 'status', 400)),
+    );
+    final l = await g1.api.passwortAnmelden(email: email, passwort: pw, wiederherstellungscode: codes.removeLast());
+    expect(l.user.id, userId);
+    return;
+  }
+  expect(f.legacyPasswortLogin, isTrue, reason: 'Standard: der Klartext-Login ist noch erlaubt');
+
+  Future<String> authKeyVon(Gegenstelle g, String passwort) async {
+    final kdf = await g.api.kdfParameter(email);
+    final keys = await PwSchluessel.ausPasswort(crypto, passwort: passwort, params: PwSicherungAblauf.parameterPruefen(kdf));
+    final k = keys.authKeyBase64;
+    keys.loeschen();
+    return k;
+  }
+
+  PasswortAnmeldung anmeldung(Gegenstelle g) => PasswortAnmeldung(api: g.api, store: g.store, krypto: () async => crypto);
+  AnmeldeSender sender(Gegenstelle g, String code) => ({passwort, authKey, upgradeAuthKey}) async {
+    final r = await g.api.passwortAnmelden(email: email, passwort: passwort, authKey: authKey, upgradeAuthKey: upgradeAuthKey, wiederherstellungscode: code);
+    await g.client.sitzungUebernehmen(r.session);
+  };
+
+  schritt('authKey-Anmeldung: Konto beginnt im Altzustand; die Admin-Übersicht zeigt es (nur lesend)');
+  var modi = (await admin.api.passwortModi())!;
+  expect(modi.modi[userId], PasswortModus.legacy);
+  expect(modi.legacyPasswortLogin, isTrue);
+  expect(await g1.api.passwortModi(), isNull, reason: 'Mitglieder ohne Admin-Recht bekommen nichts');
+
+  schritt('authKey-Anmeldung: erster Login stellt um (authKey abgelehnt wie ein falsches Passwort, dann Klartext mit upgradeAuthKey)');
+  final g2 = Gegenstelle(name: 'AuthKey-Gerät 2');
+  await anmeldung(g2).anmelden(email: email, passwort: pw, senden: sender(g2, codes.removeLast()));
+  expect(loginAnfragen(g2), 2);
+  expect((await g2.api.ich()).user.id, userId);
+  modi = (await admin.api.passwortModi())!;
+  expect(modi.modi[userId], PasswortModus.authkey);
+  expect(await g2.store.istAuthKeyKonto(email), isFalse, reason: 'gemerkt wird erst nach einer Anmeldung per authKey');
+
+  schritt('authKey-Anmeldung: danach nur noch authKey (ein Versuch), das Konto wird auf dem Gerät gemerkt');
+  final g3 = Gegenstelle(name: 'AuthKey-Gerät 3');
+  await anmeldung(g3).anmelden(email: email, passwort: pw, senden: sender(g3, codes.removeLast()));
+  expect(loginAnfragen(g3), 1);
+  expect(await g3.store.istAuthKeyKonto(email), isTrue);
+
+  schritt('authKey-Anmeldung: falsches Passwort auf einem bekannten Gerät sendet nie das Klartext-Passwort (ein Versuch, keine Wiederholung)');
+  final vorher = loginAnfragen(g3);
+  await expectLater(
+    anmeldung(g3).anmelden(email: email, passwort: 'Falsches-Passwort-1234', senden: sender(g3, codes.last)),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+  );
+  expect(loginAnfragen(g3) - vorher, 1);
+
+  schritt('authKey-Anmeldung: Klartext-Passwortwechsel eines umgestellten Kontos wird abgelehnt (alte App), ein neuer authKey wird angenommen');
+  await expectLater(
+    g3.api.passwortAendern(passwort: 'Neues-Passwort-Vertrag-34'),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'password_change_needs_update')),
+  );
+  const neu = 'Neues-Passwort-Vertrag-34';
+  await g3.api.passwortAendern(authKey: await authKeyVon(g3, neu));
+
+  schritt('authKey-Anmeldung: nach dem Wechsel gilt nur der neue authKey (alter authKey und Klartext nicht mehr)');
+  final g4 = Gegenstelle(name: 'AuthKey-Gerät 4');
+  await expectLater(
+    g4.api.passwortAnmelden(email: email, authKey: await authKeyVon(g4, pw), wiederherstellungscode: codes.last),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+  );
+  await expectLater(
+    g4.api.passwortAnmelden(email: email, passwort: pw, wiederherstellungscode: codes.last),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+  );
+  await expectLater(
+    g4.api.passwortAnmelden(email: email, passwort: neu, wiederherstellungscode: codes.last),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+    reason: 'der neue Klartext ist dem Server unbekannt, nur der authKey gilt',
+  );
+  final davor = loginAnfragen(g4);
+  await anmeldung(g4).anmelden(email: email, passwort: neu, senden: sender(g4, codes.removeLast()));
+  expect(loginAnfragen(g4) - davor, 1);
+  expect((await g4.api.ich()).user.id, userId);
+  stdout.writeln('    authKey-Anmeldung und Passwortwechsel gegen den echten Server in Ordnung');
 }
 
 /// Chat Ende-zu-Ende (E2EE Phase 2) gegen den echten Server: drei Personen mit Schlüsseln, Gruppe, zwei Geräte, Admin liest Privatchat nicht, Server sieht nur Chiffretext
@@ -1319,8 +1426,8 @@ void main() {
     expect((await admin.api.ich()).recoveryCodesRemaining, 10);
 
     schritt('Passwort nachträglich: Pfade, Step-up und Fehlercodes (Admin hat schon Passwort und nur diesen Zugang)');
-    await expectLater(admin.api.passwortEinrichtenStart('Noch-ein-Passwort-123'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'password_exists')));
-    await expectLater(admin.api.passwortAendern('kurz'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'weak_password')));
+    await expectLater(admin.api.passwortEinrichtenStart(passwort: 'Noch-ein-Passwort-123'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'password_exists')));
+    await expectLater(admin.api.passwortAendern(passwort: 'kurz'), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'weak_password')));
     await expectLater(admin.api.passwortEntfernen(), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'last_credential')));
 
     // ---------------------------------------------------------------- Refresh (echte Rotation)
@@ -1453,6 +1560,8 @@ void main() {
     final rl = await anon.api.einladungPruefen(resetInv.token);
     expect(rl.reset, isTrue);
     expect(rl.displayName, 'Ben');
+    // mit authKey braucht die App die E-Mail des Kontos (Salt) auch bei einer Reset-Einladung
+    expect(rl.email, (await anon.api.serverFaehigkeiten()).authKey ? 'ben@beispiel.de' : isNull);
     expect(parseInviteToken(resetInv.link), resetInv.token);
     final rpk = await anon.api.passkeyRegistrierungStart(token: resetInv.token);
     expect(RegisterRequestType.fromJson(normalisiereOptionen(rpk.options)).user.displayName, 'Ben');
@@ -1477,6 +1586,8 @@ void main() {
     // Chat: der Direktchat mit dem entfernten Kind ist für den Admin als gelöscht markiert (Tombstone, nicht hidden)
     expect(bereinigt.changes.where((c) => c.id == chatDm).map((c) => (c.tombstone, c.hidden)), [(true, false)]);
     await expectLater(admin.api.mitgliedEntfernen(adminId), throwsA(isA<ApiException>()));
+
+    await authKeyVertrag(admin: admin);
 
     schritt('Geräte: weiteres Gerät des Admin anlegen, einzeln abmelden, dann überall abmelden');
     final adminZwei = Gegenstelle(name: 'Zweitgerät');

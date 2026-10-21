@@ -487,6 +487,17 @@ Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd
 
 Der Server hat 2 GB RAM und keinen Swap. `sudo bash ~/lx-fampad/deploy/einrichtung-swap.sh --dry-run`, dann ohne `--dry-run`: legt `/swapfile` (1 GB, 0600) an, trägt sie in `/etc/fstab` ein (nur wenn es fehlt; baut eine Kopie mit Zeilenumbruch-Prüfung, prüft sie mit `findmnt --verify`, ersetzt erst dann, testet mit `swapon -a`, stellt bei Fehler die Sicherung `/etc/fstab.vor-swap` zurück) und setzt `vm.swappiness=10` (`/etc/sysctl.d/99-lx-fampad-swap.conf`). Idempotent, prüft den freien Platz (1 GB + 4 GB Reserve), nimmt eine halb angelegte Datei bei Fehlern zurück. Prüfen: `swapon --show`, `free -m`. Rückbau steht im Kopf des Skripts.
 
+## Passwort-Anmeldung mit authKey (Rollout und Stichtag)
+
+Voraussetzung: `E2EE_PW_BACKUP=true` in `/etc/lx-fampad/env` (siehe `server/.env.example`). `AUTH_LEGACY_PASSWORD_LOGIN` bleibt zuerst ungesetzt (= an).
+
+1. Server aktualisieren (Migration 0017), Test zu zweit; `GET /api/v1/version` zeigt `features.authKey: true`.
+2. **Erst auf allen Geräten der Familie die neue App installieren und einmal anmelden** (das stellt das Konto automatisch um). **Erst danach** Passwörter ändern: Ein Passwortwechsel oder eine Reset-Einladung mit der neuen App macht die alte Klartext-Anmeldung dieses Mitglieds unbrauchbar, noch nicht aktualisierte Geräte (0.5.x/0.6.0) kommen dann nicht mehr mit Passwort hinein.
+3. In der App unter Profil > Mitglieder und Einladungen (Admin) prüfen: Bei keinem Mitglied steht „altes passwort-verfahren“ (die Markierung für das alte Passwort-Verfahren; oder `GET /api/v1/members/password-modes` zeigt keinen `legacy`-Eintrag).
+4. Erst dann Stichtag: `AUTH_LEGACY_PASSWORD_LOGIN=false` setzen und den Dienst neu starten. Alte Apps bekommen `403 legacy_login_disabled` („Bitte aktualisiere die App“). Der Passwort-Reset durch Admins (PR 4b) ist der Rückweg für Ausgesperrte; bis dahin hilft nur die Anmeldung per Passkey oder Wiederherstellungscode.
+
+**Warnung Rückschalten:** Wird `E2EE_PW_BACKUP` ausgeschaltet, `AUTH_LEGACY_PASSWORD_LOGIN` auf `false` gesetzt oder der Server auf einen Stand vor PR 4 zurückgestellt, können sich Konten mit authKey-Passwort (Platzhalter im Klartext-Hash) nicht mehr per Passwort anmelden, nur noch per Passkey oder Wiederherstellungscode; PR 4b (Admin-Passwort-Reset) ist der Rückweg. Die App sendet für solche Konten nie Klartext. Reihenfolge beim Ausrollen: **erst den Server, dann die Web-App und die APK**.
+
 ## Nützliche Befehle auf dem Server
 
 | Befehl | Zweck |

@@ -222,6 +222,8 @@ export interface InviteLookup {
   familyName: string;
   reset: boolean;
   displayName?: string;
+  /** Nur bei einer Reset-Einladung und mit Schalter E2EE_PW_BACKUP: die App braucht die E-Mail des Kontos für den Salt der Passwort-Ableitung (authKey). */
+  email?: string;
   expiresAt: Date;
 }
 
@@ -234,9 +236,11 @@ export async function lookupInvite(ctx: AuthContext, token: string, meta: Reques
   }
   const [fam] = await ctx.db.select({ name: families.name }).from(families).where(eq(families.id, row.familyId));
   let displayName: string | undefined;
+  let email: string | undefined;
   if (row.userId) {
-    const [u] = await ctx.db.select({ displayName: users.displayName }).from(users).where(eq(users.id, row.userId));
+    const [u] = await ctx.db.select({ displayName: users.displayName, email: users.email }).from(users).where(eq(users.id, row.userId));
     displayName = u?.displayName;
+    if (ctx.config.e2eePwBackup) email = u?.email;
   }
   return {
     role: row.role,
@@ -245,6 +249,7 @@ export async function lookupInvite(ctx: AuthContext, token: string, meta: Reques
     familyName: fam?.name ?? '',
     reset: row.userId !== null,
     ...(displayName ? { displayName } : {}),
+    ...(email ? { email } : {}),
     expiresAt: row.expiresAt,
   };
 }

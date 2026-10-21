@@ -7,6 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/auth/passwort_anmeldung.dart';
+import '../../data/crypto/crypto_fehler.dart';
+import '../../data/crypto/e2ee_state.dart';
+import '../../data/crypto/pw_regeln.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/qr_anzeige.dart';
@@ -46,6 +50,24 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
     if (_pw.text != _pw2.text) throw const EingabeFehler('Die beiden Passwörter sind nicht gleich.');
   }
 
+  /// Kann der Server das Passwort per authKey entgegennehmen? Dann sieht er es nie und kann es nicht selbst prüfen: Die Regeln (Stärke, keine Kontodaten)
+  /// gelten dann hier auf dem Gerät, wie bei der Passwort-Sicherung.
+  Future<bool> _mitAuthKey() async {
+    final ok = (await ref.read(apiProvider).serverFaehigkeiten()).authKey;
+    if (ok) {
+      final user = ref.read(authProvider).user;
+      final probleme = passwortPruefen(_pw.text, email: user?.email, anzeigename: user?.displayName);
+      if (probleme.isNotEmpty) throw EingabeFehler(probleme.first.meldung);
+    }
+    return ok;
+  }
+
+  String get _email {
+    final e = ref.read(authProvider).user?.email;
+    if (e == null || e.trim().isEmpty) throw const EingabeFehler('Zu deinem Konto gehört keine E-Mail-Adresse.');
+    return e;
+  }
+
   void _zurueck() => setState(() {
     _modus = _Modus.uebersicht;
     _start = null;
@@ -76,7 +98,12 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
     PasswordStart? start;
     final ok = await ausfuehren(() async {
       _pruefePasswort();
-      start = await mitStepUp(context, ref, () => ref.read(apiProvider).passwortEinrichtenStart(_pw.text));
+      final mitAuthKey = await _mitAuthKey();
+      final pa = ref.read(passwortAnmeldungProvider);
+      final neu = mitAuthKey ? await pa.neuesPasswort(_email, _pw.text) : NeuesPasswort(klartext: _pw.text);
+      if (!mounted) return;
+      start = await mitStepUp(context, ref, () => ref.read(apiProvider).passwortEinrichtenStart(passwort: neu.klartext, authKey: neu.authKey));
+      if (start != null && neu.authKey != null) await pa.merkeKonto(_email);
     });
     if (ok && start != null && mounted) {
       // das Passwort wird nicht mehr gebraucht (der Server hält nur den Hash)
@@ -111,18 +138,48 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
   Future<void> _aendern() async {
     var erledigt = false;
     var aktuell = true;
+    var zusatz = '';
     final ok = await ausfuehren(() async {
       _pruefePasswort();
-      final fertig = await mitStepUp<bool>(context, ref, () async {
-        await ref.read(apiProvider).passwortAendern(_pw.text);
-        return true;
-      });
-      erledigt = fertig == true;
+      final pw = _pw.text;
+      if (await _mitAuthKey()) {
+        // erst einen Frame zeichnen (Ladeanzeige): die Ableitung (Argon2id) blockiert im Web den Hauptthread
+        await Future<void>.delayed(const Duration(milliseconds: 60));
+        // authKey statt Passwort; eine vorhandene Passwort-Sicherung wird mit umgestellt (Server: beides in einer Transaktion)
+        final e2ee = ref.read(e2eeProvider.notifier);
+        final w = await e2ee.passwortWechselVorbereiten(pw);
+        if (!mounted) {
+          w.loeschen();
+          return;
+        }
+        try {
+          final r = await mitStepUp<PwWechselErgebnis>(context, ref, () => e2ee.passwortWechselAusfuehren(w, pw));
+          erledigt = r != null;
+          if (r != null) {
+            if (r.sicherungAktualisiert) zusatz = ' Deine Passwort-Sicherung gehört jetzt zum neuen Passwort.';
+            if (r.sicherungVeraltet) {
+              zusatz = ' Achtung: Deine Passwort-Sicherung gehört noch zum alten Passwort. Lege sie unter Profil > Verschlüsselung neu an.';
+            }
+            await ref.read(passwortAnmeldungProvider).merkeKonto(_email);
+          }
+        } on CryptoFehler catch (e) {
+          throw EingabeFehler('${e.meldung} Das Passwort wurde nicht geändert. Den Stand deiner Passwort-Sicherung siehst du unter Profil > Verschlüsselung.');
+        } finally {
+          w.loeschen();
+        }
+      } else {
+        if (!mounted) return;
+        final fertig = await mitStepUp<bool>(context, ref, () async {
+          await ref.read(apiProvider).passwortAendern(passwort: pw);
+          return true;
+        });
+        erledigt = fertig == true;
+      }
       if (erledigt) aktuell = await _nachErfolg(hatPasswort: true);
     });
     if (ok && erledigt && mounted) {
       _zurueck();
-      zeigeHinweis(context, _hinweis('Passwort geändert.', aktuell));
+      zeigeHinweis(context, _hinweis('Passwort geändert.$zusatz', aktuell));
     }
   }
 

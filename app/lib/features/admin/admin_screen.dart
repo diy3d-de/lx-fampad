@@ -60,6 +60,9 @@ enum _Aktion { rolle, familienrolle, zuruecksetzen, bildZuruecksetzen, entfernen
 class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZustand<_MitgliederTab> {
   List<UserDto>? _mitglieder;
 
+  /// Zustand der Passwort-Anmeldung je Mitglied (nur lesend; null: der Server bietet es nicht an). Nur für die kleine Markierung "altes Passwort-Verfahren".
+  PasswortModi? _passwortModi;
+
   @override
   void initState() {
     super.initState();
@@ -67,8 +70,21 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
   }
 
   Future<void> _ladeListe() async {
-    final m = await ref.read(apiProvider).mitglieder();
-    if (mounted) setState(() => _mitglieder = m);
+    final api = ref.read(apiProvider);
+    final m = await api.mitglieder();
+    // die Markierung ist nebensächlich: Fehler dabei dürfen die Liste nicht verhindern
+    PasswortModi? modi;
+    try {
+      modi = await api.passwortModi();
+    } catch (_) {
+      modi = null;
+    }
+    if (mounted) {
+      setState(() {
+        _mitglieder = m;
+        _passwortModi = modi;
+      });
+    }
   }
 
   Future<void> _laden() => ausfuehren(_ladeListe);
@@ -247,13 +263,13 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
           if (wartend.isNotEmpty) ...[
             const MonoLabel('// wartet auf freigabe', color: kWarn),
             const SizedBox(height: 8),
-            for (final m in wartend) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion),
+            for (final m in wartend) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id]),
             const SizedBox(height: 12),
           ],
           if (liste != null) ...[
             MonoLabel('// mitglieder (${aktiv.length})'),
             const SizedBox(height: 8),
-            for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion),
+            for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id]),
             if (aktiv.isEmpty) const EmptyState(icon: Icons.group_outlined, title: 'Keine Mitglieder', hint: 'Lade jemanden ein.'),
           ],
         ],
@@ -266,7 +282,10 @@ class _MitgliedKarte extends StatelessWidget {
   final UserDto m;
   final String? ich;
   final Future<void> Function(UserDto, _Aktion)? onAktion;
-  const _MitgliedKarte({required this.m, required this.ich, required this.onAktion});
+
+  /// Zustand der Passwort-Anmeldung (nur Admins, nur wenn der Server es liefert); "legacy" bekommt eine kleine Markierung.
+  final PasswortModus? passwortModus;
+  const _MitgliedKarte({required this.m, required this.ich, required this.onAktion, this.passwortModus});
 
   @override
   Widget build(BuildContext context) {
@@ -288,7 +307,7 @@ class _MitgliedKarte extends StatelessWidget {
                   if (m.email != null)
                     Text(m.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted), overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
-                  Wrap(spacing: 6, runSpacing: 4, children: [...rollenPillen(m.role, m.familyRole), if (wartet) const RollenPille('wartet', farbe: kWarn)]),
+                  Wrap(spacing: 6, runSpacing: 4, children: [...rollenPillen(m.role, m.familyRole), if (wartet) const RollenPille('wartet', farbe: kWarn), if (passwortModus == PasswortModus.legacy) const RollenPille('altes passwort-verfahren', farbe: kWarn)]),
                 ],
               ),
             ),

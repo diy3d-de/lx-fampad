@@ -443,6 +443,9 @@ class InviteLookup {
   final String familyName;
   final bool reset;
   final String? displayName;
+
+  /// Nur bei einer Reset-Einladung (und Server mit authKey): E-Mail des Kontos, nötig für den Salt der Passwort-Ableitung.
+  final String? email;
   final DateTime expiresAt;
   const InviteLookup({
     required this.role,
@@ -451,6 +454,7 @@ class InviteLookup {
     required this.familyName,
     required this.reset,
     required this.displayName,
+    this.email,
     required this.expiresAt,
   });
 
@@ -463,6 +467,7 @@ class InviteLookup {
       familyName: _s(m, 'familyName'),
       reset: _b(m, 'reset'),
       displayName: _sn(m, 'displayName'),
+      email: _sn(m, 'email'),
       expiresAt: _t(m, 'expiresAt'),
     );
   }
@@ -575,6 +580,53 @@ OeffentlicheSchluessel _schluesselStreng(Json m) => _schluessel(m) ?? _fehler();
 
 /// Antwort auf das Anlegen oder Wechseln des Schlüssels.
 OeffentlicheSchluessel schluesselAusAntwort(Json r) => _schluesselStreng(asJson(r['keys']));
+
+/// Fähigkeiten des Servers (GET /version, `features`). Fehlt ein Eintrag (älterer Server), gilt er als nicht vorhanden; [legacyPasswortLogin] ist
+/// ohne Angabe an (der alte Server nimmt das Klartext-Passwort ohnehin an).
+class ServerFaehigkeiten {
+  final bool pwBackup;
+
+  /// Anmeldung und Passwortwechsel mit abgeleitetem authKey (das Passwort verlässt das Gerät nie).
+  final bool authKey;
+
+  /// Der Server nimmt noch das Klartext-Passwort an (AUTH_LEGACY_PASSWORD_LOGIN).
+  final bool legacyPasswortLogin;
+  const ServerFaehigkeiten({required this.pwBackup, required this.authKey, required this.legacyPasswortLogin});
+
+  static const keine = ServerFaehigkeiten(pwBackup: false, authKey: false, legacyPasswortLogin: true);
+
+  factory ServerFaehigkeiten.fromJson(Map<String, dynamic> f) =>
+      ServerFaehigkeiten(pwBackup: f['pwBackup'] == true, authKey: f['authKey'] == true, legacyPasswortLogin: f['legacyPasswordLogin'] != false);
+}
+
+/// Zustand der Passwort-Anmeldung je Mitglied (GET /members/password-modes, nur Admins). Nie ein Prüfwert, nur der Zustand.
+enum PasswortModus { legacy, authkey, keins }
+
+class PasswortModi {
+  /// Der Server nimmt noch das Klartext-Passwort an.
+  final bool legacyPasswortLogin;
+  final Map<String, PasswortModus> modi;
+  const PasswortModi({required this.legacyPasswortLogin, required this.modi});
+
+  factory PasswortModi.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final liste = m['modes'];
+    final modi = <String, PasswortModus>{};
+    if (liste is List) {
+      for (final e in liste) {
+        if (e is! Map<String, dynamic>) continue;
+        final id = e['userId'], modus = e['mode'];
+        if (id is! String) continue;
+        modi[id] = switch (modus) {
+          'authkey' => PasswortModus.authkey,
+          'legacy' => PasswortModus.legacy,
+          _ => PasswortModus.keins,
+        };
+      }
+    }
+    return PasswortModi(legacyPasswortLogin: m['legacyPasswordLogin'] != false, modi: modi);
+  }
+}
 
 /// Parameter der Passwort-Ableitung laut Server (POST /auth/kdf-params und in der Passwort-Sicherung). Der Salt ist öffentlich und kommt vom Server.
 class KdfDto {

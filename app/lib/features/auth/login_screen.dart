@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/auth/passwort_anmeldung.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 import 'invite_screen.dart';
@@ -75,12 +76,19 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       setState(() => fehler = _mitWiederherstellungscode ? 'Bitte gib einen Wiederherstellungscode ein.' : 'Bitte gib den 6-stelligen Code ein.');
       return;
     }
+    final email = _email.text.trim();
     await ausfuehren(
-      () => _auth.mitPasswortAnmelden(
-        email: _email.text.trim(),
+      () => ref.read(passwortAnmeldungProvider).anmelden(
+        email: email,
         passwort: _passwort.text,
-        totp: _mitWiederherstellungscode ? null : code,
-        wiederherstellungscode: _mitWiederherstellungscode ? wc : null,
+        senden: ({passwort, authKey, upgradeAuthKey}) => _auth.mitPasswortAnmelden(
+          email: email,
+          passwort: passwort,
+          authKey: authKey,
+          upgradeAuthKey: upgradeAuthKey,
+          totp: _mitWiederherstellungscode ? null : code,
+          wiederherstellungscode: _mitWiederherstellungscode ? wc : null,
+        ),
       ),
     );
   }

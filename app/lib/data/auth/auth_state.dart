@@ -256,8 +256,25 @@ class AuthController extends Notifier<AuthState> {
     await _anmelden(() => _api.passkeyAnmelden(challengeId: ch.challengeId, antwort: antwort));
   }
 
-  Future<void> mitPasswortAnmelden({required String email, required String passwort, String? totp, String? wiederherstellungscode}) =>
-      _anmelden(() => _api.passwortAnmelden(email: email, passwort: passwort, totp: totp, wiederherstellungscode: wiederherstellungscode));
+  /// Ein einzelner Anmeldeversuch mit Passwort: entweder [authKey] (abgeleitet) oder [passwort] (Klartext, alter Weg; mit [upgradeAuthKey] zur Umstellung).
+  /// Die Wahl des Weges trifft `PasswortAnmeldung` (passwort_anmeldung.dart).
+  Future<void> mitPasswortAnmelden({
+    required String email,
+    String? passwort,
+    String? authKey,
+    String? upgradeAuthKey,
+    String? totp,
+    String? wiederherstellungscode,
+  }) => _anmelden(
+    () => _api.passwortAnmelden(
+      email: email,
+      passwort: passwort,
+      authKey: authKey,
+      upgradeAuthKey: upgradeAuthKey,
+      totp: totp,
+      wiederherstellungscode: wiederherstellungscode,
+    ),
+  );
 
   Future<void> mitWiederherstellungscodeAnmelden({required String email, required String code}) =>
       _anmelden(() => _api.wiederherstellungAnmelden(email: email, code: code));

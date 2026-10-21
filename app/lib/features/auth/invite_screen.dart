@@ -11,6 +11,8 @@ import 'package:intl/intl.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/auth/passwort_anmeldung.dart';
+import '../../data/crypto/pw_regeln.dart';
 import '../../ui/widgets.dart';
 import 'app_download.dart';
 import 'auth_widgets.dart';
@@ -127,11 +129,23 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     if (_pw.text.length < 12) throw const EingabeFehler('Das Passwort braucht mindestens 12 Zeichen.');
     if (_pw.text != _pw2.text) throw const EingabeFehler('Die beiden Passwörter sind nicht gleich.');
     final info = _info!;
+    // E-Mail des künftigen Kontos (Salt der Ableitung): neu aus dem Formular, bei Reset-Einladung vom Server
+    final mail = info.reset ? info.email : _email.text.trim();
+    final pa = ref.read(passwortAnmeldungProvider);
+    final neu = mail == null || mail.isEmpty ? NeuesPasswort(klartext: _pw.text) : await pa.neuesPasswort(
+            mail,
+            _pw.text,
+            pruefenMitAuthKey: () {
+              final probleme = passwortPruefen(_pw.text, email: mail, anzeigename: info.reset ? info.displayName : _name.text.trim());
+              if (probleme.isNotEmpty) throw EingabeFehler(probleme.first.meldung);
+            },
+          );
     final s = await ref
         .read(apiProvider)
         .passwortRegistrierungStart(
           token: _token!,
-          passwort: _pw.text,
+          passwort: neu.klartext,
+          authKey: neu.authKey,
           pin: info.pinRequired ? _pin.text : null,
           email: info.reset ? null : _email.text.trim(),
           anzeigename: info.reset ? null : _name.text.trim(),
