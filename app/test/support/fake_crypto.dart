@@ -28,6 +28,16 @@ class FakeCryptoProvider implements CryptoProvider {
     return Uint8List.fromList(out.takeBytes().sublist(0, laenge));
   }
 
+  /// KEIN Argon2: billiger HMAC über Passwort, Salt und Parameter (nur damit Tests schnell laufen; Ausgabe hängt von allen Eingaben ab).
+  @override
+  Future<Uint8List> pwhash({required Uint8List passwort, required Uint8List salt, required int memKiB, required int ops}) async {
+    if (salt.length != 16) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Ungültige Parameter der Schlüsselableitung.');
+    return _hmac(verketten([salt, u32Bytes(memKiB), u32Bytes(ops)]), passwort, 32);
+  }
+
+  @override
+  Uint8List kdf(Uint8List master, String kontext, {int laenge = 32}) => hash(utf8Bytes(kontext), schluessel: master, laenge: laenge);
+
   @override
   Uint8List zufall(int laenge) => Uint8List.fromList(List.generate(laenge, (i) => konstant ? (i * 7 + 3) & 255 : _zufall.nextInt(256)));
 

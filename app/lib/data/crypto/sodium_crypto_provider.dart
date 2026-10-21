@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:sodium/sodium_sumo.dart';
 
+import 'bytes.dart';
 import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
 
@@ -34,6 +35,43 @@ class SodiumCryptoProvider implements CryptoProvider {
 
   @override
   Uint8List zufall(int laenge) => _s.randombytes.buf(laenge);
+
+  /// Argon2id (crypto_pwhash_argon2id) im Isolate: Auf Android/Desktop blockiert die Rechnung (64 MiB) die Oberfläche nicht. Im Web führt `runIsolated`
+  /// den Rückruf im Hauptthread aus (sodium.js hat keinen Worker): die Oberfläche steht dort während der Rechnung (Messwerte: Projektbeschreibung 9a).
+  @override
+  Future<Uint8List> pwhash({required Uint8List passwort, required Uint8List salt, required int memKiB, required int ops}) async {
+    final pw = _s.crypto.pwhash;
+    final mem = memKiB * 1024;
+    if (salt.length != pw.saltBytes || ops < pw.opsLimitMin || ops > pw.opsLimitMax || mem < pw.memLimitMin || mem > pw.memLimitMax) {
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Ungültige Parameter der Schlüsselableitung.');
+    }
+    final eingabe = Int8List.fromList(passwort);
+    final sodium = _s;
+    try {
+      final key = await sodium.runIsolated(
+        (_, _) => sodium.crypto.pwhash.callRaw(
+          outLen: 32,
+          password: eingabe,
+          salt: salt,
+          opsLimit: ops,
+          memLimit: mem,
+          alg: CryptoPwhashAlgorithm.argon2id13,
+        ),
+      );
+      try {
+        return key.extractBytes();
+      } finally {
+        key.dispose();
+      }
+    } on SodiumException {
+      throw _intern;
+    } finally {
+      eingabe.fillRange(0, eingabe.length, 0);
+    }
+  }
+
+  @override
+  Uint8List kdf(Uint8List master, String kontext, {int laenge = 32}) => hash(utf8Bytes(kontext), schluessel: master, laenge: laenge);
 
   @override
   Uint8List hash(Uint8List nachricht, {Uint8List? schluessel, int laenge = 32}) {
