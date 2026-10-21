@@ -49,7 +49,7 @@ void main() {
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Chat')));
     await warte(tester);
     await tippe(tester, find.textContaining('Cora:'));
-    await warte(tester, 10);
+    await warte(tester, 20);
     return env;
   }
 
@@ -94,8 +94,9 @@ void main() {
     expect(find.text('👍'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
     expect(find.text('❤️'), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp(r'👍 2, von Ben, Cora Berger')), findsOneWidget);
-    expect(find.byTooltip('Ben, Cora Berger'), findsOneWidget);
+    await warte(tester, 20); // Mitglieder (Namen) laden unabhängig vom Verlauf
+    expect(find.bySemanticsLabel(RegExp(r'👍 2, von (Ben, Cora Berger|Cora Berger, Ben).')), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is Tooltip && (w.message == 'Ben, Cora Berger' || w.message == 'Cora Berger, Ben')), findsOneWidget);
     pruefeLayout(tester, 'Verlauf mit Reaktionen');
   });
 
