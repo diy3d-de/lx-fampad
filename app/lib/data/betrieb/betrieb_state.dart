@@ -24,12 +24,12 @@ class BetriebStatusNotifier extends Notifier<BetriebStatusZustand> {
   @override
   BetriebStatusZustand build() => const BetriebStatusZustand();
 
-  Future<void> laden() async {
+  Future<void> laden({bool frisch = false}) async {
     if (_laeuft || !ref.mounted) return;
     _laeuft = true;
     state = BetriebStatusZustand(status: state.status, laedt: true);
     try {
-      final s = await ref.read(apiProvider).betriebStatus();
+      final s = await ref.read(apiProvider).betriebStatus(frisch: frisch);
       if (ref.mounted) state = BetriebStatusZustand(status: s);
     } on ApiException catch (e) {
       if (ref.mounted) state = BetriebStatusZustand(status: state.status, fehler: e);

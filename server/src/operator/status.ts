@@ -21,12 +21,14 @@ export interface ServiceStatus {
 export interface OperatorStatus {
   generatedAt: string;
   overall: 'ok' | 'warn' | 'error';
+  /** Anzahl der Quellen ohne Messwert (nicht lesbar): "in Ordnung" gilt nur für das, was gemessen wurde. */
+  unknownCount: number;
   server: { version: string; protocolVersion: number; startedAt: string; uptimeSec: number; memoryRssMb: number };
   database: {
     ok: boolean;
     latencyMs: number | null;
     sizeBytes: number | null;
-    migrations: { applied: number | null; expected: number | null; latest: string | null; pending: boolean | null };
+    migrations: { applied: number | null; expected: number | null; latest: string | null; pending: boolean | null; grantMissing: boolean };
   };
   services: ServiceStatus[];
   backup: { state: Level; lastSuccessAt: string | null; ageHours: number | null; totalBytes: number | null; lastResult: 'ok' | 'fehler' | null };
@@ -49,6 +51,15 @@ const BACKUP_ERROR_HOURS = 72;
 const CERT_WARN_DAYS = 14;
 const DISK_WARN_PERCENT = 85;
 const DISK_ERROR_PERCENT = 95;
+
+/** PostgreSQL 42501 (insufficient_privilege), auch wenn der Treiber den Fehler als Ursache einpackt. */
+function isPermissionDenied(err: unknown): boolean {
+  for (let e: unknown = err, i = 0; e && typeof e === 'object' && i < 4; i++) {
+    if ((e as { code?: unknown }).code === '42501') return true;
+    e = (e as { cause?: unknown }).cause;
+  }
+  return false;
+}
 
 /** Anzahl und letzter Eintrag der mitgelieferten Migrationen (Journal im Ordner drizzle/); null, wenn nicht lesbar. */
 function expectedMigrations(): { count: number; latest: string } | null {
@@ -126,6 +137,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   }
   let sizeBytes: number | null = null;
   let applied: number | null = null;
+  let grantMissing = false;
   if (dbOk) {
     try {
       const r = await ctx.db.execute<{ size: string }>(sql`select pg_database_size(current_database())::text as size`);
@@ -138,8 +150,9 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
       // Die Laufzeitrolle darf die Migrations-Tabelle evtl. nicht lesen: dann bleibt der Stand "unbekannt".
       const r = await ctx.db.execute<{ n: number }>(sql`select count(*)::int as n from drizzle.__drizzle_migrations`);
       applied = r.rows[0]?.n ?? null;
-    } catch {
+    } catch (err) {
       applied = null;
+      grantMissing = isPermissionDenied(err);
     }
   }
   const exp = expectedMigrations();
@@ -148,6 +161,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     expected: exp?.count ?? null,
     latest: exp && applied !== null && applied === exp.count ? exp.latest : null,
     pending: exp && applied !== null ? applied < exp.count : null,
+    grantMissing,
   };
 
   // ----- Zähler (nur die Familie der Sitzung) -----
@@ -195,7 +209,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     oc.backupStatusFile ? probes.readText(oc.backupStatusFile, 4096) : Promise.resolve(null),
     oc.diskPath ? probes.disk(oc.diskPath) : Promise.resolve(null),
     oc.karteDir ? probes.karteBytes(oc.karteDir) : Promise.resolve(null),
-    oc.releaseManifestFile ? probes.readText(oc.releaseManifestFile, 16 * 1024) : Promise.resolve(null),
+    oc.releaseManifestFile ? probes.readText(oc.releaseManifestFile, 64 * 1024) : Promise.resolve(null),
     readWebVersion(config, probes),
   ]);
 
@@ -226,10 +240,12 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   const diskLevel: Level = diskView === null ? 'unknown' : diskView.usedPercent >= DISK_ERROR_PERCENT ? 'error' : diskView.usedPercent >= DISK_WARN_PERCENT ? 'warn' : 'ok';
   const levels: Level[] = [...services.map((s) => s.state), backup.state, diskLevel];
   const overall = levels.includes('error') ? 'error' : levels.includes('warn') ? 'warn' : 'ok';
+  const unknownCount = levels.filter((l) => l === 'unknown').length + (migrations.applied === null ? 1 : 0);
 
   return {
     generatedAt: now.toISOString(),
     overall,
+    unknownCount,
     server: {
       version: SERVER_VERSION,
       protocolVersion: PROTOCOL_VERSION,

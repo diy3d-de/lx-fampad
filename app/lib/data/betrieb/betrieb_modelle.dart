@@ -44,7 +44,10 @@ class BetriebMigrationen {
   final int? erwartet;
   final String? letzte;
   final bool? ausstehend;
-  const BetriebMigrationen({this.angewendet, this.erwartet, this.letzte, this.ausstehend});
+
+  /// Die Laufzeitrolle darf die Migrationstabelle nicht lesen (Grant fehlt, siehe deploy/README).
+  final bool grantFehlt;
+  const BetriebMigrationen({this.angewendet, this.erwartet, this.letzte, this.ausstehend, this.grantFehlt = false});
 }
 
 class BetriebSicherung {
@@ -73,6 +76,9 @@ class BetriebAppVersion {
 class BetriebStatus {
   final DateTime erzeugt;
   final BetriebStufe gesamt;
+
+  /// Quellen ohne Messwert: "in Ordnung" gilt dann nur für das Gemessene.
+  final int unbekannt;
   final String serverVersion;
   final int protokoll;
   final int laufzeitSekunden;
@@ -103,6 +109,7 @@ class BetriebStatus {
   const BetriebStatus({
     required this.erzeugt,
     required this.gesamt,
+    required this.unbekannt,
     required this.serverVersion,
     required this.protokoll,
     required this.laufzeitSekunden,
@@ -166,6 +173,7 @@ class BetriebStatus {
     return BetriebStatus(
       erzeugt: _zeit(m['generatedAt']) ?? DateTime.now(),
       gesamt: gesamt == BetriebStufe.aus ? BetriebStufe.unbekannt : gesamt,
+      unbekannt: _zahl(m['unknownCount']) ?? 0,
       serverVersion: _text(server['version']) ?? '–',
       protokoll: _zahl(server['protocolVersion']) ?? 0,
       laufzeitSekunden: _zahl(server['uptimeSec']) ?? 0,
@@ -178,6 +186,7 @@ class BetriebStatus {
         erwartet: _zahl(mig['expected']),
         letzte: _text(mig['latest']),
         ausstehend: mig['pending'] is bool ? mig['pending'] as bool : null,
+        grantFehlt: mig['grantMissing'] == true,
       ),
       dienste: dienste,
       sicherung: BetriebSicherung(

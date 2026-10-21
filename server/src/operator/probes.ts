@@ -68,15 +68,22 @@ export const realProbes: Probes = {
         if (done) return;
         done = true;
         clearTimeout(timer);
-        socket.destroy();
+        socket?.destroy();
         resolve(value);
       };
-      // Nur das Zertifikat lesen: es wird nichts gesendet und nichts geprüft (rejectUnauthorized aus), die Verbindung geht nach localhost.
-      const socket = connect({ host, port, servername, rejectUnauthorized: false }, () => {
-        const end = new Date(socket.getPeerCertificate().valid_to);
-        finish(Number.isNaN(end.getTime()) ? null : end);
-      });
       const timer = setTimeout(() => finish(null), TIMEOUT_MS);
+      // Nur das Zertifikat lesen: es wird nichts gesendet und nichts geprüft (rejectUnauthorized aus), die Verbindung geht nach localhost.
+      let socket: ReturnType<typeof connect> | undefined;
+      try {
+        socket = connect({ host, port, servername, rejectUnauthorized: false }, () => {
+          const end = new Date(socket?.getPeerCertificate().valid_to ?? Number.NaN);
+          finish(Number.isNaN(end.getTime()) ? null : end);
+        });
+      } catch {
+        // z. B. ungültiger Port oder Host: nie werfen, nur "unbekannt"
+        finish(null);
+        return;
+      }
       socket.on('error', () => finish(null));
     });
   },

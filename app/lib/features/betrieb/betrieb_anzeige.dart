@@ -21,8 +21,12 @@ String stufeText(BetriebStufe s, {String okText = 'läuft'}) => switch (s) {
   BetriebStufe.unbekannt => 'unbekannt',
 };
 
+/// Farbe der Gesamtzeile: "in Ordnung" mit unbekannten Quellen ist neutral, nicht grün.
+Color gesamtFarbe(BetriebStufe s, {int unbekannt = 0}) => s == BetriebStufe.ok && unbekannt > 0 ? kTextMuted : stufeFarbe(s);
+
 /// Gesamtzustand für die Zeile oben auf der Übersicht.
-String gesamtText(BetriebStufe s) => switch (s) {
+String gesamtText(BetriebStufe s, {int unbekannt = 0}) => switch (s) {
+  BetriebStufe.ok when unbekannt > 0 => 'in Ordnung, $unbekannt unbekannt',
   BetriebStufe.ok => 'alles in Ordnung',
   BetriebStufe.warn => 'Hinweise beachten',
   BetriebStufe.fehler => 'Störung',

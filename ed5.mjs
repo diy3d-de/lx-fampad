@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+let f='src/operator/probes.ts', s=fs.readFileSync(f,'utf8');
+s=s.replace("      let socket: ReturnType<typeof connect>;\n","      let socket: ReturnType<typeof connect> | undefined;\n").replace("const end = new Date(socket.getPeerCertificate().valid_to);","const end = new Date(socket?.getPeerCertificate().valid_to ?? Number.NaN);").replace("      timer = setTimeout(() => finish(null), TIMEOUT_MS);\n      socket.on('error'","      timer = setTimeout(() => finish(null), TIMEOUT_MS);\n      socket.on('error'");
+fs.writeFileSync(f,s);
+f='src/routes/operator.ts'; s=fs.readFileSync(f,'utf8');
+s=s.replace("import { collectStatus } from '../operator/status.js';","import { collectStatus, type OperatorStatus } from '../operator/status.js';");
+s=s.replace("const auditQuery","/** Status wird kurz zwischengespeichert (die Abfrage geht auch an ntfy und TLS); \"fresh\" umgeht den Cache höchstens alle 5 Sekunden. */\nconst STATUS_CACHE_MS = 15_000;\nconst STATUS_FRESH_MIN_MS = 5_000;\n\nconst statusQuery = z.object({ fresh: z.literal('1').optional() }).strict();\n\nconst auditQuery");
+s=s.replace("  const limit = strictLimit(config);\n","  const limit = strictLimit(config);\n  const cache = new Map<string, { at: number; value: OperatorStatus }>();\n");
+s=s.replace("    const p = await requireOperator(ctx, await auth.requireSession(req));\n    return collectStatus({ ctx, weather, probes }, p.familyId);","    const p = await requireOperator(ctx, await auth.requireSession(req));\n    const q = parse(statusQuery, req.query);\n    const now = ctx.now().getTime();\n    const hit = cache.get(p.familyId);\n    const maxAge = q.fresh ? STATUS_FRESH_MIN_MS : STATUS_CACHE_MS;\n    if (hit && now - hit.at >= 0 && now - hit.at < maxAge) return hit.value;\n    const value = await collectStatus({ ctx, weather, probes }, p.familyId);\n    cache.set(p.familyId, { at: now, value });\n    return value;");
+fs.writeFileSync(f,s);

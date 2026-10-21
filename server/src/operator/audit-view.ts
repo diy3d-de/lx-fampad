@@ -3,14 +3,14 @@
 import { and, desc, eq, inArray, isNull, notInArray, or, sql, type SQL } from 'drizzle-orm';
 import { isIPv4 } from 'node:net';
 import type { AuthContext } from '../auth/context.js';
-import { auditLog, users } from '../db/schema.js';
+import { auditLog, memberships, users } from '../db/schema.js';
 import { normalizeIp } from '../net.js';
 
 export const AUDIT_CATEGORIES = ['alle', 'anmeldung', 'aenderungen', 'fehler'] as const;
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
 /** Anmeldung und Geräte (Alltag); Fehler und Auffälliges; alles Übrige sind Änderungen (neue Ereignisarten landen dort). */
-const LOGIN_EVENTS = ['login_ok', 'logout', 'logout_all', 'device_added', 'device_removed', 'step_up_ok', 'recovery_code_used', 'invite_used', 'member_registered'];
+const LOGIN_EVENTS = ['session_refresh_retry', 'invite_expired', 'key_backup_read', 'key_backup_pw_read', 'login_ok', 'logout', 'logout_all', 'device_added', 'device_removed', 'step_up_ok', 'recovery_code_used', 'invite_used', 'member_registered'];
 const ERROR_EVENTS = [
   'login_failed',
   'step_up_failed',
@@ -75,10 +75,12 @@ export async function listAudit(ctx: AuthContext, familyId: string, input: { cat
       event: auditLog.event,
       ip: auditLog.ip,
       actorId: auditLog.actorId,
-      actorName: users.displayName,
+      actorName: sql<string | null>`case when ${memberships.id} is null then null else ${users.displayName} end`,
     })
     .from(auditLog)
     .leftJoin(users, eq(users.id, auditLog.actorId))
+    // Name nur, wenn die Person Mitglied der Familie der Sitzung ist (sonst erscheint der Eintrag ohne Person)
+    .leftJoin(memberships, and(eq(memberships.userId, auditLog.actorId), eq(memberships.familyId, familyId)))
     .where(and(...filters))
     .orderBy(desc(auditLog.createdAt), desc(auditLog.id))
     .limit(input.limit + 1);

@@ -1,0 +1,10 @@
+import fs from 'node:fs';
+let f='lib/features/betrieb/betrieb_screen.dart', s=fs.readFileSync(f,'utf8');
+const a="          const SizedBox(width: 8),\n          pille,\n";
+if(!s.includes(a)) throw 1;
+s=s.replace(a,"          const SizedBox(width: 8),\n          // begrenzt (lange Versionskennungen brechen um, statt die Zeile zu sprengen)\n          ConstrainedBox(constraints: const BoxConstraints(maxWidth: 150), child: pille),\n");
+s=s.replace("Widget version(String? v) => Text(v ?? 'unbekannt', style:","Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style:");
+fs.writeFileSync(f,s);
+f='test/betrieb_test.dart'; s=fs.readFileSync(f,'utf8');
+s=s.replace("      final a = tester.getTopLeft(find.text('// SERVER'));","      await warte(tester);\n      final a = tester.getTopLeft(find.text('// SERVER'));");
+fs.writeFileSync(f,s);

@@ -7,9 +7,15 @@ import type { Config } from '../config.js';
 import { AUDIT_CATEGORIES, CURSOR_FORMAT, listAudit } from '../operator/audit-view.js';
 import type { Probes } from '../operator/probes.js';
 import { requireOperator } from '../operator/service.js';
-import { collectStatus } from '../operator/status.js';
+import { collectStatus, type OperatorStatus } from '../operator/status.js';
 import type { WeatherService } from '../weather/service.js';
 import { parse, strictLimit } from './util.js';
+
+/** Status wird kurz zwischengespeichert (die Abfrage geht auch an ntfy und TLS); "fresh" umgeht den Cache höchstens alle 5 Sekunden. */
+const STATUS_CACHE_MS = 15_000;
+const STATUS_FRESH_MIN_MS = 5_000;
+
+const statusQuery = z.object({ fresh: z.literal('1').optional() }).strict();
 
 const auditQuery = z
   .object({
@@ -22,11 +28,19 @@ const auditQuery = z
 export function registerOperatorRoutes(app: FastifyInstance, config: Config, auth: Auth, weather: WeatherService | undefined, probes?: Partial<Probes>): void {
   const ctx = auth.ctx;
   const limit = strictLimit(config);
+  const cache = new Map<string, { at: number; value: OperatorStatus }>();
 
   // Status ohne Step-up (nur Zahlen und Zustände); die Abfrage geht auch an ntfy und TLS, daher streng begrenzt
   app.get('/api/v1/admin/status', limit, async (req) => {
     const p = await requireOperator(ctx, await auth.requireSession(req));
-    return collectStatus({ ctx, weather, probes }, p.familyId);
+    const q = parse(statusQuery, req.query);
+    const now = ctx.now().getTime();
+    const hit = cache.get(p.familyId);
+    const maxAge = q.fresh ? STATUS_FRESH_MIN_MS : STATUS_CACHE_MS;
+    if (hit && now - hit.at >= 0 && now - hit.at < maxAge) return hit.value;
+    const value = await collectStatus({ ctx, weather, probes }, p.familyId);
+    cache.set(p.familyId, { at: now, value });
+    return value;
   });
 
   // Das Protokoll nennt Personen und Netze: nur mit frischer Bestätigung (Step-up)

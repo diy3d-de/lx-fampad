@@ -71,8 +71,9 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
           onPressed: st.laedt
               ? null
               : () {
-                  unawaited(ref.read(betriebStatusProvider.notifier).laden());
-                  if (_seite == _Seite.protokoll) unawaited(_protokollLaden());
+                  unawaited(ref.read(betriebStatusProvider.notifier).laden(frisch: true));
+                  // auch die Ereignisse neu laden; auf der Übersicht still (ohne Step-up-Abfrage), auf der Protokollseite mit
+                  unawaited(_protokollLaden(still: _seite != _Seite.protokoll));
                 },
         ),
       ],
@@ -155,7 +156,7 @@ class _Uebersicht extends ConsumerWidget {
           : const MeldungsBox('Der Zustand wird geladen …', fehler: false);
     }
     final jetzt = DateTime.now();
-    final farbe = stufeFarbe(s.gesamt);
+    final farbe = gesamtFarbe(s.gesamt, unbekannt: s.unbekannt);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -167,7 +168,7 @@ class _Uebersicht extends ConsumerWidget {
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              StatusPill('● ${gesamtText(s.gesamt)}', color: farbe),
+              StatusPill('● ${gesamtText(s.gesamt, unbekannt: s.unbekannt)}', color: farbe),
               Text('Stand ${uhrzeit(s.erzeugt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
             ],
           ),
@@ -243,7 +244,9 @@ class _Kacheln extends StatelessWidget {
       _Kachel(
         label: '// datenbank',
         wert: s.datenbankOk ? groesseText(s.datenbankBytes) : 'Störung',
-        hinweis: s.datenbankOk ? 'Migrationen ${mig.angewendet ?? '?'} von ${mig.erwartet ?? '?'}' : 'nicht erreichbar',
+        hinweis: !s.datenbankOk
+            ? 'nicht erreichbar'
+            : (mig.angewendet == null ? (mig.grantFehlt ? 'Migrationsstand unbekannt: Grant fehlt, siehe README' : 'Migrationsstand unbekannt') : 'Migrationen ${mig.angewendet} von ${mig.erwartet ?? '?'}'),
         farbe: s.datenbankOk ? kText : kDanger,
       ),
       _Kachel(
@@ -264,7 +267,9 @@ class _Kacheln extends StatelessWidget {
     ];
     return LayoutBuilder(
       builder: (context, c) {
-        final spalten = c.maxWidth >= 600 ? 3 : 2;
+        // große Schrift: eine Spalte, sonst brechen die Kacheln um
+        final grosseSchrift = MediaQuery.textScalerOf(context).scale(10) > 13;
+        final spalten = grosseSchrift ? 1 : (c.maxWidth >= 600 ? 3 : 2);
         final breite = (c.maxWidth - (spalten - 1) * 10) / spalten;
         return Wrap(spacing: 10, runSpacing: 10, children: [for (final k in kacheln) SizedBox(width: breite, child: k)]);
       },
@@ -297,7 +302,8 @@ class _Zeile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          pille,
+          // begrenzt (lange Versionskennungen brechen um, statt die Zeile zu sprengen)
+          ConstrainedBox(constraints: const BoxConstraints(maxWidth: 150), child: pille),
         ],
       ),
     ),
@@ -342,7 +348,7 @@ class _Dienste extends StatelessWidget {
       ('lx-fampad (API)', 'Version ${s.serverVersion} · ${s.speicherMb} MB RAM', stufe('api'), 'läuft'),
       (
         'PostgreSQL',
-        s.datenbankOk ? 'Antwort ${ms ?? '?'} ms · ${groesseText(s.datenbankBytes)}${s.migrationen.ausstehend == true ? ' · Migration ausstehend' : ''}' : 'nicht erreichbar',
+        s.datenbankOk ? 'Antwort ${ms ?? '?'} ms · ${groesseText(s.datenbankBytes)}${s.migrationen.ausstehend == true ? ' · Migration ausstehend' : ''}${s.migrationen.angewendet == null ? (s.migrationen.grantFehlt ? ' · Grant fehlt, siehe README' : '') : ''}' : 'nicht erreichbar',
         stufe('database'),
         'läuft',
       ),
@@ -391,7 +397,7 @@ class _Versionen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = s.appVersion;
-    Widget version(String? v) => Text(v ?? 'unbekannt', style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: v == null ? kTextMuted : kText));
+    Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: v == null ? kTextMuted : kText));
     return _Liste([
       _Zeile(name: 'Server', info: 'Protokoll ${s.protokoll} · Migrationen ${s.migrationen.letzte?.substring(0, 4) ?? 'unbekannt'}', pille: version(s.serverVersion)),
       _Zeile(name: 'Web-App', info: 'ausgelieferter Build', pille: version(s.webVersion)),

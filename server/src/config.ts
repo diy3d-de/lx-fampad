@@ -204,6 +204,7 @@ function operatorConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Operato
   };
   const tlsProbe = pick('OPERATOR_TLS_PROBE', nodeEnv === 'production' ? '127.0.0.1:443' : undefined);
   if (tlsProbe !== undefined && !/^[A-Za-z0-9.[\]:-]+:\d{1,5}$/.test(tlsProbe)) throw new Error('OPERATOR_TLS_PROBE ungültig (Format host:port oder off)');
+  if (tlsProbe !== undefined && Number(tlsProbe.slice(tlsProbe.lastIndexOf(':') + 1)) > 65535) throw new Error('OPERATOR_TLS_PROBE ungültig (Port höchstens 65535)');
   return {
     backupStatusFile: pick('OPERATOR_BACKUP_STATUS_FILE', '/var/backups/lx-fampad/status'),
     releaseManifestFile: pick('OPERATOR_RELEASE_MANIFEST', '/srv/fampad/releases/android/latest.json'),

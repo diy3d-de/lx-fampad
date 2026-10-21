@@ -16,6 +16,7 @@ import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
+import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../betrieb/betrieb_screen.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
@@ -354,7 +355,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
             icon: Icons.monitor_heart_outlined,
             titel: 'Betrieb',
             untertitel: 'zustand des servers, protokoll, nur lesen',
-            onTap: () => Navigator.of(context).push<void>(BetriebScreen.route()),
+            // im Desktop-Layout ersetzt die Seite das Konto (beide stapeln dort nicht), mobil liegt sie darüber
+            onTap: () => DesktopShellMarke.vorhanden(context) ? Navigator.of(context).pushReplacement<void, void>(BetriebScreen.route()) : Navigator.of(context).push<void>(BetriebScreen.route()),
           ),
         ],
         const SizedBox(height: 12),

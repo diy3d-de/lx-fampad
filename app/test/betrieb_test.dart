@@ -1,5 +1,7 @@
 // Betreiber-Ansicht "Betrieb" (nur lesend): Modelle (tolerant), Anzeige-Hilfen, Sichtbarkeit (nur Betreiber: Profil mobil, Seitenleiste im Desktop-Layout),
 // Übersicht (Kacheln, Dienste, Funktionen, Versionen), Protokoll (Filter, Seiten, Step-up), keine schreibenden Aufrufe, Layout (360 px, Textskala 1.5).
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/models.dart';
@@ -7,6 +9,7 @@ import 'package:lx_fampad/data/betrieb/betrieb_modelle.dart';
 import 'package:lx_fampad/features/auth/step_up.dart';
 import 'package:lx_fampad/features/betrieb/betrieb_anzeige.dart';
 import 'package:lx_fampad/features/betrieb/betrieb_screen.dart';
+import 'package:lx_fampad/features/profile/profile_screen.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -133,15 +136,15 @@ void main() {
     WidgetTester tester, {
     bool betreiber = true,
     Object Function()? status,
-    Object Function(Req)? audit,
+    FutureOr<Object?> Function(Req)? audit,
     double skala = 1.0,
     Size groesse = const Size(360, 800),
   }) async {
     final env = await angemeldeteUmgebung();
     env.server.json('GET /me', {...meJson(role: 'admin', passkeys: 1, password: true, totp: true), 'operator': betreiber});
     env.server.on('GET /admin/status', (_) => jsonAntwort(status == null ? _status() : status()));
-    env.server.on('GET /admin/audit', (r) {
-      final a = audit?.call(r);
+    env.server.on('GET /admin/audit', (r) async {
+      final a = await audit?.call(r);
       if (a == null) return jsonAntwort({'items': [for (var i = 1; i <= 3; i++) _eintrag(i)], 'nextCursor': null});
       return jsonAntwort(a);
     });
@@ -298,6 +301,120 @@ void main() {
       await betriebOeffnenMobil(tester);
       await tippe(tester, find.text('Protokoll'));
       pruefeLayout(tester, 'Betrieb Protokoll 1.5');
+    });
+  });
+
+  group('Review-Korrekturen', () {
+    testWidgets('Gesamtzeile: Unbekanntes wird nicht als "alles in Ordnung" gemeldet', (tester) async {
+      await start(tester, status: () => {..._status(), 'unknownCount': 3});
+      await betriebOeffnenMobil(tester);
+      expect(find.text('● in Ordnung, 3 unbekannt'), findsOneWidget);
+      expect(find.text('● alles in Ordnung'), findsNothing);
+    });
+
+    testWidgets('Migrationsstand ohne Leserecht: "unbekannt" mit Hinweis auf den Grant', (tester) async {
+      final s = _status();
+      (s['database'] as Map<String, dynamic>)['migrations'] = {'applied': null, 'expected': 19, 'latest': null, 'pending': null, 'grantMissing': true};
+      await start(tester, status: () => s);
+      await betriebOeffnenMobil(tester);
+      expect(find.textContaining('Grant fehlt, siehe README'), findsWidgets);
+      expect(find.textContaining('Migrationen ? von'), findsNothing);
+    });
+
+    testWidgets('Textskala 2.0 bei 360 px: Kacheln in einer Spalte, nichts läuft über', (tester) async {
+      // die Startseite selbst läuft bei 2.0 über (nicht Teil dieses Pakets): erst danach die Schrift vergrößern
+      await start(tester);
+      await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+      tester.platformDispatcher.textScaleFactorTestValue = 2.0;
+      await warte(tester);
+      tester.takeException(); // Überlauf des Profils bei 2.0 gehört nicht zu diesem Paket
+      await tippe(tester, find.text('Betrieb'));
+      await warte(tester);
+      final a = tester.getTopLeft(find.text('// SERVER'));
+      final b = tester.getTopLeft(find.text('// DATENBANK'));
+      expect(a.dx, b.dx);
+      expect(b.dy, greaterThan(a.dy));
+      pruefeLayout(tester, 'Betrieb 2.0');
+    });
+
+    testWidgets('"Prüfung neu starten" lädt Status (ohne Cache) und Ereignisse neu', (tester) async {
+      final env = await start(tester);
+      await betriebOeffnenMobil(tester);
+      final status0 = env.server.anfragen('GET /admin/status').length;
+      final audit0 = env.server.anfragen('GET /admin/audit').length;
+      await tippe(tester, find.byTooltip('Prüfung neu starten'));
+      expect(env.server.anfragen('GET /admin/status'), hasLength(status0 + 1));
+      expect(env.server.anfragen('GET /admin/status').last.query['fresh'], '1');
+      expect(env.server.anfragen('GET /admin/audit'), hasLength(audit0 + 1));
+    });
+
+    testWidgets('Desktop: Konto und Betrieb stapeln nicht', (tester) async {
+      await start(tester, groesse: const Size(1440, 900));
+      await tippe(tester, find.byIcon(Icons.settings_outlined));
+      expect(find.byType(ProfileScreen), findsOneWidget);
+      await tippe(tester, find.text('Betrieb'));
+      expect(find.byType(BetriebScreen), findsOneWidget);
+      expect(find.byType(ProfileScreen), findsNothing);
+      await tippe(tester, find.byIcon(Icons.settings_outlined));
+      expect(find.byType(ProfileScreen), findsOneWidget);
+      expect(find.byType(BetriebScreen), findsNothing);
+      // aus dem Profil heraus ersetzt "Betrieb" das Konto
+      await tippe(tester, find.text('Betrieb').last);
+      expect(find.byType(BetriebScreen), findsOneWidget);
+      expect(find.byType(ProfileScreen), findsNothing);
+    });
+
+    testWidgets('Step-up: nach Bestätigung wird das Protokoll geladen, nach Abbruch bleibt der Knopf', (tester) async {
+      final env = await angemeldeteUmgebung();
+      var bestaetigt = false;
+      env.server.json('GET /me', {...meJson(role: 'admin', passkeys: 1, password: true, totp: true), 'operator': true});
+      env.server.on('GET /admin/status', (_) => jsonAntwort(_status()));
+      env.server.on('GET /admin/audit', (_) => bestaetigt ? jsonAntwort({'items': [_eintrag(1)], 'nextCursor': null}) : fehler(403, 'step_up_required'));
+      env.server.json('POST /auth/step-up/passkey/options', {'challengeId': 'c1', 'options': {'challenge': 'abc'}});
+      env.server.on('POST /auth/step-up/passkey/verify', (_) {
+        bestaetigt = true;
+        return jsonAntwort({'stepUpAt': DateTime.now().toUtc().toIso8601String()});
+      });
+      await starteApp(tester, env);
+      await betriebOeffnenMobil(tester);
+      // Abbruch
+      await tippe(tester, find.text('Bestätigen und anzeigen'));
+      expect(find.byType(StepUpDialog), findsOneWidget);
+      await tippe(tester, find.text('Abbrechen'));
+      expect(find.byType(StepUpDialog), findsNothing);
+      expect(find.text('Bestätigen und anzeigen'), findsOneWidget);
+      expect(bestaetigt, isFalse);
+      // Bestätigung: die Anfrage wird wiederholt, die Ereignisse erscheinen
+      await tippe(tester, find.text('Bestätigen und anzeigen'));
+      await tippe(tester, find.text('Mit Passkey bestätigen'));
+      expect(bestaetigt, isTrue);
+      expect(find.byType(StepUpDialog), findsNothing);
+      expect(find.text('Bestätigen und anzeigen'), findsNothing);
+      expect(find.textContaining('Anna · 203.0.113.0/24'), findsWidgets);
+    });
+
+    testWidgets('Späte Antwort zu einem alten Filter wird verworfen (schneller Filterwechsel)', (tester) async {
+      final spaet = Completer<void>();
+      await start(
+        tester,
+        audit: (r) async {
+          if (r.query['category'] == 'fehler') {
+            // die Antwort kommt erst nach dem Wechsel zu "Anmeldung"
+            await spaet.future;
+            return {'items': [_eintrag(4, event: 'login_failed', category: 'fehler', person: null)], 'nextCursor': null};
+          }
+          return {'items': [_eintrag(5, event: 'logout')], 'nextCursor': null};
+        },
+      );
+      await betriebOeffnenMobil(tester);
+      await tippe(tester, find.text('Protokoll'));
+      await tippe(tester, find.text('Fehler'));
+      await tippe(tester, find.text('Anmeldung').last);
+      expect(find.text('Abmeldung'), findsOneWidget);
+      spaet.complete();
+      await warte(tester, 10);
+      expect(find.text('Abmeldung'), findsOneWidget);
+      expect(find.text('Fehlgeschlagene Anmeldung'), findsNothing);
     });
   });
 }

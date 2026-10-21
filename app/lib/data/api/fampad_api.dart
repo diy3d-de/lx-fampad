@@ -201,7 +201,8 @@ class FampadApi {
 
   // ----------------------------------------------------------- Betrieb (nur Betreiber, nur lesend)
 
-  Future<BetriebStatus> betriebStatus() async => BetriebStatus.fromJson(await client.get('/admin/status'));
+  /// [frisch] umgeht den kurzen Cache des Servers (der begrenzt das selbst auf höchstens eine Messung je 5 Sekunden).
+  Future<BetriebStatus> betriebStatus({bool frisch = false}) async => BetriebStatus.fromJson(await client.get(frisch ? '/admin/status?fresh=1' : '/admin/status'));
 
   /// Audit-Protokoll, seitenweise (Cursor des Servers); braucht ein frisches Step-up (403 step_up_required).
   Future<ProtokollSeite> betriebProtokoll({ProtokollArt art = ProtokollArt.alle, String? weiter, int limit = 50}) async =>

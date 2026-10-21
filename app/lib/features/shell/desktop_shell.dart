@@ -202,17 +202,21 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     }
   }
 
-  void _kontoOeffnen() {
-    final nav = _navKey.currentState;
-    if (nav == null || _beobachter.konto.value) return;
-    nav.push<void>(ProfileScreen.route());
+  /// Konto und Betrieb stapeln nicht: vor dem Öffnen werden die offenen Unterseiten (auch die andere der beiden) per `maybePop` geschlossen;
+  /// lehnt eine Seite das Schließen ab (ungespeicherte Eingaben), bleibt alles, wie es ist.
+  Future<void> _kontoOeffnen() async {
+    if (_navKey.currentState == null || _beobachter.konto.value) return;
+    if (_beobachter.betrieb.value && !await _unterseitenSchliessen()) return;
+    if (!mounted || _beobachter.konto.value) return;
+    unawaited(_navKey.currentState?.push<void>(ProfileScreen.route()));
   }
 
   /// Betreiber-Ansicht "Betrieb" (nur für den Betreiber in der Seitenleiste): wie das Konto eine Unterseite im Inhaltsbereich.
-  void _betriebOeffnen() {
-    final nav = _navKey.currentState;
-    if (nav == null || _beobachter.betrieb.value) return;
-    nav.push<void>(BetriebScreen.route());
+  Future<void> _betriebOeffnen() async {
+    if (_navKey.currentState == null || _beobachter.betrieb.value) return;
+    if (_beobachter.konto.value && !await _unterseitenSchliessen()) return;
+    if (!mounted || _beobachter.betrieb.value) return;
+    unawaited(_navKey.currentState?.push<void>(BetriebScreen.route()));
   }
 
   @override
