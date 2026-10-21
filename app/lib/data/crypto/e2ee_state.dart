@@ -724,10 +724,12 @@ class E2eeController extends Notifier<E2eeState> {
 
   /// Gerät ohne Schlüssel mit der Passwort-Sicherung verbinden (Step-up für den Abruf; UI). Der Schlüssel wird erst übernommen, wenn er zum
   /// frisch vom Server geholten öffentlichen Schlüssel passt ('_lokalUebernehmen').
-  Future<void> mitPasswortVerbinden(String passwort) async {
+  /// Gibt `true` zurück, wenn die Sicherung veraltet war (Passwort-Reset): Das Gerät ist verbunden, die Sicherung sollte jetzt erneuert werden.
+  Future<bool> mitPasswortVerbinden(String passwort) async {
     final crypto = await _krypto();
     final r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
     await _lokalUebernehmen(r.schluessel, r.keyVersion);
+    return r.veraltet;
   }
 
   /// Entfernt den Schlüssel von diesem Gerät (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden.

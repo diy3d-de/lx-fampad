@@ -608,7 +608,7 @@ void main() {
         expect(a.alleAnfragen, isNot(contains(_pwNeu)));
       });
 
-      testWidgets('ohne Schlüssel auf dem Gerät gibt es kein "Sicherung erneuern"; "Mit Passwort verbinden" nennt den Reset statt eines "früheren Schlüssels"', (tester) async {
+      testWidgets('ohne Schlüssel auf dem Gerät gibt es kein "Sicherung erneuern"; "Mit Passwort verbinden" erklärt die alte Sicherung statt eines "früheren Schlüssels"', (tester) async {
         final a = await veraltet(schluessel: false);
         await starteApp(tester, a.env, skala: skala);
         await zurVerschluesselung(tester);
@@ -617,7 +617,7 @@ void main() {
         await eingeben(tester, 'Passwort der Sicherung', _pwNeu);
         await tippe(tester, find.widgetWithText(FilledButton, 'Verbinden'));
         await warte(tester, 10);
-        expect(find.textContaining('Dein Passwort wurde zurückgesetzt. Die Sicherung muss auf einem Gerät mit Schlüssel erneuert werden'), findsOneWidget);
+        expect(find.textContaining('Deine alte Passwort-Sicherung funktioniert noch'), findsOneWidget);
         expect(find.textContaining('früheren Schlüssel'), findsNothing);
         expect(await a.speicher.lesen(personenschluesselName(fixIdAdmin)), isNull);
         pruefeLayout(tester, 'Mit Passwort verbinden: veraltet nach Reset');

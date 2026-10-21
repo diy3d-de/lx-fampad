@@ -293,6 +293,25 @@ Future<void> main() async {
         expect(srv.pwStand(_anna).stale, isFalse);
       }, timeout: const Timeout(Duration(minutes: 3)));
 
+      test('Nach einem Passwort-Reset (gleiche Schlüsselversion) öffnet die veraltete Sicherung mit dem ALTEN Passwort', () async {
+        final (:g, einr: _) = await bestehend();
+        await sichern(g);
+        srv.passwortZurueckgesetzt(_anna);
+        expect(srv.pwStand(_anna).stale, isTrue);
+        final b = await geraet();
+        // das (neue) Anmelde-Passwort ist nicht das der alten Sicherung: klare Meldung, nichts übernommen
+        await expectLater(
+          b.ctrl.mitPasswortVerbinden('Neues-Anmelde-Passwort-Wolke-Baum'),
+          throwsA(isA<CryptoFehler>().having((e) => e.art, 'art', CryptoFehlerArt.entschluesselung).having((e) => e.meldung, 'meldung', contains('alten Passwort-Sicherung'))),
+        );
+        expect(b.s.status, E2eeStatus.geraetNichtVerbunden);
+        expect(await b.speicher.lesen(personenschluesselName(_anna)), isNull);
+        expect(await b.ctrl.mitPasswortVerbinden(_pw), isTrue, reason: 'veraltet: die Oberfläche bietet das Erneuern an');
+        expect(b.s.status, E2eeStatus.bereit);
+        expect(b.ctrl.lokalerSchluessel!.exportieren(), g.ctrl.lokalerSchluessel!.exportieren());
+        expect(srv.pwStand(_anna).stale, isTrue, reason: 'das Verbinden ändert die Sicherung nicht; erneuert wird danach mit einem Passwort');
+      }, timeout: const Timeout(Duration(minutes: 3)));
+
       test('Abmelden (Wiper) entfernt auch den Vermerk', () async {
         final (:g, einr: _) = await bestehend();
         await sichern(g);

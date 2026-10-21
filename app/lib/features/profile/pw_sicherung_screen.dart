@@ -15,6 +15,7 @@ import '../../data/crypto/pw_regeln.dart';
 import '../../data/crypto/wortliste.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
+import 'geraet_verbinden_screens.dart';
 
 /// Ein Passwortfeld mit Auge (Standard verdeckt).
 class _PwFeld extends StatelessWidget {
@@ -223,6 +224,8 @@ class _PwVerbindenScreenState extends ConsumerState<PwVerbindenScreen> with Akti
     super.dispose();
   }
 
+  bool _veraltet = false;
+
   Future<void> _verbinden() async {
     final pw = _pw.text;
     final ok = await ausfuehren(() async {
@@ -230,23 +233,43 @@ class _PwVerbindenScreenState extends ConsumerState<PwVerbindenScreen> with Akti
       final c = ref.read(e2eeProvider.notifier);
       if (!mounted) return;
       final fertig = await mitStepUp(context, ref, () async {
-        await c.mitPasswortVerbinden(pw);
+        _veraltet = await c.mitPasswortVerbinden(pw);
         return true;
       });
       if (fertig != true) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Das Gerät wurde nicht verbunden. Bestätige mit Passkey oder Code.');
     });
     if (ok && mounted) {
-      zeigeHinweis(context, 'Gerät verbunden.');
-      Navigator.of(context).pop();
+      if (_veraltet) {
+        // Passwort-Reset: Die alte Sicherung hat geöffnet. Jetzt gleich die Erneuerung anbieten (mit einem neuen Passwort).
+        zeigeHinweis(context, 'Gerät verbunden. Erneuere jetzt deine Passwort-Sicherung.');
+        unawaited(Navigator.of(context).pushReplacement<void, void>(MaterialPageRoute(builder: (_) => const PwSicherungScreen())));
+      } else {
+        zeigeHinweis(context, 'Gerät verbunden.');
+        Navigator.of(context).pop();
+      }
     }
   }
 
   @override
-  Widget build(BuildContext context) => BildschirmSchutz(
+  Widget build(BuildContext context) {
+    final veraltet = ref.watch(e2eeProvider.select((s) => s.pwSicherungVeraltet));
+    final hatSicherung = ref.watch(e2eeProvider.select((s) => s.hatSicherung));
+    return _seite(veraltet, hatSicherung);
+  }
+
+  Widget _seite(bool veraltet, bool hatSicherung) => BildschirmSchutz(
     child: AuthSeite(
       label: '// passwort',
       titel: 'Mit Passwort verbinden',
       kinder: [
+        if (veraltet) ...[
+          const MeldungsBox(
+            'Dein Anmelde-Passwort wurde zurückgesetzt. Deine alte Passwort-Sicherung funktioniert noch mit dem Passwort, mit dem du sie angelegt hast. '
+            'Hast du es vergessen, nimm den Wiederherstellungsschlüssel oder ein anderes Gerät.',
+            fehler: false,
+          ),
+          const SizedBox(height: 12),
+        ],
         const Text(
           'Gib das Passwort ein, mit dem du deine Passwort-Sicherung angelegt hast. Es ist nicht automatisch dein Anmelde-Passwort.',
           style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
@@ -272,6 +295,20 @@ class _PwVerbindenScreenState extends ConsumerState<PwVerbindenScreen> with Akti
         ),
         const SizedBox(height: 16),
         HauptKnopf(text: 'Verbinden', icon: Icons.link, laeuft: laeuft, onPressed: _pw.text.isEmpty ? null : _verbinden),
+        if (hatSicherung) ...[
+          const SizedBox(height: 8),
+          ZweitKnopf(
+            text: 'Mit Wiederherstellungsschlüssel verbinden',
+            icon: Icons.key_outlined,
+            onPressed: laeuft ? null : () => Navigator.of(context).pushReplacement<void, void>(MaterialPageRoute(builder: (_) => const WiederherstellungVerbindenScreen())),
+          ),
+        ],
+        const SizedBox(height: 8),
+        ZweitKnopf(
+          text: 'Mit anderem Gerät verbinden',
+          icon: Icons.qr_code_scanner,
+          onPressed: laeuft ? null : () => Navigator.of(context).pushReplacement<void, void>(MaterialPageRoute(builder: (_) => const GeraetVerbindenScreen())),
+        ),
       ],
     ),
   );
