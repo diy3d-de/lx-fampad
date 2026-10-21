@@ -53,6 +53,9 @@ DateTime heuteTag([DateTime? jetzt]) {
   return DateTime.utc(w.year, w.month, w.day);
 }
 
+/// Uhr des Wochenrasters (Wanduhr der Familienzone als UTC): Linie der aktuellen Uhrzeit und "heute"; Tests setzen eine feste Uhr.
+final kalenderJetztProvider = Provider<DateTime Function()>((ref) => () => wandUhr(DateTime.now().toUtc(), familienOrt));
+
 class KalenderAuswahlNotifier extends Notifier<KalenderAuswahl> {
   @override
   KalenderAuswahl build() => KalenderAuswahl(ansicht: KalenderAnsicht.agenda, tag: heuteTag());

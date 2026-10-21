@@ -27,14 +27,16 @@ import 'calendar_state.dart';
 import 'kalender_widgets.dart';
 
 /// Öffnet den Editor. [v] null = neuer Termin (am Tag [tag]); sonst bearbeiten mit [umfang].
-Future<void> terminEditorOeffnen(BuildContext context, {Vorkommen? v, SerieUmfang umfang = SerieUmfang.alle, DateTime? tag}) =>
-    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => TerminEditor(vorkommen: v, umfang: umfang, tag: tag)));
+/// [startMinute] (nur neu): Beginn in Minuten seit 0:00 am Tag [tag] (Tipp auf eine leere Stelle der Wochenansicht), Ende eine Stunde später.
+Future<void> terminEditorOeffnen(BuildContext context, {Vorkommen? v, SerieUmfang umfang = SerieUmfang.alle, DateTime? tag, int? startMinute}) =>
+    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => TerminEditor(vorkommen: v, umfang: umfang, tag: tag, startMinute: startMinute)));
 
 class TerminEditor extends ConsumerStatefulWidget {
   final Vorkommen? vorkommen;
   final SerieUmfang umfang;
   final DateTime? tag;
-  const TerminEditor({super.key, this.vorkommen, this.umfang = SerieUmfang.alle, this.tag});
+  final int? startMinute;
+  const TerminEditor({super.key, this.vorkommen, this.umfang = SerieUmfang.alle, this.tag, this.startMinute});
 
   @override
   ConsumerState<TerminEditor> createState() => _TerminEditorState();
@@ -93,6 +95,13 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       _endTag = tag;
       _startZeit = TimeOfDay(hour: stunde, minute: 0);
       _endZeit = TimeOfDay(hour: stunde + 1, minute: 0);
+      final m = widget.startMinute;
+      if (m != null) {
+        // Beginn aus dem Wochenraster; das Ende (eine Stunde später) bleibt am selben Tag
+        final ende = (m + 60).clamp(0, 24 * 60 - 1);
+        _startZeit = TimeOfDay(hour: m ~/ 60, minute: m % 60);
+        _endZeit = TimeOfDay(hour: ende ~/ 60, minute: ende % 60);
+      }
       _startTagUrsprung = _startTag;
       _ganztaegigUrsprung = false;
       // Vorbelegung: heute vor zehn Jahren; am Schalttag (29.2.) auf den letzten Tag des Monats im Zieljahr begrenzt
