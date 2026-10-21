@@ -103,7 +103,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 
 | Methode, Pfad | Body | Antwort |
 | --- | --- | --- |
-| `POST /auth/invites/lookup` | `{ token }` | `{ invite: { role, pinRequired, requireApproval, familyName, reset, displayName?, email?, expiresAt } }` (`email` nur bei Reset-Einladungen und mit Schalter `E2EE_PW_BACKUP`); jeder ungültige Fall (unbekannt, benutzt, widerrufen, gesperrt, abgelaufen) ergibt dieselbe `400 invite_invalid` |
+| `POST /auth/invites/lookup` | `{ token }` | `{ invite: { role, pinRequired, requireApproval, familyName, reset, kind (standard \| password_reset), displayName?, email?, expiresAt } }` (`email` nur bei Reset-Einladungen und mit Schalter `E2EE_PW_BACKUP`); jeder ungültige Fall (unbekannt, benutzt, widerrufen, gesperrt, abgelaufen) ergibt dieselbe `400 invite_invalid` |
 | `POST /auth/invites/passkey/options` | `{ token, pin?, email?, displayName? }` | `{ challengeId, options }` (WebAuthn-Registrierungsoptionen, Challenge serverseitig, 5 min) |
 | `POST /auth/invites/passkey/complete` | `{ challengeId, response, client?, device?, label? }` | `{ member, status, recoveryCodes[10], session? }` |
 | `POST /auth/invites/password/start` | `{ token, pin?, email?, displayName?, password }` | `{ challengeId, totpSecret, totpUri }` (noch kein Konto; Passwort mindestens 12 Zeichen) |
@@ -133,6 +133,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | --- | --- | --- |
 | `POST /auth/logout` | alle | meldet das aktuelle Gerät ab (Cookie wird gelöscht); ohne Sitzung ein No-op |
 | `POST /auth/logout-all` | alle | alle Sitzungen und Geräte der Person |
+| `GET /me/security-events` | alle | eigene Sicherheitsereignisse (Passwort-Reset), siehe „Passwort zurücksetzen“ |
 | `POST /auth/step-up/passkey/options` | alle | `{ challengeId, options }` (nur die eigenen Passkeys) |
 | `POST /auth/step-up/passkey/verify` | alle | `{ challengeId, response }` → `{ stepUpAt }` |
 | `POST /auth/step-up/code` | alle | `{ totp }` oder `{ recoveryCode }` → `{ stepUpAt }` |
@@ -170,6 +171,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | `POST /members/:id/approve` | admin | gibt ein wartendes Mitglied frei |
 | `POST /members/:id/reject` | admin | lehnt ein wartendes Mitglied ab: löscht die Mitgliedschaft; das Konto nur, wenn keine weitere Mitgliedschaft besteht |
 | `POST /members/:id/reset` | admin, Step-up | `{ hours?, pin? }` (**keine E-Mail, kein Name**: das Konto bleibt) → `{ invite }`: widerruft Anmeldedaten, Codes und Sitzungen und erzeugt eine neue Einladung für dasselbe Konto; beim Annehmen entfallen `email` und `displayName` |
+| `POST /members/:id/password-reset` | admin, Step-up | nur mit Schalter `E2EE_PW_BACKUP`: Einmal-Link „neues Passwort“, der zweite Faktor der Person bleibt Pflicht (leichter als der Komplett-Reset oben; Einzelheiten im Abschnitt „Passwort zurücksetzen“) |
 | `DELETE /members/:id` | admin, Step-up | entfernt ein Mitglied (nicht sich selbst, nicht den letzten Admin): löscht die Mitgliedschaft samt Geräten und Sitzungen, widerruft offene Einladungen von und für die Person, schließt ihre WebSockets; das Konto nur, wenn keine weitere Mitgliedschaft besteht |
 
 ### Einladungen
@@ -177,7 +179,7 @@ Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.
 | Methode, Pfad | Rolle | Beschreibung |
 | --- | --- | --- |
 | `POST /invites` | admin (alle Rollen, Admin-Einladung mit Step-up), parent (nur `child`) | `{ role, hours? (1–168, Standard 24), pin? (bool), requireApproval? }` → `{ invite: { id, token, link, pin?, expiresAt, requireApproval } }`. **Token und PIN erscheinen nur in dieser Antwort.** `requireApproval` ist standardmäßig `false`; `true` verlangt die Freigabe des neuen Mitglieds durch einen Admin. |
-| `GET /invites` | admin (alle), parent (eigene) | `{ invites: [{ id, role, status: open\|used\|revoked\|locked\|expired, createdAt, expiresAt, hasPin, requireApproval, reset, createdBy, usedBy }] }` ohne Token und PIN |
+| `GET /invites` | admin (alle), parent (eigene) | `{ invites: [{ id, role, status: open\|used\|revoked\|locked\|expired, createdAt, expiresAt, hasPin, requireApproval, reset, kind (standard\|password_reset), createdBy, usedBy }] }` ohne Token und PIN |
 | `POST /invites/:id/revoke` | wie oben | widerruft eine offene Einladung; wer die Rolle der Einladung nicht (mehr) einladen darf, bekommt `403` |
 | `POST /invites/:id/extend` | wie oben | `{ hours }` → `{ expiresAt }`: setzt die Gültigkeit auf **das spätere** von bisheriger Ablaufzeit und jetzt + `hours` (**verkürzt nie**; höchstens 7 Tage je Aufruf); gesperrte Einladungen bleiben gesperrt; Rollenprüfung wie bei `revoke` |
 
@@ -231,7 +233,7 @@ Die App leitet aus E-Mail und Passwort per Argon2id (Salt und Profil: `POST /aut
 - **Einladung zum Zurücksetzen:** `POST /auth/invites/lookup` liefert bei einer Reset-Einladung (und nur mit Schalter) zusätzlich `email` des Kontos: die App braucht sie für den Salt der Passwort-Ableitung.
 - **Fehlercodes neu:** `403 legacy_login_disabled`, `409 password_change_needs_update`.
 
-**Warnung Rückschalten:** Wird `E2EE_PW_BACKUP` ausgeschaltet, `AUTH_LEGACY_PASSWORD_LOGIN` auf `false` gesetzt oder der Server auf einen Stand vor PR 4 zurückgestellt, können sich Konten mit authKey-Passwort (Platzhalter im Klartext-Hash) nicht mehr per Passwort anmelden, nur noch per Passkey oder Wiederherstellungscode; PR 4b (Admin-Passwort-Reset) ist der Rückweg. Die App sendet für solche Konten nie Klartext. Reihenfolge beim Ausrollen: **erst den Server, dann die Web-App und die APK**.
+**Warnung Rückschalten:** Wird `E2EE_PW_BACKUP` ausgeschaltet, `AUTH_LEGACY_PASSWORD_LOGIN` auf `false` gesetzt oder der Server auf einen Stand vor PR 4 zurückgestellt, können sich Konten mit authKey-Passwort (Platzhalter im Klartext-Hash) nicht mehr per Passwort anmelden, nur noch per Passkey oder Wiederherstellungscode; Der Passwort-Reset (PR 4b, Abschnitt „Passwort zurücksetzen“) ist der Rückweg. Die App sendet für solche Konten nie Klartext. Reihenfolge beim Ausrollen: **erst den Server, dann die Web-App und die APK**.
 
 **Rollout-Hinweis (wichtig):** Setzt ein Mitglied sein Passwort mit `authKey` neu (Passwort ändern, einrichten) oder wird ein Konto per Reset-Einladung neu eingerichtet, ist der Klartext-Hash ein Platzhalter: **alle noch nicht aktualisierten Geräte (App 0.5.x/0.6.0) dieses Mitglieds können sich dann auch vor dem Stichtag nicht mehr mit Passwort anmelden.** Reihenfolge deshalb: erst auf allen Geräten die neue App, dann das Passwort ändern. Den Stichtag (`AUTH_LEGACY_PASSWORD_LOGIN=false`) erst setzen, wenn `GET /members/password-modes` keinen `legacy`-Eintrag mehr zeigt (oder nach PR 4b mit Admin-Passwort-Reset als Rückweg).
 
@@ -244,6 +246,38 @@ Die App leitet aus E-Mail und Passwort per Argon2id (Salt und Profil: `POST /aut
 Ein Schlüsselwechsel (`PUT /me/keys`) löscht die Passwort-Sicherung **nicht**, sondern setzt die aktuelle auf `stale` (die Schlüsselversion zählt hoch) und eine unbestätigte auf `superseded`; die alte Sicherung (`key_backups`) entfällt wie bisher.
 
 **Pflichten des Clients (für die App):** (1) Beim Verschlüsseln den Satz (`id`, `memKiB`, `ops`, Salt) und `userId`, `keyVersion` als **AAD** binden. (2) Nach dem Entschlüsseln den öffentlichen Schlüssel gegen `person_keys` (Server) **und** den TOFU-Speicher prüfen, bei Abweichung nichts übernehmen. (3) Eine **feste Untergrenze** im Client (Profil `argon2id-v1`, 65536 KiB, 3 Durchgänge), nie Parameter aus der Serverantwort herabsetzen (Downgrade-Schutz). (4) `stale` nie zur Wiederherstellung benutzen und `verified` nur nach erfolgreicher Round-Trip-Probe senden.
+
+### Passwort zurücksetzen (PR 4b, Schalter `E2EE_PW_BACKUP`)
+
+Rückweg für Ausgesperrte und für alle, die ihr Passwort vergessen haben. **Nur mit `E2EE_PW_BACKUP=true`:** ohne Schalter gibt es die Routen nicht (`404 not_found`); die Ereignisliste und der Komplett-Reset (`POST /members/:id/reset`) bleiben. Alle Wege setzen **nur das Passwort** neu (Eingabe immer als `authKey`, nie Klartext) und ändern nie einen Schlüssel: Authenticator (TOTP), Passkeys und Wiederherstellungs-Codes bleiben, der Server kann keinen Personenschlüssel neu verpacken (er kennt weder Passwort noch `kek`).
+
+| Methode, Pfad | Rolle | Beschreibung |
+| --- | --- | --- |
+| `POST /members/:id/password-reset` | admin, Step-up | `{ hours? (1–168, Standard 24), pin? (bool) }` → `{ invite: { id, token, link, pin?, expiresAt, requireApproval } }`: Einmal-Link „neues Passwort“ für ein **anderes** Mitglied der eigenen Familie (Einladung `kind = password_reset`). Eigene ID: `409 cannot_reset_self` (der Admin umgeht so nicht seinen eigenen zweiten Faktor); fremde oder unbekannte ID `404`; Konto ohne Passwort `409 no_password`, ohne TOTP `409 no_second_factor`, gesperrt oder wartend `409 not_active`. Ein neuer Link ersetzt einen offenen früheren. Das Konto bleibt bis zum Einlösen **unverändert nutzbar** (Sitzungen, altes Passwort; ein ungenutzter Link sperrt nie aus). Die Person wird sofort benachrichtigt (Push ohne Inhalt, Ereignis `password_reset_requested`). Audit `password_reset_requested` |
+| `POST /auth/invites/password-reset/start` | ohne Anmeldung | `{ token, pin?, authKey }` (Token nur im Body) → `{ challengeId }`: prüft Link und PIN (wie jede Einladung: gezählt vor dem Vergleich, 5 Fehlversuche sperren) und merkt den Prüfwert des neuen `authKey`. Jeder ungültige Fall `400 invite_invalid`. Die Routen für neue Konten und Passkeys (`/auth/invites/password/start`, `/passkey/options`) lehnen einen solchen Link mit `400 invite_invalid` ab, umgekehrt auch ein Komplett-Reset-Link diese Route |
+| `POST /auth/invites/password-reset/complete` | ohne Anmeldung | `{ challengeId, code, client?, device? }` → `{ member, status: "active", recoveryCodes: [], session }`: `code` ist ein **gültiger TOTP-Code der Person** (der vorhandene Authenticator; ein Wiederherstellungs-Code oder der Code eines anderen Kontos zählt nicht, falsch `400 invalid_code`, gezählt gegen Konto und IP). Link-Verbrauch, TOTP-Zeitschritt (Replay-Schutz) und neues Passwort in **einer** Transaktion; parallele Einlösungen: genau eine gewinnt |
+| `POST /auth/password-reset/recovery` | ohne Anmeldung | `{ email, code (Wiederherstellungs-Code), authKey, client?, device? }` → `{ user, session, recoveryCodesRemaining }`: „Passwort vergessen?“ mit einem der 10 Codes (wird verbraucht, atomar in der Transaktion des Resets; scheitert der Reset, bleibt der Code gültig). Fehlerantwort, Sperren und Zähler wie bei `POST /auth/login/recovery` (`401 invalid_credentials` für falschen Code, unbekannte und gesperrte Konten gleich). Konto ohne Passwort `409 no_password` |
+| `POST /auth/password-reset/passkey` | ohne Anmeldung | `{ email, challengeId, response, authKey, client?, device? }` (Challenge von `POST /auth/login/passkey/options`) → wie oben: „Passwort vergessen?“ mit einem Passkey. Die E-Mail muss zum Konto des Passkeys gehören (`409 email_mismatch`): der Salt der Ableitung hängt an der E-Mail, ein anderes Passwort könnte nie zur Anmeldung dienen |
+| `GET /me/security-events` | alle | `{ events: [{ id, kind, via, actorName, byAdmin, createdAt }] }`: die **eigenen** Sicherheitsereignisse, neueste zuerst, höchstens 50, nie Inhalte oder IP. `kind`: `password_reset_requested` (Admin hat einen Link erstellt), `password_reset_done`, `account_reset_requested` (Komplett-Reset); `via`: `admin`, `recovery_code`, `passkey`; `actorName` der auslösende Admin (sonst `null` = du selbst). Aufbewahrung ein Jahr |
+
+**Nie mit TOTP allein, nie per E-Mail-Link ohne zweiten Nachweis.** „Passwort vergessen?“ verlangt einen Wiederherstellungs-Code oder einen Passkey; der Admin-Link verlangt zusätzlich den TOTP-Code der Person. Der Wiederherstellungs-Code ist schon ohne den Reset ein vollwertiger Anmeldeweg (`POST /auth/login/recovery`), der Reset gibt ihm keine zusätzliche Macht.
+
+**Wirkung (eine Transaktion, `applyPasswordReset`):** altes Passwort widerrufen, neues mit `authKey` anlegen (Platzhalter im Klartext-Hash, Klartext-Anmeldung nicht mehr möglich, wie beim Passwortwechsel), offene Reset-Links der Person widerrufen, **alle Sitzungen, Refresh-Familien und Geräte der Person beenden** (WebSockets schließen, Push-Endpunkte werden gelöscht), Ereignis `password_reset_done` und Audit `password_reset_done` schreiben; danach stellt der Server die neue Sitzung aus. **Passwort-Sicherung des Schlüssels:** die aktuelle Zeile (`active`) wird `stale` (**nie gelöscht**), eine unbestätigte (`pending`) `superseded`; `GET /me/key-backup-pw` liefert sie weiter mit `state: stale` (mit dem alten Passwort bleibt sie lesbar). Die App legt auf einem Gerät mit Personenschlüssel danach selbst eine neue Sicherung an (`PUT`, Round-Trip, `verified`): die `stale`-Zeile wird dabei `superseded`. Der Wiederherstellungsschlüssel und die QR-Übertragung gelten unverändert. Auch ein Komplett-Reset (`POST /members/:id/reset`) setzt die Sicherung beim Neu-Einrichten auf `stale`.
+
+**Benachrichtigung:** Bei jedem Reset (`password_reset_requested`, `password_reset_done`, Komplett-Reset) liest der Server **vor** dem Widerruf die Push-Themen der aktiven Geräte der Person und weckt sie danach ohne Inhalt (fester Wecker, kein Text, kein Hinweis auf den Anlass; `PushService.weckeThemen`). Die App holt daraufhin `GET /me/security-events` und meldet Neues lokal:
+- *Vordergrund:* Dialog „Sicherheitshinweis“ (bleibt, bis er bestätigt ist).
+- *Hintergrund:* lokale Benachrichtigung auf dem **eigenen Kanal „Sicherheit“** (hohe Wichtigkeit, nie der Chat-Kanal) mit festem Text „An deinem Konto hat sich etwas geändert“ (nie Namen); Tippen öffnet Profil > Sicherheitsereignisse. Der Stand „gemeldet bis“ (`sicherheitSeit`) rückt erst vor, wenn die Benachrichtigung wirklich angezeigt wurde; sonst holt der nächste Start der App es nach.
+- *Sitzung durch den Reset widerrufen:* Kommt der Wecker, die Abfrage scheitert aber mit „Sitzung abgelehnt“ obwohl das Zugangstoken laut Uhr noch gilt, zeigt die App „Du wurdest abgemeldet. Dein Passwort wurde zurückgesetzt …“ und merkt sich einen dauerhaften Hinweis (Banner auf der Anmeldeseite, Dialog nach dem Anmelden, bis bestätigt). Ein schlicht abgelaufenes Zugangstoken löst das nie aus. Grenze: Dieselbe Abfolge entsteht auch, wenn das Gerät auf andere Weise abgemeldet wurde (zum Beispiel „überall abmelden“); der Text sagt dann bewusst „melde dich mit einem Wiederherstellungscode an, wenn du das nicht warst“.
+- Weckrufe prüfen höchstens alle 5 Minuten, der Start der App immer.
+Ohne Push bleibt die Ereignisliste im Profil.
+
+**Raten am Link:** Falsche TOTP-Codes am Reset-Link zählen am Link selbst (gemeinsamer Zähler mit der PIN): nach 5 Fehlversuchen ist er gesperrt (`locked_at`, Audit `invite_locked` mit `reason: totp`); der Admin erzeugt einen neuen. Zusätzlich gelten die Sperren (IP, Konto, Paar).
+
+**Veraltete Sicherung:** `GET /me/keys` enthält `pwBackupStale: true` (sonst fehlt das Feld), solange die aktuelle Passwort-Sicherung veraltet ist; die App bietet dann auf einem Gerät mit Schlüssel „Sicherung erneuern“ an, ohne die protokollierte Sicherung selbst abzurufen. Die `stale`-Zeile bleibt **bewusst mit Step-up abrufbar** (`GET /me/key-backup-pw`, `state: stale`), damit jemand, der sein altes Passwort noch kennt, den Verlauf zurückholen kann; Risiko und Begründung in `PROJEKTBESCHREIBUNG.md` 9a.
+
+**Rollout-Hinweis:** Der Link „neues Passwort“ funktioniert nur mit `authKey` (App ab dieser Version); eine alte App zeigt den Update-Hinweis, sie schickt nie Klartext. Auch bei ausgeschaltetem Klartext-Stichtag (`AUTH_LEGACY_PASSWORD_LOGIN=false`) ist der Reset der Rückweg für Ausgesperrte: Wer sein Passwort vergessen hat, bekommt einen Link vom Admin oder nutzt „Passwort vergessen?“; es braucht dafür keinen alten Klartext-Weg.
+
+**Fehlercodes neu:** `409 cannot_reset_self`, `409 no_second_factor`, `409 not_active`, `409 email_mismatch`.
 
 ## Sync `POST /api/v1/sync`
 

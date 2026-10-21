@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error.dart';
 import '../auth/auth_state.dart';
+import '../auth/reset_hinweis.dart';
 import '../database_provider.dart';
 import '../standort/standort_abruf.dart';
 import '../standort/standort_hinweis.dart';
@@ -16,6 +17,7 @@ import '../sync_state.dart';
 import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
 import 'push_wecker.dart';
+import 'sicherheits_pruefer.dart';
 
 /// Schlüssel in sync_meta (verschwindet mit der lokalen Datenbank beim Abmelden).
 const kPushAn = 'pushAn';
@@ -338,6 +340,9 @@ class PushController extends Notifier<PushZustand> {
     try {
       await ref.read(standortAbrufProvider).abfragen();
     } catch (_) {}
+    // Sicherheitshinweis (Passwort-Reset für dein Konto): der Wecker enthält nichts, die App holt die eigenen Ereignisse
+    if (!ref.mounted) return;
+    await ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: appImVordergrund(), hinweis: ref.read(resetHinweisProvider.notifier), mindestAbstand: kSicherheitMindestabstand);
   }
 
   /// Beim Abmelden (Hook in auth_state.dart): Endpunkt beim Server löschen (nur wenn die Sitzung noch gilt) und beim Verteiler abmelden.

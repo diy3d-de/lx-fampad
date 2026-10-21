@@ -11,7 +11,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../src/auth/context.js';
 import * as schema from '../src/db/schema.js';
-import { adminPassword, migrationsFolder, World } from './helpers.js';
+import { adminPassword, kindSpalteEntfernen, kindSpalteErgaenzen, migrationsFolder, World } from './helpers.js';
 
 const key = () => randomBytes(32).toString('base64url');
 
@@ -33,6 +33,7 @@ describe('Migration 0017 (authKey) additiv auf Stand 0016', () => {
     let world: World | undefined;
     try {
       await migrateLite(db as never, { migrationsFolder: alt });
+      await kindSpalteErgaenzen(db);
       world = await World.create(db, { E2EE_PW_BACKUP: 'true' });
       const a = await adminPassword(world);
       await a.client.post('/api/v1/me/keys', { publicEncKey: key(), publicSignKey: key() });
@@ -47,6 +48,7 @@ describe('Migration 0017 (authKey) additiv auf Stand 0016', () => {
       for (const t of tabellen) vorher.set(t, await summe(t));
       await world.close();
       world = undefined;
+      await kindSpalteEntfernen(db);
 
       await migrateLite(db as never, { migrationsFolder });
       for (const t of tabellen) expect(await summe(t), t).toBe(vorher.get(t));

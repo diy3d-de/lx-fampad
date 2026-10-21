@@ -11,6 +11,7 @@ import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken, sha256Hex } from './crypto.js';
 import { createInvite, isDowngrade, revokeOpenInvitesBy, type CreatedInvite } from './invites.js';
 import { findAccountById, type Account } from './login.js';
+import { recordSecurityEvent, wakeAfterCommit, wakeTopics } from './password-reset.js';
 import { assertNotLocked, ipKey, recordFailure } from './lockout.js';
 import { countRemainingCodes, createRecoveryCodes } from './recovery.js';
 import type { MemberView } from './register.js';
@@ -268,7 +269,9 @@ export async function resetMember(
 ): Promise<CreatedInvite> {
   const target = await findAccountById(ctx, input.userId, input.familyId);
   if (!target) throw notFound();
-  return ctx.db.transaction(async (tx) => {
+  // Push-Themen vor dem Widerruf lesen (der löscht die Endpunkte)
+  const topics = await wakeTopics(ctx.db, input.userId);
+  const invite = await ctx.db.transaction(async (tx) => {
     const now = ctx.now();
     await tx.update(credentials).set({ revokedAt: now }).where(and(eq(credentials.userId, input.userId), isNull(credentials.revokedAt)));
     await tx.execute(sql`delete from recovery_codes where user_id = ${input.userId}`);
@@ -281,8 +284,11 @@ export async function resetMember(
       meta,
     );
     await writeAudit(ctx, tx, { event: 'member_reset', familyId: input.familyId, actorId: input.actorId, ip: meta.ip, detail: { target: input.userId } });
+    await recordSecurityEvent(ctx, tx, { familyId: input.familyId, userId: input.userId, kind: 'account_reset_requested', via: 'admin', actorId: input.actorId });
     return invite;
   });
+  wakeAfterCommit(ctx, input.familyId, input.userId, topics);
+  return invite;
 }
 
 // ---------- Geräte und Abmelden ----------

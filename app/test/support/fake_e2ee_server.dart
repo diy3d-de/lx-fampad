@@ -81,7 +81,7 @@ class FakeE2eeServer {
 
   FakeE2eeServer(this.server, {this.standardId}) {
     server
-      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version})))
+      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true})))
       ..on('POST /me/keys', (r) => _mit(r, (p) {
         if (p.enc != null) return fehler(409, 'keys_exist');
         p.enc = r.json['publicEncKey'] as String;
@@ -258,6 +258,14 @@ class FakeE2eeServer {
     p.pwVerifiziert = true;
     p.pwPBlob = null;
     p.pwId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
+  }
+
+  /// Wie der Server nach einem Passwort-Reset: die aktuelle Passwort-Sicherung wird `stale` (nie gelöscht), eine unbestätigte verfällt.
+  void passwortZurueckgesetzt(String id) {
+    final p = _personen[id]!;
+    if (p.pwBlob != null) p.pwStale = true;
+    p.pwPBlob = null;
+    p.pwPId = null;
   }
 
   /// Zustand der Passwort-Sicherung einer Person (für Prüfungen).

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import type { Db } from '../src/auth/context.js';
 import * as schema from '../src/db/schema.js';
 import { epocheId, wrapId } from '../src/sync/entities/chat-ids.js';
-import { Client, migrationsFolder, World } from './helpers.js';
+import { Client, migrationsFolder, World, kindSpalteEntfernen, kindSpalteErgaenzen } from './helpers.js';
 import { createFamily, Device, upsert, type Json } from './sync-kit.js';
 
 const key = () => randomBytes(32).toString('base64url');
@@ -42,6 +42,7 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
   try {
     await migrateTo(alt);
     expect((await db.execute(sql`select to_regclass('public.key_backups_pw') as t`)).rows[0]).toEqual({ t: null });
+    await kindSpalteErgaenzen(db);
 
     // ----- Stand v0.5.4 mit Daten -----
     const w1 = await World.create(db, { SYNC_RATE_LIMIT_MAX: '100000' });
@@ -88,7 +89,7 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
     const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' order by 1`)).rows).map((r) => r.tablename);
     const summen = async () => {
       const out: Record<string, string> = {};
-      for (const t of tabellen) out[t] = ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg(x::text, '|' order by x::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
+      for (const t of tabellen) out[t] = ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${t === 'invites' ? " - 'kind'" : ''})::text, '|' order by (to_jsonb(x)${t === 'invites' ? " - 'kind'" : ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
       return out;
     };
     const vorher = await summen();
@@ -96,7 +97,8 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
     await w1.close();
     welten.pop();
 
-    // ----- Migration 0014 -----
+    // ----- Migration 0014 (und alle späteren) -----
+    await kindSpalteEntfernen(db);
     await migrateTo(migrationsFolder);
     const nachher = await summen();
     for (const t of tabellen) expect(nachher[t], `Tabelle ${t} unverändert`).toBe(vorher[t]);

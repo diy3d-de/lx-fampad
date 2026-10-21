@@ -6,6 +6,7 @@ import { logoutCurrent, logoutEverywhere } from '../auth/account.js';
 import { lookupInvite } from '../auth/invites.js';
 import { finishPasskeyRegistration, finishPasswordRegistration, startPasskeyRegistration, startPasswordRegistration } from '../auth/register.js';
 import { getKdfParams } from '../auth/keys-pw.js';
+import { finishPasswordResetRedeem, resetPasswordWithPasskey, resetPasswordWithRecoveryCode, startPasswordResetRedeem } from '../auth/password-reset.js';
 import { refreshSession } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import { AppError } from '../errors.js';
@@ -80,6 +81,41 @@ export function registerAuthRoutes(app: FastifyInstance, config: Config, auth: A
     const r = await finishPasswordRegistration(ctx, body, meta(req));
     return { member: r.member, status: r.status, recoveryCodes: r.recoveryCodes, ...(r.session ? { session: sessionResponse(ctx, reply, r.session) } : {}) };
   });
+
+  // ----- Passwort zurücksetzen (nur mit Schalter E2EE_PW_BACKUP; sonst 404 wie jede unbekannte Route) -----
+  if (config.e2eePwBackup) {
+    // Link des Admins einlösen: Link (+PIN) und neuer authKey, danach ein Code des vorhandenen zweiten Faktors (TOTP)
+    app.post('/api/v1/auth/invites/password-reset/start', strikt, async (req) => {
+      const body = parse(z.object({ token: tokenSchema, pin: pinSchema.optional(), authKey: authKeySchema }).strict(), req.body);
+      return startPasswordResetRedeem(ctx, body, meta(req));
+    });
+
+    app.post('/api/v1/auth/invites/password-reset/complete', strikt, async (req, reply) => {
+      const body = parse(z.object({ challengeId: uuid, code: codeSchema, client: clientSchema, device: deviceSchema.optional() }).strict(), req.body);
+      const r = await finishPasswordResetRedeem(ctx, body, meta(req));
+      return { member: r.member, status: r.status, recoveryCodes: r.recoveryCodes, session: sessionResponse(ctx, reply, r.session) };
+    });
+
+    // "Passwort vergessen?": nur mit einem Wiederherstellungs-Code oder einem Passkey, nie mit TOTP allein
+    app.post('/api/v1/auth/password-reset/recovery', strikt, async (req, reply) => {
+      const body = parse(
+        z.object({ email: emailSchema, code: boundedString(8, 40), authKey: authKeySchema, client: clientSchema, device: deviceSchema.optional() }).strict(),
+        req.body,
+      );
+      const r = await resetPasswordWithRecoveryCode(ctx, body, meta(req));
+      return { user: await userBody(auth, r.account.userId), session: sessionResponse(ctx, reply, r.session), recoveryCodesRemaining: r.recoveryCodesRemaining };
+    });
+
+    // die Challenge kommt von POST /auth/login/passkey/options
+    app.post('/api/v1/auth/password-reset/passkey', strikt, async (req, reply) => {
+      const body = parse(
+        z.object({ email: emailSchema, challengeId: uuid, response: authenticationResponseSchema, authKey: authKeySchema, client: clientSchema, device: deviceSchema.optional() }).strict(),
+        req.body,
+      );
+      const r = await resetPasswordWithPasskey(ctx, body, meta(req));
+      return { user: await userBody(auth, r.account.userId), session: sessionResponse(ctx, reply, r.session), recoveryCodesRemaining: r.recoveryCodesRemaining };
+    });
+  }
 
   // ----- Anmeldung -----
   // Parameter der Passwort-Ableitung vor der Anmeldung (nur mit Schalter E2EE_PW_BACKUP; sonst 404 wie jede unbekannte Route).

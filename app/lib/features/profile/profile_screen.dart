@@ -25,6 +25,7 @@ import 'password_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
 import 'push_screen.dart';
+import 'sicherheit_ereignisse_screen.dart';
 import 'verschluesselung_screen.dart';
 import 'passkeys_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -310,6 +311,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
         VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
+        EinstellungsZeile(icon: Icons.shield_outlined, titel: 'Sicherheitsereignisse', untertitel: 'passwort-resets und hinweise', onTap: () => _oeffne(const SicherheitEreignisseScreen())),
         EinstellungsZeile(
           icon: Icons.phone_android,
           titel: 'Angemeldete Geräte',

@@ -64,7 +64,7 @@ export async function findAccountById(ctx: AuthContext, userId: string, familyId
 const invalidCredentials = () => new AppError(401, 'invalid_credentials', 'Die Anmeldedaten sind nicht korrekt.');
 const pending = () => new AppError(403, 'account_pending', 'Dein Konto wartet noch auf die Freigabe durch einen Admin.');
 
-async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, email: string | undefined, account: Account | null, via?: string): Promise<never> {
+export async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, email: string | undefined, account: Account | null, via?: string): Promise<never> {
   await recordLoginFailure(ctx, meta.ip, email);
   await writeAudit(ctx, ctx.db, {
     event: 'login_failed',
@@ -97,7 +97,7 @@ async function finishLogin(
   return established;
 }
 
-interface TotpHit {
+export interface TotpHit {
   credentialId: string;
   step: number;
 }
@@ -121,7 +121,7 @@ export async function checkUserTotp(ctx: AuthContext, userId: string, code: stri
 }
 
 /** Verbraucht den Zeitschritt atomar (Replay-Schutz auch bei parallelen Anfragen); false, wenn er schon vergeben ist. */
-async function claimTotpStep(ctx: AuthContext, exec: Executor, hit: TotpHit): Promise<boolean> {
+export async function claimTotpStep(ctx: AuthContext, exec: Executor, hit: TotpHit): Promise<boolean> {
   const claimed = await exec
     .update(credentials)
     .set({ lastTimeStep: hit.step, lastUsedAt: ctx.now() })
@@ -318,11 +318,15 @@ async function verifyPasskeyAssertion(
   return claimed.length > 0;
 }
 
-export async function finishPasskeyLogin(
+/**
+ * Prüft eine Passkey-Anmeldung (Challenge, Assertion, signCount) und liefert das Konto. Gemeinsam für die Anmeldung und das Zurücksetzen des
+ * Passworts mit Passkey; jeder Fehlschlag antwortet gleich (401 invalid_credentials).
+ */
+export async function authenticatePasskey(
   ctx: AuthContext,
-  input: { challengeId: string; response: AuthenticationResponseJSON; client: SessionKind; device?: DeviceInput | undefined },
+  input: { challengeId: string; response: AuthenticationResponseJSON },
   meta: RequestMeta,
-): Promise<Established> {
+): Promise<Account> {
   await assertNotLocked(ctx, [ipKey(ctx, meta.ip)]);
   const taken = await takeChallenge(ctx, input.challengeId, 'login');
   const passkey = taken ? await loadPasskey(ctx, input.response.id) : null;
@@ -332,6 +336,15 @@ export async function finishPasskeyLogin(
   // fehlschlagen lässt, soll das Konto nicht sperren können (nur die IP-Sperre gilt)
   const ok = await verifyPasskeyAssertion(ctx, passkey, input.response, taken.challenge, meta);
   if (!ok) return failLogin(ctx, meta, 'passkey', undefined, account);
+  return account;
+}
+
+export async function finishPasskeyLogin(
+  ctx: AuthContext,
+  input: { challengeId: string; response: AuthenticationResponseJSON; client: SessionKind; device?: DeviceInput | undefined },
+  meta: RequestMeta,
+): Promise<Established> {
+  const account = await authenticatePasskey(ctx, input, meta);
   const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'passkey', meta });
   if (!est) return failLogin(ctx, meta, 'passkey', undefined, account);
   return est;

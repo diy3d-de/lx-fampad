@@ -55,13 +55,16 @@ class _MitgliederTab extends ConsumerStatefulWidget {
   ConsumerState<_MitgliederTab> createState() => _MitgliederTabState();
 }
 
-enum _Aktion { rolle, familienrolle, zuruecksetzen, bildZuruecksetzen, entfernen, freigeben, ablehnen }
+enum _Aktion { rolle, familienrolle, passwortZuruecksetzen, zuruecksetzen, bildZuruecksetzen, entfernen, freigeben, ablehnen }
 
 class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZustand<_MitgliederTab> {
   List<UserDto>? _mitglieder;
 
   /// Zustand der Passwort-Anmeldung je Mitglied (nur lesend; null: der Server bietet es nicht an). Nur für die kleine Markierung "altes Passwort-Verfahren".
   PasswortModi? _passwortModi;
+
+  /// Bietet der Server das leichte "Passwort zurücksetzen" (Link, zweiter Faktor bleibt) an?
+  bool _passwortResetDa = false;
 
   @override
   void initState() {
@@ -79,10 +82,12 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
     } catch (_) {
       modi = null;
     }
+    final resetDa = await api.pwSicherungVerfuegbar();
     if (mounted) {
       setState(() {
         _mitglieder = m;
         _passwortModi = modi;
+        _passwortResetDa = resetDa;
       });
     }
   }
@@ -142,6 +147,19 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         );
         if (!ja || !mounted) return;
         await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).mitgliedEntfernen(m.id)), erfolg: 'Mitglied entfernt.');
+      case _Aktion.passwortZuruecksetzen:
+        final opt = await _passwortResetWaehlen(m);
+        if (opt == null || !mounted) return;
+        var fertig = false;
+        final geklappt = await ausfuehren(() async {
+          final inv = await mitStepUp(context, ref, () => ref.read(apiProvider).passwortZuruecksetzenLink(m.id, stunden: opt.$1, pin: opt.$2));
+          if (inv == null || !mounted) return;
+          fertig = true;
+          await Navigator.of(context).push<void>(
+            MaterialPageRoute(builder: (_) => EinladungErstelltSeite(einladung: inv, rolle: m.role, fuer: m.displayName, passwortReset: true)),
+          );
+        });
+        if (geklappt && fertig && mounted) await neuLadenMitHinweis(_ladeListe);
       case _Aktion.zuruecksetzen:
         final opt = await _zuruecksetzenWaehlen(m);
         if (opt == null || !mounted) return;
@@ -199,6 +217,53 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
       ) ??
       false;
 
+  /// Gültigkeit und PIN für den Link "Passwort zurücksetzen" (leicht: Konto, Zugänge und Verlauf bleiben).
+  Future<(int, bool)?> _passwortResetWaehlen(UserDto m) => showDialog<(int, bool)>(useRootNavigator: false,
+    context: context,
+    builder: (ctx) {
+      var stunden = 24;
+      var pin = false;
+      return StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: const Text('Passwort zurücksetzen?'),
+          scrollable: true,
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${m.displayName} bekommt einen Link und legt damit ein neues Passwort fest. '
+                'Zur Sicherheit braucht die Person dafür auch den Code aus ihrer Authenticator-App: Du selbst kannst das Konto damit nicht übernehmen. '
+                'Die App von ${m.displayName} muss aktuell sein (mit einer alten App klappt der Link nicht und zeigt „ungültig“ oder verlangt „Zugang zurücksetzen“). '
+                'Authenticator, Passkeys, Wiederherstellungscodes und der Chat-Verlauf bleiben. Alle Geräte von ${m.displayName} werden erst abgemeldet, wenn das neue Passwort gesetzt ist. '
+                '${m.displayName} sieht den Vorgang in den Sicherheitsereignissen und bekommt eine Benachrichtigung.',
+                style: const TextStyle(color: kTextMuted, height: 1.4),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                children: [
+                  for (final (t, h) in kGueltigkeiten) ChoiceChip(label: Text(t), selected: stunden == h, onSelected: (_) => setD(() => stunden = h)),
+                ],
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                value: pin,
+                onChanged: (v) => setD(() => pin = v),
+                title: const Text('PIN verlangen'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Abbrechen')),
+            TextButton(onPressed: () => Navigator.of(ctx).pop((stunden, pin)), child: const Text('Link erstellen')),
+          ],
+        ),
+      );
+    },
+  );
+
   /// Gültigkeit und PIN für die Einladung zum Zurücksetzen.
   Future<(int, bool)?> _zuruecksetzenWaehlen(UserDto m) => showDialog<(int, bool)>(useRootNavigator: false,
     context: context,
@@ -215,7 +280,8 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
             children: [
               Text(
                 'Alle Anmeldedaten, Codes und Sitzungen von ${m.displayName} werden widerrufen. '
-                'Die Person richtet ihren Zugang mit einer neuen Einladung neu ein. Das Konto bleibt erhalten.',
+                'Die Person richtet ihren Zugang mit einer neuen Einladung neu ein. Das Konto bleibt erhalten.'
+                '${_passwortResetDa ? ' Verschlüsselte Chats kann sie danach nur lesen, wenn sie noch ein Gerät mit ihrem Schlüssel oder ihren Wiederherstellungsschlüssel hat. Willst du nur das Passwort neu setzen, nimm „Passwort zurücksetzen“.' : ''}',
                 style: const TextStyle(color: kTextMuted, height: 1.4),
               ),
               const SizedBox(height: 12),
@@ -263,13 +329,13 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
           if (wartend.isNotEmpty) ...[
             const MonoLabel('// wartet auf freigabe', color: kWarn),
             const SizedBox(height: 8),
-            for (final m in wartend) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id]),
+            for (final m in wartend) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id], passwortResetDa: _passwortResetDa),
             const SizedBox(height: 12),
           ],
           if (liste != null) ...[
             MonoLabel('// mitglieder (${aktiv.length})'),
             const SizedBox(height: 8),
-            for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id]),
+            for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id], passwortResetDa: _passwortResetDa),
             if (aktiv.isEmpty) const EmptyState(icon: Icons.group_outlined, title: 'Keine Mitglieder', hint: 'Lade jemanden ein.'),
           ],
         ],
@@ -285,7 +351,10 @@ class _MitgliedKarte extends StatelessWidget {
 
   /// Zustand der Passwort-Anmeldung (nur Admins, nur wenn der Server es liefert); "legacy" bekommt eine kleine Markierung.
   final PasswortModus? passwortModus;
-  const _MitgliedKarte({required this.m, required this.ich, required this.onAktion, this.passwortModus});
+
+  /// Der Server bietet "Passwort zurücksetzen" an (nur sinnvoll für Mitglieder mit Passwort).
+  final bool passwortResetDa;
+  const _MitgliedKarte({required this.m, required this.ich, required this.onAktion, this.passwortModus, this.passwortResetDa = false});
 
   @override
   Widget build(BuildContext context) {
@@ -324,6 +393,7 @@ class _MitgliedKarte extends StatelessWidget {
                         const PopupMenuItem(value: _Aktion.rolle, child: Text('Rolle ändern')),
                         const PopupMenuItem(value: _Aktion.familienrolle, child: Text('Familienrolle ändern')),
                         if (m.avatar != null) const PopupMenuItem(value: _Aktion.bildZuruecksetzen, child: Text('Profilbild zurücksetzen')),
+                        if (passwortResetDa && passwortModus != PasswortModus.keins) const PopupMenuItem(value: _Aktion.passwortZuruecksetzen, child: Text('Passwort zurücksetzen')),
                         const PopupMenuItem(value: _Aktion.zuruecksetzen, child: Text('Zugang zurücksetzen')),
                         const PopupMenuItem(value: _Aktion.entfernen, child: Text('Entfernen')),
                       ],
@@ -445,7 +515,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
                               children: [
                                 RollenPille(i.role.label),
                                 RollenPille(i.status.label, farbe: i.status == InviteStatus.open ? kTerminal : kTextMuted),
-                                if (i.reset) const RollenPille('zurücksetzen', farbe: kWarn),
+                                if (i.art == EinladungsArt.passwordReset) const RollenPille('neues passwort', farbe: kWarn) else if (i.reset) const RollenPille('zurücksetzen', farbe: kWarn),
                                 if (i.hasPin) const RollenPille('pin', farbe: kTextMuted),
                                 if (i.requireApproval) const RollenPille('freigabe', farbe: kTextMuted),
                               ],

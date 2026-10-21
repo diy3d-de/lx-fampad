@@ -26,6 +26,7 @@ import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, ge
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { passwordModes } from '../auth/authkey.js';
+import { createPasswordResetInvite, listSecurityEvents } from '../auth/password-reset.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
@@ -60,6 +61,9 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     await setFamilyRole(ctx, p, p.userId, parse(familyRoleBody, req.body).familyRole, meta(req));
     return { ok: true };
   });
+
+  // Eigene Sicherheitsereignisse (Passwort-Reset angefordert/durchgeführt), neueste zuerst
+  app.get('/api/v1/me/security-events', async (req) => ({ events: await listSecurityEvents(ctx, await auth.requireSession(req)) }));
 
   app.get('/api/v1/me/credentials', async (req) => ({ credentials: await listCredentials(ctx, await auth.requireSession(req)) }));
 
@@ -220,6 +224,16 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     const invite = await resetMember(ctx, { familyId: p.familyId, userId: id, actorId: p.userId, hours: body.hours, withPin: body.pin }, meta(req));
     return { invite };
   });
+
+  // Admin: Einmal-Link "neues Passwort" für ein anderes Mitglied (nur mit Schalter E2EE_PW_BACKUP; Step-up Pflicht; der zweite Faktor der Person bleibt)
+  if (config.e2eePwBackup) {
+    app.post('/api/v1/members/:id/password-reset', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      const { id } = parse(idParams, req.params);
+      const body = parse(z.object({ hours: z.number().int().min(1).max(maxHours).default(ctx.config.auth.inviteDefaultHours), pin: z.boolean().default(false) }).strict(), req.body);
+      return { invite: await createPasswordResetInvite(ctx, p, { userId: id, hours: body.hours, withPin: body.pin }, meta(req)) };
+    });
+  }
 
   app.delete('/api/v1/members/:id', async (req) => {
     const p = await auth.requireSession(req);

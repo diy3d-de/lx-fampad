@@ -44,6 +44,21 @@ class PwWechselErgebnis {
   const PwWechselErgebnis({required this.sicherungAktualisiert, required this.sicherungVeraltet});
 }
 
+/// Ausgang der automatischen neuen Passwort-Sicherung nach einem Passwort-Reset.
+enum PwNachReset {
+  /// Es gab keine Sicherung, die der Reset veraltet hätte (oder der Server bietet sie nicht an): nichts zu tun.
+  nichtNoetig,
+
+  /// Die Sicherung wurde mit dem neuen Passwort neu angelegt, geprüft und bestätigt.
+  erneuert,
+
+  /// Auf diesem Gerät liegt der Personenschlüssel nicht: der Verlauf bleibt zunächst unlesbar, es wird NIE von selbst ein neuer Schlüssel angelegt.
+  keinSchluesselAufGeraet,
+
+  /// Das Anlegen ist gescheitert (Netz, Bestätigung abgelaufen o. Ä.): die Sicherung lässt sich unter Profil > Verschlüsselung neu anlegen.
+  fehlgeschlagen,
+}
+
 /// Lädt libsodium einmal (Tests ersetzen den Provider durch einen Fake).
 /// Ohne automatische Wiederholung (Riverpod 3 würde Fehler sonst mit Wartezeiten wiederholen): Scheitert das Laden, zeigt die Seite sofort "nicht verfügbar".
 final cryptoProviderProvider = FutureProvider<CryptoProvider>((ref) => SodiumCryptoProvider.laden(), retry: (_, _) => null);
@@ -124,6 +139,9 @@ class E2eeState {
   /// Schlüsselversion, für die auf DIESEM Gerät eine vollständig verifizierte Passwort-Sicherung vermerkt ist (null: keine).
   final int? pwSicherungVersion;
 
+  /// Der Server meldet die aktuelle Passwort-Sicherung als veraltet (nach einem Passwort-Reset): auf einem Gerät mit Schlüssel "Sicherung erneuern".
+  final bool pwSicherungVeraltet;
+
   /// Familien-Sicherheitscode (leer, solange niemand Schlüssel hat).
   final String sicherheitscode;
 
@@ -137,6 +155,7 @@ class E2eeState {
     this.vertrauenDefekt = false,
     this.pwSicherungVerfuegbar = false,
     this.pwSicherungVersion,
+    this.pwSicherungVeraltet = false,
     this.sicherheitscode = '',
   });
 
@@ -293,6 +312,7 @@ class E2eeController extends Notifier<E2eeState> {
         hatSicherung: eigene.hatSicherung,
         pwSicherungVerfuegbar: pwVerfuegbar,
         pwSicherungVersion: pwVersion,
+        pwSicherungVeraltet: pwVerfuegbar && eigene.pwSicherungVeraltet,
         mitglieder: mitglieder,
         warnungen: warnungen,
         // nur aktive Mitglieder: wartende gehören noch nicht zur Familie
@@ -656,6 +676,50 @@ class E2eeController extends Notifier<E2eeState> {
       }
     }
     return PwWechselErgebnis(sicherungAktualisiert: id != null, sicherungVeraltet: hatSicherung && id == null);
+  }
+
+  /// Nach einem Passwort-Reset (neues Passwort = neuer authKey UND neuer kek): Der Server hat die bisherige Passwort-Sicherung als veraltet (`stale`) markiert,
+  /// nichts gelöscht; der Wiederherstellungsschlüssel und die QR-Übertragung gelten unverändert. Hat DIESES Gerät den Personenschlüssel, legt die App mit dem
+  /// neuen Passwort selbst eine neue Sicherung an (derselbe Ablauf wie sonst: lokale Probe, Ablegen, Round-Trip, Bestätigen). Ohne Schlüssel auf dem Gerät
+  /// passiert nichts am Schlüssel (kein neuer Personenschlüssel von selbst; der Verlauf wird später über Chat-Partner freigegeben). Wirft nie.
+  Future<PwNachReset> sicherungNachResetErneuern(String passwort) async {
+    try {
+      final uid = _userId;
+      if (!await _api.pwSicherungVerfuegbar()) return PwNachReset.nichtNoetig;
+      PwSicherungDto? aktuell;
+      try {
+        aktuell = await _api.pwSicherungAbrufen();
+      } on ApiException catch (e) {
+        if (e.code != 'not_found') rethrow;
+      }
+      if (aktuell == null || !aktuell.stale) return PwNachReset.nichtNoetig;
+      // Der Vermerk "auf diesem Gerät verifiziert" gilt für die veraltete Sicherung nicht mehr
+      try {
+        await _speicher.loeschen(_pwVermerkName(uid));
+      } on Object {
+        // nur eine Anzeige
+      }
+      final crypto = await _krypto();
+      final lokal = _lokal ?? await _lokalLaden(crypto);
+      if (lokal == null) {
+        try {
+          await laden();
+        } on Object {
+          // nur die Anzeige
+        }
+        return PwNachReset.keinSchluesselAufGeraet;
+      }
+      final entwurf = await pwSicherungVorbereiten(passwort);
+      await pwSicherungAblegen(entwurf, passwort);
+      return PwNachReset.erneuert;
+    } on Object {
+      try {
+        await laden();
+      } on Object {
+        // nur die Anzeige
+      }
+      return PwNachReset.fehlgeschlagen;
+    }
   }
 
   /// Gerät ohne Schlüssel mit der Passwort-Sicherung verbinden (Step-up für den Abruf; UI). Der Schlüssel wird erst übernommen, wenn er zum

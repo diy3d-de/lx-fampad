@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 import type { Db } from '../src/auth/context.js';
 import * as schema from '../src/db/schema.js';
 import { grantOperator } from '../src/operator/service.js';
-import { addMember, adminPassword, migrationsFolder, World } from './helpers.js';
+import { addMember, adminPassword, kindSpalteEntfernen, kindSpalteErgaenzen, migrationsFolder, World } from './helpers.js';
 
 function ordnerBis0017(): string {
   const raw = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string }[] };
@@ -30,6 +30,7 @@ describe('Migration 0018 (Betreiber) additiv auf Stand 0017', () => {
     let world: World | undefined;
     try {
       await migrateLite(db as never, { migrationsFolder: alt });
+      await kindSpalteErgaenzen(db);
       world = await World.create(db);
       const a = await adminPassword(world);
       await addMember(world, a.client, 'child', 'kind@example.org');
@@ -40,6 +41,7 @@ describe('Migration 0018 (Betreiber) additiv auf Stand 0017', () => {
       await world.close();
       world = undefined;
 
+      await kindSpalteEntfernen(db);
       await migrateLite(db as never, { migrationsFolder });
       for (const t of tabellen) expect(await summe(t), t).toBe(vorher.get(t));
       expect((await db.execute(sql`select count(*)::int as n from operators`)).rows[0]).toMatchObject({ n: 0 });

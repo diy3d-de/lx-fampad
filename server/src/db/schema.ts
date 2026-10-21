@@ -344,8 +344,41 @@ export const invites = pgTable(
     requireApproval: boolean('require_approval').notNull().default(false),
     /** Wann der Ablauf ins Audit-Log geschrieben wurde (Aufräum-Job). */
     expiredLoggedAt: timestamp('expired_logged_at', { withTimezone: true }),
+    /**
+     * `standard`: neues Konto bzw. vollständiges Zurücksetzen (alle Anmeldedaten werden neu eingerichtet).
+     * `password_reset`: nur neues Passwort für ein bestehendes Konto; TOTP, Passkeys und Wiederherstellungs-Codes bleiben (der zweite Faktor ist Pflicht).
+     */
+    kind: text('kind').notNull().default('standard'),
   },
-  (t) => [index('invites_family_idx').on(t.familyId), check('invites_pin_attempts_ck', sql`${t.pinAttempts} >= 0`)],
+  (t) => [
+    index('invites_family_idx').on(t.familyId),
+    check('invites_pin_attempts_ck', sql`${t.pinAttempts} >= 0`),
+    check('invites_kind_ck', sql`${t.kind} in ('standard', 'password_reset') and (${t.kind} = 'standard' or ${t.userId} is not null)`),
+  ],
+);
+
+/**
+ * Sicherheitsereignisse einer Person, die sie selbst sehen soll (Passwort-Reset angefordert oder durchgeführt). Nur anhängen, ohne
+ * Inhalte und ohne IP; `via` sagt, auf welchem Weg (Admin-Link, Wiederherstellungscode, Passkey), `actor_id` wer es ausgelöst hat.
+ */
+export const securityEvents = pgTable(
+  'security_events',
+  {
+    id: id(),
+    familyId: familyRef(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull(),
+    via: text('via').notNull(),
+    actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('security_events_user_idx').on(t.userId, t.createdAt),
+    check('security_events_kind_ck', sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested')`),
+    check('security_events_via_ck', sql`${t.via} in ('admin', 'recovery_code', 'passkey')`),
+  ],
 );
 
 export const devices = pgTable(
@@ -508,7 +541,7 @@ export const webauthnChallenges = pgTable(
   'webauthn_challenges',
   {
     id: id(),
-    /** login | register_passkey | register_password | add_passkey | add_password | step_up */
+    /** login | register_passkey | register_password | reset_password | add_passkey | add_password | step_up */
     purpose: text('purpose').notNull(),
     challenge: text('challenge').notNull(),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }),

@@ -21,13 +21,21 @@ export interface PublicKeys {
 
 const notFound = () => new AppError(404, 'not_found');
 
-export async function getOwnKeys(ctx: AuthContext, p: SessionPrincipal): Promise<{ keys: PublicKeys | null; hasBackup: boolean }> {
+/**
+ * Eigener Stand. `pwBackupStale: true` steht nur, wenn die aktuelle Passwort-Sicherung veraltet ist (nach einem Passwort-Reset oder Schlüsselwechsel): die App bietet
+ * dann "Sicherung erneuern" an, ohne die (protokollierte, Step-up-pflichtige) Sicherung selbst abzurufen. Sonst fehlt das Feld.
+ */
+export async function getOwnKeys(ctx: AuthContext, p: SessionPrincipal): Promise<{ keys: PublicKeys | null; hasBackup: boolean; pwBackupStale?: true }> {
   const [k] = await ctx.db
     .select({ publicEncKey: personKeys.publicEncKey, publicSignKey: personKeys.publicSignKey, keyVersion: personKeys.keyVersion })
     .from(personKeys)
     .where(eq(personKeys.userId, p.userId));
   const [b] = await ctx.db.select({ v: keyBackups.keyVersion }).from(keyBackups).where(eq(keyBackups.userId, p.userId));
-  return { keys: k ?? null, hasBackup: b !== undefined && k !== undefined && b.v === k.keyVersion };
+  // nur mit Schalter E2EE_PW_BACKUP (ohne ihn gibt es die Passwort-Sicherung nicht und die Antwort bleibt wie bisher)
+  const [stale] = ctx.config.e2eePwBackup
+    ? await ctx.db.select({ id: keyBackupsPw.id }).from(keyBackupsPw).where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'stale')))
+    : [];
+  return { keys: k ?? null, hasBackup: b !== undefined && k !== undefined && b.v === k.keyVersion, ...(stale ? { pwBackupStale: true as const } : {}) };
 }
 
 /** Erstes Schlüsselpaar der Person anlegen; gibt es schon eines, 409 (Wechsel nur über rotateKeys mit Step-up). */

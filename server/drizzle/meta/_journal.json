@@ -134,6 +134,13 @@
       "when": 1792593317000,
       "tag": "0018_betreiber",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792595434304,
+      "tag": "0019_passwort_reset",
+      "breakpoints": true
     }
   ]
 }

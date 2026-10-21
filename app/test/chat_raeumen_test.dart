@@ -18,6 +18,8 @@ class _Anzeige implements ChatAnzeigePort {
   @override
   Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl}) async => true;
   @override
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text}) async => false;
+  @override
   Future<void> entfernen(int id) async => entfernt.add(id);
 }
 

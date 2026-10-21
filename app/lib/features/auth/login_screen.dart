@@ -10,6 +10,9 @@ import '../../data/auth/passwort_anmeldung.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 import 'invite_screen.dart';
+import '../../data/database_provider.dart';
+import '../../data/push/sicherheits_pruefer.dart';
+import 'passwort_vergessen_screen.dart';
 
 enum _Schritt { start, code, wiederherstellung }
 
@@ -32,9 +35,25 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   bool _mitWiederherstellungscode = false;
   bool? _passkeysDa;
 
+  /// Bietet der Server "Passwort vergessen?" an (neues Passwort mit Wiederherstellungscode oder Passkey)?
+  bool _resetMoeglich = false;
+
+  /// Die App hat im Hintergrund erfahren, dass die Sitzung nach einem Passwort-Reset widerrufen wurde: dauerhafter Hinweis, bis die Person ihn bestätigt.
+  bool _abgemeldetHinweis = false;
+
   @override
   void initState() {
     super.initState();
+    unawaited(
+      ref.read(appDatabaseProvider).metaLesen(kSicherheitAbgemeldetSchluessel).then((v) {
+        if (mounted && v != null) setState(() => _abgemeldetHinweis = true);
+      }, onError: (Object _) {}),
+    );
+    unawaited(
+      ref.read(apiProvider).serverFaehigkeiten().then((f) {
+        if (mounted) setState(() => _resetMoeglich = f.pwBackup && f.authKey);
+      }, onError: (Object _) {}),
+    );
     unawaited(
       ref.read(passkeyServiceProvider).verfuegbar().then((v) {
         if (mounted) setState(() => _passkeysDa = v);
@@ -106,13 +125,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   @override
   Widget build(BuildContext context) {
     final hinweis = ref.watch(authProvider.select((s) => s.hinweis));
-    return AuthSeite(
+    return BildschirmSchutz(
+      child: AuthSeite(
       zurueck: false,
       maxBreite: 420,
       kinder: [
         const SizedBox(height: 24),
         const MarkenKopf(),
         const SizedBox(height: 28),
+        if (_abgemeldetHinweis) ...[
+          const MeldungsBox('Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde. Warst du das nicht, melde dich mit einem Wiederherstellungscode an und sage es einem Admin.'),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: LinkKnopf(
+              'Verstanden',
+              onPressed: () {
+                setState(() => _abgemeldetHinweis = false);
+                unawaited(ref.read(appDatabaseProvider).metaLoeschen(kSicherheitAbgemeldetSchluessel));
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+        ],
         if (hinweis != null && fehler == null) ...[MeldungsBox(hinweis, fehler: false), const SizedBox(height: 16)],
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 16)],
         // AutofillGroup (im Web ein <form>): Passwortmanager erkennen Anmeldename und Passwort, und Chrome meldet kein
@@ -139,6 +173,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
           StatusPill(serverKennzeile()),
         ],
       ),
+    ),
     );
   }
 
@@ -180,6 +215,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     const SizedBox(height: 16),
     ZweitKnopf(text: 'Weiter', onPressed: laeuft ? null : _weiter),
     const SizedBox(height: 4),
+    if (_resetMoeglich)
+      Center(
+        child: LinkKnopf(
+          'Passwort vergessen? Neues Passwort festlegen',
+          onPressed: laeuft ? null : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PasswortVergessenScreen(email: _email.text.trim()))),
+        ),
+      ),
     Center(
       child: LinkKnopf('Passwort verloren? Mit Wiederherstellungscode anmelden', onPressed: laeuft ? null : () => _zu(_Schritt.wiederherstellung)),
     ),

@@ -125,15 +125,18 @@ class EinladungErstelltSeite extends StatelessWidget {
   final CreatedInvite einladung;
   final Role? rolle;
   final String? fuer;
-  const EinladungErstelltSeite({super.key, required this.einladung, this.rolle, this.fuer});
+
+  /// Link "Passwort zurücksetzen" (nur ein neues Passwort, der Authenticator der Person bleibt Pflicht) statt einer Einladung.
+  final bool passwortReset;
+  const EinladungErstelltSeite({super.key, required this.einladung, this.rolle, this.fuer, this.passwortReset = false});
 
   @override
   Widget build(BuildContext context) {
     final bis = DateFormat('d. MMM yyyy, HH:mm', 'de_DE').format(einladung.expiresAt.toLocal());
     return BildschirmSchutz(
       child: AuthSeite(
-        label: '// einladung bereit',
-        titel: fuer == null ? 'Einladung erstellt' : 'Zurücksetzen für $fuer',
+        label: passwortReset ? '// passwort zurücksetzen' : '// einladung bereit',
+        titel: passwortReset ? 'Neues Passwort für $fuer' : (fuer == null ? 'Einladung erstellt' : 'Zurücksetzen für $fuer'),
         kinder: [
           Wrap(
             spacing: 8,
@@ -144,6 +147,14 @@ class EinladungErstelltSeite extends StatelessWidget {
               if (einladung.requireApproval) const RollenPille('freigabe nötig', farbe: kWarn),
             ],
           ),
+          if (passwortReset) ...[
+            const SizedBox(height: 12),
+            Text(
+              '$fuer öffnet den Link (oder scannt den QR-Code), legt ein neues Passwort fest und bestätigt mit dem Code aus der Authenticator-App. '
+              'Ohne diesen Code funktioniert der Link nicht.',
+              style: const TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
+            ),
+          ],
           const SizedBox(height: 16),
           QrAnzeige(daten: einladung.link, beschreibung: 'QR-Code der Einladung'),
           const SizedBox(height: 4),
