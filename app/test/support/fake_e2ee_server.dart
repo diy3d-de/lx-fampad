@@ -260,6 +260,14 @@ class FakeE2eeServer {
     p.pwId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
   }
 
+  /// Wie der Server nach einem Passwort-Reset: die aktuelle Passwort-Sicherung wird `stale` (nie gelöscht), eine unbestätigte verfällt.
+  void passwortZurueckgesetzt(String id) {
+    final p = _personen[id]!;
+    if (p.pwBlob != null) p.pwStale = true;
+    p.pwPBlob = null;
+    p.pwPId = null;
+  }
+
   /// Zustand der Passwort-Sicherung einer Person (für Prüfungen).
   ({String? blob, String? pendingBlob, bool verifiziert, bool stale, int version, int anzahl}) pwStand(String id) {
     final p = _personen[id]!;

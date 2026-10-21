@@ -5,10 +5,10 @@ import { AppError } from '../errors.js';
 import type { AuthContext } from './context.js';
 import { ipKey } from './lockout.js';
 
-export type ChallengePurpose = 'login' | 'register_passkey' | 'register_password' | 'add_passkey' | 'add_password' | 'step_up';
+export type ChallengePurpose = 'login' | 'register_passkey' | 'register_password' | 'reset_password' | 'add_passkey' | 'add_password' | 'step_up';
 
 /** Vorgänge, die ohne Anmeldung eine Challenge erzeugen (Anmeldung, Registrierung per Einladung). */
-const UNAUTHENTICATED: ChallengePurpose[] = ['login', 'register_passkey', 'register_password'];
+const UNAUTHENTICATED: ChallengePurpose[] = ['login', 'register_passkey', 'register_password', 'reset_password'];
 
 /**
  * Begrenzt die Challenge-Erzeugung ohne Anmeldung, damit die Tabelle nicht ungebremst wächst: je IP (IPv6: /64) und insgesamt

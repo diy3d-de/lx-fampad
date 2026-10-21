@@ -40,6 +40,8 @@ export interface CreateInviteInput {
   requireApproval?: boolean | undefined;
   /** Zurücksetzen: Einladung für ein bestehendes Konto. */
   userId?: string | undefined;
+  /** `password_reset`: nur neues Passwort (zweiter Faktor bleibt); braucht `userId`. */
+  kind?: 'standard' | 'password_reset' | undefined;
   createdBy: string | null;
 }
 
@@ -77,6 +79,7 @@ export async function createInvite(ctx: AuthContext, exec: Executor, input: Crea
       expiresAt,
       userId: input.userId ?? null,
       requireApproval,
+      kind: input.kind ?? 'standard',
     })
     .returning({ id: invites.id });
   if (!row) throw new Error('Einladung nicht angelegt');
@@ -85,7 +88,7 @@ export async function createInvite(ctx: AuthContext, exec: Executor, input: Crea
     familyId: input.familyId,
     actorId: input.createdBy,
     ip: meta.ip,
-    detail: { inviteId: row.id, role: input.role, hours: input.hours, pin: !!pin, requireApproval, reset: !!input.userId },
+    detail: { inviteId: row.id, role: input.role, hours: input.hours, pin: !!pin, requireApproval, reset: !!input.userId, kind: input.kind ?? 'standard' },
   });
   return { id: row.id, token, link: inviteLink(ctx, token), ...(pin ? { pin } : {}), expiresAt, requireApproval };
 }
@@ -109,6 +112,8 @@ export interface InviteView {
   hasPin: boolean;
   requireApproval: boolean;
   reset: boolean;
+  /** `password_reset`: nur neues Passwort; sonst `standard`. */
+  kind: 'standard' | 'password_reset';
   createdBy: string | null;
   usedBy: string | null;
 }
@@ -122,6 +127,7 @@ const view = (ctx: AuthContext, r: InviteRow): InviteView => ({
   hasPin: r.pinHash !== null,
   requireApproval: r.requireApproval,
   reset: r.userId !== null,
+  kind: r.kind === 'password_reset' ? 'password_reset' : 'standard',
   createdBy: r.createdBy,
   usedBy: r.usedBy,
 });
@@ -221,6 +227,8 @@ export interface InviteLookup {
   requireApproval: boolean;
   familyName: string;
   reset: boolean;
+  /** `password_reset`: nur ein neues Passwort für ein bestehendes Konto (der zweite Faktor wird mit dem vorhandenen Code bestätigt). */
+  kind: 'standard' | 'password_reset';
   displayName?: string;
   /** Nur bei einer Reset-Einladung und mit Schalter E2EE_PW_BACKUP: die App braucht die E-Mail des Kontos für den Salt der Passwort-Ableitung (authKey). */
   email?: string;
@@ -248,6 +256,7 @@ export async function lookupInvite(ctx: AuthContext, token: string, meta: Reques
     requireApproval: row.requireApproval,
     familyName: fam?.name ?? '',
     reset: row.userId !== null,
+    kind: row.kind === 'password_reset' ? 'password_reset' : 'standard',
     ...(displayName ? { displayName } : {}),
     ...(email ? { email } : {}),
     expiresAt: row.expiresAt,

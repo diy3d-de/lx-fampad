@@ -14,6 +14,7 @@ import { consumeInvite, INVALID_INVITE, verifyInvite } from './invites.js';
 import { assertNotLocked, ipKey, loginKeys, recordFailure, recordLoginFailure } from './lockout.js';
 import { assertPasswordInputAllowed, AUTHKEY_ONLY, authKeyDigest, saveAuthKeyDigest } from './authkey.js';
 import { assertPasswordPolicy, hashPassword } from './password.js';
+import { markPwBackupsStaleAfterReset } from './keys-pw.js';
 import { createRecoveryCodes } from './recovery.js';
 import { establishSession, type DeviceInput, type Established, type SessionKind } from './sessions.js';
 import { checkTotp, newTotpSecret, totpUri } from './totp.js';
@@ -60,6 +61,8 @@ async function resolveIdentity(
   meta: RequestMeta,
 ): Promise<Identity> {
   const invite = await verifyInvite(ctx, input.token, input.pin, meta);
+  // eine Einladung nur für ein neues Passwort richtet nie neue Anmeldedaten ein (eigene Routen in password-reset.ts)
+  if (invite.kind !== 'standard') throw INVALID_INVITE();
   if (invite.userId) {
     const [u] = await ctx.db.select().from(users).where(eq(users.id, invite.userId));
     if (!u) throw INVALID_INVITE();
@@ -239,6 +242,8 @@ async function completeRegistration(
         email = m.email;
         displayName = m.displayName;
         await consumeInvite(ctx, tx, id.inviteId, id.userId);
+        // alle Anmeldedaten sind neu: eine vorhandene Passwort-Sicherung ist mit dem neuen Passwort nicht zu öffnen (stale, nie löschen)
+        await markPwBackupsStaleAfterReset(ctx, tx, id.userId);
       } else {
         colorIndex = await nextColorIndex(tx, familyId);
         status = inviteRow.requireApproval ? 'pending' : 'active';

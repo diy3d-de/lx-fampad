@@ -276,6 +276,9 @@ class AuthController extends Notifier<AuthState> {
     ),
   );
 
+  /// Meldet mit dem Ergebnis eines Passwort-Resets an ("Passwort vergessen?": Server setzt das Passwort und stellt die Sitzung aus).
+  Future<void> mitResetAnmelden(Future<LoginResult> Function() schritt) => _anmelden(schritt);
+
   Future<void> mitWiederherstellungscodeAnmelden({required String email, required String code}) =>
       _anmelden(() => _api.wiederherstellungAnmelden(email: email, code: code));
 

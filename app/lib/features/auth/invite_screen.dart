@@ -12,6 +12,10 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/auth/passwort_anmeldung.dart';
+import '../../data/auth/passwort_reset.dart';
+import '../../data/auth/reset_hinweis.dart';
+import '../../data/crypto/e2ee_state.dart';
+import '../../data/push/sicherheits_pruefer.dart';
 import '../../data/crypto/pw_regeln.dart';
 import '../../ui/widgets.dart';
 import 'app_download.dart';
@@ -42,6 +46,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
   final _pw = TextEditingController();
   final _pw2 = TextEditingController();
   final _totpCode = TextEditingController();
+  final _resetCode = TextEditingController();
 
   String? _token;
   InviteLookup? _info;
@@ -57,7 +62,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
 
   @override
   void dispose() {
-    for (final c in [_link, _pin, _name, _email, _pw, _pw2, _totpCode]) {
+    for (final c in [_link, _pin, _name, _email, _pw, _pw2, _totpCode, _resetCode]) {
       c.dispose();
     }
     super.dispose();
@@ -159,6 +164,34 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     await _registriert(r);
   });
 
+  /// Link des Admins "neues Passwort": PIN, neues Passwort und ein Code des vorhandenen Authenticators (der zweite Faktor bleibt Pflicht).
+  Future<void> _passwortResetEinloesen() async {
+    final auth = ref.read(authProvider.notifier);
+    final e2ee = ref.read(e2eeProvider.notifier);
+    final hinweis = ref.read(resetHinweisProvider.notifier);
+    final pruefer = ref.read(sicherheitsPrueferProvider);
+    final navigator = Navigator.of(context);
+    final pw = _pw.text;
+    final ok = await ausfuehren(() async {
+      final info = _info!;
+      if (info.pinRequired && !RegExp(r'^\d{6}$').hasMatch(_pin.text)) {
+        throw const EingabeFehler('Bitte gib die 6-stellige PIN ein, die du getrennt zum Link bekommen hast.');
+      }
+      if (pw.length < 12) throw const EingabeFehler('Das Passwort braucht mindestens 12 Zeichen.');
+      if (pw != _pw2.text) throw const EingabeFehler('Die beiden Passwörter sind nicht gleich.');
+      if (!RegExp(r'^\d{6}$').hasMatch(_resetCode.text)) throw const EingabeFehler('Bitte gib den 6-stelligen Code aus deiner Authenticator-App ein.');
+      final mail = info.email;
+      if (mail == null || mail.isEmpty) throw const EingabeFehler('Dieser Link kann auf diesem Server gerade nicht eingelöst werden. Bitte frage einen Admin.');
+      final r = await ref
+          .read(passwortResetProvider)
+          .einladungEinloesen(token: _token!, pin: info.pinRequired ? _pin.text : null, email: mail, anzeigename: info.displayName, passwort: pw, code: _resetCode.text);
+      await auth.registrierungAbschliessen(r);
+    });
+    if (!ok) return;
+    unawaited(sicherungNachReset(e2ee, hinweis, pw, pruefer: pruefer));
+    navigator.popUntil((r) => r.isFirst);
+  }
+
   /// Konto ist angelegt: Wiederherstellungscodes zeigen, erst danach die Sitzung übernehmen.
   Future<void> _registriert(RegistrationResult r) async {
     if (!mounted) return;
@@ -180,6 +213,8 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     final Widget inhalt;
     if (_start != null) {
       inhalt = _totpStufe(_start!);
+    } else if (_info != null && _info!.art == EinladungsArt.passwordReset) {
+      inhalt = _resetFormular(_info!);
     } else if (_info != null) {
       inhalt = _formular(_info!);
     } else {
@@ -349,6 +384,81 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
         ),
       ],
     ),
+    );
+  }
+
+  // ------------------------------------------------------------ Link "neues Passwort"
+
+  Widget _resetFormular(InviteLookup info) {
+    final bis = DateFormat('d. MMM, HH:mm', 'de_DE').format(info.expiresAt.toLocal());
+    return BildschirmSchutz(
+      child: AutofillGroup(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            LxCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const MonoLabel('// neues passwort'),
+                  const SizedBox(height: 8),
+                  Text(
+                    info.displayName == null ? 'Neues Passwort festlegen' : 'Neues Passwort für ${info.displayName}',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kTextStrong),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(spacing: 8, runSpacing: 6, children: [RollenPille(info.role.label), RollenPille('gültig bis $bis', farbe: kTextMuted)]),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Du legst ein neues Passwort fest. Zur Sicherheit bestätigst du mit dem aktuellen Code aus deiner Authenticator-App, dass du es bist. '
+                    'Dein Chat-Verlauf bleibt erhalten.',
+                    style: TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
+            if (info.pinRequired) ...[
+              CodeFeld(controller: _pin, label: 'PIN der Einladung', verdeckt: true),
+              const SizedBox(height: 12),
+            ],
+            TextField(
+              controller: _pw,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.newPassword],
+              decoration: const InputDecoration(labelText: 'Neues Passwort (mind. 12 Zeichen)'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _pw2,
+              obscureText: true,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.newPassword],
+              decoration: const InputDecoration(labelText: 'Passwort wiederholen'),
+            ),
+            const SizedBox(height: 12),
+            CodeFeld(controller: _resetCode, label: 'Code aus der Authenticator-App', onSubmitted: (_) => _passwortResetEinloesen()),
+            const SizedBox(height: 16),
+            HauptKnopf(text: 'Neues Passwort festlegen', laeuft: laeuft, onPressed: _passwortResetEinloesen),
+            const SizedBox(height: 8),
+            Center(
+              child: LinkKnopf(
+                'andere Einladung verwenden',
+                onPressed: laeuft
+                    ? null
+                    : () => setState(() {
+                        _info = null;
+                        _token = null;
+                        fehler = null;
+                        _resetCode.clear();
+                      }),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

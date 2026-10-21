@@ -294,3 +294,10 @@ export async function addMember(world: World, by: Client, role: 'admin' | 'paren
 }
 
 export const auditEvents = async (world: World) => (await world.db.select().from(schema.auditLog)).map((a) => a.event);
+
+/**
+ * Historische Migrationstests legen Daten mit dem AKTUELLEN Code auf einem älteren Schema an. Dort fehlt die Spalte `invites.kind`
+ * (Migration 0018), die jede Einladung schreibt: sie wird für die Dauer der Anlage ergänzt und vor dem Weitermigrieren wieder entfernt.
+ */
+export const kindSpalteErgaenzen = (db: Db) => db.execute(sql`alter table invites add column if not exists kind text not null default 'standard'`);
+export const kindSpalteEntfernen = (db: Db) => db.execute(sql`alter table invites drop column if exists kind`);

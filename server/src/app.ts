@@ -196,6 +196,8 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
       // Push nur für Änderungen einer Person (Sync); nicht an deren Gerät, nicht an Geräte mit offener Verbindung
       if (origin) void push.weckeGeraete({ familyId, rev, roles, users, origin });
     };
+    // Sicherheitsereignis (Passwort-Reset): Geräte der Person ohne Inhalt wecken, nie die Anfrage scheitern lassen
+    authCore.ctx.onSecurityEvent = (e) => void push.weckeThemen(e.topics);
     authCore.ctx.onMembersChanged = (familyId) => {
       // nur ein Hinweis: ein Fehler hier darf nie die Anfrage (Registrierung, Änderung) scheitern lassen
       try {

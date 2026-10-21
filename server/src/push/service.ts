@@ -237,6 +237,22 @@ export class PushService {
     return geweckt;
   }
 
+  /**
+   * Sicherheitswecker (Passwort-Reset): direkt an die gegebenen Themen, gleicher fester Inhalt wie jeder Wecker (kein Text, kein Hinweis auf den
+   * Anlass). Die Themen wurden vor dem Widerruf der Geräte gelesen (der löscht die Endpunkte), deshalb wird hier nicht in der Datenbank gesucht.
+   * Keine Entprellung (seltene Ereignisse), aber die globale Pause von ntfy gilt. Wirft nie.
+   */
+  async weckeThemen(topics: readonly string[]): Promise<void> {
+    if (this.closed || topics.length === 0) return;
+    if (!this.enabled) return this.logStatusOnce();
+    try {
+      if (Date.now() < this.backoffUntil) return;
+      await Promise.all([...new Set(topics)].map((t) => this.send(t)));
+    } catch (err: unknown) {
+      this.o.log.error({ err }, 'Push: Sicherheitswecker fehlgeschlagen');
+    }
+  }
+
   private live(deviceId: string): boolean {
     return this.o.hasLiveSocket(deviceId, this.liveFensterMs);
   }

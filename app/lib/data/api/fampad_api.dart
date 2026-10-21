@@ -73,6 +73,30 @@ class FampadApi {
         await client.post('/auth/invites/password/complete', {'challengeId': challengeId, 'code': code, ...await _clientFelder()}, false),
       );
 
+  // ----------------------------------------------------------- Passwort zurücksetzen (nur mit Schalter E2EE_PW_BACKUP des Servers)
+
+  /// Link des Admins einlösen, Schritt 1: Token, ggf. PIN und der neue [authKey] (das Passwort verlässt das Gerät nie).
+  Future<String> passwortResetStart({required String token, String? pin, required String authKey}) async {
+    final r = await client.post('/auth/invites/password-reset/start', {'token': token, 'authKey': authKey, if (pin != null && pin.isNotEmpty) 'pin': pin}, false);
+    final id = r['challengeId'];
+    return id is String && id.isNotEmpty ? id : throw ApiException.unerwarteteAntwort;
+  }
+
+  /// Schritt 2: der Code (TOTP) des vorhandenen Authenticators bestätigt, dass die Person selbst den Link einlöst.
+  Future<RegistrationResult> passwortResetFertig({required String challengeId, required String code}) async => RegistrationResult.fromJson(
+    await client.post('/auth/invites/password-reset/complete', {'challengeId': challengeId, 'code': code, ...await _clientFelder()}, false),
+  );
+
+  /// "Passwort vergessen?" mit einem der Wiederherstellungscodes (verbraucht ihn); meldet gleich an.
+  Future<LoginResult> passwortVergessenMitCode({required String email, required String code, required String authKey}) async => LoginResult.fromJson(
+    await client.post('/auth/password-reset/recovery', {'email': email, 'code': code, 'authKey': authKey, ...await _clientFelder()}, false),
+  );
+
+  /// "Passwort vergessen?" mit einem Passkey; die Challenge kommt von [passkeyAnmeldeOptionen].
+  Future<LoginResult> passwortVergessenMitPasskey({required String challengeId, required Json antwort, required String authKey, required String email}) async => LoginResult.fromJson(
+    await client.post('/auth/password-reset/passkey', {'email': email, 'challengeId': challengeId, 'response': antwort, 'authKey': authKey, ...await _clientFelder()}, false),
+  );
+
   // ----------------------------------------------------------- Anmeldung
 
   Future<ChallengeDto> passkeyAnmeldeOptionen() async => ChallengeDto.fromJson(await client.post('/auth/login/passkey/options', const {}, false));
@@ -374,6 +398,14 @@ class FampadApi {
   Future<void> mitgliedEntfernen(String id) async {
     await client.delete('/members/$id');
   }
+
+  /// Admin (mit Step-up): Einmal-Link "neues Passwort" für ein Mitglied; der zweite Faktor der Person bleibt Pflicht.
+  Future<CreatedInvite> passwortZuruecksetzenLink(String id, {required int stunden, required bool pin}) async =>
+      CreatedInvite.fromJson((await client.post('/members/$id/password-reset', {'hours': stunden, 'pin': pin}))['invite']);
+
+  /// Eigene Sicherheitsereignisse (Passwort-Reset angefordert oder durchgeführt), neueste zuerst.
+  Future<List<SicherheitsEreignisDto>> sicherheitsEreignisse() async =>
+      parseListe((await client.get('/me/security-events'))['events'], SicherheitsEreignisDto.fromJson);
 
   Future<CreatedInvite> mitgliedZuruecksetzen(String id, {required int stunden, required bool pin}) async =>
       CreatedInvite.fromJson((await client.post('/members/$id/reset', {'hours': stunden, 'pin': pin}))['invite']);

@@ -10,6 +10,7 @@ import '../../data/auth/passwort_anmeldung.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 import 'invite_screen.dart';
+import 'passwort_vergessen_screen.dart';
 
 enum _Schritt { start, code, wiederherstellung }
 
@@ -32,9 +33,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   bool _mitWiederherstellungscode = false;
   bool? _passkeysDa;
 
+  /// Bietet der Server "Passwort vergessen?" an (neues Passwort mit Wiederherstellungscode oder Passkey)?
+  bool _resetMoeglich = false;
+
   @override
   void initState() {
     super.initState();
+    unawaited(
+      ref.read(apiProvider).serverFaehigkeiten().then((f) {
+        if (mounted) setState(() => _resetMoeglich = f.pwBackup && f.authKey);
+      }, onError: (Object _) {}),
+    );
     unawaited(
       ref.read(passkeyServiceProvider).verfuegbar().then((v) {
         if (mounted) setState(() => _passkeysDa = v);
@@ -180,6 +189,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     const SizedBox(height: 16),
     ZweitKnopf(text: 'Weiter', onPressed: laeuft ? null : _weiter),
     const SizedBox(height: 4),
+    if (_resetMoeglich)
+      Center(
+        child: LinkKnopf(
+          'Passwort vergessen? Neues Passwort festlegen',
+          onPressed: laeuft ? null : () => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => PasswortVergessenScreen(email: _email.text.trim()))),
+        ),
+      ),
     Center(
       child: LinkKnopf('Passwort verloren? Mit Wiederherstellungscode anmelden', onPressed: laeuft ? null : () => _zu(_Schritt.wiederherstellung)),
     ),

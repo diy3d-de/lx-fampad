@@ -8,6 +8,7 @@ import { auditLog, invites, keyBackupsPw, keyTransfers, loginAttempts, webauthnC
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
 import { PW_PENDING_TTL_MS } from './keys-pw.js';
+import { purgeSecurityEvents } from './password-reset.js';
 import { purgeSessions } from './sessions.js';
 
 const DAY_MS = 86_400_000;
@@ -73,6 +74,8 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     .update(keyBackupsPw)
     .set({ state: 'superseded', updatedAt: now })
     .where(and(eq(keyBackupsPw.state, 'pending'), lt(keyBackupsPw.createdAt, new Date(now.getTime() - PW_PENDING_TTL_MS))));
+
+  await purgeSecurityEvents(ctx);
 
   const sync = await runSyncMaintenance(ctx);
 

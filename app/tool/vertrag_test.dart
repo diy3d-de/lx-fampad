@@ -33,6 +33,7 @@ import 'package:lx_fampad/data/crypto/bytes.dart';
 import 'package:lx_fampad/data/crypto/crypto_fehler.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
 import 'package:lx_fampad/data/auth/passwort_anmeldung.dart';
+import 'package:lx_fampad/data/auth/passwort_reset.dart';
 import 'package:lx_fampad/data/crypto/pw_ablauf.dart';
 import 'package:lx_fampad/data/crypto/pw_sicherung.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
@@ -678,7 +679,7 @@ Future<void> authKeyVertrag({required Gegenstelle admin}) async {
   expect((await g2.api.ich()).user.id, userId);
   modi = (await admin.api.passwortModi())!;
   expect(modi.modi[userId], PasswortModus.authkey);
-  expect(await g2.store.istAuthKeyKonto(email), isFalse, reason: 'gemerkt wird erst nach einer Anmeldung per authKey');
+  expect(await g2.store.istAuthKeyKonto(email), isTrue, reason: 'die geglückte Umstellung merkt das Konto auf diesem Gerät (nie wieder Klartext von hier)');
 
   schritt('authKey-Anmeldung: danach nur noch authKey (ein Versuch), das Konto wird auf dem Gerät gemerkt');
   final g3 = Gegenstelle(name: 'AuthKey-Gerät 3');
@@ -722,6 +723,206 @@ Future<void> authKeyVertrag({required Gegenstelle admin}) async {
   expect(loginAnfragen(g4) - davor, 1);
   expect((await g4.api.ich()).user.id, userId);
   stdout.writeln('    authKey-Anmeldung und Passwortwechsel gegen den echten Server in Ordnung');
+}
+
+/// Passwort-Reset (PR 4b) gegen den echten Server: Admin-Link (Step-up, nicht für sich selbst, TOTP der Person als zweiter Faktor, PIN), Einlösen, alte Sitzungen und altes
+/// Passwort tot, TOTP und Wiederherstellungscodes bleiben, die Passwort-Sicherung wird `stale` (nie gelöscht) und mit dem neuen Passwort neu angelegt, Ereignisliste,
+/// einmalige Einlösung; "Passwort vergessen?" mit Wiederherstellungscode (verbraucht ihn, falsche Eingaben wie die Anmeldung). Ohne Schalter E2EE_PW_BACKUP gibt es die Routen nicht.
+Future<void> passwortResetVertrag({required Gegenstelle admin, required String adminTotpSecret}) async {
+  final (cname, crypto) = (await kryptoVarianten()).last;
+  final f = await admin.api.serverFaehigkeiten();
+  if (!f.authKey) {
+    schritt('Passwort-Reset: Schalter E2EE_PW_BACKUP ist aus, die Routen gibt es nicht (404)');
+    await expectLater(
+      admin.api.passwortZuruecksetzenLink('3f2b1c1e-0000-4000-8000-000000000001', stunden: 1, pin: false),
+      throwsA(isA<ApiException>().having((e) => e.status, 'status', anyOf(404, 403))),
+    );
+    return;
+  }
+  schritt('Passwort-Reset: Mitglied mit Passwort (authKey), Schlüssel und bestätigter Passwort-Sicherung [Krypto: $cname]');
+  /// Die Sperren (IP, Konto, Paar) zählen über den ganzen Vertragslauf: bei 429 wartet der Test laut Retry-After und wiederholt (wie die App).
+  Future<T> wartend<T>(Future<T> Function() aufruf) async {
+    for (var versuch = 0;; versuch++) {
+      try {
+        return await aufruf();
+      } on ApiException catch (e) {
+        if (e.kind != ApiErrorKind.zuVieleAnfragen || versuch >= 5) rethrow;
+        final warten = (e.retryAfter ?? const Duration(seconds: 5)) + const Duration(seconds: 1);
+        stdout.writeln('    warte ${warten.inSeconds} s (Retry-After)');
+        await Future<void>.delayed(warten);
+      }
+    }
+  }
+
+  const email = 'emil@beispiel.de';
+  const pw1 = 'Zebra-Kamin-Orbit-Fluss-Lampe';
+  const pw2 = 'Quarz-Falter-Nebel-Hafen-Kiesel';
+  const pw3 = 'Wolke-Tisch-Vogel-Anker-Birne';
+  Future<String> authKeyVon(Gegenstelle g, String passwort) async {
+    final kdf = await g.api.kdfParameter(email);
+    final keys = await PwSchluessel.ausPasswort(crypto, passwort: passwort, params: PwSicherungAblauf.parameterPruefen(kdf));
+    final k = keys.authKeyBase64;
+    keys.loeschen();
+    return k;
+  }
+
+  final inv = await admin.api.einladungErstellen(rolle: Role.parent, stunden: 1, pin: false, freigabe: false);
+  final g1 = Gegenstelle(name: 'Reset-Gerät 1');
+  final start = await g1.api.passwortRegistrierungStart(token: inv.token, authKey: await authKeyVon(g1, pw1), email: email, anzeigename: 'Emil');
+  final totpSecret = start.totpSecret;
+  final reg = await g1.api.passwortRegistrierungFertig(challengeId: start.challengeId, code: await frischerCode(totpSecret));
+  await g1.client.sitzungUebernehmen(reg.session!);
+  final emilId = reg.member.id;
+  final codes = [...reg.recoveryCodes];
+  final emil = TestPerson(emilId, 'Emil', crypto);
+  await g1.api.schluesselAnlegen(enc: emil.oeffentlich.encBase64, sign: emil.oeffentlich.signBase64);
+  final ablauf1 = PwSicherungAblauf(crypto: crypto, api: g1.api, userId: emilId, email: email);
+  final serverSchluessel = (await g1.api.eigeneSchluessel()).schluessel!;
+  final entwurf1 = await ablauf1.vorbereiten(lokal: emil.pk, server: serverSchluessel, passwort: pw1);
+  final alteId = await ablauf1.ablegenUndPruefen(entwurf1, passwort: pw1, lokal: emil.pk, serverVorher: serverSchluessel);
+  expect((await g1.api.pwSicherungAbrufen()).stale, isFalse);
+
+  schritt('Passwort-Reset: Admin braucht ein frisches Step-up und kann nicht sein eigenes Passwort zurücksetzen');
+  await stepUpAltern();
+  await expectLater(admin.api.passwortZuruecksetzenLink(emilId, stunden: 24, pin: true), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'step_up_required')));
+  await admin.api.stepUpCode(totp: await frischerCode(adminTotpSecret));
+  final adminId = (await admin.api.ich()).user.id;
+  await expectLater(admin.api.passwortZuruecksetzenLink(adminId, stunden: 24, pin: false), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'cannot_reset_self')));
+  await expectLater(admin.api.passwortZuruecksetzenLink('3f2b1c1e-0000-4000-8000-000000000001', stunden: 24, pin: false), throwsA(isA<ApiException>().having((e) => e.status, 'status', 404)));
+  await expectLater(g1.api.passwortZuruecksetzenLink(adminId, stunden: 24, pin: false), throwsA(isA<ApiException>().having((e) => e.status, 'status', 403)));
+
+  schritt('Passwort-Reset: Link erzeugen; Konto bleibt bis zum Einlösen nutzbar; Emil sieht den Vorgang in seinen Sicherheitsereignissen');
+  final link = await admin.api.passwortZuruecksetzenLink(emilId, stunden: 24, pin: true);
+  expect(link.pin, isNotNull);
+  final anon = Gegenstelle(name: 'Anonym');
+  final look = await wartend(() async => anon.api.einladungPruefen(link.token));
+  expect(look.art, EinladungsArt.passwordReset);
+  expect(look.reset, isTrue);
+  expect(look.pinRequired, isTrue);
+  expect(look.email, email);
+  expect((await g1.api.ich()).user.id, emilId, reason: 'die Sitzung gilt weiter');
+  final vorher = await g1.api.sicherheitsEreignisse();
+  expect(vorher.first.art, SicherheitsArt.passwortResetAngefordert);
+  expect(vorher.first.durchAdmin, isTrue);
+  expect(vorher.first.akteur, startsWith('Anna'));
+  expect((await admin.api.einladungen()).firstWhere((i) => i.id == link.id).art, EinladungsArt.passwordReset);
+  expect(await admin.api.sicherheitsEreignisse(), isEmpty, reason: 'nur die eigenen Ereignisse');
+
+  schritt('Passwort-Reset: Der Link allein reicht nicht (falsche PIN, falscher zweiter Faktor, Klartext, andere Routen)');
+  final g2 = Gegenstelle(name: 'Reset-Gerät 2');
+  final reset = PasswortReset(api: g2.api, anmeldung: PasswortAnmeldung(api: g2.api, store: g2.store, krypto: () async => crypto), passkeys: _KeinPasskey());
+  await expectLater(
+    wartend(() async => reset.einladungEinloesen(token: link.token, pin: '000000', email: email, passwort: pw2, code: '000000')),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invite_invalid')),
+  );
+  await expectLater(
+    wartend(() async => reset.einladungEinloesen(token: link.token, pin: link.pin, email: email, passwort: pw2, code: '000000')),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_code')),
+    reason: 'der Admin kennt den Authenticator der Person nicht',
+  );
+  await expectLater(
+    wartend(() async => reset.einladungEinloesen(token: link.token, pin: link.pin, email: email, passwort: pw2, code: await frischerCode(adminTotpSecret))),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_code')),
+    reason: 'der Code eines anderen Kontos zählt nicht',
+  );
+  await expectLater(
+    wartend(() async => anon.api.passkeyRegistrierungStart(token: link.token, pin: link.pin)),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invite_invalid')),
+    reason: 'der Link gilt nur für das neue Passwort, nie für neue Anmeldedaten',
+  );
+
+  schritt('Passwort-Reset: Einlösen mit PIN, neuem Passwort und TOTP-Code der Person');
+  final res = await wartend(() async => reset.einladungEinloesen(token: link.token, pin: link.pin, email: email, passwort: pw2, code: await frischerCode(totpSecret)));
+  expect(res.member.id, emilId);
+  expect(res.recoveryCodes, isEmpty);
+  await g2.client.sitzungUebernehmen(res.session!);
+  expect((await g2.api.ich()).user.id, emilId);
+  await expectLater(g1.api.ich(), throwsA(isA<ApiException>().having((e) => e.kind, 'kind', ApiErrorKind.nichtAngemeldet)), reason: 'alte Sitzungen sind beendet');
+  await expectLater(
+    wartend(() async => anon.api.einladungPruefen(link.token)),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invite_invalid')),
+    reason: 'der Link ist verbraucht',
+  );
+
+  schritt('Passwort-Reset: altes Passwort tot, neues gilt; Wiederherstellungscodes und Authenticator bleiben');
+  final g3 = Gegenstelle(name: 'Reset-Gerät 3');
+  await expectLater(
+    wartend(() async => g3.api.passwortAnmelden(email: email, authKey: await authKeyVon(g3, pw1), wiederherstellungscode: codes.removeLast())),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+  );
+  final l3 = await wartend(() async => g3.api.passwortAnmelden(email: email, authKey: await authKeyVon(g3, pw2), wiederherstellungscode: codes.removeLast()));
+  expect(l3.user.id, emilId);
+  final g3b = Gegenstelle(name: 'Reset-Gerät 3b');
+  final l3b = await wartend(() async => g3b.api.passwortAnmelden(email: email, authKey: await authKeyVon(g3b, pw2), totp: await frischerCode(totpSecret)));
+  expect(l3b.user.id, emilId, reason: 'der vorhandene Authenticator gilt weiter');
+
+  schritt('Passwort-Reset: Passwort-Sicherung ist stale (nicht gelöscht), neue Sicherung ersetzt sie nach der Bestätigung');
+  await g2.api.stepUpCode(wiederherstellungscode: codes.removeLast());
+  final stale = await g2.api.pwSicherungAbrufen();
+  expect(stale.id, alteId);
+  expect(stale.stale, isTrue);
+  final ablauf2 = PwSicherungAblauf(crypto: crypto, api: g2.api, userId: emilId, email: email);
+  final server2 = (await g2.api.eigeneSchluessel()).schluessel!;
+  final entwurf2 = await ablauf2.vorbereiten(lokal: emil.pk, server: server2, passwort: pw2);
+  final neueId = await ablauf2.ablegenUndPruefen(entwurf2, passwort: pw2, lokal: emil.pk, serverVorher: server2);
+  final aktuell = await g2.api.pwSicherungAbrufen();
+  expect(aktuell.id, neueId);
+  expect(aktuell.stale, isFalse);
+  final geoeffnet = await ablauf2.abrufenUndOeffnen(pw2);
+  expect(gleicheBytes(geoeffnet.schluessel.exportieren(), emil.pk.exportieren()), isTrue, reason: 'derselbe Personenschlüssel, nichts ging verloren');
+  expect((await g2.api.eigeneSchluessel()).schluessel!.version, serverSchluessel.version, reason: 'der Reset ändert nie einen Schlüssel');
+
+  schritt('Passwort-Reset: Ereignisliste der Person (angefordert, durchgeführt über den Admin-Link)');
+  final liste = await g2.api.sicherheitsEreignisse();
+  expect(liste.map((e) => e.art), containsAll([SicherheitsArt.passwortResetAngefordert, SicherheitsArt.passwortZurueckgesetzt]));
+  expect(liste.firstWhere((e) => e.art == SicherheitsArt.passwortZurueckgesetzt).weg, SicherheitsWeg.admin);
+
+  schritt('Passwort vergessen: falscher oder verbrauchter Code und ein unbekanntes Konto antworten wie die Anmeldung');
+  final g4 = Gegenstelle(name: 'Vergessen-Gerät');
+  final reset4 = PasswortReset(api: g4.api, anmeldung: PasswortAnmeldung(api: g4.api, store: g4.store, krypto: () async => crypto), passkeys: _KeinPasskey());
+  await expectLater(
+    wartend(() async => reset4.vergessenMitCode(email: email, code: 'AAAA-BBBB-CCCC-DDDD', passwort: pw3)),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+  );
+  await expectLater(
+    wartend(() async => reset4.vergessenMitCode(email: 'niemand@beispiel.de', code: codes.last, passwort: pw3)),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+  );
+  expect((await g2.api.ich()).user.id, emilId, reason: 'fehlgeschlagene Versuche ändern nichts');
+
+  schritt('Passwort vergessen: mit Wiederherstellungscode; Sitzungen tot, Code verbraucht, Sicherung wieder stale');
+  final code = codes.removeLast();
+  final lr = await wartend(() async => reset4.vergessenMitCode(email: email, code: code, passwort: pw3));
+  expect(lr.user.id, emilId);
+  expect(lr.recoveryCodesRemaining, isNotNull);
+  await g4.client.sitzungUebernehmen(lr.session);
+  expect((await g4.api.ich()).user.id, emilId);
+  await expectLater(g2.api.ich(), throwsA(isA<ApiException>().having((e) => e.kind, 'kind', ApiErrorKind.nichtAngemeldet)));
+  await expectLater(
+    wartend(() async => reset4.vergessenMitCode(email: email, code: code, passwort: 'Falter-Anker-Birne-Wolke-Tisch-9')),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'invalid_credentials')),
+    reason: 'der Code gilt nur einmal',
+  );
+  final g5 = Gegenstelle(name: 'Vergessen-Gerät 2');
+  expect((await wartend(() async => g5.api.passwortAnmelden(email: email, authKey: await authKeyVon(g5, pw3), wiederherstellungscode: codes.removeLast()))).user.id, emilId);
+  await g4.api.stepUpCode(wiederherstellungscode: codes.removeLast());
+  expect((await g4.api.pwSicherungAbrufen()).stale, isTrue);
+  final ereignisse = await g4.api.sicherheitsEreignisse();
+  expect(ereignisse.first.art, SicherheitsArt.passwortZurueckgesetzt);
+  expect(ereignisse.first.weg, SicherheitsWeg.wiederherstellungscode);
+  expect(ereignisse.first.durchAdmin, isFalse);
+  stdout.writeln('    Passwort-Reset gegen den echten Server in Ordnung');
+}
+
+class _KeinPasskey implements PasskeyService {
+  @override
+  Future<bool> verfuegbar() async => false;
+
+  @override
+  Future<Map<String, dynamic>> erstellen(Map<String, dynamic> optionen) => throw UnimplementedError();
+
+  @override
+  Future<Map<String, dynamic>> bestaetigen(Map<String, dynamic> optionen) => throw UnimplementedError();
 }
 
 /// Chat Ende-zu-Ende (E2EE Phase 2) gegen den echten Server: drei Personen mit Schlüsseln, Gruppe, zwei Geräte, Admin liest Privatchat nicht, Server sieht nur Chiffretext
@@ -1588,6 +1789,7 @@ void main() {
     await expectLater(admin.api.mitgliedEntfernen(adminId), throwsA(isA<ApiException>()));
 
     await authKeyVertrag(admin: admin);
+    await passwortResetVertrag(admin: admin, adminTotpSecret: secretAdmin);
 
     schritt('Geräte: weiteres Gerät des Admin anlegen, einzeln abmelden, dann überall abmelden');
     final adminZwei = Gegenstelle(name: 'Zweitgerät');

@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../src/auth/context.js';
 import * as schema from '../src/db/schema.js';
-import { adminPassword, migrationsFolder, World } from './helpers.js';
+import { adminPassword, migrationsFolder, World, kindSpalteEntfernen, kindSpalteErgaenzen } from './helpers.js';
 
 const blob = () => randomBytes(160).toString('base64url');
 
@@ -32,6 +32,7 @@ describe('Migration 0016 (pending) additiv auf Stand 0014', () => {
     let world: World | undefined;
     try {
       await migrateLite(db as never, { migrationsFolder: alt });
+      await kindSpalteErgaenzen(db);
       world = await World.create(db, { E2EE_PW_BACKUP: 'true' });
       const a = (await adminPassword(world)).client;
       await a.post('/api/v1/me/keys', { publicEncKey: randomBytes(32).toString('base64url'), publicSignKey: randomBytes(32).toString('base64url') });
@@ -48,6 +49,7 @@ describe('Migration 0016 (pending) additiv auf Stand 0014', () => {
       const vorher = await summe();
       await world.close();
       world = undefined;
+      await kindSpalteEntfernen(db);
 
       await migrateLite(db as never, { migrationsFolder });
       expect(await summe()).toBe(vorher);

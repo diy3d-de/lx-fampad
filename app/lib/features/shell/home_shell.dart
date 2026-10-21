@@ -5,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/auth/reset_hinweis.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/push/push_state.dart';
+import '../../data/push/sicherheits_pruefer.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_hinweis.dart';
 import '../../data/sync_state.dart';
@@ -72,6 +74,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(syncProvider.notifier).starten();
+      // ein Hinweis, der kam, bevor die Oberfläche stand (schneller Abschluss der neuen Passwort-Sicherung)
+      _resetHinweisZeigen(ref.read(resetHinweisProvider));
+      // Sicherheitsereignisse seit dem letzten Mal (Passwort-Reset für dein Konto angefordert oder durchgeführt)
+      unawaited(ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: true, hinweis: ref.read(resetHinweisProvider.notifier)));
       // Push (nur Android): Zustand laden und, falls eingeschaltet, bei jedem Start erneut beim Verteiler registrieren
       unawaited(ref.read(pushProvider.notifier).starten());
       // Standort teilen: Empfang der Freigaben anderer (die Verbindung steht nur im Vordergrund oder solange du teilst)
@@ -118,6 +124,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     ref.listen(standortHinweisProvider, (_, h) {
       if (h != null) _standortHinweisZeigen(h);
     });
+    // Nach einem Passwort-Reset: was mit der Passwort-Sicherung geschehen ist (einmal, lange genug zum Lesen)
+    ref.listen(resetHinweisProvider, (_, text) => _resetHinweisZeigen(text));
     ref.listen(shellTabProvider, (_, t) {
       if (t == kStandortTab) unawaited(ref.read(standortBenachrichtigerProvider).alleEntfernen());
       // Wetter-Bereich: bei jedem Wählen frisch abfragen (wie das Öffnen der Seite mobil)
@@ -134,6 +142,15 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
       return _mobil(updateDa, tab < kTabs.length ? tab : 0, ungelesen);
     });
+  }
+
+  /// Hinweis nach einem Passwort-Reset (einmal, lange genug zum Lesen); der Zustand wird danach geleert.
+  void _resetHinweisZeigen(String? text) {
+    if (text == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 20), showCloseIcon: true));
+    ref.read(resetHinweisProvider.notifier).setzen(null);
   }
 
   /// Öffnet die Standort-Seite: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite (nicht doppelt).

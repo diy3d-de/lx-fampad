@@ -34,6 +34,7 @@ import 'chat_benachrichtiger_provider.dart';
 import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
 import 'push_wecker.dart';
+import 'sicherheits_pruefer.dart';
 
 /// Argument, mit dem das Plugin den Hintergrund-Start kennzeichnet.
 const kPushHintergrundArgument = '--unifiedpush-bg';
@@ -103,6 +104,8 @@ Future<WeckerLauf?> pushHintergrundStarten({
 
         // Standortfreigaben: der Wecker enthält nichts, die App fragt den Standort-Kanal kurz ab und meldet neue Freigaben lokal
         await standort;
+        // Sicherheitshinweis (Passwort-Reset für dein Konto): feste lokale Benachrichtigung ohne Einzelheiten
+        await c.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: false);
       } finally {
         abgebrochen = true;
         c.dispose();

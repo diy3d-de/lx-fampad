@@ -40,6 +40,8 @@ export interface AuthContext {
   /** Wird nach dem Commit einer Änderung der Mitglieder aufgerufen (Beitritt, Freigabe, Entfernen, Rolle, Familienrolle, Name, Farbe, Bild, Schlüssel); app.ts hängt den WebSocket-Hub ein. Nur ein Hinweis, nie Inhalt. */
   onMembersChanged: (familyId: string) => void;
   onRev: (familyId: string, rev: number, roles?: readonly Role[], users?: readonly string[], origin?: RevOrigin) => void;
+  /** Sicherheitsereignis einer Person (Passwort-Reset): weckt ihre Geräte OHNE Inhalt. Die Push-Themen werden vor dem Widerruf der Geräte gelesen (der Widerruf löscht die Endpunkte). Fehlt der Haken, passiert nichts. */
+  onSecurityEvent?: (event: { familyId: string; userId: string; topics: readonly string[] }) => void;
 }
 
 /** Angaben zur Anfrage, die ins Audit-Log und in die Fehlversuchs-Zähler fließen. */

@@ -363,6 +363,15 @@ enum InviteStatus {
   static InviteStatus parse(String s) => InviteStatus.values.firstWhere((e) => e.name == s, orElse: () => _fehler());
 }
 
+/// Art einer Einladung: neues Mitglied bzw. vollständiges Zurücksetzen (`standard`) oder nur ein neues Passwort für ein bestehendes Konto (`passwordReset`).
+/// Unbekannte Arten einer neueren Server-Version gelten als `standard`.
+enum EinladungsArt {
+  standard,
+  passwordReset;
+
+  static EinladungsArt parse(Object? v) => v == 'password_reset' ? EinladungsArt.passwordReset : EinladungsArt.standard;
+}
+
 /// Eintrag der Einladungsliste (ohne Token und PIN).
 class InviteDto {
   final String id;
@@ -373,6 +382,7 @@ class InviteDto {
   final bool hasPin;
   final bool requireApproval;
   final bool reset;
+  final EinladungsArt art;
   final String? createdBy;
   final String? usedBy;
   const InviteDto({
@@ -384,6 +394,7 @@ class InviteDto {
     required this.hasPin,
     required this.requireApproval,
     required this.reset,
+    this.art = EinladungsArt.standard,
     required this.createdBy,
     required this.usedBy,
   });
@@ -399,6 +410,7 @@ class InviteDto {
       hasPin: _b(m, 'hasPin'),
       requireApproval: _b(m, 'requireApproval'),
       reset: _b(m, 'reset'),
+      art: EinladungsArt.parse(m['kind']),
       createdBy: _sn(m, 'createdBy'),
       usedBy: _sn(m, 'usedBy'),
     );
@@ -442,6 +454,9 @@ class InviteLookup {
   final bool requireApproval;
   final String familyName;
   final bool reset;
+
+  /// Nur ein neues Passwort für ein bestehendes Konto (der zweite Faktor wird mit dem vorhandenen Code bestätigt) oder das Übliche.
+  final EinladungsArt art;
   final String? displayName;
 
   /// Nur bei einer Reset-Einladung (und Server mit authKey): E-Mail des Kontos, nötig für den Salt der Passwort-Ableitung.
@@ -453,6 +468,7 @@ class InviteLookup {
     required this.requireApproval,
     required this.familyName,
     required this.reset,
+    this.art = EinladungsArt.standard,
     required this.displayName,
     this.email,
     required this.expiresAt,
@@ -466,6 +482,7 @@ class InviteLookup {
       requireApproval: _b(m, 'requireApproval'),
       familyName: _s(m, 'familyName'),
       reset: _b(m, 'reset'),
+      art: EinladungsArt.parse(m['kind']),
       displayName: _sn(m, 'displayName'),
       email: _sn(m, 'email'),
       expiresAt: _t(m, 'expiresAt'),
@@ -749,5 +766,60 @@ class WetterDto {
       }
     }
     return WetterDto(verfuegbar: true, ort: ort, aktuell: aktuell, min24h: _d(m['min24h']), max24h: _d(m['max24h']), verlauf: verlauf);
+  }
+}
+
+/// Art eines Sicherheitsereignisses der eigenen Person. Unbekannte Arten einer neueren Server-Version erscheinen als `andere` (neutraler Text).
+enum SicherheitsArt {
+  passwortResetAngefordert,
+  passwortZurueckgesetzt,
+  zugangZurueckgesetzt,
+  andere;
+
+  static SicherheitsArt parse(Object? v) => switch (v) {
+    'password_reset_requested' => SicherheitsArt.passwortResetAngefordert,
+    'password_reset_done' => SicherheitsArt.passwortZurueckgesetzt,
+    'account_reset_requested' => SicherheitsArt.zugangZurueckgesetzt,
+    _ => SicherheitsArt.andere,
+  };
+}
+
+/// Weg eines Sicherheitsereignisses: durch einen Admin, mit einem Wiederherstellungscode oder mit einem Passkey.
+enum SicherheitsWeg {
+  admin,
+  wiederherstellungscode,
+  passkey,
+  unbekannt;
+
+  static SicherheitsWeg parse(Object? v) => switch (v) {
+    'admin' => SicherheitsWeg.admin,
+    'recovery_code' => SicherheitsWeg.wiederherstellungscode,
+    'passkey' => SicherheitsWeg.passkey,
+    _ => SicherheitsWeg.unbekannt,
+  };
+}
+
+/// Eintrag aus `GET /me/security-events` (nur die eigenen; nie Inhalte oder Geheimnisse).
+class SicherheitsEreignisDto {
+  final String id;
+  final SicherheitsArt art;
+  final SicherheitsWeg weg;
+
+  /// Wer es ausgelöst hat (Name eines anderen Familienmitglieds); null = du selbst.
+  final String? akteur;
+  final bool durchAdmin;
+  final DateTime zeit;
+  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit});
+
+  factory SicherheitsEreignisDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return SicherheitsEreignisDto(
+      id: _s(m, 'id'),
+      art: SicherheitsArt.parse(m['kind']),
+      weg: SicherheitsWeg.parse(m['via']),
+      akteur: _sn(m, 'actorName'),
+      durchAdmin: m['byAdmin'] == true,
+      zeit: _t(m, 'createdAt'),
+    );
   }
 }

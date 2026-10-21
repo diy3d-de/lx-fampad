@@ -199,3 +199,20 @@ export async function promotePwBackup(ctx: AuthContext, tx: Tx, p: SessionPrinci
   if (!rows[0]) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
   await writeAudit(ctx, tx, { event: 'key_backup_pw_verified', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: rows[0].keyVersion } });
 }
+
+/**
+ * Nach einem Passwort-Reset (neuer authKey UND neuer kek): die bisherige aktuelle Sicherung ist mit dem neuen Passwort nicht mehr zu öffnen.
+ * Sie wird `stale` (nie gelöscht: mit dem alten Passwort bliebe sie lesbar, der Wiederherstellungsschlüssel und die QR-Übertragung gelten
+ * unverändert weiter); eine noch unbestätigte (pending) gehört zum alten kek und verfällt (`superseded`). Gehört in die Transaktion des Resets.
+ * Gibt zurück, ob es eine aktuelle Sicherung gab (dann legt die App nach dem ersten Login eine neue an).
+ */
+export async function markPwBackupsStaleAfterReset(ctx: Pick<AuthContext, 'now'>, tx: Tx, userId: string): Promise<boolean> {
+  const now = ctx.now();
+  await tx.update(keyBackupsPw).set({ state: 'superseded', updatedAt: now }).where(and(eq(keyBackupsPw.userId, userId), eq(keyBackupsPw.state, 'pending')));
+  const hit = await tx
+    .update(keyBackupsPw)
+    .set({ state: 'stale', updatedAt: now })
+    .where(and(eq(keyBackupsPw.userId, userId), eq(keyBackupsPw.state, 'active')))
+    .returning({ id: keyBackupsPw.id });
+  return hit.length > 0;
+}
