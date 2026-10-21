@@ -141,7 +141,9 @@ void _berlin(_Schreiber s) {
   s.zeile('END:VTIMEZONE');
 }
 
-/// VTIMEZONE einer anderen Zone aus ihren Übergängen (ab [vonJahr] bis zum Ende der Daten, höchstens 400 Übergänge): zuerst die Regel, die
+/// VTIMEZONE einer anderen Zone aus ihren Übergängen (ab [vonJahr] bis zum Ende der mitgelieferten Zeitzonen-Daten, ca. 2037, höchstens 400
+/// Übergänge; danach kennt der Empfänger keine Umstellung mehr, Serien über 2037 hinaus laufen dort mit dem letzten Versatz weiter. Europe/Berlin
+/// hat dagegen eine unbegrenzte Regel): zuerst die Regel, die
 /// am Anfang gilt, dann jeder Übergang einzeln.
 void _andere(_Schreiber s, tz.Location ort, int vonJahr) {
   final start = DateTime.utc(vonJahr, 1, 1).millisecondsSinceEpoch;
@@ -205,8 +207,15 @@ String icsErstellen({required Iterable<Termin> termine, required Map<String, Lis
       _andere(s, e.value, ersteJahre[e.key]! - 1);
     }
   }
+  final gesehen = <String>{};
   for (final t in liste) {
-    _termin(s, t, ausnahmen[t.id] ?? const [], stempel);
+    // doppelte icalUid (kann es in der App geben): der zweite Termin bekommt die UID aus seiner ID, sonst würde ein Import beide zusammenfassen
+    var uid = _uid(t);
+    if (!gesehen.add(uid)) {
+      uid = '${t.id}@$kIcsUidDomain';
+      gesehen.add(uid);
+    }
+    _termin(s, t, ausnahmen[t.id] ?? const [], stempel, uid);
   }
   s.zeile('END:VCALENDAR');
   return s.toString();
@@ -230,14 +239,13 @@ void _alarm(_Schreiber s, Termin t) {
   s.zeile('END:VALARM');
 }
 
-void _termin(_Schreiber s, Termin t, List<TerminAusnahme> ausnahmen, String stempel) {
+void _termin(_Schreiber s, Termin t, List<TerminAusnahme> ausnahmen, String stempel, String uid) {
   final ganz = t.ganztaegig;
   final tagStart = _tagLesen(t.startDate);
   if (ganz ? tagStart == null : t.startUtc == null) {
     return; // ohne Beginn nicht darstellbar
   }
   final ort = ortFuer(t.tzid);
-  final uid = _uid(t);
   final serie = t.rrule != null && t.rrule!.trim().isNotEmpty;
 
   // Dauer des Termins (für geänderte Vorkommen ohne eigenes Ende)

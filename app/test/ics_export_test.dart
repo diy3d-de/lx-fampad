@@ -298,6 +298,80 @@ void main() {
     });
   });
 
+  group('Round-Trip: weitere Fälle', () {
+    test('Serie mit UNTIL: Zeittermin (UTC) und Ganztag (DATE)', () {
+      final e = _zurueck(
+        _export([
+          _t(id: 'u1', start: DateTime.utc(2026, 3, 17, 16), ende: DateTime.utc(2026, 3, 17, 17), rrule: 'FREQ=WEEKLY;UNTIL=20260428T215959Z'),
+          _t(id: 'u2', ganz: true, startDate: '2026-03-17', endDate: '2026-03-18', rrule: 'FREQ=DAILY;UNTIL=20260320'),
+        ]),
+      );
+      IcsTermin von(String id) => e.termine.firstWhere((t) => t.uid == '$id@$kIcsUidDomain');
+      expect(von('u1').rrule, 'FREQ=WEEKLY;UNTIL=20260428T215959Z');
+      expect(von('u2').rrule, 'FREQ=DAILY;UNTIL=20260320');
+      expect(von('u2').ganztaegig, isTrue);
+    });
+
+    test('Ganztags-Serie mit EXDATE und RECURRENCE-ID als VALUE=DATE', () {
+      final s = _export(
+        [_t(id: 'g', titel: 'Putzdienst', ganz: true, startDate: '2026-11-02', endDate: '2026-11-03', rrule: 'FREQ=WEEKLY;COUNT=6')],
+        {
+          'g': [_a('g', '2026-11-09', abgesagt: true), _a('g', '2026-11-16', titel: 'Putzdienst (Oma)', start: '2026-11-17', ende: '2026-11-18')],
+        },
+      );
+      expect(s, contains('EXDATE;VALUE=DATE:20261109'));
+      expect(s, contains('RECURRENCE-ID;VALUE=DATE:20261116'));
+      final t = _zurueck(s).termine.single;
+      expect(t.ausnahmen, hasLength(2));
+      expect(t.ausnahmen.firstWhere((a) => a.abgesagt).schluessel, '2026-11-09');
+      final g = t.ausnahmen.firstWhere((a) => !a.abgesagt);
+      expect([g.schluessel, g.titel, g.start, g.ende], ['2026-11-16', 'Putzdienst (Oma)', '2026-11-17', '2026-11-18']);
+    });
+
+    test('Nicht-Berlin-Zeitzone mit Serie über die Zeitumstellung (New York)', () {
+      final e = _zurueck(
+        _export(
+          [
+            _t(
+              id: 'ny',
+              tzid: 'America/New_York',
+              start: DateTime.utc(2026, 10, 27, 14),
+              ende: DateTime.utc(2026, 10, 27, 15),
+              rrule: 'FREQ=WEEKLY;COUNT=4',
+            ),
+          ],
+          {
+            'ny': [_a('ny', '2026-11-10T15:00:00Z', abgesagt: true)],
+          },
+        ),
+      );
+      final t = e.termine.single;
+      expect(t.tzid, 'America/New_York');
+      expect(t.startUtc, DateTime.utc(2026, 10, 27, 14)); // 10 Uhr EDT
+      expect(t.rrule, 'FREQ=WEEKLY;COUNT=4');
+      expect(t.ausnahmen.single.schluessel, '2026-11-10T15:00:00Z'); // nach der Umstellung 10 Uhr EST = 15 Uhr UTC
+    });
+
+    test('doppelte icalUid: der zweite Termin bekommt die UID aus seiner ID, beide überleben den Import', () {
+      final e = _zurueck(
+        _export([
+          _t(id: 'd1', titel: 'Eins', start: DateTime.utc(2026, 7, 1, 8), ende: DateTime.utc(2026, 7, 1, 9), uid: 'gleich@x'),
+          _t(id: 'd2', titel: 'Zwei', start: DateTime.utc(2026, 7, 2, 8), ende: DateTime.utc(2026, 7, 2, 9), uid: 'gleich@x'),
+        ]),
+      );
+      expect(e.termine.map((t) => t.uid).toSet(), {'gleich@x', 'd2@$kIcsUidDomain'});
+      expect(e.termine.map((t) => t.titel).toSet(), {'Eins', 'Zwei'});
+    });
+  });
+
+  group('Speichern', () {
+    test('Web: Download liefert immer null und gilt als Erfolg; Android: null = abgebrochen', () {
+      expect(icsSpeichernErfolg(null, web: true), isTrue);
+      expect(icsSpeichernErfolg(null, web: false), isFalse);
+      expect(icsSpeichernErfolg(Uri.parse('content://x/y.ics'), web: false), isTrue);
+    });
+  });
+
   group('Seite', () {
     for (final skala in [1.0, 1.5]) {
       testWidgets('Zeitraum, Anzahl, Speichern, 360 px, Textskala $skala', (tester) async {
