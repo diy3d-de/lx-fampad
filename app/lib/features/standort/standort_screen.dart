@@ -164,7 +164,8 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
 
     return _huelle(
       ListView(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+        // eingebettet wie bei den anderen Bereichen 16 oben; als eigene Seite sitzt der Zurück-Pfeil (48 px) darüber
+        padding: EdgeInsets.fromLTRB(20, widget.eingebettet ? 16 : 0, 20, 24),
         children: [
           if (!widget.eingebettet)
             Align(

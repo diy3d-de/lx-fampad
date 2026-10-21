@@ -8,6 +8,7 @@ import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
+import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_anzeige.dart';
 import '../auth/auth_widgets.dart';
@@ -88,6 +89,8 @@ class _Seitenleiste extends ConsumerWidget {
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final anzahl = ref.watch(mitgliederProvider).value?.length;
     final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
+    // Wetter nur, wenn auch die Kachel der Startseite sichtbar ist (oder der Bereich gerade offen ist, damit er beim Ausschalten nicht unter dir verschwindet)
+    final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar)) || tab == kWetterTab;
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -152,6 +155,7 @@ class _Seitenleiste extends ConsumerWidget {
                 child: ListView(
                   children: [
                     for (var i = 0; i < kDesktopTabs.length; i++)
+                      if (i != kWetterTab || wetter)
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,

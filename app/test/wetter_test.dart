@@ -7,6 +7,7 @@ import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/wetter/wetter_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:lx_fampad/features/wetter/wetter_screen.dart';
+import 'package:lx_fampad/widgets/kopfzeile.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -248,6 +249,48 @@ void main() {
       expect(find.text('12,5 °C'), findsOneWidget);
       await tippe(tester, find.text('Westerburg'));
       expect(find.byType(WetterScreen), findsOneWidget);
+      // Detailseite als Bereich der Shell: Seitenleiste und Fußzeile bleiben, kein Zurück-Pfeil, Kopfzeile wie bei den anderen Bereichen
+      expect(find.text('lx-familyhub'), findsOneWidget);
+      expect(find.textContaining('sync: '), findsOneWidget);
+      expect(find.byTooltip('Zurück'), findsNothing);
+      expect(find.byType(Scaffold), findsOneWidget);
+      expect(find.text('Wetter'), findsNWidgets(2)); // Seitenleiste + Kopfzeile
+      expect(find.byTooltip('Aktualisieren'), findsOneWidget);
+      // Kopfzeile sitzt auf Höhe der anderen Bereiche (16 px unter dem Rand)
+      expect(tester.getTopLeft(find.byType(TabKopfzeile)).dy, 16);
+      // zurück über die Seitenleiste
+      await tippe(tester, find.bySemanticsLabel('Start'));
+      expect(find.byType(DesktopHome), findsOneWidget);
+      expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('Desktop: Seitenleiste zeigt "Wetter" nur bei sichtbarer Kachel', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(tester, groesse: const Size(1440, 900));
+    expect(find.bySemanticsLabel('Wetter'), findsOneWidget);
+    await tippe(tester, find.bySemanticsLabel('Wetter'));
+    expect(find.byType(WetterScreen), findsOneWidget);
+    // Schalter aus: der geöffnete Bereich bleibt in der Leiste (verschwindet nicht unter dir), Kachel ist weg
+    await tippe(tester, find.byType(Switch));
+    expect(find.bySemanticsLabel('Wetter'), findsOneWidget);
+    await tippe(tester, find.bySemanticsLabel('Start'));
+    expect(find.bySemanticsLabel('Wetter'), findsNothing);
+    expect(find.text('// WETTER'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('Desktop: ohne Wetter keine Seitenleisten-Zeile', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(tester, groesse: const Size(1440, 900), wetter: () => null);
+    expect(find.bySemanticsLabel('Wetter'), findsNothing);
+    handle.dispose();
+  });
+
+  testWidgets('Desktop, Textskala 1.5: Wetter-Bereich ohne Layoutfehler', (tester) async {
+    await start(tester, groesse: const Size(1200, 800), skala: 1.5);
+    await tippe(tester, find.text('Westerburg'));
+    expect(find.byType(WetterScreen), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

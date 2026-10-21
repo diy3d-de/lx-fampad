@@ -8,9 +8,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
+import '../shell/desktop_shell.dart' show DesktopShellMarke;
+import '../shell/shell_tab.dart';
 import 'wetter_screen.dart';
 
+/// Öffnet die Detailseite: im Desktop-Layout als Bereich der Shell (Seitenleiste und Fußzeile bleiben), sonst als eigene Seite.
 void wetterOeffnen(BuildContext context) {
+  if (DesktopShellMarke.vorhanden(context)) {
+    ProviderScope.containerOf(context).read(shellTabProvider.notifier).waehlen(kWetterTab);
+    return;
+  }
   unawaited(
     Navigator.of(context)
         .push<void>(MaterialPageRoute(builder: (_) => const WetterScreen())),
