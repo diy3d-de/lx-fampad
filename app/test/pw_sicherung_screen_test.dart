@@ -187,6 +187,41 @@ Future<void> main() async {
       expect(find.text('Eingerichtet'), findsOneWidget);
       expect(await a.speicher.lesen(personenschluesselName(fixIdAdmin)), seeds);
     });
+
+    testWidgets('Nach Passwort-Reset: veraltete Sicherung, Hinweis, Alternativen, Öffnen mit altem Passwort ($s)', (tester) async {
+      final a = await _aufbau(schluessel: false);
+      final seeds = Uint8List.fromList(List.generate(64, (i) => 200 - i));
+      final crypto = FakeCryptoProvider();
+      final k = _schluessel(crypto, seeds);
+      a.srv.setzeSchluessel(fixIdAdmin, enc: k.$1, sign: k.$2, version: 1);
+      a.srv.pwEinspielen(fixIdAdmin, await _blobFuer(crypto, seeds, 'anna@beispiel.de', _pw), version: 1);
+      a.srv.passwortZurueckgesetzt(fixIdAdmin);
+
+      await starteApp(tester, a.env, skala: skala);
+      await _zurSeite(tester);
+      await tippeText(tester, 'Mit Passwort verbinden');
+      expect(find.textContaining('Dein Anmelde-Passwort wurde zurückgesetzt. Deine alte Passwort-Sicherung funktioniert noch'), findsOneWidget);
+      final verbinden = find.widgetWithText(FilledButton, 'Verbinden');
+      expect(tester.widget<FilledButton>(verbinden).onPressed, isNull, reason: 'leeres Feld');
+      await eingeben(tester, 'Passwort der Sicherung', 'Neues-Anmelde-Passwort-Wolke-Baum');
+      expect(tester.widget<FilledButton>(verbinden).onPressed, isNotNull);
+      expect(find.text('Mit anderem Gerät verbinden'), findsOneWidget);
+      pruefeLayout(tester, 'Mit Passwort verbinden: veraltete Sicherung');
+
+      await tippe(tester, verbinden);
+      await tester.pump(const Duration(milliseconds: 200));
+      await warte(tester);
+      expect(find.textContaining('alten Passwort-Sicherung'), findsOneWidget);
+      expect(await a.speicher.lesen(personenschluesselName(fixIdAdmin)), isNull);
+      pruefeLayout(tester, 'Mit Passwort verbinden: falsches Passwort bei veralteter Sicherung');
+
+      await eingeben(tester, 'Passwort der Sicherung', _pw);
+      await tippe(tester, find.widgetWithText(FilledButton, 'Verbinden'));
+      await tester.pump(const Duration(milliseconds: 200));
+      await warte(tester);
+      expect(await a.speicher.lesen(personenschluesselName(fixIdAdmin)), seeds);
+      expect(find.text('Passwort-Sicherung'), findsWidgets, reason: 'danach wird das Erneuern angeboten');
+    });
   }
 }
 

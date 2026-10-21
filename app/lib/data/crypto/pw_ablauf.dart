@@ -130,21 +130,18 @@ class PwSicherungAblauf {
   }
 
   /// Auf einem Gerät ohne Schlüssel: Passwort-Sicherung holen und den Personenschlüssel daraus öffnen. Der Aufrufer übernimmt ihn erst nach dem
-  /// Vergleich mit dem frisch vom Server geholten öffentlichen Schlüssel. Eine veraltete (`stale`) Sicherung enthält einen früheren Schlüssel.
-  Future<({Personenschluessel schluessel, int keyVersion})> abrufenUndOeffnen(String passwort) async {
+  /// Vergleich mit dem frisch vom Server geholten öffentlichen Schlüssel. Eine veraltete (`stale`) Sicherung bleibt mit dem Passwort öffenbar, mit dem sie
+  /// angelegt wurde (das ALTE Sicherungs-Passwort, unabhängig vom Anmelde-Passwort), solange ihre Schlüsselversion zum aktuellen Schlüssel des Servers passt
+  /// (nur das Anmelde-Passwort wurde zurückgesetzt). Gehört sie zu einem früheren Schlüssel, wird sie nicht geöffnet. [veraltet] sagt dem Aufrufer, dass er
+  /// danach das Erneuern der Sicherung anbieten soll.
+  Future<({Personenschluessel schluessel, int keyVersion, bool veraltet})> abrufenUndOeffnen(String passwort) async {
     final abruf = await api.pwSicherungAbrufen();
     if (abruf.pending) throw const CryptoFehler(CryptoFehlerArt.format, 'Die Passwort-Sicherung ist beschädigt.');
     if (abruf.stale) {
-      // Gleiche Schlüsselversion wie dein aktueller Schlüssel: Die Sicherung ist nicht von einem Schlüsselwechsel veraltet, sondern von einem Passwort-Reset
-      // (neues Passwort = neuer Schlüssel zum Öffnen). Dann sagt die Meldung den Weg, statt von einem "früheren Schlüssel" zu sprechen.
       final aktuell = (await api.eigeneSchluessel()).schluessel;
-      if (aktuell != null && aktuell.version == abruf.keyVersion) {
-        throw const CryptoFehler(
-          CryptoFehlerArt.schluessel,
-          'Dein Passwort wurde zurückgesetzt. Die Sicherung muss auf einem Gerät mit Schlüssel erneuert werden. Nimm hier deinen Wiederherstellungsschlüssel.',
-        );
+      if (aktuell == null || aktuell.version != abruf.keyVersion) {
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Die Passwort-Sicherung gehört zu einem früheren Schlüssel und passt nicht mehr zu deinem Konto.');
       }
-      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Die Passwort-Sicherung gehört zu einem früheren Schlüssel und passt nicht mehr zu deinem Konto.');
     }
     final PwKdfParams imBlob;
     try {
@@ -157,10 +154,15 @@ class PwSicherungAblauf {
     }
     try {
       final s = await PwSicherungBlob.oeffnenMitPasswort(crypto, blob: abruf.blob, passwort: passwort, userId: userId, keyVersion: abruf.keyVersion);
-      return (schluessel: s, keyVersion: abruf.keyVersion);
+      return (schluessel: s, keyVersion: abruf.keyVersion, veraltet: abruf.stale);
     } on CryptoFehler catch (f) {
       if (f.art == CryptoFehlerArt.entschluesselung) {
-        throw const CryptoFehler(CryptoFehlerArt.entschluesselung, 'Das Passwort passt nicht zu deiner Sicherung.');
+        throw CryptoFehler(
+          CryptoFehlerArt.entschluesselung,
+          abruf.stale
+              ? 'Das Passwort passt nicht zu deiner alten Passwort-Sicherung. Nimm das Passwort, mit dem du sie angelegt hast – nicht dein neues Anmelde-Passwort.'
+              : 'Das Passwort passt nicht zu deiner Sicherung.',
+        );
       }
       rethrow;
     }
