@@ -13,6 +13,8 @@ import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/chat/chat_krypto.dart' show ChatKrypto;
+import '../../data/chat/chat_zusatz_inhalt.dart';
+import '../../data/chat/chat_zusatz_repository.dart';
 import '../../data/chat/lese_status.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/members.dart';
@@ -22,6 +24,7 @@ import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
 import 'chat_anzeige.dart';
 import 'chat_krypto_ui.dart';
+import 'chat_zusatz_ui.dart';
 import 'personen_wahl.dart';
 
 class ChatVerlauf extends ConsumerStatefulWidget {
@@ -52,6 +55,72 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
 
   String get _id => widget.konversationId;
   ChatRepository get _repo => ref.read(chatRepositoryProvider);
+  ChatZusatzRepository get _zusatz => ref.read(chatZusatzRepositoryProvider);
+
+  void _hinweis(String text) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
+
+  /// Setzt die eigene Reaktion oder nimmt sie zurück (gleiches Emoji noch einmal). Nur auf bestätigte Nachrichten.
+  Future<void> _reagieren(Nachricht n, String emoji, String? meine) async {
+    if (n.rev == 0) {
+      _hinweis('Du kannst reagieren, sobald die Nachricht gesendet ist.');
+      return;
+    }
+    try {
+      if (meine == emoji) {
+        await _zusatz.reaktionEntfernen(n.id);
+      } else {
+        await _zusatz.reagieren(n.konversationId, n.id, emoji);
+      }
+    } on ChatNichtVerschluesselt {
+      _hinweis('Dieser Chat ist nicht verschlüsselt. Reaktionen sind hier nicht möglich.');
+    }
+  }
+
+  /// Stimme abgeben, ändern oder zurücknehmen. Bei Einzelwahl ersetzt die neue Antwort die alte, bei Mehrfachwahl wird die Antwort umgeschaltet.
+  Future<void> _abstimmen(Nachricht n, Umfrage u, UmfrageErgebnis e, int option) async {
+    if (n.rev == 0) {
+      _hinweis('Du kannst abstimmen, sobald die Umfrage gesendet ist.');
+      return;
+    }
+    if (u.beendet(DateTime.now())) {
+      _hinweis('Die Umfrage ist beendet.');
+      return;
+    }
+    final Set<int> neu;
+    if (u.mehrfach) {
+      neu = {...e.meine};
+      if (!neu.add(option)) neu.remove(option);
+    } else {
+      neu = e.meine.contains(option) ? <int>{} : {option};
+    }
+    try {
+      await _zusatz.abstimmen(n.konversationId, n.id, neu);
+    } on ChatNichtVerschluesselt {
+      _hinweis('Dieser Chat ist nicht verschlüsselt. Abstimmen ist hier nicht möglich.');
+    }
+  }
+
+  Future<void> _umfrageNeu() async {
+    final entwurf = await umfrageErstellen(context);
+    if (entwurf == null || !mounted) return;
+    try {
+      await _repo.senden(_id, umfrageKodieren(frage: entwurf.frage, optionen: entwurf.optionen, mehrfach: entwurf.mehrfach, ende: entwurf.ende));
+    } on ChatNichtVerschluesselt {
+      _hinweis('Dieser Chat ist nicht verschlüsselt. Neue Nachrichten sind hier nicht möglich.');
+      return;
+    } on NachrichtZuLang {
+      _hinweis('Die Umfrage ist zu lang. Bitte kürze sie.');
+      return;
+    }
+    if (mounted && _scroll.hasClients) unawaited(_scroll.animateTo(0, duration: const Duration(milliseconds: 150), curve: Curves.easeOut));
+  }
+
+  Future<void> _pinListeOeffnen(List<PinEintrag> pins) async {
+    final id = await pinListe(context, pins);
+    if (id != null && mounted) await _zusatz.pinLoesen(id);
+  }
 
   @override
   void initState() {
@@ -143,8 +212,19 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     if (mounted && _scroll.hasClients) unawaited(_scroll.animateTo(0, duration: const Duration(milliseconds: 150), curve: Curves.easeOut));
   }
 
-  Future<void> _aktionen(Nachricht n, ChatArt art, ChatRechte rechte, bool lesbar, String text, {LeseInfo? lese}) async {
+  Future<void> _aktionen(
+    Nachricht n,
+    ChatArt art,
+    ChatRechte rechte,
+    bool lesbar,
+    String text, {
+    LeseInfo? lese,
+    bool istUmfrage = false,
+    String? meineReaktion,
+    ChatPin? pin,
+  }) async {
     final abgelehnt = lese?.zustand == LeseZustand.abgelehnt;
+    final bestaetigt = n.rev > 0 && !abgelehnt && lesbar;
     final aktion = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: kSurface,
@@ -174,9 +254,12 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
               if (lesbar) _AktionsZeile(icon: Icons.copy_outlined, text: 'Text kopieren', wert: 'kopieren', c: c),
               _AktionsZeile(icon: Icons.delete_outline, text: 'Verwerfen', wert: 'verwerfen', c: c, gefahr: true),
             ] else ...[
+              if (bestaetigt) ReaktionsAuswahl(meine: meineReaktion, onWaehlen: (e) => Navigator.of(c).pop('emoji:$e')),
               _AktionsZeile(icon: Icons.reply, text: 'Antworten', wert: 'antworten', c: c),
-              if (lesbar) _AktionsZeile(icon: Icons.copy_outlined, text: 'Text kopieren', wert: 'kopieren', c: c),
-              if (lesbar && rechte.darfBearbeiten(n)) _AktionsZeile(icon: Icons.edit_outlined, text: 'Bearbeiten', wert: 'bearbeiten', c: c),
+              if (lesbar && !istUmfrage) _AktionsZeile(icon: Icons.copy_outlined, text: 'Text kopieren', wert: 'kopieren', c: c),
+              if (bestaetigt && pin == null && rechte.darfPinnen(art)) _AktionsZeile(icon: Icons.push_pin_outlined, text: 'Anheften', wert: 'anheften', c: c),
+              if (pin != null && rechte.darfPinLoesen(pin)) _AktionsZeile(icon: Icons.push_pin, text: 'Anheftung lösen', wert: 'pinLoesen', c: c),
+              if (lesbar && !istUmfrage && rechte.darfBearbeiten(n)) _AktionsZeile(icon: Icons.edit_outlined, text: 'Bearbeiten', wert: 'bearbeiten', c: c),
               if (rechte.darfLoeschen(n, art)) _AktionsZeile(icon: Icons.delete_outline, text: 'Löschen', wert: 'loeschen', c: c, gefahr: true),
             ],
           ],
@@ -184,7 +267,21 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       ),
     );
     if (!mounted || aktion == null) return;
+    if (aktion.startsWith('emoji:')) {
+      await _reagieren(n, aktion.substring(6), meineReaktion);
+      return;
+    }
     switch (aktion) {
+      case 'anheften':
+        try {
+          await _zusatz.pinnen(n.konversationId, n.id);
+        } on PinGrenze {
+          _hinweis('Es sind schon $kMaxPins Nachrichten angeheftet. Löse zuerst eine Anheftung.');
+        } on ChatNichtVerschluesselt {
+          _hinweis('Dieser Chat ist nicht verschlüsselt. Anheften ist hier nicht möglich.');
+        }
+      case 'pinLoesen':
+        await _zusatz.pinLoesen(n.id);
       case 'erneut':
         await _repo.erneutSenden(n.id);
       case 'verwerfen':
@@ -325,6 +422,31 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     final gelesenBis = {for (final l in ref.watch(lesestaendeProvider(_id)).value ?? const <Lesestand>[]) l.userId: l.gelesenBis};
     final empfaenger = {if (art == ChatArt.family) ...mitglieder.alle.map((u) => u.id) else ...teilnehmer}..remove(ich);
     final ausgang = ref.watch(nachrichtenAusgangProvider).value ?? const <String, OutboxData>{};
+    // Reaktionen, Stimmen und Anheftungen (Inhalte werden im Hintergrund entschlüsselt; nicht lesbare zählen nicht mit)
+    final reaktionenJe = gruppiereReaktionen(ref.watch(reaktionenProvider(_id)).value ?? const <Reaktion>[], (r) {
+      final z = inhalt.zusatz(ZusatzRef(id: r.id, konversationId: r.konversationId, nachrichtId: r.nachrichtId, userId: r.userId, wire: r.inhalt, rev: r.rev));
+      return z.lesbar ? z.text : null;
+    }, ich);
+    final stimmenJe = <String, List<Stimme>>{};
+    for (final st in ref.watch(stimmenProvider(_id)).value ?? const <Stimme>[]) {
+      (stimmenJe[st.nachrichtId] ??= []).add(st);
+    }
+    String? stimmeText(Stimme st) {
+      final z = inhalt.zusatz(ZusatzRef(id: st.id, konversationId: st.konversationId, nachrichtId: st.nachrichtId, userId: st.userId, wire: st.inhalt, rev: st.rev));
+      return z.lesbar ? z.text : null;
+    }
+    final pinZeilen = ref.watch(pinsProvider(_id)).value ?? const <ChatPin>[];
+    final pinJe = {for (final p in pinZeilen) p.nachrichtId: p};
+    final pinEintraege = [
+      for (final p in pinZeilen)
+        if (nachId[p.nachrichtId] case final m?)
+          PinEintrag(
+            nachrichtId: m.id,
+            text: nachrichtKurztext(m, inhalt),
+            autor: m.autorId == ich ? 'Du' : (mitglieder[m.autorId]?.displayName ?? 'Unbekannt'),
+            darfLoesen: rechte.darfPinLoesen(p),
+          ),
+    ];
     final jetzt = DateTime.now();
     final epochenMitglieder = epochenEmpfaenger(ref.watch(epochenListenProvider(_id)).value ?? const <Epoche>[]);
     String leseName(String id) => mitglieder[id]?.displayName ?? 'Unbekannt';
@@ -345,6 +467,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       fokus: _fokus,
       enterSendet: breit,
       onSenden: _senden,
+      onUmfrage: _bearbeitet == null ? _umfrageNeu : null,
       banner: _bearbeitet != null
           ? _Banner(label: 'nachricht bearbeiten', text: nachrichtKurztext(_bearbeitet!, inhalt), onAbbrechen: () => setState(() {
               _bearbeitet = null;
@@ -393,6 +516,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
               style: TextStyle(fontSize: 13, height: 1.4, color: kText),
             ),
           ),
+        if (pinEintraege.isNotEmpty) PinLeiste(pins: pinEintraege, onTap: () => _pinListeOeffnen(pinEintraege)),
         Expanded(
           child: liste.isEmpty
               ? EmptyState(icon: Icons.chat_bubble_outline, title: 'Noch keine Nachrichten', hint: art == ChatArt.family ? 'Schreib die erste Nachricht an die Familie.' : 'Schreib die erste Nachricht.')
@@ -410,6 +534,10 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     final davor = i + 1 < umgekehrt.length ? umgekehrt[i + 1] : null;
                     final zeigeName = !eigen && art != ChatArt.direct && !(davor is Nachricht && davor.autorId == n.autorId);
                     final d = inhalt.nachricht(n);
+                    final umfrage = d.lesbar ? umfrageLesen(d.text) : null;
+                    final gruppen = reaktionenJe[n.id] ?? const <ReaktionGruppe>[];
+                    final meineReaktion = gruppen.where((g) => g.ich).map((g) => g.emoji).firstOrNull;
+                    final ergebnis = umfrage == null ? null : umfrageAuswerten(umfrage, stimmenJe[n.id] ?? const <Stimme>[], stimmeText, ich);
                     final autor = mitglieder[n.autorId];
                     // ein Zitat zeigt nur eine Nachricht derselben Konversation (der Server prüft das ebenfalls)
                     final zitatKandidat = n.antwortAuf == null ? null : nachId[n.antwortAuf];
@@ -426,13 +554,28 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                       autorFarbe: autor == null ? kTextMuted : personColor(autor.colorIndex),
                       zeigeName: zeigeName,
                       inhalt: d,
+                      angeheftet: pinJe.containsKey(n.id),
+                      reaktionen: gruppen,
+                      personName: (id) => id == ich ? 'Du' : (mitglieder[id]?.displayName ?? 'Unbekannt'),
+                      onReaktion: (e) => _reagieren(n, e, meineReaktion),
+                      umfrage: umfrage == null || ergebnis == null
+                          ? null
+                          : UmfrageKarte(
+                              umfrage: umfrage,
+                              ergebnis: ergebnis,
+                              beendet: umfrage.beendet(jetzt),
+                              wartet: n.rev == 0,
+                              name: (id) => id == ich ? 'Du' : (mitglieder[id]?.displayName ?? 'Unbekannt'),
+                              onWaehle: (o) => _abstimmen(n, umfrage, ergebnis, o),
+                            ),
+                      umfrageKopf: umfrage?.frage,
                       zitat: n.antwortAuf == null
                           ? null
                           : _Zitat(
                               autor: zitat == null ? '' : (zitat.autorId == ich ? 'Du' : (mitglieder[zitat.autorId]?.displayName ?? 'Unbekannt')),
                               text: zitat == null ? 'Nachricht nicht verfügbar' : nachrichtKurztext(zitat, inhalt),
                             ),
-                      onTap: () => _aktionen(n, art, rechte, d.lesbar, d.text, lese: lese),
+                      onTap: () => _aktionen(n, art, rechte, d.lesbar, d.text, lese: lese, istUmfrage: umfrage != null, meineReaktion: meineReaktion, pin: pinJe[n.id]),
                     );
                   },
                 ),
@@ -543,6 +686,14 @@ class _Blase extends StatelessWidget {
   final VoidCallback onTap;
   final LeseInfo? lese;
   final String leseText;
+  final bool angeheftet;
+  final List<ReaktionGruppe> reaktionen;
+  final String Function(String userId) personName;
+  final ValueChanged<String> onReaktion;
+
+  /// Umfrage statt Text (Karte) und ihre Frage für Screenreader.
+  final Widget? umfrage;
+  final String? umfrageKopf;
   const _Blase({
     required this.nachricht,
     required this.lese,
@@ -554,6 +705,12 @@ class _Blase extends StatelessWidget {
     required this.inhalt,
     required this.zitat,
     required this.onTap,
+    required this.angeheftet,
+    required this.reaktionen,
+    required this.personName,
+    required this.onReaktion,
+    required this.umfrage,
+    required this.umfrageKopf,
   });
 
   @override
@@ -567,7 +724,8 @@ class _Blase extends StatelessWidget {
     final lesbar = inhalt.lesbar;
     final zeit = uhrzeit(nachricht.createdAt);
     final bearbeitet = nachricht.bearbeitetAt != null;
-    final beschreibung = '${eigen ? 'Du' : autorName}, $zeit${lese != null ? ', $leseText' : (gesendet ? '' : ', wird gesendet')}${bearbeitet ? ', bearbeitet' : ''}: $text';
+    final beschreibung =
+        '${eigen ? 'Du' : autorName}, $zeit${lese != null ? ', $leseText' : (gesendet ? '' : ', wird gesendet')}${bearbeitet ? ', bearbeitet' : ''}${angeheftet ? ', angeheftet' : ''}: ${umfrageKopf != null ? 'Umfrage: $umfrageKopf' : text}';
     return Padding(
       padding: EdgeInsets.only(top: zeigeName ? 8 : 2, bottom: 2),
       child: Align(
@@ -575,12 +733,17 @@ class _Blase extends StatelessWidget {
         child: LayoutBuilder(
           builder: (context, c) => ConstrainedBox(
             constraints: BoxConstraints(maxWidth: c.maxWidth * 0.84),
-            child: Semantics(
+            child: Column(
+              crossAxisAlignment: eigen ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+            Semantics(
               container: true,
               button: true,
               label: beschreibung,
               hint: 'Aktionen öffnen',
-              excludeSemantics: true,
+              // die Umfrage hat eigene bedienbare Antworten: ihre Semantik bleibt erhalten
+              excludeSemantics: umfrage == null,
               onTap: onTap,
               child: Material(
                 color: eigen ? kAccentSoft : kSurface.withValues(alpha: 0.92),
@@ -616,7 +779,10 @@ class _Blase extends StatelessWidget {
                               ],
                             ),
                           ),
-                        Text(text, style: TextStyle(fontStyle: lesbar ? FontStyle.normal : FontStyle.italic, color: lesbar ? kText : kTextMuted)),
+                        if (umfrage != null)
+                          umfrage!
+                        else
+                          Text(text, style: TextStyle(fontStyle: lesbar ? FontStyle.normal : FontStyle.italic, color: lesbar ? kText : kTextMuted)),
                         const SizedBox(height: 2),
                         Align(
                           alignment: Alignment.centerRight,
@@ -625,6 +791,7 @@ class _Blase extends StatelessWidget {
                             crossAxisAlignment: WrapCrossAlignment.center,
                             alignment: WrapAlignment.end,
                             children: [
+                              if (angeheftet) const Icon(Icons.push_pin, size: 12, color: kAccent, semanticLabel: 'angeheftet'),
                               if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
                               if (!gesendet && eigen) _SendeText(lese: lese),
                               Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
@@ -637,6 +804,9 @@ class _Blase extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
+                if (reaktionen.isNotEmpty) ReaktionsChips(gruppen: reaktionen, name: personName, onTap: onReaktion),
+              ],
             ),
           ),
         ),
@@ -698,7 +868,10 @@ class _Eingabe extends StatelessWidget {
   final bool enterSendet;
   final VoidCallback onSenden;
   final Widget? banner;
-  const _Eingabe({required this.controller, required this.fokus, required this.enterSendet, required this.onSenden, required this.banner});
+
+  /// Umfrage erstellen (null beim Bearbeiten einer Nachricht: dann gibt es den Knopf nicht).
+  final VoidCallback? onUmfrage;
+  const _Eingabe({required this.controller, required this.fokus, required this.enterSendet, required this.onSenden, required this.banner, required this.onUmfrage});
 
   @override
   Widget build(BuildContext context) {
@@ -725,6 +898,7 @@ class _Eingabe extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              if (onUmfrage != null) IconButton(tooltip: 'Umfrage erstellen', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.poll_outlined), onPressed: onUmfrage),
               Expanded(child: feld),
               const SizedBox(width: 8),
               IconButton.filled(tooltip: 'Senden', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), onPressed: onSenden, icon: const Icon(Icons.send)),

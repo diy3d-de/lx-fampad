@@ -32,6 +32,18 @@ class DekodierterInhalt {
   bool get lesbar => status == InhaltStatus.bereit;
 }
 
+/// Eine Reaktion oder Stimme, deren Inhalt geöffnet werden soll. Die Hülle ist an Konversation, die eigene ID (Reaktion/Stimme), die Person (Absender) und die Nachricht
+/// (als Bezug, wie bei einer Antwort) gebunden: der Server kann sie nicht umhängen.
+class ZusatzRef {
+  final String id;
+  final String konversationId;
+  final String nachrichtId;
+  final String userId;
+  final String wire;
+  final int rev;
+  const ZusatzRef({required this.id, required this.konversationId, required this.nachrichtId, required this.userId, required this.wire, required this.rev});
+}
+
 /// Größte Nachricht in Zeichen (Klartext, vor dem Kodieren). Zusätzlich gilt eine Grenze in UTF-8-Bytes (`kMaxNachrichtBytes`), damit die verschlüsselte
 /// Hülle unter der Obergrenze des Servers bleibt.
 const kMaxNachrichtenZeichen = 4000;
@@ -49,6 +61,9 @@ abstract class NachrichtenInhalt {
   /// Inhalt einer Nachricht. Verschlüsselte Nachrichten werden im Hintergrund geöffnet: bis dahin "wird entschlüsselt", danach der Text oder der Grund, warum
   /// nicht. Die Oberfläche baut sich neu auf, sobald sich etwas geändert hat (der Provider ändert sich).
   DekodierterInhalt nachricht(Nachricht n);
+
+  /// Inhalt einer Reaktion oder Stimme (Klartext mit Typpräfix `r1:`/`s1:`, siehe chat_zusatz_inhalt.dart), wie bei [nachricht] im Hintergrund geöffnet.
+  DekodierterInhalt zusatz(ZusatzRef z);
 }
 
 /// Namen und Klartext-Altbestand: `p1:` + Text. Verschlüsselte Nachrichten kann diese Hülle nicht lesen (die App benutzt [nachrichtenInhaltProvider]).
@@ -69,4 +84,7 @@ class KlartextHuelle implements NachrichtenInhalt {
 
   @override
   DekodierterInhalt nachricht(Nachricht n) => dekodieren(n.inhalt);
+
+  @override
+  DekodierterInhalt zusatz(ZusatzRef z) => const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'verschlüsselt');
 }

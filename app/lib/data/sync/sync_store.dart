@@ -45,13 +45,17 @@ abstract interface class OpVorbereiter {
   Future<String?> vorbereiten(OutboxData op);
 }
 
-/// Ein lokaler Klartext (`l1:`) einer Chat-Nachricht darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet). Nur das Feld
-/// `text` der Entität `nachricht` zählt (ein Listeneintrag, der mit "l1:" beginnt, ist ein ganz normaler Text).
+/// Verschlüsselte Chat-Inhalte je Entität: das Feld, das vor dem Senden aus dem lokalen Klartext (`l1:`) zur Hülle `e1:` wird (Nachricht: Text; Reaktion und Stimme:
+/// Inhalt). Ein anderes Feld oder eine andere Entität (z. B. ein Listeneintrag, der mit "l1:" beginnt) ist ein ganz normaler Text.
+const kVerschluesselteFelder = {'nachricht': 'text', 'reaktion': 'inhalt', 'stimme': 'inhalt'};
+
+/// Ein lokaler Klartext (`l1:`) eines verschlüsselten Chat-Inhalts darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet).
 bool _hatLokalenKlartext(OutboxData z) {
-  if (z.entity != 'nachricht' || !z.fieldsJson.contains('l1:')) return false;
+  final feld = kVerschluesselteFelder[z.entity];
+  if (feld == null || !z.fieldsJson.contains('l1:')) return false;
   try {
     final f = jsonDecode(z.fieldsJson);
-    return f is Map && f['text'] is String && (f['text'] as String).startsWith('l1:');
+    return f is Map && f[feld] is String && (f[feld] as String).startsWith('l1:');
   } catch (_) {
     return true;
   }
@@ -98,7 +102,7 @@ class SyncStore {
   /// eine neue Epoche) und verschlüsselt erst danach mit der dann aktuellen.
   Future<bool> hatAltenKlartext(Duration alter) async {
     final grenze = _jetzt().subtract(alter);
-    for (final z in await (db.select(db.outbox)..where((o) => o.entity.equals('nachricht') & o.fehlerCode.isNull() & o.createdAt.isSmallerOrEqualValue(grenze))).get()) {
+    for (final z in await (db.select(db.outbox)..where((o) => o.entity.isIn(kVerschluesselteFelder.keys) & o.fehlerCode.isNull() & o.createdAt.isSmallerOrEqualValue(grenze))).get()) {
       if (_hatLokalenKlartext(z)) return true;
     }
     return false;

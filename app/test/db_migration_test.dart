@@ -7,7 +7,7 @@ import 'package:lx_fampad/data/app_database.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 void main() {
-  test('Version 1 -> 9: Besitzer bleibt, neue Tabellen sind da, Ausgang akzeptiert op_id', () async {
+  test('Version 1 -> 10: Besitzer bleibt, neue Tabellen sind da, Ausgang akzeptiert op_id', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     // genau das Schema der Version 1
@@ -26,10 +26,10 @@ void main() {
     expect(await db.select(db.listenEintraege).get(), isEmpty);
     await db.into(db.outbox).insert(OutboxCompanion.insert(opId: 'op-1', op: 'upsert', entity: 'list', entityId: 'l1'));
     expect((await db.select(db.outbox).get()).single.opId, 'op-1');
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('Version 2 -> 9: Listen und Ausgang bleiben, Termin-Tabellen kommen dazu', () async {
+  test('Version 2 -> 10: Listen und Ausgang bleiben, Termin-Tabellen kommen dazu', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     // Schema der Version 2 (Phase 1c-1): erzeugt von der aktuellen Datenbank ohne die Termin-Tabellen
@@ -39,6 +39,9 @@ void main() {
     await db.into(db.listen).insert(ListenCompanion.insert(id: 'l1', name: 'Einkauf', createdAt: DateTime(2026, 10, 19)));
     await db.close();
     for (final t in ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'konversationen', 'nachrichten', 'lesestand', 'konversation_epochen', 'epoche_wraps', 'aufgaben', 'aufgabe_punkte']) {
+      raw.execute('DROP TABLE $t');
+    }
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
       raw.execute('DROP TABLE $t');
     }
     raw.execute('PRAGMA user_version = 2');
@@ -53,7 +56,7 @@ void main() {
     // die Indizes der neuen Tabellen sind auch beim Upgrade da (nicht nur bei einer frischen Datenbank)
     final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
     expect(indizes, containsAll(['termin_teilnehmer_termin_idx', 'termin_ausnahmen_termin_idx', 'list_items_list_idx', 'outbox_entity_idx']));
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
   test('Version 2 -> 3: Sync-Fortschritt wird zurückgesetzt, übrige Meta-Werte und Ausgang bleiben', () async {
@@ -70,6 +73,9 @@ void main() {
     for (final t in ['termine', 'termin_teilnehmer', 'termin_ausnahmen', 'konversationen', 'nachrichten', 'lesestand', 'konversation_epochen', 'epoche_wraps', 'aufgaben', 'aufgabe_punkte']) {
       raw.execute('DROP TABLE $t');
     }
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
+      raw.execute('DROP TABLE $t');
+    }
     raw.execute('PRAGMA user_version = 2');
     db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
     addTearDown(db.close);
@@ -81,7 +87,7 @@ void main() {
     expect((await db.select(db.outbox).get()).single.opId, 'op-1');
   });
 
-  test('Version 3 -> 9: Listen, Termine und Ausgang bleiben, Chat-Tabellen und Indizes kommen dazu', () async {
+  test('Version 3 -> 10: Listen, Termine und Ausgang bleiben, Chat-Tabellen und Indizes kommen dazu', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
@@ -91,6 +97,9 @@ void main() {
     await db.into(db.termine).insert(TermineCompanion.insert(id: 't1', titel: 'Zahnarzt', createdAt: DateTime(2026, 10, 19)));
     await db.close();
     for (final t in ['konversationen', 'nachrichten', 'lesestand', 'konversation_epochen', 'epoche_wraps', 'aufgaben', 'aufgabe_punkte']) {
+      raw.execute('DROP TABLE $t');
+    }
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
       raw.execute('DROP TABLE $t');
     }
     raw.execute('PRAGMA user_version = 3');
@@ -109,10 +118,10 @@ void main() {
     expect(k.titel, '');
     final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
     expect(indizes, containsAll(['nachrichten_konversation_idx', 'lesestand_konversation_idx', 'termin_teilnehmer_termin_idx']));
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('Version 4 -> 9: Chat-Zeiten werden zu Millisekunden, der Abgleich beginnt neu, andere Daten bleiben', () async {
+  test('Version 4 -> 10: Chat-Zeiten werden zu Millisekunden, der Abgleich beginnt neu, andere Daten bleiben', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
@@ -130,6 +139,9 @@ void main() {
     raw.execute('DROP TABLE epoche_wraps');
     raw.execute('DROP TABLE aufgaben');
     raw.execute('DROP TABLE aufgabe_punkte');
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
+      raw.execute('DROP TABLE $t');
+    }
     raw.execute('PRAGMA user_version = 4');
     db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
     addTearDown(db.close);
@@ -147,10 +159,10 @@ void main() {
     // Millisekunden bleiben erhalten
     await db.into(db.nachrichten).insert(NachrichtenCompanion.insert(id: 'n2', konversationId: 'k1', inhalt: 'p1:y', createdAt: DateTime.fromMillisecondsSinceEpoch(1760000010123)));
     expect((await (db.select(db.nachrichten)..where((n) => n.id.equals('n2'))).getSingle()).createdAt.millisecondsSinceEpoch, 1760000010123);
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('Version 4 -> 9: auf dem Server gelöschte Chat-Zeilen (Geister) verschwinden, lokal neue (rev 0) bleiben', () async {
+  test('Version 4 -> 10: auf dem Server gelöschte Chat-Zeilen (Geister) verschwinden, lokal neue (rev 0) bleiben', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
@@ -168,6 +180,9 @@ void main() {
     raw.execute('DROP TABLE epoche_wraps');
     raw.execute('DROP TABLE aufgaben');
     raw.execute('DROP TABLE aufgabe_punkte');
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
+      raw.execute('DROP TABLE $t');
+    }
     raw.execute('PRAGMA user_version = 4');
     db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
     addTearDown(db.close);
@@ -177,7 +192,7 @@ void main() {
     expect(await db.besitzerLesen(), 'u1');
   });
 
-  test('Version 6 -> 9: Aufgaben-Tabellen kommen dazu, Sync-Fortschritt wird zurückgesetzt, Chat, Termine und Ausgang bleiben', () async {
+  test('Version 6 -> 10: Aufgaben-Tabellen kommen dazu, Sync-Fortschritt wird zurückgesetzt, Chat, Termine und Ausgang bleiben', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
@@ -190,6 +205,9 @@ void main() {
     await db.close();
     // Schema der Version 6 (E2EE Phase 2): ohne die Aufgaben-Tabellen
     for (final t in ['aufgaben', 'aufgabe_punkte']) {
+      raw.execute('DROP TABLE $t');
+    }
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
       raw.execute('DROP TABLE $t');
     }
     raw.execute('PRAGMA user_version = 6');
@@ -206,10 +224,10 @@ void main() {
     await db.into(db.aufgabePunkte).insert(AufgabePunkteCompanion.insert(id: 'p1', aufgabeId: 'a1', inhalt: 'Tonne', createdAt: DateTime(2026, 10, 19)));
     final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
     expect(indizes, contains('aufgabe_punkte_aufgabe_idx'));
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('Version 7 -> 9: Sync-Fortschritt wird zurückgesetzt (Lesestände aller Teilnehmer), Daten und Ausgang bleiben', () async {
+  test('Version 7 -> 10: Sync-Fortschritt wird zurückgesetzt (Lesestände aller Teilnehmer), Daten und Ausgang bleiben', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
@@ -219,6 +237,9 @@ void main() {
     await db.metaSchreiben('snapshotRev', '600');
     await db.into(db.outbox).insert(OutboxCompanion.insert(opId: 'op-1', op: 'upsert', entity: 'termin', entityId: 't1'));
     await db.close();
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
+      raw.execute('DROP TABLE $t');
+    }
     raw.execute('PRAGMA user_version = 7');
     db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
     addTearDown(db.close);
@@ -226,10 +247,10 @@ void main() {
     expect(await db.metaLesen('snapshotRev'), isNull);
     expect(await db.metaLesen('deviceId'), 'dev-1');
     expect((await db.select(db.outbox).get()).single.opId, 'op-1');
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('Version 8 -> 9: Spalte fehler_code im Ausgang kommt dazu, Ausgang, Daten und Sync-Fortschritt bleiben unverändert', () async {
+  test('Version 8 -> 10: Spalte fehler_code im Ausgang kommt dazu, die Chat-Tabellen auch, Ausgang und Daten bleiben, der Sync-Fortschritt wird zurückgesetzt', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
@@ -241,22 +262,56 @@ void main() {
     await db.close();
     // Schema der Version 8: ohne fehler_code
     raw.execute('ALTER TABLE outbox DROP COLUMN fehler_code');
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
+      raw.execute('DROP TABLE $t');
+    }
     raw.execute('PRAGMA user_version = 8');
     db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
     addTearDown(db.close);
     final op = (await db.select(db.outbox).get()).single;
     expect(op.opId, 'op-1');
     expect(op.fehlerCode, isNull);
-    expect(await db.metaLesen('sinceRev'), '500'); // kein Sync-Reset: es gibt keine neue Sync-Entität
-    expect(await db.metaLesen('snapshotRev'), '600');
+    expect(await db.metaLesen('sinceRev'), isNull); // Version 10 legt Tabellen für neue Sync-Entitäten an: Reset
+    expect(await db.metaLesen('snapshotRev'), isNull);
     expect(await db.metaLesen('deviceId'), 'dev-1');
     expect(await db.besitzerLesen(), 'u1');
     await (db.update(db.outbox)).write(const OutboxCompanion(fehlerCode: Value('forbidden')));
     expect((await db.select(db.outbox).get()).single.fehlerCode, 'forbidden');
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('frische Datenbank: Version 9 mit allen Tabellen', () async {
+  test('Version 9 -> 10: Tabellen für Reaktionen, Stimmen und Pins kommen dazu, der Sync-Fortschritt wird zurückgesetzt, Ausgang und Daten bleiben', () async {
+    final raw = sqlite3.openInMemory();
+    addTearDown(raw.close);
+    var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
+    await db.besitzerSetzen('u1');
+    await db.metaSchreiben('deviceId', 'dev-1');
+    await db.metaSchreiben('sinceRev', '500');
+    await db.metaSchreiben('snapshotRev', '600');
+    await db.into(db.konversationen).insert(KonversationenCompanion.insert(id: 'k1', art: 'family', createdAt: DateTime(2026, 10, 19)));
+    await db.into(db.outbox).insert(OutboxCompanion.insert(opId: 'op-1', op: 'upsert', entity: 'nachricht', entityId: 'n1'));
+    await db.close();
+    for (final t in ['reaktionen', 'stimmen', 'pins']) {
+      raw.execute('DROP TABLE $t');
+    }
+    raw.execute('PRAGMA user_version = 9');
+    db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
+    addTearDown(db.close);
+    expect(await db.select(db.reaktionen).get(), isEmpty);
+    expect(await db.select(db.stimmen).get(), isEmpty);
+    expect(await db.select(db.pins).get(), isEmpty);
+    expect(await db.metaLesen('sinceRev'), isNull);
+    expect(await db.metaLesen('snapshotRev'), isNull);
+    expect(await db.metaLesen('deviceId'), 'dev-1');
+    expect(await db.besitzerLesen(), 'u1');
+    expect(await db.select(db.outbox).get(), hasLength(1));
+    expect(await db.select(db.konversationen).get(), hasLength(1));
+    final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
+    expect(indizes, containsAll(['reaktionen_konversation_idx', 'stimmen_konversation_idx', 'pins_konversation_idx']));
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
+  });
+
+  test('frische Datenbank: Version 10 mit allen Tabellen', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     final db = AppDatabase(NativeDatabase.opened(raw));
@@ -265,12 +320,12 @@ void main() {
     final tabellen = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")) r['name']];
     final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
     expect(indizes, containsAll(['termin_teilnehmer_termin_idx', 'termin_ausnahmen_termin_idx', 'nachrichten_konversation_idx', 'lesestand_konversation_idx']));
-    expect(tabellen, containsAll(['sync_meta', 'outbox', 'lists', 'list_items', 'termine', 'termin_teilnehmer', 'termin_ausnahmen', 'konversationen', 'nachrichten', 'lesestand', 'konversation_epochen', 'epoche_wraps', 'aufgaben', 'aufgabe_punkte']));
+    expect(tabellen, containsAll(['sync_meta', 'outbox', 'lists', 'list_items', 'termine', 'termin_teilnehmer', 'termin_ausnahmen', 'konversationen', 'nachrichten', 'lesestand', 'konversation_epochen', 'epoche_wraps', 'aufgaben', 'aufgabe_punkte', 'reaktionen', 'stimmen', 'pins']));
     expect(indizes, containsAll(['konversation_epochen_idx', 'epoche_wraps_idx', 'aufgabe_punkte_aufgabe_idx']));
-    expect(raw.select('PRAGMA user_version').single.values.first, 9);
+    expect(raw.select('PRAGMA user_version').single.values.first, 10);
   });
 
-  test('erneutes Öffnen einer Version-9-Datenbank ändert nichts', () async {
+  test('erneutes Öffnen einer Version-10-Datenbank ändert nichts', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
