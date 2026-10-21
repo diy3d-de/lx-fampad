@@ -289,7 +289,7 @@ class PinWahl {
 }
 
 /// Liste der angehefteten Nachrichten; ein Tipp auf einen Eintrag springt zur Nachricht, das Kreuz löst die Anheftung (null: nichts gewählt).
-Future<PinWahl?> pinListe(BuildContext context, List<PinEintrag> pins) => showModalBottomSheet<PinWahl>(
+Future<PinWahl?> pinListe(BuildContext context, List<PinEintrag> pins) => showModalBottomSheet<PinWahl>(useRootNavigator: false,
   context: context,
   backgroundColor: kSurface,
   showDragHandle: true,
@@ -329,7 +329,7 @@ class UmfrageEntwurf {
 }
 
 /// Fragt Frage, 2 bis 6 Antworten, Mehrfachauswahl und ein optionales Ende ab; null bei Abbruch.
-Future<UmfrageEntwurf?> umfrageErstellen(BuildContext context) => showModalBottomSheet<UmfrageEntwurf>(
+Future<UmfrageEntwurf?> umfrageErstellen(BuildContext context) => showModalBottomSheet<UmfrageEntwurf>(useRootNavigator: false,
   context: context,
   backgroundColor: kSurface,
   showDragHandle: true,
@@ -362,9 +362,9 @@ class _UmfrageEditorState extends State<_UmfrageEditor> {
 
   Future<void> _endeWaehlen() async {
     final jetzt = DateTime.now();
-    final tag = await showDatePicker(context: context, initialDate: _ende ?? jetzt.add(const Duration(days: 1)), firstDate: jetzt, lastDate: jetzt.add(const Duration(days: 365)));
+    final tag = await showDatePicker(useRootNavigator: false, context: context, initialDate: _ende ?? jetzt.add(const Duration(days: 1)), firstDate: jetzt, lastDate: jetzt.add(const Duration(days: 365)));
     if (tag == null || !mounted) return;
-    final zeit = await showTimePicker(context: context, initialTime: TimeOfDay.fromDateTime(_ende ?? jetzt.add(const Duration(hours: 1))));
+    final zeit = await showTimePicker(useRootNavigator: false, context: context, initialTime: TimeOfDay.fromDateTime(_ende ?? jetzt.add(const Duration(hours: 1))));
     if (zeit == null || !mounted) return;
     final ende = DateTime(tag.year, tag.month, tag.day, zeit.hour, zeit.minute);
     setState(() {

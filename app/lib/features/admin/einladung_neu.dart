@@ -30,7 +30,7 @@ class EinladungsWahl {
 }
 
 /// Bottom-Sheet "Neue Einladung". [eigeneRolle] bestimmt die wählbaren Rollen (Eltern: nur Kind).
-Future<EinladungsWahl?> neueEinladungWaehlen(BuildContext context, Role eigeneRolle) => showModalBottomSheet<EinladungsWahl>(
+Future<EinladungsWahl?> neueEinladungWaehlen(BuildContext context, Role eigeneRolle) => showModalBottomSheet<EinladungsWahl>(useRootNavigator: false,
   context: context,
   isScrollControlled: true,
   showDragHandle: true,

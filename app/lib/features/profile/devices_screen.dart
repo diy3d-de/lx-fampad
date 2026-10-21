@@ -35,7 +35,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
   });
 
   Future<void> _abmelden(DeviceDto d) async {
-    final ja = await showDialog<bool>(
+    final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (_) => AlertDialog(
         title: Text(d.current ? 'Dieses Gerät abmelden?' : 'Gerät abmelden?'),

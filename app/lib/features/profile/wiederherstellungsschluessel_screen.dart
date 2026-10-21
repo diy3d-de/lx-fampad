@@ -66,7 +66,7 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
   }
 
   Future<void> _spaeter() async {
-    final ja = await showDialog<bool>(
+    final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Später sichern?'),

@@ -1,4 +1,7 @@
 // Desktop-Layout (Fenster ab kDesktopBreakpoint): Seitenleiste links, Inhalt, Fußzeile mit Sync-, Geräte-, Verbindungs- und Versionsangabe.
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -35,14 +38,178 @@ class DesktopShellMarke extends InheritedWidget {
   bool updateShouldNotify(DesktopShellMarke alt) => false;
 }
 
-class DesktopShell extends ConsumerWidget {
+/// Beobachtet den Seiten-Stapel im Inhaltsbereich der Shell: Tiefe (für die Zurück-Taste) und ob die Konto-Seite (Marker [kKontoMarke] in den Argumenten der Route) offen ist.
+class _ShellBeobachter extends NavigatorObserver {
+  final tiefe = ValueNotifier<int>(0);
+  final konto = ValueNotifier<bool>(false);
+  final _routen = <Route<dynamic>>[];
+
+  bool _verworfen = false;
+
+  // Per Microtask: der Navigator meldet sich auch mitten im Bauen (erste Seite), da darf kein Zuhörer neu bauen lassen
+  /// Anzahl der Seiten im Stapel (sofort, ohne Microtask): so erkennt [_DesktopShellState._unterseitenSchliessen], ob ein Schließen gelungen ist.
+  int get anzahl => _routen.length;
+
+  /// Gerade geöffnete Seiten (Kopie des Stapels).
+  List<Route<dynamic>> get routen => [..._routen];
+
+  /// Meldet jede Änderung des Stapels (nach dem Bauen).
+  VoidCallback? beiAenderung;
+
+  void _aktualisieren() => scheduleMicrotask(() {
+    if (_verworfen) return;
+    beiAenderung?.call();
+    tiefe.value = _routen.length;
+    konto.value = _routen.any((r) => r.settings.arguments == kKontoMarke);
+  });
+
+  void verwerfen() {
+    _verworfen = true;
+    tiefe.dispose();
+    konto.dispose();
+  }
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routen.add(route);
+    _aktualisieren();
+  }
+
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routen.remove(route);
+    _aktualisieren();
+  }
+
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    _routen.remove(route);
+    _aktualisieren();
+  }
+
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) {
+    final i = oldRoute == null ? -1 : _routen.indexOf(oldRoute);
+    if (i >= 0) _routen.removeAt(i);
+    if (newRoute != null) _routen.insert(i < 0 ? _routen.length : i, newRoute);
+    _aktualisieren();
+  }
+}
+
+/// Seitenleiste und Fußzeile bleiben stehen; Unterseiten (Konto und deren Seiten, Editoren, Import) liegen in einem eigenen Navigator
+/// im Inhaltsbereich statt als Vollseite über der Shell. Jedes `Navigator.of(context).push` aus einem Bereich landet dort von selbst;
+/// Dialoge und Blätter öffnen mit `useRootNavigator: false` im selben Navigator wie ihre Seite (ihr `pop` trifft so den richtigen).
+class DesktopShell extends ConsumerStatefulWidget {
   /// Bereiche in Reihenfolge von [kDesktopTabs]; Index 0 ist die Desktop-Startseite.
   final List<Widget> screens;
   const DesktopShell({super.key, required this.screens});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final tab = ref.watch(shellTabProvider);
+  ConsumerState<DesktopShell> createState() => _DesktopShellState();
+}
+
+class _DesktopShellState extends ConsumerState<DesktopShell> {
+  final _navKey = GlobalKey<NavigatorState>();
+  final _beobachter = _ShellBeobachter();
+  // Die erste Seite des Navigators entsteht nur einmal; sie liest die (wachsende) Liste der Bereiche über diesen Halter
+  late final _screens = ValueNotifier<List<Widget>>(widget.screens);
+
+  @override
+  void didUpdateWidget(DesktopShell alt) {
+    super.didUpdateWidget(alt);
+    _screens.value = widget.screens;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _beobachter.beiAenderung = _stapelGeaendert;
+  }
+
+  @override
+  void dispose() {
+    _beobachter.verwerfen();
+    _screens.dispose();
+    super.dispose();
+  }
+
+  /// Schließt alle Unterseiten per `maybePop` (nie `popUntil`): Seiten mit `PopScope` (Wiederherstellungscodes, Step-up, laufende Aktionen,
+  /// Editoren mit Eingaben) behalten ihr Vetorecht. Gelingt das Schließen einer Seite nicht, bleibt sie offen und der Bereich unverändert (false).
+  Future<bool> _unterseitenSchliessen() async {
+    final nav = _navKey.currentState;
+    if (nav == null) return true;
+    // nur die Seiten, die jetzt offen sind: eine währenddessen frisch geöffnete (z. B. Editor aus einer Benachrichtigung) bleibt
+    final alte = _beobachter.routen.skip(1).toSet();
+    while (true) {
+      final offen = _beobachter.routen;
+      if (offen.length <= 1 || !alte.contains(offen.last)) return true;
+      await nav.maybePop();
+      if (_beobachter.routen.contains(offen.last)) {
+        _blockTiefe = offen.length;
+        return false;
+      }
+    }
+  }
+
+  // Ziel eines Wechsels, der an einer Rückfrage hängt: Wählt die Person dort "Verwerfen", schließt die Seite und das Ziel wird gewählt.
+  int? _ziel;
+  int _blockTiefe = 0; // Anzahl der Seiten, als eine sich nicht schließen ließ
+  int _zielTiefe = 0;
+  var _zielDialogGesehen = false;
+
+  void _stapelGeaendert() {
+    final ziel = _ziel;
+    if (ziel == null || !mounted) return;
+    final n = _beobachter.anzahl;
+    if (n < _zielTiefe) {
+      _ziel = null;
+      ref.read(shellTabProvider.notifier).waehlen(ziel);
+    } else if (n > _zielTiefe) {
+      _zielDialogGesehen = true;
+    } else if (_zielDialogGesehen) {
+      _ziel = null; // Rückfrage mit "Weiter bearbeiten" beantwortet: Wechsel bleibt abgebrochen
+    }
+  }
+
+  int? _ignoriereTab;
+
+  /// Bereichswechsel von außen (Karte, Benachrichtigung, Widget): bleibt eine Unterseite offen, wird der Wechsel zurückgenommen.
+  Future<void> _bereichGewechselt(int alt, int neu) async {
+    if (_ignoriereTab == neu) {
+      _ignoriereTab = null;
+      return;
+    }
+    _ziel = null;
+    if (await _unterseitenSchliessen() || !mounted) return;
+    if (ref.read(shellTabProvider) != neu) return; // inzwischen anders gewählt
+    _ziel = neu;
+    _zielTiefe = _blockTiefe;
+    _zielDialogGesehen = false;
+    _ignoriereTab = alt;
+    ref.read(shellTabProvider.notifier).waehlen(alt);
+  }
+
+  /// Seitenleiste: anderer Bereich wählen; derselbe Bereich schließt nur die Unterseiten.
+  void _bereichWaehlen(int i) {
+    if (ref.read(shellTabProvider) == i) {
+      unawaited(_unterseitenSchliessen());
+    } else {
+      ref.read(shellTabProvider.notifier).waehlen(i);
+    }
+  }
+
+  void _kontoOeffnen() {
+    final nav = _navKey.currentState;
+    if (nav == null || _beobachter.konto.value) return;
+    nav.push<void>(ProfileScreen.route());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen, sofern sie sich schließen lassen
+    ref.listen(shellTabProvider, (alt, neu) {
+      if (alt != null) unawaited(_bereichGewechselt(alt, neu));
+    });
     final shell = Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
@@ -50,21 +217,29 @@ class DesktopShell extends ConsumerWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const _Seitenleiste(),
+              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, waehlen: _bereichWaehlen),
               Expanded(
                 child: Column(
                   children: [
                     Expanded(
-                      // ein einziger Stapel: der Zustand der Bereiche bleibt beim Tab-Wechsel erhalten
-                      child: IndexedStack(
-                        index: tab,
-                        children: [
-                          for (var i = 0; i < screens.length; i++)
-                            Align(
-                              alignment: Alignment.topCenter,
-                              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 || i == kChatTab ? kMaxContentWidthDesktop : kMaxContentWidth), child: screens[i]),
-                            ),
-                        ],
+                      // Eigene Semantik-Grenze: die Seiten des Navigators sperren sonst (BlockSemantics) die davor gemalte Seitenleiste für Screenreader
+                      child: Semantics(
+                        container: true,
+                        explicitChildNodes: true,
+                        // Zurück (Android, Browser) schließt zuerst die Unterseite, erst danach greift der äußere Navigator
+                        child: ValueListenableBuilder<int>(
+                          valueListenable: _beobachter.tiefe,
+                          builder: (context, tiefe, kind) => NavigatorPopHandler(
+                            enabled: tiefe > 1,
+                            onPopWithResult: (Object? r) => _navKey.currentState?.maybePop(r),
+                            child: kind!,
+                          ),
+                          child: Navigator(
+                            key: _navKey,
+                            observers: [_beobachter],
+                            onGenerateRoute: (s) => PageRouteBuilder<void>(settings: s, pageBuilder: (_, _, _) => _Bereiche(screens: _screens), transitionDuration: Duration.zero),
+                          ),
+                        ),
                       ),
                     ),
                     const _Fusszeile(),
@@ -80,8 +255,35 @@ class DesktopShell extends ConsumerWidget {
   }
 }
 
+/// Die Bereiche der Shell (erste Seite des Navigators): ein einziger Stapel, der Zustand der Bereiche bleibt beim Tab-Wechsel erhalten.
+class _Bereiche extends ConsumerWidget {
+  final ValueListenable<List<Widget>> screens;
+  const _Bereiche({required this.screens});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tab = ref.watch(shellTabProvider);
+    return ValueListenableBuilder<List<Widget>>(
+      valueListenable: screens,
+      builder: (context, liste, _) => IndexedStack(
+        index: tab,
+        children: [
+          for (var i = 0; i < liste.length; i++)
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 || i == kChatTab ? kMaxContentWidthDesktop : kMaxContentWidth), child: liste[i]),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _Seitenleiste extends ConsumerWidget {
-  const _Seitenleiste();
+  final ValueListenable<bool> konto;
+  final VoidCallback kontoOeffnen;
+  final ValueChanged<int> waehlen;
+  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.waehlen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -162,7 +364,7 @@ class _Seitenleiste extends ConsumerWidget {
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
                         zaehler: i == kChatTab ? ungelesen : 0,
-                        onTap: () => ref.read(shellTabProvider.notifier).waehlen(i),
+                        onTap: () => waehlen(i),
                       ),
                     const SizedBox(height: 8),
                     for (final b in _kBaldBereiche) _NavEintrag(icon: b.$2, label: b.$1, gewaehlt: false, bald: true),
@@ -171,7 +373,7 @@ class _Seitenleiste extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 8),
-            const _ProfilKachel(),
+            _ProfilKachel(konto: konto, oeffnen: kontoOeffnen),
           ],
         ),
       ),
@@ -236,7 +438,9 @@ class _NavEintrag extends StatelessWidget {
 
 /// Unten in der Seitenleiste: Person mit Anmeldeart, öffnet Profil und Einstellungen.
 class _ProfilKachel extends ConsumerWidget {
-  const _ProfilKachel();
+  final ValueListenable<bool> konto;
+  final VoidCallback oeffnen;
+  const _ProfilKachel({required this.konto, required this.oeffnen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -250,15 +454,17 @@ class _ProfilKachel extends ConsumerWidget {
             if (me.hasTotp) '2fa',
           ].join(' + ');
     final name = user?.displayName ?? 'Profil';
-    return Semantics(
+    return ValueListenableBuilder<bool>(
+      valueListenable: konto,
+      builder: (context, offen, kind) => Semantics(
       button: true,
       focusable: true,
-      onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      onTap: oeffnen,
+      selected: offen,
       label: 'Profil und Einstellungen, $name${user == null ? '' : ', ${[user.role.label, if (user.familyRole != null && user.familyRole!.label != user.role.label) user.familyRole!.label].join(' und ')}'}${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
       excludeSemantics: true,
-      child: LxCard(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+      child: LxCard(gewaehlt: offen, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), onTap: oeffnen, child: kind!),
+      ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
@@ -289,7 +495,6 @@ class _ProfilKachel extends ConsumerWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }

@@ -189,7 +189,7 @@ enum SerieUmfang {
 }
 
 /// Fragt bei einem Serientermin, wie weit die Aktion gilt. Null = abgebrochen. Beim ersten Vorkommen entfällt "dieses und folgende".
-Future<SerieUmfang?> serieUmfangFragen(BuildContext context, {required String titel, required bool erstes}) => showModalBottomSheet<SerieUmfang>(
+Future<SerieUmfang?> serieUmfangFragen(BuildContext context, {required String titel, required bool erstes}) => showModalBottomSheet<SerieUmfang>(useRootNavigator: false,
   context: context,
   isScrollControlled: true,
   builder: (ctx) => SafeArea(
@@ -226,7 +226,7 @@ Future<TerminAktion?> terminDetailBlatt(
   required Mitglieder mitglieder,
   required Set<String> teilnehmer,
   required bool darfAendern,
-}) => showModalBottomSheet<TerminAktion>(
+}) => showModalBottomSheet<TerminAktion>(useRootNavigator: false,
   context: context,
   isScrollControlled: true,
   builder: (ctx) {

@@ -45,7 +45,7 @@ class ProfilButton extends ConsumerWidget {
         message: 'Profil und Sicherheit',
         child: InkResponse(
           radius: 24,
-          onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ProfileScreen())),
+          onTap: () => Navigator.of(context).push<void>(ProfileScreen.route()),
           child: SizedBox(
             width: 48,
             height: 48,

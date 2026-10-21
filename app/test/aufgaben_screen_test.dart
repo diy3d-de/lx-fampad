@@ -360,6 +360,19 @@ void main() {
     });
   }
 
+  testWidgets('Desktop: Unteraufgabe einer zugewiesenen Aufgabe abhaken (sofort gespeichert) ist keine ungespeicherte Änderung (keine Rückfrage beim Zurück)', (tester) async {
+    await start(tester, role: 'child', groesse: const Size(1200, 900), vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Zimmer saugen', zu: fixIdAdmin, owner: fixIdKind));
+      e.sync.andereAendert('aufgabe_punkt', 'cccccccc-1111-4111-8111-111111111111', {'aufgabeId': _a1, 'text': 'Teppich', 'position': 0});
+    });
+    await tippeText(tester, 'Zimmer saugen');
+    await tippeDirekt(tester, find.byIcon(Icons.check_box_outline_blank));
+    await tester.pump();
+    await tippe(tester, find.byTooltip('Zurück'));
+    expect(find.text('Änderungen verwerfen?'), findsNothing);
+    expect(find.byType(AufgabeEditor), findsNothing);
+  });
+
   testWidgets('Kind: zugewiesene Aufgabe der Eltern kann abgehakt werden (Haken bedienbar, Unteraufgaben-Häkchen wirken sofort), sonst bleibt sie schreibgeschützt', (tester) async {
     final env = await start(tester, role: 'child', groesse: const Size(360, 1400), vorher: (e) {
       e.sync.andereAendert('aufgabe', _a1, _aufgabe('Zimmer saugen', zu: fixIdAdmin, owner: fixIdKind));

@@ -69,7 +69,7 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
   }
 
   Future<void> _entfernen(CredentialDto c) async {
-    final ja = await showDialog<bool>(
+    final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Passkey entfernen?'),

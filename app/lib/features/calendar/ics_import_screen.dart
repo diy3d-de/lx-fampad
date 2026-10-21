@@ -146,7 +146,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop || _phase != _Phase.laeuft) return;
         final nav = Navigator.of(context);
-        final abbrechen = await showDialog<bool>(
+        final abbrechen = await showDialog<bool>(useRootNavigator: false,
           context: context,
           builder: (ctx) => AlertDialog(
             title: const Text('Import abbrechen?'),

@@ -28,8 +28,9 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
     ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
   };
   dienst.beiAufgabeGeoeffnet = (id) {
-    ref.read(aufgabeOeffnenProvider.notifier).setzen(id);
+    // erst den Bereich wählen, dann den Editor anfordern (die Shell schließt beim Wechsel nur die schon offenen Seiten)
     ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+    ref.read(aufgabeOeffnenProvider.notifier).setzen(id);
   };
   dienst.beiStandortGeoeffnet = () => ref.read(standortOeffnenProvider.notifier).anfordern();
   void los() => unawaited(dienst.abgleichen());

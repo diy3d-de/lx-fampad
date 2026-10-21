@@ -159,7 +159,7 @@ Future<MitgliederBestaetigung?> mitgliederBestaetigen(
   Set<String> entfernt = const {},
   bool verlaufFrage = false,
   String knopf = 'Weiter',
-}) => showDialog<MitgliederBestaetigung>(
+}) => showDialog<MitgliederBestaetigung>(useRootNavigator: false,
   context: context,
   builder: (_) => _MitgliederDialog(titel: titel, personen: personen, neu: neu, entfernt: entfernt, verlaufFrage: verlaufFrage, knopf: knopf),
 );

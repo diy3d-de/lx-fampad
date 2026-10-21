@@ -97,7 +97,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
     if (await db.metaLesen(kAkkuHinweisGezeigt) != null) return true;
     await db.metaSchreiben(kAkkuHinweisGezeigt, '1');
     if (!mounted) return false;
-    final antwort = await showDialog<String>(
+    final antwort = await showDialog<String>(useRootNavigator: false,
       context: context,
       builder: (c) => AlertDialog(
         backgroundColor: kSurface,
@@ -483,7 +483,7 @@ class _Zeile extends StatelessWidget {
 
   void _detail(BuildContext context) {
     unawaited(
-      showModalBottomSheet<void>(
+      showModalBottomSheet<void>(useRootNavigator: false,
         context: context,
         backgroundColor: kSurface,
         isScrollControlled: true,

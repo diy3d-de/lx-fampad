@@ -22,6 +22,7 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import '../profile/erinnerungen_screen.dart';
+import '../../widgets/ungespeichert_schutz.dart';
 import 'calendar_state.dart';
 import 'kalender_widgets.dart';
 
@@ -70,6 +71,13 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   }
 
   bool get _neu => widget.vorkommen == null;
+
+  /// Stand der Eingaben (zum Erkennen ungespeicherter Änderungen); der Ausgangsstand wird beim ersten Bauen festgehalten.
+  String? _ausgang;
+  String _stand() => [
+    _titel.text, _ort.text, _beschreibung.text, _ganztaegig, _geburtstag, _jahrBekannt, _geburtsdatum, _startTag, _endTag, _startZeit, _endZeit, _wdhGeaendert,
+    _erinnerung, ([..._teilnehmer]..sort()).join(','), _sicht,
+  ].join('');
   bool get _nurDieses => !_neu && widget.umfang == SerieUmfang.dieses;
 
   @override
@@ -144,7 +152,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   DateTime get _endeWand => _ganztaegig ? _endTag.add(const Duration(days: 1)) : _wand(_endTag, _endZeit);
 
   Future<DateTime?> _tagWaehlen(DateTime aktuell) async {
-    final d = await showDatePicker(
+    final d = await showDatePicker(useRootNavigator: false,
       context: context,
       initialDate: DateTime(aktuell.year, aktuell.month, aktuell.day),
       firstDate: DateTime(2000),
@@ -154,7 +162,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     return d == null ? null : DateTime.utc(d.year, d.month, d.day);
   }
 
-  Future<TimeOfDay?> _zeitWaehlen(TimeOfDay aktuell) => showTimePicker(
+  Future<TimeOfDay?> _zeitWaehlen(TimeOfDay aktuell) => showTimePicker(useRootNavigator: false,
     context: context,
     initialTime: aktuell,
     builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
@@ -305,6 +313,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
 
   @override
   Widget build(BuildContext context) {
+    _ausgang ??= _stand();
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = TerminRechte(user?.role ?? Role.child, user?.id);
     final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
@@ -371,7 +380,10 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       ],
     );
 
-    return AuthSeite(
+    return UngespeichertSchutz(
+      geaendert: () => _stand() != _ausgang,
+      aenderungen: Listenable.merge([_titel, _ort, _beschreibung]),
+      child: AuthSeite(
       label: '// termin',
       titel: titel,
       maxBreite: kMaxContentWidth,
@@ -404,7 +416,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
             label: 'Geburtsdatum',
             text: _jahrBekannt ? DateFormat('d. MMMM y', 'de_DE').format(_geburtsdatum) : DateFormat('d. MMMM', 'de_DE').format(_geburtsdatum),
             onTap: () async {
-              final d = await showDatePicker(
+              final d = await showDatePicker(useRootNavigator: false,
                 context: context,
                 initialDate: DateTime(_geburtsdatum.year, _geburtsdatum.month, _geburtsdatum.day),
                 firstDate: DateTime(1900),
@@ -518,13 +530,14 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
           ],
         ],
       ],
+      ),
     );
   }
 }
 
 /// Blatt "Wiederholung": Art, Intervall, Wochentage, Monatsmodus, Ende. Liefert die neue Auswahl (null: abgebrochen).
 Future<Wiederholung?> wiederholungBlatt(BuildContext context, Wiederholung start, {required DateTime startTag, required bool ganztaegig}) =>
-    showModalBottomSheet<Wiederholung>(
+    showModalBottomSheet<Wiederholung>(useRootNavigator: false,
       context: context,
       isScrollControlled: true,
       builder: (_) => _WiederholungBlatt(start: start, startTag: startTag),
@@ -630,7 +643,7 @@ class _WiederholungBlattState extends State<_WiederholungBlatt> {
                       text: w.ende == WdhEnde.bis && w.bis != null ? 'Bis ${DateFormat('d.M.y').format(w.bis!)}' : 'Bis Datum',
                       gewaehlt: w.ende == WdhEnde.bis,
                       onTap: () async {
-                        final d = await showDatePicker(
+                        final d = await showDatePicker(useRootNavigator: false,
                           context: context,
                           initialDate: DateTime(widget.startTag.year, widget.startTag.month, widget.startTag.day).add(const Duration(days: 30)),
                           firstDate: DateTime(widget.startTag.year, widget.startTag.month, widget.startTag.day),

@@ -76,7 +76,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
   Future<void> _aktion(UserDto m, _Aktion a) async {
     switch (a) {
       case _Aktion.rolle:
-        final neu = await showDialog<Role>(
+        final neu = await showDialog<Role>(useRootNavigator: false,
           context: context,
           builder: (ctx) => SimpleDialog(
             title: Text('Rolle für ${m.displayName}'),
@@ -170,7 +170,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
   }
 
   Future<bool> _frage(String titel, String text, String knopf) async =>
-      await showDialog<bool>(
+      await showDialog<bool>(useRootNavigator: false,
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(titel),
@@ -184,7 +184,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
       false;
 
   /// Gültigkeit und PIN für die Einladung zum Zurücksetzen.
-  Future<(int, bool)?> _zuruecksetzenWaehlen(UserDto m) => showDialog<(int, bool)>(
+  Future<(int, bool)?> _zuruecksetzenWaehlen(UserDto m) => showDialog<(int, bool)>(useRootNavigator: false,
     context: context,
     builder: (ctx) {
       var stunden = 24;
@@ -360,7 +360,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
   }
 
   Future<void> _widerrufen(InviteDto i) async {
-    final ja = await showDialog<bool>(
+    final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text('Einladung widerrufen?'),
@@ -377,7 +377,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
   }
 
   Future<void> _verlaengern(InviteDto i) async {
-    final stunden = await showDialog<int>(
+    final stunden = await showDialog<int>(useRootNavigator: false,
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Einladung verlängern'),

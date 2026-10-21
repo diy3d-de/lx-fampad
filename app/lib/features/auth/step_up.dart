@@ -18,7 +18,7 @@ Future<T?> mitStepUp<T>(BuildContext context, WidgetRef ref, Future<T> Function(
   }
   if (!context.mounted) return null;
   // Nicht per Tipp daneben schließbar: sonst bliebe ein laufender Passkey-Dialog ohne Empfänger zurück
-  final ok = await showDialog<bool>(context: context, barrierDismissible: false, builder: (_) => const StepUpDialog());
+  final ok = await showDialog<bool>(useRootNavigator: false, context: context, barrierDismissible: false, builder: (_) => const StepUpDialog());
   if (ok != true) return null;
   return aktion();
 }

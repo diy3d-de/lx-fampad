@@ -42,7 +42,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   }
 
   Future<bool> _bestaetigen(String titel, String text, String knopf) async =>
-      await showDialog<bool>(
+      await showDialog<bool>(useRootNavigator: false,
         context: context,
         builder: (_) => AlertDialog(
           title: Text(titel),

@@ -67,7 +67,7 @@ class NeueListeAngaben {
 }
 
 /// Dialog "Neue Liste": Name, Art, bei Eltern auch die Freigabe.
-Future<NeueListeAngaben?> neueListeDialog(BuildContext context, ListenRechte rechte) => showDialog<NeueListeAngaben>(
+Future<NeueListeAngaben?> neueListeDialog(BuildContext context, ListenRechte rechte) => showDialog<NeueListeAngaben>(useRootNavigator: false,
   context: context,
   builder: (_) => _NeueListe(rechte),
 );
@@ -143,7 +143,7 @@ class _NeueListeState extends State<_NeueListe> {
 
 /// Einfacher Text-Dialog (Liste umbenennen). Liefert den neuen, nicht leeren Text.
 Future<String?> textDialog(BuildContext context, {required String titel, required String label, String start = '', int maxLaenge = 100, String knopf = 'Speichern'}) =>
-    showDialog<String>(
+    showDialog<String>(useRootNavigator: false,
       context: context,
       builder: (_) => _TextDialog(titel: titel, label: label, start: start, maxLaenge: maxLaenge, knopf: knopf),
     );
@@ -192,7 +192,7 @@ class _TextDialogState extends State<_TextDialog> {
 }
 
 /// Auswahl der Freigabe einer Liste ("Sichtbar für").
-Future<ListenSicht?> sichtDialog(BuildContext context, ListenSicht aktuell) => showDialog<ListenSicht>(
+Future<ListenSicht?> sichtDialog(BuildContext context, ListenSicht aktuell) => showDialog<ListenSicht>(useRootNavigator: false,
   context: context,
   builder: (c) => AlertDialog(
     title: const Text('Sichtbar für'),
@@ -206,7 +206,7 @@ Future<ListenSicht?> sichtDialog(BuildContext context, ListenSicht aktuell) => s
 );
 
 Future<bool> bestaetigen(BuildContext context, {required String titel, required String text, required String knopf}) async =>
-    await showDialog<bool>(
+    await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (c) => AlertDialog(
         title: Text(titel),
@@ -234,7 +234,7 @@ class EintragSpeichern extends EintragAktion {
 class EintragLoeschen extends EintragAktion {}
 
 /// Blatt "Eintrag bearbeiten": Text ändern oder den Eintrag löschen.
-Future<EintragAktion?> eintragBlatt(BuildContext context, {required String text}) => showModalBottomSheet<EintragAktion>(
+Future<EintragAktion?> eintragBlatt(BuildContext context, {required String text}) => showModalBottomSheet<EintragAktion>(useRootNavigator: false,
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
@@ -306,7 +306,7 @@ class _EintragBlattState extends State<_EintragBlatt> {
 /// Rückgabe des Zuweisen-Blatts: null = abgebrochen, [keinePerson] = Zuständigkeit entfernen.
 const keinePerson = '';
 
-Future<String?> zuweisenBlatt(BuildContext context, {required List<UserDto> personen, required String? aktuell}) => showModalBottomSheet<String>(
+Future<String?> zuweisenBlatt(BuildContext context, {required List<UserDto> personen, required String? aktuell}) => showModalBottomSheet<String>(useRootNavigator: false,
   context: context,
   showDragHandle: true,
   isScrollControlled: true,

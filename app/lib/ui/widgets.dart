@@ -91,12 +91,15 @@ class LxCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
   final VoidCallback? onTap;
-  const LxCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap});
+
+  /// Hervorgehoben (Akzentrand), z. B. die Konto-Kachel der Seitenleiste, solange die Konto-Seite offen ist.
+  final bool gewaehlt;
+  const LxCard({super.key, required this.child, this.padding = const EdgeInsets.all(16), this.onTap, this.gewaehlt = false});
 
   @override
   Widget build(BuildContext context) => Material(
-        color: kSurface.withValues(alpha: 0.7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: kBorder)),
+        color: gewaehlt ? kAccentSoft : kSurface.withValues(alpha: 0.7),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: gewaehlt ? kAccent : kBorder)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
       );
