@@ -14,6 +14,8 @@ import { registerAuthRoutes } from './routes/auth.js';
 import { registerAvatarRoutes } from './routes/avatar.js';
 import { registerPushRoutes } from './routes/push.js';
 import { PushService } from './push/service.js';
+import { registerWeatherRoutes } from './routes/weather.js';
+import { WeatherService } from './weather/service.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { dbDirectory } from './location/directory.js';
@@ -29,6 +31,8 @@ declare module 'fastify' {
     hub: Hub;
     /** Standort teilen: flüchtiger Kanal, nur Prozessspeicher. */
     location: LocationService;
+    /** Wetter (nur mit Datenbank); der Abruf-Takt startet in server.ts. */
+    weather?: WeatherService;
     /** Push-Wecker (nur mit Datenbank); Chat & Co. hängen hier ihren Empfängerfilter ein (push/service.ts). */
     push?: PushService;
   }
@@ -50,6 +54,8 @@ export interface AppDeps {
   /** Nur Tests: ntfy ersetzen (Fake-HTTP) und Mindestabstand der Wecker verkürzen. */
   pushFetch?: typeof fetch;
   pushMinIntervalMs?: number;
+  /** Nur Tests: Netatmo ersetzen (Fake-HTTP). */
+  weatherFetch?: typeof fetch;
   /** Nur für Tests: Ziel des Logs (Standard: stdout). */
   logStream?: Writable;
 }
@@ -79,7 +85,7 @@ export function isApiRequest(req: FastifyRequest): boolean {
   }
 }
 
-export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, memberDirectory, locationClock }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       config.logLevel === 'silent'
@@ -179,6 +185,10 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     location.onWake = (familyId, userIds) => push.weckeStandort(familyId, userIds);
     app.addHook('onClose', async () => push.close());
     registerPushRoutes(app, config, authCore, push);
+    const weather = new WeatherService({ db, config, keys: authCore.ctx.keys, log: app.log, now: authCore.ctx.now, ...(weatherFetch ? { fetch: weatherFetch } : {}) });
+    app.decorate('weather', weather);
+    app.addHook('onClose', async () => weather.close());
+    registerWeatherRoutes(app, authCore, weather);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
     authCore.ctx.onRev = (familyId, rev, roles, users, origin) => {

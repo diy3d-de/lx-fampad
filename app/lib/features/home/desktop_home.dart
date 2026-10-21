@@ -25,6 +25,8 @@ import '../../data/tasks/aufgabe_repository.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../shell/shell_tab.dart';
 import '../standort/standort_start_karte.dart';
+import '../wetter/wetter_karte.dart';
+import '../../data/wetter/wetter_state.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../update/update_banner.dart';
 import 'home_screen.dart';
@@ -158,11 +160,12 @@ class _Kopfzeile extends ConsumerWidget {
 }
 
 /// Karten-Raster: 3 Spalten ab ca. 840 px Inhaltsbreite, sonst 2 bzw. 1; Kartenhöhe wächst mit der Textskalierung.
-class _Raster extends StatelessWidget {
+class _Raster extends ConsumerWidget {
   const _Raster();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final wetter = ref.watch(wetterProvider).kachelSichtbar;
     final skala = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
     return LayoutBuilder(
       builder: (context, c) {
@@ -171,14 +174,15 @@ class _Raster extends StatelessWidget {
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 16, crossAxisSpacing: 16, mainAxisExtent: 300 * skala),
-          children: const [
-            _TermineKarte(),
-            _ChatKarte(),
-            _EinkaufKarte(),
-            _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
-            _AufgabenKarte(),
-            _FamilieKarte(),
-            _StandortKarte(),
+          children: [
+            const _TermineKarte(),
+            const _ChatKarte(),
+            const _EinkaufKarte(),
+            const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
+            const _AufgabenKarte(),
+            const _FamilieKarte(),
+            const _StandortKarte(),
+            if (wetter) const _WetterKarte(),
           ],
         );
       },
@@ -321,6 +325,18 @@ class _ChatKarte extends ConsumerWidget {
               ],
             ),
     );
+  }
+}
+
+/// Wetter der Station: Temperatur und Stand, Tippen öffnet die Detailseite (nur sichtbar, wenn es Daten gibt und der Schalter an ist).
+class _WetterKarte extends ConsumerWidget {
+  const _WetterKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final st = ref.watch(wetterProvider);
+    if (!st.hatDaten) return const SizedBox.shrink();
+    return _Karte(label: '// wetter', semantik: wetterSemantik(st), onTap: () => wetterOeffnen(context), child: WetterInhalt(zustand: st));
   }
 }
 

@@ -476,6 +476,15 @@ Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschl
 
 Neue Entitäten (Dateien) tragen sich im Entitäten-Register des Servers (`server/src/sync/registry.ts`, `index.ts`) und der App (`app/lib/data/sync/sync_entities.dart`) ein; Protokoll und Rechte-Modell bleiben unverändert.
 
+## Wetter `GET /api/v1/weather`
+
+Messwerte einer öffentlichen Netatmo-Wetterstation in der Nähe. **Nur der Server ruft Netatmo ab** (nie ein Client); die Route liefert den zwischengespeicherten Stand an angemeldete Mitglieder (Sitzung nötig, sonst `401`; jede Rolle). Antworten sind wie alle API-Antworten `no-store`.
+
+- **Ausgeschaltet** (`WEATHER_ENABLED` fehlt, Standard): `{ "available": false }`.
+- **Eingeschaltet:** `{ "available": true, "place": "Westerburg", "current": {…} | null, "min24h": number | null, "max24h": number | null, "series": [{ "t": ISO, "temperature": number }] }`. `current` (null, solange keine Messung vorliegt) enthält `measuredAt` (Zeitpunkt der Messung der Station), `stale` (Messung älter als 1 Stunde) und, soweit die Station sie liefert, `temperature` (°C), `humidity` (%), `pressure` (hPa), `rain1h`/`rain24h` (mm), `windKmh`, `gustKmh`, `windAngle` (Grad; sonst `null`). `min24h`/`max24h`/`series` (je 15 Minuten die letzte Messung der letzten 24 Stunden, aufsteigend) kommen aus der eigenen Zwischenspeicherung (`weather_samples`, 7 Tage).
+- **Nie enthalten:** Straße, Koordinaten, Höhe, Karte, Stations-ID (MAC), Zugangsdaten. Der Ortsname ist die Einstellung `WEATHER_PLACE`.
+- **Abruf (Server):** `server/src/weather/service.ts`. `GET https://api.netatmo.com/api/getpublicdata` mit Suchrechteck (`WEATHER_BBOX`) und Filter der Antwort auf die MAC (`WEATHER_STATION_MAC`); kein Weathermap-Scraping. Alle 10 Minuten (`WEATHER_POLL_MS`, in Produktion mindestens 5 Minuten), bei Fehlern mit Backoff (verdoppelnd bis 2 Stunden), ein Takt je Prozess. OAuth2 mit Refresh-Token und **Rotation**: das neue Token wird unter Zeilensperre (`FOR UPDATE`) in derselben Transaktion gespeichert, in der es abgeholt wird; `invalid_grant` schaltet den Abruf ab (`weather_credentials.disabled_at`) bis zur neuen Eingabe. Client-ID, Client-Secret und Refresh-Token stehen nur AES-256-GCM-verschlüsselt (Schlüssel per HKDF aus `AUTH_SECRET_KEY`, Zweck `weather`) in der Datenbank; eingegeben werden sie nur per Kommandozeile (`npm run weather-setup`, ohne Echo), nie über die API. Antworten von Netatmo werden nur als Zahlen in plausiblen Bereichen übernommen und nie ins Log geschrieben.
+
 ## Push (UnifiedPush, nur Android)
 
 Push ist ein **Wecker ohne Inhalt**: kein Text, kein Titel, keine Tags, keine Namen. Das Gerät gleicht danach per `POST /sync` ab und zeigt selbst eine lokale Benachrichtigung. Der Server veröffentlicht auf dem eigenen ntfy (`NTFY_URL`, Loopback) mit dem Token `NTFY_TOKEN`; fehlt eines von beiden, ist Push still aus (ein Hinweis im Log, kein Fehler, `GET /me/push` meldet `available: false`).
