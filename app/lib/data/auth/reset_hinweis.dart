@@ -7,12 +7,12 @@ import '../push/sicherheits_pruefer.dart';
 
 /// Text für die Person; null, wenn es nichts zu sagen gibt.
 String? resetHinweisText(PwNachReset r) => switch (r) {
-  PwNachReset.erneuert => 'Dein Passwort wurde zurückgesetzt. Deine Passwort-Sicherung ist mit dem neuen Passwort neu angelegt, dein Chat-Verlauf bleibt lesbar.',
+  PwNachReset.erneuert => 'Dein Passwort wurde zurückgesetzt. Deine Passwort-Sicherung ist mit dem neuen Passwort neu angelegt, dein Chat-Verlauf bleibt auf diesem Gerät lesbar.',
   PwNachReset.keinSchluesselAufGeraet =>
     'Dein Passwort wurde zurückgesetzt. Auf diesem Gerät fehlt dein Schlüssel, deshalb kannst du den bisherigen Chat-Verlauf hier noch nicht lesen. '
         'Mit deinem Wiederherstellungsschlüssel oder einem Gerät, auf dem du schon angemeldet warst, geht es sofort. Später kann der Verlauf auch von deinen Chat-Partnern freigegeben werden.',
   PwNachReset.fehlgeschlagen =>
-    'Dein Passwort wurde zurückgesetzt. Die neue Passwort-Sicherung konnte nicht angelegt werden. Unter Profil > Verschlüsselung > Passwort-Sicherung kannst du sie mit „Sicherung erneuern“ neu anlegen. Deine Chats bleiben lesbar.',
+    'Dein Passwort wurde zurückgesetzt. Die neue Passwort-Sicherung konnte nicht angelegt werden. Unter Profil > Verschlüsselung > Passwort-Sicherung kannst du sie mit „Sicherung erneuern“ neu anlegen. Deine Chats bleiben auf Geräten lesbar, die deinen Schlüssel haben.',
   PwNachReset.nichtNoetig => null,
 };
 

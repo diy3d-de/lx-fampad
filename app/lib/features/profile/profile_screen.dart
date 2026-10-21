@@ -151,8 +151,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
         ? 'Alle deine Geräte werden abgemeldet, auch dieses. Lokale Daten auf diesem Gerät werden gelöscht.'
         : 'Du wirst auf diesem Gerät abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.';
     final knopf = ueberall ? 'Überall abmelden' : 'Abmelden';
-    // Mit Personenschlüssel auf dem Gerät: ehrliche Rückfrage, was nach dem Löschen bleibt (abmelden_pruefung.dart)
-    final ja = await abmeldenBestaetigen(context, ref, titel: titel, text: text, knopf: knopf, ueberall: ueberall, ohneSchluessel: () => _bestaetigen(titel, text, knopf));
+    // Rückfrage mit ruhigem Hinweis, dass der Schlüssel auf diesem Gerät bleibt (abmelden_pruefung.dart)
+    final ja = await abmeldenBestaetigen(context, ref, titel: titel, text: text, knopf: knopf, ueberall: ueberall);
     if (!ja || !mounted) return;
     await _abmeldenAusfuehren(ueberall: ueberall);
   }

@@ -26,8 +26,38 @@ abstract interface class SchluesselSpeicher {
   Future<void> schreiben(String name, Uint8List bytes);
   Future<void> loeschen(String name);
 
-  /// Löscht alle Einträge dieser App, deren Name mit [praefix] beginnt (beim Abmelden).
+  /// Löscht alle Einträge dieser App, deren Name mit [praefix] beginnt. Nur für "Gerät abgeben" gedacht, nie beim Abmelden.
   Future<void> loescheMitPraefix(String praefix);
+
+  /// Namen aller Einträge, die mit [praefix] beginnen (ohne sie zu lesen oder zu entschlüsseln).
+  Future<List<String>> namenMitPraefix(String praefix);
+
+  /// Verschiebt den Eintrag [von] nach [nach], ohne ihn zu entschlüsseln (für die Quarantäne: auch ein nicht lesbarer Eintrag bleibt so erhalten).
+  /// true: verschoben; false: es gibt ihn nicht oder er ließ sich nicht verschieben (dann bleibt er unverändert unter seinem Namen).
+  Future<bool> verschiebe(String von, String nach);
+
+  /// Darf der Browser diese Daten löschen? Nur im Web von Bedeutung ([SpeicherDauer.nichtZutreffend] sonst). Fragt nur ab (`navigator.storage.persisted()`),
+  /// höchstens einmal je Sitzung (das Ergebnis wird gemerkt), und fragt den Nutzer nie.
+  Future<SpeicherDauer> dauerhaftigkeit();
+
+  /// Fordert die dauerhafte Ablage an (`navigator.storage.persist()`). Nur nach einer Aktion der Person aufrufen (Einrichten, Verbinden, eigener Knopf), nie beim
+  /// Laden: Manche Browser fragen dabei nach. Höchstens einmal je Sitzung; weitere Aufrufe liefern das gemerkte Ergebnis.
+  Future<SpeicherDauer> dauerhaftAnfordern();
+}
+
+/// Ergebnis der Anfrage nach dauerhaftem Speicher (Web).
+enum SpeicherDauer {
+  /// Keine Browser-Ablage (Android: Keystore).
+  nichtZutreffend,
+
+  /// Der Browser hat die dauerhafte Ablage zugesagt.
+  gewaehrt,
+
+  /// Der Browser hat die dauerhafte Ablage NICHT zugesagt: Er darf die Daten bei Speicherknappheit löschen.
+  verweigert,
+
+  /// Die Abfrage ließ sich nicht klären (Zeitlimit, Fehler): keine Aussage, weder Entwarnung noch Warnung.
+  unbekannt,
 }
 
 /// Nur im Arbeitsspeicher (Tests, Plattformen ohne sichere Ablage).
@@ -48,4 +78,25 @@ class MemorySchluesselSpeicher implements SchluesselSpeicher {
 
   @override
   Future<void> loescheMitPraefix(String praefix) async => _daten.removeWhere((k, _) => k.startsWith(praefix));
+
+  @override
+  Future<List<String>> namenMitPraefix(String praefix) async => [
+    for (final k in _daten.keys)
+      if (k.startsWith(praefix)) k,
+  ];
+
+  @override
+  Future<bool> verschiebe(String von, String nach) async {
+    final v = _daten[von];
+    if (v == null) return false;
+    _daten[nach] = v;
+    _daten.remove(von);
+    return true;
+  }
+
+  @override
+  Future<SpeicherDauer> dauerhaftigkeit() async => SpeicherDauer.nichtZutreffend;
+
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() async => SpeicherDauer.nichtZutreffend;
 }

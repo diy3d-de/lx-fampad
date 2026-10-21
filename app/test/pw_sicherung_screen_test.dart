@@ -130,7 +130,8 @@ Future<void> main() async {
       await warte(tester);
 
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.textContaining('geprüft · neues passwort wählen'), findsOneWidget);
+      expect(find.textContaining('liegt beim server (seit '), findsOneWidget, reason: 'der Stand beim Server zählt, nicht ein "geprüft" auf diesem Gerät');
+      expect(find.textContaining('neues passwort wählen'), findsOneWidget);
       expect(a.srv.pwStand(fixIdAdmin).verifiziert, isTrue);
       expect(a.server.anfragen('POST /me/key-backup-pw/verified'), hasLength(1));
       pruefeLayout(tester, 'Verschlüsselung nach Anlegen');

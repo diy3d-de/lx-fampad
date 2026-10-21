@@ -1,9 +1,9 @@
-// Rückfrage vor einem frei gewählten Abmelden: Wer einen Personenschlüssel auf diesem Gerät hat, erfährt vorher ehrlich, dass er hier gelöscht wird
-// und was danach bleibt. Gilt für "Abmelden", "Überall abmelden" und "Dieses Gerät abmelden"; Zwangsabmeldungen (401, Widerruf) fragen nie.
-// Der Stand wird vorher frisch geladen; lässt er sich nicht klären (Schlüsselspeicher nicht lesbar, noch nicht geladen), gilt "unbekannt, evtl. vorhanden"
-// und nie "kein Schlüssel".
-import 'dart:async';
-
+// Rückfrage vor einem frei gewählten Abmelden. Abmelden beendet nur die Sitzung (und leert die zwischengespeicherten Daten): Der Personenschlüssel bleibt im
+// Schlüsselspeicher dieses Geräts liegen und wird bei der nächsten Anmeldung derselben Person wieder benutzt. Die Rückfrage ist darum nur ein ruhiger Hinweis,
+// keine Warnung; die harte Warnung gehört zu "Gerät abgeben" (Profil > Verschlüsselung), der einzigen Aktion, die den Schlüssel löscht.
+// Gilt für "Abmelden", "Überall abmelden" und "Dieses Gerät abmelden"; Zwangsabmeldungen (401, Widerruf) fragen nie.
+// Ob ein Schlüssel auf dem Gerät liegt, fragt die App direkt im Schlüsselspeicher; lässt sich das nicht klären, gilt "unbekannt, evtl. vorhanden" und nie "kein Schlüssel".
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -11,8 +11,6 @@ import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/crypto/bytes.dart';
 import '../../data/crypto/e2ee_state.dart';
-import 'pw_sicherung_screen.dart';
-import 'verschluesselung_screen.dart';
 
 /// Wie sicher die App weiß, ob auf diesem Gerät ein Personenschlüssel liegt.
 enum SchluesselLage { keiner, vorhanden, unbekannt }
@@ -41,59 +39,35 @@ Future<SchluesselLage> schluesselLage(WidgetRef ref) async {
   }
 }
 
-/// Gibt es eine auf diesem Gerät vollständig bestätigte, noch gültige Passwort-Sicherung (Vermerk vorhanden, Server bietet sie an, nicht veraltet)?
-bool hatBestaetigtePwSicherung(E2eeState s) =>
-    s.pwSicherungVerfuegbar &&
-    s.pwSicherungVersion != null &&
-    s.pwSicherungVersion == s.serverSchluessel?.version &&
-    !s.pwSicherungVeraltet;
-
 ButtonStyle _stil(Color farbe) => TextButton.styleFrom(
   foregroundColor: farbe,
   minimumSize: const Size(48, 48),
 );
 
-/// Fragt vor dem Abmelden nach. Gibt true zurück, wenn abgemeldet werden soll. Ohne Personenschlüssel auf dem Gerät zeigt [ohneSchluessel] die bisherige
-/// einfache Rückfrage. "Passwort-Sicherung anlegen" / "Erst sichern" öffnet den Ablauf und meldet nicht ab (false).
+/// Fragt vor dem Abmelden nach. Gibt true zurück, wenn abgemeldet werden soll. Mit (oder eventuell mit) Schlüssel auf dem Gerät steht im Dialog ein
+/// ruhiger Hinweis, dass der Schlüssel hier bleibt.
 Future<bool> abmeldenBestaetigen(
   BuildContext context,
   WidgetRef ref, {
   required String titel,
   required String text,
   required String knopf,
-  required Future<bool> Function() ohneSchluessel,
   bool ueberall = false,
+  bool? web,
 }) async {
-  // zuerst der Schlüsselspeicher selbst: ohne Schlüssel (und lesbar) keine neue Rückfrage, auch wenn der Server nicht erreichbar ist
-  if (await schluesselLage(ref) == SchluesselLage.keiner) {
-    return ohneSchluessel();
-  }
-  if (!context.mounted) return false;
-  // frischer Stand der Sicherung (auch wenn schon geladen); Zeitlimit und Fehler ergeben "unbekannt"/"unklar", nie "kein Schlüssel"
-  try {
-    await ref
-        .read(e2eeProvider.notifier)
-        .laden()
-        .timeout(const Duration(seconds: 3));
-  } on Object {
-    // der Stand bleibt, wie er ist
-  }
-  if (!context.mounted) return false;
+  final istWeb = web ?? kIsWeb;
   final lage = await schluesselLage(ref);
-  if (lage == SchluesselLage.keiner) return ohneSchluessel();
   if (!context.mounted) return false;
-  final s = ref.read(e2eeProvider);
-  final unbekannt = lage == SchluesselLage.unbekannt;
-  // Server nicht erreichbar, Schlüssel aber lokal da: ob er gesichert ist, weiß die App gerade nicht
-  final sicherungUnklar = !unbekannt && s.status == E2eeStatus.nichtVerfuegbar;
-  final pwOk = !unbekannt && !sicherungUnklar && hatBestaetigtePwSicherung(s);
-  // Ohne Passwort-Sicherung des Servers bleibt nur der Wiederherstellungsschlüssel: ist er gesichert (hatSicherung), genügt der ruhige Hinweis
-  final warnen =
-      !unbekannt &&
-      !sicherungUnklar &&
-      !pwOk &&
-      (s.pwSicherungVerfuegbar || !s.hatSicherung);
-  final antwort = await showDialog<String>(
+  final hinweis = switch (lage) {
+    SchluesselLage.keiner => null,
+    SchluesselLage.vorhanden =>
+      'Dein Schlüssel bleibt auf diesem Gerät. Wenn du dich hier wieder anmeldest, sind deine Chats gleich wieder lesbar. '
+          'Willst du das Gerät abgeben, nutze Profil › Verschlüsselung › Gerät abgeben.',
+    SchluesselLage.unbekannt =>
+      'Ein Schlüssel, der auf diesem Gerät liegt, bleibt hier; die App konnte ihn gerade nicht prüfen. '
+          'Willst du das Gerät abgeben, nutze Profil › Verschlüsselung › Gerät abgeben.',
+  };
+  final ja = await showDialog<bool>(
     useRootNavigator: false,
     context: context,
     builder: (ctx) => AlertDialog(
@@ -104,88 +78,29 @@ Future<bool> abmeldenBestaetigen(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(text),
-          const SizedBox(height: 12),
-          if (unbekannt)
+          if (ueberall) ...[
+            const SizedBox(height: 8),
+            const Text('Auch deine anderen Geräte werden abgemeldet; sie behalten ihren Schlüssel.', style: TextStyle(color: kTextMuted, height: 1.4)),
+          ],
+          if (hinweis != null) ...[
+            const SizedBox(height: 12),
+            Text(hinweis, style: const TextStyle(color: kTextMuted, height: 1.4)),
+          ],
+          if (istWeb && lage != SchluesselLage.keiner) ...[
+            const SizedBox(height: 8),
             const Text(
-              'Ob auf diesem Gerät ein Schlüssel liegt, ließ sich gerade nicht prüfen. Beim Abmelden wird er gelöscht, falls einer da ist.',
-              style: TextStyle(color: kDanger, height: 1.4),
-            )
-          else ...[
-            Text(
-              pwOk
-                  ? 'Beim Abmelden wird dein Schlüssel von diesem Gerät gelöscht. Danach kommst du wieder an deine Chats mit deinem Passwort der Passwort-Sicherung, '
-                        'mit einem anderen Gerät, das deinen Schlüssel hat, oder mit deinem Wiederherstellungsschlüssel, aber nur, wenn du ihn noch hast.'
-                  : 'Beim Abmelden wird dein Schlüssel von diesem Gerät gelöscht. Danach kommst du nur mit einem anderen Gerät, das deinen Schlüssel hat, '
-                        'oder mit deinem Wiederherstellungsschlüssel wieder an deine Chats, aber nur, wenn du ihn noch hast.',
-              style: const TextStyle(color: kTextMuted, height: 1.4),
+              'Auf einem gemeinsam genutzten Computer nutze „Gerät abgeben“: Normales Abmelden lässt den Schlüssel im Browser liegen.',
+              style: TextStyle(color: kTextMuted, height: 1.4),
             ),
-            if (ueberall) ...[
-              const SizedBox(height: 8),
-              const Text(
-                'Auch deine anderen Geräte werden abgemeldet; sie behalten den Schlüssel, solange du dich dort nicht selbst abmeldest oder die App-Daten löschst.',
-                style: TextStyle(color: kTextMuted, height: 1.4),
-              ),
-            ],
-            if (sicherungUnklar) ...[
-              const SizedBox(height: 12),
-              const Text(
-                'Ob dein Schlüssel gesichert ist, ließ sich gerade nicht prüfen.',
-                style: TextStyle(color: kTextMuted, height: 1.4),
-              ),
-            ],
-            if (warnen) ...[
-              const SizedBox(height: 12),
-              Text(
-                s.pwSicherungVerfuegbar
-                    ? 'Auf diesem Gerät ist keine bestätigte Passwort-Sicherung vermerkt (vielleicht hast du sie auf einem anderen Gerät bestätigt). Lege sie sonst vorher an: Profil › Verschlüsselung.'
-                    : 'Dein Schlüssel ist nicht gesichert. Sichere ihn vorher: Profil › Verschlüsselung.',
-                style: const TextStyle(color: kDanger, height: 1.4),
-              ),
-            ],
           ],
         ],
       ),
       actionsOverflowButtonSpacing: 12,
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(ctx).pop('abbrechen'),
-          style: _stil(kTextMuted),
-          child: const Text('Abbrechen'),
-        ),
-        if (warnen)
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop('sichern'),
-            style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-            child: Text(
-              s.pwSicherungVerfuegbar
-                  ? 'Passwort-Sicherung anlegen'
-                  : 'Erst sichern',
-            ),
-          ),
-        Padding(
-          padding: const EdgeInsets.only(left: 8),
-          child: TextButton(
-            onPressed: () => Navigator.of(ctx).pop('ja'),
-            style: _stil(kDanger),
-            child: Text(
-              warnen || unbekannt || sicherungUnklar
-                  ? 'Trotzdem abmelden'
-                  : knopf,
-            ),
-          ),
-        ),
+        TextButton(onPressed: () => Navigator.of(ctx).pop(false), style: _stil(kTextMuted), child: const Text('Abbrechen')),
+        TextButton(onPressed: () => Navigator.of(ctx).pop(true), style: _stil(kAccent), child: Text(knopf)),
       ],
     ),
   );
-  if (antwort == 'sichern' && context.mounted) {
-    await Navigator.of(context).push<void>(
-      MaterialPageRoute(
-        builder: (_) => s.pwSicherungVerfuegbar
-            ? const PwSicherungScreen()
-            : const VerschluesselungScreen(),
-      ),
-    );
-    return false;
-  }
-  return antwort == 'ja';
+  return ja == true;
 }

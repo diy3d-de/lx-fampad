@@ -235,7 +235,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
                 '${m.displayName} bekommt einen Link und legt damit ein neues Passwort fest. '
                 'Zur Sicherheit braucht die Person dafür auch den Code aus ihrer Authenticator-App: Du selbst kannst das Konto damit nicht übernehmen. '
                 'Die App von ${m.displayName} muss aktuell sein (mit einer alten App klappt der Link nicht und zeigt „ungültig“ oder verlangt „Zugang zurücksetzen“). '
-                'Authenticator, Passkeys, Wiederherstellungscodes und der Chat-Verlauf bleiben. Alle Geräte von ${m.displayName} werden erst abgemeldet, wenn das neue Passwort gesetzt ist. '
+                'Authenticator, Passkeys und Wiederherstellungscodes bleiben. Der Chat-Verlauf bleibt nur erhalten, wenn ${m.displayName} ein Gerät mit dem eigenen Schlüssel oder den Wiederherstellungsschlüssel hat. Alle Geräte von ${m.displayName} werden erst abgemeldet, wenn das neue Passwort gesetzt ist. '
                 '${m.displayName} sieht den Vorgang in den Sicherheitsereignissen und bekommt eine Benachrichtigung.',
                 style: const TextStyle(color: kTextMuted, height: 1.4),
               ),

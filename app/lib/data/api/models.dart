@@ -592,14 +592,42 @@ class EigeneSchluesselDto {
 
   /// Die aktuelle Passwort-Sicherung ist veraltet (nach einem Passwort-Reset oder Schlüsselwechsel): auf einem Gerät mit Schlüssel neu anlegen.
   final bool pwSicherungVeraltet;
-  const EigeneSchluesselDto({required this.schluessel, required this.hatSicherung, this.pwSicherungVeraltet = false});
+
+  /// Seit wann die aktuelle Passwort-Sicherung beim Server bestätigt ist (Round-Trip geprüft); null = nicht bestätigt ODER vom Server nicht gemeldet
+  /// (älterer Server): beides gilt als "nicht bestätigt", nie als "gesichert".
+  final DateTime? pwSicherungBestaetigtAm;
+
+  /// Seit wann die Sicherung mit dem Wiederherstellungsschlüssel zur aktuellen Schlüsselversion beim Server liegt (null: keine oder nicht gemeldet).
+  final DateTime? wiederherstellungsSicherungAm;
+
+  /// Anzahl der beim Server archivierten früheren Sicherungen (null: nicht gemeldet).
+  final int? archivAnzahl;
+  const EigeneSchluesselDto({
+    required this.schluessel,
+    required this.hatSicherung,
+    this.pwSicherungVeraltet = false,
+    this.pwSicherungBestaetigtAm,
+    this.wiederherstellungsSicherungAm,
+    this.archivAnzahl,
+  });
 
   factory EigeneSchluesselDto.fromJson(Object? raw) {
     final m = asJson(raw);
     final k = m['keys'];
-    return EigeneSchluesselDto(schluessel: k == null ? null : _schluesselStreng(asJson(k)), hatSicherung: _b(m, 'hasBackup'), pwSicherungVeraltet: m['pwBackupStale'] == true);
+    // die neuen Felder sind tolerant: fehlt eines oder hat es eine unerwartete Form, bleibt es null ("unbekannt"), nie ein Fehler und nie "gesichert"
+    final n = m['archiveCount'];
+    return EigeneSchluesselDto(
+      schluessel: k == null ? null : _schluesselStreng(asJson(k)),
+      hatSicherung: _b(m, 'hasBackup'),
+      pwSicherungVeraltet: m['pwBackupStale'] == true,
+      pwSicherungBestaetigtAm: _zeitOderNull(m['pwBackupVerifiedAt']),
+      wiederherstellungsSicherungAm: _zeitOderNull(m['recoveryBackupAt']),
+      archivAnzahl: n is int && n >= 0 ? n : null,
+    );
   }
 }
+
+DateTime? _zeitOderNull(Object? v) => v is String ? DateTime.tryParse(v) : null;
 
 OeffentlicheSchluessel _schluesselStreng(Json m) => _schluessel(m) ?? _fehler();
 

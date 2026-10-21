@@ -312,11 +312,13 @@ Future<void> main() async {
         expect(srv.pwStand(_anna).stale, isTrue, reason: 'das Verbinden ändert die Sicherung nicht; erneuert wird danach mit einem Passwort');
       }, timeout: const Timeout(Duration(minutes: 3)));
 
-      test('Abmelden (Wiper) entfernt auch den Vermerk', () async {
+      test('Abmelden (Wiper) lässt den Vermerk liegen, "Gerät abgeben" entfernt ihn', () async {
         final (:g, einr: _) = await bestehend();
         await sichern(g);
         expect(await g.speicher.lesen(_vermerk(_anna)), isNotNull);
-        await g.c.read(Provider<Future<void> Function()>(e2eeDatenWiper))();
+        await g.c.read(Provider<Future<void> Function()>(e2eeSitzungWiper))();
+        expect(await g.speicher.lesen(_vermerk(_anna)), isNotNull);
+        await schluesselVomGeraetLoeschen(g.speicher, _anna);
         expect(await g.speicher.lesen(_vermerk(_anna)), isNull);
       }, timeout: const Timeout(Duration(minutes: 2)));
     });

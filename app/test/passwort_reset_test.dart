@@ -275,6 +275,9 @@ void main() {
         await starteApp(tester, a.env, skala: skala);
         expect(find.text('Passwort vergessen? Neues Passwort festlegen'), findsOneWidget);
         await _zuPasswortVergessen(tester);
+        // ehrlich: kein pauschales "bleibt erhalten"
+        expect(find.textContaining('Dein Verlauf bleibt erhalten, wenn du ein Gerät mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast'), findsOneWidget);
+        expect(find.textContaining('Dein Chat-Verlauf bleibt erhalten'), findsNothing);
         pruefeLayout(tester, 'Passwort vergessen: Formular');
         // der alte Stand der Passwort-Sicherung, damit der Austausch sichtbar wird
         final alterBlob = a.srv.pwStand(fixIdAdmin).blob;
@@ -541,6 +544,9 @@ void main() {
         await tippeText(tester, 'Passwort zurücksetzen');
         expect(find.textContaining('Authenticator'), findsWidgets);
         expect(find.textContaining('Du selbst kannst das Konto damit nicht übernehmen'), findsOneWidget);
+        // ehrlich: der Verlauf bleibt nicht pauschal, sondern nur mit einem Gerät mit dem Schlüssel oder dem Wiederherstellungsschlüssel
+        expect(find.textContaining('Der Chat-Verlauf bleibt nur erhalten, wenn Ben ein Gerät mit dem eigenen Schlüssel oder den Wiederherstellungsschlüssel hat'), findsOneWidget);
+        expect(find.textContaining('Wiederherstellungscodes und der Chat-Verlauf bleiben'), findsNothing);
         pruefeLayout(tester, 'Passwort zurücksetzen: Dialog');
         await tippeText(tester, 'Link erstellen');
         // das Step-up-Fenster: Code eingeben

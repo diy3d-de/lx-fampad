@@ -113,6 +113,31 @@ void main() {
     expect(await speicher.lesen('e2ee.pk.a'), isNull, reason: 'der zweite Versuch findet ihn über den Index');
   });
 
+  test('Namen mit Präfix kommen aus dem Index, ohne zu lesen oder readAll', () async {
+    await speicher.schreiben('e2ee.quarantaene.a.1', Uint8List.fromList([1]));
+    await speicher.schreiben('e2ee.quarantaene.b.2', Uint8List.fromList([2]));
+    await speicher.schreiben('e2ee.pk.a', Uint8List.fromList([3]));
+    expect(await speicher.namenMitPraefix('e2ee.quarantaene.a.'), ['e2ee.quarantaene.a.1']);
+    expect(secure.readAllAufrufe, 0);
+  });
+
+  test('Verschieben (Quarantäne): der abgelegte Wert wandert unverändert, der Index folgt; ein nicht lesbarer Eintrag bleibt unberührt', () async {
+    await speicher.schreiben('e2ee.pk.a', Uint8List.fromList([1, 2, 3]));
+    expect(await speicher.verschiebe('e2ee.pk.a', 'e2ee.quarantaene.a.9'), isTrue);
+    expect(await speicher.lesen('e2ee.pk.a'), isNull);
+    expect(await speicher.lesen('e2ee.quarantaene.a.9'), [1, 2, 3]);
+    expect(await speicher.namenMitPraefix('e2ee.'), ['e2ee.quarantaene.a.9']);
+    expect(await speicher.verschiebe('e2ee.pk.fehlt', 'e2ee.quarantaene.a.10'), isFalse, reason: 'gibt es nicht');
+    secure.leseFehler = PlatformException(code: 'x', message: 'BadPaddingException');
+    expect(await speicher.verschiebe('e2ee.quarantaene.a.9', 'e2ee.quarantaene.a.11'), isFalse, reason: 'nicht einmal roh lesbar: unberührt');
+    secure.leseFehler = null;
+    expect(await speicher.lesen('e2ee.quarantaene.a.9'), [1, 2, 3]);
+  });
+
+  test('keine Browser-Ablage: dauerhaftigkeit ist "nicht zutreffend"', () async {
+    expect(await speicher.dauerhaftigkeit(), SpeicherDauer.nichtZutreffend);
+  });
+
   test('einzelnes Löschen entfernt auch den Indexeintrag', () async {
     await speicher.schreiben('e2ee.pk.a', Uint8List.fromList([1]));
     await speicher.loeschen('e2ee.pk.a');

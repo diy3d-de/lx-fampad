@@ -1,6 +1,7 @@
 // Anmeldezustand der App (Riverpod): prüfe / abgemeldet / angemeldet / wartend auf Freigabe / Verbindungsfehler.
 // Pflicht-Update liegt in updateProvider (features/update) und hat in app.dart Vorrang vor allen Zuständen.
-// Start: GET /me prüft die Sitzung. Ausdrückliches Abmelden löscht Token und lokale Daten (Hook localDataWiperProvider für Phase 1c).
+// Start: GET /me prüft die Sitzung. Ausdrückliches Abmelden löscht Token und lokale Daten (Hook localDataWiperProvider für Phase 1c), aber NIE den
+// E2EE-Personenschlüssel: der bleibt im Schlüsselspeicher (je Person getrennt); gelöscht wird er nur durch "Gerät abgeben" (E2eeController.geraetAbgeben).
 //
 // Lokale Daten und Sitzungsverlust: Verliert die App die Sitzung (abgelaufen, widerrufen, Erneuerung gescheitert), bleibt die lokale
 // Datenbank erhalten: sie kann noch ungesendete Änderungen enthalten, die nach erneuter Anmeldung derselben Person nicht verloren
@@ -81,6 +82,10 @@ class MemoryLocalDataOwner implements LocalDataOwner {
 final pushAbmeldenProvider = Provider<Future<void> Function({required bool serverLoeschen})>((ref) => ({required bool serverLoeschen}) async {});
 
 final localDataOwnerProvider = Provider<LocalDataOwner>((ref) => MemoryLocalDataOwner());
+
+/// Hook (main.dart): Eine Sitzung dieser Person wurde bestätigt (erfolgreiche Anmeldung oder gültige Sitzung beim Start). Ein liegengebliebener Löschauftrag von
+/// "Gerät abgeben" wird damit verworfen: Wer sich wieder anmeldet, will den Schlüssel behalten, und es wird nie still gelöscht. Standard: nichts (Tests).
+final sitzungBestaetigtProvider = Provider<Future<void> Function(String userId)>((ref) => (userId) async {});
 
 /// Ergebnis des Abmeldens (die Person wird informiert, wenn etwas nicht vollständig geklappt hat).
 class AbmeldeErgebnis {
@@ -213,6 +218,7 @@ class AuthController extends Notifier<AuthState> {
     if (erwarteteUserId == null) await _datenZuordnen(me.user.id);
     if (!passt()) return;
     state = AuthState(status: AuthStatus.angemeldet, user: me.user, me: me);
+    await _sitzungBestaetigt(me.user.id);
     if (!_client.istWeb) await ref.read(tokenStoreProvider).writeProfile(me.user.toJson());
   }
 
@@ -309,8 +315,16 @@ class AuthController extends Notifier<AuthState> {
     }
     if (!_aktuell(gen)) return;
     state = AuthState(status: AuthStatus.angemeldet, user: user);
+    await _sitzungBestaetigt(user.id);
     if (!_client.istWeb) await ref.read(tokenStoreProvider).writeProfile(user.toJson());
     unawaited(neuLaden());
+  }
+
+  /// Meldet dem Hook eine bestätigte Sitzung; ein Fehler dort stört die Anmeldung nie.
+  Future<void> _sitzungBestaetigt(String userId) async {
+    try {
+      await ref.read(sitzungBestaetigtProvider)(userId);
+    } catch (_) {}
   }
 
   /// Nach erfolgreicher Registrierung (und bestätigten Wiederherstellungscodes): Sitzung übernehmen bzw. auf Freigabe warten.
@@ -331,7 +345,7 @@ class AuthController extends Notifier<AuthState> {
 
   // ------------------------------------------------------------ Abmelden
 
-  /// Meldet dieses Gerät (oder alle Geräte) ab, löscht Token und lokale Daten.
+  /// Meldet dieses Gerät (oder alle Geräte) ab, löscht Token und lokale Daten (nicht den E2EE-Personenschlüssel: er bleibt im Schlüsselspeicher).
   ///
   /// Android: Ist der Server nicht erreichbar (offline, Störung), wird trotzdem lokal abgemeldet; der Aufrufer informiert die Person
   /// (`serverAbgemeldet == false`: die Sitzung bleibt auf dem Server bis zum Ablauf gültig).

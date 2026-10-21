@@ -131,7 +131,7 @@ class PwSicherungAblauf {
 
   /// Auf einem Gerät ohne Schlüssel: Passwort-Sicherung holen und den Personenschlüssel daraus öffnen. Der Aufrufer übernimmt ihn erst nach dem
   /// Vergleich mit dem frisch vom Server geholten öffentlichen Schlüssel. Eine veraltete (`stale`) Sicherung bleibt mit dem Passwort öffenbar, mit dem sie
-  /// angelegt wurde (das ALTE Sicherungs-Passwort, unabhängig vom Anmelde-Passwort), solange ihre Schlüsselversion zum aktuellen Schlüssel des Servers passt
+  /// angelegt wurde (das ALTE Passwort der Passwort-Sicherung, unabhängig vom Anmelde-Passwort), solange ihre Schlüsselversion zum aktuellen Schlüssel des Servers passt
   /// (nur das Anmelde-Passwort wurde zurückgesetzt). Gehört sie zu einem früheren Schlüssel, wird sie nicht geöffnet. [veraltet] sagt dem Aufrufer, dass er
   /// danach das Erneuern der Sicherung anbieten soll.
   Future<({Personenschluessel schluessel, int keyVersion, bool veraltet})> abrufenUndOeffnen(String passwort) async {

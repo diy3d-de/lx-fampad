@@ -1,5 +1,4 @@
 // Wiederherstellungsschlüssel: Anzeige (Base32 mit Prüfsumme), Sicherung des Personenschlüssels, richtiger/falscher Schlüssel.
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -76,19 +75,17 @@ Future<void> main() async {
       expect(Code32.kodieren(wk, 'x', gruppiert: false), hasLength(56));
     });
 
-    test('Abfrage: zwei verschiedene, aufsteigende Positionen; Gruppe prüfen unabhängig von der Schreibweise', () {
-      final zufall = Random(1);
-      for (var i = 0; i < 500; i++) {
-        final p = Wiederherstellung.abfragePositionen(zufall);
-        expect(p, hasLength(2));
-        expect(p[0], lessThan(p[1]));
-        expect(p.every((x) => x >= 0 && x < kCodeGruppen), isTrue);
-      }
+    test('Probe: der vollständig eingetippte Schlüssel zählt, unabhängig von Schreibweise und Trennern; Teile, Tippfehler und Fremdes nicht', () {
+      final z = Wiederherstellung.anzeigen(wk);
+      expect(Wiederherstellung.stimmt(wk, z), isTrue);
+      expect(Wiederherstellung.stimmt(wk, z.toLowerCase()), isTrue);
+      expect(Wiederherstellung.stimmt(wk, ' ${z.replaceAll('-', ' ')} '), isTrue);
       final g = Wiederherstellung.gruppen(wk);
-      expect(Wiederherstellung.gruppeStimmt(wk, 2, g[2].toLowerCase()), isTrue);
-      expect(Wiederherstellung.gruppeStimmt(wk, 2, ' ${g[2]} '), isTrue);
-      expect(Wiederherstellung.gruppeStimmt(wk, 2, g[3] == g[2] ? 'ZZZZ' : g[3]), isFalse);
-      expect(Wiederherstellung.gruppeStimmt(wk, 99, g[2]), isFalse);
+      expect(Wiederherstellung.stimmt(wk, g.take(2).join('-')), isFalse, reason: 'nur zwei Gruppen reichen nicht');
+      expect(Wiederherstellung.stimmt(wk, ''), isFalse);
+      expect(Wiederherstellung.stimmt(wk, z.replaceFirst(z[0], z[0] == 'A' ? 'B' : 'A')), isFalse, reason: 'ein Tippfehler (Prüfsumme)');
+      final fremd = Uint8List.fromList([for (final b in wk) b ^ 1]);
+      expect(Wiederherstellung.stimmt(wk, Wiederherstellung.anzeigen(fremd)), isFalse, reason: 'ein anderer, gültiger Schlüssel');
     });
   });
 

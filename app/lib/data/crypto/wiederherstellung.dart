@@ -5,7 +5,6 @@
 //
 // Blob (Base64url): v (1 Byte) | key_version (4 Byte, BE) | nonce (24 Byte) | chiffretext (64 Byte Personenschlüssel + 16 Byte Tag)
 // Schlüssel zum Verpacken = BLAKE2b-256(Zweck, Schlüssel = Wiederherstellungsschlüssel); AAD = "lx-fampad|key-backup|v1|user_id|key_version".
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'bytes.dart';
@@ -39,19 +38,20 @@ class Wiederherstellung {
   /// Liest einen eingetippten Schlüssel; wirft [CryptoFehler] (format/pruefsumme).
   static Uint8List lesen(String eingabe) => Code32.dekodieren(eingabe, _zweckAnzeige);
 
-  /// Zwei verschiedene zufällige Gruppen (Position 0-basiert, aufsteigend) für die Bestätigung "gesichert".
-  static List<int> abfragePositionen(Random zufall) {
-    final a = zufall.nextInt(kCodeGruppen);
-    var b = zufall.nextInt(kCodeGruppen - 1);
-    if (b >= a) b++;
-    return a < b ? [a, b] : [b, a];
-  }
-
-  /// Stimmt die eingetippte Gruppe (unabhängig von Schreibweise, 0/1/8 wie O/I/B)?
-  static bool gruppeStimmt(Uint8List schluessel, int position, String eingabe) {
-    final g = gruppen(schluessel);
-    if (position < 0 || position >= g.length) return false;
-    return Code32.normalisieren(eingabe) == g[position];
+  /// Probe nach dem Aufschreiben: Stimmt der VOLLSTÄNDIG eingetippte Schlüssel (unabhängig von Schreibweise, Leerzeichen und Bindestrichen, 0/1/8 wie O/I/B)
+  /// mit [schluessel] überein? Falsche Prüfsumme oder falsches Format ergeben false (nie eine Ausnahme).
+  static bool stimmt(Uint8List schluessel, String eingabe) {
+    final Uint8List gelesen;
+    try {
+      gelesen = lesen(eingabe);
+    } on CryptoFehler {
+      return false;
+    }
+    try {
+      return gleicheBytes(gelesen, schluessel);
+    } finally {
+      loescheBytes(gelesen);
+    }
   }
 
   static Uint8List _verpackSchluessel(CryptoProvider crypto, Uint8List wiederherstellungsschluessel) =>

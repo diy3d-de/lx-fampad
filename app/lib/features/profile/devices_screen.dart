@@ -40,12 +40,8 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
         await showDialog<bool>(useRootNavigator: false,
           context: context,
           builder: (_) => AlertDialog(
-            title: Text(d.current ? 'Dieses Gerät abmelden?' : 'Gerät abmelden?'),
-            content: Text(
-              d.current
-                  ? '"${d.name}" wird abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.'
-                  : '"${d.name}" wird abgemeldet und muss sich neu anmelden.',
-            ),
+            title: const Text('Gerät abmelden?'),
+            content: Text('"${d.name}" wird abgemeldet und muss sich neu anmelden.'),
             actions: [
               TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
               TextButton(onPressed: () => Navigator.of(context).pop(true), style: TextButton.styleFrom(foregroundColor: kDanger), child: const Text('Abmelden')),
@@ -53,13 +49,12 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
           ),
         ) ??
         false;
-    // Nur das eigene Gerät löscht den Schlüssel: dort die ehrliche Rückfrage (abmelden_pruefung.dart)
+    // Das eigene Gerät: Rückfrage mit ruhigem Hinweis, dass der Schlüssel bleibt (abmelden_pruefung.dart)
     final ja = d.current
         ? await abmeldenBestaetigen(context, ref,
             titel: 'Dieses Gerät abmelden?',
             text: '"${d.name}" wird abgemeldet. Lokale Daten auf diesem Gerät werden gelöscht.',
-            knopf: 'Abmelden',
-            ohneSchluessel: einfach)
+            knopf: 'Abmelden')
         : await einfach();
     if (!ja || !mounted) return;
     final nav = Navigator.of(context);

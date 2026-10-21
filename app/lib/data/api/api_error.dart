@@ -102,6 +102,18 @@ class ApiException implements Exception {
         message: 'Bitte bestätige diese Aktion noch einmal mit Passkey oder Code.',
       );
     }
+    // gesperrt wegen einer Anmeldung per Wiederherstellungscode oder eines Zurücksetzens: mit Dauer, wenn der Server sie nennt
+    if (code == 'destructive_locked') {
+      return ApiException(
+        kind: ApiErrorKind.sonstiges,
+        status: status,
+        code: code,
+        retryAfter: warte,
+        message:
+            'Aus Sicherheitsgründen ist das gerade gesperrt, weil du dich erst vor Kurzem mit einem Wiederherstellungscode angemeldet oder dein Konto zurückgesetzt hast. '
+            '${warte == null ? 'Versuche es später noch einmal.' : 'Das ist frühestens in ${_dauerText(warte)} wieder möglich.'}',
+      );
+    }
     if (status == 429 || code == 'too_many_attempts' || code == 'rate_limited') {
       return ApiException(
         kind: ApiErrorKind.zuVieleAnfragen,
@@ -145,6 +157,17 @@ class ApiException implements Exception {
         ? ApiErrorKind.nichtAngemeldet
         : ApiErrorKind.sonstiges;
     return ApiException(kind: kind, status: status, code: code, message: text ?? _nachStatus(status));
+  }
+
+  /// "5 Minuten", "3 Stunden", "2 Tagen" (aufgerundet; für "frühestens in …").
+  static String _dauerText(Duration d) {
+    final sek = d.inSeconds < 1 ? 1 : d.inSeconds;
+    final min = (sek / 60).ceil();
+    if (min < 60) return min == 1 ? 'einer Minute' : '$min Minuten';
+    final std = (sek / 3600).ceil();
+    if (std <= 1) return 'einer Stunde';
+    if (std < 48) return '$std Stunden';
+    return '${(sek / 86400).ceil()} Tagen';
   }
 
   static String _nachStatus(int status) {

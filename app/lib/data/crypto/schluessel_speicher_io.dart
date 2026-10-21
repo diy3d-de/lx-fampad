@@ -93,4 +93,34 @@ class SecureSchluesselSpeicher implements SchluesselSpeicher {
     await _indexSchreiben(rest);
     if (erster != null) throw erster;
   }
+
+  @override
+  Future<List<String>> namenMitPraefix(String praefix) async => [
+    for (final n in await _index())
+      if (n.startsWith(praefix)) n,
+  ];
+
+  /// Roh verschieben (der abgelegte Wert bleibt, wie er ist). Lässt sich der Eintrag nicht einmal roh lesen (Keystore-Schlüssel verloren),
+  /// bleibt er unberührt (false).
+  @override
+  Future<bool> verschiebe(String von, String nach) async {
+    final String? raw;
+    try {
+      raw = await _rohLesen('$_praefix$von');
+    } on SchluesselSpeicherFehler {
+      return false;
+    }
+    if (raw == null) return false;
+    final index = await _index();
+    if (!index.contains(nach)) await _indexSchreiben([...index, nach]);
+    await _s.write(key: '$_praefix$nach', value: raw);
+    await loeschen(von);
+    return true;
+  }
+
+  @override
+  Future<SpeicherDauer> dauerhaftigkeit() async => SpeicherDauer.nichtZutreffend;
+
+  @override
+  Future<SpeicherDauer> dauerhaftAnfordern() async => SpeicherDauer.nichtZutreffend;
 }

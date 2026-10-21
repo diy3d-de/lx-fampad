@@ -67,6 +67,12 @@ class FakeE2eeServer {
   bool authKeySchalter = false;
   bool legacyLogin = true;
 
+  /// Meldet `GET /me/keys` die neuen Felder (pwBackupVerifiedAt, recoveryBackupAt, archiveCount)? Aus = ein älterer Server: die App darf dann nie "gesichert" annehmen.
+  bool neueFelder = true;
+
+  /// Wert von `archiveCount` in `GET /me/keys` (frühere, archivierte Sicherungen).
+  int archiv = 0;
+
   /// Zuletzt per `POST /me/password/change` gesetzter authKey je Person (für Prüfungen).
   final Map<String, String> authKeys = {};
 
@@ -81,7 +87,7 @@ class FakeE2eeServer {
 
   FakeE2eeServer(this.server, {this.standardId}) {
     server
-      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true})))
+      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true, ..._neueFelder(p)})))
       ..on('POST /me/keys', (r) => _mit(r, (p) {
         if (p.enc != null) return fehler(409, 'keys_exist');
         p.enc = r.json['publicEncKey'] as String;
@@ -289,6 +295,14 @@ class FakeE2eeServer {
     final p = _personen[id]!;
     return jsonEncode({'enc': p.enc, 'sign': p.sign, 'backup': p.backupBlob, 'pwBackup': p.pwBlob, 'transfers': _transfers.values.where((t) => t.hash.startsWith('$id:')).map((t) => t.blob).toList()});
   }
+
+  Map<String, dynamic> _neueFelder(_Person p) => !neueFelder
+      ? const {}
+      : {
+          if (p.pwBlob != null && p.pwVerifiziert && !p.pwStale) 'pwBackupVerifiedAt': jetzt.toIso8601String(),
+          if (p.backupBlob != null && p.backupVersion == p.version) 'recoveryBackupAt': jetzt.toIso8601String(),
+          'archiveCount': archiv,
+        };
 
   Map<String, dynamic>? _keys(_Person p) => p.enc == null ? null : {'publicEncKey': p.enc, 'publicSignKey': p.sign, 'keyVersion': p.version};
 

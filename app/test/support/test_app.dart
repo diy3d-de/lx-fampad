@@ -9,6 +9,7 @@ import 'package:lx_fampad/data/heute_widget/heute_widget_port.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
+import 'package:lx_fampad/data/crypto/e2ee_state.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/providers.dart';
@@ -80,6 +81,9 @@ class TestUmgebung {
   /// Wirft der Wiper (lokale Daten löschen)? Zählt trotzdem als Aufruf.
   bool wiperFehler = false;
   bool wiperEcht = false;
+
+  /// Wie in main.dart: zusätzlich zum zählenden Wiper läuft der Wiper der Verschlüsselung (verwirft den Zustand, löscht aber nie einen Schlüssel).
+  bool wiperMitVerschluesselung = false;
   bool besitzerInDb = false;
   final owner = MemoryLocalDataOwner();
   /// false: der Client löst nie das Refresh-Token ein (Hintergrund-Abgleich); vor dem ersten Zugriff auf [client] setzen.
@@ -132,6 +136,16 @@ class TestUmgebung {
     // wiperEcht: der echte Wiper der App (Sync anhalten, Datenbank leeren) statt des zählenden Fakes
     if (wiperEcht)
       localDataWiperProvider.overrideWith(lokaleDatenWiper)
+    else if (wiperMitVerschluesselung)
+      localDataWiperProvider.overrideWith(
+        (ref) => wiperVerkettet([
+          () async {
+            geloescht++;
+            if (wiperFehler) throw StateError('Löschen fehlgeschlagen');
+          },
+          e2eeSitzungWiper(ref),
+        ]),
+      )
     else
       localDataWiperProvider.overrideWithValue(() async {
         geloescht++;
