@@ -89,6 +89,7 @@ export class WeatherService {
   private access: { token: string; expiresAt: number } | null = null;
   private running = false;
   private timer: NodeJS.Timeout | null = null;
+  private currentTick: Promise<void> | null = null;
   private failures = 0;
   private closed = false;
 
@@ -117,9 +118,22 @@ export class WeatherService {
     this.timer = null;
   }
 
+  /** Wartet höchstens timeoutMs auf einen laufenden Abruf (Shutdown: eine Token-Rotation nicht mittendrin abbrechen). Nach close() aufrufen. */
+  async drain(timeoutMs: number): Promise<void> {
+    const lauf = this.currentTick;
+    if (!lauf) return;
+    let t: NodeJS.Timeout | undefined;
+    await Promise.race([lauf.catch(() => undefined), new Promise<void>((r) => (t = setTimeout(r, timeoutMs)))]);
+    clearTimeout(t);
+  }
+
   private schedule(ms: number): void {
     if (this.closed) return;
-    this.timer = setTimeout(() => void this.tick(), ms);
+    this.timer = setTimeout(() => {
+      this.currentTick = this.tick().finally(() => {
+        this.currentTick = null;
+      });
+    }, ms);
     this.timer.unref();
   }
 

@@ -96,7 +96,7 @@ fi
 # Wetter-Abruf (eigener Dienst, deploy/README.md Abschnitt 12): nach dem Update neu starten, wenn er eingerichtet ist
 if systemctl cat lx-fampad-weather.service >/dev/null 2>&1; then
   echo "==> restart lx-fampad-weather"
-  sudo systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudo-Recht?). Logs: sudo journalctl -u lx-fampad-weather -n 30" >&2
+  sudo -n systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudoers-Regel fehlt? README Schritt 5). Manuell: sudo systemctl restart lx-fampad-weather" >&2
   if ! cmp -s deploy/lx-fampad-weather.service /etc/systemd/system/lx-fampad-weather.service; then
     echo "==> Hinweis: deploy/lx-fampad-weather.service weicht von /etc/systemd/system ab. Übernehmen mit: sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst"
   fi

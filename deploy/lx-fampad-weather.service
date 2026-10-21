@@ -32,6 +32,8 @@ ExecStart=/usr/bin/node dist/cli/weather-poller.js
 # bei WEATHER_ENABLED aus beendet sich der Prozess mit Exit 0 und bleibt gestoppt
 Restart=on-failure
 RestartSec=5
+# Beim Stoppen läuft ein begonnener Abruf (Token-Rotation) zu Ende, höchstens 10 s im Prozess; danach Kill nach 20 s
+TimeoutStopSec=20
 
 # Ressourcengrenzen (der VPS teilt sich den Speicher mit lx-labs, PostgreSQL und Caddy)
 MemoryMax=160M
@@ -75,7 +77,7 @@ SystemCallErrorNumber=EPERM
 CapabilityBoundingSet=
 UMask=0077
 # Kein Schreibzugriff (ProtectSystem=strict, kein ReadWritePaths): der Dienst schreibt nur in die Datenbank
-# Lesen nur, was der Dienst braucht (Code, Systemzertifikate)
+# Die Dateiablage der API ist für diesen Dienst gesperrt (die env-Datei liest systemd als root, sie braucht hier keine Sperre)
 InaccessiblePaths=/srv/fampad/files
 
 [Install]

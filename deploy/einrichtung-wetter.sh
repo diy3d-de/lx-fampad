@@ -133,19 +133,20 @@ dienst() {
   echo "==> systemd-analyze verify"
   systemd-analyze verify "$tmp/$UNIT"
   geaendert=1
-  if [ -f "$UNIT_ZIEL" ] && cmp -s "$UNIT_QUELLE" "$UNIT_ZIEL"; then
+  # ab hier zählt nur die geprüfte Kopie in $tmp (nicht der Quellpfad im Home)
+  if [ -f "$UNIT_ZIEL" ] && cmp -s "$tmp/$UNIT" "$UNIT_ZIEL"; then
     echo "==> Unit ist bereits aktuell: $UNIT_ZIEL"
     geaendert=0
   else
     echo "==> Unit wird installiert: $UNIT_ZIEL"
-    if [ -f "$UNIT_ZIEL" ]; then diff -u "$UNIT_ZIEL" "$UNIT_QUELLE" || true; fi
+    if [ -f "$UNIT_ZIEL" ]; then diff -u "$UNIT_ZIEL" "$tmp/$UNIT" || true; fi
   fi
   if [ "$trocken" -eq 1 ]; then
     echo "[dry-run] install -m 0644 $UNIT_QUELLE $UNIT_ZIEL; systemctl daemon-reload; systemctl enable --now $UNIT (bei Änderung danach restart)"
     return
   fi
   if [ "$geaendert" -eq 1 ]; then
-    install -m 0644 -o root -g root "$UNIT_QUELLE" "$UNIT_ZIEL"
+    install -m 0644 -o root -g root "$tmp/$UNIT" "$UNIT_ZIEL"
     systemctl daemon-reload
   fi
   systemctl enable --now "$UNIT"

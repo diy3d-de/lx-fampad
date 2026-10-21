@@ -380,3 +380,40 @@ describe('Abruf-Takt nur im eigenen Dienst', () => {
     expect(an.start).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('Shutdown während der Token-Rotation', () => {
+  it('drain wartet auf den laufenden Abruf, das neue Refresh-Token wird noch gespeichert', async () => {
+    const h = await backends[0]!.open();
+    vi.useFakeTimers({ toFake: ['setTimeout'] });
+    let freigeben!: () => void;
+    const gate = new Promise<void>((r) => (freigeben = r));
+    const net = fakeNetatmo();
+    const fn = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).endsWith('/oauth2/token')) await gate;
+      return net.fn(input, init);
+    }) as typeof fetch;
+    const w = await World.create(h.db, ENV, { weatherFetch: fn });
+    try {
+      const svc = w.app.weather!;
+      await svc.speichereZugangsdaten({ clientId: 'client-id-xyz', clientSecret: 'client-secret-xyz', refreshToken: 'refresh-0-secret-token' });
+      const vorher = (await h.db.select().from(schema.weatherCredentials))[0]?.refreshTokenEnc;
+      net.state.data = publicData(w.clock / 1000 - 60);
+      svc.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+      svc.close();
+      let fertig = false;
+      const drain = svc.drain(10_000).then(() => (fertig = true));
+      await Promise.resolve();
+      expect(fertig).toBe(false);
+      freigeben();
+      await drain;
+      const nachher = (await h.db.select().from(schema.weatherCredentials))[0]?.refreshTokenEnc;
+      expect(nachher).not.toBe(vorher);
+      expect(await w.count('weather_samples')).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      await w.close();
+      await h.close();
+    }
+  });
+});

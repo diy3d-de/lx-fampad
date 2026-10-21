@@ -38,6 +38,8 @@ const shutdown = async (signal: string) => {
   log.info({ signal }, 'Beende Wetter-Abruf');
   clearInterval(halten);
   weather.close();
+  // einen laufenden Abruf (Token-Rotation!) zu Ende laufen lassen, höchstens 10 s (TimeoutStopSec=20 in der Unit)
+  await weather.drain(10_000);
   await pool.end();
   process.exit(0);
 };
