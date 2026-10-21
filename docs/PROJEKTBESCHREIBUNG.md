@@ -471,6 +471,10 @@ noch als lesbaren Altbestand und wird vom Server für `e1`-Konversationen abgele
 - **Abmelden** (ausdrücklich) und Personenwechsel entfernen den geheimen Schlüssel vom Gerät; die gemerkten öffentlichen Schlüssel (TOFU) bleiben.
   Nach erneutem Anmelden wird das Gerät wieder verbunden (QR oder Wiederherstellungsschlüssel).
 
+### Abmelden löscht den Schlüssel (Rückfrage)
+
+Frei gewähltes Abmelden (Profil „Abmelden“, „Überall abmelden“, Geräteliste „Dieses Gerät abmelden“) löscht den Personenschlüssel von diesem Gerät. Liegt hier ein Schlüssel, fragt die App vorher nach und sagt ehrlich, was danach bleibt: ein anderes Gerät mit dem Schlüssel, der Wiederherstellungsschlüssel (die App weiß nicht, ob er gespeichert wurde: immer „nur, wenn du ihn noch hast“) und, nur bei auf diesem Gerät bestätigter Passwort-Sicherung (Vermerk `e2ee.kv.pw.<userId>`, Server bietet sie an, nicht veraltet), das Passwort der Passwort-Sicherung. Ohne bestätigte Passwort-Sicherung warnt die Rückfrage deutlich (rot) und bietet „Passwort-Sicherung anlegen“ an; abgemeldet wird dann nur über „Trotzdem abmelden“. Wie viele Geräte den Schlüssel haben, weiß die App nicht und rät nicht. Ohne Schlüssel auf dem Gerät bleibt die einfache Rückfrage; Zwangsabmeldungen (401, Widerruf) fragen nie (`features/profile/abmelden_pruefung.dart`).
+
 ### Wiederherstellungsschlüssel
 
 - 32 Byte Zufall, angezeigt als 14 Vierergruppen Base32 (A-Z, 2-7) mit 3 Byte Prüfsumme (SHA-256 mit Verwendungszweck: erkennt Tippfehler und Verwechslung mit

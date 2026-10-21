@@ -210,7 +210,7 @@ Future<void> main() async {
       await tester.pump(const Duration(seconds: 6)); // Hinweisleiste (SnackBar) verdeckt sonst den Knopf
       await warte(tester);
       await tippeText(tester, 'Abmelden');
-      expect(find.textContaining('Wiederherstellungsschlüssel oder ein anderes verbundenes Gerät'), findsOneWidget);
+      expect(find.textContaining('Wiederherstellungsschlüssel wieder an deine Chats, aber nur, wenn du ihn noch hast'), findsOneWidget);
       expect(find.text('Erst sichern'), findsNothing);
       pruefeLayout(tester, 'Abmelden-Dialog gesichert');
     });
