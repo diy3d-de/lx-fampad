@@ -17,6 +17,7 @@ import '../sync_state.dart';
 import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
 import 'push_wecker.dart';
+import '../betrieb/betrieb_hinweis.dart';
 import 'sicherheits_pruefer.dart';
 
 /// Schlüssel in sync_meta (verschwindet mit der lokalen Datenbank beim Abmelden).
@@ -343,6 +344,13 @@ class PushController extends Notifier<PushZustand> {
     // Sicherheitshinweis (Passwort-Reset für dein Konto): der Wecker enthält nichts, die App holt die eigenen Ereignisse
     if (!ref.mounted) return;
     await ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: appImVordergrund(), hinweis: ref.read(resetHinweisProvider.notifier), mindestAbstand: kSicherheitMindestabstand);
+    // Betreiber-Warnung (nur für den Betreiber): der Wecker enthält nichts, die App holt den Warnstand und zeigt einen festen Text
+    if (!ref.mounted) return;
+    await ref.read(betriebWarnPrueferProvider).pruefenUndMelden(
+      vordergrund: appImVordergrund(),
+      hinweis: ref.read(betriebHinweisProvider.notifier).zeigen,
+      mindestAbstand: kBetriebMindestabstand,
+    );
   }
 
   /// Beim Abmelden (Hook in auth_state.dart): Endpunkt beim Server löschen (nur wenn die Sitzung noch gilt) und beim Verteiler abmelden.

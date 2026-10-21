@@ -123,7 +123,7 @@ export interface Config {
 }
 
 export interface OperatorConfig {
-  /** Statusdatei der Sicherung (schreibt lx-fampad-backup); nur wenn der Dienst sie lesen darf, sonst "unbekannt". */
+  /** Zweite, lesbare Statusdatei der Sicherung (schreibt lx-fampad-backup als root nach /var/lib/lx-fampad-status/); nur wenn der Dienst sie lesen darf, sonst "unbekannt". */
   backupStatusFile: string | undefined;
   /** Signiertes Release-Manifest der Android-App (latest.json), nur die Versionsangaben werden gelesen. */
   releaseManifestFile: string | undefined;
@@ -206,7 +206,7 @@ function operatorConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Operato
   if (tlsProbe !== undefined && !/^[A-Za-z0-9.[\]:-]+:\d{1,5}$/.test(tlsProbe)) throw new Error('OPERATOR_TLS_PROBE ungültig (Format host:port oder off)');
   if (tlsProbe !== undefined && Number(tlsProbe.slice(tlsProbe.lastIndexOf(':') + 1)) > 65535) throw new Error('OPERATOR_TLS_PROBE ungültig (Port höchstens 65535)');
   return {
-    backupStatusFile: pick('OPERATOR_BACKUP_STATUS_FILE', '/var/backups/lx-fampad/status'),
+    backupStatusFile: pick('OPERATOR_BACKUP_STATUS_FILE', '/var/lib/lx-fampad-status/backup.status'),
     releaseManifestFile: pick('OPERATOR_RELEASE_MANIFEST', '/srv/fampad/releases/android/latest.json'),
     diskPath: pick('OPERATOR_DISK_PATH', '/srv'),
     karteDir: pick('OPERATOR_KARTE_DIR', '/srv/fampad/karte'),

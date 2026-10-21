@@ -20,6 +20,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_state.dart';
 import '../calendar/termin_repository.dart';
 import '../auth/reset_hinweis.dart' show kSicherheitPayload;
+import '../betrieb/betrieb_hinweis.dart' show kBetriebPayload;
 import '../standort/standort_hinweis.dart' show kStandortPayload;
 import '../tasks/aufgabe_repository.dart' show aufgabenProvider;
 import 'erinnerung_einstellungen.dart';
@@ -73,6 +74,9 @@ class ErinnerungDienst {
 
   /// Tipp auf den Sicherheitshinweis (Nutzlast `sicherheit`): Profil > Sicherheitsereignisse öffnen.
   void Function()? beiSicherheitGeoeffnet;
+
+  /// Tipp auf den Betreiber-Hinweis (Betrieb: Hinweis – öffne Betrieb).
+  void Function()? beiBetriebGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -265,6 +269,10 @@ class ErinnerungDienst {
     if (_beendet) return;
     if (payload == kSicherheitPayload) {
       beiSicherheitGeoeffnet?.call();
+      return;
+    }
+    if (payload == kBetriebPayload) {
+      beiBetriebGeoeffnet?.call();
       return;
     }
     if (payload == kStandortPayload) {

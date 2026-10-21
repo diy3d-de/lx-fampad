@@ -22,10 +22,13 @@ logRef.current = app.log;
 // Wetter: KEIN Abruf-Takt im API-Prozess (dieser darf nur Loopback erreichen); er läuft in cli/weather-poller.ts (lx-fampad-weather.service)
 // Aufräumen beim Start und stündlich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
 const maintenance = app.authCore ? startMaintenance(app.authCore.ctx) : undefined;
+// Betreiber-Warnungen: Prüfer alle 5 Minuten (Zustand in der Datenbank, nach einem Neustart keine Wiederholung); Push nur ohne Inhalt an den Betreiber
+app.operatorMonitor?.start();
 
 const shutdown = async (signal: string) => {
   app.log.info({ signal }, 'Beende Server');
   maintenance?.stop();
+  app.operatorMonitor?.stop();
   await app.close();
   await database?.pool.end();
   process.exit(0);

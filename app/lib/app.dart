@@ -6,7 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'constants.dart';
 import 'data/auth/auth_state.dart';
+import 'data/betrieb/betrieb_hinweis.dart' show betriebWarnSteuerungProvider;
 import 'data/chat/chat_krypto_state.dart';
+import 'data/crypto/geraet_schluessel_melder.dart' show geraetSchluesselMelderProvider;
 import 'data/lists/members.dart' show mitgliederAktualisierungProvider;
 import 'data/push/chat_benachrichtigung_raeumen.dart';
 import 'widgets/ungelesen_titel.dart';
@@ -117,6 +119,9 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     ref.watch(heuteWidgetSteuerungProvider);
     // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten
     ref.watch(chatKryptoSteuerungProvider);
+    // Betreiber: lokales Konto-Flag für die Warnungen (nur dann fragt ein Wecker den Warnstand ab) und Meldung des Schlüsselstands dieses Geräts
+    ref.watch(betriebWarnSteuerungProvider);
+    ref.watch(geraetSchluesselMelderProvider);
     ref.watch(mitgliederAktualisierungProvider);
     ref.watch(chatBenachrichtigungenRaeumenProvider);
     ref.watch(ungelesenTitelProvider);

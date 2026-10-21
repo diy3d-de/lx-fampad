@@ -22,7 +22,7 @@ function probes(over: Partial<Probes> = {}): Partial<Probes> {
   const now = Date.parse('2026-10-19T08:00:00Z');
   return {
     readText: async (path) => {
-      if (path.endsWith('/status')) return `last_run_epoch=${Math.floor(now / 1000) - 5 * 3600}\nlast_result=ok\nlast_success_epoch=${Math.floor(now / 1000) - 5 * 3600}\ntotal_bytes=617472\nlast_dir=GEHEIMER-PFAD\n`;
+      if (path.endsWith('backup.status')) return `last_run_epoch=${Math.floor(now / 1000) - 5 * 3600}\nlast_result=ok\nlast_success_epoch=${Math.floor(now / 1000) - 5 * 3600}\ntotal_bytes=617472\nlast_dir=GEHEIMER-PFAD\n`;
       if (path.endsWith('latest.json')) return JSON.stringify({ payload: JSON.stringify({ version: '0.6.1', versionCode: 6100, minVersion: '0.1.0', url: 'https://x/geheim.apk' }), signature: 'AAAA' });
       return null;
     },
@@ -225,7 +225,7 @@ describe.each(backends)('Betreiber-Ansicht ($name)', (backend) => {
     const now = world.clock;
     const ep = Math.floor(now / 1000);
     const lauf = async (text: string) => {
-      aktuell = probes({ readText: async (p) => (p.endsWith('/status') ? text : null), disk: async () => ({ totalBytes: 100, freeBytes: 10 }), tlsValidTo: async () => new Date(now + 3 * 86_400_000) });
+      aktuell = probes({ readText: async (p) => (p.endsWith('backup.status') ? text : null), disk: async () => ({ totalBytes: 100, freeBytes: 10 }), tlsValidTo: async () => new Date(now + 3 * 86_400_000) });
       world.advance(16_000); // Status-Cache (15 s) ablaufen lassen
       return (await a.client.get('/api/v1/admin/status')).json;
     };
@@ -233,6 +233,13 @@ describe.each(backends)('Betreiber-Ansicht ($name)', (backend) => {
     expect(warn.backup.state).toBe('warn');
     expect(warn.disk.usedPercent).toBe(90);
     expect([2, 3]).toContain(warn.certificate.daysLeft);
+    // exaktes Alter statt gerundeter Stunden (dieselbe Grenze wie die Warnung): 36 h 20 min ist schon zu alt, 35 h 40 min noch nicht; Platte erst über 85 %
+    expect((await lauf(`last_result=ok
+last_success_epoch=${ep - 36 * 3600 - 20 * 60}
+`)).backup.state).toBe('warn');
+    expect((await lauf(`last_result=ok
+last_success_epoch=${ep - 35 * 3600 - 40 * 60}
+`)).backup.state).toBe('ok');
     const fehler = await lauf(`last_result=fehler\nlast_success_epoch=${ep - 3600}\n`);
     expect(fehler.backup.state).toBe('error');
     expect(fehler.overall).toBe('error');

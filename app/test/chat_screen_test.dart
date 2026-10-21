@@ -25,7 +25,12 @@ const _fam = 'fa000000-0000-4000-8000-000000000001';
 const _cora = coraId;
 const _famChat = '44444444-4444-4444-8444-444444444444';
 
-String vor(int minuten) => DateTime.now().toUtc().subtract(Duration(minutes: minuten)).toIso8601String();
+/// Bezugszeit der Testdaten: heute 12:00 Uhr (Ortszeit), nicht "jetzt". Mit `DateTime.now()` rutschten Nachrichten kurz nach Mitternacht auf den Vortag und der
+/// Datumstrenner "HEUTE" fehlte; mit dem festen Mittag liegen alle Zeiten (bis 10 Stunden davor) am selben Kalendertag wie der Test.
+String vor(int minuten) {
+  final jetzt = DateTime.now();
+  return DateTime(jetzt.year, jetzt.month, jetzt.day, 12).toUtc().subtract(Duration(minutes: minuten)).toIso8601String();
+}
 
 Future<void> zumChatTab(WidgetTester tester) async {
   await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Chat')));

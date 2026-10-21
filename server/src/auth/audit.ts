@@ -53,7 +53,19 @@ export type AuditEvent =
   | 'password_reset_requested'
   | 'password_reset_done'
   | 'operator_granted'
-  | 'operator_revoked';
+  | 'operator_revoked'
+  /** Betreiber-Warnung (Prüfer, `operator/monitor.ts`): je Art ein Ereignis, ohne Inhalt. */
+  | 'operator_alert_cert'
+  | 'operator_alert_backup'
+  | 'operator_alert_database'
+  | 'operator_alert_ntfy'
+  | 'operator_alert_disk'
+  | 'operator_alert_logins'
+  | 'operator_alert_key'
+  /** Betreiber schaltet seine Warnungen ein oder aus (`detail.enabled`). */
+  | 'operator_warnings_set'
+  /** Betreiber hebt die Anmeldesperre eines Kontos auf. */
+  | 'operator_unlock';
 
 export interface AuditEntry {
   event: AuditEvent;

@@ -12,6 +12,7 @@ import '../../data/erinnerungen/erinnerung_dienst.dart';
 import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/tasks/aufgabe_repository.dart' show aufgabenProvider;
 import '../../data/auth/reset_hinweis.dart' show sicherheitOeffnenProvider;
+import '../../data/betrieb/betrieb_hinweis.dart' show betriebOeffnenProvider;
 import '../../data/standort/standort_hinweis.dart' show standortOeffnenProvider;
 import '../shell/shell_tab.dart';
 import '../tasks/tasks_state.dart' show aufgabeOeffnenProvider;
@@ -35,6 +36,7 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   };
   dienst.beiStandortGeoeffnet = () => ref.read(standortOeffnenProvider.notifier).anfordern();
   dienst.beiSicherheitGeoeffnet = () => ref.read(sicherheitOeffnenProvider.notifier).anfordern();
+  dienst.beiBetriebGeoeffnet = () => ref.read(betriebOeffnenProvider.notifier).anfordern();
   void los() => unawaited(dienst.abgleichen());
   ref.listen(kalenderDatenProvider, (_, _) => dienst.entprellt());
   ref.listen(aufgabenProvider, (_, _) => dienst.entprellt());

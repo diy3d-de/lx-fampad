@@ -447,9 +447,16 @@ export const devices = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     /** Abgemeldetes Gerät: erscheint nicht mehr in der Liste; der Aufräum-Job löscht die Zeile später. */
     revokedAt: timestamp('revoked_at', { withTimezone: true }),
+    /**
+     * Vom Gerät gemeldeter Schlüsselstand (Betreiber-Ampel, `PUT /me/device-key`): 0 = "dieses Gerät hat keinen Schlüssel", n >= 1 = "dieses Gerät hat Schlüsselversion n",
+     * null = nie gemeldet (alte App). Nur eine öffentliche Angabe, nie Schlüsselmaterial; sie stammt vom Gerät selbst und ist kein Beweis.
+     */
+    keyVersion: integer('key_version'),
+    keyReportedAt: timestamp('key_reported_at', { withTimezone: true }),
   },
   (t) => [
     index('devices_user_idx').on(t.userId),
+    check('devices_key_version_ck', sql`${t.keyVersion} is null or ${t.keyVersion} >= 0`),
     foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     index('devices_family_idx').on(t.familyId),
     // Ziel der zusammengesetzten Fremdschlüssel (family_id, device_id): eine Sitzung gehört nie zu einem fremden Gerät
@@ -580,7 +587,28 @@ export const operators = pgTable('operators', {
   grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
   /** Wer es gesetzt hat: immer 'cli' (kein Weg über die Oberfläche). */
   grantedBy: text('granted_by').notNull().default('cli'),
+  /** Betreiber-Schalter "Warnungen" (Push-Wecker ohne Inhalt bei Betriebsproblemen, `PUT /admin/warnings`); Standard an. */
+  alertsEnabled: boolean('alerts_enabled').notNull().default(true),
 });
+
+/**
+ * Zustand der Betreiber-Warnungen je Familie und Art (`operator/monitor.ts`): der Prüfer (Takt alle 5 Minuten) merkt sich hier, welche Warnung gerade
+ * aktiv ist und wann zuletzt gewarnt wurde. So gibt es nach einem Neustart keine Wiederholung und je Art höchstens alle 6 Stunden einen Wecker.
+ * `kind` ist eine feste Art (cert, backup, database, ntfy, disk, logins) oder `key:<Personen-ID>`. Nie Inhalte, nur Zustand und Zeiten.
+ */
+export const operatorAlertState = pgTable(
+  'operator_alert_state',
+  {
+    familyId: familyRef(),
+    kind: text('kind').notNull(),
+    active: boolean('active').notNull().default(false),
+    /** Seit wann die Warnung aktiv ist (null, solange sie nicht aktiv ist). */
+    since: timestamp('since', { withTimezone: true }),
+    lastNotifiedAt: timestamp('last_notified_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.familyId, t.kind] }), check('operator_alert_state_kind_ck', sql`length(${t.kind}) between 1 and 60`)],
+);
 
 /**
  * Kurzlebige WebAuthn-Challenges und Registrierungszustände (Passkey-/Passwort-Einrichtung): einmal einlösbar,

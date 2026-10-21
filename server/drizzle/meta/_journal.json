@@ -148,6 +148,13 @@
       "when": 1792614331153,
       "tag": "0020_kein_datenverlust",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792617823693,
+      "tag": "0021_betrieb_paket_2a",
+      "breakpoints": true
     }
   ]
 }
