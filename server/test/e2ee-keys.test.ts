@@ -35,7 +35,7 @@ describe.each(backends)('E2EE-Schlüssel ($name)', (backend) => {
 
   it('legt das Schlüsselpaar an, ein zweites Anlegen scheitert, /members liefert die öffentlichen Schlüssel', async () => {
     const { a, b } = await two();
-    expect((await a.get('/api/v1/me/keys')).json).toEqual({ keys: null, hasBackup: false });
+    expect((await a.get('/api/v1/me/keys')).json).toEqual({ keys: null, hasBackup: false, pwBackupVerifiedAt: null, recoveryBackupAt: null, archiveCount: 0 });
     const k = keys();
     const made = await a.post('/api/v1/me/keys', k);
     expect(made.status).toBe(200);
@@ -92,7 +92,7 @@ describe.each(backends)('E2EE-Schlüssel ($name)', (backend) => {
     expect(r.json.keys).toEqual({ ...k2, keyVersion: 2 });
     expect(await world.count('key_backups')).toBe(0);
     expect(await world.count('key_transfers')).toBe(0);
-    expect((await a.get('/api/v1/me/keys')).json).toEqual({ keys: { ...k2, keyVersion: 2 }, hasBackup: false });
+    expect((await a.get('/api/v1/me/keys')).json).toEqual({ keys: { ...k2, keyVersion: 2 }, hasBackup: false, pwBackupVerifiedAt: null, recoveryBackupAt: null, archiveCount: 1 });
     expect(await auditEvents(world)).toContain('key_rotated');
   });
 
