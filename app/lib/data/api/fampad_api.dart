@@ -223,6 +223,42 @@ class FampadApi {
 
   Future<BlobDto> sicherungAbrufen() async => BlobDto.fromJson(await client.get('/me/key-backup'));
 
+  // ----------------------------------------------------------- Passwort-Sicherung (nur mit Schalter E2EE_PW_BACKUP des Servers)
+
+  /// Schalter des Servers aus GET /version (`features.pwBackup`). Jeder Fehler und jeder ältere Server ergibt false (die Funktion bleibt unsichtbar).
+  Future<bool> pwSicherungVerfuegbar() async {
+    try {
+      final f = (await client.get('/version', auth: false))['features'];
+      return f is Map<String, dynamic> && f['pwBackup'] == true;
+    } on ApiException {
+      return false;
+    }
+  }
+
+  /// Parameter der Passwort-Ableitung samt Salt, den der Server bestimmt.
+  Future<KdfDto> kdfParameter(String email) async => KdfDto.fromJson(asJson(await client.post('/auth/kdf-params', {'email': email}, false))['kdf']);
+
+  /// Legt die Passwort-Sicherung ab (Step-up); liefert ihre Kennung.
+  Future<String> pwSicherungAblegen({required String blob, required int keyVersion, required KdfDto kdf}) async {
+    final r = await client.put('/me/key-backup-pw', {
+      'blob': blob,
+      'keyVersion': keyVersion,
+      'kdf': {'id': kdf.id, 'memKiB': kdf.memKiB, 'ops': kdf.ops},
+    });
+    final id = r['id'];
+    if (id is! String || id.isEmpty) throw ApiException.unerwarteteAntwort;
+    return id;
+  }
+
+  /// Ruft die aktuelle (bestätigte) Passwort-Sicherung ab; mit [unbestaetigt] die eigene, noch nicht bestätigte (für den Round-Trip nach dem Ablegen).
+  Future<PwSicherungDto> pwSicherungAbrufen({bool unbestaetigt = false}) async =>
+      PwSicherungDto.fromJson(await client.get(unbestaetigt ? '/me/key-backup-pw?pending=1' : '/me/key-backup-pw'));
+
+  /// Meldet die Round-Trip-Probe als bestanden: erst jetzt wird die abgelegte Sicherung aktuell und ersetzt die bisherige (atomar auf dem Server).
+  Future<void> pwSicherungBestaetigen(String id) async {
+    await client.post('/me/key-backup-pw/verified', {'id': id});
+  }
+
   /// Gibt die Ablaufzeit zurück (2 Minuten).
   Future<DateTime> uebertragungAnlegen({required String suchkennung, required String blob, required int keyVersion}) async {
     final r = await client.post('/me/key-transfer', {'lookup': suchkennung, 'blob': blob, 'keyVersion': keyVersion});

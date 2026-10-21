@@ -32,6 +32,7 @@ import 'package:lx_fampad/data/chat/chat_krypto_state.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
 import 'package:lx_fampad/data/crypto/crypto_fehler.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
+import 'package:lx_fampad/data/crypto/pw_ablauf.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
 import 'package:lx_fampad/data/chat/nachrichten_inhalt.dart';
@@ -447,6 +448,84 @@ Future<String> chatVertrag({
   return dm;
 }
 
+/// Passwort-Sicherung (PR 3 der vereinfachten Schlüsselverwaltung) gegen den echten Server: nur mit Schalter E2EE_PW_BACKUP (sonst übersprungen und die Routen
+/// müssen 404 sein). Salt vom Server, Blob ablegen, Round-Trip, "verifiziert", zweites Gerät öffnet mit dem Passwort, Server speichert nur den opaken Blob,
+/// feste Parameter (409 kdf_mismatch), alter Weg (key_backups) bleibt unberührt.
+Future<void> pwSicherungVertrag({required Gegenstelle a, required TestPerson anna, required CryptoProvider crypto, required String email}) async {
+  schritt('Passwort-Sicherung: Schalter des Servers (GET /version features.pwBackup)');
+  final an = await a.api.pwSicherungVerfuegbar();
+  if (!an) {
+    stdout.writeln('    Schalter E2EE_PW_BACKUP ist aus: Routen müssen 404 sein');
+    await expectLater(a.api.kdfParameter(email), throwsA(isA<ApiException>().having((e) => e.status, 'status', 404)));
+    await expectLater(a.api.pwSicherungAbrufen(), throwsA(isA<ApiException>().having((e) => e.status, 'status', 404)));
+    return;
+  }
+  final server = (await a.api.eigeneSchluessel()).schluessel!;
+  expect(server.gleichWie(anna.oeffentlich), isTrue);
+  final userId = anna.id;
+  const passwort = 'Zebra-Kamin-Orbit-Fluss-Lampe';
+  final ablauf = PwSicherungAblauf(crypto: crypto, api: a.api, userId: userId, email: email);
+
+  schritt('Passwort-Sicherung: Salt kommt vom Server und ist für dieselbe E-Mail stabil, für andere gleich geformt (kein Konto-Orakel)');
+  final k1 = await a.api.kdfParameter(email);
+  final k2 = await a.api.kdfParameter(email.toUpperCase());
+  final fremd = await a.api.kdfParameter('niemand@beispiel.de');
+  expect((k1.id, k1.memKiB, k1.ops), ('argon2id-v1', 65536, 3));
+  expect(k2.salt, k1.salt);
+  expect((fremd.id, fremd.memKiB, fremd.ops), ('argon2id-v1', 65536, 3));
+  expect(fremd.salt, isNot(k1.salt));
+  expect(base64urlDekodieren(fremd.salt), hasLength(16));
+  await expectLater(a.api.pwSicherungAbrufen(), throwsA(isA<ApiException>().having((e) => e.status, 'status', 404)), reason: 'noch keine Sicherung');
+
+  schritt('Passwort-Sicherung: lokale Probe, Ablegen, Round-Trip, verifiziert; der Server sieht nur den opaken Blob');
+  final entwurf = await ablauf.vorbereiten(lokal: anna.pk, server: server, passwort: passwort);
+  final id = await ablauf.ablegenUndPruefen(entwurf, passwort: passwort, lokal: anna.pk, serverVorher: server);
+  final zeilen = await dbAbfrage("select id, state, key_version, kdf_id, mem_kib, ops, blob, verified_at is not null as verifiziert from key_backups_pw where user_id = '$userId'");
+  expect(zeilen, hasLength(1));
+  expect(zeilen.single['id'], id);
+  expect((zeilen.single['state'], zeilen.single['key_version'], zeilen.single['kdf_id'], zeilen.single['mem_kib'], zeilen.single['ops']), ('active', 1, 'argon2id-v1', 65536, 3));
+  expect(zeilen.single['verifiziert'], isTrue);
+  expect(zeilen.single['blob'], entwurf.blob);
+  final seeds = anna.pk.exportieren();
+  for (final teil in [seeds.sublist(0, 32), seeds.sublist(32)]) {
+    expect((zeilen.single['blob'] as String).contains(base64urlKodieren(teil)), isFalse);
+  }
+  expect(await dbAbfrage("select 1 from audit_log where event like 'key_backup_pw_%' and detail::text like '%${entwurf.blob.substring(10, 30)}%'"), isEmpty, reason: 'nie der Blob im Audit');
+
+  schritt('Passwort-Sicherung: zweites Gerät öffnet mit dem Passwort denselben Schlüssel, falsches Passwort scheitert');
+  final nur = PwSicherungAblauf(crypto: crypto, api: a.api, userId: userId, email: email);
+  final r = await nur.abrufenUndOeffnen(passwort);
+  expect(gleicheBytes(r.schluessel.exportieren(), anna.pk.exportieren()), isTrue);
+  expect(r.keyVersion, 1);
+  await expectLater(nur.abrufenUndOeffnen('Falsches-Passwort-Tisch-Wolke-Baum'), throwsA(isA<CryptoFehler>().having((e) => e.art, 'art', CryptoFehlerArt.entschluesselung)));
+
+  schritt('Passwort-Sicherung: Abbruch nach dem Ablegen (nie bestätigt): die zuletzt verifizierte bleibt aktuell, das alte Passwort öffnet sie weiter');
+  final abgebrochen = await a.api.pwSicherungAblegen(blob: (await ablauf.vorbereiten(lokal: anna.pk, server: server, passwort: 'Nie-Bestaetigt-Wolke-Tisch-Vogel')).blob, keyVersion: 1, kdf: k1);
+  expect((await dbAbfrage("select state from key_backups_pw where user_id = '$userId' order by state")).map((z) => z['state']), ['active', 'pending']);
+  expect((await a.api.pwSicherungAbrufen()).id, id);
+  expect((await a.api.pwSicherungAbrufen(unbestaetigt: true)).id, abgebrochen);
+  expect(gleicheBytes((await nur.abrufenUndOeffnen(passwort)).schluessel.exportieren(), anna.pk.exportieren()), isTrue);
+
+  schritt('Passwort-Sicherung: erneutes Anlegen ersetzt erst nach der Bestätigung (alte Zeilen superseded, nie gelöscht); feste Parameter, Version geprüft');
+  final id2 = await ablauf.ablegenUndPruefen(
+    await ablauf.vorbereiten(lokal: anna.pk, server: server, passwort: 'Anderes-Passwort-Wolke-Tisch-Vogel'),
+    passwort: 'Anderes-Passwort-Wolke-Tisch-Vogel',
+    lokal: anna.pk,
+    serverVorher: server,
+  );
+  expect(id2, isNot(id));
+  expect((await dbAbfrage("select state from key_backups_pw where user_id = '$userId' order by created_at")).map((z) => z['state']), ['superseded', 'superseded', 'active']);
+  await expectLater(
+    a.api.pwSicherungAblegen(blob: entwurf.blob, keyVersion: 1, kdf: const KdfDto(id: 'argon2id-v1', memKiB: 1024, ops: 1, salt: '')),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'kdf_mismatch')),
+  );
+  await expectLater(
+    a.api.pwSicherungAblegen(blob: entwurf.blob, keyVersion: 7, kdf: k1),
+    throwsA(isA<ApiException>().having((e) => e.code, 'code', 'key_version_mismatch')),
+  );
+  await expectLater(a.api.pwSicherungBestaetigen(id), throwsA(isA<ApiException>().having((e) => e.code, 'code', 'backup_not_current')), reason: 'die ersetzte Sicherung lässt sich nicht mehr bestätigen');
+}
+
 /// Abfrage der Datenbank (nur lesen, JSON-Zeilen), um zu prüfen, was der Server wirklich speichert.
 Future<List<dynamic>> dbAbfrage(String sql) async {
   final r = await Process.run('node', [
@@ -574,6 +653,8 @@ Future<void> e2eeChatVertrag({
       }
     }
   }
+
+  await pwSicherungVertrag(a: a, anna: annaP, crypto: crypto, email: 'anna@beispiel.de');
 
   schritt('Chat Ende-zu-Ende: Gruppe aus drei Personen (Epoche 1, ein Wrap je Person), A sendet, alle lesen, zwei Geräte von Anna lesen dasselbe');
   final gruppe = await annaA.repo.gruppeAnlegen([kindId, coraId], name: 'Vertrag-Gruppe');

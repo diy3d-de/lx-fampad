@@ -1,5 +1,4 @@
-// Passwort-abgeleitete Sicherung des Personenschlüssels (Entwurf "vereinfachte Schlüsselverwaltung", Projektbeschreibung 9a). NUR Bausteine, noch nicht
-// im Ablauf verdrahtet.
+// Passwort-abgeleitete Sicherung des Personenschlüssels (Entwurf "vereinfachte Schlüsselverwaltung", Projektbeschreibung 9a). Bausteine; der Ablauf steht in pw_ablauf.dart (PR 3).
 //
 // Ableitung: master = Argon2id(NFKC-UTF-8-Passwort, salt, Profil kdf1) -> zwei unabhängige Teilschlüssel per BLAKE2b-256 mit Schlüssel = master:
 //   authKey = BLAKE2b-256(key = master, "lx-fampad|auth|v2")  -> geht an den Server (statt des Passworts)

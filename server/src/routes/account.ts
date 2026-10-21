@@ -134,7 +134,12 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
       const body = parse(z.object({ blob: b64urlBlobMin(96, 4096), keyVersion: z.number().int().min(1), kdf: kdfBody }).strict(), req.body);
       return { ok: true, ...(await setPwBackup(ctx, p, body, meta(req))) };
     });
-    app.get('/api/v1/me/key-backup-pw', strikt, async (req) => getPwBackup(ctx, await auth.requireSession(req), meta(req)));
+    // ohne Parameter die aktuelle (bestätigte) Sicherung; ?pending=1 die eigene noch unbestätigte, für den Round-Trip der App
+    app.get('/api/v1/me/key-backup-pw', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      const q = parse(z.object({ pending: z.literal('1').optional() }).strict(), req.query);
+      return getPwBackup(ctx, p, meta(req), q.pending ? 'pending' : 'current');
+    });
     app.post('/api/v1/me/key-backup-pw/verified', strikt, async (req) => {
       const p = await auth.requireSession(req);
       await markPwBackupVerified(ctx, p, parse(z.object({ id: uuid }).strict(), req.body).id, meta(req));

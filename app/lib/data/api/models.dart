@@ -576,6 +576,38 @@ OeffentlicheSchluessel _schluesselStreng(Json m) => _schluessel(m) ?? _fehler();
 /// Antwort auf das Anlegen oder Wechseln des Schlüssels.
 OeffentlicheSchluessel schluesselAusAntwort(Json r) => _schluesselStreng(asJson(r['keys']));
 
+/// Parameter der Passwort-Ableitung laut Server (POST /auth/kdf-params und in der Passwort-Sicherung). Der Salt ist öffentlich und kommt vom Server.
+class KdfDto {
+  final String id;
+  final int memKiB;
+  final int ops;
+  final String salt;
+  const KdfDto({required this.id, required this.memKiB, required this.ops, required this.salt});
+
+  factory KdfDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return KdfDto(id: _s(m, 'id'), memKiB: _i(m, 'memKiB'), ops: _i(m, 'ops'), salt: _s(m, 'salt'));
+  }
+}
+
+/// Antwort von GET /me/key-backup-pw. [stale]: der Personenschlüssel hat seither gewechselt (die Sicherung enthält den alten). [pending]: noch nicht bestätigt.
+class PwSicherungDto {
+  final String id;
+  final String blob;
+  final int keyVersion;
+  final bool stale;
+  final bool pending;
+  final KdfDto kdf;
+  const PwSicherungDto({required this.id, required this.blob, required this.keyVersion, required this.stale, this.pending = false, required this.kdf});
+
+  factory PwSicherungDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final state = _s(m, 'state');
+    if (state != 'active' && state != 'stale' && state != 'pending') throw ApiException.unerwarteteAntwort;
+    return PwSicherungDto(id: _s(m, 'id'), blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'), stale: state == 'stale', pending: state == 'pending', kdf: KdfDto.fromJson(m['kdf']));
+  }
+}
+
 /// Blob samt Schlüsselversion (Sicherung abrufen, Übertragung einlösen).
 class BlobDto {
   final String blob;

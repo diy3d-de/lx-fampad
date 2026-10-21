@@ -66,11 +66,14 @@ export interface PwBackupInput {
   kdf: { id: string; memKiB: number; ops: number };
 }
 
+/** Eine noch nicht bestätigte Sicherung verfällt (wird `superseded`, nie gelöscht) nach dieser Zeit (Aufräumjob). */
+export const PW_PENDING_TTL_MS = 3_600_000;
+
 /**
  * Neue Passwort-Sicherung ablegen (Step-up). Sie muss zur aktuellen key_version gehören und mit dem festen Profil abgeleitet sein
- * (sonst 409 kdf_mismatch). In EINER Transaktion: die bisherige aktuelle Zeile wird `superseded`, die neue `active` mit ihrem eigenen
- * Ableitungssatz, das Audit geschrieben. Gleichzeitige Anfragen derselben Person laufen nacheinander (Sperre auf person_keys); der
- * Teil-Unique-Index sichert zusätzlich ab.
+ * (sonst 409 kdf_mismatch). Sie entsteht als `pending`; die bisherige aktuelle Zeile (active/stale) bleibt UNBERÜHRT und gültig, bis
+ * die neue per `verified` bestätigt ist. Eine eigene ältere pending-Zeile wird `superseded`. In EINER Transaktion mit Audit;
+ * gleichzeitige Anfragen derselben Person laufen nacheinander (Sperre auf person_keys), die Teil-Unique-Indizes sichern zusätzlich ab.
  */
 export async function setPwBackup(ctx: AuthContext, p: SessionPrincipal, input: PwBackupInput, meta: RequestMeta): Promise<{ id: string }> {
   requireStepUp(ctx, p);
@@ -87,7 +90,7 @@ export async function setPwBackup(ctx: AuthContext, p: SessionPrincipal, input: 
     await tx
       .update(keyBackupsPw)
       .set({ state: 'superseded', updatedAt: now })
-      .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
+      .where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'pending')));
     const [row] = await tx
       .insert(keyBackupsPw)
       .values({
@@ -99,7 +102,7 @@ export async function setPwBackup(ctx: AuthContext, p: SessionPrincipal, input: 
         memKib: DEFAULT_KDF.memKiB,
         ops: DEFAULT_KDF.ops,
         saltGeneration: g?.generation ?? DEFAULT_SALT_GENERATION,
-        state: 'active',
+        state: 'pending',
         createdAt: now,
         updatedAt: now,
       })
@@ -114,15 +117,17 @@ export interface PwBackupOut {
   id: string;
   blob: string;
   keyVersion: number;
-  state: 'active' | 'stale';
+  state: 'pending' | 'active' | 'stale';
   kdf: KdfParams;
 }
 
 /**
- * Aktuelle Passwort-Sicherung abrufen (Step-up). Abruf und Audit stehen in einer Transaktion (kein unprotokollierter Abruf).
- * `state` ist `stale`, wenn der Personenschlüssel seither gewechselt hat (die Sicherung enthält dann den alten Schlüssel).
+ * Passwort-Sicherung abrufen (Step-up). Abruf und Audit stehen in einer Transaktion (kein unprotokollierter Abruf).
+ * Standard (`which = 'current'`): die aktuelle, bestätigte Sicherung; `state` ist `stale`, wenn der Personenschlüssel seither gewechselt
+ * hat (die Sicherung enthält dann den alten Schlüssel). `which = 'pending'`: die eigene, noch nicht bestätigte Sicherung für den
+ * Round-Trip der App (nur der Besitzer, gleiche Rechte und Protokollierung).
  */
-export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta): Promise<PwBackupOut> {
+export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta, which: 'current' | 'pending' = 'current'): Promise<PwBackupOut> {
   requireStepUp(ctx, p);
   return ctx.db.transaction(async (tx) => {
     const [b] = await tx
@@ -139,37 +144,49 @@ export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: R
       })
       .from(keyBackupsPw)
       .innerJoin(users, eq(users.id, keyBackupsPw.userId))
-      .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
+      .where(and(eq(keyBackupsPw.userId, p.userId), which === 'pending' ? eq(keyBackupsPw.state, 'pending') : inArray(keyBackupsPw.state, ['active', 'stale'])));
     if (!b) throw notFound();
-    await writeAudit(ctx, tx, { event: 'key_backup_pw_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion } });
+    await writeAudit(ctx, tx, { event: 'key_backup_pw_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion, which } });
     return {
       id: b.id,
       blob: b.blob,
       keyVersion: b.keyVersion,
-      state: b.state === 'stale' ? 'stale' : 'active',
+      state: b.state === 'stale' ? 'stale' : b.state === 'pending' ? 'pending' : 'active',
       kdf: { id: b.kdfId, memKiB: b.memKib, ops: b.ops, salt: kdfSalt(ctx, b.email, b.generation) },
     };
   });
 }
 
 /**
- * Setzt `verified_at` der Sicherung `id` (Step-up), erst nach der Round-Trip-Probe der App. Nur die eigene, noch aktuelle (`active`)
- * Zeile: fremde oder unbekannte ergeben 404, eine bereits ersetzte oder veraltete 409. Atomar mit Audit.
+ * Bestätigt die eigene Sicherung `id` (Step-up), erst nach der Round-Trip-Probe der App: in EINER Transaktion wird die bisherige
+ * aktuelle Zeile (active/stale) `superseded` und die `pending`-Zeile `active` mit `verified_at`. Vorher bleibt die alte gültig.
+ * Fremde oder unbekannte ID: 404; nicht (mehr) pending, verfallen oder zu einer anderen Schlüsselversion gehörend: 409. Eine schon
+ * bestätigte aktuelle Zeile bestätigt erneut folgenlos (verlorene Antwort). Atomar mit Audit.
  */
 export async function markPwBackupVerified(ctx: AuthContext, p: SessionPrincipal, id: string, meta: RequestMeta): Promise<void> {
   requireStepUp(ctx, p);
   await ctx.db.transaction(async (tx) => {
+    // gleiche Sperre wie Schlüsselwechsel und Ablegen: kein Bestätigen gegen einen gerade wechselnden Schlüssel
+    const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
+    const [row] = await tx
+      .select({ state: keyBackupsPw.state, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
+      .from(keyBackupsPw)
+      .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId)))
+      .for('update');
+    if (!row) throw notFound();
+    if (row.state === 'active' && row.verifiedAt) return; // schon bestätigt
+    if (row.state !== 'pending' || !k || k.v !== row.keyVersion) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
+    const now = ctx.now();
+    await tx
+      .update(keyBackupsPw)
+      .set({ state: 'superseded', updatedAt: now })
+      .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
     const rows = await tx
       .update(keyBackupsPw)
-      .set({ verifiedAt: ctx.now(), updatedAt: ctx.now() })
-      .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'active')))
+      .set({ state: 'active', verifiedAt: now, updatedAt: now })
+      .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'pending')))
       .returning({ keyVersion: keyBackupsPw.keyVersion });
-    const row = rows[0];
-    if (!row) {
-      const [vorhanden] = await tx.select({ id: keyBackupsPw.id }).from(keyBackupsPw).where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId)));
-      if (!vorhanden) throw notFound();
-      throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
-    }
-    await writeAudit(ctx, tx, { event: 'key_backup_pw_verified', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
+    if (!rows[0]) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
+    await writeAudit(ctx, tx, { event: 'key_backup_pw_verified', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: rows[0].keyVersion } });
   });
 }
