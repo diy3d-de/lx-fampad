@@ -531,7 +531,9 @@ class _Fusszeile extends ConsumerWidget {
     final sync = ref.watch(syncProvider);
     final geraete = ref.watch(geraeteAnzahlProvider).value;
     final installiert = ref.watch(updateProvider.select((u) => u.installierteVersion));
-    final version = installiert ?? (kWebVersion.isNotEmpty ? webVersionTeilen(kWebVersion).version : 'dev');
+    // Web: Versionsnummer plus Build-Kennung (Datum und Uhrzeit des Builds), damit man den geladenen Stand erkennt; Android zeigt die installierte Version
+    final web = kWebVersion.isNotEmpty ? webVersionTeilen(kWebVersion) : null;
+    final version = installiert ?? (web == null ? 'dev' : (web.kennung == null ? web.version : '${web.version}-${web.kennung}'));
     final (text, farbe) = syncAnzeige(sync);
     const stil = TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted);
     return Container(
