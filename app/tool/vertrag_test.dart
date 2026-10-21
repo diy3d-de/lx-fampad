@@ -185,6 +185,9 @@ SyncOp aender(String entity, String id, Map<String, dynamic> fields, int baseRev
     SyncOp(opId: neueUuid(), op: 'upsert', entity: entity, id: id, fields: fields, baseRev: baseRev);
 SyncOp weg(String entity, String id, int baseRev) => SyncOp(opId: neueUuid(), op: 'delete', entity: entity, id: id, baseRev: baseRev);
 
+/// Form-gültige e1-Hülle (Base64url, mindestens 153 Zeichen) für die Klartext-Schritte: der Server prüft nur die Form und wertet den Inhalt nie aus.
+String e1Text(String s) => 'e1:${base64Url.encode(utf8.encode(s)).replaceAll('=', '')}${'A' * 160}';
+
 /// Das Sync-Protokoll gegen den echten Server: zwei Geräte, Konflikte, Löschen, Rechte, Validierung, WebSocket.
 Future<void> syncVertrag({
   required Gegenstelle a,
@@ -365,7 +368,7 @@ Future<String> chatVertrag({
 
   schritt('Chat: Familienchat anlegen, Kind sieht ihn, der Gast nicht, ein zweiter wird abgelehnt');
   final famId = familienchatId((await a.api.ich()).familyId);
-  final famOp = neu('konversation', famId, {'art': 'family', 'encVersion': 'p1'});
+  final famOp = neu('konversation', famId, {'art': 'family', 'encVersion': 'e1'});
   final fam = await syncen(a, [famOp]);
   expect(fam.rejected, isEmpty);
   expect(fam.acked, [famOp.opId]);
@@ -377,39 +380,40 @@ Future<String> chatVertrag({
   expect((await syncen(a, [aender('konversation', famId, {'titel': 'p1:Neu'}, famRev)])).rejected.single.code, 'forbidden');
   expect((await syncen(a, [weg('konversation', famId, famRev)])).rejected.single.code, 'forbidden');
 
-  schritt('Chat: Nachrichten sind undurchsichtig (Inhalt bleibt unverändert, Hülle p1:), Länge, Autor und Zeit setzt der Server');
+  schritt('Chat: Nachrichten sind undurchsichtig (Inhalt bleibt unverändert, Hülle e1:), Länge, Autor und Zeit setzt der Server');
   final m1 = neueUuid();
-  final r1 = await syncen(kind, [neu('nachricht', m1, {'konversationId': famId, 'text': 'p1:<b>unverändert</b> 👋 e1:'})]);
+  final r1 = await syncen(kind, [neu('nachricht', m1, {'konversationId': famId, 'text': e1Text('<b>unverändert</b> 👋 e1:')})]);
   expect(r1.rejected, isEmpty);
-  // die Hülle muss zur Konversation passen (kein Zurückstufen, später keine Klartext-Nachricht in einem verschlüsselten Chat): e1: ist heute ungültig
-  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'e1:QUJDREVGRw=='})])).rejected.single.code, 'invalid');
+  // die Hülle muss zur Konversation passen (Klartext p1: ist in einem verschlüsselten Chat ungültig, ebenso eine zu kurze e1-Hülle; der Server prüft nur die Form)
+  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'p1:Klartext'})])).rejected.single.code, 'invalid');
+  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'e1:QUJDREVGRw'})])).rejected.single.code, 'invalid');
   final gesehen = (await alleSeiten(a)).firstWhere((c) => c.id == m1);
-  expect(gesehen.fields['text'], 'p1:<b>unverändert</b> 👋 e1:');
+  expect(gesehen.fields['text'], e1Text('<b>unverändert</b> 👋 e1:'));
   expect(gesehen.fields['autorId'], kindId);
   expect(gesehen.fields['createdAt'], isNotNull);
   expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'x' * 16385})])).rejected.single.code, 'invalid');
-  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': 'p1:x', 'autorId': adminId})])).rejected.single.code, 'invalid');
+  expect((await syncen(kind, [neu('nachricht', neueUuid(), {'konversationId': famId, 'text': e1Text('x'), 'autorId': adminId})])).rejected.single.code, 'invalid');
   // nur der Autor bearbeitet; der Admin darf im Familienchat fremde Nachrichten löschen
-  expect((await syncen(a, [aender('nachricht', m1, {'text': 'p1:gefälscht'}, gesehen.rev)])).rejected.single.code, 'forbidden');
+  expect((await syncen(a, [aender('nachricht', m1, {'text': e1Text('gefälscht')}, gesehen.rev)])).rejected.single.code, 'forbidden');
   final m2 = neueUuid();
-  await syncen(kind, [neu('nachricht', m2, {'konversationId': famId, 'text': 'p1:weg damit'})]);
+  await syncen(kind, [neu('nachricht', m2, {'konversationId': famId, 'text': e1Text('weg damit')})]);
   final rev2 = (await alleSeiten(a)).firstWhere((c) => c.id == m2).rev;
   expect((await syncen(a, [weg('nachricht', m2, rev2)])).acked, hasLength(1));
 
   schritt('Chat: Direktchat Kind/Admin (feste ID je Paar); Direktchat Kind/Cora ist für den Admin unsichtbar und unveränderbar (not_found)');
   final dm = direktChatId(kindId, adminId);
-  final dmOp = neu('konversation', dm, {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [kindId, adminId]..sort()});
+  final dmOp = neu('konversation', dm, {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [kindId, adminId]..sort()});
   expect((await syncen(kind, [dmOp])).acked, [dmOp.opId]);
   // dasselbe Paar mit anderer ID und aus der anderen Richtung: abgelehnt; dieselbe ID noch einmal: ohne Wirkung
-  expect((await syncen(a, [neu('konversation', neueUuid(), {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [adminId, kindId]})])).rejected.single.code, 'invalid');
+  expect((await syncen(a, [neu('konversation', neueUuid(), {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [adminId, kindId]})])).rejected.single.code, 'invalid');
   // Squatting: die ID des Paares Admin/Cora kann das Kind nicht für einen eigenen Chat belegen
-  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [kindId, coraId]})])).rejected.single.code, 'invalid');
-  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [adminId, coraId]})])).rejected.single.code, 'forbidden');
-  expect((await syncen(a, [neu('konversation', dm, {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [adminId, kindId]})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [kindId, coraId]})])).rejected.single.code, 'invalid');
+  expect((await syncen(kind, [neu('konversation', direktChatId(adminId, coraId), {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [adminId, coraId]})])).rejected.single.code, 'forbidden');
+  expect((await syncen(a, [neu('konversation', dm, {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [adminId, kindId]})])).rejected, isEmpty);
   final privatId = direktChatId(kindId, coraId);
-  expect((await syncen(kind, [neu('konversation', privatId, {'art': 'direct', 'encVersion': 'p1', 'teilnehmer': [kindId, coraId]})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('konversation', privatId, {'art': 'direct', 'encVersion': 'e1', 'teilnehmer': [kindId, coraId]})])).rejected, isEmpty);
   final geheimMsg = neueUuid();
-  expect((await syncen(kind, [neu('nachricht', geheimMsg, {'konversationId': privatId, 'text': 'p1:GEHEIM-TEXT'})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('nachricht', geheimMsg, {'konversationId': privatId, 'text': e1Text('GEHEIM-TEXT')})])).rejected, isEmpty);
   for (final g in [a, b]) {
     final alle = await alleSeiten(g);
     expect(alle.where((c) => c.id == privatId || c.id == geheimMsg), isEmpty, reason: 'auch der Admin sieht fremde Privatchats nicht');
@@ -419,8 +423,8 @@ Future<String> chatVertrag({
   final angriff = await syncen(a, [
     aender('konversation', privatId, {'titel': 'p1:x'}, privRev),
     weg('konversation', privatId, privRev),
-    neu('nachricht', neueUuid(), {'konversationId': privatId, 'text': 'p1:Einschleusen'}),
-    aender('nachricht', geheimMsg, {'text': 'p1:x'}, 1),
+    neu('nachricht', neueUuid(), {'konversationId': privatId, 'text': e1Text('Einschleusen')}),
+    aender('nachricht', geheimMsg, {'text': e1Text('x')}, 1),
     weg('nachricht', geheimMsg, 1),
   ]);
   expect(angriff.rejected.map((x) => x.code), List.filled(5, 'not_found'));
@@ -430,7 +434,7 @@ Future<String> chatVertrag({
 
   schritt('Chat: Gruppe, Teilnehmer entfernen -> hidden-Tombstone nur für die entfernte Person, Außenstehende erfahren nichts');
   final gruppe = neueUuid();
-  expect((await syncen(kind, [neu('konversation', gruppe, {'art': 'group', 'encVersion': 'p1', 'titel': 'p1:Ausflug', 'teilnehmer': [kindId, adminId, coraId]..sort()})])).rejected, isEmpty);
+  expect((await syncen(kind, [neu('konversation', gruppe, {'art': 'group', 'encVersion': 'e1', 'titel': 'p1:Ausflug', 'teilnehmer': [kindId, adminId, coraId]..sort()})])).rejected, isEmpty);
   final vorA = (await syncen(a, [])).rev;
   final vorCora = (await syncen(cora, [])).rev;
   final gRev = (await alleSeiten(kind)).firstWhere((c) => c.id == gruppe).rev;
@@ -442,7 +446,7 @@ Future<String> chatVertrag({
   expect(nachCora.changes.where((c) => c.id == gruppe && !c.tombstone), hasLength(1));
   // wer nie drin war (der Gast), erfährt nichts: kein Tombstone mit der ID
   expect((await alleSeiten(gast, since: vorCora)).where((c) => c.id == gruppe), isEmpty);
-  expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': 'p1:x'})])).rejected.single.code, 'not_found');
+  expect((await syncen(a, [neu('nachricht', neueUuid(), {'konversationId': gruppe, 'text': e1Text('x')})])).rejected.single.code, 'not_found');
 
   await e2eeChatVertrag(a: a, b: b, kind: kind, cora: cora, adminId: adminId, kindId: kindId, coraId: coraId, altChatId: dm);
   return dm;
