@@ -12,13 +12,38 @@ import { stationMessung, type Messung } from './parse.js';
 
 const API = 'https://api.netatmo.com';
 const REQUEST_TIMEOUT_MS = 10_000;
-const MAX_BODY_CHARS = 2_000_000;
+const MAX_BODY_BYTES = 2_000_000;
+const MAX_TOKEN_BYTES = 100_000;
 const HOUR_MS = 3_600_000;
 export const SAMPLE_RETENTION_MS = 7 * 24 * HOUR_MS;
 /** Eine Messung, die älter ist, gilt in der Anzeige als veraltet. */
 export const STALE_AFTER_MS = HOUR_MS;
 const MAX_BACKOFF_MS = 2 * HOUR_MS;
 const SERIES_BUCKET_MS = 15 * 60_000;
+
+/** Liest den Rumpf höchstens bis zur Grenze (Content-Length und Strom); null bei Überschreitung. */
+async function leseBegrenzt(res: Response, maxBytes: number): Promise<string | null> {
+  const len = Number(res.headers.get('content-length'));
+  if (Number.isFinite(len) && len > maxBytes) {
+    await res.body?.cancel().catch(() => undefined);
+    return null;
+  }
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const teile: Uint8Array[] = [];
+  let summe = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    summe += value.byteLength;
+    if (summe > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    teile.push(value);
+  }
+  return Buffer.concat(teile).toString('utf8');
+}
 
 export type PollResult = 'ok' | 'not_configured' | 'disabled' | 'invalid_grant' | 'auth_error' | 'upstream_error' | 'station_not_found' | 'busy';
 
@@ -107,7 +132,7 @@ export class WeatherService {
     try {
       const r = await this.pollOnce();
       if (r === 'ok') this.failures = 0;
-      else if (r === 'disabled' || r === 'not_configured' || r === 'invalid_grant') next = Math.max(this.cfg.pollMs, HOUR_MS);
+      else if (r === 'disabled' || r === 'not_configured' || r === 'invalid_grant') next = Math.min(this.cfg.pollMs, 10 * 60_000);
       else if (r !== 'busy') {
         this.failures++;
         next = this.backoff();
@@ -156,12 +181,14 @@ export class WeatherService {
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         redirect: 'error',
       });
-      text = await res.text();
+      const t = await leseBegrenzt(res, MAX_BODY_BYTES);
+      if (t === null) return this.fail('too_large');
+      text = t;
     } catch {
       return this.fail('network');
     }
     if (res.status === 401 || res.status === 403) return 'auth_error';
-    if (!res.ok || text.length > MAX_BODY_CHARS) return this.fail(`http_${res.status}`);
+    if (!res.ok) return this.fail(`http_${res.status}`);
     let json: unknown;
     try {
       json = JSON.parse(text);
@@ -169,8 +196,10 @@ export class WeatherService {
       return this.fail('bad_json');
     }
     const body = (json as { body?: unknown } | null)?.body;
-    const m = stationMessung(body, this.cfg.stationMac);
+    const m = stationMessung(body, this.cfg.stationMac, this.now().getTime() / 1000);
     if (!m) return this.fail('station_not_found', 'station_not_found');
+    // Messungen, die älter als die Aufbewahrung sind, werden nie gespeichert
+    if (m.ts * 1000 < this.now().getTime() - SAMPLE_RETENTION_MS) return this.fail('measurement_old');
     await this.speichern(m);
     return 'ok';
   }
@@ -206,7 +235,11 @@ export class WeatherService {
     const nowMs = this.now().getTime();
     if (this.access && this.access.expiresAt - 60_000 > nowMs) return this.access.token;
     // Zeilensperre: nur eine Erneuerung gleichzeitig; das neue Refresh-Token wird vor dem Commit gespeichert
-    return this.db.transaction(async (tx) => {
+    let neuesToken: string | undefined;
+    let zugriff: { token: string; expiresAt: number } | undefined;
+    let ergebnis: string;
+    try {
+      ergebnis = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(weatherCredentials).where(eq(weatherCredentials.id, 1)).for('update');
       if (!row || row.disabledAt) return 'error';
       const markiere = (code: string) => tx.update(weatherCredentials).set({ lastErrorAt: this.now(), lastErrorCode: code }).where(eq(weatherCredentials.id, 1));
@@ -230,7 +263,12 @@ export class WeatherService {
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
           redirect: 'error',
         });
-        text = await res.text();
+        const t = await leseBegrenzt(res, MAX_TOKEN_BYTES);
+        if (t === null) {
+          await markiere('token_too_large');
+          return 'error';
+        }
+        text = t;
       } catch {
         await markiere('token_network');
         return 'error';
@@ -260,11 +298,34 @@ export class WeatherService {
       // Rotation: das neue Refresh-Token ersetzt das alte noch vor dem Commit
       const neu = json.refresh_token;
       if (typeof neu === 'string' && neu.length >= 10 && neu.length <= 1000 && neu !== refresh) {
+        neuesToken = neu;
         await tx.update(weatherCredentials).set({ refreshTokenEnc: this.keys.encrypt(PURPOSE, neu, AAD.refreshToken), updatedAt: this.now() }).where(eq(weatherCredentials.id, 1));
       }
-      this.access = { token: access, expiresAt: this.now().getTime() + Math.min(expires, 3 * 3600) * 1000 };
+      zugriff = { token: access, expiresAt: this.now().getTime() + Math.min(expires, 3 * 3600) * 1000 };
       return access;
     });
+    } catch {
+      // Notanker: Netatmo hat das alte Refresh-Token schon ersetzt. Scheitert das Speichern in der Transaktion (Verschlüsselung, UPDATE, Commit),
+      // wird das neue Token ersatzweise außerhalb davon geschrieben, damit es nicht verloren geht.
+      this.access = null;
+      if (neuesToken !== undefined) {
+        try {
+          await this.db
+            .update(weatherCredentials)
+            .set({ refreshTokenEnc: this.keys.encrypt(PURPOSE, neuesToken, AAD.refreshToken), updatedAt: this.now(), lastErrorAt: this.now(), lastErrorCode: 'rotate_persist' })
+            .where(eq(weatherCredentials.id, 1));
+          this.log.error({ code: 'rotate_persist' }, 'Wetter: neues Refresh-Token ersatzweise gespeichert');
+        } catch {
+          this.log.error({ code: 'rotate_persist' }, 'Wetter: neues Refresh-Token ging verloren, weather-setup erneut ausführen');
+        }
+      } else {
+        this.log.error({ code: 'token_tx' }, 'Wetter: Token-Erneuerung fehlgeschlagen');
+      }
+      return 'error';
+    }
+    // das Zugangstoken gilt erst nach erfolgreichem Commit
+    if (zugriff) this.access = zugriff;
+    return ergebnis as string | 'invalid_grant' | 'error';
   }
 
   /** Zugangsdaten setzen oder ersetzen (CLI); hebt eine Abschaltung auf. */

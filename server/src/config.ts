@@ -171,7 +171,7 @@ function boolFlag(env: NodeJS.ProcessEnv, name: string): boolean {
 
 /** WEATHER_*: ohne WEATHER_ENABLED=true ist das Wetter aus; mit Schalter sind MAC und Rechteck Pflicht (fail-closed). */
 function weatherConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WeatherConfig {
-  const enabled = env.WEATHER_ENABLED?.trim().toLowerCase() === 'true';
+  const enabled = boolFlag(env, 'WEATHER_ENABLED');
   const pollMs = positiveInt(env, 'WEATHER_POLL_MS', 10 * 60_000);
   const off = { enabled: false, place: '', stationMac: '', bbox: { latSw: 0, lonSw: 0, latNe: 0, lonNe: 0 }, pollMs };
   if (!enabled) return off;

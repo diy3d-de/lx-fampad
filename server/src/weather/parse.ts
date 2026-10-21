@@ -21,7 +21,9 @@ const GRENZEN: Record<Grundwert, [number, number]> = { temperature: [-60, 60], h
 const istGrundwert = (t: unknown): t is Grundwert => t === 'temperature' || t === 'humidity' || t === 'pressure';
 
 /** Findet die Station mit der MAC in `body` und liest ihre jüngsten Werte; null, wenn sie fehlt oder nichts Brauchbares liefert. */
-export function stationMessung(body: unknown, mac: string): Messung | null {
+export function stationMessung(body: unknown, mac: string, nowSec: number): Messung | null {
+  // Zeitstempel nur von 1 bis jetzt + 5 Minuten (Uhrenabweichung); alles andere ist ungültig
+  const zeit = (v: unknown): number | null => num(v, 1, nowSec + 300);
   if (!Array.isArray(body)) return null;
   const station = body.map(rec).find((s) => typeof s?._id === 'string' && s._id.toLowerCase() === mac.toLowerCase());
   const measures = rec(station?.measures);
@@ -39,8 +41,8 @@ export function stationMessung(body: unknown, mac: string): Messung | null {
       let neuester = 0;
       let werte: unknown[] | undefined;
       for (const [k, v] of Object.entries(res)) {
-        const t = Number(k);
-        if (Number.isFinite(t) && t > neuester && Array.isArray(v)) {
+        const t = zeit(Number(k));
+        if (t !== null && t > neuester && Array.isArray(v)) {
           neuester = t;
           werte = v as unknown[];
         }
@@ -58,14 +60,14 @@ export function stationMessung(body: unknown, mac: string): Messung | null {
       }
     }
     // Regenmesser
-    const regenZeit = num(mod.rain_timeutc, 1, 4e9);
+    const regenZeit = zeit(mod.rain_timeutc);
     if (regenZeit !== null) {
       m.rain1h = num(mod.rain_60min, 0, 1000);
       m.rain24h = num(mod.rain_24h, 0, 2000);
       tsAny = Math.max(tsAny, regenZeit);
     }
     // Windmesser (Netatmo liefert km/h)
-    const windZeit = num(mod.wind_timeutc, 1, 4e9);
+    const windZeit = zeit(mod.wind_timeutc);
     if (windZeit !== null) {
       m.windKmh = num(mod.wind_strength, 0, 400);
       m.gustKmh = num(mod.gust_strength, 0, 500);

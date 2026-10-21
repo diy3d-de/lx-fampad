@@ -1,7 +1,7 @@
 // Wetter (Netatmo): Messwerte aus getpublicdata, Token-Rotation, invalid_grant, Route (nur angemeldet, nur Ortsname und Messwerte),
 // Konfiguration (fail-closed). Netatmo wird durch einen Fake-fetch ersetzt, es gibt nie einen echten Abruf.
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import * as schema from '../src/db/schema.js';
 import { stationMessung } from '../src/weather/parse.js';
@@ -60,23 +60,39 @@ function fakeNetatmo() {
 
 describe('Messwerte aus getpublicdata', () => {
   it('liest Temperatur, Feuchte, Druck, Regen und Wind nur der Station mit der MAC', () => {
-    const m = stationMessung(publicData().body, MAC);
+    const m = stationMessung(publicData().body, MAC, T0);
     expect(m).toEqual({ ts: T0 - 120, temperature: 12.5, humidity: 71, pressure: 1013.2, rain1h: 0.5, rain24h: 2.1, windKmh: 12, gustKmh: 25, windAngle: 270 });
-    expect(stationMessung(publicData().body, MAC.toUpperCase())?.temperature).toBe(12.5);
+    expect(stationMessung(publicData().body, MAC.toUpperCase(), T0)?.temperature).toBe(12.5);
   });
   it('liefert null bei fehlender Station, falscher Form und ohne Messung', () => {
-    expect(stationMessung(publicData().body, '70:ee:50:00:00:00')).toBeNull();
-    expect(stationMessung(null, MAC)).toBeNull();
-    expect(stationMessung({ body: [] }, MAC)).toBeNull();
-    expect(stationMessung([{ _id: MAC, measures: {} }], MAC)).toBeNull();
-    expect(stationMessung([{ _id: MAC }], MAC)).toBeNull();
+    expect(stationMessung(publicData().body, '70:ee:50:00:00:00', T0)).toBeNull();
+    expect(stationMessung(null, MAC, T0)).toBeNull();
+    expect(stationMessung({ body: [] }, MAC, T0)).toBeNull();
+    expect(stationMessung([{ _id: MAC, measures: {} }], MAC, T0)).toBeNull();
+    expect(stationMessung([{ _id: MAC }], MAC, T0)).toBeNull();
   });
   it('verwirft unplausible Werte', () => {
-    const m = stationMessung([{ _id: MAC, measures: { a: { res: { [T0]: [99, 150] }, type: ['temperature', 'humidity'] }, b: { res: { [T0]: [20] }, type: ['temperature'] } } }], MAC);
+    const m = stationMessung([{ _id: MAC, measures: { a: { res: { [T0]: [99, 150] }, type: ['temperature', 'humidity'] }, b: { res: { [T0]: [20] }, type: ['temperature'] } } }], MAC, T0);
     expect(m?.temperature).toBe(20);
     expect(m?.humidity).toBeNull();
-    const nur = stationMessung([{ _id: MAC, measures: { a: { res: { [T0]: [Infinity, '5'] }, type: ['temperature', 'humidity'] } } }], MAC);
+    const nur = stationMessung([{ _id: MAC, measures: { a: { res: { [T0]: [Infinity, '5'] }, type: ['temperature', 'humidity'] } } }], MAC, T0);
     expect(nur).toBeNull();
+  });
+});
+
+describe('Zeitstempel', () => {
+  it('nimmt keine Zeiten aus der Zukunft oder ausserhalb des Bereichs an', () => {
+    const mit = (ts: number | string) => stationMessung([{ _id: MAC, measures: { a: { res: { [ts]: [10, 50] }, type: ['temperature', 'humidity'] } } }], MAC, T0);
+    expect(mit(T0)?.ts).toBe(T0);
+    expect(mit(T0 + 300)?.ts).toBe(T0 + 300);
+    expect(mit(T0 + 301)).toBeNull();
+    expect(mit('1e20')).toBeNull();
+    expect(mit(0)).toBeNull();
+    expect(mit(-5)).toBeNull();
+    const regen = stationMessung([{ _id: MAC, measures: { r: { rain_60min: 1, rain_24h: 2, rain_timeutc: 1e20 } } }], MAC, T0);
+    expect(regen).toBeNull();
+    const wind = stationMessung([{ _id: MAC, measures: { w: { wind_strength: 5, wind_timeutc: T0 + 10_000 } } }], MAC, T0);
+    expect(wind).toBeNull();
   });
 });
 
@@ -91,6 +107,11 @@ describe('Konfiguration', () => {
     expect(() => loadConfig({ ...base, ...ENV, WEATHER_STATION_MAC: 'xyz' })).toThrow(/WEATHER_STATION_MAC/);
     const c = loadConfig({ ...base, ...ENV });
     expect(c.weather).toMatchObject({ enabled: true, place: 'Westerburg', stationMac: MAC, pollMs: 600_000 });
+  });
+  it('WEATHER_ENABLED ist strikt: nur true/1/false/0', () => {
+    expect(() => loadConfig({ ...base, ...ENV, WEATHER_ENABLED: 'yes' })).toThrow(/WEATHER_ENABLED/);
+    expect(loadConfig({ ...base, ...ENV, WEATHER_ENABLED: '1' }).weather.enabled).toBe(true);
+    expect(loadConfig({ ...base, WEATHER_ENABLED: 'false' }).weather.enabled).toBe(false);
   });
   it('lässt in Produktion kein zu schnelles Abfragen zu', () => {
     expect(() => loadConfig({ NODE_ENV: 'production', AUTH_SECRET_KEY: TEST_KEY, ...ENV, WEATHER_POLL_MS: '1000' })).toThrow(/WEATHER_POLL_MS/);
@@ -258,6 +279,51 @@ describe.each(backends)('Wetter-Dienst und Route ($name)', (backend) => {
     await svc().pollOnce();
     const rest = await harness.db.select().from(schema.weatherSamples).where(eq(schema.weatherSamples.temperature, -20));
     expect(rest).toHaveLength(0);
+  });
+
+  it('Messung aus der Zukunft oder älter als 7 Tage wird nicht gespeichert', async () => {
+    await zugang();
+    net.state.data = publicData(jetzt() + 10_000);
+    expect(await svc().pollOnce()).toBe('station_not_found');
+    net.state.data = publicData(jetzt() - 8 * 86400);
+    expect(await svc().pollOnce()).toBe('upstream_error');
+    expect(await world.count('weather_samples')).toBe(0);
+    expect((await harness.db.select().from(schema.weatherCredentials))[0]?.lastErrorCode).toBe('measurement_old');
+  });
+
+  it('Notanker: scheitert das Speichern in der Transaktion, wird das neue Refresh-Token ersatzweise gespeichert', async () => {
+    await zugang();
+    const keys = world.auth.ctx.keys;
+    const orig = keys.encrypt.bind(keys);
+    let n = 0;
+    const spy = vi.spyOn(keys, 'encrypt').mockImplementation((...a) => {
+      if (n++ === 0) throw new Error('boom');
+      return orig(...a);
+    });
+    expect(await svc().pollOnce()).toBe('upstream_error');
+    spy.mockRestore();
+    const [row] = await harness.db.select().from(schema.weatherCredentials);
+    expect(row?.lastErrorCode).toBe('rotate_persist');
+    // das ersatzweise gespeicherte Token ist das rotierte: der nächste Abruf klappt (der Fake lehnt das alte ab)
+    net.state.data = publicData(jetzt() - 60);
+    expect(await svc().pollOnce()).toBe('ok');
+  });
+
+  it('zu große Antworten werden abgebrochen (Content-Length und Strom)', async () => {
+    await zugang();
+    const orig = net.fn;
+    const gross = 'x'.repeat(2_100_000);
+    const fn = (async (input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).includes('getpublicdata')) return new Response(gross, { status: 200 });
+      return orig(input, init);
+    }) as typeof fetch;
+    await world?.close();
+    await harness.reset();
+    world = await World.create(harness.db, ENV, { weatherFetch: fn });
+    await zugang();
+    expect(await svc().pollOnce()).toBe('upstream_error');
+    expect((await harness.db.select().from(schema.weatherCredentials))[0]?.lastErrorCode).toBe('too_large');
+    expect(await world.count('weather_samples')).toBe(0);
   });
 
   it('läuft nie doppelt im selben Prozess', async () => {
