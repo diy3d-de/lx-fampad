@@ -584,12 +584,15 @@ OeffentlicheSchluessel? _schluessel(Json m) {
 class EigeneSchluesselDto {
   final OeffentlicheSchluessel? schluessel;
   final bool hatSicherung;
-  const EigeneSchluesselDto({required this.schluessel, required this.hatSicherung});
+
+  /// Die aktuelle Passwort-Sicherung ist veraltet (nach einem Passwort-Reset oder Schlüsselwechsel): auf einem Gerät mit Schlüssel neu anlegen.
+  final bool pwSicherungVeraltet;
+  const EigeneSchluesselDto({required this.schluessel, required this.hatSicherung, this.pwSicherungVeraltet = false});
 
   factory EigeneSchluesselDto.fromJson(Object? raw) {
     final m = asJson(raw);
     final k = m['keys'];
-    return EigeneSchluesselDto(schluessel: k == null ? null : _schluesselStreng(asJson(k)), hatSicherung: _b(m, 'hasBackup'));
+    return EigeneSchluesselDto(schluessel: k == null ? null : _schluesselStreng(asJson(k)), hatSicherung: _b(m, 'hasBackup'), pwSicherungVeraltet: m['pwBackupStale'] == true);
   }
 }
 

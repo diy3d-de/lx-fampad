@@ -11,6 +11,9 @@ import 'chat_benachrichtiger.dart';
 const _kKanalId = 'chat_nachrichten';
 const _kKanalName = 'Chat-Nachrichten';
 const _kKanalBeschreibung = 'Hinweise auf neue Nachrichten. Sie enthalten nie den Inhalt: nur dass es etwas Neues gibt und in welchem Chat.';
+const _kSicherheitKanalId = 'sicherheit';
+const _kSicherheitKanalName = 'Sicherheit';
+const _kSicherheitKanalBeschreibung = 'Hinweise, wenn dein Passwort zurückgesetzt wurde oder du abgemeldet wurdest. Feste Texte, nie Einzelheiten.';
 const _kSymbol = 'ic_stat_notify';
 
 class AndroidChatAnzeige implements ChatAnzeigePort {
@@ -46,6 +49,9 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
       if (!await _pluginVorbereiten()) return false;
       final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.createNotificationChannel(const AndroidNotificationChannel(_kKanalId, _kKanalName, description: _kKanalBeschreibung, importance: Importance.high));
+      await android?.createNotificationChannel(
+        const AndroidNotificationChannel(_kSicherheitKanalId, _kSicherheitKanalName, description: _kSicherheitKanalBeschreibung, importance: Importance.high),
+      );
       // ohne Erlaubnis (Android 13+, nicht gefragt oder abgelehnt) gibt es keine Anzeige; gefragt wird nur in Profil, Erinnerungen und Benachrichtigungen
       if (await android?.areNotificationsEnabled() != true) return false;
       _bereit = true;
@@ -66,6 +72,34 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
       await _plugin.cancel(id: id);
     } catch (_) {
       // Zusatz: ein Fehler hier darf nichts stören
+    }
+  }
+
+  @override
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text}) async {
+    if (!_bereit) return false;
+    try {
+      await _plugin.show(
+        id: id,
+        title: titel,
+        body: text,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            _kSicherheitKanalId,
+            _kSicherheitKanalName,
+            channelDescription: _kSicherheitKanalBeschreibung,
+            icon: _kSymbol,
+            importance: Importance.high,
+            priority: Priority.high,
+            category: AndroidNotificationCategory.status,
+            visibility: NotificationVisibility.private,
+          ),
+        ),
+        payload: 'sicherheit',
+      );
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -237,8 +237,8 @@ export interface ResetResult {
 }
 
 /**
- * Schritt 2: der zweite Faktor. Ein gültiger TOTP-Code des vorhandenen Authenticators (oder ein Wiederherstellungs-Code) bestätigt, dass die
- * Person selbst den Link einlöst. Einladung, Code-Verbrauch und das neue Passwort in EINER Transaktion; parallele Einlösungen scheitern.
+ * Schritt 2: der zweite Faktor. Ein gültiger TOTP-Code des vorhandenen Authenticators (nur dieser, kein Wiederherstellungs-Code) bestätigt, dass die
+ * Person selbst den Link einlöst. Falsche Codes zählen am Link: nach `maxInvitePinAttempts` (5) ist er gesperrt (wie bei der PIN). Einladung, Code-Verbrauch und das neue Passwort in EINER Transaktion; parallele Einlösungen scheitern.
  */
 export async function finishPasswordResetRedeem(
   ctx: AuthContext,
@@ -250,8 +250,22 @@ export async function finishPasswordResetRedeem(
   if (!peek) throw challengeInvalid();
   const data = peek.data as { inviteId: string; userId: string; familyId: string; email: string; authHash: string };
   await assertNotLocked(ctx, loginKeys(ctx, meta.ip, data.email));
+  // ein gesperrter, benutzter oder widerrufener Link ist hier schon erledigt (gleiche Antwort wie jeder ungültige Link)
+  const [linkZeile] = await ctx.db.select({ lockedAt: invites.lockedAt, usedAt: invites.usedAt, revokedAt: invites.revokedAt }).from(invites).where(eq(invites.id, data.inviteId));
+  if (!linkZeile || linkZeile.lockedAt || linkZeile.usedAt || linkZeile.revokedAt) throw INVALID_INVITE();
   const hit = await checkUserTotp(ctx, data.userId, input.code);
   if (!hit) {
+    // Zähler am Link (vor der Antwort, atomar): das Raten des TOTP-Codes mit dem Link ist auf wenige Versuche begrenzt; PIN und TOTP teilen sich den Zähler
+    const max = ctx.config.auth.maxInvitePinAttempts;
+    const [gezaehlt] = await ctx.db
+      .update(invites)
+      .set({ pinAttempts: sql`${invites.pinAttempts} + 1` })
+      .where(and(eq(invites.id, data.inviteId), isNull(invites.lockedAt)))
+      .returning({ n: invites.pinAttempts });
+    if (gezaehlt && gezaehlt.n >= max) {
+      await ctx.db.update(invites).set({ lockedAt: ctx.now() }).where(and(eq(invites.id, data.inviteId), isNull(invites.lockedAt)));
+      await writeAudit(ctx, ctx.db, { event: 'invite_locked', familyId: data.familyId, ip: meta.ip, detail: { inviteId: data.inviteId, reason: 'totp' } });
+    }
     await recordLoginFailure(ctx, meta.ip, data.email);
     await writeAudit(ctx, ctx.db, { event: 'login_failed', familyId: data.familyId, actorId: data.userId, ip: meta.ip, detail: { method: 'password_reset' } });
     throw invalidCode();

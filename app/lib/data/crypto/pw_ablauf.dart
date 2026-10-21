@@ -135,6 +135,15 @@ class PwSicherungAblauf {
     final abruf = await api.pwSicherungAbrufen();
     if (abruf.pending) throw const CryptoFehler(CryptoFehlerArt.format, 'Die Passwort-Sicherung ist beschädigt.');
     if (abruf.stale) {
+      // Gleiche Schlüsselversion wie dein aktueller Schlüssel: Die Sicherung ist nicht von einem Schlüsselwechsel veraltet, sondern von einem Passwort-Reset
+      // (neues Passwort = neuer Schlüssel zum Öffnen). Dann sagt die Meldung den Weg, statt von einem "früheren Schlüssel" zu sprechen.
+      final aktuell = (await api.eigeneSchluessel()).schluessel;
+      if (aktuell != null && aktuell.version == abruf.keyVersion) {
+        throw const CryptoFehler(
+          CryptoFehlerArt.schluessel,
+          'Dein Passwort wurde zurückgesetzt. Die Sicherung muss auf einem Gerät mit Schlüssel erneuert werden. Nimm hier deinen Wiederherstellungsschlüssel.',
+        );
+      }
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Die Passwort-Sicherung gehört zu einem früheren Schlüssel und passt nicht mehr zu deinem Konto.');
     }
     final PwKdfParams imBlob;

@@ -265,7 +265,9 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   Widget _pwZeile(E2eeState s) {
     final v = s.pwSicherungVersion;
     final aktuell = s.serverSchluessel?.version;
-    final (String untertitel, Widget pille) = v == null
+    final (String untertitel, Widget pille) = s.pwSicherungVeraltet && s.status == E2eeStatus.bereit
+        ? ('veraltet nach Passwort-Reset · Sicherung erneuern', const RollenPille('erneuern', farbe: kWarn))
+        : v == null
         ? ('nicht gesichert · jetzt einrichten', const RollenPille('offen', farbe: kWarn))
         : v == aktuell
         ? ('geprüft · neues passwort wählen', const RollenPille('aktiv', farbe: kTerminal))

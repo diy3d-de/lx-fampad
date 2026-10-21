@@ -139,6 +139,9 @@ class E2eeState {
   /// Schlüsselversion, für die auf DIESEM Gerät eine vollständig verifizierte Passwort-Sicherung vermerkt ist (null: keine).
   final int? pwSicherungVersion;
 
+  /// Der Server meldet die aktuelle Passwort-Sicherung als veraltet (nach einem Passwort-Reset): auf einem Gerät mit Schlüssel "Sicherung erneuern".
+  final bool pwSicherungVeraltet;
+
   /// Familien-Sicherheitscode (leer, solange niemand Schlüssel hat).
   final String sicherheitscode;
 
@@ -152,6 +155,7 @@ class E2eeState {
     this.vertrauenDefekt = false,
     this.pwSicherungVerfuegbar = false,
     this.pwSicherungVersion,
+    this.pwSicherungVeraltet = false,
     this.sicherheitscode = '',
   });
 
@@ -308,6 +312,7 @@ class E2eeController extends Notifier<E2eeState> {
         hatSicherung: eigene.hatSicherung,
         pwSicherungVerfuegbar: pwVerfuegbar,
         pwSicherungVersion: pwVersion,
+        pwSicherungVeraltet: pwVerfuegbar && eigene.pwSicherungVeraltet,
         mitglieder: mitglieder,
         warnungen: warnungen,
         // nur aktive Mitglieder: wartende gehören noch nicht zur Familie

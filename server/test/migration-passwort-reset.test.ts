@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import { drizzle as drizzleLite } from 'drizzle-orm/pglite';
 import { migrate as migrateLite } from 'drizzle-orm/pglite/migrator';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { Db } from '../src/auth/context.js';
 import * as schema from '../src/db/schema.js';
@@ -26,6 +27,14 @@ describe('Migration 0018 (Passwort-Reset) additiv auf Stand 0017', () => {
       await m.client.post('/api/v1/me/keys', { publicEncKey: key(), publicSignKey: key() });
       const put = await m.client.put('/api/v1/me/key-backup-pw', { blob: randomBytes(160).toString('base64url'), keyVersion: 1, kdf: { id: 'argon2id-v1', memKiB: 65536, ops: 3 } });
       await m.client.post('/api/v1/me/key-backup-pw/verified', { id: put.json.id });
+      // Bestandsmitglied Papa: Schlüssel, bestätigte Sicherung (active) UND eine unbestätigte (pending), Wiederherstellungscodes unberührt
+      const p = await addMember(world, a.client, 'parent', 'papa@example.org');
+      const kdf = { id: 'argon2id-v1', memKiB: 65536, ops: 3 };
+      await p.client.post('/api/v1/me/keys', { publicEncKey: key(), publicSignKey: key() });
+      const papaPut = await p.client.put('/api/v1/me/key-backup-pw', { blob: randomBytes(160).toString('base64url'), keyVersion: 1, kdf });
+      await p.client.post('/api/v1/me/key-backup-pw/verified', { id: papaPut.json.id });
+      await p.client.put('/api/v1/me/key-backup-pw', { blob: randomBytes(160).toString('base64url'), keyVersion: 1, kdf });
+      const papaId = (await db.execute<{ id: string }>(sql`select id from users where email = 'papa@example.org'`)).rows[0]?.id as string;
       const offen = await a.client.post('/api/v1/invites', { role: 'child' });
       const kind = (await db.execute<{ id: string }>(sql`select id from users where email = 'mama@example.org'`)).rows[0]?.id as string;
       world.advance(31_000);
@@ -45,12 +54,16 @@ describe('Migration 0018 (Passwort-Reset) additiv auf Stand 0017', () => {
       await db.execute(sql`alter table invites drop constraint invites_kind_ck`);
       await db.execute(sql`alter table invites drop column kind`);
       await db.execute(sql`drop table security_events`);
-      await db.execute(sql`delete from drizzle.__drizzle_migrations where id = (select max(id) from drizzle.__drizzle_migrations)`);
+      // genau die Zeile der Migration 0018 (nach Zeitstempel des Journals, nicht "die letzte")
+      const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
+      const meine = journal.entries.find((e) => e.tag.startsWith('0018_'));
+      if (!meine) throw new Error('Journal ohne 0018');
+      await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at = ${meine.when}`);
 
       await migrateLite(db as never, { migrationsFolder });
       for (const t of tabellen) expect(await summe(t), t).toBe(vorher.get(t));
       expect(await summe('invites', " - 'kind'")).toBe(vorher.get('invites'));
-      expect((await db.execute(sql`select kind, count(*)::int as n from invites group by kind`)).rows).toEqual([{ kind: 'standard', n: 4 }]);
+      expect((await db.execute(sql`select kind, count(*)::int as n from invites group by kind`)).rows).toEqual([{ kind: 'standard', n: 5 }]);
       expect((await db.execute(sql`select count(*)::int as n from security_events`)).rows[0]).toMatchObject({ n: 0 });
       // die Prüfung der Datenbank: Passwort-Reset-Einladung nur mit Konto
       await expect(db.execute(sql`insert into invites (family_id, role, token_hash, expires_at, kind) select id, 'child', 'x', now(), 'password_reset' from families limit 1`)).rejects.toThrow();
@@ -66,11 +79,18 @@ describe('Migration 0018 (Passwort-Reset) additiv auf Stand 0017', () => {
       // Passwort-Reset auf dem Bestand: Sicherung wird stale, nichts gelöscht, Schlüssel unverändert
       const keysVorher = await summe('person_keys');
       world.advance(31_000);
-      const mamaClient = world.client('203.0.113.202');
-      const rec = await mamaClient.post('/api/v1/auth/password-reset/recovery', { email: 'x@example.org', code: 'AAAA-BBBB-CCCC', authKey: key(), client: 'app' });
-      expect(rec.status).toBe(401);
+      const zeilen = async () => (await db.execute<{ state: string }>(sql`select state from key_backups_pw where user_id = ${papaId} order by state`)).rows.map((x) => x.state);
+      expect(await zeilen()).toEqual(['active', 'pending']);
+      const gesamt = (await db.execute<{ n: number }>(sql`select count(*)::int as n from key_backups_pw`)).rows[0]?.n;
+      const falsch = await world.client('203.0.113.202').post('/api/v1/auth/password-reset/recovery', { email: 'papa@example.org', code: 'AAAA-BBBB-CCCC', authKey: key(), client: 'app' });
+      expect(falsch.status).toBe(401);
+      expect(await zeilen()).toEqual(['active', 'pending']);
+      const rec = await world.client('203.0.113.203').post('/api/v1/auth/password-reset/recovery', { email: 'papa@example.org', code: p.recoveryCodes[0], authKey: key(), client: 'app' });
+      expect(rec.status).toBe(200);
+      expect(rec.json.recoveryCodesRemaining).toBe(9);
+      expect(await zeilen()).toEqual(['stale', 'superseded']);
+      expect((await db.execute(sql`select count(*)::int as n from key_backups_pw`)).rows[0]?.n).toBe(gesamt); // nichts gelöscht
       expect(await summe('person_keys')).toBe(keysVorher);
-      expect((await db.execute(sql`select state from key_backups_pw`)).rows).toEqual([{ state: 'active' }]);
     } finally {
       await world?.close().catch(() => undefined);
       await client.close();

@@ -123,6 +123,14 @@ class _PwSicherungScreenState extends ConsumerState<PwSicherungScreen> with Akti
         label: '// passwort-sicherung',
         titel: 'Passwort-Sicherung',
         kinder: [
+          if (ref.watch(e2eeProvider.select((s) => s.pwSicherungVeraltet))) ...[
+            const MeldungsBox(
+              'Dein Passwort wurde zurückgesetzt, deshalb ist die bisherige Passwort-Sicherung veraltet. Lege sie hier mit einem Passwort neu an '
+              '(zum Beispiel deinem neuen Anmelde-Passwort). Bis dahin gilt dein Wiederherstellungsschlüssel unverändert.',
+              fehler: false,
+            ),
+            const SizedBox(height: 12),
+          ],
           const Text(
             'Dein Verschlüsselungsschlüssel wird mit einem Passwort geschützt auf dem Server abgelegt. Mit diesem Passwort verbindest du später ein neues Gerät, '
             'ohne Wiederherstellungsschlüssel oder QR-Code. Der Server sieht das Passwort nie. Vergisst du es, kann es niemand wiederherstellen: '

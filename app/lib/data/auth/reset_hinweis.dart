@@ -12,9 +12,22 @@ String? resetHinweisText(PwNachReset r) => switch (r) {
     'Dein Passwort wurde zurückgesetzt. Auf diesem Gerät fehlt dein Schlüssel, deshalb kannst du den bisherigen Chat-Verlauf hier noch nicht lesen. '
         'Mit deinem Wiederherstellungsschlüssel oder einem Gerät, auf dem du schon angemeldet warst, geht es sofort. Später kann der Verlauf auch von deinen Chat-Partnern freigegeben werden.',
   PwNachReset.fehlgeschlagen =>
-    'Dein Passwort wurde zurückgesetzt. Die neue Passwort-Sicherung konnte nicht angelegt werden. Du kannst sie unter Profil > Verschlüsselung neu anlegen. Deine Chats bleiben lesbar.',
+    'Dein Passwort wurde zurückgesetzt. Die neue Passwort-Sicherung konnte nicht angelegt werden. Unter Profil > Verschlüsselung > Passwort-Sicherung kannst du sie mit „Sicherung erneuern“ neu anlegen. Deine Chats bleiben lesbar.',
   PwNachReset.nichtNoetig => null,
 };
+
+/// Nutzlast der Sicherheitsbenachrichtigung (Tipp öffnet Profil > Sicherheitsereignisse).
+const kSicherheitPayload = 'sicherheit';
+
+/// Anforderung, die Sicherheitsereignisse zu öffnen (Tipp auf die Benachrichtigung); die Shell reagiert darauf.
+class SicherheitOeffnenAnforderung extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void anfordern() => state = state + 1;
+}
+
+final sicherheitOeffnenProvider = NotifierProvider<SicherheitOeffnenAnforderung, int>(SicherheitOeffnenAnforderung.new);
 
 class ResetHinweisController extends Notifier<String?> {
   @override

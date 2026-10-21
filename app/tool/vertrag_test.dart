@@ -746,15 +746,22 @@ Future<void> passwortResetVertrag({required Gegenstelle admin, required String a
       try {
         return await aufruf();
       } on ApiException catch (e) {
-        if (e.kind != ApiErrorKind.zuVieleAnfragen || versuch >= 5) rethrow;
-        final warten = (e.retryAfter ?? const Duration(seconds: 5)) + const Duration(seconds: 1);
-        stdout.writeln('    warte ${warten.inSeconds} s (Retry-After)');
+        if (e.kind != ApiErrorKind.zuVieleAnfragen) rethrow;
+        // Deckel je Schritt: höchstens 4 Wartezeiten zu je höchstens 2 Minuten, dann klarer Abbruch statt stillem Weiterwarten
+        if (versuch >= 4) {
+          fail('Passwort-Reset-Vertrag: die Sperre (429) hält nach $versuch Wartezeiten an (zuletzt Retry-After ${e.retryAfter?.inSeconds} s). '
+              'Abbruch. Mit frischer Datenbank und neu gestartetem Server wiederholen (die Zähler gelten 15 Minuten).');
+        }
+        final laut = (e.retryAfter ?? const Duration(seconds: 5)) + const Duration(seconds: 1);
+        final warten = laut > const Duration(minutes: 2) ? const Duration(minutes: 2) : laut;
+        stdout.writeln('    warte ${warten.inSeconds} s (Retry-After, Versuch ${versuch + 1} von 4)');
         await Future<void>.delayed(warten);
       }
     }
   }
 
-  const email = 'emil@beispiel.de';
+  // Konto je Lauf neu (Zeitstempel): der Abschnitt lässt sich gegen dieselbe Datenbank wiederholen; die festen Passwörter gehören nur zu diesem Konto
+  final email = 'emil-${DateTime.now().millisecondsSinceEpoch}@beispiel.de';
   const pw1 = 'Zebra-Kamin-Orbit-Fluss-Lampe';
   const pw2 = 'Quarz-Falter-Nebel-Hafen-Kiesel';
   const pw3 = 'Wolke-Tisch-Vogel-Anker-Birne';

@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/auth/reset_hinweis.dart';
+import '../../data/database_provider.dart';
+import '../profile/sicherheit_ereignisse_screen.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/push/push_state.dart';
 import '../../data/push/sicherheits_pruefer.dart';
@@ -76,6 +78,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(syncProvider.notifier).starten();
       // ein Hinweis, der kam, bevor die Oberfläche stand (schneller Abschluss der neuen Passwort-Sicherung)
       _resetHinweisZeigen(ref.read(resetHinweisProvider));
+      unawaited(_abgemeldetHinweisPruefen());
       // Sicherheitsereignisse seit dem letzten Mal (Passwort-Reset für dein Konto angefordert oder durchgeführt)
       unawaited(ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: true, hinweis: ref.read(resetHinweisProvider.notifier)));
       // Push (nur Android): Zustand laden und, falls eingeschaltet, bei jedem Start erneut beim Verteiler registrieren
@@ -126,6 +129,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     // Nach einem Passwort-Reset: was mit der Passwort-Sicherung geschehen ist (einmal, lange genug zum Lesen)
     ref.listen(resetHinweisProvider, (_, text) => _resetHinweisZeigen(text));
+    // Tipp auf die Sicherheitsbenachrichtigung: Profil > Sicherheitsereignisse
+    ref.listen(sicherheitOeffnenProvider, (_, _) {
+      if (mounted) unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const SicherheitEreignisseScreen())));
+    });
     ref.listen(shellTabProvider, (_, t) {
       if (t == kStandortTab) unawaited(ref.read(standortBenachrichtigerProvider).alleEntfernen());
       // Wetter-Bereich: bei jedem Wählen frisch abfragen (wie das Öffnen der Seite mobil)
@@ -144,13 +151,45 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
   }
 
-  /// Hinweis nach einem Passwort-Reset (einmal, lange genug zum Lesen); der Zustand wird danach geleert.
+  /// Hinweis nach einem Passwort-Reset: ein Dialog, der stehen bleibt, bis die Person ihn bestätigt (kein flüchtiger Hinweis); der Zustand wird sofort geleert.
   void _resetHinweisZeigen(String? text) {
     if (text == null || !mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 20), showCloseIcon: true));
     ref.read(resetHinweisProvider.notifier).setzen(null);
+    unawaited(_dialogZeigen('Sicherheitshinweis', text));
+  }
+
+  Future<void> _dialogZeigen(String titel, String text, {VoidCallback? danach}) async {
+    await showDialog<void>(
+      useRootNavigator: false,
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: Text(titel),
+        scrollable: true,
+        content: Text(text, style: const TextStyle(height: 1.4)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Verstanden'),
+          ),
+        ],
+      ),
+    );
+    danach?.call();
+  }
+
+  /// Nach dem Anmelden: Hat die App im Hintergrund erfahren, dass die Sitzung nach einem Passwort-Reset widerrufen wurde, steht der Hinweis, bis er bestätigt ist.
+  Future<void> _abgemeldetHinweisPruefen() async {
+    try {
+      final db = ref.read(appDatabaseProvider);
+      if (await db.metaLesen(kSicherheitAbgemeldetSchluessel) == null || !mounted) return;
+      await _dialogZeigen(
+        'Dein Passwort wurde zurückgesetzt',
+        'Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde. Warst du das nicht, melde dich mit einem Wiederherstellungscode an und sage es einem Admin. '
+            'Details stehen unter Profil > Sicherheitsereignisse.',
+      );
+      await db.metaLoeschen(kSicherheitAbgemeldetSchluessel);
+    } catch (_) {}
   }
 
   /// Öffnet die Standort-Seite: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite (nicht doppelt).

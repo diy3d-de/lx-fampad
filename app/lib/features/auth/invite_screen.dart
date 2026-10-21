@@ -185,6 +185,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
       final r = await ref
           .read(passwortResetProvider)
           .einladungEinloesen(token: _token!, pin: info.pinRequired ? _pin.text : null, email: mail, anzeigename: info.displayName, passwort: pw, code: _resetCode.text);
+      await pruefer.hinweisAbgemeldetLoeschen();
       await auth.registrierungAbschliessen(r);
     });
     if (!ok) return;

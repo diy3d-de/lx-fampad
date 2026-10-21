@@ -89,7 +89,7 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
     const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' order by 1`)).rows).map((r) => r.tablename);
     const summen = async () => {
       const out: Record<string, string> = {};
-      for (const t of tabellen) out[t] = ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x) - 'kind')::text, '|' order by (to_jsonb(x) - 'kind')::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
+      for (const t of tabellen) out[t] = ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${t === 'invites' ? " - 'kind'" : ''})::text, '|' order by (to_jsonb(x)${t === 'invites' ? " - 'kind'" : ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
       return out;
     };
     const vorher = await summen();

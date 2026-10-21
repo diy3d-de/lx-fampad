@@ -21,6 +21,10 @@ abstract class ChatAnzeigePort {
   /// sonst zählt Android die aktiven Benachrichtigungen als Punkt/Zahl).
   Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl});
 
+  /// Sicherheitshinweis (Passwort-Reset): eigener Kanal "Sicherheit", hohe Wichtigkeit, nie der Chat-Kanal; ein Tipp öffnet Profil > Sicherheitsereignisse (Nutzlast `sicherheit`).
+  /// Nur feste Texte der App, nie Namen oder Einzelheiten. false: nicht angezeigt (keine Erlaubnis, Web), der Aufrufer behält dann seinen Stand.
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text});
+
   /// Entfernt die Benachrichtigung mit der Kennung [id] (der Chat wurde gelesen); eine nicht vorhandene ist kein Fehler.
   Future<void> entfernen(int id);
 }
@@ -33,6 +37,9 @@ class KeineChatAnzeige implements ChatAnzeigePort {
 
   @override
   Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl}) async => false;
+
+  @override
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text}) async => false;
 
   @override
   Future<void> entfernen(int id) async {}

@@ -249,6 +249,30 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       expect(wieder.json.error).toBe('challenge_invalid');
     });
 
+    it('Raten am Link ist begrenzt: nach 5 falschen TOTP-Codes ist der Link gesperrt, auch der richtige Code hilft dann nicht', async () => {
+      const f = await start();
+      const inv = await adminLink(f);
+      const c = world.client('203.0.113.201');
+      for (let i = 0; i < 5; i++) {
+        const s = await world.client(`203.0.113.${210 + i}`).post('/api/v1/auth/invites/password-reset/start', { token: inv.token, authKey: key() });
+        expect(s.status).toBe(200);
+        const r = await world.client(`203.0.113.${210 + i}`).post('/api/v1/auth/invites/password-reset/complete', { challengeId: s.json.challengeId, code: '000000' });
+        expect(r.status).toBe(400);
+      }
+      expect((await harness.db.execute(sql`select locked_at is not null as l from invites where id = ${inv.id}`)).rows[0]).toMatchObject({ l: true });
+      expect(await auditEvents(world)).toContain('invite_locked');
+      const nach = await c.post('/api/v1/auth/invites/password-reset/start', { token: inv.token, authKey: key() });
+      expect(nach.status).toBe(400);
+      expect(nach.json.error).toBe('invite_invalid');
+      // eine noch offene Challenge hilft auch nicht mehr
+      const offen = await world.client('203.0.113.230').post('/api/v1/auth/invites/password-reset/start', { token: inv.token, authKey: key() });
+      expect(offen.status).toBe(400);
+      expect(await world.count('security_events')).toBe(1); // nur "angefordert"
+      // der Admin kann einen neuen Link erzeugen
+      const neu = await adminLink(f);
+      expect((await redeem(neu.token, key(), await totp(f.m.totpSecret), { ip: '203.0.113.231' })).done?.status).toBe(200);
+    });
+
     it('Der Link gilt nur für den Reset: die Routen für neue Konten und Passkeys lehnen ihn ab; der Komplett-Reset-Link geht dort nicht', async () => {
       const f = await start();
       const inv = await adminLink(f, { pin: true });
@@ -322,6 +346,8 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       expect(await backupRows()).toEqual(['stale', 'superseded']);
       expect(await world.count('key_backups_pw')).toBe(2); // nichts gelöscht
       expect((await harness.db.execute(sql`select md5(x::text) as h from person_keys x where user_id = ${f.mamaId}`)).rows[0]).toEqual(keysVorher);
+      expect((await geraet.get('/api/v1/me/keys')).status).toBe(401);
+      expect((await r.c.get('/api/v1/me/keys')).json.pwBackupStale).toBe(true);
       // die alte Sicherung bleibt lesbar (mit dem alten Passwort), als stale gekennzeichnet
       const got = await r.c.get('/api/v1/me/key-backup-pw');
       expect(got.status).toBe(200);
@@ -334,6 +360,7 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       expect((await r.c.post('/api/v1/me/key-backup-pw/verified', { id: neu.json.id })).status).toBe(200);
       expect((await r.c.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: neu.json.id, state: 'active' });
       expect(await backupRows()).toEqual(['active', 'superseded', 'superseded']);
+      expect((await r.c.get('/api/v1/me/keys')).json).not.toHaveProperty('pwBackupStale');
     });
 
     it('ohne Sicherung ändert sich nichts an den Tabellen; der Reset geht trotzdem', async () => {

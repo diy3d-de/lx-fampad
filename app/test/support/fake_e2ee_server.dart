@@ -81,7 +81,7 @@ class FakeE2eeServer {
 
   FakeE2eeServer(this.server, {this.standardId}) {
     server
-      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version})))
+      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true})))
       ..on('POST /me/keys', (r) => _mit(r, (p) {
         if (p.enc != null) return fehler(409, 'keys_exist');
         p.enc = r.json['publicEncKey'] as String;

@@ -66,6 +66,7 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
       if (!_mitPasskey && _code.text.trim().isEmpty) throw const EingabeFehler('Bitte gib einen Wiederherstellungscode ein.');
       if (pw.length < 12) throw const EingabeFehler('Das neue Passwort braucht mindestens 12 Zeichen.');
       if (pw != _pw2.text) throw const EingabeFehler('Die beiden Passwörter sind nicht gleich.');
+      await pruefer.hinweisAbgemeldetLoeschen();
       await auth.mitResetAnmelden(() async {
         final r = _mitPasskey
             ? await reset.vergessenMitPasskey(email: mail, passwort: pw)
@@ -88,7 +89,8 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
       : 'Du hast noch $n Wiederherstellungscodes.';
 
   @override
-  Widget build(BuildContext context) => AuthSeite(
+  Widget build(BuildContext context) => BildschirmSchutz(
+    child: AuthSeite(
     label: '// passwort vergessen',
     titel: 'Neues Passwort festlegen',
     maxBreite: kMaxContentWidth,
@@ -170,5 +172,6 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
         ),
       ),
     ],
+  ),
   );
 }

@@ -234,6 +234,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
               Text(
                 '${m.displayName} bekommt einen Link und legt damit ein neues Passwort fest. '
                 'Zur Sicherheit braucht die Person dafür auch den Code aus ihrer Authenticator-App: Du selbst kannst das Konto damit nicht übernehmen. '
+                'Die App von ${m.displayName} muss aktuell sein (mit einer alten App klappt der Link nicht und zeigt „ungültig“ oder verlangt „Zugang zurücksetzen“). '
                 'Authenticator, Passkeys, Wiederherstellungscodes und der Chat-Verlauf bleiben. Alle Geräte von ${m.displayName} werden erst abgemeldet, wenn das neue Passwort gesetzt ist. '
                 '${m.displayName} sieht den Vorgang in den Sicherheitsereignissen und bekommt eine Benachrichtigung.',
                 style: const TextStyle(color: kTextMuted, height: 1.4),
@@ -514,7 +515,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
                               children: [
                                 RollenPille(i.role.label),
                                 RollenPille(i.status.label, farbe: i.status == InviteStatus.open ? kTerminal : kTextMuted),
-                                if (i.reset) const RollenPille('zurücksetzen', farbe: kWarn),
+                                if (i.art == EinladungsArt.passwordReset) const RollenPille('neues passwort', farbe: kWarn) else if (i.reset) const RollenPille('zurücksetzen', farbe: kWarn),
                                 if (i.hasPin) const RollenPille('pin', farbe: kTextMuted),
                                 if (i.requireApproval) const RollenPille('freigabe', farbe: kTextMuted),
                               ],

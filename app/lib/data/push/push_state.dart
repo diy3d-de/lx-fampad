@@ -342,7 +342,7 @@ class PushController extends Notifier<PushZustand> {
     } catch (_) {}
     // Sicherheitshinweis (Passwort-Reset für dein Konto): der Wecker enthält nichts, die App holt die eigenen Ereignisse
     if (!ref.mounted) return;
-    await ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: appImVordergrund(), hinweis: ref.read(resetHinweisProvider.notifier));
+    await ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: appImVordergrund(), hinweis: ref.read(resetHinweisProvider.notifier), mindestAbstand: kSicherheitMindestabstand);
   }
 
   /// Beim Abmelden (Hook in auth_state.dart): Endpunkt beim Server löschen (nur wenn die Sitzung noch gilt) und beim Verteiler abmelden.

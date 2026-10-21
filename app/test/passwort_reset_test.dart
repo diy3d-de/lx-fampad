@@ -7,7 +7,9 @@ import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/api/api_client.dart';
 import 'package:lx_fampad/data/api/fampad_api.dart';
+import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/reset_hinweis.dart';
@@ -118,62 +120,138 @@ void main() {
   });
 
   group('SicherheitsPruefer', () {
-    Future<(SicherheitsPruefer, FakeServer, AppDatabase, _FakeAnzeige)> bauen() async {
+    Future<_PruefAufbau> bauen({bool refresh = true, DateTime? accessBis, DateTime Function()? jetzt}) async {
       final server = FakeServer();
-      final (client, _) = await angemeldeterClient(server);
+      final store = MemoryTokenStore();
+      await store.writeTokens(
+        StoredTokens(
+          accessToken: 'access-1',
+          accessExpiresAt: accessBis ?? DateTime.now().add(const Duration(minutes: 15)),
+          refreshToken: 'refresh-1',
+          refreshExpiresAt: DateTime.now().add(const Duration(days: 90)),
+          deviceId: fixDevice,
+        ),
+      );
+      final client = ApiClient(client: server.client, store: store, base: 'https://familie.test', refreshErlaubt: refresh);
       final db = AppDatabase(DatabaseConnection(NativeDatabase.memory(), closeStreamsSynchronously: true));
       addTearDown(db.close);
       final anzeige = _FakeAnzeige();
-      return (SicherheitsPruefer(api: FampadApi(client, geraet: () async => null), db: db, anzeige: anzeige), server, db, anzeige);
+      final p = SicherheitsPruefer(api: FampadApi(client, geraet: () async => null), db: db, anzeige: anzeige, store: store, jetzt: jetzt);
+      return _PruefAufbau(p, server, db, anzeige);
     }
 
     Map<String, dynamic> ereignis(String id, DateTime zeit, {String kind = 'password_reset_requested'}) =>
         {'id': id, 'kind': kind, 'via': 'admin', 'actorName': 'Anna', 'byAdmin': true, 'createdAt': zeit.toUtc().toIso8601String()};
 
     test('erster Lauf meldet nichts (Bestand), spätere neue Ereignisse schon; danach nichts mehr', () async {
-      final (p, server, _, _) = await bauen();
+      final a = await bauen();
       final t0 = DateTime.utc(2026, 10, 20, 8);
-      server.json('GET /me/security-events', {'events': [ereignis('e1', t0)]});
-      expect(await p.neue(), isEmpty);
-      expect(await p.neue(), isEmpty);
-      server.json('GET /me/security-events', {'events': [ereignis('e2', t0.add(const Duration(hours: 1)), kind: 'password_reset_done'), ereignis('e1', t0)]});
-      final neu = await p.neue();
-      expect(neu.map((e) => e.id), ['e2']);
-      expect(await p.neue(), isEmpty);
+      a.server.json('GET /me/security-events', {'events': [ereignis('e1', t0)]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, isEmpty);
+      a.server.json('GET /me/security-events', {'events': [ereignis('e2', t0.add(const Duration(hours: 1)), kind: 'password_reset_done'), ereignis('e1', t0)]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1));
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1), reason: 'schon gemeldet');
     });
 
     test('erster Lauf ohne Bestand: das erste spätere Ereignis zählt', () async {
-      final (p, server, _, _) = await bauen();
-      server.json('GET /me/security-events', {'events': <Object>[]});
-      expect(await p.neue(), isEmpty);
-      server.json('GET /me/security-events', {'events': [ereignis('e1', DateTime.now())]});
-      expect((await p.neue()).map((e) => e.id), ['e1']);
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      a.server.json('GET /me/security-events', {'events': [ereignis('e1', DateTime.now())]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1));
     });
 
-    test('im Vordergrund ein Hinweis in der Oberfläche, im Hintergrund eine feste Benachrichtigung ohne Einzelheiten', () async {
-      final (p, server, db, anzeige) = await bauen();
-      server.json('GET /me/security-events', {'events': <Object>[]});
-      await p.neue();
-      server.json('GET /me/security-events', {'events': [ereignis('e1', DateTime.now().add(const Duration(minutes: 1)))]});
+    test('Vordergrund: Hinweis in der Oberfläche; Hintergrund: feste Benachrichtigung auf dem eigenen Kanal ohne Einzelheiten', () async {
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      a.server.json('GET /me/security-events', {'events': [ereignis('e1', DateTime.now().add(const Duration(minutes: 1)))]});
       String? gesetzt;
-      await p.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((t) => gesetzt = t));
+      await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((t) => gesetzt = t));
       expect(gesetzt, startsWith('Sicherheitshinweis:'));
-      expect(anzeige.gezeigt, isEmpty);
-      // zurücksetzen, damit das Ereignis noch einmal neu ist
-      await db.metaSchreiben(kSicherheitSeitSchluessel, DateTime.utc(2020).toIso8601String());
-      await p.pruefenUndMelden(vordergrund: false);
-      expect(anzeige.gezeigt, hasLength(1));
-      final z = anzeige.gezeigt.single;
+      expect(a.anzeige.sicherheit, isEmpty);
+      await a.db.metaSchreiben(kSicherheitSeitSchluessel, DateTime.utc(2020).toIso8601String());
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1));
+      expect(a.anzeige.gezeigt, isEmpty, reason: 'nie der Chat-Kanal');
+      final z = a.anzeige.sicherheit.single;
       expect(z.id, kSicherheitBenachrichtigungsId);
       expect('${z.titel} ${z.text}', isNot(contains('Anna')), reason: 'nie Namen oder Einzelheiten');
-      expect(z.sperrbildschirmTitel, isFalse);
     });
 
-    test('Fehler beim Abruf sind kein Fehler der App', () async {
-      final (p, server, _, anzeige) = await bauen();
-      server.on('GET /me/security-events', (_) => fehler(503, 'server_busy'));
-      await p.pruefenUndMelden(vordergrund: false);
-      expect(anzeige.gezeigt, isEmpty);
+    test('Anzeige nicht möglich (keine Erlaubnis): der Stand bleibt, der Start der App holt es nach', () async {
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final vorher = await a.db.metaLesen(kSicherheitSeitSchluessel);
+      a.server.json('GET /me/security-events', {'events': [ereignis('e1', DateTime.now().add(const Duration(minutes: 1)))]});
+      a.anzeige.erlaubt = false;
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(await a.db.metaLesen(kSicherheitSeitSchluessel), vorher);
+      // Plugin meldet "nicht angezeigt" trotz Erlaubnis
+      a.anzeige
+        ..erlaubt = true
+        ..sicherheitGelingt = false;
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(await a.db.metaLesen(kSicherheitSeitSchluessel), vorher);
+      // der nächste Start im Vordergrund holt es nach
+      String? gesetzt;
+      await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((t) => gesetzt = t));
+      expect(gesetzt, isNotNull);
+      expect(await a.db.metaLesen(kSicherheitSeitSchluessel), isNot(vorher));
+    });
+
+    test('Weckrufe prüfen höchstens alle fünf Minuten, der Start der App immer', () async {
+      var jetzt = DateTime.utc(2026, 10, 21, 10);
+      final a = await bauen(jetzt: () => jetzt);
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false, mindestAbstand: kSicherheitMindestabstand);
+      expect(a.server.anfragen('GET /me/security-events'), hasLength(1));
+      jetzt = jetzt.add(const Duration(minutes: 2));
+      await a.pruefer.pruefenUndMelden(vordergrund: false, mindestAbstand: kSicherheitMindestabstand);
+      expect(a.server.anfragen('GET /me/security-events'), hasLength(1), reason: 'zu früh');
+      await a.pruefer.pruefenUndMelden(vordergrund: true);
+      expect(a.server.anfragen('GET /me/security-events'), hasLength(2), reason: 'der Start der App prüft immer');
+      jetzt = jetzt.add(const Duration(minutes: 6));
+      await a.pruefer.pruefenUndMelden(vordergrund: false, mindestAbstand: kSicherheitMindestabstand);
+      expect(a.server.anfragen('GET /me/security-events'), hasLength(3));
+    });
+
+    test('Sitzung widerrufen (401 trotz gültigem Zugangstoken): feste Meldung "Du wurdest abgemeldet" und Hinweis für das nächste Anmelden', () async {
+      final a = await bauen(refresh: false);
+      a.server.on('GET /me/security-events', (_) => fehler(401, 'invalid_token'));
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1));
+      final z = a.anzeige.sicherheit.single;
+      expect(z.id, kSicherheitAbgemeldetBenachrichtigungsId);
+      expect(z.titel, 'Du wurdest abgemeldet');
+      expect(z.text, contains('Dein Passwort wurde zurückgesetzt'));
+      expect(z.text, contains('Wiederherstellungscode'));
+      expect(await a.db.metaLesen(kSicherheitAbgemeldetSchluessel), '1');
+      // die Person setzt selbst zurück: der Hinweis ist dann nichts Neues
+      await a.pruefer.hinweisAbgemeldetLoeschen();
+      expect(await a.db.metaLesen(kSicherheitAbgemeldetSchluessel), isNull);
+    });
+
+    test('abgelaufenes Zugangstoken im Hintergrund ist KEIN Widerruf: keine Meldung, kein Hinweis', () async {
+      final a = await bauen(refresh: false, accessBis: DateTime.now().subtract(const Duration(minutes: 1)));
+      a.server.on('GET /me/security-events', (_) => fehler(401, 'invalid_token'));
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, isEmpty);
+      expect(await a.db.metaLesen(kSicherheitAbgemeldetSchluessel), isNull);
+      expect(a.server.anfragen('GET /me/security-events'), isEmpty, reason: 'die Anfrage ging nie hinaus');
+    });
+
+    test('Serverfehler ist kein Widerruf', () async {
+      final a = await bauen(refresh: false);
+      a.server.on('GET /me/security-events', (_) => fehler(503, 'server_busy'));
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, isEmpty);
+      expect(await a.db.metaLesen(kSicherheitAbgemeldetSchluessel), isNull);
     });
   });
 
@@ -497,6 +575,100 @@ void main() {
       });
     });
 
+    group('Veraltete Sicherung, Hinweise ($s)', () {
+      /// Angemeldete App; Anna hat eine Passwort-Sicherung, die ein Reset veraltet hat.
+      Future<_Aufbau> veraltet({bool schluessel = true}) async {
+        final a = await _aufbau(schluessel: schluessel);
+        await a.env.angemeldet();
+        a.srv.passwortZurueckgesetzt(fixIdAdmin);
+        return a;
+      }
+
+      Future<void> zurVerschluesselung(WidgetTester tester) async {
+        await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+        await tippeText(tester, 'Verschlüsselung');
+      }
+
+      testWidgets('mit Schlüssel auf dem Gerät: "Sicherung erneuern" wird angeboten, erklärt den Grund und legt mit einem Passwort neu an', (tester) async {
+        final a = await veraltet();
+        await starteApp(tester, a.env, skala: skala);
+        await zurVerschluesselung(tester);
+        expect(find.textContaining('veraltet nach Passwort-Reset · Sicherung erneuern'), findsOneWidget);
+        pruefeLayout(tester, 'Verschlüsselung: Sicherung erneuern');
+        await tippeText(tester, 'Passwort-Sicherung');
+        expect(find.textContaining('Dein Passwort wurde zurückgesetzt, deshalb ist die bisherige Passwort-Sicherung veraltet'), findsOneWidget);
+        await eingeben(tester, 'Passwort (mind. 12 Zeichen)', _pwNeu);
+        await eingeben(tester, 'Passwort wiederholen', _pwNeu);
+        await tippe(tester, find.widgetWithText(FilledButton, 'Sicherung anlegen und prüfen'));
+        await tester.pump(const Duration(milliseconds: 200));
+        await warte(tester, 10);
+        expect(a.srv.pwStand(fixIdAdmin).stale, isFalse);
+        expect(a.srv.pwStand(fixIdAdmin).verifiziert, isTrue);
+        expect(a.server.anfragen('POST /me/keys'), isEmpty);
+        expect(a.alleAnfragen, isNot(contains(_pwNeu)));
+      });
+
+      testWidgets('ohne Schlüssel auf dem Gerät gibt es kein "Sicherung erneuern"; "Mit Passwort verbinden" nennt den Reset statt eines "früheren Schlüssels"', (tester) async {
+        final a = await veraltet(schluessel: false);
+        await starteApp(tester, a.env, skala: skala);
+        await zurVerschluesselung(tester);
+        expect(find.textContaining('Sicherung erneuern'), findsNothing);
+        await tippeText(tester, 'Mit Passwort verbinden');
+        await eingeben(tester, 'Passwort der Sicherung', _pwNeu);
+        await tippe(tester, find.widgetWithText(FilledButton, 'Verbinden'));
+        await warte(tester, 10);
+        expect(find.textContaining('Dein Passwort wurde zurückgesetzt. Die Sicherung muss auf einem Gerät mit Schlüssel erneuert werden'), findsOneWidget);
+        expect(find.textContaining('früheren Schlüssel'), findsNothing);
+        expect(await a.speicher.lesen(personenschluesselName(fixIdAdmin)), isNull);
+        pruefeLayout(tester, 'Mit Passwort verbinden: veraltet nach Reset');
+      });
+
+      testWidgets('Anmeldeseite: der dauerhafte Hinweis "abgemeldet" bleibt, bis er bestätigt ist', (tester) async {
+        final a = await _aufbau();
+        await a.env.db.metaSchreiben(kSicherheitAbgemeldetSchluessel, '1');
+        await starteApp(tester, a.env, skala: skala);
+        expect(find.textContaining('Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde'), findsOneWidget);
+        pruefeLayout(tester, 'Anmeldeseite mit Hinweis');
+        await tippeText(tester, 'Verstanden');
+        expect(find.textContaining('Du wurdest abgemeldet'), findsNothing);
+        expect(await a.env.db.metaLesen(kSicherheitAbgemeldetSchluessel), isNull);
+      });
+
+      testWidgets('nach dem Anmelden: ein Dialog (kein flüchtiger Hinweis), der bis zur Bestätigung stehen bleibt', (tester) async {
+        final a = await _aufbau();
+        await a.env.angemeldet();
+        await a.env.db.metaSchreiben(kSicherheitAbgemeldetSchluessel, '1');
+        await starteApp(tester, a.env, skala: skala);
+        await warte(tester, 10);
+        expect(find.text('Dein Passwort wurde zurückgesetzt'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 30));
+        expect(find.text('Dein Passwort wurde zurückgesetzt'), findsOneWidget, reason: 'bleibt stehen');
+        pruefeLayout(tester, 'Dialog nach dem Anmelden');
+        await tippeText(tester, 'Verstanden');
+        expect(find.text('Dein Passwort wurde zurückgesetzt'), findsNothing);
+        expect(await a.env.db.metaLesen(kSicherheitAbgemeldetSchluessel), isNull);
+      });
+
+      testWidgets('Einladungsliste: Link "neues passwort" trägt eine eigene Pille', (tester) async {
+        final server = standardServer();
+        server.json('GET /invites', {
+          'invites': [
+            {...einladungJson(id: 'i9', role: 'parent', reset: true), 'kind': 'password_reset'},
+            einladungJson(id: 'i8', role: 'parent', reset: true),
+          ],
+        });
+        final env = TestUmgebung(server);
+        await env.angemeldet();
+        await starteApp(tester, env, skala: skala);
+        await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+        await tippeText(tester, 'Mitglieder und Einladungen');
+        await tippeText(tester, 'Einladungen');
+        expect(find.text('neues passwort'), findsOneWidget);
+        expect(find.text('zurücksetzen'), findsOneWidget);
+        pruefeLayout(tester, 'Einladungsliste');
+      });
+    });
+
     group('Sicherheitsereignisse ($s)', () {
       testWidgets('Liste mit Texten und Zeit, leerer Zustand, Fehler', (tester) async {
         final server = standardServer();
@@ -540,6 +712,14 @@ class _MerkHinweis extends ResetHinweisController {
   void setzen(String? text) => beiSetzen(text);
 }
 
+class _PruefAufbau {
+  final SicherheitsPruefer pruefer;
+  final FakeServer server;
+  final AppDatabase db;
+  final _FakeAnzeige anzeige;
+  _PruefAufbau(this.pruefer, this.server, this.db, this.anzeige);
+}
+
 class _Gezeigt {
   final int id;
   final String titel;
@@ -550,13 +730,23 @@ class _Gezeigt {
 
 class _FakeAnzeige implements ChatAnzeigePort {
   final gezeigt = <_Gezeigt>[];
+  final sicherheit = <_Gezeigt>[];
+  bool erlaubt = true;
+  bool sicherheitGelingt = true;
 
   @override
-  Future<bool> initialisieren() async => true;
+  Future<bool> initialisieren() async => erlaubt;
 
   @override
   Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl}) async {
     gezeigt.add(_Gezeigt(id, titel, text, sperrbildschirmTitel));
+    return true;
+  }
+
+  @override
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text}) async {
+    if (!sicherheitGelingt) return false;
+    sicherheit.add(_Gezeigt(id, titel, text, false));
     return true;
   }
 

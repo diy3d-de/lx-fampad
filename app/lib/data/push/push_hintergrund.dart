@@ -105,7 +105,7 @@ Future<WeckerLauf?> pushHintergrundStarten({
         // Standortfreigaben: der Wecker enthält nichts, die App fragt den Standort-Kanal kurz ab und meldet neue Freigaben lokal
         await standort;
         // Sicherheitshinweis (Passwort-Reset für dein Konto): feste lokale Benachrichtigung ohne Einzelheiten
-        await c.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: false);
+        await c.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: false, mindestAbstand: kSicherheitMindestabstand);
       } finally {
         abgebrochen = true;
         c.dispose();
