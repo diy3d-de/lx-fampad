@@ -239,7 +239,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     final abgelehnt = lese?.zustand == LeseZustand.abgelehnt;
     // Reaktionen, Umfragen und Anheften gibt es nur in verschlüsselten Chats (Altbestand: nur lesen)
     final bestaetigt = n.rev > 0 && !abgelehnt && lesbar && verschluesselt;
-    final aktion = await showModalBottomSheet<String>(
+    final aktion = await showModalBottomSheet<String>(useRootNavigator: false,
       context: context,
       backgroundColor: kSurface,
       showDragHandle: true,

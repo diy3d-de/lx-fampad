@@ -99,7 +99,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
   }
 
   Future<DateTime?> _tagWaehlen(DateTime aktuell) async {
-    final d = await showDatePicker(
+    final d = await showDatePicker(useRootNavigator: false,
       context: context,
       initialDate: DateTime(aktuell.year, aktuell.month, aktuell.day),
       firstDate: DateTime(2000),
@@ -109,7 +109,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     return d == null ? null : DateTime.utc(d.year, d.month, d.day);
   }
 
-  Future<TimeOfDay?> _zeitWaehlen(TimeOfDay aktuell) => showTimePicker(
+  Future<TimeOfDay?> _zeitWaehlen(TimeOfDay aktuell) => showTimePicker(useRootNavigator: false,
     context: context,
     initialTime: aktuell,
     builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),

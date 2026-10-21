@@ -93,7 +93,7 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
   }
 
   Future<void> _waehlen(List<String> liste) async {
-    final gewaehlt = await showDialog<String>(
+    final gewaehlt = await showDialog<String>(useRootNavigator: false,
       context: context,
       builder: (ctx) => SimpleDialog(
         backgroundColor: kSurface,

@@ -144,7 +144,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   DateTime get _endeWand => _ganztaegig ? _endTag.add(const Duration(days: 1)) : _wand(_endTag, _endZeit);
 
   Future<DateTime?> _tagWaehlen(DateTime aktuell) async {
-    final d = await showDatePicker(
+    final d = await showDatePicker(useRootNavigator: false,
       context: context,
       initialDate: DateTime(aktuell.year, aktuell.month, aktuell.day),
       firstDate: DateTime(2000),
@@ -154,7 +154,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     return d == null ? null : DateTime.utc(d.year, d.month, d.day);
   }
 
-  Future<TimeOfDay?> _zeitWaehlen(TimeOfDay aktuell) => showTimePicker(
+  Future<TimeOfDay?> _zeitWaehlen(TimeOfDay aktuell) => showTimePicker(useRootNavigator: false,
     context: context,
     initialTime: aktuell,
     builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true), child: child!),
@@ -404,7 +404,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
             label: 'Geburtsdatum',
             text: _jahrBekannt ? DateFormat('d. MMMM y', 'de_DE').format(_geburtsdatum) : DateFormat('d. MMMM', 'de_DE').format(_geburtsdatum),
             onTap: () async {
-              final d = await showDatePicker(
+              final d = await showDatePicker(useRootNavigator: false,
                 context: context,
                 initialDate: DateTime(_geburtsdatum.year, _geburtsdatum.month, _geburtsdatum.day),
                 firstDate: DateTime(1900),
@@ -524,7 +524,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
 
 /// Blatt "Wiederholung": Art, Intervall, Wochentage, Monatsmodus, Ende. Liefert die neue Auswahl (null: abgebrochen).
 Future<Wiederholung?> wiederholungBlatt(BuildContext context, Wiederholung start, {required DateTime startTag, required bool ganztaegig}) =>
-    showModalBottomSheet<Wiederholung>(
+    showModalBottomSheet<Wiederholung>(useRootNavigator: false,
       context: context,
       isScrollControlled: true,
       builder: (_) => _WiederholungBlatt(start: start, startTag: startTag),
@@ -630,7 +630,7 @@ class _WiederholungBlattState extends State<_WiederholungBlatt> {
                       text: w.ende == WdhEnde.bis && w.bis != null ? 'Bis ${DateFormat('d.M.y').format(w.bis!)}' : 'Bis Datum',
                       gewaehlt: w.ende == WdhEnde.bis,
                       onTap: () async {
-                        final d = await showDatePicker(
+                        final d = await showDatePicker(useRootNavigator: false,
                           context: context,
                           initialDate: DateTime(widget.startTag.year, widget.startTag.month, widget.startTag.day).add(const Duration(days: 30)),
                           firstDate: DateTime(widget.startTag.year, widget.startTag.month, widget.startTag.day),

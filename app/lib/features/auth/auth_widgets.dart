@@ -333,7 +333,7 @@ Future<({FamilyRole? rolle})?> familienrolleWaehlen(BuildContext context, {requi
       ),
     ),
   );
-  return showDialog<({FamilyRole? rolle})>(
+  return showDialog<({FamilyRole? rolle})>(useRootNavigator: false,
     context: context,
     builder: (ctx) => SimpleDialog(
       title: Text(titel),

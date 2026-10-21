@@ -128,7 +128,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
 
   Future<void> _entfernen() async {
     var aktuell = true;
-    final ja = await showDialog<bool>(
+    final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Passwort entfernen?'),

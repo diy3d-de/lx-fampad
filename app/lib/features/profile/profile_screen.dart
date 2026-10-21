@@ -67,8 +67,14 @@ class EinstellungsZeile extends StatelessWidget {
   );
 }
 
+/// Routenname der Konto-Seite: die Desktop-Shell erkennt daran, dass sie offen ist (Seitenleiste hebt "Konto" hervor).
+const kKontoRoute = 'konto';
+
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
+
+  /// Route der Konto-Seite (mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell).
+  static Route<void> route() => MaterialPageRoute<void>(settings: const RouteSettings(name: kKontoRoute), builder: (_) => const ProfileScreen());
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -93,7 +99,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   void _oeffne(Widget seite) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => seite));
 
   Future<bool> _bestaetigen(String titel, String text, String knopf) async =>
-      await showDialog<bool>(
+      await showDialog<bool>(useRootNavigator: false,
         context: context,
         builder: (_) => AlertDialog(
           title: Text(titel),
@@ -150,7 +156,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
 
   /// Dialog mit Warnung zum Schlüssel; ohne Sicherung wird "Erst sichern" angeboten (öffnet die Verschlüsselung statt abzumelden).
   Future<bool> _abmeldenMitSchluessel(String titel, String text, String knopf, {required bool gesichert}) async {
-    final antwort = await showDialog<String>(
+    final antwort = await showDialog<String>(useRootNavigator: false,
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text(titel),

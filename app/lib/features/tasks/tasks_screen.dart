@@ -85,7 +85,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   );
 
   Future<void> _personWaehlen(List<UserDto> personen, String? aktuell) async {
-    final wahl = await showModalBottomSheet<String>(
+    final wahl = await showModalBottomSheet<String>(useRootNavigator: false,
       context: context,
       showDragHandle: true,
       isScrollControlled: true,
