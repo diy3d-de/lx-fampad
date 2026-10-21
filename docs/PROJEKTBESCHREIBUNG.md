@@ -468,18 +468,41 @@ noch als lesbaren Altbestand und wird vom Server für `e1`-Konversationen abgele
   CSP (`deploy/Caddyfile`: `script-src 'self'`, keine Fremd-Skripte). `libsodium.js` (`web/sodium.js`, Sumo-Variante) wird selbst gehostet
   (Prüfsumme in `app/web-assets.sha256`); sie enthält die WASM-Datei eingebettet und braucht deshalb `'wasm-unsafe-eval'` in der CSP, das dort
   für CanvasKit und `sqlite3.wasm` ohnehin steht (keine CSP-Änderung nötig, im Browser geprüft: keine CSP-Verletzung).
-- **Abmelden** (ausdrücklich) und Personenwechsel entfernen den geheimen Schlüssel vom Gerät; die gemerkten öffentlichen Schlüssel (TOFU) bleiben.
-  Nach erneutem Anmelden wird das Gerät wieder verbunden (QR oder Wiederherstellungsschlüssel).
+- **Abmelden behält den Schlüssel** (P0 „Kein Datenverlust“): Abmelden („Abmelden“, „Überall abmelden“, Geräteliste „Dieses Gerät abmelden“, Personenwechsel, Zwangsabmeldung) beendet nur die Sitzung und leert wie bisher die zwischengespeicherten Daten
+  (`localDataWiperProvider`); der Personenschlüssel bleibt im Schlüsselspeicher liegen, **je Person getrennt** (`e2ee.pk.<userId>`), samt Vermerken (`e2ee.kv.*`) und gemerkten öffentlichen Schlüsseln (TOFU). Bei der nächsten Anmeldung derselben Person
+  wird er wiederverwendet. Meldet sich am selben Gerät eine ANDERE Person an, bleibt der Schlüssel der Vorperson (verschlüsselt im Speicher) unberührt liegen und wird nie für die neue Person benutzt. Im Arbeitsspeicher wird alles verworfen
+  (`e2eeSitzungWiper`). **Der Schlüssel wird nur an zwei Stellen gelöscht:** „Gerät abgeben – alles löschen“ und das ausdrückliche Verwerfen eines Quarantäne-Eintrags (jeweils mit getipptem Wort).
 
-### Abmelden löscht den Schlüssel (Rückfrage)
+### Abmelden (ruhiger Hinweis)
 
-Frei gewähltes Abmelden (Profil „Abmelden“, „Überall abmelden“, Geräteliste „Dieses Gerät abmelden“) löscht den Personenschlüssel von diesem Gerät. Liegt hier ein Schlüssel, fragt die App vorher nach und sagt ehrlich, was danach bleibt: ein anderes Gerät mit dem Schlüssel, der Wiederherstellungsschlüssel (die App weiß nicht, ob er gespeichert wurde: immer „nur, wenn du ihn noch hast“) und, nur bei auf diesem Gerät bestätigter Passwort-Sicherung (Vermerk `e2ee.kv.pw.<userId>`, Server bietet sie an, nicht veraltet), das Passwort der Passwort-Sicherung. Ob ein Schlüssel liegt, fragt die App direkt im Schlüsselspeicher (lesbar und leer = keine Rückfrage; nicht lesbar = „unbekannt“, nie „kein Schlüssel“); ist der Server nicht erreichbar, bleibt der Hinweis neutral („ließ sich gerade nicht prüfen“). Ohne auf diesem Gerät bestätigte Passwort-Sicherung warnt die Rückfrage deutlich (rot) und bietet „Passwort-Sicherung anlegen“ an; abgemeldet wird dann nur über „Trotzdem abmelden“. Wie viele Geräte den Schlüssel haben, weiß die App nicht und rät nicht. Ohne Schlüssel auf dem Gerät bleibt die einfache Rückfrage; Zwangsabmeldungen (401, Widerruf) fragen nie (`features/profile/abmelden_pruefung.dart`).
+Frei gewähltes Abmelden fragt nur noch ruhig nach (`features/profile/abmelden_pruefung.dart`): Liegt auf dem Gerät ein Schlüssel (direkt im Schlüsselspeicher geprüft; nicht lesbar = „unbekannt, evtl. vorhanden“, nie „kein Schlüssel“), steht im Dialog
+„Dein Schlüssel bleibt auf diesem Gerät …“ mit dem Verweis auf „Gerät abgeben“. Keine Warnung, kein „Trotzdem abmelden“, keine Aussage über Sicherungen. Zwangsabmeldungen (401, Widerruf) fragen nie.
+
+### Gerät abgeben – alles löschen
+
+Eigene, bewusst abgesetzte Aktion unter Profil › Verschlüsselung (Abschnitt „Gerät abgeben“; `E2eeController.geraetAbgeben`, `schluesselVomGeraetLoeschen`): löscht Personenschlüssel, Zwischenstand, Vermerke und Quarantäne-Einträge **dieser Person** und die lokalen Daten
+und meldet ab (zuerst abmelden, dann Schlüssel löschen; scheitert das Abmelden, wird nichts gelöscht). Schlüssel anderer Personen auf dem Gerät und das gemerkte Vertrauen (TOFU) bleiben. **Gesperrt**, solange der Server keine **bestätigte** Sicherung meldet
+(`GET /me/keys`: `pwBackupVerifiedAt` bei nicht veralteter Passwort-Sicherung ODER `recoveryBackupAt` bei `hasBackup`; fehlt ein Feld oder ist der Stand nicht ladbar, gilt „unbekannt/nicht bestätigt“, nie „gesichert“; `geraetAbgabeLage`). Die Sperre
+erklärt sich und bietet „Sicherung anlegen“ an. Bestätigung im Dialog: Haken („Ich weiß: Ohne meine Sicherung … kommt mein Verlauf nicht zurück“) und Eintippen des Wortes „löschen“ (`wort_bestaetigung.dart`).
+
+### Quarantäne statt Löschen
+
+Ein lokaler Schlüssel, der nicht (mehr) gelten soll, wird **nie gelöscht**, sondern unverändert nach `e2ee.quarantaene.<userId>.<Millisekunden>` verschoben (`SchluesselSpeicher.verschiebe`, ohne Entschlüsselung; Web behält den ursprünglichen Namen als AAD):
+(1) „Dieses Gerät neu verbinden“ bei abweichendem Schlüssel, (2) ein dauerhaft defekter oder unlesbarer Schlüsseleintrag (`SchluesselSpeicherFehler`, `dauerhaft`; lässt er sich nicht verschieben, bleibt er unter seinem Namen liegen), (3) der bisherige Schlüssel nach einem
+Schlüsselwechsel, (4) ein anderer lokaler Schlüssel, bevor beim Verbinden ein neuer übernommen wird. Profil › Verschlüsselung zeigt sie als „Alter Schlüssel auf diesem Gerät“ (nur Hinweis, sie werden nie benutzt); Verwerfen nur mit getipptem Wort.
+
+### Ehrliche Anzeige
+
+„Aktiv“ (grün) steht nur, wenn der Server eine bestätigte Sicherung meldet, sonst gelb „offen“ mit sichtbarer Markierung „Sicherung offen“ (auch in der Profilzeile). Sicherungen heißen „liegt beim Server (seit <Datum>)“, nie „gesichert“ und nie grün.
+„Neuen Schlüssel erzeugen“ gibt es nicht auf der Seite „Gerät nicht verbunden“, sondern nur im Notfallbereich einer eingerichteten Seite hinter einer Checkliste (vier Haken: kein Wiederherstellungsschlüssel, kein anderes Gerät, kein Sicherungs-Passwort,
+alte Chats gehen unwiderruflich verloren) und dem getippten Wort „ersetzen“. Texte zum Passwort-Reset versprechen den Verlauf nur bedingt („… bleibt erhalten, wenn du ein Gerät mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast“).
+Web: Die Ablage fordert `navigator.storage.persist()` an (`SchluesselSpeicher.dauerhaftigkeit`); verweigert oder unklar, steht in Profil › Verschlüsselung der Hinweis „Der Browser darf diese Daten löschen“.
 
 ### Wiederherstellungsschlüssel
 
 - 32 Byte Zufall, angezeigt als 14 Vierergruppen Base32 (A-Z, 2-7) mit 3 Byte Prüfsumme (SHA-256 mit Verwendungszweck: erkennt Tippfehler und Verwechslung mit
-  dem Übertragungscode). Er wird **einmal** bei der Einrichtung angezeigt (Bildschirmschutz/FLAG_SECURE, Zwischenablage nur auf Klick); das Weiterkommen
-  verlangt die Abfrage zweier zufälliger Gruppen.
+  dem Übertragungscode). Er wird **einmal** bei der Einrichtung angezeigt (Bildschirmschutz/FLAG_SECURE, Zwischenablage nur auf Klick); danach wird er **verdeckt** und muss vollständig eingetippt werden (Probe; der Schlüssel darf dabei nicht mehr zu sehen
+  sein, „nochmal ansehen“ ist möglich). „Später sichern“ bleibt möglich, die Sicherung gilt dann sichtbar als „offen“.
 - Er verschlüsselt (XChaCha20-Poly1305, Schlüssel = BLAKE2b-256 über einen festen Zweck, geschlüsselt mit dem Wiederherstellungsschlüssel) ein Backup des
   Personenschlüssels. AAD = `lx-fampad|key-backup|v1|user_id|key_version`. Der Server bekommt nur den Blob. Der Schlüssel ist 256 Bit stark, deshalb gibt es
   keine Passphrase und kein Argon2id.

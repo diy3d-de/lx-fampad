@@ -39,9 +39,9 @@ Future<void> main(List<String> args) async {
         inviteIntakeProvider.overrideWith(() => InviteIntake(vorhanden: link != null, anfang: link?.token)),
         // Abmelden leert die lokale Datenbank (Listen, Ausgang, Sync-Zustand); vorher wird der Sync angehalten, damit eine noch
         // laufende Antwort nicht in die geleerte Datenbank schreibt
-        // zusätzlich verschwindet der geheime E2EE-Personenschlüssel vom Gerät (Wiederverbinden per QR oder Wiederherstellungsschlüssel)
-        // unabhängig voneinander: ein Fehler beim Leeren der Datenbank darf das Löschen des Schlüssels nie verhindern (und umgekehrt)
-        localDataWiperProvider.overrideWith((ref) => wiperVerkettet([lokaleDatenWiper(ref), e2eeDatenWiper(ref), () async => ref.invalidate(chatKryptoProvider)])),
+        // der geheime E2EE-Personenschlüssel bleibt dabei im Schlüsselspeicher liegen (nur sein Zustand im Arbeitsspeicher wird verworfen); löschen kann ihn nur "Gerät abgeben"
+        // unabhängig voneinander: ein Fehler beim Leeren der Datenbank darf das Verwerfen des Schlüssels im Arbeitsspeicher nie verhindern (und umgekehrt)
+        localDataWiperProvider.overrideWith((ref) => wiperVerkettet([lokaleDatenWiper(ref), e2eeSitzungWiper(ref), () async => ref.invalidate(chatKryptoProvider)])),
         // nach einem Push-Wecker: lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
         ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
         // Abmelden meldet auch den Push-Endpunkt ab (Server und ntfy-App)

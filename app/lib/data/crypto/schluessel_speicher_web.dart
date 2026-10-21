@@ -87,6 +87,23 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
 
   JSAny _alg(Uint8List iv, String name) => {'name': 'AES-GCM', 'iv': iv, 'additionalData': utf8Bytes(name)}.jsify()!;
 
+  /// Ergebnis der Anfrage nach dauerhaftem Speicher (nur ein "gewährt" wird gemerkt: ein "verweigert" kann sich ändern).
+  SpeicherDauer? _dauer;
+
+  /// Fordert die dauerhafte Ablage an (`navigator.storage.persist()`): Ohne sie darf der Browser die Schlüssel bei Speicherknappheit löschen.
+  @override
+  Future<SpeicherDauer> dauerhaftigkeit() async {
+    if (_dauer == SpeicherDauer.gewaehrt) return SpeicherDauer.gewaehrt;
+    try {
+      final verwaltung = web.window.navigator.storage;
+      var ok = (await verwaltung.persisted().toDart).toDart;
+      if (!ok) ok = (await verwaltung.persist().toDart).toDart;
+      return _dauer = ok ? SpeicherDauer.gewaehrt : SpeicherDauer.verweigert;
+    } on Object {
+      return SpeicherDauer.unbekannt;
+    }
+  }
+
   /// null nur, wenn der Eintrag nicht existiert. IndexedDB-Fehler sind vorübergehend (der Eintrag bleibt), eine fehlgeschlagene
   /// Entschlüsselung (Eintrag oder Wrapper-Schlüssel beschädigt/vertauscht) ist dauerhaft.
   @override
@@ -104,7 +121,9 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
       final obj = roh as JSObject;
       final iv = (obj.getProperty('iv'.toJS)! as JSUint8Array).toDart;
       final ct = obj.getProperty('ct'.toJS)! as JSArrayBuffer;
-      final klar = (await _subtle.decrypt(_alg(iv, name), key, ct).toDart)! as JSArrayBuffer;
+      // ein verschobener Eintrag (Quarantäne) behält den Namen, unter dem er verschlüsselt wurde
+      final aad = obj.getProperty<JSAny?>('aad'.toJS);
+      final klar = (await _subtle.decrypt(_alg(iv, aad.isA<JSString>() ? (aad! as JSString).toDart : name), key, ct).toDart)! as JSArrayBuffer;
       return Uint8List.fromList(klar.toDart.asUint8List());
     } on Object {
       throw const SchluesselSpeicherFehler('Schlüsseleintrag nicht entschlüsselbar', dauerhaft: true);
@@ -119,6 +138,39 @@ class WebSchluesselSpeicher implements SchluesselSpeicher {
     final ct = (await _subtle.encrypt(_alg(iv, name), key, bytes.toJS).toDart)! as JSArrayBuffer;
     final wert = {'iv': iv, 'ct': ct}.jsify()!;
     await _transaktion(true, (s) => _anfrage(s.put(wert, '$_eintrag$name'.toJS)));
+    unawaited(dauerhaftigkeit()); // beim Anlegen eines Schlüssels die dauerhafte Ablage anfordern (Ergebnis wird gemerkt)
+  }
+
+  /// Verschiebt den verschlüsselten Eintrag unverändert (ohne Entschlüsselung) und merkt sich den ursprünglichen Namen für die spätere Entschlüsselung.
+  @override
+  Future<bool> verschiebe(String von, String nach) async {
+    try {
+      return await _transaktion(true, (s) async {
+        final roh = await _anfrage(s.get('$_eintrag$von'.toJS));
+        if (roh == null || roh.isUndefined) return false;
+        final obj = roh as JSObject;
+        final alt = obj.getProperty<JSAny?>('aad'.toJS);
+        final neu = JSObject()
+          ..setProperty('iv'.toJS, obj.getProperty<JSAny?>('iv'.toJS))
+          ..setProperty('ct'.toJS, obj.getProperty<JSAny?>('ct'.toJS))
+          ..setProperty('aad'.toJS, alt.isA<JSString>() ? alt : von.toJS);
+        await _anfrage(s.put(neu, '$_eintrag$nach'.toJS));
+        await _anfrage(s.delete('$_eintrag$von'.toJS));
+        return true;
+      });
+    } on Object {
+      return false;
+    }
+  }
+
+  @override
+  Future<List<String>> namenMitPraefix(String praefix) async {
+    final keys = await _transaktion(false, (s) => _anfrage(s.getAllKeys()));
+    final liste = (keys! as JSArray<JSAny?>).toDart;
+    return [
+      for (final k in liste)
+        if (k != null && k.isA<JSString>() && (k as JSString).toDart.startsWith('$_eintrag$praefix')) k.toDart.substring(_eintrag.length),
+    ];
   }
 
   @override

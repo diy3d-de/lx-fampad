@@ -68,18 +68,87 @@ final schluesselSpeicherProvider = Provider<SchluesselSpeicher>((ref) => schlues
 /// Name des Personenschlüssels im Schlüsselspeicher; gehört zu einer Person, damit ein Gerät mit zwei Konten nichts vermischt.
 String personenschluesselName(String userId) => 'e2ee.pk.$userId';
 
-/// Für localDataWiperProvider (main.dart): Beim Abmelden bzw. Personenwechsel wird der geheime Personenschlüssel vom Gerät entfernt
-/// (ein neues Anmelden verlangt dann wieder "Gerät verbinden"). Die gemerkten öffentlichen Schlüssel (TOFU) bleiben, damit ein Abmelden
-/// kein Weg ist, einen Schlüsselwechsel unbemerkt zu lassen.
-Future<void> Function() e2eeDatenWiper(Ref ref) => () async {
-  try {
-    await ref.read(schluesselSpeicherProvider).loescheMitPraefix('e2ee.pk.');
-    await ref.read(schluesselSpeicherProvider).loescheMitPraefix('e2ee.kv.');
-  } finally {
-    // Zustand und der Schlüssel im Arbeitsspeicher gehören der bisherigen Person: verwerfen (der Neuaufbau überschreibt die Bytes), auch wenn das Löschen scheiterte
-    ref.invalidate(e2eeProvider);
-  }
+/// Für localDataWiperProvider (main.dart): Beim Abmelden bzw. Personenwechsel wird nur der Zustand im Arbeitsspeicher verworfen. **Der Personenschlüssel
+/// im Schlüsselspeicher bleibt liegen** (je Person getrennt, `e2ee.pk.<uid>`): Abmelden beendet die Sitzung, es löscht keinen Schlüssel. Er wird bei der
+/// nächsten Anmeldung derselben Person wiederverwendet; bei einer anderen Person am selben Gerät bleibt er unberührt (verschlüsselt) liegen und wird nie
+/// für sie benutzt. Gelöscht wird er nur über [schluesselVomGeraetLoeschen] ("Gerät abgeben") oder beim ausdrücklichen Verwerfen eines Quarantäne-Eintrags.
+Future<void> Function() e2eeSitzungWiper(Ref ref) => () async {
+  // Zustand und der Schlüssel im Arbeitsspeicher gehören der bisherigen Person: verwerfen (der Neuaufbau überschreibt die Bytes)
+  ref.invalidate(e2eeProvider);
 };
+
+/// Entfernt ALLE Schlüssel dieser Person von diesem Gerät: Personenschlüssel, Zwischenstand, Vermerke und Quarantäne-Einträge. Nur für "Gerät abgeben"
+/// (nach der Prüfung einer bestätigten Sicherung und der ausdrücklichen Bestätigung). Die gemerkten öffentlichen Schlüssel der Familie (TOFU) bleiben, damit
+/// kein Weg entsteht, einen Schlüsselwechsel unbemerkt zu lassen; Schlüssel anderer Personen auf diesem Gerät bleiben unberührt. Alle Schritte laufen
+/// unabhängig voneinander; der erste Fehler wird danach geworfen.
+Future<void> schluesselVomGeraetLoeschen(SchluesselSpeicher speicher, String userId) async {
+  Object? erster;
+  StackTrace? stapel;
+  Future<void> schritt(Future<void> Function() f) async {
+    try {
+      await f();
+    } on Object catch (e, st) {
+      erster ??= e;
+      stapel ??= st;
+    }
+  }
+
+  await schritt(() => speicher.loeschen(personenschluesselName(userId)));
+  await schritt(() => speicher.loeschen(personenschluesselAltName(userId)));
+  await schritt(() => speicher.loeschen('e2ee.kv.$userId'));
+  await schritt(() => speicher.loeschen('e2ee.kv.pw.$userId'));
+  await schritt(() async {
+    for (final n in await speicher.namenMitPraefix(quarantaenePraefix(userId))) {
+      await schritt(() => speicher.loeschen(n));
+    }
+  });
+  final fehler = erster;
+  if (fehler != null) Error.throwWithStackTrace(fehler, stapel!);
+}
+
+/// Quarantäne: Ein lokaler Schlüssel, der nicht (mehr) gelten soll (weicht vom Server ab, Speicher defekt, alter Schlüssel nach einem Wechsel), wird
+/// nie gelöscht, sondern unter diesem Namen aufbewahrt: `e2ee.quarantaene.<uid>.<Millisekunden>`.
+String quarantaenePraefix(String userId) => 'e2ee.quarantaene.$userId.';
+
+/// Ein aufbewahrter alter Schlüssel dieses Geräts (nur zur Anzeige; er wird nie automatisch benutzt oder gelöscht).
+class QuarantaeneEintrag {
+  final String name;
+
+  /// Wann er in die Quarantäne kam (aus dem Namen; null, wenn nicht lesbar).
+  final DateTime? seit;
+  const QuarantaeneEintrag(this.name, this.seit);
+}
+
+/// Wie sicher "Gerät abgeben" gerade ist.
+enum GeraetAbgabeLage {
+  /// Eine bestätigte Sicherung liegt beim Server: Schlüssel und lokale Daten dürfen nach ausdrücklicher Bestätigung gelöscht werden.
+  moeglich,
+
+  /// Der Stand beim Server ließ sich nicht klären (offline, Fehler, noch nicht geladen): gesperrt, nie "gesichert".
+  standUnbekannt,
+
+  /// Der Server kennt keine bestätigte Sicherung (oder meldet es nicht): gesperrt.
+  keineBestaetigteSicherung,
+
+  /// Auf diesem Gerät liegt kein Schlüssel und nichts in Quarantäne: es gibt nichts zu löschen.
+  nichtsZuLoeschen,
+}
+
+/// Die Regel für "Gerät abgeben": nur mit bestätigter Sicherung beim Server (Passwort-Sicherung bestätigt und gültig ODER Sicherung mit dem
+/// Wiederherstellungsschlüssel zur aktuellen Version). Unbekannt zählt nie als gesichert.
+GeraetAbgabeLage geraetAbgabeLage(E2eeState s) {
+  switch (s.status) {
+    case E2eeStatus.laedt:
+    case E2eeStatus.nichtVerfuegbar:
+      return GeraetAbgabeLage.standUnbekannt;
+    case E2eeStatus.keinSchluessel:
+    case E2eeStatus.geraetNichtVerbunden:
+      if (s.quarantaene.isEmpty) return GeraetAbgabeLage.nichtsZuLoeschen;
+    case E2eeStatus.bereit:
+    case E2eeStatus.abweichend:
+  }
+  return s.sicherungBestaetigt ? GeraetAbgabeLage.moeglich : GeraetAbgabeLage.keineBestaetigteSicherung;
+}
 
 /// Führt alle [wiper] unabhängig voneinander aus (ein Fehler eines Wipers hindert die anderen nie, z. B. darf ein Datenbankfehler das Löschen des
 /// Personenschlüssels nicht verhindern) und wirft danach den ersten Fehler.
@@ -145,6 +214,25 @@ class E2eeState {
   /// Familien-Sicherheitscode (leer, solange niemand Schlüssel hat).
   final String sicherheitscode;
 
+  /// Seit wann die aktuelle Passwort-Sicherung beim Server bestätigt ist (null: nicht bestätigt oder vom Server nicht gemeldet).
+  final DateTime? pwBestaetigtAm;
+
+  /// Seit wann die Sicherung mit dem Wiederherstellungsschlüssel zur aktuellen Schlüsselversion beim Server liegt (null: keine oder nicht gemeldet).
+  final DateTime? wiederherstellungAm;
+
+  /// Anzahl der beim Server archivierten früheren Sicherungen (null: nicht gemeldet).
+  final int? archivAnzahl;
+
+  /// Aufbewahrte alte Schlüssel dieser Person auf diesem Gerät.
+  final List<QuarantaeneEintrag> quarantaene;
+
+  /// Darf der Browser die Schlüssel-Daten löschen (nur Web; sonst [SpeicherDauer.nichtZutreffend])?
+  final SpeicherDauer speicherDauer;
+
+  /// Liegt beim Server eine BESTÄTIGTE Sicherung (Passwort-Sicherung bestätigt und nicht veraltet, oder Wiederherstellungsschlüssel-Sicherung zur
+  /// aktuellen Version)? Fehlt die Angabe des Servers, gilt sie als nicht bestätigt: "unbekannt" ist nie "gesichert".
+  bool get sicherungBestaetigt => (pwBestaetigtAm != null && !pwSicherungVeraltet) || (hatSicherung && wiederherstellungAm != null);
+
   const E2eeState({
     required this.status,
     this.meldung,
@@ -157,6 +245,11 @@ class E2eeState {
     this.pwSicherungVersion,
     this.pwSicherungVeraltet = false,
     this.sicherheitscode = '',
+    this.pwBestaetigtAm,
+    this.wiederherstellungAm,
+    this.archivAnzahl,
+    this.quarantaene = const [],
+    this.speicherDauer = SpeicherDauer.nichtZutreffend,
   });
 
   const E2eeState.laedt() : this(status: E2eeStatus.laedt);
@@ -208,8 +301,9 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
-  /// Liest den lokalen Schlüssel. Fehlt er, null. Ein eindeutig dauerhaft unbrauchbarer Eintrag wird entfernt (null); ein vorübergehender
-  /// Fehler des Speichers geht weiter, der Eintrag bleibt (ein späterer Versuch kann klappen).
+  /// Liest den lokalen Schlüssel. Fehlt er, null. Ein eindeutig dauerhaft unbrauchbarer Eintrag wird NIE gelöscht, sondern unverändert in die
+  /// Quarantäne verschoben (null; lässt er sich nicht verschieben, bleibt er unter seinem Namen liegen); ein vorübergehender Fehler des Speichers geht
+  /// weiter, der Eintrag bleibt (ein späterer Versuch kann klappen).
   Future<Personenschluessel?> _lokalLaden(CryptoProvider crypto) async {
     final name = personenschluesselName(_userId);
     final Uint8List? bytes;
@@ -217,17 +311,49 @@ class E2eeController extends Notifier<E2eeState> {
       bytes = await _speicher.lesen(name);
     } on SchluesselSpeicherFehler catch (e) {
       if (!e.dauerhaft) rethrow;
-      await _speicher.loeschen(name);
+      await _inQuarantaene(name);
       return null;
     }
     if (bytes == null) return null;
     try {
       return Personenschluessel.ausBytes(crypto, bytes);
     } on CryptoFehler {
-      await _speicher.loeschen(name);
+      await _inQuarantaene(name);
       return null;
     } finally {
       loescheBytes(bytes);
+    }
+  }
+
+  static int _letzterQuarantaeneStempel = 0;
+
+  /// Verschiebt den Eintrag [name] unverändert in die Quarantäne (nie löschen). true, wenn er danach dort liegt; false, wenn es ihn nicht gibt oder er
+  /// sich nicht verschieben ließ (er bleibt dann, wo er war).
+  Future<bool> _inQuarantaene(String name) async {
+    final uid = _userId;
+    var stempel = DateTime.now().millisecondsSinceEpoch;
+    if (stempel <= _letzterQuarantaeneStempel) stempel = _letzterQuarantaeneStempel + 1;
+    _letzterQuarantaeneStempel = stempel;
+    try {
+      return await _speicher.verschiebe(name, '${quarantaenePraefix(uid)}$stempel');
+    } on Object {
+      return false;
+    }
+  }
+
+  Future<List<QuarantaeneEintrag>> _quarantaeneLesen(String uid) async {
+    try {
+      final praefix = quarantaenePraefix(uid);
+      final namen = await _speicher.namenMitPraefix(praefix);
+      DateTime? seit(String n) {
+        final ms = int.tryParse(n.substring(praefix.length));
+        return ms == null ? null : DateTime.fromMillisecondsSinceEpoch(ms);
+      }
+
+      return [for (final n in namen) QuarantaeneEintrag(n, seit(n))]
+        ..sort((a, b) => (b.seit?.millisecondsSinceEpoch ?? 0).compareTo(a.seit?.millisecondsSinceEpoch ?? 0));
+    } on Object {
+      return const [];
     }
   }
 
@@ -305,6 +431,9 @@ class E2eeController extends Notifier<E2eeState> {
       // Passwort-Sicherung: nur sichtbar, wenn der Server sie anbietet (Fehler = aus); der Vermerk "verifiziert" liegt auf diesem Gerät
       final pwVerfuegbar = server != null && await _api.pwSicherungVerfuegbar();
       final pwVersion = pwVerfuegbar ? await _pwVermerkLesen(uid) : null;
+      final quarantaene = await _quarantaeneLesen(uid);
+      // der Browser darf die Daten löschen, wenn er die dauerhafte Ablage verweigert: die Anfrage kann beim Nutzer nachfragen, darum mit Zeitlimit
+      final dauer = await _speicher.dauerhaftigkeit().timeout(const Duration(seconds: 2), onTimeout: () => SpeicherDauer.unbekannt).catchError((Object _) => SpeicherDauer.unbekannt);
       if (!ref.mounted) return;
       state = E2eeState(
         status: status,
@@ -313,6 +442,11 @@ class E2eeController extends Notifier<E2eeState> {
         pwSicherungVerfuegbar: pwVerfuegbar,
         pwSicherungVersion: pwVersion,
         pwSicherungVeraltet: pwVerfuegbar && eigene.pwSicherungVeraltet,
+        pwBestaetigtAm: eigene.pwSicherungBestaetigtAm,
+        wiederherstellungAm: eigene.wiederherstellungsSicherungAm,
+        archivAnzahl: eigene.archivAnzahl,
+        quarantaene: quarantaene,
+        speicherDauer: dauer,
         mitglieder: mitglieder,
         warnungen: warnungen,
         // nur aktive Mitglieder: wartende gehören noch nicht zur Familie
@@ -355,7 +489,7 @@ class E2eeController extends Notifier<E2eeState> {
     try {
       alt = Personenschluessel.ausBytes(crypto, roh);
     } on CryptoFehler {
-      await _speicher.loeschen(altName);
+      await _inQuarantaene(altName); // unbrauchbarer Zwischenstand: aufbewahren, nicht löschen
       return;
     } finally {
       loescheBytes(roh);
@@ -363,8 +497,9 @@ class E2eeController extends Notifier<E2eeState> {
     final neuPasst = server != null && _lokal != null && _passt(_lokal!, server);
     final altPasst = server != null && _passt(alt, server);
     if (neuPasst) {
+      // der Wechsel ist angekommen: der bisherige Schlüssel wird aufbewahrt (Quarantäne), nicht gelöscht
       alt.loeschen();
-      await _speicher.loeschen(altName);
+      await _inQuarantaene(altName);
     } else if (altPasst) {
       await _speicher.schreiben(personenschluesselName(_userId), alt.exportieren());
       _lokal?.loeschen();
@@ -470,7 +605,7 @@ class E2eeController extends Notifier<E2eeState> {
         await zurueck();
         rethrow;
       }
-      await _speicher.loeschen(altName);
+      await _inQuarantaene(altName); // der bisherige Schlüssel wird aufbewahrt, nicht gelöscht
       // der bisherige öffentliche Schlüssel bleibt auf diesem Gerät gemerkt: eigene ältere Nachrichten und Wraps lassen sich weiter prüfen (die Historie des Servers zählt nie)
       try {
         final pruefer = VertrauensPruefer(_speicher, eigeneUserId: _userId);
@@ -518,6 +653,14 @@ class E2eeController extends Notifier<E2eeState> {
     if (server == null || server.version != keyVersion || !server.gleichWie(schluessel.oeffentlich(server.version))) {
       schluessel.loeschen();
       throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüssel passt nicht mehr zu deinem Konto (er wurde inzwischen gewechselt).');
+    }
+    // ein anderer, schon vorhandener Schlüssel dieses Geräts wird nicht überschrieben, sondern aufbewahrt (Quarantäne)
+    final vorhanden = _lokal;
+    if (vorhanden != null && !vorhanden.oeffentlich(1).gleichWie(schluessel.oeffentlich(1))) {
+      if (!await _inQuarantaene(personenschluesselName(_userId))) {
+        schluessel.loeschen();
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der bisherige Schlüssel dieses Geräts ließ sich nicht sicher beiseitelegen. Es wurde nichts verändert.');
+      }
     }
     await _speicher.schreiben(personenschluesselName(_userId), schluessel.exportieren());
     _lokal?.loeschen();
@@ -732,13 +875,51 @@ class E2eeController extends Notifier<E2eeState> {
     return r.veraltet;
   }
 
-  /// Entfernt den Schlüssel von diesem Gerät (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden.
+  /// Nimmt den Schlüssel aus dem Betrieb dieses Geräts (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden. Der Schlüssel wird
+  /// **nicht gelöscht**, sondern in die Quarantäne verschoben (Profil > Verschlüsselung: "Alter Schlüssel auf diesem Gerät"). Lässt er sich nicht
+  /// verschieben, bleibt alles, wie es ist, und es gibt einen Fehler.
   Future<void> lokalenSchluesselVerwerfen() async {
-    await _speicher.loeschen(personenschluesselName(_userId));
-    await _speicher.loeschen(personenschluesselAltName(_userId));
+    final namen = [personenschluesselName(_userId), personenschluesselAltName(_userId)];
+    for (final n in namen) {
+      final vorhanden = (await _speicher.namenMitPraefix(n)).contains(n);
+      if (vorhanden && !await _inQuarantaene(n)) {
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Schlüssel dieses Geräts ließ sich nicht sicher beiseitelegen. Es wurde nichts gelöscht.');
+      }
+    }
     _lokal?.loeschen();
     _lokal = null;
     await laden();
+  }
+
+  /// Verwirft einen aufbewahrten alten Schlüssel endgültig (die Oberfläche verlangt vorher eine ausdrückliche, getippte Bestätigung).
+  Future<void> quarantaeneVerwerfen(String name) async {
+    if (!name.startsWith(quarantaenePraefix(_userId))) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Dieser Eintrag gehört nicht zu deinem Konto.');
+    await _speicher.loeschen(name);
+    await laden();
+  }
+
+  /// "Gerät abgeben": meldet ab (Sitzung, lokale Daten) und löscht danach ALLE Schlüssel dieser Person von diesem Gerät. Nur mit bestätigter Sicherung beim
+  /// Server ([geraetAbgabeLage]): der Stand wird dafür frisch geladen; ist er unbekannt oder unbestätigt, wirft das einen Fehler und nichts wird gelöscht.
+  /// Scheitert das Abmelden (Web mit Serverfehler), wird ebenfalls nichts gelöscht. Die Oberfläche verlangt vorher die getippte Bestätigung.
+  Future<AbmeldeErgebnis> geraetAbgeben() async {
+    final uid = _userId;
+    final speicher = _speicher;
+    final auth = ref.read(authProvider.notifier);
+    await laden();
+    switch (geraetAbgabeLage(state)) {
+      case GeraetAbgabeLage.moeglich:
+        break;
+      case GeraetAbgabeLage.standUnbekannt:
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Stand deiner Sicherung ließ sich gerade nicht prüfen. Es wurde nichts gelöscht.');
+      case GeraetAbgabeLage.keineBestaetigteSicherung:
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Es gibt keine bestätigte Sicherung deines Schlüssels. Es wurde nichts gelöscht.');
+      case GeraetAbgabeLage.nichtsZuLoeschen:
+        throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät liegt kein Schlüssel.');
+    }
+    // Danach ist dieser Controller verworfen (der Abmelde-Wiper leert den Zustand): nur noch lokale Werte benutzen, kein ref
+    final ergebnis = await auth.abmelden();
+    await schluesselVomGeraetLoeschen(speicher, uid);
+    return ergebnis;
   }
 
   /// Bewusstes Zurücksetzen der gemerkten Schlüssel nach einer beschädigten Ablage (die Oberfläche warnt vorher).

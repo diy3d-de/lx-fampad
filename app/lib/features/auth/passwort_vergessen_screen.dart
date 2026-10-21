@@ -1,6 +1,6 @@
 // "Passwort vergessen?": ein neues Passwort festlegen, ohne das alte zu kennen. Nur mit einem Wiederherstellungscode oder mit einem Passkey, nie mit dem
-// Code der Authenticator-App allein. Das neue Passwort verlässt das Gerät nie (nur der abgeleitete authKey). Dein Chat-Verlauf bleibt erhalten: Auf einem Gerät
-// mit deinem Schlüssel legt die App danach selbst eine neue Passwort-Sicherung an.
+// Code der Authenticator-App allein. Das neue Passwort verlässt das Gerät nie (nur der abgeleitete authKey). Dein Verlauf bleibt nur erhalten, wenn du ein Gerät
+// mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast (die Seite sagt es so, nicht pauschal); auf einem Gerät mit deinem Schlüssel legt die App danach selbst eine neue Passwort-Sicherung an.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -101,7 +101,7 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
           children: [
             const Text(
               'Du kommst nicht mehr in dein Konto? Mit einem deiner Wiederherstellungscodes oder mit deinem Passkey legst du ein neues Passwort fest. '
-              'Der Code aus der Authenticator-App allein reicht dafür nicht. Dein Chat-Verlauf bleibt erhalten.',
+              'Der Code aus der Authenticator-App allein reicht dafür nicht. Dein Verlauf bleibt erhalten, wenn du ein Gerät mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast.',
               style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
             ),
             const SizedBox(height: 8),

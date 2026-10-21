@@ -172,6 +172,7 @@ class ApiException implements Exception {
     'challenge_invalid': 'Der Vorgang ist abgelaufen. Bitte beginne noch einmal von vorn.',
     'invalid_code': 'Der Code stimmt nicht. Prüfe ihn und versuche es noch einmal.',
     'registration_failed': 'Die Registrierung ist mit diesen Angaben nicht möglich. Prüfe sie oder frage bei der Familie nach.',
+    'destructive_locked': 'Aus Sicherheitsgründen ist das gerade gesperrt, weil du dich erst vor Kurzem mit einem Wiederherstellungscode angemeldet oder dein Konto zurückgesetzt hast. Versuche es später noch einmal.',
     'last_admin': 'Der letzte Admin kann nicht herabgestuft oder entfernt werden.',
     'last_credential': 'Das ist dein letzter Zugang. Lege zuerst einen anderen an.',
     'password_exists': 'Für dein Konto gibt es schon ein Passwort. Du kannst es ändern.',

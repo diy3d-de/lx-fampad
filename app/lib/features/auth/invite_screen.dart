@@ -412,7 +412,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
                   const SizedBox(height: 8),
                   const Text(
                     'Du legst ein neues Passwort fest. Zur Sicherheit bestätigst du mit dem aktuellen Code aus deiner Authenticator-App, dass du es bist. '
-                    'Dein Chat-Verlauf bleibt erhalten.',
+                    'Dein Verlauf bleibt erhalten, wenn du ein Gerät mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast.',
                     style: TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
                   ),
                 ],

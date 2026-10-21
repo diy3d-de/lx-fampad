@@ -232,5 +232,17 @@ Future<void> main() async {
       await s.loeschen('e2ee.vertrauen.a');
       expect(await s.lesen('e2ee.vertrauen.a'), isNull);
     });
+
+    test('Namen mit Präfix, Verschieben (Quarantäne) und Browser-Ablage', () async {
+      final s = MemorySchluesselSpeicher();
+      await s.schreiben('e2ee.pk.a', Uint8List.fromList([1]));
+      await s.schreiben('e2ee.pk.b', Uint8List.fromList([2]));
+      expect(await s.namenMitPraefix('e2ee.pk.'), unorderedEquals(['e2ee.pk.a', 'e2ee.pk.b']));
+      expect(await s.verschiebe('e2ee.pk.a', 'e2ee.quarantaene.a.1'), isTrue);
+      expect(await s.lesen('e2ee.pk.a'), isNull);
+      expect(await s.lesen('e2ee.quarantaene.a.1'), [1]);
+      expect(await s.verschiebe('e2ee.pk.a', 'e2ee.quarantaene.a.2'), isFalse);
+      expect(await s.dauerhaftigkeit(), SpeicherDauer.nichtZutreffend);
+    });
   });
 }

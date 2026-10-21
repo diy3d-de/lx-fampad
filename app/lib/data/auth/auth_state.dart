@@ -1,6 +1,7 @@
 // Anmeldezustand der App (Riverpod): prüfe / abgemeldet / angemeldet / wartend auf Freigabe / Verbindungsfehler.
 // Pflicht-Update liegt in updateProvider (features/update) und hat in app.dart Vorrang vor allen Zuständen.
-// Start: GET /me prüft die Sitzung. Ausdrückliches Abmelden löscht Token und lokale Daten (Hook localDataWiperProvider für Phase 1c).
+// Start: GET /me prüft die Sitzung. Ausdrückliches Abmelden löscht Token und lokale Daten (Hook localDataWiperProvider für Phase 1c), aber NIE den
+// E2EE-Personenschlüssel: der bleibt im Schlüsselspeicher (je Person getrennt); gelöscht wird er nur durch "Gerät abgeben" (E2eeController.geraetAbgeben).
 //
 // Lokale Daten und Sitzungsverlust: Verliert die App die Sitzung (abgelaufen, widerrufen, Erneuerung gescheitert), bleibt die lokale
 // Datenbank erhalten: sie kann noch ungesendete Änderungen enthalten, die nach erneuter Anmeldung derselben Person nicht verloren
@@ -331,7 +332,7 @@ class AuthController extends Notifier<AuthState> {
 
   // ------------------------------------------------------------ Abmelden
 
-  /// Meldet dieses Gerät (oder alle Geräte) ab, löscht Token und lokale Daten.
+  /// Meldet dieses Gerät (oder alle Geräte) ab, löscht Token und lokale Daten (nicht den E2EE-Personenschlüssel: er bleibt im Schlüsselspeicher).
   ///
   /// Android: Ist der Server nicht erreichbar (offline, Störung), wird trotzdem lokal abgemeldet; der Aufrufer informiert die Person
   /// (`serverAbgemeldet == false`: die Sitzung bleibt auf dem Server bis zum Ablauf gültig).

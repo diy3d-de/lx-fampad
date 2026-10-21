@@ -1,4 +1,4 @@
-// Oberfläche der Verschlüsselung (Profil > Verschlüsselung): Einrichtung samt Wiederherstellungsschlüssel und Kontrollabfrage, Status,
+// Oberfläche der Verschlüsselung (Profil > Verschlüsselung): Einrichtung samt Wiederherstellungsschlüssel (verdecken und ganz eintippen), Status,
 // Gerät verbinden, Warnung bei Schlüsselwechsel. 360 px Breite, Textskala 1.0 und 1.5, Touch-Ziele >= 44 px.
 import 'dart:convert';
 import 'dart:typed_data';
@@ -70,28 +70,26 @@ Future<void> main() async {
           if (RegExp(r'^[A-Z2-7]{4}$').hasMatch(w.data ?? '')) w.data!,
       ];
       expect(gruppen, hasLength(14));
-      // Weiter erst nach richtiger Abfrage
-      final weiter = find.widgetWithText(FilledButton, 'Gesichert, weiter');
+      // Der Schlüssel ist sichtbar: noch keine Kontrolle; erst "notiert", dann verdeckt und ganz eintippen
+      expect(find.byType(TextField), findsNothing);
+      await tippeText(tester, 'Ich habe ihn notiert, weiter');
+      final weiter = find.widgetWithText(FilledButton, 'Stimmt, jetzt sichern');
       expect(tester.widget<FilledButton>(weiter).onPressed, isNull);
-      final felder = find.byType(TextField);
-      expect(felder, findsNWidgets(2));
+      final feld = find.byType(TextField);
+      expect(feld, findsOneWidget);
       // Falsche Eingabe lässt den Knopf gesperrt
-      await tester.enterText(felder.at(0), 'ZZZZ');
-      await tester.enterText(felder.at(1), 'ZZZZ');
+      await tester.enterText(feld, 'ZZZZ');
       await tester.pump();
       expect(tester.widget<FilledButton>(weiter).onPressed, isNull);
-      // Richtige Gruppen laut Beschriftung "Gruppe N"
-      for (var i = 0; i < 2; i++) {
-        final label = tester.widget<TextField>(felder.at(i)).decoration!.labelText!;
-        final n = int.parse(label.replaceAll('Gruppe ', ''));
-        await tester.enterText(felder.at(i), gruppen[n - 1].toLowerCase());
-      }
+      // der ganze Schlüssel, klein geschrieben
+      await tester.enterText(feld, gruppen.join('-').toLowerCase());
       await tester.pump();
       expect(tester.widget<FilledButton>(weiter).onPressed, isNotNull);
       await tippe(tester, weiter);
 
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.textContaining('gesichert'), findsWidgets);
+      expect(find.text('aktiv'), findsOneWidget, reason: 'die Sicherung liegt jetzt bestätigt beim Server');
+      expect(find.textContaining('sicherung liegt beim server (seit '), findsOneWidget);
       expect(find.text('Neues Gerät verbinden'), findsOneWidget);
       expect(a.srv.gespeichert(fixIdAdmin).contains('"backup":null'), isFalse, reason: 'Sicherung liegt beim Server');
       expect(find.textContaining('// SICHERHEITSCODE'), findsOneWidget);
@@ -106,7 +104,9 @@ Future<void> main() async {
       await tippeText(tester, 'Später sichern');
       await tippeText(tester, 'Später');
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.textContaining('nicht gesichert'), findsOneWidget);
+      expect(find.textContaining('keine sicherung · jetzt erzeugen'), findsOneWidget);
+      expect(find.textContaining('Sicherung offen'), findsOneWidget, reason: 'sichtbare Markierung nach "Später sichern"');
+      expect(find.text('aktiv'), findsNothing);
       pruefeLayout(tester, 'Verschlüsselung: ohne Sicherung');
     });
 
@@ -173,7 +173,7 @@ Future<void> main() async {
   }
 
   for (final skala in [1.0, 1.5]) {
-    testWidgets('Abmelden ohne gesicherten Schlüssel: Warnung, "Erst sichern" führt zur Verschlüsselung (360 px, Textskala $skala)', (tester) async {
+    testWidgets('Abmelden ohne Sicherung: nur der ruhige Hinweis, keine Warnung, kein "Erst sichern" (360 px, Textskala $skala)', (tester) async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
@@ -182,15 +182,16 @@ Future<void> main() async {
       await tippeText(tester, 'Später');
       await tippe(tester, find.byTooltip('Zurück'));
       await tippeText(tester, 'Abmelden');
-      expect(find.textContaining('nicht gesichert'), findsOneWidget);
-      expect(find.text('Erst sichern'), findsOneWidget);
-      pruefeLayout(tester, 'Abmelden-Dialog mit Schlüsselwarnung');
-      await tippeText(tester, 'Erst sichern');
-      expect(find.text('Eingerichtet'), findsOneWidget, reason: 'die Verschlüsselungsseite ist offen, abgemeldet wurde nicht');
+      expect(find.textContaining('Dein Schlüssel bleibt auf diesem Gerät'), findsOneWidget);
+      expect(find.textContaining('nicht gesichert'), findsNothing);
+      expect(find.text('Erst sichern'), findsNothing);
+      expect(find.text('Trotzdem abmelden'), findsNothing);
+      pruefeLayout(tester, 'Abmelden-Dialog mit Hinweis');
+      await tippeText(tester, 'Abbrechen');
       expect(a.env.geloescht, 0);
     });
 
-    testWidgets('Abmelden mit gesichertem Schlüssel: Hinweis, kein "Erst sichern" (360 px, Textskala $skala)', (tester) async {
+    testWidgets('Abmelden mit Sicherung: derselbe ruhige Hinweis (360 px, Textskala $skala)', (tester) async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
@@ -199,20 +200,17 @@ Future<void> main() async {
         for (final w in tester.widgetList<Text>(find.byType(Text)))
           if (RegExp(r'^[A-Z2-7]{4}$').hasMatch(w.data ?? '')) w.data!,
       ];
-      final felder = find.byType(TextField);
-      for (var i = 0; i < 2; i++) {
-        final n = int.parse(tester.widget<TextField>(felder.at(i)).decoration!.labelText!.replaceAll('Gruppe ', ''));
-        await tester.enterText(felder.at(i), gruppen[n - 1]);
-      }
+      await tippeText(tester, 'Ich habe ihn notiert, weiter');
+      await tester.enterText(find.byType(TextField), gruppen.join('-'));
       await tester.pump();
-      await tippe(tester, find.widgetWithText(FilledButton, 'Gesichert, weiter'));
+      await tippe(tester, find.widgetWithText(FilledButton, 'Stimmt, jetzt sichern'));
       await tippe(tester, find.byTooltip('Zurück'));
       await tester.pump(const Duration(seconds: 6)); // Hinweisleiste (SnackBar) verdeckt sonst den Knopf
       await warte(tester);
       await tippeText(tester, 'Abmelden');
-      expect(find.textContaining('Wiederherstellungsschlüssel wieder an deine Chats, aber nur, wenn du ihn noch hast'), findsOneWidget);
+      expect(find.textContaining('Dein Schlüssel bleibt auf diesem Gerät'), findsOneWidget);
       expect(find.text('Erst sichern'), findsNothing);
-      pruefeLayout(tester, 'Abmelden-Dialog gesichert');
+      pruefeLayout(tester, 'Abmelden-Dialog mit Sicherung');
     });
   }
 
