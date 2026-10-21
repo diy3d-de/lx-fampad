@@ -50,8 +50,10 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
     const fam = await createFamily(w1);
     const personen = [fam.admin, fam.parent, fam.child];
     for (const d of personen) expect((await d.client.post('/api/v1/me/keys', { publicEncKey: key(), publicSignKey: key() })).status).toBe(200);
-    expect((await fam.admin.client.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 })).status).toBe(200);
-    expect((await fam.parent.client.post('/api/v1/me/key-transfer', { lookup: key(), blob: blob(), keyVersion: 1 })).status).toBe(200);
+    const adminBlob = blob();
+    expect((await fam.admin.client.put('/api/v1/me/key-backup', { blob: adminBlob, keyVersion: 1 })).status).toBe(200);
+    // Übertragung direkt in der Datenbank: die Route schreibt seit 0020 ein Sicherheitsereignis (Tabelle erst seit 0019, hier Stand 0012)
+    await db.execute(sql`insert into key_transfers (user_id, lookup_hash, blob, key_version, created_at, expires_at) values (${fam.parent.userId}, ${key()}, ${blob()}, 1, now(), now() + interval '1 day')`);
     // Schlüsselwechsel des Kindes direkt in der Datenbank (die neue Rotation braucht schon die Tabelle von 0014): Historie und Version 2
     await db.execute(sql`insert into person_key_history (user_id, key_version, enc_key, sign_key, valid_from, valid_until) select user_id, key_version, public_enc_key, public_sign_key, updated_at, now() from person_keys where user_id = ${fam.child.userId}`);
     await db.execute(sql`update person_keys set public_enc_key = ${key()}, public_sign_key = ${key()}, key_version = 2, updated_at = now() where user_id = ${fam.child.userId}`);
@@ -71,12 +73,10 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
     /** Antworten der alten Routen (Sync-Abruf zuletzt, damit er nichts davor verändert). */
     const antworten = async (w: World, ds: Device[]): Promise<Json> => {
       const [admin, parent, child] = ds as [Device, Device, Device];
+      // /me/keys und /me/key-backup schreiben seit 0020 in neue Tabellen (archive, security_events): auf dem Stand 0012 gibt es sie nicht, geprüft wird nach der Migration
       const out: Json = {
-        keysAdmin: (await admin.client.get('/api/v1/me/keys')).json,
-        keysChild: (await child.client.get('/api/v1/me/keys')).json,
         members: (await admin.client.get('/api/v1/members')).json,
         historie: (await parent.client.get(`/api/v1/members/${child.userId}/keys`)).json,
-        sicherung: (await admin.client.get('/api/v1/me/key-backup')).json,
       };
       void w;
       for (const [name, d] of [['admin', admin], ['parent', parent], ['child', child]] as const) out[`pull_${name}`] = await d.pull();
@@ -120,6 +120,11 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
       });
       const r = await antworten(w, ds);
       expect(r, `Schalter ${flag ?? 'aus'}`).toEqual(r1);
+      // die Schlüssel-Routen: gleicher Bestand, nur die neuen Felder kommen additiv dazu (nichts archiviert, nichts verloren)
+      const [admin, , child] = ds as [Device, Device, Device];
+      expect((await admin.client.get('/api/v1/me/keys')).json).toMatchObject({ keys: { keyVersion: 1 }, hasBackup: true, pwBackupVerifiedAt: null, archiveCount: 0 });
+      expect((await child.client.get('/api/v1/me/keys')).json).toMatchObject({ keys: { keyVersion: 2 }, hasBackup: false, recoveryBackupAt: null, archiveCount: 0 });
+      expect((await admin.client.get('/api/v1/me/key-backup')).json).toEqual({ blob: adminBlob, keyVersion: 1 });
       await w.close();
       welten.pop();
     }

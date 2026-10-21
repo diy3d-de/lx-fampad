@@ -12,6 +12,7 @@ import type { AuthContext, Executor, RequestMeta, Tx } from './context.js';
 import { assertNotLocked, clearAccountFailures, ipKey, loginKeys, recordLoginFailure } from './lockout.js';
 import { verifyPassword } from './password.js';
 import { consumeRecoveryCode, countRemainingCodes, isRecoveryCodeValid } from './recovery.js';
+import { recordSecurityEvent, wakeAfterCommit, wakeTopics } from './security-events.js';
 import { establishSession, markStepUp, type AuthMethod, type DeviceInput, type Established, type SessionKind } from './sessions.js';
 import { checkTotp } from './totp.js';
 import type { Role, SessionPrincipal } from './types.js';
@@ -84,14 +85,20 @@ export async function failLogin(ctx: AuthContext, meta: RequestMeta, method: str
 async function finishLogin(
   ctx: AuthContext,
   account: Account,
-  input: { client: SessionKind; device?: DeviceInput | undefined; method: AuthMethod; meta: RequestMeta; verbrauchen?: ((tx: Tx) => Promise<boolean>) | undefined },
+  input: { client: SessionKind; device?: DeviceInput | undefined; method: AuthMethod; meta: RequestMeta; verbrauchen?: ((tx: Tx) => Promise<boolean>) | undefined; mitWiederherstellungscode?: boolean },
 ): Promise<Established | null> {
   if (account.disabled) throw invalidCredentials();
   if (account.status === 'pending') throw pending();
+  // Zugang über einen einzelnen Wiederherstellungscode: Sitzung mit Herkunft (destruktive Schlüssel-Aktionen 24 h gesperrt), Ereignis + Wecker für die eigenen Geräte
+  const origin = input.mitWiederherstellungscode ? 'recovery_code' : 'login';
+  const topics = origin === 'recovery_code' ? await wakeTopics(ctx.db, account.userId) : [];
   const established = await ctx.db.transaction(async (tx) => {
     if (input.verbrauchen && !(await input.verbrauchen(tx))) return null;
-    return establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.method, meta: input.meta });
+    const est = await establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.method, origin, meta: input.meta });
+    if (origin === 'recovery_code') await recordSecurityEvent(ctx, tx, { familyId: account.familyId, userId: account.userId, kind: 'recovery_code_login', via: 'recovery_code', actorId: null });
+    return est;
   });
+  if (established && origin === 'recovery_code') wakeAfterCommit(ctx, account.familyId, account.userId, topics);
   // Passkeys sind nicht ratbar: sie setzen die Zähler der Passwort-Anmeldung nicht zurück
   if (established && input.method !== 'passkey') await clearAccountFailures(ctx, input.meta.ip, account.email);
   return established;
@@ -186,12 +193,14 @@ export async function loginWithPassword(
   if (account.disabled) return failLogin(ctx, meta, 'password', input.email, account, via);
   // Zweiter Faktor: zuerst nur prüfen; verbraucht wird er erst in der Anmelde-Transaktion, nach der Statusprüfung
   let verbrauchen: ((tx: Tx) => Promise<boolean>) | undefined;
+  let mitWiederherstellungscode = false;
   if (input.totp) {
     const hit = await checkUserTotp(ctx, account.userId, input.totp);
     if (hit) verbrauchen = (tx) => claimTotpStep(ctx, tx, hit);
   } else if (input.recoveryCode) {
     const code = input.recoveryCode;
     if (await isRecoveryCodeValid(ctx, account.userId, code)) {
+      mitWiederherstellungscode = true;
       verbrauchen = async (tx) => {
         if (!(await consumeRecoveryCode(ctx, account.userId, code, tx))) return false;
         await writeAudit(ctx, tx, { event: 'recovery_code_used', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { with: 'password' } });
@@ -221,7 +230,7 @@ export async function loginWithPassword(
     };
   }
   // Erst nach erfolgreicher Prüfung von Passwort UND zweitem Faktor darf die Antwort den Status verraten (403 account_pending)
-  const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'password', meta, verbrauchen });
+  const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'password', meta, verbrauchen, mitWiederherstellungscode });
   return est ?? failLogin(ctx, meta, 'password', input.email, account, via);
 }
 
@@ -242,7 +251,7 @@ export async function loginWithRecoveryCode(
     await writeAudit(ctx, tx, { event: 'recovery_code_used', familyId: account.familyId, actorId: account.userId, ip: meta.ip, detail: { with: 'recovery' } });
     return true;
   };
-  const session = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'recovery', meta, verbrauchen });
+  const session = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'recovery', meta, verbrauchen, mitWiederherstellungscode: true });
   if (!session) return failLogin(ctx, meta, 'recovery', input.email, account);
   return { session, remainingCodes: await countRemainingCodes(ctx, account.userId) };
 }

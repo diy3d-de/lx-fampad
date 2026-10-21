@@ -15,7 +15,7 @@ import { findAccountById } from './login.js';
 import { assertNotLocked, clearFailures, recordFailure } from './lockout.js';
 import { assertPasswordPolicy, hashPassword } from './password.js';
 import { isUniqueViolation } from './register.js';
-import { consumeStepUp, requireStepUp, revokeAllForUser } from './sessions.js';
+import { consumeStepUp, markAccessChanged, requireDestructiveAllowed, requireStepUp, revokeAllForUser } from './sessions.js';
 import { checkTotp, newTotpSecret, totpUri } from './totp.js';
 import type { SessionPrincipal } from './types.js';
 
@@ -29,6 +29,7 @@ const noPassword = () => new AppError(409, 'no_password', 'Für dein Konto ist k
 
 /** Schritt 1: Passwort prüfen und hashen, TOTP-Geheimnis erzeugen. Gespeichert wird nur die Challenge. */
 export async function startAddPassword(ctx: AuthContext, p: SessionPrincipal, input: { password?: string | undefined; authKey?: string | undefined }) {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   assertPasswordInputAllowed(ctx, input);
   const account = await findAccountById(ctx, p.userId, p.familyId);
@@ -71,6 +72,7 @@ export async function startAddPassword(ctx: AuthContext, p: SessionPrincipal, in
 
 /** Schritt 2: Code bestätigen; Passwort und TOTP werden gemeinsam angelegt. */
 export async function finishAddPassword(ctx: AuthContext, p: SessionPrincipal, input: { challengeId: string; code: string }, meta: RequestMeta): Promise<void> {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   const account = await findAccountById(ctx, p.userId, p.familyId);
   if (!account) throw notFound();
@@ -101,6 +103,7 @@ export async function finishAddPassword(ctx: AuthContext, p: SessionPrincipal, i
         .returning({ id: credentials.id, type: credentials.type });
       const pw = inserted.find((c) => c.type === 'password');
       if (data.authHash && pw) await saveAuthKeyDigest(tx, { userId: p.userId, credentialId: pw.id, digest: data.authHash, now });
+      await markAccessChanged(ctx, tx, p.userId);
       await writeAudit(ctx, tx, { event: 'password_added', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
       await revokeAllForUser(ctx, tx, p.userId, { exceptSessionId: p.sessionId });
       await consumeStepUp(tx, p.sessionId);
@@ -126,6 +129,7 @@ export async function changePassword(
   input: { password?: string | undefined; authKey?: string | undefined; pwBackupId?: string | undefined },
   meta: RequestMeta,
 ): Promise<void> {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   assertPasswordInputAllowed(ctx, input);
   if (input.pwBackupId !== undefined && input.authKey === undefined) throw new AppError(400, 'invalid_request');
@@ -161,6 +165,7 @@ export async function changePassword(
       await saveAuthKeyDigest(tx, { userId: p.userId, credentialId: neu.id, digest: authKeyDigest(ctx, p.userId, input.authKey), now });
       if (input.pwBackupId !== undefined) await promotePwBackup(ctx, tx, p, input.pwBackupId, meta, true);
     }
+    await markAccessChanged(ctx, tx, p.userId);
     await writeAudit(ctx, tx, {
       event: 'password_changed',
       familyId: p.familyId,
@@ -175,6 +180,7 @@ export async function changePassword(
 
 /** Passwort samt TOTP entfernen, aber nur wenn mindestens ein Passkey als Anmeldeart bleibt. */
 export async function removePassword(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta): Promise<void> {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   await ctx.db.transaction(async (tx) => {
     const own = await tx
@@ -191,6 +197,7 @@ export async function removePassword(ctx: AuthContext, p: SessionPrincipal, meta
       await tx.update(credentials).set({ revokedAt: now }).where(eq(credentials.id, c.id));
     }
     await tx.delete(webauthnChallenges).where(and(eq(webauthnChallenges.userId, p.userId), eq(webauthnChallenges.purpose, 'add_password')));
+    await markAccessChanged(ctx, tx, p.userId);
     await writeAudit(ctx, tx, { event: 'password_removed', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
     await revokeAllForUser(ctx, tx, p.userId, { exceptSessionId: p.sessionId });
     await consumeStepUp(tx, p.sessionId);

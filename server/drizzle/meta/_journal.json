@@ -141,6 +141,13 @@
       "when": 1792595434304,
       "tag": "0019_passwort_reset",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792614331153,
+      "tag": "0020_kein_datenverlust",
+      "breakpoints": true
     }
   ]
 }
