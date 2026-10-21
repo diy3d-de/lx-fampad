@@ -117,6 +117,14 @@ WochenLayout wochenLayout({required DateTime montag, required Iterable<BalkenQue
   return WochenLayout(balken: balken, mehr: mehr, spuren: sichtbar);
 }
 
+/// Wie viele Spuren (Balkenzeilen) unter der Tageszahl in eine Wochenzeile der Höhe [zeilenHoehe] passen.
+int spurenFuerHoehe(double zeilenHoehe, double tageszeile, double spur) => ((zeilenHoehe - tageszeile - 2) / spur).floor();
+
+/// Ferien und Feiertage werden erst ab drei Spuren als Balken gezeichnet; darunter nähmen sie den Terminen den Platz und erscheinen nur als
+/// Zellenfarbe (Tönung bzw. Streifen oben in der Zelle).
+const kMinSpurenFuerHinweisbalken = 3;
+bool hinweiseAlsBalken(int maxSpuren) => maxSpuren >= kMinSpurenFuerHinweisbalken;
+
 /// ISO-Kalenderwoche (Woche mit dem Donnerstag im Jahr) eines Tages.
 int kalenderwoche(DateTime tag) {
   final d = DateTime.utc(tag.year, tag.month, tag.day);

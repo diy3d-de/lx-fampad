@@ -15,11 +15,11 @@ import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../lists/list_dialogs.dart' show bestaetigen;
+import '../shell/shell_tab.dart';
 import 'calendar_state.dart';
 import 'kalender_leiste.dart';
 import 'kalender_monat.dart';
 import 'kalender_tag.dart';
-import '../shell/shell_tab.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
 
@@ -75,18 +75,21 @@ class CalendarScreen extends ConsumerWidget {
 
     // Nur das Hauptscrollable (Liste bzw. Raster, Tiefe 0) steuert die Kopfzeile; im Desktop-Layout bleibt sie immer sichtbar (Profil und Sync stehen in der Seitenleiste)
     bool beiScroll(ScrollNotification n) {
-      if (breit || n.depth != 0 || n.metrics.axis != Axis.vertical || !kopf.beruhigt) return false;
+      if (breit || n.depth != 0 || n.metrics.axis != Axis.vertical) return false;
       if (n is ScrollUpdateNotification) {
         final d = n.scrollDelta ?? 0;
         if (n.metrics.pixels <= 0) {
-          kopf.setzen(false);
-        } else if (d > 0 && n.metrics.pixels > 24 && n.metrics.maxScrollExtent > _kEinklappenAb) {
-          kopf.setzen(true);
-        } else if (d < 0) {
-          kopf.setzen(false);
+          kopf.setzen(false); // am Anfang immer wieder einblenden
+        } else if (kopf.beruhigt) {
+          // Richtungswechsel nur außerhalb der Einklapp-Animation, sonst springt die Kopfzeile
+          if (d > 0 && n.metrics.pixels > 24 && n.metrics.maxScrollExtent > _kEinklappenAb) {
+            kopf.setzen(true);
+          } else if (d < 0) {
+            kopf.setzen(false);
+          }
         }
       } else if (n is OverscrollNotification && n.overscroll < 0) {
-        kopf.setzen(false);
+        kopf.setzen(false); // Herunterziehen am Anfang immer
       }
       return false;
     }

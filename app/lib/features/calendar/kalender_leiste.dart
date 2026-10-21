@@ -10,9 +10,9 @@ import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/monat_layout.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
+import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart' show ProfilButton;
 import '../../widgets/sync_anzeige.dart';
-import '../../ui/widgets.dart';
 import 'calendar_state.dart';
 import 'ics_export_screen.dart';
 import 'ics_import_screen.dart';
@@ -63,12 +63,22 @@ class KalenderLeiste extends ConsumerWidget {
     final d = await showDatePicker(
       context: context,
       useRootNavigator: false,
-      initialDate: a.tag,
+      initialDate: a.ansicht == KalenderAnsicht.monat ? a.monat : a.tag,
       firstDate: DateTime.utc(2000),
       lastDate: DateTime.utc(2100, 12, 31),
       helpText: a.ansicht == KalenderAnsicht.monat ? 'Monat wählen' : 'Woche wählen',
     );
     if (d != null) ref.read(kalenderAuswahlProvider.notifier).tag(d);
+  }
+
+  /// Manueller Abgleich (wie der Sync-Indikator der Kopfzeile) mit kurzer Rückmeldung.
+  Future<void> _abgleichen(BuildContext context, WidgetRef ref) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await ref.read(syncProvider.notifier).synchronisieren(manuell: true);
+    if (!context.mounted) return;
+    final s = ref.read(syncProvider);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(s.status == SyncStatus.synchron ? 'Abgeglichen' : (s.meldung ?? 'Der Abgleich ist nicht möglich: ${syncAnzeige(s).$1}.'))));
   }
 
   @override
@@ -93,8 +103,13 @@ class KalenderLeiste extends ConsumerWidget {
       onSelected: (w) {
         if (w == 'import') icsImportOeffnen(context);
         if (w == 'export') icsExportOeffnen(context);
+        if (w == 'heute') ref.read(kalenderAuswahlProvider.notifier).tag(heuteTag());
+        if (w == 'sync') _abgleichen(context, ref);
       },
       itemBuilder: (_) => [
+        // eingeklappte Kopfzeile: Heute und der Abgleich (sonst in Leiste bzw. Kopfzeile) liegen hier, damit der Titel Platz behält
+        if (profil && nav) const PopupMenuItem(value: 'heute', child: Text('Heute')),
+        if (profil) PopupMenuItem(value: 'sync', child: Text('Jetzt abgleichen (${syncAnzeige(ref.read(syncProvider)).$1})')),
         if (darfAnlegen) const PopupMenuItem(value: 'import', child: Text('Importieren')),
         const PopupMenuItem(value: 'export', child: Text('Kalender exportieren')),
       ],
@@ -112,7 +127,7 @@ class KalenderLeiste extends ConsumerWidget {
                 if (nav) IconButton(style: _kompakt, tooltip: zurueck, onPressed: () => _verschiebe(ref, a, -1), icon: const Icon(Icons.chevron_left)),
                 Expanded(child: Padding(padding: EdgeInsets.only(left: nav ? 0 : 12), child: titelWidget)),
                 if (nav) IconButton(style: _kompakt, tooltip: weiter, onPressed: () => _verschiebe(ref, a, 1), icon: const Icon(Icons.chevron_right)),
-                if (nav)
+                if (nav && !profil)
                   Tooltip(
                     message: 'Heute',
                     child: Semantics(
@@ -432,6 +447,10 @@ class _FilterBlatt extends ConsumerWidget {
             _SchalterZeile(text: 'Feiertage', farbe: kFeiertag, provider: feiertageAnzeigenProvider),
             _SchalterZeile(text: 'Schulferien', farbe: kFerien, provider: ferienAnzeigenProvider),
             _SchalterZeile(text: 'Geburtstage', farbe: kGeburtstag, provider: geburtstageAnzeigenProvider),
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Bei wenig Platz im Raster: getönte Zelle = Schulferien, Streifen oben = Feiertag.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+            ),
             const SizedBox(height: 12),
             FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fertig')),
           ],

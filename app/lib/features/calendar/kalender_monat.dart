@@ -141,9 +141,9 @@ class _WochenZeile extends StatelessWidget {
     final spur = _spurHoehe(context, breit);
     return LayoutBuilder(
       builder: (context, c) {
-        final maxSpuren = ((c.maxHeight - tageszeile - 2) / spur).floor();
+        final maxSpuren = spurenFuerHoehe(c.maxHeight, tageszeile, spur);
         // Ferien und Feiertage nehmen auf kleinen Bildschirmen den Terminen den Platz: unter drei Spuren nur als Zellenfarbe (Streifen oben, Tönung), der Name steht im Tagesblatt
-        final kompakt = maxSpuren < 3;
+        final kompakt = !hinweiseAlsBalken(maxSpuren);
         final layout = wochenLayout(montag: montag, quellen: kompakt ? [for (final q in quellen) if (q.art == BalkenArt.termin) q] : quellen, maxSpuren: maxSpuren);
         final spaltenBreite = (c.maxWidth - kwBreite) / 7;
         final tage = [for (var i = 0; i < 7; i++) DateTime.utc(montag.year, montag.month, montag.day + i)];
@@ -220,6 +220,12 @@ class _WochenZeile extends StatelessWidget {
     );
   }
 
+  static Color? _grundfarbe({required bool markiert, required bool hatFerien, required bool wochenende}) {
+    final ferien = hatFerien ? kFerien.withValues(alpha: 0.14) : null;
+    if (markiert) return ferien == null ? kAccentSoft : Color.alphaBlend(kAccentSoft, ferien);
+    return ferien ?? (wochenende ? kTextStrong.withValues(alpha: 0.025) : null);
+  }
+
   Widget _tagZelle(DateTime tag, int spalte, bool kompakt) {
     final istHeute = tag == heute;
     final imMonat = tag.month == monat.month && tag.year == monat.year;
@@ -251,18 +257,31 @@ class _WochenZeile extends StatelessWidget {
         key: ValueKey('kalender-tag-${tag.toIso8601String().substring(0, 10)}'),
         onTap: () => onTag(tag),
         child: Container(
+          // Ferien-Tönung bleibt unter der Markierung von heute und dem gewählten Tag sichtbar (nur überlagert, nie ersetzt)
           decoration: BoxDecoration(
-            color: markiert ? kAccentSoft : (istHeute ? kAccent.withValues(alpha: 0.07) : (hatFerien ? kFerien.withValues(alpha: 0.14) : (spalte >= 5 ? kTextStrong.withValues(alpha: 0.025) : null))),
-            border: Border(left: const BorderSide(color: kBorderSoft), top: hatFeiertag ? const BorderSide(color: kFeiertag, width: 3) : BorderSide.none),
+            color: _grundfarbe(markiert: markiert, hatFerien: hatFerien, wochenende: spalte >= 5),
+            border: const Border(left: BorderSide(color: kBorderSoft)),
           ),
-          foregroundDecoration: istHeute ? BoxDecoration(border: Border.all(color: kAccent)) : null,
-          alignment: breit ? Alignment.topLeft : Alignment.topCenter,
-          padding: EdgeInsets.only(top: breit ? 5 : 2, left: breit ? 8 : 0),
-          child: Container(
-            constraints: BoxConstraints(minWidth: breit ? 24 : 20),
-            padding: EdgeInsets.symmetric(horizontal: breit ? 5 : 3, vertical: 2),
-            decoration: BoxDecoration(color: istHeute ? kAccent : null, borderRadius: BorderRadius.circular(11)),
-            child: Text('${tag.day}', textAlign: TextAlign.center, style: zahlStil),
+          foregroundDecoration: istHeute ? BoxDecoration(color: kAccent.withValues(alpha: 0.07), border: Border.all(color: kAccent)) : null,
+          child: Stack(
+            children: [
+              // Feiertag (bei wenig Platz): Streifen oben, ohne den Inhalt der Zelle zu verschieben
+              if (hatFeiertag) const Positioned(left: 0, right: 0, top: 0, height: 3, child: ColoredBox(color: kFeiertag)),
+              Positioned.fill(
+                child: Align(
+                  alignment: breit ? Alignment.topLeft : Alignment.topCenter,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: breit ? 5 : 2, left: breit ? 8 : 0),
+                    child: Container(
+                      constraints: BoxConstraints(minWidth: breit ? 24 : 20),
+                      padding: EdgeInsets.symmetric(horizontal: breit ? 5 : 3, vertical: 2),
+                      decoration: BoxDecoration(color: istHeute ? kAccent : null, borderRadius: BorderRadius.circular(11)),
+                      child: Text('${tag.day}', textAlign: TextAlign.center, style: zahlStil),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),

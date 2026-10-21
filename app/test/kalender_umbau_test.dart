@@ -9,10 +9,10 @@ import 'package:lx_fampad/data/calendar/feiertage.dart' show TagesHinweis, Tages
 import 'package:lx_fampad/data/calendar/monat_layout.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/calendar/ics_import_screen.dart';
-import 'package:lx_fampad/features/calendar/kalender_monat.dart';
-import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/calendar/kalender_leiste.dart' show KalenderLeiste;
+import 'package:lx_fampad/features/calendar/kalender_monat.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart';
+import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/widgets/kopfzeile.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
@@ -102,6 +102,15 @@ void main() {
       final eins = wochenLayout(montag: montag, quellen: qs, maxSpuren: 1);
       expect(eins.balken, isEmpty);
       expect(eins.mehr[2], 6);
+    });
+
+    test('Spuren aus der Zeilenhöhe; Ferien/Feiertage erst ab drei Spuren als Balken', () {
+      expect(spurenFuerHoehe(94, 22, 16), 4);
+      expect(spurenFuerHoehe(60, 30, 24), 1);
+      expect(spurenFuerHoehe(20, 22, 16), lessThan(1));
+      expect(hinweiseAlsBalken(2), isFalse);
+      expect(hinweiseAlsBalken(3), isTrue);
+      expect(hinweiseAlsBalken(0), isFalse);
     });
 
     test('Kalenderwoche (ISO) und Wochen des Monats', () {
@@ -468,12 +477,12 @@ void main() {
         e.sync.andereAendert('termin', _id(2), zeitUtc('Schwimmen', '2026-10-07T13:00:00.000Z', '2026-10-07T14:00:00.000Z'));
       },
     );
-    await lauf(1.0, 1000); // genug Höhe für drei Spuren
+    await lauf(1.0, 1200); // deutlich genug Platz für drei Spuren
     expect(find.text('Herbstferien'), findsWidgets, reason: 'genug Platz: Balken');
     expect(find.text('Zahnarzt'), findsOneWidget);
     expect(find.text('Schwimmen'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
-    await lauf(1.5, 800);
+    await lauf(1.5, 640); // deutlich zu wenig Platz für drei Spuren (die Entscheidung selbst: siehe Test der reinen Funktionen)
     expect(find.text('Herbstferien'), findsNothing, reason: 'wenig Spuren: keine Ferienbalken');
     expect(find.text('Zahnarzt'), findsOneWidget);
     expect(find.text('Schwimmen'), findsOneWidget);
@@ -484,29 +493,48 @@ void main() {
   });
 
   testWidgets('Textskala 2.0 bei 360 px: Monat, Filterblatt und Agenda ohne Layoutfehler', (tester) async {
-    await start(tester, skala: 2.0, monat: _d(2027, 3, 10), vorher: (e) => e.sync.andereAendert('termin', _id(1), zeitUtc('Zahnarzt', '2027-03-10T09:00:00.000Z', '2027-03-10T10:00:00.000Z')));
-    // die (nicht für 2.0 ausgelegte, unveränderte) Startseite meldet beim Aufbau einen Überlauf: hier zählt nur der Kalender
-    while (tester.takeException() != null) {}
-    pruefeLayout(tester, 'Monat 2.0');
-    await tippe(tester, filterKnopf);
-    pruefeLayout(tester, 'Filterblatt 2.0');
-    await tippeText(tester, 'Fertig');
-    await tippeText(tester, 'Agenda');
-    pruefeLayout(tester, 'Agenda 2.0');
+    // Die (nicht für 2.0 ausgelegte, unveränderte) Startseite meldet beim Aufbau einen Überlauf: nur dieser bekannte Fall wird ausgenommen,
+    // jeder andere Fehler (auch im Kalender) lässt den Test scheitern.
+    final alt = FlutterError.onError;
+    FlutterError.onError = (d) {
+      if (d.toString().contains('RenderFlex overflowed') && d.toString().contains('home_screen.dart')) return;
+      alt!(d);
+    };
+    try {
+      await start(tester, skala: 2.0, monat: _d(2027, 3, 10), vorher: (e) => e.sync.andereAendert('termin', _id(1), zeitUtc('Zahnarzt', '2027-03-10T09:00:00.000Z', '2027-03-10T10:00:00.000Z')));
+      pruefeLayout(tester, 'Monat 2.0');
+      await tippe(tester, filterKnopf);
+      pruefeLayout(tester, 'Filterblatt 2.0');
+      await tippeText(tester, 'Fertig');
+      await tippeText(tester, 'Agenda');
+      pruefeLayout(tester, 'Agenda 2.0');
+    } finally {
+      FlutterError.onError = alt;
+    }
   });
 
-  testWidgets('Titel "September 2026" wird bei 360 px nicht abgeschnitten, auch bei eingeklappter Kopfzeile mit Profil-Knopf', (tester) async {
+  testWidgets('Titel "September 2026" bleibt bei 360 px lesbar (mind. 14 px Schrift), auch eingeklappt; dort liegen Heute und Abgleich im Mehr-Menü', (tester) async {
     final (_, container) = await start(tester, monat: _d(2026, 9, 10));
     for (final eingeklappt in [false, true]) {
       container.read(kalenderKopfEingeklapptProvider.notifier).setzen(eingeklappt);
       await warte(tester);
       final titel = find.text('September 2026');
       expect(titel, findsOneWidget);
+      final natuerlich = tester.getSize(titel).width; // Breite bei Schriftgröße 18 vor der Skalierung
+      final sichtbar = tester.getBottomRight(titel).dx - tester.getTopLeft(titel).dx;
+      expect(sichtbar, greaterThanOrEqualTo(115), reason: 'Titel mindestens ~120 px breit (eingeklappt=$eingeklappt)');
+      expect(18 * sichtbar / natuerlich, greaterThanOrEqualTo(14), reason: 'tatsächliche Schriftgröße (eingeklappt=$eingeklappt)');
       expect(tester.getTopLeft(titel).dx, greaterThanOrEqualTo(tester.getBottomRight(find.byTooltip('Vorheriger Monat')).dx - 0.5));
       expect(tester.getBottomRight(titel).dx, lessThanOrEqualTo(tester.getTopLeft(find.byTooltip('Nächster Monat')).dx + 0.5));
       expect(find.byType(ProfilButton), findsOneWidget, reason: 'in der Kopfzeile oder (eingeklappt) in der Leiste');
+      expect(find.byTooltip('Heute'), eingeklappt ? findsNothing : findsOneWidget);
       pruefeLayout(tester, 'Leiste eingeklappt=$eingeklappt');
     }
+    await tippe(tester, find.byTooltip('Mehr: Importieren, Exportieren'));
+    expect(find.text('Heute'), findsOneWidget);
+    expect(find.textContaining('Jetzt abgleichen'), findsOneWidget);
+    await tippeText(tester, 'Heute');
+    expect(container.read(kalenderAuswahlProvider).monat, DateTime.utc(heuteTag().year, heuteTag().month));
   });
 
   testWidgets('Tipp auf einen Tag des Folgemonats wechselt den Monat nicht; eingeklappt steht der Profil-Knopf in der Leiste', (tester) async {
@@ -533,25 +561,60 @@ void main() {
     expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
   });
 
-  testWidgets('kurze Agenda: die Kopfzeile bleibt beim Scrollen stehen (kein Flackern bei knapp überlangem Inhalt)', (tester) async {
-    await start(
-      tester,
-      monatsansicht: false,
-      vorher: (e) {
-        final heute = heuteTag();
-        for (var i = 0; i < 6; i++) {
-          e.sync.andereAendert('termin', _id(i + 1), _ganztaegig('Kurz $i', heute.add(Duration(days: i)), heute.add(Duration(days: i))));
-        }
-      },
-    );
+  ScrollPosition agendaPosition(WidgetTester tester) => tester.state<ScrollableState>(find.descendant(of: find.byType(ListView), matching: find.byType(Scrollable)).first).position;
+
+  void viele(TestUmgebung e, int n) {
+    final heute = heuteTag();
+    for (var i = 0; i < n; i++) {
+      e.sync.andereAendert('termin', _id(i + 1), _ganztaegig('Tag $i', heute.add(Duration(days: i)), heute.add(Duration(days: i))));
+    }
+  }
+
+  testWidgets('knapp überlange Agenda (Scrollweite zwischen 80 und 200 px): die Kopfzeile bleibt beim Scrollen stehen', (tester) async {
+    await start(tester, monatsansicht: false, groesse: const Size(360, 800), vorher: (e) => viele(e, 12));
+    // Fenster so einstellen, dass der Inhalt genau 140 px länger ist als der sichtbare Bereich
+    var pos = agendaPosition(tester);
+    final inhalt = pos.maxScrollExtent + pos.viewportDimension;
+    tester.view.physicalSize = Size(360, 800 + (inhalt - 140) - pos.viewportDimension);
+    await warte(tester);
+    pos = agendaPosition(tester);
+    expect(pos.maxScrollExtent, inInclusiveRange(80, 200), reason: 'Voraussetzung des Tests: knapp überlang');
     for (var i = 0; i < 3; i++) {
-      await tester.drag(find.byType(ListView), const Offset(0, -150));
+      await tester.drag(find.byType(ListView), const Offset(0, -120));
       await warte(tester);
-      expect(find.byType(TabKopfzeile), findsOneWidget);
-      await tester.drag(find.byType(ListView), const Offset(0, 150));
+      expect(find.byType(TabKopfzeile), findsOneWidget, reason: 'kein Einklappen bei knapp überlangem Inhalt');
+      await tester.drag(find.byType(ListView), const Offset(0, 120));
       await warte(tester);
       expect(find.byType(TabKopfzeile), findsOneWidget);
     }
+  });
+
+  testWidgets('lange Agenda: Scrollen klappt ein, Zurückscrollen klappt aus; kurz nach dem Einklappen gilt die Beruhigung nur für Richtungswechsel', (tester) async {
+    final (_, container) = await start(tester, monatsansicht: false, vorher: (e) => viele(e, 40));
+    expect(agendaPosition(tester).maxScrollExtent, greaterThan(200));
+    final kopf = container.read(kalenderKopfEingeklapptProvider.notifier);
+    await tester.drag(find.byType(ListView), const Offset(0, -400));
+    expect(container.read(kalenderKopfEingeklapptProvider), isTrue, reason: 'Scrollen nach unten klappt ein');
+    // sofort zurück: noch in der Beruhigung (Animation), die Kopfzeile bleibt eingeklappt
+    expect(kopf.beruhigt, isFalse);
+    await tester.drag(find.byType(ListView), const Offset(0, 30));
+    expect(container.read(kalenderKopfEingeklapptProvider), isTrue, reason: 'Richtungswechsel innerhalb von 250 ms wird ignoriert');
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(kopf.beruhigt, isTrue);
+    await tester.drag(find.byType(ListView), const Offset(0, 30));
+    await warte(tester);
+    expect(container.read(kalenderKopfEingeklapptProvider), isFalse, reason: 'Hochscrollen klappt wieder aus');
+    expect(find.byType(TabKopfzeile), findsOneWidget);
+  });
+
+  testWidgets('Zurück an den Anfang blendet die Kopfzeile sofort ein, auch innerhalb der Beruhigung', (tester) async {
+    final (_, container) = await start(tester, monatsansicht: false, vorher: (e) => viele(e, 40));
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(container.read(kalenderKopfEingeklapptProvider), isTrue);
+    agendaPosition(tester).jumpTo(0);
+    await tester.pump();
+    expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
   });
 
   testWidgets('Desktop klappt die Kopfzeile nie ein (Profil und Sync stehen in der Seitenleiste)', (tester) async {
