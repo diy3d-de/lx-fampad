@@ -18,6 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../api/api_error.dart';
 import '../api/fampad_api.dart';
+import '../api/models.dart' show ServerFaehigkeiten;
 import '../api/token_store.dart';
 import '../crypto/crypto_fehler.dart';
 import '../crypto/crypto_provider.dart';
@@ -61,10 +62,38 @@ class PasswortAnmeldung {
     }
   }
 
+  static const _fehlerServerAlt = CryptoFehler(
+    CryptoFehlerArt.version,
+    'Der Server bietet die sichere Anmeldung gerade nicht an. Aus Sicherheitsgründen sendet die App dein Passwort dann nicht. Bitte versuche es später noch einmal.',
+  );
+
+  /// Fähigkeiten des Servers. Fällt GET /version aus (Netz, Zeitüberschreitung, 5xx), wird NIE auf Klartext geschlossen: Ist vom letzten Mal bekannt, dass der Server
+  /// authKey kann, gilt das, sonst geht der Fehler nach oben ("keine Verbindung").
+  Future<ServerFaehigkeiten> _faehigkeiten() async {
+    try {
+      final f = await api.serverFaehigkeiten();
+      try {
+        await store.writeFaehigkeiten(f);
+      } catch (_) {}
+      return f;
+    } on ApiException {
+      ServerFaehigkeiten? bekannt;
+      try {
+        bekannt = await store.readFaehigkeiten();
+      } catch (_) {}
+      if (bekannt != null && bekannt.authKey) return bekannt;
+      rethrow;
+    }
+  }
+
   Future<void> anmelden({required String email, required String passwort, required AnmeldeSender senden}) async {
-    final f = await api.serverFaehigkeiten();
-    if (!f.authKey) return senden(passwort: passwort);
+    final f = await _faehigkeiten();
     final festgelegt = await _festgelegt(email);
+    if (!f.authKey) {
+      // ein Konto, das diese App schon per authKey angemeldet hat, bekommt nie Klartext (auch nicht von einem Server, der den authKey "nicht kennt")
+      if (festgelegt) throw _fehlerServerAlt;
+      return senden(passwort: passwort);
+    }
     final keys = await _ableiten(email, passwort);
     if (keys == null) {
       if (f.legacyPasswortLogin && !festgelegt) return senden(passwort: passwort);
@@ -80,6 +109,8 @@ class PasswortAnmeldung {
         if (e.code != 'invalid_credentials' || !f.legacyPasswortLogin || festgelegt) rethrow;
       }
       await senden(passwort: passwort, upgradeAuthKey: keys.authKeyBase64);
+      // die Umstellung hat geklappt: ab jetzt nie wieder Klartext von diesem Gerät (der nächste authKey-Login bestätigt es)
+      await merkeKonto(email);
     } finally {
       keys.loeschen();
     }
@@ -92,8 +123,11 @@ class PasswortAnmeldung {
   /// [pruefenMitAuthKey] läuft nur, wenn der Server den authKey nimmt (er kann das Passwort dann nicht mehr selbst prüfen): die Regeln für Stärke und Kontodaten
   /// gelten dann auf dem Gerät.
   Future<NeuesPasswort> neuesPasswort(String email, String passwort, {void Function()? pruefenMitAuthKey}) async {
-    final f = await api.serverFaehigkeiten();
-    if (!f.authKey) return NeuesPasswort(klartext: passwort);
+    final f = await _faehigkeiten();
+    if (!f.authKey) {
+      if (await _festgelegt(email)) throw _fehlerServerAlt;
+      return NeuesPasswort(klartext: passwort);
+    }
     pruefenMitAuthKey?.call();
     final keys = await _ableiten(email, passwort);
     if (keys == null) {

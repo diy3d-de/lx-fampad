@@ -245,15 +245,23 @@ class FampadApi {
   // ----------------------------------------------------------- Passwort-Sicherung (nur mit Schalter E2EE_PW_BACKUP des Servers)
 
   /// Schalter des Servers aus GET /version (`features.pwBackup`). Jeder Fehler und jeder ältere Server ergibt false (die Funktion bleibt unsichtbar).
-  Future<bool> pwSicherungVerfuegbar() async => (await serverFaehigkeiten()).pwBackup;
+  Future<bool> pwSicherungVerfuegbar() async {
+    try {
+      return (await serverFaehigkeiten()).pwBackup;
+    } on ApiException {
+      return false; // nur eine Anzeige: ohne Antwort bleibt die Funktion unsichtbar
+    }
+  }
 
-  /// Fähigkeiten des Servers aus GET /version (`features`). Jeder Fehler und jeder ältere Server ergibt "nichts davon": die App bleibt dann beim alten Weg.
+  /// Fähigkeiten des Servers aus GET /version (`features`). Nur eine ERFOLGREICHE Antwort ohne `features` (älterer Server) oder 404 ergibt "nichts davon".
+  /// Netzfehler, Zeitüberschreitung, 429 und 5xx werden weitergeworfen: Wer Passwörter sendet, darf aus einem Ausfall nie schließen, der Server könne kein authKey.
   Future<ServerFaehigkeiten> serverFaehigkeiten() async {
     try {
       final f = (await client.get('/version', auth: false))['features'];
       return f is Map<String, dynamic> ? ServerFaehigkeiten.fromJson(f) : ServerFaehigkeiten.keine;
-    } on ApiException {
-      return ServerFaehigkeiten.keine;
+    } on ApiException catch (e) {
+      if (e.status == 404) return ServerFaehigkeiten.keine;
+      rethrow;
     }
   }
 

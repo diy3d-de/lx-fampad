@@ -227,6 +227,30 @@ void main() {
         pruefeLayout(tester, 'Mitglieder mit Markierung');
       });
 
+      testWidgets('Längste Pillenzeile (Rolle, Familienrolle, Markierung, wartet) läuft nicht über', (tester) async {
+        final server = standardServer();
+        server.json('GET /members', {
+          'members': [
+            {...userJson(), 'familyRole': 'grosseltern'},
+            {...userJson(id: fixIdKind, role: 'parent', name: 'Bernhard-Maximilian Langername', email: 'bernhard.maximilian.langername@beispiel.de'), 'familyRole': 'grosseltern'},
+          ],
+        });
+        server.json('GET /members/password-modes', {
+          'legacyPasswordLogin': true,
+          'modes': [
+            {'userId': fixIdAdmin, 'mode': 'legacy'},
+            {'userId': fixIdKind, 'mode': 'legacy'},
+          ],
+        });
+        final env = TestUmgebung(server);
+        await env.angemeldet();
+        await starteApp(tester, env, skala: skala);
+        await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+        await tippeText(tester, 'Mitglieder und Einladungen');
+        expect(find.text('altes passwort-verfahren'), findsNWidgets(2));
+        pruefeLayout(tester, 'Mitglieder: längste Pillenzeile');
+      });
+
       testWidgets('ohne Angebot des Servers (404) fehlt die Markierung, die Liste bleibt', (tester) async {
         final env = TestUmgebung(standardServer());
         await env.angemeldet();

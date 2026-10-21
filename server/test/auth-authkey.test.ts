@@ -245,6 +245,73 @@ describe.each(backends)('Anmeldung mit authKey ($name)', (backend) => {
     });
   });
 
+  describe('Zweiter Faktor, Rennen, Sicherung', () => {
+    it('korrekter authKey, falscher Code: eigener Fehlercode (kein Klartext-Wiederholen nötig), zählt einmal; falscher authKey und Klartext-Fehler bleiben invalid_credentials', async () => {
+      const a = await start();
+      const ak = key();
+      await login(a, { password: PW, upgradeAuthKey: ak });
+      const ip = '203.0.113.150';
+      const c = world.client(ip);
+      const body = (extra: Record<string, unknown>) => c.post('/api/v1/auth/login/password', { email: a.email, totp: '000000', ...extra });
+      const falscherCode = await body({ authKey: ak });
+      expect(falscherCode.status).toBe(401);
+      expect(falscherCode.json.error).toBe('invalid_second_factor');
+      expect((await body({ authKey: key() })).json.error).toBe('invalid_credentials');
+      expect((await body({ password: PW })).json.error).toBe('invalid_credentials'); // Klartext verrät nie, ob das Passwort stimmt
+      const n = (await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from audit_log where event = 'login_failed'`)).rows[0]?.n;
+      expect(n).toBe(3);
+    });
+
+    it('Upgrade gegen gleichzeitigen Passwortwechsel: nie bleibt ein Prüfwert des alten Passworts am neuen Eintrag', async () => {
+      for (let i = 0; i < 3; i++) {
+        await world?.close();
+        await harness.reset();
+        const a = await start();
+        const alt = key();
+        const neu = key();
+        const code1 = await code(a);
+        const [l, w] = await Promise.all([
+          world.client('203.0.113.152').post('/api/v1/auth/login/password', { email: a.email, password: PW, totp: code1, upgradeAuthKey: alt }),
+          a.client.post('/api/v1/me/password/change', { authKey: neu }),
+        ]);
+        expect(w.status).toBe(200);
+        expect([200, 401]).toContain(l.status);
+        expect(await rows()).toBeLessThanOrEqual(2);
+        // aktiv gilt höchstens der neue authKey, nie der des Upgrades
+        expect((await login(a, { authKey: alt }, '203.0.113.153')).res.status).toBe(401);
+        expect((await login(a, { authKey: neu }, '203.0.113.154')).res.status).toBe(200);
+      }
+    });
+
+    it('Passwortwechsel mit pwBackupId einer schon bestätigten (aktiven) Sicherung: 409, alles bleibt', async () => {
+      const a = await start();
+      const ak = key();
+      await login(a, { password: PW, upgradeAuthKey: ak });
+      const c = world.client('203.0.113.155');
+      const r = await c.post('/api/v1/auth/login/password', { email: a.email, authKey: ak, totp: await code(a) });
+      c.adopt(r.json.session);
+      await c.post('/api/v1/me/keys', keys());
+      const b1 = await c.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      await c.post('/api/v1/me/key-backup-pw/verified', { id: b1.json.id });
+      const res = await c.post('/api/v1/me/password/change', { authKey: key(), pwBackupId: b1.json.id });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe('backup_not_current');
+      expect((await login(a, { authKey: ak }, '203.0.113.156')).res.status).toBe(200);
+    });
+
+    it('Passwort nach "entfernen" per Klartext neu einrichten, solange eine Passwort-Sicherung besteht: 409', async () => {
+      const a = await start();
+      await a.client.post('/api/v1/me/keys', keys());
+      const put = await a.client.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      await a.client.post('/api/v1/me/key-backup-pw/verified', { id: put.json.id });
+      await harness.db.execute(sql`update credentials set revoked_at = now() where type in ('password', 'totp')`);
+      const r = await a.client.post('/api/v1/me/password/start', { password: PW });
+      expect(r.status).toBe(409);
+      expect(r.json.error).toBe('password_change_needs_update');
+      expect((await a.client.post('/api/v1/me/password/start', { authKey: key() })).status).toBe(200);
+    });
+  });
+
   describe('Stichtag AUTH_LEGACY_PASSWORD_LOGIN=false', () => {
     const ENV = { E2EE_PW_BACKUP: 'true', AUTH_LEGACY_PASSWORD_LOGIN: 'false' };
 
@@ -275,6 +342,32 @@ describe.each(backends)('Anmeldung mit authKey ($name)', (backend) => {
       expect((await login(a, { authKey: ak })).res.status).toBe(200);
       expect((await sitzung.post('/api/v1/me/password/change', { password: 'ein-neues-langes-passwort-9' })).json.error).toBe('legacy_login_disabled');
       expect((await sitzung.post('/api/v1/me/password/start', { password: PW })).json.error).toBe('legacy_login_disabled');
+    });
+
+    it('Reset-Einladung: Registrierung nur mit authKey, E-Mail kommt aus dem Lookup, danach Anmeldung mit authKey', async () => {
+      const a = await start();
+      const inv = await a.client.post('/api/v1/invites', { role: 'child' });
+      const m = await world.registerPassword(inv.json.invite.token, { email: 'kind@example.org', displayName: 'Kind' });
+      const kindId = m.complete?.json.member.id as string;
+      await restart(ENV);
+      const sitzung = world.client('203.0.113.160');
+      sitzung.cookie = a.client.cookie;
+      sitzung.csrf = a.client.csrf;
+      const reset = await sitzung.post(`/api/v1/members/${kindId}/reset`, { hours: 2, pin: false });
+      expect(reset.status).toBe(200);
+      const token = reset.json.invite.token as string;
+      const anon = world.client('203.0.113.161');
+      expect((await anon.post('/api/v1/auth/invites/lookup', { token })).json.invite.email).toBe('kind@example.org');
+      expect((await anon.post('/api/v1/auth/invites/password/start', { token, password: PW })).json.error).toBe('legacy_login_disabled');
+      const ak = key();
+      const s2 = await anon.post('/api/v1/auth/invites/password/start', { token, authKey: ak });
+      expect(s2.status).toBe(200);
+      world.advance(31_000);
+      const done = await anon.post('/api/v1/auth/invites/password/complete', { challengeId: s2.json.challengeId, code: await world.totp(s2.json.totpSecret) });
+      expect(done.status).toBe(200);
+      world.advance(31_000);
+      const l = await world.client('203.0.113.162').post('/api/v1/auth/login/password', { email: 'kind@example.org', authKey: ak, totp: await world.totp(s2.json.totpSecret) });
+      expect(l.status).toBe(200);
     });
 
     it('Registrierung mit Klartext ist zu, mit authKey möglich; danach Anmeldung mit authKey', async () => {

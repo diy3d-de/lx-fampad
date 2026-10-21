@@ -170,9 +170,9 @@ export async function markPwBackupVerified(ctx: AuthContext, p: SessionPrincipal
 
 /**
  * Kern von [markPwBackupVerified] in einer vorhandenen Transaktion (auch für den Passwortwechsel: neues Passwort und die dazu passende
- * Sicherung werden gemeinsam gültig, nie nur eins von beiden). Prüft das Step-up NICHT selbst (der Aufrufer hat es geprüft).
+ * Sicherung werden gemeinsam gültig, nie nur eins von beiden). Prüft das Step-up NICHT selbst (der Aufrufer hat es geprüft). Mit [nurPending] gilt nur eine unbestätigte Zeile (sonst `409 backup_not_current`).
  */
-export async function promotePwBackup(ctx: AuthContext, tx: Tx, p: SessionPrincipal, id: string, meta: RequestMeta): Promise<void> {
+export async function promotePwBackup(ctx: AuthContext, tx: Tx, p: SessionPrincipal, id: string, meta: RequestMeta, nurPending = false): Promise<void> {
   // gleiche Sperre wie Schlüsselwechsel und Ablegen: kein Bestätigen gegen einen gerade wechselnden Schlüssel
   const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
   const [row] = await tx
@@ -181,7 +181,8 @@ export async function promotePwBackup(ctx: AuthContext, tx: Tx, p: SessionPrinci
     .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId)))
     .for('update');
   if (!row) throw notFound();
-  if (row.state === 'active' && row.verifiedAt) return; // schon bestätigt
+  // schon bestätigt: für die einzelne Bestätigung folgenlos (verlorene Antwort); beim Passwortwechsel (nurPending) nie, dort muss es die frisch geprüfte sein
+  if (!nurPending && row.state === 'active' && row.verifiedAt) return;
   if (row.state !== 'pending' || !k || k.v !== row.keyVersion) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
   const now = ctx.now();
   await tx

@@ -73,7 +73,10 @@ export function verifyAuthKey(ctx: Pick<AuthContext, 'keys'>, stored: string | n
   return stored !== null && ok;
 }
 
-/** Aktuelle Salt-Generation der Person (die der Client für die Ableitung benutzt hat: Standard 1). */
+/**
+ * Aktuelle Salt-Generation der Person. Bis es eine Salt-Rotation gibt, ist das immer 1 und stimmt mit der des Clients überein. Vor einer Rotation muss der Client die
+ * Generation, mit der er abgeleitet hat, mitschicken und der Server sie prüfen (sonst würde ein Prüfwert zur falschen Generation gespeichert).
+ */
 async function currentGeneration(exec: Executor, userId: string): Promise<number> {
   const [g] = await exec.select({ g: accountKdf.saltGeneration }).from(accountKdf).where(eq(accountKdf.userId, userId));
   return g?.g ?? DEFAULT_SALT_GENERATION;

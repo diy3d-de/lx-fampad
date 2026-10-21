@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/auth/passwort_anmeldung.dart';
+import '../../data/crypto/crypto_fehler.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/pw_regeln.dart';
 import '../../ui/widgets.dart';
@@ -142,6 +143,8 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
       _pruefePasswort();
       final pw = _pw.text;
       if (await _mitAuthKey()) {
+        // erst einen Frame zeichnen (Ladeanzeige): die Ableitung (Argon2id) blockiert im Web den Hauptthread
+        await Future<void>.delayed(const Duration(milliseconds: 60));
         // authKey statt Passwort; eine vorhandene Passwort-Sicherung wird mit umgestellt (Server: beides in einer Transaktion)
         final e2ee = ref.read(e2eeProvider.notifier);
         final w = await e2ee.passwortWechselVorbereiten(pw);
@@ -159,6 +162,8 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
             }
             await ref.read(passwortAnmeldungProvider).merkeKonto(_email);
           }
+        } on CryptoFehler catch (e) {
+          throw EingabeFehler('${e.meldung} Das Passwort wurde nicht geändert. Den Stand deiner Passwort-Sicherung siehst du unter Profil > Verschlüsselung.');
         } finally {
           w.loeschen();
         }

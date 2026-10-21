@@ -33,6 +33,14 @@ export async function startAddPassword(ctx: AuthContext, p: SessionPrincipal, in
   assertPasswordInputAllowed(ctx, input);
   const account = await findAccountById(ctx, p.userId, p.familyId);
   if (!account) throw notFound();
+  // Klartext-Neusetzen (z. B. nach "Passwort entfernen") würde eine vorhandene Passwort-Sicherung unlesbar machen: wie beim Klartext-Wechsel abgelehnt
+  if (input.password !== undefined) {
+    const [hatSicherung] = await ctx.db
+      .select({ id: keyBackupsPw.id })
+      .from(keyBackupsPw)
+      .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
+    if (hatSicherung) throw new AppError(409, 'password_change_needs_update', 'Bitte aktualisiere die App, um dein Passwort zu ändern.');
+  }
   const [existing] = await ctx.db
     .select({ id: credentials.id })
     .from(credentials)
@@ -151,7 +159,7 @@ export async function changePassword(
     if (!neu) throw notFound();
     if (input.authKey !== undefined) {
       await saveAuthKeyDigest(tx, { userId: p.userId, credentialId: neu.id, digest: authKeyDigest(ctx, p.userId, input.authKey), now });
-      if (input.pwBackupId !== undefined) await promotePwBackup(ctx, tx, p, input.pwBackupId, meta);
+      if (input.pwBackupId !== undefined) await promotePwBackup(ctx, tx, p, input.pwBackupId, meta, true);
     }
     await writeAudit(ctx, tx, {
       event: 'password_changed',

@@ -3,6 +3,7 @@
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:lx_fampad/data/api/api_client.dart';
 import 'package:lx_fampad/data/api/api_error.dart';
 import 'package:lx_fampad/data/api/fampad_api.dart';
@@ -128,7 +129,7 @@ void main() {
       expect(zweiter['password'], _pw);
       expect(zweiter['upgradeAuthKey'], a.logins[0]['authKey']);
       expect(zweiter.containsKey('authKey'), isFalse);
-      expect(await a.store.istAuthKeyKonto(_email), isFalse, reason: 'gemerkt wird erst nach der ersten Anmeldung per authKey');
+      expect(await a.store.istAuthKeyKonto(_email), isTrue, reason: 'nach der Umstellung gilt auf diesem Gerät nie wieder Klartext');
     });
 
     test('falsches Passwort: beide Versuche scheitern, der Fehler ist derselbe wie sonst', () async {
@@ -184,6 +185,58 @@ void main() {
       a.server.on('POST /auth/kdf-params', (_) => fehler(503, 'server_busy'));
       await expectLater(a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)), throwsA(isA<ApiException>()));
       expect(a.logins, isEmpty);
+    });
+  });
+
+  group('Ausfall und Zweiter Faktor', () {
+    test('GET /version fällt aus (503, Netz): kein Klartext, der Fehler geht nach oben', () async {
+      for (final fehlerAntwort in [() => fehler(503, 'server_busy'), () => fehler(500, 'internal_error'), () => fehler(429, 'rate_limited')]) {
+        final a = _aufbau(konto: 'legacy');
+        a.server.on('GET /version', (_) => fehlerAntwort());
+        await expectLater(a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)), throwsA(isA<ApiException>()));
+        expect(a.logins, isEmpty);
+        await expectLater(a.anmeldung.neuesPasswort(_email, _pw), throwsA(isA<ApiException>()));
+      }
+      final netz = _aufbau(konto: 'legacy');
+      netz.server.on('GET /version', (_) => throw http.ClientException('offline'));
+      await expectLater(netz.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(netz)), throwsA(isA<ApiException>()));
+      expect(netz.logins, isEmpty);
+    });
+
+    test('404 oder Antwort ohne features (älterer Server): Klartext wie bisher', () async {
+      final a = _aufbau(authKey: false);
+      a.server.json('GET /version', {'service': 'lx-fampad'});
+      await a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a));
+      expect(a.logins.single['password'], _pw);
+    });
+
+    test('bekannte Fähigkeiten: fällt /version später aus, bleibt die App beim authKey-Weg, nie Klartext', () async {
+      final a = _aufbau(konto: 'authkey');
+      await a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)); // liest und merkt die Fähigkeiten
+      a.server.log.clear();
+      a.server.on('GET /version', (_) => fehler(503, 'server_busy'));
+      await a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a));
+      expect(a.logins.single.containsKey('password'), isFalse);
+      expect(a.logins.single['authKey'], isNotNull);
+    });
+
+    test('Konto auf diesem Gerät bekannt, Server meldet plötzlich kein authKey: Fehlermeldung statt Klartext', () async {
+      final a = _aufbau(authKey: false);
+      await a.store.merkeAuthKeyKonto(_email);
+      await expectLater(a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)), throwsA(isA<CryptoFehler>()));
+      await expectLater(a.anmeldung.neuesPasswort(_email, _pw), throwsA(isA<CryptoFehler>()));
+      expect(a.logins, isEmpty);
+    });
+
+    test('Fehler des zweiten Faktors (invalid_second_factor): keine Wiederholung mit Klartext', () async {
+      final a = _aufbau(konto: 'authkey');
+      a.server.on('POST /auth/login/password', (_) => fehler(401, 'invalid_second_factor'));
+      await expectLater(
+        a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)),
+        throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('Prüfe E-Mail, Passwort und Code'))),
+      );
+      expect(a.logins, hasLength(1));
+      expect(a.logins.single.containsKey('password'), isFalse);
     });
   });
 
