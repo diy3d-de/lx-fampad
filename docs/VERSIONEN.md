@@ -26,7 +26,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | tsx | 4.23.15 | nur Entwicklung (`npm run dev`) |
 | eslint / @eslint/js / typescript-eslint | 10.12.0 / 10.0.1 / 8.71.0 | |
 | Vitest | 5.0.3 | |
-| ntfy | 2.28.0 (2.31.1 ab 31.10.) | eigene Subdomain, `deny-all`, UnifiedPush-Topics `up*` |
+| ntfy | 2.29.0 (2.32.0 ab 01.11.) | eigene Subdomain, `deny-all`, UnifiedPush-Topics `up*` |
 | age | 1.2.1 (Debian 13) | Backups: Verschlüsselung der Sicherungen (`age`/`age-keygen`, Debian-Paket), nur Server-Skripte; kein npm-Paket. `rsync` (3.5.0+ds1-0+deb13u1, im Debian-13-Container geprüft; mindestens 3.4.0 wegen CVE-2024-12086; enthält `rrsync`) und `sqlite3` aus Debian für Pull und ntfy-Sicherung |
 
 ## App
