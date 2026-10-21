@@ -271,6 +271,9 @@ class MeDto {
   final bool hasPassword;
   final bool hasTotp;
   final int recoveryCodesRemaining;
+
+  /// Betreiber des Servers (Konto-Flag, nur Anzeige: zeigt den Bereich "Betrieb"; die Routen prüft der Server selbst). Ältere Server: false.
+  final bool betreiber;
   const MeDto({
     required this.user,
     required this.familyId,
@@ -281,6 +284,7 @@ class MeDto {
     required this.hasPassword,
     required this.hasTotp,
     required this.recoveryCodesRemaining,
+    this.betreiber = false,
   });
 
   factory MeDto.fromJson(Object? raw) {
@@ -298,6 +302,7 @@ class MeDto {
       hasPassword: _b(creds, 'password'),
       hasTotp: _b(creds, 'totp'),
       recoveryCodesRemaining: _i(m, 'recoveryCodesRemaining'),
+      betreiber: m['operator'] == true,
     );
   }
 }

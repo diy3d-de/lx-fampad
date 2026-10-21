@@ -18,6 +18,7 @@ import type { MemberView } from './register.js';
 import { csrfTokenFor, isAlive, loadLive, requireStepUp, revokeAllForUser, revokeDevice } from './sessions.js';
 import type { Principal, Role, SessionPrincipal } from './types.js';
 import { checkRegistration, registrationOptions } from './webauthn.js';
+import { isOperator } from '../operator/service.js';
 
 const forbidden = () => new AppError(403, 'forbidden', 'Dazu fehlt dir die Berechtigung.');
 const notFound = () => new AppError(404, 'not_found');
@@ -50,6 +51,12 @@ export async function getMe(ctx: AuthContext, p: SessionPrincipal) {
       familyRole: fr?.familyRole ?? null,
     },
     familyId: account.familyId,
+    // Betreiber-Flag nur als Anzeige-Hinweis für die App (Bereich "Betrieb"); die Betreiber-Routen prüfen es selbst
+    operator: await isOperator(ctx, p.userId, account.familyId).catch((err: unknown) => {
+      // nur ein Anzeige-Hinweis: ein Fehler hier (z. B. Migration noch nicht angewendet) darf /me nie scheitern lassen
+      ctx.log.warn({ err }, 'Betreiber-Flag nicht lesbar');
+      return false;
+    }),
     session: { id: p.sessionId, deviceId: p.deviceId, stepUpAt: p.stepUpAt },
     ...(p.via === 'cookie' ? { csrfToken: csrfTokenFor(ctx, p.sessionId) } : {}),
     credentials: {

@@ -118,6 +118,21 @@ export interface Config {
   weather: WeatherConfig;
   /** Vereinfachte Schlüsselverwaltung (Passwort-Sicherung, KDF-Parameter): Routen nur bei true, sonst 404 (Standard aus). */
   e2eePwBackup: boolean;
+  /** Betreiber-Ansicht (nur lesend): Pfade und Prüfungen, die der Status ohne root lesen darf (leer = nicht ermittelbar, "unbekannt"). */
+  operator: OperatorConfig;
+}
+
+export interface OperatorConfig {
+  /** Statusdatei der Sicherung (schreibt lx-fampad-backup); nur wenn der Dienst sie lesen darf, sonst "unbekannt". */
+  backupStatusFile: string | undefined;
+  /** Signiertes Release-Manifest der Android-App (latest.json), nur die Versionsangaben werden gelesen. */
+  releaseManifestFile: string | undefined;
+  /** Ordner, dessen belegter/freier Platz angezeigt wird. */
+  diskPath: string | undefined;
+  /** Ordner der Kartendatei (*.pmtiles); nur Vorhandensein und Größe. */
+  karteDir: string | undefined;
+  /** "host:port" einer lesenden TLS-Verbindung zur Prüfung des Zertifikatsendes (Standard in Produktion: 127.0.0.1:443, sonst aus). */
+  tlsProbe: string | undefined;
 }
 
 export interface WeatherConfig {
@@ -178,6 +193,25 @@ function boolFlagDefault(env: NodeJS.ProcessEnv, name: string, standard: boolean
   if (raw === 'false' || raw === '0') return false;
   if (raw === 'true' || raw === '1') return true;
   throw new Error(`${name} ungültig: erlaubt sind true oder false`);
+}
+
+/** OPERATOR_*: Pfade für die Betreiber-Ansicht; "off" schaltet eine Quelle ab. In Entwicklung/Test ist die TLS-Prüfung aus. */
+function operatorConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): OperatorConfig {
+  const pick = (name: string, standard: string | undefined): string | undefined => {
+    const raw = env[name]?.trim();
+    if (raw === undefined || raw === '') return standard;
+    return raw.toLowerCase() === 'off' ? undefined : raw;
+  };
+  const tlsProbe = pick('OPERATOR_TLS_PROBE', nodeEnv === 'production' ? '127.0.0.1:443' : undefined);
+  if (tlsProbe !== undefined && !/^[A-Za-z0-9.[\]:-]+:\d{1,5}$/.test(tlsProbe)) throw new Error('OPERATOR_TLS_PROBE ungültig (Format host:port oder off)');
+  if (tlsProbe !== undefined && Number(tlsProbe.slice(tlsProbe.lastIndexOf(':') + 1)) > 65535) throw new Error('OPERATOR_TLS_PROBE ungültig (Port höchstens 65535)');
+  return {
+    backupStatusFile: pick('OPERATOR_BACKUP_STATUS_FILE', '/var/backups/lx-fampad/status'),
+    releaseManifestFile: pick('OPERATOR_RELEASE_MANIFEST', '/srv/fampad/releases/android/latest.json'),
+    diskPath: pick('OPERATOR_DISK_PATH', '/srv'),
+    karteDir: pick('OPERATOR_KARTE_DIR', '/srv/fampad/karte'),
+    tlsProbe,
+  };
 }
 
 /** WEATHER_*: ohne WEATHER_ENABLED=true ist das Wetter aus; mit Schalter sind MAC und Rechteck Pflicht (fail-closed). */
@@ -360,6 +394,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
     weather: weatherConfig(env, nodeEnv),
     e2eePwBackup,
+    operator: operatorConfig(env, nodeEnv),
   };
 }
 

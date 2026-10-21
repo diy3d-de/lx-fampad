@@ -16,6 +16,7 @@ import { buildApp } from '../src/app.js';
 import type { Db } from '../src/auth/context.js';
 import { bootstrapFamily } from '../src/auth/bootstrap.js';
 import { Auth } from '../src/auth/service.js';
+import type { Probes } from '../src/operator/probes.js';
 import { loadConfig, type Config } from '../src/config.js';
 import * as schema from '../src/db/schema.js';
 import { TestAuthenticator } from './authenticator.js';
@@ -165,7 +166,7 @@ export class World {
     readonly config: Config,
   ) {}
 
-  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable; pushMinIntervalMs?: number; weatherFetch?: typeof fetch } = {}): Promise<World> {
+  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable; pushMinIntervalMs?: number; weatherFetch?: typeof fetch; operatorProbes?: Partial<Probes> } = {}): Promise<World> {
     const config = loadConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
@@ -182,7 +183,7 @@ export class World {
       ...env,
     });
     const holder: { world?: World } = {};
-    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}), ...(extra.pushMinIntervalMs !== undefined ? { pushMinIntervalMs: extra.pushMinIntervalMs } : {}), ...(extra.weatherFetch ? { weatherFetch: extra.weatherFetch } : {}) });
+    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}), ...(extra.pushMinIntervalMs !== undefined ? { pushMinIntervalMs: extra.pushMinIntervalMs } : {}), ...(extra.weatherFetch ? { weatherFetch: extra.weatherFetch } : {}), ...(extra.operatorProbes ? { operatorProbes: extra.operatorProbes } : {}) });
     await app.ready();
     const authCore = app.authCore;
     if (!authCore) throw new Error('Auth fehlt');

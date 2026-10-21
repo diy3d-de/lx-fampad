@@ -58,6 +58,7 @@ Die **Chat-Nachrichten** sind seit v0.3.0 **Ende-zu-Ende verschlüsselt** (Schl�
   nicht gespeichert und gehen beim Neustart verloren.
 - **Datenbank:** `audit_log.ip` wird höchstens 7 Tage aufbewahrt; ein Aufräum-Job (beim Start des Servers und danach **stündlich**) leert die Spalte. Die Fehlversuchs-Zähler enthalten keine Klartext-IP (nur einen HMAC) und werden gelöscht, sobald ihr Zählfenster (15 Minuten) ohne neuen Fehlversuch abgelaufen und keine Sperre mehr aktiv ist, spätestens bei einem der stündlichen Läufe. Offene WebAuthn-Challenges (auch angefangene Registrierungen mit Passwort-Hash und verschlüsseltem TOTP-Geheimnis) und WebSocket-Tickets werden nach Ablauf ebenfalls stündlich gelöscht.
 - **[Prüfen]** Der Hoster (netcup) kann auf Netzwerkebene eigene Verbindungsdaten erfassen (Abschnitt 5).
+- **Betreiber-Auswertung:** Der Betreiber des Servers kann in der App (Bereich „Betrieb“, nur lesend) das Audit-Protokoll einsehen (Anmelde- und Geräteereignisse mit Person und auf /24 bzw. /48 gekürzter Netzadresse, nie Inhalte). Zweck ist die Betriebssicherheit (Missbrauch und Störungen erkennen); die Einsicht ist auf den Betreiber beschränkt und verlangt eine frische Bestätigung.
 
 ## 5. Empfänger und Auftragsverarbeiter
 

@@ -1,4 +1,4 @@
-// Migration 0018 (invites.kind, security_events) ist rein additiv: Auf einer Datenbank im Stand 0017 (hier: Bestand anlegen, die Objekte von 0018 wieder entfernen) mit echten Konten, Schlüsseln, Passwort-Sicherung,
+// Migration 0019 (invites.kind, security_events) ist rein additiv: Auf einer Datenbank im Stand 0018 (hier: Bestand anlegen, die Objekte von 0019 wieder entfernen) mit echten Konten, Schlüsseln, Passwort-Sicherung,
 // offenen Einladungen (auch einem Komplett-Reset-Link) bleiben alle Zeilen unverändert; alte Einladungen sind danach `standard` und funktionieren
 // wie vorher; der neue Passwort-Reset greift auf demselben Bestand.
 import { PGlite } from '@electric-sql/pglite';
@@ -14,7 +14,7 @@ import { addMember, adminPassword, migrationsFolder, World } from './helpers.js'
 
 const key = () => randomBytes(32).toString('base64url');
 
-describe('Migration 0018 (Passwort-Reset) additiv auf Stand 0017', () => {
+describe('Migration 0019 (Passwort-Reset) additiv auf Stand 0018', () => {
   it('PGlite: Bestand unverändert, alte Einladungen standard und einlösbar, Passwort-Reset und Sicherung danach', async () => {
     const client = new PGlite();
     const db = drizzleLite(client, { schema }) as unknown as Db;
@@ -50,14 +50,14 @@ describe('Migration 0018 (Passwort-Reset) additiv auf Stand 0017', () => {
       vorher.set('invites', await summe('invites', " - 'kind'"));
       await world.close();
       world = undefined;
-      // zurück in den Stand 0017: die Objekte der Migration 0018 weg, ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
+      // zurück in den Stand 0018: die Objekte der Migration 0019 weg, ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
       await db.execute(sql`alter table invites drop constraint invites_kind_ck`);
       await db.execute(sql`alter table invites drop column kind`);
       await db.execute(sql`drop table security_events`);
-      // genau die Zeile der Migration 0018 (nach Zeitstempel des Journals, nicht "die letzte")
+      // genau die Zeile der Migration 0019 (nach Zeitstempel des Journals, nicht "die letzte")
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
-      const meine = journal.entries.find((e) => e.tag.startsWith('0018_'));
-      if (!meine) throw new Error('Journal ohne 0018');
+      const meine = journal.entries.find((e) => e.tag.startsWith('0019_'));
+      if (!meine) throw new Error('Journal ohne 0019');
       await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at = ${meine.when}`);
 
       await migrateLite(db as never, { migrationsFolder });

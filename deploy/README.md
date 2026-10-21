@@ -198,6 +198,24 @@ sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js
 
 widerruft alle Anmeldedaten, Sitzungen und Codes dieses Mitglieds und gibt einen neuen Einladungslink für dasselbe Konto aus.
 
+#### Betreiber setzen (Dashboard „Betrieb“)
+
+Die Ansicht „Betrieb“ in der App (Zustand des Servers, Protokoll; nur lesend) sieht nur, wer als **Betreiber** eingetragen ist. Das geht ausschließlich auf dem Server (nie über die App, nie für einen zweiten Admin automatisch); das Flag ändert keine Familienrechte:
+
+```bash
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js grant admin@example.org
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js revoke admin@example.org
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js list
+```
+
+Der Status liest nur, was der Dienst (Benutzer `lx-fampad`, Sandbox) ohne root darf; Unlesbares zeigt die App als „unbekannt“. Dazu gehört die Statusdatei der Sicherung `/var/backups/lx-fampad/status` (Ordner `root:lxbackup 0750`: ohne Zusatz „unbekannt“; wer sie anzeigen will, nimmt `lx-fampad` bewusst in die Gruppe `lxbackup` auf, damit sieht der Dienst aber auch die verschlüsselten Sicherungsdateien: Abwägung des Betreibers, Standard bleibt „unbekannt“). Pfade und Schalter der Messungen: `OPERATOR_*` in `server/.env.example`.
+
+**Migrationsstand lesen (einmalig auf dem bestehenden Server, als root):** Die Laufzeitrolle darf das Schema `drizzle` sonst nicht sehen, die Seite zeigt dann „Migrationsstand unbekannt (Grant fehlt, siehe README)“. Nur lesend und minimal, idempotent (neue Installationen erledigt `einrichtung-auth.sh`):
+
+```bash
+sudo -u postgres psql -d lx_fampad -c "GRANT USAGE ON SCHEMA drizzle TO lx_fampad; GRANT SELECT ON drizzle.__drizzle_migrations TO lx_fampad;"
+```
+
 **Aufräumen:** Beim Start und danach stündlich leert der Dienst die IP-Spalte im Audit-Log (älter als 7 Tage), löscht Audit-Einträge nach `AUDIT_RETENTION_DAYS` (Standard 365) sowie abgelaufene Sitzungen, Challenges, Tickets und Fehlversuche und protokolliert abgelaufene Einladungen.
 
 ### 6. Caddy
@@ -252,7 +270,7 @@ sudo bash ~/lx-fampad/deploy/einrichtung-ntfy.sh
 **Reihenfolge im Skript:**
 
 1. Prüfungen (Importzeile, `lx-labs.dev`, DNS-Adressen gegen die lokalen globalen Adressen, Port 2586 frei, `ntfy.familie.lx-labs.dev` ist in keiner anderen Caddy-Datei schon definiert). Bei einem Fehler wird nichts verändert.
-2. Installation von ntfy **2.28.0** (exakt gepinnt, Release vom 27.08.2026) aus dem offiziellen apt-Repository `archive.ntfy.sh`. Gewählt gegenüber dem GitHub-.deb, weil das Repository signiert ist: Das Skript vergleicht den Schlüssel-Fingerabdruck `55BA 774A 6F5E E674 31E4 B6B7 CFDB 962D 4F1E C4AF` (vorher auf <https://docs.ntfy.sh/install/> gegenlesen) und bricht bei Abweichung ab; die GitHub-Releases haben keine Signatur. `/etc/apt/preferences.d/ntfy` sorgt dafür, dass aus diesem Repository nur das Paket `ntfy` kommt (Pin-Priority 1 für alles andere). Führt das Repository die Version nicht mehr, fällt das Skript auf das Release-.deb mit gepinnter SHA-256 zurück. Danach `apt-mark hold ntfy`.
+2. Installation von ntfy **2.29.0** (exakt gepinnt, Release vom 07.10.2026) aus dem offiziellen apt-Repository `archive.ntfy.sh`. Gewählt gegenüber dem GitHub-.deb, weil das Repository signiert ist: Das Skript vergleicht den Schlüssel-Fingerabdruck `55BA 774A 6F5E E674 31E4 B6B7 CFDB 962D 4F1E C4AF` (vorher auf <https://docs.ntfy.sh/install/> gegenlesen) und bricht bei Abweichung ab; die GitHub-Releases haben keine Signatur. `/etc/apt/preferences.d/ntfy` sorgt dafür, dass aus diesem Repository nur das Paket `ntfy` kommt (Pin-Priority 1 für alles andere). Führt das Repository die Version nicht mehr, fällt das Skript auf das Release-.deb mit gepinnter SHA-256 zurück. Danach `apt-mark hold ntfy`.
 3. Systembenutzer `ntfy`, `/var/lib/ntfy` (Benutzerdatenbank), `/var/cache/ntfy` (Nachrichten-Cache 12 h, **Anhänge aus**), `/etc/ntfy/server.yml` aus `deploy/ntfy/server.yml` (deny-all, nur `127.0.0.1:2586`, `behind-proxy`, Rate-Limits; eine abweichende bisherige Datei wird mit Zeitstempel gesichert), systemd-Härtung als Drop-in `/etc/systemd/system/ntfy.service.d/haertung.conf`, Dienst starten und lokal prüfen.
 4. ntfy-Benutzer `fampad-server` (Rolle `user`, kein Admin, Passwort wird nicht gespeichert) mit **Token**, das nur auf `fampad-*` schreiben darf (zum Publizieren). Das Token liegt in `/etc/lx-fampad/ntfy-token` (root, 0600) und erscheint weder im Log noch in der Prozessliste. Lokale Rechteprobe: anonym 401/403, `fampad-*` 200, anderes Topic 401/403.
 5. Caddy: nur `/etc/caddy/conf.d/ntfy.caddy` aus `deploy/ntfy/ntfy.caddy` (eigenständige Datei, nicht `fampad.caddy`; `deploy.sh` und `einrichtung-2.sh` fassen sie nie an). Das Haupt-Caddyfile wird **nie geschrieben**, nur zum Nachlesen gesichert (`/etc/caddy/Caddyfile.vor-ntfy.<Zeitstempel>`). Ablauf: die Kandidat-Datei zuerst allein mit `caddy validate` prüfen, dann atomar installieren (erst `ntfy.caddy.neu`, dann umbenennen), danach Vollvalidierung mit allem Importierten, erst dann `reload`, danach `https://lx-labs.dev`, `https://familie.lx-labs.dev/api/v1/health` und `https://ntfy.familie.lx-labs.dev` (inkl. Rechteprobe) prüfen.
@@ -281,7 +299,7 @@ curl -sI https://lx-labs.dev | head -1
 
 **Token rotieren:** Das Token läuft nicht ab. Neues Token: `sudo -u ntfy ntfy token --config /etc/ntfy/server.yml list` (altes ansehen), `sudo rm /etc/lx-fampad/ntfy-token`, Skript erneut starten (legt ein neues an), danach das alte widerrufen (`sudo -u ntfy ntfy token --config /etc/ntfy/server.yml remove fampad-server <altes-tk_…>`), `NTFY_TOKEN` in der env-Datei ersetzen und `lx-fampad` neu starten.
 
-**Version aktualisieren:** Aktuell ist **2.28.0** gepinnt; **2.29.0** darf frühestens ab 21.10. (14 Tage nach Veröffentlichung) übernommen werden. Sicher aktualisieren: Release-Datum prüfen, neuen Fingerabdruck und Version auf docs.ntfy.sh gegenlesen, dann `NTFY_VERSION` (und `NTFY_DEB_SHA256` für den Fallback) im Skript anheben, per PR mergen; auf dem Server `sudo apt-mark unhold ntfy && sudo apt-get update && sudo apt-get install ntfy=<neu> && sudo apt-mark hold ntfy && sudo systemctl restart ntfy`, anschließend `curl https://ntfy.familie.lx-labs.dev/v1/health`. Das Skript lässt eine andere installierte Version unangetastet.
+**Version aktualisieren:** Aktuell ist **2.29.0** gepinnt; **2.32.0** darf frühestens ab 01.11. (14 Tage nach Veröffentlichung) übernommen werden. Sicher aktualisieren: Release-Datum prüfen, neuen Fingerabdruck und Version auf docs.ntfy.sh gegenlesen, dann `NTFY_VERSION` (und `NTFY_DEB_SHA256` für den Fallback) im Skript anheben, per PR mergen; auf dem Server `sudo apt-mark unhold ntfy && sudo apt-get update && sudo apt-get install ntfy=<neu> && sudo apt-mark hold ntfy && sudo systemctl restart ntfy`, anschließend `curl https://ntfy.familie.lx-labs.dev/v1/health`. Das Skript lässt eine andere installierte Version unangetastet.
 
 **Rückbau:** `sudo rm /etc/caddy/conf.d/ntfy.caddy && sudo systemctl reload caddy` (lx-labs.dev und familie bleiben unberührt), `sudo systemctl disable --now ntfy`. Daten liegen unter `/var/lib/ntfy`.
 
@@ -494,7 +512,7 @@ Voraussetzung: `E2EE_PW_BACKUP=true` in `/etc/lx-fampad/env` (siehe `server/.env
 1. Server aktualisieren (Migration 0017), Test zu zweit; `GET /api/v1/version` zeigt `features.authKey: true`.
 2. **Erst auf allen Geräten der Familie die neue App installieren und einmal anmelden** (das stellt das Konto automatisch um). **Erst danach** Passwörter ändern: Ein Passwortwechsel oder eine Reset-Einladung mit der neuen App macht die alte Klartext-Anmeldung dieses Mitglieds unbrauchbar, noch nicht aktualisierte Geräte (0.5.x/0.6.0) kommen dann nicht mehr mit Passwort hinein.
 3. In der App unter Profil > Mitglieder und Einladungen (Admin) prüfen: Bei keinem Mitglied steht „altes passwort-verfahren“ (die Markierung für das alte Passwort-Verfahren; oder `GET /api/v1/members/password-modes` zeigt keinen `legacy`-Eintrag).
-4. Erst dann Stichtag: `AUTH_LEGACY_PASSWORD_LOGIN=false` setzen und den Dienst neu starten. Alte Apps bekommen `403 legacy_login_disabled` („Bitte aktualisiere die App“). Der Passwort-Reset (PR 4b: Admin „Passwort zurücksetzen“ und „Passwort vergessen?“ mit Wiederherstellungscode oder Passkey) ist der Rückweg für Ausgesperrte; er funktioniert auch nach dem Stichtag, nur mit `authKey` (alte Apps zeigen den Update-Hinweis). **Vor dem Stichtag prüfen:** Der Server ist auf Migration 0018, mindestens zwei Admins existieren (einer kann den anderen zurücksetzen), jede Person hat ihre Wiederherstellungscodes aufbewahrt oder einen Passkey; ein Probe-Reset zu zweit hat geklappt (Admin erzeugt den Link, die Person löst ihn mit Authenticator-Code ein, die neue Passwort-Sicherung ist danach wieder „aktuell“).
+4. Erst dann Stichtag: `AUTH_LEGACY_PASSWORD_LOGIN=false` setzen und den Dienst neu starten. Alte Apps bekommen `403 legacy_login_disabled` („Bitte aktualisiere die App“). Der Passwort-Reset (PR 4b: Admin „Passwort zurücksetzen“ und „Passwort vergessen?“ mit Wiederherstellungscode oder Passkey) ist der Rückweg für Ausgesperrte; er funktioniert auch nach dem Stichtag, nur mit `authKey` (alte Apps zeigen den Update-Hinweis). **Vor dem Stichtag prüfen:** Der Server ist auf Migration 0019, mindestens zwei Admins existieren (einer kann den anderen zurücksetzen), jede Person hat ihre Wiederherstellungscodes aufbewahrt oder einen Passkey; ein Probe-Reset zu zweit hat geklappt (Admin erzeugt den Link, die Person löst ihn mit Authenticator-Code ein, die neue Passwort-Sicherung ist danach wieder „aktuell“).
 
 **Warnung Rückschalten:** Wird `E2EE_PW_BACKUP` ausgeschaltet, `AUTH_LEGACY_PASSWORD_LOGIN` auf `false` gesetzt oder der Server auf einen Stand vor PR 4 zurückgestellt, können sich Konten mit authKey-Passwort (Platzhalter im Klartext-Hash) nicht mehr per Passwort anmelden, nur noch per Passkey oder Wiederherstellungscode; der Passwort-Reset (PR 4b) ist der Rückweg, braucht aber `E2EE_PW_BACKUP=true` (ohne Schalter gibt es die Routen nicht). Die App sendet für solche Konten nie Klartext. Reihenfolge beim Ausrollen: **erst den Server, dann die Web-App und die APK**.
 

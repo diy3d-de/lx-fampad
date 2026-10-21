@@ -23,7 +23,7 @@ import 'termin_editor.dart';
 int aktiveFilter(KalenderAuswahl a, {required bool feiertage, required bool ferien, required bool geburtstage}) =>
     a.personen.length + (feiertage ? 0 : 1) + (ferien ? 0 : 1) + (geburtstage ? 0 : 1);
 
-/// Titel der Leiste: Monat und Jahr, Kalenderwoche mit Zeitraum, "Agenda".
+/// Titel der Leiste: Monat und Jahr, Kalenderwoche (mobil "KW 43 · Okt 2026", Desktop "KW 43 · 19.–25. Oktober 2026"), "Agenda".
 ({String haupt, String? unter}) kalenderTitel(KalenderAuswahl a, {required bool breit}) {
   switch (a.ansicht) {
     case KalenderAnsicht.agenda:
@@ -33,10 +33,19 @@ int aktiveFilter(KalenderAuswahl a, {required bool feiertage, required bool feri
     case KalenderAnsicht.woche:
       final montag = a.tag.subtract(Duration(days: a.tag.weekday - 1));
       final sonntag = montag.add(const Duration(days: 6));
-      final zeitraum = breit
-          ? '${DateFormat('d. MMM', 'de_DE').format(montag)} – ${DateFormat('d. MMM y', 'de_DE').format(sonntag)}'
-          : '${DateFormat('d. MMM', 'de_DE').format(montag)} – ${DateFormat('d. MMM', 'de_DE').format(sonntag)}';
-      return breit ? (haupt: 'KW ${kalenderwoche(montag)} · $zeitraum', unter: null) : (haupt: 'KW ${kalenderwoche(montag)}', unter: zeitraum);
+      final kw = 'KW ${kalenderwoche(montag)}';
+      if (!breit) {
+        // Monat und Jahr der ISO-Woche (Donnerstag)
+        final donnerstag = montag.add(const Duration(days: 3));
+        return (haupt: '$kw · ${DateFormat('MMM y', 'de_DE').format(donnerstag).replaceAll('.', '')}', unter: null);
+      }
+      final voll = DateFormat('d. MMMM y', 'de_DE');
+      final text = montag.year != sonntag.year
+          ? '${voll.format(montag)} – ${voll.format(sonntag)}'
+          : montag.month != sonntag.month
+          ? '${DateFormat('d. MMMM', 'de_DE').format(montag)} – ${voll.format(sonntag)}'
+          : '${montag.day}.–${voll.format(sonntag)}';
+      return (haupt: '$kw · $text', unter: null);
   }
 }
 
