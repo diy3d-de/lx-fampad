@@ -1,6 +1,6 @@
 {
   "name": "lx-fampad-server",
-  "version": "0.6.2",
+  "version": "0.6.3",
   "private": true,
   "type": "module",
   "description": "lx-fampad: API, Sync und WebSocket",
