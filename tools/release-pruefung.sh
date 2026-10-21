@@ -82,8 +82,8 @@ if [ -f "$usage" ]; then
       echo "FEHLER: R8 hat $klasse (ganz oder in Methoden) entfernt: Keep-Regel in app/android/app/proguard-rules.pro prüfen, die Karte bliebe leer" >&2; fehler=1
     fi
   done
-  # Widget "Heute": Empfaenger und Anzeige-Klassen duerfen nicht ganz entfernt sein (R8 wuerde sie sonst als unbenutzt streichen, das Widget bliebe leer)
-  for klasse in dev.lx_labs.fampad.HeuteWidget dev.lx_labs.fampad.HeuteAnzeige dev.lx_labs.fampad.HeuteSpeicher dev.lx_labs.fampad.HeuteKanal; do
+  # Widget "Heute": Empfaenger und Anzeige-Klassen duerfen nicht ganz entfernt sein (HeuteSpeicher ist ausgenommen: R8 fuegt das kleine Objekt in seine Aufrufer ein und listet die Klasse dann als entfernt; R8 wuerde sie sonst als unbenutzt streichen, das Widget bliebe leer)
+  for klasse in dev.lx_labs.fampad.HeuteWidget dev.lx_labs.fampad.HeuteAnzeige dev.lx_labs.fampad.HeuteKanal; do
     muster="$(printf '%s' "$klasse" | sed 's/\./\\./g')"
     if grep -qxE "$muster" "$usage"; then echo "FEHLER: R8 hat $klasse entfernt (Widget Heute)" >&2; fehler=1; fi
   done
