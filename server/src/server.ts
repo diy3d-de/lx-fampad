@@ -20,6 +20,8 @@ const app = await buildApp({
 });
 logRef.current = app.log;
 // Aufräumen beim Start und stündlich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
+// Wetter: der eine Abruf-Takt (nur mit WEATHER_ENABLED=true)
+app.weather?.start();
 const maintenance = app.authCore ? startMaintenance(app.authCore.ctx) : undefined;
 
 const shutdown = async (signal: string) => {

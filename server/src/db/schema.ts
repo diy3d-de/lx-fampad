@@ -1194,3 +1194,43 @@ export const epocheWraps = pgTable(
     check('epoche_wraps_len_ck', sql`char_length(${t.wrap}) <= 4096`),
   ],
 );
+
+/**
+ * Wetter (Netatmo, nur Server): genau eine Zeile (id = 1) mit den Zugangsdaten des Betreibers. Alles ist mit dem Hauptschlüssel
+ * verschlüsselt (KeyRing, Zweck "weather"), nie im Klartext; geschrieben nur über die Kommandozeile (cli/weather-setup.ts) und die
+ * Token-Rotation des Wetter-Dienstes. Kein Familienbezug: die Station gehört dem Betreiber des Servers, nicht einer Familie.
+ */
+export const weatherCredentials = pgTable(
+  'weather_credentials',
+  {
+    id: integer('id').primaryKey().default(1),
+    clientIdEnc: text('client_id_enc').notNull(),
+    clientSecretEnc: text('client_secret_enc').notNull(),
+    refreshTokenEnc: text('refresh_token_enc').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    lastOkAt: timestamp('last_ok_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    /** Kurzer Code des letzten Fehlers (keine Inhalte der Antwort). */
+    lastErrorCode: text('last_error_code'),
+    /** Gesetzt bei `invalid_grant`: kein Abruf mehr, bis die Zugangsdaten neu eingegeben werden. */
+    disabledAt: timestamp('disabled_at', { withTimezone: true }),
+  },
+  (t) => [check('weather_credentials_single_ck', sql`${t.id} = 1`)],
+);
+
+/** Eigene Zwischenspeicherung der Messwerte der Station (Verlauf, Min/Max); Zeilen älter als 7 Tage werden gelöscht. */
+export const weatherSamples = pgTable(
+  'weather_samples',
+  {
+    /** Zeitpunkt der Messung der Station (nicht des Abrufs). */
+    ts: timestamp('ts', { withTimezone: true }).primaryKey(),
+    temperature: doublePrecision('temperature'),
+    humidity: doublePrecision('humidity'),
+    pressure: doublePrecision('pressure'),
+    rain1h: doublePrecision('rain_1h'),
+    rain24h: doublePrecision('rain_24h'),
+    windKmh: doublePrecision('wind_kmh'),
+    gustKmh: doublePrecision('gust_kmh'),
+    windAngle: doublePrecision('wind_angle'),
+  },
+);

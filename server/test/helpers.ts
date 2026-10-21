@@ -165,7 +165,7 @@ export class World {
     readonly config: Config,
   ) {}
 
-  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable; pushMinIntervalMs?: number } = {}): Promise<World> {
+  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable; pushMinIntervalMs?: number; weatherFetch?: typeof fetch } = {}): Promise<World> {
     const config = loadConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
@@ -182,7 +182,7 @@ export class World {
       ...env,
     });
     const holder: { world?: World } = {};
-    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}), ...(extra.pushMinIntervalMs !== undefined ? { pushMinIntervalMs: extra.pushMinIntervalMs } : {}) });
+    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}), ...(extra.pushMinIntervalMs !== undefined ? { pushMinIntervalMs: extra.pushMinIntervalMs } : {}), ...(extra.weatherFetch ? { weatherFetch: extra.weatherFetch } : {}) });
     await app.ready();
     const authCore = app.authCore;
     if (!authCore) throw new Error('Auth fehlt');

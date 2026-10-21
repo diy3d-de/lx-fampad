@@ -18,6 +18,7 @@ import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
 import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKartenBuilder, standortKartenBuilderProvider;
 import 'package:lx_fampad/data/sync_state.dart';
+import 'package:lx_fampad/data/wetter/wetter_state.dart' show wetterTaktProvider;
 
 import 'fake_server.dart';
 import 'fake_socket.dart';
@@ -148,6 +149,8 @@ class TestUmgebung {
     standortBenachrichtigerProvider.overrideWithValue(
       StandortBenachrichtiger(db: db, anzeige: standortAnzeige, speicher: MemoryErinnerungSpeicher(), ich: () async => null, istVordergrund: () => true),
     ),
+    // Wetter: kein Abfrage-Takt im Test (ein Timer bliebe stehen)
+    wetterTaktProvider.overrideWithValue(null),
     ...extraOverrides,
   ];
 

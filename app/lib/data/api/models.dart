@@ -617,3 +617,84 @@ class BlobDto {
     return BlobDto(blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'));
   }
 }
+
+/// Messwerte der Wetterstation (GET /weather, docs/API.md). Nur Ortsname und Zahlen, nie Straße, Koordinaten oder Station.
+class WetterAktuell {
+  final DateTime gemessen;
+
+  /// Der Server hält die letzte Messung für veraltet (älter als eine Stunde).
+  final bool veraltet;
+  final double? temperatur;
+  final double? feuchte;
+  final double? druck;
+  final double? regen1h;
+  final double? regen24h;
+  final double? windKmh;
+  final double? boeKmh;
+  final double? windRichtung;
+  const WetterAktuell({
+    required this.gemessen,
+    required this.veraltet,
+    this.temperatur,
+    this.feuchte,
+    this.druck,
+    this.regen1h,
+    this.regen24h,
+    this.windKmh,
+    this.boeKmh,
+    this.windRichtung,
+  });
+}
+
+class WetterPunkt {
+  final DateTime zeit;
+  final double temperatur;
+  const WetterPunkt(this.zeit, this.temperatur);
+}
+
+class WetterDto {
+  /// Der Server hat das Wetter eingeschaltet.
+  final bool verfuegbar;
+  final String ort;
+  final WetterAktuell? aktuell;
+  final double? min24h;
+  final double? max24h;
+  final List<WetterPunkt> verlauf;
+  const WetterDto({required this.verfuegbar, this.ort = '', this.aktuell, this.min24h, this.max24h, this.verlauf = const []});
+
+  static double? _d(Object? v) => v is num && v.isFinite ? v.toDouble() : null;
+
+  factory WetterDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    if (m['available'] != true) return const WetterDto(verfuegbar: false);
+    final ort = _s(m, 'place');
+    final c = m['current'];
+    WetterAktuell? aktuell;
+    if (c != null) {
+      final cm = asJson(c);
+      aktuell = WetterAktuell(
+        gemessen: _t(cm, 'measuredAt'),
+        veraltet: cm['stale'] == true,
+        temperatur: _d(cm['temperature']),
+        feuchte: _d(cm['humidity']),
+        druck: _d(cm['pressure']),
+        regen1h: _d(cm['rain1h']),
+        regen24h: _d(cm['rain24h']),
+        windKmh: _d(cm['windKmh']),
+        boeKmh: _d(cm['gustKmh']),
+        windRichtung: _d(cm['windAngle']),
+      );
+    }
+    final reihe = m['series'];
+    final verlauf = <WetterPunkt>[];
+    if (reihe is List) {
+      for (final p in reihe) {
+        if (p is! Map<String, dynamic>) continue;
+        final t = p['t'] is String ? DateTime.tryParse(p['t'] as String) : null;
+        final v = _d(p['temperature']);
+        if (t != null && v != null) verlauf.add(WetterPunkt(t, v));
+      }
+    }
+    return WetterDto(verfuegbar: true, ort: ort, aktuell: aktuell, min24h: _d(m['min24h']), max24h: _d(m['max24h']), verlauf: verlauf);
+  }
+}
