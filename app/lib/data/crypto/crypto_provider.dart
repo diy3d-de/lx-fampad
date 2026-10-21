@@ -38,4 +38,11 @@ abstract interface class CryptoProvider {
   Uint8List versiegeln(Uint8List nachricht, Uint8List oeffentlicherSchluessel);
 
   Uint8List versiegelungOeffnen(Uint8List chiffretext, Uint8List oeffentlicherSchluessel, Uint8List geheimerSchluessel);
+
+  /// Argon2id (crypto_pwhash, ALG_ARGON2ID13) mit Salt von 16 Byte; Speicher in KiB, [ops] Durchläufe; Ausgabe 32 Byte. [passwort] sind die schon
+  /// normalisierten UTF-8-Bytes (pw_sicherung.dart). Rechenintensiv: auf Android läuft es in einem Isolate (UI bleibt frei), im Web im Hauptthread.
+  Future<Uint8List> pwhash({required Uint8List passwort, required Uint8List salt, required int memKiB, required int ops});
+
+  /// Schlüsselableitung: BLAKE2b mit Schlüssel = [master] (16 bis 64 Byte) über das Kontext-Label (UTF-8). Verschiedene Labels ergeben unabhängige Ausgaben.
+  Uint8List kdf(Uint8List master, String kontext, {int laenge = 32});
 }

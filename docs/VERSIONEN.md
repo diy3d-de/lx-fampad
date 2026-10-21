@@ -108,6 +108,10 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 
 `app/web/sodium.js` (1318067 Byte) ist die **Sumo-Variante** von libsodium.js **0.8.4** (Commit `a79e5ddbbcfd130e27dcbbda1b5ba072c7a9787d`), geladen mit `dart run sodium:update_web --sumo --no-edit-index` (das Werkzeug des Pakets sodium 4.1.1+2 prüft die SHA-512 `d95956f041be5bcf8a9644027e3f4866138903a38f8fe84fdb0410a0076b0121e201379b8966281b2105c67b7c85e79df6e8a68eab0eea9a8dea48bfdaf0cd2a`; lokal ohne C-Compiler mit `NIX_SKIP_SODIUM_BUILD_HOOKS=1`). Die Datei enthält keine Fremd-Adressen, kein `eval`/`new Function` und die WASM-Datei eingebettet (CSP: `script-src 'self' 'wasm-unsafe-eval'`, schon vorhanden). `web/index.html` bindet sie per `<script src="sodium.js">` **vor** dem Flutter-Start ein. `.gitattributes` führt sie als binär. Bei einem Update von sodium neu laden und die Prüfsummen (diese Tabelle und `app/web-assets.sha256`) ändern.
 
+## Wortliste für Passwort-Vorschläge
+
+`app/assets/crypto/wortliste.txt`: 2048 Wörter der **BIP-39 englischen Wortliste** (https://github.com/bitcoin/bips/blob/master/bip-0039/english.txt, BIP-0039 steht unter der MIT-Lizenz), unverändert, Quelle und Lizenz im Dateikopf. Kein Paket, kein Abruf zur Laufzeit. `app/lib/data/crypto/nfkc_tabelle.dart` ist erzeugt (`app/tool/gen_nfkc.mjs` aus der Unicode Character Database 16.0.0, https://www.unicode.org/Public/16.0.0/ucd/, Unicode-Lizenz), nicht von Hand ändern; `app/test/data/NormalizationTest.txt` ist die offizielle Testdatei derselben Version (nur für Tests, nicht in der App).
+
 ## Auflagen aus der Recherche
 
 - Flutter Web: `--no-web-resources-cdn`, Schriften (Inter, JetBrains Mono) bündeln, `fontFallbackBaseUrl` auf eigene Domain, CSP mit `'wasm-unsafe-eval'`. Im Network-Tab prüfen, dass nichts von Google lädt.
