@@ -108,6 +108,9 @@ const TABLES = [
   'konversationen',
   'nachrichten',
   'lesestand',
+  'reaktionen',
+  'stimmen',
+  'pins',
 ];
 
 const backends: [string, () => Promise<Backend>][] = [['PGlite', openPglite]];

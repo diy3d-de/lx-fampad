@@ -264,6 +264,64 @@ class Lesestaende extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Reaktion einer Person auf eine Nachricht (je Person und Nachricht eine, feste ID). `inhalt` ist die Hülle der Schnittstelle (`e1:` bzw. lokal `l1:` im Ausgang), lesbar nur
+/// über `NachrichtenInhalt.zusatz`.
+@DataClassName('Reaktion')
+@TableIndex(name: 'reaktionen_konversation_idx', columns: {#konversationId})
+class Reaktionen extends Table {
+  @override
+  String get tableName => 'reaktionen';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get nachrichtId => text()();
+  TextColumn get userId => text()();
+  TextColumn get inhalt => text()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Stimme einer Person zu einer Umfrage-Nachricht (je Person und Umfrage eine, feste ID). `geaendertAt` setzt der Server (Stimmen nach dem Ende einer Umfrage zählen nicht).
+@DataClassName('Stimme')
+@TableIndex(name: 'stimmen_konversation_idx', columns: {#konversationId})
+class Stimmen extends Table {
+  @override
+  String get tableName => 'stimmen';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get nachrichtId => text()();
+  TextColumn get userId => text()();
+  TextColumn get inhalt => text()();
+  IntColumn get geaendertAt => integer().map(const MsDatumConverter()).nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Angeheftete Nachricht (je Nachricht eine, feste ID); kein Inhalt, nur der Bezug.
+@DataClassName('ChatPin')
+@TableIndex(name: 'pins_konversation_idx', columns: {#konversationId})
+class Pins extends Table {
+  @override
+  String get tableName => 'pins';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get nachrichtId => text()();
+  TextColumn get gepinntVon => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Aufgaben (Phase 1c-4a). Fälligkeit: ein Tag (`faelligDate`, Text `YYYY-MM-DD`) ODER ein Zeitpunkt (`faelligUtc` + `tzid`), beides leer = ohne.
 @DataClassName('Aufgabe')
 class Aufgaben extends Table {
@@ -322,7 +380,7 @@ class AufgabePunkte extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte])
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -333,7 +391,9 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 9;
+  int get schemaVersion => 10;
+
+  /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -386,6 +446,14 @@ class AppDatabase extends _$AppDatabase {
           final spalten = await customSelect("PRAGMA table_info('outbox')").get();
           if (!spalten.any((r) => r.read<String>('name') == 'fehler_code')) await m.addColumn(outbox, outbox.fehlerCode);
         }
+        if (from < 10) {
+          await m.createTable(reaktionen);
+          await m.createTable(stimmen);
+          await m.createTable(pins);
+          await m.createIndex(reaktionenKonversationIdx);
+          await m.createIndex(stimmenKonversationIdx);
+          await m.createIndex(pinsKonversationIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -402,6 +470,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from == 7) {
         // Version 8 ändert keine Tabelle: bis jetzt kamen nur die eigenen Lesestände, die der anderen Teilnehmer fehlen sonst bis zu ihrer nächsten Änderung.
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 10) {
+        // Version 10 legt die Tabellen für Reaktionen, Stimmen und Pins an; ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

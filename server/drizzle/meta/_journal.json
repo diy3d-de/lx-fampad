@@ -94,6 +94,13 @@
       "breakpoints": true
     },
     {
+      "idx": 13,
+      "version": "7",
+      "when": 1792558774094,
+      "tag": "0013_chat_zusatz",
+      "breakpoints": true
+    },
+    {
       "idx": 14,
       "version": "7",
       "when": 1792563548179,

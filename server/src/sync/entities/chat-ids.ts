@@ -30,3 +30,12 @@ export const wrapId = (konversationId: string, epoche: number, empfaengerId: str
 
 /** Zufalls-UUID Version 4 (Gruppen, Nachrichten). */
 export const istUuidV4 = (id: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+
+/** Feste ID der Reaktion einer Person auf eine Nachricht (je Person und Nachricht genau eine). */
+export const reaktionId = (nachrichtId: string, userId: string): string => uuidAusSchluessel(`reaktion:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}`);
+
+/** Feste ID der Stimme einer Person zu einer Umfrage-Nachricht (je Person und Umfrage genau eine). */
+export const stimmeId = (nachrichtId: string, userId: string): string => uuidAusSchluessel(`stimme:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}`);
+
+/** Feste ID der Anheftung einer Nachricht (je Nachricht genau eine). */
+export const pinId = (nachrichtId: string): string => uuidAusSchluessel(`pin:${nachrichtId.toLowerCase()}`);

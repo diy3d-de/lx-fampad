@@ -182,6 +182,33 @@ export async function pullChanges(
             sent.add(key);
             changes.push({ rev: Number(k.rev), entity: child.name, id: String(k.id), tombstone: false, fields: wireRow(child, k) });
           }
+          // Enkel (Reaktionen, Stimmen und Pins der Nachrichten): ebenfalls begrenzt, mit den Fakten der gelieferten Nachricht
+          const kidsById = new Map(kids.map((k) => [String(k.id), k]));
+          for (const grand of registry.childrenOf(child.name)) {
+            if (!grand.parent || kidsById.size === 0) continue;
+            const gc = syncColumns(grand);
+            const enkel = (await tx
+              .select()
+              .from(grand.table)
+              .where(
+                and(
+                  eq(gc.familyId, familyId),
+                  inArray(columnOf(grand, grand.parent.field), [...kidsById.keys()]),
+                  isNull(gc.deletedAt),
+                  grand.ownerColumn ? eq(columnOf(grand, grand.ownerColumn), actor.userId) : undefined,
+                ),
+              )
+              .orderBy(desc(columnOf(grand, 'createdAt')), desc(gc.id))
+              .limit(HISTORY_LIMIT)) as Row[];
+            for (const g of enkel.reverse()) {
+              const eltern = kidsById.get(String(g[grand.parent.field]));
+              if (!eltern) continue;
+              const key = `${grand.name}:${String(g.id)}`;
+              if (sent.has(key) || !mayRead(grand.rules, actor, grand.facts(g, child.facts(eltern, h.facts)))) continue;
+              sent.add(key);
+              changes.push({ rev: Number(g.rev), entity: grand.name, id: String(g.id), tombstone: false, fields: wireRow(grand, g) });
+            }
+          }
         }
       }
       return { status: 'ok' as const, rev: family.rev, changes, hasMore, next, ...(snapshotRev !== undefined ? { snapshotRev } : {}) };
