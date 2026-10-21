@@ -76,6 +76,11 @@ export const b64urlKey = z
   .string()
   .regex(/^[A-Za-z0-9_-]{43}$/)
   .refine((s) => Buffer.from(s, 'base64url').toString('base64url') === s);
+/** 16 Byte als Base64url ohne Auffüllzeichen (22 Zeichen, kanonisch): Salt der Passwort-Ableitung. */
+export const b64urlSalt16 = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{22}$/)
+  .refine((s) => Buffer.from(s, 'base64url').toString('base64url') === s);
 /** Undurchsichtiger verschlüsselter Blob (Base64url) mit Längengrenze. */
 export const b64urlBlob = (max: number) => z.string().min(32).max(max).regex(/^[A-Za-z0-9_-]+$/);
 export const pinSchema = z.string().regex(/^\d{6}$/);

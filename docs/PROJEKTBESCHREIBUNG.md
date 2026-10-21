@@ -499,6 +499,8 @@ Tabellen `person_keys`, `person_key_history`, `key_backups`, `key_transfers` (Mi
 `GET /members/:id/keys`, Schlüssel in `GET /members` (Einzelheiten `docs/API.md`). Alles hinter der Sitzung, strenges Rate-Limit, Step-up für Sicherung (Ablegen und Abrufen) und Schlüsselwechsel,
 Audit-Ereignisse `key_created`, `key_rotated`, `backup_set`, `key_backup_read`, `transfer_claimed` (nie Schlüsselmaterial im Log).
 
+**Passwort-Sicherung (vereinfachte Schlüsselverwaltung, Server additiv, Migration 0014, Schalter `E2EE_PW_BACKUP`, Standard aus):** Tabelle `account_kdf` (je Konto Salt (16 Byte, öffentlich), Verfahren `argon2id-v1`, Speicher, Durchgänge, Version) und `key_backups_pw` (opaker Blob, `key_version`, `kdf_id`, `state` `active|stale|superseded`, `verified_at`; Zeilen werden nie gelöscht, höchstens eine aktuelle (`active` oder `stale`) je Person per Teil-Unique-Index; zusammengesetzter Fremdschlüssel `(family_id, user_id)`). Routen `POST /auth/kdf-params` (Fake-Antwort für unbekannte Konten), `PUT/GET /me/key-backup-pw`, `POST /me/key-backup-pw/verified` (`docs/API.md`); ohne Schalter 404, `GET /version` meldet `features.pwBackup`. Der Server sieht nie Passwort, `authKey` oder `kek`; Anmeldung mit `authKey` und Passwortwechsel folgen in einem späteren Paket. Der alte Weg (Wiederherstellungsschlüssel, QR-Übertragung, `key_backups`) bleibt unverändert; ein Schlüsselwechsel setzt die aktuelle Passwort-Sicherung auf `stale`.
+
 ### Phase 2: der verschlüsselte Chat
 
 Reine, getestete Bausteine: `app/lib/data/crypto/epochen.dart` (Wraps, Mitgliederlisten), `huelle.dart` (Nachrichten); die Anbindung an den Chat steht in `app/lib/data/chat/chat_krypto.dart` (Logik) und `chat_krypto_state.dart`

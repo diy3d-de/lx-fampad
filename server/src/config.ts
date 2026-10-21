@@ -112,6 +112,8 @@ export interface Config {
   locWakeCooldownMs: number;
   locSweepMs: number;
   locDirectoryTimeoutMs: number;
+  /** Vereinfachte Schlüsselverwaltung (Passwort-Sicherung, KDF-Parameter): Routen nur bei true, sonst 404 (Standard aus). */
+  e2eePwBackup: boolean;
 }
 
 /** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
@@ -144,6 +146,14 @@ function ntfyPublicHost(env: NodeJS.ProcessEnv): string {
   const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familie.lx-labs.dev').toLowerCase();
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
   return host;
+}
+
+/** Boolescher Schalter: true/1/false/0 (leer = Standard aus), alles andere bricht den Start ab. */
+function boolFlag(env: NodeJS.ProcessEnv, name: string): boolean {
+  const raw = env[name]?.trim().toLowerCase();
+  if (raw === undefined || raw === '' || raw === 'false' || raw === '0') return false;
+  if (raw === 'true' || raw === '1') return true;
+  throw new Error(`${name} ungültig: erlaubt sind true oder false`);
 }
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
@@ -299,6 +309,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locWakeCooldownMs: positiveInt(env, 'LOC_WAKE_COOLDOWN_MS', 10 * 60 * 1000),
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
+    e2eePwBackup: boolFlag(env, 'E2EE_PW_BACKUP'),
   };
 }
 
