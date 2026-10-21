@@ -19,9 +19,8 @@ const app = await buildApp({
   pingDb: database ? async () => void (await database.db.execute(sql`select 1`)) : undefined,
 });
 logRef.current = app.log;
+// Wetter: KEIN Abruf-Takt im API-Prozess (dieser darf nur Loopback erreichen); er läuft in cli/weather-poller.ts (lx-fampad-weather.service)
 // Aufräumen beim Start und stündlich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
-// Wetter: der eine Abruf-Takt (nur mit WEATHER_ENABLED=true)
-app.weather?.start();
 const maintenance = app.authCore ? startMaintenance(app.authCore.ctx) : undefined;
 
 const shutdown = async (signal: string) => {

@@ -93,6 +93,15 @@ if ! warte_auf_health; then
   exit 1
 fi
 
+# Wetter-Abruf (eigener Dienst, deploy/README.md Abschnitt 12): nach dem Update neu starten, wenn er eingerichtet ist
+if systemctl cat lx-fampad-weather.service >/dev/null 2>&1; then
+  echo "==> restart lx-fampad-weather"
+  sudo -n systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudoers-Regel fehlt? README Schritt 5). Manuell: sudo systemctl restart lx-fampad-weather" >&2
+  if ! cmp -s deploy/lx-fampad-weather.service /etc/systemd/system/lx-fampad-weather.service; then
+    echo "==> Hinweis: deploy/lx-fampad-weather.service weicht von /etc/systemd/system ab. Übernehmen mit: sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst"
+  fi
+fi
+
 # Caddy-Konfiguration wird nicht automatisch übernommen (braucht sudo mit Passwort)
 if ! cmp -s deploy/Caddyfile /etc/caddy/conf.d/fampad.caddy; then
   echo "==> Hinweis: deploy/Caddyfile weicht von /etc/caddy/conf.d/fampad.caddy ab. Übernehmen mit:"

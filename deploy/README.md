@@ -129,6 +129,8 @@ sudo bash ~/lx-fampad/deploy/einrichtung-auth.sh
 # deploy.sh darf den Dienst ohne Passwort neu starten (nur genau diesen Befehl)
 echo 'lx ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-fampad' | sudo tee /etc/sudoers.d/lx-fampad
 sudo chmod 440 /etc/sudoers.d/lx-fampad
+# nur wenn der Wetter-Dienst eingerichtet ist (Abschnitt 12): zusätzlich dessen Neustart erlauben
+#   echo 'lx ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-fampad, /usr/bin/systemctl restart lx-fampad-weather' | sudo tee /etc/sudoers.d/lx-fampad
 sudo visudo -cf /etc/sudoers.d/lx-fampad     # muss "parsed OK" melden; sonst Datei sofort löschen (ein Fehler kann sudo sperren)
 
 # erstes Deployment: baut den Server, überträgt ihn und startet den Dienst (Migrationen laufen dabei)
@@ -415,6 +417,8 @@ Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-
 
 Der Server holt die Werte einer öffentlichen Netatmo-Station (nur der Server, nie die App). Ohne diese Schritte ist das Wetter aus (Standard) und nichts passiert.
 
+**Der Abruf läuft in einem eigenen Dienst `lx-fampad-weather.service`, nicht in der API.** `lx-fampad.service` sperrt jedes Netz außer Loopback (`IPAddressDeny=any`); `api.netatmo.com` liegt hinter Azure Front Door mit wechselnden IPs, und `IPAddressAllow=` kennt keine Hostnamen. Statt die Sperre der API zu lockern, läuft nur der Abruf-Takt (`dist/cli/weather-poller.js`, kein HTTP-Port) in einem zweiten Prozess (gleicher Benutzer, gleiche Härtung, aber `IPAddressAllow=any`); `GET /weather` liest nur aus der Datenbank. **Trade-off:** Dieser eine Prozess darf ins ganze Internet verbinden (Ziel nicht filterbar); ausgeglichen durch `SocketBindDeny=any` (kein Listening), kein Schreibzugriff aufs Dateisystem, keine Capabilities und minimalen Code. Es gibt genau einen Abruf-Takt: die API startet keinen.
+
 1. **Developer-App** (einmalig, im Browser, mit deinem Netatmo-Konto): `https://dev.netatmo.com` anmelden, „My apps“, „Create“; Name und Beschreibung frei, **Scope `read_station`**. Auf der Seite der App stehen **Client ID** und **Client Secret**; der „Token generator“ (Scope `read_station` anhaken) erzeugt ein **Refresh-Token**. Diese drei Werte **nie** in Chat, Repository, Shell-Verlauf oder Dateien kopieren, sondern nur im nächsten Schritt eintippen oder einfügen. Die Nutzungsbedingungen von Netatmo (Developer Terms) vorher lesen.
 2. **Einstellungen** in `/etc/lx-fampad/env` (keine Geheimnisse; MAC und Rechteck der Station, das Rechteck klein halten, höchstens 0,5 Grad je Richtung):
    ```
@@ -428,9 +432,15 @@ Der Server holt die Werte einer öffentlichen Netatmo-Station (nur der Server, n
    ```bash
    sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/weather-setup.js
    ```
-   Das Skript fragt `client_id`, `client_secret` und `refresh_token` ab und macht einen Probeabruf (`ok` oder der Grund). `--status` zeigt den Zustand, `--remove` löscht die Zugangsdaten. Danach `sudo systemctl restart lx-fampad`.
-4. **Prüfen:** `journalctl -u lx-fampad -n 50` zeigt höchstens Codes wie `station_not_found` (MAC oder Rechteck stimmen nicht, oder die Station ist nicht öffentlich) oder `invalid_grant` (Token ungültig: Schritt 3 mit einem neuen Refresh-Token wiederholen; der Abruf ist bis dahin abgeschaltet). In der App erscheint die Kachel nach dem ersten erfolgreichen Abruf (spätestens nach 10 Minuten).
-5. **Ausschalten:** `WEATHER_ENABLED` entfernen und neu starten; die Messwerte der letzten 7 Tage bleiben in der Tabelle `weather_samples`, die Zugangsdaten löschen mit `weather-setup.js --remove`.
+   Das Skript fragt `client_id`, `client_secret` und `refresh_token` ab und macht einen Probeabruf (`ok` oder der Grund). `--status` zeigt den Zustand, `--remove` löscht die Zugangsdaten. Danach den Wetter-Dienst einrichten (Schritt 3a) bzw. neu starten: `sudo systemctl restart lx-fampad-weather`.
+3a. **Wetter-Dienst einrichten** (einmalig, nach `deploy.sh` mit diesem Stand und nach dem ersten Start der API, damit die Migration die Tabellen angelegt hat). Als Benutzer `lx`, zuerst trocken:
+   ```bash
+   sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst --dry-run
+   sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst
+   ```
+   Das Skript prüft die Unit mit `systemd-analyze verify`, kopiert sie nach `/etc/systemd/system/`, macht `daemon-reload` und `enable --now` und zeigt den Status. Von Hand: `sudo cp ~/lx-fampad/deploy/lx-fampad-weather.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now lx-fampad-weather`. `deploy.sh` startet den Dienst danach bei jedem Update neu (falls vorhanden) und weist auf eine geänderte Unit hin. Ohne `WEATHER_ENABLED=true` beendet sich der Prozess sofort und bleibt gestoppt; ohne Zugangsdaten läuft er und prüft alle 10 Minuten erneut.
+4. **Prüfen:** `journalctl -u lx-fampad-weather -n 50` zeigt höchstens Codes wie `station_not_found` (MAC oder Rechteck stimmen nicht, oder die Station ist nicht öffentlich) oder `invalid_grant` (Token ungültig: Schritt 3 mit einem neuen Refresh-Token wiederholen; der Abruf ist bis dahin abgeschaltet). In der App erscheint die Kachel nach dem ersten erfolgreichen Abruf (spätestens nach 10 Minuten).
+5. **Ausschalten:** `WEATHER_ENABLED` entfernen und `sudo systemctl restart lx-fampad lx-fampad-weather` (der Wetter-Dienst bleibt danach gestoppt; ganz entfernen: `sudo systemctl disable --now lx-fampad-weather`); die Messwerte der letzten 7 Tage bleiben in der Tabelle `weather_samples`, die Zugangsdaten löschen mit `weather-setup.js --remove`.
 
 **Netatmo rotiert das Refresh-Token bei jeder Erneuerung.** Scheitert das Speichern des neuen Tokens in der Transaktion, schreibt der Dienst es ersatzweise außerhalb davon (Fehlercode `rotate_persist` in `weather-setup --status`). Steht im Log „ging verloren, weather-setup erneut ausführen“, ist das Token weg: Schritt 3 mit einem neuen Refresh-Token wiederholen. Ist der Abruf abgeschaltet (`invalid_grant`), prüft der Dienst alle 10 Minuten, ob neue Zugangsdaten da sind. Deshalb gibt es genau einen Abruf-Takt (ein Dienstprozess); nie dieselben Zugangsdaten auf einem zweiten System (z. B. einer Test-Instanz) gleichzeitig verwenden, sonst macht ein System das Token des anderen ungültig. Der Probeabruf von `weather-setup` läuft nur, wenn `WEATHER_ENABLED=true` in der Umgebung des Befehls steht (über `--env-file`).
 
