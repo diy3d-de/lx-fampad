@@ -159,11 +159,21 @@ class _Geraet {
   void schliessen() => c.dispose();
 }
 
-/// Lässt den Ereignisschleifen-Lauf der Fakes (Sockets, Timer, Futures) abarbeiten. Wartet mindestens [n] mal 10 ms; die Zeit ist echte Zeit,
-/// daher großzügig (unter Last brauchen mehrere verkettete Futures länger als im Leerlauf).
+/// Lässt die Ereignisschleife [n] mal 5 Runden mit Null-Verzögerung laufen. Alle Ketten der Fakes (Sockets, Streams, Futures) laufen über Microtasks
+/// und Null-Timer; ihre Reihenfolge hängt nicht von der Last ab (anders als beim Warten auf echte Millisekunden, das unter Last zu früh endet).
 Future<void> pumpen([int n = 6]) async {
-  for (var i = 0; i < n; i++) {
-    await Future<void>.delayed(const Duration(milliseconds: 10));
+  for (var i = 0; i < n * 5; i++) {
+    await Future<void>.delayed(Duration.zero);
+  }
+}
+
+/// Wartet auf Zeitgeber des Dienstes (Takt, Herzschlag, Wiederverbinden), die echte Zeit brauchen: prüft die [bedingung] laufend und endet, sobald sie
+/// gilt. Die Obergrenze ist nur ein Notanker gegen Hänger, kein Zeitpunkt, an dem etwas passiert sein muss.
+Future<void> bis(bool Function() bedingung, {Duration frist = const Duration(seconds: 20)}) async {
+  final ende = DateTime.now().add(frist);
+  while (!bedingung()) {
+    if (DateTime.now().isAfter(ende)) fail('Bedingung nicht erreicht (nach ${frist.inSeconds} s)');
+    await Future<void>.delayed(const Duration(milliseconds: 5));
   }
 }
 
@@ -259,7 +269,7 @@ Future<void> main() async {
 
       Future<void> teilenAnna({Set<String> an = const {_ben}, Duration dauer = const Duration(hours: 1)}) async {
         final f = anna.ctrl.teilen(dauer: dauer, empfaenger: an);
-        await pumpen();
+        await bis(() => anna.socket.gesendet.any((m) => m['type'] == 'loc_start'));
         await relay.weiter(anna);
         expect(await f, isTrue);
       }
@@ -350,8 +360,9 @@ Future<void> main() async {
         await pumpen();
         expect((await relay.weiter(anna)).where((m) => m['type'] == 'loc_pos'), isEmpty);
         // nach 74 s ohne Versand wiederholt der Takt (auch ohne neue Messung); die Messzeit bleibt die der letzten Messung
+        final vorherPos = anna.socket.gesendet.where((m) => m['type'] == 'loc_pos').length;
         anna.jetzt = start.add(const Duration(seconds: 80));
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await bis(() => anna.socket.gesendet.where((m) => m['type'] == 'loc_pos').length > vorherPos);
         final nach = await relay.weiter(anna);
         expect(nach.where((m) => m['type'] == 'loc_pos'), isNotEmpty);
         expect(ben.st.geteilt[_anna]!.messzeit!.toUtc(), start.add(const Duration(seconds: 25)));
@@ -398,14 +409,14 @@ Future<void> main() async {
         anna.port.herz = (laeuft: true, stopAngefordert: false);
         await teilenAnna();
         anna.port.herz = (laeuft: true, stopAngefordert: true);
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await bis(() => anna.st.phase == StandortPhase.aus);
         expect(anna.st.phase, StandortPhase.aus);
       });
 
       test('Läuft der Dienst nicht mehr (vom System beendet), endet das Teilen mit Hinweis', () async {
         await teilenAnna();
         anna.port.herz = (laeuft: false, stopAngefordert: false);
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await bis(() => anna.st.phase == StandortPhase.aus);
         expect(anna.st.phase, StandortPhase.aus);
         expect(anna.st.meldung, contains('beendet'));
       });
@@ -413,7 +424,7 @@ Future<void> main() async {
       test('Ablauf: nach der Endzeit endet das Teilen von selbst', () async {
         await teilenAnna(dauer: const Duration(minutes: 15));
         anna.jetzt = start.add(const Duration(minutes: 16));
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await bis(() => anna.st.phase == StandortPhase.aus);
         expect(anna.st.phase, StandortPhase.aus);
         expect(anna.st.meldung, contains('abgelaufen'));
       });
@@ -588,7 +599,7 @@ Future<void> main() async {
         await teilenAnna(dauer: const Duration(minutes: 15));
         expect(ben.st.geteilt, isNotEmpty);
         ben.jetzt = start.add(const Duration(minutes: 20));
-        await Future<void>.delayed(const Duration(milliseconds: 80));
+        await bis(() => ben.st.geteilt.isEmpty);
         expect(ben.st.geteilt, isEmpty);
       });
 
@@ -614,13 +625,14 @@ Future<void> main() async {
 
       test('Nach dem Wiederverbinden geht sofort die neueste Position raus; währenddessen wird nichts gepuffert', () async {
         await teilenAnna();
+        final sockets = anna.sockets.sockets.length;
         anna.socket.serverSchliesst(1006);
         await pumpen();
         anna.port.ctrl.add(PositionEreignis(_pos(start)));
         await pumpen();
         expect(anna.neueNachrichten().where((m) => m['type'] == 'loc_pos'), isEmpty);
         // der SyncSocket verbindet nach dem Backoff neu; der Server meldet die Freigabe als aktiv
-        await Future<void>.delayed(const Duration(seconds: 3));
+        await bis(() => anna.sockets.sockets.length > sockets && anna.st.verbunden);
         anna.socket.vomServer({'type': 'loc_active', 'shareId': relay.letzteShare, 'endsAt': anna.port.ende!.millisecondsSinceEpoch});
         await pumpen();
         expect(anna.neueNachrichten().where((m) => m['type'] == 'loc_pos'), hasLength(1));
