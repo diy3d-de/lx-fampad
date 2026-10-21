@@ -25,6 +25,14 @@ class _Person {
   final List<_Historie> historie = [];
   String? backupBlob;
   int backupVersion = 0;
+  String? email;
+  // Passwort-Sicherung (Schalter E2EE_PW_BACKUP)
+  String? pwBlob;
+  String? pwId;
+  int pwVersion = 0;
+  bool pwStale = false;
+  bool pwVerifiziert = false;
+  int pwAnzahl = 0;
   _Person(this.id, this.name);
 }
 
@@ -47,6 +55,12 @@ class FakeE2eeServer {
   /// Verlangt der Server gerade ein Step-up (403 step_up_required) für Sicherung/Wechsel?
   bool stepUpNoetig = false;
   int stepUps = 0;
+
+  /// Schalter des Servers für die Passwort-Sicherung (GET /version: features.pwBackup; aus = die Routen gibt es nicht, 404).
+  bool pwSchalter = false;
+
+  /// Verändert den Blob in der Antwort von GET /me/key-backup-pw (simuliert eine fehlerhafte Ablage).
+  String Function(String blob)? pwAbrufVerfaelschen;
 
   /// Zählt Anfragen je Pfad (zum Prüfen, dass nichts ohne Not gesendet wurde).
   int anfragen(String methodPath) => server.anfragen(methodPath).length;
@@ -73,6 +87,7 @@ class FakeE2eeServer {
         p.sign = r.json['publicSignKey'] as String;
         p.version++;
         p.backupBlob = null;
+        if (p.pwBlob != null) p.pwStale = true;
         _transfers.removeWhere((_, t) => t.hash.startsWith('${p.id}:'));
         return jsonAntwort({'keys': _keys(p)});
       }))
@@ -88,6 +103,40 @@ class FakeE2eeServer {
         if (stepUpNoetig) return fehler(403, 'step_up_required');
         if (p.backupBlob == null) return fehler(404, 'not_found');
         return jsonAntwort({'blob': p.backupBlob, 'keyVersion': p.backupVersion});
+      }))
+      ..on('GET /version', (_) => jsonAntwort({'service': 'lx-fampad', 'features': {'pwBackup': pwSchalter}}))
+      ..on('POST /auth/kdf-params', (r) {
+        if (!pwSchalter) return fehler(404, 'not_found');
+        return jsonAntwort({'kdf': _kdf(r.json['email'] as String)});
+      })
+      ..on('PUT /me/key-backup-pw', (r) => _mit(r, (p) {
+        if (!pwSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (p.enc == null) return fehler(409, 'no_keys');
+        final kdf = r.json['kdf'] as Map<String, dynamic>;
+        if (kdf['id'] != 'argon2id-v1' || kdf['memKiB'] != 65536 || kdf['ops'] != 3) return fehler(409, 'kdf_mismatch');
+        if (r.json['keyVersion'] != p.version) return fehler(409, 'key_version_mismatch');
+        p.pwBlob = r.json['blob'] as String;
+        p.pwVersion = p.version;
+        p.pwStale = false;
+        p.pwVerifiziert = false;
+        p.pwId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
+        return jsonAntwort({'ok': true, 'id': p.pwId});
+      }))
+      ..on('GET /me/key-backup-pw', (r) => _mit(r, (p) {
+        if (!pwSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (p.pwBlob == null) return fehler(404, 'not_found');
+        final blob = pwAbrufVerfaelschen?.call(p.pwBlob!) ?? p.pwBlob!;
+        return jsonAntwort({'id': p.pwId, 'blob': blob, 'keyVersion': p.pwVersion, 'state': p.pwStale ? 'stale' : 'active', 'kdf': _kdf(p.email ?? '')});
+      }))
+      ..on('POST /me/key-backup-pw/verified', (r) => _mit(r, (p) {
+        if (!pwSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (r.json['id'] != p.pwId) return fehler(404, 'not_found');
+        if (p.pwStale) return fehler(409, 'backup_not_current');
+        p.pwVerifiziert = true;
+        return jsonAntwort({'ok': true});
       }))
       ..on('POST /me/key-transfer', (r) => _mit(r, (p) {
         if (p.enc == null) return fehler(409, 'no_keys');
@@ -113,8 +162,8 @@ class FakeE2eeServer {
   }
 
   /// Person anlegen (Anmeldung dieser Person wird über das Header-Token `access-<id>` erkannt).
-  void person(String id, String name) {
-    _personen[id] = _Person(id, name);
+  void person(String id, String name, {String? email}) {
+    _personen[id] = _Person(id, name)..email = email;
     // Schlüssel eines Mitglieds in einer Version (aktuell oder Historie), nur Familienmitglieder (hier: alle bekannten Personen)
     server.on('GET /members/$id/keys', (r) => _mit(r, (_) {
       final p = _personen[id]!;
@@ -145,10 +194,37 @@ class FakeE2eeServer {
     p.version = version;
   }
 
+  /// Salt wie beim echten Server: nur aus E-Mail bestimmt (öffentlich, deterministisch), 16 Byte.
+  Map<String, dynamic> _kdf(String email) => {
+    'id': 'argon2id-v1',
+    'memKiB': 65536,
+    'ops': 3,
+    'salt': base64urlKodieren(saltFuer(email)),
+  };
+
+  /// Der Salt, den dieser Fake-Server für eine E-Mail nennt (16 Byte).
+  static Uint8List saltFuer(String email) => Uint8List.fromList(c.sha256.convert(utf8.encode('salt|${email.trim().toLowerCase()}')).bytes.sublist(0, 16));
+
+  /// Legt eine fertige, schon verifizierte Passwort-Sicherung einer Person ab (so, wie ein anderes Gerät sie hinterlassen hätte).
+  void pwEinspielen(String id, String blob, {required int version}) {
+    final p = _personen[id]!;
+    p.pwBlob = blob;
+    p.pwVersion = version;
+    p.pwStale = false;
+    p.pwVerifiziert = true;
+    p.pwId = '00000000-0000-4000-8000-${(++p.pwAnzahl).toString().padLeft(12, '0')}';
+  }
+
+  /// Zustand der Passwort-Sicherung einer Person (für Prüfungen).
+  ({String? blob, bool verifiziert, bool stale, int version, int anzahl}) pwStand(String id) {
+    final p = _personen[id]!;
+    return (blob: p.pwBlob, verifiziert: p.pwVerifiziert, stale: p.pwStale, version: p.pwVersion, anzahl: p.pwAnzahl);
+  }
+
   /// Was der Server über eine Person gespeichert hat (für Prüfungen: nie Geheimnisse).
   String gespeichert(String id) {
     final p = _personen[id]!;
-    return jsonEncode({'enc': p.enc, 'sign': p.sign, 'backup': p.backupBlob, 'transfers': _transfers.values.where((t) => t.hash.startsWith('$id:')).map((t) => t.blob).toList()});
+    return jsonEncode({'enc': p.enc, 'sign': p.sign, 'backup': p.backupBlob, 'pwBackup': p.pwBlob, 'transfers': _transfers.values.where((t) => t.hash.startsWith('$id:')).map((t) => t.blob).toList()});
   }
 
   Map<String, dynamic>? _keys(_Person p) => p.enc == null ? null : {'publicEncKey': p.enc, 'publicSignKey': p.sign, 'keyVersion': p.version};
