@@ -223,7 +223,7 @@ class FampadApi {
   /// Rohe Antwort (die App legt sie für den Offline-Stand unverändert ab).
   Future<Json> wetterRoh() => client.get('/weather');
 
-  // ----------------------------------------------------------- Betrieb (nur Betreiber, nur lesend)
+  // ----------------------------------------------------------- Betrieb (nur Betreiber, fast nur lesend)
 
   /// [frisch] umgeht den kurzen Cache des Servers (der begrenzt das selbst auf höchstens eine Messung je 5 Sekunden).
   Future<BetriebStatus> betriebStatus({bool frisch = false}) async => BetriebStatus.fromJson(await client.get(frisch ? '/admin/status?fresh=1' : '/admin/status'));
@@ -231,6 +231,26 @@ class FampadApi {
   /// Audit-Protokoll, seitenweise (Cursor des Servers); braucht ein frisches Step-up (403 step_up_required).
   Future<ProtokollSeite> betriebProtokoll({ProtokollArt art = ProtokollArt.alle, String? weiter, int limit = 50}) async =>
       ProtokollSeite.fromJson(await client.get('/admin/audit?category=${art.code}&limit=$limit${weiter == null ? '' : '&cursor=${Uri.encodeQueryComponent(weiter)}'}'));
+
+  /// Schlüssel-Ampel je Person und für die Familie (nur Zustände, keine Geheimnisse).
+  Future<SchluesselStatus> betriebSchluesselStatus() async => SchluesselStatus.fromJson(await client.get('/admin/key-status'));
+
+  /// Mitglieder und Geräte; braucht ein frisches Step-up (403 step_up_required).
+  Future<BetriebMitglieder> betriebMitglieder() async => BetriebMitglieder.fromJson(await client.get('/admin/members'));
+
+  /// Hebt die Anmeldesperre des Kontos auf (Step-up); gibt zurück, ob etwas aufgehoben wurde.
+  Future<bool> betriebEntsperren(String userId) async => (await client.post('/admin/members/$userId/unlock', {}))['cleared'] == true;
+
+  /// Stand der Betreiber-Warnungen (ohne Step-up).
+  Future<BetriebWarnungen> betriebWarnungen() async => BetriebWarnungen.fromJson(await client.get('/admin/warnings'));
+
+  /// Schaltet die eigenen Warnungen ein oder aus (Step-up).
+  Future<BetriebWarnungen> betriebWarnungenSetzen(bool an) async => BetriebWarnungen.fromJson(await client.put('/admin/warnings', {'enabled': an}));
+
+  /// Meldet den Schlüsselstand dieses Geräts (nur diese Zahl): 0 = kein Schlüssel, n = Schlüsselversion n. Ältere Server kennen die Route nicht (404).
+  Future<void> geraetSchluesselMelden(int version) async {
+    await client.put('/me/device-key', {'keyVersion': version});
+  }
 
   // ----------------------------------------------------------- Push (nur Android)
 

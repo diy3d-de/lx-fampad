@@ -166,7 +166,7 @@ export class World {
     readonly config: Config,
   ) {}
 
-  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable; pushMinIntervalMs?: number; weatherFetch?: typeof fetch; operatorProbes?: Partial<Probes> } = {}): Promise<World> {
+  static async create(db: Db, env: NodeJS.ProcessEnv = {}, extra: { logStream?: Writable; pushMinIntervalMs?: number; weatherFetch?: typeof fetch; operatorProbes?: Partial<Probes>; pushFetch?: typeof fetch } = {}): Promise<World> {
     const config = loadConfig({
       NODE_ENV: 'test',
       LOG_LEVEL: 'silent',
@@ -183,7 +183,7 @@ export class World {
       ...env,
     });
     const holder: { world?: World } = {};
-    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}), ...(extra.pushMinIntervalMs !== undefined ? { pushMinIntervalMs: extra.pushMinIntervalMs } : {}), ...(extra.weatherFetch ? { weatherFetch: extra.weatherFetch } : {}), ...(extra.operatorProbes ? { operatorProbes: extra.operatorProbes } : {}) });
+    const app = await buildApp({ config, db, now: () => new Date(holder.world?.clock ?? Date.now()), ...(extra.logStream ? { logStream: extra.logStream } : {}), ...(extra.pushMinIntervalMs !== undefined ? { pushMinIntervalMs: extra.pushMinIntervalMs } : {}), ...(extra.weatherFetch ? { weatherFetch: extra.weatherFetch } : {}), ...(extra.operatorProbes ? { operatorProbes: extra.operatorProbes } : {}), ...(extra.pushFetch ? { pushFetch: extra.pushFetch } : {}) });
     await app.ready();
     const authCore = app.authCore;
     if (!authCore) throw new Error('Auth fehlt');
@@ -298,7 +298,7 @@ export const auditEvents = async (world: World) => (await world.db.select().from
 
 /**
  * Historische Migrationstests legen Daten mit dem AKTUELLEN Code auf einem älteren Schema an. Dort fehlen die Spalte `invites.kind`
- * (Migration 0019), die jede Einladung schreibt, und `sessions.origin`/`origin_at` sowie `users.access_changed_at` (Migration 0020), die jede Sitzung liest bzw. schreibt: sie werden für die Dauer
+ * (Migration 0019), die jede Einladung schreibt, und `sessions.origin`/`origin_at` sowie `users.access_changed_at` (Migration 0020) und `devices.key_version`/`key_reported_at` (Migration 0021), die jede Sitzung bzw. jedes Gerät liest bzw. schreibt: sie werden für die Dauer
  * der Anlage ergänzt und vor dem Weitermigrieren wieder entfernt.
  */
 export const kindSpalteErgaenzen = async (db: Db) => {
@@ -306,10 +306,14 @@ export const kindSpalteErgaenzen = async (db: Db) => {
   await db.execute(sql`alter table sessions add column if not exists origin text not null default 'login'`);
   await db.execute(sql`alter table sessions add column if not exists origin_at timestamptz`);
   await db.execute(sql`alter table users add column if not exists access_changed_at timestamptz`);
+  await db.execute(sql`alter table devices add column if not exists key_version integer`);
+  await db.execute(sql`alter table devices add column if not exists key_reported_at timestamptz`);
 };
 export const kindSpalteEntfernen = async (db: Db) => {
   await db.execute(sql`alter table invites drop column if exists kind`);
   await db.execute(sql`alter table sessions drop column if exists origin`);
   await db.execute(sql`alter table sessions drop column if exists origin_at`);
   await db.execute(sql`alter table users drop column if exists access_changed_at`);
+  await db.execute(sql`alter table devices drop column if exists key_version`);
+  await db.execute(sql`alter table devices drop column if exists key_reported_at`);
 };

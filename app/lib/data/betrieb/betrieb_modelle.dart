@@ -1,4 +1,4 @@
-// Betreiber-Ansicht "Betrieb" (nur lesend): Modelle zu GET /admin/status und GET /admin/audit. Die Auswertung ist tolerant: unbekannte Felder
+// Betreiber-Ansicht "Betrieb" (fast nur lesend): Modelle zu GET /admin/status, /admin/audit, /admin/key-status, /admin/members und /admin/warnings. Die Auswertung ist tolerant: unbekannte Felder
 // und Werte einer neueren Server-Version werden ignoriert bzw. als "unbekannt" gezeigt, nie ein Absturz. Angezeigt wird nie ein Rohtext des Servers,
 // nur feste Wörter dieser App zu festen Codes.
 import '../api/api_error.dart';
@@ -274,5 +274,282 @@ class ProtokollSeite {
   factory ProtokollSeite.fromJson(Object? raw) {
     final m = asJson(raw);
     return ProtokollSeite(eintraege: parseListe(m['items'], ProtokollEintrag.fromJson), weiter: _text(m['nextCursor']));
+  }
+}
+
+// ------------------------------------------------------------------ Paket 2a: Schlüssel-Ampel, Mitglieder und Geräte, Warnungen
+
+/// Ampel einer Person oder der Familie (feste Werte des Servers; alles andere gilt als [unbekannt], nie als grün).
+enum BetriebAmpel {
+  gruen,
+  gelb,
+  rot,
+  unbekannt;
+
+  static BetriebAmpel lesen(Object? v) => switch (v) {
+    'green' => gruen,
+    'yellow' => gelb,
+    'red' => rot,
+    _ => unbekannt,
+  };
+}
+
+/// Stand des Schlüssels auf einem Gerät, wie das Gerät ihn gemeldet hat (feste Codes des Servers).
+enum GeraeteSchluesselStand {
+  aktuell,
+  veraltet,
+  alterSchluessel,
+  keiner,
+  unbekannt;
+
+  static GeraeteSchluesselStand lesen(Object? v) => switch (v) {
+    'current' => aktuell,
+    'stale' => veraltet,
+    'old' => alterSchluessel,
+    'none' => keiner,
+    _ => unbekannt,
+  };
+}
+
+/// Die unabhängigen Wege zum Personenschlüssel (je ein Haken).
+class SchluesselWege {
+  final bool geraet;
+  final bool passwortSicherung;
+  final bool wiederherstellung;
+  const SchluesselWege({this.geraet = false, this.passwortSicherung = false, this.wiederherstellung = false});
+
+  factory SchluesselWege.fromJson(Object? raw) {
+    final m = _map(raw);
+    return SchluesselWege(geraet: m['device'] == true, passwortSicherung: m['pwBackup'] == true, wiederherstellung: m['recoveryBackup'] == true);
+  }
+
+  int get anzahl => [geraet, passwortSicherung, wiederherstellung].where((w) => w).length;
+}
+
+/// Ein Schlüsselereignis (nur Art und Zeit).
+class SchluesselEreignis {
+  final String art;
+  final DateTime zeit;
+  const SchluesselEreignis({required this.art, required this.zeit});
+
+  static SchluesselEreignis? versuchen(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final art = _text(raw['kind']);
+    final zeit = _zeit(raw['at']);
+    return art == null || zeit == null ? null : SchluesselEreignis(art: art, zeit: zeit);
+  }
+}
+
+class SchluesselPerson {
+  final String id;
+  final String name;
+  final BetriebAmpel ampel;
+  final bool hatSchluessel;
+  final int? version;
+  final SchluesselWege wege;
+  final int geraeteGesamt;
+  final int geraeteMitSchluessel;
+  final bool altesPasswortVerfahren;
+  final int archiv;
+  final List<SchluesselEreignis> ereignisse;
+  const SchluesselPerson({
+    required this.id,
+    required this.name,
+    required this.ampel,
+    required this.hatSchluessel,
+    required this.version,
+    required this.wege,
+    required this.geraeteGesamt,
+    required this.geraeteMitSchluessel,
+    required this.altesPasswortVerfahren,
+    required this.archiv,
+    required this.ereignisse,
+  });
+
+  /// Liest eine Person; fehlt Kennung oder Name, gibt es null (die Zeile entfällt).
+  static SchluesselPerson? versuchen(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final id = _text(raw['userId']);
+    final name = _text(raw['displayName']);
+    if (id == null || name == null) return null;
+    return SchluesselPerson(
+      id: id,
+      name: name,
+      ampel: BetriebAmpel.lesen(raw['ampel']),
+      hatSchluessel: raw['hasKeys'] == true,
+      version: _zahl(raw['keyVersion']),
+      wege: SchluesselWege.fromJson(raw['ways']),
+      geraeteGesamt: _zahl(raw['devicesTotal']) ?? 0,
+      geraeteMitSchluessel: _zahl(raw['devicesWithKey']) ?? 0,
+      altesPasswortVerfahren: raw['legacyPassword'] == true,
+      archiv: _zahl(raw['archiveCount']) ?? 0,
+      ereignisse: [if (raw['events'] is List) for (final e in raw['events'] as List) ?SchluesselEreignis.versuchen(e)],
+    );
+  }
+}
+
+/// `GET /admin/key-status`: Schlüssel-Ampel je Person und für die Familie.
+class SchluesselStatus {
+  final BetriebAmpel gesamt;
+
+  /// "Stichtag-bereit": alle Mitglieder grün.
+  final bool bereit;
+  final int gruen;
+  final int gelb;
+  final int rot;
+  final List<SchluesselPerson> personen;
+  const SchluesselStatus({required this.gesamt, required this.bereit, required this.gruen, required this.gelb, required this.rot, required this.personen});
+
+  factory SchluesselStatus.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final counts = _map(m['counts']);
+    final personen = [if (m['persons'] is List) for (final p in m['persons'] as List) ?SchluesselPerson.versuchen(p)];
+    return SchluesselStatus(
+      gesamt: BetriebAmpel.lesen(m['overall']),
+      // Fehlt eine Angabe oder ist eine Person nicht grün, gilt die Familie nie als bereit
+      bereit: m['ready'] == true && personen.isNotEmpty && personen.every((p) => p.ampel == BetriebAmpel.gruen),
+      gruen: _zahl(counts['green']) ?? personen.where((p) => p.ampel == BetriebAmpel.gruen).length,
+      gelb: _zahl(counts['yellow']) ?? personen.where((p) => p.ampel == BetriebAmpel.gelb).length,
+      rot: _zahl(counts['red']) ?? personen.where((p) => p.ampel == BetriebAmpel.rot).length,
+      personen: personen,
+    );
+  }
+
+  int get anzahl => personen.length;
+}
+
+class BetriebGeraet {
+  final String id;
+  final String name;
+  final String plattform;
+  final String? appVersion;
+  final DateTime? zuletztGesehen;
+  final GeraeteSchluesselStand schluessel;
+  final int? schluesselVersion;
+  const BetriebGeraet({required this.id, required this.name, required this.plattform, required this.appVersion, required this.zuletztGesehen, required this.schluessel, required this.schluesselVersion});
+
+  static BetriebGeraet? versuchen(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final id = _text(raw['id']);
+    if (id == null) return null;
+    return BetriebGeraet(
+      id: id,
+      name: _text(raw['name']) ?? 'Gerät',
+      plattform: _text(raw['platform']) ?? '',
+      appVersion: _text(raw['appVersion']),
+      zuletztGesehen: _zeit(raw['lastSeenAt']),
+      schluessel: GeraeteSchluesselStand.lesen(raw['keyState']),
+      schluesselVersion: _zahl(raw['keyVersion']),
+    );
+  }
+}
+
+class BetriebMitglied {
+  final String id;
+  final String name;
+  final Role rolle;
+  final FamilyRole? familienrolle;
+  final bool betreiber;
+  final bool ich;
+  final DateTime? letzteAnmeldung;
+  final int passkeys;
+  final bool passwort;
+  final bool totp;
+
+  /// Restdauer der Anmeldesperre des Kontos in Sekunden (null: nicht gesperrt).
+  final int? gesperrtSekunden;
+  final SchluesselPerson schluessel;
+  final List<BetriebGeraet> geraete;
+  const BetriebMitglied({
+    required this.id,
+    required this.name,
+    required this.rolle,
+    required this.familienrolle,
+    required this.betreiber,
+    required this.ich,
+    required this.letzteAnmeldung,
+    required this.passkeys,
+    required this.passwort,
+    required this.totp,
+    required this.gesperrtSekunden,
+    required this.schluessel,
+    required this.geraete,
+  });
+
+  static BetriebMitglied? versuchen(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final person = SchluesselPerson.versuchen(raw);
+    if (person == null) return null;
+    final rolleText = _text(raw['role']);
+    // eine unbekannte Rolle wird wie überall in der App als Kind behandelt (die geringsten Rechte), nie als Fehler
+    final rolle = Role.values.firstWhere((r) => r.wire == rolleText, orElse: () => Role.child);
+    final creds = _map(raw['credentials']);
+    final gesperrt = raw['locked'] is Map<String, dynamic> ? _zahl(_map(raw['locked'])['seconds']) : null;
+    return BetriebMitglied(
+      id: person.id,
+      name: person.name,
+      rolle: rolle,
+      familienrolle: FamilyRole.tolerant(raw['familyRole']),
+      betreiber: raw['operator'] == true,
+      ich: raw['you'] == true,
+      letzteAnmeldung: _zeit(raw['lastLoginAt']),
+      passkeys: _zahl(creds['passkeys']) ?? 0,
+      passwort: creds['password'] == true,
+      totp: creds['totp'] == true,
+      gesperrtSekunden: gesperrt != null && gesperrt > 0 ? gesperrt : null,
+      schluessel: person,
+      geraete: [if (raw['devices'] is List) for (final g in raw['devices'] as List) ?BetriebGeraet.versuchen(g)],
+    );
+  }
+}
+
+/// `GET /admin/members`
+class BetriebMitglieder {
+  final List<BetriebMitglied> mitglieder;
+  const BetriebMitglieder(this.mitglieder);
+
+  factory BetriebMitglieder.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return BetriebMitglieder([if (m['members'] is List) for (final e in m['members'] as List) ?BetriebMitglied.versuchen(e)]);
+  }
+}
+
+/// Feste Arten der Betreiber-Warnungen (Kennungen des Servers; Unbekanntes zeigt die Oberfläche allgemein als "Hinweis").
+const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key'];
+
+/// `GET /admin/warnings`
+class BetriebWarnungen {
+  /// Hat dieser Betreiber die Warnungen eingeschaltet?
+  final bool an;
+
+  /// Kann der Server überhaupt warnen (Push eingerichtet)?
+  final bool pushDa;
+  final DateTime? gepruefteAm;
+
+  /// Zeitpunkt des letzten Weckers (die App zeigt daraufhin einmal den festen Hinweis).
+  final DateTime? zuletztGewarnt;
+
+  /// Aktive Warnungen (Art, seit wann); eine Art kann mehrfach vorkommen (Schlüssel je Person).
+  final List<({String art, DateTime? seit})> aktiv;
+  const BetriebWarnungen({required this.an, required this.pushDa, required this.gepruefteAm, required this.zuletztGewarnt, required this.aktiv});
+
+  factory BetriebWarnungen.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final aktiv = <({String art, DateTime? seit})>[];
+    if (m['active'] is List) {
+      for (final e in m['active'] as List) {
+        if (e is! Map<String, dynamic>) continue;
+        final art = _text(e['kind']);
+        if (art != null) aktiv.add((art: art, seit: _zeit(e['since'])));
+      }
+    }
+    return BetriebWarnungen(
+      // fehlt die Angabe, gilt "an" (der Standard des Servers)
+      an: m['enabled'] != false,
+      pushDa: m['pushAvailable'] == true,
+      gepruefteAm: _zeit(m['checkedAt']),
+      zuletztGewarnt: _zeit(m['lastNotifiedAt']),
+      aktiv: aktiv,
+    );
   }
 }

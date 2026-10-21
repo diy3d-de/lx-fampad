@@ -750,7 +750,7 @@ class _FakeAnzeige implements ChatAnzeigePort {
   }
 
   @override
-  Future<bool> zeigenSicherheit({required int id, required String titel, required String text}) async {
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text, String nutzlast = 'sicherheit'}) async {
     if (!sicherheitGelingt) return false;
     sicherheit.add(_Gezeigt(id, titel, text, false));
     return true;

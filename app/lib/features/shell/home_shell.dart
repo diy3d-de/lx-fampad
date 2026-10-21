@@ -5,10 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/auth/auth_state.dart';
 import '../../data/auth/reset_hinweis.dart';
+import '../../data/betrieb/betrieb_hinweis.dart';
+import '../betrieb/betrieb_screen.dart';
 import '../../data/database_provider.dart';
 import '../profile/sicherheit_ereignisse_screen.dart';
 import '../../data/chat/chat_repository.dart';
+import '../../data/crypto/e2ee_state.dart' show e2eeProvider;
+import '../../data/crypto/geraet_schluessel_melder.dart';
 import '../../data/push/push_state.dart';
 import '../../data/push/sicherheits_pruefer.dart';
 import '../../data/standort/standort_dienst.dart';
@@ -111,6 +116,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     unawaited(ref.read(syncProvider.notifier).vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive));
     _standort.vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive);
     if (s != AppLifecycleState.resumed) return;
+    // Schlüsselstand dieses Geräts (nur die Zahl) erneut melden, wenn die letzte Meldung über 12 Stunden her ist (der Server wertet sie 30 Tage lang)
+    unawaited(ref.read(geraetSchluesselMelderZustandProvider).auffrischen(ref.read(apiProvider), ref.read(authProvider).user, ref.read(e2eeProvider)));
     final l = _letztePruefung;
     // Web: häufiger, der Hinweis "Neue Version - neu laden" ist billig (eine kleine JSON-Abfrage)
     final abstand = kIsWeb ? const Duration(minutes: 15) : const Duration(hours: 6);
@@ -132,6 +139,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     // Tipp auf die Sicherheitsbenachrichtigung: Profil > Sicherheitsereignisse
     ref.listen(sicherheitOeffnenProvider, (_, _) {
       if (mounted) unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const SicherheitEreignisseScreen())));
+    });
+    // Betreiber-Warnung: im Vordergrund ein kurzer Hinweis mit festem Text, ein Tipp auf die Benachrichtigung öffnet "Betrieb" (nur für den Betreiber)
+    ref.listen(betriebHinweisProvider, (_, _) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(const SnackBar(content: Text(kBetriebHinweisTitel), duration: Duration(seconds: 8)));
+    });
+    ref.listen(betriebOeffnenProvider, (_, _) {
+      if (mounted && ref.read(authProvider).istBetreiber) unawaited(Navigator.of(context).push<void>(BetriebScreen.route()));
     });
     ref.listen(shellTabProvider, (_, t) {
       if (t == kStandortTab) unawaited(ref.read(standortBenachrichtigerProvider).alleEntfernen());

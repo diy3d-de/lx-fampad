@@ -16,6 +16,7 @@ import { registerPushRoutes } from './routes/push.js';
 import { PushService } from './push/service.js';
 import { registerWeatherRoutes } from './routes/weather.js';
 import { registerOperatorRoutes } from './routes/operator.js';
+import { OperatorMonitor } from './operator/monitor.js';
 import type { Probes } from './operator/probes.js';
 import { WeatherService } from './weather/service.js';
 import { registerSyncRoutes } from './routes/sync.js';
@@ -37,6 +38,8 @@ declare module 'fastify' {
     weather?: WeatherService;
     /** Push-Wecker (nur mit Datenbank); Chat & Co. hängen hier ihren Empfängerfilter ein (push/service.ts). */
     push?: PushService;
+    /** Betreiber-Warnungen (nur mit Datenbank); der Takt startet in server.ts. */
+    operatorMonitor?: OperatorMonitor;
   }
 }
 
@@ -193,7 +196,11 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('weather', weather);
     app.addHook('onClose', async () => weather.close());
     registerWeatherRoutes(app, authCore, weather);
-    registerOperatorRoutes(app, config, authCore, weather, operatorProbes);
+    // Betreiber-Warnungen: der Takt startet in server.ts (nicht in Tests), der Prüfer lässt sich dort von Hand anstoßen
+    const operatorMonitor = new OperatorMonitor({ ctx: authCore.ctx, push, weather, probes: operatorProbes });
+    app.decorate('operatorMonitor', operatorMonitor);
+    app.addHook('onClose', async () => operatorMonitor.stop());
+    registerOperatorRoutes(app, config, authCore, weather, operatorMonitor, operatorProbes);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
     authCore.ctx.onRev = (familyId, rev, roles, users, origin) => {

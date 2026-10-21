@@ -22,6 +22,7 @@ import {
 } from '../auth/account.js';
 import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
+import { MAX_REPORTED_KEY_VERSION, reportDeviceKey } from '../auth/device-key.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
 import { getArchiveEntry, listArchive } from '../auth/keys-archive.js';
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
@@ -111,6 +112,13 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   // ----- E2EE-Schlüssel (Phase 1): öffentliche Personenschlüssel, opake Sicherung, Geräte-Übertragung -----
   app.get('/api/v1/me/keys', async (req) => getOwnKeys(ctx, await auth.requireSession(req)));
+
+  // Das Gerät meldet seinen Schlüsselstand (Betreiber-Ampel): 0 = kein Schlüssel, n = Schlüsselversion n; nur diese Zahl, nie Schlüsselmaterial
+  app.put('/api/v1/me/device-key', async (req) => {
+    const p = await auth.requireSession(req);
+    await reportDeviceKey(ctx, p, parse(z.object({ keyVersion: z.number().int().min(0).max(MAX_REPORTED_KEY_VERSION) }).strict(), req.body).keyVersion);
+    return { ok: true };
+  });
 
   const keysBody = z.object({ publicEncKey: b64urlKey, publicSignKey: b64urlKey }).strict();
 

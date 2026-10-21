@@ -8,6 +8,8 @@
 #     files-<Zeit>.tar.age     nur wenn INCLUDE_FILES=1 (Dateiablage)
 #     SHA256SUMS               Prüfsummen der .age-Dateien
 #   status                     Schlüssel=Wert-Datei (letzter Erfolg, Größen) für die Überwachung auf dem NAS
+#   /var/lib/lx-fampad-status/backup.status   zweite, für den Dienst lx-fampad lesbare Statusdatei (Betreiber-Ansicht "Betrieb"): nur last_result, Zeiten und Größen,
+#                              keine Pfade, keine Geheimnisse; root schreibt, der Dienst liest (Ordner root:lx-fampad 0750, angelegt von einrichtung-status.sh)
 #   LATEST                     Name des neuesten Ordners
 # Alles wird in .tmp-<Zeit>/ aufgebaut und erst am Ende per rename veröffentlicht (atomar). Aufbewahrung hier: die letzten KEEP Ordner
 # (Standard 3); der Rest liegt auf dem NAS (docs/BACKUP.md).
@@ -34,6 +36,8 @@ INCLUDE_APK=1                # neueste APK + latest.json (1) oder nur latest.jso
 INCLUDE_FILES=0              # /srv/fampad/files als eigenes Archiv (Dateiablage, erst später sinnvoll; kann groß werden)
 BACKUP_GROUP=lxbackup        # Lesegruppe für die Abholung
 MIN_FREE_MB=1024
+SERVICE_STATUS_DIR=/var/lib/lx-fampad-status   # zweite Statusdatei für den Dienst (fehlt der Ordner, wird sie übersprungen)
+SERVICE_GROUP=lx-fampad
 LOCK_FILE=/run/lock/lx-fampad-backup.lock   # nicht im RuntimeDirectory: systemd löscht es nach dem Lauf, ein paralleler manueller Lauf hätte dann eine andere Sperre
 
 if [ -f "$CONF" ]; then
@@ -86,6 +90,16 @@ write_status() {   # $1 = ok|fehler, danach Schlüssel=Wert für den Erfolgsfall
   } > "$ts"
   if getent group "$BACKUP_GROUP" >/dev/null; then chgrp "$BACKUP_GROUP" "$ts"; chmod 0640 "$ts"; else chmod 0600 "$ts"; fi
   mv -f "$ts" "$OUT_DIR/status"
+  write_service_status || true
+}
+
+# Zweite Statusdatei: nur diese Schlüssel (Erfolg/Fehler, Zeiten, Größen), nichts anderes (kein Ordnername, kein Pfad); atomar; ein Fehler hier bricht nie eine Sicherung ab
+write_service_status() {
+  [ -d "$SERVICE_STATUS_DIR" ] || return 0
+  local ts="$SERVICE_STATUS_DIR/.backup.status.$$"
+  if ! grep -E '^(last_run_utc|last_run_epoch|last_result|last_success_utc|last_success_epoch|db_bytes|config_bytes|total_bytes)=[A-Za-z0-9:_.-]*$' "$OUT_DIR/status" > "$ts"; then rm -f "$ts"; return 0; fi
+  if getent group "$SERVICE_GROUP" >/dev/null; then chgrp "$SERVICE_GROUP" "$ts"; chmod 0640 "$ts"; else chmod 0600 "$ts"; fi
+  mv -f "$ts" "$SERVICE_STATUS_DIR/backup.status"
 }
 
 on_exit() {

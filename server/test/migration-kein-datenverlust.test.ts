@@ -57,6 +57,11 @@ describe('Migration 0020 (Kein Datenverlust) additiv auf Stand 0019', () => {
       await db.execute(sql`drop table key_backup_archive`);
       await db.execute(sql`alter table sessions drop column origin, drop column origin_at`);
       await db.execute(sql`alter table users drop column access_changed_at`);
+      // ... und die Objekte der Migration 0021 (Betreiber Paket 2a; sie gilt hier als noch nicht angewendet)
+      await db.execute(sql`drop table operator_alert_state`);
+      await db.execute(sql`alter table operators drop column alerts_enabled`);
+      await db.execute(sql`alter table devices drop constraint devices_key_version_ck`);
+      await db.execute(sql`alter table devices drop column key_version, drop column key_reported_at`);
       await db.execute(sql`alter table security_events drop constraint security_events_kind_ck, drop constraint security_events_via_ck`);
       await db.execute(sql`alter table security_events drop column subject_id`);
       await db.execute(sql`alter table security_events add constraint security_events_kind_ck check (kind in ('password_reset_requested', 'password_reset_done', 'account_reset_requested'))`);

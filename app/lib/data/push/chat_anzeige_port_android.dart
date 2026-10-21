@@ -76,7 +76,7 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
   }
 
   @override
-  Future<bool> zeigenSicherheit({required int id, required String titel, required String text}) async {
+  Future<bool> zeigenSicherheit({required int id, required String titel, required String text, String nutzlast = 'sicherheit'}) async {
     if (!_bereit) return false;
     try {
       await _plugin.show(
@@ -95,7 +95,7 @@ class AndroidChatAnzeige implements ChatAnzeigePort {
             visibility: NotificationVisibility.private,
           ),
         ),
-        payload: 'sicherheit',
+        payload: nutzlast,
       );
       return true;
     } catch (_) {

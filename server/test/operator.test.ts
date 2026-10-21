@@ -22,7 +22,7 @@ function probes(over: Partial<Probes> = {}): Partial<Probes> {
   const now = Date.parse('2026-10-19T08:00:00Z');
   return {
     readText: async (path) => {
-      if (path.endsWith('/status')) return `last_run_epoch=${Math.floor(now / 1000) - 5 * 3600}\nlast_result=ok\nlast_success_epoch=${Math.floor(now / 1000) - 5 * 3600}\ntotal_bytes=617472\nlast_dir=GEHEIMER-PFAD\n`;
+      if (path.endsWith('backup.status')) return `last_run_epoch=${Math.floor(now / 1000) - 5 * 3600}\nlast_result=ok\nlast_success_epoch=${Math.floor(now / 1000) - 5 * 3600}\ntotal_bytes=617472\nlast_dir=GEHEIMER-PFAD\n`;
       if (path.endsWith('latest.json')) return JSON.stringify({ payload: JSON.stringify({ version: '0.6.1', versionCode: 6100, minVersion: '0.1.0', url: 'https://x/geheim.apk' }), signature: 'AAAA' });
       return null;
     },
@@ -225,7 +225,7 @@ describe.each(backends)('Betreiber-Ansicht ($name)', (backend) => {
     const now = world.clock;
     const ep = Math.floor(now / 1000);
     const lauf = async (text: string) => {
-      aktuell = probes({ readText: async (p) => (p.endsWith('/status') ? text : null), disk: async () => ({ totalBytes: 100, freeBytes: 10 }), tlsValidTo: async () => new Date(now + 3 * 86_400_000) });
+      aktuell = probes({ readText: async (p) => (p.endsWith('backup.status') ? text : null), disk: async () => ({ totalBytes: 100, freeBytes: 10 }), tlsValidTo: async () => new Date(now + 3 * 86_400_000) });
       world.advance(16_000); // Status-Cache (15 s) ablaufen lassen
       return (await a.client.get('/api/v1/admin/status')).json;
     };

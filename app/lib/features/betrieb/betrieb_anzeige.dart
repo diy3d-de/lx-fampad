@@ -136,6 +136,15 @@ const _ereignisse = <String, String>{
   'key_backup_pw_verified': 'Passwort-Sicherung bestätigt',
   'operator_granted': 'Betreiber-Rolle vergeben (Server)',
   'operator_revoked': 'Betreiber-Rolle entzogen (Server)',
+  'operator_alert_cert': 'Betrieb-Warnung: Zertifikat',
+  'operator_alert_backup': 'Betrieb-Warnung: Sicherung',
+  'operator_alert_database': 'Betrieb-Warnung: Datenbank',
+  'operator_alert_ntfy': 'Betrieb-Warnung: Push-Wecker (ntfy)',
+  'operator_alert_disk': 'Betrieb-Warnung: Speicherplatz',
+  'operator_alert_logins': 'Betrieb-Warnung: Fehlanmeldungen',
+  'operator_alert_key': 'Betrieb-Warnung: Schlüssel-Ampel',
+  'operator_warnings_set': 'Betrieb-Warnungen umgestellt',
+  'operator_unlock': 'Konto entsperrt',
 };
 
 String ereignisText(String code) => _ereignisse[code] ?? 'Ereignis';
@@ -145,3 +154,92 @@ Color artFarbe(ProtokollArt a) => switch (a) {
   ProtokollArt.anmeldung => kTerminal,
   _ => kTextMuted,
 };
+
+// ------------------------------------------------------------------ Paket 2a
+
+/// Farbe einer Ampel ([BetriebAmpel.unbekannt]: neutral, nie grün).
+Color ampelFarbe(BetriebAmpel a) => switch (a) {
+  BetriebAmpel.gruen => kTerminal,
+  BetriebAmpel.gelb => kWarn,
+  BetriebAmpel.rot => kDanger,
+  BetriebAmpel.unbekannt => kTextMuted,
+};
+
+/// Kurzwort der Ampel in der Pille.
+String ampelText(BetriebAmpel a) => switch (a) {
+  BetriebAmpel.gruen => 'grün',
+  BetriebAmpel.gelb => 'gelb',
+  BetriebAmpel.rot => 'rot',
+  BetriebAmpel.unbekannt => 'unbekannt',
+};
+
+/// Erklärung der Ampel einer Person in einem Satz (für die Zeile unter dem Namen und für Screenreader).
+String ampelErklaerung(SchluesselPerson p) {
+  if (!p.hatSchluessel) return 'noch kein Schlüssel eingerichtet';
+  return switch (p.ampel) {
+    BetriebAmpel.gruen => 'geschützt: ${p.wege.anzahl} unabhängige Wege zum Schlüssel',
+    BetriebAmpel.gelb => p.wege.geraet ? 'nur ein Weg: ein Gerät, keine Sicherung' : 'Sicherungen vorhanden, aber kein Gerät mit dem Schlüssel',
+    BetriebAmpel.rot => p.wege.anzahl == 0 ? 'kein Weg zum Schlüssel' : 'nur eine Sicherung und kein Gerät mit dem Schlüssel',
+    BetriebAmpel.unbekannt => 'Stand unbekannt',
+  };
+}
+
+/// Familienampel in der Übersicht: kurze Aussage zum Stichtag.
+String familienAmpelText(SchluesselStatus s) {
+  if (s.anzahl == 0) return 'keine Mitglieder';
+  if (s.bereit) return 'alle grün: Stichtag-bereit';
+  final teile = [if (s.rot > 0) '${s.rot} rot', if (s.gelb > 0) '${s.gelb} gelb'];
+  return '${s.gruen} von ${s.anzahl} grün (${teile.join(', ')}), noch nicht Stichtag-bereit';
+}
+
+/// Stand des Schlüssels auf einem Gerät in einem Wort.
+String geraetSchluesselText(GeraeteSchluesselStand s) => switch (s) {
+  GeraeteSchluesselStand.aktuell => 'Schlüssel aktuell',
+  GeraeteSchluesselStand.veraltet => 'Meldung über 30 Tage alt',
+  GeraeteSchluesselStand.alterSchluessel => 'alter Schlüssel',
+  GeraeteSchluesselStand.keiner => 'kein Schlüssel',
+  GeraeteSchluesselStand.unbekannt => 'Stand unbekannt',
+};
+
+Color geraetSchluesselFarbe(GeraeteSchluesselStand s) => switch (s) {
+  GeraeteSchluesselStand.aktuell => kTerminal,
+  GeraeteSchluesselStand.veraltet || GeraeteSchluesselStand.alterSchluessel => kWarn,
+  GeraeteSchluesselStand.keiner => kDanger,
+  GeraeteSchluesselStand.unbekannt => kTextMuted,
+};
+
+const _schluesselEreignisse = <String, String>{
+  'key_rotated': 'Schlüssel gewechselt',
+  'key_backup_replaced': 'Sicherung ersetzt',
+  'key_backup_read': 'Sicherung abgerufen',
+  'key_backup_pw_read': 'Passwort-Sicherung abgerufen',
+  'key_backup_archive_read': 'Archiv abgerufen',
+  'key_transfer_created': 'Geräte-Übertragung angelegt',
+  'key_transfer_claimed': 'Gerät verbunden',
+  'recovery_code_login': 'Anmeldung mit Wiederherstellungscode',
+};
+
+String schluesselEreignisText(String art) => _schluesselEreignisse[art] ?? 'Ereignis';
+
+/// Klartext zu den Warnarten (feste Liste des Servers; Unbekanntes heißt allgemein "Hinweis").
+String warnArtText(String art) => switch (art) {
+  'cert' => 'Zertifikat läuft in weniger als 14 Tagen ab',
+  'backup' => 'Letzte Sicherung ist älter als 36 Stunden',
+  'database' => 'Datenbank nicht erreichbar',
+  'ntfy' => 'Push-Wecker (ntfy) nicht erreichbar',
+  'disk' => 'Speicherplatz über 85 % belegt',
+  'logins' => 'Viele fehlgeschlagene Anmeldungen',
+  'key' => 'Schlüssel-Ampel einer Person ist rot',
+  _ => 'Hinweis des Servers',
+};
+
+/// Feste Wörter der Plattform in der Geräteliste ("android" wird "Android").
+String plattformText(String p) => switch (p) {
+  'android' => 'Android',
+  'web' => 'Web',
+  '' => 'Gerät',
+  _ => p.length > 16 ? p.substring(0, 16) : p,
+};
+
+/// Dauer der Anmeldesperre: "noch 45 s" bzw. "noch 2 Min".
+String sperreText(int sekunden) => sekunden < 90 ? 'noch $sekunden s' : 'noch ${(sekunden / 60).ceil()} Min';

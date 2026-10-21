@@ -117,3 +117,113 @@ class BetriebProtokollNotifier extends Notifier<BetriebProtokollZustand> {
 }
 
 final betriebProtokollProvider = NotifierProvider.autoDispose<BetriebProtokollNotifier, BetriebProtokollZustand>(BetriebProtokollNotifier.new);
+
+// ------------------------------------------------------------------ Paket 2a: Schlüssel-Ampel, Warnungen, Mitglieder und Geräte
+
+/// Ein Teil der Übersicht, der alt gewordene oder fehlende Angaben des Servers verträgt: scheitert die Abfrage (älterer Server: 404), bleibt [fehler] gesetzt und die
+/// Übersicht zeigt "nicht verfügbar" statt einer Fehlermeldung über der ganzen Seite.
+class BetriebTeilZustand<T> {
+  final T? wert;
+  final bool laedt;
+  final Object? fehler;
+  const BetriebTeilZustand({this.wert, this.laedt = false, this.fehler});
+}
+
+class BetriebSchluesselNotifier extends Notifier<BetriebTeilZustand<SchluesselStatus>> {
+  bool _laeuft = false;
+
+  @override
+  BetriebTeilZustand<SchluesselStatus> build() => const BetriebTeilZustand();
+
+  Future<void> laden() async {
+    if (_laeuft || !ref.mounted) return;
+    _laeuft = true;
+    state = BetriebTeilZustand(wert: state.wert, laedt: true);
+    try {
+      final s = await ref.read(apiProvider).betriebSchluesselStatus();
+      if (ref.mounted) state = BetriebTeilZustand(wert: s);
+    } on ApiException catch (e) {
+      if (ref.mounted) state = BetriebTeilZustand(wert: state.wert, fehler: e);
+    } on Object {
+      if (ref.mounted) state = BetriebTeilZustand(wert: state.wert, fehler: ApiException.unerwarteteAntwort);
+    } finally {
+      _laeuft = false;
+    }
+  }
+}
+
+final betriebSchluesselProvider = NotifierProvider.autoDispose<BetriebSchluesselNotifier, BetriebTeilZustand<SchluesselStatus>>(BetriebSchluesselNotifier.new);
+
+class BetriebWarnungenNotifier extends Notifier<BetriebTeilZustand<BetriebWarnungen>> {
+  bool _laeuft = false;
+
+  @override
+  BetriebTeilZustand<BetriebWarnungen> build() => const BetriebTeilZustand();
+
+  Future<void> laden() async {
+    if (_laeuft || !ref.mounted) return;
+    _laeuft = true;
+    state = BetriebTeilZustand(wert: state.wert, laedt: true);
+    try {
+      final w = await ref.read(apiProvider).betriebWarnungen();
+      if (ref.mounted) state = BetriebTeilZustand(wert: w);
+    } on ApiException catch (e) {
+      if (ref.mounted) state = BetriebTeilZustand(wert: state.wert, fehler: e);
+    } on Object {
+      if (ref.mounted) state = BetriebTeilZustand(wert: state.wert, fehler: ApiException.unerwarteteAntwort);
+    } finally {
+      _laeuft = false;
+    }
+  }
+
+  /// Schaltet die Warnungen ein oder aus. Braucht ein frisches Step-up: die ApiException geht weiter (die Oberfläche fragt ab und ruft erneut auf).
+  Future<void> setzen(bool an) async {
+    final w = await ref.read(apiProvider).betriebWarnungenSetzen(an);
+    if (ref.mounted) state = BetriebTeilZustand(wert: w);
+  }
+}
+
+final betriebWarnungenProvider = NotifierProvider.autoDispose<BetriebWarnungenNotifier, BetriebTeilZustand<BetriebWarnungen>>(BetriebWarnungenNotifier.new);
+
+class BetriebMitgliederZustand {
+  final List<BetriebMitglied> mitglieder;
+  final bool geladen;
+  final bool laedt;
+  final Object? fehler;
+  const BetriebMitgliederZustand({this.mitglieder = const [], this.geladen = false, this.laedt = false, this.fehler});
+}
+
+class BetriebMitgliederNotifier extends Notifier<BetriebMitgliederZustand> {
+  bool _laeuft = false;
+
+  @override
+  BetriebMitgliederZustand build() => const BetriebMitgliederZustand();
+
+  /// Lädt Mitglieder und Geräte. Wirft [ApiException], wenn ein Step-up nötig ist (die Oberfläche fragt ab und ruft erneut auf); andere Fehler landen im Zustand.
+  Future<void> laden() async {
+    if (_laeuft || !ref.mounted) return;
+    _laeuft = true;
+    state = BetriebMitgliederZustand(mitglieder: state.mitglieder, geladen: state.geladen, laedt: true);
+    try {
+      final m = await ref.read(apiProvider).betriebMitglieder();
+      if (ref.mounted) state = BetriebMitgliederZustand(mitglieder: m.mitglieder, geladen: true);
+    } on ApiException catch (e) {
+      if (ref.mounted) state = BetriebMitgliederZustand(mitglieder: state.mitglieder, geladen: state.geladen);
+      if (e.istStepUp) rethrow;
+      if (ref.mounted) state = BetriebMitgliederZustand(mitglieder: state.mitglieder, geladen: state.geladen, fehler: e);
+    } on Object {
+      if (ref.mounted) state = BetriebMitgliederZustand(mitglieder: state.mitglieder, geladen: state.geladen, fehler: ApiException.unerwarteteAntwort);
+    } finally {
+      _laeuft = false;
+    }
+  }
+
+  /// Hebt die Anmeldesperre eines Kontos auf (Step-up: die ApiException geht weiter) und lädt danach neu.
+  Future<void> entsperren(String id) async {
+    await ref.read(apiProvider).betriebEntsperren(id);
+    _laeuft = false;
+    await laden();
+  }
+}
+
+final betriebMitgliederProvider = NotifierProvider.autoDispose<BetriebMitgliederNotifier, BetriebMitgliederZustand>(BetriebMitgliederNotifier.new);

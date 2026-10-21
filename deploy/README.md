@@ -200,7 +200,7 @@ widerruft alle Anmeldedaten, Sitzungen und Codes dieses Mitglieds und gibt einen
 
 #### Betreiber setzen (Dashboard „Betrieb“)
 
-Die Ansicht „Betrieb“ in der App (Zustand des Servers, Protokoll; nur lesend) sieht nur, wer als **Betreiber** eingetragen ist. Das geht ausschließlich auf dem Server (nie über die App, nie für einen zweiten Admin automatisch); das Flag ändert keine Familienrechte:
+Die Ansicht „Betrieb“ in der App (Zustand des Servers, Protokoll, Schlüssel-Ampel, Mitglieder und Geräte, Warnungen) sieht nur, wer als **Betreiber** eingetragen ist. Das geht ausschließlich auf dem Server (nie über die App, nie für einen zweiten Admin automatisch); das Flag ändert keine Familienrechte:
 
 ```bash
 sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js grant admin@example.org
@@ -208,7 +208,17 @@ sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js 
 sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js list
 ```
 
-Der Status liest nur, was der Dienst (Benutzer `lx-fampad`, Sandbox) ohne root darf; Unlesbares zeigt die App als „unbekannt“. Dazu gehört die Statusdatei der Sicherung `/var/backups/lx-fampad/status` (Ordner `root:lxbackup 0750`: ohne Zusatz „unbekannt“; wer sie anzeigen will, nimmt `lx-fampad` bewusst in die Gruppe `lxbackup` auf, damit sieht der Dienst aber auch die verschlüsselten Sicherungsdateien: Abwägung des Betreibers, Standard bleibt „unbekannt“). Pfade und Schalter der Messungen: `OPERATOR_*` in `server/.env.example`.
+Der Status liest nur, was der Dienst (Benutzer `lx-fampad`, Sandbox) ohne root darf; Unlesbares zeigt die App als „unbekannt“. Dazu gehört die Statusdatei der Sicherung: der Dienst bekommt **kein** Leserecht auf `/var/backups/lx-fampad` (dort liegen die verschlüsselten Sicherungen), sondern liest eine **zweite Statusdatei** `/var/lib/lx-fampad-status/backup.status` (nur `last_result`, Zeiten und Größen, keine Pfade, keine Geheimnisse), die die Sicherung als root nach jedem Lauf schreibt. Einmalig auf dem Server einrichten (root, idempotent, `--dry-run` zeigt vorher, was passiert; legt den Ordner `root:lx-fampad 0750` an und füllt die Datei aus einer vorhandenen Statusdatei, damit nicht bis 03:30 Uhr gewartet werden muss):
+
+```bash
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-status.sh --dry-run
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-status.sh
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh      # installiert das aktualisierte Sicherungsskript (ohne Optionen: vorhandene Schlüssel bleiben)
+```
+
+Ohne diesen Schritt zeigt die App die Sicherung als „unbekannt“ und es gibt keine Warnung „Sicherung zu alt“ (unbekannt löst nie einen Alarm aus). Pfade und Schalter der Messungen: `OPERATOR_*` in `server/.env.example`.
+
+**Betreiber-Warnungen (Push, ohne Inhalt):** ein Prüfer im API-Prozess (alle 5 Minuten, Zustand in der Datenbank) weckt die Geräte des Betreibers per ntfy (derselbe Wecker wie überall, kein Text), wenn das Zertifikat unter 14 Tage hat, die Sicherung älter als 36 Stunden ist, Datenbank oder ntfy nicht erreichbar sind, der Platz über 85 % liegt, es mehr als 20 fehlgeschlagene Anmeldungen in 15 Minuten gibt oder die Schlüssel-Ampel einer Person rot wird. Die App zeigt dann „Betrieb: Hinweis – öffne Betrieb“; Einzelheiten stehen in der Betrieb-Ansicht. Je Art höchstens alle 6 Stunden, keine Wiederholung bei Neustart, Unbekanntes warnt nie. Voraussetzung ist eingerichtetes Push (ntfy, Gerät des Betreibers angemeldet); der Betreiber schaltet die Warnungen in der App ein oder aus (Standard an). Nichts weiter einzurichten; die Migration `0021` ist additiv.
 
 **Migrationsstand lesen (einmalig auf dem bestehenden Server, als root):** Die Laufzeitrolle darf das Schema `drizzle` sonst nicht sehen, die Seite zeigt dann „Migrationsstand unbekannt (Grant fehlt, siehe README)“. Nur lesend und minimal, idempotent (neue Installationen erledigt `einrichtung-auth.sh`):
 

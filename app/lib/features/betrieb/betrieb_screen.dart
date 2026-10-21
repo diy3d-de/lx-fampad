@@ -1,5 +1,6 @@
-// Bereich "Betrieb" (nur für den Betreiber des Servers, nur lesend): Übersicht (Kacheln, Dienste, Funktionen, Versionen, Ereignisse) und
-// Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet nichts auf dem Server; Änderungen gibt es hier nicht.
+// Bereich "Betrieb" (nur für den Betreiber des Servers, fast nur lesend): Übersicht (Kacheln, Schlüssel-Ampel, Warnungen, Dienste, Funktionen, Versionen,
+// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
+// nichts auf dem Server; geschrieben wird nur Weniges (Konto entsperren, eigene Warnungen ein/aus), jeweils mit Step-up.
 // Unterseite wie das Konto: mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell (Marker [kBetriebMarke]).
 import 'dart:async';
 
@@ -13,6 +14,8 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'betrieb_anzeige.dart';
+import 'betrieb_mitglieder.dart';
+import 'betrieb_schluessel.dart';
 
 /// Marker in den Argumenten der Route (kein Routenname, siehe [kKontoMarke]): die Desktop-Shell erkennt daran, dass "Betrieb" offen ist.
 const kBetriebMarke = 'betrieb-seite';
@@ -26,7 +29,7 @@ class BetriebScreen extends ConsumerStatefulWidget {
   ConsumerState<BetriebScreen> createState() => _BetriebScreenState();
 }
 
-enum _Seite { uebersicht, protokoll }
+enum _Seite { uebersicht, mitglieder, protokoll }
 
 class _BetriebScreenState extends ConsumerState<BetriebScreen> {
   _Seite _seite = _Seite.uebersicht;
@@ -37,8 +40,25 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
     Future.microtask(() {
       if (!mounted) return;
       unawaited(ref.read(betriebStatusProvider.notifier).laden());
+      unawaited(ref.read(betriebSchluesselProvider.notifier).laden());
+      unawaited(ref.read(betriebWarnungenProvider.notifier).laden());
       unawaited(_protokollLaden(still: true));
+      unawaited(_mitgliederLaden(still: true));
     });
+  }
+
+  /// Lädt Mitglieder und Geräte; braucht es ein Step-up, fragt [still] = false danach, sonst bleibt die Seite mit dem Knopf "Bestätigen und anzeigen" stehen.
+  Future<void> _mitgliederLaden({bool still = false}) async {
+    final n = ref.read(betriebMitgliederProvider.notifier);
+    try {
+      if (still) {
+        await n.laden();
+      } else {
+        await mitStepUp(context, ref, () => n.laden());
+      }
+    } on Object {
+      // Step-up nötig (still) oder Fehler: steht im Zustand bzw. die Seite bietet "Bestätigen und anzeigen" an
+    }
   }
 
   /// Lädt das Protokoll; braucht es ein Step-up, fragt [still] = false danach, sonst bleibt die Seite mit dem Hinweis stehen.
@@ -60,8 +80,12 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
     final st = ref.watch(betriebStatusProvider);
     // hält das Protokoll am Leben (autoDispose): initState lädt es schon, bevor die Seite es anzeigt
     ref.watch(betriebProtokollProvider.select((p) => p.geladen));
+    ref.watch(betriebMitgliederProvider.select((p) => p.geladen));
+    // halten Schlüssel-Ampel und Warnstand am Leben (autoDispose): initState lädt sie schon, bevor die Übersicht sie anzeigt
+    ref.watch(betriebSchluesselProvider.select((p) => p.wert != null || p.fehler != null));
+    ref.watch(betriebWarnungenProvider.select((p) => p.wert != null || p.fehler != null));
     return AuthSeite(
-      label: '// betrieb · nur lesen',
+      label: '// betrieb',
       titel: 'Betrieb',
       maxBreite: kMaxContentWidth,
       aktionen: [
@@ -72,25 +96,33 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
               ? null
               : () {
                   unawaited(ref.read(betriebStatusProvider.notifier).laden(frisch: true));
-                  // auch die Ereignisse neu laden; auf der Übersicht still (ohne Step-up-Abfrage), auf der Protokollseite mit
+                  unawaited(ref.read(betriebSchluesselProvider.notifier).laden());
+                  unawaited(ref.read(betriebWarnungenProvider.notifier).laden());
+                  // auch die Ereignisse und Mitglieder neu laden; auf den anderen Seiten still (ohne Step-up-Abfrage), auf der eigenen Seite mit
                   unawaited(_protokollLaden(still: _seite != _Seite.protokoll));
+                  unawaited(_mitgliederLaden(still: _seite != _Seite.mitglieder));
                 },
         ),
       ],
       kinder: [
-        Row(
-          children: [
-            Expanded(child: _Reiter(text: 'Übersicht', gewaehlt: _seite == _Seite.uebersicht, onTap: () => setState(() => _seite = _Seite.uebersicht))),
-            const SizedBox(width: 8),
-            Expanded(
-              child: _Reiter(
-                text: 'Protokoll',
-                gewaehlt: _seite == _Seite.protokoll,
-                onTap: () {
-                  setState(() => _seite = _Seite.protokoll);
-                  if (!ref.read(betriebProtokollProvider).geladen) unawaited(_protokollLaden());
-                },
-              ),
+        _Reiterleiste(
+          reiter: [
+            ('Übersicht', _seite == _Seite.uebersicht, () => setState(() => _seite = _Seite.uebersicht)),
+            (
+              'Mitglieder',
+              _seite == _Seite.mitglieder,
+              () {
+                setState(() => _seite = _Seite.mitglieder);
+                if (!ref.read(betriebMitgliederProvider).geladen) unawaited(_mitgliederLaden());
+              },
+            ),
+            (
+              'Protokoll',
+              _seite == _Seite.protokoll,
+              () {
+                setState(() => _seite = _Seite.protokoll);
+                if (!ref.read(betriebProtokollProvider).geladen) unawaited(_protokollLaden());
+              },
             ),
           ],
         ),
@@ -101,13 +133,35 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
               setState(() => _seite = _Seite.protokoll);
               unawaited(_protokollLaden());
             },
+            oeffneMitglieder: () {
+              setState(() => _seite = _Seite.mitglieder);
+              if (!ref.read(betriebMitgliederProvider).geladen) unawaited(_mitgliederLaden());
+            },
             protokollBestaetigen: () => _protokollLaden(),
           )
+        else if (_seite == _Seite.mitglieder)
+          BetriebMitgliederSeite(neuLaden: () => _mitgliederLaden())
         else
           _Protokoll(neuLaden: _protokollLaden),
       ],
     );
   }
+}
+
+/// Die Reiter der Seite: nebeneinander, bei großer Schrift (Textskala) untereinander, damit nichts abgeschnitten wird.
+class _Reiterleiste extends StatelessWidget {
+  final List<(String, bool, VoidCallback)> reiter;
+  const _Reiterleiste({required this.reiter});
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, c) {
+      final grosseSchrift = MediaQuery.textScalerOf(context).scale(10) > 12;
+      final spalten = grosseSchrift ? 1 : reiter.length;
+      final breite = (c.maxWidth - (spalten - 1) * 8) / spalten;
+      return Wrap(spacing: 8, runSpacing: 8, children: [for (final (text, gewaehlt, onTap) in reiter) SizedBox(width: breite, child: _Reiter(text: text, gewaehlt: gewaehlt, onTap: onTap))]);
+    },
+  );
 }
 
 class _Reiter extends StatelessWidget {
@@ -143,8 +197,9 @@ class _Reiter extends StatelessWidget {
 
 class _Uebersicht extends ConsumerWidget {
   final VoidCallback oeffneProtokoll;
+  final VoidCallback oeffneMitglieder;
   final Future<void> Function() protokollBestaetigen;
-  const _Uebersicht({required this.oeffneProtokoll, required this.protokollBestaetigen});
+  const _Uebersicht({required this.oeffneProtokoll, required this.oeffneMitglieder, required this.protokollBestaetigen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -176,11 +231,15 @@ class _Uebersicht extends ConsumerWidget {
         const SizedBox(height: 16),
         _Kacheln(s: s, jetzt: jetzt),
         const SizedBox(height: 20),
+        FamilienAmpelKarte(oeffneMitglieder: oeffneMitglieder),
+        const SizedBox(height: 20),
+        const WarnungenKarte(),
+        const SizedBox(height: 20),
         const MonoLabel('// dienste'),
         const SizedBox(height: 8),
         _Dienste(s: s, jetzt: jetzt),
         const SizedBox(height: 4),
-        const Text('Neustart und Änderungen bewusst nur per SSH auf dem Server.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+        const Text('Neustart und Konfiguration bewusst nur per SSH auf dem Server.', style: TextStyle(fontSize: 12, color: kTextMuted)),
         const SizedBox(height: 20),
         const MonoLabel('// funktionen'),
         const SizedBox(height: 8),
