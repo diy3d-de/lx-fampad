@@ -53,6 +53,19 @@
         <receiver
             android:name=".UpdateReceiver"
             android:exported="false" />
+        <!-- Startbildschirm-Widget "Heute" (HeuteWidget.kt): exportiert, weil Android es für Widget-Empfänger verlangt; reagiert nur auf Systemmeldungen
+             (APPWIDGET_UPDATE und die geschützten Zeit-Meldungen, die nur das System senden kann) und liest nichts aus Intents. Tippen öffnet MainActivity
+             über ein PendingIntent (FLAG_IMMUTABLE, ausdrückliches Ziel). Daten: app-privater Speicher, kein ContentProvider, keine Berechtigung. -->
+        <receiver android:name=".HeuteWidget" android:exported="true" android:label="Heute">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="android.intent.action.DATE_CHANGED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/heute_widget_info" />
+        </receiver>
         <!-- Terminerinnerungen: zeigt geplante Benachrichtigungen an und setzt sie nach Neustart/App-Update neu (nur intern erreichbar) -->
         <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" android:exported="false" />
         <receiver android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver" android:exported="false">

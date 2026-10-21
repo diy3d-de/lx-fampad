@@ -15,4 +15,39 @@
     <style name="NormalTheme" parent="@android:style/Theme.Black.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
     </style>
+    <!-- Widget "Heute": Zeilen, Abschnittskopf, Leer- und "+ weitere"-Hinweise -->
+    <style name="WidgetHeuteZeile">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:textColor">@color/lx_text</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+    <style name="WidgetHeuteKopf">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:letterSpacing">0.08</item>
+        <item name="android:textColor">@color/lx_text_muted</item>
+        <item name="android:textSize">10sp</item>
+    </style>
+    <style name="WidgetHeuteLeer">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:textColor">@color/lx_text_muted</item>
+        <item name="android:textSize">13sp</item>
+    </style>
+    <style name="WidgetHeuteMehr">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:layout_marginTop">3dp</item>
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/lx_text_muted</item>
+        <item name="android:textSize">11sp</item>
+    </style>
 </resources>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Widget "Heute" (HeuteWidget.kt) -->
+    <string name="widget_heute_beschreibung">Heutige Termine, fällige Aufgaben und auf Wunsch eine Liste</string>
+    <string name="widget_heute_titel">HEUTE</string>
+    <string name="widget_heute_aufgaben">AUFGABEN</string>
+    <string name="widget_heute_keine_termine">Heute keine Termine</string>
+    <string name="widget_heute_keine_aufgaben">Nichts fällig</string>
+    <string name="widget_heute_oeffnen">Öffne die App, um das Widget zu füllen.</string>
+    <string name="widget_heute_veraltet">Öffne die App, um das Widget zu aktualisieren.</string>
+</resources>

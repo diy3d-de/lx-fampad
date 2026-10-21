@@ -17,6 +17,7 @@ import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
+import 'heute_widget_screen.dart';
 import 'password_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
@@ -307,6 +308,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        // Startbildschirm-Widget gibt es nur in der Android-App
+        if (!kIsWeb) EinstellungsZeile(icon: Icons.widgets_outlined, titel: 'Widget „Heute“', untertitel: 'startbildschirm: termine, aufgaben, liste', onTap: () => _oeffne(const HeuteWidgetScreen())),
         // Push gibt es nur in der Android-App (UnifiedPush über die ntfy-App)
         if (!kIsWeb)
           Consumer(
