@@ -43,7 +43,7 @@ describe('Migration 0020 (Kein Datenverlust) additiv auf Stand 0019', () => {
       await db.execute(sql`insert into security_events (family_id, user_id, kind, via) select family_id, user_id, 'password_reset_done', 'recovery_code' from memberships where user_id = ${await id('mama@example.org')}`);
 
       const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'key_backup_archive' order by 1`)).rows).map((r) => r.tablename);
-      const ohne: Record<string, string> = { sessions: " - 'origin' - 'origin_at'", security_events: " - 'subject_id'" };
+      const ohne: Record<string, string> = { sessions: " - 'origin' - 'origin_at'", security_events: " - 'subject_id'", users: " - 'access_changed_at'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
       const vorher = new Map<string, string>();
@@ -56,6 +56,7 @@ describe('Migration 0020 (Kein Datenverlust) additiv auf Stand 0019', () => {
       // zurück in den Stand 0019: die Objekte der Migration 0020 weg, ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
       await db.execute(sql`drop table key_backup_archive`);
       await db.execute(sql`alter table sessions drop column origin, drop column origin_at`);
+      await db.execute(sql`alter table users drop column access_changed_at`);
       await db.execute(sql`alter table security_events drop constraint security_events_kind_ck, drop constraint security_events_via_ck`);
       await db.execute(sql`alter table security_events drop column subject_id`);
       await db.execute(sql`alter table security_events add constraint security_events_kind_ck check (kind in ('password_reset_requested', 'password_reset_done', 'account_reset_requested'))`);

@@ -83,6 +83,12 @@ export const users = pgTable(
     colorIndex: integer('color_index').notNull().default(0),
     createdAt: createdAt(),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /**
+     * Letzte Änderung der Anmeldedaten durch die Person selbst (Passkey/Passwort hinzufügen, ändern, entfernen, Wiederherstellungscodes neu). Sitzungen, die danach
+     * innerhalb von 24 h entstehen, erben die Sperrfrist destruktiver Schlüssel-Aktionen (Herkunft `access_change`): ein frisch angelegter Zugang hebelt sie nicht aus.
+     * Registrierung und Passwort-Reset setzen es nicht.
+     */
+    accessChangedAt: timestamp('access_changed_at', { withTimezone: true }),
     /** Benutzerbild: null = keines (Initialen), 'preset' = Platzhalter aus avatar_preset, 'photo' = Foto in user_avatars. */
     avatarKind: text('avatar_kind'),
     avatarPreset: text('avatar_preset'),
@@ -410,7 +416,7 @@ export const securityEvents = pgTable(
     index('security_events_user_idx').on(t.userId, t.createdAt),
     check(
       'security_events_kind_ck',
-      sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset')`,
+      sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_replaced', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset')`,
     ),
     check('security_events_via_ck', sql`${t.via} in ('admin', 'recovery_code', 'passkey', 'password')`),
   ],
@@ -492,7 +498,7 @@ export const sessions = pgTable(
     authMethod: text('auth_method').notNull().default('passkey'),
     /**
      * Herkunft der Sitzung: `login` (Passkey, Passwort + TOTP) oder `recovery_code` / `password_reset` (Zugang über einen einzelnen Wiederherstellungscode
-     * bzw. einen Passwort-Reset). Solche Sitzungen dürfen destruktive Schlüssel-Aktionen erst nach `origin_at` + 24 h (Fehler `destructive_locked`).
+     * bzw. einen Passwort-Reset) oder `access_change` (Anmeldung kurz nach einer Änderung der Anmeldedaten, `origin_at` = diese Änderung). Solche Sitzungen dürfen destruktive Schlüssel-Aktionen erst nach `origin_at` + 24 h (Fehler `destructive_locked`).
      * Eine Rotation des Refresh-Tokens übernimmt beide Werte unverändert.
      */
     origin: text('origin').notNull().default('login'),
@@ -523,7 +529,7 @@ export const sessions = pgTable(
     foreignKey({ columns: [t.familyId, t.deviceId], foreignColumns: [devices.familyId, devices.id] }).onDelete('cascade'),
     foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     check('sessions_kind_ck', sql`${t.kind} in ('web', 'app')`),
-    check('sessions_origin_ck', sql`${t.origin} in ('login', 'recovery_code', 'password_reset')`),
+    check('sessions_origin_ck', sql`${t.origin} in ('login', 'recovery_code', 'password_reset', 'access_change')`),
   ],
 );
 

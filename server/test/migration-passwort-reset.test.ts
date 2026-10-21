@@ -57,6 +57,7 @@ describe('Migration 0019 (Passwort-Reset) additiv auf Stand 0018', () => {
       // ... und die Objekte der Migration 0020 (sie gilt hier als noch nicht angewendet)
       await db.execute(sql`drop table key_backup_archive`);
       await db.execute(sql`alter table sessions drop column origin, drop column origin_at`);
+      await db.execute(sql`alter table users drop column access_changed_at`);
       // genau die Zeile der Migration 0019 (nach Zeitstempel des Journals, nicht "die letzte")
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
       const meine = journal.entries.find((e) => e.tag.startsWith('0019_'));

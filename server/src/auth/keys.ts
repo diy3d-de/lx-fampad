@@ -7,8 +7,8 @@ import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, RequestMeta } from './context.js';
 import { sha256Hex } from './crypto.js';
-import { countArchive } from './keys-archive.js';
-import { recordSecurityEvent, viaOf, wakeAfterCommit, wakeTopics } from './security-events.js';
+import { countArchive, thinReplaced } from './keys-archive.js';
+import { recordDebouncedEvent, recordSecurityEvent, viaOf, wakeAfterCommit, wakeTopics } from './security-events.js';
 import { requireDestructiveAllowed, requireStepUp } from './sessions.js';
 import type { SessionPrincipal } from './types.js';
 
@@ -103,7 +103,7 @@ export async function rotateKeys(
 ): Promise<PublicKeys> {
   requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
-  const topics = await wakeTopics(ctx.db, p.userId);
+  const topics = await wakeTopics(ctx.db, p.userId, p.deviceId);
   const rotated = await ctx.db.transaction(async (tx) => {
     const [alt] = await tx.select().from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
     if (!alt) throw notFound();
@@ -151,11 +151,14 @@ export async function rotateKeys(
 /**
  * Opake Schlüsselsicherung ablegen oder ersetzen (Step-up). Sie muss zur aktuellen key_version gehören. Wird eine vorhandene durch einen ANDEREN Blob
  * ersetzt, wandert die bisherige ins Archiv (`reason = 'replaced'`): ein Angreifer mit einer geliehenen Sitzung kann den Weg zum Schlüssel so nicht durch
- * Überschreiben mit Müll zerstören. Das Ablegen ist nie gesperrt (auch direkt nach einem Reset muss eine neue Sicherung möglich sein).
+ * Überschreiben mit Müll zerstören. Das Ersetzen erzeugt das Sicherheitsereignis `key_backup_replaced` und weckt die anderen Geräte der Person (die App
+ * legt nur beim ersten Ablegen oder Erneuern selbst eine Sicherung an: ein unerwartetes Ersetzen soll auffallen). Das Ablegen ist nie gesperrt (auch direkt nach einem
+ * Reset muss eine neue Sicherung möglich sein).
  */
 export async function setBackup(ctx: AuthContext, p: SessionPrincipal, input: { blob: string; keyVersion: number }, meta: RequestMeta): Promise<void> {
   requireStepUp(ctx, p);
-  await ctx.db.transaction(async (tx) => {
+  const topics = await wakeTopics(ctx.db, p.userId, p.deviceId);
+  const replaced = await ctx.db.transaction(async (tx) => {
     const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
     if (!k) throw new AppError(409, 'no_keys', 'Du hast noch keinen Schlüssel eingerichtet.');
     if (k.v !== input.keyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
@@ -171,13 +174,17 @@ export async function setBackup(ctx: AuthContext, p: SessionPrincipal, input: { 
         backupUpdatedAt: alt.updatedAt,
         archivedAt: ctx.now(),
       });
+      await thinReplaced(tx, p.userId);
+      await recordSecurityEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_backup_replaced', via: viaOf(p), actorId: p.userId });
     }
     await tx
       .insert(keyBackups)
       .values({ userId: p.userId, blob: input.blob, keyVersion: k.v, createdAt: ctx.now(), updatedAt: ctx.now() })
       .onConflictDoUpdate({ target: keyBackups.userId, set: { blob: input.blob, keyVersion: k.v, updatedAt: ctx.now() } });
-    await writeAudit(ctx, tx, { event: 'backup_set', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: k.v } });
+    await writeAudit(ctx, tx, { event: 'backup_set', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: k.v, replaced: alt !== undefined && alt.blob !== input.blob } });
+    return alt !== undefined && alt.blob !== input.blob;
   });
+  if (replaced) wakeAfterCommit(ctx, p.familyId, p.userId, topics);
 }
 
 /**
@@ -186,15 +193,15 @@ export async function setBackup(ctx: AuthContext, p: SessionPrincipal, input: { 
  */
 export async function getBackup(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta): Promise<{ blob: string; keyVersion: number }> {
   requireStepUp(ctx, p);
-  const topics = await wakeTopics(ctx.db, p.userId);
-  const b = await ctx.db.transaction(async (tx) => {
+  const topics = await wakeTopics(ctx.db, p.userId, p.deviceId);
+  const { b, recorded } = await ctx.db.transaction(async (tx) => {
     const [b] = await tx.select({ blob: keyBackups.blob, keyVersion: keyBackups.keyVersion }).from(keyBackups).where(eq(keyBackups.userId, p.userId));
     if (!b) throw notFound();
     await writeAudit(ctx, tx, { event: 'key_backup_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion } });
-    await recordSecurityEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_backup_read', via: viaOf(p), actorId: p.userId });
-    return b;
+    const recorded = await recordDebouncedEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_backup_read', via: viaOf(p), actorId: p.userId });
+    return { b, recorded };
   });
-  wakeAfterCommit(ctx, p.familyId, p.userId, topics);
+  if (recorded) wakeAfterCommit(ctx, p.familyId, p.userId, topics, { light: true });
   return b;
 }
 
@@ -217,9 +224,9 @@ export async function createTransfer(
   const now = ctx.now();
   const expiresAt = new Date(now.getTime() + KEY_TRANSFER_TTL_SEC * 1000);
   const lookupHash = sha256Hex(input.lookup);
-  const topics = await wakeTopics(ctx.db, p.userId);
+  const topics = await wakeTopics(ctx.db, p.userId, p.deviceId);
   try {
-    await ctx.db.transaction(async (tx) => {
+    const recorded = await ctx.db.transaction(async (tx) => {
       const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
       if (!k) throw new AppError(409, 'no_keys', 'Du hast noch keinen Schlüssel eingerichtet.');
       if (k.v !== input.keyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
@@ -227,9 +234,9 @@ export async function createTransfer(
         .insert(keyTransfers)
         .values({ userId: p.userId, lookupHash, blob: input.blob, keyVersion: k.v, createdAt: now, expiresAt })
         .onConflictDoUpdate({ target: keyTransfers.userId, set: { lookupHash, blob: input.blob, keyVersion: k.v, createdAt: now, expiresAt } });
-      await recordSecurityEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_transfer_created', via: viaOf(p), actorId: p.userId });
+      return recordDebouncedEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_transfer_created', via: viaOf(p), actorId: p.userId });
     });
-    wakeAfterCommit(ctx, p.familyId, p.userId, topics);
+    if (recorded) wakeAfterCommit(ctx, p.familyId, p.userId, topics, { light: true });
   } catch (e) {
     if (istEindeutigkeitsfehler(e)) throw new AppError(409, 'transfer_conflict', 'Bitte versuche es noch einmal.');
     throw e;
@@ -251,7 +258,7 @@ export async function claimTransfer(ctx: AuthContext, p: SessionPrincipal, input
     const row = rows[0];
     if (!row) throw notFound();
     await writeAudit(ctx, tx, { event: 'transfer_claimed', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
-    await recordSecurityEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_transfer_claimed', via: viaOf(p), actorId: p.userId });
+    await recordDebouncedEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_transfer_claimed', via: viaOf(p), actorId: p.userId });
     return row;
   });
 }

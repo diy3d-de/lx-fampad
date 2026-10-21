@@ -133,7 +133,11 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   app.get('/api/v1/me/key-backup', strikt, async (req) => getBackup(ctx, await auth.requireSession(req), meta(req)));
 
   // Archiv früherer Schlüsselstände (nie gelöscht): nur die eigene Person, Step-up, protokolliert; Liste ohne Blob, Einzelabruf mit Blob (und KDF bei Passwort-Sicherungen)
-  app.get('/api/v1/me/key-backups/archive', strikt, async (req) => listArchive(ctx, await auth.requireSession(req), meta(req)));
+  app.get('/api/v1/me/key-backups/archive', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    const q = parse(z.object({ limit: z.coerce.number().int().min(1).max(200).optional(), before: z.string().min(1).max(200).optional() }).strict(), req.query);
+    return listArchive(ctx, p, meta(req), q);
+  });
   app.get('/api/v1/me/key-backups/archive/:id', strikt, async (req) => {
     const p = await auth.requireSession(req);
     return getArchiveEntry(ctx, p, parse(idParams, req.params).id, meta(req));
@@ -230,7 +234,7 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     requireStepUp(ctx, p);
     const { id } = parse(idParams, req.params);
     const body = parse(z.object({ hours: z.number().int().min(1).max(maxHours).default(ctx.config.auth.inviteDefaultHours), pin: z.boolean().default(false) }).strict(), req.body);
-    const invite = await resetMember(ctx, { familyId: p.familyId, userId: id, actorId: p.userId, hours: body.hours, withPin: body.pin }, meta(req));
+    const invite = await resetMember(ctx, { familyId: p.familyId, userId: id, actorId: p.userId, hours: body.hours, withPin: body.pin, by: p }, meta(req));
     return { invite };
   });
 

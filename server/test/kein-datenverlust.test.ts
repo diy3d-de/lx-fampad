@@ -7,6 +7,7 @@ import type { AddressInfo } from 'node:net';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { WAKE_BODY } from '../src/push/service.js';
+import { TestAuthenticator } from './authenticator.js';
 import { addMember, adminPassword, auditEvents, backends, World, type Client, type Harness } from './helpers.js';
 
 const MIN = 60_000;
@@ -489,9 +490,9 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       expect(await events(f.m.client)).toEqual([]);
     });
 
-    it('Wecker ohne Inhalt: nur die Geräte der eigenen Person, fester Text, nach Wechsel/Abruf/Übertragung/Code-Anmeldung', async () => {
+    it('Wecker ohne Inhalt: nur die ANDEREN Geräte der eigenen Person, fester Text; das auslösende Gerät bleibt ruhig', async () => {
       const f = await start();
-      const c = world.client('203.0.113.160');
+      const c = world.client('203.0.113.160'); // App-Gerät mit Push
       const r = await c.post('/api/v1/auth/login/password', { email: 'admin@example.org', password: PW, totp: await totp(f.a.totpSecret), client: 'app', device: { name: 'Handy', platform: 'android' } });
       c.adopt(r.json.session);
       const topic = randTopic();
@@ -501,20 +502,34 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       mama.adopt(rm.json.session);
       const topicMama = randTopic();
       expect((await mama.request('PUT', '/api/v1/me/push', { body: { endpoint: `https://${HOST}/${topicMama}?up=1` } })).status).toBe(200);
-      await c.post('/api/v1/me/keys', keys());
-      await volleSicherung(c, 1);
+      const web = f.a.client; // anderes Gerät (Browser)
+      await web.post('/api/v1/me/keys', keys());
+      await volleSicherung(web, 1);
       ntfyCalls = [];
 
-      expect((await c.get('/api/v1/me/key-backup')).status).toBe(200);
+      // Abruf im Browser weckt das App-Gerät
+      expect((await web.get('/api/v1/me/key-backup')).status).toBe(200);
       await settle();
       expect(ntfyCalls).toEqual([{ url: `/${topic}`, body: WAKE_BODY }]);
 
+      // dasselbe Gerät mit dem Push-Endpunkt ruft selbst ab: kein Wecker an sich selbst (nach Ablauf der Entprellung, sonst gäbe es auch kein Ereignis)
+      world.advance(11 * MIN);
+      await stepUp(c, f.a.totpSecret);
       ntfyCalls = [];
-      expect((await rotate(c, 1)).status).toBe(200);
+      expect((await c.get('/api/v1/me/key-backup')).status).toBe(200);
+      await wait(400);
+      expect(ntfyCalls).toEqual([]);
+      expect((await kinds(web)).filter((k) => k === 'key_backup_read')).toHaveLength(2); // das Ereignis gibt es trotzdem
+
+      // Schlüsselwechsel im Browser: kritisch, weckt das App-Gerät; Mamas Gerät nie
+      await stepUp(web, f.a.totpSecret);
+      ntfyCalls = [];
+      expect((await rotate(web, 1)).status).toBe(200);
       await settle();
       expect(ntfyCalls).toEqual([{ url: `/${topic}`, body: WAKE_BODY }]);
       expect(ntfyCalls.some((x) => x.url.includes(topicMama))).toBe(false);
 
+      // Anmeldung per Wiederherstellungscode: kritisch, das neue Gerät hat keinen Endpunkt, das App-Gerät wird geweckt
       ntfyCalls = [];
       await codeLogin(f, f.a.recoveryCodes[5] as string, 'app', '203.0.113.162');
       await settle();
@@ -620,6 +635,365 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       expect(await world.count('key_backup_archive')).toBe(0);
       expect(await world.count('key_backups_pw')).toBe(0);
       expect(await world.count('person_keys')).toBe(0);
+    });
+  });
+
+  describe('Sperrfrist: kein Umgehen über neue Zugänge (H1)', () => {
+    /** Passkey zu einem Konto hinzufügen (frisches Step-up, Sitzung ohne Sperre). */
+    async function addPasskey(c: Client, secret: string) {
+      await stepUp(c, secret);
+      const authn = new TestAuthenticator();
+      const opt = await c.post('/api/v1/me/passkeys/options');
+      expect(opt.status).toBe(200);
+      const done = await c.post('/api/v1/me/passkeys/verify', { challengeId: opt.json.challengeId, response: authn.register(opt.json.options) });
+      expect(done.status).toBe(200);
+      return { authn, id: done.json.id as string };
+    }
+
+    it('Code-Sitzung: Passkey, Passwort, Codes, Entfernen und Zurücksetzen sind 24 h gesperrt (nichts ändert sich), danach erlaubt', async () => {
+      const f = await start();
+      await f.a.client.post('/api/v1/me/keys', keys());
+      const { c } = await codeLogin(f, f.a.recoveryCodes[0] as string);
+      const gesperrt = async (r: Promise<{ status: number; json: Record<string, any> }>, was: string) => { // eslint-disable-line @typescript-eslint/no-explicit-any
+        const x = await r;
+        expect(x.status, was).toBe(403);
+        expect(x.json.error, was).toBe('destructive_locked');
+        expect(x.json.retryAfterSec, was).toBeGreaterThan(0);
+      };
+      const codesVorher = await world.count('recovery_codes');
+      await gesperrt(c.post('/api/v1/me/passkeys/options'), 'Passkey anlegen (Start)');
+      // eine echte Challenge aus einer normalen Sitzung der Person: das Ende wird in der Code-Sitzung trotzdem abgelehnt
+      await stepUp(f.a.client, f.a.totpSecret);
+      const opt = await f.a.client.post('/api/v1/me/passkeys/options');
+      await gesperrt(c.post('/api/v1/me/passkeys/verify', { challengeId: opt.json.challengeId, response: new TestAuthenticator().register(opt.json.options) }), 'Passkey anlegen (Ende)');
+      await gesperrt(c.del('/api/v1/me/passkeys/3f2b1c1e-0000-4000-8000-000000000001'), 'Passkey entfernen');
+      await gesperrt(c.post('/api/v1/me/password/start', { authKey: key() }), 'Passwort setzen (Start)');
+      await gesperrt(c.post('/api/v1/me/password/complete', { challengeId: '3f2b1c1e-0000-4000-8000-000000000001', code: '123456' }), 'Passwort setzen (Ende)');
+      await gesperrt(c.post('/api/v1/me/password/change', { authKey: key() }), 'Passwort ändern');
+      await gesperrt(c.del('/api/v1/me/password'), 'Passwort entfernen');
+      await gesperrt(c.post('/api/v1/me/recovery-codes'), 'Wiederherstellungscodes neu erzeugen');
+      await gesperrt(c.del(`/api/v1/members/${f.mamaId}`), 'Mitglied entfernen');
+      await gesperrt(c.post(`/api/v1/members/${f.mamaId}/reset`, {}), 'Mitglied zurücksetzen');
+      await gesperrt(rotate(c, 1), 'Schlüsselwechsel');
+      // nichts hat sich geändert: Mama ist da, ihre Anmeldedaten, die Codes und die Schlüssel auch
+      expect((await f.m.client.get('/api/v1/me')).status).toBe(200);
+      expect(await world.count('recovery_codes')).toBe(codesVorher);
+      expect(await world.count('person_keys')).toBe(1);
+      expect((await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from users where access_changed_at is not null`)).rows[0]?.n).toBe(0);
+      // nach 24 h geht es (erst das Step-up erneuern)
+      world.advance(24 * H + MIN);
+      await stepUp(c, f.a.totpSecret);
+      expect((await c.post('/api/v1/me/recovery-codes')).status).toBe(200);
+    });
+
+    it('Kette: Passkey in einer normalen Sitzung angelegt, Anmeldung damit erbt die Frist; eine bestehende Sitzung bleibt frei', async () => {
+      const f = await start();
+      await f.a.client.post('/api/v1/me/keys', keys());
+      const { authn } = await addPasskey(f.a.client, f.a.totpSecret);
+      const geaendert = world.now();
+      // die Sitzung, die den Passkey angelegt hat, ist eine normale Anmeldung (Herkunft login): sie wechselt ohne Sperre
+      expect((await harness.db.execute<{ origin: string }>(sql`select origin from sessions where user_id = ${f.adminId} order by created_at`)).rows.map((r) => r.origin)).toEqual(['login']);
+      // eine NEUE Anmeldung mit dem frischen Passkey erbt die Frist
+      const c = world.client('203.0.113.140');
+      const r = await world.loginPasskey(c, authn);
+      expect(r.status).toBe(200);
+      const row = (await harness.db.execute<{ origin: string; origin_at: Date }>(sql`select origin, origin_at from sessions where user_id = ${f.adminId} order by created_at desc limit 1`)).rows[0];
+      expect(row?.origin).toBe('access_change');
+      expect(new Date(row?.origin_at as Date).getTime()).toBe(geaendert.getTime());
+      const gesperrt = await rotate(c, 1);
+      expect(gesperrt.json.error).toBe('destructive_locked');
+      expect(gesperrt.json.retryAfterSec).toBeGreaterThan(86_000 - 600);
+      // Passwort-Anmeldung innerhalb der Frist: ebenfalls geerbt
+      const c2 = world.client('203.0.113.141');
+      const r2 = await c2.post('/api/v1/auth/login/password', { email: 'admin@example.org', password: PW, totp: await totp(f.a.totpSecret) });
+      c2.adopt(r2.json.session);
+      expect((await rotate(c2, 1)).json.error).toBe('destructive_locked');
+      // nach 24 h: frei (frische Anmeldung)
+      world.advance(24 * H + MIN);
+      const c3 = world.client('203.0.113.142');
+      const r3 = await c3.post('/api/v1/auth/login/password', { email: 'admin@example.org', password: PW, totp: await totp(f.a.totpSecret) });
+      c3.adopt(r3.json.session);
+      expect((await rotate(c3, 1)).status).toBe(200);
+    });
+
+    it('Wiederherstellungscodes neu erzeugen oder Passwort ändern in einer normalen Sitzung: neue Anmeldungen erben die Frist', async () => {
+      const f = await start();
+      await f.a.client.post('/api/v1/me/keys', keys());
+      await stepUp(f.a.client, f.a.totpSecret);
+      expect((await f.a.client.post('/api/v1/me/recovery-codes')).status).toBe(200);
+      const c = world.client('203.0.113.143');
+      const r = await c.post('/api/v1/auth/login/password', { email: 'admin@example.org', password: PW, totp: await totp(f.a.totpSecret), client: 'app', device: { name: 'Handy', platform: 'android' } });
+      expect(r.status).toBe(200);
+      c.adopt(r.json.session);
+      expect((await rotate(c, 1)).json.error).toBe('destructive_locked');
+      // Registrierung setzt es nie: ein neues Mitglied meldet sich sofort normal an
+      const papa = await addMember(world, f.a.client, 'child', 'papa@example.org');
+      await papa.client.post('/api/v1/me/keys', keys());
+      const pc = world.client('203.0.113.144');
+      const pr = await pc.post('/api/v1/auth/login/password', { email: 'papa@example.org', password: PW, totp: await totp(papa.totpSecret) });
+      pc.adopt(pr.json.session);
+      expect((await rotate(pc, 1)).status).toBe(200);
+    });
+
+    it('Passkey-Selbst-Reset: Sitzung ist `login` (keine Sperre, auch kurz nach einer Änderung der Anmeldedaten); der Weg über den Code bleibt gesperrt', async () => {
+      const f = await start();
+      await f.a.client.post('/api/v1/me/keys', keys());
+      const { authn } = await addPasskey(f.a.client, f.a.totpSecret); // setzt access_changed_at: der Passkey-Reset darf das nicht erben
+      const c = world.client('203.0.113.145');
+      const o = await c.post('/api/v1/auth/login/passkey/options');
+      const r = await c.post('/api/v1/auth/password-reset/passkey', { email: 'admin@example.org', challengeId: o.json.challengeId, response: authn.assert(o.json.options), authKey: key(), client: 'app', device: { name: 'Handy', platform: 'android' } });
+      expect(r.status).toBe(200);
+      c.adopt(r.json.session);
+      expect((await harness.db.execute<{ origin: string }>(sql`select origin from sessions where user_id = ${f.adminId} and revoked_at is null`)).rows).toEqual([{ origin: 'login' }]);
+      expect((await rotate(c, 1)).status).toBe(200);
+      expect((await kinds(c)).includes('key_rotated')).toBe(true);
+      // derselbe Konto-Reset mit einem Wiederherstellungscode: gesperrt
+      const c2 = world.client('203.0.113.146');
+      const r2 = await c2.post('/api/v1/auth/password-reset/recovery', { email: 'admin@example.org', code: f.a.recoveryCodes[0], authKey: key(), client: 'app', device: { name: 'Zweit', platform: 'android' } });
+      expect(r2.status).toBe(200);
+      c2.adopt(r2.json.session);
+      expect((await rotate(c2, 2)).json.error).toBe('destructive_locked');
+    });
+
+    it('Admin-Sitzung aus Code: Mitglied entfernen und zurücksetzen gesperrt; normale Admin-Sitzung bleibt frei', async () => {
+      const f = await start();
+      const { c } = await codeLogin(f, f.a.recoveryCodes[1] as string);
+      expect((await c.post(`/api/v1/members/${f.mamaId}/reset`, {})).json.error).toBe('destructive_locked');
+      expect((await c.del(`/api/v1/members/${f.mamaId}`)).json.error).toBe('destructive_locked');
+      await stepUp(f.a.client, f.a.totpSecret);
+      expect((await f.a.client.post(`/api/v1/members/${f.mamaId}/reset`, {})).status).toBe(200);
+    });
+  });
+
+  describe('key_backup_replaced, Ausdünnen, Seiten', () => {
+    it('ein anderer Blob erzeugt das Ereignis key_backup_replaced und weckt die anderen Geräte; derselbe Blob nicht', async () => {
+      const f = await start();
+      const app = world.client('203.0.113.130');
+      const r = await app.post('/api/v1/auth/login/password', { email: 'admin@example.org', password: PW, totp: await totp(f.a.totpSecret), client: 'app', device: { name: 'Handy', platform: 'android' } });
+      app.adopt(r.json.session);
+      const topic = randTopic();
+      expect((await app.request('PUT', '/api/v1/me/push', { body: { endpoint: `https://${HOST}/${topic}?up=1` } })).status).toBe(200);
+      const web = f.a.client;
+      await web.post('/api/v1/me/keys', keys());
+      const first = blob();
+      await web.put('/api/v1/me/key-backup', { blob: first, keyVersion: 1 });
+      ntfyCalls = [];
+      await web.put('/api/v1/me/key-backup', { blob: first, keyVersion: 1 }); // gleich: nichts
+      await wait(300);
+      expect(ntfyCalls).toEqual([]);
+      expect(await kinds(web)).not.toContain('key_backup_replaced');
+      await web.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 });
+      await settle();
+      expect(ntfyCalls).toEqual([{ url: `/${topic}`, body: WAKE_BODY }]);
+      const ev = (await events(web)).filter((e) => e.kind === 'key_backup_replaced');
+      expect(ev).toHaveLength(1);
+      expect(ev[0]).toMatchObject({ via: 'password', byAdmin: false, actorName: null });
+      // kritisch: nie entprellt (zweites Ersetzen kurz danach: zweites Ereignis)
+      await web.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 });
+      expect((await events(web)).filter((e) => e.kind === 'key_backup_replaced')).toHaveLength(2);
+    });
+
+    it('viele Ersetzungen: die ältesten 5 und die neuesten 50 bleiben (die echte Sicherung geht nicht unter), Rotation-Einträge nie ausgedünnt', async () => {
+      const f = await start();
+      const c = f.a.client;
+      await c.post('/api/v1/me/keys', keys());
+      const echt = blob();
+      await c.put('/api/v1/me/key-backup', { blob: echt, keyVersion: 1 });
+      for (let i = 0; i < 60; i++) {
+        world.advance(1000);
+        expect((await c.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 })).status).toBe(200);
+      }
+      const rows = (await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from key_backup_archive where reason = 'replaced'`)).rows[0]?.n;
+      expect(rows).toBe(55);
+      const alle = (await archive(c)).filter((e) => e.kind === 'recovery');
+      expect(alle).toHaveLength(50); // die Liste zeigt höchstens 50 ersetzte
+      // die echte (älteste) Sicherung ist in der Tabelle geblieben
+      const blobs = (await harness.db.execute<{ blob: string }>(sql`select blob from key_backup_archive`)).rows.map((r) => r.blob);
+      expect(blobs).toContain(echt);
+      // Wechsel: der Eintrag `rotation` kommt immer zuerst, vollständig, und wird beim Ausdünnen nie berührt
+      expect((await rotate(c, 1)).status).toBe(200);
+      const s2 = await volleSicherung(c, 2);
+      for (let i = 0; i < 60; i++) {
+        world.advance(1000);
+        await c.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 2 });
+      }
+      expect((await rotate(c, 2)).status).toBe(200);
+      const liste = await archive(c);
+      expect(liste.filter((e) => e.reason === 'rotation' && e.kind === 'recovery')).toHaveLength(2);
+      expect(liste.slice(0, 2).every((e) => e.reason === 'rotation')).toBe(true);
+      expect(liste.filter((e) => e.reason === 'replaced').length).toBeLessThanOrEqual(50);
+      const rot2 = liste.find((e) => e.reason === 'rotation' && e.keyVersion === 2);
+      expect(rot2).toBeTruthy();
+      void s2;
+      // je Stand die ältesten 5 bleiben: Stand 1 behält seine ältesten, auch wenn Stand 2 viele Ersetzungen hat
+      const v1 = (await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from key_backup_archive where reason = 'replaced' and key_version = 1`)).rows[0]?.n;
+      expect(v1).toBeGreaterThanOrEqual(5);
+    });
+
+    it('Seiten über limit und before: lückenlos, ohne Doppelte, Reihenfolge fest; ungültiger Cursor 400', async () => {
+      const f = await start();
+      const c = f.a.client;
+      await c.post('/api/v1/me/keys', keys());
+      await volleSicherung(c, 1);
+      for (let i = 0; i < 12; i++) {
+        world.advance(1000);
+        await c.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 });
+      }
+      expect((await rotate(c, 1)).status).toBe(200);
+      const voll = (await c.get('/api/v1/me/key-backups/archive')).json;
+      expect(voll.next).toBeNull();
+      const ids: string[] = [];
+      let before: string | undefined;
+      let seiten = 0;
+      do {
+        const r = await c.get(`/api/v1/me/key-backups/archive?limit=5${before ? `&before=${encodeURIComponent(before)}` : ''}`);
+        expect(r.status).toBe(200);
+        expect(r.json.entries.length).toBeLessThanOrEqual(5);
+        ids.push(...r.json.entries.map((e: { id: string }) => e.id));
+        before = r.json.next ?? undefined;
+        seiten++;
+      } while (before && seiten < 20);
+      expect(ids).toEqual(voll.entries.map((e: { id: string }) => e.id));
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(seiten).toBeGreaterThan(2);
+      expect(voll.entries.length).toBeGreaterThanOrEqual(13); // 12 ersetzte + 1 Rotation (+ Passwort-Zeile)
+      expect(voll.entries[0].reason).toBe('rotation');
+      expect((await c.get('/api/v1/me/key-backups/archive?before=quatsch')).status).toBe(400);
+      expect((await c.get('/api/v1/me/key-backups/archive?limit=0')).status).toBe(400);
+      expect((await c.get('/api/v1/me/key-backups/archive?limit=500')).status).toBe(400);
+      expect((await c.get('/api/v1/me/key-backups/archive?x=1')).status).toBe(400);
+    });
+
+    it('unbestätigte Passwort-Sicherungen älterer Stände: höchstens 50 in der Liste, die Zahl stimmt mit der Liste überein, bestätigte vollständig', async () => {
+      const f = await start();
+      const c = f.a.client;
+      await c.post('/api/v1/me/keys', keys());
+      const s1 = await volleSicherung(c, 1);
+      for (let i = 0; i < 55; i++) await c.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      expect((await rotate(c, 1)).status).toBe(200);
+      const liste = (await archive(c)).filter((e) => e.kind === 'password');
+      expect(liste.filter((e) => !e.verified).length).toBeLessThanOrEqual(50);
+      expect(liste.find((e) => e.id === s1.pwId)).toMatchObject({ verified: true, reason: 'rotation' });
+      const k = (await c.get('/api/v1/me/keys')).json;
+      expect(k.archiveCount).toBe((await archive(c)).length);
+    });
+
+    it('ohne Schalter E2EE_PW_BACKUP: Liste, Zahl und Einzelabruf zählen nur Wiederherstellungssicherungen (konsistent)', async () => {
+      const f = await start({ E2EE_PW_BACKUP: 'false' });
+      const c = f.a.client;
+      await c.post('/api/v1/me/keys', keys());
+      await c.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 });
+      expect((await rotate(c, 1)).status).toBe(200);
+      // eine Passwort-Zeile aus der Zeit mit Schalter an (direkt eingefügt)
+      const pwId = (
+        await harness.db.execute<{ id: string }>(sql`insert into key_backups_pw (user_id, family_id, blob, key_version, kdf_id, mem_kib, ops, salt_generation, state, verified_at)
+          select user_id, family_id, ${blob()}::text, 1, 'argon2id-v1', 65536, 3, 1, 'superseded', now() from memberships where user_id = ${f.adminId} returning id`)
+      ).rows[0]?.id as string;
+      const liste = await archive(c);
+      expect(liste.map((e) => e.kind)).toEqual(['recovery']);
+      expect((await c.get('/api/v1/me/keys')).json.archiveCount).toBe(1);
+      expect((await c.get(`/api/v1/me/key-backups/archive/${pwId}`)).status).toBe(404);
+    });
+  });
+
+  describe('Entprellung und Ereignisliste (M4)', () => {
+    it('Lese-Ereignisse je Art und Person höchstens alle 10 Minuten, Wecker höchstens einer je Person in 60 s; kritische nie entprellt', async () => {
+      const f = await start();
+      const app = world.client('203.0.113.131');
+      const r = await app.post('/api/v1/auth/login/password', { email: 'admin@example.org', password: PW, totp: await totp(f.a.totpSecret), client: 'app', device: { name: 'Handy', platform: 'android' } });
+      app.adopt(r.json.session);
+      const topic = randTopic();
+      await app.request('PUT', '/api/v1/me/push', { body: { endpoint: `https://${HOST}/${topic}?up=1` } });
+      const web = f.a.client;
+      await web.post('/api/v1/me/keys', keys());
+      await volleSicherung(web, 1);
+      ntfyCalls = [];
+      world.advance(1000);
+      for (let i = 0; i < 5; i++) expect((await web.get('/api/v1/me/key-backup')).status).toBe(200); // fünf Abrufe: ein Ereignis, ein Wecker
+      expect((await web.get('/api/v1/me/key-backup-pw')).status).toBe(200); // andere Art: eigenes Ereignis, aber der Wecker kommt höchstens einmal je Minute
+      await settle();
+      await wait(300);
+      expect(await kinds(web)).toEqual(expect.arrayContaining(['key_backup_read', 'key_backup_pw_read']));
+      expect((await kinds(web)).filter((k) => k === 'key_backup_read')).toHaveLength(1);
+      expect(ntfyCalls).toHaveLength(1);
+      // nach 11 Minuten wieder ein Ereignis und ein Wecker
+      world.advance(11 * MIN);
+      await stepUp(web, f.a.totpSecret);
+      ntfyCalls = [];
+      await web.get('/api/v1/me/key-backup');
+      await settle();
+      expect((await kinds(web)).filter((k) => k === 'key_backup_read')).toHaveLength(2);
+      expect(ntfyCalls).toHaveLength(1);
+      // kritisch: zwei Wechsel kurz hintereinander = zwei Ereignisse und zwei Wecker
+      ntfyCalls = [];
+      await stepUp(web, f.a.totpSecret);
+      expect((await rotate(web, 1)).status).toBe(200);
+      expect((await rotate(web, 2)).status).toBe(200);
+      await wait(400);
+      expect((await kinds(web)).filter((k) => k === 'key_rotated')).toHaveLength(2);
+      expect(ntfyCalls.length).toBeGreaterThanOrEqual(1); // kritisch: nie durch die Lese-Entprellung unterdrückt (zwei Ereignisse oben)
+      // das Round-Trip-Lesen (?pending=1) bleibt ereignisfrei
+      const vorher = await world.count('security_events');
+      await web.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 3, kdf: kdf() });
+      expect((await web.get('/api/v1/me/key-backup-pw?pending=1')).status).toBe(200);
+      expect(await world.count('security_events')).toBe(vorher);
+    });
+
+    it('kritische Ereignisse werden in der Liste nie von Lese-Ereignissen verdrängt; Obergrenzen je Art', async () => {
+      const f = await start();
+      const c = f.a.client;
+      await c.post('/api/v1/me/keys', keys());
+      await rotate(c, 1); // ein altes, kritisches Ereignis
+      world.advance(MIN);
+      // 80 neuere Lese-Ereignisse und 120 kritische (direkt eingefügt)
+      await harness.db.execute(sql`insert into security_events (family_id, user_id, kind, via, created_at)
+        select m.family_id, m.user_id, 'key_backup_read', 'password', now() + (g || ' seconds')::interval from memberships m, generate_series(1, 80) g where m.user_id = ${f.adminId}`);
+      const liste = await events(c);
+      expect(liste.filter((e) => e.kind === 'key_rotated')).toHaveLength(1);
+      expect(liste.filter((e) => e.kind === 'key_backup_read')).toHaveLength(50);
+      await harness.db.execute(sql`insert into security_events (family_id, user_id, kind, via, created_at)
+        select m.family_id, m.user_id, 'key_rotated', 'password', now() + (g || ' seconds')::interval from memberships m, generate_series(1, 120) g where m.user_id = ${f.adminId}`);
+      const l2 = await events(c);
+      expect(l2.filter((e) => e.kind === 'key_rotated')).toHaveLength(100);
+      expect(l2.filter((e) => e.kind === 'key_backup_read')).toHaveLength(50);
+      // absteigend nach Zeit sortiert
+      const zeiten = l2.map((e) => new Date(e.createdAt as string).getTime());
+      expect([...zeiten].sort((a, b) => b - a)).toEqual(zeiten);
+    });
+  });
+
+  describe('Komplett-Reset: Benachrichtigung ist Nebensache (REVIEW M1)', () => {
+    it('der Weckhaken wirft: der Reset liefert trotzdem 200 samt Einladung, alle Ereignisse sind da', async () => {
+      const f = await start();
+      await addMember(world, f.a.client, 'child', 'papa@example.org');
+      world.auth.ctx.onSecurityEvent = () => {
+        throw new Error('kaputt');
+      };
+      await stepUp(f.a.client, f.a.totpSecret);
+      const r = await f.a.client.post(`/api/v1/members/${f.mamaId}/reset`, {});
+      expect(r.status).toBe(200);
+      expect(r.json.invite.token).toBeTruthy();
+      const k = (await harness.db.execute<{ kind: string }>(sql`select kind from security_events order by kind`)).rows.map((x) => x.kind);
+      expect(k).toEqual(['account_reset_requested', 'member_account_reset', 'member_account_reset']);
+    });
+
+    it('das Speichern des Familienhinweises scheitert (Datenbank): Reset und Einladungslink gelingen trotzdem, das eigene Ereignis der Person bleibt', async () => {
+      const f = await start();
+      await harness.db.execute(sql`create or replace function lx_test_blockiere() returns trigger language plpgsql as $$ begin if new.kind = 'member_account_reset' then raise exception 'blockiert'; end if; return new; end $$`);
+      await harness.db.execute(sql`create trigger lx_test_blockiere before insert on security_events for each row execute function lx_test_blockiere()`);
+      try {
+        await stepUp(f.a.client, f.a.totpSecret);
+        const r = await f.a.client.post(`/api/v1/members/${f.mamaId}/reset`, {});
+        expect(r.status).toBe(200);
+        expect(r.json.invite.token).toBeTruthy();
+        const k = (await harness.db.execute<{ kind: string }>(sql`select kind from security_events`)).rows.map((x) => x.kind);
+        expect(k).toEqual(['account_reset_requested']);
+        // die alten Anmeldedaten sind widerrufen (der Reset hat wirklich stattgefunden)
+        expect((await f.m.client.get('/api/v1/me')).status).toBe(401);
+      } finally {
+        await harness.db.execute(sql`drop trigger if exists lx_test_blockiere on security_events`);
+        await harness.db.execute(sql`drop function if exists lx_test_blockiere()`);
+      }
     });
   });
 

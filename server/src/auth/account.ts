@@ -1,7 +1,7 @@
 // Konto-Verwaltung nach der Anmeldung: Profil, Mitglieder, Geräte, Anmeldedaten, Wiederherstellungs-Codes, WebSocket-Tickets.
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import { and, asc, count, eq, gt, isNull, sql } from 'drizzle-orm';
-import { credentials, devices, type FamilyRole, invites, memberships, personKeys, sessions, users, wsTickets } from '../db/schema.js';
+import { credentials, devices, type FamilyRole, invites, memberships, personKeys, securityEvents, sessions, users, wsTickets } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { defaultRegistry } from '../sync/index.js';
 import { detachMemberRefs } from '../sync/refs.js';
@@ -11,11 +11,11 @@ import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken, sha256Hex } from './crypto.js';
 import { createInvite, isDowngrade, revokeOpenInvitesBy, type CreatedInvite } from './invites.js';
 import { findAccountById, type Account } from './login.js';
-import { recordSecurityEvent, wakeAfterCommit, wakeTopics } from './security-events.js';
+import { recordSecurityEvent, wakeAfterCommit, wakeTopics, wakeTopicsFor } from './security-events.js';
 import { assertNotLocked, ipKey, recordFailure } from './lockout.js';
 import { countRemainingCodes, createRecoveryCodes } from './recovery.js';
 import type { MemberView } from './register.js';
-import { csrfTokenFor, isAlive, loadLive, requireStepUp, revokeAllForUser, revokeDevice } from './sessions.js';
+import { csrfTokenFor, isAlive, loadLive, markAccessChanged, requireDestructiveAllowed, requireStepUp, revokeAllForUser, revokeDevice } from './sessions.js';
 import type { Principal, Role, SessionPrincipal } from './types.js';
 import { checkRegistration, registrationOptions } from './webauthn.js';
 import { isOperator } from '../operator/service.js';
@@ -241,6 +241,7 @@ export async function rejectMember(ctx: AuthContext, p: SessionPrincipal, target
 
 export async function removeMember(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
   requireAdmin(p);
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   if (targetId === p.userId) throw new AppError(409, 'cannot_remove_self', 'Du kannst dich nicht selbst entfernen.');
   const target = await memberOf(ctx, p, targetId);
@@ -266,13 +267,18 @@ export async function removeMember(ctx: AuthContext, p: SessionPrincipal, target
  */
 export async function resetMember(
   ctx: AuthContext,
-  input: { familyId: string; userId: string; actorId: string | null; hours: number; withPin: boolean },
+  input: { familyId: string; userId: string; actorId: string | null; hours: number; withPin: boolean; by?: SessionPrincipal },
   meta: RequestMeta,
 ): Promise<CreatedInvite> {
+  // eine Admin-Sitzung aus Wiederherstellungscode/Reset darf niemanden zurücksetzen (normale Admin-Sitzungen und das CLI bleiben frei)
+  if (input.by) requireDestructiveAllowed(ctx, input.by);
   const target = await findAccountById(ctx, input.userId, input.familyId);
   if (!target) throw notFound();
-  // Push-Themen vor dem Widerruf lesen (der löscht die Endpunkte)
-  const topics = await wakeTopics(ctx.db, input.userId);
+  // Push-Themen vor dem Widerruf lesen (der löscht die Endpunkte); ein Fehler hier darf den Reset nie verhindern
+  const topics = await wakeTopics(ctx.db, input.userId).catch((err: unknown) => {
+    ctx.log.warn({ err: (err as Error).message }, 'Push-Themen für den Reset nicht lesbar');
+    return [] as string[];
+  });
   const result = await ctx.db.transaction(async (tx) => {
     const now = ctx.now();
     await tx.update(credentials).set({ revokedAt: now }).where(and(eq(credentials.userId, input.userId), isNull(credentials.revokedAt)));
@@ -288,19 +294,38 @@ export async function resetMember(
     await writeAudit(ctx, tx, { event: 'member_reset', familyId: input.familyId, actorId: input.actorId, ip: meta.ip, detail: { target: input.userId } });
     await recordSecurityEvent(ctx, tx, { familyId: input.familyId, userId: input.userId, kind: 'account_reset_requested', via: 'admin', actorId: input.actorId });
     // Hinweis an ALLE anderen aktiven Mitglieder: ein Komplett-Reset ist der Weg, ein Konto zu übernehmen. Sie sollen einen neuen Schlüssel dieser Person
-    // nur nach Rücksprache annehmen (die App warnt bei der Schlüsseländerung ohnehin, der Hinweis erklärt den Anlass).
-    const others = await tx
-      .select({ userId: memberships.userId })
-      .from(memberships)
-      .innerJoin(users, eq(users.id, memberships.userId))
-      .where(and(eq(memberships.familyId, input.familyId), eq(memberships.status, 'active'), isNull(users.disabledAt), sql`${memberships.userId} <> ${input.userId}`));
-    for (const o of others) {
-      await recordSecurityEvent(ctx, tx, { familyId: input.familyId, userId: o.userId, kind: 'member_account_reset', via: 'admin', actorId: input.actorId, subjectId: input.userId });
+    // nur nach Rücksprache annehmen (die App warnt bei der Schlüsseländerung ohnehin, der Hinweis erklärt den Anlass). Der Hinweis ist Nebensache: in einem
+    // eigenen Teilabschnitt (Savepoint), damit ein Fehler dort den Reset und den Einladungslink nie scheitern lässt.
+    let others: string[] = [];
+    try {
+      others = await tx.transaction(async (sp) => {
+        const rows = await sp
+          .select({ userId: memberships.userId })
+          .from(memberships)
+          .innerJoin(users, eq(users.id, memberships.userId))
+          .where(and(eq(memberships.familyId, input.familyId), eq(memberships.status, 'active'), isNull(users.disabledAt), sql`${memberships.userId} <> ${input.userId}`));
+        if (rows.length > 0) {
+          await sp
+            .insert(securityEvents)
+            .values(rows.map((o) => ({ familyId: input.familyId, userId: o.userId, kind: 'member_account_reset', via: 'admin', actorId: input.actorId, subjectId: input.userId, createdAt: ctx.now() })));
+        }
+        return rows.map((o) => o.userId);
+      });
+    } catch (err: unknown) {
+      ctx.log.warn({ err: (err as Error).message }, 'Hinweis an die Familie (Komplett-Reset) nicht gespeichert');
     }
-    return { invite, others: others.map((o) => o.userId) };
+    return { invite, others };
   });
+  // nach dem Commit: Benachrichtigungen sind Nebensache und dürfen den Reset nie scheitern lassen (Themen gebündelt, Fehler nur ins Log)
   wakeAfterCommit(ctx, input.familyId, input.userId, topics);
-  for (const other of result.others) wakeAfterCommit(ctx, input.familyId, other, await wakeTopics(ctx.db, other));
+  if (result.others.length > 0) {
+    try {
+      const byUser = await wakeTopicsFor(ctx.db, result.others);
+      for (const [other, t] of byUser) wakeAfterCommit(ctx, input.familyId, other, t);
+    } catch (err: unknown) {
+      ctx.log.warn({ err: (err as Error).message }, 'Weckruf an die Familie (Komplett-Reset) fehlgeschlagen');
+    }
+  }
   return result.invite;
 }
 
@@ -354,6 +379,7 @@ export async function listCredentials(ctx: AuthContext, p: SessionPrincipal) {
 }
 
 export async function startAddPasskey(ctx: AuthContext, p: SessionPrincipal) {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   const account = await findAccountById(ctx, p.userId);
   if (!account) throw notFound();
@@ -377,6 +403,7 @@ export async function finishAddPasskey(
   input: { challengeId: string; response: RegistrationResponseJSON; label?: string | undefined },
   meta: RequestMeta,
 ): Promise<{ id: string }> {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   await assertNotLocked(ctx, [ipKey(ctx, meta.ip)]);
   const taken = await takeChallenge(ctx, input.challengeId, 'add_passkey');
@@ -387,19 +414,22 @@ export async function finishAddPasskey(
     throw new AppError(400, 'registration_failed', 'Der Passkey konnte nicht überprüft werden.');
   }
   try {
-    const [row] = await ctx.db
-      .insert(credentials)
-      .values({
-        userId: p.userId,
-        type: 'passkey',
-        label: input.label ?? null,
-        externalId: verified.externalId,
-        secret: verified.publicKey,
-        signCount: verified.counter,
-        transports: verified.transports,
-        createdAt: ctx.now(),
-      })
-      .returning({ id: credentials.id });
+    const [row] = await ctx.db.transaction(async (tx) => {
+      await markAccessChanged(ctx, tx, p.userId);
+      return tx
+        .insert(credentials)
+        .values({
+          userId: p.userId,
+          type: 'passkey',
+          label: input.label ?? null,
+          externalId: verified.externalId,
+          secret: verified.publicKey,
+          signCount: verified.counter,
+          transports: verified.transports,
+          createdAt: ctx.now(),
+        })
+        .returning({ id: credentials.id });
+    });
     await writeAudit(ctx, ctx.db, { event: 'passkey_added', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { credentialId: row?.id } });
     return { id: row?.id ?? '' };
   } catch (err) {
@@ -411,6 +441,7 @@ export async function finishAddPasskey(
 }
 
 export async function removePasskey(ctx: AuthContext, p: SessionPrincipal, credentialId: string, meta: RequestMeta): Promise<void> {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   await ctx.db.transaction(async (tx) => {
     const own = await tx
@@ -426,14 +457,17 @@ export async function removePasskey(ctx: AuthContext, p: SessionPrincipal, crede
       throw new AppError(409, 'last_credential', 'Der letzte Passkey kann nicht entfernt werden.');
     }
     await tx.update(credentials).set({ revokedAt: ctx.now() }).where(eq(credentials.id, credentialId));
+    await markAccessChanged(ctx, tx, p.userId);
     await writeAudit(ctx, tx, { event: 'passkey_removed', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { credentialId } });
   });
 }
 
 export async function regenerateRecoveryCodes(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta): Promise<string[]> {
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   return ctx.db.transaction(async (tx) => {
     const codes = await createRecoveryCodes(ctx, tx, p.userId);
+    await markAccessChanged(ctx, tx, p.userId);
     await writeAudit(ctx, tx, { event: 'recovery_codes_created', familyId: p.familyId, actorId: p.userId, ip: meta.ip });
     return codes;
   });

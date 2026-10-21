@@ -298,16 +298,18 @@ export const auditEvents = async (world: World) => (await world.db.select().from
 
 /**
  * Historische Migrationstests legen Daten mit dem AKTUELLEN Code auf einem älteren Schema an. Dort fehlen die Spalte `invites.kind`
- * (Migration 0019), die jede Einladung schreibt, und `sessions.origin`/`origin_at` (Migration 0020), die jede Sitzung schreibt: sie werden für die Dauer
+ * (Migration 0019), die jede Einladung schreibt, und `sessions.origin`/`origin_at` sowie `users.access_changed_at` (Migration 0020), die jede Sitzung liest bzw. schreibt: sie werden für die Dauer
  * der Anlage ergänzt und vor dem Weitermigrieren wieder entfernt.
  */
 export const kindSpalteErgaenzen = async (db: Db) => {
   await db.execute(sql`alter table invites add column if not exists kind text not null default 'standard'`);
   await db.execute(sql`alter table sessions add column if not exists origin text not null default 'login'`);
   await db.execute(sql`alter table sessions add column if not exists origin_at timestamptz`);
+  await db.execute(sql`alter table users add column if not exists access_changed_at timestamptz`);
 };
 export const kindSpalteEntfernen = async (db: Db) => {
   await db.execute(sql`alter table invites drop column if exists kind`);
   await db.execute(sql`alter table sessions drop column if exists origin`);
   await db.execute(sql`alter table sessions drop column if exists origin_at`);
+  await db.execute(sql`alter table users drop column if exists access_changed_at`);
 };

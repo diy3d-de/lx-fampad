@@ -18,9 +18,10 @@ ALTER TABLE "security_events" DROP CONSTRAINT "security_events_via_ck";--> state
 ALTER TABLE "security_events" ADD COLUMN "subject_id" uuid;--> statement-breakpoint
 ALTER TABLE "sessions" ADD COLUMN "origin" text DEFAULT 'login' NOT NULL;--> statement-breakpoint
 ALTER TABLE "sessions" ADD COLUMN "origin_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "users" ADD COLUMN "access_changed_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "key_backup_archive" ADD CONSTRAINT "key_backup_archive_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 CREATE INDEX "key_backup_archive_user_idx" ON "key_backup_archive" USING btree ("user_id","archived_at");--> statement-breakpoint
 ALTER TABLE "security_events" ADD CONSTRAINT "security_events_subject_id_users_id_fk" FOREIGN KEY ("subject_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "security_events" ADD CONSTRAINT "security_events_kind_ck" CHECK ("security_events"."kind" in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset'));--> statement-breakpoint
+ALTER TABLE "security_events" ADD CONSTRAINT "security_events_kind_ck" CHECK ("security_events"."kind" in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_replaced', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset'));--> statement-breakpoint
 ALTER TABLE "security_events" ADD CONSTRAINT "security_events_via_ck" CHECK ("security_events"."via" in ('admin', 'recovery_code', 'passkey', 'password'));--> statement-breakpoint
-ALTER TABLE "sessions" ADD CONSTRAINT "sessions_origin_ck" CHECK ("sessions"."origin" in ('login', 'recovery_code', 'password_reset'));
+ALTER TABLE "sessions" ADD CONSTRAINT "sessions_origin_ck" CHECK ("sessions"."origin" in ('login', 'recovery_code', 'password_reset', 'access_change'));

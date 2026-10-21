@@ -248,7 +248,11 @@ async function finishSelfReset(
   const session = await ctx.db.transaction(async (tx) => {
     if (input.verbrauchen && !(await input.verbrauchen(tx))) return null;
     await applyPasswordReset(ctx, tx, { familyId: account.familyId, userId: account.userId, authHash: authKeyDigest(ctx, account.userId, input.authKey), via: input.via, actorId: null }, meta);
-    return establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.via === 'passkey' ? 'passkey' : 'recovery', origin: 'password_reset', meta });
+    return establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.via === 'passkey' ? 'passkey' : 'recovery',
+      // Passkey: die Person hat sich mit ihrem Passkey ausgewiesen (normale Anmeldung, keine Sperrfrist); Wiederherstellungscode: wie die Code-Anmeldung gesperrt
+      ...(input.via === 'passkey' ? { origin: 'login' as const, ohneZugangsfrist: true } : { origin: 'password_reset' as const }),
+      meta,
+    });
   });
   if (!session) return null;
   if (input.via !== 'passkey') await clearAccountFailures(ctx, meta.ip, account.email);

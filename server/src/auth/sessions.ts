@@ -195,7 +195,17 @@ export function toEstablished(ctx: AuthContext, row: SessionRow, token: string):
 export async function establishSession(
   ctx: AuthContext,
   exec: Executor,
-  input: { userId: string; familyId: string; client: SessionKind; device?: DeviceInput | undefined; authMethod: AuthMethod; origin?: SessionOrigin; meta: RequestMeta },
+  input: {
+    userId: string;
+    familyId: string;
+    client: SessionKind;
+    device?: DeviceInput | undefined;
+    authMethod: AuthMethod;
+    origin?: SessionOrigin;
+    /** Nur für den Passkey-Selbst-Reset: der Passkey hat die Person ausgewiesen, die Sitzung ist `login` und erbt keine Frist aus einer früheren Änderung der Anmeldedaten. */
+    ohneZugangsfrist?: boolean;
+    meta: RequestMeta;
+  },
 ): Promise<Established> {
   const device = await ensureDevice(ctx, exec, {
     familyId: input.familyId,
@@ -204,20 +214,32 @@ export async function establishSession(
     device: input.device,
     userAgent: input.meta.userAgent,
   });
+  // Hat die Person ihre Anmeldedaten erst vor kurzem geändert (Passkey/Passwort/Codes), erbt die neue Sitzung die Sperrfrist ab dieser Änderung:
+  // ein frisch angelegter Zugang hebelt die Sperre einer Code-Sitzung sonst aus (Code-Sitzung legt Passkey an, meldet sich damit "normal" an)
+  let origin: SessionOrigin = input.origin ?? 'login';
+  let originAt: Date | undefined;
+  if (origin === 'login' && !input.ohneZugangsfrist) {
+    const [u] = await exec.select({ at: users.accessChangedAt }).from(users).where(eq(users.id, input.userId));
+    if (u?.at && u.at.getTime() + DESTRUCTIVE_LOCK_MS > ctx.now().getTime()) {
+      origin = 'access_change';
+      originAt = u.at;
+    }
+  }
   const { row, token } = await insertSession(ctx, exec, {
     familyId: input.familyId,
     userId: input.userId,
     deviceId: device.id,
     kind: input.client,
     authMethod: input.authMethod,
-    origin: input.origin ?? 'login',
+    origin,
+    ...(originAt ? { originAt } : {}),
     // die Anmeldung selbst (Passkey mit Nutzerprüfung, Passwort+TOTP, Wiederherstellungs-Code) zählt als frische Bestätigung
     stepUpAt: ctx.now(),
   });
   if (device.isNew) {
     await writeAudit(ctx, exec, { event: 'device_added', familyId: input.familyId, actorId: input.userId, deviceId: device.id, ip: input.meta.ip, detail: { kind: input.client } });
   }
-  await writeAudit(ctx, exec, { event: 'login_ok', familyId: input.familyId, actorId: input.userId, deviceId: device.id, ip: input.meta.ip, detail: { method: input.authMethod, kind: input.client, ...(input.origin && input.origin !== 'login' ? { origin: input.origin } : {}) } });
+  await writeAudit(ctx, exec, { event: 'login_ok', familyId: input.familyId, actorId: input.userId, deviceId: device.id, ip: input.meta.ip, detail: { method: input.authMethod, kind: input.client, ...(origin !== 'login' ? { origin } : {}) } });
   return toEstablished(ctx, row, token);
 }
 
@@ -478,11 +500,12 @@ export function requireStepUp(ctx: AuthContext, principal: SessionPrincipal): vo
 export const DESTRUCTIVE_LOCK_MS = 24 * 3_600_000;
 
 /**
- * Destruktive Schlüssel-Aktionen (Schlüsselwechsel) sind aus Sitzungen, die über einen einzelnen Wiederherstellungscode oder einen Passwort-Reset entstanden
- * sind, 24 Stunden nach deren Entstehen gesperrt: wer nur einen Code erbeutet hat, kann so nicht sofort alle Wiederherstellungswege des Opfers
- * entwerten, und die Familie und das Opfer haben Zeit, den Hinweis zu sehen. Passkey- und Passwort+TOTP-Anmeldung bleiben ohne Sperre. Das normale
- * Anlegen einer Sicherung (pending -> bestätigt) ist nie gesperrt (nach einem Reset legt die App sofort eine neue an) und zerstört nichts, weil
- * Ersetztes archiviert wird. Wirft 403 `destructive_locked` mit `retryAfterSec`.
+ * Destruktive Aktionen (Schlüsselwechsel, Änderungen der Anmeldedaten, Wiederherstellungscodes neu erzeugen, Mitglied entfernen/zurücksetzen) sind aus Sitzungen,
+ * die über einen einzelnen Wiederherstellungscode, einen Passwort-Reset oder kurz nach einer Änderung der Anmeldedaten entstanden sind, 24 Stunden nach deren
+ * Entstehen gesperrt: wer nur einen Code erbeutet hat, kann so nicht sofort alle Wiederherstellungswege des Opfers entwerten und sich auch keinen neuen,
+ * "normalen" Zugang anlegen (die Sitzungen daraus erben die Frist, siehe establishSession). Die Familie und das Opfer haben Zeit, den Hinweis zu sehen.
+ * Passkey- und Passwort+TOTP-Anmeldung bleiben ohne Sperre. Das normale Anlegen einer Sicherung (pending -> bestätigt) ist nie gesperrt (nach einem Reset legt
+ * die App sofort eine neue an) und zerstört nichts, weil Ersetztes archiviert wird. Wirft 403 `destructive_locked` mit `retryAfterSec`.
  */
 export function requireDestructiveAllowed(ctx: AuthContext, principal: Pick<SessionPrincipal, 'origin' | 'originAt'>): void {
   if (principal.origin === 'login') return;
@@ -494,10 +517,15 @@ export function requireDestructiveAllowed(ctx: AuthContext, principal: Pick<Sess
   throw new AppError(
     403,
     'destructive_locked',
-    `Diese Aktion ist nach der Anmeldung mit einem Wiederherstellungscode oder nach einem Passwort-Reset noch gesperrt (noch ca. ${hours} Std.). Melde dich später mit Passkey oder Passwort an.`,
+    `Diese Aktion ist nach einer Anmeldung mit Wiederherstellungscode, nach einem Passwort-Reset oder nach einer Änderung deiner Anmeldedaten noch gesperrt (noch ca. ${hours} Std.).`,
     { 'Retry-After': String(restSec) },
     { retryAfterSec: restSec },
   );
+}
+
+/** Vermerkt eine Änderung der Anmeldedaten durch die Person selbst (gehört in die Transaktion der Änderung); Sitzungen danach erben die Frist 24 h. */
+export async function markAccessChanged(ctx: Pick<AuthContext, 'now'>, exec: Executor, userId: string): Promise<void> {
+  await exec.update(users).set({ accessChangedAt: ctx.now() }).where(eq(users.id, userId));
 }
 
 // ---------- Aufräumen ----------

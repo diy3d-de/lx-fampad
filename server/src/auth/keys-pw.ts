@@ -8,7 +8,7 @@ import { accountKdf, keyBackupsPw, personKeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, RequestMeta, Tx } from './context.js';
-import { recordSecurityEvent, viaOf, wakeAfterCommit, wakeTopics } from './security-events.js';
+import { recordDebouncedEvent, viaOf, wakeAfterCommit, wakeTopics } from './security-events.js';
 import { requireStepUp } from './sessions.js';
 import type { SessionPrincipal } from './types.js';
 
@@ -128,11 +128,12 @@ export interface PwBackupOut {
  * Standard (`which = 'current'`): die aktuelle, bestätigte Sicherung; `state` ist `stale`, wenn der Personenschlüssel seither gewechselt
  * hat (die Sicherung enthält dann den alten Schlüssel). `which = 'pending'`: die eigene, noch nicht bestätigte Sicherung für den
  * Round-Trip der App (nur der Besitzer, gleiche Rechte und Protokollierung). Der Abruf der aktuellen Sicherung erzeugt ein Sicherheitsereignis
- * (`key_backup_pw_read`) samt Wecker auf die eigenen Geräte; der Round-Trip-Abruf der eigenen unbestätigten Sicherung nicht (das ist die App selbst).
+ * (`key_backup_pw_read`, höchstens eines je 10 Minuten) samt Wecker auf die anderen Geräte der Person; der Round-Trip-Abruf der eigenen unbestätigten Sicherung nicht (das ist die App selbst).
  */
 export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: RequestMeta, which: 'current' | 'pending' = 'current'): Promise<PwBackupOut> {
   requireStepUp(ctx, p);
-  const topics = which === 'current' ? await wakeTopics(ctx.db, p.userId) : [];
+  const topics = which === 'current' ? await wakeTopics(ctx.db, p.userId, p.deviceId) : [];
+  let recorded = false;
   const out = await ctx.db.transaction(async (tx): Promise<PwBackupOut> => {
     const [b] = await tx
       .select({
@@ -151,7 +152,7 @@ export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: R
       .where(and(eq(keyBackupsPw.userId, p.userId), which === 'pending' ? eq(keyBackupsPw.state, 'pending') : inArray(keyBackupsPw.state, ['active', 'stale'])));
     if (!b) throw notFound();
     await writeAudit(ctx, tx, { event: 'key_backup_pw_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion, which } });
-    if (which === 'current') await recordSecurityEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_backup_pw_read', via: viaOf(p), actorId: p.userId });
+    if (which === 'current') recorded = await recordDebouncedEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_backup_pw_read', via: viaOf(p), actorId: p.userId });
     return {
       id: b.id,
       blob: b.blob,
@@ -160,7 +161,7 @@ export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: R
       kdf: { id: b.kdfId, memKiB: b.memKib, ops: b.ops, salt: kdfSalt(ctx, b.email, b.generation) },
     };
   });
-  wakeAfterCommit(ctx, p.familyId, p.userId, topics);
+  if (recorded) wakeAfterCommit(ctx, p.familyId, p.userId, topics, { light: true });
   return out;
 }
 
