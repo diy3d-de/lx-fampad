@@ -134,6 +134,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
   void _punktUmschalten(int i, {required bool sofort}) {
     final p = _punkte[i];
     setState(() => p.erledigt = !p.erledigt);
+    if (sofort) _ausgang = _stand(); // wird sofort gespeichert: keine ungespeicherte Änderung
     if (sofort) unawaited(ref.read(aufgabeRepositoryProvider).punktErledigt(p.id, p.erledigt));
   }
 

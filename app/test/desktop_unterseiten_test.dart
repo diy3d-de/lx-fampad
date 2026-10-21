@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/features/calendar/termin_editor.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/tasks/aufgabe_editor.dart';
@@ -150,6 +151,40 @@ void main() {
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+
+  for (final (name, editor, titel) in [('Aufgaben-Editor', const AufgabeEditor(), 'Neue Aufgabe'), ('Termin-Editor', const TerminEditor(), 'Neuer Termin')]) {
+    testWidgets('$name: "Verwerfen" nach einem Bereichswechsel schließt die Seite und wählt den Bereich; "Weiter bearbeiten" nicht', (tester) async {
+      await start(tester, const Size(1200, 800));
+      await oeffnen(tester, editor);
+      await tester.enterText(find.descendant(of: find.byType(editor.runtimeType), matching: find.byType(TextField)).first, 'Etwas');
+      await tester.pump();
+      await tester.tap(find.text('Chat').first);
+      await warte(tester);
+      expect(find.text('Änderungen verwerfen?'), findsOneWidget);
+      await tester.tap(find.text('Weiter bearbeiten'));
+      await warte(tester);
+      expect(find.text(titel), findsOneWidget);
+      expect(tab(tester), 0);
+      // später ein Zurück ohne Rückfrage-Bezug zum alten Ziel: Verwerfen über den Pfeil wählt keinen Bereich
+      await tester.tap(find.byTooltip('Zurück'));
+      await warte(tester);
+      await tester.tap(find.text('Verwerfen'));
+      await warte(tester);
+      expect(find.text(titel), findsNothing);
+      expect(tab(tester), 0);
+      // erneut öffnen: Wechsel, Verwerfen -> Chat ist gewählt
+      await oeffnen(tester, editor);
+      await tester.enterText(find.descendant(of: find.byType(editor.runtimeType), matching: find.byType(TextField)).first, 'Etwas');
+      await tester.pump();
+      await tester.tap(find.text('Chat').first);
+      await warte(tester);
+      await tester.tap(find.text('Verwerfen'));
+      await warte(tester);
+      expect(find.text(titel), findsNothing);
+      expect(tab(tester), kChatTab);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('mobil: Editor ohne Rückfrage beim Zurück', (tester) async {
     await start(tester, const Size(600, 900));

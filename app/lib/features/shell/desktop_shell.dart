@@ -50,8 +50,15 @@ class _ShellBeobachter extends NavigatorObserver {
   /// Anzahl der Seiten im Stapel (sofort, ohne Microtask): so erkennt [_DesktopShellState._unterseitenSchliessen], ob ein Schließen gelungen ist.
   int get anzahl => _routen.length;
 
+  /// Gerade geöffnete Seiten (Kopie des Stapels).
+  List<Route<dynamic>> get routen => [..._routen];
+
+  /// Meldet jede Änderung des Stapels (nach dem Bauen).
+  VoidCallback? beiAenderung;
+
   void _aktualisieren() => scheduleMicrotask(() {
     if (_verworfen) return;
+    beiAenderung?.call();
     tiefe.value = _routen.length;
     konto.value = _routen.any((r) => r.settings.arguments == kKontoMarke);
   });
@@ -114,6 +121,12 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    _beobachter.beiAenderung = _stapelGeaendert;
+  }
+
+  @override
   void dispose() {
     _beobachter.verwerfen();
     _screens.dispose();
@@ -125,24 +138,54 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   Future<bool> _unterseitenSchliessen() async {
     final nav = _navKey.currentState;
     if (nav == null) return true;
-    while (_beobachter.anzahl > 1) {
-      final vorher = _beobachter.anzahl;
+    // nur die Seiten, die jetzt offen sind: eine währenddessen frisch geöffnete (z. B. Editor aus einer Benachrichtigung) bleibt
+    final alte = _beobachter.routen.skip(1).toSet();
+    while (true) {
+      final offen = _beobachter.routen;
+      if (offen.length <= 1 || !alte.contains(offen.last)) return true;
       await nav.maybePop();
-      if (_beobachter.anzahl >= vorher) return false;
+      if (_beobachter.routen.contains(offen.last)) {
+        _blockTiefe = offen.length;
+        return false;
+      }
     }
-    return true;
   }
 
-  var _zurueckGesetzt = false;
+  // Ziel eines Wechsels, der an einer Rückfrage hängt: Wählt die Person dort "Verwerfen", schließt die Seite und das Ziel wird gewählt.
+  int? _ziel;
+  int _blockTiefe = 0; // Anzahl der Seiten, als eine sich nicht schließen ließ
+  int _zielTiefe = 0;
+  var _zielDialogGesehen = false;
+
+  void _stapelGeaendert() {
+    final ziel = _ziel;
+    if (ziel == null || !mounted) return;
+    final n = _beobachter.anzahl;
+    if (n < _zielTiefe) {
+      _ziel = null;
+      ref.read(shellTabProvider.notifier).waehlen(ziel);
+    } else if (n > _zielTiefe) {
+      _zielDialogGesehen = true;
+    } else if (_zielDialogGesehen) {
+      _ziel = null; // Rückfrage mit "Weiter bearbeiten" beantwortet: Wechsel bleibt abgebrochen
+    }
+  }
+
+  int? _ignoriereTab;
 
   /// Bereichswechsel von außen (Karte, Benachrichtigung, Widget): bleibt eine Unterseite offen, wird der Wechsel zurückgenommen.
-  Future<void> _bereichGewechselt(int alt) async {
-    if (_zurueckGesetzt) {
-      _zurueckGesetzt = false;
+  Future<void> _bereichGewechselt(int alt, int neu) async {
+    if (_ignoriereTab == neu) {
+      _ignoriereTab = null;
       return;
     }
+    _ziel = null;
     if (await _unterseitenSchliessen() || !mounted) return;
-    _zurueckGesetzt = true;
+    if (ref.read(shellTabProvider) != neu) return; // inzwischen anders gewählt
+    _ziel = neu;
+    _zielTiefe = _blockTiefe;
+    _zielDialogGesehen = false;
+    _ignoriereTab = alt;
     ref.read(shellTabProvider.notifier).waehlen(alt);
   }
 
@@ -164,8 +207,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   @override
   Widget build(BuildContext context) {
     // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen, sofern sie sich schließen lassen
-    ref.listen(shellTabProvider, (alt, _) {
-      if (alt != null) unawaited(_bereichGewechselt(alt));
+    ref.listen(shellTabProvider, (alt, neu) {
+      if (alt != null) unawaited(_bereichGewechselt(alt, neu));
     });
     final shell = Scaffold(
       backgroundColor: kBg,
