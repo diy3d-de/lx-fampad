@@ -198,6 +198,24 @@ sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js
 
 widerruft alle Anmeldedaten, Sitzungen und Codes dieses Mitglieds und gibt einen neuen Einladungslink für dasselbe Konto aus.
 
+#### Betreiber setzen (Dashboard „Betrieb“)
+
+Die Ansicht „Betrieb“ in der App (Zustand des Servers, Protokoll; nur lesend) sieht nur, wer als **Betreiber** eingetragen ist. Das geht ausschließlich auf dem Server (nie über die App, nie für einen zweiten Admin automatisch); das Flag ändert keine Familienrechte:
+
+```bash
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js grant admin@example.org
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js revoke admin@example.org
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js list
+```
+
+Der Status liest nur, was der Dienst (Benutzer `lx-fampad`, Sandbox) ohne root darf; Unlesbares zeigt die App als „unbekannt“. Dazu gehört die Statusdatei der Sicherung `/var/backups/lx-fampad/status` (Ordner `root:lxbackup 0750`: ohne Zusatz „unbekannt“; wer sie anzeigen will, nimmt `lx-fampad` bewusst in die Gruppe `lxbackup` auf, damit sieht der Dienst aber auch die verschlüsselten Sicherungsdateien: Abwägung des Betreibers, Standard bleibt „unbekannt“). Pfade und Schalter der Messungen: `OPERATOR_*` in `server/.env.example`.
+
+**Migrationsstand lesen (einmalig auf dem bestehenden Server, als root):** Die Laufzeitrolle darf das Schema `drizzle` sonst nicht sehen, die Seite zeigt dann „Migrationsstand unbekannt (Grant fehlt, siehe README)“. Nur lesend und minimal, idempotent (neue Installationen erledigt `einrichtung-auth.sh`):
+
+```bash
+sudo -u postgres psql -d lx_fampad -c "GRANT USAGE ON SCHEMA drizzle TO lx_fampad; GRANT SELECT ON drizzle.__drizzle_migrations TO lx_fampad;"
+```
+
 **Aufräumen:** Beim Start und danach stündlich leert der Dienst die IP-Spalte im Audit-Log (älter als 7 Tage), löscht Audit-Einträge nach `AUDIT_RETENTION_DAYS` (Standard 365) sowie abgelaufene Sitzungen, Challenges, Tickets und Fehlversuche und protokolliert abgelaufene Einladungen.
 
 ### 6. Caddy

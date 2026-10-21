@@ -99,6 +99,18 @@ END \$\$;
 SQL
 echo "    Eigentümer: $MIGRATE_ROLE (DDL); Laufzeit: $RUNTIME_ROLE (nur SELECT/INSERT/UPDATE/DELETE)."
 
+# Nur lesend und minimal (Betreiber-Ansicht "Betrieb": Migrationsstand): USAGE auf das Schema drizzle und SELECT auf die Migrationstabelle.
+# Additiv und idempotent; gibt es die Tabelle noch nicht (keine Migration gelaufen), passiert nichts und der Schritt wird nach der ersten Migration wiederholt.
+"${PSQL[@]}" -d "$DB" <<SQL
+DO \$\$ BEGIN
+  IF to_regclass('drizzle.__drizzle_migrations') IS NOT NULL THEN
+    GRANT USAGE ON SCHEMA drizzle TO $RUNTIME_ROLE;
+    GRANT SELECT ON drizzle.__drizzle_migrations TO $RUNTIME_ROLE;
+  END IF;
+END \$\$;
+SQL
+echo "    $RUNTIME_ROLE darf den Migrationsstand lesen (nur SELECT auf drizzle.__drizzle_migrations)."
+
 echo "==> 3/4 systemd-Einheiten"
 install -m 644 -o root -g root "$SELF_DIR/lx-fampad.service" "$SELF_DIR/lx-fampad-migrate.service" /etc/systemd/system/
 systemctl daemon-reload

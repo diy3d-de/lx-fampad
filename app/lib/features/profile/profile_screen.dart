@@ -16,6 +16,8 @@ import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
+import '../shell/desktop_shell.dart' show DesktopShellMarke;
+import '../betrieb/betrieb_screen.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
 import 'heute_widget_screen.dart';
@@ -342,6 +344,19 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
             titel: auth.istAdmin ? 'Mitglieder und Einladungen' : 'Einladungen',
             untertitel: auth.istAdmin ? 'verwalten' : 'für Kinder',
             onTap: () => _oeffne(const AdminScreen()),
+          ),
+        ],
+        // Betreiber-Ansicht (Konto-Flag, nicht die Rolle): nur lesen, auch mobil über das Profil erreichbar
+        if (auth.istBetreiber) ...[
+          const SizedBox(height: 12),
+          const MonoLabel('// betrieb'),
+          const SizedBox(height: 8),
+          EinstellungsZeile(
+            icon: Icons.monitor_heart_outlined,
+            titel: 'Betrieb',
+            untertitel: 'zustand des servers, protokoll, nur lesen',
+            // im Desktop-Layout ersetzt die Seite das Konto (beide stapeln dort nicht), mobil liegt sie darüber
+            onTap: () => DesktopShellMarke.vorhanden(context) ? Navigator.of(context).pushReplacement<void, void>(BetriebScreen.route()) : Navigator.of(context).push<void>(BetriebScreen.route()),
           ),
         ],
         const SizedBox(height: 12),

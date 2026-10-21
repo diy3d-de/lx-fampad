@@ -487,6 +487,20 @@ export const auditLog = pgTable(
 );
 
 /**
+ * Betreiber des Servers (Dashboard "Betrieb", docs/PROJEKTBESCHREIBUNG.md Abschnitt 9b): ein Konto-Flag, das NUR die Server-CLI
+ * (`operator.js grant|revoke`) setzt, nie eine Route. Es gilt ausschließlich für die Betreiber-Routen unter /api/v1/admin;
+ * Rechte der Familie hängen weiterhin nur an `memberships.role`. Die Zeile verschwindet mit dem Konto.
+ */
+export const operators = pgTable('operators', {
+  userId: uuid('user_id')
+    .primaryKey()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+  /** Wer es gesetzt hat: immer 'cli' (kein Weg über die Oberfläche). */
+  grantedBy: text('granted_by').notNull().default('cli'),
+});
+
+/**
  * Kurzlebige WebAuthn-Challenges und Registrierungszustände (Passkey-/Passwort-Einrichtung): einmal einlösbar,
  * wenige Minuten gültig, werden beim Einlösen gelöscht (DELETE ... RETURNING) und vom Aufräum-Job bereinigt.
  */
