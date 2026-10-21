@@ -1,0 +1,82 @@
+# systemd-Dienst für den Wetter-Abruf (Netatmo): eigener Prozess, nur ausgehende HTTPS-Verbindungen, kein HTTP-Port.
+# Installation und Einrichtung: deploy/README.md, Abschnitt 12 (oder: sudo bash deploy/einrichtung-wetter.sh dienst).
+#   sudo cp deploy/lx-fampad-weather.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now lx-fampad-weather
+#
+# Warum ein eigener Dienst: lx-fampad.service sperrt jedes Netz außer Loopback (IPAddressDeny=any). api.netatmo.com liegt hinter
+# Azure Front Door, die IP-Adressen wechseln, und IPAddressAllow= kennt keine Hostnamen. Statt die Sperre der API zu lockern,
+# läuft nur dieser Abruf in einem Prozess, der ins Internet darf; die API liest die Messwerte nur aus der Datenbank.
+#
+# Trade-off: IPAddressAllow=any (Ziel nicht filterbar). Ausgleich: kein Listening (SocketBindDeny=any), nur Internet-Sockets (plus AF_UNIX für Namensauflösung und Log;
+# PostgreSQL per 127.0.0.1), kein Schreibzugriff aufs Dateisystem, keine Capabilities, minimaler Code
+# (Abruf, Token-Rotation, Speichern). Der Dienst kennt dieselben Geheimnisse (EnvironmentFile) wie die API.
+
+[Unit]
+Description=lx-fampad Wetter-Abruf (Netatmo)
+After=network-online.target postgresql.service lx-fampad.service
+Wants=network-online.target postgresql.service
+# Das Schema (weather_credentials, weather_samples) legt die Migration an, die vor dem API-Dienst läuft (lx-fampad-migrate.service):
+# deshalb erst nach dem ersten Start der API einrichten (README, Abschnitt 12). Der Wetter-Dienst startet keine Migration.
+
+[Service]
+Type=simple
+User=lx-fampad
+Group=lx-fampad
+WorkingDirectory=/srv/fampad/server
+Environment=NODE_ENV=production
+# Der Heap muss unter MemoryMax bleiben (ProcSubset=pid blendet /proc/meminfo aus, V8 kann den Speicher nicht selbst erkennen)
+Environment=NODE_OPTIONS=--max-old-space-size=96
+# DATABASE_URL, AUTH_SECRET_KEY, WEATHER_* usw. stehen in dieser Datei: root:root, 0600. systemd liest sie als root, bevor es auf
+# den Benutzer lx-fampad wechselt; der Dienst und alle anderen Benutzer (auch lx) können sie nicht lesen. Vorlage: server/.env.example
+EnvironmentFile=/etc/lx-fampad/env
+ExecStart=/usr/bin/node dist/cli/weather-poller.js
+# bei WEATHER_ENABLED aus beendet sich der Prozess mit Exit 0 und bleibt gestoppt
+Restart=on-failure
+RestartSec=5
+
+# Ressourcengrenzen (der VPS teilt sich den Speicher mit lx-labs, PostgreSQL und Caddy)
+MemoryMax=160M
+CPUQuota=25%
+TasksMax=64
+LimitNOFILE=256
+
+# Netzwerk: ausgehend zu api.netatmo.com (HTTPS) und zu PostgreSQL (127.0.0.1). Netatmo liegt hinter Azure Front Door mit wechselnden IPs,
+# Hostnamen lassen sich hier nicht filtern: daher keine IP-Sperre (bewusst, siehe Kopf). Eingehend nichts: kein Listening.
+IPAddressAllow=any
+SocketBindDeny=any
+
+# Härtung
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+# fremde Prozesse nicht sehen; /proc nur mit Prozess-Verzeichnissen (kein /proc/meminfo, /proc/cpuinfo)
+ProtectProc=invisible
+ProcSubset=pid
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+SystemCallArchitectures=native
+# Systemaufrufe: normale Dienst-Aufrufe erlauben, privilegierte und Ressourcen-Aufrufe sperren.
+# Kein MemoryDenyWriteExecute: V8 (JIT) braucht beschreibbaren, ausführbaren Speicher.
+# Gesperrte Aufrufe liefern einen Fehler (EPERM) statt den Dienst zu beenden.
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+CapabilityBoundingSet=
+UMask=0077
+# Kein Schreibzugriff (ProtectSystem=strict, kein ReadWritePaths): der Dienst schreibt nur in die Datenbank
+# Lesen nur, was der Dienst braucht (Code, Systemzertifikate)
+InaccessiblePaths=/srv/fampad/files
+
+[Install]
+WantedBy=multi-user.target

@@ -1,10 +1,13 @@
 // Wetter (Netatmo): Messwerte aus getpublicdata, Token-Rotation, invalid_grant, Route (nur angemeldet, nur Ortsname und Messwerte),
 // Konfiguration (fail-closed). Netatmo wird durch einen Fake-fetch ersetzt, es gibt nie einen echten Abruf.
+import { readFileSync } from 'node:fs';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadConfig } from '../src/config.js';
 import * as schema from '../src/db/schema.js';
 import { stationMessung } from '../src/weather/parse.js';
+import { startWeatherPoller } from '../src/weather/poller.js';
+import type { WeatherService } from '../src/weather/service.js';
 import { adminPassword, backends, TEST_KEY, World, type Harness } from './helpers.js';
 
 const MAC = '70:ee:50:01:79:f2';
@@ -337,5 +340,43 @@ describe.each(backends)('Wetter-Dienst und Route ($name)', (backend) => {
     await zugang();
     await svc().loescheZugangsdaten();
     expect(await svc().pollOnce()).toBe('not_configured');
+  });
+});
+
+describe('Abruf-Takt nur im eigenen Dienst', () => {
+  const base = { NODE_ENV: 'test', AUTH_SECRET_KEY: TEST_KEY };
+  it('der API-Prozess startet keinen Takt (server.ts), der Poller-Einstieg schon', () => {
+    const dir = new URL('../src/', import.meta.url);
+    const api = readFileSync(new URL('server.ts', dir), 'utf8');
+    expect(api).not.toMatch(/weather\??\.start\(/);
+    expect(api).not.toMatch(/startWeatherPoller/);
+    const poller = readFileSync(new URL('cli/weather-poller.ts', dir), 'utf8');
+    expect(poller).toMatch(/startWeatherPoller\(/);
+    expect(poller).not.toMatch(/listen\(|buildApp/);
+  });
+  it('buildApp ruft Netatmo nie von selbst ab', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] });
+    const fn = vi.fn(async () => new Response('{}'));
+    const h = await backends[0]!.open();
+    const w = await World.create(h.db, ENV, { weatherFetch: fn as unknown as typeof fetch });
+    try {
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      expect(fn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      await w.close();
+      await h.close();
+    }
+  });
+  it('startWeatherPoller: aus ohne WEATHER_ENABLED, sonst genau ein Takt', () => {
+    const log = { warn: vi.fn(), error: vi.fn() };
+    const mach = (env: NodeJS.ProcessEnv) => ({ enabled: loadConfig({ ...base, ...env }).weather.enabled, start: vi.fn() });
+    const aus = mach({});
+    expect(startWeatherPoller(aus as unknown as WeatherService, log)).toBe(false);
+    expect(aus.start).not.toHaveBeenCalled();
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    const an = mach(ENV);
+    expect(startWeatherPoller(an as unknown as WeatherService, log)).toBe(true);
+    expect(an.start).toHaveBeenCalledTimes(1);
   });
 });
