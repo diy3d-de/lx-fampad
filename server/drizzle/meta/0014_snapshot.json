@@ -1,5 +1,5 @@
 {
-  "id": "f95a5157-e066-4c6f-80e9-24b33526c867",
+  "id": "0c413552-359e-4825-a186-9521ea6e1123",
   "prevId": "35ebd196-5e7a-44e7-8180-195ab1ceb10e",
   "version": "7",
   "dialect": "postgresql",
@@ -14,32 +14,8 @@
           "primaryKey": true,
           "notNull": true
         },
-        "salt": {
-          "name": "salt",
-          "type": "bytea",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "kdf_id": {
-          "name": "kdf_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "mem_kib": {
-          "name": "mem_kib",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "ops": {
-          "name": "ops",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
+        "salt_generation": {
+          "name": "salt_generation",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -73,13 +49,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "account_kdf_salt_len": {
-          "name": "account_kdf_salt_len",
-          "value": "octet_length(\"account_kdf\".\"salt\") = 16"
-        },
-        "account_kdf_params": {
-          "name": "account_kdf_params",
-          "value": "\"account_kdf\".\"mem_kib\" between 8192 and 1048576 and \"account_kdf\".\"ops\" between 1 and 20 and \"account_kdf\".\"version\" >= 1"
+        "account_kdf_generation_ck": {
+          "name": "account_kdf_generation_ck",
+          "value": "\"account_kdf\".\"salt_generation\" >= 1"
         }
       },
       "isRLSEnabled": false
@@ -2243,6 +2215,24 @@
           "primaryKey": false,
           "notNull": true
         },
+        "mem_kib": {
+          "name": "mem_kib",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ops": {
+          "name": "ops",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "salt_generation": {
+          "name": "salt_generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
         "state": {
           "name": "state",
           "type": "text",
@@ -2344,7 +2334,11 @@
         },
         "key_backups_pw_size_ck": {
           "name": "key_backups_pw_size_ck",
-          "value": "length(\"key_backups_pw\".\"blob\") between 32 and 4096 and \"key_backups_pw\".\"key_version\" >= 1"
+          "value": "length(\"key_backups_pw\".\"blob\") between 96 and 4096 and \"key_backups_pw\".\"key_version\" >= 1"
+        },
+        "key_backups_pw_kdf_ck": {
+          "name": "key_backups_pw_kdf_ck",
+          "value": "\"key_backups_pw\".\"kdf_id\" in ('argon2id-v1') and \"key_backups_pw\".\"mem_kib\" >= 65536 and \"key_backups_pw\".\"ops\" >= 3 and \"key_backups_pw\".\"salt_generation\" >= 1"
         }
       },
       "isRLSEnabled": false

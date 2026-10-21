@@ -30,7 +30,7 @@ import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AppError } from '../errors.js';
-import { b64urlBlob, b64urlKey, b64urlSalt16, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
+import { b64urlBlob, b64urlKey, b64urlBlobMin, clearCookie, codeSchema, displayNameSchema, idParams, labelSchema, meta, parse, passwordSchema, registrationResponseSchema, strictLimit, uuid } from './util.js';
 
 const role = z.enum(['admin', 'parent', 'child']);
 const familyRoleBody = z.object({ familyRole: z.enum(FAMILY_ROLES).nullable() }).strict();
@@ -127,10 +127,11 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   // Passwort-Sicherung (vereinfachte Schlüsselverwaltung): nur mit Schalter E2EE_PW_BACKUP, sonst gibt es die Routen nicht (404)
   if (config.e2eePwBackup) {
-    const kdfBody = z.object({ id: z.enum(KDF_IDS), memKiB: z.number().int().min(8192).max(1_048_576), ops: z.number().int().min(1).max(20), salt: b64urlSalt16 }).strict();
+    // kein Salt vom Client (den bestimmt der Server) und nur das feste Profil: Abweichungen ergeben 409 kdf_mismatch
+    const kdfBody = z.object({ id: z.enum(KDF_IDS), memKiB: z.number().int(), ops: z.number().int() }).strict();
     app.put('/api/v1/me/key-backup-pw', strikt, async (req) => {
       const p = await auth.requireSession(req);
-      const body = parse(z.object({ blob: b64urlBlob(4096), keyVersion: z.number().int().min(1), kdf: kdfBody }).strict(), req.body);
+      const body = parse(z.object({ blob: b64urlBlobMin(96, 4096), keyVersion: z.number().int().min(1), kdf: kdfBody }).strict(), req.body);
       return { ok: true, ...(await setPwBackup(ctx, p, body, meta(req))) };
     });
     app.get('/api/v1/me/key-backup-pw', strikt, async (req) => getPwBackup(ctx, await auth.requireSession(req), meta(req)));

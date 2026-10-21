@@ -187,8 +187,9 @@ export const keyBackups = pgTable('key_backups', {
 });
 
 /**
- * E2EE (vereinfachte Schlüsselverwaltung, Schalter E2EE_PW_BACKUP): Parameter der Passwort-Ableitung je Konto (Argon2id). Der Salt ist
- * öffentlich (der Client braucht ihn vor der Anmeldung), er ist kein Geheimnis; Passwort, authKey und kek kennt der Server nie.
+ * E2EE (vereinfachte Schlüsselverwaltung, Schalter E2EE_PW_BACKUP): aktuelle Salt-Generation je Konto. Den Salt der Passwort-Ableitung
+ * bestimmt immer der Server, deterministisch aus E-Mail und Generation (HMAC, siehe auth/keys-pw.ts); hier steht nur die Generation
+ * (Standard 1, auch für Konten ohne Zeile). Der Client liefert nie einen Salt. Passwort, authKey und kek kennt der Server nie.
  */
 export const accountKdf = pgTable(
   'account_kdf',
@@ -196,24 +197,18 @@ export const accountKdf = pgTable(
     userId: uuid('user_id')
       .primaryKey()
       .references(() => users.id, { onDelete: 'cascade' }),
-    salt: bytea('salt').notNull(),
-    kdfId: text('kdf_id').notNull(),
-    memKib: integer('mem_kib').notNull(),
-    ops: integer('ops').notNull(),
-    /** Zählt Änderungen von Salt oder Parametern. */
-    version: integer('version').notNull().default(1),
+    saltGeneration: integer('salt_generation').notNull().default(1),
     createdAt: createdAt(),
   },
-  (t) => [
-    check('account_kdf_salt_len', sql`octet_length(${t.salt}) = 16`),
-    check('account_kdf_params', sql`${t.memKib} between 8192 and 1048576 and ${t.ops} between 1 and 20 and ${t.version} >= 1`),
-  ],
+  (t) => [check('account_kdf_generation_ck', sql`${t.saltGeneration} >= 1`)],
 );
 
 /**
  * E2EE (Schalter E2EE_PW_BACKUP): opake, mit dem Passwort-Schlüssel (kek, nur auf dem Gerät) verschlüsselte Sicherung des
- * Personenschlüssels. Zeilen werden nie gelöscht (nur mit dem Konto): eine neue Sicherung setzt die bisherige auf `superseded`, ein
- * Schlüsselwechsel (Rotation) die aktuelle auf `stale`. Höchstens eine Zeile je Person ist `active` oder `stale` (die aktuelle).
+ * Personenschlüssels. Jede Zeile trägt ihren eigenen Ableitungssatz (kdf_id, mem_kib, ops, salt_generation), so bleiben auch ältere
+ * Zeilen lesbar. Zeilen werden nie gelöscht (nur mit dem Konto): eine neue Sicherung setzt die bisherige auf `superseded`, ein
+ * Schlüsselwechsel (Rotation) die aktuelle auf `stale` (enthält dann den alten Schlüssel und darf nie als Wiederherstellung des
+ * aktuellen gelten). Höchstens eine Zeile je Person ist `active` oder `stale` (die aktuelle).
  */
 export const keyBackupsPw = pgTable(
   'key_backups_pw',
@@ -224,6 +219,9 @@ export const keyBackupsPw = pgTable(
     blob: text('blob').notNull(),
     keyVersion: integer('key_version').notNull(),
     kdfId: text('kdf_id').notNull(),
+    memKib: integer('mem_kib').notNull(),
+    ops: integer('ops').notNull(),
+    saltGeneration: integer('salt_generation').notNull(),
     state: text('state').notNull().default('active'),
     /** Erst nach der Round-Trip-Probe der App gesetzt. */
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
@@ -235,7 +233,9 @@ export const keyBackupsPw = pgTable(
     uniqueIndex('key_backups_pw_current_uq').on(t.userId).where(sql`${t.state} in ('active', 'stale')`),
     index('key_backups_pw_user_idx').on(t.userId),
     check('key_backups_pw_state_ck', sql`${t.state} in ('active', 'stale', 'superseded')`),
-    check('key_backups_pw_size_ck', sql`length(${t.blob}) between 32 and 4096 and ${t.keyVersion} >= 1`),
+    check('key_backups_pw_size_ck', sql`length(${t.blob}) between 96 and 4096 and ${t.keyVersion} >= 1`),
+    // festes Profil: kein Herabsetzen der Kosten über den Server (Untergrenze auch in der App)
+    check('key_backups_pw_kdf_ck', sql`${t.kdfId} in ('argon2id-v1') and ${t.memKib} >= 65536 and ${t.ops} >= 3 and ${t.saltGeneration} >= 1`),
   ],
 );
 

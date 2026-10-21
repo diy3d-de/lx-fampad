@@ -10,7 +10,7 @@ import { addMember, adminPassword, auditEvents, backends, TEST_KEY, World, type 
 const MIN = 60_000;
 const key = () => randomBytes(32).toString('base64url');
 const blob = (n = 160) => randomBytes(n).toString('base64url');
-const kdf = (over: Record<string, unknown> = {}) => ({ id: 'argon2id-v1', memKiB: 65536, ops: 3, salt: randomBytes(16).toString('base64url'), ...over });
+const kdf = (over: Record<string, unknown> = {}) => ({ id: 'argon2id-v1', memKiB: 65536, ops: 3, ...over });
 const keys = () => ({ publicEncKey: key(), publicSignKey: key() });
 
 describe('Konfiguration E2EE_PW_BACKUP', () => {
@@ -81,11 +81,14 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       const bl = blob();
       const k = kdf();
       const put = await a.put('/api/v1/me/key-backup-pw', { blob: bl, keyVersion: 1, kdf: k });
+      // der Salt kommt vom Server und ist derselbe wie vor der Anmeldung
+      const vorAnmeldung = (await world.client('198.51.100.20').post('/api/v1/auth/kdf-params', { email: 'admin@example.org' })).json.kdf;
       expect(put.status).toBe(200);
       expect(put.json.ok).toBe(true);
       const got = await a.get('/api/v1/me/key-backup-pw');
       expect(got.status).toBe(200);
-      expect(got.json).toEqual({ id: put.json.id, blob: bl, keyVersion: 1, state: 'active', kdf: k });
+      expect(got.json).toEqual({ id: put.json.id, blob: bl, keyVersion: 1, state: 'active', kdf: vorAnmeldung });
+      expect(vorAnmeldung).toMatchObject(k);
       expect((await harness.db.execute(sql`select verified_at from key_backups_pw`)).rows[0]).toEqual({ verified_at: null });
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: put.json.id })).status).toBe(200);
       expect(((await harness.db.execute(sql`select verified_at from key_backups_pw`)).rows[0] as { verified_at: unknown }).verified_at).not.toBeNull();
@@ -98,22 +101,25 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       const ok = { blob: blob(), keyVersion: 1, kdf: kdf() };
       for (const bad of [
         { ...ok, blob: 'kurz' },
-        { ...ok, blob: blob(4000) }, // > 4096 Zeichen
+        { ...ok, blob: blob(50) }, // unter 96 Zeichen
+        { ...ok, blob: blob(4000) }, // über 4096 Zeichen
         { ...ok, blob: `${blob()}=` },
         { ...ok, keyVersion: 0 },
         { ...ok, kdf: kdf({ id: 'scrypt' }) },
-        { ...ok, kdf: kdf({ salt: randomBytes(15).toString('base64url') }) },
-        { ...ok, kdf: kdf({ salt: randomBytes(17).toString('base64url') }) },
-        { ...ok, kdf: kdf({ salt: `${randomBytes(16).toString('base64url').slice(0, 21)}B` }) }, // nicht kanonisch
-        { ...ok, kdf: kdf({ memKiB: 1024 }) },
-        { ...ok, kdf: kdf({ memKiB: 99_999_999 }) },
-        { ...ok, kdf: kdf({ ops: 0 }) },
-        { ...ok, kdf: kdf({ ops: 99 }) },
+        { ...ok, kdf: { ...kdf(), salt: randomBytes(16).toString('base64url') } }, // der Client liefert keinen Salt
         { ...ok, kdf: { ...kdf(), extra: 1 } },
+        { ...ok, kdf: { id: 'argon2id-v1', memKiB: 65536 } },
         { ...ok, extra: 1 },
         { blob: ok.blob, keyVersion: 1 },
       ]) {
         expect((await a.put('/api/v1/me/key-backup-pw', bad)).status, JSON.stringify(bad).slice(0, 80)).toBe(400);
+      }
+      expect(await world.count('key_backups_pw')).toBe(0);
+      // freie Zahlen: nur das feste Profil, sonst 409 (Parameter-Downgrade)
+      for (const k of [kdf({ memKiB: 1024 }), kdf({ memKiB: 99_999_999 }), kdf({ ops: 1 }), kdf({ ops: 99 })]) {
+        const r = await a.put('/api/v1/me/key-backup-pw', { ...ok, kdf: k });
+        expect(r.status, JSON.stringify(k)).toBe(409);
+        expect(r.json.error).toBe('kdf_mismatch');
       }
       expect(await world.count('key_backups_pw')).toBe(0);
       expect((await world.client().put('/api/v1/me/key-backup-pw', ok)).status).toBe(401);
@@ -140,23 +146,22 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
     it('eine neue Sicherung ersetzt die aktuelle: alte Zeilen bleiben als superseded erhalten (nie löschen)', async () => {
       const { a } = await start();
       await a.post('/api/v1/me/keys', keys());
-      const k1 = kdf();
       const b1 = blob();
-      const p1 = await a.put('/api/v1/me/key-backup-pw', { blob: b1, keyVersion: 1, kdf: k1 });
-      const k2 = kdf();
+      const p1 = await a.put('/api/v1/me/key-backup-pw', { blob: b1, keyVersion: 1, kdf: kdf() });
       const b2 = blob();
-      const p2 = await a.put('/api/v1/me/key-backup-pw', { blob: b2, keyVersion: 1, kdf: k2 });
+      const p2 = await a.put('/api/v1/me/key-backup-pw', { blob: b2, keyVersion: 1, kdf: kdf() });
       expect(p1.json.id).not.toBe(p2.json.id);
       expect(await states()).toEqual(['active', 'superseded']);
-      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: p2.json.id, blob: b2, kdf: k2 });
+      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: p2.json.id, blob: b2, kdf: kdf() });
+      // jede Zeile trägt ihren eigenen Ableitungssatz
+      expect((await harness.db.execute(sql`select kdf_id, mem_kib, ops, salt_generation from key_backups_pw`)).rows).toEqual([
+        { kdf_id: 'argon2id-v1', mem_kib: 65536, ops: 3, salt_generation: 1 },
+        { kdf_id: 'argon2id-v1', mem_kib: 65536, ops: 3, salt_generation: 1 },
+      ]);
       // die ersetzte lässt sich nicht mehr verifizieren (409), die Zeile bleibt
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: p1.json.id })).json.error).toBe('backup_not_current');
       expect((await harness.db.execute<{ blob: string }>(sql`select blob from key_backups_pw where id = ${p1.json.id}`)).rows[0]?.blob).toBe(b1);
-      const v = (await harness.db.execute<{ version: number }>(sql`select version from account_kdf`)).rows[0]?.version;
-      expect(v).toBe(2);
-      // gleiche Parameter erhöhen die KDF-Version nicht
-      await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: k2 });
-      expect((await harness.db.execute<{ version: number }>(sql`select version from account_kdf`)).rows[0]?.version).toBe(2);
+      expect(await world.count('account_kdf')).toBe(1);
     });
 
     it('Rechte: nur die eigene Zeile (IDOR); fremde ID beim Verifizieren 404, fremder Abruf liefert nichts', async () => {
@@ -193,18 +198,45 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       expect(await states()).toEqual(['active', 'superseded']);
     });
 
+    it('Datenbank erzwingt das feste Profil und die Blob-Größe (auch ohne Route)', async () => {
+      const { a } = await start();
+      await a.post('/api/v1/me/keys', keys());
+      const m = (await harness.db.execute<{ user_id: string; family_id: string }>(sql`select user_id, family_id from memberships limit 1`)).rows[0];
+      const einfuegen = (over: { blob?: string; kdf?: string; mem?: number; ops?: number }) =>
+        harness.db.execute(
+          sql`insert into key_backups_pw (user_id, family_id, blob, key_version, kdf_id, mem_kib, ops, salt_generation, state) values (${m?.user_id}, ${m?.family_id}, ${over.blob ?? blob()}, 1, ${over.kdf ?? 'argon2id-v1'}, ${over.mem ?? 65536}, ${over.ops ?? 3}, 1, 'superseded')`,
+        );
+      await expect(einfuegen({ mem: 32768 })).rejects.toThrow();
+      await expect(einfuegen({ ops: 2 })).rejects.toThrow();
+      await expect(einfuegen({ kdf: 'scrypt' })).rejects.toThrow();
+      await expect(einfuegen({ blob: 'x'.repeat(95) })).rejects.toThrow();
+      await einfuegen({});
+      expect(await world.count('key_backups_pw')).toBe(1);
+    });
+
+    it('veraltete (stale) Sicherung dient nie als Wiederherstellung des aktuellen Schlüssels: Zustand und Version verraten es, Bestätigen scheitert', async () => {
+      const { a } = await start();
+      await a.post('/api/v1/me/keys', keys());
+      const pw = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      await a.put('/api/v1/me/keys', { ...keys(), expectedKeyVersion: 1 });
+      const got = (await a.get('/api/v1/me/key-backup-pw')).json;
+      const aktuell = (await a.get('/api/v1/me/keys')).json.keys.keyVersion as number;
+      expect(got.state).toBe('stale');
+      expect(got.keyVersion).toBeLessThan(aktuell);
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: pw.json.id })).status).toBe(409);
+      expect((await harness.db.execute(sql`select verified_at from key_backups_pw`)).rows[0]).toEqual({ verified_at: null });
+    });
+
     it('Teilausfall: scheitert das Audit, bleibt alles wie zuvor (nichts halb)', async () => {
       const log: string[] = [];
       const { a } = await start({ E2EE_PW_BACKUP: 'true', LOG_LEVEL: 'info' }, { logStream: new Writable({ write: (c, _e, cb) => (log.push(String(c)), cb()) }) });
       await a.post('/api/v1/me/keys', keys());
-      const k1 = kdf();
-      const first = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: k1 });
+      const first = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
       const geheimBlob = blob();
-      const geheimSalt = randomBytes(16).toString('base64url');
       await harness.db.execute(sql`create function pw_fail() returns trigger language plpgsql as $$ begin if new.event in ('key_backup_pw_set', 'key_backup_pw_read') then raise exception 'boom'; end if; return new; end $$`);
       await harness.db.execute(sql`create trigger pw_fail_t before insert on audit_log for each row execute function pw_fail()`);
       try {
-        const put = await a.put('/api/v1/me/key-backup-pw', { blob: geheimBlob, keyVersion: 1, kdf: kdf({ salt: geheimSalt }) });
+        const put = await a.put('/api/v1/me/key-backup-pw', { blob: geheimBlob, keyVersion: 1, kdf: kdf() });
         expect(put.status).toBe(500);
         expect((await a.get('/api/v1/me/key-backup-pw')).status).toBe(500); // kein unprotokollierter Abruf
       } finally {
@@ -212,25 +244,22 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
         await harness.db.execute(sql`drop function pw_fail()`);
       }
       expect(await states()).toEqual(['active']);
-      expect(await world.count('account_kdf')).toBe(1);
-      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: first.json.id, kdf: k1 });
-      // weder Blob noch Salt im Log
+      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: first.json.id });
+      // kein Blob im Log
       const text = log.join('');
       expect(text).not.toContain(geheimBlob);
-      expect(text).not.toContain(geheimSalt);
     });
 
     it('Audit enthält weder Blob noch Salt', async () => {
       const { a } = await start();
       await a.post('/api/v1/me/keys', keys());
       const bl = blob();
-      const k = kdf();
-      const p = await a.put('/api/v1/me/key-backup-pw', { blob: bl, keyVersion: 1, kdf: k });
-      await a.get('/api/v1/me/key-backup-pw');
+      const p = await a.put('/api/v1/me/key-backup-pw', { blob: bl, keyVersion: 1, kdf: kdf() });
+      const salt = (await a.get('/api/v1/me/key-backup-pw')).json.kdf.salt as string;
       await a.post('/api/v1/me/key-backup-pw/verified', { id: p.json.id });
       const audit = JSON.stringify((await harness.db.execute(sql`select detail from audit_log`)).rows);
       expect(audit).not.toContain(bl);
-      expect(audit).not.toContain(k.salt);
+      expect(audit).not.toContain(salt);
     });
 
     it('gleichzeitige Ablagen: alle gelingen nacheinander, genau eine Zeile bleibt aktuell', async () => {
@@ -261,7 +290,7 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
   });
 
   describe('POST /auth/kdf-params', () => {
-    it('echte Parameter nach der Ablage; vorher, bei unbekannten und deaktivierten Konten eine gleich geformte, stabile Fake-Antwort', async () => {
+    it('für jede E-Mail dasselbe Profil und ein vom Server abgeleiteter Salt: vor und nach der Ablage, deaktiviert, unbekannt gleich (kein Wechsel Fake zu echt)', async () => {
       const { b } = await start();
       const anon = world.client('198.51.100.7');
       const get = async (email: string) => {
@@ -277,22 +306,20 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       expect(await get('niemand@example.org')).toEqual(unbekannt);
       expect(await get('  NIEMAND@example.org ')).toEqual(unbekannt);
       expect((await get('anderer@example.org')).salt).not.toBe(unbekannt.salt);
-      // Konto ohne Eintrag: ebenfalls Fake
-      const ohne = await get('mama@example.org');
-      expect(Object.keys(ohne).sort()).toEqual(['id', 'memKiB', 'ops', 'salt']);
-      expect(await get('mama@example.org')).toEqual(ohne);
-      // mit Eintrag: echte Werte
+      // bestehendes Konto: vor der Ablage
+      const vorher = await get('mama@example.org');
+      expect(vorher).toMatchObject({ id: 'argon2id-v1', memKiB: 65536, ops: 3 });
+      // nach der Ablage: unverändert (der Salt entsteht nie beim Client)
       await b.post('/api/v1/me/keys', keys());
-      const k = kdf({ memKiB: 32768, ops: 4 });
-      await b.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: k });
-      expect(await get('mama@example.org')).toEqual(k);
-      expect(await get('MAMA@example.org')).toEqual(k);
-      expect(await get('admin@example.org')).not.toEqual(k);
-      // deaktiviert: wieder Fake, nicht die echten Werte
+      expect((await b.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() })).status).toBe(200);
+      expect(await get('mama@example.org')).toEqual(vorher);
+      expect(await get('MAMA@example.org')).toEqual(vorher);
+      // erneute Ablage ändert den Salt nicht
+      await b.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      expect(await get('mama@example.org')).toEqual(vorher);
+      // deaktiviert: ebenfalls unverändert
       await harness.db.execute(sql`update users set disabled_at = now() where email = 'mama@example.org'`);
-      const gesperrt = await get('mama@example.org');
-      expect(gesperrt).not.toEqual(k);
-      expect(gesperrt).toEqual(ohne);
+      expect(await get('mama@example.org')).toEqual(vorher);
     });
 
     it('Eingabe streng (400), Anmeldung nicht nötig, Antwort kennt nur kdf', async () => {

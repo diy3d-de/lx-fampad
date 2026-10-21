@@ -29,6 +29,15 @@ describe('Migrations-Journal', () => {
     const nummern = tags.map((t) => Number(t.slice(0, 4)));
     for (let i = 1; i < nummern.length; i++) expect(nummern[i] as number).toBeGreaterThan(nummern[i - 1] as number);
   });
+
+  // Die Snapshot-Kette muss lückenlos sein (prevId = id des Vorgängers in Journal-Reihenfolge). Nach dem Zusammenführen zweier
+  // Branches mit je einer Migration neu erzeugen: Snapshot der späteren Migration kopieren, `prevId` auf die id des Vorgängers setzen.
+  it('Snapshot-Kette ist lückenlos (prevId zeigt auf den Vorgänger), ids sind eindeutig', () => {
+    const snaps = journal.entries.map((e) => JSON.parse(readFileSync(`${migrationsFolder}/meta/${e.tag.slice(0, 4)}_snapshot.json`, 'utf8')) as { id: string; prevId: string });
+    expect(new Set(snaps.map((s) => s.id)).size).toBe(snaps.length);
+    expect(snaps[0]?.prevId).toBe('00000000-0000-0000-0000-000000000000');
+    for (let i = 1; i < snaps.length; i++) expect(snaps[i]?.prevId, `prevId von ${journal.entries[i]?.tag}`).toBe(snaps[i - 1]?.id);
+  });
 });
 
 // ---- Aktualisierung bestehender Datenbanken: 0004 bis 0014, einzeln angewendet, behält Daten und wendet jede Migration an ----

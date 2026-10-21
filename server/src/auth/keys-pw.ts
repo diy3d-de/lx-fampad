@@ -13,7 +13,11 @@ import type { SessionPrincipal } from './types.js';
 /** Bekannte Ableitungsverfahren (Kennung im Blob und in der Antwort). */
 export const KDF_IDS = ['argon2id-v1'] as const;
 
-/** Standardparameter, auch für die Fake-Antwort (damit sie wie eine echte aussieht). */
+/**
+ * Das feste Profil für ALLE Konten (echte wie Fake-Antworten): Der Client darf keine eigenen Zahlen setzen, und solange nicht alle
+ * Konten umgestellt sind, darf kein echtes Konto ein anderes Profil zeigen als der Standard (sonst entstünde ein Orakel). Ein
+ * Profilwechsel gilt nur global (neue kdf_id und Konstanten im Code), nie je Konto.
+ */
 export const DEFAULT_KDF = { id: 'argon2id-v1', memKiB: 65536, ops: 3 } as const;
 
 export interface KdfParams {
@@ -24,62 +28,81 @@ export interface KdfParams {
   salt: string;
 }
 
+/** Salt-Generation, die jedes Konto ohne eigene Zeile hat. Eine Rotation wäre eine eigene, seltene, protokollierte Aktion (nicht Teil dieses Pakets). */
+export const DEFAULT_SALT_GENERATION = 1;
+
 const notFound = () => new AppError(404, 'not_found');
 
 /**
- * Parameter der Passwort-Ableitung vor der Anmeldung. Für unbekannte, deaktivierte und Konten ohne Eintrag kommt eine deterministische
- * Fake-Antwort (Salt = HMAC über AUTH_SECRET_KEY und die E-Mail): gleiche Form, immer genau eine Abfrage, kein Orakel für die Existenz.
+ * Salt der Passwort-Ableitung: bestimmt immer der Server, deterministisch aus der normalisierten E-Mail und der Generation
+ * (HMAC über AUTH_SECRET_KEY). Echte und Fake-Antwort entstehen aus derselben Ableitung und sind nicht zu unterscheiden; der Client
+ * liefert nie einen Salt. (Die E-Mail eines Kontos ist unveränderlich; ein Wechsel würde den Salt ändern.)
+ */
+export function kdfSalt(ctx: AuthContext, email: string, generation: number): string {
+  return Buffer.from(ctx.keys.hmac('kdf-salt-v1', `${email.trim().toLowerCase()}|${generation}`).slice(0, 32), 'hex').toString('base64url');
+}
+
+/**
+ * Parameter der Passwort-Ableitung vor der Anmeldung. Für JEDE E-Mail kommt dasselbe Profil und ein aus E-Mail und Generation
+ * abgeleiteter Salt: kein Orakel für die Existenz eines Kontos. Nur eine (künftige) Salt-Rotation eines echten, nicht
+ * deaktivierten Kontos würde die Generation ändern; bis dahin gibt es immer genau eine Abfrage und Generation 1.
  */
 export async function getKdfParams(ctx: AuthContext, email: string): Promise<{ kdf: KdfParams }> {
   const norm = email.trim().toLowerCase();
-  const fakeSalt = Buffer.from(ctx.keys.hmac('kdf-fake-salt', norm).slice(0, 32), 'hex').toString('base64url');
   const [row] = await ctx.db
-    .select({ salt: accountKdf.salt, kdfId: accountKdf.kdfId, memKib: accountKdf.memKib, ops: accountKdf.ops, disabledAt: users.disabledAt })
+    .select({ generation: accountKdf.saltGeneration, disabledAt: users.disabledAt })
     .from(users)
     .leftJoin(accountKdf, eq(accountKdf.userId, users.id))
     .where(sql`lower(${users.email}) = ${norm}`)
     .limit(1);
-  if (row && row.salt && row.kdfId && row.memKib !== null && row.ops !== null && !row.disabledAt) {
-    return { kdf: { id: row.kdfId, memKiB: row.memKib, ops: row.ops, salt: Buffer.from(row.salt).toString('base64url') } };
-  }
-  return { kdf: { ...DEFAULT_KDF, salt: fakeSalt } };
+  const generation = row && !row.disabledAt && row.generation ? row.generation : DEFAULT_SALT_GENERATION;
+  return { kdf: { ...DEFAULT_KDF, salt: kdfSalt(ctx, norm, generation) } };
 }
 
 export interface PwBackupInput {
   blob: string;
   keyVersion: number;
-  kdf: KdfParams;
+  /** Was der Client benutzt hat; muss genau dem festen Profil entsprechen (kein Salt: den bestimmt der Server). */
+  kdf: { id: string; memKiB: number; ops: number };
 }
 
 /**
- * Neue Passwort-Sicherung ablegen (Step-up). Sie muss zur aktuellen key_version gehören. In EINER Transaktion: die bisherige aktuelle
- * Zeile wird `superseded`, die neue `active`, die KDF-Parameter des Kontos werden gesetzt, das Audit geschrieben. Gleichzeitige
- * Anfragen derselben Person laufen nacheinander (Sperre auf person_keys); der Teil-Unique-Index sichert zusätzlich ab.
+ * Neue Passwort-Sicherung ablegen (Step-up). Sie muss zur aktuellen key_version gehören und mit dem festen Profil abgeleitet sein
+ * (sonst 409 kdf_mismatch). In EINER Transaktion: die bisherige aktuelle Zeile wird `superseded`, die neue `active` mit ihrem eigenen
+ * Ableitungssatz, das Audit geschrieben. Gleichzeitige Anfragen derselben Person laufen nacheinander (Sperre auf person_keys); der
+ * Teil-Unique-Index sichert zusätzlich ab.
  */
 export async function setPwBackup(ctx: AuthContext, p: SessionPrincipal, input: PwBackupInput, meta: RequestMeta): Promise<{ id: string }> {
   requireStepUp(ctx, p);
+  if (input.kdf.id !== DEFAULT_KDF.id || input.kdf.memKiB !== DEFAULT_KDF.memKiB || input.kdf.ops !== DEFAULT_KDF.ops) {
+    throw new AppError(409, 'kdf_mismatch', 'Die Parameter der Schlüsselableitung stimmen nicht, bitte neu laden.');
+  }
   return ctx.db.transaction(async (tx) => {
     const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
     if (!k) throw new AppError(409, 'no_keys', 'Du hast noch keinen Schlüssel eingerichtet.');
     if (k.v !== input.keyVersion) throw new AppError(409, 'key_version_mismatch', 'Die Schlüsselversion stimmt nicht mehr, bitte neu laden.');
     const now = ctx.now();
-    const salt = Buffer.from(input.kdf.salt, 'base64url');
-    const [alt] = await tx.select().from(accountKdf).where(eq(accountKdf.userId, p.userId));
-    if (!alt) {
-      await tx.insert(accountKdf).values({ userId: p.userId, salt, kdfId: input.kdf.id, memKib: input.kdf.memKiB, ops: input.kdf.ops, createdAt: now });
-    } else if (!Buffer.from(alt.salt).equals(salt) || alt.kdfId !== input.kdf.id || alt.memKib !== input.kdf.memKiB || alt.ops !== input.kdf.ops) {
-      await tx
-        .update(accountKdf)
-        .set({ salt, kdfId: input.kdf.id, memKib: input.kdf.memKiB, ops: input.kdf.ops, version: alt.version + 1 })
-        .where(eq(accountKdf.userId, p.userId));
-    }
+    await tx.insert(accountKdf).values({ userId: p.userId, createdAt: now }).onConflictDoNothing();
+    const [g] = await tx.select({ generation: accountKdf.saltGeneration }).from(accountKdf).where(eq(accountKdf.userId, p.userId));
     await tx
       .update(keyBackupsPw)
       .set({ state: 'superseded', updatedAt: now })
       .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
     const [row] = await tx
       .insert(keyBackupsPw)
-      .values({ userId: p.userId, familyId: p.familyId, blob: input.blob, keyVersion: k.v, kdfId: input.kdf.id, state: 'active', createdAt: now, updatedAt: now })
+      .values({
+        userId: p.userId,
+        familyId: p.familyId,
+        blob: input.blob,
+        keyVersion: k.v,
+        kdfId: DEFAULT_KDF.id,
+        memKib: DEFAULT_KDF.memKiB,
+        ops: DEFAULT_KDF.ops,
+        saltGeneration: g?.generation ?? DEFAULT_SALT_GENERATION,
+        state: 'active',
+        createdAt: now,
+        updatedAt: now,
+      })
       .returning({ id: keyBackupsPw.id });
     if (!row) throw notFound();
     await writeAudit(ctx, tx, { event: 'key_backup_pw_set', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: k.v } });
@@ -108,13 +131,14 @@ export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: R
         blob: keyBackupsPw.blob,
         keyVersion: keyBackupsPw.keyVersion,
         state: keyBackupsPw.state,
-        salt: accountKdf.salt,
-        kdfId: accountKdf.kdfId,
-        memKib: accountKdf.memKib,
-        ops: accountKdf.ops,
+        kdfId: keyBackupsPw.kdfId,
+        memKib: keyBackupsPw.memKib,
+        ops: keyBackupsPw.ops,
+        generation: keyBackupsPw.saltGeneration,
+        email: users.email,
       })
       .from(keyBackupsPw)
-      .innerJoin(accountKdf, eq(accountKdf.userId, keyBackupsPw.userId))
+      .innerJoin(users, eq(users.id, keyBackupsPw.userId))
       .where(and(eq(keyBackupsPw.userId, p.userId), inArray(keyBackupsPw.state, ['active', 'stale'])));
     if (!b) throw notFound();
     await writeAudit(ctx, tx, { event: 'key_backup_pw_read', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: b.keyVersion } });
@@ -123,7 +147,7 @@ export async function getPwBackup(ctx: AuthContext, p: SessionPrincipal, meta: R
       blob: b.blob,
       keyVersion: b.keyVersion,
       state: b.state === 'stale' ? 'stale' : 'active',
-      kdf: { id: b.kdfId, memKiB: b.memKib, ops: b.ops, salt: Buffer.from(b.salt).toString('base64url') },
+      kdf: { id: b.kdfId, memKiB: b.memKib, ops: b.ops, salt: kdfSalt(ctx, b.email, b.generation) },
     };
   });
 }
