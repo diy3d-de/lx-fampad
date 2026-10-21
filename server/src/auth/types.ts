@@ -3,6 +3,12 @@ import type { FastifyRequest } from 'fastify';
 
 export type Role = 'admin' | 'parent' | 'child';
 
+/**
+ * Herkunft einer Sitzung: normale Anmeldung (Passkey, Passwort + TOTP) oder Zugang über einen einzelnen Wiederherstellungscode bzw. einen Passwort-Reset.
+ * Nur die erste ist frei für destruktive Schlüssel-Aktionen; die anderen warten 24 h (`destructive_locked`, siehe requireDestructiveAllowed).
+ */
+export type SessionOrigin = 'login' | 'recovery_code' | 'password_reset';
+
 /** Angemeldete Person samt Familie und Rolle. */
 export interface Principal {
   userId: string;
@@ -19,6 +25,11 @@ export interface SessionPrincipal extends Principal {
   via: 'cookie' | 'bearer';
   /** Letzte Anmeldung oder erneute Bestätigung (Step-up) dieser Sitzung. */
   stepUpAt: Date | null;
+  /** Anmeldeart der Sitzung (passkey | password | recovery). */
+  authMethod: string;
+  /** Herkunft der Sitzung und deren Zeitpunkt (null bei `login`). */
+  origin: SessionOrigin;
+  originAt: Date | null;
 }
 
 export interface AuthService {

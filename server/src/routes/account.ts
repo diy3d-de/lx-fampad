@@ -23,10 +23,12 @@ import {
 import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
+import { getArchiveEntry, listArchive } from '../auth/keys-archive.js';
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { passwordModes } from '../auth/authkey.js';
-import { createPasswordResetInvite, listSecurityEvents } from '../auth/password-reset.js';
+import { createPasswordResetInvite } from '../auth/password-reset.js';
+import { listSecurityEvents } from '../auth/security-events.js';
 import { changePassword, finishAddPassword, removePassword, startAddPassword } from '../auth/password-credential.js';
 import { requireStepUp } from '../auth/sessions.js';
 import type { Auth } from '../auth/service.js';
@@ -129,6 +131,13 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   });
 
   app.get('/api/v1/me/key-backup', strikt, async (req) => getBackup(ctx, await auth.requireSession(req), meta(req)));
+
+  // Archiv früherer Schlüsselstände (nie gelöscht): nur die eigene Person, Step-up, protokolliert; Liste ohne Blob, Einzelabruf mit Blob (und KDF bei Passwort-Sicherungen)
+  app.get('/api/v1/me/key-backups/archive', strikt, async (req) => listArchive(ctx, await auth.requireSession(req), meta(req)));
+  app.get('/api/v1/me/key-backups/archive/:id', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    return getArchiveEntry(ctx, p, parse(idParams, req.params).id, meta(req));
+  });
 
   // Passwort-Sicherung (vereinfachte Schlüsselverwaltung): nur mit Schalter E2EE_PW_BACKUP, sonst gibt es die Routen nicht (404)
   if (config.e2eePwBackup) {

@@ -7,7 +7,7 @@ import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken, safeEqual, sha256Hex } from './crypto.js';
-import type { Role, SessionPrincipal } from './types.js';
+import type { Role, SessionOrigin, SessionPrincipal } from './types.js';
 
 export const SESSION_COOKIE = '__Host-lxsid';
 export type SessionKind = 'web' | 'app';
@@ -126,6 +126,9 @@ export interface NewSession {
   deviceId: string;
   kind: SessionKind;
   authMethod: AuthMethod;
+  /** Herkunft der Sitzung (Standard `login`); bei einer Rotation übernimmt die Nachfolgerin Herkunft und Zeitpunkt der Vorgängerin. */
+  origin?: SessionOrigin;
+  originAt?: Date | null;
   stepUpAt: Date | null;
   /** Rotation: Familie und absolute Ablaufzeit der Vorgängerin bleiben erhalten. */
   tokenFamily?: string;
@@ -143,6 +146,8 @@ export async function insertSession(ctx: AuthContext, exec: Executor, input: New
       deviceId: input.deviceId,
       kind: input.kind,
       authMethod: input.authMethod,
+      origin: input.origin ?? 'login',
+      originAt: input.origin && input.origin !== 'login' ? (input.originAt ?? now) : null,
       stepUpAt: input.stepUpAt,
       tokenHash: sha256Hex(token),
       ...(input.tokenFamily ? { tokenFamily: input.tokenFamily } : {}),
@@ -190,7 +195,7 @@ export function toEstablished(ctx: AuthContext, row: SessionRow, token: string):
 export async function establishSession(
   ctx: AuthContext,
   exec: Executor,
-  input: { userId: string; familyId: string; client: SessionKind; device?: DeviceInput | undefined; authMethod: AuthMethod; meta: RequestMeta },
+  input: { userId: string; familyId: string; client: SessionKind; device?: DeviceInput | undefined; authMethod: AuthMethod; origin?: SessionOrigin; meta: RequestMeta },
 ): Promise<Established> {
   const device = await ensureDevice(ctx, exec, {
     familyId: input.familyId,
@@ -205,13 +210,14 @@ export async function establishSession(
     deviceId: device.id,
     kind: input.client,
     authMethod: input.authMethod,
+    origin: input.origin ?? 'login',
     // die Anmeldung selbst (Passkey mit Nutzerprüfung, Passwort+TOTP, Wiederherstellungs-Code) zählt als frische Bestätigung
     stepUpAt: ctx.now(),
   });
   if (device.isNew) {
     await writeAudit(ctx, exec, { event: 'device_added', familyId: input.familyId, actorId: input.userId, deviceId: device.id, ip: input.meta.ip, detail: { kind: input.client } });
   }
-  await writeAudit(ctx, exec, { event: 'login_ok', familyId: input.familyId, actorId: input.userId, deviceId: device.id, ip: input.meta.ip, detail: { method: input.authMethod, kind: input.client } });
+  await writeAudit(ctx, exec, { event: 'login_ok', familyId: input.familyId, actorId: input.userId, deviceId: device.id, ip: input.meta.ip, detail: { method: input.authMethod, kind: input.client, ...(input.origin && input.origin !== 'login' ? { origin: input.origin } : {}) } });
   return toEstablished(ctx, row, token);
 }
 
@@ -254,7 +260,18 @@ async function touch(ctx: AuthContext, row: SessionRow): Promise<void> {
 }
 
 function toPrincipal(row: SessionRow, role: Role, via: 'cookie' | 'bearer'): SessionPrincipal {
-  return { userId: row.userId, familyId: row.familyId, role, deviceId: row.deviceId, sessionId: row.id, via, stepUpAt: row.stepUpAt };
+  return {
+    userId: row.userId,
+    familyId: row.familyId,
+    role,
+    deviceId: row.deviceId,
+    sessionId: row.id,
+    via,
+    stepUpAt: row.stepUpAt,
+    authMethod: row.authMethod,
+    origin: row.origin as SessionOrigin,
+    originAt: row.originAt,
+  };
 }
 
 /** Prüft Bearer-Token (App) oder Session-Cookie (Web); bei Cookie-Sitzungen und ändernden Methoden zusätzlich das CSRF-Token. */
@@ -363,6 +380,8 @@ async function regrantRefresh(
       deviceId: cur.deviceId,
       kind: 'app',
       authMethod: cur.authMethod as AuthMethod,
+      origin: cur.origin as SessionOrigin,
+      originAt: cur.originAt,
       stepUpAt: cur.stepUpAt,
       tokenFamily: cur.tokenFamily,
       expiresAt: cur.expiresAt,
@@ -419,6 +438,8 @@ export async function refreshSession(ctx: AuthContext, input: { refreshToken: st
       deviceId: row.deviceId ?? input.deviceId,
       kind: 'app',
       authMethod: row.authMethod as AuthMethod,
+      origin: row.origin as SessionOrigin,
+      originAt: row.originAt,
       stepUpAt: row.stepUpAt,
       tokenFamily: row.tokenFamily,
       expiresAt: row.expiresAt,
@@ -451,6 +472,32 @@ export function requireStepUp(ctx: AuthContext, principal: SessionPrincipal): vo
   if (age > ctx.config.auth.stepUpMaxAgeSec * 1000) {
     throw new AppError(403, 'step_up_required', 'Bitte bestätige deine Identität erneut.');
   }
+}
+
+/** Sperrfrist destruktiver Schlüssel-Aktionen nach einem Zugang über Wiederherstellungscode oder Passwort-Reset. */
+export const DESTRUCTIVE_LOCK_MS = 24 * 3_600_000;
+
+/**
+ * Destruktive Schlüssel-Aktionen (Schlüsselwechsel) sind aus Sitzungen, die über einen einzelnen Wiederherstellungscode oder einen Passwort-Reset entstanden
+ * sind, 24 Stunden nach deren Entstehen gesperrt: wer nur einen Code erbeutet hat, kann so nicht sofort alle Wiederherstellungswege des Opfers
+ * entwerten, und die Familie und das Opfer haben Zeit, den Hinweis zu sehen. Passkey- und Passwort+TOTP-Anmeldung bleiben ohne Sperre. Das normale
+ * Anlegen einer Sicherung (pending -> bestätigt) ist nie gesperrt (nach einem Reset legt die App sofort eine neue an) und zerstört nichts, weil
+ * Ersetztes archiviert wird. Wirft 403 `destructive_locked` mit `retryAfterSec`.
+ */
+export function requireDestructiveAllowed(ctx: AuthContext, principal: Pick<SessionPrincipal, 'origin' | 'originAt'>): void {
+  if (principal.origin === 'login') return;
+  const since = principal.originAt?.getTime() ?? ctx.now().getTime();
+  const restMs = since + DESTRUCTIVE_LOCK_MS - ctx.now().getTime();
+  if (restMs <= 0) return;
+  const restSec = Math.ceil(restMs / 1000);
+  const hours = Math.ceil(restMs / 3_600_000);
+  throw new AppError(
+    403,
+    'destructive_locked',
+    `Diese Aktion ist nach der Anmeldung mit einem Wiederherstellungscode oder nach einem Passwort-Reset noch gesperrt (noch ca. ${hours} Std.). Melde dich später mit Passkey oder Passwort an.`,
+    { 'Retry-After': String(restSec) },
+    { retryAfterSec: restSec },
+  );
 }
 
 // ---------- Aufräumen ----------

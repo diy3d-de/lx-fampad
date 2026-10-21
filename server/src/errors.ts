@@ -9,6 +9,8 @@ export class AppError extends Error {
     readonly code: string,
     message?: string,
     readonly headers?: Record<string, string>,
+    /** Zusätzliche, nicht geheime Felder der Fehlerantwort (z. B. `retryAfterSec`); nur additiv zu `error` und `message`. */
+    readonly extra?: Record<string, string | number | boolean>,
   ) {
     super(message ?? code);
     this.name = 'AppError';
@@ -37,7 +39,7 @@ export function registerErrorHandling(app: FastifyInstance): void {
   app.setErrorHandler((err: FastifyError | AppError | ZodError, req: FastifyRequest, reply: FastifyReply) => {
     if (err instanceof AppError) {
       if (err.headers) reply.headers(err.headers);
-      return reply.code(err.status).send(body(err.code, err.status, err.message === err.code ? undefined : err.message));
+      return reply.code(err.status).send({ ...err.extra, ...body(err.code, err.status, err.message === err.code ? undefined : err.message) });
     }
     if (err instanceof ZodError) {
       return reply.code(400).send(body('invalid_request', 400));

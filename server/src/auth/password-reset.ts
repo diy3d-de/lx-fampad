@@ -10,13 +10,13 @@
 // der Wiederherstellungsschlüssel und die QR-Übertragung gelten weiter) und schreibt ein Sicherheitsereignis. Der Server rührt keinen
 // Personenschlüssel an und kann ihn nicht neu verpacken (er kennt weder Passwort noch kek).
 import type { AuthenticationResponseJSON } from '@simplewebauthn/server';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
-import { credentials, devices, invites, memberships, pushEndpoints, securityEvents, users } from '../db/schema.js';
+import { and, eq, isNull, sql } from 'drizzle-orm';
+import { credentials, invites, memberships, securityEvents, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import { AUTHKEY_ONLY, authKeyDigest, saveAuthKeyDigest } from './authkey.js';
 import { peekChallenge, saveChallenge, takeChallenge } from './challenges.js';
-import type { AuthContext, Executor, RequestMeta, Tx } from './context.js';
+import type { AuthContext, RequestMeta, Tx } from './context.js';
 import { randomToken } from './crypto.js';
 import { consumeInvite, createInvite, INVALID_INVITE, verifyInvite, type CreatedInvite } from './invites.js';
 import { markPwBackupsStaleAfterReset } from './keys-pw.js';
@@ -24,11 +24,9 @@ import { authenticatePasskey, checkUserTotp, claimTotpStep, failLogin, findAccou
 import { assertNotLocked, clearAccountFailures, loginKeys, recordLoginFailure } from './lockout.js';
 import { consumeRecoveryCode, countRemainingCodes, isRecoveryCodeValid } from './recovery.js';
 import type { MemberView } from './register.js';
+import { recordSecurityEvent, wakeAfterCommit, wakeTopics, type SecurityEventVia } from './security-events.js';
 import { establishSession, requireStepUp, revokeAllForUser, type DeviceInput, type Established, type SessionKind } from './sessions.js';
 import type { SessionPrincipal } from './types.js';
-
-export type SecurityEventKind = 'password_reset_requested' | 'password_reset_done' | 'account_reset_requested';
-export type SecurityEventVia = 'admin' | 'recovery_code' | 'passkey';
 
 const notFound = () => new AppError(404, 'not_found');
 const challengeInvalid = () => new AppError(400, 'challenge_invalid', 'Der Vorgang ist abgelaufen. Bitte neu beginnen.');
@@ -37,73 +35,6 @@ const invalidCode = () => new AppError(400, 'invalid_code', 'Der Code stimmt nic
 
 function assertEnabled(ctx: Pick<AuthContext, 'config'>): void {
   if (!ctx.config.e2eePwBackup) throw notFound();
-}
-
-// ---------- Ereignisse und Benachrichtigung ----------
-
-/** Push-Themen der aktiven Geräte einer Person. VOR dem Widerruf der Geräte lesen: der Widerruf löscht die Endpunkte. */
-export async function wakeTopics(exec: Executor, userId: string): Promise<string[]> {
-  const rows = await exec
-    .select({ topic: pushEndpoints.topic })
-    .from(pushEndpoints)
-    .innerJoin(devices, and(eq(devices.familyId, pushEndpoints.familyId), eq(devices.id, pushEndpoints.deviceId)))
-    .where(and(eq(devices.userId, userId), isNull(devices.revokedAt), isNull(pushEndpoints.disabledAt)));
-  return rows.map((r) => r.topic);
-}
-
-/** Sicherheitsereignis für die betroffene Person (sichtbar in ihrem Profil). Ohne Inhalt, ohne IP. */
-export async function recordSecurityEvent(
-  ctx: Pick<AuthContext, 'now'>,
-  exec: Executor,
-  e: { familyId: string; userId: string; kind: SecurityEventKind; via: SecurityEventVia; actorId: string | null },
-): Promise<void> {
-  await exec.insert(securityEvents).values({ familyId: e.familyId, userId: e.userId, kind: e.kind, via: e.via, actorId: e.actorId, createdAt: ctx.now() });
-}
-
-/** Weckt die Geräte der Person nach dem Commit (Push ohne Inhalt); ein Fehler des Hakens darf den Vorgang nie scheitern lassen. */
-export function wakeAfterCommit(ctx: AuthContext, familyId: string, userId: string, topics: readonly string[]): void {
-  if (topics.length === 0) return;
-  try {
-    ctx.onSecurityEvent?.({ familyId, userId, topics });
-  } catch (err: unknown) {
-    ctx.log.warn({ err: (err as Error).message }, 'Sicherheitshinweis (Push) fehlgeschlagen');
-  }
-}
-
-export interface SecurityEventView {
-  id: string;
-  kind: SecurityEventKind;
-  via: SecurityEventVia;
-  /** Wer es ausgelöst hat (Name aus der Familie); null = die Person selbst (oder die Person ist nicht mehr da). */
-  actorName: string | null;
-  byAdmin: boolean;
-  createdAt: Date;
-}
-
-/** Eigene Sicherheitsereignisse, neueste zuerst (höchstens 50). Nur die eigenen: fremde Personen gibt es hier nicht. */
-export async function listSecurityEvents(ctx: AuthContext, p: SessionPrincipal): Promise<SecurityEventView[]> {
-  const rows = await ctx.db
-    .select({
-      id: securityEvents.id,
-      kind: securityEvents.kind,
-      via: securityEvents.via,
-      actorId: securityEvents.actorId,
-      actorName: users.displayName,
-      createdAt: securityEvents.createdAt,
-    })
-    .from(securityEvents)
-    .leftJoin(users, eq(users.id, securityEvents.actorId))
-    .where(and(eq(securityEvents.userId, p.userId), eq(securityEvents.familyId, p.familyId)))
-    .orderBy(desc(securityEvents.createdAt))
-    .limit(50);
-  return rows.map((r) => ({
-    id: r.id,
-    kind: r.kind as SecurityEventKind,
-    via: r.via as SecurityEventVia,
-    actorName: r.actorId && r.actorId !== p.userId ? (r.actorName ?? null) : null,
-    byAdmin: r.via === 'admin',
-    createdAt: r.createdAt,
-  }));
 }
 
 // ---------- gemeinsamer Kern ----------
@@ -287,7 +218,7 @@ export async function finishPasswordResetRedeem(
     // Zeitschritt des TOTP verbrauchen (Replay-Schutz); schon vergeben = der Code war nicht mehr einlösbar
     if (!(await claimTotpStep(ctx, tx, hit))) throw invalidCode();
     await applyPasswordReset(ctx, tx, { familyId: data.familyId, userId: data.userId, authHash: data.authHash, via: 'admin', actorId: null }, meta);
-    const session = await establishSession(ctx, tx, { userId: data.userId, familyId: data.familyId, client: input.client, device: input.device, authMethod: 'password', meta });
+    const session = await establishSession(ctx, tx, { userId: data.userId, familyId: data.familyId, client: input.client, device: input.device, authMethod: 'password', origin: 'password_reset', meta });
     const member: MemberView = { id: data.userId, email: m.email, displayName: m.displayName, colorIndex: m.colorIndex, role: m.role, status: 'active' };
     return { member, status: 'active' as const, recoveryCodes: [] as string[], session };
   });
@@ -317,7 +248,7 @@ async function finishSelfReset(
   const session = await ctx.db.transaction(async (tx) => {
     if (input.verbrauchen && !(await input.verbrauchen(tx))) return null;
     await applyPasswordReset(ctx, tx, { familyId: account.familyId, userId: account.userId, authHash: authKeyDigest(ctx, account.userId, input.authKey), via: input.via, actorId: null }, meta);
-    return establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.via === 'passkey' ? 'passkey' : 'recovery', meta });
+    return establishSession(ctx, tx, { userId: account.userId, familyId: account.familyId, client: input.client, device: input.device, authMethod: input.via === 'passkey' ? 'passkey' : 'recovery', origin: 'password_reset', meta });
   });
   if (!session) return null;
   if (input.via !== 'passkey') await clearAccountFailures(ctx, meta.ip, account.email);

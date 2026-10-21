@@ -11,7 +11,7 @@ import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken, sha256Hex } from './crypto.js';
 import { createInvite, isDowngrade, revokeOpenInvitesBy, type CreatedInvite } from './invites.js';
 import { findAccountById, type Account } from './login.js';
-import { recordSecurityEvent, wakeAfterCommit, wakeTopics } from './password-reset.js';
+import { recordSecurityEvent, wakeAfterCommit, wakeTopics } from './security-events.js';
 import { assertNotLocked, ipKey, recordFailure } from './lockout.js';
 import { countRemainingCodes, createRecoveryCodes } from './recovery.js';
 import type { MemberView } from './register.js';
@@ -260,7 +260,9 @@ export async function removeMember(ctx: AuthContext, p: SessionPrincipal, target
 
 /**
  * Setzt ein Mitglied zurück: alle Anmeldedaten und Sitzungen werden widerrufen, die Wiederherstellungs-Codes entfallen,
- * eine neue Einladung (für dasselbe Konto) wird erzeugt. `actorId` null = Betreiber über die Kommandozeile.
+ * eine neue Einladung (für dasselbe Konto) wird erzeugt. `actorId` null = Betreiber über die Kommandozeile. Schlüssel und Sicherungen der Person bleiben
+ * unberührt (nur die Anmeldedaten werden ersetzt). Die Person und ALLE anderen aktiven Mitglieder bekommen ein Sicherheitsereignis und den Wecker (ohne Inhalt):
+ * ein Komplett-Reset ist der Weg, ein Konto zu übernehmen, die Familie soll einen neuen Schlüssel dieser Person nur nach Rücksprache annehmen.
  */
 export async function resetMember(
   ctx: AuthContext,
@@ -271,7 +273,7 @@ export async function resetMember(
   if (!target) throw notFound();
   // Push-Themen vor dem Widerruf lesen (der löscht die Endpunkte)
   const topics = await wakeTopics(ctx.db, input.userId);
-  const invite = await ctx.db.transaction(async (tx) => {
+  const result = await ctx.db.transaction(async (tx) => {
     const now = ctx.now();
     await tx.update(credentials).set({ revokedAt: now }).where(and(eq(credentials.userId, input.userId), isNull(credentials.revokedAt)));
     await tx.execute(sql`delete from recovery_codes where user_id = ${input.userId}`);
@@ -285,10 +287,21 @@ export async function resetMember(
     );
     await writeAudit(ctx, tx, { event: 'member_reset', familyId: input.familyId, actorId: input.actorId, ip: meta.ip, detail: { target: input.userId } });
     await recordSecurityEvent(ctx, tx, { familyId: input.familyId, userId: input.userId, kind: 'account_reset_requested', via: 'admin', actorId: input.actorId });
-    return invite;
+    // Hinweis an ALLE anderen aktiven Mitglieder: ein Komplett-Reset ist der Weg, ein Konto zu übernehmen. Sie sollen einen neuen Schlüssel dieser Person
+    // nur nach Rücksprache annehmen (die App warnt bei der Schlüsseländerung ohnehin, der Hinweis erklärt den Anlass).
+    const others = await tx
+      .select({ userId: memberships.userId })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(and(eq(memberships.familyId, input.familyId), eq(memberships.status, 'active'), isNull(users.disabledAt), sql`${memberships.userId} <> ${input.userId}`));
+    for (const o of others) {
+      await recordSecurityEvent(ctx, tx, { familyId: input.familyId, userId: o.userId, kind: 'member_account_reset', via: 'admin', actorId: input.actorId, subjectId: input.userId });
+    }
+    return { invite, others: others.map((o) => o.userId) };
   });
   wakeAfterCommit(ctx, input.familyId, input.userId, topics);
-  return invite;
+  for (const other of result.others) wakeAfterCommit(ctx, input.familyId, other, await wakeTopics(ctx.db, other));
+  return result.invite;
 }
 
 // ---------- Geräte und Abmelden ----------

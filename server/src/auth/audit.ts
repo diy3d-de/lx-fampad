@@ -47,6 +47,8 @@ export type AuditEvent =
   | 'key_backup_pw_set'
   | 'key_backup_pw_read'
   | 'key_backup_pw_verified'
+  | 'key_backup_archive_list'
+  | 'key_backup_archive_read'
   | 'password_authkey_set'
   | 'password_reset_requested'
   | 'password_reset_done'

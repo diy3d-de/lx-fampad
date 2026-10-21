@@ -173,7 +173,7 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       const ev = await events(f.m.client);
       expect(ev).toHaveLength(1);
       expect(ev[0]).toMatchObject({ kind: 'password_reset_requested', via: 'admin', byAdmin: true, actorName: 'Admin' });
-      expect(Object.keys(ev[0] ?? {}).sort()).toEqual(['actorName', 'byAdmin', 'createdAt', 'id', 'kind', 'via']);
+      expect(Object.keys(ev[0] ?? {}).sort()).toEqual(['actorName', 'byAdmin', 'createdAt', 'id', 'kind', 'subjectName', 'via']);
       // niemand sonst sieht es
       expect(await events(f.a.client)).toEqual([]);
       expect(await auditEvents(world)).toContain('password_reset_requested');
@@ -556,8 +556,9 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       expect((await f.a.client.post(`/api/v1/members/${f.mamaId}/reset`, {})).status).toBe(200);
       await settle();
       expect(ntfyCalls).toEqual([{ url: `/${topic}`, body: WAKE_BODY }]);
-      const ev = (await harness.db.execute<{ kind: string }>(sql`select kind from security_events`)).rows.map((r) => r.kind);
-      expect(ev).toEqual(['account_reset_requested']);
+      const ev = (await harness.db.execute<{ kind: string }>(sql`select kind from security_events order by kind`)).rows.map((r) => r.kind);
+      // die Person selbst bekommt `account_reset_requested`, der Admin (einziges anderes Mitglied) den Hinweis an die Familie
+      expect(ev).toEqual(['account_reset_requested', 'member_account_reset']);
     });
   });
 

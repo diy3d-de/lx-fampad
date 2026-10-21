@@ -187,6 +187,36 @@ export const keyBackups = pgTable('key_backups', {
 });
 
 /**
+ * E2EE: Archiv der Wiederherstellungssicherungen (nur anhängend, nie gelöscht außer mit dem Konto). Ein Schlüsselwechsel verschiebt die bisherige
+ * `key_backups`-Zeile hierher (`reason = 'rotation'`), ein Ersetzen durch einen anderen Blob zur selben key_version legt die alte Zeile hier ab
+ * (`reason = 'replaced'`): so zerstört weder ein Angreifer mit einer geliehenen Sitzung noch ein Versehen den einzigen Weg zum alten Schlüssel
+ * (und damit zum alten Chat-Verlauf). Lesen nur die eigene Person (Step-up, protokolliert): `GET /me/key-backups/archive[/:id]`.
+ */
+export const keyBackupArchive = pgTable(
+  'key_backup_archive',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    kind: text('kind').notNull().default('recovery'),
+    blob: text('blob').notNull(),
+    keyVersion: integer('key_version').notNull(),
+    reason: text('reason').notNull(),
+    /** Wann die archivierte Sicherung ursprünglich angelegt bzw. zuletzt geändert wurde. */
+    backupCreatedAt: timestamp('backup_created_at', { withTimezone: true }).notNull(),
+    backupUpdatedAt: timestamp('backup_updated_at', { withTimezone: true }).notNull(),
+    archivedAt: timestamp('archived_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('key_backup_archive_user_idx').on(t.userId, t.archivedAt),
+    check('key_backup_archive_kind_ck', sql`${t.kind} in ('recovery')`),
+    check('key_backup_archive_reason_ck', sql`${t.reason} in ('rotation', 'replaced')`),
+    check('key_backup_archive_version_ck', sql`${t.keyVersion} >= 1`),
+  ],
+);
+
+/**
  * E2EE (vereinfachte Schlüsselverwaltung, Schalter E2EE_PW_BACKUP): aktuelle Salt-Generation je Konto. Den Salt der Passwort-Ableitung
  * bestimmt immer der Server, deterministisch aus E-Mail und Generation (HMAC, siehe auth/keys-pw.ts); hier steht nur die Generation
  * (Standard 1, auch für Konten ohne Zeile). Der Client liefert nie einen Salt. Passwort, authKey und kek kennt der Server nie.
@@ -373,11 +403,16 @@ export const securityEvents = pgTable(
     via: text('via').notNull(),
     actorId: uuid('actor_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
+    /** Um wen es geht, wenn nicht um die Person selbst (Hinweis an die Familie: "Zugang von <Name> zurückgesetzt"); sonst null. */
+    subjectId: uuid('subject_id').references(() => users.id, { onDelete: 'set null' }),
   },
   (t) => [
     index('security_events_user_idx').on(t.userId, t.createdAt),
-    check('security_events_kind_ck', sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested')`),
-    check('security_events_via_ck', sql`${t.via} in ('admin', 'recovery_code', 'passkey')`),
+    check(
+      'security_events_kind_ck',
+      sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset')`,
+    ),
+    check('security_events_via_ck', sql`${t.via} in ('admin', 'recovery_code', 'passkey', 'password')`),
   ],
 );
 
@@ -455,6 +490,13 @@ export const sessions = pgTable(
     kind: text('kind').notNull().default('web'),
     /** passkey | password | recovery */
     authMethod: text('auth_method').notNull().default('passkey'),
+    /**
+     * Herkunft der Sitzung: `login` (Passkey, Passwort + TOTP) oder `recovery_code` / `password_reset` (Zugang über einen einzelnen Wiederherstellungscode
+     * bzw. einen Passwort-Reset). Solche Sitzungen dürfen destruktive Schlüssel-Aktionen erst nach `origin_at` + 24 h (Fehler `destructive_locked`).
+     * Eine Rotation des Refresh-Tokens übernimmt beide Werte unverändert.
+     */
+    origin: text('origin').notNull().default('login'),
+    originAt: timestamp('origin_at', { withTimezone: true }),
     /** Letzte erneute Bestätigung (Step-up) oder Anmeldung; Grundlage für "frisch bestätigt". */
     stepUpAt: timestamp('step_up_at', { withTimezone: true }),
     /** Hash von Session-Cookie (Web) bzw. Refresh-Token (App); Rotation über token_family. */
@@ -481,6 +523,7 @@ export const sessions = pgTable(
     foreignKey({ columns: [t.familyId, t.deviceId], foreignColumns: [devices.familyId, devices.id] }).onDelete('cascade'),
     foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     check('sessions_kind_ck', sql`${t.kind} in ('web', 'app')`),
+    check('sessions_origin_ck', sql`${t.origin} in ('login', 'recovery_code', 'password_reset')`),
   ],
 );
 
