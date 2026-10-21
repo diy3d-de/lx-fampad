@@ -61,6 +61,24 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     ..hideCurrentSnackBar()
     ..showSnackBar(SnackBar(content: Text(text)));
 
+  final Map<String, GlobalKey> _schluessel = {};
+  List<String> _reihenfolge = const [];
+
+  /// Springt zu einer Nachricht (Pin-Liste): ist sie schon gebaut, wird sie sichtbar gemacht; sonst wird grob dorthin gescrollt und erneut versucht.
+  Future<void> _zuNachricht(String id) async {
+    for (var versuch = 0; versuch < 8 && mounted; versuch++) {
+      final ctx = _schluessel[id]?.currentContext;
+      if (ctx != null && ctx.mounted) {
+        await Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        return;
+      }
+      final i = _reihenfolge.indexOf(id);
+      if (i < 0 || !_scroll.hasClients) return;
+      _scroll.jumpTo((i * 90.0).clamp(0.0, _scroll.position.maxScrollExtent));
+      await WidgetsBinding.instance.endOfFrame;
+    }
+  }
+
   /// Setzt die eigene Reaktion oder nimmt sie zurück (gleiches Emoji noch einmal). Nur auf bestätigte Nachrichten.
   Future<void> _reagieren(Nachricht n, String emoji, String? meine) async {
     if (n.rev == 0) {
@@ -68,11 +86,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       return;
     }
     try {
-      if (meine == emoji) {
-        await _zusatz.reaktionEntfernen(n.id);
-      } else {
-        await _zusatz.reagieren(n.konversationId, n.id, emoji);
-      }
+      await _zusatz.reaktionUmschalten(n.konversationId, n.id, emoji, aktuell: meine);
     } on ChatNichtVerschluesselt {
       _hinweis('Dieser Chat ist nicht verschlüsselt. Reaktionen sind hier nicht möglich.');
     }
@@ -88,15 +102,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       _hinweis('Die Umfrage ist beendet.');
       return;
     }
-    final Set<int> neu;
-    if (u.mehrfach) {
-      neu = {...e.meine};
-      if (!neu.add(option)) neu.remove(option);
-    } else {
-      neu = e.meine.contains(option) ? <int>{} : {option};
-    }
     try {
-      await _zusatz.abstimmen(n.konversationId, n.id, neu);
+      await _zusatz.stimmeUmschalten(n.konversationId, n.id, option, mehrfach: u.mehrfach, anzahl: u.optionen.length, aktuell: e.meine);
     } on ChatNichtVerschluesselt {
       _hinweis('Dieser Chat ist nicht verschlüsselt. Abstimmen ist hier nicht möglich.');
     }
@@ -118,8 +125,13 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
   }
 
   Future<void> _pinListeOeffnen(List<PinEintrag> pins) async {
-    final id = await pinListe(context, pins);
-    if (id != null && mounted) await _zusatz.pinLoesen(id);
+    final wahl = await pinListe(context, pins);
+    if (wahl == null || !mounted) return;
+    if (wahl.loesen) {
+      await _zusatz.pinLoesen(wahl.nachrichtId);
+    } else {
+      await _zuNachricht(wahl.nachrichtId);
+    }
   }
 
   @override
@@ -222,9 +234,11 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     bool istUmfrage = false,
     String? meineReaktion,
     ChatPin? pin,
+    bool verschluesselt = true,
   }) async {
     final abgelehnt = lese?.zustand == LeseZustand.abgelehnt;
-    final bestaetigt = n.rev > 0 && !abgelehnt && lesbar;
+    // Reaktionen, Umfragen und Anheften gibt es nur in verschlüsselten Chats (Altbestand: nur lesen)
+    final bestaetigt = n.rev > 0 && !abgelehnt && lesbar && verschluesselt;
     final aktion = await showModalBottomSheet<String>(
       context: context,
       backgroundColor: kSurface,
@@ -424,7 +438,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     final ausgang = ref.watch(nachrichtenAusgangProvider).value ?? const <String, OutboxData>{};
     // Reaktionen, Stimmen und Anheftungen (Inhalte werden im Hintergrund entschlüsselt; nicht lesbare zählen nicht mit)
     final reaktionenJe = gruppiereReaktionen(ref.watch(reaktionenProvider(_id)).value ?? const <Reaktion>[], (r) {
-      final z = inhalt.zusatz(ZusatzRef(id: r.id, konversationId: r.konversationId, nachrichtId: r.nachrichtId, userId: r.userId, wire: r.inhalt, rev: r.rev));
+      final z = inhalt.zusatz(ZusatzRef(id: r.id, konversationId: r.konversationId, nachrichtId: r.nachrichtId, userId: r.userId, wire: r.inhalt, rev: r.rev, art: 'r'));
       return z.lesbar ? z.text : null;
     }, ich);
     final stimmenJe = <String, List<Stimme>>{};
@@ -432,7 +446,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       (stimmenJe[st.nachrichtId] ??= []).add(st);
     }
     String? stimmeText(Stimme st) {
-      final z = inhalt.zusatz(ZusatzRef(id: st.id, konversationId: st.konversationId, nachrichtId: st.nachrichtId, userId: st.userId, wire: st.inhalt, rev: st.rev));
+      final z = inhalt.zusatz(ZusatzRef(id: st.id, konversationId: st.konversationId, nachrichtId: st.nachrichtId, userId: st.userId, wire: st.inhalt, rev: st.rev, art: 's'));
       return z.lesbar ? z.text : null;
     }
     final pinZeilen = ref.watch(pinsProvider(_id)).value ?? const <ChatPin>[];
@@ -460,6 +474,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       vorher = n.createdAt;
     }
     final umgekehrt = eintraege.reversed.toList();
+    _reihenfolge = [for (final e in umgekehrt) if (e is Nachricht) e.id];
     final breit = MediaQuery.sizeOf(context).width >= kDesktopBreakpoint;
 
     final eingabe = _Eingabe(
@@ -537,6 +552,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     final umfrage = d.lesbar ? umfrageLesen(d.text) : null;
                     final gruppen = reaktionenJe[n.id] ?? const <ReaktionGruppe>[];
                     final meineReaktion = gruppen.where((g) => g.ich).map((g) => g.emoji).firstOrNull;
+                    // das Ende einer Umfrage baut den Verlauf neu auf (sonst bliebe sie bis zur nächsten Änderung abstimmbar)
+                    if (umfrage?.ende case final ende? when ende.isAfter(jetzt)) _planeTick(ende, jetzt);
                     final ergebnis = umfrage == null ? null : umfrageAuswerten(umfrage, stimmenJe[n.id] ?? const <Stimme>[], stimmeText, ich);
                     final autor = mitglieder[n.autorId];
                     // ein Zitat zeigt nur eine Nachricht derselben Konversation (der Server prüft das ebenfalls)
@@ -546,6 +563,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                     final zumZeitpunkt = eigen ? empfaengerZurNachricht(epoche: ChatKrypto.huellenEpoche(n.inhalt), epochen: epochenMitglieder, ich: ich ?? '', aktuell: empfaenger, gelesenBis: gelesenBis) : null;
                     final lese = zumZeitpunkt == null ? null : leseInfo(nachricht: n, empfaenger: zumZeitpunkt.empfaenger, gelesenBis: gelesenBis, geschaetzt: zumZeitpunkt.geschaetzt, ausgang: ausgang[n.id], jetzt: jetzt);
                     return _Blase(
+                      key: _schluessel.putIfAbsent(n.id, GlobalKey.new),
                       nachricht: n,
                       lese: lese,
                       leseText: lese == null ? '' : leseBeschreibung(lese, leseName),
@@ -575,7 +593,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                               autor: zitat == null ? '' : (zitat.autorId == ich ? 'Du' : (mitglieder[zitat.autorId]?.displayName ?? 'Unbekannt')),
                               text: zitat == null ? 'Nachricht nicht verfügbar' : nachrichtKurztext(zitat, inhalt),
                             ),
-                      onTap: () => _aktionen(n, art, rechte, d.lesbar, d.text, lese: lese, istUmfrage: umfrage != null, meineReaktion: meineReaktion, pin: pinJe[n.id]),
+                      onTap: () => _aktionen(n, art, rechte, d.lesbar, d.text, lese: lese, istUmfrage: umfrage != null, meineReaktion: meineReaktion, pin: pinJe[n.id], verschluesselt: verschluesselt),
                     );
                   },
                 ),
@@ -695,6 +713,7 @@ class _Blase extends StatelessWidget {
   final Widget? umfrage;
   final String? umfrageKopf;
   const _Blase({
+    super.key,
     required this.nachricht,
     required this.lese,
     required this.leseText,

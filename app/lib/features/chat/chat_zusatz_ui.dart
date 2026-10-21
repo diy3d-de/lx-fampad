@@ -57,6 +57,7 @@ class ReaktionsChips extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Wrap(
     spacing: 4,
+    runSpacing: 4,
     children: [
       for (final g in gruppen)
         Builder(
@@ -280,8 +281,15 @@ class PinLeiste extends StatelessWidget {
   }
 }
 
-/// Liste der angehefteten Nachrichten; liefert die ID der Nachricht, deren Anheftung gelöst werden soll (oder null).
-Future<String?> pinListe(BuildContext context, List<PinEintrag> pins) => showModalBottomSheet<String>(
+/// Wahl in der Pin-Liste: zur Nachricht springen oder die Anheftung lösen.
+class PinWahl {
+  final String nachrichtId;
+  final bool loesen;
+  const PinWahl(this.nachrichtId, {required this.loesen});
+}
+
+/// Liste der angehefteten Nachrichten; ein Tipp auf einen Eintrag springt zur Nachricht, das Kreuz löst die Anheftung (null: nichts gewählt).
+Future<PinWahl?> pinListe(BuildContext context, List<PinEintrag> pins) => showModalBottomSheet<PinWahl>(
   context: context,
   backgroundColor: kSurface,
   showDragHandle: true,
@@ -301,8 +309,9 @@ Future<String?> pinListe(BuildContext context, List<PinEintrag> pins) => showMod
               title: Text(p.text, maxLines: 3, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kText)),
               subtitle: Text(p.autor, style: const TextStyle(color: kTextMuted)),
               trailing: p.darfLoesen
-                  ? IconButton(tooltip: 'Anheftung lösen', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.close), onPressed: () => Navigator.of(c).pop(p.nachrichtId))
+                  ? IconButton(tooltip: 'Anheftung lösen', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.close), onPressed: () => Navigator.of(c).pop(PinWahl(p.nachrichtId, loesen: true)))
                   : null,
+              onTap: () => Navigator.of(c).pop(PinWahl(p.nachrichtId, loesen: false)),
             ),
         ],
       ),

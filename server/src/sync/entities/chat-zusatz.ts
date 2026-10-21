@@ -81,7 +81,7 @@ export const reaktionEntity: EntityDef = {
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.userId as string | null) ?? null }),
   factsForCreate: (_actor: Actor, values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (values.userId as string | undefined) ?? null }),
   maxLive: { per: 'parent', max: MAX_REAKTIONEN_JE_NACHRICHT },
-  rate: { field: 'userId', perMinute: REAKTIONEN_PRO_MINUTE, perHour: REAKTIONEN_PRO_STUNDE },
+  rate: { field: 'userId', perMinute: REAKTIONEN_PRO_MINUTE, perHour: REAKTIONEN_PRO_STUNDE, viaLog: true },
   updateRate: { fields: ['inhalt'], perMinute: REAKTIONEN_PRO_MINUTE },
   scrubOnUpdate: ['inhalt'],
   validate: async (env, row: Row): Promise<boolean> => !!(await nachrichtInKonversation(env, row)),
@@ -108,9 +108,12 @@ export const stimmeEntity: EntityDef = {
   noWake: true,
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.userId as string | null) ?? null }),
   factsForCreate: (_actor: Actor, values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (values.userId as string | undefined) ?? null }),
+  // Zeit der Stimme: bei JEDEM Anlegen und Wiederbeleben (nach Löschen) und jeder Änderung des Inhalts setzt der Server sie neu; sonst ließe sich das Ende einer Umfrage
+  // durch Löschen und erneutes Abstimmen umgehen
+  onCreate: (_actor: Actor, now: Date): Row => ({ geaendertAt: now }),
   onUpdate: (changed: Row, now: Date): Row => ('inhalt' in changed ? { geaendertAt: now } : {}),
   maxLive: { per: 'parent', max: MAX_REAKTIONEN_JE_NACHRICHT },
-  rate: { field: 'userId', perMinute: STIMMEN_PRO_MINUTE, perHour: STIMMEN_PRO_STUNDE },
+  rate: { field: 'userId', perMinute: STIMMEN_PRO_MINUTE, perHour: STIMMEN_PRO_STUNDE, viaLog: true },
   updateRate: { fields: ['inhalt'], perMinute: STIMMEN_PRO_MINUTE },
   scrubOnUpdate: ['inhalt'],
   validate: async (env, row: Row): Promise<boolean> => !!(await nachrichtInKonversation(env, row)),
@@ -148,6 +151,8 @@ export const pinEntity: EntityDef = {
     if (!k) return false;
     // im Familienchat heften nur Eltern und Admins an (Kinder sehen die Pins, ändern sie aber nicht)
     if (k.art === 'family' && env.actor.role === 'child') return false;
+    // Grenze parallelitätssicher: die Konversationszeile sperren, damit gleichzeitige Anheftungen nacheinander zählen
+    await env.tx.select({ id: konversationen.id }).from(konversationen).where(and(eq(konversationen.familyId, env.familyId), eq(konversationen.id, String(row.konversationId)))).for('update');
     const [n] = await env.tx
       .select({ n: count() })
       .from(pins)

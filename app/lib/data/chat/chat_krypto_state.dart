@@ -54,7 +54,8 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
   final void Function() beiAenderung;
   final Map<String, ({String wire, DekodierterInhalt inhalt})> _cache = {};
   final Map<String, ({String wire, DekodierterInhalt inhalt})> _zusatzCache = {};
-  static const maxZusatzCache = 1500;
+  // groß genug für alle Reaktionen und Stimmen sichtbarer Chats: ein ausgeworfener Eintrag würde beim nächsten Aufbau neu geöffnet (und löst wieder einen Aufbau aus)
+  static const maxZusatzCache = 5000;
 
   /// Höchstzahl der entschlüsselten Nachrichten im Arbeitsspeicher (die ältesten fliegen zuerst raus; sie werden bei Bedarf neu geöffnet).
   static const maxCache = 500;
@@ -96,7 +97,11 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
       // ab); ein Eintrag, den der Ausgang nicht kennt, wird nie als Text angezeigt.
       final ids = lokaleIds();
       if (ids == null) return const DekodierterInhalt('', InhaltStatus.wirdEntschluesselt);
-      if (n.autorId != null && n.autorId == ich() && (n.rev == 0 || ids.contains(n.id))) return DekodierterInhalt(w.substring(kPraefixLokal.length), InhaltStatus.bereit);
+      if (n.autorId != null && n.autorId == ich() && (n.rev == 0 || ids.contains(n.id))) {
+        final t = w.substring(kPraefixLokal.length);
+        if (t.startsWith('r1:') || t.startsWith('s1:')) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'ungültiger Inhalt');
+        return DekodierterInhalt(t, InhaltStatus.bereit);
+      }
       // eigene Nachricht, die der Server schon kennt, deren Text hier aber noch nicht durch die Antwort ersetzt ist: sie ist unterwegs, nicht unverschlüsselt
       if (n.autorId != null && n.autorId == ich()) return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'wird gesendet');
       return const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'unverschlüsselt');
@@ -139,7 +144,7 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
         final k = await krypto();
         r = k == null
             ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
-            : await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.userId, wire: z.wire, antwortAuf: z.nachrichtId);
+            : await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.userId, wire: z.wire, antwortAuf: z.nachrichtId, art: z.art);
       }
       _merkeZusatz(z.id, (wire: z.wire, inhalt: r));
     } on Object {
@@ -168,6 +173,8 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
         r = k == null
             ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
             : await k.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: w, antwortAuf: n.antwortAuf);
+        // Inhalte von Reaktionen und Stimmen sind nie Nachrichtentext (eine Nachricht mit diesem Präfix wird nicht angezeigt)
+        if (r.lesbar && (r.text.startsWith('r1:') || r.text.startsWith('s1:'))) r = const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'ungültiger Inhalt');
       }
       _merke(n.id, (wire: n.inhalt, inhalt: r));
     } on Object {
@@ -229,17 +236,18 @@ class ChatOpVorbereiter implements OpVorbereiter {
     }
     if (konv == null) return null;
     final konversationId = konv;
+    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', _ => null };
     if (op.entity != 'nachricht' && antwortAuf == null) return null;
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)
     await k.aktualisieren();
     if (!klar) {
-      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf);
+      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf, art: art);
       if (neu == null) return null;
       return neu == text ? op.fieldsJson : jsonEncode({...f, feld: neu});
     }
-    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf);
+    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf, art: art);
     if (wire == null) return null;
     return jsonEncode({...f, feld: wire});
   }

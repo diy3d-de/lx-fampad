@@ -420,6 +420,8 @@ class SyncStore {
     if (def.abgelehntStill && neu && code != 'duplicate_op' && !(code == 'limit_reached' && def.bleibtBeiLimit)) {
       await _entferneBaum(z.entity, z.entityId);
       bericht.neuLaden = true;
+      final hinweis = def.stillHinweis(code);
+      if (hinweis != null) bericht.hinweise.add(SyncHinweis(hinweis));
       return;
     }
     switch (code) {

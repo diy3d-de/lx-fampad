@@ -58,6 +58,9 @@ abstract class SyncEntity {
   /// zu diesem Zeitpunkt noch lokal da. null = die üblichen Texte, leerer Text = kein Hinweis.
   Future<String?> ablehnungsHinweis(AppDatabase db, String id, String code) async => null;
 
+  /// Hinweistext, wenn eine neue Zeile mit [abgelehntStill] doch abgelehnt wurde und die Person es wissen sollte (Grenzen, fehlende Rechte); null = ganz still.
+  String? stillHinweis(String code) => null;
+
   /// Bei `limit_reached` (Mengenbegrenzung des Servers) bleibt eine neue Zeile erhalten und wird später erneut gesendet, statt zu verschwinden.
   bool get bleibtBeiLimit => false;
 

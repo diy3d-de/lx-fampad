@@ -3,7 +3,8 @@
 // kaputte Inhalte werden übersprungen, nie angezeigt oder gerechnet.
 //
 //  - Reaktion:  `r1:` + ein Emoji (höchstens [kMaxEmojiEinheiten] UTF-16-Einheiten, keine Leer- und Steuerzeichen).
-//  - Stimme:    `s1:` + durch Komma getrennte Optionsnummern (0-basiert), z. B. `s1:0,2`; keine Auswahl = die Stimme wird gelöscht, nie leer gespeichert.
+//  - Stimme:    `s1:` + durch Komma getrennte Optionsnummern (0-basiert), z. B. `s1:0,2`; keine Auswahl = die Stimme wird gelöscht, nie leer gespeichert. Optional folgt
+//               `@<Millisekunden>`: der Abgabezeitpunkt auf dem Gerät (`s1:0,2@1761000000000`), damit eine offline vor dem Ende abgegebene Stimme zählt (siehe [umfrageAuswerten]).
 //  - Umfrage:   eine ganz normale Chat-Nachricht mit mehrzeiligem Text, den ÄLTERE App-Versionen unverändert als Text zeigen (sie kennen keine Umfragen):
 //                 📊 Umfrage: <Frage>
 //                 • <Option 1>
@@ -51,7 +52,33 @@ String? reaktionLesen(String klartext) {
 }
 
 /// Gewählte Optionen als Klartext einer Stimme (aufsteigend, ohne Doppelte).
-String stimmeKodieren(Iterable<int> optionen) => '$kStimmePraefix${(optionen.toSet().toList()..sort()).join(',')}';
+String stimmeKodieren(Iterable<int> optionen, {DateTime? zeit}) =>
+    '$kStimmePraefix${(optionen.toSet().toList()..sort()).join(',')}${zeit == null ? '' : '@${zeit.millisecondsSinceEpoch}'}';
+
+/// Inhalt einer Stimme: gewählte Optionen und der Abgabezeitpunkt auf dem Gerät der Person (null bei Stimmen ohne Angabe).
+class StimmeInhalt {
+  final Set<int> auswahl;
+  final DateTime? zeit;
+  const StimmeInhalt(this.auswahl, this.zeit);
+}
+
+/// Wie [stimmeLesen], mit dem Abgabezeitpunkt (`@<ms>` am Ende, optional).
+StimmeInhalt? stimmeLesenMitZeit(String klartext, int anzahl, {required bool mehrfach}) {
+  DateTime? zeit;
+  var t = klartext;
+  final at = t.lastIndexOf('@');
+  if (at >= 0) {
+    final ms = int.tryParse(t.substring(at + 1));
+    if (ms == null || ms <= 0 || ms >= 8640000000000000) return null;
+    zeit = DateTime.fromMillisecondsSinceEpoch(ms);
+    t = t.substring(0, at);
+  }
+  final auswahl = stimmeLesen(t, anzahl, mehrfach: mehrfach);
+  return auswahl == null ? null : StimmeInhalt(auswahl, zeit);
+}
+
+/// Wie weit der Server-Zeitpunkt einer Stimme hinter dem Ende liegen darf, wenn die Stimme laut ihrem Abgabezeitpunkt VOR dem Ende abgegeben wurde (Gerät war offline).
+const kEndeToleranz = Duration(minutes: 10);
 
 /// Gewählte Optionen einer Stimme; null bei ungültigem Inhalt oder einer Nummer außerhalb von 0 bis [anzahl]-1. Bei Einzelwahl zählt nur genau eine Option.
 Set<int>? stimmeLesen(String klartext, int anzahl, {required bool mehrfach}) {
@@ -160,11 +187,14 @@ Map<String, List<ReaktionGruppe>> gruppiereReaktionen(Iterable<Reaktion> zeilen,
     if (emoji == null) continue;
     (nachNachricht[r.nachrichtId] ??= {}).putIfAbsent(emoji, () => []).add(r.userId);
   }
+  // bei gleicher Anzahl bleibt die Reihenfolge der ersten Wahl (die Map behält die Einfügereihenfolge; List.sort ist nicht stabil, deshalb der Index als Schlüssel)
   return {
     for (final e in nachNachricht.entries)
-      e.key: [
-        for (final g in e.value.entries) ReaktionGruppe(emoji: g.key, personen: g.value, ich: ich != null && g.value.contains(ich)),
-      ]..sort((a, b) => b.anzahl.compareTo(a.anzahl)),
+      e.key: () {
+        final liste = [for (final g in e.value.entries) ReaktionGruppe(emoji: g.key, personen: g.value, ich: ich != null && g.value.contains(ich))];
+        final rang = [for (var i = 0; i < liste.length; i++) i]..sort((a, b) => liste[b].anzahl != liste[a].anzahl ? liste[b].anzahl.compareTo(liste[a].anzahl) : a.compareTo(b));
+        return [for (final i in rang) liste[i]];
+      }(),
   };
 }
 
@@ -183,19 +213,30 @@ class UmfrageErgebnis {
   int stimmen(int option) => waehler[option].length;
 }
 
-/// Wertet die Stimmen einer Umfrage aus. Eine Stimme zählt nur, wenn sie lesbar und gültig ist (Optionen im Bereich, bei Einzelwahl genau eine) und nicht NACH dem
-/// Ende der Umfrage abgegeben oder geändert wurde (Zeit des Servers: [Stimme.geaendertAt], sonst Anlegen). [inhalt] liefert den Klartext oder null.
+/// Wertet die Stimmen einer Umfrage aus. Eine Stimme zählt nur, wenn sie lesbar und gültig ist (Optionen im Bereich, bei Einzelwahl genau eine) und rechtzeitig kam:
+/// Maßgeblich ist die Zeit des SERVERS (das spätere von [Stimme.createdAt] und [Stimme.geaendertAt]; der Server setzt sie bei jedem Anlegen, Wiederbeleben und Ändern).
+/// Liegt sie nach dem Ende, zählt die Stimme nur, wenn sie laut ihrem eigenen Abgabezeitpunkt (in der verschlüsselten Stimme) vor dem Ende abgegeben wurde UND der
+/// Server sie höchstens [kEndeToleranz] nach dem Ende gesehen hat (offline abgegeben); ein Abgabezeitpunkt in der Zukunft gegenüber dem Server gilt nicht. Grenze: Der
+/// Server kennt das Ende nicht, ein Client kann innerhalb der Toleranz einen früheren Zeitpunkt behaupten; eine Änderung nach dem Ende lässt die Stimme wegfallen
+/// (die ältere Fassung gibt es nicht mehr). [inhalt] liefert den Klartext oder null.
 UmfrageErgebnis umfrageAuswerten(Umfrage u, Iterable<Stimme> stimmen, String? Function(Stimme) inhalt, String? ich) {
   final waehler = [for (final _ in u.optionen) <String>[]];
   final meine = <int>{};
   var abstimmende = 0;
-  final sortiert = stimmen.toList()..sort((a, b) => (a.geaendertAt ?? a.createdAt).compareTo(b.geaendertAt ?? b.createdAt));
+  DateTime serverZeit(Stimme s) => s.geaendertAt != null && s.geaendertAt!.isAfter(s.createdAt) ? s.geaendertAt! : s.createdAt;
+  final sortiert = stimmen.toList()..sort((a, b) => serverZeit(a).compareTo(serverZeit(b)));
   for (final s in sortiert) {
-    final zeit = s.geaendertAt ?? s.createdAt;
-    if (u.ende != null && zeit.isAfter(u.ende!)) continue;
+    final zeit = serverZeit(s);
     final klar = inhalt(s);
-    final auswahl = klar == null ? null : stimmeLesen(klar, u.optionen.length, mehrfach: u.mehrfach);
-    if (auswahl == null) continue;
+    final gelesen = klar == null ? null : stimmeLesenMitZeit(klar, u.optionen.length, mehrfach: u.mehrfach);
+    if (gelesen == null) continue;
+    final auswahl = gelesen.auswahl;
+    final ende = u.ende;
+    if (ende != null && zeit.isAfter(ende)) {
+      final eigene = gelesen.zeit;
+      final rechtzeitig = eigene != null && !eigene.isAfter(ende) && !eigene.isAfter(zeit.add(const Duration(minutes: 1))) && !zeit.isAfter(ende.add(kEndeToleranz));
+      if (!rechtzeitig) continue;
+    }
     abstimmende++;
     for (final o in auswahl) {
       waehler[o].add(s.userId);

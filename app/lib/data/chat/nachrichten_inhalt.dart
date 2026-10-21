@@ -41,7 +41,10 @@ class ZusatzRef {
   final String userId;
   final String wire;
   final int rev;
-  const ZusatzRef({required this.id, required this.konversationId, required this.nachrichtId, required this.userId, required this.wire, required this.rev});
+
+  /// `r` Reaktion, `s` Stimme (Art im AAD der Hülle).
+  final String art;
+  const ZusatzRef({required this.id, required this.konversationId, required this.nachrichtId, required this.userId, required this.wire, required this.rev, required this.art});
 }
 
 /// Größte Nachricht in Zeichen (Klartext, vor dem Kodieren). Zusätzlich gilt eine Grenze in UTF-8-Bytes (`kMaxNachrichtBytes`), damit die verschlüsselte

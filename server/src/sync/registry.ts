@@ -54,7 +54,7 @@ export interface EntityDef {
   /** Fakten eines Datensatzes, der angelegt werden soll. */
   factsForCreate(actor: Actor, values: Row, parent: Facts | null): Facts;
   /** Vom Server gesetzte Werte beim Anlegen (z. B. Besitzer = anlegende Person). */
-  onCreate?(actor: Actor): Row;
+  onCreate?(actor: Actor, now: Date): Row;
   /** Vom Server abgeleitete Werte aus einer Änderung (beim Anlegen und Ändern), z. B. wer eine Aufgabe erledigt hat = Akteur. Kommt nur mit, was `changed` (bzw. die neue Zeile) enthält. */
   derive?(actor: Actor, changed: Row): Row;
   /** Prüft den Datensatz als Ganzes (Felder untereinander, z. B. Ende nach Beginn) beim Anlegen und nach dem Zusammenführen einer Änderung; false = `invalid`. */
@@ -93,7 +93,7 @@ export interface EntityDef {
   /** Die Änderung geht als WebSocket-Hinweis an alle, die den Datensatz lesen dürfen, weckt aber nie per Push (Lesestand). */
   noWake?: boolean;
   /** Mengenbegrenzung je Person und Minute: höchstens `perMinute` neue Datensätze, deren `field` (Spalte mit der Person) die Person ist; `createdAt` zählt. */
-  rate?: { field: string; perMinute: number; perHour?: number; bytes?: { field: string; perHour: number; perDay: number } };
+  rate?: { field: string; perMinute: number; perHour?: number; /** zählt Anlegen UND Wiederbeleben über das Änderungsprotokoll (created, Autor) statt über die Zeilen der Tabelle (eine wiederbelebte Zeile zählte sonst nur einmal) */ viaLog?: boolean; bytes?: { field: string; perHour: number; perDay: number } };
   /**
    * Spalte mit einer Liste von Mitglieds-IDs, die den Datensatz sichtbar machen (Teilnehmer). Verlässt eine Person die Familie, wird sie aus der Liste
    * entfernt; bleiben weniger als `keepMin(row)` übrig, wird der Datensatz gelöscht (Tombstone).

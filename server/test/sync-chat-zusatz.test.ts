@@ -243,7 +243,7 @@ describe.each(backends)('Reaktionen, Stimmen, Pins im Sync ($name)', (backend) =
       const nid = await nachricht(fam.parent, konv);
       const id = stimmeId(nid, fam.child.userId);
       expect((await fam.child.sync([stimme(fam.child, konv, nid)])).json.acked).toHaveLength(1);
-      expect((await rows(sql`select geaendert_at from stimmen where id = ${id}`))[0]?.geaendert_at).toBeNull();
+      expect((await rows(sql`select geaendert_at, created_at from stimmen where id = ${id}`))[0]?.geaendert_at).not.toBeNull(); // beim Anlegen gesetzt
       const rev = await revOf('stimmen', id);
       expect(codes(await fam.parent.sync([upsert('stimme', id, { inhalt: E1('fremd') }, rev)]))).toEqual(['forbidden']);
       expect((await fam.child.sync([upsert('stimme', id, { inhalt: E1('neu') }, rev)])).json.acked).toHaveLength(1);
@@ -261,6 +261,43 @@ describe.each(backends)('Reaktionen, Stimmen, Pins im Sync ($name)', (backend) =
       await fam.child.sync([stimme(fam.child, konv, nid)]);
       expect(ids(await fam.admin.pull(), 'stimme')).toEqual([]);
       expect(codes(await fam.child.sync([stimme(fam.child, konv, nid, 'e1:kurz')]))).toEqual(['invalid']);
+    });
+  });
+
+  describe('Stimme: Zeit und Mengenbegrenzung', () => {
+    it('der Server setzt die Zeit der Stimme bei jedem Anlegen UND Wiederbeleben neu (Ende einer Umfrage lässt sich nicht durch Löschen und neu Abstimmen umgehen)', async () => {
+      const konv = await gruppe(fam.parent, [fam.child]);
+      const nid = await nachricht(fam.parent, konv);
+      const id = stimmeId(nid, fam.child.userId);
+      const zeit = async () => (await rows(sql`select geaendert_at, created_at from stimmen where id = ${id}`))[0] as Json;
+      await fam.child.sync([stimme(fam.child, konv, nid)]);
+      const erste = await zeit();
+      expect(erste.geaendert_at).not.toBeNull();
+      world.advance(30_000);
+      expect((await fam.child.sync([upsert('stimme', id, { inhalt: E1('b') }, await revOf('stimmen', id))])).json.acked).toHaveLength(1);
+      const geaendert = await zeit();
+      expect(new Date(geaendert.geaendert_at).getTime()).toBeGreaterThan(new Date(erste.geaendert_at).getTime());
+      expect((await fam.child.sync([remove('stimme', id, await revOf('stimmen', id))])).json.acked).toHaveLength(1);
+      world.advance(30_000);
+      expect((await fam.child.sync([stimme(fam.child, konv, nid, E1('c'))])).json.rejected).toEqual([]);
+      const neu = await zeit();
+      expect(new Date(neu.geaendert_at).getTime()).toBeGreaterThan(new Date(geaendert.geaendert_at).getTime());
+      expect(new Date(neu.geaendert_at).getTime()).toBeGreaterThanOrEqual(new Date(neu.created_at).getTime());
+      // der Wert geht an die Teilnehmer
+      expect((await fam.parent.pull()).find((c) => c.entity === 'stimme')?.fields.geaendertAt).toEqual(expect.any(String));
+    });
+
+    it('Löschen und erneutes Anlegen derselben Zeile zählt für die Mengenbegrenzung jedes Mal (Protokoll statt Zeilen)', async () => {
+      const konv = await gruppe(fam.parent, [fam.child]);
+      const nid = await nachricht(fam.parent, konv);
+      const id = stimmeId(nid, fam.child.userId);
+      let abgelehnt = 0;
+      for (let i = 0; i < 31 && abgelehnt === 0; i++) {
+        const res = await fam.child.sync([stimme(fam.child, konv, nid, E1(`s${i}`))]);
+        if (codes(res).length > 0) abgelehnt++;
+        else await fam.child.sync([remove('stimme', id, await revOf('stimmen', id))]);
+      }
+      expect(abgelehnt).toBe(1);
     });
   });
 
@@ -294,6 +331,15 @@ describe.each(backends)('Reaktionen, Stimmen, Pins im Sync ($name)', (backend) =
       for (const m of mehr) antworten.push(codes(await fam.parent.sync([pin(konv, m)])));
       expect(antworten.filter((c) => c.length === 0)).toHaveLength(MAX_PINS - 1);
       expect(antworten.filter((c) => c[0] === 'invalid')).toHaveLength(1);
+    });
+
+    it('die Grenze von fünf Pins hält auch bei gleichzeitigem Anheften (Konversation wird gesperrt)', async () => {
+      const konv = await gruppe(fam.parent, [fam.child]);
+      const nids: string[] = [];
+      for (let i = 0; i < 8; i++) nids.push(await nachricht(fam.parent, konv));
+      const antworten = await Promise.all(nids.map((n, i) => (i % 2 === 0 ? fam.parent : fam.child).sync([pin(konv, n)])));
+      expect(antworten.filter((r) => (r.json.rejected as unknown[]).length === 0)).toHaveLength(MAX_PINS);
+      expect(await rows(sql`select count(*)::int as n from pins where deleted_at is null`)).toEqual([{ n: MAX_PINS }]);
     });
 
     it('im Familienchat heften nur Eltern und Admins an; alle sehen den Pin', async () => {

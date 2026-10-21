@@ -21,6 +21,14 @@ abstract class ChatZusatzEntitaet extends SyncEntity {
   /// Eine abgelehnte neue Zeile (Nachricht inzwischen gelöscht, Pin-Grenze, Rechte) verschwindet ohne Hinweis; der Stand des Servers wird neu geladen.
   @override
   bool get abgelehntStill => true;
+
+  /// Nachricht gelöscht oder schon vorhanden (anderes Gerät): ohne Hinweis; Grenzen und Rechte: ein kurzer Hinweis, nie ein Inhalt.
+  @override
+  String? stillHinweis(String code) => switch (code) {
+    'limit_reached' => 'Du bist zu schnell. Bitte versuche es gleich noch einmal.',
+    'forbidden' || 'invalid' => 'Das ging nicht: Die Grenze ist erreicht (höchstens 5 angeheftete Nachrichten) oder dir fehlt das Recht dazu.',
+    _ => null,
+  };
 }
 
 class ReaktionEntitaet extends ChatZusatzEntitaet {

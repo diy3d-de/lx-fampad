@@ -127,6 +127,47 @@ Future<void> main() async {
       }
     });
 
+    test('Abgabezeitpunkt in der Stimme: lesbar, ohne Angabe weiterhin gültig, kaputte Zeit ungültig', () {
+      final t = DateTime.fromMillisecondsSinceEpoch(1761000000000);
+      expect(stimmeKodieren([1, 0], zeit: t), 's1:0,1@1761000000000');
+      final g = stimmeLesenMitZeit('s1:0,1@1761000000000', 3, mehrfach: true)!;
+      expect(g.auswahl, {0, 1});
+      expect(g.zeit, t);
+      expect(stimmeLesenMitZeit('s1:2', 3, mehrfach: false)!.zeit, isNull);
+      for (final schlecht in ['s1:2@', 's1:2@abc', 's1:2@-5', 's1:@5', 's1:7@5']) {
+        expect(stimmeLesenMitZeit(schlecht, 3, mehrfach: false), isNull, reason: schlecht);
+      }
+    });
+
+    test('Ende: Löschen und erneutes Abstimmen nach dem Ende zählt nicht (Serverzeit ist das Spätere von Anlegen und Ändern), Behauptung einer früheren Zeit nur innerhalb der Toleranz', () {
+      final ende = DateTime.utc(2026, 10, 20, 18);
+      final u = Umfrage(frage: 'F', optionen: const ['A', 'B'], mehrfach: false, ende: ende);
+      String? klarText(Stimme s) => s.inhalt;
+      int zaehle(List<Stimme> l) => umfrageAuswerten(u, l, klarText, null).abstimmende;
+      // vor dem Ende angelegt, geändert (alte Zeit), nach dem Ende gelöscht und neu angelegt: createdAt und geaendertAt sind neu
+      expect(zaehle([_s('1', _anna, 's1:0', erstellt: DateTime.utc(2026, 10, 20, 18, 30), geaendert: DateTime.utc(2026, 10, 20, 17))]), 0);
+      expect(zaehle([_s('1', _anna, 's1:0', erstellt: DateTime.utc(2026, 10, 20, 17, 59))]), 1);
+      // offline vor dem Ende abgegeben, 5 Minuten nach dem Ende angekommen: zählt
+      final t = DateTime.utc(2026, 10, 20, 17, 50).millisecondsSinceEpoch;
+      expect(zaehle([_s('1', _anna, 's1:0@$t', erstellt: DateTime.utc(2026, 10, 20, 18, 5))]), 1);
+      // nach der Toleranz angekommen: zählt nicht
+      expect(zaehle([_s('1', _anna, 's1:0@$t', erstellt: DateTime.utc(2026, 10, 20, 18, 11))]), 0);
+      // behauptete Zeit nach dem Ende: zählt nicht
+      final spaet = DateTime.utc(2026, 10, 20, 18, 3).millisecondsSinceEpoch;
+      expect(zaehle([_s('1', _anna, 's1:0@$spaet', erstellt: DateTime.utc(2026, 10, 20, 18, 5))]), 0);
+      // behauptete Zeit in der Zukunft gegenüber dem Server: gilt nicht (hier nach dem Ende)
+      final zukunft = DateTime.utc(2026, 10, 20, 17, 59).millisecondsSinceEpoch;
+      expect(zaehle([_s('1', _anna, 's1:0@$zukunft', erstellt: DateTime.utc(2026, 10, 20, 17, 0))]), 1, reason: 'vor dem Ende angekommen: zählt ohnehin');
+    });
+
+    test('Chips: bei gleicher Anzahl bleibt die Reihenfolge der ersten Wahl', () {
+      final zeilen = [
+        for (var i = 0; i < 6; i++) _r('r$i', 'n', 'u$i', 'r1:${kReaktionEmojis[i]}', zeit: DateTime.utc(2026, 10, 20, 9, i)),
+      ];
+      final g = gruppiereReaktionen(zeilen, (r) => r.inhalt, null)['n']!;
+      expect([for (final x in g) x.emoji], kReaktionEmojis);
+    });
+
     test('Auswertung: gültige Stimmen je Antwort, eigene Auswahl, Ungültiges und Späteres zählen nicht', () {
       final ende = DateTime.utc(2026, 10, 20, 12);
       final u = Umfrage(frage: 'F', optionen: const ['A', 'B', 'C'], mehrfach: true, ende: ende);
@@ -232,20 +273,20 @@ Future<void> main() async {
       }
 
       /// Klartext einer Reaktion oder Stimme auf dem Gerät [g] (wie [NachrichtenInhalt.zusatz]: Hülle öffnen, gebunden an ID, Person und Nachricht).
-      Future<String> klar(Geraet g, {required String konv, required String id, required String nachricht, required String user, required String wire}) async {
+      Future<String> klar(Geraet g, {required String konv, required String id, required String nachricht, required String user, required String wire, String? art}) async {
         if (wire.startsWith(kPraefixLokal)) return wire.substring(kPraefixLokal.length);
-        final d = await g.krypto.nachrichtOeffnen(konversationId: konv, nachrichtId: id, autorId: user, wire: wire, antwortAuf: nachricht);
+        final d = await g.krypto.nachrichtOeffnen(konversationId: konv, nachrichtId: id, autorId: user, wire: wire, antwortAuf: nachricht, art: art);
         return d.lesbar ? d.text : '<${d.hinweis}>';
       }
 
       Future<List<String>> reaktionen(Geraet g, String nachricht) async => [
         for (final r in await (g.db.select(g.db.reaktionen)..where((t) => t.nachrichtId.equals(nachricht))).get())
-          '${r.userId}:${await klar(g, konv: r.konversationId, id: r.id, nachricht: r.nachrichtId, user: r.userId, wire: r.inhalt)}',
+          '${r.userId}:${await klar(g, konv: r.konversationId, id: r.id, nachricht: r.nachrichtId, user: r.userId, wire: r.inhalt, art: 'r')}',
       ]..sort();
 
       Future<Map<String, String>> stimmen(Geraet g, String nachricht) async => {
         for (final s in await (g.db.select(g.db.stimmen)..where((t) => t.nachrichtId.equals(nachricht))).get())
-          s.userId: await klar(g, konv: s.konversationId, id: s.id, nachricht: s.nachrichtId, user: s.userId, wire: s.inhalt),
+          s.userId: (await klar(g, konv: s.konversationId, id: s.id, nachricht: s.nachrichtId, user: s.userId, wire: s.inhalt, art: 's')).replaceFirst(RegExp(r'@\d+$'), ''),
       };
 
       test('Reaktion: Roundtrip, ersetzen, zurücknehmen; der Server sieht nie ein Emoji', () async {
@@ -309,13 +350,16 @@ Future<void> main() async {
         final z = welt.alle('reaktion').single;
         final wire = z.fields['inhalt'] as String;
         // richtig geöffnet
-        expect(await klar(a, konv: konv, id: z.id, nachricht: nid, user: ben.id, wire: wire), 'r1:👍');
+        expect(await klar(a, konv: konv, id: z.id, nachricht: nid, user: ben.id, wire: wire, art: 'r'), 'r1:👍');
+        // ohne Art oder mit der falschen Art (z. B. als Stimme gelesen) lässt sich die Hülle nicht öffnen
+        expect(await klar(a, konv: konv, id: z.id, nachricht: nid, user: ben.id, wire: wire), startsWith('<'));
+        expect(await klar(a, konv: konv, id: z.id, nachricht: nid, user: ben.id, wire: wire, art: 's'), startsWith('<'));
         // auf eine andere Nachricht umgehängt, als anderer Absender oder unter einer anderen ID: nicht lesbar
-        expect(await klar(a, konv: konv, id: z.id, nachricht: nid2, user: ben.id, wire: wire), startsWith('<'));
-        expect(await klar(a, konv: konv, id: z.id, nachricht: nid, user: cora.id, wire: wire), startsWith('<'));
-        expect(await klar(a, konv: konv, id: reaktionId(nid, cora.id), nachricht: nid, user: ben.id, wire: wire), startsWith('<'));
+        expect(await klar(a, konv: konv, id: z.id, nachricht: nid2, user: ben.id, wire: wire, art: 'r'), startsWith('<'));
+        expect(await klar(a, konv: konv, id: z.id, nachricht: nid, user: cora.id, wire: wire, art: 'r'), startsWith('<'));
+        expect(await klar(a, konv: konv, id: reaktionId(nid, cora.id), nachricht: nid, user: ben.id, wire: wire, art: 'r'), startsWith('<'));
         // als Stimme gelesen (andere ID): ebenfalls nicht
-        expect(await klar(a, konv: konv, id: stimmeId(nid, ben.id), nachricht: nid, user: ben.id, wire: wire), startsWith('<'));
+        expect(await klar(a, konv: konv, id: stimmeId(nid, ben.id), nachricht: nid, user: ben.id, wire: wire, art: 's'), startsWith('<'));
       });
 
       test('Umfrage: senden, abstimmen (Einzel- und Mehrfachwahl), ändern, zurücknehmen; der Server sieht keine Umfrage und keine Stimme', () async {
@@ -352,6 +396,26 @@ Future<void> main() async {
         await abgleich([b, c, a]);
         expect(await stimmen(a, nid), {ben.id: 's1:1', anna.id: 's1:1'});
         expect(welt.alle('stimme'), hasLength(2));
+      });
+
+      test('Schnelles Tippen: Reaktionen und Stimmen schalten nach dem Stand der Datenbank um, nicht nach dem Stand der Oberfläche', () async {
+        final (konv, nid) = await gruppeMitNachricht('Schnell');
+        // zwei Tipps auf dasselbe Emoji, ohne dass sich die Oberfläche dazwischen aktualisiert (aktuell: null): erst setzen, dann zurücknehmen
+        await Future.wait([zb.reaktionUmschalten(konv, nid, '👍'), zb.reaktionUmschalten(konv, nid, '👍')]);
+        expect(await (b.db.select(b.db.reaktionen)).get(), isEmpty);
+        await zb.reaktionUmschalten(konv, nid, '👍');
+        await Future.wait([zb.reaktionUmschalten(konv, nid, '❤️'), zb.reaktionUmschalten(konv, nid, '❤️')]);
+        expect(await (b.db.select(b.db.reaktionen)).get(), isEmpty);
+        // Mehrfachumfrage: zwei verschiedene Antworten schnell nacheinander: beide bleiben gewählt
+        await Future.wait([
+          zb.stimmeUmschalten(konv, nid, 0, mehrfach: true, anzahl: 3),
+          zb.stimmeUmschalten(konv, nid, 2, mehrfach: true, anzahl: 3),
+        ]);
+        final s = (await (b.db.select(b.db.stimmen)).get()).single;
+        expect(stimmeLesenMitZeit(s.inhalt.substring(3), 3, mehrfach: true)!.auswahl, {0, 2});
+        // dieselbe Antwort zweimal schnell: an und wieder ab
+        await Future.wait([zb.stimmeUmschalten(konv, nid, 1, mehrfach: true, anzahl: 3), zb.stimmeUmschalten(konv, nid, 1, mehrfach: true, anzahl: 3)]);
+        expect(stimmeLesenMitZeit((await (b.db.select(b.db.stimmen)).get()).single.inhalt.substring(3), 3, mehrfach: true)!.auswahl, {0, 2});
       });
 
       test('Pin: anheften, nur einmal, höchstens fünf, lösen', () async {

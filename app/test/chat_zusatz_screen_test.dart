@@ -59,7 +59,7 @@ void main() {
       'konversationId': _famChat,
       'nachrichtId': nachricht,
       'userId': wer.id,
-      'inhalt': await a.verschluesselt(_famChat, id, wer, reaktionKodieren(emoji), antwortAuf: nachricht),
+      'inhalt': await a.verschluesselt(_famChat, id, wer, reaktionKodieren(emoji), antwortAuf: nachricht, art: 'r'),
       'createdAt': vor(5),
     });
   }
@@ -70,7 +70,7 @@ void main() {
       'konversationId': _famChat,
       'nachrichtId': nachricht,
       'userId': wer.id,
-      'inhalt': await a.verschluesselt(_famChat, id, wer, stimmeKodieren(optionen), antwortAuf: nachricht),
+      'inhalt': await a.verschluesselt(_famChat, id, wer, stimmeKodieren(optionen), antwortAuf: nachricht, art: 's'),
       'createdAt': vor(5),
       'geaendertAt': null,
     });

@@ -1,6 +1,8 @@
 // Reaktionen, Stimmen (Umfragen) und Pins für die Oberfläche: liest aus der lokalen Datenbank (Streams) und schreibt sofort lokal (Tabelle und Ausgang, über SyncStore).
 // Reaktion und Stimme liegen im Ausgang als lokaler Klartext (`l1:` + `r1:`/`s1:`); der Abgleich verschlüsselt sie erst beim Senden (ChatOpVorbereiter) in die Hülle `e1:`.
 // Der Server weiß nur, DASS eine Person auf eine Nachricht reagiert oder abgestimmt hat, nie womit. Rechte: siehe docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6c.
+import 'dart:async';
+
 import 'package:drift/drift.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -34,6 +36,14 @@ class ChatZusatzRepository {
 
   ChatZusatzRepository({required this.db, required this.store, required this.ich, required this.beiAenderung, DateTime Function()? jetzt}) : _jetzt = jetzt ?? DateTime.now;
 
+  // Schnelles Tippen: Änderungen laufen nacheinander, und der aktuelle Stand wird aus der Datenbank gelesen (nicht aus dem Stand der Oberfläche beim Aufbau).
+  Future<void> _kette = Future.value();
+  Future<void> _seriell(Future<void> Function() f) {
+    final r = _kette.then((_) => f());
+    _kette = r.catchError((Object _) {});
+    return r;
+  }
+
   // ------------------------------------------------------------------ Lesen
 
   Stream<List<Reaktion>> reaktionen(String konversationId) => (db.select(db.reaktionen)..where((r) => r.konversationId.equals(konversationId))).watch();
@@ -54,6 +64,43 @@ class ChatZusatzRepository {
     final k = await (db.select(db.konversationen)..where((t) => t.id.equals(konversationId))).getSingleOrNull();
     if (k == null || k.encVersion != 'e1') throw const ChatNichtVerschluesselt();
   }
+
+  /// Schaltet die Reaktion um: dasselbe Emoji noch einmal nimmt sie zurück, ein anderes ersetzt sie. [aktuell] ist der Stand der Oberfläche; liegt die eigene Reaktion
+  /// noch unbestätigt vor (lokaler Klartext), gilt stattdessen der Stand der Datenbank (zwei schnelle Tipps nacheinander).
+  Future<void> reaktionUmschalten(String konversationId, String nachrichtId, String emoji, {String? aktuell}) => _seriell(() async {
+    final me = ich();
+    if (me == null) return;
+    final da = await (db.select(db.reaktionen)..where((r) => r.id.equals(reaktionId(nachrichtId, me)))).getSingleOrNull();
+    final jetzt = da == null ? null : (da.inhalt.startsWith(kPraefixLokal) ? reaktionLesen(da.inhalt.substring(kPraefixLokal.length)) : aktuell);
+    if (jetzt == emoji) {
+      await reaktionEntfernen(nachrichtId);
+    } else {
+      await reagieren(konversationId, nachrichtId, emoji);
+    }
+  });
+
+  /// Schaltet eine Antwort der Umfrage um (Einzelwahl: ersetzt oder nimmt zurück, Mehrfachwahl: Antwort an- oder abwählen). [aktuell] wie bei [reaktionUmschalten].
+  Future<void> stimmeUmschalten(String konversationId, String nachrichtId, int option, {required bool mehrfach, required int anzahl, Set<int> aktuell = const {}}) => _seriell(() async {
+    final me = ich();
+    if (me == null) return;
+    final da = await (db.select(db.stimmen)..where((r) => r.id.equals(stimmeId(nachrichtId, me)))).getSingleOrNull();
+    Set<int> jetzt;
+    if (da == null) {
+      jetzt = const {};
+    } else if (da.inhalt.startsWith(kPraefixLokal)) {
+      jetzt = stimmeLesenMitZeit(da.inhalt.substring(kPraefixLokal.length), anzahl, mehrfach: mehrfach)?.auswahl ?? const {};
+    } else {
+      jetzt = aktuell;
+    }
+    final Set<int> neu;
+    if (mehrfach) {
+      neu = {...jetzt};
+      if (!neu.add(option)) neu.remove(option);
+    } else {
+      neu = jetzt.contains(option) ? <int>{} : {option};
+    }
+    await abstimmen(konversationId, nachrichtId, neu);
+  });
 
   /// Setzt die eigene Reaktion auf die Nachricht (ersetzt eine frühere: je Person eine). Nur auf gesendete Nachrichten (der Server kennt die Nachricht sonst nicht).
   Future<void> reagieren(String konversationId, String nachrichtId, String emoji) async {
@@ -92,7 +139,8 @@ class ChatZusatzRepository {
       return;
     }
     await _verschluesselterChat(konversationId);
-    final inhalt = '$kPraefixLokal${stimmeKodieren(auswahl)}';
+    // mit dem Abgabezeitpunkt dieses Geräts (zählt, wenn die Stimme offline vor dem Ende der Umfrage abgegeben und erst danach synchronisiert wird)
+    final inhalt = '$kPraefixLokal${stimmeKodieren(auswahl, zeit: _jetzt())}';
     final da = await (db.select(db.stimmen)..where((r) => r.id.equals(id))).getSingleOrNull();
     final jetzt = zeitFuerServer(_jetzt());
     await store.aendern(
