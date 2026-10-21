@@ -3,6 +3,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/crypto/e2ee_state.dart' show schluesselSpeicherProvider;
+import 'package:lx_fampad/data/crypto/schluessel_speicher.dart' show MemorySchluesselSpeicher;
 import 'package:passkeys/exceptions.dart' as pk;
 import 'package:lx_fampad/constants.dart' show kApkDownloadUrl;
 import 'package:lx_fampad/data/passkey_service.dart';
@@ -433,6 +435,8 @@ void main() {
   group('Profil, Geräte, Passkeys', () {
     Future<TestUmgebung> zumProfil(WidgetTester tester, {String role = 'admin', FakeServer? server}) async {
       final env = await angemeldeteUmgebung(role: role, server: server);
+      // Schlüsselspeicher im Arbeitsspeicher und leer: kein Personenschlüssel, also die einfache Rückfrage beim Abmelden
+      env.extraOverrides.add(schluesselSpeicherProvider.overrideWithValue(MemorySchluesselSpeicher()));
       await starteApp(tester, env);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
       return env;

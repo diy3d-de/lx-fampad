@@ -2,6 +2,8 @@
 // Codes, Warten, Profil, Passkeys, Geräte, Admin, Dialoge, Sheets) ohne Layoutfehler und mit Touch-Zielen >= 44 px.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/crypto/e2ee_state.dart' show schluesselSpeicherProvider;
+import 'package:lx_fampad/data/crypto/schluessel_speicher.dart' show MemorySchluesselSpeicher;
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -104,6 +106,7 @@ void main() {
     testWidgets('360 px, $s: Profil, Passkeys, Geräte, Step-up, Abmelden-Dialog', (tester) async {
       final env = await angemeldeteUmgebung();
       env.server.on('POST /me/recovery-codes', (_) => fehler(403, 'step_up_required'));
+      env.extraOverrides.add(schluesselSpeicherProvider.overrideWithValue(MemorySchluesselSpeicher())); // kein Personenschlüssel: einfache Abmelde-Rückfrage
       await starteApp(tester, env, skala: skala);
 
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
