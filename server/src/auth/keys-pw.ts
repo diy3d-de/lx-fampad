@@ -176,11 +176,13 @@ export async function promotePwBackup(ctx: AuthContext, tx: Tx, p: SessionPrinci
   // gleiche Sperre wie Schlüsselwechsel und Ablegen: kein Bestätigen gegen einen gerade wechselnden Schlüssel
   const [k] = await tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, p.userId)).for('update');
   const [row] = await tx
-    .select({ state: keyBackupsPw.state, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
+    .select({ state: keyBackupsPw.state, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt, createdAt: keyBackupsPw.createdAt })
     .from(keyBackupsPw)
     .where(and(eq(keyBackupsPw.id, id), eq(keyBackupsPw.userId, p.userId)))
     .for('update');
   if (!row) throw notFound();
+  // eine unbestätigte Sicherung verfällt nach PW_PENDING_TTL_MS auch dann, wenn der Aufräumjob sie noch nicht erfasst hat
+  if (nurPending && row.state === 'pending' && ctx.now().getTime() - row.createdAt.getTime() > PW_PENDING_TTL_MS) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');
   // schon bestätigt: für die einzelne Bestätigung folgenlos (verlorene Antwort); beim Passwortwechsel (nurPending) nie, dort muss es die frisch geprüfte sein
   if (!nurPending && row.state === 'active' && row.verifiedAt) return;
   if (row.state !== 'pending' || !k || k.v !== row.keyVersion) throw new AppError(409, 'backup_not_current', 'Diese Sicherung ist nicht mehr aktuell.');

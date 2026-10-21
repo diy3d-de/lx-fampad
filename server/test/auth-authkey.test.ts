@@ -246,20 +246,23 @@ describe.each(backends)('Anmeldung mit authKey ($name)', (backend) => {
   });
 
   describe('Zweiter Faktor, Rennen, Sicherung', () => {
-    it('korrekter authKey, falscher Code: eigener Fehlercode (kein Klartext-Wiederholen nötig), zählt einmal; falscher authKey und Klartext-Fehler bleiben invalid_credentials', async () => {
+    it('richtiger authKey + falscher zweiter Faktor ist von falschem authKey und falschem Passwort nicht zu unterscheiden (kein Orakel am zweiten Faktor vorbei), gleiche Zähler', async () => {
       const a = await start();
       const ak = key();
       await login(a, { password: PW, upgradeAuthKey: ak });
       const ip = '203.0.113.150';
-      const c = world.client(ip);
-      const body = (extra: Record<string, unknown>) => c.post('/api/v1/auth/login/password', { email: a.email, totp: '000000', ...extra });
-      const falscherCode = await body({ authKey: ak });
-      expect(falscherCode.status).toBe(401);
-      expect(falscherCode.json.error).toBe('invalid_second_factor');
-      expect((await body({ authKey: key() })).json.error).toBe('invalid_credentials');
-      expect((await body({ password: PW })).json.error).toBe('invalid_credentials'); // Klartext verrät nie, ob das Passwort stimmt
+      const post = (extra: Record<string, unknown>) => world.client(ip).post('/api/v1/auth/login/password', { email: a.email, ...extra });
+      const falschCode = await post({ authKey: ak, totp: '000000' });
+      const ohneFaktor = await post({ authKey: ak, recoveryCode: 'AAAA-AAAA-AAAA-AAAA' });
+      const falschKey = await post({ authKey: key(), totp: '000000' });
+      const falschPw = await post({ password: 'falsch-falsch-falsch', totp: '000000' });
+      for (const r of [falschCode, ohneFaktor, falschKey, falschPw]) {
+        expect(r.status).toBe(401);
+        expect(r.json).toEqual(falschKey.json);
+      }
+      expect(falschCode.json.error).toBe('invalid_credentials');
       const n = (await harness.db.execute<{ n: number }>(sql`select count(*)::int as n from audit_log where event = 'login_failed'`)).rows[0]?.n;
-      expect(n).toBe(3);
+      expect(n).toBe(4); // jeder Fehlversuch zählt genau einmal
     });
 
     it('Upgrade gegen gleichzeitigen Passwortwechsel: nie bleibt ein Prüfwert des alten Passworts am neuen Eintrag', async () => {
@@ -297,6 +300,23 @@ describe.each(backends)('Anmeldung mit authKey ($name)', (backend) => {
       expect(res.status).toBe(409);
       expect(res.json.error).toBe('backup_not_current');
       expect((await login(a, { authKey: ak }, '203.0.113.156')).res.status).toBe(200);
+    });
+
+    it('pwBackupId einer abgelaufenen pending-Sicherung (über 1 h): 409, Passwort unverändert', async () => {
+      const a = await start();
+      const ak = key();
+      await login(a, { password: PW, upgradeAuthKey: ak });
+      const c = world.client('203.0.113.157');
+      const r = await c.post('/api/v1/auth/login/password', { email: a.email, authKey: ak, totp: await code(a) });
+      c.adopt(r.json.session);
+      await c.post('/api/v1/me/keys', keys());
+      const b1 = await c.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      world.advance(61 * 60_000);
+      const s = await c.post('/api/v1/auth/step-up/code', { totp: await world.totp(a.totpSecret) });
+      expect(s.status).toBe(200);
+      const res = await c.post('/api/v1/me/password/change', { authKey: key(), pwBackupId: b1.json.id });
+      expect(res.status).toBe(409);
+      expect((await login(a, { authKey: ak }, '203.0.113.158')).res.status).toBe(200);
     });
 
     it('Passwort nach "entfernen" per Klartext neu einrichten, solange eine Passwort-Sicherung besteht: 409', async () => {

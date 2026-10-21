@@ -228,15 +228,33 @@ void main() {
       expect(a.logins, isEmpty);
     });
 
-    test('Fehler des zweiten Faktors (invalid_second_factor): keine Wiederholung mit Klartext', () async {
-      final a = _aufbau(konto: 'authkey');
-      a.server.on('POST /auth/login/password', (_) => fehler(401, 'invalid_second_factor'));
-      await expectLater(
-        a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)),
-        throwsA(isA<ApiException>().having((e) => e.message, 'message', contains('Prüfe E-Mail, Passwort und Code'))),
-      );
-      expect(a.logins, hasLength(1));
-      expect(a.logins.single.containsKey('password'), isFalse);
+    test('404-Seite eines Proxys (HTML, kein JSON) ist wie ein Ausfall: kein Klartext', () async {
+      final a = _aufbau(konto: 'legacy');
+      a.server.on('GET /version', (_) => http.Response('<html>404</html>', 404, headers: {'content-type': 'text/html'}));
+      await expectLater(a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)), throwsA(isA<ApiException>()));
+      expect(a.logins, isEmpty);
+    });
+
+    test('bekannt: Server ohne authKey; später fällt /version aus: Fehler, nie Klartext', () async {
+      final a = _aufbau(authKey: false);
+      await a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a));
+      a.server.log.clear();
+      a.server.on('GET /version', (_) => fehler(503, 'server_busy'));
+      await expectLater(a.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(a)), throwsA(isA<ApiException>()));
+      expect(a.logins, isEmpty);
+    });
+
+    test('richtiger authKey, falscher Code (invalid_credentials): auf bekanntem Gerät keine Wiederholung, auf neuem eine mit Klartext bis zum Stichtag', () async {
+      final bekannt = _aufbau(konto: 'authkey');
+      await bekannt.store.merkeAuthKeyKonto(_email);
+      bekannt.server.on('POST /auth/login/password', (_) => fehler(401, 'invalid_credentials'));
+      await expectLater(bekannt.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(bekannt)), throwsA(isA<ApiException>()));
+      expect(bekannt.logins, hasLength(1));
+      expect(bekannt.logins.single.containsKey('password'), isFalse);
+      final neu = _aufbau(konto: 'authkey');
+      neu.server.on('POST /auth/login/password', (_) => fehler(401, 'invalid_credentials'));
+      await expectLater(neu.anmeldung.anmelden(email: _email, passwort: _pw, senden: _sender(neu)), throwsA(isA<ApiException>()));
+      expect(neu.logins, hasLength(2), reason: 'bis zum Stichtag bleibt die Klartext-Wiederholung auf einem neuen Gerät möglich');
     });
   });
 

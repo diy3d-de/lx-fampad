@@ -253,14 +253,15 @@ class FampadApi {
     }
   }
 
-  /// Fähigkeiten des Servers aus GET /version (`features`). Nur eine ERFOLGREICHE Antwort ohne `features` (älterer Server) oder 404 ergibt "nichts davon".
+  /// Fähigkeiten des Servers aus GET /version (`features`). Nur eine ERFOLGREICHE Antwort ohne `features` (älterer Server) oder ein JSON-404 ergibt "nichts davon".
   /// Netzfehler, Zeitüberschreitung, 429 und 5xx werden weitergeworfen: Wer Passwörter sendet, darf aus einem Ausfall nie schließen, der Server könne kein authKey.
   Future<ServerFaehigkeiten> serverFaehigkeiten() async {
     try {
       final f = (await client.get('/version', auth: false))['features'];
       return f is Map<String, dynamic> ? ServerFaehigkeiten.fromJson(f) : ServerFaehigkeiten.keine;
     } on ApiException catch (e) {
-      if (e.status == 404) return ServerFaehigkeiten.keine;
+      // nur eine JSON-Antwort unseres Servers (Fehlercode not_found) heißt "älterer Server"; eine 404-Seite eines Proxys (HTML) ist wie ein Ausfall
+      if (e.status == 404 && e.code == 'not_found') return ServerFaehigkeiten.keine;
       rethrow;
     }
   }

@@ -64,7 +64,7 @@ export async function findAccountById(ctx: AuthContext, userId: string, familyId
 const invalidCredentials = () => new AppError(401, 'invalid_credentials', 'Die Anmeldedaten sind nicht korrekt.');
 const pending = () => new AppError(403, 'account_pending', 'Dein Konto wartet noch auf die Freigabe durch einen Admin.');
 
-async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, email: string | undefined, account: Account | null, via?: string, code = 'invalid_credentials'): Promise<never> {
+async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, email: string | undefined, account: Account | null, via?: string): Promise<never> {
   await recordLoginFailure(ctx, meta.ip, email);
   await writeAudit(ctx, ctx.db, {
     event: 'login_failed',
@@ -73,7 +73,7 @@ async function failLogin(ctx: AuthContext, meta: RequestMeta, method: string, em
     ip: meta.ip,
     detail: via ? { method, via } : { method },
   });
-  throw code === 'invalid_credentials' ? invalidCredentials() : new AppError(401, code, 'Die Anmeldedaten sind nicht korrekt.');
+  throw invalidCredentials();
 }
 
 /**
@@ -199,10 +199,8 @@ export async function loginWithPassword(
       };
     }
   }
-  // Nur auf dem authKey-Weg, und nur mit KORREKTEM authKey (den kennt niemand ohne das Passwort): der Fehler liegt am zweiten Faktor. Die App wiederholt dann nicht
-  // mit Klartext (kein doppelter Fehlversuch, kein Passwort im Netz bei einem Tippfehler im Code). Zählt wie jeder Fehlversuch genau einmal.
-  const zweiterFaktor = via === 'authkey' ? 'invalid_second_factor' : 'invalid_credentials';
-  if (!verbrauchen) return failLogin(ctx, meta, 'password', input.email, account, via, zweiterFaktor);
+  // Bewusst dieselbe Antwort wie bei falschem Passwort: ein eigener Fehler für "richtiger authKey, falscher zweiter Faktor" wäre ein Passwort-Orakel am zweiten Faktor vorbei
+  if (!verbrauchen) return failLogin(ctx, meta, 'password', input.email, account, via);
   const faktor = verbrauchen;
   const upgrade = input.upgradeAuthKey;
   if (upgrade !== undefined && credentialId !== null) {
@@ -224,7 +222,7 @@ export async function loginWithPassword(
   }
   // Erst nach erfolgreicher Prüfung von Passwort UND zweitem Faktor darf die Antwort den Status verraten (403 account_pending)
   const est = await finishLogin(ctx, account, { client: input.client, device: input.device, method: 'password', meta, verbrauchen });
-  return est ?? failLogin(ctx, meta, 'password', input.email, account, via, zweiterFaktor);
+  return est ?? failLogin(ctx, meta, 'password', input.email, account, via);
 }
 
 // ---------- Wiederherstellungs-Code (verlorener Passkey/TOTP) ----------
