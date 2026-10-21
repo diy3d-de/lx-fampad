@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { Writable } from 'node:stream';
 import { sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { runMaintenance } from '../src/auth/maintenance.js';
 import { loadConfig } from '../src/config.js';
 import { addMember, adminPassword, auditEvents, backends, TEST_KEY, World, type Harness } from './helpers.js';
 
@@ -78,6 +79,9 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       const { a } = await start();
       await a.post('/api/v1/me/keys', keys());
       expect((await a.get('/api/v1/me/key-backup-pw')).status).toBe(404);
+      expect((await a.get('/api/v1/me/key-backup-pw?pending=1')).status).toBe(404);
+      expect((await a.get('/api/v1/me/key-backup-pw?pending=2')).status).toBe(400);
+      expect((await a.get('/api/v1/me/key-backup-pw?x=1')).status).toBe(400);
       const bl = blob();
       const k = kdf();
       const put = await a.put('/api/v1/me/key-backup-pw', { blob: bl, keyVersion: 1, kdf: k });
@@ -85,12 +89,16 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       const vorAnmeldung = (await world.client('198.51.100.20').post('/api/v1/auth/kdf-params', { email: 'admin@example.org' })).json.kdf;
       expect(put.status).toBe(200);
       expect(put.json.ok).toBe(true);
-      const got = await a.get('/api/v1/me/key-backup-pw');
+      expect((await a.get('/api/v1/me/key-backup-pw')).status).toBe(404); // unbestätigt ist noch nichts aktuell
+      const got = await a.get('/api/v1/me/key-backup-pw?pending=1');
       expect(got.status).toBe(200);
-      expect(got.json).toEqual({ id: put.json.id, blob: bl, keyVersion: 1, state: 'active', kdf: vorAnmeldung });
+      expect(got.json).toEqual({ id: put.json.id, blob: bl, keyVersion: 1, state: 'pending', kdf: vorAnmeldung });
       expect(vorAnmeldung).toMatchObject(k);
       expect((await harness.db.execute(sql`select verified_at from key_backups_pw`)).rows[0]).toEqual({ verified_at: null });
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: put.json.id })).status).toBe(200);
+      expect((await a.get('/api/v1/me/key-backup-pw')).json).toEqual({ id: put.json.id, blob: bl, keyVersion: 1, state: 'active', kdf: vorAnmeldung });
+      expect((await a.get('/api/v1/me/key-backup-pw?pending=1')).status).toBe(404);
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: put.json.id })).status).toBe(200); // wiederholt: folgenlos
       expect(((await harness.db.execute(sql`select verified_at from key_backups_pw`)).rows[0] as { verified_at: unknown }).verified_at).not.toBeNull();
       expect(await auditEvents(world)).toEqual(expect.arrayContaining(['key_backup_pw_set', 'key_backup_pw_read', 'key_backup_pw_verified']));
     });
@@ -140,28 +148,57 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
         expect(r.status).toBe(403);
         expect(r.json.error).toBe('step_up_required');
       }
-      expect(await states()).toEqual(['active']);
+      expect(await states()).toEqual(['pending']);
     });
 
-    it('eine neue Sicherung ersetzt die aktuelle: alte Zeilen bleiben als superseded erhalten (nie löschen)', async () => {
+    it('neue Sicherung ist pending, die alte bleibt gültig bis zur Bestätigung; danach ersetzt sie die alte (nie löschen)', async () => {
       const { a } = await start();
       await a.post('/api/v1/me/keys', keys());
       const b1 = blob();
       const p1 = await a.put('/api/v1/me/key-backup-pw', { blob: b1, keyVersion: 1, kdf: kdf() });
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: p1.json.id })).status).toBe(200);
+      // zweite Ablage: die erste bleibt die aktuelle, verifizierte
       const b2 = blob();
       const p2 = await a.put('/api/v1/me/key-backup-pw', { blob: b2, keyVersion: 1, kdf: kdf() });
       expect(p1.json.id).not.toBe(p2.json.id);
-      expect(await states()).toEqual(['active', 'superseded']);
-      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: p2.json.id, blob: b2, kdf: kdf() });
-      // jede Zeile trägt ihren eigenen Ableitungssatz
-      expect((await harness.db.execute(sql`select kdf_id, mem_kib, ops, salt_generation from key_backups_pw`)).rows).toEqual([
-        { kdf_id: 'argon2id-v1', mem_kib: 65536, ops: 3, salt_generation: 1 },
-        { kdf_id: 'argon2id-v1', mem_kib: 65536, ops: 3, salt_generation: 1 },
-      ]);
-      // die ersetzte lässt sich nicht mehr verifizieren (409), die Zeile bleibt
-      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: p1.json.id })).json.error).toBe('backup_not_current');
+      expect(await states()).toEqual(['active', 'pending']);
+      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: p1.json.id, blob: b1, state: 'active' });
+      expect((await a.get('/api/v1/me/key-backup-pw?pending=1')).json).toMatchObject({ id: p2.json.id, blob: b2, state: 'pending', kdf: kdf() });
+      expect(((await harness.db.execute(sql`select verified_at from key_backups_pw where id = ${p1.json.id}`)).rows[0] as { verified_at: unknown }).verified_at).not.toBeNull();
+      // eine dritte Ablage (Abbruch und neuer Versuch) ersetzt nur die pending-Zeile; die erste bleibt
+      const b3 = blob();
+      const p3 = await a.put('/api/v1/me/key-backup-pw', { blob: b3, keyVersion: 1, kdf: kdf() });
+      expect(await states()).toEqual(['active', 'pending', 'superseded']);
+      expect((await a.get('/api/v1/me/key-backup-pw')).json.id).toBe(p1.json.id);
+      // die ersetzte pending-Zeile lässt sich nicht bestätigen, die Zeile bleibt
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: p2.json.id })).json.error).toBe('backup_not_current');
+      expect(await states()).toEqual(['active', 'pending', 'superseded']);
+      // Bestätigen: atomar pending -> active, alte active -> superseded
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: p3.json.id })).status).toBe(200);
+      expect(await states()).toEqual(['active', 'superseded', 'superseded']);
+      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: p3.json.id, blob: b3, state: 'active' });
       expect((await harness.db.execute<{ blob: string }>(sql`select blob from key_backups_pw where id = ${p1.json.id}`)).rows[0]?.blob).toBe(b1);
       expect(await world.count('account_kdf')).toBe(1);
+      expect((await harness.db.execute(sql`select kdf_id, mem_kib, ops, salt_generation from key_backups_pw limit 1`)).rows[0]).toEqual({ kdf_id: 'argon2id-v1', mem_kib: 65536, ops: 3, salt_generation: 1 });
+    });
+
+    it('Abbruch nach dem Ablegen: die zuletzt verifizierte Sicherung bleibt aktuell; nach einer Stunde verfällt die unbestätigte (nie gelöscht)', async () => {
+      const { a } = await start();
+      await a.post('/api/v1/me/keys', keys());
+      const alt = blob();
+      const p1 = await a.put('/api/v1/me/key-backup-pw', { blob: alt, keyVersion: 1, kdf: kdf() });
+      await a.post('/api/v1/me/key-backup-pw/verified', { id: p1.json.id });
+      const p2 = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      expect(p2.status).toBe(200); // ... und die App bricht hier ab (kein verified)
+      expect((await a.get('/api/v1/me/key-backup-pw')).json).toMatchObject({ id: p1.json.id, blob: alt, state: 'active' });
+      world.advance(4 * MIN); // innerhalb des Step-up-Fensters
+      await runMaintenance(world.auth.ctx);
+      expect(await states()).toEqual(['active', 'pending']);
+      world.advance(60 * MIN);
+      await runMaintenance(world.auth.ctx);
+      expect(await states()).toEqual(['active', 'superseded']);
+      expect(await world.count('key_backups_pw')).toBe(2);
+      expect((await harness.db.execute<{ id: string }>(sql`select id from key_backups_pw where state = 'active'`)).rows[0]?.id).toBe(p1.json.id);
     });
 
     it('Rechte: nur die eigene Zeile (IDOR); fremde ID beim Verifizieren 404, fremder Abruf liefert nichts', async () => {
@@ -170,15 +207,18 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       await b.post('/api/v1/me/keys', keys());
       const pa = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
       expect((await b.get('/api/v1/me/key-backup-pw')).status).toBe(404);
+      expect((await b.get('/api/v1/me/key-backup-pw?pending=1')).status).toBe(404); // fremde pending-Zeile nie abrufbar
       expect((await b.post('/api/v1/me/key-backup-pw/verified', { id: pa.json.id })).status).toBe(404);
       expect((await b.post('/api/v1/me/key-backup-pw/verified', { id: '00000000-0000-4000-8000-000000000000' })).status).toBe(404);
       expect((await b.post('/api/v1/me/key-backup-pw/verified', { id: 'nichtuuid' })).status).toBe(400);
       // b legt eigene ab: a's Zeile bleibt unberührt
       const pb = await b.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
-      expect(await states()).toEqual(['active', 'active']);
-      expect((await a.get('/api/v1/me/key-backup-pw')).json.id).toBe(pa.json.id);
-      expect((await b.get('/api/v1/me/key-backup-pw')).json.id).toBe(pb.json.id);
+      expect(await states()).toEqual(['pending', 'pending']);
+      expect((await a.get('/api/v1/me/key-backup-pw?pending=1')).json.id).toBe(pa.json.id);
+      expect((await b.get('/api/v1/me/key-backup-pw?pending=1')).json.id).toBe(pb.json.id);
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: pb.json.id })).status).toBe(404);
+      expect((await b.post('/api/v1/me/key-backup-pw/verified', { id: pb.json.id })).status).toBe(200);
+      expect((await a.get('/api/v1/me/key-backup-pw?pending=1')).json.id).toBe(pa.json.id);
     });
 
     it('Schlüsselwechsel setzt die Sicherung auf stale statt zu löschen; neue Sicherung der neuen Version ersetzt sie', async () => {
@@ -186,16 +226,22 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       await a.post('/api/v1/me/keys', keys());
       await a.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 });
       const pw = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: pw.json.id })).status).toBe(200);
+      const offen = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() }); // unbestätigt
       const r = await a.put('/api/v1/me/keys', { ...keys(), expectedKeyVersion: 1 });
       expect(r.status).toBe(200);
       expect(await world.count('key_backups')).toBe(0); // alter Weg: wie bisher gelöscht
-      expect(await states()).toEqual(['stale']);
+      expect(await states()).toEqual(['stale', 'superseded']); // die unbestätigte gehört zum alten Schlüssel und verfällt
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: offen.json.id })).json.error).toBe('backup_not_current');
       const got = await a.get('/api/v1/me/key-backup-pw');
       expect(got.json).toMatchObject({ id: pw.json.id, state: 'stale', keyVersion: 1 });
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: pw.json.id })).json.error).toBe('backup_not_current');
       expect((await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() })).json.error).toBe('key_version_mismatch');
-      expect((await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 2, kdf: kdf() })).status).toBe(200);
-      expect(await states()).toEqual(['active', 'superseded']);
+      const neu = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 2, kdf: kdf() });
+      expect(neu.status).toBe(200);
+      expect(await states()).toEqual(['pending', 'stale', 'superseded']); // stale bleibt, bis die neue bestätigt ist
+      expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: neu.json.id })).status).toBe(200);
+      expect(await states()).toEqual(['active', 'superseded', 'superseded']);
     });
 
     it('Datenbank erzwingt das feste Profil und die Blob-Größe (auch ohne Route)', async () => {
@@ -218,13 +264,13 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       const { a } = await start();
       await a.post('/api/v1/me/keys', keys());
       const pw = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      await a.post('/api/v1/me/key-backup-pw/verified', { id: pw.json.id });
       await a.put('/api/v1/me/keys', { ...keys(), expectedKeyVersion: 1 });
       const got = (await a.get('/api/v1/me/key-backup-pw')).json;
       const aktuell = (await a.get('/api/v1/me/keys')).json.keys.keyVersion as number;
       expect(got.state).toBe('stale');
       expect(got.keyVersion).toBeLessThan(aktuell);
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: pw.json.id })).status).toBe(409);
-      expect((await harness.db.execute(sql`select verified_at from key_backups_pw`)).rows[0]).toEqual({ verified_at: null });
     });
 
     it('Teilausfall: scheitert das Audit, bleibt alles wie zuvor (nichts halb)', async () => {
@@ -232,6 +278,7 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       const { a } = await start({ E2EE_PW_BACKUP: 'true', LOG_LEVEL: 'info' }, { logStream: new Writable({ write: (c, _e, cb) => (log.push(String(c)), cb()) }) });
       await a.post('/api/v1/me/keys', keys());
       const first = await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() });
+      await a.post('/api/v1/me/key-backup-pw/verified', { id: first.json.id });
       const geheimBlob = blob();
       await harness.db.execute(sql`create function pw_fail() returns trigger language plpgsql as $$ begin if new.event in ('key_backup_pw_set', 'key_backup_pw_read') then raise exception 'boom'; end if; return new; end $$`);
       await harness.db.execute(sql`create trigger pw_fail_t before insert on audit_log for each row execute function pw_fail()`);
@@ -255,21 +302,21 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       await a.post('/api/v1/me/keys', keys());
       const bl = blob();
       const p = await a.put('/api/v1/me/key-backup-pw', { blob: bl, keyVersion: 1, kdf: kdf() });
-      const salt = (await a.get('/api/v1/me/key-backup-pw')).json.kdf.salt as string;
+      const salt = (await a.get('/api/v1/me/key-backup-pw?pending=1')).json.kdf.salt as string;
       await a.post('/api/v1/me/key-backup-pw/verified', { id: p.json.id });
       const audit = JSON.stringify((await harness.db.execute(sql`select detail from audit_log`)).rows);
       expect(audit).not.toContain(bl);
       expect(audit).not.toContain(salt);
     });
 
-    it('gleichzeitige Ablagen: alle gelingen nacheinander, genau eine Zeile bleibt aktuell', async () => {
+    it('gleichzeitige Ablagen: alle gelingen nacheinander, genau eine Zeile bleibt pending', async () => {
       const { a } = await start();
       await a.post('/api/v1/me/keys', keys());
       const res = await Promise.all(Array.from({ length: 5 }, () => a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() })));
       expect(res.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
       const st = await states();
       expect(st).toHaveLength(5);
-      expect(st.filter((s) => s === 'active')).toHaveLength(1);
+      expect(st.filter((s) => s === 'pending')).toHaveLength(1);
       expect(st.filter((s) => s === 'superseded')).toHaveLength(4);
       expect(await world.count('account_kdf')).toBe(1);
     });

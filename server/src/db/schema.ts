@@ -222,7 +222,7 @@ export const keyBackupsPw = pgTable(
     memKib: integer('mem_kib').notNull(),
     ops: integer('ops').notNull(),
     saltGeneration: integer('salt_generation').notNull(),
-    state: text('state').notNull().default('active'),
+    state: text('state').notNull().default('pending'),
     /** Erst nach der Round-Trip-Probe der App gesetzt. */
     verifiedAt: timestamp('verified_at', { withTimezone: true }),
     createdAt: createdAt(),
@@ -231,8 +231,10 @@ export const keyBackupsPw = pgTable(
   (t) => [
     foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
     uniqueIndex('key_backups_pw_current_uq').on(t.userId).where(sql`${t.state} in ('active', 'stale')`),
+    // höchstens eine noch nicht bestätigte (pending) Sicherung je Person; die bisherige aktuelle bleibt bis zur Bestätigung unberührt
+    uniqueIndex('key_backups_pw_pending_uq').on(t.userId).where(sql`${t.state} = 'pending'`),
     index('key_backups_pw_user_idx').on(t.userId),
-    check('key_backups_pw_state_ck', sql`${t.state} in ('active', 'stale', 'superseded')`),
+    check('key_backups_pw_state_ck', sql`${t.state} in ('pending', 'active', 'stale', 'superseded')`),
     check('key_backups_pw_size_ck', sql`length(${t.blob}) between 96 and 4096 and ${t.keyVersion} >= 1`),
     // festes Profil: kein Herabsetzen der Kosten über den Server (Untergrenze auch in der App)
     check('key_backups_pw_kdf_ck', sql`${t.kdfId} in ('argon2id-v1') and ${t.memKib} >= 65536 and ${t.ops} >= 3 and ${t.saltGeneration} >= 1`),

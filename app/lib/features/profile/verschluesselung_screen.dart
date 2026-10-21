@@ -17,6 +17,7 @@ import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'geraet_verbinden_screens.dart';
 import 'profile_screen.dart';
+import 'pw_sicherung_screen.dart';
 import 'wiederherstellungsschluessel_screen.dart';
 
 class VerschluesselungScreen extends ConsumerStatefulWidget {
@@ -213,6 +214,10 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             const SizedBox(height: 8),
             const Text('Es gibt noch keine Sicherung mit einem Wiederherstellungsschlüssel.', style: TextStyle(fontSize: 13, color: kTextMuted)),
           ],
+          if (s.pwSicherungVerfuegbar) ...[
+            const SizedBox(height: 8),
+            ZweitKnopf(text: 'Mit Passwort verbinden', icon: Icons.password, onPressed: laeuft ? null : () => _oeffne(const PwVerbindenScreen())),
+          ],
           const SizedBox(height: 16),
           _gefahr(),
         ];
@@ -241,6 +246,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             status: s.hatSicherung ? null : const RollenPille('offen', farbe: kWarn),
             onTap: laeuft ? null : _neuerSchluessel,
           ),
+          if (s.pwSicherungVerfuegbar) _pwZeile(s),
           EinstellungsZeile(
             icon: Icons.qr_code_2,
             titel: 'Neues Gerät verbinden',
@@ -253,6 +259,24 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           _gefahr(),
         ];
     }
+  }
+
+  /// Passwort-Sicherung (nur wenn der Server sie anbietet): zusätzlich zum Wiederherstellungsschlüssel, ersetzt ihn nicht.
+  Widget _pwZeile(E2eeState s) {
+    final v = s.pwSicherungVersion;
+    final aktuell = s.serverSchluessel?.version;
+    final (String untertitel, Widget pille) = v == null
+        ? ('nicht gesichert · jetzt einrichten', const RollenPille('offen', farbe: kWarn))
+        : v == aktuell
+        ? ('geprüft · neues passwort wählen', const RollenPille('aktiv', farbe: kTerminal))
+        : ('veraltet · neu sichern', const RollenPille('offen', farbe: kWarn));
+    return EinstellungsZeile(
+      icon: Icons.password,
+      titel: 'Passwort-Sicherung',
+      untertitel: untertitel,
+      status: pille,
+      onTap: laeuft ? null : () => _oeffne(const PwSicherungScreen()),
+    );
   }
 
   Widget _gefahr() => Column(

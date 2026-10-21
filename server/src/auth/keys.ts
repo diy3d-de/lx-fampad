@@ -78,6 +78,8 @@ export async function rotateKeys(
     await tx.delete(keyTransfers).where(eq(keyTransfers.userId, p.userId));
     // Passwort-Sicherung (E2EE_PW_BACKUP): nie löschen, die aktuelle gehört jetzt zum alten Schlüssel
     await tx.update(keyBackupsPw).set({ state: 'stale', updatedAt: now }).where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'active')));
+    // eine unbestätigte Sicherung gehört zum alten Schlüssel und wird nie mehr aktiv
+    await tx.update(keyBackupsPw).set({ state: 'superseded', updatedAt: now }).where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'pending')));
     await writeAudit(ctx, tx, { event: 'key_rotated', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
     return row;
   });

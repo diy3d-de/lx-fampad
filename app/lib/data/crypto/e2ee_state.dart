@@ -13,6 +13,7 @@ import '../auth/auth_state.dart';
 import 'bytes.dart';
 import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
+import 'pw_ablauf.dart';
 import 'schluessel.dart';
 import 'schluessel_speicher.dart';
 import 'sicherheitscode.dart';
@@ -95,6 +96,12 @@ class E2eeState {
   /// Die Ablage der gemerkten Schlüssel ist beschädigt: Die Oberfläche bietet "Vertrauen zurücksetzen" an.
   final bool vertrauenDefekt;
 
+  /// Der Server bietet die Passwort-Sicherung an (Schalter E2EE_PW_BACKUP; sonst bleibt die Funktion unsichtbar).
+  final bool pwSicherungVerfuegbar;
+
+  /// Schlüsselversion, für die auf DIESEM Gerät eine vollständig verifizierte Passwort-Sicherung vermerkt ist (null: keine).
+  final int? pwSicherungVersion;
+
   /// Familien-Sicherheitscode (leer, solange niemand Schlüssel hat).
   final String sicherheitscode;
 
@@ -106,6 +113,8 @@ class E2eeState {
     this.mitglieder = const [],
     this.warnungen = const [],
     this.vertrauenDefekt = false,
+    this.pwSicherungVerfuegbar = false,
+    this.pwSicherungVersion,
     this.sicherheitscode = '',
   });
 
@@ -192,6 +201,20 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
+  /// Vermerk (öffentlich, kein Geheimnis): Für diese Schlüsselversion hat DIESES Gerät die Passwort-Sicherung vollständig verifiziert (lokale Probe,
+  /// Round-Trip, Bestätigung beim Server). Liegt unter dem Präfix 'e2ee.kv.', wird also beim Abmelden mit entfernt.
+  static String _pwVermerkName(String userId) => 'e2ee.kv.pw.$userId';
+
+  Future<int?> _pwVermerkLesen(String userId) async {
+    try {
+      final b = await _speicher.lesen(_pwVermerkName(userId));
+      if (b == null) return null;
+      return int.tryParse(String.fromCharCodes(b));
+    } on Object {
+      return null;
+    }
+  }
+
   /// Zuletzt vom Server erfahrene Schlüsselversion dieser Person (null: nie erfahren).
   Future<int?> letzteBekannteVersion() async {
     final id = ref.read(authProvider).user?.id;
@@ -238,11 +261,16 @@ class E2eeController extends Notifier<E2eeState> {
         (_, null) => E2eeStatus.geraetNichtVerbunden,
         (final s?, final l?) => _passt(l, s) ? E2eeStatus.bereit : E2eeStatus.abweichend,
       };
+      // Passwort-Sicherung: nur sichtbar, wenn der Server sie anbietet (Fehler = aus); der Vermerk "verifiziert" liegt auf diesem Gerät
+      final pwVerfuegbar = server != null && await _api.pwSicherungVerfuegbar();
+      final pwVersion = pwVerfuegbar ? await _pwVermerkLesen(uid) : null;
       if (!ref.mounted) return;
       state = E2eeState(
         status: status,
         serverSchluessel: server,
         hatSicherung: eigene.hatSicherung,
+        pwSicherungVerfuegbar: pwVerfuegbar,
+        pwSicherungVersion: pwVersion,
         mitglieder: mitglieder,
         warnungen: warnungen,
         // nur aktive Mitglieder: wartende gehören noch nicht zur Familie
@@ -513,6 +541,49 @@ class E2eeController extends Notifier<E2eeState> {
     } finally {
       loescheBytes(geheimnis);
     }
+  }
+
+  PwSicherungAblauf _pwAblauf(CryptoProvider crypto) {
+    final email = ref.read(authProvider).user?.email;
+    if (email == null || email.trim().isEmpty) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Zu deinem Konto gehört keine E-Mail-Adresse.');
+    return PwSicherungAblauf(crypto: crypto, api: _api, userId: _userId, email: email);
+  }
+
+  /// Passwort-Sicherung, Schritt 1 (rechenintensiv, ohne Step-up): Salt vom Server, Blob erzeugen, lokale Probe. Sendet nichts an die Sicherung und
+  /// verändert nichts (weder Schlüssel noch Vermerk). Der alte Weg (Wiederherstellungsschlüssel, QR) bleibt unberührt.
+  Future<PwEntwurf> pwSicherungVorbereiten(String passwort) async {
+    final crypto = await _krypto();
+    final lokal = _lokal ?? await _lokalLaden(crypto);
+    if (lokal == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät gibt es keinen Schlüssel.');
+    final server = await _serverSchluessel();
+    if (server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast die Verschlüsselung noch nicht eingerichtet.');
+    return _pwAblauf(crypto).vorbereiten(lokal: lokal, server: server, passwort: passwort);
+  }
+
+  /// Schritt 2 und 3 (Step-up legt die UI um den Aufruf): ablegen, Round-Trip, beim Server als verifiziert melden und erst dann auf diesem Gerät
+  /// vermerken. Scheitert etwas, bleibt der bisherige Vermerk unverändert: der Server hält die bisherige Sicherung bis zur Bestätigung der neuen
+  /// gültig (das bisherige Passwort öffnet sie weiter); ein verlangtes Step-up ist kein Fehler (die UI wiederholt den Aufruf).
+  Future<bool> pwSicherungAblegen(PwEntwurf entwurf, String passwort) async {
+    final crypto = await _krypto();
+    final lokal = _lokal ?? await _lokalLaden(crypto);
+    final server = await _serverSchluessel();
+    if (lokal == null || server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät gibt es keinen Schlüssel.');
+    await _pwAblauf(crypto).ablegenUndPruefen(entwurf, passwort: passwort, lokal: lokal, serverVorher: server);
+    try {
+      await _speicher.schreiben(_pwVermerkName(_userId), utf8Bytes('${entwurf.keyVersion}'));
+    } on Object {
+      // ohne Vermerk zeigt die Seite "nicht bestätigt"; die Sicherung selbst ist verifiziert
+    }
+    await laden();
+    return true;
+  }
+
+  /// Gerät ohne Schlüssel mit der Passwort-Sicherung verbinden (Step-up für den Abruf; UI). Der Schlüssel wird erst übernommen, wenn er zum
+  /// frisch vom Server geholten öffentlichen Schlüssel passt ('_lokalUebernehmen').
+  Future<void> mitPasswortVerbinden(String passwort) async {
+    final crypto = await _krypto();
+    final r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
+    await _lokalUebernehmen(r.schluessel, r.keyVersion);
   }
 
   /// Entfernt den Schlüssel von diesem Gerät (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden.
