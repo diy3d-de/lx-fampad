@@ -2,7 +2,7 @@
 // Der Server sieht und speichert nie ein Geheimnis: Blobs sind für ihn undurchsichtiger Text (mit Wiederherstellungsschlüssel bzw.
 // Einmalschlüssel verschlüsselt, beides nur auf den Geräten). Alles gehört zur angemeldeten Person; Blobs und Schlüssel erscheinen nie im Log.
 import { and, asc, eq, gt, isNull } from 'drizzle-orm';
-import { keyBackups, keyTransfers, memberships, personKeyHistory, personKeys, users } from '../db/schema.js';
+import { keyBackups, keyBackupsPw, keyTransfers, memberships, personKeyHistory, personKeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, RequestMeta } from './context.js';
@@ -76,6 +76,8 @@ export async function rotateKeys(
     if (!row) throw notFound();
     await tx.delete(keyBackups).where(eq(keyBackups.userId, p.userId));
     await tx.delete(keyTransfers).where(eq(keyTransfers.userId, p.userId));
+    // Passwort-Sicherung (E2EE_PW_BACKUP): nie löschen, die aktuelle gehört jetzt zum alten Schlüssel
+    await tx.update(keyBackupsPw).set({ state: 'stale', updatedAt: now }).where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'active')));
     await writeAudit(ctx, tx, { event: 'key_rotated', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion } });
     return row;
   });

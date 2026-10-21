@@ -197,6 +197,27 @@ der Server sieht nie ein Geheimnis. Schlüsselmaterial erscheint nie im Log. Kod
 | `POST /me/key-transfer` | alle | `{ lookup (32 Byte Base64url), blob (bis 1024 Zeichen), keyVersion }` (`keyVersion` muss zur aktuellen Version passen, sonst `409 key_version_mismatch`; kollidiert die Suchkennung mit der einer anderen Person `409 transfer_conflict`) → `{ expiresAt, ttlSec: 120 }`: Übertragung für ein neues Gerät; höchstens eine offene je Person (eine neue ersetzt sie); gespeichert wird nur der SHA-256-Hash von `lookup`. `409 no_keys` ohne Schlüssel |
 | `POST /me/key-transfer/claim` | alle | `{ lookup }` → `{ blob, keyVersion }`: löst **genau einmal** ein (atomar), nur durch dieselbe Person, nur vor Ablauf. Jeder Fehlschlag (unbekannt, abgelaufen, schon eingelöst, fremde Person) antwortet gleich mit `404 not_found`. Audit `transfer_claimed` |
 
+### Passwort-Sicherung des Schlüssels (vereinfachte Schlüsselverwaltung, Schalter `E2EE_PW_BACKUP`)
+
+**Nur mit `E2EE_PW_BACKUP=true` (Standard aus):** Ohne den Schalter gibt es diese Routen nicht, sie antworten wie jede unbekannte Route mit `404 not_found`; `GET /version` meldet den Stand als `features: { pwBackup: true|false }`
+(alte Apps ignorieren das Feld). Die Sicherung ist **zusätzlich** zum Wiederherstellungsschlüssel und zur Geräte-Übertragung (Abschnitt davor, unverändert). Der Server sieht nie Passwort, `authKey` oder `kek`: Der Blob ist mit dem auf dem Gerät
+abgeleiteten Schlüssel verschlüsselt und für ihn undurchsichtiger Base64url-Text. Blob und Salt erscheinen nie im Log oder Audit. Alles strikt geprüft (unbekannte Felder `400`), strenges Rate-Limit wie die Anmeldung (Standard 10 je Minute und IP).
+
+**Ableitungssatz `kdf` = `{ id, memKiB, ops, salt }`:** Es gibt ein festes Profil für alle Konten: `id: "argon2id-v1"`, `memKiB: 65536`, `ops: 3` (Wechsel nur global per Code, nie je Konto, sonst wäre das Profil ein Konto-Orakel). Der **Salt** (16 Byte, Base64url) wird **immer vom Server bestimmt**:
+HMAC über `AUTH_SECRET_KEY` aus der normalisierten E-Mail und der Salt-Generation (Standard 1, für jedes Konto). Der Client liefert nie einen Salt und keine freien Zahlen. Eine Salt-Rotation (höhere Generation) wäre eine eigene, seltene, protokollierte Aktion und ist nicht Teil dieses Pakets.
+Jede Sicherungszeile speichert ihren eigenen Satz (`kdf_id`, `mem_kib`, `ops`, `salt_generation`), ältere (ersetzte) Zeilen bleiben so lesbar.
+
+| Methode, Pfad | Rolle | Beschreibung |
+| --- | --- | --- |
+| `POST /auth/kdf-params` | ohne Anmeldung | `{ email }` → `{ kdf }`: Satz **vor** der Anmeldung. Für **jede** E-Mail (bekannt, unbekannt, deaktiviert, mit oder ohne Sicherung) dasselbe Profil und ein aus E-Mail und Generation abgeleiteter Salt, immer genau eine Abfrage: kein Orakel für die Existenz eines Kontos und kein Wechsel der Antwort beim ersten Ablegen |
+| `PUT /me/key-backup-pw` | alle, Step-up | `{ blob (96 bis 4096 Zeichen), keyVersion, kdf: { id, memKiB, ops } }` (kein Salt) → `{ ok, id }`: `kdf` muss genau dem festen Profil entsprechen (sonst `409 kdf_mismatch`). Legt eine neue Sicherung als `active` an und setzt die bisherige aktuelle auf `superseded` (alles in **einer** Transaktion mit dem Audit `key_backup_pw_set`; gleichzeitige Aufrufe laufen nacheinander). `keyVersion` muss zur aktuellen Schlüsselversion passen (`409 key_version_mismatch`), ohne Schlüssel `409 no_keys`. Alte Zeilen werden **nie gelöscht**. Die Datenbank erzwingt zusätzlich Profil (`argon2id-v1`, mindestens 65536 KiB und 3 Durchgänge) und Blob-Länge |
+| `GET /me/key-backup-pw` | alle, Step-up | `{ id, blob, keyVersion, state, kdf }` der aktuellen Sicherung (`state`: `active`, oder `stale`, wenn der Personenschlüssel seither gewechselt hat: sie enthält dann den **alten** Schlüssel und darf nie als Wiederherstellung des aktuellen gelten); `404` ohne Sicherung. Abruf und Audit `key_backup_pw_read` in einer Transaktion |
+| `POST /me/key-backup-pw/verified` | alle, Step-up | `{ id }` setzt `verified_at` der eigenen, noch aktuellen Sicherung (erst nach der Round-Trip-Probe der App); fremde oder unbekannte `id` `404`, ersetzte oder veraltete (`stale`) `409 backup_not_current`. Audit `key_backup_pw_verified` |
+
+Ein Schlüsselwechsel (`PUT /me/keys`) löscht die Passwort-Sicherung **nicht**, sondern setzt die aktuelle auf `stale` (die Schlüsselversion zählt hoch); die alte Sicherung (`key_backups`) entfällt wie bisher.
+
+**Pflichten des Clients (für die App):** (1) Beim Verschlüsseln den Satz (`id`, `memKiB`, `ops`, Salt) und `userId`, `keyVersion` als **AAD** binden. (2) Nach dem Entschlüsseln den öffentlichen Schlüssel gegen `person_keys` (Server) **und** den TOFU-Speicher prüfen, bei Abweichung nichts übernehmen. (3) Eine **feste Untergrenze** im Client (Profil `argon2id-v1`, 65536 KiB, 3 Durchgänge), nie Parameter aus der Serverantwort herabsetzen (Downgrade-Schutz). (4) `stale` nie zur Wiederherstellung benutzen und `verified` nur nach erfolgreicher Round-Trip-Probe senden.
+
 ## Sync `POST /api/v1/sync`
 
 Der Abgleich der Familiendaten (Phase 1c; erster Fachbereich: **Listen**). Gleiche Anmeldung wie `/me` (Cookie + `X-CSRF-Token` oder `Authorization: Bearer`). **Die Familie und die Rolle kommen immer aus der Sitzung, nie aus dem Körper**; ein Feld `familyId` im Körper führt zu `400`. Konzept und Entscheidungen: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6.
