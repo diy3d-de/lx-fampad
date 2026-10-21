@@ -22,6 +22,7 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import '../profile/erinnerungen_screen.dart';
+import '../../widgets/ungespeichert_schutz.dart';
 import 'calendar_state.dart';
 import 'kalender_widgets.dart';
 
@@ -70,6 +71,13 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   }
 
   bool get _neu => widget.vorkommen == null;
+
+  /// Stand der Eingaben (zum Erkennen ungespeicherter Änderungen); der Ausgangsstand wird beim ersten Bauen festgehalten.
+  String? _ausgang;
+  String _stand() => [
+    _titel.text, _ort.text, _beschreibung.text, _ganztaegig, _geburtstag, _jahrBekannt, _geburtsdatum, _startTag, _endTag, _startZeit, _endZeit, _wdhGeaendert,
+    _erinnerung, ([..._teilnehmer]..sort()).join(','), _sicht,
+  ].join('');
   bool get _nurDieses => !_neu && widget.umfang == SerieUmfang.dieses;
 
   @override
@@ -305,6 +313,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
 
   @override
   Widget build(BuildContext context) {
+    _ausgang ??= _stand();
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = TerminRechte(user?.role ?? Role.child, user?.id);
     final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
@@ -371,7 +380,10 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       ],
     );
 
-    return AuthSeite(
+    return UngespeichertSchutz(
+      geaendert: () => _stand() != _ausgang,
+      aenderungen: Listenable.merge([_titel, _ort, _beschreibung]),
+      child: AuthSeite(
       label: '// termin',
       titel: titel,
       maxBreite: kMaxContentWidth,
@@ -518,6 +530,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
           ],
         ],
       ],
+      ),
     );
   }
 }

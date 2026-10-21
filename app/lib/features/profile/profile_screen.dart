@@ -67,14 +67,14 @@ class EinstellungsZeile extends StatelessWidget {
   );
 }
 
-/// Routenname der Konto-Seite: die Desktop-Shell erkennt daran, dass sie offen ist (Seitenleiste hebt "Konto" hervor).
-const kKontoRoute = 'konto';
+/// Marker in den Argumenten der Konto-Route (kein Routenname: der Wurzel-Navigator schreibt benannte Routen im Web in die Adresszeile). Die Desktop-Shell erkennt daran, dass das Konto offen ist.
+const kKontoMarke = 'konto-seite';
 
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
   /// Route der Konto-Seite (mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell).
-  static Route<void> route() => MaterialPageRoute<void>(settings: const RouteSettings(name: kKontoRoute), builder: (_) => const ProfileScreen());
+  static Route<void> route() => MaterialPageRoute<void>(settings: const RouteSettings(arguments: kKontoMarke), builder: (_) => const ProfileScreen());
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();

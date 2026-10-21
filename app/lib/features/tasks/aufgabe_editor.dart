@@ -17,6 +17,7 @@ import '../../data/lists/members.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
@@ -62,6 +63,14 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
   var _speichert = false;
 
   bool get _neu => widget.aufgabe == null;
+
+  /// Stand der Eingaben (zum Erkennen ungespeicherter Änderungen); der Ausgangsstand wird beim ersten Bauen festgehalten.
+  String? _ausgang;
+  String _stand() => [
+    _titel.text, _beschreibung.text, _neuerPunkt.text, _tag, _mitUhrzeit, _zeit, _prio, _zustaendig, _wdh, _sicht, _erinnerung,
+    for (final p in _punkte) '${p.id}|${p.text.text}|${p.erledigt}',
+    _entsorgen.length,
+  ].join('');
 
   @override
   void initState() {
@@ -222,6 +231,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
   Widget build(BuildContext context) {
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = AufgabeRechte(user?.role ?? Role.child, user?.id);
+    _ausgang ??= _stand();
     final darf = _neu ? rechte.darfAnlegen : rechte.darfAendern(widget.aufgabe!);
     // zuständige Person ohne Änderungsrecht: Unteraufgaben abhaken ist erlaubt (wirkt sofort), alles andere nicht
     final statusDarf = !darf && !_neu && rechte.darfStatus(widget.aufgabe!);
@@ -258,7 +268,10 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     void nichts() {}
     VoidCallback? nurWenn(VoidCallback f) => darf ? f : null;
 
-    return AuthSeite(
+    return UngespeichertSchutz(
+      geaendert: () => _stand() != _ausgang,
+      aenderungen: Listenable.merge([_titel, _beschreibung, _neuerPunkt, for (final p in _punkte) p.text]),
+      child: AuthSeite(
       label: '// aufgabe',
       titel: _neu ? 'Neue Aufgabe' : (darf ? 'Aufgabe bearbeiten' : 'Aufgabe'),
       maxBreite: kMaxContentWidth,
@@ -495,6 +508,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
             ),
           ),
       ],
+      ),
     );
   }
 }

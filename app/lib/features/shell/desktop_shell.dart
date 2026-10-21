@@ -38,7 +38,7 @@ class DesktopShellMarke extends InheritedWidget {
   bool updateShouldNotify(DesktopShellMarke alt) => false;
 }
 
-/// Beobachtet den Seiten-Stapel im Inhaltsbereich der Shell: Tiefe (für die Zurück-Taste) und ob die Konto-Seite (Name [kKontoRoute]) offen ist.
+/// Beobachtet den Seiten-Stapel im Inhaltsbereich der Shell: Tiefe (für die Zurück-Taste) und ob die Konto-Seite (Marker [kKontoMarke] in den Argumenten der Route) offen ist.
 class _ShellBeobachter extends NavigatorObserver {
   final tiefe = ValueNotifier<int>(0);
   final konto = ValueNotifier<bool>(false);
@@ -47,10 +47,13 @@ class _ShellBeobachter extends NavigatorObserver {
   bool _verworfen = false;
 
   // Per Microtask: der Navigator meldet sich auch mitten im Bauen (erste Seite), da darf kein Zuhörer neu bauen lassen
+  /// Anzahl der Seiten im Stapel (sofort, ohne Microtask): so erkennt [_DesktopShellState._unterseitenSchliessen], ob ein Schließen gelungen ist.
+  int get anzahl => _routen.length;
+
   void _aktualisieren() => scheduleMicrotask(() {
     if (_verworfen) return;
     tiefe.value = _routen.length;
-    konto.value = _routen.any((r) => r.settings.name == kKontoRoute);
+    konto.value = _routen.any((r) => r.settings.arguments == kKontoMarke);
   });
 
   void verwerfen() {
@@ -117,6 +120,41 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     super.dispose();
   }
 
+  /// Schließt alle Unterseiten per `maybePop` (nie `popUntil`): Seiten mit `PopScope` (Wiederherstellungscodes, Step-up, laufende Aktionen,
+  /// Editoren mit Eingaben) behalten ihr Vetorecht. Gelingt das Schließen einer Seite nicht, bleibt sie offen und der Bereich unverändert (false).
+  Future<bool> _unterseitenSchliessen() async {
+    final nav = _navKey.currentState;
+    if (nav == null) return true;
+    while (_beobachter.anzahl > 1) {
+      final vorher = _beobachter.anzahl;
+      await nav.maybePop();
+      if (_beobachter.anzahl >= vorher) return false;
+    }
+    return true;
+  }
+
+  var _zurueckGesetzt = false;
+
+  /// Bereichswechsel von außen (Karte, Benachrichtigung, Widget): bleibt eine Unterseite offen, wird der Wechsel zurückgenommen.
+  Future<void> _bereichGewechselt(int alt) async {
+    if (_zurueckGesetzt) {
+      _zurueckGesetzt = false;
+      return;
+    }
+    if (await _unterseitenSchliessen() || !mounted) return;
+    _zurueckGesetzt = true;
+    ref.read(shellTabProvider.notifier).waehlen(alt);
+  }
+
+  /// Seitenleiste: anderer Bereich wählen; derselbe Bereich schließt nur die Unterseiten.
+  void _bereichWaehlen(int i) {
+    if (ref.read(shellTabProvider) == i) {
+      unawaited(_unterseitenSchliessen());
+    } else {
+      ref.read(shellTabProvider.notifier).waehlen(i);
+    }
+  }
+
   void _kontoOeffnen() {
     final nav = _navKey.currentState;
     if (nav == null || _beobachter.konto.value) return;
@@ -125,8 +163,10 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
 
   @override
   Widget build(BuildContext context) {
-    // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen
-    ref.listen(shellTabProvider, (_, _) => _navKey.currentState?.popUntil((r) => r.isFirst));
+    // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen, sofern sie sich schließen lassen
+    ref.listen(shellTabProvider, (alt, _) {
+      if (alt != null) unawaited(_bereichGewechselt(alt));
+    });
     final shell = Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
@@ -134,7 +174,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen),
+              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, waehlen: _bereichWaehlen),
               Expanded(
                 child: Column(
                   children: [
@@ -199,7 +239,8 @@ class _Bereiche extends ConsumerWidget {
 class _Seitenleiste extends ConsumerWidget {
   final ValueListenable<bool> konto;
   final VoidCallback kontoOeffnen;
-  const _Seitenleiste({required this.konto, required this.kontoOeffnen});
+  final ValueChanged<int> waehlen;
+  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.waehlen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -280,7 +321,7 @@ class _Seitenleiste extends ConsumerWidget {
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
                         zaehler: i == kChatTab ? ungelesen : 0,
-                        onTap: () => ref.read(shellTabProvider.notifier).waehlen(i),
+                        onTap: () => waehlen(i),
                       ),
                     const SizedBox(height: 8),
                     for (final b in _kBaldBereiche) _NavEintrag(icon: b.$2, label: b.$1, gewaehlt: false, bald: true),
@@ -370,16 +411,17 @@ class _ProfilKachel extends ConsumerWidget {
             if (me.hasTotp) '2fa',
           ].join(' + ');
     final name = user?.displayName ?? 'Profil';
-    return Semantics(
+    return ValueListenableBuilder<bool>(
+      valueListenable: konto,
+      builder: (context, offen, kind) => Semantics(
       button: true,
       focusable: true,
       onTap: oeffnen,
-      selected: konto.value,
+      selected: offen,
       label: 'Profil und Einstellungen, $name${user == null ? '' : ', ${[user.role.label, if (user.familyRole != null && user.familyRole!.label != user.role.label) user.familyRole!.label].join(' und ')}'}${art == null || art.isEmpty ? '' : ', Anmeldung per $art'}',
       excludeSemantics: true,
-      child: ValueListenableBuilder<bool>(
-        valueListenable: konto,
-        builder: (context, offen, kind) => LxCard(gewaehlt: offen, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), onTap: oeffnen, child: kind!),
+      child: LxCard(gewaehlt: offen, padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8), onTap: oeffnen, child: kind!),
+      ),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
@@ -410,7 +452,6 @@ class _ProfilKachel extends ConsumerWidget {
             ],
           ),
         ),
-      ),
     );
   }
 }
