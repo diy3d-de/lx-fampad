@@ -87,6 +87,8 @@ flutter:
     - assets/karte/style-hell.json
     # Platzhalter-Benutzerbilder (transparente PNG, Quellen in tool/avatare/)
     - assets/avatare/
+    # Wortliste für Passwort-Vorschläge (BIP-39 englisch, MIT; Quelle im Dateikopf)
+    - assets/crypto/wortliste.txt
 
   # Schriften werden mitgeliefert (SIL Open Font License, Lizenztexte liegen daneben) - kein Google-Fonts-Abruf.
   fonts:
