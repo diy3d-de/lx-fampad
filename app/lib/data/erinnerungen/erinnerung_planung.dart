@@ -24,6 +24,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../../constants.dart';
 import '../app_database.dart' show Aufgabe;
 import '../calendar/expansion.dart';
+import '../calendar/geburtstag.dart' show vorkommenTitel;
 import '../calendar/termin_repository.dart' show KalenderDaten;
 import '../calendar/zeitzonen.dart';
 import '../tasks/aufgabe_logik.dart' show faelligWand, istErledigt;
@@ -209,7 +210,7 @@ List<GeplanteErinnerung> planeErinnerungen({
       GeplanteErinnerung(
         id: id,
         zeit: zeit,
-        titel: v.titel.trim().isEmpty ? 'Termin' : v.titel,
+        titel: v.titel.trim().isEmpty ? 'Termin' : vorkommenTitel(v),
         text: erinnerungInhalt(v, DateTime.utc(w.year, w.month, w.day)),
         payload: erinnerungPayload(v.termin.id, v.ersterTag),
       ),

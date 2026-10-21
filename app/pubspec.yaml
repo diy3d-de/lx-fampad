@@ -87,6 +87,8 @@ flutter:
     - assets/karte/style-hell.json
     # Platzhalter-Benutzerbilder (transparente PNG, Quellen in tool/avatare/)
     - assets/avatare/
+    # Schulferien Rheinland-Pfalz 2026-2028 (mitgeliefert, ohne Netzabruf; Quelle im Dateikopf)
+    - assets/kalender/schulferien_rlp.json
 
   # Schriften werden mitgeliefert (SIL Open Font License, Lizenztexte liegen daneben) - kein Google-Fonts-Abruf.
   fonts:

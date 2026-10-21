@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/calendar/expansion.dart';
+import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/zeitzonen.dart';
 import '../../data/lists/members.dart';
@@ -76,6 +77,7 @@ bool passtZumFilter(Vorkommen v, Set<String> personen, KalenderDaten daten) {
 
 /// Farbe eines Termins: Personenfarbe des Erstellers (unbekannt: Akzent).
 Color terminFarbe(Vorkommen v, Mitglieder mitglieder) {
+  if (istGeburtstag(v.termin)) return kGeburtstag;
   final u = mitglieder[v.termin.ownerId];
   return u == null ? kAccent : personColor(u.colorIndex);
 }

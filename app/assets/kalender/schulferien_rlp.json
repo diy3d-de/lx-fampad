@@ -1,0 +1,22 @@
+{
+  "_quelle": "Ministerium für Bildung Rheinland-Pfalz, Ferientermine (https://bm.rlp.de/service/ferientermine), abgerufen am 21.10.2026; Abgleich Kalenderpedia.",
+  "_lizenz": "Termine sind amtliche Tatsachen (nicht urheberrechtlich geschützt); keine Fremdlizenz.",
+  "_stand": "2026-10-21",
+  "_hinweis": "Ohne Gewähr. Jede Schule kann bis zu sechs bewegliche Ferientage festlegen; die stehen hier nicht. Rheinland-Pfalz hat keine Winter- und Pfingstferien. Feiertage werden berechnet (feiertage.dart), nicht hier gelistet.",
+  "region": "RP",
+  "ferien": [
+    { "name": "Weihnachtsferien", "von": "2025-12-22", "bis": "2026-01-07" },
+    { "name": "Osterferien", "von": "2026-03-30", "bis": "2026-04-10" },
+    { "name": "Sommerferien", "von": "2026-06-29", "bis": "2026-08-07" },
+    { "name": "Herbstferien", "von": "2026-10-05", "bis": "2026-10-16" },
+    { "name": "Weihnachtsferien", "von": "2026-12-23", "bis": "2027-01-08" },
+    { "name": "Osterferien", "von": "2027-03-22", "bis": "2027-04-02" },
+    { "name": "Sommerferien", "von": "2027-06-28", "bis": "2027-08-06" },
+    { "name": "Herbstferien", "von": "2027-10-04", "bis": "2027-10-15" },
+    { "name": "Weihnachtsferien", "von": "2027-12-23", "bis": "2028-01-07" },
+    { "name": "Osterferien", "von": "2028-04-10", "bis": "2028-04-21" },
+    { "name": "Sommerferien", "von": "2028-07-03", "bis": "2028-08-11" },
+    { "name": "Herbstferien", "von": "2028-10-09", "bis": "2028-10-20" },
+    { "name": "Weihnachtsferien", "von": "2028-12-21", "bis": "2029-01-08" }
+  ]
+}

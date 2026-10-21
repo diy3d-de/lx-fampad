@@ -21,6 +21,9 @@ const kWarn = Color(0xFFFEBC2E);
 const kDanger = Color(0xFFFF5F57);
 const kOnAccent = Color(0xFF04121B);
 const kTextStrong = Color(0xFFFFFFFF); // Überschriften
+const kFeiertag = Color(0xFFFFB86B); // Feiertage im Kalender (dezent, nicht synchronisiert)
+const kFerien = Color(0xFF60A5FA); // Schulferien im Kalender
+const kGeburtstag = Color(0xFFF472B6); // Geburtstage
 
 /// Stärke des Hintergrund-Schimmers oben (wie lx-urlaubsplanung): Violett links, Cyan rechts.
 const kGlowNeuralAlpha = 0.30;

@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/calendar/ics_datei.dart';
+import 'package:lx_fampad/data/calendar/geburtstag.dart';
 import 'package:lx_fampad/data/calendar/ics_import.dart';
 import 'package:lx_fampad/data/calendar/ics_parser.dart';
 import 'package:lx_fampad/data/calendar/termin_repository.dart';
@@ -93,6 +94,17 @@ void main() {
       expect((await g.db.select(g.db.terminTeilnehmer).get()), hasLength(e.termine.length));
       final ops = await g.ausgang();
       expect(ops.where((o) => o.entity == 'termin'), hasLength(e.termine.length));
+    });
+
+    test('Import: jährliche ganztägige "Geburtstag"-Termine (FamilyWall) gelten als Geburtstage, ohne Alter; Zeittermine nicht', () async {
+      final g = _Geraet();
+      final e = icsLesen(_fixture('familywall.ics'));
+      await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin, teilnehmer: {});
+      final alle = await g.termine();
+      final geburtstage = alle.where(istGeburtstag).map((t) => t.titel).toList()..sort();
+      expect(geburtstage, ['Geburtstag Eva', 'Geburtstag Eva', 'Geburtstag Max']);
+      expect(alle.firstWhere((t) => t.titel == 'Geburtstag 40 🎂').ganztaegig, isFalse);
+      expect(alle.where(istGeburtstag).every((t) => !hatGeburtstagsMarke(t) && geburtsjahr(t) == null), isTrue);
     });
 
     test('Web-Regression: der Import öffnet nie eine verschachtelte Transaktion (auch Serien mit Ausnahmen, Aktualisieren, Teilnehmer)', () async {

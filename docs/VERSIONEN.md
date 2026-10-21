@@ -113,3 +113,7 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 - Flutter Web: `--no-web-resources-cdn`, Schriften (Inter, JetBrains Mono) bündeln, `fontFallbackBaseUrl` auf eigene Domain, CSP mit `'wasm-unsafe-eval'`. Im Network-Tab prüfen, dass nichts von Google lädt.
 - Karte: Glyphen und Sprites selbst hosten, PMTiles per `pmtiles extract` aus Protomaps erzeugen, Größe vorab messen.
 - Phase-0-Spikes: Passkey mit signierter Sideload-APK (ggf. ohne Play Services), drift im Web (Reload, zwei Tabs), UnifiedPush mit ntfy auf den echten Handys.
+
+## Schulferien-Asset (Kalender)
+
+`app/assets/kalender/schulferien_rlp.json`: Schulferien Rheinland-Pfalz 2026 bis 2028 (Weihnachten ab 22.12.2025), Quelle Ministerium für Bildung RLP (bm.rlp.de/service/ferientermine, abgerufen 21.10.2026), Abgleich Kalenderpedia; Tatsachenangaben ohne Fremdlizenz, "ohne Gewähr". Kein neues Paket.

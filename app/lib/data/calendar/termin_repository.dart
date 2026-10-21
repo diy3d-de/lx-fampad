@@ -39,6 +39,9 @@ class TerminEingabe {
   final int? erinnerungMin;
   final TerminSicht sicht;
   final Set<String> teilnehmer;
+
+  /// Nur für Geburtstage (Marke, siehe geburtstag.dart); sonst null = das Feld bleibt unberührt.
+  final String? icalUid;
   const TerminEingabe({
     required this.titel,
     this.ort = '',
@@ -50,6 +53,7 @@ class TerminEingabe {
     this.erinnerungMin,
     this.sicht = TerminSicht.family,
     this.teilnehmer = const {},
+    this.icalUid,
   });
 }
 
@@ -129,6 +133,7 @@ class TerminRepository {
         'rrule': e.rrule,
         'erinnerungMin': e.erinnerungMin,
         'audience': e.sicht.wire,
+        'icalUid': ?e.icalUid,
       };
     }
     return {
@@ -180,6 +185,7 @@ class TerminRepository {
       'rrule': alt.rrule,
       'erinnerungMin': alt.erinnerungMin,
       'audience': alt.audience,
+      'icalUid': alt.icalUid,
     };
     // Ein Termin in einer anderen Zeitzone (z. B. später importiert) behält sie, solange sein Beginn derselbe Zeitpunkt bleibt
     // (sonst änderte sich seine Wanduhrzeit in Serien über die Zeitumstellung).
