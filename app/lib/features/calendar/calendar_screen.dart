@@ -16,6 +16,7 @@ import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'calendar_state.dart';
+import 'ics_export_screen.dart';
 import 'ics_import_screen.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
@@ -53,11 +54,11 @@ class CalendarScreen extends ConsumerWidget {
           if (personen.length >= 2) const SizedBox(height: 12),
           const _FeiertageSchalter(),
           const SizedBox(height: 12),
-          if (rechte.darfAnlegen)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              if (rechte.darfAnlegen) ...[
                 FilledButton.icon(
                   onPressed: () => terminEditorOeffnen(context, tag: auswahl.ansicht == KalenderAnsicht.agenda ? null : auswahl.tag),
                   icon: const Icon(Icons.add),
@@ -65,7 +66,9 @@ class CalendarScreen extends ConsumerWidget {
                 ),
                 OutlinedButton.icon(onPressed: () => icsImportOeffnen(context), icon: const Icon(Icons.upload_file), label: const Text('Importieren')),
               ],
-            ),
+              OutlinedButton.icon(onPressed: () => icsExportOeffnen(context), icon: const Icon(Icons.download), label: const Text('Kalender exportieren')),
+            ],
+          ),
           const SizedBox(height: 16),
           switch (auswahl.ansicht) {
             KalenderAnsicht.agenda => _Agenda(auswahl: auswahl, daten: daten, mitglieder: mitglieder, rechte: rechte),
