@@ -87,7 +87,9 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       _endZeit = TimeOfDay(hour: stunde + 1, minute: 0);
       _startTagUrsprung = _startTag;
       _ganztaegigUrsprung = false;
-      _geburtsdatum = DateTime.utc(tag.year - 10, tag.month, tag.day);
+      // Vorbelegung: heute vor zehn Jahren; am Schalttag (29.2.) auf den letzten Tag des Monats im Zieljahr begrenzt
+      final zielJahr = tag.year - 10;
+      _geburtsdatum = DateTime.utc(zielJahr, tag.month, tag.day.clamp(1, DateTime.utc(zielJahr, tag.month + 1, 0).day));
       _erinnerung = ref.read(erinnerungEinstellungenProvider).standardVorlauf; // lokale Vorgabe dieses Geräts
       return;
     }
@@ -202,7 +204,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       ganztaegig: true,
       startWand: start,
       endeWand: start.add(const Duration(days: 1)),
-      rrule: kGeburtstagRegel,
+      rrule: geburtstagRegel(d.month, d.day),
       erinnerungMin: _erinnerung,
       sicht: _sicht,
       teilnehmer: _teilnehmer,

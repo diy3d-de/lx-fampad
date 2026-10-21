@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
 import 'package:lx_fampad/data/calendar/feiertage.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/calendar/kalender_widgets.dart';
@@ -47,25 +48,38 @@ void main() {
     expect(g['Fronleichnam'], _d(2027, 5, 27));
   });
 
-  test('Asset: Ferien 2026 bis 2028 lesbar, mit Quelle und Stand im Kopf, plausible Bereiche', () {
+  // Eigene Referenz: offizielle Tabelle des Ministeriums für Bildung RLP (bm.rlp.de/service/ferientermine, abgerufen 21.10.2026), erster und letzter
+  // Ferientag einschließlich. Die Asset-Datei muss genau diese Abschnitte enthalten (nicht mehr, nicht weniger).
+  const referenz = <(String, String, String)>[
+    ('Weihnachtsferien', '2025-12-22', '2026-01-07'),
+    ('Osterferien', '2026-03-30', '2026-04-10'),
+    ('Sommerferien', '2026-06-29', '2026-08-07'),
+    ('Herbstferien', '2026-10-05', '2026-10-16'),
+    ('Weihnachtsferien', '2026-12-23', '2027-01-08'),
+    ('Osterferien', '2027-03-22', '2027-04-02'),
+    ('Sommerferien', '2027-06-28', '2027-08-06'),
+    ('Herbstferien', '2027-10-04', '2027-10-15'),
+    ('Weihnachtsferien', '2027-12-23', '2028-01-07'),
+    ('Osterferien', '2028-04-10', '2028-04-21'),
+    ('Sommerferien', '2028-07-03', '2028-08-11'),
+    ('Herbstferien', '2028-10-09', '2028-10-20'),
+    ('Weihnachtsferien', '2028-12-21', '2029-01-08'),
+    ('Osterferien', '2029-03-26', '2029-04-06'),
+    ('Sommerferien', '2029-07-16', '2029-08-24'),
+    ('Herbstferien', '2029-10-22', '2029-11-02'),
+  ];
+
+  test('Asset: Ferien stimmen exakt mit der Referenztabelle des Ministeriums überein, Dateikopf mit Quelle, Stand und Hinweis', () {
     final text = File('assets/kalender/schulferien_rlp.json').readAsStringSync();
     expect(text, contains('_quelle'));
+    expect(text, contains('bm.rlp.de'));
     expect(text, contains('_stand'));
     expect(text, contains('Ohne Gewähr'));
+    expect(text, contains('Schule fragen'));
     final ferien = ferienAusJson(text);
-    expect(ferien.length, 13);
-    for (final f in ferien) {
-      expect(f.bis.isBefore(f.von), isFalse, reason: f.name);
-      expect(f.bis.difference(f.von).inDays, lessThan(45), reason: f.name);
-    }
-    final sommer2026 = ferien.firstWhere((f) => f.name == 'Sommerferien' && f.von.year == 2026);
-    expect(sommer2026.von, _d(2026, 6, 29));
-    expect(sommer2026.bis, _d(2026, 8, 7));
-    for (final j in [2026, 2027, 2028]) {
-      for (final n in ['Osterferien', 'Sommerferien', 'Herbstferien']) {
-        expect(ferien.where((f) => f.name == n && f.von.year == j).length, 1, reason: '$n $j');
-      }
-    }
+    expect([for (final f in ferien) (f.name, tagText(f.von), tagText(f.bis))], referenz);
+    // keine Pfingst- und Winterferien in Rheinland-Pfalz
+    expect(ferien.any((f) => f.name.contains('Pfingst') || f.name.contains('Winter')), isFalse);
   });
 
   test('ferienAusJson: kaputte Einträge und Texte werden übersprungen, nie ein Fehler', () {
@@ -77,7 +91,7 @@ void main() {
 
   test('TagesHinweise: fuerTag und Agenda (Ferien nur am ersten sichtbaren Tag, Feiertage an ihrem Tag)', () {
     final ferien = [TagesHinweis(name: 'Sommerferien', art: TagesHinweisArt.ferien, von: _d(2026, 6, 29), bis: _d(2026, 8, 7))];
-    final h = TagesHinweise.aus(ferien: ferien, vonJahr: 2026, bisJahr: 2026);
+    final h = TagesHinweise.aus(ferien: ferien);
     expect(h.fuerTag(_d(2026, 7, 15)).map((e) => e.name), ['Sommerferien']);
     expect(h.fuerTag(_d(2026, 8, 8)), isEmpty);
     expect(h.fuerTag(_d(2026, 5, 1)).single.name, 'Tag der Arbeit');
@@ -88,6 +102,9 @@ void main() {
     expect(b[_d(2026, 6, 29)]!.single.name, 'Sommerferien');
     expect(b.entries.where((e) => e.value.any((x) => x.art == TagesHinweisArt.ferien)).length, 1);
     expect(TagesHinweise.leer.istLeer, isTrue);
+    // Feiertage werden für jedes abgefragte Jahr berechnet, auch weit in der Zukunft
+    expect(h.fuerTag(_d(2041, 12, 25)).single.name, '1. Weihnachtstag');
+    expect(h.fuerTag(_d(2031, 4, 14)).map((e) => e.name), ['Ostermontag'], reason: 'Ostern 2031: 13.4.');
   });
 
   testWidgets('TagesHinweisZeile: Ferien nennen das Ende, 360 px ohne Überlauf', (tester) async {

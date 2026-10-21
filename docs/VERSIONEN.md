@@ -116,4 +116,4 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 
 ## Schulferien-Asset (Kalender)
 
-`app/assets/kalender/schulferien_rlp.json`: Schulferien Rheinland-Pfalz 2026 bis 2028 (Weihnachten ab 22.12.2025), Quelle Ministerium für Bildung RLP (bm.rlp.de/service/ferientermine, abgerufen 21.10.2026), Abgleich Kalenderpedia; Tatsachenangaben ohne Fremdlizenz, "ohne Gewähr". Kein neues Paket.
+`app/assets/kalender/schulferien_rlp.json`: Schulferien Rheinland-Pfalz 2026 bis 2029 (Weihnachten ab 22.12.2025), Quelle Ministerium für Bildung RLP (bm.rlp.de/service/ferientermine, abgerufen 21.10.2026), Abgleich Kalenderpedia; Tatsachenangaben ohne Fremdlizenz, "ohne Gewähr". Kein neues Paket.
