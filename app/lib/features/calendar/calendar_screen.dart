@@ -435,7 +435,7 @@ class _Woche extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final notifier = ref.read(kalenderAuswahlProvider.notifier);
-    final heute = heuteTag();
+    final jetzt = ref.watch(kalenderJetztProvider);
     final montag = auswahl.tag.subtract(Duration(days: auswahl.tag.weekday - 1));
     final naechster = DateTime.utc(montag.year, montag.month, montag.day + 7);
     final sonntag = DateTime.utc(montag.year, montag.month, montag.day + 6);
@@ -465,14 +465,14 @@ class _Woche extends ConsumerWidget {
         final panel = breit && c.maxWidth >= _Monat._panelAb;
         final raster = WochenRaster(
           montag: montag,
-          heute: heute,
           gewaehlt: auswahl.tag,
           gewaehltMarkieren: panel,
           breit: breit,
           bloecke: bloecke,
           band: quellen,
           farbe: (b) => terminFarbe(b.v, mitglieder),
-          jetzt: jetztWand,
+          person: (b) => mitglieder[b.v.termin.ownerId]?.displayName,
+          jetzt: jetzt,
           unten: !panel && platzFuerKnopf ? 72 : 0,
           onWoche: (r) => notifier.tag(DateTime.utc(auswahl.tag.year, auswahl.tag.month, auswahl.tag.day + 7 * r)),
           onBlock: (b) => terminOeffnen(b.v),

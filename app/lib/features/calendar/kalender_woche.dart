@@ -12,7 +12,6 @@ import '../../constants.dart';
 import '../../data/calendar/geburtstag.dart' show vorkommenTitel;
 import '../../data/calendar/monat_layout.dart';
 import '../../data/calendar/woche_layout.dart';
-import '../../data/calendar/zeitzonen.dart';
 import 'calendar_state.dart';
 
 /// Stundenhöhe: Mindestmaß aus der Textgröße (Stundenbeschriftung), mobil 38, Desktop 60.
@@ -30,13 +29,21 @@ double _bandSpur(BuildContext context, bool breit) {
   return soll > min ? soll : min;
 }
 
-/// Mindesthöhe eines Blocks im Zeitraster.
-double _blockMin(bool breit) => breit ? 24 : 18;
+double _blockSchrift(bool breit) => breit ? 12.0 : 9.0;
+
+/// Abstand oben und unten im Block (Polster, Rand), von der Zeilenzahl abgezogen.
+double _blockRand(bool breit) => breit ? 10.0 : 6.0;
+
+/// Mindesthöhe eines Blocks im Zeitraster: mindestens eine Textzeile (mit der Textskala wächst sie mit), sonst 18 bzw. 24 px.
+double _blockMin(BuildContext context, bool breit) {
+  final mind = breit ? 24.0 : 18.0;
+  final text = MediaQuery.textScalerOf(context).scale(_blockSchrift(breit)) * 1.25 + _blockRand(breit);
+  return text > mind ? text : mind;
+}
 
 class WochenRaster extends StatefulWidget {
   /// Montag der angezeigten Woche (UTC-Markierung).
   final DateTime montag;
-  final DateTime heute;
   final DateTime gewaehlt;
 
   /// Der gewählte Tag wird markiert (Desktop mit Tagespanel).
@@ -48,7 +55,10 @@ class WochenRaster extends StatefulWidget {
   final List<BalkenQuelle> band;
   final Color Function(WochenBlock) farbe;
 
-  /// Aktuelle Uhrzeit der Familienzone (Wanduhr als UTC), `null` = keine Linie (Test).
+  /// Name der Person hinter dem Block (Ersteller; für die Beschreibung der Screenreader), `null` = unbekannt.
+  final String? Function(WochenBlock)? person;
+
+  /// Aktuelle Uhrzeit der Familienzone (Wanduhr als UTC); daraus ergeben sich heute (Hervorhebung, Linie) und der Wechsel um Mitternacht.
   final DateTime Function() jetzt;
   final void Function(DateTime tag) onTag;
   final void Function(WochenBlock b) onBlock;
@@ -64,13 +74,13 @@ class WochenRaster extends StatefulWidget {
   const WochenRaster({
     super.key,
     required this.montag,
-    required this.heute,
     required this.gewaehlt,
     this.gewaehltMarkieren = false,
     this.breit = false,
     required this.bloecke,
     required this.band,
     required this.farbe,
+    this.person,
     required this.jetzt,
     required this.onTag,
     required this.onBlock,
@@ -88,6 +98,27 @@ class _WochenRasterState extends State<WochenRaster> {
   late DateTime _jetzt;
   Timer? _takt;
 
+  /// Beim nächsten Aufbau prüfen, ob der erste Termin sichtbar ist (neue Woche, erste Termine eingetroffen).
+  var _scrollPruefen = false;
+
+  /// Während eines Sprungs gehen keine Scroll-Meldungen nach oben (sie würden die Kopfzeile einklappen).
+  var _springt = false;
+
+  /// Maße des letzten Aufbaus für den Sprung.
+  double _sichtHoehe = 0;
+  double _stunde = 0;
+  double _maxOffset = 0;
+  int _ziel = 0;
+  int? _fruehesteMinute;
+
+  /// Heute in der Familienzone, aus der Uhr des Rasters (wechselt um Mitternacht mit).
+  DateTime get _heute => DateTime.utc(_jetzt.year, _jetzt.month, _jetzt.day);
+
+  /// Wischen: Start (Randgeste?) und Weg.
+  var _wischRand = false;
+  var _wischWeg = 0.0;
+  var _breite = 0.0;
+
   @override
   void initState() {
     super.initState();
@@ -97,6 +128,30 @@ class _WochenRasterState extends State<WochenRaster> {
       final j = widget.jetzt();
       if (mounted && (j.minute != _jetzt.minute || j.hour != _jetzt.hour || j.day != _jetzt.day)) setState(() => _jetzt = j);
     });
+  }
+
+  @override
+  void didUpdateWidget(WochenRaster alt) {
+    super.didUpdateWidget(alt);
+    if (alt.montag != widget.montag || (alt.bloecke.isEmpty && widget.bloecke.isNotEmpty)) _scrollPruefen = true;
+  }
+
+  /// Springt auf den Zielwert, wenn der früheste Termin der Woche außerhalb des sichtbaren Bereichs liegt.
+  void _scrollAnpassen() {
+    final c = _scroll;
+    final frueh = _fruehesteMinute;
+    if (c == null || !c.hasClients || frueh == null) return;
+    final oben = frueh / 60 * _stunde;
+    final aktuell = c.offset;
+    if (oben >= aktuell && oben + _stunde <= aktuell + _sichtHoehe) return;
+    final ziel = (_ziel / 60 * _stunde).clamp(0.0, _maxOffset < 0 ? 0.0 : _maxOffset);
+    if ((ziel - aktuell).abs() < 0.5) return;
+    _springt = true;
+    try {
+      c.jumpTo(ziel);
+    } finally {
+      _springt = false;
+    }
   }
 
   @override
@@ -114,7 +169,8 @@ class _WochenRasterState extends State<WochenRaster> {
     final breit = widget.breit;
     final montag = widget.montag;
     final tage = [for (var i = 0; i < 7; i++) DateTime.utc(montag.year, montag.month, montag.day + i)];
-    final heuteIndex = tage.indexOf(widget.heute);
+    final heute = _heute;
+    final heuteIndex = tage.indexOf(heute);
     final randLinks = breit ? 52.0 : 30.0;
     final spur = _bandSpur(context, breit);
     final maxSpuren = breit ? 4 : 3;
@@ -131,7 +187,7 @@ class _WochenRasterState extends State<WochenRaster> {
           .map((q) => q.art == BalkenArt.feiertag ? 'Feiertag ${q.text}' : 'Schulferien ${q.text}');
       return [
         _tagFormat.format(tag),
-        if (tag == widget.heute) 'heute',
+        if (tag == heute) 'heute',
         ...hinweise,
         if (termine == 0) 'keine Termine' else termine == 1 ? '1 Termin' : '$termine Termine',
       ].join(', ');
@@ -161,7 +217,7 @@ class _WochenRasterState extends State<WochenRaster> {
               child: _Tageskopf(
                 tag: tage[i],
                 spalte: i,
-                heute: widget.heute,
+                heute: heute,
                 markiert: widget.gewaehltMarkieren && tage[i] == widget.gewaehlt,
                 breit: breit,
                 label: beschriftung(i),
@@ -253,23 +309,38 @@ class _WochenRasterState extends State<WochenRaster> {
           // beim ersten Aufbau auf die aktuelle Uhrzeit bzw. den ersten Termin der Woche scrollen (ohne Scroll-Meldung, die die Kopfzeile einklappen würde)
           final ziel = scrollZielMinute(bloecke: widget.bloecke, jetztMinute: heuteIndex >= 0 ? _jetzt.hour * 60 + _jetzt.minute : null);
           final maxOffset = gesamt + widget.unten - c.maxHeight;
+          _ziel = ziel;
+          _stunde = stunde;
+          _sichtHoehe = c.maxHeight;
+          _maxOffset = maxOffset;
+          _fruehesteMinute = widget.bloecke.isEmpty ? null : widget.bloecke.map((b) => b.start).reduce((a, b) => a < b ? a : b);
           _scroll ??= ScrollController(initialScrollOffset: (ziel / 60 * stunde).clamp(0.0, maxOffset < 0 ? 0.0 : maxOffset));
-          return SingleChildScrollView(
-            controller: _scroll,
-            physics: const AlwaysScrollableScrollPhysics(),
-            child: Padding(
-              padding: EdgeInsets.only(bottom: widget.unten),
-              child: _Zeitraster(
-                tage: tage,
-                heuteIndex: heuteIndex,
-                jetzt: _jetzt,
-                bloecke: widget.bloecke,
-                farbe: widget.farbe,
-                stunde: stunde,
-                randLinks: randLinks,
-                breit: breit,
-                onBlock: widget.onBlock,
-                onLeer: widget.onLeer,
+          if (_scrollPruefen) {
+            _scrollPruefen = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _scrollAnpassen();
+            });
+          }
+          return NotificationListener<ScrollNotification>(
+            onNotification: (_) => _springt,
+            child: SingleChildScrollView(
+              controller: _scroll,
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Padding(
+                padding: EdgeInsets.only(bottom: widget.unten),
+                child: _Zeitraster(
+                  tage: tage,
+                  heuteIndex: heuteIndex,
+                  jetzt: _jetzt,
+                  bloecke: widget.bloecke,
+                  farbe: widget.farbe,
+                  person: widget.person,
+                  stunde: stunde,
+                  randLinks: randLinks,
+                  breit: breit,
+                  onBlock: widget.onBlock,
+                  onLeer: widget.onLeer,
+                ),
               ),
             ),
           );
@@ -277,13 +348,24 @@ class _WochenRasterState extends State<WochenRaster> {
       ),
     );
 
-    return GestureDetector(
-      behavior: HitTestBehavior.translucent,
-      onHorizontalDragEnd: (d) {
-        final v = d.primaryVelocity ?? 0;
-        if (v.abs() > 300) widget.onWoche(v < 0 ? 1 : -1);
+    return LayoutBuilder(
+      builder: (context, c) {
+        _breite = c.maxWidth;
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          // Wischen wechselt die Woche: erst ab 40 px Weg und 300 px/s, nicht bei einer Randgeste (die ersten und letzten 8 px gehören dem System)
+          onHorizontalDragStart: (d) {
+            _wischWeg = 0;
+            _wischRand = d.localPosition.dx < 8 || d.localPosition.dx > _breite - 8;
+          },
+          onHorizontalDragUpdate: (d) => _wischWeg += d.primaryDelta ?? 0,
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (!_wischRand && v.abs() > 300 && _wischWeg.abs() >= 40 && (v < 0) == (_wischWeg < 0)) widget.onWoche(v < 0 ? 1 : -1);
+          },
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [kopf, bandWidget, raster]),
+        );
       },
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [kopf, bandWidget, raster]),
     );
   }
 }
@@ -392,6 +474,7 @@ class _Zeitraster extends StatelessWidget {
   final DateTime jetzt;
   final List<WochenBlock> bloecke;
   final Color Function(WochenBlock) farbe;
+  final String? Function(WochenBlock)? person;
   final double stunde;
   final double randLinks;
   final bool breit;
@@ -403,6 +486,7 @@ class _Zeitraster extends StatelessWidget {
     required this.jetzt,
     required this.bloecke,
     required this.farbe,
+    required this.person,
     required this.stunde,
     required this.randLinks,
     required this.breit,
@@ -413,6 +497,7 @@ class _Zeitraster extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final gesamt = 24 * stunde;
+    final blockMin = _blockMin(context, breit);
     return SizedBox(
       height: gesamt,
       child: LayoutBuilder(
@@ -452,15 +537,15 @@ class _Zeitraster extends StatelessWidget {
                   width: spalte,
                   top: 0,
                   height: gesamt,
-                  child: _TagesSpalte(tag: tage[i], spalte: i, heute: i == heuteIndex, stunde: stunde, onLeer: onLeer),
+                  child: _TagesSpalte(tag: tage[i], spalte: i, heute: i == heuteIndex, stunde: stunde, breit: breit, onLeer: onLeer),
                 ),
               for (final b in bloecke)
                 Positioned(
                   left: randLinks + b.tag * spalte + b.spalte * spalte / b.spalten,
                   width: spalte / b.spalten,
                   top: b.start / 60 * stunde,
-                  height: _blockHoehe(b, stunde, breit),
-                  child: _Block(b: b, farbe: farbe(b), breit: breit, onTap: () => onBlock(b)),
+                  height: _blockHoehe(b, stunde, blockMin),
+                  child: _Block(b: b, farbe: farbe(b), person: person?.call(b), breit: breit, onTap: () => onBlock(b)),
                 ),
               if (heuteIndex >= 0)
                 Positioned(
@@ -497,9 +582,8 @@ class _Zeitraster extends StatelessWidget {
   }
 }
 
-double _blockHoehe(WochenBlock b, double stunde, bool breit) {
+double _blockHoehe(WochenBlock b, double stunde, double min) {
   final h = (b.ende - b.start) / 60 * stunde - 1;
-  final min = _blockMin(breit);
   final ziel = h < min ? min : h;
   // ein kurzer Block am unteren Rand ragt nicht über 24:00 hinaus
   final platz = 24 * stunde - b.start / 60 * stunde;
@@ -512,8 +596,9 @@ class _TagesSpalte extends StatelessWidget {
   final int spalte;
   final bool heute;
   final double stunde;
+  final bool breit;
   final void Function(DateTime tag, int minute)? onLeer;
-  const _TagesSpalte({required this.tag, required this.spalte, required this.heute, required this.stunde, required this.onLeer});
+  const _TagesSpalte({required this.tag, required this.spalte, required this.heute, required this.stunde, required this.breit, required this.onLeer});
 
   @override
   Widget build(BuildContext context) {
@@ -526,40 +611,73 @@ class _TagesSpalte extends StatelessWidget {
     );
     final leer = onLeer;
     if (leer == null) return inhalt;
+    // Handy: Tipp oder Lang-Tipp legt an; Desktop und Web (Maus): nur Doppelklick oder langes Drücken, ein einzelner Klick tut nichts
     return ExcludeSemantics(
-      child: GestureDetector(
+      child: _LeerStelle(
         key: ValueKey('woche-spalte-${tag.toIso8601String().substring(0, 10)}'),
-        behavior: HitTestBehavior.opaque,
-        onTapUp: (d) => leer(tag, gerundeteMinute(d.localPosition.dy / stunde * 60)),
-        onLongPressStart: (d) => leer(tag, gerundeteMinute(d.localPosition.dy / stunde * 60)),
+        doppelklick: breit,
+        onLeer: (dy) => leer(tag, gerundeteMinute(dy / stunde * 60)),
         child: inhalt,
       ),
     );
   }
 }
 
+/// Tipp-Fläche einer Tagesspalte: meldet die Höhe (dy) der Stelle für Tipp bzw. Doppelklick und Lang-Tipp.
+class _LeerStelle extends StatefulWidget {
+  final bool doppelklick;
+  final void Function(double dy) onLeer;
+  final Widget child;
+  const _LeerStelle({super.key, required this.doppelklick, required this.onLeer, required this.child});
+
+  @override
+  State<_LeerStelle> createState() => _LeerStelleState();
+}
+
+class _LeerStelleState extends State<_LeerStelle> {
+  var _dy = 0.0;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.opaque,
+    onTapDown: (d) => _dy = d.localPosition.dy,
+    onTap: widget.doppelklick ? null : () => widget.onLeer(_dy),
+    onDoubleTap: widget.doppelklick ? () => widget.onLeer(_dy) : null,
+    onLongPressStart: (d) => widget.onLeer(d.localPosition.dy),
+    child: widget.child,
+  );
+}
+
 class _Block extends StatelessWidget {
   final WochenBlock b;
   final Color farbe;
+  final String? person;
   final bool breit;
   final VoidCallback onTap;
-  const _Block({required this.b, required this.farbe, required this.breit, required this.onTap});
+  const _Block({required this.b, required this.farbe, required this.person, required this.breit, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final v = b.v;
     final titel = vorkommenTitel(v);
     final r = Radius.circular(breit ? 6 : 4);
-    final schrift = breit ? 12.0 : 9.0;
+    final schrift = _blockSchrift(breit);
+    final rand = _blockRand(breit);
+    final spanne = zeitspanneText(v);
     return LayoutBuilder(
       builder: (context, c) {
         final skala = MediaQuery.textScalerOf(context);
         final zeile = skala.scale(schrift) * 1.25;
-        final zeilen = ((c.maxHeight - (breit ? 8 : 4)) / zeile).floor();
+        final zeilen = ((c.maxHeight - rand) / zeile + 1e-6).floor();
         final mitZeit = breit && zeilen >= 2;
         return Semantics(
           button: true,
-          label: '$titel, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}',
+          label: [
+            titel,
+            istUmstellungsSpanne(v) ? '${datumZeitText(v)} ($spanne)' : datumZeitText(v),
+            if (v.ort.isNotEmpty) v.ort,
+            if (person != null && person!.isNotEmpty) 'von $person',
+          ].join(', '),
           excludeSemantics: true,
           onTap: onTap,
           child: GestureDetector(
@@ -586,7 +704,7 @@ class _Block extends StatelessWidget {
                               children: [
                                 if (mitZeit)
                                   TextSpan(
-                                    text: '\n${uhrzeitText(v.startWand)}–${uhrzeitText(v.endeWand)}',
+                                    text: '\n$spanne',
                                     style: const TextStyle(fontFamily: kFontMono, fontSize: 10, fontWeight: FontWeight.w400),
                                   ),
                               ],
@@ -604,6 +722,3 @@ class _Block extends StatelessWidget {
     );
   }
 }
-
-/// Aktuelle Wanduhr der Familienzone (für die Linie der aktuellen Uhrzeit).
-DateTime jetztWand() => wandUhr(DateTime.now().toUtc(), familienOrt);

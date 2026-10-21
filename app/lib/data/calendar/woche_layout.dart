@@ -38,6 +38,29 @@ class WochenBlock {
 /// Mindestdauer in Minuten, die ein Block für die Überlappungsprüfung belegt (kurze Termine bekommen im Raster eine Mindesthöhe).
 const kWochenMinDauer = 30;
 
+Duration _echteDauer(Vorkommen v) {
+  final t = v.termin;
+  if (v.geaendert || t.startUtc == null || t.endUtc == null) return Duration.zero;
+  return t.endUtc!.difference(t.startUtc!);
+}
+
+/// Ein Zeittermin in der doppelten Stunde der Herbst-Umstellung (z. B. 02:30 MESZ bis 02:30 MEZ): die Wanduhr steht am Ende vor oder auf dem
+/// Beginn, obwohl der Termin real läuft.
+bool istUmstellungsSpanne(Vorkommen v) => !v.ganztaegig && !v.endeWand.isAfter(v.startWand) && _echteDauer(v) > Duration.zero;
+
+/// Ende im Raster: bei einer Umstellungsspanne Beginn plus reale Dauer (mindestens [minDauer] Minuten), sonst das Ende der Wanduhr.
+DateTime _rasterEnde(Vorkommen v, int minDauer) {
+  if (v.endeWand.isAfter(v.startWand)) return v.endeWand;
+  if (!istUmstellungsSpanne(v)) return v.startWand;
+  final min = _echteDauer(v).inMinutes;
+  return v.startWand.add(Duration(minutes: min < minDauer ? minDauer : min));
+}
+
+String _hhmm(DateTime w) => '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
+
+/// Zeitspanne für die Beschriftung eines Blocks ("15:00–16:30"); bei einer Umstellungsspanne mit Zonenkürzeln ("02:30 MESZ–02:30 MEZ").
+String zeitspanneText(Vorkommen v) => istUmstellungsSpanne(v) ? '${_hhmm(v.startWand)} MESZ–${_hhmm(v.endeWand)} MEZ' : '${_hhmm(v.startWand)}–${_hhmm(v.endeWand)}';
+
 /// Ob ein Vorkommen ins Band über dem Zeitraster gehört: ganztägige und solche von mindestens 24 Stunden.
 bool gehoertInsBand(Vorkommen v) => v.ganztaegig || v.endeWand.difference(v.startWand) >= const Duration(hours: 24);
 
@@ -47,7 +70,7 @@ List<WochenBlock> zeitBloecke(DateTime montag, Iterable<Vorkommen> liste, {int m
   final proTag = List.generate(7, (_) => <WochenBlock>[]);
   for (final v in liste) {
     if (gehoertInsBand(v)) continue;
-    final ende = v.endeWand.isAfter(v.startWand) ? v.endeWand : v.startWand;
+    final ende = _rasterEnde(v, minDauer);
     for (var i = 0; i < 7; i++) {
       final tagBeginn = DateTime.utc(montag.year, montag.month, montag.day + i);
       final tagEnde = DateTime.utc(montag.year, montag.month, montag.day + i + 1);

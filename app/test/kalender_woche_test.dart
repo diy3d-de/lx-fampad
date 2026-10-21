@@ -221,6 +221,31 @@ void main() {
       expect(bs.where((b) => b.v.termin.id == 'd'), isEmpty);
     });
 
+    test('Herbst-Umstellung, Termin in der doppelten Stunde: Länge aus der realen Dauer, Beschriftung mit MESZ/MEZ', () {
+      final mo = _d(2026, 10, 19);
+      // 02:30 MESZ (00:30 UTC) bis 02:30 MEZ (01:30 UTC): real eine Stunde, die Wanduhr steht am Ende wieder auf 02:30
+      final eine = _woche(mo, [_termin('a', 'Doppelt', '2026-10-25T00:30:00Z', '2026-10-25T01:30:00Z')]).single;
+      expect(eine.endeWand, eine.startWand);
+      expect(istUmstellungsSpanne(eine), isTrue);
+      expect(zeitBloecke(mo, [eine]).map((b) => (b.tag, b.start, b.ende)), [(6, 150, 210)]);
+      expect(zeitspanneText(eine), '02:30 MESZ–02:30 MEZ');
+      // 02:30 MESZ bis 02:00 MEZ (01:00 UTC): real 30 Minuten, die Wanduhr steht am Ende vor dem Beginn
+      final halbe = _woche(mo, [_termin('b', 'Halb', '2026-10-25T00:30:00Z', '2026-10-25T01:00:00Z')]).single;
+      expect(halbe.endeWand.isBefore(halbe.startWand), isTrue);
+      expect(zeitBloecke(mo, [halbe]).map((b) => (b.tag, b.start, b.ende)), [(6, 150, 180)]);
+      expect(zeitspanneText(halbe), '02:30 MESZ–02:00 MEZ');
+      // zehn Minuten real: das Raster belegt mindestens die Mindestdauer
+      final kurz = _woche(mo, [_termin('c', 'Kurz', '2026-10-25T00:30:00Z', '2026-10-25T00:40:00Z')]).single;
+      expect(istUmstellungsSpanne(kurz), isFalse, reason: 'die Wanduhr läuft hier normal vorwärts');
+      // normale Termine und Termine ohne Dauer sind keine Umstellungsspannen
+      final normal = _woche(mo, [_termin('d', 'Normal', '2026-10-21T08:00:00Z', '2026-10-21T09:00:00Z')]).single;
+      expect(istUmstellungsSpanne(normal), isFalse);
+      expect(zeitspanneText(normal), '10:00–11:00');
+      final leer = _woche(mo, [_termin('e', 'Leer', '2026-10-21T08:00:00Z', '2026-10-21T08:00:00Z')]).single;
+      expect(istUmstellungsSpanne(leer), isFalse);
+      expect(zeitBloecke(mo, [leer]).map((b) => (b.start, b.ende)), [(600, 600)]);
+    });
+
     test('Serie: jedes Vorkommen der Woche ein Block; abgesagtes fehlt; verschobenes steht am neuen Tag', () {
       final mo = _d(2027, 3, 8);
       final serie = _termin('s', 'Chor', '2027-03-03T17:00:00Z', '2027-03-03T18:00:00Z', rrule: 'FREQ=DAILY;COUNT=20'); // täglich 18:00 MEZ ab Mi 3.3.
@@ -273,14 +298,31 @@ void main() {
 
   // ---------------------------------------------------------------------------------------------- Oberfläche
 
+  /// Die Startseite ist nicht für Textskala 2.0 ausgelegt und meldet beim Aufbau einen Überlauf: nur dieser bekannte Fall wird ausgenommen,
+  /// jeder andere Fehler lässt den Test scheitern.
+  void startseitenUeberlaufIgnorieren() {
+    final alt = FlutterError.onError;
+    FlutterError.onError = (d) {
+      if (d.toString().contains('RenderFlex overflowed') && d.toString().contains('home_screen.dart')) return;
+      alt!(d);
+    };
+    addTearDown(() => FlutterError.onError = alt);
+  }
+
+  /// Der Raster-Scrollbereich der Wochenansicht (nicht das Panel oder Blätter).
+  final rasterScroll = find.descendant(of: find.byType(WochenRaster), matching: find.byType(SingleChildScrollView));
+
   Future<(TestUmgebung, ProviderContainer)> start(
     WidgetTester tester, {
+    String role = 'admin',
     void Function(TestUmgebung env)? vorher,
     double skala = 1.0,
     Size groesse = const Size(360, 800),
     DateTime? tag,
+    DateTime? uhr,
   }) async {
-    final env = await angemeldeteUmgebung();
+    final env = await angemeldeteUmgebung(role: role);
+    if (uhr != null) env.extraOverrides.add(kalenderJetztProvider.overrideWithValue(() => uhr));
     vorher?.call(env);
     final container = await starteApp(tester, env, skala: skala, groesse: groesse);
     if (groesse.width >= kDesktopBreakpoint) {
@@ -387,7 +429,7 @@ void main() {
   testWidgets('Tipp und Lang-Tipp auf eine leere Stelle legen einen Termin mit Tag und auf 30 Minuten abgerundeter Uhrzeit an', (tester) async {
     await start(tester, tag: _d(2027, 3, 10), vorher: demoWoche);
     // 15:00 und 17:00 sichtbar machen (beim Öffnen steht das Raster am frühesten Termin der Woche, hier die Nacht ab 0:00)
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -500));
+    await tester.drag(rasterScroll, const Offset(0, -500));
     await warte(tester);
     // Stundenhöhe aus zwei Blöcken (15:00 und 17:00 am Mittwoch), nicht als feste Zahl
     final stunde = (tester.getRect(block(_id(2))).top - tester.getRect(block(_id(1))).top) / 2;
@@ -418,7 +460,6 @@ void main() {
         home: Scaffold(
           body: WochenRaster(
             montag: _d(2027, 3, 8),
-            heute: _d(2027, 3, 10),
             gewaehlt: _d(2027, 3, 10),
             bloecke: const [],
             band: const [],
@@ -454,29 +495,37 @@ void main() {
     await tester.fling(kopf(_d(2027, 3, 17)), const Offset(250, 0), 1200);
     await warte(tester);
     expect(find.text('KW 10 · März 2027'), findsOneWidget);
+    // "Heute" nutzt die echte Uhr; ein Datumswechsel während des Tests ist erlaubt
+    final vorher = heuteTag();
     await tippe(tester, find.byTooltip('Heute'));
-    expect(container.read(kalenderAuswahlProvider).tag, heuteTag());
-    expect(find.text('KW ${kalenderwoche(heuteTag())}'), findsOneWidget);
+    final nachher = heuteTag();
+    final gewaehlt = container.read(kalenderAuswahlProvider).tag;
+    expect([vorher, nachher], contains(gewaehlt));
+    expect(find.text('KW ${kalenderwoche(gewaehlt)}'), findsOneWidget);
   });
 
   testWidgets('senkrechtes Scrollen im Raster wechselt die Woche nicht und klappt die Kopfzeile ein; Zurückscrollen klappt sie aus', (tester) async {
     final (_, container) = await start(tester, tag: _d(2027, 3, 10), vorher: demoWoche);
     expect(find.text('Kalender'), findsWidgets);
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -300));
+    await tester.drag(rasterScroll, const Offset(0, -300));
     await warte(tester);
     expect(find.text('KW 10 · März 2027'), findsOneWidget);
     expect(container.read(kalenderKopfEingeklapptProvider), isTrue);
-    await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, 3000));
+    await tester.drag(rasterScroll, const Offset(0, 3000));
     await warte(tester);
     expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('heute: die Linie der aktuellen Uhrzeit steht in der aktuellen Woche, in anderen nicht', (tester) async {
-    await start(tester, tag: heuteTag());
+  testWidgets('heute (feste Uhr 10.3.2027 12:00): die Linie der aktuellen Uhrzeit steht in der aktuellen Woche, in anderen nicht; heute ist im Kopf beschriftet', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(tester, tag: _d(2027, 3, 10), uhr: DateTime.utc(2027, 3, 10, 12));
     expect(find.byKey(const ValueKey('woche-jetzt')), findsOneWidget);
+    expect(tester.getSemantics(kopf(_d(2027, 3, 10))).label, contains('heute'));
+    expect(tester.getSemantics(kopf(_d(2027, 3, 11))).label, isNot(contains('heute')));
     await tippe(tester, find.byTooltip('Nächste Woche'));
     expect(find.byKey(const ValueKey('woche-jetzt')), findsNothing);
+    handle.dispose();
   });
 
   testWidgets('Sommerzeit 28.3.2027: Nacht über die Umstellung liegt am Samstag und Sonntag, der Termin danach am Sonntag', (tester) async {
@@ -510,13 +559,7 @@ void main() {
 
   for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('360 px, Textskala $skala: viele Termine, Band mit Überlauf, Nacht und Überlappung ohne Layoutfehler', (tester) async {
-      // Die (nicht für 2.0 ausgelegte, unveränderte) Startseite meldet beim Aufbau einen Überlauf: nur dieser bekannte Fall wird ausgenommen.
-      final alt = FlutterError.onError;
-      FlutterError.onError = (d) {
-        if (d.toString().contains('RenderFlex overflowed') && d.toString().contains('home_screen.dart')) return;
-        alt!(d);
-      };
-      addTearDown(() => FlutterError.onError = alt);
+      startseitenUeberlaufIgnorieren();
       await start(
         tester,
         skala: skala,
@@ -534,11 +577,157 @@ void main() {
       expect(find.textContaining('+'), findsWidgets, reason: 'Überlauf des Bands als "+n"');
       expect(blockAmTag(_id(30), 3), findsOneWidget);
       pruefeLayout(tester, 'Woche, Skala $skala');
-      await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -2000));
+      await tester.drag(rasterScroll, const Offset(0, -2000));
       await warte(tester);
       pruefeLayout(tester, 'Woche gescrollt, Skala $skala');
     });
   }
+
+  for (final skala in [1.0, 1.5, 2.0]) {
+    testWidgets('Kurzer Block (30 Minuten) zeigt seinen Titel bei Textskala $skala (360 px)', (tester) async {
+      startseitenUeberlaufIgnorieren();
+      await start(
+        tester,
+        skala: skala,
+        tag: _d(2027, 3, 10),
+        vorher: (e) {
+          e.sync.andereAendert('termin', _id(1), _zeitDaten('Kurztermin', '2027-03-10T09:00:00.000Z', '2027-03-10T09:30:00.000Z')); // 10:00 bis 10:30
+          e.sync.andereAendert('termin', _id(2), _zeitDaten('Ohne Dauer', '2027-03-11T09:00:00.000Z', '2027-03-11T09:00:00.000Z'));
+        },
+      );
+      expect(find.descendant(of: block(_id(1)), matching: find.text('Kurztermin')), findsOneWidget);
+      expect(find.descendant(of: block(_id(2)), matching: find.text('Ohne Dauer')), findsOneWidget);
+    });
+  }
+
+  testWidgets('Umstellungsspanne 25.10.2026: Block am Sonntag mit Länge, Beschreibung nennt MESZ und MEZ', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(
+      tester,
+      tag: _d(2026, 10, 21),
+      vorher: (e) => e.sync.andereAendert('termin', _id(1), _zeitDaten('Doppelte Stunde', '2026-10-25T00:30:00.000Z', '2026-10-25T01:30:00.000Z')),
+    );
+    expect(blockAmTag(_id(1), 6), findsOneWidget);
+    expect(tester.getSemantics(block(_id(1))).label, allOf(contains('Doppelte Stunde'), contains('02:30 MESZ–02:30 MEZ')));
+    handle.dispose();
+  });
+
+  testWidgets('Beschreibung des Blocks nennt die Person (Ersteller)', (tester) async {
+    final handle = tester.ensureSemantics();
+    await start(tester, tag: _d(2027, 3, 10), vorher: demoWoche);
+    expect(tester.getSemantics(block(_id(1))).label, contains('von Anna'));
+    handle.dispose();
+  });
+
+  // Das Raster einzeln in einem kleinen Bildschirm: der Scrollbereich ist kürzer als der Tag, so dass "sichtbar" etwas bedeutet.
+  Future<void> rasterHost(WidgetTester tester, {required DateTime montag, required List<WochenBlock> bloecke, DateTime Function()? uhr, void Function(ScrollNotification)? melde}) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              melde?.call(n);
+              return false;
+            },
+            child: WochenRaster(
+              montag: montag,
+              gewaehlt: montag,
+              bloecke: bloecke,
+              band: const [],
+              farbe: (_) => kAccent,
+              jetzt: uhr ?? () => DateTime.utc(2030, 1, 1, 12),
+              onTag: (_) {},
+              onBlock: (_) {},
+              onLeer: null,
+              onWoche: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  List<WochenBlock> blockUm(DateTime montag, String id, int stunde) => zeitBloecke(
+    montag,
+    _woche(montag, [_termin(id, id, DateTime.utc(montag.year, montag.month, montag.day + 1, stunde - 1).toIso8601String(), DateTime.utc(montag.year, montag.month, montag.day + 1, stunde).toIso8601String())]),
+  );
+
+  void sichtbar(WidgetTester tester, String id, {String grund = ''}) {
+    final b = tester.getRect(find.byWidgetPredicate((w) => w.key is ValueKey && (w.key! as ValueKey).value.toString().startsWith('woche-block-$id|')));
+    final fenster = tester.getRect(rasterScroll);
+    expect(b.top, greaterThanOrEqualTo(fenster.top - 0.5), reason: 'Block $id oberhalb des Fensters $grund');
+    expect(b.bottom, lessThanOrEqualTo(fenster.bottom + 0.5), reason: 'Block $id unterhalb des Fensters $grund');
+  }
+
+  testWidgets('Die Termine treffen nach dem Öffnen ein: das Raster springt zum ersten Termin, wenn er nicht sichtbar ist, ohne Scroll-Meldung', (tester) async {
+    tester.view.physicalSize = const Size(360, 420);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final montag = _d(2027, 3, 8);
+    final meldungen = <ScrollNotification>[];
+    await rasterHost(tester, montag: montag, bloecke: const [], melde: meldungen.add);
+    await rasterHost(tester, montag: montag, bloecke: blockUm(montag, 'a', 22), melde: meldungen.add);
+    await tester.pump();
+    sichtbar(tester, 'a');
+    expect(meldungen.whereType<ScrollUpdateNotification>(), isEmpty, reason: 'der Sprung meldet nichts nach oben (die Kopfzeile klappt nicht ein)');
+  });
+
+  testWidgets('Wochenwechsel zu einer Woche mit nur frühen Terminen: der frühe Termin ist sichtbar; ein sichtbarer Termin lässt die Position stehen', (tester) async {
+    tester.view.physicalSize = const Size(360, 420);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final montag = _d(2027, 3, 8);
+    final naechste = _d(2027, 3, 15);
+    await rasterHost(tester, montag: montag, bloecke: blockUm(montag, 'spaet', 21));
+    sichtbar(tester, 'spaet', grund: 'beim Öffnen');
+    await rasterHost(tester, montag: naechste, bloecke: blockUm(naechste, 'frueh', 7));
+    await tester.pump();
+    sichtbar(tester, 'frueh', grund: 'nach dem Wochenwechsel');
+    // Wechsel zu einer Woche, deren Termin schon sichtbar ist: keine Bewegung
+    final vorher = tester.getRect(rasterScroll).top;
+    final stand = tester.state<ScrollableState>(find.descendant(of: rasterScroll, matching: find.byType(Scrollable))).position.pixels;
+    final dritte = _d(2027, 3, 22);
+    await rasterHost(tester, montag: dritte, bloecke: blockUm(dritte, 'mitte', 8));
+    await tester.pump();
+    expect(tester.getRect(rasterScroll).top, vorher);
+    expect(tester.state<ScrollableState>(find.descendant(of: rasterScroll, matching: find.byType(Scrollable))).position.pixels, stand);
+  });
+
+  testWidgets('Tageswechsel um Mitternacht: heute, Linie und Beschriftung wandern mit der Uhr des Rasters', (tester) async {
+    final handle = tester.ensureSemantics();
+    var uhr = DateTime.utc(2027, 3, 10, 23, 59, 40);
+    final montag = _d(2027, 3, 8);
+    await rasterHost(tester, montag: montag, bloecke: const [], uhr: () => uhr);
+    expect(tester.getSemantics(kopf(_d(2027, 3, 10))).label, contains('heute'));
+    expect(find.byKey(const ValueKey('woche-jetzt')), findsOneWidget);
+    uhr = DateTime.utc(2027, 3, 11, 0, 0, 10);
+    await tester.pump(const Duration(seconds: 31));
+    expect(tester.getSemantics(kopf(_d(2027, 3, 11))).label, contains('heute'));
+    expect(tester.getSemantics(kopf(_d(2027, 3, 10))).label, isNot(contains('heute')));
+    expect(find.byKey(const ValueKey('woche-jetzt')), findsOneWidget);
+    handle.dispose();
+  });
+
+  testWidgets('Wischen: zu kurze Wege und Randgesten wechseln die Woche nicht', (tester) async {
+    final (_, container) = await start(tester, tag: _d(2027, 3, 10), vorher: demoWoche);
+    final tag = container.read(kalenderAuswahlProvider).tag;
+    final k = tester.getRect(kopf(_d(2027, 3, 10)));
+    await tester.fling(kopf(_d(2027, 3, 10)), const Offset(-30, 0), 1500); // schnell, aber unter 40 px
+    await warte(tester);
+    expect(container.read(kalenderAuswahlProvider).tag, tag);
+    await tester.flingFrom(Offset(10, k.center.dy), const Offset(250, 0), 1500); // beginnt in den ersten 8 px des Rasters (Rand 8 px)
+    await warte(tester);
+    expect(container.read(kalenderAuswahlProvider).tag, tag);
+    await tester.fling(kopf(_d(2027, 3, 10)), const Offset(-120, 0), 1500);
+    await warte(tester);
+    expect(container.read(kalenderAuswahlProvider).tag, _d(2027, 3, 17), reason: 'ein richtiges Wischen wechselt');
+  });
+
+  testWidgets('Rolle Kind darf anlegen: leere Stellen des Rasters sind Tipp-Flächen', (tester) async {
+    await start(tester, role: 'child', tag: _d(2027, 3, 10), vorher: demoWoche);
+    expect(spalte(_d(2027, 3, 9)), findsOneWidget);
+  });
 
   testWidgets('Sieben Spalten bei 360 px sind gleich breit und passen in den Bildschirm; Kopf-Ziele mindestens 44 px', (tester) async {
     await start(tester, tag: _d(2027, 3, 10), vorher: demoWoche);
@@ -570,10 +759,39 @@ void main() {
         await tippe(tester, kopf(_d(2027, 3, 11)));
         expect(find.text('Donnerstag, 11. März'), findsOneWidget, reason: 'Tagesblatt');
       }
-      await tester.drag(find.byType(SingleChildScrollView).first, const Offset(0, -300));
+      await tester.drag(rasterScroll, const Offset(0, -300));
       await warte(tester);
       expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
       pruefeLayout(tester, 'Desktop');
     });
   }
+
+  testWidgets('Desktop: ein einzelner Klick auf eine leere Stelle tut nichts, ein Doppelklick legt einen Termin an, Lang-Tipp ebenso', (tester) async {
+    await start(tester, groesse: const Size(1440, 900), tag: _d(2027, 3, 10), vorher: demoWoche);
+    await tester.drag(rasterScroll, const Offset(0, -600)); // 15:00 und 17:00 ins Bild
+    await warte(tester);
+    final stunde = (tester.getRect(block(_id(2))).top - tester.getRect(block(_id(1))).top) / 2;
+    final y15 = tester.getRect(block(_id(1))).top;
+    final dienstag = tester.getRect(spalte(_d(2027, 3, 9)));
+    final stelle = Offset(dienstag.center.dx, y15 + stunde * 0.4); // 15:24
+
+    await tester.tapAt(stelle);
+    await tester.pump(const Duration(milliseconds: 500)); // länger als die Doppelklick-Frist
+    await warte(tester);
+    expect(find.byType(TerminEditor), findsNothing, reason: 'ein einzelner Klick legt am Desktop nichts an');
+
+    await tester.tapAt(stelle);
+    await tester.pump(const Duration(milliseconds: 60));
+    await tester.tapAt(stelle);
+    await warte(tester);
+    var editor = tester.widget<TerminEditor>(find.byType(TerminEditor));
+    expect((editor.tag, editor.startMinute), (_d(2027, 3, 9), 15 * 60));
+    Navigator.of(tester.element(find.byType(TerminEditor))).pop();
+    await warte(tester);
+
+    await tester.longPressAt(Offset(dienstag.center.dx, y15 + stunde * 2.75)); // 17:45
+    await warte(tester);
+    editor = tester.widget<TerminEditor>(find.byType(TerminEditor));
+    expect((editor.tag, editor.startMinute), (_d(2027, 3, 9), 17 * 60 + 30));
+  });
 }
