@@ -271,7 +271,7 @@ class _Bereiche extends ConsumerWidget {
           for (var i = 0; i < liste.length; i++)
             Align(
               alignment: Alignment.topCenter,
-              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 || i == kChatTab ? kMaxContentWidthDesktop : kMaxContentWidth), child: liste[i]),
+              child: ConstrainedBox(constraints: BoxConstraints(maxWidth: i == 0 || i == kChatTab || i == kKalenderTab ? kMaxContentWidthDesktop : kMaxContentWidth), child: liste[i]),
             ),
         ],
       ),

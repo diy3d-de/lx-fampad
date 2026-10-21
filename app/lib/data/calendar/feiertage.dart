@@ -2,7 +2,7 @@
 // wird aus dem Netz geladen, nichts ist editierbar.
 //  - Gesetzliche Feiertage werden berechnet (Ostern nach Gauß, die beweglichen Feiertage daraus), nicht als Liste gepflegt.
 //  - Schulferien liegen als Asset `assets/kalender/schulferien_rlp.json` (Quelle, Stand und Hinweis "ohne Gewähr" im Dateikopf), 2026 bis 2028.
-//  - Schalter "Feiertage und Ferien anzeigen": lokal je Gerät in `sync_meta` (Standard: an).
+//  - Schalter "Feiertage", "Schulferien" und "Geburtstage": je lokal je Gerät in `sync_meta` (Standard: an).
 // Tage sind wie überall im Kalender `DateTime.utc`-Markierungen der Familienzone.
 import 'dart:convert';
 
@@ -135,12 +135,15 @@ const kSchulferienAsset = 'assets/kalender/schulferien_rlp.json';
 /// Die mitgelieferten Ferien (einmal geladen).
 final ferienProvider = FutureProvider<List<TagesHinweis>>((ref) async => ferienAusJson(await rootBundle.loadString(kSchulferienAsset)));
 
-/// Schlüssel in `sync_meta` ("nein" = aus).
+/// Schlüssel in `sync_meta` ("nein" = aus): Feiertage; Schulferien und Geburtstage haben eigene Schlüssel (ohne eigenen Wert gilt für die
+/// Ferien der Wert der Feiertage, wie vor der Trennung beider Schalter).
 const kFeiertageSchluessel = 'kalender_feiertage';
+const kFerienSchluessel = 'kalender_ferien';
+const kGeburtstageSchluessel = 'kalender_geburtstage';
 
 abstract class FeiertageSpeicher {
-  Future<String?> lesen();
-  Future<void> schreiben(String wert);
+  Future<String?> lesen({String schluessel = kFeiertageSchluessel});
+  Future<void> schreiben(String wert, {String schluessel = kFeiertageSchluessel});
 }
 
 class DatenbankFeiertageSpeicher implements FeiertageSpeicher {
@@ -148,27 +151,33 @@ class DatenbankFeiertageSpeicher implements FeiertageSpeicher {
   DatenbankFeiertageSpeicher(this._ref);
 
   @override
-  Future<String?> lesen() => _ref.read(appDatabaseProvider).metaLesen(kFeiertageSchluessel);
+  Future<String?> lesen({String schluessel = kFeiertageSchluessel}) => _ref.read(appDatabaseProvider).metaLesen(schluessel);
 
   @override
-  Future<void> schreiben(String wert) => _ref.read(appDatabaseProvider).metaSchreiben(kFeiertageSchluessel, wert);
+  Future<void> schreiben(String wert, {String schluessel = kFeiertageSchluessel}) => _ref.read(appDatabaseProvider).metaSchreiben(schluessel, wert);
 }
 
 class MemoryFeiertageSpeicher implements FeiertageSpeicher {
-  String? wert;
-  MemoryFeiertageSpeicher([this.wert]);
+  final Map<String, String> werte = {};
+  MemoryFeiertageSpeicher([String? wert]) {
+    if (wert != null) werte[kFeiertageSchluessel] = wert;
+  }
 
   @override
-  Future<String?> lesen() async => wert;
+  Future<String?> lesen({String schluessel = kFeiertageSchluessel}) async => werte[schluessel];
 
   @override
-  Future<void> schreiben(String w) async => wert = w;
+  Future<void> schreiben(String w, {String schluessel = kFeiertageSchluessel}) async => werte[schluessel] = w;
 }
 
 final feiertageSpeicherProvider = Provider<FeiertageSpeicher>((ref) => DatenbankFeiertageSpeicher(ref));
 
-/// Schalter "Feiertage und Ferien anzeigen" (Standard: an; lokal je Gerät).
-class FeiertageAnzeigenNotifier extends Notifier<bool> {
+/// Lokaler Ein/Aus-Schalter der Kalenderanzeige (Standard: an; je Gerät in `sync_meta`).
+abstract class AnzeigeSchalter extends Notifier<bool> {
+  String get schluessel;
+
+  /// Ersatzschlüssel, wenn der eigene Wert fehlt.
+  String? get ersatzSchluessel => null;
   bool _gesetzt = false;
 
   @override
@@ -180,7 +189,9 @@ class FeiertageAnzeigenNotifier extends Notifier<bool> {
 
   Future<void> _laden() async {
     try {
-      final w = await ref.read(feiertageSpeicherProvider).lesen();
+      final speicher = ref.read(feiertageSpeicherProvider);
+      var w = await speicher.lesen(schluessel: schluessel);
+      if (w == null && ersatzSchluessel != null) w = await speicher.lesen(schluessel: ersatzSchluessel!);
       if (ref.mounted && !_gesetzt && w == 'nein') state = false;
     } catch (_) {
       // nicht lesbar: Standard (an)
@@ -191,17 +202,41 @@ class FeiertageAnzeigenNotifier extends Notifier<bool> {
     _gesetzt = true;
     state = an;
     try {
-      await ref.read(feiertageSpeicherProvider).schreiben(an ? 'ja' : 'nein');
+      await ref.read(feiertageSpeicherProvider).schreiben(an ? 'ja' : 'nein', schluessel: schluessel);
     } catch (_) {
       // gilt dann nur bis zum Schließen der App
     }
   }
 }
 
-final feiertageAnzeigenProvider = NotifierProvider<FeiertageAnzeigenNotifier, bool>(FeiertageAnzeigenNotifier.new);
+/// Schalter "Feiertage anzeigen".
+class FeiertageAnzeigenNotifier extends AnzeigeSchalter {
+  @override
+  String get schluessel => kFeiertageSchluessel;
+}
 
-/// Hinweise für die Oberfläche: leer, solange der Schalter aus ist; Feiertage sofort, Ferien sobald das Asset geladen ist.
+/// Schalter "Schulferien anzeigen".
+class FerienAnzeigenNotifier extends AnzeigeSchalter {
+  @override
+  String get schluessel => kFerienSchluessel;
+  @override
+  String? get ersatzSchluessel => kFeiertageSchluessel;
+}
+
+/// Schalter "Geburtstage anzeigen" (blendet Geburtstage in Agenda, Monat und Woche aus; sie bleiben als Termine bestehen).
+class GeburtstageAnzeigenNotifier extends AnzeigeSchalter {
+  @override
+  String get schluessel => kGeburtstageSchluessel;
+}
+
+final feiertageAnzeigenProvider = NotifierProvider<FeiertageAnzeigenNotifier, bool>(FeiertageAnzeigenNotifier.new);
+final ferienAnzeigenProvider = NotifierProvider<FerienAnzeigenNotifier, bool>(FerienAnzeigenNotifier.new);
+final geburtstageAnzeigenProvider = NotifierProvider<GeburtstageAnzeigenNotifier, bool>(GeburtstageAnzeigenNotifier.new);
+
+/// Hinweise für die Oberfläche: Feiertage sofort, Ferien sobald das Asset geladen ist; je nach Schalter.
 final tagesHinweiseProvider = Provider.autoDispose<TagesHinweise>((ref) {
-  if (!ref.watch(feiertageAnzeigenProvider)) return TagesHinweise.leer;
-  return TagesHinweise(ref.watch(ferienProvider).value ?? const <TagesHinweis>[]);
+  final feiertage = ref.watch(feiertageAnzeigenProvider);
+  final ferien = ref.watch(ferienAnzeigenProvider);
+  if (!feiertage && !ferien) return TagesHinweise.leer;
+  return TagesHinweise(ferien ? (ref.watch(ferienProvider).value ?? const <TagesHinweis>[]) : const <TagesHinweis>[], feiertageAn: feiertage);
 });

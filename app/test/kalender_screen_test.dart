@@ -8,6 +8,7 @@ import 'package:lx_fampad/data/calendar/expansion.dart';
 import 'package:lx_fampad/data/calendar/wiederholung.dart' show wochentagKurz;
 import 'package:lx_fampad/data/calendar/zeitzonen.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
+import 'package:lx_fampad/features/calendar/kalender_leiste.dart' show AnsichtUmschalter;
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:lx_fampad/features/lists/list_dialogs.dart' show AuswahlKnopf;
 import 'package:lx_fampad/features/profile/profile_screen.dart';
@@ -22,6 +23,9 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/test_app.dart';
+
+/// Knopf "Filter und Anzeige" der Leiste (die Beschriftung nennt die Zahl aktiver Filter).
+final filterKnopf = find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Filter und Anzeige'));
 
 const _t1 = 'aaaaaaaa-1111-4111-8111-111111111111';
 const _t2 = 'aaaaaaaa-2222-4222-8222-222222222222';
@@ -142,12 +146,18 @@ void main() {
       e.sync.andereAendert('termin_teilnehmer', 'bbbbbbbb-1111-4111-8111-111111111111', {'terminId': _t3, 'userId': fixIdKind});
     });
     expect(find.text('Annas Termin'), findsOneWidget);
+    await tippe(tester, filterKnopf);
     await tippe(tester, find.bySemanticsLabel('Termine von Ben'));
+    expect(find.byTooltip('Filter und Anzeige, 3 aktiv'), findsOneWidget, reason: 'Zähler: Ben gewählt, im Test sind Feiertage und Ferien aus');
+    await tippeText(tester, 'Fertig');
     expect(find.text('Annas Termin'), findsNothing);
     expect(find.text('Bens Termin'), findsOneWidget);
     expect(find.text('Gemeinsam'), findsOneWidget);
-    await tippeText(tester, 'Alle');
+    await tippe(tester, filterKnopf);
+    await tippeText(tester, 'Zurücksetzen');
+    await tippeText(tester, 'Fertig');
     expect(find.text('Annas Termin'), findsOneWidget);
+    expect(find.byTooltip('Filter und Anzeige'), findsOneWidget, reason: 'zurückgesetzt: kein aktiver Filter');
   });
 
   testWidgets('Detail, Bearbeiten (alle) und Löschen eines einzelnen Termins', (tester) async {
@@ -174,7 +184,7 @@ void main() {
   for (final skala in [1.0, 1.5]) {
     testWidgets('Termin anlegen (Textskala $skala): Editor, Wiederholung, Teilnehmer; erscheint in der Agenda; Layout', (tester) async {
       final env = await start(tester, skala: skala);
-      await tippeText(tester, 'Neuer Termin');
+      await tippe(tester, find.byTooltip('Neuer Termin'));
       expect(find.text('Neuer Termin'), findsWidgets);
       pruefeLayout(tester, 'Editor');
       await eingeben(tester, 'Titel', 'Elternabend mit einem ziemlich langen Titel, der umbrechen muss');
@@ -207,7 +217,7 @@ void main() {
 
   testWidgets('Editor: ohne Titel wird nicht gespeichert, mit Titel schon', (tester) async {
     final env = await start(tester);
-    await tippeText(tester, 'Neuer Termin');
+    await tippe(tester, find.byTooltip('Neuer Termin'));
     await tippeText(tester, 'Termin anlegen');
     expect(find.text('Gib dem Termin einen Titel.'), findsOneWidget);
     expect(await env.db.select(env.db.termine).get(), isEmpty);
@@ -218,7 +228,7 @@ void main() {
   });
 
   testWidgets('Serie: nur dieses Vorkommen löschen = Ausnahme "abgesagt"; die Serie bleibt', (tester) async {
-    final env = await start(tester, vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY')));
+    final env = await start(tester, groesse: const Size(360, 3000), vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY')));
     final vorher = find.text('Chor').evaluate().length;
     expect(vorher, greaterThan(3));
     await tippe(tester, find.text('Chor').first);
@@ -235,7 +245,7 @@ void main() {
   });
 
   testWidgets('Serie: dieses und folgende löschen kürzt die Serie (UNTIL)', (tester) async {
-    final env = await start(tester, vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY')));
+    final env = await start(tester, groesse: const Size(360, 3000), vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY')));
     await tippe(tester, find.text('Chor').at(2));
     await tippeText(tester, 'Löschen');
     await tippeText(tester, 'Dieses und alle folgenden');
@@ -262,17 +272,25 @@ void main() {
     expect(find.text('Chor Sonderprobe'), findsOneWidget);
   });
 
-  testWidgets('Monat: 48-px-Zellen, Punkte in Personenfarben, Tag wählen zeigt dessen Termine; Layout', (tester) async {
+  testWidgets('Monat: Raster füllt den Platz, heute ist markiert, Tipp auf den Tag öffnet das Tagesblatt mit dessen Terminen; Layout', (tester) async {
     await start(tester, vorher: (e) {
       e.sync.andereAendert('termin', _t1, _zeittermin('Heute-Termin', tage: 0, stunde: 22));
     });
     await tippeText(tester, 'Monat');
     final heute = heuteTag();
-    final zelle = find.widgetWithText(InkWell, '${heute.day}').first;
-    expect(tester.getSize(zelle).height, 48);
+    final zelle = find.byKey(ValueKey('kalender-tag-${tagText(heute)}'));
+    expect(zelle, findsOneWidget);
+    expect(tester.getSize(zelle).height, greaterThanOrEqualTo(44));
     expect(tester.getSize(zelle).width, greaterThanOrEqualTo(44));
+    expect(find.text('Heute-Termin'), findsOneWidget, reason: 'als Balken im Raster');
     await tippe(tester, zelle);
-    expect(find.text('Heute-Termin'), findsOneWidget);
+    expect(find.text('Termin'), findsOneWidget, reason: 'Tagesblatt mit "+ Termin"');
+    expect(find.text('Heute-Termin'), findsNWidgets(2), reason: 'Balken und Liste im Blatt');
+    expect(find.text('22:00'), findsOneWidget);
+    await tippe(tester, find.text('Heute-Termin').last);
+    expect(find.text('Bearbeiten'), findsOneWidget, reason: 'Detailblatt');
+    await tester.tapAt(const Offset(10, 10));
+    await warte(tester);
     await tippe(tester, find.byTooltip('Nächster Monat'));
     expect(find.text('Heute-Termin'), findsNothing);
     pruefeLayout(tester, 'Monat');
@@ -285,7 +303,7 @@ void main() {
     expect(find.text('frei'), findsWidgets);
     await tippe(tester, find.byTooltip('Nächste Woche'));
     expect(find.text('Wochentermin'), findsNothing);
-    await tippeText(tester, 'Heute');
+    await tippe(tester, find.byTooltip('Heute'));
     expect(find.text('Wochentermin'), findsOneWidget);
     pruefeLayout(tester, 'Woche');
   });
@@ -336,24 +354,36 @@ void main() {
     for (final skala in [1.0, 1.5]) {
       testWidgets('Auswahl-Knöpfe stehen nebeneinander und stapeln sich nicht (Breite $breite, Textskala $skala); Touch-Ziele >= 44 px', (tester) async {
         await start(tester, skala: skala, groesse: Size(breite, 900), vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Zahnarzt')));
-        final verfuegbar = breite - 40; // Seitenrand 2 x 20
-        final alle = ['Agenda', 'Monat', 'Woche'];
-        final rects = [for (final a in alle) tester.getRect(find.widgetWithText(AuswahlKnopf, a))];
-        for (var i = 0; i < alle.length; i++) {
-          expect(rects[i].width, lessThan(verfuegbar * 0.6), reason: '${alle[i]} füllt die ganze Zeile (gestapelt)');
-          expect(rects[i].height, greaterThanOrEqualTo(44));
+        final verfuegbar = breite - 40; // Seitenrand 2 x 20 im Editor
+        // Leiste: Umschalter mit drei Segmenten, Filter, Mehr und runder Knopf; alles mindestens 44 px und innerhalb des Bildschirms
+        final segmente = [
+          for (final a in ['Agenda', 'Monat', 'Woche']) tester.getRect(find.ancestor(of: find.descendant(of: find.byType(AnsichtUmschalter), matching: find.text(a)), matching: find.byType(InkWell)).first),
+        ];
+        for (final r in segmente) {
+          expect(r.height, greaterThanOrEqualTo(44));
+          expect(r.width, greaterThanOrEqualTo(44));
         }
-        if (skala == 1.0) expect(rects.map((r) => r.top).toSet(), hasLength(1), reason: 'bei normaler Schrift in einer Zeile');
-        // Personenfilter: Alle und die Personen nebeneinander
+        expect(segmente.map((r) => r.top).toSet(), hasLength(1), reason: 'Umschalter in einer Zeile');
+        expect(segmente.last.right, lessThanOrEqualTo(breite));
+        for (final (t, f) in [('Filter', find.widgetWithIcon(IconButton, Icons.filter_list)), ('Mehr', find.widgetWithIcon(IconButton, Icons.more_vert))]) {
+          final r = tester.getRect(f);
+          expect(r.height, greaterThanOrEqualTo(44), reason: t);
+          expect(r.width, greaterThanOrEqualTo(44), reason: t);
+          expect(r.right, lessThanOrEqualTo(breite), reason: t);
+        }
+        final neu = tester.getSize(find.byTooltip('Neuer Termin'));
+        expect(neu.height, greaterThanOrEqualTo(44));
+        expect(neu.width, greaterThanOrEqualTo(44));
+        // Filterblatt: Personen nebeneinander
+        await tippe(tester, filterKnopf);
         final alleKnopf = tester.getRect(find.widgetWithText(AuswahlKnopf, 'Alle'));
         final anna = tester.getRect(find.bySemanticsLabel('Termine von Anna'));
         expect(alleKnopf.width, lessThan(verfuegbar * 0.6));
         if (skala == 1.0) expect(alleKnopf.top, anna.top, reason: 'Filter in einer Zeile');
-        final neu = tester.getSize(find.widgetWithText(FilledButton, 'Neuer Termin'));
-        expect(neu.height, greaterThanOrEqualTo(44));
-        expect(neu.width, lessThan(verfuegbar));
+        pruefeLayout(tester, 'Filterblatt');
+        await tippeText(tester, 'Fertig');
         // Editor: Erinnerung, Freigabe, Wiederholungsblatt
-        await tippeText(tester, 'Neuer Termin');
+        await tippe(tester, find.byTooltip('Neuer Termin'));
         for (final k in tester.widgetList<AuswahlKnopf>(find.byType(AuswahlKnopf))) {
           final r = tester.getRect(find.byWidget(k));
           expect(r.width, lessThan(verfuegbar * 0.8), reason: '${k.text} gestapelt');
@@ -378,11 +408,14 @@ void main() {
     }
   }
 
-  testWidgets('Auswahl-Knöpfe auch im Desktop-Layout nebeneinander (1000 px); Kalender dort ohne doppelte Profil-/Sync-Knöpfe in der Kopfzeile', (tester) async {
+  testWidgets('Desktop-Layout (1000 px): Leiste in einer Zeile mit Umschalter und "Neuer Termin"; Kalender dort ohne doppelte Profil-/Sync-Knöpfe in der Kopfzeile', (tester) async {
     await start(tester, groesse: const Size(1000, 900));
-    final rects = [for (final a in ['Agenda', 'Monat', 'Woche']) tester.getRect(find.widgetWithText(AuswahlKnopf, a))];
+    final rects = [for (final a in ['Agenda', 'Monat', 'Woche']) tester.getRect(find.descendant(of: find.byType(AnsichtUmschalter), matching: find.text(a)))];
     expect(rects.map((r) => r.top).toSet(), hasLength(1));
-    expect(rects.every((r) => r.width < 200), isTrue);
+    expect(find.widgetWithText(FilledButton, 'Neuer Termin'), findsOneWidget);
+    expect(find.byTooltip('Neuer Termin'), findsNothing, reason: 'der runde Knopf ist nur mobil');
+    expect(find.text('Anzeige'), findsOneWidget);
+    expect(find.text('Importieren / Exportieren'), findsOneWidget);
     // Desktop: Datum und Titel bleiben, Sync (Fußzeile) und Profil (Seitenleiste) stehen schon woanders
     expect(find.text('// ${kopfzeilenDatum()}'.toUpperCase()), findsOneWidget);
     expect(find.text('Kalender'), findsWidgets);
@@ -435,7 +468,7 @@ void main() {
 
   testWidgets('Zeitzonen-Daten fehlen: Speichern wird gesperrt mit Hinweis, ein neuer Versuch klappt', (tester) async {
     final env = await start(tester);
-    await tippeText(tester, 'Neuer Termin');
+    await tippe(tester, find.byTooltip('Neuer Termin'));
     await eingeben(tester, 'Titel', 'Arzt');
     zeitzonenBereitUeberschreibung = false;
     addTearDown(() => zeitzonenBereitUeberschreibung = null);

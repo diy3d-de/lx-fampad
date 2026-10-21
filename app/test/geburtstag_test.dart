@@ -130,7 +130,7 @@ void main() {
 
   testWidgets('Editor: Geburtstag anlegen (ganztägig, jährlich, Marke mit Geburtsjahr), erscheint mit Alter in der Agenda', (tester) async {
     final (env, _) = await start(tester, groesse: const Size(360, 2400)); // hoch genug, dass der Editor nicht scrollen muss
-    await tippe(tester, find.text('Neuer Termin'));
+    await tippe(tester, find.byTooltip('Neuer Termin'));
     await tester.enterText(find.byType(TextField).first, 'Lena');
     await tippe(tester, find.text('Geburtstag'));
     expect(find.text('GEBURTSDATUM'), findsWidgets);

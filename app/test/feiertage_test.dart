@@ -145,10 +145,28 @@ void main() {
     container.read(kalenderAuswahlProvider.notifier).tag(_d(jahr, 1, 1));
     await warte(tester);
     expect(find.text('Neujahr'), findsOneWidget);
-    await tippe(tester, find.text('Feiertage & Ferien'));
+    await tippe(tester, find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Filter und Anzeige')));
+    await tippe(tester, find.text('Feiertage'));
+    await tippeText(tester, 'Fertig');
     expect(find.text('Neujahr'), findsNothing);
     expect(container.read(feiertageAnzeigenProvider), isFalse);
+    expect(container.read(ferienAnzeigenProvider), isTrue, reason: 'Schulferien haben einen eigenen Schalter');
     expect(await container.read(feiertageSpeicherProvider).lesen(), 'nein');
+    expect(await container.read(feiertageSpeicherProvider).lesen(schluessel: kFerienSchluessel), isNull);
+  });
+
+  testWidgets('Schalter Schulferien und Geburtstage: eigene lokale Werte; ohne eigenen Wert gilt für Ferien der alte gemeinsame Schalter', (tester) async {
+    final container = await start(tester, feiertage: 'nein');
+    expect(container.read(feiertageAnzeigenProvider), isFalse);
+    await warte(tester);
+    expect(container.read(ferienAnzeigenProvider), isFalse, reason: 'alter gemeinsamer Wert "nein" gilt weiter für die Ferien');
+    expect(container.read(geburtstageAnzeigenProvider), isTrue);
+    await container.read(ferienAnzeigenProvider.notifier).setzen(true);
+    await container.read(geburtstageAnzeigenProvider.notifier).setzen(false);
+    final speicher = container.read(feiertageSpeicherProvider);
+    expect(await speicher.lesen(schluessel: kFerienSchluessel), 'ja');
+    expect(await speicher.lesen(schluessel: kGeburtstageSchluessel), 'nein');
+    expect(await speicher.lesen(), 'nein', reason: 'Feiertage bleiben aus');
   });
 
   testWidgets('Kalender Woche: Feiertage erscheinen am Tag, bei ausgeschaltetem Schalter nicht', (tester) async {

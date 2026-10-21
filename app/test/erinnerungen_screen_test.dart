@@ -173,7 +173,7 @@ void main() {
         env.extraOverrides.addAll([erinnerungPortProvider.overrideWithValue(port), erinnerungSpeicherProvider.overrideWithValue(speicher)]);
         await starteApp(tester, env, skala: skala);
         await tippe(tester, find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
-        await tippeText(tester, 'Neuer Termin');
+        await tippe(tester, find.byTooltip('Neuer Termin'));
         await tippeText(tester, '15 Minuten');
         await warte(tester);
         expect(find.textContaining('Benachrichtigungen für lx-familyhub nicht erlaubt'), erlaubt ? findsNothing : findsOneWidget);
