@@ -2,6 +2,7 @@
 # NUR FÜR DEN CONTAINER-TEST (test-integration.sh): Attrappe für systemctl in einem Container ohne systemd.
 # Startet lx-fampad (mit vorgeschalteter Migration), ntfy und die Sicherung als normale Prozesse; alles andere ist ein Nichtstun.
 # Wird nie auf einem echten Server installiert.
+[ -f /.dockerenv ] || { echo "fake-systemctl: läuft nur in einem Docker-Container (/.dockerenv fehlt): Abbruch" >&2; exit 99; }
 STATE=/run/fake-systemctl
 mkdir -p "$STATE"
 cmd="${1:-}"; shift || true
@@ -23,7 +24,7 @@ starten() {
   case "$unit" in
     lx-fampad)
       ( lade_env /etc/lx-fampad/migrate.env; export NODE_ENV=production; cd /srv/fampad/server && runuser -u lx-fampad -- node dist/db/migrate-cli.js ) >> /var/log/fake-lx-fampad-migrate.log 2>&1 || return 1
-      ( lade_env /etc/lx-fampad/env; export NODE_ENV=production HOST=127.0.0.1 PORT=4400; cd /srv/fampad/server; setsid runuser -u lx-fampad -- node dist/server.js >> /var/log/fake-lx-fampad.log 2>&1 & echo $! > "$pidfile" )
+      ( lade_env /etc/lx-fampad/env; export NODE_ENV=production HOST=127.0.0.1 PORT=4400; cd /srv/fampad/server || exit 1; setsid runuser -u lx-fampad -- node dist/server.js >> /var/log/fake-lx-fampad.log 2>&1 & echo $! > "$pidfile" )
       ;;
     ntfy)
       ( setsid runuser -u ntfy -- ntfy serve --config /etc/ntfy/server.yml >> /var/log/fake-ntfy.log 2>&1 & echo $! > "$pidfile" )

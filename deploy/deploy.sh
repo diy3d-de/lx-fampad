@@ -98,10 +98,16 @@ if ! warte_auf_health; then
   exit 1
 fi
 
-# Wetter-Abruf (eigener Dienst, deploy/README.md Abschnitt 12): nach dem Update neu starten, wenn er eingerichtet ist
-if systemctl cat lx-fampad-weather.service >/dev/null 2>&1; then
-  echo "==> restart lx-fampad-weather"
-  sudo -n systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudoers-Regel fehlt? README Schritt 5). Manuell: sudo systemctl restart lx-fampad-weather" >&2
+# Wetter-Abruf (eigener Dienst, deploy/README.md Abschnitt 12): nach dem Update nur neu starten, wenn er schon LÄUFT (ein Neustart eines
+# gestoppten Dienstes würde ihn starten: zwei Server dürfen das Netatmo-Token nicht gleichzeitig abrufen). Beim Aufbau durch
+# neuinstallation/bootstrap-server.sh (DEPLOY_OHNE_PULL=1) wird der Wetter-Dienst nie angefasst.
+if [ "${DEPLOY_OHNE_PULL:-0}" != 1 ] && systemctl cat lx-fampad-weather.service >/dev/null 2>&1; then
+  if systemctl is-active --quiet lx-fampad-weather; then
+    echo "==> restart lx-fampad-weather"
+    sudo -n systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudoers-Regel fehlt? README Schritt 5). Manuell: sudo systemctl restart lx-fampad-weather" >&2
+  else
+    echo "==> lx-fampad-weather läuft nicht und wird nicht gestartet"
+  fi
   if ! cmp -s deploy/lx-fampad-weather.service /etc/systemd/system/lx-fampad-weather.service; then
     echo "==> Hinweis: deploy/lx-fampad-weather.service weicht von /etc/systemd/system ab. Übernehmen mit: sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst"
   fi

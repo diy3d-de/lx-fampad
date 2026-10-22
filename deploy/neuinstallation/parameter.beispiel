@@ -21,6 +21,11 @@
 # Swap in MB (0 = keiner). Bei 2 GB Arbeitsspeicher empfohlen: 1024
 #SWAP_MB=1024
 
+# Pins übersteuern: nur nötig, wenn das Repository die fest eingebaute Version nicht mehr führt (das Skript nennt dann die verfügbaren).
+# Bewusst wählen und danach in docs/VERSIONEN.md nachziehen; Node muss zu server/.nvmrc (24.x ab 24.21) passen.
+#NODE_PKG_VERSION=24.21.0-1nodesource1
+#CADDY_PKG_VERSION=2.11.7
+
 # --- Anwendung (nur bei einer LEEREN Neuinstallation; bei einer Wiederherstellung steht alles in der gesicherten env) -------------------------
 # SHA-256-Fingerabdruck des Release-Signaturschlüssels der Android-App (AA:BB:… mit 32 Bytes): ergibt assetlinks.json und WEBAUTHN_ORIGINS
 #RELEASE_CERT_SHA256=AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99

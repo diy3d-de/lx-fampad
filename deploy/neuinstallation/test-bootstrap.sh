@@ -45,6 +45,8 @@ gleich "--identity ohne --sicherung Exit-Code" 2 "$(a --identity-stdin >/dev/nul
 gleich "--phase und --ab zusammen Exit-Code" 2 "$(a --phase pruefen --ab caddy >/dev/null 2>&1; echo $?)"
 gleich "unbekannte Phase Exit-Code" 2 "$(a --phase gibtsnicht >/dev/null 2>&1; echo $?)"
 gleich "--identity-datei-loeschen ohne Datei Exit-Code" 2 "$(a --identity-datei-loeschen >/dev/null 2>&1; echo $?)"
+gleich "--dns-pruefung-ueberspringen ohne --ohne-systemd Exit-Code" 2 "$(a --dns-pruefung-ueberspringen >/dev/null 2>&1; echo $?)"
+gleich "--identity-datei-loeschen außerhalb von /dev/shm und /run Exit-Code" 2 "$(a --sicherung /tmp --identity-datei /tmp/x --identity-datei-loeschen >/dev/null 2>&1; echo $?)"
 gelingt "--hilfe nennt die Phasen" bash -c "env -u BOOTSTRAP_NUR_FUNKTIONEN bash '$SKRIPT' --hilfe | grep -q 'konfiguration'"
 
 echo "== Parameterdatei"
@@ -78,6 +80,22 @@ gelingt "parameter.beispiel: alle Schlüssel einkommentiert sind gültig" p "$(c
 ERLAUBTE="$(grep -E '^ +GIT_REPO_URL\|' "$SKRIPT" | tr -d ' ' | sed 's/)$//' | tr '|' ' ')"
 gleich "parameter.beispiel enthält jeden erlaubten Schlüssel (Liste im Skript: $(wc -w <<<"$ERLAUBTE") Stück)" "" "$(for k in $ERLAUBTE; do grep -q "^$k=" "$ARBEIT/beispiel.txt" || echo -n "$k "; done)"
 : "$RECIP"
+
+echo "== Rechte-Prüfungen und Schlüsseldatei"
+: > "$ARBEIT/r1"; chmod 644 "$ARBEIT/r1"
+gelingt "root-eigene Datei mit 644 ist zulässig" nur_root_schreibbar "$ARBEIT/r1"
+chmod 664 "$ARBEIT/r1"; scheitert "gruppenschreibbare Datei wird abgelehnt" nur_root_schreibbar "$ARBEIT/r1"
+chmod 646 "$ARBEIT/r1"; scheitert "weltschreibbare Datei wird abgelehnt" nur_root_schreibbar "$ARBEIT/r1"
+chmod 644 "$ARBEIT/r1"; ln -s "$ARBEIT/r1" "$ARBEIT/r2"; scheitert "Symlink wird abgelehnt" nur_root_schreibbar "$ARBEIT/r2"
+printf 'GIT_REF=v1\n' > "$ARBEIT/pg.txt"; chmod 664 "$ARBEIT/pg.txt"
+scheitert "Parameterdatei mit Gruppen-Schreibrecht wird abgelehnt" bash -c "BOOTSTRAP_NUR_FUNKTIONEN=1 . '$SKRIPT'; set +e; parameter_lesen '$ARBEIT/pg.txt'"
+scheitert "Schlüsseldatei außerhalb von /dev/shm und /run darf nicht gelöscht werden" identitaet_datei_loeschbar "$ARBEIT/r1"
+if [ -d /dev/shm ]; then
+  SHM="/dev/shm/bootstrap-test-$$"; : > "$SHM"; chmod 600 "$SHM"
+  gelingt "Datei in /dev/shm (root, kein Symlink) darf gelöscht werden" identitaet_datei_loeschbar "$SHM"
+  ln -s "$SHM" "$SHM.link"; scheitert "Symlink in /dev/shm wird abgelehnt" identitaet_datei_loeschbar "$SHM.link"
+  rm -f "$SHM" "$SHM.link"
+else uebersprungen "Schlüsseldatei in /dev/shm" "/dev/shm fehlt"; fi
 
 echo "== env_wert und env_setzen"
 printf 'A=1\nB=zwei\nB=drei\nC=x=y' > "$ARBEIT/env"
@@ -152,7 +170,7 @@ heredoc() { # Inhalt des Heredocs, der nach Zeile "$2" beginnt, in Datei $1
 }
 gleich "Härtungs-Drop-in von ntfy ist in beiden Skripten gleich" \
   "$(heredoc "$REPO_WURZEL/deploy/einrichtung-ntfy.sh" "haertung.conf <<'EOF'")" \
-  "$(heredoc "$SKRIPT" "haertung.conf <<'EOF'")"
+  "$(heredoc "$SKRIPT" "haertung.conf\" <<'EOF'")"
 gleich "apt-Pin-Datei von ntfy ist in beiden Skripten gleich" \
   "$(heredoc "$REPO_WURZEL/deploy/einrichtung-ntfy.sh" "preferences.d/ntfy <<'EOF'")" \
   "$(heredoc "$SKRIPT" "preferences.d/ntfy <<'EOF'")"
@@ -177,6 +195,10 @@ if hat_werkzeug age && hat_werkzeug age-keygen && hat_werkzeug tar; then
   head -c 64 /dev/urandom > "$ARBEIT/wurzel/dump.bin"
   printf 'PGDMPxxxxxxxxxxxx' | age -r "$PUB" -o "$ARBEIT/db-20261022-033000.dump.age"
   baue_config "$ARBEIT/config-gut.age" etc/lx-fampad
+  # Swap: ohne --swap-ok Abbruch vor dem Einlesen, mit --swap-ok Warnung; Schlüssel wird verworfen
+  ( swapon() { echo "/swapfile file 1G 0B -2"; }; ID_STDIN=1; SWAP_OK=0; identitaet_laden < "$K" ) >/dev/null 2>&1 && fehl "aktiver Swap bricht vor dem Einlesen des Schlüssels ab" || ok "aktiver Swap bricht vor dem Einlesen des Schlüssels ab"
+  ( swapon() { echo "/swapfile file 1G 0B -2"; }; ID_STDIN=1; SWAP_OK=1; identitaet_laden < "$K"; [ -n "$AGE_ID" ] ) >/dev/null 2>&1 && ok "mit --swap-ok wird der Schlüssel trotz Swap gelesen" || fehl "mit --swap-ok wird der Schlüssel trotz Swap gelesen"
+  ( swapon() { :; }; ID_STDIN=1; SWAP_OK=0; RESTORE=1; identitaet_laden < "$K"; schluessel_verwerfen; [ -z "$AGE_ID" ] && [ "$SCHLUESSEL_VERWORFEN" = 1 ] ) >/dev/null 2>&1 && ok "schluessel_verwerfen leert den Schlüssel" || fehl "schluessel_verwerfen leert den Schlüssel"
   AGE_ID="$(grep '^AGE-SECRET-KEY-' "$K")"
   DB_ARCHIV="$ARBEIT/db-20261022-033000.dump.age"; CFG_ARCHIV="$ARBEIT/config-gut.age"
   gleich "Entschlüsselung mit dem richtigen Schlüssel (Pipe, keine Schlüsseldatei)" "PGDMPxxxxxxxxxxxx" "$(age_entschluesseln "$DB_ARCHIV")"
@@ -217,6 +239,22 @@ etc/lx-fampad/env"
   ( SICHERUNG_DIR="$ARBEIT/lauf"; sicherung_ordner_pruefen ) >/dev/null 2>&1 && ok "Sicherungsordner mit passenden Prüfsummen" || fehl "Sicherungsordner mit passenden Prüfsummen"
   printf 'x' >> "$ARBEIT/lauf/config-20261022-033000.tar.age"
   ( SICHERUNG_DIR="$ARBEIT/lauf"; sicherung_ordner_pruefen ) >/dev/null 2>&1 && fehl "veränderte Datei fällt über die Prüfsumme auf" || ok "veränderte Datei fällt über die Prüfsumme auf"
+  # SHA256SUMS muss alle benutzten Archive nennen
+  cp "$ARBEIT/config-gut.age" "$ARBEIT/lauf/config-20261022-033000.tar.age"
+  ( cd "$ARBEIT/lauf" && sha256sum -- db-*.age > SHA256SUMS )
+  ( SICHERUNG_DIR="$ARBEIT/lauf"; sicherung_ordner_pruefen ) >/dev/null 2>&1 && fehl "Archiv ohne Eintrag in SHA256SUMS wird abgelehnt" || ok "Archiv ohne Eintrag in SHA256SUMS wird abgelehnt"
+  ( cd "$ARBEIT/lauf" && sha256sum -- *.age > SHA256SUMS )
+  chmod 666 "$ARBEIT/lauf/SHA256SUMS"
+  ( SICHERUNG_DIR="$ARBEIT/lauf"; sicherung_ordner_pruefen ) >/dev/null 2>&1 && fehl "weltschreibbare SHA256SUMS wird abgelehnt" || ok "weltschreibbare SHA256SUMS wird abgelehnt"
+  chmod 644 "$ARBEIT/lauf/SHA256SUMS"
+  ( SICHERUNG_DIR="$ARBEIT/lauf"; sicherung_ordner_pruefen ) >/dev/null 2>&1 && ok "Sicherungsordner mit richtigen Rechten und vollständiger SHA256SUMS" || fehl "Sicherungsordner mit richtigen Rechten und vollständiger SHA256SUMS"
+  # Dateiablage-Archiv (ungepacktes tar): Hardlink, fremder Pfad, gutes Archiv
+  mkdir -p "$ARBEIT/wf/srv/fampad/files"; echo x > "$ARBEIT/wf/srv/fampad/files/a"; ln "$ARBEIT/wf/srv/fampad/files/a" "$ARBEIT/wf/srv/fampad/files/b"
+  tar -cf - -C "$ARBEIT/wf" srv | age -r "$PUB" -o "$ARBEIT/files-hardlink.age"
+  ( tar_archiv_pruefen "$ARBEIT/files-hardlink.age" "" "Dateiablage" ) >/dev/null 2>&1 && fehl "Dateiablage-Archiv mit Hardlink wird abgelehnt" || ok "Dateiablage-Archiv mit Hardlink wird abgelehnt"
+  rm "$ARBEIT/wf/srv/fampad/files/b"
+  tar -cf - -C "$ARBEIT/wf" srv | age -r "$PUB" -o "$ARBEIT/files-gut.age"
+  gleich "Dateiablage-Archiv ohne Links wird gelesen" "$(printf 'srv/\nsrv/fampad/\nsrv/fampad/files/\nsrv/fampad/files/a')" "$(tar_archiv_pruefen "$ARBEIT/files-gut.age" "" "Dateiablage" 2>/dev/null)"
   AGE_ID=""
 else
   uebersprungen "age-Tests" "age, age-keygen oder tar fehlt"
@@ -225,7 +263,10 @@ fi
 echo "== Trockenlauf (nur wenn auf einem Debian-13-System als root)"
 if [ "$(id -u)" = 0 ] && grep -q '^VERSION_ID="13"' /etc/os-release 2>/dev/null; then
   OUT="$(a --dry-run --ohne-systemd --lx-anlegen 2>&1)"; RC=$?
-  gleich "Trockenlauf Exit-Code (frischer Server, nichts vorhanden)" 0 "$RC"
+  # ohne Netz (--network none) meldet der Trockenlauf "nicht erreichbar" als PROBLEM: das ist erwartet, alles andere nicht
+  ANDERE_PROBLEME="$(grep -E '^ +PROBLEM:' <<<"$OUT" | grep -vc 'nicht erreichbar' || true)"
+  gleich "Trockenlauf: keine anderen PROBLEM-Zeilen als fehlendes Netz" 0 "$ANDERE_PROBLEME"
+  if [ "$RC" = 0 ] || { [ "$RC" = 1 ] && grep -q 'nicht erreichbar' <<<"$OUT"; }; then ok "Trockenlauf Exit-Code (0, oder 1 nur wegen fehlendem Netz)"; else fehl "Trockenlauf Exit-Code $RC"; fi
   gelingt "Trockenlauf nennt alle Phasen" bash -c "for p in pruefen pakete system code konfiguration datenbank anwendung ntfy caddy sicherung pruefung; do echo \"\$1\" | grep -q \"Phase .*: \$p\" || exit 1; done" _ "$OUT"
   gelingt "Trockenlauf meldet 'nichts wurde verändert'" grep -q 'nichts wurde verändert' <<<"$OUT"
   gelingt "Trockenlauf listet die Aufgaben für den Menschen" grep -q 'Das musst du noch selbst tun' <<<"$OUT"

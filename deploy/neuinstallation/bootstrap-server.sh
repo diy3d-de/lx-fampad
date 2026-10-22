@@ -29,20 +29,24 @@
 #   --sicherung ORDNER         Sicherungsordner (db-*.dump.age, config-*.tar.age, SHA256SUMS), z. B. vom NAS
 #   --identity-stdin           privaten age-Schlüssel von stdin lesen (Einfügen, dann Strg+D; Eingabe unsichtbar)
 #   --identity-datei DATEI     privaten age-Schlüssel aus dieser (temporären) Datei lesen; wird nie kopiert
-#   --identity-datei-loeschen  die Schlüsseldatei nach dem Einlesen sofort überschreiben und löschen
+#   --identity-datei-loeschen  die Schlüsseldatei nach dem Einlesen sofort überschreiben und löschen (nur Dateien unter /dev/shm oder /run, root-eigen, kein Symlink)
+#   --swap-ok                  trotz aktivem Swap fortfahren (sonst Abbruch vor dem Einlesen des Schlüssels: Swap könnte ihn auf die Platte auslagern)
 #   --konfiguration-ersetzen   eine vorhandene, abweichende /etc/lx-fampad/env durch die der Sicherung ersetzen (Kopie bleibt)
 #   --datenbank-ersetzen       eine vorhandene, NICHT leere Datenbank lx_fampad durch die Sicherung ersetzen (die alte wird umbenannt, nicht gelöscht)
 #   --wetter-starten           den Wetter-Dienst einschalten (nur, wenn der alte Server aus ist: Netatmo-Token!)
-#   --dns-pruefung-ueberspringen  Caddy auch ohne passenden DNS-Eintrag einrichten (nur für Tests)
+#   --dns-pruefung-ueberspringen  Caddy ohne DNS-Prüfung behandeln (nur Container-Tests, nur zusammen mit --ohne-systemd, sonst Exit 2)
 #   --lx-anlegen               den Benutzer lx anlegen, falls er fehlt (ohne Passwort; Schlüssel aus LX_SSH_PUBKEY)
 #   --yes                      Rückfragen mit "ja" beantworten (nur zusammen mit den ausdrücklichen --...-ersetzen-Optionen sinnvoll)
-#   --ohne-systemd             nur für Container-Tests: keine systemctl-Aufrufe
+#   --ohne-systemd             NUR für Container-Tests (test-integration/): kein systemd-Zwang, kein systemd-analyze, Caddy-Site-Dateien werden nur geprüft,
+#                              nie gegen die echten Internet-Adressen betrieben; systemctl wird trotzdem aufgerufen (im Test eine Attrappe)
 # Exit-Codes: 0 fertig (ggf. mit Hinweisen "OFFEN"), 1 Fehler, 2 falscher Aufruf, 10 Pause (ein Schritt von dir ist nötig, danach denselben Befehl wiederholen).
 #
 # Sicherheitsregeln dieses Skripts: kein Geheimnis in Argumenten, Log oder Repository (Passwörter entstehen auf dem Server, der private
 # age-Schlüssel liegt nur im Arbeitsspeicher und wird nie abgelegt); das Haupt-Caddyfile von lx-labs.dev wird nie überschrieben (nur
 # /etc/caddy/conf.d/*.caddy; die Importzeile nur in einem unveränderten Standard-Caddyfile); kein curl|bash, alle Quellen mit Schlüssel- oder
-# Prüfsummen-Pin; nichts wird ausgeführt, was aus der Sicherung stammt (nur Dateien an erlaubten Pfaden werden entpackt).
+# Prüfsummen-Pin. Aus der Sicherung werden nur Dateien an erlaubten Pfaden entpackt (keine Links, Geräte, ..-Pfade); der Datenbank-Dump läuft als
+# Migrationsrolle (nie als Superuser), kann aber SQL enthalten: die Echtheit der Sicherung beweist erst eine Signatur (offener Punkt, docs/NEUINSTALLATION.md).
+# Der private Schlüssel wird nach der letzten Entschlüsselung verworfen (vor einem Swap); ein vorhandener Swap bricht vor dem Einlesen ab (--swap-ok).
 #
 # Das gesamte Skript steht in Funktionen: bash liest es vollständig, bevor es etwas ausführt (der Git-Checkout darf es während des Laufs ersetzen).
 set -Eeuo pipefail
@@ -63,10 +67,11 @@ readonly DB_NAME="lx_fampad"
 readonly RT_ROLE="lx_fampad"
 readonly MG_ROLE="lx_fampad_migrate"
 readonly PG_MAJOR="17"
-readonly NODE_PKG_VERSION="24.21.0-1nodesource1"      # = server/.nvmrc 24.21.0
+# Pins: Standardwerte; mit NODE_PKG_VERSION / CADDY_PKG_VERSION in der Parameterdatei bewusst übersteuerbar (wenn das Repository die Version nicht mehr führt)
+NODE_PKG_VERSION="24.21.0-1nodesource1"               # = server/.nvmrc 24.21.0
 readonly NODESOURCE_FPR="6F71F525282841EEDAF851B42F59B5F99B1BE0B4"
 readonly NODESOURCE_KEY_URL="https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
-readonly CADDY_PKG_VERSION="2.11.7"
+CADDY_PKG_VERSION="2.11.7"
 readonly CADDY_FPR="65760C51EDEA2017CEA2CA15155B6D79CA56EA34"
 readonly CADDY_KEY_URL="https://dl.cloudsmith.io/public/caddy/stable/gpg.key"
 readonly GITHUB_ED25519_FPR="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"   # https://api.github.com/meta (ssh_key_fingerprints)
@@ -77,9 +82,10 @@ readonly PHASEN=(pruefen pakete system code konfiguration datenbank anwendung nt
 DRY=0; JA=0; OHNE_SYSTEMD=0; LX_ANLEGEN=0
 PARAMS_DATEI=""; NUR_PHASEN=""; AB_PHASE=""
 SICHERUNG_DIR=""; ID_STDIN=0; ID_DATEI=""; ID_LOESCHEN=0
-KONFIG_ERSETZEN=0; DB_ERSETZEN=0; WETTER_STARTEN=0; DNS_UEBERSPRINGEN=0
+KONFIG_ERSETZEN=0; DB_ERSETZEN=0; WETTER_STARTEN=0; DNS_UEBERSPRINGEN=0; SWAP_OK=0
 RESTORE=0
 AGE_ID=""                  # privater Schlüssel, nur hier im Arbeitsspeicher
+SCHLUESSEL_VERWORFEN=0     # 1 nach der letzten Entschlüsselung (Ende der Phase datenbank), bevor ein Swap aktiviert wird
 DB_ARCHIV=""; CFG_ARCHIV=""; FILES_ARCHIV=""
 REPO=""; LX_HOME=""
 AKTUELLE_PHASE="-"
@@ -93,6 +99,7 @@ P_WEATHER_ENABLED=""; P_WEATHER_PLACE=""; P_WEATHER_STATION_MAC=""; P_WEATHER_BB
 P_RELEASE_CERT_SHA256=""; P_E2EE_PW_BACKUP=""; P_AUTH_LEGACY_PASSWORD_LOGIN=""
 P_BACKUP_AGE_RECIPIENTS=""; P_BACKUP_AGE_RECIPIENTS_CONFIG=""; P_BACKUP_NAS_PUBKEY=""; P_BACKUP_NAS_IP=""
 P_SWAP_MB="0"
+P_NODE_PKG_VERSION=""; P_CADDY_PKG_VERSION=""
 
 # --- Ausgabe ---------------------------------------------------------------------------------------------------------------------------
 info() { echo "    $*"; }
@@ -113,7 +120,7 @@ pruefpunkt() { # $1 Text, Rest: Befehl (ohne Ausgabe); im Trockenlauf nur genann
   if trocken; then echo "    [dry-run] Prüfpunkt: $text"; return 0; fi
   if "$@" >/dev/null 2>&1; then echo "    Prüfpunkt ok: $text"; else fehler "Prüfpunkt fehlgeschlagen in Phase $AKTUELLE_PHASE: $text"; fi
 }
-sysd() { if [ "$OHNE_SYSTEMD" = 1 ]; then info "[ohne systemd] übersprungen: systemctl $*"; else systemctl "$@"; fi; }
+sysd() { systemctl "$@"; }   # im Test (--ohne-systemd) steht hier eine Attrappe (test-integration/fake-systemctl.sh)
 frage_ja() { # $1 Frage; Rückfragen nur mit --yes oder am Terminal
   [ "$JA" = 1 ] && return 0
   [ -r /dev/tty ] || fehler "Rückfrage nötig, aber kein Terminal vorhanden: --yes angeben oder in einem Terminal starten"
@@ -159,10 +166,15 @@ CADDY_ROLLBACK_AKTIV=0
 
 # --- Parameterdatei --------------------------------------------------------------------------------------------------------------------
 # Wird NIE als Shell ausgeführt (kein source): nur Zeilen SCHLÜSSEL=Wert aus einer festen Liste; alles andere bricht ab.
+# Datei oder Ordner gehört root und ist für Gruppe/Andere nicht schreibbar (sonst könnte ein anderer Benutzer sie zwischen Prüfung und Benutzung austauschen)
+nur_root_schreibbar() { # $1 Pfad
+  [ -e "$1" ] && [ ! -L "$1" ] && [ "$(stat -c %u "$1")" = 0 ] && [ $(( 8#$(stat -c %a "$1") & 8#022 )) -eq 0 ]
+}
 parameter_lesen() { # $1 Datei
   local datei="$1" zeile key val n=0
   local re_dq='^"(.*)"$' re_sq="^'(.*)'\$"
   [ -r "$datei" ] || fehler "Parameterdatei nicht lesbar: $datei"
+  nur_root_schreibbar "$datei" || fehler "Parameterdatei $datei muss root gehören, darf kein Symlink sein und darf für Gruppe/Andere nicht schreibbar sein (chown root:root, chmod 600)"
   while IFS= read -r zeile || [ -n "$zeile" ]; do
     n=$((n + 1)); zeile="${zeile%$'\r'}"
     case "$zeile" in ''|'#'*) continue ;; esac
@@ -174,7 +186,7 @@ parameter_lesen() { # $1 Datei
       fehler "Parameterdatei Zeile $n: enthält einen privaten Schlüssel. Der gehört nie in eine Datei auf dem Server."
     fi
     case "$key" in
-      GIT_REPO_URL|GIT_REF|LX_SSH_PUBKEY|CI_DEPLOY_PUBKEY|WEATHER_ENABLED|WEATHER_PLACE|WEATHER_STATION_MAC|WEATHER_BBOX|RELEASE_CERT_SHA256|E2EE_PW_BACKUP|AUTH_LEGACY_PASSWORD_LOGIN|BACKUP_AGE_RECIPIENTS|BACKUP_AGE_RECIPIENTS_CONFIG|BACKUP_NAS_PUBKEY|BACKUP_NAS_IP|SWAP_MB)
+      GIT_REPO_URL|GIT_REF|LX_SSH_PUBKEY|CI_DEPLOY_PUBKEY|WEATHER_ENABLED|WEATHER_PLACE|WEATHER_STATION_MAC|WEATHER_BBOX|RELEASE_CERT_SHA256|E2EE_PW_BACKUP|AUTH_LEGACY_PASSWORD_LOGIN|BACKUP_AGE_RECIPIENTS|BACKUP_AGE_RECIPIENTS_CONFIG|BACKUP_NAS_PUBKEY|BACKUP_NAS_IP|SWAP_MB|NODE_PKG_VERSION|CADDY_PKG_VERSION)
         printf -v "P_$key" '%s' "$val" ;;
       *) fehler "Parameterdatei Zeile $n: unbekannter Schlüssel '$key' (erlaubt sind nur die Schlüssel aus parameter.beispiel; Geheimnisse gehören nicht hierher)" ;;
     esac
@@ -211,6 +223,8 @@ parameter_pruefen() {
   if { [ -n "$P_BACKUP_NAS_PUBKEY" ] && [ -z "$P_BACKUP_NAS_IP" ]; } || { [ -z "$P_BACKUP_NAS_PUBKEY" ] && [ -n "$P_BACKUP_NAS_IP" ]; }; then
     fehler "BACKUP_NAS_PUBKEY und BACKUP_NAS_IP gehören zusammen"
   fi
+  [ -z "$P_NODE_PKG_VERSION" ] || [[ "$P_NODE_PKG_VERSION" =~ ^24\.[0-9]+\.[0-9]+-1nodesource1$ ]] || fehler "NODE_PKG_VERSION ungültig (24.x.y-1nodesource1)"
+  [ -z "$P_CADDY_PKG_VERSION" ] || [[ "$P_CADDY_PKG_VERSION" =~ ^2\.[0-9]+\.[0-9]+$ ]] || fehler "CADDY_PKG_VERSION ungültig (2.x.y)"
   [[ "$P_SWAP_MB" =~ ^[0-9]+$ ]] || fehler "SWAP_MB muss eine Zahl sein"
   if [ "$P_SWAP_MB" -ne 0 ] && { [ "$P_SWAP_MB" -lt 256 ] || [ "$P_SWAP_MB" -gt 8192 ]; }; then fehler "SWAP_MB: 0 oder 256 bis 8192"; fi
   return 0
@@ -310,8 +324,22 @@ db_passwort_lesen() { # $1 Datei, $2 Schlüssel
 age_entschluesseln() { # $1 Datei -> Klartext auf stdout; der Schlüssel läuft über eine Pipe (kein Datei, keine Prozessliste)
   age -d -i <(printf '%s\n' "$AGE_ID") -- "$1"
 }
+# Schlüsseldatei darf nur gelöscht werden, wenn sie im Arbeitsspeicher liegt (/dev/shm, /run), kein Symlink ist und root gehört
+identitaet_datei_loeschbar() { # $1 Pfad
+  case "$1" in /dev/shm/*|/run/*) ;; *) return 1 ;; esac
+  [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat -c %u "$1")" = 0 ]
+}
+# Swap kann Arbeitsspeicher (und damit den Schlüssel) auf die Platte auslagern
+swap_aktiv() { [ -n "$(swapon --show --noheadings 2>/dev/null || true)" ]; }
 identitaet_laden() {
   local roh="" zeile
+  if swap_aktiv; then
+    [ "$SWAP_OK" = 1 ] || fehler "Auf diesem Server ist Swap aktiv (swapon --show): der private Schlüssel könnte aus dem Arbeitsspeicher auf die Platte ausgelagert werden. Erst 'swapoff -a', oder bewusst mit --swap-ok fortfahren (danach den Swap-Bereich überschreiben/neu anlegen)."
+    warn "Swap ist aktiv, --swap-ok angegeben: der Schlüssel kann im Swap landen."
+  fi
+  if [ "$ID_LOESCHEN" = 1 ]; then
+    identitaet_datei_loeschbar "$ID_DATEI" || fehler "--identity-datei-loeschen: nur für eine reguläre Datei unter /dev/shm oder /run, die root gehört und kein Symlink ist"
+  fi
   if [ "$ID_STDIN" = 1 ]; then
     if [ -t 0 ]; then
       echo "    Privaten age-Schlüssel einfügen (Eingabe unsichtbar), danach Enter und Strg+D:" >&2
@@ -339,6 +367,7 @@ sicherung_ordner_pruefen() {
   local d="$SICHERUNG_DIR" n
   [ -d "$d" ] || fehler "Sicherungsordner fehlt: $d"
   d="$(cd "$d" && pwd)"; SICHERUNG_DIR="$d"
+  nur_root_schreibbar "$d" || fehler "Sicherungsordner $d muss root gehören und darf für Gruppe/Andere nicht schreibbar sein (chown -R root:root, chmod -R go-w)"
   DB_ARCHIV=""; CFG_ARCHIV=""; FILES_ARCHIV=""
   shopt -s nullglob
   local dbs=("$d"/db-*.dump.age) cfgs=("$d"/config-*.tar.age) fls=("$d"/files-*.tar.age)
@@ -350,22 +379,42 @@ sicherung_ordner_pruefen() {
   DB_ARCHIV="${dbs[0]}"; CFG_ARCHIV="${cfgs[0]}"
   if [ "${#fls[@]}" -eq 1 ]; then FILES_ARCHIV="${fls[0]}"; fi
   [ -f "$d/SHA256SUMS" ] || fehler "SHA256SUMS fehlt in $d"
+  local f
+  for f in "$d/SHA256SUMS" "$DB_ARCHIV" "$CFG_ARCHIV" ${FILES_ARCHIV:+"$FILES_ARCHIV"}; do
+    nur_root_schreibbar "$f" || fehler "$f muss root gehören, kein Symlink sein und darf für Gruppe/Andere nicht schreibbar sein"
+  done
+  # alle benutzten Archive müssen in SHA256SUMS stehen (sha256sum -c prüft sonst nur, was dort eingetragen ist)
+  for f in "$DB_ARCHIV" "$CFG_ARCHIV" ${FILES_ARCHIV:+"$FILES_ARCHIV"}; do
+    awk -v n="$(basename "$f")" '$2 == n || $2 == "*" n { g = 1 } END { exit !g }' "$d/SHA256SUMS" || fehler "$(basename "$f") steht nicht in SHA256SUMS: die Sicherung ist unvollständig oder verändert"
+  done
   ( cd "$d" && sha256sum -c --strict --quiet SHA256SUMS ) || fehler "Prüfsummen stimmen nicht: die Sicherung ist beschädigt (eine ältere vom NAS nehmen)"
   n="$(basename "$d")"
   info "Sicherung: $d (Prüfsummen ok$([[ "$n" =~ ^[0-9]{8}-[0-9]{6}$ ]] && echo ", Zeitstempel $n UTC"))"
 }
 # Schlüsselprüfung (nur im echten Lauf): passt der Schlüssel, ist der Dump ein pg_dump, sind alle Einträge des Archivs sicher
 sicherung_inhalt_pruefen() {
-  local magic typen namen
+  local magic namen
   magic="$(age_entschluesseln "$DB_ARCHIV" 2>/dev/null | head -c 5 || true)"
   [ "$magic" = "PGDMP" ] || fehler "Datenbank-Archiv lässt sich mit diesem Schlüssel nicht lesen oder ist kein pg_dump (falscher Schlüssel? 'no identity matched')"
-  typen="$(age_entschluesseln "$CFG_ARCHIV" | tar -tvzf - | cut -c1)" || fehler "Konfigurationsarchiv nicht lesbar"
-  if grep -qv '^[-d]$' <<<"$typen"; then fehler "Konfigurationsarchiv enthält Links oder Gerätedateien: wird nicht entpackt"; fi
-  namen="$(age_entschluesseln "$CFG_ARCHIV" | tar -tzf -)" || fehler "Konfigurationsarchiv nicht lesbar"
-  if grep -qE '(^|/)\.\.(/|$)|^/' <<<"$namen"; then fehler "Konfigurationsarchiv enthält unsichere Pfade: wird nicht entpackt"; fi
+  namen="$(tar_archiv_pruefen "$CFG_ARCHIV" z "Konfigurationsarchiv")" || exit 1
   grep -qx 'etc/lx-fampad/env' <<<"$namen" || fehler "etc/lx-fampad/env fehlt im Konfigurationsarchiv (AUTH_SECRET_KEY!)"
   CFG_NAMEN="$namen"
   info "Schlüssel passt; Datenbank-Archiv ist ein pg_dump; Konfigurationsarchiv enthält nur Dateien und Ordner."
+  if [ -n "$FILES_ARCHIV" ]; then
+    namen="$(tar_archiv_pruefen "$FILES_ARCHIV" "" "Dateiablage-Archiv")" || exit 1
+    if grep -qvE '^srv/fampad/files(/|$)' <<<"$namen"; then fehler "Dateiablage-Archiv enthält Pfade außerhalb von srv/fampad/files: wird nicht entpackt"; fi
+    info "Dateiablage-Archiv enthält nur Dateien und Ordner unter srv/fampad/files."
+  fi
+}
+# Ein (verschlüsseltes) tar-Archiv ansehen, ohne etwas zu entpacken: nur reguläre Dateien und Ordner (keine Symlinks, Hardlinks, Geräte),
+# keine absoluten oder ..-Pfade. Gibt die Namen aus; bei Fehlern eine Meldung auf stderr und Rückgabe 1.
+tar_archiv_pruefen() { # $1 Datei, $2 "z" (gzip) oder "", $3 Bezeichnung
+  local typen namen
+  typen="$(age_entschluesseln "$1" | tar "-tv$2f" - | cut -c1)" || { echo "FEHLER: $3 nicht lesbar" >&2; return 1; }
+  if grep -qv '^[-d]$' <<<"$typen"; then echo "FEHLER: $3 enthält Links oder Gerätedateien: wird nicht entpackt" >&2; return 1; fi
+  namen="$(age_entschluesseln "$1" | tar "-t$2f" -)" || { echo "FEHLER: $3 nicht lesbar" >&2; return 1; }
+  if grep -qE '(^|/)\.\.(/|$)|^/' <<<"$namen"; then echo "FEHLER: $3 enthält unsichere Pfade: wird nicht entpackt" >&2; return 1; fi
+  printf '%s\n' "$namen"
 }
 CFG_NAMEN=""
 # Nur ausdrücklich genannte Pfade entpacken (wer immer das Archiv erzeugt hat: nichts Unbekanntes landet auf der Platte)
@@ -375,8 +424,17 @@ config_extrahieren() { # Präfixe (relativ zu /), nur vorhandene werden entpackt
     if awk -v p="$p" 'index($0, p "/") == 1 || $0 == p { f = 1 } END { exit !f }' <<<"$CFG_NAMEN"; then gefunden+=("$p"); fi
   done
   [ "${#gefunden[@]}" -gt 0 ] || return 0
-  age_entschluesseln "$CFG_ARCHIV" | tar -xzf - -C / --no-same-owner -- "${gefunden[@]}"
+  # umask 077: Verzeichnisse, die tar nebenbei anlegt, sind nicht für andere lesbar (Dateien behalten die gesicherten Modi, z. B. 600 für env)
+  ( umask 077; age_entschluesseln "$CFG_ARCHIV" | tar -xzf - -C / --no-same-owner -- "${gefunden[@]}" )
   info "entpackt: ${gefunden[*]}"
+}
+# Symlinks in den für lx beschreibbaren Bäumen entfernen, bevor root dort etwas entpackt oder anlegt (lx könnte sie vorbereitet haben)
+lx_baeume_bereinigen() {
+  local d
+  for d in "$@"; do
+    [ ! -L "$d" ] || fehler "$d ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
+    [ ! -d "$d" ] || find "$d" -type l -delete
+  done
 }
 config_hat() { awk -v p="$1" 'index($0, p "/") == 1 || $0 == p { f = 1 } END { exit !f }' <<<"$CFG_NAMEN"; }
 
@@ -384,11 +442,22 @@ config_hat() { awk -v p="$1" 'index($0, p "/") == 1 || $0 == p { f = 1 } END { e
 restore_bereit() {
   [ "$RESTORE" = 1 ] || return 0
   trocken && return 0
+  [ "$SCHLUESSEL_VERWORFEN" = 0 ] || return 0
   [ -z "$AGE_ID" ] || return 0
   command -v age >/dev/null || fehler "age fehlt (Phase pakete installiert es)"
   [ -n "$DB_ARCHIV" ] || sicherung_ordner_pruefen   # nötig, wenn die Phase pruefen nicht mitläuft (--ab, --phase)
   identitaet_laden
   sicherung_inhalt_pruefen
+}
+
+# Nach der letzten Entschlüsselung: den Schlüssel aus dem Arbeitsspeicher des Skripts entfernen (vor Swap, Bau und allem Weiteren)
+schluessel_verwerfen() {
+  [ "$RESTORE" = 1 ] || return 0
+  trocken && return 0
+  [ "$SCHLUESSEL_VERWORFEN" = 0 ] || return 0
+  AGE_ID=""; unset AGE_ID; AGE_ID=""
+  SCHLUESSEL_VERWORFEN=1
+  info "age-Schlüssel aus dem Arbeitsspeicher des Skripts entfernt (alle Entschlüsselungen sind erledigt)."
 }
 
 # Probleme, die im Trockenlauf nur gemeldet werden, im echten Lauf aber abbrechen
@@ -416,14 +485,19 @@ authorized_keys_ergaenzen() { # $1 Benutzer, $2 vollständige Zeile
   local u="$1" zeile="$2" home dir f grp
   home="$(getent passwd "$u" | cut -d: -f6)"; grp="$(id -gn "$u")"
   dir="$home/.ssh"; f="$dir/authorized_keys"
+  # lx darf in seinem Home Symlinks anlegen: root folgt ihnen nie
+  [ ! -L "$home" ] && [ ! -L "$dir" ] && [ ! -L "$f" ] || fehler "$dir oder $f ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
   install -d -m 700 -o "$u" -g "$grp" "$dir"
   [ -e "$f" ] || install -m 600 -o "$u" -g "$grp" /dev/null "$f"
-  chown "$u:$grp" "$f"; chmod 600 "$f"
+  chown -h "$u:$grp" "$f"; chmod 600 "$f"
   grep -qxF -- "$zeile" "$f" || printf '%s\n' "$zeile" >> "$f"
 }
+# Regel für den Neustart per deploy.sh. Die Wetter-Regel gibt es nur, wenn der Wetter-Dienst gewollt ist (--wetter-starten) oder die Regel schon
+# da war: ein Wiederholungslauf ohne die Option fügt sie nicht hinzu und nimmt sie nicht weg.
 sudoers_schreiben() { # $1 mit Wetter-Neustart (1/0)
-  local regel="$LX_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-fampad" tmp="$TMP_ARBEIT/sudoers-lx-fampad"
-  [ "$1" = 1 ] && regel="$regel, /usr/bin/systemctl restart lx-fampad-weather"
+  local regel="$LX_USER ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-fampad" tmp="$TMP_ARBEIT/sudoers-lx-fampad" mit="$1"
+  if [ -f /etc/sudoers.d/lx-fampad ] && grep -q 'restart lx-fampad-weather' /etc/sudoers.d/lx-fampad; then mit=1; fi
+  [ "$mit" = 1 ] && regel="$regel, /usr/bin/systemctl restart lx-fampad-weather"
   printf '%s\n' "$regel" > "$tmp"
   visudo -cf "$tmp" >/dev/null || fehler "sudoers-Prüfung fehlgeschlagen (Regel: $regel)"
   install -m 440 -o root -g root "$tmp" /etc/sudoers.d/lx-fampad
@@ -451,8 +525,10 @@ github_hostkey_sichern() {
   keys="$(ssh-keyscan -T 10 -t ed25519 github.com 2>/dev/null)"
   fpr="$(ssh-keygen -lf /dev/stdin <<<"$keys" 2>/dev/null | awk '{print $2}')"
   [ "$fpr" = "$GITHUB_ED25519_FPR" ] || fehler "SSH-Host-Schlüssel von github.com stimmt nicht mit dem gepinnten überein (gefunden: ${fpr:-keiner}; erwartet: $GITHUB_ED25519_FPR). Nichts wurde eingetragen."
+  [ ! -L "$kf" ] && [ ! -L "$LX_HOME/.ssh" ] || fehler "$kf oder $LX_HOME/.ssh ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
+  rm -f "$kf"
   printf '%s\n' "$keys" > "$kf"
-  chown "$LX_USER:$(id -gn "$LX_USER")" "$kf"; chmod 644 "$kf"
+  chown -h "$LX_USER:$(id -gn "$LX_USER")" "$kf"; chmod 644 "$kf"
 }
 CADDY_ARBEITSLISTE=()
 
@@ -511,6 +587,10 @@ phase_pruefen() {
     sicherung_ordner_pruefen
     if trocken; then info "Der private Schlüssel wird im Trockenlauf nicht gelesen; Inhalt und Schlüssel prüft der echte Lauf in der Phase pakete, bevor etwas verändert wird."; fi
     if [ -n "$ID_DATEI" ] && [ ! -r "$ID_DATEI" ]; then blockiert "Schlüsseldatei nicht lesbar: $ID_DATEI"; fi
+    if [ "$ID_LOESCHEN" = 1 ] && ! identitaet_datei_loeschbar "$ID_DATEI"; then blockiert "--identity-datei-loeschen: nur für eine reguläre Datei unter /dev/shm oder /run, die root gehört (kein Symlink)"; fi
+    if swap_aktiv; then
+      if [ "$SWAP_OK" = 1 ]; then info "Swap ist aktiv; --swap-ok ist angegeben."; else blockiert "Swap ist aktiv (swapon --show): der Schlüssel könnte auf die Platte ausgelagert werden. Erst swapoff -a oder bewusst --swap-ok"; fi
+    else info "Swap: nicht aktiv (gut: der Schlüssel bleibt im Arbeitsspeicher). Ein Swap aus SWAP_MB wird erst angelegt, wenn alle Entschlüsselungen fertig sind."; fi
   fi
   if [ -n "$P_GIT_REF" ]; then info "Code-Stand (GIT_REF): $P_GIT_REF"; else info "Code-Stand: wie im Checkout $REPO (kein GIT_REF gesetzt; für eine Wiederherstellung den Stand der Sicherung festlegen!)"; fi
   [ -z "$P_BACKUP_AGE_RECIPIENTS" ] && info "Sicherung des neuen Servers: BACKUP_* nicht gesetzt (die Phase sicherung wird übersprungen oder nutzt vorhandene Empfänger)"
@@ -572,7 +652,7 @@ Signed-By: /usr/share/keyrings/nodesource.gpg
 EOF
   printf 'Package: nodejs\nPin: origin deb.nodesource.com\nPin-Priority: 600\n' > /etc/apt/preferences.d/nodejs
   apt-get update -qq
-  apt_version_da nodejs "$NODE_PKG_VERSION" || fehler "nodejs=$NODE_PKG_VERSION steht nicht im NodeSource-Repository"
+  apt_version_da nodejs "$NODE_PKG_VERSION" || fehler "nodejs=$NODE_PKG_VERSION steht nicht (mehr) im NodeSource-Repository. Verfügbar (neueste zuerst): $(apt-cache madison nodejs | awk '{print $3}' | head -n 5 | tr '\n' ' '). Eine bewusst gewählte 24.x-Version trägst du als NODE_PKG_VERSION in die Parameterdatei ein (und in docs/VERSIONEN.md), nichts wurde installiert."
   apt_installieren "nodejs=$NODE_PKG_VERSION"
   apt-mark hold nodejs >/dev/null
   info "Node.js $(node --version) installiert (Schlüssel-Fingerabdruck geprüft, per apt-mark hold festgehalten)."
@@ -600,11 +680,16 @@ phase_system() {
     id "$SVC_USER" >/dev/null 2>&1 || adduser --system --group --no-create-home --shell /usr/sbin/nologin "$SVC_USER"
     usermod -aG "$SVC_USER" "$LX_USER"
     mkdir -p /srv/fampad/{server,server.prev,web,releases/android,well-known,font-fallback,karte,files} "$ETC_DIR"
-    chown "$LX_USER:$SVC_USER" /srv/fampad/server /srv/fampad/server.prev
+    # Ordner, die lx beschreiben darf: nie einem Symlink folgen (chown -h, keine Symlinks als Wurzel)
+    local d
+    for d in /srv/fampad /srv/fampad/server /srv/fampad/server.prev /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte /srv/fampad/files; do
+      [ ! -L "$d" ] || fehler "$d ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
+    done
+    chown -h "$LX_USER:$SVC_USER" /srv/fampad/server /srv/fampad/server.prev
     chmod 750 /srv/fampad/server /srv/fampad/server.prev
-    chown -R "$LX_USER:$LX_USER" /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte
+    chown -hR "$LX_USER:$LX_USER" /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte
     chmod -R u=rwX,go=rX /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte
-    chown "$SVC_USER:$SVC_USER" /srv/fampad/files
+    chown -h "$SVC_USER:$SVC_USER" /srv/fampad/files
     chmod 700 /srv/fampad/files
     chmod 755 /srv/fampad
     chown root:root "$ETC_DIR"; chmod 755 "$ETC_DIR"
@@ -643,6 +728,7 @@ phase_code() {
     return 0
   fi
   if [ "$netz" = 1 ] && [[ "$url" == git@* ]]; then
+    [ ! -L "$LX_HOME/.ssh" ] && [ ! -L "$key" ] && [ ! -L "$key.pub" ] || fehler "$LX_HOME/.ssh oder der Deploy-Key ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
     install -d -m 700 -o "$LX_USER" -g "$(id -gn "$LX_USER")" "$LX_HOME/.ssh"
     github_hostkey_sichern
     if [ ! -s "$key" ]; then
@@ -670,9 +756,13 @@ phase_code() {
     git_lx fetch --tags --prune origin
     sha="$(git_lx rev-parse --verify --quiet "origin/$P_GIT_REF^{commit}" || git_lx rev-parse --verify --quiet "$P_GIT_REF^{commit}" || true)"
     [ -n "$sha" ] || fehler "GIT_REF '$P_GIT_REF' nicht gefunden (Tag, Branch oder Commit?)"
+    if git_lx rev-parse --verify --quiet "refs/remotes/origin/$P_GIT_REF" >/dev/null; then
+      warn "GIT_REF '$P_GIT_REF' ist ein BRANCH und damit beweglich: heute und beim nächsten Mal kann das ein anderer Stand sein. Für eine Wiederherstellung einen Tag oder eine Commit-ID nehmen."
+    fi
     git_lx checkout --quiet --detach "$sha"
     info "Code-Stand: $P_GIT_REF = $sha"
   fi
+  echo "    ==> CODE-STAND DIESES LAUFS: $(git_lx rev-parse HEAD) ($(git_lx describe --tags --always 2>/dev/null || echo ohne-Tag))"
   info "Code-Stand jetzt: $(git_lx log -1 --format='%h %s (%ci)')"
   info "Letzte Commits (bitte kurz ansehen: das Skript führt als root Dateien aus diesem Checkout aus):"
   git_lx log -3 --format='        %h %an: %s' | cat
@@ -732,17 +822,21 @@ konfiguration_aus_sicherung() {
     info "Kopie der bisherigen env angelegt (root, 0600)."
   fi
   if trocken; then
-    info "[dry-run] aus config-*.tar.age nur diese Pfade entpacken: etc/lx-fampad, etc/lx-fampad-backup, srv/fampad/well-known, srv/fampad/releases/android"
+    info "[dry-run] aus config-*.tar.age nur diese Pfade entpacken: etc/lx-fampad, etc/lx-fampad-backup, srv/fampad/well-known, srv/fampad/releases/android, var/lib/ntfy (nur wenn noch keine ntfy-Benutzerdatenbank da ist)"
     info "[dry-run] Caddy-Dateien, ntfy-Konfiguration, Units und sudoers der Sicherung werden NICHT übernommen (kommen frisch aus dem Repository)"
     return 0
   fi
+  lx_baeume_bereinigen /srv/fampad/well-known /srv/fampad/releases
   config_extrahieren etc/lx-fampad etc/lx-fampad-backup srv/fampad/well-known srv/fampad/releases/android
+  if [ -s /var/lib/ntfy/user.db ]; then info "ntfy-Benutzerdatenbank vorhanden, wird nicht überschrieben."
+  else config_extrahieren var/lib/ntfy; fi
   config_hat etc/lx-fampad || fehler "etc/lx-fampad nicht im Archiv"
-  chown -R root:root "$ETC_DIR"; chmod 755 "$ETC_DIR"
+  chown -hR root:root "$ETC_DIR"; chmod 755 "$ETC_DIR"
   find "$ETC_DIR" -maxdepth 1 -type f -exec chmod 600 {} +
-  [ ! -d /etc/lx-fampad-backup ] || chown -R root:root /etc/lx-fampad-backup
-  chown -R "$LX_USER:$LX_USER" /srv/fampad/well-known /srv/fampad/releases
+  [ ! -d /etc/lx-fampad-backup ] || chown -hR root:root /etc/lx-fampad-backup
+  chown -hR "$LX_USER:$LX_USER" /srv/fampad/well-known /srv/fampad/releases
   chmod -R u=rwX,go=rX /srv/fampad/well-known /srv/fampad/releases
+  # die gesicherte ntfy-Benutzerdatenbank liegt jetzt bei root; die Phase ntfy übergibt sie dem Benutzer ntfy (so entschlüsselt keine spätere Phase mehr)
   [ -n "$(env_wert "$ENV_FILE" AUTH_SECRET_KEY)" ] || fehler "AUTH_SECRET_KEY fehlt in der wiederhergestellten env"
   local url rp
   url="$(env_wert "$ENV_FILE" PUBLIC_URL)"; rp="$(env_wert "$ENV_FILE" WEBAUTHN_RP_ID)"
@@ -751,8 +845,10 @@ konfiguration_aus_sicherung() {
   db_passwort_lesen "$ENV_FILE" DATABASE_URL >/dev/null || fehler "DATABASE_URL der Sicherung nicht lesbar (Passwort mit unerwarteten Zeichen?)"
   info "Konfiguration aus der Sicherung wiederhergestellt (AUTH_SECRET_KEY und Datenbank-Zugangsdaten stammen aus der Sicherung)."
   if [ -n "$FILES_ARCHIV" ]; then
-    age_entschluesseln "$FILES_ARCHIV" | tar -xf - -C / --no-same-owner -- srv/fampad/files
-    chown -R "$SVC_USER:$SVC_USER" /srv/fampad/files; chmod 700 /srv/fampad/files
+    # das Archiv wurde in sicherung_inhalt_pruefen auf Links, Geräte und fremde Pfade geprüft (nur srv/fampad/files)
+    [ ! -L /srv/fampad/files ] || fehler "/srv/fampad/files ist ein Symlink: Abbruch"
+    ( umask 077; age_entschluesseln "$FILES_ARCHIV" | tar -xf - -C / --no-same-owner -- srv/fampad/files )
+    chown -hR "$SVC_USER:$SVC_USER" /srv/fampad/files; chmod 700 /srv/fampad/files
     info "Dateiablage aus files-*.tar.age wiederhergestellt."
   fi
 }
@@ -761,9 +857,11 @@ well_known_pruefen() {
   if [ -s "$f" ] && ! grep -q 'RELEASE-SHA256-FINGERPRINT-EINTRAGEN' "$f"; then info "assetlinks.json vorhanden."; return 0; fi
   if [ -z "$P_RELEASE_CERT_SHA256" ]; then offen "assetlinks.json fehlt (RELEASE_CERT_SHA256 nicht gesetzt): ohne sie gibt es weder Passkeys in der App noch verifizierte App-Links (deploy/README.md Abschnitt 9)"; return 0; fi
   if trocken; then info "[dry-run] assetlinks.json aus der Vorlage mit RELEASE_CERT_SHA256 erzeugen"; return 0; fi
+  [ ! -L /srv/fampad/well-known ] || fehler "/srv/fampad/well-known ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
+  rm -f "$f"   # ein von lx vorbereiteter Symlink würde sonst ein Ziel außerhalb überschreiben
   FP="$P_RELEASE_CERT_SHA256" awk '/RELEASE-SHA256-FINGERPRINT-EINTRAGEN/ { print "        \"" toupper(ENVIRON["FP"]) "\""; next } { print }' "$tpl" > "$f"
   python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" || fehler "erzeugte assetlinks.json ist kein gültiges JSON"
-  chown "$LX_USER:$LX_USER" "$f"; chmod 644 "$f"
+  chown -h "$LX_USER:$LX_USER" "$f"; chmod 644 "$f"
   info "assetlinks.json aus der Vorlage erzeugt."
 }
 
@@ -799,9 +897,7 @@ phase_datenbank() {
       info "Datenbank $DB_NAME ist nicht leer ($tabellen Tabellen): die Wiederherstellung wird übersprungen (idempotent). Ersetzen nur mit --datenbank-ersetzen."
     else
       if [ "$tabellen" -gt 0 ]; then
-        frage_ja "Die vorhandene Datenbank $DB_NAME mit $tabellen Tabellen wird umbenannt und durch die Sicherung ersetzt. Fortfahren?" || fehler "abgebrochen"
-        sysd stop lx-fampad || true
-        sysd stop lx-fampad-weather || true
+        frage_ja "Die vorhandene Datenbank $DB_NAME mit $tabellen Tabellen wird umbenannt und durch die Sicherung ersetzt (die Dienste werden erst nach dem erfolgreichen Einspielen kurz gestoppt). Fortfahren?" || fehler "abgebrochen"
       fi
       datenbank_wiederherstellen "$tabellen"
     fi
@@ -813,6 +909,7 @@ phase_datenbank() {
     fi
   fi
   rt_pw=""
+  schluessel_verwerfen   # letzte Entschlüsselung erledigt: der Schlüssel verschwindet, bevor Swap, Bau und Dienste kommen
   info "einrichtung-auth.sh: AUTH_SECRET_KEY, Rollentrennung, Einheiten"
   bash "$REPO/deploy/einrichtung-auth.sh"
   pruefpunkt "Datenbank $DB_NAME gehört $MG_ROLE" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -X -tAc \"select pg_get_userbyid(datdba) from pg_database where datname='$DB_NAME'\")\" = $MG_ROLE ]"
@@ -830,30 +927,57 @@ rolle_setzen() { # $1 Rolle, $2 Passwort (nur Zeichen A-Za-z0-9._~-); Passwort l
   printf "%s ROLE %s LOGIN PASSWORD '%s' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;\n" "$verb" "$1" "$2" | psql_pg -d postgres
 }
 # Sicherung in eine Wegwerf-Datenbank einspielen und erst bei Erfolg an den Platz von lx_fampad setzen (kein halbfertiger Zustand)
+#
+# pg_restore läuft NICHT als Superuser: als Migrationsrolle (Eigentümerin der Wegwerf-Datenbank), mit --no-owner --no-acl. Alles, was der
+# Dump enthält, wird so mit den Rechten dieser Rolle ausgeführt (kein Superuser-Zugriff durch eine manipulierte Sicherung); Besitzer und
+# Rechte setzt danach einrichtung-auth.sh. Grenze: Ein Dump kann auch dann SQL enthalten, das die Daten verändert; echte Echtheit würde nur
+# eine Signatur der Sicherung liefern (offener Punkt, docs/NEUINSTALLATION.md).
 datenbank_wiederherstellen() { # $1 Tabellenzahl der vorhandenen Datenbank
-  local tmpdb="${DB_NAME}_wiederherstellung" alt
+  local tmpdb="${DB_NAME}_wiederherstellung" alt="" mg_pw fampad_aktiv=0 wetter_aktiv=0
+  mg_pw="$(db_passwort_lesen "$MIGRATE_ENV" MIGRATION_DATABASE_URL)" || fehler "Passwort in $MIGRATE_ENV nicht lesbar"
   psql_pg -d postgres -c "DROP DATABASE IF EXISTS $tmpdb WITH (FORCE)"
   psql_pg -d postgres -c "CREATE DATABASE $tmpdb OWNER $MG_ROLE TEMPLATE template0 ENCODING 'UTF8'"
-  info "pg_restore (age -d | pg_restore, Klartext nur in der Pipe) ..."
-  if ! age_entschluesseln "$DB_ARCHIV" | (cd / && runuser -u postgres -- pg_restore --exit-on-error -d "$tmpdb"); then
+  info "pg_restore als $MG_ROLE (age -d | pg_restore --no-owner --no-acl, Klartext nur in der Pipe) ..."
+  if ! age_entschluesseln "$DB_ARCHIV" | PGPASSWORD="$mg_pw" pg_restore -h 127.0.0.1 -U "$MG_ROLE" --no-owner --no-acl --exit-on-error -d "$tmpdb"; then
+    mg_pw=""
     psql_pg -d postgres -c "DROP DATABASE IF EXISTS $tmpdb WITH (FORCE)" || true
-    fehler "pg_restore fehlgeschlagen (die halbfertige Wegwerf-Datenbank wurde gelöscht; $DB_NAME ist unverändert)"
+    fehler "pg_restore fehlgeschlagen (die halbfertige Wegwerf-Datenbank wurde gelöscht; $DB_NAME und alle Dienste sind unverändert)"
   fi
+  mg_pw=""
+  # erst jetzt (die Wegwerf-Datenbank ist fertig) werden Dienste gestoppt und die Namen getauscht; bei jedem Fehler geht alles zurück
+  if db_vorhanden "$DB_NAME" && [ "$1" -gt 0 ]; then
+    systemctl is-active --quiet lx-fampad && fampad_aktiv=1
+    systemctl is-active --quiet lx-fampad-weather && wetter_aktiv=1
+    sysd stop lx-fampad || true
+    sysd stop lx-fampad-weather || true
+    alt="${DB_NAME}_vor_$(date +%Y%m%d_%H%M%S)"
+  fi
+  if ! datenbank_tauschen "$tmpdb" "$alt"; then
+    psql_pg -d postgres -c "ALTER DATABASE $DB_NAME WITH ALLOW_CONNECTIONS true" >/dev/null 2>&1 || true
+    if [ -n "$alt" ] && ! db_vorhanden "$DB_NAME" && db_vorhanden "$alt"; then psql_pg -d postgres -c "ALTER DATABASE $alt RENAME TO $DB_NAME" || true; fi
+    [ "$fampad_aktiv" = 0 ] || sysd start lx-fampad || true
+    [ "$wetter_aktiv" = 0 ] || sysd start lx-fampad-weather || true
+    psql_pg -d postgres -c "DROP DATABASE IF EXISTS $tmpdb WITH (FORCE)" || true
+    fehler "Datenbank konnte nicht ausgetauscht werden: der alte Zustand ist wiederhergestellt, Dienste laufen wie vorher"
+  fi
+  [ -z "$alt" ] || info "Bisherige Datenbank umbenannt in $alt (enthält Personendaten: nach der Prüfung löschen: DROP DATABASE $alt)."
+  info "Datenbank $DB_NAME aus der Sicherung wiederhergestellt: $(db_tabellen "$DB_NAME") Tabellen."
+}
+datenbank_tauschen() { # $1 fertige Wegwerf-Datenbank, $2 neuer Name der alten (leer = alte Datenbank ist leer oder fehlt: wird gelöscht)
   if db_vorhanden "$DB_NAME"; then
-    if [ "$1" -gt 0 ]; then
-      alt="${DB_NAME}_vor_$(date +%Y%m%d_%H%M%S)"
-      psql_pg -d postgres -c "ALTER DATABASE $DB_NAME WITH ALLOW_CONNECTIONS false" -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB_NAME'" >/dev/null
-      psql_pg -d postgres -c "ALTER DATABASE $DB_NAME RENAME TO $alt"
-      info "Bisherige Datenbank umbenannt in $alt (enthält Personendaten: nach der Prüfung löschen: DROP DATABASE $alt)."
+    if [ -n "$2" ]; then
+      psql_pg -d postgres -c "ALTER DATABASE $DB_NAME WITH ALLOW_CONNECTIONS false" || return 1
+      psql_pg -d postgres -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='$DB_NAME'" >/dev/null || return 1
+      psql_pg -d postgres -c "ALTER DATABASE $DB_NAME RENAME TO $2" || return 1
     else
-      psql_pg -d postgres -c "DROP DATABASE $DB_NAME WITH (FORCE)"
+      psql_pg -d postgres -c "DROP DATABASE $DB_NAME WITH (FORCE)" || return 1
     fi
   fi
-  psql_pg -d postgres -c "ALTER DATABASE $tmpdb RENAME TO $DB_NAME"
-  info "Datenbank $DB_NAME aus der Sicherung wiederhergestellt: $(db_tabellen "$DB_NAME") Tabellen."
+  psql_pg -d postgres -c "ALTER DATABASE $1 RENAME TO $DB_NAME" || return 1
 }
 
 phase_anwendung() {
+  schluessel_verwerfen   # Sicherheitsnetz: ein Swap darf nie aktiviert werden, solange der Schlüssel im Arbeitsspeicher ist
   if [ "$P_SWAP_MB" -gt 0 ]; then
     if trocken; then info "[dry-run] Swap ${P_SWAP_MB} MB über einrichtung-swap.sh"; else bash "$REPO/deploy/einrichtung-swap.sh" --size-mb "$P_SWAP_MB"; fi
   else
@@ -890,7 +1014,8 @@ wetter_einheit() {
   cp "$src" "$TMP_ARBEIT/$unit"
   if [ "$OHNE_SYSTEMD" = 0 ]; then systemd-analyze verify "$TMP_ARBEIT/$unit" || fehler "systemd-analyze verify meldet Fehler in $unit"; fi
   if ! cmp -s "$TMP_ARBEIT/$unit" "$ziel"; then install -m 644 -o root -g root "$TMP_ARBEIT/$unit" "$ziel"; sysd daemon-reload; fi
-  sudoers_schreiben 1
+  # sudo-Regel für den Wetter-Neustart nur mit --wetter-starten (oder wenn sie schon da war); sonst kann deploy.sh den Wetter-Dienst nie versehentlich starten
+  sudoers_schreiben "$WETTER_STARTEN"
   if grep -qE '^WEATHER_ENABLED=(true|1)[[:space:]]*$' "$ENV_FILE"; then
     if [ "$WETTER_STARTEN" = 1 ]; then
       sysd enable --now "$unit"
@@ -904,13 +1029,13 @@ wetter_einheit() {
 }
 
 phase_ntfy() {
-  restore_bereit
   ntfy_pins_lesen || { NTFY_VERSION="(wird nach dem Klonen aus deploy/einrichtung-ntfy.sh gelesen)"; NTFY_FPR="(dito)"; }
   local cfg=/etc/ntfy/server.yml port=2586 token_file="$ETC_DIR/ntfy-token" pw_file="$ETC_DIR/ntfy-family-password" local_url=http://127.0.0.1:2586
   if trocken; then
     info "[dry-run] ntfy $NTFY_VERSION aus archive.ntfy.sh (Schlüssel $NTFY_FPR prüfen, Fallback: .deb mit SHA-256), apt-mark hold, Dienst startet nie vor der Konfiguration"
     info "[dry-run] /etc/ntfy/server.yml aus dem Repository (nur 127.0.0.1:$port, deny-all), Härtung als Drop-in"
-    if [ "$RESTORE" = 1 ]; then info "[dry-run] ntfy-Datenbank (Benutzer, Token) aus der Sicherung, solange /var/lib/ntfy/user.db noch fehlt"; fi
+    if [ "$RESTORE" = 1 ]; then info "[dry-run] ntfy-Datenbank (Benutzer, Token): kommt schon aus der Phase konfiguration (nur solange /var/lib/ntfy/user.db fehlt)"; fi
+    info "[dry-run] ntfy wird nur neu gestartet, wenn er nicht läuft oder sich Konfiguration/Härtung ändern"
     info "[dry-run] Benutzer fampad-server (nur Schreiben auf fampad-* und up*, Token), fampad-family (nur Lesen auf up*); NTFY_URL/NTFY_TOKEN in der env"
     pruefpunkt "ntfy: anonym 401/403, Token darf auf fampad-* schreiben, nicht auf fremde Themen" true
     return 0
@@ -926,10 +1051,13 @@ phase_ntfy() {
   id ntfy >/dev/null 2>&1 || useradd --system --no-create-home --home-dir /var/lib/ntfy --shell /usr/sbin/nologin ntfy
   install -d -m 750 -o ntfy -g ntfy /var/lib/ntfy /var/cache/ntfy
   install -d -m 755 -o root -g root /etc/ntfy
+  local neustart=0
+  systemctl is-active --quiet ntfy || neustart=1
+  if [ ! -f "$cfg" ] || ! cmp -s "$REPO/deploy/ntfy/server.yml" "$cfg"; then neustart=1; fi
   if [ -f "$cfg" ] && ! cmp -s "$REPO/deploy/ntfy/server.yml" "$cfg"; then cp -p "$cfg" "$cfg.vor-neuinstallation.$(date +%Y%m%d-%H%M%S).bak"; fi
   install -m 640 -o root -g ntfy "$REPO/deploy/ntfy/server.yml" "$cfg"
   install -d -m 755 /etc/systemd/system/ntfy.service.d
-  cat > /etc/systemd/system/ntfy.service.d/haertung.conf <<'EOF'
+  cat > "$TMP_ARBEIT/haertung.conf" <<'EOF'
 [Service]
 User=ntfy
 Group=ntfy
@@ -955,21 +1083,16 @@ AmbientCapabilities=
 ReadWritePaths=/var/lib/ntfy /var/cache/ntfy
 UMask=0077
 EOF
-  chmod 644 /etc/systemd/system/ntfy.service.d/haertung.conf
-  sysd daemon-reload
-  # Daten aus der Sicherung (Benutzer, Rechte, Token), nur solange noch keine Benutzerdatenbank da ist
-  if [ "$RESTORE" = 1 ] && config_hat var/lib/ntfy; then
-    if [ -s /var/lib/ntfy/user.db ]; then
-      info "ntfy-Benutzerdatenbank vorhanden, wird nicht überschrieben."
-    else
-      sysd stop ntfy || true
-      config_extrahieren var/lib/ntfy
-      chown -R ntfy:ntfy /var/lib/ntfy; chmod 750 /var/lib/ntfy
-      info "ntfy-Benutzerdatenbank aus der Sicherung wiederhergestellt (der Nachrichten-Cache war nie Teil der Sicherung)."
-    fi
+  if ! cmp -s "$TMP_ARBEIT/haertung.conf" /etc/systemd/system/ntfy.service.d/haertung.conf; then
+    install -m 644 -o root -g root "$TMP_ARBEIT/haertung.conf" /etc/systemd/system/ntfy.service.d/haertung.conf
+    neustart=1
   fi
+  sysd daemon-reload
+  # Die gesicherte ntfy-Benutzerdatenbank (Benutzer, Rechte, Token) hat die Phase konfiguration schon entpackt (dort ist der Schlüssel noch da); hier gehört sie nur noch dem Benutzer ntfy
+  chown -hR ntfy:ntfy /var/lib/ntfy; chmod 750 /var/lib/ntfy
   sysd enable ntfy
-  sysd restart ntfy
+  # ntfy wird nur neu gestartet, wenn er nicht lief oder sich Konfiguration/Härtung geändert haben (ein Wiederholungslauf unterbricht die Wecker nicht)
+  if [ "$neustart" = 1 ]; then sysd restart ntfy; else info "ntfy läuft mit unveränderter Konfiguration: kein Neustart."; fi
   local ok=0
   for _ in $(seq 1 20); do
     if http_enthaelt "$local_url/v1/health" '"healthy":true'; then ok=1; break; fi
@@ -1129,7 +1252,7 @@ caddy_installieren() {
   chmod 644 /usr/share/keyrings/caddy-stable-archive-keyring.gpg
   echo "deb [signed-by=/usr/share/keyrings/caddy-stable-archive-keyring.gpg] https://dl.cloudsmith.io/public/caddy/stable/deb/debian any-version main" > /etc/apt/sources.list.d/caddy-stable.list
   apt-get update -qq
-  apt_version_da caddy "$CADDY_PKG_VERSION" || fehler "caddy=$CADDY_PKG_VERSION steht nicht im Caddy-Repository"
+  apt_version_da caddy "$CADDY_PKG_VERSION" || fehler "caddy=$CADDY_PKG_VERSION steht nicht (mehr) im Caddy-Repository. Verfügbar (neueste zuerst): $(apt-cache madison caddy | awk '{print $3}' | head -n 5 | tr '\n' ' '). Eine bewusst gewählte 2.x-Version trägst du als CADDY_PKG_VERSION in die Parameterdatei ein (und in docs/VERSIONEN.md); nichts wurde installiert."
   apt_installieren "caddy=$CADDY_PKG_VERSION"
   apt-mark hold caddy >/dev/null
   info "Caddy $CADDY_PKG_VERSION installiert (Schlüssel-Fingerabdruck geprüft, per apt-mark hold festgehalten)."
@@ -1212,7 +1335,7 @@ caddy_zuruecksetzen() {
     if [ -n "$bak" ] && [ -f "$bak" ]; then cp -p "$bak" "$ziel" || rm -f "$ziel"; else rm -f "$ziel"; fi
   done
   sysd reload caddy || true
-  echo "    lx-labs.dev: $(curl -sI --max-time 10 https://lx-labs.dev 2>/dev/null | head -n 1 | tr -d '\r')" >&2
+  if [ "$OHNE_SYSTEMD" = 0 ]; then echo "    lx-labs.dev: $(curl -sI --max-time 10 https://lx-labs.dev 2>/dev/null | head -n 1 | tr -d '\r')" >&2; fi
 }
 
 phase_sicherung() {
@@ -1254,10 +1377,22 @@ api_ok() { http_enthaelt "$1" "$2"; }
 nur_lokal_ports() { ! ss -ltnH 2>/dev/null | awk '{print $4}' | grep -E ':(4400|2586|5432)$' | grep -qvE '^(127\.0\.0\.1|\[::1\]):'; }
 datei_modus() { [ "$(stat -c %a "$1")" = "$2" ]; }
 env_rechte_ok() { [ "$(stat -c %U:%G:%a "$ENV_FILE")" = root:root:600 ]; }
+# SSH: nur lesen und melden (die sshd-Konfiguration ändert das Skript nie)
+ssh_haertung_melden() {
+  local t pw root
+  command -v sshd >/dev/null || { info "sshd nicht gefunden: SSH-Einstellungen nicht geprüft."; return 0; }
+  t="$(sshd -T 2>/dev/null || true)"
+  [ -n "$t" ] || { info "sshd -T liefert nichts: SSH-Einstellungen nicht geprüft."; return 0; }
+  pw="$(awk '$1 == "passwordauthentication" { print $2 }' <<<"$t")"
+  root="$(awk '$1 == "permitrootlogin" { print $2 }' <<<"$t")"
+  [ "$pw" = no ] || offen "SSH erlaubt die Anmeldung mit Passwort (PasswordAuthentication $pw): nur Schlüssel zulassen (PasswordAuthentication no), sonst ist der Server per Passwort-Raten angreifbar"
+  case "$root" in no|prohibit-password|without-password) ;; *) offen "SSH erlaubt root die Anmeldung mit Passwort (PermitRootLogin $root): auf prohibit-password oder no stellen, sobald dein Benutzer lx per Schlüssel funktioniert" ;; esac
+  command -v fail2ban-client >/dev/null || info "Hinweis: fail2ban ist nicht installiert (sperrt wiederholt falsche SSH-Anmeldungen; optional: apt install fail2ban)."
+}
 lx_labs_koexistenz() { [ -f /etc/caddy/Caddyfile ] && grep -qE '^[[:space:]]*(www\.)?lx-labs\.dev' /etc/caddy/Caddyfile; }
 phase_pruefung() {
   if trocken; then
-    info "[dry-run] Abschlussprüfung: Dienste aktiv, Health, Ports nur lokal, Dateirechte, HTTPS (wenn DNS passt), Firewall-Hinweis"
+    info "[dry-run] Abschlussprüfung: Dienste aktiv, Health, Ports nur lokal, Dateirechte, HTTPS (wenn DNS passt), SSH-Einstellungen (nur melden), Firewall-Hinweis"
     return 0
   fi
   local dienst
@@ -1270,7 +1405,10 @@ phase_pruefung() {
   kontrolle "Ports 4400, 2586, 5432 nur auf localhost" "ein interner Port ist von außen erreichbar (ss -ltnp prüfen)" nur_lokal_ports
   kontrolle "env gehört root:root, Modus 600" "env hat falsche Rechte" env_rechte_ok
   kontrolle "migrate.env hat Modus 600" "migrate.env fehlt oder hat falsche Rechte" datei_modus "$MIGRATE_ENV" 600
-  if dns_pruefen "$DOMAIN" && dns_pruefen "$NTFY_DOMAIN"; then
+  ssh_haertung_melden
+  if [ "$OHNE_SYSTEMD" = 1 ]; then
+    info "Testmodus (--ohne-systemd): keine Prüfung gegen die Internet-Adressen ($DOMAIN, lx-labs.dev)."
+  elif dns_pruefen "$DOMAIN" && dns_pruefen "$NTFY_DOMAIN"; then
     kontrolle "https://$DOMAIN antwortet" "https://$DOMAIN antwortet nicht" api_ok "https://$DOMAIN/api/v1/health" '"db":"ok"'
     kontrolle "https://$NTFY_DOMAIN antwortet" "https://$NTFY_DOMAIN antwortet nicht" api_ok "https://$NTFY_DOMAIN/v1/health" '"healthy":true'
     if lx_labs_koexistenz; then kontrolle "lx-labs.dev antwortet weiter" "lx-labs.dev antwortet NICHT" curl -fsI --max-time 10 https://lx-labs.dev; fi
@@ -1285,7 +1423,7 @@ mensch_liste() {
   echo
   echo "==> Das musst du noch selbst tun (ausführlich: docs/NEUINSTALLATION.md)"
   echo "    1. DNS bei Cloudflare: A-Einträge 'familie' und 'ntfy.familie' (DNS only) auf die IP dieses Servers; danach: bootstrap-server.sh --phase caddy,pruefung"
-  echo "    2. Firewall: nur 22, 80, 443 offen (Anbieter-Firewall oder ufw); SSH-Härtung (nur Schlüssel) wie bei lx-labs"
+  echo "    2. Firewall: nur 22, 80, 443 offen (Anbieter-Firewall oder ufw); SSH-Härtung (nur Schlüssel, kein Passwort, optional fail2ban) wie bei lx-labs"
   echo "    3. Web-App hochladen (vom PC):  deploy/deploy-web.sh   (SSH-Alias auf den neuen Server zeigen lassen)"
   echo "    4. NAS: Host-Schlüssel des neuen Servers eintragen (ssh-keygen -R, ssh-keyscan; Fingerabdruck vergleichen), Pull-Probelauf"
   echo "    5. GitHub: Secrets VPS_KNOWN_HOSTS (neuer Host-Schlüssel) und ggf. VPS_HOST; CI-Schlüssel aus CI_DEPLOY_PUBKEY muss zum Secret VPS_SSH_KEY passen"
@@ -1295,7 +1433,7 @@ mensch_liste() {
     echo "    8. Alten Server erst abschalten, wenn alles läuft; danach Wetter-Dienst starten (--wetter-starten), TTL der DNS-Einträge wieder erhöhen"
   else
     echo "    7. Ersten Admin anlegen:  sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js --family \"<Familienname>\"   (Link einlösen: Passkey/TOTP)"
-    echo "    8. Betreiber setzen (Dashboard Betrieb), ntfy-App der Familie mit Benutzer fampad-family einrichten (Passwort: sudo cat /etc/lx-fampad/ntfy-family-password)"
+    echo "    8. Betreiber setzen (Dashboard Betrieb), ntfy-App der Familie mit Benutzer fampad-family einrichten (Passwort: sudo less /etc/lx-fampad/ntfy-family-password, danach 'q' und 'clear'; nicht per cat ins Terminal-Protokoll)"
   fi
   echo "    9. Neue Sicherung mit dem privaten age-Schlüssel testen: deploy/backup/wiederherstellung-test.sh (Schlüssel nie auf den Server)"
   echo "   10. Nie auf diesem Server ablegen/prüfen: privater age-Schlüssel, Android-Keystore, UPDATE_SIGNING_KEY (nicht in der Sicherung)"
@@ -1349,6 +1487,7 @@ argumente_lesen() {
       --datenbank-ersetzen) DB_ERSETZEN=1 ;;
       --wetter-starten) WETTER_STARTEN=1 ;;
       --dns-pruefung-ueberspringen) DNS_UEBERSPRINGEN=1 ;;
+      --swap-ok) SWAP_OK=1 ;;
       -h|--help|--hilfe) hilfe; exit 0 ;;
       *) echo "Unbekannte Option: $1 (--hilfe)" >&2; exit 2 ;;
     esac
@@ -1365,6 +1504,13 @@ argumente_lesen() {
     { [ "$ID_STDIN" = 0 ] && [ -z "$ID_DATEI" ]; } || { echo "--identity-* ohne --sicherung ergibt keinen Sinn" >&2; exit 2; }
   fi
   [ "$ID_LOESCHEN" = 0 ] || [ -n "$ID_DATEI" ] || { echo "--identity-datei-loeschen braucht --identity-datei" >&2; exit 2; }
+  if [ "$ID_LOESCHEN" = 1 ]; then
+    case "$ID_DATEI" in /dev/shm/*|/run/*) ;; *) echo "--identity-datei-loeschen nur für Dateien unter /dev/shm oder /run (Arbeitsspeicher)" >&2; exit 2 ;; esac
+  fi
+  # Nur für Container-Tests: ohne passenden DNS-Eintrag darf Caddy nur geprüft, nie gegen die echten Adressen betrieben werden
+  if [ "$DNS_UEBERSPRINGEN" = 1 ] && [ "$OHNE_SYSTEMD" = 0 ]; then
+    echo "--dns-pruefung-ueberspringen gibt es nur zusammen mit --ohne-systemd (Testmodus): auf einem echten Server schützt die DNS-Prüfung vor Zertifikatsfehlern und vor Aufrufen an einen fremden Server" >&2; exit 2
+  fi
   if [ "$ID_STDIN" = 1 ] && [ "$JA" = 0 ] && { [ "$KONFIG_ERSETZEN" = 1 ] || [ "$DB_ERSETZEN" = 1 ]; } && [ ! -r /dev/tty ]; then
     echo "Mit --identity-stdin ist stdin belegt: für Rückfragen --yes angeben" >&2; exit 2
   fi
@@ -1375,6 +1521,8 @@ main() {
   argumente_lesen "$@"
   [ -z "$PARAMS_DATEI" ] || parameter_lesen "$PARAMS_DATEI"
   parameter_pruefen
+  if [ -n "$P_NODE_PKG_VERSION" ]; then NODE_PKG_VERSION="$P_NODE_PKG_VERSION"; warn "NODE_PKG_VERSION aus der Parameterdatei: $NODE_PKG_VERSION (Standard: 24.21.0-1nodesource1)"; fi
+  if [ -n "$P_CADDY_PKG_VERSION" ]; then CADDY_PKG_VERSION="$P_CADDY_PKG_VERSION"; warn "CADDY_PKG_VERSION aus der Parameterdatei: $CADDY_PKG_VERSION (Standard: 2.11.7)"; fi
   [ "$(id -u)" -eq 0 ] || fehler "Bitte als root starten:  sudo bash $0 ..."
   if ! trocken; then sperren; fi
   TMP_ARBEIT="$(mktemp -d)"

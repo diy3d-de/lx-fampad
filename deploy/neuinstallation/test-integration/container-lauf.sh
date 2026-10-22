@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Läuft IM Debian-13-Container (aufgerufen von test-integration.sh): Szenario "neu" oder "wiederherstellung".
 # Nur für Tests: legt eine Attrappe für systemctl an (kein systemd im Container) und prüft das Ergebnis des Skripts.
+# Bricht ab, wenn es nicht in einem Docker-Container läuft (die Attrappe und die Testdaten dürfen nie auf einen echten Server).
 set -euo pipefail
+[ -f /.dockerenv ] || { echo "container-lauf.sh läuft nur in einem Docker-Container (/.dockerenv fehlt): Abbruch" >&2; exit 99; }
 export LC_ALL=C.UTF-8
 SZENARIO="${1:?neu|wiederherstellung}"
-REPO_QUELLE=/repo            # lesend eingebunden
-ARBEIT=/work                 # vom Host eingebunden: Sicherung, Testschlüssel
+REPO_QUELLE=/repo            # aus dem Tarball des Hosts entpackt (Kopie, nicht der Arbeitsbaum)
+ARBEIT=/work                 # vom Host eingebunden: Sicherung, Testschlüssel (nur Testdaten)
 SKRIPT="$REPO_QUELLE/deploy/neuinstallation/bootstrap-server.sh"
 LXHOME=/home/lx
 
@@ -17,9 +19,7 @@ pruefe() { local t="$1"; shift; if "$@" >/dev/null 2>&1; then ok "$t"; else fehl
 echo "== Vorbereitung des Containers (nur Testhilfen)"
 apt-get update -qq >/dev/null
 apt-get install -y -qq --no-install-recommends ca-certificates curl iproute2 age openssh-client >/dev/null 2>&1
-mkdir -p /run/systemd/system
 install -m 755 "$REPO_QUELLE/deploy/neuinstallation/test-integration/fake-systemctl.sh" /usr/bin/systemctl
-printf '#!/bin/sh\nexit 0\n' > /usr/bin/systemd-analyze; chmod 755 /usr/bin/systemd-analyze
 printf '#!/bin/sh\nexit 0\n' > /usr/bin/journalctl; chmod 755 /usr/bin/journalctl
 
 if [ "$SZENARIO" = neu ]; then
@@ -39,11 +39,17 @@ WEATHER_STATION_MAC=aa:bb:cc:dd:ee:ff
 WEATHER_BBOX=50.49,7.94,50.53,7.99
 EOF
 fi
-PARAMS="$ARBEIT/params.txt"
-ARGS=(--params "$PARAMS" --lx-anlegen)
+# Parameterdatei und Sicherung liegen im Container (root-eigen, nicht für andere schreibbar): das Skript verlangt das
+install -m 600 -o root -g root "$ARBEIT/params.txt" /root/params.txt
+PARAMS=/root/params.txt
+# --swap-ok: ein Container zeigt den Swap des Hosts (/proc/swaps); im Test wird der Schlüssel nur über eine Pipe gelesen
+ARGS=(--params "$PARAMS" --lx-anlegen --ohne-systemd --swap-ok)
 if [ "$SZENARIO" = wiederherstellung ]; then
   LAUF="$(ls -1 "$ARBEIT/sicherung" | sort | tail -1)"
-  ARGS+=(--sicherung "$ARBEIT/sicherung/$LAUF")
+  mkdir -p /root/sicherung
+  cp -r "$ARBEIT/sicherung/$LAUF" /root/sicherung/
+  chown -R root:root /root/sicherung; chmod -R go-w /root/sicherung
+  ARGS+=(--sicherung "/root/sicherung/$LAUF")
 fi
 
 echo "== 1. Trockenlauf (verändert nichts)"
@@ -61,9 +67,8 @@ else
   bash "$SKRIPT" "${ARGS[@]}" --phase pruefen,pakete,system
 fi
 
-echo "== 3. Checkout vorbereiten (der Test nimmt den Stand des eingebundenen Repositorys statt GitHub)"
+echo "== 3. Checkout vorbereiten (der Test nimmt den Stand aus dem Tarball statt GitHub)"
 cp -r "$REPO_QUELLE" "$LXHOME/lx-fampad"
-rm -rf "$LXHOME/lx-fampad/.git"
 chown -R lx:lx "$LXHOME/lx-fampad"
 runuser -u lx -- bash -c "cd '$LXHOME/lx-fampad' && git init -q && git config user.email t@example.org && git config user.name test && git add -A && git commit -q -m 'Teststand'"
 
@@ -77,8 +82,9 @@ fi
 echo "== 4b. Caddy: DNS zeigt woanders hin, also dürfen noch keine Site-Dateien entstehen"
 [ ! -e /etc/caddy/conf.d/fampad.caddy ] && ok "keine Site-Dateien ohne passenden DNS-Eintrag" || fehl "Site-Dateien trotz falschem DNS"
 CADDY_ARGS=("${ARGS[@]}"); [ "$SZENARIO" = neu ] || CADDY_ARGS+=(--identity-stdin)
-CADDY_AUSGABE="$(bash "$SKRIPT" "${CADDY_ARGS[@]}" --phase caddy --dns-pruefung-ueberspringen --ohne-systemd < "$ARBEIT/key.txt" 2>&1)"
+CADDY_AUSGABE="$(bash "$SKRIPT" "${CADDY_ARGS[@]}" --phase caddy --dns-pruefung-ueberspringen < "$ARBEIT/key.txt" 2>&1)"
 grep -q 'Site-Dateien aus dem Repository sind gültig' <<<"$CADDY_AUSGABE" && ok "Site-Dateien aus dem Repository sind gültig (caddy validate)" || fehl "Site-Dateien aus dem Repository nicht gültig: $CADDY_AUSGABE"
+pruefe "mit --ohne-systemd werden nie Site-Dateien installiert" bash -c "[ ! -e /etc/caddy/conf.d/fampad.caddy ]"
 
 echo "== 5. Prüfungen"
 pruefe "API antwortet mit db ok" bash -c "curl -fsS http://127.0.0.1:4400/api/v1/health | grep -q '\"db\":\"ok\"'"
@@ -87,9 +93,11 @@ pruefe "env root:root 600" bash -c "[ \"\$(stat -c %U:%G:%a /etc/lx-fampad/env)\
 pruefe "migrate.env root:root 600" bash -c "[ \"\$(stat -c %U:%G:%a /etc/lx-fampad/migrate.env)\" = root:root:600 ]"
 pruefe "ntfy-token 600" bash -c "[ \"\$(stat -c %a /etc/lx-fampad/ntfy-token)\" = 600 ]"
 pruefe "Datenbank gehört der Migrationsrolle" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -tAc \"select pg_get_userbyid(datdba) from pg_database where datname='lx_fampad'\")\" = lx_fampad_migrate ]"
+pruefe "Tabellen gehören der Migrationsrolle (nicht postgres)" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -d lx_fampad -tAc \"select count(*) from pg_tables where schemaname in ('public','drizzle') and tableowner <> 'lx_fampad_migrate'\")\" = 0 ]"
 pruefe "Laufzeitrolle kann keine Tabelle anlegen" bash -c "! PGPASSWORD=\"\$(sed -nE 's|^DATABASE_URL=postgres://[^:]+:([^@]*)@.*|\\1|p' /etc/lx-fampad/env)\" psql -h 127.0.0.1 -U lx_fampad -d lx_fampad -c 'create table probe(x int)'"
 pruefe "Laufzeitrolle kann lesen" bash -c "PGPASSWORD=\"\$(sed -nE 's|^DATABASE_URL=postgres://[^:]+:([^@]*)@.*|\\1|p' /etc/lx-fampad/env)\" psql -h 127.0.0.1 -U lx_fampad -d lx_fampad -tAc 'select count(*) from families'"
 pruefe "sudoers gültig" visudo -cf /etc/sudoers.d/lx-fampad
+pruefe "sudoers enthält KEINE Wetter-Regel (ohne --wetter-starten)" bash -c "! grep -q 'lx-fampad-weather' /etc/sudoers.d/lx-fampad"
 pruefe "Wetter-Einheit installiert, aber nicht gestartet" bash -c "[ -f /etc/systemd/system/lx-fampad-weather.service ] && ! [ -f /run/fake-systemctl/lx-fampad-weather.pid ]"
 pruefe "Haupt-Caddyfile enthält nur die Importzeile" bash -c "grep -q '^import /etc/caddy/conf.d/\*.caddy' /etc/caddy/Caddyfile"
 pruefe "assetlinks.json ist gültiges JSON mit Fingerabdruck" bash -c "grep -q 'AA:BB:CC' /srv/fampad/well-known/assetlinks.json && node -e 'JSON.parse(require(\"fs\").readFileSync(\"/srv/fampad/well-known/assetlinks.json\"))'"
@@ -115,16 +123,20 @@ else
   pruefe "keine Wegwerf-Datenbank übrig" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -tAc \"select count(*) from pg_database where datname like 'lx_fampad_wieder%'\")\" = 0 ]"
   pruefe "ntfy-Token aus der Sicherung ist gültig (Benutzerdatenbank wiederhergestellt)" bash -c "runuser -u ntfy -- ntfy token --config /etc/ntfy/server.yml list | grep -q \"\$(head -n1 /etc/lx-fampad/ntfy-token)\""
   pruefe "NTFY_TOKEN in der env = Token-Datei" bash -c "[ \"\$(sed -n 's/^NTFY_TOKEN=//p' /etc/lx-fampad/env)\" = \"\$(head -n1 /etc/lx-fampad/ntfy-token)\" ]"
+  pruefe "ntfy-Datenbank gehört dem Benutzer ntfy" bash -c "[ \"\$(stat -c %U /var/lib/ntfy/user.db)\" = ntfy ]"
   pruefe "recipients.txt der Sicherung wiederhergestellt" test -s /etc/lx-fampad-backup/recipients.txt
   SCHLUESSEL="$(grep '^AGE-SECRET-KEY-' "$ARBEIT/key.txt")"
   FUNDE="$(grep -rIlF -- "$SCHLUESSEL" /etc /root /srv /var /tmp /dev/shm /home /run 2>/dev/null || true)"
   [ -z "$FUNDE" ] && ok "der private Schlüssel liegt nirgends auf der Platte (gesucht in /etc /root /srv /var /tmp /dev/shm /home /run)" || fehl "Schlüssel gefunden in: $FUNDE"
   SCHLUESSEL=""
-  echo "== 7. Wiederholung (muss ohne Änderung durchlaufen; Datenbank nicht leer: kein erneutes Einspielen)"
+  echo "== 7. Wiederholung (muss ohne Änderung durchlaufen; Datenbank nicht leer: kein erneutes Einspielen; ntfy ohne Neustart)"
+  NTFY_PID_VORHER="$(cat /run/fake-systemctl/ntfy.pid)"
   WIEDERHOLUNG="$(bash "$SKRIPT" "${ARGS[@]}" --identity-stdin < "$ARBEIT/key.txt" 2>&1)"
-  grep -E 'übersprungen|bleibt unverändert|stammt schon|nicht leer' <<<"$WIEDERHOLUNG" | head -8 || true
+  grep -E 'übersprungen|bleibt unverändert|stammt schon|nicht leer|kein Neustart' <<<"$WIEDERHOLUNG" | head -8 || true
   pruefe "Wiederholung meldet: Datenbank nicht leer, kein erneutes Einspielen" grep -q 'nicht leer' <<<"$WIEDERHOLUNG"
+  pruefe "Wiederholung startet ntfy nicht neu" bash -c "[ \"\$(cat /run/fake-systemctl/ntfy.pid)\" = '$NTFY_PID_VORHER' ]"
   pruefe "Familie nach Wiederholung unverändert" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -d lx_fampad -tAc 'select count(*) from families')\" = 1 ]"
+  pruefe "Wiederholung ohne --wetter-starten fügt keine Wetter-Regel hinzu" bash -c "! grep -q 'lx-fampad-weather' /etc/sudoers.d/lx-fampad"
 fi
 echo
 if [ "$FEHLER" = 0 ]; then echo "SZENARIO $SZENARIO: BESTANDEN"; else echo "SZENARIO $SZENARIO: FEHLER"; exit 1; fi
