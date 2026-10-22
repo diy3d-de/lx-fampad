@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/auth/auth_state.dart';
 import '../../data/crypto/bytes.dart';
+import '../../data/crypto/notfallblatt.dart';
 import '../../data/crypto/code32.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/wiederherstellung.dart';
@@ -78,14 +80,29 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
     }
   }
 
+  /// Notfallblatt (PDF mit Schlüssel und Kurzanleitung) speichern: nur auf Klick, nur solange der Schlüssel hier sichtbar ist; der Schlüssel landet in keinem Log.
+  Future<void> _notfallblatt() async {
+    final name = ref.read(authProvider).user?.displayName ?? '';
+    final speichern = ref.read(notfallblattSpeichernProvider);
+    final pdf = notfallblattPdf(gruppen: _gruppen, name: name);
+    try {
+      final gespeichert = await speichern(kNotfallblattDateiname, pdf);
+      if (gespeichert && mounted) zeigeHinweis(context, 'Notfallblatt gespeichert. Drucke es aus, lege es sicher ab und lösche danach die Datei.');
+    } on Object {
+      if (mounted) zeigeHinweis(context, 'Das Notfallblatt ließ sich nicht speichern. Schreibe den Schlüssel stattdessen ab.');
+    } finally {
+      pdf.fillRange(0, pdf.length, 0); // die Kopie im Arbeitsspeicher überschreiben
+    }
+  }
+
   Future<void> _spaeter() async {
     final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (_) => AlertDialog(
         title: const Text('Später sichern?'),
         content: const Text(
-          'Ohne gesicherten Wiederherstellungsschlüssel verlierst du deinen Schlüssel und deinen Chat-Verlauf, wenn du alle Geräte verlierst. '
-          'Deine Sicherung bleibt unter Profil › Verschlüsselung als "offen" markiert, bis du sie anlegst.',
+          'Ohne bestätigten Wiederherstellungsschlüssel verlierst du deinen Schlüssel und deinen Chat-Verlauf, wenn du alle Geräte verlierst, und niemand kann ihn dir zurückgeben. '
+          'Deine Absicherung bleibt auf der Startseite und unter Profil › Verschlüsselung auf „offen“, bis du den Schlüssel bestätigt hast.',
         ),
         scrollable: true,
         actions: [
@@ -151,9 +168,16 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
                 geheim: true,
               ),
             ),
+            const SizedBox(height: 8),
+            ZweitKnopf(text: 'Notfallblatt speichern (PDF)', icon: Icons.picture_as_pdf_outlined, onPressed: laeuft ? null : _notfallblatt),
+            const SizedBox(height: 4),
+            const Text(
+              'Das Notfallblatt enthält den Schlüssel und eine Kurzanleitung zum Ausdrucken. Speichere es nur dort, wo du es danach drucken und löschen kannst.',
+              style: TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
+            ),
             const SizedBox(height: 16),
             const Text(
-              'Schreibe ihn auf oder lege ihn im Passwortmanager ab. Im nächsten Schritt wird er verdeckt, und du tippst ihn vollständig ab: So weißt du, dass er stimmt.',
+              'Schreibe ihn auf, drucke das Notfallblatt oder lege ihn im Passwortmanager ab. Im nächsten Schritt wird er verdeckt, und du tippst ihn vollständig ab: So weißt du, dass er stimmt.',
               style: TextStyle(fontSize: 14, height: 1.4, color: kText),
             ),
             const SizedBox(height: 12),

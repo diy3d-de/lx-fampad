@@ -557,7 +557,7 @@ Future<void> main() async {
     testWidgets('"Später sichern" bleibt möglich und sagt, dass die Sicherung offen bleibt', (tester) async {
       await zeigen(tester, 1.0);
       await tippeText(tester, 'Später sichern');
-      expect(find.textContaining('als "offen" markiert'), findsOneWidget);
+      expect(find.textContaining('auf „offen“'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Später'), findsOneWidget);
       pruefeLayout(tester, 'Später sichern');
     });
