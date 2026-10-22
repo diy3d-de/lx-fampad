@@ -14,7 +14,7 @@
 #   pakete          apt-Pakete, PostgreSQL 17, Node.js (NodeSource, Version und Schlüssel gepinnt), Prüfung der Sicherung mit dem Schlüssel
 #   system          Benutzer (lx, lx-fampad), Verzeichnisse, journald (7 Tage), sudo-Regel, optional CI-Schlüssel und Swap
 #   code            Git-Checkout (Deploy-Key, GitHub-Host-Schlüssel gepinnt; pausiert, bis der Deploy-Key eingetragen ist)
-#   konfiguration   /etc/lx-fampad/env (neu: Zufallspasswort; Sicherung: aus dem Archiv), assetlinks.json
+#   konfiguration   /etc/lx-fampad/env (neu: Zufallspasswort; Sicherung: aus dem Archiv über ein Staging im Arbeitsspeicher, gezielt kopiert), assetlinks.json
 #   datenbank       Rollen (Laufzeit nur DML, Migrationsrolle), Datenbank, ggf. pg_restore, einrichtung-auth.sh (AUTH_SECRET_KEY, Einheiten)
 #   anwendung       Server bauen und starten (deploy.sh), Migrationen, Wetter-Einheit (wird nur auf Wunsch gestartet)
 #   ntfy            ntfy installieren und härten, Benutzer/Token/Rechte (oder aus der Sicherung), env-Einträge
@@ -29,7 +29,7 @@
 #   --sicherung ORDNER         Sicherungsordner (db-*.dump.age, config-*.tar.age, SHA256SUMS), z. B. vom NAS
 #   --identity-stdin           privaten age-Schlüssel von stdin lesen (Einfügen, dann Strg+D; Eingabe unsichtbar)
 #   --identity-datei DATEI     privaten age-Schlüssel aus dieser (temporären) Datei lesen; wird nie kopiert
-#   --identity-datei-loeschen  die Schlüsseldatei nach dem Einlesen sofort überschreiben und löschen (nur Dateien unter /dev/shm oder /run, root-eigen, kein Symlink)
+#   --identity-datei-loeschen  die Schlüsseldatei nach dem Einlesen sofort überschreiben und löschen (nur Dateien unter /dev/shm, /run/lxfampad oder /run/user, ohne .., root-eigen, kein Symlink)
 #   --swap-ok                  trotz aktivem Swap fortfahren (sonst Abbruch vor dem Einlesen des Schlüssels: Swap könnte ihn auf die Platte auslagern)
 #   --konfiguration-ersetzen   eine vorhandene, abweichende /etc/lx-fampad/env durch die der Sicherung ersetzen (Kopie bleibt)
 #   --datenbank-ersetzen       eine vorhandene, NICHT leere Datenbank lx_fampad durch die Sicherung ersetzen (die alte wird umbenannt, nicht gelöscht)
@@ -44,8 +44,12 @@
 # Sicherheitsregeln dieses Skripts: kein Geheimnis in Argumenten, Log oder Repository (Passwörter entstehen auf dem Server, der private
 # age-Schlüssel liegt nur im Arbeitsspeicher und wird nie abgelegt); das Haupt-Caddyfile von lx-labs.dev wird nie überschrieben (nur
 # /etc/caddy/conf.d/*.caddy; die Importzeile nur in einem unveränderten Standard-Caddyfile); kein curl|bash, alle Quellen mit Schlüssel- oder
-# Prüfsummen-Pin. Aus der Sicherung werden nur Dateien an erlaubten Pfaden entpackt (keine Links, Geräte, ..-Pfade); der Datenbank-Dump läuft als
-# Migrationsrolle (nie als Superuser), kann aber SQL enthalten: die Echtheit der Sicherung beweist erst eine Signatur (offener Punkt, docs/NEUINSTALLATION.md).
+# Prüfsummen-Pin. EHRLICH: Dem Inhalt einer Sicherung darf nicht blind vertraut werden (jeder, der den öffentlichen age-Schlüssel kennt, kann ein
+# gültiges Archiv erzeugen; SHA256SUMS schützt nur vor Übertragungsfehlern). Deshalb: Archive und SHA256SUMS werden einmal in ein root-eigenes
+# Arbeitsverzeichnis kopiert und nur dort geprüft/benutzt; entpackt wird zuerst in ein Staging (--no-same-owner --no-same-permissions) und dann gezielt
+# kopiert (nur reguläre Dateien, feste Modi); nichts aus der Sicherung wird als root geladen oder ausgeführt (backup.conf kommt aus den Parametern,
+# von den Backup-Einstellungen wird nur recipients*.txt nach Formatprüfung übernommen); der Dump läuft als Migrationsrolle, nie als Superuser, kann
+# aber SQL enthalten. Echte Echtheit beweist erst eine Signatur von SHA256SUMS (offener Punkt, docs/NEUINSTALLATION.md).
 # Der private Schlüssel wird nach der letzten Entschlüsselung verworfen (vor einem Swap); ein vorhandener Swap bricht vor dem Einlesen ab (--swap-ok).
 #
 # Das gesamte Skript steht in Funktionen: bash liest es vollständig, bevor es etwas ausführt (der Git-Checkout darf es während des Laufs ersetzen).
@@ -100,6 +104,7 @@ P_RELEASE_CERT_SHA256=""; P_E2EE_PW_BACKUP=""; P_AUTH_LEGACY_PASSWORD_LOGIN=""
 P_BACKUP_AGE_RECIPIENTS=""; P_BACKUP_AGE_RECIPIENTS_CONFIG=""; P_BACKUP_NAS_PUBKEY=""; P_BACKUP_NAS_IP=""
 P_SWAP_MB="0"
 P_NODE_PKG_VERSION=""; P_CADDY_PKG_VERSION=""
+P_BACKUP_KEEP=""; P_BACKUP_INCLUDE_APK=""; P_BACKUP_INCLUDE_FILES=""
 
 # --- Ausgabe ---------------------------------------------------------------------------------------------------------------------------
 info() { echo "    $*"; }
@@ -149,6 +154,9 @@ aufraeumen() {
   if [ "$SPERRE_GESETZT" = 1 ] && [ "$(cat "$SPERRDATEI" 2>/dev/null)" = "$$" ]; then rm -f "$SPERRDATEI"; fi
   if [ "$POLICY_RC_ANGELEGT" = 1 ]; then rm -f /usr/sbin/policy-rc.d; fi
   if [ -n "$TMP_ARBEIT" ]; then rm -rf -- "$TMP_ARBEIT"; fi
+  if [ -n "$STAGE_SHM" ]; then rm -rf -- "$STAGE_SHM"; fi
+  if [ -n "$STAGE_FILES" ]; then rm -rf -- "$STAGE_FILES"; fi
+  if [ -n "$ARCH_ARBEIT" ]; then rm -rf -- "$ARCH_ARBEIT"; fi
   if [ "$rc" -ne 0 ] && [ "$rc" -ne 10 ]; then
     echo "!!  Abbruch in Phase '$AKTUELLE_PHASE' (Code $rc). Ursache beheben und denselben Befehl wiederholen (idempotent) oder mit --ab $AKTUELLE_PHASE neu starten." >&2
   fi
@@ -170,12 +178,17 @@ CADDY_ROLLBACK_AKTIV=0
 nur_root_schreibbar() { # $1 Pfad
   [ -e "$1" ] && [ ! -L "$1" ] && [ "$(stat -c %u "$1")" = 0 ] && [ $(( 8#$(stat -c %a "$1") & 8#022 )) -eq 0 ]
 }
+# Dasselbe an einem bereits geöffneten Dateideskriptor: geprüft wird genau die Datei, die danach gelesen wird (kein Austausch dazwischen)
+fd_root_schreibbar() { # $1 Deskriptor-Nummer
+  [ -f "/proc/self/fd/$1" ] && [ "$(stat -L -c %u "/proc/self/fd/$1")" = 0 ] && [ $(( 8#$(stat -L -c %a "/proc/self/fd/$1") & 8#022 )) -eq 0 ]
+}
 parameter_lesen() { # $1 Datei
-  local datei="$1" zeile key val n=0
+  local datei="$1" zeile key val n=0 pfd
   local re_dq='^"(.*)"$' re_sq="^'(.*)'\$"
-  [ -r "$datei" ] || fehler "Parameterdatei nicht lesbar: $datei"
-  nur_root_schreibbar "$datei" || fehler "Parameterdatei $datei muss root gehören, darf kein Symlink sein und darf für Gruppe/Andere nicht schreibbar sein (chown root:root, chmod 600)"
-  while IFS= read -r zeile || [ -n "$zeile" ]; do
+  [ -r "$datei" ] && [ ! -L "$datei" ] || fehler "Parameterdatei nicht lesbar oder ein Symlink: $datei"
+  exec {pfd}< "$datei"   # einmal öffnen: Eigentümer, Rechte und Inhalt stammen aus derselben Datei
+  fd_root_schreibbar "$pfd" || fehler "Parameterdatei $datei muss root gehören und darf für Gruppe/Andere nicht schreibbar sein (chown root:root, chmod 600)"
+  while IFS= read -r zeile <&"$pfd" || [ -n "$zeile" ]; do
     n=$((n + 1)); zeile="${zeile%$'\r'}"
     case "$zeile" in ''|'#'*) continue ;; esac
     [[ "$zeile" =~ ^[[:space:]]*# ]] && continue
@@ -186,11 +199,12 @@ parameter_lesen() { # $1 Datei
       fehler "Parameterdatei Zeile $n: enthält einen privaten Schlüssel. Der gehört nie in eine Datei auf dem Server."
     fi
     case "$key" in
-      GIT_REPO_URL|GIT_REF|LX_SSH_PUBKEY|CI_DEPLOY_PUBKEY|WEATHER_ENABLED|WEATHER_PLACE|WEATHER_STATION_MAC|WEATHER_BBOX|RELEASE_CERT_SHA256|E2EE_PW_BACKUP|AUTH_LEGACY_PASSWORD_LOGIN|BACKUP_AGE_RECIPIENTS|BACKUP_AGE_RECIPIENTS_CONFIG|BACKUP_NAS_PUBKEY|BACKUP_NAS_IP|SWAP_MB|NODE_PKG_VERSION|CADDY_PKG_VERSION)
+      GIT_REPO_URL|GIT_REF|LX_SSH_PUBKEY|CI_DEPLOY_PUBKEY|WEATHER_ENABLED|WEATHER_PLACE|WEATHER_STATION_MAC|WEATHER_BBOX|RELEASE_CERT_SHA256|E2EE_PW_BACKUP|AUTH_LEGACY_PASSWORD_LOGIN|BACKUP_AGE_RECIPIENTS|BACKUP_AGE_RECIPIENTS_CONFIG|BACKUP_NAS_PUBKEY|BACKUP_NAS_IP|BACKUP_KEEP|BACKUP_INCLUDE_APK|BACKUP_INCLUDE_FILES|SWAP_MB|NODE_PKG_VERSION|CADDY_PKG_VERSION)
         printf -v "P_$key" '%s' "$val" ;;
       *) fehler "Parameterdatei Zeile $n: unbekannter Schlüssel '$key' (erlaubt sind nur die Schlüssel aus parameter.beispiel; Geheimnisse gehören nicht hierher)" ;;
     esac
-  done < "$datei"
+  done
+  exec {pfd}<&-
 }
 SSH_KEY_RE='^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp256|ecdsa-sha2-nistp384|ecdsa-sha2-nistp521) [A-Za-z0-9+/]+=*( [^[:cntrl:]]*)?$'
 AGE_RECIP_RE='^age1[02-9ac-hj-np-z]{58}$'
@@ -225,6 +239,9 @@ parameter_pruefen() {
   fi
   [ -z "$P_NODE_PKG_VERSION" ] || [[ "$P_NODE_PKG_VERSION" =~ ^24\.[0-9]+\.[0-9]+-1nodesource1$ ]] || fehler "NODE_PKG_VERSION ungültig (24.x.y-1nodesource1)"
   [ -z "$P_CADDY_PKG_VERSION" ] || [[ "$P_CADDY_PKG_VERSION" =~ ^2\.[0-9]+\.[0-9]+$ ]] || fehler "CADDY_PKG_VERSION ungültig (2.x.y)"
+  [ -z "$P_BACKUP_KEEP" ] || { [[ "$P_BACKUP_KEEP" =~ ^[0-9]{1,2}$ ]] && [ "$P_BACKUP_KEEP" -ge 1 ]; } || fehler "BACKUP_KEEP muss eine Zahl von 1 bis 99 sein"
+  [ -z "$P_BACKUP_INCLUDE_APK" ] || [[ "$P_BACKUP_INCLUDE_APK" =~ ^[01]$ ]] || fehler "BACKUP_INCLUDE_APK muss 0 oder 1 sein"
+  [ -z "$P_BACKUP_INCLUDE_FILES" ] || [[ "$P_BACKUP_INCLUDE_FILES" =~ ^[01]$ ]] || fehler "BACKUP_INCLUDE_FILES muss 0 oder 1 sein"
   [[ "$P_SWAP_MB" =~ ^[0-9]+$ ]] || fehler "SWAP_MB muss eine Zahl sein"
   if [ "$P_SWAP_MB" -ne 0 ] && { [ "$P_SWAP_MB" -lt 256 ] || [ "$P_SWAP_MB" -gt 8192 ]; }; then fehler "SWAP_MB: 0 oder 256 bis 8192"; fi
   return 0
@@ -324,21 +341,34 @@ db_passwort_lesen() { # $1 Datei, $2 Schlüssel
 age_entschluesseln() { # $1 Datei -> Klartext auf stdout; der Schlüssel läuft über eine Pipe (kein Datei, keine Prozessliste)
   age -d -i <(printf '%s\n' "$AGE_ID") -- "$1"
 }
-# Schlüsseldatei darf nur gelöscht werden, wenn sie im Arbeitsspeicher liegt (/dev/shm, /run), kein Symlink ist und root gehört
-identitaet_datei_loeschbar() { # $1 Pfad
-  case "$1" in /dev/shm/*|/run/*) ;; *) return 1 ;; esac
-  [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat -c %u "$1")" = 0 ]
+# Schlüsseldatei darf nur gelöscht werden, wenn sie im Arbeitsspeicher liegt (/dev/shm, /run/lxfampad, /run/user), ohne ..-Teile, auch aufgelöst
+# (realpath) dort bleibt, kein Symlink ist und root gehört
+identitaet_pfad_erlaubt() { # $1 Pfad (nur die Schreibweise)
+  case "$1" in *..*) return 1 ;; esac
+  case "$1" in /dev/shm/*|/run/lxfampad/*|/run/user/*) return 0 ;; *) return 1 ;; esac
 }
-# Swap kann Arbeitsspeicher (und damit den Schlüssel) auf die Platte auslagern
-swap_aktiv() { [ -n "$(swapon --show --noheadings 2>/dev/null || true)" ]; }
+identitaet_datei_loeschbar() { # $1 Pfad
+  local rp
+  identitaet_pfad_erlaubt "$1" || return 1
+  [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat -c %u "$1")" = 0 ] || return 1
+  rp="$(realpath -e -- "$1")" || return 1
+  identitaet_pfad_erlaubt "$rp"
+}
+# Swap kann Arbeitsspeicher (und damit den Schlüssel) auf die Platte auslagern. Gelesen wird /proc/swaps (kein Programm, das fehlen kann);
+# ist die Datei nicht lesbar, gilt Swap als aktiv (fail-closed).
+SWAPS_DATEI=/proc/swaps
+swap_aktiv() {
+  [ -r "$SWAPS_DATEI" ] || return 0
+  [ -n "$(awk 'NR > 1' "$SWAPS_DATEI")" ]
+}
 identitaet_laden() {
   local roh="" zeile
   if swap_aktiv; then
-    [ "$SWAP_OK" = 1 ] || fehler "Auf diesem Server ist Swap aktiv (swapon --show): der private Schlüssel könnte aus dem Arbeitsspeicher auf die Platte ausgelagert werden. Erst 'swapoff -a', oder bewusst mit --swap-ok fortfahren (danach den Swap-Bereich überschreiben/neu anlegen)."
+    [ "$SWAP_OK" = 1 ] || fehler "Auf diesem Server ist Swap aktiv (/proc/swaps) oder nicht prüfbar: der private Schlüssel könnte aus dem Arbeitsspeicher auf die Platte ausgelagert werden. Erst 'swapoff -a', oder bewusst mit --swap-ok fortfahren (danach den Swap-Bereich überschreiben/neu anlegen)."
     warn "Swap ist aktiv, --swap-ok angegeben: der Schlüssel kann im Swap landen."
   fi
   if [ "$ID_LOESCHEN" = 1 ]; then
-    identitaet_datei_loeschbar "$ID_DATEI" || fehler "--identity-datei-loeschen: nur für eine reguläre Datei unter /dev/shm oder /run, die root gehört und kein Symlink ist"
+    identitaet_datei_loeschbar "$ID_DATEI" || fehler "--identity-datei-loeschen: nur für eine reguläre Datei unter /dev/shm, /run/lxfampad oder /run/user (ohne ..), die root gehört und kein Symlink ist"
   fi
   if [ "$ID_STDIN" = 1 ]; then
     if [ -t 0 ]; then
@@ -383,11 +413,22 @@ sicherung_ordner_pruefen() {
   for f in "$d/SHA256SUMS" "$DB_ARCHIV" "$CFG_ARCHIV" ${FILES_ARCHIV:+"$FILES_ARCHIV"}; do
     nur_root_schreibbar "$f" || fehler "$f muss root gehören, kein Symlink sein und darf für Gruppe/Andere nicht schreibbar sein"
   done
+  # Im echten Lauf werden die Dateien EINMAL in ein root-eigenes Arbeitsverzeichnis kopiert (Platte, nicht RAM: die Dateiablage kann groß sein; nur
+  # verschlüsselte Daten). Geprüft und benutzt werden nur diese Kopien: Ein Austausch im Quellordner nach der Prüfung greift nicht mehr.
+  local pd="$d"
+  if ! trocken; then
+    ARCH_ARBEIT="$(mktemp -d -p /var/tmp lx-fampad-bootstrap-sicherung.XXXXXX)"
+    chmod 700 "$ARCH_ARBEIT"
+    cp -- "$d/SHA256SUMS" "$DB_ARCHIV" "$CFG_ARCHIV" ${FILES_ARCHIV:+"$FILES_ARCHIV"} "$ARCH_ARBEIT/" || fehler "Kopieren der Sicherung nach $ARCH_ARBEIT fehlgeschlagen (Platz?)"
+    DB_ARCHIV="$ARCH_ARBEIT/$(basename "$DB_ARCHIV")"; CFG_ARCHIV="$ARCH_ARBEIT/$(basename "$CFG_ARCHIV")"
+    if [ -n "$FILES_ARCHIV" ]; then FILES_ARCHIV="$ARCH_ARBEIT/$(basename "$FILES_ARCHIV")"; fi
+    pd="$ARCH_ARBEIT"
+  fi
   # alle benutzten Archive müssen in SHA256SUMS stehen (sha256sum -c prüft sonst nur, was dort eingetragen ist)
   for f in "$DB_ARCHIV" "$CFG_ARCHIV" ${FILES_ARCHIV:+"$FILES_ARCHIV"}; do
-    awk -v n="$(basename "$f")" '$2 == n || $2 == "*" n { g = 1 } END { exit !g }' "$d/SHA256SUMS" || fehler "$(basename "$f") steht nicht in SHA256SUMS: die Sicherung ist unvollständig oder verändert"
+    awk -v n="$(basename "$f")" '$2 == n || $2 == "*" n { g = 1 } END { exit !g }' "$pd/SHA256SUMS" || fehler "$(basename "$f") steht nicht in SHA256SUMS: die Sicherung ist unvollständig oder verändert"
   done
-  ( cd "$d" && sha256sum -c --strict --quiet SHA256SUMS ) || fehler "Prüfsummen stimmen nicht: die Sicherung ist beschädigt (eine ältere vom NAS nehmen)"
+  ( cd "$pd" && sha256sum -c --strict --quiet SHA256SUMS ) || fehler "Prüfsummen stimmen nicht: die Sicherung ist beschädigt (eine ältere vom NAS nehmen)"
   n="$(basename "$d")"
   info "Sicherung: $d (Prüfsummen ok$([[ "$n" =~ ^[0-9]{8}-[0-9]{6}$ ]] && echo ", Zeitstempel $n UTC"))"
 }
@@ -418,15 +459,35 @@ tar_archiv_pruefen() { # $1 Datei, $2 "z" (gzip) oder "", $3 Bezeichnung
 }
 CFG_NAMEN=""
 # Nur ausdrücklich genannte Pfade entpacken (wer immer das Archiv erzeugt hat: nichts Unbekanntes landet auf der Platte)
-config_extrahieren() { # Präfixe (relativ zu /), nur vorhandene werden entpackt
+ARCH_ARBEIT=""; STAGE_SHM=""; STAGE_FILES=""
+# Entpackt wird NIE direkt nach /: erst in ein root-eigenes Staging (Arbeitsspeicher /dev/shm, 700), mit --no-same-owner und
+# --no-same-permissions (Modi/Eigentümer aus dem Archiv zählen nicht). Danach kopiert das Skript gezielt und setzt Modi und Eigentümer selbst.
+config_in_staging() { # Präfixe (relativ zu /), nur vorhandene werden entpackt
   local p gefunden=()
   for p in "$@"; do
     if awk -v p="$p" 'index($0, p "/") == 1 || $0 == p { f = 1 } END { exit !f }' <<<"$CFG_NAMEN"; then gefunden+=("$p"); fi
   done
   [ "${#gefunden[@]}" -gt 0 ] || return 0
-  # umask 077: Verzeichnisse, die tar nebenbei anlegt, sind nicht für andere lesbar (Dateien behalten die gesicherten Modi, z. B. 600 für env)
-  ( umask 077; age_entschluesseln "$CFG_ARCHIV" | tar -xzf - -C / --no-same-owner -- "${gefunden[@]}" )
-  info "entpackt: ${gefunden[*]}"
+  if [ -z "$STAGE_SHM" ]; then
+    [ -d /dev/shm ] || fehler "/dev/shm fehlt (Staging im Arbeitsspeicher)"
+    STAGE_SHM="$(mktemp -d -p /dev/shm lx-fampad-bootstrap.XXXXXX)"; chmod 700 "$STAGE_SHM"
+  fi
+  ( umask 077; age_entschluesseln "$CFG_ARCHIV" | tar -xzf - -C "$STAGE_SHM" --no-same-owner --no-same-permissions -- "${gefunden[@]}" )
+  info "entpackt (Staging): ${gefunden[*]}"
+}
+# Gibt nur Namen zurück, die als einfache Dateinamen taugen (keine Pfadteile)
+einfacher_name() { [[ "$1" =~ ^[A-Za-z0-9._-]+$ ]] && [ "$1" != . ] && [ "$1" != .. ]; }
+# Kopiert die regulären Dateien der obersten Ebene (keine Symlinks, keine Unterordner) mit festem Modus und Eigentümer root
+staging_dateien_kopieren() { # $1 Quellordner im Staging, $2 Zielordner, $3 Modus, $4 "nur-fehlende" oder "alle"
+  local f n
+  [ -d "$1" ] || return 0
+  for f in "$1"/*; do
+    [ -f "$f" ] && [ ! -L "$f" ] || continue
+    n="$(basename "$f")"
+    einfacher_name "$n" || { warn "Datei mit ungewöhnlichem Namen übersprungen: $n"; continue; }
+    if [ "$4" = nur-fehlende ] && [ -e "$2/$n" ]; then continue; fi
+    install -m "$3" -o root -g root "$f" "$2/$n"
+  done
 }
 # Symlinks in den für lx beschreibbaren Bäumen entfernen, bevor root dort etwas entpackt oder anlegt (lx könnte sie vorbereitet haben)
 lx_baeume_bereinigen() {
@@ -488,9 +549,19 @@ authorized_keys_ergaenzen() { # $1 Benutzer, $2 vollständige Zeile
   # lx darf in seinem Home Symlinks anlegen: root folgt ihnen nie
   [ ! -L "$home" ] && [ ! -L "$dir" ] && [ ! -L "$f" ] || fehler "$dir oder $f ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
   install -d -m 700 -o "$u" -g "$grp" "$dir"
-  [ -e "$f" ] || install -m 600 -o "$u" -g "$grp" /dev/null "$f"
-  chown -h "$u:$grp" "$f"; chmod 600 "$f"
-  grep -qxF -- "$zeile" "$f" || printf '%s\n' "$zeile" >> "$f"
+  local tmp="$TMP_ARBEIT/authorized_keys.$u"
+  : > "$tmp"
+  if [ -f "$f" ]; then cat -- "$f" > "$tmp"; fi
+  grep -qxF -- "$zeile" "$tmp" || printf '%s\n' "$zeile" >> "$tmp"
+  schreibe_neu "$tmp" "$f" 600 "$u:$grp"
+}
+# Datei im Verzeichnis eines anderen Benutzers (lx) neu anlegen: Symlink ablehnen, alte Datei entfernen, mit noclobber (O_EXCL) schreiben,
+# dann Eigentümer/Modus setzen. Restrisiko: ein Austausch zwischen den Schritten durch lx selbst (kein Vorschlaghammer: das Verzeichnis gehört ihm).
+schreibe_neu() { # $1 Quelldatei, $2 Ziel, $3 Modus, $4 Eigentümer:Gruppe
+  [ ! -L "$2" ] || fehler "$2 ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
+  rm -f -- "$2"
+  ( set -C; cat -- "$1" > "$2" ) || fehler "$2 ließ sich nicht neu anlegen (existiert schon?)"
+  chown -h "$4" "$2"; chmod "$3" "$2"
 }
 # Regel für den Neustart per deploy.sh. Die Wetter-Regel gibt es nur, wenn der Wetter-Dienst gewollt ist (--wetter-starten) oder die Regel schon
 # da war: ein Wiederholungslauf ohne die Option fügt sie nicht hinzu und nimmt sie nicht weg.
@@ -526,9 +597,8 @@ github_hostkey_sichern() {
   fpr="$(ssh-keygen -lf /dev/stdin <<<"$keys" 2>/dev/null | awk '{print $2}')"
   [ "$fpr" = "$GITHUB_ED25519_FPR" ] || fehler "SSH-Host-Schlüssel von github.com stimmt nicht mit dem gepinnten überein (gefunden: ${fpr:-keiner}; erwartet: $GITHUB_ED25519_FPR). Nichts wurde eingetragen."
   [ ! -L "$kf" ] && [ ! -L "$LX_HOME/.ssh" ] || fehler "$kf oder $LX_HOME/.ssh ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
-  rm -f "$kf"
-  printf '%s\n' "$keys" > "$kf"
-  chown -h "$LX_USER:$(id -gn "$LX_USER")" "$kf"; chmod 644 "$kf"
+  printf '%s\n' "$keys" > "$TMP_ARBEIT/known_hosts_fampad"
+  schreibe_neu "$TMP_ARBEIT/known_hosts_fampad" "$kf" 644 "$LX_USER:$(id -gn "$LX_USER")"
 }
 CADDY_ARBEITSLISTE=()
 
@@ -688,7 +758,9 @@ phase_system() {
     chown -h "$LX_USER:$SVC_USER" /srv/fampad/server /srv/fampad/server.prev
     chmod 750 /srv/fampad/server /srv/fampad/server.prev
     chown -hR "$LX_USER:$LX_USER" /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte
-    chmod -R u=rwX,go=rX /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte
+    # Modi nur an echten Ordnern und Dateien setzen (find folgt keinen Symlinks; chmod -R könnte einem von lx angelegten Link folgen)
+    find /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte -type d -exec chmod 755 {} +
+    find /srv/fampad/web /srv/fampad/releases /srv/fampad/well-known /srv/fampad/font-fallback /srv/fampad/karte -type f -exec chmod u=rw,go=r {} +
     chown -h "$SVC_USER:$SVC_USER" /srv/fampad/files
     chmod 700 /srv/fampad/files
     chmod 755 /srv/fampad
@@ -804,53 +876,102 @@ konfiguration_neu() {
   info "$ENV_FILE angelegt (Datenbank-Passwort steht nur dort; AUTH_SECRET_KEY erzeugt einrichtung-auth.sh in der Phase datenbank)."
   [ -n "$P_RELEASE_CERT_SHA256" ] || offen "WEBAUTHN_ORIGINS fehlt (RELEASE_CERT_SHA256 nicht gesetzt): Passkeys der Android-App gehen erst, wenn du ihn nach deploy/README.md Abschnitt 9 einträgst"
 }
+# Alles aus der Sicherung wird erst in ein Staging im Arbeitsspeicher entpackt, dort geprüft und dann gezielt kopiert.
+# Jeder Schritt gilt für sich: der Abgleich über AUTH_SECRET_KEY betrifft nur die env-Dateien; die übrigen Teile (Update-Kanal, well-known,
+# ntfy-Benutzerdatenbank, Dateiablage, Empfänger der Sicherung) werden immer "nur wenn sie fehlen" wiederhergestellt.
+# NICHT aus der Sicherung übernommen: backup.conf (root lädt sie per source), Caddy-Dateien, ntfy-Konfiguration, Units, sudoers.
 konfiguration_aus_sicherung() {
-  local alt neu
-  if [ -e "$ENV_FILE" ]; then
-    if trocken; then info "[dry-run] $ENV_FILE existiert: AUTH_SECRET_KEY würde mit dem der Sicherung verglichen"; return 0; fi
-    alt="$(env_wert "$ENV_FILE" AUTH_SECRET_KEY)"
-    neu="$({ age_entschluesseln "$CFG_ARCHIV" | tar -xzOf - etc/lx-fampad/env 2>/dev/null || true; } | { grep '^AUTH_SECRET_KEY=' || true; } | tail -n 1 | cut -d= -f2-)"
-    if [ -n "$neu" ] && [ "$alt" = "$neu" ]; then
-      info "$ENV_FILE stammt schon aus dieser Sicherung (AUTH_SECRET_KEY gleich), bleibt unverändert."
-      alt=""; neu=""
-      return 0
-    fi
-    alt=""; neu=""
-    [ "$KONFIG_ERSETZEN" = 1 ] || fehler "$ENV_FILE existiert und weicht von der Sicherung ab. Ein falscher AUTH_SECRET_KEY macht TOTP-Geheimnisse und Codes unbrauchbar. Prüfe, warum die Datei da ist; zum bewussten Ersetzen --konfiguration-ersetzen angeben (eine Kopie bleibt)."
-    frage_ja "Vorhandene Konfiguration durch die der Sicherung ersetzen?" || fehler "abgebrochen"
-    cp -p "$ENV_FILE" "$ENV_FILE.vor-wiederherstellung.$(date +%Y%m%d-%H%M%S)"
-    info "Kopie der bisherigen env angelegt (root, 0600)."
-  fi
+  local alt neu env_ersetzen=0 env_vorhanden=0 url rp f
+  [ ! -e "$ENV_FILE" ] || env_vorhanden=1
   if trocken; then
-    info "[dry-run] aus config-*.tar.age nur diese Pfade entpacken: etc/lx-fampad, etc/lx-fampad-backup, srv/fampad/well-known, srv/fampad/releases/android, var/lib/ntfy (nur wenn noch keine ntfy-Benutzerdatenbank da ist)"
-    info "[dry-run] Caddy-Dateien, ntfy-Konfiguration, Units und sudoers der Sicherung werden NICHT übernommen (kommen frisch aus dem Repository)"
+    info "[dry-run] aus config-*.tar.age ins Staging (Arbeitsspeicher, --no-same-permissions): etc/lx-fampad, etc/lx-fampad-backup (nur recipients*.txt nach Formatprüfung), srv/fampad/well-known, srv/fampad/releases/android, var/lib/ntfy"
+    if [ "$env_vorhanden" = 1 ]; then info "[dry-run] $ENV_FILE existiert: AUTH_SECRET_KEY würde mit dem der Sicherung verglichen; die übrigen Teile werden trotzdem 'nur wenn sie fehlen' wiederhergestellt"; fi
+    info "[dry-run] Caddy-Dateien, ntfy-Konfiguration, Units, sudoers und backup.conf der Sicherung werden NICHT übernommen (kommen frisch aus dem Repository bzw. den Parametern)"
     return 0
   fi
-  lx_baeume_bereinigen /srv/fampad/well-known /srv/fampad/releases
-  config_extrahieren etc/lx-fampad etc/lx-fampad-backup srv/fampad/well-known srv/fampad/releases/android
-  if [ -s /var/lib/ntfy/user.db ]; then info "ntfy-Benutzerdatenbank vorhanden, wird nicht überschrieben."
-  else config_extrahieren var/lib/ntfy; fi
+  config_in_staging etc/lx-fampad etc/lx-fampad-backup srv/fampad/well-known srv/fampad/releases/android var/lib/ntfy
   config_hat etc/lx-fampad || fehler "etc/lx-fampad nicht im Archiv"
-  chown -hR root:root "$ETC_DIR"; chmod 755 "$ETC_DIR"
-  find "$ETC_DIR" -maxdepth 1 -type f -exec chmod 600 {} +
-  [ ! -d /etc/lx-fampad-backup ] || chown -hR root:root /etc/lx-fampad-backup
-  chown -hR "$LX_USER:$LX_USER" /srv/fampad/well-known /srv/fampad/releases
-  chmod -R u=rwX,go=rX /srv/fampad/well-known /srv/fampad/releases
-  # die gesicherte ntfy-Benutzerdatenbank liegt jetzt bei root; die Phase ntfy übergibt sie dem Benutzer ntfy (so entschlüsselt keine spätere Phase mehr)
-  [ -n "$(env_wert "$ENV_FILE" AUTH_SECRET_KEY)" ] || fehler "AUTH_SECRET_KEY fehlt in der wiederhergestellten env"
-  local url rp
-  url="$(env_wert "$ENV_FILE" PUBLIC_URL)"; rp="$(env_wert "$ENV_FILE" WEBAUTHN_RP_ID)"
-  [[ "${url%/}" == "https://$DOMAIN" ]] || fehler "PUBLIC_URL der Sicherung ist '$url', erwartet https://$DOMAIN. Die Domain (Passkey-RP-ID) darf sich nicht ändern; nichts wird gestartet."
+  local senv="$STAGE_SHM/etc/lx-fampad/env"
+  [ -f "$senv" ] && [ ! -L "$senv" ] || fehler "etc/lx-fampad/env fehlt im Archiv oder ist kein reguläre Datei"
+  # Prüfen, BEVOR irgendetwas verändert wird
+  [ -n "$(env_wert "$senv" AUTH_SECRET_KEY)" ] || fehler "AUTH_SECRET_KEY fehlt in der env der Sicherung"
+  url="$(env_wert "$senv" PUBLIC_URL)"; rp="$(env_wert "$senv" WEBAUTHN_RP_ID)"
+  [[ "${url%/}" == "https://$DOMAIN" ]] || fehler "PUBLIC_URL der Sicherung ist '$url', erwartet https://$DOMAIN. Die Domain (Passkey-RP-ID) darf sich nicht ändern; nichts wurde verändert."
   [ -z "$rp" ] || [ "$rp" = "$DOMAIN" ] || fehler "WEBAUTHN_RP_ID der Sicherung ist '$rp', erwartet $DOMAIN"
-  db_passwort_lesen "$ENV_FILE" DATABASE_URL >/dev/null || fehler "DATABASE_URL der Sicherung nicht lesbar (Passwort mit unerwarteten Zeichen?)"
-  info "Konfiguration aus der Sicherung wiederhergestellt (AUTH_SECRET_KEY und Datenbank-Zugangsdaten stammen aus der Sicherung)."
-  if [ -n "$FILES_ARCHIV" ]; then
-    # das Archiv wurde in sicherung_inhalt_pruefen auf Links, Geräte und fremde Pfade geprüft (nur srv/fampad/files)
-    [ ! -L /srv/fampad/files ] || fehler "/srv/fampad/files ist ein Symlink: Abbruch"
-    ( umask 077; age_entschluesseln "$FILES_ARCHIV" | tar -xf - -C / --no-same-owner -- srv/fampad/files )
-    chown -hR "$SVC_USER:$SVC_USER" /srv/fampad/files; chmod 700 /srv/fampad/files
-    info "Dateiablage aus files-*.tar.age wiederhergestellt."
+  db_passwort_lesen "$senv" DATABASE_URL >/dev/null || fehler "DATABASE_URL der Sicherung nicht lesbar (Passwort mit unerwarteten Zeichen?)"
+  # 1. env-Dateien (nur hier entscheidet der Abgleich)
+  if [ "$env_vorhanden" = 1 ]; then
+    alt="$(env_wert "$ENV_FILE" AUTH_SECRET_KEY)"; neu="$(env_wert "$senv" AUTH_SECRET_KEY)"
+    if [ "$alt" = "$neu" ]; then
+      info "$ENV_FILE stammt schon aus dieser Sicherung (AUTH_SECRET_KEY gleich): env bleibt, fehlende Dateien in $ETC_DIR werden ergänzt."
+    else
+      alt=""; neu=""
+      [ "$KONFIG_ERSETZEN" = 1 ] || fehler "$ENV_FILE existiert und weicht von der Sicherung ab. Ein falscher AUTH_SECRET_KEY macht TOTP-Geheimnisse und Codes unbrauchbar. Prüfe, warum die Datei da ist; zum bewussten Ersetzen --konfiguration-ersetzen angeben (eine Kopie bleibt)."
+      frage_ja "Vorhandene Konfiguration durch die der Sicherung ersetzen?" || fehler "abgebrochen"
+      cp -p "$ENV_FILE" "$ENV_FILE.vor-wiederherstellung.$(date +%Y%m%d-%H%M%S)"
+      info "Kopie der bisherigen env angelegt (root, 0600)."
+      env_ersetzen=1
+    fi
+    alt=""; neu=""
+  else
+    env_ersetzen=1
   fi
+  if [ "$env_ersetzen" = 1 ]; then
+    staging_dateien_kopieren "$STAGE_SHM/etc/lx-fampad" "$ETC_DIR" 600 alle
+    info "Konfiguration aus der Sicherung wiederhergestellt (AUTH_SECRET_KEY und Datenbank-Zugangsdaten stammen aus der Sicherung)."
+  else
+    staging_dateien_kopieren "$STAGE_SHM/etc/lx-fampad" "$ETC_DIR" 600 nur-fehlende
+  fi
+  # 2. Empfänger der Sicherung (nur recipients*.txt, nur wenn sie fehlen und das Format stimmt; backup.conf kommt aus den Parametern)
+  mkdir -p /etc/lx-fampad-backup; chown root:root /etc/lx-fampad-backup; chmod 755 /etc/lx-fampad-backup
+  for f in recipients.txt recipients-config.txt; do
+    [ -f "$STAGE_SHM/etc/lx-fampad-backup/$f" ] && [ ! -L "$STAGE_SHM/etc/lx-fampad-backup/$f" ] || continue
+    [ ! -e "/etc/lx-fampad-backup/$f" ] || continue
+    if empfaenger_datei_ok "$STAGE_SHM/etc/lx-fampad-backup/$f"; then
+      install -m 644 -o root -g root "$STAGE_SHM/etc/lx-fampad-backup/$f" "/etc/lx-fampad-backup/$f"
+      info "Empfängerdatei $f aus der Sicherung übernommen (Format geprüft)."
+    else
+      warn "$f aus der Sicherung hat nicht das Format 'age1…' (eine Zeile je öffentlichem Schlüssel) und wird NICHT übernommen: BACKUP_AGE_RECIPIENTS in der Parameterdatei setzen."
+    fi
+  done
+  # 3. Update-Kanal und assetlinks (nur wenn fehlend; vorher Symlinks in diesen lx-Bäumen entfernen)
+  lx_baeume_bereinigen /srv/fampad/well-known /srv/fampad/releases
+  rsync_stage "$STAGE_SHM/srv/fampad/well-known/" /srv/fampad/well-known/ "$LX_USER:$LX_USER" D755,F644
+  rsync_stage "$STAGE_SHM/srv/fampad/releases/android/" /srv/fampad/releases/android/ "$LX_USER:$LX_USER" D755,F644
+  # 4. ntfy-Benutzerdatenbank (nur wenn noch keine da ist; die Phase ntfy übergibt sie dem Benutzer ntfy)
+  if [ -s /var/lib/ntfy/user.db ]; then info "ntfy-Benutzerdatenbank vorhanden, wird nicht überschrieben."
+  elif [ -d "$STAGE_SHM/var/lib/ntfy" ]; then
+    mkdir -p /var/lib/ntfy
+    rsync_stage "$STAGE_SHM/var/lib/ntfy/" /var/lib/ntfy/ root:root D750,F600
+  fi
+  # 5. Dateiablage (nur wenn /srv/fampad/files leer ist)
+  if [ -n "$FILES_ARCHIV" ]; then
+    [ ! -L /srv/fampad/files ] || fehler "/srv/fampad/files ist ein Symlink: Abbruch"
+    if [ -n "$(find /srv/fampad/files -mindepth 1 -print -quit 2>/dev/null)" ]; then
+      info "Dateiablage ist nicht leer: nicht überschrieben."
+    else
+      STAGE_FILES="$(mktemp -d -p /srv/fampad .staging-files.XXXXXX)"; chmod 700 "$STAGE_FILES"
+      ( umask 077; age_entschluesseln "$FILES_ARCHIV" | tar -xf - -C "$STAGE_FILES" --no-same-owner --no-same-permissions -- srv/fampad/files )
+      rsync_stage "$STAGE_FILES/srv/fampad/files/" /srv/fampad/files/ "$SVC_USER:$SVC_USER" D700,F600
+      info "Dateiablage aus files-*.tar.age wiederhergestellt."
+    fi
+  fi
+}
+# Kopiert ein Staging-Verzeichnis nach Ziel: nur "nur wenn fehlend" (--ignore-existing), keine Symlinks/Geräte, feste Modi und Eigentümer
+rsync_stage() { # $1 Quelle/ (mit Slash), $2 Ziel/, $3 Eigentümer:Gruppe, $4 --chmod-Angabe
+  [ -d "$1" ] || return 0
+  rsync -rt --no-links --no-devices --no-specials --ignore-existing --chown="$3" --chmod="$4" -- "$1" "$2"
+}
+# Empfängerdatei: nur Kommentare, Leerzeilen und öffentliche age-Schlüssel (nie ein privater), mindestens ein Schlüssel
+empfaenger_datei_ok() { # $1 Datei
+  local z n=0
+  while IFS= read -r z || [ -n "$z" ]; do
+    z="${z%$'\r'}"
+    case "$z" in ''|'#'*) continue ;; esac
+    [[ "$z" =~ $AGE_RECIP_RE ]] || return 1
+    n=$((n + 1))
+  done < "$1"
+  [ "$n" -gt 0 ]
 }
 well_known_pruefen() {
   local f=/srv/fampad/well-known/assetlinks.json tpl="$REPO/deploy/assetlinks.json.template"
@@ -858,10 +979,9 @@ well_known_pruefen() {
   if [ -z "$P_RELEASE_CERT_SHA256" ]; then offen "assetlinks.json fehlt (RELEASE_CERT_SHA256 nicht gesetzt): ohne sie gibt es weder Passkeys in der App noch verifizierte App-Links (deploy/README.md Abschnitt 9)"; return 0; fi
   if trocken; then info "[dry-run] assetlinks.json aus der Vorlage mit RELEASE_CERT_SHA256 erzeugen"; return 0; fi
   [ ! -L /srv/fampad/well-known ] || fehler "/srv/fampad/well-known ist ein Symlink: Abbruch (Verdacht auf Manipulation)"
-  rm -f "$f"   # ein von lx vorbereiteter Symlink würde sonst ein Ziel außerhalb überschreiben
-  FP="$P_RELEASE_CERT_SHA256" awk '/RELEASE-SHA256-FINGERPRINT-EINTRAGEN/ { print "        \"" toupper(ENVIRON["FP"]) "\""; next } { print }' "$tpl" > "$f"
-  python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$f" || fehler "erzeugte assetlinks.json ist kein gültiges JSON"
-  chown -h "$LX_USER:$LX_USER" "$f"; chmod 644 "$f"
+  FP="$P_RELEASE_CERT_SHA256" awk '/RELEASE-SHA256-FINGERPRINT-EINTRAGEN/ { print "        \"" toupper(ENVIRON["FP"]) "\""; next } { print }' "$tpl" > "$TMP_ARBEIT/assetlinks.json"
+  python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$TMP_ARBEIT/assetlinks.json" || fehler "erzeugte assetlinks.json ist kein gültiges JSON"
+  schreibe_neu "$TMP_ARBEIT/assetlinks.json" "$f" 644 "$LX_USER:$LX_USER"   # Symlink ablehnen, entfernen, mit noclobber (O_EXCL) schreiben
   info "assetlinks.json aus der Vorlage erzeugt."
 }
 
@@ -953,14 +1073,22 @@ datenbank_wiederherstellen() { # $1 Tabellenzahl der vorhandenen Datenbank
     alt="${DB_NAME}_vor_$(date +%Y%m%d_%H%M%S)"
   fi
   if ! datenbank_tauschen "$tmpdb" "$alt"; then
-    psql_pg -d postgres -c "ALTER DATABASE $DB_NAME WITH ALLOW_CONNECTIONS true" >/dev/null 2>&1 || true
-    if [ -n "$alt" ] && ! db_vorhanden "$DB_NAME" && db_vorhanden "$alt"; then psql_pg -d postgres -c "ALTER DATABASE $alt RENAME TO $DB_NAME" || true; fi
-    [ "$fampad_aktiv" = 0 ] || sysd start lx-fampad || true
-    [ "$wetter_aktiv" = 0 ] || sysd start lx-fampad-weather || true
-    psql_pg -d postgres -c "DROP DATABASE IF EXISTS $tmpdb WITH (FORCE)" || true
-    fehler "Datenbank konnte nicht ausgetauscht werden: der alte Zustand ist wiederhergestellt, Dienste laufen wie vorher"
+    # Rückfall in dieser Reihenfolge: ERST den Namen zurück (die alte Datenbank trägt das Verbot neuer Verbindungen mit sich),
+    # DANN Verbindungen wieder erlauben (auf dem endgültigen Namen); Fehler werden gemeldet, nicht verschluckt
+    local rueckfall_ok=1
+    if [ -n "$alt" ] && ! db_vorhanden "$DB_NAME" && db_vorhanden "$alt"; then
+      psql_pg -d postgres -c "ALTER DATABASE $alt RENAME TO $DB_NAME" || { warn "Rückbenennung $alt -> $DB_NAME FEHLGESCHLAGEN: von Hand: ALTER DATABASE $alt RENAME TO $DB_NAME"; rueckfall_ok=0; }
+    fi
+    if db_vorhanden "$DB_NAME"; then
+      psql_pg -d postgres -c "ALTER DATABASE $DB_NAME WITH ALLOW_CONNECTIONS true" || { warn "ALLOW_CONNECTIONS auf $DB_NAME konnte nicht gesetzt werden: von Hand: ALTER DATABASE $DB_NAME WITH ALLOW_CONNECTIONS true"; rueckfall_ok=0; }
+    fi
+    if [ "$fampad_aktiv" = 1 ]; then sysd start lx-fampad || { warn "lx-fampad ließ sich nicht wieder starten"; rueckfall_ok=0; }; fi
+    if [ "$wetter_aktiv" = 1 ]; then sysd start lx-fampad-weather || { warn "lx-fampad-weather ließ sich nicht wieder starten"; rueckfall_ok=0; }; fi
+    psql_pg -d postgres -c "DROP DATABASE IF EXISTS $tmpdb WITH (FORCE)" || warn "Wegwerf-Datenbank $tmpdb blieb stehen (von Hand: DROP DATABASE $tmpdb)"
+    if [ "$rueckfall_ok" = 1 ]; then fehler "Datenbank konnte nicht ausgetauscht werden: der alte Zustand ist wiederhergestellt, Dienste laufen wie vorher"; fi
+    fehler "Datenbank konnte nicht ausgetauscht werden UND der Rückfall ist unvollständig (Meldungen WARNUNG oben): bitte von Hand prüfen (psql -l, systemctl status lx-fampad)"
   fi
-  [ -z "$alt" ] || info "Bisherige Datenbank umbenannt in $alt (enthält Personendaten: nach der Prüfung löschen: DROP DATABASE $alt)."
+  [ -z "$alt" ] || info "Bisherige Datenbank umbenannt in $alt (enthält Personendaten; ALLOW_CONNECTIONS ist dort aus, DROP DATABASE $alt geht trotzdem: nach der Prüfung löschen)."
   info "Datenbank $DB_NAME aus der Sicherung wiederhergestellt: $(db_tabellen "$DB_NAME") Tabellen."
 }
 datenbank_tauschen() { # $1 fertige Wegwerf-Datenbank, $2 neuer Name der alten (leer = alte Datenbank ist leer oder fehlt: wird gelöscht)
@@ -1018,8 +1146,9 @@ wetter_einheit() {
   sudoers_schreiben "$WETTER_STARTEN"
   if grep -qE '^WEATHER_ENABLED=(true|1)[[:space:]]*$' "$ENV_FILE"; then
     if [ "$WETTER_STARTEN" = 1 ]; then
-      sysd enable --now "$unit"
-      info "Wetter-Dienst gestartet."
+      sysd enable "$unit"
+      sysd restart "$unit"   # auch im Wiederholungslauf: neue Einheit/neuer Code wird wirksam (enable --now würde einen laufenden Dienst nicht neu starten)
+      info "Wetter-Dienst gestartet (neu gestartet)."
     else
       offen "Wetter-Dienst ist installiert, aber NICHT gestartet: Netatmo rotiert das Refresh-Token, zwei Server dürfen es nicht gleichzeitig abrufen. Erst wenn der alte Server aus ist: sudo systemctl enable --now lx-fampad-weather (oder dieses Skript mit --wetter-starten). Das gesicherte Token ist evtl. veraltet: dann sudo node --env-file=$ENV_FILE /srv/fampad/server/dist/cli/weather-setup.js"
     fi
@@ -1171,6 +1300,9 @@ ntfy_benutzer_einrichten() { # $1 cfg, $2 Token-Datei, $3 Passwort-Datei
   chown root:root "$token_file"; chmod 600 "$token_file"
   # fampad-family: gemeinsamer Lese-Benutzer der Handys (nur up*, nur lesen); Passwort bleibt auf dem Server
   if ! grep -q '^user fampad-family ' <<<"$ulist"; then
+    if [ -s "$pw_file" ]; then
+      offen "ntfy-Benutzer fampad-family war in der ntfy-Datenbank nicht vorhanden, aber $pw_file existierte (aus der Sicherung?): das Passwort wird NEU gesetzt und die Datei ersetzt. In allen ntfy-Apps der Familie das neue Passwort eintragen (sudo less $pw_file, nicht cat)"
+    fi
     pw="$(head -c 24 /dev/urandom | base64 | tr -d '/+=\n')"
     NTFY_PASSWORD="$pw" ntfy_als_ntfy user --config "$cfg" add --role=user fampad-family >/dev/null
     ( umask 077; printf '%s\n' "$pw" > "$pw_file" )
@@ -1338,6 +1470,20 @@ caddy_zuruecksetzen() {
   if [ "$OHNE_SYSTEMD" = 0 ]; then echo "    lx-labs.dev: $(curl -sI --max-time 10 https://lx-labs.dev 2>/dev/null | head -n 1 | tr -d '\r')" >&2; fi
 }
 
+# backup.conf entsteht nur aus den (geprüften) Parametern, nie aus der Sicherung: lx-fampad-backup.sh lädt sie als root per "source"
+backup_conf_schreiben() {
+  local conf=/etc/lx-fampad-backup/backup.conf tmp="$TMP_ARBEIT/backup.conf"
+  [ -n "$P_BACKUP_KEEP$P_BACKUP_INCLUDE_APK$P_BACKUP_INCLUDE_FILES" ] || return 0
+  {
+    echo "# Von deploy/neuinstallation/bootstrap-server.sh aus der Parameterdatei geschrieben (nicht aus der Sicherung übernommen)."
+    [ -z "$P_BACKUP_KEEP" ] || echo "KEEP=$P_BACKUP_KEEP"
+    [ -z "$P_BACKUP_INCLUDE_APK" ] || echo "INCLUDE_APK=$P_BACKUP_INCLUDE_APK"
+    [ -z "$P_BACKUP_INCLUDE_FILES" ] || echo "INCLUDE_FILES=$P_BACKUP_INCLUDE_FILES"
+  } > "$tmp"
+  mkdir -p /etc/lx-fampad-backup
+  install -m 644 -o root -g root "$tmp" "$conf"
+  info "backup.conf aus den Parametern geschrieben."
+}
 phase_sicherung() {
   local args=() r
   if [ -z "$P_BACKUP_AGE_RECIPIENTS" ] && [ ! -s /etc/lx-fampad-backup/recipients.txt ]; then
@@ -1361,6 +1507,7 @@ phase_sicherung() {
     info "[dry-run] bash $REPO/deploy/backup/einrichtung-backup.sh ${args[*]//age1*/age1…} (installiert Skript, Dienst, Timer 03:30, Benutzer lxbackup mit rrsync -ro; Probelauf der Sicherung)"
     return 0
   fi
+  backup_conf_schreiben
   bash "$REPO/deploy/backup/einrichtung-status.sh"
   bash "$REPO/deploy/backup/einrichtung-backup.sh" "${args[@]}"
   pruefpunkt "Sicherungs-Timer aktiv, Statusdatei vorhanden" bash -c "[ -s /var/backups/lx-fampad/status ] && ( [ '$OHNE_SYSTEMD' = 1 ] || systemctl is-active --quiet lx-fampad-backup.timer )"
@@ -1505,7 +1652,11 @@ argumente_lesen() {
   fi
   [ "$ID_LOESCHEN" = 0 ] || [ -n "$ID_DATEI" ] || { echo "--identity-datei-loeschen braucht --identity-datei" >&2; exit 2; }
   if [ "$ID_LOESCHEN" = 1 ]; then
-    case "$ID_DATEI" in /dev/shm/*|/run/*) ;; *) echo "--identity-datei-loeschen nur für Dateien unter /dev/shm oder /run (Arbeitsspeicher)" >&2; exit 2 ;; esac
+    identitaet_pfad_erlaubt "$ID_DATEI" || { echo "--identity-datei-loeschen nur für Dateien unter /dev/shm, /run/lxfampad oder /run/user (Arbeitsspeicher, ohne ..)" >&2; exit 2; }
+  fi
+  # Testmodus nie auf einem echten Server: dort läuft systemd
+  if [ "$OHNE_SYSTEMD" = 1 ] && [ -d /run/systemd/system ]; then
+    echo "--ohne-systemd (und --dns-pruefung-ueberspringen) nur auf Systemen ohne systemd (Container-Tests): hier läuft systemd" >&2; exit 2
   fi
   # Nur für Container-Tests: ohne passenden DNS-Eintrag darf Caddy nur geprüft, nie gegen die echten Adressen betrieben werden
   if [ "$DNS_UEBERSPRINGEN" = 1 ] && [ "$OHNE_SYSTEMD" = 0 ]; then

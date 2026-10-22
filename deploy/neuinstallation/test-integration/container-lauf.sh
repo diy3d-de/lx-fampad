@@ -106,6 +106,8 @@ if [ "$SZENARIO" = neu ]; then
   echo "== 6. Testdaten anlegen und Sicherung erzeugen"
   node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js --family "Testfamilie" >/dev/null
   pruefe "Familie angelegt" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -d lx_fampad -tAc 'select count(*) from families')\" = 1 ]"
+  # Marker in backup.conf: gelangt ins Konfigurationsarchiv, darf bei der Wiederherstellung NICHT übernommen werden (root lädt backup.conf per source)
+  echo 'INCLUDE_APK=0   # MARKER-AUS-DER-SICHERUNG' >> /etc/lx-fampad-backup/backup.conf
   /usr/local/sbin/lx-fampad-backup >/dev/null
   rm -rf "$ARBEIT/sicherung"; mkdir -p "$ARBEIT/sicherung"
   cp -r "/var/backups/lx-fampad/$(cat /var/backups/lx-fampad/LATEST)" "$ARBEIT/sicherung/"
@@ -125,15 +127,21 @@ else
   pruefe "NTFY_TOKEN in der env = Token-Datei" bash -c "[ \"\$(sed -n 's/^NTFY_TOKEN=//p' /etc/lx-fampad/env)\" = \"\$(head -n1 /etc/lx-fampad/ntfy-token)\" ]"
   pruefe "ntfy-Datenbank gehört dem Benutzer ntfy" bash -c "[ \"\$(stat -c %U /var/lib/ntfy/user.db)\" = ntfy ]"
   pruefe "recipients.txt der Sicherung wiederhergestellt" test -s /etc/lx-fampad-backup/recipients.txt
+  pruefe "backup.conf aus der Sicherung wurde NICHT übernommen" bash -c "! grep -q MARKER-AUS-DER-SICHERUNG /etc/lx-fampad-backup/backup.conf"
+  pruefe "Modi in /etc/lx-fampad: nur Dateien, alle 600 root:root" bash -c "[ -z \"\$(find /etc/lx-fampad -mindepth 1 \\( ! -type f -o ! -perm 600 -o ! -user root \\) -print)\" ]"
   SCHLUESSEL="$(grep '^AGE-SECRET-KEY-' "$ARBEIT/key.txt")"
   FUNDE="$(grep -rIlF -- "$SCHLUESSEL" /etc /root /srv /var /tmp /dev/shm /home /run 2>/dev/null || true)"
   [ -z "$FUNDE" ] && ok "der private Schlüssel liegt nirgends auf der Platte (gesucht in /etc /root /srv /var /tmp /dev/shm /home /run)" || fehl "Schlüssel gefunden in: $FUNDE"
   SCHLUESSEL=""
   echo "== 7. Wiederholung (muss ohne Änderung durchlaufen; Datenbank nicht leer: kein erneutes Einspielen; ntfy ohne Neustart)"
   NTFY_PID_VORHER="$(cat /run/fake-systemctl/ntfy.pid)"
+  # fehlende Teile werden auch bei gleichem AUTH_SECRET_KEY wiederhergestellt ("nur wenn fehlt")
+  TOKEN_VORHER="$(head -n1 /etc/lx-fampad/ntfy-token)"
+  rm -f /etc/lx-fampad/ntfy-token
   WIEDERHOLUNG="$(bash "$SKRIPT" "${ARGS[@]}" --identity-stdin < "$ARBEIT/key.txt" 2>&1)"
   grep -E 'übersprungen|bleibt unverändert|stammt schon|nicht leer|kein Neustart' <<<"$WIEDERHOLUNG" | head -8 || true
   pruefe "Wiederholung meldet: Datenbank nicht leer, kein erneutes Einspielen" grep -q 'nicht leer' <<<"$WIEDERHOLUNG"
+  pruefe "fehlendes ntfy-token wurde trotz gleichem AUTH_SECRET_KEY aus der Sicherung ergänzt" bash -c "[ \"\$(head -n1 /etc/lx-fampad/ntfy-token)\" = '$TOKEN_VORHER' ]"
   pruefe "Wiederholung startet ntfy nicht neu" bash -c "[ \"\$(cat /run/fake-systemctl/ntfy.pid)\" = '$NTFY_PID_VORHER' ]"
   pruefe "Familie nach Wiederholung unverändert" bash -c "[ \"\$(cd / && runuser -u postgres -- psql -d lx_fampad -tAc 'select count(*) from families')\" = 1 ]"
   pruefe "Wiederholung ohne --wetter-starten fügt keine Wetter-Regel hinzu" bash -c "! grep -q 'lx-fampad-weather' /etc/sudoers.d/lx-fampad"

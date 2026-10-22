@@ -7,6 +7,7 @@
 # (SC2034: P_*/AGE_ID/REPO werden von den eingelesenen Funktionen benutzt; SC2015/SC2016: Absicht in den Testzeilen)
 set -uo pipefail
 
+[ ! -e /srv/fampad/server ] || { echo "Abbruch: /srv/fampad/server existiert (ein echter Server?). Die Tests laufen nur in Wegwerf-Containern." >&2; exit 99; }
 HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKRIPT="$HIER/bootstrap-server.sh"
 REPO_WURZEL="$(cd "$HIER/../.." && pwd)"
@@ -47,6 +48,11 @@ gleich "unbekannte Phase Exit-Code" 2 "$(a --phase gibtsnicht >/dev/null 2>&1; e
 gleich "--identity-datei-loeschen ohne Datei Exit-Code" 2 "$(a --identity-datei-loeschen >/dev/null 2>&1; echo $?)"
 gleich "--dns-pruefung-ueberspringen ohne --ohne-systemd Exit-Code" 2 "$(a --dns-pruefung-ueberspringen >/dev/null 2>&1; echo $?)"
 gleich "--identity-datei-loeschen außerhalb von /dev/shm und /run Exit-Code" 2 "$(a --sicherung /tmp --identity-datei /tmp/x --identity-datei-loeschen >/dev/null 2>&1; echo $?)"
+if [ -f /.dockerenv ] && [ ! -d /run/systemd/system ]; then
+  mkdir -p /run/systemd/system
+  gleich "--ohne-systemd ist verboten, wenn systemd läuft (/run/systemd/system) Exit-Code" 2 "$(a --ohne-systemd --dry-run >/dev/null 2>&1; echo $?)"
+  rmdir /run/systemd/system
+else uebersprungen "--ohne-systemd bei laufendem systemd" "nur im Docker-Container prüfbar"; fi
 gelingt "--hilfe nennt die Phasen" bash -c "env -u BOOTSTRAP_NUR_FUNKTIONEN bash '$SKRIPT' --hilfe | grep -q 'konfiguration'"
 
 echo "== Parameterdatei"
@@ -95,7 +101,27 @@ if [ -d /dev/shm ]; then
   gelingt "Datei in /dev/shm (root, kein Symlink) darf gelöscht werden" identitaet_datei_loeschbar "$SHM"
   ln -s "$SHM" "$SHM.link"; scheitert "Symlink in /dev/shm wird abgelehnt" identitaet_datei_loeschbar "$SHM.link"
   rm -f "$SHM" "$SHM.link"
+  scheitert "Pfad mit .. wird abgelehnt (/dev/shm/../tmp/x)" identitaet_pfad_erlaubt "/dev/shm/../tmp/x"
+  scheitert "/run/ allgemein ist nicht erlaubt" identitaet_pfad_erlaubt "/run/lock/x"
+  gelingt "/run/lxfampad/ und /run/user/ sind erlaubt" bash -c "BOOTSTRAP_NUR_FUNKTIONEN=1 . '$SKRIPT'; set +e; identitaet_pfad_erlaubt /run/lxfampad/k && identitaet_pfad_erlaubt /run/user/0/k"
 else uebersprungen "Schlüsseldatei in /dev/shm" "/dev/shm fehlt"; fi
+
+echo "== Empfängerdateien und Staging-Kopie"
+printf '# Kommentar\n%s\n' "age1$(printf 'q%.0s' {1..58})" > "$ARBEIT/rec-gut"
+gelingt "Empfängerdatei mit age1-Schlüssel ist gültig" empfaenger_datei_ok "$ARBEIT/rec-gut"
+printf 'AGE-SECRET-KEY-1ABC\n' > "$ARBEIT/rec-privat"; scheitert "privater Schlüssel in der Empfängerdatei wird abgelehnt" empfaenger_datei_ok "$ARBEIT/rec-privat"
+printf 'export X=$(touch /tmp/boese)\n' > "$ARBEIT/rec-code"; scheitert "Shell-Code in der Empfängerdatei wird abgelehnt" empfaenger_datei_ok "$ARBEIT/rec-code"
+printf '# nur Kommentar\n' > "$ARBEIT/rec-leer"; scheitert "Empfängerdatei ohne Schlüssel wird abgelehnt" empfaenger_datei_ok "$ARBEIT/rec-leer"
+mkdir -p "$ARBEIT/st/q" "$ARBEIT/st/z"; echo a > "$ARBEIT/st/q/env"; echo b > "$ARBEIT/st/q/neu"; ln -s /etc/passwd "$ARBEIT/st/q/link"; mkdir "$ARBEIT/st/q/unter"; echo c > "$ARBEIT/st/z/env"
+chmod 666 "$ARBEIT/st/q/env"
+staging_dateien_kopieren "$ARBEIT/st/q" "$ARBEIT/st/z" 600 nur-fehlende
+gleich "nur-fehlende überschreibt nichts" "c" "$(cat "$ARBEIT/st/z/env")"
+gleich "fehlende Datei wird kopiert, Modus 600" "a600" "$(cat "$ARBEIT/st/z/neu" >/dev/null; echo a600)"
+gleich "Modus der kopierten Datei ist 600 (nicht der des Archivs)" "600" "$(stat -c %a "$ARBEIT/st/z/neu")"
+[ ! -e "$ARBEIT/st/z/link" ] && ok "Symlinks werden nicht kopiert" || fehl "Symlinks werden nicht kopiert"
+staging_dateien_kopieren "$ARBEIT/st/q" "$ARBEIT/st/z" 600 alle
+gleich "alle überschreibt" "a" "$(cat "$ARBEIT/st/z/env")"
+[ ! -e "$ARBEIT/st/z/unter" ] && ok "Unterordner werden nicht kopiert" || fehl "Unterordner werden nicht kopiert"
 
 echo "== env_wert und env_setzen"
 printf 'A=1\nB=zwei\nB=drei\nC=x=y' > "$ARBEIT/env"
@@ -196,9 +222,12 @@ if hat_werkzeug age && hat_werkzeug age-keygen && hat_werkzeug tar; then
   printf 'PGDMPxxxxxxxxxxxx' | age -r "$PUB" -o "$ARBEIT/db-20261022-033000.dump.age"
   baue_config "$ARBEIT/config-gut.age" etc/lx-fampad
   # Swap: ohne --swap-ok Abbruch vor dem Einlesen, mit --swap-ok Warnung; Schlüssel wird verworfen
-  ( swapon() { echo "/swapfile file 1G 0B -2"; }; ID_STDIN=1; SWAP_OK=0; identitaet_laden < "$K" ) >/dev/null 2>&1 && fehl "aktiver Swap bricht vor dem Einlesen des Schlüssels ab" || ok "aktiver Swap bricht vor dem Einlesen des Schlüssels ab"
-  ( swapon() { echo "/swapfile file 1G 0B -2"; }; ID_STDIN=1; SWAP_OK=1; identitaet_laden < "$K"; [ -n "$AGE_ID" ] ) >/dev/null 2>&1 && ok "mit --swap-ok wird der Schlüssel trotz Swap gelesen" || fehl "mit --swap-ok wird der Schlüssel trotz Swap gelesen"
-  ( swapon() { :; }; ID_STDIN=1; SWAP_OK=0; RESTORE=1; identitaet_laden < "$K"; schluessel_verwerfen; [ -z "$AGE_ID" ] && [ "$SCHLUESSEL_VERWORFEN" = 1 ] ) >/dev/null 2>&1 && ok "schluessel_verwerfen leert den Schlüssel" || fehl "schluessel_verwerfen leert den Schlüssel"
+  printf 'Filename Type Size Used Priority\n/swapfile file 1048572 0 -2\n' > "$ARBEIT/swaps-aktiv"; printf 'Filename Type Size Used Priority\n' > "$ARBEIT/swaps-leer"
+  ( SWAPS_DATEI="$ARBEIT/swaps-aktiv"; ID_STDIN=1; SWAP_OK=0; identitaet_laden < "$K" ) >/dev/null 2>&1 && fehl "aktiver Swap bricht vor dem Einlesen des Schlüssels ab" || ok "aktiver Swap bricht vor dem Einlesen des Schlüssels ab"
+  ( SWAPS_DATEI="$ARBEIT/swaps-aktiv"; ID_STDIN=1; SWAP_OK=1; identitaet_laden < "$K"; [ -n "$AGE_ID" ] ) >/dev/null 2>&1 && ok "mit --swap-ok wird der Schlüssel trotz Swap gelesen" || fehl "mit --swap-ok wird der Schlüssel trotz Swap gelesen"
+  ( SWAPS_DATEI="$ARBEIT/swaps-leer"; ID_STDIN=1; SWAP_OK=0; RESTORE=1; identitaet_laden < "$K"; schluessel_verwerfen; [ -z "$AGE_ID" ] && [ "$SCHLUESSEL_VERWORFEN" = 1 ] ) >/dev/null 2>&1 && ok "schluessel_verwerfen leert den Schlüssel" || fehl "schluessel_verwerfen leert den Schlüssel"
+  ( SWAPS_DATEI="$ARBEIT/gibtsnicht"; swap_aktiv ) && ok "nicht lesbare /proc/swaps gilt als Swap aktiv (fail-closed)" || fehl "nicht lesbare /proc/swaps gilt als Swap aktiv (fail-closed)"
+  ( SWAPS_DATEI="$ARBEIT/swaps-leer"; swap_aktiv ) && fehl "leere /proc/swaps = kein Swap" || ok "leere /proc/swaps = kein Swap"
   AGE_ID="$(grep '^AGE-SECRET-KEY-' "$K")"
   DB_ARCHIV="$ARBEIT/db-20261022-033000.dump.age"; CFG_ARCHIV="$ARBEIT/config-gut.age"
   gleich "Entschlüsselung mit dem richtigen Schlüssel (Pipe, keine Schlüsseldatei)" "PGDMPxxxxxxxxxxxx" "$(age_entschluesseln "$DB_ARCHIV")"

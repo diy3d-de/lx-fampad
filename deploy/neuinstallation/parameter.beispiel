@@ -46,3 +46,8 @@
 # Öffentlicher SSH-Schlüssel des NAS und seine öffentliche IP-Adresse (mehrere mit Komma, CIDR mindestens /16 bzw. /48); beides zusammen
 #BACKUP_NAS_PUBKEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispiel lx-fampad-backup
 #BACKUP_NAS_IP=203.0.113.7
+# Einstellungen der Sicherung (ergeben /etc/lx-fampad-backup/backup.conf; die Datei aus der alten Sicherung wird bewusst NICHT übernommen):
+# Ordner auf dem Server, neueste APK mitsichern, Dateiablage mitsichern (1, sobald die Dateiablage genutzt wird)
+#BACKUP_KEEP=3
+#BACKUP_INCLUDE_APK=1
+#BACKUP_INCLUDE_FILES=0
