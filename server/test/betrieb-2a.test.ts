@@ -11,7 +11,7 @@ import { ALERT_DEBOUNCE_MS, evaluateConditions, KEY_ALERT_GRACE_MS, OperatorMoni
 import type { Probes } from '../src/operator/probes.js';
 import { NAS_ABSENT } from '../src/operator/nas-status.js';
 import { emptyUpdates } from '../src/operator/update-status.js';
-import type { OperatorStatus } from '../src/operator/status.js';
+import { EMPTY_PUSH, type OperatorStatus } from '../src/operator/status.js';
 import { grantOperator } from '../src/operator/service.js';
 import { WAKE_BODY } from '../src/push/service.js';
 import { addMember, adminPassword, auditEvents, backends, World, type Client, type Harness } from './helpers.js';
@@ -96,6 +96,7 @@ describe('Warn-Bedingungen (rein)', () => {
       services: [{ id: 'ntfy', state: 'ok', detail: {} }],
       backup: { state: 'ok', lastSuccessAt: new Date(now.getTime() - 5 * HOUR).toISOString(), ageHours: 5, totalBytes: 1, lastResult: 'ok' },
       nas: NAS_ABSENT,
+      push: EMPTY_PUSH,
       updates: emptyUpdates(null, '0.1.0'),
       disk: { totalBytes: 100, freeBytes: 50, usedPercent: 50 },
       certificate: { validTo: new Date(now.getTime() + 60 * DAY).toISOString(), daysLeft: 60 },
@@ -169,6 +170,7 @@ describe.each(backends)('Betreiber Paket 2a ($name)', (backend) => {
     readText: (p, m) => aktuell.readText!(p, m),
     disk: (p) => aktuell.disk!(p),
     karteBytes: (d) => aktuell.karteBytes!(d),
+    dirBytes: (d, n) => (aktuell.dirBytes ? aktuell.dirBytes(d, n) : Promise.resolve(null)),
     tlsValidTo: (x, s) => aktuell.tlsValidTo!(x, s),
     ntfyReachable: (u) => aktuell.ntfyReachable!(u),
   };

@@ -250,6 +250,24 @@ String plattformText(String p) => switch (p) {
   _ => p.length > 16 ? p.substring(0, 16) : p,
 };
 
+/// Feste Wörter zu den Fehlercodes des Wetter-Dienstes (Codes des Servers, nie ein Rohtext; Unbekanntes heißt allgemein "Fehler beim Abruf").
+String wetterFehlerText(String code) {
+  if (RegExp(r'^http_\d{3}$').hasMatch(code)) return 'Antwort des Wetterdienstes mit Fehlercode (${code.substring(5)})';
+  return switch (code) {
+    'network' => 'Wetterdienst nicht erreichbar',
+    'invalid_grant' => 'Zugangsdaten ungültig',
+    'auth_rejected' => 'Zugang vom Wetterdienst abgelehnt',
+    'station_not_found' => 'Station nicht in der Antwort',
+    'measurement_old' => 'Messung zu alt',
+    'rotate_persist' => 'neues Zugangstoken nur ersatzweise gespeichert',
+    'too_large' => 'Antwort zu groß',
+    'bad_json' => 'Antwort nicht lesbar',
+    'token_bad' => 'Zugangstoken unbrauchbar',
+    _ when code.startsWith('token_http_') => 'Token-Abruf abgelehnt',
+    _ => 'Fehler beim Abruf',
+  };
+}
+
 /// App-Stand eines Geräts in einem Wort (feste Texte zu den festen Codes des Servers).
 String appStandText(AppStand s) => switch (s) {
   AppStand.aktuell => 'aktuell',

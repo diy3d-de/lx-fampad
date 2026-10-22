@@ -8,6 +8,7 @@ import type { Config } from '../config.js';
 import { AUDIT_CATEGORIES, CURSOR_FORMAT, listAudit } from '../operator/audit-view.js';
 import { collectConfig } from '../operator/config-view.js';
 import { collectKeyStatus, summarize } from '../operator/key-status.js';
+import { listMetrics, METRICS_MAX_DAYS } from '../operator/metrics.js';
 import type { MaintenanceGate } from '../operator/maintenance.js';
 import { collectMembers, unlockMember } from '../operator/members.js';
 import { setWarningsEnabled, type OperatorMonitor } from '../operator/monitor.js';
@@ -59,6 +60,13 @@ export function registerOperatorRoutes(
     const value = await collectStatus({ ctx, weather, probes }, p.familyId);
     cache.set(p.familyId, { at: now, value });
     return value;
+  });
+
+  // Nutzung und Verlauf (Paket 3): tägliche Messpunkte, nur Zahlen (aktive Personen und Geräte, Zähler, Größen), ohne Step-up (keine Namen, keine Inhalte)
+  app.get('/api/v1/admin/metrics', limit, async (req) => {
+    const p = await requireOperator(ctx, await auth.requireSession(req));
+    const q = parse(z.object({ days: z.coerce.number().int().min(1).max(METRICS_MAX_DAYS).default(90) }).strict(), req.query);
+    return listMetrics(ctx, p.familyId, q.days);
   });
 
   // Konfiguration (Paket 2b): nur sichere Ausschnitte (Schalter, Limits), nie Geheimnisse; nur lesend, ohne Step-up (keine Personen, keine Adressen mit Zugangsdaten)

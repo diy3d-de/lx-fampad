@@ -1,7 +1,7 @@
 // GET /api/v1/admin/status: Zustand des Servers für den Betreiber, nur lesend. Nie Geheimnisse, Standorte, Chat-Inhalte oder Schlüssel
 // (nur Zahlen, Zeitpunkte, Versionen, Schalterstände), nie Pfade oder Fehlertexte. Was ohne root nicht lesbar ist, heißt "unbekannt".
 import { readFileSync } from 'node:fs';
-import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gt, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
 import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
@@ -45,9 +45,47 @@ export interface OperatorStatus {
     app: { version: string; versionCode: number | null; minVersion: string | null } | null;
     minAppVersion: string;
   };
+  /** Push-Wecker: registrierte Geräte und Zustellfehler als Zähler (Paket 3, nur Zahlen, nie Endpunkte oder Themen). */
+  push: PushStatus;
   /** Update-Stand der Android-Geräte (Zähler ohne Namen; Einzelheiten je Person in `GET /admin/members`). */
   updates: UpdateStatus;
   features: { pwBackup: boolean; legacyPasswordLogin: boolean; weather: boolean; push: boolean; map: { available: boolean; sizeBytes: number | null } };
+}
+
+/** Push-Wecker (Betrieb Paket 3): nur Zähler und Zeiten, nie Endpunkte, Themen oder Fehlertexte. */
+export interface PushStatus {
+  /** Geräte mit einem aktiven Wecker (nicht abgemeldet, Endpunkt nicht deaktiviert). */
+  devicesActive: number;
+  /** Geräte, deren Endpunkt der Server deaktiviert hat (ntfy meldete "weg" oder wiederholte Fehler); sie melden sich beim nächsten Start neu an. */
+  devicesDisabled: number;
+  /** Aktive Geräte mit mindestens einem Zustellfehler in Folge. */
+  devicesFailing: number;
+  /** Geräte mit einem Zustellfehler in den letzten 24 Stunden. */
+  errors24h: number;
+  /** Letzte erfolgreiche Zustellung an irgendein Gerät (null: noch nie oder unbekannt). */
+  lastOkAt: string | null;
+}
+
+export const EMPTY_PUSH: PushStatus = { devicesActive: 0, devicesDisabled: 0, devicesFailing: 0, errors24h: 0, lastOkAt: null };
+
+async function collectPushStatus(ctx: AuthContext, familyId: string, now: Date): Promise<PushStatus> {
+  const since = new Date(now.getTime() - 86_400_000);
+  const rows = await ctx.db
+    .select({ disabledAt: pushEndpoints.disabledAt, failCount: pushEndpoints.failCount, lastErrorAt: pushEndpoints.lastErrorAt })
+    .from(pushEndpoints)
+    .innerJoin(devices, and(eq(devices.familyId, pushEndpoints.familyId), eq(devices.id, pushEndpoints.deviceId)))
+    .where(and(eq(pushEndpoints.familyId, familyId), isNull(devices.revokedAt)));
+  const [ok] = await ctx.db
+    .select({ at: max(pushEndpoints.lastOkAt) })
+    .from(pushEndpoints)
+    .where(and(eq(pushEndpoints.familyId, familyId), isNotNull(pushEndpoints.lastOkAt)));
+  return {
+    devicesActive: rows.filter((r) => r.disabledAt === null).length,
+    devicesDisabled: rows.filter((r) => r.disabledAt !== null).length,
+    devicesFailing: rows.filter((r) => r.disabledAt === null && r.failCount > 0).length,
+    errors24h: rows.filter((r) => r.lastErrorAt !== null && r.lastErrorAt.getTime() >= since.getTime()).length,
+    lastOkAt: ok?.at?.toISOString() ?? null,
+  };
 }
 
 const STARTED_AT = new Date();
@@ -203,7 +241,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     const w = dbOk ? await deps.weather.status().catch(() => null) : null;
     if (!w) weather = { id: 'weather', state: 'unknown', detail: {} };
     else if (!w.configured) weather = { id: 'weather', state: 'warn', detail: { configured: false } };
-    else if (w.disabled) weather = { id: 'weather', state: 'error', detail: { configured: true, disabled: true } };
+    else if (w.disabled) weather = { id: 'weather', state: 'error', detail: { configured: true, disabled: true, errorCount: w.errorCount } };
     else {
       const ageMin = w.lastOkAt ? Math.max(0, Math.round((now.getTime() - w.lastOkAt.getTime()) / 60_000)) : null;
       const stale = ageMin === null || ageMin > (config.weather.pollMs / 60_000) * 3;
@@ -215,6 +253,9 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
           lastOkAt: w.lastOkAt?.toISOString() ?? null,
           lastOkMinutesAgo: ageMin,
           lastErrorCode: w.lastErrorCode && /^[a-z0-9_]{1,40}$/.test(w.lastErrorCode) ? w.lastErrorCode : null,
+          lastErrorAt: w.lastErrorAt?.toISOString() ?? null,
+          // Fehlschläge in Folge seit dem letzten Erfolg (nur die Zahl, nie ein Text)
+          errorCount: w.errorCount,
         },
       };
     }
@@ -232,6 +273,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1) : Promise.resolve(null),
   ]);
   const nas = parseNasStatus(nasText, now);
+  const push: PushStatus = dbOk ? await collectPushStatus(ctx, familyId, now).catch(() => EMPTY_PUSH) : EMPTY_PUSH;
   const appInfo = manifestText ? parseManifest(manifestText) : null;
   const updates: UpdateStatus = dbOk
     ? await collectUpdateStatus(ctx, familyId, appInfo?.version ?? null).catch(() => emptyUpdates(appInfo?.version ?? null, config.minAppVersion))
@@ -285,6 +327,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     services,
     backup,
     nas,
+    push,
     disk: diskView,
     certificate,
     counts,

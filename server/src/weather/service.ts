@@ -3,7 +3,7 @@
 // OAuth2: Refresh-Token mit Rotation. Das neue Token wird in derselben Transaktion unter Zeilensperre gespeichert, in der es
 // abgeholt wird (nur eine Erneuerung gleichzeitig); bei `invalid_grant` wird der Abruf abgeschaltet, bis der Betreiber die
 // Zugangsdaten neu eingibt. Zugangsdaten stehen nur verschlüsselt in der Datenbank, nie im Log.
-import { asc, eq, gte, lt } from 'drizzle-orm';
+import { asc, eq, gte, lt, sql } from 'drizzle-orm';
 import type { Db, Logger } from '../auth/context.js';
 import type { KeyRing } from '../auth/crypto.js';
 import type { Config } from '../config.js';
@@ -219,7 +219,7 @@ export class WeatherService {
   }
 
   private async fail(code: string, result: PollResult = 'upstream_error'): Promise<PollResult> {
-    await this.db.update(weatherCredentials).set({ lastErrorAt: this.now(), lastErrorCode: code }).where(eq(weatherCredentials.id, 1));
+    await this.db.update(weatherCredentials).set({ lastErrorAt: this.now(), lastErrorCode: code, errorCount: sql`${weatherCredentials.errorCount} + 1` }).where(eq(weatherCredentials.id, 1));
     this.log.warn({ code }, 'Wetter-Abruf ohne Ergebnis');
     return result;
   }
@@ -241,7 +241,7 @@ export class WeatherService {
       })
       .onConflictDoNothing();
     await this.db.delete(weatherSamples).where(lt(weatherSamples.ts, new Date(now.getTime() - SAMPLE_RETENTION_MS)));
-    await this.db.update(weatherCredentials).set({ lastOkAt: now, lastErrorAt: null, lastErrorCode: null }).where(eq(weatherCredentials.id, 1));
+    await this.db.update(weatherCredentials).set({ lastOkAt: now, lastErrorAt: null, lastErrorCode: null, errorCount: 0 }).where(eq(weatherCredentials.id, 1));
   }
 
   /** Gültiges Zugangstoken (im Speicher); erneuert es bei Bedarf über das Refresh-Token mit Rotation. */
@@ -256,7 +256,7 @@ export class WeatherService {
       ergebnis = await this.db.transaction(async (tx) => {
       const [row] = await tx.select().from(weatherCredentials).where(eq(weatherCredentials.id, 1)).for('update');
       if (!row || row.disabledAt) return 'error';
-      const markiere = (code: string) => tx.update(weatherCredentials).set({ lastErrorAt: this.now(), lastErrorCode: code }).where(eq(weatherCredentials.id, 1));
+      const markiere = (code: string) => tx.update(weatherCredentials).set({ lastErrorAt: this.now(), lastErrorCode: code, errorCount: sql`${weatherCredentials.errorCount} + 1` }).where(eq(weatherCredentials.id, 1));
       let clientId: string, clientSecret: string, refresh: string;
       try {
         clientId = this.keys.decrypt(PURPOSE, row.clientIdEnc, AAD.clientId);
@@ -296,7 +296,7 @@ export class WeatherService {
       if (!res.ok) {
         if (json.error === 'invalid_grant') {
           const now = this.now();
-          await tx.update(weatherCredentials).set({ disabledAt: now, lastErrorAt: now, lastErrorCode: 'invalid_grant' }).where(eq(weatherCredentials.id, 1));
+          await tx.update(weatherCredentials).set({ disabledAt: now, lastErrorAt: now, lastErrorCode: 'invalid_grant', errorCount: sql`${weatherCredentials.errorCount} + 1` }).where(eq(weatherCredentials.id, 1));
           this.log.error({ code: 'invalid_grant' }, 'Wetter abgeschaltet: Zugangsdaten neu eingeben (weather-setup)');
           return 'invalid_grant';
         }
@@ -326,7 +326,7 @@ export class WeatherService {
         try {
           await this.db
             .update(weatherCredentials)
-            .set({ refreshTokenEnc: this.keys.encrypt(PURPOSE, neuesToken, AAD.refreshToken), updatedAt: this.now(), lastErrorAt: this.now(), lastErrorCode: 'rotate_persist' })
+            .set({ refreshTokenEnc: this.keys.encrypt(PURPOSE, neuesToken, AAD.refreshToken), updatedAt: this.now(), lastErrorAt: this.now(), lastErrorCode: 'rotate_persist', errorCount: sql`${weatherCredentials.errorCount} + 1` })
             .where(eq(weatherCredentials.id, 1));
           this.log.error({ code: 'rotate_persist' }, 'Wetter: neues Refresh-Token ersatzweise gespeichert');
         } catch {
@@ -352,6 +352,7 @@ export class WeatherService {
       disabledAt: null,
       lastErrorAt: null,
       lastErrorCode: null,
+      errorCount: 0,
     };
     await this.db.insert(weatherCredentials).values({ id: 1, ...werte }).onConflictDoUpdate({ target: weatherCredentials.id, set: werte });
     this.access = null;
@@ -363,9 +364,9 @@ export class WeatherService {
   }
 
   /** Zustand für die Einrichtung (ohne Geheimnisse). */
-  async status(): Promise<{ configured: boolean; disabled: boolean; lastOkAt: Date | null; lastErrorCode: string | null }> {
+  async status(): Promise<{ configured: boolean; disabled: boolean; lastOkAt: Date | null; lastErrorAt: Date | null; lastErrorCode: string | null; errorCount: number }> {
     const [r] = await this.db.select().from(weatherCredentials);
-    return { configured: !!r, disabled: !!r?.disabledAt, lastOkAt: r?.lastOkAt ?? null, lastErrorCode: r?.lastErrorCode ?? null };
+    return { configured: !!r, disabled: !!r?.disabledAt, lastOkAt: r?.lastOkAt ?? null, lastErrorAt: r?.lastErrorAt ?? null, lastErrorCode: r?.lastErrorCode ?? null, errorCount: r?.errorCount ?? 0 };
   }
 
   /** Aktueller Stand und 24-h-Verlauf aus der eigenen Zwischenspeicherung. Nur Ortsname und Messwerte. */

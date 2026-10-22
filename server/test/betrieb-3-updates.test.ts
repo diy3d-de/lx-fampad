@@ -68,6 +68,7 @@ describe.each(backends)('Betrieb Paket 3, Update-Stand ($name)', (backend) => {
     readText: async (p) => (p.endsWith('latest.json') ? manifest : null),
     disk: async () => null,
     karteBytes: async () => null,
+    dirBytes: async () => null,
     tlsValidTo: async () => null,
     ntfyReachable: async () => true,
   };

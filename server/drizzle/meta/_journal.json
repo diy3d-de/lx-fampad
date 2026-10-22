@@ -176,6 +176,13 @@
       "when": 1792670852254,
       "tag": "0024_p1_verlauf_freigabe",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1792700000001,
+      "tag": "0025_betrieb_paket_3",
+      "breakpoints": true
     }
   ]
 }

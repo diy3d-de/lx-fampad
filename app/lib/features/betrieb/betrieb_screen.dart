@@ -1,5 +1,5 @@
 // Bereich "Betrieb" (nur für den Betreiber des Servers, fast nur lesend): Übersicht (Kacheln, Schlüssel-Ampel, Warnungen, Dienste, Funktionen, Versionen,
-// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Backups (Paket 3: Sicherung auf dem Server, Abholung und Wiederherstellungstest laut NAS), Nutzung (Paket 3: Update-Stand, später Wetter und Push, Nutzung und Verlauf), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
+// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Backups (Paket 3: Sicherung auf dem Server, Abholung und Wiederherstellungstest laut NAS), Nutzung (Paket 3: aktive Personen und Geräte, Verlaufsgrafiken, Wetter und Push, Update-Stand), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
 // nichts auf dem Server; geschrieben wird nur Weniges (Konto entsperren, eigene Warnungen ein/aus, Wartungsmodus, Familienhinweis), jeweils mit Step-up.
 // Unterseite wie das Konto: mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell (Marker [kBetriebMarke]).
 import 'dart:async';
@@ -93,6 +93,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
     ref.watch(betriebWarnungenProvider.select((p) => p.wert != null || p.fehler != null));
     ref.watch(betriebEinstellungenProvider.select((p) => p.wert != null || p.fehler != null));
     ref.watch(betriebKonfigurationProvider.select((p) => p.wert != null || p.fehler != null));
+    // hält den Verlauf am Leben (autoDispose): die Nutzungsseite lädt ihn beim ersten Öffnen, danach bleibt er beim Wechseln der Reiter erhalten
+    ref.watch(betriebVerlaufProvider.select((p) => p.wert != null || p.fehler != null));
     return AuthSeite(
       label: '// betrieb',
       titel: 'Betrieb',
@@ -109,6 +111,7 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
                   unawaited(ref.read(betriebWarnungenProvider.notifier).laden());
                   unawaited(ref.read(betriebEinstellungenProvider.notifier).laden());
                   unawaited(ref.read(betriebKonfigurationProvider.notifier).laden());
+                  unawaited(ref.read(betriebVerlaufProvider.notifier).laden());
                   // auch die Ereignisse und Mitglieder neu laden; auf den anderen Seiten still (ohne Step-up-Abfrage), auf der eigenen Seite mit
                   unawaited(_protokollLaden(still: _seite != _Seite.protokoll));
                   unawaited(_mitgliederLaden(still: _seite != _Seite.mitglieder));

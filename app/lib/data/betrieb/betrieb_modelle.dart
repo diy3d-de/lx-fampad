@@ -151,6 +151,97 @@ class BetriebAppVersion {
   const BetriebAppVersion({required this.version, this.versionCode, this.mindestversion});
 }
 
+/// Push-Wecker (`push` in `GET /admin/status`): nur Zähler und eine Zeit, nie Endpunkte oder Themen.
+class BetriebPush {
+  /// Geräte mit einem aktiven Wecker.
+  final int aktiv;
+
+  /// Geräte, deren Endpunkt der Server deaktiviert hat.
+  final int deaktiviert;
+
+  /// Aktive Geräte mit mindestens einem Zustellfehler in Folge.
+  final int fehlerhaft;
+
+  /// Geräte mit einem Zustellfehler in den letzten 24 Stunden.
+  final int fehler24h;
+  final DateTime? letzterErfolg;
+  const BetriebPush({this.aktiv = 0, this.deaktiviert = 0, this.fehlerhaft = 0, this.fehler24h = 0, this.letzterErfolg});
+
+  factory BetriebPush.fromJson(Object? raw) {
+    final m = _map(raw);
+    return BetriebPush(
+      aktiv: _zahl(m['devicesActive']) ?? 0,
+      deaktiviert: _zahl(m['devicesDisabled']) ?? 0,
+      fehlerhaft: _zahl(m['devicesFailing']) ?? 0,
+      fehler24h: _zahl(m['errors24h']) ?? 0,
+      letzterErfolg: _zeit(m['lastOkAt']),
+    );
+  }
+}
+
+/// Ein täglicher Messpunkt der Betreiber-Ansicht (`GET /admin/metrics`): nur Zahlen, [tag] ist der UTC-Tag.
+class VerlaufTag {
+  final DateTime tag;
+  final int personen7;
+  final int personen30;
+  final int geraete7;
+  final int geraete30;
+  final int abgleiche;
+  final int fehler;
+  final int rateLimit;
+  final int? datenbankBytes;
+  final int? dateienBytes;
+  const VerlaufTag({
+    required this.tag,
+    this.personen7 = 0,
+    this.personen30 = 0,
+    this.geraete7 = 0,
+    this.geraete30 = 0,
+    this.abgleiche = 0,
+    this.fehler = 0,
+    this.rateLimit = 0,
+    this.datenbankBytes,
+    this.dateienBytes,
+  });
+
+  /// Liest einen Tag; ohne gültiges Datum gibt es null (der Eintrag entfällt).
+  static VerlaufTag? versuchen(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final text = _text(raw['day']);
+    final tag = text == null || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text) ? null : DateTime.tryParse('${text}T00:00:00Z');
+    if (tag == null) return null;
+    int n(String k) => (_zahl(raw[k]) ?? 0).clamp(0, 1 << 52);
+    return VerlaufTag(
+      tag: tag,
+      personen7: n('activePersons7'),
+      personen30: n('activePersons30'),
+      geraete7: n('activeDevices7'),
+      geraete30: n('activeDevices30'),
+      abgleiche: n('syncRuns'),
+      fehler: n('syncErrors'),
+      rateLimit: n('rateLimited'),
+      datenbankBytes: _zahl(raw['dbBytes']),
+      dateienBytes: _zahl(raw['filesBytes']),
+    );
+  }
+}
+
+/// `GET /admin/metrics`: der Verlauf (aufsteigend nach Tag; Lücken bleiben Lücken).
+class BetriebVerlauf {
+  final DateTime erzeugt;
+  final int aufbewahrungTage;
+  final List<VerlaufTag> tage;
+  const BetriebVerlauf({required this.erzeugt, required this.aufbewahrungTage, required this.tage});
+
+  factory BetriebVerlauf.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final tage = [if (m['days'] is List) for (final e in m['days'] as List) ?VerlaufTag.versuchen(e)]..sort((a, b) => a.tag.compareTo(b.tag));
+    return BetriebVerlauf(erzeugt: _zeit(m['generatedAt']) ?? DateTime.now(), aufbewahrungTage: _zahl(m['retentionDays']) ?? 400, tage: tage);
+  }
+
+  VerlaufTag? get letzter => tage.isEmpty ? null : tage.last;
+}
+
 /// Stand der App-Version eines Geräts (feste Codes des Servers; alles andere gilt als [unbekannt], nie als aktuell).
 enum AppStand {
   aktuell,
@@ -242,6 +333,9 @@ class BetriebStatus {
   final BetriebSicherung sicherung;
   final BetriebNas nas;
 
+  /// Push-Wecker: Geräte und Zustellfehler als Zähler; null bei einem älteren Server.
+  final BetriebPush? push;
+
   /// Update-Stand der Android-Geräte; null bei einem älteren Server.
   final BetriebUpdates? updates;
   final BetriebPlatte? platte;
@@ -276,6 +370,7 @@ class BetriebStatus {
     required this.dienste,
     required this.sicherung,
     required this.nas,
+    required this.push,
     required this.updates,
     required this.platte,
     required this.zertifikatBis,
@@ -354,6 +449,7 @@ class BetriebStatus {
         ergebnis: _ergebnis(backup['lastResult']),
       ),
       nas: BetriebNas.fromJson(m['nas']),
+      push: m['push'] is Map<String, dynamic> ? BetriebPush.fromJson(m['push']) : null,
       updates: m['updates'] is Map<String, dynamic> ? BetriebUpdates.fromJson(m['updates']) : null,
       platte: disk == null
           ? null

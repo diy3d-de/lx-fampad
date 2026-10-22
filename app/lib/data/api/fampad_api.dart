@@ -233,6 +233,9 @@ class FampadApi {
   Future<ProtokollSeite> betriebProtokoll({ProtokollArt art = ProtokollArt.alle, String? weiter, int limit = 50}) async =>
       ProtokollSeite.fromJson(await client.get('/admin/audit?category=${art.code}&limit=$limit${weiter == null ? '' : '&cursor=${Uri.encodeQueryComponent(weiter)}'}'));
 
+  /// Verlauf der täglichen Messpunkte (nur Zahlen; ohne Step-up), die letzten [tage] Tage (1 bis 400). Ältere Server kennen die Route nicht (404).
+  Future<BetriebVerlauf> betriebVerlauf({int tage = 90}) async => BetriebVerlauf.fromJson(await client.get('/admin/metrics?days=$tage'));
+
   /// Familienampel der Schlüssel (nur Zähler, ohne Namen und Ereignisse; ohne Step-up). Die Einzelheiten je Person stehen in [betriebMitglieder].
   Future<SchluesselStatus> betriebSchluesselStatus() async => SchluesselStatus.fromJson(await client.get('/admin/key-status?summary=1'));
 

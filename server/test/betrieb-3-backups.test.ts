@@ -159,6 +159,7 @@ describe.each(backends)('Betrieb Paket 3, Backups ($name)', (backend) => {
     readText: (p, m) => aktuell.readText!(p, m),
     disk: (p) => aktuell.disk!(p),
     karteBytes: (d) => aktuell.karteBytes!(d),
+    dirBytes: async () => null,
     tlsValidTo: (x, s) => aktuell.tlsValidTo!(x, s),
     ntfyReachable: (u) => aktuell.ntfyReachable!(u),
   };

@@ -185,6 +185,53 @@ class BetriebWarnungenNotifier extends Notifier<BetriebTeilZustand<BetriebWarnun
 
 final betriebWarnungenProvider = NotifierProvider.autoDispose<BetriebWarnungenNotifier, BetriebTeilZustand<BetriebWarnungen>>(BetriebWarnungenNotifier.new);
 
+/// Verlauf (Nutzung): die gewählte Spanne in Tagen und die geladenen Messpunkte. Scheitert die Abfrage (älterer Server: 404), bleibt [fehler] gesetzt.
+class BetriebVerlaufZustand {
+  final int tage;
+  final BetriebVerlauf? wert;
+  final bool laedt;
+  final Object? fehler;
+  const BetriebVerlaufZustand({this.tage = 30, this.wert, this.laedt = false, this.fehler});
+}
+
+/// Wählbare Spannen des Verlaufs in Tagen.
+const kVerlaufSpannen = <int>[7, 30, 90, 365];
+
+class BetriebVerlaufNotifier extends Notifier<BetriebVerlaufZustand> {
+  bool _laeuft = false;
+  // Zählt Spannenwechsel: eine späte Antwort zu einer alten Spanne wird verworfen
+  int _lauf = 0;
+
+  @override
+  BetriebVerlaufZustand build() => const BetriebVerlaufZustand();
+
+  /// Lädt den Verlauf, optional mit neuer Spanne.
+  Future<void> laden({int? tage}) async {
+    final neu = tage ?? state.tage;
+    if (tage != null && tage != state.tage) {
+      _lauf++;
+      _laeuft = false;
+      state = BetriebVerlaufZustand(tage: tage);
+    }
+    if (_laeuft || !ref.mounted) return;
+    _laeuft = true;
+    final lauf = _lauf;
+    state = BetriebVerlaufZustand(tage: neu, wert: state.wert, laedt: true);
+    try {
+      final v = await ref.read(apiProvider).betriebVerlauf(tage: neu);
+      if (ref.mounted && lauf == _lauf) state = BetriebVerlaufZustand(tage: neu, wert: v);
+    } on ApiException catch (e) {
+      if (ref.mounted && lauf == _lauf) state = BetriebVerlaufZustand(tage: neu, wert: state.wert, fehler: e);
+    } on Object {
+      if (ref.mounted && lauf == _lauf) state = BetriebVerlaufZustand(tage: neu, wert: state.wert, fehler: ApiException.unerwarteteAntwort);
+    } finally {
+      if (lauf == _lauf) _laeuft = false;
+    }
+  }
+}
+
+final betriebVerlaufProvider = NotifierProvider.autoDispose<BetriebVerlaufNotifier, BetriebVerlaufZustand>(BetriebVerlaufNotifier.new);
+
 class BetriebMitgliederZustand {
   final List<BetriebMitglied> mitglieder;
   final bool geladen;

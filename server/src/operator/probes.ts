@@ -14,6 +14,8 @@ export interface Probes {
   disk(path: string): Promise<DiskInfo | null>;
   /** Größe der größten *.pmtiles-Datei im Ordner; null = keine. */
   karteBytes(dir: string): Promise<number | null>;
+  /** Gesamtgröße aller Dateien unter dem Ordner (nur die Summe, nie Namen; Links werden nicht verfolgt); null = nicht ermittelbar, nicht vorhanden oder mehr als `maxEntries` Einträge. */
+  dirBytes(dir: string, maxEntries: number): Promise<number | null>;
   /** Zertifikatsende (lesende TLS-Verbindung), null = nicht ermittelbar. */
   tlsValidTo(probe: string, servername: string): Promise<Date | null>;
   /** Antwortet der lokale ntfy auf /v1/health? */
@@ -54,6 +56,25 @@ export const realProbes: Probes = {
         if (st.isFile() && (best === null || st.size > best)) best = st.size;
       }
       return best;
+    } catch {
+      return null;
+    }
+  },
+  async dirBytes(dir, maxEntries) {
+    try {
+      let total = 0;
+      let seen = 0;
+      const stack = [dir];
+      for (let d = stack.pop(); d !== undefined; d = stack.pop()) {
+        for (const e of await readdir(d, { withFileTypes: true })) {
+          if (++seen > maxEntries) return null;
+          if (e.isSymbolicLink()) continue;
+          const p = `${d}/${e.name}`;
+          if (e.isDirectory()) stack.push(p);
+          else if (e.isFile()) total += (await stat(p)).size;
+        }
+      }
+      return total;
     } catch {
       return null;
     }

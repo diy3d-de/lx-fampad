@@ -24,7 +24,8 @@ import type { PushService } from '../push/service.js';
 import type { WeatherService } from '../weather/service.js';
 import { serializeErr } from '../log.js';
 import { collectKeyStatus, type KeyStatus } from './key-status.js';
-import type { Probes } from './probes.js';
+import { collectActivity, FILES_MAX_ENTRIES, FILES_MEASURE_INTERVAL_MS, recordMetrics, type CounterDelta, type UsageCounters } from './metrics.js';
+import { realProbes, type Probes } from './probes.js';
 import { BACKUP_WARN_HOURS, CERT_WARN_DAYS, collectStatus, DISK_WARN_PERCENT, type OperatorStatus } from './status.js';
 
 export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore'] as const;
@@ -122,6 +123,8 @@ export interface MonitorDeps {
   push: PushService | undefined;
   weather: WeatherService | undefined;
   probes?: Partial<Probes> | undefined;
+  /** Zähler des Prozesses (Abgleiche, Fehler, Rate-Limit-Treffer): der Prüfer übernimmt sie bei jedem Lauf in den Messpunkt des Tages (Paket 3). */
+  counters?: UsageCounters | undefined;
 }
 
 export interface WarningsView {
@@ -145,6 +148,9 @@ export class OperatorMonitor {
   private readonly states = new Map<string, StateRow>();
   private readonly cache = new Map<string, FamilyOperators>();
   private readonly topicCache = new Map<string, string[]>();
+  /** Zähler, die in diesem Lauf noch nicht in die Datenbank übernommen sind (gehen sonst zurück in den Zähler). */
+  private pending: CounterDelta | null = null;
+  private filesCache: { at: number; bytes: number | null } | null = null;
 
   constructor(private readonly deps: MonitorDeps) {}
 
@@ -171,6 +177,7 @@ export class OperatorMonitor {
     if (this.running) return report;
     this.running = true;
     const { ctx } = this.deps;
+    this.pending = this.deps.counters?.take() ?? null;
     try {
       let families: FamilyOperators[];
       try {
@@ -190,6 +197,9 @@ export class OperatorMonitor {
       }
       this.lastRunAt = ctx.now();
     } finally {
+      // nicht übernommene Zähler (keine Familie, Datenbank nicht erreichbar) gehen zurück in den Zähler: nichts geht verloren
+      if (this.pending && this.deps.counters) this.deps.counters.restore(this.pending);
+      this.pending = null;
       this.running = false;
     }
     return report;
@@ -210,6 +220,33 @@ export class OperatorMonitor {
       byFamily.set(r.familyId, f);
     }
     return [...byFamily.values()];
+  }
+
+  /** Dateiablage: höchstens stündlich messen (nur die Summe). */
+  private async filesBytes(): Promise<number | null> {
+    const { ctx } = this.deps;
+    const dir = ctx.config.operator.filesDir;
+    if (!dir) return null;
+    const now = ctx.now().getTime();
+    const hit = this.filesCache;
+    if (hit && now >= hit.at && now - hit.at < FILES_MEASURE_INTERVAL_MS) return hit.bytes;
+    const probes: Probes = { ...realProbes, ...this.deps.probes };
+    const bytes = await probes.dirBytes(dir, FILES_MAX_ENTRIES);
+    this.filesCache = { at: now, bytes };
+    return bytes;
+  }
+
+  /** Tägliche Messpunkte (Nutzung und Verlauf): nur Zahlen; ein Fehler hier lässt nie die Prüfung der Warnungen scheitern. */
+  private async recordUsage(familyId: string, status: OperatorStatus): Promise<void> {
+    const { ctx } = this.deps;
+    try {
+      const activity = await collectActivity(ctx, familyId);
+      const files = await this.filesBytes();
+      await recordMetrics(ctx, familyId, { activity, dbBytes: status.database.sizeBytes, filesBytes: files }, this.pending ?? { syncRuns: 0, syncErrors: 0, rateLimited: 0 });
+      this.pending = null; // übernommen (weitere Familien in diesem Lauf bekommen keine Zähler mehr)
+    } catch (err: unknown) {
+      ctx.log.warn({ err: serializeErr(err) }, 'Messpunkt der Betreiber-Ansicht nicht geschrieben');
+    }
   }
 
   private async loginFailures(familyId: string): Promise<number | null> {
@@ -267,6 +304,7 @@ export class OperatorMonitor {
     const now = ctx.now();
     const status = await collectStatus({ ctx, weather: this.deps.weather, probes: this.deps.probes }, fam.familyId);
     const dbUp = status.database.ok;
+    if (dbUp) await this.recordUsage(fam.familyId, status);
     const keys = dbUp ? await collectKeyStatus(ctx, fam.familyId).catch(() => null) : null;
     const failures = dbUp ? await this.loginFailures(fam.familyId) : null;
     if (dbUp) {

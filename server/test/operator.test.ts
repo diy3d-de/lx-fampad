@@ -67,6 +67,7 @@ describe.each(backends)('Betreiber-Ansicht ($name)', (backend) => {
     readText: (p, m) => aktuell.readText!(p, m),
     disk: (p) => aktuell.disk!(p),
     karteBytes: (d) => aktuell.karteBytes!(d),
+    dirBytes: (d, n) => (aktuell.dirBytes ? aktuell.dirBytes(d, n) : Promise.resolve(null)),
     tlsValidTo: (x, s) => aktuell.tlsValidTo!(x, s),
     ntfyReachable: (u) => aktuell.ntfyReachable!(u),
   };
