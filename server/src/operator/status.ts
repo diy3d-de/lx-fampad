@@ -7,6 +7,7 @@ import type { Config } from '../config.js';
 import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { WeatherService } from '../weather/service.js';
+import { NAS_STATUS_MAX_BYTES, parseNasStatus, type NasStatus } from './nas-status.js';
 import { realProbes, type Probes } from './probes.js';
 
 export type Level = 'ok' | 'warn' | 'error' | 'off' | 'unknown';
@@ -32,6 +33,8 @@ export interface OperatorStatus {
   };
   services: ServiceStatus[];
   backup: { state: Level; lastSuccessAt: string | null; ageHours: number | null; totalBytes: number | null; lastResult: 'ok' | 'fehler' | null };
+  /** Rückmeldung des NAS (Abholung und Wiederherstellungstest); ohne Einrichtung "nicht eingerichtet", nie ein Alarm. */
+  nas: NasStatus;
   disk: { totalBytes: number; freeBytes: number; usedPercent: number } | null;
   certificate: { validTo: string; daysLeft: number } | null;
   counts: { members: number; devices: number; pushDevices: number; activeSessions: number };
@@ -208,7 +211,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   }
 
   // ----- ntfy, Zertifikat, Sicherung, Platte, Karte, Versionen (parallel, jede Quelle für sich fehlertolerant) -----
-  const [ntfyUp, validTo, backupText, disk, karte, manifestText, web] = await Promise.all([
+  const [ntfyUp, validTo, backupText, disk, karte, manifestText, web, nasText] = await Promise.all([
     config.ntfyUrl ? probes.ntfyReachable(config.ntfyUrl) : Promise.resolve(null),
     oc.tlsProbe ? probes.tlsValidTo(oc.tlsProbe, new URL(config.publicUrl).hostname) : Promise.resolve(null),
     oc.backupStatusFile ? probes.readText(oc.backupStatusFile, 4096) : Promise.resolve(null),
@@ -216,7 +219,9 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     oc.karteDir ? probes.karteBytes(oc.karteDir) : Promise.resolve(null),
     oc.releaseManifestFile ? probes.readText(oc.releaseManifestFile, 64 * 1024) : Promise.resolve(null),
     readWebVersion(config, probes),
+    oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1) : Promise.resolve(null),
   ]);
+  const nas = parseNasStatus(nasText, now);
 
   const ntfy: ServiceStatus = ntfyUp === null ? { id: 'ntfy', state: 'off', detail: {} } : { id: 'ntfy', state: ntfyUp ? 'ok' : 'error', detail: { devices: counts.pushDevices } };
 
@@ -245,7 +250,9 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   const services = [api, database, weather, ntfy, caddy];
 
   const diskLevel: Level = diskView === null ? 'unknown' : diskView.usedPercent >= DISK_ERROR_PERCENT ? 'error' : diskView.usedPercent > DISK_WARN_PERCENT ? 'warn' : 'ok';
-  const levels: Level[] = [...services.map((s) => s.state), backup.state, diskLevel];
+  // Die Rückmeldung des NAS zählt erst, wenn sie eingerichtet ist (bis dahin gilt die Karenz: nichts davon ist ein Alarm oder ein "unbekannt")
+  const nasLevels = [nas.pull.state, nas.restore.state].filter((l) => l !== 'unknown');
+  const levels: Level[] = [...services.map((s) => s.state), backup.state, diskLevel, ...nasLevels];
   const overall = levels.includes('error') ? 'error' : levels.includes('warn') ? 'warn' : 'ok';
   const unknownCount = levels.filter((l) => l === 'unknown').length + (migrations.applied === null ? 1 : 0);
 
@@ -263,6 +270,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     database: { ok: dbOk, latencyMs, sizeBytes, migrations },
     services,
     backup,
+    nas,
     disk: diskView,
     certificate,
     counts,

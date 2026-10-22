@@ -143,6 +143,8 @@ const _ereignisse = <String, String>{
   'operator_alert_disk': 'Betrieb-Warnung: Speicherplatz',
   'operator_alert_logins': 'Betrieb-Warnung: Fehlanmeldungen',
   'operator_alert_key': 'Betrieb-Warnung: Schlüssel-Ampel',
+  'operator_alert_nas_pull': 'Betrieb-Warnung: Abholung durch das NAS',
+  'operator_alert_nas_restore': 'Betrieb-Warnung: Wiederherstellungstest',
   'operator_warnings_set': 'Betrieb-Warnungen umgestellt',
   'operator_unlock': 'Konto entsperrt',
   'operator_maintenance_set': 'Wartungsmodus umgeschaltet',
@@ -232,6 +234,8 @@ String warnArtText(String art) => switch (art) {
   'disk' => 'Speicherplatz über 85 % belegt',
   'logins' => 'Viele fehlgeschlagene Anmeldungen',
   'key' => 'Schlüssel-Ampel einer Person ist rot',
+  'nas_pull' => 'Das NAS hat die Sicherung seit über 36 Stunden nicht abgeholt (oder die Abholung ist fehlgeschlagen)',
+  'nas_restore' => 'Der Wiederherstellungstest ist älter als 10 Tage oder fehlgeschlagen',
   _ => 'Hinweis des Servers',
 };
 

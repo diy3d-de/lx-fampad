@@ -133,6 +133,10 @@ export interface OperatorConfig {
   diskPath: string | undefined;
   /** Ordner der Kartendatei (*.pmtiles); nur Vorhandensein und Größe. */
   karteDir: string | undefined;
+  /** Rückmeldung des NAS (schreibt der erzwungene Befehl lx-fampad-nasstatus-empfang in einen eigenen Ordner, den der Dienst nur liest): letzte Abholung und letzter Wiederherstellungstest. */
+  nasStatusFile: string | undefined;
+  /** Ordner der Dateiablage (nur die Gesamtgröße für den Verlauf, nie Namen). */
+  filesDir: string | undefined;
   /** "host:port" einer lesenden TLS-Verbindung zur Prüfung des Zertifikatsendes (Standard in Produktion: 127.0.0.1:443, sonst aus). */
   tlsProbe: string | undefined;
 }
@@ -212,6 +216,8 @@ function operatorConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Operato
     releaseManifestFile: pick('OPERATOR_RELEASE_MANIFEST', '/srv/fampad/releases/android/latest.json'),
     diskPath: pick('OPERATOR_DISK_PATH', '/srv'),
     karteDir: pick('OPERATOR_KARTE_DIR', '/srv/fampad/karte'),
+    nasStatusFile: pick('OPERATOR_NAS_STATUS_FILE', '/var/lib/lx-fampad-nasstatus/nas.status'),
+    filesDir: pick('OPERATOR_FILES_DIR', '/srv/fampad/files'),
     tlsProbe,
   };
 }

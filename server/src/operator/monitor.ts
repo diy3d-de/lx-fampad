@@ -27,7 +27,7 @@ import { collectKeyStatus, type KeyStatus } from './key-status.js';
 import type { Probes } from './probes.js';
 import { BACKUP_WARN_HOURS, CERT_WARN_DAYS, collectStatus, DISK_WARN_PERCENT, type OperatorStatus } from './status.js';
 
-export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key'] as const;
+export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore'] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
 export const CHECK_INTERVAL_MS = 5 * 60_000;
@@ -69,6 +69,12 @@ export function evaluateConditions(status: OperatorStatus, loginFailures: number
   if (b.lastResult === null && b.lastSuccessAt === null) add('backup', 'unknown');
   else if (b.lastSuccessAt === null) add('backup', b.lastResult === 'fehler' ? 'active' : 'unknown');
   else add('backup', now.getTime() - new Date(b.lastSuccessAt).getTime() > BACKUP_ALERT_HOURS * 3_600_000 ? 'active' : 'ok');
+
+  // Rückmeldung des NAS (Paket 3): Abholung älter als 36 Stunden oder fehlgeschlagen, Wiederherstellungstest älter als 10 Tage oder fehlgeschlagen. Solange das NAS nichts
+  // gemeldet hat (nicht eingerichtet, ungültige Datei, noch kein Test), ist es "unbekannt" und warnt nie (Karenz bis zur Einrichtung).
+  const nasAlert = (state: string): AlertResult => (state === 'warn' || state === 'error' ? 'active' : state === 'ok' ? 'ok' : 'unknown');
+  add('nas_pull', nasAlert(status.nas.pull.state));
+  add('nas_restore', nasAlert(status.nas.restore.state));
 
   // Datenbank und ntfy nicht erreichbar (ntfy aus = nichts zu melden)
   add('database', status.database.ok ? 'ok' : 'active');

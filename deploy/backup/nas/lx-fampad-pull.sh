@@ -38,6 +38,8 @@ MIN_VALID="${LXB_MIN_VALID:-3}"                    # nach der Rotation müssen m
 MIN_DB_BYTES="${LXB_MIN_DB_BYTES:-2000}"           # kleinere Datenbankdatei gilt als nicht plausibel
 RSYNC_TIMEOUT="${LXB_TIMEOUT:-2h}"
 NOTIFY_CMD="${LXB_NOTIFY_CMD:-}"                   # optional: Befehl, der bei Fehlern mit der Meldung als Argument aufgerufen wird
+STATUS_KEY="${LXB_STATUS_KEY:-$HOME/.ssh/lx-fampad-status}"   # optional (Betrieb Paket 3): eigener SSH-Schlüssel für die Statusmeldung an den Server; existiert er nicht, wird nichts gemeldet
+MELDER="${LXB_STATUS_MELDER:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lx-fampad-nasstatus.sh}"   # das Meldeskript neben diesem
 
 ROTATE_ONLY=0
 DRY=0
@@ -49,9 +51,39 @@ for a in "$@"; do
   esac
 done
 
+# Stand der Abholung für die Betreiber-Ansicht (Betrieb Paket 3): schreibt $DEST/pull-status (nur Zeiten, Zähler, ok/fehler) und meldet ihn über den eigenen Statusschlüssel
+# an den Server. Alles hier ist best effort und ändert nie das Ergebnis des Laufs; Trocken- und reine Rotationsläufe melden nichts.
+pull_status() {   # $1 = ok|fehler
+  [ "$DRY" = 0 ] && [ "$ROTATE_ONLY" = 0 ] && [ -d "$DEST" ] && [ ! -L "$DEST" ] || return 0
+  (
+    set +e; trap - ERR
+    pstat="$DEST/pull-status"
+    alt() { if [ -f "$pstat" ] && [ ! -L "$pstat" ]; then sed -n "s/^$1=\([0-9]*\)\$/\1/p" "$pstat" | head -1; fi; }
+    jetzt="$(date -u +%s)"
+    erfolg="$(alt last_success_epoch)"; [ "$1" != ok ] || erfolg="$jetzt"
+    neueste="$(alt newest_backup_epoch)"; anzahl="$(alt archive_count)"
+    if [ -n "${NEUESTE:-}" ]; then neueste="$(epoch_von_namen "$NEUESTE" 2>/dev/null)"; [ -n "$neueste" ] || neueste="$(alt newest_backup_epoch)"; fi
+    if [[ "${ANZAHL:-}" =~ ^[0-9]+$ ]]; then anzahl="$ANZAHL"; fi
+    tmp="$(mktemp "$DEST/.pull-status.XXXXXX" 2>/dev/null)" || exit 0
+    {
+      echo "last_result=$1"
+      echo "last_run_epoch=$jetzt"
+      [ -z "$erfolg" ] || echo "last_success_epoch=$erfolg"
+      [ -z "$neueste" ] || echo "newest_backup_epoch=$neueste"
+      [ -z "$anzahl" ] || echo "archive_count=$anzahl"
+    } > "$tmp" && mv -f "$tmp" "$pstat" || rm -f "$tmp"
+    if [ -f "$MELDER" ] && [ -r "$STATUS_KEY" ]; then
+      LXB_DEST="$DEST" LXB_SERVER="$SERVER" LXB_PORT="$PORT" LXB_KNOWN_HOSTS="$KNOWN_HOSTS" LXB_STATUS_KEY="$STATUS_KEY" timeout 120 bash "$MELDER" >/dev/null 2>&1 \
+        || echo "Hinweis: Statusmeldung an den Server fehlgeschlagen (die Sicherung ist davon nicht betroffen)" >&2
+    fi
+  ) || true
+}
+
 alarm() {
+  trap - ERR
   echo "ALARM: $*" >&2
   if [ -n "$NOTIFY_CMD" ]; then $NOTIFY_CMD "lx-fampad Sicherung: $*" || true; fi
+  pull_status fehler
   exit 1
 }
 trap 'alarm "Skript abgebrochen (Zeile $LINENO)"' ERR
@@ -324,4 +356,5 @@ for n in ${LOESCHEN[@]+"${LOESCHEN[@]}"}; do
   [[ "$n" =~ $NAME_RE ]] || continue
   if [ "$DRY" = 1 ]; then echo "    [dry-run] würde löschen: $n"; else rm -rf -- "${ARCHIV:?}/$n"; echo "    gelöscht: $n"; fi
 done
+pull_status ok
 echo "==> Fertig."

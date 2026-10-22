@@ -55,7 +55,86 @@ class BetriebSicherung {
   final DateTime? letzterErfolg;
   final int? alterStunden;
   final int? bytes;
-  const BetriebSicherung({this.stufe = BetriebStufe.unbekannt, this.letzterErfolg, this.alterStunden, this.bytes});
+
+  /// Ergebnis des letzten Laufs laut Statusdatei (feste Codes ok/fehler; alles andere null).
+  final String? ergebnis;
+  const BetriebSicherung({this.stufe = BetriebStufe.unbekannt, this.letzterErfolg, this.alterStunden, this.bytes, this.ergebnis});
+}
+
+String? _ergebnis(Object? v) => v == 'ok' || v == 'fehler' ? v as String : null;
+
+/// Letzte Abholung der Sicherung durch das NAS (Rückmeldung des NAS, Betrieb Paket 3). Die Angaben stammen vom NAS und sind ein Hinweis, kein Beweis.
+class BetriebNasAbholung {
+  final BetriebStufe stufe;
+  final String? ergebnis;
+  final DateTime? letzterLauf;
+  final DateTime? letzterErfolg;
+  final int? alterStunden;
+  final DateTime? neuesteSicherung;
+  final int? anzahl;
+  const BetriebNasAbholung({this.stufe = BetriebStufe.unbekannt, this.ergebnis, this.letzterLauf, this.letzterErfolg, this.alterStunden, this.neuesteSicherung, this.anzahl});
+
+  factory BetriebNasAbholung.fromJson(Object? raw) {
+    final m = _map(raw);
+    return BetriebNasAbholung(
+      stufe: BetriebStufe.lesen(m['state']),
+      ergebnis: _ergebnis(m['result']),
+      letzterLauf: _zeit(m['lastRunAt']),
+      letzterErfolg: _zeit(m['lastSuccessAt']),
+      alterStunden: _zahl(m['ageHours']),
+      neuesteSicherung: _zeit(m['newestBackupAt']),
+      anzahl: _zahl(m['count']),
+    );
+  }
+}
+
+/// Letzter automatischer Wiederherstellungstest auf dem NAS.
+class BetriebNasTest {
+  final BetriebStufe stufe;
+  final String? ergebnis;
+  final DateTime? letzterLauf;
+  final DateTime? letzterErfolg;
+  final int? alterTage;
+
+  /// Wurde auch das Konfigurationsarchiv geprüft? (null: nicht gemeldet)
+  final bool? konfigGeprueft;
+  const BetriebNasTest({this.stufe = BetriebStufe.unbekannt, this.ergebnis, this.letzterLauf, this.letzterErfolg, this.alterTage, this.konfigGeprueft});
+
+  factory BetriebNasTest.fromJson(Object? raw) {
+    final m = _map(raw);
+    return BetriebNasTest(
+      stufe: BetriebStufe.lesen(m['state']),
+      ergebnis: _ergebnis(m['result']),
+      letzterLauf: _zeit(m['lastRunAt']),
+      letzterErfolg: _zeit(m['lastSuccessAt']),
+      alterTage: _zahl(m['ageDays']),
+      konfigGeprueft: m['configChecked'] is bool ? m['configChecked'] as bool : null,
+    );
+  }
+}
+
+/// Rückmeldung des NAS im Feld `nas` von `GET /admin/status`. [bekannt] = false: ein älterer Server kennt sie nicht; [eingerichtet] = false: das NAS hat noch nichts gemeldet
+/// (oder die Datei war ungültig, dann [ungueltig]); beides ist nie ein Alarm.
+class BetriebNas {
+  final bool bekannt;
+  final bool eingerichtet;
+  final bool ungueltig;
+  final DateTime? empfangen;
+  final BetriebNasAbholung abholung;
+  final BetriebNasTest test;
+  const BetriebNas({this.bekannt = false, this.eingerichtet = false, this.ungueltig = false, this.empfangen, this.abholung = const BetriebNasAbholung(), this.test = const BetriebNasTest()});
+
+  factory BetriebNas.fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return const BetriebNas();
+    return BetriebNas(
+      bekannt: true,
+      eingerichtet: raw['configured'] == true,
+      ungueltig: raw['invalid'] == true,
+      empfangen: _zeit(raw['receivedAt']),
+      abholung: BetriebNasAbholung.fromJson(raw['pull']),
+      test: BetriebNasTest.fromJson(raw['restore']),
+    );
+  }
 }
 
 class BetriebPlatte {
@@ -89,6 +168,7 @@ class BetriebStatus {
   final BetriebMigrationen migrationen;
   final List<BetriebDienst> dienste;
   final BetriebSicherung sicherung;
+  final BetriebNas nas;
   final BetriebPlatte? platte;
   final DateTime? zertifikatBis;
   final int? zertifikatTage;
@@ -120,6 +200,7 @@ class BetriebStatus {
     required this.migrationen,
     required this.dienste,
     required this.sicherung,
+    required this.nas,
     required this.platte,
     required this.zertifikatBis,
     required this.zertifikatTage,
@@ -194,7 +275,9 @@ class BetriebStatus {
         letzterErfolg: _zeit(backup['lastSuccessAt']),
         alterStunden: _zahl(backup['ageHours']),
         bytes: _zahl(backup['totalBytes']),
+        ergebnis: _ergebnis(backup['lastResult']),
       ),
+      nas: BetriebNas.fromJson(m['nas']),
       platte: disk == null
           ? null
           : BetriebPlatte(gesamt: _zahl(disk['totalBytes']) ?? 0, frei: _zahl(disk['freeBytes']) ?? 0, belegtProzent: _zahl(disk['usedPercent']) ?? 0),
@@ -517,7 +600,7 @@ class BetriebMitglieder {
 }
 
 /// Feste Arten der Betreiber-Warnungen (Kennungen des Servers; Unbekanntes zeigt die Oberfläche allgemein als "Hinweis").
-const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key'];
+const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore'];
 
 /// `GET /admin/warnings`
 class BetriebWarnungen {
