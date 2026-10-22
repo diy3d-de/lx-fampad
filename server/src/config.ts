@@ -118,6 +118,8 @@ export interface Config {
   weather: WeatherConfig;
   /** Vereinfachte Schlüsselverwaltung (Passwort-Sicherung, KDF-Parameter): Routen nur bei true, sonst 404 (Standard aus). */
   e2eePwBackup: boolean;
+  /** Wraps mit Schlüsselversion (Wrap-ID v2, "Verlauf freigeben" und "Verlauf teilen"): nur bei true, sonst lehnt der Server sie ab (Standard aus; erst einschalten, wenn alle Apps der Familie aktualisiert sind). */
+  e2eeWrapKeyVersion: boolean;
   /** Betreiber-Ansicht (nur lesend): Pfade und Prüfungen, die der Status ohne root lesen darf (leer = nicht ermittelbar, "unbekannt"). */
   operator: OperatorConfig;
 }
@@ -315,6 +317,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   if (!(LOG_LEVELS as readonly string[]).includes(level)) throw new Error(`LOG_LEVEL ungültig: ${level}`);
 
   const e2eePwBackup = boolFlag(env, 'E2EE_PW_BACKUP');
+  const e2eeWrapKeyVersion = boolFlag(env, 'E2EE_WRAP_KEY_VERSION');
   const legacyPasswordLogin = boolFlagDefault(env, 'AUTH_LEGACY_PASSWORD_LOGIN', true);
   // fail-closed: ohne authKey-Anmeldung (hängt am Schalter E2EE_PW_BACKUP) würde das Abschalten des Klartext-Logins alle Passwort-Konten aussperren
   if (!legacyPasswordLogin && !e2eePwBackup) throw new Error('AUTH_LEGACY_PASSWORD_LOGIN=false braucht E2EE_PW_BACKUP=true (sonst kann sich niemand mehr mit Passwort anmelden)');
@@ -394,6 +397,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
     weather: weatherConfig(env, nodeEnv),
     e2eePwBackup,
+    e2eeWrapKeyVersion,
     operator: operatorConfig(env, nodeEnv),
   };
 }

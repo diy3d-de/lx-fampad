@@ -60,8 +60,9 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb, mai
       minAppVersion: config.minAppVersion,
       webVersion: await readWebVersion(config),
       maintenance: maintenance ? (await maintenance.current()) !== null : false,
-      // wrapKeyVersion: der Server nimmt Wraps mit Schlüsselversion (Wrap-ID v2, "Verlauf freigeben") an; die App bietet die Freigabe nur dann an
-      features: { pwBackup: config.e2eePwBackup, authKey: config.e2eePwBackup, legacyPasswordLogin: config.auth.legacyPasswordLogin, wrapKeyVersion: true },
+      // wrapKeyVersion (Schalter E2EE_WRAP_KEY_VERSION): der Server nimmt Wraps mit Schlüsselversion (Wrap-ID v2, "Verlauf freigeben"/"Verlauf teilen") an; die App
+      // nutzt sie nur dann
+      features: { pwBackup: config.e2eePwBackup, authKey: config.e2eePwBackup, legacyPasswordLogin: config.auth.legacyPasswordLogin, wrapKeyVersion: config.e2eeWrapKeyVersion },
     };
   });
 }

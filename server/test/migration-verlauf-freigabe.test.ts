@@ -23,7 +23,7 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
     let world: World | undefined;
     try {
       await migrateLite(db as never, { migrationsFolder });
-      world = await World.create(db, { SYNC_RATE_LIMIT_MAX: '100000' });
+      world = await World.create(db, { SYNC_RATE_LIMIT_MAX: '100000', E2EE_WRAP_KEY_VERSION: 'true' });
       const fam = await createFamily(world);
       // Bestand wie bei v0.7.0: Gruppe mit zwei Epochen und je einem Wrap (ID v1) für Elternteil und Kind
       const konv = randomUUID();
@@ -79,7 +79,7 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
       await einfuegen(3, fam.child.userId);
 
       // der Server startet auf dem migrierten Bestand und meldet die Fähigkeit
-      world = await World.create(db, { SYNC_RATE_LIMIT_MAX: '100000' });
+      world = await World.create(db, { SYNC_RATE_LIMIT_MAX: '100000', E2EE_WRAP_KEY_VERSION: 'true' });
       expect((await world.client().get('/api/v1/version')).json.features).toMatchObject({ wrapKeyVersion: true });
     } finally {
       await world?.close().catch(() => undefined);

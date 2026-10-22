@@ -63,7 +63,8 @@ class _KryptoMitAngeboten extends ChatKrypto {
   Future<List<VerlaufAngebot>> verlaufAngebote({bool cache = true}) async => angebote;
 }
 
-SicherheitsEreignisDto _reset(String name, Duration vorher) => SicherheitsEreignisDto(
+/// Hinweis "Zugang von [name] wurde zurückgesetzt"; [id] ist die Konto-ID der betroffenen Person (ohne Angabe die aus dem Namen; null: der Server konnte sie nicht nennen).
+SicherheitsEreignisDto _reset(String name, Duration vorher, {String? id = _ausName}) => SicherheitsEreignisDto(
   id: 'e-$name-${vorher.inMinutes}',
   art: SicherheitsArt.mitgliedZugangZurueckgesetzt,
   weg: SicherheitsWeg.admin,
@@ -71,7 +72,10 @@ SicherheitsEreignisDto _reset(String name, Duration vorher) => SicherheitsEreign
   durchAdmin: true,
   zeit: DateTime.now().subtract(vorher),
   betroffener: name,
+  betroffenerId: id == _ausName ? (name == 'Ben' ? fixIdKind : (name == 'Cora Berger' ? coraId : null)) : id,
 );
+
+const _ausName = '?';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -148,6 +152,19 @@ void main() {
     expect(knopf.onPressed, isNull);
     // ein Reset einer anderen Person zählt nicht
     pruefeLayout(tester, 'Gesperrte Frage');
+  });
+
+  testWidgets('Umbenennen umgeht die Sperre nicht: der Abgleich läuft über die Konto-ID, nicht über den Anzeigenamen', (tester) async {
+    // der Hinweis nannte den früheren Namen "Benedikt"; heute heißt die Person "Ben": die Kennung entscheidet
+    await gateFall(tester, () async => true, ereignisse: () async => [_reset('Benedikt', const Duration(hours: 2), id: fixIdKind)]);
+    expect(find.textContaining('Der Zugang von Ben wurde vor kurzem zurückgesetzt'), findsOneWidget);
+    expect(tester.widget<TextButton>(find.widgetWithText(TextButton, 'Noch gesperrt')).onPressed, isNull);
+  });
+
+  testWidgets('Ein Reset ohne zuordenbare Kennung (älterer Server, Person nicht mehr da) gilt fail-closed für jede Person: strenger Weg', (tester) async {
+    await gateFall(tester, () async => true, ereignisse: () async => [_reset('Ben', const Duration(hours: 2), id: null)]);
+    expect(find.textContaining('wurde vor kurzem zurückgesetzt'), findsOneWidget);
+    expect(find.text('Noch gesperrt'), findsOneWidget);
   });
 
   testWidgets('Reset einer anderen Person oder länger her als die Beobachtungszeit: normale Frage', (tester) async {

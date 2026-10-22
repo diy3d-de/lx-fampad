@@ -27,6 +27,7 @@ import '../crypto/vertrauen.dart' show VertrauensAblageDefekt;
 import '../sync/sync_store.dart';
 import 'chat_ids.dart';
 import 'nachrichten_inhalt.dart';
+import 'verlauf_vermerk.dart';
 
 const _familie = 'family';
 
@@ -177,6 +178,10 @@ class ChatKrypto {
 
   /// Signaturschlüssel eines Absenders in einer bestimmten Version (gemerkt, sonst Historie des Servers).
   final Future<OeffentlicheSchluessel> Function(String userId, int version) absenderSchluessel;
+
+  /// Nimmt der Server Wraps mit Schlüsselversion (Wrap-ID v2) an (Schalter des Servers, `GET /version` `features.wrapKeyVersion`)? Nur dann schreibt "Verlauf teilen"
+  /// seine Wraps mit der ID v2 und gibt es "Verlauf freigeben"; sonst bleibt alles bei der ID v1 wie bisher. Unbekannt gilt als nein.
+  final bool Function() wrapV2Erlaubt;
   final HuellenCodec _huelle;
   final DateTime Function() _jetzt;
 
@@ -235,10 +240,12 @@ class ChatKrypto {
     required this.gemerkt,
     required this.serverSchluessel,
     required this.absenderSchluessel,
+    bool Function()? wrapV2Erlaubt,
     DateTime Function()? jetzt,
     Future<AkzeptierterStand?> Function(String konversationId)? standLaden,
     Future<void> Function(String konversationId, AkzeptierterStand stand)? standSpeichern,
-  }) : _huelle = HuellenCodec(crypto),
+  }) : wrapV2Erlaubt = wrapV2Erlaubt ?? (() => false),
+       _huelle = HuellenCodec(crypto),
        _jetzt = jetzt ?? DateTime.now,
        _standLaden = standLaden ?? ((_) async => null),
        _standSpeichern = standSpeichern ?? ((_, _) async {});
@@ -678,8 +685,8 @@ class ChatKrypto {
 
   /// Die Mitgliederliste der älteren Epoche, gegen die der Schlüssel geprüft wird (Verpflichtung): ihre Signatur muss gegen den GEMERKTEN Schlüssel ihres eigenen Verteilers
   /// stimmen (nie ein Schlüssel vom Server). Das gilt auch, wenn jemand anderes den Wrap weitergibt ("Verlauf teilen"/"Verlauf freigeben" durch ein Mitglied, das die
-  /// Epoche nicht angelegt hat). Kennt dieses Gerät den Schlüssel des Verteilers in dieser Version nicht, gibt es keine Verpflichtung, gegen die sich prüfen ließe: null
-  /// (nachsichtig). Kennt es ihn, und die Signatur stimmt nicht, ist die Liste verändert: [VerpflichtungFehler].
+  /// Epoche nicht angelegt hat). Kennt dieses Gerät den Schlüssel des Verteilers in dieser Version nicht, lässt sich der Schlüssel nicht prüfen: Fehler `schluessel` (nicht
+  /// fest übernommen, später erneut). Kennt es ihn, und die Signatur stimmt nicht, ist die Liste verändert: [VerpflichtungFehler].
   Future<MitgliederListe?> _alteListe(Epoche e, EpochenWrap wrap, OeffentlicheSchluessel wrapVerteiler) async {
     final SignierteMitgliederListe s;
     try {
@@ -689,7 +696,11 @@ class ChatKrypto {
     }
     final OeffentlicheSchluessel? v =
         s.verteilerId == wrap.verteilerId && s.verteilerKeyVersion == wrap.verteilerKeyVersion ? wrapVerteiler : await _verteilerSchluessel(s.verteilerId, s.verteilerKeyVersion);
-    if (v == null || v.version != s.verteilerKeyVersion) return null;
+    if (v == null || v.version != s.verteilerKeyVersion) {
+      // der Verteiler der Liste ist (in dieser Version) unbekannt: der Schlüssel lässt sich nicht gegen die Verpflichtung prüfen und wird NICHT fest übernommen. Er
+      // bleibt zurückgestellt ("Absender noch nicht bekannt") und wird erneut versucht, sobald sich das Vertrauen ändert (Abgleich der Mitglieder).
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Der Verteiler der älteren Epoche ist dir noch nicht bekannt.');
+    }
     final liste = EpochenEmpfaenger.alteListeGeprueft(crypto, signiert: s, verteiler: v);
     if (liste == null) throw const VerpflichtungFehler();
     return liste;
@@ -896,7 +907,10 @@ class ChatKrypto {
       final aenderungen = <SyncAenderung>[
         SyncAenderung('epoche', epocheId(konversationId, nummer), {'konversationId': konversationId, 'epoche': nummer, 'mitglieder': signiert.kodieren()}),
       ];
-      SyncAenderung wrapFuer(int epoche, Uint8List key, String user, OeffentlicheSchluessel empf) {
+      final v2 = wrapV2Erlaubt();
+      // [historie]: ein Wrap für eine ÄLTERE Epoche ("Verlauf teilen"). Mit dem Schalter des Servers bekommt er die ID v2 (Schlüsselversion des Empfängers und eigener Name
+      // als Verteiler in der ID): ein Mitglied kann den Platz der ID v1 nicht mehr vorab mit Müll belegen, der Empfänger probiert alle Wraps seiner Version durch.
+      SyncAenderung wrapFuer(int epoche, Uint8List key, String user, OeffentlicheSchluessel empf, {bool historie = false}) {
         final w = EpochenVerteiler.wrapErstellen(
           crypto,
           epochenschluessel: key,
@@ -908,6 +922,13 @@ class ChatKrypto {
           verteilerKeyVersion: meineKeyVersion,
           verteilerSignGeheim: meinSchluessel.signGeheim,
         );
+        if (historie && v2) {
+          return SyncAenderung(
+            'epoche_wrap',
+            wrapIdV2(konversationId, epoche, user, empf.version, ichId),
+            {'konversationId': konversationId, 'epoche': epoche, 'empfaengerId': user, 'wrap': w.kodieren(), 'keyVersion': empf.version},
+          );
+        }
         return SyncAenderung(
           'epoche_wrap',
           wrapId(konversationId, epoche, user),
@@ -927,7 +948,7 @@ class ChatKrypto {
           for (final u in historieFuer) {
             final k = e.schluessel[u];
             if (k == null || u == ichId || vergeben.contains('$alt:$u')) continue;
-            aenderungen.add(wrapFuer(alt, key, u, k));
+            aenderungen.add(wrapFuer(alt, key, u, k, historie: true));
           }
         }
       }
@@ -1036,28 +1057,6 @@ class ChatKrypto {
     }
   }
 
-  static String _freigabeSchluessel(String userId, int keyVersion) => 'verlaufFreigabe.${userId.toLowerCase()}.$keyVersion';
-
-  /// Was dieses Gerät für diese Person und Schlüsselversion schon freigegeben UND vom Server bestätigt bekommen hat ("Konversation:Epoche"); lokal in `sync_meta` (der
-  /// Server erfährt nichts davon). Eine Freigabe zählt erst, wenn der Server den Wrap bestätigt hat (die lokale Zeile hat rev > 0): vorher ist sie "unterwegs", und eine
-  /// abgelehnte Freigabe verschwindet lokal wieder und wird weiter angeboten.
-  Future<Set<String>> _freigegeben(String userId, int keyVersion) async {
-    final raw = await db.metaLesen(_freigabeSchluessel(userId, keyVersion));
-    if (raw == null) return {};
-    try {
-      final d = jsonDecode(raw);
-      return d is List ? {for (final x in d) if (x is String) x} : {};
-    } on FormatException {
-      return {};
-    }
-  }
-
-  Future<void> _freigabeMerken(String userId, int keyVersion, Iterable<String> neu) async {
-    final alt = await _freigegeben(userId, keyVersion);
-    final alle = {...alt, ...neu};
-    if (alle.length == alt.length) return;
-    await db.metaSchreiben(_freigabeSchluessel(userId, keyVersion), jsonEncode(alle.toList()..sort()));
-  }
 
   /// Die Mitgliederliste einer Epoche, wenn ihre Signatur gegen den GEMERKTEN Schlüssel ihres Verteilers stimmt (sonst null).
   Future<MitgliederListe?> _listeGeprueft(SignierteMitgliederListe s) async {
@@ -1114,7 +1113,7 @@ class ChatKrypto {
         if (u == ichId || !teilnehmer.contains(u) || basis[u] != m.keyVersion) continue;
         final k = await vertrauenswuerdig(u);
         if (k == null || k.version != m.keyVersion) continue;
-        final geteilt = await _freigegeben(u, k.version);
+        final geteilt = await freigabeVermerke(db, u, k.version);
         for (final alt in epochen.skip(1)) {
           final marke = '${konv.id}:${alt.epoche}';
           if (geteilt.contains(marke)) continue;
@@ -1144,7 +1143,7 @@ class ChatKrypto {
       }
     }
     for (final b in bestaetigt.values) {
-      await _freigabeMerken(b.userId, b.version, b.keys);
+      await freigabeVermerken(db, b.userId, b.version, b.keys);
     }
     return [
       for (final e in nach.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
@@ -1156,8 +1155,13 @@ class ChatKrypto {
   /// (Wrap-ID v2 mit dem eigenen Namen als Verteiler, `keyVersion` im Feld) und schreibt sie in EINER Transaktion in den Ausgang ([SyncStore.aendernMehrere]). Höchstens
   /// [max] Wraps je Aufruf (die Rate des Servers; die neuesten Epochen zuerst), der Rest bleibt im Angebot und folgt mit dem nächsten Tipp ([VerlaufErgebnis.rest]).
   /// Als freigegeben gilt es erst, wenn der Server die Wraps beim Abgleich bestätigt hat. Der Server bleibt blind: er sieht nur Wraps und eine öffentliche Zahl.
-  Future<VerlaufErgebnis> verlaufFreigeben(String userId, {int max = kMaxFreigabeWraps}) async {
+  ///
+  /// [zuruecksetzung] ist der Zeitpunkt des letzten Hinweises "Zugang zurückgesetzt" für die Person (null: keiner): vor Ablauf der Wartefrist ([kFreigabeWartefrist]) wird
+  /// nichts erzeugt, auch wenn die Oberfläche es versuchte (die Regel steht hier, nicht nur im Controller). Ohne Schalter des Servers ([wrapV2Erlaubt]) gibt es nichts.
+  Future<VerlaufErgebnis> verlaufFreigeben(String userId, {int max = kMaxFreigabeWraps, DateTime? zuruecksetzung}) async {
     const nichts = VerlaufErgebnis(gesendet: 0, rest: 0);
+    if (!wrapV2Erlaubt()) return nichts;
+    if (zuruecksetzung != null && _jetzt().isBefore(zuruecksetzung.add(kFreigabeWartefrist))) return nichts;
     final angebot = (await verlaufAngebote(cache: false)).where((a) => a.userId == userId).firstOrNull;
     if (angebot == null) return nichts;
     final k = await vertrauenswuerdig(userId);

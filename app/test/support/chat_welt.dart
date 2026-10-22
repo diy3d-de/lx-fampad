@@ -113,6 +113,7 @@ class Geraet {
         return frueher['$u:$version'];
       },
       serverSchluessel: () => karte,
+      wrapV2Erlaubt: () => w.wrapV2Erlaubt,
       absenderSchluessel: (u, version) async {
         final s = tofu[u];
         if (s != null && s.version == version) return s;
@@ -170,6 +171,9 @@ class ChatWelt {
 
   /// Test: der Server lehnt jeden Wrap ab (z. B. Rate oder Ausfall); die Absender bekommen eine Ablehnung statt einer Bestätigung.
   bool wrapsVerweigern = false;
+
+  /// Schalter des Servers E2EE_WRAP_KEY_VERSION (Wrap-ID v2); aus: der Server lehnt Wraps mit Schlüsselversion ab, die App bleibt bei der ID v1.
+  bool wrapV2Erlaubt = true;
 
   /// Aktuelle Schlüsselversion je Person laut Server (fehlt: 1); für die Prüfung der Wrap-ID v2 (keine künftige Version).
   final Map<String, int> schluesselVersionen = {};
@@ -330,6 +334,7 @@ class ChatWelt {
           final n = f['epoche'] as int;
           final emp = f['empfaengerId'] as String;
           if (wrapsVerweigern) return 'invalid'; // Test: der Server lehnt Wraps ab
+          if (f['keyVersion'] != null && !wrapV2Erlaubt) return 'invalid'; // Schalter E2EE_WRAP_KEY_VERSION aus
           // Wrap-ID v2: mit keyVersion die ID v2, ohne die ID v1 (wie der echte Server); eine künftige Version der Person gibt es nicht
           final version = f['keyVersion'] as int?;
           final erwartet = version == null ? wrapId(f['konversationId'] as String, n, emp) : wrapIdV2(f['konversationId'] as String, n, emp, version, g.person.id);

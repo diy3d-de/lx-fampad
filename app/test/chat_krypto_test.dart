@@ -1194,6 +1194,97 @@ Future<void> main() async {
         expect(await a.krypto.verlaufAngebote(), isEmpty, reason: 'Ben hat denselben Schlüssel: nichts freizugeben');
       });
 
+      test('Verlauf teilen mit Wrap-ID v2: ein Mitglied kann den Platz nicht vorab mit Müll belegen; ohne Schalter des Servers bleibt es bei der ID v1', () async {
+        final id = await gruppe(a, [b, c]);
+        final alt = await senden(a, id, 'altes Geheimnis', abgleichen: [a, b, c]);
+        await a.repo.teilnehmerAendern(id, hinzu: {dora.id}); // ohne Verlauf: Dora hat nur die neue Epoche
+        await abgleich([a, b, c, d]);
+        expect(await text(d, id, alt), '<warte auf Schlüssel>');
+        // Cora (böswillig) belegt den Platz der ID v1 für (Epoche 1, Dora) mit Müll, bevor Anna den Verlauf teilt
+        final muell = EpochenVerteiler.wrapErstellen(
+          crypto,
+          epochenschluessel: crypto.zufall(32),
+          conversationId: id,
+          epoch: 1,
+          empfaengerId: dora.id,
+          empfaenger: dora.oeffentlich,
+          verteilerId: cora.id,
+          verteilerKeyVersion: cora.version,
+          verteilerSignGeheim: cora.pk.signGeheim,
+        );
+        await c.store.aendernMehrere([
+          SyncAenderung('epoche_wrap', wrapId(id, 1, dora.id), {'konversationId': id, 'epoche': 1, 'empfaengerId': dora.id, 'wrap': muell.kodieren()}),
+        ]);
+        await abgleich([c]);
+        // Anna teilt den Verlauf (mit der nächsten Epoche, wie die Aufnahme es tut): ihre Wraps haben die ID v2 mit ihr als Verteiler und gehen durch
+        final konv = await (a.db.select(a.db.konversationen)..where((k) => k.id.equals(id))).getSingle();
+        expect(konv, isNotNull);
+        await a.store.aendernMehrere(await a.krypto.epocheErstellen(konversationId: id, mitglieder: {anna.id, ben.id, cora.id, dora.id}, historieFuer: {dora.id}));
+        await abgleich([a, b, c, d]);
+        expect(welt.zeile('epoche_wrap', wrapIdV2(id, 1, dora.id, 1, anna.id))!.fields['keyVersion'], 1);
+        expect(welt.abgelehnt['epoche_wrap'], isNull, reason: 'der Platz der ID v1 war belegt, der der ID v2 nicht');
+        expect(await text(d, id, alt), 'altes Geheimnis', reason: 'Dora probiert beide Wraps durch: der Müll scheitert an der Verpflichtung, der echte öffnet');
+        // ohne Schalter des Servers: wie bisher die ID v1 (kein Feld keyVersion), nichts ändert sich für ältere Apps
+        welt.wrapV2Erlaubt = false;
+        final id2 = await gruppe(a, [b]);
+        final alt2 = await senden(a, id2, 'noch älter', abgleichen: [a, b]);
+        await a.repo.teilnehmerAendern(id2, hinzu: {dora.id}, verlaufTeilen: true);
+        await abgleich([a, b, d]);
+        expect(welt.zeile('epoche_wrap', wrapIdV2(id2, 1, dora.id, 1, anna.id)), isNull);
+        expect(welt.zeile('epoche_wrap', wrapId(id2, 1, dora.id))!.fields.containsKey('keyVersion'), isFalse);
+        expect(await text(d, id2, alt2), 'noch älter');
+        // und auch das Freigeben gibt es dann nicht
+        expect((await a.krypto.verlaufFreigeben(dora.id)).gesendet, 0);
+      });
+
+      test('Verteiler der älteren Liste unbekannt: der Schlüssel wird nicht fest übernommen, sondern wartet, bis der Verteiler bekannt ist', () async {
+        final id = await gruppe(a, [b]);
+        final alt = await senden(a, id, 'altes Geheimnis', abgleichen: [a, b]);
+        // Ben nimmt Dora mit dem Verlauf auf; Epoche 1 hat Anna angelegt, Dora kennt Anna nicht (nur Ben, der den Wrap weitergibt)
+        d.tofu.remove(anna.id);
+        d.krypto.vertrauenGeaendert();
+        await b.repo.teilnehmerAendern(id, hinzu: {dora.id}, verlaufTeilen: true);
+        await abgleich([b, a, d]);
+        expect(d.krypto.schluessel(id, 1), isNull, reason: 'ohne Verpflichtung, gegen die sich prüfen ließe, nicht fest übernommen');
+        expect(d.krypto.problem(id, 1), NichtLesbarGrund.absenderUnbekannt);
+        d.tofu[anna.id] = anna.oeffentlich;
+        d.krypto.vertrauenGeaendert();
+        await d.krypto.aktualisieren();
+        expect(await text(d, id, alt), 'altes Geheimnis');
+      });
+
+      test('Freigabe: die Wartefrist nach einem Reset gilt auch im Schlüsselbund, nicht nur in der Oberfläche', () async {
+        final id = await gruppe(a, [b, c]);
+        await senden(a, id, 'altes Geheimnis', abgleichen: [a, b, c]);
+        final b2 = await schluesselVerloren(ben, id, bestaetigen: [a, c]);
+        final jetzt = a.jetzt;
+        expect((await a.krypto.verlaufFreigeben(ben.id, zuruecksetzung: jetzt.subtract(const Duration(hours: 2)))).gesendet, 0);
+        expect(await a.krypto.verlaufAngebote(), hasLength(1), reason: 'nichts verbraucht');
+        expect((await a.krypto.verlaufFreigeben(ben.id, zuruecksetzung: jetzt.subtract(const Duration(hours: 30)))).gesendet, 1);
+        await abgleich([a, b2]);
+        expect(b2.krypto.epochenMitSchluessel(id), [1, 2]);
+      });
+
+      test('Zweites Gerät oder Neuinstallation des Freigebenden: "gibt es schon" gilt als freigegeben, das Angebot bleibt nicht dauerhaft stehen', () async {
+        final id = await gruppe(a, [b, c]);
+        await senden(a, id, 'altes Geheimnis', abgleichen: [a, b, c]);
+        final b2 = await schluesselVerloren(ben, id, bestaetigen: [a, c]);
+        expect((await a.krypto.verlaufFreigeben(ben.id)).gesendet, 1);
+        await abgleich([a, b2]);
+        // Anna installiert neu (oder nutzt ein zweites Gerät): gleicher Personenschlüssel, leere lokale Datenbank, Bens neuen Schlüssel hat sie bestätigt
+        final a2 = neuesGeraet(anna, name: 'Anna-neu');
+        a2.frueher['${ben.id}:1'] = welt.historie['${ben.id}:1']!;
+        a2.tofu[ben.id] = ben.oeffentlich;
+        a2.mitgliederLernen(alle);
+        await abgleich([a2]);
+        expect(await a2.krypto.verlaufAngebote(), hasLength(1), reason: 'dieses Gerät weiß nichts von der Freigabe des anderen');
+        expect((await a2.krypto.verlaufFreigeben(ben.id)).gesendet, 1);
+        await abgleich([a2, b2]);
+        expect(welt.abgelehnt['epoche_wrap'], 1, reason: 'derselbe Verteiler, dieselbe ID: gibt es schon');
+        expect(await a2.krypto.verlaufAngebote(), isEmpty, reason: '"gibt es schon" heißt: erledigt');
+        expect(await a2.db.metaLesen('verlaufFreigabe.${ben.id}.2'), '["$id:1"]');
+      });
+
       test('Transportformen sind stabil: EpochenWrap und signierte Liste lassen sich lesen (Format-Regression)', () async {
         final id = await gruppe(a, [b]);
         final w = EpochenWrap.dekodieren(welt.alle('epoche_wrap').firstWhere((x) => x.fields['empfaengerId'] == ben.id).fields['wrap'] as String);

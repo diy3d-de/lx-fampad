@@ -159,6 +159,8 @@ export const epocheWrapEntity: EntityDef = {
     if (k.art !== 'family' && !k.teilnehmer.map((u) => u.toLowerCase()).includes(String(row.empfaengerId).toLowerCase())) return false;
     // Wrap-ID v2: nur für eine Schlüsselversion, die die Person schon hat (nie eine künftige: niemand kann künftige IDs vorab belegen)
     if (row.keyVersion !== undefined && row.keyVersion !== null) {
+      // Schalter E2EE_WRAP_KEY_VERSION (Standard aus): ohne ihn gibt es Wraps mit Version nicht (Apps bis 0.7.0 nehmen bei mehreren Wraps den letzten und ließen sich stören)
+      if (env.flags?.wrapKeyVersion !== true) return false;
       const [pk] = await env.tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, String(row.empfaengerId))).limit(1);
       if (!pk || Number(row.keyVersion) > pk.v) return false;
     }

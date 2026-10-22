@@ -6,7 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { direktChatId, epocheId, familienchatId, wrapId, wrapIdV2 } from '../src/sync/entities/chat-ids.js';
 import { epocheEntity, epocheWrapEntity, MAX_EPOCHEN_LISTE, MAX_WRAP } from '../src/sync/entities/chat-epochen.js';
 import { authorize, mayRead, type Actor, type Facts } from '../src/sync/permissions.js';
-import { backends, World, type Harness } from './helpers.js';
+import { loadConfig } from '../src/config.js';
+import { backends, TEST_KEY, World, type Harness } from './helpers.js';
 import { createFamily, extraMember, remove, resetSync, upsert, type Device, type Family, type Json } from './sync-kit.js';
 
 const E1 = (n = 200) => `e1:${'A'.repeat(n)}`;
@@ -48,7 +49,7 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
 
   beforeAll(async () => {
     harness = await backend.open();
-    world = await World.create(harness.db, { SYNC_RATE_LIMIT_MAX: '100000', WS_PING_INTERVAL_MS: '600000', WS_AUTH_TIMEOUT_MS: '60000' });
+    world = await World.create(harness.db, { SYNC_RATE_LIMIT_MAX: '100000', E2EE_WRAP_KEY_VERSION: 'true', WS_PING_INTERVAL_MS: '600000', WS_AUTH_TIMEOUT_MS: '60000' });
     fam = await createFamily(world);
   }, 180_000);
   afterAll(async () => {
@@ -431,6 +432,28 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       await world.db.execute(sql`update epoche_wraps set deleted_at = now(), rev = rev + 1 where konversation_id = ${dm} and key_version is not null`);
       expect(codes(await fam.parent.sync([wrapV2(fam.parent, dm, 1, fam.child, 2, BLOB(192))]))).toEqual([]);
       expect((await wraps(dm)).filter((w) => w.key_version === 2)).toEqual([{ epoche: 1, key_version: 2, wrap: BLOB(192) }]);
+    });
+
+    it('Schalter E2EE_WRAP_KEY_VERSION: aus (und fehlend) lehnt der Server Wraps mit Version ab, ohne Version bleibt alles wie bisher; an nimmt sie an', async () => {
+      const konv = await gruppe(fam.parent, [fam.child]);
+      expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child)]))).toEqual([]);
+      await schluessel(fam.child, 2);
+      const zeile = { id: randomUUID(), konversationId: konv, epoche: 1, empfaengerId: fam.child.userId, wrap: BLOB() };
+      const env = (flags?: { wrapKeyVersion: boolean }) => ({ tx: world.db as never, familyId: fam.familyId, actor: { role: 'parent' as const, userId: fam.parent.userId }, ...(flags ? { flags } : {}) });
+      const validate = epocheWrapEntity.validate!;
+      expect(await validate(env({ wrapKeyVersion: false }), { ...zeile, keyVersion: 2 })).toBe(false);
+      expect(await validate(env(), { ...zeile, keyVersion: 2 })).toBe(false); // ohne Angabe: geschlossen
+      expect(await validate(env({ wrapKeyVersion: true }), { ...zeile, keyVersion: 2 })).toBe(true);
+      expect(await validate(env({ wrapKeyVersion: false }), { ...zeile })).toBe(true); // ID v1 unberührt
+    });
+
+    it('Konfiguration: E2EE_WRAP_KEY_VERSION ist standardmäßig aus; true/1 an; unbekannte Werte brechen den Start ab', () => {
+      const cfg = (v?: string) => loadConfig({ NODE_ENV: 'test', AUTH_SECRET_KEY: TEST_KEY, ...(v === undefined ? {} : { E2EE_WRAP_KEY_VERSION: v }) }).e2eeWrapKeyVersion;
+      expect(cfg()).toBe(false);
+      expect(cfg('false')).toBe(false);
+      expect(cfg('true')).toBe(true);
+      expect(cfg('1')).toBe(true);
+      expect(() => cfg('ja')).toThrow(/E2EE_WRAP_KEY_VERSION/);
     });
 
     it('Altbestand: Zeilen aus der Zeit vor der Spalte haben keine Version, bleiben gültig und zählen für die Eindeutigkeit als Version 0', async () => {

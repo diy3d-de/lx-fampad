@@ -418,6 +418,7 @@ class SyncStore {
   Future<void> _abgelehnt(OutboxData z, String code, UebernahmeBericht bericht) async {
     final def = entitaeten[z.entity];
     if (def == null) return;
+    await def.nachAblehnung(db, z, code);
     final name = await def.anzeigename(db, z.entityId) ?? 'Ein Eintrag';
     final neu = z.baseRev == 0 && z.op == 'upsert';
     if (neu && {'not_found', 'deleted', 'forbidden', 'parent_deleted'}.contains(code)) {

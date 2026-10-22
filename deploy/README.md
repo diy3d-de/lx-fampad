@@ -553,6 +553,10 @@ Voraussetzung: `E2EE_PW_BACKUP=true` in `/etc/lx-fampad/env` (siehe `server/.env
 
 **Warnung Rückschalten:** Wird `E2EE_PW_BACKUP` ausgeschaltet, `AUTH_LEGACY_PASSWORD_LOGIN` auf `false` gesetzt oder der Server auf einen Stand vor PR 4 zurückgestellt, können sich Konten mit authKey-Passwort (Platzhalter im Klartext-Hash) nicht mehr per Passwort anmelden, nur noch per Passkey oder Wiederherstellungscode; der Passwort-Reset (PR 4b) ist der Rückweg, braucht aber `E2EE_PW_BACKUP=true` (ohne Schalter gibt es die Routen nicht). Die App sendet für solche Konten nie Klartext. Reihenfolge beim Ausrollen: **erst den Server, dann die Web-App und die APK**.
 
+## Verlauf freigeben und teilen (Wrap-ID v2, Schalter `E2EE_WRAP_KEY_VERSION`)
+
+Migration 0024 (Spalte `epoche_wraps.key_version`) ist rein additiv. Der Schalter `E2EE_WRAP_KEY_VERSION` in `/etc/lx-fampad/env` (siehe `server/.env.example`) bleibt **aus**, bis die neue App auf **allen** Geräten der Familie installiert ist: Apps bis 0.7.0 nehmen bei mehreren Wraps derselben Epoche den letzten und ließen sich sonst mit v2-Wraps stören. Reihenfolge: Server aktualisieren (Migration, Schalter aus), Web und APK ausrollen, alle Geräte aktualisieren, dann `E2EE_WRAP_KEY_VERSION=true` setzen und den Dienst neu starten; `GET /api/v1/version` zeigt `features.wrapKeyVersion: true`. Solange er aus ist, bietet die App weder die Freigabe nach einem Reset noch v2-Wraps beim Teilen an (alles wie bisher).
+
 ## Nützliche Befehle auf dem Server
 
 | Befehl | Zweck |

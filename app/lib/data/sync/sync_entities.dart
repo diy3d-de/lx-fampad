@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 
 import '../api/models.dart';
 import '../app_database.dart';
+import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
 
 /// Untergeordnete Entität: Zeilen von [entity], deren Feld [field] auf die ID des Elternteils zeigt, hängen an ihm (Löschen, Sichtbarkeit).
@@ -60,6 +61,9 @@ abstract class SyncEntity {
 
   /// Hinweistext, wenn eine neue Zeile mit [abgelehntStill] doch abgelehnt wurde und die Person es wissen sollte (Grenzen, fehlende Rechte); null = ganz still.
   String? stillHinweis(String code) => null;
+
+  /// Wird bei jeder Ablehnung einer Op dieser Entität vor der Standardbehandlung aufgerufen (die Zeile ist noch lokal da). Standard: nichts.
+  Future<void> nachAblehnung(AppDatabase db, OutboxData op, String code) async {}
 
   /// Bei `limit_reached` (Mengenbegrenzung des Servers) bleibt eine neue Zeile erhalten und wird später erneut gesendet, statt zu verschwinden.
   bool get bleibtBeiLimit => false;
@@ -690,6 +694,23 @@ class EpocheWrapEntitaet extends SyncEntity {
   /// Ein Wrap geht nicht verloren, wenn der Server wegen der Rate kurz ablehnt: er kommt mit neuer op_id wieder in den Ausgang.
   @override
   bool get bleibtBeiLimit => true;
+
+  /// "Gibt es schon" (`not_found`) auf das Anlegen eines Wraps der ID v2 heißt: Dieser Verteiler (ein anderes Gerät derselben Person, eine frühere Installation) hat genau diesen
+  /// Wrap schon abgelegt: für "Verlauf freigeben" ist das erledigt, das Angebot soll nicht dauerhaft stehen bleiben.
+  @override
+  Future<void> nachAblehnung(AppDatabase db, OutboxData op, String code) async {
+    if (code != 'not_found' || op.op != 'upsert') return;
+    try {
+      final f = jsonDecode(op.fieldsJson);
+      if (f is! Map<String, dynamic>) return;
+      final version = _int(f['keyVersion']), epoche = _int(f['epoche']);
+      final konv = _text(f['konversationId']), empf = _text(f['empfaengerId']);
+      if (version == null || epoche == null || konv == null || empf == null) return;
+      await freigabeVermerken(db, empf, version, ['$konv:$epoche']);
+    } on FormatException {
+      // unlesbarer Eintrag: nichts vermerken
+    }
+  }
 
   @override
   String get grenzeErreicht => 'Zu viele Schlüssel auf einmal';

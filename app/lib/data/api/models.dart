@@ -887,7 +887,11 @@ class SicherheitsEreignisDto {
 
   /// Nur beim Hinweis an die Familie ([SicherheitsArt.mitgliedZugangZurueckgesetzt]): wessen Zugang zurückgesetzt wurde (Anzeigename); sonst null.
   final String? betroffener;
-  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit, this.betroffener});
+
+  /// Kennung der betroffenen Person (nur beim Hinweis an die Familie, nur Mitglieder der eigenen Familie; null bei einem älteren Server oder einer Person, die nicht mehr da
+  /// ist): damit gleicht die Wartefrist der Verlauf-Freigabe ohne den Anzeigenamen ab (ein Umbenennen umgeht sie nicht).
+  final String? betroffenerId;
+  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit, this.betroffener, this.betroffenerId});
 
   factory SicherheitsEreignisDto.fromJson(Object? raw) {
     final m = asJson(raw);
@@ -899,6 +903,7 @@ class SicherheitsEreignisDto {
       durchAdmin: m['byAdmin'] == true,
       zeit: _t(m, 'createdAt'),
       betroffener: _sn(m, 'subjectName'),
+      betroffenerId: _sn(m, 'subjectId'),
     );
   }
 }

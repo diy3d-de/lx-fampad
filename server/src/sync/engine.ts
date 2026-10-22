@@ -16,7 +16,7 @@ import { appliedOps, changeLog, families, memberships, users } from '../db/schem
 import type { Role } from '../auth/types.js';
 import { AppError } from '../errors.js';
 import { authorize, mayRead, rolesThatMayRead, type Actor, type Facts } from './permissions.js';
-import { columnOf, syncColumns, type EntityDef, type Registry, type Row } from './registry.js';
+import { columnOf, syncColumns, type EngineFlags, type EntityDef, type Registry, type Row } from './registry.js';
 import type { ConflictOut, ParsedOp, RejectCode } from './types.js';
 
 export interface OpOutcome {
@@ -61,6 +61,8 @@ export interface EngineEnv {
   authorId: string | null;
   now: Date;
   revs: RevCounter;
+  /** Schalter des Servers, die einzelne Entitäten brauchen (aus der Konfiguration; fehlt bei Aufrufen des Servers selbst). */
+  flags?: EngineFlags;
 }
 
 // ---------------------------------------------------------------- Hilfen
@@ -249,7 +251,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const decision = authorize(def.rules, 'create', env.actor, def.factsForCreate(env.actor, values, parentFacts), Object.keys(supplied), values);
   if (decision !== 'ok') return rejected(decision);
   if (def.check && !def.check(values)) return rejected('invalid');
-  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor }, { ...values, id: op.id }))) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor, ...(env.flags ? { flags: env.flags } : {}) }, { ...values, id: op.id }))) return rejected('invalid');
 
   for (const [name, f] of Object.entries(def.fields)) {
     const v = values[name];
@@ -407,7 +409,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
     }
     if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
   }
-  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor }, { ...row, ...changed }))) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor, ...(env.flags ? { flags: env.flags } : {}) }, { ...row, ...changed }))) return rejected('invalid');
   // Mengenbegrenzung für Änderungen (z. B. Teilnehmerwechsel, Text-Bearbeitungen): gezählt wird im Änderungsprotokoll
   if (def.updateRate && def.updateRate.fields.some((f) => f in changed)) {
     const fieldList = sql.join(def.updateRate.fields.map((f) => sql`${f}`), sql`, `);
@@ -541,7 +543,7 @@ async function replayConflicts(
 
 /** Wendet eine Op an (eine Transaktion, idempotent über applied_ops; Zeitlimits: Überlast wird zu 503 statt zu hängenden Anfragen). */
 export async function applyOp(
-  ctx: Pick<AuthContext, 'db' | 'now'>,
+  ctx: Pick<AuthContext, 'db' | 'now' | 'config'>,
   registry: Registry,
   input: { actor: Actor; familyId: string; deviceId: string | null; op: ParsedOp; timeouts?: OpTimeouts },
 ): Promise<AppliedOp> {
@@ -569,7 +571,7 @@ export async function applyOp(
         return { outcome, committedRev: null };
       }
       const revs = new RevCounter(family.rev);
-      const env: EngineEnv = { tx, registry, familyId, actor, deviceId, authorId: actor.userId, now: ctx.now(), revs };
+      const env: EngineEnv = { tx, registry, familyId, actor, deviceId, authorId: actor.userId, now: ctx.now(), revs, flags: { wrapKeyVersion: ctx.config.e2eeWrapKeyVersion } };
       const outcome = await evaluateOp(env, op);
       if (outcome.status === 'rejected' && revs.changed) throw new Error('Abgelehnte Op hat eine Revision vergeben');
       if (revs.changed) await tx.update(families).set({ currentRev: revs.rev }).where(eq(families.id, familyId));

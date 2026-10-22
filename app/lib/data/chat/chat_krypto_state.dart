@@ -340,6 +340,7 @@ class ChatKryptoController extends Notifier<int> {
     final k = await krypto();
     if (k == null) return false;
     await k.aktualisieren();
+    await _gateOk(); // Schalter des Servers für die Wraps des geteilten Verlaufs (Wrap-ID v2); ohne Antwort bleibt es bei der ID v1
     final konv = await (_db.select(_db.konversationen)..where((x) => x.id.equals(konversationId))).getSingleOrNull();
     if (konv == null) return false;
     try {
@@ -399,7 +400,7 @@ class ChatKryptoController extends Notifier<int> {
     if (k == null) return null;
     try {
       await k.aktualisieren();
-      final r = await k.verlaufFreigeben(userId);
+      final r = await k.verlaufFreigeben(userId, zuruecksetzung: angebot?.zuruecksetzung);
       if (r.gesendet == 0) return null;
       ref.read(syncProvider.notifier).lokaleAenderung();
       unawaited(_angeboteTakt(k));
@@ -493,14 +494,15 @@ class ChatKryptoController extends Notifier<int> {
   DateTime? _ereignisFehler;
 
   /// Wann wurde der Zugang dieser Person zuletzt komplett zurückgesetzt (Hinweis an die Familie, [SicherheitsArt.mitgliedZugangZurueckgesetzt]), sofern der Hinweis jünger
-  /// als [kFreigabeResetFenster] ist? Der Hinweis nennt nur den Namen: stimmt er mit dem Anzeigenamen überein, gilt er (bei gleichen Namen für beide: im Zweifel streng).
+  /// als [kFreigabeResetFenster] ist? Der Abgleich läuft über die KONTO-ID, nie über den Anzeigenamen (ein Umbenennen umgeht die Sperre nicht). Ein Hinweis ohne Kennung
+  /// (älterer Server, die betroffene Person ist nicht mehr da) lässt sich nicht zuordnen: fail-closed gilt er für JEDE Person, die Freigabe geht dann den strengen Weg.
   DateTime? _resetZeit(List<SicherheitsEreignisDto> ereignisse, String userId) {
-    final name = ref.read(e2eeProvider).mitglieder.where((m) => m.id == userId).firstOrNull?.displayName.trim().toLowerCase();
-    if (name == null || name.isEmpty) return null;
     final grenze = DateTime.now().subtract(kFreigabeResetFenster);
     DateTime? neueste;
     for (final e in ereignisse) {
-      if (e.art != SicherheitsArt.mitgliedZugangZurueckgesetzt || e.betroffener?.trim().toLowerCase() != name || e.zeit.isBefore(grenze)) continue;
+      if (e.art != SicherheitsArt.mitgliedZugangZurueckgesetzt || e.zeit.isBefore(grenze)) continue;
+      final id = e.betroffenerId;
+      if (id != null && id.toLowerCase() != userId.toLowerCase()) continue;
       if (neueste == null || e.zeit.isAfter(neueste)) neueste = e.zeit;
     }
     return neueste;
@@ -601,6 +603,7 @@ class ChatKryptoController extends Notifier<int> {
     _dbSub = db.tableUpdates(TableUpdateQuery.onAllTables([db.konversationEpochen, db.epocheWraps, db.konversationen])).listen((_) => _geplant());
     _geplant();
     unawaited(mitgliederAktualisieren());
+    unawaited(_gateOk()); // den Schalter des Servers (Wrap-ID v2) im Hintergrund erfragen, damit "Verlauf teilen" ihn kennt
   }
 
   /// Aktuelle Mitglieder und ihre Schlüssel beim Server holen (neue Schlüssel, Entfernte). Höchstens alle [kMitgliederAbstand], sofort mit [erzwingen].
@@ -680,6 +683,8 @@ class ChatKryptoController extends Notifier<int> {
       meineKeyVersion: version,
       gemerkt: (u, {version}) => pruefer.gemerkterSchluessel(u, version: version),
       serverSchluessel: _serverSchluessel,
+      // der Schalter des Servers (Wrap-ID v2); unbekannt gilt als nein (alter Weg). Die Frage läuft im Hintergrund und wird zwischengespeichert.
+      wrapV2Erlaubt: () => _gate?.wert == true,
       absenderSchluessel: (u, v) => e2ee.absenderSchluessel(u, v),
       standLaden: (konv) async {
         final s = await pruefer.standLaden(konv);

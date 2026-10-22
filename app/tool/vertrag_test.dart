@@ -571,6 +571,7 @@ class E2eeGeraet {
       meineKeyVersion: person.version,
       gemerkt: (u, {version}) async => e.tofu[u],
       serverSchluessel: () => e.karte,
+      wrapV2Erlaubt: () => true,
       absenderSchluessel: (u, v) async => e.tofu[u]?.version == v ? e.tofu[u]! : throw const CryptoFehler(CryptoFehlerArt.signatur, 'Absender nicht bestätigt'),
     );
     e.engine = SyncEngine(
