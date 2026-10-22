@@ -6,23 +6,29 @@
 #   (ohne Option)              der ganze Ablauf in sechs Schritten: 1 Willkommen und Prüfung, 2 Sicherung und Schlüssel, 3 Fragen, 4 Zusammenfassung,
 #                              5 Aufbau, 6 "Dein Teil" (Liste mit deinen Werten, auch in /root/umzug-offen.txt)
 #   --probe                    Probelauf: läuft bis zur Zusammenfassung und ändert nichts (nichts wird installiert, gemerkt oder geschrieben)
+#   --aktualisieren            Umzug bei laufendem Altserver: eine NEUERE Sicherung einspielen (ersetzt Datenbank und Konfiguration dieses Servers;
+#                              die bisherige Datenbank bleibt umbenannt erhalten). Erst nach dem Aufbau, vor der DNS-Umstellung.
 #   --weiter caddy             nach der DNS-Umstellung: Caddy und Zertifikate (bootstrap --phase caddy,pruefung)
 #   --weiter wetter            nachdem der ALTE Server aus ist: Wetter-Dienst starten (Netatmo erlaubt nur einen Abrufer)
 #   --weiter muell             nachdem der ALTE Server aus ist: Müll-Dienst (Abfuhrtermine) starten
-#   --weiter pruefung          Abschlussprüfung wiederholen und die Liste neu schreiben
+#   --weiter pruefung          Abschlussprüfung wiederholen und die Liste neu schreiben (geht auch ohne den Sicherungsordner)
 #   --ip ADRESSE               öffentliche IPv4-Adresse dieses Servers (sonst erkennt der Assistent sie; nur nötig hinter NAT)
-#   --params DATEI             optionale Parameterdatei (nur Öffentliches, Vorlage parameter.beispiel) als Vorgabe, z. B. mit den NAS-Daten aus deinen Unterlagen
-#   --neu                      gemerkte Antworten (/root/.umzug-antworten) verwerfen und alles neu fragen
+#   --params DATEI             optionale Parameterdatei (nur Öffentliches, Vorlage parameter.beispiel) als Vorgabe, z. B. mit den NAS-Daten aus deinen Unterlagen;
+#                              der Pfad wird gemerkt (nicht der Inhalt) und beim Neustart wieder gelesen
+#   --neu                      gemerkte Antworten verwerfen und alles neu fragen (der Stand des Aufbaus bleibt; ein anderer Code-Stand setzt ihn ab "code" zurück)
 #   --swap-ok                  trotz aktivem Swap fortfahren (sonst Abbruch VOR dem Einlesen des Schlüssels; wie bei bootstrap-server.sh)
 #   --ohne-systemd, --dns-pruefung-ueberspringen   NUR für Container-Tests, werden an bootstrap-server.sh weitergegeben (das sie selbst absichert)
 #   --hilfe                    diese Hilfe
 # Exit-Codes: 0 fertig, 1 Fehler (Bericht: /root/umzug-bericht.txt), 2 falscher Aufruf, 10 pausiert (GitHub-Schlüssel: denselben Befehl noch einmal starten).
 #
-# Neustart nach einem Abbruch: derselbe Befehl. Gemerkt werden NUR Nicht-Geheimes (Sicherungspfad, Code-Stand, IP, Swap-Wunsch, NAS-Daten, Stand des
-# Aufbaus) in /root/.umzug-antworten (root, 0600). Der private age-Schlüssel wird nie gemerkt: er wird unsichtbar eingelesen, liegt nur in einer Shell-Variable
-# dieses Prozesses (nie in einer Datei, nie in Argumenten, Umgebung oder Log), geht an bootstrap-server.sh nur über eine Pipe (--identity-stdin) und wird nach
-# der letzten Verwendung (Ende der Phase datenbank) verworfen. Nach einem Neustart vor diesem Punkt fragt der Assistent ihn noch einmal.
-# Caddy und das Haupt-Caddyfile (lx-labs.dev) fasst dieses Skript nie an; das tut nur bootstrap-server.sh in seiner Phase caddy (nur conf.d, mit Rückfall).
+# Neustart nach einem Abbruch: derselbe Befehl. Gemerkt werden NUR Nicht-Geheimes (Sicherungspfad, Code-Stand, IP, Swap-Wunsch, NAS-Daten, Pfad der --params-Datei,
+# Stand des Aufbaus) in /root/.umzug-antworten (root, 0600). Der private age-Schlüssel wird nie gemerkt: er wird unsichtbar eingelesen, liegt nur in einer
+# Shell-Variable dieses Prozesses (nie in einer Datei, nie in Argumenten, Umgebung oder Log), geht an bootstrap-server.sh nur über eine Pipe (--identity-stdin)
+# und wird nach der letzten Verwendung (Ende der Phase datenbank) verworfen. Nach einem Neustart vor diesem Punkt fragt der Assistent ihn noch einmal.
+# Sicherheit: bootstrap-server.sh läuft als root; der Assistent kopiert es beim Start in ein root-eigenes Arbeitsverzeichnis (/run, 0700), prüft dort Eigentümer und
+# Rechte und führt NUR diese Kopie aus. xtrace (bash -x), Speicherabzüge (ulimit -c 0) und ein Terminal ohne Echo werden abgesichert.
+# Das Haupt-Caddyfile (lx-labs.dev) fasst dieses Skript nie an; bootstrap-server.sh legt es nur an, wenn es fehlt oder noch das unveränderte Standard-Caddyfile
+# ist (eine Kopie bleibt), ein fremdes bleibt unangetastet; sonst nur conf.d, mit Rückfall.
 #
 # Das gesamte Skript steht in Funktionen (bash liest es vollständig, bevor es etwas ausführt).
 set -uo pipefail
@@ -32,13 +38,15 @@ umask 077
 
 # --- Festwerte ----------------------------------------------------------------------------------------------------------------------
 # Absichtlich nicht "readonly": aus_bootstrap() liest bootstrap-server.sh in einer Unterschale ein, das dieselben Namen schreibgeschützt setzt.
+UMZUG_VERSION="0.9.0"                                 # Stand des Projekts (Versionskopf); test-umzug.sh vergleicht mit app/pubspec.yaml
 DOMAIN="familie.lx-labs.dev"                          # fest: Passkeys (RP-ID) hängen daran
 NTFY_DOMAIN="ntfy.familie.lx-labs.dev"
 LX_USER="lx"
-PHASEN=(pruefen pakete system code konfiguration datenbank anwendung ntfy caddy sicherung pruefung)   # wie in bootstrap-server.sh
+PHASEN=(pruefen pakete system code konfiguration datenbank anwendung ntfy caddy sicherung pruefung)   # wie in bootstrap-server.sh (test-umzug.sh vergleicht)
 GITHUB_SCHLUESSEL_SEITE="https://github.com/diy3d-de/lx-fampad/settings/keys"
 SCHLUESSEL_PHASEN="pakete,konfiguration,datenbank"    # hier entschlüsselt bootstrap-server.sh (Schlüssel nötig)
-BIS_DATENBANK="pruefen,pakete,system,code,konfiguration,datenbank"   # diese Phasen bekommen --sicherung (RESTORE)
+BIS_DATENBANK="pruefen,pakete,system,code,konfiguration,datenbank"   # diese Phasen bekommen --sicherung (Wiederherstellung)
+NACH_CODE="code,anwendung,ntfy,caddy,sicherung,pruefung"             # setzt ein anderer Code-Stand zurück (konfiguration und datenbank bleiben)
 declare -A PHASEN_NAME=(
   [pruefen]="Prüfung" [pakete]="Pakete installieren" [system]="Benutzer und Ordner" [code]="Code von GitHub holen"
   [konfiguration]="Konfiguration aus der Sicherung" [datenbank]="Datenbank einspielen" [anwendung]="Server bauen und starten"
@@ -50,26 +58,35 @@ OFFEN_DATEI="/root/umzug-offen.txt"
 BERICHT_DATEI="/root/umzug-bericht.txt"
 LAUF_LOG="/root/umzug-lauf.log"
 PARAMS_ERZEUGT="/root/umzug.params"
-HIER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd || echo .)"
-BOOTSTRAP="$HIER/bootstrap-server.sh"
+SWAPS_DATEI="/proc/swaps"                             # für Tests ersetzbar
+SUDOERS_DATEI="/etc/sudoers.d/lx-fampad"              # für Tests ersetzbar
+UMZUG_PFAD="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+HIER="$(cd "$(dirname "$UMZUG_PFAD")" 2>/dev/null && pwd || echo .)"
+BOOTSTRAP_ORIG="$HIER/bootstrap-server.sh"            # die Datei, die du kopiert hast
+BOOTSTRAP="$BOOTSTRAP_ORIG"                           # die Datei, die tatsächlich läuft (nach dem Start: die geprüfte Kopie im Arbeitsverzeichnis)
 
 # --- Zustand des Laufs --------------------------------------------------------------------------------------------------------------
-OPT_PROBE=0; OPT_WEITER=""; OPT_IP=""; OPT_PARAMS=""; OPT_NEU=0; OPT_SWAP_OK=0; OPT_OHNE_SYSTEMD=0; OPT_DNS_SKIP=0
+OPT_PROBE=0; OPT_WEITER=""; OPT_IP=""; OPT_PARAMS=""; OPT_NEU=0; OPT_AKTUALISIEREN=0; OPT_SWAP_OK=0; OPT_OHNE_SYSTEMD=0; OPT_DNS_SKIP=0
 AGE_ID=""                                  # privater Schlüssel: nur hier im Arbeitsspeicher
-PARAMS_PFAD=""; ARBEIT_DIR=""
-DB_ARCHIV=""; CFG_ARCHIV=""
-IP_V4=""; IP_V6=""
+PARAMS_PFAD=""                             # Parameterdatei für bootstrap-server.sh (im Probelauf im Arbeitsverzeichnis)
+ARBEIT_DIR=""                              # root-eigenes Arbeitsverzeichnis (/run, 0700): Kopie von bootstrap-server.sh, Exit-Code-Datei
+DB_ARCHIV=""; CFG_ARCHIV=""                # Archive der gewählten Sicherung
+IP_V4=""; IP_V6=""                         # Adressen dieses Servers
 RAM_MB=0
 FATAL=0                                    # Zähler der nicht behebbaren Befunde in Schritt 1
-FEHLENDE_PAKETE=()
-SSH_KEY_RE=""; NUR_ROOT_FEHLER=""; CFG_VERSION=""
+FEHLENDE_PAKETE=()                         # kleine Werkzeuge, die Schritt 1 nachinstalliert
+SSH_KEY_RE=""                              # Muster für öffentliche SSH-Schlüssel (aus bootstrap-server.sh)
+NUR_ROOT_FEHLER=""                         # Befund von sicherung_rechte_pruefen: symlink|rechte
+CFG_VERSION=""                             # App-Version aus dem Update-Kanal der Sicherung (Vorschlag für den Code-Stand)
 KANDIDATEN=(); PLAN=(); BA=(); PROBLEME=(); LISTE=()
 HINWEISE=()                                # OFFEN-Meldungen von bootstrap-server.sh
 PAUSE_KEY=""; CADDY_JETZT=0; DAUER_LETZT="0:00"
-LETZTE_PHASE="-"; LETZTER_FEHLER=""
+LETZTE_PHASE="-"; LETZTER_FEHLER=""; ALTE_DB_NEU=""
+GIT_REF_VORHER=""                          # Code-Stand vor einem "--neu" (ein anderer setzt den Aufbau ab "code" zurück)
+STTY_SAVE=""                               # Terminal-Einstellungen vor dem unsichtbaren Einlesen
 # Antworten (A_*): nur Nicht-Geheimes
-A_SICHERUNG=""; A_GIT_REF=""; A_SWAP_MB=""; A_IP=""; A_NAS_IP=""; A_NAS_PUBKEY=""; A_LX_PUBKEY=""
-A_WETTER=""; A_MUELL=""; A_MUELL_LINK=""; A_KEEP=""; A_APK=""; A_FILES=""
+A_SICHERUNG=""; A_GIT_REF=""; A_SWAP_MB=""; A_IP=""; A_NAS_IP=""; A_NAS_PUBKEY=""; A_LX_PUBKEY=""; A_PARAMS=""
+A_WETTER=""; A_MUELL=""; A_MUELL_LINK=""; A_KEEP=""; A_APK=""; A_FILES=""; A_ALTE_DB=""
 A_FRAGEN=""; A_FERTIG=""; A_ERLEDIGT=""
 declare -A EXTRA=()                        # Werte aus --params (nur öffentliche Parameter)
 ANTWORT=""
@@ -81,6 +98,7 @@ farben_init() { # Farben nur auf einem Terminal (nicht bei NO_COLOR, nicht bei U
     C_RESET=$'\033[0m'; C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_C=$'\033[36m'; C_B=$'\033[1m'; C_D=$'\033[2m'
   fi
 }
+sauber() { printf '%s' "${1//[[:cntrl:]]/}"; } # Steuerzeichen und Escape-Folgen entfernen (Texte aus Archiven und Programmen)
 zeile() { printf '%s\n' "$*"; }
 gut() { printf '  %s✓%s %s\n' "$C_G" "$C_RESET" "$*"; }
 hinweis() { printf '  %s!%s %s\n' "$C_Y" "$C_RESET" "$*"; }
@@ -94,27 +112,31 @@ schritt_titel() { # $1 Nummer, $2 Titel
 dauer() { printf '%d:%02d' $(( $1 / 60 )) $(( $1 % 60 )); }
 
 # --- Aufräumen und Abbruch ----------------------------------------------------------------------------------------------------------
-# Der Schlüssel verschwindet auf jedem Weg aus dem Arbeitsspeicher; die Wegwerf-Dateien (nur Probelauf) auch.
+# Der Schlüssel verschwindet auf jedem Weg aus dem Arbeitsspeicher; die Wegwerf-Dateien und das Terminal werden zurückgesetzt.
+terminal_zuruecksetzen() { if [ -n "$STTY_SAVE" ]; then stty "$STTY_SAVE" 2>/dev/null || true; fi; }
 aufraeumen() {
   local rc=$?
   trap - EXIT
   AGE_ID=""; unset AGE_ID
+  terminal_zuruecksetzen
   if [ -n "$ARBEIT_DIR" ]; then rm -rf -- "$ARBEIT_DIR"; fi
   exit "$rc"
 }
 unterbrochen() {
+  terminal_zuruecksetzen
   echo
   zeile "Abgebrochen. Nichts geht verloren: Starte denselben Befehl noch einmal, Erledigtes wird übersprungen."
   exit 130
 }
-# Ein Satz mit der Ursache, ein Satz mit der Maßnahme; im echten Lauf zusätzlich der Bericht ohne Geheimnisse
+# Ein Satz mit der Ursache, ein Satz mit der Maßnahme; im echten Lauf zusätzlich der Bericht (ohne Geheimnisse)
 fehler_ende() { # $1 Ursache, $2 Maßnahme, $3 Exit-Code (Standard 1)
-  local code="${3:-1}"
+  local code="${3:-1}" ursache
+  ursache="$(sauber "$1")"
   echo >&2
-  printf '%s✗ %s%s\n' "$C_R" "$1" "$C_RESET" >&2
+  printf '%s✗ %s%s\n' "$C_R" "$ursache" "$C_RESET" >&2
   printf '  %s\n' "$2" >&2
   if [ "$OPT_PROBE" = 0 ] && [ "$(id -u)" = 0 ] && [ "$code" != 2 ]; then
-    if bericht_schreiben "$1" "$2" 2>/dev/null; then printf '  Bericht ohne Geheimnisse: %s\n' "$BERICHT_DATEI" >&2; fi
+    if bericht_schreiben "$ursache" "$2" 2>/dev/null; then printf '  Bericht (ohne Geheimnisse, aber mit Pfaden und Adressen): %s\n' "$BERICHT_DATEI" >&2; fi
   fi
   exit "$code"
 }
@@ -167,14 +189,45 @@ private_ipv4() {
   { [ "$a" = 100 ] && [ "$b" -ge 64 ] && [ "$b" -le 127 ]; } && return 0
   return 1
 }
-gueltige_nas_ip() { # eine oder mehrere (Komma) IPv4-/IPv6-Adressen oder CIDR; die genaue Prüfung (CIDR mindestens /16 bzw. /48) macht einrichtung-backup.sh
+# NAS-Adresse wie in einrichtung-backup.sh (ip_pruefen): Adresse oder Netz ohne gesetzte Hostbits, Präfix mindestens /16 (IPv4) bzw. /48 (IPv6),
+# keine unspezifizierte, Multicast- oder reservierte Adresse, keine führenden Nullen. Die endgültige Prüfung macht einrichtung-backup.sh.
+ipv4_netz_ok() {
+  local ip="$1" p=32 o1 o2 o3 o4 n mask
+  if [[ "$ip" == */* ]]; then p="${ip#*/}"; ip="${ip%/*}"; fi
+  [[ "$p" =~ ^(0|[1-9][0-9]?)$ ]] || return 1
+  [[ "$ip" =~ ^(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})\.(0|[1-9][0-9]{0,2})$ ]] || return 1
+  o1="${BASH_REMATCH[1]}"; o2="${BASH_REMATCH[2]}"; o3="${BASH_REMATCH[3]}"; o4="${BASH_REMATCH[4]}"
+  [ "$o1" -le 255 ] && [ "$o2" -le 255 ] && [ "$o3" -le 255 ] && [ "$o4" -le 255 ] || return 1
+  [ "$o1" -ge 1 ] && [ "$o1" -le 223 ] || return 1                       # nicht 0.x (unspezifiziert), nicht Multicast/reserviert (ab 224)
+  [ "$p" -ge 16 ] && [ "$p" -le 32 ] || return 1
+  n=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+  mask=$(( (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF ))
+  [ $(( n & ~mask & 0xFFFFFFFF )) -eq 0 ]                                # Hostbits müssen 0 sein
+}
+ipv6_netz_ok() {
+  local ip="$1" p=128 rest gruppen g n=0
+  if [[ "$ip" == */* ]]; then p="${ip#*/}"; ip="${ip%/*}"; fi
+  [[ "$p" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
+  [ "$p" -ge 48 ] && [ "$p" -le 128 ] || return 1
+  [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] || return 1
+  [[ "$ip" == *:::* ]] && return 1
+  rest="${ip//::/}"; [ $(( ${#ip} - ${#rest} )) -le 2 ] || return 1       # höchstens ein "::"
+  [[ "$ip" =~ ^:[^:] ]] && return 1
+  [[ "$ip" =~ [^:]:$ ]] && return 1
+  IFS=':' read -ra gruppen <<<"$ip"
+  for g in "${gruppen[@]}"; do [ -z "$g" ] && continue; [[ "$g" =~ ^[0-9a-fA-F]{1,4}$ ]] || return 1; n=$((n + 1)); done
+  if [[ "$ip" == *::* ]]; then [ "$n" -le 7 ] || return 1; else [ "$n" -eq 8 ] || return 1; fi
+  [[ "${ip,,}" =~ ^(::|0+(:0+)*::?(0+)?)$ ]] && return 1                 # unspezifiziert
+  [[ "${ip,,}" =~ ^ff ]] && return 1                                     # Multicast
+  [[ "${ip,,}" =~ ^::ffff: ]] && return 1                                # IPv4-mapped
+  return 0
+}
+gueltige_nas_ip() { # eine oder mehrere (Komma) Adressen oder Netze
   local teil teile=()
   [ -n "$1" ] || return 1
   IFS=',' read -ra teile <<<"$1"
   for teil in "${teile[@]}"; do
-    if [[ "$teil" =~ ^[0-9]{1,3}(\.[0-9]{1,3}){3}(/[0-9]{1,2})?$ ]]; then continue; fi
-    if [[ "$teil" =~ ^[0-9a-fA-F:]*:[0-9a-fA-F:]*(/[0-9]{1,3})?$ ]]; then continue; fi
-    return 1
+    if [[ "$teil" == *:* ]]; then ipv6_netz_ok "$teil" || return 1; else ipv4_netz_ok "$teil" || return 1; fi
   done
   return 0
 }
@@ -184,32 +237,51 @@ liste_enthaelt() { [[ ",$1," == *",$2,"* ]]; } # $1 Kommaliste, $2 Wert
 
 # --- Hilfen aus bootstrap-server.sh (ohne Doppelung): in einer Unterschale eingelesen, ändert nichts -------------------------------
 aus_bootstrap() { # $@ Funktion und Argumente von bootstrap-server.sh
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090,SC2030,SC2031
   ( set +eE; export BOOTSTRAP_NUR_FUNKTIONEN=1; . "$BOOTSTRAP" >/dev/null 2>&1; set +eE; "$@" )
 }
 bootstrap_wert() { # $1 Name einer Variablen von bootstrap-server.sh
-  # shellcheck disable=SC1090
+  # shellcheck disable=SC1090,SC2030,SC2031
   ( set +eE; export BOOTSTRAP_NUR_FUNKTIONEN=1; . "$BOOTSTRAP" >/dev/null 2>&1; set +eE; printf '%s' "${!1}" )
 }
-bootstrap_pruefen() { # beide Skripte laufen als root: nur root-eigen und nicht für andere schreibbar
-  local d f
-  [ -f "$BOOTSTRAP" ] && [ ! -L "$BOOTSTRAP" ] || fehler_ende "bootstrap-server.sh fehlt neben diesem Skript ($HIER)." "Kopiere beide Dateien vom PC: scp deploy/neuinstallation/umzug.sh deploy/neuinstallation/bootstrap-server.sh root@<IP>:/root/" 2
-  bash -n "$BOOTSTRAP" 2>/dev/null || fehler_ende "bootstrap-server.sh ist beschädigt (Syntaxfehler)." "Kopiere die Datei noch einmal vom PC und vergleiche die Prüfsumme (sha256sum)."
-  for f in "$BOOTSTRAP" "${BASH_SOURCE[0]}"; do
-    d="$(readlink -f "$f" 2>/dev/null || echo "$f")"
-    if [ "$(stat -c %u "$d" 2>/dev/null)" != 0 ] || [ $(( 8#$(stat -c %a "$d" 2>/dev/null || echo 777) & 8#022 )) -ne 0 ]; then
-      fehler_ende "$(basename "$f") gehört nicht root oder ist für andere schreibbar." "Führe aus: chown root:root $d && chmod 700 $d"
-    fi
-  done
+bootstrap_dns() { # $1 Host -> "ok" oder der Grund (wie bootstrap-server.sh ihn meldet)
+  # shellcheck disable=SC1090,SC2030,SC2031
+  ( set +eE; export BOOTSTRAP_NUR_FUNKTIONEN=1; . "$BOOTSTRAP" >/dev/null 2>&1; set +eE
+    if dns_pruefen "$1"; then echo ok; else printf '%s\n' "${DNS_GRUND:-unbekannt}"; fi )
+}
+root_eigen() { # $1 Pfad: gehört root und ist für Gruppe und Andere nicht schreibbar
+  [ "$(stat -c %u "$1" 2>/dev/null)" = 0 ] && [ $(( 8#$(stat -c %a "$1" 2>/dev/null || echo 777) & 8#022 )) -eq 0 ]
+}
+# bootstrap-server.sh läuft mehrfach als root: einmal beim Start in das Arbeitsverzeichnis kopieren (aus dem geprüften, geöffneten Deskriptor), dort noch
+# einmal prüfen und NUR diese Kopie ausführen und einlesen. Ein späterer Austausch der Originaldatei greift nicht mehr.
+bootstrap_pruefen() {
+  local fd kopie="$ARBEIT_DIR/bootstrap-server.sh" f
+  if [ ! -f "$BOOTSTRAP_ORIG" ] || [ -L "$BOOTSTRAP_ORIG" ]; then
+    fehler_ende "bootstrap-server.sh fehlt neben diesem Skript ($HIER)." "Kopiere beide Dateien vom PC: scp deploy/neuinstallation/umzug.sh deploy/neuinstallation/bootstrap-server.sh root@<IP>:/root/" 2
+  fi
+  root_eigen "$UMZUG_PFAD" || fehler_ende "umzug.sh gehört nicht root oder ist für andere schreibbar." "Führe aus: chown root:root $UMZUG_PFAD && chmod 700 $UMZUG_PFAD"
+  exec {fd}< "$BOOTSTRAP_ORIG"
+  if [ "$(stat -L -c %u "/proc/self/fd/$fd")" != 0 ] || [ $(( 8#$(stat -L -c %a "/proc/self/fd/$fd") & 8#022 )) -ne 0 ]; then
+    exec {fd}<&-
+    fehler_ende "bootstrap-server.sh gehört nicht root oder ist für andere schreibbar." "Führe aus: chown root:root $BOOTSTRAP_ORIG && chmod 700 $BOOTSTRAP_ORIG"
+  fi
+  cat <&"$fd" > "$kopie"; exec {fd}<&-
+  chmod 700 "$kopie"
+  root_eigen "$kopie" || fehler_ende "Die Kopie von bootstrap-server.sh im Arbeitsverzeichnis ist nicht root-eigen." "Prüfe /run (Dateisystem) und starte neu."
+  bash -n "$kopie" 2>/dev/null || fehler_ende "bootstrap-server.sh ist beschädigt (Syntaxfehler)." "Kopiere die Datei noch einmal vom PC und vergleiche die Prüfsumme (sha256sum)."
+  BOOTSTRAP="$kopie"
   SSH_KEY_RE="$(bootstrap_wert SSH_KEY_RE)"
   [ -n "$SSH_KEY_RE" ] || fehler_ende "bootstrap-server.sh lässt sich nicht einlesen." "Kopiere es noch einmal vom PC (Prüfsumme vergleichen)."
+  for f in dns_pruefen parameter_lesen parameter_pruefen; do
+    aus_bootstrap declare -F "$f" >/dev/null 2>&1 || fehler_ende "bootstrap-server.sh hat die Funktion $f nicht mehr: umzug.sh und bootstrap-server.sh gehören nicht zum selben Stand." "Kopiere beide Dateien aus demselben Git-Stand (deploy/neuinstallation/) auf den Server."
+  done
 }
 
 # --- Gemerkte Antworten (nur Nicht-Geheimes, root 0600; nie als Shell ausgeführt) --------------------------------------------------------
-readonly ANTWORT_SCHLUESSEL=(SICHERUNG GIT_REF SWAP_MB IP NAS_IP NAS_PUBKEY LX_PUBKEY WETTER MUELL MUELL_LINK KEEP APK FILES FRAGEN FERTIG ERLEDIGT HINWEIS)
+readonly ANTWORT_SCHLUESSEL=(SICHERUNG GIT_REF SWAP_MB IP NAS_IP NAS_PUBKEY LX_PUBKEY PARAMS WETTER MUELL MUELL_LINK KEEP APK FILES ALTE_DB FRAGEN FERTIG ERLEDIGT HINWEIS)
 antwort_wert_ok() { # $1 Schlüssel, $2 Wert
   case "$1" in
-    SICHERUNG) gueltiger_pfad "$2" ;;
+    SICHERUNG|PARAMS) gueltiger_pfad "$2" ;;
     GIT_REF) gueltiger_tag "$2" ;;
     SWAP_MB) gueltiger_swap "$2" ;;
     IP) gueltige_ipv4 "$2" ;;
@@ -217,15 +289,30 @@ antwort_wert_ok() { # $1 Schlüssel, $2 Wert
     NAS_PUBKEY|LX_PUBKEY) gueltiger_ssh_schluessel "$2" ;;
     WETTER|MUELL|MUELL_LINK|FRAGEN|APK|FILES) [[ "$2" =~ ^[01]$ ]] ;;
     KEEP) [[ "$2" =~ ^[1-9][0-9]?$ ]] ;;
+    ALTE_DB) [[ "$2" =~ ^lx_fampad_vor_[0-9_]{8,20}$ ]] ;;
     FERTIG|ERLEDIGT) [[ "$2" =~ ^[a-z,]*$ ]] ;;
     HINWEIS) [[ "$2" =~ ^[^[:cntrl:]]{1,600}$ ]] ;;
     *) return 1 ;;
   esac
 }
 antworten_zuruecksetzen() {
-  A_SICHERUNG=""; A_GIT_REF=""; A_SWAP_MB=""; A_IP=""; A_NAS_IP=""; A_NAS_PUBKEY=""; A_LX_PUBKEY=""
-  A_WETTER=""; A_MUELL=""; A_MUELL_LINK=""; A_KEEP=""; A_APK=""; A_FILES=""; A_FRAGEN=""; A_FERTIG=""; A_ERLEDIGT=""
+  A_SICHERUNG=""; A_GIT_REF=""; A_SWAP_MB=""; A_IP=""; A_NAS_IP=""; A_NAS_PUBKEY=""; A_LX_PUBKEY=""; A_PARAMS=""
+  A_WETTER=""; A_MUELL=""; A_MUELL_LINK=""; A_KEEP=""; A_APK=""; A_FILES=""; A_ALTE_DB=""; A_FRAGEN=""; A_FERTIG=""; A_ERLEDIGT=""
   HINWEISE=()
+}
+# --neu und "Damit weitermachen? nein": die Antworten verfallen, der Stand des Aufbaus (und was sich daraus ergibt) bleibt; sonst würde Schritt 1
+# einen halb eingerichteten Server als "schon eingerichtet" ablehnen
+antworten_neu_beginnen() {
+  local f="$A_FERTIG" e="$A_ERLEDIGT" w="$A_WETTER" m="$A_MUELL" ml="$A_MUELL_LINK" ip="$A_IP" alt="$A_ALTE_DB" g="$A_GIT_REF" h=("${HINWEISE[@]}")
+  antworten_zuruecksetzen
+  A_FERTIG="$f"; A_ERLEDIGT="$e"; A_WETTER="$w"; A_MUELL="$m"; A_MUELL_LINK="$ml"; A_IP="$ip"; A_ALTE_DB="$alt"; HINWEISE=("${h[@]}")
+  GIT_REF_VORHER="$g"
+}
+fertig_ab_code_loeschen() { # ein anderer Code-Stand: code, anwendung und alles danach muss noch einmal laufen (konfiguration und datenbank bleiben)
+  local p neu="" alt
+  for p in ${A_FERTIG//,/ }; do liste_enthaelt "$NACH_CODE" "$p" || neu="${neu:+$neu,}$p"; done
+  alt=",$A_ERLEDIGT,"; alt="${alt//,caddy,/,}"; alt="${alt#,}"; alt="${alt%,}"
+  A_FERTIG="$neu"; A_ERLEDIGT="$alt"
 }
 antworten_lesen() { # liest ANTWORTEN_DATEI; Rückgabe 0, wenn sie da und brauchbar war
   local z key val n=0
@@ -268,7 +355,7 @@ fertig_markieren() { # $1 Phase
 erledigt_markieren() { liste_enthaelt "$A_ERLEDIGT" "$1" || A_ERLEDIGT="${A_ERLEDIGT:+$A_ERLEDIGT,}$1"; antworten_schreiben; }
 hinweis_merken() { # $1 Text einer OFFEN-Meldung von bootstrap-server.sh
   local t h
-  t="$(printf '%s' "$1" | tr -d '[:cntrl:]' | cut -c1-600)"
+  t="$(sauber "$1")"; t="${t:0:600}"
   [ -n "$t" ] || return 0
   for h in "${HINWEISE[@]}"; do [ "$h" = "$t" ] && return 0; done
   HINWEISE+=("$t")
@@ -278,7 +365,9 @@ hinweis_merken() { # $1 Text einer OFFEN-Meldung von bootstrap-server.sh
 readonly PARAM_SCHLUESSEL=" GIT_REPO_URL GIT_REF LX_SSH_PUBKEY CI_DEPLOY_PUBKEY WEATHER_ENABLED WEATHER_PLACE WEATHER_STATION_MAC WEATHER_BBOX RELEASE_CERT_SHA256 E2EE_PW_BACKUP AUTH_LEGACY_PASSWORD_LOGIN BACKUP_AGE_RECIPIENTS BACKUP_AGE_RECIPIENTS_CONFIG BACKUP_NAS_PUBKEY BACKUP_NAS_IP BACKUP_KEEP BACKUP_INCLUDE_APK BACKUP_INCLUDE_FILES SWAP_MB NODE_PKG_VERSION CADDY_PKG_VERSION "
 extra_params_lesen() { # $1 Datei
   local d="$1" z key val n=0 pfd re_dq='^"(.*)"$' re_sq="^'(.*)'\$"
-  [ -f "$d" ] && [ ! -L "$d" ] && [ -r "$d" ] || fehler_ende "Die Parameterdatei $d ist nicht lesbar oder ein Symlink." "Gib den Pfad einer normalen Datei an (--params DATEI)." 2
+  if [ ! -f "$d" ] || [ -L "$d" ] || [ ! -r "$d" ]; then
+    fehler_ende "Die Parameterdatei $d ist nicht lesbar oder ein Symlink." "Gib den Pfad einer normalen Datei an (--params DATEI)." 2
+  fi
   exec {pfd}< "$d"
   if [ ! -f "/proc/self/fd/$pfd" ] || [ "$(stat -L -c %u "/proc/self/fd/$pfd")" != 0 ] || [ $(( 8#$(stat -L -c %a "/proc/self/fd/$pfd") & 8#022 )) -ne 0 ]; then
     exec {pfd}<&-
@@ -324,10 +413,16 @@ params_schreiben() { # $1 Zieldatei
     done
   } > "$tmp" && chmod 600 "$tmp" && chown root:root "$tmp" && mv -f "$tmp" "$ziel"
 }
+extra_params_einbinden() { # --params bzw. der gemerkte Pfad; nach dem Lesen der Antworten
+  if [ -n "$OPT_PARAMS" ]; then A_PARAMS="$(readlink -f "$OPT_PARAMS" 2>/dev/null || echo "$OPT_PARAMS")"; fi
+  [ -n "$A_PARAMS" ] || return 0
+  if [ -f "$A_PARAMS" ]; then extra_params_lesen "$A_PARAMS"
+  else hinweis "Die früher angegebene Parameterdatei $A_PARAMS gibt es nicht mehr: Werte wie BACKUP_AGE_RECIPIENTS, CI_DEPLOY_PUBKEY oder RELEASE_CERT_SHA256 daraus fehlen. Lege sie wieder hin oder starte mit --params DATEI."; fi
+}
 
 # --- Schritt 1: Willkommen und Prüfung (ändert nichts) ---------------------------------------------------------------------------------
 tcp_offen() { timeout 6 bash -c "exec 3<>/dev/tcp/$1/$2" 2>/dev/null; }
-swap_aktiv() { [ ! -r /proc/swaps ] || [ -n "$(awk 'NR > 1' /proc/swaps)" ]; }
+swap_aktiv() { [ ! -r "$SWAPS_DATEI" ] || [ -n "$(awk 'NR > 1' "$SWAPS_DATEI")" ]; }
 ip_erkennen() {
   local ip=""
   if [ -n "$OPT_IP" ]; then IP_V4="$OPT_IP"
@@ -375,7 +470,8 @@ schritt1_pruefungen() {
   if [ -z "${TMUX:-}" ] && [ -z "${STY:-}" ]; then prueffeld hinweis "Du arbeitest nicht in tmux: bei einem Verbindungsabbruch stoppt der Aufbau. Besser: apt install tmux, dann tmux new -s umzug und hier neu starten."; fi
   if [ -e /srv/fampad/server ] || [ -e /etc/lx-fampad/env ] || [ -e /etc/systemd/system/lx-fampad.service ]; then
     if [ -n "$A_FERTIG" ]; then prueffeld ok "Teile von lx-fampad sind schon eingerichtet (Fortsetzung eines früheren Laufs: ${A_FERTIG//,/, })"
-    else prueffeld fatal "Auf diesem Server ist lx-fampad schon (teilweise) eingerichtet. Der Assistent ist für einen frischen Server: nimm einen neuen oder nutze bootstrap-server.sh direkt (docs/NEUINSTALLATION.md)."; fi
+    elif [ "$OPT_PROBE" = 1 ]; then prueffeld hinweis "lx-fampad ist hier schon (teilweise) eingerichtet. Der Probelauf läuft trotzdem weiter und ändert nichts; für den Stand eines begonnenen Laufs: bash umzug.sh --weiter pruefung."
+    else prueffeld fatal "Auf diesem Server ist lx-fampad schon (teilweise) eingerichtet, aber ohne gemerkte Antworten des Assistenten. Der Assistent ist für einen frischen Server: nimm einen neuen oder nutze bootstrap-server.sh direkt (docs/NEUINSTALLATION.md)."; fi
   else prueffeld ok "Es läuft noch nichts von lx-fampad auf diesem Server"; fi
 }
 pakete_installieren() {
@@ -384,9 +480,12 @@ pakete_installieren() {
   fi
   gut "Installiert: $*"
 }
+pruefsumme_kurz() { sha256sum "$1" 2>/dev/null | cut -c1-16; }
 schritt1() {
   schritt_titel 1 "Willkommen und Prüfung"
+  printf '%slx-fampad · Umzugs-Assistent%s   %sVersion %s%s\n' "$C_B" "$C_RESET" "$C_D" "$UMZUG_VERSION" "$C_RESET"
   printf 'Ich richte diesen Server für %s%s%s ein.\n' "$C_C" "$DOMAIN" "$C_RESET"
+  blass "Prüfsummen der beiden Skripte (SHA-256, Anfang): umzug.sh $(pruefsumme_kurz "$UMZUG_PFAD"), bootstrap-server.sh $(pruefsumme_kurz "$BOOTSTRAP")"
   if [ "$OPT_PROBE" = 1 ]; then zeile "PROBELAUF: Ich gehe alle Schritte bis zur Zusammenfassung durch und ändere nichts."
   else zeile "Vorher prüfe ich kurz, ob alles passt. Dabei wird nichts verändert."; fi
   echo
@@ -412,7 +511,7 @@ schritt1() {
     if [ "$OPT_PROBE" = 1 ]; then hinweis "Probelauf: ich würde jetzt ${FEHLENDE_PAKETE[*]} installieren (apt). Ohne age kann ich den Schlüssel unten nicht prüfen."
     else
       echo
-      zeile "Ich installiere jetzt nur diese kleinen Debian-Pakete: ${FEHLENDE_PAKETE[*]}. Das ist die einzige Änderung vor deiner Bestätigung in Schritt 4."
+      zeile "Ich installiere jetzt nur diese kleinen Debian-Pakete: ${FEHLENDE_PAKETE[*]}."
       frage_ja "Einverstanden?" ja || fehler_ende "Ohne ${FEHLENDE_PAKETE[*]} kann ich nicht weitermachen." "Installiere sie selbst (apt-get install ${FEHLENDE_PAKETE[*]}) oder starte neu und antworte ja."
       pakete_installieren "${FEHLENDE_PAKETE[@]}"
     fi
@@ -436,6 +535,19 @@ sicherungen_finden() { # füllt KANDIDATEN, neueste zuerst
     if [ -n "$d" ] && sicherung_ordner_gueltig "$d"; then KANDIDATEN+=("$d"); fi
   done < <(find "$SICHERUNG_BASIS" -mindepth 1 -maxdepth 1 -type d -regextype posix-extended -regex '.*/[0-9]{8}-[0-9]{6}' 2>/dev/null | sort -r)
 }
+# Stehen die benutzten Archive in SHA256SUMS? (sha256sum -c prüft sonst nur, was dort eingetragen ist; wie bootstrap-server.sh)
+sha_liste_vollstaendig() { # $1 Ordner
+  local d="$1" f
+  shopt -s nullglob
+  for f in "$d"/db-*.dump.age "$d"/config-*.tar.age "$d"/files-*.tar.age; do
+    awk -v n="$(basename "$f")" '$2 == n || $2 == "*" n { g = 1 } END { exit !g }' "$d/SHA256SUMS" || { shopt -u nullglob; return 1; }
+  done
+  shopt -u nullglob
+  return 0
+}
+pruefsummen_ok() { # $1 Ordner
+  sha_liste_vollstaendig "$1" && ( cd "$1" && sha256sum -c --strict --quiet SHA256SUMS >/dev/null 2>&1 )
+}
 sicherung_beschreiben() { # $1 Ordner -> Text "vor 1 Tag, 21 MB, Prüfsummen ok"
   local d="$1" name stamp="" epoche jetzt tage groesse summen
   name="$(basename "$d")"
@@ -448,7 +560,7 @@ sicherung_beschreiben() { # $1 Ordner -> Text "vor 1 Tag, 21 MB, Prüfsummen ok"
     else stamp="vor $tage Tagen"; fi
   fi
   groesse="$(du -sh --apparent-size "$d" 2>/dev/null | cut -f1)"
-  if ( cd "$d" && sha256sum -c --strict --quiet SHA256SUMS >/dev/null 2>&1 ); then summen="Prüfsummen ok"; else summen="PRÜFSUMMEN FALSCH"; fi
+  if pruefsummen_ok "$d"; then summen="Prüfsummen ok"; else summen="PRÜFSUMMEN FALSCH"; fi
   printf '%s%s, %s' "${stamp:+$stamp, }" "${groesse:-?}" "$summen"
 }
 sicherung_rechte_pruefen() { # $1 Ordner; Befund in NUR_ROOT_FEHLER (symlink|rechte)
@@ -458,12 +570,9 @@ sicherung_rechte_pruefen() { # $1 Ordner; Befund in NUR_ROOT_FEHLER (symlink|rec
   if [ -n "$(find "$d" \( ! -user root -o -perm /022 \) -print -quit 2>/dev/null)" ]; then NUR_ROOT_FEHLER="rechte"; return 1; fi
   return 0
 }
-sicherung_uebernehmen() { # $1 Ordner; Rückgabe 0 = gewählt und geprüft
+sicherung_uebernehmen() { # $1 Ordner; Rückgabe 0 = gewählt und geprüft (erst Rechte, dann Prüfsummen)
   local d f
   d="$(cd "$1" && pwd)"
-  if ! ( cd "$d" && sha256sum -c --strict --quiet SHA256SUMS >/dev/null 2>&1 ); then
-    schlecht "Die Prüfsummen dieser Sicherung stimmen nicht (beschädigt oder unvollständig kopiert). Nimm eine ältere oder kopiere sie noch einmal."; return 1
-  fi
   if ! sicherung_rechte_pruefen "$d"; then
     if [ "$NUR_ROOT_FEHLER" = symlink ]; then schlecht "In $d liegen Symlinks: das lehne ich ab (Verdacht auf Manipulation). Kopiere die Sicherung neu."; return 1; fi
     hinweis "$d gehört nicht root oder ist für andere schreibbar. bootstrap-server.sh verlangt: root-eigen, keine Schreibrechte für Gruppe und Andere."
@@ -471,6 +580,12 @@ sicherung_uebernehmen() { # $1 Ordner; Rückgabe 0 = gewählt und geprüft
     elif frage_ja "    Soll ich das jetzt herstellen (chown -R root:root und chmod -R go-w auf diesen Ordner)?" ja; then
       if ! { chown -R root:root "$d" && chmod -R go-w "$d"; }; then schlecht "Das ging nicht."; return 1; fi
     else schlecht "Ohne diese Rechte bricht bootstrap-server.sh ab."; return 1; fi
+  fi
+  if ! sha_liste_vollstaendig "$d"; then
+    schlecht "In SHA256SUMS fehlt ein Archiv dieser Sicherung (unvollständig oder verändert): nimm eine andere Sicherung."; return 1
+  fi
+  if ! pruefsummen_ok "$d"; then
+    schlecht "Die Prüfsummen dieser Sicherung stimmen nicht (beschädigt oder unvollständig kopiert). Nimm eine ältere oder kopiere sie noch einmal."; return 1
   fi
   sicherung_ordner_gueltig "$d" || return 1
   shopt -s nullglob
@@ -540,9 +655,17 @@ schluessel_passt() { # 0 = der Datenbank-Dump der Sicherung lässt sich öffnen 
   magic="$(age -d -i <(printf '%s\n' "$AGE_ID") -- "$DB_ARCHIV" 2>/dev/null | head -c 5 || true)"
   [ "$magic" = PGDMP ]
 }
+# Liest aus der entschlüsselten Konfiguration nur Unbedenkliches (Schalter, Versionsnummer, Sicherungseinstellungen): die Zeilen werden gefiltert,
+# bevor sie in eine Variable kommen; AUTH_SECRET_KEY, Passwörter und Links bleiben in der Pipe.
+cfg_aus_archiv() { # $1 Pfad im Archiv; Klartext auf stdout
+  age -d -i <(printf '%s\n' "$AGE_ID") -- "$CFG_ARCHIV" 2>/dev/null | tar -xzOf - "$1" 2>/dev/null
+}
+konfiguration_lesbar() { # 0 = das Konfigurationsarchiv lässt sich öffnen und enthält eine nichtleere etc/lx-fampad/env
+  [ -n "$(cfg_aus_archiv etc/lx-fampad/env | head -c 1 || true)" ]
+}
 schluessel_noetig() { # 0, wenn noch eine Phase offen ist, die entschlüsselt
   local p
-  for p in pakete konfiguration datenbank; do liste_enthaelt "$A_FERTIG" "$p" || return 0; done
+  for p in ${SCHLUESSEL_PHASEN//,/ }; do liste_enthaelt "$A_FERTIG" "$p" || return 0; done
   return 1
 }
 frage_schluessel() {
@@ -559,39 +682,42 @@ frage_schluessel() {
     fehler_ende "age ist nicht installiert." "Installiere es (apt-get install age) und starte neu."
   fi
   for versuch in 1 2 3; do
-    zeile "Einfügen (die Eingabe bleibt unsichtbar), dann Enter. Bei einer ganzen Schlüsseldatei: Strg+D.${versuch:+ (Versuch $versuch von 3)}"
+    zeile "Einfügen (die Eingabe bleibt unsichtbar), dann Enter. Bei einer ganzen Schlüsseldatei: Strg+D. (Versuch $versuch von 3)"
     schluessel_einlesen || fehler_ende "Es wurde kein privater Schlüssel eingegeben." "Starte neu und füge den Schlüssel (AGE-SECRET-KEY-1…) aus deinem Passwortmanager ein."
     printf '%sPrüfe, ob der Schlüssel zur Sicherung passt …%s\n' "$C_Y" "$C_RESET"
-    if schluessel_passt; then gut "Der Schlüssel passt (Datenbank und Konfiguration lassen sich öffnen)."; return 0; fi
+    if schluessel_passt; then
+      if ! konfiguration_lesbar; then
+        fehler_ende "Der Schlüssel passt zur Datenbank, aber das Konfigurationsarchiv lässt sich nicht öffnen oder enthält keine etc/lx-fampad/env (mit AUTH_SECRET_KEY)." "Die Konfiguration kann für andere Schlüssel verschlüsselt sein (BACKUP_AGE_RECIPIENTS_CONFIG): nimm den Haupt- oder Ersatzschlüssel oder eine andere Sicherung. Nichts wurde verändert."
+      fi
+      gut "Der Schlüssel passt (Datenbank und Konfiguration lassen sich öffnen)."; return 0
+    fi
     AGE_ID=""
     schlecht "Dieser Schlüssel passt nicht zu dieser Sicherung. Nichts wurde verändert."
   done
   fehler_ende "Der Schlüssel passte dreimal nicht zur Sicherung." "Prüfe, ob es der Schlüssel zu GENAU dieser Sicherung ist (es gibt Haupt- und Ersatzschlüssel), und starte neu. Nichts wurde verändert."
 }
-# Liest aus der entschlüsselten Konfiguration nur Unbedenkliches (Schalter, Versionsnummer, Sicherungseinstellungen): die Zeilen werden gefiltert,
-# bevor sie in eine Variable kommen; AUTH_SECRET_KEY, Passwörter und Links bleiben in der Pipe.
-cfg_aus_archiv() { # $1 Pfad im Archiv; Klartext auf stdout
-  age -d -i <(printf '%s\n' "$AGE_ID") -- "$CFG_ARCHIV" 2>/dev/null | tar -xzOf - "$1" 2>/dev/null
-}
 config_auswerten() {
-  local env_flags bc zeile url="" v
+  local env_flags bc zeile url="" v gelesen=0 w="" m="" ml=""
   env_flags="$(cfg_aus_archiv etc/lx-fampad/env | awk '
-    { sub(/\r$/, "") }
+    { sub(/\r$/, ""); n++ }
     /^WEATHER_ENABLED=/ { v = substr($0, 17); gsub(/["\047]/, "", v); w = (v == "true" || v == "1") ? 1 : 0 }
     /^WASTE_ENABLED=/ { v = substr($0, 15); gsub(/["\047]/, "", v); m = (v == "true" || v == "1") ? 1 : 0 }
     /^WASTE_ICS_URL=./ { l = 1 }
     /^PUBLIC_URL=/ { u = substr($0, 12); gsub(/["\047]/, "", u) }
-    END { printf "WETTER=%d\nMUELL=%d\nMUELL_LINK=%d\n", w + 0, m + 0, l + 0; if (u != "") print "PUBLIC_URL=" u }' 2>/dev/null || true)"
+    END { if (n > 0) { printf "GELESEN=1\nWETTER=%d\nMUELL=%d\nMUELL_LINK=%d\n", w + 0, m + 0, l + 0; if (u != "") print "PUBLIC_URL=" u } }' 2>/dev/null || true)"
   while IFS= read -r zeile; do
     case "$zeile" in
-      WETTER=[01]) A_WETTER="${zeile#WETTER=}" ;;
-      MUELL=[01]) A_MUELL="${zeile#MUELL=}" ;;
-      MUELL_LINK=[01]) A_MUELL_LINK="${zeile#MUELL_LINK=}" ;;
+      GELESEN=1) gelesen=1 ;;
+      WETTER=[01]) w="${zeile#WETTER=}" ;;
+      MUELL=[01]) m="${zeile#MUELL=}" ;;
+      MUELL_LINK=[01]) ml="${zeile#MUELL_LINK=}" ;;
       PUBLIC_URL=https://*) url="${zeile#PUBLIC_URL=}" ;;
     esac
   done <<<"$env_flags"
+  if [ "$gelesen" = 1 ]; then A_WETTER="$w"; A_MUELL="$m"; A_MUELL_LINK="$ml"; fi   # nur setzen, wenn die env wirklich gelesen wurde
   if [ -n "$url" ] && [ "${url%/}" != "https://$DOMAIN" ]; then
-    fehler_ende "Diese Sicherung gehört zu '${url:0:80}', nicht zu https://$DOMAIN." "Die Domain darf sich nie ändern (Passkeys): nimm die Sicherung des richtigen Servers."
+    url="${url:0:80}"; url="${url//[^A-Za-z0-9:\/._-]/?}"
+    fehler_ende "Diese Sicherung gehört zu '$url', nicht zu https://$DOMAIN." "Die Domain darf sich nie ändern (Passkeys): nimm die Sicherung des richtigen Servers."
   fi
   CFG_VERSION="$(cfg_aus_archiv srv/fampad/releases/android/latest.json | grep -oE '[\\"]version\\?":\\?"[0-9]+\.[0-9]+\.[0-9]+' | grep -oE '[0-9]+\.[0-9]+\.[0-9]+$' | head -n 1 || true)"
   bc="$(cfg_aus_archiv etc/lx-fampad-backup/backup.conf | sed -nE 's/^(KEEP|INCLUDE_APK|INCLUDE_FILES)=([0-9]{1,2})[[:space:]]*(#.*)?$/\1=\2/p' || true)"
@@ -606,15 +732,15 @@ config_auswerten() {
 }
 schritt2() {
   schritt_titel 2 "Sicherung und Schlüssel"
+  if ! schluessel_noetig; then
+    gut "Alle Phasen, die die Sicherung brauchen, sind erledigt: ich brauche weder den Sicherungsordner noch deinen Schlüssel mehr."
+    return 0
+  fi
   zeile "Zuerst die Sicherung (Frage 1), dann dein Schlüssel. Ihn brauche ich früh: Manches, was ich dir gleich vorschlage (Code-Stand, Wetter, Müll),"
   zeile "steht nur in der verschlüsselten Konfiguration der Sicherung."
   frage_sicherung
-  if schluessel_noetig; then
-    frage_schluessel
-    if [ -n "$AGE_ID" ]; then config_auswerten; fi
-  else
-    gut "Der Schlüssel wird nicht mehr gebraucht: alle Phasen mit Entschlüsselung sind schon erledigt."
-  fi
+  frage_schluessel
+  if [ -n "$AGE_ID" ]; then config_auswerten; fi
 }
 
 # --- Schritt 3: die übrigen Fragen -----------------------------------------------------------------------------------------------
@@ -624,8 +750,11 @@ frage_code_stand() { # Frage 2
   echo
   fett "Frage 2: Welcher Code-Stand?"
   if [ -n "$A_GIT_REF" ]; then vorschlag="$A_GIT_REF"; elif [ -n "$CFG_VERSION" ]; then vorschlag="v$CFG_VERSION"; fi
-  if [ -n "$CFG_VERSION" ]; then printf 'Die Sicherung enthält den Update-Kanal der App-Version %s%s%s.\n' "$C_C" "$CFG_VERSION" "$C_RESET"; fi
-  zeile "Die Datenbank darf nicht neuer sein als der Code. Nimm den Tag der Version, die auf dem alten Server lief (Beispiel: v0.9.0)."
+  if [ -n "$CFG_VERSION" ]; then
+    printf 'Die Sicherung enthält den Update-Kanal der App-Version %s%s%s.\n' "$C_C" "$CFG_VERSION" "$C_RESET"
+    zeile "Das ist die Version der letzten APK, nicht unbedingt die des Servers: lief dort ein neuerer Stand, nimm diesen (auf dem alten Server: cd ~/lx-fampad && git describe --tags)."
+  fi
+  zeile "Die Datenbank darf nicht neuer sein als der Code (sonst scheitert der Bau bei den Migrationen). Beispiel: v0.9.0"
   while true; do
     if [ -n "$vorschlag" ]; then lies_zeile "Ich nehme den Tag ${vorschlag}.  [Enter = ja, oder anderen Tag eingeben] "; eingabe="${ANTWORT:-$vorschlag}"
     else lies_zeile "Tag eingeben (z. B. v0.9.0): "; eingabe="$ANTWORT"; fi
@@ -651,7 +780,7 @@ frage_nas() { # Frage 3
       hinweis "Ohne NAS-Daten richte ich die tägliche Sicherung NICHT ein. Du holst das später nach (steht dann in deiner Liste)."
       return 0
     fi
-    if ! gueltige_nas_ip "$ANTWORT"; then zeile "  Das ist keine gültige IP-Adresse (Beispiel: 203.0.113.7)."; continue; fi
+    if ! gueltige_nas_ip "$ANTWORT"; then zeile "  Das ist keine zulässige Adresse (Beispiel: 203.0.113.7; Netze höchstens /16 bzw. /48, keine Hostbits, keine Multicast-Adresse)."; continue; fi
     ip="$ANTWORT"
     lies_zeile "Öffentlicher SSH-Schlüssel des NAS (eine Zeile, beginnt mit ssh-ed25519): "
     if gueltiger_ssh_schluessel "$ANTWORT"; then A_NAS_IP="$ip"; A_NAS_PUBKEY="$ANTWORT"; return 0; fi
@@ -710,11 +839,24 @@ frage_lx_schluessel() { # Frage 5, nur wenn der Benutzer lx fehlt
     zeile "  Das ist kein öffentlicher SSH-Schlüssel."
   done
 }
+code_stand_wechsel_pruefen() { # ein anderer Code-Stand als zuvor: den Aufbau ab "code" noch einmal laufen lassen
+  local alt="$1"
+  if [ -n "$alt" ] && [ "$A_GIT_REF" != "$alt" ] && { liste_enthaelt "$A_FERTIG" code || liste_enthaelt "$A_FERTIG" anwendung; }; then
+    fertig_ab_code_loeschen
+    hinweis "Neuer Code-Stand ($alt -> $A_GIT_REF): Code, Server-Bau und alles danach laufen noch einmal; Konfiguration und Datenbank bleiben."
+  fi
+}
 schritt3() {
-  local gesamt=4
+  local gesamt=4 vorher
   schritt_titel 3 "Fragen"
   if [ "$A_FRAGEN" = 1 ] && [ -n "$A_GIT_REF" ] && [ -n "$A_SWAP_MB" ]; then
     gut "Die übrigen Fragen sind schon beantwortet (Code-Stand ${A_GIT_REF}, Swap ${A_SWAP_MB} MB)."
+    if frage_ja "Code-Stand ändern (zum Beispiel, weil der Bau bei den Migrationen scheiterte)?" nein; then
+      vorher="$A_GIT_REF"; A_GIT_REF=""
+      frage_code_stand
+      code_stand_wechsel_pruefen "$vorher"
+      antworten_schreiben
+    fi
     return 0
   fi
   if lx_fehlt; then gesamt=5; fi
@@ -724,13 +866,14 @@ schritt3() {
   frage_swap
   if lx_fehlt; then frage_lx_schluessel; fi
   A_FRAGEN=1
+  code_stand_wechsel_pruefen "$GIT_REF_VORHER"
   antworten_schreiben
 }
 
 # --- Schritt 4: Zusammenfassung (hier endet der Teil ohne Änderungen) -----------------------------------------------------------------
 dns_ok() { # $1 Host
   [ "$OPT_DNS_SKIP" = 1 ] && return 0
-  aus_bootstrap dns_pruefen "$1" >/dev/null 2>&1
+  [ "$(bootstrap_dns "$1")" = ok ]
 }
 plan_bauen() { # füllt PLAN (Phasen dieses Laufs) und CADDY_JETZT
   local p
@@ -742,9 +885,11 @@ plan_bauen() { # füllt PLAN (Phasen dieses Laufs) und CADDY_JETZT
     PLAN+=("$p")
   done
 }
+# --swap-ok an bootstrap-server.sh: bei der Option, oder wenn Swap läuft und kein Schlüssel mehr im Speicher/nötig ist (z. B. nach der Phase anwendung)
+swap_ok_noetig() { [ "$OPT_SWAP_OK" = 1 ] || { swap_aktiv && ! schluessel_noetig && [ -z "$AGE_ID" ]; }; }
 bootstrap_basis() { # BA = die gemeinsamen Argumente für bootstrap-server.sh
   BA=(--params "$PARAMS_PFAD" --lx-anlegen)
-  if [ "$OPT_SWAP_OK" = 1 ]; then BA+=(--swap-ok); fi
+  if swap_ok_noetig; then BA+=(--swap-ok); fi
   if [ "$OPT_OHNE_SYSTEMD" = 1 ]; then BA+=(--ohne-systemd); fi
   if [ "$OPT_DNS_SKIP" = 1 ]; then BA+=(--dns-pruefung-ueberspringen); fi
   return 0
@@ -753,16 +898,21 @@ gegenprobe() { # bootstrap-server.sh --dry-run: prüft Parameter, Sicherung und 
   local aus rc z
   PROBLEME=()
   bootstrap_basis
-  aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" --sicherung "$A_SICHERUNG" --identity-stdin </dev/null 2>&1)"; rc=$?
+  if schluessel_noetig; then
+    aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" --sicherung "$A_SICHERUNG" --identity-stdin </dev/null 2>&1)"; rc=$?
+  else
+    aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" </dev/null 2>&1)"; rc=$?
+  fi
   while IFS= read -r z; do
-    case "$z" in *"PROBLEM:"*) PROBLEME+=("$(sed -E 's/^[[:space:]]*PROBLEM:[[:space:]]*//' <<<"$z")") ;; esac
+    case "$z" in *"PROBLEM:"*) PROBLEME+=("$(sauber "$(sed -E 's/^[[:space:]]*PROBLEM:[[:space:]]*//' <<<"$z")")") ;; esac
   done <<<"$aus"
   if [ "$rc" -ne 0 ] && [ "${#PROBLEME[@]}" -eq 0 ]; then
     z="$(grep -E '^(FEHLER|Parameterdatei|--)' <<<"$aus" | head -n 1 || true)"
-    PROBLEME+=("${z:-bootstrap-server.sh --dry-run meldet einen Fehler (Code $rc)}")
+    PROBLEME+=("$(sauber "${z:-bootstrap-server.sh --dry-run meldet einen Fehler (Code $rc)}")")
   fi
   return 0
 }
+lx_noch_ohne_schluessel() { lx_fehlt && [ -z "$A_LX_PUBKEY" ]; }
 schritt4() {
   local n=0 p extra
   schritt_titel 4 "Zusammenfassung"
@@ -770,15 +920,16 @@ schritt4() {
   if [ "$OPT_PROBE" = 1 ]; then PARAMS_PFAD="$ARBEIT_DIR/umzug.params"; else PARAMS_PFAD="$PARAMS_ERZEUGT"; fi
   params_schreiben "$PARAMS_PFAD" || fehler_ende "Die Parameterdatei $PARAMS_PFAD ließ sich nicht schreiben." "Prüfe den freien Platz und die Rechte von /root."
   printf '%sDas passiert jetzt%s   %s(dauert etwa 20 Minuten)%s\n\n' "$C_B" "$C_RESET" "$C_D" "$C_RESET"
-  printf '  Sicherung:    %s%s\n' "$(basename "$A_SICHERUNG")" "${CFG_VERSION:+, App-Version $CFG_VERSION}"
+  printf '  Sicherung:    %s%s\n' "$(basename "${A_SICHERUNG:-?}")" "${CFG_VERSION:+, App-Version $CFG_VERSION}"
   printf '  Domain:       %s\n' "$DOMAIN"
   printf '  IP:           %s\n' "${A_IP:-?}"
-  printf '  Code-Stand:   %s\n' "$A_GIT_REF"
+  printf '  Code-Stand:   %s   %s(den Commit zeigt die Phase "Code von GitHub holen")%s\n' "$A_GIT_REF" "$C_D" "$C_RESET"
   if [ "$A_SWAP_MB" = 0 ]; then printf '  Swap:         keiner\n'; else printf '  Swap:         %s MB (nach dem Verwerfen deines Schlüssels)\n' "$A_SWAP_MB"; fi
   if [ -n "$A_NAS_IP" ]; then printf '  NAS-Abholung: von %s\n' "$A_NAS_IP"
   else printf '  NAS-Abholung: %snicht eingerichtet%s (die tägliche Sicherung folgt erst mit den NAS-Daten)\n' "$C_Y" "$C_RESET"; fi
   if lx_fehlt; then printf '  Benutzer lx:  wird angelegt, %s\n' "$([ -n "$A_LX_PUBKEY" ] && echo "mit deinem SSH-Schlüssel" || echo "ohne SSH-Schlüssel")"; fi
   if [ -n "$A_KEEP$A_APK$A_FILES" ]; then printf '  Sicherung:    Einstellungen wie auf dem alten Server (behalte %s, APK %s, Dateiablage %s)\n' "${A_KEEP:-Standard}" "${A_APK:-Standard}" "${A_FILES:-Standard}"; fi
+  if [ -n "$A_PARAMS" ]; then printf '  Parameterdatei: %s (Werte daraus gehen mit)\n' "$A_PARAMS"; fi
   echo
   zeile "  Ich werde:"
   for p in "${PLAN[@]}"; do
@@ -786,32 +937,33 @@ schritt4() {
     if [ "$p" = code ]; then extra="   ${C_Y}(Pause: du trägst einen Schlüssel bei GitHub ein)${C_RESET}"; fi
     printf '   %s%d%s %s%s\n' "$C_C" "$n" "$C_RESET" "${PHASEN_NAME[$p]}" "$extra"
   done
-  if [ "$CADDY_JETZT" = 0 ]; then printf '   %s·%s %s: später, nach deiner DNS-Umstellung (bash umzug.sh --weiter caddy)\n' "$C_D" "$C_RESET" "${PHASEN_NAME[caddy]}"; fi
+  if [ "$CADDY_JETZT" = 0 ]; then printf '   %s·%s %s: später, nach deiner DNS-Umstellung (bash %s --weiter caddy)\n' "$C_D" "$C_RESET" "${PHASEN_NAME[caddy]}" "$UMZUG_PFAD"; fi
   if [ "${#PLAN[@]}" -eq 0 ]; then zeile "   (nichts mehr: alle Phasen sind schon erledigt)"; fi
   echo
   printf '  %sNichts%s wird gelöscht. Dein alter Server bleibt unberührt.\n' "$C_G" "$C_RESET"
-  zeile "  Das Haupt-Caddyfile und der Web-Auftritt von lx-labs.dev werden nie angefasst (bootstrap-server.sh ändert nur conf.d, mit Rückfall)."
+  zeile "  Das Haupt-Caddyfile von lx-labs.dev wird nie überschrieben: bootstrap-server.sh legt es nur an, wenn es fehlt oder noch das unveränderte Standard-Caddyfile ist"
+  zeile "  (eine Kopie bleibt); ein fremdes Caddyfile bleibt unangetastet, sonst ändert es nur conf.d (mit Rückfall)."
   echo
   zeile "Gegenprobe (bootstrap-server.sh --dry-run, ändert nichts) …"
   gegenprobe
   if [ "${#PROBLEME[@]}" -gt 0 ]; then
     for p in "${PROBLEME[@]}"; do schlecht "$p"; done
     if [ "$OPT_PROBE" = 1 ]; then hinweis "Im echten Lauf würde der Assistent hier stoppen."
-    else fehler_ende "Die Gegenprobe meldet ${#PROBLEME[@]} Problem(e)." "Behebe sie (siehe oben) und starte denselben Befehl noch einmal; nichts wurde verändert."; fi
+    else fehler_ende "Die Gegenprobe meldet ${#PROBLEME[@]} Problem(e)." "Behebe sie (siehe oben) und starte denselben Befehl noch einmal; am Server wurde nichts verändert."; fi
   else gut "Gegenprobe ohne Befund (Parameter, Prüfsummen, Rechte)."; fi
 }
 bestaetigen() { # Rückgabe 0 = starten, 1 = Probelauf (Ende)
   local k
   echo
   if [ "$OPT_PROBE" = 1 ]; then
-    printf '%sProbelauf beendet. Es wurde nichts verändert.%s Für den echten Lauf: bash umzug.sh\n' "$C_G" "$C_RESET"
+    printf '%sProbelauf beendet. Es wurde nichts verändert.%s Für den echten Lauf: bash %s\n' "$C_G" "$C_RESET" "$UMZUG_PFAD"
     return 1
   fi
   [ "${#PLAN[@]}" -gt 0 ] || return 0
   printf '%sJetzt starten?%s Tippe %sumziehen%s zur Bestätigung (alles andere bricht ab): ' "$C_B" "$C_RESET" "$C_C" "$C_RESET" >&2
   if ! IFS= read -r k; then echo >&2; abbruch_eingabe; fi
   if [ "$(trimmen "${k%$'\r'}")" != umziehen ]; then
-    zeile "Abgebrochen, es wurde nichts verändert. Deine Antworten sind gemerkt: starte denselben Befehl, wenn du bereit bist."
+    zeile "Abgebrochen, es wurde am Server nichts verändert. Deine Antworten sind gemerkt: starte denselben Befehl, wenn du bereit bist."
     exit 0
   fi
   return 0
@@ -822,54 +974,61 @@ scrub() { sed -E 's/AGE-SECRET-KEY-1[0-9A-Z]+/[entfernt]/g; s/tk_[A-Za-z0-9]+/tk
 bericht_schreiben() { # $1 Ursache, $2 Maßnahme
   local tmp="$BERICHT_DATEI.neu.$$"
   {
-    echo "lx-fampad Umzugs-Assistent: Fehlerbericht (ohne Geheimnisse: kein Schlüssel, keine Passwörter, keine Links, keine Programmausgaben)"
+    echo "lx-fampad Umzugs-Assistent: Fehlerbericht (ohne Schlüssel, Passwörter, Links und Programmausgaben; ABER mit Pfaden, IP-Adressen und dem Namen deiner Sicherung: nur gezielt weitergeben)"
     echo "Zeit (UTC): $(date -u '+%Y-%m-%d %H:%M:%S')"
-    echo "Phase: $LETZTE_PHASE"
-    echo "Ursache: $1"
-    echo "Maßnahme: $2"
+    echo "Phase: $(sauber "$LETZTE_PHASE")"
+    echo "Ursache: $(sauber "$1" | scrub)"
+    echo "Maßnahme: $(sauber "$2" | scrub)"
     echo "System: $(sed -nE 's/^PRETTY_NAME=//p' /etc/os-release 2>/dev/null | tr -d '"'), Arbeitsspeicher ${RAM_MB} MB"
     echo
     echo "Gemerkte Antworten:"
-    antworten_text | grep -v '^HINWEIS=' | sed 's/^/  /'
+    antworten_text | grep -v '^HINWEIS=' | scrub | sed 's/^/  /'
     echo
     echo "Letzte Meldungen von bootstrap-server.sh (nur seine eigenen Meldungen):"
     if [ -f "$LAUF_LOG" ]; then grep -E '^(==>|!!|FEHLER|PAUSE|    (Prüfpunkt|PROBLEM|WARNUNG|OFFEN))' "$LAUF_LOG" | tail -n 60 | scrub | sed 's/^/  /'; fi
   } > "$tmp" 2>/dev/null && chmod 600 "$tmp" && mv -f "$tmp" "$BERICHT_DATEI"
 }
-fehlermassnahme() { # $1 letzte FEHLER-Zeile von bootstrap-server.sh -> Maßnahme in einem Satz
+fehlermassnahme() { # $1 letzte FEHLER-Zeile von bootstrap-server.sh -> Maßnahme in einem Satz (die Muster stehen in bootstrap-server.sh, test-umzug.sh prüft das)
   case "$1" in
-    *"Swap ist aktiv"*) echo "Führe 'swapoff -a' aus und starte denselben Befehl noch einmal (oder bewusst mit --swap-ok)." ;;
-    *"nicht lesen oder ist kein pg_dump"*|*"no identity matched"*) echo "Der Schlüssel passt nicht zu dieser Sicherung: starte neu und gib den richtigen Schlüssel ein." ;;
+    *"Swap aktiv"*|*"Swap ist aktiv"*) echo "Führe 'swapoff -a' aus und starte denselben Befehl noch einmal (oder bewusst mit --swap-ok)." ;;
+    *"nicht lesen oder ist kein pg_dump"*) echo "Der Schlüssel passt nicht zu dieser Sicherung: starte neu und gib den richtigen Schlüssel ein." ;;
     *"Prüfsummen stimmen nicht"*) echo "Die Sicherung ist beschädigt: kopiere sie noch einmal oder nimm eine ältere vom NAS." ;;
     *"muss root gehören"*) echo "Führe 'chown -R root:root' und 'chmod -R go-w' auf den Sicherungsordner aus und starte neu." ;;
     *"PUBLIC_URL der Sicherung"*) echo "Die Sicherung gehört zu einer anderen Domain: nimm die Sicherung des Servers von $DOMAIN." ;;
-    *"GIT_REF"*) echo "Prüfe den Tag (git tag auf deinem PC) und starte mit 'bash umzug.sh --neu' neu, um ihn neu einzugeben." ;;
-    *"deploy.sh fehlgeschlagen"*) echo "Der Code-Stand passt vermutlich nicht zur Datenbank: nimm einen neueren Tag ('bash umzug.sh --neu'); Einzelheiten: journalctl -u lx-fampad-migrate -n 50." ;;
+    *"deploy.sh fehlgeschlagen"*) echo "Der Code-Stand passt vermutlich nicht zur Datenbank: starte denselben Befehl und antworte bei \"Code-Stand ändern?\" mit ja (neuerer Tag); Einzelheiten: journalctl -u lx-fampad-migrate -n 50." ;;
+    *"GIT_REF"*) echo "Der Tag wurde nicht gefunden: starte denselben Befehl und antworte bei \"Code-Stand ändern?\" mit ja (Tags auf deinem PC: git tag)." ;;
     *"weicht von der Sicherung ab"*) echo "Auf diesem Server liegt schon eine andere Konfiguration: nimm einen frischen Server." ;;
-    *"Caddy"*|*"antwortet nicht"*|*"Zertifikat"*) echo "Prüfe die DNS-Einträge (dig +short $DOMAIN), warte mindestens eine Stunde (Grenzen von Let's Encrypt) und starte 'bash umzug.sh --weiter caddy' erneut." ;;
+    *"Caddy"*|*"antwortet nicht"*|*"Zertifikat"*) echo "Prüfe die DNS-Einträge (dig +short $DOMAIN), warte mindestens eine Stunde (Grenzen von Let's Encrypt) und starte '$UMZUG_PFAD --weiter caddy' erneut." ;;
     *) echo "Behebe die Ursache laut Meldung (Einzelheiten: $LAUF_LOG) und starte denselben Befehl noch einmal: Erledigtes wird übersprungen." ;;
   esac
 }
-# bootstrap-server.sh mit BA ausführen und den Fortschritt zeigen; bootstrap-server.sh läuft in einem eigenen Prozess, seine Ausgabe kommt über eine
-# Pipe (Dateideskriptor 7), das Ende meldet eine Marke. Rückgabe: Exit-Code von bootstrap-server.sh. Der Schlüssel geht nur in seine stdin-Pipe.
+# bootstrap-server.sh mit BA ausführen und den Fortschritt zeigen. bootstrap-server.sh läuft in einem eigenen Prozess, seine Ausgabe kommt über eine Pipe
+# (Dateideskriptor 7); sein Exit-Code geht über eine Datei im Arbeitsverzeichnis (nicht über die Ausgabe: Hintergrunddienste könnten die Pipe offen halten).
+# Rückgabe: Exit-Code von bootstrap-server.sh. Der Schlüssel geht nur in seine stdin-Pipe.
 lauf_ausfuehren() { # $1 Anzeigename, $2 Nummer-Text, $3 mit Schlüssel (1|0); Argumente in BA
-  local name="$1" nr="$2" mitkey="$3" sentinel="__UMZUG_RC_${RANDOM}${RANDOM}__" start=$SECONDS rc=-1 z="" teil="" lesen
-  PAUSE_KEY=""; LETZTER_FEHLER=""
+  local name="$1" nr="$2" mitkey="$3" rcdatei="$ARBEIT_DIR/rc" start=$SECONDS rc="" z="" teil="" lesen stille=0 ausgabe
+  PAUSE_KEY=""; LETZTER_FEHLER=""; ALTE_DB_NEU=""
   if [ "$mitkey" = 1 ] && [ -z "$AGE_ID" ]; then fehler_ende "Der Schlüssel ist nicht mehr im Speicher, wird aber für \"$name\" gebraucht." "Starte denselben Befehl noch einmal: ich frage den Schlüssel erneut ab."; fi
-  printf '%s▶%s %s %s\n' "$C_Y" "$C_RESET" "$nr" "$name"
+  printf '%s▶%s %-5s %s\n' "$C_Y" "$C_RESET" "$nr" "$name"
   echo "=== $(date -u '+%F %T') UTC  $name" >> "$LAUF_LOG"
+  rm -f "$rcdatei"
   if [ "$mitkey" = 1 ]; then
-    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < <(printf '%s\n' "$AGE_ID") 2>&1; echo "$sentinel$?" )
+    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < <(printf '%s\n' "$AGE_ID") 2>&1; echo "$?" > "$rcdatei" )
   else
-    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < /dev/null 2>&1; echo "$sentinel$?" )
+    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < /dev/null 2>&1; echo "$?" > "$rcdatei" )
   fi
   while true; do
-    if [ -t 1 ]; then IFS= read -r -t 20 -u 7 z; lesen=$?; else IFS= read -r -u 7 z; lesen=$?; fi
-    if [ "$lesen" -gt 128 ]; then teil="$teil$z"; printf '    %s… läuft seit %s%s\n' "$C_D" "$(dauer $((SECONDS - start)))" "$C_RESET"; continue; fi
+    IFS= read -r -t 1 -u 7 z; lesen=$?
+    if [ "$lesen" -gt 128 ]; then
+      teil="$teil$z"
+      if [ -s "$rcdatei" ]; then break; fi        # bootstrap-server.sh ist fertig und die Pipe ist leer
+      stille=$((stille + 1))
+      if [ -t 1 ] && [ $((stille % 20)) -eq 0 ]; then printf '    %s… läuft seit %s%s\n' "$C_D" "$(dauer $((SECONDS - start)))" "$C_RESET"; fi
+      continue
+    fi
     [ "$lesen" -eq 0 ] || break
     z="$teil$z"; teil=""
-    z="${z%$'\r'}"
-    if [[ "$z" == "$sentinel"* ]]; then rc="${z#"$sentinel"}"; break; fi
+    z="$(sauber "$z")"
     printf '%s\n' "$z" >> "$LAUF_LOG"
     case "$z" in
       "    OFFEN: "*) hinweis_merken "${z#    OFFEN: }" ;;
@@ -877,15 +1036,19 @@ lauf_ausfuehren() { # $1 Anzeigename, $2 Nummer-Text, $3 mit Schlüssel (1|0); A
       "FEHLER: "*) printf '    %s%s%s\n' "$C_R" "$z" "$C_RESET"; LETZTER_FEHLER="${z#FEHLER: }" ;;
       "!!  "*) printf '    %s%s%s\n' "$C_R" "$z" "$C_RESET" ;;
       *"CODE-STAND DIESES LAUFS"*) printf '    %s\n' "$(sed -E 's/^[[:space:]]*==> //' <<<"$z")" ;;
+      *"Bisherige Datenbank umbenannt in "*) if [[ "$z" =~ umbenannt\ in\ (lx_fampad_vor_[0-9_]+) ]]; then ALTE_DB_NEU="${BASH_REMATCH[1]}"; fi ;;
       ssh-ed25519\ *|ssh-rsa\ *|ecdsa-sha2-*) if [[ "$z" =~ $SSH_KEY_RE ]]; then PAUSE_KEY="$z"; fi ;;
     esac
   done
   exec 7<&-
+  ausgabe=0
+  for lesen in 1 2 3 4 5; do if [ -s "$rcdatei" ]; then ausgabe=1; break; fi; sleep 0.2; done
+  if [ "$ausgabe" = 1 ]; then rc="$(head -n 1 "$rcdatei")"; fi
   [[ "$rc" =~ ^[0-9]+$ ]] || rc=1
   DAUER_LETZT="$(dauer $((SECONDS - start)))"
   return "$rc"
 }
-phase_meldung_ok() { printf '%s✓%s %s %s   %s%s%s\n' "$C_G" "$C_RESET" "$1" "$2" "$C_D" "$DAUER_LETZT" "$C_RESET"; }
+phase_meldung_ok() { printf '%s✓%s %-5s %-36s %s%s%s\n' "$C_G" "$C_RESET" "$1" "$2" "$C_D" "$DAUER_LETZT" "$C_RESET"; }
 github_pause() { # zeigt den öffentlichen Deploy-Key und wartet auf "weiter"; Rückgabe 0 = weiter, 1 = abgebrochen
   local k
   echo
@@ -920,14 +1083,15 @@ aufbau_phase() { # $1 Phase; Rückgabe 0 = fertig
       if github_pause; then continue; fi
       antworten_schreiben
       echo
-      zeile "Pausiert. Trage den Schlüssel bei GitHub ein und starte danach denselben Befehl noch einmal (bash umzug.sh): Erledigtes wird übersprungen."
+      zeile "Pausiert. Trage den Schlüssel bei GitHub ein und starte danach denselben Befehl noch einmal (bash $UMZUG_PFAD): Erledigtes wird übersprungen."
       zeile "Dein privater Schlüssel wird dann noch einmal abgefragt (er wird nie gespeichert)."
       exit 10
     fi
-    printf '%s✗%s %s %s\n' "$C_R" "$C_RESET" "$nr" "${PHASEN_NAME[$p]}" >&2
+    printf '%s✗%s %-5s %s\n' "$C_R" "$C_RESET" "$nr" "${PHASEN_NAME[$p]}" >&2
     fehler_ende "Die Phase \"${PHASEN_NAME[$p]}\" ist fehlgeschlagen${LETZTER_FEHLER:+: $LETZTER_FEHLER}." "$(fehlermassnahme "$LETZTER_FEHLER")"
   done
 }
+schluessel_verwerfen() { AGE_ID=""; unset AGE_ID; AGE_ID=""; }
 schritt5() {
   local p
   schritt_titel 5 "Aufbau"
@@ -937,12 +1101,12 @@ schritt5() {
     aufbau_phase "$p"
     # nach der letzten Entschlüsselung (Ende der Phase datenbank) verschwindet der Schlüssel aus dem Arbeitsspeicher
     if [ "$p" = datenbank ] && [ -n "$AGE_ID" ]; then
-      AGE_ID=""; unset AGE_ID; AGE_ID=""
+      schluessel_verwerfen
       blass "    Schlüssel aus dem Arbeitsspeicher des Assistenten entfernt (alle Entschlüsselungen sind erledigt)."
     fi
     if [ "$p" = caddy ]; then erledigt_markieren caddy; fi
   done
-  AGE_ID=""; unset AGE_ID; AGE_ID=""
+  schluessel_verwerfen
   if [ "$CADDY_JETZT" = 0 ]; then printf '%s·%s %s: später, nach deiner DNS-Umstellung\n' "$C_D" "$C_RESET" "${PHASEN_NAME[caddy]}"; fi
 }
 
@@ -957,29 +1121,35 @@ lx_hat_schluessel() { # hat der Benutzer lx schon einen SSH-Schlüssel?
   home="$(getent passwd "$LX_USER" | cut -d: -f6)"
   [ -n "$home" ] && [ -s "$home/.ssh/authorized_keys" ]
 }
-erl() { liste_enthaelt "$A_ERLEDIGT" "$1" && printf '   -> erledigt'; return 0; }
+erl() { if liste_enthaelt "$A_ERLEDIGT" "$1"; then printf '   -> erledigt'; fi; return 0; }
 l() { LISTE+=("$*"); }
 liste_bauen() { # füllt LISTE (reiner Text; Überschriften beginnen mit "[n] ")
-  local n=0 ip="${A_IP:-<IP>}" fp h hinweisliste=()
+  local n=0 ip="${A_IP:-<IP>}" fp h hinweisliste=() u="bash $UMZUG_PFAD" dns_nr
   LISTE=()
   fp="$(host_fingerabdruck)"
   l "Jetzt bist du dran. Reihenfolge einhalten:"
   l ""
-  l "Vorab: Läuft der ALTE Server noch und hat sich seit der Sicherung etwas geändert (Nachrichten, Termine), fehlt es hier. Für einen verlustfreien Umzug:"
-  l "  alt:   sudo systemctl stop lx-fampad lx-fampad-weather && sudo systemctl start lx-fampad-backup.service"
-  l "  dann die frische Sicherung holen und hier neu einspielen (docs/NEUINSTALLATION.md, \"Umzug bei laufendem Altserver\")."
+  n=$((n + 1)); l "[$n] Läuft der ALTE Server noch und hat sich seit der Sicherung etwas geändert? Dann zuerst Schreibstopp und frische Sicherung"
+  l "      alt:   sudo systemctl stop lx-fampad lx-fampad-weather"
+  l "      alt:   sudo systemctl start lx-fampad-backup.service      (neue Sicherung: /var/backups/lx-fampad/<neuester Ordner>, oder vom NAS holen)"
+  l "      Ordner nach $ip kopieren:  scp -r <Ordner> root@$ip:/root/sicherung/"
+  l "      hier:  $u --aktualisieren$(erl aktualisieren)      (fragt Sicherung, Schlüssel und das Wort \"ersetzen\"; die bisherige Datenbank bleibt umbenannt erhalten)"
+  l "      Hat sich nichts geändert (oder ist der alte Server schon aus), überspringst du [$n]."
   l ""
-  n=$((n + 1)); l "[$n] DNS bei Cloudflare umstellen  (graue Wolke, \"DNS only\")"
+  n=$((n + 1)); dns_nr="$n"; l "[$n] DNS bei Cloudflare umstellen  (graue Wolke, \"DNS only\")"
   l "      familie        A   $ip"
   l "      ntfy.familie   A   $ip"
   if [ -n "$IP_V6" ]; then l "      Gibt es einen AAAA-Eintrag: auf $IP_V6 umstellen oder löschen (sonst zeigt er noch zum alten Server)."
   else l "      Einen vorhandenen AAAA-Eintrag löschen (dieser Server hat keine globale IPv6-Adresse)."; fi
   l "    Kontrolle:  dig +short $DOMAIN   (muss $ip zeigen; unter Windows: nslookup $DOMAIN 1.1.1.1)"
-  n=$((n + 1)); l "[$n] Caddy und Zertifikate holen  (erst nach [1]!)$(erl caddy)"
-  l "      bash umzug.sh --weiter caddy"
+  n=$((n + 1)); l "[$n] Caddy und Zertifikate holen  (erst nach [$dns_nr]!)$(erl caddy)"
+  l "      $u --weiter caddy"
   n=$((n + 1)); l "[$n] Web-App hochladen  (auf deinem PC, im Git-Checkout von lx-fampad)"
   if lx_hat_schluessel; then l "      SSH_HOST=lx@$ip deploy/deploy-web.sh"
   else l "      Auf diesem Server hat lx noch keinen SSH-Schlüssel: trage deinen öffentlichen Schlüssel in /home/lx/.ssh/authorized_keys ein, dann: SSH_HOST=lx@$ip deploy/deploy-web.sh"; fi
+  n=$((n + 1)); l "[$n] Prüfen, ob alles stimmt  (nach Caddy und Web-App)"
+  l "      Anmeldung mit Passkey und mit TOTP (das beweist AUTH_SECRET_KEY), Listen und Kalender sichtbar, Push-Test, App-Update-Prüfung."
+  l "      Gelöschte Daten (Löschwünsche nach DSGVO) sind seit der Sicherung wieder da und müssen erneut gelöscht werden."
   n=$((n + 1))
   if [ -n "$A_NAS_IP" ]; then
     l "[$n] NAS neu verbinden  (auf dem NAS)"
@@ -992,31 +1162,38 @@ liste_bauen() { # füllt LISTE (reiner Text; Überschriften beginnen mit "[n] ")
     l "      In $PARAMS_ERZEUGT zwei Zeilen ergänzen: BACKUP_NAS_PUBKEY=<öffentlicher SSH-Schlüssel des NAS>  und  BACKUP_NAS_IP=<IP des NAS>"
     l "      dann: bash $HIER/bootstrap-server.sh --params $PARAMS_ERZEUGT --phase sicherung   und danach den Host-Schlüssel auf dem NAS neu lernen (docs/NEUINSTALLATION.md, Abschnitt 6)"
   fi
-  n=$((n + 1)); l "[$n] Alten Server stoppen"
+  n=$((n + 1)); l "[$n] Alten Server endgültig stoppen  (falls noch nicht in [1] geschehen)"
   l "      alt:   sudo systemctl stop lx-fampad lx-fampad-weather"
   if [ "$A_WETTER" = 1 ]; then
     n=$((n + 1)); l "[$n] Wetter-Dienst hier starten  (erst wenn der alte Server aus ist: Netatmo erlaubt nur einen Abrufer)$(erl wetter)"
-    l "      neu:   bash umzug.sh --weiter wetter"
+    l "      neu:   $u --weiter wetter"
     l "      Ist das gesicherte Token veraltet: sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/weather-setup.js"
   fi
   if [ "$A_MUELL" = 1 ]; then
     n=$((n + 1)); l "[$n] Müll-Dienst (Abfuhrtermine) hier starten  (nach dem Stopp des alten Servers)$(erl muell)"
     if [ "$A_MUELL_LINK" = 1 ]; then l "      Der Link des Abfallkalenders steht in der gesicherten Konfiguration und ist schon hier."
     else l "      Der Link des Abfallkalenders fehlt in der Sicherung: erst  sudo bash /home/$LX_USER/lx-fampad/deploy/einrichtung-muell.sh einstellungen  (der Link wird unsichtbar abgefragt)."; fi
-    l "      neu:   bash umzug.sh --weiter muell"
+    l "      neu:   $u --weiter muell      (ergänzt auch die sudo-Regel für den Neustart des Dienstes, deploy/README.md Abschnitt 13)"
   fi
   n=$((n + 1)); l "[$n] Wiederherstellungstest  (auf deinem PC, mit dem PRIVATEN Schlüssel)"
   l "      deploy/backup/wiederherstellung-test.sh --identity ~/lx-fampad-age.key --run-dir <vom NAS geholte NEUE Sicherung dieses Servers>"
   l "      (erst nach der ersten Nacht um 03:30; Anleitung: docs/BACKUP-EINRICHTUNG-SCHRITTE.md)"
+  if [ -n "$A_ALTE_DB" ]; then
+    n=$((n + 1)); l "[$n] Die bisherige Datenbank löschen  (enthält Personendaten; erst nach der Prüfung)"
+    l "      sudo -u postgres psql -c \"DROP DATABASE $A_ALTE_DB\""
+  fi
   l ""
   l "Danach, wenn du Zeit hast:"
   l "  - Firewall: nur 22, 80 und 443 offen (Anbieter-Firewall oder ufw); SSH nur mit Schlüssel."
+  l "  - APK-Link: Kopie der neuesten APK als lx-familyhub-latest.apk in /srv/fampad/releases/android neu anlegen und latest.json prüfen (deploy/README.md Abschnitt 9)."
   l "  - Release-Upload per GitHub Actions: Secrets VPS_HOST ($ip) und VPS_KNOWN_HOSTS (ssh-keyscan -t ed25519 $ip; Fingerabdruck ${fp:-vergleichen}) in der Environment vps-deploy."
   l "  - Karte (1,1 GB) neu erzeugen und Fallback-Schriften nach /srv/fampad/font-fallback (deploy/README.md, Abschnitte 8 und 11)."
   l "  - TTL der DNS-Einträge wieder erhöhen; den alten Server erst nach mindestens einer Woche stabilem Betrieb abgeben (Datenträger bereinigen lassen)."
+  l "  - Diese Liste später noch einmal ansehen oder neu schreiben lassen: $u --weiter pruefung   (geht auch ohne den Sicherungsordner)."
   for h in "${HINWEISE[@]}"; do
     case "$h" in
-      "Die neue Sicherung ist UNGEPRÜFT"*|"DNS zeigt noch nicht"*|"Wetter-Dienst ist installiert"*) ;;
+      "Die neue Sicherung ist UNGEPRÜFT"*|"DNS zeigt noch nicht"*|"NAS-Abholung nicht eingerichtet"*) ;;
+      "Wetter-Dienst ist installiert"*) [ "$A_WETTER" = 1 ] || hinweisliste+=("$h") ;;
       *) hinweisliste+=("$h") ;;
     esac
   done
@@ -1049,15 +1226,31 @@ schritt6() {
   if liste_schreiben; then echo; blass "Die Liste liegt auch in $OFFEN_DATEI."; else hinweis "Die Liste ließ sich nicht nach $OFFEN_DATEI schreiben."; fi
 }
 
-# --- --weiter: einzelne Folgeschritte -----------------------------------------------------------------------------------------------
-weiter_vorbereiten() {
-  antworten_lesen || fehler_ende "Es gibt noch keinen Lauf des Assistenten auf diesem Server (keine gemerkten Antworten)." "Starte zuerst: bash umzug.sh"
-  liste_enthaelt "$A_FERTIG" datenbank || fehler_ende "Der Aufbau ist noch nicht bis zur Datenbank gekommen." "Starte zuerst: bash umzug.sh (derselbe Befehl setzt dort fort)."
-  [ -f "$PARAMS_ERZEUGT" ] || fehler_ende "Die Parameterdatei $PARAMS_ERZEUGT fehlt." "Starte zuerst: bash umzug.sh"
+# --- --weiter und --aktualisieren: einzelne Folgeschritte -------------------------------------------------------------------------
+weiter_vorbereiten() { # $1 "aufbau" (Standard): der Aufbau muss bis zur Datenbank gekommen sein; "fertig": bis zur Anwendung
+  antworten_lesen || fehler_ende "Es gibt noch keinen Lauf des Assistenten auf diesem Server (keine gemerkten Antworten)." "Starte zuerst: bash $UMZUG_PFAD"
+  liste_enthaelt "$A_FERTIG" datenbank || fehler_ende "Der Aufbau ist noch nicht bis zur Datenbank gekommen." "Starte zuerst den Aufbau: bash $UMZUG_PFAD (derselbe Befehl setzt dort fort)."
+  if [ "${1:-aufbau}" = fertig ]; then
+    liste_enthaelt "$A_FERTIG" anwendung || fehler_ende "Der Server ist noch nicht gebaut und gestartet (Phase \"Server bauen und starten\")." "Schließe zuerst den Aufbau ab: bash $UMZUG_PFAD"
+  fi
+  [ -f "$PARAMS_ERZEUGT" ] || fehler_ende "Die Parameterdatei $PARAMS_ERZEUGT fehlt." "Starte zuerst: bash $UMZUG_PFAD"
   PARAMS_PFAD="$PARAMS_ERZEUGT"
   ip_erkennen
   [ -n "$A_IP" ] || A_IP="$IP_V4"
   : >> "$LAUF_LOG"; chmod 600 "$LAUF_LOG" 2>/dev/null || true
+}
+# Die sudo-Regel für den Neustart des Müll-Dienstes (README Abschnitt 13, Schritt 2): bootstrap-server.sh schreibt /etc/sudoers.d/lx-fampad bei jedem
+# Lauf der Phase anwendung neu (ohne diese Regel); darum nach jedem solchen Lauf wieder ergänzen
+sudoers_muell_ergaenzen() {
+  local f="$SUDOERS_DATEI" tmp="$ARBEIT_DIR/sudoers.neu"
+  [ -f "$f" ] || { hinweis "$f fehlt: die sudo-Regel für den Müll-Dienst konnte nicht ergänzt werden."; return 1; }
+  if grep -q 'restart lx-fampad-waste' "$f"; then return 0; fi
+  command -v visudo >/dev/null || { hinweis "visudo fehlt: die sudo-Regel für den Müll-Dienst konnte nicht geprüft und ergänzt werden."; return 1; }
+  awk -v zusatz=", /usr/bin/systemctl restart lx-fampad-waste" 'BEGIN { fertig = 0 } !fertig && /^lx ALL=\(root\) NOPASSWD:/ { print $0 zusatz; fertig = 1; next } { print } END { if (!fertig) exit 1 }' "$f" > "$tmp" \
+    || { hinweis "$f hat nicht die erwartete Form: bitte die Regel von Hand ergänzen (deploy/README.md Abschnitt 13)."; return 1; }
+  visudo -cf "$tmp" >/dev/null || { hinweis "Die ergänzte sudo-Regel ist ungültig und wird nicht übernommen."; return 1; }
+  install -m 440 -o root -g root "$tmp" "$f"
+  gut "sudo-Regel für den Neustart des Müll-Dienstes ergänzt."
 }
 weiter_phasen() { # $1 Phasen (kommagetrennt), $2 Anzeige, $3 zusätzliche Option für bootstrap-server.sh (optional)
   local rc
@@ -1074,15 +1267,17 @@ weiter_phasen() { # $1 Phasen (kommagetrennt), $2 Anzeige, $3 zusätzliche Optio
 }
 weiter_liste() { echo; liste_bauen; liste_ausgeben; if liste_schreiben; then blass "Die Liste liegt auch in $OFFEN_DATEI."; fi; }
 weiter_caddy() {
-  local h bad=0
+  local h grund bad=0
   weiter_vorbereiten
   echo; fett "Caddy und Zertifikate"
   for h in "$DOMAIN" "$NTFY_DOMAIN"; do
-    if dns_ok "$h"; then gut "DNS ok: $h zeigt auf diesen Server"
-    else schlecht "DNS: $h zeigt noch nicht auf diesen Server (${A_IP:-?})."; bad=1; fi
+    if [ "$OPT_DNS_SKIP" = 1 ]; then gut "DNS-Prüfung übersprungen (Testmodus): $h"; continue; fi
+    grund="$(bootstrap_dns "$h")"
+    if [ "$grund" = ok ]; then gut "DNS ok: $h zeigt auf diesen Server"
+    else schlecht "DNS: $h $(sauber "$grund")."; bad=1; fi
   done
   if [ "$bad" = 1 ]; then
-    fehler_ende "Der DNS-Eintrag zeigt noch nicht auf diesen Server; Caddy würde keine Zertifikate bekommen und Let's-Encrypt-Versuche verbrauchen." "Stelle die A-Einträge familie und ntfy.familie auf ${A_IP:-diesen Server} (DNS only), warte, bis 'dig +short $DOMAIN' die Adresse zeigt, und wiederhole den Befehl."
+    fehler_ende "Der DNS-Eintrag zeigt noch nicht (nur) auf diesen Server; Caddy würde keine Zertifikate bekommen und Let's-Encrypt-Versuche verbrauchen." "Stelle die A-Einträge familie und ntfy.familie auf ${A_IP:-diesen Server} (DNS only), lösche oder ändere einen AAAA-Eintrag, warte, bis 'dig +short $DOMAIN' die Adresse zeigt, und wiederhole den Befehl."
   fi
   weiter_phasen "caddy,pruefung" "Caddy, Zertifikate und Abschlussprüfung"
   fertig_markieren caddy; fertig_markieren pruefung; erledigt_markieren caddy
@@ -1090,7 +1285,7 @@ weiter_caddy() {
   weiter_liste
 }
 weiter_wetter() {
-  weiter_vorbereiten
+  weiter_vorbereiten fertig
   echo; fett "Wetter-Dienst starten"
   if [ "$A_WETTER" != 1 ]; then zeile "Das Wetter war auf dem alten Server nicht eingeschaltet: nichts zu tun."; return 0; fi
   zeile "Netatmo erlaubt nur EINEN Abrufer gleichzeitig (das Token wird bei jedem Abruf erneuert)."
@@ -1098,15 +1293,29 @@ weiter_wetter() {
   if [ "${ANTWORT,,}" != ja ]; then zeile "Gut, ich starte nichts. Stoppe zuerst den alten Server und wiederhole den Befehl."; return 0; fi
   weiter_phasen "anwendung" "Server neu bauen und Wetter-Dienst einschalten" "--wetter-starten"
   erledigt_markieren wetter
+  if liste_enthaelt "$A_ERLEDIGT" muell; then sudoers_muell_ergaenzen; fi
   weiter_liste
 }
+# Der Müll-Dienst wird als root aus dem Checkout von lx gestartet: nur wenn der Checkout unverändert auf dem gewählten Code-Stand steht
+muell_checkout_pruefen() { # $1 Checkout
+  local co="$1" status kopf soll
+  status="$(runuser -u "$LX_USER" -- git -C "$co" status --porcelain -- deploy 2>/dev/null)" || return 1
+  [ -z "$status" ] || return 1
+  kopf="$(runuser -u "$LX_USER" -- git -C "$co" rev-parse HEAD 2>/dev/null)" || return 1
+  soll="$(runuser -u "$LX_USER" -- git -C "$co" rev-parse --verify --quiet "${A_GIT_REF}^{commit}" 2>/dev/null)" || return 1
+  [ -n "$kopf" ] && [ "$kopf" = "$soll" ]
+}
 weiter_muell() {
-  local ziel
-  weiter_vorbereiten
+  local co ziel
+  weiter_vorbereiten fertig
   echo; fett "Müll-Dienst starten"
   if [ "$A_MUELL" != 1 ]; then zeile "Die Abfuhrtermine waren auf dem alten Server nicht eingeschaltet: nichts zu tun."; return 0; fi
-  ziel="$(getent passwd "$LX_USER" | cut -d: -f6)/lx-fampad/deploy/einrichtung-muell.sh"
-  [ -f "$ziel" ] || fehler_ende "$ziel fehlt (Code-Stand ohne Abfuhrtermine?)." "Nimm einen Code-Stand ab v0.9.0 ('bash umzug.sh --neu') oder lass den Müll-Dienst weg."
+  co="$(getent passwd "$LX_USER" | cut -d: -f6)/lx-fampad"
+  ziel="$co/deploy/einrichtung-muell.sh"
+  [ -f "$ziel" ] || fehler_ende "$ziel fehlt (Code-Stand ohne Abfuhrtermine?)." "Nimm einen Code-Stand ab v0.9.0 (starte den Assistenten neu und antworte bei \"Code-Stand ändern?\" mit ja) oder lass den Müll-Dienst weg."
+  if ! muell_checkout_pruefen "$co"; then
+    fehler_ende "Der Checkout $co weicht vom Code-Stand $A_GIT_REF ab (Änderungen in deploy/ oder anderer Commit); ich führe nichts als root daraus aus." "Prüfe ihn (git -C $co status, git -C $co log -1) und stelle ihn auf $A_GIT_REF zurück. Wer in $co schreiben kann, hat mit dem Dienst root-Rechte."
+  fi
   if [ "$A_MUELL_LINK" != 1 ]; then
     fehler_ende "Der Link des Abfallkalenders fehlt in der Sicherung." "Führe zuerst aus: sudo bash $ziel einstellungen   (der Link wird unsichtbar abgefragt) und wiederhole dann diesen Befehl."
   fi
@@ -1118,6 +1327,7 @@ weiter_muell() {
     fehler_ende "Der Müll-Dienst ließ sich nicht einrichten." "Einzelheiten: $LAUF_LOG (oder direkt: sudo bash $ziel dienst)."
   fi
   gut "Müll-Dienst (lx-fampad-waste) eingerichtet und gestartet."
+  sudoers_muell_ergaenzen
   erledigt_markieren muell
   weiter_liste
 }
@@ -1128,6 +1338,46 @@ weiter_pruefung() {
   fertig_markieren pruefung
   weiter_liste
 }
+# Umzug bei laufendem Altserver: eine neuere Sicherung einspielen (Datenbank und Konfiguration ersetzen; die bisherige Datenbank bleibt umbenannt)
+aktualisieren() {
+  local wort vorher
+  weiter_vorbereiten fertig
+  echo; fett "Neuere Sicherung einspielen"
+  zeile "Das ersetzt die Datenbank und die Konfiguration DIESES Servers durch die der gewählten Sicherung. Die bisherige Datenbank wird nur umbenannt (nichts wird gelöscht),"
+  zeile "die Dienste stehen dabei kurz still. Vorher auf dem ALTEN Server: sudo systemctl stop lx-fampad lx-fampad-weather, dann die frische Sicherung holen (Schreibstopp)."
+  vorher="$A_SICHERUNG"; A_SICHERUNG=""
+  ip_erkennen
+  frage_sicherung
+  if [ "$A_SICHERUNG" = "$vorher" ]; then
+    hinweis "Das ist dieselbe Sicherung wie beim ersten Lauf: es ändert sich nichts Neues."
+    frage_ja "Trotzdem einspielen?" nein || { zeile "Gut, ich ändere nichts."; return 0; }
+  fi
+  frage_schluessel
+  config_auswerten
+  echo
+  printf '%sAchtung:%s Datenbank und Konfiguration dieses Servers werden durch Sicherung %s ersetzt. Tippe %sersetzen%s zur Bestätigung: ' "$C_B" "$C_RESET" "$(basename "$A_SICHERUNG")" "$C_C" "$C_RESET" >&2
+  if ! IFS= read -r wort; then echo >&2; abbruch_eingabe; fi
+  if [ "$(trimmen "${wort%$'\r'}")" != ersetzen ]; then zeile "Abgebrochen, es wurde nichts verändert."; schluessel_verwerfen; return 0; fi
+  antworten_schreiben
+  LETZTE_PHASE="aktualisieren"
+  bootstrap_basis
+  BA+=(--phase "konfiguration,datenbank,anwendung" --sicherung "$A_SICHERUNG" --identity-stdin --datenbank-ersetzen --konfiguration-ersetzen --yes)
+  if liste_enthaelt "$A_ERLEDIGT" wetter; then BA+=(--wetter-starten); fi
+  lauf_ausfuehren "Neue Sicherung einspielen, Server neu bauen" "·" 1; wort=$?
+  schluessel_verwerfen
+  if [ "$wort" -ne 0 ]; then
+    printf '%s✗%s Neue Sicherung einspielen\n' "$C_R" "$C_RESET" >&2
+    fehler_ende "Das Einspielen der neuen Sicherung ist fehlgeschlagen${LETZTER_FEHLER:+: $LETZTER_FEHLER}." "$(fehlermassnahme "$LETZTER_FEHLER") Die bisherige Datenbank ist, falls schon getauscht, unter ihrem neuen Namen noch da (psql -l); bootstrap-server.sh stellt sie bei einem Fehler selbst zurück."
+  fi
+  phase_meldung_ok "·" "Neue Sicherung eingespielt, Server neu gestartet"
+  if [ -n "$ALTE_DB_NEU" ]; then
+    A_ALTE_DB="$ALTE_DB_NEU"
+    hinweis "Die bisherige Datenbank heißt jetzt $A_ALTE_DB und enthält Personendaten. Nach der Prüfung löschen: sudo -u postgres psql -c \"DROP DATABASE $A_ALTE_DB\""
+  fi
+  if liste_enthaelt "$A_ERLEDIGT" muell; then sudoers_muell_ergaenzen; fi
+  erledigt_markieren aktualisieren
+  weiter_liste
+}
 
 # --- Aufruf -------------------------------------------------------------------------------------------------------------------------
 hilfe() { sed -n '2,/^set -u/{/^set -u/!p}' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
@@ -1136,6 +1386,7 @@ argumente_lesen() {
     case "$1" in
       --probe) OPT_PROBE=1 ;;
       --weiter) [ $# -ge 2 ] || { echo "--weiter braucht einen Wert (caddy, wetter, muell, pruefung)" >&2; exit 2; }; OPT_WEITER="$2"; shift ;;
+      --aktualisieren) OPT_AKTUALISIEREN=1 ;;
       --ip) [ $# -ge 2 ] || { echo "--ip braucht einen Wert" >&2; exit 2; }; OPT_IP="$2"; shift ;;
       --params) [ $# -ge 2 ] || { echo "--params braucht einen Wert" >&2; exit 2; }; OPT_PARAMS="$2"; shift ;;
       --neu) OPT_NEU=1 ;;
@@ -1148,34 +1399,45 @@ argumente_lesen() {
     shift
   done
   case "$OPT_WEITER" in ''|caddy|wetter|muell|pruefung) ;; *) echo "Unbekannter Folgeschritt: $OPT_WEITER (erlaubt: caddy, wetter, muell, pruefung)" >&2; exit 2 ;; esac
-  if [ -n "$OPT_WEITER" ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ]; }; then echo "--weiter geht nicht zusammen mit --probe oder --neu" >&2; exit 2; fi
+  if [ -n "$OPT_WEITER" ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ] || [ "$OPT_AKTUALISIEREN" = 1 ]; }; then echo "--weiter geht nicht zusammen mit --probe, --neu oder --aktualisieren" >&2; exit 2; fi
+  if [ "$OPT_PROBE" = 1 ] && [ "$OPT_NEU" = 1 ]; then echo "--probe geht nicht zusammen mit --neu (der Probelauf ändert nichts, auch keine gemerkten Antworten)" >&2; exit 2; fi
+  if [ "$OPT_AKTUALISIEREN" = 1 ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ]; }; then echo "--aktualisieren geht nicht zusammen mit --probe oder --neu" >&2; exit 2; fi
   if [ -n "$OPT_IP" ] && { ! gueltige_ipv4 "$OPT_IP" || private_ipv4 "$OPT_IP"; }; then echo "--ip braucht eine öffentliche IPv4-Adresse (Beispiel: 203.0.113.10)" >&2; exit 2; fi
   if [ "$OPT_DNS_SKIP" = 1 ] && [ "$OPT_OHNE_SYSTEMD" = 0 ]; then echo "--dns-pruefung-ueberspringen gibt es nur zusammen mit --ohne-systemd (Container-Tests)" >&2; exit 2; fi
   return 0
 }
+# Absicherung gegen unbeabsichtigte Spuren des Schlüssels: kein xtrace (würde die Eingabe ins Terminal oder in eine Datei schreiben), keine Speicherabzüge
+sicherheit_pruefen() {
+  case "$-" in *x*) echo "Abbruch: xtrace (bash -x, set -x) ist eingeschaltet: es würde auch den privaten Schlüssel protokollieren. Starte ohne -x." >&2; exit 2 ;; esac
+  if [ -n "${BASH_XTRACEFD:-}" ]; then echo "Abbruch: BASH_XTRACEFD ist gesetzt (Protokollierung der Befehle): unset BASH_XTRACEFD und neu starten." >&2; exit 2; fi
+  ulimit -c 0 2>/dev/null || true
+}
 main() {
+  sicherheit_pruefen
   argumente_lesen "$@"
   farben_init
   [ "$(id -u)" -eq 0 ] || { echo "Bitte als root starten:  sudo bash $0" >&2; exit 2; }
   trap aufraeumen EXIT
   trap unterbrochen INT TERM HUP
-  bootstrap_pruefen
+  if [ -t 0 ]; then STTY_SAVE="$(stty -g 2>/dev/null || true)"; fi
   ARBEIT_DIR="$(mktemp -d -p /run umzug.XXXXXXXX 2>/dev/null || mktemp -d)"
   chmod 700 "$ARBEIT_DIR"
+  bootstrap_pruefen
   if [ -n "$OPT_WEITER" ]; then
     case "$OPT_WEITER" in caddy) weiter_caddy ;; wetter) weiter_wetter ;; muell) weiter_muell ;; pruefung) weiter_pruefung ;; esac
     exit 0
   fi
+  if [ "$OPT_AKTUALISIEREN" = 1 ]; then aktualisieren; exit 0; fi
   echo
-  fett "lx-fampad · Umzugs-Assistent"
-  if [ "$OPT_NEU" = 1 ]; then antworten_zuruecksetzen; rm -f "$ANTWORTEN_DATEI"
+  if [ "$OPT_NEU" = 1 ]; then antworten_lesen || true; antworten_neu_beginnen
   elif [ "$OPT_PROBE" = 0 ] && antworten_lesen; then
     echo
     zeile "Ich habe die Antworten eines früheren Laufs gefunden:"
     printf '  Sicherung %s, Code-Stand %s, fertige Phasen: %s\n' "${A_SICHERUNG:-?}" "${A_GIT_REF:-?}" "${A_FERTIG:-keine}"
-    if ! frage_ja "Damit weitermachen?" ja; then antworten_zuruecksetzen; rm -f "$ANTWORTEN_DATEI"; fi
+    if [ -n "$A_PARAMS" ]; then printf '  Zusätzliche Parameterdatei: %s\n' "$A_PARAMS"; fi
+    if ! frage_ja "Damit weitermachen?" ja; then antworten_neu_beginnen; fi
   fi
-  if [ -n "$OPT_PARAMS" ]; then extra_params_lesen "$OPT_PARAMS"; fi
+  extra_params_einbinden
   schritt1
   schritt2
   schritt3
@@ -1189,5 +1451,6 @@ main() {
 # Nur ausführen, wenn das Skript gestartet (nicht eingelesen) wird; test-umzug.sh liest es ein und prüft die Hilfsfunktionen.
 if [ "${BASH_SOURCE[0]}" = "$0" ] && [ -z "${UMZUG_NUR_FUNKTIONEN:-}" ]; then
   main "$@"
+  # shellcheck disable=SC2317
   exit $?
 fi

@@ -69,8 +69,8 @@ for i in 203.0.113.7 8.8.8.8 1.2.3.4; do gelingt "IPv4 ok: $i" gueltige_ipv4 "$i
 for i in 256.1.1.1 1.2.3 1.2.3.4.5 a.b.c.d "" "1.2.3.4/24"; do scheitert "IPv4 abgelehnt: '$i'" gueltige_ipv4 "$i"; done
 for i in 10.0.0.1 127.0.0.1 192.168.1.1 172.16.0.1 172.31.255.1 169.254.1.1 100.64.0.1; do gelingt "private IPv4 erkannt: $i" private_ipv4 "$i"; done
 for i in 8.8.8.8 172.32.0.1 172.15.0.1 203.0.113.7 100.63.0.1; do scheitert "öffentliche IPv4 nicht privat: $i" private_ipv4 "$i"; done
-for i in 203.0.113.7 203.0.113.0/24 2001:db8::1 2001:db8::/48 "203.0.113.7,2001:db8::1"; do gelingt "NAS-IP ok: $i" gueltige_nas_ip "$i"; done
-for i in "" abc "1.2.3" "203.0.113.7;ls" "203.0.113.7 " "a:b:zz"; do scheitert "NAS-IP abgelehnt: '$i'" gueltige_nas_ip "$i"; done
+for i in 203.0.113.7 203.0.113.0/24 203.0.0.0/16 2001:db8::1 2001:db8::/48 "203.0.113.7,2001:db8::1"; do gelingt "NAS-IP ok: $i" gueltige_nas_ip "$i"; done
+for i in "" abc "1.2.3" "203.0.113.7;ls" "203.0.113.7 " "a:b:zz" 256.1.1.1 203.0.113.256 01.2.3.4 0.0.0.0 224.0.0.1 240.0.0.1 203.0.113.7/24 10.0.0.0/8 203.0.113.0/15 203.0.113.0/33 2001:db8::/32 :: ff02::1 ::ffff:1.2.3.4 2001:db8:::1 1:2:3:4:5:6:7:8:9; do scheitert "NAS-IP abgelehnt: '$i'" gueltige_nas_ip "$i"; done
 for s in 0 256 1024 8192; do gelingt "Swap ok: $s" gueltiger_swap "$s"; done
 for s in 100 8193 -1 abc ""; do scheitert "Swap abgelehnt: '$s'" gueltiger_swap "$s"; done
 SSHOK="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIabc test@pc"
@@ -190,6 +190,10 @@ rm -f "$S/20261022-033000/link"
 echo manipuliert >> "$S/20261021-033000/config-20261021-033000.tar.age"
 enthaelt "geänderte Datei: Prüfsummen FALSCH" "$(sicherung_beschreiben "$S/20261021-033000")" "PRÜFSUMMEN FALSCH"
 scheitert "geänderte Datei wird nicht übernommen" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; sicherung_uebernehmen '$S/20261021-033000'"
+cp -r "$S/20261022-033000" "$S/unvollstaendig"; ( cd "$S/unvollstaendig" && sha256sum db-*.age > SHA256SUMS ); chown -R root:root "$S"; chmod -R go-w "$S"
+enthaelt "Archiv fehlt in SHA256SUMS: nicht 'Prüfsummen ok'" "$(sicherung_beschreiben "$S/unvollstaendig")" "PRÜFSUMMEN FALSCH"
+scheitert "Archiv fehlt in SHA256SUMS: wird nicht übernommen" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; sicherung_uebernehmen '$S/unvollstaendig'"
+rm -rf "$S/unvollstaendig"
 gelingt "unveränderte Sicherung wird übernommen" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; sicherung_uebernehmen '$S/20261022-033000'"
 
 echo "== Schlüsselprüfung und Konfiguration (mit echtem age)"
@@ -251,7 +255,7 @@ enthaelt "Liste: neue IP bei den DNS-Einträgen" "$L" "familie        A   203.0.
 enthaelt "Liste: ntfy.familie als A-Eintrag" "$L" "ntfy.familie   A   203.0.113.10"
 enthaelt "Liste: Kontrollbefehl dig" "$L" "dig +short familie.lx-labs.dev"
 enthaelt "Liste: Caddy-Schritt mit --weiter caddy und Vermerk erledigt" "$L" "--weiter caddy"
-enthaelt "Liste: Caddy als erledigt markiert" "$L" "(erst nach [1]!)   -> erledigt"
+enthaelt "Liste: Caddy als erledigt markiert" "$L" "(erst nach [2]!)   -> erledigt"
 enthaelt "Liste: Web-App" "$L" "deploy/deploy-web.sh"
 enthaelt "Liste: NAS neu verbinden" "$L" "ssh-keygen -R familie.lx-labs.dev"
 enthaelt "Liste: Wetter-Dienst" "$L" "--weiter wetter"
@@ -268,6 +272,190 @@ enthaelt "Liste: ohne NAS-Daten der Nachholschritt" "$L" "NAS-Abholung nachholen
 liste_schreiben
 gleich "Listendatei: Modus 600" 600 "$(stat -c %a "$OFFEN_DATEI")"
 enthaelt "Listendatei enthält die Liste" "$(cat "$OFFEN_DATEI")" "DNS bei Cloudflare umstellen"
+
+echo "== Aufbau, Neustart und Swap (reine Logik)"
+# Swap bei Wiederaufnahme (SWAPS_DATEI-Attrappe): --swap-ok nur, wenn die Option da ist oder Swap läuft UND kein Schlüssel nötig/im Speicher ist
+printf 'Filename Type Size Used Priority\n/swapfile file 1048572 0 -2\n' > "$ARBEIT/swaps-an"; printf 'Filename Type Size Used Priority\n' > "$ARBEIT/swaps-aus"
+PARAMS_PFAD="$ARBEIT/x.params"; OPT_SWAP_OK=0; AGE_ID=""
+SWAPS_DATEI="$ARBEIT/swaps-an"
+A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung"
+bootstrap_basis; enthaelt "Wiederaufnahme nach der Phase anwendung mit laufendem Swap: --swap-ok wird durchgereicht (kein Schlüssel nötig)" "${BA[*]}" "--swap-ok"
+A_FERTIG="pruefen,pakete,system"
+bootstrap_basis; enthaelt_nicht "solange der Schlüssel nötig ist: kein stilles --swap-ok" "${BA[*]}" "--swap-ok"
+A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung"; AGE_ID="x"
+bootstrap_basis; enthaelt_nicht "Schlüssel im Speicher (neue Sicherung einspielen): kein stilles --swap-ok" "${BA[*]}" "--swap-ok"
+AGE_ID=""; SWAPS_DATEI="$ARBEIT/swaps-aus"
+bootstrap_basis; enthaelt_nicht "ohne Swap kein --swap-ok" "${BA[*]}" "--swap-ok"
+OPT_SWAP_OK=1; bootstrap_basis; enthaelt "mit der Option immer --swap-ok" "${BA[*]}" "--swap-ok"; OPT_SWAP_OK=0
+SWAPS_DATEI="$ARBEIT/swaps-an"; A_FERTIG=""
+gelingt "swap_aktiv erkennt die Attrappe" swap_aktiv
+SWAPS_DATEI="$ARBEIT/swaps-aus"; scheitert "ohne Swap meldet swap_aktiv nichts" swap_aktiv
+SWAPS_DATEI="$ARBEIT/gibtsnicht"; gelingt "nicht lesbare /proc/swaps gilt als aktiv (fail-closed)" swap_aktiv
+SWAPS_DATEI=/proc/swaps
+# --neu: die Antworten verfallen, der Stand des Aufbaus bleibt (sonst blockiert Schritt 1 den halb eingerichteten Server)
+A_SICHERUNG=/root/sicherung/x; A_GIT_REF=v0.9.0; A_SWAP_MB=1024; A_FRAGEN=1; A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung"; A_ERLEDIGT="caddy,wetter"; A_WETTER=1; A_PARAMS=/root/p; HINWEISE=("h1")
+antworten_neu_beginnen
+gleich "--neu: Antworten verworfen (Sicherung)" "" "$A_SICHERUNG"; gleich "--neu: Fragen verworfen" "" "$A_FRAGEN"; gleich "--neu: Pfad der Parameterdatei verworfen" "" "$A_PARAMS"
+gleich "--neu: Stand des Aufbaus bleibt" "pruefen,pakete,system,code,konfiguration,datenbank,anwendung" "$A_FERTIG"
+gleich "--neu: erledigte Folgeschritte bleiben" "caddy,wetter" "$A_ERLEDIGT"; gleich "--neu: Schalter aus der Konfiguration bleiben" 1 "$A_WETTER"; gleich "--neu: Hinweise bleiben" h1 "${HINWEISE[0]}"
+gleich "--neu merkt sich den bisherigen Code-Stand" v0.9.0 "$GIT_REF_VORHER"
+# anderer Code-Stand: code, anwendung und alles danach laufen noch einmal, konfiguration und datenbank bleiben
+A_GIT_REF=v0.9.1; A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung,ntfy,caddy,sicherung,pruefung"; A_ERLEDIGT="caddy,wetter"
+code_stand_wechsel_pruefen v0.9.0 >/dev/null
+gleich "anderer Code-Stand: Stand des Aufbaus ab code zurückgesetzt" "pruefen,pakete,system,konfiguration,datenbank" "$A_FERTIG"
+gleich "anderer Code-Stand: caddy nicht mehr als erledigt" "wetter" "$A_ERLEDIGT"
+A_FERTIG="pruefen,pakete"; code_stand_wechsel_pruefen v0.9.0 >/dev/null
+gleich "anderer Code-Stand, aber code noch nicht gelaufen: nichts zu tun" "pruefen,pakete" "$A_FERTIG"
+A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung"; A_GIT_REF=v0.9.0; code_stand_wechsel_pruefen v0.9.0 >/dev/null
+gleich "gleicher Code-Stand: nichts zurückgesetzt" "pruefen,pakete,system,code,konfiguration,datenbank,anwendung" "$A_FERTIG"
+A_FERTIG=""; A_ERLEDIGT=""; A_PARAMS=""; HINWEISE=()
+# Pfad der --params-Datei wird gemerkt (nicht der Inhalt) und beim Neustart wieder gelesen
+printf 'CI_DEPLOY_PUBKEY=%s\nBACKUP_NAS_IP=203.0.113.7\n' "$SSHOK" > "$ARBEIT/mem.params"; chmod 600 "$ARBEIT/mem.params"
+EXTRA=(); OPT_PARAMS="$ARBEIT/mem.params"; extra_params_einbinden >/dev/null; OPT_PARAMS=""
+gleich "--params: Pfad wird in den Antworten gemerkt" "$ARBEIT/mem.params" "$A_PARAMS"
+antworten_schreiben; enthaelt "gemerkter Pfad steht in der Antwortdatei" "$(cat "$ANTWORTEN_DATEI")" "PARAMS=$ARBEIT/mem.params"
+enthaelt_nicht "der Inhalt der --params-Datei steht NICHT in der Antwortdatei" "$(cat "$ANTWORTEN_DATEI")" "CI_DEPLOY_PUBKEY"
+antworten_zuruecksetzen; EXTRA=(); antworten_lesen; extra_params_einbinden >/dev/null
+gleich "Neustart ohne Option: Parameterdatei wird aus dem gemerkten Pfad gelesen" "$SSHOK" "${EXTRA[CI_DEPLOY_PUBKEY]:-}"
+params_schreiben "$ARBEIT/mem2.params"; enthaelt "Wert aus der gemerkten Parameterdatei landet in der Datei für bootstrap" "$(cat "$ARBEIT/mem2.params")" "CI_DEPLOY_PUBKEY="
+A_PARAMS="$ARBEIT/weg.params"; EXTRA=(); HINT="$(extra_params_einbinden 2>&1)"
+enthaelt "fehlende gemerkte Parameterdatei: deutlicher Hinweis" "$HINT" "gibt es nicht mehr"
+A_PARAMS=""; EXTRA=(); rm -f "$ANTWORTEN_DATEI"
+
+echo "== Steuerzeichen und Kürzung"
+gleich "sauber entfernt Escape-Folgen" "FEHLER: x[31m" "$(sauber $'FEHLER: x\033[31m')"
+hinweis_merken $'Hinweis mit \033[2J Escape und\ttab'; gleich "hinweis_merken: Steuerzeichen entfernt" "Hinweis mit [2J Escape undtab" "${HINWEISE[0]}"
+LANG_T="$(printf 'ä%.0s' {1..700})"; HINWEISE=(); hinweis_merken "$LANG_T"
+gleich "hinweis_merken kürzt nach Zeichen (nicht Bytes): 600 Zeichen" 600 "${#HINWEISE[0]}"
+HINWEISE=()
+B2="$(BERICHT_DATEI="$ARBEIT/b2.txt"; bericht_schreiben $'Ursache mit \033[31m Escape und AGE-SECRET-KEY-1ABCDEF' "Maßnahme"; cat "$ARBEIT/b2.txt")"
+enthaelt_nicht "Bericht: keine Escape-Zeichen in der Ursache" "$B2" $'\033'
+enthaelt_nicht "Bericht: Schlüssel in der Ursache wird entfernt" "$B2" "AGE-SECRET-KEY-1ABCDEF"
+enthaelt "Bericht weist auf Pfade und Adressen hin" "$B2" "mit Pfaden, IP-Adressen"
+
+echo "== Absicherung (xtrace, --probe --neu, falsche Reihenfolge)"
+XT="$(env -u UMZUG_NUR_FUNKTIONEN bash -x "$SKRIPT" --probe 2>&1 >/dev/null)"; XT_RC=$(env -u UMZUG_NUR_FUNKTIONEN bash -x "$SKRIPT" --probe >/dev/null 2>&1; echo $?)
+gleich "bash -x wird abgelehnt (Exit-Code 2)" 2 "$XT_RC"
+enthaelt "Meldung nennt xtrace" "$XT" "xtrace"
+gleich "BASH_XTRACEFD wird abgelehnt (Exit-Code 2)" 2 "$(BASH_XTRACEFD=9 env -u UMZUG_NUR_FUNKTIONEN bash "$SKRIPT" --probe 9>/dev/null >/dev/null 2>&1; echo $?)"
+gleich "--probe --neu: Exit-Code 2" 2 "$(a --probe --neu >/dev/null 2>&1; echo $?)"
+gleich "--aktualisieren --probe: Exit-Code 2" 2 "$(a --aktualisieren --probe >/dev/null 2>&1; echo $?)"
+gleich "--weiter zusammen mit --aktualisieren: Exit-Code 2" 2 "$(a --weiter caddy --aktualisieren >/dev/null 2>&1; echo $?)"
+# --weiter ohne vorherigen Lauf: Exit-Code 1 mit klarer Meldung (Skripte liegen root-eigen in einem Wegwerf-Ordner)
+mkdir -p "$ARBEIT/lauf"; install -m 700 "$SKRIPT" "$ARBEIT/lauf/umzug.sh"; install -m 700 "$BOOT" "$ARBEIT/lauf/bootstrap-server.sh"
+W1="$(env -u UMZUG_NUR_FUNKTIONEN bash "$ARBEIT/lauf/umzug.sh" --weiter caddy 2>&1)"; W1_RC=$?
+gleich "--weiter ohne gemerkte Antworten: Exit-Code 1" 1 "$W1_RC"
+enthaelt "Meldung: noch kein Lauf des Assistenten" "$W1" "noch keinen Lauf"
+rm -f /root/umzug-bericht.txt
+# Kopplung an bootstrap-server.sh: fehlt eine genutzte Funktion, bricht der Assistent hart ab
+mkdir -p "$ARBEIT/alt"; install -m 700 "$SKRIPT" "$ARBEIT/alt/umzug.sh"; printf "SSH_KEY_RE='^ssh-ed25519 '\n" > "$ARBEIT/alt/bootstrap-server.sh"; chmod 700 "$ARBEIT/alt/bootstrap-server.sh"
+K1="$(env -u UMZUG_NUR_FUNKTIONEN bash "$ARBEIT/alt/umzug.sh" --weiter pruefung 2>&1)"; K1_RC=$?
+gleich "bootstrap-server.sh ohne dns_pruefen: Exit-Code 1" 1 "$K1_RC"
+enthaelt "Meldung: nicht zum selben Stand" "$K1" "nicht zum selben Stand"
+rm -f /root/umzug-bericht.txt
+# umzug.sh führt nur die geprüfte Kopie aus: die Kopie liegt im Arbeitsverzeichnis, die Originaldatei wird danach nicht mehr gelesen
+gelingt "bootstrap_pruefen kopiert nach ARBEIT_DIR und setzt BOOTSTRAP auf die Kopie" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; ARBEIT_DIR='$ARBEIT/kopie'; mkdir -p \"\$ARBEIT_DIR\"; chmod 700 \"\$ARBEIT_DIR\"; BOOTSTRAP_ORIG='$ARBEIT/lauf/bootstrap-server.sh'; UMZUG_PFAD='$ARBEIT/lauf/umzug.sh'; bootstrap_pruefen && [ \"\$BOOTSTRAP\" = '$ARBEIT/kopie/bootstrap-server.sh' ] && cmp -s '$BOOT' \"\$BOOTSTRAP\" && [ \"\$(stat -c %a \"\$BOOTSTRAP\")\" = 700 ]"
+
+echo "== Gegenprobe mit gefälschtem bootstrap (PROBLEM-Zeilen)"
+cat > "$ARBEIT/fake-boot.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "    PROBLEM: zu wenig Platz (Beispiel)" >&2
+echo "    PROBLEM: Netz nicht erreichbar \033[31m"  >&2
+exit 1
+EOF
+BOOTSTRAP="$ARBEIT/fake-boot.sh"; PARAMS_PFAD="$ARBEIT/x.params"; A_SICHERUNG="$ARBEIT/sich"; A_FERTIG=""
+gegenprobe
+gleich "Gegenprobe sammelt beide PROBLEM-Zeilen" 2 "${#PROBLEME[@]}"
+enthaelt "Gegenprobe: Text der ersten Zeile" "${PROBLEME[0]}" "zu wenig Platz"
+printf '#!/usr/bin/env bash\nexit 1\n' > "$ARBEIT/fake-boot.sh"; gegenprobe
+gleich "Fehler ohne PROBLEM-Zeile wird trotzdem gemeldet" 1 "${#PROBLEME[@]}"
+BOOTSTRAP="$BOOT"
+
+echo "== Fehlermeldungen passen zu den Texten von bootstrap-server.sh"
+mm() { # bootstrap-Text-Auszug (muss im Skript stehen) -> die Maßnahme darf nicht die allgemeine sein
+  grep -qF -- "$1" "$BOOT" || { fehl "Text steht nicht mehr in bootstrap-server.sh: $1"; return; }
+  if fehlermassnahme "$1" | grep -q "Behebe die Ursache laut Meldung"; then fehl "keine eigene Maßnahme für: $1"; else ok "eigene Maßnahme für: $1"; fi
+}
+mm "Swap aktiv"; mm "Swap ist aktiv"; mm "nicht lesen oder ist kein pg_dump"; mm "Prüfsummen stimmen nicht"; mm "muss root gehören"; mm "PUBLIC_URL der Sicherung"; mm "deploy.sh fehlgeschlagen"
+mm "GIT_REF '"; mm "weicht von der Sicherung ab"
+enthaelt "deploy.sh-Fehler (nennt auch GIT_REF) bekommt die Migrations-Maßnahme, nicht die Tag-Maßnahme" "$(fehlermassnahme "deploy.sh fehlgeschlagen (Meldungen oben; häufig: Migration passt nicht zum Code-Stand, GIT_REF prüfen)")" "journalctl"
+enthaelt "Maßnahme zu Tag/Migration nennt \"Code-Stand ändern?\"" "$(fehlermassnahme "GIT_REF 'v9' nicht gefunden")" "Code-Stand ändern?"
+enthaelt_nicht "Maßnahmen verweisen nicht mehr auf --neu zum Ändern des Tags" "$(fehlermassnahme "GIT_REF 'v9' nicht gefunden")" "--neu"
+
+echo "== Kopplung an bootstrap-server.sh (Listen und Version)"
+gleich "PHASEN stimmen mit bootstrap-server.sh überein" "$(bash -c "BOOTSTRAP_NUR_FUNKTIONEN=1 . '$BOOT'; echo \"\${PHASEN[*]}\"")" "${PHASEN[*]}"
+BP="$(grep -E '^ +GIT_REPO_URL[|]' "$BOOT" | tr -d ' ' | sed 's/)$//' | tr '|' ' ')"
+gleich "PARAM_SCHLUESSEL stimmen mit den erlaubten Schlüsseln von bootstrap-server.sh überein" " $BP " "$PARAM_SCHLUESSEL"
+for p in ${SCHLUESSEL_PHASEN//,/ }; do
+  gelingt "phase_$p ruft restore_bereit auf (Schlüssel nötig)" bash -c "sed -n '/^phase_$p() {/,/^}/p' '$BOOT' | grep -q restore_bereit"
+done
+for p in ${BIS_DATENBANK//,/ }; do liste_enthaelt "pruefen,pakete,system,code,konfiguration,datenbank" "$p" || fehl "BIS_DATENBANK: $p"; done
+gleich "BIS_DATENBANK endet mit datenbank (die Phase, nach der der Schlüssel verworfen wird)" datenbank "${BIS_DATENBANK##*,}"
+for p in ${NACH_CODE//,/ }; do gelingt "NACH_CODE: $p ist eine Phase" bash -c "BOOTSTRAP_NUR_FUNKTIONEN=1 . '$BOOT'; [[ \" \${PHASEN[*]} \" == *\" $p \"* ]]"; done
+if [ -f "$HIER/../../app/pubspec.yaml" ]; then
+  gleich "UMZUG_VERSION stimmt mit app/pubspec.yaml überein (bei jedem Release mitziehen)" "$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$HIER/../../app/pubspec.yaml" | head -n 1)" "$UMZUG_VERSION"
+else uebersprungen "UMZUG_VERSION gegen pubspec.yaml" "app/pubspec.yaml nicht erreichbar"; fi
+# Der Weg "DNS stimmt" mit gefälschten ip/getent (ohne --dns-pruefung-ueberspringen): bootstrap-server.sh setzt PATH selbst, die Attrappen liegen darum in /usr/local/sbin
+cat > /usr/local/sbin/ip <<'EOF'
+#!/bin/sh
+case "$*" in
+  *"addr show scope global"*) echo "2: eth0    inet 203.0.113.10/24 brd 203.0.113.255 scope global eth0" ;;
+  *) exit 0 ;;
+esac
+EOF
+cat > /usr/local/sbin/getent <<'EOF'
+#!/bin/sh
+case "$1" in
+  ahostsv4) echo "${FAKE_A:-203.0.113.10}      STREAM $2" ;;
+  ahostsv6) : ;;
+esac
+EOF
+chmod 755 /usr/local/sbin/ip /usr/local/sbin/getent
+OPT_DNS_SKIP=0
+gleich "dns_ok: A-Eintrag zeigt auf diesen Server" ok "$(bootstrap_dns familie.lx-labs.dev)"
+gelingt "dns_ok (ohne Überspringen) für beide Domains" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; OPT_DNS_SKIP=0; dns_ok familie.lx-labs.dev && dns_ok ntfy.familie.lx-labs.dev"
+gleich "plan_bauen: bei passendem DNS läuft Caddy im Hauptlauf mit" 1 "$( A_FERTIG=""; plan_bauen; echo "$CADDY_JETZT" )"
+gleich "dns_ok: Eintrag zeigt woanders hin -> nicht ok" "zeigt auf 198.51.100.9 (keine globale Adresse dieses Servers)" "$(FAKE_A=198.51.100.9 bootstrap_dns familie.lx-labs.dev)"
+gleich "plan_bauen: bei falschem DNS wird Caddy auf später verschoben" 0 "$( A_FERTIG=""; FAKE_A=198.51.100.9 plan_bauen; echo "$CADDY_JETZT" )"
+rm -f /usr/local/sbin/ip /usr/local/sbin/getent
+
+echo "== sudo-Regel für den Müll-Dienst"
+if command -v visudo >/dev/null; then
+  printf 'lx ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-fampad\n' > "$ARBEIT/sudoers"; ARBEIT_DIR="$ARBEIT"
+  SUDOERS_DATEI="$ARBEIT/sudoers" sudoers_muell_ergaenzen >/dev/null
+  enthaelt "Müll-Regel wird an die vorhandene Regel angehängt" "$(cat "$ARBEIT/sudoers")" "restart lx-fampad-waste"
+  gelingt "ergänzte sudoers-Datei ist gültig" visudo -cf "$ARBEIT/sudoers"
+  SUDOERS_DATEI="$ARBEIT/sudoers" sudoers_muell_ergaenzen >/dev/null
+  gleich "zweiter Aufruf ändert nichts (nur eine Regel)" 1 "$(grep -c 'restart lx-fampad-waste' "$ARBEIT/sudoers")"
+  printf 'lx ALL=(root) NOPASSWD: /usr/bin/systemctl restart lx-fampad, /usr/bin/systemctl restart lx-fampad-weather\n' > "$ARBEIT/sudoers"
+  SUDOERS_DATEI="$ARBEIT/sudoers" sudoers_muell_ergaenzen >/dev/null
+  enthaelt "mit Wetter-Regel: beide bleiben, Müll kommt dazu" "$(cat "$ARBEIT/sudoers")" "restart lx-fampad-weather, /usr/bin/systemctl restart lx-fampad-waste"
+  ARBEIT_DIR=""
+else uebersprungen "sudo-Regel für den Müll-Dienst" "visudo fehlt in diesem Container (Szenario C prüft es mit sudo)"; fi
+
+echo "== Konfiguration: nicht lesbar oder leer"
+if command -v age >/dev/null && command -v age-keygen >/dev/null; then
+  # Konfigurationsarchiv nur für einen anderen Schlüssel (BACKUP_AGE_RECIPIENTS_CONFIG): der Datenbank-Schlüssel kann es nicht öffnen
+  DB_ARCHIV="$ARBEIT/db-20261022-033000.dump.age"; CFG_ARCHIV="$ARBEIT/config-nurk2.tar.age"
+  ( cd "$CFGW" && tar -czf - etc srv ) | age -r "$(age-keygen -y "$ARBEIT/k2.txt")" -o "$CFG_ARCHIV"
+  AGE_ID="$KEY1"
+  scheitert "Datenbank passt, Konfiguration ist für einen anderen Schlüssel: nicht lesbar" konfiguration_lesbar
+  gelingt "...aber der Datenbank-Schlüssel passt" schluessel_passt
+  KL="$( ( OPT_PROBE=1; SWAPS_DATEI="$ARBEIT/swaps-aus"; frage_schluessel ) 2>&1 < <(printf '%s\n' "$KEY1"); echo "RC=$?" )"
+  enthaelt "frage_schluessel bricht früh ab (Exit-Code 1)" "$KL" "RC=1"
+  enthaelt "Meldung nennt das Konfigurationsarchiv" "$KL" "Konfigurationsarchiv lässt sich nicht öffnen"
+  enthaelt_nicht "es wird NICHT behauptet, die Konfiguration lasse sich öffnen" "$KL" "Datenbank und Konfiguration lassen sich öffnen"
+  # leere env: etc/lx-fampad/env nicht im Archiv
+  mkdir -p "$ARBEIT/cfgleer/etc/lx-fampad-backup"; echo x > "$ARBEIT/cfgleer/etc/lx-fampad-backup/backup.conf"
+  ( cd "$ARBEIT/cfgleer" && tar -czf - etc ) | age -r "$PUB1" -o "$ARBEIT/config-leer.tar.age"
+  CFG_ARCHIV="$ARBEIT/config-leer.tar.age"; AGE_ID="$KEY1"
+  scheitert "Konfigurationsarchiv ohne env: nicht lesbar" konfiguration_lesbar
+  A_WETTER=1; A_MUELL=1; A_MUELL_LINK=1; config_auswerten
+  gleich "config_auswerten setzt Wetter nicht, wenn die env nicht gelesen wurde" 1 "$A_WETTER"
+  gleich "config_auswerten setzt Müll nicht, wenn die env nicht gelesen wurde" 1 "$A_MUELL"
+  A_WETTER=""; A_MUELL=""; A_MUELL_LINK=""
+  AGE_ID=""
+else uebersprungen "Konfiguration nicht lesbar" "age fehlt"; fi
 
 echo "== Ausgabe ohne Terminal"
 gleich "liste_ausgeben ohne Escape-Codes (nicht auf einem Terminal)" 0 "$(liste_ausgeben | grep -c $'\033')"
