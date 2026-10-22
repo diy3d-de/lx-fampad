@@ -32,6 +32,8 @@ export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'login
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
 export const CHECK_INTERVAL_MS = 5 * 60_000;
+/** Das Schreiben der Zähler beim Beenden darf höchstens so lange dauern. */
+const FLUSH_TIMEOUT_MS = 3_000;
 /** Je Art höchstens ein Wecker in diesem Zeitraum. */
 export const ALERT_DEBOUNCE_MS = 6 * 3_600_000;
 // dieselben Schwellen wie die Ansicht (status.ts), damit Seite und Warnung nie auseinanderlaufen
@@ -157,6 +159,8 @@ export class OperatorMonitor {
   private pending: CounterDelta | null = null;
   private filesCache: { at: number; bytes: number | null } | null = null;
   private filesPromise: Promise<void> | null = null;
+  /** Beendet eine laufende Messung der Dateiablage sofort (Timer weg, Ergebnis unbekannt); die hängende Probe selbst wird nicht mehr abgewartet. */
+  private cancelFiles: (() => void) | null = null;
 
   constructor(private readonly deps: MonitorDeps) {}
 
@@ -171,6 +175,8 @@ export class OperatorMonitor {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = undefined;
+    // keine offenen Timer und kein Warten auf die Dateimessung nach dem Beenden
+    this.cancelFiles?.();
   }
 
   private sk(familyId: string, key: string): string {
@@ -249,6 +255,10 @@ export class OperatorMonitor {
       const frist = new Promise<null>((resolve) => {
         timer = setTimeout(() => resolve(null), FILES_MEASURE_TIMEOUT_MS);
         timer.unref();
+        this.cancelFiles = () => {
+          clearTimeout(timer);
+          resolve(null);
+        };
       });
       this.filesPromise = Promise.race([probes.dirBytes(dir, FILES_MAX_ENTRIES).catch(() => null), frist])
         .then((bytes) => {
@@ -256,6 +266,7 @@ export class OperatorMonitor {
         })
         .finally(() => {
           if (timer) clearTimeout(timer);
+          this.cancelFiles = null;
           this.filesPromise = null;
         });
     }
@@ -267,17 +278,31 @@ export class OperatorMonitor {
     await this.filesPromise;
   }
 
-  /** Schreibt die noch nicht übernommenen Zähler beim Beenden einmal in den Messpunkt (ein Neustart verliert so keine Zähler); wirft nie. */
+  /**
+   * Schreibt die noch nicht übernommenen Zähler beim Beenden einmal in den Messpunkt (ein Neustart verliert so keine Zähler); wirft nie und wartet höchstens
+   * `FLUSH_TIMEOUT_MS` (danach gehen die Zähler zurück in den Zähler und gelten als verloren: das Beenden hängt nie an der Datenbank). Unabhängig von der Dateimessung.
+   */
   async flushCounters(): Promise<void> {
     const { ctx, counters } = this.deps;
     const fam = [...this.cache.values()][0];
     if (!counters || !fam || this.running) return;
     const delta = counters.take();
+    let timer: NodeJS.Timeout | undefined;
     try {
-      const activity = await collectActivity(ctx, fam.familyId);
-      await recordMetrics(ctx, fam.familyId, { activity, dbBytes: null, filesBytes: null }, delta);
+      const schreiben = (async () => {
+        const activity = await collectActivity(ctx, fam.familyId);
+        await recordMetrics(ctx, fam.familyId, { activity, dbBytes: null, filesBytes: null }, delta);
+        return true;
+      })();
+      const frist = new Promise<boolean>((resolve) => {
+        timer = setTimeout(() => resolve(false), FLUSH_TIMEOUT_MS);
+      });
+      schreiben.catch(() => undefined);
+      if (!(await Promise.race([schreiben, frist]))) counters.restore(delta);
     } catch {
       counters.restore(delta);
+    } finally {
+      if (timer) clearTimeout(timer);
     }
   }
 

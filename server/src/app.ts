@@ -225,7 +225,6 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('operatorMonitor', operatorMonitor);
     app.addHook('onClose', async () => {
       operatorMonitor.stop();
-      await operatorMonitor.whenIdle();
       await operatorMonitor.flushCounters();
     });
     if (maintenance) registerOperatorRoutes(app, config, authCore, weather, operatorMonitor, maintenance, operatorProbes);

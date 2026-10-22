@@ -199,6 +199,16 @@ describe.each(backends)('Betrieb Paket 3, Nutzung, Wetter und Push ($name)', (ba
     expect(((await einzeln())!).filesBytes).toBeNull();
   });
 
+  it('Schließen hängt nie an einer hängenden Dateimessung: der Dienst endet in wenigen Sekunden, ohne offenen Timer', async () => {
+    const fam = await familie();
+    aktuell = { ...messungen(), dirBytes: () => new Promise<number | null>(() => undefined) }; // kehrt nie zurück
+    await monitor().runOnce(); // startet die Messung im Hintergrund (Zeitlimit 15 s)
+    await fam.admin.sync([]);
+    const t0 = Date.now();
+    await world.close();
+    expect(Date.now() - t0).toBeLessThan(4000);
+  }, 20_000);
+
   it('Beim Schließen werden die noch nicht übernommenen Zähler einmal in den Messpunkt geschrieben', async () => {
     const fam = await familie();
     await monitor().runOnce(); // die Familie ist dem Prüfer bekannt
