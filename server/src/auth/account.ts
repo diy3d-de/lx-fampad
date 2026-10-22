@@ -18,6 +18,7 @@ import { countRemainingCodes, createRecoveryCodes } from './recovery.js';
 import type { MemberView } from './register.js';
 import { csrfTokenFor, isAlive, loadLive, markAccessChanged, requireDestructiveAllowed, requireStepUp, revokeAllForUser, revokeDevice } from './sessions.js';
 import type { Principal, Role, SessionPrincipal } from './types.js';
+import { invalidateGuardianEscrow, invalidateGuardianRole } from './guardian-invalidate.js';
 import { checkRegistration, registrationOptions } from './webauthn.js';
 import { isOperator } from '../operator/service.js';
 
@@ -178,6 +179,8 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
       throw new AppError(409, 'last_admin', 'Der letzte Admin kann nicht herabgestuft werden.');
     }
     await tx.update(memberships).set({ role }).where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)));
+    // Rollenwechsel (zum Beispiel Kind zu Elternteil): Hinterlegungen als Kind und als Elternteil werden ungültig
+    await invalidateGuardianRole(tx, targetId, ctx.now());
     // die Sicht der Person auf die Daten ändert sich: ihre Geräte müssen den lokalen Stand verwerfen und neu synchronisieren
     await tx.update(devices).set({ resyncRequired: true }).where(and(eq(devices.familyId, p.familyId), eq(devices.userId, targetId)));
     // Rollenwechsel: alle Sitzungen der Person enden (auch ihre WebSockets), sie meldet sich mit der neuen Rolle neu an
@@ -470,6 +473,8 @@ export async function resetMember(
     await tx.update(credentials).set({ revokedAt: now }).where(and(eq(credentials.userId, input.userId), isNull(credentials.revokedAt)));
     await tx.execute(sql`delete from recovery_codes where user_id = ${input.userId}`);
     await revokeAllForUser(ctx, tx, input.userId);
+    // Komplett-Reset: Hinterlegungen für die Eltern-Wiederherstellung werden ungültig (stale), offene Anfragen enden; nichts wird gelöscht
+    await invalidateGuardianEscrow(tx, input.userId, now);
     await tx.update(invites).set({ revokedAt: now }).where(and(eq(invites.userId, input.userId), isNull(invites.usedAt), isNull(invites.revokedAt)));
     const invite = await createInvite(
       ctx,
@@ -612,6 +617,8 @@ export async function finishAddPasskey(
           secret: verified.publicKey,
           signCount: verified.counter,
           transports: verified.transports,
+          deviceType: verified.deviceType,
+          backedUp: verified.backedUp,
           createdAt: ctx.now(),
         })
         .returning({ id: credentials.id });

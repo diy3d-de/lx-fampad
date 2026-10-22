@@ -11,12 +11,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
 import '../../constants.dart';
-import '../../data/api/models.dart' show MemberStatus;
+import '../../data/api/models.dart' show MemberStatus, Role;
 import '../../data/auth/auth_state.dart';
+import '../../data/api/eltern_modelle.dart' show AnfrageZustand;
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/crypto/eltern_state.dart';
 import '../../data/crypto/schluessel_speicher.dart' show SpeicherDauer;
 import '../../data/crypto/sicherheitscode.dart';
 import '../../data/crypto/vertrauen.dart';
+import '../../data/crypto/wiederherstellungstest.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -24,8 +27,11 @@ import '../auth/auth_widgets.dart';
 import '../auth/geraetespeicher_reparatur.dart';
 import '../auth/step_up.dart';
 import 'geraet_verbinden_screens.dart';
+import 'eltern_screens.dart';
+import 'prf_sicherung_screen.dart';
 import 'profile_screen.dart';
 import 'pw_sicherung_screen.dart';
+import 'wiederherstellung_testen_screen.dart';
 import 'wiederherstellungsschluessel_screen.dart';
 import 'wort_bestaetigung.dart';
 
@@ -319,6 +325,14 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Mit Passwort verbinden', icon: Icons.password, onPressed: laeuft ? null : () => _oeffne(const PwVerbindenScreen())),
           ],
+          if (s.elternWiederherstellungVerfuegbar && auth.user?.role == Role.child) ...[
+            const SizedBox(height: 8),
+            ZweitKnopf(text: 'Von meinen Eltern zurückholen', icon: Icons.family_restroom, onPressed: laeuft ? null : () => _oeffne(const ElternWiederherstellungScreen())),
+          ],
+          if (s.prfSicherungVerfuegbar && (auth.me?.passkeys ?? 0) > 0) ...[
+            const SizedBox(height: 8),
+            ZweitKnopf(text: 'Mit Passkey verbinden', icon: Icons.fingerprint, onPressed: laeuft ? null : () => _oeffne(const PrfVerbindenScreen())),
+          ],
           if (s.vertrauenDefekt) ...[
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen),
@@ -350,6 +364,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             status: s.sicherungBestaetigt ? const RollenPille('aktiv', farbe: kTerminal) : const RollenPille('offen', farbe: kWarn),
           ),
           if (!s.sicherungBestaetigt) ...[_SicherungOffen(onSichern: laeuft ? null : () => _sicherungAnlegen(s)), const SizedBox(height: 8)],
+          ..._testErinnerung(s),
           EinstellungsZeile(
             icon: Icons.key_outlined,
             titel: 'Wiederherstellungsschlüssel',
@@ -362,6 +377,9 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             onTap: laeuft ? null : _neuerSchluessel,
           ),
           if (s.pwSicherungVerfuegbar) _pwZeile(s),
+          if (s.prfSicherungVerfuegbar && (auth.me?.passkeys ?? 0) > 0) _prfZeile(s),
+          _testZeile(s),
+          ..._elternZeilen(s, auth),
           EinstellungsZeile(
             icon: Icons.qr_code_2,
             titel: 'Neues Gerät verbinden',
@@ -528,6 +546,85 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       untertitel: untertitel,
       status: pille,
       onTap: laeuft ? null : () => _oeffne(const PwSicherungScreen()),
+    );
+  }
+
+  /// Wiederherstellungstest: die Zeile zeigt, wann zuletzt getestet wurde; nach 90 Tagen (mit eingeschalteter Erinnerung) steht oben eine ruhige Erinnerung. Rein lokal.
+  Widget _testZeile(E2eeState s) {
+    final stand = ref.watch(testStandProvider).value ?? const TestStand();
+    final faellig = testFaellig(s, stand, DateTime.now());
+    return EinstellungsZeile(
+      icon: Icons.rule,
+      titel: 'Wiederherstellung testen',
+      untertitel: testZeitText(stand),
+      status: faellig ? const RollenPille('fällig', farbe: kWarn) : null,
+      onTap: laeuft ? null : () => _oeffne(const WiederherstellungTestenScreen()),
+    );
+  }
+
+  /// Eltern-Wiederherstellung (nur mit Schalter des Servers): Kinder erlauben ihren Eltern zu helfen; Eltern sehen, wem sie helfen können und ob jemand um Hilfe bittet.
+  List<Widget> _elternZeilen(E2eeState s, AuthState auth) {
+    if (!s.elternWiederherstellungVerfuegbar) return const [];
+    final rolle = auth.user?.role;
+    if (rolle == Role.child) {
+      final aktiv = ref.watch(elternHilfeAktivProvider);
+      return [
+        EinstellungsZeile(
+          icon: Icons.family_restroom,
+          titel: 'Eltern-Wiederherstellung',
+          untertitel: aktiv ? 'deine eltern können dir helfen' : 'aus · eltern helfen lassen',
+          status: aktiv ? const RollenPille('aktiv', farbe: kTerminal) : const RollenPille('aus', farbe: kWarn),
+          onTap: laeuft ? null : () => _oeffne(const ElternWiederherstellungScreen()),
+        ),
+      ];
+    }
+    if (rolle == Role.admin || rolle == Role.parent) {
+      final h = ref.watch(hilfeProvider).value;
+      if (h == null || h.kinder.isEmpty) return const [];
+      final offen = h.anfragen.where((a) => a.anfrage.zustand.offen && a.anfrage.zustand != AnfrageZustand.freigegeben).length;
+      return [
+        EinstellungsZeile(
+          icon: Icons.child_care,
+          titel: 'Kindern helfen',
+          untertitel: offen > 0 ? '$offen anfrage${offen == 1 ? '' : 'n'} offen' : '${h.kinder.length} kind${h.kinder.length == 1 ? '' : 'er'} · du kannst helfen',
+          status: offen > 0 ? const RollenPille('anfrage', farbe: kWarn) : null,
+          onTap: laeuft ? null : () => _oeffne(const ElternHilfeScreen()),
+        ),
+      ];
+    }
+    return const [];
+  }
+
+  List<Widget> _testErinnerung(E2eeState s) {
+    final stand = ref.watch(testStandProvider).value ?? const TestStand();
+    if (!testFaellig(s, stand, DateTime.now())) return const [];
+    return [
+      const MeldungsBox(
+        'Es ist über 90 Tage her, dass du deine Wiederherstellung geprüft hast. Teste jetzt, ob sich deine Sicherung noch öffnen lässt: das dauert eine Minute und verändert nichts.',
+        fehler: false,
+      ),
+      const SizedBox(height: 8),
+      ZweitKnopf(text: 'Wiederherstellung testen', icon: Icons.rule, onPressed: laeuft ? null : () => _oeffne(const WiederherstellungTestenScreen())),
+      const SizedBox(height: 8),
+    ];
+  }
+
+  /// Passkey-Sicherung (nur wenn der Server sie anbietet und die Person einen Passkey hat): zusätzlich zu den anderen Wegen. Es zählt der Stand beim Server.
+  Widget _prfZeile(E2eeState s) {
+    final bestaetigt = s.prfBestaetigtAm;
+    final (String untertitel, Widget? pille) = s.prfSicherungVeraltet && s.prfCredentialIds.isEmpty
+        ? ('veraltet nach Schlüsselwechsel · Sicherung erneuern', const RollenPille('erneuern', farbe: kWarn))
+        : bestaetigt != null && s.prfCredentialIds.isNotEmpty && !s.prfSynchronisiert
+        ? ('liegt beim server · zählt (noch) nicht: dein passkey meldet sich nicht als synchronisiert', const RollenPille('nur dieses gerät', farbe: kWarn))
+        : bestaetigt != null && s.prfCredentialIds.isNotEmpty
+        ? ('liegt beim server (seit ${_datum(bestaetigt)}) · erneuern', null)
+        : ('nicht gesichert · jetzt einrichten', const RollenPille('offen', farbe: kWarn));
+    return EinstellungsZeile(
+      icon: Icons.fingerprint,
+      titel: 'Passkey-Sicherung',
+      untertitel: untertitel,
+      status: pille,
+      onTap: laeuft ? null : () => _oeffne(const PrfSicherungScreen()),
     );
   }
 

@@ -68,6 +68,80 @@ Future<void> main() async {
       });
     }
 
+    // Passkey-Sicherung (PRF): zählt mit der Passwort-Sicherung als EIN Weg (wie `ampelOf` des Servers)
+    final prfTabelle = <(bool, bool, bool, bool, AbsicherungAmpel, int)>[
+      // Gerät, Passwort, Passkey, Wiederherstellung -> Ampel, Wege
+      (true, false, true, false, AbsicherungAmpel.gruen, 2),
+      (true, true, true, false, AbsicherungAmpel.gruen, 2),
+      (true, true, true, true, AbsicherungAmpel.gruen, 3),
+      (true, false, false, false, AbsicherungAmpel.gelb, 1),
+      (false, false, true, false, AbsicherungAmpel.rot, 1),
+      (false, false, true, true, AbsicherungAmpel.gelb, 2),
+      (false, true, true, false, AbsicherungAmpel.rot, 1),
+    ];
+    for (final (geraet, pw, prf, rec, erwartet, wege) in prfTabelle) {
+      test('Passkey: Gerät=$geraet Passwort=$pw Passkey=$prf Wiederherstellung=$rec -> $erwartet ($wege Wege)', () {
+        final base = _zustand(geraet ? E2eeStatus.bereit : E2eeStatus.geraetNichtVerbunden, pw: pw, rec: rec);
+        final s = E2eeState(
+          status: base.status,
+          serverSchluessel: base.serverSchluessel,
+          hatSicherung: base.hatSicherung,
+          wiederherstellungAm: base.wiederherstellungAm,
+          pwSicherungVerfuegbar: true,
+          pwBestaetigtAm: base.pwBestaetigtAm,
+          prfSicherungVerfuegbar: true,
+          prfBestaetigtAm: prf ? _jetzt : null,
+          prfCredentialIds: prf ? const ['cred-1'] : const [],
+          prfSynchronisiert: prf,
+        );
+        final a = bewerteAbsicherung(s, hatPasskey: true);
+        expect(a.ampel, erwartet);
+        expect(a.wege, wege);
+        expect(a.prfWeg, prf);
+        if (a.ampel == AbsicherungAmpel.gruen) expect(a.pwWeg || a.prfWeg || a.wiederherstellungWeg, isTrue, reason: 'grün nie ohne bestätigte Sicherung');
+      });
+    }
+
+    test('Passkey-Sicherung mit gerätegebundenem (nicht synchronisiertem) Passkey zählt NICHT als Weg und nie als bestätigte Sicherung', () {
+      final s = E2eeState(
+        status: E2eeStatus.bereit,
+        serverSchluessel: _schluessel(),
+        pwSicherungVerfuegbar: true,
+        prfSicherungVerfuegbar: true,
+        prfBestaetigtAm: _jetzt,
+        prfCredentialIds: const ['cred-1'],
+        prfSynchronisiert: false,
+      );
+      final a = bewerteAbsicherung(s, hatPasskey: true);
+      expect(a.prfWeg, isFalse);
+      expect(a.wege, 1, reason: 'nur dieses Gerät');
+      expect(a.ampel, AbsicherungAmpel.gelb);
+      expect(s.sicherungBestaetigt, isFalse, reason: 'für "Gerät abgeben" zählt die Passkey-Sicherung nie');
+      expect(E2eeState(status: E2eeStatus.bereit, prfBestaetigtAm: _jetzt, prfCredentialIds: const ['c'], prfSynchronisiert: true).sicherungBestaetigt, isFalse);
+    });
+
+    test('Passkey-Sicherung: ohne bestätigte Kennung zählt sie nicht; nächster Schritt nur mit Passkey und Server-Schalter; veraltet = erneuern', () {
+      E2eeState z({bool verfuegbar = true, bool veraltet = false, DateTime? am, List<String> ids = const []}) => E2eeState(
+        status: E2eeStatus.bereit,
+        serverSchluessel: _schluessel(),
+        pwSicherungVerfuegbar: false,
+        prfSicherungVerfuegbar: verfuegbar,
+        prfSicherungVeraltet: veraltet,
+        prfBestaetigtAm: am,
+        prfCredentialIds: ids,
+      );
+      // Zeitpunkt ohne Kennung (oder umgekehrt) ist nie ein Weg
+      expect(bewerteAbsicherung(z(am: _jetzt), hatPasskey: true).prfWeg, isFalse);
+      expect(bewerteAbsicherung(z(ids: const ['x']), hatPasskey: true).prfWeg, isFalse);
+      expect(bewerteAbsicherung(z(), hatPasskey: true).schritte, [AbsicherungSchritt.passkeySicherung, AbsicherungSchritt.wiederherstellungsschluessel]);
+      expect(bewerteAbsicherung(z(), hatPasskey: false).schritte, [AbsicherungSchritt.wiederherstellungsschluessel], reason: 'ohne Passkey kein Angebot');
+      expect(bewerteAbsicherung(z(verfuegbar: false), hatPasskey: true).schritte, [AbsicherungSchritt.wiederherstellungsschluessel], reason: 'ohne Server-Schalter kein Angebot');
+      expect(bewerteAbsicherung(z(veraltet: true), hatPasskey: true).schritte.first, AbsicherungSchritt.passkeySicherungErneuern);
+      // Nenner: die Sicherung durch Zugangsdaten zählt als dritter Weg, sobald es sie gibt
+      expect(bewerteAbsicherung(z(), hatPasskey: true).wegeMoeglich, 3);
+      expect(bewerteAbsicherung(z(verfuegbar: false), hatPasskey: false).wegeMoeglich, 2);
+    });
+
     test('noch kein Schlüssel: rot, nächster Schritt "einrichten"', () {
       final a = bewerteAbsicherung(_zustand(E2eeStatus.keinSchluessel, schluesselBeimServer: false));
       expect(a.ampel, AbsicherungAmpel.rot);

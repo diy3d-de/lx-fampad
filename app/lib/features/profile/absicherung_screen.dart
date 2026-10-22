@@ -11,11 +11,14 @@ import '../../constants.dart';
 import '../../data/crypto/absicherung.dart';
 import '../../data/crypto/absicherung_state.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/crypto/wiederherstellungstest.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import 'prf_sicherung_screen.dart';
 import 'profile_screen.dart' show EinstellungsZeile;
 import 'pw_sicherung_screen.dart';
 import 'verschluesselung_screen.dart';
+import 'wiederherstellung_testen_screen.dart';
 import 'wiederherstellungsschluessel_screen.dart';
 
 /// Farbe der Ampel (unbekannt: neutral, nie grün).
@@ -48,6 +51,8 @@ Future<void> absicherungSchrittOeffnen(BuildContext context, WidgetRef ref, Absi
         await seite(const VerschluesselungScreen());
       case AbsicherungSchritt.passwortSicherung || AbsicherungSchritt.passwortSicherungErneuern:
         await seite(const PwSicherungScreen());
+      case AbsicherungSchritt.passkeySicherung || AbsicherungSchritt.passkeySicherungErneuern:
+        await seite(const PrfSicherungScreen());
       case AbsicherungSchritt.wiederherstellungsschluessel:
         final ersatz = ref.read(e2eeProvider).hatSicherung;
         final einrichtung = await e2ee.neuerWiederherstellungsschluessel();
@@ -189,12 +194,43 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
             titel: 'Passwort-Sicherung',
             text: a.pwWeg ? 'bestätigt seit ${_tag(a.pwSeit)}' : (s.pwSicherungVeraltet ? 'veraltet, bitte erneuern' : 'nicht angelegt'),
           ),
+        if (a.prfAngeboten || a.prfWeg)
+          _Weg(
+            da: a.prfWeg,
+            titel: 'Passkey-Sicherung',
+            text: a.prfWeg
+                ? 'bestätigt seit ${_tag(a.prfSeit)}; gilt nur, solange dein Passkey-Anbieter ihn auch auf anderen Geräten bereithält (ob das klappt, hängt vom Anbieter ab)'
+                : s.prfCredentialIds.isNotEmpty && !s.prfSynchronisiert
+                ? 'angelegt, zählt aber (noch) nicht: dein Passkey meldet sich nicht als gesichert und synchronisiert, er ist vielleicht an dieses Gerät gebunden'
+                : (s.prfSicherungVeraltet ? 'veraltet, bitte erneuern' : 'nicht angelegt'),
+          ),
         _Weg(
           da: a.wiederherstellungWeg,
           titel: 'Wiederherstellungsschlüssel',
           text: a.wiederherstellungWeg ? 'liegt beim Server seit ${_tag(a.wiederherstellungSeit)}' : 'nicht angelegt',
         ),
         const SizedBox(height: 8),
+        // Wiederherstellungstest (rein lokal): eine Sicherung, die nie probiert wurde, ist keine
+        if (hierBereit && (a.pwWeg || a.prfWeg || a.wiederherstellungWeg)) ...[
+          Builder(
+            builder: (context) {
+              final stand = ref.watch(testStandProvider).value ?? const TestStand();
+              final faellig = testFaellig(s, stand, DateTime.now());
+              return Semantics(
+                container: true,
+                label: 'Wiederherstellung testen: ${testZeitText(stand)}${faellig ? ', fällig' : ''}',
+                child: EinstellungsZeile(
+                  icon: Icons.rule,
+                  titel: 'Wiederherstellung testen',
+                  untertitel: testZeitText(stand),
+                  status: faellig ? const RollenPille('fällig', farbe: kWarn) : null,
+                  onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const WiederherstellungTestenScreen()))),
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 8),
+        ],
         if (a.ampel == AbsicherungAmpel.unbekannt) ...[
           const MeldungsBox('Der Stand ließ sich gerade nicht laden. Prüfe deine Verbindung und öffne die Seite noch einmal.'),
           const SizedBox(height: 8),

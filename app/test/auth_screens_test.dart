@@ -46,7 +46,8 @@ void main() {
       await starteApp(tester, env);
       expect(find.text('Willkommen zurück'), findsOneWidget);
       await tippeText(tester, 'Mit Passkey anmelden');
-      expect(env.passkeys.bestaetigt, 1);
+      expect(env.passkeys.bestaetigt, 1, reason: 'der Server bietet die Passkey-Sicherung nicht an (kein Schalter in GET /version): die Anmeldung läuft wie bisher, ohne PRF-Erweiterung');
+      expect(env.passkeys.mitPrfBestaetigt, 0);
       expect(find.byType(NavigationBar), findsOneWidget);
     });
 

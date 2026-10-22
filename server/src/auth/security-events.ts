@@ -27,7 +27,22 @@ export type SecurityEventKind =
   | 'key_transfer_created'
   | 'key_transfer_claimed'
   /** Hinweis an die Familie: der Zugang eines Mitglieds wurde komplett zurückgesetzt (`subjectName` = wessen). */
-  | 'member_account_reset';
+  | 'member_account_reset'
+  /** Die Passkey-Sicherung wurde abgerufen. */
+  | 'key_backup_prf_read'
+  /** Eine Passkey-Sicherung wurde angelegt und bestätigt. */
+  | 'key_backup_prf_set'
+  /** Eltern-Wiederherstellung (Kinder): Hinterlegung angelegt bzw. zurückgenommen. */
+  | 'guardian_escrow_set'
+  | 'guardian_escrow_removed'
+  /** Eine Anfrage zur Wiederherstellung wurde gestellt (Hinweis ans Kind) bzw. wartet auf ein Elternteil (Hinweis an die Eltern, `subjectName` = Kind). */
+  | 'guardian_recovery_requested'
+  | 'guardian_recovery_asked'
+  /** Ein Elternteil hat die Anfrage übernommen (Hinweis ans Kind: jetzt den flüchtigen Schlüssel offenlegen und den Kurzcode nennen). */
+  | 'guardian_recovery_challenged'
+  /** Ein Elternteil hat freigegeben (Hinweis ans Kind) bzw. die Anfrage endete (abgebrochen, abgelehnt, abgelaufen). */
+  | 'guardian_recovery_released'
+  | 'guardian_recovery_ended';
 export type SecurityEventVia = 'admin' | 'recovery_code' | 'passkey' | 'password';
 
 /**
@@ -42,6 +57,13 @@ export const CRITICAL_KINDS: readonly SecurityEventKind[] = [
   'key_backup_replaced',
   'recovery_code_login',
   'member_account_reset',
+  'guardian_escrow_set',
+  'guardian_escrow_removed',
+  'guardian_recovery_requested',
+  'guardian_recovery_asked',
+  'guardian_recovery_challenged',
+  'guardian_recovery_released',
+  'guardian_recovery_ended',
 ];
 const READ_DEBOUNCE_MS = 10 * 60_000;
 const WAKE_DEBOUNCE_MS = 60_000;

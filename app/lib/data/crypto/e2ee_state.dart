@@ -14,6 +14,7 @@ import '../auth/eigener_abruf.dart';
 import 'bytes.dart';
 import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
+import 'eltern_state.dart';
 import 'pw_ablauf.dart';
 import 'schluessel.dart';
 import 'schluessel_speicher.dart';
@@ -22,6 +23,7 @@ import 'sodium_crypto_provider.dart';
 import 'uebertragung.dart';
 import 'vertrauen.dart';
 import 'wiederherstellung.dart';
+import 'wiederherstellungstest.dart';
 
 /// Vorbereiteter Passwortwechsel: abgeleiteter authKey/kek des neuen Passworts und, falls möglich, die neue Passwort-Sicherung (lokal geprüft). Enthält Schlüsselmaterial:
 /// nach Gebrauch [loeschen] aufrufen.
@@ -77,6 +79,9 @@ enum AutoVerbinden {
   /// Das Anmelde-Passwort öffnet die Sicherung nicht (sie wurde mit einem anderen Passwort angelegt).
   passwortPasstNicht,
 
+  /// Der Passkey öffnet die Passkey-Sicherung nicht (er wurde zum Beispiel neu angelegt).
+  passkeyPasstNicht,
+
   /// Technischer Fehler (Netz, Speicher, Step-up): es wurde nichts verändert; manuell unter Profil > Verschlüsselung.
   fehlgeschlagen,
 }
@@ -119,6 +124,15 @@ Future<void> schluesselVomGeraetLoeschen(SchluesselSpeicher speicher, String use
   await schritt(() => speicher.loeschen(personenschluesselAltName(userId)));
   await schritt(() => speicher.loeschen('e2ee.kv.$userId'));
   await schritt(() => speicher.loeschen('e2ee.kv.pw.$userId'));
+  // Vermerke der Wiederherstellungstests und der Eltern-Wiederherstellung (flüchtiges Paar des Kindes, festgehaltene Werte des Elternteils je Anfrage)
+  await schritt(() => speicher.loeschen(testVermerkName(userId)));
+  await schritt(() => speicher.loeschen(testAusName(userId)));
+  await schritt(() => speicher.loeschen(elternAnfrageName(userId)));
+  await schritt(() async {
+    for (final n in await speicher.namenMitPraefix('e2ee.elternuebernahme.$userId.')) {
+      await schritt(() => speicher.loeschen(n));
+    }
+  });
   await schritt(() async {
     for (final n in await speicher.namenMitPraefix(quarantaenePraefix(userId))) {
       await schritt(() => speicher.loeschen(n));
@@ -309,6 +323,20 @@ class E2eeState {
   /// Der Server meldet die aktuelle Passwort-Sicherung als veraltet (nach einem Passwort-Reset): auf einem Gerät mit Schlüssel "Sicherung erneuern".
   final bool pwSicherungVeraltet;
 
+  /// Passkey-Sicherung (Schalter E2EE_PRF_BACKUP des Servers): angeboten, seit wann bestätigt (null: nicht bestätigt oder nicht gemeldet), welche Passkeys (öffentliche
+  /// Kennungen) bestätigt gesichert sind und ob eine veraltet ist (nach einem Schlüsselwechsel).
+  final bool prfSicherungVerfuegbar;
+  final DateTime? prfBestaetigtAm;
+  final List<String> prfCredentialIds;
+  final bool prfSicherungVeraltet;
+
+  /// Ein Passkey mit bestätigter Sicherung ist synchronisiert (auf anderen Geräten verfügbar). Nur dann zählt die Passkey-Sicherung als Weg und nie als "bestätigte Sicherung"
+  /// für "Gerät abgeben" (ein gerätegebundener Passkey wäre mit dem Gerät unlesbar).
+  final bool prfSynchronisiert;
+
+  /// Der Server bietet die Eltern-Wiederherstellung für Kinder an (Schalter E2EE_PARENT_RECOVERY; sonst bleibt die Funktion unsichtbar).
+  final bool elternWiederherstellungVerfuegbar;
+
   /// Familien-Sicherheitscode (leer, solange niemand Schlüssel hat).
   final String sicherheitscode;
 
@@ -336,6 +364,8 @@ class E2eeState {
 
   /// Liegt beim Server eine BESTÄTIGTE Sicherung (Passwort-Sicherung bestätigt und nicht veraltet, oder Wiederherstellungsschlüssel-Sicherung zur
   /// aktuellen Version)? Fehlt die Angabe des Servers, gilt sie als nicht bestätigt: "unbekannt" ist nie "gesichert".
+  /// Die Passkey-Sicherung zählt hier bewusst NICHT: sie ist nur so verfügbar wie der Passkey (ein gerätegebundener ginge mit dem Gerät verloren); "Gerät abgeben" bleibt ohne
+  /// Passwort-Sicherung oder Wiederherstellungsschlüssel gesperrt.
   bool get sicherungBestaetigt => (pwBestaetigtAm != null && !pwSicherungVeraltet) || (hatSicherung && wiederherstellungAm != null);
 
   const E2eeState({
@@ -349,6 +379,12 @@ class E2eeState {
     this.pwSicherungVerfuegbar = false,
     this.pwSicherungVersion,
     this.pwSicherungVeraltet = false,
+    this.prfSicherungVerfuegbar = false,
+    this.prfBestaetigtAm,
+    this.prfCredentialIds = const [],
+    this.prfSicherungVeraltet = false,
+    this.prfSynchronisiert = false,
+    this.elternWiederherstellungVerfuegbar = false,
     this.sicherheitscode = '',
     this.pwBestaetigtAm,
     this.wiederherstellungAm,
@@ -573,7 +609,10 @@ class E2eeController extends Notifier<E2eeState> {
         (final s?, final l?) => _passt(l, s) ? E2eeStatus.bereit : E2eeStatus.abweichend,
       };
       // Passwort-Sicherung: nur sichtbar, wenn der Server sie anbietet (Fehler = aus); der Vermerk "verifiziert" liegt auf diesem Gerät
-      final pwVerfuegbar = server != null && await _api.pwSicherungVerfuegbar();
+      final faehig = server == null ? ServerFaehigkeiten.keine : await _api.faehigkeitenOderKeine();
+      final pwVerfuegbar = faehig.pwBackup;
+      final prfVerfuegbar = faehig.prfBackup;
+      final elternVerfuegbar = faehig.elternWiederherstellung;
       final pwVersion = pwVerfuegbar ? await _pwVermerkLesen(uid) : null;
       final quarantaene = await _quarantaeneLesen(uid);
       // der Browser darf die Daten löschen, wenn er die dauerhafte Ablage verweigert: die Anfrage kann beim Nutzer nachfragen, darum mit Zeitlimit
@@ -593,6 +632,12 @@ class E2eeController extends Notifier<E2eeState> {
         pwSicherungVerfuegbar: pwVerfuegbar,
         pwSicherungVersion: pwVersion,
         pwSicherungVeraltet: pwVerfuegbar && eigene.pwSicherungVeraltet,
+        prfSicherungVerfuegbar: prfVerfuegbar,
+        prfBestaetigtAm: prfVerfuegbar ? eigene.prfSicherungBestaetigtAm : null,
+        prfCredentialIds: prfVerfuegbar ? eigene.prfCredentialIds : const [],
+        prfSicherungVeraltet: prfVerfuegbar && eigene.prfSicherungVeraltet,
+        prfSynchronisiert: prfVerfuegbar && eigene.prfSynchronisiert,
+        elternWiederherstellungVerfuegbar: elternVerfuegbar,
         pwBestaetigtAm: eigene.pwSicherungBestaetigtAm,
         wiederherstellungAm: eigene.wiederherstellungsSicherungAm,
         archivAnzahl: eigene.archivAnzahl,
@@ -888,6 +933,14 @@ class E2eeController extends Notifier<E2eeState> {
       loescheBytes(geheimnis);
     }
   }
+
+  /// Für die Abläufe der Passkey-Sicherung und der Eltern-Wiederherstellung (prf_state.dart, eltern_state.dart): lokaler Schlüssel und Provider, ohne etwas zu verändern.
+  Future<CryptoProvider> kryptoFuerAblauf() => _krypto();
+  Future<Personenschluessel?> lokalenSchluesselFuerAblauf() async => _lokal ?? await _lokalLaden(await _krypto());
+
+  /// Übernimmt einen aus einer Sicherung (Passkey, Eltern) geöffneten Schlüssel wie beim Verbinden mit Passwort: Vergleich mit dem frisch geholten öffentlichen Schlüssel des
+  /// Servers, erst dann schreiben ([_lokalUebernehmen]).
+  Future<void> schluesselUebernehmen(Personenschluessel schluessel, int keyVersion) => _lokalUebernehmen(schluessel, keyVersion);
 
   /// Marke "eigener Abruf der Passwort-Sicherung" (siehe eigener_abruf.dart), VOR dem Abruf setzen. Wirft nie.
   Future<void> _eigenerAbruf() => ref.read(eigenerPwAbrufMarkeProvider)();

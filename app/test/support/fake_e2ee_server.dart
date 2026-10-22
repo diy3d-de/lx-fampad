@@ -26,6 +26,7 @@ class _Person {
   String? backupBlob;
   int backupVersion = 0;
   String? email;
+  String rolle = 'parent';
   // Passwort-Sicherung (Schalter E2EE_PW_BACKUP)
   String? pwBlob;
   String? pwId;
@@ -37,9 +38,55 @@ class _Person {
   String? pwPBlob;
   String? pwPId;
   int pwPVersion = 0;
+  // Passkey-Sicherung (Schalter E2EE_PRF_BACKUP): aktuelle Zeilen je Passkey, eine unbestätigte (pending)
+  final Map<String, _PrfZeile> prfAktuell = {};
+  _PrfZeile? prfPending;
+  int prfAnzahl = 0;
   // Geräte, die dem Server melden, den aktuellen Schlüssel zu haben (PUT /me/device-key)
   int geraete = 0;
   _Person(this.id, this.name);
+}
+
+/// Eine Passkey-Sicherung (je Passkey eine aktuelle Zeile und höchstens eine unbestätigte je Person).
+class _PrfZeile {
+  final String id;
+  final String credentialId;
+  final String blob;
+  final int version;
+  bool verifiziert = false;
+  bool stale = false;
+  _PrfZeile(this.id, this.credentialId, this.blob, this.version);
+}
+
+/// Hinterlegung eines Kindes für ein Elternteil (Eltern-Wiederherstellung).
+class FakeHinterlegung {
+  String blob;
+  String sig;
+  int kindVersion;
+  int elternVersion;
+  FakeHinterlegung(this.blob, this.sig, this.kindVersion, this.elternVersion);
+}
+
+/// Eine Anfrage zur Wiederherstellung (Zustände wie beim Server).
+class FakeAnfrage {
+  final String id;
+  final String kindId;
+  String state = 'pending';
+  final int keyVersion;
+  String commit;
+  final DateTime bereitAb;
+  final DateTime laeuftAb;
+  String? elternId;
+  String? challenge;
+  String? pub;
+  String? nonce;
+  String? freigabeBlob;
+  String? freigabeSig;
+  FakeAnfrage(this.id, this.kindId, this.keyVersion, this.commit, this.bereitAb, this.laeuftAb);
+  bool get offen => state == 'pending' || state == 'challenged' || state == 'revealed' || state == 'released';
+  void leeren() {
+    pub = nonce = challenge = freigabeBlob = freigabeSig = null;
+  }
 }
 
 class _Transfer {
@@ -65,6 +112,25 @@ class FakeE2eeServer {
   /// Schalter des Servers für die Passwort-Sicherung (GET /version: features.pwBackup; aus = die Routen gibt es nicht, 404).
   bool pwSchalter = false;
 
+  /// Schalter des Servers für die Eltern-Wiederherstellung (GET /version: features.parentRecovery; aus = die Routen gibt es nicht, 404) und die Wartefrist in Stunden.
+  bool elternSchalter = false;
+  int wartefristStunden = 24;
+  final Map<String, Map<String, FakeHinterlegung>> hinterlegungen = {};
+  final List<FakeAnfrage> anfragenListe = [];
+  int _anfrageZaehler = 0;
+
+  /// Schalter des Servers für die Passkey-Sicherung (GET /version: features.prfBackup; aus = die Routen gibt es nicht, 404).
+  bool prfSchalter = false;
+
+  /// Meldet der Server die Passkeys mit bestätigter Sicherung als synchronisiert (multiDevice)? false = gerätegebundener Passkey: zählt nicht als Weg.
+  bool prfSynced = true;
+
+  /// Verändert den Blob in der Antwort von GET /me/key-backup-prf (simuliert eine fehlerhafte Ablage).
+  String Function(String blob)? prfAbrufVerfaelschen;
+
+  /// Passkeys (öffentliche Kennungen), die der Server als aktiv kennt: nur für sie nimmt er eine Passkey-Sicherung an.
+  final Set<String> aktivePasskeys = {'cred-1'};
+
   /// Der Server nimmt den abgeleiteten authKey statt des Klartext-Passworts (GET /version: features.authKey) und, ob er den Klartext noch annimmt.
   bool authKeySchalter = false;
   bool legacyLogin = true;
@@ -88,15 +154,17 @@ class FakeE2eeServer {
   final String? standardId;
 
   FakeE2eeServer(this.server, {this.standardId}) {
+    _elternRouten();
     server
-      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true, ..._neueFelder(p)})))
+      ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true, ..._neueFelder(p), ..._prfFelder(p)})))
       ..on('GET /me/key-status', (r) => _mit(r, (p) {
         if (!keyStatusSchalter) return fehler(404, 'not_found');
         final hat = p.enc != null;
         final geraet = hat && p.geraete > 0;
         final pw = hat && pwSchalter && p.pwBlob != null && p.pwVerifiziert && !p.pwStale && p.pwVersion == p.version;
         final rec = hat && p.backupBlob != null && p.backupVersion == p.version;
-        final n = [geraet, pw, rec].where((x) => x).length;
+        final prf = hat && prfSchalter && prfSynced && p.prfAktuell.values.any((z) => z.verifiziert && !z.stale && z.version == p.version);
+        final n = [geraet, pw || prf, rec].where((x) => x).length;
         // dieselbe Rechenvorschrift wie der Server (ampelOf)
         final ampel = !hat || n == 0 ? 'red' : (n >= 2 && geraet ? 'green' : (n == 1 ? (geraet ? 'yellow' : 'red') : 'yellow'));
         return jsonAntwort({
@@ -105,7 +173,7 @@ class FakeE2eeServer {
             'ampel': ampel,
             'hasKeys': hat,
             'keyVersion': hat ? p.version : null,
-            'ways': {'device': geraet, 'pwBackup': pw, 'recoveryBackup': rec},
+            'ways': {'device': geraet, 'pwBackup': pw, if (prfSchalter) 'prfBackup': prf, 'recoveryBackup': rec},
             'wayCount': n,
             'devicesTotal': p.geraete,
             'devicesWithKey': p.geraete,
@@ -133,6 +201,10 @@ class FakeE2eeServer {
         if (p.pwBlob != null) p.pwStale = true;
         p.pwPBlob = null;
         p.pwPId = null;
+        for (final z in p.prfAktuell.values) {
+          z.stale = true;
+        }
+        p.prfPending = null;
         _transfers.removeWhere((_, t) => t.hash.startsWith('${p.id}:'));
         return jsonAntwort({'keys': _keys(p)});
       }))
@@ -149,7 +221,47 @@ class FakeE2eeServer {
         if (p.backupBlob == null) return fehler(404, 'not_found');
         return jsonAntwort({'blob': p.backupBlob, 'keyVersion': p.backupVersion});
       }))
-      ..on('GET /version', (_) => jsonAntwort({'service': 'lx-fampad', 'features': {'pwBackup': pwSchalter, 'authKey': authKeySchalter, 'legacyPasswordLogin': legacyLogin}}))
+      ..on('GET /version', (_) => jsonAntwort({'service': 'lx-fampad', 'features': {'pwBackup': pwSchalter, 'authKey': authKeySchalter, 'legacyPasswordLogin': legacyLogin, 'prfBackup': prfSchalter, 'parentRecovery': elternSchalter}}))
+      ..on('POST /auth/step-up/passkey/options', (_) => jsonAntwort({'challengeId': 'step-up-1', 'options': {'challenge': 'AAAA', 'rpId': 'familie.lx-labs.dev', 'allowCredentials': [for (final id in aktivePasskeys) {'id': id, 'type': 'public-key'}]}}))
+      ..on('POST /auth/step-up/passkey/verify', (r) {
+        stepUps++;
+        stepUpNoetig = false;
+        return jsonAntwort({'ok': true});
+      })
+      ..on('PUT /me/key-backup-prf', (r) => _mit(r, (p) {
+        if (!prfSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (p.enc == null) return fehler(409, 'no_keys');
+        if (r.json['keyVersion'] != p.version) return fehler(409, 'key_version_mismatch');
+        final cred = r.json['credentialId'] as String;
+        if (!aktivePasskeys.contains(cred)) return fehler(409, 'passkey_unknown');
+        p.prfPending = _PrfZeile('00000000-0000-4000-8000-${(++p.prfAnzahl).toString().padLeft(12, '0')}', cred, r.json['blob'] as String, p.version);
+        return jsonAntwort({'ok': true, 'id': p.prfPending!.id});
+      }))
+      ..on('GET /me/key-backup-prf', (r) => _mit(r, (p) {
+        if (!prfSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        final cred = r.query['credentialId'];
+        if (cred == null || !aktivePasskeys.contains(cred)) return fehler(404, 'not_found');
+        final z = r.query['pending'] == '1' ? (p.prfPending?.credentialId == cred ? p.prfPending : null) : p.prfAktuell[cred];
+        if (z == null) return fehler(404, 'not_found');
+        final blob = prfAbrufVerfaelschen?.call(z.blob) ?? z.blob;
+        return jsonAntwort({'id': z.id, 'credentialId': z.credentialId, 'blob': blob, 'keyVersion': z.version, 'state': r.query['pending'] == '1' ? 'pending' : (z.stale ? 'stale' : 'active')});
+      }))
+      ..on('POST /me/key-backup-prf/verified', (r) => _mit(r, (p) {
+        if (!prfSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        final pend = p.prfPending;
+        if (pend == null || r.json['id'] != pend.id) {
+          final schon = p.prfAktuell.values.any((z) => z.id == r.json['id'] && z.verifiziert && !z.stale);
+          return schon ? jsonAntwort({'ok': true}) : fehler(404, 'not_found');
+        }
+        if (pend.version != p.version || !aktivePasskeys.contains(pend.credentialId)) return fehler(409, 'backup_not_current');
+        pend.verifiziert = true;
+        p.prfAktuell[pend.credentialId] = pend;
+        p.prfPending = null;
+        return jsonAntwort({'ok': true});
+      }))
       ..on('POST /me/password/change', (r) => _mit(r, (p) {
         if (stepUpNoetig) return fehler(403, 'step_up_required');
         final authKey = r.json['authKey'];
@@ -238,8 +350,10 @@ class FakeE2eeServer {
   }
 
   /// Person anlegen (Anmeldung dieser Person wird über das Header-Token `access-<id>` erkannt).
-  void person(String id, String name, {String? email}) {
-    _personen[id] = _Person(id, name)..email = email;
+  void person(String id, String name, {String? email, String rolle = 'parent'}) {
+    _personen[id] = _Person(id, name)
+      ..email = email
+      ..rolle = rolle;
     // Schlüssel eines Mitglieds in einer Version (aktuell oder Historie), nur Familienmitglieder (hier: alle bekannten Personen)
     server.on('GET /members/$id/keys', (r) => _mit(r, (_) {
       final p = _personen[id]!;
@@ -275,6 +389,219 @@ class FakeE2eeServer {
     p.backupVersion = p.version;
   }
 
+  /// Legt eine fertige Sicherung des Wiederherstellungsschlüssels (echter Blob) für die aktuelle Schlüsselversion ab.
+  void sicherungMitBlob(String id, String blob) {
+    final p = _personen[id]!;
+    p.backupBlob = blob;
+    p.backupVersion = p.version;
+  }
+
+  Map<String, dynamic> _anfrageJson(FakeAnfrage a, {required bool fuerKind}) => {
+    'id': a.id,
+    'state': a.state,
+    'keyVersion': a.keyVersion,
+    'readyAt': a.bereitAb.toIso8601String(),
+    'expiresAt': a.laeuftAb.toIso8601String(),
+    'createdAt': jetzt.toIso8601String(),
+    'guardianId': a.elternId,
+    'guardianName': a.elternId == null ? null : _personen[a.elternId]?.name,
+    'challenge': a.challenge,
+    'commit': a.commit,
+    'releaseBlob': fuerKind ? a.freigabeBlob : null,
+    'releaseSig': fuerKind ? a.freigabeSig : null,
+  };
+
+  FakeAnfrage? _anfrageAus(Req r) => anfragenListe.where((a) => a.id == r.path.split('/').where((t) => t.length == 36).firstOrNull).firstOrNull;
+
+  /// Die Routen der Eltern-Wiederherstellung (docs/API.md): dieselben Zustände und Fehler wie der Server.
+  void _elternRouten() {
+    bool kind(_Person p) => p.rolle == 'child';
+    bool eltern(_Person p) => p.rolle == 'parent' || p.rolle == 'admin';
+    server
+      ..on('GET /me/guardian-escrow', (r) => _mit(r, (p) {
+        if (!elternSchalter) return fehler(404, 'not_found');
+        if (!kind(p)) return jsonAntwort({'eligible': false, 'enabled': false, 'since': null, 'keyVersion': null, 'guardians': <Object>[]});
+        final h = hinterlegungen[p.id] ?? {};
+        return jsonAntwort({
+          'eligible': true,
+          'enabled': h.isNotEmpty,
+          'since': h.isEmpty ? null : jetzt.toIso8601String(),
+          'keyVersion': h.isEmpty ? null : h.values.first.kindVersion,
+          'guardians': [
+            for (final e in h.entries)
+              {'id': e.key, 'displayName': _personen[e.key]?.name ?? '?', 'guardianKeyVersion': e.value.elternVersion, 'stale': e.value.kindVersion != p.version || _personen[e.key]?.version != e.value.elternVersion},
+          ],
+        });
+      }))
+      ..on('PUT /me/guardian-escrow', (r) => _mit(r, (p) {
+        if (!elternSchalter) return fehler(404, 'not_found');
+        if (!kind(p)) return fehler(403, 'forbidden');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (r.json['keyVersion'] != p.version) return fehler(409, 'key_version_mismatch');
+        final neu = <String, FakeHinterlegung>{};
+        for (final e in (r.json['entries'] as List)) {
+          final m = e as Map<String, dynamic>;
+          final g = _personen[m['guardianId']];
+          if (g == null || !eltern(g) || g.enc == null) return fehler(409, 'guardian_invalid');
+          if (g.version != m['guardianKeyVersion']) return fehler(409, 'guardian_key_changed');
+          neu[g.id] = FakeHinterlegung(m['blob'] as String, m['sig'] as String, p.version, g.version);
+        }
+        hinterlegungen[p.id] = neu;
+        return jsonAntwort({'ok': true, 'count': neu.length});
+      }))
+      ..on('DELETE /me/guardian-escrow', (r) => _mit(r, (p) {
+        if (!elternSchalter) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        final war = (hinterlegungen.remove(p.id) ?? {}).isNotEmpty;
+        for (final a in anfragenListe.where((a) => a.kindId == p.id && a.offen)) {
+          a.state = 'cancelled';
+          a.leeren();
+        }
+        return jsonAntwort({'ok': true, 'removed': war});
+      }))
+      ..on('POST /me/guardian-recovery', (r) => _mit(r, (p) {
+        if (!elternSchalter) return fehler(404, 'not_found');
+        if (!kind(p)) return fehler(403, 'forbidden');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        final h = hinterlegungen[p.id] ?? {};
+        final gueltig = h.entries.any((e) => e.value.kindVersion == p.version && _personen[e.key]?.version == e.value.elternVersion);
+        if (!gueltig) return fehler(409, 'no_escrow');
+        if (anfragenListe.any((a) => a.kindId == p.id && a.offen)) return fehler(409, 'recovery_open');
+        final bereit = jetzt.add(Duration(hours: wartefristStunden));
+        final a = FakeAnfrage('00000000-0000-4000-8000-${(++_anfrageZaehler).toString().padLeft(12, '0')}', p.id, p.version, r.json['commit'] as String, bereit, bereit.add(const Duration(days: 3)));
+        anfragenListe.add(a);
+        return jsonAntwort({'recovery': _anfrageJson(a, fuerKind: true)});
+      }))
+      ..on('GET /me/guardian-recovery', (r) => _mit(r, (p) {
+        if (!elternSchalter) return fehler(404, 'not_found');
+        final meine = anfragenListe.where((a) => a.kindId == p.id).toList();
+        for (final a in meine) {
+          if (a.offen && !a.laeuftAb.isAfter(jetzt)) {
+            a.state = 'expired';
+            a.leeren();
+          }
+        }
+        return jsonAntwort({'recovery': meine.isEmpty ? null : _anfrageJson(meine.last, fuerKind: true)});
+      }))
+      ..onMuster('POST /me/guardian-recovery/:id/reveal', (r) => _mit(r, (p) {
+        final x = _anfrageAus(r);
+        if (x == null || x.kindId != p.id) return fehler(404, 'not_found');
+        if (x.state != 'challenged') return fehler(409, 'recovery_state');
+        final gesehen = r.json['challenge'];
+        if (gesehen != null && gesehen != x.challenge) return fehler(409, 'recovery_state');
+        x.pub = r.json['pub'] as String;
+        x.nonce = r.json['nonce'] as String;
+        x.state = 'revealed';
+        return jsonAntwort({'ok': true});
+      }))
+      ..onMuster('POST /me/guardian-recovery/:id/cancel', (r) => _mit(r, (p) {
+        final x = _anfrageAus(r);
+        if (x == null || x.kindId != p.id) return fehler(404, 'not_found');
+        if (!x.offen) return fehler(409, 'recovery_state');
+        x.state = 'cancelled';
+        x.leeren();
+        return jsonAntwort({'ok': true});
+      }))
+      ..onMuster('POST /me/guardian-recovery/:id/done', (r) => _mit(r, (p) {
+        final x = _anfrageAus(r);
+        if (x == null || x.kindId != p.id) return fehler(404, 'not_found');
+        if (x.state == 'done') return jsonAntwort({'ok': true});
+        if (x.state != 'released') return fehler(409, 'recovery_state');
+        x.state = 'done';
+        x.leeren();
+        return jsonAntwort({'ok': true});
+      }))
+      ..on('GET /guardian/recoveries', (r) => _mit(r, (p) {
+        if (!elternSchalter) return fehler(404, 'not_found');
+        if (!eltern(p)) return fehler(403, 'forbidden');
+        final kinder = <Map<String, dynamic>>[];
+        final anfragen = <Map<String, dynamic>>[];
+        for (final e in hinterlegungen.entries) {
+          final h = e.value[p.id];
+          if (h == null) continue;
+          final k = _personen[e.key]!;
+          kinder.add({'id': k.id, 'displayName': k.name, 'keyVersion': h.kindVersion, 'guardianKeyVersion': h.elternVersion, 'stale': h.kindVersion != k.version || p.version != h.elternVersion});
+          for (final a in anfragenListe.where((a) => a.kindId == k.id && a.offen && a.laeuftAb.isAfter(jetzt))) {
+            final meine = a.elternId == p.id;
+            anfragen.add({
+              ..._anfrageJson(a, fuerKind: false),
+              'challenge': meine ? a.challenge : null,
+              'childId': k.id,
+              'childName': k.name,
+              'commit': a.commit,
+              'revealPub': meine ? a.pub : null,
+              'revealNonce': meine ? a.nonce : null,
+              'escrow': meine && a.state == 'revealed' ? {'blob': h.blob, 'sig': h.sig, 'keyVersion': h.kindVersion, 'guardianKeyVersion': h.elternVersion} : null,
+            });
+          }
+        }
+        return jsonAntwort({'children': kinder, 'requests': anfragen});
+      }))
+      ..onMuster('POST /guardian/recoveries/:id/challenge', (r) => _mit(r, (p) {
+        final x = _anfrageAus(r);
+        if (x == null) return fehler(404, 'not_found');
+        if (!eltern(p)) return fehler(403, 'forbidden');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (hinterlegungen[x.kindId]?[p.id] == null) return fehler(404, 'not_found');
+        if (x.state != 'pending') return fehler(409, 'recovery_state');
+        if (jetzt.isBefore(x.bereitAb)) return fehler(409, 'recovery_wait');
+        x.state = 'challenged';
+        x.elternId = p.id;
+        x.challenge = r.json['challenge'] as String;
+        return jsonAntwort({'ok': true});
+      }))
+      ..onMuster('POST /guardian/recoveries/:id/release', (r) => _mit(r, (p) {
+        final x = _anfrageAus(r);
+        if (x == null) return fehler(404, 'not_found');
+        if (stepUpNoetig) return fehler(403, 'step_up_required');
+        if (x.elternId != p.id || x.state != 'revealed') return fehler(409, 'recovery_state');
+        x.state = 'released';
+        x.freigabeBlob = r.json['blob'] as String;
+        x.freigabeSig = r.json['sig'] as String;
+        return jsonAntwort({'ok': true});
+      }))
+      ..onMuster('POST /guardian/recoveries/:id/decline', (r) => _mit(r, (p) {
+        final x = _anfrageAus(r);
+        if (x == null) return fehler(404, 'not_found');
+        if (hinterlegungen[x.kindId]?[p.id] == null) return fehler(404, 'not_found');
+        if (!x.offen) return fehler(409, 'recovery_state');
+        x.state = 'declined';
+        x.leeren();
+        return jsonAntwort({'ok': true});
+      }));
+  }
+
+  /// Legt eine fertige Hinterlegung eines Kindes für ein Elternteil ab (so, wie ein anderes Gerät des Kindes sie hinterlassen hätte; der Inhalt ist hier nur ein Platzhalter).
+  void hinterlegungEinspielen(String kindId, String elternId) {
+    final k = _personen[kindId]!;
+    final e = _personen[elternId]!;
+    (hinterlegungen[kindId] ??= {})[elternId] = FakeHinterlegung('x' * 150, 'y' * 86, k.version, e.version);
+  }
+
+  /// Legt eine Anfrage in einem bestimmten Zustand ab (Platzhalterinhalte); `bereitIn`: Stunden bis zum Ende der Wartefrist (negativ: schon vorbei).
+  void anfrageEinspielen(String kindId, {String zustand = 'pending', String? elternId, int bereitIn = 24}) {
+    final k = _personen[kindId]!;
+    final bereit = jetzt.add(Duration(hours: bereitIn));
+    final a = FakeAnfrage('00000000-0000-4000-8000-${(++_anfrageZaehler).toString().padLeft(12, '0')}', kindId, k.version, 'c' * 43, bereit, bereit.add(const Duration(days: 3)))
+      ..state = zustand
+      ..elternId = elternId;
+    if (zustand != 'pending') a.challenge = 'A' * 22;
+    if (zustand == 'revealed') {
+      a.pub = 'A' * 43;
+      a.nonce = 'A' * 22;
+    }
+    anfragenListe.add(a);
+  }
+
+  /// Zustand der Anfragen und Hinterlegungen für Prüfungen (nie Geheimnisse).
+  List<String> anfrageZustaende() => [for (final a in anfragenListe) a.state];
+
+  /// Alles, was der Server zu Hinterlegungen und Anfragen gespeichert hat, als Text (für "nie im Klartext"-Prüfungen).
+  String elternGespeichert() => jsonEncode({
+    'escrows': {for (final e in hinterlegungen.entries) e.key: {for (final x in e.value.entries) x.key: [x.value.blob, x.value.sig]}},
+    'anfragen': [for (final a in anfragenListe) [a.state, a.commit, a.pub, a.nonce, a.challenge, a.freigabeBlob, a.freigabeSig]],
+  });
+
   /// Person aus der Familie nehmen (verschwindet aus /members).
   void entferne(String id) => _personen.remove(id);
 
@@ -296,6 +623,32 @@ class FakeE2eeServer {
 
   /// Der Salt, den dieser Fake-Server für eine E-Mail nennt (16 Byte).
   static Uint8List saltFuer(String email) => Uint8List.fromList(c.sha256.convert(utf8.encode('salt|${email.trim().toLowerCase()}')).bytes.sublist(0, 16));
+
+  /// Felder der Passkey-Sicherung in `GET /me/keys` (nur mit Schalter, wie der Server).
+  Map<String, dynamic> _prfFelder(_Person p) {
+    if (!prfSchalter) return const {};
+    final gut = p.prfAktuell.values.where((z) => z.verifiziert && !z.stale && z.version == p.version && aktivePasskeys.contains(z.credentialId)).toList();
+    return {
+      'prfBackupVerifiedAt': gut.isEmpty ? null : jetzt.toIso8601String(),
+      'prfBackupCredentialIds': [for (final z in gut) z.credentialId],
+      'prfBackupSynced': prfSynced && gut.isNotEmpty,
+      if (p.prfAktuell.values.any((z) => z.stale)) 'prfBackupStale': true,
+    };
+  }
+
+  /// Zustand der Passkey-Sicherung einer Person (für Prüfungen).
+  ({String? blob, String? pendingBlob, bool verifiziert, bool stale, int anzahl}) prfStand(String id, String credentialId) {
+    final p = _personen[id]!;
+    final z = p.prfAktuell[credentialId];
+    return (blob: z?.blob, pendingBlob: p.prfPending?.blob, verifiziert: z?.verifiziert ?? false, stale: z?.stale ?? false, anzahl: p.prfAnzahl);
+  }
+
+  /// Legt eine fertige, schon bestätigte Passkey-Sicherung ab (so, wie ein anderes Gerät sie hinterlassen hätte).
+  void prfEinspielen(String id, String credentialId, String blob, {required int version}) {
+    final p = _personen[id]!;
+    final z = _PrfZeile('00000000-0000-4000-8000-${(++p.prfAnzahl).toString().padLeft(12, '0')}', credentialId, blob, version)..verifiziert = true;
+    p.prfAktuell[credentialId] = z;
+  }
 
   /// Legt eine fertige, schon verifizierte Passwort-Sicherung einer Person ab (so, wie ein anderes Gerät sie hinterlassen hätte).
   void pwEinspielen(String id, String blob, {required int version}) {
@@ -325,7 +678,7 @@ class FakeE2eeServer {
   /// Was der Server über eine Person gespeichert hat (für Prüfungen: nie Geheimnisse).
   String gespeichert(String id) {
     final p = _personen[id]!;
-    return jsonEncode({'enc': p.enc, 'sign': p.sign, 'backup': p.backupBlob, 'pwBackup': p.pwBlob, 'transfers': _transfers.values.where((t) => t.hash.startsWith('$id:')).map((t) => t.blob).toList()});
+    return jsonEncode({'enc': p.enc, 'sign': p.sign, 'backup': p.backupBlob, 'pwBackup': p.pwBlob, 'prfBackup': [for (final z in p.prfAktuell.values) z.blob, ?p.prfPending?.blob], 'transfers': _transfers.values.where((t) => t.hash.startsWith('$id:')).map((t) => t.blob).toList()});
   }
 
   Map<String, dynamic> _neueFelder(_Person p) => !neueFelder
@@ -338,7 +691,7 @@ class FakeE2eeServer {
 
   Map<String, dynamic>? _keys(_Person p) => p.enc == null ? null : {'publicEncKey': p.enc, 'publicSignKey': p.sign, 'keyVersion': p.version};
 
-  Map<String, dynamic> _mitglied(_Person p) => {...userJson(id: p.id, name: p.name, role: 'parent', email: null, status: ausstehend.contains(p.id) ? 'pending' : 'active'), if (p.enc != null) ...?_keys(p)};
+  Map<String, dynamic> _mitglied(_Person p) => {...userJson(id: p.id, name: p.name, role: p.rolle, email: null, status: ausstehend.contains(p.id) ? 'pending' : 'active'), if (p.enc != null) ...?_keys(p)};
 
   String _sha(String s) => base64urlKodieren(Uint8List.fromList(c.sha256.convert(utf8.encode(s)).bytes));
 

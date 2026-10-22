@@ -1,8 +1,9 @@
 // E2EE-Schlüsselverwaltung (Phase 1): öffentliche Personenschlüssel, opake Schlüsselsicherung, kurzlebige Geräte-Übertragung.
 // Der Server sieht und speichert nie ein Geheimnis: Blobs sind für ihn undurchsichtiger Text (mit Wiederherstellungsschlüssel bzw.
 // Einmalschlüssel verschlüsselt, beides nur auf den Geräten). Alles gehört zur angemeldeten Person; Blobs und Schlüssel erscheinen nie im Log.
-import { and, asc, eq, gt, isNull } from 'drizzle-orm';
-import { keyBackupArchive, keyBackups, keyBackupsPw, keyTransfers, memberships, personKeyHistory, personKeys, users } from '../db/schema.js';
+import { and, asc, eq, gt, inArray, isNull } from 'drizzle-orm';
+import { guardianEscrows, guardianRecoveries, keyBackupArchive, keyBackups, keyBackupsPrf, keyBackupsPw, keyTransfers, memberships, personKeyHistory, personKeys, users } from '../db/schema.js';
+import { prfBackupStatus } from './keys-prf.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, RequestMeta } from './context.js';
@@ -28,6 +29,14 @@ export interface OwnKeys {
   keys: PublicKeys | null;
   hasBackup: boolean;
   pwBackupStale?: true;
+  /** Nur mit Schalter E2EE_PRF_BACKUP: Zeit der letzten bestätigten Passkey-Sicherung zur aktuellen Schlüsselversion (bei noch aktivem Passkey) oder null. */
+  prfBackupVerifiedAt?: string | null;
+  /** Nur mit Schalter E2EE_PRF_BACKUP: öffentliche Kennungen der Passkeys, die eine bestätigte Sicherung zur aktuellen Version haben. */
+  prfBackupCredentialIds?: string[];
+  /** Nur mit Schalter E2EE_PRF_BACKUP: mindestens ein Passkey mit bestätigter Sicherung ist synchronisiert (auf anderen Geräten verfügbar). Ein an ein Gerät gebundener Passkey zählt nicht als Weg. */
+  prfBackupSynced?: boolean;
+  /** Nur mit Schalter E2EE_PRF_BACKUP: eine Passkey-Sicherung ist veraltet (nach einem Schlüsselwechsel). */
+  prfBackupStale?: true;
   /** Zeit der letzten bestätigten, aktiven Passwort-Sicherung zur AKTUELLEN Schlüsselversion (ISO) oder null (auch ohne Schalter E2EE_PW_BACKUP). */
   pwBackupVerifiedAt: string | null;
   /** Zeit der Wiederherstellungssicherung (Wiederherstellungsschlüssel) zur aktuellen Schlüsselversion (ISO) oder null. */
@@ -60,9 +69,12 @@ export async function getOwnKeys(ctx: AuthContext, p: SessionPrincipal): Promise
           .where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'active'), eq(keyBackupsPw.keyVersion, k.keyVersion)))
       : [];
   const hasBackup = b !== undefined && k !== undefined && b.v === k.keyVersion;
+  // Passkey-Sicherung (E2EE_PRF_BACKUP): ohne Schalter fehlen die Felder und die Antwort bleibt wie bisher
+  const prf = ctx.config.e2eePrfBackup ? await prfBackupStatus(ctx.db, p.userId, k?.keyVersion ?? null) : null;
   return {
     keys: k ?? null,
     hasBackup,
+    ...(prf ? { prfBackupVerifiedAt: prf.verifiedAt?.toISOString() ?? null, prfBackupCredentialIds: prf.credentialIds, prfBackupSynced: prf.synced, ...(prf.stale ? { prfBackupStale: true as const } : {}) } : {}),
     ...(stale ? { pwBackupStale: true as const } : {}),
     pwBackupVerifiedAt: verified?.at?.toISOString() ?? null,
     recoveryBackupAt: hasBackup && b ? b.updatedAt.toISOString() : null,
@@ -176,6 +188,15 @@ export async function rotateKeys(
     await tx.update(keyBackupsPw).set({ state: 'stale', updatedAt: now }).where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'active')));
     // eine unbestätigte Sicherung gehört zum alten Schlüssel und wird nie mehr aktiv
     await tx.update(keyBackupsPw).set({ state: 'superseded', updatedAt: now }).where(and(eq(keyBackupsPw.userId, p.userId), eq(keyBackupsPw.state, 'pending')));
+    // Passkey-Sicherung und Hinterlegung für die Eltern: dasselbe (nie löschen; sie enthalten den alten Schlüssel)
+    await tx.update(keyBackupsPrf).set({ state: 'stale', updatedAt: now }).where(and(eq(keyBackupsPrf.userId, p.userId), eq(keyBackupsPrf.state, 'active')));
+    await tx.update(keyBackupsPrf).set({ state: 'superseded', updatedAt: now }).where(and(eq(keyBackupsPrf.userId, p.userId), eq(keyBackupsPrf.state, 'pending')));
+    await tx.update(guardianEscrows).set({ state: 'stale', updatedAt: now }).where(and(eq(guardianEscrows.childId, p.userId), eq(guardianEscrows.state, 'active')));
+    // eine laufende Anfrage der Eltern-Wiederherstellung gehört zum alten Schlüssel
+    await tx
+      .update(guardianRecoveries)
+      .set({ state: 'cancelled', releaseBlob: null, releaseSig: null, revealPub: null, revealNonce: null, challenge: null, updatedAt: now })
+      .where(and(eq(guardianRecoveries.childId, p.userId), inArray(guardianRecoveries.state, ['pending', 'challenged', 'revealed', 'released'])));
     await writeAudit(ctx, tx, { event: 'key_rotated', familyId: p.familyId, actorId: p.userId, deviceId: p.deviceId, ip: meta.ip, detail: { keyVersion: row.keyVersion, archived: bk !== undefined } });
     await recordSecurityEvent(ctx, tx, { familyId: p.familyId, userId: p.userId, kind: 'key_rotated', via: viaOf(p), actorId: p.userId });
     return row;

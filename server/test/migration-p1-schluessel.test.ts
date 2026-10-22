@@ -40,6 +40,8 @@ describe('Migration 0022 (P1 Schlüssel-Paket) additiv auf Stand 0021', () => {
       await db.execute(sql`drop table operator_metrics`); // Migration 0025 (Betrieb Paket 3)
       await db.execute(sql`alter table weather_credentials drop column error_count`);
       await db.execute(sql`drop table operator_settings`); // Migration 0023 (Betreiber Paket 2b) liegt über 0022 und wird beim erneuten Migrieren wieder angelegt
+      await db.execute(sql`drop table guardian_escrows, guardian_recoveries, key_backups_prf`); // Migration 0026 (Passkey-Sicherung, Eltern-Wiederherstellung), wird beim erneuten Migrieren wieder angelegt
+      await db.execute(sql`alter table credentials drop column device_type, drop column backed_up`); // Migration 0026 (Art des Passkeys)
       await db.execute(sql`alter table users drop constraint users_removed_ck`);
       await db.execute(sql`alter table users drop column removed_at, drop column removed_by`);
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };

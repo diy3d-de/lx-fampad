@@ -1,4 +1,6 @@
 // Aufbau von Provider-Überschreibungen für Tests: Fake-Server, Speicher im Arbeitsspeicher, Fake-Passkeys.
+import 'dart:typed_data';
+
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,6 +34,38 @@ class FakePasskeys implements PasskeyService {
   int erstellt = 0;
   int bestaetigt = 0;
   Map<String, dynamic>? letzteOptionen;
+
+  /// Ergebnis von [bestaetigenMitPrf]: Kennung des Passkeys und die PRF-Ausgabe (null = der Passkey-Speicher unterstützt PRF nicht); die Warteschlange zuerst.
+  String prfCredentialId = 'cred-1';
+  Uint8List? prfAusgabe;
+  final List<Uint8List?> prfWarteschlange = [];
+  int mitPrfBestaetigt = 0;
+  String? letzteNurCredentialId;
+
+  /// Fehler nur der Anfrage MIT PRF (ein Passkey-Speicher, der die Erweiterung nicht annimmt); die Anfrage ohne PRF klappt dann.
+  PasskeyException? prfFehler;
+
+  @override
+  Future<PasskeyMitPrf> bestaetigenMitPrf(Map<String, dynamic> optionen, {required Uint8List salt, String? nurCredentialId}) async {
+    letzteOptionen = optionen;
+    letzteNurCredentialId = nurCredentialId;
+    if (prfFehler != null) throw prfFehler!;
+    if (fehler != null) throw fehler!;
+    mitPrfBestaetigt++;
+    final ausgabe = prfWarteschlange.isNotEmpty ? prfWarteschlange.removeAt(0) : prfAusgabe;
+    return PasskeyMitPrf(
+      antwort: {
+        'id': prfCredentialId,
+        'rawId': prfCredentialId,
+        'type': 'public-key',
+        'response': {'clientDataJSON': 'e30', 'authenticatorData': 'AA', 'signature': 'c2ln'},
+        'clientExtensionResults': <String, dynamic>{},
+      },
+      credentialId: prfCredentialId,
+      // eine Kopie wie vom echten Plugin: der Aufrufer überschreibt die Bytes nach Gebrauch
+      prf: ausgabe == null ? null : Uint8List.fromList(ausgabe),
+    );
+  }
 
   @override
   Future<bool> verfuegbar() async => da;

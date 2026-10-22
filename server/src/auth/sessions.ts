@@ -7,6 +7,7 @@ import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
 import { randomToken, safeEqual, sha256Hex } from './crypto.js';
+import { invalidateGuardianEscrow } from './guardian-invalidate.js';
 import type { Role, SessionOrigin, SessionPrincipal } from './types.js';
 
 export const SESSION_COOKIE = '__Host-lxsid';
@@ -526,6 +527,8 @@ export function requireDestructiveAllowed(ctx: AuthContext, principal: Pick<Sess
 /** Vermerkt eine Änderung der Anmeldedaten durch die Person selbst (gehört in die Transaktion der Änderung); Sitzungen danach erben die Frist 24 h. */
 export async function markAccessChanged(ctx: Pick<AuthContext, 'now'>, exec: Executor, userId: string): Promise<void> {
   await exec.update(users).set({ accessChangedAt: ctx.now() }).where(eq(users.id, userId));
+  // Hinterlegungen für die Eltern-Wiederherstellung (Kinder) werden mit jeder Änderung der Anmeldedaten ungültig (nie gelöscht, siehe guardian-invalidate.ts)
+  await invalidateGuardianEscrow(exec, userId, ctx.now());
 }
 
 // ---------- Aufräumen ----------

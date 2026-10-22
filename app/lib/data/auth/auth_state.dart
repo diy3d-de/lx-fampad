@@ -103,6 +103,13 @@ final systemChannelProvider = Provider<SystemChannel>((ref) => SystemChannel());
 
 final passkeyServiceProvider = Provider<PasskeyService>((ref) => CorbadoPasskeyService());
 
+/// Kennung und rohe PRF-Ausgabe einer Passkey-Anmeldung (nur für das automatische Verbinden; nie loggen, nie speichern).
+class PasskeyPrfLogin {
+  final String credentialId;
+  final Uint8List prf;
+  const PasskeyPrfLogin(this.credentialId, this.prf);
+}
+
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient(client: ref.watch(httpClientProvider), store: ref.watch(tokenStoreProvider)));
 
 final apiProvider = Provider<FampadApi>((ref) {
@@ -263,6 +270,26 @@ class AuthController extends Notifier<AuthState> {
     final ch = await _api.passkeyAnmeldeOptionen();
     final antwort = await ref.read(passkeyServiceProvider).bestaetigen(ch.options);
     await _anmelden(() => _api.passkeyAnmelden(challengeId: ch.challengeId, antwort: antwort));
+  }
+
+  /// Wie [mitPasskeyAnmelden], zusätzlich mit der PRF-Erweiterung (Passkey-Sicherung: dieselbe Geste liefert die Ausgabe, mit der das Gerät seinen Schlüssel öffnen kann).
+  /// Scheitert die Anfrage mit PRF aus einem allgemeinen Grund (ein Passkey-Speicher, der die Erweiterung nicht annimmt), wird einmal ohne PRF wiederholt: die Anmeldung
+  /// selbst darf daran nie hängen. Gibt die Ausgabe zurück (roh, ungeprüft, nie loggen) oder null.
+  Future<PasskeyPrfLogin?> mitPasskeyAnmeldenMitPrf(Uint8List salt) async {
+    final ch = await _api.passkeyAnmeldeOptionen();
+    final dienst = ref.read(passkeyServiceProvider);
+    PasskeyMitPrf? r;
+    Map<String, dynamic> antwort;
+    try {
+      r = await dienst.bestaetigenMitPrf(ch.options, salt: salt);
+      antwort = r.antwort;
+    } on PasskeyException catch (e) {
+      if (e.art != PasskeyFehler.sonstiges) rethrow;
+      antwort = await dienst.bestaetigen(ch.options);
+    }
+    await _anmelden(() => _api.passkeyAnmelden(challengeId: ch.challengeId, antwort: antwort));
+    final prf = r?.prf;
+    return r == null || prf == null ? null : PasskeyPrfLogin(r.credentialId, prf);
   }
 
   /// Ein einzelner Anmeldeversuch mit Passwort: entweder [authKey] (abgeleitet) oder [passwort] (Klartext, alter Weg; mit [upgradeAuthKey] zur Umstellung).

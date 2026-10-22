@@ -10,7 +10,7 @@ export const AUDIT_CATEGORIES = ['alle', 'anmeldung', 'aenderungen', 'fehler'] a
 export type AuditCategory = (typeof AUDIT_CATEGORIES)[number];
 
 /** Anmeldung und Geräte (Alltag); Fehler und Auffälliges; alles Übrige sind Änderungen (neue Ereignisarten landen dort). */
-const LOGIN_EVENTS = ['session_refresh_retry', 'invite_expired', 'key_backup_read', 'key_backup_pw_read', 'login_ok', 'logout', 'logout_all', 'device_added', 'device_removed', 'step_up_ok', 'recovery_code_used', 'invite_used', 'member_registered'];
+const LOGIN_EVENTS = ['session_refresh_retry', 'invite_expired', 'key_backup_read', 'key_backup_pw_read', 'key_backup_prf_read', 'login_ok', 'logout', 'logout_all', 'device_added', 'device_removed', 'step_up_ok', 'recovery_code_used', 'invite_used', 'member_registered'];
 const ERROR_EVENTS = [
   'login_failed',
   'step_up_failed',

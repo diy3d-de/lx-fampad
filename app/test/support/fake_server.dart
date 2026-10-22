@@ -46,12 +46,29 @@ class FakeServer {
     if (request.bodyBytes.isNotEmpty) body = (request.headers['content-type'] ?? '').contains('json') ? jsonDecode(request.body) : request.bodyBytes;
     final req = Req(request.method, uri.path.replaceFirst('/api/v1', ''), request.headers, body)..query = uri.queryParameters;
     log.add(req);
-    final h = routes[req.key];
+    var h = routes[req.key];
+    if (h == null) {
+      for (final (methode, muster, handler) in _muster) {
+        if (methode == req.method && muster.hasMatch(req.path)) {
+          h = handler;
+          break;
+        }
+      }
+    }
     if (h == null) return fehler(404, 'not_found');
     return await h(req);
   });
 
   void on(String methodPath, Handler h) => routes[methodPath] = h;
+
+  final List<(String, RegExp, Handler)> _muster = [];
+
+  /// Route mit Platzhaltern (":id" passt auf ein Pfadstück), zum Beispiel "POST /me/x/:id/cancel"; feste Routen gehen vor.
+  void onMuster(String methodPath, Handler h) {
+    final i = methodPath.indexOf(' ');
+    final pfad = methodPath.substring(i + 1).split('/').map((t) => t.startsWith(':') ? '[^/]+' : RegExp.escape(t)).join('/');
+    _muster.add((methodPath.substring(0, i), RegExp('^$pfad\u0024'), h));
+  }
 
   void json(String methodPath, Object body, {int status = 200}) => routes[methodPath] = (_) => jsonAntwort(body, status: status);
 

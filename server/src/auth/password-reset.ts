@@ -19,6 +19,7 @@ import { peekChallenge, saveChallenge, takeChallenge } from './challenges.js';
 import type { AuthContext, RequestMeta, Tx } from './context.js';
 import { randomToken } from './crypto.js';
 import { consumeInvite, createInvite, INVALID_INVITE, verifyInvite, type CreatedInvite } from './invites.js';
+import { invalidateGuardianEscrow } from './guardian-invalidate.js';
 import { markPwBackupsStaleAfterReset } from './keys-pw.js';
 import { authenticatePasskey, checkUserTotp, claimTotpStep, failLogin, findAccountByEmail, findAccountById, type Account } from './login.js';
 import { assertNotLocked, clearAccountFailures, loginKeys, recordLoginFailure } from './lockout.js';
@@ -63,6 +64,8 @@ async function applyPasswordReset(
   if (!neu) throw notFound();
   await saveAuthKeyDigest(tx, { userId: input.userId, credentialId: neu.id, digest: input.authHash, now });
   const backupStale = await markPwBackupsStaleAfterReset(ctx, tx, input.userId);
+  // Hinterlegung für die Eltern (Kinder) wird ungültig: wer das Passwort zurücksetzt, bekommt darüber nie den Schlüssel des Kindes
+  await invalidateGuardianEscrow(tx, input.userId, now);
   // weitere offene Reset-Links der Person sind hinfällig
   await tx
     .update(invites)

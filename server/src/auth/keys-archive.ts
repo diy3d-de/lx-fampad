@@ -9,7 +9,7 @@
 // Schlüsselstand die ältesten 5 (die echte Sicherung liegt vor einer Flut von Müll-Ersetzungen) und insgesamt die neuesten 50 (siehe thinReplaced).
 // Ohne Schalter E2EE_PW_BACKUP erscheinen nur Wiederherstellungssicherungen (Liste, Zahl und Einzelabruf gleich).
 import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, or, sql } from 'drizzle-orm';
-import { keyBackupArchive, keyBackupsPw, personKeys, users } from '../db/schema.js';
+import { keyBackupArchive, keyBackupsPrf, keyBackupsPw, personKeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, Executor, RequestMeta } from './context.js';
@@ -27,8 +27,8 @@ const PAGE_MAX = 200;
 
 export interface ArchiveEntry {
   id: string;
-  /** `recovery` = mit dem Wiederherstellungsschlüssel verschlüsselt, `password` = mit dem Passwort-Schlüssel (kdf beim Einzelabruf). */
-  kind: 'recovery' | 'password';
+  /** `recovery` = mit dem Wiederherstellungsschlüssel verschlüsselt, `password` = mit dem Passwort-Schlüssel (kdf beim Einzelabruf), `passkey` = mit der PRF-Ausgabe eines Passkeys (`credentialId` beim Einzelabruf). */
+  kind: 'recovery' | 'password' | 'passkey';
   /** Zu welchem Schlüsselstand (key_version) die Sicherung gehört. */
   keyVersion: number;
   createdAt: string;
@@ -43,6 +43,8 @@ export interface ArchiveDetail extends ArchiveEntry {
   blob: string;
   /** Nur bei `kind = 'password'`: Ableitungsparameter samt Salt. */
   kdf?: KdfParams;
+  /** Nur bei `kind = 'passkey'`: öffentliche Kennung des Passkeys, dessen PRF-Ausgabe den Blob öffnet. */
+  credentialId?: string;
 }
 
 /**
@@ -56,6 +58,19 @@ function pwArchiveWhere(userId: string, currentVersion: number) {
     or(
       and(inArray(keyBackupsPw.state, ['superseded', 'stale']), lt(keyBackupsPw.keyVersion, currentVersion)),
       and(eq(keyBackupsPw.state, 'superseded'), isNotNull(keyBackupsPw.verifiedAt)),
+    ),
+  );
+}
+
+/** Wie [pwArchiveWhere] für die Passkey-Sicherungen. */
+function prfArchiveWhere(userId: string, currentVersion: number) {
+  return and(
+    eq(keyBackupsPrf.userId, userId),
+    or(
+      and(inArray(keyBackupsPrf.state, ['superseded', 'stale']), lt(keyBackupsPrf.keyVersion, currentVersion)),
+      and(eq(keyBackupsPrf.state, 'superseded'), isNotNull(keyBackupsPrf.verifiedAt)),
+      // eine aktive Sicherung, deren Passkey inzwischen entfernt wurde, ist über die normale Route nicht mehr erreichbar: sie gehört ins Archiv (nie unerreichbar)
+      sql`(${keyBackupsPrf.state} = 'active' and not exists (select 1 from credentials c where c.user_id = ${keyBackupsPrf.userId} and c.type = 'passkey' and c.external_id = ${keyBackupsPrf.credentialId} and c.revoked_at is null))`,
     ),
   );
 }
@@ -111,6 +126,31 @@ async function collect(ctx: Pick<AuthContext, 'config'>, exec: Executor, userId:
       .from(keyBackupsPw)
       .where(and(pwArchiveWhere(userId, current), or(gte(keyBackupsPw.keyVersion, current), isNull(keyBackupsPw.verifiedAt))))
       .orderBy(desc(keyBackupsPw.updatedAt))
+      .limit(REPLACED_SHOWN);
+    cands.push(...always.map((r) => toCand(r, 0)), ...rest.map((r) => toCand(r, 1)));
+  }
+  if (ctx.config.e2eePrfBackup) {
+    const cols = { id: keyBackupsPrf.id, keyVersion: keyBackupsPrf.keyVersion, createdAt: keyBackupsPrf.createdAt, archivedAt: keyBackupsPrf.updatedAt, verifiedAt: keyBackupsPrf.verifiedAt };
+    const toCand = (r: { id: string; keyVersion: number; createdAt: Date; archivedAt: Date; verifiedAt: Date | null }, rank: 0 | 1): Cand => ({
+      id: r.id,
+      kind: 'passkey',
+      keyVersion: r.keyVersion,
+      createdAt: r.createdAt.toISOString(),
+      archivedAt: r.archivedAt.toISOString(),
+      reason: r.keyVersion < current ? 'rotation' : 'replaced',
+      verified: r.verifiedAt !== null,
+      rank,
+      archived: r.archivedAt.getTime(),
+    });
+    const always = await exec
+      .select(cols)
+      .from(keyBackupsPrf)
+      .where(and(prfArchiveWhere(userId, current), lt(keyBackupsPrf.keyVersion, current), isNotNull(keyBackupsPrf.verifiedAt)));
+    const rest = await exec
+      .select(cols)
+      .from(keyBackupsPrf)
+      .where(and(prfArchiveWhere(userId, current), or(gte(keyBackupsPrf.keyVersion, current), isNull(keyBackupsPrf.verifiedAt))))
+      .orderBy(desc(keyBackupsPrf.updatedAt))
       .limit(REPLACED_SHOWN);
     cands.push(...always.map((r) => toCand(r, 0)), ...rest.map((r) => toCand(r, 1)));
   }
@@ -199,6 +239,35 @@ export async function getArchiveEntry(ctx: AuthContext, p: SessionPrincipal, id:
         blob: rec.blob,
       };
     } else {
+      const prfRow = ctx.config.e2eePrfBackup
+        ? (
+            await tx
+              .select({
+                id: keyBackupsPrf.id,
+                blob: keyBackupsPrf.blob,
+                keyVersion: keyBackupsPrf.keyVersion,
+                createdAt: keyBackupsPrf.createdAt,
+                archivedAt: keyBackupsPrf.updatedAt,
+                verifiedAt: keyBackupsPrf.verifiedAt,
+                credentialId: keyBackupsPrf.credentialId,
+              })
+              .from(keyBackupsPrf)
+              .where(and(eq(keyBackupsPrf.id, id), prfArchiveWhere(p.userId, current)))
+          )[0]
+        : undefined;
+      if (prfRow) {
+        detail = {
+          id: prfRow.id,
+          kind: 'passkey',
+          keyVersion: prfRow.keyVersion,
+          createdAt: prfRow.createdAt.toISOString(),
+          archivedAt: prfRow.archivedAt.toISOString(),
+          reason: prfRow.keyVersion < current ? 'rotation' : 'replaced',
+          verified: prfRow.verifiedAt !== null,
+          blob: prfRow.blob,
+          credentialId: prfRow.credentialId,
+        };
+      } else {
       // ohne Schalter E2EE_PW_BACKUP gibt es die Passwort-Einträge nicht (wie in der Liste)
       if (!ctx.config.e2eePwBackup) throw new AppError(404, 'not_found');
       const [row] = await tx
@@ -230,6 +299,7 @@ export async function getArchiveEntry(ctx: AuthContext, p: SessionPrincipal, id:
         blob: row.blob,
         kdf: { id: row.kdfId, memKiB: row.memKib, ops: row.ops, salt: kdfSalt(ctx, row.email, row.generation) },
       };
+      }
     }
     await writeAudit(ctx, tx, {
       event: 'key_backup_archive_read',

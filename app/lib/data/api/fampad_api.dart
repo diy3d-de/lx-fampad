@@ -8,6 +8,7 @@ import '../sync/sync_models.dart';
 import '../crypto/schluessel.dart';
 import '../betrieb/betrieb_modelle.dart';
 import '../betrieb/familien_stand.dart';
+import 'eltern_modelle.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -337,6 +338,15 @@ class FampadApi {
     }
   }
 
+  /// Wie [serverFaehigkeiten], aber jeder Fehler ergibt "nichts davon" (nur für Anzeigen: ohne Antwort bleiben die Funktionen unsichtbar).
+  Future<ServerFaehigkeiten> faehigkeitenOderKeine() async {
+    try {
+      return await serverFaehigkeiten();
+    } on ApiException {
+      return ServerFaehigkeiten.keine;
+    }
+  }
+
   /// Fähigkeiten des Servers aus GET /version (`features`). Nur eine ERFOLGREICHE Antwort ohne `features` (älterer Server) oder ein JSON-404 ergibt "nichts davon".
   /// Netzfehler, Zeitüberschreitung, 429 und 5xx werden weitergeworfen: Wer Passwörter sendet, darf aus einem Ausfall nie schließen, der Server könne kein authKey.
   Future<ServerFaehigkeiten> serverFaehigkeiten() async {
@@ -372,6 +382,88 @@ class FampadApi {
   /// Meldet die Round-Trip-Probe als bestanden: erst jetzt wird die abgelegte Sicherung aktuell und ersetzt die bisherige (atomar auf dem Server).
   Future<void> pwSicherungBestaetigen(String id) async {
     await client.post('/me/key-backup-pw/verified', {'id': id});
+  }
+
+  // ----------------------------------------------------------- Passkey-Sicherung (nur mit Schalter E2EE_PRF_BACKUP des Servers)
+
+  /// Schalter des Servers aus GET /version (`features.prfBackup`). Jeder Fehler und jeder ältere Server ergibt false (die Funktion bleibt unsichtbar).
+  Future<bool> prfSicherungVerfuegbar() async {
+    try {
+      return (await serverFaehigkeiten()).prfBackup;
+    } on ApiException {
+      return false;
+    }
+  }
+
+  /// Legt die Passkey-Sicherung zu EINEM Passkey ab (Step-up); liefert ihre Kennung.
+  Future<String> prfSicherungAblegen({required String credentialId, required String blob, required int keyVersion}) async {
+    final r = await client.put('/me/key-backup-prf', {'credentialId': credentialId, 'blob': blob, 'keyVersion': keyVersion});
+    final id = r['id'];
+    if (id is! String || id.isEmpty) throw ApiException.unerwarteteAntwort;
+    return id;
+  }
+
+  /// Ruft die aktuelle (bestätigte) Passkey-Sicherung dieses Passkeys ab; mit [unbestaetigt] die eigene, noch nicht bestätigte (Round-Trip nach dem Ablegen).
+  Future<PrfSicherungDto> prfSicherungAbrufen({required String credentialId, bool unbestaetigt = false}) async =>
+      PrfSicherungDto.fromJson(await client.get('/me/key-backup-prf?credentialId=${Uri.encodeQueryComponent(credentialId)}${unbestaetigt ? '&pending=1' : ''}'));
+
+  /// Meldet die Round-Trip-Probe als bestanden: erst jetzt wird die abgelegte Sicherung aktuell (atomar auf dem Server).
+  Future<void> prfSicherungBestaetigen(String id) async {
+    await client.post('/me/key-backup-prf/verified', {'id': id});
+  }
+
+  // ----------------------------------------------------------- Eltern-Wiederherstellung für Kinder (nur mit Schalter E2EE_PARENT_RECOVERY des Servers)
+
+  /// Eigener Stand der Hinterlegung (nur Namen, Versionen, Zeiten; für Erwachsene "nicht berechtigt").
+  Future<HinterlegungStand> hinterlegungStand() async => HinterlegungStand.fromJson(await client.get('/me/guardian-escrow'));
+
+  /// Legt die Hinterlegung an oder ersetzt sie (Step-up, nur Kinder): je Elternteil eine Sealed Box der Seeds und die Signatur des Kindes.
+  Future<void> hinterlegungSetzen({required int keyVersion, required List<({String guardianId, int guardianKeyVersion, String blob, String sig})> eintraege}) async {
+    await client.put('/me/guardian-escrow', {
+      'keyVersion': keyVersion,
+      'entries': [for (final e in eintraege) {'guardianId': e.guardianId, 'guardianKeyVersion': e.guardianKeyVersion, 'blob': e.blob, 'sig': e.sig}],
+    });
+  }
+
+  /// Nimmt die Zustimmung zurück (Step-up): löscht alle Einträge und beendet eine offene Anfrage.
+  Future<void> hinterlegungZuruecknehmen() async {
+    await client.delete('/me/guardian-escrow');
+  }
+
+  /// Stellt eine Anfrage (Step-up): nur die Verpflichtung auf den flüchtigen Schlüssel geht an den Server.
+  Future<AnfrageDto> anfrageStellen(String verpflichtung) async => AnfrageDto.fromJson(asJson(await client.post('/me/guardian-recovery', {'commit': verpflichtung}))['recovery']);
+
+  /// Die eigene Anfrage (die offene, sonst die zuletzt beendete der letzten sieben Tage); null, wenn es keine gibt.
+  Future<AnfrageDto?> eigeneAnfrage() async {
+    final r = asJson(await client.get('/me/guardian-recovery'))['recovery'];
+    return r == null ? null : AnfrageDto.fromJson(r);
+  }
+
+  Future<void> anfrageOffenlegen(String id, {required String schluessel, required String nonce, String? challenge}) async {
+    await client.post('/me/guardian-recovery/$id/reveal', {'pub': schluessel, 'nonce': nonce, 'challenge': ?challenge});
+  }
+
+  Future<void> anfrageAbbrechen(String id) async {
+    await client.post('/me/guardian-recovery/$id/cancel');
+  }
+
+  Future<void> anfrageAbschliessen(String id) async {
+    await client.post('/me/guardian-recovery/$id/done');
+  }
+
+  /// Übersicht für ein Elternteil: Kinder mit Hinterlegung und offene Anfragen.
+  Future<HilfeUebersicht> hilfeUebersicht() async => HilfeUebersicht.fromJson(await client.get('/guardian/recoveries'));
+
+  Future<void> anfrageUebernehmen(String id, String challenge) async {
+    await client.post('/guardian/recoveries/$id/challenge', {'challenge': challenge});
+  }
+
+  Future<void> anfrageFreigeben(String id, {required String blob, required String sig}) async {
+    await client.post('/guardian/recoveries/$id/release', {'blob': blob, 'sig': sig});
+  }
+
+  Future<void> anfrageAblehnen(String id) async {
+    await client.post('/guardian/recoveries/$id/decline');
   }
 
   /// Gibt die Ablaufzeit zurück (2 Minuten).

@@ -8,7 +8,7 @@ import { and, desc, eq, inArray, isNull } from 'drizzle-orm';
 import { passwordModes } from '../auth/authkey.js';
 import type { AuthContext } from '../auth/context.js';
 import { countArchive } from '../auth/keys-archive.js';
-import { devices, keyBackups, keyBackupsPw, memberships, personKeys, securityEvents, users } from '../db/schema.js';
+import { credentials, devices, keyBackups, keyBackupsPrf, keyBackupsPw, memberships, personKeys, securityEvents, users } from '../db/schema.js';
 
 export type Ampel = 'green' | 'yellow' | 'red';
 
@@ -22,6 +22,8 @@ export interface Ways {
   device: boolean;
   /** Bestätigte, aktive Passwort-Sicherung zur aktuellen Schlüsselversion. */
   pwBackup: boolean;
+  /** Bestätigte, aktive Passkey-Sicherung (PRF) zur aktuellen Schlüsselversion bei noch aktivem Passkey. Zählt mit der Passwort-Sicherung als EIN Weg (Sicherung durch Zugangsdaten). */
+  prfBackup?: boolean;
   /** Wiederherstellungssicherung (Wiederherstellungsschlüssel) zur aktuellen Schlüsselversion. */
   recoveryBackup: boolean;
 }
@@ -34,7 +36,7 @@ export interface Ways {
  */
 export function ampelOf(ways: Ways, hasKeys: boolean): Ampel {
   if (!hasKeys) return 'red';
-  const n = [ways.device, ways.pwBackup, ways.recoveryBackup].filter(Boolean).length;
+  const n = [ways.device, ways.pwBackup || ways.prfBackup === true, ways.recoveryBackup].filter(Boolean).length;
   if (n >= 2 && ways.device) return 'green';
   if (n === 0) return 'red';
   if (n === 1) return ways.device ? 'yellow' : 'red';
@@ -50,7 +52,7 @@ export function overallAmpel(ampeln: readonly Ampel[]): { overall: Ampel; ready:
 }
 
 /** Feste Arten der Schlüsselereignisse in der Ansicht (security_events.kind). */
-export const KEY_EVENT_KINDS = ['key_rotated', 'key_backup_replaced', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'key_transfer_created', 'key_transfer_claimed', 'recovery_code_login'] as const;
+export const KEY_EVENT_KINDS = ['key_rotated', 'key_backup_replaced', 'key_backup_read', 'key_backup_pw_read', 'key_backup_prf_read', 'key_backup_archive_read', 'key_transfer_created', 'key_transfer_claimed', 'recovery_code_login'] as const;
 
 export interface KeyEventView {
   kind: string;
@@ -120,6 +122,24 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string, opts:
     .select({ userId: keyBackupsPw.userId, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
     .from(keyBackupsPw)
     .where(and(inArray(keyBackupsPw.userId, ids), eq(keyBackupsPw.state, 'active')));
+  const prf = ctx.config.e2eePrfBackup
+    ? await ctx.db
+        .select({ userId: keyBackupsPrf.userId, keyVersion: keyBackupsPrf.keyVersion, verifiedAt: keyBackupsPrf.verifiedAt })
+        .from(keyBackupsPrf)
+        .innerJoin(
+          credentials,
+          and(
+            eq(credentials.userId, keyBackupsPrf.userId),
+            eq(credentials.type, 'passkey'),
+            eq(credentials.externalId, keyBackupsPrf.credentialId),
+            isNull(credentials.revokedAt),
+            // nur ein synchronisierter Passkey (BE und BS: multiDevice und gesichert) ist ein Weg: ein gerätegebundener ginge mit dem Gerät verloren
+            eq(credentials.deviceType, 'multiDevice'),
+            eq(credentials.backedUp, true),
+          ),
+        )
+        .where(and(inArray(keyBackupsPrf.userId, ids), eq(keyBackupsPrf.state, 'active')))
+    : [];
   const modes = ctx.config.e2eePwBackup ? new Map((await passwordModes(ctx, familyId, opts.onlyUserId)).map((m) => [m.userId, m.mode])) : new Map<string, string>();
 
   const persons: PersonKeyStatus[] = [];
@@ -131,6 +151,7 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string, opts:
     const ways: Ways = {
       device: hasKeys && withKey.length > 0,
       pwBackup: hasKeys && pw.some((r) => r.userId === m.userId && r.keyVersion === current && r.verifiedAt !== null),
+      ...(ctx.config.e2eePrfBackup ? { prfBackup: hasKeys && prf.some((r) => r.userId === m.userId && r.keyVersion === current && r.verifiedAt !== null) } : {}),
       recoveryBackup: hasKeys && recovery.some((r) => r.userId === m.userId && r.keyVersion === current),
     };
     // je Person abgefragt: eine Person mit vielen Ereignissen verdrängt die Ereignisse der anderen nie
@@ -152,7 +173,7 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string, opts:
       hasKeys,
       keyVersion: current,
       ways,
-      wayCount: [ways.device, ways.pwBackup, ways.recoveryBackup].filter(Boolean).length,
+      wayCount: [ways.device, ways.pwBackup || ways.prfBackup === true, ways.recoveryBackup].filter(Boolean).length,
       devicesTotal: own.length,
       devicesWithKey: withKey.length,
       devicesReported: own.filter((d) => d.keyVersion !== null && d.reportedAt !== null).length,

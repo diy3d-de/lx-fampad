@@ -44,6 +44,8 @@ describe('Migration 0017 (authKey) additiv auf Stand 0016', () => {
 
       const summe = async (t: string) => ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg(x::text, '|' order by x::text), '')) as h from ${t} x`))).rows[0] as { h: string }).h;
       const tabellen = ['users', 'memberships', 'credentials', 'person_keys', 'key_backups_pw', 'sessions', 'recovery_codes'];
+      // die Art des Passkeys (Migration 0026) gibt es im Stand 0016 nicht: die Registrierung oben hat sie für die Dauer des Tests geschrieben
+      await db.execute(sql`update credentials set device_type = null, backed_up = null`);
       const vorher = new Map<string, string>();
       for (const t of tabellen) vorher.set(t, await summe(t));
       await world.close();

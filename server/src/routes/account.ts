@@ -32,6 +32,7 @@ import { reportDeviceApp } from '../auth/device-info.js';
 import { isReportableVersion } from '../operator/update-status.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, getOwnKeySafety, rotateKeys, setBackup } from '../auth/keys.js';
 import { getArchiveEntry, listArchive } from '../auth/keys-archive.js';
+import { getPrfBackup, markPrfBackupVerified, setPrfBackup } from '../auth/keys-prf.js';
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
 import { passwordModes } from '../auth/authkey.js';
@@ -186,6 +187,27 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     app.post('/api/v1/me/key-backup-pw/verified', strikt, async (req) => {
       const p = await auth.requireSession(req);
       await markPwBackupVerified(ctx, p, parse(z.object({ id: uuid }).strict(), req.body).id, meta(req));
+      return { ok: true };
+    });
+  }
+
+  // Passkey-Sicherung (WebAuthn-PRF): nur mit Schalter E2EE_PRF_BACKUP, sonst gibt es die Routen nicht (404). Der Blob ist für den Server undurchsichtig, die Passkey-Kennung öffentlich.
+  if (config.e2eePrfBackup) {
+    const credentialIdSchema = z.string().min(1).max(1024).regex(/^[A-Za-z0-9_-]+$/);
+    app.put('/api/v1/me/key-backup-prf', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      const body = parse(z.object({ credentialId: credentialIdSchema, blob: b64urlBlobMin(96, 4096), keyVersion: z.number().int().min(1) }).strict(), req.body);
+      return { ok: true, ...(await setPrfBackup(ctx, p, body, meta(req))) };
+    });
+    // credentialId ist Pflicht (die Sicherung gehört zu EINEM Passkey); ?pending=1 die eigene noch unbestätigte, für den Round-Trip der App
+    app.get('/api/v1/me/key-backup-prf', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      const q = parse(z.object({ credentialId: credentialIdSchema, pending: z.literal('1').optional() }).strict(), req.query);
+      return getPrfBackup(ctx, p, q.credentialId, meta(req), q.pending ? 'pending' : 'current');
+    });
+    app.post('/api/v1/me/key-backup-prf/verified', strikt, async (req) => {
+      const p = await auth.requireSession(req);
+      await markPrfBackupVerified(ctx, p, parse(z.object({ id: uuid }).strict(), req.body).id, meta(req));
       return { ok: true };
     });
   }

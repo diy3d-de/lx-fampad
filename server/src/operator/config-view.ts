@@ -46,6 +46,8 @@ export function collectConfig(config: Config): ConfigView {
         id: 'switches',
         items: [
           { key: 'E2EE_PW_BACKUP', value: config.e2eePwBackup },
+          { key: 'E2EE_PRF_BACKUP', value: config.e2eePrfBackup },
+          { key: 'E2EE_PARENT_RECOVERY', value: config.e2eeParentRecovery },
           { key: 'AUTH_LEGACY_PASSWORD_LOGIN', value: config.auth.legacyPasswordLogin },
           { key: 'WEATHER_ENABLED', value: w.enabled },
           // nur "ist Push eingerichtet" (beide Angaben gesetzt), nie die Adresse oder das Token

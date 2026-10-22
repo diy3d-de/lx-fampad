@@ -16,7 +16,7 @@ import { assertPasswordInputAllowed, AUTHKEY_ONLY, authKeyDigest, saveAuthKeyDig
 import { assertPasswordPolicy, hashPassword } from './password.js';
 import { markPwBackupsStaleAfterReset } from './keys-pw.js';
 import { createRecoveryCodes } from './recovery.js';
-import { establishSession, type DeviceInput, type Established, type SessionKind } from './sessions.js';
+import { establishSession, markAccessChanged, type DeviceInput, type Established, type SessionKind } from './sessions.js';
 import { checkTotp, newTotpSecret, totpUri } from './totp.js';
 import type { Role } from './types.js';
 import { checkRegistration, registrationOptions } from './webauthn.js';
@@ -117,6 +117,8 @@ export async function finishPasskeyRegistration(
         secret: verified.publicKey,
         signCount: verified.counter,
         transports: verified.transports,
+        deviceType: verified.deviceType,
+        backedUp: verified.backedUp,
         createdAt: ctx.now(),
       });
     },
@@ -244,6 +246,8 @@ async function completeRegistration(
         await consumeInvite(ctx, tx, id.inviteId, id.userId);
         // alle Anmeldedaten sind neu: eine vorhandene Passwort-Sicherung ist mit dem neuen Passwort nicht zu öffnen (stale, nie löschen)
         await markPwBackupsStaleAfterReset(ctx, tx, id.userId);
+        // Änderung der Anmeldedaten: Sperrfrist für destruktive Aktionen (auch für spätere Anmeldungen) und ungültige Hinterlegung der Eltern-Wiederherstellung
+        await markAccessChanged(ctx, tx, id.userId);
       } else {
         colorIndex = await nextColorIndex(tx, familyId);
         status = inviteRow.requireApproval ? 'pending' : 'active';
@@ -271,6 +275,8 @@ async function completeRegistration(
         client: input.client,
         device: input.device,
         authMethod: input.authMethod,
+        // nach einem Komplett-Reset des Zugangs: Sitzung mit Sperrfrist für destruktive Aktionen (24 h)
+        ...(id.reset ? { origin: 'password_reset' as const } : {}),
         meta,
       });
       return { member, status, recoveryCodes, session };
