@@ -264,7 +264,6 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
           title: Text(titel),
           scrollable: true,
           content: Text(text),
-          scrollable: true,
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
             TextButton(
