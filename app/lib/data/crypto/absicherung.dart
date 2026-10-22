@@ -49,6 +49,9 @@ class AbsicherungsStatus {
   /// Die Passwort-Sicherung gibt es auf diesem Server (sonst bleibt der Weg unsichtbar und wird nie verlangt).
   final bool pwVerfuegbar;
 
+  /// Die Person hat überhaupt einen Schlüssel (laut Server).
+  final bool hatSchluessel;
+
   /// Reihenfolge = Wichtigkeit; leer bei unbekannt und bei grün auf einem verbundenen Gerät.
   final List<AbsicherungSchritt> schritte;
   const AbsicherungsStatus({
@@ -60,10 +63,14 @@ class AbsicherungsStatus {
     this.pwSeit,
     this.wiederherstellungSeit,
     this.pwVerfuegbar = false,
+    this.hatSchluessel = true,
     this.schritte = const [],
   });
 
   int get wege => [geraetWeg, pwWeg, wiederherstellungWeg].where((w) => w).length;
+
+  /// Wie viele Wege es auf diesem Server überhaupt gibt (die Passwort-Sicherung nur, wenn er sie anbietet): der Nenner in "x von y Wegen".
+  int get wegeMoeglich => pwVerfuegbar ? 3 : 2;
 
   /// Der wichtigste nächste Schritt (null bei grün und unbekannt).
   AbsicherungSchritt? get naechster => schritte.isEmpty ? null : schritte.first;
@@ -90,7 +97,9 @@ class AbsicherungsStatus {
     AbsicherungAmpel.gelb => wege == 1 && geraetWeg
         ? 'Dein Schlüssel liegt nur auf einem Gerät. Geht es verloren, ist dein Chat-Verlauf weg. Lege eine Sicherung an.'
         : 'Du hast Sicherungen, aber auf diesem Gerät fehlt dein Schlüssel. Verbinde es, damit du deine Chats lesen kannst.',
-    AbsicherungAmpel.rot => wege == 0
+    AbsicherungAmpel.rot => !hatSchluessel
+        ? 'Du hast noch keinen Schlüssel. Ohne ihn kannst du keine Chats lesen oder schreiben.'
+        : wege == 0
         ? 'Dein Schlüssel ist nirgends gesichert. Geht ein Gerät verloren, ist dein Chat-Verlauf nicht mehr lesbar.'
         : 'Es gibt nur eine Sicherung und kein Gerät mit deinem Schlüssel. Verbinde dieses Gerät oder lege eine zweite Sicherung an.',
     AbsicherungAmpel.unbekannt => 'Der Stand deiner Sicherung ist gerade nicht bekannt.',
@@ -162,6 +171,7 @@ AbsicherungsStatus bewerteAbsicherung(E2eeState s, {SchluesselWegeDto? server}) 
     pwSeit: pw ? s.pwBestaetigtAm : null,
     wiederherstellungSeit: rec ? s.wiederherstellungAm : null,
     pwVerfuegbar: s.pwSicherungVerfuegbar,
+    hatSchluessel: hatSchluessel,
     schritte: schritte,
   );
 }

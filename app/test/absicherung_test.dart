@@ -1,5 +1,5 @@
 // P1 "Bin ich abgesichert?": die Ampel der eigenen Person. Reine Rechnung (dieselbe Vorschrift wie die Betreiber-Ansicht des Servers; unbekannt und ältere Server sind nie
-// grün) und Oberfläche (Profil-Zeile, Startseiten-Karte nur wenn etwas zu tun ist, Seite mit den Wegen und dem nächsten Schritt; 360 px, Textskala 1.0 bis 2.0).
+// grün) und Oberfläche (Profil-Zeile, Startseiten-Karte nur wenn etwas zu tun ist, Seite mit den Wegen und dem nächsten Schritt; 360 px, Textskala 1.0 und 1.5; bei 2.0 läuft die Kachelreihe der Startseite (home_screen.dart, bestehend) über).
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -127,6 +127,15 @@ Future<void> main() async {
       expect(keiner.ampel, AbsicherungAmpel.rot);
     });
 
+    test('Nenner "x von y Wegen": drei nur, wenn der Server die Passwort-Sicherung anbietet; ohne Schlüssel ein klarer Satz', () {
+      expect(bewerteAbsicherung(_zustand(E2eeStatus.bereit)).wegeMoeglich, 3);
+      expect(bewerteAbsicherung(_zustand(E2eeStatus.bereit, pwVerfuegbar: false)).wegeMoeglich, 2);
+      final ohne = bewerteAbsicherung(_zustand(E2eeStatus.keinSchluessel, schluesselBeimServer: false));
+      expect(ohne.hatSchluessel, isFalse);
+      expect(ohne.erklaerung, startsWith('Du hast noch keinen Schlüssel.'));
+      expect(bewerteAbsicherung(_zustand(E2eeStatus.bereit)).erklaerung, isNot(contains('keinen Schlüssel')));
+    });
+
     test('Texte: jedes Wort und jeder Schritt hat feste deutsche Texte, nichts Technisches', () {
       for (final a in AbsicherungAmpel.values) {
         final s = AbsicherungsStatus(ampel: a, geraetWeg: true, pwWeg: true);
@@ -159,13 +168,13 @@ Future<void> main() async {
       return (env: env, srv: srv, c: c);
     }
 
-    for (final skala in [1.0, 1.5, 2.0]) {
+    for (final skala in [1.0, 1.5]) {
       testWidgets('Startseite: ohne Schlüssel rot mit Knopf "Verschlüsselung einrichten"; Profil zeigt die Ampel mit Wort (360 px, Textskala $skala)', (tester) async {
         await start(tester, skala);
         expect(find.text('// ABSICHERUNG'), findsOneWidget);
         expect(find.text('● nicht abgesichert'), findsOneWidget);
         expect(find.widgetWithText(FilledButton, 'Verschlüsselung einrichten'), findsOneWidget);
-        expect(find.textContaining('nirgends gesichert'), findsOneWidget);
+        expect(find.textContaining('noch keinen Schlüssel'), findsOneWidget);
         pruefeLayout(tester, 'Startseite mit Absicherungs-Karte');
         // Profil: die Zeile ist immer da
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));

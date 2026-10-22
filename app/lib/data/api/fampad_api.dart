@@ -435,6 +435,11 @@ class FampadApi {
   /// Admin: entfernte Mitglieder, die noch zurückgeholt werden können (Soft-Delete). Ein älterer Server kennt die Route nicht (404).
   Future<EntfernteMitglieder> entfernteMitglieder() async => EntfernteMitglieder.fromJson(await client.get('/members/removed'));
 
+  /// Admin (mit Step-up, unwiderruflich): löscht ein ENTFERNTES Mitglied sofort endgültig (Konto, Schlüssel, Sicherungen, Archiv), z. B. auf Verlangen nach Art. 17 DSGVO.
+  Future<void> mitgliedEndgueltigLoeschen(String id) async {
+    await client.post('/members/$id/purge', const {});
+  }
+
   /// Admin (mit Step-up): holt ein entferntes Mitglied zurück; Schlüssel und Sicherungen sind unverändert da.
   Future<void> mitgliedWiederherstellen(String id) async {
     await client.post('/members/$id/restore', const {});

@@ -87,6 +87,20 @@ Future<void> main() async {
       expect(komisch, isNot(contains('😀')));
     });
 
+    test('Name: lange Namen werden gekürzt, Steuerzeichen und Umbrüche werden Leerzeichen, Fremdes "?"; ohne Schlüsselgruppen gibt es kein Blatt', () {
+      final lang = _text(notfallblattPdf(gruppen: gruppen, name: 'Maximilian ' * 12, datum: DateTime(2026, 10, 22)));
+      expect(lang, contains('...'));
+      expect(lang, isNot(contains('Maximilian Maximilian Maximilian Maximilian Maximilian')));
+      final umbruch = _text(notfallblattPdf(gruppen: gruppen, name: 'Anna\n(Mama)\u0000\t   Äpfel', datum: DateTime(2026, 10, 22)));
+      expect(umbruch, contains('Anna \\(Mama\\) Äpfel'));
+      final fremd = _text(notfallblattPdf(gruppen: gruppen, name: '李小龍 😀 Li', datum: DateTime(2026, 10, 22)));
+      expect(fremd, contains('??? ? Li'));
+      expect(() => notfallblattPdf(gruppen: const [], name: 'Anna'), throwsArgumentError);
+      expect(() => notfallblattPdf(gruppen: const ['', ''], name: 'Anna'), throwsArgumentError);
+      // der Name steht nie mit mehr als 40 Zeichen auf dem Blatt
+      expect(kNotfallblattNameMax, 40);
+    });
+
     test('nur Standardschriften, keine Verweise ins Netz, keine Skripte', () {
       expect(s, contains('/BaseFont /Helvetica'));
       expect(s, contains('/BaseFont /Courier-Bold'));

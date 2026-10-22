@@ -243,6 +243,142 @@ describe.each(backends)('P1 Schlüssel-Paket Server ($name)', (backend) => {
     });
   });
 
+  // ----------------------------------------------------------------------------------------------------------------- Soft-Delete: Nachbesserungen
+
+  describe('Soft-Delete: Härtung', () => {
+    async function entfernt(email = 'mama@example.org') {
+      const a = await adminPassword(world);
+      const m = await addMember(world, a.client, 'parent', email);
+      await schluesselUndSicherungen(m.client);
+      const mid = await idOf(m.client);
+      await stepUp(a);
+      expect((await a.client.del(`/api/v1/members/${mid}`)).status).toBe(200);
+      return { a, m, mid };
+    }
+
+    it('Einladen einer Adresse, die zu einem entfernten Mitglied gehört: Admin bekommt 409 mit eigener Meldung, andere Rollen kein Konto-Orakel', async () => {
+      const { a } = await entfernt();
+      const kind = await addMember(world, a.client, 'child', 'kind@example.org');
+      const res = await a.client.post('/api/v1/invites', { role: 'child', email: 'MAMA@example.org' });
+      expect(res.status).toBe(409);
+      expect(res.json.error).toBe('member_removed');
+      expect(res.json.message).toContain('zurück');
+      // eine unbekannte oder aktive Adresse und das Weglassen der Adresse: normal
+      expect((await a.client.post('/api/v1/invites', { role: 'child', email: 'neu@example.org' })).status).toBe(200);
+      expect((await a.client.post('/api/v1/invites', { role: 'child', email: 'kind@example.org' })).status).toBe(200);
+      expect((await a.client.post('/api/v1/invites', { role: 'child' })).status).toBe(200);
+      // Eltern bekommen für dieselbe Adresse nie eine andere Antwort als für eine unbekannte (die Prüfung gilt nur der Admin-Route)
+      const eltern = await addMember(world, a.client, 'parent', 'papa@example.org');
+      expect((await eltern.client.post('/api/v1/invites', { role: 'child', email: 'mama@example.org' })).status).toBe(200);
+      expect((await eltern.client.post('/api/v1/invites', { role: 'child', email: 'unbekannt@example.org' })).status).toBe(200);
+      expect((await a.client.post('/api/v1/invites', { role: 'child', email: 'keine-adresse' })).status).toBe(400);
+      void kind;
+    });
+
+    it('nach dem Zurückholen oder endgültigen Löschen lässt sich die Adresse wieder einladen', async () => {
+      const { a, mid } = await entfernt();
+      await stepUp(a);
+      expect((await a.client.post(`/api/v1/members/${mid}/restore`)).status).toBe(200);
+      expect((await a.client.post('/api/v1/invites', { role: 'child', email: 'mama@example.org' })).status).toBe(200);
+    });
+
+    it('"Jetzt endgültig löschen": nur Admins, nur Entfernte, mit Step-up; Schlüssel und Sicherungen sind danach weg, Audit mit manual', async () => {
+      const { a, m, mid } = await entfernt();
+      const kind = await addMember(world, a.client, 'child', 'kind@example.org');
+      const kid = await idOf(kind.client);
+      // ohne frisches Step-up
+      world.advance(10 * 60_000);
+      const ohne = await a.client.post(`/api/v1/members/${mid}/purge`);
+      expect(ohne.status).toBe(403);
+      expect(ohne.json.error).toBe('step_up_required');
+      await stepUp(a);
+      // aktive und unbekannte Personen löscht man nie so
+      expect((await a.client.post(`/api/v1/members/${kid}/purge`)).status).toBe(404);
+      expect((await a.client.post('/api/v1/members/00000000-0000-4000-8000-000000000000/purge')).status).toBe(404);
+      expect((await kind.client.post(`/api/v1/members/${mid}/purge`)).status).toBe(403);
+      expect((await world.client().post(`/api/v1/members/${mid}/purge`)).status).toBe(401);
+      expect((await harness.db.select().from(schema.users).where(eq(schema.users.id, kid))).length).toBe(1);
+      expect(await zeile('person_keys', mid)).toBe(1);
+      await stepUp(a);
+      expect((await a.client.post(`/api/v1/members/${mid}/purge`)).status).toBe(200);
+      expect((await harness.db.select().from(schema.users).where(eq(schema.users.id, mid))).length).toBe(0);
+      for (const t of ['person_keys', 'key_backups_pw', 'key_backup_archive', 'credentials']) expect(await zeile(t, mid), t).toBe(0);
+      const audit = await harness.db.select().from(schema.auditLog).where(eq(schema.auditLog.event, 'member_purged'));
+      expect(audit[0]?.detail).toMatchObject({ target: mid, manual: true });
+      expect((await a.client.get('/api/v1/members/removed')).json.members).toHaveLength(0);
+      void m;
+    });
+
+    it('Sperrfrist: eine Admin-Sitzung aus Wiederherstellungscode darf weder zurückholen noch endgültig löschen', async () => {
+      const { a, mid } = await entfernt();
+      await harness.db.execute(sql`update sessions set origin = 'recovery_code', origin_at = ${new Date(world.clock).toISOString()}::timestamptz where user_id = ${await idOf(a.client)}`);
+      await stepUp(a);
+      for (const url of [`/api/v1/members/${mid}/restore`, `/api/v1/members/${mid}/purge`]) {
+        const res = await a.client.post(url);
+        expect(res.status, url).toBe(403);
+        expect(res.json.error, url).toBe('destructive_locked');
+      }
+      expect(await zeile('person_keys', mid)).toBe(1);
+    });
+
+    it('Familienrolle und Zurücksetzen (Route und Betreiber-CLI) lehnen entfernte Konten ab', async () => {
+      const { a, mid } = await entfernt();
+      const res = await a.client.put(`/api/v1/members/${mid}/family-role`, { familyRole: 'mutter' });
+      expect(res.status).toBe(404);
+      const { resetByEmail } = await import('../src/auth/bootstrap.js');
+      await expect(resetByEmail(world.auth.ctx, 'mama@example.org')).rejects.toMatchObject({ code: 'member_removed' });
+      const { resetMember } = await import('../src/auth/account.js');
+      const fam = (await harness.db.select().from(schema.memberships).where(eq(schema.memberships.userId, mid)))[0]!.familyId;
+      await expect(resetMember(world.auth.ctx, { familyId: fam, userId: mid, actorId: null, hours: 24, withPin: false }, { ip: undefined })).rejects.toMatchObject({ status: 404 });
+      // die Person ist unverändert entfernt und nichts wurde widerrufen
+      expect((await harness.db.select().from(schema.users).where(eq(schema.users.id, mid)))[0]?.removedAt).not.toBeNull();
+      expect(await zeile('credentials', mid)).toBeGreaterThan(0);
+      expect((await harness.db.select().from(schema.credentials).where(and(eq(schema.credentials.userId, mid), sql`revoked_at is not null`))).length).toBe(0);
+    });
+
+    it('Aufräum-Job: ein Fehler bei einer Person hält die anderen nicht auf und das Log enthält nur die ID', async () => {
+      const a = await adminPassword(world);
+      const ids: string[] = [];
+      for (const e of ['eins@example.org', 'zwei@example.org']) {
+        const m = await addMember(world, a.client, 'child', e);
+        ids.push(await idOf(m.client));
+      }
+      for (const id of ids) {
+        await stepUp(a);
+        expect((await a.client.del(`/api/v1/members/${id}`)).status).toBe(200);
+        await entferntVor(id, REMOVED_RETENTION_DAYS + 1);
+      }
+      const ctx = world.auth.ctx;
+      const eintraege: Array<{ obj: Record<string, unknown>; msg?: string }> = [];
+      const original = ctx.log.error.bind(ctx.log);
+      ctx.log.error = (obj: object, msg?: string) => {
+        eintraege.push({ obj: obj as Record<string, unknown>, ...(msg ? { msg } : {}) });
+        original(obj, msg);
+      };
+      const realTx = ctx.db.transaction.bind(ctx.db);
+      let aufrufe = 0;
+      (ctx.db as unknown as { transaction: unknown }).transaction = ((...args: Parameters<typeof realTx>) => {
+        aufrufe++;
+        if (aufrufe === 1) return Promise.reject(Object.assign(new Error('insert into "x" values ($1) -- params: geheim-parameter'), { query: 'insert', params: ['geheim-parameter'] }));
+        return realTx(...args);
+      }) as unknown;
+      try {
+        const n = await (await import('../src/auth/account.js')).purgeRemovedMembers(ctx);
+        expect(n).toBe(1);
+      } finally {
+        (ctx.db as unknown as { transaction: unknown }).transaction = realTx;
+        ctx.log.error = original;
+      }
+      expect(eintraege).toHaveLength(1);
+      expect(eintraege[0]!.obj.userId).toBeTypeOf('string');
+      expect(JSON.stringify(eintraege[0]!.obj)).not.toContain('geheim-parameter');
+      // genau eine Person ist weg, die andere bleibt für den nächsten Lauf
+      const rest = await Promise.all(ids.map(async (id) => (await harness.db.select().from(schema.users).where(eq(schema.users.id, id))).length));
+      expect(rest.sort()).toEqual([0, 1]);
+      expect((await (await import('../src/auth/account.js')).purgeRemovedMembers(ctx))).toBe(1);
+    });
+  });
+
   // ----------------------------------------------------------------------------------------------------------------- Ampel für mich
 
   describe('GET /me/key-status (Bin ich abgesichert?)', () => {

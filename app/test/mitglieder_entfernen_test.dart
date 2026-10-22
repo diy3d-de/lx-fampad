@@ -73,6 +73,7 @@ Future<void> main() async {
       expect(find.text('Opa zurückholen?'), findsOneWidget);
       expect(find.textContaining('Schlüssel und Sicherungen sind unverändert da'), findsOneWidget);
       expect(find.textContaining('Chat-Teilnahmen kommen nicht zurück'), findsOneWidget);
+      expect(find.textContaining('Führe danach „Zugang zurücksetzen“ für Opa aus'), findsOneWidget);
       // abbrechen: nichts wird gesendet
       await tippeText(tester, 'Abbrechen');
       expect(server.anfragen('POST /members/$_idOma/restore'), isEmpty);
@@ -112,6 +113,7 @@ Future<void> main() async {
       expect(find.textContaining('„Kürzlich entfernt“ zurück'), findsOneWidget);
       expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('endgültig gelöscht')), findsOneWidget);
       expect(find.textContaining('Chat-Teilnahmen kommen auch bei einer Rückkehr nicht von selbst zurück'), findsOneWidget);
+      expect(find.textContaining('Die E-Mail-Adresse bleibt in dieser Zeit belegt'), findsOneWidget);
       pruefeLayout(tester, 'Entfernen-Dialog');
       await tippe(tester, find.widgetWithText(TextButton, 'Entfernen'));
       expect(server.anfragen('DELETE /members/$fixIdKind'), hasLength(1));
@@ -126,6 +128,26 @@ Future<void> main() async {
       expect(find.textContaining('wird entfernt und überall abgemeldet'), findsOneWidget);
       expect(find.textContaining('Tage'), findsNothing, reason: 'ohne Soft-Delete wird nichts aufbewahrt und nichts versprochen');
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('"Jetzt endgültig löschen": nur mit getipptem Wort, dann POST /purge (Step-up über den bekannten Dialog)', (tester) async {
+      final (_, server) = await zumAdmin(tester, 1.0);
+      server.json('POST /members/$_idOma/purge', {'ok': true});
+      await tippe(tester, find.text('Jetzt endgültig löschen'));
+      expect(find.text('Opa jetzt endgültig löschen?'), findsOneWidget);
+      expect(find.textContaining('sofort und unwiderruflich gelöscht'), findsOneWidget);
+      expect(find.textContaining('Datensicherungen'), findsOneWidget);
+      // ohne das Wort ist der Knopf gesperrt
+      final knopf = find.widgetWithText(TextButton, 'Endgültig löschen');
+      expect(tester.widget<TextButton>(knopf).onPressed, isNull);
+      expect(server.anfragen('POST /members/$_idOma/purge'), isEmpty);
+      pruefeLayout(tester, 'Löschen-Dialog');
+      await tester.enterText(find.byType(TextField).last, 'löschen');
+      await tester.pump();
+      server.json('GET /members/removed', {'members': <Object>[], 'retentionDays': 30});
+      await tippe(tester, knopf);
+      expect(server.anfragen('POST /members/$_idOma/purge'), hasLength(1));
+      expect(find.text('Opa ist endgültig gelöscht.'), findsOneWidget);
     });
 
     testWidgets('Komplett-Reset: der Dialog sagt, dass die Familie einen Hinweis bekommt', (tester) async {

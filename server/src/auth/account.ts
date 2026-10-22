@@ -3,6 +3,7 @@ import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import { and, asc, count, eq, gt, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { credentials, devices, type FamilyRole, invites, memberships, personKeys, securityEvents, sessions, users, wsTickets } from '../db/schema.js';
 import { AppError } from '../errors.js';
+import { serializeErr } from '../log.js';
 import { defaultRegistry } from '../sync/index.js';
 import { detachMemberRefs } from '../sync/refs.js';
 import { writeAudit } from './audit.js';
@@ -133,6 +134,9 @@ export async function listMembers(ctx: AuthContext, p: SessionPrincipal): Promis
  */
 export async function setFamilyRole(ctx: AuthContext, p: SessionPrincipal, targetId: string, familyRole: FamilyRole | null, meta: RequestMeta): Promise<void> {
   if (targetId !== p.userId) requireAdmin(p);
+  // gesperrte und entfernte Konten (Soft-Delete) lassen sich nicht mehr ändern
+  const ziel = await findAccountById(ctx, targetId, p.familyId);
+  if (!ziel || ziel.disabled) throw notFound();
   await ctx.db.transaction(async (tx) => {
     const done = await tx
       .update(memberships)
@@ -295,6 +299,27 @@ export async function removeMember(ctx: AuthContext, p: SessionPrincipal, target
   ctx.onMembersChanged(p.familyId);
 }
 
+/**
+ * Hinweis für Admins beim Einladen: Gehört [email] zu einem **entfernten** Mitglied der eigenen Familie, bleibt die Adresse bis zum endgültigen Löschen belegt (die Registrierung
+ * mit ihr würde scheitern). Dann `409 member_removed` mit eigener Meldung. Nur für Admins geprüft: für alle anderen Rollen passiert nichts (kein Konto-Orakel für Eltern).
+ */
+export async function assertEmailNotRemoved(ctx: AuthContext, p: SessionPrincipal, email: string): Promise<void> {
+  if (p.role !== 'admin') return;
+  const [row] = await ctx.db
+    .select({ id: users.id })
+    .from(users)
+    .innerJoin(memberships, eq(memberships.userId, users.id))
+    .where(and(eq(memberships.familyId, p.familyId), isNotNull(users.removedAt), sql`lower(${users.email}) = lower(${email.trim()})`))
+    .limit(1);
+  if (row) {
+    throw new AppError(
+      409,
+      'member_removed',
+      `Diese Person ist entfernt: Hole sie zuerst zurück (Familie verwalten > Kürzlich entfernt), oder warte bis zum endgültigen Löschen (${REMOVED_RETENTION_DAYS} Tage nach dem Entfernen), bevor du dieselbe Adresse neu einlädst.`,
+    );
+  }
+}
+
 export interface RemovedMemberView {
   id: string;
   displayName: string;
@@ -341,6 +366,8 @@ export async function listRemovedMembers(ctx: AuthContext, p: SessionPrincipal):
  */
 export async function restoreMember(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
   requireAdmin(p);
+  // das Zurückholen gibt einem Konto samt Anmeldedaten und Schlüsseln wieder Zugang: eine Admin-Sitzung aus Wiederherstellungscode/Reset darf das nicht (24 h Sperrfrist)
+  requireDestructiveAllowed(ctx, p);
   requireStepUp(ctx, p);
   await ctx.db.transaction(async (tx) => {
     const [row] = await tx
@@ -369,23 +396,52 @@ export async function purgeRemovedMembers(ctx: AuthContext): Promise<number> {
     .where(and(isNotNull(users.removedAt), lt(users.removedAt, cutoff), isNotNull(users.disabledAt)));
   let purged = 0;
   for (const d of due) {
-    const syncRev = await ctx.db.transaction(async (tx) => {
-      // erneut unter Sperre prüfen: eine Wiederherstellung zwischen Auswahl und Löschen darf nie ein Konto verlieren
-      const [still] = await tx
-        .select({ id: users.id })
-        .from(users)
-        .where(and(eq(users.id, d.id), isNotNull(users.removedAt), lt(users.removedAt, cutoff)))
-        .for('update');
-      if (!still) return undefined;
-      const rev = await removeFromFamily(ctx, tx, { familyId: d.familyId, userId: d.id, actorId: d.id, reason: 'member_purged' }, { ip: undefined });
-      await writeAudit(ctx, tx, { event: 'member_purged', familyId: d.familyId, detail: { target: d.id, role: d.role } });
-      return rev;
-    });
-    if (syncRev === undefined) continue;
-    purged++;
-    if (syncRev !== null) ctx.onRev(d.familyId, syncRev);
+    // ein Fehler bei einer Person (nur ihre ID und die Art des Fehlers kommen ins Log, nie Parameter) hält die übrigen nicht auf
+    try {
+      const syncRev = await ctx.db.transaction(async (tx) => {
+        // erneut unter Sperre prüfen: eine Wiederherstellung zwischen Auswahl und Löschen darf nie ein Konto verlieren
+        const [still] = await tx
+          .select({ id: users.id })
+          .from(users)
+          .where(and(eq(users.id, d.id), isNotNull(users.removedAt), lt(users.removedAt, cutoff)))
+          .for('update');
+        if (!still) return undefined;
+        const rev = await removeFromFamily(ctx, tx, { familyId: d.familyId, userId: d.id, actorId: d.id, reason: 'member_purged' }, { ip: undefined });
+        await writeAudit(ctx, tx, { event: 'member_purged', familyId: d.familyId, detail: { target: d.id, role: d.role, manual: false } });
+        return rev;
+      });
+      if (syncRev === undefined) continue;
+      purged++;
+      if (syncRev !== null) ctx.onRev(d.familyId, syncRev);
+    } catch (err: unknown) {
+      ctx.log.error({ userId: d.id, err: serializeErr(err) }, 'Endgültiges Löschen eines entfernten Mitglieds fehlgeschlagen');
+    }
   }
   return purged;
+}
+
+/**
+ * Löscht ein **entferntes** Mitglied sofort endgültig (Admin, Step-up, Sperrfrist; z. B. auf Verlangen nach Art. 17 DSGVO): dieselbe Kaskade wie der Aufräum-Job.
+ * Nicht entfernte, fremde und unbekannte Personen ergeben 404 (aktive Mitglieder löscht man nie direkt, sondern über das Entfernen mit Frist). Unwiderruflich.
+ */
+export async function purgeMemberNow(ctx: AuthContext, p: SessionPrincipal, targetId: string, meta: RequestMeta): Promise<void> {
+  requireAdmin(p);
+  requireDestructiveAllowed(ctx, p);
+  requireStepUp(ctx, p);
+  const syncRev = await ctx.db.transaction(async (tx) => {
+    const [row] = await tx
+      .select({ id: users.id, role: memberships.role })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(and(eq(memberships.familyId, p.familyId), eq(users.id, targetId), isNotNull(users.removedAt), isNotNull(users.disabledAt)))
+      .for('update', { of: users });
+    if (!row) throw notFound();
+    const rev = await removeFromFamily(ctx, tx, { familyId: p.familyId, userId: targetId, actorId: p.userId, reason: 'member_purged' }, meta);
+    await writeAudit(ctx, tx, { event: 'member_purged', familyId: p.familyId, actorId: p.userId, ip: meta.ip, detail: { target: targetId, role: row.role, manual: true } });
+    return rev;
+  });
+  if (syncRev !== null) ctx.onRev(p.familyId, syncRev);
+  ctx.onMembersChanged(p.familyId);
 }
 
 /**
@@ -402,7 +458,8 @@ export async function resetMember(
   // eine Admin-Sitzung aus Wiederherstellungscode/Reset darf niemanden zurücksetzen (normale Admin-Sitzungen und das CLI bleiben frei)
   if (input.by) requireDestructiveAllowed(ctx, input.by);
   const target = await findAccountById(ctx, input.userId, input.familyId);
-  if (!target || (input.by && target.disabled)) throw notFound();
+  // gesperrte und entfernte Konten (Soft-Delete) werden nicht zurückgesetzt (auch nicht per CLI): erst zurückholen
+  if (!target || target.disabled) throw notFound();
   // Push-Themen vor dem Widerruf lesen (der löscht die Endpunkte); ein Fehler hier darf den Reset nie verhindern
   const topics = await wakeTopics(ctx.db, input.userId).catch((err: unknown) => {
     ctx.log.warn({ err: (err as Error).message }, 'Push-Themen für den Reset nicht lesbar');

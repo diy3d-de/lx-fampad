@@ -96,11 +96,18 @@ class SicherheitsPruefer {
         if (zuletzt != null && jetzt().difference(zuletzt) < mindestAbstand) return;
       }
       await db.metaSchreiben(kSicherheitGeprueftSchluessel, jetzt().toUtc().toIso8601String());
-      final neu = await _neue();
-      if (neu.isEmpty) return;
+      final alle = await _neue();
+      if (alle.isEmpty) return;
+      // Information statt Alarm: das Abrufen der Passwort-Sicherung (das automatische Verbinden nach der Anmeldung tut es bei jedem neuen Gerät) bleibt in der Liste,
+      // löst aber weder Dialog noch Benachrichtigung aus; der Stand rückt trotzdem vor
+      final neu = [for (final e in alle) if (e.art != SicherheitsArt.passwortSicherungAbgerufen) e];
+      if (neu.isEmpty) {
+        await _markieren(alle.first.zeit);
+        return;
+      }
       if (vordergrund) {
         hinweis?.setzen('Sicherheitshinweis: ${sicherheitsEreignisText(neu.first)} Details unter Profil > Sicherheitsereignisse.');
-        await _markieren(neu.first.zeit);
+        await _markieren(alle.first.zeit);
         return;
       }
       if (!await anzeige.initialisieren()) return; // der Stand bleibt: der nächste Start der App holt es nach
@@ -113,7 +120,7 @@ class SicherheitsPruefer {
             ? 'In der Familie wurde ein Zugang zurückgesetzt. Details unter Profil > Sicherheitsereignisse.'
             : 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
       );
-      if (gezeigt) await _markieren(neu.first.zeit);
+      if (gezeigt) await _markieren(alle.first.zeit);
     } on ApiException catch (e) {
       if (!vordergrund) await _vielleichtAbgemeldet(e);
     } catch (_) {

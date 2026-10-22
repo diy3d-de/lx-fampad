@@ -17,25 +17,34 @@ String? autoVerbindenText(AutoVerbinden r) => switch (r) {
   AutoVerbinden.nichtNoetig || AutoVerbinden.keineSicherung => null,
 };
 
-class AutoVerbindenHinweisController extends Notifier<String?> {
-  @override
-  String? build() => null;
 
-  void setzen(String? text) => state = text;
+/// Der Hinweis nach dem automatischen Verbinden: Text und, nach einem Verbinden, das Angebot "Gerät abgeben / Schlüssel entfernen" (Weg zurück auf einem fremden oder geliehenen Gerät).
+class AutoVerbindenHinweis {
+  final String text;
+  final bool abgebenAnbieten;
+  const AutoVerbindenHinweis(this.text, {this.abgebenAnbieten = false});
+}
+
+class AutoVerbindenHinweisController extends Notifier<AutoVerbindenHinweis?> {
+  @override
+  AutoVerbindenHinweis? build() => null;
+
+  void setzen(AutoVerbindenHinweis? hinweis) => state = hinweis;
 }
 
 /// Der noch nicht angezeigte Hinweis (null: keiner); die Shell zeigt ihn kurz und leert ihn.
-final autoVerbindenHinweisProvider = NotifierProvider<AutoVerbindenHinweisController, String?>(AutoVerbindenHinweisController.new);
+final autoVerbindenHinweisProvider = NotifierProvider<AutoVerbindenHinweisController, AutoVerbindenHinweis?>(AutoVerbindenHinweisController.new);
 
-/// Nach der Anmeldung mit Passwort: Gerät ohne Schlüssel mit der Passwort-Sicherung verbinden und der Person sagen, was geschehen ist. Wirft nie.
+/// Nach der Anmeldung mit Passwort UND Zustimmung der Person ("Das ist mein eigenes Gerät"): Gerät ohne Schlüssel mit der Passwort-Sicherung verbinden und sagen, was geschehen ist. Wirft nie.
 Future<AutoVerbinden> automatischVerbinden(E2eeController e2ee, AutoVerbindenHinweisController hinweis, String passwort) async {
   final AutoVerbinden r;
   try {
     r = await e2ee.automatischVerbinden(passwort);
   } on Object {
-    hinweis.setzen(autoVerbindenText(AutoVerbinden.fehlgeschlagen));
+    hinweis.setzen(AutoVerbindenHinweis(autoVerbindenText(AutoVerbinden.fehlgeschlagen)!));
     return AutoVerbinden.fehlgeschlagen;
   }
-  hinweis.setzen(autoVerbindenText(r));
+  final text = autoVerbindenText(r);
+  hinweis.setzen(text == null ? null : AutoVerbindenHinweis(text, abgebenAnbieten: r == AutoVerbinden.verbunden));
   return r;
 }

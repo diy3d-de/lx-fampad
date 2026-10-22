@@ -12,6 +12,7 @@ import '../../data/auth/auth_state.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
+import '../profile/wort_bestaetigung.dart';
 import 'einladung_neu.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -115,14 +116,30 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         'Konto, Schlüssel und Sicherungen bleiben noch ${e.aufbewahrungTage} Tage gespeichert: In dieser Zeit holst du die Person unter „Kürzlich entfernt“ zurück. '
         'Danach wird alles endgültig gelöscht, auch ihr Schlüssel und ihre Sicherungen. '
         'Zuständigkeiten, Termin-Teilnahmen und Chat-Teilnahmen kommen auch bei einer Rückkehr nicht von selbst zurück. '
-        'Ihre früheren Nachrichten bleiben als Chiffretext; nach dem endgültigen Löschen lassen sie sich auf neu verbundenen Geräten nicht mehr prüfen.';
+        'Ihre früheren Nachrichten bleiben als Chiffretext; nach dem endgültigen Löschen lassen sie sich auf neu verbundenen Geräten nicht mehr prüfen. '
+        'Die E-Mail-Adresse bleibt in dieser Zeit belegt: Willst du dieselbe Adresse neu einladen, hole die Person zuerst zurück oder warte bis zum endgültigen Löschen.';
+  }
+
+  /// "Jetzt endgültig löschen" (Art. 17 DSGVO und Ähnliches): unwiderruflich, mit Step-up und getipptem Wort.
+  Future<void> _endgueltigLoeschen(EntferntesMitglied m) async {
+    final ja = await wortBestaetigen(
+      context,
+      titel: '${m.name} jetzt endgültig löschen?',
+      text: 'Konto, Anmeldedaten${m.hatSchluessel ? ', Schlüssel, alle Sicherungen und das Archiv' : ''} von ${m.name} werden sofort und unwiderruflich gelöscht. Danach lässt sich die Person nicht mehr zurückholen'
+          '${m.hatSchluessel ? ', und ihr Chat-Verlauf ist für sie nie wieder lesbar' : ''}. Aus den Datensicherungen verschwinden die Daten erst nach deren Aufbewahrungsfrist.',
+      wort: 'löschen',
+      knopf: 'Endgültig löschen',
+    );
+    if (!ja || !mounted) return;
+    await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).mitgliedEndgueltigLoeschen(m.id)), erfolg: '${m.name} ist endgültig gelöscht.');
   }
 
   Future<void> _wiederherstellen(EntferntesMitglied m) async {
     final ja = await _frage(
       '${m.name} zurückholen?',
       '${m.name} bekommt den Zugang zurück und meldet sich neu an. Schlüssel und Sicherungen sind unverändert da. '
-          'Zuständigkeiten und Chat-Teilnahmen kommen nicht zurück: Du nimmst ${m.name} wieder in Gruppen auf, und die Familie bestätigt die Person im Chat wie jede neue Person.',
+          'Zuständigkeiten und Chat-Teilnahmen kommen nicht zurück: Du nimmst ${m.name} wieder in Gruppen auf, und die Familie bestätigt die Person im Chat wie jede neue Person. '
+          'Empfehlung: Führe danach „Zugang zurücksetzen“ für ${m.name} aus. Das erneuert alle Anmeldedaten und Wiederherstellungscodes, falls das Konto zwischendurch in falsche Hände geraten ist.',
       'Zurückholen',
       gefaehrlich: false,
     );
@@ -392,7 +409,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
               style: const TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
             ),
             const SizedBox(height: 8),
-            for (final m in _entfernte!.mitglieder) _EntferntKarte(m: m, onZurueck: laeuft ? null : () => _wiederherstellen(m)),
+            for (final m in _entfernte!.mitglieder) _EntferntKarte(m: m, onZurueck: laeuft ? null : () => _wiederherstellen(m), onLoeschen: laeuft ? null : () => _endgueltigLoeschen(m)),
           ],
         ],
       ),
@@ -404,7 +421,8 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
 class _EntferntKarte extends StatelessWidget {
   final EntferntesMitglied m;
   final VoidCallback? onZurueck;
-  const _EntferntKarte({required this.m, required this.onZurueck});
+  final VoidCallback? onLoeschen;
+  const _EntferntKarte({required this.m, required this.onZurueck, required this.onLoeschen});
 
   static String _tag(DateTime d) => DateFormat('dd.MM.yyyy').format(d.toLocal());
 
@@ -429,6 +447,16 @@ class _EntferntKarte extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Zurückholen', icon: Icons.undo, onPressed: onZurueck),
+            const SizedBox(height: 4),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: onLoeschen,
+                style: TextButton.styleFrom(foregroundColor: kDanger, minimumSize: const Size(44, 44)),
+                icon: const Icon(Icons.delete_forever_outlined, size: 18),
+                label: const Text('Jetzt endgültig löschen'),
+              ),
+            ),
           ],
         ),
       ),

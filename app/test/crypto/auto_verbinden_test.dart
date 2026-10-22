@@ -202,6 +202,25 @@ Future<void> main() async {
         expect(b.ctrl.lokalerSchluessel, isNull);
       }, timeout: const Timeout(Duration(minutes: 2)));
 
+      test('Überlappende Ladeläufe (Seite, Chat-Schlüsselbund) überschreiben das Verbinden nicht: am Ende ist das Gerät bereit, auch für den, der auf den älteren Lauf wartet', () async {
+        await mitSicherung();
+        final b = await geraet();
+        // mehrere Läufe laufen gleichzeitig mit dem Verbinden; keiner darf den eben übernommenen Schlüssel mit einem älteren Stand (ohne Schlüssel) überschreiben
+        final laeufe = [b.ctrl.laden(), b.ctrl.laden()];
+        final r = b.ctrl.automatischVerbinden(_pw);
+        laeufe.add(b.ctrl.laden());
+        expect(await r, AutoVerbinden.verbunden);
+        await Future.wait(laeufe);
+        expect(b.s.status, E2eeStatus.bereit);
+        expect(b.ctrl.lokalerSchluessel, isNotNull);
+        expect(await b.speicher.lesen(personenschluesselName(_anna)), isNotNull);
+        // wer einen abgelösten Lauf abwartet, sieht danach den neuesten Stand
+        final alt = b.ctrl.laden();
+        await b.ctrl.laden();
+        await alt;
+        expect(b.s.status, E2eeStatus.bereit);
+      }, timeout: const Timeout(Duration(minutes: 2)));
+
       test('Server ohne Passwort-Sicherung (Schalter aus): nichts zu tun', () async {
         final b = await geraet();
         srv.pwSchalter = false;
@@ -214,8 +233,14 @@ Future<void> main() async {
         final b = await geraet();
         final hinweis = b.c.read(autoVerbindenHinweisProvider.notifier);
         expect(await automatischVerbinden(b.ctrl, hinweis, _pw), AutoVerbinden.verbunden);
-        expect(b.c.read(autoVerbindenHinweisProvider), contains('verbunden'));
-        expect(b.c.read(autoVerbindenHinweisProvider)!.contains(_pw), isFalse);
+        final h = b.c.read(autoVerbindenHinweisProvider)!;
+        expect(h.text, contains('verbunden'));
+        expect(h.text.contains(_pw), isFalse);
+        expect(h.abgebenAnbieten, isTrue, reason: 'nach dem Verbinden: Weg zurück (Gerät abgeben) anbieten');
+        // ein fehlgeschlagener Versuch bietet es nicht an
+        hinweis.setzen(null);
+        await automatischVerbinden(b.ctrl, hinweis, 'Falsches-Passwort-Wolke-Tisch-Vogel-1');
+        expect(b.c.read(autoVerbindenHinweisProvider), isNull, reason: 'Gerät ist schon verbunden: nichts zu tun, kein Hinweis');
       }, timeout: const Timeout(Duration(minutes: 2)));
     });
   }

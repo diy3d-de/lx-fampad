@@ -95,14 +95,14 @@ export async function saveAuthKeyDigest(exec: Executor, input: { userId: string;
 }
 
 /** Zustand der Passwort-Anmeldung je Konto der Familie (nur lesend, für die Admin-Übersicht). Kein Prüfwert verlässt diese Funktion. */
-export async function passwordModes(ctx: AuthContext, familyId: string): Promise<Array<{ userId: string; mode: PasswordMode }>> {
+export async function passwordModes(ctx: AuthContext, familyId: string, onlyUserId?: string): Promise<Array<{ userId: string; mode: PasswordMode }>> {
   const rows = await ctx.db
     .select({ userId: memberships.userId, credentialId: credentials.id, authCredential: passwordAuthkeys.credentialId })
     .from(memberships)
     .innerJoin(users, and(eq(users.id, memberships.userId), isNull(users.disabledAt)))
     .leftJoin(credentials, and(eq(credentials.userId, memberships.userId), eq(credentials.type, 'password'), isNull(credentials.revokedAt)))
     .leftJoin(passwordAuthkeys, eq(passwordAuthkeys.credentialId, credentials.id))
-    .where(eq(memberships.familyId, familyId));
+    .where(and(eq(memberships.familyId, familyId), onlyUserId ? eq(memberships.userId, onlyUserId) : undefined));
   return rows.map((r) => ({ userId: r.userId, mode: r.credentialId === null ? 'none' : r.authCredential === null ? 'legacy' : 'authkey' }));
 }
 

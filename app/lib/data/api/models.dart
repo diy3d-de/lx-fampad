@@ -841,6 +841,9 @@ enum SicherheitsArt {
 
   /// Hinweis an die Familie: der Zugang eines ANDEREN Mitglieds wurde komplett zurückgesetzt (der Name steht in [SicherheitsEreignisDto.betroffener]).
   mitgliedZugangZurueckgesetzt,
+
+  /// Die Passwort-Sicherung wurde abgerufen (auch das automatische Verbinden einer Anmeldung tut das): nur eine Information in der Liste, nie ein Alarm.
+  passwortSicherungAbgerufen,
   andere;
 
   static SicherheitsArt parse(Object? v) => switch (v) {
@@ -848,6 +851,7 @@ enum SicherheitsArt {
     'password_reset_done' => SicherheitsArt.passwortZurueckgesetzt,
     'account_reset_requested' => SicherheitsArt.zugangZurueckgesetzt,
     'member_account_reset' => SicherheitsArt.mitgliedZugangZurueckgesetzt,
+    'key_backup_pw_read' => SicherheitsArt.passwortSicherungAbgerufen,
     _ => SicherheitsArt.andere,
   };
 }

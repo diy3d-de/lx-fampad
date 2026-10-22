@@ -207,6 +207,28 @@ void main() {
       expect(a.anzeige.sicherheit.single.text, startsWith('An deinem Konto'));
     });
 
+    test('Abruf der Passwort-Sicherung (z. B. durch das automatische Verbinden) ist nur eine Information: kein Dialog, keine Benachrichtigung, der Stand rückt vor', () async {
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final t = DateTime.now().add(const Duration(minutes: 1));
+      final lesen = ereignis('e1', t, kind: 'key_backup_pw_read');
+      expect(SicherheitsEreignisDto.fromJson(lesen).art, SicherheitsArt.passwortSicherungAbgerufen);
+      expect(sicherheitsEreignisText(SicherheitsEreignisDto.fromJson(lesen)), contains('Passwort-Sicherung'));
+      a.server.json('GET /me/security-events', {'events': [lesen]});
+      String? gesetzt;
+      await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((x) => gesetzt = x));
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(gesetzt, isNull);
+      expect(a.anzeige.sicherheit, isEmpty);
+      expect(DateTime.parse((await a.db.metaLesen(kSicherheitSeitSchluessel))!).isAtSameMomentAs(t.toUtc()), isTrue, reason: 'der Stand rückt vor, die Information wird nicht ständig neu geprüft');
+      // zusammen mit einem echten Ereignis zählt nur dieses
+      final echt = ereignis('e2', t.add(const Duration(minutes: 1)), kind: 'password_reset_done');
+      a.server.json('GET /me/security-events', {'events': [echt, lesen]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1));
+    });
+
     test('Anzeige nicht möglich (keine Erlaubnis): der Stand bleibt, der Start der App holt es nach', () async {
       final a = await bauen();
       a.server.json('GET /me/security-events', {'events': <Object>[]});

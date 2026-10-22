@@ -37,6 +37,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   bool _mitWiederherstellungscode = false;
   bool? _passkeysDa;
 
+  /// "Das ist mein eigenes Gerät – Schlüssel hier speichern": nur dann verbindet sich das Gerät nach der Anmeldung mit Passwort automatisch mit dem Schlüssel
+  /// (er bleibt danach auf dem Gerät). Android (eigenes Handy) Standard an, im Browser (oft geteilte Computer) Standard aus.
+  bool _eigenesGeraet = !kIsWeb;
+
   /// Bietet der Server "Passwort vergessen?" an (neues Passwort mit Wiederherstellungscode oder Passkey)?
   bool _resetMoeglich = false;
 
@@ -102,6 +106,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     final e2ee = ref.read(e2eeProvider.notifier);
     final hinweis = ref.read(autoVerbindenHinweisProvider.notifier);
     final passwort = _passwort.text;
+    final eigenesGeraet = _eigenesGeraet;
     final ok = await ausfuehren(
       () => ref.read(passwortAnmeldungProvider).anmelden(
         email: email,
@@ -116,8 +121,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
         ),
       ),
     );
-    // Ein Passwort für Anmeldung und Sicherung: ein Gerät ohne Schlüssel verbindet sich mit der Passwort-Sicherung, ohne ein zweites Passwort zu verlangen
-    if (ok) unawaited(automatischVerbinden(e2ee, hinweis, passwort));
+    // Ein Passwort für Anmeldung und Sicherung: ein Gerät ohne Schlüssel verbindet sich mit der Passwort-Sicherung, ohne ein zweites Passwort zu verlangen,
+    // aber NUR mit Zustimmung der Person (der Schlüssel bleibt danach auf dem Gerät): ohne Haken bleibt es beim manuellen Weg
+    if (ok && eigenesGeraet) unawaited(automatischVerbinden(e2ee, hinweis, passwort));
   }
 
   Future<void> _nurWiederherstellung() async {
@@ -220,7 +226,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       onSubmitted: (_) => _weiter(),
       decoration: const InputDecoration(labelText: 'Passwort'),
     ),
-    const SizedBox(height: 16),
+    const SizedBox(height: 4),
+    // Zustimmung zum Speichern des Schlüssels auf diesem Gerät (nie stillschweigend, besonders nicht auf geteilten Computern)
+    CheckboxListTile(
+      value: _eigenesGeraet,
+      onChanged: laeuft ? null : (v) => setState(() => _eigenesGeraet = v ?? false),
+      contentPadding: EdgeInsets.zero,
+      controlAffinity: ListTileControlAffinity.leading,
+      dense: false,
+      title: const Text('Das ist mein eigenes Gerät – Schlüssel hier speichern', style: TextStyle(fontSize: 14)),
+      subtitle: const Text(
+        'Dann verbindet sich dieses Gerät nach der Anmeldung selbst mit deinem Schlüssel. Auf einem fremden oder gemeinsam genutzten Gerät nicht anhaken.',
+        style: TextStyle(fontSize: 12, color: kTextMuted),
+      ),
+    ),
+    const SizedBox(height: 8),
     ZweitKnopf(text: 'Weiter', onPressed: laeuft ? null : _weiter),
     const SizedBox(height: 4),
     if (_resetMoeglich)

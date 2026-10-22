@@ -11,6 +11,7 @@ import '../../data/betrieb/betrieb_hinweis.dart';
 import '../betrieb/betrieb_screen.dart';
 import '../../data/database_provider.dart';
 import '../profile/sicherheit_ereignisse_screen.dart';
+import '../profile/verschluesselung_screen.dart' show VerschluesselungScreen;
 import '../../data/chat/chat_repository.dart';
 import '../../data/crypto/auto_verbinden.dart';
 import '../../data/crypto/e2ee_state.dart' show e2eeProvider;
@@ -192,12 +193,21 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   }
 
   /// Hinweis nach dem automatischen Verbinden (P1): kurz und ruhig, kein Dialog. Der Zustand wird sofort geleert.
-  void _autoVerbindenHinweisZeigen(String? text) {
-    if (text == null || !mounted) return;
+  void _autoVerbindenHinweisZeigen(AutoVerbindenHinweis? hinweis) {
+    if (hinweis == null || !mounted) return;
     ref.read(autoVerbindenHinweisProvider.notifier).setzen(null);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 10)));
+      ..showSnackBar(
+        SnackBar(
+          content: Text(hinweis.abgebenAnbieten ? '${hinweis.text} Ist das nicht dein eigenes Gerät? Dann gib es unter „Gerät abgeben“ wieder ab.' : hinweis.text),
+          duration: const Duration(seconds: 12),
+          // Weg zurück: Profil > Verschlüsselung (dort „Gerät abgeben – alles löschen“ unter „Erweitert“)
+          action: hinweis.abgebenAnbieten
+              ? SnackBarAction(label: 'Gerät abgeben', onPressed: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const VerschluesselungScreen()))))
+              : null,
+        ),
+      );
   }
 
   Future<void> _dialogZeigen(String titel, String text, {VoidCallback? danach}) async {

@@ -378,6 +378,9 @@ class UebertragungsAnzeige {
 class E2eeController extends Notifier<E2eeState> {
   Personenschluessel? _lokal;
 
+  /// Zähler der Ladeläufe ([laden]): nur der jüngste Lauf darf Zustand und lokalen Schlüssel setzen.
+  int _ladeLauf = 0;
+
   @override
   E2eeState build() {
     // Dieselbe Notifier-Instanz wird nach invalidate neu gebaut: den Schlüssel der bisherigen Person nie behalten
@@ -509,21 +512,45 @@ class E2eeController extends Notifier<E2eeState> {
   Future<OeffentlicheSchluessel?> _serverSchluessel() async => (await _api.eigeneSchluessel()).schluessel;
 
   /// Lädt Schlüsselstand, Mitglieder und Warnungen neu.
-  Future<void> laden() async {
+  Future<void> laden() {
     final uid = ref.read(authProvider).user?.id;
-    if (uid == null) return;
+    if (uid == null) return Future<void>.value();
+    // Generationszähler: überlappende Läufe (Seite, Chat-Schlüsselbund, automatisches Verbinden) dürfen sich nicht überschreiben. Ein älterer Lauf, der nach einem
+    // neueren (oder nach dem Übernehmen eines Schlüssels) fertig wird, verwirft sein Ergebnis und fasst weder den Zustand noch den lokalen Schlüssel an.
+    final lauf = ++_ladeLauf;
+    final f = _ladenLauf(uid, lauf);
+    _juengsterLauf = f;
+    return f;
+  }
+
+  Future<void>? _juengsterLauf;
+
+  /// Ein abgelöster Lauf wartet auf den jüngsten: Wer `await laden()` aufruft, sieht danach den neuesten Stand (nicht den vor dem Lauf).
+  Future<void> _abwarten(int lauf) async {
+    final j = _juengsterLauf;
+    if (ref.mounted && lauf != _ladeLauf && j != null) await j;
+  }
+
+  Future<void> _ladenLauf(String uid, int lauf) async {
+    bool veraltet() => lauf != _ladeLauf || !ref.mounted;
     try {
       final crypto = await _krypto();
       // der lokale Schlüssel gehört zum Gerät: er steht auch ohne Verbindung zum Server zur Verfügung (Chat lesen und schreiben offline)
       try {
-        _lokal ??= await _lokalLaden(crypto);
+        if (_lokal == null) {
+          final gelesen = await _lokalLaden(crypto);
+          if (veraltet()) return await _abwarten(lauf);
+          _lokal ??= gelesen; // erst nach dem Lesen prüfen: ein inzwischen übernommener Schlüssel wird nie überschrieben
+        }
       } on SchluesselSpeicherFehler {
         // der Schlüsselspeicher ist gerade nicht lesbar: unten wird es erneut versucht und gemeldet
       }
       final eigene = await _api.eigeneSchluessel();
       final mitglieder = await _api.mitglieder();
-      if (!ref.mounted) return;
-      _lokal = await _lokalLaden(crypto);
+      if (veraltet()) return await _abwarten(lauf);
+      final gelesen = await _lokalLaden(crypto);
+      if (veraltet()) return await _abwarten(lauf);
+      _lokal = gelesen;
       await _zwischenstandAufloesen(crypto, eigene.schluessel);
       final server = eigene.schluessel;
       if (server != null) await _versionMerken(uid, server.version);
@@ -550,7 +577,7 @@ class E2eeController extends Notifier<E2eeState> {
       final quarantaene = await _quarantaeneLesen(uid);
       // der Browser darf die Daten löschen, wenn er die dauerhafte Ablage verweigert: die Anfrage kann beim Nutzer nachfragen, darum mit Zeitlimit
       final dauer = await _speicher.dauerhaftigkeit().timeout(const Duration(seconds: 2), onTimeout: () => SpeicherDauer.unbekannt).catchError((Object _) => SpeicherDauer.unbekannt);
-      if (!ref.mounted) return;
+      if (veraltet()) return await _abwarten(lauf);
       state = E2eeState(
         status: status,
         vertrauenDefekt: ablageDefekt,
@@ -580,7 +607,7 @@ class E2eeController extends Notifier<E2eeState> {
         ]),
       );
     } on VertrauensAblageDefekt {
-      if (ref.mounted) {
+      if (!veraltet()) {
         state = const E2eeState(
           status: E2eeStatus.nichtVerfuegbar,
           vertrauenDefekt: true,
@@ -588,11 +615,11 @@ class E2eeController extends Notifier<E2eeState> {
         );
       }
     } on CryptoFehler catch (e) {
-      if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.meldung);
+      if (!veraltet()) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.meldung);
     } on SchluesselSpeicherFehler {
-      if (ref.mounted) state = const E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: 'Der Schlüsselspeicher dieses Geräts ist gerade nicht lesbar. Bitte versuche es gleich noch einmal.');
+      if (!veraltet()) state = const E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: 'Der Schlüsselspeicher dieses Geräts ist gerade nicht lesbar. Bitte versuche es gleich noch einmal.');
     } on ApiException catch (e) {
-      if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.message);
+      if (!veraltet()) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.message);
     }
   }
 

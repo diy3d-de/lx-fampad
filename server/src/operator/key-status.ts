@@ -120,7 +120,7 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string, opts:
     .select({ userId: keyBackupsPw.userId, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
     .from(keyBackupsPw)
     .where(and(inArray(keyBackupsPw.userId, ids), eq(keyBackupsPw.state, 'active')));
-  const modes = ctx.config.e2eePwBackup ? new Map((await passwordModes(ctx, familyId)).map((m) => [m.userId, m.mode])) : new Map<string, string>();
+  const modes = ctx.config.e2eePwBackup ? new Map((await passwordModes(ctx, familyId, opts.onlyUserId)).map((m) => [m.userId, m.mode])) : new Map<string, string>();
 
   const persons: PersonKeyStatus[] = [];
   for (const m of members) {

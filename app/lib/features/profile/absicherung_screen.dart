@@ -75,7 +75,7 @@ class AbsicherungsZeile extends ConsumerWidget {
       child: EinstellungsZeile(
         icon: Icons.health_and_safety_outlined,
         titel: 'Bin ich abgesichert?',
-        untertitel: a.ampel == AbsicherungAmpel.unbekannt ? 'stand wird geprüft' : '${a.wege} von 3 wegen zum schlüssel',
+        untertitel: a.ampel == AbsicherungAmpel.unbekannt ? 'stand wird geprüft' : '${a.wege} von ${a.wegeMoeglich} wegen zum schlüssel',
         status: StatusPill('● ${a.antwort}', color: absicherungFarbe(a.ampel)),
         onTap: onTap,
       ),
@@ -180,7 +180,7 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
           da: a.geraetWeg,
           titel: 'Gerät mit deinem Schlüssel',
           text: a.geraetWeg
-              ? (hierBereit ? 'dieses Gerät${andere != null && andere > 1 ? ' und ${andere - 1} weitere' : ''}' : 'ein anderes Gerät')
+              ? (hierBereit ? 'dieses Gerät${andere != null && andere > 1 ? ' (laut Server melden $andere Geräte deinen Schlüssel)' : ''}' : 'ein anderes Gerät')
               : 'auf diesem Gerät fehlt dein Schlüssel',
         ),
         if (a.pwVerfuegbar || a.pwWeg)

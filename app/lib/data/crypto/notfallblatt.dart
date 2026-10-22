@@ -10,6 +10,8 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'notfallblatt_download_stub.dart' if (dart.library.js_interop) 'notfallblatt_download_web.dart';
+
 /// Schriftart in der Seitenbeschreibung (die drei Standardschriften jedes PDF-Betrachters).
 enum _Schrift { normal, fett, mono }
 
@@ -38,6 +40,18 @@ List<int> _winAnsi(String s) {
     }
   }
   return out;
+}
+
+/// Höchstzahl Zeichen des Namens auf dem Blatt (lange Namen würden aus dem Blatt laufen).
+const int kNotfallblattNameMax = 40;
+
+/// Der Name für das Blatt: Steuerzeichen und Zeilenumbrüche werden zu Leerzeichen, überflüssige Leerzeichen entfallen, zu lange Namen werden mit "..." gekürzt
+/// (nach Zeichen, nie mitten in einem Zeichen). Was die Schrift nicht kennt (z. B. Emoji, nicht lateinische Schrift), wird beim Schreiben zu "?".
+String _kurzerName(String name) {
+  final sauber = name.replaceAll(RegExp(r'[\u0000-\u001F\u007F-\u009F  ]+'), ' ').replaceAll(RegExp(r' {2,}'), ' ').trim();
+  final zeichen = sauber.runes.toList();
+  if (zeichen.length <= kNotfallblattNameMax) return sauber;
+  return '${String.fromCharCodes(zeichen.take(kNotfallblattNameMax - 3)).trimRight()}...';
 }
 
 /// Maskiert ein Zeichen, das in einer PDF-Zeichenkette Bedeutung hat.
@@ -135,7 +149,8 @@ List<_Zeile> _seite({required List<String> gruppen, required String name, requir
 /// Das Notfallblatt als PDF-Datei (A4, eine Seite). [gruppen] sind die Vierergruppen des Schlüssels (`Wiederherstellung.gruppen`), [name] der Name der Person.
 /// Der Rückgabewert enthält den Schlüssel im Klartext: nur speichern, nie loggen; danach [Uint8List.fillRange] mit 0.
 Uint8List notfallblattPdf({required List<String> gruppen, required String name, DateTime? datum}) {
-  final seite = _seite(gruppen: gruppen, name: name, datum: datum ?? DateTime.now());
+  if (gruppen.isEmpty || gruppen.any((g) => g.isEmpty)) throw ArgumentError('Ohne Schlüssel gibt es kein Notfallblatt.');
+  final seite = _seite(gruppen: gruppen, name: _kurzerName(name), datum: datum ?? DateTime.now());
   final r = _rahmen(seite);
 
   // Inhalt der Seite (Zeichenstrom)
@@ -182,7 +197,14 @@ Uint8List notfallblattPdf({required List<String> gruppen, required String name, 
     aus.add(latin1.encode('${s.toString().padLeft(10, '0')} 00000 n \n'));
   }
   aus.add(latin1.encode('trailer\n<< /Size $n /Root 1 0 R /Info ${objekte.length} 0 R >>\nstartxref\n$xref\n%%EOF\n'));
-  return aus.takeBytes();
+  final ergebnis = aus.takeBytes();
+  // Zwischenpuffer mit dem Schlüssel im Klartext überschreiben (der Strom und seine Kopie im Seitenobjekt); das Ergebnis überschreibt der Aufrufer nach dem Speichern
+  strom.fillRange(0, strom.length, 0);
+  final seiteninhalt = objekte[6];
+  for (var i = 0; i < seiteninhalt.length; i++) {
+    seiteninhalt[i] = 0;
+  }
+  return ergebnis;
 }
 
 /// Dateiname des Notfallblatts (ohne Namen oder Kennungen der Person).
@@ -192,6 +214,8 @@ const String kNotfallblattDateiname = 'lx-fampad-notfallblatt.pdf';
 typedef NotfallblattSpeichern = Future<bool> Function(String name, Uint8List bytes);
 
 Future<bool> _systemSpeichern(String name, Uint8List bytes) async {
+  // Web: eigener Anker-Download (file_picker widerruft die Blob-Adresse sofort nach dem Klick); der Browser meldet weder Ziel noch Abbruch
+  if (kIsWeb) return notfallblattHerunterladen(name, bytes);
   final ziel = await FilePicker.saveFile(
     fileName: name,
     bytes: bytes,
@@ -200,8 +224,8 @@ Future<bool> _systemSpeichern(String name, Uint8List bytes) async {
     type: FileType.custom,
     allowedExtensions: const ['pdf'],
   );
-  // Web: der Browser lädt herunter und meldet weder Ziel noch Abbruch (gilt als gespeichert); Android: null = abgebrochen
-  return kIsWeb || ziel != null;
+  // Android: null = die Person hat abgebrochen
+  return ziel != null;
 }
 
 final notfallblattSpeichernProvider = Provider<NotfallblattSpeichern>((ref) => _systemSpeichern);
