@@ -117,7 +117,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         'Danach wird alles endgültig gelöscht, auch ihr Schlüssel und ihre Sicherungen. '
         'Zuständigkeiten, Termin-Teilnahmen und Chat-Teilnahmen kommen auch bei einer Rückkehr nicht von selbst zurück. '
         'Ihre früheren Nachrichten bleiben als Chiffretext; nach dem endgültigen Löschen lassen sie sich auf neu verbundenen Geräten nicht mehr prüfen. '
-        'Die E-Mail-Adresse bleibt in dieser Zeit belegt: Willst du dieselbe Adresse neu einladen, hole die Person zuerst zurück oder warte bis zum endgültigen Löschen.';
+        'Die E-Mail-Adresse bleibt in dieser Zeit belegt: Eine Einladung mit derselben Adresse lässt sich erst annehmen, wenn du die Person zurückgeholt hast oder das endgültige Löschen erfolgt ist.';
   }
 
   /// "Jetzt endgültig löschen" (Art. 17 DSGVO und Ähnliches): unwiderruflich, mit Step-up und getipptem Wort.
@@ -404,7 +404,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
             MonoLabel('// kürzlich entfernt (${_entfernte!.mitglieder.length})', color: kTextMuted),
             const SizedBox(height: 4),
             Text(
-              'Schlüssel und Sicherungen liegen noch ${_entfernte!.aufbewahrungTage} Tage nach dem Entfernen beim Server. Danach wird alles endgültig gelöscht.',
+              'Schlüssel und Sicherungen liegen noch ${_entfernte!.aufbewahrungTage} Tage nach dem Entfernen beim Server. Danach wird alles endgültig gelöscht. Die E-Mail-Adresse bleibt bis dahin belegt: Eine Registrierung mit ihr geht erst nach dem Zurückholen oder dem endgültigen Löschen.',
               style: const TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
             ),
             const SizedBox(height: 8),

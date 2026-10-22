@@ -10,6 +10,7 @@ import '../api/api_error.dart';
 import '../api/fampad_api.dart';
 import '../api/models.dart';
 import '../auth/auth_state.dart';
+import '../auth/eigener_abruf.dart';
 import 'bytes.dart';
 import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
@@ -888,6 +889,9 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
+  /// Marke "eigener Abruf der Passwort-Sicherung" (siehe eigener_abruf.dart), VOR dem Abruf setzen. Wirft nie.
+  Future<void> _eigenerAbruf() => ref.read(eigenerPwAbrufMarkeProvider)();
+
   PwSicherungAblauf _pwAblauf(CryptoProvider crypto) {
     final email = ref.read(authProvider).user?.email;
     if (email == null || email.trim().isEmpty) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Zu deinem Konto gehört keine E-Mail-Adresse.');
@@ -950,6 +954,7 @@ class E2eeController extends Notifier<E2eeState> {
   /// Sicherung). Ohne Sicherung oder ohne Schlüssel auf dem Gerät wird nur das Passwort geändert; die Antwort sagt, ob die Sicherung dann veraltet ist.
   Future<PwWechselErgebnis> passwortWechselAusfuehren(PwWechselEntwurf w, String neuesPasswort) async {
     var hatSicherung = false;
+    await _eigenerAbruf();
     try {
       await _api.pwSicherungAbrufen();
       hatSicherung = true;
@@ -990,6 +995,7 @@ class E2eeController extends Notifier<E2eeState> {
       final uid = _userId;
       if (!await _api.pwSicherungVerfuegbar()) return PwNachReset.nichtNoetig;
       PwSicherungDto? aktuell;
+      await _eigenerAbruf();
       try {
         aktuell = await _api.pwSicherungAbrufen();
       } on ApiException catch (e) {
@@ -1030,6 +1036,7 @@ class E2eeController extends Notifier<E2eeState> {
   /// Gibt `true` zurück, wenn die Sicherung veraltet war (Passwort-Reset): Das Gerät ist verbunden, die Sicherung sollte jetzt erneuert werden.
   Future<bool> mitPasswortVerbinden(String passwort) async {
     final crypto = await _krypto();
+    await _eigenerAbruf();
     final r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
     await _lokalUebernehmen(r.schluessel, r.keyVersion);
     return r.veraltet;
@@ -1057,6 +1064,7 @@ class E2eeController extends Notifier<E2eeState> {
       if (eigene.pwSicherungVeraltet) return AutoVerbinden.veraltet;
       if (eigene.pwSicherungBestaetigtAm == null) return AutoVerbinden.keineSicherung;
       final ({Personenschluessel schluessel, int keyVersion, bool veraltet}) r;
+      await _eigenerAbruf();
       try {
         r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
       } on CryptoFehler catch (e) {

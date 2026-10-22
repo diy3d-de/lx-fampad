@@ -5,6 +5,7 @@
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
 import { auditLog, invites, keyBackupsPw, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
+import { serializeErr } from '../log.js';
 import { purgeRemovedMembers } from './account.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
@@ -84,7 +85,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
   try {
     removedPurged = await purgeRemovedMembers(ctx);
   } catch (err: unknown) {
-    ctx.log.error({ err: (err as Error).message }, 'Endgültiges Löschen entfernter Mitglieder fehlgeschlagen');
+    ctx.log.error({ err: serializeErr(err) }, 'Endgültiges Löschen entfernter Mitglieder fehlgeschlagen');
   }
 
   const sync = await runSyncMaintenance(ctx);

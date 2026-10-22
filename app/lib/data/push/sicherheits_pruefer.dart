@@ -20,6 +20,7 @@ import '../api/models.dart';
 import '../api/token_store.dart';
 import '../app_database.dart';
 import '../auth/auth_state.dart';
+import '../auth/eigener_abruf.dart';
 import '../auth/reset_hinweis.dart';
 import '../auth/sicherheit_text.dart';
 import '../database_provider.dart';
@@ -98,9 +99,13 @@ class SicherheitsPruefer {
       await db.metaSchreiben(kSicherheitGeprueftSchluessel, jetzt().toUtc().toIso8601String());
       final alle = await _neue();
       if (alle.isEmpty) return;
-      // Information statt Alarm: das Abrufen der Passwort-Sicherung (das automatische Verbinden nach der Anmeldung tut es bei jedem neuen Gerät) bleibt in der Liste,
-      // löst aber weder Dialog noch Benachrichtigung aus; der Stand rückt trotzdem vor
-      final neu = [for (final e in alle) if (e.art != SicherheitsArt.passwortSicherungAbgerufen) e];
+      // Nur das EIGENE Abrufen der Passwort-Sicherung (dieses Gerät hat sie kurz davor selbst geholt, z. B. beim automatischen Verbinden; siehe eigener_abruf.dart)
+      // ist keine Warnung: es bleibt in der Liste, löst aber weder Dialog noch Benachrichtigung aus; der Stand rückt trotzdem vor. Abrufe anderer Geräte
+      // zählen wie jedes Sicherheitsereignis (Warnhinweis bei Passwort-Diebstahl).
+      final marke = DateTime.tryParse(await db.metaLesen(kEigenerPwAbrufSchluessel) ?? '');
+      bool eigen(SicherheitsEreignisDto e) =>
+          e.art == SicherheitsArt.passwortSicherungAbgerufen && marke != null && e.zeit.difference(marke).abs() <= kEigenerAbrufFenster;
+      final neu = [for (final e in alle) if (!eigen(e)) e];
       if (neu.isEmpty) {
         await _markieren(alle.first.zeit);
         return;

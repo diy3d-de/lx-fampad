@@ -12,6 +12,7 @@ import 'package:lx_fampad/data/api/fampad_api.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/app_database.dart';
+import 'package:lx_fampad/data/auth/eigener_abruf.dart';
 import 'package:lx_fampad/data/auth/reset_hinweis.dart';
 import 'package:lx_fampad/data/auth/sicherheit_text.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
@@ -207,7 +208,7 @@ void main() {
       expect(a.anzeige.sicherheit.single.text, startsWith('An deinem Konto'));
     });
 
-    test('Abruf der Passwort-Sicherung (z. B. durch das automatische Verbinden) ist nur eine Information: kein Dialog, keine Benachrichtigung, der Stand rückt vor', () async {
+    test('Eigener Abruf der Passwort-Sicherung (Marke dieses Geräts): nur eine Information, kein Dialog, keine Benachrichtigung, der Stand rückt vor', () async {
       final a = await bauen();
       a.server.json('GET /me/security-events', {'events': <Object>[]});
       await a.pruefer.pruefenUndMelden(vordergrund: false);
@@ -215,6 +216,8 @@ void main() {
       final lesen = ereignis('e1', t, kind: 'key_backup_pw_read');
       expect(SicherheitsEreignisDto.fromJson(lesen).art, SicherheitsArt.passwortSicherungAbgerufen);
       expect(sicherheitsEreignisText(SicherheitsEreignisDto.fromJson(lesen)), contains('Passwort-Sicherung'));
+      // das Gerät hat kurz davor selbst abgerufen (z. B. automatisches Verbinden)
+      await a.db.metaSchreiben(kEigenerPwAbrufSchluessel, t.subtract(const Duration(seconds: 20)).toUtc().toIso8601String());
       a.server.json('GET /me/security-events', {'events': [lesen]});
       String? gesetzt;
       await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((x) => gesetzt = x));
@@ -227,6 +230,27 @@ void main() {
       a.server.json('GET /me/security-events', {'events': [echt, lesen]});
       await a.pruefer.pruefenUndMelden(vordergrund: false);
       expect(a.anzeige.sicherheit, hasLength(1));
+    });
+
+    test('Fremder Abruf der Passwort-Sicherung (keine Marke oder Marke weit weg) wird wie jedes Sicherheitsereignis gemeldet, neutral und ohne Inhalt', () async {
+      for (final marke in <DateTime?>[null, DateTime.now().subtract(const Duration(hours: 1))]) {
+        final a = await bauen();
+        a.server.json('GET /me/security-events', {'events': <Object>[]});
+        await a.pruefer.pruefenUndMelden(vordergrund: false);
+        if (marke != null) await a.db.metaSchreiben(kEigenerPwAbrufSchluessel, marke.toUtc().toIso8601String());
+        final t = DateTime.now().add(const Duration(minutes: 1));
+        a.server.json('GET /me/security-events', {'events': [ereignis('e1', t, kind: 'key_backup_pw_read')]});
+        String? gesetzt;
+        await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((x) => gesetzt = x));
+        expect(gesetzt, startsWith('Sicherheitshinweis:'));
+        expect(gesetzt, contains('Passwort-Sicherung'));
+        // Hintergrund: feste Benachrichtigung ohne Einzelheiten
+        await a.db.metaSchreiben(kSicherheitSeitSchluessel, DateTime.utc(2020).toIso8601String());
+        await a.pruefer.pruefenUndMelden(vordergrund: false);
+        final z = a.anzeige.sicherheit.single;
+        expect('${z.titel} ${z.text}', isNot(contains('Anna')));
+        expect(z.text, startsWith('An deinem Konto'));
+      }
     });
 
     test('Anzeige nicht möglich (keine Erlaubnis): der Stand bleibt, der Start der App holt es nach', () async {

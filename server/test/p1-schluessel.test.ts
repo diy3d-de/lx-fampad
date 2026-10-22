@@ -4,7 +4,9 @@ import { randomBytes } from 'node:crypto';
 import { and, eq, sql } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { REMOVED_RETENTION_DAYS } from '../src/auth/account.js';
+import { passwordModes } from '../src/auth/authkey.js';
 import { runMaintenance } from '../src/auth/maintenance.js';
+import { collectKeyStatus } from '../src/operator/key-status.js';
 import * as schema from '../src/db/schema.js';
 import { addMember, adminPassword, auditEvents, backends, World, type Client, type Harness } from './helpers.js';
 
@@ -429,6 +431,41 @@ describe.each(backends)('P1 Schlüssel-Paket Server ($name)', (backend) => {
       expect(Object.keys((await m.client.get('/api/v1/me/key-status')).json.status).sort()).toEqual(
         ['ampel', 'archiveCount', 'devicesReported', 'devicesTotal', 'devicesWithKey', 'generatedAt', 'hasKeys', 'keyVersion', 'wayCount', 'ways'].sort(),
       );
+    });
+
+    it('passwordModes und collectKeyStatus mit onlyUserId liefern nur die eigene Person (ohne Filter alle der Familie)', async () => {
+      const a = await adminPassword(world);
+      const m = await addMember(world, a.client, 'parent', 'mama@example.org');
+      const aid = await idOf(a.client);
+      const mid = await idOf(m.client);
+      const [mitgliedschaft] = await harness.db.select({ familyId: schema.memberships.familyId }).from(schema.memberships).where(eq(schema.memberships.userId, aid));
+      const familyId = mitgliedschaft!.familyId;
+      const ids = (rows: Array<{ userId: string }>) => rows.map((r) => r.userId).sort();
+      expect(ids(await passwordModes(world.auth.ctx, familyId))).toEqual([aid, mid].sort());
+      expect(ids(await passwordModes(world.auth.ctx, familyId, mid))).toEqual([mid]);
+      expect(ids(await passwordModes(world.auth.ctx, familyId, aid))).toEqual([aid]);
+      // eine Person, die nicht zur Familie gehört, ergibt nichts
+      expect(await passwordModes(world.auth.ctx, familyId, '00000000-0000-4000-8000-000000000000')).toEqual([]);
+      expect(ids((await collectKeyStatus(world.auth.ctx, familyId)).persons)).toEqual([aid, mid].sort());
+      const nurMama = await collectKeyStatus(world.auth.ctx, familyId, { onlyUserId: mid });
+      expect(nurMama.persons.map((x) => x.userId)).toEqual([mid]);
+      expect((await collectKeyStatus(world.auth.ctx, familyId, { onlyUserId: '00000000-0000-4000-8000-000000000000' })).persons).toEqual([]);
+    });
+
+    it('GET /me/key-status hat das strikte Rate-Limit (wie die anderen Schlüssel-Routen): jenseits der Grenze 429', async () => {
+      const strict = await World.create(harness.db, { E2EE_PW_BACKUP: 'true', AUTH_RATE_LIMIT_MAX: '10', RATE_LIMIT_MAX: '200' });
+      try {
+        const a = await adminPassword(strict);
+        const codes: number[] = [];
+        for (let i = 0; i < 12; i++) codes.push((await a.client.get('/api/v1/me/key-status')).status);
+        expect(codes.slice(0, 10).every((c) => c === 200)).toBe(true);
+        expect(codes.slice(10)).toEqual([429, 429]);
+        const limited = await a.client.get('/api/v1/me/key-status');
+        expect(limited.status).toBe(429);
+        expect(limited.json.error).toBe('rate_limited');
+      } finally {
+        await strict.close();
+      }
     });
 
     it('ein entferntes Mitglied hat keine Ampel mehr (404, Sitzung ohnehin beendet) und fehlt in der Betreiber-Ampel', async () => {

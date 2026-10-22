@@ -7,6 +7,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
+import 'package:lx_fampad/data/auth/eigener_abruf.dart';
+import 'package:lx_fampad/data/database_provider.dart';
 import 'package:lx_fampad/data/crypto/auto_verbinden.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
 import 'package:lx_fampad/data/crypto/e2ee_state.dart';
@@ -110,7 +112,10 @@ Future<void> main() async {
         final b = await geraet();
         expect(b.s.status, E2eeStatus.geraetNichtVerbunden);
         final vorher = abrufe();
+        expect(await b.c.read(appDatabaseProvider).metaLesen(kEigenerPwAbrufSchluessel), isNull);
         expect(await b.ctrl.automatischVerbinden(_pw), AutoVerbinden.verbunden);
+        // die Marke "eigener Abruf" steht (der Sicherheitsprüfer zeigt das eigene Ereignis dann nicht als Warnung)
+        expect(DateTime.tryParse(await b.c.read(appDatabaseProvider).metaLesen(kEigenerPwAbrufSchluessel) ?? ''), isNotNull);
         expect(b.s.status, E2eeStatus.bereit);
         expect(b.ctrl.lokalerSchluessel!.exportieren(), g.ctrl.lokalerSchluessel!.exportieren());
         expect(await b.speicher.lesen(personenschluesselName(_anna)), isNotNull);

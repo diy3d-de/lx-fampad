@@ -1,6 +1,8 @@
 // Wiederherstellungsschlüssel einmalig anzeigen, dann VERDECKEN und vollständig eintippen lassen (Probe: Der Schlüssel darf während der Kontrolle nicht mehr
 // zu sehen sein, sonst prüft sie nichts) und erst dann die Sicherung beim Server ablegen. "Später sichern" bleibt möglich; die Sicherung gilt dann als
 // "offen" (Profil > Verschlüsselung zeigt es sichtbar an). Bildschirmfoto-Schutz (FLAG_SECURE) und Zwischenablage nur auf Klick wie bei den Wiederherstellungscodes.
+import 'dart:typed_data' show Uint8List;
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -85,8 +87,9 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
   Future<void> _notfallblatt() async {
     final name = ref.read(authProvider).user?.displayName ?? '';
     final speichern = ref.read(notfallblattSpeichernProvider);
-    final pdf = notfallblattPdf(gruppen: _gruppen, name: name);
+    Uint8List? pdf;
     try {
+      pdf = notfallblattPdf(gruppen: _gruppen, name: name);
       final gespeichert = await speichern(kNotfallblattDateiname, pdf);
       if (gespeichert && mounted) {
         // im Web meldet der Browser weder Ziel noch Abbruch: nur "angestoßen", nicht "gespeichert"
@@ -100,7 +103,7 @@ class _WiederherstellungsschluesselScreenState extends ConsumerState<Wiederherst
     } on Object {
       if (mounted) zeigeHinweis(context, 'Das Notfallblatt ließ sich nicht speichern. Schreibe den Schlüssel stattdessen ab.');
     } finally {
-      pdf.fillRange(0, pdf.length, 0); // die Kopie im Arbeitsspeicher überschreiben
+      pdf?.fillRange(0, pdf.length, 0); // die Kopie im Arbeitsspeicher überschreiben
     }
   }
 
