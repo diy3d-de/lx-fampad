@@ -233,6 +233,9 @@ class FampadApi {
   Future<ProtokollSeite> betriebProtokoll({ProtokollArt art = ProtokollArt.alle, String? weiter, int limit = 50}) async =>
       ProtokollSeite.fromJson(await client.get('/admin/audit?category=${art.code}&limit=$limit${weiter == null ? '' : '&cursor=${Uri.encodeQueryComponent(weiter)}'}'));
 
+  /// Verlauf der täglichen Messpunkte (nur Zahlen; ohne Step-up), die letzten [tage] Tage (1 bis 400). Ältere Server kennen die Route nicht (404).
+  Future<BetriebVerlauf> betriebVerlauf({int tage = 90}) async => BetriebVerlauf.fromJson(await client.get('/admin/metrics?days=$tage'));
+
   /// Familienampel der Schlüssel (nur Zähler, ohne Namen und Ereignisse; ohne Step-up). Die Einzelheiten je Person stehen in [betriebMitglieder].
   Future<SchluesselStatus> betriebSchluesselStatus() async => SchluesselStatus.fromJson(await client.get('/admin/key-status?summary=1'));
 
@@ -269,6 +272,11 @@ class FampadApi {
   /// Meldet den Schlüsselstand dieses Geräts (nur diese Zahl): 0 = kein Schlüssel, n = Schlüsselversion n. Ältere Server kennen die Route nicht (404).
   Future<void> geraetSchluesselMelden(int version) async {
     await client.put('/me/device-key', {'keyVersion': version});
+  }
+
+  /// Meldet die App-Version dieses Geräts (nur der Versionsstring x.y.z; Update-Stand der Betreiber-Ansicht). Ältere Server kennen die Route nicht (404).
+  Future<void> geraetVersionMelden(String version) async {
+    await client.put('/me/device-info', {'appVersion': version});
   }
 
   // ----------------------------------------------------------- Push (nur Android)

@@ -1,13 +1,15 @@
 // GET /api/v1/admin/status: Zustand des Servers für den Betreiber, nur lesend. Nie Geheimnisse, Standorte, Chat-Inhalte oder Schlüssel
 // (nur Zahlen, Zeitpunkte, Versionen, Schalterstände), nie Pfade oder Fehlertexte. Was ohne root nicht lesbar ist, heißt "unbekannt".
 import { readFileSync } from 'node:fs';
-import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gt, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
 import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { WeatherService } from '../weather/service.js';
+import { NAS_STATUS_MAX_BYTES, parseNasStatus, type NasStatus } from './nas-status.js';
 import { realProbes, type Probes } from './probes.js';
+import { collectUpdateStatus, emptyUpdates, type UpdateStatus } from './update-status.js';
 
 export type Level = 'ok' | 'warn' | 'error' | 'off' | 'unknown';
 
@@ -32,6 +34,8 @@ export interface OperatorStatus {
   };
   services: ServiceStatus[];
   backup: { state: Level; lastSuccessAt: string | null; ageHours: number | null; totalBytes: number | null; lastResult: 'ok' | 'fehler' | null };
+  /** Rückmeldung des NAS (Abholung und Wiederherstellungstest); ohne Einrichtung "nicht eingerichtet", nie ein Alarm. */
+  nas: NasStatus;
   disk: { totalBytes: number; freeBytes: number; usedPercent: number } | null;
   certificate: { validTo: string; daysLeft: number } | null;
   counts: { members: number; devices: number; pushDevices: number; activeSessions: number };
@@ -41,7 +45,47 @@ export interface OperatorStatus {
     app: { version: string; versionCode: number | null; minVersion: string | null } | null;
     minAppVersion: string;
   };
+  /** Push-Wecker: registrierte Geräte und Zustellfehler als Zähler (Paket 3, nur Zahlen, nie Endpunkte oder Themen). */
+  push: PushStatus;
+  /** Update-Stand der Android-Geräte (Zähler ohne Namen; Einzelheiten je Person in `GET /admin/members`). */
+  updates: UpdateStatus;
   features: { pwBackup: boolean; legacyPasswordLogin: boolean; weather: boolean; push: boolean; map: { available: boolean; sizeBytes: number | null } };
+}
+
+/** Push-Wecker (Betrieb Paket 3): nur Zähler und Zeiten, nie Endpunkte, Themen oder Fehlertexte. */
+export interface PushStatus {
+  /** Geräte mit einem aktiven Wecker (nicht abgemeldet, Endpunkt nicht deaktiviert). */
+  devicesActive: number;
+  /** Geräte, deren Endpunkt der Server deaktiviert hat (ntfy meldete "weg" oder wiederholte Fehler); sie melden sich beim nächsten Start neu an. */
+  devicesDisabled: number;
+  /** Aktive Geräte mit mindestens einem Zustellfehler in Folge. */
+  devicesFailing: number;
+  /** Geräte mit einem Zustellfehler in den letzten 24 Stunden. */
+  errors24h: number;
+  /** Letzte erfolgreiche Zustellung an irgendein Gerät (null: noch nie oder unbekannt). */
+  lastOkAt: string | null;
+}
+
+export const EMPTY_PUSH: PushStatus = { devicesActive: 0, devicesDisabled: 0, devicesFailing: 0, errors24h: 0, lastOkAt: null };
+
+async function collectPushStatus(ctx: AuthContext, familyId: string, now: Date): Promise<PushStatus> {
+  const since = new Date(now.getTime() - 86_400_000);
+  const rows = await ctx.db
+    .select({ disabledAt: pushEndpoints.disabledAt, failCount: pushEndpoints.failCount, lastErrorAt: pushEndpoints.lastErrorAt })
+    .from(pushEndpoints)
+    .innerJoin(devices, and(eq(devices.familyId, pushEndpoints.familyId), eq(devices.id, pushEndpoints.deviceId)))
+    .where(and(eq(pushEndpoints.familyId, familyId), isNull(devices.revokedAt)));
+  const [ok] = await ctx.db
+    .select({ at: max(pushEndpoints.lastOkAt) })
+    .from(pushEndpoints)
+    .where(and(eq(pushEndpoints.familyId, familyId), isNotNull(pushEndpoints.lastOkAt)));
+  return {
+    devicesActive: rows.filter((r) => r.disabledAt === null).length,
+    devicesDisabled: rows.filter((r) => r.disabledAt !== null).length,
+    devicesFailing: rows.filter((r) => r.disabledAt === null && r.failCount > 0).length,
+    errors24h: rows.filter((r) => r.lastErrorAt !== null && r.lastErrorAt.getTime() >= since.getTime()).length,
+    lastOkAt: ok?.at?.toISOString() ?? null,
+  };
 }
 
 const STARTED_AT = new Date();
@@ -111,6 +155,13 @@ async function readWebVersion(config: Config, probes: Probes): Promise<string | 
   if (!config.webVersionFile) return null;
   const text = (await probes.readText(config.webVersionFile, 256))?.trim();
   return text && /^[A-Za-z0-9._-]{1,64}$/.test(text) ? text : null;
+}
+
+/** Neueste veröffentlichte Android-Version laut Release-Manifest (null: nicht lesbar), für Seiten, die den Stand der Geräte beurteilen. */
+export async function readAppReference(config: Config, probes: Partial<Probes> | undefined): Promise<string | null> {
+  const p: Probes = { ...realProbes, ...probes };
+  const text = config.operator.releaseManifestFile ? await p.readText(config.operator.releaseManifestFile, 64 * 1024) : null;
+  return text ? (parseManifest(text)?.version ?? null) : null;
 }
 
 export interface StatusDeps {
@@ -190,7 +241,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     const w = dbOk ? await deps.weather.status().catch(() => null) : null;
     if (!w) weather = { id: 'weather', state: 'unknown', detail: {} };
     else if (!w.configured) weather = { id: 'weather', state: 'warn', detail: { configured: false } };
-    else if (w.disabled) weather = { id: 'weather', state: 'error', detail: { configured: true, disabled: true } };
+    else if (w.disabled) weather = { id: 'weather', state: 'error', detail: { configured: true, disabled: true, errorCount: w.errorCount } };
     else {
       const ageMin = w.lastOkAt ? Math.max(0, Math.round((now.getTime() - w.lastOkAt.getTime()) / 60_000)) : null;
       const stale = ageMin === null || ageMin > (config.weather.pollMs / 60_000) * 3;
@@ -202,21 +253,31 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
           lastOkAt: w.lastOkAt?.toISOString() ?? null,
           lastOkMinutesAgo: ageMin,
           lastErrorCode: w.lastErrorCode && /^[a-z0-9_]{1,40}$/.test(w.lastErrorCode) ? w.lastErrorCode : null,
+          lastErrorAt: w.lastErrorAt?.toISOString() ?? null,
+          // Fehlschläge in Folge seit dem letzten Erfolg (nur die Zahl, nie ein Text)
+          errorCount: w.errorCount,
         },
       };
     }
   }
 
   // ----- ntfy, Zertifikat, Sicherung, Platte, Karte, Versionen (parallel, jede Quelle für sich fehlertolerant) -----
-  const [ntfyUp, validTo, backupText, disk, karte, manifestText, web] = await Promise.all([
+  const [ntfyUp, validTo, backupText, disk, karte, manifestText, web, nasText] = await Promise.all([
     config.ntfyUrl ? probes.ntfyReachable(config.ntfyUrl) : Promise.resolve(null),
     oc.tlsProbe ? probes.tlsValidTo(oc.tlsProbe, new URL(config.publicUrl).hostname) : Promise.resolve(null),
-    oc.backupStatusFile ? probes.readText(oc.backupStatusFile, 4096) : Promise.resolve(null),
+    oc.backupStatusFile ? probes.readText(oc.backupStatusFile, 4096, true) : Promise.resolve(null),
     oc.diskPath ? probes.disk(oc.diskPath) : Promise.resolve(null),
     oc.karteDir ? probes.karteBytes(oc.karteDir) : Promise.resolve(null),
     oc.releaseManifestFile ? probes.readText(oc.releaseManifestFile, 64 * 1024) : Promise.resolve(null),
     readWebVersion(config, probes),
+    oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1, true) : Promise.resolve(null),
   ]);
+  const nas = parseNasStatus(nasText, now);
+  const push: PushStatus = dbOk ? await collectPushStatus(ctx, familyId, now).catch(() => EMPTY_PUSH) : EMPTY_PUSH;
+  const appInfo = manifestText ? parseManifest(manifestText) : null;
+  const updates: UpdateStatus = dbOk
+    ? await collectUpdateStatus(ctx, familyId, appInfo?.version ?? null).catch(() => emptyUpdates(appInfo?.version ?? null, config.minAppVersion))
+    : emptyUpdates(appInfo?.version ?? null, config.minAppVersion);
 
   const ntfy: ServiceStatus = ntfyUp === null ? { id: 'ntfy', state: 'off', detail: {} } : { id: 'ntfy', state: ntfyUp ? 'ok' : 'error', detail: { devices: counts.pushDevices } };
 
@@ -245,7 +306,9 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   const services = [api, database, weather, ntfy, caddy];
 
   const diskLevel: Level = diskView === null ? 'unknown' : diskView.usedPercent >= DISK_ERROR_PERCENT ? 'error' : diskView.usedPercent > DISK_WARN_PERCENT ? 'warn' : 'ok';
-  const levels: Level[] = [...services.map((s) => s.state), backup.state, diskLevel];
+  // Die Rückmeldung des NAS zählt erst, wenn sie eingerichtet ist (bis dahin gilt die Karenz: nichts davon ist ein Alarm oder ein "unbekannt")
+  const nasLevels = [nas.pull.state, nas.restore.state].filter((l) => l !== 'unknown');
+  const levels: Level[] = [...services.map((s) => s.state), backup.state, diskLevel, ...nasLevels];
   const overall = levels.includes('error') ? 'error' : levels.includes('warn') ? 'warn' : 'ok';
   const unknownCount = levels.filter((l) => l === 'unknown').length + (migrations.applied === null ? 1 : 0);
 
@@ -263,10 +326,13 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     database: { ok: dbOk, latencyMs, sizeBytes, migrations },
     services,
     backup,
+    nas,
+    push,
     disk: diskView,
     certificate,
     counts,
-    versions: { server: SERVER_VERSION, web, app: manifestText ? parseManifest(manifestText) : null, minAppVersion: config.minAppVersion },
+    versions: { server: SERVER_VERSION, web, app: appInfo, minAppVersion: config.minAppVersion },
+    updates,
     features: {
       pwBackup: config.e2eePwBackup,
       legacyPasswordLogin: config.auth.legacyPasswordLogin,

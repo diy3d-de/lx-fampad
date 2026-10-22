@@ -64,6 +64,9 @@ export type AuditEvent =
   | 'operator_alert_disk'
   | 'operator_alert_logins'
   | 'operator_alert_key'
+  | 'operator_alert_nas_pull'
+  | 'operator_alert_nas_restore'
+  | 'operator_alert_nas_channel'
   /** Betreiber schaltet seine Warnungen ein oder aus (`detail.enabled`). */
   | 'operator_warnings_set'
   /** Betreiber hebt die Anmeldesperre eines Kontos auf. */

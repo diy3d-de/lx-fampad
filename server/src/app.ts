@@ -17,6 +17,7 @@ import { PushService } from './push/service.js';
 import { registerWeatherRoutes } from './routes/weather.js';
 import { registerOperatorRoutes } from './routes/operator.js';
 import { MaintenanceGate } from './operator/maintenance.js';
+import { UsageCounters } from './operator/metrics.js';
 import { OperatorMonitor } from './operator/monitor.js';
 import type { Probes } from './operator/probes.js';
 import { WeatherService } from './weather/service.js';
@@ -210,9 +211,22 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.addHook('onClose', async () => weather.close());
     registerWeatherRoutes(app, authCore, weather);
     // Betreiber-Warnungen: der Takt startet in server.ts (nicht in Tests), der Prüfer lässt sich dort von Hand anstoßen
-    const operatorMonitor = new OperatorMonitor({ ctx: authCore.ctx, push, weather, probes: operatorProbes });
+    // Zähler für Nutzung und Verlauf (nur Zahlen): Abgleich-Anfragen, Serverfehler im Abgleich (5xx außer der Wartung 503), Antworten mit 429
+    const usageCounters = new UsageCounters();
+    app.addHook('onResponse', async (req, reply) => {
+      const status = reply.statusCode;
+      if (status === 429) usageCounters.rateLimit();
+      if (req.method === 'POST' && req.routeOptions?.url === '/api/v1/sync') {
+        usageCounters.syncRun();
+        if (status >= 500 && status !== 503) usageCounters.syncError();
+      }
+    });
+    const operatorMonitor = new OperatorMonitor({ ctx: authCore.ctx, push, weather, probes: operatorProbes, counters: usageCounters });
     app.decorate('operatorMonitor', operatorMonitor);
-    app.addHook('onClose', async () => operatorMonitor.stop());
+    app.addHook('onClose', async () => {
+      operatorMonitor.stop();
+      await operatorMonitor.flushCounters();
+    });
     if (maintenance) registerOperatorRoutes(app, config, authCore, weather, operatorMonitor, maintenance, operatorProbes);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort

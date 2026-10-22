@@ -28,6 +28,8 @@ import {
 import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
 import { MAX_REPORTED_KEY_VERSION, reportDeviceKey } from '../auth/device-key.js';
+import { reportDeviceApp } from '../auth/device-info.js';
+import { isReportableVersion } from '../operator/update-status.js';
 import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, getOwnKeySafety, rotateKeys, setBackup } from '../auth/keys.js';
 import { getArchiveEntry, listArchive } from '../auth/keys-archive.js';
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
@@ -125,6 +127,13 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
   app.put('/api/v1/me/device-key', strikt, async (req) => {
     const p = await auth.requireSession(req);
     await reportDeviceKey(ctx, p, parse(z.object({ keyVersion: z.number().int().min(0).max(MAX_REPORTED_KEY_VERSION) }).strict(), req.body).keyVersion);
+    return { ok: true };
+  });
+
+  // Das Gerät meldet beim Start seine App-Version (Update-Stand der Betreiber-Ansicht): nur ein Versionsstring x.y.z, streng geprüft; immer das Gerät der Sitzung
+  app.put('/api/v1/me/device-info', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await reportDeviceApp(ctx, p, parse(z.object({ appVersion: z.string().max(16).refine(isReportableVersion, 'invalid') }).strict(), req.body).appVersion);
     return { ok: true };
   });
 

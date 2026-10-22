@@ -1,5 +1,5 @@
 // Bereich "Betrieb" (nur für den Betreiber des Servers, fast nur lesend): Übersicht (Kacheln, Schlüssel-Ampel, Warnungen, Dienste, Funktionen, Versionen,
-// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
+// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Backups (Paket 3: Sicherung auf dem Server, Abholung und Wiederherstellungstest laut NAS), Nutzung (Paket 3: aktive Personen und Geräte, Verlaufsgrafiken, Wetter und Push, Update-Stand), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
 // nichts auf dem Server; geschrieben wird nur Weniges (Konto entsperren, eigene Warnungen ein/aus, Wartungsmodus, Familienhinweis), jeweils mit Step-up.
 // Unterseite wie das Konto: mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell (Marker [kBetriebMarke]).
 import 'dart:async';
@@ -15,8 +15,11 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'betrieb_anzeige.dart';
+import 'betrieb_backups.dart';
+import 'betrieb_bausteine.dart';
 import 'betrieb_einstellungen.dart';
 import 'betrieb_mitglieder.dart';
+import 'betrieb_nutzung.dart';
 import 'betrieb_schluessel.dart';
 
 /// Marker in den Argumenten der Route (kein Routenname, siehe [kKontoMarke]): die Desktop-Shell erkennt daran, dass "Betrieb" offen ist.
@@ -31,7 +34,7 @@ class BetriebScreen extends ConsumerStatefulWidget {
   ConsumerState<BetriebScreen> createState() => _BetriebScreenState();
 }
 
-enum _Seite { uebersicht, mitglieder, einstellungen, protokoll }
+enum _Seite { uebersicht, mitglieder, backups, nutzung, einstellungen, protokoll }
 
 class _BetriebScreenState extends ConsumerState<BetriebScreen> {
   _Seite _seite = _Seite.uebersicht;
@@ -90,6 +93,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
     ref.watch(betriebWarnungenProvider.select((p) => p.wert != null || p.fehler != null));
     ref.watch(betriebEinstellungenProvider.select((p) => p.wert != null || p.fehler != null));
     ref.watch(betriebKonfigurationProvider.select((p) => p.wert != null || p.fehler != null));
+    // hält den Verlauf am Leben (autoDispose): die Nutzungsseite lädt ihn beim ersten Öffnen, danach bleibt er beim Wechseln der Reiter erhalten
+    ref.watch(betriebVerlaufProvider.select((p) => p.wert != null || p.fehler != null));
     return AuthSeite(
       label: '// betrieb',
       titel: 'Betrieb',
@@ -106,6 +111,7 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
                   unawaited(ref.read(betriebWarnungenProvider.notifier).laden());
                   unawaited(ref.read(betriebEinstellungenProvider.notifier).laden());
                   unawaited(ref.read(betriebKonfigurationProvider.notifier).laden());
+                  unawaited(ref.read(betriebVerlaufProvider.notifier).laden());
                   // auch die Ereignisse und Mitglieder neu laden; auf den anderen Seiten still (ohne Step-up-Abfrage), auf der eigenen Seite mit
                   unawaited(_protokollLaden(still: _seite != _Seite.protokoll));
                   unawaited(_mitgliederLaden(still: _seite != _Seite.mitglieder));
@@ -124,6 +130,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
                 if (!ref.read(betriebMitgliederProvider).geladen) unawaited(_mitgliederLaden());
               },
             ),
+            ('Backups', _seite == _Seite.backups, () => setState(() => _seite = _Seite.backups)),
+            ('Nutzung', _seite == _Seite.nutzung, () => setState(() => _seite = _Seite.nutzung)),
             ('Einstellungen', _seite == _Seite.einstellungen, () => setState(() => _seite = _Seite.einstellungen)),
             (
               'Protokoll',
@@ -150,6 +158,15 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
           )
         else if (_seite == _Seite.mitglieder)
           BetriebMitgliederSeite(neuLaden: () => _mitgliederLaden())
+        else if (_seite == _Seite.backups)
+          const BetriebBackupsSeite()
+        else if (_seite == _Seite.nutzung)
+          BetriebNutzungSeite(
+            oeffneMitglieder: () {
+              setState(() => _seite = _Seite.mitglieder);
+              if (!ref.read(betriebMitgliederProvider).geladen) unawaited(_mitgliederLaden());
+            },
+          )
         else if (_seite == _Seite.einstellungen)
           const BetriebEinstellungenSeite()
         else
@@ -168,8 +185,8 @@ class _Reiterleiste extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, c) {
       final grosseSchrift = MediaQuery.textScalerOf(context).scale(10) > 12;
-      // vier Reiter passen bei schmaler Breite (360 px) nicht nebeneinander: zwei Spalten
-      final spalten = grosseSchrift ? 1 : (reiter.length > 3 && c.maxWidth < 480 ? 2 : reiter.length);
+      // mehr als drei Reiter passen bei schmaler Breite (360 px) nicht nebeneinander: zwei Spalten; breiter höchstens drei (die Beschriftungen brechen nicht um)
+      final spalten = grosseSchrift ? 1 : (reiter.length > 3 ? (c.maxWidth < 480 ? 2 : 3) : reiter.length);
       final breite = (c.maxWidth - (spalten - 1) * 8) / spalten;
       return Wrap(spacing: 8, runSpacing: 8, children: [for (final (text, gewaehlt, onTap) in reiter) SizedBox(width: breite, child: _Reiter(text: text, gewaehlt: gewaehlt, onTap: onTap))]);
     },
@@ -348,54 +365,6 @@ class _Kacheln extends StatelessWidget {
   }
 }
 
-class _Zeile extends StatelessWidget {
-  final String name;
-  final String info;
-  final Widget pille;
-  const _Zeile({required this.name, required this.info, required this.pille});
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 8),
-    child: ConstrainedBox(
-      constraints: const BoxConstraints(minHeight: 44),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                const SizedBox(height: 2),
-                Text(info, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // begrenzt (lange Versionskennungen brechen um, statt die Zeile zu sprengen)
-          ConstrainedBox(constraints: const BoxConstraints(maxWidth: 150), child: pille),
-        ],
-      ),
-    ),
-  );
-}
-
-class _Liste extends StatelessWidget {
-  final List<Widget> zeilen;
-  const _Liste(this.zeilen);
-
-  @override
-  Widget build(BuildContext context) => LxCard(
-    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-    child: Column(
-      children: [
-        for (var i = 0; i < zeilen.length; i++) ...[if (i > 0) const Divider(height: 1, color: kBorderSoft), zeilen[i]],
-      ],
-    ),
-  );
-}
-
 class _Dienste extends StatelessWidget {
   final BetriebStatus s;
   final DateTime jetzt;
@@ -437,9 +406,9 @@ class _Dienste extends StatelessWidget {
         'gültig',
       ),
     ];
-    return _Liste([
+    return BetriebListe([
       for (final (name, info, stufeWert, okText) in zeilen)
-        _Zeile(name: name, info: info, pille: StatusPill(stufeText(stufeWert, okText: okText), color: stufeFarbe(stufeWert))),
+        BetriebZeile(name: name, info: info, pille: StatusPill(stufeText(stufeWert, okText: okText), color: stufeFarbe(stufeWert))),
     ]);
   }
 }
@@ -451,12 +420,12 @@ class _Funktionen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget pille(bool an, {String ja = 'an', String nein = 'aus'}) => StatusPill(an ? ja : nein, color: an ? kTerminal : kTextMuted);
-    return _Liste([
-      _Zeile(name: 'Wetter anzeigen', info: 'Dienst + Konfiguration', pille: pille(s.schalterWetter)),
-      _Zeile(name: 'Push-Wecker (ntfy)', info: 'Server-Konfiguration', pille: pille(s.schalterPush)),
-      _Zeile(name: 'Passwort-Sicherung', info: 'E2EE_PW_BACKUP · Server-Datei, Neustart', pille: pille(s.schalterPwSicherung)),
-      _Zeile(name: 'Klartext-Passwort-Anmeldung', info: 'AUTH_LEGACY_PASSWORD_LOGIN · Server-Datei, Neustart', pille: pille(s.schalterKlartextLogin)),
-      _Zeile(name: 'Karte (PMTiles)', info: s.karteDa ? 'Datei vorhanden · ${groesseText(s.karteBytes)}' : 'keine Datei gefunden', pille: pille(s.karteDa, ja: 'da', nein: 'fehlt')),
+    return BetriebListe([
+      BetriebZeile(name: 'Wetter anzeigen', info: 'Dienst + Konfiguration', pille: pille(s.schalterWetter)),
+      BetriebZeile(name: 'Push-Wecker (ntfy)', info: 'Server-Konfiguration', pille: pille(s.schalterPush)),
+      BetriebZeile(name: 'Passwort-Sicherung', info: 'E2EE_PW_BACKUP · Server-Datei, Neustart', pille: pille(s.schalterPwSicherung)),
+      BetriebZeile(name: 'Klartext-Passwort-Anmeldung', info: 'AUTH_LEGACY_PASSWORD_LOGIN · Server-Datei, Neustart', pille: pille(s.schalterKlartextLogin)),
+      BetriebZeile(name: 'Karte (PMTiles)', info: s.karteDa ? 'Datei vorhanden · ${groesseText(s.karteBytes)}' : 'keine Datei gefunden', pille: pille(s.karteDa, ja: 'da', nein: 'fehlt')),
     ]);
   }
 }
@@ -469,11 +438,11 @@ class _Versionen extends StatelessWidget {
   Widget build(BuildContext context) {
     final app = s.appVersion;
     Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: v == null ? kTextMuted : kText));
-    return _Liste([
-      _Zeile(name: 'Server', info: 'Protokoll ${s.protokoll} · Migrationen ${s.migrationen.letzte?.substring(0, 4) ?? 'unbekannt'}', pille: version(s.serverVersion)),
-      _Zeile(name: 'Web-App', info: 'ausgelieferter Build', pille: version(s.webVersion)),
-      _Zeile(name: 'Android-App', info: 'Release-Manifest', pille: version(app == null ? null : '${app.version}${app.versionCode == null ? '' : '+${app.versionCode}'}')),
-      _Zeile(name: 'Mindestversion App', info: 'ältere Apps müssen aktualisieren', pille: version(s.mindestversionApp)),
+    return BetriebListe([
+      BetriebZeile(name: 'Server', info: 'Protokoll ${s.protokoll} · Migrationen ${s.migrationen.letzte?.substring(0, 4) ?? 'unbekannt'}', pille: version(s.serverVersion)),
+      BetriebZeile(name: 'Web-App', info: 'ausgelieferter Build', pille: version(s.webVersion)),
+      BetriebZeile(name: 'Android-App', info: 'Release-Manifest', pille: version(app == null ? null : '${app.version}${app.versionCode == null ? '' : '+${app.versionCode}'}')),
+      BetriebZeile(name: 'Mindestversion App', info: 'ältere Apps müssen aktualisieren', pille: version(s.mindestversionApp)),
     ]);
   }
 }
@@ -511,7 +480,7 @@ class _Ereignisse extends ConsumerWidget {
         else if (neueste.isEmpty)
           const Text('Noch keine Einträge.', style: TextStyle(color: kTextMuted))
         else
-          _Liste([for (final e in neueste) _EintragZeile(e: e, jetzt: jetzt)]),
+          BetriebListe([for (final e in neueste) _EintragZeile(e: e, jetzt: jetzt)]),
       ],
     );
   }
@@ -608,7 +577,7 @@ class _Protokoll extends ConsumerWidget {
               ? const MeldungsBox('Das Protokoll wird geladen …', fehler: false)
               : ZweitKnopf(text: 'Bestätigen und anzeigen', icon: Icons.verified_user_outlined, onPressed: () => unawaited(neuLaden())),
         if (p.geladen && p.eintraege.isEmpty) const Text('Keine Einträge in dieser Auswahl.', style: TextStyle(color: kTextMuted)),
-        if (p.eintraege.isNotEmpty) _Liste([for (final e in p.eintraege) _EintragZeile(e: e, jetzt: jetzt)]),
+        if (p.eintraege.isNotEmpty) BetriebListe([for (final e in p.eintraege) _EintragZeile(e: e, jetzt: jetzt)]),
         if (p.weiter != null) ...[
           const SizedBox(height: 12),
           ZweitKnopf(text: p.laedt ? 'Lädt …' : 'Ältere Einträge laden', icon: Icons.expand_more, onPressed: p.laedt ? null : () => unawaited(ref.read(betriebProtokollProvider.notifier).mehr())),

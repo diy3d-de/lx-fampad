@@ -620,6 +620,36 @@ export const operatorAlertState = pgTable(
 );
 
 /**
+ * Tägliche Messpunkte der Betreiber-Ansicht (Paket 3, `operator/metrics.ts`): je Familie und Tag (UTC) eine Zeile mit NUR Zahlen: aktive Personen und Geräte in den letzten 7 und
+ * 30 Tagen, Zähler des Tages (Abgleiche, Fehler, Rate-Limit-Treffer; der Prüfer addiert sie alle 5 Minuten) und Größen (Datenbank, Dateiablage). Nie Inhalte, Titel, Namen oder IDs.
+ * Aufbewahrung 400 Tage (Aufräum-Job). Die Zähler gelten für den Server (eine Familie je Server) und werden der ersten Familie des Prüflaufs zugerechnet.
+ */
+export const operatorMetrics = pgTable(
+  'operator_metrics',
+  {
+    familyId: familyRef(),
+    day: date('day', { mode: 'string' }).notNull(),
+    activePersons7: integer('active_persons_7').notNull().default(0),
+    activePersons30: integer('active_persons_30').notNull().default(0),
+    activeDevices7: integer('active_devices_7').notNull().default(0),
+    activeDevices30: integer('active_devices_30').notNull().default(0),
+    syncRuns: integer('sync_runs').notNull().default(0),
+    syncErrors: integer('sync_errors').notNull().default(0),
+    rateLimited: integer('rate_limited').notNull().default(0),
+    dbBytes: bigint('db_bytes', { mode: 'number' }),
+    filesBytes: bigint('files_bytes', { mode: 'number' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.familyId, t.day] }),
+    check(
+      'operator_metrics_nonneg_ck',
+      sql`${t.activePersons7} >= 0 and ${t.activePersons30} >= 0 and ${t.activeDevices7} >= 0 and ${t.activeDevices30} >= 0 and ${t.syncRuns} >= 0 and ${t.syncErrors} >= 0 and ${t.rateLimited} >= 0 and (${t.dbBytes} is null or ${t.dbBytes} >= 0) and (${t.filesBytes} is null or ${t.filesBytes} >= 0)`,
+    ),
+  ],
+);
+
+/**
  * Betreiber-Einstellungen je Familie (Paket 2b, `operator/settings.ts`): genau eine Zeile je Familie, wird beim ersten Schalten angelegt.
  * Wartungsmodus (sperrt Schreib-Ops, Sync und neue Anmeldungen mit 503 "maintenance"; optional mit automatischem Ende) und Familienhinweis
  * (kurzer reiner Text mit optionalem Ablauf, den die App als Banner zeigt). Nie Geheimnisse; der Hinweistext steht nur hier, nicht im Audit-Log.
@@ -1412,6 +1442,8 @@ export const weatherCredentials = pgTable(
     lastErrorCode: text('last_error_code'),
     /** Gesetzt bei `invalid_grant`: kein Abruf mehr, bis die Zugangsdaten neu eingegeben werden. */
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /** Fehlschläge in Folge seit dem letzten Erfolg (Betreiber-Ansicht, Paket 3); nur die Zahl, nie ein Text. */
+    errorCount: integer('error_count').notNull().default(0),
   },
   (t) => [check('weather_credentials_single_ck', sql`${t.id} = 1`)],
 );

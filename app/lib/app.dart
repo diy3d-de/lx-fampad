@@ -9,6 +9,7 @@ import 'data/auth/auth_state.dart';
 import 'data/betrieb/betrieb_hinweis.dart' show betriebWarnSteuerungProvider;
 import 'data/chat/chat_krypto_state.dart';
 import 'data/crypto/geraet_schluessel_melder.dart' show geraetSchluesselMelderProvider;
+import 'data/geraet_version_melder.dart' show geraetVersionMelderProvider;
 import 'data/lists/members.dart' show mitgliederAktualisierungProvider;
 import 'data/push/chat_benachrichtigung_raeumen.dart';
 import 'widgets/ungelesen_titel.dart';
@@ -122,6 +123,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     // Betreiber: lokales Konto-Flag für die Warnungen (nur dann fragt ein Wecker den Warnstand ab) und Meldung des Schlüsselstands dieses Geräts
     ref.watch(betriebWarnSteuerungProvider);
     ref.watch(geraetSchluesselMelderProvider);
+    ref.watch(geraetVersionMelderProvider);
     ref.watch(mitgliederAktualisierungProvider);
     ref.watch(chatBenachrichtigungenRaeumenProvider);
     ref.watch(ungelesenTitelProvider);

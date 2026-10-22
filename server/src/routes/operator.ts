@@ -8,13 +8,14 @@ import type { Config } from '../config.js';
 import { AUDIT_CATEGORIES, CURSOR_FORMAT, listAudit } from '../operator/audit-view.js';
 import { collectConfig } from '../operator/config-view.js';
 import { collectKeyStatus, summarize } from '../operator/key-status.js';
+import { listMetrics, METRICS_MAX_DAYS } from '../operator/metrics.js';
 import type { MaintenanceGate } from '../operator/maintenance.js';
 import { collectMembers, unlockMember } from '../operator/members.js';
 import { setWarningsEnabled, type OperatorMonitor } from '../operator/monitor.js';
 import type { Probes } from '../operator/probes.js';
 import { requireOperator } from '../operator/service.js';
 import { getSettings, setMaintenance, setNotice } from '../operator/settings.js';
-import { collectStatus, type OperatorStatus } from '../operator/status.js';
+import { collectStatus, readAppReference, type OperatorStatus } from '../operator/status.js';
 import type { WeatherService } from '../weather/service.js';
 import { idParams, meta, parse, safeString, strictLimit } from './util.js';
 
@@ -61,6 +62,13 @@ export function registerOperatorRoutes(
     return value;
   });
 
+  // Nutzung und Verlauf (Paket 3): tägliche Messpunkte, nur Zahlen (aktive Personen und Geräte, Zähler, Größen), ohne Step-up (keine Namen, keine Inhalte)
+  app.get('/api/v1/admin/metrics', limit, async (req) => {
+    const p = await requireOperator(ctx, await auth.requireSession(req));
+    const q = parse(z.object({ days: z.coerce.number().int().min(1).max(METRICS_MAX_DAYS).default(90) }).strict(), req.query);
+    return listMetrics(ctx, p.familyId, q.days);
+  });
+
   // Konfiguration (Paket 2b): nur sichere Ausschnitte (Schalter, Limits), nie Geheimnisse; nur lesend, ohne Step-up (keine Personen, keine Adressen mit Zugangsdaten)
   app.get('/api/v1/admin/config', limit, async (req) => {
     await requireOperator(ctx, await auth.requireSession(req));
@@ -101,7 +109,7 @@ export function registerOperatorRoutes(
   // Mitglieder und Geräte (Gerätenamen, Versionen, letzte Anmeldung): wie das Protokoll nur mit frischem Step-up
   app.get('/api/v1/admin/members', limit, async (req) => {
     const p = await requireOperator(ctx, await auth.requireSession(req), { stepUp: true });
-    return collectMembers(ctx, p);
+    return collectMembers(ctx, p, await readAppReference(config, probes));
   });
 
   // Anmeldesperre des Kontos aufheben (einzige schreibende Aktion über Mitglieder; Step-up, Protokoll)

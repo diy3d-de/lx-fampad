@@ -48,6 +48,9 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
       await world.close();
       world = undefined;
 
+      // die Objekte von 0025 (Betrieb Paket 3) liegen über 0024 und werden beim erneuten Migrieren wieder angelegt
+      await db.execute(sql`drop table operator_metrics`);
+      await db.execute(sql`alter table weather_credentials drop column error_count`);
       // zurück in den Stand 0023: die Objekte von 0024 weg (alter Index ohne Version), ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
       await db.execute(sql`drop index epoche_wraps_uq`);
       await db.execute(sql`alter table epoche_wraps drop constraint epoche_wraps_key_version_ck`);
@@ -63,6 +66,9 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
       expect((await db.execute(sql`select count(*)::int as n, count(key_version)::int as v from epoche_wraps`)).rows[0]).toMatchObject({ n: 4, v: 0 });
 
       // zweite Anwendung (Tests stellen frühere Stände nach und wenden alles erneut an): kein Fehler, nichts verändert
+      // (die Objekte von 0025 sind nicht wiederholbar angelegt und gehen deshalb vorher wieder weg)
+      await db.execute(sql`drop table operator_metrics`);
+      await db.execute(sql`alter table weather_credentials drop column error_count`);
       await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at >= ${meine.when}`);
       await migrateLite(db as never, { migrationsFolder });
       for (const t of tabellen) expect(await summe(t), t).toBe(vorher.get(t));

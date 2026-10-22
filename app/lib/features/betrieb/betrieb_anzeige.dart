@@ -143,6 +143,9 @@ const _ereignisse = <String, String>{
   'operator_alert_disk': 'Betrieb-Warnung: Speicherplatz',
   'operator_alert_logins': 'Betrieb-Warnung: Fehlanmeldungen',
   'operator_alert_key': 'Betrieb-Warnung: Schlüssel-Ampel',
+  'operator_alert_nas_pull': 'Betrieb-Warnung: Abholung durch das NAS',
+  'operator_alert_nas_restore': 'Betrieb-Warnung: Wiederherstellungstest',
+  'operator_alert_nas_channel': 'Betrieb-Warnung: Statuskanal des NAS',
   'operator_warnings_set': 'Betrieb-Warnungen umgestellt',
   'operator_unlock': 'Konto entsperrt',
   'operator_maintenance_set': 'Wartungsmodus umgeschaltet',
@@ -232,6 +235,9 @@ String warnArtText(String art) => switch (art) {
   'disk' => 'Speicherplatz über 85 % belegt',
   'logins' => 'Viele fehlgeschlagene Anmeldungen',
   'key' => 'Schlüssel-Ampel einer Person ist rot',
+  'nas_pull' => 'Das NAS hat die Sicherung seit über 36 Stunden nicht abgeholt (oder die Abholung ist fehlgeschlagen)',
+  'nas_restore' => 'Der Wiederherstellungstest ist älter als 10 Tage oder fehlgeschlagen',
+  'nas_channel' => 'Die Statusmeldung des NAS fehlt oder ist ungültig (der Kanal lieferte schon einmal eine gültige Datei)',
   _ => 'Hinweis des Servers',
 };
 
@@ -244,6 +250,44 @@ String plattformText(String p) => switch (p) {
   'web' => 'Web',
   '' => 'Gerät',
   _ => p.length > 16 ? p.substring(0, 16) : p,
+};
+
+/// Feste Wörter zu den Fehlercodes des Wetter-Dienstes (Codes des Servers, nie ein Rohtext; Unbekanntes heißt allgemein "Fehler beim Abruf").
+String wetterFehlerText(String code) {
+  if (RegExp(r'^http_\d{3}$').hasMatch(code)) return 'Antwort des Wetterdienstes mit Fehlercode (${code.substring(5)})';
+  return switch (code) {
+    'network' => 'Wetterdienst nicht erreichbar',
+    'invalid_grant' => 'Zugangsdaten ungültig',
+    'auth_rejected' => 'Zugang vom Wetterdienst abgelehnt',
+    'station_not_found' => 'Station nicht in der Antwort',
+    'measurement_old' => 'Messung zu alt',
+    'rotate_persist' => 'neues Zugangstoken nur ersatzweise gespeichert',
+    'too_large' => 'Antwort zu groß',
+    'bad_json' => 'Antwort nicht lesbar',
+    'token_bad' => 'Zugangstoken unbrauchbar',
+    'token_network' => 'Token-Abruf: Wetterdienst nicht erreichbar',
+    'token_too_large' => 'Token-Antwort zu groß',
+    'token_tx' => 'Token-Erneuerung fehlgeschlagen',
+    'decrypt' => 'gespeicherte Zugangsdaten nicht lesbar',
+    _ when code.startsWith('token_http_') => 'Token-Abruf abgelehnt',
+    _ => 'Fehler beim Abruf',
+  };
+}
+
+/// App-Stand eines Geräts in einem Wort (feste Texte zu den festen Codes des Servers).
+String appStandText(AppStand s) => switch (s) {
+  AppStand.aktuell => 'aktuell',
+  AppStand.aelter => 'ältere Version',
+  AppStand.unterMindestversion => 'Update nötig',
+  AppStand.inaktiv => 'lange nicht gesehen',
+  AppStand.unbekannt => 'Version unbekannt',
+};
+
+Color appStandFarbe(AppStand s) => switch (s) {
+  AppStand.aktuell => kTerminal,
+  AppStand.aelter => kWarn,
+  AppStand.unterMindestversion => kDanger,
+  AppStand.inaktiv || AppStand.unbekannt => kTextMuted,
 };
 
 /// Dauer der Anmeldesperre: "noch 45 s" bzw. "noch 2 Min".

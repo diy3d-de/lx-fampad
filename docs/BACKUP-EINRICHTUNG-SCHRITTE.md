@@ -3,7 +3,7 @@
 Diese Anleitung führt dich einmal komplett durch (etwa 1 bis 2 Stunden). Hintergründe, Sicherheitsmodell und Grenzen stehen in [`BACKUP.md`](BACKUP.md), der Neuaufbau im Ernstfall in [`WIEDERHERSTELLUNG.md`](WIEDERHERSTELLUNG.md).
 Alles auf dem Server führst du selbst mit `sudo` aus; nichts davon macht Claude. Befehle sind zum Kopieren gedacht, `<…>` und Werte in `'…'` ersetzt du durch deine eigenen.
 
-**Reihenfolge ist wichtig:** Schlüssel (1, 2) → **NAS-Snapshots (3) vor dem ersten Lauf** → Server (4 bis 6) → NAS-Abholung (7) → Wiederherstellungstest (8), optional automatischer Wochentest auf dem NAS (10). Ohne Schritt 3 und 8 ist die Sicherung nicht abgenommen.
+**Reihenfolge ist wichtig:** Schlüssel (1, 2) → **NAS-Snapshots (3) vor dem ersten Lauf** → Server (4 bis 6) → NAS-Abholung (7) → Wiederherstellungstest (8), optional automatischer Wochentest auf dem NAS (10), optional Rückmeldung des NAS an die Betreiber-Ansicht (11). Ohne Schritt 3 und 8 ist die Sicherung nicht abgenommen.
 
 Was nicht gesichert wird (bewusst): Web-App und Server-Code (kommen aus `deploy.sh`), die kommende Kartendatei `/srv/fampad/karte` (1 bis 5 GB, neu erzeugbar), lx-labs.dev, Standortdaten (gibt es nicht auf der Platte).
 
@@ -475,9 +475,81 @@ cat /volume1/backup/lx-fampad/restoretest-status
 
 Das Image wird alle 35 Tage automatisch neu gebaut (Sicherheitsupdates der Pakete), von Hand mit `--rebuild`. Das Basis-Image ist im Skript an einen festen Digest (`BASE=…`) gebunden und wird nie ohne Absicht neu geladen (`--pull never`); die Pakete darin kommen beim Bauen aus dem Debian-Archiv. Den Digest erneuerst du bei Gelegenheit mit einer neuen Skriptfassung. Einmal im Monat in der Statusdatei nachsehen, dass `last_run_utc` höchstens 8 Tage alt ist (läuft die Aufgabe selbst nicht mehr, meldet sich nichts, wie beim Pull).
 
-### 10.8 Meldung an den Server (noch nicht)
+### 10.8 Meldung an den Server
 
-Der Server erfährt das Ergebnis **noch nicht**: Er hält bewusst keine Zugangsdaten zum NAS, und der vorhandene SSH-Zugang des NAS ist nur lesend (`rrsync -ro`). Ein sicherer Rückweg (NAS schickt nur die Statusdatei über einen eigenen eingeschränkten Schlüssel) ist als offener Punkt für „Betrieb Paket 3“ vermerkt (`BACKUP.md`, Abschnitt „Automatischer Wiederherstellungstest“). Bis dahin ist die E-Mail des Aufgabenplaners das Warnsignal.
+Das Ergebnis geht an den Server, sobald du Abschnitt 11 eingerichtet hast (eigener, eingeschränkter Schlüssel des NAS; der Server hält weiter keine Zugangsdaten zum NAS). Ohne Abschnitt 11 bleibt die E-Mail des Aufgabenplaners das Warnsignal.
+
+---
+
+## 11. Optional, empfohlen: Rückmeldung des NAS an die Betreiber-Ansicht (Betrieb Paket 3)
+
+Mit diesem Schritt zeigt „Betrieb“ > **Backups** die letzte Abholung und den letzten Wiederherstellungstest, und der Server warnt dich per Push (ohne Inhalt), wenn die Abholung älter als 36 Stunden ist oder der Test älter als 10 Tage bzw. fehlgeschlagen ist. Der Server bekommt **keine** Zugangsdaten zum NAS: das NAS schickt nur eine kleine, geprüfte Statusdatei über einen **zweiten, eigenen** SSH-Schlüssel, der auf dem Server genau einen Befehl ausführen darf (Hintergrund und Grenzen: [`BACKUP.md`](BACKUP.md), Abschnitt „Rückmeldung an den Server“). Bis du das einrichtest, steht in der App „noch keine Rückmeldung“, und es gibt keine Warnung dazu.
+
+### 11.1 Zweiten SSH-Schlüssel auf dem NAS erzeugen
+
+Als der Benutzer, der die Aufgaben ausführt (Synology: `root`), **nicht** den Schlüssel der Abholung wiederverwenden:
+
+```bash
+ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status
+cat ~/.ssh/lx-fampad-status.pub
+```
+
+Die Zeile `ssh-ed25519 AAAA… lx-fampad-status` ist der **öffentliche** Schlüssel (der private bleibt auf dem NAS). Er wird dem Server nur für den einen Befehl gegeben.
+
+### 11.2 Server: Trockenlauf und Einrichten
+
+Per SSH auf den Server (in `tmux`). Wie bei Schritt 4: erst den Stand ansehen, denn das Skript läuft als root und kopiert aus deinem Checkout nach `/usr/local/sbin`:
+
+```bash
+git -C ~/lx-fampad pull --ff-only
+git -C ~/lx-fampad log -3 --stat
+git -C ~/lx-fampad status --short deploy
+NAS_PUB2='ssh-ed25519 AAAA… lx-fampad-status'
+NAS_IP='203.0.113.7'      # dieselbe Adresse wie in Schritt 5
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey "$NAS_PUB2" --nas-ip "$NAS_IP"
+```
+
+**Erwartung:** Prüfungen ohne `FEHLER`, am Ende `Trockenlauf beendet: alle Prüfungen bestanden` mit der Liste dessen, was angelegt würde (Benutzer `lxnasstatus`, Ordner `/var/lib/lx-fampad-nasstatus`, Befehl, `authorized_keys`). Meldet es, dass der Schlüssel der Abholung doppelt verwendet wird: einen neuen erzeugen (11.1). Erlaubt dein `sshd` nur bestimmte Benutzer (`AllowUsers`), nennt das Skript es: dann `lxnasstatus` von Hand in `sshd_config` ergänzen (`sshd -t`, dann neu laden). Das Skript ändert `sshd_config`, Caddy und das Haupt-Caddyfile nie. Dann derselbe Aufruf ohne `--dry-run`:
+
+```bash
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --nas-pubkey "$NAS_PUB2" --nas-ip "$NAS_IP"
+```
+
+**Erwartung:** `4/4 Selbsttest` endet mit zwei Zeilen `ok: …` und `Fertig.`. Den Rückbau siehe [`BACKUP.md`](BACKUP.md), Abschnitt „Rückbau“ (zusätzlich: `sudo userdel lxnasstatus`, `/var/lib/lxnasstatus`, `/var/lib/lx-fampad-nasstatus` und `/usr/local/sbin/lx-fampad-nasstatus-empfang` löschen).
+
+### 11.3 NAS: Skripte aus dem eigenen Git-Checkout
+
+Wie in 10.2: nicht vom Server holen, sondern vom PC (geprüfter Tag), Prüfsummen vergleichen. Neu sind `lx-fampad-nasstatus.sh`; **`lx-fampad-pull.sh` und `lx-fampad-restoretest.sh` ersetzt du durch die neuen Fassungen** (sie schreiben `pull-status` bzw. rufen die Meldung auf). Alle drei liegen im selben Ordner auf dem NAS (das Pull- und das Restoretest-Skript suchen das Meldeskript neben sich):
+
+```powershell
+cd C:\Projekte\lx-familienzentrale
+Get-FileHash -Algorithm SHA256 deploy\backup\nas\lx-fampad-nasstatus.sh, deploy\backup\nas\lx-fampad-pull.sh, deploy\backup\nas\lx-fampad-restoretest.sh
+scp deploy\backup\nas\lx-fampad-nasstatus.sh deploy\backup\nas\lx-fampad-pull.sh deploy\backup\nas\lx-fampad-restoretest.sh <nas-admin-benutzer>@<nas-adresse>:/volume1/homes/<nas-admin-benutzer>/
+```
+
+Auf dem NAS (`sudo -i`): Prüfsummen mit `sha256sum` vergleichen und die Dateien dorthin legen, wo die Aufgaben sie schon aufrufen (`lx-fampad-pull.sh` z. B. `/volume1/backup/`, `lx-fampad-restoretest.sh` in `/root/lx-fampad-restoretest/`); das Meldeskript neben **jedes** der beiden (oder `LXB_STATUS_MELDER=/pfad/lx-fampad-nasstatus.sh` in der Aufgabe setzen). Rechte `700`, Besitzer `root`. Der Melder nutzt dieselbe `known_hosts`-Datei wie der Pull (`~/.ssh/lx-fampad-backup.known_hosts`, Schritt 7) und den neuen Schlüssel `~/.ssh/lx-fampad-status`.
+
+### 11.4 Einmal von Hand testen
+
+```bash
+# was würde gesendet? (nichts wird gesendet)
+LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-nasstatus.sh --print
+# senden
+LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-nasstatus.sh
+```
+
+**Erwartung:** `--print` zeigt nur Zeilen mit festen Schlüsseln (`pull_result=ok`, `pull_success_epoch=…`, …), `Status an den Server gemeldet.`. Auf dem Server: `sudo cat /var/lib/lx-fampad-nasstatus/nas.status` zeigt dieselben Zeilen plus `received_epoch=…`. Wenn es noch keine `pull-status` gibt (der Pull lief noch nicht in der neuen Fassung), zuerst den Pull von Hand starten (Schritt 7). In der App: **Betrieb > Backups** (Prüfung neu starten). Ab jetzt melden das Pull-Skript (04:30) und der Wiederherstellungstest (sonntags) nach jedem Lauf von selbst; ein Fehler beim Melden ändert nie das Ergebnis der Sicherung.
+
+### 11.5 Fehlerbilder
+
+| Meldung / Anzeige | Ursache |
+| --- | --- |
+| `Statusmeldung an den Server fehlgeschlagen` | Schlüssel, Adresse (`--nas-ip` muss die öffentliche Adresse des NAS sein), `known_hosts` oder die Einrichtung auf dem Server prüfen; `ssh -i ~/.ssh/lx-fampad-status -v lxnasstatus@<server>` von Hand ansehen |
+| `abgelehnt: …` auf dem Server (der Befehl nimmt die Datei nicht an) | die Datei hat ein unerwartetes Format: eine selbst geänderte Skriptfassung? Auf dem NAS von Hand `bash lx-fampad-nasstatus.sh` ausführen (zeigt die Meldung) und `--print` ansehen |
+| App: „Noch keine Rückmeldung vom NAS“ | es wurde noch nichts gemeldet, oder der Dienst darf `/var/lib/lx-fampad-nasstatus` nicht lesen (Gruppe `lx-fampad`, `2750`) |
+| App: „nicht lesbar (ungültiges Format)“ | die Datei auf dem Server ist größer als 4 KB oder hat ein ungültiges Format: neu senden; sie wird bei jedem Lauf ersetzt |
+| Warnung „Abholung durch das NAS“ | die letzte erfolgreiche Abholung ist älter als 36 Stunden oder das Pull-Skript meldete `fehler`: Aufgabenplaner und `pull-status` prüfen |
+| Warnung „Wiederherstellungstest“ | der letzte erfolgreiche Test ist älter als 10 Tage oder fehlgeschlagen: `restoretest-status` (10.7) |
 
 ---
 
@@ -491,4 +563,5 @@ Der Server erfährt das Ergebnis **noch nicht**: Er hält bewusst keine Zugangsd
 - [ ] Wiederherstellungstest (Schritt 8) bestanden und eingetragen
 - [ ] Optional: Swap eingerichtet
 - [ ] Optional: automatischer Wochentest auf dem NAS (Schritt 10): `restoretest-status` zeigt `last_result=ok`, E-Mail bei Fehler ist getestet
+- [ ] Optional: Rückmeldung des NAS (Schritt 11): „Betrieb > Backups“ zeigt Abholung und Test mit Alter
 - [ ] Datenschutz: Die Sicherungen werden erst nach der Aufbewahrungszeit endgültig gelöscht (Server 3 Tage, NAS bis ca. 13 Monate), siehe `DATENSCHUTZ-ENTWURF.md`

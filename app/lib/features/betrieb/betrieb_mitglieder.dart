@@ -170,6 +170,10 @@ class _MitgliedKarte extends StatelessWidget {
               'zuletzt angemeldet: ${m.letzteAnmeldung == null ? '–' : zeitText(m.letzteAnmeldung!, jetzt)}${anmeldung.isEmpty ? '' : ' · $anmeldung'}',
               style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
             ),
+            if (m.geraeteZurueck > 0) ...[
+              const SizedBox(height: 8),
+              StatusPill(m.geraeteZurueck == 1 ? '1 Gerät auf älterer Version' : '${m.geraeteZurueck} Geräte auf älterer Version', color: kWarn),
+            ],
             if (s.hatSchluessel) ...[
               const SizedBox(height: 8),
               Wrap(
@@ -270,7 +274,7 @@ class _GeraetZeile extends StatelessWidget {
     final info = [plattformText(g.plattform), if (g.appVersion != null) g.appVersion!, 'zuletzt ${g.zuletztGesehen == null ? '–' : zeitText(g.zuletztGesehen!, jetzt)}'].join(' · ');
     return Semantics(
       container: true,
-      label: '${g.name}, $info, ${geraetSchluesselText(g.schluessel)}',
+      label: '${g.name}, $info, ${geraetSchluesselText(g.schluessel)}${g.appStand == null ? '' : ', ${appStandText(g.appStand!)}'}',
       excludeSemantics: true,
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
@@ -286,6 +290,8 @@ class _GeraetZeile extends StatelessWidget {
                     Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
                     Text(info, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    // nur wer zurückliegt, bekommt eine eigene Marke (sonst wäre jede Zeile bunt)
+                    if (g.appStand != null && g.appStand!.zurueck) ...[const SizedBox(height: 4), StatusPill(appStandText(g.appStand!), color: appStandFarbe(g.appStand!))],
                   ],
                 ),
               ),

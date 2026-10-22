@@ -55,7 +55,86 @@ class BetriebSicherung {
   final DateTime? letzterErfolg;
   final int? alterStunden;
   final int? bytes;
-  const BetriebSicherung({this.stufe = BetriebStufe.unbekannt, this.letzterErfolg, this.alterStunden, this.bytes});
+
+  /// Ergebnis des letzten Laufs laut Statusdatei (feste Codes ok/fehler; alles andere null).
+  final String? ergebnis;
+  const BetriebSicherung({this.stufe = BetriebStufe.unbekannt, this.letzterErfolg, this.alterStunden, this.bytes, this.ergebnis});
+}
+
+String? _ergebnis(Object? v) => v == 'ok' || v == 'fehler' ? v as String : null;
+
+/// Letzte Abholung der Sicherung durch das NAS (Rückmeldung des NAS, Betrieb Paket 3). Die Angaben stammen vom NAS und sind ein Hinweis, kein Beweis.
+class BetriebNasAbholung {
+  final BetriebStufe stufe;
+  final String? ergebnis;
+  final DateTime? letzterLauf;
+  final DateTime? letzterErfolg;
+  final int? alterStunden;
+  final DateTime? neuesteSicherung;
+  final int? anzahl;
+  const BetriebNasAbholung({this.stufe = BetriebStufe.unbekannt, this.ergebnis, this.letzterLauf, this.letzterErfolg, this.alterStunden, this.neuesteSicherung, this.anzahl});
+
+  factory BetriebNasAbholung.fromJson(Object? raw) {
+    final m = _map(raw);
+    return BetriebNasAbholung(
+      stufe: BetriebStufe.lesen(m['state']),
+      ergebnis: _ergebnis(m['result']),
+      letzterLauf: _zeit(m['lastRunAt']),
+      letzterErfolg: _zeit(m['lastSuccessAt']),
+      alterStunden: _zahl(m['ageHours']),
+      neuesteSicherung: _zeit(m['newestBackupAt']),
+      anzahl: _zahl(m['count']),
+    );
+  }
+}
+
+/// Letzter automatischer Wiederherstellungstest auf dem NAS.
+class BetriebNasTest {
+  final BetriebStufe stufe;
+  final String? ergebnis;
+  final DateTime? letzterLauf;
+  final DateTime? letzterErfolg;
+  final int? alterTage;
+
+  /// Wurde auch das Konfigurationsarchiv geprüft? (null: nicht gemeldet)
+  final bool? konfigGeprueft;
+  const BetriebNasTest({this.stufe = BetriebStufe.unbekannt, this.ergebnis, this.letzterLauf, this.letzterErfolg, this.alterTage, this.konfigGeprueft});
+
+  factory BetriebNasTest.fromJson(Object? raw) {
+    final m = _map(raw);
+    return BetriebNasTest(
+      stufe: BetriebStufe.lesen(m['state']),
+      ergebnis: _ergebnis(m['result']),
+      letzterLauf: _zeit(m['lastRunAt']),
+      letzterErfolg: _zeit(m['lastSuccessAt']),
+      alterTage: _zahl(m['ageDays']),
+      konfigGeprueft: m['configChecked'] is bool ? m['configChecked'] as bool : null,
+    );
+  }
+}
+
+/// Rückmeldung des NAS im Feld `nas` von `GET /admin/status`. [bekannt] = false: ein älterer Server kennt sie nicht; [eingerichtet] = false: das NAS hat noch nichts gemeldet
+/// (oder die Datei war ungültig, dann [ungueltig]); beides ist nie ein Alarm.
+class BetriebNas {
+  final bool bekannt;
+  final bool eingerichtet;
+  final bool ungueltig;
+  final DateTime? empfangen;
+  final BetriebNasAbholung abholung;
+  final BetriebNasTest test;
+  const BetriebNas({this.bekannt = false, this.eingerichtet = false, this.ungueltig = false, this.empfangen, this.abholung = const BetriebNasAbholung(), this.test = const BetriebNasTest()});
+
+  factory BetriebNas.fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return const BetriebNas();
+    return BetriebNas(
+      bekannt: true,
+      eingerichtet: raw['configured'] == true,
+      ungueltig: raw['invalid'] == true,
+      empfangen: _zeit(raw['receivedAt']),
+      abholung: BetriebNasAbholung.fromJson(raw['pull']),
+      test: BetriebNasTest.fromJson(raw['restore']),
+    );
+  }
 }
 
 class BetriebPlatte {
@@ -70,6 +149,169 @@ class BetriebAppVersion {
   final int? versionCode;
   final String? mindestversion;
   const BetriebAppVersion({required this.version, this.versionCode, this.mindestversion});
+}
+
+/// Push-Wecker (`push` in `GET /admin/status`): nur Zähler und eine Zeit, nie Endpunkte oder Themen.
+class BetriebPush {
+  /// Geräte mit einem aktiven Wecker.
+  final int aktiv;
+
+  /// Geräte, deren Endpunkt der Server deaktiviert hat.
+  final int deaktiviert;
+
+  /// Aktive Geräte mit mindestens einem Zustellfehler in Folge.
+  final int fehlerhaft;
+
+  /// Geräte mit einem Zustellfehler in den letzten 24 Stunden.
+  final int fehler24h;
+  final DateTime? letzterErfolg;
+  const BetriebPush({this.aktiv = 0, this.deaktiviert = 0, this.fehlerhaft = 0, this.fehler24h = 0, this.letzterErfolg});
+
+  factory BetriebPush.fromJson(Object? raw) {
+    final m = _map(raw);
+    return BetriebPush(
+      aktiv: _zahl(m['devicesActive']) ?? 0,
+      deaktiviert: _zahl(m['devicesDisabled']) ?? 0,
+      fehlerhaft: _zahl(m['devicesFailing']) ?? 0,
+      fehler24h: _zahl(m['errors24h']) ?? 0,
+      letzterErfolg: _zeit(m['lastOkAt']),
+    );
+  }
+}
+
+/// Ein täglicher Messpunkt der Betreiber-Ansicht (`GET /admin/metrics`): nur Zahlen, [tag] ist der UTC-Tag.
+class VerlaufTag {
+  final DateTime tag;
+  final int personen7;
+  final int personen30;
+  final int geraete7;
+  final int geraete30;
+  final int abgleiche;
+  final int fehler;
+  final int rateLimit;
+  final int? datenbankBytes;
+  final int? dateienBytes;
+  const VerlaufTag({
+    required this.tag,
+    this.personen7 = 0,
+    this.personen30 = 0,
+    this.geraete7 = 0,
+    this.geraete30 = 0,
+    this.abgleiche = 0,
+    this.fehler = 0,
+    this.rateLimit = 0,
+    this.datenbankBytes,
+    this.dateienBytes,
+  });
+
+  /// Liest einen Tag; ohne gültiges Datum gibt es null (der Eintrag entfällt).
+  static VerlaufTag? versuchen(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final text = _text(raw['day']);
+    final tag = text == null || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text) ? null : DateTime.tryParse('${text}T00:00:00Z');
+    if (tag == null) return null;
+    int n(String k) => (_zahl(raw[k]) ?? 0).clamp(0, 1 << 52);
+    return VerlaufTag(
+      tag: tag,
+      personen7: n('activePersons7'),
+      personen30: n('activePersons30'),
+      geraete7: n('activeDevices7'),
+      geraete30: n('activeDevices30'),
+      abgleiche: n('syncRuns'),
+      fehler: n('syncErrors'),
+      rateLimit: n('rateLimited'),
+      datenbankBytes: _zahl(raw['dbBytes']),
+      dateienBytes: _zahl(raw['filesBytes']),
+    );
+  }
+}
+
+/// `GET /admin/metrics`: der Verlauf (aufsteigend nach Tag; Lücken bleiben Lücken).
+class BetriebVerlauf {
+  final DateTime erzeugt;
+  final int aufbewahrungTage;
+  final List<VerlaufTag> tage;
+  const BetriebVerlauf({required this.erzeugt, required this.aufbewahrungTage, required this.tage});
+
+  factory BetriebVerlauf.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final tage = [if (m['days'] is List) for (final e in m['days'] as List) ?VerlaufTag.versuchen(e)]..sort((a, b) => a.tag.compareTo(b.tag));
+    return BetriebVerlauf(erzeugt: _zeit(m['generatedAt']) ?? DateTime.now(), aufbewahrungTage: _zahl(m['retentionDays']) ?? 400, tage: tage);
+  }
+
+  VerlaufTag? get letzter => tage.isEmpty ? null : tage.last;
+}
+
+/// Stand der App-Version eines Geräts (feste Codes des Servers; alles andere gilt als [unbekannt], nie als aktuell).
+enum AppStand {
+  aktuell,
+  aelter,
+  unterMindestversion,
+  inaktiv,
+  unbekannt;
+
+  /// null: das Gerät hat keine Release-Verfolgung (Web, andere Plattformen) oder ein älterer Server kennt das Feld nicht.
+  static AppStand? lesen(Object? v) => switch (v) {
+    null => null,
+    'current' => aktuell,
+    'outdated' => aelter,
+    'below_min' => unterMindestversion,
+    'inactive' => inaktiv,
+    _ => unbekannt,
+  };
+
+  /// Ist das Gerät hinter der neuesten Version zurück (älter oder unter der Mindestversion)?
+  bool get zurueck => this == aelter || this == unterMindestversion;
+}
+
+/// Update-Stand der Android-Geräte in `GET /admin/status` (`updates`): nur Zähler, keine Namen. Die Einzelheiten je Person stehen in der Mitgliederseite.
+class BetriebUpdates {
+  /// Neueste veröffentlichte Android-Version laut Release-Manifest (null: nicht lesbar).
+  final String? neueste;
+  final String mindestversion;
+  final int gesamt;
+  final int aktuell;
+  final int aelter;
+  final int unterMindestversion;
+  final int inaktiv;
+  final int unbekannt;
+
+  /// Geräte ohne Release-Verfolgung (Web und andere).
+  final int andere;
+
+  /// Personen mit mindestens einem zurückgebliebenen Gerät.
+  final int personenZurueck;
+  const BetriebUpdates({
+    this.neueste,
+    this.mindestversion = '–',
+    this.gesamt = 0,
+    this.aktuell = 0,
+    this.aelter = 0,
+    this.unterMindestversion = 0,
+    this.inaktiv = 0,
+    this.unbekannt = 0,
+    this.andere = 0,
+    this.personenZurueck = 0,
+  });
+
+  factory BetriebUpdates.fromJson(Object? raw) {
+    final m = _map(raw);
+    final a = _map(m['android']);
+    return BetriebUpdates(
+      neueste: _text(m['reference']),
+      mindestversion: _text(m['minAppVersion']) ?? '–',
+      gesamt: _zahl(a['total']) ?? 0,
+      aktuell: _zahl(a['current']) ?? 0,
+      aelter: _zahl(a['outdated']) ?? 0,
+      unterMindestversion: _zahl(a['belowMin']) ?? 0,
+      inaktiv: _zahl(a['inactive']) ?? 0,
+      unbekannt: _zahl(a['unknown']) ?? 0,
+      andere: _zahl(m['otherDevices']) ?? 0,
+      personenZurueck: _zahl(m['personsBehind']) ?? 0,
+    );
+  }
+
+  int get zurueck => aelter + unterMindestversion;
 }
 
 /// `GET /admin/status`
@@ -89,6 +331,13 @@ class BetriebStatus {
   final BetriebMigrationen migrationen;
   final List<BetriebDienst> dienste;
   final BetriebSicherung sicherung;
+  final BetriebNas nas;
+
+  /// Push-Wecker: Geräte und Zustellfehler als Zähler; null bei einem älteren Server.
+  final BetriebPush? push;
+
+  /// Update-Stand der Android-Geräte; null bei einem älteren Server.
+  final BetriebUpdates? updates;
   final BetriebPlatte? platte;
   final DateTime? zertifikatBis;
   final int? zertifikatTage;
@@ -120,6 +369,9 @@ class BetriebStatus {
     required this.migrationen,
     required this.dienste,
     required this.sicherung,
+    required this.nas,
+    required this.push,
+    required this.updates,
     required this.platte,
     required this.zertifikatBis,
     required this.zertifikatTage,
@@ -194,7 +446,11 @@ class BetriebStatus {
         letzterErfolg: _zeit(backup['lastSuccessAt']),
         alterStunden: _zahl(backup['ageHours']),
         bytes: _zahl(backup['totalBytes']),
+        ergebnis: _ergebnis(backup['lastResult']),
       ),
+      nas: BetriebNas.fromJson(m['nas']),
+      push: m['push'] is Map<String, dynamic> ? BetriebPush.fromJson(m['push']) : null,
+      updates: m['updates'] is Map<String, dynamic> ? BetriebUpdates.fromJson(m['updates']) : null,
       platte: disk == null
           ? null
           : BetriebPlatte(gesamt: _zahl(disk['totalBytes']) ?? 0, frei: _zahl(disk['freeBytes']) ?? 0, belegtProzent: _zahl(disk['usedPercent']) ?? 0),
@@ -428,7 +684,19 @@ class BetriebGeraet {
   final DateTime? zuletztGesehen;
   final GeraeteSchluesselStand schluessel;
   final int? schluesselVersion;
-  const BetriebGeraet({required this.id, required this.name, required this.plattform, required this.appVersion, required this.zuletztGesehen, required this.schluessel, required this.schluesselVersion});
+
+  /// Stand der App-Version (null: keine Release-Verfolgung oder älterer Server).
+  final AppStand? appStand;
+  const BetriebGeraet({
+    required this.id,
+    required this.name,
+    required this.plattform,
+    required this.appVersion,
+    required this.zuletztGesehen,
+    required this.schluessel,
+    required this.schluesselVersion,
+    this.appStand,
+  });
 
   static BetriebGeraet? versuchen(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
@@ -442,6 +710,7 @@ class BetriebGeraet {
       zuletztGesehen: _zeit(raw['lastSeenAt']),
       schluessel: GeraeteSchluesselStand.lesen(raw['keyState']),
       schluesselVersion: _zahl(raw['keyVersion']),
+      appStand: AppStand.lesen(raw['appState']),
     );
   }
 }
@@ -462,6 +731,9 @@ class BetriebMitglied {
   final int? gesperrtSekunden;
   final SchluesselPerson schluessel;
   final List<BetriebGeraet> geraete;
+
+  /// Android-Geräte dieser Person, die älter als die neueste Version oder unter der Mindestversion sind (0 bei einem älteren Server).
+  final int geraeteZurueck;
   const BetriebMitglied({
     required this.id,
     required this.name,
@@ -476,6 +748,7 @@ class BetriebMitglied {
     required this.gesperrtSekunden,
     required this.schluessel,
     required this.geraete,
+    this.geraeteZurueck = 0,
   });
 
   static BetriebMitglied? versuchen(Object? raw) {
@@ -501,6 +774,7 @@ class BetriebMitglied {
       gesperrtSekunden: gesperrt != null && gesperrt > 0 ? gesperrt : null,
       schluessel: person,
       geraete: [if (raw['devices'] is List) for (final g in raw['devices'] as List) ?BetriebGeraet.versuchen(g)],
+      geraeteZurueck: _zahl(raw['devicesBehind']) ?? 0,
     );
   }
 }
@@ -517,7 +791,7 @@ class BetriebMitglieder {
 }
 
 /// Feste Arten der Betreiber-Warnungen (Kennungen des Servers; Unbekanntes zeigt die Oberfläche allgemein als "Hinweis").
-const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key'];
+const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore', 'nas_channel'];
 
 /// `GET /admin/warnings`
 class BetriebWarnungen {

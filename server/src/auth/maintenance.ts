@@ -11,6 +11,7 @@ import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
 import { PW_PENDING_TTL_MS } from './keys-pw.js';
 import { purgeSecurityEvents } from './password-reset.js';
+import { purgeMetrics } from '../operator/metrics.js';
 import { purgeSessions } from './sessions.js';
 
 const DAY_MS = 86_400_000;
@@ -28,6 +29,8 @@ export interface PurgeReport {
   invitesExpired: number;
   invitesDeleted: number;
   removedMembersPurged: number;
+  /** Messpunkte der Betreiber-Ansicht, die älter als 400 Tage sind. */
+  metricsDeleted: number;
   sync: SyncPurgeReport;
 }
 
@@ -88,6 +91,14 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     ctx.log.error({ err: serializeErr(err) }, 'Endgültiges Löschen entfernter Mitglieder fehlgeschlagen');
   }
 
+  // Messpunkte der Betreiber-Ansicht (nur Zahlen) nach 400 Tagen löschen; ein Fehler hier darf den übrigen Aufräum-Job nie verhindern
+  let metricsGone = 0;
+  try {
+    metricsGone = await purgeMetrics(ctx);
+  } catch (err: unknown) {
+    ctx.log.error({ err: serializeErr(err) }, 'Aufräumen der Messpunkte fehlgeschlagen');
+  }
+
   const sync = await runSyncMaintenance(ctx);
 
   return {
@@ -101,6 +112,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     invitesExpired: expired.length,
     invitesDeleted: invitesGone.length,
     removedMembersPurged: removedPurged,
+    metricsDeleted: metricsGone,
     sync,
   };
 }

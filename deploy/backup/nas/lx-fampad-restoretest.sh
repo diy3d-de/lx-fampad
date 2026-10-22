@@ -40,6 +40,8 @@ MIN_MIGRATIONS="${LXR_MIN_MIGRATIONS:-5}"
 MIN_ROWS="${LXR_MIN_ROWS:-10}"
 NOTIFY_CMD="${LXR_NOTIFY_CMD:-${LXB_NOTIFY_CMD:-}}" # optional: Befehl, der bei Fehlern mit einer Kurzmeldung (ohne Inhalte) aufgerufen wird
 NO_CONFIG="${LXR_OHNE_CONFIG:-0}"
+STATUS_KEY="${LXR_STATUS_KEY:-${LXB_STATUS_KEY:-$HOME/.ssh/lx-fampad-status}}"   # optional (Betrieb Paket 3): eigener SSH-Schlüssel für die Statusmeldung; fehlt er, wird nichts gemeldet
+MELDER="${LXR_STATUS_MELDER:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/lx-fampad-nasstatus.sh}"   # das Meldeskript neben diesem
 
 DRY=0; REBUILD=0; VERBOSE=0; KEYGEN=0
 while [ $# -gt 0 ]; do
@@ -97,6 +99,11 @@ bei_ende() {
       } > "$tmp" && mv -f "$tmp" "$STATUS" || { rm -f "$tmp"; echo "WARNUNG: Statusdatei $STATUS konnte nicht geschrieben werden" >&2; }
     else
       echo "WARNUNG: Statusdatei in $DEST konnte nicht angelegt werden" >&2
+    fi
+    # Betrieb Paket 3: den Stand (nur ok/fehler, Zeiten) an den Server melden, wenn der eigene Statusschlüssel eingerichtet ist; best effort, ändert nie das Ergebnis
+    if [ -f "$MELDER" ] && [ -r "$STATUS_KEY" ]; then
+      ( set +e; trap - ERR; LXB_DEST="$DEST" LXB_STATUS_KEY="$STATUS_KEY" timeout 120 bash "$MELDER" >/dev/null 2>&1 \
+          || echo "Hinweis: Statusmeldung an den Server fehlgeschlagen (der Test ist davon nicht betroffen)" >&2 ) || true
     fi
     if [ "$RESULT" != ok ]; then
       echo "ALARM: Wiederherstellungstest fehlgeschlagen (Schritt: $STEP, Grund: $DETAIL)" >&2
