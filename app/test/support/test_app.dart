@@ -125,8 +125,14 @@ class TestUmgebung {
   /// Feiertage und Ferien im Kalender (Standard im Test: aus, damit Feiertage in den Fenstern der Kalender-Tests nichts verfälschen; 'ja' schaltet an).
   String feiertage = 'nein';
 
+  /// Gemerkte Kalender-Ansicht im Test (Standard: Agenda, wie vor der Umstellung der Standardansicht auf Monat; null = nichts gemerkt, also Monat).
+  String? kalenderAnsicht = 'agenda';
+
+  /// Eigener Speicher der lokalen Kalender-Einstellungen (z. B. mit Fehlern); ersetzt den Speicher im Arbeitsspeicher.
+  FeiertageSpeicher? speicher;
+
   List<Override> get overrides => [
-    feiertageSpeicherProvider.overrideWithValue(MemoryFeiertageSpeicher(feiertage)),
+    feiertageSpeicherProvider.overrideWithValue(speicher ?? MemoryFeiertageSpeicher(feiertage, {kKalenderAnsichtSchluessel: ?kalenderAnsicht})),
     // Widget "Heute": im Test gilt flutter_test als Android, ohne Fake würde der Kanal angesprochen und ein Entprell-Timer bliebe stehen; Tests des Widgets setzen ihren Fake über extraOverrides
     heuteWidgetPortProvider.overrideWithValue(heuteWidgetPort),
     httpClientProvider.overrideWithValue(server.client),
