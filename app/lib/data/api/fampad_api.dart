@@ -271,6 +271,11 @@ class FampadApi {
     await client.put('/me/device-key', {'keyVersion': version});
   }
 
+  /// Meldet die App-Version dieses Geräts (nur der Versionsstring x.y.z; Update-Stand der Betreiber-Ansicht). Ältere Server kennen die Route nicht (404).
+  Future<void> geraetVersionMelden(String version) async {
+    await client.put('/me/device-info', {'appVersion': version});
+  }
+
   // ----------------------------------------------------------- Push (nur Android)
 
   Future<PushStatusDto> pushStatus() async => PushStatusDto.fromJson(await client.get('/me/push'));

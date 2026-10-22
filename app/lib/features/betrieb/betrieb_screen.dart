@@ -1,5 +1,5 @@
 // Bereich "Betrieb" (nur für den Betreiber des Servers, fast nur lesend): Übersicht (Kacheln, Schlüssel-Ampel, Warnungen, Dienste, Funktionen, Versionen,
-// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Backups (Paket 3: Sicherung auf dem Server, Abholung und Wiederherstellungstest laut NAS), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
+// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Backups (Paket 3: Sicherung auf dem Server, Abholung und Wiederherstellungstest laut NAS), Nutzung (Paket 3: Update-Stand, später Wetter und Push, Nutzung und Verlauf), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
 // nichts auf dem Server; geschrieben wird nur Weniges (Konto entsperren, eigene Warnungen ein/aus, Wartungsmodus, Familienhinweis), jeweils mit Step-up.
 // Unterseite wie das Konto: mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell (Marker [kBetriebMarke]).
 import 'dart:async';
@@ -19,6 +19,7 @@ import 'betrieb_backups.dart';
 import 'betrieb_bausteine.dart';
 import 'betrieb_einstellungen.dart';
 import 'betrieb_mitglieder.dart';
+import 'betrieb_nutzung.dart';
 import 'betrieb_schluessel.dart';
 
 /// Marker in den Argumenten der Route (kein Routenname, siehe [kKontoMarke]): die Desktop-Shell erkennt daran, dass "Betrieb" offen ist.
@@ -33,7 +34,7 @@ class BetriebScreen extends ConsumerStatefulWidget {
   ConsumerState<BetriebScreen> createState() => _BetriebScreenState();
 }
 
-enum _Seite { uebersicht, mitglieder, backups, einstellungen, protokoll }
+enum _Seite { uebersicht, mitglieder, backups, nutzung, einstellungen, protokoll }
 
 class _BetriebScreenState extends ConsumerState<BetriebScreen> {
   _Seite _seite = _Seite.uebersicht;
@@ -127,6 +128,7 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
               },
             ),
             ('Backups', _seite == _Seite.backups, () => setState(() => _seite = _Seite.backups)),
+            ('Nutzung', _seite == _Seite.nutzung, () => setState(() => _seite = _Seite.nutzung)),
             ('Einstellungen', _seite == _Seite.einstellungen, () => setState(() => _seite = _Seite.einstellungen)),
             (
               'Protokoll',
@@ -155,6 +157,13 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
           BetriebMitgliederSeite(neuLaden: () => _mitgliederLaden())
         else if (_seite == _Seite.backups)
           const BetriebBackupsSeite()
+        else if (_seite == _Seite.nutzung)
+          BetriebNutzungSeite(
+            oeffneMitglieder: () {
+              setState(() => _seite = _Seite.mitglieder);
+              if (!ref.read(betriebMitgliederProvider).geladen) unawaited(_mitgliederLaden());
+            },
+          )
         else if (_seite == _Seite.einstellungen)
           const BetriebEinstellungenSeite()
         else

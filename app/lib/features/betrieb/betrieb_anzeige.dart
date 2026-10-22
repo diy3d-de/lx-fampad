@@ -250,5 +250,21 @@ String plattformText(String p) => switch (p) {
   _ => p.length > 16 ? p.substring(0, 16) : p,
 };
 
+/// App-Stand eines Geräts in einem Wort (feste Texte zu den festen Codes des Servers).
+String appStandText(AppStand s) => switch (s) {
+  AppStand.aktuell => 'aktuell',
+  AppStand.aelter => 'ältere Version',
+  AppStand.unterMindestversion => 'Update nötig',
+  AppStand.inaktiv => 'lange nicht gesehen',
+  AppStand.unbekannt => 'Version unbekannt',
+};
+
+Color appStandFarbe(AppStand s) => switch (s) {
+  AppStand.aktuell => kTerminal,
+  AppStand.aelter => kWarn,
+  AppStand.unterMindestversion => kDanger,
+  AppStand.inaktiv || AppStand.unbekannt => kTextMuted,
+};
+
 /// Dauer der Anmeldesperre: "noch 45 s" bzw. "noch 2 Min".
 String sperreText(int sekunden) => sekunden < 90 ? 'noch $sekunden s' : 'noch ${(sekunden / 60).ceil()} Min';

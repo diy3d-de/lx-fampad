@@ -151,6 +151,78 @@ class BetriebAppVersion {
   const BetriebAppVersion({required this.version, this.versionCode, this.mindestversion});
 }
 
+/// Stand der App-Version eines Geräts (feste Codes des Servers; alles andere gilt als [unbekannt], nie als aktuell).
+enum AppStand {
+  aktuell,
+  aelter,
+  unterMindestversion,
+  inaktiv,
+  unbekannt;
+
+  /// null: das Gerät hat keine Release-Verfolgung (Web, andere Plattformen) oder ein älterer Server kennt das Feld nicht.
+  static AppStand? lesen(Object? v) => switch (v) {
+    null => null,
+    'current' => aktuell,
+    'outdated' => aelter,
+    'below_min' => unterMindestversion,
+    'inactive' => inaktiv,
+    _ => unbekannt,
+  };
+
+  /// Ist das Gerät hinter der neuesten Version zurück (älter oder unter der Mindestversion)?
+  bool get zurueck => this == aelter || this == unterMindestversion;
+}
+
+/// Update-Stand der Android-Geräte in `GET /admin/status` (`updates`): nur Zähler, keine Namen. Die Einzelheiten je Person stehen in der Mitgliederseite.
+class BetriebUpdates {
+  /// Neueste veröffentlichte Android-Version laut Release-Manifest (null: nicht lesbar).
+  final String? neueste;
+  final String mindestversion;
+  final int gesamt;
+  final int aktuell;
+  final int aelter;
+  final int unterMindestversion;
+  final int inaktiv;
+  final int unbekannt;
+
+  /// Geräte ohne Release-Verfolgung (Web und andere).
+  final int andere;
+
+  /// Personen mit mindestens einem zurückgebliebenen Gerät.
+  final int personenZurueck;
+  const BetriebUpdates({
+    this.neueste,
+    this.mindestversion = '–',
+    this.gesamt = 0,
+    this.aktuell = 0,
+    this.aelter = 0,
+    this.unterMindestversion = 0,
+    this.inaktiv = 0,
+    this.unbekannt = 0,
+    this.andere = 0,
+    this.personenZurueck = 0,
+  });
+
+  factory BetriebUpdates.fromJson(Object? raw) {
+    final m = _map(raw);
+    final a = _map(m['android']);
+    return BetriebUpdates(
+      neueste: _text(m['reference']),
+      mindestversion: _text(m['minAppVersion']) ?? '–',
+      gesamt: _zahl(a['total']) ?? 0,
+      aktuell: _zahl(a['current']) ?? 0,
+      aelter: _zahl(a['outdated']) ?? 0,
+      unterMindestversion: _zahl(a['belowMin']) ?? 0,
+      inaktiv: _zahl(a['inactive']) ?? 0,
+      unbekannt: _zahl(a['unknown']) ?? 0,
+      andere: _zahl(m['otherDevices']) ?? 0,
+      personenZurueck: _zahl(m['personsBehind']) ?? 0,
+    );
+  }
+
+  int get zurueck => aelter + unterMindestversion;
+}
+
 /// `GET /admin/status`
 class BetriebStatus {
   final DateTime erzeugt;
@@ -169,6 +241,9 @@ class BetriebStatus {
   final List<BetriebDienst> dienste;
   final BetriebSicherung sicherung;
   final BetriebNas nas;
+
+  /// Update-Stand der Android-Geräte; null bei einem älteren Server.
+  final BetriebUpdates? updates;
   final BetriebPlatte? platte;
   final DateTime? zertifikatBis;
   final int? zertifikatTage;
@@ -201,6 +276,7 @@ class BetriebStatus {
     required this.dienste,
     required this.sicherung,
     required this.nas,
+    required this.updates,
     required this.platte,
     required this.zertifikatBis,
     required this.zertifikatTage,
@@ -278,6 +354,7 @@ class BetriebStatus {
         ergebnis: _ergebnis(backup['lastResult']),
       ),
       nas: BetriebNas.fromJson(m['nas']),
+      updates: m['updates'] is Map<String, dynamic> ? BetriebUpdates.fromJson(m['updates']) : null,
       platte: disk == null
           ? null
           : BetriebPlatte(gesamt: _zahl(disk['totalBytes']) ?? 0, frei: _zahl(disk['freeBytes']) ?? 0, belegtProzent: _zahl(disk['usedPercent']) ?? 0),
@@ -511,7 +588,19 @@ class BetriebGeraet {
   final DateTime? zuletztGesehen;
   final GeraeteSchluesselStand schluessel;
   final int? schluesselVersion;
-  const BetriebGeraet({required this.id, required this.name, required this.plattform, required this.appVersion, required this.zuletztGesehen, required this.schluessel, required this.schluesselVersion});
+
+  /// Stand der App-Version (null: keine Release-Verfolgung oder älterer Server).
+  final AppStand? appStand;
+  const BetriebGeraet({
+    required this.id,
+    required this.name,
+    required this.plattform,
+    required this.appVersion,
+    required this.zuletztGesehen,
+    required this.schluessel,
+    required this.schluesselVersion,
+    this.appStand,
+  });
 
   static BetriebGeraet? versuchen(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
@@ -525,6 +614,7 @@ class BetriebGeraet {
       zuletztGesehen: _zeit(raw['lastSeenAt']),
       schluessel: GeraeteSchluesselStand.lesen(raw['keyState']),
       schluesselVersion: _zahl(raw['keyVersion']),
+      appStand: AppStand.lesen(raw['appState']),
     );
   }
 }
@@ -545,6 +635,9 @@ class BetriebMitglied {
   final int? gesperrtSekunden;
   final SchluesselPerson schluessel;
   final List<BetriebGeraet> geraete;
+
+  /// Android-Geräte dieser Person, die älter als die neueste Version oder unter der Mindestversion sind (0 bei einem älteren Server).
+  final int geraeteZurueck;
   const BetriebMitglied({
     required this.id,
     required this.name,
@@ -559,6 +652,7 @@ class BetriebMitglied {
     required this.gesperrtSekunden,
     required this.schluessel,
     required this.geraete,
+    this.geraeteZurueck = 0,
   });
 
   static BetriebMitglied? versuchen(Object? raw) {
@@ -584,6 +678,7 @@ class BetriebMitglied {
       gesperrtSekunden: gesperrt != null && gesperrt > 0 ? gesperrt : null,
       schluessel: person,
       geraete: [if (raw['devices'] is List) for (final g in raw['devices'] as List) ?BetriebGeraet.versuchen(g)],
+      geraeteZurueck: _zahl(raw['devicesBehind']) ?? 0,
     );
   }
 }

@@ -9,6 +9,7 @@ import type { SessionPrincipal } from '../auth/types.js';
 import { auditLog, credentials, devices, loginAttempts, memberships, operators, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { collectKeyStatus, DEVICE_REPORT_FRESH_DAYS, type Ampel, type KeyEventView, type Ways } from './key-status.js';
+import { appStateOf, type AppState } from './update-status.js';
 
 const DAY_MS = 86_400_000;
 
@@ -43,6 +44,8 @@ export interface MemberDeviceView {
   keyState: DeviceKeyState;
   keyVersion: number | null;
   keyReportedAt: string | null;
+  /** Stand der App-Version (Paket 3): null bei Geräten ohne Release-Verfolgung (Web, andere Plattformen). */
+  appState: AppState | null;
 }
 
 export interface MemberView {
@@ -65,6 +68,8 @@ export interface MemberView {
   legacyPassword: boolean;
   archiveCount: number;
   events: KeyEventView[];
+  /** Android-Geräte dieser Person, die älter als die neueste Version oder unter der Mindestversion sind (Paket 3). */
+  devicesBehind: number;
   devices: MemberDeviceView[];
 }
 
@@ -73,7 +78,8 @@ export interface MembersPage {
   members: MemberView[];
 }
 
-export async function collectMembers(ctx: AuthContext, p: SessionPrincipal): Promise<MembersPage> {
+/** `reference` = neueste veröffentlichte Android-Version (Release-Manifest), null wenn nicht lesbar (dann gibt es nie "veraltet", nur "unter Mindestversion"). */
+export async function collectMembers(ctx: AuthContext, p: SessionPrincipal, reference: string | null = null): Promise<MembersPage> {
   const now = ctx.now();
   const keys = await collectKeyStatus(ctx, p.familyId);
   const ids = keys.persons.map((k) => k.userId);
@@ -121,6 +127,20 @@ export async function collectMembers(ctx: AuthContext, p: SessionPrincipal): Pro
     const [lock] = row
       ? await ctx.db.select({ until: loginAttempts.lockedUntil }).from(loginAttempts).where(eq(loginAttempts.key, accountKey(ctx, row.email)))
       : [];
+    const deviceViews: MemberDeviceView[] = devs
+      .filter((d) => d.userId === k.userId)
+      .map((d) => ({
+        id: d.id,
+        name: d.name,
+        platform: d.platform,
+        appVersion: d.appVersion,
+        createdAt: d.createdAt.toISOString(),
+        lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
+        keyState: deviceKeyState(d, k.keyVersion, now),
+        keyVersion: d.keyVersion,
+        keyReportedAt: d.reportedAt?.toISOString() ?? null,
+        appState: appStateOf(d, reference, ctx.config.minAppVersion, now),
+      }));
     const locked = lock?.until && lock.until.getTime() > now.getTime() ? { until: lock.until.toISOString(), seconds: Math.ceil((lock.until.getTime() - now.getTime()) / 1000) } : null;
     const c = (t: string) => creds.find((x) => x.userId === k.userId && x.type === t)?.n ?? 0;
     members.push({
@@ -140,19 +160,8 @@ export async function collectMembers(ctx: AuthContext, p: SessionPrincipal): Pro
       legacyPassword: k.legacyPassword,
       archiveCount: k.archiveCount,
       events: k.events,
-      devices: devs
-        .filter((d) => d.userId === k.userId)
-        .map((d) => ({
-          id: d.id,
-          name: d.name,
-          platform: d.platform,
-          appVersion: d.appVersion,
-          createdAt: d.createdAt.toISOString(),
-          lastSeenAt: d.lastSeenAt?.toISOString() ?? null,
-          keyState: deviceKeyState(d, k.keyVersion, now),
-          keyVersion: d.keyVersion,
-          keyReportedAt: d.reportedAt?.toISOString() ?? null,
-        })),
+      devicesBehind: deviceViews.filter((d) => d.appState === 'outdated' || d.appState === 'below_min').length,
+      devices: deviceViews,
     });
   }
   return { generatedAt: now.toISOString(), members };

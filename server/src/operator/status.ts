@@ -9,6 +9,7 @@ import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { WeatherService } from '../weather/service.js';
 import { NAS_STATUS_MAX_BYTES, parseNasStatus, type NasStatus } from './nas-status.js';
 import { realProbes, type Probes } from './probes.js';
+import { collectUpdateStatus, emptyUpdates, type UpdateStatus } from './update-status.js';
 
 export type Level = 'ok' | 'warn' | 'error' | 'off' | 'unknown';
 
@@ -44,6 +45,8 @@ export interface OperatorStatus {
     app: { version: string; versionCode: number | null; minVersion: string | null } | null;
     minAppVersion: string;
   };
+  /** Update-Stand der Android-Geräte (Zähler ohne Namen; Einzelheiten je Person in `GET /admin/members`). */
+  updates: UpdateStatus;
   features: { pwBackup: boolean; legacyPasswordLogin: boolean; weather: boolean; push: boolean; map: { available: boolean; sizeBytes: number | null } };
 }
 
@@ -114,6 +117,13 @@ async function readWebVersion(config: Config, probes: Probes): Promise<string | 
   if (!config.webVersionFile) return null;
   const text = (await probes.readText(config.webVersionFile, 256))?.trim();
   return text && /^[A-Za-z0-9._-]{1,64}$/.test(text) ? text : null;
+}
+
+/** Neueste veröffentlichte Android-Version laut Release-Manifest (null: nicht lesbar), für Seiten, die den Stand der Geräte beurteilen. */
+export async function readAppReference(config: Config, probes: Partial<Probes> | undefined): Promise<string | null> {
+  const p: Probes = { ...realProbes, ...probes };
+  const text = config.operator.releaseManifestFile ? await p.readText(config.operator.releaseManifestFile, 64 * 1024) : null;
+  return text ? (parseManifest(text)?.version ?? null) : null;
 }
 
 export interface StatusDeps {
@@ -222,6 +232,10 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1) : Promise.resolve(null),
   ]);
   const nas = parseNasStatus(nasText, now);
+  const appInfo = manifestText ? parseManifest(manifestText) : null;
+  const updates: UpdateStatus = dbOk
+    ? await collectUpdateStatus(ctx, familyId, appInfo?.version ?? null).catch(() => emptyUpdates(appInfo?.version ?? null, config.minAppVersion))
+    : emptyUpdates(appInfo?.version ?? null, config.minAppVersion);
 
   const ntfy: ServiceStatus = ntfyUp === null ? { id: 'ntfy', state: 'off', detail: {} } : { id: 'ntfy', state: ntfyUp ? 'ok' : 'error', detail: { devices: counts.pushDevices } };
 
@@ -274,7 +288,8 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     disk: diskView,
     certificate,
     counts,
-    versions: { server: SERVER_VERSION, web, app: manifestText ? parseManifest(manifestText) : null, minAppVersion: config.minAppVersion },
+    versions: { server: SERVER_VERSION, web, app: appInfo, minAppVersion: config.minAppVersion },
+    updates,
     features: {
       pwBackup: config.e2eePwBackup,
       legacyPasswordLogin: config.auth.legacyPasswordLogin,

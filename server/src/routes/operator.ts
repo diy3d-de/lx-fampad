@@ -14,7 +14,7 @@ import { setWarningsEnabled, type OperatorMonitor } from '../operator/monitor.js
 import type { Probes } from '../operator/probes.js';
 import { requireOperator } from '../operator/service.js';
 import { getSettings, setMaintenance, setNotice } from '../operator/settings.js';
-import { collectStatus, type OperatorStatus } from '../operator/status.js';
+import { collectStatus, readAppReference, type OperatorStatus } from '../operator/status.js';
 import type { WeatherService } from '../weather/service.js';
 import { idParams, meta, parse, safeString, strictLimit } from './util.js';
 
@@ -101,7 +101,7 @@ export function registerOperatorRoutes(
   // Mitglieder und Geräte (Gerätenamen, Versionen, letzte Anmeldung): wie das Protokoll nur mit frischem Step-up
   app.get('/api/v1/admin/members', limit, async (req) => {
     const p = await requireOperator(ctx, await auth.requireSession(req), { stepUp: true });
-    return collectMembers(ctx, p);
+    return collectMembers(ctx, p, await readAppReference(config, probes));
   });
 
   // Anmeldesperre des Kontos aufheben (einzige schreibende Aktion über Mitglieder; Step-up, Protokoll)
