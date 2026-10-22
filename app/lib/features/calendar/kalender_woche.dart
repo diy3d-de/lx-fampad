@@ -12,7 +12,9 @@ import '../../constants.dart';
 import '../../data/calendar/geburtstag.dart' show vorkommenTitel;
 import '../../data/calendar/monat_layout.dart';
 import '../../data/calendar/woche_layout.dart';
+import '../../data/muell/muell_modelle.dart';
 import 'calendar_state.dart';
+import 'muell_kalender.dart';
 
 /// Stundenhöhe: Mindestmaß aus der Textgröße (Stundenbeschriftung), mobil 38, Desktop 60.
 double _stundenHoehe(BuildContext context, bool breit) {
@@ -71,8 +73,12 @@ class WochenRaster extends StatefulWidget {
 
   /// Platz unter dem Raster (mobil für den runden Knopf).
   final double unten;
+
+  /// Abfuhrtermine (nur Anzeige, nur mit eingeschaltetem Schalter): je Tag die Arten; als Punkte im Tageskopf (verdrängen keine Termine).
+  final Map<DateTime, List<MuellArt>> muell;
   const WochenRaster({
     super.key,
+    this.muell = const {},
     required this.montag,
     required this.gewaehlt,
     this.gewaehltMarkieren = false,
@@ -189,6 +195,7 @@ class _WochenRasterState extends State<WochenRaster> {
         _tagFormat.format(tag),
         if (tag == heute) 'heute',
         ...hinweise,
+        if ((widget.muell[tag] ?? const <MuellArt>[]).isNotEmpty) muellKalenderText(widget.muell[tag]!),
         if (termine == 0) 'keine Termine' else termine == 1 ? '1 Termin' : '$termine Termine',
       ].join(', ');
     }
@@ -221,6 +228,8 @@ class _WochenRasterState extends State<WochenRaster> {
                 markiert: widget.gewaehltMarkieren && tage[i] == widget.gewaehlt,
                 breit: breit,
                 label: beschriftung(i),
+                muell: widget.muell[tage[i]] ?? const [],
+                muellRaum: tage.any((t) => (widget.muell[t] ?? const <MuellArt>[]).isNotEmpty),
                 onTag: widget.onTag,
               ),
             ),
@@ -377,14 +386,20 @@ class _Tageskopf extends StatelessWidget {
   final bool markiert;
   final bool breit;
   final String label;
+  final List<MuellArt> muell;
+
+  /// Die Müll-Anzeige ist an (in dieser Woche gibt es Abholungen): Platz für die Punkte an allen Tagen.
+  final bool muellRaum;
   final void Function(DateTime tag) onTag;
   const _Tageskopf({
+    required this.muellRaum,
     required this.tag,
     required this.spalte,
     required this.heute,
     required this.markiert,
     required this.breit,
     required this.label,
+    required this.muell,
     required this.onTag,
   });
 
@@ -426,6 +441,8 @@ class _Tageskopf extends StatelessWidget {
               ),
               const SizedBox(height: 2),
               zahl,
+              // Abfuhr (nur Anzeige): kleine Punkte an Tagen mit Abholung; ist die Anzeige an, bleibt die Zeile an allen Tagen reserviert (gleiche Höhe)
+              if (muellRaum) Padding(padding: const EdgeInsets.only(top: 2), child: SizedBox(height: breit ? 6 : 5, child: muell.isEmpty ? null : MuellPunkte(arten: muell, groesse: breit ? 6 : 5))),
             ],
           ),
         ),

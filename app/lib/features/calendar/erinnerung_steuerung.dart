@@ -14,6 +14,8 @@ import '../../data/tasks/aufgabe_repository.dart' show aufgabenProvider;
 import '../../data/auth/reset_hinweis.dart' show sicherheitOeffnenProvider;
 import '../../data/betrieb/betrieb_hinweis.dart' show betriebOeffnenProvider;
 import '../../data/standort/standort_hinweis.dart' show standortOeffnenProvider;
+import '../../data/muell/muell_hinweis.dart' show muellOeffnenProvider;
+import '../../data/muell/muell_state.dart' show muellProvider;
 import '../shell/shell_tab.dart';
 import '../tasks/tasks_state.dart' show aufgabeOeffnenProvider;
 import 'calendar_state.dart';
@@ -37,11 +39,15 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   dienst.beiStandortGeoeffnet = () => ref.read(standortOeffnenProvider.notifier).anfordern();
   dienst.beiSicherheitGeoeffnet = () => ref.read(sicherheitOeffnenProvider.notifier).anfordern();
   dienst.beiBetriebGeoeffnet = () => ref.read(betriebOeffnenProvider.notifier).anfordern();
+  dienst.beiMuellGeoeffnet = () => ref.read(muellOeffnenProvider.notifier).anfordern();
   void los() => unawaited(dienst.abgleichen());
+  // Abfuhrtermine (Abend vor der Abholung, nur Eltern/Admins): neue Daten oder Einstellungen -> Fenster neu berechnen
+  ref.listen(muellProvider.select((z) => z.stand), (_, _) => dienst.entprellt());
   ref.listen(kalenderDatenProvider, (_, _) => dienst.entprellt());
   ref.listen(aufgabenProvider, (_, _) => dienst.entprellt());
   ref.listen(erinnerungEinstellungenProvider, (_, _) => los());
-  ref.listen(authProvider.select((a) => (a.status, a.user?.id, a.hinweis)), (_, _) => los());
+  // (die Rolle gehört dazu: ein Rollenwechsel ändert, wer Müll-Erinnerungen bekommt)
+  ref.listen(authProvider.select((a) => (a.status, a.user?.id, a.user?.role, a.hinweis)), (_, _) => los());
   // Rückkehr (auch aus den Systemeinstellungen): Erlaubnis neu lesen, damit Anzeigen und Planung ohne Neustart nachziehen
   final lebenszyklus = AppLifecycleListener(
     onResume: () {

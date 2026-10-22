@@ -116,6 +116,8 @@ export interface Config {
   locDirectoryTimeoutMs: number;
   /** Wetter (Netatmo, nur Server; standardmäßig aus). */
   weather: WeatherConfig;
+  /** Abfuhrtermine (ICS einer Abfall-Plattform, nur Server; standardmäßig aus). */
+  waste: WasteConfig;
   /** Vereinfachte Schlüsselverwaltung (Passwort-Sicherung, KDF-Parameter): Routen nur bei true, sonst 404 (Standard aus). */
   e2eePwBackup: boolean;
   /** Wraps mit Schlüsselversion (Wrap-ID v2, "Verlauf freigeben" und "Verlauf teilen"): nur bei true, sonst lehnt der Server sie ab (Standard aus; erst einschalten, wenn alle Apps der Familie aktualisiert sind). */
@@ -156,6 +158,69 @@ export interface WeatherConfig {
   /** Suchrechteck für getpublicdata (klein halten: eine Anfrage liefert alle öffentlichen Stationen darin). */
   bbox: { latSw: number; lonSw: number; latNe: number; lonNe: number };
   pollMs: number;
+}
+
+/** Abfuhrtermine (ICS-Abruf nur im Dienst lx-fampad-waste; standardmäßig aus). */
+export interface WasteConfig {
+  enabled: boolean;
+  /** URL-Vorlage mit {YEAR} (enthält den Schlüssel der Quelle: Geheimnis, nie loggen, nie in Antworten). */
+  icsUrl: string;
+  /** Der einzige Host, den der Abruf anspricht (aus der URL abgeleitet). */
+  host: string;
+  /** Angezeigter Ortsname (nie die Straße); leer = keiner. */
+  place: string;
+  /** Browser-Kennung für den Abruf (die Quelle antwortet sonst mit 403). */
+  userAgent: string;
+  /** Takt des Abruf-Prozesses (er liest nur den Zustand aus der Datenbank; Abrufe folgen der Jahreslogik). */
+  tickMs: number;
+  /** Die Müll-Konfiguration ist ungültig (feste Meldung ohne Link): die Funktion ist dann aus. Der API-Prozess startet trotzdem und warnt nur; der Abruf-Dienst bricht ab. */
+  configError?: string;
+}
+
+const WASTE_DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+
+/**
+ * WASTE_*: ohne WASTE_ENABLED=true ist der Müll aus; mit Schalter ist WASTE_ICS_URL Pflicht (https, ein Host, Platzhalter {YEAR}).
+ * Eine ungültige Eingabe macht die Funktion nur AUS (`configError`, feste Meldung ohne Link): ein Tippfehler in dieser Zusatzfunktion darf den API-Start nie verhindern.
+ * Der Abruf-Dienst (cli/waste-poller.ts) beendet sich bei `configError`; das Einrichtungsskript prüft den Link vorher mit dieser Funktion.
+ */
+export function wasteConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WasteConfig {
+  try {
+    return wasteConfigStrikt(env, nodeEnv);
+  } catch (err) {
+    const tickMs = Number.isInteger(Number(env.WASTE_TICK_MS)) && Number(env.WASTE_TICK_MS) > 0 ? Number(env.WASTE_TICK_MS) : 60_000;
+    // nur Meldungen aus dieser Datei (nennen nie den Link); alles andere bekommt einen festen Text
+    const msg = err instanceof Error && /^WASTE_[A-Z_]+ /.test(err.message) ? err.message : 'Müll-Konfiguration ungültig';
+    return { enabled: false, icsUrl: '', host: '', place: '', userAgent: WASTE_DEFAULT_UA, tickMs, configError: msg };
+  }
+}
+
+function wasteConfigStrikt(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WasteConfig {
+  const enabled = boolFlag(env, 'WASTE_ENABLED');
+  const tickMs = positiveInt(env, 'WASTE_TICK_MS', 60_000);
+  const off: WasteConfig = { enabled: false, icsUrl: '', host: '', place: '', userAgent: WASTE_DEFAULT_UA, tickMs };
+  if (!enabled) return off;
+  if (tickMs < 10_000 && nodeEnv === 'production') throw new Error('WASTE_TICK_MS darf in Produktion nicht unter 10000 liegen');
+  const raw = (env.WASTE_ICS_URL ?? '').trim();
+  if (!raw) throw new Error('WASTE_ICS_URL fehlt');
+  if (raw.length > 1000 || !raw.includes('{YEAR}')) throw new Error('WASTE_ICS_URL ungültig (https-Adresse mit dem Platzhalter {YEAR}, höchstens 1000 Zeichen)');
+  let host: string;
+  try {
+    const u = new URL(raw.replaceAll('{YEAR}', '2026'));
+    const v = new URL(raw.replaceAll('{YEAR}', '2099'));
+    host = u.hostname;
+    const istIp = /^[\d.]+$/.test(host) || host.includes(':') || host.startsWith('[');
+    if (u.protocol !== 'https:' || u.username || u.password || u.hash || (u.port !== '' && u.port !== '443') || istIp || !host.includes('.') || host.endsWith('.') || host === 'localhost' || v.hostname !== host) {
+      throw new Error('x');
+    }
+  } catch {
+    throw new Error('WASTE_ICS_URL ungültig (nur https, ein Hostname, keine Zugangsdaten, kein Port, Platzhalter {YEAR})');
+  }
+  const place = (env.WASTE_PLACE?.trim() ?? '').normalize('NFC');
+  if (place.length > 60 || /[<>]/.test(place) || [...place].some((c) => c < ' ')) throw new Error('WASTE_PLACE ungültig');
+  const ua = env.WASTE_USER_AGENT?.trim() || WASTE_DEFAULT_UA;
+  if (ua.length > 250 || [...ua].some((c) => c < ' ' || c > '~')) throw new Error('WASTE_USER_AGENT ungültig (nur druckbares ASCII, höchstens 250 Zeichen)');
+  return { enabled, icsUrl: raw, host, place, userAgent: ua, tickMs };
 }
 
 /** NTFY_URL: nur http(s) ohne Zugangsdaten, Pfad und Query; ohne Angabe oder Token ist Push aus. */
@@ -415,6 +480,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locSweepMs: positiveInt(env, 'LOC_SWEEP_MS', 5000),
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
     weather: weatherConfig(env, nodeEnv),
+    waste: wasteConfig(env, nodeEnv),
     e2eePwBackup,
     e2eeWrapKeyVersion,
     e2eePrfBackup,

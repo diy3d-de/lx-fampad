@@ -22,6 +22,7 @@ import '../tasks/aufgaben_anzeige.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
+import '../muell/muell_karte.dart';
 import '../standort/standort_start_karte.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_karte.dart';
@@ -109,6 +110,7 @@ class HomeScreen extends ConsumerWidget {
         const SizedBox(height: 20),
         const _AufgabenKarte(),
         const SizedBox(height: 20),
+        const MuellStartKarte(),
         const WetterStartKarte(),
         const StandortStartKarte(),
       ],

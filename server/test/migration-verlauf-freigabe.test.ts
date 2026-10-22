@@ -62,6 +62,7 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
       const meine = journal.entries.find((e) => e.tag.startsWith('0024_'));
       if (!meine) throw new Error('Journal ohne 0024');
+      await db.execute(sql`drop table if exists waste_events, waste_years, waste_state`); // Migration 0027 (Abfuhrtermine) liegt darüber und wird beim erneuten Migrieren wieder angelegt
       await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at >= ${meine.when}`);
 
       await migrateLite(db as never, { migrationsFolder });
@@ -70,6 +71,8 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
 
       // zweite Anwendung (Tests stellen frühere Stände nach und wenden alles erneut an): kein Fehler, nichts verändert
       // (die Objekte von 0025 sind nicht wiederholbar angelegt und gehen deshalb vorher wieder weg)
+      // Migration 0027 (Abfuhrtermine) ist die neueste und geht zuerst zurück
+      await db.execute(sql`drop table if exists waste_events, waste_years, waste_state`);
       // Migration 0026 (Passkey-Sicherung, Eltern-Wiederherstellung; neuer als 0025, also zuerst zurück)
       await db.execute(sql`drop table guardian_escrows, guardian_recoveries, key_backups_prf`);
       await db.execute(sql`alter table credentials drop column device_type, drop column backed_up`);

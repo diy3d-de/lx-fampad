@@ -90,6 +90,8 @@ vorher() {
     if [ "$trocken" -eq 1 ]; then
       printf '[dry-run] anhängen: %s\n' "${neu[@]}"
     else
+      # endet die Datei ohne Zeilenumbruch, würde der erste neue Eintrag an die letzte Zeile geklebt
+      if [ -s "$ENV_DATEI" ] && [ "$(tail -c1 "$ENV_DATEI" | wc -l)" -eq 0 ]; then printf '\n' >> "$ENV_DATEI"; fi
       printf '%s\n' "${neu[@]}" >> "$ENV_DATEI"
       echo "    angehängt: ${#neu[@]} Zeile(n)"
     fi

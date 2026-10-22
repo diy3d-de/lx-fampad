@@ -8,6 +8,7 @@ import type { Db, Logger } from '../auth/context.js';
 import type { KeyRing } from '../auth/crypto.js';
 import type { Config } from '../config.js';
 import { weatherCredentials, weatherSamples } from '../db/schema.js';
+import { leseBegrenzt } from '../http-limit.js';
 import { stationMessung, type Messung } from './parse.js';
 
 const API = 'https://api.netatmo.com';
@@ -20,30 +21,6 @@ export const SAMPLE_RETENTION_MS = 7 * 24 * HOUR_MS;
 export const STALE_AFTER_MS = HOUR_MS;
 const MAX_BACKOFF_MS = 2 * HOUR_MS;
 const SERIES_BUCKET_MS = 15 * 60_000;
-
-/** Liest den Rumpf höchstens bis zur Grenze (Content-Length und Strom); null bei Überschreitung. */
-async function leseBegrenzt(res: Response, maxBytes: number): Promise<string | null> {
-  const len = Number(res.headers.get('content-length'));
-  if (Number.isFinite(len) && len > maxBytes) {
-    await res.body?.cancel().catch(() => undefined);
-    return null;
-  }
-  if (!res.body) return '';
-  const reader = res.body.getReader();
-  const teile: Uint8Array[] = [];
-  let summe = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    summe += value.byteLength;
-    if (summe > maxBytes) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    teile.push(value);
-  }
-  return Buffer.concat(teile).toString('utf8');
-}
 
 export type PollResult = 'ok' | 'not_configured' | 'disabled' | 'invalid_grant' | 'auth_error' | 'upstream_error' | 'station_not_found' | 'busy';
 

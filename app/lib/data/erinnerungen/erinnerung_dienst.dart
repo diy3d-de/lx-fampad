@@ -20,6 +20,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_state.dart';
 import '../calendar/termin_repository.dart';
 import '../auth/reset_hinweis.dart' show kSicherheitPayload;
+import '../muell/muell_logik.dart' show istMuellPayload;
+import '../muell/muell_state.dart' show muellErinnerungen, muellProvider;
+import '../api/models.dart' show Role;
 import '../betrieb/betrieb_hinweis.dart' show kBetriebPayload;
 import '../standort/standort_hinweis.dart' show kStandortPayload;
 import '../tasks/aufgabe_repository.dart' show aufgabenProvider;
@@ -77,6 +80,9 @@ class ErinnerungDienst {
 
   /// Tipp auf den Betreiber-Hinweis (Betrieb: Hinweis – öffne Betrieb).
   void Function()? beiBetriebGeoeffnet;
+
+  /// Tipp auf die Müll-Erinnerung bzw. den Hinweis auf ein neues Jahr (Nutzlast `muell|<Tag>` oder `muell`): die Müll-Seite öffnen.
+  void Function()? beiMuellGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -166,9 +172,13 @@ class ErinnerungDienst {
     if (ich == null) return true;
     final einst = _ref.read(erinnerungEinstellungenProvider);
     if (!await _kontoPruefen(ich)) return false;
-    if (!einst.an) return _loeschen();
+    // Abfuhrtermine haben einen eigenen Schalter: der globale Schalter "Erinnerungen auf diesem Gerät" aus löscht nur Termine und Aufgaben, nicht die Müll-Alarme
+    final nurMuell = !einst.an;
+    if (!_muellBereit(auth.user?.role)) return true;
+    final muellPlan = muellErinnerungen(_ref.read(muellProvider), auth.user?.role, _jetzt());
+    if (nurMuell && muellPlan.isEmpty) return _loeschen();
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
-    if (!_datenDa(einst.aufgabenAn)) return true;
+    if (!nurMuell && !_datenDa(einst.aufgabenAn)) return true;
     final exakt = await port.exakteAlarmeMoeglich();
     // Wurde die Erlaubnis nachträglich erteilt (oder entzogen), alles neu setzen: kein App-Neustart nötig
     final bs = await port.benachrichtigungsStatus();
@@ -179,10 +189,12 @@ class ErinnerungDienst {
       _leer = false;
     }
     final plan = planeErinnerungen(
-      daten: _ref.read(kalenderDatenProvider),
+      daten: nurMuell ? const KalenderDaten() : _ref.read(kalenderDatenProvider),
       ich: ich,
       jetzt: _jetzt(),
-      aufgaben: einst.aufgabenAn ? (_ref.read(aufgabenProvider).value ?? const []) : const [],
+      aufgaben: !nurMuell && einst.aufgabenAn ? (_ref.read(aufgabenProvider).value ?? const []) : const [],
+      // Abfuhrtermine: Abend vor der Abholung, nur Eltern/Admins (leer für alle anderen)
+      zusatz: muellPlan,
     );
     final alt = _letzte;
     final gleich =
@@ -226,6 +238,9 @@ class ErinnerungDienst {
     } catch (_) {}
     return true;
   }
+
+  /// Eltern/Admins planen erst, wenn die lokale Ablage der Abfuhrtermine gelesen ist (sonst würde ein Fenster ohne sie die Müll-Alarme kurz löschen).
+  bool _muellBereit(Role? rolle) => (rolle != Role.admin && rolle != Role.parent) || _ref.read(muellProvider).ablageGelesen;
 
   bool _datenDa(bool mitAufgaben) =>
       _ref.read(termineProvider).hasValue && _ref.read(terminAusnahmenProvider).hasValue && _ref.read(terminTeilnehmerProvider).hasValue &&
@@ -277,6 +292,10 @@ class ErinnerungDienst {
     }
     if (payload == kStandortPayload) {
       beiStandortGeoeffnet?.call();
+      return;
+    }
+    if (istMuellPayload(payload)) {
+      beiMuellGeoeffnet?.call();
       return;
     }
     final aufgabe = aufgabeErinnerungPayloadLesen(payload);

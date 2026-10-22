@@ -25,6 +25,17 @@ const kFeiertag = Color(0xFFFFB86B); // Feiertage im Kalender (dezent, nicht syn
 const kFerien = Color(0xFF60A5FA); // Schulferien im Kalender
 const kGeburtstag = Color(0xFFD946EF); // Geburtstage (Fuchsia; bewusst nicht Pink #f472b6 = Personenfarbe 6 der personPalette)
 
+/// Abfallarten (Müll-Kachel, Seite, Kalenderanzeige): je Art eine feste Farbe, nie als Hex im Widget.
+const kMuellRest = Color(0xFF9AA3B8); // Restabfall (Grau-Blau)
+const kMuellBio = Color(0xFF34D399); // Bioabfall (Grün)
+const kMuellGelb = Color(0xFFFEBC2E); // Gelber Sack
+const kMuellPapier = Color(0xFF60A5FA); // Altpapier (Blau)
+const kMuellGruen = Color(0xFFA3E635); // Grünabfall (Gelbgrün)
+const kMuellSonder = Color(0xFFFF5F57); // Sonderabfall (Rot)
+const kMuellSperr = Color(0xFFA78BFA); // Sperrmüll (Violett)
+const kMuellBaum = Color(0xFF2DD4BF); // Weihnachtsbäume (Türkis)
+const kMuellSonst = Color(0xFF8B93A7); // alles Unbekannte ("Sonstiges")
+
 /// Stärke des Hintergrund-Schimmers oben (wie lx-urlaubsplanung): Violett links, Cyan rechts.
 const kGlowNeuralAlpha = 0.30;
 const kGlowAccentAlpha = 0.09;
@@ -164,6 +175,7 @@ const kDesktopTabs = <NavTab>[
   ...kTabs,
   NavTab('Standort', Icons.location_on_outlined, Icons.location_on),
   NavTab('Wetter', Icons.wb_sunny_outlined, Icons.wb_sunny),
+  NavTab('Müll', Icons.delete_outline, Icons.delete),
 ];
 
 /// Ab dieser Fensterbreite zeigt die App das Desktop-Layout (Seitenleiste, Karten-Raster); darunter bleibt es mobil.

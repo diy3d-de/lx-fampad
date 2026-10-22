@@ -19,6 +19,8 @@ const app = await buildApp({
   pingDb: database ? async () => void (await database.db.execute(sql`select 1`)) : undefined,
 });
 logRef.current = app.log;
+// ungültige Müll-Konfiguration: Funktion aus, der API-Start bleibt unberührt (die Meldung nennt nie den Link); der Abruf-Dienst bricht selbst ab
+if (config.waste.configError) app.log.warn({ code: 'waste_config' }, `Müll ist aus: ${config.waste.configError}`);
 // Wetter: KEIN Abruf-Takt im API-Prozess (dieser darf nur Loopback erreichen); er läuft in cli/weather-poller.ts (lx-fampad-weather.service)
 // Aufräumen beim Start und stündlich: IPs im Audit-Log nach 7 Tagen, abgelaufene Sitzungen, Challenges, Tickets
 const maintenance = app.authCore ? startMaintenance(app.authCore.ctx) : undefined;

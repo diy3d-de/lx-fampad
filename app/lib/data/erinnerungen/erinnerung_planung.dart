@@ -168,13 +168,14 @@ DateTime _erinnerungsZeit(DateTime beginn, int min, tz.Location ort) {
 }
 
 /// Die nächsten Erinnerungen ab [jetzt], zeitlich sortiert, höchstens [maxAnzahl] (danach, falls es mehr gäbe, der Hinweis "Erinnerungen
-/// laufen aus"). Reine Funktion der Daten und der Uhr.
+/// laufen aus"). Reine Funktion der Daten und der Uhr. [zusatz]: weitere, schon berechnete Erinnerungen (Abfuhrtermine), die sich das Fenster teilen.
 List<GeplanteErinnerung> planeErinnerungen({
   required KalenderDaten daten,
   required String? ich,
   required DateTime jetzt,
   int maxAnzahl = kErinnerungFenster,
   List<Aufgabe> aufgaben = const [],
+  List<GeplanteErinnerung> zusatz = const [],
 }) {
   if (ich == null || maxAnzahl <= 0) return const [];
   final jetztUtc = jetzt.toUtc();
@@ -238,6 +239,10 @@ List<GeplanteErinnerung> planeErinnerungen({
         payload: aufgabeErinnerungPayload(a.id),
       ),
     );
+  }
+  // Zusätzliche, schon berechnete Erinnerungen (Müll: Abend vor der Abholung) teilen sich das Fenster
+  for (final z in zusatz) {
+    if (ids.add(z.id)) out.add(z);
   }
   if (out.isEmpty) return const [];
   out.sort((a, b) {

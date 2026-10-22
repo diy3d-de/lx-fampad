@@ -11,6 +11,7 @@ import '../../data/calendar/monat_layout.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/woche_layout.dart';
 import '../../data/lists/members.dart';
+import '../../data/muell/muell_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
@@ -23,6 +24,7 @@ import 'kalender_monat.dart';
 import 'kalender_tag.dart';
 import 'kalender_woche.dart';
 import 'kalender_widgets.dart';
+import 'muell_kalender.dart';
 import 'termin_editor.dart';
 
 /// Erst wenn die Liste um mehr als die Kopfzeile plus Reserve scrollbar ist, klappt die Kopfzeile ein (sonst würde sie bei knapp überlangem
@@ -234,7 +236,10 @@ class _Agenda extends ConsumerWidget {
       bis.subtract(const Duration(days: 1)),
     );
     final hinweise = ref.watch(tagesHinweiseProvider).fuerAgenda(heute, bis.subtract(const Duration(days: 1)));
-    final schluessel = {...tage.keys, ...hinweise.keys}.toList()..sort();
+    // Abfuhrtermine (nur mit eingeschaltetem Schalter): Anzeige wie Feiertage, nie als Termin
+    final muell = ref.watch(muellKalenderTageProvider);
+    final muellTage = [for (final t in muell.keys) if (!t.isBefore(heute) && t.isBefore(bis)) t];
+    final schluessel = {...tage.keys, ...hinweise.keys, ...muellTage}.toList()..sort();
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: _listenRand(platzFuerKnopf),
@@ -248,6 +253,7 @@ class _Agenda extends ConsumerWidget {
               child: MonoLabel(tag == heute ? '${tagesLabel(tag)} · heute' : tagesLabel(tag), color: tag == heute ? kAccent : kTextMuted),
             ),
             TagesHinweisZeile(hinweise: hinweise[tag] ?? const [], mitEnde: true),
+            MuellTagesZeile(arten: muell[tag] ?? const []),
             _tagesListe(context, ref, tag, tage[tag] ?? const <Vorkommen>[], daten, mitglieder, rechte),
           ],
         _MehrKnopf(auswahl: auswahl),
@@ -357,6 +363,7 @@ class _Monat extends ConsumerWidget {
           gewaehltMarkieren: panel,
           breit: breit,
           quellen: quellen,
+          muell: ref.watch(muellKalenderTageProvider),
           onTag: (tag) {
             notifier.waehleTag(tag);
             if (!breit) ref.read(kalenderKopfEingeklapptProvider.notifier).setzen(true);
@@ -472,6 +479,7 @@ class _Woche extends ConsumerWidget {
           breit: breit,
           bloecke: bloecke,
           band: quellen,
+          muell: ref.watch(muellKalenderTageProvider),
           farbe: (b) => terminFarbe(b.v, mitglieder),
           person: (b) => mitglieder[b.v.termin.ownerId]?.displayName,
           jetzt: jetzt,

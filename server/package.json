@@ -18,7 +18,8 @@
     "test": "vitest run",
     "bootstrap": "node --env-file-if-exists=.env dist/cli/bootstrap.js",
     "weather-setup": "node --env-file-if-exists=.env dist/cli/weather-setup.js",
-    "weather-poller": "node --env-file-if-exists=.env dist/cli/weather-poller.js"
+    "weather-poller": "node --env-file-if-exists=.env dist/cli/weather-poller.js",
+    "waste-poller": "node --env-file-if-exists=.env dist/cli/waste-poller.js"
   },
   "dependencies": {
     "@fastify/rate-limit": "11.2.0",
