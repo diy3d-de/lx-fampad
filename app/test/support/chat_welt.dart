@@ -35,6 +35,7 @@ class TestPerson {
     welt.historie['$id:$version'] = oeffentlich;
     pk = Personenschluessel.erzeugen(welt.crypto);
     version++;
+    welt.schluesselVersionen[id] = version;
   }
 }
 
@@ -166,6 +167,9 @@ class ChatWelt {
 
   /// Frühere öffentliche Schlüssel (Historie des Servers): "userId:version" -> Schlüssel.
   final Map<String, OeffentlicheSchluessel> historie = {};
+
+  /// Aktuelle Schlüsselversion je Person laut Server (fehlt: 1); für die Prüfung der Wrap-ID v2 (keine künftige Version).
+  final Map<String, int> schluesselVersionen = {};
 
   int rev = 0;
   final Map<String, ServerZeile> _z = {};
@@ -322,11 +326,15 @@ class ChatWelt {
           if (konv == null || konv.fields['encVersion'] != 'e1') return 'invalid';
           final n = f['epoche'] as int;
           final emp = f['empfaengerId'] as String;
-          if (o.entityId != wrapId(f['konversationId'] as String, n, emp)) return 'invalid';
+          // Wrap-ID v2: mit keyVersion die ID v2, ohne die ID v1 (wie der echte Server); eine künftige Version der Person gibt es nicht
+          final version = f['keyVersion'] as int?;
+          final erwartet = version == null ? wrapId(f['konversationId'] as String, n, emp) : wrapIdV2(f['konversationId'] as String, n, emp, version);
+          if (o.entityId != erwartet) return 'invalid';
+          if (version != null && version > (schluesselVersionen[emp] ?? 1)) return 'invalid';
           if (_z['epoche/${epocheId(f['konversationId'] as String, n)}'] == null) return 'invalid';
           final teil = (konv.fields['teilnehmer'] as List?)?.cast<String>() ?? const [];
           if (konv.fields['art'] != 'family' && !teil.contains(emp)) return 'invalid';
-          if (vorhanden != null) return 'not_found'; // der erste gewinnt
+          if (vorhanden != null) return 'not_found'; // der erste gewinnt (je Konversation, Epoche, Empfänger und Schlüsselversion)
           gesehen.add({'entity': 'epoche_wrap', ...f});
           _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'verteilerId': g.person.id}, ++rev);
           return null;

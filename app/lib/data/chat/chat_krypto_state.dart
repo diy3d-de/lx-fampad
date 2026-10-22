@@ -255,6 +255,10 @@ class ChatOpVorbereiter implements OpVorbereiter {
 
 final chatKryptoProvider = NotifierProvider<ChatKryptoController, int>(ChatKryptoController.new);
 
+/// Nimmt der Server Wraps mit Schlüsselversion an (`GET /version`, `features.wrapKeyVersion`)? Nur dann bietet die App "Verlauf freigeben" an; ein älterer Server meldet es
+/// nicht (nichts ändert sich). Ein Fehler (offline) wirft; der Controller wertet ihn als "nein" und fragt beim nächsten Mal erneut.
+final serverKannVerlaufFreigebenProvider = FutureProvider<bool>((ref) async => (await ref.read(apiProvider).serverFaehigkeiten()).wrapKeyVersion);
+
 /// Der Inhalt der Nachrichten für die Oberfläche. Mit jeder Änderung (etwas ist entschlüsselt, ein Schlüssel ist eingetroffen) entsteht eine neue Sicht: Riverpod meldet
 /// einen Provider nur weiter, wenn sich der Wert ändert, und der Zwischenspeicher selbst bleibt dasselbe Objekt.
 final nachrichtenInhaltProvider = Provider<NachrichtenInhalt>((ref) {
@@ -361,6 +365,79 @@ class ChatKryptoController extends Notifier<int> {
     }
   }
 
+  /// Verlauf, den dieses Gerät für Personen mit neuem Schlüssel freigeben könnte (Angebote, je Person und Schlüsselstand). Die Oberfläche fragt nach: "Ja, das ist X –
+  /// Verlauf freigeben". Es geschieht nie etwas ohne diesen Tipp (kein Auto-Re-Wrap).
+  List<VerlaufAngebot> _angebote = const [];
+  final Set<String> _freigabeVerborgen = {};
+
+  /// Die Angebote ohne die in dieser Sitzung zurückgestellten.
+  List<VerlaufAngebot> get verlaufAngebote => [
+    for (final a in _angebote)
+      if (!_freigabeVerborgen.contains('${a.userId}:${a.keyVersion}')) a,
+  ];
+
+  /// Zurückstellen (bis zum nächsten Start der App).
+  void verlaufSpaeter(String userId) {
+    for (final a in _angebote) {
+      if (a.userId == userId) _freigabeVerborgen.add('${a.userId}:${a.keyVersion}');
+    }
+    _anstossen();
+  }
+
+  /// Gibt den Verlauf für die Person frei (nach ihrem ausdrücklichen Tipp). Liefert false, wenn das jetzt nicht geht (der Hinweis bleibt dann stehen).
+  Future<bool> verlaufFreigeben(String userId) async {
+    final k = await krypto();
+    if (k == null) return false;
+    try {
+      await k.aktualisieren();
+      final n = await k.verlaufFreigeben(userId);
+      if (n == 0) return false;
+      ref.read(syncProvider.notifier).lokaleAenderung();
+      await _angeboteAktualisieren(k);
+      return true;
+    } on CryptoFehler {
+      return false;
+    } on VerschluesselungNichtBereit {
+      return false;
+    }
+  }
+
+  /// Rechnet die Angebote neu. Den Server fragen wir erst, wenn es etwas anzubieten gäbe (kein Netz im Normalfall).
+  Future<void> _angeboteAktualisieren(ChatKrypto k) async {
+    var neu = const <VerlaufAngebot>[];
+    try {
+      neu = await k.verlaufAngebote();
+      if (neu.isNotEmpty && !await _serverKannFreigeben()) neu = const [];
+    } on Object {
+      neu = const [];
+    }
+    _angeboteSetzen(neu);
+  }
+
+  Future<bool> _serverKannFreigeben() async {
+    try {
+      return await ref.read(serverKannVerlaufFreigebenProvider.future);
+    } on Object {
+      ref.invalidate(serverKannVerlaufFreigebenProvider);
+      return false;
+    }
+  }
+
+  void _angeboteSetzen(List<VerlaufAngebot> neu) {
+    bool gleich() {
+      if (neu.length != _angebote.length) return false;
+      for (var i = 0; i < neu.length; i++) {
+        final a = neu[i], b = _angebote[i];
+        if (a.userId != b.userId || a.keyVersion != b.keyVersion || a.anzahl != b.anzahl || a.chats != b.chats) return false;
+      }
+      return true;
+    }
+
+    final aenderung = !gleich();
+    _angebote = neu;
+    if (aenderung) _anstossen();
+  }
+
   /// Inhalt für die Oberfläche (Zwischenspeicher der entschlüsselten Nachrichten).
   NachrichtenInhalt get inhalt => _inhalt!;
 
@@ -376,6 +453,8 @@ class ChatKryptoController extends Notifier<int> {
     _inhalt?.leeren(); // Neuaufbau (andere Person, Abmelden): nichts Entschlüsseltes bleibt im Speicher
     _aufnahmen = const {};
     _verborgen.clear();
+    _angebote = const [];
+    _freigabeVerborgen.clear();
     _inhalt = E2eeNachrichtenInhalt(
       krypto: krypto,
       encVersion: (id) async => (await (_db.select(_db.konversationen)..where((k) => k.id.equals(id))).getSingleOrNull())?.encVersion,
@@ -566,7 +645,11 @@ class ChatKryptoController extends Notifier<int> {
   /// verlorene Wraps nachreichen. Neu hinzugekommene Personen warten auf die Bestätigung ([aufnahmen]). Nur mit frischem Stand der Mitglieder vom Server.
   Future<void> _pflegen(ChatKrypto k) async {
     final e = ref.read(e2eeProvider);
-    if (e.status != E2eeStatus.bereit || e.mitglieder.isEmpty) return;
+    if (e.status != E2eeStatus.bereit || e.mitglieder.isEmpty) {
+      _angeboteSetzen(const []);
+      return;
+    }
+    await _angeboteAktualisieren(k);
     final jetzt = DateTime.now();
     final aufnahmen = <String, Set<String>>{};
     final kandidaten = <Konversation>[];

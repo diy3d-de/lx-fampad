@@ -18,6 +18,14 @@ void main() {
     expect(me.sessionDeviceId, fixDevice);
   });
 
+  test('Fähigkeiten des Servers: wrapKeyVersion fehlt bei einem älteren Server (false), sonst nur bei true', () {
+    expect(ServerFaehigkeiten.keine.wrapKeyVersion, isFalse);
+    expect(ServerFaehigkeiten.fromJson({'pwBackup': true, 'authKey': true, 'legacyPasswordLogin': true}).wrapKeyVersion, isFalse);
+    expect(ServerFaehigkeiten.fromJson({'wrapKeyVersion': true}).wrapKeyVersion, isTrue);
+    expect(ServerFaehigkeiten.fromJson({'wrapKeyVersion': 'true'}).wrapKeyVersion, isFalse);
+    expect(ServerFaehigkeiten.fromJson({'wrapKeyVersion': 1}).wrapKeyVersion, isFalse);
+  });
+
   test('Sitzungen: Web (Cookie + CSRF) und App (Token)', () {
     final w = SessionDto.fromJson(webSession());
     expect(w.istApp, isFalse);

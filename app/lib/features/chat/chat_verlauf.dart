@@ -24,6 +24,7 @@ import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
 import 'chat_anzeige.dart';
 import 'chat_krypto_ui.dart';
+import 'verlauf_freigabe_ui.dart';
 import 'chat_zusatz_ui.dart';
 import 'personen_wahl.dart';
 
@@ -521,6 +522,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         ),
         if (verschluesselt) SchluesselWechselHinweis(personen: art == ChatArt.family ? const {} : {...teilnehmer}),
         if (verschluesselt) AufnahmeHinweis(konversationId: konv.id, chatName: name),
+        if (verschluesselt) VerlaufFreigabeHinweis(konversationId: konv.id),
         if (!verschluesselt)
           Container(
             margin: const EdgeInsets.fromLTRB(12, 6, 12, 2),

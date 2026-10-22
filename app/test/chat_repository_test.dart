@@ -125,6 +125,19 @@ void main() {
       expect(lesestandId('k1', _ich), '9a36a4d2-7fa9-5a56-9d92-e8db827e177c');
     });
 
+    test('Known-Answer Wrap-ID v1 und v2: dieselben Werte wie der Server (server/test/sync-e2ee-chat.test.ts, "Wrap-ID v2")', () {
+      const konv = 'cccccccc-0000-4000-8000-0000000000c1';
+      const person = 'AAAAAAAA-0000-4000-8000-00000000000A'; // Großbuchstaben ergeben dieselbe ID wie Kleinbuchstaben
+      expect(wrapId(konv, 3, person), '983b472e-54e3-544a-bc89-d4f59b375feb');
+      expect(wrapIdV2(konv, 3, person, 1), '63e3b1a1-8ecd-522e-a675-1113b19e9696');
+      expect(wrapIdV2(konv, 3, person, 2), 'e31c1787-9157-540d-9264-be908b6b5291');
+      expect(wrapIdV2(konv, 4, person, 2), '7c3326f3-57f3-54d2-8ffa-d35943c640f9');
+      expect(wrapIdV2(konv, 3, person.toLowerCase(), 2), wrapIdV2(konv, 3, person, 2));
+      // jede Version, jede Epoche und v1 gegen v2 ergeben eigene IDs
+      final alle = {wrapId(konv, 3, person), wrapIdV2(konv, 3, person, 1), wrapIdV2(konv, 3, person, 2), wrapIdV2(konv, 4, person, 2), wrapIdV2(konv, 3, person, 12), wrapIdV2(konv, 31, person, 2)};
+      expect(alle, hasLength(6));
+    });
+
     test('Familienchat- und Lesestand-ID sind stabil und verschieden', () {
       expect(familienchatId(_fam), familienchatId(_fam));
       expect(lesestandId('k1', _ich), lesestandId('K1', _ich.toUpperCase()));

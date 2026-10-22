@@ -229,7 +229,7 @@ Beide Routen: strenges Rate-Limit (10/min). Der Server kann die Blobs nicht lese
 
 ### Passwort-Sicherung des Schlüssels (vereinfachte Schlüsselverwaltung, Schalter `E2EE_PW_BACKUP`)
 
-**Nur mit `E2EE_PW_BACKUP=true` (Standard aus):** Ohne den Schalter gibt es diese Routen nicht, sie antworten wie jede unbekannte Route mit `404 not_found`; `GET /version` meldet den Stand als `features: { pwBackup, authKey, legacyPasswordLogin }` (Booleans; `authKey` = `pwBackup`)
+**Nur mit `E2EE_PW_BACKUP=true` (Standard aus):** Ohne den Schalter gibt es diese Routen nicht, sie antworten wie jede unbekannte Route mit `404 not_found`; `GET /version` meldet den Stand als `features: { pwBackup, authKey, legacyPasswordLogin, wrapKeyVersion }` (Booleans; `authKey` = `pwBackup`; `wrapKeyVersion` ist immer `true` und sagt, dass der Server Wraps mit Schlüsselversion annimmt, siehe „Epochen und Schlüssel-Wraps“)
 (alte Apps ignorieren das Feld). Die Sicherung ist **zusätzlich** zum Wiederherstellungsschlüssel und zur Geräte-Übertragung (Abschnitt davor, unverändert). Der Server sieht nie Passwort, `authKey` oder `kek`: Der Blob ist mit dem auf dem Gerät
 abgeleiteten Schlüssel verschlüsselt und für ihn undurchsichtiger Base64url-Text. Blob und Salt erscheinen nie im Log oder Audit. Alles strikt geprüft (unbekannte Felder `400`), strenges Rate-Limit wie die Anmeldung (Standard 10 je Minute und IP).
 
@@ -514,8 +514,8 @@ Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschl
   die Epoche des Gewinners aus dem Änderungsstrom. Lückenlos: Epoche N gibt es erst, wenn N-1 da ist (sonst `invalid`). Alle Teilnehmer der Konversation lesen sie (im Familienchat alle aktiven Mitglieder), Nichtteilnehmer erfahren nichts
   (`not_found`, auch für Admins); unveränderlich, nicht löschbar (verschwindet nur mit der Konversation). Höchstens 1000 je Konversation, 20 neue je Person und Minute (`limit_reached`).
 - **Grenzen für Epochen und Wraps:** Epochen je Person höchstens 3 je Minute und 12 je Stunde, höchstens 100 lebende je Konversation und Person (insgesamt 1000); Wraps höchstens 100 je Minute und 800 je Stunde, 2000 lebende je Konversation und Person (`limit_reached`). Wraps der **höchsten** Epoche nimmt der Server nur vom Verteiler dieser Epoche an (`forbidden`); für ältere Epochen (Verlauf teilen) darf jedes Mitglied Wraps anlegen. Eine gelöschte Epoche oder ein gelöschter Wrap lässt sich mit derselben ID wieder anlegen (Wiederbeleben). Im Verlauf für neu Aufgenommene liefert der Server die eigenen Wraps immer (Abfrage nach Empfänger, kein Verdrängen durch fremde Zeilen). Wraps und Lesestand lösen keinen Push-Wecker aus.
-- **`epoche_wrap`:** der für **eine Person** verpackte Epochenschlüssel (Sealed Box plus Signatur des Verteilers). Je (Konversation, Epoche, Empfänger) genau eine Zeile mit vorgeschriebener ID (`wrap:<Konversation>:<Nummer>:<Empfänger>`), der erste gewinnt
-  (ein zweiter ist `not_found`, "gibt es schon"), unveränderlich. **Nur der Empfänger liest seinen Wrap** (auch der Verteiler, die anderen Teilnehmer und Admins nicht), der WebSocket-Hinweis geht nur an ihn. Anlegen darf jeder Teilnehmer;
+- **`epoche_wrap`:** der für **eine Person** verpackte Epochenschlüssel (Sealed Box plus Signatur des Verteilers). Je (Konversation, Epoche, Empfänger, Schlüsselversion) genau eine Zeile mit vorgeschriebener ID, der erste gewinnt
+  (ein zweiter ist `not_found`, "gibt es schon"), unveränderlich. **Ohne `keyVersion`** (Altbestand und Apps bis 0.7.0) gilt die ID v1 `wrap:<Konversation>:<Nummer>:<Empfänger>`, und die Zeile zählt für die Eindeutigkeit als Version 0; **mit `keyVersion`** (Wrap-ID v2, „Verlauf freigeben“; `GET /version` meldet `features.wrapKeyVersion`) gilt die ID v2 `wrap2:<Konversation>:<Nummer>:<Empfänger>:<Schlüsselversion>`. So kann dieselbe ältere Epoche nach einem Schlüsselwechsel oder Reset der Person noch einmal für ihren **neuen** Schlüssel verpackt werden; die alten Zeilen bleiben unverändert (sie gehören zum alten Schlüssel, Archiv). Jede andere Kombination aus ID und `keyVersion` ist `invalid`, ebenso eine `keyVersion`, die die Person noch nicht hat (größer als ihre aktuelle Schlüsselversion), oder eine Person ohne Schlüssel. Der Server liest nichts aus dem Wrap: ob Wrap und Feld dieselbe Version nennen, prüft allein der Empfänger (er öffnet nur Wraps seiner aktuellen Version). **Nur der Empfänger liest seinen Wrap** (auch der Verteiler, die anderen Teilnehmer und Admins nicht), der WebSocket-Hinweis geht nur an ihn. Anlegen darf jeder Teilnehmer;
   die Epoche muss es geben, der Empfänger muss Teilnehmer sein (Familienchat: aktives Mitglied), sonst `invalid`. Verlässt die Person die Familie, verschwinden ihre Wraps (Tombstone für ihre Geräte). Höchstens 20 000 je Konversation, 400 neue je Person und Minute.
 
 | Entität | Feld | Typ | Zugriff |
@@ -528,6 +528,7 @@ Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschl
 | | `epoche` | Ganzzahl 1 bis 100 000 (Pflicht) | create |
 | | `empfaengerId` | UUID des Empfängers (Pflicht, aktives Mitglied) | create |
 | | `wrap` | Base64url bis 4096 Zeichen (Pflicht, undurchsichtig) | create |
+| | `keyVersion` | Ganzzahl 1 bis 1 000 000, Schlüsselversion des Empfängers (optional; fehlt bei Wraps älterer Apps, in der Antwort dann `null`) | create |
 | | `verteilerId`, `createdAt` | vom Server | server |
 
 **Aufgaben (Phase 1c-4a)**

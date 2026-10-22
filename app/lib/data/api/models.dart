@@ -672,12 +672,15 @@ class ServerFaehigkeiten {
 
   /// Der Server nimmt noch das Klartext-Passwort an (AUTH_LEGACY_PASSWORD_LOGIN).
   final bool legacyPasswortLogin;
-  const ServerFaehigkeiten({required this.pwBackup, required this.authKey, required this.legacyPasswortLogin});
+
+  /// Der Server nimmt Wraps mit Schlüsselversion an (Wrap-ID v2): erst dann bietet die App "Verlauf freigeben" an. Ältere Server melden nichts: false.
+  final bool wrapKeyVersion;
+  const ServerFaehigkeiten({required this.pwBackup, required this.authKey, required this.legacyPasswortLogin, this.wrapKeyVersion = false});
 
   static const keine = ServerFaehigkeiten(pwBackup: false, authKey: false, legacyPasswortLogin: true);
 
   factory ServerFaehigkeiten.fromJson(Map<String, dynamic> f) =>
-      ServerFaehigkeiten(pwBackup: f['pwBackup'] == true, authKey: f['authKey'] == true, legacyPasswortLogin: f['legacyPasswordLogin'] != false);
+      ServerFaehigkeiten(pwBackup: f['pwBackup'] == true, authKey: f['authKey'] == true, legacyPasswortLogin: f['legacyPasswordLogin'] != false, wrapKeyVersion: f['wrapKeyVersion'] == true);
 }
 
 /// Zustand der Passwort-Anmeldung je Mitglied (GET /members/password-modes, nur Admins). Nie ein Prüfwert, nur der Zustand.

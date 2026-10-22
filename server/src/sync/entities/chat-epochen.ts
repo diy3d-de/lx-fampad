@@ -5,19 +5,22 @@
 //  - Epoche: je (Konversation, Epoche) genau eine Zeile mit fester, abgeleiteter ID; der erste Schreiber gewinnt, jeder weitere Versuch wird abgelehnt (der
 //    Verlierer einer gleichzeitigen Rotation übernimmt die Epoche des Gewinners). Unveränderlich, nicht löschbar (nur mit der Konversation). Lückenlos: Epoche N
 //    gibt es erst, wenn N-1 da ist. Alle Teilnehmer der Konversation lesen sie.
-//  - Wrap: je (Konversation, Epoche, Empfänger) genau eine Zeile (feste ID, der erste gewinnt), unveränderlich. NUR der Empfänger liest seine Zeile (auch Admins und
-//    die anderen Teilnehmer nicht), der WebSocket-Hinweis geht nur an ihn. Der Empfänger muss Teilnehmer sein, die Epoche muss es geben.
+//  - Wrap: je (Konversation, Epoche, Empfänger, Schlüsselversion) genau eine Zeile (feste ID, der erste gewinnt), unveränderlich. NUR der Empfänger liest seine Zeile
+//    (auch Admins und die anderen Teilnehmer nicht), der WebSocket-Hinweis geht nur an ihn. Der Empfänger muss Teilnehmer sein, die Epoche muss es geben.
+//    Wrap-ID v2 (PR 7 "Verlauf freigeben"): Ein Wrap OHNE `keyVersion` (Altbestand, ältere Apps) hat die ID v1 (`wrapId`), einer MIT `keyVersion` die ID v2
+//    (`wrapIdV2`). So lässt sich dieselbe Epoche nach einem Schlüsselwechsel der Person noch einmal für ihren neuen Schlüssel verpacken, ohne die alten Zeilen
+//    anzufassen (sie bleiben für das Archiv des alten Schlüssels). Die Zahl ist öffentlich (sie steht auch in person_keys); der Server liest nichts aus dem Wrap selbst.
 //  - Ob Wrap und Mitgliederliste echt sind, prüft allein der Empfänger (Signatur gegen den gemerkten Schlüssel des Verteilers): ein Server oder Admin kann nichts
 //    unterschieben, nur Wraps verwerfen oder blockieren (Verfügbarkeit, nicht Vertraulichkeit).
 // Verteilt wird nur in verschlüsselten Konversationen (`enc_version` e1).
 import { and, eq, isNull, max } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Executor } from '../../auth/context.js';
-import { epocheWraps, konversationen, konversationEpochen } from '../../db/schema.js';
+import { epocheWraps, konversationen, konversationEpochen, personKeys } from '../../db/schema.js';
 import { safeString } from '../../routes/util.js';
 import type { Actor, Facts } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
-import { epocheId, wrapId } from './chat-ids.js';
+import { epocheId, wrapId, wrapIdV2 } from './chat-ids.js';
 import { forAllRoles } from './chat.js';
 import { iso, uuid } from './common.js';
 
@@ -124,6 +127,8 @@ export const epocheWrapEntity: EntityDef = {
     epoche: { access: 'create', schema: epochenNummer, required: true },
     empfaengerId: { access: 'create', schema: uuid, required: true, memberRef: true },
     wrap: { access: 'create', schema: base64url(1, MAX_WRAP), required: true },
+    // Wrap-ID v2: Schlüsselversion des Empfängers, für die der Wrap verpackt ist (fehlt bei Wraps älterer Apps, dann gilt die ID v1)
+    keyVersion: { access: 'create', schema: z.number().int().min(1).max(1_000_000) },
     verteilerId: { access: 'server', schema: uuid.nullable() },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },
@@ -133,7 +138,11 @@ export const epocheWrapEntity: EntityDef = {
   // verschwindet die Person aus der Familie, verschwinden ihre Wraps (mit Tombstone für ihre Geräte)
   memberOwned: 'empfaengerId',
   ownerOnlyNotify: true,
-  idValid: (id: string, values: Row): boolean => id === wrapId(String(values.konversationId), Number(values.epoche), String(values.empfaengerId)),
+  // ohne keyVersion die ID v1 (ältere Apps, Altbestand), mit keyVersion die ID v2: jede andere Kombination ist ungültig (niemand kann eine ID vorab anders belegen)
+  idValid: (id: string, values: Row): boolean =>
+    values.keyVersion === undefined || values.keyVersion === null
+      ? id === wrapId(String(values.konversationId), Number(values.epoche), String(values.empfaengerId))
+      : id === wrapIdV2(String(values.konversationId), Number(values.epoche), String(values.empfaengerId), Number(values.keyVersion)),
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.empfaengerId as string | null) ?? null }),
   factsForCreate: (_actor: Actor, values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (values.empfaengerId as string | undefined) ?? null }),
   onCreate: (actor: Actor): Row => ({ verteilerId: actor.userId }),
@@ -148,6 +157,11 @@ export const epocheWrapEntity: EntityDef = {
     const k = await e1Konversation(env, konversationId);
     if (!k) return false;
     if (k.art !== 'family' && !k.teilnehmer.map((u) => u.toLowerCase()).includes(String(row.empfaengerId).toLowerCase())) return false;
+    // Wrap-ID v2: nur für eine Schlüsselversion, die die Person schon hat (nie eine künftige: niemand kann künftige IDs vorab belegen)
+    if (row.keyVersion !== undefined && row.keyVersion !== null) {
+      const [pk] = await env.tx.select({ v: personKeys.keyVersion }).from(personKeys).where(eq(personKeys.userId, String(row.empfaengerId))).limit(1);
+      if (!pk || Number(row.keyVersion) > pk.v) return false;
+    }
     // Wraps der HÖCHSTEN Epoche nur von deren Verteiler (sonst könnte ein Teilnehmer sie mit Müll vorab belegen: der erste gewinnt); ältere Epochen darf jeder
     // Teilnehmer für neu Aufgenommene nachreichen ("Verlauf teilen", signiert vom Weitergebenden, der Empfänger prüft)
     const [epoche] = await env.tx

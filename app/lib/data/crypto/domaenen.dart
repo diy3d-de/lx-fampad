@@ -17,6 +17,12 @@ const String kDomaeneMitglieder = 'lx-familyhub|members|v1';
 /// Verpflichtung auf einen Epochenschlüssel in der signierten Mitgliederliste (epochen.dart).
 const String kDomaeneSchluesselCommitment = 'lx-familyhub|epochkey-commit|v1';
 
+/// Signierte Beitritts-Bestätigung eines neuen Mitglieds (beitritt.dart, PR 6, Bausteine; Grund `join`).
+const String kDomaeneBeitritt = 'lx-familyhub|join|v1';
+
+/// MAC des Beitritts-Geheimnisses über den öffentlichen Schlüssel eines neuen Mitglieds (beitritt.dart). Eigene Domäne: ein MAC ist nie eine Signatur.
+const String kDomaeneBeitrittMac = 'lx-familyhub|join-mac|v1';
+
 /// Ein Feld mit vorangestellter Länge (u32, BE).
 Uint8List gerahmt(List<int> feld) => verketten([u32Bytes(feld.length), feld]);
 

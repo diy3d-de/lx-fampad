@@ -28,6 +28,15 @@ export const epocheId = (konversationId: string, epoche: number): string => uuid
 export const wrapId = (konversationId: string, epoche: number, empfaengerId: string): string =>
   uuidAusSchluessel(`wrap:${konversationId.toLowerCase()}:${epoche}:${empfaengerId.toLowerCase()}`);
 
+/**
+ * Feste ID des Schlüssel-Wraps einer Epoche für eine Person UND eine bestimmte Schlüsselversion (Wrap-ID v2, PR 7 "Verlauf freigeben").
+ * Die ID v1 (`wrapId`) kennt die Schlüsselversion nicht: Hat eine Person ihren Schlüssel gewechselt (oder nach einem Reset einen neuen), ist ihre ID für die
+ * älteren Epochen schon belegt, und dieselbe Epoche ließe sich nicht noch einmal für den neuen Schlüssel verpacken. v2 trennt die Zeilen je Version; die
+ * alten Zeilen (ohne `keyVersion`) bleiben unverändert gültig. Muss exakt der App entsprechen (chat_ids.dart, Known-Answer-Tests auf beiden Seiten).
+ */
+export const wrapIdV2 = (konversationId: string, epoche: number, empfaengerId: string, keyVersion: number): string =>
+  uuidAusSchluessel(`wrap2:${konversationId.toLowerCase()}:${epoche}:${empfaengerId.toLowerCase()}:${keyVersion}`);
+
 /** Zufalls-UUID Version 4 (Gruppen, Nachrichten). */
 export const istUuidV4 = (id: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 

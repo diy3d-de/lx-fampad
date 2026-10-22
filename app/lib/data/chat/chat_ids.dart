@@ -32,6 +32,12 @@ String epocheId(String konversationId, int epoche) => uuidAusSchluessel('epoche:
 String wrapId(String konversationId, int epoche, String empfaengerId) =>
     uuidAusSchluessel('wrap:${konversationId.toLowerCase()}:$epoche:${empfaengerId.toLowerCase()}');
 
+/// ID des Schlüssel-Wraps einer Epoche für eine Person UND eine bestimmte Schlüsselversion (Wrap-ID v2, "Verlauf freigeben"). Die ID v1 ([wrapId]) kennt die
+/// Schlüsselversion nicht: hat die Person einen neuen Schlüssel, ist ihre ID für die älteren Epochen schon belegt. v2 trennt die Zeilen je Version; alte Zeilen und
+/// Apps bis 0.7.0 bleiben bei v1. Muss exakt dem Server entsprechen (server/src/sync/entities/chat-ids.ts, Known-Answer-Tests auf beiden Seiten).
+String wrapIdV2(String konversationId, int epoche, String empfaengerId, int keyVersion) =>
+    uuidAusSchluessel('wrap2:${konversationId.toLowerCase()}:$epoche:${empfaengerId.toLowerCase()}:$keyVersion');
+
 /// ID der Reaktion einer Person auf eine Nachricht (je Person und Nachricht genau eine).
 String reaktionId(String nachrichtId, String userId) => uuidAusSchluessel('reaktion:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}');
 
