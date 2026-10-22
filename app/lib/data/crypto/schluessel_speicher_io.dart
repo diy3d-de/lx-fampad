@@ -10,6 +10,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'bytes.dart';
 import 'schluessel_speicher.dart';
+import 'sicherer_speicher.dart';
 
 SchluesselSpeicher schluesselSpeicherErzeugen() => SecureSchluesselSpeicher();
 
@@ -17,7 +18,7 @@ class SecureSchluesselSpeicher implements SchluesselSpeicher {
   static const _praefix = 'lx_fampad_';
   static const _indexName = '__index';
   final FlutterSecureStorage _s;
-  SecureSchluesselSpeicher([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
+  SecureSchluesselSpeicher([FlutterSecureStorage? storage]) : _s = storage ?? kSicherSpeicher;
 
   static final _dauerhaftMuster = RegExp('BadPadding|AEADBadTag|BadTag|IllegalBlockSize|MAC verification|Signature/MAC', caseSensitive: false);
 

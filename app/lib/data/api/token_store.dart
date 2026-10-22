@@ -4,6 +4,7 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../crypto/sicherer_speicher.dart';
 import 'kleiner_speicher.dart';
 import 'models.dart' show ServerFaehigkeiten;
 
@@ -163,7 +164,7 @@ class SecureTokenStore implements TokenStore {
   static const _kCaps = 'lx_fampad_server_caps';
 
   final FlutterSecureStorage _s;
-  SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
+  SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? kSicherSpeicher;
 
   /// Liest und decodiert einen Eintrag; bei jedem Fehler wird er gelöscht und null geliefert.
   Future<T?> _lesen<T>(String key, T? Function(Object? json) lesen) async {

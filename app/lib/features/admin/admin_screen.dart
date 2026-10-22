@@ -142,7 +142,9 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
       case _Aktion.entfernen:
         final ja = await _frage(
           'Mitglied entfernen?',
-          '${m.displayName} wird entfernt und überall abgemeldet. Das Konto bleibt nur bestehen, wenn die Person noch zu einer anderen Familie gehört.',
+          '${m.displayName} wird entfernt und überall abgemeldet. Das Konto bleibt nur bestehen, wenn die Person noch zu einer anderen Familie gehört.\n\n'
+          'Endgültig: Ihr Schlüssel, ihre Sicherungen und ihr Schlüsselarchiv werden auf dem Server gelöscht. Ihre früheren Nachrichten bleiben als Chiffretext. '
+          'Auf Geräten, die ihren Schlüssel schon gemerkt haben, bleiben sie lesbar; auf neu verbundenen Geräten lassen sie sich nicht mehr prüfen.',
           'Entfernen',
         );
         if (!ja || !mounted) return;
@@ -208,6 +210,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(titel),
+          scrollable: true,
           content: Text(text),
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),

@@ -6,8 +6,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/crypto/e2ee_state.dart';
+import 'package:lx_fampad/data/sync_state.dart';
 import 'package:lx_fampad/data/crypto/schluessel_speicher.dart';
 import 'package:lx_fampad/features/profile/abmelden_pruefung.dart';
 
@@ -88,13 +90,14 @@ Future<void> _dialogAllein(
   E2eeState zustand, {
   bool ueberall = false,
   bool web = false,
+  List<Override> extra = const [],
 }) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [e2eeProvider.overrideWith(() => _FesterZustand(zustand))],
+      overrides: [e2eeProvider.overrideWith(() => _FesterZustand(zustand)), ...extra],
       child: MaterialApp(
         builder: (c, w) => MediaQuery(
           data: MediaQuery.of(c)
@@ -303,5 +306,45 @@ Future<void> main() async {
       );
       pruefeLayout(tester, 'Dialog 2.0 unbekannt');
     });
+
+    // Lücke L-5: ungesendete Änderungen im Ausgang gehen beim Abmelden verloren, darum nennt der Dialog die Anzahl und bietet das Synchronisieren an
+    testWidgets('ungesendete Änderungen: Warnung mit Anzahl, "Erst synchronisieren" gleicht ab', (tester) async {
+      final sync = _OffenSync(3);
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), extra: [syncProvider.overrideWith(() => sync)]);
+      expect(find.textContaining('3 Änderungen'), findsOneWidget);
+      expect(find.text('Erst synchronisieren'), findsOneWidget);
+      expect(find.textContaining('Änderungen verwerfen'), findsOneWidget, reason: 'der Abmelden-Knopf sagt ehrlich, was passiert');
+      pruefeLayout(tester, 'Dialog 2.0 mit ungesendeten Änderungen');
+      sync.nachSync = 0;
+      await tester.tap(find.text('Erst synchronisieren'));
+      await tester.pumpAndSettle();
+      expect(sync.synchronisiert, 1);
+      expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing, reason: 'nach dem Abgleich ist nichts mehr offen');
+      expect(find.text('Erst synchronisieren'), findsNothing);
+      expect(find.text('Abmelden'), findsOneWidget);
+    });
+
+    testWidgets('ohne ungesendete Änderungen: keine Warnung', (tester) async {
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit));
+      expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing);
+      expect(find.text('Erst synchronisieren'), findsNothing);
+    });
   });
+}
+
+/// Sync-Dienst mit festem Zähler offener Änderungen; der Abgleich setzt ihn auf [nachSync].
+class _OffenSync extends SyncController {
+  final int start;
+  int nachSync = 0;
+  int synchronisiert = 0;
+  _OffenSync(this.start);
+
+  @override
+  SyncState build() => SyncState(offeneAenderungen: start);
+
+  @override
+  Future<void> synchronisieren({bool manuell = false}) async {
+    synchronisiert++;
+    state = state.copyWith(offeneAenderungen: nachSync);
+  }
 }

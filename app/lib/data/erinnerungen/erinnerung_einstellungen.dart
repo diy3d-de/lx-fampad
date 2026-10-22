@@ -8,6 +8,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../crypto/sicherer_speicher.dart';
+
 /// Auswahl für die Standard-Vorlaufzeit (Minuten; null = keine). Teilmenge der Werte, die der Termin-Editor anbietet.
 const kStandardVorlaeufe = <int?>[null, 15, 60, 1440];
 
@@ -58,7 +60,7 @@ const kErinnerungKontoSchluessel = 'erinnerung_konto';
 /// Android: im Keystore-gestützten Speicher der App (dieselbe Abhängigkeit wie die Anmeldung; keine zusätzliche Bibliothek).
 class SicherErinnerungSpeicher implements ErinnerungSpeicher {
   final FlutterSecureStorage _s;
-  SicherErinnerungSpeicher([FlutterSecureStorage? s]) : _s = s ?? const FlutterSecureStorage();
+  SicherErinnerungSpeicher([FlutterSecureStorage? s]) : _s = s ?? kSicherSpeicher;
 
   @override
   Future<Map<String, String>> lesen() async {

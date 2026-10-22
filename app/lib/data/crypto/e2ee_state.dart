@@ -401,7 +401,9 @@ class E2eeController extends Notifier<E2eeState> {
     if (bytes == null) return null;
     try {
       return Personenschluessel.ausBytes(crypto, bytes);
-    } on CryptoFehler {
+    } on CryptoFehler catch (e) {
+      // ein interner Fehler der Bibliothek sagt nichts über den Eintrag: er bleibt liegen (nur Länge/Format eines Schlüssels sind ein echter Defekt)
+      if (e.art == CryptoFehlerArt.bibliothek) rethrow;
       await _inQuarantaene(name);
       return null;
     } finally {
@@ -505,8 +507,17 @@ class E2eeController extends Notifier<E2eeState> {
       final server = eigene.schluessel;
       if (server != null) await _versionMerken(uid, server.version);
       final pruefer = VertrauensPruefer(_speicher, eigeneUserId: uid);
-      final warnungen = await pruefer.pruefen({for (final m in mitglieder) m.id: m.schluessel});
-      await pruefer.standPruefen(); // ein beschädigter Stand der Chat-Mitglieder wird wie eine beschädigte Merkliste gemeldet
+      var warnungen = <SchluesselWarnung>[];
+      var ablageDefekt = false;
+      try {
+        warnungen = await pruefer.pruefen({for (final m in mitglieder) m.id: m.schluessel});
+        await pruefer.standPruefen(); // ein beschädigter Stand der Chat-Mitglieder wird wie eine beschädigte Merkliste gemeldet
+      } on VertrauensAblageDefekt {
+        // Ohne eigenen Schlüssel auf dem Gerät (Schlüsselspeicher dauerhaft unlesbar, der Schlüssel liegt in der Quarantäne) darf das nicht in eine Sackgasse führen:
+        // "Gerät nicht verbunden" bleibt, mit dem Weg zum Verbinden und dem bewussten Zurücksetzen des Vertrauens. Mit Schlüssel (oder ohne Server-Schlüssel) bleibt es beim Fehlerbild unten.
+        if (_lokal != null || server == null) rethrow;
+        ablageDefekt = true;
+      }
       final status = switch ((server, _lokal)) {
         (null, _) => E2eeStatus.keinSchluessel,
         (_, null) => E2eeStatus.geraetNichtVerbunden,
@@ -521,6 +532,11 @@ class E2eeController extends Notifier<E2eeState> {
       if (!ref.mounted) return;
       state = E2eeState(
         status: status,
+        vertrauenDefekt: ablageDefekt,
+        meldung: ablageDefekt
+            ? 'Der Schlüsselspeicher dieses Geräts ist nicht mehr lesbar (Daten gelöscht oder Schlüssel verloren). Ein alter Schlüssel hier wurde aufbewahrt, nicht gelöscht. '
+                  'Verbinde dieses Gerät neu; die gemerkten Schlüssel der Familie sind dabei verloren und werden danach neu geprüft (Vertrauen zurücksetzen).'
+            : null,
         serverSchluessel: server,
         hatSicherung: eigene.hatSicherung,
         pwSicherungVerfuegbar: pwVerfuegbar,
@@ -573,7 +589,8 @@ class E2eeController extends Notifier<E2eeState> {
     Personenschluessel? alt;
     try {
       alt = Personenschluessel.ausBytes(crypto, roh);
-    } on CryptoFehler {
+    } on CryptoFehler catch (e) {
+      if (e.art == CryptoFehlerArt.bibliothek) return; // interner Fehler der Bibliothek: der Zwischenstand bleibt liegen, das nächste Laden versucht es noch einmal
       await _inQuarantaene(altName); // unbrauchbarer Zwischenstand: aufbewahren, nicht löschen
       return;
     } finally {

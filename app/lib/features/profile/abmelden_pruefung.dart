@@ -2,6 +2,8 @@
 // Schlüsselspeicher dieses Geräts liegen und wird bei der nächsten Anmeldung derselben Person wieder benutzt. Die Rückfrage ist darum nur ein ruhiger Hinweis,
 // keine Warnung; die harte Warnung gehört zu "Gerät abgeben" (Profil > Verschlüsselung), der einzigen Aktion, die den Schlüssel löscht.
 // Gilt für "Abmelden", "Überall abmelden" und "Dieses Gerät abmelden"; Zwangsabmeldungen (401, Widerruf) fragen nie.
+// Warten noch ungesendete Änderungen im Ausgang (Zähler des Sync-Dienstes), warnt der Dialog mit der Anzahl und bietet "Erst synchronisieren" an: Beim Abmelden werden sie
+// mit den lokalen Daten gelöscht (Lücke L-5). Ohne offene Änderungen bleibt es beim ruhigen Hinweis.
 // Ob ein Schlüssel auf dem Gerät liegt, fragt die App direkt im Schlüsselspeicher; lässt sich das nicht klären, gilt "unbekannt, evtl. vorhanden" und nie "kein Schlüssel".
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -11,6 +13,7 @@ import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/crypto/bytes.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/sync_state.dart';
 
 /// Wie sicher die App weiß, ob auf diesem Gerät ein Personenschlüssel liegt.
 enum SchluesselLage { keiner, vorhanden, unbekannt }
@@ -67,40 +70,76 @@ Future<bool> abmeldenBestaetigen(
       'Ein Schlüssel, der auf diesem Gerät liegt, bleibt hier; die App konnte ihn gerade nicht prüfen. '
           'Willst du das Gerät abgeben, nutze Profil › Verschlüsselung › Gerät abgeben.',
   };
+  var offen = ref.read(syncProvider).offeneAenderungen;
+  var synchronisiert = false;
   final ja = await showDialog<bool>(
     useRootNavigator: false,
     context: context,
-    builder: (ctx) => AlertDialog(
-      title: Text(titel),
-      scrollable: true,
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(text),
-          if (ueberall) ...[
-            const SizedBox(height: 8),
-            const Text('Auch deine anderen Geräte werden abgemeldet; sie behalten ihren Schlüssel.', style: TextStyle(color: kTextMuted, height: 1.4)),
+    builder: (ctx) => StatefulBuilder(
+      builder: (ctx, setZ) => AlertDialog(
+        title: Text(titel),
+        scrollable: true,
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(text),
+            if (ueberall) ...[
+              const SizedBox(height: 8),
+              const Text('Auch deine anderen Geräte werden abgemeldet; sie behalten ihren Schlüssel.', style: TextStyle(color: kTextMuted, height: 1.4)),
+            ],
+            if (offen > 0) ...[
+              const SizedBox(height: 12),
+              Text(ungesendetText(offen), style: const TextStyle(color: kWarn, height: 1.4)),
+            ],
+            if (hinweis != null) ...[
+              const SizedBox(height: 12),
+              Text(hinweis, style: const TextStyle(color: kTextMuted, height: 1.4)),
+            ],
+            if (istWeb && lage != SchluesselLage.keiner) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Auf einem gemeinsam genutzten Computer nutze „Gerät abgeben“: Normales Abmelden lässt den Schlüssel im Browser liegen.',
+                style: TextStyle(color: kTextMuted, height: 1.4),
+              ),
+            ],
           ],
-          if (hinweis != null) ...[
-            const SizedBox(height: 12),
-            Text(hinweis, style: const TextStyle(color: kTextMuted, height: 1.4)),
-          ],
-          if (istWeb && lage != SchluesselLage.keiner) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Auf einem gemeinsam genutzten Computer nutze „Gerät abgeben“: Normales Abmelden lässt den Schlüssel im Browser liegen.',
-              style: TextStyle(color: kTextMuted, height: 1.4),
+        ),
+        actionsOverflowButtonSpacing: 12,
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false), style: _stil(kTextMuted), child: const Text('Abbrechen')),
+          if (offen > 0)
+            TextButton(
+              onPressed: synchronisiert
+                  ? null
+                  : () async {
+                      setZ(() => synchronisiert = true);
+                      try {
+                        await ref.read(syncProvider.notifier).synchronisieren(manuell: true);
+                      } on Object {
+                        // der Zustand zeigt unten, was noch offen ist
+                      }
+                      // der Zähler kommt über den Datenbank-Strom; einen Augenblick Zeit lassen, bevor er neu gelesen wird
+                      await Future<void>.delayed(const Duration(milliseconds: 150));
+                      if (ctx.mounted) {
+                        setZ(() {
+                          offen = ref.read(syncProvider).offeneAenderungen;
+                          synchronisiert = false;
+                        });
+                      }
+                    },
+              style: _stil(kAccent),
+              child: Text(synchronisiert ? 'Synchronisiere …' : 'Erst synchronisieren'),
             ),
-          ],
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true), style: _stil(offen > 0 ? kDanger : kAccent), child: Text(offen > 0 ? '$knopf (Änderungen verwerfen)' : knopf)),
         ],
       ),
-      actionsOverflowButtonSpacing: 12,
-      actions: [
-        TextButton(onPressed: () => Navigator.of(ctx).pop(false), style: _stil(kTextMuted), child: const Text('Abbrechen')),
-        TextButton(onPressed: () => Navigator.of(ctx).pop(true), style: _stil(kAccent), child: Text(knopf)),
-      ],
     ),
   );
   return ja == true;
 }
+
+/// Warnung vor dem Verlust noch nicht gesendeter Änderungen (Ausgang): Beim ausdrücklichen Abmelden und bei "Gerät abgeben" werden sie mit den lokalen Daten gelöscht.
+String ungesendetText(int n) =>
+    '${n == 1 ? 'Eine Änderung (z. B. eine Nachricht) wurde' : '$n Änderungen (z. B. Nachrichten) wurden'} noch nicht an den Server gesendet und '
+    '${n == 1 ? 'geht' : 'gehen'} beim Abmelden verloren. Verbinde dich mit dem Netz und synchronisiere zuerst.';

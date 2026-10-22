@@ -54,9 +54,20 @@ class VertrauensPruefer {
 
   String get _name => 'e2ee.vertrauen.$eigeneUserId';
 
+  /// Liest eine Ablage. Ein vorübergehender Lesefehler des Speichers geht weiter (nie wie "noch nichts gemerkt" behandeln). Ist der Eintrag DAUERHAFT nicht lesbar
+  /// (Schlüssel zum Entschlüsseln verloren), ist die Ablage für dieses Gerät wie beschädigt: [VertrauensAblageDefekt] (bewusstes Zurücksetzen statt einer Sackgasse).
+  Future<Uint8List?> _lesen(String name) async {
+    try {
+      return await speicher.lesen(name);
+    } on SchluesselSpeicherFehler catch (e) {
+      if (e.dauerhaft) throw const VertrauensAblageDefekt();
+      rethrow;
+    }
+  }
+
   Future<Map<String, GemerkterSchluessel>> _laden() async {
     // Lesefehler des Speichers (Keystore, IndexedDB) gehen weiter: ein Fehler darf nie wie "noch nichts gemerkt" aussehen und die Merkliste überschreiben
-    final bytes = await speicher.lesen(_name);
+    final bytes = await _lesen(_name);
     if (bytes == null) return {};
     try {
       final raw = jsonDecode(utf8.decode(bytes));
@@ -178,7 +189,7 @@ class VertrauensPruefer {
   String get _standName => 'e2ee.akzeptiert.$eigeneUserId';
 
   Future<Map<String, Object?>> _standAlle() async {
-    final bytes = await speicher.lesen(_standName);
+    final bytes = await _lesen(_standName);
     if (bytes == null) return {};
     try {
       final raw = jsonDecode(utf8.decode(bytes));

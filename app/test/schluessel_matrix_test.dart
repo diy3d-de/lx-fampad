@@ -4,8 +4,8 @@
 //  2. Abmelden und Anmelden mit leerer lokaler Datenbank: der Verlauf (auch über mehrere Epochen) ist mit demselben Personenschlüssel wieder lesbar; ohne ihn nicht.
 //  3. Der Schlüsselspeicher wird geleert, während die App läuft (Browser: Websitedaten gelöscht, Android: Keystore zurückgesetzt): "Gerät nicht verbunden",
 //     nie ein stiller neuer Schlüssel, der Server-Schlüssel bleibt unberührt, Verbinden mit dem Wiederherstellungsschlüssel gelingt.
-//  4. Bekannte Lücken L-1 (Android-Plugin löscht selbst), L-2 (Sackgasse bei dauerhaft unlesbarer Ablage) und L-7 (Bibliotheksfehler schiebt gesunden Schlüssel in die
-//     Quarantäne) als übersprungene Tests mit dem gewünschten Verhalten; wer eine Lücke schließt, entfernt das skip.
+//  4. Geschlossene Lücken L-1 (Android-Plugin löschte selbst), L-2 (Sackgasse bei dauerhaft unlesbarer Ablage) und L-7 (Bibliotheksfehler schob gesunden Schlüssel in die
+//     Quarantäne): die Tests beschreiben das gewünschte Verhalten.
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -343,9 +343,9 @@ void _speicherGeleert(String name, CryptoProvider crypto) {
   });
 }
 
-/// Bekannte Lücken (übersprungen, mit Begründung): Sie beschreiben das gewünschte Verhalten; wer eine Lücke schließt, entfernt das `skip`.
+/// Geschlossene Lücken L-1, L-2 und L-7 (waren übersprungen, siehe docs/TESTFAMILIE-SCHLUESSEL.md, Abschnitt 3).
 void _luecken() {
-  group('Bekannte Lücken (übersprungen)', () {
+  group('Geschlossene Lücken', () {
     late FakeServer fake;
     late FakeE2eeServer srv;
 
@@ -374,9 +374,13 @@ void _luecken() {
         // gewünscht: der Eintrag bleibt unter seinem Namen liegen (vorübergehender Fehler), die Seite meldet "nicht verfügbar"
         expect(await speicher.lesen(personenschluesselName(_anna)), vorher, reason: 'der gesunde Schlüssel liegt jetzt in der Quarantäne statt unter seinem Namen');
         expect(srv.anfragen('POST /me/keys'), 1);
+        expect(a.s.status, E2eeStatus.nichtVerfuegbar);
+        expect(a.s.quarantaene, isEmpty);
+        // der Fehler ist vorbei: der nächste Versuch findet den Schlüssel wieder
+        z.zicken = false;
+        await a.ctrl.laden();
+        expect(a.s.status, E2eeStatus.bereit);
       },
-      skip: 'Lücke L-7 (Niedrig): _lokalLaden fängt jede CryptoFehler-Art und verschiebt den Schlüssel in die Quarantäne; nur "schluessel" (Länge/Format) dürfte das tun. '
-          'Nichts geht verloren (der Eintrag bleibt unverändert in der Quarantäne), aber das Gerät gilt als "nicht verbunden", und die App kann den Eintrag nicht zurückholen.',
     );
 
     test(
@@ -397,21 +401,29 @@ void _luecken() {
         await a.ctrl.laden();
         expect(a.s.status, E2eeStatus.geraetNichtVerbunden, reason: 'ist ${a.s.status}: "${a.s.meldung}"; die Seite bietet dann nur "Erneut versuchen"');
         expect(a.s.quarantaene, hasLength(1));
+        // klare Meldung und der Weg zum bewussten Zurücksetzen des Vertrauens (die gemerkten Schlüssel sind mit dem Speicher verloren)
+        expect(a.s.vertrauenDefekt, isTrue);
+        expect(a.s.meldung, contains('nicht mehr lesbar'));
+        expect(a.s.hatSicherung, isTrue, reason: 'die Seite braucht das für "Mit Wiederherstellungsschlüssel verbinden"');
       },
-      skip: 'Lücke L-2 (Mittel): VertrauensPruefer._laden reicht einen DAUERHAFTEN SchluesselSpeicherFehler unverändert weiter; laden() endet in "nicht verfügbar" '
-          '("Der Schlüsselspeicher … gerade nicht lesbar. Bitte versuche es gleich noch einmal."), die Seite bietet nur "Erneut versuchen" und kein Verbinden. Nichts wird gelöscht, aber die Person kommt nur über '
-          'das Löschen der Browser-/App-Daten weiter.',
     );
 
     test(
       'der Android-Speicher darf nie selbst löschen: FlutterSecureStorage mit resetOnError: false',
       () {
-        final quelle = _lies('lib/data/crypto/schluessel_speicher_io.dart');
-        expect(quelle, contains('resetOnError: false'), reason: 'flutter_secure_storage setzt resetOnError standardmäßig auf true und löscht bei jedem Lesefehler den Eintrag (read) bzw. alles (readAll), bevor die App den Fehler sieht');
+        // flutter_secure_storage setzt resetOnError standardmäßig auf true und löscht bei jedem Lesefehler den Eintrag (read) bzw. alles (readAll), bevor die App den Fehler sieht.
+        // Darum gibt es genau EINE Stelle, die ein FlutterSecureStorage erzeugt (sicherer_speicher.dart, mit resetOnError: false); alle anderen benutzen sie.
+        final quelle = _lies('lib/data/crypto/sicherer_speicher.dart');
+        expect(quelle, contains('AndroidOptions(resetOnError: false)'));
+        for (final f in _libDateien()) {
+          final pfad = _norm(f.path);
+          if (pfad == 'lib/data/crypto/sicherer_speicher.dart') continue;
+          expect(RegExp(r'FlutterSecureStorage\s*\(').hasMatch(_lies(f.path)), isFalse, reason: '$pfad erzeugt ein FlutterSecureStorage mit den Standardoptionen (resetOnError: true): kSicherSpeicher benutzen');
+        }
+        for (final p in ['lib/data/crypto/schluessel_speicher_io.dart', 'lib/data/api/token_store.dart', 'lib/data/erinnerungen/erinnerung_einstellungen.dart']) {
+          expect(_lies(p), contains('kSicherSpeicher'), reason: p);
+        }
       },
-      skip: 'Lücke L-1 (Hoch, Android): `const FlutterSecureStorage()` nutzt AndroidOptions(resetOnError: true) (flutter_secure_storage 11.2.0, FlutterSecureStorage.handleStorageError): '
-          'schlägt das Entschlüsseln eines Eintrags fehl, löscht das Plugin den Eintrag (read: `delete(key)`, readAll: `deleteAll()`), versucht es erneut und liefert null = "nicht vorhanden". '
-          'Die Logik des Schlüsselspeichers (nur null = nicht vorhanden, Fehler = Quarantäne oder liegen lassen) greift dann nie.',
     );
   });
 }

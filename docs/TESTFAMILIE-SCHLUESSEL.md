@@ -89,7 +89,7 @@ Nur im Browser gut herbeizuführen.
 3. „Mit Wiederherstellungsschlüssel verbinden“.
 
 **Soll:** „Dieses Gerät ist nicht verbunden“ (nicht „Nicht eingerichtet“!), unter „Erweitert“/Hinweisen ein Eintrag **„Alter Schlüssel auf diesem Gerät · seit …“** (der nicht lesbare Eintrag wurde unverändert aufbewahrt, nicht gelöscht). Nach dem Verbinden: derselbe Schlüssel wie vorher, Chat lesbar, der alte Eintrag bleibt als Hinweis stehen, bis jemand ihn mit dem getippten Wort „löschen“ **verwirft** (Knopf „Verwerfen“).
-**Heute (bekannte Lücke L-2):** Sind **alle** Einträge unlesbar (auch die gemerkten Schlüssel der Familie, was bei fehlendem Wrapper-Schlüssel immer so ist), endet die Seite in „Die Verschlüsselung ist gerade nicht verfügbar“ / „Der Schlüsselspeicher dieses Geräts ist gerade nicht lesbar. Bitte versuche es gleich noch einmal.“ mit nur „Erneut versuchen“. Der Schlüssel liegt dann schon in der Quarantäne, es geht nichts verloren, aber die App bietet kein Verbinden an. Rückweg: Fall 6 (Websitedaten löschen, dann verbinden). Dasselbe Bild ist auf Android denkbar, wenn der Keystore-Schlüssel verloren geht (siehe L-1).
+**Sind alle Einträge unlesbar** (auch die gemerkten Schlüssel der Familie, was bei fehlendem Wrapper-Schlüssel immer so ist; Lücke L-2, behoben): „Dieses Gerät ist nicht verbunden“ mit den Verbinden-Wegen und der Meldung „Der Schlüsselspeicher dieses Geräts ist nicht mehr lesbar …“ samt Knopf „Vertrauen zurücksetzen“ (die gemerkten Schlüssel der Familie sind verloren und werden danach neu geprüft). Der Schlüssel liegt in der Quarantäne. Dasselbe Bild ist auf Android denkbar, wenn der Keystore-Schlüssel verloren geht; das Plugin löscht dort nicht mehr selbst (L-1, behoben).
 **Nicht erlaubt:** stilles Anlegen eines neuen Schlüssels, Meldung „Verschlüsselung einrichten“ ohne Hinweis, automatisches Löschen des alten Eintrags.
 
 ### Fall 6: Browser-Daten gelöscht, Speicher nicht dauerhaft
@@ -158,7 +158,7 @@ Nicht von Hand. Der Test `server/test/schluessel-matrix.test.ts` prüft die Gren
 4. Neues Gerät für Anna (frisches Browser-Profil), verbinden (Fall 4), Familienchat öffnen: Doras alte Nachricht.
 
 **Erwartet (heute):** Dora ist weg, **mit ihr alle Schlüssel, Sicherungen und Archiveinträge** (Zeilen verschwinden per Kaskade). Doras Nachrichten bleiben als Chiffretext bei den anderen; auf **bestehenden** Geräten, die ihren Schlüssel gemerkt haben, bleiben sie lesbar. Auf dem **neuen** Gerät fehlt Doras Schlüssel: die Nachricht steht dort als „Absender nicht bestätigt“/nicht lesbar.
-**Bekannte Lücke (L-4):** Die Rückfrage nennt das nicht (nur „… wird entfernt und überall abgemeldet“). Ein Soft-Delete mit Frist ist geplant. Bis dahin: vor jedem echten Entfernen Snapshot der Datenbank.
+**Rückfrage (L-4, Text behoben):** Sie nennt jetzt, dass Schlüssel, Sicherungen und Schlüsselarchiv der Person endgültig gelöscht werden und ihre früheren Nachrichten auf neu verbundenen Geräten nicht mehr prüfbar sind. Ein Soft-Delete mit Frist ist geplant (eigenes Paket). Bis dahin: vor jedem echten Entfernen Snapshot der Datenbank.
 Außerdem: eine Admin-Sitzung, die per Wiederherstellungscode entstand, darf **nicht** entfernen (Fall 9).
 
 ### Fall 13: Komplett-Reset („Zugang zurücksetzen“)
@@ -169,12 +169,12 @@ Außerdem: eine Admin-Sitzung, die per Wiederherstellungscode entstand, darf **n
 
 **Erwartet:** Coras **Schlüssel und Sicherungen bleiben** (`person_keys`, `key_backups*` unverändert); mit C1 (Schlüssel noch im Browser) ist alles lesbar, ohne C1 mit Wiederherstellungsschlüssel. **Alle anderen** bekommen einen Hinweis „Zugang von Cora wurde zurückgesetzt; nimm einen neuen Schlüssel dieser Person nur nach Rücksprache an“ (Ereignis + Wecker ohne Inhalt). Eine Schlüsseländerung bei Cora wird bei den anderen **nie** stillschweigend akzeptiert.
 
-### Fall 14: Ungesendeter Ausgang beim Abmelden (bekannte Lücke L-5)
+### Fall 14: Ungesendeter Ausgang beim Abmelden (Lücke L-5, Warnung eingebaut)
 
 1. A1 (Android): Flugmodus an. Chat: Nachricht „Offline-Test“ schreiben (Zustand „wird gesendet“).
-2. Profil › „Abmelden“ (der Dialog sagt nur „Lokale Daten auf diesem Gerät werden gelöscht.“), Flugmodus aus, anmelden.
+2. Profil › „Abmelden“.
 
-**Erwartet heute:** Die Nachricht ist **weg** (der Ausgang wird beim ausdrücklichen Abmelden geleert, ohne gesonderte Warnung). Das ist der einzige Fall in dieser Matrix, in dem beim Abmelden Inhalt verloren gehen kann; Schlüssel und Verlauf auf dem Server sind nicht betroffen. Zum Vergleich: Bei einem Sitzungsverlust (Widerruf, 401) bleibt der Ausgang erhalten und geht nach erneuter Anmeldung derselben Person hinaus.
+**Erwartet:** Der Dialog nennt in Gelb die Anzahl („Eine Änderung (z. B. eine Nachricht) wurde noch nicht an den Server gesendet und geht beim Abmelden verloren …“), bietet „Erst synchronisieren“ an, und der Abmelden-Knopf heißt „Abmelden (Änderungen verwerfen)“. Mit Netz und „Erst synchronisieren“ verschwindet die Warnung, die Nachricht ist beim Server. Dasselbe bei „Gerät abgeben“: vorher ein Abgleich, ein Pflicht-Haken nennt den Rest. Wer trotzdem abmeldet, verliert die Nachricht (der Ausgang wird geleert); Schlüssel und Verlauf auf dem Server sind nicht betroffen. Zum Vergleich: Bei einem Sitzungsverlust (Widerruf, 401) bleibt der Ausgang erhalten und geht nach erneuter Anmeldung derselben Person hinaus.
 
 ## 2. Ergebnisblatt
 
@@ -195,19 +195,19 @@ Außerdem: eine Admin-Sitzung, die per Wiederherstellungscode entstand, darf **n
 | 13 Komplett-Reset | | | | |
 | 14 Ausgang beim Abmelden | | | | |
 
-## 3. Bekannte Lücken (Stand dieser Prüfung, noch nicht behoben)
+## 3. Bekannte Lücken (Stand dieser Prüfung)
 
-Nicht als neue Fehler melden, aber bei jedem Durchlauf beobachten, ob sie noch gelten. Die ersten drei haben übersprungene Tests in `app/test/schluessel_matrix_test.dart` (Nummern L-1, L-2, L-7), L-6 einen Test in `server/test/schluessel-matrix.test.ts`.
+Nicht als neue Fehler melden, aber bei jedem Durchlauf beobachten, ob sie noch gelten. Behobene Lücken sind markiert (Tests in `app/test/schluessel_matrix_test.dart`, `abmelden_warnung_test.dart`, `auth_screens_test.dart`), L-6 hat einen Test in `server/test/schluessel-matrix.test.ts`.
 
 | Nr. | Schwere | Was |
 | --- | --- | --- |
-| L-1 | hoch (Android) | `flutter_secure_storage` löscht bei einem Lesefehler **selbst** (Standard `resetOnError: true`): Eintrag bzw. alles, bevor die App den Fehler sieht; Quarantäne und „vorübergehend lässt liegen“ greifen dort nie. Nicht von Hand auslösbar (Samsung-Keystore-Aussetzer); nur Codeprüfung. |
-| L-2 | mittel | Sackgasse „Schlüsselspeicher nicht lesbar“, wenn die Vertrauensablage dauerhaft unlesbar ist (Fall 5). |
+| L-1 | **behoben** (war hoch, Android) | `flutter_secure_storage` löschte bei einem Lesefehler **selbst** (Standard `resetOnError: true`). Jetzt erzeugt nur `lib/data/crypto/sicherer_speicher.dart` ein `FlutterSecureStorage`, mit `resetOnError: false` (Wächtertest); ein Lesefehler kommt als `SchluesselSpeicherFehler` an. Nebenwirkung: Ist der Keystore-Schlüssel dauerhaft kaputt, scheitern auch Schreibzugriffe (Anmeldung) bis zum Löschen der App-Daten, statt dass das Plugin still alles zurücksetzt. |
+| L-2 | **behoben** (war mittel) | Sackgasse „Schlüsselspeicher nicht lesbar“: Eine dauerhaft unlesbare Vertrauensablage gilt wie eine beschädigte; ohne eigenen Schlüssel bleibt „Gerät nicht verbunden“ mit allen Verbinden-Wegen, Meldung und „Vertrauen zurücksetzen“ (Fall 5). |
 | L-3 | mittel | Kein Weg in der App, aus Archiv oder aufbewahrtem altem Schlüssel den alten Verlauf zu öffnen (Fall 10). |
-| L-4 | mittel | „Entfernen“ löscht Schlüssel, Sicherungen und Archiv endgültig und nimmt auf **neuen** Geräten der anderen die Prüfbarkeit der alten Nachrichten der Person; die Rückfrage sagt es nicht (Fall 12). |
-| L-5 | niedrig bis mittel | Ausdrückliches Abmelden und „Gerät abgeben“ leeren den **Ausgang** (noch nicht gesendete Nachrichten, Änderungen) ohne gesonderte Warnung (Fall 14). |
+| L-4 | **Text behoben**, Soft-Delete offen | „Entfernen“ löscht Schlüssel, Sicherungen und Archiv endgültig und nimmt auf **neuen** Geräten der anderen die Prüfbarkeit der alten Nachrichten der Person; die Rückfrage sagt es jetzt (Fall 12). |
+| L-5 | **behoben** (war niedrig bis mittel) | Ausdrückliches Abmelden und „Gerät abgeben“ leerten den **Ausgang** ohne Warnung: jetzt Anzahl, „Erst synchronisieren“, beim Gerät abgeben Abgleich und Pflicht-Haken (Fall 14). |
 | L-6 | niedrig | Die zuletzt gültige echte Wiederherstellungssicherung ist nach 51 späteren Ersetzungen aus dem Archiv gedünnt (nur mit einer geliehenen, voll angemeldeten Sitzung auslösbar, Fall 11). |
-| L-7 | niedrig | Ein interner Fehler der Verschlüsselungsbibliothek beim Ableiten schiebt einen gesunden Schlüssel in die Quarantäne (nichts geht verloren, aber „Gerät nicht verbunden“). |
+| L-7 | **behoben** (war niedrig) | Ein interner Fehler der Verschlüsselungsbibliothek (`bibliothek`) beim Ableiten schob einen gesunden Schlüssel in die Quarantäne; jetzt bleibt er liegen („nicht verfügbar“, der nächste Versuch klappt). |
 | L-8 | niedrig, theoretisch | Löst die App nach einem unklaren Schlüsselwechsel (Verbindungsabbruch) den Zwischenstand auf und kommt die Anfrage danach doch noch beim Server an, ist der neue private Schlüssel weg (der alte bleibt, der Server kennt aber den neuen). |
 
 ## 4. Nach den Tests

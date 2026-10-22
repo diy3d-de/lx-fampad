@@ -17,6 +17,7 @@ import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/schluessel_speicher.dart' show SpeicherDauer;
 import '../../data/crypto/sicherheitscode.dart';
 import '../../data/crypto/vertrauen.dart';
+import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
 import '../auth/auth_widgets.dart';
@@ -138,6 +139,17 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   /// getipptem Wort. Liegen frühere Schlüssel auf dem Gerät (Quarantäne, abweichender Schlüssel), gibt es einen eigenen Pflicht-Haken mit der Anzahl.
   Future<void> _geraetAbgebenAusfuehren() async {
     final n = ref.read(e2eeProvider).fruehereSchluessel;
+    // noch nicht gesendete Änderungen (Ausgang) gehen mit den lokalen Daten verloren: vorher einmal abgleichen, den Rest nennen
+    if (ref.read(syncProvider).offeneAenderungen > 0) {
+      try {
+        await ref.read(syncProvider.notifier).synchronisieren(manuell: true);
+      } on Object {
+        // der Rest wird unten genannt
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      if (!mounted) return;
+    }
+    final offen = ref.read(syncProvider).offeneAenderungen;
     final ja = await wortBestaetigen(
       context,
       titel: 'Gerät abgeben?',
@@ -145,6 +157,9 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           'Dein Schlüssel und alle lokalen Daten werden von diesem Gerät gelöscht, und du wirst abgemeldet. Dein Konto, deine Chats auf dem Server und deine Sicherung bleiben. '
           'Deinen Verlauf bekommst du danach nur mit deiner Sicherung oder von einem anderen Gerät mit deinem Schlüssel wieder.',
       haken: [
+        if (offen > 0)
+          'Ich weiß: ${offen == 1 ? '1 noch nicht gesendete Änderung (z. B. eine Nachricht) geht' : '$offen noch nicht gesendete Änderungen (z. B. Nachrichten) gehen'} verloren. '
+              'Die Synchronisierung eben hat sie nicht übertragen.',
         'Ich weiß: Ohne meine Sicherung (Wiederherstellungsschlüssel oder Passwort der Passwort-Sicherung) kommt mein Verlauf nicht zurück.',
         if (n > 0)
           n == 1
@@ -281,6 +296,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             'Dein Schlüssel liegt auf einem anderen Gerät. Verbinde dieses Gerät per QR-Code oder Code von dort, oder mit deinem Wiederherstellungsschlüssel.',
             style: TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
           ),
+          if (s.vertrauenDefekt && s.meldung != null) ...[const SizedBox(height: 12), MeldungsBox(s.meldung!)],
           const SizedBox(height: 12),
           HauptKnopf(text: 'Mit anderem Gerät verbinden', icon: Icons.qr_code_scanner, onPressed: laeuft ? null : () => _oeffne(const GeraetVerbindenScreen())),
           const SizedBox(height: 8),
@@ -296,6 +312,10 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           if (s.pwSicherungVerfuegbar) ...[
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Mit Passwort verbinden', icon: Icons.password, onPressed: laeuft ? null : () => _oeffne(const PwVerbindenScreen())),
+          ],
+          if (s.vertrauenDefekt) ...[
+            const SizedBox(height: 8),
+            ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen),
           ],
           // bewusst KEIN "Neuen Schlüssel erzeugen" auf dieser Seite: wer sein Gerät nur nicht verbunden hat, soll verbinden, nicht ersetzen
           ..._zusatz(s),

@@ -615,6 +615,9 @@ void main() {
       await tippe(tester, find.byTooltip('Aktionen für Ben'));
       await tippeText(tester, 'Entfernen');
       expect(find.text('Mitglied entfernen?'), findsOneWidget);
+      // Lücke L-4: die Rückfrage sagt ehrlich, was endgültig verloren geht
+      expect(find.textContaining('Schlüssel, ihre Sicherungen und ihr Schlüsselarchiv werden auf dem Server gelöscht'), findsOneWidget);
+      expect(find.textContaining('lassen sie sich nicht mehr prüfen'), findsOneWidget);
       await tippe(tester, find.widgetWithText(TextButton, 'Entfernen'));
       expect(server.anfragen('DELETE /members/$fixIdKind'), hasLength(1));
     });
