@@ -85,7 +85,9 @@ export type AuditEvent =
   /** Betreiber schaltet den Wartungsmodus (`detail.from`/`to`, optional `until`; `via: 'cli'` beim Notausgang auf dem Server). */
   | 'operator_maintenance_set'
   /** Betreiber setzt oder löscht den Familienhinweis (`detail.had`/`has`, Länge und Ablauf, nie der Text). */
-  | 'operator_notice_set';
+  | 'operator_notice_set'
+  /** Eltern/Admin fordern eine Prüfung des Abfuhrkalenders an („Jetzt prüfen“); der Dienst lx-fampad-waste holt sie ab. */
+  | 'waste_check_requested';
 
 export interface AuditEntry {
   event: AuditEvent;

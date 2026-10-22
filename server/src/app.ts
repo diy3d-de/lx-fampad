@@ -22,6 +22,8 @@ import { UsageCounters } from './operator/metrics.js';
 import { OperatorMonitor } from './operator/monitor.js';
 import type { Probes } from './operator/probes.js';
 import { WeatherService } from './weather/service.js';
+import { registerWasteRoutes } from './routes/waste.js';
+import { WasteService } from './waste/service.js';
 import { registerSyncRoutes } from './routes/sync.js';
 import { registerSystemRoutes } from './routes/system.js';
 import { dbDirectory } from './location/directory.js';
@@ -212,6 +214,8 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('weather', weather);
     app.addHook('onClose', async () => weather.close());
     registerWeatherRoutes(app, authCore, weather);
+    // Abfuhrtermine: der API-Prozess ruft nie ab (nur lesen und Prüfung anfordern); der Abruf läuft in cli/waste-poller.ts
+    registerWasteRoutes(app, config, authCore, new WasteService({ db, config, log: app.log, now: authCore.ctx.now }));
     // Betreiber-Warnungen: der Takt startet in server.ts (nicht in Tests), der Prüfer lässt sich dort von Hand anstoßen
     // Zähler für Nutzung und Verlauf (nur Zahlen): Abgleich-Anfragen, Serverfehler im Abgleich (5xx außer der Wartung 503), Antworten mit 429
     const usageCounters = new UsageCounters();

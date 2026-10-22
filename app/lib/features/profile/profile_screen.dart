@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/muell/muell_state.dart';
 import '../../data/push/push_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/crypto/e2ee_state.dart';
@@ -19,6 +20,7 @@ import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../betrieb/betrieb_screen.dart';
+import '../muell/muell_screen.dart';
 import 'abmelden_pruefung.dart';
 import 'absicherung_screen.dart';
 import 'devices_screen.dart';
@@ -291,6 +293,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        const _MuellZeile(),
         const _WetterZeile(),
         // Startbildschirm-Widget gibt es nur in der Android-App
         if (!kIsWeb) EinstellungsZeile(icon: Icons.widgets_outlined, titel: 'Widget „Heute“', untertitel: 'startbildschirm: termine, aufgaben, liste', onTap: () => _oeffne(const HeuteWidgetScreen())),
@@ -345,6 +348,23 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           label: const Text('Überall abmelden'),
         ),
       ],
+    );
+  }
+}
+
+/// Zeile "Müll" (Abfuhrtermine): öffnet die Müll-Seite, auch wenn die Kachel der Startseite fehlt; nur wenn der Server die Abfuhrtermine eingeschaltet hat.
+/// Im Desktop-Layout steht der Bereich in der Seitenleiste, dort führt die Zeile ebenfalls auf die Seite.
+class _MuellZeile extends ConsumerWidget {
+  const _MuellZeile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (!ref.watch(muellProvider.select((m) => m.verfuegbar))) return const SizedBox.shrink();
+    return EinstellungsZeile(
+      icon: Icons.delete_outline,
+      titel: 'Müll',
+      untertitel: 'abfuhrtermine und erinnerung',
+      onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellScreen()))),
     );
   }
 }

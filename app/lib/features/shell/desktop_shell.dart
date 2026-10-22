@@ -10,6 +10,7 @@ import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
+import '../../data/muell/muell_state.dart';
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
@@ -314,6 +315,8 @@ class _Seitenleiste extends ConsumerWidget {
     // Wetter nur, wenn auch die Kachel der Startseite sichtbar ist (oder der Bereich gerade offen ist, damit er beim Ausschalten nicht unter dir verschwindet)
     final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar)) || tab == kWetterTab;
     final betreiber = ref.watch(authProvider.select((s) => s.istBetreiber));
+    // Müll nur, wenn der Server die Abfuhrtermine eingeschaltet hat (oder der Bereich gerade offen ist)
+    final muell = ref.watch(muellProvider.select((m) => m.verfuegbar)) || tab == kMuellTab;
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -378,7 +381,7 @@ class _Seitenleiste extends ConsumerWidget {
                 child: ListView(
                   children: [
                     for (var i = 0; i < kDesktopTabs.length; i++)
-                      if (i != kWetterTab || wetter)
+                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell))
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,

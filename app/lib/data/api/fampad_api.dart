@@ -225,6 +225,16 @@ class FampadApi {
   /// Rohe Antwort (die App legt sie für den Offline-Stand unverändert ab).
   Future<Json> wetterRoh() => client.get('/weather');
 
+  // ----------------------------------------------------------- Müll (Abfuhrtermine)
+
+  /// Rohe Antwort von `GET /waste` (Offline-Stand unverändert in `sync_meta`); 404 = der Server hat die Abfuhrtermine nicht eingeschaltet.
+  Future<Json> muellRoh() => client.get('/waste');
+
+  /// "Jetzt nach neuer Datei suchen" (nur Eltern/Admins): setzt die Anforderung; der Abruf-Dienst des Servers holt sie im nächsten Takt ab (429 bei zu häufig).
+  Future<void> muellPruefenAnfordern() async {
+    await client.post('/waste/check');
+  }
+
   // ----------------------------------------------------------- Betrieb (nur Betreiber, fast nur lesend)
 
   /// [frisch] umgeht den kurzen Cache des Servers (der begrenzt das selbst auf höchstens eine Messung je 5 Sekunden).

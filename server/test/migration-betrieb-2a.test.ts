@@ -55,6 +55,7 @@ describe('Migration 0021 (Betreiber Paket 2a) additiv auf Stand 0020', () => {
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
       const meine = journal.entries.find((e) => e.tag.startsWith('0021_'));
       if (!meine) throw new Error('Journal ohne 0021');
+      await db.execute(sql`drop table if exists waste_events, waste_years, waste_state`); // Migration 0027 (Abfuhrtermine) liegt darüber und wird beim erneuten Migrieren wieder angelegt
       await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at >= ${meine.when}`);
 
       await migrateLite(db as never, { migrationsFolder });

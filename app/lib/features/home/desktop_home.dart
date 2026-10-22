@@ -27,6 +27,8 @@ import '../tasks/aufgaben_anzeige.dart';
 import '../shell/shell_tab.dart';
 import '../standort/standort_start_karte.dart';
 import '../wetter/wetter_karte.dart';
+import '../muell/muell_karte.dart';
+import '../../data/muell/muell_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../update/update_banner.dart';
@@ -168,6 +170,7 @@ class _Raster extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final wetter = ref.watch(wetterProvider).kachelSichtbar;
+    final muell = ref.watch(muellProvider.select((m) => m.hatTermine));
     final skala = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
     return LayoutBuilder(
       builder: (context, c) {
@@ -184,6 +187,7 @@ class _Raster extends ConsumerWidget {
             const _AufgabenKarte(),
             const _FamilieKarte(),
             const _StandortKarte(),
+            if (muell) const _MuellKarte(),
             if (wetter) const _WetterKarte(),
           ],
         );
@@ -227,7 +231,10 @@ class _Karte extends StatelessWidget {
   final String semantik;
   final VoidCallback? onTap;
   final Widget child;
-  const _Karte({required this.label, required this.semantik, required this.child, this.zaehler, this.onTap});
+
+  /// Hervorgehoben (Akzentrand), z. B. die Müll-Karte am Tag vor der Abholung.
+  final bool hervorgehoben;
+  const _Karte({required this.label, required this.semantik, required this.child, this.zaehler, this.onTap, this.hervorgehoben = false});
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -238,6 +245,7 @@ class _Karte extends StatelessWidget {
     label: semantik,
     excludeSemantics: onTap != null,
     child: LxCard(
+      gewaehlt: hervorgehoben,
       onTap: onTap,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -326,6 +334,24 @@ class _ChatKarte extends ConsumerWidget {
                   ),
               ],
             ),
+    );
+  }
+}
+
+/// Müll: Datum der nächsten Abholung und Symbole der Arten; am Tag vor der Abholung hervorgehoben. Tippen öffnet die Müll-Seite.
+class _MuellKarte extends ConsumerWidget {
+  const _MuellKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final z = ref.watch(muellProvider);
+    final d = MuellKachelDaten.aus(z, muellJetzt(ref));
+    return _Karte(
+      label: d.hervorgehoben ? '// müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : '// müll',
+      semantik: muellKachelSemantik(d),
+      hervorgehoben: d.hervorgehoben,
+      onTap: () => muellOeffnen(context),
+      child: MuellKachelInhalt(daten: d),
     );
   }
 }

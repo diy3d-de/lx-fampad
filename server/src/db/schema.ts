@@ -1572,3 +1572,53 @@ export const weatherSamples = pgTable(
     windAngle: doublePrecision('wind_angle'),
   },
 );
+
+/** Abfallarten (feste Liste; unbekannte Namen der Quelle landen unter `sonst`). Dieselben Codes verwendet die App. */
+export const WASTE_KINDS = ['rest', 'bio', 'gelb', 'papier', 'gruen', 'sonder', 'sperr', 'baum', 'sonst'] as const;
+export type WasteKind = (typeof WASTE_KINDS)[number];
+
+/**
+ * Abfuhrtermine: nur der Abfuhr-Dienst (cli/waste-poller.ts) schreibt, `GET /waste` liest für alle Mitglieder der Familie.
+ * Gespeichert werden nur Tag und Art (nie Straße, UID, Beschreibung oder Ort der Quelle). Kein Sync, keine Revisionen.
+ */
+export const wasteEvents = pgTable(
+  'waste_events',
+  {
+    familyId: familyRef(),
+    day: date('day', { mode: 'string' }).notNull(),
+    kind: text('kind').notNull(),
+  },
+  (t) => [
+    primaryKey({ columns: [t.familyId, t.day, t.kind] }),
+    check('waste_events_kind_ck', sql`${t.kind} in ('rest', 'bio', 'gelb', 'papier', 'gruen', 'sonder', 'sperr', 'baum', 'sonst')`),
+  ],
+);
+
+/** Stand je Kalenderjahr: geladen, noch nicht verfügbar (leere oder ungültige Antwort) oder Abruffehler; nur feste Fehlercodes, nie Texte der Quelle. */
+export const wasteYears = pgTable(
+  'waste_years',
+  {
+    familyId: familyRef(),
+    year: integer('year').notNull(),
+    status: text('status').notNull(),
+    eventCount: integer('event_count').notNull().default(0),
+    /** Erstmals geladen (bleibt bei späteren Aktualisierungen). */
+    loadedAt: timestamp('loaded_at', { withTimezone: true }),
+    lastCheckedAt: timestamp('last_checked_at', { withTimezone: true }),
+    /** Kurzer Code des letzten fehlgeschlagenen Abrufs (z. B. `http_403`, `network`, `empty`). */
+    errorCode: text('error_code'),
+  },
+  (t) => [
+    primaryKey({ columns: [t.familyId, t.year] }),
+    check('waste_years_status_ck', sql`${t.status} in ('loaded', 'unavailable', 'error')`),
+    check('waste_years_year_ck', sql`${t.year} between 2000 and 2200`),
+  ],
+);
+
+/** Zustand je Familie: „Jetzt prüfen“ (Admin) setzt `check_requested_at`, der Abfuhr-Dienst holt es ab; `last_request_at` begrenzt die Häufigkeit. */
+export const wasteState = pgTable('waste_state', {
+  familyId: familyRef().primaryKey(),
+  checkRequestedAt: timestamp('check_requested_at', { withTimezone: true }),
+  lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
+  lastCheckAt: timestamp('last_check_at', { withTimezone: true }),
+});

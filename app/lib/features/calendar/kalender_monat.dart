@@ -7,6 +7,8 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/calendar/monat_layout.dart';
+import '../../data/muell/muell_modelle.dart';
+import 'muell_kalender.dart';
 
 /// Mindesthöhe einer Wochenzeile (darunter scrollt das Raster): Tageszeile plus zwei Spuren.
 double _tageszeileHoehe(BuildContext context, bool breit) {
@@ -36,7 +38,10 @@ class MonatsRaster extends StatelessWidget {
   final bool breit;
   final List<BalkenQuelle> quellen;
   final void Function(DateTime tag) onTag;
-  const MonatsRaster({super.key, required this.monat, required this.heute, required this.gewaehlt, this.gewaehltMarkieren = false, this.breit = false, required this.quellen, required this.onTag});
+
+  /// Abfuhrtermine (nur Anzeige, nur mit eingeschaltetem Schalter): je Tag die Arten; als schmaler Streifen am unteren Rand der Zelle.
+  final Map<DateTime, List<MuellArt>> muell;
+  const MonatsRaster({super.key, required this.monat, required this.heute, required this.gewaehlt, this.gewaehltMarkieren = false, this.breit = false, required this.quellen, required this.onTag, this.muell = const {}});
 
   @override
   Widget build(BuildContext context) {
@@ -95,6 +100,7 @@ class MonatsRaster extends StatelessWidget {
                           kwBreite: kwBreite,
                           quellen: quellen,
                           proTag: proTag,
+                          muell: muell,
                           onTag: onTag,
                         ),
                       ),
@@ -119,6 +125,7 @@ class _WochenZeile extends StatelessWidget {
   final double kwBreite;
   final List<BalkenQuelle> quellen;
   final Map<DateTime, List<BalkenQuelle>> proTag;
+  final Map<DateTime, List<MuellArt>> muell;
   final void Function(DateTime tag) onTag;
   const _WochenZeile({
     required this.montag,
@@ -130,6 +137,7 @@ class _WochenZeile extends StatelessWidget {
     required this.kwBreite,
     required this.quellen,
     required this.proTag,
+    required this.muell,
     required this.onTag,
   });
 
@@ -235,10 +243,12 @@ class _WochenZeile extends StatelessWidget {
     final hatFeiertag = kompakt && eintraege.any((q) => q.art == BalkenArt.feiertag);
     final termine = eintraege.where((q) => q.art == BalkenArt.termin).toList();
     final hinweise = eintraege.where((q) => q.art != BalkenArt.termin).map((q) => q.art == BalkenArt.feiertag ? 'Feiertag ${q.text}' : 'Schulferien ${q.text}');
+    final abfuhr = muell[tag] ?? const <MuellArt>[];
     final label = [
       _tagFormat.format(tag),
       if (istHeute) 'heute',
       ...hinweise,
+      if (abfuhr.isNotEmpty) muellKalenderText(abfuhr),
       if (termine.isEmpty) 'keine Termine' else '${termine.length == 1 ? '1 Termin' : '${termine.length} Termine'}: ${termine.take(3).map((q) => q.text).join(', ')}${termine.length > 3 ? ' und weitere' : ''}',
     ].join(', ');
     final zahlStil = TextStyle(
@@ -267,6 +277,9 @@ class _WochenZeile extends StatelessWidget {
             children: [
               // Feiertag (bei wenig Platz): Streifen oben, ohne den Inhalt der Zelle zu verschieben
               if (hatFeiertag) const Positioned(left: 0, right: 0, top: 0, height: 3, child: ColoredBox(color: kFeiertag)),
+              // Abfuhr (nur Anzeige): schmaler Streifen unten in der Zelle, auf dem Desktop dazu kleine Symbole oben rechts; verdrängt keine Termine
+              if (abfuhr.isNotEmpty) Positioned(left: 0, right: 0, bottom: 0, child: MuellStreifen(key: ValueKey('muell-streifen-${tag.toIso8601String().substring(0, 10)}'), arten: abfuhr)),
+              if (abfuhr.isNotEmpty && breit) Positioned(right: 4, top: 6, child: MuellMiniSymbole(arten: abfuhr)),
               Positioned.fill(
                 child: Align(
                   alignment: breit ? Alignment.topLeft : Alignment.topCenter,

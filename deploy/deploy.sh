@@ -115,6 +115,19 @@ if [ "${DEPLOY_OHNE_PULL:-0}" != 1 ] && systemctl cat lx-fampad-weather.service 
   fi
 fi
 
+# Abfuhrtermine-Abruf (eigener Dienst, deploy/README.md Abschnitt 13): wie der Wetter-Dienst nur neu starten, wenn er läuft oder eingeschaltet ist
+if [ "${DEPLOY_OHNE_PULL:-0}" != 1 ] && systemctl cat lx-fampad-waste.service >/dev/null 2>&1; then
+  if systemctl is-active --quiet lx-fampad-waste || systemctl is-enabled --quiet lx-fampad-waste; then
+    echo "==> restart lx-fampad-waste"
+    sudo -n systemctl restart lx-fampad-waste || echo "==> WARNUNG: lx-fampad-waste ließ sich nicht neu starten (sudoers-Regel fehlt? README Abschnitt 13). Manuell: sudo systemctl restart lx-fampad-waste" >&2
+  else
+    echo "==> lx-fampad-waste läuft nicht und ist nicht eingeschaltet: wird nicht gestartet"
+  fi
+  if ! cmp -s deploy/lx-fampad-waste.service /etc/systemd/system/lx-fampad-waste.service; then
+    echo "==> Hinweis: deploy/lx-fampad-waste.service weicht von /etc/systemd/system ab. Übernehmen mit: sudo bash ~/lx-fampad/deploy/einrichtung-muell.sh dienst"
+  fi
+fi
+
 # Caddy-Konfiguration wird nicht automatisch übernommen (braucht sudo mit Passwort)
 if ! cmp -s deploy/Caddyfile /etc/caddy/conf.d/fampad.caddy; then
   echo "==> Hinweis: deploy/Caddyfile weicht von /etc/caddy/conf.d/fampad.caddy ab. Übernehmen mit:"

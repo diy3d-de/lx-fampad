@@ -11,6 +11,7 @@ import '../../data/api/models.dart';
 import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/monat_layout.dart';
 import '../../data/lists/members.dart';
+import '../../data/muell/muell_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart' show ProfilButton;
@@ -353,9 +354,10 @@ class _AnzeigeMenue extends ConsumerWidget {
       (wert: 'feiertage', text: 'Feiertage', an: ref.watch(feiertageAnzeigenProvider)),
       (wert: 'ferien', text: 'Schulferien', an: ref.watch(ferienAnzeigenProvider)),
       (wert: 'geburtstage', text: 'Geburtstage', an: ref.watch(geburtstageAnzeigenProvider)),
+      if (ref.watch(muellProvider.select((z) => z.hatTermine))) (wert: 'muell', text: 'Müll', an: ref.watch(muellProvider.select((z) => z.einst.imKalender))),
     ];
     return PopupMenuButton<String>(
-      tooltip: 'Anzeige: Feiertage, Schulferien, Geburtstage',
+      tooltip: 'Anzeige: Feiertage, Schulferien, Geburtstage, Müll',
       onSelected: (w) {
         switch (w) {
           case 'feiertage':
@@ -364,6 +366,8 @@ class _AnzeigeMenue extends ConsumerWidget {
             ref.read(ferienAnzeigenProvider.notifier).setzen(!eintraege[1].an);
           case 'geburtstage':
             ref.read(geburtstageAnzeigenProvider.notifier).setzen(!eintraege[2].an);
+          case 'muell':
+            ref.read(muellProvider.notifier).kalenderSetzen(!eintraege[3].an);
         }
       },
       itemBuilder: (_) => [for (final e in eintraege) CheckedPopupMenuItem(value: e.wert, checked: e.an, child: Text(e.text))],
@@ -458,6 +462,7 @@ class _FilterBlatt extends ConsumerWidget {
             _SchalterZeile(text: 'Feiertage', farbe: kFeiertag, provider: feiertageAnzeigenProvider),
             _SchalterZeile(text: 'Schulferien', farbe: kFerien, provider: ferienAnzeigenProvider),
             _SchalterZeile(text: 'Geburtstage', farbe: kGeburtstag, provider: geburtstageAnzeigenProvider),
+            const _MuellSchalterZeile(),
             const Padding(
               padding: EdgeInsets.only(top: 4),
               child: Text('Bei wenig Platz im Raster: getönte Zelle = Schulferien, Streifen oben = Feiertag.', style: TextStyle(fontSize: 12, color: kTextMuted)),
@@ -466,6 +471,30 @@ class _FilterBlatt extends ConsumerWidget {
             FilledButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Fertig')),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Schalter "Müll" (Abfuhrtermine): nur Anzeige, nur auf diesem Gerät, Standard aus; für alle Mitglieder (auch Kinder). Nur sichtbar, wenn der Server
+/// Abfuhrtermine liefert. Das "Zurücksetzen" des Blatts lässt ihn unberührt (er ist von sich aus aus).
+class _MuellSchalterZeile extends ConsumerWidget {
+  const _MuellSchalterZeile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final z = ref.watch(muellProvider);
+    if (!z.hatTermine) return const SizedBox.shrink();
+    return SwitchListTile(
+      contentPadding: EdgeInsets.zero,
+      value: z.einst.imKalender,
+      onChanged: (v) => ref.read(muellProvider.notifier).kalenderSetzen(v),
+      title: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: const BoxDecoration(shape: BoxShape.circle, color: kMuellRest)),
+          const SizedBox(width: 12),
+          const Expanded(child: Text('Müll')),
+        ],
       ),
     );
   }

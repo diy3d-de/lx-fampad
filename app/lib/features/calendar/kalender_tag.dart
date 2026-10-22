@@ -13,10 +13,12 @@ import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/monat_layout.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/lists/members.dart';
+import '../../data/muell/muell_state.dart';
 import '../../ui/widgets.dart';
 import 'calendar_anzeige.dart';
 import 'calendar_state.dart';
 import 'kalender_widgets.dart';
+import 'muell_kalender.dart';
 
 /// Inhalt eines Tages: Kopf (Datum, Kalenderwoche), Hinweise (Feiertag, Ferien), Termine, "Termin anlegen".
 class TagesInhalt extends ConsumerWidget {
@@ -79,6 +81,7 @@ class TagesInhalt extends ConsumerWidget {
         ),
         const SizedBox(height: 14),
         TagesHinweisZeile(hinweise: hinweise),
+        MuellTagesZeile(arten: ref.watch(muellKalenderTageProvider)[tag] ?? const []),
         if (liste.isEmpty)
           const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('Keine Termine – frei!', style: TextStyle(color: kTextMuted)))
         else
