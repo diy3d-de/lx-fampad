@@ -246,6 +246,8 @@ sudo -u postgres psql -d lx_fampad -c "GRANT USAGE ON SCHEMA drizzle TO lx_fampa
 
 ### 6. Caddy
 
+**Warnung ntfy:** `ntfy.familie.lx-labs.dev` gehört **nicht** in `deploy/Caddyfile` bzw. `fampad.caddy` (diese Datei ist byte-gleich zur Serverdatei, `deploy.sh` vergleicht sie). Der Site-Block liegt eigenständig in `deploy/ntfy/ntfy.caddy` und wird nur von `deploy/einrichtung-ntfy.sh` nach `/etc/caddy/conf.d/ntfy.caddy` installiert; sonst gäbe es beim Caddy-Start eine doppelte Site-Definition. `deploy.sh` und `einrichtung-2.sh` fassen `ntfy.caddy` nie an (Reverse-Proxy auf `127.0.0.1:2586`, kein `encode`, wegen Streaming).
+
 Festgelegter Pfad: die Konfiguration liegt in **`/etc/caddy/conf.d/fampad.caddy`**; das Haupt-Caddyfile (`/etc/caddy/Caddyfile`, gehört dem lx-labs-Deploy) bindet sie mit der Zeile `import /etc/caddy/conf.d/*.caddy` ein. Reihenfolge zum Schutz von lx-labs.dev: erst sichern, dann Zeile anfügen, prüfen, bei Fehler sofort zurückkopieren, erst danach neu laden.
 
 **Vorab prüfen:** Das Haupt-Caddyfile von lx-labs darf kein globales `log` setzen (kein `log` im Optionsblock `{ … }` ganz oben und keines außerhalb eines Site-Blocks). Sonst entstünden auch für lx-fampad Zugriffslogs mit IP-Adressen, die der Datenschutz-Entwurf ausschließt. Prüfen: `grep -n '^[[:space:]]*log' /etc/caddy/Caddyfile`; ein `log` nur im Site-Block von lx-labs.dev betrifft die Familie nicht.
