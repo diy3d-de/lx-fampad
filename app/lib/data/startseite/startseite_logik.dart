@@ -168,6 +168,20 @@ class StartAnordnung {
     geladen: true,
   );
 
+  /// Standardreihenfolge und nichts ausgeblendet.
+  bool istStandard(StartLayout l) => ausgeblendet.isEmpty && _listeGleich(reihenfolge, l.standard);
+
   StartAnordnung kopie({List<String>? reihenfolge, Set<String>? ausgeblendet, bool? geladen}) =>
       StartAnordnung(reihenfolge: reihenfolge ?? this.reihenfolge, ausgeblendet: ausgeblendet ?? this.ausgeblendet, geladen: geladen ?? this.geladen);
 }
+
+bool _listeGleich(List<String> a, List<String> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (a[i] != b[i]) return false;
+  }
+  return true;
+}
+
+/// Gleiche Reihenfolge und gleiche ausgeblendete Kacheln (für "nichts geändert, nichts schreiben").
+bool gleicheAnordnung(StartAnordnung a, StartAnordnung b) => _listeGleich(a.reihenfolge, b.reihenfolge) && _gleich(a.ausgeblendet, b.ausgeblendet);

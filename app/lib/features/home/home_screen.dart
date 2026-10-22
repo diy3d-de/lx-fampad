@@ -29,6 +29,7 @@ import '../standort/standort_start_karte.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_karte.dart';
 import 'startseite_verfuegbar.dart';
+import 'startseite_anpassen_zeile.dart';
 import 'startseite_widgets.dart';
 
 /// Vorname für die Begrüßung: erstes Wort des Anzeigenamens, sehr lange Namen werden gekürzt; null bei leerem Namen.
@@ -91,7 +92,7 @@ class HomeScreen extends ConsumerWidget {
               if (ziel == alt) return;
               final liste = List.of(ids);
               liste.insert(ziel, liste.removeAt(alt));
-              ref.read(startseiteMobilProvider.notifier).teilmengeOrdnen(liste);
+              unawaited(ref.read(startseiteMobilProvider.notifier).teilmengeOrdnen(liste));
             },
           ),
         ),

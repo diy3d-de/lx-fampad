@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/wetter/wetter_state.dart';
-import '../calendar/geburtstage_karte.dart' show geburtstageVorhandenProvider;
+import '../calendar/geburtstage_karte.dart' show geburtstageAnstehendProvider;
 
 KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true}) => KachelVerfuegbarkeit(
   angeboten: {
@@ -20,7 +20,7 @@ final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     StartLayout.mobil,
     muell: ref.watch(muellProvider.select((m) => m.hatTermine)),
     wetter: ref.watch(wetterProvider.select((w) => w.kachelSichtbar)),
-    geburtstage: ref.watch(geburtstageVorhandenProvider),
+    geburtstage: ref.watch(geburtstageAnstehendProvider.select((l) => l.isNotEmpty)),
   ),
 );
 

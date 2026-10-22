@@ -1,11 +1,10 @@
 // Gemeinsame Bausteine zum Anpassen der Startseite (Handy-Liste und Desktop-Raster): die "gehobene" Kachel beim Ziehen, die gestrichelte
-// Lücke der Zielstelle und die Zeile "Startseite anpassen" am Ende der Startseite. Farben nur über Konstanten, keine weichen Schatten.
+// Lücke der Zielstelle. Farben nur über Konstanten, keine weichen Schatten.
 import 'dart:ui' show PathMetric;
 
 import 'package:flutter/material.dart';
 
 import '../../constants.dart';
-import 'startseite_anpassen_screen.dart';
 
 /// Kachel, die gerade gezogen wird: leicht größer, Akzentrand und hellere Fläche, kein Schatten.
 class StartseiteGehoben extends StatelessWidget {
@@ -77,20 +76,4 @@ class _GestrichelterRand extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// Zeile am Ende der Startseite: öffnet "Startseite anpassen" (Kopfzeile bleibt bei allen Tabs gleich, daher kein Knopf dort).
-class StartseiteAnpassenZeile extends StatelessWidget {
-  const StartseiteAnpassenZeile({super.key});
-
-  @override
-  Widget build(BuildContext context) => Align(
-    alignment: Alignment.centerLeft,
-    child: TextButton.icon(
-      style: TextButton.styleFrom(minimumSize: const Size(44, 44), foregroundColor: kTextMuted, tapTargetSize: MaterialTapTargetSize.padded),
-      onPressed: () => Navigator.of(context).push<void>(StartseiteAnpassenScreen.route()),
-      icon: const Icon(Icons.tune, size: 18),
-      label: const Text('Startseite anpassen', style: TextStyle(fontFamily: kFontMono, fontSize: 12)),
-    ),
-  );
 }

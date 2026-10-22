@@ -1,7 +1,10 @@
 // Startseite im Desktop-Layout: Kopfzeile (Datum, Begrüßung, Suche, Benachrichtigungen, "+ Neu") und Karten-Raster.
 // Die Kacheln lassen sich umsortieren und ausblenden (lokal je Gerät, siehe startseite_anpassen_screen.dart).
 // Echte Daten gibt es für Termine, Aufgaben, Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard, KeyDownEvent, KeyEvent, LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
@@ -29,6 +32,7 @@ import '../shell/shell_tab.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/startseite/startseite_state.dart';
 import 'startseite_verfuegbar.dart';
+import 'startseite_anpassen_zeile.dart';
 import 'startseite_widgets.dart';
 import '../standort/standort_start_karte.dart';
 import '../wetter/wetter_karte.dart';
@@ -185,6 +189,10 @@ class _RasterState extends ConsumerState<_Raster> {
   /// Gerade gezogene Kachel und ihr Zielplatz in der Anzeige (null = keine Ziehgeste).
   String? _zieht;
   int? _ziel;
+  int _urspruenglich = 0;
+
+  /// Esc während des Ziehens: nichts ablegen (die Kachel springt zurück, beim Loslassen ändert sich nichts).
+  bool _abgebrochen = false;
   EdgeDraggingAutoScroller? _scroller;
 
   /// Zeiger der Ziehgeste (global) und Maße des Rasters der letzten Zeichnung: beim Mitscrollen am Rand wandert die Kachel unter dem
@@ -213,10 +221,23 @@ class _RasterState extends ConsumerState<_Raster> {
     _scroller?.stopAutoScroll();
     final scrollable = Scrollable.maybeOf(context);
     _scroller = scrollable == null ? null : EdgeDraggingAutoScroller(scrollable, velocityScalar: 7, onScrollViewScrolled: _beiScroll);
+    HardwareKeyboard.instance.removeHandler(_taste);
+    HardwareKeyboard.instance.addHandler(_taste);
     setState(() {
       _zieht = id;
-      _ziel = ids.indexOf(id);
+      _abgebrochen = false;
+      _urspruenglich = ids.indexOf(id);
+      _ziel = _urspruenglich;
     });
+  }
+
+  bool _taste(KeyEvent e) {
+    if (_zieht == null || e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.escape) return false;
+    setState(() {
+      _abgebrochen = true;
+      _ziel = _urspruenglich;
+    });
+    return true;
   }
 
   void _ueber(String id, int platz) {
@@ -238,23 +259,30 @@ class _RasterState extends ConsumerState<_Raster> {
     if (platz != _ziel) setState(() => _ziel = platz);
   }
 
-  /// Ablegen (auch, wenn die Maustaste neben einer Kachel losgelassen wird): die Vorschau wird zur neuen Reihenfolge.
+  /// Ablegen: die Vorschau wird zur neuen Reihenfolge. Lässt man die Maustaste außerhalb einer Kachel los (auch zwischen den Kacheln oder
+  /// außerhalb des Rasters), gilt die zuletzt angezeigte Zielstelle; Esc bricht ab. Ändert sich nichts, wird nichts gespeichert.
   void _ablegen() {
     if (_zieht == null) return;
+    if (!_abgebrochen) unawaited(ref.read(startseiteDesktopProvider.notifier).teilmengeOrdnen(_anzeige(_sichtbar())));
+    _ziehenBeenden();
+  }
+
+  /// Ziehzustand zurücksetzen (nach dem Ablegen, bei Esc-Abbruch oder wenn die gezogene Kachel verschwindet).
+  void _ziehenBeenden() {
     _scroller?.stopAutoScroll();
-    final neu = _anzeige(_sichtbar());
-    ref.read(startseiteDesktopProvider.notifier).teilmengeOrdnen(neu);
-    if (mounted) {
-      setState(() {
-        _zieht = null;
-        _ziel = null;
-      });
-    }
+    HardwareKeyboard.instance.removeHandler(_taste);
+    if (!mounted) return;
+    setState(() {
+      _zieht = null;
+      _ziel = null;
+      _abgebrochen = false;
+    });
   }
 
   @override
   void dispose() {
     _scroller?.stopAutoScroll();
+    HardwareKeyboard.instance.removeHandler(_taste);
     super.dispose();
   }
 
@@ -264,7 +292,10 @@ class _RasterState extends ConsumerState<_Raster> {
     final verf = ref.watch(desktopVerfuegbarProvider);
     // erst zeichnen, wenn die gemerkte Reihenfolge gelesen ist (sonst springen die Kacheln)
     if (!a.geladen) return const SizedBox.shrink();
-    final anzeige = _anzeige(sichtbareKacheln(reihenfolge: a.reihenfolge, verfuegbar: verf, ausgeblendet: a.ausgeblendet));
+    final sichtbar = sichtbareKacheln(reihenfolge: a.reihenfolge, verfuegbar: verf, ausgeblendet: a.ausgeblendet);
+    // die gezogene Kachel ist verschwunden (ausgeblendet, nicht mehr verfügbar): Ziehzustand aufgeben, sonst bliebe eine Lücke ohne Kachel
+    if (_zieht != null && !sichtbar.contains(_zieht)) WidgetsBinding.instance.addPostFrameCallback((_) => _ziehenBeenden());
+    final anzeige = _anzeige(sichtbar);
     final skala = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
     return LayoutBuilder(
       builder: (context, c) {
@@ -285,19 +316,28 @@ class _RasterState extends ConsumerState<_Raster> {
               KeyedSubtree(
                 key: ValueKey(anzeige[i]),
                 child: DragTarget<String>(
-                  onWillAcceptWithDetails: (_) => true,
+                  // nur die zuerst gezogene Kachel zählt (eine zweite Berührung zieht nichts: kein Bild, keine Lücke, kein Ablegen)
+                  onWillAcceptWithDetails: (d) => d.data == _zieht,
                   onMove: (_) => _ueber(anzeige[i], i),
                   onAcceptWithDetails: (_) => _ablegen(),
                   builder: (context, _, _) => LongPressDraggable<String>(
                     data: anzeige[i],
-                    feedback: SizedBox(width: breite, height: hoehe, child: StartseiteGehoben(child: _kachel(anzeige[i]))),
-                    childWhenDragging: const StartseiteLuecke(),
-                    onDragStarted: () => _start(anzeige[i]),
+                    maxSimultaneousDrags: 1,
+                    feedback: _zieht == null || _zieht == anzeige[i]
+                        ? SizedBox(width: breite, height: hoehe, child: StartseiteGehoben(child: _kachel(anzeige[i])))
+                        : const SizedBox.shrink(),
+                    childWhenDragging: _zieht == anzeige[i] ? const StartseiteLuecke() : _kachel(anzeige[i]),
+                    onDragStarted: () {
+                      if (_zieht == null) _start(anzeige[i]);
+                    },
                     onDragUpdate: (d) {
+                      if (_zieht != anzeige[i]) return;
                       _zeiger = Rect.fromCenter(center: d.globalPosition, width: 48, height: 48);
                       _scroller?.startAutoScrollIfNecessary(_zeiger);
                     },
-                    onDragEnd: (_) => _ablegen(),
+                    onDragEnd: (_) {
+                      if (_zieht == anzeige[i]) _ablegen();
+                    },
                     child: _kachel(anzeige[i]),
                   ),
                 ),

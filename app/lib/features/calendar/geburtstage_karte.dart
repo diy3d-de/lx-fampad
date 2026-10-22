@@ -13,11 +13,11 @@ import '../shell/shell_tab.dart';
 import 'calendar_anzeige.dart';
 import 'calendar_state.dart';
 
-/// Steht in den nächsten 60 Tagen ein Geburtstag an? (Die Startseite zeichnet die Kachel nur dann und lässt sie sonst aus der Reihenfolge.)
-final geburtstageVorhandenProvider = Provider.autoDispose<bool>((ref) {
+/// Die Geburtstage der nächsten 60 Tage (Startseite: Karte und Verfügbarkeit der Kachel; ohne Treffer gibt es die Kachel nicht).
+final geburtstageAnstehendProvider = Provider.autoDispose<List<Vorkommen>>((ref) {
   final daten = ref.watch(kalenderDatenProvider);
   final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
-  return nurGeburtstage(anstehende(daten, jetzt)).isNotEmpty;
+  return nurGeburtstage(anstehende(daten, jetzt));
 });
 
 class GeburtstageKarte extends ConsumerWidget {
@@ -25,10 +25,9 @@ class GeburtstageKarte extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final daten = ref.watch(kalenderDatenProvider);
     final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
     final heute = heuteTag(jetzt);
-    final liste = nurGeburtstage(anstehende(daten, jetzt)).take(3).toList();
+    final liste = ref.watch(geburtstageAnstehendProvider).take(3).toList();
     if (liste.isEmpty) return const SizedBox.shrink();
     String tagText(Vorkommen v) {
       final tag = v.ersterTag;

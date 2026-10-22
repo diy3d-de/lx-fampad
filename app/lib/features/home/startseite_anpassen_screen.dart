@@ -1,7 +1,9 @@
 // "Startseite anpassen" (Einstellungen, nur dieses Gerät und dieses Layout): Kacheln der Startseite ordnen und ausblenden, ohne Ziehen auf
 // der Startseite selbst. Je Kachel: Ziehgriff, Pfeile hoch/runter (mindestens 44 px, für Bedienhilfen und kleine Bildschirme) und ein
-// Schalter "anzeigen"; unten "Zurücksetzen" (Standardreihenfolge, alles sichtbar) und "Fertig". Änderungen gelten sofort.
+// Schalter "anzeigen"; unten "Zurücksetzen" (Standardreihenfolge, alles sichtbar; mit Meldung und "Rückgängig", aus, solange schon Standard ist) und "Fertig". Änderungen gelten sofort.
 // Die Warnkarte "Bin ich abgesichert?" steht fest oben und lässt sich weder verschieben noch ausblenden (hier nur als Hinweiszeile).
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -25,7 +27,9 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
     final anordnung = ref.watch(startseiteProvider(l));
     final verf = ref.watch(verfuegbarProvider(l));
     final notifier = ref.read(startseiteProvider(l).notifier);
-    final ids = angeboteneKacheln(reihenfolge: anordnung.reihenfolge, verfuegbar: verf);
+    final geladen = anordnung.geladen;
+    // bis der gespeicherte Stand gelesen ist, gibt es keine Bedienelemente (sonst würde eine Änderung auf den Standard statt auf den gespeicherten Stand wirken)
+    final ids = geladen ? angeboteneKacheln(reihenfolge: anordnung.reihenfolge, verfuegbar: verf) : const <String>[];
     final titel = {for (final k in l.kacheln) k.id: k};
 
     Widget eintrag(String id, int i, {bool flach = false}) => _Eintrag(
@@ -36,9 +40,9 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
       an: !anordnung.ausgeblendet.contains(id),
       leer: verf.leer.contains(id),
       flach: flach,
-      onHoch: i > 0 ? () => notifier.schieben(ids, id, -1) : null,
-      onRunter: i < ids.length - 1 ? () => notifier.schieben(ids, id, 1) : null,
-      onAn: (v) => notifier.anzeigen(id, v),
+      onHoch: i > 0 ? () => unawaited(notifier.schieben(ids, id, -1)) : null,
+      onRunter: i < ids.length - 1 ? () => unawaited(notifier.schieben(ids, id, 1)) : null,
+      onAn: (v) => unawaited(notifier.anzeigen(id, v)),
     );
 
     return Scaffold(
@@ -74,8 +78,8 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
                                 ),
                                 const SizedBox(height: 12),
                                 Text(
-                                  'Ordne die Kacheln deiner ${l.anzeigename} und blende aus, was du nicht brauchst. '
-                                  'Das gilt nur auf diesem Gerät und nur für diese Ansicht. Auf der Startseite selbst kannst du eine Kachel auch gedrückt halten und ziehen.',
+                                  'Ordne die Kacheln der ${l.anzeigename} und blende aus, was du nicht brauchst. '
+                                  'Das gilt nur für die ${l.anzeigename} dieses Geräts. Auf der Startseite selbst kannst du eine Kachel auch gedrückt halten und ziehen.',
                                   style: const TextStyle(fontSize: 13, color: kTextMuted),
                                 ),
                                 const SizedBox(height: 16),
@@ -96,31 +100,12 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
                                 if (ziel == alt) return;
                                 final liste = List.of(ids);
                                 liste.insert(ziel, liste.removeAt(alt));
-                                notifier.teilmengeOrdnen(liste);
+                                unawaited(notifier.teilmengeOrdnen(liste));
                               },
                             ),
                           ),
+                          if (!geladen) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(24), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))),
                           const SliverToBoxAdapter(child: SizedBox(height: 8)),
-                        ],
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        alignment: WrapAlignment.end,
-                        children: [
-                          OutlinedButton(
-                            style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-                            onPressed: notifier.zuruecksetzen,
-                            child: const Text('Zurücksetzen'),
-                          ),
-                          FilledButton(
-                            style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-                            onPressed: () => Navigator.of(context).maybePop(),
-                            child: const Text('Fertig'),
-                          ),
                         ],
                       ),
                     ),
@@ -131,7 +116,54 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
           ),
         ),
       ),
+      // unten, damit die Meldung "Zurückgesetzt" die Knöpfe nicht verdeckt
+      bottomNavigationBar: Material(
+        type: MaterialType.transparency,
+        child: SafeArea(
+          child: Center(
+            heightFactor: 1,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: kMaxContentWidth),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  alignment: WrapAlignment.end,
+                  children: [
+                    OutlinedButton(
+                      style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+                      onPressed: geladen && !anordnung.istStandard(l) ? () => unawaited(_aufStandard(context, notifier)) : null,
+                      child: const Text('Zurücksetzen'),
+                    ),
+                    FilledButton(
+                      style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+                      onPressed: () => Navigator.of(context).maybePop(),
+                      child: const Text('Fertig'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
+  }
+
+  /// Setzt die Ansicht zurück und bietet "Rückgängig" an (kein Dialog: die Änderung ist harmlos und umkehrbar).
+  Future<void> _aufStandard(BuildContext context, StartseiteNotifier notifier) async {
+    final messenger = ScaffoldMessenger.of(context);
+    final alt = await notifier.aufStandardSetzen();
+    if (alt == null) return;
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Zurückgesetzt'),
+          action: SnackBarAction(label: 'Rückgängig', onPressed: () => unawaited(notifier.wiederherstellen(alt))),
+        ),
+      );
   }
 }
 

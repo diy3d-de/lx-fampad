@@ -3,15 +3,19 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction, SemanticsNode;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart' show localDataWiperProvider;
 import 'package:lx_fampad/data/calendar/feiertage.dart' show FeiertageSpeicher, MemoryFeiertageSpeicher, kFeiertageSchluessel;
 import 'package:lx_fampad/data/startseite/startseite_logik.dart';
 import 'package:lx_fampad/data/startseite/startseite_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
-import 'package:lx_fampad/features/home/home_screen.dart';
 import 'package:lx_fampad/features/home/startseite_anpassen_screen.dart';
+import 'package:lx_fampad/features/home/startseite_anpassen_zeile.dart';
+import 'package:lx_fampad/features/home/startseite_verfuegbar.dart';
 import 'package:lx_fampad/features/home/startseite_widgets.dart';
 
 import 'support/fake_server.dart';
@@ -26,9 +30,17 @@ void main() {
   const mAus = 'startseite_ausgeblendet_mobil';
   const dKey = 'startseite_reihenfolge_desktop';
 
-  Future<ProviderContainer> start(WidgetTester tester, {MemoryFeiertageSpeicher? speicher, Size groesse = const Size(360, 800), double skala = 1.0, FeiertageSpeicher? eigener}) async {
+  Future<ProviderContainer> start(
+    WidgetTester tester, {
+    MemoryFeiertageSpeicher? speicher,
+    Size groesse = const Size(360, 800),
+    double skala = 1.0,
+    FeiertageSpeicher? eigener,
+    List<Override> ueberschreibungen = const [],
+  }) async {
     final env = await angemeldeteUmgebung();
     env.speicher = eigener ?? speicher ?? MemoryFeiertageSpeicher('nein');
+    env.extraOverrides.addAll(ueberschreibungen);
     return starteApp(tester, env, groesse: groesse, skala: skala);
   }
 
@@ -73,11 +85,8 @@ void main() {
       final nach = Offset(von.dx, tester.getTopLeft(find.text('// EINKAUFSLISTE')).dy - 6);
       await ziehe(tester, von, nach);
       expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
-      final gespeichert = kennungenAusText(speicher.werte[mKey])!;
-      expect(gespeichert.take(3), ['schnellzugriff', 'aufgaben', 'einkauf']);
-      // Geburtstage (gerade ohne Treffer, nicht gezeichnet) bleiben auf ihrem Platz in der Liste; Termine rücken hinter Einkauf
-      expect(gespeichert.indexOf('termine'), greaterThan(gespeichert.indexOf('einkauf')));
-      expect(gespeichert.toSet(), StartLayout.mobil.standard.toSet());
+      // Geburtstage (ohne Treffer), Müll und Wetter (nicht verfügbar) werden nicht gezeichnet und behalten ihren Platz in der Liste
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'aufgaben', 'einkauf', 'geburtstage', 'termine', 'muell', 'wetter', 'standort']);
       // der Desktop-Schlüssel bleibt unberührt
       expect(speicher.werte.containsKey(dKey), isFalse);
       // Neustart mit demselben Speicher
@@ -125,7 +134,7 @@ void main() {
     testWidgets('Speicher nicht lesbar und nicht schreibbar: Standardreihenfolge, Ändern gilt bis zum Schließen', (tester) async {
       final c = await start(tester, eigener: _KaputterSpeicher());
       expect(folge(tester, mobilLabels), mobilLabels);
-      c.read(startseiteMobilProvider.notifier).schieben(['einkauf', 'termine', 'aufgaben', 'standort'], 'aufgaben', -2);
+      await c.read(startseiteMobilProvider.notifier).schieben(['einkauf', 'termine', 'aufgaben', 'standort'], 'aufgaben', -2);
       await warte(tester);
       expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
       expect(tester.takeException(), isNull);
@@ -152,12 +161,12 @@ void main() {
     final c = env.container();
     addTearDown(c.dispose);
     c.listen(startseiteMobilProvider, (_, _) {});
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await pumpEventQueue();
     expect(c.read(startseiteMobilProvider).ausgeblendet, {'aufgaben'});
     expect(c.read(startseiteMobilProvider).reihenfolge.first, 'standort');
     speicher.werte.clear(); // wie sync_meta nach dem Leeren der Datenbank
     await c.read(localDataWiperProvider)();
-    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await pumpEventQueue();
     expect(c.read(startseiteMobilProvider).reihenfolge, StartLayout.mobil.standard);
     expect(c.read(startseiteMobilProvider).ausgeblendet, isEmpty);
   });
@@ -193,10 +202,11 @@ void main() {
       expect(tester.widget<IconButton>(find.byKey(const ValueKey('runter:standort'))).onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('runter:schnellzugriff')));
       await warte(tester);
-      expect(kennungenAusText(speicher.werte[mKey])!.take(3), ['einkauf', 'schnellzugriff', 'termine']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort']);
       await tester.tap(find.byKey(const ValueKey('hoch:standort')));
       await warte(tester);
-      expect(kennungenAusText(speicher.werte[mKey])!.indexOf('standort'), lessThan(kennungenAusText(speicher.werte[mKey])!.indexOf('aufgaben')));
+      // Müll und Wetter (nicht angeboten) bleiben auf ihren Plätzen, Standort und Aufgaben tauschen die ihren
+      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'standort', 'muell', 'wetter', 'aufgaben']);
     });
 
     testWidgets('Schalter blendet aus und wieder ein; Zurücksetzen stellt Standard her; Fertig schließt', (tester) async {
@@ -212,7 +222,9 @@ void main() {
       await warte(tester);
       expect(c.read(startseiteMobilProvider).ausgeblendet, isEmpty);
       expect(c.read(startseiteMobilProvider).reihenfolge, StartLayout.mobil.standard);
-      expect(kennungenAusText(speicher.werte[mKey]), StartLayout.mobil.standard);
+      // die gespeicherten Werte werden gelöscht (nicht durch die Standardlisten ersetzt)
+      expect(speicher.werte.containsKey(mKey), isFalse);
+      expect(speicher.werte.containsKey(mAus), isFalse);
       await tester.tap(find.byKey(const ValueKey('an:standort')));
       await warte(tester);
       await tester.tap(find.byKey(const ValueKey('an:standort')));
@@ -264,8 +276,7 @@ void main() {
       }
       await g.up();
       await warte(tester);
-      final r = kennungenAusText(speicher.werte[mKey])!;
-      expect(r.indexOf('standort'), lessThan(r.indexOf('einkauf')));
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'standort', 'einkauf', 'termine', 'geburtstage', 'muell', 'wetter', 'aufgaben']);
     });
 
     testWidgets('Semantics: Pfeile nennen Kachel, Position und Richtung', (tester) async {
@@ -304,7 +315,7 @@ void main() {
       final von = tester.getCenter(find.text('// ALS NÄCHSTES'));
       final nach = Offset(von.dx, tester.getTopLeft(find.text('// EINKAUFSLISTE')).dy - 6);
       await ziehe(tester, von, nach);
-      expect(kennungenAusText(speicher.werte[mKey])!.take(3), ['schnellzugriff', 'termine', 'einkauf']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'termine', 'einkauf', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort']);
       expect(tester.takeException(), isNull);
     });
   });
@@ -339,9 +350,8 @@ void main() {
       await g.up();
       await warte(tester);
       expect(find.byType(StartseiteLuecke), findsNothing);
-      final r = kennungenAusText(speicher.werte[dKey])!;
-      expect(r.take(3), ['aufgaben', 'termine', 'chat']);
-      expect(r.toSet(), StartLayout.desktop.standard.toSet()); // auch nicht angezeigte (Müll, Wetter) behalten ihren Eintrag
+      // auch nicht angezeigte Kacheln (Müll, Wetter) behalten ihren Eintrag
+      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'einkauf', 'dateien', 'familie', 'standort', 'muell', 'wetter']);
       expect(speicher.werte.containsKey(mKey), isFalse);
       expect(oben(tester, '// aufgaben'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
       expect(tester.takeException(), isNull);
@@ -365,7 +375,9 @@ void main() {
       await g.up();
       await warte(tester);
       // abgelegt wurde dort, wo der Zeiger nach dem Mitscrollen steht (weiter hinten), nicht am alten Platz
-      expect(kennungenAusText(speicher.werte[dKey])!.first, isNot('termine'));
+      final r = kennungenAusText(speicher.werte[dKey])!;
+      expect(r.indexOf('termine'), greaterThanOrEqualTo(3));
+      expect(r.toSet(), StartLayout.desktop.standard.toSet());
       expect(tester.takeException(), isNull);
     });
 
@@ -407,9 +419,278 @@ void main() {
   });
 
   testWidgets('Desktop 1200 px, Textskala 1.5: Raster ohne Layoutfehler', (tester) async {
-    await start(tester, groesse: const Size(1200, 900), skala: 1.5);
+    await start(tester, groesse: const Size(1200, 2400), skala: 1.5);
     expect(tester.takeException(), isNull);
-    expect(find.byType(HomeScreen), findsNothing);
+    // die Zellenhöhe wächst mit der Textskala (300 * 1.5) und alle Kacheln bleiben im Raster
+    for (final z in find.byType(LongPressDraggable<String>).evaluate()) {
+      expect(tester.getSize(find.byWidget(z.widget)).height, 450);
+    }
+    expect(find.byType(LongPressDraggable<String>), findsNWidgets(7));
+  });
+
+  group('Änderungen und Laden', () {
+    test('eine Änderung vor dem Ende des Lesens überschreibt den gespeicherten Stand nicht, sondern wird darauf angewendet', () async {
+      final langsam = _LangsamerSpeicher({mKey: '["standort","aufgaben"]'});
+      final env = TestUmgebung(FakeServer())..speicher = langsam;
+      final c = env.container();
+      addTearDown(c.dispose);
+      c.listen(startseiteMobilProvider, (_, _) {});
+      final n = c.read(startseiteMobilProvider.notifier);
+      expect(c.read(startseiteMobilProvider).geladen, isFalse);
+      final f = n.anzeigen('einkauf', false); // der Speicher liefert noch nichts
+      await pumpEventQueue();
+      expect(c.read(startseiteMobilProvider).geladen, isFalse, reason: 'die Änderung wartet');
+      langsam.freigeben();
+      await f;
+      await pumpEventQueue();
+      final a = c.read(startseiteMobilProvider);
+      expect(a.reihenfolge.take(2), ['standort', 'aufgaben']);
+      expect(a.ausgeblendet, {'einkauf'});
+      expect(kennungenAusText(langsam.werte[mKey])!.take(2), ['standort', 'aufgaben']);
+      expect(kennungenAusText(langsam.werte[mAus]), ['einkauf']);
+    });
+
+    test('ein Lesevorgang, den ein invalidate (Datenwipe) überholt hat, verwirft sein Ergebnis', () async {
+      final sp = _HandgesteuerterSpeicher();
+      final env = TestUmgebung(FakeServer())..speicher = sp;
+      final c = env.container();
+      addTearDown(c.dispose);
+      c.listen(startseiteMobilProvider, (_, _) {});
+      await pumpEventQueue();
+      expect(sp.offen, hasLength(1)); // erster Lesevorgang wartet (Wert: nichts gespeichert)
+      sp.werte[mKey] = '["standort"]'; // inzwischen gespeichert
+      c.invalidate(startseiteMobilProvider);
+      c.read(startseiteMobilProvider);
+      await pumpEventQueue();
+      expect(sp.offen, hasLength(2));
+      await sp.lasse(1); // neuer Lesevorgang: Reihenfolge
+      await sp.lasse(2); // ... und Ausgeblendete
+      expect(c.read(startseiteMobilProvider).reihenfolge.first, 'standort');
+      await sp.lasse(0); // der alte kommt zu spät und darf nichts überschreiben
+      await sp.lasse(3);
+      expect(c.read(startseiteMobilProvider).reihenfolge.first, 'standort');
+      expect(c.read(startseiteMobilProvider).geladen, isTrue);
+    });
+
+    test('eine Änderung ohne Wirkung schreibt nichts', () async {
+      final sp = _ZaehlenderSpeicher();
+      final env = TestUmgebung(FakeServer())..speicher = sp;
+      final c = env.container();
+      addTearDown(c.dispose);
+      c.listen(startseiteMobilProvider, (_, _) {});
+      await pumpEventQueue();
+      final n = c.read(startseiteMobilProvider.notifier);
+      await n.teilmengeOrdnen(StartLayout.mobil.standard);
+      await n.anzeigen('standort', true);
+      await n.schieben(StartLayout.mobil.standard, 'schnellzugriff', -1);
+      expect(sp.schreibvorgaenge, 0);
+      await n.anzeigen('standort', false);
+      expect(sp.schreibvorgaenge, 2);
+    });
+  });
+
+  testWidgets('beide Layouts sind früh gelesen: auf dem Handy ist auch der Desktop-Zustand schon geladen (kein leeres Raster beim Wechsel über 900 px)', (tester) async {
+    final c = await start(tester);
+    expect(c.read(startseiteMobilProvider).geladen, isTrue);
+    expect(c.read(startseiteDesktopProvider).geladen, isTrue);
+  });
+
+  group('Kachel erscheint oder verschwindet während des Ziehens', () {
+    testWidgets('Handy: Kachel wird aus- und wieder eingeblendet, während gezogen wird: keine Ausnahme, Liste bleibt stimmig', (tester) async {
+      final c = await start(tester, groesse: const Size(360, 1400));
+      final von = tester.getCenter(find.text('// AUFGABEN'));
+      final g = await tester.startGesture(von);
+      await tester.pump(const Duration(milliseconds: 700));
+      await g.moveBy(const Offset(0, -80));
+      await tester.pump(const Duration(milliseconds: 100));
+      await c.read(startseiteMobilProvider.notifier).anzeigen('standort', false);
+      await tester.pump(const Duration(milliseconds: 100));
+      await g.moveBy(const Offset(0, -40));
+      await tester.pump(const Duration(milliseconds: 100));
+      await g.up();
+      await warte(tester);
+      expect(find.text('// STANDORT'), findsNothing);
+      await c.read(startseiteMobilProvider.notifier).anzeigen('standort', true);
+      await warte(tester);
+      expect(find.text('// STANDORT'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(folge(tester, mobilLabels).toSet(), mobilLabels.toSet());
+    });
+
+    testWidgets('Desktop: die gezogene Kachel verschwindet: der Zug endet ohne Lücke, ohne Ausnahme und ohne Ablegen', (tester) async {
+      final sp = _ZaehlenderSpeicher();
+      final c = await start(tester, eigener: sp, groesse: const Size(1440, 1500));
+      final g = await tester.startGesture(tester.getCenter(find.text('// AUFGABEN')));
+      await tester.pump(const Duration(milliseconds: 700));
+      await g.moveBy(const Offset(-200, 0));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(StartseiteLuecke), findsOneWidget);
+      final davor = sp.schreibvorgaenge;
+      await c.read(startseiteDesktopProvider.notifier).anzeigen('aufgaben', false);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(StartseiteLuecke), findsNothing);
+      await g.up();
+      await warte(tester);
+      expect(tester.takeException(), isNull);
+      expect(find.text('// AUFGABEN'), findsNothing);
+      expect(sp.schreibvorgaenge, davor + 2, reason: 'nur das Ausblenden wurde gespeichert, das Ablegen schreibt nichts');
+      expect(find.byType(StartseiteLuecke), findsNothing);
+    });
+
+    testWidgets('Desktop: eine zweite Kachel kann nicht gleichzeitig gezogen werden', (tester) async {
+      await start(tester, groesse: const Size(1440, 1500));
+      final g1 = await tester.startGesture(tester.getCenter(find.text('// AUFGABEN')), pointer: 1);
+      await tester.pump(const Duration(milliseconds: 700));
+      await g1.moveBy(const Offset(-50, 0));
+      final g2 = await tester.startGesture(tester.getCenter(find.text('// HEUTE & MORGEN')), pointer: 2);
+      await tester.pump(const Duration(milliseconds: 700));
+      await g2.moveBy(const Offset(50, 0));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(StartseiteGehoben), findsOneWidget);
+      await g2.up();
+      await g1.up();
+      await warte(tester);
+      expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('Desktop: Ablegen, Abbrechen, bedingte Kachel in der Mitte', () {
+    const gross = Size(1440, 1500);
+    const seitenleiste = Offset(60, 700);
+    const reihe = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben'];
+
+    Future<TestGesture> zieheZu(WidgetTester tester, String von, String zu) async {
+      final anfang = tester.getCenter(find.text(von));
+      final ziel = tester.getCenter(find.text(zu)) + const Offset(0, 60);
+      final g = await tester.startGesture(anfang);
+      await tester.pump(const Duration(milliseconds: 700));
+      for (var i = 1; i <= 12; i++) {
+        await g.moveTo(anfang + (ziel - anfang) * (i / 12));
+        await tester.pump(const Duration(milliseconds: 40));
+      }
+      await tester.pump(const Duration(milliseconds: 100));
+      return g;
+    }
+
+    testWidgets('Loslassen außerhalb (Seitenleiste): es gilt die zuletzt angezeigte Zielstelle', (tester) async {
+      final sp = MemoryFeiertageSpeicher('nein');
+      await start(tester, speicher: sp, groesse: gross);
+      final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
+      await g.moveTo(seitenleiste);
+      await tester.pump(const Duration(milliseconds: 100));
+      await g.up();
+      await warte(tester);
+      expect(kennungenAusText(sp.werte[dKey])!.take(2), ['aufgaben', 'termine']);
+      expect(find.byType(StartseiteLuecke), findsNothing);
+    });
+
+    testWidgets('Esc bricht den Zug ab: nichts wird gespeichert, die Reihenfolge bleibt', (tester) async {
+      final sp = _ZaehlenderSpeicher();
+      await start(tester, eigener: sp, groesse: gross);
+      final davor = folge(tester, reihe);
+      final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pump(const Duration(milliseconds: 100));
+      await g.up();
+      await warte(tester);
+      expect(sp.schreibvorgaenge, 0);
+      expect(folge(tester, reihe), davor);
+      expect(find.byType(StartseiteLuecke), findsNothing);
+    });
+
+    testWidgets('an Ort und Stelle loslassen: keine Änderung, nichts wird geschrieben', (tester) async {
+      final sp = _ZaehlenderSpeicher();
+      await start(tester, eigener: sp, groesse: gross);
+      final von = tester.getCenter(find.text('// AUFGABEN'));
+      await ziehe(tester, von, von + const Offset(6, 6), schritte: 3);
+      expect(sp.schreibvorgaenge, 0);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('eine nicht angezeigte Kachel mitten im Raster behält ihren Platz in der gespeicherten Liste', (tester) async {
+      final sp = MemoryFeiertageSpeicher('nein');
+      final angeboten = {...StartLayout.desktop.standard}..remove('einkauf');
+      await start(
+        tester,
+        speicher: sp,
+        groesse: gross,
+        ueberschreibungen: [desktopVerfuegbarProvider.overrideWith((ref) => KachelVerfuegbarkeit(angeboten: angeboten))],
+      );
+      expect(find.text('// EINKAUFSLISTE'), findsNothing);
+      final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
+      await g.up();
+      await warte(tester);
+      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'dateien', 'familie', 'standort', 'muell', 'wetter']);
+    });
+  });
+
+  group('Zurücksetzen mit Rückgängig', () {
+    testWidgets('Zurücksetzen meldet sich mit Rückgängig und stellt den alten Stand wieder her; danach ist der Knopf aus', (tester) async {
+      final sp = MemoryFeiertageSpeicher('nein', {mKey: '["standort","aufgaben"]', mAus: '["einkauf"]'});
+      final c = await start(tester, speicher: sp, groesse: const Size(360, 1800));
+      await tester.scrollUntilVisible(find.text('Startseite anpassen'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.tap(find.text('Startseite anpassen'));
+      await warte(tester);
+      expect(find.textContaining('nur für die Handy-Ansicht dieses Geräts'), findsOneWidget);
+      final alt = c.read(startseiteMobilProvider);
+      await tester.tap(find.text('Zurücksetzen'));
+      await warte(tester);
+      expect(find.text('Zurückgesetzt'), findsOneWidget);
+      expect(c.read(startseiteMobilProvider).istStandard(StartLayout.mobil), isTrue);
+      expect(sp.werte.containsKey(mKey), isFalse);
+      expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Zurücksetzen')).onPressed, isNull);
+      await tester.tap(find.text('Rückgängig'));
+      await warte(tester);
+      expect(c.read(startseiteMobilProvider).reihenfolge, alt.reihenfolge);
+      expect(c.read(startseiteMobilProvider).ausgeblendet, {'einkauf'});
+      expect(kennungenAusText(sp.werte[mKey])!.take(2), ['standort', 'aufgaben']);
+      expect(kennungenAusText(sp.werte[mAus]), ['einkauf']);
+      expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Zurücksetzen')).onPressed, isNotNull);
+    });
+
+    testWidgets('bei Standard ist der Knopf aus', (tester) async {
+      await start(tester, groesse: const Size(360, 1800));
+      await tester.scrollUntilVisible(find.text('Startseite anpassen'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.tap(find.text('Startseite anpassen'));
+      await warte(tester);
+      expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Zurücksetzen')).onPressed, isNull);
+    });
+
+    testWidgets('solange der gespeicherte Stand gelesen wird, zeigt die Seite einen Ladezustand und keine Bedienelemente', (tester) async {
+      final env = await angemeldeteUmgebung();
+      env.speicher = _LangsamerSpeicher({});
+      await starteApp(tester, env);
+      final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
+      unawaited(nav.push<void>(StartseiteAnpassenScreen.route()));
+      await warte(tester);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byKey(const ValueKey('an:einkauf')), findsNothing);
+      expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Zurücksetzen')).onPressed, isNull);
+    });
+  });
+
+  group('Semantics der Startseite', () {
+    testWidgets('Kacheln der Handy-Liste bieten Verschieben als Aktion für Screenreader an und bleiben als Schaltfläche benannt', (tester) async {
+      final handle = tester.ensureSemantics();
+      await start(tester);
+      final aktionen = <String>[];
+      void gehe(SemanticsNode n) {
+        for (final id in n.getSemanticsData().customSemanticsActionIds ?? const <int>[]) {
+          aktionen.add(CustomSemanticsAction.getAction(id)?.label ?? '');
+        }
+        n.visitChildren((k) {
+          gehe(k);
+          return true;
+        });
+      }
+
+      gehe(tester.renderObject(find.byType(CustomScrollView).first).owner!.semanticsOwner!.rootSemanticsNode!);
+      expect(aktionen.where((a) => a.toLowerCase().contains('unten')), isNotEmpty);
+      expect(aktionen.where((a) => a.toLowerCase().contains('oben')), isNotEmpty);
+      expect(find.bySemanticsLabel(RegExp('Einkaufsliste, noch keine Liste')), findsOneWidget);
+      handle.dispose();
+    });
   });
 
   group('Kacheln-Kennungen', () {
@@ -431,6 +712,34 @@ class _KaputterSpeicher extends MemoryFeiertageSpeicher {
 
   @override
   Future<void> schreiben(String w, {String schluessel = kFeiertageSchluessel}) async => throw StateError('nicht schreibbar');
+}
+
+/// Zählt die Schreibvorgänge.
+class _ZaehlenderSpeicher extends MemoryFeiertageSpeicher {
+  int schreibvorgaenge = 0;
+
+  @override
+  Future<void> schreiben(String w, {String schluessel = kFeiertageSchluessel}) async {
+    schreibvorgaenge++;
+    await super.schreiben(w, schluessel: schluessel);
+  }
+}
+
+/// Jeder Lesevorgang wartet, bis der Test ihn mit [lasse] freigibt; geliefert wird der Wert vom Zeitpunkt des Aufrufs.
+class _HandgesteuerterSpeicher extends MemoryFeiertageSpeicher {
+  final offen = <(Completer<String?>, String?)>[];
+
+  @override
+  Future<String?> lesen({String schluessel = kFeiertageSchluessel}) {
+    final c = Completer<String?>();
+    offen.add((c, werte[schluessel]));
+    return c.future;
+  }
+
+  Future<void> lasse(int i) async {
+    offen[i].$1.complete(offen[i].$2);
+    await pumpEventQueue();
+  }
 }
 
 /// Liefert die Werte erst nach [freigeben] (Lesen dauert).
