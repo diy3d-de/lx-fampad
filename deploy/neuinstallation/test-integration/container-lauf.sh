@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Läuft IM Debian-13-Container (aufgerufen von test-integration.sh): Szenario "neu" oder "wiederherstellung".
+# Läuft IM Debian-13-Container (aufgerufen von test-integration.sh): Szenario "neu", "wiederherstellung" oder "umzug" (Umzugs-Assistent, umzug-lauf.sh).
 # Nur für Tests: legt eine Attrappe für systemctl an (kein systemd im Container) und prüft das Ergebnis des Skripts.
 # Bricht ab, wenn es nicht in einem Docker-Container läuft (die Attrappe und die Testdaten dürfen nie auf einen echten Server).
 set -euo pipefail
 [ -f /.dockerenv ] || { echo "container-lauf.sh läuft nur in einem Docker-Container (/.dockerenv fehlt): Abbruch" >&2; exit 99; }
 export LC_ALL=C.UTF-8
-SZENARIO="${1:?neu|wiederherstellung}"
+SZENARIO="${1:?neu|wiederherstellung|umzug}"
 REPO_QUELLE=/repo            # aus dem Tarball des Hosts entpackt (Kopie, nicht der Arbeitsbaum)
 ARBEIT=/work                 # vom Host eingebunden: Sicherung, Testschlüssel (nur Testdaten)
 SKRIPT="$REPO_QUELLE/deploy/neuinstallation/bootstrap-server.sh"
@@ -21,6 +21,12 @@ apt-get update -qq >/dev/null
 apt-get install -y -qq --no-install-recommends ca-certificates curl iproute2 age openssh-client >/dev/null 2>&1
 install -m 755 "$REPO_QUELLE/deploy/neuinstallation/test-integration/fake-systemctl.sh" /usr/bin/systemctl
 printf '#!/bin/sh\nexit 0\n' > /usr/bin/journalctl; chmod 755 /usr/bin/journalctl
+
+if [ "$SZENARIO" = umzug ]; then
+  # Der Umzugs-Assistent (umzug.sh) hat seinen eigenen Ablauf: Szenario in umzug-lauf.sh (braucht die Sicherung aus Szenario "neu")
+  [ -d "$ARBEIT/sicherung" ] || { echo "Szenario umzug braucht zuerst Szenario neu (die Sicherung in $ARBEIT/sicherung)" >&2; exit 98; }
+  exec bash "$REPO_QUELLE/deploy/neuinstallation/test-integration/umzug-lauf.sh"
+fi
 
 if [ "$SZENARIO" = neu ]; then
   [ -f "$ARBEIT/key.txt" ] || age-keygen -o "$ARBEIT/key.txt" >/dev/null 2>&1

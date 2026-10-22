@@ -4,7 +4,7 @@ Dieses Handbuch brauchst du, wenn der Server ausgefallen ist, die Platte kaputt 
 frischen Debian 13 neu auf: **leer** oder **aus der verschlüsselten Sicherung** (Datenbank und Konfiguration). Das Skript ersetzt keine Entscheidungen und
 keine Schritte, die nur du tun kannst (DNS, Firewall, Schlüssel): Sie stehen in Abschnitt 6.
 
-Wer das Skript nur lesen will: `deploy/neuinstallation/bootstrap-server.sh` (Kopf = Bedienungsanleitung, `--hilfe`). Hintergrund und die Handarbeit statt Skript:
+Wer es geführt machen will: der **Umzugs-Assistent** `deploy/neuinstallation/umzug.sh` (Abschnitt 3a) fragt, was er wissen muss, und zeigt am Ende deine Liste. Wer das Skript nur lesen will: `deploy/neuinstallation/bootstrap-server.sh` (Kopf = Bedienungsanleitung, `--hilfe`). Hintergrund und die Handarbeit statt Skript:
 [`WIEDERHERSTELLUNG.md`](WIEDERHERSTELLUNG.md). Die Sicherung selbst: [`BACKUP.md`](BACKUP.md).
 
 ## 1. Was das Skript macht (und was nicht)
@@ -179,6 +179,52 @@ Der **Personenschlüssel** für die Ende-zu-Ende-Verschlüsselung der Chats ents
 4. **Auf dem Server** (per `ssh root@<NEUE-IP>`): `apt-get update && apt-get install -y tmux curl ca-certificates iproute2`, dann in `tmux` arbeiten (`tmux new -s neu`; nach einem Verbindungsabbruch mit `tmux attach -t neu` zurück).
 5. Parameterdatei ausfüllen: `cp parameter.beispiel neuinstallation.params && nano neuinstallation.params` (nur Zeilen ohne `#` am Anfang zählen).
 
+## 3a. Mit dem Assistenten (geführter Umzug oder Wiederherstellung)
+
+Für einen Umzug oder eine Wiederherstellung aus der Sicherung gibt es eine geführte Hülle um das Skript: `deploy/neuinstallation/umzug.sh`. Sie ersetzt `bootstrap-server.sh` nicht, sondern
+stellt die Fragen, baut die Befehle zusammen (Parameterdatei, Optionen), ruft das Skript phasenweise auf, zeigt den Fortschritt und schreibt am Ende die fertige Liste mit **deinen** Werten
+(neue IP, DNS-Einträge, Befehle). Für eine **leere** Neuinstallation ohne Sicherung gilt weiter Abschnitt 4.
+
+**Auf deinem PC** (im eigenen Git-Checkout von lx-fampad; beide Dateien müssen vom selben Stand sein, danach die Prüfsummen vergleichen):
+
+```bash
+sha256sum deploy/neuinstallation/umzug.sh deploy/neuinstallation/bootstrap-server.sh      # Windows PowerShell: Get-FileHash -Algorithm SHA256 <Datei>
+scp deploy/neuinstallation/umzug.sh deploy/neuinstallation/bootstrap-server.sh root@<NEUE-IP>:/root/
+scp -r /pfad/archiv/20261022-033000 root@<NEUE-IP>:/root/sicherung/                        # Sicherungsordner vom NAS (verschlüsselt)
+ssh root@<NEUE-IP> 'sha256sum /root/umzug.sh /root/bootstrap-server.sh'                   # dieselben Prüfsummen wie oben, sonst nicht starten
+```
+
+**Auf dem neuen Server** (Abschnitt 3 gilt: Debian 13, Firewall, `tmux`): erst der Probelauf, dann der echte Lauf.
+
+```bash
+tmux new -s umzug
+bash umzug.sh --probe      # läuft bis zur Zusammenfassung und ändert nichts (übt die Fragen)
+bash umzug.sh              # der echte Lauf
+```
+
+| Schritt | Was passiert |
+| --- | --- |
+| 1 Willkommen und Prüfung | Debian 13, Arbeitsspeicher und Platz, Netz, Ports 4400/2586/5432 nur lokal, SSH-Passwort-Hinweis, noch nichts von lx-fampad da. Fehlen nur `curl`, `age` oder `iproute2`, fragt der Assistent, ob er sie installieren darf: **die einzige Änderung vor deiner Bestätigung** |
+| 2 Sicherung und Schlüssel | Frage 1 (Sicherungsordner: der Assistent listet die Ordner in `/root/sicherung`, prüft Prüfsummen und Rechte und bietet `chown`/`chmod` an), dann der **private age-Schlüssel** (unsichtbar eingegeben, sofort geprüft, dreimal Versuch). Der Schlüssel kommt **vor** den übrigen Fragen, weil die gesicherte Konfiguration verschlüsselt ist: erst damit kann der Assistent Wetter, Müll, die App-Version (Vorschlag für den Code-Stand) und die Einstellungen der Sicherung lesen |
+| 3 Fragen | Code-Stand (Tag, Vorschlag aus der Sicherung), NAS (IP und öffentlicher SSH-Schlüssel), Swap (bei 2 GB empfohlen), nur wenn der Benutzer `lx` fehlt: dein öffentlicher SSH-Schlüssel. Enter nimmt jeweils den Vorschlag in `[ ]` |
+| 4 Zusammenfassung | „Das passiert jetzt“ mit allen Werten, eine Gegenprobe mit `bootstrap-server.sh --dry-run`, dann musst du das Wort `umziehen` tippen. **Erst ab hier wird der Server verändert** |
+| 5 Aufbau | die Phasen von `bootstrap-server.sh` nacheinander mit Häkchen und Zeit. Bei der **GitHub-Pause** zeigt der Assistent den öffentlichen Schlüssel deutlich an; nach dem Eintragen bei GitHub tippst du `weiter` (oder `abbrechen` und startest später denselben Befehl noch einmal) |
+| 6 Dein Teil | die fertige Liste (DNS mit der echten IP und `dig`-Kontrolle, Caddy, Web-App, NAS neu verbinden mit dem Fingerabdruck dieses Servers, alten Server stoppen, Wetter, Müll, Wiederherstellungstest), auch in `/root/umzug-offen.txt` |
+
+**Folgeschritte** (jeweils ein Befehl, die Liste sagt dir wann): `bash umzug.sh --weiter caddy` (nach der DNS-Umstellung; ohne passenden DNS-Eintrag lehnt der Assistent ab, damit keine Let's-Encrypt-Versuche verbraucht werden),
+`--weiter wetter` und `--weiter muell` (erst nachdem der **alte** Server aus ist; fragt nach `ja`), `--weiter pruefung` (Abschlussprüfung wiederholen, Liste neu schreiben).
+
+**Nach einem Abbruch** (Verbindung, Pause bei GitHub, Fehler): **derselbe Befehl** noch einmal. Der Assistent merkt sich nur Nicht-Geheimes (Sicherungspfad, Code-Stand, IP, Swap-Wunsch, NAS-Daten, welche Phasen fertig sind) in `/root/.umzug-antworten` (root, `0600`) und macht dort weiter.
+Den privaten Schlüssel fragt er nach einem Neustart **noch einmal** ab, solange noch eine Phase offen ist, die entschlüsselt (`pakete`, `konfiguration`, `datenbank`); danach nie wieder. `--neu` verwirft die gemerkten Antworten.
+
+**Sicherheit** (wie bei `bootstrap-server.sh`): Der private Schlüssel wird nur unsichtbar eingelesen, liegt nur in einer Variable des Prozesses (nie in einer Datei, nie in Argumenten oder Umgebung, nie im Log), geht an `bootstrap-server.sh` nur über eine Pipe (`--identity-stdin`) und
+wird nach der Phase `datenbank` verworfen. Ist Swap aktiv, bricht der Assistent **vor** dem Einlesen ab (`swapoff -a`, oder bewusst `--swap-ok`). Die Parameterdatei `/root/umzug.params` (nur Öffentliches, `0600`) erzeugt der Assistent selbst; mit `--params DATEI` kannst du eine eigene
+Datei aus deinen Unterlagen als Vorgabe angeben (z. B. mit den NAS-Daten). Beide Skripte müssen root gehören und dürfen nicht für andere schreibbar sein; Caddy und das Haupt-Caddyfile fasst der Assistent nie an (das tut nur die Phase `caddy`, nur `conf.d`, mit Rückfall). Bei einem Fehler nennt er
+die Ursache in einem Satz mit Maßnahme und schreibt `/root/umzug-bericht.txt` (ohne Geheimnisse, ohne Programmausgaben: das ist die Datei, die du weitergeben kannst; das volle Log `/root/umzug-lauf.log` bleibt auf dem Server).
+
+**Grenzen:** Die IP des NAS und sein öffentlicher SSH-Schlüssel stehen **nicht** in der Sicherung (die Abholung steht in `/var/lib/lxbackup`, das nicht gesichert wird): Der Assistent fragt sie ab oder nimmt sie aus `--params`; ohne sie richtet er die tägliche Sicherung nicht ein (die Liste sagt, wie du es nachholst).
+Läuft der alte Server noch, fehlt alles, was seit der Sicherung passiert ist: Für einen verlustfreien Umzug zuerst die Schritte unter „Umzug bei laufendem Altserver“ (Abschnitt 5). Der Assistent erzeugt keine leere Installation.
+
 ## 4. Variante A: leere Neuinstallation (neuer Familienserver ohne alte Daten)
 
 ```bash
@@ -306,10 +352,13 @@ Getestet (im Debian-13-Container, ohne systemd): `shellcheck` und `bash -n`; die
 einschließlich Symlink-, Hardlink-, `..`-, Falschschlüssel- und SHA256SUMS-Fällen); der Trockenlauf auf einem leeren Server; ein kompletter Lauf **leer** (Pakete, PostgreSQL 17, Node, Datenbankrollen, Bau, Migrationen, ntfy mit Token/Rechten, Sicherung mit Abholpfad) und danach eine **Wiederherstellung**
 in einem zweiten frischen Container (Schlüssel über stdin, `pg_restore` als Migrationsrolle, `AUTH_SECRET_KEY` und Datenbank gleich, ntfy-Token gültig, kein Schlüssel auf der Platte, zweiter Lauf ändert nichts und startet ntfy nicht neu, keine Wetter-Regel in `sudo`).
 Aufruf: `deploy/neuinstallation/test-docker.sh` (läuft mit `--network none`) und `deploy/neuinstallation/test-integration/test-integration.sh`.
+**Der Umzugs-Assistent** (`umzug.sh`) ist ebenso getestet: Hilfsfunktionen und `shellcheck` in `test-docker.sh` (`test-umzug.sh`: Prüfung der Eingaben, gemerkte Antworten ohne Geheimnisse, Parameterdatei, Schlüsselprüfung und Auswertung der Konfiguration mit echtem `age`, Bericht, Liste) und im Integrationstest Szenario C
+(`umzug-lauf.sh`, frischer Container): `--probe` ändert nichts; ein falscher Schlüssel bricht nach drei Versuchen ab, ohne etwas zu ändern; ein echter Lauf pausiert bei der GitHub-Pause (Exit 10, öffentlicher Schlüssel angezeigt); der Neustart mit gemerkten Antworten läuft bis zum Ende mit demselben Ergebnis wie die Wiederherstellung von Hand;
+der private Schlüssel liegt nirgends auf der Platte und war während des Laufs nie in Argumenten oder der Umgebung eines Prozesses (Abfrage alle 50 ms); die Antwortdatei, Parameterdatei, Liste und der Bericht enthalten keine Geheimnisse; `--weiter caddy|wetter|muell|pruefung`.
 **Isolation der Tests:** Der Integrationstest läuft nur in Docker (Container-Lauf und `systemctl`-Attrappe brechen ohne `/.dockerenv` ab), ruft das Skript immer mit `--ohne-systemd` auf (spricht nie `familie.lx-labs.dev` oder `lx-labs.dev` an; `--dns-pruefung-ueberspringen` gibt es nur zusammen damit)
 und nimmt den Code-Stand aus einem Tarball der verfolgten Dateien (`git ls-files`), nicht aus einer Kopie des Arbeitsbaums mit `.git`. Das Netz braucht er nur für die Paketquellen. Hinweis: Ein Container zeigt den Swap des Hosts, deshalb gibt der Test `--swap-ok` an. `--ohne-systemd` bricht mit Exit 2 ab, wenn `/run/systemd/system` existiert (also auf einem echten Server), und `test-bootstrap.sh` bricht ab, wenn `/srv/fampad/server` existiert.
 
-**Nicht getestet** (nur auf einem echten Server prüfbar): echtes systemd (Unit-Härtung, `systemd-analyze verify`, Neustart nach Reboot), Caddy-Reload mit Zertifikaten und Let's Encrypt, DNS-Umschaltung, die Pause beim GitHub-Deploy-Key, die Koexistenz mit lx-labs.dev
+**Nicht getestet** (nur auf einem echten Server prüfbar): echtes systemd (Unit-Härtung, `systemd-analyze verify`, Neustart nach Reboot), Caddy-Reload mit Zertifikaten und Let's Encrypt, DNS-Umschaltung, die Pause beim GitHub-Deploy-Key bis zum tatsächlichen Eintragen und Weitermachen (der Assistent zeigt die Pause im Container, der Neustart danach läuft dort mit einem lokalen Checkout), der Müll-Dienst des Assistenten (`--weiter muell` mit aktivem Müll), die Koexistenz mit lx-labs.dev
 (Haupt-Caddyfile `fremd` mit Importzeile), `ufw`, `--wetter-starten`, ein Datenbankdump mit echten Daten und Datenmengen, netcup-spezifisches (Cloud-Init, Snapshots). Vor dem ersten echten Einsatz einmal als Übung mit `--dry-run` auf einem Wegwerf-Server (Abschnitt 3) durchspielen und
 das Ergebnis in dein Betriebsbuch eintragen; `WIEDERHERSTELLUNG.md` empfiehlt das ohnehin einmal im Jahr.
 
@@ -324,6 +373,7 @@ Wiederherstellungstest regelmäßig mit einer NAS-Sicherung machen.
 ## 11. Dateien
 
 - `deploy/neuinstallation/bootstrap-server.sh` – das Skript (Kopf: Bedienungsanleitung)
+- `deploy/neuinstallation/umzug.sh` – der Umzugs-Assistent (Abschnitt 3a; Kopf: Bedienungsanleitung, `--hilfe`)
 - `deploy/neuinstallation/parameter.beispiel` – Vorlage der Parameterdatei (nur Öffentliches)
-- `deploy/neuinstallation/test-bootstrap.sh`, `test-docker.sh`, `test-integration/` – Tests (Docker nötig; verändern nichts am eigenen Rechner)
+- `deploy/neuinstallation/test-bootstrap.sh`, `test-umzug.sh`, `test-docker.sh`, `test-integration/` (mit `umzug-lauf.sh`) – Tests (Docker nötig; verändern nichts am eigenen Rechner)
 - Gebrauchte Bausteine (unverändert): `deploy/einrichtung-auth.sh`, `einrichtung-swap.sh`, `backup/einrichtung-status.sh`, `backup/einrichtung-backup.sh`, `deploy.sh` (neu: `DEPLOY_OHNE_PULL=1` lässt den festgelegten Code-Stand stehen), `Caddyfile`, `ntfy/`, `lx-fampad*.service`
