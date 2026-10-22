@@ -2,8 +2,10 @@
 // Im Web wird NICHTS gespeichert: dort trägt der HttpOnly-Cookie die Sitzung.
 import 'dart:convert';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../crypto/sicherer_speicher.dart';
 import 'kleiner_speicher.dart';
 import 'models.dart' show ServerFaehigkeiten;
 
@@ -153,8 +155,8 @@ class MemoryTokenStore implements TokenStore {
 }
 
 /// Android Keystore über flutter_secure_storage. Das Lesen fängt ALLE Fehler ab (PlatformException, BadPaddingException nach
-/// Keystore-Verlust oder Backup-Wiederherstellung, kaputtes JSON ...): der unlesbare Eintrag wird gelöscht und die Person gilt als
-/// nicht angemeldet (null), statt dass die App beim Start hängt oder abstürzt.
+/// Keystore-Verlust oder Backup-Wiederherstellung, kaputtes JSON ...) und liefert null (nicht angemeldet), statt dass die App beim Start hängt oder abstürzt.
+/// Gelöscht wird der Eintrag nur bei dauerhaftem Defekt (nicht entschlüsselbar, beschädigt), nie nach einem vorübergehenden Lesefehler.
 class SecureTokenStore implements TokenStore {
   static const _kTokens = 'lx_fampad_tokens';
   static const _kDevice = 'lx_fampad_device_id';
@@ -163,18 +165,29 @@ class SecureTokenStore implements TokenStore {
   static const _kCaps = 'lx_fampad_server_caps';
 
   final FlutterSecureStorage _s;
-  SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
+  SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? kSicherSpeicher;
 
-  /// Liest und decodiert einen Eintrag; bei jedem Fehler wird er gelöscht und null geliefert.
+  /// Liest und decodiert einen Eintrag. Ein unbrauchbarer Eintrag (dauerhaft nicht entschlüsselbar oder beschädigt) wird gelöscht, null geliefert. Ein VORÜBERGEHENDER
+  /// Lesefehler (Keystore gesperrt, E/A) liefert nur null und löscht nichts: der nächste Start liest wieder.
   Future<T?> _lesen<T>(String key, T? Function(Object? json) lesen) async {
+    final String? raw;
     try {
-      final raw = await _s.read(key: key);
-      if (raw == null) return null;
+      raw = await _s.read(key: key);
+    } catch (e) {
+      if (!speicherFehlerDauerhaft(e)) return null;
+      return _loeschenSicher(key); // dauerhaft unlesbar: wie nicht vorhanden behandeln
+    }
+    if (raw == null) return null;
+    try {
       final wert = lesen(jsonDecode(raw));
       if (wert != null) return wert;
     } catch (_) {
-      // unlesbar (Keystore-Schlüssel weg, beschädigte Daten ...): wie nicht vorhanden behandeln
+      // beschädigte Daten
     }
+    return _loeschenSicher(key);
+  }
+
+  Future<T?> _loeschenSicher<T>(String key) async {
     try {
       await _s.delete(key: key);
     } catch (_) {
@@ -186,10 +199,29 @@ class SecureTokenStore implements TokenStore {
   @override
   Future<StoredTokens?> readTokens() => _lesen(_kTokens, StoredTokens.fromJson);
 
+  /// Schreibt einen Eintrag. Scheitert das mit einem Plattformfehler (Keystore-Schlüssel verloren, der Speicher heilt sich mit resetOnError: false nicht selbst),
+  /// meldet das [GeraeteSpeicherDefekt]: die Oberfläche bietet dann die bewusste Reparatur an.
+  Future<void> _schreiben(String key, String value) async {
+    try {
+      await _s.write(key: key, value: value);
+    } on PlatformException catch (e) {
+      // "Gerätespeicher defekt" nur bei einem Fehler, der nach einem dauerhaften Defekt aussieht (auch beim zweiten Versuch); alles andere (E/A, voller Speicher,
+      // Aussetzer) bleibt ein normaler Fehler mit der allgemeinen Meldung
+      if (speicherFehlerDauerhaft(e)) throw const GeraeteSpeicherDefekt();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      try {
+        await _s.write(key: key, value: value);
+      } on PlatformException catch (e2) {
+        if (speicherFehlerDauerhaft(e2)) throw const GeraeteSpeicherDefekt();
+        rethrow;
+      }
+    }
+  }
+
   @override
   Future<void> writeTokens(StoredTokens tokens) async {
-    await _s.write(key: _kTokens, value: jsonEncode(tokens.toJson()));
-    await _s.write(key: _kDevice, value: tokens.deviceId);
+    await _schreiben(_kTokens, jsonEncode(tokens.toJson()));
+    await _schreiben(_kDevice, tokens.deviceId);
   }
 
   @override
@@ -219,7 +251,7 @@ class SecureTokenStore implements TokenStore {
   Future<Map<String, dynamic>?> readProfile() => _lesen(_kProfile, (v) => v is Map<String, dynamic> ? v : null);
 
   @override
-  Future<void> writeProfile(Map<String, dynamic> profile) => _s.write(key: _kProfile, value: jsonEncode(profile));
+  Future<void> writeProfile(Map<String, dynamic> profile) => _schreiben(_kProfile, jsonEncode(profile));
 
   Future<List<String>> _konten() async =>
       (await _lesen<List<String>>(_kAuthKeyKonten, (v) => v is List ? [for (final e in v) if (e is String) e] : null)) ?? const [];
@@ -231,7 +263,7 @@ class SecureTokenStore implements TokenStore {
   Future<ServerFaehigkeiten?> readFaehigkeiten() => _lesen(_kCaps, _faehigkeitenLesen);
 
   @override
-  Future<void> writeFaehigkeiten(ServerFaehigkeiten f) => _s.write(key: _kCaps, value: _faehigkeitenJson(f));
+  Future<void> writeFaehigkeiten(ServerFaehigkeiten f) => _schreiben(_kCaps, _faehigkeitenJson(f));
 
   @override
   Future<void> merkeAuthKeyKonto(String email) async {
@@ -240,6 +272,6 @@ class SecureTokenStore implements TokenStore {
     if (liste.contains(k)) return;
     // wenige Konten pro Gerät: ältere Einträge fallen heraus
     final neu = [...liste, k];
-    await _s.write(key: _kAuthKeyKonten, value: jsonEncode(neu.length > 20 ? neu.sublist(neu.length - 20) : neu));
+    await _schreiben(_kAuthKeyKonten, jsonEncode(neu.length > 20 ? neu.sublist(neu.length - 20) : neu));
   }
 }

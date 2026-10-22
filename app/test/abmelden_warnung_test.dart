@@ -6,8 +6,10 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/crypto/e2ee_state.dart';
+import 'package:lx_fampad/data/sync_state.dart';
 import 'package:lx_fampad/data/crypto/schluessel_speicher.dart';
 import 'package:lx_fampad/features/profile/abmelden_pruefung.dart';
 
@@ -88,13 +90,20 @@ Future<void> _dialogAllein(
   E2eeState zustand, {
   bool ueberall = false,
   bool web = false,
+  String knopf = 'Abmelden',
+  int abgelehnt = 0,
+  List<Override> extra = const [],
 }) async {
   tester.view.physicalSize = const Size(360, 740);
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   await tester.pumpWidget(
     ProviderScope(
-      overrides: [e2eeProvider.overrideWith(() => _FesterZustand(zustand))],
+      overrides: [
+        e2eeProvider.overrideWith(() => _FesterZustand(zustand)),
+        abgelehnteAenderungenProvider.overrideWith((ref) => Stream.value(abgelehnt)), // ohne Datenbank
+        ...extra,
+      ],
       child: MaterialApp(
         builder: (c, w) => MediaQuery(
           data: MediaQuery.of(c)
@@ -110,7 +119,7 @@ Future<void> _dialogAllein(
                   ref,
                   titel: 'Abmelden?',
                   text: 'Du wirst abgemeldet.',
-                  knopf: 'Abmelden',
+                  knopf: knopf,
                   ueberall: ueberall,
                   web: web,
                 ),
@@ -303,5 +312,89 @@ Future<void> main() async {
       );
       pruefeLayout(tester, 'Dialog 2.0 unbekannt');
     });
+
+    // Lücke L-5: ungesendete Änderungen im Ausgang gehen beim Abmelden verloren, darum nennt der Dialog die Anzahl und bietet das Synchronisieren an
+    testWidgets('ungesendete Änderungen: Warnung mit Anzahl, "Erst synchronisieren" gleicht ab', (tester) async {
+      final sync = _OffenSync(3);
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), extra: [syncProvider.overrideWith(() => sync)]);
+      expect(find.textContaining('3 Änderungen'), findsOneWidget);
+      expect(find.text('Erst synchronisieren'), findsOneWidget);
+      expect(find.textContaining('Änderungen verwerfen'), findsOneWidget, reason: 'der Abmelden-Knopf sagt ehrlich, was passiert');
+      pruefeLayout(tester, 'Dialog 2.0 mit ungesendeten Änderungen');
+      sync.nachSync = 0;
+      await tester.tap(find.text('Erst synchronisieren'));
+      await tester.pumpAndSettle();
+      expect(sync.synchronisiert, 1);
+      expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing, reason: 'nach dem Abgleich ist nichts mehr offen');
+      expect(find.text('Erst synchronisieren'), findsNothing);
+      expect(find.text('Abmelden'), findsOneWidget);
+    });
+
+    testWidgets('ohne ungesendete Änderungen: keine Warnung', (tester) async {
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit));
+      expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing);
+      expect(find.text('Erst synchronisieren'), findsNothing);
+    });
+
+    // G-2: vom Server abgelehnte Änderungen (Fehlercode im Ausgang) gehen beim Abmelden ebenfalls verloren und werden getrennt genannt
+    testWidgets('abgelehnte Änderungen: getrennt genannt, kein "Erst synchronisieren", Knopf warnt', (tester) async {
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), abgelehnt: 2);
+      expect(find.textContaining('2 nicht gesendete Nachrichten (Änderungen) mit Fehler'), findsOneWidget);
+      expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing);
+      expect(find.text('Erst synchronisieren'), findsNothing, reason: 'ein Abgleich ändert an abgelehnten Änderungen nichts');
+      expect(find.textContaining('Änderungen verwerfen'), findsOneWidget);
+      pruefeLayout(tester, 'Dialog 2.0 mit abgelehnten Änderungen');
+    });
+
+    // G-3: der Zähler ist live: ändert sich der Ausgang bei geöffnetem Dialog (Abgleich im Hintergrund), folgt der Text ohne Schnappschuss
+    testWidgets('der Zähler folgt dem Ausgang live', (tester) async {
+      final sync = _OffenSync(2);
+      await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), extra: [syncProvider.overrideWith(() => sync)]);
+      expect(find.textContaining('2 Änderungen'), findsOneWidget);
+      sync.setze(5);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('5 Änderungen'), findsOneWidget);
+      sync.setze(0);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing);
+      expect(find.text('Abmelden'), findsOneWidget, reason: 'ohne Verlust steht wieder der schlichte Knopf da');
+    });
+
+    // der längste Knopftext bei 360 px und Textskala 2.0
+    testWidgets('"Überall abmelden (Änderungen verwerfen)": längster Knopftext ohne Layoutfehler', (tester) async {
+      await _dialogAllein(
+        tester,
+        const E2eeState(status: E2eeStatus.bereit),
+        ueberall: true,
+        knopf: 'Überall abmelden',
+        abgelehnt: 3,
+        extra: [syncProvider.overrideWith(() => _OffenSync(12))],
+      );
+      expect(find.text('Überall abmelden (Änderungen verwerfen)'), findsOneWidget);
+      expect(find.text('Erst synchronisieren'), findsOneWidget);
+      expect(find.text('Abbrechen'), findsOneWidget);
+      pruefeLayout(tester, 'Dialog 2.0 längster Knopf');
+      expect(tester.takeException(), isNull);
+    });
   });
+}
+
+/// Sync-Dienst mit festem Zähler offener Änderungen; der Abgleich setzt ihn auf [nachSync].
+class _OffenSync extends SyncController {
+  final int start;
+  int nachSync = 0;
+  int synchronisiert = 0;
+  _OffenSync(this.start);
+
+  @override
+  SyncState build() => SyncState(offeneAenderungen: start);
+
+  /// Der Ausgang ändert sich (wie über den Datenbank-Strom).
+  void setze(int n) => state = state.copyWith(offeneAenderungen: n);
+
+  @override
+  Future<void> synchronisieren({bool manuell = false}) async {
+    synchronisiert++;
+    setze(nachSync);
+  }
 }

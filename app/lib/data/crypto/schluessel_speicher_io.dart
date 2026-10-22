@@ -5,11 +5,11 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'bytes.dart';
 import 'schluessel_speicher.dart';
+import 'sicherer_speicher.dart';
 
 SchluesselSpeicher schluesselSpeicherErzeugen() => SecureSchluesselSpeicher();
 
@@ -17,14 +17,9 @@ class SecureSchluesselSpeicher implements SchluesselSpeicher {
   static const _praefix = 'lx_fampad_';
   static const _indexName = '__index';
   final FlutterSecureStorage _s;
-  SecureSchluesselSpeicher([FlutterSecureStorage? storage]) : _s = storage ?? const FlutterSecureStorage();
+  SecureSchluesselSpeicher([FlutterSecureStorage? storage]) : _s = storage ?? kSicherSpeicher;
 
-  static final _dauerhaftMuster = RegExp('BadPadding|AEADBadTag|BadTag|IllegalBlockSize|MAC verification|Signature/MAC', caseSensitive: false);
-
-  SchluesselSpeicherFehler _fehler(Object e) {
-    final text = e is PlatformException ? '${e.code} ${e.message} ${e.details}' : e.toString();
-    return SchluesselSpeicherFehler('Schlüsselspeicher nicht lesbar', dauerhaft: _dauerhaftMuster.hasMatch(text));
-  }
+  SchluesselSpeicherFehler _fehler(Object e) => SchluesselSpeicherFehler('Schlüsselspeicher nicht lesbar', dauerhaft: speicherFehlerDauerhaft(e));
 
   Future<String?> _rohLesen(String key) async {
     try {
@@ -45,8 +40,16 @@ class SecureSchluesselSpeicher implements SchluesselSpeicher {
     }
   }
 
+  /// Die Namen aller Einträge. Ein DAUERHAFT unlesbarer Index (Keystore-Schlüssel verloren) gilt als leer: die Einträge dahinter sind es auch, und er darf Schreiben, Löschen und
+  /// die Anzeige der Quarantäne nicht blockieren. Ein vorübergehender Lesefehler geht weiter.
   Future<List<String>> _index() async {
-    final raw = await _rohLesen('$_praefix$_indexName');
+    final String? raw;
+    try {
+      raw = await _rohLesen('$_praefix$_indexName');
+    } on SchluesselSpeicherFehler catch (e) {
+      if (e.dauerhaft) return [];
+      rethrow;
+    }
     if (raw == null) return [];
     try {
       final l = jsonDecode(raw);
@@ -90,7 +93,7 @@ class SecureSchluesselSpeicher implements SchluesselSpeicher {
         rest.add(name); // bleibt im Index: ein späterer Versuch löscht ihn
       }
     }
-    await _indexSchreiben(rest);
+    if (rest.length != index.length) await _indexSchreiben(rest); // nichts gelöscht (z. B. unlesbarer Index): den Index nicht überschreiben
     if (erster != null) throw erster;
   }
 

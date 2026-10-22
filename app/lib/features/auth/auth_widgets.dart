@@ -11,8 +11,10 @@ import '../../data/api/api_error.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/crypto/crypto_fehler.dart';
+import '../../data/crypto/sicherer_speicher.dart';
 import '../../data/passkey_service.dart';
 import '../../ui/widgets.dart';
+import 'geraetespeicher_reparatur.dart';
 
 /// Rahmen eines Vollbild-Screens: Hintergrund mit Schimmer, Kopfzeile mit Zurück-Pfeil, scrollbarer Inhalt (Breite begrenzt).
 class AuthSeite extends StatelessWidget {
@@ -163,7 +165,7 @@ class MeldungsBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final farbe = fehler ? kDanger : kAccent;
-    return Semantics(
+    final box = Semantics(
       liveRegion: true,
       child: Container(
         padding: const EdgeInsets.all(12),
@@ -182,6 +184,9 @@ class MeldungsBox extends StatelessWidget {
         ),
       ),
     );
+    // "Gerätespeicher defekt" (Anmeldung kann nichts ablegen): überall, wo die Meldung erscheint, steht darunter der Weg zur bewussten Reparatur
+    if (text != kGeraeteSpeicherDefektText) return box;
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [box, const GeraeteSpeicherKnopf()]);
   }
 }
 
@@ -390,6 +395,7 @@ String fehlerText(Object e) {
   if (e is PasskeyException) return e.message;
   if (e is EingabeFehler) return e.message;
   if (e is CryptoFehler) return e.meldung;
+  if (e is GeraeteSpeicherDefekt) return e.meldung;
   return 'Das hat nicht geklappt. Bitte versuche es noch einmal.';
 }
 

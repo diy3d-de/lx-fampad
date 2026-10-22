@@ -115,6 +115,18 @@ class SyncStore {
     return (db.selectOnly(db.outbox)..addColumns([anzahl])..where(db.outbox.fehlerCode.isNull())).map((r) => r.read(anzahl) ?? 0).watchSingle();
   }
 
+  /// Anzahl abgelehnter Änderungen im Ausgang (mit Fehlercode, z. B. eine Nachricht, die der Server abgelehnt hat): Sie senden nichts mehr, gehen aber beim Abmelden
+  /// mit den lokalen Daten verloren. Live (für die Warnung vor dem Abmelden).
+  Stream<int> abgelehnteAenderungen() {
+    final anzahl = db.outbox.id.count();
+    return (db.selectOnly(db.outbox)..addColumns([anzahl])..where(db.outbox.fehlerCode.isNotNull())).map((r) => r.read(anzahl) ?? 0).watchSingle();
+  }
+
+  Future<int> abgelehnteAnzahl() async {
+    final anzahl = db.outbox.id.count();
+    return (await (db.selectOnly(db.outbox)..addColumns([anzahl])..where(db.outbox.fehlerCode.isNotNull())).map((r) => r.read(anzahl) ?? 0).getSingle());
+  }
+
   Future<int> offeneAnzahl() async {
     final anzahl = db.outbox.id.count();
     return (await (db.selectOnly(db.outbox)..addColumns([anzahl])..where(db.outbox.fehlerCode.isNull())).map((r) => r.read(anzahl) ?? 0).getSingle());
