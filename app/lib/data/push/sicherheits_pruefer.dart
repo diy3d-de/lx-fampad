@@ -104,10 +104,14 @@ class SicherheitsPruefer {
         return;
       }
       if (!await anzeige.initialisieren()) return; // der Stand bleibt: der nächste Start der App holt es nach
+      // fester Text, nie ein Name; nur der Hinweis an die Familie (ein anderer Zugang wurde zurückgesetzt) sagt, dass es nicht das eigene Konto ist
+      final nurFamilie = neu.every((e) => e.art == SicherheitsArt.mitgliedZugangZurueckgesetzt);
       final gezeigt = await anzeige.zeigenSicherheit(
         id: kSicherheitBenachrichtigungsId,
         titel: 'Sicherheitshinweis',
-        text: 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
+        text: nurFamilie
+            ? 'In der Familie wurde ein Zugang zurückgesetzt. Details unter Profil > Sicherheitsereignisse.'
+            : 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
       );
       if (gezeigt) await _markieren(neu.first.zeit);
     } on ApiException catch (e) {

@@ -66,6 +66,9 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
   /// Bietet der Server das leichte "Passwort zurücksetzen" (Link, zweiter Faktor bleibt) an?
   bool _passwortResetDa = false;
 
+  /// Kürzlich entfernte Mitglieder (Soft-Delete); null: der Server kennt es nicht (älterer Stand: Entfernen ist dort endgültig und sofort) oder die Abfrage ist gescheitert.
+  EntfernteMitglieder? _entfernte;
+
   @override
   void initState() {
     super.initState();
@@ -75,6 +78,13 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
   Future<void> _ladeListe() async {
     final api = ref.read(apiProvider);
     final m = await api.mitglieder();
+    // die Liste der Entfernten ist nebensächlich: ein älterer Server (404) oder ein Fehler lässt nur den Bereich weg und den alten, ehrlichen Text im Dialog stehen
+    EntfernteMitglieder? entfernte;
+    try {
+      entfernte = await api.entfernteMitglieder();
+    } catch (_) {
+      entfernte = null;
+    }
     // die Markierung ist nebensächlich: Fehler dabei dürfen die Liste nicht verhindern
     PasswortModi? modi;
     try {
@@ -88,8 +98,36 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         _mitglieder = m;
         _passwortModi = modi;
         _passwortResetDa = resetDa;
+        _entfernte = entfernte;
       });
     }
+  }
+
+  /// Text zum Entfernen: mit Soft-Delete (Server hält Schlüssel und Sicherungen noch [EntfernteMitglieder.aufbewahrungTage] Tage) ehrlich anders als beim sofortigen Löschen.
+  String _entfernenText(UserDto m) {
+    final e = _entfernte;
+    if (e == null) {
+      return '${m.displayName} wird entfernt und überall abgemeldet. Das Konto bleibt nur bestehen, wenn die Person noch zu einer anderen Familie gehört.\n\n'
+          'Endgültig: Ihr Schlüssel, ihre Sicherungen und ihr Schlüsselarchiv werden auf dem Server gelöscht. Ihre früheren Nachrichten bleiben als Chiffretext. '
+          'Auf Geräten, die ihren Schlüssel schon gemerkt haben, bleiben sie lesbar; auf neu verbundenen Geräten lassen sie sich nicht mehr prüfen.';
+    }
+    return '${m.displayName} wird aus der Familie genommen und überall abgemeldet. '
+        'Konto, Schlüssel und Sicherungen bleiben noch ${e.aufbewahrungTage} Tage gespeichert: In dieser Zeit holst du die Person unter „Kürzlich entfernt“ zurück. '
+        'Danach wird alles endgültig gelöscht, auch ihr Schlüssel und ihre Sicherungen. '
+        'Zuständigkeiten, Termin-Teilnahmen und Chat-Teilnahmen kommen auch bei einer Rückkehr nicht von selbst zurück. '
+        'Ihre früheren Nachrichten bleiben als Chiffretext; nach dem endgültigen Löschen lassen sie sich auf neu verbundenen Geräten nicht mehr prüfen.';
+  }
+
+  Future<void> _wiederherstellen(EntferntesMitglied m) async {
+    final ja = await _frage(
+      '${m.name} zurückholen?',
+      '${m.name} bekommt den Zugang zurück und meldet sich neu an. Schlüssel und Sicherungen sind unverändert da. '
+          'Zuständigkeiten und Chat-Teilnahmen kommen nicht zurück: Du nimmst ${m.name} wieder in Gruppen auf, und die Familie bestätigt die Person im Chat wie jede neue Person.',
+      'Zurückholen',
+      gefaehrlich: false,
+    );
+    if (!ja || !mounted) return;
+    await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).mitgliedWiederherstellen(m.id)), erfolg: '${m.name} ist wieder in der Familie.');
   }
 
   Future<void> _laden() => ausfuehren(_ladeListe);
@@ -140,15 +178,12 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
           erfolg: 'Profilbild zurückgesetzt.',
         );
       case _Aktion.entfernen:
-        final ja = await _frage(
-          'Mitglied entfernen?',
-          '${m.displayName} wird entfernt und überall abgemeldet. Das Konto bleibt nur bestehen, wenn die Person noch zu einer anderen Familie gehört.\n\n'
-          'Endgültig: Ihr Schlüssel, ihre Sicherungen und ihr Schlüsselarchiv werden auf dem Server gelöscht. Ihre früheren Nachrichten bleiben als Chiffretext. '
-          'Auf Geräten, die ihren Schlüssel schon gemerkt haben, bleiben sie lesbar; auf neu verbundenen Geräten lassen sie sich nicht mehr prüfen.',
-          'Entfernen',
-        );
+        final ja = await _frage('Mitglied entfernen?', _entfernenText(m), 'Entfernen');
         if (!ja || !mounted) return;
-        await _ausfuehrenUndLaden(() => _schritt(() => ref.read(apiProvider).mitgliedEntfernen(m.id)), erfolg: 'Mitglied entfernt.');
+        await _ausfuehrenUndLaden(
+          () => _schritt(() => ref.read(apiProvider).mitgliedEntfernen(m.id)),
+          erfolg: _entfernte == null ? 'Mitglied entfernt.' : 'Mitglied entfernt. Du kannst es bis zum endgültigen Löschen zurückholen.',
+        );
       case _Aktion.passwortZuruecksetzen:
         final opt = await _passwortResetWaehlen(m);
         if (opt == null || !mounted) return;
@@ -205,16 +240,21 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
     if (ok && erledigt && mounted) await neuLadenMitHinweis(_ladeListe, erfolg: erfolg);
   }
 
-  Future<bool> _frage(String titel, String text, String knopf) async =>
+  Future<bool> _frage(String titel, String text, String knopf, {bool gefaehrlich = true}) async =>
       await showDialog<bool>(useRootNavigator: false,
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text(titel),
           scrollable: true,
           content: Text(text),
+          scrollable: true,
           actions: [
             TextButton(onPressed: () => Navigator.of(ctx).pop(false), child: const Text('Abbrechen')),
-            TextButton(onPressed: () => Navigator.of(ctx).pop(true), style: TextButton.styleFrom(foregroundColor: kDanger), child: Text(knopf)),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              style: gefaehrlich ? TextButton.styleFrom(foregroundColor: kDanger) : null,
+              child: Text(knopf),
+            ),
           ],
         ),
       ) ??
@@ -283,7 +323,8 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
             children: [
               Text(
                 'Alle Anmeldedaten, Codes und Sitzungen von ${m.displayName} werden widerrufen. '
-                'Die Person richtet ihren Zugang mit einer neuen Einladung neu ein. Das Konto bleibt erhalten.'
+                'Die Person richtet ihren Zugang mit einer neuen Einladung neu ein. Das Konto bleibt erhalten. '
+                'Alle anderen in der Familie bekommen einen Hinweis darauf und sollen einen neuen Schlüssel von ${m.displayName} nur nach Rücksprache annehmen.'
                 '${_passwortResetDa ? ' Verschlüsselte Chats kann sie danach nur lesen, wenn sie noch ein Gerät mit ihrem Schlüssel oder ihren Wiederherstellungsschlüssel hat. Willst du nur das Passwort neu setzen, nimm „Passwort zurücksetzen“.' : ''}',
                 style: const TextStyle(color: kTextMuted, height: 1.4),
               ),
@@ -341,10 +382,58 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
             for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id], passwortResetDa: _passwortResetDa),
             if (aktiv.isEmpty) const EmptyState(icon: Icons.group_outlined, title: 'Keine Mitglieder', hint: 'Lade jemanden ein.'),
           ],
+          // Soft-Delete: entfernte Mitglieder, die noch zurückgeholt werden können (nur wenn es welche gibt)
+          if (_entfernte != null && _entfernte!.mitglieder.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            MonoLabel('// kürzlich entfernt (${_entfernte!.mitglieder.length})', color: kTextMuted),
+            const SizedBox(height: 4),
+            Text(
+              'Schlüssel und Sicherungen liegen noch ${_entfernte!.aufbewahrungTage} Tage nach dem Entfernen beim Server. Danach wird alles endgültig gelöscht.',
+              style: const TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
+            ),
+            const SizedBox(height: 8),
+            for (final m in _entfernte!.mitglieder) _EntferntKarte(m: m, onZurueck: laeuft ? null : () => _wiederherstellen(m)),
+          ],
         ],
       ),
     );
   }
+}
+
+/// Ein kürzlich entferntes Mitglied: Name, Rolle, wann es endgültig gelöscht wird und der Knopf "Zurückholen".
+class _EntferntKarte extends StatelessWidget {
+  final EntferntesMitglied m;
+  final VoidCallback? onZurueck;
+  const _EntferntKarte({required this.m, required this.onZurueck});
+
+  static String _tag(DateTime d) => DateFormat('dd.MM.yyyy').format(d.toLocal());
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 8),
+    child: Semantics(
+      container: true,
+      label: '${m.name}, entfernt am ${_tag(m.entferntAm)}, wird am ${_tag(m.loeschtAm)} endgültig gelöscht',
+      child: LxCard(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(m.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            Wrap(spacing: 6, runSpacing: 4, children: [RollenPille(m.rolle.label, farbe: kTextMuted), if (m.hatSchluessel) const RollenPille('schlüssel gespeichert', farbe: kWarn)]),
+            const SizedBox(height: 6),
+            Text(
+              'entfernt am ${_tag(m.entferntAm)} · endgültig gelöscht am ${_tag(m.loeschtAm)}',
+              style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+            ),
+            const SizedBox(height: 8),
+            ZweitKnopf(text: 'Zurückholen', icon: Icons.undo, onPressed: onZurueck),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _MitgliedKarte extends StatelessWidget {

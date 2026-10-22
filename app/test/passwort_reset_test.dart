@@ -183,6 +183,30 @@ void main() {
       expect('${z.titel} ${z.text}', isNot(contains('Anna')), reason: 'nie Namen oder Einzelheiten');
     });
 
+    test('Hinweis an die Familie (Komplett-Reset eines anderen Mitglieds): Text mit Namen in der App, fester Text ohne Namen in der Benachrichtigung', () async {
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final familie = {...ereignis('e1', DateTime.now().add(const Duration(minutes: 1)), kind: 'member_account_reset'), 'subjectName': 'Mama'};
+      final dto = SicherheitsEreignisDto.fromJson(familie);
+      expect(dto.art, SicherheitsArt.mitgliedZugangZurueckgesetzt);
+      expect(dto.betroffener, 'Mama');
+      expect(sicherheitsEreignisText(dto), 'Der Zugang von Mama wurde zurückgesetzt. Nimm einen neuen Schlüssel dieser Person nur nach Rücksprache an.');
+      expect(sicherheitsEreignisText(SicherheitsEreignisDto.fromJson({...familie, 'subjectName': null})), contains('einem Familienmitglied'));
+      a.server.json('GET /me/security-events', {'events': [familie]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final z = a.anzeige.sicherheit.single;
+      expect(z.text, startsWith('In der Familie wurde ein Zugang zurückgesetzt.'));
+      expect('${z.titel} ${z.text}', isNot(contains('Mama')), reason: 'nie Namen in der Benachrichtigung');
+      expect(z.text, isNot(contains('An deinem Konto')), reason: 'es ist nicht das eigene Konto');
+      // zusammen mit einem Ereignis am eigenen Konto gilt der allgemeine Text
+      await a.db.metaSchreiben(kSicherheitSeitSchluessel, DateTime.utc(2020).toIso8601String());
+      a.anzeige.sicherheit.clear();
+      a.server.json('GET /me/security-events', {'events': [familie, ereignis('e2', DateTime.now().add(const Duration(minutes: 2)), kind: 'password_reset_done')]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit.single.text, startsWith('An deinem Konto'));
+    });
+
     test('Anzeige nicht möglich (keine Erlaubnis): der Stand bleibt, der Start der App holt es nach', () async {
       final a = await bauen();
       a.server.json('GET /me/security-events', {'events': <Object>[]});
