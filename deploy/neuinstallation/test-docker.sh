@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Startet die Tests von bootstrap-server.sh in einem frischen Debian-13-Container (Docker nötig; nichts am Rechner selbst wird verändert).
+# Startet die Tests von bootstrap-server.sh und des Umzugs-Assistenten (umzug.sh) in einem frischen Debian-13-Container (Docker nötig; nichts am Rechner selbst wird verändert).
 #   deploy/neuinstallation/test-docker.sh
 # Das Netz wird nur zum Bauen des Test-Images gebraucht (apt: age, python3, shellcheck); die Tests selbst laufen mit --network none,
 # das Repository ist nur lesend eingebunden. (Der Trockenlauf meldet ohne Netz "nicht erreichbar": das erwartet der Test.)
@@ -17,7 +17,9 @@ MSYS_NO_PATHCONV=1 docker run --rm --network none -v "$REPO:/repo:ro" lx-fampad-
   cd /repo
   echo "== shellcheck"
   shellcheck -x -S warning deploy/neuinstallation/bootstrap-server.sh deploy/neuinstallation/test-bootstrap.sh deploy/neuinstallation/test-docker.sh \
-    deploy/neuinstallation/test-integration/*.sh deploy/deploy.sh
+    deploy/neuinstallation/umzug.sh deploy/neuinstallation/test-umzug.sh deploy/neuinstallation/test-integration/*.sh deploy/deploy.sh
   echo "   shellcheck ok"
   bash deploy/neuinstallation/test-bootstrap.sh
+  echo "== Umzugs-Assistent"
+  bash deploy/neuinstallation/test-umzug.sh
 '
