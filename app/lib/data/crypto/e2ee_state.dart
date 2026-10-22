@@ -59,6 +59,27 @@ enum PwNachReset {
   fehlgeschlagen,
 }
 
+/// Ausgang des automatischen Verbindens nach der Anmeldung mit Passwort ([E2eeController.automatischVerbinden]).
+enum AutoVerbinden {
+  /// Es gab nichts zu tun (Gerät hat schon einen Schlüssel, Person hat noch keinen, Passwort-Sicherung nicht angeboten).
+  nichtNoetig,
+
+  /// Das Gerät ist jetzt mit dem Personenschlüssel verbunden.
+  verbunden,
+
+  /// Es gibt keine bestätigte Passwort-Sicherung: Verbinden geht nur mit Wiederherstellungsschlüssel oder einem anderen Gerät.
+  keineSicherung,
+
+  /// Die Passwort-Sicherung ist veraltet (nach einem Passwort-Reset): sie gehört zum alten Passwort.
+  veraltet,
+
+  /// Das Anmelde-Passwort öffnet die Sicherung nicht (sie wurde mit einem anderen Passwort angelegt).
+  passwortPasstNicht,
+
+  /// Technischer Fehler (Netz, Speicher, Step-up): es wurde nichts verändert; manuell unter Profil > Verschlüsselung.
+  fehlgeschlagen,
+}
+
 /// Lädt libsodium einmal (Tests ersetzen den Provider durch einen Fake).
 /// Ohne automatische Wiederholung (Riverpod 3 würde Fehler sonst mit Wartezeiten wiederholen): Scheitert das Laden, zeigt die Seite sofort "nicht verfügbar".
 final cryptoProviderProvider = FutureProvider<CryptoProvider>((ref) => SodiumCryptoProvider.laden(), retry: (_, _) => null);
@@ -985,6 +1006,48 @@ class E2eeController extends Notifier<E2eeState> {
     final r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
     await _lokalUebernehmen(r.schluessel, r.keyVersion);
     return r.veraltet;
+  }
+
+  /// Nach der Anmeldung mit Passwort (ein Passwort für Anmeldung und Sicherung): Hat dieses Gerät noch keinen Schlüssel, der Server aber eine bestätigte, nicht
+  /// veraltete Passwort-Sicherung, öffnet die App sie mit dem Passwort, das die Person gerade eingegeben hat, und verbindet das Gerät (kein zweites Passwort).
+  /// Nie ein neuer Personenschlüssel, nie ein vorhandener lokaler Schlüssel wird angefasst oder ersetzt (liegt einer da, passiert nichts, auch bei "abweichend": das
+  /// entscheidet die Person unter Profil > Verschlüsselung). Übernommen wird der Schlüssel erst nach dem Vergleich mit dem frisch geholten öffentlichen Schlüssel
+  /// des Servers ([_lokalUebernehmen]). Wirft nie; der Ausgang sagt, was geschehen ist.
+  Future<AutoVerbinden> automatischVerbinden(String passwort) async {
+    try {
+      if (!await _api.pwSicherungVerfuegbar()) return AutoVerbinden.nichtNoetig;
+      final crypto = await _krypto();
+      final Personenschluessel? lokal;
+      try {
+        lokal = _lokal ?? await _lokalLaden(crypto);
+      } on SchluesselSpeicherFehler {
+        return AutoVerbinden.fehlgeschlagen; // Speicher gerade nicht lesbar: nichts anfassen
+      }
+      if (lokal != null) return AutoVerbinden.nichtNoetig;
+      final eigene = await _api.eigeneSchluessel();
+      if (eigene.schluessel == null) return AutoVerbinden.nichtNoetig; // noch kein Schlüssel eingerichtet: nie automatisch einen anlegen
+      // Zustand des Servers zuerst (ohne die protokollierte Sicherung abzurufen): nur eine bestätigte, aktuelle Sicherung ist ein Ziel
+      if (eigene.pwSicherungVeraltet) return AutoVerbinden.veraltet;
+      if (eigene.pwSicherungBestaetigtAm == null) return AutoVerbinden.keineSicherung;
+      final ({Personenschluessel schluessel, int keyVersion, bool veraltet}) r;
+      try {
+        r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
+      } on CryptoFehler catch (e) {
+        return e.art == CryptoFehlerArt.entschluesselung ? AutoVerbinden.passwortPasstNicht : AutoVerbinden.fehlgeschlagen;
+      } on ApiException catch (e) {
+        return e.code == 'not_found' ? AutoVerbinden.keineSicherung : AutoVerbinden.fehlgeschlagen;
+      }
+      // _lokalUebernehmen prüft gegen den frisch geholten Schlüssel des Servers und schreibt erst dann
+      await _lokalUebernehmen(r.schluessel, r.keyVersion);
+      return AutoVerbinden.verbunden;
+    } on Object {
+      try {
+        if (ref.mounted) await laden();
+      } on Object {
+        // nur die Anzeige
+      }
+      return AutoVerbinden.fehlgeschlagen;
+    }
   }
 
   /// Nimmt den Schlüssel aus dem Betrieb dieses Geräts (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden. Der Schlüssel wird

@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/auth/passwort_anmeldung.dart';
+import '../../data/crypto/auto_verbinden.dart';
+import '../../data/crypto/e2ee_state.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 import 'invite_screen.dart';
@@ -96,7 +98,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       return;
     }
     final email = _email.text.trim();
-    await ausfuehren(
+    // vor der Anmeldung festhalten: danach ersetzt die Oberfläche diese Seite (wie bei "Passwort vergessen?")
+    final e2ee = ref.read(e2eeProvider.notifier);
+    final hinweis = ref.read(autoVerbindenHinweisProvider.notifier);
+    final passwort = _passwort.text;
+    final ok = await ausfuehren(
       () => ref.read(passwortAnmeldungProvider).anmelden(
         email: email,
         passwort: _passwort.text,
@@ -110,6 +116,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
         ),
       ),
     );
+    // Ein Passwort für Anmeldung und Sicherung: ein Gerät ohne Schlüssel verbindet sich mit der Passwort-Sicherung, ohne ein zweites Passwort zu verlangen
+    if (ok) unawaited(automatischVerbinden(e2ee, hinweis, passwort));
   }
 
   Future<void> _nurWiederherstellung() async {
