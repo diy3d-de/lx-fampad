@@ -1785,6 +1785,11 @@ void main() {
     final vorEntfernenRev = (await syncen(adminB, [])).rev;
     await admin.api.mitgliedEntfernen(kindId);
     expect((await admin.api.mitglieder()).any((m) => m.id == kindId), isFalse);
+    // Soft-Delete (P1): das entfernte Mitglied liegt mit Frist in der Liste der Entfernten (wiederherstellbar), und "Bin ich abgesichert?" antwortet
+    final entfernte = await admin.api.entfernteMitglieder();
+    expect(entfernte.mitglieder.any((m) => m.id == kindId), isTrue);
+    expect(entfernte.aufbewahrungTage, 30);
+    expect(await admin.api.schluesselWege(), isNotNull);
     schritt('Sync: Verweise auf das entfernte Mitglied sind mit Änderungseintrag bereinigt');
     final bereinigt = await syncen(adminB, [], since: vorEntfernenRev);
     expect(bereinigt.rev, greaterThan(vorEntfernenRev));
