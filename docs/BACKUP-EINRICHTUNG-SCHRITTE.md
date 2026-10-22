@@ -3,7 +3,7 @@
 Diese Anleitung führt dich einmal komplett durch (etwa 1 bis 2 Stunden). Hintergründe, Sicherheitsmodell und Grenzen stehen in [`BACKUP.md`](BACKUP.md), der Neuaufbau im Ernstfall in [`WIEDERHERSTELLUNG.md`](WIEDERHERSTELLUNG.md).
 Alles auf dem Server führst du selbst mit `sudo` aus; nichts davon macht Claude. Befehle sind zum Kopieren gedacht, `<…>` und Werte in `'…'` ersetzt du durch deine eigenen.
 
-**Reihenfolge ist wichtig:** Schlüssel (1, 2) → **NAS-Snapshots (3) vor dem ersten Lauf** → Server (4 bis 6) → NAS-Abholung (7) → Wiederherstellungstest (8). Ohne Schritt 3 und 8 ist die Sicherung nicht abgenommen.
+**Reihenfolge ist wichtig:** Schlüssel (1, 2) → **NAS-Snapshots (3) vor dem ersten Lauf** → Server (4 bis 6) → NAS-Abholung (7) → Wiederherstellungstest (8), optional automatischer Wochentest auf dem NAS (10). Ohne Schritt 3 und 8 ist die Sicherung nicht abgenommen.
 
 Was nicht gesichert wird (bewusst): Web-App und Server-Code (kommen aus `deploy.sh`), die kommende Kartendatei `/srv/fampad/karte` (1 bis 5 GB, neu erzeugbar), lx-labs.dev, Standortdaten (gibt es nicht auf der Platte).
 
@@ -324,6 +324,148 @@ free -m
 
 ---
 
+## 10. Optional, empfohlen: Wiederherstellungstest jede Woche automatisch (auf dem NAS)
+
+Der manuelle Test aus Schritt 8 prüft einmal. Eine Sicherung, die niemand zurückspielt, kann trotzdem kaputt sein (falscher Schlüssel, beschädigte Datei, neue Datenbank-Version). Deshalb spielt das NAS **jeden Sonntag** die zuletzt abgeholte Sicherung in eine **Wegwerf-Datenbank** ein (Docker-Container, ohne Netz, Daten nur im Arbeitsspeicher, danach weg) und schreibt das Ergebnis in eine kleine Statusdatei (`ok` oder `fehler`, Zeitpunkt, Größen, Anzahl Tabellen, **nie Inhalte oder Geheimnisse**). Bei einem Fehler schlägt der Aufgabenplaner an und schickt dir die E-Mail aus Schritt 7. Der Server und die Produktivdatenbank werden nie angefasst.
+
+**Sicherheitsabwägung (bitte lesen):** Für den Test muss ein **privater** Schlüssel auf dem NAS liegen. Wer auf dem NAS Administrator ist, kann damit die Datenbank-Sicherungen auf dem NAS entschlüsseln. Deshalb:
+- Du erzeugst dafür einen **eigenen Test-Schlüssel** (nicht den Hauptschlüssel, nicht den Ersatzschlüssel). Den kannst du jederzeit austauschen.
+- Der Test-Schlüssel bekommt **nur die Datenbank**, **nicht** das Konfigurationsarchiv mit `AUTH_SECRET_KEY` (Schritt 10.2). Der Test prüft dann nur die Datenbank, das Konfigurationsarchiv prüfst du weiter von Hand (Schritt 8, halbjährlich).
+- Der Schlüssel liegt im Home-Verzeichnis von `root` (nicht in einer Freigabe), damit ihn weder Snapshots noch Hyper Backup mitnehmen, und hat die Rechte `600`.
+- Bist du mit der Abwägung nicht einverstanden: nicht einrichten und Schritt 8 weiter halbjährlich von Hand machen.
+
+**Voraussetzungen:** ein Synology mit Docker-Unterstützung (Paket *Container Manager*, bei DSM 7.0/7.1 *Docker*; nicht jedes Modell kann es: Paketzentrale ansehen), etwa 1 GB freier Arbeitsspeicher, Internet beim ersten Mal (das Image wird einmal gebaut). Die Aufgabe läuft als `root` (Docker verlangt das bei Synology).
+
+### 10.1 Container Manager installieren
+
+Paketzentrale → *Container Manager* suchen → Installieren. Fertig (nichts weiter einstellen).
+
+### 10.2 Test-Schlüssel erzeugen und dem Server als Empfänger nur für die Datenbank hinzufügen
+
+Auf deinem PC (wie in Schritt 1):
+
+```powershell
+cd C:\age
+.\age-keygen.exe -o lx-fampad-age-test.key
+.\age-keygen.exe -y lx-fampad-age-test.key
+```
+
+**Erwartung:** die zweite Zeile zeigt `age1…` (öffentlicher Schlüssel, `AGE_PUB_TEST`). Die Datei `lx-fampad-age-test.key` ist der private Schlüssel: nur für den Weg aufs NAS (10.3), danach vom PC löschen oder sicher ablegen.
+
+Auf dem Server den Einrichtungsaufruf aus Schritt 5 **wiederholen** (er ist wiederholbar und **ersetzt** die Empfängerlisten, deshalb alle Schlüssel angeben): Haupt-, Ersatz- **und** Test-Schlüssel für die Datenbank, nur Haupt- und Ersatzschlüssel für die Konfiguration:
+
+```bash
+AGE_PUB_TEST='age1…test…'
+sudo bash ~/lx-fampad/deploy/backup/einrichtung-backup.sh \
+  --age-recipient "$AGE_PUB" --age-recipient "$AGE_PUB2" --age-recipient "$AGE_PUB_TEST" \
+  --age-recipient-config "$AGE_PUB" --age-recipient-config "$AGE_PUB2" \
+  --nas-pubkey "$NAS_PUB" --nas-ip "$NAS_IP"
+sudo systemctl start lx-fampad-backup.service
+```
+
+**Erwartung:** wie in Schritt 5; in der Übersicht des Skripts stehen `3 age-Empfänger` und `2 eigene Empfänger für die Konfiguration` (vorher mit `--dry-run` ansehen). **Wichtig:** Nur Sicherungen, die **nach** dieser Umstellung entstehen, kann der Test-Schlüssel lesen; der Test beginnt also mit dem nächsten Pull (Schritt 10.4). Haupt- und Ersatzschlüssel lesen weiterhin alles.
+
+### 10.3 Skripte und Schlüssel auf das NAS bringen
+
+Auf deinem PC (`lx-labs` ist dein SSH-Alias des Servers; die Skripte stammen aus dem Checkout dort, wie in Schritt 7):
+
+```bash
+scp lx-labs:lx-fampad/deploy/backup/wiederherstellung-test.sh .
+scp lx-labs:lx-fampad/deploy/backup/nas/lx-fampad-restoretest.sh .
+scp wiederherstellung-test.sh lx-fampad-restoretest.sh lx-fampad-age-test.key <nas-admin-benutzer>@<nas-adresse>:/volume1/homes/<nas-admin-benutzer>/
+```
+
+Dann auf dem NAS (SSH als Admin, danach `sudo -i`, Passwort eingeben) alles nach `/root` verschieben und absichern:
+
+```bash
+sudo -i
+mkdir -p /root/lx-fampad-restoretest && chmod 700 /root/lx-fampad-restoretest
+mv /volume1/homes/<nas-admin-benutzer>/{wiederherstellung-test.sh,lx-fampad-restoretest.sh,lx-fampad-age-test.key} /root/lx-fampad-restoretest/
+chown root:root /root/lx-fampad-restoretest/* && chmod 600 /root/lx-fampad-restoretest/lx-fampad-age-test.key && chmod 700 /root/lx-fampad-restoretest/*.sh
+ls -l /root/lx-fampad-restoretest
+```
+
+**Erwartung:** drei Dateien, der Schlüssel `-rw-------`, die Skripte `-rwx------`, alle `root root`. Die Datei `lx-fampad-age-test.key` auf dem PC jetzt löschen (auch aus dem Home-Ordner auf dem NAS ist sie durch das Verschieben weg). Ein Ersatz ist nicht nötig: geht der Test-Schlüssel verloren, erzeugst du einfach einen neuen (10.2).
+
+### 10.4 Einmal von Hand testen
+
+Zuerst muss das NAS eine Sicherung haben, die der Test-Schlüssel lesen kann (aus der Zeit nach 10.2): den Pull aus Schritt 7 einmal von Hand ausführen (`LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-pull.sh`) und prüfen, dass `neu und ok: <Datum>` erscheint. Dann (als `root`, wie oben):
+
+```bash
+cd /root/lx-fampad-restoretest
+LXB_DEST=/volume1/backup/lx-fampad bash lx-fampad-restoretest.sh --identity /root/lx-fampad-restoretest/lx-fampad-age-test.key --ohne-config --dry-run
+```
+
+**Erwartung:** `==> Sicherung: <Datum> (Alter … h …)`, `Image … fehlt (wird beim echten Lauf gebaut).`, `==> Trockenlauf beendet`. Eine Zeile `FEHLER: …` sagt, was fehlt (z. B. Schlüsselrechte, Docker nicht gefunden). Dann der echte Lauf (der erste dauert einige Minuten, weil das Image gebaut wird):
+
+```bash
+LXB_DEST=/volume1/backup/lx-fampad bash lx-fampad-restoretest.sh --identity /root/lx-fampad-restoretest/lx-fampad-age-test.key --ohne-config
+cat /volume1/backup/lx-fampad/restoretest-status
+```
+
+**Erwartung:**
+
+```
+==> 1/4 Prüfsummen
+==> 2/4 Wegwerf-Datenbank lx_fampad_restoretest anlegen
+==> 3/4 Entschlüsseln und einspielen (age -d | pg_restore, ohne Besitzer/Rechte)
+    Tabellen im Schema public: <N>
+    angewendete Migrationen (drizzle.__drizzle_migrations): <Zahl>
+==> 4/4 Konfigurationsarchiv …   (übersprungen, weil --ohne-config)
+==> Wiederherstellungstest bestanden: <Datum> (Tabellen: <N>, Migrationen: <Zahl>)
+```
+
+und in der Statusdatei `last_result=ok`, `last_success_utc=<jetzt>`, `db_bytes=…`, `tables=…`, `config_check=nein`. Prüfe, dass `tables` und `migrations` zur Größenordnung deines Servers passen.
+
+### 10.5 Aufgabenplaner: jeden Sonntag
+
+Systemsteuerung → Aufgabenplaner → Erstellen → Geplante Aufgabe → *Benutzerdefiniertes Skript*:
+- *Allgemein*: Name `lx-fampad Wiederherstellungstest`, Benutzer **root**.
+- *Zeitplan*: **wöchentlich, Sonntag, 06:00** (nach dem Abholen um 04:30 und den Snapshots um 05:30).
+- *Aufgabeneinstellungen*: Haken bei *Ausführungsdetails per E-Mail senden* und *Nur bei abnormaler Beendigung*; im Feld *Benutzerdefiniertes Skript*:
+
+```bash
+LXB_DEST=/volume1/backup/lx-fampad bash /root/lx-fampad-restoretest/lx-fampad-restoretest.sh --identity /root/lx-fampad-restoretest/lx-fampad-age-test.key --ohne-config
+```
+
+- Aufgabe markieren → *Ausführen* → *Aktion* → *Ausgabeergebnis anzeigen*: muss `Wiederherstellungstest bestanden` enthalten. Die Ausgabe enthält nur Fortschrittszeilen und Zähler, keine Daten.
+- Beendet sich der Test mit einem Fehler (Exit 1), kommt die E-Mail, und `restoretest-status` meldet `last_result=fehler` mit `step` und `detail`. Ein sonntags laufender anderer Test (Exit 75) ist harmlos.
+
+### 10.6 Ergebnis lesen und was Fehler bedeuten
+
+```bash
+cat /volume1/backup/lx-fampad/restoretest-status
+```
+
+| Wert | Bedeutung |
+| --- | --- |
+| `last_result` | `ok` oder `fehler` |
+| `last_run_utc`, `last_success_utc` | letzter Lauf, letzter erfolgreicher Lauf (UTC) |
+| `run_dir`, `backup_age_h` | welche Sicherung getestet wurde und wie alt sie war |
+| `db_bytes`, `config_bytes` | Größe der verschlüsselten Dateien |
+| `tables`, `migrations` | Zähler der wiederhergestellten Datenbank (Größenordnung vergleichen) |
+| `config_check` | `ja` = Konfigurationsarchiv geprüft, `nein` = bewusst übersprungen (`--ohne-config`) |
+| `step`, `detail` | bei `fehler`: wo und warum (Tabelle unten) |
+
+| `detail` | Ursache und was zu tun ist |
+| --- | --- |
+| `pruefsummen` | Datei beschädigt oder verändert: Archiv und Snapshots ansehen (BACKUP.md, „Bei Alarm“) |
+| `entschluesseln_einspielen` | Test-Schlüssel passt nicht zu dieser Sicherung (nach 10.2 neu erzeugt? Sicherung aus der Zeit davor?), Datei beschädigt oder PostgreSQL im Image älter als 17 |
+| `konfigarchiv` | nur ohne `--ohne-config`: Schlüssel kann das Konfigurationsarchiv nicht lesen oder `etc/lx-fampad/env` fehlt darin |
+| `sicherung_zu_alt` | neueste geprüfte Sicherung älter als 72 h: holt der Pull (Schritt 7) noch ab? |
+| `keine_sicherung`, `kein_archiv`, `marke_stimmt_nicht` | Pull noch nie gelaufen bzw. Archiv verändert (BACKUP.md, „Bei Alarm“) |
+| `schluessel_rechte`, `schluessel_besitzer`, `schluessel_fehlt`, `schluessel_inhalt`, `schluessel_im_archiv` | Schlüsseldatei prüfen: `chmod 600`, Besitzer root, richtiger Pfad, kein Link, nicht im Sicherungsordner |
+| `docker_fehlt`, `docker_nicht_erreichbar`, `docker_start`, `image_bauen` | Container Manager installiert und gestartet? Aufgabe als root? Beim Bauen Internet und Speicherplatz |
+| `zeitlimit` | der Test hat 30 Minuten überschritten (`LXR_TIMEOUT`), NAS ausgelastet oder Datenbank sehr groß (`LXR_TMPFS_SIZE`/`LXR_MEMORY` erhöhen) |
+
+Das Image wird bei Bedarf alle 35 Tage neu gebaut (Sicherheitsupdates der Basis), von Hand mit `--rebuild`. Einmal im Monat in der Statusdatei nachsehen, dass `last_run_utc` höchstens 8 Tage alt ist (läuft die Aufgabe selbst nicht mehr, meldet sich nichts, wie beim Pull).
+
+### 10.7 Meldung an den Server (noch nicht)
+
+Der Server erfährt das Ergebnis **noch nicht**: Er hält bewusst keine Zugangsdaten zum NAS, und der vorhandene SSH-Zugang des NAS ist nur lesend (`rrsync -ro`). Ein sicherer Rückweg (NAS schickt nur die Statusdatei über einen eigenen eingeschränkten Schlüssel) ist als offener Punkt für „Betrieb Paket 3“ vermerkt (`BACKUP.md`, Abschnitt „Überwachung“). Bis dahin ist die E-Mail des Aufgabenplaners das Warnsignal.
+
+---
+
 ## Fertig: Checkliste
 
 - [ ] Haupt- und Ersatzschlüssel (privat) im Passwortmanager bzw. ausgedruckt an zwei Orten, **nicht** auf dem Server
@@ -333,4 +475,5 @@ free -m
 - [ ] NAS-Aufgabe 04:30 läuft, E-Mail bei Fehler ist getestet
 - [ ] Wiederherstellungstest (Schritt 8) bestanden und eingetragen
 - [ ] Optional: Swap eingerichtet
+- [ ] Optional: automatischer Wochentest auf dem NAS (Schritt 10): `restoretest-status` zeigt `last_result=ok`, E-Mail bei Fehler ist getestet
 - [ ] Datenschutz: Die Sicherungen werden erst nach der Aufbewahrungszeit endgültig gelöscht (Server 3 Tage, NAS bis ca. 13 Monate), siehe `DATENSCHUTZ-ENTWURF.md`

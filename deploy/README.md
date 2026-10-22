@@ -525,7 +525,7 @@ systemctl list-timers lx-fampad-backup.timer && sudo cat /var/backups/lx-fampad/
 
 **Schritt-für-Schritt-Anleitung zum Einrichten:** [`docs/BACKUP-EINRICHTUNG-SCHRITTE.md`](../docs/BACKUP-EINRICHTUNG-SCHRITTE.md). Nicht gesichert wird u. a. `/srv/fampad/karte` (Kartendatei, neu erzeugbar).
 
-Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern die in diesem Lauf angelegten oder geänderten Dateien, Units, den Benutzer und den Timer-Zustand zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh}`.
+Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern die in diesem Lauf angelegten oder geänderten Dateien, Units, den Benutzer und den Timer-Zustand zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh, nas/lx-fampad-restoretest.sh}`.
 
 ### Swap
 
