@@ -37,6 +37,7 @@ describe('Migration 0022 (P1 Schlüssel-Paket) additiv auf Stand 0021', () => {
       world = undefined;
 
       // zurück in den Stand 0021: die Objekte von 0022 weg, ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
+      await db.execute(sql`drop table operator_settings`); // Migration 0023 (Betreiber Paket 2b) liegt über 0022 und wird beim erneuten Migrieren wieder angelegt
       await db.execute(sql`alter table users drop constraint users_removed_ck`);
       await db.execute(sql`alter table users drop column removed_at, drop column removed_by`);
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
