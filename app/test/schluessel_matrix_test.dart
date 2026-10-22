@@ -40,7 +40,62 @@ List<File> _libDateien() => [
 ];
 
 /// Quelltext ohne Zeilen- und Blockkommentare (Kommentare dürfen die Namen nennen, der Wächter prüft nur Code).
-String _ohneKommentare(String t) => t.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '').replaceAll(RegExp(r'//[^\n]*'), '');
+/// Erkennt Zeichenketten (auch mit ${...}-Einsetzungen): ein "//" in einem String, etwa in einer URL, schneidet nichts ab.
+String _ohneKommentare(String t) {
+  final aus = StringBuffer();
+  // leer = Code; sonst oben ein String-Rahmen (Anführungszeichen) oder ein Einsetzungs-Rahmen (Klammertiefe)
+  final rahmen = <({String? anfuehrung, int tiefe})>[];
+  var i = 0;
+  while (i < t.length) {
+    final c = t[i];
+    final n = i + 1 < t.length ? t[i + 1] : '';
+    final oben = rahmen.isEmpty ? null : rahmen.last;
+    if (oben != null && oben.anfuehrung != null) {
+      if (c == r'\') {
+        aus..write(c)..write(n);
+        i += 2;
+        continue;
+      }
+      if (c == r'$' && n == '{') {
+        rahmen.add((anfuehrung: null, tiefe: 0));
+        aus.write(r'${');
+        i += 2;
+        continue;
+      }
+      if (c == oben.anfuehrung) rahmen.removeLast();
+      aus.write(c);
+      i++;
+      continue;
+    }
+    if (c == '/' && n == '/') {
+      while (i < t.length && t[i] != '\n') {
+        i++;
+      }
+      continue;
+    }
+    if (c == '/' && n == '*') {
+      final ende = t.indexOf('*/', i + 2);
+      i = ende < 0 ? t.length : ende + 2;
+      continue;
+    }
+    if (c == "'" || c == '"') {
+      rahmen.add((anfuehrung: c, tiefe: 0));
+    } else if (oben != null) {
+      if (c == '{') {
+        rahmen[rahmen.length - 1] = (anfuehrung: null, tiefe: oben.tiefe + 1);
+      } else if (c == '}') {
+        if (oben.tiefe == 0) {
+          rahmen.removeLast();
+        } else {
+          rahmen[rahmen.length - 1] = (anfuehrung: null, tiefe: oben.tiefe - 1);
+        }
+      }
+    }
+    aus.write(c);
+    i++;
+  }
+  return aus.toString();
+}
 
 String _norm(String pfad) => pfad.replaceAll('\\', '/');
 
@@ -465,6 +520,52 @@ void _luecken() {
         }
       },
     );
+
+    test('der Kommentar-Filter lässt Zeichenketten mit "//" (URLs) und Einsetzungen unberührt', () {
+      final t = _ohneKommentare("final u = 'https://x.de/a'; // FlutterSecureStorage(\nfinal v = '\${a ? 'b' : \"//c\"}'; /* deleteAll( */ final w = 1;");
+      expect(t, contains("'https://x.de/a'"));
+      expect(t, contains('//c'));
+      expect(t, contains('final w = 1;'));
+      expect(t, isNot(contains('FlutterSecureStorage')));
+      expect(t, isNot(contains('deleteAll')));
+    });
+
+    test('Reparatur des Gerätespeichers: genau ein Zugriff auf den Provider und ein zuruecksetzen()-Aufruf, beide in geraetespeicher_reparatur.dart, nach der Wortbestätigung', () {
+      const reparatur = 'lib/features/auth/geraetespeicher_reparatur.dart';
+      const definition = 'lib/data/crypto/sicherer_speicher.dart';
+      final providerStellen = <String>[];
+      final aufrufe = <String>[];
+      for (final f in _libDateien()) {
+        final pfad = _norm(f.path);
+        final text = _ohneKommentare(_lies(f.path));
+        if (pfad != definition) {
+          for (var i = 0; i < RegExp(r'\bgeraeteSpeicherProvider\b').allMatches(text).length; i++) {
+            providerStellen.add(pfad);
+          }
+          expect(RegExp(r'\bPluginGeraeteSpeicher\b').hasMatch(text), isFalse, reason: '$pfad baut die Reparatur selbst zusammen');
+        }
+        // zuruecksetzen() auf einem GeraeteSpeicher: der Aufruf in der Reparatur; die Vertrauensablage (VertrauensPruefer.zuruecksetzen) hat ihre eigene Rückfrage
+        for (final m in RegExp(r'(\w+)\.zuruecksetzen\(').allMatches(text)) {
+          if (m.group(1) != 'speicher' || pfad != reparatur) {
+            if (pfad == 'lib/data/crypto/e2ee_state.dart') continue; // `VertrauensPruefer(...).zuruecksetzen()`
+            fail('$pfad ruft ${m.group(0)} auf');
+          }
+        }
+        for (final _ in RegExp(r'\bspeicher\.zuruecksetzen\(').allMatches(text)) {
+          aufrufe.add(pfad);
+        }
+      }
+      expect(providerStellen, [reparatur]);
+      expect(aufrufe, [reparatur]);
+      final code = _ohneKommentare(_lies(reparatur));
+      final wort = code.indexOf('wortBestaetigen(');
+      final aufruf = code.indexOf('speicher.zuruecksetzen(');
+      expect(wort, greaterThan(0));
+      expect(aufruf, greaterThan(wort), reason: 'zuerst die Rückfrage mit getipptem Wort');
+      final proben = [for (final m in RegExp(r'speicher\.nachweislichDefekt\(').allMatches(code)) m.start];
+      expect(proben.where((p) => p < wort), isNotEmpty, reason: 'Probe vor der Rückfrage');
+      expect(proben.where((p) => p > wort && p < aufruf), isNotEmpty, reason: 'Probe noch einmal direkt vor dem Löschen');
+    });
   });
 }
 

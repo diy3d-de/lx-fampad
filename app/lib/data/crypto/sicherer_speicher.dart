@@ -45,8 +45,9 @@ class GeraeteSpeicherDefekt implements Exception {
 
 /// Prüfung und bewusste Reparatur des sicheren Speichers dieses Geräts (Android).
 abstract class GeraeteSpeicher {
-  /// Probe: Prüfeintrag schreiben, lesen, löschen, bei einem Fehler nach kurzer Pause noch einmal. true nur, wenn BEIDE Versuche scheitern (nachweislich defekt,
-  /// kein vorübergehender Aussetzer).
+  /// Probe: Prüfeintrag schreiben, lesen, löschen und bereits vorhandene Einträge lesen; bei einem Fehler wird nach einer Pause wiederholt (insgesamt drei Versuche).
+  /// true nur, wenn ALLE Versuche scheitern UND mindestens ein Fehler nach einem dauerhaften Defekt aussieht ([speicherFehlerDauerhaft]: Schlüssel ungültig, nicht
+  /// entschlüsselbar). Reine E/A-Fehler, voller Speicher oder ein Aussetzer zählen nicht als Defekt.
   Future<bool> nachweislichDefekt();
 
   /// Löscht alles, was die App im sicheren Speicher hält, und lässt das Plugin dabei kaputte Schlüssel verwerfen. Nur nach Rückfrage und nach [nachweislichDefekt] aufrufen.
@@ -57,28 +58,41 @@ class PluginGeraeteSpeicher implements GeraeteSpeicher {
   final FlutterSecureStorage _alltag;
   final FlutterSecureStorage _reparatur;
   final Duration pause;
-  PluginGeraeteSpeicher({FlutterSecureStorage? alltag, FlutterSecureStorage? reparatur, this.pause = const Duration(milliseconds: 400)})
+  PluginGeraeteSpeicher({FlutterSecureStorage? alltag, FlutterSecureStorage? reparatur, this.pause = const Duration(seconds: 1)})
     : _alltag = alltag ?? kSicherSpeicher,
       _reparatur = reparatur ?? _kReparaturSpeicher;
 
   static const _probe = 'lx_fampad_probe';
 
-  Future<bool> _probeKlappt() async {
+  /// Bereits vorhandene Einträge der App (Anmeldung, Index des Schlüsselspeichers): Ist einer davon dauerhaft nicht entschlüsselbar, zeigt das den Defekt am deutlichsten.
+  static const _vorhandene = ['lx_fampad_tokens', 'lx_fampad___index'];
+
+  /// Ein Versuch: null, wenn alles klappt; sonst der erste Fehler (bei einem unerwarteten Lesewert ein [StateError]).
+  Future<Object?> _versuch() async {
     try {
       await _alltag.write(key: _probe, value: '1');
       final v = await _alltag.read(key: _probe);
       await _alltag.delete(key: _probe);
-      return v == '1';
-    } on Object {
-      return false;
+      if (v != '1') return StateError('Prüfeintrag nicht lesbar');
+      for (final k in _vorhandene) {
+        await _alltag.read(key: k);
+      }
+      return null;
+    } on Object catch (e) {
+      return e;
     }
   }
 
   @override
   Future<bool> nachweislichDefekt() async {
-    if (await _probeKlappt()) return false;
-    await Future<void>.delayed(pause);
-    return !await _probeKlappt();
+    var dauerhaft = false;
+    for (var i = 0; i < 3; i++) {
+      if (i > 0) await Future<void>.delayed(pause);
+      final fehler = await _versuch();
+      if (fehler == null) return false; // ein Versuch gelingt: ein Aussetzer, kein Defekt
+      if (speicherFehlerDauerhaft(fehler)) dauerhaft = true;
+    }
+    return dauerhaft;
   }
 
   @override

@@ -210,6 +210,14 @@ Nicht als neue Fehler melden, aber bei jedem Durchlauf beobachten, ob sie noch g
 | L-7 | **behoben** (war niedrig) | Ein interner Fehler der Verschlüsselungsbibliothek (`bibliothek`) beim Ableiten schob einen gesunden Schlüssel in die Quarantäne; jetzt bleibt er liegen („nicht verfügbar“, der nächste Versuch klappt). |
 | L-8 | niedrig, theoretisch | Löst die App nach einem unklaren Schlüsselwechsel (Verbindungsabbruch) den Zwischenstand auf und kommt die Anfrage danach doch noch beim Server an, ist der neue private Schlüssel weg (der alte bleibt, der Server kennt aber den neuen). |
 
+### Gerätespeicher zurücksetzen (zu L-1): Ablauf und offener manueller Test
+
+Ablauf: Probe (drei Versuche mit Pause; nur wenn alle scheitern **und** ein Fehler nach kaputtem Schlüssel aussieht) › vorher Abgleich, falls die Sitzung noch läuft › Rückfrage mit getipptem Wort „zurücksetzen“, die alles Verlorene nennt (lokale Datenbank, Einstellungen, gemerkte Schlüssel der Familie, Ausgang; Pflicht-Haken für ungesendete und abgelehnte Änderungen, frühere Schlüssel, fehlende bestätigte Sicherung) › direkt vor dem Löschen noch einmal Probe (hat sich der Speicher erholt: nichts gelöscht) › `deleteAll()` mit der Reparatur-Instanz › Probe danach › abmelden (das Ergebnis wird ausgewertet) › **Aufforderung, die App ganz zu schließen und neu zu öffnen**.
+
+Warum der Neustart nötig ist: Das Plugin teilt seine Instanz (und die abgeleiteten Schlüssel) im laufenden Prozess; ob der Speicher nach `deleteAll()` ohne Neustart schon sauber neu aufbaut, ist nicht gesichert. Die App behauptet darum nie „fertig“, sondern verlangt den Neustart und nennt andernfalls das Löschen der App-Daten in den Android-Einstellungen.
+
+**Offen (nicht automatisch prüfbar):** Manueller Test auf einem Android-Gerät mit gelöschtem Keystore-Eintrag. Schritte: App mit Anmeldung und eingerichteter Verschlüsselung installieren, dann den Keystore-Schlüssel des Plugins entfernen (`<Paket>.FlutterSecureStoragePluginKeyOAEP`, z. B. über ein Debug-Build mit `KeyStore.deleteEntry`), App neu starten: erwartet „Gerät nicht verbunden“ mit Meldung und „Gerätespeicher zurücksetzen“ (bzw. bei der Anmeldung „Gerätespeicher defekt“), nach Zurücksetzen und Neustart Anmeldung möglich, Verbinden mit Wiederherstellungsschlüssel stellt den Chat wieder her. Bis dahin sind nur die Fakes und Wächtertests geprüft.
+
 ## 4. Nach den Tests
 
 - Testinstanz samt Datenbank, Debug-APK und Browser-Profile löschen oder zurücksetzen; die Wiederherstellungsschlüssel und Codes der Testfamilie vernichten.

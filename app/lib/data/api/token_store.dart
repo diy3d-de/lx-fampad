@@ -204,8 +204,17 @@ class SecureTokenStore implements TokenStore {
   Future<void> _schreiben(String key, String value) async {
     try {
       await _s.write(key: key, value: value);
-    } on PlatformException {
-      throw const GeraeteSpeicherDefekt();
+    } on PlatformException catch (e) {
+      // "Gerätespeicher defekt" nur bei einem Fehler, der nach einem dauerhaften Defekt aussieht (auch beim zweiten Versuch); alles andere (E/A, voller Speicher,
+      // Aussetzer) bleibt ein normaler Fehler mit der allgemeinen Meldung
+      if (speicherFehlerDauerhaft(e)) throw const GeraeteSpeicherDefekt();
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      try {
+        await _s.write(key: key, value: value);
+      } on PlatformException catch (e2) {
+        if (speicherFehlerDauerhaft(e2)) throw const GeraeteSpeicherDefekt();
+        rethrow;
+      }
     }
   }
 
