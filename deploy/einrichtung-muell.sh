@@ -48,6 +48,19 @@ while [ $# -gt 0 ]; do
 done
 if [ "$modus" = "dienst" ] && { [ -n "$ort" ] || [ -n "$ua" ]; }; then usage; fi
 
+# Zeichen, die in einer env-Datei Ärger machen (Anführungszeichen, $, #, Backslash, Steuerzeichen inkl. Zeilenumbruch); Leerzeichen sind bei Ort und
+# Browser-Kennung erlaubt. Läuft vor allem anderen: bei Fehlern wird nichts geschrieben.
+env_unsicher() { # env_unsicher WERT: 0 = enthält Unzulässiges
+  case "$1" in *$'\n'*|*$'\r'*) return 0 ;; esac
+  printf '%s' "$1" | LC_ALL=C grep -qE "[\"'\$#\\\\[:cntrl:]]"
+}
+for pair in "--ort:$ort" "--user-agent:$ua"; do
+  if env_unsicher "${pair#*:}"; then
+    echo "FEHLER: ${pair%%:*} enthält unzulässige Zeichen (Anführungszeichen, \$, #, Backslash oder Steuerzeichen). Nichts geändert." >&2
+    exit 1
+  fi
+done
+
 # EINRICHTUNG_OHNE_ROOT=1: nur für Tests dieses Skripts (ohne root)
 if [ "$(id -u)" -ne 0 ] && [ "${EINRICHTUNG_OHNE_ROOT:-0}" != 1 ]; then
   echo "Bitte mit sudo ausführen." >&2
@@ -101,8 +114,10 @@ einstellungen() {
     echo "[dry-run] der Link würde jetzt abgefragt (Eingabe unsichtbar) und geprüft"
   else
     echo "==> Link des Abfallkalenders (ICS) einfügen, Eingabe unsichtbar:"
-    read -rs -p "    Link: " link
+    read -rs -p "    Link: " link || true
     echo
+    # nichts eingegeben (oder Eingabe beendet): abbrechen, bevor irgendetwas geschrieben wird
+    if [ -z "$link" ]; then echo "FEHLER: kein Link eingegeben. Nichts geändert." >&2; exit 1; fi
     # das Jahr im Zeitraum durch den Platzhalter ersetzen (timeperiod=YYYY0101-YYYY1231)
     link="$(printf '%s' "$link" | sed -E 's/timeperiod=[0-9]{4}0101-[0-9]{4}1231/timeperiod={YEAR}0101-{YEAR}1231/')"
     # Zeichen, die in einer env-Datei Ärger machen (Leerraum, Anführungszeichen, $, #, Backslash, Zeilenumbruch)

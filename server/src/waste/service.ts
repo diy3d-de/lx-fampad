@@ -361,7 +361,7 @@ export class WasteService {
     const now = this.now();
     const rows = await this.yearRows(familyId);
     // Hinweis: `now` nur für die Jahreslogik der geplanten Prüfung
-    const geladen =rows.filter((r) => r.status === 'loaded').map((r) => r.year);
+    const geladen = rows.filter((r) => r.status === 'loaded').map((r) => r.year);
     const ev = geladen.length
       ? await this.db
           .select({ day: wasteEvents.day, kind: wasteEvents.kind })
