@@ -1,6 +1,6 @@
 {
   "id": "521bd5ec-abef-45a6-99d6-9e9fbc6fa919",
-  "prevId": "6d2e9158-90e1-4065-9d6f-fd8b18523316",
+  "prevId": "00900d10-01b0-4159-8a1f-a53faf74838d",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -7381,6 +7381,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "removed_at": {
+          "name": "removed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "removed_by": {
+          "name": "removed_by",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "access_changed_at": {
           "name": "access_changed_at",
           "type": "timestamp with time zone",
@@ -7429,6 +7441,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "users_removed_ck": {
+          "name": "users_removed_ck",
+          "value": "\"users\".\"removed_at\" is null or \"users\".\"disabled_at\" is not null"
+        },
         "users_avatar_ck": {
           "name": "users_avatar_ck",
           "value": "(\"users\".\"avatar_kind\" is null and \"users\".\"avatar_preset\" is null) or (\"users\".\"avatar_kind\" = 'preset' and \"users\".\"avatar_preset\" is not null) or (\"users\".\"avatar_kind\" = 'photo' and \"users\".\"avatar_preset\" is null)"
