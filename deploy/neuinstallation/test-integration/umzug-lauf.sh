@@ -223,6 +223,17 @@ printf '%s\n' "ja" | "${UMZUG[@]}" --weiter muell > "$ARBEIT/weiter-muell2.log" 
 gleich "--weiter muell mit verändertem Checkout (deploy/): Exit-Code 1, nichts als root ausgeführt" 1 "$RC"
 enthaelt "Meldung: Checkout weicht vom Code-Stand ab" "$ARBEIT/weiter-muell2.log" "weicht vom Code-Stand"
 runuser -u lx -- git -C "$LXHOME/lx-fampad" checkout -- deploy/README.md
+# versteckte Änderungen (assume-unchanged) und eine fremde Datei in deploy/ zählen ebenfalls
+runuser -u lx -- git -C "$LXHOME/lx-fampad" update-index --assume-unchanged deploy/README.md
+echo "# Versteckte Manipulation" >> "$LXHOME/lx-fampad/deploy/README.md"
+printf '%s\n' "ja" | "${UMZUG[@]}" --weiter muell > "$ARBEIT/weiter-muell2b.log" 2>&1; RC=$?
+gleich "--weiter muell mit per assume-unchanged versteckter Änderung: Exit-Code 1" 1 "$RC"
+runuser -u lx -- git -C "$LXHOME/lx-fampad" update-index --no-assume-unchanged deploy/README.md
+runuser -u lx -- git -C "$LXHOME/lx-fampad" checkout -- deploy/README.md
+echo "echo boese" > "$LXHOME/lx-fampad/deploy/zusatz.sh"
+printf '%s\n' "ja" | "${UMZUG[@]}" --weiter muell > "$ARBEIT/weiter-muell2c.log" 2>&1; RC=$?
+gleich "--weiter muell mit fremder (nicht verfolgter) Datei in deploy/: Exit-Code 1" 1 "$RC"
+rm -f "$LXHOME/lx-fampad/deploy/zusatz.sh"
 printf '#!/bin/sh\nexit 0\n' > /usr/local/sbin/systemd-analyze; chmod 755 /usr/local/sbin/systemd-analyze     # Attrappe (kein systemd im Container)
 printf '%s\n' "ja" | "${UMZUG[@]}" --weiter muell > "$ARBEIT/weiter-muell3.log" 2>&1; RC=$?
 tail -8 "$ARBEIT/weiter-muell3.log"
@@ -246,13 +257,30 @@ NEU="$(cat /var/backups/lx-fampad/LATEST)"
 cp -r "/var/backups/lx-fampad/$NEU" /root/sicherung/
 chown -R root:root /root/sicherung; chmod -R go-w /root/sicherung
 psql_db lx_fampad "update families set name = '$FAMILIE_VORHER'" >/dev/null      # der "neue Server" steht wieder auf dem alten Stand
+printf '\nE2EE_PW_BACKUP=true\n' >> /etc/lx-fampad/env                          # die env dieses Servers weicht jetzt von der Sicherung ab (Schalter), der AUTH_SECRET_KEY bleibt gleich
+# Die ältere (erste) Sicherung: ausdrückliche Rückfrage, ohne das Wort wird nichts verändert
+printf '%s\n' "2" "nein" | "${UMZUG[@]}" --aktualisieren > "$ARBEIT/akt-alt.log" 2>&1; RC=$?
+gleich "--aktualisieren mit der älteren Sicherung ohne das Wort aelter: Exit-Code 0, nichts verändert" 0 "$RC"
+enthaelt "Rückfrage: nicht neuer als die zuletzt eingespielte" "$ARBEIT/akt-alt.log" "NICHT neuer als die zuletzt eingespielte"
+gleich "Familie unverändert nach der Rückfrage" "$FAMILIE_VORHER" "$(psql_db lx_fampad 'select name from families limit 1')"
 printf '%s\n' "" "$KEY" "nein" | "${UMZUG[@]}" --aktualisieren > "$ARBEIT/akt0.log" 2>&1; RC=$?
 gleich "--aktualisieren mit falschem Bestätigungswort: Exit-Code 0, nichts verändert" 0 "$RC"
 gleich "Familie unverändert (Stand des neuen Servers)" "$FAMILIE_VORHER" "$(psql_db lx_fampad 'select name from families limit 1')"
-printf '%s\n' "" "$KEY" "ersetzen" | "${UMZUG[@]}" --aktualisieren 2>&1 | tee "$ARBEIT/akt1.log" | tail -25
+# Der Server ist schon live (Caddy erledigt): ein zweites Wort ist nötig
+printf '%s\n' "" "$KEY" "ersetzen" "nein" | "${UMZUG[@]}" --aktualisieren > "$ARBEIT/akt0b.log" 2>&1; RC=$?
+gleich "--aktualisieren auf einem schon produktiven Server ohne das Wort verlieren: Exit-Code 0, nichts verändert" 0 "$RC"
+enthaelt "Warnung: Änderungen landen in der umbenannten Datenbank" "$ARBEIT/akt0b.log" "landet in der UMBENANNTEN Datenbank"
+gleich "Familie unverändert (zweites Wort fehlte)" "$FAMILIE_VORHER" "$(psql_db lx_fampad 'select name from families limit 1')"
+gleich "keine umbenannte Datenbank angelegt" 0 "$(psql_db postgres "select count(*) from pg_database where datname like 'lx_fampad_vor_%'")"
+printf '%s\n' "" "$KEY" "ersetzen" "verlieren" | "${UMZUG[@]}" --aktualisieren 2>&1 | tee "$ARBEIT/akt1.log" | tail -25
 RC=${PIPESTATUS[1]}
 gleich "--aktualisieren: Exit-Code 0" 0 "$RC"
 enthaelt "die neueste Sicherung wurde zur Auswahl angeboten" "$ARBEIT/akt1.log" "$NEU"
+enthaelt "Achtung-Satz nennt Datum und Uhrzeit der Sicherung" "$ARBEIT/akt1.log" "vom $(sed -E 's/^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$/\3.\2.\1 \4:\5:\6/' <<<"$NEU") UTC"
+enthaelt "AUTH_SECRET_KEY: gleich (nur Vergleich, kein Wert)" "$ARBEIT/akt1.log" "GLEICH wie auf diesem Server"
+enthaelt "abweichender Schalter wird angezeigt" "$ARBEIT/akt1.log" "E2EE_PW_BACKUP: auf diesem Server an, in der Sicherung nicht gesetzt"
+enthaelt "Abweichung steht als Hinweis in der Liste" /root/umzug-offen.txt "E2EE_PW_BACKUP"
+pruefe "die env dieses Servers blieb (gleicher Schlüssel): E2EE_PW_BACKUP=true steht noch drin" grep -q '^E2EE_PW_BACKUP=true' /etc/lx-fampad/env
 gleich "Datenbank stammt aus der neueren Sicherung" "Testfamilie-neu" "$(psql_db lx_fampad 'select name from families limit 1')"
 gleich "die bisherige Datenbank blieb umbenannt erhalten (genau eine)" 1 "$(psql_db postgres "select count(*) from pg_database where datname like 'lx_fampad_vor_%'")"
 enthaelt "Hinweis zum späteren Löschen (Personendaten)" "$ARBEIT/akt1.log" "DROP DATABASE lx_fampad_vor_"

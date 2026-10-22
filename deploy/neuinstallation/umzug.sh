@@ -6,8 +6,9 @@
 #   (ohne Option)              der ganze Ablauf in sechs Schritten: 1 Willkommen und Prüfung, 2 Sicherung und Schlüssel, 3 Fragen, 4 Zusammenfassung,
 #                              5 Aufbau, 6 "Dein Teil" (Liste mit deinen Werten, auch in /root/umzug-offen.txt)
 #   --probe                    Probelauf: läuft bis zur Zusammenfassung und ändert nichts (nichts wird installiert, gemerkt oder geschrieben)
-#   --aktualisieren            Umzug bei laufendem Altserver: eine NEUERE Sicherung einspielen (ersetzt Datenbank und Konfiguration dieses Servers;
-#                              die bisherige Datenbank bleibt umbenannt erhalten). Erst nach dem Aufbau, vor der DNS-Umstellung.
+#   --aktualisieren            Umzug bei laufendem Altserver: eine NEUERE Sicherung einspielen (ersetzt die Datenbank; die bisherige bleibt umbenannt erhalten;
+#                              die env dieses Servers nur bei abweichendem AUTH_SECRET_KEY). Erst nach dem Aufbau, vor der DNS-Umstellung.
+#                              Schutz: Wort "aelter" bei gleicher/älterer Sicherung, Wort "verlieren" bei schon produktivem Server, Wort "anders" bei anderem Schlüssel.
 #   --weiter caddy             nach der DNS-Umstellung: Caddy und Zertifikate (bootstrap --phase caddy,pruefung)
 #   --weiter wetter            nachdem der ALTE Server aus ist: Wetter-Dienst starten (Netatmo erlaubt nur einen Abrufer)
 #   --weiter muell             nachdem der ALTE Server aus ist: Müll-Dienst (Abfuhrtermine) starten
@@ -38,7 +39,7 @@ umask 077
 
 # --- Festwerte ----------------------------------------------------------------------------------------------------------------------
 # Absichtlich nicht "readonly": aus_bootstrap() liest bootstrap-server.sh in einer Unterschale ein, das dieselben Namen schreibgeschützt setzt.
-UMZUG_VERSION="0.9.0"                                 # Stand des Projekts (Versionskopf); test-umzug.sh vergleicht mit app/pubspec.yaml
+UMZUG_VERSION="0.9.1"                                 # Stand des Projekts (Versionskopf); bei jedem Versionsbump mitziehen: test-umzug.sh verlangt UMZUG_VERSION >= Version in app/pubspec.yaml
 DOMAIN="familie.lx-labs.dev"                          # fest: Passkeys (RP-ID) hängen daran
 NTFY_DOMAIN="ntfy.familie.lx-labs.dev"
 LX_USER="lx"
@@ -59,6 +60,8 @@ BERICHT_DATEI="/root/umzug-bericht.txt"
 LAUF_LOG="/root/umzug-lauf.log"
 PARAMS_ERZEUGT="/root/umzug.params"
 SWAPS_DATEI="/proc/swaps"                             # für Tests ersetzbar
+ENV_LOKAL="/etc/lx-fampad/env"                        # die Konfiguration dieses Servers (für den Vergleich bei --aktualisieren; für Tests ersetzbar)
+LOCK_DATEI="/run/lock/lx-fampad-umzug.lock"           # Sperre gegen zwei gleichzeitige Sitzungen
 SUDOERS_DATEI="/etc/sudoers.d/lx-fampad"              # für Tests ersetzbar
 UMZUG_PFAD="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
 HIER="$(cd "$(dirname "$UMZUG_PFAD")" 2>/dev/null && pwd || echo .)"
@@ -83,6 +86,8 @@ HINWEISE=()                                # OFFEN-Meldungen von bootstrap-serve
 PAUSE_KEY=""; CADDY_JETZT=0; DAUER_LETZT="0:00"
 LETZTE_PHASE="-"; LETZTER_FEHLER=""; ALTE_DB_NEU=""
 GIT_REF_VORHER=""                          # Code-Stand vor einem "--neu" (ein anderer setzt den Aufbau ab "code" zurück)
+KONFIG_GLEICH=0; KONFIG_ABW=()             # --aktualisieren: gleicher AUTH_SECRET_KEY wie in der Sicherung? Abweichende (nicht geheime) Schalter der env
+SCH_GELESEN=0; SCH_W=""; SCH_M=""; SCH_ML=""; SCH_URL=""   # Schalter aus einer env (Wetter, Müll, Müll-Link, PUBLIC_URL), siehe schalter_lesen
 STTY_SAVE=""                               # Terminal-Einstellungen vor dem unsichtbaren Einlesen
 # Antworten (A_*): nur Nicht-Geheimes
 A_SICHERUNG=""; A_GIT_REF=""; A_SWAP_MB=""; A_IP=""; A_NAS_IP=""; A_NAS_PUBKEY=""; A_LX_PUBKEY=""; A_PARAMS=""
@@ -98,7 +103,12 @@ farben_init() { # Farben nur auf einem Terminal (nicht bei NO_COLOR, nicht bei U
     C_RESET=$'\033[0m'; C_G=$'\033[32m'; C_Y=$'\033[33m'; C_R=$'\033[31m'; C_C=$'\033[36m'; C_B=$'\033[1m'; C_D=$'\033[2m'
   fi
 }
-sauber() { printf '%s' "${1//[[:cntrl:]]/}"; } # Steuerzeichen und Escape-Folgen entfernen (Texte aus Archiven und Programmen)
+# Steuerzeichen, Escape-Folgen und unsichtbare Richtungs-/Format-Zeichen (U+202A-202E, U+2066-2069, U+200B-200F, U+2028/2029, U+FEFF) entfernen (Texte aus Archiven und Programmen)
+sauber() {
+  local s="${1//[[:cntrl:]]/}" c
+  for c in $'‪' $'‫' $'‬' $'‭' $'‮' $'⁦' $'⁧' $'⁨' $'⁩' $'​' $'‌' $'‍' $'‎' $'‏' $' ' $' ' $'﻿'; do s="${s//$c/}"; done
+  printf '%s' "$s"
+}
 zeile() { printf '%s\n' "$*"; }
 gut() { printf '  %s✓%s %s\n' "$C_G" "$C_RESET" "$*"; }
 hinweis() { printf '  %s!%s %s\n' "$C_Y" "$C_RESET" "$*"; }
@@ -204,22 +214,50 @@ ipv4_netz_ok() {
   mask=$(( (0xFFFFFFFF << (32 - p)) & 0xFFFFFFFF ))
   [ $(( n & ~mask & 0xFFFFFFFF )) -eq 0 ]                                # Hostbits müssen 0 sein
 }
-ipv6_netz_ok() {
-  local ip="$1" p=128 rest gruppen g n=0
+G=()                                                                     # Gruppen (Dezimalzahlen) der zuletzt zerlegten IPv6-Adresse
+ipv6_gruppen() { # $1 Adresse ohne Präfix -> G[0..7]; Rückgabe 1 bei Formfehler (nur Hex und ':', ein "::" höchstens, keine ":::")
+  local ip="$1" links rechts g i n
+  local -a l=() r=()
+  G=()
+  [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] || return 1
+  [[ "$ip" == *:::* ]] && return 1
+  if [[ "$ip" == *::* ]]; then
+    links="${ip%%::*}"; rechts="${ip#*::}"
+    [[ "$rechts" == *::* ]] && return 1
+    if [ -n "$links" ]; then IFS=':' read -ra l <<<"$links"; fi
+    if [ -n "$rechts" ]; then IFS=':' read -ra r <<<"$rechts"; fi
+    n=$(( ${#l[@]} + ${#r[@]} ))
+    [ "$n" -le 7 ] || return 1
+    for g in "${l[@]}"; do G+=("$g"); done
+    for ((i = n; i < 8; i++)); do G+=(0); done
+    for g in "${r[@]}"; do G+=("$g"); done
+  else
+    IFS=':' read -ra G <<<"$ip"
+    [ "${#G[@]}" -eq 8 ] || return 1
+  fi
+  for i in 0 1 2 3 4 5 6 7; do
+    [[ "${G[$i]}" =~ ^[0-9a-fA-F]{1,4}$ ]] || return 1
+    G[i]=$(( 16#${G[$i]} ))
+  done
+  return 0
+}
+ipv6_netz_ok() { # wie ip_pruefen in einrichtung-backup.sh (python ipaddress, strict): Präfix >= 48, keine Hostbits, nicht unspezifiziert/Multicast/reserviert/IPv4-mapped/6to4/Teredo
+  local ip="$1" p=128 i bits mask g0
   if [[ "$ip" == */* ]]; then p="${ip#*/}"; ip="${ip%/*}"; fi
   [[ "$p" =~ ^(0|[1-9][0-9]{0,2})$ ]] || return 1
   [ "$p" -ge 48 ] && [ "$p" -le 128 ] || return 1
-  [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]] || return 1
-  [[ "$ip" == *:::* ]] && return 1
-  rest="${ip//::/}"; [ $(( ${#ip} - ${#rest} )) -le 2 ] || return 1       # höchstens ein "::"
-  [[ "$ip" =~ ^:[^:] ]] && return 1
-  [[ "$ip" =~ [^:]:$ ]] && return 1
-  IFS=':' read -ra gruppen <<<"$ip"
-  for g in "${gruppen[@]}"; do [ -z "$g" ] && continue; [[ "$g" =~ ^[0-9a-fA-F]{1,4}$ ]] || return 1; n=$((n + 1)); done
-  if [[ "$ip" == *::* ]]; then [ "$n" -le 7 ] || return 1; else [ "$n" -eq 8 ] || return 1; fi
-  [[ "${ip,,}" =~ ^(::|0+(:0+)*::?(0+)?)$ ]] && return 1                 # unspezifiziert
-  [[ "${ip,,}" =~ ^ff ]] && return 1                                     # Multicast
-  [[ "${ip,,}" =~ ^::ffff: ]] && return 1                                # IPv4-mapped
+  ipv6_gruppen "$ip" || return 1
+  g0="${G[0]}"
+  if [ $(( G[0] | G[1] | G[2] | G[3] | G[4] )) -eq 0 ] && [ "${G[5]}" -eq 65535 ]; then return 1; fi   # ::ffff:0:0/96 (auch voll ausgeschrieben)
+  [ "$g0" -ne 8194 ] || return 1                                                                      # 2002::/16 (6to4)
+  if [ "$g0" -eq 8193 ] && [ "${G[1]}" -eq 0 ]; then return 1; fi                                     # 2001::/32 (Teredo)
+  # erlaubt bleiben nur die nicht reservierten Bereiche: 2000::/3, fc00::/7, fe80::/9 (alles andere ist reserviert, unspezifiziert oder Multicast)
+  if ! { { [ "$g0" -ge 8192 ] && [ "$g0" -le 16383 ]; } || { [ "$g0" -ge 64512 ] && [ "$g0" -le 65023 ]; } || { [ "$g0" -ge 65152 ] && [ "$g0" -le 65279 ]; }; }; then return 1; fi
+  for i in 0 1 2 3 4 5 6 7; do
+    bits=$(( p - 16 * i )); [ "$bits" -ge 0 ] || bits=0; [ "$bits" -le 16 ] || bits=16
+    mask=$(( (0xFFFF << (16 - bits)) & 0xFFFF ))
+    [ $(( G[i] & ~mask & 0xFFFF )) -eq 0 ] || return 1                                                # Hostbits müssen 0 sein
+  done
   return 0
 }
 gueltige_nas_ip() { # eine oder mehrere (Komma) Adressen oder Netze
@@ -289,7 +327,7 @@ antwort_wert_ok() { # $1 Schlüssel, $2 Wert
     NAS_PUBKEY|LX_PUBKEY) gueltiger_ssh_schluessel "$2" ;;
     WETTER|MUELL|MUELL_LINK|FRAGEN|APK|FILES) [[ "$2" =~ ^[01]$ ]] ;;
     KEEP) [[ "$2" =~ ^[1-9][0-9]?$ ]] ;;
-    ALTE_DB) [[ "$2" =~ ^lx_fampad_vor_[0-9_]{8,20}$ ]] ;;
+    ALTE_DB) [[ "$2" =~ ^lx_fampad_vor_[0-9_]{8,20}(,lx_fampad_vor_[0-9_]{8,20})*$ ]] ;;   # kommagetrennt: jede Aktualisierung legt eine weitere an
     FERTIG|ERLEDIGT) [[ "$2" =~ ^[a-z,]*$ ]] ;;
     HINWEIS) [[ "$2" =~ ^[^[:cntrl:]]{1,600}$ ]] ;;
     *) return 1 ;;
@@ -303,9 +341,9 @@ antworten_zuruecksetzen() {
 # --neu und "Damit weitermachen? nein": die Antworten verfallen, der Stand des Aufbaus (und was sich daraus ergibt) bleibt; sonst würde Schritt 1
 # einen halb eingerichteten Server als "schon eingerichtet" ablehnen
 antworten_neu_beginnen() {
-  local f="$A_FERTIG" e="$A_ERLEDIGT" w="$A_WETTER" m="$A_MUELL" ml="$A_MUELL_LINK" ip="$A_IP" alt="$A_ALTE_DB" g="$A_GIT_REF" h=("${HINWEISE[@]}")
+  local f="$A_FERTIG" e="$A_ERLEDIGT" w="$A_WETTER" m="$A_MUELL" ml="$A_MUELL_LINK" ip="$A_IP" alt="$A_ALTE_DB" g="$A_GIT_REF" pa="$A_PARAMS" h=("${HINWEISE[@]}")
   antworten_zuruecksetzen
-  A_FERTIG="$f"; A_ERLEDIGT="$e"; A_WETTER="$w"; A_MUELL="$m"; A_MUELL_LINK="$ml"; A_IP="$ip"; A_ALTE_DB="$alt"; HINWEISE=("${h[@]}")
+  A_FERTIG="$f"; A_ERLEDIGT="$e"; A_WETTER="$w"; A_MUELL="$m"; A_MUELL_LINK="$ml"; A_IP="$ip"; A_ALTE_DB="$alt"; A_PARAMS="$pa"; HINWEISE=("${h[@]}")
   GIT_REF_VORHER="$g"
 }
 fertig_ab_code_loeschen() { # ein anderer Code-Stand: code, anwendung und alles danach muss noch einmal laufen (konfiguration und datenbank bleiben)
@@ -417,7 +455,12 @@ extra_params_einbinden() { # --params bzw. der gemerkte Pfad; nach dem Lesen der
   if [ -n "$OPT_PARAMS" ]; then A_PARAMS="$(readlink -f "$OPT_PARAMS" 2>/dev/null || echo "$OPT_PARAMS")"; fi
   [ -n "$A_PARAMS" ] || return 0
   if [ -f "$A_PARAMS" ]; then extra_params_lesen "$A_PARAMS"
-  else hinweis "Die früher angegebene Parameterdatei $A_PARAMS gibt es nicht mehr: Werte wie BACKUP_AGE_RECIPIENTS, CI_DEPLOY_PUBKEY oder RELEASE_CERT_SHA256 daraus fehlen. Lege sie wieder hin oder starte mit --params DATEI."; fi
+  else
+    hinweis "Die früher angegebene Parameterdatei $A_PARAMS gibt es nicht mehr: Werte wie BACKUP_AGE_RECIPIENTS, CI_DEPLOY_PUBKEY oder RELEASE_CERT_SHA256 daraus fehlen."
+    if [ "$OPT_PROBE" = 0 ]; then
+      frage_ja "Trotzdem ohne diese Datei weitermachen?" nein || fehler_ende "Die gemerkte Parameterdatei $A_PARAMS fehlt." "Lege sie wieder hin (eine leere Datei genügt, wenn du nichts daraus brauchst) oder starte mit --params DATEI."
+    fi
+  fi
 }
 
 # --- Schritt 1: Willkommen und Prüfung (ändert nichts) ---------------------------------------------------------------------------------
@@ -696,25 +739,32 @@ frage_schluessel() {
   done
   fehler_ende "Der Schlüssel passte dreimal nicht zur Sicherung." "Prüfe, ob es der Schlüssel zu GENAU dieser Sicherung ist (es gibt Haupt- und Ersatzschlüssel), und starte neu. Nichts wurde verändert."
 }
-config_auswerten() {
-  local env_flags bc zeile url="" v gelesen=0 w="" m="" ml=""
-  env_flags="$(cfg_aus_archiv etc/lx-fampad/env | awk '
+# Schalter aus einer env (stdin; Archiv oder lokale Datei): nur Unbedenkliches (Wetter, Müll, ob ein Müll-Link da ist, PUBLIC_URL) -> SCH_*.
+# Eine einzige Auswertung für die Sicherung (config_auswerten) und für diesen Server (nach --aktualisieren), damit Liste und Schalter nicht auseinanderlaufen.
+schalter_lesen() {
+  local zeile
+  SCH_GELESEN=0; SCH_W=""; SCH_M=""; SCH_ML=""; SCH_URL=""
+  while IFS= read -r zeile; do
+    case "$zeile" in
+      GELESEN=1) SCH_GELESEN=1 ;;
+      WETTER=[01]) SCH_W="${zeile#WETTER=}" ;;
+      MUELL=[01]) SCH_M="${zeile#MUELL=}" ;;
+      MUELL_LINK=[01]) SCH_ML="${zeile#MUELL_LINK=}" ;;
+      PUBLIC_URL=https://*) SCH_URL="${zeile#PUBLIC_URL=}" ;;
+    esac
+  done < <(awk '
     { sub(/\r$/, ""); n++ }
     /^WEATHER_ENABLED=/ { v = substr($0, 17); gsub(/["\047]/, "", v); w = (v == "true" || v == "1") ? 1 : 0 }
     /^WASTE_ENABLED=/ { v = substr($0, 15); gsub(/["\047]/, "", v); m = (v == "true" || v == "1") ? 1 : 0 }
     /^WASTE_ICS_URL=./ { l = 1 }
     /^PUBLIC_URL=/ { u = substr($0, 12); gsub(/["\047]/, "", u) }
-    END { if (n > 0) { printf "GELESEN=1\nWETTER=%d\nMUELL=%d\nMUELL_LINK=%d\n", w + 0, m + 0, l + 0; if (u != "") print "PUBLIC_URL=" u } }' 2>/dev/null || true)"
-  while IFS= read -r zeile; do
-    case "$zeile" in
-      GELESEN=1) gelesen=1 ;;
-      WETTER=[01]) w="${zeile#WETTER=}" ;;
-      MUELL=[01]) m="${zeile#MUELL=}" ;;
-      MUELL_LINK=[01]) ml="${zeile#MUELL_LINK=}" ;;
-      PUBLIC_URL=https://*) url="${zeile#PUBLIC_URL=}" ;;
-    esac
-  done <<<"$env_flags"
-  if [ "$gelesen" = 1 ]; then A_WETTER="$w"; A_MUELL="$m"; A_MUELL_LINK="$ml"; fi   # nur setzen, wenn die env wirklich gelesen wurde
+    END { if (n > 0) { printf "GELESEN=1\nWETTER=%d\nMUELL=%d\nMUELL_LINK=%d\n", w + 0, m + 0, l + 0; if (u != "") print "PUBLIC_URL=" u } }' 2>/dev/null)
+}
+config_auswerten() { # $1 "ohne-flags": Wetter/Müll nicht setzen (--aktualisieren liest sie nach dem Lauf aus der env dieses Servers)
+  local bc zeile url="" v
+  schalter_lesen < <(cfg_aus_archiv etc/lx-fampad/env)
+  if [ "${1:-}" != ohne-flags ] && [ "$SCH_GELESEN" = 1 ]; then A_WETTER="$SCH_W"; A_MUELL="$SCH_M"; A_MUELL_LINK="$SCH_ML"; fi   # nur setzen, wenn die env wirklich gelesen wurde
+  url="$SCH_URL"
   if [ -n "$url" ] && [ "${url%/}" != "https://$DOMAIN" ]; then
     url="${url:0:80}"; url="${url//[^A-Za-z0-9:\/._-]/?}"
     fehler_ende "Diese Sicherung gehört zu '$url', nicht zu https://$DOMAIN." "Die Domain darf sich nie ändern (Passkeys): nimm die Sicherung des richtigen Servers."
@@ -899,9 +949,9 @@ gegenprobe() { # bootstrap-server.sh --dry-run: prüft Parameter, Sicherung und 
   PROBLEME=()
   bootstrap_basis
   if schluessel_noetig; then
-    aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" --sicherung "$A_SICHERUNG" --identity-stdin </dev/null 2>&1)"; rc=$?
+    aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" --sicherung "$A_SICHERUNG" --identity-stdin </dev/null 2>&1 8>&-)"; rc=$?
   else
-    aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" </dev/null 2>&1)"; rc=$?
+    aus="$(bash "$BOOTSTRAP" --dry-run "${BA[@]}" </dev/null 2>&1 8>&-)"; rc=$?
   fi
   while IFS= read -r z; do
     case "$z" in *"PROBLEM:"*) PROBLEME+=("$(sauber "$(sed -E 's/^[[:space:]]*PROBLEM:[[:space:]]*//' <<<"$z")")") ;; esac
@@ -1013,9 +1063,9 @@ lauf_ausfuehren() { # $1 Anzeigename, $2 Nummer-Text, $3 mit Schlüssel (1|0); A
   echo "=== $(date -u '+%F %T') UTC  $name" >> "$LAUF_LOG"
   rm -f "$rcdatei"
   if [ "$mitkey" = 1 ]; then
-    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < <(printf '%s\n' "$AGE_ID") 2>&1; echo "$?" > "$rcdatei" )
+    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < <(printf '%s\n' "$AGE_ID") 2>&1 8>&-; echo "$?" > "$rcdatei" )
   else
-    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < /dev/null 2>&1; echo "$?" > "$rcdatei" )
+    exec 7< <( bash "$BOOTSTRAP" "${BA[@]}" < /dev/null 2>&1 8>&-; echo "$?" > "$rcdatei" )
   fi
   while true; do
     IFS= read -r -t 1 -u 7 z; lesen=$?
@@ -1179,8 +1229,8 @@ liste_bauen() { # füllt LISTE (reiner Text; Überschriften beginnen mit "[n] ")
   l "      deploy/backup/wiederherstellung-test.sh --identity ~/lx-fampad-age.key --run-dir <vom NAS geholte NEUE Sicherung dieses Servers>"
   l "      (erst nach der ersten Nacht um 03:30; Anleitung: docs/BACKUP-EINRICHTUNG-SCHRITTE.md)"
   if [ -n "$A_ALTE_DB" ]; then
-    n=$((n + 1)); l "[$n] Die bisherige Datenbank löschen  (enthält Personendaten; erst nach der Prüfung)"
-    l "      sudo -u postgres psql -c \"DROP DATABASE $A_ALTE_DB\""
+    n=$((n + 1)); l "[$n] Die bisherigen Datenbanken löschen  (enthalten Personendaten; erst nach der Prüfung; Übersicht: sudo -u postgres psql -l, Namen lx_fampad_vor_…)"
+    for h in ${A_ALTE_DB//,/ }; do l "      sudo -u postgres psql -c \"DROP DATABASE $h\""; done
   fi
   l ""
   l "Danach, wenn du Zeit hast:"
@@ -1296,13 +1346,22 @@ weiter_wetter() {
   if liste_enthaelt "$A_ERLEDIGT" muell; then sudoers_muell_ergaenzen; fi
   weiter_liste
 }
-# Der Müll-Dienst wird als root aus dem Checkout von lx gestartet: nur wenn der Checkout unverändert auf dem gewählten Code-Stand steht
+# git als lx im Checkout, gehärtet: keine fsmonitor- und Hook-Programme aus der Konfiguration des Checkouts, HOME wie bei git_lx in bootstrap-server.sh
+git_muell() { # $1 Checkout, Rest: git-Argumente
+  local co="$1" home; shift
+  home="$(getent passwd "$LX_USER" | cut -d: -f6)"
+  runuser -u "$LX_USER" -- env HOME="$home" GIT_TERMINAL_PROMPT=0 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$co" "$@"
+}
+# Der Müll-Dienst wird als root aus dem Checkout von lx gestartet: nur wenn der Checkout unverändert auf dem gewählten Code-Stand steht (auch nicht per
+# assume-unchanged oder skip-worktree versteckt). Das schützt vor Versehen, NICHT vor einem manipulierten lx: wer in diesem Checkout schreiben kann, hat root-Rechte.
 muell_checkout_pruefen() { # $1 Checkout
-  local co="$1" status kopf soll
-  status="$(runuser -u "$LX_USER" -- git -C "$co" status --porcelain -- deploy 2>/dev/null)" || return 1
+  local co="$1" status kopf soll marker
+  status="$(git_muell "$co" status --porcelain --untracked-files=all --ignored -- deploy 2>/dev/null)" || return 1
   [ -z "$status" ] || return 1
-  kopf="$(runuser -u "$LX_USER" -- git -C "$co" rev-parse HEAD 2>/dev/null)" || return 1
-  soll="$(runuser -u "$LX_USER" -- git -C "$co" rev-parse --verify --quiet "${A_GIT_REF}^{commit}" 2>/dev/null)" || return 1
+  marker="$(git_muell "$co" ls-files -v -- deploy 2>/dev/null | grep -E '^[a-zS] ' || true)"
+  [ -z "$marker" ] || return 1
+  kopf="$(git_muell "$co" rev-parse HEAD 2>/dev/null)" || return 1
+  soll="$(git_muell "$co" rev-parse --verify --quiet "${A_GIT_REF}^{commit}" 2>/dev/null)" || return 1
   [ -n "$kopf" ] && [ "$kopf" = "$soll" ]
 }
 weiter_muell() {
@@ -1323,7 +1382,7 @@ weiter_muell() {
   if [ "${ANTWORT,,}" != ja ]; then zeile "Gut, ich starte nichts. Stoppe zuerst den alten Server und wiederhole den Befehl."; return 0; fi
   LETZTE_PHASE="muell"
   echo "=== $(date -u '+%F %T') UTC  einrichtung-muell.sh dienst" >> "$LAUF_LOG"
-  if ! bash "$ziel" dienst >>"$LAUF_LOG" 2>&1; then
+  if ! bash "$ziel" dienst >>"$LAUF_LOG" 2>&1 8>&-; then
     fehler_ende "Der Müll-Dienst ließ sich nicht einrichten." "Einzelheiten: $LAUF_LOG (oder direkt: sudo bash $ziel dienst)."
   fi
   gut "Müll-Dienst (lx-fampad-waste) eingerichtet und gestartet."
@@ -1338,41 +1397,130 @@ weiter_pruefung() {
   fertig_markieren pruefung
   weiter_liste
 }
-# Umzug bei laufendem Altserver: eine neuere Sicherung einspielen (Datenbank und Konfiguration ersetzen; die bisherige Datenbank bleibt umbenannt)
+# --- --aktualisieren: Hilfen -------------------------------------------------------------------------------------------------------
+wort_eingeben() { # $1 Aufforderung, $2 Wort; Rückgabe 0 = genau dieses Wort getippt
+  local k
+  printf '%s' "$1" >&2
+  if ! IFS= read -r k; then echo >&2; abbruch_eingabe; fi
+  [ "$(trimmen "${k%$'\r'}")" = "$2" ]
+}
+sicherung_zeit_text() { # $1 Ordner -> "22.10.2026 03:30:00 UTC" (aus dem Ordnernamen YYYYMMDD-HHMMSS), sonst leer
+  local n
+  n="$(basename "$1")"
+  [[ "$n" =~ ^([0-9]{4})([0-9]{2})([0-9]{2})-([0-9]{2})([0-9]{2})([0-9]{2})$ ]] || return 0
+  printf '%s.%s.%s %s:%s:%s UTC' "${BASH_REMATCH[3]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[1]}" "${BASH_REMATCH[4]}" "${BASH_REMATCH[5]}" "${BASH_REMATCH[6]}"
+}
+sicherung_aelter_gleich() { # $1 bisherige, $2 neue Sicherung: 0, wenn die neue NICHT neuer ist oder sich nicht vergleichen lässt (Name ohne Zeitstempel)
+  local a b
+  a="$(basename "$1")"; b="$(basename "$2")"
+  [[ "$a" =~ ^[0-9]{8}-[0-9]{6}$ ]] && [[ "$b" =~ ^[0-9]{8}-[0-9]{6}$ ]] || return 0
+  [[ ! "$b" > "$a" ]]
+}
+auth_hash() { # stdin: eine env; gibt den Hash des letzten AUTH_SECRET_KEY aus (nie den Wert); nichts, wenn keiner da ist
+  sed -n 's/^AUTH_SECRET_KEY=//p' | tail -n 1 | { local v; IFS= read -r v && [ -n "$v" ] && printf '%s' "$v" | sha256sum | cut -d' ' -f1; }
+}
+env_vergleichswerte() { # stdin: eine env; Zeilen NAME=an|aus|gesetzt|nicht gesetzt für die nicht geheimen Schalter (nie ein Wert, nie der Link)
+  awk '
+    function norm(v) { gsub(/["\047]/, "", v); v = tolower(v); if (v == "true" || v == "1") return "an"; if (v == "false" || v == "0") return "aus"; if (v == "") return "nicht gesetzt"; return "gesetzt" }
+    { sub(/\r$/, "") }
+    /^WEATHER_ENABLED=/ { w = norm(substr($0, 17)) }
+    /^WASTE_ENABLED=/ { m = norm(substr($0, 15)) }
+    /^WASTE_ICS_URL=./ { l = "gesetzt" }
+    /^E2EE_PW_BACKUP=/ { e = norm(substr($0, 16)) }
+    /^AUTH_LEGACY_PASSWORD_LOGIN=/ { a = norm(substr($0, 28)) }
+    END {
+      print "WEATHER_ENABLED=" (w == "" ? "nicht gesetzt" : w); print "WASTE_ENABLED=" (m == "" ? "nicht gesetzt" : m)
+      print "WASTE_ICS_URL=" (l == "" ? "nicht gesetzt" : l); print "E2EE_PW_BACKUP=" (e == "" ? "nicht gesetzt" : e)
+      print "AUTH_LEGACY_PASSWORD_LOGIN=" (a == "" ? "nicht gesetzt" : a)
+    }'
+}
+# Vergleich der Sicherung mit der env dieses Servers: ist der AUTH_SECRET_KEY gleich (nur per Hash, nie ausgegeben)? Bei gleichem Schlüssel bleibt die env dieses
+# Servers (bootstrap-server.sh ersetzt sie nur bei abweichendem Schlüssel): dann zeigt KONFIG_ABW, worin die nicht geheimen Schalter der Sicherung abweichen.
+konfiguration_vergleichen() {
+  local a b n k v
+  local -A sich=() lokal=()
+  KONFIG_GLEICH=0; KONFIG_ABW=()
+  a="$(cfg_aus_archiv etc/lx-fampad/env | auth_hash)"; b=""
+  if [ -f "$ENV_LOKAL" ]; then b="$(auth_hash < "$ENV_LOKAL")"; fi
+  if [ -n "$a" ] && [ "$a" = "$b" ]; then KONFIG_GLEICH=1; fi
+  a=""; b=""
+  [ "$KONFIG_GLEICH" = 1 ] || return 0
+  while IFS='=' read -r k v; do sich["$k"]="$v"; done < <(cfg_aus_archiv etc/lx-fampad/env | env_vergleichswerte)
+  while IFS='=' read -r k v; do lokal["$k"]="$v"; done < <(env_vergleichswerte < "$ENV_LOKAL")
+  for n in WEATHER_ENABLED WASTE_ENABLED WASTE_ICS_URL E2EE_PW_BACKUP AUTH_LEGACY_PASSWORD_LOGIN; do
+    if [ "${sich[$n]:-}" != "${lokal[$n]:-}" ]; then KONFIG_ABW+=("$n: auf diesem Server ${lokal[$n]:-?}, in der Sicherung ${sich[$n]:-?}"); fi
+  done
+  return 0
+}
+alte_db_merken() { # $1 Name einer umbenannten Datenbank (kommagetrennte Liste: jede Aktualisierung legt eine weitere an)
+  if ! liste_enthaelt "$A_ALTE_DB" "$1"; then A_ALTE_DB="${A_ALTE_DB:+$A_ALTE_DB,}$1"; fi
+}
+# Umzug bei laufendem Altserver: eine neuere Sicherung einspielen (die bisherige Datenbank bleibt umbenannt; die env nur bei anderem AUTH_SECRET_KEY ersetzt)
 aktualisieren() {
-  local wort vorher
+  local rc vorher zeit_neu a live=0
   weiter_vorbereiten fertig
   echo; fett "Neuere Sicherung einspielen"
-  zeile "Das ersetzt die Datenbank und die Konfiguration DIESES Servers durch die der gewählten Sicherung. Die bisherige Datenbank wird nur umbenannt (nichts wird gelöscht),"
-  zeile "die Dienste stehen dabei kurz still. Vorher auf dem ALTEN Server: sudo systemctl stop lx-fampad lx-fampad-weather, dann die frische Sicherung holen (Schreibstopp)."
+  zeile "Das spielt die Datenbank der gewählten Sicherung ein. Die bisherige Datenbank wird nur umbenannt (nichts wird gelöscht), die Dienste stehen dabei kurz still."
+  zeile "Die Konfiguration (env) dieses Servers wird nur ersetzt, wenn der AUTH_SECRET_KEY der Sicherung ANDERS ist; bei gleichem Schlüssel bleibt sie (fehlende Dateien in /etc/lx-fampad werden ergänzt)."
+  zeile "Vorher auf dem ALTEN Server: sudo systemctl stop lx-fampad lx-fampad-weather, dann die frische Sicherung holen (Schreibstopp)."
   vorher="$A_SICHERUNG"; A_SICHERUNG=""
-  ip_erkennen
   frage_sicherung
-  if [ "$A_SICHERUNG" = "$vorher" ]; then
-    hinweis "Das ist dieselbe Sicherung wie beim ersten Lauf: es ändert sich nichts Neues."
-    frage_ja "Trotzdem einspielen?" nein || { zeile "Gut, ich ändere nichts."; return 0; }
+  zeit_neu="$(sicherung_zeit_text "$A_SICHERUNG")"
+  if sicherung_aelter_gleich "$vorher" "$A_SICHERUNG"; then
+    hinweis "Diese Sicherung ($(basename "$A_SICHERUNG")${zeit_neu:+, $zeit_neu}) ist NICHT neuer als die zuletzt eingespielte ($(basename "${vorher:-?}")) oder lässt sich nicht vergleichen: du würdest einen gleichen oder älteren Stand einspielen."
+    wort_eingeben "Wirklich? Tippe aelter zur Bestätigung: " aelter || { zeile "Abgebrochen, es wurde nichts verändert."; return 0; }
   fi
   frage_schluessel
-  config_auswerten
+  config_auswerten ohne-flags
+  konfiguration_vergleichen
   echo
-  printf '%sAchtung:%s Datenbank und Konfiguration dieses Servers werden durch Sicherung %s ersetzt. Tippe %sersetzen%s zur Bestätigung: ' "$C_B" "$C_RESET" "$(basename "$A_SICHERUNG")" "$C_C" "$C_RESET" >&2
-  if ! IFS= read -r wort; then echo >&2; abbruch_eingabe; fi
-  if [ "$(trimmen "${wort%$'\r'}")" != ersetzen ]; then zeile "Abgebrochen, es wurde nichts verändert."; schluessel_verwerfen; return 0; fi
+  if [ "$KONFIG_GLEICH" = 1 ]; then
+    gut "AUTH_SECRET_KEY der Sicherung: GLEICH wie auf diesem Server (die env dieses Servers bleibt)."
+    for a in "${KONFIG_ABW[@]}"; do hinweis "Schalter weichen ab: $a"; done
+    if [ "${#KONFIG_ABW[@]}" -gt 0 ]; then
+      hinweis "Die env dieses Servers gilt weiter. Prüfe die Abweichungen nach dem Lauf, besonders E2EE_PW_BACKUP: nutzen Konten die Anmeldung mit authKey, scheitert sie, wenn es hier aus ist."
+    fi
+  else
+    schlecht "AUTH_SECRET_KEY der Sicherung: ANDERS als auf diesem Server (oder nicht lesbar). Das ist vermutlich die Sicherung eines anderen Servers: die env dieses Servers wird ersetzt (Kopie bleibt), TOTP-Geheimnisse und Codes der bisherigen Konten wären nur mit dem alten Schlüssel lesbar."
+  fi
+  if liste_enthaelt "$A_ERLEDIGT" caddy; then live=1; fi
+  printf '%sAchtung:%s Die Datenbank dieses Servers wird durch die Sicherung %s%s ersetzt (die bisherige bleibt umbenannt). Tippe %sersetzen%s zur Bestätigung: ' "$C_B" "$C_RESET" "$(basename "$A_SICHERUNG")" "${zeit_neu:+ vom $zeit_neu}" "$C_C" "$C_RESET" >&2
+  if ! IFS= read -r a; then echo >&2; abbruch_eingabe; fi
+  if [ "$(trimmen "${a%$'\r'}")" != ersetzen ]; then zeile "Abgebrochen, es wurde nichts verändert."; schluessel_verwerfen; return 0; fi
+  if [ "$KONFIG_GLEICH" != 1 ]; then
+    wort_eingeben "Der AUTH_SECRET_KEY ist ANDERS: die env dieses Servers wird ersetzt. Zum Fortfahren tippe anders: " anders || { zeile "Abgebrochen, es wurde nichts verändert."; schluessel_verwerfen; return 0; }
+  fi
+  if [ "$live" = 1 ]; then
+    hinweis "Dieser Server ist schon in Betrieb (Caddy läuft). Alles, was die Familie hier seit dem ersten Einspielen geändert hat (Nachrichten, Termine, Listen), landet in der UMBENANNTEN Datenbank und fehlt danach."
+    wort_eingeben "Zum Fortfahren tippe verlieren: " verlieren || { zeile "Abgebrochen, es wurde nichts verändert."; schluessel_verwerfen; return 0; }
+  fi
   antworten_schreiben
   LETZTE_PHASE="aktualisieren"
   bootstrap_basis
   BA+=(--phase "konfiguration,datenbank,anwendung" --sicherung "$A_SICHERUNG" --identity-stdin --datenbank-ersetzen --konfiguration-ersetzen --yes)
   if liste_enthaelt "$A_ERLEDIGT" wetter; then BA+=(--wetter-starten); fi
-  lauf_ausfuehren "Neue Sicherung einspielen, Server neu bauen" "·" 1; wort=$?
+  lauf_ausfuehren "Neue Sicherung einspielen, Server neu bauen" "·" 1; rc=$?
   schluessel_verwerfen
-  if [ "$wort" -ne 0 ]; then
+  # Der Tausch der Datenbank ist unumkehrbar gemeldet: den Namen der umbenannten Datenbank sofort merken, auch wenn danach etwas scheitert
+  if [ -n "$ALTE_DB_NEU" ]; then alte_db_merken "$ALTE_DB_NEU"; antworten_schreiben; fi
+  if [ "$rc" -ne 0 ]; then
     printf '%s✗%s Neue Sicherung einspielen\n' "$C_R" "$C_RESET" >&2
-    fehler_ende "Das Einspielen der neuen Sicherung ist fehlgeschlagen${LETZTER_FEHLER:+: $LETZTER_FEHLER}." "$(fehlermassnahme "$LETZTER_FEHLER") Die bisherige Datenbank ist, falls schon getauscht, unter ihrem neuen Namen noch da (psql -l); bootstrap-server.sh stellt sie bei einem Fehler selbst zurück."
+    if [ -n "$ALTE_DB_NEU" ]; then
+      fehler_ende "Nach dem Tausch der Datenbank ist etwas fehlgeschlagen${LETZTER_FEHLER:+: $LETZTER_FEHLER}: die neue Datenbank ist eingespielt, die bisherige heißt jetzt $ALTE_DB_NEU (nichts wurde gelöscht), der Server läuft möglicherweise nicht." "Prüfe den Zustand (sudo -u postgres psql -l, journalctl -u lx-fampad -n 50). Bei falschem Code-Stand: starte bash $UMZUG_PFAD (ohne --aktualisieren) und antworte bei \"Code-Stand ändern?\" mit ja, das baut den Server neu und tauscht die Datenbank nicht noch einmal; ein zweites --aktualisieren spielt die Sicherung noch einmal ein und legt eine ZWEITE umbenannte Datenbank (lx_fampad_vor_…) an."
+    fi
+    fehler_ende "Das Einspielen der neuen Sicherung ist fehlgeschlagen${LETZTER_FEHLER:+: $LETZTER_FEHLER}; die Datenbank wurde nicht getauscht." "$(fehlermassnahme "$LETZTER_FEHLER") (Bei diesem Fehler ist nichts umbenannt worden; --aktualisieren lässt sich nach der Korrektur wiederholen.)"
   fi
   phase_meldung_ok "·" "Neue Sicherung eingespielt, Server neu gestartet"
   if [ -n "$ALTE_DB_NEU" ]; then
-    A_ALTE_DB="$ALTE_DB_NEU"
-    hinweis "Die bisherige Datenbank heißt jetzt $A_ALTE_DB und enthält Personendaten. Nach der Prüfung löschen: sudo -u postgres psql -c \"DROP DATABASE $A_ALTE_DB\""
+    hinweis "Die bisherige Datenbank heißt jetzt $ALTE_DB_NEU und enthält Personendaten. Nach der Prüfung löschen: sudo -u postgres psql -c \"DROP DATABASE $ALTE_DB_NEU\""
+  fi
+  # Die env dieses Servers gilt jetzt (bei gleichem Schlüssel blieb sie): Schalter für Wetter und Müll von dort lesen, damit die Liste dazu passt
+  if [ -f "$ENV_LOKAL" ]; then
+    schalter_lesen < "$ENV_LOKAL"
+    if [ "$SCH_GELESEN" = 1 ]; then A_WETTER="$SCH_W"; A_MUELL="$SCH_M"; A_MUELL_LINK="$SCH_ML"; fi
+  fi
+  if [ "$KONFIG_GLEICH" = 1 ]; then
+    for a in "${KONFIG_ABW[@]}"; do hinweis_merken "Nach --aktualisieren blieb die env dieses Servers und weicht von der Sicherung ab: $a. Prüfen (E2EE_PW_BACKUP aus, aber Konten mit authKey: Anmeldung scheitert)."; done
   fi
   if liste_enthaelt "$A_ERLEDIGT" muell; then sudoers_muell_ergaenzen; fi
   erledigt_markieren aktualisieren
@@ -1402,6 +1550,10 @@ argumente_lesen() {
   if [ -n "$OPT_WEITER" ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ] || [ "$OPT_AKTUALISIEREN" = 1 ]; }; then echo "--weiter geht nicht zusammen mit --probe, --neu oder --aktualisieren" >&2; exit 2; fi
   if [ "$OPT_PROBE" = 1 ] && [ "$OPT_NEU" = 1 ]; then echo "--probe geht nicht zusammen mit --neu (der Probelauf ändert nichts, auch keine gemerkten Antworten)" >&2; exit 2; fi
   if [ "$OPT_AKTUALISIEREN" = 1 ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ]; }; then echo "--aktualisieren geht nicht zusammen mit --probe oder --neu" >&2; exit 2; fi
+  if [ -n "$OPT_PARAMS" ]; then
+    OPT_PARAMS="$(readlink -f -- "$OPT_PARAMS" 2>/dev/null || echo "$OPT_PARAMS")"
+    gueltiger_pfad "$OPT_PARAMS" || { echo "--params: ungültiger Pfad (absolut, nur Buchstaben, Ziffern und . _ - / @ +, ohne '..' und Leerzeichen): $OPT_PARAMS" >&2; exit 2; }
+  fi
   if [ -n "$OPT_IP" ] && { ! gueltige_ipv4 "$OPT_IP" || private_ipv4 "$OPT_IP"; }; then echo "--ip braucht eine öffentliche IPv4-Adresse (Beispiel: 203.0.113.10)" >&2; exit 2; fi
   if [ "$OPT_DNS_SKIP" = 1 ] && [ "$OPT_OHNE_SYSTEMD" = 0 ]; then echo "--dns-pruefung-ueberspringen gibt es nur zusammen mit --ohne-systemd (Container-Tests)" >&2; exit 2; fi
   return 0
@@ -1412,6 +1564,15 @@ sicherheit_pruefen() {
   if [ -n "${BASH_XTRACEFD:-}" ]; then echo "Abbruch: BASH_XTRACEFD ist gesetzt (Protokollierung der Befehle): unset BASH_XTRACEFD und neu starten." >&2; exit 2; fi
   ulimit -c 0 2>/dev/null || true
 }
+# Sperre gegen zwei gleichzeitige Sitzungen (Dateideskriptor 8; an bootstrap-server.sh und alles, was es startet, wird er nicht vererbt: 8>&-). Der Probelauf ändert
+# nichts und braucht keine Sperre.
+sperre_holen() {
+  [ "$OPT_PROBE" = 0 ] || return 0
+  mkdir -p "$(dirname "$LOCK_DATEI")" 2>/dev/null || true
+  if ! { exec 8>"$LOCK_DATEI"; } 2>/dev/null || ! flock -n 8; then
+    fehler_ende "Eine andere Sitzung des Assistenten läuft schon (Sperre $LOCK_DATEI)." "Warte, bis sie fertig ist (tmux attach -t umzug), und starte dann denselben Befehl noch einmal." 2
+  fi
+}
 main() {
   sicherheit_pruefen
   argumente_lesen "$@"
@@ -1421,7 +1582,9 @@ main() {
   trap unterbrochen INT TERM HUP
   if [ -t 0 ]; then STTY_SAVE="$(stty -g 2>/dev/null || true)"; fi
   ARBEIT_DIR="$(mktemp -d -p /run umzug.XXXXXXXX 2>/dev/null || mktemp -d)"
+  if [ -z "$ARBEIT_DIR" ] || [ ! -d "$ARBEIT_DIR" ]; then echo "Abbruch: Das Arbeitsverzeichnis ließ sich nicht anlegen (/run voll oder nicht beschreibbar?)." >&2; exit 1; fi
   chmod 700 "$ARBEIT_DIR"
+  sperre_holen
   bootstrap_pruefen
   if [ -n "$OPT_WEITER" ]; then
     case "$OPT_WEITER" in caddy) weiter_caddy ;; wetter) weiter_wetter ;; muell) weiter_muell ;; pruefung) weiter_pruefung ;; esac

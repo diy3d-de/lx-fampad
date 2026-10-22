@@ -295,7 +295,7 @@ SWAPS_DATEI=/proc/swaps
 # --neu: die Antworten verfallen, der Stand des Aufbaus bleibt (sonst blockiert Schritt 1 den halb eingerichteten Server)
 A_SICHERUNG=/root/sicherung/x; A_GIT_REF=v0.9.0; A_SWAP_MB=1024; A_FRAGEN=1; A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung"; A_ERLEDIGT="caddy,wetter"; A_WETTER=1; A_PARAMS=/root/p; HINWEISE=("h1")
 antworten_neu_beginnen
-gleich "--neu: Antworten verworfen (Sicherung)" "" "$A_SICHERUNG"; gleich "--neu: Fragen verworfen" "" "$A_FRAGEN"; gleich "--neu: Pfad der Parameterdatei verworfen" "" "$A_PARAMS"
+gleich "--neu: Antworten verworfen (Sicherung)" "" "$A_SICHERUNG"; gleich "--neu: Fragen verworfen" "" "$A_FRAGEN"; gleich "--neu: Pfad der Parameterdatei bleibt (Werte daraus dürfen nicht still fehlen)" "/root/p" "$A_PARAMS"
 gleich "--neu: Stand des Aufbaus bleibt" "pruefen,pakete,system,code,konfiguration,datenbank,anwendung" "$A_FERTIG"
 gleich "--neu: erledigte Folgeschritte bleiben" "caddy,wetter" "$A_ERLEDIGT"; gleich "--neu: Schalter aus der Konfiguration bleiben" 1 "$A_WETTER"; gleich "--neu: Hinweise bleiben" h1 "${HINWEISE[0]}"
 gleich "--neu merkt sich den bisherigen Code-Stand" v0.9.0 "$GIT_REF_VORHER"
@@ -318,8 +318,13 @@ enthaelt_nicht "der Inhalt der --params-Datei steht NICHT in der Antwortdatei" "
 antworten_zuruecksetzen; EXTRA=(); antworten_lesen; extra_params_einbinden >/dev/null
 gleich "Neustart ohne Option: Parameterdatei wird aus dem gemerkten Pfad gelesen" "$SSHOK" "${EXTRA[CI_DEPLOY_PUBKEY]:-}"
 params_schreiben "$ARBEIT/mem2.params"; enthaelt "Wert aus der gemerkten Parameterdatei landet in der Datei für bootstrap" "$(cat "$ARBEIT/mem2.params")" "CI_DEPLOY_PUBKEY="
-A_PARAMS="$ARBEIT/weg.params"; EXTRA=(); HINT="$(extra_params_einbinden 2>&1)"
-enthaelt "fehlende gemerkte Parameterdatei: deutlicher Hinweis" "$HINT" "gibt es nicht mehr"
+A_PARAMS="$ARBEIT/weg.params"; EXTRA=(); HINT="$( (OPT_PROBE=1; extra_params_einbinden) 2>&1)"
+enthaelt "fehlende gemerkte Parameterdatei: deutlicher Hinweis (Probelauf)" "$HINT" "gibt es nicht mehr"
+HINT="$( (OPT_PROBE=0; extra_params_einbinden < <(printf 'nein\n')) 2>&1; echo "RC=$?")"
+enthaelt "fehlende gemerkte Parameterdatei: im echten Lauf fragt der Assistent, ob er ohne sie weitermachen soll" "$HINT" "ohne diese Datei weitermachen"
+enthaelt "...und bricht bei 'nein' ab (Exit-Code 1)" "$HINT" "RC=1"
+HINT="$( (OPT_PROBE=0; extra_params_einbinden < <(printf 'ja\n')) 2>&1; echo "RC=$?")"
+enthaelt "...und macht bei 'ja' weiter" "$HINT" "RC=0"
 A_PARAMS=""; EXTRA=(); rm -f "$ANTWORTEN_DATEI"
 
 echo "== Steuerzeichen und Kürzung"
@@ -393,7 +398,9 @@ for p in ${BIS_DATENBANK//,/ }; do liste_enthaelt "pruefen,pakete,system,code,ko
 gleich "BIS_DATENBANK endet mit datenbank (die Phase, nach der der Schlüssel verworfen wird)" datenbank "${BIS_DATENBANK##*,}"
 for p in ${NACH_CODE//,/ }; do gelingt "NACH_CODE: $p ist eine Phase" bash -c "BOOTSTRAP_NUR_FUNKTIONEN=1 . '$BOOT'; [[ \" \${PHASEN[*]} \" == *\" $p \"* ]]"; done
 if [ -f "$HIER/../../app/pubspec.yaml" ]; then
-  gleich "UMZUG_VERSION stimmt mit app/pubspec.yaml überein (bei jedem Release mitziehen)" "$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$HIER/../../app/pubspec.yaml" | head -n 1)" "$UMZUG_VERSION"
+  # UMZUG_VERSION darf der Projektversion vorauslaufen (der Versionsbump-Commit ändert beides), aber nie hinter ihr zurückbleiben
+  PUBVER="$(sed -nE 's/^version:[[:space:]]*([0-9]+\.[0-9]+\.[0-9]+).*/\1/p' "$HIER/../../app/pubspec.yaml" | head -n 1)"
+  gleich "UMZUG_VERSION ($UMZUG_VERSION) ist nicht älter als die Version in app/pubspec.yaml ($PUBVER): beim Versionsbump mitziehen" "$PUBVER" "$(printf '%s\n%s\n' "$PUBVER" "$UMZUG_VERSION" | sort -V | head -n 1)"
 else uebersprungen "UMZUG_VERSION gegen pubspec.yaml" "app/pubspec.yaml nicht erreichbar"; fi
 # Der Weg "DNS stimmt" mit gefälschten ip/getent (ohne --dns-pruefung-ueberspringen): bootstrap-server.sh setzt PATH selbst, die Attrappen liegen darum in /usr/local/sbin
 cat > /usr/local/sbin/ip <<'EOF'
@@ -456,6 +463,157 @@ if command -v age >/dev/null && command -v age-keygen >/dev/null; then
   A_WETTER=""; A_MUELL=""; A_MUELL_LINK=""
   AGE_ID=""
 else uebersprungen "Konfiguration nicht lesbar" "age fehlt"; fi
+
+echo "== NAS-Adresse: gleiche Regeln wie ip_pruefen in einrichtung-backup.sh (Differenztest mit python3)"
+if command -v python3 >/dev/null; then
+  eval "$(sed -n '/^ip_pruefen() {/,/^}/p' "$HIER/../backup/einrichtung-backup.sh")"
+  ABW=""
+  for i in 203.0.113.7 203.0.113.0/24 203.0.0.0/16 203.0.113.7/24 10.0.0.0/8 8.8.8.8/32 8.8.0.0/16 8.8.8.0/16 224.0.0.1 240.0.0.1 0.0.0.0 255.255.255.255 1.2.3.4/33 01.2.3.4 \
+           2001:db8::1 2001:db8::/48 2001:db8::/32 2001:db8:1:2:3:4:5:6 2001:db8:0:8000::/49 2001:db8:0:1::/49 2001:db8::1/48 2001:db8::1/128 2a00:1450::/48 2a00:1450:4001::/48 2a00:1450::1/48 \
+           2002::1 2002:c000:204::/48 2001::1 2001:0:0:0:0:0:0:1 2001:1::1 ::ffff:102:304 0:0:0:0:0:ffff:102:304 ::ffff:0:0 fe80::1 fe80::/64 fc00::1 fd12:3456:789a::/48 fec0::1 \
+           100::1 4000::1 6000::1 8000::1 e000::1 f000::1 f800::1 fe00::1 fe7f::1 ::1 :: ff00::1 ff02::1 1:2:3:4:5:6:7:8 1::2::3 :1:2:3:4:5:6:7 1:2:3:4:5:6:7:: 2001:db8:::1 2001:db8::g; do
+    mein=1; gueltige_nas_ip "$i" || mein=0
+    py=1; ip_pruefen "$i" >/dev/null 2>&1 || py=0
+    if [ "$mein" = 1 ] && [ "$py" = 0 ]; then ABW="$ABW $i"; fi
+  done
+  gleich "alles, was der Assistent annimmt, nimmt auch ip_pruefen an (nie liberaler)" "" "$ABW"
+  STRENG=""
+  for i in 203.0.113.0/24 203.0.0.0/16 2001:db8::/48 2001:db8::1 2a00:1450::/48 fe80::1 fc00::1 fd12:3456:789a::/48 fec0::1 8.8.8.8/32; do
+    ip_pruefen "$i" >/dev/null 2>&1 && ! gueltige_nas_ip "$i" && STRENG="$STRENG $i"
+  done
+  gleich "übliche Adressen, die ip_pruefen annimmt, lehnt der Assistent nicht ab" "" "$STRENG"
+else uebersprungen "NAS-Adresse gegen ip_pruefen" "python3 fehlt"; fi
+for i in 2002::1 2001::1 ::ffff:102:304 0:0:0:0:0:ffff:102:304 2001:db8::1/48 2001:db8:0:1::/49 ff02::1 100::1 fe00::1; do scheitert "NAS-IPv6 abgelehnt: $i" gueltige_nas_ip "$i"; done
+for i in 2001:db8:0:8000::/49 fe80::/64 fd12:3456:789a::/48; do gelingt "NAS-IPv6 ok: $i" gueltige_nas_ip "$i"; done
+
+echo "== Steuerzeichen: Richtungs- und Format-Zeichen"
+gleich "sauber entfernt Bidi-/Format-Zeichen" "abcde" "$(sauber $'a‮b⁦c‏d​e')"
+gleich "sauber lässt Umlaute und normalen Text stehen" "Prüfsummen ok, äöü ß" "$(sauber 'Prüfsummen ok, äöü ß')"
+
+echo "== --params-Pfad, Sperre"
+gleich "--params mit ungültigem Pfad: Exit-Code 2" 2 "$(a --params '/tmp/a;b' >/dev/null 2>&1; echo $?)"
+gleich "--params mit Leerzeichen im Pfad: Exit-Code 2" 2 "$(a --params '/tmp/a b' >/dev/null 2>&1; echo $?)"
+mkdir -p /run/lock
+LOCKOUT="$( ( exec 9>/run/lock/lx-fampad-umzug.lock; flock -n 9; env -u UMZUG_NUR_FUNKTIONEN bash "$ARBEIT/lauf/umzug.sh" --weiter pruefung 2>&1; echo "RC=$?" ) )"
+enthaelt "zweite Sitzung wird abgelehnt (Exit-Code 2)" "$LOCKOUT" "RC=2"
+enthaelt "Meldung nennt die andere Sitzung" "$LOCKOUT" "Eine andere Sitzung des Assistenten läuft schon"
+rm -f /run/lock/lx-fampad-umzug.lock
+
+echo "== --aktualisieren: Zeitstempel, Vergleich der Konfiguration, umbenannte Datenbanken"
+gleich "Zeitangabe aus dem Ordnernamen" "22.10.2026 03:30:00 UTC" "$(sicherung_zeit_text /x/20261022-033000)"
+gleich "kein Zeitstempel im Namen: leer" "" "$(sicherung_zeit_text /x/neu)"
+gelingt "gleiche Sicherung gilt als 'nicht neuer'" sicherung_aelter_gleich /x/20261022-033000 /y/20261022-033000
+gelingt "ältere Sicherung gilt als 'nicht neuer'" sicherung_aelter_gleich /x/20261022-033000 /y/20261021-235959
+scheitert "neuere Sicherung ist neuer" sicherung_aelter_gleich /x/20261022-033000 /y/20261022-033001
+gelingt "nicht vergleichbarer Name wird wie 'nicht neuer' behandelt (Rückfrage)" sicherung_aelter_gleich /x/20261022-033000 /y/meine-sicherung
+gelingt "keine bisherige Sicherung bekannt: Rückfrage" sicherung_aelter_gleich "" /y/20261022-033000
+gelingt "mehrere umbenannte Datenbanken sind gültig" antwort_wert_ok ALTE_DB "lx_fampad_vor_20261022_120000,lx_fampad_vor_20261023_010101"
+scheitert "umbenannte Datenbank mit Sonderzeichen ist ungültig" antwort_wert_ok ALTE_DB "lx_fampad_vor_20261022_120000;drop"
+A_ALTE_DB=""; alte_db_merken lx_fampad_vor_20261022_120000; alte_db_merken lx_fampad_vor_20261023_010101; alte_db_merken lx_fampad_vor_20261023_010101
+gleich "alte_db_merken: Liste ohne Doppelte" "lx_fampad_vor_20261022_120000,lx_fampad_vor_20261023_010101" "$A_ALTE_DB"
+A_IP=203.0.113.10; A_NAS_IP=""; A_WETTER=0; A_MUELL=0; A_ERLEDIGT=""; HINWEISE=(); liste_bauen
+enthaelt "Liste: beide umbenannten Datenbanken zum Löschen" "$(printf '%s\n' "${LISTE[@]}")" "DROP DATABASE lx_fampad_vor_20261023_010101"
+enthaelt "Liste: Hinweis auf psql -l" "$(printf '%s\n' "${LISTE[@]}")" "psql -l"
+A_ALTE_DB=""
+if command -v age >/dev/null && command -v age-keygen >/dev/null; then
+  mkdir -p "$ARBEIT/kv/a/etc/lx-fampad" "$ARBEIT/kv/b/etc/lx-fampad" "$ARBEIT/kv/c/etc/lx-fampad"
+  # Sicherung: gleicher Schlüssel wie lokal, andere Schalter; b: anderer Schlüssel; c: gar kein Schlüssel. Geheimnisse nur als Text in den Dateien.
+  printf 'AUTH_SECRET_KEY=GEHEIM-SCHLUESSEL-A-123456\nWEATHER_ENABLED=true\nE2EE_PW_BACKUP=true\nWASTE_ENABLED=false\n' > "$ARBEIT/kv/a/etc/lx-fampad/env"
+  printf 'AUTH_SECRET_KEY=GEHEIM-SCHLUESSEL-B-654321\nWEATHER_ENABLED=true\n' > "$ARBEIT/kv/b/etc/lx-fampad/env"
+  printf 'WEATHER_ENABLED=true\n' > "$ARBEIT/kv/c/etc/lx-fampad/env"
+  for k in a b c; do ( cd "$ARBEIT/kv/$k" && tar -czf - etc ) | age -r "$PUB1" -o "$ARBEIT/kv/config-$k.tar.age"; done
+  printf 'AUTH_SECRET_KEY=GEHEIM-SCHLUESSEL-A-123456\nWEATHER_ENABLED=false\nWASTE_ENABLED=false\nWASTE_ICS_URL=https://abfall.example.org/?key=GEHEIMER-LINK-X\n' > "$ARBEIT/env-lokal"
+  ENV_LOKAL="$ARBEIT/env-lokal"; AGE_ID="$KEY1"
+  CFG_ARCHIV="$ARBEIT/kv/config-a.tar.age"; konfiguration_vergleichen
+  gleich "gleicher AUTH_SECRET_KEY wird erkannt (nur per Hash)" 1 "$KONFIG_GLEICH"
+  ABWT="$(printf '%s\n' "${KONFIG_ABW[@]}")"
+  enthaelt "Abweichung: Wetter" "$ABWT" "WEATHER_ENABLED: auf diesem Server aus, in der Sicherung an"
+  enthaelt "Abweichung: E2EE_PW_BACKUP" "$ABWT" "E2EE_PW_BACKUP: auf diesem Server nicht gesetzt, in der Sicherung an"
+  enthaelt "Abweichung: Link des Abfallkalenders (nur gesetzt/nicht gesetzt)" "$ABWT" "WASTE_ICS_URL: auf diesem Server gesetzt, in der Sicherung nicht gesetzt"
+  enthaelt_nicht "keine Abweichung bei gleichem Müll-Schalter" "$ABWT" "WASTE_ENABLED"
+  VARS="$(declare -p)"
+  enthaelt_nicht "kein Schlüssel in den Variablen" "$VARS" "GEHEIM-SCHLUESSEL"
+  enthaelt_nicht "kein Link in den Variablen" "$VARS" "GEHEIMER-LINK"
+  CFG_ARCHIV="$ARBEIT/kv/config-b.tar.age"; konfiguration_vergleichen
+  gleich "anderer AUTH_SECRET_KEY: ANDERS" 0 "$KONFIG_GLEICH"; gleich "bei anderem Schlüssel keine Schalter-Abweichungen (die env wird ersetzt)" 0 "${#KONFIG_ABW[@]}"
+  CFG_ARCHIV="$ARBEIT/kv/config-c.tar.age"; konfiguration_vergleichen
+  gleich "Sicherung ohne AUTH_SECRET_KEY: nicht gleich" 0 "$KONFIG_GLEICH"
+  ENV_LOKAL="$ARBEIT/gibtsnicht"; CFG_ARCHIV="$ARBEIT/kv/config-a.tar.age"; konfiguration_vergleichen
+  gleich "keine lokale env: nicht gleich" 0 "$KONFIG_GLEICH"
+  ENV_LOKAL=/etc/lx-fampad/env; AGE_ID=""
+else uebersprungen "Vergleich der Konfiguration" "age fehlt"; fi
+# Schalter nach dem Lauf aus der env dieses Servers (Liste und Schalter laufen nicht auseinander)
+printf 'WEATHER_ENABLED=true\nWASTE_ENABLED=1\nWASTE_ICS_URL=https://x.example/?key=GEHEIM\n' > "$ARBEIT/env-nachher"
+schalter_lesen < "$ARBEIT/env-nachher"
+gleich "schalter_lesen: Wetter" 1 "$SCH_W"; gleich "schalter_lesen: Müll" 1 "$SCH_M"; gleich "schalter_lesen: Müll-Link vorhanden" 1 "$SCH_ML"; gleich "schalter_lesen: gelesen" 1 "$SCH_GELESEN"
+schalter_lesen < /dev/null; gleich "schalter_lesen: leere env gilt als nicht gelesen" 0 "$SCH_GELESEN"
+
+# aktualisieren() in allen Ausgängen (mit gefälschtem bootstrap und ersetzten Fragen)
+mkdir -p "$ARBEIT/akt"
+printf '#!/usr/bin/env bash\necho "    Bisherige Datenbank umbenannt in lx_fampad_vor_20261022_120000 (enthält Personendaten)"\necho "    Prüfpunkt ok: x"\nexit 0\n' > "$ARBEIT/akt/ok.sh"
+printf '#!/usr/bin/env bash\necho "    Bisherige Datenbank umbenannt in lx_fampad_vor_20261022_120001 (enthält Personendaten)"\necho "FEHLER: deploy.sh fehlgeschlagen (Meldungen oben; häufig: Migration passt nicht zum Code-Stand, GIT_REF prüfen)"\nexit 1\n' > "$ARBEIT/akt/fehler-nach-tausch.sh"
+printf '#!/usr/bin/env bash\necho "FEHLER: Prüfsummen stimmen nicht: die Sicherung ist beschädigt"\nexit 1\n' > "$ARBEIT/akt/fehler-vor-tausch.sh"
+akt() { # $1 gefälschtes bootstrap, $2 neue Sicherung (Ordnername), $3 Eingaben (mit \n), $4 gleiche env (1|0), $5 bereits erledigte Folgeschritte
+  local boot="$1" neu="$2" eingaben="$3" gleiche="$4" erledigt="$5"
+  rm -f "$ARBEIT/akt/antworten" "$ARBEIT/akt/lauf.log"
+  (
+    ARBEIT_DIR="$ARBEIT/akt/arbeit"; mkdir -p "$ARBEIT_DIR"; BOOTSTRAP="$boot"; LAUF_LOG="$ARBEIT/akt/lauf.log"; ANTWORTEN_DATEI="$ARBEIT/akt/antworten"
+    OFFEN_DATEI="$ARBEIT/akt/offen.txt"; BERICHT_DATEI="$ARBEIT/akt/bericht.txt"; PARAMS_PFAD="$ARBEIT/x.params"; ENV_LOKAL="$ARBEIT/gibtsnicht"
+    weiter_vorbereiten() { :; }
+    frage_sicherung() { A_SICHERUNG="$ARBEIT/akt/$neu"; }
+    frage_schluessel() { AGE_ID="x"; }
+    config_auswerten() { :; }
+    konfiguration_vergleichen() { KONFIG_GLEICH="$gleiche"; KONFIG_ABW=(); }
+    A_SICHERUNG="$ARBEIT/akt/20261021-033000"; A_ERLEDIGT="$erledigt"; A_FERTIG="pruefen,pakete,system,code,konfiguration,datenbank,anwendung,ntfy,sicherung,pruefung"; A_IP=203.0.113.10; A_GIT_REF=v0.9.0
+    aktualisieren < <(printf '%b' "$eingaben")
+  ) 2>&1; echo "RC=$?"
+}
+A1="$(akt "$ARBEIT/akt/ok.sh" 20261022-033000 'ersetzen\nverlieren\n' 1 caddy)"
+enthaelt "live (Caddy erledigt): Warnung vor Datenverlust" "$A1" "landet in der UMBENANNTEN Datenbank"
+enthaelt "live: Datum und Uhrzeit der Sicherung im Achtung-Satz" "$A1" "vom 22.10.2026 03:30:00 UTC"
+enthaelt "live + Wörter getippt: erfolgreich" "$A1" "RC=0"
+enthaelt "umbenannte Datenbank gemerkt" "$(cat "$ARBEIT/akt/antworten")" "ALTE_DB=lx_fampad_vor_20261022_120000"
+enthaelt "aktualisieren als erledigt gemerkt" "$(cat "$ARBEIT/akt/antworten")" "aktualisieren"
+enthaelt "gleicher Schlüssel wird angezeigt" "$A1" "GLEICH wie auf diesem Server"
+A2="$(akt "$ARBEIT/akt/ok.sh" 20261022-033000 'ersetzen\nnein\n' 1 caddy)"
+enthaelt "live ohne das zweite Wort: abgebrochen" "$A2" "Abgebrochen, es wurde nichts verändert."
+enthaelt_nicht "live ohne das zweite Wort: nichts gemerkt (kein Tausch)" "$(cat "$ARBEIT/akt/antworten" 2>/dev/null)" "ALTE_DB"
+A3="$(akt "$ARBEIT/akt/ok.sh" 20261022-033000 'ersetzen\n' 1 '')"
+enthaelt "nicht live: ein Wort genügt" "$A3" "RC=0"
+enthaelt_nicht "nicht live: keine Datenverlust-Warnung" "$A3" "UMBENANNTEN Datenbank"
+A4="$(akt "$ARBEIT/akt/ok.sh" 20261020-033000 'nein\n' 1 '')"
+enthaelt "ältere Sicherung: ausdrückliche Rückfrage" "$A4" "NICHT neuer als die zuletzt eingespielte"
+enthaelt "ältere Sicherung ohne das Wort: abgebrochen, nichts verändert" "$A4" "Abgebrochen, es wurde nichts verändert."
+enthaelt_nicht "ältere Sicherung: bootstrap lief nicht (nichts gemerkt)" "$(cat "$ARBEIT/akt/antworten" 2>/dev/null)" "ALTE_DB"
+A5="$(akt "$ARBEIT/akt/ok.sh" 20261020-033000 'aelter\nersetzen\n' 1 '')"
+enthaelt "ältere Sicherung mit dem Wort aelter: geht weiter" "$A5" "RC=0"
+A6="$(akt "$ARBEIT/akt/ok.sh" 20261022-033000 'ersetzen\nnein\n' 0 '')"
+enthaelt "anderer AUTH_SECRET_KEY: deutliche Meldung" "$A6" "ANDERS als auf diesem Server"
+enthaelt "anderer AUTH_SECRET_KEY: zweites Wort anders nötig, sonst abgebrochen" "$A6" "Abgebrochen, es wurde nichts verändert."
+A7="$(akt "$ARBEIT/akt/ok.sh" 20261022-033000 'ersetzen\nanders\n' 0 '')"
+enthaelt "anderer AUTH_SECRET_KEY mit dem Wort anders: weiter" "$A7" "RC=0"
+A8="$(akt "$ARBEIT/akt/fehler-nach-tausch.sh" 20261022-033000 'ersetzen\n' 1 '')"
+enthaelt "Fehler nach dem Tausch: Exit-Code 1" "$A8" "RC=1"
+enthaelt "Fehler nach dem Tausch: eigene Meldung mit dem Namen der umbenannten Datenbank" "$A8" "Nach dem Tausch der Datenbank ist etwas fehlgeschlagen"
+enthaelt "Fehler nach dem Tausch: Name steht in der Meldung" "$A8" "lx_fampad_vor_20261022_120001"
+enthaelt "Fehler nach dem Tausch: psql -l" "$A8" "psql -l"
+enthaelt "Fehler nach dem Tausch: ehrlich zur zweiten umbenannten Datenbank" "$A8" "ZWEITE umbenannte Datenbank"
+enthaelt "Fehler nach dem Tausch: Code-Stand per normalem Lauf" "$A8" "ohne --aktualisieren"
+enthaelt "Fehler nach dem Tausch: der Name der alten Datenbank wurde VOR der Fehlerprüfung gemerkt" "$(cat "$ARBEIT/akt/antworten")" "ALTE_DB=lx_fampad_vor_20261022_120001"
+A9="$(akt "$ARBEIT/akt/fehler-vor-tausch.sh" 20261022-033000 'ersetzen\n' 1 '')"
+enthaelt "Fehler vor dem Tausch: Exit-Code 1" "$A9" "RC=1"
+enthaelt "Fehler vor dem Tausch: sagt, dass nichts getauscht wurde" "$A9" "nicht getauscht"
+enthaelt_nicht "Fehler vor dem Tausch: keine umbenannte Datenbank gemerkt" "$(cat "$ARBEIT/akt/antworten")" "ALTE_DB"
+# Schalter nach dem Lauf aus der env dieses Servers (nicht aus der Sicherung)
+printf 'WEATHER_ENABLED=true\nWASTE_ENABLED=true\nWASTE_ICS_URL=https://x.example/?key=GEHEIM\nAUTH_SECRET_KEY=egal\n' > "$ARBEIT/akt/env-nachher"
+A10="$( ( rm -f "$ARBEIT/akt/antworten"; ARBEIT_DIR="$ARBEIT/akt/arbeit"; BOOTSTRAP="$ARBEIT/akt/ok.sh"; LAUF_LOG="$ARBEIT/akt/lauf.log"; ANTWORTEN_DATEI="$ARBEIT/akt/antworten"; OFFEN_DATEI="$ARBEIT/akt/offen.txt"
+  PARAMS_PFAD=x; ENV_LOKAL="$ARBEIT/akt/env-nachher"; weiter_vorbereiten() { :; }; frage_sicherung() { A_SICHERUNG="$ARBEIT/akt/20261022-033000"; }; frage_schluessel() { AGE_ID=x; }; config_auswerten() { :; }
+  konfiguration_vergleichen() { KONFIG_GLEICH=1; KONFIG_ABW=("E2EE_PW_BACKUP: auf diesem Server aus, in der Sicherung an"); }
+  A_SICHERUNG="$ARBEIT/akt/20261021-033000"; A_WETTER=0; A_MUELL=0; A_ERLEDIGT=""; A_FERTIG="datenbank,anwendung"; A_IP=203.0.113.10
+  aktualisieren < <(printf 'ersetzen\n'); echo "WETTER=$A_WETTER MUELL=$A_MUELL LINK=$A_MUELL_LINK" ) 2>&1)"
+enthaelt "nach dem Lauf gelten Wetter und Müll der env dieses Servers" "$A10" "WETTER=1 MUELL=1 LINK=1"
+enthaelt "Abweichung der Schalter steht als Hinweis in der Antwortdatei (und damit in der Liste)" "$(cat "$ARBEIT/akt/antworten")" "HINWEIS=Nach --aktualisieren blieb die env dieses Servers und weicht von der Sicherung ab: E2EE_PW_BACKUP"
+enthaelt "...und in der Liste" "$(cat "$ARBEIT/akt/offen.txt")" "E2EE_PW_BACKUP"
 
 echo "== Ausgabe ohne Terminal"
 gleich "liste_ausgeben ohne Escape-Codes (nicht auf einem Terminal)" 0 "$(liste_ausgeben | grep -c $'\033')"
