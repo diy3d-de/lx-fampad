@@ -13,6 +13,13 @@ import '../shell/shell_tab.dart';
 import 'calendar_anzeige.dart';
 import 'calendar_state.dart';
 
+/// Steht in den nächsten 60 Tagen ein Geburtstag an? (Die Startseite zeichnet die Kachel nur dann und lässt sie sonst aus der Reihenfolge.)
+final geburtstageVorhandenProvider = Provider.autoDispose<bool>((ref) {
+  final daten = ref.watch(kalenderDatenProvider);
+  final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
+  return nurGeburtstage(anstehende(daten, jetzt)).isNotEmpty;
+});
+
 class GeburtstageKarte extends ConsumerWidget {
   const GeburtstageKarte({super.key});
 
@@ -30,34 +37,31 @@ class GeburtstageKarte extends ConsumerWidget {
       return DateFormat('E, d. MMM', 'de_DE').format(tag).toLowerCase();
     }
 
-    return Padding(
-      padding: const EdgeInsets.only(top: 20),
-      child: Semantics(
-        button: true,
-        label: 'Nächste Geburtstage: ${liste.map((v) => '${vorkommenTitel(v)} ${tagText(v)}').join(', ')}. Kalender öffnen',
-        excludeSemantics: true,
-        child: LxCard(
-          onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const MonoLabel('// geburtstage'),
-              const SizedBox(height: 12),
-              for (final v in liste)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.cake_outlined, size: 18, color: kGeburtstag),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(vorkommenTitel(v), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
-                      const SizedBox(width: 8),
-                      Text(tagText(v), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-                    ],
-                  ),
+    return Semantics(
+      button: true,
+      label: 'Nächste Geburtstage: ${liste.map((v) => '${vorkommenTitel(v)} ${tagText(v)}').join(', ')}. Kalender öffnen',
+      excludeSemantics: true,
+      child: LxCard(
+        onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const MonoLabel('// geburtstage'),
+            const SizedBox(height: 12),
+            for (final v in liste)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.cake_outlined, size: 18, color: kGeburtstag),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text(vorkommenTitel(v), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
+                    const SizedBox(width: 8),
+                    Text(tagText(v), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  ],
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

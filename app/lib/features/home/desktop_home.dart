@@ -1,4 +1,5 @@
 // Startseite im Desktop-Layout: Kopfzeile (Datum, Begrüßung, Suche, Benachrichtigungen, "+ Neu") und Karten-Raster.
+// Die Kacheln lassen sich umsortieren und ausblenden (lokal je Gerät, siehe startseite_anpassen_screen.dart).
 // Echte Daten gibt es für Termine, Aufgaben, Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,6 +26,10 @@ import '../lists/list_dialogs.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../shell/shell_tab.dart';
+import '../../data/startseite/startseite_logik.dart';
+import '../../data/startseite/startseite_state.dart';
+import 'startseite_verfuegbar.dart';
+import 'startseite_widgets.dart';
 import '../standort/standort_start_karte.dart';
 import '../wetter/wetter_karte.dart';
 import '../muell/muell_karte.dart';
@@ -58,6 +63,8 @@ class DesktopHome extends ConsumerWidget {
         const UpdateAnzeige(),
         const AbsicherungsKarte(),
         const _Raster(),
+        const SizedBox(height: 8),
+        const StartseiteAnpassenZeile(),
       ],
     );
   }
@@ -164,37 +171,157 @@ class _Kopfzeile extends ConsumerWidget {
 }
 
 /// Karten-Raster: 3 Spalten ab ca. 840 px Inhaltsbreite, sonst 2 bzw. 1; Kartenhöhe wächst mit der Textskalierung.
-class _Raster extends ConsumerWidget {
+/// Kacheln lassen sich mit gedrückter Maustaste (kurz halten, dann ziehen) umsortieren: die Zielstelle erscheint als gestrichelte Lücke,
+/// die übrigen Kacheln rücken nach; Loslassen legt ab. Am oberen und unteren Rand scrollt die Seite mit. Reihenfolge und Ausblenden
+/// gelten nur lokal je Gerät (data/startseite/); Pfeile und Schalter gibt es auf der Seite "Startseite anpassen".
+class _Raster extends ConsumerStatefulWidget {
   const _Raster();
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final wetter = ref.watch(wetterProvider).kachelSichtbar;
-    final muell = ref.watch(muellProvider.select((m) => m.hatTermine));
+  ConsumerState<_Raster> createState() => _RasterState();
+}
+
+class _RasterState extends ConsumerState<_Raster> {
+  /// Gerade gezogene Kachel und ihr Zielplatz in der Anzeige (null = keine Ziehgeste).
+  String? _zieht;
+  int? _ziel;
+  EdgeDraggingAutoScroller? _scroller;
+
+  /// Zeiger der Ziehgeste (global) und Maße des Rasters der letzten Zeichnung: beim Mitscrollen am Rand wandert die Kachel unter dem
+  /// ruhenden Zeiger weiter, den Zielplatz rechnet dann [_beiScroll] aus der Rastergeometrie.
+  Rect _zeiger = Rect.zero;
+  final _gitter = GlobalKey();
+  int _spalten = 1;
+  double _zellenBreite = 0;
+  double _zellenHoehe = 0;
+
+  List<String> _sichtbar() {
+    final a = ref.read(startseiteDesktopProvider);
+    return sichtbareKacheln(reihenfolge: a.reihenfolge, verfuegbar: ref.read(desktopVerfuegbarProvider), ausgeblendet: a.ausgeblendet);
+  }
+
+  /// Reihenfolge mit der gezogenen Kachel an ihrem Zielplatz (ihr Platz selbst ist die Lücke).
+  List<String> _anzeige(List<String> ids) {
+    final z = _zieht;
+    if (z == null || !ids.contains(z)) return ids;
+    final basis = [...ids]..remove(z);
+    return basis..insert((_ziel ?? ids.indexOf(z)).clamp(0, basis.length), z);
+  }
+
+  void _start(String id) {
+    final ids = _sichtbar();
+    _scroller?.stopAutoScroll();
+    final scrollable = Scrollable.maybeOf(context);
+    _scroller = scrollable == null ? null : EdgeDraggingAutoScroller(scrollable, velocityScalar: 7, onScrollViewScrolled: _beiScroll);
+    setState(() {
+      _zieht = id;
+      _ziel = ids.indexOf(id);
+    });
+  }
+
+  void _ueber(String id, int platz) {
+    if (_zieht == null || id == _zieht || _ziel == platz) return;
+    setState(() => _ziel = platz);
+  }
+
+  /// Nach einem Scroll-Schritt am Rand: weiter scrollen, solange der Zeiger am Rand steht, und den Platz unter dem Zeiger als Ziel nehmen.
+  void _beiScroll() {
+    if (!mounted || _zieht == null) return;
+    _scroller?.startAutoScrollIfNecessary(_zeiger);
+    final box = _gitter.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.attached || _zellenBreite <= 0) return;
+    final lokal = box.globalToLocal(_zeiger.center);
+    final spalte = (lokal.dx / (_zellenBreite + 16)).floor().clamp(0, _spalten - 1);
+    final zeile = (lokal.dy / (_zellenHoehe + 16)).floor().clamp(0, 1000);
+    final anzahl = _sichtbar().length;
+    final platz = (zeile * _spalten + spalte).clamp(0, anzahl - 1);
+    if (platz != _ziel) setState(() => _ziel = platz);
+  }
+
+  /// Ablegen (auch, wenn die Maustaste neben einer Kachel losgelassen wird): die Vorschau wird zur neuen Reihenfolge.
+  void _ablegen() {
+    if (_zieht == null) return;
+    _scroller?.stopAutoScroll();
+    final neu = _anzeige(_sichtbar());
+    ref.read(startseiteDesktopProvider.notifier).teilmengeOrdnen(neu);
+    if (mounted) {
+      setState(() {
+        _zieht = null;
+        _ziel = null;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scroller?.stopAutoScroll();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final a = ref.watch(startseiteDesktopProvider);
+    final verf = ref.watch(desktopVerfuegbarProvider);
+    // erst zeichnen, wenn die gemerkte Reihenfolge gelesen ist (sonst springen die Kacheln)
+    if (!a.geladen) return const SizedBox.shrink();
+    final anzeige = _anzeige(sichtbareKacheln(reihenfolge: a.reihenfolge, verfuegbar: verf, ausgeblendet: a.ausgeblendet));
     final skala = MediaQuery.textScalerOf(context).scale(1).clamp(1.0, 2.0);
     return LayoutBuilder(
       builder: (context, c) {
         final spalten = c.maxWidth >= 840 ? 3 : (c.maxWidth >= 520 ? 2 : 1);
+        final breite = (c.maxWidth - (spalten - 1) * 16) / spalten;
+        final hoehe = 300 * skala;
+        _spalten = spalten;
+        _zellenBreite = breite;
+        _zellenHoehe = hoehe;
         return GridView(
+          key: _gitter,
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 16, crossAxisSpacing: 16, mainAxisExtent: 300 * skala),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 16, crossAxisSpacing: 16, mainAxisExtent: hoehe),
           children: [
-            const _TermineKarte(),
-            const _ChatKarte(),
-            const _EinkaufKarte(),
-            const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
-            const _AufgabenKarte(),
-            const _FamilieKarte(),
-            const _StandortKarte(),
-            if (muell) const _MuellKarte(),
-            if (wetter) const _WetterKarte(),
+            for (var i = 0; i < anzeige.length; i++)
+              // Schlüssel je Kachel: beim Umsortieren wandert das Element mit (die laufende Ziehgeste bleibt erhalten)
+              KeyedSubtree(
+                key: ValueKey(anzeige[i]),
+                child: DragTarget<String>(
+                  onWillAcceptWithDetails: (_) => true,
+                  onMove: (_) => _ueber(anzeige[i], i),
+                  onAcceptWithDetails: (_) => _ablegen(),
+                  builder: (context, _, _) => LongPressDraggable<String>(
+                    data: anzeige[i],
+                    feedback: SizedBox(width: breite, height: hoehe, child: StartseiteGehoben(child: _kachel(anzeige[i]))),
+                    childWhenDragging: const StartseiteLuecke(),
+                    onDragStarted: () => _start(anzeige[i]),
+                    onDragUpdate: (d) {
+                      _zeiger = Rect.fromCenter(center: d.globalPosition, width: 48, height: 48);
+                      _scroller?.startAutoScrollIfNecessary(_zeiger);
+                    },
+                    onDragEnd: (_) => _ablegen(),
+                    child: _kachel(anzeige[i]),
+                  ),
+                ),
+              ),
           ],
         );
       },
     );
   }
 }
+
+/// Die Kachel zu einer Kennung (siehe [kDesktopKacheln]).
+Widget _kachel(String id) => switch (id) {
+  'termine' => const _TermineKarte(),
+  'chat' => const _ChatKarte(),
+  'einkauf' => const _EinkaufKarte(),
+  'dateien' => const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
+  'aufgaben' => const _AufgabenKarte(),
+  'familie' => const _FamilieKarte(),
+  'standort' => const _StandortKarte(),
+  'muell' => const _MuellKarte(),
+  'wetter' => const _WetterKarte(),
+  _ => const SizedBox.shrink(),
+};
 
 /// "Heute & morgen" mit echten Terminen (lokale Datenbank, auch offline); Tippen öffnet den Kalender.
 class _TermineKarte extends ConsumerWidget {

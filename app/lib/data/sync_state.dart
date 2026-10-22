@@ -16,6 +16,7 @@ import 'database_provider.dart';
 import 'erinnerungen/erinnerung_dienst.dart';
 import 'heute_widget/heute_widget_dienst.dart';
 import 'standort/standort_hinweis.dart';
+import 'startseite/startseite_state.dart';
 import 'chat/chat_krypto_state.dart';
 import 'sync/sync_engine.dart';
 import 'sync/sync_socket.dart';
@@ -455,6 +456,9 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
     await ref.read(standortBenachrichtigerProvider).alleEntfernen();
   } catch (_) {}
   await ref.read(appDatabaseProvider).alleDatenLoeschen();
+  // die gemerkte Reihenfolge der Startseite lag in sync_meta und ist weg: der Zustand im Arbeitsspeicher liest neu (Standard), die nächste Person erbt sie nicht
+  ref.invalidate(startseiteMobilProvider);
+  ref.invalidate(startseiteDesktopProvider);
 };
 
 /// Fehlermeldung für die Anzeige (nie Interna).
