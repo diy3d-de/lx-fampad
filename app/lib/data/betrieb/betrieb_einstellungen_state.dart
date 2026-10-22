@@ -58,15 +58,15 @@ class BetriebEinstellungenNotifier extends Notifier<BetriebTeilZustand<FamilienS
   }
 
   /// Schaltet den Wartungsmodus (Step-up: die ApiException geht weiter). Danach holt das Gerät den Stand für den eigenen Banner neu.
-  Future<void> wartungSetzen(bool an, {DateTime? bis}) async {
-    final s = await ref.read(apiProvider).betriebWartungSetzen(an, bis: bis);
+  Future<void> wartungSetzen(bool an, {Duration? dauer}) async {
+    final s = await ref.read(apiProvider).betriebWartungSetzen(an, dauer: dauer);
     if (!ref.mounted) return;
     state = BetriebTeilZustand(wert: s);
     unawaited(ref.read(familienHinweisProvider.notifier).laden());
   }
 
   /// Setzt ([text]) oder löscht (null) den Familienhinweis (Step-up: die ApiException geht weiter).
-  Future<void> hinweisSetzen(String? text, {DateTime? ablauf}) async {
+  Future<void> hinweisSetzen(String? text, {Duration? ablauf}) async {
     final s = await ref.read(apiProvider).betriebHinweisSetzen(text, ablauf: ablauf);
     if (!ref.mounted) return;
     state = BetriebTeilZustand(wert: s);

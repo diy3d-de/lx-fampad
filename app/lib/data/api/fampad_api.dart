@@ -254,13 +254,14 @@ class FampadApi {
   /// Wartungsmodus und Familienhinweis aus Sicht des Betreibers (ohne Step-up).
   Future<FamilienStand> betriebEinstellungen() async => FamilienStand.fromJson(await client.get('/admin/settings'));
 
-  /// Schaltet den Wartungsmodus (Step-up); [bis] ist das optionale automatische Ende (höchstens 72 Stunden voraus).
-  Future<FamilienStand> betriebWartungSetzen(bool an, {DateTime? bis}) async =>
-      FamilienStand.fromJson(await client.put('/admin/maintenance', {'active': an, if (an && bis != null) 'until': bis.toUtc().toIso8601String()}));
+  /// Schaltet den Wartungsmodus (Step-up); [dauer] ist die Dauer bis zum automatischen Ende (1 Minute bis 72 Stunden, ohne Angabe 72 Stunden). Der Server rechnet das Ende
+  /// mit SEINER Uhr aus: die Uhr des Geräts spielt keine Rolle.
+  Future<FamilienStand> betriebWartungSetzen(bool an, {Duration? dauer}) async =>
+      FamilienStand.fromJson(await client.put('/admin/maintenance', {'active': an, if (an && dauer != null) 'untilMinutes': dauer.inMinutes}));
 
-  /// Setzt den Familienhinweis ([text] null löscht ihn; Step-up); [ablauf] ist der optionale Ablauf (höchstens 90 Tage voraus).
-  Future<FamilienStand> betriebHinweisSetzen(String? text, {DateTime? ablauf}) async =>
-      FamilienStand.fromJson(await client.put('/admin/notice', {'text': text, if (text != null && ablauf != null) 'expiresAt': ablauf.toUtc().toIso8601String()}));
+  /// Setzt den Familienhinweis ([text] null löscht ihn; Step-up); [ablauf] ist die Dauer bis zum Ablauf (höchstens 90 Tage; der Server rechnet mit seiner Uhr).
+  Future<FamilienStand> betriebHinweisSetzen(String? text, {Duration? ablauf}) async =>
+      FamilienStand.fromJson(await client.put('/admin/notice', {'text': text, if (text != null && ablauf != null) 'expiresInMinutes': ablauf.inMinutes}));
 
   /// Wartung und Familienhinweis für alle Angemeldeten (Banner); ältere Server kennen die Route nicht (404).
   Future<FamilienStand> familienStand() async => FamilienStand.fromJson(await client.get('/family-notice'));

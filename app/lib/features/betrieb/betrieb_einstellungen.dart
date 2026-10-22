@@ -53,8 +53,8 @@ class BetriebEinstellungenSeite extends ConsumerWidget {
 
 // ------------------------------------------------------------------ Wartungsmodus
 
-/// Auswahl des automatischen Endes beim Einschalten (Stunden; null = bis zum Ausschalten).
-const _wartungDauern = <(String, int?)>[('Ohne Ende', null), ('1 Std.', 1), ('4 Std.', 4), ('24 Std.', 24)];
+/// Auswahl des automatischen Endes beim Einschalten (Stunden). Die Wartung hat immer ein Ende (höchstens 72 Stunden): ein vergessener Modus sperrt nie auf Dauer.
+const _wartungDauern = <(String, int)>[('1 Std.', 1), ('4 Std.', 4), ('24 Std.', 24), ('72 Std.', 72)];
 
 class _WartungKarte extends ConsumerStatefulWidget {
   final BetriebTeilZustand<FamilienStand> zustand;
@@ -65,7 +65,7 @@ class _WartungKarte extends ConsumerStatefulWidget {
 }
 
 class _WartungKarteState extends ConsumerState<_WartungKarte> with AktionsZustand<_WartungKarte> {
-  int? _stunden;
+  int _stunden = 4;
 
   Future<void> _einschalten() async {
     final bestaetigt = await showDialog<bool>(
@@ -76,7 +76,7 @@ class _WartungKarteState extends ConsumerState<_WartungKarte> with AktionsZustan
         scrollable: true,
         content: const Text(
           'Solange er läuft, können alle Mitglieder nichts mehr abgleichen und sich nicht neu anmelden. Änderungen bleiben auf den Geräten und gehen danach raus. '
-          'Du selbst bleibst angemeldet und kannst ihn hier wieder ausschalten.',
+          'Er endet nach der gewählten Dauer von selbst. Du selbst bleibst angemeldet und kannst ihn hier früher ausschalten.',
           style: TextStyle(height: 1.4),
         ),
         actions: [
@@ -86,9 +86,10 @@ class _WartungKarteState extends ConsumerState<_WartungKarte> with AktionsZustan
       ),
     );
     if (bestaetigt != true || !mounted) return;
-    final bis = _stunden == null ? null : DateTime.now().add(Duration(hours: _stunden!));
+    // die Dauer geht an den Server, der das Ende mit seiner Uhr ausrechnet (die Uhr des Geräts zählt nicht)
+    final dauer = Duration(hours: _stunden);
     await ausfuehren(() async {
-      await mitStepUp(context, ref, () => ref.read(betriebEinstellungenProvider.notifier).wartungSetzen(true, bis: bis));
+      await mitStepUp(context, ref, () => ref.read(betriebEinstellungenProvider.notifier).wartungSetzen(true, dauer: dauer));
     });
   }
 
@@ -196,7 +197,7 @@ class _HinweisKarteState extends ConsumerState<_HinweisKarte> with AktionsZustan
       setState(() => fehler = 'Bitte gib einen Text ein.');
       return;
     }
-    final ablauf = _tage == null ? null : DateTime.now().add(Duration(days: _tage!));
+    final ablauf = _tage == null ? null : Duration(days: _tage!);
     final ok = await ausfuehren(() async {
       await mitStepUp(context, ref, () => ref.read(betriebEinstellungenProvider.notifier).hinweisSetzen(text, ablauf: ablauf));
     });

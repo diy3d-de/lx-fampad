@@ -412,6 +412,18 @@ class SyncController extends Notifier<SyncState> {
       });
       return;
     }
+    // Wartung des Betreibers: fester Takt (Wartezeit des Servers plus bis zu 30 s Zufall, damit nicht alle Geräte gleichzeitig kommen), kein Hochschaukeln des Fehler-Backoffs
+    // (nach dem Ende der Wartung soll es zügig weitergehen, nicht erst nach Minuten)
+    if (e.ausgang == SyncAusgang.wartung) {
+      final basisSek = (e.warten?.inSeconds ?? 60).clamp(5, 300);
+      final warte = Duration(seconds: basisSek, milliseconds: (ref.read(syncZufallProvider).nextDouble() * 30000).round());
+      _backoffTimer?.cancel();
+      _backoffTimer = Timer(warte, () {
+        _backoffTimer = null;
+        unawaited(synchronisieren());
+      });
+      return;
+    }
     _fehlversuche++;
     final basis = min(_zeiten.backoffMax.inMilliseconds, _zeiten.backoffStart.inMilliseconds * pow(2, min(_fehlversuche - 1, 16)).toInt());
     var warte = Duration(milliseconds: kurz ? _zeiten.backoffStart.inMilliseconds : (basis * (0.5 + ref.read(syncZufallProvider).nextDouble())).round());

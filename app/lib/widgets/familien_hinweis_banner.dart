@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 
 import '../constants.dart';
 import '../data/betrieb/familien_hinweis_state.dart';
+import '../ui/widgets.dart';
 
 /// "heute 14:30", sonst "23. okt., 14:30" (Ortszeit).
 String endeText(DateTime t, DateTime jetzt) {
@@ -36,6 +37,7 @@ class FamilienHinweisBanner extends ConsumerWidget {
             _Banner(
               icon: Icons.build_outlined,
               farbe: kWarn,
+              label: '// wartung',
               text: wartung?.bis == null
                   ? 'Wartung: Die Familienzentrale wird gerade gewartet. Änderungen bleiben auf deinem Gerät und werden danach abgeglichen.'
                   : 'Wartung bis ${endeText(wartung!.bis!, jetzt)}: Änderungen bleiben auf deinem Gerät und werden danach abgeglichen.',
@@ -45,6 +47,8 @@ class FamilienHinweisBanner extends ConsumerWidget {
             _Banner(
               icon: Icons.campaign_outlined,
               farbe: kAccent,
+              // fester Absender: ein Hinweis wirkt nie wie eine Systemmeldung der App (Wartung) und der Text bleibt erkennbar als Text des Betreibers
+              label: '// hinweis des betreibers',
               text: hinweis.text,
               schliessen: () => ref.read(familienHinweisProvider.notifier).schliessen(),
             ),
@@ -57,9 +61,10 @@ class FamilienHinweisBanner extends ConsumerWidget {
 class _Banner extends StatelessWidget {
   final IconData icon;
   final Color farbe;
+  final String label;
   final String text;
   final VoidCallback? schliessen;
-  const _Banner({required this.icon, required this.farbe, required this.text, this.schliessen});
+  const _Banner({required this.icon, required this.farbe, required this.label, required this.text, this.schliessen});
 
   @override
   Widget build(BuildContext context) {
@@ -80,7 +85,14 @@ class _Banner extends StatelessWidget {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(vertical: 10),
-                child: Text(text, style: const TextStyle(fontSize: 13, height: 1.35, color: kText)),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    MonoLabel(label, color: farbe),
+                    const SizedBox(height: 4),
+                    Text(text, style: const TextStyle(fontSize: 13, height: 1.35, color: kText)),
+                  ],
+                ),
               ),
             ),
             if (schliessen != null) IconButton(tooltip: 'Hinweis schließen', constraints: const BoxConstraints(minWidth: 44, minHeight: 44), icon: const Icon(Icons.close, size: 18), onPressed: schliessen),

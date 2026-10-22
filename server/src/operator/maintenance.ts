@@ -49,32 +49,41 @@ export class MaintenanceGate {
   private readAt = 0;
   private loading: Promise<void> | null = null;
   private warned = false;
+  /** Zählt die Schaltungen: ein Lesevorgang, der vor einem `invalidate()` begann, liefert evtl. den alten Stand und darf ihn nicht festschreiben. */
+  private generation = 0;
 
   constructor(private readonly deps: { db: Db; now: () => Date; log: Logger }) {}
 
-  /** Der Zustand ist nicht mehr aktuell (der Betreiber hat geschaltet): beim nächsten Zugriff neu lesen. */
+  /** Der Zustand ist nicht mehr aktuell (der Betreiber hat geschaltet): beim nächsten Zugriff neu lesen, auch wenn gerade ein Lesevorgang läuft. */
   invalidate(): void {
+    this.generation++;
     this.readAt = 0;
   }
 
   private async load(): Promise<void> {
+    const gen = this.generation;
     try {
-      this.rows = await this.deps.db
+      const rows = await this.deps.db
         .select({ until: operatorSettings.maintenanceUntil })
         .from(operatorSettings)
         .where(eq(operatorSettings.maintenanceActive, true));
+      // zwischenzeitlich geschaltet: dieses Ergebnis kann veraltet sein, nicht übernehmen (readAt bleibt 0, der nächste Durchlauf liest neu)
+      if (gen !== this.generation) return;
+      this.rows = rows;
       this.warned = false;
     } catch (err) {
       // behält den zuletzt bekannten Stand; ohne Datenbank scheitern die Anfragen ohnehin an anderer Stelle
       if (!this.warned) this.deps.log.warn({ err }, 'Wartungsmodus nicht lesbar, der letzte Stand gilt');
       this.warned = true;
+      if (gen !== this.generation) return;
     }
     this.readAt = Date.now();
   }
 
   /** Ist der Wartungsmodus an (und nicht durch "until" abgelaufen)? Mehrere gleichzeitige Aufrufe teilen sich eine Abfrage. */
   async current(): Promise<MaintenanceState | null> {
-    if (Date.now() - this.readAt >= CACHE_MS) {
+    // höchstens drei Durchläufe: wird währenddessen geschaltet, liest der nächste Durchlauf den neuen Stand
+    for (let i = 0; i < 3 && (this.readAt === 0 || Date.now() - this.readAt >= CACHE_MS); i++) {
       this.loading ??= this.load().finally(() => {
         this.loading = null;
       });
@@ -90,10 +99,17 @@ export class MaintenanceGate {
   /** Wirft die feste Wartungs-Antwort, wenn die Anfrage gesperrt ist. */
   async check(req: Pick<FastifyRequest, 'method' | 'routeOptions'>): Promise<void> {
     if (!blockedDuringMaintenance(req)) return;
-    if (await this.current()) throw maintenanceError();
+    const state = await this.current();
+    if (state) throw maintenanceError(state.until, this.deps.now());
   }
 }
 
-export function maintenanceError(): AppError {
-  return new AppError(503, 'maintenance', MAINTENANCE_MESSAGE, { 'retry-after': '60' }, { maintenance: true });
+/** `Retry-After`: höchstens 60 Sekunden, endet die Wartung früher, nur bis dahin (mindestens 1). */
+export function retryAfterSeconds(until: Date | null, now: Date): number {
+  if (until === null) return 60;
+  return Math.min(60, Math.max(1, Math.ceil((until.getTime() - now.getTime()) / 1000)));
+}
+
+export function maintenanceError(until: Date | null = null, now: Date = new Date()): AppError {
+  return new AppError(503, 'maintenance', MAINTENANCE_MESSAGE, { 'retry-after': String(retryAfterSeconds(until, now)) }, { maintenance: true });
 }

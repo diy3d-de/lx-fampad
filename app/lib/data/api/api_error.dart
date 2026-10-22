@@ -235,6 +235,9 @@ class ApiException implements Exception {
     'legacy_login_disabled': 'Diese App-Version ist zu alt für die Anmeldung. Bitte aktualisiere die App.',
     'password_change_needs_update': 'Zum Ändern des Passworts brauchst du die neueste App-Version. Bitte aktualisiere die App.',
     'backup_not_current': 'Die Passwort-Sicherung ist nicht mehr aktuell. Bitte versuche es noch einmal.',
+    'invalid_notice': 'Der Hinweis ist nicht gültig: 1 bis 280 Zeichen in einer Zeile, ohne Sonderzeichen.',
+    'notice_link': 'Der Hinweis darf keine Links oder Webadressen enthalten.',
+    'invalid_duration': 'Die gewählte Dauer ist nicht gültig. Bitte wähle sie noch einmal.',
     'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
   };
 }

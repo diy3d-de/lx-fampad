@@ -222,9 +222,9 @@ void main() {
     expect(anfragen(), 2);
   });
 
-  lauf('503 maintenance: Status "wartung" (kein Fehler), erneuter Versuch nach der Wartezeit, danach wieder synchron; der Ausgang bleibt', (tester) async {
+  lauf('503 maintenance: Status "wartung" (kein Fehler), fester Takt Retry-After plus Zufall ohne Hochschaukeln, danach zügig wieder synchron; der Ausgang bleibt', (tester) async {
     env = await angemeldeteUmgebung();
-    env.sync.fehlerQueue.addAll([(503, 'maintenance'), (503, 'maintenance')]);
+    env.sync.fehlerQueue.addAll([(503, 'maintenance'), (503, 'maintenance'), (503, 'maintenance')]);
     env.sync.retryAfterWert = 60;
     c = ProviderContainer(overrides: [...env.overrides, syncZufallProvider.overrideWithValue(_FesterZufall())]);
     await c.read(listenRepositoryProvider).listeAnlegen(name: 'Einkauf');
@@ -233,13 +233,24 @@ void main() {
     expect(c.read(syncProvider).status, SyncStatus.wartung);
     expect(c.read(syncProvider).meldung, contains('Wartung'));
     expect(await c.read(syncStoreProvider).offeneAnzahl(), 1, reason: 'die Änderung bleibt im Ausgang');
-    final n = anfragen();
-    await ruhe(tester, const Duration(seconds: 50));
-    expect(anfragen(), n, reason: 'nicht früher als die Wartezeit des Servers (60 s)');
-    await ruhe(tester, const Duration(seconds: 20));
-    expect(anfragen(), n + 1);
-    expect(c.read(syncProvider).status, SyncStatus.wartung);
-    await ruhe(tester, const Duration(minutes: 3));
+    // fester Takt: 60 s (Wartezeit des Servers) plus Zufall 0 bis 30 s (hier 15 s), nie früher als 60 s und nie länger als 90 s; kein Hochschaukeln wie beim
+    // Fehler-Backoff (2, 4, 8 ... Sekunden bis 5 Minuten): alle drei Abstände gleich
+    Future<int> bisZumNaechsten() async {
+      final vorher = anfragen();
+      var sek = 0;
+      while (anfragen() == vorher && sek < 200) {
+        await ruhe(tester, const Duration(seconds: 1));
+        sek++;
+      }
+      return sek;
+    }
+
+    for (var i = 0; i < 3; i++) {
+      final sek = await bisZumNaechsten();
+      expect(sek, inInclusiveRange(60, 90), reason: 'Versuch $i: Wartezeit des Servers plus Zufall');
+      expect(sek, inInclusiveRange(70, 80), reason: 'Zufall 0.5 ergibt 15 s, jedes Mal gleich');
+    }
+    // nach dem Ende der Wartung (dritter Versuch erfolgreich) geht es im selben Takt weiter
     expect(c.read(syncProvider).status, SyncStatus.synchron);
     expect(await c.read(syncStoreProvider).offeneAnzahl(), 0);
   });

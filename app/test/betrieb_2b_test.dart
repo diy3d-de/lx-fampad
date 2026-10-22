@@ -2,10 +2,13 @@
 // Ablauf, älterer Server), die Seite "Einstellungen" des Betreibers (Wartungsmodus mit Bestätigung und Step-up, Hinweis senden und löschen, Konfiguration nur lesend) und das Layout
 // (360 px, Textskala 1.5/2.0, Touch-Ziele mindestens 44 px).
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/api/api_error.dart';
+import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/betrieb/familien_hinweis_state.dart';
 import 'package:lx_fampad/data/betrieb/familien_stand.dart';
 import 'package:lx_fampad/features/auth/step_up.dart';
@@ -161,8 +164,9 @@ void main() {
       if (!alt) env.server.on('GET /family-notice', (_) => jsonAntwort(stand == null ? _stand() : stand()));
       c = env.container();
       addTearDown(c.dispose);
-      // der Zustand hängt an der angemeldeten Person
-      c.read(familienHinweisProvider);
+      // der Zustand hängt an der angemeldeten Person (und der gemerkte Stand an ihrer Kennung)
+      await c.read(authProvider.notifier).start();
+      expect(c.read(authProvider).user?.id, fixIdAdmin);
     }
 
     test('Abfrage: Wartung und Hinweis erscheinen; ohne Abfrage ist nichts da', () async {
@@ -184,7 +188,8 @@ void main() {
       expect(c.read(familienHinweisProvider).sichtbar(jetzt)?.text, 'Erster');
       await n.schliessen();
       expect(c.read(familienHinweisProvider).sichtbar(jetzt), isNull);
-      expect(await env.db.metaLesen(kHinweisGeschlossenSchluessel), '2026-10-22T08:00:00.000Z');
+      expect(await env.db.metaLesen(hinweisGeschlossenSchluessel(fixIdAdmin)), '2026-10-22T08:00:00.000Z');
+      expect(await env.db.metaLesen(kHinweisGeschlossenSchluessel), isNull, reason: 'je Person ein eigener Schlüssel');
       // die Abfrage bringt denselben Hinweis wieder: er bleibt weg
       await n.laden();
       expect(c.read(familienHinweisProvider).sichtbar(jetzt), isNull);
@@ -196,9 +201,37 @@ void main() {
 
     test('der gemerkte Stand gilt nach einem Neustart (Start liest die Ablage)', () async {
       await bauen(stand: () => _stand(hinweis: _hinweis('Alt')));
-      await env.db.metaSchreiben(kHinweisGeschlossenSchluessel, '2026-10-22T08:00:00.000Z');
+      await env.db.metaSchreiben(hinweisGeschlossenSchluessel(fixIdAdmin), '2026-10-22T08:00:00.000Z');
       await c.read(familienHinweisProvider.notifier).starten();
       expect(c.read(familienHinweisProvider).sichtbar(DateTime.utc(2026, 10, 22, 9)), isNull);
+    });
+
+    test('geteiltes Gerät: was eine andere Person weggeklickt hat, blendet den Hinweis nicht für diese Person aus', () async {
+      await bauen(stand: () => _stand(hinweis: _hinweis('Für alle')));
+      await env.db.metaSchreiben(hinweisGeschlossenSchluessel('u-andere-person'), '2026-10-22T08:00:00.000Z');
+      await env.db.metaSchreiben(kHinweisGeschlossenSchluessel, '2026-10-22T08:00:00.000Z'); // der alte Schlüssel ohne Person gilt nicht mehr
+      await c.read(familienHinweisProvider.notifier).starten();
+      expect(c.read(familienHinweisProvider).sichtbar(DateTime.utc(2026, 10, 22, 9))?.text, 'Für alle');
+    });
+
+    test('Personenwechsel während einer Abfrage: die späte Antwort der vorigen Person ändert den neuen Zustand nicht, der Lauf ist zurückgesetzt', () async {
+      final antwort = Completer<void>();
+      await bauen(stand: () => _stand(hinweis: _hinweis('Alt')));
+      env.server.on('GET /family-notice', (_) async {
+        await antwort.future;
+        return jsonAntwort(_stand(hinweis: _hinweis('Spät')));
+      });
+      final lauf = c.read(familienHinweisProvider.notifier).laden();
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      c.invalidate(familienHinweisProvider); // Personenwechsel: der Zustand wird neu aufgebaut
+      expect(c.read(familienHinweisProvider).stand, isNull);
+      antwort.complete();
+      await lauf;
+      expect(c.read(familienHinweisProvider).stand, isNull, reason: 'die Antwort der vorigen Person wird verworfen');
+      // und der neue Zustand fragt wieder (kein hängengebliebener "läuft"-Zustand)
+      env.server.on('GET /family-notice', (_) => jsonAntwort(_stand(hinweis: _hinweis('Neu'))));
+      await c.read(familienHinweisProvider.notifier).laden();
+      expect(c.read(familienHinweisProvider).stand?.hinweis?.text, 'Neu');
     });
 
     test('Ablauf: nach dem Ablaufzeitpunkt ist der Hinweis weg, auch ohne neue Abfrage; Wartung ist nicht wegklickbar', () async {
@@ -257,7 +290,8 @@ void main() {
     env.server.on('PUT /admin/maintenance', (r) {
       if (!bestaetigt) return fehler(403, 'step_up_required');
       final an = r.json['active'] == true;
-      aktuell = _stand(wartung: an, bis: r.json['until'] as String?, hinweis: aktuell['notice'] as Map<String, dynamic>?);
+      final minuten = r.json['untilMinutes'] as int? ?? 72 * 60;
+      aktuell = _stand(wartung: an, bis: DateTime.now().toUtc().add(Duration(minutes: minuten)).toIso8601String(), hinweis: aktuell['notice'] as Map<String, dynamic>?);
       return jsonAntwort(aktuell);
     });
     env.server.on('PUT /admin/notice', (r) {
@@ -265,7 +299,13 @@ void main() {
       final text = r.json['text'] as String?;
       aktuell = _stand(
         wartung: (aktuell['maintenance'] as Map<String, dynamic>)['active'] == true,
-        hinweis: text == null ? null : _hinweis(text.trim(), setAt: DateTime.now().toUtc().toIso8601String(), expiresAt: r.json['expiresAt'] as String?),
+        hinweis: text == null
+            ? null
+            : _hinweis(
+                text.trim(),
+                setAt: DateTime.now().toUtc().toIso8601String(),
+                expiresAt: r.json['expiresInMinutes'] == null ? null : DateTime.now().toUtc().add(Duration(minutes: r.json['expiresInMinutes'] as int)).toIso8601String(),
+              ),
       );
       return jsonAntwort(aktuell);
     });
@@ -303,9 +343,11 @@ void main() {
       final env = await start(tester, betreiber: false, oeffnen: false, stand: () => _stand(hinweis: _hinweis('Samstag ist Wartung, plant bitte um.')));
       expect(find.text('Samstag ist Wartung, plant bitte um.'), findsOneWidget);
       expect(find.byType(FamilienHinweisBanner), findsOneWidget);
+      // fester Absender über dem Text: der Hinweis ist klar der Text des Betreibers
+      expect(find.text('// HINWEIS DES BETREIBERS'), findsOneWidget);
       await tippe(tester, find.byTooltip('Hinweis schließen'));
       expect(find.text('Samstag ist Wartung, plant bitte um.'), findsNothing);
-      expect(await env.db.metaLesen(kHinweisGeschlossenSchluessel), isNotNull);
+      expect(await env.db.metaLesen(hinweisGeschlossenSchluessel(fixIdAdmin)), isNotNull);
       pruefeLayout(tester, 'nach dem Wegklicken');
     });
 
@@ -313,6 +355,9 @@ void main() {
       final bis = DateTime.now().toUtc().add(const Duration(hours: 2)).toIso8601String();
       await start(tester, betreiber: false, oeffnen: false, stand: () => _stand(wartung: true, bis: bis, hinweis: _hinweis('Kurze Pause')));
       expect(find.textContaining('Wartung bis '), findsOneWidget);
+      // Wartung und Hinweis tragen verschiedene feste Kennzeichen
+      expect(find.text('// WARTUNG'), findsOneWidget);
+      expect(find.text('// HINWEIS DES BETREIBERS'), findsOneWidget);
       expect(find.textContaining('Änderungen bleiben auf deinem Gerät'), findsOneWidget);
       expect(find.text('Kurze Pause'), findsOneWidget);
       // nur der Hinweis hat einen Schließen-Knopf
@@ -397,7 +442,10 @@ void main() {
 
     testWidgets('Wartung einschalten: Rückfrage, Ende wählbar, Step-up, dann PUT mit Ende; danach "Wartung läuft" und der Banner', (tester) async {
       final env = await start(tester);
-      await tippe(tester, find.text('4 Std.'));
+      // kein "ohne Ende" mehr: die Wartung hat immer ein Ende, vorgewählt sind 4 Stunden
+      expect(find.text('Ohne Ende'), findsNothing);
+      expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '4 Std.')).selected, isTrue);
+      await tippe(tester, find.text('24 Std.'));
       await tippe(tester, find.text('Wartung einschalten'));
       // Rückfrage mit Abbrechen: nichts geschieht
       expect(find.text('Wartungsmodus einschalten?'), findsOneWidget);
@@ -410,16 +458,14 @@ void main() {
       final puts = env.server.anfragen('PUT /admin/maintenance');
       expect(puts, hasLength(2), reason: 'erst abgelehnt (Step-up nötig), nach der Bestätigung noch einmal');
       final body = puts.last.json;
-      expect(body['active'], isTrue);
-      final bis = DateTime.parse(body['until'] as String);
-      expect(bis.difference(DateTime.now().toUtc()).inMinutes, inInclusiveRange(235, 241));
+      expect(body, {'active': true, 'untilMinutes': 24 * 60}, reason: 'die Dauer geht an den Server (er rechnet das Ende mit seiner Uhr), keine Uhrzeit vom Gerät');
       expect(find.text('● Wartung läuft'), findsOneWidget);
       expect(find.text('Wartung beenden'), findsOneWidget);
       // der eigene Banner (hinter der Seite) holt den Stand sofort neu
       expect(env.server.anfragen('GET /family-notice').length, greaterThanOrEqualTo(2));
     });
 
-    testWidgets('Wartung ohne Ende einschalten sendet kein "until"; beenden sendet active=false', (tester) async {
+    testWidgets('Wartung: Standard 4 Stunden, 72 Stunden wählbar; beenden sendet active=false und keine Dauer', (tester) async {
       final env = await start(tester, vorStart: (env) => env.server.json('GET /admin/settings', _stand(wartung: true, bis: null)));
       // läuft schon: nur "beenden"
       expect(find.text('● Wartung läuft'), findsOneWidget);
@@ -428,10 +474,15 @@ void main() {
       await tippe(tester, find.text('Mit Passkey bestätigen'));
       expect(env.server.anfragen('PUT /admin/maintenance').last.json, {'active': false});
       expect(find.text('● aus'), findsOneWidget);
-      // ohne Ende wieder an
+      // wieder an: die vorgewählten 4 Stunden, danach 72 Stunden
       await tippe(tester, find.text('Wartung einschalten'));
       await tippe(tester, find.text('Einschalten'));
-      expect(env.server.anfragen('PUT /admin/maintenance').last.json, {'active': true});
+      expect(env.server.anfragen('PUT /admin/maintenance').last.json, {'active': true, 'untilMinutes': 240});
+      await tippe(tester, find.text('Wartung beenden'));
+      await tippe(tester, find.text('72 Std.'));
+      await tippe(tester, find.text('Wartung einschalten'));
+      await tippe(tester, find.text('Einschalten'));
+      expect(env.server.anfragen('PUT /admin/maintenance').last.json, {'active': true, 'untilMinutes': 72 * 60});
     });
 
     testWidgets('Hinweis senden: leerer Text wird nicht gesendet, Umbrüche fallen weg, Ablauf wählbar; danach sichtbar, Eingabe leer; löschen', (tester) async {
@@ -448,8 +499,7 @@ void main() {
       await mitte(tester, find.text('Hinweis senden'));
       await tippe(tester, find.text('Mit Passkey bestätigen'));
       final put = env.server.anfragen('PUT /admin/notice').last.json;
-      expect(put['text'], 'Server-Umzug am Samstag', reason: 'getrimmt');
-      expect(DateTime.parse(put['expiresAt'] as String).difference(DateTime.now().toUtc()).inHours, inInclusiveRange(166, 169));
+      expect(put, {'text': 'Server-Umzug am Samstag', 'expiresInMinutes': 7 * 24 * 60}, reason: 'getrimmt, der Ablauf als Dauer (der Server rechnet mit seiner Uhr)');
       expect(find.text('● sichtbar'), findsOneWidget);
       expect(find.text('Hinweis löschen'), findsOneWidget);
       expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
@@ -459,13 +509,20 @@ void main() {
       expect(find.text('Zurzeit ist kein Hinweis gesetzt.'), findsOneWidget);
     });
 
-    testWidgets('Fehler des Servers (zum Beispiel ungültige Eingabe): feste Meldung, kein Servertext', (tester) async {
-      await start(tester, vorStart: (env) => env.server.on('PUT /admin/notice', (_) => fehler(400, 'invalid_request')));
-      await zu(tester, find.text('Hinweis senden'));
-      await tester.enterText(find.byType(TextField), 'Text');
-      await mitte(tester, find.text('Hinweis senden'));
-      expect(find.text('Die Eingabe ist nicht gültig. Bitte prüfe sie.'), findsOneWidget);
-    });
+    for (final (code, text) in [
+      ('invalid_request', 'Die Eingabe ist nicht gültig. Bitte prüfe sie.'),
+      ('invalid_notice', 'Der Hinweis ist nicht gültig: 1 bis 280 Zeichen in einer Zeile, ohne Sonderzeichen.'),
+      ('notice_link', 'Der Hinweis darf keine Links oder Webadressen enthalten.'),
+      ('invalid_duration', 'Die gewählte Dauer ist nicht gültig. Bitte wähle sie noch einmal.'),
+    ]) {
+      testWidgets('Fehler des Servers $code: klare deutsche Meldung, kein Servertext', (tester) async {
+        await start(tester, vorStart: (env) => env.server.on('PUT /admin/notice', (_) => fehler(400, code)));
+        await zu(tester, find.text('Hinweis senden'));
+        await tester.enterText(find.byType(TextField), 'Text');
+        await mitte(tester, find.text('Hinweis senden'));
+        expect(find.text(text), findsOneWidget);
+      });
+    }
 
     testWidgets('älterer Server (404): ruhiger Hinweis statt Fehler, die anderen Seiten bleiben benutzbar', (tester) async {
       await start(

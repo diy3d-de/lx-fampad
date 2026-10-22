@@ -3,10 +3,12 @@
 // Geprüft wird: Rechte-Tabelle (nur Betreiber, alle anderen 404, ohne Sitzung 401), Step-up, Eingabeprüfung, Audit (alter und neuer Zustand, nie der Text),
 // Familiengrenze und dass die Konfiguration nie Geheimnisse oder Adressen mit Zugangsdaten enthält.
 import { randomUUID } from 'node:crypto';
+import type { AddressInfo } from 'node:net';
+import WebSocket from 'ws';
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import * as schema from '../src/db/schema.js';
-import { blockedDuringMaintenance, MaintenanceGate, MAINTENANCE_MESSAGE } from '../src/operator/maintenance.js';
+import { blockedDuringMaintenance, MaintenanceGate, MAINTENANCE_MESSAGE, retryAfterSeconds } from '../src/operator/maintenance.js';
 import { grantOperator } from '../src/operator/service.js';
 import { clearMaintenanceAll, cleanNoticeText, NOTICE_MAX_CHARS } from '../src/operator/settings.js';
 import { addMember, adminPassword, backends, World, type Harness } from './helpers.js';
@@ -49,6 +51,69 @@ describe('Hinweistext prüfen (rein)', () => {
     ['unsichtbares Zeichen', 'a\u200bb'],
   ])('lehnt ab: %s', (_name, text) => {
     expect(() => cleanNoticeText(text)).toThrow();
+  });
+
+  // unsichtbare Zeichen und Tag-Zeichen: mit Codepunkten gebaut, damit sie im Quelltext nicht unsichtbar stehen
+  it.each([
+    ['Tag-Zeichen U+E0041', 0xe0041],
+    ['Tag-Zeichen U+E007F', 0xe007f],
+    ['Combining Grapheme Joiner U+034F', 0x34f],
+    ['Hangul-Füllzeichen U+115F', 0x115f],
+    ['Hangul-Füllzeichen U+1160', 0x1160],
+    ['Hangul Filler U+3164', 0x3164],
+    ['Halfwidth Hangul Filler U+FFA0', 0xffa0],
+    ['leeres Braille-Muster U+2800', 0x2800],
+    ['Khmer U+17B4', 0x17b4],
+    ['Khmer U+17B5', 0x17b5],
+    ['Objekt-Ersatzzeichen U+FFFC', 0xfffc],
+    ['LRM U+200E', 0x200e],
+    ['RLM U+200F', 0x200f],
+    ['Null-Breite-Leerzeichen U+200B', 0x200b],
+    ['Word Joiner U+2060', 0x2060],
+    ['BOM U+FEFF', 0xfeff],
+  ])('lehnt unsichtbares Zeichen ab: %s', (_name, cp) => {
+    expect(() => cleanNoticeText('Hallo ' + String.fromCodePoint(cp) + ' Welt')).toThrow(expect.objectContaining({ status: 400, code: 'invalid_notice' }));
+  });
+
+  it('erlaubt ZWJ und ZWNJ (Familien-Emoji) und Variationsselektoren', () => {
+    const zwj = String.fromCodePoint(0x200d);
+    const familie = ['👨', '👩', '👧'].join(zwj);
+    expect(cleanNoticeText('Familie ' + familie)).toBe('Familie ' + familie);
+    const herz = '❤' + String.fromCodePoint(0xfe0f);
+    expect(cleanNoticeText('Danke ' + herz)).toContain('Danke');
+    expect(cleanNoticeText('a' + String.fromCodePoint(0x200c) + 'b')).toHaveLength(3);
+  });
+
+  it.each([
+    'Mehr auf https://lx-labs.dev',
+    'http://example.org',
+    'ftp://x',
+    'Siehe www.beispiel',
+    'WWW.X.DE',
+    'gehe auf lx-labs.dev',
+    'mail an info.familie.de bitte',
+    'login.example.com öffnen',
+  ])('lehnt Links ab: %s', (text) => {
+    expect(() => cleanNoticeText(text)).toThrow(expect.objectContaining({ status: 400, code: 'notice_link' }));
+  });
+
+  it('normale Sätze mit Punkten bleiben möglich', () => {
+    for (const text of ['Wartung z. B. am Sa. um 9.30 Uhr', 'Ca. 2 Std., danach geht es wieder.', 'Version 1.2.3 kommt', 'Ende.Fertig']) {
+      expect(cleanNoticeText(text)).toBe(text);
+    }
+  });
+});
+
+const FAMILIE = ['👨', '👩', '👧'].join(String.fromCodePoint(0x200d));
+
+describe('Wartung: Retry-After (rein)', () => {
+  it('höchstens 60 Sekunden, kurz vor dem Ende nur noch der Rest, mindestens 1', () => {
+    const jetzt = new Date('2026-10-22T10:00:00Z');
+    expect(retryAfterSeconds(null, jetzt)).toBe(60);
+    expect(retryAfterSeconds(new Date('2026-10-22T12:00:00Z'), jetzt)).toBe(60);
+    expect(retryAfterSeconds(new Date('2026-10-22T10:00:30Z'), jetzt)).toBe(30);
+    expect(retryAfterSeconds(new Date('2026-10-22T10:00:00.400Z'), jetzt)).toBe(1);
+    expect(retryAfterSeconds(new Date('2026-10-22T09:59:00Z'), jetzt)).toBe(1);
   });
 });
 
@@ -108,6 +173,40 @@ describe('Wartung: welche Anfragen gesperrt sind (rein)', () => {
     expect(await gate.current()).toEqual({ until: new Date('2026-10-22T11:00:00Z') });
     jetzt = new Date('2026-10-22T11:00:00Z');
     expect(await gate.current()).toBeNull();
+  });
+
+  it('Tor: wird während eines laufenden Lesevorgangs geschaltet, gilt danach der neue Stand (kein veralteter Zwischenspeicher)', async () => {
+    // jeder Lesevorgang wartet auf sein eigenes Freigabe-Signal und liefert den Stand, den er beim Start sah
+    const lesevorgaenge: Array<{ rows: Array<{ until: Date | null }>; frei: () => void; fertig: Promise<void> }> = [];
+    let stand: Array<{ until: Date | null }> = [];
+    const db = {
+      select: () => ({
+        from: () => ({
+          where: () => {
+            const rows = stand;
+            let frei!: () => void;
+            const fertig = new Promise<void>((resolve) => (frei = resolve));
+            lesevorgaenge.push({ rows, frei, fertig });
+            return fertig.then(() => rows);
+          },
+        }),
+      }),
+    };
+    const gate = new MaintenanceGate({ db: db as never, now: () => new Date('2026-10-22T10:00:00Z'), log: { warn: () => undefined, error: () => undefined } });
+    const bis = new Date('2026-10-22T12:00:00Z');
+    const abfrage = gate.current(); // Lesevorgang 1 sieht "aus" und hängt
+    await new Promise((r) => setTimeout(r, 5));
+    expect(lesevorgaenge).toHaveLength(1);
+    stand = [{ until: bis }]; // der Betreiber schaltet ein ...
+    gate.invalidate(); // ... und leert den Zwischenspeicher, während Lesevorgang 1 noch läuft
+    lesevorgaenge[0]!.frei(); // Lesevorgang 1 endet mit dem ALTEN Stand: er darf nicht festgeschrieben werden
+    await new Promise((r) => setTimeout(r, 5));
+    expect(lesevorgaenge).toHaveLength(2); // der Durchlauf liest neu
+    lesevorgaenge[1]!.frei();
+    expect(await abfrage).toEqual({ until: bis });
+    // und der Zwischenspeicher hält den neuen Stand (kein weiterer Lesevorgang)
+    expect(await gate.current()).toEqual({ until: bis });
+    expect(lesevorgaenge).toHaveLength(2);
   });
 });
 
@@ -237,17 +336,22 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
       {},
       { active: 'ja' },
       { active: true, extra: 1 },
-      { active: true, until: 'morgen' },
-      { active: true, until: iso(-MIN) },
-      { active: true, until: new Date(now).toISOString() },
-      { active: true, until: iso(72 * HOUR + MIN) },
-      { active: false, until: iso(HOUR) },
-      { active: true, until: 12345 },
+      { active: true, until: iso(HOUR) }, // das Ende kommt nie als Uhrzeit vom Gerät
+      { active: true, untilMinutes: 'morgen' },
+      { active: true, untilMinutes: 0 },
+      { active: true, untilMinutes: -5 },
+      { active: true, untilMinutes: 1.5 },
+      { active: true, untilMinutes: 72 * 60 + 1 },
+      { active: false, untilMinutes: 60 },
     ]) {
       expect((await a.client.put('/api/v1/admin/maintenance', body)).status, JSON.stringify(body)).toBe(400);
     }
     expect(await world.count('operator_settings')).toBe(0);
-    expect((await a.client.put('/api/v1/admin/maintenance', { active: true, until: iso(72 * HOUR) })).status).toBe(200);
+    const ok = await a.client.put('/api/v1/admin/maintenance', { active: true, untilMinutes: 72 * 60 });
+    expect(ok.status).toBe(200);
+    expect(ok.json.maintenance.until).toBe(new Date(world.clock + 72 * HOUR).toISOString());
+    // die Fehlerantwort nennt den Grund (die App zeigt dazu eine eigene deutsche Meldung)
+    expect((await a.client.put('/api/v1/admin/maintenance', { active: true, untilMinutes: 0 })).json.error).toBe('invalid_duration');
   });
 
   it('Wartung an: Sync, Schreiben und neue Anmeldungen bekommen 503 "maintenance" mit fester deutscher Meldung; Lesen, bestehende Sitzungen und Betreiber bleiben', async () => {
@@ -255,7 +359,8 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
     expect((await syncMit(eltern)).status).toBe(200);
     const an = await wartungAn(a);
     expect(an.status).toBe(200);
-    expect(an.json.maintenance).toMatchObject({ active: true, until: null });
+    // ohne Angabe gilt das Höchstmaß von 72 Stunden: der Wartungsmodus hat immer ein Ende
+    expect(an.json.maintenance).toMatchObject({ active: true, until: new Date(world.clock + 72 * HOUR).toISOString() });
 
     // gesperrt: Sync und andere schreibende Anfragen einer bestehenden Sitzung
     const s = await syncMit(eltern);
@@ -283,7 +388,8 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
     expect((await eltern.client.get('/api/v1/members')).status).toBe(200);
     const stand = await eltern.client.get('/api/v1/family-notice');
     expect(stand.status).toBe(200);
-    expect(stand.json.maintenance).toMatchObject({ active: true, until: null });
+    expect(stand.json.maintenance).toMatchObject({ active: true });
+    expect(typeof stand.json.maintenance.until).toBe('string');
     expect(typeof stand.json.maintenance.since).toBe('string');
     const version = await world.client().get('/api/v1/version');
     expect(version.json.maintenance).toBe(true);
@@ -312,10 +418,47 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
     expect((await eltern.client.get('/api/v1/me')).status).toBe(401);
   });
 
-  it('Wartung: automatisches Ende ("until") und Notausgang (Server-CLI)', async () => {
+  it('Wartung: Retry-After endet mit der Wartung (höchstens 60 s, kurz vor dem Ende nur der Rest)', async () => {
     const { a, eltern } = await familie();
+    expect((await wartungAn(a, { active: true, untilMinutes: 5 })).status).toBe(200);
+    expect((await syncMit(eltern)).headers['retry-after']).toBe('60');
+    world.advance(5 * MIN - 30_000);
+    expect((await syncMit(eltern)).headers['retry-after']).toBe('30');
+    world.advance(31_000);
+    expect((await syncMit(eltern)).status).toBe(200);
+  });
+
+  it('Wartung: WebSocket und WS-Ticket laufen weiter (Lesen und Hinweise; nichts wird gespeichert)', async () => {
+    const { a, eltern } = await familie();
+    await world.app.listen({ host: '127.0.0.1', port: 0 });
+    expect((await wartungAn(a)).status).toBe(200);
+    const ticket = await eltern.client.post('/api/v1/ws-ticket', {});
+    expect(ticket.status).toBe(200);
+    const { port } = world.app.server.address() as AddressInfo;
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws`, { headers: { 'x-forwarded-for': '203.0.113.10' } });
+    try {
+      const nachrichten: Array<Record<string, unknown>> = [];
+      ws.on('message', (raw: Buffer) => nachrichten.push(JSON.parse(raw.toString('utf8'))));
+      await new Promise<void>((resolve, reject) => {
+        ws.once('open', () => resolve());
+        ws.once('error', reject);
+        ws.once('unexpected-response', (_req, res) => reject(new Error(`Upgrade abgelehnt: ${res.statusCode}`)));
+      });
+      ws.send(JSON.stringify({ type: 'auth', ticket: ticket.json.ticket }));
+      const ende = Date.now() + 5000;
+      while (!nachrichten.some((m) => m.type === 'ready') && Date.now() < ende) await new Promise((r) => setTimeout(r, 10));
+      expect(nachrichten.some((m) => m.type === 'ready')).toBe(true);
+    } finally {
+      ws.terminate();
+    }
+    // die Gegenprobe: schreibend bleibt es gesperrt
+    expect((await syncMit(eltern)).status).toBe(503);
+  });
+
+  it('Wartung: automatisches Ende ("untilMinutes") und Notausgang (Server-CLI)', async () => {
+    const { a, eltern } = await familie();
+    const an = await wartungAn(a, { active: true, untilMinutes: 60 });
     const bis = new Date(world.clock + HOUR).toISOString();
-    const an = await wartungAn(a, { active: true, until: bis });
     expect(an.json.maintenance).toMatchObject({ active: true, until: bis });
     expect((await syncMit(eltern)).status).toBe(503);
     world.advance(HOUR + MIN);
@@ -342,7 +485,7 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
     expect(new Date(since1).getTime()).toBeGreaterThanOrEqual(t0);
     world.advance(10 * MIN);
     // erneut an (jetzt mit Ende): "seit" bleibt
-    const zweit = await wartungAn(a, { active: true, until: new Date(world.clock + HOUR).toISOString() });
+    const zweit = await wartungAn(a, { active: true, untilMinutes: 60 });
     expect(zweit.json.maintenance.since).toBe(since1);
     await stepUp(a);
     expect((await a.client.put('/api/v1/admin/maintenance', { active: false })).status).toBe(200);
@@ -376,15 +519,27 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
       { text: 'umgekehrt \u202e Text' },
       { text: 'NUL \u0000' },
       { text: 'Hallo', extra: 1 },
-      { text: 'Hallo', expiresAt: 'bald' },
-      { text: 'Hallo', expiresAt: iso(-MIN) },
-      { text: 'Hallo', expiresAt: iso(90 * DAY + MIN) },
-      { text: null, expiresAt: iso(DAY) },
+      { text: 'Hallo', expiresAt: iso(DAY) }, // der Ablauf kommt nie als Uhrzeit vom Gerät
+      { text: 'Hallo', expiresInMinutes: 'bald' },
+      { text: 'Hallo', expiresInMinutes: 0 },
+      { text: 'Hallo', expiresInMinutes: -1 },
+      { text: 'Hallo', expiresInMinutes: 1.5 },
+      { text: 'Hallo', expiresInMinutes: 90 * 24 * 60 + 1 },
+      { text: null, expiresInMinutes: 60 },
+      { text: 'Mehr unter https://lx-labs.dev' },
+      { text: 'Bitte auf lx-labs.dev gehen' },
+      { text: 'Tag ' + String.fromCodePoint(0xe0041) + ' Zeichen' },
     ]) {
       expect((await a.client.put('/api/v1/admin/notice', body)).status, JSON.stringify(body)).toBe(400);
     }
+    // klare Gründe (die App zeigt dazu eigene deutsche Meldungen)
+    const code = async (body: unknown) => (await a.client.put('/api/v1/admin/notice', body)).json.error;
+    expect(await code({ text: 'zwei\nZeilen' })).toBe('invalid_notice');
+    expect(await code({ text: 'Mehr unter https://lx-labs.dev' })).toBe('notice_link');
+    expect(await code({ text: 'Hallo', expiresInMinutes: 0 })).toBe('invalid_duration');
+    expect(await code({ text: null, expiresInMinutes: 5 })).toBe('invalid_duration');
     expect(await world.count('operator_settings')).toBe(0);
-    for (const body of [{ text: 'x'.repeat(NOTICE_MAX_CHARS) }, { text: 'Hallo', expiresAt: iso(90 * DAY) }, { text: 'Mit Ümläuten und 😀' }]) {
+    for (const body of [{ text: 'x'.repeat(NOTICE_MAX_CHARS) }, { text: 'Hallo', expiresInMinutes: 90 * 24 * 60 }, { text: 'Mit Ümläuten und 😀' }, { text: 'Familie ' + FAMILIE }]) {
       expect((await a.client.put('/api/v1/admin/notice', body)).status, JSON.stringify(body)).toBe(200);
     }
   });
@@ -392,9 +547,9 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
   it('Hinweis setzen: alle Angemeldeten sehen ihn mit Version und Ablauf; er läuft von selbst ab; löschen; neue Version bei jedem Setzen', async () => {
     const { a, eltern, kind } = await familie();
     await stepUp(a);
-    const bis = new Date(world.clock + 2 * DAY).toISOString();
-    const gesetzt = await a.client.put('/api/v1/admin/notice', { text: '  Samstag Vormittag: Wartung  ', expiresAt: bis });
+    const gesetzt = await a.client.put('/api/v1/admin/notice', { text: '  Samstag Vormittag: Wartung  ', expiresInMinutes: 2 * 24 * 60 });
     expect(gesetzt.status).toBe(200);
+    const bis = new Date(world.clock + 2 * DAY).toISOString();
     expect(gesetzt.json.notice).toMatchObject({ text: 'Samstag Vormittag: Wartung', expiresAt: bis });
     const v1 = gesetzt.json.notice.setAt as string;
     for (const p of [a, eltern, kind]) {
@@ -411,7 +566,7 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
     expect(neu.json.notice.setAt).not.toBe(v1);
     // Ablauf von selbst
     await stepUp(a);
-    expect((await a.client.put('/api/v1/admin/notice', { text: 'Kurz', expiresAt: new Date(world.clock + HOUR).toISOString() })).status).toBe(200);
+    expect((await a.client.put('/api/v1/admin/notice', { text: 'Kurz', expiresInMinutes: 60 })).status).toBe(200);
     expect((await kind.client.get('/api/v1/family-notice')).json.notice?.text).toBe('Kurz');
     world.advance(HOUR + MIN);
     expect((await kind.client.get('/api/v1/family-notice')).json.notice).toBeNull();
@@ -431,7 +586,7 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
     const { a } = await familie();
     await stepUp(a);
     const text = 'Geheimer Wartungstext 4711';
-    expect((await a.client.put('/api/v1/admin/notice', { text, expiresAt: new Date(world.clock + DAY).toISOString() })).status).toBe(200);
+    expect((await a.client.put('/api/v1/admin/notice', { text, expiresInMinutes: 24 * 60 })).status).toBe(200);
     expect((await a.client.put('/api/v1/admin/notice', { text: null })).status).toBe(200);
     const ereignisse = await audit('operator_notice_set');
     expect(ereignisse).toHaveLength(2);

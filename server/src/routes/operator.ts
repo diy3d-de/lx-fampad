@@ -32,10 +32,8 @@ const auditQuery = z
   })
   .strict();
 
-const isoTime = safeString().pipe(z.iso.datetime({ offset: true })).transform((s) => new Date(s));
-
-const maintenanceBody = z.object({ active: z.boolean(), until: isoTime.nullable().optional() }).strict();
-const noticeBody = z.object({ text: safeString().max(2000).nullable(), expiresAt: isoTime.nullable().optional() }).strict();
+const maintenanceBody = z.object({ active: z.boolean(), untilMinutes: z.number().int().nullable().optional() }).strict();
+const noticeBody = z.object({ text: safeString().max(2000).nullable(), expiresInMinutes: z.number().int().nullable().optional() }).strict();
 
 export function registerOperatorRoutes(
   app: FastifyInstance,
@@ -74,12 +72,12 @@ export function registerOperatorRoutes(
   app.put('/api/v1/admin/maintenance', limit, async (req) => {
     const p = await requireOperator(ctx, await auth.requireSession(req), { stepUp: true });
     const body = parse(maintenanceBody, req.body);
-    return setMaintenance(ctx, gate, p, { active: body.active, until: body.until ?? null }, meta(req));
+    return setMaintenance(ctx, gate, p, { active: body.active, minutes: body.untilMinutes ?? null }, meta(req));
   });
   app.put('/api/v1/admin/notice', limit, async (req) => {
     const p = await requireOperator(ctx, await auth.requireSession(req), { stepUp: true });
     const body = parse(noticeBody, req.body);
-    return setNotice(ctx, p, { text: body.text, expiresAt: body.expiresAt ?? null }, meta(req));
+    return setNotice(ctx, p, { text: body.text, expiresInMinutes: body.expiresInMinutes ?? null }, meta(req));
   });
 
   // Für ALLE angemeldeten Mitglieder (kein Betreiber nötig): Wartung und Familienhinweis, die die App als Banner bzw. Meldung zeigt. Reiner Text, keine Personen.
