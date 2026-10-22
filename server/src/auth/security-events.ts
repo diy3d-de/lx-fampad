@@ -2,7 +2,7 @@
 // Gemeinsam genutzt von Passwort-Reset, Schlüsselverwaltung (Wechsel, Abruf und Ersetzen von Sicherungen, Übertragung), Anmeldung per Wiederherstellungscode
 // und dem Komplett-Reset (Hinweis an die Familie). Nur anhängend; ohne Inhalte, ohne Schlüsselmaterial, ohne IP.
 import { and, desc, eq, gt, inArray, isNull, ne, notInArray } from 'drizzle-orm';
-import { devices, pushEndpoints, securityEvents, users } from '../db/schema.js';
+import { devices, memberships, pushEndpoints, securityEvents, users } from '../db/schema.js';
 import type { AuthContext, Executor } from './context.js';
 import type { SessionPrincipal } from './types.js';
 
@@ -143,6 +143,8 @@ export interface SecurityEventView {
   byAdmin: boolean;
   /** Um wen es geht, wenn nicht um die Person selbst (nur `member_account_reset`); sonst null. */
   subjectName: string | null;
+  /** Kennung der betroffenen Person (nur `member_account_reset`, nur Mitglieder der eigenen Familie, sonst null): damit gleicht die App ohne den Anzeigenamen ab. */
+  subjectId: string | null;
   createdAt: Date;
 }
 
@@ -178,7 +180,12 @@ export async function listSecurityEvents(ctx: AuthContext, p: SessionPrincipal):
   const subjectIds = [...new Set(rows.map((r) => r.subjectId).filter((s): s is string => !!s && s !== p.userId))];
   const names = new Map<string, string>();
   if (subjectIds.length > 0) {
-    const us = await ctx.db.select({ id: users.id, name: users.displayName }).from(users).where(inArray(users.id, subjectIds));
+    // nur Mitglieder der EIGENEN Familie: Name und Kennung fremder Konten gibt es hier nie
+    const us = await ctx.db
+      .select({ id: users.id, name: users.displayName })
+      .from(users)
+      .innerJoin(memberships, and(eq(memberships.userId, users.id), eq(memberships.familyId, p.familyId)))
+      .where(inArray(users.id, subjectIds));
     for (const u of us) names.set(u.id, u.name);
   }
   return rows.map((r) => ({
@@ -188,6 +195,7 @@ export async function listSecurityEvents(ctx: AuthContext, p: SessionPrincipal):
     actorName: r.actorId && r.actorId !== p.userId ? (r.actorName ?? null) : null,
     byAdmin: r.via === 'admin',
     subjectName: r.subjectId && r.subjectId !== p.userId ? (names.get(r.subjectId) ?? null) : null,
+    subjectId: r.subjectId && r.subjectId !== p.userId && names.has(r.subjectId) ? r.subjectId : null,
     createdAt: r.createdAt,
   }));
 }

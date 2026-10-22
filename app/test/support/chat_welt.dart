@@ -35,6 +35,7 @@ class TestPerson {
     welt.historie['$id:$version'] = oeffentlich;
     pk = Personenschluessel.erzeugen(welt.crypto);
     version++;
+    welt.schluesselVersionen[id] = version;
   }
 }
 
@@ -112,6 +113,7 @@ class Geraet {
         return frueher['$u:$version'];
       },
       serverSchluessel: () => karte,
+      wrapV2Erlaubt: () => w.wrapV2Erlaubt,
       absenderSchluessel: (u, version) async {
         final s = tofu[u];
         if (s != null && s.version == version) return s;
@@ -166,6 +168,15 @@ class ChatWelt {
 
   /// Frühere öffentliche Schlüssel (Historie des Servers): "userId:version" -> Schlüssel.
   final Map<String, OeffentlicheSchluessel> historie = {};
+
+  /// Test: der Server lehnt jeden Wrap ab (z. B. Rate oder Ausfall); die Absender bekommen eine Ablehnung statt einer Bestätigung.
+  bool wrapsVerweigern = false;
+
+  /// Schalter des Servers E2EE_WRAP_KEY_VERSION (Wrap-ID v2); aus: der Server lehnt Wraps mit Schlüsselversion ab, die App bleibt bei der ID v1.
+  bool wrapV2Erlaubt = true;
+
+  /// Aktuelle Schlüsselversion je Person laut Server (fehlt: 1); für die Prüfung der Wrap-ID v2 (keine künftige Version).
+  final Map<String, int> schluesselVersionen = {};
 
   int rev = 0;
   final Map<String, ServerZeile> _z = {};
@@ -322,11 +333,17 @@ class ChatWelt {
           if (konv == null || konv.fields['encVersion'] != 'e1') return 'invalid';
           final n = f['epoche'] as int;
           final emp = f['empfaengerId'] as String;
-          if (o.entityId != wrapId(f['konversationId'] as String, n, emp)) return 'invalid';
+          if (wrapsVerweigern) return 'invalid'; // Test: der Server lehnt Wraps ab
+          if (f['keyVersion'] != null && !wrapV2Erlaubt) return 'invalid'; // Schalter E2EE_WRAP_KEY_VERSION aus
+          // Wrap-ID v2: mit keyVersion die ID v2, ohne die ID v1 (wie der echte Server); eine künftige Version der Person gibt es nicht
+          final version = f['keyVersion'] as int?;
+          final erwartet = version == null ? wrapId(f['konversationId'] as String, n, emp) : wrapIdV2(f['konversationId'] as String, n, emp, version, g.person.id);
+          if (o.entityId != erwartet) return 'invalid';
+          if (version != null && version > (schluesselVersionen[emp] ?? 1)) return 'invalid';
           if (_z['epoche/${epocheId(f['konversationId'] as String, n)}'] == null) return 'invalid';
           final teil = (konv.fields['teilnehmer'] as List?)?.cast<String>() ?? const [];
           if (konv.fields['art'] != 'family' && !teil.contains(emp)) return 'invalid';
-          if (vorhanden != null) return 'not_found'; // der erste gewinnt
+          if (vorhanden != null) return 'not_found'; // der erste gewinnt (je Konversation, Epoche, Empfänger und Schlüsselversion)
           gesehen.add({'entity': 'epoche_wrap', ...f});
           _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'verteilerId': g.person.id}, ++rev);
           return null;

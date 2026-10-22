@@ -571,6 +571,7 @@ class E2eeGeraet {
       meineKeyVersion: person.version,
       gemerkt: (u, {version}) async => e.tofu[u],
       serverSchluessel: () => e.karte,
+      wrapV2Erlaubt: () => true,
       absenderSchluessel: (u, v) async => e.tofu[u]?.version == v ? e.tofu[u]! : throw const CryptoFehler(CryptoFehlerArt.signatur, 'Absender nicht bestätigt'),
     );
     e.engine = SyncEngine(
@@ -1060,6 +1061,55 @@ Future<void> e2eeChatVertrag({
   await annaB.repo.gelesenSetzen(gruppe);
   await abgleich([annaB, annaA]);
   expect((await annaA.repo.uebersicht(adminId).first).firstWhere((e) => e.id == gruppe).ungelesen, 0);
+
+  schritt('Chat Ende-zu-Ende: Verlauf freigeben (Wrap-ID v2): Ben verliert seinen Schlüssel, Anna gibt nach dem Tipp den alten Verlauf frei, Annas zweites Gerät ist zu spät');
+  // Reset ohne Gerät mit Schlüssel (simuliert: der Server bekommt Bens neuen öffentlichen Schlüssel in Version 2; ein neues, leeres Gerät kennt nur den neuen Schlüssel)
+  benP.pk = Personenschluessel.erzeugen(crypto);
+  benP.version = 2;
+  await dbAbfrage(
+    "update person_keys set public_enc_key = '${benP.oeffentlich.encBase64}', public_sign_key = '${benP.oeffentlich.signBase64}', key_version = 2 where user_id = '$kindId'",
+  );
+  final benNeu = await E2eeGeraet.neu(kind, benP, crypto);
+  addTearDown(benNeu.db.close);
+  for (final g in [annaA, annaB, benNeu]) {
+    await g.mitgliederLernen();
+  }
+  // Anna und ihr zweites Gerät bestätigen Bens neuen Schlüssel (TOFU: "Neuen Schlüssel akzeptieren"); dann rotiert Annas Gerät automatisch (Epoche 4 mit Ben in Version 2)
+  for (final g in [annaA, annaB]) {
+    g.tofu[kindId] = benP.oeffentlich;
+    g.krypto.vertrauenGeaendert();
+  }
+  // (die Rate des Servers erlaubt 3 neue Epochen je Person und Minute; die vorherigen Schritte liefen schneller: das Zeitfenster wird in der Datenbank verschoben)
+  await dbAbfrage("update konversation_epochen set created_at = created_at - interval '5 minutes' where verteiler_id = '$adminId'");
+  final konvA = await (annaA.db.select(annaA.db.konversationen)..where((k) => k.id.equals(gruppe))).getSingle();
+  final plan = await annaA.krypto.rotationNoetig(konversation: konvA, teilnehmer: {adminId, kindId});
+  expect(plan?.versionNeu, isTrue);
+  await annaA.store.aendernMehrere(await annaA.krypto.epocheErstellen(konversationId: gruppe, mitglieder: plan!.mitglieder));
+  await abgleich([annaA, annaB, benNeu]);
+  expect(await dbAbfrage("select 1 from konversation_epochen where konversation_id = '$gruppe'"), hasLength(4));
+  expect(benNeu.krypto.epochenMitSchluessel(gruppe), [4], reason: 'nur die neue Epoche: der Verlauf davor gehört zum alten Schlüssel');
+  expect(await benNeu.lesen(gruppe, m1), startsWith('<'), reason: 'ohne Freigabe nicht lesbar');
+  // das Angebot: die Epochen 1 bis 3, in denen Ben Mitglied war; nichts geschieht von selbst
+  expect((await annaA.krypto.verlaufAngebote()).single.epochen, {gruppe: [1, 2, 3]});
+  expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and key_version is not null"), isEmpty);
+  // der Tipp: drei Wraps mit Schlüsselversion 2, der Server nimmt sie mit der ID v2 an
+  expect((await annaA.krypto.verlaufFreigeben(kindId)).gesendet, 3);
+  await abgleich([annaA, benNeu]);
+  final v2 = await dbAbfrage("select id, epoche, key_version, empfaenger_id from epoche_wraps where konversation_id = '$gruppe' and key_version is not null order by epoche");
+  expect([for (final z in v2) z['epoche']], [1, 2, 3]);
+  expect({for (final z in v2) z['key_version']}, {2});
+  expect({for (final z in v2) z['empfaenger_id']}, {kindId});
+  expect([for (final z in v2) z['id']], [for (var n = 1; n <= 3; n++) wrapIdV2(gruppe, n, kindId, 2, adminId)]);
+  expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and empfaenger_id = '$kindId' and key_version is null and epoche <= 3"), hasLength(3), reason: 'die alten Wraps (Version 1, ID v1) bleiben unverändert');
+  expect(await benNeu.lesen(gruppe, m1), 'GEHEIMER-TEXT-123 👋');
+  expect(await benNeu.lesen(gruppe, m2), 'NACH-DEM-ENTFERNEN');
+  // Annas zweites Gerät gibt auch frei: der erste gewinnt, der zweite Wrap wird abgelehnt, nichts bricht und nichts wird doppelt
+  expect((await annaB.krypto.verlaufFreigeben(kindId)).gesendet, 3);
+  await abgleich([annaB, benNeu]);
+  expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and key_version is not null"), hasLength(3));
+  expect(await benNeu.lesen(gruppe, m1), 'GEHEIMER-TEXT-123 👋');
+  // der Server hat dabei nie Klartext gesehen
+  expect(await dbAbfrage("select 1 from change_log where changes::text like '%GEHEIMER%' or changes::text like '%NACH-DEM%'"), isEmpty);
   expect(altChatId, isNotEmpty);
 }
 

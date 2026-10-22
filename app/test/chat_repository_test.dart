@@ -125,6 +125,29 @@ void main() {
       expect(lesestandId('k1', _ich), '9a36a4d2-7fa9-5a56-9d92-e8db827e177c');
     });
 
+    test('Known-Answer Wrap-ID v1 und v2: dieselben Werte wie der Server (server/test/sync-e2ee-chat.test.ts, "Wrap-ID v2")', () {
+      const konv = 'cccccccc-0000-4000-8000-0000000000c1';
+      const person = 'AAAAAAAA-0000-4000-8000-00000000000A'; // Großbuchstaben ergeben dieselbe ID wie Kleinbuchstaben
+      expect(wrapId(konv, 3, person), '983b472e-54e3-544a-bc89-d4f59b375feb');
+      const verteiler = 'BBBBBBBB-0000-4000-8000-00000000000B';
+      expect(wrapIdV2(konv, 3, person, 1, verteiler), '72337638-0ff4-5a4a-9898-6066b0a43136');
+      expect(wrapIdV2(konv, 3, person, 2, verteiler), '6d138d01-470b-5136-a5ff-1301198a292a');
+      expect(wrapIdV2(konv, 4, person, 2, verteiler), '9c17015b-45eb-5ef9-bb02-10910d4ff0a5');
+      expect(wrapIdV2(konv, 3, person, 2, person), 'e552dda5-be8d-5444-a049-8e0889248521');
+      expect(wrapIdV2(konv, 3, person.toLowerCase(), 2, verteiler.toLowerCase()), wrapIdV2(konv, 3, person, 2, verteiler));
+      // jede Version, jede Epoche, jeder Verteiler und v1 gegen v2 ergeben eigene IDs
+      final alle = {
+        wrapId(konv, 3, person),
+        wrapIdV2(konv, 3, person, 1, verteiler),
+        wrapIdV2(konv, 3, person, 2, verteiler),
+        wrapIdV2(konv, 4, person, 2, verteiler),
+        wrapIdV2(konv, 3, person, 12, verteiler),
+        wrapIdV2(konv, 31, person, 2, verteiler),
+        wrapIdV2(konv, 3, person, 2, person),
+      };
+      expect(alle, hasLength(7));
+    });
+
     test('Familienchat- und Lesestand-ID sind stabil und verschieden', () {
       expect(familienchatId(_fam), familienchatId(_fam));
       expect(lesestandId('k1', _ich), lesestandId('K1', _ich.toUpperCase()));

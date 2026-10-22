@@ -480,7 +480,7 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       );
       const ev = await events(c);
       for (const e of ev) {
-        expect(Object.keys(e).sort()).toEqual(['actorName', 'byAdmin', 'createdAt', 'id', 'kind', 'subjectName', 'via']);
+        expect(Object.keys(e).sort()).toEqual(['actorName', 'byAdmin', 'createdAt', 'id', 'kind', 'subjectId', 'subjectName', 'via']);
         expect(['password', 'recovery_code']).toContain(e.via);
       }
       // nichts Geheimes: weder Blobs noch Schlüssel noch Codes in der Antwort oder der Tabelle
@@ -615,7 +615,7 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       // Sicht der Familie: Name der betroffenen Person, keine Mail, keine Rollen
       const papaEv = (await papaG.c.get('/api/v1/me/security-events')).json.events as Array<Record<string, any>>; // eslint-disable-line @typescript-eslint/no-explicit-any
       expect(papaEv).toHaveLength(1);
-      expect(papaEv[0]).toMatchObject({ kind: 'member_account_reset', via: 'admin', subjectName: 'mama', actorName: 'Admin', byAdmin: true });
+      expect(papaEv[0]).toMatchObject({ kind: 'member_account_reset', via: 'admin', subjectName: 'mama', subjectId: f.mamaId, actorName: 'Admin', byAdmin: true });
       expect(JSON.stringify(papaEv)).not.toContain('mama@example.org');
       // die betroffene Person sieht nur ihr eigenes Ereignis (Sitzungen sind widerrufen: neu anmelden geht erst nach der Einladung, also über die Tabelle geprüft)
       expect(rows.some((r) => r.user_id === f.mamaId && r.kind === 'member_account_reset')).toBe(false);

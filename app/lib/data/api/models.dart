@@ -672,12 +672,15 @@ class ServerFaehigkeiten {
 
   /// Der Server nimmt noch das Klartext-Passwort an (AUTH_LEGACY_PASSWORD_LOGIN).
   final bool legacyPasswortLogin;
-  const ServerFaehigkeiten({required this.pwBackup, required this.authKey, required this.legacyPasswortLogin});
+
+  /// Der Server nimmt Wraps mit Schlüsselversion an (Wrap-ID v2): erst dann bietet die App "Verlauf freigeben" an. Ältere Server melden nichts: false.
+  final bool wrapKeyVersion;
+  const ServerFaehigkeiten({required this.pwBackup, required this.authKey, required this.legacyPasswortLogin, this.wrapKeyVersion = false});
 
   static const keine = ServerFaehigkeiten(pwBackup: false, authKey: false, legacyPasswortLogin: true);
 
   factory ServerFaehigkeiten.fromJson(Map<String, dynamic> f) =>
-      ServerFaehigkeiten(pwBackup: f['pwBackup'] == true, authKey: f['authKey'] == true, legacyPasswortLogin: f['legacyPasswordLogin'] != false);
+      ServerFaehigkeiten(pwBackup: f['pwBackup'] == true, authKey: f['authKey'] == true, legacyPasswortLogin: f['legacyPasswordLogin'] != false, wrapKeyVersion: f['wrapKeyVersion'] == true);
 }
 
 /// Zustand der Passwort-Anmeldung je Mitglied (GET /members/password-modes, nur Admins). Nie ein Prüfwert, nur der Zustand.
@@ -884,7 +887,11 @@ class SicherheitsEreignisDto {
 
   /// Nur beim Hinweis an die Familie ([SicherheitsArt.mitgliedZugangZurueckgesetzt]): wessen Zugang zurückgesetzt wurde (Anzeigename); sonst null.
   final String? betroffener;
-  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit, this.betroffener});
+
+  /// Kennung der betroffenen Person (nur beim Hinweis an die Familie, nur Mitglieder der eigenen Familie; null bei einem älteren Server oder einer Person, die nicht mehr da
+  /// ist): damit gleicht die Wartefrist der Verlauf-Freigabe ohne den Anzeigenamen ab (ein Umbenennen umgeht sie nicht).
+  final String? betroffenerId;
+  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit, this.betroffener, this.betroffenerId});
 
   factory SicherheitsEreignisDto.fromJson(Object? raw) {
     final m = asJson(raw);
@@ -896,6 +903,7 @@ class SicherheitsEreignisDto {
       durchAdmin: m['byAdmin'] == true,
       zeit: _t(m, 'createdAt'),
       betroffener: _sn(m, 'subjectName'),
+      betroffenerId: _sn(m, 'subjectId'),
     );
   }
 }

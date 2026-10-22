@@ -1365,15 +1365,21 @@ export const epocheWraps = pgTable(
     empfaengerId: uuid('empfaenger_id').notNull(),
     verteilerId: uuid('verteiler_id').references(() => users.id, { onDelete: 'set null' }),
     wrap: text('wrap').notNull(),
+    // Wrap-ID v2 (Migration 0024): Schlüsselversion des Empfängers, für die der Wrap verpackt ist (öffentliche Zahl, nichts Geheimes). null = Altbestand und
+    // Wraps älterer Apps (ID v1, ohne Version); der Server liest nichts aus dem undurchsichtigen Wrap selbst
+    keyVersion: integer('key_version'),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
     foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
     foreignKey({ columns: [t.familyId, t.empfaengerId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    // Wraps ohne Version (Altbestand, ID v1): je (Konversation, Epoche, Empfänger) genau eine lebende Zeile. Wraps MIT Version (ID v2) enthalten den Verteiler in ihrer
+    // ID: je Verteiler eine Zeile, mehrere Verteiler dürfen dieselbe Epoche für dieselbe Version verpacken (niemand kann den Platz eines anderen belegen)
     uniqueIndex('epoche_wraps_uq')
       .on(t.familyId, t.konversationId, t.epoche, t.empfaengerId)
-      .where(sql`${t.deletedAt} is null`),
+      .where(sql`${t.deletedAt} is null and ${t.keyVersion} is null`),
+    check('epoche_wraps_key_version_ck', sql`${t.keyVersion} is null or ${t.keyVersion} between 1 and 1000000`),
     index('epoche_wraps_empfaenger_idx').on(t.familyId, t.empfaengerId),
     index('epoche_wraps_family_rev_idx').on(t.familyId, t.rev),
     index('epoche_wraps_tombstone_idx')

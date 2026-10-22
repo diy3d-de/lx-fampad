@@ -173,7 +173,7 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       const ev = await events(f.m.client);
       expect(ev).toHaveLength(1);
       expect(ev[0]).toMatchObject({ kind: 'password_reset_requested', via: 'admin', byAdmin: true, actorName: 'Admin' });
-      expect(Object.keys(ev[0] ?? {}).sort()).toEqual(['actorName', 'byAdmin', 'createdAt', 'id', 'kind', 'subjectName', 'via']);
+      expect(Object.keys(ev[0] ?? {}).sort()).toEqual(['actorName', 'byAdmin', 'createdAt', 'id', 'kind', 'subjectId', 'subjectName', 'via']);
       // niemand sonst sieht es
       expect(await events(f.a.client)).toEqual([]);
       expect(await auditEvents(world)).toContain('password_reset_requested');
