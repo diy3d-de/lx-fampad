@@ -21,6 +21,7 @@ Dateien in diesem Ordner:
 - `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
 - `einrichtung-ntfy.sh` – richtet ntfy ein (Installation, Härtung, Token, `ntfy.caddy`; Abschnitt 7); `ntfy/server.yml` (deny-all), `ntfy/ntfy.caddy` (eigene Caddy-Datei)
 - `backup/` – tägliche verschlüsselte Sicherung (age) und Einrichtung, Wiederherstellungstest, Pull-Skript für das NAS (Abschnitt "Backups"); `einrichtung-swap.sh` – Swapdatei
+- `neuinstallation/` – `bootstrap-server.sh`: ganzer Server auf einem frischen Debian 13 neu aufbauen, leer oder aus der verschlüsselten Sicherung (idempotent, `--dry-run` zuerst); Anleitung für Laien: [`docs/NEUINSTALLATION.md`](../docs/NEUINSTALLATION.md); Tests (`test-docker.sh`, `test-integration/`)
 
 Verzeichnisse auf dem Server:
 
@@ -484,7 +485,7 @@ Der Server holt die Werte einer öffentlichen Netatmo-Station (nur der Server, n
    sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst --dry-run
    sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst
    ```
-   Das Skript prüft die Unit mit `systemd-analyze verify`, kopiert sie nach `/etc/systemd/system/`, macht `daemon-reload` und `enable --now` und zeigt den Status. Von Hand: `sudo cp ~/lx-fampad/deploy/lx-fampad-weather.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now lx-fampad-weather`. `deploy.sh` startet den Dienst danach bei jedem Update neu (falls vorhanden) und weist auf eine geänderte Unit hin. Ohne `WEATHER_ENABLED=true` beendet sich der Prozess sofort und bleibt gestoppt; ohne Zugangsdaten läuft er und prüft alle 10 Minuten erneut.
+   Das Skript prüft die Unit mit `systemd-analyze verify`, kopiert sie nach `/etc/systemd/system/`, macht `daemon-reload` und `enable --now` und zeigt den Status. Von Hand: `sudo cp ~/lx-fampad/deploy/lx-fampad-weather.service /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl enable --now lx-fampad-weather`. `deploy.sh` startet den Dienst danach bei jedem Update neu, **aber nur, wenn er schon läuft** (ein gestoppter Dienst wird nie gestartet) und weist auf eine geänderte Unit hin. Ohne `WEATHER_ENABLED=true` beendet sich der Prozess sofort und bleibt gestoppt; ohne Zugangsdaten läuft er und prüft alle 10 Minuten erneut.
 4. **Prüfen:** `journalctl -u lx-fampad-weather -n 50` zeigt höchstens Codes wie `station_not_found` (MAC oder Rechteck stimmen nicht, oder die Station ist nicht öffentlich) oder `invalid_grant` (Token ungültig: Schritt 3 mit einem neuen Refresh-Token wiederholen; der Abruf ist bis dahin abgeschaltet). In der App erscheint die Kachel nach dem ersten erfolgreichen Abruf (spätestens nach 10 Minuten).
 5. **Ausschalten:** `WEATHER_ENABLED` entfernen und `sudo systemctl restart lx-fampad lx-fampad-weather` (der Wetter-Dienst bleibt danach gestoppt; ganz entfernen: `sudo systemctl disable --now lx-fampad-weather`); die Messwerte der letzten 7 Tage bleiben in der Tabelle `weather_samples`, die Zugangsdaten löschen mit `weather-setup.js --remove`.
 

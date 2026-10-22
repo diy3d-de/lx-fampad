@@ -1,0 +1,53 @@
+# Parameterdatei für deploy/neuinstallation/bootstrap-server.sh (Vorlage; Kopie ausfüllen, z. B. als ~/neuinstallation.params, Aufruf: --params DATEI).
+# NUR ÖFFENTLICHE Werte (Domain, öffentliche Schlüssel, IP-Adressen). Hier gehört KEIN Geheimnis hinein: keine Passwörter, kein privater
+# age-Schlüssel, keine Netatmo-Zugangsdaten (die tippst du später auf dem Server ein), kein Update-Signaturschlüssel, kein Android-Keystore.
+# Das Skript liest die Datei nie als Shell-Code, nur Zeilen SCHLÜSSEL=Wert aus dieser Liste; alles andere bricht es ab. Alle Zeilen sind optional.
+# Auf dem laufenden Server liegt diese Datei nicht; sie gehört in deine Betriebsunterlagen (Passwortmanager/Notizen), damit du sie im Ernstfall hast.
+
+# --- Code-Stand ---------------------------------------------------------------------------------------------------------------------------
+# Repository (nur GitHub): per SSH mit Deploy-Key (Standard) oder https://github.com/NAME/REPO.git
+#GIT_REPO_URL=git@github.com:diy3d-de/lx-fampad.git
+# Tag, Branch oder Commit. BEI EINER WIEDERHERSTELLUNG den Stand der Sicherung angeben (die Datenbank darf nicht neuer sein als der Code;
+# ältere Datenbanken migriert der Server beim Start). Leer = der Stand, den der Checkout ohnehin hat (meist main).
+#GIT_REF=v0.6.5
+
+# --- Benutzer und Zugänge --------------------------------------------------------------------------------------------------------------
+# Öffentlicher SSH-Schlüssel für den Benutzer lx (nur mit --lx-anlegen); eine Zeile "ssh-ed25519 AAAA… Kommentar"
+#LX_SSH_PUBKEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispiel lx@pc
+# Öffentlicher Schlüssel des GitHub-Release-Uploads (Secret VPS_SSH_KEY): darf nur nach /srv/fampad/releases/android schreiben (rrsync -wo)
+#CI_DEPLOY_PUBKEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispiel lx-fampad-release
+
+# --- Server ----------------------------------------------------------------------------------------------------------------------------
+# Swap in MB (0 = keiner). Bei 2 GB Arbeitsspeicher empfohlen: 1024
+#SWAP_MB=1024
+
+# Pins übersteuern: nur nötig, wenn das Repository die fest eingebaute Version nicht mehr führt (das Skript nennt dann die verfügbaren).
+# Bewusst wählen und danach in docs/VERSIONEN.md nachziehen; Node muss zu server/.nvmrc (24.x ab 24.21) passen.
+#NODE_PKG_VERSION=24.21.0-1nodesource1
+#CADDY_PKG_VERSION=2.11.7
+
+# --- Anwendung (nur bei einer LEEREN Neuinstallation; bei einer Wiederherstellung steht alles in der gesicherten env) -------------------------
+# SHA-256-Fingerabdruck des Release-Signaturschlüssels der Android-App (AA:BB:… mit 32 Bytes): ergibt assetlinks.json und WEBAUTHN_ORIGINS
+#RELEASE_CERT_SHA256=AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99:AA:BB:CC:DD:EE:FF:00:11:22:33:44:55:66:77:88:99
+# Wetter (Netatmo): Ort (nur der Name wird in der App gezeigt), MAC der Station, Suchrechteck lat_sw,lon_sw,lat_ne,lon_ne
+#WEATHER_ENABLED=true
+#WEATHER_PLACE=Salz
+#WEATHER_STATION_MAC=aa:bb:cc:dd:ee:ff
+#WEATHER_BBOX=50.49,7.94,50.53,7.99
+# Schalter der Schlüsselverwaltung (siehe server/.env.example); AUTH_LEGACY_PASSWORD_LOGIN=false braucht E2EE_PW_BACKUP=true
+#E2EE_PW_BACKUP=true
+#AUTH_LEGACY_PASSWORD_LOGIN=true
+
+# --- Tägliche Sicherung des neuen Servers (docs/BACKUP.md) -----------------------------------------------------------------------------
+# Öffentliche age-Schlüssel (age1…), mehrere mit Komma; der private Schlüssel gehört nie auf den Server
+#BACKUP_AGE_RECIPIENTS=age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+# optional: eigene Empfänger nur für die Konfiguration mit AUTH_SECRET_KEY
+#BACKUP_AGE_RECIPIENTS_CONFIG=age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq
+# Öffentlicher SSH-Schlüssel des NAS und seine öffentliche IP-Adresse (mehrere mit Komma, CIDR mindestens /16 bzw. /48); beides zusammen
+#BACKUP_NAS_PUBKEY=ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBeispielBeispielBeispielBeispielBeispiel lx-fampad-backup
+#BACKUP_NAS_IP=203.0.113.7
+# Einstellungen der Sicherung (ergeben /etc/lx-fampad-backup/backup.conf; die Datei aus der alten Sicherung wird bewusst NICHT übernommen):
+# Ordner auf dem Server, neueste APK mitsichern, Dateiablage mitsichern (1, sobald die Dateiablage genutzt wird)
+#BACKUP_KEEP=3
+#BACKUP_INCLUDE_APK=1
+#BACKUP_INCLUDE_FILES=0

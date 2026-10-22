@@ -20,8 +20,13 @@ PREV=/srv/fampad/server.prev
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
-echo "==> git pull"
-git pull --ff-only
+# DEPLOY_OHNE_PULL=1: nur für deploy/neuinstallation/bootstrap-server.sh (ein festgelegter Code-Stand, GIT_REF, soll bleiben)
+if [ "${DEPLOY_OHNE_PULL:-0}" = 1 ]; then
+  echo "==> git pull übersprungen (DEPLOY_OHNE_PULL=1)"
+else
+  echo "==> git pull"
+  git pull --ff-only
+fi
 
 echo "==> npm ci (alle Pakete, ohne Skripte) + build"
 cd server
@@ -93,10 +98,18 @@ if ! warte_auf_health; then
   exit 1
 fi
 
-# Wetter-Abruf (eigener Dienst, deploy/README.md Abschnitt 12): nach dem Update neu starten, wenn er eingerichtet ist
-if systemctl cat lx-fampad-weather.service >/dev/null 2>&1; then
-  echo "==> restart lx-fampad-weather"
-  sudo -n systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudoers-Regel fehlt? README Schritt 5). Manuell: sudo systemctl restart lx-fampad-weather" >&2
+# Wetter-Abruf (eigener Dienst, deploy/README.md Abschnitt 12): nach dem Update nur neu starten, wenn er läuft oder eingeschaltet ist (ein
+# Neustart eines ausgeschalteten Dienstes würde ihn starten: zwei Server dürfen das Netatmo-Token nicht gleichzeitig abrufen). Beim Aufbau durch
+# neuinstallation/bootstrap-server.sh (DEPLOY_OHNE_PULL=1) wird der Wetter-Dienst nie angefasst.
+if [ "${DEPLOY_OHNE_PULL:-0}" != 1 ] && systemctl cat lx-fampad-weather.service >/dev/null 2>&1; then
+  # läuft ODER ist eingeschaltet (enabled): ein gescheiterter, aber eingeschalteter Dienst wird wie früher beim Deploy neu gestartet;
+  # ein ausgeschalteter, gestoppter wird nie gestartet
+  if systemctl is-active --quiet lx-fampad-weather || systemctl is-enabled --quiet lx-fampad-weather; then
+    echo "==> restart lx-fampad-weather"
+    sudo -n systemctl restart lx-fampad-weather || echo "==> WARNUNG: lx-fampad-weather ließ sich nicht neu starten (sudoers-Regel fehlt? README Schritt 5). Manuell: sudo systemctl restart lx-fampad-weather" >&2
+  else
+    echo "==> lx-fampad-weather läuft nicht und ist nicht eingeschaltet: wird nicht gestartet"
+  fi
   if ! cmp -s deploy/lx-fampad-weather.service /etc/systemd/system/lx-fampad-weather.service; then
     echo "==> Hinweis: deploy/lx-fampad-weather.service weicht von /etc/systemd/system ab. Übernehmen mit: sudo bash ~/lx-fampad/deploy/einrichtung-wetter.sh dienst"
   fi
