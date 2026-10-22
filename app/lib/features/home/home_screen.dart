@@ -10,6 +10,8 @@ import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/lists/list_repository.dart';
+import '../../data/startseite/startseite_logik.dart';
+import '../../data/startseite/startseite_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
@@ -26,6 +28,9 @@ import '../muell/muell_karte.dart';
 import '../standort/standort_start_karte.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_karte.dart';
+import 'startseite_verfuegbar.dart';
+import 'startseite_anpassen_zeile.dart';
+import 'startseite_widgets.dart';
 
 /// Vorname für die Begrüßung: erstes Wort des Anzeigenamens, sehr lange Namen werden gekürzt; null bei leerem Namen.
 String? vorname(String? anzeigename) {
@@ -42,80 +47,128 @@ String begruessung(String? anzeigename) {
   return v == null ? 'Hallo' : 'Hallo, $v';
 }
 
-/// Start: Begrüßung, Sync-Status, Schnellzugriffe, Einkaufsliste (echte Daten), "Als Nächstes".
+/// Start: Begrüßung, Sync-Status und die Kacheln (Schnellzugriffe, Einkaufsliste, Termine, ...); Reihenfolge und Ausblenden lokal je Gerät
+/// (Zustand in data/startseite/), die Warn- und Hinweiskarten oben bleiben fest.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final sync = ref.watch(syncProvider);
     final name = ref.watch(authProvider.select((s) => s.user?.displayName));
-    final verbunden = sync.status == SyncStatus.synchron;
-    final (statusText, farbe) = syncAnzeige(sync);
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-      children: [
-        TabKopfzeile(title: begruessung(name)),
-        const SizedBox(height: 20),
-        const UpdateAnzeige(),
-        const AbsicherungsKarte(),
-        Container(
-          constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: farbe.withValues(alpha: 0.08),
-            border: Border.all(color: farbe.withValues(alpha: 0.4)),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
+    final anordnung = ref.watch(startseiteMobilProvider);
+    final verf = ref.watch(mobilVerfuegbarProvider);
+    // erst zeichnen, wenn die gemerkte Reihenfolge gelesen ist (sonst springen die Kacheln)
+    final ids = anordnung.geladen ? sichtbareKacheln(reihenfolge: anordnung.reihenfolge, verfuegbar: verf, ausgeblendet: anordnung.ausgeblendet) : const <String>[];
+    return CustomScrollView(
+      slivers: [
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+          sliver: SliverList.list(
             children: [
-              Icon(verbunden || sync.status == SyncStatus.laeuft ? Icons.sync : Icons.cloud_off, size: 16, color: farbe),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  statusText,
-                  style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: farbe),
-                ),
-              ),
-              Text(
-                sync.letzterAbgleich == null ? '' : DateFormat('HH:mm').format(sync.letzterAbgleich!),
-                style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
-              ),
+              TabKopfzeile(title: begruessung(name)),
+              const SizedBox(height: 20),
+              const UpdateAnzeige(),
+              const AbsicherungsKarte(),
+              const _SyncLeiste(),
+              const SizedBox(height: 20),
             ],
           ),
         ),
-        const SizedBox(height: 20),
-        GridView(
-          // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite und bleibt bei großer Schrift bedienbar
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 4,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            mainAxisExtent: 96,
+        // Kacheln: gedrückt halten und ziehen (Handy: langes Drücken, Maus: gedrückt halten); Reihenfolge und Ausblenden lokal je Gerät
+        SliverPadding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          sliver: SliverReorderableList(
+            itemCount: ids.length,
+            itemBuilder: (context, i) => ReorderableDelayedDragStartListener(
+              key: ValueKey(ids[i]),
+              index: i,
+              child: Padding(padding: const EdgeInsets.only(bottom: 20), child: _kachel(ids[i])),
+            ),
+            proxyDecorator: (child, index, animation) => Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(width: double.infinity, child: StartseiteGehoben(animation: animation, child: _kachel(ids[index]))),
+            ),
+            onReorderItem: (alt, ziel) {
+              if (ziel == alt) return;
+              final liste = List.of(ids);
+              liste.insert(ziel, liste.removeAt(alt));
+              unawaited(ref.read(startseiteMobilProvider.notifier).teilmengeOrdnen(liste));
+            },
           ),
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          children: const [
-            _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
-            _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
-            _Schnellzugriff('Foto', Icons.image_outlined),
-            _Schnellzugriff('Datei', Icons.upload_outlined),
-          ],
         ),
-        const SizedBox(height: 20),
-        const _EinkaufKarte(),
-        const SizedBox(height: 20),
-        const _NaechsteKarte(),
-        const GeburtstageKarte(),
-        const SizedBox(height: 20),
-        const _AufgabenKarte(),
-        const SizedBox(height: 20),
-        const MuellStartKarte(),
-        const WetterStartKarte(),
-        const StandortStartKarte(),
+        const SliverPadding(padding: EdgeInsets.fromLTRB(20, 0, 20, 20), sliver: SliverToBoxAdapter(child: StartseiteAnpassenZeile())),
       ],
     );
   }
+}
+
+/// Die Kachel zu einer Kennung (siehe [kMobilKacheln]).
+Widget _kachel(String id) => switch (id) {
+  'schnellzugriff' => const _SchnellzugriffReihe(),
+  'einkauf' => const _EinkaufKarte(),
+  'termine' => const _NaechsteKarte(),
+  'geburtstage' => const GeburtstageKarte(),
+  'aufgaben' => const _AufgabenKarte(),
+  'muell' => const MuellStartKarte(),
+  'wetter' => const WetterStartKarte(),
+  'standort' => const StandortStartKarte(),
+  _ => const SizedBox.shrink(),
+};
+
+/// Streifen mit dem Stand des Abgleichs (fest, keine Kachel).
+class _SyncLeiste extends ConsumerWidget {
+  const _SyncLeiste();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final sync = ref.watch(syncProvider);
+    final verbunden = sync.status == SyncStatus.synchron;
+    final (statusText, farbe) = syncAnzeige(sync);
+    return Container(
+      constraints: const BoxConstraints(minHeight: 44),
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: farbe.withValues(alpha: 0.08),
+        border: Border.all(color: farbe.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Icon(verbunden || sync.status == SyncStatus.laeuft ? Icons.sync : Icons.cloud_off, size: 16, color: farbe),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              statusText,
+              style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: farbe),
+            ),
+          ),
+          Text(
+            sync.letzterAbgleich == null ? '' : DateFormat('HH:mm').format(sync.letzterAbgleich!),
+            style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Kachel "Schnellzugriff": vier Knöpfe in einer Reihe.
+class _SchnellzugriffReihe extends StatelessWidget {
+  const _SchnellzugriffReihe();
+
+  @override
+  Widget build(BuildContext context) => GridView(
+    // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite und bleibt bei großer Schrift bedienbar
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 96),
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    children: const [
+      _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
+      _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
+      _Schnellzugriff('Foto', Icons.image_outlined),
+      _Schnellzugriff('Datei', Icons.upload_outlined),
+    ],
+  );
 }
 
 class _Schnellzugriff extends ConsumerWidget {

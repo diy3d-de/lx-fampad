@@ -20,6 +20,7 @@ import '../auth/recovery_codes_screen.dart';
 import '../auth/step_up.dart';
 import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../betrieb/betrieb_screen.dart';
+import '../home/startseite_anpassen_screen.dart';
 import '../muell/muell_screen.dart';
 import 'abmelden_pruefung.dart';
 import 'absicherung_screen.dart';
@@ -293,6 +294,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        EinstellungsZeile(icon: Icons.dashboard_customize_outlined, titel: 'Startseite anpassen', untertitel: 'kacheln verschieben und ausblenden, nur dieses gerät', onTap: () => _oeffne(const StartseiteAnpassenScreen())),
         const _MuellZeile(),
         const _WetterZeile(),
         // Startbildschirm-Widget gibt es nur in der Android-App

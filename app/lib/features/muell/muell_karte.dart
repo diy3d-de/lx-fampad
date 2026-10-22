@@ -88,27 +88,24 @@ class MuellStartKarte extends ConsumerWidget {
     if (!z.hatTermine) return const SizedBox.shrink();
     final jetzt = muellJetzt(ref);
     final d = MuellKachelDaten.aus(z, jetzt);
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Semantics(
-        container: true,
-        button: true,
-        label: muellKachelSemantik(d),
-        excludeSemantics: true,
+    return Semantics(
+      container: true,
+      button: true,
+      label: muellKachelSemantik(d),
+      excludeSemantics: true,
+      onTap: () => muellOeffnen(context),
+      child: LxCard(
+        gewaehlt: d.hervorgehoben,
         onTap: () => muellOeffnen(context),
-        child: LxCard(
-          gewaehlt: d.hervorgehoben,
-          onTap: () => muellOeffnen(context),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                MonoLabel(d.hervorgehoben ? '// müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : '// müll'),
-                const SizedBox(height: 10),
-                MuellKachelInhalt(daten: d),
-              ],
-            ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              MonoLabel(d.hervorgehoben ? '// müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : '// müll'),
+              const SizedBox(height: 10),
+              MuellKachelInhalt(daten: d),
+            ],
           ),
         ),
       ),

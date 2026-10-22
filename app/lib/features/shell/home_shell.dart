@@ -30,6 +30,7 @@ import '../../widgets/familien_hinweis_banner.dart';
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
 import '../files/files_screen.dart';
+import '../../data/startseite/startseite_state.dart';
 import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
@@ -152,6 +153,9 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final tab = ref.watch(shellTabProvider);
     final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
+    // Startseite: gemerkte Reihenfolge beider Layouts früh lesen (hier hören ohne neu zu bauen), damit beim Wechsel über 900 px nichts leer springt
+    ref.listen(startseiteMobilProvider, (_, _) {});
+    ref.listen(startseiteDesktopProvider, (_, _) {});
     // Standortfreigaben: Tipp auf die Benachrichtigung bzw. "Ansehen" öffnet die Standort-Seite; im Vordergrund ein dezenter Hinweis
     ref.listen(standortOeffnenProvider, (_, _) => _standortOeffnen());
     ref.listen(standortHinweisProvider, (_, h) {

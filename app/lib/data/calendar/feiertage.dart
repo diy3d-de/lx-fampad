@@ -147,6 +147,9 @@ const kKalenderAnsichtSchluessel = 'kalender_ansicht';
 abstract class FeiertageSpeicher {
   Future<String?> lesen({String schluessel = kFeiertageSchluessel});
   Future<void> schreiben(String wert, {String schluessel = kFeiertageSchluessel});
+
+  /// Entfernt den Wert (danach gilt wieder der Standard).
+  Future<void> loeschen(String schluessel);
 }
 
 class DatenbankFeiertageSpeicher implements FeiertageSpeicher {
@@ -158,6 +161,9 @@ class DatenbankFeiertageSpeicher implements FeiertageSpeicher {
 
   @override
   Future<void> schreiben(String wert, {String schluessel = kFeiertageSchluessel}) => _ref.read(appDatabaseProvider).metaSchreiben(schluessel, wert);
+
+  @override
+  Future<void> loeschen(String schluessel) => _ref.read(appDatabaseProvider).metaLoeschen(schluessel);
 }
 
 class MemoryFeiertageSpeicher implements FeiertageSpeicher {
@@ -172,6 +178,9 @@ class MemoryFeiertageSpeicher implements FeiertageSpeicher {
 
   @override
   Future<void> schreiben(String w, {String schluessel = kFeiertageSchluessel}) async => werte[schluessel] = w;
+
+  @override
+  Future<void> loeschen(String schluessel) async => werte.remove(schluessel);
 }
 
 final feiertageSpeicherProvider = Provider<FeiertageSpeicher>((ref) => DatenbankFeiertageSpeicher(ref));

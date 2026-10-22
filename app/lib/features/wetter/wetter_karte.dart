@@ -106,26 +106,23 @@ class WetterStartKarte extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final st = ref.watch(wetterProvider);
     if (!st.kachelSichtbar) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
-      child: Semantics(
-        container: true,
-        button: true,
-        label: wetterSemantik(st),
-        excludeSemantics: true,
+    return Semantics(
+      container: true,
+      button: true,
+      label: wetterSemantik(st),
+      excludeSemantics: true,
+      onTap: () => wetterOeffnen(context),
+      child: LxCard(
         onTap: () => wetterOeffnen(context),
-        child: LxCard(
-          onTap: () => wetterOeffnen(context),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(minHeight: 44),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const MonoLabel('// wetter'),
-                const SizedBox(height: 10),
-                WetterInhalt(zustand: st),
-              ],
-            ),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const MonoLabel('// wetter'),
+              const SizedBox(height: 10),
+              WetterInhalt(zustand: st),
+            ],
           ),
         ),
       ),
