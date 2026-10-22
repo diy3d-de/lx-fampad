@@ -50,7 +50,7 @@ class _KopfBereich extends ConsumerWidget {
   }
 }
 
-/// Kalender: Agenda (Standard), Monat und Woche, Filter je Person, Termine anlegen, ändern und löschen (auch Serien). Alles wirkt sofort
+/// Kalender: Monat (Standard; die zuletzt gewählte Ansicht merkt sich das Gerät), Agenda und Woche, Filter je Person, Termine anlegen, ändern und löschen (auch Serien). Alles wirkt sofort
 /// auf die lokale Datenbank; der Abgleich mit dem Server läuft im Hintergrund (data/sync/).
 /// Aufbau: (einklappende) Kopfzeile, Hinweise des Abgleichs (nur bei Bedarf), schlanke Leiste mit Umschalter, darunter die Ansicht; mobil dazu
 /// der runde Knopf "Neuer Termin", im Desktop-Layout steht er in der Leiste. Das Monatsraster füllt den Rest des Bildschirms.
@@ -60,6 +60,8 @@ class CalendarScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final auswahl = ref.watch(kalenderAuswahlProvider);
+    // Erst die gemerkte Ansicht lesen (wenige Millisekunden), dann zeichnen: kein Sprung von der Standardansicht auf die gemerkte
+    if (!auswahl.geladen) return const SizedBox.shrink();
     final daten = ref.watch(kalenderDatenProvider);
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = TerminRechte(user?.role ?? Role.child, user?.id);

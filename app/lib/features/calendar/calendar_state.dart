@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/calendar/expansion.dart';
+import '../../data/calendar/feiertage.dart' show feiertageSpeicherProvider, kKalenderAnsichtSchluessel;
 import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/zeitzonen.dart';
@@ -18,6 +19,9 @@ enum KalenderAnsicht {
 
   final String label;
   const KalenderAnsicht(this.label);
+
+  /// Gemerkter Wert ("agenda", "monat", "woche"); fehlt er oder ist er unbekannt: Monat (Standardansicht).
+  static KalenderAnsicht ausText(String? text) => KalenderAnsicht.values.where((a) => a.name == text).firstOrNull ?? KalenderAnsicht.monat;
 }
 
 class KalenderAuswahl {
@@ -34,14 +38,18 @@ class KalenderAuswahl {
 
   /// Wie viele Tage die Agenda ab heute zeigt.
   final int agendaTage;
-  KalenderAuswahl({required this.ansicht, required this.tag, DateTime? monat, this.personen = const {}, this.agendaTage = kAgendaTage}) : monat = monat ?? DateTime.utc(tag.year, tag.month);
 
-  KalenderAuswahl kopie({KalenderAnsicht? ansicht, DateTime? tag, DateTime? monat, Set<String>? personen, int? agendaTage}) => KalenderAuswahl(
+  /// Ist die gemerkte Ansicht schon gelesen? Bis dahin zeichnet der Kalender noch nichts, damit er nicht von Monat auf die gemerkte Ansicht springt.
+  final bool geladen;
+  KalenderAuswahl({required this.ansicht, required this.tag, DateTime? monat, this.personen = const {}, this.agendaTage = kAgendaTage, this.geladen = true}) : monat = monat ?? DateTime.utc(tag.year, tag.month);
+
+  KalenderAuswahl kopie({KalenderAnsicht? ansicht, DateTime? tag, DateTime? monat, Set<String>? personen, int? agendaTage, bool? geladen}) => KalenderAuswahl(
     ansicht: ansicht ?? this.ansicht,
     tag: tag ?? this.tag,
     monat: monat ?? this.monat,
     personen: personen ?? this.personen,
     agendaTage: agendaTage ?? this.agendaTage,
+    geladen: geladen ?? this.geladen,
   );
 }
 
@@ -57,10 +65,43 @@ DateTime heuteTag([DateTime? jetzt]) {
 final kalenderJetztProvider = Provider<DateTime Function()>((ref) => () => wandUhr(DateTime.now().toUtc(), familienOrt));
 
 class KalenderAuswahlNotifier extends Notifier<KalenderAuswahl> {
-  @override
-  KalenderAuswahl build() => KalenderAuswahl(ansicht: KalenderAnsicht.agenda, tag: heuteTag());
+  bool _gesetzt = false;
 
-  void ansicht(KalenderAnsicht a) => state = state.kopie(ansicht: a);
+  @override
+  KalenderAuswahl build() {
+    _gesetzt = false;
+    _laden();
+    return KalenderAuswahl(ansicht: KalenderAnsicht.monat, tag: heuteTag(), geladen: false);
+  }
+
+  /// Liest die gemerkte Ansicht (lokal je Gerät in `sync_meta`); Fehler oder unbekannter Wert: Monat. Eine inzwischen gesetzte Ansicht gewinnt.
+  Future<void> _laden() async {
+    var a = KalenderAnsicht.monat;
+    try {
+      a = KalenderAnsicht.ausText(await ref.read(feiertageSpeicherProvider).lesen(schluessel: kKalenderAnsichtSchluessel));
+    } catch (_) {
+      // nicht lesbar: Monat
+    }
+    if (!ref.mounted) return;
+    state = state.kopie(ansicht: _gesetzt ? null : a, geladen: true);
+  }
+
+  /// Setzt die Ansicht, ohne sie zu merken (Sprung aus Benachrichtigung oder Widget).
+  void ansicht(KalenderAnsicht a) {
+    _gesetzt = true;
+    state = state.kopie(ansicht: a);
+  }
+
+  /// Wechsel durch die Person: gilt sofort und wird für den nächsten Start gemerkt (schlägt das Schreiben fehl, gilt sie bis zum Schließen der App).
+  Future<void> ansichtMerken(KalenderAnsicht a) async {
+    ansicht(a);
+    try {
+      await ref.read(feiertageSpeicherProvider).schreiben(a.name, schluessel: kKalenderAnsichtSchluessel);
+    } catch (_) {
+      // nur bis zum Schließen der App
+    }
+  }
+
   /// Springt zu einem Tag und zeigt dessen Monat.
   void tag(DateTime t) => state = state.kopie(tag: DateTime.utc(t.year, t.month, t.day), monat: DateTime.utc(t.year, t.month));
 

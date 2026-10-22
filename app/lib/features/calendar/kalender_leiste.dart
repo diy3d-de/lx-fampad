@@ -1,5 +1,7 @@
 // Leiste des Kalenders: Monat/Woche mit Pfeilen und Wahl, "Heute", Filter und Anzeige (mobil als Bottom-Sheet, Desktop als Chips und Menü),
 // "Mehr" mit Importieren und Exportieren, der Umschalter Agenda | Monat | Woche. Alles, was früher als Knöpfe über dem Kalender lag.
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -220,7 +222,7 @@ class KalenderLeiste extends ConsumerWidget {
   }
 
   void _ansicht(WidgetRef ref, KalenderAnsicht x) {
-    ref.read(kalenderAuswahlProvider.notifier).ansicht(x);
+    unawaited(ref.read(kalenderAuswahlProvider.notifier).ansichtMerken(x));
     ref.read(kalenderKopfEingeklapptProvider.notifier).setzen(false);
   }
 }

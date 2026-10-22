@@ -141,6 +141,9 @@ const kFeiertageSchluessel = 'kalender_feiertage';
 const kFerienSchluessel = 'kalender_ferien';
 const kGeburtstageSchluessel = 'kalender_geburtstage';
 
+/// Zuletzt gewählte Kalender-Ansicht ("agenda", "monat", "woche"; lokal je Gerät, Standard: Monat).
+const kKalenderAnsichtSchluessel = 'kalender_ansicht';
+
 abstract class FeiertageSpeicher {
   Future<String?> lesen({String schluessel = kFeiertageSchluessel});
   Future<void> schreiben(String wert, {String schluessel = kFeiertageSchluessel});
@@ -159,8 +162,9 @@ class DatenbankFeiertageSpeicher implements FeiertageSpeicher {
 
 class MemoryFeiertageSpeicher implements FeiertageSpeicher {
   final Map<String, String> werte = {};
-  MemoryFeiertageSpeicher([String? wert]) {
+  MemoryFeiertageSpeicher([String? wert, Map<String, String> weitere = const {}]) {
     if (wert != null) werte[kFeiertageSchluessel] = wert;
+    werte.addAll(weitere);
   }
 
   @override
