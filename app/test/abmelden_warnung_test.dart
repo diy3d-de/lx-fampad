@@ -202,7 +202,8 @@ Future<void> main() async {
         a.srv.server.on('GET /me/keys', (_) => fehler(500, 'server_error'));
         await tippeText(tester, 'Abmelden');
         expect(find.textContaining('Dein Schlüssel bleibt auf diesem Gerät'), findsOneWidget);
-        expect(find.textContaining('gesichert'), findsNothing);
+        // der Dialog sagt nichts über die Sicherung (die Profilseite dahinter hat seit P1 die Zeile "Bin ich abgesichert?", daher nur der Dialog)
+        expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('gesichert')), findsNothing);
         expect(find.text('Trotzdem abmelden'), findsNothing);
         pruefeLayout(tester, 'Abmelden bei nicht erreichbarem Server');
         await tippe(tester, find.widgetWithText(TextButton, 'Abmelden'));

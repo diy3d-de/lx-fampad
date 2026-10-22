@@ -274,6 +274,9 @@ class FampadApi {
 
   Future<EigeneSchluesselDto> eigeneSchluessel() async => EigeneSchluesselDto.fromJson(await client.get('/me/keys'));
 
+  /// "Bin ich abgesichert?": die Wege zum eigenen Schlüssel laut Server (`GET /me/key-status`). null, wenn die Antwort nicht lesbar ist; ältere Server kennen die Route nicht (404).
+  Future<SchluesselWegeDto?> schluesselWege() async => SchluesselWegeDto.fromJson(await client.get('/me/key-status'));
+
   Future<OeffentlicheSchluessel> schluesselAnlegen({required String enc, required String sign}) async =>
       schluesselAusAntwort(await client.post('/me/keys', {'publicEncKey': enc, 'publicSignKey': sign}));
 
@@ -427,6 +430,14 @@ class FampadApi {
 
   Future<void> mitgliedEntfernen(String id) async {
     await client.delete('/members/$id');
+  }
+
+  /// Admin: entfernte Mitglieder, die noch zurückgeholt werden können (Soft-Delete). Ein älterer Server kennt die Route nicht (404).
+  Future<EntfernteMitglieder> entfernteMitglieder() async => EntfernteMitglieder.fromJson(await client.get('/members/removed'));
+
+  /// Admin (mit Step-up): holt ein entferntes Mitglied zurück; Schlüssel und Sicherungen sind unverändert da.
+  Future<void> mitgliedWiederherstellen(String id) async {
+    await client.post('/members/$id/restore', const {});
   }
 
   /// Admin (mit Step-up): Einmal-Link "neues Passwort" für ein Mitglied; der zweite Faktor der Person bleibt Pflicht.

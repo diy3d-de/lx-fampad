@@ -629,6 +629,34 @@ class EigeneSchluesselDto {
 
 DateTime? _zeitOderNull(Object? v) => v is String ? DateTime.tryParse(v) : null;
 
+/// Antwort von GET /me/key-status ("Bin ich abgesichert?"): die Wege zum eigenen Schlüssel, wie der Server sie kennt. Nur Zustände und Zahlen. Fehlt etwas oder hat es eine
+/// unerwartete Form, gilt der Weg als nicht vorhanden (nie als vorhanden); [fromJson] liefert dann null, wenn die Antwort als Ganzes nicht lesbar ist.
+class SchluesselWegeDto {
+  /// Mindestens ein aktives Gerät hat gemeldet, den aktuellen Schlüssel zu haben (vom Gerät selbst gemeldet, kein Beweis).
+  final bool geraet;
+  final bool pwSicherung;
+  final bool wiederherstellung;
+  final int geraeteMitSchluessel;
+  final int archivAnzahl;
+  const SchluesselWegeDto({required this.geraet, required this.pwSicherung, required this.wiederherstellung, required this.geraeteMitSchluessel, required this.archivAnzahl});
+
+  static SchluesselWegeDto? fromJson(Object? raw) {
+    if (raw is! Map<String, dynamic>) return null;
+    final s = raw['status'];
+    if (s is! Map<String, dynamic>) return null;
+    final w = s['ways'];
+    if (w is! Map<String, dynamic>) return null;
+    int zahl(Object? v) => v is int && v >= 0 ? v : 0;
+    return SchluesselWegeDto(
+      geraet: w['device'] == true,
+      pwSicherung: w['pwBackup'] == true,
+      wiederherstellung: w['recoveryBackup'] == true,
+      geraeteMitSchluessel: zahl(s['devicesWithKey']),
+      archivAnzahl: zahl(s['archiveCount']),
+    );
+  }
+}
+
 OeffentlicheSchluessel _schluesselStreng(Json m) => _schluessel(m) ?? _fehler();
 
 /// Antwort auf das Anlegen oder Wechseln des Schlüssels.
@@ -810,12 +838,16 @@ enum SicherheitsArt {
   passwortResetAngefordert,
   passwortZurueckgesetzt,
   zugangZurueckgesetzt,
+
+  /// Hinweis an die Familie: der Zugang eines ANDEREN Mitglieds wurde komplett zurückgesetzt (der Name steht in [SicherheitsEreignisDto.betroffener]).
+  mitgliedZugangZurueckgesetzt,
   andere;
 
   static SicherheitsArt parse(Object? v) => switch (v) {
     'password_reset_requested' => SicherheitsArt.passwortResetAngefordert,
     'password_reset_done' => SicherheitsArt.passwortZurueckgesetzt,
     'account_reset_requested' => SicherheitsArt.zugangZurueckgesetzt,
+    'member_account_reset' => SicherheitsArt.mitgliedZugangZurueckgesetzt,
     _ => SicherheitsArt.andere,
   };
 }
@@ -845,7 +877,10 @@ class SicherheitsEreignisDto {
   final String? akteur;
   final bool durchAdmin;
   final DateTime zeit;
-  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit});
+
+  /// Nur beim Hinweis an die Familie ([SicherheitsArt.mitgliedZugangZurueckgesetzt]): wessen Zugang zurückgesetzt wurde (Anzeigename); sonst null.
+  final String? betroffener;
+  const SicherheitsEreignisDto({required this.id, required this.art, required this.weg, required this.akteur, required this.durchAdmin, required this.zeit, this.betroffener});
 
   factory SicherheitsEreignisDto.fromJson(Object? raw) {
     final m = asJson(raw);
@@ -856,6 +891,53 @@ class SicherheitsEreignisDto {
       akteur: _sn(m, 'actorName'),
       durchAdmin: m['byAdmin'] == true,
       zeit: _t(m, 'createdAt'),
+      betroffener: _sn(m, 'subjectName'),
+    );
+  }
+}
+
+/// Ein entferntes Mitglied (Soft-Delete, `GET /members/removed`): Konto, Schlüssel und Sicherungen liegen bis [loeschtAm] noch beim Server und lassen sich zurückholen.
+class EntferntesMitglied {
+  final String id;
+  final String name;
+  final Role rolle;
+  final DateTime entferntAm;
+
+  /// Ab diesem Zeitpunkt löscht der Server endgültig.
+  final DateTime loeschtAm;
+
+  /// Die Person hatte Schlüssel eingerichtet (mit dem endgültigen Löschen gehen sie und ihre Sicherungen verloren).
+  final bool hatSchluessel;
+  const EntferntesMitglied({required this.id, required this.name, required this.rolle, required this.entferntAm, required this.loeschtAm, required this.hatSchluessel});
+
+  factory EntferntesMitglied.fromJson(Object? raw) {
+    final m = asJson(raw);
+    return EntferntesMitglied(
+      id: _s(m, 'id'),
+      name: _s(m, 'displayName'),
+      rolle: Role.parse(_s(m, 'role')),
+      entferntAm: _t(m, 'removedAt'),
+      loeschtAm: _t(m, 'purgeAt'),
+      hatSchluessel: m['hasKeys'] == true,
+    );
+  }
+}
+
+/// Antwort von `GET /members/removed`.
+class EntfernteMitglieder {
+  final List<EntferntesMitglied> mitglieder;
+
+  /// Wie viele Tage der Server entfernte Mitglieder aufbewahrt.
+  final int aufbewahrungTage;
+  const EntfernteMitglieder({required this.mitglieder, required this.aufbewahrungTage});
+
+  factory EntfernteMitglieder.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final liste = m['members'];
+    final tage = m['retentionDays'];
+    return EntfernteMitglieder(
+      mitglieder: liste is List ? [for (final e in liste) EntferntesMitglied.fromJson(e)] : const [],
+      aufbewahrungTage: tage is int && tage > 0 ? tage : 30,
     );
   }
 }

@@ -14,6 +14,7 @@ import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_anzeige.dart';
+import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/geburtstage_karte.dart';
@@ -56,6 +57,7 @@ class HomeScreen extends ConsumerWidget {
         TabKopfzeile(title: begruessung(name)),
         const SizedBox(height: 20),
         const UpdateAnzeige(),
+        const AbsicherungsKarte(),
         Container(
           constraints: const BoxConstraints(minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: 14),

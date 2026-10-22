@@ -329,7 +329,9 @@ void main() {
         await _vergessenAusfuellen(tester);
         expect(find.byType(NavigationBar), findsOneWidget);
         expect(a.server.anfragen('PUT /me/key-backup-pw'), isEmpty);
-        expect(find.textContaining('Passwort-Sicherung'), findsNothing);
+        // kein Hinweis des Resets zur Sicherung (Dialog oder Meldung); die Karte "Bin ich abgesichert?" auf der Startseite (P1) darf die Passwort-Sicherung anbieten
+        expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('Passwort-Sicherung')), findsNothing);
+        expect(find.descendant(of: find.byType(SnackBar), matching: find.textContaining('Passwort-Sicherung')), findsNothing);
       });
 
       testWidgets('Anlegen der neuen Sicherung scheitert: der Reset gilt trotzdem, der Hinweis nennt den Weg zur Neuanlage', (tester) async {

@@ -37,6 +37,8 @@ class _Person {
   String? pwPBlob;
   String? pwPId;
   int pwPVersion = 0;
+  // Geräte, die dem Server melden, den aktuellen Schlüssel zu haben (PUT /me/device-key)
+  int geraete = 0;
   _Person(this.id, this.name);
 }
 
@@ -88,6 +90,30 @@ class FakeE2eeServer {
   FakeE2eeServer(this.server, {this.standardId}) {
     server
       ..on('GET /me/keys', (r) => _mit(r, (p) => jsonAntwort({'keys': _keys(p), 'hasBackup': p.backupBlob != null && p.backupVersion == p.version, if (p.pwStale && p.pwBlob != null) 'pwBackupStale': true, ..._neueFelder(p)})))
+      ..on('GET /me/key-status', (r) => _mit(r, (p) {
+        if (!keyStatusSchalter) return fehler(404, 'not_found');
+        final hat = p.enc != null;
+        final geraet = hat && p.geraete > 0;
+        final pw = hat && pwSchalter && p.pwBlob != null && p.pwVerifiziert && !p.pwStale && p.pwVersion == p.version;
+        final rec = hat && p.backupBlob != null && p.backupVersion == p.version;
+        final n = [geraet, pw, rec].where((x) => x).length;
+        // dieselbe Rechenvorschrift wie der Server (ampelOf)
+        final ampel = !hat || n == 0 ? 'red' : (n >= 2 && geraet ? 'green' : (n == 1 ? (geraet ? 'yellow' : 'red') : 'yellow'));
+        return jsonAntwort({
+          'status': {
+            'generatedAt': jetzt.toIso8601String(),
+            'ampel': ampel,
+            'hasKeys': hat,
+            'keyVersion': hat ? p.version : null,
+            'ways': {'device': geraet, 'pwBackup': pw, 'recoveryBackup': rec},
+            'wayCount': n,
+            'devicesTotal': p.geraete,
+            'devicesWithKey': p.geraete,
+            'devicesReported': p.geraete,
+            'archiveCount': archiv,
+          },
+        });
+      }))
       ..on('POST /me/keys', (r) => _mit(r, (p) {
         if (p.enc != null) return fehler(409, 'keys_exist');
         p.enc = r.json['publicEncKey'] as String;
@@ -232,6 +258,12 @@ class FakeE2eeServer {
 
   /// Personen, die (noch) auf die Freigabe warten (Status pending in /members).
   final Set<String> ausstehend = {};
+
+  /// Kennt der Server `GET /me/key-status` (sonst 404 wie ein älterer Server)?
+  bool keyStatusSchalter = true;
+
+  /// So viele Geräte der Person melden dem Server, den aktuellen Schlüssel zu haben.
+  void geraeteMelden(String id, int n) => _personen[id]!.geraete = n;
 
   /// Aktuelle Schlüsselversion einer Person (für Vermerke in Tests).
   int schluesselVersion(String id) => _personen[id]!.version;
