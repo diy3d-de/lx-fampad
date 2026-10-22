@@ -2,15 +2,17 @@
 //   node dist/cli/operator.js grant <E-Mail>    macht ein aktives Mitglied zum Betreiber (sieht das Dashboard "Betrieb")
 //   node dist/cli/operator.js revoke <E-Mail>   nimmt die Rolle zurück
 //   node dist/cli/operator.js list              zeigt die Betreiber
+//   node dist/cli/operator.js maintenance off   Notausgang: schaltet den Wartungsmodus aus (falls sich niemand mehr anmelden kann)
 // Die Rolle gilt nur für die Betreiber-Routen (/api/v1/admin); Familienrechte (Admin, Eltern, Kind) ändert sie nicht.
 import { Auth } from '../auth/service.js';
 import { loadConfig } from '../config.js';
 import { createDb } from '../db/index.js';
 import { AppError } from '../errors.js';
 import { grantOperator, listOperators, revokeOperator } from '../operator/service.js';
+import { clearMaintenanceAll } from '../operator/settings.js';
 
 const [command, email] = process.argv.slice(2);
-const usage = 'Aufruf: operator.js grant <E-Mail> | revoke <E-Mail> | list';
+const usage = 'Aufruf: operator.js grant <E-Mail> | revoke <E-Mail> | list | maintenance off';
 
 const config = loadConfig();
 if (!config.databaseUrl) throw new Error('DATABASE_URL fehlt');
@@ -22,6 +24,8 @@ try {
     const rows = await listOperators(auth.ctx);
     if (rows.length === 0) console.log('Keine Betreiber eingetragen.');
     for (const r of rows) console.log(`${r.email}  (${r.displayName})  seit ${r.grantedAt.toISOString()}`);
+  } else if (command === 'maintenance' && email === 'off') {
+    console.log((await clearMaintenanceAll(auth.ctx)) ? 'Der Wartungsmodus ist ausgeschaltet.' : 'Der Wartungsmodus war nicht an.');
   } else if ((command === 'grant' || command === 'revoke') && email) {
     const result = command === 'grant' ? await grantOperator(auth.ctx, email) : await revokeOperator(auth.ctx, email);
     if (command === 'grant') console.log(result.changed ? `${email} ist jetzt Betreiber.` : `${email} war schon Betreiber.`);

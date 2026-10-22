@@ -67,7 +67,11 @@ export type AuditEvent =
   /** Betreiber schaltet seine Warnungen ein oder aus (`detail.enabled`). */
   | 'operator_warnings_set'
   /** Betreiber hebt die Anmeldesperre eines Kontos auf. */
-  | 'operator_unlock';
+  | 'operator_unlock'
+  /** Betreiber schaltet den Wartungsmodus (`detail.from`/`to`, optional `until`; `via: 'cli'` beim Notausgang auf dem Server). */
+  | 'operator_maintenance_set'
+  /** Betreiber setzt oder löscht den Familienhinweis (`detail.had`/`has`, Länge und Ablauf, nie der Text). */
+  | 'operator_notice_set';
 
 export interface AuditEntry {
   event: AuditEvent;

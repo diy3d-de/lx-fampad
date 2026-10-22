@@ -40,6 +40,7 @@ describe('Migration 0021 (Betreiber Paket 2a) additiv auf Stand 0020', () => {
       world = undefined;
 
       // zurück in den Stand 0020: die Objekte der Migration 0021 weg, ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
+      await db.execute(sql`drop table operator_settings`); // Migration 0023 (Betreiber Paket 2b), wird beim erneuten Migrieren wieder angelegt
       // ... und die Objekte der Migration 0022 (P1 Schlüssel-Paket, Soft-Delete der Mitglieder; sie gilt hier als noch nicht angewendet)
       await db.execute(sql`alter table users drop constraint users_removed_ck`);
       await db.execute(sql`alter table users drop column removed_at, drop column removed_by`);

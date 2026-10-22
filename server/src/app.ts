@@ -16,6 +16,7 @@ import { registerPushRoutes } from './routes/push.js';
 import { PushService } from './push/service.js';
 import { registerWeatherRoutes } from './routes/weather.js';
 import { registerOperatorRoutes } from './routes/operator.js';
+import { MaintenanceGate } from './operator/maintenance.js';
 import { OperatorMonitor } from './operator/monitor.js';
 import type { Probes } from './operator/probes.js';
 import { WeatherService } from './weather/service.js';
@@ -40,6 +41,8 @@ declare module 'fastify' {
     push?: PushService;
     /** Betreiber-Warnungen (nur mit Datenbank); der Takt startet in server.ts. */
     operatorMonitor?: OperatorMonitor;
+    /** Wartungsmodus (nur mit Datenbank); Tests lesen den Zustand neu, nachdem sie die Datenbank von Hand geändert haben (`invalidate()`). */
+    maintenance?: MaintenanceGate;
   }
 }
 
@@ -120,6 +123,16 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
 
   registerErrorHandling(app);
 
+  // Wartungsmodus (Betreiber, Paket 2b): schreibende Anfragen, Sync und neue Anmeldungen bekommen 503 "maintenance"; Lesen, bestehende Sitzungen und die
+  // Betreiber-Routen bleiben erreichbar (operator/maintenance.ts). Der Haken steht vor allen Routen, damit er für alle gilt.
+  const maintenance = db ? new MaintenanceGate({ db, now: now ?? (() => new Date()), log: app.log }) : undefined;
+  if (maintenance) {
+    app.decorate('maintenance', maintenance);
+    app.addHook('onRequest', async (req) => {
+      await maintenance.check(req);
+    });
+  }
+
   // Antworten der API werden nie zwischengespeichert (Sitzungen, Tokens, Listen)
   app.addHook('onSend', async (req, reply) => {
     if (isApiRequest(req) && !reply.hasHeader('cache-control')) reply.header('cache-control', 'no-store');
@@ -164,7 +177,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
   app.decorate('location', location);
   location.startTimer();
   app.addHook('onClose', async () => location.close());
-  registerSystemRoutes(app, { config, pingDb });
+  registerSystemRoutes(app, { config, pingDb, maintenance });
   let auth: AuthService = authOverride ?? noAuth;
   if (db) {
     const authCore = new Auth({ db, config, log: app.log, ...(now ? { now } : {}) });
@@ -200,7 +213,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     const operatorMonitor = new OperatorMonitor({ ctx: authCore.ctx, push, weather, probes: operatorProbes });
     app.decorate('operatorMonitor', operatorMonitor);
     app.addHook('onClose', async () => operatorMonitor.stop());
-    registerOperatorRoutes(app, config, authCore, weather, operatorMonitor, operatorProbes);
+    if (maintenance) registerOperatorRoutes(app, config, authCore, weather, operatorMonitor, maintenance, operatorProbes);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort
     authCore.ctx.onRev = (familyId, rev, roles, users, origin) => {
