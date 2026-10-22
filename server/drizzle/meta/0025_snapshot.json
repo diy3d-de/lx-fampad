@@ -1,6 +1,6 @@
 {
-  "id": "65d491ae-871c-4c5d-aea9-5e9af441e86c",
-  "prevId": "521bd5ec-abef-45a6-99d6-9e9fbc6fa919",
+  "id": "c5404e12-d19e-421e-8c23-2a35fde2f9cd",
+  "prevId": "227ed0d0-3d7e-4dcb-837a-9cba8a3f0e48",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1432,6 +1432,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "key_version": {
+          "name": "key_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -1496,7 +1502,7 @@
             }
           ],
           "isUnique": true,
-          "where": "\"epoche_wraps\".\"deleted_at\" is null",
+          "where": "\"epoche_wraps\".\"deleted_at\" is null and \"epoche_wraps\".\"key_version\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -1656,6 +1662,10 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
+        "epoche_wraps_key_version_ck": {
+          "name": "epoche_wraps_key_version_ck",
+          "value": "\"epoche_wraps\".\"key_version\" is null or \"epoche_wraps\".\"key_version\" between 1 and 1000000"
+        },
         "epoche_wraps_epoche_ck": {
           "name": "epoche_wraps_epoche_ck",
           "value": "\"epoche_wraps\".\"epoche\" between 1 and 100000"
