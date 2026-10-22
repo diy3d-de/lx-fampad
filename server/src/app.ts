@@ -10,6 +10,7 @@ import { serializeErr } from './log.js';
 import { normalizeIp } from './net.js';
 import { AppError, registerErrorHandling } from './errors.js';
 import { registerAccountRoutes } from './routes/account.js';
+import { registerGuardianRoutes } from './routes/guardian.js';
 import { registerAuthRoutes } from './routes/auth.js';
 import { registerAvatarRoutes } from './routes/avatar.js';
 import { registerPushRoutes } from './routes/push.js';
@@ -185,6 +186,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     app.decorate('authCore', authCore);
     registerAuthRoutes(app, config, authCore);
     registerAccountRoutes(app, config, authCore);
+    registerGuardianRoutes(app, config, authCore);
     registerAvatarRoutes(app, config, authCore);
     registerSyncRoutes(app, config, authCore);
     const push = new PushService({

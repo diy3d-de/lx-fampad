@@ -46,6 +46,8 @@ Mit `--skip-config` überspringt das Skript Schritt 4 (Konfigurationsarchiv), f�
 
 Zusätzlich einmal im Jahr: einen **kompletten Neuaufbau** auf einem Wegwerf-Server oder einer VM nach Abschnitt 3 durchspielen (ohne DNS-Umschaltung).
 
+Zur Einordnung: Dieser Test betrifft den **Server**. Ob sich der **Schlüssel der Chats** (Sicherung mit Wiederherstellungsschlüssel, Passwort oder Passkey) wirklich wieder öffnen lässt, prüft jede Person selbst in der App (Profil > Verschlüsselung > „Wiederherstellung testen“, Erinnerung alle 90 Tage, rein lokal; Abschnitt 9a der Projektbeschreibung). Bei einem Neuaufbau aus der Datenbanksicherung bleiben diese Sicherungen erhalten (sie liegen als undurchsichtige Blobs in der Datenbank).
+
 ## 3. Neuaufbau auf einem frischen Debian-13-VPS
 
 **Der übliche Weg ist das Skript `deploy/neuinstallation/bootstrap-server.sh`** (Schritt für Schritt für Laien: [`NEUINSTALLATION.md`](NEUINSTALLATION.md), mit Liste dessen, was verloren geht und was du selbst tun musst). Es macht die folgenden Schritte 4 bis 14 in einem Lauf (Pakete, Benutzer, Konfiguration und Datenbank aus der Sicherung, Dienste, ntfy, Caddy nur als `conf.d`-Dateien, Sicherung). Die Handarbeit unten bleibt als Rückfallebene und zum Nachvollziehen.

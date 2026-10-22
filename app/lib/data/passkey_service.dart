@@ -1,6 +1,8 @@
 // Passkeys (WebAuthn) über das Paket `passkeys` (Corbado): Android per Credential Manager, Web per Browser-API
 // (web/passkeys-bundle.js, selbst gehostet). Die Server-Optionen (SimpleWebAuthn-JSON) gehen unverändert hinein, die Antwort
 // kommt als WebAuthn-JSON heraus. Alle Fehler werden zu [PasskeyException] mit klarer Meldung und Weg zu Passwort + TOTP.
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:passkeys/authenticator.dart';
 import 'package:passkeys/exceptions.dart' as pk;
@@ -29,6 +31,19 @@ class PasskeyException implements Exception {
   String toString() => 'PasskeyException($art)';
 }
 
+/// Antwort einer Passkey-Bestätigung samt dem Ergebnis der PRF-Erweiterung (Passkey-Sicherung, Projektbeschreibung 9a).
+class PasskeyMitPrf {
+  /// AuthenticationResponseJSON für den Server (ohne die PRF-Ausgabe: sie verlässt das Gerät nie).
+  final Map<String, dynamic> antwort;
+
+  /// Kennung des benutzten Passkeys (Base64url, wie der Server sie führt).
+  final String credentialId;
+
+  /// Die 32 Byte der PRF-Ausgabe oder null, wenn der Passkey-Speicher PRF nicht unterstützt (oder nichts Brauchbares lieferte). Nie loggen, nie senden.
+  final Uint8List? prf;
+  const PasskeyMitPrf({required this.antwort, required this.credentialId, required this.prf});
+}
+
 abstract class PasskeyService {
   /// Gibt es auf diesem Gerät/Browser überhaupt Passkey-Unterstützung?
   Future<bool> verfuegbar();
@@ -38,6 +53,39 @@ abstract class PasskeyService {
 
   /// Mit Passkey bestätigen. [optionen] sind die Anmeldeoptionen des Servers; Rückgabe: AuthenticationResponseJSON.
   Future<Map<String, dynamic>> bestaetigen(Map<String, dynamic> optionen);
+
+  /// Wie [bestaetigen], zusätzlich mit der PRF-Erweiterung (fester [salt], 32 Byte): die Ausgabe liegt im Ergebnis ([PasskeyMitPrf.prf]; null, wenn nicht
+  /// unterstützt). Mit [nurCredentialId] bietet das Gerät nur diesen Passkey an (für die zweite Probe derselben Sicherung).
+  Future<PasskeyMitPrf> bestaetigenMitPrf(Map<String, dynamic> optionen, {required Uint8List salt, String? nurCredentialId});
+}
+
+/// Liest die PRF-Ausgabe aus den Ergebnissen der Client-Erweiterungen (`prf.results.first`, Base64url). null bei jeder Abweichung (nie ein Fehler).
+Uint8List? prfAusgabeAus(Map<Object?, Object?>? ergebnisse) {
+  try {
+    final prf = ergebnisse?['prf'];
+    if (prf is! Map) return null;
+    final results = prf['results'];
+    if (results is! Map) return null;
+    final first = results['first'];
+    if (first is! String || first.isEmpty) return null;
+    return Uint8List.fromList(base64Url.decode(base64Url.normalize(first)));
+  } on Object {
+    return null;
+  }
+}
+
+/// Kennung eines Passkeys in der Form des Servers: Base64url ohne Füllzeichen (manche Plattformen liefern sie mit `=`).
+String passkeyKennung(String id) => id.replaceAll('=', '');
+
+/// Die Antwort für den Server ohne die PRF-Ausgabe: sie verlässt das Gerät nie, auch dann nicht, wenn das Paket die Erweiterungs-Ergebnisse (je nach Version oder
+/// Plattform) in `toJson()` mitgibt. Eine Antwort ohne Ergebnisse bleibt unverändert; sonst bleibt `clientExtensionResults` (ohne `prf`) stehen.
+Map<String, dynamic> antwortOhnePrf(Map<String, dynamic> antwort) {
+  final e = antwort['clientExtensionResults'];
+  if (e is! Map || !e.containsKey('prf')) return antwort;
+  return {
+    ...antwort,
+    'clientExtensionResults': {for (final k in e.entries) if (k.key != 'prf') k.key: k.value},
+  };
 }
 
 /// Das Paket verlangt bei Anmeldedaten ein `transports`-Feld; der Server lässt es bei manchen Einträgen weg.
@@ -128,6 +176,34 @@ class CorbadoPasskeyService implements PasskeyService {
       final req = RegisterRequestType.fromJson(normalisiereOptionen(optionen));
       final res = await _a.register(req);
       return res.toJson();
+    } on pk.AuthenticatorException catch (e) {
+      throw passkeyFehlerAbbilden(e);
+    } on FormatException {
+      throw const PasskeyException(PasskeyFehler.sonstiges, 'Der Server hat unerwartete Passkey-Angaben gesendet.');
+    } on TypeError {
+      throw const PasskeyException(PasskeyFehler.sonstiges, 'Der Server hat unerwartete Passkey-Angaben gesendet.');
+    } catch (e) {
+      throw passkeyFehlerAbbilden(e);
+    }
+  }
+
+  @override
+  Future<PasskeyMitPrf> bestaetigenMitPrf(Map<String, dynamic> optionen, {required Uint8List salt, String? nurCredentialId}) async {
+    try {
+      final norm = normalisiereOptionen(optionen);
+      if (nurCredentialId != null && norm['allowCredentials'] is List) {
+        norm['allowCredentials'] = [for (final c in norm['allowCredentials'] as List) if (c is Map && passkeyKennung('${c['id']}') == passkeyKennung(nurCredentialId)) c];
+      }
+      norm['extensions'] = {
+        ...(norm['extensions'] is Map<String, dynamic> ? norm['extensions'] as Map<String, dynamic> : const <String, dynamic>{}),
+        'prf': {
+          'eval': {'first': base64Url.encode(salt).replaceAll('=', '')},
+        },
+      };
+      final req = AuthenticateRequestType.fromJson(norm, mediation: MediationType.Optional, preferImmediatelyAvailableCredentials: false);
+      final res = await _a.authenticate(req);
+      // das Paket verwirft die Erweiterungs-Ergebnisse in toJson(): die PRF-Ausgabe steht nur im Objekt
+      return PasskeyMitPrf(antwort: antwortOhnePrf(res.toJson()), credentialId: passkeyKennung(res.id), prf: prfAusgabeAus(res.clientExtensionResults));
     } on pk.AuthenticatorException catch (e) {
       throw passkeyFehlerAbbilden(e);
     } on FormatException {

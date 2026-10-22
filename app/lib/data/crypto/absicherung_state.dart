@@ -13,7 +13,7 @@ import 'e2ee_state.dart';
 final schluesselWegeProvider = FutureProvider.autoDispose<SchluesselWegeDto?>((ref) async {
   final eingeloggt = ref.watch(authProvider.select((s) => s.status == AuthStatus.angemeldet));
   // neu holen, wenn sich etwas ändert, das die Wege betrifft (Verbinden, neue Sicherung, Schlüsselwechsel)
-  ref.watch(e2eeProvider.select((s) => (s.status, s.pwBestaetigtAm, s.wiederherstellungAm, s.pwSicherungVeraltet, s.serverSchluessel?.version)));
+  ref.watch(e2eeProvider.select((s) => (s.status, s.pwBestaetigtAm, s.wiederherstellungAm, s.pwSicherungVeraltet, s.serverSchluessel?.version, s.prfBestaetigtAm, s.prfCredentialIds.length, s.prfSicherungVeraltet, s.prfSynchronisiert)));
   final status = ref.read(e2eeProvider).status;
   if (!eingeloggt || status == E2eeStatus.laedt || status == E2eeStatus.nichtVerfuegbar) return null;
   try {
@@ -29,5 +29,6 @@ final schluesselWegeProvider = FutureProvider.autoDispose<SchluesselWegeDto?>((r
 final absicherungProvider = Provider<AbsicherungsStatus>((ref) {
   final s = ref.watch(e2eeProvider);
   final server = ref.watch(schluesselWegeProvider).value;
-  return bewerteAbsicherung(s, server: server);
+  final hatPasskey = ref.watch(authProvider.select((a) => (a.me?.passkeys ?? 0) > 0));
+  return bewerteAbsicherung(s, server: server, hatPasskey: hatPasskey);
 });

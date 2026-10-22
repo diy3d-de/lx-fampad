@@ -93,6 +93,8 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
       for (const t of tabellen) out[t] = ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${t === 'invites' ? " - 'kind'" : ''})::text, '|' order by (to_jsonb(x)${t === 'invites' ? " - 'kind'" : ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
       return out;
     };
+    // die Art des Passkeys (Migration 0026) gibt es im Stand 0012 nicht: die Registrierung oben hat sie für die Dauer des Tests geschrieben
+    await db.execute(sql`update credentials set device_type = null, backed_up = null`);
     const vorher = await summen();
     const uhr = w1.clock;
     await w1.close();

@@ -40,7 +40,7 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
         ]);
       }
       const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' order by 1`)).rows).map((r) => r.tablename);
-      const ohne: Record<string, string> = { epoche_wraps: " - 'key_version'" };
+      const ohne: Record<string, string> = { epoche_wraps: " - 'key_version'", credentials: " - 'device_type' - 'backed_up'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
       const vorher = new Map<string, string>();
@@ -49,6 +49,9 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
       world = undefined;
 
       // die Objekte von 0025 (Betrieb Paket 3) liegen über 0024 und werden beim erneuten Migrieren wieder angelegt
+      // Migration 0026 (Passkey-Sicherung, Eltern-Wiederherstellung; neuer als 0025, also zuerst zurück)
+      await db.execute(sql`drop table guardian_escrows, guardian_recoveries, key_backups_prf`);
+      await db.execute(sql`alter table credentials drop column device_type, drop column backed_up`);
       await db.execute(sql`drop table operator_metrics`);
       await db.execute(sql`alter table weather_credentials drop column error_count`);
       // zurück in den Stand 0023: die Objekte von 0024 weg (alter Index ohne Version), ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
@@ -67,6 +70,9 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
 
       // zweite Anwendung (Tests stellen frühere Stände nach und wenden alles erneut an): kein Fehler, nichts verändert
       // (die Objekte von 0025 sind nicht wiederholbar angelegt und gehen deshalb vorher wieder weg)
+      // Migration 0026 (Passkey-Sicherung, Eltern-Wiederherstellung; neuer als 0025, also zuerst zurück)
+      await db.execute(sql`drop table guardian_escrows, guardian_recoveries, key_backups_prf`);
+      await db.execute(sql`alter table credentials drop column device_type, drop column backed_up`);
       await db.execute(sql`drop table operator_metrics`);
       await db.execute(sql`alter table weather_credentials drop column error_count`);
       await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at >= ${meine.when}`);

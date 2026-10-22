@@ -602,6 +602,16 @@ class EigeneSchluesselDto {
 
   /// Anzahl der beim Server archivierten früheren Sicherungen (null: nicht gemeldet).
   final int? archivAnzahl;
+
+  /// Passkey-Sicherung (nur mit Schalter des Servers; fehlt die Angabe, ist null bzw. leer = "nicht bestätigt"): seit wann sie bestätigt ist, welche Passkeys (öffentliche
+  /// Kennungen) eine bestätigte Sicherung zur aktuellen Version haben und ob eine veraltet ist.
+  final DateTime? prfSicherungBestaetigtAm;
+  final List<String> prfCredentialIds;
+  final bool prfSicherungVeraltet;
+
+  /// Mindestens ein Passkey mit bestätigter Sicherung ist synchronisiert (auf anderen Geräten verfügbar). Ein an ein Gerät gebundener Passkey ist kein Weg: mit dem Gerät
+  /// wäre auch die Sicherung unlesbar. Fehlt die Angabe (älterer Server), gilt "nicht synchronisiert".
+  final bool prfSynchronisiert;
   const EigeneSchluesselDto({
     required this.schluessel,
     required this.hatSicherung,
@@ -609,6 +619,10 @@ class EigeneSchluesselDto {
     this.pwSicherungBestaetigtAm,
     this.wiederherstellungsSicherungAm,
     this.archivAnzahl,
+    this.prfSicherungBestaetigtAm,
+    this.prfCredentialIds = const [],
+    this.prfSicherungVeraltet = false,
+    this.prfSynchronisiert = false,
   });
 
   factory EigeneSchluesselDto.fromJson(Object? raw) {
@@ -623,6 +637,10 @@ class EigeneSchluesselDto {
       pwSicherungBestaetigtAm: _zeitOderNull(m['pwBackupVerifiedAt']),
       wiederherstellungsSicherungAm: _zeitOderNull(m['recoveryBackupAt']),
       archivAnzahl: n is int && n >= 0 ? n : null,
+      prfSicherungBestaetigtAm: _zeitOderNull(m['prfBackupVerifiedAt']),
+      prfCredentialIds: m['prfBackupCredentialIds'] is List ? [for (final c in m['prfBackupCredentialIds'] as List) if (c is String && c.isNotEmpty) c] : const [],
+      prfSicherungVeraltet: m['prfBackupStale'] == true,
+      prfSynchronisiert: m['prfBackupSynced'] == true,
     );
   }
 }
@@ -635,10 +653,13 @@ class SchluesselWegeDto {
   /// Mindestens ein aktives Gerät hat gemeldet, den aktuellen Schlüssel zu haben (vom Gerät selbst gemeldet, kein Beweis).
   final bool geraet;
   final bool pwSicherung;
+
+  /// Bestätigte Passkey-Sicherung (zählt mit der Passwort-Sicherung als EIN Weg).
+  final bool prfSicherung;
   final bool wiederherstellung;
   final int geraeteMitSchluessel;
   final int archivAnzahl;
-  const SchluesselWegeDto({required this.geraet, required this.pwSicherung, required this.wiederherstellung, required this.geraeteMitSchluessel, required this.archivAnzahl});
+  const SchluesselWegeDto({required this.geraet, required this.pwSicherung, this.prfSicherung = false, required this.wiederherstellung, required this.geraeteMitSchluessel, required this.archivAnzahl});
 
   static SchluesselWegeDto? fromJson(Object? raw) {
     if (raw is! Map<String, dynamic>) return null;
@@ -650,6 +671,7 @@ class SchluesselWegeDto {
     return SchluesselWegeDto(
       geraet: w['device'] == true,
       pwSicherung: w['pwBackup'] == true,
+      prfSicherung: w['prfBackup'] == true,
       wiederherstellung: w['recoveryBackup'] == true,
       geraeteMitSchluessel: zahl(s['devicesWithKey']),
       archivAnzahl: zahl(s['archiveCount']),
@@ -675,12 +697,29 @@ class ServerFaehigkeiten {
 
   /// Der Server nimmt Wraps mit Schlüsselversion an (Wrap-ID v2): erst dann bietet die App "Verlauf freigeben" an. Ältere Server melden nichts: false.
   final bool wrapKeyVersion;
-  const ServerFaehigkeiten({required this.pwBackup, required this.authKey, required this.legacyPasswortLogin, this.wrapKeyVersion = false});
+
+  /// Passkey-Sicherung (WebAuthn-PRF) und Eltern-Wiederherstellung für Kinder: je ein eigener Schalter des Servers (Standard aus).
+  final bool prfBackup;
+  final bool elternWiederherstellung;
+  const ServerFaehigkeiten({
+    required this.pwBackup,
+    required this.authKey,
+    required this.legacyPasswortLogin,
+    this.wrapKeyVersion = false,
+    this.prfBackup = false,
+    this.elternWiederherstellung = false,
+  });
 
   static const keine = ServerFaehigkeiten(pwBackup: false, authKey: false, legacyPasswortLogin: true);
 
-  factory ServerFaehigkeiten.fromJson(Map<String, dynamic> f) =>
-      ServerFaehigkeiten(pwBackup: f['pwBackup'] == true, authKey: f['authKey'] == true, legacyPasswortLogin: f['legacyPasswordLogin'] != false, wrapKeyVersion: f['wrapKeyVersion'] == true);
+  factory ServerFaehigkeiten.fromJson(Map<String, dynamic> f) => ServerFaehigkeiten(
+    pwBackup: f['pwBackup'] == true,
+    authKey: f['authKey'] == true,
+    legacyPasswortLogin: f['legacyPasswordLogin'] != false,
+    wrapKeyVersion: f['wrapKeyVersion'] == true,
+    prfBackup: f['prfBackup'] == true,
+    elternWiederherstellung: f['parentRecovery'] == true,
+  );
 }
 
 /// Zustand der Passwort-Anmeldung je Mitglied (GET /members/password-modes, nur Admins). Nie ein Prüfwert, nur der Zustand.
@@ -741,6 +780,24 @@ class PwSicherungDto {
     final state = _s(m, 'state');
     if (state != 'active' && state != 'stale' && state != 'pending') throw ApiException.unerwarteteAntwort;
     return PwSicherungDto(id: _s(m, 'id'), blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'), stale: state == 'stale', pending: state == 'pending', kdf: KdfDto.fromJson(m['kdf']));
+  }
+}
+
+/// Antwort von GET /me/key-backup-prf. [stale]: der Personenschlüssel hat seither gewechselt. [pending]: noch nicht bestätigt.
+class PrfSicherungDto {
+  final String id;
+  final String credentialId;
+  final String blob;
+  final int keyVersion;
+  final bool stale;
+  final bool pending;
+  const PrfSicherungDto({required this.id, required this.credentialId, required this.blob, required this.keyVersion, required this.stale, this.pending = false});
+
+  factory PrfSicherungDto.fromJson(Object? raw) {
+    final m = asJson(raw);
+    final state = _s(m, 'state');
+    if (state != 'active' && state != 'stale' && state != 'pending') throw ApiException.unerwarteteAntwort;
+    return PrfSicherungDto(id: _s(m, 'id'), credentialId: _s(m, 'credentialId'), blob: _s(m, 'blob'), keyVersion: _i(m, 'keyVersion'), stale: state == 'stale', pending: state == 'pending');
   }
 }
 
@@ -847,6 +904,22 @@ enum SicherheitsArt {
 
   /// Die Passwort-Sicherung wurde abgerufen (auch das automatische Verbinden einer Anmeldung tut das): nur eine Information in der Liste, nie ein Alarm.
   passwortSicherungAbgerufen,
+
+  /// Die Passkey-Sicherung wurde abgerufen (wie bei der Passwort-Sicherung: eine Information, bei einem fremden Gerät ein Hinweis).
+  passkeySicherungAbgerufen,
+
+  /// Eine Passkey-Sicherung wurde angelegt und bestätigt (ein Gerät, eine Information; bei einem unbekannten Gerät ein Hinweis).
+  passkeySicherungAngelegt,
+
+  /// Eltern-Wiederherstellung (nur Kinder-Konten): Hinterlegung angelegt oder zurückgenommen; Anfrage gestellt (Hinweis ans Kind), von einem Elternteil übernommen, freigegeben,
+  /// beendet; und der Hinweis an die Eltern, dass ein Kind um Hilfe bittet (der Name steht in [SicherheitsEreignisDto.betroffener]).
+  elternHinterlegungAngelegt,
+  elternHinterlegungZurueckgenommen,
+  elternAnfrageGestellt,
+  elternAnfrageFuerKind,
+  elternAnfrageUebernommen,
+  elternFreigegeben,
+  elternAnfrageBeendet,
   andere;
 
   static SicherheitsArt parse(Object? v) => switch (v) {
@@ -855,6 +928,15 @@ enum SicherheitsArt {
     'account_reset_requested' => SicherheitsArt.zugangZurueckgesetzt,
     'member_account_reset' => SicherheitsArt.mitgliedZugangZurueckgesetzt,
     'key_backup_pw_read' => SicherheitsArt.passwortSicherungAbgerufen,
+    'key_backup_prf_read' => SicherheitsArt.passkeySicherungAbgerufen,
+    'key_backup_prf_set' => SicherheitsArt.passkeySicherungAngelegt,
+    'guardian_escrow_set' => SicherheitsArt.elternHinterlegungAngelegt,
+    'guardian_escrow_removed' => SicherheitsArt.elternHinterlegungZurueckgenommen,
+    'guardian_recovery_requested' => SicherheitsArt.elternAnfrageGestellt,
+    'guardian_recovery_asked' => SicherheitsArt.elternAnfrageFuerKind,
+    'guardian_recovery_challenged' => SicherheitsArt.elternAnfrageUebernommen,
+    'guardian_recovery_released' => SicherheitsArt.elternFreigegeben,
+    'guardian_recovery_ended' => SicherheitsArt.elternAnfrageBeendet,
     _ => SicherheitsArt.andere,
   };
 }

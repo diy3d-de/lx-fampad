@@ -183,6 +183,13 @@
       "when": 1792674569399,
       "tag": "0025_betrieb_paket_3",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1792677707446,
+      "tag": "0026_passkey_wiederherstellung",
+      "breakpoints": true
     }
   ]
 }

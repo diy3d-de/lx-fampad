@@ -11,6 +11,7 @@ import '../../data/auth/auth_state.dart';
 import '../../data/push/push_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/crypto/eltern_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
@@ -220,7 +221,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                       if (user.email != null)
                         Text(user.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
                       const SizedBox(height: 6),
-                      Wrap(spacing: 6, runSpacing: 4, children: rollenPillen(user.role, user.familyRole)),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 4,
+                        children: [...rollenPillen(user.role, user.familyRole), if (ref.watch(elternHilfeAktivProvider)) const RollenPille('eltern-hilfe aktiv', farbe: kTerminal)],
+                      ),
                       const SizedBox(height: 6),
                       const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
                     ],

@@ -316,7 +316,7 @@ async function verifyPasskeyAssertion(
   // signCount atomar fortschreiben: ein gleichzeitig eingelöster Replay derselben Antwort scheitert hier
   const claimed = await ctx.db
     .update(credentials)
-    .set({ signCount: check.newCounter, lastUsedAt: ctx.now() })
+    .set({ signCount: check.newCounter, lastUsedAt: ctx.now(), deviceType: check.deviceType, backedUp: check.backedUp })
     .where(
       and(
         eq(credentials.id, passkey.id),

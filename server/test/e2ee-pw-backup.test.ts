@@ -59,7 +59,7 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
       expect((await a.put('/api/v1/me/key-backup-pw', { blob: blob(), keyVersion: 1, kdf: kdf() })).status).toBe(404);
       expect((await a.get('/api/v1/me/key-backup-pw')).status).toBe(404);
       expect((await a.post('/api/v1/me/key-backup-pw/verified', { id: '00000000-0000-4000-8000-000000000000' })).status).toBe(404);
-      expect((await world.app.inject('/api/v1/version')).json().features).toEqual({ pwBackup: false, authKey: false, legacyPasswordLogin: true, wrapKeyVersion: false });
+      expect((await world.app.inject('/api/v1/version')).json().features).toEqual({ pwBackup: false, authKey: false, legacyPasswordLogin: true, wrapKeyVersion: false, prfBackup: false, parentRecovery: false });
       // alter Weg funktioniert wie zuvor
       expect((await a.put('/api/v1/me/key-backup', { blob: blob(), keyVersion: 1 })).status).toBe(200);
       expect((await a.get('/api/v1/me/keys')).json.hasBackup).toBe(true);
@@ -72,7 +72,7 @@ describe.each(backends)('Passwort-Sicherung ($name)', (backend) => {
   describe('Schalter an', () => {
     it('/version meldet features.pwBackup', async () => {
       await start();
-      expect((await world.app.inject('/api/v1/version')).json().features).toEqual({ pwBackup: true, authKey: true, legacyPasswordLogin: true, wrapKeyVersion: false });
+      expect((await world.app.inject('/api/v1/version')).json().features).toEqual({ pwBackup: true, authKey: true, legacyPasswordLogin: true, wrapKeyVersion: false, prfBackup: false, parentRecovery: false });
     });
 
     it('Ablegen, Abrufen, Verifizieren; Antwort nur mit blob, kdf, keyVersion, state (und id)', async () => {

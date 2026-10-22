@@ -311,6 +311,9 @@ export const kindSpalteErgaenzen = async (db: Db) => {
   // Migration 0022 (Soft-Delete der Mitglieder)
   await db.execute(sql`alter table users add column if not exists removed_at timestamptz`);
   await db.execute(sql`alter table users add column if not exists removed_by uuid`);
+  // Migration 0026 (Art des Passkeys: Registrierung und Anmeldung schreiben sie)
+  await db.execute(sql`alter table credentials add column if not exists device_type text`);
+  await db.execute(sql`alter table credentials add column if not exists backed_up boolean`);
 };
 export const kindSpalteEntfernen = async (db: Db) => {
   await db.execute(sql`alter table invites drop column if exists kind`);
@@ -321,4 +324,6 @@ export const kindSpalteEntfernen = async (db: Db) => {
   await db.execute(sql`alter table devices drop column if exists key_reported_at`);
   await db.execute(sql`alter table users drop column if exists removed_at`);
   await db.execute(sql`alter table users drop column if exists removed_by`);
+  await db.execute(sql`alter table credentials drop column if exists device_type`);
+  await db.execute(sql`alter table credentials drop column if exists backed_up`);
 };

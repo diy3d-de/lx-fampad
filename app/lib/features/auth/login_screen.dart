@@ -9,6 +9,8 @@ import '../../data/auth/auth_state.dart';
 import '../../data/auth/passwort_anmeldung.dart';
 import '../../data/crypto/auto_verbinden.dart';
 import '../../data/crypto/e2ee_state.dart';
+import '../../data/crypto/prf_sicherung.dart';
+import '../../data/crypto/prf_state.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 import 'invite_screen.dart';
@@ -41,6 +43,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   /// (er bleibt danach auf dem Gerät). Android (eigenes Handy) Standard an, im Browser (oft geteilte Computer) Standard aus.
   bool _eigenesGeraet = !kIsWeb;
 
+  /// Bietet der Server die Passkey-Sicherung an (GET /version)? Nur dann fragt die Passkey-Anmeldung die PRF-Erweiterung mit; sonst läuft sie wie bisher.
+  bool _prfMoeglich = false;
+
   /// Bietet der Server "Passwort vergessen?" an (neues Passwort mit Wiederherstellungscode oder Passkey)?
   bool _resetMoeglich = false;
 
@@ -57,7 +62,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     );
     unawaited(
       ref.read(apiProvider).serverFaehigkeiten().then((f) {
-        if (mounted) setState(() => _resetMoeglich = f.pwBackup && f.authKey);
+        if (mounted) {
+          setState(() {
+            _resetMoeglich = f.pwBackup && f.authKey;
+            _prfMoeglich = f.prfBackup;
+          });
+        }
       }, onError: (Object _) {}),
     );
     unawaited(
@@ -124,6 +134,34 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     // Ein Passwort für Anmeldung und Sicherung: ein Gerät ohne Schlüssel verbindet sich mit der Passwort-Sicherung, ohne ein zweites Passwort zu verlangen,
     // aber NUR mit Zustimmung der Person (der Schlüssel bleibt danach auf dem Gerät): ohne Haken bleibt es beim manuellen Weg
     if (ok && eigenesGeraet) unawaited(automatischVerbinden(e2ee, hinweis, passwort));
+  }
+
+  /// Anmeldung mit Passkey. Mit Zustimmung ("Das ist mein eigenes Gerät") fragt die Anmeldung zugleich die PRF-Erweiterung ab: dieselbe Geste liefert dann die Ausgabe, mit der
+  /// ein Gerät ohne Schlüssel sich mit der Passkey-Sicherung verbindet. Ohne Zustimmung, ohne PRF-Unterstützung oder ohne Sicherung ändert sich nichts.
+  Future<void> _mitPasskey() async {
+    final hinweis = ref.read(autoVerbindenHinweisProvider.notifier);
+    final prfSteuerung = ref.read(prfSteuerungProvider);
+    final eigenesGeraet = _eigenesGeraet && _prfMoeglich;
+    PasskeyPrfLogin? prf;
+    final ok = await ausfuehren(() async {
+      Uint8List? salt;
+      if (eigenesGeraet) {
+        try {
+          salt = prfSalt(await ref.read(cryptoProviderProvider.future));
+        } on Object {
+          salt = null; // ohne libsodium keine Passkey-Sicherung: die Anmeldung läuft wie bisher
+        }
+      }
+      if (salt == null) {
+        await _auth.mitPasskeyAnmelden();
+      } else {
+        prf = await _auth.mitPasskeyAnmeldenMitPrf(salt);
+      }
+    });
+    final p = prf;
+    if (ok && eigenesGeraet && p != null) {
+      unawaited(automatischMitPasskey(prfSteuerung, hinweis, credentialId: p.credentialId, ausgabe: p.prf));
+    }
   }
 
   Future<void> _nurWiederherstellung() async {
@@ -198,7 +236,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       text: 'Mit Passkey anmelden',
       icon: Icons.fingerprint,
       laeuft: laeuft,
-      onPressed: () => ausfuehren(_auth.mitPasskeyAnmelden),
+      onPressed: _mitPasskey,
     ),
     if (_passkeysDa == false) ...[
       const SizedBox(height: 8),
@@ -236,7 +274,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       dense: false,
       title: const Text('Das ist mein eigenes Gerät – Schlüssel hier speichern', style: TextStyle(fontSize: 14)),
       subtitle: const Text(
-        'Dann verbindet sich dieses Gerät nach der Anmeldung selbst mit deinem Schlüssel. Auf einem fremden oder gemeinsam genutzten Gerät nicht anhaken.',
+        'Dann verbindet sich dieses Gerät nach der Anmeldung (mit Passwort oder Passkey) selbst mit deinem Schlüssel. Auf einem fremden oder gemeinsam genutzten Gerät nicht anhaken.',
         style: TextStyle(fontSize: 12, color: kTextMuted),
       ),
     ),

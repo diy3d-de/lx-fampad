@@ -120,6 +120,12 @@ export interface Config {
   e2eePwBackup: boolean;
   /** Wraps mit Schlüsselversion (Wrap-ID v2, "Verlauf freigeben" und "Verlauf teilen"): nur bei true, sonst lehnt der Server sie ab (Standard aus; erst einschalten, wenn alle Apps der Familie aktualisiert sind). */
   e2eeWrapKeyVersion: boolean;
+  /** Passkey-Sicherung (WebAuthn-PRF, Blobs in key_backups_prf): Routen nur bei true, sonst 404 (Standard aus). */
+  e2eePrfBackup: boolean;
+  /** Eltern-Wiederherstellung für Kinder (Hinterlegung, Anfrage mit Wartefrist): Routen nur bei true, sonst 404 (Standard aus). */
+  e2eeParentRecovery: boolean;
+  /** Wartefrist zwischen der Anfrage des Kindes und der Freigabe durch ein Elternteil (ganze Stunden, 24 bis 168). */
+  parentRecoveryWaitHours: number;
   /** Betreiber-Ansicht (nur lesend): Pfade und Prüfungen, die der Status ohne root lesen darf (leer = nicht ermittelbar, "unbekannt"). */
   operator: OperatorConfig;
 }
@@ -324,6 +330,13 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
 
   const e2eePwBackup = boolFlag(env, 'E2EE_PW_BACKUP');
   const e2eeWrapKeyVersion = boolFlag(env, 'E2EE_WRAP_KEY_VERSION');
+  const e2eePrfBackup = boolFlag(env, 'E2EE_PRF_BACKUP');
+  const e2eeParentRecovery = boolFlag(env, 'E2EE_PARENT_RECOVERY');
+  const waitRaw = env.E2EE_PARENT_RECOVERY_WAIT_HOURS?.trim();
+  const parentRecoveryWaitHours = waitRaw === undefined || waitRaw === '' ? 24 : Number(waitRaw);
+  if (!Number.isInteger(parentRecoveryWaitHours) || parentRecoveryWaitHours < 24 || parentRecoveryWaitHours > 168) {
+    throw new Error('E2EE_PARENT_RECOVERY_WAIT_HOURS ungültig (ganze Stunden von 24 bis 168)');
+  }
   const legacyPasswordLogin = boolFlagDefault(env, 'AUTH_LEGACY_PASSWORD_LOGIN', true);
   // fail-closed: ohne authKey-Anmeldung (hängt am Schalter E2EE_PW_BACKUP) würde das Abschalten des Klartext-Logins alle Passwort-Konten aussperren
   if (!legacyPasswordLogin && !e2eePwBackup) throw new Error('AUTH_LEGACY_PASSWORD_LOGIN=false braucht E2EE_PW_BACKUP=true (sonst kann sich niemand mehr mit Passwort anmelden)');
@@ -404,6 +417,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     weather: weatherConfig(env, nodeEnv),
     e2eePwBackup,
     e2eeWrapKeyVersion,
+    e2eePrfBackup,
+    e2eeParentRecovery,
+    parentRecoveryWaitHours,
     operator: operatorConfig(env, nodeEnv),
   };
 }

@@ -151,6 +151,10 @@ void _waechter() {
         'name', // quarantaeneVerwerfen: nur Einträge mit dem Präfix der eigenen Quarantäne
         'name', // schluesselWechseln: Rückrollen, wenn es keinen bisherigen Schlüssel gab (alt == null)
         'n', // schluesselVomGeraetLoeschen: Quarantäne-Einträge dieser Person
+        'n', // schluesselVomGeraetLoeschen: Vermerke der Übernahme einer Eltern-Anfrage (nur Anfrage-Vermerke dieser Person, keine Schlüssel)
+        'testVermerkName(userId)', // schluesselVomGeraetLoeschen: Vermerk des Wiederherstellungstests (kein Schlüssel)
+        'testAusName(userId)', // schluesselVomGeraetLoeschen: Vermerk "Test aus" (kein Schlüssel)
+        'elternAnfrageName(userId)', // schluesselVomGeraetLoeschen: flüchtiges Paar einer Eltern-Anfrage (kein Personenschlüssel)
         r"'e2ee.kv.$userId'", // schluesselVomGeraetLoeschen
         r"'e2ee.kv.pw.$userId'", // schluesselVomGeraetLoeschen
         'personenschluesselAltName(userId)', // schluesselVomGeraetLoeschen

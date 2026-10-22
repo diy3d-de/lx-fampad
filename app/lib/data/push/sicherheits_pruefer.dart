@@ -104,7 +104,7 @@ class SicherheitsPruefer {
       // zählen wie jedes Sicherheitsereignis (Warnhinweis bei Passwort-Diebstahl).
       final marke = DateTime.tryParse(await db.metaLesen(kEigenerPwAbrufSchluessel) ?? '');
       bool eigen(SicherheitsEreignisDto e) =>
-          e.art == SicherheitsArt.passwortSicherungAbgerufen && marke != null && e.zeit.difference(marke).abs() <= kEigenerAbrufFenster;
+          (e.art == SicherheitsArt.passwortSicherungAbgerufen || e.art == SicherheitsArt.passkeySicherungAbgerufen) && marke != null && e.zeit.difference(marke).abs() <= kEigenerAbrufFenster;
       final neu = [for (final e in alle) if (!eigen(e)) e];
       if (neu.isEmpty) {
         await _markieren(alle.first.zeit);
@@ -118,11 +118,15 @@ class SicherheitsPruefer {
       if (!await anzeige.initialisieren()) return; // der Stand bleibt: der nächste Start der App holt es nach
       // fester Text, nie ein Name; nur der Hinweis an die Familie (ein anderer Zugang wurde zurückgesetzt) sagt, dass es nicht das eigene Konto ist
       final nurFamilie = neu.every((e) => e.art == SicherheitsArt.mitgliedZugangZurueckgesetzt);
+      // ein Kind bittet um Hilfe bei der Wiederherstellung (Hinweis an die Eltern): auch das sagt nie einen Namen
+      final nurKindBittet = neu.every((e) => e.art == SicherheitsArt.elternAnfrageFuerKind);
       final gezeigt = await anzeige.zeigenSicherheit(
         id: kSicherheitBenachrichtigungsId,
         titel: 'Sicherheitshinweis',
         text: nurFamilie
             ? 'In der Familie wurde ein Zugang zurückgesetzt. Details unter Profil > Sicherheitsereignisse.'
+            : nurKindBittet
+            ? 'Ein Kind bittet um Hilfe bei der Wiederherstellung. Details unter Profil > Sicherheitsereignisse.'
             : 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
       );
       if (gezeigt) await _markieren(alle.first.zeit);

@@ -287,6 +287,110 @@ export const keyBackupsPw = pgTable(
 );
 
 /**
+ * E2EE (Passkey-Sicherung, Schalter E2EE_PRF_BACKUP): der Personenschlüssel, verpackt mit einem Schlüssel aus der PRF-Ausgabe EINES Passkeys (WebAuthn-PRF,
+ * `hmac-secret`). Der Server sieht die PRF-Ausgabe nie; der Blob ist für ihn undurchsichtig, `credential_id` ist die öffentliche Kennung des Passkeys. Je Person und Passkey
+ * höchstens eine aktuelle (`active`/`stale`) und je Person höchstens eine unbestätigte (`pending`) Zeile; Zeilen werden nie gelöscht (ersetzt = `superseded`,
+ * nach Schlüsselwechsel `stale`), bleiben über das Archiv erreichbar. Keine Fremdschlüssel auf die Anmeldedaten: ein gelöschter Passkey lässt die Zeile liegen.
+ */
+export const keyBackupsPrf = pgTable(
+  'key_backups_prf',
+  {
+    id: id(),
+    userId: uuid('user_id').notNull(),
+    familyId: familyRef(),
+    credentialId: text('credential_id').notNull(),
+    blob: text('blob').notNull(),
+    keyVersion: integer('key_version').notNull(),
+    state: text('state').notNull().default('pending'),
+    /** Erst nach der Round-Trip-Probe der App gesetzt. */
+    verifiedAt: timestamp('verified_at', { withTimezone: true }),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('key_backups_prf_current_uq').on(t.userId, t.credentialId).where(sql`${t.state} in ('active', 'stale')`),
+    uniqueIndex('key_backups_prf_pending_uq').on(t.userId).where(sql`${t.state} = 'pending'`),
+    index('key_backups_prf_user_idx').on(t.userId),
+    check('key_backups_prf_state_ck', sql`${t.state} in ('pending', 'active', 'stale', 'superseded')`),
+    check('key_backups_prf_size_ck', sql`length(${t.blob}) between 96 and 4096 and ${t.keyVersion} >= 1 and length(${t.credentialId}) between 1 and 1024`),
+  ],
+);
+
+/**
+ * E2EE (Eltern-Wiederherstellung für Kinder, Schalter E2EE_PARENT_RECOVERY): die Seeds des Kindes, je Elternteil als Sealed Box an dessen Schlüssel verpackt und vom Kind
+ * signiert (beides für den Server undurchsichtig). Nur mit Zustimmung des Kindes; Zurücknehmen löscht die Zeilen. `stale`: der Schlüssel des Kindes wurde seither gewechselt
+ * (der Eintrag enthält den alten Schlüssel und wird nicht mehr angeboten).
+ */
+export const guardianEscrows = pgTable(
+  'guardian_escrows',
+  {
+    id: id(),
+    familyId: familyRef(),
+    childId: uuid('child_id').notNull(),
+    guardianId: uuid('guardian_id').notNull(),
+    /** Schlüsselversion des Kindes, deren Seeds im Blob stehen. */
+    keyVersion: integer('key_version').notNull(),
+    /** Schlüsselversion des Elternteils, an dessen X25519-Schlüssel verpackt wurde. */
+    guardianKeyVersion: integer('guardian_key_version').notNull(),
+    blob: text('blob').notNull(),
+    sig: text('sig').notNull(),
+    state: text('state').notNull().default('active'),
+    /** Zeitpunkt der ersten Zustimmung des Kindes. */
+    consentAt: timestamp('consent_at', { withTimezone: true }).notNull().defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.childId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.guardianId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    // je Kind und Elternteil höchstens EINE gültige (aktive oder veraltete) Hinterlegung; ersetzte (`superseded`) und zurückgenommene (`revoked`) bleiben bis zur Löschfrist liegen
+    uniqueIndex('guardian_escrows_current_uq').on(t.childId, t.guardianId).where(sql`${t.state} in ('active', 'stale')`),
+    index('guardian_escrows_guardian_idx').on(t.guardianId),
+    check('guardian_escrows_state_ck', sql`${t.state} in ('active', 'stale', 'superseded', 'revoked')`),
+    check('guardian_escrows_size_ck', sql`length(${t.blob}) between 64 and 2048 and length(${t.sig}) between 64 and 256 and ${t.keyVersion} >= 1 and ${t.guardianKeyVersion} >= 1`),
+    check('guardian_escrows_self_ck', sql`${t.childId} <> ${t.guardianId}`),
+  ],
+);
+
+/**
+ * E2EE (Eltern-Wiederherstellung): eine Anfrage des Kindes. Zustände: `pending` (Verpflichtung abgelegt, Wartefrist läuft), `challenged` (ein Elternteil hat die Zufallszahl
+ * gesendet), `revealed` (das Kind hat den flüchtigen Schlüssel offengelegt), `released` (das Elternteil hat die Übergabe abgelegt), danach `done` (vom Kind abgeholt, Blob gelöscht)
+ * oder `cancelled`/`declined`/`expired`. Je Kind höchstens eine offene Anfrage. Die Übergabedaten (`release_*`) sind für den Server undurchsichtig und verschwinden mit dem Ende.
+ */
+export const guardianRecoveries = pgTable(
+  'guardian_recoveries',
+  {
+    id: id(),
+    familyId: familyRef(),
+    childId: uuid('child_id').notNull(),
+    state: text('state').notNull().default('pending'),
+    keyVersion: integer('key_version').notNull(),
+    /** BLAKE2b über flüchtigen öffentlichen Schlüssel und Nonce (Verpflichtung, Base64url). */
+    commit: text('commit').notNull(),
+    readyAt: timestamp('ready_at', { withTimezone: true }).notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    guardianId: uuid('guardian_id'),
+    challenge: text('challenge'),
+    revealPub: text('reveal_pub'),
+    revealNonce: text('reveal_nonce'),
+    releaseBlob: text('release_blob'),
+    releaseSig: text('release_sig'),
+    /** Gerät des Kindes, das die Anfrage gestellt hat: nur dieses Gerät offenbart den flüchtigen Schlüssel, holt die Übergabe und schließt ab (null: Sitzung ohne Gerät). */
+    deviceId: uuid('device_id'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.childId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('guardian_recoveries_open_uq').on(t.childId).where(sql`${t.state} in ('pending', 'challenged', 'revealed', 'released')`),
+    index('guardian_recoveries_child_idx').on(t.childId, t.createdAt),
+    check('guardian_recoveries_state_ck', sql`${t.state} in ('pending', 'challenged', 'revealed', 'released', 'done', 'cancelled', 'declined', 'expired')`),
+    check('guardian_recoveries_size_ck', sql`length(${t.commit}) between 32 and 128 and ${t.keyVersion} >= 1`),
+  ],
+);
+
+/**
  * E2EE: kurzlebige Geräte-Übertragung des Personenschlüssels (QR). Gespeichert wird nur der Hash der Suchkennung; der Blob ist mit
  * einem Einmalschlüssel verschlüsselt, den der Server nie sieht. Höchstens eine je Person, einmal einlösbar (DELETE ... RETURNING).
  */
@@ -317,6 +421,10 @@ export const credentials = pgTable(
     secret: text('secret').notNull(),
     signCount: bigint('sign_count', { mode: 'number' }).notNull().default(0),
     transports: jsonb('transports').$type<string[]>(),
+    /** Passkey: `multiDevice` (synchronisiert/gesichert) oder `singleDevice` (an ein Gerät gebunden), zuletzt bei der Registrierung oder Anmeldung gemeldet; null = unbekannt. */
+    deviceType: text('device_type'),
+    /** Passkey: Backup-Status laut Authenticator (BS-Flag), null = unbekannt. */
+    backedUp: boolean('backed_up'),
     /** TOTP-Replay-Schutz: letzter akzeptierter Zeitschritt. */
     lastTimeStep: bigint('last_time_step', { mode: 'number' }),
     createdAt: createdAt(),
@@ -425,7 +533,7 @@ export const securityEvents = pgTable(
     index('security_events_user_idx').on(t.userId, t.createdAt),
     check(
       'security_events_kind_ck',
-      sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_replaced', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset')`,
+      sql`${t.kind} in ('password_reset_requested', 'password_reset_done', 'account_reset_requested', 'key_rotated', 'key_backup_replaced', 'key_backup_read', 'key_backup_pw_read', 'key_backup_archive_read', 'recovery_code_login', 'key_transfer_created', 'key_transfer_claimed', 'member_account_reset', 'key_backup_prf_read', 'guardian_escrow_set', 'guardian_escrow_removed', 'guardian_recovery_requested', 'guardian_recovery_asked', 'guardian_recovery_challenged', 'guardian_recovery_released', 'guardian_recovery_ended', 'key_backup_prf_set')`,
     ),
     check('security_events_via_ck', sql`${t.via} in ('admin', 'recovery_code', 'passkey', 'password')`),
   ],

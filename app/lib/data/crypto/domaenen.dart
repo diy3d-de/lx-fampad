@@ -40,3 +40,29 @@ const String kKontextPwKek = 'lx-fampad|kek|v2';
 
 /// Präfix der AAD des Blobs der Passwort-Sicherung.
 const String kDomaenePwSicherung = 'lx-fampad|pwbackup|v2';
+
+// Passkey-Sicherung (prf_sicherung.dart): Kontext-Labels der Schlüsselableitung aus der PRF-Ausgabe eines Passkeys (BLAKE2b mit Schlüssel = PRF-Ausgabe) und AAD des Blobs.
+// Die PRF-Ausgabe selbst wird nie direkt als Schlüssel benutzt.
+
+/// Salt der PRF-Auswertung (fest; der WebAuthn-Client hängt selbst "WebAuthn PRF" davor und hasht).
+const String kPrfSaltText = 'lx-fampad|prf-salt|v1';
+
+/// Kontext des `kek` aus der PRF-Ausgabe (Schlüssel zum Verpacken des Personenschlüssels, bleibt auf dem Gerät).
+const String kKontextPrfKek = 'lx-fampad|prf-kek|v1';
+
+/// Präfix der AAD des Blobs der Passkey-Sicherung.
+const String kDomaenePrfSicherung = 'lx-fampad|prfbackup|v3';
+
+// Eltern-Wiederherstellung (eltern_wiederherstellung.dart): Signaturen und Ableitungen, je mit eigenem Präfix.
+
+/// Signierte Hinterlegung des Kindes für ein Elternteil.
+const String kDomaeneHinterlegung = 'lx-familyhub|escrow|v1';
+
+/// Signierte Übergabe des Elternteils an den flüchtigen Schlüssel des Kindes.
+const String kDomaeneFreigabe = 'lx-familyhub|escrow-release|v1';
+
+/// Verpflichtung des Kindes auf seinen flüchtigen öffentlichen Schlüssel.
+const String kDomaeneVerpflichtung = 'lx-familyhub|escrow-commit|v1';
+
+/// Kurzcode (SAS) zum Vergleich zwischen Kind und Elternteil.
+const String kDomaeneKurzcode = 'lx-familyhub|escrow-sas|v1';

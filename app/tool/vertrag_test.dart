@@ -12,6 +12,7 @@
 // (die Datei dazu aus tool/ nach test/ kopieren; sie initialisiert kein Widget-Binding, damit HTTP echt läuft).
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show DatabaseConnection, driftRuntimeOptions;
 import 'package:drift/native.dart';
@@ -931,6 +932,9 @@ class _KeinPasskey implements PasskeyService {
 
   @override
   Future<Map<String, dynamic>> bestaetigen(Map<String, dynamic> optionen) => throw UnimplementedError();
+
+  @override
+  Future<PasskeyMitPrf> bestaetigenMitPrf(Map<String, dynamic> optionen, {required Uint8List salt, String? nurCredentialId}) => throw UnimplementedError();
 }
 
 /// Chat Ende-zu-Ende (E2EE Phase 2) gegen den echten Server: drei Personen mit Schlüsseln, Gruppe, zwei Geräte, Admin liest Privatchat nicht, Server sieht nur Chiffretext

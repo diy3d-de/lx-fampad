@@ -53,6 +53,9 @@ export interface VerifiedRegistration {
   publicKey: string;
   counter: number;
   transports: string[] | null;
+  /** `multiDevice` (synchronisiert) oder `singleDevice` (an ein Gerät gebunden) laut Authenticator; BS-Flag. */
+  deviceType: string;
+  backedUp: boolean;
 }
 
 export async function checkRegistration(
@@ -76,6 +79,8 @@ export async function checkRegistration(
       publicKey: Buffer.from(cred.publicKey).toString('base64url'),
       counter: cred.counter,
       transports: cred.transports ? [...cred.transports] : null,
+      deviceType: result.registrationInfo.credentialDeviceType,
+      backedUp: result.registrationInfo.credentialBackedUp,
     };
   } catch (err) {
     ctx.log.warn({ err: (err as Error).message }, 'Passkey-Registrierung abgelehnt');
@@ -99,7 +104,7 @@ export interface StoredPasskey {
   transports: string[] | null;
 }
 
-export type AuthenticationCheck = { ok: true; newCounter: number } | { ok: false; counterRegression: boolean };
+export type AuthenticationCheck = { ok: true; newCounter: number; deviceType: string; backedUp: boolean } | { ok: false; counterRegression: boolean };
 
 export async function checkAuthentication(
   ctx: AuthContext,
@@ -123,7 +128,7 @@ export async function checkAuthentication(
       requireUserVerification: true,
     });
     if (!result.verified) return { ok: false, counterRegression: false };
-    return { ok: true, newCounter: result.authenticationInfo.newCounter };
+    return { ok: true, newCounter: result.authenticationInfo.newCounter, deviceType: result.authenticationInfo.credentialDeviceType, backedUp: result.authenticationInfo.credentialBackedUp };
   } catch (err) {
     const message = (err as Error).message ?? '';
     // die Bibliothek meldet einen nicht steigenden signCount (geklonter Authenticator) mit "counter" im Text

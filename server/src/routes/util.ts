@@ -99,8 +99,13 @@ const webauthnResponse = z
     authenticatorAttachment: z.string().max(32).optional(),
   })
   .passthrough();
-export const registrationResponseSchema = webauthnResponse.transform((v) => v as unknown as RegistrationResponseJSON);
-export const authenticationResponseSchema = webauthnResponse.transform((v) => v as unknown as AuthenticationResponseJSON);
+/** Die PRF-Ausgabe des Passkeys (Passkey-Sicherung) darf den Server nie erreichen: die App entfernt sie, und der Server verwirft sie hier noch einmal (Defense in Depth), bevor sie irgendwo landen könnte. */
+const ohnePrf = <T extends { clientExtensionResults: Record<string, unknown> }>(v: T): T => {
+  const { prf: _prf, ...rest } = v.clientExtensionResults;
+  return { ...v, clientExtensionResults: rest };
+};
+export const registrationResponseSchema = webauthnResponse.transform((v) => ohnePrf(v) as unknown as RegistrationResponseJSON);
+export const authenticationResponseSchema = webauthnResponse.transform((v) => ohnePrf(v) as unknown as AuthenticationResponseJSON);
 
 /** Setzt bei Web-Sitzungen das Cookie und baut die Antwort; die App bekommt Access- und Refresh-Token im Body. */
 export function sessionResponse(ctx: AuthContext, reply: FastifyReply, est: Established): Record<string, unknown> {

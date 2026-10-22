@@ -35,6 +35,10 @@ export class TestAuthenticator {
   private readonly y: Buffer;
   counter: number;
   userHandle: Buffer | null = null;
+  /** true: synchronisierter Passkey (BE- und BS-Flag gesetzt, multiDevice); Standard: an ein Gerät gebunden (singleDevice). */
+  multiDevice = false;
+  /** Mit multiDevice: BS-Flag (aktuell gesichert/synchronisiert); false = BE ohne BS (synchronisierbar, aber noch nicht gesichert). */
+  backupState = true;
 
   constructor(
     private readonly rpId = 'familie.lx-labs.dev',
@@ -79,7 +83,7 @@ export class TestAuthenticator {
     this.userHandle = Buffer.from(options.user.id, 'base64url');
     const clientData = JSON.stringify({ type: 'webauthn.create', challenge: options.challenge, origin: opts.origin ?? this.origin, crossOrigin: false });
     const uv = opts.userVerified === false ? 0 : 0x04;
-    const authData = this.authData(0x01 | uv | 0x40, this.counter, true);
+    const authData = this.authData(0x01 | uv | 0x40 | (this.multiDevice ? (this.backupState ? 0x18 : 0x08) : 0), this.counter, true);
     const attestationObject = cbor(new Map<Cbor, Cbor>([['fmt', 'none'], ['attStmt', new Map()], ['authData', authData]]));
     return {
       id: this.id,
@@ -97,7 +101,7 @@ export class TestAuthenticator {
     else this.counter = opts.counter;
     const clientData = Buffer.from(JSON.stringify({ type: 'webauthn.get', challenge: options.challenge, origin: opts.origin ?? this.origin, crossOrigin: false }));
     const uv = opts.userVerified === false ? 0 : 0x04;
-    const authData = this.authData(0x01 | uv, this.counter, false);
+    const authData = this.authData(0x01 | uv | (this.multiDevice ? (this.backupState ? 0x18 : 0x08) : 0), this.counter, false);
     const signature = sign('sha256', Buffer.concat([authData, sha256(clientData)]), this.privateKey);
     return {
       id: this.id,

@@ -632,7 +632,16 @@ Future<void> main() async {
         await a.speicher.schreiben('${quarantaenePraefix(_anna)}123', Uint8List.fromList([2]));
         await a.speicher.schreiben('${quarantaenePraefix(_ben)}124', Uint8List.fromList([3]));
         await a.speicher.schreiben(personenschluesselName(_ben), Uint8List.fromList([4]));
+        // Vermerke der Wiederherstellungstests und der Eltern-Wiederherstellung (auch die von Ben bleiben)
+        for (final n in ['e2ee.kv.test.$_anna', 'e2ee.kv.testaus.$_anna', 'e2ee.elternanfrage.$_anna', 'e2ee.elternuebernahme.$_anna.anfrage-1', 'e2ee.elternuebernahme.$_anna.anfrage-2']) {
+          await a.speicher.schreiben(n, Uint8List.fromList([5]));
+        }
+        await a.speicher.schreiben('e2ee.elternanfrage.$_ben', Uint8List.fromList([6]));
         await schluesselVomGeraetLoeschen(a.speicher, _anna);
+        expect(await a.speicher.namenMitPraefix('e2ee.elternuebernahme.$_anna.'), isEmpty);
+        expect(await a.speicher.namenMitPraefix('e2ee.kv.test'), isEmpty);
+        expect(await a.speicher.lesen('e2ee.elternanfrage.$_anna'), isNull);
+        expect(await a.speicher.lesen('e2ee.elternanfrage.$_ben'), isNotNull, reason: 'Bens Vermerk bleibt');
         expect(await a.speicher.namenMitPraefix('e2ee.pk.$_anna'), isEmpty);
         expect(await a.speicher.namenMitPraefix('e2ee.kv.$_anna'), isEmpty);
         expect(await a.speicher.lesen('e2ee.kv.pw.$_anna'), isNull);

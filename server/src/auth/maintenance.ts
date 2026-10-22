@@ -4,11 +4,13 @@
 // rund eine Stunde über seinen Ablauf hinaus in der Datenbank.
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
-import { auditLog, invites, keyBackupsPw, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
+import { auditLog, invites, keyBackupsPrf, keyBackupsPw, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
 import { serializeErr } from '../log.js';
 import { purgeRemovedMembers } from './account.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
+import { expireGuardianRecoveries } from './guardian-recovery.js';
+import { PRF_PENDING_TTL_MS } from './keys-prf.js';
 import { PW_PENDING_TTL_MS } from './keys-pw.js';
 import { purgeSecurityEvents } from './password-reset.js';
 import { purgeMetrics } from '../operator/metrics.js';
@@ -80,6 +82,15 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     .update(keyBackupsPw)
     .set({ state: 'superseded', updatedAt: now })
     .where(and(eq(keyBackupsPw.state, 'pending'), lt(keyBackupsPw.createdAt, new Date(now.getTime() - PW_PENDING_TTL_MS))));
+
+  // dasselbe für die Passkey-Sicherung
+  await ctx.db
+    .update(keyBackupsPrf)
+    .set({ state: 'superseded', updatedAt: now })
+    .where(and(eq(keyBackupsPrf.state, 'pending'), lt(keyBackupsPrf.createdAt, new Date(now.getTime() - PRF_PENDING_TTL_MS))));
+
+  // Eltern-Wiederherstellung: überfällige Anfragen enden; Übergabedaten verschwinden mit dem Ende (nie Schlüsselmaterial liegen lassen)
+  await expireGuardianRecoveries(ctx, now);
 
   await purgeSecurityEvents(ctx);
 
