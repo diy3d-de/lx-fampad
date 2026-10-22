@@ -20,8 +20,13 @@ PREV=/srv/fampad/server.prev
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
-echo "==> git pull"
-git pull --ff-only
+# DEPLOY_OHNE_PULL=1: nur für deploy/neuinstallation/bootstrap-server.sh (ein festgelegter Code-Stand, GIT_REF, soll bleiben)
+if [ "${DEPLOY_OHNE_PULL:-0}" = 1 ]; then
+  echo "==> git pull übersprungen (DEPLOY_OHNE_PULL=1)"
+else
+  echo "==> git pull"
+  git pull --ff-only
+fi
 
 echo "==> npm ci (alle Pakete, ohne Skripte) + build"
 cd server

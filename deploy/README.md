@@ -21,6 +21,7 @@ Dateien in diesem Ordner:
 - `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
 - `einrichtung-ntfy.sh` – richtet ntfy ein (Installation, Härtung, Token, `ntfy.caddy`; Abschnitt 7); `ntfy/server.yml` (deny-all), `ntfy/ntfy.caddy` (eigene Caddy-Datei)
 - `backup/` – tägliche verschlüsselte Sicherung (age) und Einrichtung, Wiederherstellungstest, Pull-Skript für das NAS (Abschnitt "Backups"); `einrichtung-swap.sh` – Swapdatei
+- `neuinstallation/` – `bootstrap-server.sh`: ganzer Server auf einem frischen Debian 13 neu aufbauen, leer oder aus der verschlüsselten Sicherung (idempotent, `--dry-run` zuerst); Anleitung für Laien: [`docs/NEUINSTALLATION.md`](../docs/NEUINSTALLATION.md); Tests (`test-docker.sh`, `test-integration/`)
 
 Verzeichnisse auf dem Server:
 

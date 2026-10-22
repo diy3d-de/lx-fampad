@@ -48,6 +48,8 @@ Zusätzlich einmal im Jahr: einen **kompletten Neuaufbau** auf einem Wegwerf-Ser
 
 ## 3. Neuaufbau auf einem frischen Debian-13-VPS
 
+**Der übliche Weg ist das Skript `deploy/neuinstallation/bootstrap-server.sh`** (Schritt für Schritt für Laien: [`NEUINSTALLATION.md`](NEUINSTALLATION.md), mit Liste dessen, was verloren geht und was du selbst tun musst). Es macht die folgenden Schritte 4 bis 14 in einem Lauf (Pakete, Benutzer, Konfiguration und Datenbank aus der Sicherung, Dienste, ntfy, Caddy nur als `conf.d`-Dateien, Sicherung). Die Handarbeit unten bleibt als Rückfallebene und zum Nachvollziehen.
+
 Gilt für Totalverlust und für den Umzug (Variante B in Abschnitt 4). Grundlage ist eine bestehende Einrichtung nach `deploy/README.md`; die Skripte sind
 idempotent und bleiben in dieser Reihenfolge. Nummern in Klammern verweisen auf die Abschnitte der `deploy/README.md`.
 
