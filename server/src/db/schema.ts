@@ -84,6 +84,13 @@ export const users = pgTable(
     createdAt: createdAt(),
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
     /**
+     * Soft-Delete (P1): Zeitpunkt, an dem ein Admin die Person aus der Familie genommen hat. Dann ist auch `disabled_at` gesetzt (kein Login, nicht in den Listen);
+     * Schlüssel, Sicherungen, Archiv und Anmeldedaten bleiben bis zum endgültigen Löschen (Aufräum-Job nach `REMOVED_RETENTION_DAYS`) oder bis zur Wiederherstellung.
+     */
+    removedAt: timestamp('removed_at', { withTimezone: true }),
+    /** Wer entfernt hat (ohne Fremdschlüssel: der Eintrag überlebt das Löschen des Admin-Kontos; Zuordnung steht außerdem im Audit). */
+    removedBy: uuid('removed_by'),
+    /**
      * Letzte Änderung der Anmeldedaten durch die Person selbst (Passkey/Passwort hinzufügen, ändern, entfernen, Wiederherstellungscodes neu). Sitzungen, die danach
      * innerhalb von 24 h entstehen, erben die Sperrfrist destruktiver Schlüssel-Aktionen (Herkunft `access_change`): ein frisch angelegter Zugang hebelt sie nicht aus.
      * Registrierung und Passwort-Reset setzen es nicht.
@@ -97,6 +104,8 @@ export const users = pgTable(
   },
   (t) => [
     uniqueIndex('users_email_lower_uq').on(sql`lower(${t.email})`),
+    // Soft-Delete: wer entfernt ist, ist immer auch gesperrt (kein Login, keine Listen)
+    check('users_removed_ck', sql`${t.removedAt} is null or ${t.disabledAt} is not null`),
     check('users_avatar_ck', sql`(${t.avatarKind} is null and ${t.avatarPreset} is null) or (${t.avatarKind} = 'preset' and ${t.avatarPreset} is not null) or (${t.avatarKind} = 'photo' and ${t.avatarPreset} is null)`),
   ],
 );

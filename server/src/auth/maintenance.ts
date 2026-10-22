@@ -5,6 +5,7 @@
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
 import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
 import { auditLog, invites, keyBackupsPw, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
+import { purgeRemovedMembers } from './account.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext } from './context.js';
 import { PW_PENDING_TTL_MS } from './keys-pw.js';
@@ -25,6 +26,7 @@ export interface PurgeReport {
   attemptsDeleted: number;
   invitesExpired: number;
   invitesDeleted: number;
+  removedMembersPurged: number;
   sync: SyncPurgeReport;
 }
 
@@ -77,6 +79,14 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
 
   await purgeSecurityEvents(ctx);
 
+  // entfernte Mitglieder (Soft-Delete) nach der Aufbewahrungsfrist endgültig löschen; ein Fehler hier darf den übrigen Aufräum-Job nie verhindern
+  let removedPurged = 0;
+  try {
+    removedPurged = await purgeRemovedMembers(ctx);
+  } catch (err: unknown) {
+    ctx.log.error({ err: (err as Error).message }, 'Endgültiges Löschen entfernter Mitglieder fehlgeschlagen');
+  }
+
   const sync = await runSyncMaintenance(ctx);
 
   return {
@@ -89,6 +99,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     attemptsDeleted: attempts.length,
     invitesExpired: expired.length,
     invitesDeleted: invitesGone.length,
+    removedMembersPurged: removedPurged,
     sync,
   };
 }

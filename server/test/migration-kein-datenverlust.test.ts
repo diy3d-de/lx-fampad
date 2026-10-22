@@ -58,6 +58,9 @@ describe('Migration 0020 (Kein Datenverlust) additiv auf Stand 0019', () => {
       await db.execute(sql`alter table sessions drop column origin, drop column origin_at`);
       await db.execute(sql`alter table users drop column access_changed_at`);
       // ... und die Objekte der Migration 0021 (Betreiber Paket 2a; sie gilt hier als noch nicht angewendet)
+      // ... und die Objekte der Migration 0022 (P1 Schlüssel-Paket, Soft-Delete der Mitglieder; sie gilt hier als noch nicht angewendet)
+      await db.execute(sql`alter table users drop constraint users_removed_ck`);
+      await db.execute(sql`alter table users drop column removed_at, drop column removed_by`);
       await db.execute(sql`drop table operator_alert_state`);
       await db.execute(sql`alter table operators drop column alerts_enabled`);
       await db.execute(sql`alter table devices drop constraint devices_key_version_ck`);

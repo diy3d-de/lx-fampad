@@ -298,7 +298,7 @@ export const auditEvents = async (world: World) => (await world.db.select().from
 
 /**
  * Historische Migrationstests legen Daten mit dem AKTUELLEN Code auf einem älteren Schema an. Dort fehlen die Spalte `invites.kind`
- * (Migration 0019), die jede Einladung schreibt, und `sessions.origin`/`origin_at` sowie `users.access_changed_at` (Migration 0020) und `devices.key_version`/`key_reported_at` (Migration 0021), die jede Sitzung bzw. jedes Gerät liest bzw. schreibt: sie werden für die Dauer
+ * (Migration 0019), die jede Einladung schreibt, und `sessions.origin`/`origin_at` sowie `users.access_changed_at` (Migration 0020) `devices.key_version`/`key_reported_at` (Migration 0021) und `users.removed_at`/`removed_by` (Migration 0022), die jede Sitzung, jedes Gerät bzw. jedes Konto liest bzw. schreibt: sie werden für die Dauer
  * der Anlage ergänzt und vor dem Weitermigrieren wieder entfernt.
  */
 export const kindSpalteErgaenzen = async (db: Db) => {
@@ -308,6 +308,9 @@ export const kindSpalteErgaenzen = async (db: Db) => {
   await db.execute(sql`alter table users add column if not exists access_changed_at timestamptz`);
   await db.execute(sql`alter table devices add column if not exists key_version integer`);
   await db.execute(sql`alter table devices add column if not exists key_reported_at timestamptz`);
+  // Migration 0022 (Soft-Delete der Mitglieder)
+  await db.execute(sql`alter table users add column if not exists removed_at timestamptz`);
+  await db.execute(sql`alter table users add column if not exists removed_by uuid`);
 };
 export const kindSpalteEntfernen = async (db: Db) => {
   await db.execute(sql`alter table invites drop column if exists kind`);
@@ -316,4 +319,6 @@ export const kindSpalteEntfernen = async (db: Db) => {
   await db.execute(sql`alter table users drop column if exists access_changed_at`);
   await db.execute(sql`alter table devices drop column if exists key_version`);
   await db.execute(sql`alter table devices drop column if exists key_reported_at`);
+  await db.execute(sql`alter table users drop column if exists removed_at`);
+  await db.execute(sql`alter table users drop column if exists removed_by`);
 };

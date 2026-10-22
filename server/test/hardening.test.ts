@@ -396,7 +396,6 @@ describe.each(backends)('Härtung ($name)', (backend) => {
       expect((await a.client.del(`/api/v1/members/${mamaId}`)).status).toBe(200);
       row = (await harness.db.select().from(schema.invites).where(eq(schema.invites.id, inv.json.invite.id)))[0];
       expect(row?.revokedAt).not.toBeNull();
-      expect(row?.createdBy).toBeNull();
       // der Link ist tot
       const lookup = await world.client('198.51.100.8').post('/api/v1/auth/invites/lookup', { token: inv.json.invite.token });
       expect(lookup.json.error).toBe('invite_invalid');
@@ -412,13 +411,20 @@ describe.each(backends)('Härtung ($name)', (backend) => {
       return fam2;
     }
 
-    it('ohne weitere Mitgliedschaft verschwindet auch das Konto', async () => {
+    it('ohne weitere Mitgliedschaft ist das Konto gesperrt und entfernt (Soft-Delete); nach der Aufbewahrungsfrist verschwindet es ganz', async () => {
       const a = await adminPassword(world);
       const kid = await addMember(world, a.client, 'child', 'kind@example.org');
       const id = await memberId('kind@example.org');
       expect((await a.client.del(`/api/v1/members/${id}`)).status).toBe(200);
-      expect(await memberId('kind@example.org')).toBe('');
+      expect(await memberId('kind@example.org')).toBe(id);
+      const [u] = await harness.db.select().from(schema.users).where(eq(schema.users.id, id));
+      expect(u?.removedAt).not.toBeNull();
+      expect(u?.disabledAt).not.toBeNull();
       expect((await kid.client.get('/api/v1/me')).status).toBe(401);
+      await harness.db.update(schema.users).set({ removedAt: new Date(world.clock - 31 * 86_400_000) }).where(eq(schema.users.id, id));
+      const { runMaintenance } = await import('../src/auth/maintenance.js');
+      await runMaintenance(world.auth.ctx);
+      expect(await memberId('kind@example.org')).toBe('');
     });
 
     it('mit weiterer Mitgliedschaft bleibt das Konto bestehen, die Familie verliert die Person', async () => {

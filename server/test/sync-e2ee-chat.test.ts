@@ -230,8 +230,9 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       await opa.pull();
       await fam.child.pull();
       expect((await fam.admin.client.del(`/api/v1/members/${opa.userId}`)).status).toBe(200);
-      expect(await rows(sql`select 1 from epoche_wraps where empfaenger_id = ${opa.userId}`)).toHaveLength(0);
-      expect(await rows(sql`select 1 from epoche_wraps where konversation_id = ${konv}`)).toHaveLength(2);
+      // Soft-Delete: seine Wraps sind gelöscht (Tombstone), die Zeile bleibt bis zum endgültigen Löschen liegen
+      expect(await rows(sql`select 1 from epoche_wraps where empfaenger_id = ${opa.userId} and deleted_at is null`)).toHaveLength(0);
+      expect(await rows(sql`select 1 from epoche_wraps where konversation_id = ${konv} and deleted_at is null`)).toHaveLength(2);
       // die übrigen Teilnehmer behalten Epoche und eigenen Wrap
       const spaeter = await fam.child.pull();
       expect(ids(spaeter, 'epoche_wrap')).toEqual([]);

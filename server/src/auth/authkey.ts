@@ -16,7 +16,7 @@
 // Setzen/Ändern des Passworts mit authKey; zurück zu legacy nur durch Entfernen und neues Einrichten per Klartext (alte App).
 import { timingSafeEqual } from 'node:crypto';
 import { and, eq, isNull } from 'drizzle-orm';
-import { accountKdf, credentials, memberships, passwordAuthkeys } from '../db/schema.js';
+import { accountKdf, credentials, memberships, passwordAuthkeys, users } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import type { AuthContext, Executor } from './context.js';
 import { DEFAULT_SALT_GENERATION } from './keys-pw.js';
@@ -99,6 +99,7 @@ export async function passwordModes(ctx: AuthContext, familyId: string): Promise
   const rows = await ctx.db
     .select({ userId: memberships.userId, credentialId: credentials.id, authCredential: passwordAuthkeys.credentialId })
     .from(memberships)
+    .innerJoin(users, and(eq(users.id, memberships.userId), isNull(users.disabledAt)))
     .leftJoin(credentials, and(eq(credentials.userId, memberships.userId), eq(credentials.type, 'password'), isNull(credentials.revokedAt)))
     .leftJoin(passwordAuthkeys, eq(passwordAuthkeys.credentialId, credentials.id))
     .where(eq(memberships.familyId, familyId));

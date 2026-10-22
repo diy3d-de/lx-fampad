@@ -404,13 +404,14 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
     expect((await rows(world, sql`select count(*)::int as n from termin_teilnehmer where termin_id = ${id}`))[0]?.n).toBe(2);
     const del = await fam.admin.client.del(`/api/v1/members/${extra.userId}`);
     expect(del.status, JSON.stringify(del.json)).toBe(200);
-    expect(await rows(world, sql`select 1 from termin_teilnehmer where id = ${tn}`)).toHaveLength(0); // Kaskade hat die Zeile entfernt
+    expect(await rows(world, sql`select 1 from termin_teilnehmer where id = ${tn} and deleted_at is null`)).toHaveLength(0); // Soft-Delete: die Zeile ist gelöscht (Tombstone), nicht mehr lebendig
     const spaeter = await fam.parent.pull();
     const grab = spaeter.find((c) => c.entity === 'termin_teilnehmer' && c.id === tn);
     expect(grab?.tombstone).toBe(true);
     expect(spaeter.some((c) => c.id === andere)).toBe(false); // die andere Person bleibt unberührt
     // Wartung räumt den verwaisten Eintrag nach der Aufbewahrungsfrist
     await world.db.execute(sql`update change_log set created_at = '2000-01-01T00:00:00Z' where entity_id = ${tn}`);
+    await world.db.execute(sql`update termin_teilnehmer set deleted_at = '2000-01-01T00:00:00Z' where id = ${tn}`); // Soft-Delete: die Tombstone-Zeile bleibt, bis sie die Aufbewahrungsfrist erreicht
     await runSyncMaintenance(world.auth.ctx);
     expect(await rows(world, sql`select 1 from change_log where entity_id = ${tn}`)).toHaveLength(0);
   });
