@@ -32,6 +32,9 @@ describe('Migration 0025 (Betrieb Paket 3) additiv auf Stand 0023', () => {
       for (const t of tabellen) vorher.set(t, await summe(t));
 
       // zurück in den Stand 0023: die Objekte der Migration 0025 weg, ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
+      // Migration 0026 (Passkey-Sicherung, Eltern-Wiederherstellung; neuer als 0025, also zuerst zurück)
+      await db.execute(sql`drop table guardian_escrows, guardian_recoveries, key_backups_prf`);
+      await db.execute(sql`alter table credentials drop column device_type, drop column backed_up`);
       await db.execute(sql`drop table operator_metrics`);
       await db.execute(sql`alter table weather_credentials drop column error_count`);
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
