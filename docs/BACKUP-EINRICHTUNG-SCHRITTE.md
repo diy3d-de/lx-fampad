@@ -545,7 +545,7 @@ LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-nasstatus.sh
 | Meldung / Anzeige | Ursache |
 | --- | --- |
 | `Statusmeldung an den Server fehlgeschlagen` | Schlüssel, Adresse (`--nas-ip` muss die öffentliche Adresse des NAS sein), `known_hosts` oder die Einrichtung auf dem Server prüfen; `ssh -i ~/.ssh/lx-fampad-status -v lxnasstatus@<server>` von Hand ansehen |
-| `abgelehnt: …` (auf dem NAS-Bildschirm nicht sichtbar, im Server-Protokoll `journalctl -t sshd`) | die Datei hat ein unerwartetes Format: eine selbst geänderte Skriptfassung? Nur `--print` ansehen |
+| `abgelehnt: …` auf dem Server (der Befehl nimmt die Datei nicht an) | die Datei hat ein unerwartetes Format: eine selbst geänderte Skriptfassung? Auf dem NAS von Hand `bash lx-fampad-nasstatus.sh` ausführen (zeigt die Meldung) und `--print` ansehen |
 | App: „Noch keine Rückmeldung vom NAS“ | es wurde noch nichts gemeldet, oder der Dienst darf `/var/lib/lx-fampad-nasstatus` nicht lesen (Gruppe `lx-fampad`, `2750`) |
 | App: „nicht lesbar (ungültiges Format)“ | die Datei auf dem Server ist größer als 4 KB oder hat ein ungültiges Format: neu senden; sie wird bei jedem Lauf ersetzt |
 | Warnung „Abholung durch das NAS“ | die letzte erfolgreiche Abholung ist älter als 36 Stunden oder das Pull-Skript meldete `fehler`: Aufgabenplaner und `pull-status` prüfen |

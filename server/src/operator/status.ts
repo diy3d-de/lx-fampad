@@ -265,12 +265,12 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   const [ntfyUp, validTo, backupText, disk, karte, manifestText, web, nasText] = await Promise.all([
     config.ntfyUrl ? probes.ntfyReachable(config.ntfyUrl) : Promise.resolve(null),
     oc.tlsProbe ? probes.tlsValidTo(oc.tlsProbe, new URL(config.publicUrl).hostname) : Promise.resolve(null),
-    oc.backupStatusFile ? probes.readText(oc.backupStatusFile, 4096) : Promise.resolve(null),
+    oc.backupStatusFile ? probes.readText(oc.backupStatusFile, 4096, true) : Promise.resolve(null),
     oc.diskPath ? probes.disk(oc.diskPath) : Promise.resolve(null),
     oc.karteDir ? probes.karteBytes(oc.karteDir) : Promise.resolve(null),
     oc.releaseManifestFile ? probes.readText(oc.releaseManifestFile, 64 * 1024) : Promise.resolve(null),
     readWebVersion(config, probes),
-    oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1) : Promise.resolve(null),
+    oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1, true) : Promise.resolve(null),
   ]);
   const nas = parseNasStatus(nasText, now);
   const push: PushStatus = dbOk ? await collectPushStatus(ctx, familyId, now).catch(() => EMPTY_PUSH) : EMPTY_PUSH;

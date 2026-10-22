@@ -63,7 +63,8 @@ pull_status() {   # $1 = ok|fehler
     erfolg="$(alt last_success_epoch)"; [ "$1" != ok ] || erfolg="$jetzt"
     neueste="$(alt newest_backup_epoch)"; anzahl="$(alt archive_count)"
     if [ -n "${NEUESTE:-}" ]; then neueste="$(epoch_von_namen "$NEUESTE" 2>/dev/null)"; [ -n "$neueste" ] || neueste="$(alt newest_backup_epoch)"; fi
-    if [[ "${ANZAHL:-}" =~ ^[0-9]+$ ]]; then anzahl="$ANZAHL"; fi
+    # Anzahl der Stände NACH der Rotation zählen (nicht den Wert vor dem Löschen)
+    if [ -d "$ARCHIV" ]; then anzahl="$(find "$ARCHIV" -mindepth 1 -maxdepth 1 -type d -name '[0-9]*-[0-9]*' | wc -l | tr -d ' ')"; fi
     tmp="$(mktemp "$DEST/.pull-status.XXXXXX" 2>/dev/null)" || exit 0
     {
       echo "last_result=$1"

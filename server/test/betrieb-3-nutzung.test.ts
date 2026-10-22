@@ -45,6 +45,31 @@ describe('Zähler im Prozess (rein)', () => {
   });
 });
 
+describe('Lesen der Statusdateien ohne Symlinks (echte Messung auf einem Wegwerf-Ordner)', () => {
+  it('mit noFollow wird ein Symlink als Datei nicht gelesen, eine reguläre Datei schon; ohne noFollow wie bisher', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'fampad-read-'));
+    try {
+      writeFileSync(join(dir, 'echt.status'), 'a=1\n');
+      expect(await realProbes.readText(join(dir, 'echt.status'), 100, true)).toBe('a=1\n');
+      expect(await realProbes.readText(join(dir, 'gibtsnicht'), 100, true)).toBeNull();
+      expect(await realProbes.readText(dir, 100, true)).toBeNull(); // ein Ordner ist keine Datei
+      let link = false;
+      try {
+        symlinkSync(join(dir, 'echt.status'), join(dir, 'link.status'));
+        link = true;
+      } catch {
+        // ohne Recht für Links (Windows): der Teil entfällt
+      }
+      if (link && process.platform !== 'win32') {
+        expect(await realProbes.readText(join(dir, 'link.status'), 100, true)).toBeNull();
+        expect(await realProbes.readText(join(dir, 'link.status'), 100)).toBe('a=1\n');
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('Größe der Dateiablage (echte Messung auf einem Wegwerf-Ordner)', () => {
   it('summiert nur Dateigrößen (auch in Unterordnern), keine Namen; null bei fehlendem Ordner oder zu vielen Einträgen', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'fampad-files-'));
@@ -138,10 +163,13 @@ describe.each(backends)('Betrieb Paket 3, Nutzung, Wetter und Push ($name)', (ba
     await monitor().runOnce();
     const z = (await einzeln())!;
     expect(z.day).toBe(dayOf(new Date(world.clock)));
-    expect(z).toMatchObject({ activePersons7: 3, activePersons30: 3, activeDevices7: 3, activeDevices30: 3, filesBytes: 5000 });
+    expect(z).toMatchObject({ activePersons7: 3, activePersons30: 3, activeDevices7: 3, activeDevices30: 3 });
     expect(z.dbBytes).toBeGreaterThan(0);
+    // die Dateiablage wird im Hintergrund gemessen, nie vor den Warn-Prüfungen abgewartet: der erste Lauf hat noch keinen Wert
+    expect(z.filesBytes).toBeNull();
+    await monitor().whenIdle();
     expect(await world.count('operator_metrics')).toBe(1);
-    // ein weiterer Lauf: weiter genau eine Zeile; die Dateigröße wird höchstens stündlich neu gemessen
+    // ein weiterer Lauf: weiter genau eine Zeile; der Wert kommt jetzt hinein, die Dateigröße wird höchstens stündlich neu gemessen
     world.advance(5 * MIN);
     files = 9999;
     await monitor().runOnce();
@@ -149,14 +177,37 @@ describe.each(backends)('Betrieb Paket 3, Nutzung, Wetter und Push ($name)', (ba
     expect((await einzeln())!.filesBytes).toBe(5000);
     expect(filesAufrufe).toBe(1);
     world.advance(FILES_MEASURE_INTERVAL_MS);
+    await monitor().runOnce(); // veraltet: schreibt den alten Wert und misst im Hintergrund neu
+    await monitor().whenIdle();
+    expect(filesAufrufe).toBe(2);
+    world.advance(5 * MIN);
     await monitor().runOnce();
     expect((await einzeln())!.filesBytes).toBe(9999);
-    expect(filesAufrufe).toBe(2);
     // ein neuer Tag legt eine neue Zeile an
     world.advance(DAY);
     await monitor().runOnce();
     expect(await world.count('operator_metrics')).toBe(2);
     expect(fam.familyId).toBeTruthy();
+  });
+
+  it('Eine hängende Messung der Dateiablage hält weder den Prüflauf noch die Warnungen auf', async () => {
+    await familie();
+    aktuell = { ...messungen(), dirBytes: () => new Promise<number | null>(() => undefined) }; // kehrt nie zurück
+    const t0 = Date.now();
+    await expect(monitor().runOnce()).resolves.toBeDefined();
+    expect(Date.now() - t0).toBeLessThan(10_000);
+    expect(((await einzeln())!).filesBytes).toBeNull();
+  });
+
+  it('Beim Schließen werden die noch nicht übernommenen Zähler einmal in den Messpunkt geschrieben', async () => {
+    const fam = await familie();
+    await monitor().runOnce(); // die Familie ist dem Prüfer bekannt
+    await fam.admin.sync([]);
+    await fam.admin.sync([]);
+    await monitor().flushCounters();
+    expect(((await einzeln())!).syncRuns).toBe(2);
+    await monitor().flushCounters(); // nichts mehr offen: nichts doppelt
+    expect(((await einzeln())!).syncRuns).toBe(2);
   });
 
   it('Aktivität: 7 und 30 Tage getrennt; abgemeldete Geräte, nicht aktive Mitglieder und lange nicht gesehene Geräte zählen nicht', async () => {
@@ -242,7 +293,7 @@ describe.each(backends)('Betrieb Paket 3, Nutzung, Wetter und Push ($name)', (ba
     world.advance(10 * MIN); // ohne frisches Step-up
     const res = await fam.admin.client.get('/api/v1/admin/metrics');
     expect(res.status).toBe(200);
-    expect(res.json).toMatchObject({ retentionDays: METRICS_RETENTION_DAYS, days: [{ activePersons7: 3, filesBytes: 5000 }] });
+    expect(res.json).toMatchObject({ retentionDays: METRICS_RETENTION_DAYS, days: [{ activePersons7: 3, filesBytes: null }] });
     expect(Object.keys(res.json.days[0]).sort()).toEqual(['activeDevices30', 'activeDevices7', 'activePersons30', 'activePersons7', 'dbBytes', 'day', 'filesBytes', 'rateLimited', 'syncErrors', 'syncRuns'].sort());
     for (const q of ['days=0', 'days=401', 'days=abc', 'days=1.5', 'days=-1', 'x=1', 'days=7&days=8']) {
       expect((await fam.admin.client.get(`/api/v1/admin/metrics?${q}`)).status, q).toBe(400);

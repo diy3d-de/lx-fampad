@@ -73,7 +73,10 @@ class _NutzungAbschnitt extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final v = ref.watch(betriebVerlaufProvider);
-    final heute = v.wert?.letzter;
+    // "heute"-Zahlen nur, wenn der letzte Messpunkt wirklich von heute (UTC) ist; sonst wie ohne Messpunkte (nie Zahlen von gestern als heutige ausgeben)
+    final letzter = v.wert?.letzter;
+    final jetzt = DateTime.now().toUtc();
+    final heute = letzter != null && letzter.tag.year == jetzt.year && letzter.tag.month == jetzt.month && letzter.tag.day == jetzt.day ? letzter : null;
     final Widget inhalt;
     if (heute == null) {
       inhalt = BetriebListe([

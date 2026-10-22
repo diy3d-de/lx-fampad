@@ -791,7 +791,7 @@ class BetriebMitglieder {
 }
 
 /// Feste Arten der Betreiber-Warnungen (Kennungen des Servers; Unbekanntes zeigt die Oberfläche allgemein als "Hinweis").
-const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore'];
+const kWarnArten = <String>['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore', 'nas_channel'];
 
 /// `GET /admin/warnings`
 class BetriebWarnungen {

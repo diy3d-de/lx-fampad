@@ -145,6 +145,7 @@ const _ereignisse = <String, String>{
   'operator_alert_key': 'Betrieb-Warnung: Schlüssel-Ampel',
   'operator_alert_nas_pull': 'Betrieb-Warnung: Abholung durch das NAS',
   'operator_alert_nas_restore': 'Betrieb-Warnung: Wiederherstellungstest',
+  'operator_alert_nas_channel': 'Betrieb-Warnung: Statuskanal des NAS',
   'operator_warnings_set': 'Betrieb-Warnungen umgestellt',
   'operator_unlock': 'Konto entsperrt',
   'operator_maintenance_set': 'Wartungsmodus umgeschaltet',
@@ -236,6 +237,7 @@ String warnArtText(String art) => switch (art) {
   'key' => 'Schlüssel-Ampel einer Person ist rot',
   'nas_pull' => 'Das NAS hat die Sicherung seit über 36 Stunden nicht abgeholt (oder die Abholung ist fehlgeschlagen)',
   'nas_restore' => 'Der Wiederherstellungstest ist älter als 10 Tage oder fehlgeschlagen',
+  'nas_channel' => 'Die Statusmeldung des NAS fehlt oder ist ungültig (der Kanal lieferte schon einmal eine gültige Datei)',
   _ => 'Hinweis des Servers',
 };
 
@@ -263,6 +265,10 @@ String wetterFehlerText(String code) {
     'too_large' => 'Antwort zu groß',
     'bad_json' => 'Antwort nicht lesbar',
     'token_bad' => 'Zugangstoken unbrauchbar',
+    'token_network' => 'Token-Abruf: Wetterdienst nicht erreichbar',
+    'token_too_large' => 'Token-Antwort zu groß',
+    'token_tx' => 'Token-Erneuerung fehlgeschlagen',
+    'decrypt' => 'gespeicherte Zugangsdaten nicht lesbar',
     _ when code.startsWith('token_http_') => 'Token-Abruf abgelehnt',
     _ => 'Fehler beim Abruf',
   };

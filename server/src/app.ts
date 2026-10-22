@@ -223,7 +223,11 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     });
     const operatorMonitor = new OperatorMonitor({ ctx: authCore.ctx, push, weather, probes: operatorProbes, counters: usageCounters });
     app.decorate('operatorMonitor', operatorMonitor);
-    app.addHook('onClose', async () => operatorMonitor.stop());
+    app.addHook('onClose', async () => {
+      operatorMonitor.stop();
+      await operatorMonitor.whenIdle();
+      await operatorMonitor.flushCounters();
+    });
     if (maintenance) registerOperatorRoutes(app, config, authCore, weather, operatorMonitor, maintenance, operatorProbes);
     auth = authOverride ?? authCore;
     // Widerruf (Abmelden, Gerät entfernen, Rollenwechsel, Mitglied entfernen) schließt die offenen WebSockets sofort

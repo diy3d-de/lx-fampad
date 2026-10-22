@@ -13,7 +13,7 @@
 //    (und die zuletzt bekannten Push-Themen), damit auch "Datenbank nicht erreichbar" gemeldet werden kann.
 //  - Pro Betreiber schaltbar (`operators.alerts_enabled`, Standard an); ohne eingeschaltete Betreiber wird der Zustand weitergeführt, aber nie geweckt.
 //  - Jede Warnung steht im Protokoll ("Betrieb-Warnung: <Art>"), ohne Inhalt; der Wecker enthält nichts (kein Text, kein Titel, keine Namen).
-import { and, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, sql } from 'drizzle-orm';
 import { writeAudit, type AuditEvent } from '../auth/audit.js';
 import type { AuthContext, RequestMeta } from '../auth/context.js';
 import { wakeTopicsFor } from '../auth/security-events.js';
@@ -24,11 +24,11 @@ import type { PushService } from '../push/service.js';
 import type { WeatherService } from '../weather/service.js';
 import { serializeErr } from '../log.js';
 import { collectKeyStatus, type KeyStatus } from './key-status.js';
-import { collectActivity, FILES_MAX_ENTRIES, FILES_MEASURE_INTERVAL_MS, recordMetrics, type CounterDelta, type UsageCounters } from './metrics.js';
+import { collectActivity, FILES_MAX_ENTRIES, FILES_MEASURE_INTERVAL_MS, FILES_MEASURE_TIMEOUT_MS, recordMetrics, type CounterDelta, type UsageCounters } from './metrics.js';
 import { realProbes, type Probes } from './probes.js';
 import { BACKUP_WARN_HOURS, CERT_WARN_DAYS, collectStatus, DISK_WARN_PERCENT, type OperatorStatus } from './status.js';
 
-export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore'] as const;
+export const ALERT_KINDS = ['cert', 'backup', 'database', 'ntfy', 'disk', 'logins', 'key', 'nas_pull', 'nas_restore', 'nas_channel'] as const;
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
 export const CHECK_INTERVAL_MS = 5 * 60_000;
@@ -58,7 +58,10 @@ export interface Condition {
 const KEY_PREFIX = 'key:';
 
 /** Wertet die Messungen aus (rein, mit Uhr als Parameter testbar). `loginFailures`/`keys` = null: nicht ermittelbar. */
-export function evaluateConditions(status: OperatorStatus, loginFailures: number | null, keys: KeyStatus | null, now: Date): Condition[] {
+/** Schlüssel des Zustands, der merkt, dass der Kanal des NAS schon einmal eine gültige Datei geliefert hat (kein Alarm in `view`, keine Meldung). */
+const NAS_SEEN_KEY = 'nas_seen';
+
+export function evaluateConditions(status: OperatorStatus, loginFailures: number | null, keys: KeyStatus | null, now: Date, nasSeen = false): Condition[] {
   const out: Condition[] = [];
   const add = (kind: AlertKind, result: AlertResult, key: string = kind, graceMs = 0) => out.push({ key, kind, result, graceMs });
 
@@ -76,6 +79,8 @@ export function evaluateConditions(status: OperatorStatus, loginFailures: number
   const nasAlert = (state: string): AlertResult => (state === 'warn' || state === 'error' ? 'active' : state === 'ok' ? 'ok' : 'unknown');
   add('nas_pull', nasAlert(status.nas.pull.state));
   add('nas_restore', nasAlert(status.nas.restore.state));
+  // Stiller Ausfall des Kanals: war schon einmal eine gültige Datei da und fehlt sie jetzt (oder ist ungültig), ist das eine Warnung; vor der ersten gültigen Datei nie
+  add('nas_channel', status.nas.configured ? 'ok' : nasSeen ? 'active' : 'unknown');
 
   // Datenbank und ntfy nicht erreichbar (ntfy aus = nichts zu melden)
   add('database', status.database.ok ? 'ok' : 'active');
@@ -151,6 +156,7 @@ export class OperatorMonitor {
   /** Zähler, die in diesem Lauf noch nicht in die Datenbank übernommen sind (gehen sonst zurück in den Zähler). */
   private pending: CounterDelta | null = null;
   private filesCache: { at: number; bytes: number | null } | null = null;
+  private filesPromise: Promise<void> | null = null;
 
   constructor(private readonly deps: MonitorDeps) {}
 
@@ -205,14 +211,18 @@ export class OperatorMonitor {
     return report;
   }
 
-  /** Familien, die mindestens einen aktiven Betreiber haben (auch mit ausgeschalteten Warnungen: der Zustand wird weitergeführt). */
+  /**
+   * Familien, die mindestens einen aktiven Betreiber haben (auch mit ausgeschalteten Warnungen: der Zustand wird weitergeführt). Geordnet nach Familien-ID: ein Server
+   * bedient genau eine Familie; die Zähler des Prozesses (Nutzung und Verlauf) werden der ersten Familie des Laufs zugerechnet, die Reihenfolge ist deshalb fest.
+   */
   private async loadFamilies(): Promise<FamilyOperators[]> {
     const rows = await this.deps.ctx.db
       .select({ familyId: memberships.familyId, userId: operators.userId, enabled: operators.alertsEnabled })
       .from(operators)
       .innerJoin(users, eq(users.id, operators.userId))
       .innerJoin(memberships, eq(memberships.userId, users.id))
-      .where(and(eq(memberships.status, 'active'), isNull(users.disabledAt)));
+      .where(and(eq(memberships.status, 'active'), isNull(users.disabledAt)))
+      .orderBy(asc(memberships.familyId));
     const byFamily = new Map<string, FamilyOperators>();
     for (const r of rows) {
       const f = byFamily.get(r.familyId) ?? { familyId: r.familyId, enabledUserIds: [] };
@@ -222,18 +232,53 @@ export class OperatorMonitor {
     return [...byFamily.values()];
   }
 
-  /** Dateiablage: höchstens stündlich messen (nur die Summe). */
-  private async filesBytes(): Promise<number | null> {
+  /**
+   * Dateiablage (nur die Summe): der zuletzt gemessene Wert. Die Messung läuft höchstens stündlich im HINTERGRUND mit Zeitlimit und wird nie vor den Warn-Prüfungen
+   * abgewartet (ein großer Ordner darf weder den Prüfer noch den Dateisystem-Pool aufhalten); ein neuer Wert kommt mit dem nächsten Lauf in den Messpunkt.
+   */
+  private filesBytes(): number | null {
     const { ctx } = this.deps;
     const dir = ctx.config.operator.filesDir;
     if (!dir) return null;
     const now = ctx.now().getTime();
     const hit = this.filesCache;
-    if (hit && now >= hit.at && now - hit.at < FILES_MEASURE_INTERVAL_MS) return hit.bytes;
-    const probes: Probes = { ...realProbes, ...this.deps.probes };
-    const bytes = await probes.dirBytes(dir, FILES_MAX_ENTRIES);
-    this.filesCache = { at: now, bytes };
-    return bytes;
+    const frisch = hit !== null && now >= hit.at && now - hit.at < FILES_MEASURE_INTERVAL_MS;
+    if (!frisch && this.filesPromise === null) {
+      const probes: Probes = { ...realProbes, ...this.deps.probes };
+      let timer: NodeJS.Timeout | undefined;
+      const frist = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), FILES_MEASURE_TIMEOUT_MS);
+        timer.unref();
+      });
+      this.filesPromise = Promise.race([probes.dirBytes(dir, FILES_MAX_ENTRIES).catch(() => null), frist])
+        .then((bytes) => {
+          this.filesCache = { at: ctx.now().getTime(), bytes };
+        })
+        .finally(() => {
+          if (timer) clearTimeout(timer);
+          this.filesPromise = null;
+        });
+    }
+    return hit?.bytes ?? null;
+  }
+
+  /** Wartet auf eine laufende Messung der Dateiablage (für Tests und das Beenden). */
+  async whenIdle(): Promise<void> {
+    await this.filesPromise;
+  }
+
+  /** Schreibt die noch nicht übernommenen Zähler beim Beenden einmal in den Messpunkt (ein Neustart verliert so keine Zähler); wirft nie. */
+  async flushCounters(): Promise<void> {
+    const { ctx, counters } = this.deps;
+    const fam = [...this.cache.values()][0];
+    if (!counters || !fam || this.running) return;
+    const delta = counters.take();
+    try {
+      const activity = await collectActivity(ctx, fam.familyId);
+      await recordMetrics(ctx, fam.familyId, { activity, dbBytes: null, filesBytes: null }, delta);
+    } catch {
+      counters.restore(delta);
+    }
   }
 
   /** Tägliche Messpunkte (Nutzung und Verlauf): nur Zahlen; ein Fehler hier lässt nie die Prüfung der Warnungen scheitern. */
@@ -241,7 +286,7 @@ export class OperatorMonitor {
     const { ctx } = this.deps;
     try {
       const activity = await collectActivity(ctx, familyId);
-      const files = await this.filesBytes();
+      const files = this.filesBytes();
       await recordMetrics(ctx, familyId, { activity, dbBytes: status.database.sizeBytes, filesBytes: files }, this.pending ?? { syncRuns: 0, syncErrors: 0, rateLimited: 0 });
       this.pending = null; // übernommen (weitere Familien in diesem Lauf bekommen keine Zähler mehr)
     } catch (err: unknown) {
@@ -304,7 +349,6 @@ export class OperatorMonitor {
     const now = ctx.now();
     const status = await collectStatus({ ctx, weather: this.deps.weather, probes: this.deps.probes }, fam.familyId);
     const dbUp = status.database.ok;
-    if (dbUp) await this.recordUsage(fam.familyId, status);
     const keys = dbUp ? await collectKeyStatus(ctx, fam.familyId).catch(() => null) : null;
     const failures = dbUp ? await this.loginFailures(fam.familyId) : null;
     if (dbUp) {
@@ -312,7 +356,12 @@ export class OperatorMonitor {
       // die Push-Themen der Betreiber merken: fällt die Datenbank später aus, kann "Datenbank nicht erreichbar" trotzdem geweckt werden
       await wakeTopicsFor(ctx.db, fam.enabledUserIds).then((m) => this.topicCache.set(fam.familyId, [...m.values()].flat()), () => undefined);
     }
-    const conditions = evaluateConditions(status, failures, keys, now);
+    // einmal gültig gesehen: ab jetzt ist ein Verschwinden oder eine ungültige Datei eine Warnung (der Zustand steht in der Datenbank)
+    if (status.nas.configured && !this.states.get(this.sk(fam.familyId, NAS_SEEN_KEY))?.active) {
+      await this.saveState(fam.familyId, NAS_SEEN_KEY, { active: true, since: now, lastNotifiedAt: null });
+    }
+    const nasSeen = this.states.get(this.sk(fam.familyId, NAS_SEEN_KEY))?.active === true;
+    const conditions = evaluateConditions(status, failures, keys, now, nasSeen);
     const notified: AlertKind[] = [];
 
     for (const c of conditions) {
@@ -355,6 +404,8 @@ export class OperatorMonitor {
           .catch(() => undefined);
       }
     }
+    // Messpunkt zuletzt: nach den Warn-Prüfungen, nie davor
+    if (dbUp) await this.recordUsage(fam.familyId, status);
     return notified;
   }
 

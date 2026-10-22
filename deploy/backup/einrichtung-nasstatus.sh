@@ -17,7 +17,7 @@
 #   (Trockenlauf nur prüfen; ohne --dry-run einrichten.)
 # Optionen:
 #   --nas-pubkey 'ssh-ed25519 …'   öffentlicher Schlüssel des NAS für die Statusmeldung (eine Zeile) | --nas-pubkey-file DATEI. NICHT derselbe wie für die Abholung.
-#   --nas-ip IP[,IP…]              Adresse(n) des NAS ("from=" im authorized_keys): gültige IPv4/IPv6-Adresse oder CIDR (mindestens /16 bzw. /48)
+#   --nas-ip IP[,IP…]              Adresse(n) des NAS ("from=" im authorized_keys): am besten eine Einzeladresse; ein Netz höchstens /24 (IPv4) bzw. /64 (IPv6)
 #   --dry-run                      nur Prüfungen
 # Beim ersten Lauf sind NAS-Schlüssel und NAS-IP Pflicht; bei Wiederholung dürfen sie fehlen (der vorhandene Eintrag bleibt).
 # ACHTUNG: Das Skript läuft als root und kopiert eine Datei aus dem (für lx schreibbaren) Checkout nach /usr/local/sbin: vorher
@@ -157,7 +157,7 @@ if [ -n "$NAS_KEY_ARG" ]; then
   fi
 fi
 # NAS-Adresse: per Parser (nicht per Sperrliste); Ergebnis ist die kanonische Schreibweise, so landet nur Geprüftes im authorized_keys.
-# Zulässig: einzelne IPv4/IPv6-Adresse oder Netz (CIDR, keine gesetzten Hostbits) mit Präfix mindestens /16 (IPv4) bzw. /48 (IPv6).
+# Zulässig: einzelne IPv4/IPv6-Adresse (empfohlen) oder Netz (CIDR, keine gesetzten Hostbits) mit Präfix mindestens /24 (IPv4) bzw. /64 (IPv6).
 ip_pruefen() {
   python3 -I -c '
 import ipaddress, sys
@@ -172,7 +172,7 @@ if n.network_address.is_unspecified or n.network_address.is_multicast or n.netwo
     sys.exit("unspezifizierte/Multicast-/reservierte Adresse")
 if n.version == 6 and (n.network_address.ipv4_mapped is not None or n.network_address.sixtofour is not None or n.network_address.teredo is not None):
     sys.exit("IPv4-mapped/6to4/Teredo nicht erlaubt")
-mn = 16 if n.version == 4 else 48
+mn = 24 if n.version == 4 else 64
 if n.prefixlen < mn:
     sys.exit("Netz zu groß (Präfix /%d, erlaubt ab /%d)" % (n.prefixlen, mn))
 print(str(n.network_address) if n.num_addresses == 1 else str(n))
@@ -185,6 +185,7 @@ if [ -n "$NAS_IP" ]; then
   for ip in "${IPS[@]}"; do
     CANON="$(ip_pruefen "$ip" 2>&1)" || fehler "Ungültige NAS-Adresse '${ip:0:45}': $CANON"
     NAS_FROM="${NAS_FROM:+$NAS_FROM,}$CANON"
+    case "$CANON" in */*) info "WARNUNG: $CANON ist ein Netz, keine Einzeladresse: jeder Rechner darin dürfte die Statusmeldung senden (mit dem Schlüssel des NAS). Eine Einzeladresse ist sicherer." ;; esac
     case "$CANON" in
       127.*|::1) info "Hinweis: $CANON ist eine Loopback-Adresse (nur für Tests sinnvoll)." ;;
       10.*|192.168.*|172.1[6-9].*|172.2?.*|172.3[01].*|fc*|fd*) info "WARNUNG: $CANON ist eine private Adresse: der Server sieht das NAS mit der öffentlichen Adresse des Anschlusses (sofern kein VPN). Passt die Adresse?" ;;
@@ -280,7 +281,8 @@ restore_result=ok
 restore_run_epoch=$NOW
 restore_success_epoch=$NOW
 restore_config_check=nein"
-empfang() { printf '%s\n' "$1" | as_su env LX_NASSTATUS_DIR="$T" SSH_ORIGINAL_COMMAND='cat /etc/shadow' "$BIN"; }
+# env -u SSH_CONNECTION: der Selbsttest läuft nicht über die SSH-Sitzung des Befehls (nur ohne sie gilt der Ordner-Override)
+empfang() { printf '%s\n' "$1" | as_su env -u SSH_CONNECTION LX_NASSTATUS_DIR="$T" SSH_ORIGINAL_COMMAND='cat /etc/shadow' "$BIN"; }
 empfang "$GUT" >/dev/null || fehler "gültige Beispieldatei wurde abgelehnt"
 [ "$(stat -c '%U:%G %a' "$T/nas.status")" = "$STATUS_USER:$SERVICE_GROUP 640" ] || fehler "Rechte der Beispieldatei falsch: $(stat -c '%U:%G %a' "$T/nas.status")"
 grep -q '^received_epoch=' "$T/nas.status" || fehler "received_epoch fehlt"
@@ -298,7 +300,7 @@ restore_config_check=ja;id"
 ablehnen "Zeit in der Zukunft" "pull_result=ok
 pull_success_epoch=$((NOW + 100000))"
 ablehnen "ohne Ergebnis" "pull_count=3"
-if as_su sh -c "head -c 5000 /dev/zero | tr '\\0' a | env LX_NASSTATUS_DIR='$T' '$BIN'" >/dev/null 2>&1; then fehler "Selbsttest: mehr als 4 KB wurden angenommen"; fi
+if as_su sh -c "head -c 5000 /dev/zero | tr '\\0' a | env -u SSH_CONNECTION LX_NASSTATUS_DIR='$T' '$BIN'" >/dev/null 2>&1; then fehler "Selbsttest: mehr als 4 KB wurden angenommen"; fi
 cmp -s "$T/nas.status" "$WORK/vorher" || fehler "Selbsttest: zu große Eingabe hat die Datei verändert"
 info "ok: gültige Dateien angenommen, ungültige abgelehnt (Datei blieb jeweils unverändert)."
 info "Rechteprüfung als $STATUS_USER:"

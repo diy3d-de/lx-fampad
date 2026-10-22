@@ -1,7 +1,7 @@
 // Betrieb Paket 3, Teil A (Backups): Rückmeldung des NAS (letzte Abholung, letzter Wiederherstellungstest). Geprüft wird die strenge Auswertung der Statusdatei (rein),
 // die Zustände mit ihren Grenzen (36 Stunden, 10 Tage), dass die Anzeige nur feste Felder liefert, die Karenz bis zur Einrichtung ("unbekannt" warnt nie) und die Warnungen im Prüfer.
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { ALERT_DEBOUNCE_MS, evaluateConditions, type AlertKind } from '../src/operator/monitor.js';
+import { ALERT_DEBOUNCE_MS, evaluateConditions, OperatorMonitor, type AlertKind } from '../src/operator/monitor.js';
 import { NAS_ABSENT, NAS_STATUS_MAX_BYTES, parseNasStatus } from '../src/operator/nas-status.js';
 import type { Probes } from '../src/operator/probes.js';
 import { grantOperator } from '../src/operator/service.js';
@@ -138,6 +138,16 @@ describe('Warn-Bedingungen der NAS-Rückmeldung (rein)', () => {
     expect(erg(parseNasStatus('Müll', NOW))).toMatchObject({ nas_pull: 'unknown', nas_restore: 'unknown' });
     // eingerichtet, aber noch kein Wiederherstellungstest gemeldet: nur die Abholung zählt
     expect(erg(parseNasStatus(nasText(NOW, { pullH: 3 }), NOW))).toMatchObject({ nas_pull: 'ok', nas_restore: 'unknown' });
+  });
+
+  it('Stiller Ausfall des Kanals: nach der ersten gültigen Datei ist Verschwinden oder Ungültigkeit eine Warnung, davor nie', () => {
+    const kanal = (nas: ReturnType<typeof parseNasStatus>, gesehen: boolean) => evaluateConditions(status(nas), 0, null, NOW, gesehen).find((c) => c.key === 'nas_channel')?.result;
+    expect(kanal(NAS_ABSENT, false)).toBe('unknown');
+    expect(kanal(parseNasStatus('Müll', NOW), false)).toBe('unknown');
+    expect(kanal(NAS_ABSENT, true)).toBe('active');
+    expect(kanal(parseNasStatus('Müll', NOW), true)).toBe('active');
+    expect(kanal(parseNasStatus(nasText(NOW, { pullH: 2 }), NOW), true)).toBe('ok');
+    expect(kanal(parseNasStatus(nasText(NOW, { pullH: 2 }), NOW), false)).toBe('ok');
   });
 
   it('Grenzen: Abholung 36 Stunden, Wiederherstellungstest 10 Tage, Fehlschlag', () => {
@@ -279,6 +289,30 @@ describe.each(backends)('Betrieb Paket 3, Backups ($name)', (backend) => {
     nas = nasText(nowDate(), { pullH: 3, restoreH: 1, restore: 'fehler' });
     expect((await monitor().runOnce()).notified).toEqual(['nas_restore']);
     expect((await a.client.get('/api/v1/admin/warnings')).json.active.map((x: { kind: string }) => x.kind)).toEqual(['nas_restore']);
+  });
+
+  it('Kanal-Ausfall: vor der ersten gültigen Datei nie eine Warnung; danach meldet das Verschwinden genau einmal, auch nach einem Neustart des Prüfers', async () => {
+    const { a } = await betreiber();
+    nas = null;
+    expect((await monitor().runOnce()).notified).toEqual([]); // nie eingerichtet
+    nas = nasText(nowDate(), { pullH: 3, restoreH: 24 });
+    expect((await monitor().runOnce()).notified).toEqual([]); // gültig: wird gemerkt
+    world.advance(5 * MIN);
+    nas = null; // Datei verschwindet
+    expect((await monitor().runOnce()).notified).toEqual(['nas_channel']);
+    expect((await auditEvents(world)).filter((e) => e.startsWith('operator_alert_'))).toEqual(['operator_alert_nas_channel']);
+    const w = (await a.client.get('/api/v1/admin/warnings')).json;
+    expect(w.active).toEqual([{ kind: 'nas_channel', since: expect.any(String), count: 1 }]);
+    // der gemerkte Zustand steht in der Datenbank: ein neuer Prüfer wiederholt nichts, "nas_seen" taucht nie in der Anzeige auf
+    const neu = new OperatorMonitor({ ctx: world.auth.ctx, push: world.app.push, weather: world.app.weather, probes: umschaltbar });
+    world.advance(5 * MIN);
+    expect((await neu.runOnce()).notified).toEqual([]);
+    expect(JSON.stringify((await a.client.get('/api/v1/admin/warnings')).json)).not.toContain('nas_seen');
+    // ungültige Datei zählt wie ein Ausfall; eine gültige beendet ihn ohne Meldung
+    world.advance(5 * MIN);
+    nas = nasText(nowDate(), { pullH: 3, restoreH: 24 });
+    expect((await neu.runOnce()).notified).toEqual([]);
+    expect((await a.client.get('/api/v1/admin/warnings')).json.active).toEqual([]);
   });
 
   it('Rechte: nur der Betreiber sieht die Rückmeldung (Admin und Kind 404, ohne Sitzung 401)', async () => {

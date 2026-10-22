@@ -1,7 +1,8 @@
 // Rückmeldung des NAS (Betrieb Paket 3, Backups): das NAS schickt nach jeder Abholung und jedem Wiederherstellungstest eine kleine Statusdatei an den Server
 // (zweiter SSH-Schlüssel mit erzwungenem Befehl, `deploy/backup/lx-fampad-nasstatus-empfang.sh`; der Server hält keine Zugangsdaten zum NAS). Die Datei steht in einem
 // eigenen Ordner, den der Dienst NUR liest. Hier wird sie streng ausgewertet: höchstens 4 KB, nur Zeilen `schluessel=wert`, nur bekannte Schlüssel, Zahlen und feste Codes,
-// Zeitpunkte plausibel (nie in der Zukunft). Alles andere heißt "ungültig" und ergibt "unbekannt", nie einen Alarm.
+// Zeitpunkte plausibel (nie in der Zukunft). Alles andere heißt "ungültig" und ergibt "unbekannt", nie einen Alarm. Unbekannte, aber gut geformte Schlüssel
+// (eine neuere Fassung des NAS-Skripts) werden ignoriert und nie angezeigt; ein Fehler in einem BEKANNTEN Schlüssel macht die ganze Datei ungültig.
 //
 // Grenze: Die Angaben stammen vom NAS. Ein übernommenes NAS könnte "ok" vortäuschen; die Anzeige ist ein Hinweis mit Alter, kein Beweis (Wiederherstellungstest von Hand
 // halbjährlich, docs/BACKUP.md).

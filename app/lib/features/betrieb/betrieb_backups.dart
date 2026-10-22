@@ -41,7 +41,7 @@ class BetriebBackupsSeite extends ConsumerWidget {
             BetriebZeile(
               name: 'Letzte Sicherung',
               info: b.letzterErfolg == null
-                  ? 'Statusdatei nicht lesbar'
+                  ? (b.ergebnis == 'fehler' ? 'bisher nie erfolgreich' : 'Statusdatei nicht lesbar')
                   : '${_zeitMitAlter(b.letzterErfolg, jetzt)}${b.bytes == null ? '' : ' · ${groesseText(b.bytes)}'}',
               pille: _pille(b.stufe),
             ),
@@ -52,7 +52,7 @@ class BetriebBackupsSeite extends ConsumerWidget {
                 pille: StatusPill(b.ergebnis == 'ok' ? 'erfolgreich' : 'fehlgeschlagen', color: b.ergebnis == 'ok' ? kTerminal : kDanger),
               ),
           ]),
-          hinweis: 'Täglich um 03:30 Uhr, verschlüsselt, auf dem Server bleiben die letzten 3 Tage. Hinweis ab 36 Stunden Alter.',
+          hinweis: 'Täglich, verschlüsselt, auf dem Server bleiben die letzten 3 Tage. Hinweis ab 36 Stunden Alter.',
         ),
         const SizedBox(height: 20),
         BetriebAbschnitt(
@@ -66,7 +66,7 @@ class BetriebBackupsSeite extends ConsumerWidget {
                       : 'Noch keine Rückmeldung vom NAS. Bis zur Einrichtung gibt es dazu keine Angabe und keine Warnung (Anleitung: Sicherung einrichten, Abschnitt 11).',
                 )
               : _Abholung(nas: nas, jetzt: jetzt),
-          hinweis: 'Das NAS holt um 04:30 Uhr ab und meldet danach den Stand. Hinweis, wenn die letzte Abholung älter als 36 Stunden ist oder fehlschlug.',
+          hinweis: 'Das NAS holt täglich ab und meldet danach den Stand. Hinweis, wenn die letzte Abholung älter als 36 Stunden ist oder fehlschlug.',
         ),
         const SizedBox(height: 20),
         BetriebAbschnitt(

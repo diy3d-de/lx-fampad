@@ -17,7 +17,9 @@ export const METRICS_MAX_DAYS = METRICS_RETENTION_DAYS;
 /** Die Größe der Dateiablage wird höchstens so oft gemessen (der Ordner kann groß sein). */
 export const FILES_MEASURE_INTERVAL_MS = 3_600_000;
 /** Obergrenze der Einträge, die die Messung der Dateiablage durchläuft (darüber: "unbekannt"). */
-export const FILES_MAX_ENTRIES = 200_000;
+export const FILES_MAX_ENTRIES = 20_000;
+/** Zeitlimit der Messung der Dateiablage (sie läuft im Hintergrund und hält nie die Prüfung der Warnungen auf). */
+export const FILES_MEASURE_TIMEOUT_MS = 15_000;
 
 export interface CounterDelta {
   syncRuns: number;

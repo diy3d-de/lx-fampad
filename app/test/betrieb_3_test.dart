@@ -17,7 +17,9 @@ import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/test_app.dart';
 
-String _vor(Duration d) => DateTime.now().toUtc().subtract(d).toIso8601String();
+/// Eine feste Uhr je Testlauf: alle Zeitangaben der Antworten beziehen sich auf denselben Zeitpunkt (nicht auf den jeweiligen Aufruf).
+final _t0 = DateTime.now().toUtc();
+String _vor(Duration d) => _t0.subtract(d).toIso8601String();
 
 Map<String, dynamic> _nas({
   bool eingerichtet = true,
@@ -65,7 +67,7 @@ Map<String, dynamic> _push({int aktiv = 3, int deaktiviert = 1, int fehlerhaft =
 };
 
 Map<String, dynamic> _tag(int vorTagen, {int p7 = 2, int p30 = 3, int g7 = 3, int g30 = 4, int runs = 120, int err = 0, int limit = 1, int? db = 40 * 1024 * 1024, int? dateien}) => {
-  'day': DateTime.now().toUtc().subtract(Duration(days: vorTagen)).toIso8601String().substring(0, 10),
+  'day': _t0.subtract(Duration(days: vorTagen)).toIso8601String().substring(0, 10),
   'activePersons7': p7,
   'activePersons30': p30,
   'activeDevices7': g7,
@@ -84,7 +86,7 @@ Map<String, dynamic> _verlauf({List<Map<String, dynamic>>? tage}) => {
 };
 
 Map<String, dynamic> _status({Object? nas = _std, Object? updates = _std, Object? push = _std, int wetterFehler = 0, String overall = 'ok'}) => {
-  'generatedAt': DateTime.now().toUtc().toIso8601String(),
+  'generatedAt': _t0.toIso8601String(),
   'overall': overall,
   'server': {'version': '0.7.0', 'protocolVersion': 1, 'startedAt': '2026-10-18T08:00:00.000Z', 'uptimeSec': 3 * 86400, 'memoryRssMb': 58},
   'database': {
@@ -208,10 +210,12 @@ void main() {
     test('Warntexte zu den neuen Arten und Ereignissen sind fest; Unbekanntes bleibt allgemein', () {
       expect(warnArtText('nas_pull'), contains('NAS'));
       expect(warnArtText('nas_restore'), contains('Wiederherstellungstest'));
+      expect(warnArtText('nas_channel'), contains('Statusmeldung'));
+      expect(ereignisText('operator_alert_nas_channel'), 'Betrieb-Warnung: Statuskanal des NAS');
       expect(warnArtText('<script>'), 'Hinweis des Servers');
       expect(ereignisText('operator_alert_nas_pull'), 'Betrieb-Warnung: Abholung durch das NAS');
       expect(ereignisText('operator_alert_nas_restore'), 'Betrieb-Warnung: Wiederherstellungstest');
-      expect(kWarnArten, containsAll(<String>['nas_pull', 'nas_restore']));
+      expect(kWarnArten, containsAll(<String>['nas_pull', 'nas_restore', 'nas_channel']));
     });
   });
 
@@ -241,7 +245,7 @@ void main() {
         ],
       });
       expect(v.tage, hasLength(3));
-      expect(v.tage.map((t) => t.tag.isBefore(DateTime.now().toUtc())).every((x) => x), isTrue);
+      expect(v.tage.map((t) => t.tag.isBefore(_t0)).every((x) => x), isTrue);
       expect(v.tage.first.tag.isBefore(v.tage.last.tag), isTrue);
       final mittel = v.tage[1];
       expect(mittel.abgleiche, 0, reason: 'negative Zahlen gibt es nicht');
@@ -276,6 +280,9 @@ void main() {
       expect(wetterFehlerText('token_http_500'), 'Token-Abruf abgelehnt');
       expect(wetterFehlerText('<script>alert(1)</script>'), 'Fehler beim Abruf');
       expect(wetterFehlerText('http_<b>'), 'Fehler beim Abruf');
+      for (final c in ['token_network', 'token_too_large', 'token_tx', 'decrypt', 'token_bad', 'rotate_persist']) {
+        expect(wetterFehlerText(c), isNot('Fehler beim Abruf'), reason: c);
+      }
     });
   });
 
@@ -485,6 +492,15 @@ void main() {
       expect(env.server.anfragen('GET /admin/metrics').single.query['days'], '30');
     });
 
+
+    testWidgets('Zahlen "heute" nur, wenn der letzte Messpunkt von heute ist: sonst wie ohne Messpunkte', (tester) async {
+      await start(tester, verlauf: {'generatedAt': _vor(Duration.zero), 'retentionDays': 400, 'days': [_tag(3), _tag(2)]});
+      await seite(tester, 'Nutzung');
+      expect(find.text('Aktive Personen'), findsNothing);
+      expect(find.text('Rate-Limit-Treffer heute'), findsNothing);
+      expect(find.text('Messpunkte'), findsOneWidget);
+    });
+
     testWidgets('Spanne wählen lädt den Verlauf neu; eine späte Antwort der alten Spanne überschreibt nichts', (tester) async {
       final env = await start(tester);
       await seite(tester, 'Nutzung');
@@ -600,6 +616,22 @@ void main() {
       expect(find.text('Störung'), findsWidgets);
       expect(find.text('fehlgeschlagen'), findsOneWidget);
       expect(find.textContaining('vor 1 T'), findsWidgets);
+    });
+
+
+    testWidgets('Server-Sicherung mit Fehler und ohne je einen Erfolg: "bisher nie erfolgreich" statt "Statusdatei nicht lesbar"; keine festen Uhrzeiten im Hinweis', (tester) async {
+      await start(
+        tester,
+        status: () => {
+          ..._status(overall: 'error'),
+          'backup': {'state': 'error', 'lastSuccessAt': null, 'ageHours': null, 'totalBytes': null, 'lastResult': 'fehler'},
+        },
+      );
+      await seite(tester, 'Backups');
+      expect(find.text('bisher nie erfolgreich'), findsOneWidget);
+      expect(find.text('Statusdatei nicht lesbar'), findsNothing);
+      expect(find.textContaining('03:30'), findsNothing);
+      expect(find.textContaining('Täglich, verschlüsselt'), findsOneWidget);
     });
 
     testWidgets('NAS noch nicht eingerichtet: ruhiger Hinweis, keine Warnung, keine Angabe statt "ok"', (tester) async {
