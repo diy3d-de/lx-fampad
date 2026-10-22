@@ -72,15 +72,16 @@ familie.lx-labs.dev {
 		file_server
 	}
 
-	# Kartenkacheln (eine PMTiles-Datei, Erzeugung und Einspielen: tools/karte/README.md, Einrichtung des Ordners: deploy/einrichtung-karte.sh).
-	# file_server beantwortet Range-Anfragen nativ (206), das ETag erkennt die neu eingespielte Datei. Gleiche Domain: kein CORS, keine CSP-Änderung.
+	# Flutter-Web-Build (aktuelle Version per Symlink). Per ETag prüfen lassen, damit Updates sofort greifen.
+	# Kartenkacheln (Karten-Spike, docs/KARTE-SPIKE.md): eine PMTiles-Datei aus /srv/fampad/karte/ (Erzeugung: tools/karte/README.md).
+	# file_server beantwortet Range-Anfragen nativ (206 Partial Content), ETag erkennt die neu eingespielte Datei. Gleiche Domain wie die App:
+	# kein CORS, keine CSP-Änderung (connect-src 'self'). Derselbe Block steht dauerhaft in deploy/Caddyfile (deploy.sh meldet Abweichungen von conf.d/fampad.caddy). deploy/einrichtung-karte.sh fügt ihn in eine ältere fampad.caddy ein, die ihn noch nicht hat.
 	handle_path /karte-daten/* {
 		root * /srv/fampad/karte
 		header Cache-Control "no-cache"
 		file_server
 	}
 
-	# Flutter-Web-Build (aktuelle Version per Symlink). Per ETag prüfen lassen, damit Updates sofort greifen.
 	handle {
 		root * /srv/fampad/web/current
 		header Cache-Control "no-cache"
@@ -89,6 +90,4 @@ familie.lx-labs.dev {
 	}
 }
 
-# ntfy.familie.lx-labs.dev gehört NICHT in diese Datei: Der Site-Block liegt eigenständig in deploy/ntfy/ntfy.caddy und wird nur von
-# deploy/einrichtung-ntfy.sh nach /etc/caddy/conf.d/ntfy.caddy installiert (sonst doppelte Site-Definition beim Caddy-Start;
-# deploy.sh und einrichtung-2.sh fassen ntfy.caddy nie an). Referenz: Reverse-Proxy auf 127.0.0.1:2586, kein encode (Streaming).
+# Eigener ntfy-Server (UnifiedPush). Meldungen enthalten nie Inhalte.

@@ -42,6 +42,8 @@ zählt Tabellen und Zeilen je Tabelle, listet das Konfigurationsarchiv (ohne zu 
 Wegwerf-Datenbank wieder (`--keep` lässt sie zum Nachsehen stehen). Vergleiche die Zeilenzahlen mit der laufenden Datenbank (Größenordnung: Mitglieder,
 Listen, Termine); Termin im Kalender: Datum der Sicherung notieren. Trage Datum und Ergebnis in dein Betriebsbuch ein.
 
+Mit `--skip-config` überspringt das Skript Schritt 4 (Konfigurationsarchiv), für einen Schlüssel, der nur Datenbank (und Dateiablage) lesen darf. Das nutzt der **automatische Wochentest auf dem NAS** (`deploy/backup/nas/lx-fampad-restoretest.sh`, Docker-Wegwerf-Datenbank, Statusdatei `restoretest-status`; Einrichtung: `BACKUP-EINRICHTUNG-SCHRITTE.md`, Abschnitt 10, Hintergrund `BACKUP.md`). Er ersetzt den halbjährlichen Test von Hand nicht ganz: das Konfigurationsarchiv (`AUTH_SECRET_KEY`) prüfst du weiter selbst.
+
 Zusätzlich einmal im Jahr: einen **kompletten Neuaufbau** auf einem Wegwerf-Server oder einer VM nach Abschnitt 3 durchspielen (ohne DNS-Umschaltung).
 
 ## 3. Neuaufbau auf einem frischen Debian-13-VPS

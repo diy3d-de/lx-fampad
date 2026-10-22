@@ -14,6 +14,8 @@
 #     --identity DATEI   privater age-Schlüssel (AGE-SECRET-KEY-…)
 #     --run-dir ORDNER   ein Sicherungsordner (mit db-*.dump.age, config-*.tar.age, SHA256SUMS)
 #     --as-postgres      psql/pg_restore als Benutzer postgres ausführen (nur Server)
+#     --skip-config      Schritt 4 (Konfigurationsarchiv, enthält AUTH_SECRET_KEY) überspringen: für einen Schlüssel, der nur die Datenbank
+#                        entschlüsseln darf (automatischer Test auf dem NAS, docs/BACKUP-EINRICHTUNG-SCHRITTE.md, Abschnitt 10)
 #     --keep             Wegwerf-Datenbank am Ende NICHT löschen (zum Nachsehen; sie enthält dann ALLE personenbezogenen Daten im Klartext: danach
 #                        sofort von Hand löschen: dropdb lx_fampad_restoretest)
 # Bevorzugt auf dem eigenen Rechner mit einem eigenen, lokalen PostgreSQL-Cluster (nicht auf dem Produktivserver, nicht in einem geteilten Cluster).
@@ -24,6 +26,7 @@ IDENTITY=""
 RUN_DIR=""
 AS_PG=0
 KEEP=0
+SKIP_CONFIG=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,6 +34,7 @@ while [ $# -gt 0 ]; do
     --run-dir) [ $# -ge 2 ] || { echo "--run-dir braucht einen Wert" >&2; exit 2; }; RUN_DIR="$2"; shift ;;
     --as-postgres) AS_PG=1 ;;
     --keep) KEEP=1 ;;
+    --skip-config) SKIP_CONFIG=1 ;;
     -h|--help) sed -n '2,/^set -E/{/^set -E/!p}' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Unbekannte Option: $1 (--help)" >&2; exit 2 ;;
   esac
@@ -103,7 +107,9 @@ MIG="$(pg psql -X -tAq -d "$SCRATCH_DB" -c "select count(*) from drizzle.__drizz
 echo "    angewendete Migrationen (drizzle.__drizzle_migrations): $MIG"
 
 echo "==> 4/4 Konfigurationsarchiv (nur Dateiliste, nichts wird entpackt)"
-if [ "${#CFGS[@]}" -eq 1 ]; then
+if [ "$SKIP_CONFIG" = 1 ]; then
+  echo "    übersprungen (--skip-config): das Konfigurationsarchiv wurde nicht entschlüsselt."
+elif [ "${#CFGS[@]}" -eq 1 ]; then
   LIST="$(age -d -i "$IDENTITY" "${CFGS[0]}" | tar -tzf -)" || fehler "Konfigurationsarchiv nicht lesbar"
   # shellcheck disable=SC2001
   sed "s/^/        /" <<<"$LIST"

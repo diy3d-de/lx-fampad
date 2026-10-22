@@ -246,6 +246,8 @@ sudo -u postgres psql -d lx_fampad -c "GRANT USAGE ON SCHEMA drizzle TO lx_fampa
 
 ### 6. Caddy
 
+**Warnung ntfy:** `ntfy.familie.lx-labs.dev` gehört **nicht** in `deploy/Caddyfile` bzw. `fampad.caddy` (diese Datei ist byte-gleich zur Serverdatei, `deploy.sh` vergleicht sie). Der Site-Block liegt eigenständig in `deploy/ntfy/ntfy.caddy` und wird nur von `deploy/einrichtung-ntfy.sh` nach `/etc/caddy/conf.d/ntfy.caddy` installiert; sonst gäbe es beim Caddy-Start eine doppelte Site-Definition. `deploy.sh` und `einrichtung-2.sh` fassen `ntfy.caddy` nie an (Reverse-Proxy auf `127.0.0.1:2586`, kein `encode`, wegen Streaming).
+
 Festgelegter Pfad: die Konfiguration liegt in **`/etc/caddy/conf.d/fampad.caddy`**; das Haupt-Caddyfile (`/etc/caddy/Caddyfile`, gehört dem lx-labs-Deploy) bindet sie mit der Zeile `import /etc/caddy/conf.d/*.caddy` ein. Reihenfolge zum Schutz von lx-labs.dev: erst sichern, dann Zeile anfügen, prüfen, bei Fehler sofort zurückkopieren, erst danach neu laden.
 
 **Vorab prüfen:** Das Haupt-Caddyfile von lx-labs darf kein globales `log` setzen (kein `log` im Optionsblock `{ … }` ganz oben und keines außerhalb eines Site-Blocks). Sonst entstünden auch für lx-fampad Zugriffslogs mit IP-Adressen, die der Datenschutz-Entwurf ausschließt. Prüfen: `grep -n '^[[:space:]]*log' /etc/caddy/Caddyfile`; ein `log` nur im Site-Block von lx-labs.dev betrifft die Familie nicht.
@@ -525,7 +527,7 @@ systemctl list-timers lx-fampad-backup.timer && sudo cat /var/backups/lx-fampad/
 
 **Schritt-für-Schritt-Anleitung zum Einrichten:** [`docs/BACKUP-EINRICHTUNG-SCHRITTE.md`](../docs/BACKUP-EINRICHTUNG-SCHRITTE.md). Nicht gesichert wird u. a. `/srv/fampad/karte` (Kartendatei, neu erzeugbar).
 
-Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern die in diesem Lauf angelegten oder geänderten Dateien, Units, den Benutzer und den Timer-Zustand zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh}`.
+Das Skript ändert weder Caddy noch das Haupt-Caddyfile (lx-labs.dev) noch `sshd_config`; es nimmt bei Fehlern die in diesem Lauf angelegten oder geänderten Dateien, Units, den Benutzer und den Timer-Zustand zurück. Dateien: `deploy/backup/{lx-fampad-backup.sh, lx-fampad-backup.service, lx-fampad-backup.timer, einrichtung-backup.sh, wiederherstellung-test.sh, nas/lx-fampad-pull.sh, nas/lx-fampad-restoretest.sh}`.
 
 ### Swap
 
