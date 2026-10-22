@@ -162,6 +162,13 @@
       "when": 1792651223972,
       "tag": "0022_p1_schluessel_paket",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1792651230000,
+      "tag": "0023_betrieb_paket_2b",
+      "breakpoints": true
     }
   ]
 }

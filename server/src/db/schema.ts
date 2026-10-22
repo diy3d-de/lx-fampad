@@ -620,6 +620,35 @@ export const operatorAlertState = pgTable(
 );
 
 /**
+ * Betreiber-Einstellungen je Familie (Paket 2b, `operator/settings.ts`): genau eine Zeile je Familie, wird beim ersten Schalten angelegt.
+ * Wartungsmodus (sperrt Schreib-Ops, Sync und neue Anmeldungen mit 503 "maintenance"; optional mit automatischem Ende) und Familienhinweis
+ * (kurzer reiner Text mit optionalem Ablauf, den die App als Banner zeigt). Nie Geheimnisse; der Hinweistext steht nur hier, nicht im Audit-Log.
+ */
+export const operatorSettings = pgTable(
+  'operator_settings',
+  {
+    familyId: uuid('family_id')
+      .primaryKey()
+      .references((): AnyPgColumn => families.id, { onDelete: 'cascade' }),
+    maintenanceActive: boolean('maintenance_active').notNull().default(false),
+    maintenanceSince: timestamp('maintenance_since', { withTimezone: true }),
+    /** Automatisches Ende (Sicherung gegen "vergessen auszuschalten"); null = bis der Betreiber ausschaltet. */
+    maintenanceUntil: timestamp('maintenance_until', { withTimezone: true }),
+    maintenanceBy: uuid('maintenance_by').references(() => users.id, { onDelete: 'set null' }),
+    noticeText: text('notice_text'),
+    noticeExpiresAt: timestamp('notice_expires_at', { withTimezone: true }),
+    /** Version des Hinweises (Zeitpunkt des Setzens): die App merkt sich daran, welchen Hinweis eine Person schon weggeklickt hat. */
+    noticeSetAt: timestamp('notice_set_at', { withTimezone: true }),
+    noticeSetBy: uuid('notice_set_by').references(() => users.id, { onDelete: 'set null' }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    check('operator_settings_notice_ck', sql`${t.noticeText} is null or (length(${t.noticeText}) between 1 and 280 and ${t.noticeSetAt} is not null)`),
+    check('operator_settings_maintenance_ck', sql`not ${t.maintenanceActive} or ${t.maintenanceSince} is not null`),
+  ],
+);
+
+/**
  * Kurzlebige WebAuthn-Challenges und Registrierungszustände (Passkey-/Passwort-Einrichtung): einmal einlösbar,
  * wenige Minuten gültig, werden beim Einlösen gelöscht (DELETE ... RETURNING) und vom Aufräum-Job bereinigt.
  */

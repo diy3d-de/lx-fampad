@@ -7,6 +7,7 @@ import 'api_error.dart';
 import '../sync/sync_models.dart';
 import '../crypto/schluessel.dart';
 import '../betrieb/betrieb_modelle.dart';
+import '../betrieb/familien_stand.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -246,6 +247,24 @@ class FampadApi {
 
   /// Schaltet die eigenen Warnungen ein oder aus (Step-up).
   Future<BetriebWarnungen> betriebWarnungenSetzen(bool an) async => BetriebWarnungen.fromJson(await client.put('/admin/warnings', {'enabled': an}));
+
+  /// Sichere Ausschnitte der Server-Konfiguration (nur Schalter und Limits, nie Geheimnisse; ohne Step-up).
+  Future<BetriebKonfiguration> betriebKonfiguration() async => BetriebKonfiguration.fromJson(await client.get('/admin/config'));
+
+  /// Wartungsmodus und Familienhinweis aus Sicht des Betreibers (ohne Step-up).
+  Future<FamilienStand> betriebEinstellungen() async => FamilienStand.fromJson(await client.get('/admin/settings'));
+
+  /// Schaltet den Wartungsmodus (Step-up); [dauer] ist die Dauer bis zum automatischen Ende (1 Minute bis 72 Stunden, ohne Angabe 72 Stunden). Der Server rechnet das Ende
+  /// mit SEINER Uhr aus: die Uhr des Geräts spielt keine Rolle.
+  Future<FamilienStand> betriebWartungSetzen(bool an, {Duration? dauer}) async =>
+      FamilienStand.fromJson(await client.put('/admin/maintenance', {'active': an, if (an && dauer != null) 'untilMinutes': dauer.inMinutes}));
+
+  /// Setzt den Familienhinweis ([text] null löscht ihn; Step-up); [ablauf] ist die Dauer bis zum Ablauf (höchstens 90 Tage; der Server rechnet mit seiner Uhr).
+  Future<FamilienStand> betriebHinweisSetzen(String? text, {Duration? ablauf}) async =>
+      FamilienStand.fromJson(await client.put('/admin/notice', {'text': text, if (text != null && ablauf != null) 'expiresInMinutes': ablauf.inMinutes}));
+
+  /// Wartung und Familienhinweis für alle Angemeldeten (Banner); ältere Server kennen die Route nicht (404).
+  Future<FamilienStand> familienStand() async => FamilienStand.fromJson(await client.get('/family-notice'));
 
   /// Meldet den Schlüsselstand dieses Geräts (nur diese Zahl): 0 = kein Schlüssel, n = Schlüsselversion n. Ältere Server kennen die Route nicht (404).
   Future<void> geraetSchluesselMelden(int version) async {

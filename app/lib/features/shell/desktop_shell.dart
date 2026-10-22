@@ -13,6 +13,7 @@ import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/familien_hinweis_banner.dart';
 import '../../widgets/sync_anzeige.dart';
 import '../auth/auth_widgets.dart';
 import '../betrieb/betrieb_screen.dart';
@@ -236,6 +237,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
               Expanded(
                 child: Column(
                   children: [
+                    // Banner des Betreibers (Wartung, Familienhinweis); ohne Hinweis ist er leer
+                    Align(alignment: Alignment.topCenter, child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: kMaxContentWidthDesktop), child: const FamilienHinweisBanner())),
                     Expanded(
                       // Eigene Semantik-Grenze: die Seiten des Navigators sperren sonst (BlockSemantics) die davor gemalte Seitenleiste für Screenreader
                       child: Semantics(

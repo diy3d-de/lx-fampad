@@ -26,6 +26,7 @@ class SyncIndicator extends ConsumerWidget {
     final (IconData icon, Color farbe, String text) = switch (sync.status) {
       SyncStatus.fehler => (Icons.cloud_off, kDanger, 'Abgleich fehlgeschlagen. ${sync.meldung ?? ''}'.trim()),
       SyncStatus.updateNoetig => (Icons.system_update_alt, kWarn, 'Bitte aktualisiere die App'),
+      SyncStatus.wartung => (Icons.build_outlined, kWarn, offen == null ? 'Wartung' : 'Wartung, $offen'),
       SyncStatus.offline => (Icons.cloud_off, kTextMuted, offen == null ? 'Offline' : 'Offline, $offen'),
       SyncStatus.getrennt => (Icons.cloud_off, kTextMuted, 'Nicht verbunden'),
       SyncStatus.synchron || SyncStatus.laeuft => n > 0
@@ -54,6 +55,7 @@ class SyncIndicator extends ConsumerWidget {
               switch (s.status) {
                 SyncStatus.synchron => 'Abgeglichen',
                 SyncStatus.offline => 'Offline – Änderungen werden später abgeglichen.',
+                SyncStatus.wartung => 'Wartung – Änderungen werden danach abgeglichen.',
                 SyncStatus.getrennt => 'Nicht verbunden',
                 _ => s.meldung ?? 'Der Abgleich ist fehlgeschlagen.',
               },

@@ -1,12 +1,15 @@
 import { readFile } from 'node:fs/promises';
 import type { FastifyInstance } from 'fastify';
 import type { Config } from '../config.js';
+import type { MaintenanceGate } from '../operator/maintenance.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 
 export interface SystemDeps {
   config: Config;
   /** Prüft die Datenbankverbindung; fehlt sie, meldet /health "db: skipped". */
   pingDb?: () => Promise<void>;
+  /** Wartungsmodus (nur mit Datenbank): `GET /version` meldet ihn, damit die App ihn schon vor der Anmeldung kennt. */
+  maintenance?: MaintenanceGate | undefined;
 }
 
 const WEB_VERSION_FORMAT = /^[A-Za-z0-9._-]{1,64}$/;
@@ -32,7 +35,7 @@ async function readWebVersion(config: Config): Promise<string | null> {
   }
 }
 
-export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: SystemDeps): void {
+export function registerSystemRoutes(app: FastifyInstance, { config, pingDb, maintenance }: SystemDeps): void {
   // Health-Check bleibt begrenzt (er fragt die Datenbank ab). Nur Aufrufe von 127.0.0.1 (deploy.sh, lokale Überwachung)
   // sind ausgenommen; über Caddy ist req.ip die echte Client-IP aus X-Forwarded-For, nie 127.0.0.1.
   app.get('/api/v1/health', { config: { rateLimit: { allowList: ['127.0.0.1'] } } }, async (_req, reply) => {
@@ -56,6 +59,7 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb }: S
       minProtocolVersion: config.minProtocolVersion,
       minAppVersion: config.minAppVersion,
       webVersion: await readWebVersion(config),
+      maintenance: maintenance ? (await maintenance.current()) !== null : false,
       features: { pwBackup: config.e2eePwBackup, authKey: config.e2eePwBackup, legacyPasswordLogin: config.auth.legacyPasswordLogin },
     };
   });

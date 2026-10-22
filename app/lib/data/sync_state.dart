@@ -33,6 +33,9 @@ enum SyncStatus {
 
   /// Die App ist für den Server zu alt (Pflicht-Update).
   updateNoetig,
+
+  /// Wartungsmodus des Betreibers: der Server nimmt vorübergehend nichts an; Änderungen bleiben lokal und gehen danach raus.
+  wartung,
 }
 
 /// Hinweis für die Person (z. B. Eintrag anderswo gelöscht); bleibt stehen, bis sie ihn schließt.
@@ -361,6 +364,10 @@ class SyncController extends Notifier<SyncState> {
         } else {
           _backoffPlanen(e);
         }
+      case SyncAusgang.wartung:
+        // kein Fehler: die Änderungen bleiben im Ausgang, der nächste Versuch kommt nach der Wartezeit des Servers (mindestens eine Minute, bis 5 Minuten)
+        state = state.copyWith(status: SyncStatus.wartung, meldung: e.meldung, hinweise: hinweise);
+        _backoffPlanen(e);
       case SyncAusgang.offline:
         state = state.copyWith(status: SyncStatus.offline, meldung: e.meldung, hinweise: hinweise);
         _backoffPlanen(e);
@@ -398,6 +405,18 @@ class SyncController extends Notifier<SyncState> {
     // und nicht hochschaukeln, sonst dauert ein Import mit vielen Änderungen ein Vielfaches der nötigen Zeit.
     if (e.mengenlimit) {
       final warte = _limitWartezeit(e) + Duration(milliseconds: 250 + (ref.read(syncZufallProvider).nextDouble() * 750).round());
+      _backoffTimer?.cancel();
+      _backoffTimer = Timer(warte, () {
+        _backoffTimer = null;
+        unawaited(synchronisieren());
+      });
+      return;
+    }
+    // Wartung des Betreibers: fester Takt (Wartezeit des Servers plus bis zu 30 s Zufall, damit nicht alle Geräte gleichzeitig kommen), kein Hochschaukeln des Fehler-Backoffs
+    // (nach dem Ende der Wartung soll es zügig weitergehen, nicht erst nach Minuten)
+    if (e.ausgang == SyncAusgang.wartung) {
+      final basisSek = (e.warten?.inSeconds ?? 60).clamp(5, 300);
+      final warte = Duration(seconds: basisSek, milliseconds: (ref.read(syncZufallProvider).nextDouble() * 30000).round());
       _backoffTimer?.cancel();
       _backoffTimer = Timer(warte, () {
         _backoffTimer = null;
@@ -447,6 +466,8 @@ String syncMeldungFuer(SyncState s) {
       return s.meldung ?? 'Der Abgleich ist fehlgeschlagen.';
     case SyncStatus.updateNoetig:
       return 'Bitte aktualisiere die App.';
+    case SyncStatus.wartung:
+      return 'Wartung – Änderungen werden danach abgeglichen.';
     default:
       return '';
   }

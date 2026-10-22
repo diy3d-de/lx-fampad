@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/auth/reset_hinweis.dart';
 import '../../data/betrieb/betrieb_hinweis.dart';
+import '../../data/betrieb/familien_hinweis_state.dart';
 import '../betrieb/betrieb_screen.dart';
 import '../../data/database_provider.dart';
 import '../profile/sicherheit_ereignisse_screen.dart';
@@ -23,6 +24,7 @@ import '../../data/standort/standort_hinweis.dart';
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/familien_hinweis_banner.dart';
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
 import '../files/files_screen.dart';
@@ -69,12 +71,14 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   Timer? _ersteUpdatePruefung;
   late final SyncController _sync;
   late final StandortController _standort;
+  late final FamilienHinweisNotifier _hinweis;
 
   @override
   void initState() {
     super.initState();
     _sync = ref.read(syncProvider.notifier);
     _standort = ref.read(standortProvider.notifier);
+    _hinweis = ref.read(familienHinweisProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     ref.read(updateProvider.notifier).init();
     // erste Update-Prüfung kurz nach dem Start (Pflicht-Updates sollen früh auffallen), danach beim Zurückkehren in die App
@@ -83,6 +87,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       ref.read(syncProvider.notifier).starten();
+      // Hinweis des Betreibers und Wartung (Banner); ein Zusatz, scheitert still
+      unawaited(_hinweis.starten());
       // ein Hinweis, der kam, bevor die Oberfläche stand (schneller Abschluss der neuen Passwort-Sicherung)
       _resetHinweisZeigen(ref.read(resetHinweisProvider));
       _autoVerbindenHinweisZeigen(ref.read(autoVerbindenHinweisProvider));
@@ -105,6 +111,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     // Abmelden oder Sitzungsverlust: kein Abgleich mehr (der Ausgang bleibt in der Datenbank)
     _sync.stoppen(zustandAendern: false); // mitten im Abbau des Widget-Baums keinen Zustand ändern
     _standort.anhalten();
+    _hinweis.stoppen();
     super.dispose();
   }
 
@@ -119,6 +126,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     unawaited(ref.read(syncProvider.notifier).vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive));
     _standort.vordergrund(s == AppLifecycleState.resumed || s == AppLifecycleState.inactive);
     if (s != AppLifecycleState.resumed) return;
+    unawaited(_hinweis.laden());
     // Schlüsselstand dieses Geräts (nur die Zahl) erneut melden, wenn die letzte Meldung über 12 Stunden her ist (der Server wertet sie 30 Tage lang)
     unawaited(ref.read(geraetSchluesselMelderZustandProvider).auffrischen(ref.read(apiProvider), ref.read(authProvider).user, ref.read(e2eeProvider)));
     final l = _letztePruefung;
@@ -279,7 +287,12 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     return Scaffold(
       backgroundColor: kBg,
       body: LxBackground(
-        child: SafeArea(child: LxContentWidth(child: IndexedStack(index: tab, children: _screens))),
+        child: SafeArea(
+          child: LxContentWidth(
+            // Banner des Betreibers (Wartung, Familienhinweis) über dem Inhalt; ohne Hinweis ist er leer
+            child: Column(children: [const FamilienHinweisBanner(), Expanded(child: IndexedStack(index: tab, children: _screens))]),
+          ),
+        ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,

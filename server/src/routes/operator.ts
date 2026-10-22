@@ -6,14 +6,17 @@ import { z } from 'zod';
 import type { Auth } from '../auth/service.js';
 import type { Config } from '../config.js';
 import { AUDIT_CATEGORIES, CURSOR_FORMAT, listAudit } from '../operator/audit-view.js';
+import { collectConfig } from '../operator/config-view.js';
 import { collectKeyStatus, summarize } from '../operator/key-status.js';
+import type { MaintenanceGate } from '../operator/maintenance.js';
 import { collectMembers, unlockMember } from '../operator/members.js';
 import { setWarningsEnabled, type OperatorMonitor } from '../operator/monitor.js';
 import type { Probes } from '../operator/probes.js';
 import { requireOperator } from '../operator/service.js';
+import { getSettings, setMaintenance, setNotice } from '../operator/settings.js';
 import { collectStatus, type OperatorStatus } from '../operator/status.js';
 import type { WeatherService } from '../weather/service.js';
-import { idParams, meta, parse, strictLimit } from './util.js';
+import { idParams, meta, parse, safeString, strictLimit } from './util.js';
 
 /** Status wird kurz zwischengespeichert (die Abfrage geht auch an ntfy und TLS); "fresh" umgeht den Cache höchstens alle 5 Sekunden. */
 const STATUS_CACHE_MS = 15_000;
@@ -29,7 +32,18 @@ const auditQuery = z
   })
   .strict();
 
-export function registerOperatorRoutes(app: FastifyInstance, config: Config, auth: Auth, weather: WeatherService | undefined, monitor: OperatorMonitor, probes?: Partial<Probes>): void {
+const maintenanceBody = z.object({ active: z.boolean(), untilMinutes: z.number().int().nullable().optional() }).strict();
+const noticeBody = z.object({ text: safeString().max(2000).nullable(), expiresInMinutes: z.number().int().nullable().optional() }).strict();
+
+export function registerOperatorRoutes(
+  app: FastifyInstance,
+  config: Config,
+  auth: Auth,
+  weather: WeatherService | undefined,
+  monitor: OperatorMonitor,
+  gate: MaintenanceGate,
+  probes?: Partial<Probes>,
+): void {
   const ctx = auth.ctx;
   const limit = strictLimit(config);
   const cache = new Map<string, { at: number; value: OperatorStatus }>();
@@ -46,6 +60,28 @@ export function registerOperatorRoutes(app: FastifyInstance, config: Config, aut
     cache.set(p.familyId, { at: now, value });
     return value;
   });
+
+  // Konfiguration (Paket 2b): nur sichere Ausschnitte (Schalter, Limits), nie Geheimnisse; nur lesend, ohne Step-up (keine Personen, keine Adressen mit Zugangsdaten)
+  app.get('/api/v1/admin/config', limit, async (req) => {
+    await requireOperator(ctx, await auth.requireSession(req));
+    return collectConfig(config);
+  });
+
+  // Wartungsmodus und Familienhinweis (Paket 2b): Stand lesen ohne Step-up, Schalten und Setzen mit frischem Step-up; jeweils ins Audit-Log
+  app.get('/api/v1/admin/settings', limit, async (req) => getSettings(ctx, (await requireOperator(ctx, await auth.requireSession(req))).familyId));
+  app.put('/api/v1/admin/maintenance', limit, async (req) => {
+    const p = await requireOperator(ctx, await auth.requireSession(req), { stepUp: true });
+    const body = parse(maintenanceBody, req.body);
+    return setMaintenance(ctx, gate, p, { active: body.active, minutes: body.untilMinutes ?? null }, meta(req));
+  });
+  app.put('/api/v1/admin/notice', limit, async (req) => {
+    const p = await requireOperator(ctx, await auth.requireSession(req), { stepUp: true });
+    const body = parse(noticeBody, req.body);
+    return setNotice(ctx, p, { text: body.text, expiresInMinutes: body.expiresInMinutes ?? null }, meta(req));
+  });
+
+  // Für ALLE angemeldeten Mitglieder (kein Betreiber nötig): Wartung und Familienhinweis, die die App als Banner bzw. Meldung zeigt. Reiner Text, keine Personen.
+  app.get('/api/v1/family-notice', async (req) => getSettings(ctx, (await auth.requireSession(req)).familyId));
 
   // Das Protokoll nennt Personen und Netze: nur mit frischer Bestätigung (Step-up)
   app.get('/api/v1/admin/audit', limit, async (req) => {

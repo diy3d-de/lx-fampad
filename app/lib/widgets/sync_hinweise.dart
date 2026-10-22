@@ -34,6 +34,7 @@ class SyncStatusLeiste extends StatelessWidget {
       SyncStatus.offline => offen > 0 ? 'Offline – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} später abgeglichen.' : 'Offline – Änderungen werden später abgeglichen.',
       SyncStatus.fehler => 'Der Abgleich hat nicht geklappt. Deine Änderungen bleiben gespeichert und werden erneut gesendet.',
       SyncStatus.updateNoetig => 'Bitte aktualisiere die App, damit der Abgleich wieder funktioniert.',
+      SyncStatus.wartung => offen > 0 ? 'Wartung – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} danach abgeglichen.' : 'Wartung – der Abgleich läuft danach weiter.',
       _ => null,
     };
     if (text == null) return const SizedBox.shrink();
@@ -52,7 +53,7 @@ class SyncStatusLeiste extends StatelessWidget {
           ),
           child: Row(
             children: [
-              Icon(sync.status == SyncStatus.offline ? Icons.cloud_off : Icons.error_outline, size: 16, color: farbe),
+              Icon(sync.status == SyncStatus.offline ? Icons.cloud_off : (sync.status == SyncStatus.wartung ? Icons.build_outlined : Icons.error_outline), size: 16, color: farbe),
               const SizedBox(width: 10),
               Expanded(child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: farbe))),
             ],

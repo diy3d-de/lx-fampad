@@ -209,6 +209,14 @@ sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js 
 sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js list
 ```
 
+**Wartungsmodus, Notausgang:** Der Betreiber schaltet den Wartungsmodus in der App (Betrieb > Einstellungen; Schreiben, Abgleich und neue Anmeldungen sind dann gesperrt, Lesen und bestehende Sitzungen laufen weiter). Ist seine Sitzung abgelaufen und er kann sich wegen der Sperre nicht neu anmelden, schaltet dieser Befehl den Modus auf dem Server ab (Audit-Eintrag „via cli“):
+
+```bash
+sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js maintenance off
+```
+
+Der Modus hat immer ein Ende (gewählte Dauer, höchstens 72 Stunden) und endet von selbst; der Notausgang beendet ihn früher, wenn niemand mehr an die Oberfläche kommt.
+
 Der Status liest nur, was der Dienst (Benutzer `lx-fampad`, Sandbox) ohne root darf; Unlesbares zeigt die App als „unbekannt“. Dazu gehört die Statusdatei der Sicherung: der Dienst bekommt **kein** Leserecht auf `/var/backups/lx-fampad` (dort liegen die verschlüsselten Sicherungen), sondern liest eine **zweite Statusdatei** `/var/lib/lx-fampad-status/backup.status` (nur `last_result`, Zeiten und Größen, keine Pfade, keine Geheimnisse), die die Sicherung als root nach jedem Lauf schreibt. Einmalig auf dem Server einrichten (root, idempotent, `--dry-run` zeigt vorher, was passiert; legt den Ordner `root:lx-fampad 0750` an und füllt die Datei aus einer vorhandenen Statusdatei, damit nicht bis 03:30 Uhr gewartet werden muss):
 
 ```bash

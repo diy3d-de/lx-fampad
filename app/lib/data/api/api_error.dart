@@ -20,6 +20,9 @@ enum ApiErrorKind {
   /// Server überlastet (503 server_busy).
   serverBusy,
 
+  /// Der Betreiber hat den Wartungsmodus eingeschaltet (503 maintenance): Schreiben, Abgleich und neue Anmeldungen sind vorübergehend gesperrt.
+  wartung,
+
   /// Konto wartet auf Freigabe (403 account_pending).
   kontoWartet,
 
@@ -32,6 +35,9 @@ enum ApiErrorKind {
   /// Alles andere (Eingabe falsch, Konflikt, nicht erlaubt, Serverfehler ...).
   sonstiges,
 }
+
+/// Meldung bei Wartung (feste Meldung der App, nie ein Servertext).
+const kWartungMeldung = 'Die Familienzentrale ist gerade in Wartung. Bitte versuche es später noch einmal.';
 
 class ApiException implements Exception {
   final ApiErrorKind kind;
@@ -126,6 +132,10 @@ class ApiException implements Exception {
     // Push ist auf dem Server nicht eingerichtet: kein Überlast-Hinweis (503 ist hier ein dauerhafter Zustand)
     if (code == 'push_unavailable') {
       return ApiException(kind: ApiErrorKind.sonstiges, status: status, code: code, message: _texte[code]!);
+    }
+    // Wartungsmodus des Betreibers: eigener Zustand, kein Fehler (die Daten bleiben auf dem Gerät und gehen danach raus)
+    if (code == 'maintenance') {
+      return ApiException(kind: ApiErrorKind.wartung, status: status, code: code, retryAfter: warte, message: kWartungMeldung);
     }
     if (status == 503) {
       return ApiException(
@@ -225,6 +235,9 @@ class ApiException implements Exception {
     'legacy_login_disabled': 'Diese App-Version ist zu alt für die Anmeldung. Bitte aktualisiere die App.',
     'password_change_needs_update': 'Zum Ändern des Passworts brauchst du die neueste App-Version. Bitte aktualisiere die App.',
     'backup_not_current': 'Die Passwort-Sicherung ist nicht mehr aktuell. Bitte versuche es noch einmal.',
+    'invalid_notice': 'Der Hinweis ist nicht gültig: 1 bis 280 Zeichen in einer Zeile, ohne Sonderzeichen.',
+    'notice_link': 'Der Hinweis darf keine Links oder Webadressen enthalten.',
+    'invalid_duration': 'Die gewählte Dauer ist nicht gültig. Bitte wähle sie noch einmal.',
     'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
   };
 }
