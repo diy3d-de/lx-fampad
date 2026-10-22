@@ -589,9 +589,12 @@ describe.each(backends)('Passwort-Reset ($name)', (backend) => {
       const { runMaintenance } = await import('../src/auth/maintenance.js');
       await runMaintenance(world.auth.ctx);
       expect(await world.count('security_events')).toBe(3);
-      // Konto entfernen löscht die Ereignisse mit (Datenschutz)
+      // Konto entfernen (Soft-Delete): die Ereignisse bleiben während der Aufbewahrungsfrist, mit dem endgültigen Löschen verschwinden sie (Datenschutz)
       await stepUp(f);
       expect((await f.a.client.del(`/api/v1/members/${f.mamaId}`)).status).toBe(200);
+      expect(await world.count('security_events')).toBe(3);
+      await harness.db.execute(sql`update users set removed_at = ${new Date(world.clock - 31 * 86_400_000).toISOString()}::timestamptz where id = ${f.mamaId}`);
+      await runMaintenance(world.auth.ctx);
       expect(await world.count('security_events')).toBe(0);
     });
   });

@@ -19,6 +19,7 @@ import '../auth/step_up.dart';
 import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../betrieb/betrieb_screen.dart';
 import 'abmelden_pruefung.dart';
+import 'absicherung_screen.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
 import 'heute_widget_screen.dart';
@@ -275,6 +276,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           untertitel: me == null ? 'wird geladen …' : '${me.recoveryCodesRemaining} übrig · neue erzeugen',
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
+        AbsicherungsZeile(onTap: () => _oeffne(const AbsicherungScreen())),
         VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
         EinstellungsZeile(icon: Icons.shield_outlined, titel: 'Sicherheitsereignisse', untertitel: 'passwort-resets und hinweise', onTap: () => _oeffne(const SicherheitEreignisseScreen())),
         EinstellungsZeile(

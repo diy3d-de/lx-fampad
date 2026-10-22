@@ -10,6 +10,7 @@ import '../api/api_error.dart';
 import '../api/fampad_api.dart';
 import '../api/models.dart';
 import '../auth/auth_state.dart';
+import '../auth/eigener_abruf.dart';
 import 'bytes.dart';
 import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
@@ -56,6 +57,27 @@ enum PwNachReset {
   keinSchluesselAufGeraet,
 
   /// Das Anlegen ist gescheitert (Netz, Bestätigung abgelaufen o. Ä.): die Sicherung lässt sich unter Profil > Verschlüsselung neu anlegen.
+  fehlgeschlagen,
+}
+
+/// Ausgang des automatischen Verbindens nach der Anmeldung mit Passwort ([E2eeController.automatischVerbinden]).
+enum AutoVerbinden {
+  /// Es gab nichts zu tun (Gerät hat schon einen Schlüssel, Person hat noch keinen, Passwort-Sicherung nicht angeboten).
+  nichtNoetig,
+
+  /// Das Gerät ist jetzt mit dem Personenschlüssel verbunden.
+  verbunden,
+
+  /// Es gibt keine bestätigte Passwort-Sicherung: Verbinden geht nur mit Wiederherstellungsschlüssel oder einem anderen Gerät.
+  keineSicherung,
+
+  /// Die Passwort-Sicherung ist veraltet (nach einem Passwort-Reset): sie gehört zum alten Passwort.
+  veraltet,
+
+  /// Das Anmelde-Passwort öffnet die Sicherung nicht (sie wurde mit einem anderen Passwort angelegt).
+  passwortPasstNicht,
+
+  /// Technischer Fehler (Netz, Speicher, Step-up): es wurde nichts verändert; manuell unter Profil > Verschlüsselung.
   fehlgeschlagen,
 }
 
@@ -357,6 +379,9 @@ class UebertragungsAnzeige {
 class E2eeController extends Notifier<E2eeState> {
   Personenschluessel? _lokal;
 
+  /// Zähler der Ladeläufe ([laden]): nur der jüngste Lauf darf Zustand und lokalen Schlüssel setzen.
+  int _ladeLauf = 0;
+
   @override
   E2eeState build() {
     // Dieselbe Notifier-Instanz wird nach invalidate neu gebaut: den Schlüssel der bisherigen Person nie behalten
@@ -488,21 +513,45 @@ class E2eeController extends Notifier<E2eeState> {
   Future<OeffentlicheSchluessel?> _serverSchluessel() async => (await _api.eigeneSchluessel()).schluessel;
 
   /// Lädt Schlüsselstand, Mitglieder und Warnungen neu.
-  Future<void> laden() async {
+  Future<void> laden() {
     final uid = ref.read(authProvider).user?.id;
-    if (uid == null) return;
+    if (uid == null) return Future<void>.value();
+    // Generationszähler: überlappende Läufe (Seite, Chat-Schlüsselbund, automatisches Verbinden) dürfen sich nicht überschreiben. Ein älterer Lauf, der nach einem
+    // neueren (oder nach dem Übernehmen eines Schlüssels) fertig wird, verwirft sein Ergebnis und fasst weder den Zustand noch den lokalen Schlüssel an.
+    final lauf = ++_ladeLauf;
+    final f = _ladenLauf(uid, lauf);
+    _juengsterLauf = f;
+    return f;
+  }
+
+  Future<void>? _juengsterLauf;
+
+  /// Ein abgelöster Lauf wartet auf den jüngsten: Wer `await laden()` aufruft, sieht danach den neuesten Stand (nicht den vor dem Lauf).
+  Future<void> _abwarten(int lauf) async {
+    final j = _juengsterLauf;
+    if (ref.mounted && lauf != _ladeLauf && j != null) await j;
+  }
+
+  Future<void> _ladenLauf(String uid, int lauf) async {
+    bool veraltet() => lauf != _ladeLauf || !ref.mounted;
     try {
       final crypto = await _krypto();
       // der lokale Schlüssel gehört zum Gerät: er steht auch ohne Verbindung zum Server zur Verfügung (Chat lesen und schreiben offline)
       try {
-        _lokal ??= await _lokalLaden(crypto);
+        if (_lokal == null) {
+          final gelesen = await _lokalLaden(crypto);
+          if (veraltet()) return await _abwarten(lauf);
+          _lokal ??= gelesen; // erst nach dem Lesen prüfen: ein inzwischen übernommener Schlüssel wird nie überschrieben
+        }
       } on SchluesselSpeicherFehler {
         // der Schlüsselspeicher ist gerade nicht lesbar: unten wird es erneut versucht und gemeldet
       }
       final eigene = await _api.eigeneSchluessel();
       final mitglieder = await _api.mitglieder();
-      if (!ref.mounted) return;
-      _lokal = await _lokalLaden(crypto);
+      if (veraltet()) return await _abwarten(lauf);
+      final gelesen = await _lokalLaden(crypto);
+      if (veraltet()) return await _abwarten(lauf);
+      _lokal = gelesen;
       await _zwischenstandAufloesen(crypto, eigene.schluessel);
       final server = eigene.schluessel;
       if (server != null) await _versionMerken(uid, server.version);
@@ -529,7 +578,7 @@ class E2eeController extends Notifier<E2eeState> {
       final quarantaene = await _quarantaeneLesen(uid);
       // der Browser darf die Daten löschen, wenn er die dauerhafte Ablage verweigert: die Anfrage kann beim Nutzer nachfragen, darum mit Zeitlimit
       final dauer = await _speicher.dauerhaftigkeit().timeout(const Duration(seconds: 2), onTimeout: () => SpeicherDauer.unbekannt).catchError((Object _) => SpeicherDauer.unbekannt);
-      if (!ref.mounted) return;
+      if (veraltet()) return await _abwarten(lauf);
       state = E2eeState(
         status: status,
         vertrauenDefekt: ablageDefekt,
@@ -559,7 +608,7 @@ class E2eeController extends Notifier<E2eeState> {
         ]),
       );
     } on VertrauensAblageDefekt {
-      if (ref.mounted) {
+      if (!veraltet()) {
         state = const E2eeState(
           status: E2eeStatus.nichtVerfuegbar,
           vertrauenDefekt: true,
@@ -567,11 +616,11 @@ class E2eeController extends Notifier<E2eeState> {
         );
       }
     } on CryptoFehler catch (e) {
-      if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.meldung);
+      if (!veraltet()) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.meldung);
     } on SchluesselSpeicherFehler {
-      if (ref.mounted) state = const E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: 'Der Schlüsselspeicher dieses Geräts ist gerade nicht lesbar. Bitte versuche es gleich noch einmal.');
+      if (!veraltet()) state = const E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: 'Der Schlüsselspeicher dieses Geräts ist gerade nicht lesbar. Bitte versuche es gleich noch einmal.');
     } on ApiException catch (e) {
-      if (ref.mounted) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.message);
+      if (!veraltet()) state = E2eeState(status: E2eeStatus.nichtVerfuegbar, meldung: e.message);
     }
   }
 
@@ -840,6 +889,9 @@ class E2eeController extends Notifier<E2eeState> {
     }
   }
 
+  /// Marke "eigener Abruf der Passwort-Sicherung" (siehe eigener_abruf.dart), VOR dem Abruf setzen. Wirft nie.
+  Future<void> _eigenerAbruf() => ref.read(eigenerPwAbrufMarkeProvider)();
+
   PwSicherungAblauf _pwAblauf(CryptoProvider crypto) {
     final email = ref.read(authProvider).user?.email;
     if (email == null || email.trim().isEmpty) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Zu deinem Konto gehört keine E-Mail-Adresse.');
@@ -902,6 +954,7 @@ class E2eeController extends Notifier<E2eeState> {
   /// Sicherung). Ohne Sicherung oder ohne Schlüssel auf dem Gerät wird nur das Passwort geändert; die Antwort sagt, ob die Sicherung dann veraltet ist.
   Future<PwWechselErgebnis> passwortWechselAusfuehren(PwWechselEntwurf w, String neuesPasswort) async {
     var hatSicherung = false;
+    await _eigenerAbruf();
     try {
       await _api.pwSicherungAbrufen();
       hatSicherung = true;
@@ -942,6 +995,7 @@ class E2eeController extends Notifier<E2eeState> {
       final uid = _userId;
       if (!await _api.pwSicherungVerfuegbar()) return PwNachReset.nichtNoetig;
       PwSicherungDto? aktuell;
+      await _eigenerAbruf();
       try {
         aktuell = await _api.pwSicherungAbrufen();
       } on ApiException catch (e) {
@@ -982,9 +1036,53 @@ class E2eeController extends Notifier<E2eeState> {
   /// Gibt `true` zurück, wenn die Sicherung veraltet war (Passwort-Reset): Das Gerät ist verbunden, die Sicherung sollte jetzt erneuert werden.
   Future<bool> mitPasswortVerbinden(String passwort) async {
     final crypto = await _krypto();
+    await _eigenerAbruf();
     final r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
     await _lokalUebernehmen(r.schluessel, r.keyVersion);
     return r.veraltet;
+  }
+
+  /// Nach der Anmeldung mit Passwort (ein Passwort für Anmeldung und Sicherung): Hat dieses Gerät noch keinen Schlüssel, der Server aber eine bestätigte, nicht
+  /// veraltete Passwort-Sicherung, öffnet die App sie mit dem Passwort, das die Person gerade eingegeben hat, und verbindet das Gerät (kein zweites Passwort).
+  /// Nie ein neuer Personenschlüssel, nie ein vorhandener lokaler Schlüssel wird angefasst oder ersetzt (liegt einer da, passiert nichts, auch bei "abweichend": das
+  /// entscheidet die Person unter Profil > Verschlüsselung). Übernommen wird der Schlüssel erst nach dem Vergleich mit dem frisch geholten öffentlichen Schlüssel
+  /// des Servers ([_lokalUebernehmen]). Wirft nie; der Ausgang sagt, was geschehen ist.
+  Future<AutoVerbinden> automatischVerbinden(String passwort) async {
+    try {
+      if (!await _api.pwSicherungVerfuegbar()) return AutoVerbinden.nichtNoetig;
+      final crypto = await _krypto();
+      final Personenschluessel? lokal;
+      try {
+        lokal = _lokal ?? await _lokalLaden(crypto);
+      } on SchluesselSpeicherFehler {
+        return AutoVerbinden.fehlgeschlagen; // Speicher gerade nicht lesbar: nichts anfassen
+      }
+      if (lokal != null) return AutoVerbinden.nichtNoetig;
+      final eigene = await _api.eigeneSchluessel();
+      if (eigene.schluessel == null) return AutoVerbinden.nichtNoetig; // noch kein Schlüssel eingerichtet: nie automatisch einen anlegen
+      // Zustand des Servers zuerst (ohne die protokollierte Sicherung abzurufen): nur eine bestätigte, aktuelle Sicherung ist ein Ziel
+      if (eigene.pwSicherungVeraltet) return AutoVerbinden.veraltet;
+      if (eigene.pwSicherungBestaetigtAm == null) return AutoVerbinden.keineSicherung;
+      final ({Personenschluessel schluessel, int keyVersion, bool veraltet}) r;
+      await _eigenerAbruf();
+      try {
+        r = await _pwAblauf(crypto).abrufenUndOeffnen(passwort);
+      } on CryptoFehler catch (e) {
+        return e.art == CryptoFehlerArt.entschluesselung ? AutoVerbinden.passwortPasstNicht : AutoVerbinden.fehlgeschlagen;
+      } on ApiException catch (e) {
+        return e.code == 'not_found' ? AutoVerbinden.keineSicherung : AutoVerbinden.fehlgeschlagen;
+      }
+      // _lokalUebernehmen prüft gegen den frisch geholten Schlüssel des Servers und schreibt erst dann
+      await _lokalUebernehmen(r.schluessel, r.keyVersion);
+      return AutoVerbinden.verbunden;
+    } on Object {
+      try {
+        if (ref.mounted) await laden();
+      } on Object {
+        // nur die Anzeige
+      }
+      return AutoVerbinden.fehlgeschlagen;
+    }
   }
 
   /// Nimmt den Schlüssel aus dem Betrieb dieses Geräts (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden. Der Schlüssel wird

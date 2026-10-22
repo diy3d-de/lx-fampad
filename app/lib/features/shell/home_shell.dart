@@ -11,7 +11,9 @@ import '../../data/betrieb/betrieb_hinweis.dart';
 import '../betrieb/betrieb_screen.dart';
 import '../../data/database_provider.dart';
 import '../profile/sicherheit_ereignisse_screen.dart';
+import '../profile/verschluesselung_screen.dart' show VerschluesselungScreen;
 import '../../data/chat/chat_repository.dart';
+import '../../data/crypto/auto_verbinden.dart';
 import '../../data/crypto/e2ee_state.dart' show e2eeProvider;
 import '../../data/crypto/geraet_schluessel_melder.dart';
 import '../../data/push/push_state.dart';
@@ -83,6 +85,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(syncProvider.notifier).starten();
       // ein Hinweis, der kam, bevor die Oberfläche stand (schneller Abschluss der neuen Passwort-Sicherung)
       _resetHinweisZeigen(ref.read(resetHinweisProvider));
+      _autoVerbindenHinweisZeigen(ref.read(autoVerbindenHinweisProvider));
       unawaited(_abgemeldetHinweisPruefen());
       // Sicherheitsereignisse seit dem letzten Mal (Passwort-Reset für dein Konto angefordert oder durchgeführt)
       unawaited(ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: true, hinweis: ref.read(resetHinweisProvider.notifier)));
@@ -136,6 +139,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     // Nach einem Passwort-Reset: was mit der Passwort-Sicherung geschehen ist (einmal, lange genug zum Lesen)
     ref.listen(resetHinweisProvider, (_, text) => _resetHinweisZeigen(text));
+    // Nach der Anmeldung mit Passwort: Gerät automatisch mit dem Schlüssel verbunden (oder warum nicht)
+    ref.listen(autoVerbindenHinweisProvider, (_, text) => _autoVerbindenHinweisZeigen(text));
     // Tipp auf die Sicherheitsbenachrichtigung: Profil > Sicherheitsereignisse
     ref.listen(sicherheitOeffnenProvider, (_, _) {
       if (mounted) unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const SicherheitEreignisseScreen())));
@@ -185,6 +190,24 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     if (text == null || !mounted) return;
     ref.read(resetHinweisProvider.notifier).setzen(null);
     unawaited(_dialogZeigen('Sicherheitshinweis', text));
+  }
+
+  /// Hinweis nach dem automatischen Verbinden (P1): kurz und ruhig, kein Dialog. Der Zustand wird sofort geleert.
+  void _autoVerbindenHinweisZeigen(AutoVerbindenHinweis? hinweis) {
+    if (hinweis == null || !mounted) return;
+    ref.read(autoVerbindenHinweisProvider.notifier).setzen(null);
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(hinweis.abgebenAnbieten ? '${hinweis.text} Ist das nicht dein eigenes Gerät? Dann gib es unter „Gerät abgeben“ wieder ab.' : hinweis.text),
+          duration: const Duration(seconds: 12),
+          // Weg zurück: Profil > Verschlüsselung (dort „Gerät abgeben – alles löschen“ unter „Erweitert“)
+          action: hinweis.abgebenAnbieten
+              ? SnackBarAction(label: 'Gerät abgeben', onPressed: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const VerschluesselungScreen()))))
+              : null,
+        ),
+      );
   }
 
   Future<void> _dialogZeigen(String titel, String text, {VoidCallback? danach}) async {

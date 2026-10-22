@@ -7,6 +7,7 @@ import { AppError } from '../errors.js';
 import { writeAudit } from './audit.js';
 import type { AuthContext, RequestMeta } from './context.js';
 import { sha256Hex } from './crypto.js';
+import { collectKeyStatus, type Ampel, type Ways } from '../operator/key-status.js';
 import { countArchive, thinReplaced } from './keys-archive.js';
 import { recordDebouncedEvent, recordSecurityEvent, viaOf, wakeAfterCommit, wakeTopics } from './security-events.js';
 import { requireDestructiveAllowed, requireStepUp } from './sessions.js';
@@ -66,6 +67,43 @@ export async function getOwnKeys(ctx: AuthContext, p: SessionPrincipal): Promise
     pwBackupVerifiedAt: verified?.at?.toISOString() ?? null,
     recoveryBackupAt: hasBackup && b ? b.updatedAt.toISOString() : null,
     archiveCount: await countArchive(ctx, p.userId, k?.keyVersion ?? 0),
+  };
+}
+
+export interface OwnKeySafety {
+  generatedAt: string;
+  /** Dieselbe Ampel wie in der Betreiber-Ansicht (eine Rechenvorschrift, `ampelOf`): grün nur mit mindestens zwei unabhängigen Wegen, darunter ein Gerät mit dem aktuellen Schlüssel. */
+  ampel: Ampel;
+  hasKeys: boolean;
+  keyVersion: number | null;
+  ways: Ways;
+  wayCount: number;
+  devicesTotal: number;
+  devicesWithKey: number;
+  devicesReported: number;
+  archiveCount: number;
+}
+
+/**
+ * "Bin ich abgesichert?": die Schlüssel-Ampel der eigenen Person (nur Zustände und Zahlen, nie Schlüssel oder Sicherungen). Die App ergänzt sie um das, was nur das
+ * Gerät weiß (liegt der Schlüssel hier wirklich?). Grenze wie in der Betreiber-Ansicht: Geräte melden ihren Stand selbst (`PUT /me/device-key`), und eine Sicherung
+ * zählt als Weg, sobald sie bestätigt ist (Passwort-Sicherung nach Round-Trip) bzw. nach dem Abtippen des Wiederherstellungsschlüssels abgelegt wurde.
+ */
+export async function getOwnKeySafety(ctx: AuthContext, p: SessionPrincipal): Promise<OwnKeySafety> {
+  const status = await collectKeyStatus(ctx, p.familyId, { onlyUserId: p.userId });
+  const me = status.persons[0];
+  if (!me) throw notFound();
+  return {
+    generatedAt: status.generatedAt,
+    ampel: me.ampel,
+    hasKeys: me.hasKeys,
+    keyVersion: me.keyVersion,
+    ways: me.ways,
+    wayCount: me.wayCount,
+    devicesTotal: me.devicesTotal,
+    devicesWithKey: me.devicesWithKey,
+    devicesReported: me.devicesReported,
+    archiveCount: me.archiveCount,
   };
 }
 

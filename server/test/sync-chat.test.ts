@@ -491,7 +491,8 @@ describe.each(backends)('Chat im Sync ($name)', (backend) => {
       expect(byId(g3)[0]?.fields.teilnehmer).toEqual([fam.child.userId, fam.parent.userId].sort());
       // Nachricht im Familienchat bleibt, Autor ist leer
       expect(byId(famMsg)[0]?.fields).toMatchObject({ autorId: null, text: E1('Hallo') });
-      expect(await rows(sql`select count(*)::int as n from lesestand where user_id = ${opa.userId}`)).toEqual([{ n: 0 }]);
+      // Soft-Delete: der Lesestand der Person ist weg (Tombstone), die Zeile bleibt bis zum endgültigen Löschen liegen
+      expect(await rows(sql`select count(*)::int as n from lesestand where user_id = ${opa.userId} and deleted_at is null`)).toEqual([{ n: 0 }]);
       // Admin sieht von all dem nichts Privates
       expect(ids(await fam.admin.pull()).filter((i) => [dm, g2, g3].includes(i))).toEqual([]);
       // die entfernte Person ist kein gültiger Teilnehmer mehr

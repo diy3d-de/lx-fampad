@@ -12,7 +12,7 @@
 //  - Löschen gewinnt: ein Update auf einen gelöschten Datensatz wird mit `deleted` abgelehnt, ein Löschen wirkt immer.
 import { and, count, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import type { AuthContext, Executor } from '../auth/context.js';
-import { appliedOps, changeLog, families, memberships } from '../db/schema.js';
+import { appliedOps, changeLog, families, memberships, users } from '../db/schema.js';
 import type { Role } from '../auth/types.js';
 import { AppError } from '../errors.js';
 import { authorize, mayRead, rolesThatMayRead, type Actor, type Facts } from './permissions.js';
@@ -127,10 +127,12 @@ async function memberRefsValid(tx: Executor, familyId: string, value: unknown): 
 }
 
 async function isActiveMember(tx: Executor, familyId: string, userId: string): Promise<boolean> {
+  // entfernte (Soft-Delete) und gesperrte Konten sind keine gültigen Verweise mehr, auch wenn ihre Mitgliedschaft bis zum endgültigen Löschen liegen bleibt
   const rows = await tx
     .select({ id: memberships.id })
     .from(memberships)
-    .where(and(eq(memberships.familyId, familyId), eq(memberships.userId, userId), eq(memberships.status, 'active')))
+    .innerJoin(users, eq(users.id, memberships.userId))
+    .where(and(eq(memberships.familyId, familyId), eq(memberships.userId, userId), eq(memberships.status, 'active'), isNull(users.disabledAt)))
     .limit(1);
   return rows.length > 0;
 }

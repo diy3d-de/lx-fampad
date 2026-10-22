@@ -18,6 +18,7 @@ import '../../ui/widgets.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
+import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../../data/tasks/aufgabe_logik.dart';
 import '../chat/chat_anzeige.dart';
 import '../lists/list_dialogs.dart';
@@ -53,6 +54,7 @@ class DesktopHome extends ConsumerWidget {
         _Kopfzeile(label: '// $heute', gruss: tagesgruss(name, jetzt)),
         const SizedBox(height: 24),
         const UpdateAnzeige(),
+        const AbsicherungsKarte(),
         const _Raster(),
       ],
     );

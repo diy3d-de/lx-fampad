@@ -12,6 +12,7 @@ import 'package:lx_fampad/data/api/fampad_api.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/app_database.dart';
+import 'package:lx_fampad/data/auth/eigener_abruf.dart';
 import 'package:lx_fampad/data/auth/reset_hinweis.dart';
 import 'package:lx_fampad/data/auth/sicherheit_text.dart';
 import 'package:lx_fampad/data/crypto/bytes.dart';
@@ -183,6 +184,75 @@ void main() {
       expect('${z.titel} ${z.text}', isNot(contains('Anna')), reason: 'nie Namen oder Einzelheiten');
     });
 
+    test('Hinweis an die Familie (Komplett-Reset eines anderen Mitglieds): Text mit Namen in der App, fester Text ohne Namen in der Benachrichtigung', () async {
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final familie = {...ereignis('e1', DateTime.now().add(const Duration(minutes: 1)), kind: 'member_account_reset'), 'subjectName': 'Mama'};
+      final dto = SicherheitsEreignisDto.fromJson(familie);
+      expect(dto.art, SicherheitsArt.mitgliedZugangZurueckgesetzt);
+      expect(dto.betroffener, 'Mama');
+      expect(sicherheitsEreignisText(dto), 'Der Zugang von Mama wurde zurückgesetzt. Nimm einen neuen Schlüssel dieser Person nur nach Rücksprache an.');
+      expect(sicherheitsEreignisText(SicherheitsEreignisDto.fromJson({...familie, 'subjectName': null})), contains('einem Familienmitglied'));
+      a.server.json('GET /me/security-events', {'events': [familie]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final z = a.anzeige.sicherheit.single;
+      expect(z.text, startsWith('In der Familie wurde ein Zugang zurückgesetzt.'));
+      expect('${z.titel} ${z.text}', isNot(contains('Mama')), reason: 'nie Namen in der Benachrichtigung');
+      expect(z.text, isNot(contains('An deinem Konto')), reason: 'es ist nicht das eigene Konto');
+      // zusammen mit einem Ereignis am eigenen Konto gilt der allgemeine Text
+      await a.db.metaSchreiben(kSicherheitSeitSchluessel, DateTime.utc(2020).toIso8601String());
+      a.anzeige.sicherheit.clear();
+      a.server.json('GET /me/security-events', {'events': [familie, ereignis('e2', DateTime.now().add(const Duration(minutes: 2)), kind: 'password_reset_done')]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit.single.text, startsWith('An deinem Konto'));
+    });
+
+    test('Eigener Abruf der Passwort-Sicherung (Marke dieses Geräts): nur eine Information, kein Dialog, keine Benachrichtigung, der Stand rückt vor', () async {
+      final a = await bauen();
+      a.server.json('GET /me/security-events', {'events': <Object>[]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      final t = DateTime.now().add(const Duration(minutes: 1));
+      final lesen = ereignis('e1', t, kind: 'key_backup_pw_read');
+      expect(SicherheitsEreignisDto.fromJson(lesen).art, SicherheitsArt.passwortSicherungAbgerufen);
+      expect(sicherheitsEreignisText(SicherheitsEreignisDto.fromJson(lesen)), contains('Passwort-Sicherung'));
+      // das Gerät hat kurz davor selbst abgerufen (z. B. automatisches Verbinden)
+      await a.db.metaSchreiben(kEigenerPwAbrufSchluessel, t.subtract(const Duration(seconds: 20)).toUtc().toIso8601String());
+      a.server.json('GET /me/security-events', {'events': [lesen]});
+      String? gesetzt;
+      await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((x) => gesetzt = x));
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(gesetzt, isNull);
+      expect(a.anzeige.sicherheit, isEmpty);
+      expect(DateTime.parse((await a.db.metaLesen(kSicherheitSeitSchluessel))!).isAtSameMomentAs(t.toUtc()), isTrue, reason: 'der Stand rückt vor, die Information wird nicht ständig neu geprüft');
+      // zusammen mit einem echten Ereignis zählt nur dieses
+      final echt = ereignis('e2', t.add(const Duration(minutes: 1)), kind: 'password_reset_done');
+      a.server.json('GET /me/security-events', {'events': [echt, lesen]});
+      await a.pruefer.pruefenUndMelden(vordergrund: false);
+      expect(a.anzeige.sicherheit, hasLength(1));
+    });
+
+    test('Fremder Abruf der Passwort-Sicherung (keine Marke oder Marke weit weg) wird wie jedes Sicherheitsereignis gemeldet, neutral und ohne Inhalt', () async {
+      for (final marke in <DateTime?>[null, DateTime.now().subtract(const Duration(hours: 1))]) {
+        final a = await bauen();
+        a.server.json('GET /me/security-events', {'events': <Object>[]});
+        await a.pruefer.pruefenUndMelden(vordergrund: false);
+        if (marke != null) await a.db.metaSchreiben(kEigenerPwAbrufSchluessel, marke.toUtc().toIso8601String());
+        final t = DateTime.now().add(const Duration(minutes: 1));
+        a.server.json('GET /me/security-events', {'events': [ereignis('e1', t, kind: 'key_backup_pw_read')]});
+        String? gesetzt;
+        await a.pruefer.pruefenUndMelden(vordergrund: true, hinweis: _MerkHinweis((x) => gesetzt = x));
+        expect(gesetzt, startsWith('Sicherheitshinweis:'));
+        expect(gesetzt, contains('Passwort-Sicherung'));
+        // Hintergrund: feste Benachrichtigung ohne Einzelheiten
+        await a.db.metaSchreiben(kSicherheitSeitSchluessel, DateTime.utc(2020).toIso8601String());
+        await a.pruefer.pruefenUndMelden(vordergrund: false);
+        final z = a.anzeige.sicherheit.single;
+        expect('${z.titel} ${z.text}', isNot(contains('Anna')));
+        expect(z.text, startsWith('An deinem Konto'));
+      }
+    });
+
     test('Anzeige nicht möglich (keine Erlaubnis): der Stand bleibt, der Start der App holt es nach', () async {
       final a = await bauen();
       a.server.json('GET /me/security-events', {'events': <Object>[]});
@@ -329,7 +399,9 @@ void main() {
         await _vergessenAusfuellen(tester);
         expect(find.byType(NavigationBar), findsOneWidget);
         expect(a.server.anfragen('PUT /me/key-backup-pw'), isEmpty);
-        expect(find.textContaining('Passwort-Sicherung'), findsNothing);
+        // kein Hinweis des Resets zur Sicherung (Dialog oder Meldung); die Karte "Bin ich abgesichert?" auf der Startseite (P1) darf die Passwort-Sicherung anbieten
+        expect(find.descendant(of: find.byType(AlertDialog), matching: find.textContaining('Passwort-Sicherung')), findsNothing);
+        expect(find.descendant(of: find.byType(SnackBar), matching: find.textContaining('Passwort-Sicherung')), findsNothing);
       });
 
       testWidgets('Anlegen der neuen Sicherung scheitert: der Reset gilt trotzdem, der Hinweis nennt den Weg zur Neuanlage', (tester) async {

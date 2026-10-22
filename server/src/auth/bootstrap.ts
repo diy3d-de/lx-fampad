@@ -50,10 +50,13 @@ export async function bootstrapFamily(ctx: AuthContext, input: { familyName: str
 /** Notfall: der Betreiber setzt ein Mitglied (z. B. den einzigen Admin) per E-Mail zurück und bekommt einen neuen Einladungslink. */
 export async function resetByEmail(ctx: AuthContext, email: string, withPin = false): Promise<CreatedInvite> {
   const [row] = await ctx.db
-    .select({ userId: users.id, familyId: memberships.familyId })
+    .select({ userId: users.id, familyId: memberships.familyId, disabledAt: users.disabledAt, removedAt: users.removedAt })
     .from(users)
     .innerJoin(memberships, eq(memberships.userId, users.id))
     .where(sql`lower(${users.email}) = lower(${email})`);
   if (!row) throw new AppError(404, 'not_found', 'Kein Mitglied mit dieser E-Mail-Adresse.');
+  // entfernte (Soft-Delete) und gesperrte Konten setzt man nicht zurück: erst in der App zurückholen
+  if (row.removedAt) throw new AppError(409, 'member_removed', 'Dieses Mitglied wurde entfernt. Hole es zuerst in der App zurück (Familie verwalten > Kürzlich entfernt), dann kannst du den Zugang zurücksetzen.');
+  if (row.disabledAt) throw new AppError(409, 'not_active', 'Das Konto ist gesperrt und wird nicht zurückgesetzt.');
   return resetMember(ctx, { familyId: row.familyId, userId: row.userId, actorId: null, hours: ctx.config.auth.bootstrapInviteHours, withPin }, CLI_META);
 }

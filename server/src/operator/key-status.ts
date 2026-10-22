@@ -96,8 +96,8 @@ export interface KeyStatus {
   persons: PersonKeyStatus[];
 }
 
-/** Ampel aller aktiven Mitglieder der Familie. Nur lesend. */
-export async function collectKeyStatus(ctx: AuthContext, familyId: string): Promise<KeyStatus> {
+/** Ampel aller aktiven Mitglieder der Familie (mit `onlyUserId` nur einer Person und ohne Ereignisse: für `GET /me/key-status`). Nur lesend. */
+export async function collectKeyStatus(ctx: AuthContext, familyId: string, opts: { onlyUserId?: string } = {}): Promise<KeyStatus> {
   const now = ctx.now();
   const fresh = new Date(now.getTime() - DEVICE_REPORT_FRESH_DAYS * DAY_MS);
   const members = await ctx.db
@@ -105,7 +105,7 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string): Prom
     .from(memberships)
     .innerJoin(users, eq(users.id, memberships.userId))
     .leftJoin(personKeys, eq(personKeys.userId, users.id))
-    .where(and(eq(memberships.familyId, familyId), eq(memberships.status, 'active'), isNull(users.disabledAt)))
+    .where(and(eq(memberships.familyId, familyId), eq(memberships.status, 'active'), isNull(users.disabledAt), opts.onlyUserId ? eq(users.id, opts.onlyUserId) : undefined))
     .orderBy(users.displayName);
   const ids = members.map((m) => m.userId);
   const empty = { generatedAt: now.toISOString(), ...overallAmpel([]), persons: [] as PersonKeyStatus[] };
@@ -120,7 +120,7 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string): Prom
     .select({ userId: keyBackupsPw.userId, keyVersion: keyBackupsPw.keyVersion, verifiedAt: keyBackupsPw.verifiedAt })
     .from(keyBackupsPw)
     .where(and(inArray(keyBackupsPw.userId, ids), eq(keyBackupsPw.state, 'active')));
-  const modes = ctx.config.e2eePwBackup ? new Map((await passwordModes(ctx, familyId)).map((m) => [m.userId, m.mode])) : new Map<string, string>();
+  const modes = ctx.config.e2eePwBackup ? new Map((await passwordModes(ctx, familyId, opts.onlyUserId)).map((m) => [m.userId, m.mode])) : new Map<string, string>();
 
   const persons: PersonKeyStatus[] = [];
   for (const m of members) {
@@ -134,14 +134,16 @@ export async function collectKeyStatus(ctx: AuthContext, familyId: string): Prom
       recoveryBackup: hasKeys && recovery.some((r) => r.userId === m.userId && r.keyVersion === current),
     };
     // je Person abgefragt: eine Person mit vielen Ereignissen verdrängt die Ereignisse der anderen nie
-    const events = (
-      await ctx.db
-        .select({ kind: securityEvents.kind, at: securityEvents.createdAt })
-        .from(securityEvents)
-        .where(and(eq(securityEvents.familyId, familyId), eq(securityEvents.userId, m.userId), inArray(securityEvents.kind, [...KEY_EVENT_KINDS])))
-        .orderBy(desc(securityEvents.createdAt))
-        .limit(EVENTS_PER_PERSON)
-    ).map((e) => ({ kind: e.kind, at: e.at.toISOString() }));
+    const events = opts.onlyUserId
+      ? []
+      : (
+          await ctx.db
+            .select({ kind: securityEvents.kind, at: securityEvents.createdAt })
+            .from(securityEvents)
+            .where(and(eq(securityEvents.familyId, familyId), eq(securityEvents.userId, m.userId), inArray(securityEvents.kind, [...KEY_EVENT_KINDS])))
+            .orderBy(desc(securityEvents.createdAt))
+            .limit(EVENTS_PER_PERSON)
+        ).map((e) => ({ kind: e.kind, at: e.at.toISOString() }));
     persons.push({
       userId: m.userId,
       displayName: m.displayName,

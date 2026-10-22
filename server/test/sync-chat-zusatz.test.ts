@@ -208,7 +208,8 @@ describe.each(backends)('Reaktionen, Stimmen, Pins im Sync ($name)', (backend) =
       expect((await fam.admin.client.del(`/api/v1/members/${opa.userId}`)).status).toBe(200);
       const changes = await fam.child.pull();
       expect(changes.filter((c) => c.tombstone).map((c) => c.entity).sort()).toEqual(['reaktion', 'stimme']);
-      expect(await rows(sql`select count(*)::int as n from reaktionen`)).toEqual([{ n: 0 }]);
+      // Soft-Delete: die Zeilen bleiben bis zum endgültigen Löschen liegen, sind aber gelöscht (Tombstone)
+      expect(await rows(sql`select count(*)::int as n from reaktionen where deleted_at is null`)).toEqual([{ n: 0 }]);
     });
 
     it('in eine Gruppe Aufgenommene bekommen mit dem Verlauf auch Reaktionen, Stimmen und Pins der Nachrichten (nicht die der Unbeteiligten)', async () => {

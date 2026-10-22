@@ -623,7 +623,7 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       expect(rows.filter((r) => r.kind === 'member_account_reset')).toHaveLength(2);
     });
 
-    it('Mitglied entfernen bleibt unverändert und endgültig: Schlüssel, Sicherungen, Archiv und Ereignisse verschwinden mit dem Konto (Soft-Delete kommt später)', async () => {
+    it('Mitglied entfernen ist ein Soft-Delete (P1): Schlüssel, Sicherungen, Archiv und Ereignisse bleiben bis zum endgültigen Löschen liegen (Einzelheiten: p1-schluessel.test.ts)', async () => {
       const f = await start();
       const m = f.m.client;
       await m.post('/api/v1/me/keys', keys());
@@ -632,6 +632,13 @@ describe.each(backends)('Kein Datenverlust ($name)', (backend) => {
       expect(await world.count('key_backup_archive')).toBe(1);
       await stepUp(f.a.client, f.a.totpSecret);
       expect((await f.a.client.del(`/api/v1/members/${f.mamaId}`)).status).toBe(200);
+      expect(await world.count('key_backup_archive')).toBe(1);
+      expect(await world.count('key_backups_pw')).toBeGreaterThan(0);
+      expect(await world.count('person_keys')).toBe(1);
+      // nach der Aufbewahrungsfrist löscht der Aufräum-Job endgültig, mit allem, was daran hängt
+      await harness.db.execute(sql`update users set removed_at = ${new Date(world.clock - 31 * 86_400_000).toISOString()}::timestamptz where id = ${f.mamaId}`);
+      const { runMaintenance } = await import('../src/auth/maintenance.js');
+      expect((await runMaintenance(world.auth.ctx)).removedMembersPurged).toBe(1);
       expect(await world.count('key_backup_archive')).toBe(0);
       expect(await world.count('key_backups_pw')).toBe(0);
       expect(await world.count('person_keys')).toBe(0);

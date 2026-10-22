@@ -20,6 +20,7 @@ import '../api/models.dart';
 import '../api/token_store.dart';
 import '../app_database.dart';
 import '../auth/auth_state.dart';
+import '../auth/eigener_abruf.dart';
 import '../auth/reset_hinweis.dart';
 import '../auth/sicherheit_text.dart';
 import '../database_provider.dart';
@@ -96,20 +97,35 @@ class SicherheitsPruefer {
         if (zuletzt != null && jetzt().difference(zuletzt) < mindestAbstand) return;
       }
       await db.metaSchreiben(kSicherheitGeprueftSchluessel, jetzt().toUtc().toIso8601String());
-      final neu = await _neue();
-      if (neu.isEmpty) return;
+      final alle = await _neue();
+      if (alle.isEmpty) return;
+      // Nur das EIGENE Abrufen der Passwort-Sicherung (dieses Gerät hat sie kurz davor selbst geholt, z. B. beim automatischen Verbinden; siehe eigener_abruf.dart)
+      // ist keine Warnung: es bleibt in der Liste, löst aber weder Dialog noch Benachrichtigung aus; der Stand rückt trotzdem vor. Abrufe anderer Geräte
+      // zählen wie jedes Sicherheitsereignis (Warnhinweis bei Passwort-Diebstahl).
+      final marke = DateTime.tryParse(await db.metaLesen(kEigenerPwAbrufSchluessel) ?? '');
+      bool eigen(SicherheitsEreignisDto e) =>
+          e.art == SicherheitsArt.passwortSicherungAbgerufen && marke != null && e.zeit.difference(marke).abs() <= kEigenerAbrufFenster;
+      final neu = [for (final e in alle) if (!eigen(e)) e];
+      if (neu.isEmpty) {
+        await _markieren(alle.first.zeit);
+        return;
+      }
       if (vordergrund) {
         hinweis?.setzen('Sicherheitshinweis: ${sicherheitsEreignisText(neu.first)} Details unter Profil > Sicherheitsereignisse.');
-        await _markieren(neu.first.zeit);
+        await _markieren(alle.first.zeit);
         return;
       }
       if (!await anzeige.initialisieren()) return; // der Stand bleibt: der nächste Start der App holt es nach
+      // fester Text, nie ein Name; nur der Hinweis an die Familie (ein anderer Zugang wurde zurückgesetzt) sagt, dass es nicht das eigene Konto ist
+      final nurFamilie = neu.every((e) => e.art == SicherheitsArt.mitgliedZugangZurueckgesetzt);
       final gezeigt = await anzeige.zeigenSicherheit(
         id: kSicherheitBenachrichtigungsId,
         titel: 'Sicherheitshinweis',
-        text: 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
+        text: nurFamilie
+            ? 'In der Familie wurde ein Zugang zurückgesetzt. Details unter Profil > Sicherheitsereignisse.'
+            : 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
       );
-      if (gezeigt) await _markieren(neu.first.zeit);
+      if (gezeigt) await _markieren(alle.first.zeit);
     } on ApiException catch (e) {
       if (!vordergrund) await _vielleichtAbgemeldet(e);
     } catch (_) {

@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
-import { devices, memberships, pushEndpoints, sessions } from '../db/schema.js';
+import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { WeatherService } from '../weather/service.js';
 import { realProbes, type Probes } from './probes.js';
@@ -168,7 +168,11 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   // ----- Zähler (nur die Familie der Sitzung) -----
   let counts: OperatorStatus['counts'] = { members: 0, devices: 0, pushDevices: 0, activeSessions: 0 };
   if (dbOk) {
-    const [m] = await ctx.db.select({ n: count() }).from(memberships).where(and(eq(memberships.familyId, familyId), eq(memberships.status, 'active')));
+    const [m] = await ctx.db
+      .select({ n: count() })
+      .from(memberships)
+      .innerJoin(users, eq(users.id, memberships.userId))
+      .where(and(eq(memberships.familyId, familyId), eq(memberships.status, 'active'), isNull(users.disabledAt)));
     const [d] = await ctx.db.select({ n: count() }).from(devices).where(and(eq(devices.familyId, familyId), isNull(devices.revokedAt)));
     const [p] = await ctx.db.select({ n: count() }).from(pushEndpoints).where(and(eq(pushEndpoints.familyId, familyId), isNull(pushEndpoints.disabledAt)));
     const [s] = await ctx.db

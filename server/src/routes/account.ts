@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
   approveMember,
+  assertEmailNotRemoved,
+  purgeMemberNow,
   changeRole,
   finishAddPasskey,
   getMe,
@@ -10,12 +12,15 @@ import {
   listCredentials,
   listDevices,
   listMembers,
+  listRemovedMembers,
+  REMOVED_RETENTION_DAYS,
   regenerateRecoveryCodes,
   rejectMember,
   removeDevice,
   removeMember,
   removePasskey,
   resetMember,
+  restoreMember,
   setFamilyRole,
   startAddPasskey,
   updateProfile,
@@ -23,7 +28,7 @@ import {
 import { FAMILY_ROLES } from '../db/schema.js';
 import { avatarMetaFor } from '../avatar/service.js';
 import { MAX_REPORTED_KEY_VERSION, reportDeviceKey } from '../auth/device-key.js';
-import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, rotateKeys, setBackup } from '../auth/keys.js';
+import { claimTransfer, createKeys, createTransfer, getBackup, getMemberKeys, getOwnKeys, getOwnKeySafety, rotateKeys, setBackup } from '../auth/keys.js';
 import { getArchiveEntry, listArchive } from '../auth/keys-archive.js';
 import { getPwBackup, markPwBackupVerified, setPwBackup, KDF_IDS } from '../auth/keys-pw.js';
 import { assertMayInvite, createInvite, extendInvite, listInvites, revokeInvite } from '../auth/invites.js';
@@ -112,6 +117,9 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
 
   // ----- E2EE-Schlüssel (Phase 1): öffentliche Personenschlüssel, opake Sicherung, Geräte-Übertragung -----
   app.get('/api/v1/me/keys', async (req) => getOwnKeys(ctx, await auth.requireSession(req)));
+
+  // "Bin ich abgesichert?": Schlüssel-Ampel der eigenen Person (dieselbe Rechenvorschrift wie die Betreiber-Ansicht), nur Zustände und Zahlen
+  app.get('/api/v1/me/key-status', strikt, async (req) => ({ status: await getOwnKeySafety(ctx, await auth.requireSession(req)) }));
 
   // Das Gerät meldet seinen Schlüsselstand (Betreiber-Ampel): 0 = kein Schlüssel, n = Schlüsselversion n; nur diese Zahl, nie Schlüsselmaterial
   app.put('/api/v1/me/device-key', strikt, async (req) => {
@@ -262,6 +270,22 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
     return { ok: true };
   });
 
+  // Soft-Delete: entfernte Mitglieder bleiben REMOVED_RETENTION_DAYS Tage (mit Schlüsseln und Sicherungen) liegen und lassen sich zurückholen (nur Admins)
+  app.get('/api/v1/members/removed', async (req) => ({ members: await listRemovedMembers(ctx, await auth.requireSession(req)), retentionDays: REMOVED_RETENTION_DAYS }));
+
+  // Unwiderruflich: ein entferntes Mitglied sofort endgültig löschen (z. B. auf Verlangen nach Art. 17 DSGVO); nur Admins, Step-up, Sperrfrist
+  app.post('/api/v1/members/:id/purge', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await purgeMemberNow(ctx, p, parse(idParams, req.params).id, meta(req));
+    return { ok: true };
+  });
+
+  app.post('/api/v1/members/:id/restore', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    await restoreMember(ctx, p, parse(idParams, req.params).id, meta(req));
+    return { ok: true };
+  });
+
   // ----- Einladungen (Admin; Eltern nur Kinder und nur die eigenen) -----
   app.get('/api/v1/invites', async (req) => {
     const p = await auth.requireSession(req);
@@ -278,11 +302,14 @@ export function registerAccountRoutes(app: FastifyInstance, config: Config, auth
           hours: z.number().int().min(1).max(maxHours).default(ctx.config.auth.inviteDefaultHours),
           pin: z.boolean().default(false),
           requireApproval: z.boolean().optional(),
+          // optional, nur als Hinweis für Admins: soll eine Adresse neu eingeladen werden, die zu einem entfernten Mitglied gehört (siehe assertEmailNotRemoved)
+          email: z.string().trim().email().max(254).optional(),
         })
         .strict(),
       req.body,
     );
     assertMayInvite(p.role, body.role);
+    if (body.email) await assertEmailNotRemoved(ctx, p, body.email);
     if (body.role === 'admin') requireStepUp(ctx, p);
     // Freigabe durch einen Admin ist nur auf ausdrücklichen Wunsch nötig (Standard: nein)
     const requireApproval = body.requireApproval;
