@@ -1092,18 +1092,18 @@ Future<void> e2eeChatVertrag({
   expect((await annaA.krypto.verlaufAngebote()).single.epochen, {gruppe: [1, 2, 3]});
   expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and key_version is not null"), isEmpty);
   // der Tipp: drei Wraps mit Schlüsselversion 2, der Server nimmt sie mit der ID v2 an
-  expect(await annaA.krypto.verlaufFreigeben(kindId), 3);
+  expect((await annaA.krypto.verlaufFreigeben(kindId)).gesendet, 3);
   await abgleich([annaA, benNeu]);
   final v2 = await dbAbfrage("select id, epoche, key_version, empfaenger_id from epoche_wraps where konversation_id = '$gruppe' and key_version is not null order by epoche");
   expect([for (final z in v2) z['epoche']], [1, 2, 3]);
   expect({for (final z in v2) z['key_version']}, {2});
   expect({for (final z in v2) z['empfaenger_id']}, {kindId});
-  expect([for (final z in v2) z['id']], [for (var n = 1; n <= 3; n++) wrapIdV2(gruppe, n, kindId, 2)]);
+  expect([for (final z in v2) z['id']], [for (var n = 1; n <= 3; n++) wrapIdV2(gruppe, n, kindId, 2, adminId)]);
   expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and empfaenger_id = '$kindId' and key_version is null and epoche <= 3"), hasLength(3), reason: 'die alten Wraps (Version 1, ID v1) bleiben unverändert');
   expect(await benNeu.lesen(gruppe, m1), 'GEHEIMER-TEXT-123 👋');
   expect(await benNeu.lesen(gruppe, m2), 'NACH-DEM-ENTFERNEN');
   // Annas zweites Gerät gibt auch frei: der erste gewinnt, der zweite Wrap wird abgelehnt, nichts bricht und nichts wird doppelt
-  expect(await annaB.krypto.verlaufFreigeben(kindId), 3);
+  expect((await annaB.krypto.verlaufFreigeben(kindId)).gesendet, 3);
   await abgleich([annaB, benNeu]);
   expect(await dbAbfrage("select 1 from epoche_wraps where konversation_id = '$gruppe' and key_version is not null"), hasLength(3));
   expect(await benNeu.lesen(gruppe, m1), 'GEHEIMER-TEXT-123 👋');

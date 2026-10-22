@@ -1,5 +1,5 @@
-// Migration 0025 (Wrap-ID v2 für "Verlauf freigeben": `epoche_wraps.key_version`, Eindeutigkeit je Schlüsselversion) ist rein additiv: Auf einer Datenbank im Stand 0023
-// (hier: Bestand mit Chat, Epochen und Wraps anlegen, die Objekte von 0025 wieder entfernen) bleibt jede Zeile unverändert, bestehende Wraps haben keine Version
+// Migration 0024 (Wrap-ID v2 für "Verlauf freigeben": `epoche_wraps.key_version`, Eindeutigkeit je Schlüsselversion) ist rein additiv: Auf einer Datenbank im Stand 0023
+// (hier: Bestand mit Chat, Epochen und Wraps anlegen, die Objekte von 0024 wieder entfernen) bleibt jede Zeile unverändert, bestehende Wraps haben keine Version
 // (null) und gelten weiter, und die Eindeutigkeit gilt danach je (Konversation, Epoche, Empfänger, Schlüsselversion). Die Migration ist wiederholbar.
 import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
@@ -16,7 +16,7 @@ import { createFamily, upsert } from './sync-kit.js';
 
 const BLOB = (n = 120) => 'B'.repeat(n);
 
-describe('Migration 0025 (Wrap-ID v2) additiv auf Stand 0023', () => {
+describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
   it('PGlite: Wraps unverändert und ohne Version, Eindeutigkeit je Version, wiederholbar, danach nehmen v1 und v2 Wraps an', async () => {
     const client = new PGlite();
     const db = drizzleLite(client, { schema }) as unknown as Db;
@@ -48,14 +48,14 @@ describe('Migration 0025 (Wrap-ID v2) additiv auf Stand 0023', () => {
       await world.close();
       world = undefined;
 
-      // zurück in den Stand 0023: die Objekte von 0025 weg (alter Index ohne Version), ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
+      // zurück in den Stand 0023: die Objekte von 0024 weg (alter Index ohne Version), ihr Eintrag im Migrationsprotokoll weg (die Daten bleiben)
       await db.execute(sql`drop index epoche_wraps_uq`);
       await db.execute(sql`alter table epoche_wraps drop constraint epoche_wraps_key_version_ck`);
       await db.execute(sql`alter table epoche_wraps drop column key_version`);
       await db.execute(sql`create unique index epoche_wraps_uq on epoche_wraps (family_id, konversation_id, epoche, empfaenger_id) where deleted_at is null`);
       const journal = JSON.parse(readFileSync(`${migrationsFolder}/meta/_journal.json`, 'utf8')) as { entries: { tag: string; when: number }[] };
-      const meine = journal.entries.find((e) => e.tag.startsWith('0025_'));
-      if (!meine) throw new Error('Journal ohne 0025');
+      const meine = journal.entries.find((e) => e.tag.startsWith('0024_'));
+      if (!meine) throw new Error('Journal ohne 0024');
       await db.execute(sql`delete from drizzle.__drizzle_migrations where created_at >= ${meine.when}`);
 
       await migrateLite(db as never, { migrationsFolder });
@@ -67,7 +67,7 @@ describe('Migration 0025 (Wrap-ID v2) additiv auf Stand 0023', () => {
       await migrateLite(db as never, { migrationsFolder });
       for (const t of tabellen) expect(await summe(t), t).toBe(vorher.get(t));
 
-      // Eindeutigkeit: ohne Version genau einer je (Konversation, Epoche, Empfänger), mit Version je Version einer; Version 0 oder negativ gibt es nicht
+      // Eindeutigkeit: ohne Version genau einer je (Konversation, Epoche, Empfänger); mit Version mehrere (je Verteiler eine); Version 0 oder negativ gibt es nicht
       const einfuegen = (version: number | null, empfaenger: string) =>
         db.execute(sql`insert into epoche_wraps (id, family_id, konversation_id, epoche, empfaenger_id, wrap, key_version, rev, field_revs, created_at)
           values (${randomUUID()}::uuid, ${fam.familyId}::uuid, ${konv}::uuid, 1, ${empfaenger}::uuid, ${BLOB(90)}, ${version}, 1, '{}'::jsonb, now())`);
@@ -75,7 +75,7 @@ describe('Migration 0025 (Wrap-ID v2) additiv auf Stand 0023', () => {
       await expect(einfuegen(0, fam.child.userId)).rejects.toThrow();
       await expect(einfuegen(-3, fam.child.userId)).rejects.toThrow();
       await einfuegen(2, fam.child.userId);
-      await expect(einfuegen(2, fam.child.userId)).rejects.toThrow();
+      await einfuegen(2, fam.child.userId); // ein zweiter Verteiler derselben Version (die ID enthält den Verteiler)
       await einfuegen(3, fam.child.userId);
 
       // der Server startet auf dem migrierten Bestand und meldet die Fähigkeit
@@ -90,7 +90,7 @@ describe('Migration 0025 (Wrap-ID v2) additiv auf Stand 0023', () => {
   it('die abgeleiteten IDs sind je Version verschieden (Schutz vor Verwechslung in der Datenbank)', () => {
     const konv = randomUUID();
     const person = randomUUID();
-    const ids = new Set([wrapId(konv, 1, person), wrapIdV2(konv, 1, person, 1), wrapIdV2(konv, 1, person, 2), wrapIdV2(konv, 2, person, 1)]);
-    expect(ids.size).toBe(4);
+    const ids = new Set([wrapId(konv, 1, person), wrapIdV2(konv, 1, person, 1, person), wrapIdV2(konv, 1, person, 2, person), wrapIdV2(konv, 2, person, 1, person), wrapIdV2(konv, 1, person, 1, konv)]);
+    expect(ids.size).toBe(5);
   });
 });

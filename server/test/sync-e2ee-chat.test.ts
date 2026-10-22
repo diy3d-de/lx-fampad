@@ -304,9 +304,10 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
   });
 
   describe('Wrap-ID v2 (Verlauf freigeben): derselbe Empfänger, dieselbe Epoche, neue Schlüsselversion', () => {
-    const wrapV2 = (konv: string, n: number, empfaenger: Device | string, version: number, blob = BLOB(), id?: string) => {
+    /** Wrap der ID v2; die ID enthält den Verteiler [von] (der Akteur, der die Op sendet). */
+    const wrapV2 = (von: Device, konv: string, n: number, empfaenger: Device | string, version: number, blob = BLOB(), id?: string) => {
       const emp = typeof empfaenger === 'string' ? empfaenger : empfaenger.userId;
-      return upsert('epoche_wrap', id ?? wrapIdV2(konv, n, emp, version), { konversationId: konv, epoche: n, empfaengerId: emp, wrap: blob, keyVersion: version });
+      return upsert('epoche_wrap', id ?? wrapIdV2(konv, n, emp, version, von.userId), { konversationId: konv, epoche: n, empfaengerId: emp, wrap: blob, keyVersion: version });
     };
     /** Die öffentlichen Schlüssel sind für den Server Text: nur die Versionszahl zählt. */
     const schluessel = (d: Device, version: number) =>
@@ -323,13 +324,15 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       const konv = 'cccccccc-0000-4000-8000-0000000000c1';
       const person = 'AAAAAAAA-0000-4000-8000-00000000000A'; // Großbuchstaben: gleiche ID wie in Kleinbuchstaben
       expect(wrapId(konv, 3, person)).toBe('983b472e-54e3-544a-bc89-d4f59b375feb');
-      expect(wrapIdV2(konv, 3, person, 1)).toBe('63e3b1a1-8ecd-522e-a675-1113b19e9696');
-      expect(wrapIdV2(konv, 3, person, 2)).toBe('e31c1787-9157-540d-9264-be908b6b5291');
-      expect(wrapIdV2(konv, 4, person, 2)).toBe('7c3326f3-57f3-54d2-8ffa-d35943c640f9');
-      // nichts kollidiert: jede Schlüsselversion, jede Epoche und v1 gegen v2 ergeben eigene IDs
-      const alle = new Set([wrapId(konv, 3, person), wrapIdV2(konv, 3, person, 1), wrapIdV2(konv, 3, person, 2), wrapIdV2(konv, 4, person, 2), wrapIdV2(konv, 3, person, 12), wrapIdV2(konv, 31, person, 2)]);
-      expect(alle.size).toBe(6);
-      expect(wrapIdV2(konv, 3, person.toLowerCase(), 2)).toBe(wrapIdV2(konv, 3, person, 2));
+      const verteiler = 'BBBBBBBB-0000-4000-8000-00000000000B';
+      expect(wrapIdV2(konv, 3, person, 1, verteiler)).toBe('72337638-0ff4-5a4a-9898-6066b0a43136');
+      expect(wrapIdV2(konv, 3, person, 2, verteiler)).toBe('6d138d01-470b-5136-a5ff-1301198a292a');
+      expect(wrapIdV2(konv, 4, person, 2, verteiler)).toBe('9c17015b-45eb-5ef9-bb02-10910d4ff0a5');
+      expect(wrapIdV2(konv, 3, person, 2, person)).toBe('e552dda5-be8d-5444-a049-8e0889248521');
+      // nichts kollidiert: jede Schlüsselversion, jede Epoche, jeder Verteiler und v1 gegen v2 ergeben eigene IDs
+      const alle = new Set([wrapId(konv, 3, person), wrapIdV2(konv, 3, person, 1, verteiler), wrapIdV2(konv, 3, person, 2, verteiler), wrapIdV2(konv, 4, person, 2, verteiler), wrapIdV2(konv, 3, person, 12, verteiler), wrapIdV2(konv, 31, person, 2, verteiler), wrapIdV2(konv, 3, person, 2, person)]);
+      expect(alle.size).toBe(7);
+      expect(wrapIdV2(konv, 3, person.toLowerCase(), 2, verteiler.toLowerCase())).toBe(wrapIdV2(konv, 3, person, 2, verteiler));
     });
 
     it('nach einem Schlüsselwechsel lässt sich eine ältere Epoche noch einmal für den neuen Schlüssel verpacken; der alte Wrap bleibt', async () => {
@@ -337,7 +340,7 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child, BLOB(150)), epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child)]))).toEqual([]);
       await schluessel(fam.child, 2); // das Kind hat einen neuen Schlüssel (Version 2)
       // Epoche 1 ist nicht mehr die höchste: jeder Teilnehmer darf den Verlauf für die neue Version nachreichen
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 2, BLOB(160))]))).toEqual([]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 2, BLOB(160))]))).toEqual([]);
       expect(await wraps(konv)).toContainEqual({ epoche: 1, key_version: 2, wrap: BLOB(160) });
       expect(await wraps(konv)).toContainEqual({ epoche: 1, key_version: null, wrap: BLOB(150) });
       // das Kind bekommt beide (der Empfänger wählt anhand der Version im Wrap), sonst niemand
@@ -348,17 +351,22 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect((await fam.parent.pull()).filter((c) => c.entity === 'epoche_wrap' && c.fields.epoche === 1).map((c) => c.fields.wrap)).toEqual([BLOB()]);
     });
 
-    it('der erste gewinnt je Schlüsselversion (ein zweiter ist "gibt es schon"); eine andere Version ist ein eigener Wrap', async () => {
-      const konv = await gruppe(fam.parent, [fam.child]);
-      expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child)]))).toEqual([]);
+    it('jeder Verteiler hat seinen eigenen Platz je Schlüsselversion (niemand belegt den eines anderen); eine andere Version ist ein eigener Wrap', async () => {
+      const konv = await gruppe(fam.parent, [fam.child, fam.admin]);
+      expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), wrap(konv, 1, fam.admin), epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child), wrap(konv, 2, fam.admin)]))).toEqual([]);
       await schluessel(fam.child, 3);
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 2, BLOB(170))]))).toEqual([]);
-      // dieselbe Version noch einmal (anderes Gerät, anderer Teilnehmer, auch die Wiederholung desselben Inhalts): abgelehnt als "gibt es schon", der erste bleibt
-      expect(codes(await fam.admin.sync([wrapV2(konv, 1, fam.child, 2, BLOB(171))]))).not.toEqual([]);
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 2, BLOB(170))]))).toEqual(['not_found']);
+      // der Admin (kein Verteiler der Epoche) kommt zuerst, mit Müll: das nimmt dem Elternteil seinen Platz nicht
+      expect(codes(await fam.admin.sync([wrapV2(fam.admin, konv, 1, fam.child, 2, BLOB(171))]))).toEqual([]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 2, BLOB(170))]))).toEqual([]);
+      // beide Zeilen liegen da (das Kind probiert sie durch); derselbe Verteiler noch einmal ist "gibt es schon", sein erster Wrap bleibt
+      expect((await wraps(konv, fam.child.userId)).filter((w) => w.key_version === 2).map((w) => w.wrap).sort()).toEqual([BLOB(170), BLOB(171)]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 2, BLOB(172))]))).toEqual(['not_found']);
+      expect((await wraps(konv, fam.child.userId)).filter((w) => w.key_version === 2).map((w) => w.wrap).sort()).toEqual([BLOB(170), BLOB(171)]);
+      // eine ID mit dem Verteiler eines anderen ist ungültig (niemand sendet unter fremdem Namen)
+      expect(codes(await fam.admin.sync([wrapV2(fam.admin, konv, 1, fam.child, 2, BLOB(173), wrapIdV2(konv, 1, fam.child.userId, 2, fam.parent.userId))]))).not.toEqual([]);
       // Version 3: eigener Wrap neben Version 2 und dem alten
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 3, BLOB(172))]))).toEqual([]);
-      expect((await wraps(konv, fam.child.userId)).filter((w) => w.epoche === 1).map((w) => w.key_version)).toEqual([null, 2, 3]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 3, BLOB(174))]))).toEqual([]);
+      expect((await wraps(konv, fam.child.userId)).filter((w) => w.epoche === 1).map((w) => w.key_version)).toEqual([null, 2, 2, 3]);
       // der alte Weg bleibt eindeutig: ein zweiter Wrap ohne Version für dieselbe Epoche und Person gibt es nicht
       expect(codes(await fam.parent.sync([wrap(konv, 1, fam.child, BLOB(173))]))).not.toEqual([]);
       expect((await wraps(konv, fam.child.userId)).filter((w) => w.epoche === 1 && w.key_version === null)).toHaveLength(1);
@@ -368,23 +376,23 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       const konv = await gruppe(fam.parent, [fam.child]);
       expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child)]))).toEqual([]);
       // das Kind hat (noch) keinen Schlüssel beim Server
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 1)]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 1)]))).toEqual(['invalid']);
       await schluessel(fam.child, 2);
       // künftige Version: abgelehnt (niemand belegt IDs künftiger Schlüssel vorab)
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 3)]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 3)]))).toEqual(['invalid']);
       // ID passt nicht zur Version, ID v1 mit Version, ID v2 ohne Version
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 2, BLOB(), wrapIdV2(konv, 1, fam.child.userId, 1))]))).toEqual(['invalid']);
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 2, BLOB(), wrapId(konv, 1, fam.child.userId))]))).not.toEqual([]);
-      expect(codes(await fam.parent.sync([upsert('epoche_wrap', wrapIdV2(konv, 1, fam.child.userId, 2), { konversationId: konv, epoche: 1, empfaengerId: fam.child.userId, wrap: BLOB() })]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 2, BLOB(), wrapIdV2(konv, 1, fam.child.userId, 1, fam.parent.userId))]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 2, BLOB(), wrapId(konv, 1, fam.child.userId))]))).not.toEqual([]);
+      expect(codes(await fam.parent.sync([upsert('epoche_wrap', wrapIdV2(konv, 1, fam.child.userId, 2, fam.parent.userId), { konversationId: konv, epoche: 1, empfaengerId: fam.child.userId, wrap: BLOB() })]))).toEqual(['invalid']);
       // Zahlbereich und Form
       for (const v of [0, -1, 1.5, '2', null]) {
-        const op = upsert('epoche_wrap', wrapIdV2(konv, 1, fam.child.userId, 2), { konversationId: konv, epoche: 1, empfaengerId: fam.child.userId, wrap: BLOB(), keyVersion: v });
+        const op = upsert('epoche_wrap', wrapIdV2(konv, 1, fam.child.userId, 2, fam.parent.userId), { konversationId: konv, epoche: 1, empfaengerId: fam.child.userId, wrap: BLOB(), keyVersion: v });
         expect(codes(await fam.parent.sync([op])), `keyVersion ${String(v)}`).toEqual(['invalid']);
       }
       // wie bei v1: die Epoche muss es geben, der Empfänger muss Teilnehmer sein
       await schluessel(fam.admin, 1);
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.admin, 1)]))).toEqual(['invalid']);
-      expect(codes(await fam.parent.sync([wrapV2(konv, 7, fam.child, 2)]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.admin, 1)]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 7, fam.child, 2)]))).toEqual(['invalid']);
       // nichts davon hat eine Zeile angelegt
       expect((await wraps(konv)).filter((w) => w.key_version !== null)).toEqual([]);
     });
@@ -394,19 +402,19 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), wrap(konv, 1, fam.admin)]))).toEqual([]);
       await schluessel(fam.child, 2);
       // Epoche 1 ist (noch) die höchste: nur ihr Verteiler (Elternteil) darf, nicht der Admin
-      expect(codes(await fam.admin.sync([wrapV2(konv, 1, fam.child, 2, BLOB(180))]))).toEqual(['invalid']);
+      expect(codes(await fam.admin.sync([wrapV2(fam.admin, konv, 1, fam.child, 2, BLOB(180))]))).toEqual(['invalid']);
       expect(codes(await fam.parent.sync([epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child), wrap(konv, 2, fam.admin)]))).toEqual([]);
       // jetzt ist Epoche 1 älter: auch der Admin darf nachreichen
-      expect(codes(await fam.admin.sync([wrapV2(konv, 1, fam.child, 2, BLOB(180))]))).toEqual([]);
+      expect(codes(await fam.admin.sync([wrapV2(fam.admin, konv, 1, fam.child, 2, BLOB(180))]))).toEqual([]);
       // Epoche 2 (höchste): nur der Verteiler
-      expect(codes(await fam.admin.sync([wrapV2(konv, 2, fam.child, 2, BLOB(181))]))).toEqual(['invalid']);
+      expect(codes(await fam.admin.sync([wrapV2(fam.admin, konv, 2, fam.child, 2, BLOB(181))]))).toEqual(['invalid']);
     });
 
     it('Sicht: nur der Empfänger sieht seine Wraps (auch die mit Version); Verteiler, andere Teilnehmer und Fremde sehen sie nie', async () => {
       const konv = await gruppe(fam.parent, [fam.child, fam.admin]);
       expect(codes(await fam.parent.sync([epoche(konv, 1), wrap(konv, 1, fam.parent), wrap(konv, 1, fam.child), wrap(konv, 1, fam.admin), epoche(konv, 2), wrap(konv, 2, fam.parent), wrap(konv, 2, fam.child), wrap(konv, 2, fam.admin)]))).toEqual([]);
       await schluessel(fam.child, 2);
-      expect(codes(await fam.parent.sync([wrapV2(konv, 1, fam.child, 2, BLOB(190))]))).toEqual([]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, konv, 1, fam.child, 2, BLOB(190))]))).toEqual([]);
       const wrapsVon = async (d: Device) => (await d.pull()).filter((c) => c.entity === 'epoche_wrap');
       expect((await wrapsVon(fam.child)).filter((c) => c.fields.keyVersion === 2)).toHaveLength(1);
       expect((await wrapsVon(fam.admin)).every((c) => c.fields.empfaengerId === fam.admin.userId && c.fields.keyVersion === null)).toBe(true);
@@ -419,9 +427,9 @@ describe.each(backends)('E2EE-Chat im Sync ($name)', (backend) => {
       expect((await fam.parent.sync([upsert('konversation', dm, { art: 'direct', teilnehmer: [fam.parent.userId, fam.child.userId] })])).json.rejected).toEqual([]);
       expect(codes(await fam.parent.sync([epoche(dm, 1), wrap(dm, 1, fam.parent), wrap(dm, 1, fam.child), epoche(dm, 2), wrap(dm, 2, fam.parent), wrap(dm, 2, fam.child)]))).toEqual([]);
       await schluessel(fam.child, 2);
-      expect(codes(await fam.parent.sync([wrapV2(dm, 1, fam.child, 2, BLOB(191))]))).toEqual([]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, dm, 1, fam.child, 2, BLOB(191))]))).toEqual([]);
       await world.db.execute(sql`update epoche_wraps set deleted_at = now(), rev = rev + 1 where konversation_id = ${dm} and key_version is not null`);
-      expect(codes(await fam.parent.sync([wrapV2(dm, 1, fam.child, 2, BLOB(192))]))).toEqual([]);
+      expect(codes(await fam.parent.sync([wrapV2(fam.parent, dm, 1, fam.child, 2, BLOB(192))]))).toEqual([]);
       expect((await wraps(dm)).filter((w) => w.key_version === 2)).toEqual([{ epoche: 1, key_version: 2, wrap: BLOB(192) }]);
     });
 

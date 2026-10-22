@@ -168,6 +168,9 @@ class ChatWelt {
   /// Frühere öffentliche Schlüssel (Historie des Servers): "userId:version" -> Schlüssel.
   final Map<String, OeffentlicheSchluessel> historie = {};
 
+  /// Test: der Server lehnt jeden Wrap ab (z. B. Rate oder Ausfall); die Absender bekommen eine Ablehnung statt einer Bestätigung.
+  bool wrapsVerweigern = false;
+
   /// Aktuelle Schlüsselversion je Person laut Server (fehlt: 1); für die Prüfung der Wrap-ID v2 (keine künftige Version).
   final Map<String, int> schluesselVersionen = {};
 
@@ -326,9 +329,10 @@ class ChatWelt {
           if (konv == null || konv.fields['encVersion'] != 'e1') return 'invalid';
           final n = f['epoche'] as int;
           final emp = f['empfaengerId'] as String;
+          if (wrapsVerweigern) return 'invalid'; // Test: der Server lehnt Wraps ab
           // Wrap-ID v2: mit keyVersion die ID v2, ohne die ID v1 (wie der echte Server); eine künftige Version der Person gibt es nicht
           final version = f['keyVersion'] as int?;
-          final erwartet = version == null ? wrapId(f['konversationId'] as String, n, emp) : wrapIdV2(f['konversationId'] as String, n, emp, version);
+          final erwartet = version == null ? wrapId(f['konversationId'] as String, n, emp) : wrapIdV2(f['konversationId'] as String, n, emp, version, g.person.id);
           if (o.entityId != erwartet) return 'invalid';
           if (version != null && version > (schluesselVersionen[emp] ?? 1)) return 'invalid';
           if (_z['epoche/${epocheId(f['konversationId'] as String, n)}'] == null) return 'invalid';

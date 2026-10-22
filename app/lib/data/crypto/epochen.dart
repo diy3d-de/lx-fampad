@@ -286,6 +286,12 @@ class EpochenVerteiler {
 
 CryptoFehler _signatur() => const CryptoFehler(CryptoFehlerArt.signatur, 'Die Schlüsselverteilung konnte nicht bestätigt werden.');
 
+/// Der geöffnete Epochenschlüssel passt nicht zur Verpflichtung in der signierten Mitgliederliste (Split-Verteilung, untergeschobene Liste oder ein falscher Schlüssel,
+/// den ein Mitglied beim "Verlauf teilen" bzw. "Verlauf freigeben" weitergibt). Art `signatur`, damit bestehende Auswertungen gleich bleiben.
+class VerpflichtungFehler extends CryptoFehler {
+  const VerpflichtungFehler() : super(CryptoFehlerArt.signatur, 'Der Schlüssel passt nicht zur signierten Mitgliederliste.');
+}
+
 /// Seite des Empfängers.
 class EpochenEmpfaenger {
   /// Prüft die Signatur der Mitgliederliste gegen [verteiler] und ihre Passung zur erwarteten Konversation/Epoche; enthält sie [ichId]
@@ -391,7 +397,7 @@ class EpochenEmpfaenger {
     final erwartet = schluesselCommitmentBerechnen(crypto, epochenschluessel: schluessel, conversationId: liste.conversationId, epoch: liste.epoch);
     if (!gleicheBytes(erwartet, liste.schluesselCommitment)) {
       loescheBytes(schluessel);
-      throw const CryptoFehler(CryptoFehlerArt.signatur, 'Der Schlüssel passt nicht zur signierten Mitgliederliste.');
+      throw const VerpflichtungFehler();
     }
   }
 

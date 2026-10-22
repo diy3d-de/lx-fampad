@@ -65,7 +65,7 @@ class EpochenMitglied {
 }
 
 /// Gründe, warum eine Nachricht nicht lesbar ist (die Oberfläche zeigt je Grund einen kurzen Hinweis, nie Inhalte).
-enum NichtLesbarGrund { schluesselFehlt, absenderUnbekannt, signaturUngueltig, beschaedigt, neuereVersion, unverschluesselt }
+enum NichtLesbarGrund { schluesselFehlt, absenderUnbekannt, signaturUngueltig, beschaedigt, neuereVersion, unverschluesselt, verlaufFalsch }
 
 /// Was an den Mitgliedern einer Konversation anders ist als in ihrer letzten Epoche. [mitglieder] sind die Empfänger einer neuen Epoche (alle mit
 /// vertrauenswürdigem Schlüssel, auch die [neu] hinzugekommenen).
@@ -87,20 +87,45 @@ class RotationsPlan {
   Set<String> get automatischeMitglieder => mitglieder.difference(neu);
 }
 
-/// Höchstzahl der Wraps, die ein Tipp auf "Verlauf freigeben" erzeugt (der Rest bleibt im Angebot; der Server nimmt höchstens 100 Wraps je Minute an).
-const kMaxFreigabeWraps = 400;
+/// Höchstzahl der Wraps, die ein Tipp auf "Verlauf freigeben" erzeugt: so viele nimmt der Server je Minute an (100); der Rest bleibt im Angebot und folgt mit dem
+/// nächsten Tipp.
+const kMaxFreigabeWraps = 100;
 
 /// Angebot an dieses Gerät: Verlauf, den es für [userId] (neuer Schlüssel der Version [keyVersion]) weitergeben könnte, je Konversation die Epochen (aufsteigend).
 /// Die Oberfläche fragt nach ("Ja, das ist X – Verlauf freigeben"); automatisch geschieht nie etwas ([ChatKrypto.verlaufAngebote]).
 class VerlaufAngebot {
   final String userId;
   final int keyVersion;
+
+  /// Der Schlüssel der Person, für den die Wraps entstehen (dieser, nie ein anderer; auch der Sicherheitscode im Dialog stammt aus ihm).
+  final OeffentlicheSchluessel schluessel;
   final Map<String, List<int>> epochen;
-  const VerlaufAngebot({required this.userId, required this.keyVersion, required this.epochen});
+
+  /// Zeitpunkt des letzten Hinweises "Zugang zurückgesetzt" für diese Person (Sicherheitsereignis), wenn er noch jung ist; sonst null. Setzt der Controller.
+  final DateTime? zuruecksetzung;
+  const VerlaufAngebot({required this.userId, required this.keyVersion, required this.schluessel, required this.epochen, this.zuruecksetzung});
+
+  VerlaufAngebot mitZuruecksetzung(DateTime? zeit) => VerlaufAngebot(userId: userId, keyVersion: keyVersion, schluessel: schluessel, epochen: epochen, zuruecksetzung: zeit);
+
+  /// Wartefrist nach einem Reset: frühestens 24 Stunden nach dem Hinweis (null: keine).
+  DateTime? get fruehestens => zuruecksetzung?.add(kFreigabeWartefrist);
 
   /// Zahl der Chats und der Epochen (Schlüssel), um die es geht.
   int get chats => epochen.length;
   int get anzahl => epochen.values.fold(0, (s, e) => s + e.length);
+}
+
+/// Wartefrist für die Freigabe nach einem Reset des Zugangs der Person (Sicherheitsereignis "Zugang zurückgesetzt").
+const kFreigabeWartefrist = Duration(hours: 24);
+
+/// Wie lange ein Hinweis "Zugang zurückgesetzt" die Freigabe verschärft (Wartefrist, danach Sicherheitscode und getippter Name).
+const kFreigabeResetFenster = Duration(days: 14);
+
+/// Ergebnis eines Tipps auf "Verlauf freigeben": [gesendet] Wraps liegen im Ausgang (der Server bestätigt sie beim Abgleich), [rest] Schlüssel bleiben im Angebot.
+class VerlaufErgebnis {
+  final int gesendet;
+  final int rest;
+  const VerlaufErgebnis({required this.gesendet, required this.rest});
 }
 
 /// Eine geöffnete Epoche, deren Mitgliederliste Personen enthält, die dieses Gerät nicht kennt: zurückgestellt, bis sie nachträglich durch eine eigene Epoche bestätigt ist.
@@ -367,8 +392,8 @@ class ChatKrypto {
           if (!ring.schluessel.containsKey(e.epoche)) _problem(conv, e.epoche, NichtLesbarGrund.schluesselFehlt);
           continue;
         }
-        final w = _wrapFuer(ws, meineKeyVersion);
-        final marke = _marke(e, w);
+        final kand = _wrapKandidaten(ws, meineKeyVersion);
+        final marke = _marke(e, kand);
         SignierteMitgliederListe signiert;
         try {
           signiert = SignierteMitgliederListe.dekodieren(e.mitglieder);
@@ -385,7 +410,7 @@ class ChatKrypto {
           // die Epoche wurde für einen früheren Schlüssel dieser Person verteilt (Schlüsselwechsel): ihr Verlauf ist mit dem neuen Schlüssel nicht mehr lesbar, außer
           // ein Chat-Partner hat ihn freigegeben ("Verlauf freigeben", Wrap-ID v2): dann gibt es einen Wrap für den neuen Schlüssel, und die Epoche geht wie der
           // geteilte Verlauf über die aktuelle, geprüfte Liste (unten)
-          if (eingetragen < meineKeyVersion && _wrapVersion(w) == meineKeyVersion) {
+          if (eingetragen < meineKeyVersion && _wrapVersion(kand.first) == meineKeyVersion) {
             spaeter.add(e);
           } else {
             _problem(conv, e.epoche, NichtLesbarGrund.schluesselFehlt);
@@ -410,7 +435,7 @@ class ChatKrypto {
           _gehalten.remove('$conv:${e.epoche}');
         }
         if (_gescheitertBei['$conv:${e.epoche}:$marke'] == _vertrauensStempel) continue;
-        final r = await _regulaerOeffnen(conv, e, w, signiert);
+        final r = await _regulaerOeffnen(conv, e, kand, signiert);
         if (r != null) {
           pruefeAnnahme(e, signiert, null, r.key, marke, r.verteiler);
         } else {
@@ -468,16 +493,19 @@ class ChatKrypto {
         }
       }
       // 2. Verlauf: ältere Epochen, die ein Mitglied beim Aufnehmen geteilt hat; Bürge ist die aktuelle, geprüfte Liste
-      if (regulaer.isNotEmpty) {
+      if (regulaer.isEmpty) {
+        _geprueft.remove(conv);
+      } else {
         final hoechste = regulaer.keys.reduce((a, b) => a > b ? a : b);
         final aktuell = regulaer[hoechste]!;
+        _geprueft[conv] = (epoche: hoechste, liste: aktuell.liste);
         for (final e in spaeter) {
           if (e.epoche >= hoechste) continue;
-          final w = _wrapFuer(wrapNach['$conv:${e.epoche}']!, meineKeyVersion);
-          final marke = '${_marke(e, w)}|h$hoechste';
+          final kand = _wrapKandidaten(wrapNach['$conv:${e.epoche}']!, meineKeyVersion);
+          final marke = '${_marke(e, kand)}|h$hoechste';
           if (ring.schluessel.containsKey(e.epoche) && ring.stand[e.epoche] == marke) continue;
           if (_gescheitertBei['$conv:${e.epoche}:$marke'] == _vertrauensStempel) continue;
-          final key = await _historieOeffnen(conv, e, w, aktuell.liste, hoechste, aktuell.verteiler);
+          final key = await _historieOeffnen(conv, e, kand, aktuell.liste, hoechste, aktuell.verteiler);
           if (key != null) {
             ring.schluessel[e.epoche] = key;
             ring.stand[e.epoche] = marke;
@@ -501,6 +529,7 @@ class ChatKrypto {
         }
       }
     }
+    if (geaendert) _ringStand++;
     return geaendert;
   }
 
@@ -527,7 +556,8 @@ class ChatKrypto {
 
   static Map<String, int> _basisVon(SignierteMitgliederListe s) => {for (final m in s.liste.mitglieder) m.userId: m.keyVersion};
 
-  String _marke(Epoche e, EpocheWrapZeile w) => c.sha256.convert(utf8.encode('${e.mitglieder}|${w.wrap}')).toString();
+  /// Prüfmarke einer Epoche samt ALLER Kandidaten-Wraps: ändert sich einer, wird neu geöffnet.
+  String _marke(Epoche e, List<EpocheWrapZeile> ws) => c.sha256.convert(utf8.encode('${e.mitglieder}|${ws.map((w) => w.wrap).join('|')}')).toString();
 
   /// Schlüsselversion, für die ein Wrap verpackt ist (aus dem signierten Wrap selbst, nie aus dem Feld des Servers); null, wenn er sich nicht lesen lässt.
   final Map<String, ({String wrap, int? version})> _wrapVersionen = {};
@@ -545,17 +575,19 @@ class ChatKrypto {
     return v;
   }
 
-  /// Der Wrap, der zum Schlüssel dieser Version gehört; gibt es keinen, der erste (er scheitert beim Öffnen mit einer ehrlichen Meldung). [wraps] ist nicht leer.
-  EpocheWrapZeile _wrapFuer(List<EpocheWrapZeile> wraps, int version) {
-    for (final w in wraps) {
-      if (_wrapVersion(w) == version) return w;
-    }
-    return wraps.first;
+  /// ALLE Wraps, die laut signiertem Wrap zum Schlüssel dieser Version gehören (mehrere Verteiler können dieselbe Epoche für dieselbe Version verpackt haben; ein
+  /// böswilliger darf keinen echten verdrängen: der Aufrufer probiert sie der Reihe nach durch, bis einer öffnet). Gibt es keinen, der erste (er scheitert beim Öffnen mit
+  /// einer ehrlichen Meldung). [wraps] ist nicht leer.
+  List<EpocheWrapZeile> _wrapKandidaten(List<EpocheWrapZeile> wraps, int version) {
+    final passend = [for (final w in wraps) if (_wrapVersion(w) == version) w];
+    return passend.isEmpty ? [wraps.first] : passend;
   }
 
   void _problem(String conv, int epoche, NichtLesbarGrund grund) => (_probleme[conv] ??= {})[epoche] = grund;
 
   void _verwerfen(String conv) {
+    _geprueft.remove(conv);
+    _ringStand++;
     final r = _ringe.remove(conv);
     if (r != null) {
       for (final k in r.schluessel.values) {
@@ -579,72 +611,88 @@ class ChatKrypto {
     _zurueckgestellt.clear();
   }
 
-  Future<({Uint8List key, OeffentlicheSchluessel verteiler})?> _regulaerOeffnen(String conv, Epoche e, EpocheWrapZeile w, SignierteMitgliederListe signiert) async {
-    try {
-      final wrap = EpochenWrap.dekodieren(w.wrap);
-      final verteiler = await _verteilerSchluessel(signiert.verteilerId, signiert.verteilerKeyVersion);
-      if (verteiler == null) {
-        _problem(conv, e.epoche, NichtLesbarGrund.absenderUnbekannt);
-        return null;
+  /// Öffnet den Epochenschlüssel einer Epoche, die diese Person mit ihrem aktuellen Schlüssel nennt: probiert ALLE Wraps dieser Version der Reihe nach (mehrere Verteiler
+  /// können sie verpackt haben; ein falscher darf den echten nie verdrängen) und nimmt den ersten, der alle Prüfungen besteht.
+  Future<({Uint8List key, OeffentlicheSchluessel verteiler})?> _regulaerOeffnen(String conv, Epoche e, List<EpocheWrapZeile> kandidaten, SignierteMitgliederListe signiert) async {
+    for (final w in kandidaten) {
+      try {
+        final wrap = EpochenWrap.dekodieren(w.wrap);
+        final verteiler = await _verteilerSchluessel(signiert.verteilerId, signiert.verteilerKeyVersion);
+        if (verteiler == null) {
+          _problem(conv, e.epoche, NichtLesbarGrund.absenderUnbekannt);
+          return null; // hängt nicht vom Wrap ab: mit den anderen Wraps wäre es dasselbe
+        }
+        final key = EpochenEmpfaenger.uebernehmen(
+          crypto,
+          wrap: wrap,
+          liste: signiert,
+          erwarteteConversationId: conv,
+          erwarteteEpoche: e.epoche,
+          ichId: ichId,
+          meinSchluessel: meinSchluessel,
+          meineKeyVersion: meineKeyVersion,
+          verteiler: verteiler,
+        );
+        return (key: key, verteiler: verteiler);
+      } on CryptoFehler catch (f) {
+        _problem(conv, e.epoche, _grund(f));
       }
-      final key = EpochenEmpfaenger.uebernehmen(
-        crypto,
-        wrap: wrap,
-        liste: signiert,
-        erwarteteConversationId: conv,
-        erwarteteEpoche: e.epoche,
-        ichId: ichId,
-        meinSchluessel: meinSchluessel,
-        meineKeyVersion: meineKeyVersion,
-        verteiler: verteiler,
-      );
-      return (key: key, verteiler: verteiler);
-    } on CryptoFehler catch (f) {
-      _problem(conv, e.epoche, _grund(f));
-      return null;
     }
+    return null;
   }
 
-  Future<Uint8List?> _historieOeffnen(String conv, Epoche e, EpocheWrapZeile w, SignierteMitgliederListe aktuelleListe, int aktuelleEpoche, OeffentlicheSchluessel aktuellerVerteiler) async {
-    try {
-      final wrap = EpochenWrap.dekodieren(w.wrap);
-      final wrapVerteiler = await _verteilerSchluessel(wrap.verteilerId, wrap.verteilerKeyVersion);
-      if (wrapVerteiler == null) {
-        _problem(conv, e.epoche, NichtLesbarGrund.absenderUnbekannt);
-        return null;
+  /// Wie [_regulaerOeffnen] für ältere Epochen ("Verlauf teilen" beim Aufnehmen, "Verlauf freigeben" nach einem neuen Schlüssel): alle Wraps der eigenen Version der Reihe
+  /// nach; der erste, dessen Signatur, Bürge (aktuelle, geprüfte Liste) und Verpflichtung stimmen, gilt. Ein Schlüssel, der nicht zur Verpflichtung passt, ist ein Fehler
+  /// ([NichtLesbarGrund.verlaufFalsch]), nie ein stilles Überspringen.
+  Future<Uint8List?> _historieOeffnen(String conv, Epoche e, List<EpocheWrapZeile> kandidaten, SignierteMitgliederListe aktuelleListe, int aktuelleEpoche, OeffentlicheSchluessel aktuellerVerteiler) async {
+    for (final w in kandidaten) {
+      try {
+        final wrap = EpochenWrap.dekodieren(w.wrap);
+        final wrapVerteiler = await _verteilerSchluessel(wrap.verteilerId, wrap.verteilerKeyVersion);
+        if (wrapVerteiler == null) {
+          _problem(conv, e.epoche, NichtLesbarGrund.absenderUnbekannt);
+          continue;
+        }
+        return EpochenEmpfaenger.historieUebernehmen(
+          crypto,
+          wrap: wrap,
+          erwarteteConversationId: conv,
+          erwarteteEpoche: e.epoche,
+          aktuelleListe: aktuelleListe,
+          aktuelleEpoche: aktuelleEpoche,
+          aktuellerVerteiler: aktuellerVerteiler,
+          ichId: ichId,
+          meinSchluessel: meinSchluessel,
+          meineKeyVersion: meineKeyVersion,
+          wrapVerteiler: wrapVerteiler,
+          alteListe: await _alteListe(e, wrap, wrapVerteiler),
+        );
+      } on VerpflichtungFehler {
+        _problem(conv, e.epoche, NichtLesbarGrund.verlaufFalsch);
+      } on CryptoFehler catch (f) {
+        _problem(conv, e.epoche, _grund(f));
       }
-      return EpochenEmpfaenger.historieUebernehmen(
-        crypto,
-        wrap: wrap,
-        erwarteteConversationId: conv,
-        erwarteteEpoche: e.epoche,
-        aktuelleListe: aktuelleListe,
-        aktuelleEpoche: aktuelleEpoche,
-        aktuellerVerteiler: aktuellerVerteiler,
-        ichId: ichId,
-        meinSchluessel: meinSchluessel,
-        meineKeyVersion: meineKeyVersion,
-        wrapVerteiler: wrapVerteiler,
-        alteListe: await _alteListe(e, wrap, wrapVerteiler),
-      );
-    } on CryptoFehler catch (f) {
-      _problem(conv, e.epoche, _grund(f));
-      return null;
     }
+    return null;
   }
 
-  /// Die Mitgliederliste der älteren Epoche, wenn ihre Signatur gegen den GEMERKTEN Schlüssel ihres eigenen Verteilers stimmt (nie ein Schlüssel vom Server): dann
-  /// prüft die Übernahme den Schlüssel gegen ihre Verpflichtung. Das gilt auch, wenn jemand anderes den Wrap weitergibt ("Verlauf freigeben" durch ein Mitglied, das die
-  /// Epoche nicht angelegt hat): ein falscher Schlüssel fällt so auf. Ohne bekannten Verteiler der Liste: keine Verpflichtung, gegen die sich prüfen ließe.
+  /// Die Mitgliederliste der älteren Epoche, gegen die der Schlüssel geprüft wird (Verpflichtung): ihre Signatur muss gegen den GEMERKTEN Schlüssel ihres eigenen Verteilers
+  /// stimmen (nie ein Schlüssel vom Server). Das gilt auch, wenn jemand anderes den Wrap weitergibt ("Verlauf teilen"/"Verlauf freigeben" durch ein Mitglied, das die
+  /// Epoche nicht angelegt hat). Kennt dieses Gerät den Schlüssel des Verteilers in dieser Version nicht, gibt es keine Verpflichtung, gegen die sich prüfen ließe: null
+  /// (nachsichtig). Kennt es ihn, und die Signatur stimmt nicht, ist die Liste verändert: [VerpflichtungFehler].
   Future<MitgliederListe?> _alteListe(Epoche e, EpochenWrap wrap, OeffentlicheSchluessel wrapVerteiler) async {
+    final SignierteMitgliederListe s;
     try {
-      final s = SignierteMitgliederListe.dekodieren(e.mitglieder);
-      final OeffentlicheSchluessel? v = s.verteilerId == wrap.verteilerId && s.verteilerKeyVersion == wrap.verteilerKeyVersion ? wrapVerteiler : await _verteilerSchluessel(s.verteilerId, s.verteilerKeyVersion);
-      if (v == null) return null;
-      return EpochenEmpfaenger.alteListeGeprueft(crypto, signiert: s, verteiler: v);
+      s = SignierteMitgliederListe.dekodieren(e.mitglieder);
     } on CryptoFehler {
-      return null;
+      throw const VerpflichtungFehler();
     }
+    final OeffentlicheSchluessel? v =
+        s.verteilerId == wrap.verteilerId && s.verteilerKeyVersion == wrap.verteilerKeyVersion ? wrapVerteiler : await _verteilerSchluessel(s.verteilerId, s.verteilerKeyVersion);
+    if (v == null || v.version != s.verteilerKeyVersion) return null;
+    final liste = EpochenEmpfaenger.alteListeGeprueft(crypto, signiert: s, verteiler: v);
+    if (liste == null) throw const VerpflichtungFehler();
+    return liste;
   }
 
   static NichtLesbarGrund _grund(CryptoFehler f) => switch (f.art) {
@@ -800,6 +848,7 @@ class ChatKrypto {
     NichtLesbarGrund.beschaedigt => 'beschädigt',
     NichtLesbarGrund.neuereVersion => 'neuere App-Version nötig',
     NichtLesbarGrund.unverschluesselt => 'unverschlüsselt',
+    NichtLesbarGrund.verlaufFalsch => 'Verlaufsschlüssel passt nicht',
   };
 
   // ------------------------------------------------------------------ Rotation
@@ -989,7 +1038,9 @@ class ChatKrypto {
 
   static String _freigabeSchluessel(String userId, int keyVersion) => 'verlaufFreigabe.${userId.toLowerCase()}.$keyVersion';
 
-  /// Was dieses Gerät für diese Person und Schlüsselversion schon freigegeben hat ("Konversation:Epoche"); lokal in `sync_meta` (der Server erfährt nichts davon).
+  /// Was dieses Gerät für diese Person und Schlüsselversion schon freigegeben UND vom Server bestätigt bekommen hat ("Konversation:Epoche"); lokal in `sync_meta` (der
+  /// Server erfährt nichts davon). Eine Freigabe zählt erst, wenn der Server den Wrap bestätigt hat (die lokale Zeile hat rev > 0): vorher ist sie "unterwegs", und eine
+  /// abgelehnte Freigabe verschwindet lokal wieder und wird weiter angeboten.
   Future<Set<String>> _freigegeben(String userId, int keyVersion) async {
     final raw = await db.metaLesen(_freigabeSchluessel(userId, keyVersion));
     if (raw == null) return {};
@@ -1002,7 +1053,9 @@ class ChatKrypto {
   }
 
   Future<void> _freigabeMerken(String userId, int keyVersion, Iterable<String> neu) async {
-    final alle = {...await _freigegeben(userId, keyVersion), ...neu};
+    final alt = await _freigegeben(userId, keyVersion);
+    final alle = {...alt, ...neu};
+    if (alle.length == alt.length) return;
     await db.metaSchreiben(_freigabeSchluessel(userId, keyVersion), jsonEncode(alle.toList()..sort()));
   }
 
@@ -1013,39 +1066,64 @@ class ChatKrypto {
     return EpochenEmpfaenger.alteListeGeprueft(crypto, signiert: s, verteiler: v);
   }
 
+  /// Die höchste akzeptierte Epoche je Konversation mit ihrer GEPRÜFTEN Liste (Signatur und Aufnahmeregeln bestanden; Stand des letzten Laufs von [aktualisieren]).
+  final Map<String, ({int epoche, SignierteMitgliederListe liste})> _geprueft = {};
+
+  /// Zählt jede Änderung am Schlüsselbund (neue oder verlorene Epochenschlüssel): Grundlage des Zwischenspeichers der Angebote.
+  int _ringStand = 0;
+  String? _angebotStand;
+  List<VerlaufAngebot> _angebotWert = const [];
+
   /// Was dieses Gerät weitergeben könnte, damit eine Person mit einem NEUEN Schlüssel (Reset, Schlüsselwechsel) ihre älteren Chats wieder lesen kann: je Person
   /// und aktueller Schlüsselversion die Epochen je Konversation. Nur wenn ALLES zutrifft (sonst fehlt das Angebot):
-  ///  - der Schlüssel der Person ist diesem Gerät vertraut (gemerkt UND gleich dem des Servers) und steht so in der höchsten, akzeptierten Epoche der Konversation
-  ///    (der Chat hat sie mit diesem Schlüssel schon aufgenommen, die Rotation hat stattgefunden); die Person ist heute Teilnehmer;
+  ///  - der Schlüssel der Person ist diesem Gerät vertraut (gemerkt UND gleich dem des Servers) und steht so in der höchsten, GEPRÜFTEN und akzeptierten Epoche der
+  ///    Konversation (der Chat hat sie mit diesem Schlüssel schon aufgenommen, die Rotation hat stattgefunden); die Person ist heute Teilnehmer;
   ///  - die Epoche liegt unter der höchsten, dieses Gerät hat ihren Schlüssel (er passt zur Verpflichtung der Liste) und ihre Mitgliederliste ist auf die
   ///    Signatur ihres Verteilers geprüft: nur was die Person damals hatte (sie steht mit einer ÄLTEREN Schlüsselversion darin), nie Verlauf aus der Zeit davor;
-  ///  - dieses Gerät hat es für diese Person und Version noch nicht freigegeben.
-  /// Automatisch weitergegeben wird nie etwas: das Angebot ist die Frage an die Oberfläche ("Ja, das ist X – Verlauf freigeben").
-  Future<List<VerlaufAngebot>> verlaufAngebote() async {
+  ///  - dieses Gerät hat es für diese Person und Version weder freigegeben noch ist es unterwegs (lokale Zeile des Wraps; eine abgelehnte verschwindet und wird neu angeboten).
+  /// Automatisch weitergegeben wird nie etwas: das Angebot ist die Frage an die Oberfläche ("Ja, das ist X – Verlauf freigeben"). Das Ergebnis wird zwischengespeichert,
+  /// solange sich Vertrauen, Schlüsselbund und die Zahl der lokalen Epochen, Wraps und Chats nicht ändern; [cache] false rechnet neu (vor dem Freigeben).
+  Future<List<VerlaufAngebot>> verlaufAngebote({bool cache = true}) async {
     final aktiv = serverSchluessel();
     if (aktiv == null) return const [];
-    final nach = <String, ({int version, Map<String, List<int>> epochen})>{};
+    final zaehler = await db
+        .customSelect('select (select count(*) from konversation_epochen) as a, (select count(*) from epoche_wraps) as b, (select count(*) from konversationen) as c, (select count(*) from epoche_wraps where rev > 0) as d')
+        .getSingle();
+    final stand = '$_vertrauensStempel|$_ringStand|${zaehler.read<int>('a')}|${zaehler.read<int>('b')}|${zaehler.read<int>('c')}|${zaehler.read<int>('d')}|${aktiv.length}';
+    if (cache && stand == _angebotStand) return _angebotWert;
+    final wert = await _angeboteBerechnen(aktiv);
+    _angebotStand = stand;
+    _angebotWert = wert;
+    return wert;
+  }
+
+  Future<List<VerlaufAngebot>> _angeboteBerechnen(Map<String, OeffentlicheSchluessel?> aktiv) async {
+    final lokal = {for (final w in await db.select(db.epocheWraps).get()) w.id: w.rev};
+    final nach = <String, ({OeffentlicheSchluessel schluessel, Map<String, List<int>> epochen})>{};
+    final bestaetigt = <String, ({String userId, int version, Set<String> keys})>{};
     for (final konv in await db.select(db.konversationen).get()) {
       if (konv.encVersion != 'e1' || konv.rev == 0) continue;
       final basis = _akzeptiert[konv.id];
-      if (basis == null) continue;
+      final pruef = _geprueft[konv.id];
+      if (basis == null || pruef == null) continue;
       final epochen = await _epochen(konv.id); // absteigend
-      if (epochen.length < 2 || epochen.first.rev == 0 || schluessel(konv.id, epochen.first.epoche) == null) continue;
-      final SignierteMitgliederListe hoechste;
-      try {
-        hoechste = SignierteMitgliederListe.dekodieren(epochen.first.mitglieder);
-      } on CryptoFehler {
-        continue;
-      }
+      if (epochen.length < 2 || epochen.first.rev == 0 || epochen.first.epoche != pruef.epoche || schluessel(konv.id, pruef.epoche) == null) continue;
       final teilnehmer = konv.art == _familie ? aktiv.keys.toSet() : _teilnehmerVon(konv);
-      for (final m in hoechste.liste.mitglieder) {
+      for (final m in pruef.liste.liste.mitglieder) {
         final u = m.userId;
         if (u == ichId || !teilnehmer.contains(u) || basis[u] != m.keyVersion) continue;
         final k = await vertrauenswuerdig(u);
         if (k == null || k.version != m.keyVersion) continue;
         final geteilt = await _freigegeben(u, k.version);
         for (final alt in epochen.skip(1)) {
-          if (geteilt.contains('${konv.id}:${alt.epoche}')) continue;
+          final marke = '${konv.id}:${alt.epoche}';
+          if (geteilt.contains(marke)) continue;
+          final unterwegs = lokal[wrapIdV2(konv.id, alt.epoche, u, k.version, ichId)];
+          if (unterwegs != null) {
+            // vom Server bestätigt (rev > 0): dauerhaft merken; sonst unterwegs: nicht noch einmal anbieten
+            if (unterwegs > 0) (bestaetigt['$u:${k.version}'] ??= (userId: u, version: k.version, keys: <String>{})).keys.add(marke);
+            continue;
+          }
           final key = schluessel(konv.id, alt.epoche);
           if (key == null) continue;
           final SignierteMitgliederListe signiert;
@@ -1060,28 +1138,32 @@ class ChatKrypto {
           final liste = await _listeGeprueft(signiert);
           if (liste == null) continue;
           if (!gleicheBytes(schluesselCommitmentBerechnen(crypto, epochenschluessel: key, conversationId: konv.id, epoch: alt.epoche), liste.schluesselCommitment)) continue;
-          final eintrag = nach.putIfAbsent(u, () => (version: k.version, epochen: <String, List<int>>{}));
+          final eintrag = nach.putIfAbsent(u, () => (schluessel: k, epochen: <String, List<int>>{}));
           (eintrag.epochen[konv.id] ??= []).add(alt.epoche);
         }
       }
     }
+    for (final b in bestaetigt.values) {
+      await _freigabeMerken(b.userId, b.version, b.keys);
+    }
     return [
       for (final e in nach.entries.toList()..sort((a, b) => a.key.compareTo(b.key)))
-        VerlaufAngebot(userId: e.key, keyVersion: e.value.version, epochen: {for (final x in e.value.epochen.entries) x.key: (x.value..sort())}),
+        VerlaufAngebot(userId: e.key, keyVersion: e.value.schluessel.version, schluessel: e.value.schluessel, epochen: {for (final x in e.value.epochen.entries) x.key: (x.value..sort())}),
     ];
   }
 
   /// Gibt den Verlauf für [userId] frei (nach dem ausdrücklichen Tipp der Person): verpackt die Epochenschlüssel dieses Angebots für den NEUEN Schlüssel der Person
-  /// (Wrap-ID v2, `keyVersion` im Feld) und schreibt alles in EINER Transaktion in den Ausgang ([SyncStore.aendernMehrere]). Höchstens [max] Wraps je Aufruf (die neuesten
-  /// Epochen zuerst; der Rest bleibt im Angebot). Liefert die Zahl der Wraps (0: nichts zu tun oder jetzt nicht möglich). Der Server bleibt blind: er sieht nur Wraps und
-  /// eine öffentliche Zahl.
-  Future<int> verlaufFreigeben(String userId, {int max = kMaxFreigabeWraps}) async {
-    final angebot = (await verlaufAngebote()).where((a) => a.userId == userId).firstOrNull;
-    if (angebot == null) return 0;
+  /// (Wrap-ID v2 mit dem eigenen Namen als Verteiler, `keyVersion` im Feld) und schreibt sie in EINER Transaktion in den Ausgang ([SyncStore.aendernMehrere]). Höchstens
+  /// [max] Wraps je Aufruf (die Rate des Servers; die neuesten Epochen zuerst), der Rest bleibt im Angebot und folgt mit dem nächsten Tipp ([VerlaufErgebnis.rest]).
+  /// Als freigegeben gilt es erst, wenn der Server die Wraps beim Abgleich bestätigt hat. Der Server bleibt blind: er sieht nur Wraps und eine öffentliche Zahl.
+  Future<VerlaufErgebnis> verlaufFreigeben(String userId, {int max = kMaxFreigabeWraps}) async {
+    const nichts = VerlaufErgebnis(gesendet: 0, rest: 0);
+    final angebot = (await verlaufAngebote(cache: false)).where((a) => a.userId == userId).firstOrNull;
+    if (angebot == null) return nichts;
     final k = await vertrauenswuerdig(userId);
-    if (k == null || k.version != angebot.keyVersion) return 0;
+    // genau der Schlüssel, den das Angebot (und der Dialog mit dem Sicherheitscode) zeigt
+    if (k == null || k.version != angebot.keyVersion || !k.gleichWie(angebot.schluessel)) return nichts;
     final aenderungen = <SyncAenderung>[];
-    final neu = <String>[];
     for (final eintrag in angebot.epochen.entries) {
       for (final epoche in eintrag.value.reversed) {
         if (aenderungen.length >= max) break;
@@ -1101,17 +1183,15 @@ class ChatKrypto {
         aenderungen.add(
           SyncAenderung(
             'epoche_wrap',
-            wrapIdV2(eintrag.key, epoche, userId, k.version),
+            wrapIdV2(eintrag.key, epoche, userId, k.version, ichId),
             {'konversationId': eintrag.key, 'epoche': epoche, 'empfaengerId': userId, 'wrap': w.kodieren(), 'keyVersion': k.version},
           ),
         );
-        neu.add('${eintrag.key}:$epoche');
       }
     }
-    if (aenderungen.isEmpty) return 0;
+    if (aenderungen.isEmpty) return nichts;
     await store.aendernMehrere(aenderungen);
-    await _freigabeMerken(userId, k.version, neu);
-    return aenderungen.length;
+    return VerlaufErgebnis(gesendet: aenderungen.length, rest: angebot.anzahl - aenderungen.length);
   }
 
   // ------------------------------------------------------------------ Verlorene Wraps nachreichen

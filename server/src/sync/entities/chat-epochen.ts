@@ -138,11 +138,11 @@ export const epocheWrapEntity: EntityDef = {
   // verschwindet die Person aus der Familie, verschwinden ihre Wraps (mit Tombstone für ihre Geräte)
   memberOwned: 'empfaengerId',
   ownerOnlyNotify: true,
-  // ohne keyVersion die ID v1 (ältere Apps, Altbestand), mit keyVersion die ID v2: jede andere Kombination ist ungültig (niemand kann eine ID vorab anders belegen)
-  idValid: (id: string, values: Row): boolean =>
+  // ohne keyVersion die ID v1 (ältere Apps, Altbestand), mit keyVersion die ID v2 MIT dem Verteiler (dem Akteur): jede andere Kombination ist ungültig
+  idValid: (id: string, values: Row, actor: Actor): boolean =>
     values.keyVersion === undefined || values.keyVersion === null
       ? id === wrapId(String(values.konversationId), Number(values.epoche), String(values.empfaengerId))
-      : id === wrapIdV2(String(values.konversationId), Number(values.epoche), String(values.empfaengerId), Number(values.keyVersion)),
+      : id === wrapIdV2(String(values.konversationId), Number(values.epoche), String(values.empfaengerId), Number(values.keyVersion), actor.userId),
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.empfaengerId as string | null) ?? null }),
   factsForCreate: (_actor: Actor, values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (values.empfaengerId as string | undefined) ?? null }),
   onCreate: (actor: Actor): Row => ({ verteilerId: actor.userId }),

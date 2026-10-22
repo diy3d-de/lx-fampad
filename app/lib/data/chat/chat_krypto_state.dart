@@ -259,6 +259,10 @@ final chatKryptoProvider = NotifierProvider<ChatKryptoController, int>(ChatKrypt
 /// nicht (nichts ändert sich). Ein Fehler (offline) wirft; der Controller wertet ihn als "nein" und fragt beim nächsten Mal erneut.
 final serverKannVerlaufFreigebenProvider = FutureProvider<bool>((ref) async => (await ref.read(apiProvider).serverFaehigkeiten()).wrapKeyVersion);
 
+/// Die Sicherheitsereignisse der eigenen Person (`GET /me/security-events`): daraus erkennt die Freigabe, ob der Zugang einer Person vor kurzem zurückgesetzt wurde
+/// (Hinweis an die Familie). Ein Fehler wirft; ohne gesicherte Antwort gibt es kein Angebot.
+final verlaufFreigabeEreignisseProvider = FutureProvider<List<SicherheitsEreignisDto>>((ref) => ref.read(apiProvider).sicherheitsEreignisse());
+
 /// Der Inhalt der Nachrichten für die Oberfläche. Mit jeder Änderung (etwas ist entschlüsselt, ein Schlüssel ist eingetroffen) entsteht eine neue Sicht: Riverpod meldet
 /// einen Provider nur weiter, wenn sich der Wert ändert, und der Zwischenspeicher selbst bleibt dasselbe Objekt.
 final nachrichtenInhaltProvider = Provider<NachrichtenInhalt>((ref) {
@@ -384,43 +388,122 @@ class ChatKryptoController extends Notifier<int> {
     _anstossen();
   }
 
-  /// Gibt den Verlauf für die Person frei (nach ihrem ausdrücklichen Tipp). Liefert false, wenn das jetzt nicht geht (der Hinweis bleibt dann stehen).
-  Future<bool> verlaufFreigeben(String userId) async {
+  /// Gibt den Verlauf für die Person frei (nach ihrem ausdrücklichen Tipp). Liefert null, wenn das jetzt nicht geht (der Hinweis bleibt dann stehen), sonst wie viele Wraps
+  /// gesendet werden und wie viele Schlüssel noch im Angebot bleiben (höchstens [kMaxFreigabeWraps] je Tipp). Innerhalb der Wartefrist nach einem Reset der Person
+  /// geht es nie (auch wenn die Oberfläche es versuchte).
+  Future<VerlaufErgebnis?> verlaufFreigeben(String userId) async {
+    final angebot = _angebote.where((a) => a.userId == userId).firstOrNull;
+    final frist = angebot?.fruehestens;
+    if (frist != null && DateTime.now().isBefore(frist)) return null;
     final k = await krypto();
-    if (k == null) return false;
+    if (k == null) return null;
     try {
       await k.aktualisieren();
-      final n = await k.verlaufFreigeben(userId);
-      if (n == 0) return false;
+      final r = await k.verlaufFreigeben(userId);
+      if (r.gesendet == 0) return null;
       ref.read(syncProvider.notifier).lokaleAenderung();
-      await _angeboteAktualisieren(k);
-      return true;
+      unawaited(_angeboteTakt(k));
+      return r;
     } on CryptoFehler {
-      return false;
+      return null;
     } on VerschluesselungNichtBereit {
-      return false;
+      return null;
     }
   }
 
-  /// Rechnet die Angebote neu. Den Server fragen wir erst, wenn es etwas anzubieten gäbe (kein Netz im Normalfall).
+  bool _angebotLaeuft = false;
+  bool _angebotNochmal = false;
+
+  /// Rechnet die Angebote neu, aber nie im Weg: höchstens ein Lauf zugleich, ein Auslöser währenddessen ergibt einen weiteren Lauf. Wartet nie auf das Netz, wer es
+  /// nicht abwarten will ([unawaited]).
+  Future<void> _angeboteTakt(ChatKrypto k) async {
+    if (_angebotLaeuft) {
+      _angebotNochmal = true;
+      return;
+    }
+    _angebotLaeuft = true;
+    try {
+      do {
+        _angebotNochmal = false;
+        await _angeboteAktualisieren(k);
+      } while (_angebotNochmal && ref.mounted);
+    } finally {
+      _angebotLaeuft = false;
+    }
+  }
+
+  /// Rechnet die Angebote neu. Das Netz (Fähigkeit des Servers, Sicherheitsereignisse) fragen wir erst, wenn es etwas anzubieten gäbe, und nur zwischengespeichert.
   Future<void> _angeboteAktualisieren(ChatKrypto k) async {
     var neu = const <VerlaufAngebot>[];
     try {
       neu = await k.verlaufAngebote();
-      if (neu.isNotEmpty && !await _serverKannFreigeben()) neu = const [];
+      if (neu.isNotEmpty) {
+        final ereignisse = await _gateOk() ? await _ereignisseLaden() : null;
+        // ohne gesicherte Antwort (älterer Server, offline) gibt es kein Angebot; nie ein Angebot, ohne zu wissen, ob der Zugang der Person zurückgesetzt wurde
+        neu = ereignisse == null ? const [] : [for (final a in neu) a.mitZuruecksetzung(_resetZeit(ereignisse, a.userId))];
+      }
     } on Object {
       neu = const [];
     }
+    if (!ref.mounted) return;
     _angeboteSetzen(neu);
   }
 
-  Future<bool> _serverKannFreigeben() async {
+  ({bool wert, DateTime stand})? _gate;
+  static const _gateFalschDauer = Duration(minutes: 5);
+
+  /// Nimmt der Server Wraps mit Schlüsselversion an? Ein "ja" gilt für die Sitzung, ein "nein" (älterer Server oder Fehler) nur einige Minuten, danach wird erneut gefragt.
+  Future<bool> _gateOk() async {
+    final g = _gate;
+    final jetzt = DateTime.now();
+    if (g != null && (g.wert || jetzt.difference(g.stand) < _gateFalschDauer)) return g.wert;
     try {
-      return await ref.read(serverKannVerlaufFreigebenProvider.future);
-    } on Object {
       ref.invalidate(serverKannVerlaufFreigebenProvider);
+      final v = await ref.read(serverKannVerlaufFreigebenProvider.future);
+      _gate = (wert: v, stand: jetzt);
+      return v;
+    } on Object {
+      _gate = (wert: false, stand: jetzt);
       return false;
     }
+  }
+
+  ({List<SicherheitsEreignisDto> liste, DateTime stand})? _ereignisse;
+  static const _ereignisDauer = Duration(minutes: 2);
+
+  /// Die Sicherheitsereignisse der eigenen Person (zwischengespeichert); null, wenn sie sich nicht laden lassen.
+  Future<List<SicherheitsEreignisDto>?> _ereignisseLaden() async {
+    final c = _ereignisse;
+    final jetzt = DateTime.now();
+    if (c != null && jetzt.difference(c.stand) < _ereignisDauer) return c.liste;
+    final f = _ereignisFehler;
+    if (f != null && jetzt.difference(f) < const Duration(minutes: 1)) return null;
+    try {
+      ref.invalidate(verlaufFreigabeEreignisseProvider);
+      final l = await ref.read(verlaufFreigabeEreignisseProvider.future);
+      _ereignisse = (liste: l, stand: jetzt);
+      _ereignisFehler = null;
+      return l;
+    } on Object {
+      _ereignisFehler = jetzt;
+      return null;
+    }
+  }
+
+  DateTime? _ereignisFehler;
+
+  /// Wann wurde der Zugang dieser Person zuletzt komplett zurückgesetzt (Hinweis an die Familie, [SicherheitsArt.mitgliedZugangZurueckgesetzt]), sofern der Hinweis jünger
+  /// als [kFreigabeResetFenster] ist? Der Hinweis nennt nur den Namen: stimmt er mit dem Anzeigenamen überein, gilt er (bei gleichen Namen für beide: im Zweifel streng).
+  DateTime? _resetZeit(List<SicherheitsEreignisDto> ereignisse, String userId) {
+    final name = ref.read(e2eeProvider).mitglieder.where((m) => m.id == userId).firstOrNull?.displayName.trim().toLowerCase();
+    if (name == null || name.isEmpty) return null;
+    final grenze = DateTime.now().subtract(kFreigabeResetFenster);
+    DateTime? neueste;
+    for (final e in ereignisse) {
+      if (e.art != SicherheitsArt.mitgliedZugangZurueckgesetzt || e.betroffener?.trim().toLowerCase() != name || e.zeit.isBefore(grenze)) continue;
+      if (neueste == null || e.zeit.isAfter(neueste)) neueste = e.zeit;
+    }
+    return neueste;
   }
 
   void _angeboteSetzen(List<VerlaufAngebot> neu) {
@@ -428,7 +511,7 @@ class ChatKryptoController extends Notifier<int> {
       if (neu.length != _angebote.length) return false;
       for (var i = 0; i < neu.length; i++) {
         final a = neu[i], b = _angebote[i];
-        if (a.userId != b.userId || a.keyVersion != b.keyVersion || a.anzahl != b.anzahl || a.chats != b.chats) return false;
+        if (a.userId != b.userId || a.keyVersion != b.keyVersion || a.anzahl != b.anzahl || a.chats != b.chats || a.zuruecksetzung != b.zuruecksetzung) return false;
       }
       return true;
     }
@@ -455,6 +538,9 @@ class ChatKryptoController extends Notifier<int> {
     _verborgen.clear();
     _angebote = const [];
     _freigabeVerborgen.clear();
+    _gate = null;
+    _ereignisse = null;
+    _ereignisFehler = null;
     _inhalt = E2eeNachrichtenInhalt(
       krypto: krypto,
       encVersion: (id) async => (await (_db.select(_db.konversationen)..where((k) => k.id.equals(id))).getSingleOrNull())?.encVersion,
@@ -649,7 +735,7 @@ class ChatKryptoController extends Notifier<int> {
       _angeboteSetzen(const []);
       return;
     }
-    await _angeboteAktualisieren(k);
+    unawaited(_angeboteTakt(k)); // nie im Weg: das Netz (Fähigkeit, Ereignisse) hält die Pflege der Epochen nicht auf
     final jetzt = DateTime.now();
     final aufnahmen = <String, Set<String>>{};
     final kandidaten = <Konversation>[];

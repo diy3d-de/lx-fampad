@@ -1,5 +1,5 @@
 {
-  "id": "ece921fb-d3d0-4ee2-bcaa-cef819e6cf40",
+  "id": "227ed0d0-3d7e-4dcb-837a-9cba8a3f0e48",
   "prevId": "521bd5ec-abef-45a6-99d6-9e9fbc6fa919",
   "version": "7",
   "dialect": "postgresql",
@@ -1499,16 +1499,10 @@
               "isExpression": false,
               "asc": true,
               "nulls": "last"
-            },
-            {
-              "expression": "coalesce(\"key_version\", 0)",
-              "asc": true,
-              "isExpression": true,
-              "nulls": "last"
             }
           ],
           "isUnique": true,
-          "where": "\"epoche_wraps\".\"deleted_at\" is null",
+          "where": "\"epoche_wraps\".\"deleted_at\" is null and \"epoche_wraps\".\"key_version\" is null",
           "concurrently": false,
           "method": "btree",
           "with": {}
