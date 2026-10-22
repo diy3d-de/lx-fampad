@@ -106,6 +106,9 @@ final syncSocketOeffnerProvider = Provider<SocketOeffner?>((ref) => null);
 
 final syncStoreProvider = Provider<SyncStore>((ref) => SyncStore(ref.watch(appDatabaseProvider)));
 
+/// Abgelehnte, nicht gesendete Änderungen im Ausgang (live; nur für die Warnung vor dem Abmelden).
+final abgelehnteAenderungenProvider = StreamProvider.autoDispose<int>((ref) => ref.watch(syncStoreProvider).abgelehnteAenderungen());
+
 /// Bereitet Ops vor dem Senden vor (Chat: verschlüsselt). Der Hintergrund-Abgleich eines Push-Weckers setzt hier null: dort gibt es keine Chat-Verschlüsselung
 /// (kein Schlüsselbund, keine Controller); Chat-Klartext im Ausgang bleibt dann liegen und geht erst beim nächsten Start der App hinaus.
 final opVorbereiterProvider = Provider<OpVorbereiter?>(

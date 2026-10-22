@@ -15,6 +15,20 @@ import '../support/fake_crypto.dart';
 OeffentlicheSchluessel _key(int n, {int version = 1}) =>
     OeffentlicheSchluessel(enc: Uint8List.fromList(List.filled(32, n)), sign: Uint8List.fromList(List.filled(32, n + 100)), version: version);
 
+/// Speicher, dessen Lesen mit [fehler] scheitert.
+class _LeseFehlerSpeicher extends MemorySchluesselSpeicher {
+  SchluesselSpeicherFehler? fehler;
+  @override
+  Future<Uint8List?> lesen(String name) async => fehler != null ? throw fehler! : super.lesen(name);
+}
+
+/// Speicher, bei dem das Löschen eines Eintrags scheitert.
+class _LoeschFehlerSpeicher extends MemorySchluesselSpeicher {
+  String? scheitertBei;
+  @override
+  Future<void> loeschen(String name) async => name == scheitertBei ? throw const SchluesselSpeicherFehler('nicht löschbar', dauerhaft: false) : super.loeschen(name);
+}
+
 Future<void> main() async {
   for (final (name, crypto) in await kryptoVarianten()) {
     group('Personenschlüssel ($name)', () {
@@ -200,6 +214,26 @@ Future<void> main() async {
       await speicher.schreiben('e2ee.vertrauen.ich', Uint8List.fromList(utf8.encode('[1,2]')));
       await expectLater(pruefer().pruefen({'anna': _key(1)}), throwsA(isA<CryptoFehler>()));
       expect(utf8.decode((await speicher.lesen('e2ee.vertrauen.ich'))!), '[1,2]', reason: 'nichts überschrieben');
+    });
+
+    test('dauerhaft unlesbare Ablage gilt wie beschädigt, ein vorübergehender Lesefehler geht unverändert weiter', () async {
+      final s = _LeseFehlerSpeicher();
+      final p = pruefer(s);
+      s.fehler = const SchluesselSpeicherFehler('weg', dauerhaft: true);
+      await expectLater(p.pruefen({'anna': _key(1)}), throwsA(isA<VertrauensAblageDefekt>()));
+      await expectLater(p.standLaden('k'), throwsA(isA<VertrauensAblageDefekt>()));
+      s.fehler = const SchluesselSpeicherFehler('gesperrt', dauerhaft: false);
+      await expectLater(p.pruefen({'anna': _key(1)}), throwsA(isA<SchluesselSpeicherFehler>()));
+    });
+
+    test('zuruecksetzen: scheitert das erste Löschen, kommt das zweite trotzdem dran; der erste Fehler geht weiter', () async {
+      final s = _LoeschFehlerSpeicher();
+      await s.schreiben('e2ee.vertrauen.ich', Uint8List.fromList([1]));
+      await s.schreiben('e2ee.akzeptiert.ich', Uint8List.fromList([2]));
+      s.scheitertBei = 'e2ee.vertrauen.ich';
+      await expectLater(pruefer(s).zuruecksetzen(), throwsA(isA<SchluesselSpeicherFehler>()));
+      expect(await s.lesen('e2ee.akzeptiert.ich'), isNull, reason: 'der zweite Eintrag wurde trotzdem gelöscht');
+      expect(await s.lesen('e2ee.vertrauen.ich'), isNotNull, reason: 'der erste blieb (Löschen scheiterte)');
     });
 
     test('höhere Schlüsselversion bei gleichem Schlüssel wird still übernommen, ohne Warnung', () async {

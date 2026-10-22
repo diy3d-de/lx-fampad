@@ -534,8 +534,10 @@ class E2eeController extends Notifier<E2eeState> {
         status: status,
         vertrauenDefekt: ablageDefekt,
         meldung: ablageDefekt
-            ? 'Der Schlüsselspeicher dieses Geräts ist nicht mehr lesbar (Daten gelöscht oder Schlüssel verloren). Ein alter Schlüssel hier wurde aufbewahrt, nicht gelöscht. '
-                  'Verbinde dieses Gerät neu; die gemerkten Schlüssel der Familie sind dabei verloren und werden danach neu geprüft (Vertrauen zurücksetzen).'
+            ? 'Der Schlüsselspeicher dieses Geräts ist nicht mehr lesbar (Daten gelöscht oder Schlüssel verloren). '
+                  '${quarantaene.isNotEmpty ? 'Ein alter Schlüssel hier wurde aufbewahrt, nicht gelöscht. ' : 'Der Schlüssel auf diesem Gerät ist nicht mehr lesbar. '}'
+                  'Verbinde dieses Gerät neu. Die gemerkten Schlüssel der Familie sind verloren; mit „Vertrauen zurücksetzen“ werden sie beim ersten Sehen neu gemerkt: '
+                  'Vergleiche danach die Sicherheitscodes mit den Personen.'
             : null,
         serverSchluessel: server,
         hatSicherung: eigene.hatSicherung,

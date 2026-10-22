@@ -240,8 +240,16 @@ class VertrauensPruefer {
   /// Bewusstes Zurücksetzen (nach einer beschädigten Ablage): vergisst ALLE gemerkten Schlüssel und den akzeptierten Stand der Chats. Danach gilt wieder "beim ersten
   /// Sehen"; die Sicherheitscodes sollten mit den Personen verglichen werden.
   Future<void> zuruecksetzen() async {
-    await speicher.loeschen(_name);
-    await speicher.loeschen(_standName);
+    // jeden Eintrag einzeln versuchen: scheitert der erste, kommt der zweite trotzdem dran; der erste Fehler geht danach weiter
+    Object? erster;
+    for (final name in [_name, _standName]) {
+      try {
+        await speicher.loeschen(name);
+      } on Object catch (e) {
+        erster ??= e;
+      }
+    }
+    if (erster != null) throw erster;
   }
 
   /// Sicherheitscode des gemerkten Schlüssels (zum Vergleich "alt gegen neu").

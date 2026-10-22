@@ -21,6 +21,7 @@ import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
 import '../auth/auth_widgets.dart';
+import '../auth/geraetespeicher_reparatur.dart';
 import '../auth/step_up.dart';
 import 'geraet_verbinden_screens.dart';
 import 'profile_screen.dart';
@@ -139,17 +140,19 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   /// getipptem Wort. Liegen frühere Schlüssel auf dem Gerät (Quarantäne, abweichender Schlüssel), gibt es einen eigenen Pflicht-Haken mit der Anzahl.
   Future<void> _geraetAbgebenAusfuehren() async {
     final n = ref.read(e2eeProvider).fruehereSchluessel;
-    // noch nicht gesendete Änderungen (Ausgang) gehen mit den lokalen Daten verloren: vorher einmal abgleichen, den Rest nennen
-    if (ref.read(syncProvider).offeneAenderungen > 0) {
-      try {
-        await ref.read(syncProvider.notifier).synchronisieren(manuell: true);
-      } on Object {
-        // der Rest wird unten genannt
-      }
-      await Future<void>.delayed(const Duration(milliseconds: 150));
-      if (!mounted) return;
+    // noch nicht gesendete Änderungen (Ausgang) gehen mit den lokalen Daten verloren: vorher einmal abgleichen, den Rest (auch abgelehnte) aus der Datenbank nennen
+    final store = ref.read(syncStoreProvider);
+    final sync = ref.read(syncProvider.notifier);
+    var offen = 0;
+    var abgelehnt = 0;
+    try {
+      if (await store.offeneAnzahl() > 0) await sync.synchronisieren(manuell: true);
+      offen = await store.offeneAnzahl();
+      abgelehnt = await store.abgelehnteAnzahl();
+    } on Object {
+      // der Stand des Ausgangs ließ sich nicht lesen: ohne Warnung weiter (die Rückfrage unten bleibt)
     }
-    final offen = ref.read(syncProvider).offeneAenderungen;
+    if (!mounted) return;
     final ja = await wortBestaetigen(
       context,
       titel: 'Gerät abgeben?',
@@ -160,6 +163,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         if (offen > 0)
           'Ich weiß: ${offen == 1 ? '1 noch nicht gesendete Änderung (z. B. eine Nachricht) geht' : '$offen noch nicht gesendete Änderungen (z. B. Nachrichten) gehen'} verloren. '
               'Die Synchronisierung eben hat sie nicht übertragen.',
+        if (abgelehnt > 0)
+          'Ich weiß: ${abgelehnt == 1 ? '1 nicht gesendete Nachricht (Änderung) mit Fehler geht' : '$abgelehnt nicht gesendete Nachrichten (Änderungen) mit Fehler gehen'} verloren (vom Server abgelehnt).',
         'Ich weiß: Ohne meine Sicherung (Wiederherstellungsschlüssel oder Passwort der Passwort-Sicherung) kommt mein Verlauf nicht zurück.',
         if (n > 0)
           n == 1
@@ -265,9 +270,10 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         return [
           MeldungsBox(s.meldung ?? 'Die Verschlüsselung ist gerade nicht verfügbar.'),
           const SizedBox(height: 12),
-          if (s.vertrauenDefekt)
-            ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen)
-          else
+          if (s.vertrauenDefekt) ...[
+            ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen),
+            const GeraeteSpeicherKnopf(),
+          ] else
             ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: laeuft ? null : () => unawaited(_c.laden())),
           ..._zusatz(s),
         ];
@@ -316,6 +322,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           if (s.vertrauenDefekt) ...[
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen),
+            // der Schlüsselspeicher selbst ist kaputt (Android-Keystore-Schlüssel verloren): bewusste Reparatur, nur nach Probe und Rückfrage
+            const GeraeteSpeicherKnopf(),
           ],
           // bewusst KEIN "Neuen Schlüssel erzeugen" auf dieser Seite: wer sein Gerät nur nicht verbunden hat, soll verbinden, nicht ersetzen
           ..._zusatz(s),

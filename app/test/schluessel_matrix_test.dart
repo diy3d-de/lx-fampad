@@ -39,6 +39,9 @@ List<File> _libDateien() => [
     if (f is File && f.path.endsWith('.dart')) f,
 ];
 
+/// Quelltext ohne Zeilen- und Blockkommentare (Kommentare dürfen die Namen nennen, der Wächter prüft nur Code).
+String _ohneKommentare(String t) => t.replaceAll(RegExp(r'/\*[\s\S]*?\*/'), '').replaceAll(RegExp(r'//[^\n]*'), '');
+
 String _norm(String pfad) => pfad.replaceAll('\\', '/');
 
 /// Argument eines Aufrufs `...loeschen(<arg>)` ab der öffnenden Klammer (mit Klammerzählung, einzeilig oder mehrzeilig).
@@ -409,19 +412,56 @@ void _luecken() {
     );
 
     test(
+      'Android, Keystore-Schlüssel verloren: Lesen, Schreiben und Löschen scheitern dauerhaft, nichts lässt sich verschieben: "Gerät nicht verbunden" mit ehrlicher Meldung (kein "aufbewahrt")',
+      () async {
+        final krypto = FakeCryptoProvider();
+        final s = _AndroidKaputt();
+        final a = await _geraetErzeugen(fake, _anna, 'Anna', krypto, speicher: s);
+        await a.ctrl.laden();
+        final einr = await a.ctrl.einrichten();
+        await a.ctrl.sicherungAblegen(einr);
+        s.kaputt = true;
+        await a.ctrl.laden();
+        expect(a.s.status, E2eeStatus.geraetNichtVerbunden, reason: 'ist ${a.s.status}: "${a.s.meldung}"');
+        expect(a.s.vertrauenDefekt, isTrue);
+        expect(a.s.quarantaene, isEmpty, reason: 'es wurde nichts verschoben');
+        expect(a.s.meldung, contains('nicht mehr lesbar'));
+        expect(a.s.meldung, isNot(contains('aufbewahrt')), reason: 'auf Android wurde nichts beiseitegelegt');
+        expect(a.s.meldung, contains('beim ersten Sehen neu gemerkt'));
+        expect(a.s.meldung, contains('Sicherheitscodes'));
+      },
+    );
+
+    test(
       'der Android-Speicher darf nie selbst löschen: FlutterSecureStorage mit resetOnError: false',
       () {
         // flutter_secure_storage setzt resetOnError standardmäßig auf true und löscht bei jedem Lesefehler den Eintrag (read) bzw. alles (readAll), bevor die App den Fehler sieht.
-        // Darum gibt es genau EINE Stelle, die ein FlutterSecureStorage erzeugt (sicherer_speicher.dart, mit resetOnError: false); alle anderen benutzen sie.
-        final quelle = _lies('lib/data/crypto/sicherer_speicher.dart');
-        expect(quelle, contains('AndroidOptions(resetOnError: false)'));
-        for (final f in _libDateien()) {
+        // Darum erzeugt genau EINE Datei ein FlutterSecureStorage (sicherer_speicher.dart): den Alltagszugang kSicherSpeicher mit resetOnError: false und die EINE bewusste
+        // Reparatur (resetOnError: true, nur über GeraeteSpeicher.zuruecksetzen nach Probe und Rückfrage). Alle anderen benutzen kSicherSpeicher.
+        const erlaubt = 'lib/data/crypto/sicherer_speicher.dart';
+        final quelle = _ohneKommentare(_lies(erlaubt));
+        expect(RegExp(r'FlutterSecureStorage\s*\(').allMatches(quelle).length, 2, reason: 'genau der Alltagszugang und die eine Reparatur');
+        expect(RegExp(r'AndroidOptions\(resetOnError: false\)').allMatches(quelle).length, 1);
+        expect(RegExp(r'AndroidOptions\(resetOnError: true\)').allMatches(quelle).length, 1);
+        expect(RegExp(r'_kReparaturSpeicher').allMatches(quelle).length, 2, reason: 'Definition und ein Vorgabewert in PluginGeraeteSpeicher: die Reparatur wird sonst nirgends benutzt');
+        expect(RegExp(r'\.deleteAll\(').allMatches(quelle).length, 1, reason: 'deleteAll nur in der Reparatur');
+        // jede Dart-Datei außerhalb von test/ (lib/ und tool/) und jede Android-Quelle: kein weiterer Zugang
+        final dateien = <File>[
+          ..._libDateien(),
+          for (final ordner in ['tool', 'android/app/src'])
+            if (Directory(ordner).existsSync())
+              for (final f in Directory(ordner).listSync(recursive: true))
+                if (f is File && RegExp(r'\.(dart|kt|java)$').hasMatch(f.path) && !f.path.endsWith('GeneratedPluginRegistrant.java')) f,
+        ];
+        for (final f in dateien) {
           final pfad = _norm(f.path);
-          if (pfad == 'lib/data/crypto/sicherer_speicher.dart') continue;
-          expect(RegExp(r'FlutterSecureStorage\s*\(').hasMatch(_lies(f.path)), isFalse, reason: '$pfad erzeugt ein FlutterSecureStorage mit den Standardoptionen (resetOnError: true): kSicherSpeicher benutzen');
+          if (pfad == erlaubt) continue;
+          final text = _ohneKommentare(_lies(f.path));
+          expect(RegExp(r'FlutterSecureStorage\s*\(').hasMatch(text), isFalse, reason: '$pfad erzeugt ein FlutterSecureStorage mit den Standardoptionen (resetOnError: true): kSicherSpeicher benutzen');
+          expect(RegExp(r'EncryptedSharedPreferences|resetOnError|deleteAll\(').hasMatch(text), isFalse, reason: '$pfad greift am Gerätespeicher vorbei');
         }
         for (final p in ['lib/data/crypto/schluessel_speicher_io.dart', 'lib/data/api/token_store.dart', 'lib/data/erinnerungen/erinnerung_einstellungen.dart']) {
-          expect(_lies(p), contains('kSicherSpeicher'), reason: p);
+          expect(_ohneKommentare(_lies(p)), contains('kSicherSpeicher'), reason: p);
         }
       },
     );
@@ -437,6 +477,24 @@ class _WrapperWeg extends MemorySchluesselSpeicher {
     if (weg && roh != null) throw const SchluesselSpeicherFehler('Schlüsseleintrag nicht entschlüsselbar', dauerhaft: true);
     return roh;
   }
+}
+
+/// Android mit verlorenem Keystore-Schlüssel (resetOnError: false, der Speicher heilt sich nicht): Lesen, Schreiben und Löschen scheitern dauerhaft, Verschieben geht nicht,
+/// der Index gilt als leer (wie in SecureSchluesselSpeicher).
+class _AndroidKaputt extends MemorySchluesselSpeicher {
+  bool kaputt = false;
+  static const _f = SchluesselSpeicherFehler('Schlüsselspeicher nicht lesbar', dauerhaft: true);
+
+  @override
+  Future<Uint8List?> lesen(String name) async => kaputt ? throw _f : super.lesen(name);
+  @override
+  Future<void> schreiben(String name, Uint8List bytes) async => kaputt ? throw _f : super.schreiben(name, bytes);
+  @override
+  Future<void> loeschen(String name) async => kaputt ? throw _f : super.loeschen(name);
+  @override
+  Future<bool> verschiebe(String von, String nach) async => kaputt ? false : super.verschiebe(von, nach);
+  @override
+  Future<List<String>> namenMitPraefix(String praefix) async => kaputt ? [] : super.namenMitPraefix(praefix);
 }
 
 Future<void> main() async {

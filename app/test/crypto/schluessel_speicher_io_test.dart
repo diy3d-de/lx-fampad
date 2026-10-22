@@ -58,6 +58,25 @@ void main() {
     speicher = SecureSchluesselSpeicher(secure);
   });
 
+  test('Keystore-Schlüssel ungültig oder verloren (InvalidKey, Key mismatch) gilt als dauerhaft', () async {
+    await speicher.schreiben('e2ee.pk.a', Uint8List.fromList([9]));
+    for (final text in ['java.security.InvalidKeyException: Failed to unwrap key', 'Key mismatch after algorithm change (RSA)', 'KeyPermanentlyInvalidatedException']) {
+      secure.leseFehler = PlatformException(code: 'Exception encountered', message: text);
+      expect((await _fehler(speicher.lesen('e2ee.pk.a'))).dauerhaft, isTrue, reason: text);
+    }
+  });
+
+  test('dauerhaft unlesbarer Index gilt als leer: Anzeige, Schreiben und Löschen sind nicht blockiert, ein vorübergehender Fehler geht weiter', () async {
+    await speicher.schreiben('e2ee.quarantaene.a.1', Uint8List.fromList([1]));
+    secure.leseFehler = PlatformException(code: 'Exception encountered', message: 'javax.crypto.BadPaddingException');
+    expect(await speicher.namenMitPraefix('e2ee.quarantaene.a.'), isEmpty);
+    await speicher.schreiben('e2ee.pk.neu', Uint8List.fromList([5])); // der Index wird neu angelegt
+    await speicher.loeschen('e2ee.pk.neu');
+    await speicher.loescheMitPraefix('e2ee.quarantaene.'); // nichts im (leeren) Index: wirft nicht
+    secure.leseFehler = PlatformException(code: 'Exception encountered', message: 'KeyStoreException: key not accessible');
+    await expectLater(speicher.namenMitPraefix('e2ee.'), throwsA(isA<SchluesselSpeicherFehler>()));
+  });
+
   test('Roundtrip; fehlender Eintrag ist null (kein Fehler)', () async {
     expect(await speicher.lesen('e2ee.pk.a'), isNull);
     await speicher.schreiben('e2ee.pk.a', Uint8List.fromList([1, 2, 3]));
