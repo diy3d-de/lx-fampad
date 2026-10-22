@@ -145,6 +145,8 @@ const _ereignisse = <String, String>{
   'operator_alert_key': 'Betrieb-Warnung: Schlüssel-Ampel',
   'operator_warnings_set': 'Betrieb-Warnungen umgestellt',
   'operator_unlock': 'Konto entsperrt',
+  'operator_maintenance_set': 'Wartungsmodus umgeschaltet',
+  'operator_notice_set': 'Familienhinweis geändert',
 };
 
 String ereignisText(String code) => _ereignisse[code] ?? 'Ereignis';

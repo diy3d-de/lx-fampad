@@ -1,6 +1,6 @@
 // Bereich "Betrieb" (nur für den Betreiber des Servers, fast nur lesend): Übersicht (Kacheln, Schlüssel-Ampel, Warnungen, Dienste, Funktionen, Versionen,
-// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
-// nichts auf dem Server; geschrieben wird nur Weniges (Konto entsperren, eigene Warnungen ein/aus), jeweils mit Step-up.
+// Ereignisse), Mitglieder (Mitglieder und Geräte, Paket 2a), Einstellungen (Wartungsmodus, Familienhinweis, Konfiguration, Paket 2b) und Protokoll (Audit mit Filter). Zeigt nie Geheimnisse, Standorte oder Chat-Inhalte und startet
+// nichts auf dem Server; geschrieben wird nur Weniges (Konto entsperren, eigene Warnungen ein/aus, Wartungsmodus, Familienhinweis), jeweils mit Step-up.
 // Unterseite wie das Konto: mobil eine Vollseite, im Desktop-Layout eine Seite im Inhaltsbereich der Shell (Marker [kBetriebMarke]).
 import 'dart:async';
 
@@ -8,12 +8,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/betrieb/betrieb_einstellungen_state.dart';
 import '../../data/betrieb/betrieb_modelle.dart';
 import '../../data/betrieb/betrieb_state.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../auth/step_up.dart';
 import 'betrieb_anzeige.dart';
+import 'betrieb_einstellungen.dart';
 import 'betrieb_mitglieder.dart';
 import 'betrieb_schluessel.dart';
 
@@ -29,7 +31,7 @@ class BetriebScreen extends ConsumerStatefulWidget {
   ConsumerState<BetriebScreen> createState() => _BetriebScreenState();
 }
 
-enum _Seite { uebersicht, mitglieder, protokoll }
+enum _Seite { uebersicht, mitglieder, einstellungen, protokoll }
 
 class _BetriebScreenState extends ConsumerState<BetriebScreen> {
   _Seite _seite = _Seite.uebersicht;
@@ -42,6 +44,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
       unawaited(ref.read(betriebStatusProvider.notifier).laden());
       unawaited(ref.read(betriebSchluesselProvider.notifier).laden());
       unawaited(ref.read(betriebWarnungenProvider.notifier).laden());
+      unawaited(ref.read(betriebEinstellungenProvider.notifier).laden());
+      unawaited(ref.read(betriebKonfigurationProvider.notifier).laden());
       unawaited(_protokollLaden(still: true));
       unawaited(_mitgliederLaden(still: true));
     });
@@ -84,6 +88,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
     // halten Schlüssel-Ampel und Warnstand am Leben (autoDispose): initState lädt sie schon, bevor die Übersicht sie anzeigt
     ref.watch(betriebSchluesselProvider.select((p) => p.wert != null || p.fehler != null));
     ref.watch(betriebWarnungenProvider.select((p) => p.wert != null || p.fehler != null));
+    ref.watch(betriebEinstellungenProvider.select((p) => p.wert != null || p.fehler != null));
+    ref.watch(betriebKonfigurationProvider.select((p) => p.wert != null || p.fehler != null));
     return AuthSeite(
       label: '// betrieb',
       titel: 'Betrieb',
@@ -98,6 +104,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
                   unawaited(ref.read(betriebStatusProvider.notifier).laden(frisch: true));
                   unawaited(ref.read(betriebSchluesselProvider.notifier).laden());
                   unawaited(ref.read(betriebWarnungenProvider.notifier).laden());
+                  unawaited(ref.read(betriebEinstellungenProvider.notifier).laden());
+                  unawaited(ref.read(betriebKonfigurationProvider.notifier).laden());
                   // auch die Ereignisse und Mitglieder neu laden; auf den anderen Seiten still (ohne Step-up-Abfrage), auf der eigenen Seite mit
                   unawaited(_protokollLaden(still: _seite != _Seite.protokoll));
                   unawaited(_mitgliederLaden(still: _seite != _Seite.mitglieder));
@@ -116,6 +124,7 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
                 if (!ref.read(betriebMitgliederProvider).geladen) unawaited(_mitgliederLaden());
               },
             ),
+            ('Einstellungen', _seite == _Seite.einstellungen, () => setState(() => _seite = _Seite.einstellungen)),
             (
               'Protokoll',
               _seite == _Seite.protokoll,
@@ -141,6 +150,8 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
           )
         else if (_seite == _Seite.mitglieder)
           BetriebMitgliederSeite(neuLaden: () => _mitgliederLaden())
+        else if (_seite == _Seite.einstellungen)
+          const BetriebEinstellungenSeite()
         else
           _Protokoll(neuLaden: _protokollLaden),
       ],
@@ -157,7 +168,8 @@ class _Reiterleiste extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, c) {
       final grosseSchrift = MediaQuery.textScalerOf(context).scale(10) > 12;
-      final spalten = grosseSchrift ? 1 : reiter.length;
+      // vier Reiter passen bei schmaler Breite (360 px) nicht nebeneinander: zwei Spalten
+      final spalten = grosseSchrift ? 1 : (reiter.length > 3 && c.maxWidth < 480 ? 2 : reiter.length);
       final breite = (c.maxWidth - (spalten - 1) * 8) / spalten;
       return Wrap(spacing: 8, runSpacing: 8, children: [for (final (text, gewaehlt, onTap) in reiter) SizedBox(width: breite, child: _Reiter(text: text, gewaehlt: gewaehlt, onTap: onTap))]);
     },

@@ -222,6 +222,28 @@ void main() {
     expect(anfragen(), 2);
   });
 
+  lauf('503 maintenance: Status "wartung" (kein Fehler), erneuter Versuch nach der Wartezeit, danach wieder synchron; der Ausgang bleibt', (tester) async {
+    env = await angemeldeteUmgebung();
+    env.sync.fehlerQueue.addAll([(503, 'maintenance'), (503, 'maintenance')]);
+    env.sync.retryAfterWert = 60;
+    c = ProviderContainer(overrides: [...env.overrides, syncZufallProvider.overrideWithValue(_FesterZufall())]);
+    await c.read(listenRepositoryProvider).listeAnlegen(name: 'Einkauf');
+    sync = c.read(syncProvider.notifier)..starten();
+    await ruhe(tester);
+    expect(c.read(syncProvider).status, SyncStatus.wartung);
+    expect(c.read(syncProvider).meldung, contains('Wartung'));
+    expect(await c.read(syncStoreProvider).offeneAnzahl(), 1, reason: 'die Änderung bleibt im Ausgang');
+    final n = anfragen();
+    await ruhe(tester, const Duration(seconds: 50));
+    expect(anfragen(), n, reason: 'nicht früher als die Wartezeit des Servers (60 s)');
+    await ruhe(tester, const Duration(seconds: 20));
+    expect(anfragen(), n + 1);
+    expect(c.read(syncProvider).status, SyncStatus.wartung);
+    await ruhe(tester, const Duration(minutes: 3));
+    expect(c.read(syncProvider).status, SyncStatus.synchron);
+    expect(await c.read(syncStoreProvider).offeneAnzahl(), 0);
+  });
+
   lauf('429 too_many_attempts (Sperre der Anmeldung) nimmt den Backoff-Pfad, nicht das Mengenlimit', (tester) async {
     await mitFehlern(tester, [(429, 'too_many_attempts')], 7);
     expect(c.read(syncProvider).status, SyncStatus.fehler);

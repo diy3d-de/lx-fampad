@@ -7,6 +7,7 @@ import 'api_error.dart';
 import '../sync/sync_models.dart';
 import '../crypto/schluessel.dart';
 import '../betrieb/betrieb_modelle.dart';
+import '../betrieb/familien_stand.dart';
 import 'models.dart';
 
 class FampadApi {
@@ -246,6 +247,23 @@ class FampadApi {
 
   /// Schaltet die eigenen Warnungen ein oder aus (Step-up).
   Future<BetriebWarnungen> betriebWarnungenSetzen(bool an) async => BetriebWarnungen.fromJson(await client.put('/admin/warnings', {'enabled': an}));
+
+  /// Sichere Ausschnitte der Server-Konfiguration (nur Schalter und Limits, nie Geheimnisse; ohne Step-up).
+  Future<BetriebKonfiguration> betriebKonfiguration() async => BetriebKonfiguration.fromJson(await client.get('/admin/config'));
+
+  /// Wartungsmodus und Familienhinweis aus Sicht des Betreibers (ohne Step-up).
+  Future<FamilienStand> betriebEinstellungen() async => FamilienStand.fromJson(await client.get('/admin/settings'));
+
+  /// Schaltet den Wartungsmodus (Step-up); [bis] ist das optionale automatische Ende (höchstens 72 Stunden voraus).
+  Future<FamilienStand> betriebWartungSetzen(bool an, {DateTime? bis}) async =>
+      FamilienStand.fromJson(await client.put('/admin/maintenance', {'active': an, if (an && bis != null) 'until': bis.toUtc().toIso8601String()}));
+
+  /// Setzt den Familienhinweis ([text] null löscht ihn; Step-up); [ablauf] ist der optionale Ablauf (höchstens 90 Tage voraus).
+  Future<FamilienStand> betriebHinweisSetzen(String? text, {DateTime? ablauf}) async =>
+      FamilienStand.fromJson(await client.put('/admin/notice', {'text': text, if (text != null && ablauf != null) 'expiresAt': ablauf.toUtc().toIso8601String()}));
+
+  /// Wartung und Familienhinweis für alle Angemeldeten (Banner); ältere Server kennen die Route nicht (404).
+  Future<FamilienStand> familienStand() async => FamilienStand.fromJson(await client.get('/family-notice'));
 
   /// Meldet den Schlüsselstand dieses Geräts (nur diese Zahl): 0 = kein Schlüssel, n = Schlüsselversion n. Ältere Server kennen die Route nicht (404).
   Future<void> geraetSchluesselMelden(int version) async {

@@ -627,6 +627,8 @@ void main() {
         },
       );
       await tippe(tester, find.text('Mitglieder'));
+      // das Öffnen der Seite fragt schon nach der Bestätigung (Dialog): abbrechen, der Knopf bleibt (unabhängig von der Höhe der Reiterleiste)
+      if (find.byType(StepUpDialog).evaluate().isNotEmpty) await tippe(tester, find.text('Abbrechen'));
       expect(find.text('Anna (du)'), findsNothing);
       expect(find.text('Bestätigen und anzeigen'), findsOneWidget);
       await tippe(tester, find.text('Bestätigen und anzeigen'));

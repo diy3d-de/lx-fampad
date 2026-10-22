@@ -20,6 +20,9 @@ enum ApiErrorKind {
   /// Server überlastet (503 server_busy).
   serverBusy,
 
+  /// Der Betreiber hat den Wartungsmodus eingeschaltet (503 maintenance): Schreiben, Abgleich und neue Anmeldungen sind vorübergehend gesperrt.
+  wartung,
+
   /// Konto wartet auf Freigabe (403 account_pending).
   kontoWartet,
 
@@ -32,6 +35,9 @@ enum ApiErrorKind {
   /// Alles andere (Eingabe falsch, Konflikt, nicht erlaubt, Serverfehler ...).
   sonstiges,
 }
+
+/// Meldung bei Wartung (feste Meldung der App, nie ein Servertext).
+const kWartungMeldung = 'Die Familienzentrale ist gerade in Wartung. Bitte versuche es später noch einmal.';
 
 class ApiException implements Exception {
   final ApiErrorKind kind;
@@ -126,6 +132,10 @@ class ApiException implements Exception {
     // Push ist auf dem Server nicht eingerichtet: kein Überlast-Hinweis (503 ist hier ein dauerhafter Zustand)
     if (code == 'push_unavailable') {
       return ApiException(kind: ApiErrorKind.sonstiges, status: status, code: code, message: _texte[code]!);
+    }
+    // Wartungsmodus des Betreibers: eigener Zustand, kein Fehler (die Daten bleiben auf dem Gerät und gehen danach raus)
+    if (code == 'maintenance') {
+      return ApiException(kind: ApiErrorKind.wartung, status: status, code: code, retryAfter: warte, message: kWartungMeldung);
     }
     if (status == 503) {
       return ApiException(

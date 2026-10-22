@@ -27,6 +27,9 @@ enum SyncAusgang {
   /// Anfragelimit oder Überlast (429/503): später wieder, [SyncErgebnis.warten] nennt die Mindestwartezeit.
   ueberlastet,
 
+  /// Der Betreiber hat den Wartungsmodus eingeschaltet (503 maintenance): später wieder, die Änderungen bleiben im Ausgang.
+  wartung,
+
   /// Sonstiger Fehler (Server 5xx, unerwartete Antwort, lokaler Fehler).
   fehler,
 }
@@ -109,6 +112,7 @@ class SyncEngine {
       ApiErrorKind.netzwerk => SyncErgebnis(SyncAusgang.offline, hinweise: hinweise, meldung: e.message, ops: ops),
       ApiErrorKind.nichtAngemeldet => SyncErgebnis(SyncAusgang.sitzungVerloren, hinweise: hinweise, meldung: e.message, ops: ops),
       ApiErrorKind.updateNoetig => SyncErgebnis(SyncAusgang.updateNoetig, hinweise: hinweise, meldung: e.message, ops: ops),
+      ApiErrorKind.wartung => SyncErgebnis(SyncAusgang.wartung, hinweise: hinweise, warten: e.retryAfter, meldung: e.message, ops: ops),
       ApiErrorKind.zuVieleAnfragen || ApiErrorKind.serverBusy => SyncErgebnis(
         SyncAusgang.ueberlastet,
         hinweise: hinweise,

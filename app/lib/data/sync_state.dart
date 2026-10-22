@@ -33,6 +33,9 @@ enum SyncStatus {
 
   /// Die App ist für den Server zu alt (Pflicht-Update).
   updateNoetig,
+
+  /// Wartungsmodus des Betreibers: der Server nimmt vorübergehend nichts an; Änderungen bleiben lokal und gehen danach raus.
+  wartung,
 }
 
 /// Hinweis für die Person (z. B. Eintrag anderswo gelöscht); bleibt stehen, bis sie ihn schließt.
@@ -361,6 +364,10 @@ class SyncController extends Notifier<SyncState> {
         } else {
           _backoffPlanen(e);
         }
+      case SyncAusgang.wartung:
+        // kein Fehler: die Änderungen bleiben im Ausgang, der nächste Versuch kommt nach der Wartezeit des Servers (mindestens eine Minute, bis 5 Minuten)
+        state = state.copyWith(status: SyncStatus.wartung, meldung: e.meldung, hinweise: hinweise);
+        _backoffPlanen(e);
       case SyncAusgang.offline:
         state = state.copyWith(status: SyncStatus.offline, meldung: e.meldung, hinweise: hinweise);
         _backoffPlanen(e);
@@ -447,6 +454,8 @@ String syncMeldungFuer(SyncState s) {
       return s.meldung ?? 'Der Abgleich ist fehlgeschlagen.';
     case SyncStatus.updateNoetig:
       return 'Bitte aktualisiere die App.';
+    case SyncStatus.wartung:
+      return 'Wartung – Änderungen werden danach abgeglichen.';
     default:
       return '';
   }

@@ -10,5 +10,6 @@ import '../data/sync_state.dart';
   SyncStatus.offline => (s.offeneAenderungen > 0 ? 'offline · ${s.offeneAenderungen} offen' : 'offline', kTextMuted),
   SyncStatus.fehler => ('abgleich fehlgeschlagen', kDanger),
   SyncStatus.updateNoetig => ('update nötig', kTextMuted),
+  SyncStatus.wartung => (s.offeneAenderungen > 0 ? 'wartung · ${s.offeneAenderungen} offen' : 'wartung', kWarn),
   SyncStatus.getrennt => ('nicht verbunden', kTextMuted),
 };

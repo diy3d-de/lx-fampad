@@ -5,6 +5,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:lx_fampad/data/api/api_client.dart';
+import 'package:lx_fampad/data/api/api_error.dart' show kWartungMeldung;
 import 'package:lx_fampad/data/api/fampad_api.dart';
 import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
@@ -380,6 +381,18 @@ void main() {
     test('426: Update nötig', () async {
       a.sync.fehlerQueue.add((426, 'update_required'));
       expect((await a.engine.abgleichen()).ausgang, SyncAusgang.updateNoetig);
+    });
+
+    test('503 maintenance: Wartung (kein Fehler), mit fester Meldung; der Ausgang bleibt', () async {
+      await a.neueListe(_l1, 'Einkauf');
+      a.sync.fehlerQueue.add((503, 'maintenance'));
+      final e = await a.engine.abgleichen();
+      expect(e.ausgang, SyncAusgang.wartung);
+      expect(e.meldung, kWartungMeldung);
+      expect(await a.ausgang(), hasLength(1));
+      // andere 503 bleiben "ueberlastet"
+      a.sync.fehlerQueue.add((503, 'server_busy'));
+      expect((await a.engine.abgleichen()).ausgang, SyncAusgang.ueberlastet);
     });
 
     test('409 device_mismatch: Gerät neu zuordnen lassen', () async {
