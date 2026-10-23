@@ -507,7 +507,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
-| `konversation` | `art` | `family`, `direct`, `group`, `meds` (Pflicht; `meds` nur für den Medikamenten-Plan, siehe unten) | create |
+| `konversation` | `art` | `family`, `direct`, `group`, `meds`, `zaehler` (Pflicht; `meds` nur für den Medikamenten-Plan, `zaehler` nur für die Zähler, siehe unten) | create |
 | | `subjektId` | nur bei `meds`: UUID der Person, um deren Medikamente es geht (Pflicht dort, sonst `null`); unveränderlich | create |
 | | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), beim Wiederbeleben einer gelöschten Konversation gilt die Hülle der Neuanlage (`e1`, auch aus einem `p1`-Altbestand) | create |
 | | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
@@ -562,6 +562,26 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Aufbewahrung:** Einnahmen werden **nach 120 Tagen** (`created_at`, Serverzeit) vom stündlichen Wartungsjob gelöscht (Tombstone, die Geräte entfernen ihre Kopie). Medikamente bleiben bis zum Löschen.
 - **Grenzen:** höchstens 100 lebende Medikamente je Konversation, 3000 Einnahmen je Medikament (`limit_reached`); je Person 20 neue Medikamente und 60 neue Einnahmen je Minute (200 bzw. 600 je Stunde; Anlegen zählt über das Änderungsprotokoll), 60 bzw. 120 Änderungen von `inhalt` je Minute.
 - **Ältere Clients** überspringen `medikament` und `einnahme` im Änderungsstrom (`protocolVersion` bleibt 1) und zeigen die Konversation der Art `meds` wie eine leere Gruppe.
+
+**Zähler (Migration 0031)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6l. Verbrauchsdaten, Ende-zu-Ende verschlüsselt. Eine **verborgene Konversation je Familie** der Art `zaehler`; Zähler und Zählerstände sind ihre Kinder. Epochen und Wraps laufen über `epoche` und `epoche_wrap` (wie bei jedem verschlüsselten Chat).
+
+- **`konversation` mit `art: "zaehler"`:** `encVersion: "e1"`, kein `titel`, kein `subjektId`. Die ID ist **vorgeschrieben**: `zaehlerChatId(Familie)` = SHA-256 von `lx-fampad:zaehler:<Familien-ID kleingeschrieben>` (Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`, Known-Answer-Tests auf beiden Seiten); jede andere ID ist `invalid`. `teilnehmer` (1 bis 20, die anlegende Person dabei, sonst `forbidden`): **nur aktive Eltern und Admins** (`parent`/`admin`), **nie ein Kind** (`invalid`); angelegt und geändert wird nur von einer erwachsenen Person. Jeder Teilnehmer darf die Liste ändern, jede Änderung legt eine neue Epoche an. **Nie löschbar** (`forbidden`), `titel` unveränderlich, **keine Nachrichten** darin (`invalid`). Nach einem Rollenwechsel (`PATCH /members/:id/role`) wirft der Server ein Elternteil, das Kind wurde, **sofort** aus der Liste (`hidden`-Tombstone ohne Inhalt); ein Kind, das Elternteil wurde, nimmt der Server nicht von selbst auf (das tut ein Teilnehmer mit Schlüssel, den Verlauf nur auf ausdrücklichen Tipp).
+
+| Entität | Feld | Wert | Zugriff |
+|---|---|---|---|
+| `zaehler` | `konversationId` | UUID der Zähler-Konversation (Pflicht; lebend, `e1`, Art `zaehler`, sonst `invalid`) | create |
+| | `inhalt` | e1-Hülle (Pflicht, Form `^e1:[A-Za-z0-9_-]+$`, 153 bis 16384 Zeichen): Art, Name, Einheit, Preise, Periode, ...; der Server liest nichts davon | rw |
+| | `bearbeiterId`, `createdAt` | Person, die den Inhalt zuletzt geschrieben und signiert hat (setzt der Server); Anlagezeit | server |
+| `zaehlerstand` | `konversationId`, `zaehlerId` | UUID (Pflicht; der Zähler gehört zur Konversation und lebt, sonst `invalid`) | create |
+| | `inhalt` | e1-Hülle (Datum, Stand, Notiz; 153 bis 2048 Zeichen) | rw |
+| | `bearbeiterId`, `createdAt` | wie beim Zähler | server |
+
+- **Rechte:** Lesen, Anlegen, Ändern (nur `inhalt`) und Löschen nur für **Eltern und Admins als Teilnehmer**; Kinder haben in der Regeltabelle kein Recht (`not_found`), Unbeteiligte ebenso (auch Admins, die nicht in der Liste stehen; das Betreiber-Flag zählt nie). IDs sind Zufalls-UUIDs (Version 4). Löschen eines Zählers löscht seine Stände (Kaskade, Tombstones); Löschen der Konversation gibt es nicht.
+- **Hülle:** unverändert `e1` (9a); **Art** `z` (Zähler, ohne Bezug) bzw. `a` (Zählerstand, Bezug = `zaehlerId`) und der Bearbeiter stehen in AAD und Signatur.
+- **Aufbewahrung:** Stände sind **dauerhaft**, es gibt keinen Löschjob.
+- **Grenzen:** höchstens 50 lebende Zähler je Konversation, 5000 Stände je Zähler (`limit_reached`); je Person 20 neue Zähler und 60 neue Stände je Minute (200 bzw. 600 je Stunde), 60 bzw. 120 Änderungen je Minute.
+- **Kein Wecker:** `Facts.quiet` schaltet den Push-Wecker für Konversation, Epochen, Wraps, Zähler und Stände ab; ältere Inhalte werden aus den Protokolleinträgen entfernt, beim Löschen geleert.
+- **Ältere Clients** überspringen `zaehler` und `zaehlerstand` im Änderungsstrom (`protocolVersion` bleibt 1); eine Konversation der Art `zaehler` sehen nur Eltern und Admins (bei älteren Apps wie eine leere Gruppe).
 
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
