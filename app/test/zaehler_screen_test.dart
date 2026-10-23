@@ -24,6 +24,16 @@ import 'support/harness.dart';
 import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
 
+class _Schalter extends Notifier<bool> {
+  @override
+  bool build() => true;
+  void setzen(bool v) => state = v;
+}
+
+extension on ZaehlerDaten {
+  ZaehlerDaten copyMitDarf(bool darf) => darf ? this : ZaehlerDaten(geladen: true, ich: ich);
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   tzdata.initializeTimeZones();
@@ -639,11 +649,39 @@ void main() {
       expect(find.text('Medikamente'), findsWidgets);
     });
 
-    testWidgets('Desktop: der Bereich zeigt die Übersicht; Rollenwechsel zum Kind blendet ihn aus', (tester) async {
+    testWidgets('Desktop: der Bereich zeigt die Übersicht', (tester) async {
       final (_, c) = await start(tester, alle(), groesse: const Size(1200, 800));
       expect(find.text('Balkonkraftwerk'), findsOneWidget);
       expect(c.read(shellTabProvider), kZaehlerTab);
       pruefeLayout(tester, 'Desktop Zähler');
+    });
+
+    testWidgets('Rollenwechsel zum Kind: Seitenleiste, Bereich und Mehr-Eintrag verschwinden, die Shell fällt auf die Startseite zurück', (tester) async {
+      final darf = NotifierProvider<_Schalter, bool>(_Schalter.new);
+      repo = ZaehlerRepoAttrappe();
+      final env = await angemeldeteUmgebung();
+      env.extraOverrides.addAll([
+        erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false),
+        zaehlerTestUhr,
+        zaehlerDatenProvider.overrideWith((ref) => alle().copyMitDarf(ref.watch(darf))),
+        zaehlerDarfProvider.overrideWith((ref) => ref.watch(darf)),
+        zaehlerRepositoryProvider.overrideWithValue(repo),
+      ]);
+      final c = await starteApp(tester, env, groesse: const Size(1200, 800));
+      c.read(shellTabProvider.notifier).waehlen(kZaehlerTab);
+      await warte(tester);
+      expect(find.text('Zähler'), findsWidgets);
+      expect(find.text('Balkonkraftwerk'), findsOneWidget);
+      // die Person wird zum Kind (die Rolle kommt vom Server, hier der Schalter)
+      c.read(darf.notifier).setzen(false);
+      await warte(tester);
+      expect(c.read(shellTabProvider), 0);
+      expect(find.text('Balkonkraftwerk'), findsNothing);
+      expect(find.text('Zähler'), findsNothing);
+      // und wieder zurück: der Eintrag ist wieder da
+      c.read(darf.notifier).setzen(true);
+      await warte(tester);
+      expect(find.text('Zähler'), findsOneWidget);
     });
 
     testWidgets('Die Daten eines Kindes sind leer: der Datenanbieter liest für Kinder nichts (ohne Überschreibung)', (tester) async {
