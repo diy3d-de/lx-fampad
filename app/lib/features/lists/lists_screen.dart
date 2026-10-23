@@ -5,6 +5,7 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
+import '../../data/lists/einkauf_logik.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../data/lists/members.dart';
@@ -53,7 +54,13 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     final text = _neu.text.trim();
     if (text.isEmpty) return;
     _neu.clear();
-    await _repo.eintragAnlegen(liste.id, text);
+    String? kategorie;
+    if (ListenArt.von(liste.kind).mitKategorien) {
+      final alle = await ref.read(alleEintraegeProvider.future);
+      final k = schlageKategorieVor(text, vorhandene: alle);
+      kategorie = k == EinkaufKategorie.sonstiges ? null : k.wire;
+    }
+    await _repo.eintragAnlegen(liste.id, text, kategorie: kategorie);
     if (mounted) _fokus.requestFocus();
   }
 
@@ -65,6 +72,19 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
       case 'sicht':
         final s = await sichtDialog(context, ListenSicht.von(liste.audience));
         if (s != null) await _repo.listeSicht(liste.id, s);
+      case 'vorlage_speichern':
+        final n = await textDialog(context, titel: 'Als Vorlage speichern', label: 'Name der Vorlage', start: '${liste.name} (Vorlage)');
+        if (n == null || !mounted) return;
+        final id = await _repo.alsVorlageSpeichern(liste, name: n);
+        if (!mounted) return;
+        _hinweis(id == null ? 'Die Liste ist leer, daraus wird keine Vorlage.' : 'Vorlage „$n“ gespeichert.');
+      case 'vorlage_nehmen':
+        final vorlagen = (ref.read(listenProvider).value ?? const <Liste>[]).where((l) => ListenArt.von(l.kind) == ListenArt.template && l.id != liste.id).toList();
+        final wahl = await vorlageBlatt(context, vorlagen: vorlagen);
+        if (wahl == null || !mounted) return;
+        final neu = await _repo.ausVorlageUebernehmen(liste.id, wahl);
+        if (!mounted) return;
+        _hinweis(neu == 0 ? 'Alles aus der Vorlage steht schon auf der Liste.' : (neu == 1 ? '1 Eintrag aus der Vorlage übernommen.' : '$neu Einträge aus der Vorlage übernommen.'));
       case 'loeschen':
         final anzahl = (await ref.read(eintraegeProvider(liste.id).future)).length;
         if (!mounted) return;
@@ -83,12 +103,17 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     }
   }
 
-  Future<void> _eintragBearbeiten(Listeneintrag e) async {
-    final a = await eintragBlatt(context, text: e.inhalt);
+  void _hinweis(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+
+  Future<void> _eintragBearbeiten(Listeneintrag e, Liste liste) async {
+    final mitKategorie = ListenArt.von(liste.kind).mitKategorien;
+    final a = await eintragBlatt(context, text: e.inhalt, mitKategorie: mitKategorie, kategorie: e.category);
     if (a == null) return;
     switch (a) {
-      case EintragSpeichern(:final text):
+      case EintragSpeichern(:final text, :final kategorie):
         if (text != e.inhalt) await _repo.eintragText(e.id, text);
+        // "Sonstiges" und kein Wert sind dasselbe: dann nichts schreiben
+        if (mitKategorie && EinkaufKategorie.von(kategorie) != EinkaufKategorie.von(e.category)) await _repo.eintragKategorie(e.id, kategorie);
       case EintragLoeschen():
         await _repo.eintragLoeschen(e.id);
     }
@@ -156,7 +181,7 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         fokus: _fokus,
         onHinzu: () => _eintragHinzufuegen(liste),
         onMenue: (a) => _menue(liste, a),
-        onBearbeiten: _eintragBearbeiten,
+        onBearbeiten: (e) => _eintragBearbeiten(e, liste),
         onZuweisen: (e) => _zuweisen(e, mitglieder.alle),
       ),
     ];
@@ -262,6 +287,7 @@ class _ListeAnsicht extends ConsumerWidget {
     ListenArt.shopping => 'Was fehlt?',
     ListenArt.packing => 'Was muss mit?',
     ListenArt.custom => 'Neuer Eintrag',
+    ListenArt.template => 'Was gehört dazu?',
   };
 
   @override
@@ -272,7 +298,21 @@ class _ListeAnsicht extends ConsumerWidget {
     final sortiert = sortiereEintraege(eintraege);
     final erledigt = eintraege.where((e) => e.doneAt != null).length;
     final gesamt = eintraege.length;
+    final art = ListenArt.von(liste.kind);
     final menue = rechte.darfListeAendern(liste);
+    final gruppiert = art.mitKategorien;
+    Widget zeile(Listeneintrag e) => Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: _Zeile(
+        key: ValueKey('eintrag-${e.id}'),
+        eintrag: e,
+        rechte: rechte,
+        person: mitglieder[e.assigneeId],
+        onHaken: () => ref.read(listenRepositoryProvider).eintragErledigt(e.id, e.doneAt == null),
+        onBearbeiten: () => onBearbeiten(e),
+        onZuweisen: () => onZuweisen(e),
+      ),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -299,6 +339,8 @@ class _ListeAnsicht extends ConsumerWidget {
                 onSelected: onMenue,
                 itemBuilder: (_) => [
                   const PopupMenuItem(value: 'umbenennen', height: 48, child: Text('Umbenennen')),
+                  if (art == ListenArt.shopping) const PopupMenuItem(value: 'vorlage_nehmen', height: 48, child: Text('Aus Vorlage übernehmen')),
+                  if (art == ListenArt.shopping) const PopupMenuItem(value: 'vorlage_speichern', height: 48, child: Text('Als Vorlage speichern')),
                   if (rechte.darfFreigabeAendern) const PopupMenuItem(value: 'sicht', height: 48, child: Text('Sichtbar für …')),
                   const PopupMenuItem(value: 'loeschen', height: 48, child: Text('Liste löschen', style: TextStyle(color: kDanger))),
                 ],
@@ -335,25 +377,26 @@ class _ListeAnsicht extends ConsumerWidget {
             ],
           ),
         ],
+        if (gruppiert && rechte.darfEintraegeAendern)
+          _Vorschlaege(liste: liste, eingabe: eingabe, fokus: fokus, offeneNamen: {for (final e in eintraege) if (e.doneAt == null) e.inhalt}),
         const SizedBox(height: 16),
         if (lesefehler)
           const EmptyState(icon: Icons.error_outline, title: 'Einträge nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
         else if (sortiert.isEmpty)
           const EmptyState(icon: Icons.checklist_outlined, title: 'Noch nichts drauf', hint: 'Schreib oben auf, was auf die Liste soll.')
-        else
-          for (final e in sortiert)
+        else if (gruppiert) ...[
+          for (final g in gruppiereOffene(eintraege)) ...[
             Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: _Zeile(
-                key: ValueKey('eintrag-${e.id}'),
-                eintrag: e,
-                rechte: rechte,
-                person: mitglieder[e.assigneeId],
-                onHaken: () => ref.read(listenRepositoryProvider).eintragErledigt(e.id, e.doneAt == null),
-                onBearbeiten: () => onBearbeiten(e),
-                onZuweisen: () => onZuweisen(e),
-              ),
+              key: ValueKey('kategorie-${g.kategorie.wire}'),
+              padding: const EdgeInsets.fromLTRB(2, 8, 2, 6),
+              child: MonoLabel(g.kategorie.label, color: kTextMuted),
             ),
+            for (final e in g.eintraege) zeile(e),
+          ],
+          if (erledigteEintraege(eintraege).isNotEmpty) const Padding(padding: EdgeInsets.fromLTRB(2, 12, 2, 6), child: MonoLabel('Erledigt', color: kTextMuted)),
+          for (final e in erledigteEintraege(eintraege)) zeile(e),
+        ] else
+          for (final e in sortiert) zeile(e),
         if (gesamt > 0)
           Padding(
             padding: const EdgeInsets.only(top: 12),
@@ -444,6 +487,62 @@ class _Zeile extends StatelessWidget {
             Padding(padding: const EdgeInsets.only(right: 12), child: BenutzerAvatar(user: person, size: 30)),
         ],
       ),
+    );
+  }
+}
+
+/// Vorschläge "Zuletzt gekauft" unter dem Eingabefeld: aus bereits abgehakten Einträgen der Familie, gefiltert nach dem Getippten.
+/// Ein Tipp legt den Eintrag mit Name und Kategorie an.
+class _Vorschlaege extends ConsumerWidget {
+  final Liste liste;
+  final TextEditingController eingabe;
+  final FocusNode fokus;
+  final Set<String> offeneNamen;
+  const _Vorschlaege({required this.liste, required this.eingabe, required this.fokus, required this.offeneNamen});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alle = ref.watch(alleEintraegeProvider).value ?? const <Listeneintrag>[];
+    return ListenableBuilder(
+      listenable: eingabe,
+      builder: (context, _) {
+        final treffer = zuletztGekauft(alle, eingabe.text, offeneNamen: offeneNamen);
+        if (treffer.isEmpty) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const MonoLabel('// zuletzt gekauft', color: kTextMuted),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final v in treffer)
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minHeight: 44, maxWidth: 260),
+                      child: ActionChip(
+                        key: ValueKey('vorschlag-${v.name}'),
+                        tooltip: '${v.name} hinzufügen (${v.kategorie.label})',
+                        label: Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        onPressed: () async {
+                          eingabe.clear();
+                          await ref.read(listenRepositoryProvider).eintragAnlegen(
+                            liste.id,
+                            v.name,
+                            kategorie: v.kategorie == EinkaufKategorie.sonstiges ? null : v.kategorie.wire,
+                          );
+                          fokus.requestFocus();
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

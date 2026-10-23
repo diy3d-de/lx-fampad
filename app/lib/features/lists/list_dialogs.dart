@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 
 import '../../constants.dart';
 import '../../data/api/models.dart';
+import '../../data/app_database.dart';
+import '../../data/lists/einkauf_logik.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../ui/widgets.dart';
@@ -119,7 +121,7 @@ class _NeueListeState extends State<_NeueListe> {
           Wrap(
             spacing: 8,
             runSpacing: 8,
-            children: [for (final a in ListenArt.values) AuswahlKnopf(text: a.label, gewaehlt: a == _art, onTap: () => setState(() => _art = a))],
+            children: [for (final a in ListenArt.values.where((a) => a != ListenArt.template)) AuswahlKnopf(text: a.label, gewaehlt: a == _art, onTap: () => setState(() => _art = a))],
           ),
           if (widget.rechte.freigaben.length > 1) ...[
             const SizedBox(height: 16),
@@ -228,22 +230,27 @@ sealed class EintragAktion {}
 
 class EintragSpeichern extends EintragAktion {
   final String text;
-  EintragSpeichern(this.text);
+
+  /// Gewählte Kategorie (Kennung; null = Sonstiges). Nur bei Listen mit Kategorien gesetzt, sonst bleibt sie unverändert.
+  final String? kategorie;
+  EintragSpeichern(this.text, {this.kategorie});
 }
 
 class EintragLoeschen extends EintragAktion {}
 
 /// Blatt "Eintrag bearbeiten": Text ändern oder den Eintrag löschen.
-Future<EintragAktion?> eintragBlatt(BuildContext context, {required String text}) => showModalBottomSheet<EintragAktion>(useRootNavigator: false,
+Future<EintragAktion?> eintragBlatt(BuildContext context, {required String text, bool mitKategorie = false, String? kategorie}) => showModalBottomSheet<EintragAktion>(useRootNavigator: false,
   context: context,
   isScrollControlled: true,
   showDragHandle: true,
-  builder: (_) => _EintragBlatt(text: text),
+  builder: (_) => _EintragBlatt(text: text, mitKategorie: mitKategorie, kategorie: kategorie),
 );
 
 class _EintragBlatt extends StatefulWidget {
   final String text;
-  const _EintragBlatt({required this.text});
+  final bool mitKategorie;
+  final String? kategorie;
+  const _EintragBlatt({required this.text, required this.mitKategorie, required this.kategorie});
 
   @override
   State<_EintragBlatt> createState() => _EintragBlattState();
@@ -251,6 +258,7 @@ class _EintragBlatt extends StatefulWidget {
 
 class _EintragBlattState extends State<_EintragBlatt> {
   late final _c = TextEditingController(text: widget.text);
+  late var _kategorie = EinkaufKategorie.von(widget.kategorie);
 
   @override
   void dispose() {
@@ -261,7 +269,7 @@ class _EintragBlattState extends State<_EintragBlatt> {
   void _speichern() {
     final t = _c.text.trim();
     if (t.isEmpty) return;
-    Navigator.of(context).pop(EintragSpeichern(t));
+    Navigator.of(context).pop(EintragSpeichern(t, kategorie: widget.mitKategorie && _kategorie != EinkaufKategorie.sonstiges ? _kategorie.wire : null));
   }
 
   @override
@@ -281,6 +289,16 @@ class _EintragBlattState extends State<_EintragBlatt> {
             decoration: const InputDecoration(labelText: 'Eintrag', counterText: ''),
             onSubmitted: (_) => _speichern(),
           ),
+          if (widget.mitKategorie) ...[
+            const SizedBox(height: 12),
+            const MonoLabel('// kategorie'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [for (final k in EinkaufKategorie.values) AuswahlKnopf(text: k.label, gewaehlt: k == _kategorie, onTap: () => setState(() => _kategorie = k))],
+            ),
+          ],
           const SizedBox(height: 12),
           // Wrap statt Row: bei großer Schrift rutscht ein Knopf in die nächste Zeile, statt zu überlaufen
           Wrap(
@@ -333,6 +351,32 @@ Future<String?> zuweisenBlatt(BuildContext context, {required List<UserDto> pers
               selected: p.id == aktuell,
               onTap: () => Navigator.of(c).pop(p.id),
             ),
+        ],
+      ),
+    ),
+  ),
+);
+
+/// Auswahl einer Vorlage ("Aus Vorlage übernehmen"): liefert die ID der gewählten Vorlagenliste.
+Future<String?> vorlageBlatt(BuildContext context, {required List<Liste> vorlagen}) => showModalBottomSheet<String>(useRootNavigator: false,
+  context: context,
+  showDragHandle: true,
+  isScrollControlled: true,
+  builder: (c) => SafeArea(
+    child: ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(c).height * 0.7),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
+        children: [
+          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('// vorlage wählen')),
+          if (vorlagen.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+              child: Text('Noch keine Vorlage. Speichere eine Liste über das Menü als Vorlage.', style: TextStyle(color: kTextMuted)),
+            ),
+          for (final v in vorlagen)
+            ListTile(minTileHeight: 52, leading: const Icon(Icons.content_copy_outlined, color: kTextMuted), title: Text(v.name), onTap: () => Navigator.of(c).pop(v.id)),
         ],
       ),
     ),
