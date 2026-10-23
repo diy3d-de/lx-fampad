@@ -188,6 +188,7 @@ List<GeplanteErinnerung> planeErinnerungen({
   int maxAnzahl = kErinnerungFenster,
   List<Aufgabe> aufgaben = const [],
   List<GeplanteErinnerung> zusatz = const [],
+  bool elternRolle = false,
 }) {
   if (ich == null || maxAnzahl <= 0) return const [];
   final jetztUtc = jetzt.toUtc();
@@ -232,7 +233,7 @@ List<GeplanteErinnerung> planeErinnerungen({
   final horizont = jetztUtc.add(const Duration(days: kErinnerungHorizontTage));
   for (final a in aufgaben) {
     final min = a.erinnerungMin;
-    if (min == null || min < 0 || istErledigt(a) || !aufgabeBetrifftPerson(a.assigneeId, a.ownerId, ich)) continue;
+    if (min == null || min < 0 || istErledigt(a) || !(aufgabeBetrifftPerson(a.assigneeId, a.ownerId, ich) || (a.frist && elternRolle))) continue; // Fristen erinnern zusätzlich alle Eltern und Admins
     final wand = faelligWand(a);
     if (wand == null) continue;
     final mitUhr = a.faelligUtc != null;
