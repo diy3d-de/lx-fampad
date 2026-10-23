@@ -211,6 +211,7 @@ class _Kachel extends StatelessWidget {
           customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
           onTap: onTap,
           child: Stack(
+            fit: StackFit.expand,
             children: [
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 10),

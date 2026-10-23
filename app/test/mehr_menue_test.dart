@@ -130,6 +130,18 @@ void main() {
   });
 
   group('Blatt', () {
+    testWidgets('Symbol und Beschriftung der Kacheln sitzen mittig, nicht links', (tester) async {
+      await start(tester);
+      await mehrOeffnen(tester);
+      final kachel = find.byKey(const ValueKey('mehr:listen'));
+      expect(kachel, findsOneWidget);
+      final mitte = tester.getCenter(kachel).dx;
+      final symbol = tester.getCenter(find.descendant(of: kachel, matching: find.byType(Icon))).dx;
+      final text = tester.getCenter(find.descendant(of: kachel, matching: find.text('Listen'))).dx;
+      expect((symbol - mitte).abs(), lessThan(2), reason: 'Symbol mittig');
+      expect((text - mitte).abs(), lessThan(2), reason: 'Beschriftung mittig');
+    });
+
     testWidgets('Mehr öffnet das Blatt und ändert den aktiven Bereich nicht', (tester) async {
       final (_, c) = await start(tester);
       expect(ausgewaehlt(tester), 0);
