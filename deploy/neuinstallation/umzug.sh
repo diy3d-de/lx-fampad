@@ -1407,6 +1407,31 @@ nasstatus_aufruf() { # $1 Skript, Rest: Optionen; Ausgabe auch ins Log
   rc=${PIPESTATUS[0]}
   return "$rc"
 }
+# NAS-Adresse für einrichtung-nasstatus.sh: strenger als die der Abholung: höchstens 4 Adressen, Netze nur bis /24 (IPv4) bzw. /64 (IPv6), sonst lehnt das Skript sie ab
+nasstatus_ip_ok() { # $1 Adressen (Komma)
+  local t p teile=()
+  gueltige_nas_ip "$1" || return 1
+  IFS=',' read -ra teile <<<"$1"
+  [ "${#teile[@]}" -le 4 ] || return 1
+  for t in "${teile[@]}"; do
+    [[ "$t" == */* ]] || continue
+    p="${t#*/}"
+    if [[ "$t" == *:* ]]; then [ "$p" -ge 64 ] || return 1; else [ "$p" -ge 24 ] || return 1; fi
+  done
+  return 0
+}
+NS_IP=""
+nasstatus_ip_klaeren() { # $1 vorgeschlagene Adresse (leer = fragen); Ergebnis in NS_IP; höchstens dreimal fragen
+  local ip="$1" versuch=0
+  while ! nasstatus_ip_ok "$ip"; do
+    [ -z "$ip" ] || hinweis "Die NAS-Adresse '${ip:0:60}' passt hier nicht: einrichtung-nasstatus.sh erlaubt nur Einzeladressen oder Netze bis /24 (IPv4) bzw. /64 (IPv6), höchstens vier."
+    versuch=$((versuch + 1))
+    [ "$versuch" -le 3 ] || fehler_ende "Es wurde keine zulässige NAS-Adresse eingegeben." "Beispiel: 203.0.113.7 (die öffentliche Adresse deines Anschlusses, am besten eine Einzeladresse); starte den Befehl noch einmal."
+    lies_zeile "Öffentliche IP-Adresse des NAS (am sichersten eine Einzeladresse): "
+    ip="$ANTWORT"
+  done
+  NS_IP="$ip"
+}
 weiter_nasstatus() {
   local co ziel ip key
   weiter_vorbereiten fertig
@@ -1420,26 +1445,28 @@ weiter_nasstatus() {
     fehler_ende "Der Checkout $co weicht vom Code-Stand $A_GIT_REF ab (Änderungen in deploy/ oder anderer Commit); ich führe nichts als root daraus aus." "Prüfe ihn (git -C $co status, git -C $co log -1) und stelle ihn auf $A_GIT_REF zurück. Wer in $co schreiben kann, hat mit dem Skript root-Rechte."
   fi
   ip="$A_NAS_IP"
-  if [ -z "$ip" ]; then
-    hinweis "In den Antworten steht keine NAS-IP (die NAS-Abholung wurde nicht eingerichtet)."
-    lies_zeile "Öffentliche IP-Adresse des NAS (am sichersten eine Einzeladresse): "
-    gueltige_nas_ip "$ANTWORT" || fehler_ende "Das ist keine zulässige NAS-Adresse." "Beispiel: 203.0.113.7 (Netze höchstens /16 bzw. /48; einrichtung-nasstatus.sh erlaubt sogar nur /24 bzw. /64)."
-    ip="$ANTWORT"
-  else
-    zeile "NAS-IP aus den Antworten: $ip (einrichtung-nasstatus.sh erlaubt Netze nur bis /24 bzw. /64; eine Einzeladresse ist am sichersten)."
-  fi
+  if [ -z "$ip" ]; then hinweis "In den Antworten steht keine NAS-IP (die NAS-Abholung wurde nicht eingerichtet)."
+  else zeile "NAS-IP aus den Antworten: $ip"; fi
+  nasstatus_ip_klaeren "$ip"; ip="$NS_IP"
   zeile "Auf dem NAS liegt der ÖFFENTLICHE Teil des zweiten Schlüssels unter ~/.ssh/lx-fampad-status.pub (Zeile mit \"lx-fampad-status\"). Gibt es ihn noch nicht:"
   blass "  ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status      (im selben .ssh wie der Schlüssel der Abholung; nie den privaten Teil hierher)"
+  zeile "Gib genau EINE Zeile ein, die mit ssh- beginnt (der öffentliche Schlüssel, die Datei MIT .pub). Alles andere weise ich ab, ohne es weiter zu lesen."
   lies_zeile "Öffentlicher Schlüssel (eine Zeile): "
   key="$ANTWORT"
-  gueltiger_ssh_schluessel "$key" || fehler_ende "Das ist kein öffentlicher SSH-Schlüssel (erwartet: ssh-ed25519 AAAA… lx-fampad-status)." "Kopiere die Zeile aus ~/.ssh/lx-fampad-status.pub auf dem NAS (die Datei MIT .pub; der private Teil gehört nie hierher)."
+  gueltiger_ssh_schluessel "$key" || fehler_ende "Das ist kein öffentlicher SSH-Schlüssel (erwartet: eine Zeile ssh-ed25519 AAAA… lx-fampad-status)." "Kopiere die Zeile aus ~/.ssh/lx-fampad-status.pub auf dem NAS (die Datei MIT .pub; der private Teil gehört nie hierher) und starte den Befehl noch einmal."
   if [ -n "$A_NAS_PUBKEY" ] && [ "$(awk '{print $2}' <<<"$key")" = "$(awk '{print $2}' <<<"$A_NAS_PUBKEY")" ]; then
     fehler_ende "Das ist der Schlüssel der Abholung, nicht der zweite Schlüssel für die Statusmeldung." "Erzeuge auf dem NAS einen eigenen Schlüssel (ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status) und gib dessen .pub-Zeile an."
   fi
+  case "$key" in ssh-rsa\ *) hinweis "Das ist ein RSA-Schlüssel: einrichtung-nasstatus.sh nimmt ihn an, ein ed25519-Schlüssel wäre besser (ssh-keygen -t ed25519)." ;; esac
   LETZTE_PHASE="nasstatus"
   echo "=== $(date -u '+%F %T') UTC  einrichtung-nasstatus.sh" >> "$LAUF_LOG"
   echo; zeile "Trockenlauf (einrichtung-nasstatus.sh --dry-run, ändert nichts) …"
-  nasstatus_aufruf "$ziel" --dry-run --nas-pubkey "$key" --nas-ip "$ip" || fehler_ende "Der Trockenlauf von einrichtung-nasstatus.sh meldet ein Problem (siehe oben)." "Behebe es (Einzelheiten: $LAUF_LOG, docs/BACKUP-EINRICHTUNG-SCHRITTE.md Abschnitt 11) und starte den Befehl noch einmal."
+  while ! nasstatus_aufruf "$ziel" --dry-run --nas-pubkey "$key" --nas-ip "$ip"; do
+    schlecht "Der Trockenlauf von einrichtung-nasstatus.sh meldet ein Problem (siehe oben)."
+    frage_ja "Eine andere NAS-IP eingeben (z. B. wenn die Adresse abgelehnt wurde)?" nein \
+      || fehler_ende "Der Trockenlauf von einrichtung-nasstatus.sh meldet ein Problem (siehe oben)." "Behebe es (Einzelheiten: $LAUF_LOG, docs/BACKUP-EINRICHTUNG-SCHRITTE.md Abschnitt 11) und starte den Befehl noch einmal."
+    nasstatus_ip_klaeren ""; ip="$NS_IP"
+  done
   echo
   frage_ja "Trockenlauf ohne Befund. Jetzt einrichten?" ja || { zeile "Gut, ich ändere nichts."; return 0; }
   nasstatus_aufruf "$ziel" --nas-pubkey "$key" --nas-ip "$ip" || fehler_ende "Das Einrichten der NAS-Rückmeldung ist fehlgeschlagen (siehe oben; das Skript hat seine Änderungen zurückgenommen)." "Behebe die Ursache (Einzelheiten: $LAUF_LOG) und starte den Befehl noch einmal."

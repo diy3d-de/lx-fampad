@@ -640,13 +640,19 @@ gleich "--weiter mit unbekanntem Schritt bleibt Exit-Code 2" 2 "$(a --weiter nas
 enthaelt "--hilfe nennt --weiter nasstatus" "$(a --hilfe)" "--weiter nasstatus"
 # Ablauf mit gefälschtem einrichtung-nasstatus.sh (der Checkout von lx ist ersetzt)
 mkdir -p "$ARBEIT/ns/co/deploy/backup"
-printf '#!/usr/bin/env bash\necho "args: $*" >> "$NS_LOG"\ncase " $* " in *" --dry-run "*) echo "    Trockenlauf beendet: alle Prüfungen bestanden" ;; *) echo "Fertig." ;; esac\nexit "${NS_RC:-0}"\n' > "$ARBEIT/ns/co/deploy/backup/einrichtung-nasstatus.sh"
+cat > "$ARBEIT/ns/co/deploy/backup/einrichtung-nasstatus.sh" <<'EOF'
+#!/usr/bin/env bash
+echo "args: $*" >> "$NS_LOG"
+if [ -n "${NS_FAIL_IP:-}" ] && [[ " $* " == *" --nas-ip $NS_FAIL_IP "* ]]; then echo "FEHLER: Ungültige NAS-Adresse (Beispiel)" >&2; exit 1; fi
+case " $* " in *" --dry-run "*) echo "    Trockenlauf beendet: alle Prüfungen bestanden" ;; *) echo "Fertig." ;; esac
+exit "${NS_RC:-0}"
+EOF
 STATUSKEY="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIstatusstatusstatus lx-fampad-status"
 ns() { # $1 Eingaben (\n), $2 NAS-IP in den Antworten, $3 Checkout sauber (1|0), $4 Exit-Code des gefälschten Skripts, $5 Schlüssel der Abholung
-  local eingaben="$1" nip="$2" sauber_co="$3" nrc="$4" abholung="$5"
+  local eingaben="$1" nip="$2" sauber_co="$3" nrc="$4" abholung="$5" failip="${6:-}"
   rm -f "$ARBEIT/ns/log" "$ARBEIT/ns/antworten"
   (
-    export NS_LOG="$ARBEIT/ns/log" NS_RC="$nrc"
+    export NS_LOG="$ARBEIT/ns/log" NS_RC="$nrc" NS_FAIL_IP="$failip"
     ARBEIT_DIR="$ARBEIT/ns/arbeit"; mkdir -p "$ARBEIT_DIR"; LAUF_LOG="$ARBEIT/ns/lauf.log"; ANTWORTEN_DATEI="$ARBEIT/ns/antworten"; OFFEN_DATEI="$ARBEIT/ns/offen.txt"; BERICHT_DATEI="$ARBEIT/ns/bericht.txt"
     weiter_vorbereiten() { :; }
     lx_checkout() { echo "$ARBEIT/ns/co"; }
@@ -682,6 +688,35 @@ N7="$(ns "$STATUSKEY\n\n" 203.0.113.7 0 0 "$SSHOK")"
 enthaelt "verändertes Checkout: Exit-Code 1" "$N7" "RC=1"
 enthaelt "verändertes Checkout: nichts als root ausgeführt" "$N7" "weicht vom Code-Stand"
 [ ! -s "$ARBEIT/ns/log" ] && ok "verändertes Checkout: das Skript wurde nicht aufgerufen" || fehl "verändertes Checkout: das Skript wurde aufgerufen"
+enthaelt "vor der Schlüsseleingabe: nur eine Zeile, die mit ssh- beginnt" "$N1" "genau EINE Zeile ein, die mit ssh- beginnt"
+# Trockenlauf scheitert an der NAS-IP: eine Neueingabe der IP wird angeboten
+N9="$(ns "$STATUSKEY\nja\n203.0.113.9\n\n" 203.0.113.7 1 0 "$SSHOK" 203.0.113.7)"
+enthaelt "Trockenlauf scheitert an der IP, neue IP eingegeben: Exit-Code 0" "$N9" "RC=0"
+gleich "dreimal aufgerufen: Trockenlauf (alte IP, scheitert), Trockenlauf (neue IP), echt" 3 "$(wc -l < "$ARBEIT/ns/log")"
+enthaelt "der zweite Trockenlauf nimmt die neue IP" "$(sed -n 2p "$ARBEIT/ns/log")" "--dry-run --nas-pubkey $STATUSKEY --nas-ip 203.0.113.9"
+enthaelt "der echte Aufruf nimmt die neue IP" "$(sed -n 3p "$ARBEIT/ns/log")" "--nas-ip 203.0.113.9"
+enthaelt_nicht "der echte Aufruf ist kein Trockenlauf" "$(sed -n 3p "$ARBEIT/ns/log")" "--dry-run"
+# eine zu große Netzadresse aus der Abholung (bis /16 erlaubt) passt hier nicht (nur bis /24): vorher nach einer engeren gefragt
+N10="$(ns "203.0.113.9\n$STATUSKEY\n\n" 203.0.0.0/16 1 0 "$SSHOK")"
+enthaelt "Netz /16 aus den Antworten: Hinweis, dass es hier nur bis /24 geht" "$N10" "nur Einzeladressen oder Netze bis /24"
+enthaelt "...und eine engere Adresse wird abgefragt und benutzt (Exit-Code 0)" "$N10" "RC=0"
+enthaelt "...der Aufruf bekommt die engere Adresse" "$(sed -n 1p "$ARBEIT/ns/log")" "--nas-ip 203.0.113.9"
+gelingt "nasstatus_ip_ok: Einzeladresse" nasstatus_ip_ok 203.0.113.7
+gelingt "nasstatus_ip_ok: /24" nasstatus_ip_ok 203.0.113.0/24
+scheitert "nasstatus_ip_ok: /23" nasstatus_ip_ok 203.0.112.0/23
+gelingt "nasstatus_ip_ok: IPv6 /64" nasstatus_ip_ok 2001:db8:0:1::/64
+scheitert "nasstatus_ip_ok: IPv6 /48" nasstatus_ip_ok 2001:db8::/48
+scheitert "nasstatus_ip_ok: mehr als vier Adressen" nasstatus_ip_ok 203.0.113.1,203.0.113.2,203.0.113.3,203.0.113.4,203.0.113.5
+gelingt "nasstatus_ip_ok: vier Adressen" nasstatus_ip_ok 203.0.113.1,203.0.113.2,203.0.113.3,203.0.113.4
+scheitert "nasstatus_ip_ok: ungültig" nasstatus_ip_ok 999.1.1.1
+# RSA-Schlüssel: Hinweis (einrichtung-nasstatus.sh nimmt ihn an), kein Abbruch
+N11="$(ns "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDabc lx-fampad-status\n\n" 203.0.113.7 1 0 "$SSHOK")"
+enthaelt "RSA-Schlüssel: Hinweis auf ed25519" "$N11" "RSA-Schlüssel"
+enthaelt "RSA-Schlüssel: kein Abbruch (Exit-Code 0)" "$N11" "RC=0"
+# mehrzeilige Eingabe (z. B. ein eingefügter privater Schlüssel): die erste Zeile genügt zum Abweisen, der Rest wird nicht mehr gelesen
+N12="$(ns "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n" 203.0.113.7 1 0 "$SSHOK")"
+enthaelt "mehrzeiliger privater Schlüssel: abgewiesen (Exit-Code 1)" "$N12" "RC=1"
+enthaelt_nicht "...ohne dass weitere Zeilen als Antwort auf spätere Fragen gelesen werden (kein Aufruf)" "$(cat "$ARBEIT/ns/log" 2>/dev/null)" "args"
 N8="$(ns "$STATUSKEY\nnein\n" 203.0.113.7 1 0 "$SSHOK")"
 enthaelt "'nein' bei \"Jetzt einrichten?\": Exit-Code 0" "$N8" "RC=0"
 gleich "'nein': nur der Trockenlauf lief" 1 "$(wc -l < "$ARBEIT/ns/log")"
