@@ -507,7 +507,8 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
-| `konversation` | `art` | `family`, `direct`, `group` (Pflicht) | create |
+| `konversation` | `art` | `family`, `direct`, `group`, `meds` (Pflicht; `meds` nur für den Medikamenten-Plan, siehe unten) | create |
+| | `subjektId` | nur bei `meds`: UUID der Person, um deren Medikamente es geht (Pflicht dort, sonst `null`); unveränderlich | create |
 | | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), beim Wiederbeleben einer gelöschten Konversation gilt die Hülle der Neuanlage (`e1`, auch aus einem `p1`-Altbestand) | create |
 | | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
 | | `teilnehmer` | Liste von UUIDs (sortiert, eindeutig; Familienchat leer, Direktchat 2, Gruppe 2 bis 20) | rw (nur Gruppen) |
@@ -540,6 +541,27 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Pin:** anlegen darf jede Person mit Sicht; im **Familienchat nur Eltern und Admins** (Kinder: `invalid`); lösen: Eltern und Admins jeden, **Kinder nur ihren eigenen** (`forbidden`); nicht änderbar; höchstens **5** lebende je Konversation (`invalid`). Der Server sieht nur die ID der angehefteten Nachricht.
 - **Grenzen:** je Nachricht höchstens 50 lebende Reaktionen und 50 Stimmen (`limit_reached`); je Person 60 neue Reaktionen je Minute und 600 je Stunde, 30 neue Stimmen je Minute und 300 je Stunde, 60 (Reaktion) bzw. 30 (Stimme) Änderungen je Minute, 10 neue Pins je Minute. Bei Reaktion und Stimme zählen Anlegen **und Wiederbeleben** (Änderungsprotokoll). Pins: Die Grenze von 5 wird unter einer Sperre der Konversationszeile geprüft (parallelitätssicher).
 - **Ältere Clients** kennen die Entitäten nicht und überspringen sie im Änderungsstrom (kein Fehler, `protocolVersion` bleibt 1).
+
+**Medikamenten-Plan (Migration 0030)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6k. Gesundheitsdaten, Ende-zu-Ende verschlüsselt. Je Person (Subjekt) gibt es eine **verborgene Konversation** der Art `meds`; Medikamente und Einnahmen sind ihre Kinder. Epochen und Wraps laufen über `epoche` und `epoche_wrap` (wie bei jedem verschlüsselten Chat).
+
+- **`konversation` mit `art: "meds"`:** zusätzlich das Pflichtfeld `subjektId` (UUID des Subjekts, aktives Mitglied, unveränderlich) und `encVersion: "e1"`; kein `titel`. Die ID ist **vorgeschrieben**: `medsChatId(subjektId)` = SHA-256 von `lx-fampad:meds:<subjektId kleingeschrieben>` (Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`, Known-Answer-Tests auf beiden Seiten); jede andere ID ist `invalid`. `teilnehmer` (1 bis 20, die anlegende Person dabei, sonst `forbidden`): **Subjekt ist ein Kind (`child`)**: das Kind selbst und beliebig viele aktive Eltern/Admins (`parent`/`admin`), **nie ein anderes Kind**; **Subjekt ist erwachsen**: genau es selbst, **nie ein anderer Erwachsener** (auch kein Admin, auch nicht der Betreiber; das Betreiber-Flag zählt nirgends). Die Regel prüft der Server gegen die Rollen seiner Datenbank beim Anlegen und nach jeder Änderung der Liste (`invalid`); jeder Teilnehmer darf die Liste ändern (Eltern kommen und gehen, jede Änderung legt eine neue Epoche an). **Nie löschbar** (`forbidden`), `titel` und `subjektId` unveränderlich, **keine Nachrichten** darin (`invalid`). Verschwindet das Subjekt aus der Familie, verschwindet die Konversation samt Inhalt (Tombstone); wird ein Elternteil entfernt, wird es aus der Liste genommen. **Nach einem Rollenwechsel** (`PATCH /members/:id/role`) zieht der Server alle Listen nach (wer nach der neuen Rollenverteilung nicht mehr hineingehört, fliegt heraus und bekommt den `hidden`-Tombstone; die Verbleibenden rotieren den Schlüssel mit ihrer App).
+- **Sichtbarkeit:** nur die Teilnehmer der Konversation (harte Grenze, kein Rollen-Durchgriff); für alle anderen existiert die ID nicht (`not_found` beim Ändern, Löschen und Anlegen darunter). Der WebSocket-Hinweis geht nur an die Teilnehmer, **nie als Push-Wecker** (`Facts.quiet`: auch Konversation, Epochen und Wraps dieser Konversation wecken nie).
+
+| Entität | Feld | Typ | Zugriff |
+| --- | --- | --- | --- |
+| `medikament` | `konversationId` | UUID der Medikamenten-Konversation (Pflicht; lebend, `e1`, Art `meds`, sonst `invalid`) | create |
+| | `inhalt` | Hülle `e1:`+Base64url (153 bis 16 384 Zeichen), Klartext `m1:`+JSON; undurchsichtig | rw |
+| | `bearbeiterId` | UUID oder `null` (Person, die `inhalt` zuletzt geschrieben und signiert hat; setzt der Server, nach Entfernen der Person `null`) | server |
+| | `createdAt` | ISO-8601 (UTC) | server |
+| `einnahme` | `konversationId`, `medikamentId` | UUID (Pflicht; das Medikament gehört zur Konversation und lebt, sonst `invalid`) | create |
+| | `inhalt` | Hülle `e1:`+Base64url (153 bis 2048 Zeichen), Klartext `n1:`+JSON; undurchsichtig | rw |
+| | `bearbeiterId`, `createdAt` | wie beim Medikament | server |
+
+- **Rechte:** Anlegen, Lesen, Ändern (nur `inhalt`) und Löschen darf **jeder Teilnehmer der Konversation, jede Rolle**, sonst nichts (Regeltabelle in `sync-medikamente.test.ts`: Erwachsener sieht nie fremden Erwachsenen, Admin ebenfalls nicht, Elternteil sieht Kind, Kind sieht keinen Erwachsenen und kein Geschwister). IDs sind Zufalls-UUIDs (Version 4), keine abgeleiteten (der Server kennt keinen Inhalt). Die Einnahme ist Kind des Medikaments (`parent`: `medikamentId`): Löschen des Medikaments löscht seine Einnahmen mit Tombstone; Löschen der Konversation gibt es nicht.
+- **Hülle:** unverändert die versionierte, signierte Hülle `e1` (9a); **Art** `m` (Medikament, ohne Bezug) bzw. `n` (Einnahme, Bezug = `medikamentId`) und der **Bearbeiter** als Absender stehen in AAD und Signatur: die Hülle lässt sich nie als andere Art, bei einem anderen Medikament, unter einer anderen ID oder in einer anderen Konversation lesen. Der Server prüft nur Form (`^e1:[A-Za-z0-9_-]+$`), Mindest- und Höchstlänge, nie den Inhalt.
+- **Aufbewahrung:** Einnahmen werden **nach 120 Tagen** (`created_at`, Serverzeit) vom stündlichen Wartungsjob gelöscht (Tombstone, die Geräte entfernen ihre Kopie). Medikamente bleiben bis zum Löschen.
+- **Grenzen:** höchstens 100 lebende Medikamente je Konversation, 3000 Einnahmen je Medikament (`limit_reached`); je Person 20 neue Medikamente und 60 neue Einnahmen je Minute (200 bzw. 600 je Stunde; Anlegen zählt über das Änderungsprotokoll), 60 bzw. 120 Änderungen von `inhalt` je Minute.
+- **Ältere Clients** überspringen `medikament` und `einnahme` im Änderungsstrom (`protocolVersion` bleibt 1) und zeigen die Konversation der Art `meds` wie eine leere Gruppe.
 
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
