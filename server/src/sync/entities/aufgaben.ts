@@ -1,6 +1,7 @@
 // Aufgaben (To-dos) und ihre Unteraufgaben (Phase 1c-4a).
 //
 // Fälligkeit wie bei Terminen: ein Kalendertag (`faelligDate`, ganztägig) ODER ein Zeitpunkt in UTC (`faelligUtc`) mit IANA-Zeitzone (`tzid`).
+// Fristen (`frist`): Aufgaben mit Ablaufdatum; Vorwarnzeit = `erinnerungMin`, Wiederholung alle `fristMonate` Monate (Client legt die nächste an).
 // Wiederholung einfach (`daily`/`weekly`/`monthly`): Beim Erledigen legt der Client die nächste Aufgabe an; der Server prüft nur die Form.
 //
 // Rechte (siehe sync/permissions.ts), wie bei Terminen, dazu die zuständige Person:
@@ -41,6 +42,8 @@ const aufgabeRules: Rules = {
       'wiederholung',
       'wiederholungTag',
       'erinnerungMin',
+      'frist',
+      'fristMonate',
     ],
     limits: { audience: ['family'] },
     // zuständige Kinder dürfen nur den Erledigt-Status setzen (erledigtVon setzt der Server)
@@ -81,7 +84,11 @@ export const aufgabeEntity: EntityDef = {
     folgeId: { access: 'rw', schema: uuid.nullable(), defaultValue: null, blank: null },
     wiederholungTag: { access: 'rw', schema: z.number().int().min(1).max(31).nullable(), defaultValue: null, blank: null },
     wiederholung: { access: 'rw', schema: z.enum(AUFGABE_WIEDERHOLUNGEN).nullable(), defaultValue: null, blank: null },
-    erinnerungMin: { access: 'rw', schema: z.number().int().min(0).max(40320).nullable(), defaultValue: null },
+    // bis 365 Tage (Vorwarnzeit der Fristen); die App bietet bei normalen Aufgaben weiter höchstens 1 Tag an
+    erinnerungMin: { access: 'rw', schema: z.number().int().min(0).max(525600).nullable(), defaultValue: null },
+    // Fristen-Tracker: additiv, alte Apps ignorieren beides und zeigen die Frist als normale Aufgabe
+    frist: { access: 'rw', schema: z.boolean(), defaultValue: false, blank: false },
+    fristMonate: { access: 'rw', schema: z.number().int().min(1).max(120).nullable(), defaultValue: null, blank: null },
     audience: { access: 'rw', schema: AUDIENCE_INPUT, defaultValue: 'family' },
     ownerId: { access: 'server', schema: uuid.nullable() },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
