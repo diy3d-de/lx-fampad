@@ -38,7 +38,10 @@ enum ChatArt {
   group('group'),
 
   /// Medikamenten-Konversation einer Person (Abschnitt 6k): verborgen, nie in der Chatliste, ohne Nachrichten.
-  meds('meds');
+  meds('meds'),
+
+  /// Zähler-Konversation der Familie (Abschnitt 6l): verborgen, nur Eltern und Admins, nie in der Chatliste, ohne Nachrichten.
+  zaehler('zaehler');
 
   final String wire;
   const ChatArt(this.wire);
@@ -82,6 +85,7 @@ List<ChatEintrag> sortiereChats(Iterable<ChatEintrag> alle) {
     ChatArt.direct => 1,
     ChatArt.group => 2,
     ChatArt.meds => 3,
+    ChatArt.zaehler => 4,
   };
   final liste = alle.toList()
     ..sort((a, b) {
@@ -132,7 +136,7 @@ SELECT k.id AS kid,
   (SELECT n.id FROM nachrichten n WHERE n.konversation_id = k.id ORDER BY n.created_at DESC, CASE WHEN n.rev = 0 THEN 1 ELSE 0 END DESC, n.rev DESC, n.id DESC LIMIT 1) AS letzte_id,
   (SELECT COUNT(*) FROM nachrichten n WHERE n.konversation_id = k.id AND (n.autor_id IS NULL OR n.autor_id <> ?1)
      AND n.created_at > COALESCE((SELECT l.gelesen_bis FROM lesestand l WHERE l.konversation_id = k.id AND l.user_id = ?1 LIMIT 1), 0)) AS ungelesen
-FROM konversationen k WHERE k.art <> 'meds' ''';
+FROM konversationen k WHERE k.art NOT IN ('meds', 'zaehler') ''';
     return db
         .customSelect(sql, variables: [Variable.withString(me)], readsFrom: {db.konversationen, db.nachrichten, db.lesestaende})
         .watch()

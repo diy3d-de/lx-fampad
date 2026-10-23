@@ -52,3 +52,6 @@ export const stimmeId = (nachrichtId: string, userId: string): string => uuidAus
 
 /** Feste ID der Anheftung einer Nachricht (je Nachricht genau eine). */
 export const pinId = (nachrichtId: string): string => uuidAusSchluessel(`pin:${nachrichtId.toLowerCase()}`);
+
+/** Feste ID der Zähler-Konversation einer Familie (Abschnitt 6l): je Familie genau eine, daraus abgeleitet (niemand kann sie vorab belegen). */
+export const zaehlerChatId = (familyId: string): string => uuidAusSchluessel(`zaehler:${familyId.toLowerCase()}`);

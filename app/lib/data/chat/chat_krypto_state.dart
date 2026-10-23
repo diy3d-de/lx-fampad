@@ -237,6 +237,15 @@ class ChatOpVorbereiter implements OpVorbereiter {
         // Medikamenten-Plan: kein Bezug (Art `m`, gebunden an Konversation, eigene ID und Bearbeiter)
         final zeile = await (db.select(db.medikamente)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
         konv ??= zeile?.konversationId;
+      case 'zaehler':
+        // Zähler (Abschnitt 6l): kein Bezug (Art `z`, gebunden an Konversation, eigene ID und Bearbeiter)
+        final zeile = await (db.select(db.zaehler)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+      case 'zaehlerstand':
+        // Bezug ist der Zähler (Art `a`): ein Stand lässt sich nicht an einen anderen Zähler hängen
+        final zeile = await (db.select(db.zaehlerstaende)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+        antwortAuf = f['zaehlerId'] is String ? f['zaehlerId'] as String : zeile?.zaehlerId;
       case 'einnahme':
         // Bezug ist das Medikament (Art `n`): eine Einnahme lässt sich nicht an ein anderes Medikament hängen
         final zeile = await (db.select(db.einnahmen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
@@ -245,8 +254,8 @@ class ChatOpVorbereiter implements OpVorbereiter {
     }
     if (konv == null) return null;
     final konversationId = konv;
-    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', _ => null };
-    if (op.entity != 'nachricht' && op.entity != 'medikament' && antwortAuf == null) return null;
+    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', 'zaehler' => 'z', 'zaehlerstand' => 'a', _ => null };
+    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'zaehler' && antwortAuf == null) return null;
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)

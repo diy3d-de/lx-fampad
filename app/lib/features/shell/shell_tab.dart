@@ -34,5 +34,8 @@ const kMuellTab = 8;
 /// Index des Medikamenten-Bereichs in [kDesktopTabs] (nur im Desktop-Layout ein Bereich der Shell; mobil eine Seite über das Blatt "Mehr").
 const kMedikamenteTab = 9;
 
+/// Index des Zähler-Bereichs in [kDesktopTabs] (nur Eltern und Admins; nur im Desktop-Layout ein Bereich der Shell, mobil eine Seite über das Blatt "Mehr").
+const kZaehlerTab = 10;
+
 /// Index des (noch nicht gebauten) Dateien-Bereichs in [kTabs]; ausgeblendet, solange `kDateienSichtbar` falsch ist.
 const kDateienTab = 3;

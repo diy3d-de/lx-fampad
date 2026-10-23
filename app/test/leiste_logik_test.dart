@@ -86,6 +86,14 @@ void main() {
       expect(m.summe([0, 1, 2, 4]), 3);
     });
 
+    test('fällige Zähler-Ablesungen zählen immer mit (der Eintrag liegt immer hinter Mehr), sind nie rot und für Kinder 0', () {
+      const z = MehrHinweise(zaehler: 2, medikamente: 1);
+      expect(z.summe(kLeisteStandard), 3);
+      expect(z.summe([0, 1, 2, 4]), 3);
+      expect(z.ueberfaellig(kLeisteStandard), isFalse);
+      expect(const MehrHinweise().zaehler, 0);
+    });
+
     test('rot nur bei Überfälligem, das wirklich hinter Mehr liegt', () {
       expect(h.ueberfaellig(kLeisteStandard), isFalse, reason: 'überfällige Aufgabe ist in der Leiste sichtbar');
       expect(h.ueberfaellig([0, 1, 2, 4]), isTrue);

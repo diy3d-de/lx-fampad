@@ -94,7 +94,7 @@ class ChatBenachrichtiger implements EreignisBenachrichtiger {
     final sperre = await sperrbildschirmTitel();
     for (final e in nachKonv.entries) {
       final k = konversationen[e.key];
-      if (k == null || k.art == 'meds') continue; // die verborgene Medikamenten-Konversation meldet nie etwas (sie hat keine Nachrichten)
+      if (k == null || k.art == 'meds' || k.art == 'zaehler') continue; // die verborgenen Konversationen (Medikamente, Zähler) melden nie etwas (sie haben keine Nachrichten)
       // nur, was der eigene Lesestand noch nicht abdeckt (auf einem anderen Gerät schon Gelesenes meldet nichts); Titel und Zahl am Symbol kommen aus derselben Zahl
       final ungelesen = await _ungelesen(e.key, me);
       if (ungelesen <= 0) continue;
