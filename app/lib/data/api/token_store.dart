@@ -41,12 +41,38 @@ class StoredTokens {
   }
 }
 
+/// Sperre "Erneuerung läuft" in der gemeinsamen Ablage: wer gerade das Refresh-Token einlöst ([besitzer], zufällig je Erneuerung), und bis wann
+/// die Sperre höchstens gilt ([bis], danach darf jeder sie übernehmen). Kein Geheimnis.
+class ErneuerungsSperre {
+  final String besitzer;
+  final DateTime bis;
+  const ErneuerungsSperre(this.besitzer, this.bis);
+
+  Map<String, dynamic> toJson() => {'o': besitzer, 'b': bis.toUtc().toIso8601String()};
+
+  static ErneuerungsSperre? fromJson(Object? raw) {
+    if (raw is! Map) return null;
+    final o = raw['o'], b = raw['b'];
+    if (o is! String || b is! String) return null;
+    final t = DateTime.tryParse(b);
+    return t == null ? null : ErneuerungsSperre(o, t);
+  }
+}
+
 abstract class TokenStore {
   Future<StoredTokens?> readTokens();
   Future<void> writeTokens(StoredTokens tokens);
 
   /// Löscht die Token (die Geräte-ID bleibt als Hinweis für die nächste Anmeldung erhalten).
   Future<void> clearTokens();
+
+  /// Sperre gegen doppelte Erneuerung (Hintergrund-Engine und App teilen sich diese Ablage, aber keinen Arbeitsspeicher). Best-Effort ohne atomare
+  /// Operation: der Aufrufer schreibt, wartet kurz und liest zurück (siehe `ApiClient._erneuernEinmal`). Lesefehler = keine Sperre.
+  Future<ErneuerungsSperre?> readErneuerungsSperre();
+  Future<void> writeErneuerungsSperre(ErneuerungsSperre sperre);
+
+  /// Löscht die Sperre nur, wenn sie noch [besitzer] gehört (nie die einer anderen Erneuerung).
+  Future<void> clearErneuerungsSperre(String besitzer);
 
   /// Geräte-ID der letzten Anmeldung (wird bei der nächsten mitgesendet, damit der Server das Gerät wiedererkennt).
   Future<String?> readDeviceId();
@@ -92,6 +118,19 @@ class MemoryTokenStore implements TokenStore {
   Future<void> clearTokens() async {
     _tokens = null;
     _profile = null;
+  }
+
+  ErneuerungsSperre? _sperre;
+
+  @override
+  Future<ErneuerungsSperre?> readErneuerungsSperre() async => _sperre;
+
+  @override
+  Future<void> writeErneuerungsSperre(ErneuerungsSperre sperre) async => _sperre = sperre;
+
+  @override
+  Future<void> clearErneuerungsSperre(String besitzer) async {
+    if (_sperre?.besitzer == besitzer) _sperre = null;
   }
 
   @override
@@ -163,6 +202,7 @@ class SecureTokenStore implements TokenStore {
   static const _kProfile = 'lx_fampad_profile';
   static const _kAuthKeyKonten = 'lx_fampad_authkey_konten';
   static const _kCaps = 'lx_fampad_server_caps';
+  static const _kSperre = 'lx_fampad_refresh_lock';
 
   final FlutterSecureStorage _s;
   SecureTokenStore([FlutterSecureStorage? storage]) : _s = storage ?? kSicherSpeicher;
@@ -236,6 +276,33 @@ class SecureTokenStore implements TokenStore {
       }
     }
     if (erster != null) throw erster;
+  }
+
+  @override
+  Future<ErneuerungsSperre?> readErneuerungsSperre() async {
+    try {
+      final raw = await _s.read(key: _kSperre);
+      return raw == null ? null : ErneuerungsSperre.fromJson(jsonDecode(raw));
+    } catch (_) {
+      return null; // unlesbar = keine Sperre (sie verfällt ohnehin)
+    }
+  }
+
+  @override
+  Future<void> writeErneuerungsSperre(ErneuerungsSperre sperre) async {
+    try {
+      await _s.write(key: _kSperre, value: jsonEncode(sperre.toJson()));
+    } catch (_) {
+      // ohne Sperre erneuern ist schlechter als mit, aber nie ein Grund, die Anmeldung zu verlieren
+    }
+  }
+
+  @override
+  Future<void> clearErneuerungsSperre(String besitzer) async {
+    try {
+      if ((await readErneuerungsSperre())?.besitzer != besitzer) return;
+      await _s.delete(key: _kSperre);
+    } catch (_) {}
   }
 
   @override
