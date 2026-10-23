@@ -34,7 +34,12 @@ void main() {
       for (final t in kTabs) {
         expect(navEintrag(t.label), findsOneWidget, reason: t.label);
       }
-      expect(find.text('bald'), findsNWidgets(2)); // Fotos, Orte (Aufgaben gibt es seit 1c-4a)
+      // keine Platzhalter-Einträge ("bald") in der Seitenleiste: Fotos und Orte stehen erst im Menü, wenn sie gebaut sind
+      expect(find.text('bald'), findsNothing);
+      expect(navEintrag('Fotos'), findsNothing);
+      expect(navEintrag('Orte'), findsNothing);
+      expect(find.text('Fotos'), findsNothing);
+      expect(find.text('Orte'), findsNothing);
       expect(find.textContaining(RegExp('^Guten (Morgen|Tag|Abend)')), findsOneWidget);
       for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben', '// familie & orte']) {
         expect(find.text(l.toUpperCase()), findsOneWidget, reason: l);
@@ -73,15 +78,12 @@ void main() {
     expect(find.textContaining('Hallo'), findsWidgets);
   });
 
-  testWidgets('Navigation in der Seitenleiste, "bald"-Einträge sind inaktiv', (tester) async {
+  testWidgets('Navigation in der Seitenleiste', (tester) async {
     await start(tester, const Size(1440, 900));
     await tester.tap(find.text('Chat').first);
     await warte(tester);
     expect(find.text('// HEUTE & MORGEN'), findsNothing);
     await tester.tap(find.text('Start').first);
-    await warte(tester);
-    expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
-    await tester.tap(find.text('Fotos').first, warnIfMissed: false);
     await warte(tester);
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
     // Karte "Zuletzt geteilt" führt in Dateien

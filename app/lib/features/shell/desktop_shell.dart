@@ -24,12 +24,6 @@ import '../update/update_service.dart';
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
-/// Noch nicht gebaute Bereiche in der Seitenleiste (deaktiviert, mit "bald" markiert).
-const _kBaldBereiche = <(String, IconData)>[
-  ('Fotos', Icons.photo_library_outlined),
-  ('Orte', Icons.place_outlined),
-];
-
 /// Marke im Baum: "hier ist die Desktop-Shell". So entscheidet [standortOeffnen] danach, ob der Bereich zu wählen ist (statt nach der Fensterbreite zu raten);
 /// eine gepushte Seite über der Shell liegt nicht darunter und öffnet wie mobil eine Seite.
 class DesktopShellMarke extends InheritedWidget {
@@ -390,8 +384,6 @@ class _Seitenleiste extends ConsumerWidget {
                         zaehler: i == kChatTab ? ungelesen : 0,
                         onTap: () => waehlen(i),
                       ),
-                    const SizedBox(height: 8),
-                    for (final b in _kBaldBereiche) _NavEintrag(icon: b.$2, label: b.$1, gewaehlt: false, bald: true),
                     // nur der Betreiber des Servers sieht "Betrieb" (Konto-Flag, nicht die Rolle); öffnet wie das Konto eine Unterseite
                     if (betreiber)
                       ValueListenableBuilder<bool>(
@@ -415,33 +407,32 @@ class _NavEintrag extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool gewaehlt;
-  final bool bald;
   final bool badge;
 
   /// Anzahl ungelesener Nachrichten (0: kein Zeichen).
   final int zaehler;
   final VoidCallback? onTap;
-  const _NavEintrag({required this.icon, required this.label, required this.gewaehlt, this.bald = false, this.badge = false, this.zaehler = 0, this.onTap});
+  const _NavEintrag({required this.icon, required this.label, required this.gewaehlt, this.badge = false, this.zaehler = 0, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final farbe = bald ? kTextFaint : (gewaehlt ? kAccent : kText);
-    final inhalt = Padding(
+    final farbe = gewaehlt ? kAccent : kText;
+    return Padding(
       padding: const EdgeInsets.only(bottom: 4),
       child: Semantics(
         button: true,
         selected: gewaehlt,
-        enabled: !bald,
-        focusable: !bald,
-        onTap: bald ? null : onTap,
-        label: bald ? '$label, kommt bald' : (zaehler > 0 ? '$label, $zaehler ungelesen' : label),
+        enabled: true,
+        focusable: true,
+        onTap: onTap,
+        label: zaehler > 0 ? '$label, $zaehler ungelesen' : label,
         excludeSemantics: true,
         child: Material(
           color: gewaehlt ? kAccentSoft : Colors.transparent,
           borderRadius: BorderRadius.circular(10),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: bald ? null : onTap,
+            onTap: onTap,
             focusColor: kAccent.withValues(alpha: 0.18),
             hoverColor: kSurfaceHover.withValues(alpha: 0.6),
             child: Container(
@@ -454,7 +445,6 @@ class _NavEintrag extends StatelessWidget {
                   Expanded(
                     child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: farbe)),
                   ),
-                  if (bald) const Text('bald', style: TextStyle(fontFamily: kFontMono, fontSize: 10, color: kTextFaint)),
                 ],
               ),
             ),
@@ -462,7 +452,6 @@ class _NavEintrag extends StatelessWidget {
         ),
       ),
     );
-    return bald ? Tooltip(message: '$label kommt in einer späteren Phase', child: inhalt) : inhalt;
   }
 }
 
