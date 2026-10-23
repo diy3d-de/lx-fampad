@@ -416,7 +416,8 @@ void main() {
     expect(find.widgetWithText(FilledButton, 'Neuer Termin'), findsOneWidget);
     expect(find.byTooltip('Neuer Termin'), findsNothing, reason: 'der runde Knopf ist nur mobil');
     expect(find.text('Anzeige'), findsOneWidget);
-    expect(find.text('Importieren / Exportieren'), findsOneWidget);
+    expect(find.text('Kalender-Einstellungen …'), findsOneWidget);
+    expect(find.text('Importieren / Exportieren'), findsNothing);
     // Desktop: Datum und Titel bleiben, Sync (Fußzeile) und Profil (Seitenleiste) stehen schon woanders
     expect(find.text('// ${kopfzeilenDatum()}'.toUpperCase()), findsOneWidget);
     expect(find.text('Kalender'), findsWidgets);

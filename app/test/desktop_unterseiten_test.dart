@@ -34,25 +34,29 @@ void main() {
       await start(tester, groesse);
       await tester.tap(kachel());
       await warte(tester);
-      expect(find.text('Profil & Sicherheit'), findsOneWidget);
+      expect(find.text('Profil'), findsOneWidget);
       seitenleisteUndFusszeileDa();
-      expect(tester.getTopLeft(find.text('Profil & Sicherheit')).dx, greaterThan(248)); // rechts neben der Seitenleiste
+      expect(tester.getTopLeft(find.text('Profil')).dx, greaterThan(248)); // rechts neben der Seitenleiste
       expect(find.byWidgetPredicate((w) => w is LxCard && w.gewaehlt), findsOneWidget); // Konto hervorgehoben
 
       // Unterseite öffnen: Seitenleiste und Fußzeile bleiben
+      await tester.tap(find.text('Sicherheit'));
+      await warte(tester);
       await tester.tap(find.text('Passkeys'));
       await warte(tester);
-      expect(find.text('Profil & Sicherheit'), findsNothing);
+      expect(find.text('Profil'), findsNothing);
       seitenleisteUndFusszeileDa();
       expect(tester.takeException(), isNull);
 
-      // zurück zum Konto, dann zur Startseite
+      // zurück über die Sammelseite zum Konto, dann zur Startseite
       await tester.tap(find.byTooltip('Zurück'));
       await warte(tester);
-      expect(find.text('Profil & Sicherheit'), findsOneWidget);
       await tester.tap(find.byTooltip('Zurück'));
       await warte(tester);
-      expect(find.text('Profil & Sicherheit'), findsNothing);
+      expect(find.text('Profil'), findsOneWidget);
+      await tester.tap(find.byTooltip('Zurück'));
+      await warte(tester);
+      expect(find.text('Profil'), findsNothing);
       expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
       seitenleisteUndFusszeileDa();
       handle.dispose();
@@ -64,10 +68,10 @@ void main() {
     await start(tester, const Size(1200, 800));
     await tester.tap(kachel());
     await warte(tester);
-    expect(find.text('Profil & Sicherheit'), findsOneWidget);
+    expect(find.text('Profil'), findsOneWidget);
     await tester.tap(find.text('Chat').first);
     await warte(tester);
-    expect(find.text('Profil & Sicherheit'), findsNothing);
+    expect(find.text('Profil'), findsNothing);
     seitenleisteUndFusszeileDa();
     handle.dispose();
   });
@@ -76,7 +80,7 @@ void main() {
     await start(tester, const Size(900, 700), skala: 1.5);
     await tester.tap(kachel());
     await warte(tester);
-    expect(find.text('Profil & Sicherheit'), findsOneWidget);
+    expect(find.text('Profil'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -84,7 +88,7 @@ void main() {
     await start(tester, const Size(600, 900));
     await tester.tap(find.byType(ProfilButton).first);
     await warte(tester);
-    expect(find.text('Profil & Sicherheit'), findsOneWidget);
+    expect(find.text('Profil'), findsOneWidget);
     expect(find.text('lx-familyhub'), findsNothing);
     expect(tester.takeException(), isNull);
   });
@@ -111,10 +115,10 @@ void main() {
     await start(tester, const Size(1200, 800));
     await tester.tap(kachel());
     await warte(tester);
-    expect(find.text('Profil & Sicherheit'), findsOneWidget);
+    expect(find.text('Profil'), findsOneWidget);
     await tester.tap(find.text('Start').first);
     await warte(tester);
-    expect(find.text('Profil & Sicherheit'), findsNothing);
+    expect(find.text('Profil'), findsNothing);
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
   });
 

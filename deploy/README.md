@@ -367,7 +367,7 @@ sudo bash ~/lx-fampad/deploy/einrichtung-ntfy-up.sh
 
 ### 8. Web-App hochladen
 
-Auf dem PC (Flutter 3.47.6 installiert, Git Bash/WSL, SSH-Alias `lx-labs`):
+Auf dem PC (Flutter 3.47.7 installiert, Git Bash/WSL, SSH-Alias `lx-labs`):
 
 ```bash
 deploy/deploy-web.sh

@@ -393,7 +393,9 @@ void main() {
         await starteApp(tester, env, skala: skala);
         await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
         await warte(tester);
-        await tester.tap(find.byTooltip('Mehr: Importieren, Exportieren'));
+        await tester.tap(find.byTooltip('Mehr'));
+        await warte(tester);
+        await tester.tap(find.text('Kalender-Einstellungen …'));
         await warte(tester);
         await tester.tap(find.text('Kalender exportieren'));
         await warte(tester);

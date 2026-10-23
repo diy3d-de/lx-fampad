@@ -63,7 +63,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: 3.47.6
+          flutter-version: 3.47.7
           channel: stable
           cache: true
       # pubspec.lock ist eingecheckt: die CI darf nichts neu auflösen (analyzer 14.5.0 bricht build_runner 2.16.1)
@@ -105,7 +105,7 @@ jobs:
           java-version: '17'
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: 3.47.6
+          flutter-version: 3.47.7
           channel: stable
           cache: true
       # Android-SDK ist auf dem Runner vorinstalliert; nur die Lizenzen bestätigen

@@ -1,5 +1,5 @@
 // Leiste des Kalenders: Monat/Woche mit Pfeilen und Wahl, "Heute", Filter und Anzeige (mobil als Bottom-Sheet, Desktop als Chips und Menü),
-// "Mehr" mit Importieren und Exportieren, der Umschalter Agenda | Monat | Woche. Alles, was früher als Knöpfe über dem Kalender lag.
+// "Mehr" mit "Kalender-Einstellungen …" (Import und Export liegen dort), der Umschalter Agenda | Monat | Woche. Alles, was früher als Knöpfe über dem Kalender lag.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -17,8 +17,7 @@ import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart' show ProfilButton;
 import '../../widgets/sync_anzeige.dart';
 import 'calendar_state.dart';
-import 'ics_export_screen.dart';
-import 'ics_import_screen.dart';
+import '../profile/kalender_einstellungen_screen.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
 
@@ -110,11 +109,10 @@ class KalenderLeiste extends ConsumerWidget {
     final menue = PopupMenuButton<String>(
       style: _kompakt,
       padding: EdgeInsets.zero,
-      tooltip: 'Mehr: Importieren, Exportieren',
+      tooltip: 'Mehr',
       icon: const Icon(Icons.more_vert),
       onSelected: (w) {
-        if (w == 'import') icsImportOeffnen(context);
-        if (w == 'export') icsExportOeffnen(context);
+        if (w == 'einstellungen') kalenderEinstellungenOeffnen(context);
         if (w == 'heute') ref.read(kalenderAuswahlProvider.notifier).tag(heuteTag());
         if (w == 'sync') _abgleichen(context, ref);
       },
@@ -122,8 +120,7 @@ class KalenderLeiste extends ConsumerWidget {
         // eingeklappte Kopfzeile: Heute und der Abgleich (sonst in Leiste bzw. Kopfzeile) liegen hier, damit der Titel Platz behält
         if (profil && nav) const PopupMenuItem(value: 'heute', child: Text('Heute')),
         if (profil) PopupMenuItem(value: 'sync', child: Text('Jetzt abgleichen (${syncAnzeige(ref.read(syncProvider)).$1})')),
-        if (darfAnlegen) const PopupMenuItem(value: 'import', child: Text('Importieren')),
-        const PopupMenuItem(value: 'export', child: Text('Kalender exportieren')),
+        const PopupMenuItem(value: 'einstellungen', child: Text('Kalender-Einstellungen …')),
       ],
     );
     final titelWidget = _TitelKnopf(titel: titel, breit: breit, onTap: nav ? () => _datumWaehlen(context, ref, a) : null, semantik: nav ? '$einheit wählen: ${titel.haupt}' : 'Agenda');
@@ -205,17 +202,10 @@ class KalenderLeiste extends ConsumerWidget {
         AnsichtUmschalter(aktiv: a.ansicht, breit: true, onWahl: (x) => _ansicht(ref, x)),
         PersonenFilter(personen: personen, gewaehlt: a.personen, onPerson: ref.read(kalenderAuswahlProvider.notifier).person, onAlle: ref.read(kalenderAuswahlProvider.notifier).alle),
         _AnzeigeMenue(aktiv: aktiv),
-        PopupMenuButton<String>(
-          tooltip: 'Importieren und Exportieren',
-          onSelected: (w) {
-            if (w == 'import') icsImportOeffnen(context);
-            if (w == 'export') icsExportOeffnen(context);
-          },
-          itemBuilder: (_) => [
-            if (darfAnlegen) const PopupMenuItem(value: 'import', child: Text('Importieren')),
-            const PopupMenuItem(value: 'export', child: Text('Kalender exportieren')),
-          ],
-          child: const _MenueKnopf(text: 'Importieren / Exportieren'),
+        OutlinedButton.icon(
+          onPressed: () => kalenderEinstellungenOeffnen(context),
+          icon: const Icon(Icons.tune, size: 18),
+          label: const Text('Kalender-Einstellungen …'),
         ),
         if (darfAnlegen) FilledButton.icon(onPressed: onNeu, icon: const Icon(Icons.add, size: 18), label: const Text('Neuer Termin')),
       ],

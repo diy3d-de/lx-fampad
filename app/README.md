@@ -1,6 +1,6 @@
 # app – Flutter (Android + Web)
 
-Flutter 3.47.6 / Dart 3.13.5, Riverpod 3.4.3, drift 2.35.1 (Versionen exakt gepinnt, siehe `../docs/VERSIONEN.md`).
+Flutter 3.47.7 / Dart 3.13.5, Riverpod 3.4.3, drift 2.35.1 (Versionen exakt gepinnt, siehe `../docs/VERSIONEN.md`).
 
 ```bash
 flutter pub get --enforce-lockfile

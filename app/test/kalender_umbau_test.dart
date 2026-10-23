@@ -8,9 +8,9 @@ import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
 import 'package:lx_fampad/data/calendar/feiertage.dart' show TagesHinweis, TagesHinweisArt, ferienProvider, geburtstageAnzeigenProvider;
 import 'package:lx_fampad/data/calendar/monat_layout.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
-import 'package:lx_fampad/features/calendar/ics_import_screen.dart';
 import 'package:lx_fampad/features/calendar/kalender_leiste.dart' show KalenderLeiste;
 import 'package:lx_fampad/features/calendar/kalender_monat.dart';
+import 'package:lx_fampad/features/profile/kalender_einstellungen_screen.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/widgets/kopfzeile.dart';
@@ -160,7 +160,7 @@ void main() {
       expect(find.text('März 2027'), findsOneWidget);
       expect(find.text('${heuteTag().day}'), findsWidgets, reason: 'Heute-Knopf zeigt den Tag');
       expect(find.byTooltip('Vorheriger Monat'), findsOneWidget);
-      expect(find.byTooltip('Mehr: Importieren, Exportieren'), findsOneWidget);
+      expect(find.byTooltip('Mehr'), findsOneWidget);
       await tippe(tester, find.byTooltip('Nächster Monat'));
       expect(find.text('April 2027'), findsOneWidget);
       await tippe(tester, find.byTooltip('Heute'));
@@ -184,13 +184,14 @@ void main() {
     expect(find.text('März 2027'), findsOneWidget);
   });
 
-  testWidgets('Mehr-Menü: Importieren (nur wer anlegen darf) und Exportieren', (tester) async {
+  testWidgets('Mehr-Menü: ohne Importieren und Exportieren, dafür "Kalender-Einstellungen …" (öffnet die Seite Kalender)', (tester) async {
     await start(tester);
-    await tippe(tester, find.byTooltip('Mehr: Importieren, Exportieren'));
-    expect(find.text('Importieren'), findsOneWidget);
-    expect(find.text('Kalender exportieren'), findsOneWidget);
-    await tippeText(tester, 'Importieren');
-    expect(find.byType(IcsImportScreen), findsOneWidget);
+    await tippe(tester, find.byTooltip('Mehr'));
+    expect(find.text('Importieren'), findsNothing);
+    expect(find.text('Kalender exportieren'), findsNothing);
+    expect(find.text('Kalender-Einstellungen …'), findsOneWidget);
+    await tippeText(tester, 'Kalender-Einstellungen …');
+    expect(find.byType(KalenderEinstellungenScreen), findsOneWidget);
   });
 
   testWidgets('Filterblatt: Schalter Geburtstage blendet Geburtstage in der Agenda aus, Zähler zählt aktive Filter, "Zurücksetzen"', (tester) async {
@@ -354,7 +355,7 @@ void main() {
   });
 
   for (final breite in [1440.0, 1000.0]) {
-    testWidgets('Desktop ($breite px): Leiste in einer Zeile mit Personenchips, Anzeige-Menü, Import/Export und "Neuer Termin"; ${breite >= 1440 ? 'Tagespanel statt Sheet' : 'schmal: Tagesblatt'}', (tester) async {
+    testWidgets('Desktop ($breite px): Leiste in einer Zeile mit Personenchips, Anzeige-Menü, Kalender-Einstellungen und "Neuer Termin"; ${breite >= 1440 ? 'Tagespanel statt Sheet' : 'schmal: Tagesblatt'}', (tester) async {
       await start(
         tester,
         groesse: Size(breite, 900),
@@ -367,7 +368,7 @@ void main() {
       expect(find.text('März 2027'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Neuer Termin'), findsOneWidget);
       expect(find.text('Anzeige'), findsOneWidget);
-      expect(find.text('Importieren / Exportieren'), findsOneWidget);
+      expect(find.text('Kalender-Einstellungen …'), findsOneWidget);
       expect(find.byType(FloatingActionButton), findsNothing);
       expect(find.text('Schwimmen 16:00'), findsOneWidget, reason: 'Desktop: Zeit im Balken');
       if (breite >= 1440) {
@@ -530,7 +531,7 @@ void main() {
       expect(find.byTooltip('Heute'), eingeklappt ? findsNothing : findsOneWidget);
       pruefeLayout(tester, 'Leiste eingeklappt=$eingeklappt');
     }
-    await tippe(tester, find.byTooltip('Mehr: Importieren, Exportieren'));
+    await tippe(tester, find.byTooltip('Mehr'));
     expect(find.text('Heute'), findsOneWidget);
     expect(find.textContaining('Jetzt abgleichen'), findsOneWidget);
     await tippeText(tester, 'Heute');
@@ -625,7 +626,7 @@ void main() {
   });
 
   for (final breit in [false, true]) {
-    testWidgets('ohne Anlegen-Recht (${breit ? 'Desktop' : 'mobil'}): kein "Importieren", kein "Neuer Termin" in der Leiste', (tester) async {
+    testWidgets('ohne Anlegen-Recht (${breit ? 'Desktop' : 'mobil'}): kein "Neuer Termin", Import/Export nie in der Leiste', (tester) async {
       final env = await angemeldeteUmgebung();
       tester.view.physicalSize = breit ? const Size(1440, 900) : const Size(360, 800);
       tester.view.devicePixelRatio = 1.0;
@@ -641,9 +642,10 @@ void main() {
       );
       await warte(tester);
       expect(find.widgetWithText(FilledButton, 'Neuer Termin'), findsNothing);
-      await tippe(tester, find.byTooltip(breit ? 'Importieren und Exportieren' : 'Mehr: Importieren, Exportieren'));
+      if (!breit) await tippe(tester, find.byTooltip('Mehr'));
+      expect(find.text('Kalender-Einstellungen …'), findsOneWidget);
       expect(find.text('Importieren'), findsNothing);
-      expect(find.text('Kalender exportieren'), findsOneWidget);
+      expect(find.text('Kalender exportieren'), findsNothing);
     });
   }
 
