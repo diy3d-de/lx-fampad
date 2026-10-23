@@ -17,12 +17,16 @@ import '../../data/chat/chat_zusatz_inhalt.dart';
 import '../../data/chat/chat_zusatz_repository.dart';
 import '../../data/chat/lese_status.dart';
 import '../../data/chat/nachrichten_inhalt.dart';
+import '../../data/suche/chat_sprung.dart';
+import '../../data/suche/such_logik.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart' show BildschirmSchutz;
 import '../lists/list_dialogs.dart';
 import '../shell/shell_tab.dart';
+import '../suche/treffer_text.dart';
 import 'chat_anzeige.dart';
+import 'chat_suche_ui.dart';
 import 'chat_krypto_ui.dart';
 import 'verlauf_freigabe_ui.dart';
 import 'chat_zusatz_ui.dart';
@@ -50,6 +54,12 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
   Nachricht? _bearbeitet;
   bool _amEnde = true;
 
+  /// Suche im Chat: Leiste offen, Suchwörter (Hervorhebung in den sichtbaren Nachrichten) und der angesteuerte Treffer.
+  bool _sucheOffen = false;
+  List<String> _suchWoerter = const [];
+  String? _treffer;
+  Timer? _trefferEnde;
+
   /// Neuzeichnen, sobald eine ungesendete Nachricht als "hängt" gilt (die Uhr allein löst keine Änderung der Datenbank aus).
   Timer? _tick;
   DateTime? _tickZiel;
@@ -67,14 +77,18 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
 
   /// Springt zu einer Nachricht (Pin-Liste): ist sie schon gebaut, wird sie sichtbar gemacht; sonst wird grob dorthin gescrollt und erneut versucht.
   Future<void> _zuNachricht(String id) async {
-    for (var versuch = 0; versuch < 8 && mounted; versuch++) {
+    for (var versuch = 0; versuch < 30 && mounted; versuch++) {
       final ctx = _schluessel[id]?.currentContext;
       if (ctx != null && ctx.mounted) {
         await Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
         return;
       }
       final i = _reihenfolge.indexOf(id);
-      if (i < 0 || !_scroll.hasClients) return;
+      // die Liste ist noch nicht da (Chat gerade geöffnet): ein paar Bilder warten
+      if (i < 0 || !_scroll.hasClients) {
+        await WidgetsBinding.instance.endOfFrame;
+        continue;
+      }
       _scroll.jumpTo((i * 90.0).clamp(0.0, _scroll.position.maxScrollExtent));
       await WidgetsBinding.instance.endOfFrame;
     }
@@ -139,11 +153,43 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
   void initState() {
     super.initState();
     _scroll.addListener(_beiScrollen);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _markieren());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _markieren();
+      _sprungPruefen();
+    });
+  }
+
+  /// Sprung aus der Suche über alle Chats: zur Nachricht scrollen und sie kurz hervorheben.
+  void _sprungPruefen() {
+    final z = ref.read(chatSprungProvider);
+    if (!mounted || z == null || z.chatId != _id) return;
+    ref.read(chatSprungProvider.notifier).verbraucht();
+    _trefferAnsteuern(z.nachrichtId, dauerhaft: false);
+  }
+
+  void _trefferAnsteuern(String id, {required bool dauerhaft}) {
+    _trefferEnde?.cancel();
+    setState(() => _treffer = id);
+    if (!dauerhaft) {
+      _trefferEnde = Timer(const Duration(seconds: 4), () {
+        if (mounted) setState(() => _treffer = null);
+      });
+    }
+    unawaited(_zuNachricht(id));
+  }
+
+  void _sucheSchliessen() {
+    _trefferEnde?.cancel();
+    setState(() {
+      _sucheOffen = false;
+      _suchWoerter = const [];
+      _treffer = null;
+    });
   }
 
   @override
   void dispose() {
+    _trefferEnde?.cancel();
     _scroll.dispose();
     _text.dispose();
     _fokus.dispose();
@@ -396,6 +442,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       }
     });
     ref.listen(nachrichtenProvider(_id), (_, _) => WidgetsBinding.instance.addPostFrameCallback((_) => _markieren()));
+    ref.listen(chatSprungProvider, (_, _) => WidgetsBinding.instance.addPostFrameCallback((_) => _sprungPruefen()));
     // beim Zurückwechseln in den Chat-Bereich gilt der Verlauf erst jetzt als gelesen
     ref.listen(shellTabProvider, (_, t) {
       if (t == kChatTab) WidgetsBinding.instance.addPostFrameCallback((_) => _markieren());
@@ -506,6 +553,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
           untertitel: untertitel,
           verschluesselt: verschluesselt,
           avatar: ChatAvatar(art: art, person: anderer, name: name, size: 36),
+          beiSuche: _sucheOffen ? null : () => setState(() => _sucheOffen = true),
           menue: art == ChatArt.group
               ? PopupMenuButton<String>(
                   tooltip: 'Gruppe verwalten',
@@ -520,6 +568,13 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                 )
               : null,
         ),
+        if (_sucheOffen)
+          ChatSuchLeiste(
+            konversationId: _id,
+            beiTreffer: (id) => _trefferAnsteuern(id, dauerhaft: true),
+            beiWoerter: (w) => setState(() => _suchWoerter = w),
+            beiSchliessen: _sucheSchliessen,
+          ),
         if (verschluesselt) SchluesselWechselHinweis(personen: art == ChatArt.family ? const {} : {...teilnehmer}),
         if (verschluesselt) AufnahmeHinweis(konversationId: konv.id, chatName: name),
         if (verschluesselt) VerlaufFreigabeHinweis(konversationId: konv.id),
@@ -575,6 +630,8 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
                       zeigeName: zeigeName,
                       inhalt: d,
                       angeheftet: pinJe.containsKey(n.id),
+                      markiert: _treffer == n.id,
+                      suchWoerter: _sucheOffen ? _suchWoerter : const [],
                       reaktionen: gruppen,
                       personName: (id) => id == ich ? 'Du' : (mitglieder[id]?.displayName ?? 'Unbekannt'),
                       onReaktion: (e) => _reagieren(n, e, meineReaktion),
@@ -615,7 +672,10 @@ class _Kopf extends StatelessWidget {
   final bool verschluesselt;
   final Widget? avatar;
   final Widget? menue;
-  const _Kopf({required this.beiSchliessen, required this.titel, required this.untertitel, required this.avatar, required this.menue, this.verschluesselt = false});
+
+  /// Öffnet die Suche im Chat (null = Suche schon offen oder nicht möglich).
+  final VoidCallback? beiSuche;
+  const _Kopf({required this.beiSchliessen, required this.titel, required this.untertitel, required this.avatar, required this.menue, this.verschluesselt = false, this.beiSuche});
 
   @override
   Widget build(BuildContext context) => Container(
@@ -653,6 +713,7 @@ class _Kopf extends StatelessWidget {
             ],
           ),
         ),
+        if (beiSuche != null) IconButton(tooltip: 'Im Chat suchen', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.search), onPressed: beiSuche),
         ?menue,
       ],
     ),
@@ -707,6 +768,10 @@ class _Blase extends StatelessWidget {
   final LeseInfo? lese;
   final String leseText;
   final bool angeheftet;
+
+  /// Der aktuell angesteuerte Suchtreffer (kräftiger Rand) und die Suchwörter für die Hervorhebung im Text.
+  final bool markiert;
+  final List<String> suchWoerter;
   final List<ReaktionGruppe> reaktionen;
   final String Function(String userId) personName;
   final ValueChanged<String> onReaktion;
@@ -727,6 +792,8 @@ class _Blase extends StatelessWidget {
     required this.zitat,
     required this.onTap,
     required this.angeheftet,
+    this.markiert = false,
+    this.suchWoerter = const [],
     required this.reaktionen,
     required this.personName,
     required this.onReaktion,
@@ -746,7 +813,7 @@ class _Blase extends StatelessWidget {
     final zeit = uhrzeit(nachricht.createdAt);
     final bearbeitet = nachricht.bearbeitetAt != null;
     final beschreibung =
-        '${eigen ? 'Du' : autorName}, $zeit${lese != null ? ', $leseText' : (gesendet ? '' : ', wird gesendet')}${bearbeitet ? ', bearbeitet' : ''}${angeheftet ? ', angeheftet' : ''}: ${umfrageKopf != null ? 'Umfrage: $umfrageKopf' : text}';
+        '${eigen ? 'Du' : autorName}, $zeit${lese != null ? ', $leseText' : (gesendet ? '' : ', wird gesendet')}${bearbeitet ? ', bearbeitet' : ''}${angeheftet ? ', angeheftet' : ''}${markiert ? ', Suchtreffer' : ''}: ${umfrageKopf != null ? 'Umfrage: $umfrageKopf' : text}';
     return Padding(
       padding: EdgeInsets.only(top: zeigeName ? 8 : 2, bottom: 2),
       child: Align(
@@ -775,7 +842,7 @@ class _Blase extends StatelessWidget {
                     bottomLeft: Radius.circular(eigen ? 14 : 4),
                     bottomRight: Radius.circular(eigen ? 4 : 14),
                   ),
-                  side: BorderSide(color: eigen ? kAccent.withValues(alpha: 0.4) : kBorder),
+                  side: BorderSide(color: markiert ? kAccent : (eigen ? kAccent.withValues(alpha: 0.4) : kBorder), width: markiert ? 2 : 1),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -802,6 +869,8 @@ class _Blase extends StatelessWidget {
                           ),
                         if (umfrage != null)
                           umfrage!
+                        else if (lesbar && suchWoerter.isNotEmpty && finde(text, suchWoerter) != null)
+                          TrefferText(text, finde(text, suchWoerter)!, stil: const TextStyle(fontSize: 14, color: kText), maxLines: null)
                         else
                           Text(text, style: TextStyle(fontStyle: lesbar ? FontStyle.normal : FontStyle.italic, color: lesbar ? kText : kTextMuted)),
                         const SizedBox(height: 2),

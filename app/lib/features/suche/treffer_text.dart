@@ -8,7 +8,7 @@ class TrefferText extends StatelessWidget {
   final String text;
   final List<TextBereich> bereiche;
   final TextStyle? stil;
-  final int maxLines;
+  final int? maxLines;
   const TrefferText(this.text, this.bereiche, {super.key, this.stil, this.maxLines = 2});
 
   @override
