@@ -36,7 +36,7 @@ flutter analyze
 flutter test        # libsodium-Tests brauchen die native Bibliothek (Build-Hook = C-Compiler): ohne sie (z. B. Windows ohne Visual Studio, dann NIX_SKIP_SODIUM_BUILD_HOOKS=1) werden sie übersprungen; in der CI ist SODIUM_ERFORDERLICH=1 gesetzt (dann Pflicht)
 flutter run -d chrome
 flutter build web --release --no-web-resources-cdn
-# Vertragsprüfung gegen den echten Server (nicht Teil von flutter test): app/tool/vertrag_test.dart (Anmeldung und seit 1c der Sync mit zwei Geräten, Konflikten, Rechten, WebSocket, mehrseitigem Snapshot bei purged_rev > 0, Geisterliste), Ablauf im Dateikopf (enthält die Ende-zu-Ende-Prüfung des Chats mit drei Personen und zwei Geräten)
+# Vertragsprüfung gegen den echten Server (nicht Teil von flutter test; läuft in der CI als Job `vertrag` gegen PostgreSQL 17 mit Migrations- und Laufzeitrolle, lokal wie beschrieben; der Server braucht dafür `E2EE_WRAP_KEY_VERSION=true`): app/tool/vertrag_test.dart (Anmeldung und seit 1c der Sync mit zwei Geräten, Konflikten, Rechten, WebSocket, mehrseitigem Snapshot bei purged_rev > 0, Geisterliste), Ablauf im Dateikopf (enthält die Ende-zu-Ende-Prüfung des Chats mit drei Personen und zwei Geräten)
 
 # Werkzeuge (Repo-Wurzel)
 node --test "tools/*.test.mjs"                                      # Test der Manifest-Signatur

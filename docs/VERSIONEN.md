@@ -11,7 +11,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | Fastify | 5.12.5 | auf Node 24 im Test prüfen |
 | @fastify/websocket | 11.3.3 | Auth über Session-Cookie beim Upgrade oder Einmal-Ticket |
 | drizzle-orm / drizzle-kit | 0.45.3 / 0.31.11 | 1.0 noch RC; kein `db.query` (Relational v1) |
-| PostgreSQL | 17 (Debian 13, Debian-Repo) | entschieden 18.10.2026 |
+| PostgreSQL | 17 (Debian 13, Debian-Repo) | entschieden 18.10.2026; CI-Service-Container der Vertragsprüfung: `postgres:17.6` |
 | @simplewebauthn/server | 14.0.3 | Phase 1a im Einsatz (veröffentlicht 25.09.2026). `supportedAlgorithmIDs` = ES256/RS256, UV Pflicht, Attestation `none`; Antworten werden im Test mit einem eigenen Test-Authenticator erzeugt |
 | otplib | 13.5.0 | Phase 1a im Einsatz (21.08.2026). API ≠ v12 (funktionale `verify`/`generate`, `epochTolerance`); Replay-Schutz über `afterTimeStep` und atomares Fortschreiben von `credentials.last_time_step` |
 | argon2 | 0.45.1 | Phase 1a im Einsatz (21.07.2026). Argon2id (32 MiB, t=3, p=1). Native Prebuilds liegen im Paket: läuft auch mit `npm ci --ignore-scripts` (deploy.sh), auf Debian 13/glibc x64 noch nicht auf dem echten Server geprüft |
