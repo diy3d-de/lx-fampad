@@ -105,6 +105,7 @@ Future<void> main() async {
       // Profil: Pille für das Kinder-Konto
       await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.byTooltip('Zurück'));
+      await tippe(tester, find.byTooltip('Zurück'));
       expect(find.text('eltern-hilfe aktiv'), findsOneWidget);
       pruefeLayout(tester, 'Profil mit Pille');
 

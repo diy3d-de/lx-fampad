@@ -1,7 +1,7 @@
-// Profil und Sicherheit (Mockup "Sicherheit & System"): Zugänge, Wiederherstellungscodes, Geräte, Familie (Admin/Eltern), Abmelden.
+// Profil (Hauptseite): Profilkarte, kurze Zeilen in Unterseiten (Sicherheit, Benachrichtigungen, Startseite und Anzeige, Kalender, Müll), Familie (Eltern/Admin),
+// Betrieb (Betreiber), App (Über, Abmelden). Die Einstellungen selbst liegen auf den Unterseiten.
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,32 +9,22 @@ import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/muell/muell_state.dart';
-import '../../data/push/push_state.dart';
-import '../../data/wetter/wetter_state.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/eltern_state.dart';
 import '../../ui/widgets.dart';
 import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
-import '../auth/recovery_codes_screen.dart';
-import '../auth/step_up.dart';
 import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../betrieb/betrieb_screen.dart';
-import '../home/startseite_anpassen_screen.dart';
 import '../muell/muell_screen.dart';
 import 'abmelden_pruefung.dart';
-import 'absicherung_screen.dart';
-import 'devices_screen.dart';
-import 'erinnerungen_screen.dart';
-import 'heute_widget_screen.dart';
+import 'anzeige_screen.dart';
+import 'benachrichtigungen_screen.dart';
 import 'kalender_einstellungen_screen.dart';
-import 'password_screen.dart';
+import 'profil_plattform.dart';
+import 'sicherheit_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
-import 'push_screen.dart';
-import 'sicherheit_ereignisse_screen.dart';
-import 'verschluesselung_screen.dart';
-import 'passkeys_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
@@ -108,47 +98,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
 
   void _oeffne(Widget seite) => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => seite));
 
-  Future<bool> _bestaetigen(String titel, String text, String knopf) async =>
-      await showDialog<bool>(useRootNavigator: false,
-        context: context,
-        builder: (_) => AlertDialog(
-          title: Text(titel),
-          content: Text(text),
-          actions: [
-            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(true),
-              style: TextButton.styleFrom(foregroundColor: kDanger),
-              child: Text(knopf),
-            ),
-          ],
-        ),
-      ) ??
-      false;
-
   Future<void> _familienrolle(FamilyRole? aktuell) async {
     final wahl = await familienrolleWaehlen(context, titel: 'Familienrolle', aktuell: aktuell);
     if (wahl == null || wahl.rolle == aktuell || !mounted) return;
     final ok = await ausfuehren(() => ref.read(apiProvider).familienrolleSetzen(wahl.rolle));
     if (ok && mounted) await ref.read(authProvider.notifier).neuLaden();
-  }
-
-  Future<void> _neueCodes() async {
-    final ja = await _bestaetigen(
-      'Neue Wiederherstellungscodes?',
-      'Die bisherigen Codes werden damit ungültig. Die neuen Codes siehst du nur einmal.',
-      'Neue Codes erzeugen',
-    );
-    if (!ja || !mounted) return;
-    await ausfuehren(() async {
-      final codes = await mitStepUp(context, ref, () => ref.read(apiProvider).neueWiederherstellungscodes());
-      if (codes == null || !mounted) return;
-      await Navigator.of(context).push<void>(
-        MaterialPageRoute(
-          builder: (_) => RecoveryCodesScreen(codes: codes, onFertig: () => ref.read(authProvider.notifier).neuLaden()),
-        ),
-      );
-    });
   }
 
   Future<void> _abmelden({required bool ueberall}) async {
@@ -204,10 +158,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
   Widget build(BuildContext context) {
     final auth = ref.watch(authProvider);
     final user = auth.user;
-    final me = auth.me;
+    final web = ref.watch(profilWebProvider);
     return AuthSeite(
       label: '// konto',
-      titel: 'Profil & Sicherheit',
+      titel: 'Profil',
       maxBreite: kMaxContentWidth,
       kinder: [
         if (user != null)
@@ -263,59 +217,13 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           ),
         ],
         const SizedBox(height: 12),
-        const MonoLabel('// sicherheit'),
+        const MonoLabel('// einstellungen'),
         const SizedBox(height: 8),
-        EinstellungsZeile(
-          icon: Icons.fingerprint,
-          titel: 'Passkeys',
-          untertitel: me == null ? 'wird geladen …' : (me.passkeys == 0 ? 'keiner eingerichtet' : '${me.passkeys} aktiv'),
-          status: me != null && me.passkeys > 0 ? const RollenPille('aktiv', farbe: kTerminal) : null,
-          onTap: () => _oeffne(const PasskeysScreen()),
-        ),
-        EinstellungsZeile(
-          icon: Icons.verified_user_outlined,
-          titel: 'Passwort und Zwei-Faktor (TOTP)',
-          untertitel: me == null ? 'wird geladen …' : (me.hasPassword && me.hasTotp ? 'authenticator-app' : 'nicht eingerichtet'),
-          status: me != null && me.hasPassword && me.hasTotp ? const RollenPille('an', farbe: kTerminal) : null,
-          onTap: me == null ? null : () => _oeffne(const PasswordScreen()),
-        ),
-        EinstellungsZeile(
-          icon: Icons.key_outlined,
-          titel: 'Wiederherstellungscodes',
-          untertitel: me == null ? 'wird geladen …' : '${me.recoveryCodesRemaining} übrig · neue erzeugen',
-          onTap: laeuft || me == null ? null : _neueCodes,
-        ),
-        AbsicherungsZeile(onTap: () => _oeffne(const AbsicherungScreen())),
-        VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
-        EinstellungsZeile(icon: Icons.shield_outlined, titel: 'Sicherheitsereignisse', untertitel: 'passwort-resets und hinweise', onTap: () => _oeffne(const SicherheitEreignisseScreen())),
-        EinstellungsZeile(
-          icon: Icons.phone_android,
-          titel: 'Angemeldete Geräte',
-          untertitel: 'einzeln abmelden',
-          onTap: () => _oeffne(const DevicesScreen()),
-        ),
-        EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        SicherheitsZeile(onTap: () => _oeffne(const SicherheitScreen())),
+        EinstellungsZeile(icon: Icons.notifications_none, titel: 'Benachrichtigungen', untertitel: web ? 'erinnerungen' : 'erinnerungen und push', onTap: () => _oeffne(const BenachrichtigungenScreen())),
+        EinstellungsZeile(icon: Icons.dashboard_customize_outlined, titel: 'Startseite und Anzeige', untertitel: web ? 'kacheln, wetter' : 'kacheln, wetter, widget', onTap: () => _oeffne(const AnzeigeScreen())),
         EinstellungsZeile(icon: Icons.calendar_month_outlined, titel: 'Kalender', untertitel: 'import und export (ics)', onTap: () => _oeffne(const KalenderEinstellungenScreen())),
-        EinstellungsZeile(icon: Icons.dashboard_customize_outlined, titel: 'Startseite anpassen', untertitel: 'kacheln verschieben und ausblenden, nur dieses gerät', onTap: () => _oeffne(const StartseiteAnpassenScreen())),
         const _MuellZeile(),
-        const _WetterZeile(),
-        // Startbildschirm-Widget gibt es nur in der Android-App
-        if (!kIsWeb) EinstellungsZeile(icon: Icons.widgets_outlined, titel: 'Widget „Heute“', untertitel: 'startbildschirm: termine, aufgaben, liste', onTap: () => _oeffne(const HeuteWidgetScreen())),
-        // Push gibt es nur in der Android-App (UnifiedPush über die ntfy-App)
-        if (!kIsWeb)
-          Consumer(
-            builder: (context, ref, _) {
-              final push = ref.watch(pushProvider);
-              return EinstellungsZeile(
-                icon: Icons.notifications_outlined,
-                titel: 'Benachrichtigungen',
-                untertitel: push.gewuenscht ? (push.angemeldet ? 'push aktiv' : 'wird eingerichtet') : 'aus',
-                status: push.gewuenscht && push.angemeldet ? const RollenPille('an', farbe: kTerminal) : null,
-                onTap: () => _oeffne(const PushScreen()),
-              );
-            },
-          ),
-        EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kAppName', untertitel: 'version und update', onTap: () => _oeffne(const UeberScreen())),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),
           const MonoLabel('// familie'),
@@ -341,8 +249,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           ),
         ],
         const SizedBox(height: 12),
-        const MonoLabel('// konto'),
+        const MonoLabel('// app'),
         const SizedBox(height: 8),
+        EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kAppName', untertitel: 'version und update', onTap: () => _oeffne(const UeberScreen())),
+        const SizedBox(height: 4),
         ZweitKnopf(text: 'Abmelden', icon: Icons.logout, onPressed: laeuft ? null : () => _abmelden(ueberall: false)),
         const SizedBox(height: 8),
         OutlinedButton.icon(
@@ -369,34 +279,6 @@ class _MuellZeile extends ConsumerWidget {
       titel: 'Müll',
       untertitel: 'abfuhrtermine und erinnerung',
       onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellScreen()))),
-    );
-  }
-}
-
-/// Schalter "Wetter anzeigen" (lokal je Gerät): auch bei ausgeschaltetem Wetter erreichbar, denn dann gibt es weder Kachel noch Seitenleisten-Eintrag.
-/// Meldet der Server das Wetter als nicht eingerichtet, steht nur ein Hinweis da.
-class _WetterZeile extends ConsumerWidget {
-  const _WetterZeile();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final st = ref.watch(wetterProvider);
-    if (st.dto != null && !st.dto!.verfuegbar) {
-      return const EinstellungsZeile(icon: Icons.wb_sunny_outlined, titel: 'Wetter anzeigen', untertitel: 'wetter ist auf dem server nicht eingerichtet');
-    }
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: LxCard(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-        child: SwitchListTile(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-          secondary: const Icon(Icons.wb_sunny_outlined, color: kAccent, size: 22),
-          title: const Text('Wetter anzeigen', style: TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: const Text('startseite und seitenleiste, nur auf diesem gerät', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-          value: st.anzeigen,
-          onChanged: (v) => unawaited(ref.read(wetterProvider.notifier).anzeigenSetzen(v)),
-        ),
-      ),
     );
   }
 }

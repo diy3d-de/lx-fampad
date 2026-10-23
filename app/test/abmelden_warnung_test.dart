@@ -190,7 +190,7 @@ Future<void> main() async {
       expect(a.env.geloescht, 0);
       expect(a.srv.server.anfragen('POST /auth/logout'), isEmpty);
       expect(await a.env.store.readTokens(), isNotNull);
-      expect(find.text('Profil & Sicherheit'), findsOneWidget);
+      expect(find.text('Profil'), findsOneWidget);
     });
 
     testWidgets(

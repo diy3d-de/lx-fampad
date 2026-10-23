@@ -78,7 +78,36 @@ Future<void> tippe(WidgetTester tester, Finder f) async {
   await warte(tester);
 }
 
-Future<void> tippeText(WidgetTester tester, String text) => tippe(tester, find.text(text));
+/// Zeilen der Profil-Unterseiten und die Sammelseite, auf der sie liegen (Profil-Umbau): `tippeText` öffnet die Sammelseite zuerst, wenn die Zeile
+/// auf der aktuellen Seite fehlt (so bleiben die Tests der einzelnen Seiten unabhängig davon, wohin die Zeile einsortiert ist).
+const profilZeilenSeite = <String, String>{
+  'Passkeys': 'Sicherheit',
+  'Passwort und Zwei-Faktor (TOTP)': 'Sicherheit',
+  'Wiederherstellungscodes': 'Sicherheit',
+  'Bin ich abgesichert?': 'Sicherheit',
+  'Verschlüsselung': 'Sicherheit',
+  'Angemeldete Geräte': 'Sicherheit',
+  'Sicherheitsereignisse': 'Sicherheit',
+  'Erinnerungen': 'Benachrichtigungen',
+  'Push': 'Benachrichtigungen',
+  'Startseite anpassen': 'Startseite und Anzeige',
+  'Wetter anzeigen': 'Startseite und Anzeige',
+  'Widget „Heute“': 'Startseite und Anzeige',
+};
+
+const profilHauptTexte = {'Abmelden', 'Überall abmelden'};
+
+Future<void> tippeText(WidgetTester tester, String text) async {
+  final seite = profilZeilenSeite[text];
+  if (seite != null && find.text(text).evaluate().isEmpty) await tippe(tester, find.text(seite));
+  // Zeilen der Hauptseite (Abmelden): von einer Unterseite erst zurück
+  if (profilHauptTexte.contains(text)) {
+    for (var i = 0; i < 3 && find.text(text).evaluate().isEmpty && find.byTooltip('Zurück').evaluate().isNotEmpty; i++) {
+      await tippe(tester, find.byTooltip('Zurück'));
+    }
+  }
+  await tippe(tester, find.text(text));
+}
 
 Future<void> eingeben(WidgetTester tester, String label, String wert) async {
   final f = find.widgetWithText(TextField, label);

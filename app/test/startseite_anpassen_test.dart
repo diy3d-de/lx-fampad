@@ -256,6 +256,8 @@ void main() {
       await start(tester);
       await tester.tap(find.byTooltip('Profil und Sicherheit'));
       await warte(tester);
+      await tester.tap(find.text('Startseite und Anzeige'));
+      await warte(tester);
       await tester.scrollUntilVisible(find.text('Startseite anpassen'), 300, scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('Startseite anpassen'));
       await warte(tester);

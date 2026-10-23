@@ -252,9 +252,15 @@ Future<void> main() async {
         pruefeLayout(tester, 'Startseite mit Absicherungs-Karte');
         // Profil: die Zeile ist immer da
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+        // Hauptseite: nur die Zeile Sicherheit mit der Antwort der Ampel als Pille; die Ampel-Zeile selbst liegt auf der Seite Sicherheit
+        expect(find.text('Sicherheit'), findsOneWidget);
+        expect(find.text('● nein'), findsOneWidget);
+        expect(find.text('Bin ich abgesichert?'), findsNothing);
+        pruefeLayout(tester, 'Profil mit Sicherheits-Zeile');
+        await tippeText(tester, 'Sicherheit');
         expect(find.text('Bin ich abgesichert?'), findsOneWidget);
         expect(find.text('● nein'), findsOneWidget);
-        pruefeLayout(tester, 'Profil mit Ampel-Zeile');
+        pruefeLayout(tester, 'Sicherheit mit Ampel-Zeile');
         await tippeText(tester, 'Bin ich abgesichert?');
         expect(find.text('// DEINE WEGE'), findsOneWidget);
         expect(find.text('Wiederherstellungsschlüssel'), findsOneWidget);

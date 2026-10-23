@@ -156,11 +156,13 @@ void main() {
     pruefeLayout(tester, 'Push Anleitung Textskala 1.5');
   });
 
-  testWidgets('Profil: Zeile "Benachrichtigungen" öffnet die Seite (Android), Status "aus"', (tester) async {
+  testWidgets('Profil: Zeile "Benachrichtigungen" führt über die Sammelseite zu Push (Android), Status "aus"', (tester) async {
     await zeige(tester, const ProfileScreen());
     final zeile = find.text('Benachrichtigungen');
     expect(zeile, findsOneWidget);
     await tippe(tester, zeile);
+    expect(find.text('aus'), findsOneWidget);
+    await tippe(tester, find.text('Push'));
     expect(find.text('Auf diesem Gerät benachrichtigen'), findsOneWidget);
   });
 }

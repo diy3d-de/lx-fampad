@@ -293,9 +293,11 @@ void main() {
       } else {
         await tippe(tester, find.byIcon(Icons.settings_outlined));
       }
+      await tippeText(tester, 'Startseite und Anzeige');
       expect(find.text('Wetter anzeigen'), findsOneWidget);
       await tippe(tester, find.widgetWithText(SwitchListTile, 'Wetter anzeigen'));
       expect(c.read(wetterProvider).anzeigen, isTrue);
+      await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.byTooltip('Zurück'));
       expect(find.text('// WETTER'), findsOneWidget);
       expect(tester.takeException(), isNull);
@@ -305,6 +307,7 @@ void main() {
   testWidgets('Profil: Server ohne Wetter zeigt nur einen Hinweis statt des Schalters', (tester) async {
     await start(tester, wetter: () => <String, dynamic>{'available': false});
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+    await tippeText(tester, 'Startseite und Anzeige');
     expect(find.textContaining('nicht eingerichtet'), findsOneWidget);
     expect(find.widgetWithText(SwitchListTile, 'Wetter anzeigen'), findsNothing);
   });

@@ -150,7 +150,7 @@ void main() {
       await zumProfil(tester, env);
       await tippeText(tester, 'Abmelden');
       await tippe(tester, find.widgetWithText(TextButton, 'Abmelden'));
-      expect(find.text('Profil & Sicherheit'), findsOneWidget, reason: 'nicht als abgemeldet anzeigen');
+      expect(find.text('Profil'), findsOneWidget, reason: 'nicht als abgemeldet anzeigen');
       expect(find.textContaining('Du bist noch angemeldet'), findsOneWidget);
       expect(find.textContaining('bis zum Ablauf gültig'), findsOneWidget);
       expect(env.geloescht, 0);
@@ -362,7 +362,7 @@ void main() {
     testWidgets('Kurze Überschriften behalten die volle Größe', (tester) async {
       await starteApp(tester, await angemeldeteUmgebung());
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      final stil = tester.widget<Text>(find.text('Profil & Sicherheit')).style!;
+      final stil = tester.widget<Text>(find.text('Profil')).style!;
       expect(stil.fontSize, 26);
     });
 

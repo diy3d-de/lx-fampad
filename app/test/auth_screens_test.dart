@@ -445,9 +445,11 @@ void main() {
 
     testWidgets('zeigt Name, Rolle, Zugänge und Codes', (tester) async {
       await zumProfil(tester);
-      expect(find.text('Profil & Sicherheit'), findsOneWidget);
+      expect(find.text('Profil'), findsOneWidget);
       expect(find.text('Anna'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
+      expect(find.text('1 aktiv'), findsNothing, reason: 'Zugänge und Codes liegen auf der Seite Sicherheit');
+      await tippeText(tester, 'Sicherheit');
       expect(find.text('1 aktiv'), findsOneWidget);
       expect(find.textContaining('8 übrig'), findsOneWidget);
     });
@@ -462,7 +464,7 @@ void main() {
       expect(await env.store.readTokens(), isNull);
       expect(env.geloescht, 1);
       expect(find.text('Willkommen zurück'), findsOneWidget);
-      expect(find.text('Profil & Sicherheit'), findsNothing, reason: 'Unterseiten sind geschlossen');
+      expect(find.text('Profil'), findsNothing, reason: 'Unterseiten sind geschlossen');
     });
 
     testWidgets('Überall abmelden ruft logout-all', (tester) async {
@@ -551,7 +553,7 @@ void main() {
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       await tippeText(tester, 'Abbrechen');
       expect(server.anfragen('POST /me/recovery-codes'), hasLength(1));
-      expect(find.text('Profil & Sicherheit'), findsOneWidget);
+      expect(find.text('Sicherheit'), findsOneWidget);
     });
   });
 

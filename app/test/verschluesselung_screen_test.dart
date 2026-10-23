@@ -219,6 +219,7 @@ Future<void> main() async {
     await a.speicher.schreiben('e2ee.vertrauen.$fixIdAdmin', utf8Bytes(jsonEncode({_ben: {'e': _key(9), 's': _key(8), 'v': 1}})));
     await starteApp(tester, a.env);
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+    await tippeText(tester, 'Sicherheit');
     expect(find.text('Verschlüsselung'), findsOneWidget);
     expect(find.text('Warnung'), findsOneWidget);
     pruefeLayout(tester, 'Profil mit Warnung');
