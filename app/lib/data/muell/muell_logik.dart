@@ -1,4 +1,4 @@
-// Abfuhrtermine: REINE Logik (keine Oberfläche, kein Netz): nächste Abholung, "morgen", kommende Tage, nächste je Art, Texte und die
+// Abfuhrtermine: REINE Logik (keine Oberfläche, kein Netz): nächste Abholung, "morgen", kommende Tage, Texte und die
 // Planung der Erinnerungen (Abend vor der Abholung, nur für Eltern/Admins, rollierendes Fenster der bestehenden Erinnerungen).
 // Tage sind wie überall im Kalender `DateTime.utc`-Markierungen der Familienzone (Europe/Berlin).
 import '../calendar/zeitzonen.dart';
@@ -40,17 +40,7 @@ List<MuellTag> kommendeAbholungen(List<MuellTag> tage, DateTime heute, {MuellArt
   return out;
 }
 
-/// Die nächste Abholung je Art (nur Arten mit Terminen), in der Reihenfolge der Arten.
-List<MuellTag> naechsteJeArt(List<MuellTag> tage, DateTime heute) {
-  final out = <MuellTag>[];
-  for (final a in MuellArt.values) {
-    final t = naechsteAbholung(tage, heute, art: a);
-    if (t != null) out.add(t);
-  }
-  return out;
-}
-
-/// Arten, die in den Terminen vorkommen (für Filter und Legende); "Sonstiges" nur, wenn es vorkommt.
+/// Arten, die in den Terminen vorkommen (für Filter und Einstellungen); "Sonstiges" nur, wenn es vorkommt.
 List<MuellArt> vorkommendeArten(List<MuellTag> tage) {
   final s = {for (final t in tage) ...t.arten};
   return [for (final a in MuellArt.values) if (s.contains(a)) a];

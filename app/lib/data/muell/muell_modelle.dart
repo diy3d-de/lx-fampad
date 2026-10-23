@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import '../../constants.dart';
 import '../api/models.dart' show asJson;
 
-/// Die Abfallarten (Reihenfolge = Reihenfolge in Legende, Filter und Einstellungen).
+/// Die Abfallarten (Reihenfolge = Reihenfolge in Filter und Einstellungen).
 enum MuellArt {
   rest('rest', 'Restabfall', 'Rest', Icons.delete_outline, kMuellRest),
   bio('bio', 'Bioabfall', 'Bio', Icons.eco_outlined, kMuellBio),

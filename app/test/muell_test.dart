@@ -1,11 +1,12 @@
-// Abfuhrtermine ("Müll"): Modell und Logik (nächste Abholung, morgen, je Art), Erinnerungsplanung (nur Eltern/Admins, Sonderabfall aus, Sperrmüll an,
-// Uhrzeit 18:00), Startseiten-Kachel (normal / morgen / Kind / ausgeschaltet / Desktop), Seite mit Filter und Legende, Einstellungen (Rechte, Standardwerte,
+// Abfuhrtermine ("Müll"): Modell und Logik (nächste Abholung, morgen), Erinnerungsplanung (nur Eltern/Admins, Sonderabfall aus, Sperrmüll an,
+// Uhrzeit 18:00), Startseiten-Kachel (normal / morgen / Kind / ausgeschaltet / Desktop), Seite mit Filter (einspaltig), Einstellungen (Rechte, Standardwerte,
 // lokal gespeichert), "Jetzt nach neuer Datei suchen" (Rechte, Ablauf, zu oft), Hinweis auf ein neues Jahr (einmalig, nur Eltern/Admins), Erinnerungsdienst
 // und die optionale Kalenderanzeige (Schalter aus/an, verdrängt keine Termine); Layout bei 360 px Breite und Textskala 1.0 und 1.5.
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/constants.dart' show kMaxContentWidth;
 import 'package:lx_fampad/data/api/models.dart' show Role;
 import 'package:lx_fampad/data/app_database.dart' show AufgabenCompanion;
 import 'package:lx_fampad/data/auth/auth_state.dart';
@@ -148,7 +149,7 @@ void main() {
       expect(MuellDto.nichtVerfuegbar.verfuegbar, isFalse);
     });
 
-    test('nächste Abholung, kommende Termine und nächste je Art', () {
+    test('nächste Abholung, kommende Termine', () {
       final tage = MuellDto.fromJson(_antwort()).tage;
       final heute = muellHeute(_jetzt);
       expect(heute, DateTime.utc(2026, 10, 22));
@@ -164,8 +165,6 @@ void main() {
       expect(naechsteAbholung(tage, heute, art: MuellArt.gelb)!.arten, [MuellArt.gelb], reason: 'bei Filter nur die Art');
       expect(kommendeAbholungen(tage, heute, art: MuellArt.papier).map((t) => t.tag), [DateTime.utc(2026, 11, 18)]);
       expect(kommendeAbholungen(tage, heute, max: 2), hasLength(2));
-      final je = naechsteJeArt(tage, heute);
-      expect(je.map((t) => t.arten.single), [MuellArt.rest, MuellArt.bio, MuellArt.gelb, MuellArt.papier, MuellArt.sonder, MuellArt.sperr, MuellArt.baum]);
       expect(vorkommendeArten(tage), hasLength(7), reason: 'Grünabfall und Sonstiges kommen nicht vor');
       expect(muellKurzDatum(n.tag), 'Mi 28.10.');
       expect(muellLangDatum(n.tag), 'Mittwoch, 28.10.');
@@ -363,7 +362,7 @@ void main() {
     });
 
     for (final skala in [1.0, 1.5]) {
-      testWidgets('Seite öffnet per Tipp: nächste Abholung groß, Legende, nächste je Art, Filter (360 px, Textskala $skala)', (tester) async {
+      testWidgets('Seite öffnet per Tipp: nächste Abholung groß, Filter, kommende Termine, keine Legende (360 px, Textskala $skala)', (tester) async {
         await start(tester, skala: skala);
         await tippe(tester, find.text('Mi 28.10.'));
         expect(find.byType(MuellScreen), findsOneWidget);
@@ -371,9 +370,12 @@ void main() {
         expect(find.text('Mittwoch, 28.10.'), findsOneWidget);
         expect(find.text('Bioabfall, Gelber Sack · in 6 Tagen'), findsOneWidget);
         expect(find.text('// KOMMENDE TERMINE'), findsOneWidget);
-        expect(find.text('// LEGENDE'), findsOneWidget);
-        expect(find.text('// NÄCHSTE JE ART'), findsOneWidget);
+        expect(find.text('// LEGENDE'), findsNothing);
+        expect(find.text('// NÄCHSTE JE ART'), findsNothing);
         expect(find.text('Alle'), findsOneWidget);
+        // Die Chips zeigen nur Arten mit Terminen im Zeitraum (Grünabfall und Sonstiges kommen nicht vor)
+        expect(find.text('Rest'), findsOneWidget);
+        expect(find.text('Grün'), findsNothing);
         // Tage der Liste: 28, 04, 18, 26, 14, 30
         for (final z in ['28', '04', '18', '26', '14', '30']) {
           expect(find.text(z), findsOneWidget, reason: 'Tag $z');
@@ -411,7 +413,13 @@ void main() {
       await warte(tester);
       expect(find.byType(MuellScreen), findsOneWidget);
       expect(find.text('Mittwoch, 28.10.'), findsOneWidget);
-      expect(find.text('// LEGENDE'), findsOneWidget, reason: 'zweispaltig auf dem Desktop');
+      expect(find.text('// LEGENDE'), findsNothing);
+      expect(find.text('// NÄCHSTE JE ART'), findsNothing);
+      // einspaltig und auf die Inhaltsbreite begrenzt wie die anderen Bereiche
+      final breite = tester.getSize(find.ancestor(of: find.text('// NÄCHSTE ABHOLUNG'), matching: find.byType(LxCard)).first).width;
+      expect(breite, lessThanOrEqualTo(kMaxContentWidth), reason: 'nicht über die ganze Breite gezogen');
+      expect(breite, greaterThan(600), reason: 'eine volle Spalte, keine halbleere zweite Spalte');
+      expect(find.text('Papier'), findsOneWidget, reason: 'Filter-Chips auch auf dem Desktop');
       expect(tester.takeException(), isNull);
     });
 
