@@ -1,8 +1,6 @@
 // Medikamenten-Plan, Teil 2: Erinnerungsdienst mit Medikamenten (echte Datenbank, Fake-Port, kein Plugin). Geprüft: die Einnahme-Alarme stehen im gemeinsamen Fenster, der Schalter
 // "Medikamenten-Erinnerungen" nimmt sie weg (unabhängig vom Schalter für Termine), ein Abhaken räumt die Alarme des Slots ab, ohne geladene Daten wird nichts angefasst, der Tipp auf eine
 // Erinnerung öffnet die Medikamenten-Ansicht (Nutzlast ohne Inhalt).
-import 'dart:async';
-
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';

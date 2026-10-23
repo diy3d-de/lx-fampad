@@ -80,6 +80,12 @@ void main() {
       expect(h.summe([0, 1, 2, 4]), 5, reason: 'Aufgaben hinter Mehr: 3 + 2 Fristen');
     });
 
+    test('Medikamente (fällige und verpasste Einnahmen) zählen immer mit, denn der Eintrag liegt immer hinter Mehr', () {
+      const m = MehrHinweise(medikamente: 2, fristen: 1);
+      expect(m.summe(kLeisteStandard), 3);
+      expect(m.summe([0, 1, 2, 4]), 3);
+    });
+
     test('rot nur bei Überfälligem, das wirklich hinter Mehr liegt', () {
       expect(h.ueberfaellig(kLeisteStandard), isFalse, reason: 'überfällige Aufgabe ist in der Leiste sichtbar');
       expect(h.ueberfaellig([0, 1, 2, 4]), isTrue);

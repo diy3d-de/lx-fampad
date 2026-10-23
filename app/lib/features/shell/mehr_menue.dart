@@ -15,6 +15,8 @@ import '../../data/tasks/fristen_logik.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
+import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
+import '../medikamente/medikamente_karte.dart' show medikamenteOeffnen;
 import '../muell/muell_karte.dart' show muellOeffnen;
 import '../profile/profile_screen.dart';
 import '../standort/standort_start_karte.dart' show standortOeffnen;
@@ -36,6 +38,7 @@ final mehrHinweiseProvider = Provider.autoDispose<MehrHinweise>((ref) {
     aufgabenUeberfaellig: aufgaben.where((a) => istUeberfaellig(a, jetzt)).length,
     fristen: fristen.length,
     fristenUeberfaellig: fristen.where((a) => fristAmpel(a, jetzt) == FristAmpel.ueberfaellig).length,
+    medikamente: ref.watch(medikamenteFaelligProvider),
   );
 });
 
@@ -50,7 +53,7 @@ class MehrEintrag {
   const MehrEintrag({required this.id, required this.label, required this.icon, required this.oeffnen, this.hinweis = 0, this.ueberfaellig = false});
 }
 
-/// Die Einträge des Blatts in fester Reihenfolge: Bereiche hinter "Mehr", Fristen, Müll, Wetter (nur wenn verfügbar), Standort, Suche.
+/// Die Einträge des Blatts in fester Reihenfolge: Bereiche hinter "Mehr", Fristen, Medikamente, Müll, Wetter (nur wenn verfügbar), Standort, Suche.
 List<MehrEintrag> mehrEintraege(WidgetRef ref, List<int> leiste) {
   final h = ref.watch(mehrHinweiseProvider);
   final muell = ref.watch(muellProvider.select((m) => m.verfuegbar));
@@ -76,6 +79,8 @@ List<MehrEintrag> mehrEintraege(WidgetRef ref, List<int> leiste) {
         ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
       },
     ),
+    // Medikamente (nach Fristen): nur Eigenes und das der Kinder; die Zahl sind fällige und verpasste Einnahmen heute
+    MehrEintrag(id: 'medikamente', label: 'Medikamente', icon: Icons.medication_outlined, hinweis: h.medikamente, oeffnen: (c, _) => medikamenteOeffnen(c)),
     if (muell) MehrEintrag(id: 'muell', label: 'Müll', icon: Icons.delete_outline, oeffnen: (c, _) => muellOeffnen(c)),
     if (wetter) MehrEintrag(id: 'wetter', label: 'Wetter', icon: Icons.wb_sunny_outlined, oeffnen: (c, _) => wetterOeffnen(c)),
     MehrEintrag(id: 'standort', label: 'Standort', icon: Icons.location_on_outlined, oeffnen: (c, _) => standortOeffnen(c)),

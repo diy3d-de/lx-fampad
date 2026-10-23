@@ -8,13 +8,15 @@ import '../../data/wetter/wetter_state.dart';
 import '../calendar/countdown_karte.dart' show countdownEintraegeProvider;
 import '../calendar/geburtstage_karte.dart' show geburtstageAnstehendProvider;
 import '../tasks/fristen_anzeige.dart' show dringendeFristenProvider;
+import '../medikamente/medikament_anzeige.dart' show medikamenteVorhandenProvider;
+import '../medikamente/medikamente_karte.dart' show medKachelProvider;
 
-KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true}) => KachelVerfuegbarkeit(
+KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true, bool medikamente = false, bool medikamenteOffen = false}) => KachelVerfuegbarkeit(
   angeboten: {
     for (final id in l.standard)
-      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown)) id,
+      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown) && !(id == 'medikamente' && !medikamente)) id,
   },
-  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen'},
+  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen', if (!medikamenteOffen) 'medikamente'},
 );
 
 final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
@@ -25,6 +27,8 @@ final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     geburtstage: ref.watch(geburtstageAnstehendProvider.select((l) => l.isNotEmpty)),
     countdown: ref.watch(countdownEintraegeProvider.select((l) => l.isNotEmpty)),
     fristen: ref.watch(dringendeFristenProvider.select((l) => l.isNotEmpty)),
+    medikamente: ref.watch(medikamenteVorhandenProvider),
+    medikamenteOffen: ref.watch(medKachelProvider.select((k) => k.sichtbar)),
   ),
 );
 
@@ -35,6 +39,8 @@ final desktopVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     wetter: ref.watch(wetterProvider.select((w) => w.kachelSichtbar)),
     countdown: ref.watch(countdownEintraegeProvider.select((l) => l.isNotEmpty)),
     fristen: ref.watch(dringendeFristenProvider.select((l) => l.isNotEmpty)),
+    medikamente: ref.watch(medikamenteVorhandenProvider),
+    medikamenteOffen: ref.watch(medKachelProvider.select((k) => k.sichtbar)),
   ),
 );
 

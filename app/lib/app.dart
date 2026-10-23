@@ -16,6 +16,7 @@ import 'data/push/chat_benachrichtigung_raeumen.dart';
 import 'widgets/ungelesen_titel.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
+import 'features/medikamente/medikament_steuerung.dart';
 import 'features/home/heute_widget_steuerung.dart';
 import 'features/auth/auth_widgets.dart';
 import 'features/auth/invite_intake.dart';
@@ -149,6 +150,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     ref.watch(heuteWidgetSteuerungProvider);
     // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten
     ref.watch(chatKryptoSteuerungProvider);
+    // Medikamenten-Plan: Teilnehmer der verborgenen Konversationen nach Mitglieder- und Rollenwechseln nachziehen (nur vertrauenswürdige Schlüssel)
+    ref.watch(medikamentSteuerungProvider);
     // Betreiber: lokales Konto-Flag für die Warnungen (nur dann fragt ein Wecker den Warnstand ab) und Meldung des Schlüsselstands dieses Geräts
     ref.watch(betriebWarnSteuerungProvider);
     ref.watch(geraetSchluesselMelderProvider);

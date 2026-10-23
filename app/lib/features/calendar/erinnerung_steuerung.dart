@@ -49,7 +49,10 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   ref.listen(kalenderDatenProvider, (_, _) => dienst.entprellt());
   ref.listen(aufgabenProvider, (_, _) => dienst.entprellt());
   // Einnahme-Erinnerungen: neue Pläne, abgehakte Einnahmen oder eine fertige Entschlüsselung -> Fenster neu berechnen (ein abgehakter Slot nimmt seine Alarme mit)
-  ref.listen(medDatenProvider, (_, _) => dienst.entprellt());
+  ref.listen(medDatenProvider, (alt, neu) {
+    // nur wenn sich etwas für die Erinnerungen ändern kann: Pläne vorhanden (oder eben weggefallen) oder die Daten sind erst jetzt geladen; ohne Pläne löst nichts einen Abgleich aus
+    if (neu.geladen != (alt?.geladen ?? false) || neu.eintraege.isNotEmpty || (alt?.eintraege.isNotEmpty ?? false)) dienst.entprellt();
+  });
   ref.listen(erinnerungEinstellungenProvider, (_, _) => los());
   // (die Rolle gehört dazu: ein Rollenwechsel ändert, wer Müll-Erinnerungen bekommt)
   ref.listen(authProvider.select((a) => (a.status, a.user?.id, a.user?.role, a.hinweis)), (_, _) => los());

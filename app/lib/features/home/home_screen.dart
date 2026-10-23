@@ -27,6 +27,7 @@ import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
 import '../muell/muell_karte.dart';
+import '../medikamente/medikamente_karte.dart' show MedikamenteStartKarte;
 import '../standort/standort_start_karte.dart';
 import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
@@ -114,6 +115,7 @@ Widget _kachel(String id) => switch (id) {
   'countdown' => const CountdownKarte(),
   'aufgaben' => const _AufgabenKarte(),
   'fristen' => const FristenStartKarte(),
+  'medikamente' => const MedikamenteStartKarte(),
   'muell' => const MuellStartKarte(),
   'wetter' => const WetterStartKarte(),
   'standort' => const StandortStartKarte(),

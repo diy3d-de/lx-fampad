@@ -22,6 +22,7 @@ import '../betrieb/betrieb_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
+import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -312,6 +313,8 @@ class _Seitenleiste extends ConsumerWidget {
     final betreiber = ref.watch(authProvider.select((s) => s.istBetreiber));
     // Müll nur, wenn der Server die Abfuhrtermine eingeschaltet hat (oder der Bereich gerade offen ist)
     final muell = ref.watch(muellProvider.select((m) => m.verfuegbar)) || tab == kMuellTab;
+    // Zahl fälliger und verpasster Einnahmen am Eintrag "Medikamente" (nur lokal berechnet)
+    final medFaellig = ref.watch(medikamenteFaelligProvider);
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -382,7 +385,7 @@ class _Seitenleiste extends ConsumerWidget {
                         label: kDesktopTabs[i].label,
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
-                        zaehler: i == kChatTab ? ungelesen : 0,
+                        zaehler: i == kChatTab ? ungelesen : (i == kMedikamenteTab ? medFaellig : 0),
                         onTap: () => waehlen(i),
                       ),
                     // nur der Betreiber des Servers sieht "Betrieb" (Konto-Flag, nicht die Rolle); öffnet wie das Konto eine Unterseite

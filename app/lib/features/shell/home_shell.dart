@@ -21,6 +21,7 @@ import '../../data/push/push_state.dart';
 import '../../data/push/sicherheits_pruefer.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_hinweis.dart';
+import '../../data/medikamente/medikament_hinweis.dart';
 import '../../data/muell/muell_hinweis.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/neuigkeiten/neuigkeiten.dart';
@@ -38,6 +39,7 @@ import '../../data/startseite/startseite_state.dart';
 import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
+import '../medikamente/medikamente_screen.dart';
 import '../muell/muell_screen.dart';
 import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
@@ -59,7 +61,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(8, (_) => GlobalKey());
+  final _keys = List.generate(9, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -73,12 +75,14 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   bool _standortBesucht = false;
   bool _wetterBesucht = false;
   bool _muellBesucht = false;
+  bool _medikamenteBesucht = false;
   List<Widget> get _desktopScreens => [
     const DesktopHome(),
     ..._screens.sublist(1),
     if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink(),
     if (_wetterBesucht) WetterScreen(key: _keys[6], eingebettet: true) else const SizedBox.shrink(),
     if (_muellBesucht) MuellScreen(key: _keys[7], eingebettet: true) else const SizedBox.shrink(),
+    if (_medikamenteBesucht) MedikamenteScreen(key: _keys[8], eingebettet: true) else const SizedBox.shrink(),
   ];
 
   /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
@@ -221,6 +225,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     // Tipp auf eine Müll-Benachrichtigung (Erinnerung, "Abfuhrtermine 20XX sind da"): die Müll-Seite öffnen
     ref.listen(muellOeffnenProvider, (_, _) => _muellOeffnen());
+    // Tipp auf eine Medikamenten-Erinnerung: die Medikamenten-Ansicht öffnen (die Nutzlast trägt nie einen Inhalt)
+    ref.listen(medikamentOeffnenProvider, (_, _) => _medikamenteOeffnen());
     return LayoutBuilder(builder: (context, c) {
       _desktopLayout = c.maxWidth >= kDesktopBreakpoint;
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
@@ -228,6 +234,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (tab == kStandortTab) _standortBesucht = true;
         if (tab == kWetterTab) _wetterBesucht = true;
         if (tab == kMuellTab) _muellBesucht = true;
+        if (tab == kMedikamenteTab) _medikamenteBesucht = true;
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
@@ -311,6 +318,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(shellTabProvider.notifier).waehlen(kMuellTab);
     } else {
       unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellScreen())));
+    }
+  }
+
+  /// Öffnet die Medikamenten-Ansicht: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite.
+  void _medikamenteOeffnen() {
+    if (!mounted) return;
+    if (_desktopLayout) {
+      ref.read(shellTabProvider.notifier).waehlen(kMedikamenteTab);
+    } else {
+      unawaited(Navigator.of(context).push<void>(medikamenteRoute()));
     }
   }
 

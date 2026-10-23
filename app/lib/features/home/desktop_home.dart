@@ -40,6 +40,7 @@ import '../standort/standort_start_karte.dart';
 import '../wandtablet/wandtablet_steuerung.dart' show WandtabletStartZeile;
 import '../wetter/wetter_karte.dart';
 import '../muell/muell_karte.dart';
+import '../medikamente/medikamente_karte.dart' show MedikamenteStartKarte;
 import '../../data/muell/muell_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/standort/standort_dienst.dart';
@@ -349,6 +350,7 @@ Widget _kachel(String id) => switch (id) {
   'dateien' => const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
   'aufgaben' => const _AufgabenKarte(),
   'fristen' => const FristenStartKarte(),
+  'medikamente' => const MedikamenteStartKarte(),
   'familie' => const _FamilieKarte(),
   'standort' => const _StandortKarte(),
   'muell' => const _MuellKarte(),

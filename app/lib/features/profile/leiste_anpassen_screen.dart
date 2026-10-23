@@ -53,7 +53,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
           const MonoLabel('// hinter „mehr“'),
           const SizedBox(height: 8),
           Text(
-            dahinter.isEmpty ? 'Fristen, Müll, Wetter, Standort und Suche' : '${dahinter.map((t) => kTabs[t].label).join(', ')}, Fristen, Müll, Wetter, Standort und Suche',
+            dahinter.isEmpty ? 'Fristen, Medikamente, Müll, Wetter, Standort und Suche' : '${dahinter.map((t) => kTabs[t].label).join(', ')}, Fristen, Medikamente, Müll, Wetter, Standort und Suche',
             style: const TextStyle(fontSize: 13, color: kTextMuted),
           ),
           const SizedBox(height: 16),
