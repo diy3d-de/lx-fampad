@@ -144,7 +144,7 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
         final k = await krypto();
         r = k == null
             ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
-            : await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.userId, wire: z.wire, antwortAuf: z.nachrichtId, art: z.art);
+            : await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.userId, wire: z.wire, antwortAuf: z.nachrichtId.isEmpty ? null : z.nachrichtId, art: z.art);
       }
       _merkeZusatz(z.id, (wire: z.wire, inhalt: r));
     } on Object {
@@ -233,11 +233,20 @@ class ChatOpVorbereiter implements OpVorbereiter {
         final zeile = await (db.select(db.stimmen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
         konv ??= zeile?.konversationId;
         antwortAuf = f['nachrichtId'] is String ? f['nachrichtId'] as String : zeile?.nachrichtId;
+      case 'medikament':
+        // Medikamenten-Plan: kein Bezug (Art `m`, gebunden an Konversation, eigene ID und Bearbeiter)
+        final zeile = await (db.select(db.medikamente)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+      case 'einnahme':
+        // Bezug ist das Medikament (Art `n`): eine Einnahme lässt sich nicht an ein anderes Medikament hängen
+        final zeile = await (db.select(db.einnahmen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+        antwortAuf = f['medikamentId'] is String ? f['medikamentId'] as String : zeile?.medikamentId;
     }
     if (konv == null) return null;
     final konversationId = konv;
-    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', _ => null };
-    if (op.entity != 'nachricht' && antwortAuf == null) return null;
+    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', _ => null };
+    if (op.entity != 'nachricht' && op.entity != 'medikament' && antwortAuf == null) return null;
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)

@@ -27,6 +27,8 @@ String chatName(Konversation k, List<String> teilnehmer, Mitglieder mitglieder, 
       final namen = [for (final t in teilnehmer.where((t) => t != ich)) mitglieder[t]?.displayName.split(RegExp(r'\s+')).first ?? 'Unbekannt'];
       if (namen.isEmpty) return 'Gruppe';
       return namen.length <= 3 ? namen.join(', ') : '${namen.take(2).join(', ')} +${namen.length - 2}';
+    case ChatArt.meds:
+      return 'Medikamente'; // nie in der Chatliste, nur als Rückfall
   }
 }
 

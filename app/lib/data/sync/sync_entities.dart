@@ -9,6 +9,7 @@ import '../api/models.dart';
 import '../app_database.dart';
 import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
+import 'sync_medikamente.dart';
 
 /// Untergeordnete Entität: Zeilen von [entity], deren Feld [field] auf die ID des Elternteils zeigt, hängen an ihm (Löschen, Sichtbarkeit).
 class KindLink {
@@ -421,7 +422,7 @@ class KonversationEntitaet extends SyncEntity {
   String get name => 'konversation';
 
   @override
-  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId')];
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -457,6 +458,7 @@ class KonversationEntitaet extends SyncEntity {
           titel: Value(_text(fields['titel']) ?? ''),
           teilnehmerJson: Value(jsonEncode(_liste(fields['teilnehmer']) ?? const <String>[])),
           ownerId: Value(_text(fields['ownerId'])),
+          subjektId: Value(_text(fields['subjektId'])),
           encVersion: Value(_text(fields['encVersion']) ?? 'e1'),
           rev: Value(rev ?? 0),
         ),
@@ -469,6 +471,7 @@ class KonversationEntitaet extends SyncEntity {
         titel: setze('titel') ? Value(_text(fields['titel']) ?? '') : const Value.absent(),
         teilnehmerJson: setze('teilnehmer') && _liste(fields['teilnehmer']) != null ? Value(jsonEncode(_liste(fields['teilnehmer']))) : const Value.absent(),
         ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
+        subjektId: setze('subjektId') ? Value(_text(fields['subjektId'])) : const Value.absent(),
         encVersion: setze('encVersion') && _text(fields['encVersion']) != null ? Value(_text(fields['encVersion'])!) : const Value.absent(),
         createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),
         rev: rev != null ? Value(rev) : const Value.absent(),
@@ -961,6 +964,8 @@ final Map<String, SyncEntity> syncEntities = {
     ReaktionEntitaet(),
     StimmeEntitaet(),
     PinEntitaet(),
+    MedikamentEntitaet(),
+    EinnahmeEntitaet(),
   ])
     e.name: e,
 };

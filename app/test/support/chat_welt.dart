@@ -5,6 +5,7 @@ import 'dart:convert';
 
 import 'package:drift/drift.dart' show DatabaseConnection, OrderingTerm;
 import 'package:drift/native.dart';
+import 'package:lx_fampad/data/api/models.dart' show MemberStatus, Role, UserDto;
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/chat/chat_ids.dart';
 import 'package:lx_fampad/data/chat/chat_krypto.dart';
@@ -15,6 +16,7 @@ import 'package:lx_fampad/data/crypto/crypto_fehler.dart';
 import 'package:lx_fampad/data/crypto/crypto_provider.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/crypto/vertrauen.dart' show VertrauensAblageDefekt;
+import 'package:lx_fampad/data/medikamente/medikament_subjekte.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
 
@@ -178,6 +180,48 @@ class ChatWelt {
   /// Aktuelle Schlüsselversion je Person laut Server (fehlt: 1); für die Prüfung der Wrap-ID v2 (keine künftige Version).
   final Map<String, int> schluesselVersionen = {};
 
+  /// Rollen der aktiven Mitglieder laut Server (für die Medikamenten-Konversation); leer: nicht gesetzt.
+  final Map<String, Role> rollen = {};
+
+  /// Der Server setzt die Dauer-Uhr der Zeilen (createdAt) nach dieser Uhr (für die 120 Tage der Einnahmen).
+  DateTime Function() serverZeit = () => DateTime.utc(2026, 10, 19, 9);
+
+  List<UserDto> get _mitglieder => [
+    for (final e in rollen.entries) UserDto(id: e.key, email: null, displayName: e.key, colorIndex: 0, role: e.value, status: MemberStatus.active),
+  ];
+
+  /// Personen, die die Sicht auf eine Medikamenten-Konversation verloren haben und davon noch erfahren sollen (Tombstone "hidden" wie beim echten Server), je Person.
+  final Map<String, Set<String>> _verloren = {};
+
+  /// Setzt die Teilnehmer einer Medikamenten-Konversation und verhält sich wie der echte Server: wer die Sicht verliert, bekommt später einen "hidden"-Tombstone; wer sie gewinnt, bekommt
+  /// den bisherigen Inhalt (die Kinder der Konversation bekommen eine neue Revision und werden so erneut ausgeliefert).
+  void _teilnehmerSetzen(ServerZeile k, List<String> neu) {
+    final alt = (k.fields['teilnehmer'] as List).cast<String>();
+    for (final w in alt.where((t) => !neu.contains(t))) {
+      _verloren.putIfAbsent(w, () => {}).add(k.id);
+    }
+    k.fields['teilnehmer'] = neu;
+    k.rev = ++rev;
+    if (neu.any((t) => !alt.contains(t))) {
+      for (final z in _z.values) {
+        if (z.fields['konversationId'] == k.id && z.entity != 'konversation') z.rev = ++rev;
+      }
+    }
+  }
+
+  /// Der Server wertet nach einem Rollenwechsel die Teilnehmer der Medikamenten-Konversationen neu (wie reconcileMedsTeilnehmer): wer nach den Rollen nicht hineingehört, fliegt heraus.
+  void rollenwechsel(String userId, Role neu) {
+    rollen[userId] = neu;
+    for (final z in alle('konversation')) {
+      if (z.fields['art'] != 'meds') continue;
+      final subjekt = z.fields['subjektId'] as String;
+      final teil = (z.fields['teilnehmer'] as List).cast<String>();
+      final a = teilnehmerAbgleichen(subjekt: subjekt, aktuell: teil, mitglieder: _mitglieder);
+      if (a.weg.isEmpty) continue;
+      _teilnehmerSetzen(z, [for (final t in teil) if (!a.weg.contains(t)) t]);
+    }
+  }
+
   int rev = 0;
   final Map<String, ServerZeile> _z = {};
 
@@ -243,6 +287,7 @@ class ChatWelt {
             SyncChange(rev: z.rev, entity: z.entity, id: z.id, tombstone: false, hidden: false, fields: {...z.fields}),
         for (final t in _tombs)
           if (t.rev > g.sinceRev) SyncChange(rev: t.rev, entity: t.entity, id: t.id, tombstone: true, hidden: false, fields: const {}),
+        for (final k in _verloren.remove(g.person.id) ?? <String>{}) SyncChange(rev: rev, entity: 'konversation', id: k, tombstone: true, hidden: true, fields: const {}),
       ]..sort((a, b) => a.rev.compareTo(b.rev));
       final res = SyncResult(
         resyncNoetig: false,
@@ -288,14 +333,34 @@ class ChatWelt {
           _tombs.add((rev: ++rev, entity: z.entity, id: z.id));
         }
       }
+      if (o.entity == 'medikament') {
+        for (final z in [for (final z in _z.values) if (z.entity == 'einnahme' && z.fields['medikamentId'] == o.entityId) z]) {
+          _z.remove('${z.entity}/${z.id}');
+          _tombs.add((rev: ++rev, entity: z.entity, id: z.id));
+        }
+      }
+      if (o.entity == 'konversation' && _z[key]?.fields['art'] == 'meds') return 'forbidden';
       if (_z.remove(key) != null) _tombs.add((rev: ++rev, entity: o.entity, id: o.entityId));
       return null;
     }
     final vorhanden = _z[key];
     switch (o.entity) {
       case 'konversation':
+        if (f['art'] == 'meds' || vorhanden?.fields['art'] == 'meds') {
+          // Medikamenten-Konversation: feste ID aus dem Subjekt, Rollen-Regel der Teilnehmer, nie löschbar (wie der echte Server)
+          final subjekt = (f['subjektId'] ?? vorhanden?.fields['subjektId']) as String?;
+          final teil = ((f['teilnehmer'] ?? vorhanden?.fields['teilnehmer']) as List?)?.cast<String>() ?? const <String>[];
+          if (subjekt == null || o.entityId != medsChatId(subjekt)) return 'invalid';
+          if (!teilnehmerGueltig(subjekt: subjekt, teilnehmer: teil, mitglieder: _mitglieder)) return 'invalid';
+          if (vorhanden != null && !((vorhanden.fields['teilnehmer'] as List).cast<String>().contains(g.person.id))) return 'not_found';
+          if (vorhanden == null && !teil.contains(g.person.id)) return 'forbidden';
+        }
         if (vorhanden == null) {
           _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'encVersion': f['encVersion'] ?? 'e1'}, ++rev);
+          return null;
+        }
+        if (vorhanden.fields['art'] == 'meds' && f['teilnehmer'] is List) {
+          _teilnehmerSetzen(vorhanden, (f['teilnehmer'] as List).cast<String>());
           return null;
         }
         vorhanden.fields.addAll(f..remove('encVersion'));
@@ -304,6 +369,7 @@ class ChatWelt {
       case 'nachricht':
         final konv = _z['konversation/${vorhanden?.fields['konversationId'] ?? f['konversationId']}'];
         if (konv == null) return 'not_found';
+        if (konv.fields['art'] == 'meds') return 'invalid';
         final text = (f['text'] ?? vorhanden?.fields['text']) as String;
         if (!text.startsWith('${konv.fields['encVersion']}:')) return 'invalid';
         if (konv.fields['encVersion'] == 'e1' && text.length < 150) return 'invalid';
@@ -346,6 +412,24 @@ class ChatWelt {
           if (vorhanden != null) return 'not_found'; // der erste gewinnt (je Konversation, Epoche, Empfänger und Schlüsselversion)
           gesehen.add({'entity': 'epoche_wrap', ...f});
           _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'verteilerId': g.person.id}, ++rev);
+          return null;
+        }
+      case 'medikament':
+      case 'einnahme':
+        {
+          final konvId = (vorhanden?.fields['konversationId'] ?? f['konversationId']) as String;
+          final konv = _z['konversation/$konvId'];
+          if (konv == null || konv.fields['art'] != 'meds' || !((konv.fields['teilnehmer'] as List).cast<String>().contains(g.person.id))) return 'not_found';
+          final text = f['inhalt'] as String?;
+          if (text != null && (!RegExp(r'^e1:[A-Za-z0-9_-]+$').hasMatch(text) || text.length < 153)) return 'invalid';
+          if (o.entity == 'einnahme' && vorhanden == null && _z['medikament/${f['medikamentId']}']?.fields['konversationId'] != konvId) return 'invalid';
+          gesehen.add({'entity': o.entity, ...f});
+          if (vorhanden == null) {
+            _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'bearbeiterId': g.person.id, 'createdAt': serverZeit().toIso8601String()}, ++rev);
+          } else {
+            vorhanden.fields.addAll({...f, 'bearbeiterId': g.person.id});
+            vorhanden.rev = ++rev;
+          }
           return null;
         }
       default:

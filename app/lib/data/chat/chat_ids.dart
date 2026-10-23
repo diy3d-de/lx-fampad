@@ -39,6 +39,9 @@ String wrapId(String konversationId, int epoche, String empfaengerId) =>
 String wrapIdV2(String konversationId, int epoche, String empfaengerId, int keyVersion, String verteilerId) =>
     uuidAusSchluessel('wrap2:${konversationId.toLowerCase()}:$epoche:${empfaengerId.toLowerCase()}:$keyVersion:${verteilerId.toLowerCase()}');
 
+/// ID der Medikamenten-Konversation einer Person (Abschnitt 6k): je Person genau eine, daraus abgeleitet (muss exakt dem Server entsprechen, server/src/sync/entities/chat-ids.ts).
+String medsChatId(String subjektId) => uuidAusSchluessel('meds:${subjektId.toLowerCase()}');
+
 /// ID der Reaktion einer Person auf eine Nachricht (je Person und Nachricht genau eine).
 String reaktionId(String nachrichtId, String userId) => uuidAusSchluessel('reaktion:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}');
 
