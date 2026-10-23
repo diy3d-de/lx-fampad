@@ -367,6 +367,45 @@ class Einnahmen extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Zähler (Abschnitt 6l), Kind der Zähler-Konversation (`konversationen.art = 'zaehler'`). `inhalt` ist die Hülle der Schnittstelle (`e1:` bzw. lokal `l1:` im Ausgang), lesbar nur
+/// über `NachrichtenInhalt.zusatz` (Art `z`); `bearbeiterId` ist die Person, die den Inhalt zuletzt geschrieben und signiert hat.
+@DataClassName('ZaehlerZeile')
+@TableIndex(name: 'zaehler_konversation_idx', columns: {#konversationId})
+class Zaehler extends Table {
+  @override
+  String get tableName => 'zaehler';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Zählerstand (Abschnitt 6l), Kind eines Zählers; Hülle wie beim Zähler (Art `a`). Dauerhaft: der Server löscht nie von selbst.
+@DataClassName('ZaehlerstandZeile')
+@TableIndex(name: 'zaehlerstaende_zaehler_idx', columns: {#zaehlerId})
+@TableIndex(name: 'zaehlerstaende_konversation_idx', columns: {#konversationId})
+class Zaehlerstaende extends Table {
+  @override
+  String get tableName => 'zaehlerstaende';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get zaehlerId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Aufgaben (Phase 1c-4a). Fälligkeit: ein Tag (`faelligDate`, Text `YYYY-MM-DD`) ODER ein Zeitpunkt (`faelligUtc` + `tzid`), beides leer = ohne.
 @DataClassName('Aufgabe')
 class Aufgaben extends Table {
@@ -431,7 +470,7 @@ class AufgabePunkte extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen])
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, Zaehler, Zaehlerstaende])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -442,12 +481,13 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 13;
+  int get schemaVersion => 14;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
   /// Version 12: `frist` und `frist_monate` an Aufgaben (Fristen-Tracker) mit Sync-Reset, damit vorhandene Werte ankommen.
   /// Version 13: Medikamenten-Plan (`subjekt_id` an Konversationen, Tabellen `medikamente` und `einnahmen`) mit Sync-Reset.
+  /// Version 14: Zähler (Tabellen `zaehler` und `zaehlerstaende`) mit Sync-Reset.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -529,6 +569,13 @@ class AppDatabase extends _$AppDatabase {
           await m.createIndex(einnahmenMedikamentIdx);
           await m.createIndex(einnahmenKonversationIdx);
         }
+        if (from < 14) {
+          await m.createTable(zaehler);
+          await m.createTable(zaehlerstaende);
+          await m.createIndex(zaehlerKonversationIdx);
+          await m.createIndex(zaehlerstaendeZaehlerIdx);
+          await m.createIndex(zaehlerstaendeKonversationIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -561,6 +608,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 13) {
         // Version 13 legt Tabellen für neue Sync-Entitäten an (Medikamente, Einnahmen) und eine Spalte an Konversationen; ohne Reset kämen schon vorhandene nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 14) {
+        // Version 14 legt Tabellen für neue Sync-Entitäten an (Zähler, Zählerstände); ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

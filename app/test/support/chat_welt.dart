@@ -17,6 +17,7 @@ import 'package:lx_fampad/data/crypto/crypto_provider.dart';
 import 'package:lx_fampad/data/crypto/schluessel.dart';
 import 'package:lx_fampad/data/crypto/vertrauen.dart' show VertrauensAblageDefekt;
 import 'package:lx_fampad/data/medikamente/medikament_subjekte.dart';
+import 'package:lx_fampad/data/zaehler/zaehler_teilnehmer.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
 
@@ -209,10 +210,18 @@ class ChatWelt {
     }
   }
 
-  /// Der Server wertet nach einem Rollenwechsel die Teilnehmer der Medikamenten-Konversationen neu (wie reconcileMedsTeilnehmer): wer nach den Rollen nicht hineingehört, fliegt heraus.
+  /// Der Server wertet nach einem Rollenwechsel die Teilnehmer der Medikamenten- und Zähler-Konversationen neu (wie reconcileMedsTeilnehmer und reconcileZaehlerTeilnehmer): wer nach den
+  /// Rollen nicht hineingehört, fliegt heraus (bei den Zählern jedes Kind sofort).
   void rollenwechsel(String userId, Role neu) {
     rollen[userId] = neu;
     for (final z in alle('konversation')) {
+      if (z.fields['art'] == 'zaehler') {
+        final teil = (z.fields['teilnehmer'] as List).cast<String>();
+        final a = zaehlerAbgleichen(aktuell: teil, mitglieder: _mitglieder);
+        final rest = [for (final t in teil) if (!a.weg.contains(t)) t];
+        if (a.weg.isNotEmpty && rest.isNotEmpty) _teilnehmerSetzen(z, rest);
+        continue;
+      }
       if (z.fields['art'] != 'meds') continue;
       final subjekt = z.fields['subjektId'] as String;
       final teil = (z.fields['teilnehmer'] as List).cast<String>();
@@ -339,7 +348,13 @@ class ChatWelt {
           _tombs.add((rev: ++rev, entity: z.entity, id: z.id));
         }
       }
-      if (o.entity == 'konversation' && _z[key]?.fields['art'] == 'meds') return 'forbidden';
+      if (o.entity == 'zaehler') {
+        for (final z in [for (final z in _z.values) if (z.entity == 'zaehlerstand' && z.fields['zaehlerId'] == o.entityId) z]) {
+          _z.remove('${z.entity}/${z.id}');
+          _tombs.add((rev: ++rev, entity: z.entity, id: z.id));
+        }
+      }
+      if (o.entity == 'konversation' && (_z[key]?.fields['art'] == 'meds' || _z[key]?.fields['art'] == 'zaehler')) return 'forbidden';
       if (_z.remove(key) != null) _tombs.add((rev: ++rev, entity: o.entity, id: o.entityId));
       return null;
     }
@@ -355,11 +370,20 @@ class ChatWelt {
           if (vorhanden != null && !((vorhanden.fields['teilnehmer'] as List).cast<String>().contains(g.person.id))) return 'not_found';
           if (vorhanden == null && !teil.contains(g.person.id)) return 'forbidden';
         }
+        if (f['art'] == 'zaehler' || vorhanden?.fields['art'] == 'zaehler') {
+          // Zähler-Konversation: feste ID aus der Familie, nur Erwachsene als Teilnehmer, nur Erwachsene schreiben, nie löschbar (wie der echte Server)
+          final teil = ((f['teilnehmer'] ?? vorhanden?.fields['teilnehmer']) as List?)?.cast<String>() ?? const <String>[];
+          if (o.entityId != zaehlerChatId(familieId)) return 'invalid';
+          if (vorhanden != null && !((vorhanden.fields['teilnehmer'] as List).cast<String>().contains(g.person.id))) return 'not_found';
+          if (vorhanden == null && !teil.contains(g.person.id)) return 'forbidden';
+          if (!zaehlerTeilnehmerGueltig(teilnehmer: teil, mitglieder: _mitglieder)) return 'invalid';
+          if (f['subjektId'] != null) return 'invalid';
+        }
         if (vorhanden == null) {
           _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'encVersion': f['encVersion'] ?? 'e1'}, ++rev);
           return null;
         }
-        if (vorhanden.fields['art'] == 'meds' && f['teilnehmer'] is List) {
+        if ((vorhanden.fields['art'] == 'meds' || vorhanden.fields['art'] == 'zaehler') && f['teilnehmer'] is List) {
           _teilnehmerSetzen(vorhanden, (f['teilnehmer'] as List).cast<String>());
           return null;
         }
@@ -369,7 +393,7 @@ class ChatWelt {
       case 'nachricht':
         final konv = _z['konversation/${vorhanden?.fields['konversationId'] ?? f['konversationId']}'];
         if (konv == null) return 'not_found';
-        if (konv.fields['art'] == 'meds') return 'invalid';
+        if (konv.fields['art'] == 'meds' || konv.fields['art'] == 'zaehler') return 'invalid';
         final text = (f['text'] ?? vorhanden?.fields['text']) as String;
         if (!text.startsWith('${konv.fields['encVersion']}:')) return 'invalid';
         if (konv.fields['encVersion'] == 'e1' && text.length < 150) return 'invalid';
@@ -423,6 +447,24 @@ class ChatWelt {
           final text = f['inhalt'] as String?;
           if (text != null && (!RegExp(r'^e1:[A-Za-z0-9_-]+$').hasMatch(text) || text.length < 153)) return 'invalid';
           if (o.entity == 'einnahme' && vorhanden == null && _z['medikament/${f['medikamentId']}']?.fields['konversationId'] != konvId) return 'invalid';
+          gesehen.add({'entity': o.entity, ...f});
+          if (vorhanden == null) {
+            _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'bearbeiterId': g.person.id, 'createdAt': serverZeit().toIso8601String()}, ++rev);
+          } else {
+            vorhanden.fields.addAll({...f, 'bearbeiterId': g.person.id});
+            vorhanden.rev = ++rev;
+          }
+          return null;
+        }
+      case 'zaehler':
+      case 'zaehlerstand':
+        {
+          final konvId = (vorhanden?.fields['konversationId'] ?? f['konversationId']) as String;
+          final konv = _z['konversation/$konvId'];
+          if (konv == null || konv.fields['art'] != 'zaehler' || !((konv.fields['teilnehmer'] as List).cast<String>().contains(g.person.id)) || !istErwachsen(rollen[g.person.id] ?? Role.child)) return 'not_found';
+          final text = f['inhalt'] as String?;
+          if (text != null && (!RegExp(r'^e1:[A-Za-z0-9_-]+$').hasMatch(text) || text.length < 153)) return 'invalid';
+          if (o.entity == 'zaehlerstand' && vorhanden == null && _z['zaehler/${f['zaehlerId']}']?.fields['konversationId'] != konvId) return 'invalid';
           gesehen.add({'entity': o.entity, ...f});
           if (vorhanden == null) {
             _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'bearbeiterId': g.person.id, 'createdAt': serverZeit().toIso8601String()}, ++rev);

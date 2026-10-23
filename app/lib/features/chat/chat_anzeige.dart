@@ -29,6 +29,8 @@ String chatName(Konversation k, List<String> teilnehmer, Mitglieder mitglieder, 
       return namen.length <= 3 ? namen.join(', ') : '${namen.take(2).join(', ')} +${namen.length - 2}';
     case ChatArt.meds:
       return 'Medikamente'; // nie in der Chatliste, nur als Rückfall
+    case ChatArt.zaehler:
+      return 'Zähler'; // nie in der Chatliste, nur als Rückfall
   }
 }
 
