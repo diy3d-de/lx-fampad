@@ -20,6 +20,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../auth/auth_state.dart';
 import '../calendar/termin_repository.dart';
 import '../auth/reset_hinweis.dart' show kSicherheitPayload;
+import '../medikamente/medikament_erinnerung.dart' show istMedikamentPayload, planeMedikamentErinnerungen;
+import '../medikamente/medikament_state.dart' show medDatenProvider;
 import '../muell/muell_logik.dart' show istMuellPayload;
 import '../muell/muell_state.dart' show muellErinnerungen, muellProvider;
 import '../api/models.dart' show Role;
@@ -80,6 +82,9 @@ class ErinnerungDienst {
 
   /// Tipp auf den Betreiber-Hinweis (Betrieb: Hinweis – öffne Betrieb).
   void Function()? beiBetriebGeoeffnet;
+
+  /// Tipp auf eine Medikamenten-Erinnerung (Nutzlast `medikament|<ID>`, nie ein Inhalt): die Medikamenten-Ansicht öffnen.
+  void Function()? beiMedikamentGeoeffnet;
 
   /// Tipp auf die Müll-Erinnerung bzw. den Hinweis auf ein neues Jahr (Nutzlast `muell|<Tag>` oder `muell`): die Müll-Seite öffnen.
   void Function()? beiMuellGeoeffnet;
@@ -176,7 +181,12 @@ class ErinnerungDienst {
     final nurMuell = !einst.an;
     if (!_muellBereit(auth.user?.role)) return true;
     final muellPlan = muellErinnerungen(_ref.read(muellProvider), auth.user?.role, _jetzt());
-    if (nurMuell && muellPlan.isEmpty) return _loeschen();
+    // Einnahme-Erinnerungen (eigener Schalter): erst, wenn Pläne und Mitglieder gelesen sind (sonst würde ein leeres Fenster ihre Alarme löschen); neutral, nur lokal
+    final md = einst.medikamenteAn ? _ref.read(medDatenProvider) : null;
+    if (md != null && !md.geladen) return true;
+    final medPlan = md == null ? const <GeplanteErinnerung>[] : planeMedikamentErinnerungen(medDaten: md, jetzt: _jetzt());
+    final zusatzPlan = [...muellPlan, ...medPlan];
+    if (nurMuell && zusatzPlan.isEmpty) return _loeschen();
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
     if (!nurMuell && !_datenDa(einst.aufgabenAn)) return true;
     final exakt = await port.exakteAlarmeMoeglich();
@@ -194,7 +204,7 @@ class ErinnerungDienst {
       jetzt: _jetzt(),
       aufgaben: !nurMuell && einst.aufgabenAn ? (_ref.read(aufgabenProvider).value ?? const []) : const [],
       // Abfuhrtermine: Abend vor der Abholung, nur Eltern/Admins (leer für alle anderen)
-      zusatz: muellPlan,
+      zusatz: zusatzPlan,
       elternRolle: auth.user?.role == Role.admin || auth.user?.role == Role.parent,
     );
     final alt = _letzte;
@@ -293,6 +303,10 @@ class ErinnerungDienst {
     }
     if (payload == kStandortPayload) {
       beiStandortGeoeffnet?.call();
+      return;
+    }
+    if (istMedikamentPayload(payload)) {
+      beiMedikamentGeoeffnet?.call();
       return;
     }
     if (istMuellPayload(payload)) {
