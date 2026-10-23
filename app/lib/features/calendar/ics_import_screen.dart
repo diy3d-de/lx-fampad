@@ -215,7 +215,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         const SizedBox(height: 16),
         FilledButton.icon(onPressed: _waehlen, icon: const Icon(Icons.upload_file), label: const Text('ICS-Datei auswählen')),
         const SizedBox(height: 8),
-        const Text('Höchstens 5 MB und 5000 Termine.', style: TextStyle(color: kTextFaint, fontSize: 12)),
+        const Text('Höchstens 5 MB und 5000 Termine.', style: TextStyle(color: kTextMuted, fontSize: 12)),
       ],
     );
   }

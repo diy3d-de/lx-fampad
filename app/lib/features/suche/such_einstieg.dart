@@ -1,5 +1,5 @@
-// Einstieg in eine Suche (ein Feld, das beim Tippen die Suchseite öffnet): auf der Startseite die globale Suche (mobil eine Zeile unter dem Sync-Status, im Desktop-Layout das
-// Feld neben "Neu"), auf der Chat-Liste die Suche über alle Chats. Die gemeinsame Kopfzeile der Tabs bleibt unverändert (keine eigenen Aktionen dort).
+// Einstieg in eine Suche: auf der Startseite die globale Suche (mobil ein Knopf rechts neben dem Sync-Status, im Desktop-Layout ein Feld neben "Neu"), auf der Chat-Liste ein
+// Feld für die Suche über alle Chats. Die gemeinsame Kopfzeile der Tabs bleibt unverändert (keine eigenen Aktionen dort).
 import 'package:flutter/material.dart';
 
 import '../../constants.dart';
@@ -48,7 +48,32 @@ class SuchFeldKnopf extends StatelessWidget {
   );
 }
 
-/// Einstieg in die globale Suche (Startseite).
+/// Quadratischer Such-Knopf (Handy-Startseite, neben dem Sync-Status: kostet keine zusätzliche Zeile); gleicher Rand wie die Streifen und Karten.
+class SuchKnopf extends StatelessWidget {
+  const SuchKnopf({super.key});
+
+  @override
+  Widget build(BuildContext context) => Tooltip(
+    message: 'Suchen',
+    child: Semantics(
+      button: true,
+      label: 'Suchen in Terminen, Aufgaben und Listen',
+      excludeSemantics: true,
+      onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),
+      child: Material(
+        color: kSurface.withValues(alpha: 0.7),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kBorder)),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),
+          child: const SizedBox(width: 44, height: 44, child: Icon(Icons.search, size: 22, color: kAccent)),
+        ),
+      ),
+    ),
+  );
+}
+
+/// Einstieg in die globale Suche (Desktop-Kopf der Startseite).
 class SuchEinstieg extends StatelessWidget {
   final double? breite;
   const SuchEinstieg({super.key, this.breite});

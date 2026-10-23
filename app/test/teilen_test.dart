@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/api/models.dart' show SessionDto;
-import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/teilen/teilen_logik.dart';
 import 'package:lx_fampad/data/teilen/teilen_state.dart';
@@ -30,7 +29,7 @@ void main() {
       expect(teilenKuerzen('   \n\t '), isNull);
       expect(teilenKuerzen('  Hallo Welt  '), 'Hallo Welt');
       expect(teilenKuerzen('a\u0000b\u0007c\r\nd'), 'abc\nd');
-      expect(teilenKuerzen('a​b‮c﻿d'), 'abcd');
+      expect(teilenKuerzen('a${String.fromCharCode(0x200b)}b${String.fromCharCode(0x202e)}c${String.fromCharCode(0xfeff)}d'), 'abcd');
       expect(teilenKuerzen('Zeile 1\nZeile 2\tTab'), 'Zeile 1\nZeile 2\tTab');
     });
 

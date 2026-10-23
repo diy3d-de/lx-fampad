@@ -71,9 +71,7 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 20),
               const UpdateAnzeige(),
               const AbsicherungsKarte(),
-              const _SyncLeiste(),
-              const SizedBox(height: 12),
-              const SuchEinstieg(),
+              const _SyncZeile(),
               const SizedBox(height: 20),
             ],
           ),
@@ -119,6 +117,21 @@ Widget _kachel(String id) => switch (id) {
   'standort' => const StandortStartKarte(),
   _ => const SizedBox.shrink(),
 };
+
+/// Sync-Streifen und rechts daneben der Such-Knopf (eine Zeile, fest, keine Kachel).
+class _SyncZeile extends StatelessWidget {
+  const _SyncZeile();
+
+  @override
+  Widget build(BuildContext context) => const Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(child: _SyncLeiste()),
+      SizedBox(width: 8),
+      SuchKnopf(),
+    ],
+  );
+}
 
 /// Streifen mit dem Stand des Abgleichs (fest, keine Kachel).
 class _SyncLeiste extends ConsumerWidget {
@@ -166,7 +179,7 @@ class _SchnellzugriffReihe extends StatelessWidget {
     // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite, aber mit der Schrift; bei stark vergrößerter Schrift zwei Knöpfe je Reihe,
     // damit die Beschriftungen nicht mitten im Wort brechen
     final skala = MediaQuery.textScalerOf(context).scale(1.0);
-    final spalten = skala > 1.3 ? 2 : 4;
+    final spalten = skala >= 1.75 ? 2 : 4;
     final hoehe = (24 + 36 + 8 + 12 * skala * 1.4 + 4).ceilToDouble();
     return GridView(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: hoehe < 96 ? 96 : hoehe),

@@ -169,7 +169,7 @@ void main() {
     expect({for (final e in ziel) e.inhalt: e.category}, {'Milch': 'milch_kuehlregal', 'Brot': 'brot_backwaren'});
   });
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Layout 360 px, Textskala $skala: gruppierte Liste, Vorschläge, Blatt mit Kategorien', (tester) async {
       await start(
         tester,

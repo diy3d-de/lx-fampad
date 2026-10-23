@@ -882,9 +882,9 @@ class _Blase extends StatelessWidget {
                             alignment: WrapAlignment.end,
                             children: [
                               if (angeheftet) const Icon(Icons.push_pin, size: 12, color: kAccent, semanticLabel: 'angeheftet'),
-                              if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
+                              if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                               if (!gesendet && eigen) _SendeText(lese: lese),
-                              Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
+                              Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
                               if (lese != null) LeseHaken(info: lese!, text: leseText),
                             ],
                           ),

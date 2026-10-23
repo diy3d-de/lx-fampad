@@ -20,7 +20,7 @@ void main() {
     await tippe(tester, find.widgetWithText(EinstellungsZeile, 'Kalender'));
   }
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Textskala $skala (360 px): Abschnitt und beide Einträge sichtbar, kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
       await oeffneMobil(tester, skala: skala);
       expect(find.byType(KalenderEinstellungenScreen), findsOneWidget);

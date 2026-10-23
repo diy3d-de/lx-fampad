@@ -58,7 +58,7 @@ void main() {
     expect(s.werte[kNeuigkeitenSchluessel], '0.9.3');
   });
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Dialog bei 360 px, Textskala $skala: Stichpunkte, Schließen ruft onGesehen', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;

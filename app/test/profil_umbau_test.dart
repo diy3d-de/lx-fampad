@@ -62,7 +62,7 @@ void main() {
   Finder zeile(String titel) => find.widgetWithText(EinstellungsZeile, titel);
 
   group('Hauptseite', () {
-    for (final skala in [1.0, 1.5]) {
+    for (final skala in [1.0, 1.5, 2.0]) {
       testWidgets('Admin (Android, Textskala $skala, 360 px): Gruppen und Zeilen, nichts läuft über, Touch-Ziele mindestens 44 px', (tester) async {
         await start(tester, skala: skala);
         expect(find.byType(ProfileScreen), findsOneWidget);
@@ -154,7 +154,7 @@ void main() {
   });
 
   group('Sicherheit', () {
-    for (final skala in [1.0, 1.5]) {
+    for (final skala in [1.0, 1.5, 2.0]) {
       testWidgets('alle bisherigen Sicherheitszeilen sind da und öffnen ihre Seite (360 px, Textskala $skala)', (tester) async {
         await start(tester, skala: skala);
         await tippe(tester, zeile('Sicherheit'));

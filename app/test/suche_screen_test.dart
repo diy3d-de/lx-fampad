@@ -53,8 +53,8 @@ void main() {
 
   testWidgets('Startseite mobil: Suchzeile öffnet die Suche, Treffer je Bereich (Umlaut-tolerant), Layout 360 px', (tester) async {
     await start(tester);
-    expect(find.byType(SuchEinstieg), findsOneWidget);
-    await tippe(tester, find.byType(SuchEinstieg));
+    expect(suchKnopf(), findsOneWidget);
+    await tippe(tester, suchKnopf());
     expect(find.byType(SuchScreen), findsOneWidget);
     expect(find.text('Wonach suchst du?'), findsOneWidget);
     await suchen(tester, 'apfel');
@@ -71,14 +71,14 @@ void main() {
 
   testWidgets('Treffer antippen: Eintrag springt in die Liste, Aufgabe öffnet den Editor', (tester) async {
     await start(tester);
-    await tippe(tester, find.byType(SuchEinstieg));
+    await tippe(tester, suchKnopf());
     await suchen(tester, 'apfel');
     await tippe(tester, semLabel('Listeneintrag: Äpfel und Birnen'));
     expect(find.byType(SuchScreen), findsNothing);
     expect(find.byType(ListsScreen), findsOneWidget);
 
     await zumStart(tester);
-    await tippe(tester, find.byType(SuchEinstieg));
+    await tippe(tester, suchKnopf());
     await suchen(tester, 'pflücken');
     await tippe(tester, semLabel('Aufgabe: Äpfel pflücken'));
     expect(find.byType(AufgabeEditor), findsOneWidget);
@@ -86,7 +86,7 @@ void main() {
 
   testWidgets('Termin antippen wechselt in den Kalender auf den Tag des Termins', (tester) async {
     await start(tester);
-    await tippe(tester, find.byType(SuchEinstieg));
+    await tippe(tester, suchKnopf());
     await suchen(tester, 'schulhof');
     await tippe(tester, semLabel('Termin: Apfelfest'));
     expect(find.byType(SuchScreen), findsNothing);
@@ -97,7 +97,7 @@ void main() {
   for (final skala in [1.5, 2.0]) {
     testWidgets('Layout bei 360 px und Textskala $skala (leer, mit Treffern, ohne Treffer)', (tester) async {
       await start(tester, skala: skala);
-      await tippe(tester, find.byType(SuchEinstieg));
+      await tippe(tester, suchKnopf());
       pruefeLayout(tester, 'Suche leer $skala');
       await suchen(tester, 'apfel');
       pruefeLayout(tester, 'Suche Treffer $skala');
@@ -108,8 +108,8 @@ void main() {
 
   testWidgets('Desktop-Layout: Suchfeld in der Kopfzeile der Startseite öffnet die Suche im Inhaltsbereich', (tester) async {
     await start(tester, groesse: const Size(1200, 800));
-    expect(find.byType(SuchEinstieg), findsOneWidget);
-    await tippe(tester, find.byType(SuchEinstieg));
+    expect(suchKnopf(), findsOneWidget);
+    await tippe(tester, suchKnopf());
     expect(find.byType(SuchScreen), findsOneWidget);
     // Seitenleiste bleibt stehen
     expect(find.text('lx-familyhub'), findsOneWidget);
@@ -123,6 +123,9 @@ void main() {
     expect(kTabs[kListenTab].label, 'Listen');
   });
 }
+
+/// Der Such-Knopf der Startseite: mobil das Symbol neben dem Sync-Status, im Desktop-Layout das Feld im Kopf.
+Finder suchKnopf() => find.byWidgetPredicate((w) => w is SuchKnopf || w is SuchEinstieg);
 
 Future<void> zumStart(WidgetTester tester) async {
   await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Start')));

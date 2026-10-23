@@ -293,7 +293,7 @@ class _Eintrag extends StatelessWidget {
                       _pfeil(hoch: true, onTap: onHoch),
                       _pfeil(hoch: false, onTap: onRunter),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(_position.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint))),
+                      Expanded(child: Text(_position.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted))),
                     ],
                   ),
                 ],

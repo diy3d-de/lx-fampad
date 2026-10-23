@@ -100,7 +100,7 @@ void main() {
     expect(speicher.werte[kCountdownSchluessel], '["y"]');
   });
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Kachel bei 360 px, Textskala $skala: Titel und Tage, leer = unsichtbar', (tester) async {
       tester.view.physicalSize = const Size(360, 640);
       tester.view.devicePixelRatio = 1;

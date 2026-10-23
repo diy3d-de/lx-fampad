@@ -449,7 +449,7 @@ void main() {
     });
   });
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Layout Stumm/Filter bei 360 px, Textskala $skala: kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
       await start(
         tester,
@@ -476,7 +476,7 @@ void main() {
     });
   }
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Layout bei 360 px, Textskala $skala: kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
       await start(
         tester,

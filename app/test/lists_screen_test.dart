@@ -407,7 +407,7 @@ void main() {
     expect(find.textContaining('Noch keine Einkaufsliste'), findsOneWidget);
   });
 
-  for (final skala in [1.0, 1.5]) {
+  for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Layout 360 px, Textskala $skala: Listen mit langen Namen, Texten, Zuständigen und Meldungen', (tester) async {
       final env = await start(
         tester,

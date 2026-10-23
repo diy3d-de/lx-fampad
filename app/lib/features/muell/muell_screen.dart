@@ -269,7 +269,7 @@ class _TagZeile extends StatelessWidget {
               child: Column(
                 children: [
                   Text(k.zahl, style: TextStyle(fontFamily: kFontMono, fontSize: 24, fontWeight: FontWeight.w500, color: bald ? kAccent : kTextStrong, height: 1.1)),
-                  Text(k.unten, maxLines: 1, style: const TextStyle(fontFamily: kFontMono, fontSize: 10, letterSpacing: 0.8, color: kTextFaint)),
+                  Text(k.unten, maxLines: 1, style: const TextStyle(fontFamily: kFontMono, fontSize: 10, letterSpacing: 0.8, color: kTextMuted)),
                 ],
               ),
             ),
