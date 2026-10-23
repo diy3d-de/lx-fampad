@@ -263,6 +263,12 @@ LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-pull.sh
 
 Einmal im Monat im NAS-Archiv nachsehen, dass der neueste Ordner von gestern ist (läuft die Aufgabe selbst nicht mehr, meldet sich nichts).
 
+**Synology-Hinweise (erlebte Fehler):**
+- **Aufgabe oder Test läuft als `root`** (Aufgabenplaner-Benutzer `root` oder `sudo -i`): das Skript findet die Schlüssel nicht, denn dort ist `$HOME` gleich `/root`. Meldung: `ALARM: SSH-Schlüssel nicht lesbar: /root/.ssh/lx-fampad-backup`. Abhilfe: `HOME=/volume1/homes/<benutzer> bash …` setzen (im Aufgabenfeld und beim Test von Hand) oder die Aufgabe als genau den Benutzer laufen lassen, dem `~/.ssh/lx-fampad-backup` gehört.
+- **Beide Schlüssel** (`lx-fampad-backup` für die Abholung und `lx-fampad-status` für die Rückmeldung, Abschnitt 11) und die Datei `lx-fampad-backup.known_hosts` müssen im **selben** `.ssh` dieses Benutzers liegen.
+- **`scp` zur Synology:** neuere `scp`-Fassungen sprechen SFTP, das auf der Synology oft nicht erlaubt ist (`subsystem request failed`): `scp -O …` (altes Protokoll) benutzen oder einen Pfad **ohne** `/volume1` angeben (z. B. `<benutzer>@<nas>:` bzw. `/homes/<benutzer>/`).
+- **Besitzer der Skripte:** läuft die Aufgabe als normaler Benutzer, die kopierten Skripte **nicht** `root`-eigen mit `700` ablegen (der Benutzer kann sie dann nicht lesen): Besitzer = der ausführende Benutzer (`chown <benutzer> … && chmod 700 …`).
+
 ---
 
 ## 8. Erster Wiederherstellungstest (heute, nicht später)
@@ -487,7 +493,7 @@ Mit diesem Schritt zeigt „Betrieb“ > **Backups** die letzte Abholung und den
 
 ### 11.1 Zweiten SSH-Schlüssel auf dem NAS erzeugen
 
-Als der Benutzer, der die Aufgaben ausführt (Synology: `root`), **nicht** den Schlüssel der Abholung wiederverwenden:
+Als der Benutzer, der die Aufgaben ausführt (Synology: derselbe Benutzer wie bei der Abholung, siehe die Synology-Hinweise am Ende von Abschnitt 7; läuft die Aufgabe als `root`, `HOME` setzen), **nicht** den Schlüssel der Abholung wiederverwenden. Der Schlüssel muss im **selben** `.ssh` liegen wie der der Abholung:
 
 ```bash
 ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status
@@ -527,7 +533,7 @@ Get-FileHash -Algorithm SHA256 deploy\backup\nas\lx-fampad-nasstatus.sh, deploy\
 scp deploy\backup\nas\lx-fampad-nasstatus.sh deploy\backup\nas\lx-fampad-pull.sh deploy\backup\nas\lx-fampad-restoretest.sh <nas-admin-benutzer>@<nas-adresse>:/volume1/homes/<nas-admin-benutzer>/
 ```
 
-Auf dem NAS (`sudo -i`): Prüfsummen mit `sha256sum` vergleichen und die Dateien dorthin legen, wo die Aufgaben sie schon aufrufen (`lx-fampad-pull.sh` z. B. `/volume1/backup/`, `lx-fampad-restoretest.sh` in `/root/lx-fampad-restoretest/`); das Meldeskript neben **jedes** der beiden (oder `LXB_STATUS_MELDER=/pfad/lx-fampad-nasstatus.sh` in der Aufgabe setzen). Rechte `700`, Besitzer `root`. Der Melder nutzt dieselbe `known_hosts`-Datei wie der Pull (`~/.ssh/lx-fampad-backup.known_hosts`, Schritt 7) und den neuen Schlüssel `~/.ssh/lx-fampad-status`.
+Auf dem NAS (`sudo -i`): Prüfsummen mit `sha256sum` vergleichen und die Dateien dorthin legen, wo die Aufgaben sie schon aufrufen (`lx-fampad-pull.sh` z. B. `/volume1/backup/`, `lx-fampad-restoretest.sh` in `/root/lx-fampad-restoretest/`); das Meldeskript neben **jedes** der beiden (oder `LXB_STATUS_MELDER=/pfad/lx-fampad-nasstatus.sh` in der Aufgabe setzen). Rechte `700`, Besitzer = der Benutzer, der die Aufgabe ausführt (läuft sie als `root`, dann `root`; sonst **nicht** `root`-eigen, sonst kann der Benutzer die Skripte nicht lesen). `scp` zur Synology: `scp -O` oder Pfad ohne `/volume1` (Abschnitt 7, Synology-Hinweise). Der Melder nutzt dieselbe `known_hosts`-Datei wie der Pull (`~/.ssh/lx-fampad-backup.known_hosts`, Schritt 7) und den neuen Schlüssel `~/.ssh/lx-fampad-status`.
 
 ### 11.4 Einmal von Hand testen
 
@@ -544,6 +550,7 @@ LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-nasstatus.sh
 
 | Meldung / Anzeige | Ursache |
 | --- | --- |
+| `ALARM: SSH-Schlüssel nicht lesbar: /root/.ssh/lx-fampad-status` (oder `…-backup`) | Aufgabe oder Test läuft als `root`, die Schlüssel liegen aber im `.ssh` eines anderen Benutzers: `HOME=/volume1/homes/<benutzer> bash …` setzen oder die Aufgabe als dieser Benutzer laufen lassen; beide Schlüssel müssen im selben `.ssh` liegen (Abschnitt 7, Synology-Hinweise) |
 | `Statusmeldung an den Server fehlgeschlagen` | Schlüssel, Adresse (`--nas-ip` muss die öffentliche Adresse des NAS sein), `known_hosts` oder die Einrichtung auf dem Server prüfen; `ssh -i ~/.ssh/lx-fampad-status -v lxnasstatus@<server>` von Hand ansehen |
 | `abgelehnt: …` auf dem Server (der Befehl nimmt die Datei nicht an) | die Datei hat ein unerwartetes Format: eine selbst geänderte Skriptfassung? Auf dem NAS von Hand `bash lx-fampad-nasstatus.sh` ausführen (zeigt die Meldung) und `--print` ansehen |
 | App: „Noch keine Rückmeldung vom NAS“ | es wurde noch nichts gemeldet, oder der Dienst darf `/var/lib/lx-fampad-nasstatus` nicht lesen (Gruppe `lx-fampad`, `2750`) |
