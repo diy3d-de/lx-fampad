@@ -104,7 +104,7 @@ void main() {
 
     testWidgets('normales Wischen über eine Kachel scrollt die Seite und ordnet nichts um', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein');
-      await start(tester, speicher: speicher, groesse: const Size(360, 500));
+      await start(tester, speicher: speicher, groesse: const Size(360, 560));
       final vorher = oben(tester, '// EINKAUFSLISTE');
       await tester.drag(find.text('// EINKAUFSLISTE'), const Offset(0, -150));
       await warte(tester);

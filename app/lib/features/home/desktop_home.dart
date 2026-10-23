@@ -41,6 +41,7 @@ import '../muell/muell_karte.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/standort/standort_dienst.dart';
+import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
 import 'home_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -124,21 +125,7 @@ class _Kopfzeile extends ConsumerWidget {
           spacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Tooltip(
-              message: 'Die Suche kommt in einer späteren Phase',
-              child: Semantics(
-                label: 'Suche, noch nicht verfügbar',
-                excludeSemantics: true,
-                child: const SizedBox(
-                  width: 240,
-                  height: 44,
-                  child: TextField(
-                    enabled: false,
-                    decoration: InputDecoration(hintText: 'Suchen …', prefixIcon: Icon(Icons.search, size: 20), isDense: true),
-                  ),
-                ),
-              ),
-            ),
+            const SuchEinstieg(breite: 240),
             IconButton(
               tooltip: 'Benachrichtigungen',
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
