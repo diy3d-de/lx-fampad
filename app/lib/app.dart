@@ -11,6 +11,7 @@ import 'data/chat/chat_krypto_state.dart';
 import 'data/crypto/geraet_schluessel_melder.dart' show geraetSchluesselMelderProvider;
 import 'data/geraet_version_melder.dart' show geraetVersionMelderProvider;
 import 'data/lists/members.dart' show mitgliederAktualisierungProvider;
+import 'data/teilen/teilen_state.dart';
 import 'data/push/chat_benachrichtigung_raeumen.dart';
 import 'widgets/ungelesen_titel.dart';
 import 'features/auth/adresszeile.dart';
@@ -23,6 +24,7 @@ import 'features/auth/invite_link.dart';
 import 'features/auth/login_screen.dart';
 import 'features/auth/pending_screen.dart';
 import 'features/shell/home_shell.dart';
+import 'features/teilen/teilen_seite.dart';
 import 'features/update/update_banner.dart';
 import 'features/update/update_service.dart';
 import 'ui/theme.dart';
@@ -40,6 +42,8 @@ class FampadApp extends ConsumerStatefulWidget {
 
 class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserver {
   StreamSubscription<String>? _links;
+  StreamSubscription<String>? _teilen;
+  bool _teilenOffen = false;
 
   @override
   void initState() {
@@ -52,6 +56,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     aufEinladungInAdresszeileHoeren((l) => ref.read(inviteIntakeProvider.notifier).eingegangen(l.token));
     final kanal = ref.read(systemChannelProvider);
     _links = kanal.links.listen(_linkVonAussen);
+    // Text aus "Teilen mit lx-familyhub" (Android): bleibt im Arbeitsspeicher, bis die angemeldete Person das Ziel gewählt hat
+    _teilen = kanal.teilen.listen((t) => ref.read(teilenProvider.notifier).eingegangen(t));
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (!mounted) return;
       // Sitzung prüfen (GET /me); parallel Pflicht-Update erkennen, bevor jemand sich anmeldet
@@ -59,6 +65,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
       await ref.read(authProvider.notifier).start();
       final start = await kanal.startLink();
       if (start != null) _linkVonAussen(start);
+      final geteilt = await kanal.startTeilen();
+      if (geteilt != null && mounted) ref.read(teilenProvider.notifier).eingegangen(geteilt);
     });
   }
 
@@ -66,6 +74,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_links?.cancel());
+    unawaited(_teilen?.cancel());
     super.dispose();
   }
 
@@ -84,6 +93,22 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   void _linkVonAussen(String link) {
     if (!istEinladungsLink(link)) return;
     ref.read(inviteIntakeProvider.notifier).eingegangen(parseInviteToken(link));
+  }
+
+  /// Geteilter Text wartet und die Person ist angemeldet: die Auswahl "Wohin damit?" öffnen (eine Seite über allem, nur einmal). Nicht angemeldet: der Text bleibt liegen
+  /// und wird nach der Anmeldung angeboten.
+  void _teilenAnbieten() {
+    if (_teilenOffen || ref.read(teilenProvider) == null || ref.read(authProvider).status != AuthStatus.angemeldet) return;
+    _teilenOffen = true;
+    WidgetsBinding.instance.scheduleFrame();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final nav = _navigatorKey.currentState;
+      if (nav == null || ref.read(teilenProvider) == null || ref.read(authProvider).status != AuthStatus.angemeldet) {
+        _teilenOffen = false;
+        return;
+      }
+      unawaited(nav.push<void>(TeilenSeite.route()).whenComplete(() => _teilenOffen = false));
+    });
   }
 
   void _einladungVerarbeiten() {
@@ -132,8 +157,15 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
       if (alt != neu && neu != AuthStatus.angemeldet) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _navigatorKey.currentState?.popUntil((r) => r.isFirst));
       }
+      // Abmelden, Sitzungsverlust und Personenwechsel verwerfen einen wartenden geteilten Text; nach der Anmeldung wird er angeboten
+      if (alt == AuthStatus.angemeldet && neu != AuthStatus.angemeldet) {
+        ref.read(teilenProvider.notifier).verwerfen();
+      } else {
+        _teilenAnbieten();
+      }
       _einladungVerarbeiten();
     });
+    ref.listen(teilenProvider, (_, _) => _teilenAnbieten());
     ref.listen(inviteIntakeProvider, (_, _) => _einladungVerarbeiten());
     return MaterialApp(
       title: kAppName,
