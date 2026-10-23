@@ -1278,7 +1278,7 @@ export const konversationen = pgTable(
       .default(sql`'{}'::uuid[]`),
     /** Wer die Konversation angelegt hat (setzt der Server; null beim Familienchat und nach dem Entfernen der Person). */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
-    /** Nur Art `meds` (Medikamenten-Plan, Abschnitt 6i): die Person, um deren Medikamente es geht (unveränderlich); sonst null. */
+    /** Nur Art `meds` (Medikamenten-Plan, Abschnitt 6k): die Person, um deren Medikamente es geht (unveränderlich); sonst null. */
     subjektId: uuid('subjekt_id'),
     createdAt: createdAt(),
     ...syncColumns(),
@@ -1470,7 +1470,7 @@ export const pins = pgTable(
 );
 
 /**
- * Medikamenten-Plan (Abschnitt 6i): ein Medikament einer Person, Kind der Medikamenten-Konversation (`konversationen.art = 'meds'`). `inhalt` ist eine Ende-zu-Ende
+ * Medikamenten-Plan (Abschnitt 6k): ein Medikament einer Person, Kind der Medikamenten-Konversation (`konversationen.art = 'meds'`). `inhalt` ist eine Ende-zu-Ende
  * verschlüsselte, signierte e1-Hülle (Name, Dosis, Rhythmus, Uhrzeiten, Vorrat, Notizen, Rezeptdatum, Zustand): der Server sieht nur Struktur und Größe.
  * `bearbeiter_id` ist die Person, die den Inhalt zuletzt geschrieben (und signiert) hat.
  */
@@ -1501,7 +1501,7 @@ export const medikamente = pgTable(
 );
 
 /**
- * Einnahme-Eintrag (Medikamenten-Protokoll, Abschnitt 6i): Kind eines Medikaments. `inhalt` ist eine e1-Hülle (geplanter Zeitpunkt, Zeitpunkt der Einnahme, Status, Menge).
+ * Einnahme-Eintrag (Medikamenten-Protokoll, Abschnitt 6k): Kind eines Medikaments. `inhalt` ist eine e1-Hülle (geplanter Zeitpunkt, Zeitpunkt der Einnahme, Status, Menge).
  * Der Server löscht Einträge nach 120 Tagen (nach `created_at`, Serverzeit; Wartungsjob sync/meds.ts).
  */
 export const einnahmen = pgTable(

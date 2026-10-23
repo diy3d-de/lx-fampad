@@ -1,4 +1,4 @@
-// Medikamenten-Plan, Teil des Servers außerhalb der Sync-Engine (Abschnitt 6i):
+// Medikamenten-Plan, Teil des Servers außerhalb der Sync-Engine (Abschnitt 6k):
 //  - `purgeAlteEinnahmen`: Einnahme-Einträge werden nach 120 Tagen gelöscht (Serverzeit, `created_at`), mit Tombstone, damit die Geräte ihre Kopie entfernen. Läuft im
 //    stündlichen Wartungsjob (sync/maintenance.ts); je Familie in einer eigenen Transaktion mit gesperrter Familienzeile (wie jede andere Änderung).
 //  - `reconcileMedsTeilnehmer`: nach einem Rollenwechsel (Kind wird Erwachsener, Elternteil wird Kind) zieht der Server die Teilnehmerlisten der Medikamenten-Konversationen

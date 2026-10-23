@@ -24,7 +24,7 @@ import { direktChatId, familienchatId, istUuidV4, lesestandId, medsChatId } from
 import { iso, timestamp, uuid } from './common.js';
 import { aktiveRollen, medsTeilnehmerGueltig } from './meds-regeln.js';
 
-/** `meds`: verborgene Konversation für die Medikamente EINER Person (Abschnitt 6i): nie in der Chatliste, nie mit Nachrichten, nur Medikamente und Einnahmen darunter. */
+/** `meds`: verborgene Konversation für die Medikamente EINER Person (Abschnitt 6k): nie in der Chatliste, nie mit Nachrichten, nur Medikamente und Einnahmen darunter. */
 export const KONVERSATION_ARTEN = ['family', 'direct', 'group', 'meds'] as const;
 /** Teilnehmer je Gruppe (einschließlich der anlegenden Person). */
 export const MAX_GRUPPE = 20;

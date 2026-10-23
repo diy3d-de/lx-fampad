@@ -1,4 +1,4 @@
-// Regeln der Medikamenten-Konversation (Abschnitt 6i): wer die Medikamente einer Person sehen darf. Rein (ohne Datenbank), damit Register, Rollenwechsel und Tests dieselbe Regel benutzen.
+// Regeln der Medikamenten-Konversation (Abschnitt 6k): wer die Medikamente einer Person sehen darf. Rein (ohne Datenbank), damit Register, Rollenwechsel und Tests dieselbe Regel benutzen.
 //
 //  - Subjekt = die Person, um deren Medikamente es geht. Sie sieht immer ihre eigenen.
 //  - Subjekt ist ein Kind (Rolle `child`): zusätzlich dürfen Eltern und Admins (Rollen `parent`/`admin`) teilnehmen, nie ein anderes Kind (auch kein Geschwister).

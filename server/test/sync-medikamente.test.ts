@@ -1,4 +1,4 @@
-// Medikamenten-Plan im Sync (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6i): verborgene Konversation je Person (Art `meds`), Medikamente und Einnahmen als Kinder.
+// Medikamenten-Plan im Sync (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6k): verborgene Konversation je Person (Art `meds`), Medikamente und Einnahmen als Kinder.
 // Gesundheitsdaten: Erwachsene sehen NIE die eines anderen Erwachsenen (auch Admins nicht), Eltern und Admins sehen zusätzlich die ihrer Kinder, Kinder nur die eigenen.
 // Der Server sieht nur undurchsichtige e1-Hüllen; geprüft werden Teilnehmer-Grenze, Rollen-Regel, feste IDs, Kaskade, Konflikte, Limits, Wecker und die 120 Tage.
 import { randomUUID } from 'node:crypto';

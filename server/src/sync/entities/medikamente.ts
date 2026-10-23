@@ -1,4 +1,4 @@
-// Medikamenten-Plan: Medikamente und Einnahmen (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6i). Gesundheitsdaten, Ende-zu-Ende verschlüsselt.
+// Medikamenten-Plan: Medikamente und Einnahmen (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6k). Gesundheitsdaten, Ende-zu-Ende verschlüsselt.
 //
 // Aufbau (bewusst auf der geprüften Chat-Mechanik): Je Person (Subjekt) gibt es eine verborgene Konversation der Art `meds` (feste ID aus dem Subjekt, `medsChatId`).
 // Ihre Teilnehmerliste ist die Sichtgrenze (`Facts.participants`, harte Grenze vor jeder Rollenregel, nie ein Rollen-Durchgriff): das Subjekt und, nur bei einem Kind,
