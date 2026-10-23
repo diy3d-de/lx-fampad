@@ -8,6 +8,8 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../api/api_error.dart';
+import '../auth/auth_state.dart' show apiProvider;
 import '../sync/sync_socket.dart';
 import 'standort_dienst.dart' show StandortSocketFabrik, standortSocketFabrikProvider;
 import 'standort_hinweis.dart';
@@ -16,7 +18,10 @@ class StandortAbruf {
   final StandortSocketFabrik fabrik;
   final StandortBenachrichtiger benachrichtiger;
   final DateTime Function() jetzt;
-  StandortAbruf({required this.fabrik, required this.benachrichtiger, DateTime Function()? jetzt}) : jetzt = jetzt ?? DateTime.now;
+
+  /// Sorgt vor dem Ticket für ein gültiges Zugangstoken (erneuert es einmal, serialisiert; wirft [ApiException]). Ohne: kein Erneuern (Tests der Verbindung).
+  final Future<void> Function()? zugangSichern;
+  StandortAbruf({required this.fabrik, required this.benachrichtiger, DateTime Function()? jetzt, this.zugangSichern}) : jetzt = jetzt ?? DateTime.now;
 
   /// Verbindet kurz und meldet neue Freigaben (höchstens einmal je 30 Sekunden und Gerät, gebucht in der lokalen Datenbank). [stille]: so lange nach dem Aufbau noch auf Nachreichungen warten; [hoechstens]: Obergrenze inklusive Aufbau.
   Future<void> abfragen({Duration stille = const Duration(milliseconds: 1500), Duration hoechstens = const Duration(seconds: 15), Duration aufbauFrist = const Duration(seconds: 8)}) async {
@@ -26,6 +31,18 @@ class StandortAbruf {
     if (benachrichtiger.istVordergrund()) return notiere('im_vordergrund');
     if (!await benachrichtiger.aktiv()) return notiere('aus');
     if (!await benachrichtiger.abrufErlaubt()) return notiere('gedrosselt'); // höchstens einer je 30 Sekunden und Gerät (WebSocket-Ticket, Anmelde-Grenze je IP)
+    // Das Zugangstoken (15 Minuten) ist nach einer Weile abgelaufen, der Hintergrund-Client erneuert nie von selbst: einmal erneuern, sonst ehrlich melden
+    // (kein Ticket, keine Wiederholung; die Person öffnet die App, die Anmeldung läuft dort weiter).
+    final sichern = zugangSichern;
+    if (sichern != null) {
+      try {
+        await sichern();
+      } on ApiException catch (e) {
+        return notiere(e.kind == ApiErrorKind.nichtAngemeldet ? 'anmeldung_abgelaufen' : 'keine_verbindung');
+      } catch (_) {
+        return notiere('keine_verbindung');
+      }
+    }
     var verbunden = false;
     var freigaben = 0;
     final fertig = Completer<void>();
@@ -80,4 +97,6 @@ class StandortAbruf {
   }
 }
 
-final standortAbrufProvider = Provider<StandortAbruf>((ref) => StandortAbruf(fabrik: ref.read(standortSocketFabrikProvider), benachrichtiger: ref.read(standortBenachrichtigerProvider)));
+final standortAbrufProvider = Provider<StandortAbruf>(
+  (ref) => StandortAbruf(fabrik: ref.read(standortSocketFabrikProvider), benachrichtiger: ref.read(standortBenachrichtigerProvider), zugangSichern: () => ref.read(apiProvider).client.zugangErneuern()),
+);

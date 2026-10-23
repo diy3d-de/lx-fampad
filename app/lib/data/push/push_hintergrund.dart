@@ -6,6 +6,8 @@
 //  - Nie das Refresh-Token einlösen: Der Hintergrund-Client ist ein ApiClient mit refreshErlaubt: false. Ist das Access-Token abgelaufen
 //    oder wird es abgelehnt, endet der Lauf ohne Tokenzugriff und ohne die Sitzung zu verwerfen; der nächste Start der App gleicht ab.
 //    (Zwei Engines dürften sonst dasselbe Refresh-Token einlösen: der Server würde die ganze Familie widerrufen.)
+//    Einzige Ausnahme: der Standort-Abruf (`StandortAbruf`) erneuert ausdrücklich einmal über `ApiClient.zugangErneuern` (serialisiert, höchstens einmal je 30 s,
+//    nie in einer Schleife); scheitert das, bleibt nur der Diagnose-Code `anmeldung_abgelaufen` bzw. `keine_verbindung`.
 //  - Serialisiert und gedrosselt ([WeckerLauf]): höchstens ein Lauf zugleich, mindestens 10 s zwischen zwei Läufen, Wecker dazwischen
 //    werden zu einem Lauf zusammengefasst. Das Plugin ruft den Dart-Code auf jeden Wecker; eine Flut (auch von fremden Apps, die die
 //    exportierte Empfänger-Komponente ansprechen) führt so zu höchstens einem Abgleich je 10 s.

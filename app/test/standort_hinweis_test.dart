@@ -4,12 +4,16 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/api/api_client.dart';
+import 'package:lx_fampad/data/api/fampad_api.dart';
+import 'package:lx_fampad/data/api/token_store.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/standort/standort_abruf.dart';
 import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/sync/sync_socket.dart';
 
+import 'support/fake_server.dart';
 import 'support/fake_socket.dart';
 
 const _ich = 'aaaaaaaa-0000-4000-8000-000000000001';
@@ -292,6 +296,73 @@ void main() {
       sockets.scheitern = 0;
       await mitServer((a) => a.abfragen(stille: const Duration(milliseconds: 100), hoechstens: const Duration(seconds: 3)), (_) {});
       expect(await code(), 'ok');
+    });
+
+    group('abgelaufenes Zugangstoken im Hintergrund (Client ohne eigene Erneuerung)', () {
+      Future<(StandortAbruf, FakeServer, MemoryTokenStore)> hintergrund(FakeServer server, {required bool abgelaufen}) async {
+        final (_, store) = await angemeldeterClient(server, accessBis: abgelaufen ? DateTime.now().subtract(const Duration(minutes: 1)) : null);
+        // wie der Hintergrund-Container: derselbe Client darf von selbst nie erneuern
+        final bg = ApiClient(client: server.client, store: store, web: false, base: 'https://familie.test', refreshErlaubt: false);
+        final api = FampadApi(bg, geraet: () async => null);
+        return (
+          StandortAbruf(
+            benachrichtiger: benachrichtiger(),
+            zugangSichern: bg.zugangErneuern,
+            fabrik: ({required beiNachricht, required beiStatus}) => SyncSocket(
+              ticket: api.wsTicket,
+              beiRev: (_) {},
+              beiStatus: beiStatus,
+              beiNachricht: beiNachricht,
+              oeffner: sockets.oeffner,
+              adresse: () => Uri.parse('wss://familie.test/ws'),
+            ),
+          ),
+          server,
+          store,
+        );
+      }
+
+      Future<String?> code() async => StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagAbruf))?.code;
+
+      test('abgelaufen: genau eine Erneuerung, dann Ticket mit dem neuen Token, Verbindung steht', () async {
+        final server = FakeServer()
+          ..on('POST /auth/refresh', (_) => jsonAntwort({'session': appSession(access: 'access-2', refresh: 'refresh-2')}))
+          ..json('POST /ws-ticket', {'ticket': 't-1'});
+        final (a, _, store) = await hintergrund(server, abgelaufen: true);
+        await a.abfragen(stille: const Duration(milliseconds: 100), hoechstens: const Duration(seconds: 3));
+        expect(server.log.map((r) => r.key), ['POST /auth/refresh', 'POST /ws-ticket']);
+        expect(server.anfragen('POST /ws-ticket').single.headers['authorization'], 'Bearer access-2');
+        expect((await store.readTokens())!.refreshToken, 'refresh-2');
+        expect(sockets.sockets, isNotEmpty);
+        expect(await code(), 'ok');
+      });
+
+      test('gültiges Token: keine Erneuerung', () async {
+        final server = FakeServer()..json('POST /ws-ticket', {'ticket': 't-1'});
+        final (a, _, _) = await hintergrund(server, abgelaufen: false);
+        await a.abfragen(stille: const Duration(milliseconds: 100), hoechstens: const Duration(seconds: 3));
+        expect(server.anfragen('POST /auth/refresh'), isEmpty);
+        expect(await code(), 'ok');
+      });
+
+      test('Erneuerung abgelehnt: ehrlicher Zustand "anmeldung_abgelaufen", kein Ticket, keine Wiederholung', () async {
+        final server = FakeServer()..on('POST /auth/refresh', (_) => fehler(401, 'invalid_token'));
+        final (a, _, _) = await hintergrund(server, abgelaufen: true);
+        await a.abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(seconds: 2));
+        expect(server.log.map((r) => r.key), ['POST /auth/refresh']);
+        expect(sockets.sockets, isEmpty);
+        expect(await code(), 'anmeldung_abgelaufen');
+        expect(standortDiagnoseText('anmeldung_abgelaufen'), contains('öffne die App'));
+      });
+
+      test('Netz weg bei der Erneuerung: "keine_verbindung", Token bleiben unangetastet', () async {
+        final server = FakeServer()..on('POST /auth/refresh', (_) => fehler(503, 'unavailable'));
+        final (a, _, store) = await hintergrund(server, abgelaufen: true);
+        await a.abfragen(stille: const Duration(milliseconds: 50), hoechstens: const Duration(seconds: 2));
+        expect(await code(), 'keine_verbindung');
+        expect((await store.readTokens())!.refreshToken, 'refresh-1');
+        expect(server.anfragen('POST /auth/refresh'), hasLength(1));
+      });
     });
 
     test('Hinweise aus oder App im Vordergrund: keine Verbindung', () async {
