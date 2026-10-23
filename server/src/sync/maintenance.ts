@@ -10,6 +10,7 @@ import { getTableName } from 'drizzle-orm';
 import type { AuthContext } from '../auth/context.js';
 import { appliedOps, changeLog, devices, families } from '../db/schema.js';
 import { defaultRegistry } from './index.js';
+import { purgeAlteEinnahmen } from './meds.js';
 import { syncColumns, type EntityDef, type Registry } from './registry.js';
 import { REJECTED_RETENTION_DAYS, RETENTION_DAYS } from './types.js';
 
@@ -20,6 +21,8 @@ export interface SyncPurgeReport {
   logEntriesPurged: number;
   opsPurged: number;
   contentCleared: number;
+  /** Einnahme-Einträge des Medikamenten-Plans, die älter als 120 Tage waren. */
+  einnahmenPurged: number;
 }
 
 function depth(registry: Registry, def: EntityDef): number {
@@ -31,7 +34,9 @@ function depth(registry: Registry, def: EntityDef): number {
 export async function runSyncMaintenance(ctx: Pick<AuthContext, 'db' | 'now'>, registry: Registry = defaultRegistry): Promise<SyncPurgeReport> {
   const now = ctx.now();
   const cutoff = new Date(now.getTime() - RETENTION_DAYS * DAY_MS);
-  const report: SyncPurgeReport = { tombstonesPurged: 0, logEntriesPurged: 0, opsPurged: 0, contentCleared: 0 };
+  const report: SyncPurgeReport = { tombstonesPurged: 0, logEntriesPurged: 0, opsPurged: 0, contentCleared: 0, einnahmenPurged: 0 };
+  // Medikamenten-Protokoll: nach 120 Tagen löschen (mit Tombstone); vor dem allgemeinen Aufräumen, damit dessen Fristen die neuen Tombstones mitnehmen
+  report.einnahmenPurged = await purgeAlteEinnahmen(ctx, registry);
   // Kinder vor Eltern
   const defs = registry.list().sort((a, b) => depth(registry, b) - depth(registry, a));
 

@@ -2,6 +2,7 @@ import { aufgabeEntity, aufgabePunktEntity } from './entities/aufgaben.js';
 import { epocheEntity, epocheWrapEntity } from './entities/chat-epochen.js';
 import { konversationEntity, lesestandEntity, nachrichtEntity } from './entities/chat.js';
 import { pinEntity, reaktionEntity, stimmeEntity } from './entities/chat-zusatz.js';
+import { einnahmeEntity, medikamentEntity } from './entities/medikamente.js';
 import { listEntity, listItemEntity } from './entities/lists.js';
 import { terminAusnahmeEntity, terminEntity, terminTeilnehmerEntity } from './entities/termine.js';
 import { Registry } from './registry.js';
@@ -23,4 +24,6 @@ export const defaultRegistry = new Registry([
   reaktionEntity,
   stimmeEntity,
   pinEntity,
+  medikamentEntity,
+  einnahmeEntity,
 ]);

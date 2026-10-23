@@ -5,6 +5,7 @@ import { credentials, devices, type FamilyRole, invites, memberships, personKeys
 import { AppError } from '../errors.js';
 import { serializeErr } from '../log.js';
 import { defaultRegistry } from '../sync/index.js';
+import { reconcileMedsTeilnehmer } from '../sync/meds.js';
 import { detachMemberRefs } from '../sync/refs.js';
 import { writeAudit } from './audit.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
@@ -172,6 +173,7 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
   requireStepUp(ctx, p);
   const target = await memberOf(ctx, p, targetId);
   if (target.role === role) return;
+  let syncRev: number | null = null;
   await ctx.db.transaction(async (tx) => {
     // Admin-Zeilen sperren: zwei gleichzeitige Herabstufungen dürfen nicht den letzten Admin entfernen
     await tx.select({ id: memberships.id }).from(memberships).where(and(eq(memberships.familyId, p.familyId), eq(memberships.role, 'admin'))).for('update');
@@ -179,6 +181,8 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
       throw new AppError(409, 'last_admin', 'Der letzte Admin kann nicht herabgestuft werden.');
     }
     await tx.update(memberships).set({ role }).where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)));
+    // Medikamenten-Plan: wer nach der neuen Rolle die Medikamente einer Person nicht mehr sehen darf (Kind wird Erwachsener, Elternteil wird Kind), fliegt aus der Teilnehmerliste
+    syncRev = await reconcileMedsTeilnehmer(tx, defaultRegistry, { familyId: p.familyId, now: ctx.now() });
     // Rollenwechsel (zum Beispiel Kind zu Elternteil): Hinterlegungen als Kind und als Elternteil werden ungültig
     await invalidateGuardianRole(tx, targetId, ctx.now());
     // die Sicht der Person auf die Daten ändert sich: ihre Geräte müssen den lokalen Stand verwerfen und neu synchronisieren
@@ -197,6 +201,7 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
       detail: { target: targetId, from: target.role, to: role },
     });
   });
+  if (syncRev !== null) ctx.onRev(p.familyId, syncRev);
   ctx.onMembersChanged(p.familyId);
 }
 
