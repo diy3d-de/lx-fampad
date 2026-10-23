@@ -12,12 +12,11 @@ import 'wandtablet_screen.dart';
 /// Öffnet den Modus über allem (Wurzel-Navigator, auch aus der Desktop-Shell heraus). Gibt zurück, wenn er beendet ist.
 Future<void> wandtabletStarten(BuildContext context) => Navigator.of(context, rootNavigator: true).push<void>(WandtabletScreen.route());
 
-/// true, sobald die Person angemeldet ist, die Einstellungen gelesen sind und "Beim Start automatisch starten" an ist. Das Wurzel-Widget (app.dart)
-/// hört darauf und startet den Modus einmal je Anmeldung.
-final wandtabletAutostartProvider = Provider<bool>((ref) {
+/// true, sobald die Person angemeldet ist und die Einstellungen gelesen sind. Das Wurzel-Widget (app.dart) hört darauf und prüft dann EINMAL je
+/// Anmeldung, ob "Beim Start automatisch starten" an ist (ein späteres Umschalten startet den Modus nie von selbst).
+final wandtabletBereitProvider = Provider<bool>((ref) {
   final angemeldet = ref.watch(authProvider.select((a) => a.status == AuthStatus.angemeldet && a.user != null));
-  final e = ref.watch(wandtabletEinstellungenProvider);
-  return angemeldet && e.geladen && e.autostart;
+  return angemeldet && ref.watch(wandtabletEinstellungenProvider.select((e) => e.geladen));
 });
 
 /// Zeile am Ende der Desktop-/Tablet-Startseite: startet den Modus. Keine Kopfzeilen-Aktion (die Kopfzeile bleibt bei allen Tabs gleich).

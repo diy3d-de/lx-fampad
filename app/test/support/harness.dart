@@ -101,6 +101,7 @@ const profilZeilenSeite = <String, String>{
   'Startseite anpassen': 'Startseite und Anzeige',
   'Wetter anzeigen': 'Startseite und Anzeige',
   'Widget „Heute“': 'Startseite und Anzeige',
+  'Wandtablet-Modus': 'Startseite und Anzeige',
 };
 
 const profilHauptTexte = {'Abmelden', 'Überall abmelden'};

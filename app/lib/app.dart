@@ -25,6 +25,7 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/pending_screen.dart';
 import 'features/shell/home_shell.dart';
 import 'features/teilen/teilen_seite.dart';
+import 'data/wandtablet/wandtablet_einstellungen.dart';
 import 'features/wandtablet/wandtablet_screen.dart';
 import 'features/wandtablet/wandtablet_steuerung.dart';
 import 'features/update/update_banner.dart';
@@ -170,12 +171,13 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
       _einladungVerarbeiten();
     });
     // Wandtablet-Modus: "Beim Start der App automatisch starten" (lokal je Gerät), einmal je Anmeldung
-    ref.listen(wandtabletAutostartProvider, (_, an) {
-      if (!an || _wandtabletGestartet) return;
-      _wandtabletGestartet = true;
+    ref.listen(wandtabletBereitProvider, (_, bereit) {
+      if (!bereit || _wandtabletGestartet) return;
+      _wandtabletGestartet = true; // nur die erste Prüfung nach der Anmeldung zählt
+      if (!ref.read(wandtabletEinstellungenProvider).autostart) return;
       WidgetsBinding.instance.scheduleFrame();
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (ref.read(wandtabletAutostartProvider)) unawaited(_navigatorKey.currentState?.push<void>(WandtabletScreen.route()));
+        if (ref.read(wandtabletBereitProvider)) unawaited(_navigatorKey.currentState?.push<void>(WandtabletScreen.route()));
       });
     });
     ref.listen(teilenProvider, (_, _) => _teilenAnbieten());

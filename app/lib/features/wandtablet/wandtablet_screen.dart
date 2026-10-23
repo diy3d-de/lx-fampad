@@ -237,59 +237,54 @@ class _Kopf extends ConsumerWidget {
     final heute = DateTime.utc(w.year, w.month, w.day);
     final hinweise = ref.watch(tagesHinweiseProvider).fuerTag(heute);
     final uhr = wandUhrText(jetzt);
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        // Ausstieg: Uhr gedrückt halten (auch als Aktion für Screenreader)
-        Semantics(
-          label: 'Uhr, $uhr Uhr, $datum',
-          hint: kWandHinweisBeenden,
-          onLongPress: onBeenden,
-          excludeSemantics: true,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onLongPress: onBeenden,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(uhr, style: _mono(gross ? 120 : 72, farbe: kTextStrong, gewicht: FontWeight.w700).copyWith(height: 1.0, letterSpacing: -2)),
-                  Text(datum, style: TextStyle(fontSize: gross ? 32 : 20, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: kTextStrong)),
-                ],
-              ),
-            ),
+    // Ausstieg: Uhr gedrückt halten (auch als Aktion für Screenreader). Die Uhr wächst nicht mit der Textskala (sie ist schon groß genug).
+    final uhrGruppe = Semantics(
+      label: 'Uhr, $uhr Uhr, $datum',
+      hint: kWandHinweisBeenden,
+      onLongPress: onBeenden,
+      excludeSemantics: true,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: onBeenden,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(uhr, textScaler: TextScaler.noScaling, style: _mono(gross ? 120 : 72, farbe: kTextStrong, gewicht: FontWeight.w700).copyWith(height: 1.0, letterSpacing: -2)),
+              Text(datum, style: TextStyle(fontSize: gross ? 32 : 20, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: kTextStrong)),
+            ],
           ),
         ),
-        if (hinweise.isNotEmpty) ...[
-          const SizedBox(width: 24),
-          Expanded(
-            child: Align(
-              alignment: Alignment.centerRight,
-              child: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (final h in hinweise)
-                    () {
-                      final farbe = h.art == TagesHinweisArt.feiertag ? kFeiertag : kFerien;
-                      return Semantics(
-                        label: '${h.art == TagesHinweisArt.feiertag ? 'Feiertag' : 'Schulferien'}: ${h.name}',
-                        excludeSemantics: true,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10), border: Border.all(color: farbe.withValues(alpha: 0.4))),
-                          child: Text(h.name, style: _mono(gross ? 20 : 16, farbe: farbe)),
-                        ),
-                      );
-                    }(),
-                ],
+      ),
+    );
+    final chips = Wrap(
+      alignment: gross ? WrapAlignment.end : WrapAlignment.start,
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        for (final h in hinweise)
+          () {
+            final farbe = h.art == TagesHinweisArt.feiertag ? kFeiertag : kFerien;
+            return Semantics(
+              label: '${h.art == TagesHinweisArt.feiertag ? 'Feiertag' : 'Schulferien'}: ${h.name}',
+              excludeSemantics: true,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10), border: Border.all(color: farbe.withValues(alpha: 0.4))),
+                child: Text(h.name, style: _mono(gross ? 20 : 16, farbe: farbe)),
               ),
-            ),
-          ),
-        ] else
-          const Spacer(),
+            );
+          }(),
+      ],
+    );
+    if (!gross) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [uhrGruppe, if (hinweise.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: chips)]);
+    }
+    return Row(
+      children: [
+        Flexible(flex: 3, child: uhrGruppe),
+        if (hinweise.isNotEmpty) ...[const SizedBox(width: 24), Flexible(flex: 2, child: Align(alignment: Alignment.centerRight, child: chips))],
       ],
     );
   }
