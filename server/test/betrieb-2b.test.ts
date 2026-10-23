@@ -585,18 +585,18 @@ describe.each(backends)('Betreiber Paket 2b ($name)', (backend) => {
   it('Hinweis: das Audit-Log kennt Länge und Ablauf, nie den Text', async () => {
     const { a } = await familie();
     await stepUp(a);
-    const text = 'Geheimer Wartungstext 4711';
+    const text = 'Geheimer Wartungstext xyzzy';
     expect((await a.client.put('/api/v1/admin/notice', { text, expiresInMinutes: 24 * 60 })).status).toBe(200);
     expect((await a.client.put('/api/v1/admin/notice', { text: null })).status).toBe(200);
     const ereignisse = await audit('operator_notice_set');
     expect(ereignisse).toHaveLength(2);
     expect(ereignisse[0]!.detail).toMatchObject({ had: false, has: true, length: [...text].length });
     expect(ereignisse[1]!.detail).toMatchObject({ had: true, has: false, length: 0, expiresAt: null });
-    expect(JSON.stringify(await world.db.select().from(schema.auditLog))).not.toContain('4711');
+    expect(JSON.stringify(await world.db.select().from(schema.auditLog))).not.toContain('xyzzy');
     // und die Betreiber-Ansicht des Protokolls zeigt es als Änderung, ohne Text
     await stepUp(a);
     const seite = await a.client.get('/api/v1/admin/audit?category=aenderungen');
-    expect(JSON.stringify(seite.json)).not.toContain('4711');
+    expect(JSON.stringify(seite.json)).not.toContain('xyzzy');
     expect((seite.json.items as Array<{ event: string }>).some((i) => i.event === 'operator_notice_set')).toBe(true);
   });
 
