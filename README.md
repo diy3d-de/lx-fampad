@@ -10,7 +10,7 @@ Die Daten bleiben auf dem eigenen Server in Deutschland (`familie.lx-labs.dev`).
 | Ordner | Inhalt |
 | --- | --- |
 | `server/` | Node 24 + TypeScript + Fastify + Drizzle (PostgreSQL 17), REST `/api/v1`, WebSocket `/ws` |
-| `app/` | Flutter 3.47.6 (Android + Web), Riverpod, drift |
+| `app/` | Flutter 3.47.7 (Android + Web), Riverpod, drift |
 | `deploy/` | Caddy, systemd, Deploy-Skripte, ntfy, Anleitung für Debian 13 |
 | `docs/` | [Projektbeschreibung](docs/PROJEKTBESCHREIBUNG.md), [gepinnte Versionen](docs/VERSIONEN.md), Mockups |
 
@@ -23,7 +23,7 @@ npm test && npm run lint
 cp .env.example .env        # DATABASE_URL anpassen, dann: npm run build && npm run migrate && npm start
 curl http://127.0.0.1:4400/api/v1/health
 
-# App (Flutter 3.47.6)
+# App (Flutter 3.47.7)
 cd app && flutter pub get --enforce-lockfile
 dart run build_runner build --delete-conflicting-outputs
 flutter analyze && flutter test

@@ -36,7 +36,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 
 | Paket | Version | Hinweis |
 | --- | --- | --- |
-| Flutter / Dart | 3.47.6 / 3.13.5 | wie lx-urlaubsplanung |
+| Flutter / Dart | 3.47.7 / 3.13.5 | wie lx-urlaubsplanung |
 | flutter_riverpod | 3.4.3 | |
 | drift / drift_dev | 2.35.1 | Web: COOP/COEP-Header für OPFS, sonst IndexedDB-Fallback |
 | drift_flutter / sqlite3 | 0.3.1 / 3.7.0 | `sqlite3.wasm` zur Version passend |
