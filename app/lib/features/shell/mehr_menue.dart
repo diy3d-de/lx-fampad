@@ -196,7 +196,7 @@ class _Kachel extends StatelessWidget {
     final e = eintrag;
     return Semantics(
       button: true,
-      label: e.hinweis > 0 ? '${e.label}, ${e.hinweis} ${e.ueberfaellig ? 'überfällig oder fällig' : 'Hinweise'}' : e.label,
+      label: e.hinweis > 0 ? '${e.label}, ${e.hinweis} ${e.hinweis == 1 ? 'Hinweis' : 'Hinweise'}${e.ueberfaellig ? ', Überfälliges dabei' : ''}' : e.label,
       excludeSemantics: true,
       child: Material(
         color: kBgElevated,
