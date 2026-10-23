@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart';
+import 'package:lx_fampad/data/standort/standort_einstellungen.dart';
 import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart';
 import 'package:lx_fampad/features/karte/karte_verfuegbar.dart';
@@ -10,6 +11,7 @@ import 'package:lx_fampad/features/standort/standort_karte.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
+import 'support/test_app.dart' show TestUmgebung;
 
 const _cora = '33333333-4444-4555-8666-777777777777';
 const _dora = '44444444-5555-4666-8777-888888888888';
@@ -89,6 +91,7 @@ void main() {
   );
 
   late _TestSteuerung steuerung;
+  late TestUmgebung umgebung;
 
   Future<void> start(
     WidgetTester tester, {
@@ -100,6 +103,7 @@ void main() {
     StandortKartenBuilder? karte,
   }) async {
     final env = await angemeldeteUmgebung(role: role);
+    umgebung = env;
     env.server.json('GET /members', {
       'members': [
         userJson(role: role),
@@ -321,6 +325,156 @@ void main() {
     expect(find.text('Akku: Teilen im Hintergrund'), findsNothing);
     expect(steuerung.gestartetMit, const Duration(hours: 1));
   });
+
+  GeteiltePosition ort(String id, {double lat = 48.13721, double lon = 11.5755}) =>
+      GeteiltePosition(userId: id, shareId: 's-$id', endetAt: jetzt.add(const Duration(minutes: 40)), breite: lat, laenge: lon, genauigkeit: 12, messzeit: jetzt.subtract(const Duration(minutes: 1)));
+
+  Future<String?> meta(WidgetTester tester, String k) async {
+    String? wert;
+    await tester.runAsync(() async => wert = await umgebung.db.metaLesen(k));
+    return wert;
+  }
+
+  group('Stumm je Person', () {
+    testWidgets('Knopf in der Zeile schaltet stumm (Eintrag bleibt sichtbar, ehrlich beschriftet), merkt es lokal und hebt es wieder auf', (tester) async {
+      await start(tester, zustand: StandortState(geteilt: {fixIdKind: person(fixIdKind), _cora: person(_cora)}));
+      await oeffnen(tester);
+      expect(find.text('stumm: keine Hinweise'), findsNothing);
+      await tippe(tester, find.byTooltip('Hinweise stumm schalten: Ben'));
+      await warte(tester);
+      expect(find.text('stumm: keine Hinweise'), findsOneWidget);
+      expect(find.text('Ben'), findsWidgets); // bleibt sichtbar
+      expect(find.byTooltip('Stumm aufheben: Ben'), findsOneWidget);
+      expect(stummAusWert(await meta(tester, kStandortStummSchluessel)), {fixIdKind});
+      await tippe(tester, find.byTooltip('Stumm aufheben: Ben'));
+      await warte(tester);
+      expect(find.text('stumm: keine Hinweise'), findsNothing);
+      expect(stummAusWert(await meta(tester, kStandortStummSchluessel)), isEmpty);
+    });
+
+    testWidgets('Detailblatt: Schalter mit ehrlicher Erklärung der Wirkung', (tester) async {
+      await start(tester, zustand: StandortState(geteilt: {fixIdKind: person(fixIdKind)}));
+      await oeffnen(tester);
+      await tippe(tester, find.textContaining('vor 2 Min').first);
+      await warte(tester);
+      expect(find.textContaining('Hinweise von Ben stumm'), findsOneWidget);
+      expect(find.textContaining('Die Person bleibt in Liste und Karte sichtbar'), findsOneWidget);
+      await tippe(tester, find.byType(Switch));
+      await warte(tester);
+      expect(stummAusWert(await meta(tester, kStandortStummSchluessel)), {fixIdKind});
+    });
+
+    testWidgets('gemerkte Stummschaltung gilt nach dem Start (aus sync_meta gelesen)', (tester) async {
+      await start(tester, zustand: StandortState(geteilt: {fixIdKind: person(fixIdKind)}));
+      await tester.runAsync(() => umgebung.db.metaSchreiben(kStandortStummSchluessel, stummZuWert({fixIdKind})));
+      await oeffnen(tester);
+      await warte(tester);
+      expect(find.text('stumm: keine Hinweise'), findsOneWidget);
+    });
+  });
+
+  group('Entfernung zu mir', () {
+    final eigene = GeraetePosition(breite: 48.13721, laenge: 11.5755, zeit: jetzt);
+
+    testWidgets('ohne eigenen Standort: Filter aus mit Hinweis, nichts wird ausgeblendet', (tester) async {
+      await start(tester, zustand: StandortState(geteilt: {fixIdKind: ort(fixIdKind), _cora: ort(_cora, lat: 50.0)}));
+      await oeffnen(tester);
+      expect(find.byKey(const Key('distanz-hinweis')), findsOneWidget);
+      expect(find.textContaining('Eigener Standort nicht bekannt'), findsOneWidget);
+      expect(find.text('unter 1 km'), findsOneWidget);
+      // die Knöpfe sind gesperrt: ein Tipp ändert nichts
+      await tester.tap(find.text('unter 1 km'), warnIfMissed: false);
+      await warte(tester);
+      expect(await meta(tester, kStandortDistanzSchluessel), isNull);
+      expect(find.text('Cora Berger'), findsWidgets);
+      expect(find.text('Ben'), findsWidgets);
+    });
+
+    testWidgets('beim Teilen: "unter 1 km" blendet Weit-Entfernte aus, zeigt Entfernung, merkt die Auswahl lokal', (tester) async {
+      await start(
+        tester,
+        zustand: StandortState(
+          phase: StandortPhase.teilt,
+          endetAt: jetzt.add(const Duration(hours: 1)),
+          empfaenger: const {fixIdKind},
+          verbunden: true,
+          eigene: eigene,
+          geteilt: {fixIdKind: ort(fixIdKind, lon: 11.5785), _cora: ort(_cora, lat: 49.0)},
+        ),
+      );
+      await oeffnen(tester);
+      expect(find.text('Cora Berger'), findsWidgets);
+      await tippe(tester, find.text('unter 1 km'));
+      await warte(tester);
+      expect(find.text('Cora Berger'), findsNothing);
+      expect(find.text('Ben'), findsWidgets);
+      expect(find.textContaining('1 Person ausgeblendet'), findsOneWidget);
+      expect(find.textContaining('m entfernt'), findsOneWidget);
+      expect(await meta(tester, kStandortDistanzSchluessel), 'km1');
+      await tippe(tester, find.text('Alle'));
+      await warte(tester);
+      expect(find.text('Cora Berger'), findsWidgets);
+    });
+
+    testWidgets('Filter ohne Treffer: eigener Hinweis statt "Niemand teilt gerade"', (tester) async {
+      await start(
+        tester,
+        zustand: StandortState(phase: StandortPhase.teilt, endetAt: jetzt.add(const Duration(hours: 1)), verbunden: true, eigene: eigene, geteilt: {_cora: ort(_cora, lat: 49.0)}),
+      );
+      await oeffnen(tester);
+      await tippe(tester, find.text('unter 5 km'));
+      await warte(tester);
+      expect(find.text('Niemand in dieser Entfernung'), findsOneWidget);
+      expect(find.text('Niemand teilt gerade'), findsNothing);
+    });
+  });
+
+  group('Gesamtlimit beim Verlängern', () {
+    testWidgets('am Limit: Knopf gesperrt, feste Meldung', (tester) async {
+      final beginn = jetzt.subtract(const Duration(hours: 20));
+      await start(tester, zustand: StandortState(phase: StandortPhase.teilt, beginnAt: beginn, endetAt: beginn.add(kStandortGesamtdauer), verbunden: true, empfaenger: const {fixIdKind}));
+      await oeffnen(tester);
+      expect(find.textContaining('Länger als 24 Stunden seit dem Start geht nicht'), findsOneWidget);
+      await tester.tap(find.text('1 Stunde länger'), warnIfMissed: false);
+      await warte(tester);
+      expect(steuerung.verlaengert, isNull);
+    });
+
+    testWidgets('noch nicht am Limit: kein Hinweis, Verlängern geht an die Steuerung', (tester) async {
+      await start(tester, zustand: StandortState(phase: StandortPhase.teilt, beginnAt: jetzt, endetAt: jetzt.add(const Duration(hours: 1)), verbunden: true, empfaenger: const {fixIdKind}));
+      await oeffnen(tester);
+      expect(find.textContaining('Länger als 24 Stunden'), findsNothing);
+      await tippe(tester, find.text('1 Stunde länger'));
+      expect(steuerung.verlaengert, const Duration(hours: 1));
+    });
+  });
+
+  for (final skala in [1.0, 1.5]) {
+    testWidgets('Layout Stumm/Filter bei 360 px, Textskala $skala: kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
+      await start(
+        tester,
+        skala: skala,
+        zustand: StandortState(
+          phase: StandortPhase.teilt,
+          beginnAt: jetzt.subtract(const Duration(hours: 24)),
+          endetAt: jetzt.add(const Duration(minutes: 5)),
+          verbunden: true,
+          empfaenger: const {fixIdKind},
+          eigene: GeraetePosition(breite: 48.13721, laenge: 11.5755, zeit: jetzt),
+          geteilt: {fixIdKind: ort(fixIdKind, lon: 11.5785), _cora: ort(_cora, lat: 49.0)},
+        ),
+      );
+      await tester.runAsync(() => umgebung.db.metaSchreiben(kStandortStummSchluessel, stummZuWert({fixIdKind})));
+      await oeffnen(tester);
+      await warte(tester);
+      expect(tester.takeException(), isNull);
+      expect(kleineZiele(tester), isEmpty);
+      await tippe(tester, find.text('unter 5 km'));
+      await warte(tester);
+      expect(tester.takeException(), isNull);
+      expect(kleineZiele(tester), isEmpty);
+    });
+  }
 
   for (final skala in [1.0, 1.5]) {
     testWidgets('Layout bei 360 px, Textskala $skala: kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {

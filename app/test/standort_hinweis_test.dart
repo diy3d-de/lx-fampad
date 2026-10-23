@@ -11,6 +11,7 @@ import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/standort/standort_abruf.dart';
 import 'package:lx_fampad/data/standort/standort_hinweis.dart';
+import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/sync/sync_socket.dart';
 
 import 'support/fake_server.dart';
@@ -183,6 +184,21 @@ void main() {
       expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.vordergrund);
       expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.nichts);
       expect(anzeige.gezeigt, isEmpty);
+    });
+
+    test('Stumm geschaltete Person: kein Hinweis (Diagnose "stumm"), eine andere Person schon; nach dem Aufheben wieder', () async {
+      await db.metaSchreiben(kStandortStummSchluessel, stummZuWert({_ben}));
+      final b = benachrichtiger();
+      expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.nichts);
+      expect(StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagHinweis))?.code, 'stumm');
+      expect(anzeige.gezeigt, isEmpty);
+      expect(await b.freigabe(von: _cora, shareId: 's2', endsAt: ende()), HinweisErgebnis.system);
+      // im Vordergrund auch kein Hinweis in der App
+      vordergrund = true;
+      expect(await b.freigabe(von: _ben, shareId: 's3', endsAt: ende()), HinweisErgebnis.nichts);
+      vordergrund = false;
+      await db.metaSchreiben(kStandortStummSchluessel, stummZuWert({}));
+      expect(await b.freigabe(von: _ben, shareId: 's1', endsAt: ende()), HinweisErgebnis.system);
     });
 
     test('eigene Freigabe, abgelaufene Freigabe, keine angemeldete Person und fehlende Erlaubnis melden nichts (ohne Erlaubnis wird nichts gebucht)', () async {

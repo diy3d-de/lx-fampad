@@ -1,8 +1,24 @@
 // Anzeige-Modelle und reine Hilfen fürs Standort teilen (ohne Flutter-Oberfläche, getestet in test/standort_modelle_test.dart).
+import 'dart:convert';
+
 import '../api/models.dart';
 
 /// Längste Freigabe (wie am Server und im Empfänger begrenzt).
 const Duration kStandortHoechstdauer = Duration(hours: 12);
+
+/// Längste Gesamtlaufzeit einer Freigabe vom Start an, auch nach mehrfachem Verlängern (Standard des Servers `LOC_MAX_TOTAL_MINUTES` = 24 h; stellt der Server
+/// es anders ein, lehnt er mit `total_limit` ab und die App meldet es).
+const Duration kStandortGesamtdauer = Duration(hours: 24);
+
+/// Feste Meldung, wenn das Verlängern nicht mehr geht (Gesamtlimit).
+String standortGesamtlimitText([Duration limit = kStandortGesamtdauer]) => 'Länger als ${limit.inHours} Stunden seit dem Start geht nicht. Starte danach neu.';
+
+/// Bis wann ein Verlängern höchstens gehen kann: je Anfrage höchstens [kStandortHoechstdauer] ab [jetzt] und insgesamt höchstens [kStandortGesamtdauer] ab [beginn].
+DateTime standortFruehestesLimit({required DateTime beginn, required DateTime jetzt}) {
+  final a = jetzt.add(kStandortHoechstdauer);
+  final b = beginn.add(kStandortGesamtdauer);
+  return a.isBefore(b) ? a : b;
+}
 
 /// Ab diesem Alter gilt eine Position als veraltet (die Anzeige warnt: "zuletzt gesehen vor …").
 const Duration kStandortVeraltetNach = Duration(minutes: 5);
@@ -122,3 +138,23 @@ Set<String> standardEmpfaenger(UserDto ich, Iterable<UserDto> mitglieder) => {
   for (final m in mitglieder)
     if (m.id != ich.id && m.status == MemberStatus.active && (ich.role != Role.child || m.role != Role.child)) m.id,
 };
+
+/// Schlüssel in `sync_meta`: Personen, deren Standort-Hinweise auf diesem Gerät stumm sind (JSON-Liste von Personen-IDs; nur lokal).
+const kStandortStummSchluessel = 'standort_stumm';
+
+/// Gemerkte Personen-IDs (tolerant: kaputter oder fremder Wert ergibt "niemand stumm").
+Set<String> stummAusWert(String? wert) {
+  if (wert == null || wert.isEmpty) return const {};
+  try {
+    final d = jsonDecode(wert);
+    if (d is List) {
+      return {
+        for (final x in d)
+          if (x is String && x.isNotEmpty) x,
+      };
+    }
+  } catch (_) {}
+  return const {};
+}
+
+String stummZuWert(Set<String> ids) => jsonEncode((ids.toList()..sort()));

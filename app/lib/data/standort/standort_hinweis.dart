@@ -15,6 +15,7 @@ import '../app_database.dart';
 import '../database_provider.dart';
 import '../erinnerungen/erinnerung_einstellungen.dart';
 import '../lists/members.dart';
+import 'standort_modelle.dart' show kStandortStummSchluessel, stummAusWert;
 import 'standort_anzeige_port_stub.dart' if (dart.library.io) 'standort_anzeige_port_io.dart';
 
 /// Schnittstelle zum Betriebssystem für die Benachrichtigung über eine Freigabe (Android: eigener Kanal "Standortfreigaben"; Web und Tests: ohne Wirkung bzw. Fake).
@@ -150,6 +151,8 @@ class StandortBenachrichtiger {
       final me = await ich();
       if (me == null || me == von) return await ergebnis('eigene', HinweisErgebnis.nichts);
       if (!await aktiv()) return await ergebnis('aus', HinweisErgebnis.nichts);
+      // stumm geschaltete Person (lokal je Gerät): kein Hinweis, der Eintrag bleibt in der Liste
+      if (stummAusWert(await db.metaLesen(kStandortStummSchluessel)).contains(von)) return await ergebnis('stumm', HinweisErgebnis.nichts);
       final rest = endsAt.difference(jetzt());
       if (rest <= Duration.zero) return await ergebnis('abgelaufen', HinweisErgebnis.nichts);
       if (await db.metaLesen(_buchSchluessel(von)) == shareId) return await ergebnis('schon_gemeldet', HinweisErgebnis.nichts);
@@ -267,6 +270,7 @@ String standortDiagnoseText(String code) => switch (code) {
   'schon_gemeldet' => 'schon gemeldet',
   'abstand' => 'unterdrückt: weniger als 10 Minuten nach dem letzten Hinweis dieser Person',
   'abgelaufen' => 'Freigabe schon abgelaufen',
+  'stumm' => 'unterdrückt: Person ist stumm geschaltet',
   'eigene' => 'eigene Freigabe',
   'keine_erlaubnis' => 'Android zeigt keine Benachrichtigungen (Erlaubnis oder Kanal aus)',
   'anzeige_fehlgeschlagen' => 'Anzeige fehlgeschlagen',
