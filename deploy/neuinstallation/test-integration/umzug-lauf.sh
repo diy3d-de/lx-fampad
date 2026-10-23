@@ -39,6 +39,7 @@ age-keygen -o "$ARBEIT/falsch.txt" >/dev/null 2>&1
 KEY_FALSCH="$(grep '^AGE-SECRET-KEY-' "$ARBEIT/falsch.txt")"
 ssh-keygen -q -t ed25519 -N "" -C pc-test -f "$ARBEIT/pc_key"
 ssh-keygen -q -t ed25519 -N "" -C ci-test -f "$ARBEIT/ci_key"
+ssh-keygen -q -t ed25519 -N "" -C lx-fampad-status -f "$ARBEIT/status_key"      # der zweite Schlüssel des NAS (nur für die Statusmeldung)
 mkdir -p /root/.ssh; chmod 700 /root/.ssh
 cp "$ARBEIT/pc_key.pub" /root/.ssh/authorized_keys; chmod 600 /root/.ssh/authorized_keys
 # öffentliche Vorgaben wie aus den Betriebsunterlagen: --params (NAS und der Schlüssel des Release-Uploads)
@@ -242,6 +243,21 @@ pruefe "Müll-Einheit installiert" test -f /etc/systemd/system/lx-fampad-waste.s
 pruefe "sudo-Regel für den Müll-Dienst ergänzt (und gültig), Wetter-Regel bleibt" bash -c "grep -q 'restart lx-fampad-waste' /etc/sudoers.d/lx-fampad && grep -q 'restart lx-fampad-weather' /etc/sudoers.d/lx-fampad && visudo -cf /etc/sudoers.d/lx-fampad"
 pruefe "Müll in der Liste als erledigt markiert" grep -qE 'Müll-Dienst.*-> erledigt' /root/umzug-offen.txt
 rm -f /usr/local/sbin/systemd-analyze
+# NAS-Rückkanal (Status vom NAS): steht in keiner Sicherung, bootstrap richtet ihn nicht ein; der Assistent ruft einrichtung-nasstatus.sh aus dem geprüften Checkout auf
+printf '%s\n' "$(cut -d' ' -f1-2 "$ARBEIT/nas_key.pub") lx-fampad-status" | "${UMZUG[@]}" --weiter nasstatus > "$ARBEIT/weiter-nas1.log" 2>&1; RC=$?
+gleich "--weiter nasstatus mit dem Schlüssel der Abholung: Exit-Code 1" 1 "$RC"
+enthaelt "Meldung: das ist der Schlüssel der Abholung" "$ARBEIT/weiter-nas1.log" "Schlüssel der Abholung"
+pruefe "dabei wurde nichts angelegt (kein Benutzer lxnasstatus)" bash -c "! id lxnasstatus"
+printf '%s\n' "$(cut -d' ' -f1-2 "$ARBEIT/status_key.pub") lx-fampad-status" "" | "${UMZUG[@]}" --weiter nasstatus > "$ARBEIT/weiter-nas2.log" 2>&1; RC=$?
+tail -22 "$ARBEIT/weiter-nas2.log"
+gleich "--weiter nasstatus mit dem zweiten Schlüssel: Exit-Code 0" 0 "$RC"
+enthaelt "Trockenlauf und echter Lauf von einrichtung-nasstatus.sh" "$ARBEIT/weiter-nas2.log" "Trockenlauf beendet: alle Prüfungen bestanden"
+pruefe "Benutzer lxnasstatus angelegt" id lxnasstatus
+pruefe "authorized_keys: nur von der NAS-IP, nur der erzwungene Befehl" bash -c "grep -q 'restrict,from=\"203.0.113.7\",command=\"/usr/local/sbin/lx-fampad-nasstatus-empfang\" ssh-ed25519' /var/lib/lxnasstatus/.ssh/authorized_keys"
+pruefe "Befehl installiert (root:root 755)" bash -c "[ \"\$(stat -c %U:%G:%a /usr/local/sbin/lx-fampad-nasstatus-empfang)\" = root:root:755 ]"
+pruefe "Ordner für die Statusdatei: lxnasstatus:lx-fampad 2750" bash -c "[ \"\$(stat -c %U:%G:%a /var/lib/lx-fampad-nasstatus)\" = lxnasstatus:lx-fampad:2750 ]"
+pruefe "NAS-Rückmeldung in der Liste als erledigt markiert" grep -qE 'NAS-Rückmeldung neu einrichten.*-> erledigt' /root/umzug-offen.txt
+pruefe "kein privater Schlüssel im Log dieses Aufrufs" bash -c "! grep -q 'PRIVATE KEY' '$ARBEIT/weiter-nas2.log'"
 "${UMZUG[@]}" --weiter pruefung > "$ARBEIT/weiter-pruefung.log" 2>&1 < /dev/null; RC=$?
 gleich "--weiter pruefung: Exit-Code 0" 0 "$RC"
 enthaelt "Abschlussprüfung bestanden" "$ARBEIT/weiter-pruefung.log" "Abschlussprüfung"

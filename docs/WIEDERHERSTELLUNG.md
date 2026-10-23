@@ -21,6 +21,7 @@ DNS (Cloudflare) und zum Server-Anbieter (netcup). Ohne den privaten age-Schlüs
 | `assetlinks.json` | `/srv/fampad/well-known` | ja | aus `deploy/assetlinks.json.template` |
 | Web-App, Server-Code, Schriften | `/srv/fampad/{web,server,font-fallback}` | nein | `deploy-web.sh` bzw. `deploy.sh` |
 | Dateiablage | `/srv/fampad/files` | nur mit `INCLUDE_FILES=1` | nicht ersetzbar, sobald genutzt |
+| NAS-Rückkanal („Status vom NAS“): Benutzer `lxnasstatus`, Befehl `/usr/local/sbin/lx-fampad-nasstatus-empfang`, Ordner `/var/lib/lx-fampad-nasstatus` | `/var/lib/lxnasstatus`, `/usr/local/sbin`, `/var/lib/lx-fampad-nasstatus` | **nein** | `deploy/backup/einrichtung-nasstatus.sh` (mit dem **zweiten** öffentlichen SSH-Schlüssel des NAS, `~/.ssh/lx-fampad-status.pub`, und der NAS-IP); ohne ihn fehlen nur die Anzeige und die Warnungen „NAS“ in „Betrieb“ |
 | Update-Signaturschlüssel (Ed25519), Android-Keystore | beim Entwickler / GitHub Secrets | **nicht Teil dieser Sicherung** | getrennt sichern (`tools/README.md`, `deploy/README.md` Abschnitt 10): geht der Keystore verloren, lässt sich die App nicht mehr aktualisieren |
 | lx-labs.dev | eigenes Projekt | nein | eigenes Deploy/Backup von lx-labs |
 
@@ -132,7 +133,7 @@ sudo systemctl start ntfy && sudo shred -u /dev/shm/config.tar.gz
     (`etc/lx-fampad/ntfy-family-password` nur, wenn die Datei im Archiv ist.) Passen `NTFY_TOKEN` in `/etc/lx-fampad/env` und die wiederhergestellte `user.db` nicht zusammen, in `env` das
     Token aus `ntfy-token` eintragen (README 7). Dienst `lx-fampad` neu starten.
 13. **Web-App und App-Dateien:** vom PC `deploy/deploy-web.sh` (README 8). `assetlinks.json` und `latest.json` kamen mit Schritt 7 zurück (README 9).
-14. **Sicherung wieder einrichten:** Abschnitt 3 der `BACKUP.md` (`einrichtung-backup.sh` mit denselben Schlüsseln; der NAS-Schlüssel bleibt gültig, nur das `known_hosts` auf dem NAS muss den neuen Host-Schlüssel kennen: `ssh-keygen -R familie.lx-labs.dev`, `ssh-keyscan` neu).
+14. **Sicherung wieder einrichten:** Abschnitt 3 der `BACKUP.md` (`einrichtung-backup.sh` mit denselben Schlüsseln; der NAS-Schlüssel bleibt gültig, nur das `known_hosts` auf dem NAS muss den neuen Host-Schlüssel kennen: `ssh-keygen -R familie.lx-labs.dev`, `ssh-keyscan` neu). **Danach den Rückkanal „Status vom NAS“ neu einrichten** (er steht in keiner Sicherung und fehlt auf dem neuen Server still): `sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey '<~/.ssh/lx-fampad-status.pub vom NAS>' --nas-ip '<NAS-IP>'`, dann ohne `--dry-run`; Anleitung: `BACKUP-EINRICHTUNG-SCHRITTE.md`, Abschnitt 11. Der Umzugs-Assistent (`umzug.sh`) hat dafür `--weiter nasstatus`.
 15. **Test:** `https://familie.lx-labs.dev` laden, Anmeldung mit Passkey/Passwort, **TOTP-Anmeldung** (beweist `AUTH_SECRET_KEY`), Listen und Kalender sichtbar, Push-Test, App-Update-Prüfung,
     `curl -sI https://lx-labs.dev` unverändert 200. Von außen: `nc -zv -w 3 <IP> 4400 2586 5432` müssen scheitern.
 16. **Nacharbeiten:** (a) **Datenverlust-Fenster:** Änderungen seit der Sicherung (bis zu ca. 24 h) fehlen; Geräte, deren Stand neuer ist als der des Servers, melden `resync_required` und laden alles neu

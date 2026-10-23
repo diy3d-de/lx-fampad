@@ -12,6 +12,7 @@
 #   --weiter caddy             nach der DNS-Umstellung: Caddy und Zertifikate (bootstrap --phase caddy,pruefung)
 #   --weiter wetter            nachdem der ALTE Server aus ist: Wetter-Dienst starten (Netatmo erlaubt nur einen Abrufer)
 #   --weiter muell             nachdem der ALTE Server aus ist: Müll-Dienst (Abfuhrtermine) starten
+#   --weiter nasstatus         NAS-Rückmeldung ("Status vom NAS", Betrieb Paket 3) neu einrichten: fragt den öffentlichen zweiten SSH-Schlüssel des NAS und ruft einrichtung-nasstatus.sh auf
 #   --weiter pruefung          Abschlussprüfung wiederholen und die Liste neu schreiben (geht auch ohne den Sicherungsordner)
 #   --ip ADRESSE               öffentliche IPv4-Adresse dieses Servers (sonst erkennt der Assistent sie; nur nötig hinter NAT)
 #   --params DATEI             optionale Parameterdatei (nur Öffentliches, Vorlage parameter.beispiel) als Vorgabe, z. B. mit den NAS-Daten aus deinen Unterlagen;
@@ -1212,6 +1213,13 @@ liste_bauen() { # füllt LISTE (reiner Text; Überschriften beginnen mit "[n] ")
     l "      In $PARAMS_ERZEUGT zwei Zeilen ergänzen: BACKUP_NAS_PUBKEY=<öffentlicher SSH-Schlüssel des NAS>  und  BACKUP_NAS_IP=<IP des NAS>"
     l "      dann: bash $HIER/bootstrap-server.sh --params $PARAMS_ERZEUGT --phase sicherung   und danach den Host-Schlüssel auf dem NAS neu lernen (docs/NEUINSTALLATION.md, Abschnitt 6)"
   fi
+  n=$((n + 1)); l "[$n] NAS-Rückmeldung neu einrichten  (\"Status vom NAS\" für Betrieb; nur wenn du sie nutzt: sie steht in keiner Sicherung und fehlt nach dem Umzug still)$(erl nasstatus)"
+  l "      Der Server hat keine Zugangsdaten zum NAS, darum braucht er den ÖFFENTLICHEN zweiten Schlüssel des NAS: auf dem NAS  cat ~/.ssh/lx-fampad-status.pub"
+  l "      (Zeile mit lx-fampad-status; gibt es ihn noch nicht: ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status, im selben .ssh wie der Schlüssel der Abholung)."
+  l "      hier:  $u --weiter nasstatus      (fragt den öffentlichen Schlüssel und richtet es ein; nimmt die NAS-IP aus den Antworten)"
+  l "      oder von Hand (als lx, nach git -C ~/lx-fampad status --short deploy):"
+  l "        sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey '<öffentlicher zweiter Schlüssel lx-fampad-status vom NAS>' --nas-ip '${A_NAS_IP:-<NAS-IP>}'"
+  l "        dann derselbe Aufruf ohne --dry-run; danach auf dem NAS lx-fampad-nasstatus.sh einmal von Hand (docs/BACKUP-EINRICHTUNG-SCHRITTE.md, Abschnitt 11)."
   n=$((n + 1)); l "[$n] Alten Server endgültig stoppen  (falls noch nicht in [1] geschehen)"
   l "      alt:   sudo systemctl stop lx-fampad lx-fampad-weather"
   if [ "$A_WETTER" = 1 ]; then
@@ -1347,21 +1355,22 @@ weiter_wetter() {
   weiter_liste
 }
 # git als lx im Checkout, gehärtet: keine fsmonitor- und Hook-Programme aus der Konfiguration des Checkouts, HOME wie bei git_lx in bootstrap-server.sh
-git_muell() { # $1 Checkout, Rest: git-Argumente
+git_checkout() { # $1 Checkout, Rest: git-Argumente
   local co="$1" home; shift
   home="$(getent passwd "$LX_USER" | cut -d: -f6)"
   runuser -u "$LX_USER" -- env HOME="$home" GIT_TERMINAL_PROMPT=0 git -c core.fsmonitor=false -c core.hooksPath=/dev/null -C "$co" "$@"
 }
-# Der Müll-Dienst wird als root aus dem Checkout von lx gestartet: nur wenn der Checkout unverändert auf dem gewählten Code-Stand steht (auch nicht per
+lx_checkout() { printf '%s/lx-fampad' "$(getent passwd "$LX_USER" | cut -d: -f6)"; }   # der Git-Checkout von lx (für Tests ersetzbar)
+# Skripte aus dem Checkout von lx laufen als root (Müll-Dienst, NAS-Rückmeldung): nur wenn der Checkout unverändert auf dem gewählten Code-Stand steht (auch nicht per
 # assume-unchanged oder skip-worktree versteckt). Das schützt vor Versehen, NICHT vor einem manipulierten lx: wer in diesem Checkout schreiben kann, hat root-Rechte.
-muell_checkout_pruefen() { # $1 Checkout
+checkout_pruefen() { # $1 Checkout
   local co="$1" status kopf soll marker
-  status="$(git_muell "$co" status --porcelain --untracked-files=all --ignored -- deploy 2>/dev/null)" || return 1
+  status="$(git_checkout "$co" status --porcelain --untracked-files=all --ignored -- deploy 2>/dev/null)" || return 1
   [ -z "$status" ] || return 1
-  marker="$(git_muell "$co" ls-files -v -- deploy 2>/dev/null | grep -E '^[a-zS] ' || true)"
+  marker="$(git_checkout "$co" ls-files -v -- deploy 2>/dev/null | grep -E '^[a-zS] ' || true)"
   [ -z "$marker" ] || return 1
-  kopf="$(git_muell "$co" rev-parse HEAD 2>/dev/null)" || return 1
-  soll="$(git_muell "$co" rev-parse --verify --quiet "${A_GIT_REF}^{commit}" 2>/dev/null)" || return 1
+  kopf="$(git_checkout "$co" rev-parse HEAD 2>/dev/null)" || return 1
+  soll="$(git_checkout "$co" rev-parse --verify --quiet "${A_GIT_REF}^{commit}" 2>/dev/null)" || return 1
   [ -n "$kopf" ] && [ "$kopf" = "$soll" ]
 }
 weiter_muell() {
@@ -1369,10 +1378,10 @@ weiter_muell() {
   weiter_vorbereiten fertig
   echo; fett "Müll-Dienst starten"
   if [ "$A_MUELL" != 1 ]; then zeile "Die Abfuhrtermine waren auf dem alten Server nicht eingeschaltet: nichts zu tun."; return 0; fi
-  co="$(getent passwd "$LX_USER" | cut -d: -f6)/lx-fampad"
+  co="$(lx_checkout)"
   ziel="$co/deploy/einrichtung-muell.sh"
   [ -f "$ziel" ] || fehler_ende "$ziel fehlt (Code-Stand ohne Abfuhrtermine?)." "Nimm einen Code-Stand ab v0.9.0 (starte den Assistenten neu und antworte bei \"Code-Stand ändern?\" mit ja) oder lass den Müll-Dienst weg."
-  if ! muell_checkout_pruefen "$co"; then
+  if ! checkout_pruefen "$co"; then
     fehler_ende "Der Checkout $co weicht vom Code-Stand $A_GIT_REF ab (Änderungen in deploy/ oder anderer Commit); ich führe nichts als root daraus aus." "Prüfe ihn (git -C $co status, git -C $co log -1) und stelle ihn auf $A_GIT_REF zurück. Wer in $co schreiben kann, hat mit dem Dienst root-Rechte."
   fi
   if [ "$A_MUELL_LINK" != 1 ]; then
@@ -1388,6 +1397,82 @@ weiter_muell() {
   gut "Müll-Dienst (lx-fampad-waste) eingerichtet und gestartet."
   sudoers_muell_ergaenzen
   erledigt_markieren muell
+  weiter_liste
+}
+# NAS-Rückkanal ("Status vom NAS", Betrieb Paket 3): steht in keiner Sicherung und bootstrap-server.sh richtet ihn nicht ein (und wird hier nicht verändert).
+# Nur der Aufruf von einrichtung-nasstatus.sh aus dem geprüften Checkout. Der Server hat keine Zugangsdaten zum NAS: der ÖFFENTLICHE zweite Schlüssel kommt vom NAS.
+nasstatus_aufruf() { # $1 Skript, Rest: Optionen; Ausgabe auch ins Log
+  local skript="$1" rc; shift
+  bash "$skript" "$@" 2>&1 8>&- | tee -a "$LAUF_LOG"
+  rc=${PIPESTATUS[0]}
+  return "$rc"
+}
+# NAS-Adresse für einrichtung-nasstatus.sh: strenger als die der Abholung: höchstens 4 Adressen, Netze nur bis /24 (IPv4) bzw. /64 (IPv6), sonst lehnt das Skript sie ab
+nasstatus_ip_ok() { # $1 Adressen (Komma)
+  local t p teile=()
+  gueltige_nas_ip "$1" || return 1
+  IFS=',' read -ra teile <<<"$1"
+  [ "${#teile[@]}" -le 4 ] || return 1
+  for t in "${teile[@]}"; do
+    [[ "$t" == */* ]] || continue
+    p="${t#*/}"
+    if [[ "$t" == *:* ]]; then [ "$p" -ge 64 ] || return 1; else [ "$p" -ge 24 ] || return 1; fi
+  done
+  return 0
+}
+NS_IP=""
+nasstatus_ip_klaeren() { # $1 vorgeschlagene Adresse (leer = fragen); Ergebnis in NS_IP; höchstens dreimal fragen
+  local ip="$1" versuch=0
+  while ! nasstatus_ip_ok "$ip"; do
+    [ -z "$ip" ] || hinweis "Die NAS-Adresse '${ip:0:60}' passt hier nicht: einrichtung-nasstatus.sh erlaubt nur Einzeladressen oder Netze bis /24 (IPv4) bzw. /64 (IPv6), höchstens vier."
+    versuch=$((versuch + 1))
+    [ "$versuch" -le 3 ] || fehler_ende "Es wurde keine zulässige NAS-Adresse eingegeben." "Beispiel: 203.0.113.7 (die öffentliche Adresse deines Anschlusses, am besten eine Einzeladresse); starte den Befehl noch einmal."
+    lies_zeile "Öffentliche IP-Adresse des NAS (am sichersten eine Einzeladresse): "
+    ip="$ANTWORT"
+  done
+  NS_IP="$ip"
+}
+weiter_nasstatus() {
+  local co ziel ip key
+  weiter_vorbereiten fertig
+  echo; fett "NAS-Rückmeldung (Status vom NAS) einrichten"
+  zeile "Das NAS meldet nach jeder Abholung und jedem Wiederherstellungstest eine kleine, geprüfte Statusdatei an diesen Server (eigener, zweiter SSH-Schlüssel; der Server hält keine Zugangsdaten zum NAS)."
+  zeile "Ohne diesen Schritt zeigt \"Betrieb\" keine Rückmeldung des NAS und es gibt keine Warnungen dazu."
+  co="$(lx_checkout)"
+  ziel="$co/deploy/backup/einrichtung-nasstatus.sh"
+  [ -f "$ziel" ] || fehler_ende "$ziel fehlt (Code-Stand ohne NAS-Rückkanal?)." "Nimm einen neueren Code-Stand (starte den Assistenten und antworte bei \"Code-Stand ändern?\" mit ja) oder richte ihn später von Hand ein (docs/BACKUP-EINRICHTUNG-SCHRITTE.md, Abschnitt 11)."
+  if ! checkout_pruefen "$co"; then
+    fehler_ende "Der Checkout $co weicht vom Code-Stand $A_GIT_REF ab (Änderungen in deploy/ oder anderer Commit); ich führe nichts als root daraus aus." "Prüfe ihn (git -C $co status, git -C $co log -1) und stelle ihn auf $A_GIT_REF zurück. Wer in $co schreiben kann, hat mit dem Skript root-Rechte."
+  fi
+  ip="$A_NAS_IP"
+  if [ -z "$ip" ]; then hinweis "In den Antworten steht keine NAS-IP (die NAS-Abholung wurde nicht eingerichtet)."
+  else zeile "NAS-IP aus den Antworten: $ip"; fi
+  nasstatus_ip_klaeren "$ip"; ip="$NS_IP"
+  zeile "Auf dem NAS liegt der ÖFFENTLICHE Teil des zweiten Schlüssels unter ~/.ssh/lx-fampad-status.pub (Zeile mit \"lx-fampad-status\"). Gibt es ihn noch nicht:"
+  blass "  ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status      (im selben .ssh wie der Schlüssel der Abholung; nie den privaten Teil hierher)"
+  zeile "Gib genau EINE Zeile ein, die mit ssh- beginnt (der öffentliche Schlüssel, die Datei MIT .pub). Alles andere weise ich ab, ohne es weiter zu lesen."
+  lies_zeile "Öffentlicher Schlüssel (eine Zeile): "
+  key="$ANTWORT"
+  gueltiger_ssh_schluessel "$key" || fehler_ende "Das ist kein öffentlicher SSH-Schlüssel (erwartet: eine Zeile ssh-ed25519 AAAA… lx-fampad-status)." "Kopiere die Zeile aus ~/.ssh/lx-fampad-status.pub auf dem NAS (die Datei MIT .pub; der private Teil gehört nie hierher) und starte den Befehl noch einmal."
+  if [ -n "$A_NAS_PUBKEY" ] && [ "$(awk '{print $2}' <<<"$key")" = "$(awk '{print $2}' <<<"$A_NAS_PUBKEY")" ]; then
+    fehler_ende "Das ist der Schlüssel der Abholung, nicht der zweite Schlüssel für die Statusmeldung." "Erzeuge auf dem NAS einen eigenen Schlüssel (ssh-keygen -t ed25519 -N '' -C 'lx-fampad-status' -f ~/.ssh/lx-fampad-status) und gib dessen .pub-Zeile an."
+  fi
+  case "$key" in ssh-rsa\ *) hinweis "Das ist ein RSA-Schlüssel: einrichtung-nasstatus.sh nimmt ihn an, ein ed25519-Schlüssel wäre besser (ssh-keygen -t ed25519)." ;; esac
+  LETZTE_PHASE="nasstatus"
+  echo "=== $(date -u '+%F %T') UTC  einrichtung-nasstatus.sh" >> "$LAUF_LOG"
+  echo; zeile "Trockenlauf (einrichtung-nasstatus.sh --dry-run, ändert nichts) …"
+  while ! nasstatus_aufruf "$ziel" --dry-run --nas-pubkey "$key" --nas-ip "$ip"; do
+    schlecht "Der Trockenlauf von einrichtung-nasstatus.sh meldet ein Problem (siehe oben)."
+    frage_ja "Eine andere NAS-IP eingeben (z. B. wenn die Adresse abgelehnt wurde)?" nein \
+      || fehler_ende "Der Trockenlauf von einrichtung-nasstatus.sh meldet ein Problem (siehe oben)." "Behebe es (Einzelheiten: $LAUF_LOG, docs/BACKUP-EINRICHTUNG-SCHRITTE.md Abschnitt 11) und starte den Befehl noch einmal."
+    nasstatus_ip_klaeren ""; ip="$NS_IP"
+  done
+  echo
+  frage_ja "Trockenlauf ohne Befund. Jetzt einrichten?" ja || { zeile "Gut, ich ändere nichts."; return 0; }
+  nasstatus_aufruf "$ziel" --nas-pubkey "$key" --nas-ip "$ip" || fehler_ende "Das Einrichten der NAS-Rückmeldung ist fehlgeschlagen (siehe oben; das Skript hat seine Änderungen zurückgenommen)." "Behebe die Ursache (Einzelheiten: $LAUF_LOG) und starte den Befehl noch einmal."
+  gut "NAS-Rückmeldung auf diesem Server eingerichtet."
+  erledigt_markieren nasstatus
+  zeile "Noch auf dem NAS: lx-fampad-nasstatus.sh einmal von Hand ausführen (docs/BACKUP-EINRICHTUNG-SCHRITTE.md, Abschnitt 11.4); dann zeigt \"Betrieb\" > Backups die Rückmeldung."
   weiter_liste
 }
 weiter_pruefung() {
@@ -1533,7 +1618,7 @@ argumente_lesen() {
   while [ $# -gt 0 ]; do
     case "$1" in
       --probe) OPT_PROBE=1 ;;
-      --weiter) [ $# -ge 2 ] || { echo "--weiter braucht einen Wert (caddy, wetter, muell, pruefung)" >&2; exit 2; }; OPT_WEITER="$2"; shift ;;
+      --weiter) [ $# -ge 2 ] || { echo "--weiter braucht einen Wert (caddy, wetter, muell, nasstatus, pruefung)" >&2; exit 2; }; OPT_WEITER="$2"; shift ;;
       --aktualisieren) OPT_AKTUALISIEREN=1 ;;
       --ip) [ $# -ge 2 ] || { echo "--ip braucht einen Wert" >&2; exit 2; }; OPT_IP="$2"; shift ;;
       --params) [ $# -ge 2 ] || { echo "--params braucht einen Wert" >&2; exit 2; }; OPT_PARAMS="$2"; shift ;;
@@ -1546,7 +1631,7 @@ argumente_lesen() {
     esac
     shift
   done
-  case "$OPT_WEITER" in ''|caddy|wetter|muell|pruefung) ;; *) echo "Unbekannter Folgeschritt: $OPT_WEITER (erlaubt: caddy, wetter, muell, pruefung)" >&2; exit 2 ;; esac
+  case "$OPT_WEITER" in ''|caddy|wetter|muell|nasstatus|pruefung) ;; *) echo "Unbekannter Folgeschritt: $OPT_WEITER (erlaubt: caddy, wetter, muell, nasstatus, pruefung)" >&2; exit 2 ;; esac
   if [ -n "$OPT_WEITER" ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ] || [ "$OPT_AKTUALISIEREN" = 1 ]; }; then echo "--weiter geht nicht zusammen mit --probe, --neu oder --aktualisieren" >&2; exit 2; fi
   if [ "$OPT_PROBE" = 1 ] && [ "$OPT_NEU" = 1 ]; then echo "--probe geht nicht zusammen mit --neu (der Probelauf ändert nichts, auch keine gemerkten Antworten)" >&2; exit 2; fi
   if [ "$OPT_AKTUALISIEREN" = 1 ] && { [ "$OPT_PROBE" = 1 ] || [ "$OPT_NEU" = 1 ]; }; then echo "--aktualisieren geht nicht zusammen mit --probe oder --neu" >&2; exit 2; fi
@@ -1587,7 +1672,7 @@ main() {
   sperre_holen
   bootstrap_pruefen
   if [ -n "$OPT_WEITER" ]; then
-    case "$OPT_WEITER" in caddy) weiter_caddy ;; wetter) weiter_wetter ;; muell) weiter_muell ;; pruefung) weiter_pruefung ;; esac
+    case "$OPT_WEITER" in caddy) weiter_caddy ;; wetter) weiter_wetter ;; muell) weiter_muell ;; nasstatus) weiter_nasstatus ;; pruefung) weiter_pruefung ;; esac
     exit 0
   fi
   if [ "$OPT_AKTUALISIEREN" = 1 ]; then aktualisieren; exit 0; fi
