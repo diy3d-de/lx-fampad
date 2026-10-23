@@ -184,7 +184,21 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                         runSpacing: 4,
                         children: [...rollenPillen(user.role, user.familyRole), if (ref.watch(elternHilfeAktivProvider)) const RollenPille('eltern-hilfe aktiv', farbe: kTerminal)],
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 2),
+                      Semantics(
+                        button: true,
+                        label: 'Familienrolle ändern',
+                        child: InkWell(
+                          onTap: laeuft || auth.offline ? null : () => _familienrolle(user.familyRole),
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(minHeight: 44),
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: Text('Familienrolle ändern (nur Anzeige)', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
+                            ),
+                          ),
+                        ),
+                      ),
                       const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
                     ],
                   ),
@@ -205,16 +219,6 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall)),
           const SizedBox(height: 8),
           LinkKnopf('Trotzdem nur lokal abmelden', onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall, nurLokal: true)),
-        ],
-        if (user != null) ...[
-          const SizedBox(height: 12),
-          EinstellungsZeile(
-            icon: Icons.family_restroom,
-            titel: 'Familienrolle',
-            untertitel: 'nur anzeige, ändert keine rechte',
-            status: user.familyRole == null ? null : RollenPille(user.familyRole!.label, farbe: kTextMuted),
-            onTap: laeuft || auth.offline ? null : () => _familienrolle(user.familyRole),
-          ),
         ],
         const SizedBox(height: 12),
         const MonoLabel('// einstellungen'),

@@ -44,7 +44,7 @@ void main() {
       await starteApp(tester, env, skala: skala);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
       expect(find.text('Admin'), findsOneWidget);
-      expect(find.text('Elternteil'), findsNWidgets(2)); // Pille in der Kopfkarte und Status der Zeile "Familienrolle"
+      expect(find.text('Elternteil'), findsOneWidget); // Pille in der Kopfkarte
       pruefeLayout(tester, 'Profil mit Familienrolle');
       await tippe(tester, find.text('Mitglieder und Einladungen'));
       expect(find.byType(AdminScreen), findsOneWidget);
@@ -61,7 +61,7 @@ void main() {
     await starteApp(tester, env);
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
     // eine Pille in der Kopfkarte (nur Rolle) und der Status der Zeile "Familienrolle"
-    expect(find.text('Elternteil'), findsNWidgets(2));
+    expect(find.text('Elternteil'), findsOneWidget);
   });
 
   testWidgets('Profil: Familienrolle wählen sendet PUT /me/family-role und zeigt die neue Pille', (tester) async {
@@ -76,14 +76,13 @@ void main() {
       server.json('GET /me', me);
       return jsonAntwort({'ok': true});
     });
-    await tippe(tester, find.text('Familienrolle'));
-    expect(find.text('nur anzeige, ändert keine rechte'), findsNWidgets(2));
+    await tippe(tester, find.text('Familienrolle ändern (nur Anzeige)'));
     expect(kleineZiele(tester), isEmpty);
     await tippe(tester, find.text('Mutter'));
     final puts = server.anfragen('PUT /me/family-role');
     expect(puts, hasLength(1));
     expect(puts.single.json, {'familyRole': 'mutter'});
-    expect(find.text('Mutter'), findsNWidgets(2)); // Pille in der Kopfkarte und Status der Zeile
+    expect(find.text('Mutter'), findsOneWidget); // Pille in der Kopfkarte
     expect(find.text('Admin'), findsOneWidget); // Rolle bleibt
   });
 
@@ -92,7 +91,7 @@ void main() {
     final env = await angemeldeteUmgebung(server: server);
     await starteApp(tester, env);
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-    await tippe(tester, find.text('Familienrolle'));
+    await tippe(tester, find.text('Familienrolle ändern (nur Anzeige)'));
     await tippe(tester, find.text('Keine Angabe'));
     expect(server.anfragen('PUT /me/family-role').single.json, {'familyRole': null});
   });
