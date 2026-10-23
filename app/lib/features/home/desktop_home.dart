@@ -37,6 +37,7 @@ import 'startseite_verfuegbar.dart';
 import 'startseite_anpassen_zeile.dart';
 import 'startseite_widgets.dart';
 import '../standort/standort_start_karte.dart';
+import '../wandtablet/wandtablet_steuerung.dart' show WandtabletStartZeile;
 import '../wetter/wetter_karte.dart';
 import '../muell/muell_karte.dart';
 import '../../data/muell/muell_state.dart';
@@ -72,6 +73,7 @@ class DesktopHome extends ConsumerWidget {
         const _Raster(),
         const SizedBox(height: 8),
         const StartseiteAnpassenZeile(),
+        const WandtabletStartZeile(),
       ],
     );
   }

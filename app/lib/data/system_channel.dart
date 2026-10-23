@@ -84,6 +84,9 @@ class SystemChannel {
   /// Öffnet die Benachrichtigungseinstellungen der App (Rückfall: App-Info). false = nicht möglich.
   Future<bool> benachrichtigungsEinstellungenOeffnen() async => (await _aufrufen<bool>('openNotificationSettings')) == true;
 
+  /// Hält den Bildschirm an (FLAG_KEEP_SCREEN_ON, Wandtablet-Modus) oder gibt ihn frei. Ohne Kanal (Web, Tests) ein No-op.
+  Future<void> bildschirmWach(bool an) => _aufrufen<void>('setKeepScreenOn', {'an': an});
+
   /// Schaltet den Bildschirmfoto-Schutz (FLAG_SECURE) ein; zählt verschachtelte Aufrufe mit.
   Future<void> schuetzen() async {
     _geschuetzt++;
