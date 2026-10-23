@@ -1,4 +1,9 @@
 {
+  "0.12.0": [
+    "Medikamenten-Plan: Einnahme-Erinnerung, Vorrat und Rezeptfrist. Du siehst nur deine eigenen Medikamente, Eltern zusätzlich die ihrer Kinder, alles Ende-zu-Ende verschlüsselt",
+    "Neue untere Leiste mit „Mehr“: Listen, Fristen, Medikamente, Müll, Wetter, Standort, Suche und Profil liegen dort. Die Leiste lässt sich unter Profil anpassen",
+    "Der Dateien-Bereich ist ausgeblendet, bis er fertig ist"
+  ],
   "0.11.0": [
     "Fristen: Reisepass, TÜV, Versicherung und mehr mit Ablaufdatum und Vorwarnzeit, Erinnerung an alle Eltern",
     "Wandtablet-Modus: Uhr, Termine, Müll und Wetter als Vollbild-Anzeige fürs Tablet (Profil › Startseite und Anzeige)",

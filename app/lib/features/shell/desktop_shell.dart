@@ -11,6 +11,7 @@ import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/muell/muell_state.dart';
+import '../../data/shell/leiste_logik.dart' show kDateienSichtbar;
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
@@ -21,6 +22,7 @@ import '../betrieb/betrieb_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
+import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -311,6 +313,8 @@ class _Seitenleiste extends ConsumerWidget {
     final betreiber = ref.watch(authProvider.select((s) => s.istBetreiber));
     // Müll nur, wenn der Server die Abfuhrtermine eingeschaltet hat (oder der Bereich gerade offen ist)
     final muell = ref.watch(muellProvider.select((m) => m.verfuegbar)) || tab == kMuellTab;
+    // Zahl fälliger und verpasster Einnahmen am Eintrag "Medikamente" (nur lokal berechnet)
+    final medFaellig = ref.watch(medikamenteFaelligProvider);
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -375,13 +379,13 @@ class _Seitenleiste extends ConsumerWidget {
                 child: ListView(
                   children: [
                     for (var i = 0; i < kDesktopTabs.length; i++)
-                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell))
+                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || kDateienSichtbar))
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
-                        zaehler: i == kChatTab ? ungelesen : 0,
+                        zaehler: i == kChatTab ? ungelesen : (i == kMedikamenteTab ? medFaellig : 0),
                         onTap: () => waehlen(i),
                       ),
                     // nur der Betreiber des Servers sieht "Betrieb" (Konto-Flag, nicht die Rolle); öffnet wie das Konto eine Unterseite

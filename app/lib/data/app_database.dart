@@ -181,6 +181,9 @@ class Konversationen extends Table {
   TextColumn get teilnehmerJson => text().named('teilnehmer').withDefault(const Constant('[]'))();
   TextColumn get ownerId => text().nullable()();
 
+  /// Nur Art `meds` (Medikamenten-Plan, Abschnitt 6k): die Person, um deren Medikamente es geht; sonst leer.
+  TextColumn get subjektId => text().named('subjekt_id').nullable()();
+
   /// Version der Inhaltshülle: `e1` Ende-zu-Ende verschlüsselt (Standard), `p1` Klartext (nur Altbestand; die App schreibt dort nicht mehr).
   TextColumn get encVersion => text().named('enc_version').withDefault(const Constant('e1'))();
   IntColumn get createdAt => integer().map(const MsDatumConverter())();
@@ -325,6 +328,45 @@ class Pins extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// Medikament (Medikamenten-Plan, Abschnitt 6k), Kind der Medikamenten-Konversation (`konversationen.art = 'meds'`). `inhalt` ist die Hülle der Schnittstelle (`e1:` bzw. lokal `l1:`
+/// im Ausgang), lesbar nur über `NachrichtenInhalt.zusatz` (Art `m`); `bearbeiterId` ist die Person, die den Inhalt zuletzt geschrieben und signiert hat.
+@DataClassName('MedikamentZeile')
+@TableIndex(name: 'medikamente_konversation_idx', columns: {#konversationId})
+class Medikamente extends Table {
+  @override
+  String get tableName => 'medikamente';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Einnahme-Eintrag (Medikamenten-Protokoll), Kind eines Medikaments; Hülle wie beim Medikament (Art `n`). Der Server löscht Einträge nach 120 Tagen.
+@DataClassName('EinnahmeZeile')
+@TableIndex(name: 'einnahmen_medikament_idx', columns: {#medikamentId})
+@TableIndex(name: 'einnahmen_konversation_idx', columns: {#konversationId})
+class Einnahmen extends Table {
+  @override
+  String get tableName => 'einnahmen';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get medikamentId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
 /// Aufgaben (Phase 1c-4a). Fälligkeit: ein Tag (`faelligDate`, Text `YYYY-MM-DD`) ODER ein Zeitpunkt (`faelligUtc` + `tzid`), beides leer = ohne.
 @DataClassName('Aufgabe')
 class Aufgaben extends Table {
@@ -389,7 +431,7 @@ class AufgabePunkte extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins])
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -400,11 +442,12 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 12;
+  int get schemaVersion => 13;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
   /// Version 12: `frist` und `frist_monate` an Aufgaben (Fristen-Tracker) mit Sync-Reset, damit vorhandene Werte ankommen.
+  /// Version 13: Medikamenten-Plan (`subjekt_id` an Konversationen, Tabellen `medikamente` und `einnahmen`) mit Sync-Reset.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -476,6 +519,16 @@ class AppDatabase extends _$AppDatabase {
           if (!spalten.any((r) => r.read<String>('name') == 'frist')) await m.addColumn(aufgaben, aufgaben.frist);
           if (!spalten.any((r) => r.read<String>('name') == 'frist_monate')) await m.addColumn(aufgaben, aufgaben.fristMonate);
         }
+        if (from < 13) {
+          // Spalte nur anlegen, wenn sie fehlt (erneuter Lauf nach einem abgebrochenen Update; Version < 4 legt die Tabelle schon mit der Spalte an)
+          final spalten = await customSelect("PRAGMA table_info('konversationen')").get();
+          if (!spalten.any((r) => r.read<String>('name') == 'subjekt_id')) await m.addColumn(konversationen, konversationen.subjektId);
+          await m.createTable(medikamente);
+          await m.createTable(einnahmen);
+          await m.createIndex(medikamenteKonversationIdx);
+          await m.createIndex(einnahmenMedikamentIdx);
+          await m.createIndex(einnahmenKonversationIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -504,6 +557,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 12) {
         // Version 12 fügt der Aufgabe synchronisierte Felder hinzu; ohne Reset kämen schon vorhandene Fristen nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 13) {
+        // Version 13 legt Tabellen für neue Sync-Entitäten an (Medikamente, Einnahmen) und eine Spalte an Konversationen; ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

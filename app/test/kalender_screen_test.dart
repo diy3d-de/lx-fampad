@@ -53,10 +53,7 @@ Map<String, dynamic> _zeittermin(String titel, {int tage = 1, int stunde = 10, S
   'audience': audience,
 };
 
-Future<void> zumTab(WidgetTester tester, String label) async {
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
-  await warte(tester);
-}
+Future<void> zumTab(WidgetTester tester, String label) => zumBereich(tester, label);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -83,7 +80,7 @@ void main() {
       Rect? profil;
       Rect? sync;
       Rect? label;
-      for (final tab in kTabs) {
+      for (final tab in kTabs.where((t) => t.label != 'Dateien')) {
         await zumTab(tester, tab.label);
         expect(find.text(datum), findsOneWidget, reason: 'Datum im Tab ${tab.label}');
         expect(find.byType(SyncIndicator), findsOneWidget, reason: 'Sync-Symbol im Tab ${tab.label}');

@@ -43,7 +43,7 @@ export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom', 't
 export const listAudience = pgEnum('list_audience', ['parents', 'family']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
 /** Art einer Konversation: der Familienchat (genau einer je Familie), ein Direktchat (zwei Personen) oder eine Gruppe. */
-export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group']);
+export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group', 'meds']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -1278,10 +1278,17 @@ export const konversationen = pgTable(
       .default(sql`'{}'::uuid[]`),
     /** Wer die Konversation angelegt hat (setzt der Server; null beim Familienchat und nach dem Entfernen der Person). */
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    /** Nur Art `meds` (Medikamenten-Plan, Abschnitt 6k): die Person, um deren Medikamente es geht (unveränderlich); sonst null. */
+    subjektId: uuid('subjekt_id'),
     createdAt: createdAt(),
     ...syncColumns(),
   },
   (t) => [
+    foreignKey({ columns: [t.familyId, t.subjektId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    index('konversationen_subjekt_idx')
+      .on(t.familyId, t.subjektId)
+      .where(sql`${t.subjektId} is not null`),
+    check('konversationen_subjekt_ck', sql`(${t.art}::text = 'meds') = (${t.subjektId} is not null)`),
     index('konversationen_family_rev_idx').on(t.familyId, t.rev),
     index('konversationen_tombstone_idx')
       .on(t.familyId, t.rev)
@@ -1302,7 +1309,8 @@ export const konversationen = pgTable(
       'konversationen_teilnehmer_ck',
       sql`(${t.art} = 'family' and cardinality(${t.teilnehmer}) = 0)
         or (${t.art} = 'direct' and cardinality(${t.teilnehmer}) = 2)
-        or (${t.art} = 'group' and cardinality(${t.teilnehmer}) between 2 and 20)`,
+        or (${t.art} = 'group' and cardinality(${t.teilnehmer}) between 2 and 20)
+        or (${t.art}::text = 'meds' and cardinality(${t.teilnehmer}) between 1 and 20)`,
     ),
   ],
 );
@@ -1458,6 +1466,70 @@ export const pins = pgTable(
     index('pins_von_idx')
       .on(t.familyId, t.gepinntVon, t.createdAt)
       .where(sql`${t.gepinntVon} is not null`),
+  ],
+);
+
+/**
+ * Medikamenten-Plan (Abschnitt 6k): ein Medikament einer Person, Kind der Medikamenten-Konversation (`konversationen.art = 'meds'`). `inhalt` ist eine Ende-zu-Ende
+ * verschlüsselte, signierte e1-Hülle (Name, Dosis, Rhythmus, Uhrzeiten, Vorrat, Notizen, Rezeptdatum, Zustand): der Server sieht nur Struktur und Größe.
+ * `bearbeiter_id` ist die Person, die den Inhalt zuletzt geschrieben (und signiert) hat.
+ */
+export const medikamente = pgTable(
+  'medikamente',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('medikamente_family_id_uq').on(t.familyId, t.id),
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('medikamente_konversation_idx').on(t.familyId, t.konversationId),
+    index('medikamente_family_rev_idx').on(t.familyId, t.rev),
+    index('medikamente_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('medikamente_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('medikamente_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 16384`),
+  ],
+);
+
+/**
+ * Einnahme-Eintrag (Medikamenten-Protokoll, Abschnitt 6k): Kind eines Medikaments. `inhalt` ist eine e1-Hülle (geplanter Zeitpunkt, Zeitpunkt der Einnahme, Status, Menge).
+ * Der Server löscht Einträge nach 120 Tagen (nach `created_at`, Serverzeit; Wartungsjob sync/meds.ts).
+ */
+export const einnahmen = pgTable(
+  'einnahmen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    medikamentId: uuid('medikament_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.medikamentId], foreignColumns: [medikamente.familyId, medikamente.id] }).onDelete('cascade'),
+    index('einnahmen_medikament_idx').on(t.familyId, t.medikamentId),
+    index('einnahmen_konversation_idx').on(t.familyId, t.konversationId),
+    index('einnahmen_family_rev_idx').on(t.familyId, t.rev),
+    index('einnahmen_created_idx').on(t.familyId, t.createdAt),
+    index('einnahmen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('einnahmen_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('einnahmen_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 2048`),
   ],
 );
 

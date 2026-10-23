@@ -38,6 +38,9 @@ export const wrapId = (konversationId: string, epoche: number, empfaengerId: str
 export const wrapIdV2 = (konversationId: string, epoche: number, empfaengerId: string, keyVersion: number, verteilerId: string): string =>
   uuidAusSchluessel(`wrap2:${konversationId.toLowerCase()}:${epoche}:${empfaengerId.toLowerCase()}:${keyVersion}:${verteilerId.toLowerCase()}`);
 
+/** Feste ID der Medikamenten-Konversation einer Person (Abschnitt 6k): je Person genau eine, daraus abgeleitet (niemand kann sie für eine andere Person vorab belegen). */
+export const medsChatId = (subjektId: string): string => uuidAusSchluessel(`meds:${subjektId.toLowerCase()}`);
+
 /** Zufalls-UUID Version 4 (Gruppen, Nachrichten). */
 export const istUuidV4 = (id: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 

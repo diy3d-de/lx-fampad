@@ -43,6 +43,7 @@ async function pruefen(db: Db, migrateTo: (folder: string) => Promise<void>) {
     await migrateTo(alt);
     expect((await db.execute(sql`select to_regclass('public.key_backups_pw') as t`)).rows[0]).toEqual({ t: null });
     await kindSpalteErgaenzen(db);
+    await db.execute(sql`alter table konversationen add column if not exists subjekt_id uuid`); // Migration 0030 (Medikamenten-Plan): der neue Code schreibt die Spalte schon auf dem Stand 0012; die Migration ist wiederholbar
     await db.execute(sql`alter table epoche_wraps add column if not exists key_version integer`); // Migration 0024 (Wrap-ID v2): der neue Code liest die Spalte schon auf dem Stand 0012; die Migration ist wiederholbar
 
     // ----- Stand v0.5.4 mit Daten -----

@@ -108,6 +108,7 @@ const sameValue = (def: EntityDef, field: string, a: unknown, b: unknown): boole
 function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: string[]; wake: boolean } {
   const roles = new Set<Role>();
   const users = new Set<string>();
+  const quiet = facts.some((f) => f.quiet === true);
   for (const f of facts) {
     if (def.ownerOnlyNotify) {
       if (f.ownerId) users.add(f.ownerId);
@@ -116,7 +117,7 @@ function recipients(def: EntityDef, ...facts: Facts[]): { roles: Role[]; users: 
     for (const r of rolesThatMayRead(def.rules, f)) roles.add(r);
     for (const u of f.participants ?? []) users.add(u);
   }
-  return { roles: [...roles], users: [...users], wake: !def.ownerOnlyNotify && !def.noWake };
+  return { roles: [...roles], users: [...users], wake: !def.ownerOnlyNotify && !def.noWake && !quiet };
 }
 
 /** Prüft einen Wert, der eine Mitglieds-ID oder eine Liste davon ist: alle müssen aktive Mitglieder der Familie sein. */

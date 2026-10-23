@@ -86,7 +86,7 @@ void main() {
       await ziehe(tester, von, nach);
       expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
       // Geburtstage (ohne Treffer), Müll und Wetter (nicht verfügbar) werden nicht gezeichnet und behalten ihren Platz in der Liste
-      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'aufgaben', 'einkauf', 'geburtstage', 'termine', 'muell', 'wetter', 'standort', 'countdown', 'fristen']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'aufgaben', 'einkauf', 'geburtstage', 'termine', 'muell', 'wetter', 'standort', 'countdown', 'fristen', 'medikamente']);
       // der Desktop-Schlüssel bleibt unberührt
       expect(speicher.werte.containsKey(dKey), isFalse);
       // Neustart mit demselben Speicher
@@ -202,11 +202,11 @@ void main() {
       expect(tester.widget<IconButton>(find.byKey(const ValueKey('runter:fristen'))).onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('runter:schnellzugriff')));
       await warte(tester);
-      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen', 'medikamente']);
       await tester.tap(find.byKey(const ValueKey('hoch:standort')));
       await warte(tester);
       // Müll und Wetter (nicht angeboten) bleiben auf ihren Plätzen, Standort und Aufgaben tauschen die ihren
-      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'standort', 'muell', 'wetter', 'aufgaben', 'countdown', 'fristen']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'standort', 'muell', 'wetter', 'aufgaben', 'countdown', 'fristen', 'medikamente']);
     });
 
     testWidgets('Schalter blendet aus und wieder ein; Zurücksetzen stellt Standard her; Fertig schließt', (tester) async {
@@ -278,7 +278,7 @@ void main() {
       }
       await g.up();
       await warte(tester);
-      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'standort', 'einkauf', 'termine', 'geburtstage', 'muell', 'wetter', 'aufgaben', 'countdown', 'fristen']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'standort', 'einkauf', 'termine', 'geburtstage', 'muell', 'wetter', 'aufgaben', 'countdown', 'fristen', 'medikamente']);
     });
 
     testWidgets('Semantics: Pfeile nennen Kachel, Position und Richtung', (tester) async {
@@ -317,19 +317,19 @@ void main() {
       final von = tester.getCenter(find.text('// ALS NÄCHSTES'));
       final nach = Offset(von.dx, tester.getTopLeft(find.text('// EINKAUFSLISTE')).dy - 6);
       await ziehe(tester, von, nach);
-      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'termine', 'einkauf', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'termine', 'einkauf', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen', 'medikamente']);
       expect(tester.takeException(), isNull);
     });
   });
 
   group('Desktop-Raster', () {
     const gross = Size(1440, 1500);
-    const rasterLabels = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben', '// familie & orte', '// standort'];
+    const rasterLabels = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben', '// familie & orte', '// standort'];
 
     testWidgets('Standardreihenfolge, Zeile "Startseite anpassen" unter dem Raster', (tester) async {
       await start(tester, groesse: gross);
       expect(folge(tester, rasterLabels).toSet(), rasterLabels.toSet());
-      expect(oben(tester, '// heute & morgen'), lessThan(oben(tester, '// zuletzt geteilt')));
+      expect(oben(tester, '// heute & morgen'), lessThan(oben(tester, '// aufgaben')));
       expect(find.text('Startseite anpassen'), findsOneWidget);
       expect(oben(tester, '// standort'), lessThan(tester.getTopLeft(find.text('Startseite anpassen')).dy));
     });
@@ -353,7 +353,7 @@ void main() {
       await warte(tester);
       expect(find.byType(StartseiteLuecke), findsNothing);
       // auch nicht angezeigte Kacheln (Müll, Wetter) behalten ihren Eintrag
-      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'einkauf', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen']);
+      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'einkauf', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente']);
       expect(speicher.werte.containsKey(mKey), isFalse);
       expect(oben(tester, '// aufgaben'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
       expect(tester.takeException(), isNull);
@@ -384,9 +384,9 @@ void main() {
     });
 
     testWidgets('neu gestartet: gespeicherte Reihenfolge und ausgeblendete Kacheln gelten', (tester) async {
-      final speicher = MemoryFeiertageSpeicher('nein', {dKey: '["standort","chat"]', 'startseite_ausgeblendet_desktop': '["dateien"]'});
+      final speicher = MemoryFeiertageSpeicher('nein', {dKey: '["standort","chat"]', 'startseite_ausgeblendet_desktop': '["aufgaben"]'});
       await start(tester, speicher: speicher, groesse: gross);
-      expect(find.text('// ZULETZT GETEILT'), findsNothing);
+      expect(find.text('// AUFGABEN'), findsNothing);
       expect(oben(tester, '// standort'), lessThanOrEqualTo(oben(tester, '// chat · familie')));
       expect(oben(tester, '// chat · familie'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
     });
@@ -405,17 +405,17 @@ void main() {
       await warte(tester);
       expect(find.byType(StartseiteAnpassenScreen), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget); // Seitenleiste bleibt
-      expect(find.byKey(const ValueKey('an:dateien')), findsOneWidget);
+      expect(find.byKey(const ValueKey('an:aufgaben')), findsOneWidget);
       expect(find.byKey(const ValueKey('an:schnellzugriff')), findsNothing); // gehört zur Handy-Liste
       // breit: Pfeile in derselben Zeile (kein Positionstext der schmalen Variante)
       expect(find.textContaining('position'), findsNothing);
-      await tester.tap(find.byKey(const ValueKey('an:dateien')));
+      await tester.tap(find.byKey(const ValueKey('an:aufgaben')));
       await warte(tester);
-      expect(kennungenAusText(speicher.werte['startseite_ausgeblendet_desktop']), ['dateien']);
+      expect(kennungenAusText(speicher.werte['startseite_ausgeblendet_desktop']), ['aufgaben']);
       await tester.tap(find.text('Fertig'));
       await warte(tester);
       expect(find.byType(StartseiteAnpassenScreen), findsNothing);
-      expect(find.text('// ZULETZT GETEILT'), findsNothing);
+      expect(find.text('// AUFGABEN'), findsNothing);
       pruefeLayout(tester, 'Desktop nach Anpassen');
     });
   });
@@ -427,7 +427,7 @@ void main() {
     for (final z in find.byType(LongPressDraggable<String>).evaluate()) {
       expect(tester.getSize(find.byWidget(z.widget)).height, 450);
     }
-    expect(find.byType(LongPressDraggable<String>), findsNWidgets(7));
+    expect(find.byType(LongPressDraggable<String>), findsNWidgets(6));
   });
 
   group('Änderungen und Laden', () {
@@ -560,7 +560,7 @@ void main() {
   group('Desktop: Ablegen, Abbrechen, bedingte Kachel in der Mitte', () {
     const gross = Size(1440, 1500);
     const seitenleiste = Offset(60, 700);
-    const reihe = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben'];
+    const reihe = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben'];
 
     Future<TestGesture> zieheZu(WidgetTester tester, String von, String zu) async {
       final anfang = tester.getCenter(find.text(von));
@@ -623,7 +623,7 @@ void main() {
       final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
       await g.up();
       await warte(tester);
-      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen']);
+      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente']);
     });
   });
 

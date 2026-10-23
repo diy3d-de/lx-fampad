@@ -31,9 +31,11 @@ void main() {
       expect(find.byType(NavigationBar), findsNothing);
       expect(find.text('lx-familyhub'), findsOneWidget);
       expect(find.text(kInviteHost), findsOneWidget);
-      for (final t in kTabs) {
+      for (final t in kTabs.where((t) => t.label != 'Dateien')) {
         expect(navEintrag(t.label), findsOneWidget, reason: t.label);
       }
+      // der Dateien-Bereich ist noch nicht gebaut: nicht in der Seitenleiste (kDateienSichtbar)
+      expect(navEintrag('Dateien'), findsNothing);
       // keine Platzhalter-Einträge ("bald") in der Seitenleiste: Fotos und Orte stehen erst im Menü, wenn sie gebaut sind
       expect(find.text('bald'), findsNothing);
       expect(navEintrag('Fotos'), findsNothing);
@@ -41,7 +43,9 @@ void main() {
       expect(find.text('Fotos'), findsNothing);
       expect(find.text('Orte'), findsNothing);
       expect(find.textContaining(RegExp('^Guten (Morgen|Tag|Abend)')), findsOneWidget);
-      for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// zuletzt geteilt', '// aufgaben', '// familie & orte']) {
+      for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben', '// familie & orte']) {
+      // der Dateien-Platzhalter ist ausgeblendet, solange der Bereich nicht gebaut ist (kDateienSichtbar)
+      expect(find.text('// ZULETZT GETEILT'), findsNothing);
         expect(find.text(l.toUpperCase()), findsOneWidget, reason: l);
       }
       expect(find.text('Heute und morgen steht nichts an.'), findsOneWidget); // Termine-Karte ohne Termine
@@ -67,7 +71,7 @@ void main() {
     final c = tester.getTopLeft(find.text('// EINKAUFSLISTE'));
     expect(a.dy, b.dy);
     expect(b.dy, c.dy);
-    final d = tester.getTopLeft(find.text('// ZULETZT GETEILT'));
+    final d = tester.getTopLeft(find.text('// AUFGABEN'));
     expect(d.dy, greaterThan(a.dy));
   });
 
@@ -86,10 +90,8 @@ void main() {
     await tester.tap(find.text('Start').first);
     await warte(tester);
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
-    // Karte "Zuletzt geteilt" führt in Dateien
-    await tester.tap(find.text('Noch keine Dateien'));
-    await warte(tester);
-    expect(find.text('// ZULETZT GETEILT'), findsNothing);
+    // der Dateien-Platzhalter ist ausgeblendet (kein Weg in den noch nicht gebauten Bereich)
+    expect(find.text('Noch keine Dateien'), findsNothing);
   });
 
   for (final groesse in [const Size(1200, 800), const Size(900, 700)]) {

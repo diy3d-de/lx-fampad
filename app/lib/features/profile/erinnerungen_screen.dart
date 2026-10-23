@@ -176,6 +176,20 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             child: SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+              title: const Text('Medikamenten-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+              subtitle: const Text(
+                'Erinnert an deine Einnahmen und an die deiner Kinder, einmal erneut nach 15 Minuten. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
+                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              ),
+              value: einst.medikamenteAn,
+              onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).medikamenteAnSetzen(v)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          LxCard(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Titel auf Sperrbildschirm zeigen', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
                 'aus: gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort (und der Chat-Name neuer Nachrichten) erst nach dem Entsperren',

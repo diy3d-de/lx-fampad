@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/features/calendar/calendar_screen.dart';
 import 'package:lx_fampad/features/chat/chat_screen.dart';
-import 'package:lx_fampad/features/files/files_screen.dart';
 import 'package:lx_fampad/features/home/home_screen.dart';
 import 'package:lx_fampad/features/lists/lists_screen.dart';
+import 'package:lx_fampad/features/tasks/tasks_screen.dart';
 import 'package:lx_fampad/features/update/update_banner.dart';
 
 import 'support/fake_server.dart';
@@ -24,33 +23,36 @@ void main() {
     expect(env.server.log.where((r) => r.path == '/me'), isEmpty, reason: 'ohne Token kein Serveraufruf');
   });
 
-  testWidgets('angemeldet öffnet die fünf Tabs und zeigt nach jedem Wechsel genau den gewählten Tab', (tester) async {
+  testWidgets('angemeldet: Leiste mit vier Bereichen und Mehr, nach jedem Wechsel zeigt der Stapel genau den gewählten Bereich', (tester) async {
     final env = await angemeldeteUmgebung();
     await starteApp(tester, env);
 
     expect(find.byType(NavigationBar), findsOneWidget);
-    for (final tab in kTabs) {
-      expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab.label)), findsOneWidget);
+    for (final label in ['Start', 'Kalender', 'Chat', 'Aufgaben', 'Mehr']) {
+      expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)), findsOneWidget, reason: label);
+    }
+    // Listen liegen hinter "Mehr", Dateien sind ausgeblendet
+    for (final label in ['Listen', 'Dateien']) {
+      expect(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)), findsNothing, reason: label);
     }
 
-    // Die Tabs liegen in einem IndexedStack: alle Seiten sind im Baum, sichtbar (und bedienbar) ist nur die gewählte.
-    // Der Titel im Tab-Inhalt (nicht die Beschriftung der NavigationBar) muss zum gewählten Tab passen.
-    final seiten = <Type>[HomeScreen, CalendarScreen, ChatScreen, FilesScreen, ListsScreen];
-    final titel = ['Hallo, Anna', 'Kalender', 'Chat', 'Dateien', 'Listen'];
+    // Die Bereiche liegen in einem IndexedStack: alle Seiten sind im Baum, sichtbar (und bedienbar) ist nur der gewählte.
+    // Der Titel im Inhalt (nicht die Beschriftung der NavigationBar) muss zum gewählten Bereich passen.
+    final seiten = <Type>[HomeScreen, CalendarScreen, ChatScreen, ListsScreen, TasksScreen];
+    final titel = ['Hallo, Anna', 'Kalender', 'Chat', 'Listen', 'Aufgaben'];
+    final tabs = [0, 1, 2, 4, 5];
+    final namen = ['Start', 'Kalender', 'Chat', 'Listen', 'Aufgaben'];
 
-    for (var tab = 0; tab < kTabs.length; tab++) {
-      if (tab > 0) {
-        await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(kTabs[tab].label)));
-        await tester.pump();
-      }
-      expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, tab, reason: kTabs[tab].label);
+    for (var n = 0; n < tabs.length; n++) {
+      if (n > 0) await zumBereich(tester, namen[n]);
+      expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, tabs[n], reason: namen[n]);
       for (var i = 0; i < seiten.length; i++) {
         final inhalt = find.descendant(of: find.byType(IndexedStack), matching: find.text(titel[i]));
-        if (i == tab) {
-          expect(inhalt.hitTestable(), findsOneWidget, reason: 'Titel "${titel[i]}" muss bei Tab ${kTabs[tab].label} sichtbar sein');
+        if (i == n) {
+          expect(inhalt.hitTestable(), findsWidgets, reason: 'Titel "${titel[i]}" muss bei ${namen[n]} sichtbar sein');
           expect(find.descendant(of: find.byType(IndexedStack), matching: find.byType(seiten[i])), findsOneWidget);
         } else {
-          expect(inhalt.hitTestable(), findsNothing, reason: 'Titel "${titel[i]}" darf bei Tab ${kTabs[tab].label} nicht sichtbar sein');
+          expect(inhalt.hitTestable(), findsNothing, reason: 'Titel "${titel[i]}" darf bei ${namen[n]} nicht sichtbar sein');
         }
       }
     }

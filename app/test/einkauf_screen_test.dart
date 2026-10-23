@@ -35,8 +35,7 @@ void main() {
     final env = await angemeldeteUmgebung(role: role);
     await vorher?.call(env);
     await starteApp(tester, env, skala: skala);
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Listen')));
-    await warte(tester);
+    await zumBereich(tester, 'Listen');
     return env;
   }
 

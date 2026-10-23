@@ -7,6 +7,8 @@
 //  - Fest oben stehen (nicht in dieser Liste, nicht verschiebbar, nicht ausblendbar): Update-Hinweis und die Warnkarte "Bin ich abgesichert?".
 import 'dart:convert';
 
+import '../shell/leiste_logik.dart' show kDateienSichtbar;
+
 enum StartLayout {
   mobil,
   desktop;
@@ -43,6 +45,7 @@ const kMobilKacheln = <StartKachel>[
   StartKachel('standort', 'Standort', 'standort teilen'),
   StartKachel('countdown', 'Countdown', 'erscheint nur mit gewähltem termin'),
   StartKachel('fristen', 'Fristen', 'erscheint nur, wenn eine frist bald abläuft'),
+  StartKachel('medikamente', 'Medikamente', 'erscheint nur mit offenen einnahmen'),
 ];
 
 /// Kacheln des Desktop-Rasters in der Standardreihenfolge.
@@ -50,7 +53,8 @@ const kDesktopKacheln = <StartKachel>[
   StartKachel('termine', 'Heute & morgen', 'termine'),
   StartKachel('chat', 'Chat', 'letzte nachrichten'),
   StartKachel('einkauf', 'Einkaufsliste', 'offene einträge'),
-  StartKachel('dateien', 'Zuletzt geteilt', 'dateien, kommen später'),
+  // Der Dateien-Platzhalter ist ausgeblendet, solange der Bereich nicht gebaut ist (kDateienSichtbar in leiste_logik.dart)
+  if (kDateienSichtbar) StartKachel('dateien', 'Zuletzt geteilt', 'dateien, kommen später'),
   StartKachel('aufgaben', 'Aufgaben', 'offene aufgaben'),
   StartKachel('familie', 'Familie & Orte', 'mitglieder'),
   StartKachel('standort', 'Standort', 'standort teilen'),
@@ -58,6 +62,7 @@ const kDesktopKacheln = <StartKachel>[
   StartKachel('wetter', 'Wetter', 'deine wetterstation'),
   StartKachel('countdown', 'Countdown', 'erscheint nur mit gewähltem termin'),
   StartKachel('fristen', 'Fristen', 'erscheint nur, wenn eine frist bald abläuft'),
+  StartKachel('medikamente', 'Medikamente', 'erscheint nur mit offenen einnahmen'),
 ];
 
 /// Welche Kacheln es gerade gibt: [angeboten] (Feature ist da, erscheint in der Anpassen-Seite) und davon [leer] (gerade nichts zu zeigen,

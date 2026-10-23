@@ -6,6 +6,10 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/data/api/models.dart' show MemberStatus, Role, UserDto;
+import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
+import 'package:lx_fampad/data/medikamente/medikament_modelle.dart';
+import 'package:lx_fampad/data/medikamente/medikament_state.dart';
 import 'package:lx_fampad/features/neuigkeiten/neuigkeiten_dialog.dart';
 import 'package:lx_fampad/data/neuigkeiten/neuigkeiten.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart' show EinstellungsZeile;
@@ -13,6 +17,7 @@ import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/suche/such_einstieg.dart' show SuchKnopf;
 
 import 'support/chat_ui_aufbau.dart';
+import 'support/fake_erinnerung_port.dart';
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -71,8 +76,7 @@ void main() {
   }
 
   Future<void> zumTab(WidgetTester tester, String label) async {
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
-    await warte(tester);
+    await zumBereich(tester, label);
   }
 
   void pruefe(WidgetTester tester, String wo) {
@@ -210,6 +214,59 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(unbeschriftet(tester), isEmpty, reason: 'Neuigkeiten-Dialog');
         expect(tester.getSize(find.byType(TextButton).last).height, greaterThanOrEqualTo(44));
+        h.dispose();
+      });
+    });
+  }
+
+  // Medikamenten-Plan: Heute (mit Filter, Warnkarte, bei Bedarf), Detail und Editor, jedes Bedienelement beschriftet
+  for (final skala in [1.0, 2.0]) {
+    group('Medikamente, Textskala $skala', () {
+      const med1 = 'dddddddd-0000-4000-8000-000000000001';
+      const med2 = 'dddddddd-0000-4000-8000-000000000002';
+      const med3 = 'dddddddd-0000-4000-8000-000000000003';
+      final daten = MedDaten(
+        geladen: true,
+        ich: fixIdAdmin,
+        ichRolle: Role.admin,
+        personen: const [
+          UserDto(id: fixIdAdmin, email: null, displayName: 'Anna', colorIndex: 0, role: Role.admin, status: MemberStatus.active),
+          UserDto(id: fixIdKind, email: null, displayName: 'Ben', colorIndex: 1, role: Role.child, status: MemberStatus.active),
+        ],
+        eintraege: [
+          MedEintrag(MedikamentAnsicht(id: med1, konversationId: 'k1', subjektId: fixIdAdmin, inhalt: const MedikamentInhalt(name: 'Blutdrucktablette', dosis: '5 mg', zeiten: ['00:01', '23:59'], beginn: '2026-10-01'), erstelltAt: DateTime.utc(2026, 10, 1)), const []),
+          MedEintrag(MedikamentAnsicht(id: med2, konversationId: 'k2', subjektId: fixIdKind, inhalt: MedikamentInhalt(name: 'Vitamin D', zeiten: const ['00:02'], beginn: '2026-10-01', bestand: 3, bestandStand: DateTime.now().toUtc(), packung: 30), erstelltAt: DateTime.utc(2026, 10, 1)), const []),
+          MedEintrag(MedikamentAnsicht(id: med3, konversationId: 'k1', subjektId: fixIdAdmin, inhalt: const MedikamentInhalt(name: 'Nasenspray', rhythmus: Rhythmus.bedarf(), beginn: '2026-10-01'), erstelltAt: DateTime.utc(2026, 10, 1)), const []),
+        ],
+      );
+
+      Future<void> medStart(WidgetTester tester) async {
+        final env = await angemeldeteUmgebung();
+        env.extraOverrides.addAll([
+          erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false),
+          medDatenProvider.overrideWithValue(daten),
+          medAnsichtProvider.overrideWithValue(daten),
+        ]);
+        await starteApp(tester, env, skala: skala, groesse: const Size(360, 900));
+        await zumTab(tester, 'Medikamente');
+      }
+
+      testWidgets('Heute und Detail', (tester) async {
+        final h = tester.ensureSemantics();
+        await medStart(tester);
+        pruefe(tester, 'Medikamente Heute $skala');
+        await tippe(tester, find.text('Vitamin D').first);
+        pruefe(tester, 'Medikament Detail $skala');
+        h.dispose();
+      });
+
+      testWidgets('Editor', (tester) async {
+        final h = tester.ensureSemantics();
+        await medStart(tester);
+        await tippe(tester, find.widgetWithText(FilledButton, 'Medikament'));
+        pruefe(tester, 'Medikament Editor $skala');
+        await tippe(tester, find.text('Wochentage'));
+        pruefe(tester, 'Medikament Editor Wochentage $skala');
         h.dispose();
       });
     });

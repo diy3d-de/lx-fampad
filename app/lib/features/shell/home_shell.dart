@@ -21,6 +21,7 @@ import '../../data/push/push_state.dart';
 import '../../data/push/sicherheits_pruefer.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_hinweis.dart';
+import '../../data/medikamente/medikament_hinweis.dart';
 import '../../data/muell/muell_hinweis.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/neuigkeiten/neuigkeiten.dart';
@@ -30,11 +31,15 @@ import '../../ui/widgets.dart';
 import '../../widgets/familien_hinweis_banner.dart';
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
+import '../../data/shell/leiste_logik.dart';
+import '../../data/shell/leiste_state.dart';
+import 'mehr_menue.dart';
 import '../files/files_screen.dart';
 import '../../data/startseite/startseite_state.dart';
 import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
+import '../medikamente/medikamente_screen.dart';
 import '../muell/muell_screen.dart';
 import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
@@ -45,7 +50,7 @@ import '../wetter/wetter_screen.dart';
 import 'desktop_shell.dart';
 import 'shell_tab.dart';
 
-/// Rahmen der angemeldeten App: Glow-Hintergrund, die sechs Tabs (Desktop: dazu Standort) und die Material-3-NavigationBar.
+/// Rahmen der angemeldeten App: Glow-Hintergrund, die Bereiche (Desktop: dazu Standort, Wetter, Müll) und die Material-3-NavigationBar (mobil: vier Bereiche plus "Mehr").
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -56,7 +61,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(8, (_) => GlobalKey());
+  final _keys = List.generate(9, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -70,12 +75,14 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   bool _standortBesucht = false;
   bool _wetterBesucht = false;
   bool _muellBesucht = false;
+  bool _medikamenteBesucht = false;
   List<Widget> get _desktopScreens => [
     const DesktopHome(),
     ..._screens.sublist(1),
     if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink(),
     if (_wetterBesucht) WetterScreen(key: _keys[6], eingebettet: true) else const SizedBox.shrink(),
     if (_muellBesucht) MuellScreen(key: _keys[7], eingebettet: true) else const SizedBox.shrink(),
+    if (_medikamenteBesucht) MedikamenteScreen(key: _keys[8], eingebettet: true) else const SizedBox.shrink(),
   ];
 
   /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
@@ -218,6 +225,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     // Tipp auf eine Müll-Benachrichtigung (Erinnerung, "Abfuhrtermine 20XX sind da"): die Müll-Seite öffnen
     ref.listen(muellOeffnenProvider, (_, _) => _muellOeffnen());
+    // Tipp auf eine Medikamenten-Erinnerung: die Medikamenten-Ansicht öffnen (die Nutzlast trägt nie einen Inhalt)
+    ref.listen(medikamentOeffnenProvider, (_, _) => _medikamenteOeffnen());
     return LayoutBuilder(builder: (context, c) {
       _desktopLayout = c.maxWidth >= kDesktopBreakpoint;
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
@@ -225,10 +234,11 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (tab == kStandortTab) _standortBesucht = true;
         if (tab == kWetterTab) _wetterBesucht = true;
         if (tab == kMuellTab) _muellBesucht = true;
+        if (tab == kMedikamenteTab) _medikamenteBesucht = true;
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
-      return _mobil(updateDa, tab < kTabs.length ? tab : 0, ungelesen);
+      return _mobil(updateDa, mobilerTabGueltig(tab) ? tab : 0, ungelesen);
     });
   }
 
@@ -311,6 +321,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     }
   }
 
+  /// Öffnet die Medikamenten-Ansicht: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite.
+  void _medikamenteOeffnen() {
+    if (!mounted) return;
+    if (_desktopLayout) {
+      ref.read(shellTabProvider.notifier).waehlen(kMedikamenteTab);
+    } else {
+      unawaited(Navigator.of(context).push<void>(medikamenteRoute()));
+    }
+  }
+
   /// Dezenter Hinweis im Vordergrund, außer die Standort-Seite ist selbst zu sehen.
   void _standortHinweisZeigen(StandortHinweis h) {
     if (!mounted) return;
@@ -323,15 +343,27 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   }
 
   Widget _mobil(bool updateDa, int tab, int ungelesen) {
+    // Leiste: die gewählten Bereiche plus das feste Feld "Mehr"; ein Bereich hinter "Mehr" markiert "Mehr"
+    final leiste = ref.watch(leisteProvider).tabs;
+    final hinweise = ref.watch(mehrHinweiseProvider);
+    final mehrZahl = hinweise.summe(leiste);
     // Zeichen am Tab: Update-Hinweis am Start, Anzahl ungelesener Nachrichten am Chat
-    Widget symbol(int i, IconData icon) {
-      final chat = i == kChatTab && ungelesen > 0;
+    Widget symbol(int t, IconData icon) {
+      final chat = t == kChatTab && ungelesen > 0;
       return Badge(
-        isLabelVisible: (updateDa && i == 0) || chat,
+        isLabelVisible: (updateDa && t == 0) || chat,
         label: chat ? Text(ungelesen > 99 ? '99+' : '$ungelesen') : null,
         child: Icon(icon),
       );
     }
+
+    Widget mehrSymbol(IconData icon) => Badge(
+      isLabelVisible: mehrZahl > 0,
+      label: Text(hinweisText(mehrZahl)),
+      backgroundColor: hinweise.ueberfaellig(leiste) ? kDanger : kWarn,
+      textColor: kBg,
+      child: Icon(icon),
+    );
 
     return Scaffold(
       backgroundColor: kBg,
@@ -344,16 +376,29 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (i) => ref.read(shellTabProvider.notifier).waehlen(i),
+        selectedIndex: leisteAuswahl(tab, leiste),
+        onDestinationSelected: (i) {
+          if (i < leiste.length) {
+            ref.read(shellTabProvider.notifier).waehlen(leiste[i]);
+          } else {
+            // "Mehr" öffnet nur das Blatt, der aktive Bereich bleibt
+            unawaited(mehrBlattOeffnen(context));
+          }
+        },
         destinations: [
-          for (var i = 0; i < kTabs.length; i++)
+          for (final t in leiste)
             NavigationDestination(
-              icon: symbol(i, kTabs[i].icon),
-              selectedIcon: symbol(i, kTabs[i].selectedIcon),
-              label: kTabs[i].label,
-              tooltip: i == kChatTab && ungelesen > 0 ? 'Chat, $ungelesen ungelesen' : kTabs[i].label,
+              icon: symbol(t, kTabs[t].icon),
+              selectedIcon: symbol(t, kTabs[t].selectedIcon),
+              label: kTabs[t].label,
+              tooltip: t == kChatTab && ungelesen > 0 ? 'Chat, $ungelesen ungelesen' : kTabs[t].label,
             ),
+          NavigationDestination(
+            icon: mehrSymbol(Icons.apps_outlined),
+            selectedIcon: mehrSymbol(Icons.apps),
+            label: 'Mehr',
+            tooltip: mehrZahl > 0 ? 'Weitere Bereiche, $mehrZahl ${mehrZahl == 1 ? 'Hinweis' : 'Hinweise'}' : 'Weitere Bereiche',
+          ),
         ],
       ),
     );

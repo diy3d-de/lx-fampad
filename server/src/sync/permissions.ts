@@ -43,6 +43,8 @@ export interface Facts {
   assigneeId?: string | null;
   /** Nur diese Personen sehen den Datensatz (Direkt-/Gruppenchat und alles darunter); fehlt: es gilt `audience` (Familienchat). */
   participants?: readonly string[] | undefined;
+  /** Keine Push-Wecker für Änderungen an diesem Datensatz und allem darunter (Medikamenten-Konversation: kein Chat-Wecker); der WebSocket-Hinweis geht trotzdem an die Teilnehmer. */
+  quiet?: boolean | undefined;
 }
 
 export interface RoleRule {

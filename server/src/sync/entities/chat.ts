@@ -20,10 +20,12 @@ import { konversationen, lesestand, nachrichten } from '../../db/schema.js';
 import { safeString } from '../../routes/util.js';
 import { ROLES, type Actor, type Facts, type RoleRule, type Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
-import { direktChatId, familienchatId, istUuidV4, lesestandId } from './chat-ids.js';
+import { direktChatId, familienchatId, istUuidV4, lesestandId, medsChatId } from './chat-ids.js';
 import { iso, timestamp, uuid } from './common.js';
+import { aktiveRollen, medsTeilnehmerGueltig } from './meds-regeln.js';
 
-export const KONVERSATION_ARTEN = ['family', 'direct', 'group'] as const;
+/** `meds`: verborgene Konversation für die Medikamente EINER Person (Abschnitt 6k): nie in der Chatliste, nie mit Nachrichten, nur Medikamente und Einnahmen darunter. */
+export const KONVERSATION_ARTEN = ['family', 'direct', 'group', 'meds'] as const;
 /** Teilnehmer je Gruppe (einschließlich der anlegenden Person). */
 export const MAX_GRUPPE = 20;
 /** Obergrenze des undurchsichtigen Nachrichtentextes (Zeichen; die Hülle für spätere Verschlüsselung braucht Platz). */
@@ -68,6 +70,7 @@ const konversationRules = forAllRoles({ read: 'shared', create: 'shared', update
 /** Stimmigkeit je Art. Der Familienchat hat weder Namen noch Teilnehmer (ihn sieht die ganze Familie). */
 export function konversationValid(row: Row): boolean {
   const t = strings(row.teilnehmer);
+  if (row.art !== 'meds' && row.subjektId !== undefined && row.subjektId !== null) return false; // nur die Medikamenten-Konversation hat ein Subjekt
   switch (row.art) {
     case 'direct':
       return t.length === 2 && row.titel === '';
@@ -75,6 +78,9 @@ export function konversationValid(row: Row): boolean {
       return t.length >= 2 && t.length <= MAX_GRUPPE;
     case 'family':
       return t.length === 0 && row.titel === '';
+    case 'meds':
+      // das Subjekt ist Teilnehmer (die Rollen-Regel prüft `validate` gegen die Datenbank)
+      return typeof row.subjektId === 'string' && t.includes(row.subjektId.toLowerCase()) && t.length <= MAX_GRUPPE && row.titel === '';
     default:
       return false;
   }
@@ -93,12 +99,16 @@ export const konversationEntity: EntityDef = {
     titel: { access: 'rw', schema: opaque(MAX_TITEL, 0), defaultValue: '', blank: '' },
     // bleibt auch im Tombstone erhalten: die Löschung bleibt dadurch für Teilnehmer sichtbar und für alle anderen unsichtbar
     teilnehmer: { access: 'rw', schema: teilnehmerListe, defaultValue: [], memberRef: true },
+    // nur Art `meds`: die Person, um deren Medikamente es geht (unveränderlich; die ID der Konversation ist daraus abgeleitet); sonst null
+    subjektId: { access: 'create', schema: uuid.transform((s) => s.toLowerCase()).nullable(), defaultValue: null, memberRef: true },
     ownerId: { access: 'server', schema: uuid.nullable() },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },
   rules: konversationRules,
   userRefs: ['ownerId'],
-  memberArray: { field: 'teilnehmer', keepMin: () => 2 },
+  // Verschwindet das Subjekt, verschwindet die Medikamenten-Konversation mit allem darunter (memberOwned); eine Person weniger in der Liste (Elternteil) lässt sie bestehen
+  memberOwned: 'subjektId',
+  memberArray: { field: 'teilnehmer', keepMin: (row: Row) => (row.art === 'meds' ? 1 : 2) },
   lostSight: (before: Row, after: Row): string[] => {
     const rest = new Set(strings(after.teilnehmer));
     return strings(before.teilnehmer).filter((u) => !rest.has(u));
@@ -116,6 +126,8 @@ export const konversationEntity: EntityDef = {
         return id === familienchatId(familyId);
       case 'direct':
         return t.length === 2 && id === direktChatId(t[0]!, t[1]!);
+      case 'meds':
+        return typeof values.subjektId === 'string' && id === medsChatId(values.subjektId);
       default:
         return istUuidV4(id);
     }
@@ -128,15 +140,26 @@ export const konversationEntity: EntityDef = {
     audience: 'family',
     ownerId: (row.ownerId as string | null) ?? null,
     participants: row.art === 'family' ? undefined : strings(row.teilnehmer),
+    ...(row.art === 'meds' ? { quiet: true } : {}),
   }),
   factsForCreate: (actor: Actor, values: Row): Facts => ({
     audience: 'family',
     ownerId: actor.userId,
     participants: values.art === 'family' ? undefined : strings(values.teilnehmer),
+    ...(values.art === 'meds' ? { quiet: true } : {}),
   }),
   onCreate: (actor: Actor): Row => ({ ownerId: actor.userId }),
   check: konversationValid,
+  // Medikamenten-Konversation: die Teilnehmer müssen zu den Rollen der Datenbank passen (nie über Clientangaben), auch nach jeder Änderung der Liste
+  validate: async (env, row: Row): Promise<boolean> => {
+    if (row.art !== 'meds') return true;
+    const teilnehmer = strings(row.teilnehmer);
+    const rollen = await aktiveRollen(env.tx, env.familyId, [String(row.subjektId), ...teilnehmer]);
+    return medsTeilnehmerGueltig(String(row.subjektId), teilnehmer, rollen);
+  },
   guard: (action, before, after) => {
+    // Medikamenten-Konversation: nie löschen (Kein Datenverlust; sie endet nur mit der Person), nur die Teilnehmer ändern sich
+    if (before.art === 'meds') return action === 'update' && !!after && before.titel === after.titel;
     if (action === 'delete') return before.art === 'group';
     if (before.art === 'group') return true;
     // Familienchat und Direktchat: Name und Teilnehmer bleiben, wie sie sind
@@ -178,12 +201,12 @@ export const nachrichtEntity: EntityDef = {
   // Hülle passend zur Konversation (kein Zurückstufen auf Klartext) und eine Antwort verweist nur auf eine Nachricht derselben Konversation
   validate: async (env, row: Row): Promise<boolean> => {
     const [k] = await env.tx
-      .select({ enc: konversationen.encVersion })
+      .select({ enc: konversationen.encVersion, art: konversationen.art })
       .from(konversationen)
       .where(and(eq(konversationen.familyId, env.familyId), eq(konversationen.id, String(row.konversationId))))
       .limit(1);
-    // in Klartext-Altbestand (`p1`) nimmt der Server nichts Neues mehr an
-    if (!k || k.enc !== 'e1' || !String(row.text).startsWith(`${k.enc}:`)) return false;
+    // in Klartext-Altbestand (`p1`) nimmt der Server nichts Neues mehr an; in der Medikamenten-Konversation gibt es nie Nachrichten
+    if (!k || k.art === 'meds' || k.enc !== 'e1' || !String(row.text).startsWith(`${k.enc}:`)) return false;
     // verschlüsselte Hülle: nur die Form (Zeichensatz Base64url, Mindestlänge), nie der Inhalt; Klartext `p1:` ist in e1-Konversationen schon durch das Präfix ausgeschlossen
     if (k.enc === 'e1' && !(String(row.text).length >= E1_MIN && /^e1:[A-Za-z0-9_-]+$/.test(String(row.text)))) return false;
     if (typeof row.antwortAuf === 'string') {
