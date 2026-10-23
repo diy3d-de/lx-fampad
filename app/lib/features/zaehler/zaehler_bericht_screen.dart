@@ -16,6 +16,7 @@ import '../../data/zaehler/zaehler_uebersicht.dart';
 import '../../data/zaehler/zaehler_pdf.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'zaehler_anzeige.dart';
 
@@ -105,7 +106,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
   Widget build(BuildContext context) {
     if (!ref.watch(zaehlerDarfProvider)) return const AuthSeite(titel: 'Nicht verfügbar', maxBreite: kMaxContentWidth, kinder: [EmptyState(icon: Icons.lock_outline, title: 'Nicht verfügbar', hint: 'Diesen Bereich gibt es für dich nicht.')]);
     final daten = ref.watch(zaehlerDatenProvider);
-    final heute = zaehlerHeute(DateTime.now());
+    final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final alle = [...daten.kacheln, ...daten.archiviert.map((r) => daten.kachel('z:${r.id}')).whereType<ZaehlerKachel>()];
     _gewaehlt ??= widget.schluessel != null ? {widget.schluessel!} : {for (final k in daten.kacheln) k.schluessel};
     final gewaehlt = [for (final k in alle) if (_gewaehlt!.contains(k.schluessel)) k];

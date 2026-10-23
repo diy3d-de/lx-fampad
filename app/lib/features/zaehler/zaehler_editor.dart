@@ -16,6 +16,7 @@ import '../../data/zaehler/zaehler_uebersicht.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'zaehler_anzeige.dart';
 import 'zaehler_screen.dart' show zaehlerLoeschenMitBestaetigung;
@@ -214,7 +215,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
         final id = await repo.anlegen(inhalt);
         if (startMilli != null) {
           try {
-            await repo.standErfassen(id, datum: zaehlerHeute(DateTime.now()), milli: startMilli);
+            await repo.standErfassen(id, datum: zaehlerHeute(ref.read(minutenTaktProvider).value ?? DateTime.now()), milli: startMilli);
           } on Object {
             if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Der Zähler ist angelegt, der erste Stand ließ sich nicht speichern. Trage ihn noch einmal ein.')));
           }
@@ -397,7 +398,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
                 ),
               ),
             Align(alignment: Alignment.centerLeft, child: TextButton.icon(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(_preisBearbeiten()), icon: const Icon(Icons.add), label: Text(erzeugung ? 'Strompreis hinzufügen' : 'Preisstand hinzufügen'))),
-            const Text('Bei einer Preisänderung trägst du den neuen Preis mit Datum ein. Alte Zeiträume rechnen mit dem alten Preis. Grund- und Zählergebühr werden anteilig auf Tage umgelegt.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+            Text(erzeugung ? 'Bei einer Preisänderung trägst du den neuen Strompreis mit Datum ein. Alte Zeiträume rechnen mit dem alten Preis.' : 'Bei einer Preisänderung trägst du den neuen Preis mit Datum ein. Alte Zeiträume rechnen mit dem alten Preis. Grund- und Zählergebühr werden anteilig auf Tage umgelegt.', style: const TextStyle(fontSize: 12, color: kTextMuted)),
             if (!erzeugung) ...[
               const SizedBox(height: 12),
               TextField(controller: _abschlag, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))], decoration: const InputDecoration(labelText: 'Abschlag im Monat in Euro (optional)')),
@@ -661,7 +662,7 @@ class _WechselDialogState extends ConsumerState<_WechselDialog> {
   @override
   Widget build(BuildContext context) {
     final r = ref.watch(zaehlerDatenProvider).reihe(widget.reiheId);
-    final heute = zaehlerHeute(DateTime.now());
+    final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     if (r == null) return AlertDialog(title: const Text('Zähler wechseln'), content: const Text('Diesen Zähler gibt es nicht mehr.'), actions: [TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Schließen'))]);
     final einheit = r.inhalt.einheit;
     return AlertDialog(

@@ -17,6 +17,7 @@ import '../../data/zaehler/zaehler_uebersicht.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'zaehler_anzeige.dart';
 import 'zaehler_editor.dart' show zaehlerWechselOeffnen;
@@ -141,7 +142,7 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
   @override
   Widget build(BuildContext context) {
     final daten = ref.watch(zaehlerDarfProvider) ? ref.watch(zaehlerDatenProvider) : const ZaehlerDaten(geladen: true);
-    final heute = zaehlerHeute(DateTime.now());
+    final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final aktiv = [for (final r in daten.reihen) if (!r.archiviert) r];
     final id = _aktuelleId(daten);
     final r = id == null ? null : daten.reihe(id);
@@ -357,7 +358,7 @@ class _StandDialogState extends ConsumerState<_StandDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final heute = zaehlerHeute(DateTime.now());
+    final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final einheit = widget.reihe.inhalt.einheit;
     final milli = mengeParsen(_wert.text);
     // die anderen Stände der Reihe (ohne den bearbeiteten selbst)

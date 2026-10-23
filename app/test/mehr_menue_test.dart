@@ -142,7 +142,7 @@ void main() {
     testWidgets('Standard: Listen, Fristen, Standort, Suche (kein Müll, kein Wetter ohne Server); Zeile Profil; Medikamente nach Fristen, keine Dateien', (tester) async {
       await start(tester);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'standort', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'zaehler', 'standort', 'suche']);
       for (final t in ['Listen', 'Fristen', 'Standort', 'Suche', 'Profil', 'Konto, Sicherheit, Einstellungen']) {
         expect(find.descendant(of: blatt(), matching: find.text(t)), findsOneWidget, reason: t);
       }
@@ -154,20 +154,20 @@ void main() {
     testWidgets('Müll und Wetter erscheinen nur, wenn der Server sie anbietet (Reihenfolge: Bereiche, Fristen, Medikamente, Müll, Wetter, Standort, Suche)', (tester) async {
       await start(tester, muell: true, wetter: true);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'muell', 'wetter', 'standort', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'zaehler', 'muell', 'wetter', 'standort', 'suche']);
     });
 
     testWidgets('nur Müll: ohne Wetter', (tester) async {
       await start(tester, muell: true);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'muell', 'standort', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'zaehler', 'muell', 'standort', 'suche']);
     });
 
     testWidgets('eigene Leiste: die nicht gewählten Bereiche stehen im Blatt', (tester) async {
       await start(tester, gespeichert: {'leiste_bereiche': 'start,kalender,chat,listen'});
       expect(tester.widgetList<NavigationDestination>(find.byType(NavigationDestination)).map((d) => d.label), ['Start', 'Kalender', 'Chat', 'Listen', 'Mehr']);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['aufgaben', 'fristen', 'medikamente', 'standort', 'suche']);
+      expect(kachelIds(tester), ['aufgaben', 'fristen', 'medikamente', 'zaehler', 'standort', 'suche']);
     });
 
     for (final skala in [1.0, 2.0]) {
@@ -175,7 +175,7 @@ void main() {
         await start(tester, skala: skala, muell: true, wetter: true);
         await mehrOeffnen(tester);
         expect(tester.takeException(), isNull);
-        for (final id in ['listen', 'fristen', 'medikamente', 'muell', 'wetter', 'standort', 'suche']) {
+        for (final id in ['listen', 'fristen', 'medikamente', 'zaehler', 'muell', 'wetter', 'standort', 'suche']) {
           final s = tester.getSize(find.byKey(ValueKey('mehr:$id')));
           expect(s.width, greaterThanOrEqualTo(44), reason: id);
           expect(s.height, greaterThanOrEqualTo(44), reason: id);

@@ -10,6 +10,9 @@ import 'package:lx_fampad/data/api/models.dart' show MemberStatus, Role, UserDto
 import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
 import 'package:lx_fampad/data/medikamente/medikament_modelle.dart';
 import 'package:lx_fampad/data/medikamente/medikament_state.dart';
+import 'package:lx_fampad/data/zaehler/zaehler_repository.dart' show zaehlerRepositoryProvider;
+import 'package:lx_fampad/data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
+import 'package:lx_fampad/features/zaehler/zaehler_diagramm.dart' show VerbrauchsDiagramm;
 import 'package:lx_fampad/features/neuigkeiten/neuigkeiten_dialog.dart';
 import 'package:lx_fampad/data/neuigkeiten/neuigkeiten.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart' show EinstellungsZeile;
@@ -22,6 +25,7 @@ import 'support/fake_erinnerung_port.dart';
 import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/test_app.dart';
+import 'support/zaehler_welt.dart';
 
 /// Alle sichtbaren, antippbaren Knoten und Textfelder des Semantics-Baums ohne Beschriftung (Pfad zur Fehlersuche).
 List<String> unbeschriftet(WidgetTester tester) {
@@ -267,6 +271,72 @@ void main() {
         pruefe(tester, 'Medikament Editor $skala');
         await tippe(tester, find.text('Wochentage'));
         pruefe(tester, 'Medikament Editor Wochentage $skala');
+        h.dispose();
+      });
+
+      // Zähler (nur Eltern und Admins): Übersicht, Verlauf mit bedienbarem Diagramm, Stand eintragen, Einrichten, Bericht
+      Future<ZaehlerRepoAttrappe> zaehlerStart(WidgetTester tester) async {
+        final repo = ZaehlerRepoAttrappe();
+        final env = await angemeldeteUmgebung();
+        final st = monatsStaende();
+        final d = datenAus([
+          strom(staende: st.sublist(0, st.length - 1)),
+          wasser(zKalt1, 'Kaltwasser Etage'),
+          wasser(zKalt2, 'Kaltwasser Waschkeller', start: 50, proMonat: 2),
+          solar(),
+        ]);
+        env.extraOverrides.addAll([
+          erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false),
+          zaehlerTestUhr,
+          zaehlerDatenProvider.overrideWithValue(d),
+          zaehlerRepositoryProvider.overrideWithValue(repo),
+        ]);
+        await starteApp(tester, env, skala: skala, groesse: const Size(360, 900));
+        await zumTab(tester, 'Zähler');
+        return repo;
+      }
+
+      testWidgets('Zähler: Übersicht', (tester) async {
+        final h = tester.ensureSemantics();
+        await zaehlerStart(tester);
+        pruefe(tester, 'Zähler Übersicht $skala');
+        h.dispose();
+      });
+
+      testWidgets('Zähler: Verlauf mit Diagramm (Wert, Nachbarwerte, Schrittaktionen)', (tester) async {
+        final h = tester.ensureSemantics();
+        await zaehlerStart(tester);
+        await tippe(tester, find.bySemanticsLabel(RegExp(r'^Strom.')));
+        pruefe(tester, 'Zähler Verlauf $skala');
+        // das Diagramm trägt Wert, Vor- und Nachwert und beide Schrittaktionen
+        final diagramm = tester.getSemantics(find.byType(VerbrauchsDiagramm));
+        final data = diagramm.getSemanticsData();
+        expect(data.hasAction(SemanticsAction.increase), isTrue);
+        expect(data.hasAction(SemanticsAction.decrease), isTrue);
+        expect(data.label, contains('Verbrauch je Monat'));
+        expect(data.label, contains('Januar 2026'));
+        expect(data.increasedValue, isNotEmpty);
+        expect(data.decreasedValue, isNotEmpty);
+        tester.semantics.increase(find.semantics.byLabel(RegExp(r'^Verbrauch je Monat')));
+        await warte(tester);
+        expect(find.textContaining('// SEPTEMBER'), findsOneWidget);
+        h.dispose();
+      });
+
+      testWidgets('Zähler: Stand eintragen mit Hinweis, Einrichten, Bericht', (tester) async {
+        final h = tester.ensureSemantics();
+        await zaehlerStart(tester);
+        await tippe(tester, find.widgetWithText(FilledButton, 'Stand eintragen'));
+        pruefe(tester, 'Zähler Stand $skala');
+        await eingeben(tester, 'Zählerstand in kWh', '100');
+        await warte(tester);
+        pruefe(tester, 'Zähler Stand mit Hinweis $skala');
+        await tippe(tester, find.byTooltip('Zurück'));
+        await tippe(tester, find.byTooltip('Zähler hinzufügen'));
+        pruefe(tester, 'Zähler Editor $skala');
+        await tippe(tester, find.byTooltip('Zurück'));
+        await tippe(tester, find.byTooltip('Bericht als PDF'));
+        pruefe(tester, 'Zähler Bericht $skala');
         h.dispose();
       });
     });

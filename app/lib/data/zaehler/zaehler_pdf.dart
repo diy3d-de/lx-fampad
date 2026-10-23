@@ -99,13 +99,11 @@ List<String> umbrechenNachBreite(String text, double groesse, double maxBreite, 
 
 class _Seite {
   final inhalt = StringBuffer();
-  final texte = <int>[]; // nur für die Seitennummer
 }
 
 /// Schreibt Seiten mit Textzeilen, Linien und Balken; fängt am Ende jeder Seite eine neue an.
 class _Schreiber {
   final seiten = <_Seite>[_Seite()];
-  final bytes = <List<int>>[];
   double y = _hoehe - _rand;
 
   _Seite get _s => seiten.last;
@@ -272,7 +270,6 @@ Uint8List zaehlerBerichtPdf(BerichtDaten d) {
     final seite = s.seiten[i];
     final tmp = _Schreiber();
     tmp.seiten[0] = seite;
-    seite.inhalt.write('');
     tmp.linie(links, rechts, 48);
     tmp.text('Erstellt am ${d.erstellt} · Werte laut eigenen Ablesungen', links, 8, farbe: _cMuted, yy: 36);
     tmp.text('Seite ${i + 1} von $n', rechts, 8, farbe: _cMuted, rechts: true, yy: 36);
@@ -334,7 +331,13 @@ List<String> pdfTextstuecke(Uint8List pdf) {
   final out = <String>[];
   final re = RegExp(r'\(((?:\\.|[^\\)])*)\) Tj');
   for (final m in re.allMatches(s)) {
-    out.add(m.group(1)!.replaceAllMapped(RegExp(r'\\(.)'), (e) => e.group(1)!));
+    out.add(_ausWinAnsi(m.group(1)!.replaceAllMapped(RegExp(r'\\(.)'), (e) => e.group(1)!)));
   }
   return out;
+}
+
+/// Gegenstück zu [_winAnsi] für die Sonderzeichen der Schriftkodierung (Euro, Gedankenstrich, Anführungszeichen).
+String _ausWinAnsi(String s) {
+  const sonder = {0x80: '€', 0x84: '„', 0x93: '“', 0x94: '”', 0x96: '–', 0x97: '—', 0x85: '…', 0x95: '•'};
+  return String.fromCharCodes([for (final r in s.runes) if (sonder.containsKey(r)) ...sonder[r]!.runes else r]);
 }

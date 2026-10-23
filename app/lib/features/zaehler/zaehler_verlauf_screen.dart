@@ -14,6 +14,7 @@ import '../../data/zaehler/zaehler_state.dart';
 import '../../data/zaehler/zaehler_uebersicht.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'zaehler_anzeige.dart';
 import 'zaehler_bericht_screen.dart';
@@ -73,7 +74,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
     if (k == null) {
       return AuthSeite(label: '// verlauf', titel: 'Verlauf', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Diesen Zähler gibt es nicht mehr.', fehler: false)]);
     }
-    final heute = zaehlerHeute(DateTime.now());
+    final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final einheit = k.einheit;
     final farbe = zaehlerFarbe(k.art);
     final erzeugung = istErzeugung(k.art);

@@ -77,14 +77,17 @@ class _VerbrauchsDiagrammState extends State<VerbrauchsDiagramm> {
   @override
   Widget build(BuildContext context) {
     final c = widget.cursor;
+    final n = widget.balken.length;
+    // Bedienhilfen: Wert und beide Nachbarwerte gehören zusammen (sonst verweigert Flutter die Aktionen); ohne Auswahl gilt der erste Balken als Nachbar
+    final i = (c ?? 0).clamp(0, n == 0 ? 0 : n - 1);
     return Semantics(
       container: true,
       label: widget.semantik,
-      value: c == null || c >= widget.balken.length ? null : widget.wertText(c),
-      increasedValue: c != null && c + 1 < widget.balken.length ? widget.wertText(c + 1) : null,
-      decreasedValue: c != null && c > 0 ? widget.wertText(c - 1) : null,
-      onIncrease: () => _schritt(1),
-      onDecrease: () => _schritt(-1),
+      value: n == 0 ? null : (c == null ? 'Kein Balken gewählt' : widget.wertText(i)),
+      increasedValue: n == 0 ? null : widget.wertText((i + 1).clamp(0, n - 1)),
+      decreasedValue: n == 0 ? null : widget.wertText((i - 1).clamp(0, n - 1)),
+      onIncrease: n == 0 ? null : () => _schritt(1),
+      onDecrease: n == 0 ? null : () => _schritt(-1),
       focusable: true,
       focused: _fokus,
       child: ExcludeSemantics(
