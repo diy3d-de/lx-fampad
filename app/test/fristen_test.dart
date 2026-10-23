@@ -261,6 +261,15 @@ void main() {
       expect(planeErinnerungen(daten: leer, ich: 'u-ich', jetzt: DateTime.utc(2026, 10, 19, 8), aufgaben: [a.copyWith(assigneeId: const Value('u-ben'))]), isEmpty);
     });
 
+    test('Eltern und Admins werden an jede sichtbare Frist erinnert; Kinder nur an eigene', () {
+      final a = frist(faelligDate: '2027-01-31', erinnerungMin: 90 * 1440).copyWith(assigneeId: const Value('u-ben'));
+      final jetzt = DateTime.utc(2026, 10, 19, 8);
+      expect(planeErinnerungen(daten: leer, ich: 'u-ich', jetzt: jetzt, aufgaben: [a], elternRolle: true), hasLength(1));
+      expect(planeErinnerungen(daten: leer, ich: 'u-ich', jetzt: jetzt, aufgaben: [a]), isEmpty, reason: 'ohne Elternrolle nur Zuständige');
+      // gilt nur für Fristen, nicht für normale Aufgaben anderer Personen
+      expect(planeErinnerungen(daten: leer, ich: 'u-ich', jetzt: jetzt, aufgaben: [a.copyWith(frist: false)], elternRolle: true), isEmpty);
+    });
+
     test('Text: heute und morgen', () {
       expect(fristErinnerungInhalt(tag(2026, 10, 19), tag(2026, 10, 19)), 'Läuft heute ab');
       expect(fristErinnerungInhalt(tag(2026, 10, 20), tag(2026, 10, 19)), 'Läuft morgen ab');

@@ -195,6 +195,7 @@ class ErinnerungDienst {
       aufgaben: !nurMuell && einst.aufgabenAn ? (_ref.read(aufgabenProvider).value ?? const []) : const [],
       // Abfuhrtermine: Abend vor der Abholung, nur Eltern/Admins (leer für alle anderen)
       zusatz: muellPlan,
+      elternRolle: auth.user?.role == Role.admin || auth.user?.role == Role.parent,
     );
     final alt = _letzte;
     final gleich =
