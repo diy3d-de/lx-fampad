@@ -172,7 +172,7 @@ class _Kopf extends StatelessWidget {
                 style: const TextStyle(
                   fontFamily: kFontMono,
                   fontSize: 11,
-                  color: kTextFaint,
+                  color: kTextMuted,
                 ),
               ),
           ],

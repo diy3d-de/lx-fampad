@@ -36,6 +36,9 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private var systemChannel: MethodChannel? = null
     private var startLink: String? = null
+
+    /** Text, mit dem die App per "Teilen" gestartet wurde (einmalig von Dart abgeholt); nie protokollieren. */
+    private var startTeilen: String? = null
     private var startWidgetZiel: String? = null
     private var standort: StandortKanal? = null
     private var heute: HeuteKanal? = null
@@ -53,6 +56,9 @@ class MainActivity : FlutterActivity() {
         /** Tipp auf das Widget "Heute" (HeuteWidget.kt): Aktion und Ziel, nur diese festen Ziele werden angenommen. */
         const val ACTION_WIDGET = "dev.lx_labs.fampad.WIDGET_OEFFNEN"
         const val EXTRA_ZIEL = "ziel"
+
+        /** Längster angenommener Text beim Teilen (Zeichen); alles darüber wird hart gekürzt. Dart kürzt ebenfalls (lib/data/teilen/teilen_logik.dart). */
+        private const val MAX_TEILEN_ZEICHEN = 4000
         private val WIDGET_ZIELE = setOf("kalender", "aufgaben", "listen")
     }
 
@@ -68,6 +74,7 @@ class MainActivity : FlutterActivity() {
         merkeWidgetZiel(intent)
         super.onCreate(savedInstanceState)
         startLink = linkAus(intent)
+        startTeilen = teilenAus(intent)
         secureAnwenden()
     }
 
@@ -82,6 +89,7 @@ class MainActivity : FlutterActivity() {
         setIntent(intent)
         val link = linkAus(intent)
         if (link != null) systemChannel?.invokeMethod("link", link)
+        teilenAus(intent)?.let { systemChannel?.invokeMethod("share", it) }
         widgetZielAus(intent)?.let { heute?.zielMelden(it) }
     }
 
@@ -201,6 +209,26 @@ class MainActivity : FlutterActivity() {
     }
 
     /** Nur Links der eigenen Domain (https). Die Daten werden aus dem Intent entfernt, damit sie nicht erneut gelesen werden. */
+    /**
+     * Text aus "Teilen mit lx-familyhub" (ACTION_SEND, text/plain): nur das String-Extra EXTRA_TEXT, hart auf [MAX_TEILEN_ZEICHEN] gekürzt (nicht mitten in einem
+     * Zeichenpaar), nie EXTRA_STREAM oder Anhänge; der Intent-Filter im Manifest nimmt nur text/plain an. Das Extra wird entfernt, damit ein erneut zugestellter
+     * Intent (Drehen, Start aus dem Verlauf) nicht noch einmal teilt. Der Text wird nirgends protokolliert.
+     */
+    private fun teilenAus(intent: Intent?): String? {
+        if (intent == null || intent.action != Intent.ACTION_SEND || intent.type != "text/plain") return null
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+        val roh = try {
+            intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+        } catch (e: Exception) {
+            null
+        }
+        intent.removeExtra(Intent.EXTRA_TEXT)
+        if (roh == null || roh.isBlank()) return null
+        var text = if (roh.length > MAX_TEILEN_ZEICHEN) roh.substring(0, MAX_TEILEN_ZEICHEN) else roh
+        if (text.isNotEmpty() && Character.isHighSurrogate(text.last())) text = text.dropLast(1)
+        return text
+    }
+
     private fun linkAus(intent: Intent?): String? {
         if (intent?.action != Intent.ACTION_VIEW) return null
         val data = intent.data ?: return null
@@ -233,6 +261,10 @@ class MainActivity : FlutterActivity() {
                     "initialLink" -> {
                         result.success(startLink)
                         startLink = null
+                    }
+                    "initialShare" -> {
+                        result.success(startTeilen)
+                        startTeilen = null
                     }
                     "setSecure" -> {
                         secureWunsch = call.argument<Boolean>("secure") == true

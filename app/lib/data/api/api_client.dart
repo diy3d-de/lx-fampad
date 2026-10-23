@@ -286,6 +286,20 @@ class ApiClient {
 
   // ---------------------------------------------------------------- Refresh
 
+  /// Stellt sicher, dass das Access-Token noch gültig ist, und erneuert es dafür einmal über denselben serialisierten Weg wie jede Anfrage (gleichzeitige
+  /// Aufrufer teilen sich eine Anfrage). Gilt ausdrücklich auch für einen Client mit `refreshErlaubt: false`: Der Aufrufer (heute nur der Standort-Abruf
+  /// nach einem Wecker, höchstens einmal je 30 Sekunden) entscheidet bewusst, dass er hier erneuern darf. Nie in einer Schleife wiederholen: ein Fehler
+  /// (Verbindung, abgelehnt) wird weitergereicht. Web: nichts zu tun (Cookie).
+  Future<void> zugangErneuern() async {
+    if (_web) return;
+    final t = await _tokenLaden();
+    if (t == null) {
+      throw const ApiException(kind: ApiErrorKind.nichtAngemeldet, status: 401, code: 'unauthenticated', message: 'Du bist nicht angemeldet.');
+    }
+    if (t.accessExpiresAt.subtract(_vorlauf).isAfter(_now())) return;
+    await _erneuern();
+  }
+
   Future<void> _nachUnauthorized(String gesendet) async {
     final aktuell = await _tokenLaden();
     if (aktuell == null) return; // inzwischen abgemeldet

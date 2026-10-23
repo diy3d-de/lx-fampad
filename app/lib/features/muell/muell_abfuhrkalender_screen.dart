@@ -93,7 +93,7 @@ class _Kv extends StatelessWidget {
       alignment: WrapAlignment.spaceBetween,
       spacing: 12,
       children: [
-        Text(k, style: const TextStyle(fontSize: 13, color: kTextFaint)),
+        Text(k, style: const TextStyle(fontSize: 13, color: kTextMuted)),
         Text(v, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kText)),
       ],
     ),

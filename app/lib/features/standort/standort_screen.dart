@@ -14,6 +14,7 @@ import '../../data/database_provider.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/lists/members.dart';
 import '../../data/standort/standort_dienst.dart';
+import '../../data/standort/standort_einstellungen.dart';
 import '../../data/standort/standort_hinweis.dart';
 import '../../data/standort/standort_modelle.dart';
 import '../../ui/widgets.dart';
@@ -157,8 +158,13 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
     final andere = [for (final u in mitglieder.value ?? const <UserDto>[]) if (u.id != ich?.id) u];
     if (_gewaehlt == null && ich != null && andere.isNotEmpty) _gewaehlt = standardEmpfaenger(ich, andere);
     final jetzt = _jetzt;
-    final liste = st.geteilt.values.toList()
+    final einst = ref.watch(standortEinstellungenProvider);
+    final alle = st.geteilt.values.toList()
       ..sort((a, b) => (namen[a.userId]?.displayName ?? '').toLowerCase().compareTo((namen[b.userId]?.displayName ?? '').toLowerCase()));
+    // Entfernung zu mir: nur aus dem eigenen Standort, den das Gerät liefert, solange ich selbst teile (nie heimlich abgefragt)
+    final eigene = st.phase == StandortPhase.teilt ? st.eigene : null;
+    final gefiltert = filterNachDistanz(alle, eigene, einst.distanz);
+    final liste = gefiltert.sichtbar;
     final karte = ref.watch(standortKartenBuilderProvider);
     final mitPosition = [for (final p in liste) if (p.hatPosition) p];
 
@@ -206,12 +212,26 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
             karte(context, mitPosition, namen),
             const SizedBox(height: 12),
           ],
-          if (liste.isEmpty)
+          if (alle.isNotEmpty) ...[_DistanzAuswahl(filter: einst.distanz, eigeneBekannt: eigene != null, ausgeblendet: gefiltert.ausgeblendet), const SizedBox(height: 12)],
+          if (alle.isEmpty)
             const LxCard(
               child: EmptyState(icon: Icons.location_off_outlined, title: 'Niemand teilt gerade', hint: 'Wenn jemand aus der Familie seinen Standort teilt, siehst du ihn hier.'),
             )
+          else if (liste.isEmpty)
+            const LxCard(
+              child: EmptyState(icon: Icons.social_distance_outlined, title: 'Niemand in dieser Entfernung', hint: 'Wähle oben eine größere Entfernung oder "Alle".'),
+            )
           else
-            for (final p in liste) ...[_Zeile(p: p, nutzer: namen[p.userId], jetzt: jetzt), const SizedBox(height: 8)],
+            for (final p in liste) ...[
+              _Zeile(
+                p: p,
+                nutzer: namen[p.userId],
+                jetzt: jetzt,
+                stumm: einst.istStumm(p.userId),
+                entfernung: eigene != null && p.hatPosition ? abstandMeter(eigene.breite, eigene.laenge, p.breite!, p.laenge!) : null,
+              ),
+              const SizedBox(height: 8),
+            ],
           if (port.verfuegbar) ...[const SizedBox(height: 16), const _AkkuHinweis()],
         ],
       ),
@@ -409,7 +429,20 @@ class _Teilen extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 8),
-          ZweitKnopf(text: '1 Stunde länger', icon: Icons.more_time, onPressed: startet ? null : () => unawaited(ref.read(standortProvider.notifier).verlaengern(const Duration(hours: 1)))),
+          ZweitKnopf(
+            text: '1 Stunde länger',
+            icon: Icons.more_time,
+            onPressed: startet || st.amGesamtlimit ? null : () => unawaited(ref.read(standortProvider.notifier).verlaengern(const Duration(hours: 1))),
+          ),
+          if (st.amGesamtlimit)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                standortGesamtlimitText(),
+                style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kWarn),
+              ),
+            ),
+          if (st.meldung != null && !st.amGesamtlimit) ...[const SizedBox(height: 8), MeldungsBox(st.meldung!)],
         ],
       ),
     );
@@ -428,7 +461,11 @@ class _Zeile extends StatelessWidget {
   final GeteiltePosition p;
   final UserDto? nutzer;
   final DateTime jetzt;
-  const _Zeile({required this.p, required this.nutzer, required this.jetzt});
+  final bool stumm;
+
+  /// Luftlinie zu mir in Metern (null: eigener Standort nicht bekannt).
+  final double? entfernung;
+  const _Zeile({required this.p, required this.nutzer, required this.jetzt, this.stumm = false, this.entfernung});
 
   @override
   Widget build(BuildContext context) {
@@ -446,34 +483,47 @@ class _Zeile extends StatelessWidget {
       zeile = '${genauigkeitText(p.genauigkeit)} · ${alterText(alter!)}';
     }
     final rest = p.endetAt.difference(jetzt);
-    final semantik = '$name, $zeile, teilt noch ${_restText(rest)}';
+    final entf = entfernung == null ? '' : ' · ${entfernungText(entfernung!)} entfernt';
+    final semantik = '$name${stumm ? ', stumm' : ''}, $zeile$entf, teilt noch ${_restText(rest)}';
     return Semantics(
       container: true,
-      button: p.hatPosition,
-      label: semantik,
-      excludeSemantics: true,
-      onTap: p.hatPosition ? () => _detail(context) : null,
       child: LxCard(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        padding: const EdgeInsets.only(left: 14, right: 4, top: 10, bottom: 10),
         onTap: p.hatPosition ? () => _detail(context) : null,
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
           child: Row(
             children: [
-              BenutzerAvatar(user: nutzer, ersatzName: name, size: 36),
-              const SizedBox(width: 12),
+              // Text und Tipp auf die Zeile für Screenreader zusammengefasst; der Stumm-Knopf bleibt als eigenes Element erreichbar
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text(zeile, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: p.ungeprueft || veraltet ? kWarn : kTextMuted)),
-                  ],
+                child: Semantics(
+                  container: true,
+                  button: p.hatPosition,
+                  label: semantik,
+                  excludeSemantics: true,
+                  onTap: p.hatPosition ? () => _detail(context) : null,
+                  child: Row(
+                    children: [
+                      BenutzerAvatar(user: nutzer, ersatzName: name, size: 36),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            Text(zeile + entf, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: p.ungeprueft || veraltet ? kWarn : kTextMuted)),
+                            if (stumm) const Text('stumm: keine Hinweise', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_restText(rest), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(_restText(rest), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint)),
+              _StummKnopf(userId: p.userId, name: name, stumm: stumm),
             ],
           ),
         ),
@@ -488,7 +538,7 @@ class _Zeile extends StatelessWidget {
         backgroundColor: kSurface,
         isScrollControlled: true,
         showDragHandle: true,
-        builder: (_) => StandortDetail(p: p, nutzer: nutzer, jetzt: jetzt),
+        builder: (_) => StandortDetail(p: p, nutzer: nutzer, jetzt: jetzt, entfernung: entfernung),
       ),
     );
   }
@@ -499,7 +549,8 @@ class StandortDetail extends StatelessWidget {
   final GeteiltePosition p;
   final UserDto? nutzer;
   final DateTime jetzt;
-  const StandortDetail({super.key, required this.p, required this.nutzer, required this.jetzt});
+  final double? entfernung;
+  const StandortDetail({super.key, required this.p, required this.nutzer, required this.jetzt, this.entfernung});
 
   @override
   Widget build(BuildContext context) {
@@ -524,6 +575,8 @@ class StandortDetail extends StatelessWidget {
             _Zeile2('Genauigkeit', genauigkeitText(p.genauigkeit)),
             _Zeile2('Gemessen', alter == null ? 'unbekannt' : '${alterText(alter)} (${DateFormat('HH:mm:ss').format(p.messzeit!)} Uhr)'),
             _Zeile2('Teilt noch', _restText(p.endetAt.difference(jetzt))),
+            if (entfernung != null) _Zeile2('Entfernung', '${entfernungText(entfernung!)} Luftlinie'),
+            _StummSchalter(userId: p.userId, name: name),
             if (p.veraltet(jetzt)) const Padding(padding: EdgeInsets.only(top: 8), child: MeldungsBox('Die Position ist nicht mehr aktuell. Vielleicht hat die Person gerade keinen Empfang.', fehler: false)),
           ],
         ),
@@ -604,6 +657,92 @@ class _AkkuHinweis extends ConsumerWidget {
           ],
         ],
       ),
+    );
+  }
+}
+
+/// Wirkung von "stumm", ehrlich: nur Hinweise auf diesem Gerät; Liste und Karte zeigen die Person weiter.
+const kStummErklaerung =
+    'Stumm: kein Hinweis "… teilt seinen Standort" auf diesem Gerät, auch nicht im Hintergrund. Die Person bleibt in Liste und Karte sichtbar. Gilt nur hier und lässt sich jederzeit aufheben.';
+
+/// Kleiner Knopf in der Zeile: Stumm schalten bzw. aufheben (44 px Touch-Ziel).
+class _StummKnopf extends ConsumerWidget {
+  final String userId;
+  final String name;
+  final bool stumm;
+  const _StummKnopf({required this.userId, required this.name, required this.stumm});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => IconButton(
+    constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+    tooltip: stumm ? 'Stumm aufheben: $name' : 'Hinweise stumm schalten: $name',
+    icon: Icon(stumm ? Icons.notifications_off_outlined : Icons.notifications_none_outlined, size: 20, color: stumm ? kWarn : kTextMuted),
+    onPressed: () => unawaited(ref.read(standortEinstellungenProvider.notifier).stummSetzen(userId, !stumm)),
+  );
+}
+
+/// Schalter mit Erklärung im Detailblatt.
+class _StummSchalter extends ConsumerWidget {
+  final String userId;
+  final String name;
+  const _StummSchalter({required this.userId, required this.name});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final stumm = ref.watch(standortEinstellungenProvider.select((e) => e.istStumm(userId)));
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: SwitchListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text('Hinweise von $name stumm'),
+        subtitle: const Text(kStummErklaerung, style: TextStyle(fontSize: 12, color: kTextMuted, height: 1.4)),
+        value: stumm,
+        onChanged: (v) => unawaited(ref.read(standortEinstellungenProvider.notifier).stummSetzen(userId, v)),
+      ),
+    );
+  }
+}
+
+/// Auswahl "Entfernung zu mir": nur mit bekanntem eigenem Standort (der ist nur bekannt, solange ich selbst teile).
+class _DistanzAuswahl extends ConsumerWidget {
+  final DistanzFilter filter;
+  final bool eigeneBekannt;
+  final int ausgeblendet;
+  const _DistanzAuswahl({required this.filter, required this.eigeneBekannt, required this.ausgeblendet});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final knoepfe = Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [for (final f in DistanzFilter.values) AuswahlKnopf(text: f.label, gewaehlt: filter == f, onTap: () => unawaited(ref.read(standortEinstellungenProvider.notifier).distanzSetzen(f)))],
+    );
+    final String hinweis;
+    if (!eigeneBekannt) {
+      hinweis = 'Eigener Standort nicht bekannt: Er ist nur bekannt, solange du selbst teilst. Er wird nie heimlich abgefragt, darum ist der Filter aus.';
+    } else if (filter.aktiv && ausgeblendet > 0) {
+      hinweis = '$ausgeblendet ${ausgeblendet == 1 ? 'Person' : 'Personen'} ausgeblendet (zu weit weg oder noch ohne Position).';
+    } else {
+      hinweis = 'Luftlinie, lokal auf deinem Gerät berechnet.';
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const MonoLabel('// entfernung zu mir'),
+        const SizedBox(height: 8),
+        if (eigeneBekannt)
+          knoepfe
+        else
+          ExcludeSemantics(
+            child: IgnorePointer(child: Opacity(opacity: 0.4, child: knoepfe)),
+          ),
+        const SizedBox(height: 6),
+        Text(
+          hinweis,
+          key: const Key('distanz-hinweis'),
+          style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+        ),
+      ],
     );
   }
 }

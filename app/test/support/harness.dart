@@ -18,6 +18,9 @@ const minZiel = 44.0;
 /// Aufrufe des System-Kanals (Gerätename, Bildschirmschutz ...) seit dem Start der App im Test.
 final kanalAufrufe = <MethodCall>[];
 
+/// Text, mit dem die App per "Teilen" gestartet wurde (Antwort der Android-Seite auf "initialShare", einmalig); null = normaler Start.
+String? kanalTeilenStart;
+
 /// Antwortet die Android-Seite auf "copySensitive" mit Erfolg (sonst fällt die App auf die normale Zwischenablage zurück)?
 bool kanalGeheimOk = false;
 
@@ -29,6 +32,11 @@ void kanalMocken() {
   messenger.setMockMethodCallHandler(const MethodChannel(kSystemChannel), (call) async {
     kanalAufrufe.add(call);
     if (call.method == 'copySensitive') return kanalGeheimOk;
+    if (call.method == 'initialShare') {
+      final t = kanalTeilenStart;
+      kanalTeilenStart = null;
+      return t;
+    }
     return call.method == 'deviceName' ? 'Pixel 9' : null;
   });
   addTearDown(() => messenger.setMockMethodCallHandler(const MethodChannel(kSystemChannel), null));

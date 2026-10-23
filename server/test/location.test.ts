@@ -386,6 +386,34 @@ describe('WebSocket-Kanal "loc"', () => {
     expect(alice.of('loc_error').map((m) => m.code)).toEqual(['bad_duration']);
   });
 
+  it('Gesamtlimit: Verlängern über 24 h seit dem Start wird mit total_limit abgelehnt, genau am Limit geht es', async () => {
+    await start();
+    const [alice, bob] = [await connect('alice'), await connect('bob')];
+    const t0 = clock;
+    await send(alice, startMsg([[BOB, 'w']], { endsAt: t0 + 10 * 3_600_000 }));
+    clock = t0 + 9 * 3_600_000;
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: t0 + 20 * 3_600_000 });
+    clock = t0 + 19 * 3_600_000;
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: t0 + 24 * 3_600_000 + 1 });
+    expect(alice.of('loc_error').map((m) => m.code)).toEqual(['total_limit']);
+    expect(bob.of('loc_extend')).toHaveLength(1);
+    // genau 24 h nach dem Start ist erlaubt
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: t0 + 24 * 3_600_000 });
+    expect(alice.of('loc_active').at(-1)).toEqual({ type: 'loc_active', shareId: SHARE, endsAt: t0 + 24 * 3_600_000 });
+    expect(bob.of('loc_extend')).toHaveLength(2);
+    expect(app?.location.size).toBe(1);
+  });
+
+  it('Gesamtlimit ist einstellbar (LOC_MAX_TOTAL_MINUTES) und gilt auch für den Start', async () => {
+    await start({ LOC_MAX_TOTAL_MINUTES: '90' });
+    const alice = await connect('alice');
+    await send(alice, startMsg([[BOB, 'w']], { endsAt: clock + 91 * 60_000 }));
+    expect(alice.of('loc_error').map((m) => m.code)).toEqual(['bad_duration']);
+    await send(alice, startMsg([[BOB, 'w']], { endsAt: clock + 60 * 60_000 }));
+    await send(alice, { type: 'loc_extend', shareId: SHARE, endsAt: clock + 91 * 60_000 });
+    expect(alice.of('loc_error').map((m) => m.code)).toEqual(['bad_duration', 'total_limit']);
+  });
+
   it('Beenden: Empfänger bekommen loc_stop, danach gibt es nichts mehr', async () => {
     await start();
     const [alice, bob] = [await connect('alice'), await connect('bob')];

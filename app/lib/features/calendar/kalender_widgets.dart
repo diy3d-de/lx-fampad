@@ -13,6 +13,7 @@ import '../../data/calendar/zeitzonen.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
+import 'countdown_karte.dart' show CountdownSchalter;
 import 'calendar_state.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -268,6 +269,7 @@ Future<TerminAktion?> terminDetailBlatt(
                 ),
               ),
             if (ersteller != null) zeile(Icons.person_outline, 'Angelegt von ${ersteller.displayName}'),
+            CountdownSchalter(terminId: t.id),
             const SizedBox(height: 8),
             if (darfAendern) ...[
               FilledButton.icon(onPressed: () => Navigator.of(ctx).pop(TerminAktion.bearbeiten), icon: const Icon(Icons.edit_outlined), label: const Text('Bearbeiten')),

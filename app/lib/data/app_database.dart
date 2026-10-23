@@ -51,7 +51,7 @@ class Listen extends Table {
   TextColumn get id => text()();
   TextColumn get name => text()();
 
-  /// shopping | packing | custom
+  /// shopping | packing | custom | template (Vorlage für Einkaufslisten)
   TextColumn get kind => text().withDefault(const Constant('custom'))();
 
   /// Wer sie sieht: parents | family (frühere Werte "all" gelten als family)
@@ -78,6 +78,9 @@ class ListenEintraege extends Table {
   TextColumn get inhalt => text().named('text')();
   TextColumn get assigneeId => text().nullable()();
   DateTimeColumn get doneAt => dateTime().nullable()();
+
+  /// Kategorie nach Supermarkt-Gang (Kennung, null = Sonstiges; unbekannte Werte toleriert die Oberfläche).
+  TextColumn get category => text().nullable()();
   RealColumn get position => real().withDefault(const Constant(0))();
   DateTimeColumn get createdAt => dateTime()();
   IntColumn get rev => integer().withDefault(const Constant(0))();
@@ -391,9 +394,10 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 10;
+  int get schemaVersion => 11;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
+  /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -454,6 +458,11 @@ class AppDatabase extends _$AppDatabase {
           await m.createIndex(stimmenKonversationIdx);
           await m.createIndex(pinsKonversationIdx);
         }
+        if (from < 11) {
+          // nur anlegen, wenn sie fehlt (erneuter Lauf nach einem abgebrochenen Update)
+          final spalten = await customSelect("PRAGMA table_info('list_items')").get();
+          if (!spalten.any((r) => r.read<String>('name') == 'category')) await m.addColumn(listenEintraege, listenEintraege.category);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -474,6 +483,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 10) {
         // Version 10 legt die Tabellen für Reaktionen, Stimmen und Pins an; ohne Reset kämen schon vorhandene nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 11) {
+        // Version 11 fügt dem Eintrag ein synchronisiertes Feld hinzu; ohne Reset kämen schon vorhandene Kategorien nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

@@ -67,6 +67,16 @@ fi
 grep -q 'android.appwidget.provider' "$manifest" || { echo "FEHLER: android.appwidget.provider (Widget-Beschreibung) fehlt im Release-Manifest" >&2; fehler=1; }
 grep -q 'android.appwidget.action.APPWIDGET_UPDATE' "$manifest" || { echo "FEHLER: APPWIDGET_UPDATE fehlt im Release-Manifest" >&2; fehler=1; }
 
+# Teilen aus anderen Apps: nur Text (ACTION_SEND mit text/plain); keine Mehrfachauswahl und kein anderer MIME-Typ im Filter
+manifest_zeilen="$(tr -d '\r' < "$manifest" | tr '\n' ' ' | sed 's#</intent-filter>#&\n#g')"
+if ! printf '%s\n' "$manifest_zeilen" | grep 'android.intent.action.SEND"' | grep -q 'mimeType="text/plain"'; then
+  echo "FEHLER: Intent-Filter ACTION_SEND mit text/plain fehlt im Release-Manifest (Teilen aus anderen Apps)" >&2; fehler=1
+fi
+if grep -q 'android.intent.action.SEND_MULTIPLE' "$manifest"; then echo "FEHLER: SEND_MULTIPLE im Release-Manifest (nur ein Text wird angenommen)" >&2; fehler=1; fi
+if printf '%s\n' "$manifest_zeilen" | grep 'android.intent.action.SEND"' | grep -o 'mimeType="[^"]*"' | grep -qv 'mimeType="text/plain"'; then
+  echo "FEHLER: ACTION_SEND nimmt einen anderen MIME-Typ als text/plain an (Bilder und Dateien werden nicht angenommen)" >&2; fehler=1
+fi
+
 usage="build/app/outputs/mapping/release/usage.txt"
 if [ -f "$usage" ]; then
   # usage.txt nennt, was R8 entfernt hat: "Klasse" allein = ganz entfernt, "Klasse:" mit Einrückungen darunter = Mitglieder entfernt
@@ -94,5 +104,5 @@ else
   echo "FEHLER: $usage fehlt (R8 lief nicht?)" >&2; fehler=1
 fi
 
-[ "$fehler" = 0 ] && echo "Release-Prüfung bestanden (Manifest inkl. Widget-Empfänger, ABI und Größe der APK, R8-Regeln der Karte und des Widgets)."
+[ "$fehler" = 0 ] && echo "Release-Prüfung bestanden (Manifest inkl. Widget-Empfänger und Teilen-Filter, ABI und Größe der APK, R8-Regeln der Karte und des Widgets)."
 exit "$fehler"

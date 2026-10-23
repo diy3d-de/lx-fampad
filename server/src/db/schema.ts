@@ -38,7 +38,7 @@ export const memberRole = pgEnum('member_role', ['admin', 'parent', 'child']);
 /** pending: per Einladung mit Freigabe registriert, darf sich erst nach Freigabe durch einen Admin anmelden. */
 export const memberStatus = pgEnum('member_status', ['active', 'pending']);
 export const credentialType = pgEnum('credential_type', ['passkey', 'totp', 'password']);
-export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom']);
+export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom', 'template']);
 /** Wer eine Liste oder einen Termin sehen darf: nur Eltern/Admins oder die ganze Familie (Eingaben alter Apps mit "all" werden auf "family" abgebildet). */
 export const listAudience = pgEnum('list_audience', ['parents', 'family']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
@@ -1051,6 +1051,8 @@ export const listItems = pgTable(
     text: text('text').notNull(),
     assigneeId: uuid('assignee_id').references(() => users.id, { onDelete: 'set null' }),
     doneAt: timestamp('done_at', { withTimezone: true }),
+    /** Kategorie nach Supermarkt-Gang (Kennung aus LIST_CATEGORIES, NULL = Sonstiges). */
+    category: text('category'),
     /** Sortierung innerhalb der Liste: Kommazahl, neue Position zwischen zwei Nachbarn = Mittelwert (nur das verschobene Feld ändert sich). */
     position: doublePrecision('position').notNull().default(0),
     createdAt: createdAt(),

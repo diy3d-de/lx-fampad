@@ -149,7 +149,7 @@ void main() {
         return erster == 'Chat';
       }
 
-      for (var i = 0; i < 12 && !aufChat(); i++) {
+      for (var i = 0; i < 16 && !aufChat(); i++) {
         await tester.sendKeyEvent(LogicalKeyboardKey.tab);
         await tester.pump();
       }

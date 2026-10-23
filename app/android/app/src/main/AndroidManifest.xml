@@ -112,6 +112,14 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="https" android:host="familie.lx-labs.dev" android:path="/"/>
             </intent-filter>
+            <!-- Teilen aus anderen Apps ("Teilen mit lx-familyhub"): nur Text (ACTION_SEND mit text/plain), keine Bilder, Dateien oder Mehrfachauswahl (kein
+                 SEND_MULTIPLE, kein anderer MIME-Typ). MainActivity liest nur das String-Extra EXTRA_TEXT, kürzt es hart (4000 Zeichen) und gibt es an die Oberfläche,
+                 die erst nach der Anmeldung fragt, wohin der Text soll (Liste, Aufgabe, verschlüsselter Chat). tools/release-pruefung.sh prüft die Form dieses Filters. -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <data android:mimeType="text/plain"/>
+            </intent-filter>
         </activity>
         <!-- Nicht löschen: wird vom Flutter-Tool zur Erzeugung von GeneratedPluginRegistrant.java gebraucht -->
         <meta-data

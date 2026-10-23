@@ -22,6 +22,7 @@ import '../../ui/widgets.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
+import '../calendar/countdown_karte.dart';
 import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../../data/tasks/aufgabe_logik.dart';
 import '../chat/chat_anzeige.dart';
@@ -40,6 +41,7 @@ import '../muell/muell_karte.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/standort/standort_dienst.dart';
+import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
 import 'home_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -123,21 +125,7 @@ class _Kopfzeile extends ConsumerWidget {
           spacing: 8,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            Tooltip(
-              message: 'Die Suche kommt in einer späteren Phase',
-              child: Semantics(
-                label: 'Suche, noch nicht verfügbar',
-                excludeSemantics: true,
-                child: const SizedBox(
-                  width: 240,
-                  height: 44,
-                  child: TextField(
-                    enabled: false,
-                    decoration: InputDecoration(hintText: 'Suchen …', prefixIcon: Icon(Icons.search, size: 20), isDense: true),
-                  ),
-                ),
-              ),
-            ),
+            const SuchEinstieg(breite: 240),
             IconButton(
               tooltip: 'Benachrichtigungen',
               constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
@@ -352,6 +340,7 @@ class _RasterState extends ConsumerState<_Raster> {
 /// Die Kachel zu einer Kennung (siehe [kDesktopKacheln]).
 Widget _kachel(String id) => switch (id) {
   'termine' => const _TermineKarte(),
+  'countdown' => const CountdownKarte(),
   'chat' => const _ChatKarte(),
   'einkauf' => const _EinkaufKarte(),
   'dateien' => const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),

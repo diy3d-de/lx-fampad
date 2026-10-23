@@ -29,13 +29,17 @@ enum ListenSicht {
 enum ListenArt {
   shopping('shopping', 'Einkauf'),
   packing('packing', 'Packliste'),
-  custom('custom', 'Eigene Liste');
+  custom('custom', 'Eigene Liste'),
+  template('template', 'Vorlage');
 
   final String wire;
   final String label;
   const ListenArt(this.wire, this.label);
 
   static ListenArt von(String wire) => values.firstWhere((s) => s.wire == wire, orElse: () => ListenArt.custom);
+
+  /// Einkaufslisten und Vorlagen: Einträge mit Kategorie nach Supermarkt-Gang.
+  bool get mitKategorien => this == shopping || this == template;
 }
 
 /// Sortierung der Einträge: offene zuerst nach Position, erledigte unten (zuletzt erledigte zuerst).
@@ -106,7 +110,7 @@ class ListenRepository {
   // ------------------------------------------------------------------ Einträge
 
   /// Neuer Eintrag oben in der Liste (Position kleiner als alle offenen).
-  Future<String> eintragAnlegen(String listId, String text, {String? zugewiesen}) async {
+  Future<String> eintragAnlegen(String listId, String text, {String? zugewiesen, String? kategorie}) async {
     final id = _neueId();
     final kleinste = db.listenEintraege.position.min();
     final zeile =
@@ -118,7 +122,7 @@ class ListenRepository {
     await store.aendern(
       'list_item',
       id,
-      {'listId': listId, 'text': text.trim(), 'position': oben == null ? 0.0 : oben - 1, 'assigneeId': ?zugewiesen},
+      {'listId': listId, 'text': text.trim(), 'position': oben == null ? 0.0 : oben - 1, 'assigneeId': ?zugewiesen, 'category': ?kategorie},
       nurLokal: {'createdAt': zeitFuerServer(_jetzt())},
     );
     beiAenderung();
@@ -131,11 +135,67 @@ class ListenRepository {
 
   Future<void> eintragZuweisen(String id, String? userId) => _aendern('list_item', id, {'assigneeId': userId});
 
+  /// Kategorie ändern; `null` setzt auf "Sonstiges" (kein Wert) zurück.
+  Future<void> eintragKategorie(String id, String? kategorie) => _aendern('list_item', id, {'category': kategorie});
+
   Future<void> eintragVerschieben(String id, double position) => _aendern('list_item', id, {'position': position});
 
   Future<void> eintragLoeschen(String id) async {
     await store.loeschen('list_item', id);
     beiAenderung();
+  }
+
+  /// Speichert die Einträge einer Liste (ohne Erledigt-Stand, Zuständigkeit und Position der Liste) als neue Vorlage mit der Freigabe der Liste.
+  /// Liefert die ID der Vorlage; eine leere Liste ergibt keine Vorlage (null).
+  Future<String?> alsVorlageSpeichern(Liste liste, {String? name}) async {
+    final eintraege = sortiereEintraege(await (db.select(db.listenEintraege)..where((e) => e.listId.equals(liste.id))).get());
+    if (eintraege.isEmpty) return null;
+    final vorlageId = _neueId();
+    final jetzt = zeitFuerServer(_jetzt());
+    final n = (name ?? '${liste.name} (Vorlage)').trim();
+    await store.aendernMehrere([
+      SyncAenderung('list', vorlageId, {'name': n.length > 100 ? n.substring(0, 100) : n, 'kind': ListenArt.template.wire, 'audience': liste.audience},
+          nurLokal: {'createdAt': jetzt, 'ownerId': ich()}),
+      for (var i = 0; i < eintraege.length; i++)
+        SyncAenderung(
+          'list_item',
+          _neueId(),
+          {'listId': vorlageId, 'text': eintraege[i].inhalt, 'position': i.toDouble(), 'category': ?eintraege[i].category},
+          nurLokal: {'createdAt': jetzt},
+        ),
+    ]);
+    beiAenderung();
+    return vorlageId;
+  }
+
+  /// Übernimmt die Einträge einer Vorlage (ohne Erledigt-Stand) in [listId]; Namen, die dort schon offen sind, werden übersprungen.
+  /// Liefert die Zahl der neuen Einträge.
+  Future<int> ausVorlageUebernehmen(String listId, String vorlageId) async {
+    final vorlage = sortiereEintraege(await (db.select(db.listenEintraege)..where((e) => e.listId.equals(vorlageId))).get());
+    final offen = {
+      for (final e in await (db.select(db.listenEintraege)..where((e) => e.listId.equals(listId) & e.doneAt.isNull())).get()) e.inhalt.trim().toLowerCase(),
+    };
+    final neu = [for (final e in vorlage) if (offen.add(e.inhalt.trim().toLowerCase())) e];
+    if (neu.isEmpty) return 0;
+    final kleinste = db.listenEintraege.position.min();
+    final zeile =
+        await (db.selectOnly(db.listenEintraege)
+              ..addColumns([kleinste])
+              ..where(db.listenEintraege.listId.equals(listId) & db.listenEintraege.doneAt.isNull()))
+            .getSingle();
+    final start = (zeile.read(kleinste) ?? 0) - neu.length;
+    final jetzt = zeitFuerServer(_jetzt());
+    await store.aendernMehrere([
+      for (var i = 0; i < neu.length; i++)
+        SyncAenderung(
+          'list_item',
+          _neueId(),
+          {'listId': listId, 'text': neu[i].inhalt, 'position': start + i.toDouble(), 'category': ?neu[i].category},
+          nurLokal: {'createdAt': jetzt},
+        ),
+    ]);
+    beiAenderung();
+    return neu.length;
   }
 
   Future<void> _aendern(String entity, String id, Map<String, dynamic> felder) async {

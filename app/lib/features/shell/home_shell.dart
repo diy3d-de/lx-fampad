@@ -23,6 +23,7 @@ import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_hinweis.dart';
 import '../../data/muell/muell_hinweis.dart';
 import '../../data/muell/muell_state.dart';
+import '../../data/neuigkeiten/neuigkeiten.dart';
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
@@ -37,6 +38,8 @@ import '../lists/lists_screen.dart';
 import '../muell/muell_screen.dart';
 import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
+import '../neuigkeiten/neuigkeiten_dialog.dart';
+import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
 import '../wetter/wetter_screen.dart';
 import 'desktop_shell.dart';
@@ -104,6 +107,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       _resetHinweisZeigen(ref.read(resetHinweisProvider));
       _autoVerbindenHinweisZeigen(ref.read(autoVerbindenHinweisProvider));
       unawaited(_abgemeldetHinweisPruefen());
+      unawaited(_neuigkeitenPruefen());
       // Sicherheitsereignisse seit dem letzten Mal (Passwort-Reset für dein Konto angefordert oder durchgeführt)
       unawaited(ref.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: true, hinweis: ref.read(resetHinweisProvider.notifier)));
       // Push (nur Android): Zustand laden und, falls eingeschaltet, bei jedem Start erneut beim Verteiler registrieren
@@ -124,6 +128,21 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     _standort.anhalten();
     _hinweis.stoppen();
     super.dispose();
+  }
+
+  /// "Neu in x.y.z" nach einem Update: einmalig, nur wenn die Shell die aktuelle Seite ist (nie über Step-up, Login oder andere Seiten).
+  Future<void> _neuigkeitenPruefen() async {
+    String? version;
+    if (kIsWeb) {
+      version = kWebVersion.isEmpty ? null : webVersionTeilen(kWebVersion).version;
+    } else {
+      version = (await ref.read(updateProvider.notifier).installierteAngaben()).$1;
+    }
+    final dienst = ref.read(neuigkeitenDienstProvider);
+    final n = await dienst.pruefen(version);
+    if (n == null || !mounted) return;
+    if (ModalRoute.of(context)?.isCurrent != true) return; // nicht gemerkt: beim nächsten Start erneut
+    await neuigkeitenDialogZeigen(context, n, onGesehen: () => unawaited(dienst.gesehen(n.version)));
   }
 
   void _updatePruefen() {

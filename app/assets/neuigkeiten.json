@@ -1,0 +1,18 @@
+{
+  "0.10.0": [
+    "Suche: Termine, Aufgaben und Listen findest du jetzt über das Such-Symbol auf der Startseite",
+    "Chat-Suche: im Chat und über alle Chats, nur auf deinem Gerät",
+    "Einkaufsliste: Kategorien nach Supermarkt-Gang, Vorlagen und Vorschläge „zuletzt gekauft“",
+    "Countdown: Schalter im Termin zeigt „in N Tagen“ auf der Startseite",
+    "Teilen: Text aus anderen Apps als Listeneintrag, Aufgabe oder Chat-Nachricht (Android)",
+    "Standort: Personen stummschalten, nach Entfernung filtern, Freigabe höchstens 24 Stunden",
+    "Profil: Familienrolle in der Profilkarte, Profil › Müll öffnet direkt die Einstellungen",
+    "Bessere Lesbarkeit und Bedienung bei großer Schrift"
+  ],
+  "0.9.2": [
+    "Profil neu geordnet",
+    "Import und Export findest du unter Profil › Kalender",
+    "Die Müll-Seite ist schlanker",
+    "Profil › Müll öffnet direkt die Einstellungen"
+  ]
+}

@@ -41,6 +41,7 @@ const kMobilKacheln = <StartKachel>[
   StartKachel('muell', 'Müll', 'nächste abholung'),
   StartKachel('wetter', 'Wetter', 'deine wetterstation'),
   StartKachel('standort', 'Standort', 'standort teilen'),
+  StartKachel('countdown', 'Countdown', 'erscheint nur mit gewähltem termin'),
 ];
 
 /// Kacheln des Desktop-Rasters in der Standardreihenfolge.
@@ -54,6 +55,7 @@ const kDesktopKacheln = <StartKachel>[
   StartKachel('standort', 'Standort', 'standort teilen'),
   StartKachel('muell', 'Müll', 'nächste abholung'),
   StartKachel('wetter', 'Wetter', 'deine wetterstation'),
+  StartKachel('countdown', 'Countdown', 'erscheint nur mit gewähltem termin'),
 ];
 
 /// Welche Kacheln es gerade gibt: [angeboten] (Feature ist da, erscheint in der Anpassen-Seite) und davon [leer] (gerade nichts zu zeigen,

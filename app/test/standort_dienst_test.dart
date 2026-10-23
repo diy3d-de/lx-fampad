@@ -440,6 +440,40 @@ Future<void> main() async {
         expect(m.where((x) => x['type'] == 'loc_extend'), hasLength(1));
       });
 
+      test('Gesamtlimit: von Start an höchstens 24 Stunden, auch nach mehrfachem Verlängern; am Limit gibt es eine feste Meldung und kein weiteres loc_extend', () async {
+        await teilenAnna(dauer: const Duration(days: 2));
+        anna.jetzt = start.add(const Duration(hours: 11));
+        await anna.ctrl.verlaengern(const Duration(hours: 12));
+        expect(anna.st.endetAt, start.add(const Duration(hours: 23)));
+        expect(anna.st.amGesamtlimit, isFalse);
+        anna.jetzt = start.add(const Duration(hours: 22));
+        await anna.ctrl.verlaengern(const Duration(hours: 5));
+        // nicht 27 Stunden: genau 24 Stunden nach dem Start
+        expect(anna.st.endetAt, start.add(kStandortGesamtdauer));
+        expect(anna.st.amGesamtlimit, isTrue);
+        expect(anna.port.verlaengert.last, start.add(kStandortGesamtdauer));
+        final n = anna.port.verlaengert.length;
+        await anna.ctrl.verlaengern(const Duration(hours: 1));
+        expect(anna.port.verlaengert, hasLength(n));
+        expect(anna.st.meldung, standortGesamtlimitText());
+        expect(anna.st.endetAt, start.add(kStandortGesamtdauer));
+      });
+
+      test('Lehnt der Server das Verlängern ab (total_limit, anders eingestellt), geht die Freigabe auf das bestätigte Ende zurück und sagt es', () async {
+        await teilenAnna();
+        anna.socket.vomServer({'type': 'loc_started', 'shareId': anna.letzteShareId, 'endsAt': start.add(const Duration(hours: 1)).millisecondsSinceEpoch});
+        await pumpen();
+        final bestaetigt = anna.st.endetAt;
+        await anna.ctrl.verlaengern(const Duration(hours: 2));
+        expect(anna.st.endetAt, isNot(bestaetigt));
+        anna.socket.vomServer({'type': 'loc_error', 'code': 'total_limit', 'shareId': anna.letzteShareId});
+        await pumpen();
+        expect(anna.st.endetAt, bestaetigt);
+        expect(anna.port.verlaengert.last, bestaetigt);
+        expect(anna.st.meldung, standortGesamtlimitText());
+        expect(anna.st.phase, StandortPhase.teilt);
+      });
+
       test('Empfang: dieselbe Position noch einmal (Replay) und Pakete mit alter Sequenznummer ändern nichts', () async {
         await teilenAnna();
         anna.port.ctrl.add(PositionEreignis(_pos(start)));

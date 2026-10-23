@@ -108,6 +108,9 @@ class StandortState {
   final StandortPhase phase;
   final DateTime? endetAt;
 
+  /// Start der eigenen Freigabe (Serveruhr ist maßgeblich; hier die Uhr des Geräts): das Gesamtlimit zählt von hier an.
+  final DateTime? beginnAt;
+
   /// Personen, die meine Freigabe bekommen haben.
   final Set<String> empfaenger;
 
@@ -128,6 +131,7 @@ class StandortState {
   const StandortState({
     this.phase = StandortPhase.aus,
     this.endetAt,
+    this.beginnAt,
     this.empfaenger = const {},
     this.ausgelassen = const {},
     this.meldung,
@@ -140,9 +144,13 @@ class StandortState {
 
   bool get teilt => phase != StandortPhase.aus;
 
+  /// Das Ende liegt schon am Gesamtlimit: länger geht es nicht mehr (Verlängern gesperrt).
+  bool get amGesamtlimit => beginnAt != null && endetAt != null && !endetAt!.isBefore(beginnAt!.add(kStandortGesamtdauer));
+
   StandortState kopie({
     StandortPhase? phase,
     DateTime? endetAt,
+    DateTime? beginnAt,
     bool endeLoeschen = false,
     Set<String>? empfaenger,
     Set<String>? ausgelassen,
@@ -157,6 +165,7 @@ class StandortState {
   }) => StandortState(
     phase: phase ?? this.phase,
     endetAt: endeLoeschen ? null : (endetAt ?? this.endetAt),
+    beginnAt: endeLoeschen ? null : (beginnAt ?? this.beginnAt),
     empfaenger: empfaenger ?? this.empfaenger,
     ausgelassen: ausgelassen ?? this.ausgelassen,
     meldung: meldungLoeschen ? null : (meldung ?? this.meldung),
@@ -200,6 +209,9 @@ class StandortController extends Notifier<StandortState> {
   /// Zählt Starts und Stopps der Freigabe: späte Antworten einer früheren Freigabe werden verworfen.
   int _lauf = 0;
   GeraetePosition? _letzteGesendet;
+
+  /// Letztes vom Server bestätigtes Ende der eigenen Freigabe (Rückfall, wenn der Server ein Verlängern ablehnt).
+  DateTime? _bestaetigtesEnde;
   DateTime? _letzterVersandZeit;
   final Map<String, StandortEmpfaenger> _empfang = {};
 
@@ -371,7 +383,8 @@ class StandortController extends Notifier<StandortState> {
           StartFehler.dienstStart => 'Das Teilen konnte nicht gestartet werden. Öffne die App im Vordergrund und versuche es noch einmal.',
         }, dienstStoppen: true);
       }
-      state = state.kopie(endetAt: ende, empfaenger: empf.keys.toSet(), ausgelassen: aus);
+      state = state.kopie(endetAt: ende, beginnAt: jetzt, empfaenger: empf.keys.toSet(), ausgelassen: aus);
+      _bestaetigtesEnde = ende;
       _startFrist?.cancel();
       _startFrist = Timer(_zeiten.startFrist, () {
         if (lauf == _lauf && state.phase == StandortPhase.startet) unawaited(scheitern(_kMeldungAbgelehnt, dienstStoppen: true));
@@ -400,6 +413,7 @@ class StandortController extends Notifier<StandortState> {
     _startFrist?.cancel();
     _startFrist = null;
     final war = state.phase;
+    if (endsAt != null) _bestaetigtesEnde = DateTime.fromMillisecondsSinceEpoch(endsAt);
     state = state.kopie(phase: StandortPhase.teilt, endetAt: endsAt == null ? null : DateTime.fromMillisecondsSinceEpoch(endsAt));
     if (war == StandortPhase.startet) {
       _herzschlag?.cancel();
@@ -455,13 +469,26 @@ class StandortController extends Notifier<StandortState> {
     final jetzt = _jetzt();
     final basis = state.endetAt != null && state.endetAt!.isAfter(jetzt) ? state.endetAt! : jetzt;
     var ende = basis.add(um);
-    final deckel = jetzt.add(kStandortHoechstdauer);
+    final deckel = standortFruehestesLimit(beginn: state.beginnAt ?? jetzt, jetzt: jetzt);
     if (ende.isAfter(deckel)) ende = deckel;
-    if (!ende.isAfter(state.endetAt ?? jetzt)) return;
+    if (!ende.isAfter(state.endetAt ?? jetzt)) {
+      // das Gesamtlimit (nicht die 12 Stunden ab jetzt) hält uns auf: ehrlich sagen
+      if (state.amGesamtlimit) state = state.kopie(meldung: standortGesamtlimitText());
+      return;
+    }
     sender.verlaengern(ende.millisecondsSinceEpoch);
-    state = state.kopie(endetAt: ende);
+    state = state.kopie(endetAt: ende, meldungLoeschen: true);
     await _port.verlaengern(ende);
     _socket?.senden({'type': 'loc_extend', 'shareId': _shareId, 'endsAt': ende.millisecondsSinceEpoch});
+  }
+
+  /// Der Server hat das Verlängern abgelehnt (Gesamtlimit, anders eingestellt als hier angenommen): zurück zum bestätigten Ende, Sender und Dienst mit.
+  Future<void> _verlaengernAbgelehnt(bool gesamtlimit) async {
+    final alt = _bestaetigtesEnde;
+    if (alt == null) return;
+    _sender?.verlaengern(alt.millisecondsSinceEpoch);
+    state = state.kopie(endetAt: alt, meldung: gesamtlimit ? standortGesamtlimitText() : 'Der Server hat das Verlängern abgelehnt.');
+    await _port.verlaengern(alt);
   }
 
   /// Beendet das Teilen (Tipp, Benachrichtigung, Ablauf, Server). Ohne Rückfrage; die Empfänger erfahren es.
@@ -477,6 +504,7 @@ class StandortController extends Notifier<StandortState> {
     _sender?.vergessen();
     _sender = null;
     _shareId = null;
+    _bestaetigtesEnde = null;
     _letzteGesendet = null;
     _letzterVersandZeit = null;
     state = state.kopie(phase: StandortPhase.aus, endeLoeschen: true, empfaenger: const {}, ausgelassen: const {}, eigeneLoeschen: true, meldung: grund, meldungLoeschen: grund == null);
@@ -549,13 +577,18 @@ class StandortController extends Notifier<StandortState> {
           if (state.phase == StandortPhase.startet) {
             _gestartet(x is int ? x : null);
           } else if (x is int && state.phase == StandortPhase.teilt) {
-            state = state.kopie(endetAt: DateTime.fromMillisecondsSinceEpoch(x));
+            _bestaetigtesEnde = DateTime.fromMillisecondsSinceEpoch(x);
+            state = state.kopie(endetAt: _bestaetigtesEnde);
           }
         }
       case 'loc_error':
         if (m['shareId'] == _shareId && _shareId != null) {
           final code = m['code'];
           if (code == 'rate_limited') return; // nur eine übersprungene Position
+          if ((code == 'total_limit' || code == 'bad_duration') && state.phase == StandortPhase.teilt) {
+            unawaited(_verlaengernAbgelehnt(code == 'total_limit'));
+            return;
+          }
           if (code == 'unknown_share') {
             unawaited(beenden(grund: 'Das Teilen ist beendet.', serverInformieren: false));
           } else if (state.phase == StandortPhase.startet) {

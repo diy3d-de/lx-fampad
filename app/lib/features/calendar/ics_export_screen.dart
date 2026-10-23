@@ -150,7 +150,7 @@ class _IcsExportScreenState extends ConsumerState<IcsExportScreen> {
         const SizedBox(height: 8),
         const Text(
           'Eine Serie kommt immer ganz in die Datei, auch wenn nur ein Teil davon im Zeitraum liegt.',
-          style: TextStyle(color: kTextFaint, fontSize: 12),
+          style: TextStyle(color: kTextMuted, fontSize: 12),
         ),
       ],
     );

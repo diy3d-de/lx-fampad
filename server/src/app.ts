@@ -169,6 +169,7 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     directory: memberDirectory ?? (db ? dbDirectory(db) : async () => []),
     ...(locationClock ? { now: locationClock } : {}),
     maxDurationMs: config.locMaxDurationMs,
+    maxTotalMs: config.locMaxTotalMinutes * 60_000,
     maxSharesPerFamily: config.locMaxSharesPerFamily,
     minIntervalMs: config.locMinIntervalMs,
     maxPerMinute: config.locMaxPerMinute,

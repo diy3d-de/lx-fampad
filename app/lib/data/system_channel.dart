@@ -12,21 +12,35 @@ class SystemChannel {
   static const _channel = MethodChannel(kSystemChannel);
   int _geschuetzt = 0;
   final _links = StreamController<String>.broadcast();
+  final _teilen = StreamController<String>.broadcast();
   bool _verbunden = false;
 
   bool get verfuegbar => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
+  void _verbinden() {
+    if (!verfuegbar || _verbunden) return;
+    _verbunden = true;
+    _channel.setMethodCallHandler((call) async {
+      if (call.method == 'link' && call.arguments is String) _links.add(call.arguments as String);
+      if (call.method == 'share' && call.arguments is String) _teilen.add(call.arguments as String);
+      return null;
+    });
+  }
+
   /// Hört auf Links, die die laufende App erreichen (Android: Intent mit https://familie.lx-labs.dev/#/einladung/…).
   Stream<String> get links {
-    if (verfuegbar && !_verbunden) {
-      _verbunden = true;
-      _channel.setMethodCallHandler((call) async {
-        if (call.method == 'link' && call.arguments is String) _links.add(call.arguments as String);
-        return null;
-      });
-    }
+    _verbinden();
     return _links.stream;
   }
+
+  /// Hört auf Text, den eine andere App per "Teilen" an die laufende App schickt (Android: ACTION_SEND, text/plain; höchstens 4000 Zeichen). Nie protokollieren.
+  Stream<String> get teilen {
+    _verbinden();
+    return _teilen.stream;
+  }
+
+  /// Text, mit dem die App per "Teilen" gestartet wurde (einmalig; danach null).
+  Future<String?> startTeilen() => _aufrufen<String>('initialShare');
 
   Future<T?> _aufrufen<T>(String methode, [Object? argumente]) async {
     if (!verfuegbar) return null;

@@ -14,9 +14,12 @@ import '../../data/crypto/e2ee_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
+import '../../data/suche/chat_sprung.dart';
 import '../shell/shell_tab.dart';
+import '../suche/such_einstieg.dart';
 import 'chat_anzeige.dart';
 import 'chat_krypto_ui.dart';
+import 'chat_suche_ui.dart';
 import 'chat_verlauf.dart';
 import 'personen_wahl.dart';
 
@@ -104,6 +107,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
     }
   }
 
+  /// Suche über alle Chats: ein Treffer öffnet den Chat; der Verlauf springt zur Nachricht (chatSprungProvider).
+  Future<void> _suchen(bool zweiSpalten) async {
+    final ziel = await Navigator.of(context).push<ChatSprungZiel>(ChatSuchSeite.route());
+    if (ziel == null || !mounted) return;
+    ref.read(chatSprungProvider.notifier).zu(ziel.chatId, ziel.nachrichtId);
+    if (zweiSpalten) {
+      ref.read(gewaehlterChatProvider.notifier).waehlen(ziel.chatId);
+    } else {
+      _oeffnen(ziel.chatId);
+    }
+  }
+
   void _oeffnen(String id) {
     Navigator.of(context).push<void>(
       MaterialPageRoute(
@@ -129,6 +144,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         final liste = _Liste(
           zweiSpalten: zweiSpalten,
           onNeu: () => _neuerChat(zweiSpalten),
+          onSuche: () => _suchen(zweiSpalten),
           onOeffnen: (id) {
             if (zweiSpalten) {
               ref.read(gewaehlterChatProvider.notifier).waehlen(id);
@@ -159,8 +175,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
 class _Liste extends ConsumerWidget {
   final bool zweiSpalten;
   final VoidCallback onNeu;
+  final VoidCallback onSuche;
   final void Function(String id) onOeffnen;
-  const _Liste({required this.zweiSpalten, required this.onNeu, required this.onOeffnen});
+  const _Liste({required this.zweiSpalten, required this.onNeu, required this.onSuche, required this.onOeffnen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -216,6 +233,11 @@ class _Liste extends ConsumerWidget {
           children: [
             const Padding(padding: EdgeInsets.fromLTRB(20, 16, 20, 4), child: TabKopfzeile(title: 'Chat')),
             const VerschluesselungHinweis(),
+            if (eintraege.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
+                child: SuchFeldKnopf(label: 'In Chats suchen …', semantik: 'In allen Chats suchen', onTap: onSuche),
+              ),
             Expanded(child: inhaltsbereich),
           ],
         ),

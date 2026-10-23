@@ -20,12 +20,14 @@ import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/geburtstage_karte.dart';
+import '../calendar/countdown_karte.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
 import '../muell/muell_karte.dart';
 import '../standort/standort_start_karte.dart';
+import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_karte.dart';
 import 'startseite_verfuegbar.dart';
@@ -69,7 +71,7 @@ class HomeScreen extends ConsumerWidget {
               const SizedBox(height: 20),
               const UpdateAnzeige(),
               const AbsicherungsKarte(),
-              const _SyncLeiste(),
+              const _SyncZeile(),
               const SizedBox(height: 20),
             ],
           ),
@@ -108,12 +110,28 @@ Widget _kachel(String id) => switch (id) {
   'einkauf' => const _EinkaufKarte(),
   'termine' => const _NaechsteKarte(),
   'geburtstage' => const GeburtstageKarte(),
+  'countdown' => const CountdownKarte(),
   'aufgaben' => const _AufgabenKarte(),
   'muell' => const MuellStartKarte(),
   'wetter' => const WetterStartKarte(),
   'standort' => const StandortStartKarte(),
   _ => const SizedBox.shrink(),
 };
+
+/// Sync-Streifen und rechts daneben der Such-Knopf (eine Zeile, fest, keine Kachel).
+class _SyncZeile extends StatelessWidget {
+  const _SyncZeile();
+
+  @override
+  Widget build(BuildContext context) => const Row(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Expanded(child: _SyncLeiste()),
+      SizedBox(width: 8),
+      SuchKnopf(),
+    ],
+  );
+}
 
 /// Streifen mit dem Stand des Abgleichs (fest, keine Kachel).
 class _SyncLeiste extends ConsumerWidget {
@@ -157,18 +175,24 @@ class _SchnellzugriffReihe extends StatelessWidget {
   const _SchnellzugriffReihe();
 
   @override
-  Widget build(BuildContext context) => GridView(
-    // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite und bleibt bei großer Schrift bedienbar
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: 96),
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    children: const [
-      _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
-      _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
-      _Schnellzugriff('Foto', Icons.image_outlined),
-      _Schnellzugriff('Datei', Icons.upload_outlined),
-    ],
-  );
+  Widget build(BuildContext context) {
+    // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite, aber mit der Schrift; bei stark vergrößerter Schrift zwei Knöpfe je Reihe,
+    // damit die Beschriftungen nicht mitten im Wort brechen
+    final skala = MediaQuery.textScalerOf(context).scale(1.0);
+    final spalten = skala >= 1.75 ? 2 : 4;
+    final hoehe = (24 + 36 + 8 + 12 * skala * 1.4 + 4).ceilToDouble();
+    return GridView(
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: hoehe < 96 ? 96 : hoehe),
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      children: const [
+        _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
+        _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
+        _Schnellzugriff('Foto', Icons.image_outlined),
+        _Schnellzugriff('Datei', Icons.upload_outlined),
+      ],
+      );
+  }
 }
 
 class _Schnellzugriff extends ConsumerWidget {

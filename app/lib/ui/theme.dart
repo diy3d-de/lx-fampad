@@ -88,7 +88,7 @@ ThemeData buildTheme() {
       enabledBorder: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: kBorder)),
       focusedBorder: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: kAccent, width: 2)),
       labelStyle: const TextStyle(color: kTextMuted),
-      hintStyle: const TextStyle(color: kTextFaint),
+      hintStyle: const TextStyle(color: kTextMuted),
     ),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? kOnAccent : kTextMuted),

@@ -190,6 +190,22 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
     ];
   }
 
+  /// Für die Chat-Suche (einmaliges Lesen, kein Strom): die jüngsten [je] Nachrichten jeder der Konversationen [ids]. Der Wortlaut bleibt verschlüsselt
+  /// (`e1:`); geöffnet wird nur im Arbeitsspeicher über [NachrichtenInhalt], nichts davon wird abgelegt.
+  Future<List<Nachricht>> fuerSuche(Iterable<String> ids, {int je = 2000}) async {
+    final r = <Nachricht>[];
+    for (final id in ids) {
+      r.addAll(
+        await (db.select(db.nachrichten)
+              ..where((n) => n.konversationId.equals(id))
+              ..orderBy(_reihenfolge(aufsteigend: false))
+              ..limit(je))
+            .get(),
+      );
+    }
+    return r;
+  }
+
   /// Die jüngsten Nachrichten über alle sichtbaren Konversationen (Startseite).
   Stream<List<Nachricht>> juengste(int anzahl) =>
       (db.select(db.nachrichten)

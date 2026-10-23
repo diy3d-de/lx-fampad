@@ -12,7 +12,20 @@ import type { Actor, Facts, Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
 import { AUDIENCE_INPUT, iso, timestamp, trimmed, uuid } from './common.js';
 
-export const LIST_KINDS = ['shopping', 'packing', 'custom'] as const;
+export const LIST_KINDS = ['shopping', 'packing', 'custom', 'template'] as const;
+
+/** Kategorien der Einträge nach Supermarkt-Gang (Reihenfolge = typischer Gang); `null` = Sonstiges. Die App toleriert unbekannte Werte. */
+export const LIST_CATEGORIES = [
+  'obst_gemuese',
+  'brot_backwaren',
+  'milch_kuehlregal',
+  'fleisch_fisch',
+  'tiefkuehl',
+  'vorrat_konserven',
+  'getraenke',
+  'haushalt_drogerie',
+  'sonstiges',
+] as const;
 
 const fullAccess = { read: 'all', create: 'all', update: 'all', delete: 'all' } as const;
 
@@ -55,6 +68,7 @@ export const listItemEntity: EntityDef = {
     text: { access: 'rw', schema: trimmed(500), required: true, blank: '' },
     assigneeId: { access: 'rw', schema: uuid.nullable(), defaultValue: null, blank: null, memberRef: true },
     doneAt: { access: 'rw', schema: timestamp.nullable(), defaultValue: null, blank: null, toWire: iso },
+    category: { access: 'rw', schema: z.enum(LIST_CATEGORIES).nullable(), defaultValue: null, blank: null },
     position: { access: 'rw', schema: z.number().min(-1e12).max(1e12), defaultValue: 0, blank: 0 },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },
