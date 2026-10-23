@@ -1,5 +1,5 @@
 // Seite "Müll" (mobil eine Seite, Desktop ein Bereich der Shell): die nächste Abholung groß, Filter nach Abfallart, kommende Termine nach
-// Tag, Legende und die nächste Abholung je Art. Alle Familienmitglieder (auch Kinder) sehen sie; Daten kommen vom eigenen Server (Offline-
+// Tag. Alle Familienmitglieder (auch Kinder) sehen sie; Daten kommen vom eigenen Server (Offline-
 // Stand lokal). Einstellungen (Erinnerung nur für Eltern/Admins, Anzeige im Kalender für alle) hinter dem Zahnrad.
 import 'dart:async';
 
@@ -66,10 +66,22 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
           children: [
-            Row(children: [const Expanded(child: TabKopfzeile(title: 'Müll')), ...aktionen]),
-            if (ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel('// $ort')],
-            const SizedBox(height: 16),
-            ...kinder,
+            // einspaltig und wie die übrigen Bereiche auf die Inhaltsbreite begrenzt (oben mittig)
+            Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: kMaxContentWidth),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(children: [const Expanded(child: TabKopfzeile(title: 'Müll')), ...aktionen]),
+                    if (ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel('// $ort')],
+                    const SizedBox(height: 16),
+                    ...kinder,
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -128,42 +140,13 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
           ),
       ],
     );
-    final rechts = <Widget>[
-      LxCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [const MonoLabel('// legende'), const SizedBox(height: 10), MuellLegende(arten: arten.isEmpty ? MuellArt.values : arten)],
-        ),
-      ),
-      const SizedBox(height: 12),
-      LxCard(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const MonoLabel('// nächste je art'),
-            const SizedBox(height: 8),
-            for (final t in naechsteJeArt(tage, heute)) _JeArtZeile(abholung: t),
-          ],
-        ),
-      ),
-    ];
     final stand = z.abgerufen == null ? null : 'Stand ${muellZeitpunkt(z.abgerufen!)}${z.fehler ? ' · offline' : ''}';
     return [
-      LayoutBuilder(
-        builder: (context, c) {
-          final zweispaltig = c.maxWidth >= 640;
-          final links = <Widget>[naechste, const SizedBox(height: 12), filter, const SizedBox(height: 8), liste];
-          if (!zweispaltig) return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [...links, const SizedBox(height: 16), ...rechts]);
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 5, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: links)),
-              const SizedBox(width: 16),
-              Expanded(flex: 4, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: rechts)),
-            ],
-          );
-        },
-      ),
+      naechste,
+      const SizedBox(height: 12),
+      filter,
+      const SizedBox(height: 8),
+      liste,
       if (stand != null) Padding(padding: const EdgeInsets.only(top: 16), child: Text(stand, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: z.fehler ? kWarn : kTextMuted))),
     ];
   }
@@ -311,28 +294,6 @@ class _TagZeile extends StatelessWidget {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-class _JeArtZeile extends StatelessWidget {
-  final MuellTag abholung;
-  const _JeArtZeile({required this.abholung});
-
-  @override
-  Widget build(BuildContext context) {
-    final a = abholung.arten.first;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          MuellSymbol(a, groesse: 22),
-          const SizedBox(width: 8),
-          Expanded(child: Text(a.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 13, color: kTextMuted))),
-          const SizedBox(width: 8),
-          Text(muellKurzDatum(abholung.tag), style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kText)),
-        ],
       ),
     );
   }
