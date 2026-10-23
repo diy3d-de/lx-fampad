@@ -301,6 +301,7 @@ class _StandortDiagnoseKarte extends ConsumerWidget {
           const MonoLabel('// diagnose standortfreigaben'),
           const SizedBox(height: 8),
           _DiagZeile('Letzter Wecker', wecker(d.wecker)),
+          _DiagZeile('Letzter Abgleich im Hintergrund', mitCode(d.sync)),
           _DiagZeile('Letzter Abruf des Standort-Kanals', mitCode(d.abruf)),
           _DiagZeile('Letzter Hinweis', mitCode(d.hinweis)),
           const SizedBox(height: 4),

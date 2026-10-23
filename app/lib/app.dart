@@ -25,6 +25,9 @@ import 'features/auth/login_screen.dart';
 import 'features/auth/pending_screen.dart';
 import 'features/shell/home_shell.dart';
 import 'features/teilen/teilen_seite.dart';
+import 'data/wandtablet/wandtablet_einstellungen.dart';
+import 'features/wandtablet/wandtablet_screen.dart';
+import 'features/wandtablet/wandtablet_steuerung.dart';
 import 'features/update/update_banner.dart';
 import 'features/update/update_service.dart';
 import 'ui/theme.dart';
@@ -44,6 +47,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   StreamSubscription<String>? _links;
   StreamSubscription<String>? _teilen;
   bool _teilenOffen = false;
+  bool _wandtabletGestartet = false;
 
   @override
   void initState() {
@@ -157,6 +161,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
       if (alt != neu && neu != AuthStatus.angemeldet) {
         WidgetsBinding.instance.addPostFrameCallback((_) => _navigatorKey.currentState?.popUntil((r) => r.isFirst));
       }
+      if (neu != AuthStatus.angemeldet) _wandtabletGestartet = false;
       // Abmelden, Sitzungsverlust und Personenwechsel verwerfen einen wartenden geteilten Text; nach der Anmeldung wird er angeboten
       if (alt == AuthStatus.angemeldet && neu != AuthStatus.angemeldet) {
         ref.read(teilenProvider.notifier).verwerfen();
@@ -164,6 +169,16 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
         _teilenAnbieten();
       }
       _einladungVerarbeiten();
+    });
+    // Wandtablet-Modus: "Beim Start der App automatisch starten" (lokal je Gerät), einmal je Anmeldung
+    ref.listen(wandtabletBereitProvider, (_, bereit) {
+      if (!bereit || _wandtabletGestartet) return;
+      _wandtabletGestartet = true; // nur die erste Prüfung nach der Anmeldung zählt
+      if (!ref.read(wandtabletEinstellungenProvider).autostart) return;
+      WidgetsBinding.instance.scheduleFrame();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (ref.read(wandtabletBereitProvider)) unawaited(_navigatorKey.currentState?.push<void>(WandtabletScreen.route()));
+      });
     });
     ref.listen(teilenProvider, (_, _) => _teilenAnbieten());
     ref.listen(inviteIntakeProvider, (_, _) => _einladungVerarbeiten());

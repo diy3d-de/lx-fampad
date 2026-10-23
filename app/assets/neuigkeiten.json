@@ -1,4 +1,9 @@
 {
+  "0.11.0": [
+    "Fristen: Reisepass, TÜV, Versicherung und mehr mit Ablaufdatum und Vorwarnzeit, Erinnerung an alle Eltern",
+    "Wandtablet-Modus: Uhr, Termine, Müll und Wetter als Vollbild-Anzeige fürs Tablet (Profil › Startseite und Anzeige)",
+    "Zuverlässigerer Abgleich im Hintergrund nach einer Benachrichtigung"
+  ],
   "0.10.1": [
     "Neues App-Icon: das lx-labs-Icon mit Dach in den Personenfarben, vier Personenpunkten und der Zeile familyhub"
   ],

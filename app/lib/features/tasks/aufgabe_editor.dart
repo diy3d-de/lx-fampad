@@ -21,10 +21,13 @@ import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import 'frist_editor.dart' show FristEditor;
 
 /// Öffnet den Editor. [aufgabe] null = neue Aufgabe.
-Future<void> aufgabeEditorOeffnen(BuildContext context, {Aufgabe? aufgabe}) =>
-    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => AufgabeEditor(aufgabe: aufgabe)));
+Future<void> aufgabeEditorOeffnen(BuildContext context, {Aufgabe? aufgabe}) => Navigator.of(context).push<void>(
+  // Fristen haben ihren eigenen Editor (Ablaufdatum, Wiederholung in Monaten, Vorwarnzeit)
+  MaterialPageRoute(builder: (_) => aufgabe != null && aufgabe.frist ? FristEditor(frist: aufgabe) : AufgabeEditor(aufgabe: aufgabe)),
+);
 
 /// Obergrenze der Unteraufgaben je Aufgabe (wie am Server).
 const kMaxPunkte = 100;

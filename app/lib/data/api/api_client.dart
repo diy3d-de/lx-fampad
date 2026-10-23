@@ -19,6 +19,7 @@
 //   - Token erscheinen nie in Logs oder Fehlermeldungen.
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show Random;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -56,6 +57,15 @@ class ApiClient {
   /// ein zweiter Prozess oder eine zweite Engine nie ein Refresh-Token doppelt einlösen (der Server würde die ganze Familie widerrufen).
   final bool _refreshErlaubt;
 
+  /// Nur mit `refreshErlaubt: false` (Hintergrund): ein abgelaufenes oder abgelehntes Zugangstoken wird genau EINMAL je Client über denselben serialisierten,
+  /// prozessübergreifend gesperrten Weg erneuert wie sonst ([_erneuern]); danach nie wieder (kein Schleifen, ein Fehler bleibt der Fehler dieses Laufs).
+  final bool _hintergrundErneuern;
+  Future<void>? _hgLauf;
+
+  /// Prozessübergreifende Sperre der Erneuerung (Hintergrund-Engine und App teilen nur die Token-Ablage): Gültigkeit und Abstand zum Prüfen/Zurücklesen.
+  final Duration _sperreDauer;
+  final Duration _sperreAbstand;
+
   /// Wird aufgerufen, wenn die Sitzung nicht mehr gültig ist (Zustand wird "abgemeldet").
   void Function(SessionLostReason reason)? onSessionLost;
 
@@ -75,6 +85,9 @@ class ApiClient {
     DateTime Function()? now,
     this._timeout = const Duration(seconds: 20),
     this._refreshErlaubt = true,
+    this._hintergrundErneuern = false,
+    this._sperreDauer = const Duration(seconds: 30),
+    this._sperreAbstand = const Duration(milliseconds: 40),
   }) : _web = web ?? kIsWeb,
        _base = base ?? kApiBase,
        _now = now ?? DateTime.now;
@@ -186,7 +199,12 @@ class ApiClient {
     var res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
     if (auth && res.statusCode == 401 && !_web && gesendetesToken != null && _istSitzungsCode(_fehlercode(res))) {
       // ohne Refresh-Erlaubnis (Hintergrund): weder erneuern noch die Sitzung verwerfen, nur melden, dass es jetzt nicht geht
-      if (!_refreshErlaubt) throw ApiException.zugangAbgelaufen;
+      if (!_refreshErlaubt) {
+        if (!_hintergrundErneuern || _hgLauf != null) throw ApiException.zugangAbgelaufen;
+        await _nachUnauthorized(gesendetesToken, hintergrund: true);
+        gesendetesToken = (await _tokenLaden())?.accessToken;
+        return _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
+      }
       // Access-Token abgelehnt (z. B. abgelaufen/Uhr): einmal erneuern, aber nur, wenn nicht schon jemand anderes erneuert hat.
       // Andere 401-Fachcodes (step_up_failed ...) bleiben, wie sie sind: kein Erneuern, kein zweiter Versuch.
       await _nachUnauthorized(gesendetesToken);
@@ -213,7 +231,12 @@ class ApiClient {
     }
     if (!_refreshErlaubt) {
       // nur mit einem noch gültigen Access-Token (mit Reserve für die Laufzeit der Anfrage), sonst ohne Tokenzugriff beenden
-      if (!t.accessExpiresAt.subtract(const Duration(seconds: 5)).isAfter(_now())) throw ApiException.zugangAbgelaufen;
+      if (!t.accessExpiresAt.subtract(const Duration(seconds: 5)).isAfter(_now())) {
+        if (!_hintergrundErneuern) throw ApiException.zugangAbgelaufen;
+        await _hintergrundErneuernEinmal();
+        t = await _tokenLaden();
+        if (t == null || !t.accessExpiresAt.subtract(const Duration(seconds: 5)).isAfter(_now())) throw ApiException.zugangAbgelaufen;
+      }
       return t.accessToken;
     }
     if (!t.accessExpiresAt.subtract(_vorlauf).isAfter(_now())) {
@@ -300,11 +323,32 @@ class ApiClient {
     await _erneuern();
   }
 
-  Future<void> _nachUnauthorized(String gesendet) async {
+  Future<void> _nachUnauthorized(String gesendet, {bool hintergrund = false}) async {
     final aktuell = await _tokenLaden();
     if (aktuell == null) return; // inzwischen abgemeldet
     if (aktuell.accessToken != gesendet) return; // ein anderer Aufruf hat schon erneuert
+    if (hintergrund) return _hintergrundErneuernEinmal();
     await _erneuern();
+  }
+
+  /// Hintergrund: höchstens eine Erneuerung je Client; jeder weitere Aufruf desselben Laufs wartet auf dasselbe Ergebnis (auch denselben Fehler), ohne erneut zu erneuern.
+  Future<void> _hintergrundErneuernEinmal() => _hgLauf ??= _erneuern();
+
+  /// Übernimmt Token, die eine andere Engine/ein anderer Prozess in die gemeinsame Ablage geschrieben hat (nie ältere): das Refresh-Token ist dann
+  /// schon eingelöst, ein zweites Einlösen würde die Token-Familie widerrufen. Ergebnis true: die übernommenen Token gelten noch (nichts mehr zu tun).
+  Future<bool> _frischeUebernehmen(int gen) async {
+    final alt = _tokens;
+    if (alt == null) return false;
+    final StoredTokens? neu;
+    try {
+      neu = await _store.readTokens();
+    } catch (_) {
+      return false;
+    }
+    if (gen != _gen) throw _sitzungGeaendert;
+    if (neu == null || neu.refreshToken == alt.refreshToken || !neu.accessExpiresAt.isAfter(alt.accessExpiresAt)) return false;
+    _tokens = neu;
+    return neu.accessExpiresAt.subtract(_vorlauf).isAfter(_now());
   }
 
   /// Erneuert die Token; gleichzeitige Aufrufer teilen sich genau eine Anfrage.
@@ -319,8 +363,40 @@ class ApiClient {
     return f;
   }
 
+  /// Erneuert unter der Sperre der gemeinsamen Ablage: Hintergrund-Engine und App laufen in getrennten Isolates, teilen aber den Token-Speicher. Vor und
+  /// nach dem Warten auf die Sperre werden die Token frisch gelesen; hat die andere Seite schon erneuert, werden ihre (neueren) Token übernommen,
+  /// statt das verbrauchte Refresh-Token ein zweites Mal einzulösen (der Server würde die ganze Familie widerrufen). Die Sperre gilt höchstens
+  /// [_sperreDauer] (Absturz mitten drin sperrt nie dauerhaft); wer nicht rechtzeitig an die Reihe kommt, bekommt einen Verbindungsfehler (Token unangetastet).
   Future<void> _erneuernEinmal() async {
     final gen = _gen;
+    await _tokenLaden();
+    if (await _frischeUebernehmen(gen)) return;
+    final mein = '${_now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+    final uhr = Stopwatch()..start();
+    while (true) {
+      final s = await _store.readErneuerungsSperre();
+      if (s != null && s.besitzer != mein && s.bis.isAfter(_now())) {
+        // jemand anderes erneuert gerade: warten, dann frisch lesen
+        if (uhr.elapsed > _sperreDauer + _sperreAbstand * 2) throw ApiException.keineVerbindung;
+        await Future<void>.delayed(_sperreAbstand);
+        if (await _frischeUebernehmen(gen)) return;
+        continue;
+      }
+      await _store.writeErneuerungsSperre(ErneuerungsSperre(mein, _now().add(_sperreDauer)));
+      await Future<void>.delayed(_sperreAbstand); // wer gleichzeitig geschrieben hat, überschreibt uns: zurücklesen entscheidet
+      final z = await _store.readErneuerungsSperre();
+      if (z == null || z.besitzer == mein) break; // null: Ablage ohne Sperre, dann ohne
+      if (uhr.elapsed > _sperreDauer + _sperreAbstand * 2) throw ApiException.keineVerbindung;
+    }
+    try {
+      if (await _frischeUebernehmen(gen)) return;
+      await _erneuernEinloesen(gen);
+    } finally {
+      await _store.clearErneuerungsSperre(mein);
+    }
+  }
+
+  Future<void> _erneuernEinloesen(int gen) async {
     final t = await _tokenLaden();
     if (t == null) {
       throw const ApiException(kind: ApiErrorKind.nichtAngemeldet, status: 401, code: 'unauthenticated', message: 'Du bist nicht angemeldet.');
@@ -376,6 +452,8 @@ class ApiClient {
     final retry = int.tryParse(res.headers['retry-after'] ?? '');
     final fehler = ApiException.vonAntwort(status: res.statusCode, code: code, retryAfterSekunden: retry);
     if (res.statusCode == 401 || res.statusCode == 400 || res.statusCode == 403 || res.statusCode == 404) {
+      // Abgelehnt, weil eine andere Engine das Refresh-Token inzwischen eingelöst hat? Dann liegen neuere Token in der Ablage: übernehmen, nichts verwerfen.
+      if (await _frischeUebernehmen(gen)) return;
       await _verloren(SessionLostReason.abgelaufen, gen);
       throw ApiException(kind: ApiErrorKind.nichtAngemeldet, status: res.statusCode, code: code, message: 'Deine Anmeldung ist abgelaufen. Bitte melde dich neu an.');
     }

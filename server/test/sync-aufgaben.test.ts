@@ -59,7 +59,7 @@ describe('Rechte-Regeltabelle: Aufgaben', () => {
     const ohne: Facts = { audience: 'family', ownerId: 'u-eltern', assigneeId: null };
     expect(act(aufgabeEntity, 'update', 'child', zugewiesen, ['erledigtAt'], { erledigtAt: new Date() })).toBe('ok');
     expect(act(aufgabeEntity, 'update', 'child', zugewiesen, ['erledigtAt', 'titel'])).toBe('forbidden');
-    for (const f of ['titel', 'faelligDate', 'assigneeId', 'audience', 'prioritaet', 'wiederholung', 'beschreibung']) {
+    for (const f of ['titel', 'faelligDate', 'assigneeId', 'audience', 'prioritaet', 'wiederholung', 'beschreibung', 'frist', 'fristMonate', 'erinnerungMin']) {
       expect(act(aufgabeEntity, 'update', 'child', zugewiesen, [f]), f).toBe('forbidden');
     }
     expect(act(aufgabeEntity, 'update', 'child', zugewiesen, [])).toBe('forbidden');
@@ -151,7 +151,11 @@ describe.each(backends)('Aufgaben-Sync ($name)', (backend) => {
       aufgabe({ wiederholung: 'yearly' }),
       aufgabe({ wiederholung: 'FREQ=DAILY' }),
       aufgabe({ erinnerungMin: -1 }),
-      aufgabe({ erinnerungMin: 40321 }),
+      aufgabe({ erinnerungMin: 525601 }),
+      aufgabe({ frist: 'ja' }),
+      aufgabe({ fristMonate: 0 }),
+      aufgabe({ fristMonate: 121 }),
+      aufgabe({ fristMonate: 1.5 }),
       aufgabe({ audience: 'jeder' }),
       aufgabe({ ownerId: fam.admin.userId }),
       aufgabe({ unbekannt: 1 }),
@@ -340,6 +344,26 @@ describe.each(backends)('Aufgaben-Sync ($name)', (backend) => {
     }
     const t = upsert('aufgabe', id, { wiederholungTag: 15 }, 2);
     expect((await fam.child.sync([t])).json.rejected).toEqual([{ opId: t.opId, code: 'forbidden' }]);
+  });
+
+  it('Fristen: frist, fristMonate und lange Vorwarnzeit gespeichert; Standard ohne Angabe; Konflikt je Feld; Kind nur bei eigener Aufgabe', async () => {
+    const normal = await anlegen(fam.admin, aufgabe({ faelligDate: '2026-12-01' }));
+    expect((await fam.parent.pull()).find((c) => c.id === normal)?.fields).toMatchObject({ frist: false, fristMonate: null });
+    const id = await anlegen(fam.admin, aufgabe({ titel: 'TÜV', faelligDate: '2028-03-31', frist: true, fristMonate: 24, erinnerungMin: 90 * 1440 }));
+    expect((await fam.child.pull()).find((c) => c.id === id)?.fields).toMatchObject({ frist: true, fristMonate: 24, erinnerungMin: 129600 });
+    const eltern2 = await fam.secondDevice('parent');
+    const basis = Number((await rows(world, sql`select rev from aufgaben where id = ${id}`))[0]?.rev);
+    expect((await fam.admin.sync([upsert('aufgabe', id, { fristMonate: 12 }, basis)])).json.conflicts).toEqual([]);
+    expect((await eltern2.sync([upsert('aufgabe', id, { erinnerungMin: 30 * 1440 }, basis)])).json.conflicts).toEqual([]);
+    const r = await fam.parent.sync([upsert('aufgabe', id, { fristMonate: 36, titel: 'TÜV Auto' }, basis)]);
+    expect(r.json.conflicts[0].fields).toEqual({ fristMonate: 12 });
+    const [row] = await rows(world, sql`select frist, frist_monate, erinnerung_min, titel from aufgaben where id = ${id}`);
+    expect(row).toEqual({ frist: true, frist_monate: 12, erinnerung_min: 43200, titel: 'TÜV Auto' });
+    // Kind: fremde Frist nicht änderbar, eigene schon
+    const fremd = upsert('aufgabe', id, { fristMonate: 6 }, basis + 3);
+    expect((await fam.child.sync([fremd])).json.rejected).toEqual([{ opId: fremd.opId, code: 'forbidden' }]);
+    const eigen = await anlegen(fam.child, aufgabe({ faelligDate: '2027-01-01', frist: true, fristMonate: 12 }));
+    expect((await fam.child.sync([upsert('aufgabe', eigen, { fristMonate: 24 }, 1)])).json.rejected).toEqual([]);
   });
 
   it('feste ID einer Folgeaufgabe von zwei Geräten: die zweite Op ist eine Änderung, keine Doppelung', async () => {

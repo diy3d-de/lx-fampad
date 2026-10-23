@@ -15,6 +15,7 @@ import '../app_database.dart';
 import '../database_provider.dart';
 import '../erinnerungen/erinnerung_einstellungen.dart';
 import '../lists/members.dart';
+import '../sync/sync_engine.dart' show SyncAusgang;
 import 'standort_modelle.dart' show kStandortStummSchluessel, stummAusWert;
 import 'standort_anzeige_port_stub.dart' if (dart.library.io) 'standort_anzeige_port_io.dart';
 
@@ -226,6 +227,7 @@ class StandortBenachrichtiger {
 const kDiagWecker = 'diag_wecker';
 const kDiagAbruf = 'diag_abruf';
 const kDiagHinweis = 'diag_hinweis';
+const kDiagSync = 'diag_sync';
 
 /// Merkt Zeitpunkt und Code (nie Namen, Kennungen oder Orte). Fehler beim Speichern sind egal.
 Future<void> standortDiagnoseSchreiben(AppDatabase db, String schluessel, String code, DateTime zeit) async {
@@ -248,11 +250,20 @@ class StandortDiagnoseEintrag {
   }
 }
 
+/// Feste Codes für das Ergebnis des Hintergrund-Abgleichs (Diagnose, nie Servertexte).
+String syncDiagnoseCode(SyncAusgang a) => switch (a) {
+  SyncAusgang.ok => 'ok',
+  SyncAusgang.offline => 'offline',
+  SyncAusgang.sitzungVerloren => 'sitzung_verloren',
+  _ => 'fehler',
+};
+
 class StandortDiagnose {
   final StandortDiagnoseEintrag? wecker;
   final StandortDiagnoseEintrag? abruf;
   final StandortDiagnoseEintrag? hinweis;
-  const StandortDiagnose({this.wecker, this.abruf, this.hinweis});
+  final StandortDiagnoseEintrag? sync;
+  const StandortDiagnose({this.wecker, this.abruf, this.hinweis, this.sync});
 }
 
 /// Lesbare Texte zu den Codes (feste Sätze, keine Servertexte).
@@ -261,6 +272,8 @@ String standortDiagnoseText(String code) => switch (code) {
   'freigaben' => 'Freigabe(n) abgeholt',
   'aus' => 'Hinweise ausgeschaltet',
   'im_vordergrund' => 'App war offen (Hinweis in der App)',
+  'sitzung_verloren' => 'Anmeldung abgelaufen: öffne die App, dann meldest du dich neu an',
+  'offline' => 'keine Verbindung (Netz oder Server nicht erreichbar)',
   'gestartet' => 'gestartet, aber nicht zu Ende gekommen (Android hat den Hintergrund-Start beendet?)',
   'gedrosselt' => 'übersprungen: vor weniger als 30 Sekunden schon abgefragt',
   'keine_verbindung' => 'keine Verbindung (Netz oder Server nicht erreichbar)',
@@ -284,6 +297,7 @@ final standortDiagnoseProvider = FutureProvider.autoDispose<StandortDiagnose>((r
       wecker: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagWecker)),
       abruf: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagAbruf)),
       hinweis: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagHinweis)),
+      sync: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagSync)),
     );
   } catch (_) {
     return const StandortDiagnose();

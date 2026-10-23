@@ -127,3 +127,142 @@ jobs:
       # PlatformView-Schnittstelle, die die Karte per JNI benutzt) und prüft das Release-Manifest (INTERNET da, kein Standort im Hintergrund)
       - run: bash tools/release-pruefung.sh
         working-directory: .
+
+  # Vertragsprüfung: die App-Klassen (ApiClient, Sync, E2EE-Chat usw.) gegen den ECHTEN gebauten Server mit PostgreSQL 17 und den
+  # Rollen wie in der Produktion (Migrationsrolle = Eigentümer, Laufzeitrolle nur DML). Läuft parallel zu den anderen Jobs (ca. 1 Minute Testzeit).
+  vertrag:
+    name: Vertragsprüfung (App gegen echten Server)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17.6
+        env:
+          POSTGRES_PASSWORD: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      SERVER_PORT: '4460'
+      SODIUM_ERFORDERLICH: '1'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.21.0
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+      - name: Server bauen
+        working-directory: server
+        run: |
+          npm ci --ignore-scripts --no-fund --no-audit
+          npm run build
+      # Rollen wie deploy/einrichtung-auth.sh: Migrationsrolle besitzt die Datenbank (DDL), Laufzeitrolle darf nur DML und den Migrationsstand lesen
+      - name: Datenbank und Rollen anlegen
+        env:
+          PGPASSWORD: ci
+        run: |
+          psql -h 127.0.0.1 -U postgres -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE lx_fampad_migrate LOGIN PASSWORD 'ci-migrate' NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          CREATE ROLE lx_fampad LOGIN PASSWORD 'ci-runtime' NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION;
+          CREATE DATABASE lx_fampad OWNER lx_fampad_migrate;
+          SQL
+          psql -h 127.0.0.1 -U postgres -d lx_fampad -v ON_ERROR_STOP=1 <<'SQL'
+          GRANT CONNECT ON DATABASE lx_fampad TO lx_fampad;
+          REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+          ALTER SCHEMA public OWNER TO lx_fampad_migrate;
+          GRANT USAGE ON SCHEMA public TO lx_fampad;
+          ALTER DEFAULT PRIVILEGES FOR ROLE lx_fampad_migrate IN SCHEMA public GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO lx_fampad;
+          ALTER DEFAULT PRIVILEGES FOR ROLE lx_fampad_migrate IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO lx_fampad;
+          SQL
+      - name: Migrieren (Migrationsrolle)
+        working-directory: server
+        env:
+          MIGRATION_DATABASE_URL: postgres://lx_fampad_migrate:ci-migrate@127.0.0.1:5432/lx_fampad
+        run: node dist/db/migrate-cli.js
+      - name: Lesezugriff auf den Migrationsstand für die Laufzeitrolle
+        env:
+          PGPASSWORD: ci
+        run: |
+          psql -h 127.0.0.1 -U postgres -d lx_fampad -v ON_ERROR_STOP=1 -c "GRANT USAGE ON SCHEMA drizzle TO lx_fampad; GRANT SELECT ON drizzle.__drizzle_migrations TO lx_fampad;"
+      # Server-Umgebung nur in einer Datei im Runner-Temp (kein Geheimnis, aber nie ins Log); Sync-/Anmelde-Limits hoch, sonst 429 im Dauerlauf
+      - name: Serverumgebung schreiben
+        run: |
+          umask 077
+          {
+            echo "NODE_ENV=development"
+            echo "HOST=127.0.0.1"
+            echo "PORT=$SERVER_PORT"
+            echo "DATABASE_URL=postgres://lx_fampad:ci-runtime@127.0.0.1:5432/lx_fampad"
+            echo "PUBLIC_URL=https://familie.lx-labs.dev"
+            echo "AUTH_SECRET_KEY=$(openssl rand -base64 32)"
+            echo "FILES_DIR=$RUNNER_TEMP/files"
+            echo "LOG_LEVEL=warn"
+            echo "RATE_LIMIT_MAX=100000"
+            echo "AUTH_RATE_LIMIT_MAX=100000"
+            echo "CHALLENGE_MAX_PER_IP=100000"
+            echo "CHALLENGE_MAX_GLOBAL=100000"
+            echo "SYNC_RATE_LIMIT_MAX=100000"
+            echo "SYNC_OPS_BURST=100000"
+            echo "SYNC_OPS_PER_MINUTE=100000"
+            echo "SYNC_REQ_BURST=100000"
+            echo "SYNC_REQ_PER_MINUTE=100000"
+            echo "SYNC_OPS_PER_DAY=1000000"
+            echo "WS_MAX_PER_IP=1000"
+            echo "WS_MAX_PER_USER=1000"
+            echo "WS_MAX_MESSAGES=100000"
+            # die Prüfung "Verlauf freigeben" braucht den Schalter für Wrap-ID v2 (Standard aus)
+            echo "E2EE_WRAP_KEY_VERSION=true"
+          } > "$RUNNER_TEMP/server.env"
+          mkdir -p "$RUNNER_TEMP/files"
+      - name: Einladung für den ersten Admin (Bootstrap)
+        working-directory: server
+        run: |
+          umask 077
+          node --env-file="$RUNNER_TEMP/server.env" dist/cli/bootstrap.js --family "Familie Vertrag" > "$RUNNER_TEMP/bootstrap.out"
+          TOKEN="$(grep -o '#/einladung/[A-Za-z0-9_-]*' "$RUNNER_TEMP/bootstrap.out" | head -n1 | sed 's#.*/##')"
+          rm -f "$RUNNER_TEMP/bootstrap.out"
+          if [ -z "$TOKEN" ]; then echo "Einladungstoken nicht gefunden"; exit 1; fi
+          echo "::add-mask::$TOKEN"
+          echo "INVITE_TOKEN=$TOKEN" >> "$GITHUB_ENV"
+      - name: Server starten
+        working-directory: server
+        run: |
+          nohup node --env-file="$RUNNER_TEMP/server.env" dist/server.js > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 60); do
+            if curl -fsS "http://127.0.0.1:$SERVER_PORT/api/v1/health" > /dev/null 2>&1; then echo "Server bereit"; exit 0; fi
+            sleep 1
+          done
+          echo "Server nicht bereit"; tail -n 50 "$RUNNER_TEMP/server.log"; exit 1
+      - name: Flutter-Abhängigkeiten
+        working-directory: app
+        run: |
+          flutter pub get --enforce-lockfile
+          dart run build_runner build
+      - name: Vertragsprüfung ausführen
+        working-directory: app
+        env:
+          SERVER: http://127.0.0.1:4460
+          SERVER_DIR: ${{ github.workspace }}/server
+          DATABASE_URL: postgres://lx_fampad:ci-runtime@127.0.0.1:5432/lx_fampad
+        run: |
+          cp tool/vertrag_test.dart test/vertrag_test.dart
+          flutter test test/vertrag_test.dart --reporter expanded
+      # Das Serverlog enthält laut Projektregeln keine Geheimnisse, Parameter oder Inhalte (Level warn)
+      - name: Serverlog bei Fehlschlag
+        if: failure()
+        run: tail -n 200 "$RUNNER_TEMP/server.log" || true
+      - name: Server beenden
+        if: always()
+        run: pkill -f "dist/server.js" || true

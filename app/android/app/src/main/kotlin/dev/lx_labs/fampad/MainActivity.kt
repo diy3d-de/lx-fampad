@@ -47,6 +47,9 @@ class MainActivity : FlutterActivity() {
         /** Zuletzt von Dart gewünschter Zustand von FLAG_SECURE; als Klassenvariable, damit eine neu erstellte Activity ihn kennt. */
         private var secureWunsch = false
 
+        /** Zuletzt von Dart gewünschter Zustand von FLAG_KEEP_SCREEN_ON (Wandtablet-Modus); ebenfalls als Klassenvariable. */
+        private var wachWunsch = false
+
         /** Kanal der Terminerinnerungen (lib/data/erinnerungen/erinnerung_port_android.dart); muss dort identisch sein. */
         private const val ERINNERUNG_KANAL = "terminerinnerungen"
         private const val CHAT_KANAL = "chat_nachrichten"
@@ -76,11 +79,13 @@ class MainActivity : FlutterActivity() {
         startLink = linkAus(intent)
         startTeilen = teilenAus(intent)
         secureAnwenden()
+        wachAnwenden()
     }
 
     override fun onResume() {
         super.onResume()
         secureAnwenden()
+        wachAnwenden()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -133,6 +138,12 @@ class MainActivity : FlutterActivity() {
     private fun secureAnwenden() {
         if (secureWunsch) window.setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+    }
+
+    /** Hält den Bildschirm an, solange Dart es wünscht (Wandtablet-Modus); Dart gibt beim Verlassen frei. */
+    private fun wachAnwenden() {
+        if (wachWunsch) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     }
 
     /** Kopiert Text als vertraulich (EXTRA_IS_SENSITIVE, Android 13+: keine Vorschau; ältere Versionen ignorieren den Hinweis). */
@@ -269,6 +280,11 @@ class MainActivity : FlutterActivity() {
                     "setSecure" -> {
                         secureWunsch = call.argument<Boolean>("secure") == true
                         secureAnwenden()
+                        result.success(null)
+                    }
+                    "setKeepScreenOn" -> {
+                        wachWunsch = call.argument<Boolean>("an") == true
+                        wachAnwenden()
                         result.success(null)
                     }
                     "notificationStatus" ->

@@ -7,13 +7,14 @@ import '../../data/startseite/startseite_logik.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../calendar/countdown_karte.dart' show countdownEintraegeProvider;
 import '../calendar/geburtstage_karte.dart' show geburtstageAnstehendProvider;
+import '../tasks/fristen_anzeige.dart' show dringendeFristenProvider;
 
-KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true}) => KachelVerfuegbarkeit(
+KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true}) => KachelVerfuegbarkeit(
   angeboten: {
     for (final id in l.standard)
       if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown)) id,
   },
-  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage'},
+  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen'},
 );
 
 final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
@@ -23,6 +24,7 @@ final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     wetter: ref.watch(wetterProvider.select((w) => w.kachelSichtbar)),
     geburtstage: ref.watch(geburtstageAnstehendProvider.select((l) => l.isNotEmpty)),
     countdown: ref.watch(countdownEintraegeProvider.select((l) => l.isNotEmpty)),
+    fristen: ref.watch(dringendeFristenProvider.select((l) => l.isNotEmpty)),
   ),
 );
 
@@ -32,6 +34,7 @@ final desktopVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     muell: ref.watch(muellProvider.select((m) => m.hatTermine)),
     wetter: ref.watch(wetterProvider.select((w) => w.kachelSichtbar)),
     countdown: ref.watch(countdownEintraegeProvider.select((l) => l.isNotEmpty)),
+    fristen: ref.watch(dringendeFristenProvider.select((l) => l.isNotEmpty)),
   ),
 );
 

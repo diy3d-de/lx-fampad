@@ -141,6 +141,18 @@ String aufgabeErinnerungInhalt(DateTime faellig, bool mitUhrzeit, DateTime erinn
   return mitUhrzeit ? 'Fällig $text, ${_hhmm(faellig)}' : 'Fällig $text';
 }
 
+/// Text der Erinnerung einer Frist (Fristen-Tracker): "Läuft heute ab", "Läuft morgen ab", "Läuft ab Mi, 21. Okt". [ablauf] ist das Ablaufdatum,
+/// [erinnerungTag] der Kalendertag, an dem die Erinnerung erscheint. Die Vorwarnzeit steht nie im Text (sie ist beim Zeitpunkt, nicht im Inhalt).
+String fristErinnerungInhalt(DateTime ablauf, DateTime erinnerungTag) {
+  final tag = DateTime.utc(ablauf.year, ablauf.month, ablauf.day);
+  final diff = tag.difference(DateTime.utc(erinnerungTag.year, erinnerungTag.month, erinnerungTag.day)).inDays;
+  return switch (diff) {
+    0 => 'Läuft heute ab',
+    1 => 'Läuft morgen ab',
+    _ => 'Läuft ab ${_wochentage[tag.weekday - 1]}, ${tag.day}. ${_monate[tag.month - 1]} ${tag.year}',
+  };
+}
+
 /// Betrifft die Aufgabe die Person [ich]? Ihr zugewiesen; ohne Zuständige nur, wenn sie die Aufgabe selbst angelegt hat. Eine Aufgabe, die
 /// jemand anderem zugewiesen ist, erinnert nur diese Person.
 bool aufgabeBetrifftPerson(String? zustaendig, String? ownerId, String? ich) {
@@ -176,6 +188,7 @@ List<GeplanteErinnerung> planeErinnerungen({
   int maxAnzahl = kErinnerungFenster,
   List<Aufgabe> aufgaben = const [],
   List<GeplanteErinnerung> zusatz = const [],
+  bool elternRolle = false,
 }) {
   if (ich == null || maxAnzahl <= 0) return const [];
   final jetztUtc = jetzt.toUtc();
@@ -220,7 +233,7 @@ List<GeplanteErinnerung> planeErinnerungen({
   final horizont = jetztUtc.add(const Duration(days: kErinnerungHorizontTage));
   for (final a in aufgaben) {
     final min = a.erinnerungMin;
-    if (min == null || min < 0 || istErledigt(a) || !aufgabeBetrifftPerson(a.assigneeId, a.ownerId, ich)) continue;
+    if (min == null || min < 0 || istErledigt(a) || !(aufgabeBetrifftPerson(a.assigneeId, a.ownerId, ich) || (a.frist && elternRolle))) continue; // Fristen erinnern zusätzlich alle Eltern und Admins
     final wand = faelligWand(a);
     if (wand == null) continue;
     final mitUhr = a.faelligUtc != null;
@@ -235,7 +248,7 @@ List<GeplanteErinnerung> planeErinnerungen({
         id: id,
         zeit: zeit,
         titel: a.titel.trim().isEmpty ? 'Aufgabe' : a.titel,
-        text: aufgabeErinnerungInhalt(wand, mitUhr, DateTime.utc(w.year, w.month, w.day)),
+        text: a.frist ? fristErinnerungInhalt(wand, DateTime.utc(w.year, w.month, w.day)) : aufgabeErinnerungInhalt(wand, mitUhr, DateTime.utc(w.year, w.month, w.day)),
         payload: aufgabeErinnerungPayload(a.id),
       ),
     );

@@ -1101,6 +1101,10 @@ export const aufgaben = pgTable(
     wiederholung: text('wiederholung'),
     /** Erinnerung in Minuten vor der Fälligkeit (null: keine). */
     erinnerungMin: integer('erinnerung_min'),
+    /** Familien-Frist (Ablaufdatum mit Vorwarnzeit in `erinnerung_min`); alte Apps zeigen sie als normale Aufgabe. */
+    frist: boolean('frist').notNull().default(false),
+    /** Wiederholung der Frist alle N Monate (12 = jährlich); leer = einmalig. Der Client legt beim Erledigen die nächste an. */
+    fristMonate: integer('frist_monate'),
     audience: listAudience('audience').notNull().default('family'),
     ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
@@ -1123,7 +1127,8 @@ export const aufgaben = pgTable(
     check('aufgaben_prioritaet_ck', sql`${t.prioritaet} between 0 and 3`),
     check('aufgaben_wiederholung_ck', sql`${t.wiederholung} is null or ${t.wiederholung} in ('daily', 'weekly', 'monthly')`),
     check('aufgaben_wdh_tag_ck', sql`${t.wiederholungTag} is null or ${t.wiederholungTag} between 1 and 31`),
-    check('aufgaben_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
+    check('aufgaben_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 525600`),
+    check('aufgaben_frist_monate_ck', sql`${t.fristMonate} is null or ${t.fristMonate} between 1 and 120`),
     check(
       'aufgaben_faellig_ck',
       sql`(${t.faelligDate} is null or ${t.faelligUtc} is null) and (${t.faelligUtc} is null or ${t.tzid} is not null)`,
