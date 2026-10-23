@@ -27,6 +27,7 @@ import 'absicherung_screen.dart';
 import 'devices_screen.dart';
 import 'erinnerungen_screen.dart';
 import 'heute_widget_screen.dart';
+import 'kalender_einstellungen_screen.dart';
 import 'password_screen.dart';
 import 'ueber_screen.dart';
 import 'profilbild_screen.dart';
@@ -294,6 +295,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           onTap: () => _oeffne(const DevicesScreen()),
         ),
         EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erinnerungen', untertitel: 'terminerinnerungen auf diesem gerät', onTap: () => _oeffne(const ErinnerungenScreen())),
+        EinstellungsZeile(icon: Icons.calendar_month_outlined, titel: 'Kalender', untertitel: 'import und export (ics)', onTap: () => _oeffne(const KalenderEinstellungenScreen())),
         EinstellungsZeile(icon: Icons.dashboard_customize_outlined, titel: 'Startseite anpassen', untertitel: 'kacheln verschieben und ausblenden, nur dieses gerät', onTap: () => _oeffne(const StartseiteAnpassenScreen())),
         const _MuellZeile(),
         const _WetterZeile(),

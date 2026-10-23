@@ -17,6 +17,7 @@ import 'package:lx_fampad/data/calendar/ics_parser.dart';
 import 'package:lx_fampad/data/calendar/termin_repository.dart';
 import 'package:lx_fampad/data/sync/sync_models.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart';
+import 'package:lx_fampad/features/profile/kalender_einstellungen_screen.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'support/harness.dart';
@@ -282,9 +283,11 @@ void main() {
         await starteApp(tester, env, skala: skala);
         await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
         await warte(tester);
-        await tester.tap(find.byTooltip('Mehr: Importieren, Exportieren'));
+        await tester.tap(find.byTooltip('Mehr'));
         await warte(tester);
-        await tester.tap(find.text('Importieren'));
+        await tester.tap(find.text('Kalender-Einstellungen …'));
+        await warte(tester);
+        await tester.tap(find.text('Datei importieren (.ics)'));
         await warte(tester);
         expect(find.text('ICS-Datei auswählen'), findsOneWidget);
         pruefeLayout(tester, 'Start');
@@ -300,7 +303,7 @@ void main() {
         expect((await env.db.select(env.db.termine).get()), isNotEmpty);
         await tester.tap(find.text('Fertig'));
         await warte(tester);
-        expect(find.byTooltip('Mehr: Importieren, Exportieren'), findsOneWidget, reason: 'zurück im Kalender');
+        expect(find.byType(KalenderEinstellungenScreen), findsOneWidget, reason: 'zurück auf der Seite Kalender');
       });
     }
 
@@ -311,9 +314,11 @@ void main() {
       await starteApp(tester, env);
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
       await warte(tester);
-      await tester.tap(find.byTooltip('Mehr: Importieren, Exportieren'));
+      await tester.tap(find.byTooltip('Mehr'));
       await warte(tester);
-      await tester.tap(find.text('Importieren'));
+      await tester.tap(find.text('Kalender-Einstellungen …'));
+      await warte(tester);
+      await tester.tap(find.text('Datei importieren (.ics)'));
       await warte(tester);
       await tester.tap(find.text('ICS-Datei auswählen'));
       await warte(tester, 12);
