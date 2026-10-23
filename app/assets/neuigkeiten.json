@@ -1,4 +1,7 @@
 {
+  "0.12.1": [
+    "Im Mehr-Menü sitzen Symbole und Beschriftungen jetzt mittig in den Kacheln"
+  ],
   "0.12.0": [
     "Medikamenten-Plan: Einnahme-Erinnerung, Vorrat und Rezeptfrist. Du siehst nur deine eigenen Medikamente, Eltern zusätzlich die ihrer Kinder, alles Ende-zu-Ende verschlüsselt",
     "Neue untere Leiste mit „Mehr“: Listen, Fristen, Medikamente, Müll, Wetter, Standort, Suche und Profil liegen dort. Die Leiste lässt sich unter Profil anpassen",
