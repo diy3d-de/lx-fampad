@@ -9,6 +9,7 @@ import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../home/startseite_anpassen_screen.dart';
+import 'leiste_anpassen_screen.dart';
 import '../wandtablet/wandtablet_einstellungen_screen.dart';
 import 'heute_widget_screen.dart';
 import 'profil_plattform.dart';
@@ -33,6 +34,13 @@ class AnzeigeScreen extends ConsumerWidget {
           untertitel: 'kacheln verschieben und ausblenden, nur dieses gerät',
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const StartseiteAnpassenScreen())),
         ),
+        if (MediaQuery.sizeOf(context).width < kDesktopBreakpoint)
+          EinstellungsZeile(
+            icon: Icons.view_agenda_outlined,
+            titel: 'Untere Leiste',
+            untertitel: 'vier bereiche und „mehr“, nur dieses gerät',
+            onTap: () => Navigator.of(context).push<void>(LeisteAnpassenScreen.route()),
+          ),
         const WetterZeile(),
         EinstellungsZeile(
           icon: Icons.tv_outlined,

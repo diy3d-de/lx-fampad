@@ -30,3 +30,6 @@ const kWetterTab = 7;
 
 /// Index des Müll-Bereichs in [kDesktopTabs] (nur im Desktop-Layout ein Bereich der Shell, und dort nur in der Seitenleiste, wenn der Server die Abfuhrtermine eingeschaltet hat; mobil eine Seite).
 const kMuellTab = 8;
+
+/// Index des (noch nicht gebauten) Dateien-Bereichs in [kTabs]; ausgeblendet, solange `kDateienSichtbar` falsch ist.
+const kDateienTab = 3;

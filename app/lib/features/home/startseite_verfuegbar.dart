@@ -3,6 +3,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../data/muell/muell_state.dart';
+import '../../data/shell/leiste_logik.dart' show kDateienSichtbar;
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../calendar/countdown_karte.dart' show countdownEintraegeProvider;
@@ -12,7 +13,7 @@ import '../tasks/fristen_anzeige.dart' show dringendeFristenProvider;
 KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true}) => KachelVerfuegbarkeit(
   angeboten: {
     for (final id in l.standard)
-      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown)) id,
+      if (!(id == 'dateien' && !kDateienSichtbar) && !(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown)) id,
   },
   leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen'},
 );

@@ -11,6 +11,7 @@ import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/muell/muell_state.dart';
+import '../../data/shell/leiste_logik.dart' show kDateienSichtbar;
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
@@ -375,7 +376,7 @@ class _Seitenleiste extends ConsumerWidget {
                 child: ListView(
                   children: [
                     for (var i = 0; i < kDesktopTabs.length; i++)
-                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell))
+                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || kDateienSichtbar))
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,

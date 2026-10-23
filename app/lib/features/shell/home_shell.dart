@@ -30,6 +30,9 @@ import '../../ui/widgets.dart';
 import '../../widgets/familien_hinweis_banner.dart';
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
+import '../../data/shell/leiste_logik.dart';
+import '../../data/shell/leiste_state.dart';
+import 'mehr_menue.dart';
 import '../files/files_screen.dart';
 import '../../data/startseite/startseite_state.dart';
 import '../home/desktop_home.dart';
@@ -45,7 +48,7 @@ import '../wetter/wetter_screen.dart';
 import 'desktop_shell.dart';
 import 'shell_tab.dart';
 
-/// Rahmen der angemeldeten App: Glow-Hintergrund, die sechs Tabs (Desktop: dazu Standort) und die Material-3-NavigationBar.
+/// Rahmen der angemeldeten App: Glow-Hintergrund, die Bereiche (Desktop: dazu Standort, Wetter, Müll) und die Material-3-NavigationBar (mobil: vier Bereiche plus "Mehr").
 class HomeShell extends ConsumerStatefulWidget {
   const HomeShell({super.key});
 
@@ -228,7 +231,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
-      return _mobil(updateDa, tab < kTabs.length ? tab : 0, ungelesen);
+      return _mobil(updateDa, mobilerTabGueltig(tab) ? tab : 0, ungelesen);
     });
   }
 
@@ -323,15 +326,27 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   }
 
   Widget _mobil(bool updateDa, int tab, int ungelesen) {
+    // Leiste: die gewählten Bereiche plus das feste Feld "Mehr"; ein Bereich hinter "Mehr" markiert "Mehr"
+    final leiste = ref.watch(leisteProvider).tabs;
+    final hinweise = ref.watch(mehrHinweiseProvider);
+    final mehrZahl = hinweise.summe(leiste);
     // Zeichen am Tab: Update-Hinweis am Start, Anzahl ungelesener Nachrichten am Chat
-    Widget symbol(int i, IconData icon) {
-      final chat = i == kChatTab && ungelesen > 0;
+    Widget symbol(int t, IconData icon) {
+      final chat = t == kChatTab && ungelesen > 0;
       return Badge(
-        isLabelVisible: (updateDa && i == 0) || chat,
+        isLabelVisible: (updateDa && t == 0) || chat,
         label: chat ? Text(ungelesen > 99 ? '99+' : '$ungelesen') : null,
         child: Icon(icon),
       );
     }
+
+    Widget mehrSymbol(IconData icon) => Badge(
+      isLabelVisible: mehrZahl > 0,
+      label: Text(hinweisText(mehrZahl)),
+      backgroundColor: hinweise.ueberfaellig(leiste) ? kDanger : kWarn,
+      textColor: kBg,
+      child: Icon(icon),
+    );
 
     return Scaffold(
       backgroundColor: kBg,
@@ -344,16 +359,29 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         ),
       ),
       bottomNavigationBar: NavigationBar(
-        selectedIndex: tab,
-        onDestinationSelected: (i) => ref.read(shellTabProvider.notifier).waehlen(i),
+        selectedIndex: leisteAuswahl(tab, leiste),
+        onDestinationSelected: (i) {
+          if (i < leiste.length) {
+            ref.read(shellTabProvider.notifier).waehlen(leiste[i]);
+          } else {
+            // "Mehr" öffnet nur das Blatt, der aktive Bereich bleibt
+            unawaited(mehrBlattOeffnen(context));
+          }
+        },
         destinations: [
-          for (var i = 0; i < kTabs.length; i++)
+          for (final t in leiste)
             NavigationDestination(
-              icon: symbol(i, kTabs[i].icon),
-              selectedIcon: symbol(i, kTabs[i].selectedIcon),
-              label: kTabs[i].label,
-              tooltip: i == kChatTab && ungelesen > 0 ? 'Chat, $ungelesen ungelesen' : kTabs[i].label,
+              icon: symbol(t, kTabs[t].icon),
+              selectedIcon: symbol(t, kTabs[t].selectedIcon),
+              label: kTabs[t].label,
+              tooltip: t == kChatTab && ungelesen > 0 ? 'Chat, $ungelesen ungelesen' : kTabs[t].label,
             ),
+          NavigationDestination(
+            icon: mehrSymbol(Icons.apps_outlined),
+            selectedIcon: mehrSymbol(Icons.apps),
+            label: 'Mehr',
+            tooltip: mehrZahl > 0 ? 'Mehr, ${hinweisText(mehrZahl)} Hinweise' : 'Mehr',
+          ),
         ],
       ),
     );
