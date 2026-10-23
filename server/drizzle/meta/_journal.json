@@ -218,6 +218,13 @@
       "when": 1792786157983,
       "tag": "0030_medikamente",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792793551623,
+      "tag": "0031_zaehler",
+      "breakpoints": true
     }
   ]
 }
