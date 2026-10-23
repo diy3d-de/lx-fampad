@@ -154,10 +154,10 @@ class ZaehlerRepository {
     return id;
   });
 
-  /// Gleicht die Teilnehmer der Zähler-Konversation mit den Rollen ab: Eltern/Admins, die fehlen, kommen dazu (nur mit vertrauenswürdigem Schlüssel; den früheren Verlauf teilt eine Person
-  /// nur auf ausdrücklichen Tipp), wer nach den Rollen nicht mehr hineingehört, geht (jede Änderung legt in derselben Transaktion eine neue Epoche an: wer geht, liest Neues nicht mehr).
+  /// Gleicht die Teilnehmer der Zähler-Konversation mit den Rollen ab: Eltern/Admins, die fehlen, kommen dazu (nur mit vertrauenswürdigem Schlüssel; den früheren Verlauf bekommen
+  /// sie NICHT von selbst, sondern nur mit [verlaufTeilen] = true bzw. über [verlaufTeilen] auf ausdrücklichen Tipp einer Person, die ihn lesen kann), wer nach den Rollen nicht mehr hineingehört, geht (jede Änderung legt in derselben Transaktion eine neue Epoche an: wer geht, liest Neues nicht mehr).
   /// Der Server wirft nach einem Rollenwechsel ein Kind sofort aus der Liste; die Rotation übernimmt dann diese Pflege. Liefert true, wenn etwas geändert wurde. Nur Teilnehmer ändern.
-  Future<bool> teilnehmerPflegen() => _seriell(() async {
+  Future<bool> teilnehmerPflegen({bool verlaufTeilen = false}) => _seriell(() async {
     final me = ich();
     final konv = await konversation();
     if (me == null || konv == null || konv.encVersion != 'e1' || konv.rev == 0) return false;
@@ -175,7 +175,25 @@ class ZaehlerRepository {
     if (neu.isEmpty || !neu.contains(me.toLowerCase())) return false; // nie eine leere Liste; wer selbst nicht mehr hineingehört, ändert nichts mehr
     final sortiert = neu.toList()..sort();
     final aenderungen = <SyncAenderung>[SyncAenderung('konversation', konv.id, {'teilnehmer': sortiert})];
-    aenderungen.addAll(await k.epocheErstellen(konversationId: konv.id, mitglieder: neu, historieFuer: a.hinzu, unvertrauteAuslassen: true));
+    aenderungen.addAll(await k.epocheErstellen(konversationId: konv.id, mitglieder: neu, historieFuer: verlaufTeilen ? a.hinzu : const {}, unvertrauteAuslassen: true));
+    await store.aendernMehrere(aenderungen);
+    beiAenderung();
+    return true;
+  });
+
+  /// "Verlauf teilen": gibt [personen] (Eltern und Admins, die schon Teilnehmer sind, aber den früheren Verlauf noch nicht lesen können) die Schlüssel der älteren Epochen, die dieses
+  /// Gerät kennt. Nur auf ausdrücklichen Tipp, nie automatisch. Legt dafür eine neue Epoche für alle Teilnehmer an. Liefert true, wenn etwas geschrieben wurde.
+  Future<bool> verlaufTeilen(Set<String> personen) => _seriell(() async {
+    final me = ich();
+    final konv = await konversation();
+    if (me == null || konv == null || konv.encVersion != 'e1' || konv.rev == 0) return false;
+    final aktuell = teilnehmerIds(konv).map((x) => x.toLowerCase()).toSet();
+    if (!aktuell.contains(me.toLowerCase())) return false;
+    await _darf();
+    final fuer = {for (final p in personen) p.toLowerCase()}.where((p) => aktuell.contains(p) && p != me.toLowerCase()).toSet();
+    if (fuer.isEmpty) return false;
+    final k = await _kryptoPflicht();
+    final aenderungen = await k.epocheErstellen(konversationId: konv.id, mitglieder: aktuell, historieFuer: fuer, unvertrauteAuslassen: true);
     await store.aendernMehrere(aenderungen);
     beiAenderung();
     return true;

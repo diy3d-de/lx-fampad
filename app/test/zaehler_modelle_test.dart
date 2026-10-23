@@ -143,7 +143,7 @@ void main() {
       expect(() => standKodieren(const StandInhalt(datum: '2026-02-30', milli: 1)), throwsArgumentError);
       expect(() => standKodieren(const StandInhalt(datum: '2026-03-01', milli: -1)), throwsArgumentError);
       expect(() => standKodieren(StandInhalt(datum: '2026-03-01', milli: 1, notiz: 'x' * 121)), throwsArgumentError);
-      expect(standLesen('${kPraefixStand}{'), isNull);
+      expect(standLesen('$kPraefixStand{'), isNull);
       expect(standLesen('$kPraefixStand${jsonEncode({'v': 2, 'd': '2026-03-01', 'w': 1})}'), isNull);
       expect(standLesen('$kPraefixStand${jsonEncode({'v': 1, 'd': '2026-03-01', 'w': 1.5})}'), isNull);
       expect(standLesen('$kPraefixStand${jsonEncode({'v': 1, 'd': '2026-03-01', 'w': 1, 'k': 'q'})}'), isNull);
