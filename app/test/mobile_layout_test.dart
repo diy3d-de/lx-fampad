@@ -14,6 +14,7 @@ import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
 import 'package:lx_fampad/features/calendar/calendar_state.dart' show heuteTag;
 
 import 'support/fake_server.dart';
+import 'support/harness.dart' show zumBereich;
 import 'support/test_app.dart';
 
 const _breite = 360.0;
@@ -71,11 +72,10 @@ void main() {
       await _angemeldetStarten(tester);
       expect(tester.takeException(), isNull, reason: 'Start');
 
-      for (var i = 0; i < kTabs.length; i++) {
-        await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(kTabs[i].label)));
-        await tester.pump();
-        expect(tester.takeException(), isNull, reason: 'Tab ${kTabs[i].label}');
-        expect(kleineZiele(tester), isEmpty, reason: 'Tab ${kTabs[i].label}: Touch-Ziele unter $_minZiel px');
+      for (final t in [0, 1, 2, 5, 4]) {
+        await zumBereich(tester, kTabs[t].label);
+        expect(tester.takeException(), isNull, reason: 'Tab ${kTabs[t].label}');
+        expect(kleineZiele(tester), isEmpty, reason: 'Tab ${kTabs[t].label}: Touch-Ziele unter $_minZiel px');
       }
 
       // Kalender: Monat wechseln und Tag antippen darf nichts brechen
@@ -95,8 +95,7 @@ void main() {
       expect(kleineZiele(tester), isEmpty, reason: 'Kalender nach Bedienung');
 
       // Listen: leerer Zustand, Liste anlegen, Eintrag hinzufügen (Layout und Ziele)
-      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Listen')));
-      await tester.pump();
+      await zumBereich(tester, 'Listen');
       expect(find.text('Noch keine Liste'), findsOneWidget);
       expect(kleineZiele(tester), isEmpty, reason: 'Listen leer');
       await tester.tap(find.text('Liste anlegen'));

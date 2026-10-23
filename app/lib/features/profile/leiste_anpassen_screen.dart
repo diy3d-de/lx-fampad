@@ -61,7 +61,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
             alignment: Alignment.centerRight,
             child: OutlinedButton(
               style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-              onPressed: !st.istStandard ? () => unawaited(notifier.zuruecksetzen()) : null,
+              onPressed: !st.istStandard ? () => unawaited(notifier.aufStandardSetzen()) : null,
               child: const Text('Zurücksetzen'),
             ),
           ),

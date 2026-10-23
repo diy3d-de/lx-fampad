@@ -380,7 +380,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
             icon: mehrSymbol(Icons.apps_outlined),
             selectedIcon: mehrSymbol(Icons.apps),
             label: 'Mehr',
-            tooltip: mehrZahl > 0 ? 'Mehr, ${hinweisText(mehrZahl)} Hinweise' : 'Mehr',
+            tooltip: mehrZahl > 0 ? 'Weitere Bereiche, ${hinweisText(mehrZahl)} Hinweise' : 'Weitere Bereiche',
           ),
         ],
       ),

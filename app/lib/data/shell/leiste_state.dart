@@ -60,7 +60,7 @@ class LeisteNotifier extends Notifier<LeisteZustand> {
   Future<void> ersetzen(int index, int neuerTab) => _aendern((t) => leisteErsetzen(t, index, neuerTab));
 
   /// Standard: der gespeicherte Wert wird gelöscht (spätere Änderungen des Standards greifen).
-  Future<void> zuruecksetzen() async {
+  Future<void> aufStandardSetzen() async {
     final gen = _generation;
     if (!state.geladen) await _gelesen;
     if (!ref.mounted || gen != _generation) return;

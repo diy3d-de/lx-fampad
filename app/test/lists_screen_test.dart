@@ -19,8 +19,7 @@ const _l2 = '11111111-1111-4111-8111-222222222222';
 const _i1 = '22222222-2222-4222-8222-222222222222';
 
 Future<void> zumListenTab(WidgetTester tester) async {
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Listen')));
-  await warte(tester);
+  await zumBereich(tester, 'Listen'); // Listen liegen standardmäßig hinter "Mehr"
 }
 
 Finder eingabe(String hinweis) => find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == hinweis);

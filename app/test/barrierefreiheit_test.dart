@@ -71,8 +71,7 @@ void main() {
   }
 
   Future<void> zumTab(WidgetTester tester, String label) async {
-    await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
-    await warte(tester);
+    await zumBereich(tester, label);
   }
 
   void pruefe(WidgetTester tester, String wo) {

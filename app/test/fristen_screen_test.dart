@@ -43,10 +43,7 @@ Future<void> tippeDirekt(WidgetTester tester, Finder f) async {
   await warte(tester);
 }
 
-Future<void> zumTab(WidgetTester tester, String label) async {
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
-  await warte(tester);
-}
+Future<void> zumTab(WidgetTester tester, String label) => zumBereich(tester, label);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

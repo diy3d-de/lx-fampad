@@ -50,10 +50,7 @@ Future<void> tippeDirekt(WidgetTester tester, Finder f) async {
   await warte(tester);
 }
 
-Future<void> zumTab(WidgetTester tester, String label) async {
-  await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(label)));
-  await warte(tester);
-}
+Future<void> zumTab(WidgetTester tester, String label) => zumBereich(tester, label);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -460,16 +457,16 @@ void main() {
     expect(find.text('200 offen · 0 erledigt'), findsOneWidget);
   });
 
-  testWidgets('Sechs Navigationsziele bei 360 px und Textskala 1.5: kein Label abgeschnitten, Touch-Ziele >= 44 px', (tester) async {
+  testWidgets('Fünf Navigationsfelder (vier Bereiche und Mehr) bei 360 px und Textskala 1.5: kein Label abgeschnitten, Touch-Ziele >= 44 px', (tester) async {
     await start(tester, skala: 1.5, tab: 'Start');
-    for (final t in kTabs) {
-      final p = find.descendant(of: find.byType(NavigationBar), matching: find.text(t.label));
-      expect(p, findsOneWidget, reason: t.label);
+    for (final label in ['Start', 'Kalender', 'Chat', 'Aufgaben', 'Mehr']) {
+      final p = find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
+      expect(p, findsOneWidget, reason: label);
       final ro = tester.renderObject<RenderParagraph>(p);
-      expect(ro.didExceedMaxLines, isFalse, reason: 'Label ${t.label} abgeschnitten');
-      expect(ro.size.width, lessThanOrEqualTo(360 / kTabs.length + 0.5), reason: 'Label ${t.label} breiter als sein Ziel');
+      expect(ro.didExceedMaxLines, isFalse, reason: 'Label $label abgeschnitten');
+      expect(ro.size.width, lessThanOrEqualTo(360 / 5 + 0.5), reason: 'Label $label breiter als sein Ziel');
     }
-    pruefeLayout(tester, 'Sechs Tabs');
+    pruefeLayout(tester, 'Fünf Felder');
   });
 
   testWidgets('Startseite mobil: Karte "Aufgaben" zeigt Überfälliges und bald Fälliges, Tippen öffnet den Bereich', (tester) async {

@@ -31,9 +31,11 @@ void main() {
       expect(find.byType(NavigationBar), findsNothing);
       expect(find.text('lx-familyhub'), findsOneWidget);
       expect(find.text(kInviteHost), findsOneWidget);
-      for (final t in kTabs) {
+      for (final t in kTabs.where((t) => t.label != 'Dateien')) {
         expect(navEintrag(t.label), findsOneWidget, reason: t.label);
       }
+      // der Dateien-Bereich ist noch nicht gebaut: nicht in der Seitenleiste (kDateienSichtbar)
+      expect(navEintrag('Dateien'), findsNothing);
       // keine Platzhalter-Einträge ("bald") in der Seitenleiste: Fotos und Orte stehen erst im Menü, wenn sie gebaut sind
       expect(find.text('bald'), findsNothing);
       expect(navEintrag('Fotos'), findsNothing);

@@ -189,3 +189,17 @@ Future<TestUmgebung> angemeldeteUmgebung({String role = 'admin', FakeServer? ser
   await env.angemeldet();
   return env;
 }
+
+/// Wechselt in der mobilen Leiste in den Bereich [label]: steht er in der Leiste, ein Tipp darauf; sonst über "Mehr" und das Blatt (Standard: Listen).
+Future<void> zumBereich(WidgetTester tester, String label) async {
+  final leiste = find.byType(NavigationBar);
+  final direkt = find.descendant(of: leiste, matching: find.text(label));
+  if (direkt.evaluate().isNotEmpty) {
+    await tester.tap(direkt);
+  } else {
+    await tester.tap(find.descendant(of: leiste, matching: find.text('Mehr')));
+    await warte(tester);
+    await tester.tap(find.descendant(of: find.byType(BottomSheet), matching: find.text(label)));
+  }
+  await warte(tester);
+}
