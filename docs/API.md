@@ -575,7 +575,8 @@ Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschl
 - **Obergrenzen:** 5000 **offene** (nicht erledigte) Aufgaben je Familie, zusätzlich **500 offene je Besitzer für Kinder**; alle lebenden Aufgaben (auch erledigte) zusammen höchstens 20000 je Familie; 100 lebende Unteraufgaben je Aufgabe und 50000 je Familie (`limit_reached`). **Mitglied entfernt:** `assigneeId`, `erledigtVon` und `ownerId` werden mit Änderungseintrag auf `null` gesetzt.
 - **Zuständige Person:** Wer in `assigneeId` steht (auch ein Kind), darf an der Aufgabe **nur** `erledigtAt` und `folgeId` ändern und an ihren Unteraufgaben nur `doneAt`; jede weitere Änderung, Anlegen/Löschen von Unteraufgaben und Löschen der Aufgabe sind `forbidden`, eine für die Person nicht sichtbare Aufgabe `not_found`. Sonst gilt die Tabelle unten.
 - **Folgeaufgabe:** `folgeId` (UUID oder `null`) nennt die beim Erledigen angelegte Folgeaufgabe (abgeleitet, bei belegter ID zufällig); `wiederholungTag` (1 bis 31 oder `null`) ist der Wunschtag des Monats bei `monthly` und bleibt in der Kette erhalten.
-- **Erinnerung:** `erinnerungMin` (0 bis 40320 Minuten vor der Fälligkeit oder `null`) wird gespeichert und synchronisiert; die App nutzt es noch nicht (siehe Abschnitt 6e der Projektbeschreibung, Offen).
+- **Erinnerung:** `erinnerungMin` (0 bis 525600 Minuten vor der Fälligkeit oder `null`) wird gespeichert und synchronisiert; die App plant daraus lokale Erinnerungen (Abschnitt 6e der Projektbeschreibung).
+- **Fristen** (`frist`, `fristMonate`; Migration 0029, additiv, Standard `false`/`null`): Eine Frist ist eine Aufgabe mit Ablaufdatum (`faelligDate`), Vorwarnzeit in `erinnerungMin` und Wiederholung in Monaten. Rechte, Konflikte je Feld, Obergrenzen und Folgeaufgabe (`folgeId`) sind die der Aufgaben; ein Kind darf beide Felder nur an eigenen Aufgaben ändern, eine zuständige Person nicht. Der Server prüft nur die Form.
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
@@ -591,7 +592,9 @@ Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschl
 | | `folgeId` | UUID oder `null` (Folgeaufgabe, auch die zuständige Person darf es setzen) | rw |
 | | `wiederholungTag` | Ganzzahl 1 bis 31 oder `null` (Wunschtag, `monthly`) | rw |
 | | `wiederholung` | `daily`, `weekly`, `monthly` oder `null` | rw |
-| | `erinnerungMin` | Ganzzahl 0 bis 40320 oder `null` | rw |
+| | `erinnerungMin` | Ganzzahl 0 bis 525600 oder `null` (bis 0.10: 0 bis 40320; bei Fristen die Vorwarnzeit, Tage * 1440) | rw |
+| | `frist` | Boolean (Standard `false`): Familien-Frist (Fristen-Tracker); ältere Apps ignorieren das Feld und zeigen die Frist als normale Aufgabe | rw |
+| | `fristMonate` | Ganzzahl 1 bis 120 oder `null` (Wiederholung der Frist alle N Monate, 12 = jährlich; der Client legt beim Erledigen die nächste an) | rw |
 | | `audience` | `parents`, `family` (Standard), `all` (wird `family`) | rw |
 | | `ownerId` | UUID oder `null` (Ersteller; bestimmt das Änderungsrecht des Kindes) | server |
 | | `createdAt` | ISO-8601 (UTC) | server |

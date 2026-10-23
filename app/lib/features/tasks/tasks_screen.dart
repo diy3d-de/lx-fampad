@@ -239,10 +239,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         const EmptyState(icon: Icons.error_outline, title: 'Aufgaben nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
       else if (ladend)
         const Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))
+      else if (fristenAnsicht && sichtbar.isEmpty && !daten.aufgaben.any((a) => a.frist))
+        const EmptyState(icon: Icons.event_available_outlined, title: 'Noch keine Fristen', hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.')
       else if (daten.aufgaben.isEmpty)
         const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
-      else if (sichtbar.isEmpty && fristenAnsicht)
-        const EmptyState(icon: Icons.event_available_outlined, title: 'Noch keine Fristen', hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.')
       else if (sichtbar.isEmpty)
         EmptyState(
           icon: Icons.filter_alt_off_outlined,
