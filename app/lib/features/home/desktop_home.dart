@@ -41,6 +41,7 @@ import '../wandtablet/wandtablet_steuerung.dart' show WandtabletStartZeile;
 import '../wetter/wetter_karte.dart';
 import '../muell/muell_karte.dart';
 import '../medikamente/medikamente_karte.dart' show MedikamenteStartKarte;
+import '../zaehler/zaehler_karte.dart' show ZaehlerStartKarte;
 import '../../data/muell/muell_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../data/standort/standort_dienst.dart';
@@ -351,6 +352,7 @@ Widget _kachel(String id) => switch (id) {
   'aufgaben' => const _AufgabenKarte(),
   'fristen' => const FristenStartKarte(),
   'medikamente' => const MedikamenteStartKarte(),
+  'zaehler' => const ZaehlerStartKarte(),
   'familie' => const _FamilieKarte(),
   'standort' => const _StandortKarte(),
   'muell' => const _MuellKarte(),

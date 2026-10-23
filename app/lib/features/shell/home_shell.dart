@@ -40,6 +40,9 @@ import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
 import '../medikamente/medikamente_screen.dart';
+import '../zaehler/zaehler_screen.dart';
+import '../../data/zaehler/zaehler_hinweis.dart';
+import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
 import '../muell/muell_screen.dart';
 import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
@@ -61,7 +64,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(9, (_) => GlobalKey());
+  final _keys = List.generate(10, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -76,6 +79,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   bool _wetterBesucht = false;
   bool _muellBesucht = false;
   bool _medikamenteBesucht = false;
+  bool _zaehlerBesucht = false;
   List<Widget> get _desktopScreens => [
     const DesktopHome(),
     ..._screens.sublist(1),
@@ -83,6 +87,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     if (_wetterBesucht) WetterScreen(key: _keys[6], eingebettet: true) else const SizedBox.shrink(),
     if (_muellBesucht) MuellScreen(key: _keys[7], eingebettet: true) else const SizedBox.shrink(),
     if (_medikamenteBesucht) MedikamenteScreen(key: _keys[8], eingebettet: true) else const SizedBox.shrink(),
+    // Zähler: erst gebaut, wenn der Bereich gewählt wurde (nur Eltern und Admins; für alle anderen bleibt es leer)
+    if (_zaehlerBesucht) ZaehlerScreen(key: _keys[9], eingebettet: true) else const SizedBox.shrink(),
   ];
 
   /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
@@ -227,6 +233,14 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     ref.listen(muellOeffnenProvider, (_, _) => _muellOeffnen());
     // Tipp auf eine Medikamenten-Erinnerung: die Medikamenten-Ansicht öffnen (die Nutzlast trägt nie einen Inhalt)
     ref.listen(medikamentOeffnenProvider, (_, _) => _medikamenteOeffnen());
+    // Tipp auf eine Zähler-Erinnerung: die Zähler-Übersicht öffnen (nur Eltern und Admins; die Nutzlast trägt nie einen Inhalt)
+    ref.listen(zaehlerOeffnenProvider, (_, _) => _zaehlerOeffnen());
+    // Wer die Zähler nicht (mehr) sehen darf (Rollenwechsel), landet nie im Zähler-Bereich
+    if (!ref.watch(zaehlerDarfProvider) && tab == kZaehlerTab) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !ref.read(zaehlerDarfProvider) && ref.read(shellTabProvider) == kZaehlerTab) ref.read(shellTabProvider.notifier).waehlen(0);
+      });
+    }
     return LayoutBuilder(builder: (context, c) {
       _desktopLayout = c.maxWidth >= kDesktopBreakpoint;
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
@@ -235,6 +249,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (tab == kWetterTab) _wetterBesucht = true;
         if (tab == kMuellTab) _muellBesucht = true;
         if (tab == kMedikamenteTab) _medikamenteBesucht = true;
+        if (tab == kZaehlerTab && ref.read(zaehlerDarfProvider)) _zaehlerBesucht = true;
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
@@ -328,6 +343,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(shellTabProvider.notifier).waehlen(kMedikamenteTab);
     } else {
       unawaited(Navigator.of(context).push<void>(medikamenteRoute()));
+    }
+  }
+
+  /// Öffnet die Zähler-Übersicht: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite. Nur für Eltern und Admins (für alle anderen passiert nichts).
+  void _zaehlerOeffnen() {
+    if (!mounted || !ref.read(zaehlerDarfProvider)) return;
+    if (_desktopLayout) {
+      ref.read(shellTabProvider.notifier).waehlen(kZaehlerTab);
+    } else {
+      unawaited(Navigator.of(context).push<void>(zaehlerRoute()));
     }
   }
 

@@ -62,7 +62,14 @@ class ZaehlerDaten {
   /// Die Inhalte aller lesbaren Zähler (ID -> Inhalt).
   Map<String, ZaehlerInhalt> get inhalte => {for (final e in eintraege) if (e.inhalt != null) e.id: e.inhalt!};
 
-  ZaehlerKachel? kachel(String schluessel) => kacheln.where((k) => k.schluessel == schluessel).firstOrNull;
+  /// Die Kachel mit diesem Schlüssel; ein einzelner (auch archivierter) Zähler `z:<ID>` ergibt eine eigene Kachel.
+  ZaehlerKachel? kachel(String schluessel) {
+    final k = kacheln.where((k) => k.schluessel == schluessel).firstOrNull;
+    if (k != null || !schluessel.startsWith('z:')) return k;
+    final r = reihe(schluessel.substring(2));
+    if (r == null) return null;
+    return kachelVon(r.id) ?? ZaehlerKachel(schluessel: 'z:${r.id}', titel: r.name, art: r.art, reihen: [r]);
+  }
 
   /// Die Kachel, die diese Reihe enthält.
   ZaehlerKachel? kachelVon(String reiheId) => kacheln.where((k) => k.reihen.any((r) => r.id == reiheId)).firstOrNull;

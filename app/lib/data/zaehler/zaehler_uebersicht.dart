@@ -178,3 +178,62 @@ String datumTextDeutsch(String ymd) {
 }
 
 String tagIso(DateTime t) => tagText(t);
+
+// ---------------------------------------------------------------- Solar
+
+/// Auswertung einer Erzeugungsreihe (Solar): Vorteil in der laufenden Abrechnungsperiode bis heute und Amortisation der Anlage.
+class SolarAuswertung {
+  final Zeitraum periode;
+  final SolarErgebnis ergebnis;
+  final Amortisation? amortisation;
+  const SolarAuswertung(this.periode, this.ergebnis, this.amortisation);
+}
+
+/// Der Strompreis der Ersparnis steht im Preisverlauf des Erzeugungszählers selbst (Arbeitspreis); Eigenverbrauchsanteil, Einspeisevergütung und Anschaffungspreis ebenfalls dort.
+SolarAuswertung solarAuswertung(ZaehlerReihe r, DateTime heute) {
+  final p = abrechnungsperiode(heute, periodeMonat: r.inhalt.periodeMonat, periodeTag: r.inhalt.periodeTag);
+  final bis = heute.isBefore(p.ende) ? (heute.isBefore(p.start) ? p.start : heute) : p.ende;
+  final jahr = solarVorteil(r.inhalt, r.kurve, Zeitraum(p.start, bis), r.inhalt.preise);
+  Amortisation? am;
+  final kosten = r.inhalt.anlagenkosten;
+  final erster = r.kurve.ersterTag;
+  if (kosten != null && kosten > 0 && erster != null) {
+    final seit = tagVonNummer(erster);
+    final tage = tagNummer(heute) - erster;
+    final gesamt = solarVorteil(r.inhalt, r.kurve, Zeitraum(seit, heute), r.inhalt.preise).vorteilCent;
+    final jahrVorteil = tage >= 365
+        ? solarVorteil(r.inhalt, r.kurve, Zeitraum(heute.subtract(const Duration(days: 365)), heute), r.inhalt.preise).vorteilCent
+        : (tage >= 30 ? rundenDiv(gesamt * 365, tage) : 0);
+    am = amortisation(anlagenkostenCent: kosten, bisherCent: gesamt, proJahrCent: jahrVorteil);
+  }
+  return SolarAuswertung(p, jahr, am);
+}
+
+// ---------------------------------------------------------------- Vorschau eines neuen Standes
+
+/// Was die Person beim Eintragen sofort sieht: letzter Stand davor, Verbrauch seitdem, Verbrauch je Tag und der Vorjahreswert je Tag (nur wenn bekannt).
+class StandVorschau {
+  final Stand? davor;
+  final int? verbrauchMilli;
+  final int? tage;
+  final int? proTagMilli;
+  final int? vorjahrProTagMilli;
+  const StandVorschau({this.davor, this.verbrauchMilli, this.tage, this.proTagMilli, this.vorjahrProTagMilli});
+}
+
+StandVorschau standVorschau(ZaehlerReihe r, DateTime datum, int milli) {
+  final d = DateTime.utc(datum.year, datum.month, datum.day);
+  final davor = r.staende.where((s) => s.tag.isBefore(d)).lastOrNull;
+  if (davor == null) return const StandVorschau();
+  final tage = tagNummer(d) - tagNummer(davor.tag);
+  if (milli < davor.milli) return StandVorschau(davor: davor, tage: tage);
+  final v = milli - davor.milli;
+  final pro = tage > 0 ? rundenDiv(v, tage) : null;
+  int? vj;
+  if (tage > 0) {
+    final z = vorjahrVon(Zeitraum(davor.tag, d));
+    final w = r.kurve.verbrauch(z.start, z.ende);
+    if (w.vollstaendig) vj = rundenDiv(w.milli, tage);
+  }
+  return StandVorschau(davor: davor, verbrauchMilli: v, tage: tage, proTagMilli: pro, vorjahrProTagMilli: vj);
+}
