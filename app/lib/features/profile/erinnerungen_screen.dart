@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/erinnerungen/erinnerung_dienst.dart';
 import '../../data/erinnerungen/erinnerung_einstellungen.dart';
+import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/calendar_state.dart' show erinnerungText;
@@ -185,6 +186,23 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
               onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).medikamenteAnSetzen(v)),
             ),
           ),
+          // Zähler: nur für Eltern und Admins (Kinder sehen den Eintrag nie)
+          if (ref.watch(zaehlerDarfProvider)) ...[
+            const SizedBox(height: 8),
+            LxCard(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: SwitchListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                title: const Text('Zähler-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text(
+                  'Erinnert am Ablesetag um 9 Uhr. Der Text ist immer neutral, nie eine Zählerart oder ein Stand; nichts geht über den Server',
+                  style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                ),
+                value: einst.zaehlerAn,
+                onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).zaehlerAnSetzen(v)),
+              ),
+            ),
+          ],
           const SizedBox(height: 8),
           LxCard(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),

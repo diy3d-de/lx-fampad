@@ -2,6 +2,7 @@
 //  - an: Erinnerungen auf diesem Gerät planen (Standard: an; die Berechtigung für Benachrichtigungen wird erst in den Einstellungen
 //    angefragt, nicht beim ersten Start).
 //  - aufgabenAn: auch Erinnerungen für Aufgaben planen (Standard: an; gilt zusätzlich zu "an").
+//  - zaehlerAn: Ablese-Erinnerungen der Zähler planen (nur Eltern und Admins; Standard: an; eigener Schalter).
 //  - medikamenteAn: Einnahme-Erinnerungen des Medikamenten-Plans planen (Standard: an; eigener Schalter, unabhängig von "an", wie bei den Abfuhrterminen).
 //  - sperrbildschirmTitel: Titel und Ort dürfen auf dem Sperrbildschirm erscheinen (Standard: aus, dort steht dann nur ein neutraler Hinweis).
 //  - standardVorlauf: Vorlaufzeit, die der Editor für NEUE Termine vorbelegt (null = keine Erinnerung).
@@ -20,22 +21,24 @@ class ErinnerungEinstellungen {
   final bool sperrbildschirmTitel;
   final bool aufgabenAn;
   final bool medikamenteAn;
-  const ErinnerungEinstellungen({this.an = true, this.standardVorlauf, this.sperrbildschirmTitel = false, this.aufgabenAn = true, this.medikamenteAn = true});
+  final bool zaehlerAn;
+  const ErinnerungEinstellungen({this.an = true, this.standardVorlauf, this.sperrbildschirmTitel = false, this.aufgabenAn = true, this.medikamenteAn = true, this.zaehlerAn = true});
 
-  ErinnerungEinstellungen kopie({bool? an, Object? standardVorlauf = _keine, bool? sperrbildschirmTitel, bool? aufgabenAn, bool? medikamenteAn}) => ErinnerungEinstellungen(
+  ErinnerungEinstellungen kopie({bool? an, Object? standardVorlauf = _keine, bool? sperrbildschirmTitel, bool? aufgabenAn, bool? medikamenteAn, bool? zaehlerAn}) => ErinnerungEinstellungen(
     an: an ?? this.an,
     standardVorlauf: identical(standardVorlauf, _keine) ? this.standardVorlauf : standardVorlauf as int?,
     sperrbildschirmTitel: sperrbildschirmTitel ?? this.sperrbildschirmTitel,
     aufgabenAn: aufgabenAn ?? this.aufgabenAn,
     medikamenteAn: medikamenteAn ?? this.medikamenteAn,
+    zaehlerAn: zaehlerAn ?? this.zaehlerAn,
   );
 
   @override
   bool operator ==(Object other) =>
-      other is ErinnerungEinstellungen && other.an == an && other.standardVorlauf == standardVorlauf && other.sperrbildschirmTitel == sperrbildschirmTitel && other.aufgabenAn == aufgabenAn && other.medikamenteAn == medikamenteAn;
+      other is ErinnerungEinstellungen && other.an == an && other.standardVorlauf == standardVorlauf && other.sperrbildschirmTitel == sperrbildschirmTitel && other.aufgabenAn == aufgabenAn && other.medikamenteAn == medikamenteAn && other.zaehlerAn == zaehlerAn;
 
   @override
-  int get hashCode => Object.hash(an, standardVorlauf, sperrbildschirmTitel, aufgabenAn, medikamenteAn);
+  int get hashCode => Object.hash(an, standardVorlauf, sperrbildschirmTitel, aufgabenAn, medikamenteAn, zaehlerAn);
 }
 
 const Object _keine = Object();
@@ -51,6 +54,7 @@ const _kVorlauf = 'erinnerung_vorlauf';
 const _kSperre = 'erinnerung_sperrbildschirm';
 const _kAufgaben = 'erinnerung_aufgaben';
 const _kMedikamente = 'erinnerung_medikamente';
+const _kZaehler = 'erinnerung_zaehler';
 
 /// Schlüssel der Einstellung "Titel auf dem Sperrbildschirm zeigen" (gilt auch für die Chat-Benachrichtigungen).
 const kSperrbildschirmSchluessel = _kSperre;
@@ -73,9 +77,10 @@ class SicherErinnerungSpeicher implements ErinnerungSpeicher {
     final sp = await _s.read(key: _kSperre);
     final au = await _s.read(key: _kAufgaben);
     final me = await _s.read(key: _kMedikamente);
+    final za = await _s.read(key: _kZaehler);
     final k = await _s.read(key: kErinnerungKontoSchluessel);
     final sh = await _s.read(key: kStandortHinweisSchluessel);
-    return {_kAn: ?an, _kVorlauf: ?v, _kSperre: ?sp, _kAufgaben: ?au, _kMedikamente: ?me, kErinnerungKontoSchluessel: ?k, kStandortHinweisSchluessel: ?sh};
+    return {_kAn: ?an, _kVorlauf: ?v, _kSperre: ?sp, _kAufgaben: ?au, _kMedikamente: ?me, _kZaehler: ?za, kErinnerungKontoSchluessel: ?k, kStandortHinweisSchluessel: ?sh};
   }
 
   @override
@@ -119,6 +124,7 @@ class ErinnerungEinstellungenNotifier extends Notifier<ErinnerungEinstellungen> 
   bool _sperreGesetzt = false;
   bool _aufgabenGesetzt = false;
   bool _medikamenteGesetzt = false;
+  bool _zaehlerGesetzt = false;
 
   Future<void> _laden() async {
     var neu = const ErinnerungEinstellungen();
@@ -133,6 +139,7 @@ class ErinnerungEinstellungenNotifier extends Notifier<ErinnerungEinstellungen> 
         sperrbildschirmTitel: m[_kSperre] == 'ja',
         aufgabenAn: m[_kAufgaben] != 'nein',
         medikamenteAn: m[_kMedikamente] != 'nein',
+        zaehlerAn: m[_kZaehler] != 'nein',
       );
     } catch (_) {
       // Speicher nicht lesbar: Standardwerte
@@ -145,6 +152,7 @@ class ErinnerungEinstellungenNotifier extends Notifier<ErinnerungEinstellungen> 
       sperrbildschirmTitel: _sperreGesetzt ? jetzt.sperrbildschirmTitel : neu.sperrbildschirmTitel,
       aufgabenAn: _aufgabenGesetzt ? jetzt.aufgabenAn : neu.aufgabenAn,
       medikamenteAn: _medikamenteGesetzt ? jetzt.medikamenteAn : neu.medikamenteAn,
+      zaehlerAn: _zaehlerGesetzt ? jetzt.zaehlerAn : neu.zaehlerAn,
     );
   }
 
@@ -164,6 +172,12 @@ class ErinnerungEinstellungenNotifier extends Notifier<ErinnerungEinstellungen> 
     _medikamenteGesetzt = true;
     state = state.kopie(medikamenteAn: an);
     await _schreiben(_kMedikamente, an ? 'ja' : 'nein');
+  }
+
+  Future<void> zaehlerAnSetzen(bool an) async {
+    _zaehlerGesetzt = true;
+    state = state.kopie(zaehlerAn: an);
+    await _schreiben(_kZaehler, an ? 'ja' : 'nein');
   }
 
   Future<void> vorlaufSetzen(int? minuten) async {

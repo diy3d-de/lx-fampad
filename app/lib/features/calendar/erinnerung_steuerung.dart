@@ -17,6 +17,8 @@ import '../../data/standort/standort_hinweis.dart' show standortOeffnenProvider;
 import '../../data/medikamente/medikament_hinweis.dart' show medikamentOeffnenProvider;
 import '../../data/medikamente/medikament_state.dart' show medDatenProvider;
 import '../../data/muell/muell_hinweis.dart' show muellOeffnenProvider;
+import '../../data/zaehler/zaehler_hinweis.dart' show zaehlerOeffnenProvider;
+import '../../data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
 import '../../data/muell/muell_state.dart' show muellProvider;
 import '../shell/shell_tab.dart';
 import '../tasks/tasks_state.dart' show aufgabeOeffnenProvider;
@@ -42,6 +44,7 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   dienst.beiSicherheitGeoeffnet = () => ref.read(sicherheitOeffnenProvider.notifier).anfordern();
   dienst.beiBetriebGeoeffnet = () => ref.read(betriebOeffnenProvider.notifier).anfordern();
   dienst.beiMedikamentGeoeffnet = () => ref.read(medikamentOeffnenProvider.notifier).anfordern();
+  dienst.beiZaehlerGeoeffnet = () => ref.read(zaehlerOeffnenProvider.notifier).anfordern();
   dienst.beiMuellGeoeffnet = () => ref.read(muellOeffnenProvider.notifier).anfordern();
   void los() => unawaited(dienst.abgleichen());
   // Abfuhrtermine (Abend vor der Abholung, nur Eltern/Admins): neue Daten oder Einstellungen -> Fenster neu berechnen
@@ -52,6 +55,10 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   ref.listen(medDatenProvider, (alt, neu) {
     // nur wenn sich etwas für die Erinnerungen ändern kann: Pläne vorhanden (oder eben weggefallen) oder die Daten sind erst jetzt geladen; ohne Pläne löst nichts einen Abgleich aus
     if (neu.geladen != (alt?.geladen ?? false) || neu.eintraege.isNotEmpty || (alt?.eintraege.isNotEmpty ?? false)) dienst.entprellt();
+  });
+  // Ablese-Erinnerungen der Zähler (nur Eltern und Admins; für alle anderen ändert sich nie etwas): neue Stände, Zähler oder eine fertige Entschlüsselung -> Fenster neu berechnen
+  ref.listen(zaehlerDatenProvider, (alt, neu) {
+    if (neu.geladen != (alt?.geladen ?? false) || neu.reihen.isNotEmpty || (alt?.reihen.isNotEmpty ?? false)) dienst.entprellt();
   });
   ref.listen(erinnerungEinstellungenProvider, (_, _) => los());
   // (die Rolle gehört dazu: ein Rollenwechsel ändert, wer Müll-Erinnerungen bekommt)
