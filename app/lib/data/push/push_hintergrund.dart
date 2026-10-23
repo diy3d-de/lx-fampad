@@ -3,11 +3,11 @@
 // Dann wird nur abgeglichen (und neue Ereignisse an [EreignisBenachrichtiger] gemeldet), nie runApp aufgerufen.
 //
 // Regeln:
-//  - Nie das Refresh-Token einlösen: Der Hintergrund-Client ist ein ApiClient mit refreshErlaubt: false. Ist das Access-Token abgelaufen
-//    oder wird es abgelehnt, endet der Lauf ohne Tokenzugriff und ohne die Sitzung zu verwerfen; der nächste Start der App gleicht ab.
-//    (Zwei Engines dürften sonst dasselbe Refresh-Token einlösen: der Server würde die ganze Familie widerrufen.)
-//    Einzige Ausnahme: der Standort-Abruf (`StandortAbruf`) erneuert ausdrücklich einmal über `ApiClient.zugangErneuern` (serialisiert, höchstens einmal je 30 s,
-//    nie in einer Schleife); scheitert das, bleibt nur der Diagnose-Code `anmeldung_abgelaufen` bzw. `keine_verbindung`.
+//  - Refresh: Der Hintergrund-Client ist ein ApiClient mit refreshErlaubt: false (nie von selbst erneuern, nie die Sitzung verwerfen) und hintergrundErneuern: true:
+//    Ist das Zugangstoken (15 min) abgelaufen oder wird es abgelehnt, erneuert er genau EINMAL je Lauf über den serialisierten Weg des ApiClient (derselbe wie der
+//    Standort-Abruf, `zugangErneuern`), nie in einer Schleife, 401 wird nie wiederholt außer dem einen Mal nach dem Erneuern. Zwei Engines (diese und die der App
+//    teilen sich nur die Token-Ablage) sichern sich über eine Sperre in der Ablage mit Ablaufzeit gegen doppeltes Einlösen ab (ApiClient._erneuernEinmal); hat die
+//    andere Seite erneuert, werden ihre Token übernommen. Scheitert es: Diagnose `offline` (Netz, Token unangetastet) bzw. `sitzung_verloren` (abgelehnt).
 //  - Serialisiert und gedrosselt ([WeckerLauf]): höchstens ein Lauf zugleich, mindestens 10 s zwischen zwei Läufen, Wecker dazwischen
 //    werden zu einem Lauf zusammengefasst. Das Plugin ruft den Dart-Code auf jeden Wecker; eine Flut (auch von fremden Apps, die die
 //    exportierte Empfänger-Komponente ansprechen) führt so zu höchstens einem Abgleich je 10 s.
@@ -50,7 +50,7 @@ ProviderContainer hintergrundContainer({List<Override> zusaetzlich = const []}) 
     opVorbereiterProvider.overrideWithValue(null),
     // lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
     ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
-    apiClientProvider.overrideWith((ref) => ApiClient(client: ref.watch(httpClientProvider), store: ref.watch(tokenStoreProvider), refreshErlaubt: false)),
+    apiClientProvider.overrideWith((ref) => ApiClient(client: ref.watch(httpClientProvider), store: ref.watch(tokenStoreProvider), refreshErlaubt: false, hintergrundErneuern: true)),
   ],
 );
 
@@ -89,7 +89,7 @@ Future<WeckerLauf?> pushHintergrundStarten({
           await weckerAbgleichen(
             store: c.read(syncStoreProvider),
             abgleich: () async {
-              await engine
+              final ergebnis = await engine
                   .abgleichen(abgebrochen: () => abgebrochen)
                   .timeout(
                     hoechstdauer,
@@ -98,6 +98,8 @@ Future<WeckerLauf?> pushHintergrundStarten({
                       return const SyncErgebnis(SyncAusgang.abgebrochen);
                     },
                   );
+              // ehrlicher Zustand statt stillem Abbruch (Profil > Benachrichtigungen > Diagnose): nur ein fester Code
+              await standortDiagnoseSchreiben(c.read(appDatabaseProvider), kDiagSync, syncDiagnoseCode(ergebnis.ausgang), DateTime.now());
             },
             ereignisse: ereignisse ?? c.read(ereignisBenachrichtigerProvider),
           );
