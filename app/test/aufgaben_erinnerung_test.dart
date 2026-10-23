@@ -40,6 +40,7 @@ Aufgabe aufgabe({
   DateTime? erledigt,
 }) => Aufgabe(
   id: id,
+  frist: false,
   titel: titel,
   beschreibung: '',
   faelligDate: faelligDate,

@@ -354,6 +354,12 @@ class Aufgaben extends Table {
   TextColumn get folgeId => text().nullable()();
   IntColumn get erinnerungMin => integer().nullable()();
 
+  /// Familien-Frist (Fristen-Tracker): Ablaufdatum in der Fälligkeit, Vorwarnzeit in `erinnerungMin`
+  BoolColumn get frist => boolean().withDefault(const Constant(false))();
+
+  /// Wiederholung der Frist alle N Monate (12 = jährlich), null = einmalig
+  IntColumn get fristMonate => integer().nullable()();
+
   /// parents | family (wie bei Listen)
   TextColumn get audience => text().withDefault(const Constant('family'))();
   TextColumn get ownerId => text().nullable()();
@@ -394,10 +400,11 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 11;
+  int get schemaVersion => 12;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
+  /// Version 12: `frist` und `frist_monate` an Aufgaben (Fristen-Tracker) mit Sync-Reset, damit vorhandene Werte ankommen.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -463,6 +470,12 @@ class AppDatabase extends _$AppDatabase {
           final spalten = await customSelect("PRAGMA table_info('list_items')").get();
           if (!spalten.any((r) => r.read<String>('name') == 'category')) await m.addColumn(listenEintraege, listenEintraege.category);
         }
+        if (from < 12 && from >= 7) {
+          // nur anlegen, wenn sie fehlt (erneuter Lauf nach einem abgebrochenen Update); Version < 7 legt die Tabelle schon mit den Spalten an
+          final spalten = await customSelect("PRAGMA table_info('aufgaben')").get();
+          if (!spalten.any((r) => r.read<String>('name') == 'frist')) await m.addColumn(aufgaben, aufgaben.frist);
+          if (!spalten.any((r) => r.read<String>('name') == 'frist_monate')) await m.addColumn(aufgaben, aufgaben.fristMonate);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -487,6 +500,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 11) {
         // Version 11 fügt dem Eintrag ein synchronisiertes Feld hinzu; ohne Reset kämen schon vorhandene Kategorien nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 12) {
+        // Version 12 fügt der Aufgabe synchronisierte Felder hinzu; ohne Reset kämen schon vorhandene Fristen nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

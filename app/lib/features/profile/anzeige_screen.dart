@@ -9,6 +9,7 @@ import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../home/startseite_anpassen_screen.dart';
+import '../wandtablet/wandtablet_einstellungen_screen.dart';
 import 'heute_widget_screen.dart';
 import 'profil_plattform.dart';
 import 'profile_screen.dart' show EinstellungsZeile;
@@ -33,6 +34,12 @@ class AnzeigeScreen extends ConsumerWidget {
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const StartseiteAnpassenScreen())),
         ),
         const WetterZeile(),
+        EinstellungsZeile(
+          icon: Icons.tv_outlined,
+          titel: 'Wandtablet-Modus',
+          untertitel: 'vollbild-anzeige für ein tablet an der wand, nur dieses gerät',
+          onTap: () => Navigator.of(context).push<void>(WandtabletEinstellungenScreen.route()),
+        ),
         if (!web) ...[
           const SizedBox(height: 4),
           const MonoLabel('// android'),

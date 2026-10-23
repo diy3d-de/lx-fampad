@@ -149,7 +149,10 @@ enum AufgabeFilter {
   offen('Offen'),
   alle('Alle'),
   meine('Meine'),
-  erledigt('Erledigt');
+  erledigt('Erledigt'),
+
+  /// Offene Fristen (Fristen-Tracker), nach Ablauf sortiert.
+  fristen('Fristen');
 
   final String label;
   const AufgabeFilter(this.label);
@@ -171,6 +174,7 @@ List<Aufgabe> filtereAufgaben(List<Aufgabe> alle, {required AufgabeFilter filter
           AufgabeFilter.offen => !istErledigt(a),
           AufgabeFilter.erledigt => istErledigt(a),
           AufgabeFilter.meine => ich != null && a.assigneeId == ich && !istErledigt(a),
+          AufgabeFilter.fristen => a.frist && !istErledigt(a),
         } &&
         (person == null || a.assigneeId == person))
       a,

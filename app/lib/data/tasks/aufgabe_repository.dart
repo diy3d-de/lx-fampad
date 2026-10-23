@@ -23,6 +23,7 @@ import '../sync/sync_entities.dart';
 import '../sync/sync_store.dart';
 import '../sync_state.dart';
 import 'aufgabe_logik.dart';
+import 'fristen_logik.dart';
 
 /// Eine Unteraufgabe im Formular. Neue haben eine vom Formular vergebene ID.
 class PunktEingabe {
@@ -49,6 +50,10 @@ class AufgabeEingabe {
   /// Minuten vor der Fälligkeit (null = keine Erinnerung); ohne Fälligkeit wird nichts gespeichert.
   final int? erinnerungMin;
   final List<PunktEingabe> punkte;
+
+  /// Fristen-Tracker: eine Frist hat ein Ablaufdatum ([faellig], ohne Uhrzeit), [fristMonate] (null = einmalig) und die Vorwarnzeit in [erinnerungMin].
+  final bool frist;
+  final int? fristMonate;
   const AufgabeEingabe({
     required this.titel,
     this.beschreibung = '',
@@ -60,6 +65,8 @@ class AufgabeEingabe {
     this.sicht = AufgabeSicht.family,
     this.erinnerungMin,
     this.punkte = const [],
+    this.frist = false,
+    this.fristMonate,
   });
 }
 
@@ -137,10 +144,13 @@ class AufgabeRepository {
       'tzid': tzid,
       'prioritaet': e.prioritaet.wert,
       'assigneeId': e.zustaendig,
-      // Wiederholung braucht eine Fälligkeit (sonst gäbe es keine nächste)
-      'wiederholung': f == null ? null : e.wiederholung.wire,
-      'wiederholungTag': f != null && e.wiederholung == AufgabeWdh.monatlich ? f.day : null,
+      // Wiederholung braucht eine Fälligkeit (sonst gäbe es keine nächste). Fristen wiederholen über `fristMonate` (ältere Apps ignorieren das und
+      // legen keine Folgeaufgabe an); der Wunschtag des Monats bleibt in `wiederholungTag`.
+      'wiederholung': f == null || e.frist ? null : e.wiederholung.wire,
+      'wiederholungTag': f != null && (e.frist ? e.fristMonate != null : e.wiederholung == AufgabeWdh.monatlich) ? f.day : null,
       'erinnerungMin': f == null ? null : e.erinnerungMin,
+      'frist': e.frist,
+      'fristMonate': f != null && e.frist ? e.fristMonate : null,
       'audience': e.sicht.wire,
     };
   }
@@ -215,6 +225,8 @@ class AufgabeRepository {
     'wiederholung' => wert == a.wiederholung,
     'wiederholungTag' => wert == a.wiederholungTag,
     'erinnerungMin' => wert == a.erinnerungMin,
+    'frist' => wert == a.frist,
+    'fristMonate' => wert == a.fristMonate,
     'audience' => wert == a.audience,
     _ => false,
   };
@@ -257,7 +269,8 @@ class AufgabeRepository {
     const keine = (aenderungen: <SyncAenderung>[], id: null as String?);
     final wdh = AufgabeWdh.von(a.wiederholung);
     final basis = faelligWand(a);
-    if (wdh == AufgabeWdh.keine || basis == null) return keine;
+    final fristWdh = a.frist && a.fristMonate != null;
+    if ((wdh == AufgabeWdh.keine && !fristWdh) || basis == null) return keine;
     if (a.faelligUtc != null && !zeitzonenBereit()) return keine; // ohne Zeitzonen-Daten keine falsche Uhrzeit
     final String id;
     if (a.folgeId != null) {
@@ -268,8 +281,10 @@ class AufgabeRepository {
       id = await _gibt(abgeleitet) ? _neueId() : abgeleitet;
     }
     final mitUhr = a.faelligUtc != null;
-    final wunschTag = wdh == AufgabeWdh.monatlich ? (a.wiederholungTag ?? basis.day) : null;
-    final naechste = naechsteFaelligkeit(basisWand: basis, wdh: wdh, mitUhrzeit: mitUhr, jetzt: jetzt, wunschTag: wunschTag);
+    final wunschTag = (wdh == AufgabeWdh.monatlich || fristWdh) ? (a.wiederholungTag ?? basis.day) : null;
+    final naechste = fristWdh
+        ? naechsteFristFaelligkeit(basis: DateTime.utc(basis.year, basis.month, basis.day), monate: a.fristMonate!, jetzt: jetzt, wunschTag: wunschTag)
+        : naechsteFaelligkeit(basisWand: basis, wdh: wdh, mitUhrzeit: mitUhr, jetzt: jetzt, wunschTag: wunschTag);
     if (naechste == null) return keine;
     final punkte = sortierePunkte(await (db.select(db.aufgabePunkte)..where((t) => t.aufgabeId.equals(a.id))).get());
     return (
@@ -288,6 +303,8 @@ class AufgabeRepository {
             'wiederholung': a.wiederholung,
             'wiederholungTag': wunschTag,
             'erinnerungMin': a.erinnerungMin,
+            'frist': a.frist,
+            'fristMonate': a.fristMonate,
             'audience': a.audience,
           },
           nurLokal: {'createdAt': zeitFuerServer(jetzt), 'ownerId': ich()},
@@ -320,6 +337,7 @@ class AufgabeRepository {
         f.assigneeId == a.assigneeId &&
         f.audience == a.audience &&
         f.wiederholung == a.wiederholung &&
+        f.fristMonate == a.fristMonate &&
         folge.every((p) => p.doneAt == null) &&
         (folge.map((p) => p.inhalt).toList()..sort()).join('\u0000') == vorlage.join('\u0000');
     if (unveraendert) await store.loeschen('aufgabe', f.id);
