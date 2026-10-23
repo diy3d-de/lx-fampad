@@ -16,7 +16,7 @@ import '../admin/admin_screen.dart';
 import '../auth/auth_widgets.dart';
 import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../betrieb/betrieb_screen.dart';
-import '../muell/muell_screen.dart';
+import '../muell/muell_einstellungen_screen.dart';
 import 'abmelden_pruefung.dart';
 import 'anzeige_screen.dart';
 import 'benachrichtigungen_screen.dart';
@@ -281,8 +281,8 @@ class _MuellZeile extends ConsumerWidget {
     return EinstellungsZeile(
       icon: Icons.delete_outline,
       titel: 'Müll',
-      untertitel: 'abfuhrtermine und erinnerung',
-      onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellScreen()))),
+      untertitel: 'erinnerung, kalender, abfuhrkalender',
+      onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellEinstellungenScreen()))),
     );
   }
 }

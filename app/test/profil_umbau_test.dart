@@ -14,7 +14,7 @@ import 'package:lx_fampad/features/profile/profile_screen.dart';
 import 'package:lx_fampad/features/profile/push_screen.dart';
 import 'package:lx_fampad/features/profile/sicherheit_screen.dart';
 import 'package:lx_fampad/features/profile/ueber_screen.dart';
-import 'package:lx_fampad/features/muell/muell_screen.dart';
+import 'package:lx_fampad/features/muell/muell_einstellungen_screen.dart';
 import 'package:lx_fampad/features/home/startseite_anpassen_screen.dart';
 
 import 'support/fake_erinnerung_port.dart';
@@ -116,11 +116,11 @@ void main() {
       pruefeLayout(tester, 'Hauptseite Betreiber');
     });
 
-    testWidgets('Müll-Zeile nur, wenn der Server die Abfuhrtermine anbietet; sie öffnet die Müll-Seite', (tester) async {
+    testWidgets('Müll-Zeile nur, wenn der Server die Abfuhrtermine anbietet; sie öffnet die Müll-Einstellungen', (tester) async {
       await start(tester, muell: true);
       expect(zeile('Müll'), findsOneWidget);
       await tippe(tester, zeile('Müll'));
-      expect(find.byType(MuellScreen), findsOneWidget);
+      expect(find.byType(MuellEinstellungenScreen), findsOneWidget);
     });
 
     testWidgets('Familienrolle bleibt wählbar, Untertitel der Zeilen nennen Push und Widget nur auf Android', (tester) async {
