@@ -28,6 +28,7 @@ const int kMaxNummerZeichen = 40;
 const int kMaxNotizZeichen = 300;
 const int kMaxStandNotizZeichen = 120;
 const int kMaxGruppeZeichen = 40;
+const int kMaxOrtZeichen = 40;
 const int kMaxPreise = 40;
 const int kMaxKlartextBytesZaehler = 8000;
 const int kMaxKlartextBytesStand = 600;
@@ -261,6 +262,12 @@ class ZaehlerInhalt {
   final int? anlagenkosten;
   final int? einspeiseVerguetung;
 
+  /// Wo der Zähler hängt (z. B. "Waschkeller"); nur zur Anzeige.
+  final String ort;
+
+  /// Warnschwelle: ab wie viel Prozent über dem Vorjahr der Verbrauch als ungewöhnlich hoch gilt (null: keine Warnung).
+  final int? warnProzent;
+
   ZaehlerInhalt({
     required this.art,
     required this.name,
@@ -279,6 +286,8 @@ class ZaehlerInhalt {
     this.eigenverbrauchBp,
     this.anlagenkosten,
     this.einspeiseVerguetung,
+    this.ort = '',
+    this.warnProzent,
   }) : einheit = einheit ?? art.einheit,
        kosten = kosten ?? art.kostenStandard,
        preise = List.unmodifiable(preise);
@@ -289,7 +298,7 @@ class ZaehlerInhalt {
   bool get gueltig {
     if (name.trim().isEmpty || name.length > kMaxNameZeichen) return false;
     if (einheit.trim().isEmpty || einheit.length > kMaxEinheitZeichen) return false;
-    if (nummer.length > kMaxNummerZeichen || notiz.length > kMaxNotizZeichen || gruppe.length > kMaxGruppeZeichen) return false;
+    if (nummer.length > kMaxNummerZeichen || ort.length > kMaxOrtZeichen || notiz.length > kMaxNotizZeichen || gruppe.length > kMaxGruppeZeichen) return false;
     if (periodeMonat < 1 || periodeMonat > 12 || periodeTag < 1 || periodeTag > 31) return false;
     if (preise.length > kMaxPreise || preise.any((p) => !p.gueltig)) return false;
     for (var i = 1; i < preise.length; i++) {
@@ -302,6 +311,7 @@ class ZaehlerInhalt {
     if (eigenverbrauchBp != null && (eigenverbrauchBp! < 0 || eigenverbrauchBp! > 10000)) return false;
     if (anlagenkosten != null && (anlagenkosten! < 0 || anlagenkosten! > 100 * kMaxGeldCent)) return false;
     if (einspeiseVerguetung != null && (einspeiseVerguetung! < 0 || einspeiseVerguetung! > kMaxPreisAp)) return false;
+    if (warnProzent != null && (warnProzent! < 1 || warnProzent! > 1000)) return false;
     return true;
   }
 
@@ -323,6 +333,8 @@ class ZaehlerInhalt {
     int? Function()? eigenverbrauchBp,
     int? Function()? anlagenkosten,
     int? Function()? einspeiseVerguetung,
+    String? ort,
+    int? Function()? warnProzent,
   }) => ZaehlerInhalt(
     art: art ?? this.art,
     name: name ?? this.name,
@@ -341,6 +353,8 @@ class ZaehlerInhalt {
     eigenverbrauchBp: eigenverbrauchBp != null ? eigenverbrauchBp() : this.eigenverbrauchBp,
     anlagenkosten: anlagenkosten != null ? anlagenkosten() : this.anlagenkosten,
     einspeiseVerguetung: einspeiseVerguetung != null ? einspeiseVerguetung() : this.einspeiseVerguetung,
+    ort: ort ?? this.ort,
+    warnProzent: warnProzent != null ? warnProzent() : this.warnProzent,
   );
 
   Map<String, dynamic> toJson() => {
@@ -362,6 +376,8 @@ class ZaehlerInhalt {
     if (eigenverbrauchBp != null) 'eigen': eigenverbrauchBp,
     if (anlagenkosten != null) 'anlage': anlagenkosten,
     if (einspeiseVerguetung != null) 'einsp': einspeiseVerguetung,
+    if (ort.isNotEmpty) 'ort': ort,
+    if (warnProzent != null) 'warn': warnProzent,
   };
 
   @override
@@ -414,6 +430,10 @@ ZaehlerInhalt? zaehlerLesen(String klar) {
     return _ganz(karte[k], 0, max) ?? -1;
   }
 
+  final ort = d.containsKey('ort') ? _text(d['ort'], kMaxOrtZeichen, leerErlaubt: true) : '';
+  if (ort == null) return null;
+  final warn = d.containsKey('warn') ? (_ganz(d['warn'], 1, 1000) ?? -1) : null;
+  if (warn == -1) return null;
   final abschlag = optGanz('abschlag', kMaxGeldCent);
   final eigen = optGanz('eigen', 10000);
   final anlage = optGanz('anlage', 100 * kMaxGeldCent);
@@ -445,6 +465,8 @@ ZaehlerInhalt? zaehlerLesen(String klar) {
     eigenverbrauchBp: eigen,
     anlagenkosten: anlage,
     einspeiseVerguetung: einsp,
+    ort: ort,
+    warnProzent: warn,
   );
   return z.gueltig ? z : null;
 }

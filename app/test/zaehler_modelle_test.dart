@@ -76,6 +76,16 @@ void main() {
       expect(zaehlerLesen(klar), z);
     });
 
+    test('Ort und Warnschwelle: Rundlauf, nur gültige Werte', () {
+      final z = _strom().kopie(ort: 'Waschkeller', warnProzent: () => 30);
+      expect(zaehlerLesen(zaehlerKodieren(z)), z);
+      expect(zaehlerLesen(zaehlerKodieren(z))!.ort, 'Waschkeller');
+      expect(zaehlerLesen(zaehlerKodieren(z))!.warnProzent, 30);
+      expect(zaehlerKodieren(_strom()), isNot(contains('"ort"'))); // ohne Wert kein Feld (ältere Apps lesen weiter)
+      expect(() => zaehlerKodieren(_strom().kopie(warnProzent: () => 0)), throwsArgumentError);
+      expect(() => zaehlerKodieren(_strom().kopie(ort: 'x' * 41)), throwsArgumentError);
+    });
+
     test('Standardwerte der Art: Strom rechnet Kosten, Wasser nicht', () {
       expect(ZaehlerInhalt(art: ZaehlerArt.strom, name: 'a').kosten, isTrue);
       expect(ZaehlerInhalt(art: ZaehlerArt.kaltwasser, name: 'a').kosten, isFalse);
