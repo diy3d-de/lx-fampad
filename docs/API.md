@@ -450,7 +450,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
 | `list` | lesen, anlegen, ändern, löschen, Freigabe ändern | Stufe `family` lesen; anlegen nur mit Stufe `family`; **eigene** Listen umbenennen (`name`, `kind`) und löschen |
-| | `kind` | `shopping`, `packing`, `custom` (Standard) | rw |
+| | `kind` | `shopping`, `packing`, `custom` (Standard), `template` (Vorlage für Einkaufslisten; ältere Apps zeigen sie als eigene Liste) | rw |
 | | `audience` | `parents`, `family` (Standard), `all` | rw |
 | | `ownerId` | UUID oder `null` | server (die anlegende Person) |
 | | `createdAt` | ISO-8601 (UTC) | server |
@@ -458,6 +458,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `text` | Text 1 bis 500 Zeichen (Pflicht) | rw |
 | | `assigneeId` | UUID eines aktiven Mitglieds oder `null` | rw |
 | | `doneAt` | ISO-8601 mit Zeitzone (2000 bis 2200) oder `null` (offen) | rw |
+| | `category` | Kategorie nach Supermarkt-Gang: `obst_gemuese`, `brot_backwaren`, `milch_kuehlregal`, `fleisch_fisch`, `tiefkuehl`, `vorrat_konserven`, `getraenke`, `haushalt_drogerie`, `sonstiges` oder `null` (= Sonstiges; optional, ältere Apps ignorieren das Feld) | rw |
 | | `position` | Zahl, ±10^12 (Standard 0) | rw |
 | | `createdAt` | ISO-8601 (UTC) | server |
 

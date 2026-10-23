@@ -103,7 +103,9 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     }
   }
 
-  void _hinweis(String text) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  void _hinweis(String text) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text)));
 
   Future<void> _eintragBearbeiten(Listeneintrag e, Liste liste) async {
     final mitKategorie = ListenArt.von(liste.kind).mitKategorien;
