@@ -35,6 +35,8 @@ interface Share {
   /** Gerät des Senders (nur dieses darf Positionen senden); ohne Gerätekennung die Sitzung bzw. die Person. */
   ownerKey: string;
   ownerSessionId: string | undefined;
+  /** Beginn (Serveruhr): Gesamtlaufzeit zählt ab hier, auch nach Verlängern. */
+  startedAt: number;
   endsAt: number;
   recipients: Map<string, string>;
   /** Letztes Paket nur im Arbeitsspeicher, damit ein später verbundener Empfänger nicht leer ausgeht. */
@@ -52,6 +54,8 @@ export interface LocationDeps {
   directory: MemberDirectory;
   now?: () => number;
   maxDurationMs: number;
+  /** Obergrenze der Gesamtlaufzeit je Freigabe (Start bis spätestes Ende); Standard 24 h. */
+  maxTotalMs?: number;
   maxSharesPerFamily: number;
   minIntervalMs: number;
   maxPerMinute: number;
@@ -132,11 +136,15 @@ export class LocationService {
     return value;
   }
 
+  private get maxTotalMs(): number {
+    return this.deps.maxTotalMs ?? 24 * 60 * 60 * 1000;
+  }
+
   async start(p: Principal, socket: WebSocket, msg: { shareId?: unknown; endsAt?: unknown; recipients?: unknown }): Promise<LocationResult> {
     const now = this.now();
     if (typeof msg.shareId !== 'string' || !UUID.test(msg.shareId)) return { ok: false, code: 'bad_request' };
     const endsAt = this.checkEndsAt(msg.endsAt, now);
-    if (endsAt === null) return { ok: false, code: 'bad_duration' };
+    if (endsAt === null || endsAt - now > this.maxTotalMs) return { ok: false, code: 'bad_duration' };
     if (!Array.isArray(msg.recipients) || msg.recipients.length === 0 || msg.recipients.length > MAX_RECIPIENTS) return { ok: false, code: 'bad_recipients' };
     const wraps = new Map<string, string>();
     for (const r of msg.recipients as unknown[]) {
@@ -173,6 +181,7 @@ export class LocationService {
       ownerId: p.userId,
       ownerKey: ownerKeyOf(p),
       ownerSessionId: p.sessionId,
+      startedAt: now,
       endsAt,
       recipients: new Map(allowed.map((id) => [id, wraps.get(id) as string])),
       lastPacket: null,
@@ -277,6 +286,8 @@ export class LocationService {
     }
     const endsAt = this.checkEndsAt(msg.endsAt, this.now());
     if (endsAt === null) return { ok: false, code: 'bad_duration' };
+    // Gesamtlimit: Start zählt als Beginn; darüber hinaus gibt es kein Verlängern (die Freigabe läuft dann zu ihrem bisherigen Ende ab)
+    if (endsAt - s.startedAt > this.maxTotalMs) return { ok: false, code: 'total_limit' };
     s.endsAt = endsAt;
     sendTo(socket, { type: 'loc_active', shareId: s.id, endsAt });
     // auch die Empfänger erfahren das neue Ende (sonst ließen sie den Eintrag lokal zum alten Ende ablaufen)
