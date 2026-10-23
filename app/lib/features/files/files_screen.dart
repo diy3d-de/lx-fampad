@@ -4,7 +4,7 @@ import '../../constants.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 
-/// Dateien: Einstiege (Fotos & Alben, Tresor) und leere Liste "zuletzt". Phase 0: ohne Funktion.
+/// Dateien: Einstieg (Tresor) und leere Liste "zuletzt". Phase 0: ohne Funktion.
 class FilesScreen extends StatelessWidget {
   const FilesScreen({super.key});
 
@@ -14,8 +14,6 @@ class FilesScreen extends StatelessWidget {
         children: const [
           TabKopfzeile(title: 'Dateien'),
           SizedBox(height: 16),
-          _Einstieg(icon: Icons.photo_library_outlined, titel: 'Fotos & Alben', untertitel: 'folgt in Phase 2'),
-          SizedBox(height: 10),
           _Einstieg(icon: Icons.lock_outline, titel: 'Tresor', untertitel: 'nur Eltern · Passkey · Phase 2'),
           SizedBox(height: 20),
           MonoLabel('// zuletzt'),

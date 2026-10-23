@@ -71,11 +71,11 @@ Die Spalte „Phase“ legt die Reihenfolge fest (siehe Abschnitt 11).
 | **Dateien** | Ordner, Hoch-/Herunterladen (fortsetzbar), Vorschau, Teilen in der Familie, offline verfügbar machen, Speicherkontingent | 1 |
 | **Tresor** | Ordner für Ausweise, Verträge, Gesundheit; nur Eltern, erneute Passkey-/2FA-Bestätigung beim Öffnen | 2 |
 | **Pinnwand** | Beiträge mit Text/Fotos, Kommentare, Reaktionen – die „Wall“ der Familie | 2 |
-| **Fotos & Alben** | Alben, automatische Vorschaubilder, Videos, Freigabe je Album an Eltern oder Familie, GPS-Daten entfernen (optional) | 2 |
+| **Fotos & Alben** | Alben, automatische Vorschaubilder, Videos, Freigabe je Album an Eltern oder Familie, GPS-Daten entfernen (optional); bis zur Umsetzung steht kein Platzhalter im Menü | 2 |
 | **Essensplan & Rezepte** | Wochenplan, Rezeptsammlung, Zutaten mit einem Klick auf die Einkaufsliste | 2 |
 | **Kontakte** | Gemeinsames Adressbuch (Ärzte, Schule, Notfallnummern), Export als vCard | 2 |
 | **Standort & Karte** | Live-Standort teilen und Familienmitglieder auf einer Karte verfolgen; Dauer vorab wählbar (15 Min, 1 Std, 8 Std, „bis ich beende“), Teilen jederzeit beenden oder verlängern, Restzeit sichtbar (siehe Abschnitt 3a) | 2 |
-| **Orte** | Orte (Zuhause, Schule) mit Ankunfts-/Abfahrts-Hinweis, nur für Mitglieder, die ihren Standort gerade teilen | 3 |
+| **Orte** | Orte (Zuhause, Schule) mit Ankunfts-/Abfahrts-Hinweis, nur für Mitglieder, die ihren Standort gerade teilen; bis zur Umsetzung steht kein Platzhalter im Menü | 3 |
 | **Budget** | Ausgaben erfassen, Kategorien, Monatsübersicht, Taschengeld | 3 |
 | **Integration** | Kalender-Abo (ICS) lesend nach außen, Import aus Google/Outlook (ICS/CalDAV), Benachrichtigungen per E-Mail | 3 |
 | **Startseite** | Heute, nächste Termine, offene Aufgaben, neue Nachrichten, Sync-Status | 1 |
