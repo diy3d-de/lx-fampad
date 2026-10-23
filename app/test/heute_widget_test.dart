@@ -105,6 +105,7 @@ void main() {
         for (var i = 0; i < 30; i++)
           Aufgabe(
             id: 'a$i',
+            frist: false,
             titel: 'A$i',
             beschreibung: '',
             faelligDate: _tag(0),

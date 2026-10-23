@@ -27,6 +27,7 @@ Termin _termin(String id, String titel, {String ort = '', String beschreibung = 
 
 Aufgabe _aufgabe(String id, String titel, {String beschreibung = '', bool erledigt = false}) => Aufgabe(
   id: id,
+  frist: false,
   titel: titel,
   beschreibung: beschreibung,
   faelligDate: null,

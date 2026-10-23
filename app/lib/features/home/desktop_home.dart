@@ -29,6 +29,7 @@ import '../chat/chat_anzeige.dart';
 import '../lists/list_dialogs.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../tasks/aufgaben_anzeige.dart';
+import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
 import '../shell/shell_tab.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/startseite/startseite_state.dart';
@@ -345,6 +346,7 @@ Widget _kachel(String id) => switch (id) {
   'einkauf' => const _EinkaufKarte(),
   'dateien' => const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
   'aufgaben' => const _AufgabenKarte(),
+  'fristen' => const FristenStartKarte(),
   'familie' => const _FamilieKarte(),
   'standort' => const _StandortKarte(),
   'muell' => const _MuellKarte(),

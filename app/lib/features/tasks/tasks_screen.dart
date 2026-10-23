@@ -19,7 +19,10 @@ import '../../widgets/sync_hinweise.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'aufgabe_editor.dart';
+import '../../data/tasks/fristen_logik.dart';
 import 'aufgaben_anzeige.dart';
+import 'frist_editor.dart';
+import 'fristen_anzeige.dart';
 import 'tasks_state.dart';
 
 /// Aufgaben (To-dos): schnell anlegen, abhaken, filtern, sortieren; Tippen öffnet den Editor. Alles wirkt sofort auf die lokale
@@ -151,8 +154,10 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final mitgliederListe = daten.aufgaben.isEmpty ? const <UserDto>[] : (ref.watch(mitgliederProvider).value ?? const <UserDto>[]);
     final mitglieder = Mitglieder(mitgliederListe);
 
+    final fristenAnsicht = ansicht.filter == AufgabeFilter.fristen;
+    final gefiltert = filtereAufgaben(daten.aufgaben, filter: ansicht.filter, person: ansicht.person, ich: user?.id);
     final sichtbar = [
-      for (final a in sortiereAufgaben(filtereAufgaben(daten.aufgaben, filter: ansicht.filter, person: ansicht.person, ich: user?.id), ansicht.sortierung))
+      for (final a in fristenAnsicht ? offeneFristen(gefiltert) : sortiereAufgaben(gefiltert, ansicht.sortierung))
         if (!_weg.contains(a.id)) a, // gerade weggewischt: sofort weg, auch wenn die Datenbank noch nachzieht
     ];
     final offen = daten.aufgaben.where((a) => !istErledigt(a)).length;
@@ -165,7 +170,18 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       const TabKopfzeile(title: 'Aufgaben'),
       const SizedBox(height: 12),
       const SyncHinweise(),
-      if (rechte.darfAnlegen) ...[
+      if (rechte.darfAnlegen && fristenAnsicht) ...[
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(minimumSize: const Size(44, 48)),
+            onPressed: () => fristEditorOeffnen(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Neue Frist'),
+          ),
+        ),
+        const SizedBox(height: 12),
+      ] else if (rechte.darfAnlegen) ...[
         Row(
           children: [
             Expanded(
@@ -201,8 +217,9 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         children: [
           if (mitgliederListe.length > 1)
             _PersonFilter(person: mitglieder[ansicht.person], aktiv: ansicht.person != null, onTap: () => _personWaehlen(mitgliederListe, ansicht.person)),
-          for (final s in AufgabeSortierung.values)
-            AuswahlKnopf(text: 'Nach ${s.label}', gewaehlt: ansicht.sortierung == s, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).sortierung(s)),
+          if (!fristenAnsicht)
+            for (final s in AufgabeSortierung.values)
+              AuswahlKnopf(text: 'Nach ${s.label}', gewaehlt: ansicht.sortierung == s, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).sortierung(s)),
         ],
       ),
       const SizedBox(height: 8),
@@ -224,6 +241,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         const Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))
       else if (daten.aufgaben.isEmpty)
         const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
+      else if (sichtbar.isEmpty && fristenAnsicht)
+        const EmptyState(icon: Icons.event_available_outlined, title: 'Noch keine Fristen', hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.')
       else if (sichtbar.isEmpty)
         EmptyState(
           icon: Icons.filter_alt_off_outlined,
@@ -233,6 +252,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
             AufgabeFilter.offen => 'Es ist nichts mehr offen.',
             AufgabeFilter.erledigt => 'Erledigte Aufgaben erscheinen hier.',
             AufgabeFilter.alle => 'Für diese Person gibt es keine Aufgaben.',
+            AufgabeFilter.fristen => 'Es gibt keine offenen Fristen.',
           },
         ),
     ];
@@ -346,6 +366,8 @@ class _Zeile extends StatelessWidget {
     final a = aufgabe;
     final erledigt = istErledigt(a);
     final ueberfaellig = istUeberfaellig(a, jetzt);
+    final ampel = fristAmpel(a, jetzt);
+    final fristOffen = a.frist && !erledigt;
     final prio = AufgabePrio.von(a.prioritaet);
     final stand = punkteStand(punkte);
     final hatFaellig = a.faelligDate != null || a.faelligUtc != null;
@@ -368,7 +390,7 @@ class _Zeile extends StatelessWidget {
     final beschreibung = [
       a.titel,
       erledigt ? 'erledigt' : 'offen',
-      if (hatFaellig) (ueberfaellig ? 'überfällig, ${faelligText(a, jetzt)}' : 'fällig ${faelligText(a, jetzt)}'),
+      if (fristOffen) 'Frist, ${fristAmpelWort(ampel)}, ${fristKurzText(a, jetzt)}' else if (hatFaellig) (ueberfaellig ? 'überfällig, ${faelligText(a, jetzt)}' : 'fällig ${faelligText(a, jetzt)}'),
       if (prio != AufgabePrio.keine) 'Priorität ${prio.label.toLowerCase()}',
       if (person != null) 'zuständig ${person!.displayName}',
     ].join(', ');
@@ -377,7 +399,7 @@ class _Zeile extends StatelessWidget {
       constraints: const BoxConstraints(minHeight: 56),
       decoration: BoxDecoration(
         color: erledigt ? null : kSurface.withValues(alpha: 0.7),
-        border: Border.all(color: ueberfaellig ? kDanger.withValues(alpha: 0.6) : kBorder),
+        border: Border.all(color: ueberfaellig ? kDanger.withValues(alpha: 0.6) : (fristOffen && ampel == FristAmpel.bald ? kWarn.withValues(alpha: 0.6) : kBorder)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -426,13 +448,20 @@ class _Zeile extends StatelessWidget {
                           decorationColor: kTextMuted,
                         ),
                       ),
-                      if (hatFaellig || prio != AufgabePrio.keine || stand.gesamt > 0 || wdh != AufgabeWdh.keine) ...[
+                      if (hatFaellig || prio != AufgabePrio.keine || stand.gesamt > 0 || wdh != AufgabeWdh.keine || a.fristMonate != null) ...[
                         const SizedBox(height: 3),
                         Wrap(
                           spacing: 10,
                           runSpacing: 2,
                           children: [
-                            if (hatFaellig)
+                            if (fristOffen)
+                              meta(
+                                ampel == FristAmpel.ueberfaellig ? Icons.warning_amber_rounded : Icons.event_repeat_outlined,
+                                fristKurzText(a, jetzt),
+                                fristFarbe(ampel),
+                                semantik: 'Frist ${fristAmpelWort(ampel)}, ${fristKurzText(a, jetzt)}',
+                              )
+                            else if (hatFaellig)
                               meta(
                                 ueberfaellig ? Icons.warning_amber_rounded : Icons.event_outlined,
                                 ueberfaellig ? 'überfällig · ${faelligText(a, jetzt)}' : faelligText(a, jetzt),
@@ -442,6 +471,7 @@ class _Zeile extends StatelessWidget {
                             if (prio != AufgabePrio.keine) meta(Icons.flag_outlined, prio.label.toLowerCase(), prioFarbe(prio), semantik: 'Priorität ${prio.label}'),
                             if (stand.gesamt > 0) meta(Icons.checklist, '${stand.erledigt}/${stand.gesamt}', kTextMuted, semantik: '${stand.erledigt} von ${stand.gesamt} Unteraufgaben erledigt'),
                             if (wdh != AufgabeWdh.keine) meta(Icons.repeat, wdh.label.toLowerCase(), kTextMuted),
+                            if (a.frist && a.fristMonate != null) meta(Icons.repeat, fristWiederholungText(a.fristMonate).toLowerCase(), kTextMuted),
                           ],
                         ),
                       ],

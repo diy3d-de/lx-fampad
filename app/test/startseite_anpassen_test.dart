@@ -86,7 +86,7 @@ void main() {
       await ziehe(tester, von, nach);
       expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
       // Geburtstage (ohne Treffer), Müll und Wetter (nicht verfügbar) werden nicht gezeichnet und behalten ihren Platz in der Liste
-      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'aufgaben', 'einkauf', 'geburtstage', 'termine', 'muell', 'wetter', 'standort', 'countdown']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'aufgaben', 'einkauf', 'geburtstage', 'termine', 'muell', 'wetter', 'standort', 'countdown', 'fristen']);
       // der Desktop-Schlüssel bleibt unberührt
       expect(speicher.werte.containsKey(dKey), isFalse);
       // Neustart mit demselben Speicher
@@ -192,21 +192,21 @@ void main() {
       }
       expect(find.byKey(const ValueKey('an:muell')), findsNothing);
       expect(find.byKey(const ValueKey('an:wetter')), findsNothing);
-      expect(find.text('gerade nichts anzuzeigen'), findsOneWidget); // Geburtstage ohne Termine
+      expect(find.text('gerade nichts anzuzeigen'), findsNWidgets(2)); // Geburtstage ohne Termine, Fristen ohne dringende Frist
     });
 
     testWidgets('Pfeil runter und hoch ordnen um, speichern, die Pfeile an den Enden sind aus', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein');
       await oeffnen(tester, speicher: speicher);
       expect(tester.widget<IconButton>(find.byKey(const ValueKey('hoch:schnellzugriff'))).onPressed, isNull);
-      expect(tester.widget<IconButton>(find.byKey(const ValueKey('runter:standort'))).onPressed, isNull);
+      expect(tester.widget<IconButton>(find.byKey(const ValueKey('runter:fristen'))).onPressed, isNull);
       await tester.tap(find.byKey(const ValueKey('runter:schnellzugriff')));
       await warte(tester);
-      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen']);
       await tester.tap(find.byKey(const ValueKey('hoch:standort')));
       await warte(tester);
       // Müll und Wetter (nicht angeboten) bleiben auf ihren Plätzen, Standort und Aufgaben tauschen die ihren
-      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'standort', 'muell', 'wetter', 'aufgaben', 'countdown']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['einkauf', 'schnellzugriff', 'termine', 'geburtstage', 'standort', 'muell', 'wetter', 'aufgaben', 'countdown', 'fristen']);
     });
 
     testWidgets('Schalter blendet aus und wieder ein; Zurücksetzen stellt Standard her; Fertig schließt', (tester) async {
@@ -278,14 +278,14 @@ void main() {
       }
       await g.up();
       await warte(tester);
-      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'standort', 'einkauf', 'termine', 'geburtstage', 'muell', 'wetter', 'aufgaben', 'countdown']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'standort', 'einkauf', 'termine', 'geburtstage', 'muell', 'wetter', 'aufgaben', 'countdown', 'fristen']);
     });
 
     testWidgets('Semantics: Pfeile nennen Kachel, Position und Richtung', (tester) async {
       final handle = tester.ensureSemantics();
       await oeffnen(tester);
-      expect(find.bySemanticsLabel('Kachel Einkaufsliste, Position 2 von 6, nach oben verschieben'), findsOneWidget);
-      expect(find.bySemanticsLabel('Kachel Einkaufsliste, Position 2 von 6, nach unten verschieben'), findsOneWidget);
+      expect(find.bySemanticsLabel('Kachel Einkaufsliste, Position 2 von 7, nach oben verschieben'), findsOneWidget);
+      expect(find.bySemanticsLabel('Kachel Einkaufsliste, Position 2 von 7, nach unten verschieben'), findsOneWidget);
       expect(find.bySemanticsLabel('Kachel Standort anzeigen'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('Bin ich abgesichert\\? Bleibt fest oben')), findsOneWidget);
       handle.dispose();
@@ -317,7 +317,7 @@ void main() {
       final von = tester.getCenter(find.text('// ALS NÄCHSTES'));
       final nach = Offset(von.dx, tester.getTopLeft(find.text('// EINKAUFSLISTE')).dy - 6);
       await ziehe(tester, von, nach);
-      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'termine', 'einkauf', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown']);
+      expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'termine', 'einkauf', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen']);
       expect(tester.takeException(), isNull);
     });
   });
@@ -353,7 +353,7 @@ void main() {
       await warte(tester);
       expect(find.byType(StartseiteLuecke), findsNothing);
       // auch nicht angezeigte Kacheln (Müll, Wetter) behalten ihren Eintrag
-      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'einkauf', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown']);
+      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'einkauf', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen']);
       expect(speicher.werte.containsKey(mKey), isFalse);
       expect(oben(tester, '// aufgaben'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
       expect(tester.takeException(), isNull);
@@ -623,7 +623,7 @@ void main() {
       final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
       await g.up();
       await warte(tester);
-      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown']);
+      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen']);
     });
   });
 

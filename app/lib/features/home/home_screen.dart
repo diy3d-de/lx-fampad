@@ -22,6 +22,7 @@ import '../calendar/calendar_state.dart';
 import '../calendar/geburtstage_karte.dart';
 import '../calendar/countdown_karte.dart';
 import '../tasks/aufgaben_anzeige.dart';
+import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
 import '../shell/shell_tab.dart';
@@ -112,6 +113,7 @@ Widget _kachel(String id) => switch (id) {
   'geburtstage' => const GeburtstageKarte(),
   'countdown' => const CountdownKarte(),
   'aufgaben' => const _AufgabenKarte(),
+  'fristen' => const FristenStartKarte(),
   'muell' => const MuellStartKarte(),
   'wetter' => const WetterStartKarte(),
   'standort' => const StandortStartKarte(),
