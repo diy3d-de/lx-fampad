@@ -22,8 +22,8 @@ MedikamentInhalt _m(String name, {List<String> zeiten = const ['08:00'], Rhythmu
 );
 
 var _n = 0;
-MedEintrag _e(MedikamentInhalt m, {String subjekt = _ich, List<EinnahmeAnsicht> einnahmen = const []}) =>
-    MedEintrag(MedikamentAnsicht(id: 'med${++_n}', konversationId: 'k', subjektId: subjekt, inhalt: m, erstelltAt: DateTime.utc(2026, 10, 1)), einnahmen);
+MedEintrag _e(MedikamentInhalt m, {String subjekt = _ich, List<EinnahmeAnsicht> einnahmen = const [], DateTime? erstellt}) =>
+    MedEintrag(MedikamentAnsicht(id: 'med${++_n}', konversationId: 'k', subjektId: subjekt, inhalt: m, erstelltAt: erstellt ?? DateTime.utc(2026, 10, 1)), einnahmen);
 
 EinnahmeAnsicht _ein(String geplant, DateTime um, {EinnahmeStatus s = EinnahmeStatus.genommen}) =>
     EinnahmeAnsicht(id: 'e${++_n}', medikamentId: 'x', inhalt: EinnahmeInhalt(status: s, um: um, geplant: geplant), erstelltAt: um);
@@ -156,5 +156,42 @@ void main() {
     final k = _e(_m('Kind'), subjekt: _kind);
     final a = heuteAnsicht([k], _jetzt);
     expect(a.gruppen.single.slots.single.subjektId, _kind);
+  });
+
+  group('Neuer Plan: Slots vor dem Anlegen gibt es nicht', () {
+    test('Anlegen um 15:00 mit 08:00 und 20:00: nur 20:00 ist heute offen, nichts verpasst oder fällig', () {
+      final angelegt = DateTime.utc(2026, 10, 23, 13, 0); // 15:00 Berlin
+      final jetzt = DateTime.utc(2026, 10, 23, 13, 30);
+      final e = _e(_m('A', zeiten: ['08:00', '20:00'], bestand: 5), erstellt: angelegt);
+      final a = heuteAnsicht([e], jetzt);
+      expect(a.gesamt, 1);
+      expect(a.gruppen.single.slots.single.zeit, '20:00');
+      expect(a.faellig, 0, reason: 'kein Badge');
+      expect(heuteSlots([e], jetzt).any((s) => s.slot.status.name == 'verpasst'), isFalse);
+      expect(nichtErledigtHeute([e], jetzt), 1);
+      // Verlauf: heute nur offen (20:00), nie "verpasst"
+      expect(verlauf(e, jetzt).last.stand, VerlaufStand.offen);
+      // Vorrat: der Slot 08:00 verbraucht nichts (5 Stück: 20:00 heute + 4 Tage à 1 ... mit 2 pro Tag ab morgen)
+      final ohne = _e(_m('A', zeiten: ['08:00', '20:00'], bestand: 5), erstellt: DateTime.utc(2026, 10, 1));
+      expect(vorratWarnTage(e, jetzt), isNotNull);
+      expect(vorratWarnTage(e, jetzt)! >= vorratWarnTage(ohne, jetzt)!, isTrue);
+    });
+
+    test('Beginn über Mitternacht: angelegt 23:50, Slot 00:10 heute entfällt, 23:55 zählt', () {
+      final angelegt = DateTime.utc(2026, 10, 23, 21, 50); // 23:50 Berlin
+      final jetzt = DateTime.utc(2026, 10, 23, 21, 52);
+      final e = _e(_m('A', zeiten: ['00:10', '23:55']), erstellt: angelegt);
+      expect(heuteSlots([e], jetzt).map((s) => s.zeit), ['23:55']);
+      // am nächsten Tag zählt 00:10 wieder
+      final morgen = DateTime.utc(2026, 10, 23, 22, 30); // 00:30 Berlin am 24.
+      expect(heuteSlots([e], morgen).map((s) => s.zeit), ['00:10', '23:55']);
+    });
+
+    test('Sommerzeit-Ende (25.10.2026): angelegt in der zweiten 02:xx-Stunde, Slot 02:15 (erste Stunde) entfällt, 03:00 zählt', () {
+      final angelegt = DateTime.utc(2026, 10, 25, 1, 30); // 02:30 MEZ, nach der Umstellung
+      final jetzt = DateTime.utc(2026, 10, 25, 1, 40);
+      final e = _e(_m('A', zeiten: ['02:15', '03:00']), erstellt: angelegt);
+      expect(heuteSlots([e], jetzt).map((s) => s.zeit), ['03:00']);
+    });
   });
 }

@@ -60,7 +60,7 @@ List<GeplanteErinnerung> planeMedikamentErinnerungen({required MedDaten medDaten
     final subjekt = e.subjektId.toLowerCase();
     for (var i = 0; i < tage; i++) {
       final tag = DateTime.utc(heute.year, heute.month, heute.day + i);
-      for (final s in tagesplan(m, e.einnahmen, tag, jetztUtc, ort: berlin)) {
+      for (final s in tagesplan(m, e.einnahmen, tag, jetztUtc, ort: berlin, ab: e.med.erstelltAt)) {
         if (s.status == SlotStatus.genommen || s.status == SlotStatus.uebersprungen) continue;
         final k = '$subjekt|${s.slot.schluessel}';
         final alt = offen[k];

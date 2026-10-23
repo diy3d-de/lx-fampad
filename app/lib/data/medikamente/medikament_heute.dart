@@ -79,7 +79,7 @@ List<HeuteSlot> heuteSlots(Iterable<MedEintrag> eintraege, DateTime jetzt) {
   for (final e in eintraege) {
     final m = e.inhalt;
     if (m == null) continue;
-    for (final s in tagesplan(m, e.einnahmen, heute, jetzt)) {
+    for (final s in tagesplan(m, e.einnahmen, heute, jetzt, ab: e.med.erstelltAt)) {
       out.add(HeuteSlot(e, s));
     }
   }
@@ -144,7 +144,7 @@ int _tageBis(String tag, DateTime jetzt) {
 int? vorratWarnTage(MedEintrag e, DateTime jetzt) {
   final m = e.inhalt;
   if (m == null || m.zustand != MedikamentZustand.aktiv || m.bestand == null) return null;
-  final p = vorratPrognose(m, e.einnahmen, jetzt);
+  final p = vorratPrognose(m, e.einnahmen, jetzt, ab: e.med.erstelltAt);
   final t = p.tage;
   if (t == null || t > kVorratWarnTage) return null;
   return t;
@@ -198,7 +198,7 @@ List<VerlaufTag> verlauf(MedEintrag e, DateTime jetzt, {int tage = kVerlaufTage}
   final out = <VerlaufTag>[];
   for (var i = tage - 1; i >= 0; i--) {
     final tag = DateTime.utc(heute.year, heute.month, heute.day - i);
-    final plan = m == null ? const <TagesSlot>[] : tagesplan(m, e.einnahmen, tag, jetzt);
+    final plan = m == null ? const <TagesSlot>[] : tagesplan(m, e.einnahmen, tag, jetzt, ab: e.med.erstelltAt);
     final VerlaufStand s;
     if (plan.isEmpty) {
       s = VerlaufStand.keinPlan;

@@ -16,8 +16,8 @@ const _uuid = 'dddddddd-0000-4000-8000-00000000000d';
 var _n = 0;
 String _id() => 'dddddddd-0000-4000-8000-${(++_n).toString().padLeft(12, '0')}';
 
-MedEintrag _e(MedikamentInhalt m, {String subjekt = _ich, List<EinnahmeAnsicht> einnahmen = const [], String? id}) =>
-    MedEintrag(MedikamentAnsicht(id: id ?? _id(), konversationId: 'k', subjektId: subjekt, inhalt: m, erstelltAt: DateTime.utc(2026, 10, 1)), einnahmen);
+MedEintrag _e(MedikamentInhalt m, {String subjekt = _ich, List<EinnahmeAnsicht> einnahmen = const [], String? id, DateTime? erstellt}) =>
+    MedEintrag(MedikamentAnsicht(id: id ?? _id(), konversationId: 'k', subjektId: subjekt, inhalt: m, erstelltAt: erstellt ?? DateTime.utc(2026, 10, 1)), einnahmen);
 
 MedikamentInhalt _m(String name, {List<String> zeiten = const ['08:00'], Rhythmus rhythmus = const Rhythmus.taeglich(), MedikamentZustand z = MedikamentZustand.aktiv, String beginn = '2026-10-01'}) => MedikamentInhalt(
   name: name,
@@ -147,5 +147,31 @@ void main() {
     expect(istMedikamentPayload('medikament'), isFalse);
     expect(istMedikamentPayload('termin|$_uuid|2026-10-23'), isFalse);
     expect(istMedikamentPayload(null), isFalse);
+  });
+
+  test('Neuer Plan um 15:00 mit 08:00 und 20:00: keine Erinnerung und keine Nachfass-Erinnerung für den früheren Slot heute', () {
+    final angelegt = DateTime.utc(2026, 10, 23, 13, 0); // 15:00 Berlin
+    final e = _e(_m('A', zeiten: ['08:00', '20:00']), erstellt: angelegt);
+    final p = _plan(_daten([e]), DateTime.utc(2026, 10, 23, 13, 0, 10), tage: 2);
+    expect(p.map((x) => x.zeit), [
+      DateTime.utc(2026, 10, 23, 18, 0), // 20:00 heute
+      DateTime.utc(2026, 10, 23, 18, 15),
+      DateTime.utc(2026, 10, 24, 6, 0), // 08:00 morgen
+      DateTime.utc(2026, 10, 24, 6, 15),
+      DateTime.utc(2026, 10, 24, 18, 0),
+      DateTime.utc(2026, 10, 24, 18, 15),
+    ]);
+  });
+
+  test('Anlegen kurz vor dem Slot: der Slot nach dem Anlegen wird erinnert; Beginn über Mitternacht und Sommerzeit', () {
+    // 07:59 angelegt, 08:00-Slot liegt danach
+    final e = _e(_m('A'), erstellt: DateTime.utc(2026, 10, 23, 5, 59));
+    expect(_plan(_daten([e]), DateTime.utc(2026, 10, 23, 5, 59, 10), tage: 1).map((x) => x.zeit), [DateTime.utc(2026, 10, 23, 6, 0), DateTime.utc(2026, 10, 23, 6, 15)]);
+    // 23:50 angelegt, Slot 00:10 am selben Tag liegt davor, am nächsten Tag danach
+    final m = _e(_m('A', zeiten: ['00:10']), erstellt: DateTime.utc(2026, 10, 23, 21, 50));
+    expect(_plan(_daten([m]), DateTime.utc(2026, 10, 23, 21, 51), tage: 2).map((x) => x.zeit.day), [23, 23]); // 00:10 Berlin am 24. = 22:10 UTC am 23.
+    // Sommerzeit-Ende: Slot 02:15 (erste Stunde, 00:15 UTC) liegt vor dem Anlegen um 01:30 UTC
+    final s = _e(_m('A', zeiten: ['02:15', '03:00']), erstellt: DateTime.utc(2026, 10, 25, 1, 30));
+    expect(_plan(_daten([s]), DateTime.utc(2026, 10, 25, 1, 31), tage: 1).map((x) => x.zeit.hour), [2, 2]); // nur 03:00 MEZ = 02:00 UTC
   });
 }

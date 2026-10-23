@@ -95,7 +95,7 @@ class _MedikamentDetailScreenState extends ConsumerState<MedikamentDetailScreen>
     final ich = e.subjektId.toLowerCase() == daten.ich?.toLowerCase();
     final subjektKind = person?.role == Role.child;
     final name = person?.displayName.split(RegExp(r'\s+')).first ?? 'Person';
-    final prognose = m.bestand == null ? null : vorratPrognose(m, e.einnahmen, jetzt);
+    final prognose = m.bestand == null ? null : vorratPrognose(m, e.einnahmen, jetzt, ab: e.med.erstelltAt);
     final warn = vorratWarnTage(e, jetzt);
     final rezept = m.rezeptDatum == null ? null : tagLesen(m.rezeptDatum!);
     final v = verlauf(e, jetzt);

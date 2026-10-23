@@ -126,8 +126,10 @@ TagesSlot slotStand(Slot slot, Iterable<EinnahmeAnsicht> einnahmen, DateTime jet
 }
 
 /// Der Plan eines Tages mit dem Stand jedes Slots.
-List<TagesSlot> tagesplan(MedikamentInhalt m, Iterable<EinnahmeAnsicht> einnahmen, DateTime tag, DateTime jetzt, {Duration verpasstNach = kVerpasstNach, tz.Location? ort}) => [
-  for (final s in slotsAmTag(m, tag)) slotStand(s, einnahmen, jetzt, verpasstNach: verpasstNach, ort: ort),
+/// [ab]: Slots vor diesem Zeitpunkt (Anlegen des Plans) gibt es nicht: sie sind nie offen, fällig oder verpasst.
+List<TagesSlot> tagesplan(MedikamentInhalt m, Iterable<EinnahmeAnsicht> einnahmen, DateTime tag, DateTime jetzt, {Duration verpasstNach = kVerpasstNach, tz.Location? ort, DateTime? ab}) => [
+  for (final s in slotsAmTag(m, tag))
+    if (ab == null || !s.instant(ort).isBefore(ab.toUtc())) slotStand(s, einnahmen, jetzt, verpasstNach: verpasstNach, ort: ort),
 ];
 
 /// Der nächste noch offene Slot (nicht erfasst, nicht verpasst), von gestern an gesucht (ein Slot kurz vor Mitternacht gilt noch); null, wenn es keinen gibt (bei Bedarf, beendet, ...).
@@ -219,7 +221,7 @@ class VorratPrognose {
 
 /// "Reicht noch N Tage": der Plan wird Slot für Slot ab jetzt durchgerechnet (Rhythmus, Pause, Ende des Plans). Heutige Slots zählen, wenn sie noch offen sind (nicht erfasst, nicht
 /// verpasst); spätere Tage voll. So stimmt die Zahl auch bei Wochentagen und Intervallen, nicht nur im Durchschnitt.
-VorratPrognose vorratPrognose(MedikamentInhalt m, Iterable<EinnahmeAnsicht> einnahmen, DateTime jetzt, {Duration verpasstNach = kVerpasstNach, tz.Location? ort, int horizontTage = kVorratHorizontTage}) {
+VorratPrognose vorratPrognose(MedikamentInhalt m, Iterable<EinnahmeAnsicht> einnahmen, DateTime jetzt, {Duration verpasstNach = kVerpasstNach, tz.Location? ort, int horizontTage = kVorratHorizontTage, DateTime? ab}) {
   final bestand = bestandJetzt(m, einnahmen);
   if (bestand == null) return const VorratPrognose();
   var rest = bestand;
@@ -227,7 +229,7 @@ VorratPrognose vorratPrognose(MedikamentInhalt m, Iterable<EinnahmeAnsicht> einn
   var verbrauchtIrgendwas = false;
   for (var i = 0; i <= horizontTage; i++) {
     final tag = DateTime.utc(heute.year, heute.month, heute.day + i);
-    for (final s in tagesplan(m, einnahmen, tag, jetzt, verpasstNach: verpasstNach, ort: ort)) {
+    for (final s in tagesplan(m, einnahmen, tag, jetzt, verpasstNach: verpasstNach, ort: ort, ab: ab)) {
       if (i == 0 && s.status != SlotStatus.offen) continue; // heute: erfasste und verpasste Slots verbrauchen nichts mehr
       verbrauchtIrgendwas = true;
       if (rest + 1e-9 < m.menge) return VorratPrognose(bestand: bestand, tage: i, leerAm: tagText(tag));
