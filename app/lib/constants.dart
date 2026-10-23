@@ -36,6 +36,14 @@ const kMuellSperr = Color(0xFFA78BFA); // Sperrmüll (Violett)
 const kMuellBaum = Color(0xFF2DD4BF); // Weihnachtsbäume (Türkis)
 const kMuellSonst = Color(0xFF8B93A7); // alles Unbekannte ("Sonstiges")
 
+/// Zählerarten (Zähler-Kacheln, Verlauf): je Art eine feste Farbe, nie als Hex im Widget. Strom nutzt `kWarn`.
+const kZaehlerKalt = Color(0xFF38BDF8); // Kaltwasser (Blau)
+const kZaehlerWarm = Color(0xFFFB7185); // Warmwasser (Rosé)
+const kZaehlerGas = Color(0xFFFB923C); // Gas (Orange)
+const kZaehlerWaerme = Color(0xFFA78BFA); // Wärmemenge (Violett)
+const kZaehlerSolar = Color(0xFFA3E635); // Erzeugung/Solar (Gelbgrün)
+const kZaehlerEigen = Color(0xFF8B93A7); // eigener Zähler (Grau)
+
 /// Stärke des Hintergrund-Schimmers oben (wie lx-urlaubsplanung): Violett links, Cyan rechts.
 const kGlowNeuralAlpha = 0.30;
 const kGlowAccentAlpha = 0.09;
@@ -177,6 +185,7 @@ const kDesktopTabs = <NavTab>[
   NavTab('Wetter', Icons.wb_sunny_outlined, Icons.wb_sunny),
   NavTab('Müll', Icons.delete_outline, Icons.delete),
   NavTab('Medikamente', Icons.medication_outlined, Icons.medication),
+  NavTab('Zähler', Icons.speed_outlined, Icons.speed),
 ];
 
 /// Ab dieser Fensterbreite zeigt die App das Desktop-Layout (Seitenleiste, Karten-Raster); darunter bleibt es mobil.

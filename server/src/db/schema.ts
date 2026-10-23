@@ -43,7 +43,7 @@ export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom', 't
 export const listAudience = pgEnum('list_audience', ['parents', 'family']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
 /** Art einer Konversation: der Familienchat (genau einer je Familie), ein Direktchat (zwei Personen) oder eine Gruppe. */
-export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group', 'meds']);
+export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group', 'meds', 'zaehler']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -1310,7 +1310,8 @@ export const konversationen = pgTable(
       sql`(${t.art} = 'family' and cardinality(${t.teilnehmer}) = 0)
         or (${t.art} = 'direct' and cardinality(${t.teilnehmer}) = 2)
         or (${t.art} = 'group' and cardinality(${t.teilnehmer}) between 2 and 20)
-        or (${t.art}::text = 'meds' and cardinality(${t.teilnehmer}) between 1 and 20)`,
+        or (${t.art}::text = 'meds' and cardinality(${t.teilnehmer}) between 1 and 20)
+        or (${t.art}::text = 'zaehler' and cardinality(${t.teilnehmer}) between 1 and 20)`,
     ),
   ],
 );
@@ -1530,6 +1531,65 @@ export const einnahmen = pgTable(
       .on(t.familyId, t.bearbeiterId, t.createdAt)
       .where(sql`${t.bearbeiterId} is not null`),
     check('einnahmen_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 2048`),
+  ],
+);
+
+/**
+ * Zähler (Abschnitt 6l): ein Zähler des Haushalts (Strom, Wasser, Gas, ...), Kind der Zähler-Konversation (`konversationen.art = 'zaehler'`, eine je Familie, nur Eltern und
+ * Admins als Teilnehmer). `inhalt` ist eine Ende-zu-Ende verschlüsselte, signierte e1-Hülle (Art, Name, Einheit, Preise, Periode, ...): der Server sieht nur Struktur und Größe.
+ */
+export const zaehler = pgTable(
+  'zaehler',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('zaehler_family_id_uq').on(t.familyId, t.id),
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('zaehler_konversation_idx').on(t.familyId, t.konversationId),
+    index('zaehler_family_rev_idx').on(t.familyId, t.rev),
+    index('zaehler_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('zaehler_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('zaehler_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 16384`),
+  ],
+);
+
+/** Zählerstand (Abschnitt 6l): Kind eines Zählers, `inhalt` eine e1-Hülle (Datum, Stand, Notiz). Dauerhaft (keine automatische Löschung). */
+export const zaehlerstaende = pgTable(
+  'zaehlerstaende',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    zaehlerId: uuid('zaehler_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    foreignKey({ columns: [t.familyId, t.zaehlerId], foreignColumns: [zaehler.familyId, zaehler.id] }).onDelete('cascade'),
+    index('zaehlerstaende_zaehler_idx').on(t.familyId, t.zaehlerId),
+    index('zaehlerstaende_konversation_idx').on(t.familyId, t.konversationId),
+    index('zaehlerstaende_family_rev_idx').on(t.familyId, t.rev),
+    index('zaehlerstaende_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('zaehlerstaende_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('zaehlerstaende_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 2048`),
   ],
 );
 

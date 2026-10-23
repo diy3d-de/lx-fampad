@@ -22,6 +22,8 @@ import '../calendar/termin_repository.dart';
 import '../auth/reset_hinweis.dart' show kSicherheitPayload;
 import '../medikamente/medikament_erinnerung.dart' show istMedikamentPayload, planeMedikamentErinnerungen;
 import '../medikamente/medikament_state.dart' show medDatenProvider;
+import '../zaehler/zaehler_erinnerung.dart' show istZaehlerPayload, planeZaehlerErinnerungen;
+import '../zaehler/zaehler_state.dart' show darfRolleZaehler, zaehlerDatenProvider;
 import '../muell/muell_logik.dart' show istMuellPayload;
 import '../muell/muell_state.dart' show muellErinnerungen, muellProvider;
 import '../api/models.dart' show Role;
@@ -85,6 +87,9 @@ class ErinnerungDienst {
 
   /// Tipp auf eine Medikamenten-Erinnerung (Nutzlast `medikament|<ID>`, nie ein Inhalt): die Medikamenten-Ansicht öffnen.
   void Function()? beiMedikamentGeoeffnet;
+
+  /// Tipp auf eine Zähler-Erinnerung (Nutzlast `zaehler`, nie ein Inhalt): die Zähler-Übersicht öffnen (die Shell prüft die Rolle).
+  void Function()? beiZaehlerGeoeffnet;
 
   /// Tipp auf die Müll-Erinnerung bzw. den Hinweis auf ein neues Jahr (Nutzlast `muell|<Tag>` oder `muell`): die Müll-Seite öffnen.
   void Function()? beiMuellGeoeffnet;
@@ -185,7 +190,11 @@ class ErinnerungDienst {
     final md = einst.medikamenteAn ? _ref.read(medDatenProvider) : null;
     if (md != null && !md.geladen) return true;
     final medPlan = md == null ? const <GeplanteErinnerung>[] : planeMedikamentErinnerungen(medDaten: md, jetzt: _jetzt());
-    final zusatzPlan = [...muellPlan, ...medPlan];
+    // Ablese-Erinnerungen der Zähler (eigener Schalter, nur Eltern und Admins, neutral, nur lokal): erst, wenn die Daten gelesen sind
+    final zd = einst.zaehlerAn && darfRolleZaehler(auth.user?.role) ? _ref.read(zaehlerDatenProvider) : null;
+    if (zd != null && !zd.geladen) return true;
+    final zaehlerPlan = zd == null ? const <GeplanteErinnerung>[] : planeZaehlerErinnerungen(daten: zd, jetzt: _jetzt());
+    final zusatzPlan = [...muellPlan, ...medPlan, ...zaehlerPlan];
     if (nurMuell && zusatzPlan.isEmpty) return _loeschen();
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
     if (!nurMuell && !_datenDa(einst.aufgabenAn)) return true;
@@ -307,6 +316,10 @@ class ErinnerungDienst {
     }
     if (istMedikamentPayload(payload)) {
       beiMedikamentGeoeffnet?.call();
+      return;
+    }
+    if (istZaehlerPayload(payload)) {
+      beiZaehlerGeoeffnet?.call();
       return;
     }
     if (istMuellPayload(payload)) {

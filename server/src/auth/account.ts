@@ -6,6 +6,7 @@ import { AppError } from '../errors.js';
 import { serializeErr } from '../log.js';
 import { defaultRegistry } from '../sync/index.js';
 import { reconcileMedsTeilnehmer } from '../sync/meds.js';
+import { reconcileZaehlerTeilnehmer } from '../sync/zaehler.js';
 import { detachMemberRefs } from '../sync/refs.js';
 import { writeAudit } from './audit.js';
 import { saveChallenge, takeChallenge } from './challenges.js';
@@ -183,6 +184,8 @@ export async function changeRole(ctx: AuthContext, p: SessionPrincipal, targetId
     await tx.update(memberships).set({ role }).where(and(eq(memberships.familyId, p.familyId), eq(memberships.userId, targetId)));
     // Medikamenten-Plan: wer nach der neuen Rolle die Medikamente einer Person nicht mehr sehen darf (Kind wird Erwachsener, Elternteil wird Kind), fliegt aus der Teilnehmerliste
     syncRev = await reconcileMedsTeilnehmer(tx, defaultRegistry, { familyId: p.familyId, now: ctx.now() });
+    // Zähler: ein Elternteil, das Kind wird, fliegt sofort aus der Teilnehmerliste (nie ein Kind unter den Teilnehmern)
+    syncRev = (await reconcileZaehlerTeilnehmer(tx, defaultRegistry, { familyId: p.familyId, now: ctx.now() })) ?? syncRev;
     // Rollenwechsel (zum Beispiel Kind zu Elternteil): Hinterlegungen als Kind und als Elternteil werden ungültig
     await invalidateGuardianRole(tx, targetId, ctx.now());
     // die Sicht der Person auf die Daten ändert sich: ihre Geräte müssen den lokalen Stand verwerfen und neu synchronisieren

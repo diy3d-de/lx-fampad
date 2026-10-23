@@ -3,6 +3,7 @@ import { epocheEntity, epocheWrapEntity } from './entities/chat-epochen.js';
 import { konversationEntity, lesestandEntity, nachrichtEntity } from './entities/chat.js';
 import { pinEntity, reaktionEntity, stimmeEntity } from './entities/chat-zusatz.js';
 import { einnahmeEntity, medikamentEntity } from './entities/medikamente.js';
+import { zaehlerEntity, zaehlerstandEntity } from './entities/zaehler.js';
 import { listEntity, listItemEntity } from './entities/lists.js';
 import { terminAusnahmeEntity, terminEntity, terminTeilnehmerEntity } from './entities/termine.js';
 import { Registry } from './registry.js';
@@ -26,4 +27,6 @@ export const defaultRegistry = new Registry([
   pinEntity,
   medikamentEntity,
   einnahmeEntity,
+  zaehlerEntity,
+  zaehlerstandEntity,
 ]);

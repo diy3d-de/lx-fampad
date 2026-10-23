@@ -10,13 +10,15 @@ import '../calendar/geburtstage_karte.dart' show geburtstageAnstehendProvider;
 import '../tasks/fristen_anzeige.dart' show dringendeFristenProvider;
 import '../medikamente/medikament_anzeige.dart' show medikamenteVorhandenProvider;
 import '../medikamente/medikamente_karte.dart' show medKachelProvider;
+import '../zaehler/zaehler_anzeige.dart' show zaehlerVorhandenProvider;
+import '../zaehler/zaehler_karte.dart' show zaehlerKachelProvider;
 
-KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true, bool medikamente = false, bool medikamenteOffen = false}) => KachelVerfuegbarkeit(
+KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true, bool medikamente = false, bool medikamenteOffen = false, bool zaehler = false, bool zaehlerOffen = false}) => KachelVerfuegbarkeit(
   angeboten: {
     for (final id in l.standard)
-      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown) && !(id == 'medikamente' && !medikamente)) id,
+      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown) && !(id == 'medikamente' && !medikamente) && !(id == 'zaehler' && !zaehler)) id,
   },
-  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen', if (!medikamenteOffen) 'medikamente'},
+  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen', if (!medikamenteOffen) 'medikamente', if (!zaehlerOffen) 'zaehler'},
 );
 
 final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
@@ -29,6 +31,8 @@ final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     fristen: ref.watch(dringendeFristenProvider.select((l) => l.isNotEmpty)),
     medikamente: ref.watch(medikamenteVorhandenProvider),
     medikamenteOffen: ref.watch(medKachelProvider.select((k) => k.sichtbar)),
+    zaehler: ref.watch(zaehlerVorhandenProvider),
+    zaehlerOffen: ref.watch(zaehlerKachelProvider.select((k) => k.sichtbar)),
   ),
 );
 
@@ -41,6 +45,8 @@ final desktopVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     fristen: ref.watch(dringendeFristenProvider.select((l) => l.isNotEmpty)),
     medikamente: ref.watch(medikamenteVorhandenProvider),
     medikamenteOffen: ref.watch(medKachelProvider.select((k) => k.sichtbar)),
+    zaehler: ref.watch(zaehlerVorhandenProvider),
+    zaehlerOffen: ref.watch(zaehlerKachelProvider.select((k) => k.sichtbar)),
   ),
 );
 

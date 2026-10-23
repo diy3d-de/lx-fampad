@@ -106,11 +106,14 @@ class MehrHinweise {
 
   /// Fällige und verpasste Einnahmen heute aus den Plänen, die diese Person sehen darf (Medikamenten-Plan; liegt immer hinter "Mehr").
   final int medikamente;
-  const MehrHinweise({this.aufgaben = 0, this.aufgabenUeberfaellig = 0, this.fristen = 0, this.fristenUeberfaellig = 0, this.medikamente = 0});
 
-  /// Summe am Feld "Mehr": Fristen und Medikamente immer (sie liegen immer hinter "Mehr"), Aufgaben nur, wenn der Aufgaben-Bereich hinter "Mehr" liegt
+  /// Zähler, die jetzt abgelesen werden sollen (nur Eltern und Admins; für alle anderen 0; liegt immer hinter "Mehr").
+  final int zaehler;
+  const MehrHinweise({this.aufgaben = 0, this.aufgabenUeberfaellig = 0, this.fristen = 0, this.fristenUeberfaellig = 0, this.medikamente = 0, this.zaehler = 0});
+
+  /// Summe am Feld "Mehr": Fristen, Medikamente und Zähler immer (sie liegen immer hinter "Mehr"), Aufgaben nur, wenn der Aufgaben-Bereich hinter "Mehr" liegt
   /// (steht er in der Leiste, sieht man ihn dort ohnehin).
-  int summe(List<int> leiste) => fristen + medikamente + (leiste.contains(5) ? 0 : aufgaben);
+  int summe(List<int> leiste) => fristen + medikamente + zaehler + (leiste.contains(5) ? 0 : aufgaben);
 
   /// Ist darunter etwas Überfälliges (rotes Zeichen statt gelbem)?
   bool ueberfaellig(List<int> leiste) => fristenUeberfaellig > 0 || (!leiste.contains(5) && aufgabenUeberfaellig > 0);
