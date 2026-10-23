@@ -125,7 +125,7 @@ void main() {
 
     testWidgets('Familienrolle bleibt wählbar, Untertitel der Zeilen nennen Push und Widget nur auf Android', (tester) async {
       await start(tester);
-      expect(zeile('Familienrolle'), findsOneWidget);
+      expect(find.text('Familienrolle ändern (nur Anzeige)'), findsOneWidget);
       expect(find.text('erinnerungen und push'), findsOneWidget);
       expect(find.text('kacheln, wetter, widget'), findsOneWidget);
     });

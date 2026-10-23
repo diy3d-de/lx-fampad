@@ -20,6 +20,7 @@ import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/geburtstage_karte.dart';
+import '../calendar/countdown_karte.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
@@ -108,6 +109,7 @@ Widget _kachel(String id) => switch (id) {
   'einkauf' => const _EinkaufKarte(),
   'termine' => const _NaechsteKarte(),
   'geburtstage' => const GeburtstageKarte(),
+  'countdown' => const CountdownKarte(),
   'aufgaben' => const _AufgabenKarte(),
   'muell' => const MuellStartKarte(),
   'wetter' => const WetterStartKarte(),
