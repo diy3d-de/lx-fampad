@@ -178,7 +178,7 @@ describe.each(backends)('Dateiablage: Upload und Auslieferung (%s)', (backend) =
       expect(last.headers['upload-blob-id']).toBe(id);
       expect(last.headers['upload-sha256']).toBe(sha256(bytes));
       // Blob-Zeile, Datei verschlüsselt, Staging weg
-      const [b] = await rows(sql`select * from datei_blob where id = ${id}`);
+      const [b] = await rows(sql`select *, size::int as size, disk_size::int as disk_size from datei_blob where id = ${id}`);
       expect(b).toMatchObject({ modus: 'server', kind: 'datei', state: 'ready', size: bytes.length, sha256: sha256(bytes), mime: 'application/pdf', kid: 1 });
       expect(Number(b?.disk_size)).toBe(encryptedSize(bytes.length));
       expect(b?.dek_wrap).toBeTruthy();
@@ -475,7 +475,7 @@ describe.each(backends)('Dateiablage: Upload und Auslieferung (%s)', (backend) =
       const bytes = Buffer.concat([png(), randomBytes(5000)]);
       const { id, last } = await upload(c, bytes, { modus: 'e2ee', mime: 'application/pdf', name: 'geheim.pdf' }, 2048);
       expect(last.headers['upload-sha256']).toBe(sha256(bytes));
-      const [b] = await rows(sql`select * from datei_blob where id = ${id}`);
+      const [b] = await rows(sql`select *, size::int as size, disk_size::int as disk_size from datei_blob where id = ${id}`);
       expect(b).toMatchObject({ modus: 'e2ee', kind: 'opak', mime: null, dek_wrap: null, kid: null, size: bytes.length, sha256: sha256(bytes) });
       expect(Number(b?.disk_size)).toBe(bytes.length);
       expect(readFileSync(blobFile(id)).equals(bytes)).toBe(true);

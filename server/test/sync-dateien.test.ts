@@ -265,7 +265,7 @@ describe.each(backends)('Dateien im Sync (%s)', (backend) => {
     it('Datei + Fassung in einem Stapel: Größe, Typ und Prüfsumme setzt der Server; der Blob gehört danach dem Datensatz', async () => {
       const bytes = pdfLike(3333);
       const { dateiId, versionId, blobId } = await neueDatei(fam.parent, bytes);
-      const [v] = await rows(sql`select size, mime, sha256, blob_id from datei_versionen where id = ${versionId}`);
+      const [v] = await rows(sql`select size::int as size, mime, sha256, blob_id from datei_versionen where id = ${versionId}`);
       expect(v).toMatchObject({ size: 3333, mime: 'application/pdf', blob_id: blobId });
       const b = await blobRow(blobId);
       expect(b).toMatchObject({ state: 'claimed', claim_entity: 'datei_version', claim_id: versionId, modus: 'server' });
@@ -439,7 +439,7 @@ describe.each(backends)('Dateien im Sync (%s)', (backend) => {
       const blobId = await hochE2ee(fam.parent, bytes);
       const id = randomUUID();
       expect(acked(await fam.parent.sync([anhang(id, blobId)]))).toBe(1);
-      expect((await rows(sql`select size, blob_id from tresor_anhaenge where id = ${id}`))[0]).toMatchObject({ size: 4321, blob_id: blobId });
+      expect((await rows(sql`select size::int as size, blob_id from tresor_anhaenge where id = ${id}`))[0]).toMatchObject({ size: 4321, blob_id: blobId });
       expect(await blobRow(blobId)).toMatchObject({ state: 'claimed', claim_entity: 'tresor_anhang', claim_id: id, modus: 'e2ee' });
       for (const d of [fam.parent, fam.admin]) {
         const r = await get(d, blobId);
