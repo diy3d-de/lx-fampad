@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/dateien/tresor_anhang_state.dart';
 import '../../data/tresor/tresor_daten.dart';
 import '../../data/tresor/tresor_logik.dart';
 import '../../data/tresor/tresor_modelle.dart';
@@ -365,13 +366,15 @@ class _KategorieZeile extends StatelessWidget {
   );
 }
 
-class _EintragZeile extends StatelessWidget {
+class _EintragZeile extends ConsumerWidget {
   final TresorAnsicht eintrag;
   final bool mitKategorie;
   const _EintragZeile(this.eintrag, {this.mitKategorie = false});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Zahl der angehängten Dokumente (nur wenn es Dokumente gibt: entsperrt, Dateiablage verfügbar)
+    final docs = ref.watch(tresorAnhaengeProvider.select((v) => v.value?.where((a) => a.eintragId == eintrag.id).length ?? 0));
     final i = eintrag.inhalt!;
     final n = i.felder.length;
     final unter = [if (mitKategorie) i.kategorieAnzeige, '$n ${n == 1 ? 'Feld' : 'Felder'}'].join(' · ');
@@ -380,7 +383,7 @@ class _EintragZeile extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 6),
       child: Semantics(
         button: true,
-        label: '${i.titel}, $unter',
+        label: '${i.titel}, $unter${docs > 0 ? ', $docs ${docs == 1 ? 'Dokument' : 'Dokumente'}' : ''}',
         excludeSemantics: true,
         onTap: oeffnen,
         child: InkWell(
@@ -403,6 +406,11 @@ class _EintragZeile extends StatelessWidget {
                     ],
                   ),
                 ),
+                if (docs > 0) ...[
+                  const Icon(Icons.attach_file, size: 16, color: kTextMuted),
+                  Text('$docs', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  const SizedBox(width: 4),
+                ],
                 const Icon(Icons.chevron_right, color: kTextMuted),
               ],
             ),
