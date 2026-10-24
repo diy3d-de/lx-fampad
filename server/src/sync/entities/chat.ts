@@ -20,15 +20,16 @@ import { konversationen, lesestand, nachrichten } from '../../db/schema.js';
 import { safeString } from '../../routes/util.js';
 import { ROLES, type Actor, type Facts, type RoleRule, type Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
-import { direktChatId, familienchatId, istUuidV4, lesestandId, medsChatId, zaehlerChatId } from './chat-ids.js';
+import { direktChatId, familienchatId, istUuidV4, lesestandId, medsChatId, tresorChatId, zaehlerChatId } from './chat-ids.js';
 import { iso, timestamp, uuid } from './common.js';
 import { aktiveRollen, istErwachsen, medsTeilnehmerGueltig } from './meds-regeln.js';
+import { tresorTeilnehmerGueltig } from './tresor-regeln.js';
 import { zaehlerTeilnehmerGueltig } from './zaehler-regeln.js';
 
 /** `meds`: verborgene Konversation für die Medikamente EINER Person (Abschnitt 6k): nie in der Chatliste, nie mit Nachrichten, nur Medikamente und Einnahmen darunter. */
-export const KONVERSATION_ARTEN = ['family', 'direct', 'group', 'meds', 'zaehler'] as const;
-/** Verborgene Konversationen (Medikamente, Zähler): nie in der Chatliste, nie mit Nachrichten. */
-export const VERBORGENE_ARTEN: readonly string[] = ['meds', 'zaehler'];
+export const KONVERSATION_ARTEN = ['family', 'direct', 'group', 'meds', 'zaehler', 'tresor'] as const;
+/** Verborgene Konversationen (Medikamente, Zähler, Tresor): nie in der Chatliste, nie mit Nachrichten. */
+export const VERBORGENE_ARTEN: readonly string[] = ['meds', 'zaehler', 'tresor'];
 /** Teilnehmer je Gruppe (einschließlich der anlegenden Person). */
 export const MAX_GRUPPE = 20;
 /** Obergrenze des undurchsichtigen Nachrichtentextes (Zeichen; die Hülle für spätere Verschlüsselung braucht Platz). */
@@ -87,6 +88,9 @@ export function konversationValid(row: Row): boolean {
     case 'zaehler':
       // Zähler des Haushalts (Abschnitt 6l): ohne Subjekt, ohne Namen; ob nur Erwachsene darin stehen, prüft `validate` gegen die Datenbank
       return (row.subjektId === undefined || row.subjektId === null) && t.length >= 1 && t.length <= MAX_GRUPPE && row.titel === '';
+    case 'tresor':
+      // Tresor der Eltern (Abschnitt 6m): ohne Subjekt, ohne Namen; ob nur Erwachsene darin stehen, prüft `validate` gegen die Datenbank
+      return (row.subjektId === undefined || row.subjektId === null) && t.length >= 1 && t.length <= MAX_GRUPPE && row.titel === '';
     default:
       return false;
   }
@@ -136,6 +140,8 @@ export const konversationEntity: EntityDef = {
         return typeof values.subjektId === 'string' && id === medsChatId(values.subjektId);
       case 'zaehler':
         return id === zaehlerChatId(familyId);
+      case 'tresor':
+        return id === tresorChatId(familyId);
       default:
         return istUuidV4(id);
     }
@@ -166,13 +172,18 @@ export const konversationEntity: EntityDef = {
       if (!istErwachsen(env.actor.role)) return false;
       return zaehlerTeilnehmerGueltig(teilnehmer, await aktiveRollen(env.tx, env.familyId, teilnehmer));
     }
+    if (row.art === 'tresor') {
+      // Tresor: wie die Zähler, Teilnehmer UND Schreibende nur Erwachsene (Rollen aus der Datenbank bzw. der Sitzung); ein Kind ist nie Teilnehmer
+      if (!istErwachsen(env.actor.role)) return false;
+      return tresorTeilnehmerGueltig(teilnehmer, await aktiveRollen(env.tx, env.familyId, teilnehmer));
+    }
     if (row.art !== 'meds') return true;
     const rollen = await aktiveRollen(env.tx, env.familyId, [String(row.subjektId), ...teilnehmer]);
     return medsTeilnehmerGueltig(String(row.subjektId), teilnehmer, rollen);
   },
   guard: (action, before, after) => {
     // Medikamenten-Konversation: nie löschen (Kein Datenverlust; sie endet nur mit der Person), nur die Teilnehmer ändern sich
-    if (before.art === 'meds' || before.art === 'zaehler') return action === 'update' && !!after && before.titel === after.titel;
+    if (before.art === 'meds' || before.art === 'zaehler' || before.art === 'tresor') return action === 'update' && !!after && before.titel === after.titel;
     if (action === 'delete') return before.art === 'group';
     if (before.art === 'group') return true;
     // Familienchat und Direktchat: Name und Teilnehmer bleiben, wie sie sind
