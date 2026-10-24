@@ -9,6 +9,7 @@ import '../api/models.dart';
 import '../app_database.dart';
 import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
+import 'sync_dateien.dart';
 import 'sync_medikamente.dart';
 import 'sync_tresor.dart';
 import 'sync_zaehler.dart';
@@ -74,6 +75,9 @@ abstract class SyncEntity {
   /// Eine endgültig abgelehnte NEUE Zeile dieser Entität bleibt lokal und im Ausgang als Fehler stehen (mit Grund-Code), statt zu verschwinden: die Person
   /// entscheidet über "Erneut senden" oder "Verwerfen" (heute nur Chat-Nachrichten).
   bool get fehlerBleibtSichtbar => false;
+
+  /// Hinweistext (ohne Namen, ohne Schlusspunkt) bei `invalid_reference`: ein Verweis der Änderung gilt nicht (mehr). Standard: eine zugewiesene Person; die Dateiablage nennt hier einen Upload.
+  String get ungueltigerVerweis => 'Die zugewiesene Person gehört nicht mehr zur Familie';
 }
 
 DateTime? _zeit(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : null;
@@ -424,7 +428,7 @@ class KonversationEntitaet extends SyncEntity {
   String get name => 'konversation';
 
   @override
-  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId'), KindLink('zaehler', 'konversationId'), KindLink('zaehlerstand', 'konversationId'), KindLink('tresor_eintrag', 'konversationId')];
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId'), KindLink('zaehler', 'konversationId'), KindLink('zaehlerstand', 'konversationId'), KindLink('tresor_eintrag', 'konversationId'), KindLink('tresor_anhang', 'konversationId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -971,6 +975,10 @@ final Map<String, SyncEntity> syncEntities = {
     ZaehlerEntitaet(),
     ZaehlerstandEntitaet(),
     TresorEintragEntitaet(),
+    OrdnerEntitaet(),
+    DateiEntitaet(),
+    DateiVersionEntitaet(),
+    TresorAnhangEntitaet(),
   ])
     e.name: e,
 };
