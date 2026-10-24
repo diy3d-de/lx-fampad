@@ -460,7 +460,7 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   // laufende Übertragungen der Dateiablage enden, heruntergeladene Dateien (Offline-Kopien, Teil-Dateien) und angefangene Uploads bleiben nicht auf dem Gerät liegen; der Dienst entsteht danach neu
   try {
     await ref.read(transferDienstProvider).beenden();
-    await ref.read(dateiCacheDienstProvider).alleLoeschen();
+    await ref.read(dateiCacheDienstProvider).alleLoeschen().timeout(const Duration(seconds: 10));
   } catch (_) {}
   ref.invalidate(transferDienstProvider);
   await ref.read(appDatabaseProvider).alleDatenLoeschen();

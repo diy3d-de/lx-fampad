@@ -33,7 +33,9 @@ class VorschauCache {
       _bilder[blobId] = da;
       return Future.value(da);
     }
-    return _laufend[blobId] ??= _laden(blobId).whenComplete(() => _laufend.remove(blobId));
+    return _laufend[blobId] ??= _laden(blobId).whenComplete(() {
+      _laufend.remove(blobId); // (kein Rückgabewert: ein Future würde whenComplete selbst abwarten)
+    });
   }
 
   Future<Uint8List?> _laden(String blobId) async {
