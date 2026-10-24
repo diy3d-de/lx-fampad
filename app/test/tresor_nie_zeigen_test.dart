@@ -86,7 +86,7 @@ void main() {
 
   test('Wandtablet, Suche, Widget "Heute", Teilen, Standort, Betreiber-Ansicht, Push, Startseite und Erinnerungen sind nicht mit dem Tresor verbunden (kein Import, keine Typen)', () {
     final kopplung = RegExp(
-      r"import\s+'[^']*tresor|\bTresorDaten\b|\bTresorInhalt\b|\bTresorAnsicht\b|\bTresorFeld\b|\bTresorRepository\b|tresorDatenProvider|tresorRepositoryProvider|tresorSperreProvider|tresorDarfProvider|db\.tresorEintraege|tresor_eintrag",
+      r"import\s+'[^']*tresor|\bTresorDaten\b|\bTresorInhalt\b|\bTresorAnsicht\b|\bTresorFeld\b|\bTresorRepository\b|tresorDatenProvider|tresorRepositoryProvider|tresorSperreProvider|tresorDarfProvider|db\.tresorEintraege|tresor_eintrag|tresorAnhang|TresorAnhang|AnhangAnsicht|tresorDokumenteAktiv|db\.tresorAnhaenge",
     );
     final bereiche = [
       'lib/data/wandtablet', 'lib/features/wandtablet', 'lib/data/suche', 'lib/features/suche', 'lib/data/heute_widget', 'lib/data/teilen', 'lib/features/teilen',
@@ -120,6 +120,44 @@ void main() {
     // der Oberflächen-Teil nutzt weder Teilen noch Dateiausgabe
     final ui = [for (final f in _dartDateien('lib/features/tresor')) f.readAsStringSync()].join('\n');
     expect(RegExp(r'dart:io|file_picker|printing|ics_export|Share\.').hasMatch(ui), isFalse);
+  });
+
+  test('Anhänge im Tresor: nur der Tresor und die Datenschicht kennen sie (nie Dateien-Bereich, Suche, Wandtablet, Widget, Teilen, Push), nie eine Verbindung zum Vorschau-Zwischenspeicher', () {
+    final anhang = RegExp(r'tresor_anhang|tresorAnhang|TresorAnhang|AnhangAnsicht|tresorDokumenteAktiv|db\.tresorAnhaenge|tresorAnhaenge');
+    // erlaubt: die Datenschicht der Anhänge, die Sync-Anbindung, die Tresor-Oberfläche (und die Datenbank selbst)
+    final erlaubt = RegExp(
+      r'lib[/\\](data[/\\](app_database(\.g)?\.dart|chat[/\\]chat_krypto_state\.dart|dateien[/\\]tresor_anhang_[a-z]+\.dart|sync[/\\](sync_dateien|sync_entities|sync_store)\.dart)|features[/\\]tresor[/\\][a-z_]+\.dart)$',
+    );
+    final fremd = <String>[];
+    var geprueft = 0;
+    for (final f in _dartDateien('lib')) {
+      geprueft++;
+      if (anhang.hasMatch(f.readAsStringSync()) && !erlaubt.hasMatch(f.path)) fremd.add(f.path);
+    }
+    expect(geprueft, greaterThan(300));
+    expect(fremd, isEmpty, reason: 'Anhänge des Tresors dürfen nur dort vorkommen, wo sie hingehören');
+    // der Dateien-Bereich (Oberfläche und Datenschicht ohne die Tresor-Teile) kennt sie nicht
+    final dateienBereich = [
+      for (final o in ['lib/features/files', 'lib/data/dateien']) for (final f in _dartDateien(o)) if (!f.path.contains('tresor_anhang')) f,
+    ];
+    expect(dateienBereich, isNotEmpty);
+    for (final f in dateienBereich) {
+      expect(anhang.hasMatch(f.readAsStringSync()), isFalse, reason: f.path);
+    }
+    // der Tresor-Anhang-Code nutzt weder Vorschau-Zwischenspeicher, Offline-Cache noch den Download in den Cache der Dateien-Ablage (Klartext nur im Arbeitsspeicher)
+    final cacheWeg = RegExp(r'datei_vorschau|VorschauCache|vorschauCacheProvider|vorschauBildProvider|datei_cache_dienst|DateiCacheDienst|dateiCacheDienstProvider|datei_ort|DateiOrt\b|dateiOrtProvider|\.herunterladen\(\s*blobId');
+    final tresorAnhangCode = [
+      for (final f in [..._dartDateien('lib/features/tresor'), ..._dartDateien('lib/data/dateien').where((f) => f.path.contains('tresor_anhang'))]) f,
+    ];
+    expect(tresorAnhangCode.length, greaterThanOrEqualTo(8));
+    for (final f in tresorAnhangCode) {
+      expect(cacheWeg.hasMatch(f.readAsStringSync()), isFalse, reason: f.path);
+    }
+    // keine temporären Dateien, kein Teilen, kein Push, kein Log im Anhang-Code
+    final dateiAusgabe = RegExp(r'dart:io|getTemporaryDirectory|Share\.|PushService|\bprint\(|debugPrint\(|developer\.log');
+    for (final f in tresorAnhangCode) {
+      expect(dateiAusgabe.hasMatch(f.readAsStringSync()), isFalse, reason: f.path);
+    }
   });
 
   test('Backup- und Betreiber-Weg lesen keine Inhalte: in der App kein Zugriff auf die Tabelle tresor_eintraege', () {
