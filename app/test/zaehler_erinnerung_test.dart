@@ -9,7 +9,7 @@ import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_erinnerung.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_hinweis.dart';
-import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show Stand;
+import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show MonatsWert, Stand;
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart';
 import 'package:lx_fampad/features/calendar/erinnerung_steuerung.dart';
@@ -95,6 +95,37 @@ void main() {
       expect([for (final x in p) x.id], [for (final x in p2) x.id]);
       final ende = ablesetermine(const Ablesung.monatlich(31), DateTime.utc(2026, 2, 1), DateTime.utc(2026, 4, 30));
       expect(ende, [DateTime.utc(2026, 2, 28), DateTime.utc(2026, 3, 31), DateTime.utc(2026, 4, 30)]);
+    });
+  });
+
+  group('Monatswerte', () {
+    ZaehlerBeispiel solarOkt({bool oktober = false, String? archiviert}) => ZaehlerBeispiel(
+      zSolar,
+      ZaehlerInhalt(art: ZaehlerArt.erzeugung, name: 'Balkon', modus: ZaehlerModus.monat, archiviertAb: archiviert),
+      const [],
+      [
+        MonatsWert(jahr: 2026, monat: 8, milli: 30000, id: 'a'),
+        MonatsWert(jahr: 2026, monat: 9, milli: 40000, id: 'b'),
+        if (oktober) MonatsWert(jahr: 2026, monat: 10, milli: 5000, id: 'c'),
+      ],
+    );
+
+    test('am Monatsersten um 09:00 Berlin, solange der Vormonat fehlt; derselbe neutrale Text', () {
+      final p = planeZaehlerErinnerungen(daten: datenAus([solarOkt()]), jetzt: jetzt);
+      expect([for (final x in p) wandUhr(x.zeit, familienOrt)], [DateTime.utc(2026, 11, 1, 9), DateTime.utc(2026, 12, 1, 9), DateTime.utc(2027, 1, 1, 9)]);
+      for (final x in p) {
+        expect(x.titel, kZaehlerTitel);
+        expect(x.text, kZaehlerErinnerungText);
+        expect(x.payload, kZaehlerPayload);
+      }
+    });
+
+    test('ist der Vormonat schon eingetragen, entfällt dieser Alarm; archivierte erinnern nie; Zählerstand-Zähler am selben Tag ergeben nur einen Alarm', () {
+      final p = planeZaehlerErinnerungen(daten: datenAus([solarOkt(oktober: true)]), jetzt: jetzt);
+      expect([for (final x in p) wandUhr(x.zeit, familienOrt).month], [12, 1]);
+      expect(planeZaehlerErinnerungen(daten: datenAus([solarOkt(archiviert: '2026-09-30')]), jetzt: jetzt), isEmpty);
+      final beide = planeZaehlerErinnerungen(daten: datenAus([solarOkt(), monatlichAm(1)]), jetzt: jetzt);
+      expect(beide.where((x) => wandUhr(x.zeit, familienOrt).day == 1 && wandUhr(x.zeit, familienOrt).month == 12), hasLength(1));
     });
   });
 

@@ -29,6 +29,7 @@ import '../sync/sync_store.dart';
 import '../sync_state.dart';
 import 'zaehler_logik.dart';
 import 'zaehler_modelle.dart';
+import 'zaehler_monate.dart';
 import 'zaehler_teilnehmer.dart';
 
 /// Wie viele Zähler es höchstens gibt (wie der Server).
@@ -301,7 +302,7 @@ class ZaehlerRepository {
         .get();
     return [
       for (final a in await lesenStaende(zeilen))
-        if (a.inhalt?.tag != null) Stand(a.inhalt!.tag!, a.inhalt!.milli, marke: a.inhalt!.marke),
+        if (a.inhalt != null && !a.inhalt!.istMonatswert && a.inhalt!.tag != null) Stand(a.inhalt!.tag!, a.inhalt!.milli, marke: a.inhalt!.marke),
     ];
   }
 
@@ -388,14 +389,15 @@ class ZaehlerRepository {
     final zeilen = await (db.select(db.zaehlerstaende)..where((e) => e.zaehlerId.equals(zaehlerId) & (ausser == null ? const Constant(true) : e.id.equals(ausser).not()))).get();
     final bestehende = [
       for (final a in await lesenStaende(zeilen))
-        if (a.inhalt?.tag != null) Stand(a.inhalt!.tag!, a.inhalt!.milli),
+        if (a.inhalt != null && !a.inhalt!.istMonatswert && a.inhalt!.tag != null) Stand(a.inhalt!.tag!, a.inhalt!.milli),
     ];
     return pruefeStand(datum: datum, milli: milli, bestehende: bestehende, heute: _heute);
   }
 
   /// Erfasst eine Ablesung. Ein Datum in der Zukunft und unmögliche Werte werden abgelehnt ([StandUngueltig]); Hinweise ([standPruefen]) entscheidet die Person vorher.
   Future<String> standErfassen(String zaehlerId, {required DateTime datum, required int milli, String notiz = '', StandMarke? marke}) => _seriell(() async {
-    final (z, _) = await _aktuell(zaehlerId);
+    final (z, zi) = await _aktuell(zaehlerId);
+    if (zi.monatlich) throw const StandUngueltig('Dieser Zähler nimmt Monatswerte statt Zählerstände.');
     _standPruefenHart(datum, milli);
     final inhalt = StandInhalt(datum: tagText(datum), milli: milli, notiz: notiz, marke: marke);
     final klar = standKodieren(inhalt);
@@ -439,6 +441,76 @@ class ZaehlerRepository {
     beiAenderung();
   });
 
+  // ------------------------------------------------------------------ Monatswerte
+
+  /// Alle lesbaren Monatswert-Einträge eines Zählers (auch Doppelte eines Monats), ältester zuerst.
+  Future<List<MonatsWert>> _monatsEintraege(String zaehlerId) async {
+    final zeilen = await (db.select(db.zaehlerstaende)
+          ..where((e) => e.zaehlerId.equals(zaehlerId))
+          ..orderBy([(e) => OrderingTerm.asc(e.createdAt), (e) => OrderingTerm.asc(e.id)]))
+        .get();
+    return [
+      for (final a in await lesenStaende(zeilen))
+        if (a.inhalt != null && a.inhalt!.istMonatswert)
+          MonatsWert(jahr: monatLesen(a.inhalt!.monat)!.jahr, monat: monatLesen(a.inhalt!.monat)!.monat, milli: a.inhalt!.milli, zeit: a.inhalt!.zeit, id: a.id, notiz: a.inhalt!.notiz),
+    ];
+  }
+
+  /// Die Monatswerte eines Zählers: ein Wert je Monat (der zuletzt geschriebene), aufsteigend.
+  Future<List<MonatsWert>> monatswerte(String zaehlerId) async => monatswerteZusammenfuehren(await _monatsEintraege(zaehlerId));
+
+  /// Prüft einen Monatswert (Zukunft, schon vorhanden, mehr als doppelt so hoch wie im Vorjahresmonat). Hinweise entscheidet die Person vorher; nur ein Monat in der Zukunft sperrt.
+  Future<MonatswertPlausibilitaet> monatswertPruefen(String zaehlerId, {required int jahr, required int monat, required int milli}) async =>
+      pruefeMonatswert(jahr: jahr, monat: monat, milli: milli, werte: await monatswerte(zaehlerId), heute: _heute);
+
+  void _monatPruefenHart(int jahr, int monat, int milli) {
+    if (monatLesen(monatText(jahr, monat)) == null) throw const StandUngueltig('Dieser Monat ist nicht möglich.');
+    if (milli < 0 || milli > kMaxMonatswertMilli) throw const StandUngueltig('Dieser Monatswert ist nicht möglich (0 bis 100 000).');
+    final h = _heute;
+    if (jahr * 12 + monat - 1 > h.year * 12 + h.month - 1) throw const StandUngueltig('Ein Monatswert kann nicht in der Zukunft liegen.');
+  }
+
+  /// Trägt den Wert eines Monats ein oder ERSETZT ihn: ein Monat zählt genau einmal. Der Server kennt für Stände nur Zufalls-IDs, darum wird ein vorhandener Eintrag des Monats
+  /// überschrieben (neue Schreibzeit), Doppelte (von einem anderen Gerät) werden mit entfernt; entstehen zwei Einträge gleichzeitig auf zwei Geräten, gilt beim Lesen der mit der
+  /// größten Schreibzeit ([monatswerteZusammenfuehren]). Liefert die ID des Eintrags.
+  Future<String> monatswertErfassen(String zaehlerId, {required int jahr, required int monat, required int milli, String notiz = ''}) => _seriell(() async {
+    final (z, zi) = await _aktuell(zaehlerId);
+    if (!zi.monatlich) throw const StandUngueltig('Dieser Zähler nimmt Zählerstände statt Monatswerte.');
+    _monatPruefenHart(jahr, monat, milli);
+    final eintraege = (await _monatsEintraege(zaehlerId)).where((w) => w.jahr == jahr && w.monat == monat).toList();
+    final gewinner = monatswerteZusammenfuehren(eintraege).firstOrNull;
+    final jetztMs = _jetzt().millisecondsSinceEpoch;
+    final zeit = gewinner != null && gewinner.zeit >= jetztMs ? gewinner.zeit + 1 : jetztMs;
+    final klar = standKodieren(StandInhalt.monatswert(monat: monatText(jahr, monat), milli: milli, zeit: zeit, notiz: notiz));
+    final String id;
+    if (gewinner != null) {
+      id = gewinner.id;
+      await store.aendern('zaehlerstand', id, {'inhalt': '$kPraefixLokal$klar'}, nurLokal: {'bearbeiterId': ich()});
+      for (final w in eintraege) {
+        if (w.id != id) await store.loeschen('zaehlerstand', w.id);
+      }
+    } else {
+      id = _neueId();
+      await store.aendern(
+        'zaehlerstand',
+        id,
+        {'konversationId': z.konversationId, 'zaehlerId': zaehlerId, 'inhalt': '$kPraefixLokal$klar'},
+        nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'bearbeiterId': ich()},
+      );
+    }
+    beiAenderung();
+    return id;
+  });
+
+  /// Löscht den Wert eines Monats (alle Einträge dieses Monats).
+  Future<void> monatswertLoeschen(String zaehlerId, {required int jahr, required int monat}) => _seriell(() async {
+    await _darf();
+    for (final w in (await _monatsEintraege(zaehlerId)).where((w) => w.jahr == jahr && w.monat == monat)) {
+      await store.loeschen('zaehlerstand', w.id);
+    }
+    beiAenderung();
+  });
+
   // ------------------------------------------------------------------ Zählerwechsel
 
   /// Zählerwechsel: Der alte Zähler bekommt am Tag [datum] seinen Endstand ([endstandMilli], Marke "Ende") und wird archiviert; ein neuer Zähler (mit denselben Einstellungen, [neu]
@@ -453,6 +525,7 @@ class ZaehlerRepository {
     ZaehlerInhalt Function(ZaehlerInhalt alt)? neu,
   }) => _seriell(() async {
     final (alt, altInhalt) = await _aktuell(alterId);
+    if (altInhalt.monatlich) throw const StandUngueltig('Bei Monatswerten gibt es keinen Zählerwechsel.');
     _standPruefenHart(datum, endstandMilli);
     _standPruefenHart(datum, startstandMilli);
     final vorhandene = await staende(alterId);
