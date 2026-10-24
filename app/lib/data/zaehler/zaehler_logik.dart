@@ -91,6 +91,34 @@ List<Stand> normalisiere(Iterable<Stand> staende) {
   return [for (final k in (nachTag.keys.toList()..sort())) nachTag[k]!];
 }
 
+/// Ein Monatswert (Eingabeart "Monatswerte"): Verbrauch bzw. Erzeugung eines Kalendermonats in Tausendsteln; [zeit] ist die Schreibzeit (ms), [id] die des Stand-Eintrags.
+class MonatsWert {
+  final int jahr;
+  final int monat;
+  final int milli;
+  final int zeit;
+  final String id;
+  final String notiz;
+  const MonatsWert({required this.jahr, required this.monat, required this.milli, this.zeit = 0, this.id = '', this.notiz = ''});
+
+  String get schluessel => monatText(jahr, monat);
+  int get monatsIndex => jahr * 12 + monat - 1;
+
+  @override
+  String toString() => '$schluessel: $milli';
+}
+
+/// Je Monat gilt genau ein Wert: der mit der größten Schreibzeit (bei Gleichstand die größte ID, damit alle Geräte dasselbe wählen); aufsteigend nach Monat. Die Server-IDs der
+/// Stände sind Zufalls-IDs, ein Monat kann also nach dem Abgleich zweier Geräte doppelt vorkommen: erst diese Regel macht daraus einen Wert.
+List<MonatsWert> monatswerteZusammenfuehren(Iterable<MonatsWert> werte) {
+  final nach = <int, MonatsWert>{};
+  for (final w in werte) {
+    final alt = nach[w.monatsIndex];
+    if (alt == null || w.zeit > alt.zeit || (w.zeit == alt.zeit && w.id.compareTo(alt.id) > 0)) nach[w.monatsIndex] = w;
+  }
+  return [for (final k in (nach.keys.toList()..sort())) nach[k]!];
+}
+
 /// Der Verbrauch eines Zeitraums. [abgedeckteTage] sind die Tage, für die es Stände gibt; [vollstaendig], wenn der ganze Zeitraum abgedeckt ist.
 class Verbrauch {
   final int milli;
@@ -110,9 +138,54 @@ class Verbrauchskurve {
 
   /// Wie oft ein Stand kleiner war als der vorige (0 Verbrauch angenommen).
   final int ruecksprunege;
-  const Verbrauchskurve._(this.punkte, this.ruecksprunege);
+
+  /// Nur Monatswerte: Tage [von, bis) INNERHALB der Kurve, für die es keinen Wert gibt (dort gilt 0 Verbrauch, sie zählen aber nicht als abgedeckt).
+  final List<({int von, int bis})> luecken;
+  const Verbrauchskurve._(this.punkte, this.ruecksprunege, [this.luecken = const []]);
 
   static const leer = Verbrauchskurve._([], 0);
+
+  /// Die Kurve aus Monatswerten (Eingabeart "Monatswerte"): jeder Monat verteilt seinen Wert gleichmäßig auf seine Tage, damit sind Monats- und Jahressummen EXAKT die eingetragenen
+  /// Werte. Fehlende Monate liegen als [luecken] in der Kurve (0 Verbrauch, nicht abgedeckt). Der laufende Monat ([heute] gesetzt) ist ein Zwischenstand und endet mit dem Tag [heute];
+  /// Monate nach [heute] zählen nicht. Mehrere Werte für einen Monat: der letzte der Liste gilt (Aufrufer reichen sie schon zusammengeführt ein, siehe [monatswerteZusammenfuehren]).
+  factory Verbrauchskurve.ausMonatswerten(Iterable<MonatsWert> werte, {DateTime? heute}) {
+    final nach = <int, MonatsWert>{};
+    for (final w in werte) {
+      nach[w.jahr * 12 + w.monat - 1] = w;
+    }
+    if (nach.isEmpty) return leer;
+    final h = heute == null ? null : tagNummer(heute);
+    final p = <({int tag, int c})>[];
+    final luecken = <({int von, int bis})>[];
+    var c = 0;
+    for (final k in (nach.keys.toList()..sort())) {
+      final w = nach[k]!;
+      final start = tagNummer(DateTime.utc(w.jahr, w.monat, 1));
+      if (h != null && start > h) continue; // Zukunft zählt nie
+      var ende = tagNummer(DateTime.utc(w.jahr, w.monat + 1, 1));
+      if (h != null && h + 1 < ende) ende = h + 1; // laufender Monat: Zwischenstand bis einschließlich heute
+      if (p.isEmpty) {
+        p.add((tag: start, c: 0));
+      } else if (p.last.tag < start) {
+        luecken.add((von: p.last.tag, bis: start));
+        p.add((tag: start, c: c));
+      }
+      c += w.milli;
+      p.add((tag: ende, c: c));
+    }
+    return p.isEmpty ? leer : Verbrauchskurve._(p, 0, luecken);
+  }
+
+  /// Tage in [von, bis) (Tagnummern), die in einer Lücke liegen.
+  int _lueckenTage(int von, int bis) {
+    var n = 0;
+    for (final l in luecken) {
+      final a = l.von > von ? l.von : von;
+      final e = l.bis < bis ? l.bis : bis;
+      if (e > a) n += e - a;
+    }
+    return n;
+  }
 
   factory Verbrauchskurve.aus(Iterable<Stand> staende) {
     final n = normalisiere(staende);
@@ -159,7 +232,7 @@ class Verbrauchskurve {
     final a = v < punkte.first.tag ? punkte.first.tag : v;
     final e = b > punkte.last.tag ? punkte.last.tag : b;
     if (e <= a) return Verbrauch(0, 0, b - v);
-    return Verbrauch(bei(e)! - bei(a)!, e - a, b - v);
+    return Verbrauch(bei(e)! - bei(a)!, e - a - _lueckenTage(a, e), b - v);
   }
 
   /// Eine Kurve, die nach beiden Seiten mit gleichbleibender Tagesrate bis [von] bzw. [bis] fortgesetzt ist (Prognose): [beobachtetMilli] über [beobachteteTage] ergibt die Rate.
@@ -170,7 +243,7 @@ class Verbrauchskurve {
     final b = tagNummer(bis);
     if (b > p.last.tag) p.add((tag: b, c: p.last.c + rundenDiv(beobachtetMilli * (b - p.last.tag), beobachteteTage)));
     if (v < p.first.tag) p.insert(0, (tag: v, c: p.first.c - rundenDiv(beobachtetMilli * (p.first.tag - v), beobachteteTage)));
-    return Verbrauchskurve._(p, ruecksprunege);
+    return Verbrauchskurve._(p, ruecksprunege, luecken);
   }
 
   /// Mehrere Kurven hintereinander (Zählerwechsel-Kette, ältester Zähler zuerst): der Verbrauch läuft nahtlos weiter. Beginnt der nächste Zähler am Tag des Endes des vorigen,
@@ -179,9 +252,11 @@ class Verbrauchskurve {
     final p = <({int tag, int c})>[];
     var rueck = 0;
     var luecken = 0;
+    final monatsLuecken = <({int von, int bis})>[];
     for (final k in kurven) {
       if (k.punkte.isEmpty) continue;
       rueck += k.ruecksprunege;
+      monatsLuecken.addAll(k.luecken);
       final offset = p.isEmpty ? 0 : p.last.c;
       if (p.isNotEmpty && k.punkte.first.tag > p.last.tag) luecken++;
       for (final pt in k.punkte) {
@@ -196,7 +271,7 @@ class Verbrauchskurve {
         }
       }
     }
-    return (kurve: Verbrauchskurve._(p, rueck), luecken: luecken);
+    return (kurve: Verbrauchskurve._(p, rueck, monatsLuecken), luecken: luecken);
   }
 }
 

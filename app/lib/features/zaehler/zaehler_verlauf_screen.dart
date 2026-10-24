@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/zaehler/zaehler_logik.dart';
 import '../../data/zaehler/zaehler_modelle.dart';
+import '../../data/zaehler/zaehler_monate.dart';
 import '../../data/zaehler/zaehler_repository.dart';
 import '../../data/zaehler/zaehler_state.dart';
 import '../../data/zaehler/zaehler_uebersicht.dart';
@@ -20,6 +21,7 @@ import 'zaehler_anzeige.dart';
 import 'zaehler_bericht_screen.dart';
 import 'zaehler_diagramm.dart';
 import 'zaehler_editor.dart';
+import 'zaehler_monat_screen.dart';
 import 'zaehler_stand_screen.dart';
 
 /// Öffnet den Verlauf der Kachel mit diesem Schlüssel (`z:<ID>` oder `g:<Art>:<Gruppe>`).
@@ -102,7 +104,8 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
       return '${b.beschriftung}: $v$vjT';
     }
 
-    final semantik = StringBuffer('Verbrauch je Monat, ${k.titel}, ${_zeitraumTitel(k, z)}. ');
+    final wort = wertWort(k.art);
+    final semantik = StringBuffer('$wort je Monat, ${k.titel}, ${_zeitraumTitel(k, z)}. ');
     for (var i = 0; i < balken.length; i++) {
       semantik.write('${wertText(i)}. ');
     }
@@ -125,7 +128,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
               style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
               onPressed: k.zumAblesen.isEmpty ? null : () => standEintragenOeffnen(context, reiheIds: [for (final r in k.zumAblesen) r.id]),
               icon: const Icon(Icons.edit_note),
-              label: Text(k.istGruppe ? 'Alle ablesen' : 'Stand eintragen'),
+              label: Text(k.istGruppe ? 'Alle ablesen' : (k.erste.monatlich ? 'Monatswert eintragen' : 'Stand eintragen')),
             ),
           ),
         ],
@@ -233,7 +236,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
         LxCard(
           child: Column(
             children: [
-              _Zeile(laufend ? '${_zeitraumTitel(k, z)} bisher' : 'Verbrauch ${_zeitraumTitel(k, z)}', gesamt.abgedeckteTage == 0 ? 'noch offen' : '${verbrauchAnzeige(gesamt.milli, einheit)}${gesamt.vollstaendig ? '' : ' (unvollständig)'}'),
+              _Zeile(laufend ? '${_zeitraumTitel(k, z)} bisher' : '$wort ${_zeitraumTitel(k, z)}', gesamt.abgedeckteTage == 0 ? 'noch offen' : '${verbrauchAnzeige(gesamt.milli, einheit)}${gesamt.vollstaendig ? '' : ' (unvollständig)'}'),
               if (vjGesamt.abgedeckteTage > 0) _Zeile('Vorjahr', '${verbrauchAnzeige(vjGesamt.milli, einheit)}${vjGesamt.vollstaendig ? '' : ' (unvollständig)'}'),
               ..._hochrechnung(k, z, heute, vjGesamt, einheit),
               ..._kosten(k, z, heute, kostenAn),
@@ -250,7 +253,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
         for (final r in k.reihen) _StaendeAbschnitt(reihe: r, daten: daten, mitTitel: k.istGruppe, alle: _alleStaende),
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => setState(() => _alleStaende = !_alleStaende), child: Text(_alleStaende ? 'Nur die letzten Stände' : 'Alle Stände zeigen')),
+          child: TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => setState(() => _alleStaende = !_alleStaende), child: Text(k.reihen.every((r) => r.monatlich) ? (_alleStaende ? 'Nur die letzten Werte' : 'Alle Werte zeigen') : (_alleStaende ? 'Nur die letzten Stände' : 'Alle Stände zeigen'))),
         ),
       ],
     );
@@ -259,12 +262,21 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
   List<Widget> _hochrechnung(ZaehlerKachel k, Zeitraum z, DateTime heute, Verbrauch vjGesamt, String einheit) {
     if (heute.isBefore(z.start) || !heute.isBefore(z.ende)) return const [];
     var summe = 0;
+    var geschaetzt = 0;
     for (final r in k.reihen) {
+      if (r.monatlich) {
+        final h = monatsHochrechnung(r.monatswerte, z, heute);
+        if (h == null) return const [];
+        summe += h.prognoseMilli;
+        if (h.geschaetzteMonate > geschaetzt) geschaetzt = h.geschaetzteMonate;
+        continue;
+      }
       final h = hochrechnung(r.kurve, z, heute);
       if (h == null) return const [];
       summe += h.prognoseMilli;
     }
-    return [_Zeile('Hochrechnung ${_zeitraumTitel(k, z)}', '${verbrauchAnzeige(summe, einheit)}${vjGesamt.vollstaendig ? ' (Vorjahr ${verbrauchAnzeige(vjGesamt.milli, einheit, mitEinheit: false)})' : ''}')];
+    final schaetzText = geschaetzt == 0 ? '' : ' · geschätzt, $geschaetzt ${geschaetzt == 1 ? 'Monat' : 'Monate'} aus Vorjahr oder Durchschnitt';
+    return [_Zeile('Hochrechnung ${_zeitraumTitel(k, z)}', '${verbrauchAnzeige(summe, einheit)}$schaetzText${vjGesamt.vollstaendig ? ' (Vorjahr ${verbrauchAnzeige(vjGesamt.milli, einheit, mitEinheit: false)})' : ''}')];
   }
 
   List<Widget> _kosten(ZaehlerKachel k, Zeitraum z, DateTime heute, bool an) {
@@ -348,6 +360,7 @@ class _StaendeAbschnitt extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    if (reihe.monatlich) return _MonatswerteAbschnitt(reihe: reihe, mitTitel: mitTitel, alle: alle);
     // alle lesbaren Stände der Kette, neueste zuerst; der Unterschied zum vorigen Stand desselben Zählers steht daneben
     final zeilen = <({StandAnsicht a, StandInhalt s, int? delta})>[];
     for (final id in reihe.ids) {
@@ -426,6 +439,85 @@ class _StaendeAbschnitt extends ConsumerWidget {
                           if (!ok || !context.mounted) return;
                           try {
                             await ref.read(zaehlerRepositoryProvider).standLoeschen(z.a.id);
+                          } on Object catch (e) {
+                            if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(zaehlerFehlerText(e))));
+                          }
+                        }
+                      },
+                      itemBuilder: (_) => const [PopupMenuItem(value: 'aendern', child: Text('Bearbeiten')), PopupMenuItem(value: 'loeschen', child: Text('Löschen'))],
+                    ),
+                  ],
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Die letzten Monatswerte eines Zählers (Eingabeart Monatswerte), nach Monat, neueste zuerst, mit Bearbeiten und Löschen (mit Bestätigung).
+class _MonatswerteAbschnitt extends ConsumerWidget {
+  final ZaehlerReihe reihe;
+  final bool mitTitel;
+  final bool alle;
+  const _MonatswerteAbschnitt({required this.reihe, required this.mitTitel, required this.alle});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
+    final werte = reihe.monatswerte.reversed.toList();
+    final sichtbar = alle ? werte : werte.take(6).toList();
+    final einheit = reihe.inhalt.einheit;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: LxCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(child: MonoLabel(mitTitel ? '// letzte werte · ${reihe.name.toLowerCase()}' : '// letzte werte', color: kTextMuted)),
+                TextButton.icon(
+                  style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
+                  onPressed: () => zaehlerEditorOeffnen(context, id: reihe.id),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('Zähler bearbeiten'),
+                ),
+              ],
+            ),
+            if (werte.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Noch kein Monatswert eingetragen.', style: TextStyle(color: kTextMuted))),
+            for (final w in sichtbar)
+              ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(monatTitel(w.jahr, w.monat)),
+                          if (w.jahr == heute.year && w.monat == heute.month || w.notiz.isNotEmpty)
+                            Text([if (w.jahr == heute.year && w.monat == heute.month) 'Zwischenstand', if (w.notiz.isNotEmpty) w.notiz].join(' · '), style: const TextStyle(fontSize: 12, color: kTextMuted)),
+                        ],
+                      ),
+                    ),
+                    Semantics(
+                      label: 'Monatswert ${monatTitel(w.jahr, w.monat)}: ${verbrauchAnzeige(w.milli, einheit)}',
+                      excludeSemantics: true,
+                      child: Text(verbrauchAnzeige(w.milli, einheit), style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w600)),
+                    ),
+                    PopupMenuButton<String>(
+                      tooltip: 'Monatswert ${monatTitel(w.jahr, w.monat)}: Aktionen',
+                      constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+                      onSelected: (v) async {
+                        if (v == 'aendern') {
+                          await monatswertEintragenOeffnen(context, reiheId: reihe.id, monat: (jahr: w.jahr, monat: w.monat), bearbeiten: true);
+                        } else if (v == 'loeschen') {
+                          final ok = await bestaetigen(context, titel: 'Monatswert löschen?', text: 'Der Wert für ${monatTitel(w.jahr, w.monat)} (${verbrauchAnzeige(w.milli, einheit)}) wird gelöscht.', knopf: 'Löschen');
+                          if (!ok || !context.mounted) return;
+                          try {
+                            await ref.read(zaehlerRepositoryProvider).monatswertLoeschen(reihe.id, jahr: w.jahr, monat: w.monat);
                           } on Object catch (e) {
                             if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(zaehlerFehlerText(e))));
                           }

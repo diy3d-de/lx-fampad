@@ -12,6 +12,7 @@ import 'package:lx_fampad/data/chat/chat_krypto.dart';
 import 'package:lx_fampad/data/sync/sync_store.dart' show SyncAenderung;
 import 'package:lx_fampad/data/zaehler/zaehler_logik.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
+import 'package:lx_fampad/data/zaehler/zaehler_monate.dart' show MonatswertHinweis;
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_teilnehmer.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -533,6 +534,69 @@ Future<void> main() async {
         expect(id, isNotEmpty);
         // und die Mama darf ihn nicht wieder aufnehmen (er ist ein Kind)
         expect(await rm.teilnehmerPflegen(), isFalse);
+      });
+
+      test('Monatswerte: eintragen, ersetzen (ein Monat nur einmal), zwei Geräte gleichzeitig ergeben einen Wert, Löschen, der Server sieht nie Klartext', () async {
+        final id = await rm.anlegen(ZaehlerInhalt(art: ZaehlerArt.erzeugung, name: 'Balkon-Geheim', modus: ZaehlerModus.monat));
+        gm.jetzt = gp.jetzt = DateTime.utc(2026, 10, 19, 9);
+        await alle();
+        final e1 = await rm.monatswertErfassen(id, jahr: 2026, monat: 9, milli: 123456, notiz: 'Anker-Geheim');
+        await alle();
+        // Ersetzen: derselbe Eintrag, nicht doppelt
+        final e2 = await rp.monatswertErfassen(id, jahr: 2026, monat: 9, milli: 130000);
+        expect(e2, e1);
+        await alle();
+        expect(welt.alle('zaehlerstand'), hasLength(1));
+        expect((await rm.monatswerte(id)).single.milli, 130000);
+        // zwei Geräte tragen offline denselben Monat ein: nach dem Abgleich zwei Zeilen, aber EIN Wert (der zuletzt geschriebene), auf beiden Geräten gleich
+        gm.jetzt = DateTime.utc(2026, 10, 19, 10);
+        gp.jetzt = DateTime.utc(2026, 10, 19, 11);
+        await rm.monatswertErfassen(id, jahr: 2026, monat: 8, milli: 50000);
+        await rp.monatswertErfassen(id, jahr: 2026, monat: 8, milli: 60000);
+        await alle();
+        expect(welt.alle('zaehlerstand'), hasLength(3));
+        expect((await rm.monatswerte(id)).map((w) => '${w.monat}:${w.milli}'), ['8:60000', '9:130000']);
+        expect((await rp.monatswerte(id)).map((w) => '${w.monat}:${w.milli}'), ['8:60000', '9:130000']);
+        // das nächste Eintragen räumt das Doppelte auf
+        await rm.monatswertErfassen(id, jahr: 2026, monat: 8, milli: 61000);
+        await alle();
+        expect(welt.alle('zaehlerstand'), hasLength(2));
+        expect((await rp.monatswerte(id)).first.milli, 61000);
+        // Löschen
+        await rp.monatswertLoeschen(id, jahr: 2026, monat: 8);
+        await alle();
+        expect((await rm.monatswerte(id)).map((w) => w.monat), [9]);
+        // der Server sieht weder Name noch Monat noch Wert noch Notiz
+        final gesehen = serverGesehen();
+        for (final geheim in ['Balkon-Geheim', 'Anker-Geheim', '2026-09', '123456', '130000', '"monat"']) {
+          expect(gesehen, isNot(contains(geheim)));
+        }
+      });
+
+      test('Monatswerte: Grenzen (nie negativ, höchstens 100 000, nie die Zukunft), laufender Monat erlaubt; Stände und Zählerwechsel gibt es dort nicht, und umgekehrt', () async {
+        final id = await rm.anlegen(ZaehlerInhalt(art: ZaehlerArt.erzeugung, name: 'Balkon', modus: ZaehlerModus.monat));
+        gm.jetzt = DateTime.utc(2026, 10, 19, 9);
+        await expectLater(rm.monatswertErfassen(id, jahr: 2026, monat: 9, milli: -1), throwsA(isA<StandUngueltig>()));
+        await expectLater(rm.monatswertErfassen(id, jahr: 2026, monat: 9, milli: kMaxMonatswertMilli + 1), throwsA(isA<StandUngueltig>()));
+        await expectLater(rm.monatswertErfassen(id, jahr: 2026, monat: 11, milli: 1000), throwsA(isA<StandUngueltig>()));
+        await expectLater(rm.monatswertErfassen(id, jahr: 2027, monat: 1, milli: 1000), throwsA(isA<StandUngueltig>()));
+        await expectLater(rm.monatswertErfassen(id, jahr: 2026, monat: 13, milli: 1000), throwsA(isA<StandUngueltig>()));
+        await rm.monatswertErfassen(id, jahr: 2026, monat: 10, milli: 1000); // laufender Monat = Zwischenstand
+        await rm.monatswertErfassen(id, jahr: 2026, monat: 9, milli: kMaxMonatswertMilli);
+        await expectLater(rm.standErfassen(id, datum: _d('2026-10-01'), milli: 1000), throwsA(isA<StandUngueltig>()));
+        await expectLater(rm.zaehlerWechseln(id, datum: _d('2026-10-01'), endstandMilli: 1, startstandMilli: 0), throwsA(isA<StandUngueltig>()));
+        final hinweis = await rm.monatswertPruefen(id, jahr: 2026, monat: 9, milli: 1);
+        expect(hinweis.hinweise, contains(MonatswertHinweis.ersetzt));
+        // ein Zähler im Modus Zählerstand nimmt keine Monatswerte
+        final stromId = await strom(rm);
+        await expectLater(rm.monatswertErfassen(stromId, jahr: 2026, monat: 9, milli: 1000), throwsA(isA<StandUngueltig>()));
+      });
+
+      test('Kinder: Monatswerte gibt es für sie nie', () async {
+        final id = await rm.anlegen(ZaehlerInhalt(art: ZaehlerArt.erzeugung, name: 'Balkon', modus: ZaehlerModus.monat));
+        await alle();
+        await expectLater(re.monatswertErfassen(id, jahr: 2026, monat: 9, milli: 1000), throwsA(isA<ZaehlerNichtErlaubt>()));
+        await expectLater(re.monatswertLoeschen(id, jahr: 2026, monat: 9), throwsA(isA<ZaehlerNichtErlaubt>()));
       });
 
       test('Das Betreiber-Flag und die Familienrolle ändern nichts: nur die Rolle zählt', () async {

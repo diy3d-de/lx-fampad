@@ -6,6 +6,7 @@
 import '../medikamente/medikament_modelle.dart' show tagText;
 import 'zaehler_logik.dart';
 import 'zaehler_modelle.dart';
+import 'zaehler_monate.dart';
 
 /// Ein Zähler samt Kette seiner Vorgänger. [id] ist der jüngste Zähler der Kette.
 class ZaehlerReihe {
@@ -21,7 +22,15 @@ class ZaehlerReihe {
 
   /// Lücken zwischen den Zählern der Kette (dort gilt 0 Verbrauch).
   final int luecken;
-  const ZaehlerReihe({required this.id, required this.ids, required this.inhalt, required this.staende, required this.kurve, this.luecken = 0});
+
+  /// Eingabeart Monatswerte: die zusammengeführten Monatswerte der Reihe (aufsteigend nach Monat; je Monat einer). Bei Zählerständen leer.
+  final List<MonatsWert> monatswerte;
+  const ZaehlerReihe({required this.id, required this.ids, required this.inhalt, required this.staende, required this.kurve, this.luecken = 0, this.monatswerte = const []});
+
+  bool get monatlich => inhalt.monatlich;
+
+  /// Der Monatswert des jüngsten Monats (null ohne Werte oder bei Zählerständen).
+  MonatsWert? get letzterMonat => monatswerte.isEmpty ? null : monatswerte.last;
 
   String get name => inhalt.name;
   bool get archiviert => inhalt.archiviert;
@@ -30,11 +39,18 @@ class ZaehlerReihe {
 }
 
 /// Baut die Reihen: [inhalte] sind die lesbaren Zähler (ID -> Inhalt), [staende] ihre Stände in der Reihenfolge der Anlage. Zähler ohne lesbaren Inhalt fehlen in der Kette still.
-List<ZaehlerReihe> baueReihen(Map<String, ZaehlerInhalt> inhalte, Map<String, List<Stand>> staende) {
+/// [monatswerte]: die Monatswerte je Zähler (nur für die Eingabeart Monatswerte; bei Zählerständen ignoriert, und umgekehrt zählen bei Monatswerte-Zählern Stände nie). [heute]: der
+/// laufende Monat ist dann ein Zwischenstand bis heute (ohne Angabe zählt jeder Monat voll).
+List<ZaehlerReihe> baueReihen(Map<String, ZaehlerInhalt> inhalte, Map<String, List<Stand>> staende, {Map<String, List<MonatsWert>> monatswerte = const {}, DateTime? heute}) {
   final juengste = <String>{for (final id in inhalte.keys) juengsterDerKette(id, inhalte)};
   final reihen = <ZaehlerReihe>[];
   for (final j in juengste) {
     final ketteIds = kette(j, inhalte);
+    if (inhalte[j]!.monatlich) {
+      final werte = monatswerteZusammenfuehren([for (final id in ketteIds) ...?monatswerte[id]]);
+      reihen.add(ZaehlerReihe(id: j, ids: ketteIds, inhalt: inhalte[j]!, staende: const [], kurve: Verbrauchskurve.ausMonatswerten(werte, heute: heute), monatswerte: werte));
+      continue;
+    }
     final alle = <Stand>[for (final id in ketteIds) ...?staende[id]];
     final v = Verbrauchskurve.verkettet([for (final id in ketteIds) Verbrauchskurve.aus(staende[id] ?? const [])]);
     reihen.add(ZaehlerReihe(id: j, ids: ketteIds, inhalt: inhalte[j]!, staende: normalisiere(alle), kurve: v.kurve, luecken: v.luecken));
@@ -145,7 +161,11 @@ bool ungewoehnlichHoch(ZaehlerKachel k, DateTime heute) {
 // ---------------------------------------------------------------- Fälligkeit
 
 /// Ablese-Fälligkeit einer Reihe (archivierte nie).
-Faelligkeit reiheFaelligkeit(ZaehlerReihe r, DateTime heute) => r.archiviert ? const Faelligkeit(null, null, false) : ablesungFaellig(r.inhalt.ablesung, r.letzter?.tag, heute);
+Faelligkeit reiheFaelligkeit(ZaehlerReihe r, DateTime heute) => r.archiviert
+    ? const Faelligkeit(null, null, false)
+    : r.monatlich
+        ? monatswertFaellig(r.monatswerte, heute)
+        : ablesungFaellig(r.inhalt.ablesung, r.letzter?.tag, heute);
 
 /// Die Reihen, die jetzt abgelesen werden sollen.
 List<ZaehlerReihe> faelligeReihen(Iterable<ZaehlerReihe> reihen, DateTime heute) => [for (final r in reihen) if (reiheFaelligkeit(r, heute).faellig) r];
@@ -158,7 +178,7 @@ enum FaelligkeitsArt { faellig, aktuell, keinRhythmus }
   var rhythmus = false;
   for (final r in k.reihen) {
     final f = reiheFaelligkeit(r, heute);
-    if (r.inhalt.ablesung != null && !r.archiviert) rhythmus = true;
+    if ((r.inhalt.ablesung != null || r.monatlich) && !r.archiviert) rhythmus = true;
     if (f.faellig) return (art: FaelligkeitsArt.faellig, termin: f.naechsterTermin);
     if (f.naechsterTermin != null && (naechster == null || f.naechsterTermin!.isBefore(naechster))) naechster = f.naechsterTermin;
   }

@@ -55,6 +55,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
   final _verguetung = TextEditingController();
   final _start = TextEditingController();
   var _art = ZaehlerArt.strom;
+  var _modus = ZaehlerModus.stand;
   var _rhythmus = _Rhythmus.keiner;
   var _rTag = 1;
   var _rMonat = 12;
@@ -75,7 +76,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
 
   List<TextEditingController> get _felder => [_name, _nummer, _ort, _gruppe, _einheit, _notiz, _abschlag, _anlage, _eigen, _verguetung, _start];
 
-  String _stand() => [for (final c in _felder) c.text, _art, _rhythmus, _rTag, _rMonat, _kalenderjahr, _pTag, _pMonat, _kosten, [for (final p in _preise) '${p.ab}/${p.arbeitspreis}/${p.grundgebuehrJahr}/${p.zaehlergebuehrJahr}'], _warn, _warnProzent].join('|');
+  String _stand() => [for (final c in _felder) c.text, _art, _modus, _rhythmus, _rTag, _rMonat, _kalenderjahr, _pTag, _pMonat, _kosten, [for (final p in _preise) '${p.ab}/${p.arbeitspreis}/${p.grundgebuehrJahr}/${p.zaehlergebuehrJahr}'], _warn, _warnProzent].join('|');
 
   @override
   void dispose() {
@@ -97,6 +98,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     if (z == null) return;
     _alt = z;
     _art = z.art;
+    _modus = z.modus;
     _name.text = z.name;
     _nummer.text = z.nummer;
     _ort.text = z.ort;
@@ -135,6 +137,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
   void _artWaehlen(ZaehlerArt a, ZaehlerDaten d) {
     setState(() {
       _art = a;
+      _modus = ZaehlerModus.standardFuer(a); // Erzeugung hat keinen richtigen Zähler: Monatswerte, sonst Zählerstand (änderbar)
       _kosten = a.kostenStandard;
       if (a != ZaehlerArt.eigen) _einheit.text = a.einheit;
       if (a == ZaehlerArt.eigen) _einheit.clear();
@@ -147,6 +150,13 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
         }
       }
     });
+  }
+
+  /// Gibt es schon Stände oder Monatswerte (dann lässt sich die Eingabeart nicht mehr ändern)?
+  bool _hatWerte(ZaehlerDaten d) {
+    final id = widget.id;
+    if (id == null) return false;
+    return d.eintrag(id)?.staende.isNotEmpty ?? false;
   }
 
   int? _geld(String t) => t.trim().isEmpty ? null : geldParsen(t);
@@ -184,17 +194,20 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
       ort: _ort.text.trim(),
       gruppe: _art == ZaehlerArt.erzeugung ? '' : _gruppe.text.trim(),
       periodeMonat: _kalenderjahr ? 1 : _pMonat,
-      periodeTag: _kalenderjahr ? 1 : _pTag,
+      periodeTag: _kalenderjahr || _modus == ZaehlerModus.monat ? 1 : _pTag, // Monatswerte kennen keine Tage: die Periode beginnt immer am Monatsersten
       kosten: _kosten,
       preise: preise,
       abschlag: _kosten && _art != ZaehlerArt.erzeugung ? abschlag : null,
       vorgaenger: _alt?.vorgaenger,
       archiviertAb: _alt?.archiviertAb,
-      ablesung: switch (_rhythmus) {
+      modus: _modus,
+      ablesung: _modus == ZaehlerModus.monat
+          ? null // bei Monatswerten erinnert die App am Monatsersten, ein eigener Rhythmus entfällt
+          : switch (_rhythmus) {
         _Rhythmus.keiner => null,
         _Rhythmus.monatlich => Ablesung.monatlich(_rTag),
         _Rhythmus.jaehrlich => Ablesung.jaehrlich(monat: _rMonat, tag: _rTag),
-      },
+            },
       eigenverbrauchBp: eigenBp,
       anlagenkosten: anlage,
       einspeiseVerguetung: vergutung,
@@ -203,7 +216,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     if (!inhalt.gueltig) return _fehlerSetzen('Die Eingaben sind nicht stimmig. Prüfe Name, Preise und Zeiten.');
     final startText = _start.text.trim();
     final startMilli = startText.isEmpty ? null : mengeParsen(startText);
-    if (_neu && startText.isNotEmpty && (startMilli == null || startMilli > kMaxStandMilli)) return _fehlerSetzen('Der aktuelle Stand muss eine Zahl sein, zum Beispiel 48213,5.');
+    if (_neu && _modus == ZaehlerModus.stand && startText.isNotEmpty && (startMilli == null || startMilli > kMaxStandMilli)) return _fehlerSetzen('Der aktuelle Stand muss eine Zahl sein, zum Beispiel 48213,5.');
     final repo = ref.read(zaehlerRepositoryProvider);
     final nav = Navigator.of(context);
     setState(() {
@@ -213,7 +226,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     try {
       if (_neu) {
         final id = await repo.anlegen(inhalt);
-        if (startMilli != null) {
+        if (startMilli != null && _modus == ZaehlerModus.stand) {
           try {
             await repo.standErfassen(id, datum: zaehlerHeute(ref.read(minutenTaktProvider).value ?? DateTime.now()), milli: startMilli);
           } on Object {
@@ -287,6 +300,32 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             TextField(controller: _einheit, maxLength: kMaxEinheitZeichen, decoration: const InputDecoration(labelText: 'Einheit (zum Beispiel Stück oder l)', counterText: '')),
           ],
           const SizedBox(height: 14),
+          const MonoLabel('// eingabeart'),
+          const SizedBox(height: 6),
+          if (_neu || !_hatWerte(daten))
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                AuswahlKnopf(text: 'Zählerstand', gewaehlt: _modus == ZaehlerModus.stand, onTap: () => setState(() => _modus = ZaehlerModus.stand)),
+                AuswahlKnopf(text: 'Monatswerte', gewaehlt: _modus == ZaehlerModus.monat, onTap: () => setState(() => _modus = ZaehlerModus.monat)),
+              ],
+            )
+          else
+            Text(_modus == ZaehlerModus.monat ? 'Monatswerte' : 'Zählerstand', style: const TextStyle(color: kTextMuted)),
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              _modus == ZaehlerModus.monat
+                  ? (erzeugung
+                      ? 'Du trägst die Erzeugung je Monat in $einheit ein, zum Beispiel aus der App der Anlage. Einen Zähler brauchst du dafür nicht.'
+                      : 'Du trägst den Verbrauch je Monat direkt in $einheit ein, ohne Zählerstand.')
+                  : 'Du liest den Zählerstand ab; der Verbrauch ergibt sich aus dem Unterschied zwischen zwei Ständen.',
+              style: const TextStyle(fontSize: 12, color: kTextMuted),
+            ),
+          ),
+          if (!_neu && _hatWerte(daten)) const Padding(padding: EdgeInsets.only(top: 4), child: Text('Die Eingabeart lässt sich nicht mehr ändern, solange es Werte gibt.', style: TextStyle(fontSize: 12, color: kTextMuted))),
+          const SizedBox(height: 14),
           TextField(controller: _nummer, maxLength: kMaxNummerZeichen, decoration: const InputDecoration(labelText: 'Zählernummer (optional)', counterText: '')),
           const SizedBox(height: 14),
           const MonoLabel('// ort'),
@@ -313,6 +352,12 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             const SizedBox(height: 8),
             TextField(controller: _gruppe, maxLength: kMaxGruppeZeichen, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Gruppe (zum Beispiel Wasser Wohnung)', helperText: 'Zähler gleicher Art mit gleichem Namen zeigt die App mit einer Summe', counterText: '')),
           ],
+          if (_modus == ZaehlerModus.monat) ...[
+            const SizedBox(height: 16),
+            const MonoLabel('// erinnerung'),
+            const SizedBox(height: 6),
+            const Text('Am 1. jedes Monats um 9 Uhr erinnert die App an den Monatswert des Vormonats, bis er eingetragen ist (Profil, Erinnerungen, Zähler-Erinnerungen).', style: TextStyle(fontSize: 12, color: kTextMuted)),
+          ] else ...[
           const SizedBox(height: 16),
           const MonoLabel('// ablese-rhythmus'),
           const SizedBox(height: 6),
@@ -337,6 +382,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
               ),
             ),
           ],
+          ],
           const SizedBox(height: 16),
           const MonoLabel('// abrechnungsperiode'),
           const SizedBox(height: 6),
@@ -350,8 +396,8 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           ),
           if (!_kalenderjahr) ...[
             const SizedBox(height: 8),
-            _Stepper(label: 'Beginnt am Tag', wert: _pTag, min: 1, max: 31, text: (v) => '$v.', onChanged: (v) => setState(() => _pTag = v)),
-            _Stepper(label: 'im Monat', wert: _pMonat, min: 1, max: 12, text: monatName, onChanged: (v) => setState(() => _pMonat = v)),
+            if (_modus != ZaehlerModus.monat) _Stepper(label: 'Beginnt am Tag', wert: _pTag, min: 1, max: 31, text: (v) => '$v.', onChanged: (v) => setState(() => _pTag = v)),
+            _Stepper(label: _modus == ZaehlerModus.monat ? 'Beginnt im Monat' : 'im Monat', wert: _pMonat, min: 1, max: 12, text: monatName, onChanged: (v) => setState(() => _pMonat = v)),
           ],
           const SizedBox(height: 16),
           LxCard(
@@ -430,7 +476,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           ],
           const SizedBox(height: 14),
           TextField(controller: _notiz, maxLength: kMaxNotizZeichen, minLines: 1, maxLines: 3, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'Notiz (optional)', counterText: '')),
-          if (_neu) ...[
+          if (_neu && _modus == ZaehlerModus.stand) ...[
             const SizedBox(height: 14),
             TextField(
               controller: _start,
@@ -442,7 +488,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             const SizedBox(height: 20),
             const MonoLabel('// weitere aktionen', color: kTextMuted),
             const SizedBox(height: 6),
-            if (!(_alt?.archiviert ?? false)) OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(zaehlerWechselOeffnen(context, ref, reihe.id)), icon: const Icon(Icons.swap_horiz), label: const Text('Zähler wechseln (neue Nummer, neuer Startstand)')),
+            if (!(_alt?.archiviert ?? false) && _modus == ZaehlerModus.stand) OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(zaehlerWechselOeffnen(context, ref, reihe.id)), icon: const Icon(Icons.swap_horiz), label: const Text('Zähler wechseln (neue Nummer, neuer Startstand)')),
             const SizedBox(height: 8),
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),

@@ -5,6 +5,7 @@ import 'package:lx_fampad/data/medikamente/medikament_logik.dart' show familienT
 import 'package:lx_fampad/data/medikamente/medikament_modelle.dart' show tagText;
 import 'package:lx_fampad/data/zaehler/zaehler_logik.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
+import 'package:lx_fampad/data/zaehler/zaehler_monate.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_uebersicht.dart';
@@ -35,8 +36,39 @@ class ZaehlerBeispiel {
   final String id;
   final ZaehlerInhalt inhalt;
   final List<Stand> staende;
-  const ZaehlerBeispiel(this.id, this.inhalt, this.staende);
+
+  /// Nur für die Eingabeart Monatswerte.
+  final List<MonatsWert> monatswerte;
+  const ZaehlerBeispiel(this.id, this.inhalt, this.staende, [this.monatswerte = const []]);
 }
+
+/// Monatswerte der letzten [anzahl] vollen Monate (neuester = Vormonat) plus optional der laufende Monat als Zwischenstand; [kwh] je Monat von [start] aus um [schritt] steigend.
+List<MonatsWert> monatsWerte({int anzahl = 30, double start = 20, double schritt = 1, double? laufend, bool vormonatAuslassen = false}) {
+  final h = heuteTag();
+  final out = <MonatsWert>[];
+  for (var i = anzahl; i >= 1; i--) {
+    if (i == 1 && vormonatAuslassen) continue;
+    final t = DateTime.utc(h.year, h.month - i, 1);
+    out.add(MonatsWert(jahr: t.year, monat: t.month, milli: ((start + schritt * (anzahl - i)) * 1000).round(), zeit: 1, id: 'm${t.year}-${t.month}'));
+  }
+  if (laufend != null) out.add(MonatsWert(jahr: h.year, monat: h.month, milli: (laufend * 1000).round(), zeit: 1, id: 'laufend'));
+  return out;
+}
+
+/// Balkonkraftwerk ohne Zähler: Eingabeart Monatswerte.
+ZaehlerBeispiel solarMonate({List<MonatsWert>? werte, String id = zSolar, String name = 'Balkonkraftwerk'}) => ZaehlerBeispiel(
+  id,
+  ZaehlerInhalt(
+    art: ZaehlerArt.erzeugung,
+    name: name,
+    modus: ZaehlerModus.monat,
+    preise: const [Preis(ab: '2020-01-01', arbeitspreis: 3100)],
+    eigenverbrauchBp: 8000,
+    anlagenkosten: 44900,
+  ),
+  const [],
+  werte ?? monatsWerte(),
+);
 
 ZaehlerBeispiel strom({List<Stand>? staende, Ablesung? ablesung = const Ablesung.monatlich(1), String nummer = '1EMH0012345', int? warn}) => ZaehlerBeispiel(
   zStrom,
@@ -78,10 +110,12 @@ ZaehlerDaten datenAus(List<ZaehlerBeispiel> b, {String ich = 'a', bool geladen =
         [
           for (var i = 0; i < z.staende.length; i++)
             StandAnsicht(id: '${z.id}-s$i', zaehlerId: z.id, inhalt: StandInhalt(datum: tagText(z.staende[i].tag), milli: z.staende[i].milli, marke: z.staende[i].marke), erstelltAt: DateTime.utc(2026, 1, 1, 0, 0, i)),
+          for (final w in z.monatswerte)
+            StandAnsicht(id: w.id, zaehlerId: z.id, inhalt: StandInhalt.monatswert(monat: w.schluessel, milli: w.milli, zeit: w.zeit, notiz: w.notiz), erstelltAt: DateTime.utc(2026, 1, 1)),
         ],
       ),
   ];
-  final reihen = baueReihen({for (final z in b) z.id: z.inhalt}, {for (final z in b) z.id: z.staende});
+  final reihen = baueReihen({for (final z in b) z.id: z.inhalt}, {for (final z in b) z.id: z.staende}, monatswerte: {for (final z in b) z.id: z.monatswerte}, heute: heuteTag());
   return ZaehlerDaten(geladen: geladen, ich: ich, darf: darf, eintraege: eintraege, reihen: reihen, kacheln: baueKacheln(reihen));
 }
 
@@ -101,7 +135,22 @@ class ZaehlerRepoAttrappe implements ZaehlerRepository {
   final standAenderungen = <({String id, DateTime? datum, int? milli})>[];
   final aufrufe = <String>[];
   final wechsel = <({String id, int ende, int start})>[];
+  final monatswertErfasst = <({String id, int jahr, int monat, int milli})>[];
   Object? fehler;
+  MonatswertPlausibilitaet monatswertHinweis = const MonatswertPlausibilitaet([]);
+
+  @override
+  Future<String> monatswertErfassen(String zaehlerId, {required int jahr, required int monat, required int milli, String notiz = ''}) async {
+    if (fehler != null) throw fehler!;
+    monatswertErfasst.add((id: zaehlerId, jahr: jahr, monat: monat, milli: milli));
+    return 'm';
+  }
+
+  @override
+  Future<void> monatswertLoeschen(String zaehlerId, {required int jahr, required int monat}) async => aufrufe.add('monatswertLoeschen:$zaehlerId:$jahr-$monat');
+
+  @override
+  Future<MonatswertPlausibilitaet> monatswertPruefen(String zaehlerId, {required int jahr, required int monat, required int milli}) async => monatswertHinweis;
 
   @override
   Future<String> anlegen(ZaehlerInhalt inhalt) async {

@@ -32,11 +32,28 @@ class ZaehlerEintrag {
   ZaehlerInhalt? get inhalt => ansicht.inhalt;
   bool get lesbar => inhalt != null;
 
-  /// Die lesbaren Stände als Rechen-Stände.
+  /// Die lesbaren Stände als Rechen-Stände (Monatswerte sind keine Stände).
   List<Stand> get rechenStaende => [
     for (final s in staende)
-      if (s.inhalt?.tag != null) Stand(s.inhalt!.tag!, s.inhalt!.milli, marke: s.inhalt!.marke),
+      if (s.inhalt != null && !s.inhalt!.istMonatswert && s.inhalt!.tag != null) Stand(s.inhalt!.tag!, s.inhalt!.milli, marke: s.inhalt!.marke),
   ];
+
+  /// Alle lesbaren Monatswert-Einträge (auch Doppelte eines Monats, in Anlage-Reihenfolge); [monatswerteZusammenfuehren] macht daraus einen Wert je Monat.
+  List<MonatsWert> get roheMonatswerte => [
+    for (final s in staende)
+      if (s.inhalt != null && s.inhalt!.istMonatswert)
+        MonatsWert(
+          jahr: monatLesen(s.inhalt!.monat)!.jahr,
+          monat: monatLesen(s.inhalt!.monat)!.monat,
+          milli: s.inhalt!.milli,
+          zeit: s.inhalt!.zeit,
+          id: s.id,
+          notiz: s.inhalt!.notiz,
+        ),
+  ];
+
+  /// Ein Wert je Monat (der zuletzt geschriebene), aufsteigend.
+  List<MonatsWert> get monatswerte => monatswerteZusammenfuehren(roheMonatswerte);
 }
 
 class ZaehlerDaten {
@@ -104,7 +121,12 @@ final zaehlerDatenProvider = Provider<ZaehlerDaten>((ref) {
     for (final z in zeilen.value!) ZaehlerEintrag(repo.ansicht(z, inhalt), List.unmodifiable(nachZaehler[z.id] ?? const [])),
   ];
   final inhalte = {for (final e in liste) if (e.inhalt != null) e.id: e.inhalt!};
-  final reihen = baueReihen(inhalte, {for (final e in liste) if (e.lesbar) e.id: e.rechenStaende});
+  final reihen = baueReihen(
+    inhalte,
+    {for (final e in liste) if (e.lesbar) e.id: e.rechenStaende},
+    monatswerte: {for (final e in liste) if (e.lesbar) e.id: e.roheMonatswerte},
+    heute: zaehlerHeute(DateTime.now()),
+  );
   return ZaehlerDaten(geladen: true, ich: me, darf: true, eintraege: liste, reihen: reihen, kacheln: baueKacheln(reihen));
 });
 

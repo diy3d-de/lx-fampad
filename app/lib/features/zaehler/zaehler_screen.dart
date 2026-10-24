@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/zaehler/zaehler_logik.dart' show abrechnungsperiode;
 import '../../data/zaehler/zaehler_repository.dart';
 import '../../data/zaehler/zaehler_state.dart';
 import '../../data/zaehler/zaehler_uebersicht.dart';
@@ -19,6 +20,7 @@ import '../lists/list_dialogs.dart' show bestaetigen;
 import 'zaehler_anzeige.dart';
 import 'zaehler_bericht_screen.dart';
 import 'zaehler_editor.dart';
+import 'zaehler_monat_screen.dart' show wertWort;
 import 'zaehler_stand_screen.dart';
 import 'zaehler_verlauf_screen.dart';
 
@@ -44,7 +46,7 @@ class ZaehlerScreen extends ConsumerWidget {
           child: FilledButton.icon(
             onPressed: daten.reihen.where((r) => !r.archiviert).isEmpty ? () => zaehlerEditorOeffnen(context) : () => standEintragenOeffnen(context),
             icon: Icon(daten.reihen.where((r) => !r.archiviert).isEmpty ? Icons.add : Icons.edit_note),
-            label: Text(daten.reihen.where((r) => !r.archiviert).isEmpty ? 'Zähler einrichten' : 'Stand eintragen'),
+            label: Text(daten.reihen.where((r) => !r.archiviert).isEmpty ? 'Zähler einrichten' : (daten.reihen.where((r) => !r.archiviert).every((r) => r.monatlich) ? 'Monatswert eintragen' : 'Stand eintragen')),
             style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
           ),
         ),
@@ -127,7 +129,11 @@ class _FaelligKarte extends StatelessWidget {
   Widget build(BuildContext context) {
     final erste = faellig.first;
     final t = reiheFaelligkeit(erste, heute).letzterTermin;
-    final titel = faellig.length == 1 ? '${erste.name}: Ablesen am ${t == null ? 'heute' : tagKurz(t)}' : '${faellig.length} Zähler warten auf eine Ablesung';
+    final alleMonatlich = faellig.every((r) => r.monatlich);
+    final vm = DateTime.utc(heute.year, heute.month - 1, 1);
+    final titel = faellig.length == 1
+        ? (erste.monatlich ? '${erste.name}: ${wertWort(erste.art)} ${monatName(vm.month)} fehlt' : '${erste.name}: Ablesen am ${t == null ? 'heute' : tagKurz(t)}')
+        : '${faellig.length} Zähler warten auf ${alleMonatlich ? 'einen Monatswert' : 'eine Ablesung'}';
     return Semantics(
       container: true,
       label: 'Ablesen fällig. $titel',
@@ -143,12 +149,12 @@ class _FaelligKarte extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(titel, style: const TextStyle(fontWeight: FontWeight.w700)),
-                  const Text('Dein Rhythmus ist abgelaufen. Trage den aktuellen Stand ein.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+                  Text(alleMonatlich ? 'Der Wert des Vormonats ist noch nicht eingetragen.' : 'Dein Rhythmus ist abgelaufen. Trage den aktuellen Stand ein.', style: const TextStyle(fontSize: 12, color: kTextMuted)),
                 ],
               ),
             ),
             const SizedBox(width: 8),
-            TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => standEintragenOeffnen(context, reiheIds: [for (final r in faellig) r.id]), child: const Text('Ablesen')),
+            TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => standEintragenOeffnen(context, reiheIds: [for (final r in faellig) r.id]), child: Text(alleMonatlich ? 'Eintragen' : 'Ablesen')),
           ],
         ),
       ),
@@ -173,12 +179,18 @@ class _KachelKarte extends StatelessWidget {
     final r = k.erste;
     final warn = ungewoehnlichHoch(k, heute);
     final solar = erzeugung && !k.istGruppe ? solarAuswertung(r, heute) : null;
+    final monatlich = !k.istGruppe && r.monatlich;
+    final periode = abrechnungsperiode(heute, periodeMonat: r.inhalt.periodeMonat, periodeTag: r.inhalt.periodeTag);
     // Hauptwert: Stand (einzeln) bzw. Verbrauch des letzten vollen Monats (Gruppe), Solar die Erzeugung der laufenden Periode
     final String haupt;
     final String? unter;
     if (solar != null) {
-      haupt = verbrauchAnzeige(solar.ergebnis.erzeugtMilli, einheit);
+      haupt = r.monatlich && r.monatswerte.isEmpty ? 'Noch kein Monatswert' : verbrauchAnzeige(solar.ergebnis.erzeugtMilli, einheit);
       unter = 'seit ${tagDeutsch(solar.periode.start)}';
+    } else if (monatlich) {
+      final bis = heute.isBefore(periode.ende) ? heute : periode.ende;
+      haupt = r.monatswerte.isEmpty ? 'Noch kein Monatswert' : verbrauchAnzeige(r.kurve.verbrauch(periode.start, bis).milli, einheit);
+      unter = 'seit ${tagDeutsch(periode.start)}';
     } else if (k.istGruppe) {
       haupt = monat == null ? 'Noch zu wenige Stände' : '${monatName(monat.monat)} ${verbrauchAnzeige(monat.milli, einheit)}';
       unter = '${k.reihen.length} Zähler zusammen';
@@ -187,7 +199,7 @@ class _KachelKarte extends StatelessWidget {
       unter = r.inhalt.nummer.isEmpty ? null : 'Zähler ${r.inhalt.nummer}';
     }
     final pille = switch (f.art) {
-      FaelligkeitsArt.faellig => const StatusPill('ABLESEN FÄLLIG', color: kWarn),
+      FaelligkeitsArt.faellig => StatusPill(k.reihen.every((x) => x.monatlich) ? 'WERT FÄLLIG' : 'ABLESEN FÄLLIG', color: kWarn),
       FaelligkeitsArt.aktuell => StatusPill(k.istGruppe ? '${k.reihen.length} ZÄHLER · AKTUELL' : (f.termin == null ? 'AKTUELL' : 'NÄCHSTE ${tagKurz(f.termin!)}'), color: kTerminal),
       FaelligkeitsArt.keinRhythmus => StatusPill(erzeugung && !k.istGruppe ? 'ERZEUGUNG' : 'KEIN RHYTHMUS', color: kTextMuted),
     };
@@ -195,8 +207,8 @@ class _KachelKarte extends StatelessWidget {
     final prozent = monat?.prozent;
     final semantik = StringBuffer('${k.titel}. $haupt');
     if (unter != null) semantik.write('. $unter');
-    if (monat != null) semantik.write('. ${monatName(monat.monat)} ${verbrauchAnzeige(monat.milli, einheit)}${prozent == null ? '' : ', ${prozent > 0 ? 'plus' : 'minus'} ${prozent.abs().round()} Prozent zum Vorjahr'}');
-    if (f.art == FaelligkeitsArt.faellig) semantik.write('. Ablesen fällig');
+    if (monat != null) semantik.write('. ${monatlich ? 'Monatswert ' : ''}${monatName(monat.monat)} ${verbrauchAnzeige(monat.milli, einheit)}${prozent == null ? '' : ', ${prozent > 0 ? 'plus' : 'minus'} ${prozent.abs().round()} Prozent zum Vorjahr'}');
+    if (f.art == FaelligkeitsArt.faellig) semantik.write(monatlich ? '. Monatswert fällig' : '. Ablesen fällig');
     if (warn) semantik.write('. Verbrauch ungewöhnlich hoch');
     semantik.write('. Öffnen für den Verlauf');
     return Semantics(
@@ -245,7 +257,7 @@ class _KachelKarte extends StatelessWidget {
                     children: [
                       Container(width: 8, height: 8, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(shape: BoxShape.circle, color: zaehlerFarbe(m.art))),
                       Expanded(child: Text(m.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      Text(m.letzter == null ? '–' : '${standAnzeige(m.letzter!.milli)} ${m.inhalt.einheit}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                      Text(m.monatlich ? (m.letzterMonat == null ? '–' : '${monatKurz(m.letzterMonat!.monat)} ${verbrauchAnzeige(m.letzterMonat!.milli, m.inhalt.einheit)}') : (m.letzter == null ? '–' : '${standAnzeige(m.letzter!.milli)} ${m.inhalt.einheit}'), style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
                     ],
                   ),
                 ),
@@ -263,7 +275,7 @@ class _KachelKarte extends StatelessWidget {
               const SizedBox(height: 6),
               const Row(children: [Icon(Icons.warning_amber_rounded, size: 16, color: kWarn), SizedBox(width: 6), Expanded(child: Text('Verbrauch ungewöhnlich hoch', style: TextStyle(fontSize: 13, color: kWarn)))]),
             ],
-            if (r.letzter == null && !k.istGruppe) const Padding(padding: EdgeInsets.only(top: 4), child: Text('Trage den ersten Stand ein, dann beginnt die Auswertung.', style: TextStyle(fontSize: 12, color: kTextMuted))),
+            if (!k.istGruppe && (monatlich ? r.monatswerte.isEmpty : r.letzter == null)) Padding(padding: const EdgeInsets.only(top: 4), child: Text(monatlich ? 'Trage den ersten Monatswert ein, dann beginnt die Auswertung.' : 'Trage den ersten Stand ein, dann beginnt die Auswertung.', style: const TextStyle(fontSize: 12, color: kTextMuted))),
           ],
         ),
       ),
