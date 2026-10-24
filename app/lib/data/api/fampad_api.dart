@@ -8,6 +8,7 @@ import '../sync/sync_models.dart';
 import '../crypto/schluessel.dart';
 import '../betrieb/betrieb_modelle.dart';
 import '../betrieb/familien_stand.dart';
+import '../dateien/datei_modelle.dart';
 import 'eltern_modelle.dart';
 import 'models.dart';
 
@@ -352,6 +353,9 @@ class FampadApi {
       return false; // nur eine Anzeige: ohne Antwort bleibt die Funktion unsichtbar
     }
   }
+
+  /// Zahlen der Dateiablage (`GET /files/usage`: belegt, reserviert, Kontingent, Grenzen). Ohne Schalter des Servers `404 not_found`.
+  Future<DateiNutzung> dateiNutzung() async => DateiNutzung.fromJson(await client.get('/files/usage'));
 
   /// Wie [serverFaehigkeiten], aber jeder Fehler ergibt "nichts davon" (nur für Anzeigen: ohne Antwort bleiben die Funktionen unsichtbar).
   Future<ServerFaehigkeiten> faehigkeitenOderKeine() async {
