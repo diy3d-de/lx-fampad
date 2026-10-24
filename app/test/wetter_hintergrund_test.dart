@@ -308,6 +308,25 @@ void main() {
       }
     });
 
+    test('Wandtablet-Autostart: nie gemeldet; war schon gemeldet, geht [] hin; Autostart aus meldet den Stand wieder', () async {
+      await start();
+      await c.read(wandtabletEinstellungenProvider.notifier).autostartSetzen(true);
+      await ruhe(30);
+      await c.read(pushProvider.notifier).einschalten();
+      await ruhe(100);
+      expect(c.read(pushProvider).angemeldet, isTrue);
+      expect(bodies, isEmpty, reason: 'Autostart an: gar nichts melden');
+      await c.read(wetterHinweisEinstellungenProvider.notifier).setzen(WetterHinweisArt.wind, true);
+      await ruhe(60);
+      expect(bodies, isEmpty);
+      await c.read(wandtabletEinstellungenProvider.notifier).autostartSetzen(false);
+      await ruhe(60);
+      expect(bodies.last, {'kinds': ['frost', 'wind']});
+      await c.read(wandtabletEinstellungenProvider.notifier).autostartSetzen(true);
+      await ruhe(60);
+      expect(bodies.last, {'kinds': <String>[]});
+    });
+
     test('Server ohne Wetter: die Route wird nie aufgerufen', () async {
       await start(wetterDa: false);
       await c.read(pushProvider.notifier).einschalten();

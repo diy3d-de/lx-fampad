@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error.dart';
 import '../auth/auth_state.dart';
 import '../push/push_state.dart';
+import '../wandtablet/wandtablet_einstellungen.dart';
 import 'wetter_hinweise.dart';
 import 'wetter_logik.dart' show WetterHinweisArt;
 import 'wetter_state.dart';
@@ -34,7 +35,10 @@ class WetterMeldung extends Notifier<void> {
     // wenn die Einstellungen gelesen sind; ein früheres Anlegen würde den ersten Abruf an ihr vorbeilaufen lassen
     final verfuegbar = ref.watch(wetterProvider.select((w) => w.dto?.verfuegbar ?? false));
     if (!verfuegbar) return;
-    final arten = wetterArtNamen(einst.an);
+    // Wandtablet-Autostart: das Gerät zeigt nie eine Wetter-Benachrichtigung, also soll der Server es gar nicht erst wecken (leere Liste); kommt der Autostart wieder aus, geht der Stand erneut hin
+    final wand = ref.watch(wandtabletEinstellungenProvider);
+    if (!wand.geladen) return;
+    final arten = wand.autostart ? <String>[] : wetterArtNamen(einst.an);
     final schluessel = '$user|${arten.join(',')}';
     if (schluessel == _gemeldet) return;
     // ohne je etwas gemeldet zu haben ist "nichts gewünscht" der Stand des Servers
