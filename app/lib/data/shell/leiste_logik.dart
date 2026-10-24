@@ -11,8 +11,6 @@ const kLeistePlaetze = 4;
 /// Schlüssel in `sync_meta`.
 const kLeisteSchluessel = 'leiste_bereiche';
 
-/// Der Dateien-Bereich ist noch nicht gebaut: ausgeblendet (mobil und Desktop). Auf `true` setzen, sobald er da ist.
-const kDateienSichtbar = false;
 
 /// Kennung eines Bereichs der Leiste (stabil, wird gespeichert) und sein Index im Seitenstapel (Reihenfolge von `kTabs`).
 class LeisteBereich {
@@ -21,12 +19,12 @@ class LeisteBereich {
   const LeisteBereich(this.id, this.tab);
 }
 
-/// Alle Bereiche, die in der Leiste stehen dürfen (Reihenfolge = Reihenfolge von `kTabs`; Dateien nur, wenn sichtbar).
+/// Alle Bereiche, die in der Leiste stehen dürfen (Reihenfolge = Reihenfolge von `kTabs`). Dateien steht nie in der Leiste: mobil eine Seite hinter "Mehr" (nur wenn der Server die
+/// Dateiablage meldet, siehe datei_state.dart), im Desktop-Layout ein Bereich der Seitenleiste.
 const kLeisteBereiche = <LeisteBereich>[
   LeisteBereich('start', 0),
   LeisteBereich('kalender', 1),
   LeisteBereich('chat', 2),
-  if (kDateienSichtbar) LeisteBereich('dateien', 3),
   LeisteBereich('listen', 4),
   LeisteBereich('aufgaben', 5),
 ];

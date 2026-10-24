@@ -352,8 +352,8 @@ void main() {
       await g.up();
       await warte(tester);
       expect(find.byType(StartseiteLuecke), findsNothing);
-      // auch nicht angezeigte Kacheln (Müll, Wetter) behalten ihren Eintrag
-      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'einkauf', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente', 'zaehler']);
+      // auch nicht angezeigte Kacheln (Müll, Wetter, Dateien ohne Dateiablage) behalten ihren Eintrag
+      expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'dateien', 'einkauf', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente', 'zaehler']);
       expect(speicher.werte.containsKey(mKey), isFalse);
       expect(oben(tester, '// aufgaben'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
       expect(tester.takeException(), isNull);
@@ -623,7 +623,7 @@ void main() {
       final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
       await g.up();
       await warte(tester);
-      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente', 'zaehler']);
+      expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente', 'zaehler']);
     });
   });
 
