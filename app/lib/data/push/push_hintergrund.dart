@@ -37,6 +37,7 @@ import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
 import 'push_wecker.dart';
 import '../betrieb/betrieb_hinweis.dart';
+import '../wetter/wetter_hintergrund.dart';
 import 'sicherheits_pruefer.dart';
 
 /// Argument, mit dem das Plugin den Hintergrund-Start kennzeichnet.
@@ -113,6 +114,8 @@ Future<WeckerLauf?> pushHintergrundStarten({
         await c.read(sicherheitsPrueferProvider).pruefenUndMelden(vordergrund: false, mindestAbstand: kSicherheitMindestabstand);
         // Betreiber-Warnung (nur für den Betreiber): feste lokale Benachrichtigung "Betrieb: Hinweis – öffne Betrieb"
         await c.read(betriebWarnPrueferProvider).pruefenUndMelden(vordergrund: false, mindestAbstand: kBetriebMindestabstand);
+        // Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall): der Server weckt ohne Inhalt, die App holt GET /weather und wertet lokal aus
+        await c.read(wetterHintergrundPrueferProvider).pruefen();
       } finally {
         abgebrochen = true;
         c.dispose();

@@ -600,10 +600,15 @@ export const pushEndpoints = pgTable(
     failCount: integer('fail_count').notNull().default(0),
     /** Deaktiviert (ntfy meldet 404/410 oder wiederholte Fehler): kein Versand, bis das Gerät sich neu anmeldet (PUT /me/push). */
     disabledAt: timestamp('disabled_at', { withTimezone: true }),
+    /** Wetter-Hinweise per Wecker: Bitmaske der Arten, die dieses Gerät will (weather/alerts.ts, 0 = aus; Bit i = Art i). Nur "Gerät will Art X", nie Inhalte. */
+    weatherKinds: integer('weather_kinds').notNull().default(0),
+    /** Wann je Art zuletzt ein Wetter-Wecker an dieses Gerät ging (Entprellung, `{art: Millisekunden}`). */
+    weatherSent: jsonb('weather_sent').$type<Record<string, number>>().notNull().default({}),
   },
   (t) => [
     foreignKey({ columns: [t.familyId, t.deviceId], foreignColumns: [devices.familyId, devices.id] }).onDelete('cascade'),
     unique('push_endpoints_topic_uq').on(t.topic),
+    check('push_endpoints_weather_kinds_ck', sql`${t.weatherKinds} between 0 and 31`),
     index('push_endpoints_family_idx').on(t.familyId),
     check('push_endpoints_topic_ck', sql`${t.topic} ~ '^up[A-Za-z0-9_-]{12,64}$'`),
   ],
@@ -1743,6 +1748,13 @@ export const weatherSamples = pgTable(
     windAngle: doublePrecision('wind_angle'),
   },
 );
+
+/** Zustand der Wetter-Hinweise je Art (Wetter-Dienst): gilt die Bedingung gerade (mit Hysterese)? Ein Neustart des Dienstes schickt so keinen Wecker doppelt. */
+export const weatherAlertState = pgTable('weather_alert_state', {
+  kind: text('kind').primaryKey(),
+  active: boolean('active').notNull(),
+  changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** Abfallarten (feste Liste; unbekannte Namen der Quelle landen unter `sonst`). Dieselben Codes verwendet die App. */
 export const WASTE_KINDS = ['rest', 'bio', 'gelb', 'papier', 'gruen', 'sonder', 'sperr', 'baum', 'sonst'] as const;

@@ -18,6 +18,7 @@ import 'push_plattform.dart';
 import 'push_plattform_fabrik.dart';
 import 'push_wecker.dart';
 import '../betrieb/betrieb_hinweis.dart';
+import '../wetter/wetter_hintergrund.dart';
 import 'sicherheits_pruefer.dart';
 
 /// Schlüssel in sync_meta (verschwindet mit der lokalen Datenbank beim Abmelden).
@@ -351,6 +352,10 @@ class PushController extends Notifier<PushZustand> {
       hinweis: ref.read(betriebHinweisProvider.notifier).zeigen,
       mindestAbstand: kBetriebMindestabstand,
     );
+    // Wetter-Hinweise: ist die App im Vordergrund, holt sie das Wetter ohnehin alle 10 Minuten selbst und zeigt den Hinweis; sonst (Prozess lebt, Oberfläche nicht)
+    // wie der Hintergrund-Start
+    if (!ref.mounted || appImVordergrund()) return;
+    await ref.read(wetterHintergrundPrueferProvider).pruefen();
   }
 
   /// Beim Abmelden (Hook in auth_state.dart): Endpunkt beim Server löschen (nur wenn die Sitzung noch gilt) und beim Verteiler abmelden.

@@ -34,6 +34,17 @@ class WandtabletEinstellungen {
 
 const Object _keine = Object();
 
+/// Läuft der Wandtablet-Modus gerade (Bildschirm offen)? Wetter-Benachrichtigungen werden dann nicht gezeigt. Nur im Arbeitsspeicher der laufenden App; die
+/// Hintergrund-Engine kennt nur die Einstellung "Beim Start automatisch starten" ([kWandAutostartSchluessel]) als Hinweis auf ein dauerhaftes Wandtablet.
+class WandtabletLaeuft extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void setzen(bool laeuft) => state = laeuft;
+}
+
+final wandtabletLaeuftProvider = NotifierProvider<WandtabletLaeuft, bool>(WandtabletLaeuft.new);
+
 class WandtabletEinstellungenNotifier extends Notifier<WandtabletEinstellungen> {
   int _generation = 0;
   Future<void> _gelesen = Future<void>.value();
