@@ -8,6 +8,7 @@ import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/wetter/wetter_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:lx_fampad/features/wetter/wetter_screen.dart';
+import 'package:lx_fampad/features/wetter/wetter_verlauf_karte.dart';
 import 'package:lx_fampad/widgets/kopfzeile.dart';
 
 import 'support/fake_server.dart';
@@ -134,11 +135,11 @@ void main() {
       expect(find.byType(WetterScreen), findsOneWidget);
       expect(find.text('71 %'), findsOneWidget);
       expect(find.text('1013 hPa'), findsOneWidget);
-      expect(find.text('0,5 mm / 2,1 mm'), findsOneWidget);
-      expect(find.text('12 km/h aus W'), findsOneWidget);
-      expect(find.text('25 km/h'), findsOneWidget);
+      expect(find.text('1 h: 0,5 · 24 h: 2,1 mm'), findsOneWidget);
+      expect(find.text('12 km/h'), findsOneWidget);
+      expect(find.text('aus W · Böen bis 25 km/h'), findsOneWidget);
       expect(find.text('3,0 °C / 18,5 °C'), findsOneWidget);
-      expect(find.text('// VERLAUF 24 H'), findsOneWidget);
+      expect(find.byType(WetterVerlaufKarte), findsOneWidget);
       expect(find.byType(CustomPaint), findsWidgets);
       pruefeLayout(tester, 'Wetter-Detail');
     },
@@ -273,6 +274,7 @@ void main() {
     await tippe(tester, find.bySemanticsLabel('Wetter'));
     expect(find.byType(WetterScreen), findsOneWidget);
     // Schalter aus: der geöffnete Bereich bleibt in der Leiste (verschwindet nicht unter dir), Kachel ist weg
+    await tester.scrollUntilVisible(find.byType(Switch), 300, scrollable: find.descendant(of: find.byType(WetterScreen), matching: find.byType(Scrollable)).first);
     await tippe(tester, find.byType(Switch));
     expect(find.bySemanticsLabel('Wetter'), findsOneWidget);
     await tippe(tester, find.bySemanticsLabel('Start'));

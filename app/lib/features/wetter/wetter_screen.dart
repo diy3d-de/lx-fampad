@@ -6,11 +6,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
-import '../../data/api/models.dart';
+import '../../data/wetter/wetter_logik.dart' show gefuehlteTemperatur, regenLetzte24;
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
+import 'wetter_hinweise_screen.dart';
+import 'wetter_teile.dart';
+import 'wetter_verlauf_karte.dart';
 
 class WetterScreen extends ConsumerStatefulWidget {
   /// Im Desktop-Layout ein Bereich der Shell (Seitenleiste und Fußzeile bleiben): ohne eigenes Gerüst, ohne Zurück-Pfeil, mit der gemeinsamen Kopfzeile.
@@ -77,9 +80,15 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
         else ...[
           _Kopf(st: st, jetzt: jetzt),
           const SizedBox(height: 16),
-          _Werte(dto: dto!, a: a),
+          WetterVerlaufKarte(dto: dto!),
           const SizedBox(height: 16),
-          _Verlauf(dto: dto),
+          WetterKacheln(dto: dto),
+          const SizedBox(height: 16),
+          WetterRegenKarte(dto: dto),
+          if (dto.aktuell!.regen1h != null || dto.aktuell!.regen24h != null || regenLetzte24(dto.stunden).isNotEmpty) const SizedBox(height: 16),
+          WetterWindKarte(a: a),
+          if (a.windKmh != null || a.boeKmh != null) const SizedBox(height: 16),
+          WetterVergleichKarte(dto: dto),
         ],
         const SizedBox(height: 16),
         LxCard(
@@ -103,7 +112,12 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
                 unawaited(ref.read(wetterProvider.notifier).anzeigenSetzen(v)),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 8),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: LinkKnopf('Wetter-Hinweise einstellen', onPressed: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const WetterHinweiseScreen())))),
+        ),
+        const SizedBox(height: 4),
         const Text(
           'Messwerte einer Wetterstation in der Nähe. Dein Gerät fragt nur den eigenen Server; abgerufen wird ausschließlich dort.',
           style: TextStyle(fontSize: 12, color: kTextMuted),
@@ -136,10 +150,11 @@ class _Kopf extends StatelessWidget {
     final a = st.dto!.aktuell!;
     final stand = wetterStand(st, jetzt);
     final abgerufen = st.abgerufen;
+    final gefuehlt = a.temperatur == null ? null : gefuehlteTemperatur(temperatur: a.temperatur, feuchte: a.feuchte, windKmh: a.windKmh);
     return LxCard(
       child: Semantics(
         container: true,
-        label: 'Temperatur ${temperaturText(a.temperatur)}. ${stand.text}',
+        label: 'Temperatur ${temperaturText(a.temperatur)}${gefuehlt == null ? '' : ', gefühlt ${temperaturText(gefuehlt)}'}. ${stand.text}',
         excludeSemantics: true,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -155,6 +170,10 @@ class _Kopf extends StatelessWidget {
                 color: kAccent,
               ),
             ),
+            if (gefuehlt != null) ...[
+              const SizedBox(height: 4),
+              Text('gefühlt ${temperaturText(gefuehlt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+            ],
             const SizedBox(height: 6),
             Text(
               stand.text,
@@ -180,160 +199,4 @@ class _Kopf extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Werte extends StatelessWidget {
-  final WetterDto dto;
-  final WetterAktuell a;
-  const _Werte({required this.dto, required this.a});
-
-  @override
-  Widget build(BuildContext context) {
-    final zeilen = <(String, String)>[
-      if (dto.min24h != null && dto.max24h != null)
-        (
-          'Min / Max (24 h)',
-          '${temperaturText(dto.min24h)} / ${temperaturText(dto.max24h)}',
-        ),
-      if (a.feuchte != null) ('Luftfeuchte', feuchteText(a.feuchte)),
-      if (a.druck != null) ('Luftdruck', druckText(a.druck)),
-      if (a.regen1h != null || a.regen24h != null)
-        (
-          'Regen (1 h / 24 h)',
-          '${regenText(a.regen1h)} / ${regenText(a.regen24h)}',
-        ),
-      if (a.windKmh != null)
-        (
-          'Wind',
-          '${windText(a.windKmh)}${a.windRichtung != null ? ' aus ${windRichtungText(a.windRichtung!)}' : ''}',
-        ),
-      if (a.boeKmh != null) ('Böen', windText(a.boeKmh)),
-    ];
-    if (zeilen.isEmpty) return const SizedBox.shrink();
-    return LxCard(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      child: Column(
-        children: [
-          for (final z in zeilen)
-            Semantics(
-              container: true,
-              label: '${z.$1}: ${z.$2}',
-              excludeSemantics: true,
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(minHeight: 44),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 5,
-                      child: Text(
-                        z.$1,
-                        style: const TextStyle(color: kTextMuted),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      flex: 6,
-                      child: Text(
-                        z.$2,
-                        textAlign: TextAlign.end,
-                        style: const TextStyle(
-                          fontFamily: kFontMono,
-                          fontSize: 14,
-                          color: kTextStrong,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Verlauf extends StatelessWidget {
-  final WetterDto dto;
-  const _Verlauf({required this.dto});
-
-  @override
-  Widget build(BuildContext context) {
-    final p = dto.verlauf;
-    return LxCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const MonoLabel('// verlauf 24 h'),
-          const SizedBox(height: 12),
-          if (p.length < 2)
-            const Text(
-              'Noch zu wenige Messwerte für einen Verlauf.',
-              style: TextStyle(color: kTextMuted),
-            )
-          else
-            Semantics(
-              container: true,
-              label:
-                  'Temperaturverlauf der letzten 24 Stunden, von ${temperaturText(dto.min24h)} bis ${temperaturText(dto.max24h)}',
-              excludeSemantics: true,
-              child: SizedBox(
-                height: 140,
-                width: double.infinity,
-                child: CustomPaint(painter: _VerlaufPainter(p)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VerlaufPainter extends CustomPainter {
-  final List<WetterPunkt> punkte;
-  _VerlaufPainter(this.punkte);
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final temps = punkte.map((p) => p.temperatur);
-    var lo = temps.reduce((a, b) => a < b ? a : b);
-    var hi = temps.reduce((a, b) => a > b ? a : b);
-    if (hi - lo < 2) {
-      final mitte = (hi + lo) / 2;
-      lo = mitte - 1;
-      hi = mitte + 1;
-    }
-    final t0 = punkte.first.zeit.millisecondsSinceEpoch.toDouble();
-    final t1 = punkte.last.zeit.millisecondsSinceEpoch.toDouble();
-    final spanne = (t1 - t0) == 0 ? 1.0 : (t1 - t0);
-    Offset pos(WetterPunkt p) => Offset(
-      (p.zeit.millisecondsSinceEpoch - t0) / spanne * size.width,
-      size.height - (p.temperatur - lo) / (hi - lo) * size.height,
-    );
-    final raster = Paint()
-      ..color = kBorder
-      ..strokeWidth = 1;
-    for (var i = 0; i <= 2; i++) {
-      final y = size.height * i / 2;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), raster);
-    }
-    final start = pos(punkte.first);
-    final pfad = Path()..moveTo(start.dx, start.dy);
-    for (final p in punkte.skip(1)) {
-      final o = pos(p);
-      pfad.lineTo(o.dx, o.dy);
-    }
-    canvas.drawPath(
-      pfad,
-      Paint()
-        ..color = kAccent
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..strokeJoin = StrokeJoin.round,
-    );
-    canvas.drawCircle(pos(punkte.last), 3.5, Paint()..color = kAccent);
-  }
-
-  @override
-  bool shouldRepaint(_VerlaufPainter old) => old.punkte != punkte;
 }
