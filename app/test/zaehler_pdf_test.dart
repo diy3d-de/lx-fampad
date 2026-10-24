@@ -186,4 +186,60 @@ void main() {
     final k = kacheln({'a': ZaehlerInhalt(art: ZaehlerArt.strom, name: 'S')}, {'a': monatlich(2025, 6, 4)});
     expect(text(pdfFuer(k, jahr2025)), contains('Hinweis: Für einen Teil des Zeitraums fehlen Ablesungen'));
   });
+
+  group('Monatswerte', () {
+    List<ZaehlerKachel> solarMonate(List<MonatsWert> werte) => baueKacheln(baueReihen(
+      {'s': ZaehlerInhalt(art: ZaehlerArt.erzeugung, name: 'Balkon', modus: ZaehlerModus.monat, eigenverbrauchBp: 8000, preise: const [Preis(ab: '2020-01-01', arbeitspreis: 3000)])},
+      {'s': [Stand(DateTime.utc(2025, 1, 1), 5000)]}, // ein Stand zählt bei Monatswerten nie
+      monatswerte: {'s': werte},
+      heute: heute,
+    ));
+    final werte = [
+      for (var m = 1; m <= 12; m++) MonatsWert(jahr: 2024, monat: m, milli: 10000 * m, id: 'a$m'),
+      for (var m = 1; m <= 12; m++) MonatsWert(jahr: 2025, monat: m, milli: 20000 * m, id: 'b$m'),
+    ];
+
+    test('Tabelle je Monat mit Summe und Vorjahr statt Ständen', () {
+      final d = baueBericht(kacheln: solarMonate(werte), wahl: const BerichtWahl(zeitraum: BerichtZeitraum.kalenderjahr, jahr: 2025, kosten: true), heute: heute);
+      final ab = d.abschnitte.single;
+      expect(ab.monatswerte, isTrue);
+      expect(ab.tabellen, isEmpty);
+      expect(ab.monate, hasLength(12));
+      expect(ab.monate[2].verbrauch, '60,0'); // März 2025: 60 kWh
+      expect(ab.monate[2].vorjahr, '30,0');
+      expect(ab.monate[2].veraenderung, '+100 %');
+      expect(ab.gesamt, '1.560 kWh'); // 20 * 78
+      expect(ab.vorjahrGesamt, '780 kWh');
+      expect(ab.unvollstaendig, isFalse);
+      final t = text(zaehlerBerichtPdf(d));
+      expect(t, contains('Monatswerte Erzeugung (kWh)'));
+      expect(t, contains('Summe Erzeugung'));
+      expect(t, contains('1.560 kWh'));
+      expect(t, contains('Vorjahreszeitraum'));
+      expect(t, contains('Ersparnis')); // Solar: Ersparnis statt Kosten
+      expect(t, isNot(contains('Keine Stände')));
+      expect(t, isNot(contains('Stand kWh')));
+    });
+
+    test('fehlende Monate und der laufende Monat sind gekennzeichnet', () {
+      final luecke = [for (final w in werte) if (!(w.jahr == 2026)) w, MonatsWert(jahr: 2026, monat: 10, milli: 5000, id: 'x')];
+      final d = baueBericht(kacheln: solarMonate(luecke), wahl: const BerichtWahl(zeitraum: BerichtZeitraum.kalenderjahr, jahr: 2026), heute: heute);
+      final ab = d.abschnitte.single;
+      expect(ab.unvollstaendig, isTrue);
+      expect(ab.monate.first.verbrauch, '–');
+      final t = text(zaehlerBerichtPdf(d));
+      expect(t, contains('fehlen Monatswerte'));
+      expect(t, contains('Zwischenstand'));
+    });
+
+    test('Zählerstand-Zähler bleiben im Bericht unverändert (Stände, Verbrauch je Monat)', () {
+      final k = kacheln({'a': ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Strom Haus')}, {'a': monatlich(2024, 1, 30)});
+      final d = baueBericht(kacheln: k, wahl: const BerichtWahl(zeitraum: BerichtZeitraum.kalenderjahr, jahr: 2025), heute: heute);
+      expect(d.abschnitte.single.monatswerte, isFalse);
+      expect(d.abschnitte.single.tabellen, isNotEmpty);
+      final t = text(zaehlerBerichtPdf(d));
+      expect(t, contains('Verbrauch je Monat (kWh)'));
+      expect(t, contains('Gesamtverbrauch'));
+    });
+  });
 }

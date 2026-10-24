@@ -112,6 +112,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
     final gewaehlt = [for (final k in alle) if (_gewaehlt!.contains(k.schluessel)) k];
     final jahr = _jahr ?? heute.year;
     final wahl = BerichtWahl(zeitraum: _zeitraum, jahr: jahr, von: _von, bis: _bis, staende: _staende, monate: _monate, vorjahr: _vorjahr, kosten: _kosten);
+    final nurMonatswerte = gewaehlt.isNotEmpty && gewaehlt.every((k) => k.reihen.every((r) => r.monatlich));
     final kannErstellen = !_arbeitet && gewaehlt.isNotEmpty && wahl.gueltig && (_staende || _monate);
     if (!daten.geladen || alle.isEmpty) {
       return AuthSeite(label: '// zähler', titel: 'Bericht', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Es gibt noch keinen Zähler, für den ein Bericht entstehen kann.', fehler: false)]);
@@ -182,13 +183,13 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            AuswahlKnopf(text: 'Stände', gewaehlt: _staende, onTap: () => setState(() => _staende = !_staende)),
+            AuswahlKnopf(text: nurMonatswerte ? 'Monatswerte' : 'Stände', gewaehlt: _staende, onTap: () => setState(() => _staende = !_staende)),
             AuswahlKnopf(text: 'Verbrauch je Monat', gewaehlt: _monate, onTap: () => setState(() => _monate = !_monate)),
             AuswahlKnopf(text: 'Vorjahr', gewaehlt: _vorjahr, onTap: () => setState(() => _vorjahr = !_vorjahr)),
             AuswahlKnopf(text: 'Kosten', gewaehlt: _kosten, onTap: () => setState(() => _kosten = !_kosten)),
           ],
         ),
-        if (!_staende && !_monate) const Padding(padding: EdgeInsets.only(top: 6), child: Text('Wähle mindestens „Stände“ oder „Verbrauch je Monat“.', style: TextStyle(color: kWarn, fontSize: 13))),
+        if (!_staende && !_monate) Padding(padding: const EdgeInsets.only(top: 6), child: Text(nurMonatswerte ? 'Wähle mindestens „Monatswerte“ oder „Verbrauch je Monat“.' : 'Wähle mindestens „Stände“ oder „Verbrauch je Monat“.', style: TextStyle(color: kWarn, fontSize: 13))),
         const SizedBox(height: 16),
         const MonoLabel('// vorschau', color: kTextMuted),
         const SizedBox(height: 6),
@@ -223,7 +224,7 @@ class _VorschauZeile extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Semantics(
         container: true,
-        label: '${kachel.titel}: ${zeitraumText(z)}, ${v.abgedeckteTage == 0 ? 'keine Stände' : verbrauchAnzeige(v.milli, kachel.einheit)}',
+        label: '${kachel.titel}: ${zeitraumText(z)}, ${v.abgedeckteTage == 0 ? (kachel.erste.monatlich ? 'keine Werte' : 'keine Stände') : verbrauchAnzeige(v.milli, kachel.einheit)}',
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -238,7 +239,7 @@ class _VorschauZeile extends StatelessWidget {
                 ],
               ),
             ),
-            Text(v.abgedeckteTage == 0 ? 'keine Stände' : verbrauchAnzeige(v.milli, kachel.einheit), style: const TextStyle(fontFamily: kFontMono, fontSize: 12)),
+            Text(v.abgedeckteTage == 0 ? (kachel.erste.monatlich ? 'keine Werte' : 'keine Stände') : verbrauchAnzeige(v.milli, kachel.einheit), style: const TextStyle(fontFamily: kFontMono, fontSize: 12)),
           ],
         ),
       ),

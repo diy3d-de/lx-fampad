@@ -1,7 +1,6 @@
 // Zähler: Oberfläche der Eingabeart "Monatswerte" (Balkonkraftwerk): Kachel, Monatswert eintragen (Monat, Vorjahr, Jahressumme, ersetzen, Zahlendreher), Verlauf mit Bearbeiten und
 // Löschen, Einrichten mit Vorbelegung der Eingabeart; bei 360 px und Textskala 1.0/1.5/2.0. Kinder haben keinen Zugang. Daten über überschriebene Provider, Schreibwege über ein aufzeichnendes Repository.
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
@@ -14,7 +13,6 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 
 import 'support/fake_erinnerung_port.dart';
 import 'support/harness.dart';
-import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
 
 void main() {
@@ -221,7 +219,7 @@ void main() {
     // AuswahlKnopf: das gewählte Feld ist als ausgewählt ausgezeichnet
     void gewaehlt(WidgetTester tester, String text, bool soll) {
       final knoten = tester.getSemantics(find.bySemanticsLabel(text).first);
-      expect(knoten, soll ? containsSemantics(isSelected: true) : isNot(containsSemantics(isSelected: true)), reason: text);
+      expect(knoten, soll ? isSemantics(isSelected: true) : isNot(isSemantics(isSelected: true)), reason: text);
     }
 
     testWidgets('Erzeugung: Eingabeart ist mit Monatswerte vorbelegt; kein Ablese-Rhythmus; Speichern legt den Zähler mit modus monat an', (tester) async {

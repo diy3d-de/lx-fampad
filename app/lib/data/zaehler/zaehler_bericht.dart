@@ -86,6 +86,12 @@ class BerichtAbschnitt {
   final String? vorjahrVeraenderung;
   final bool unvollstaendig;
 
+  /// Alle Zähler des Abschnitts haben die Eingabeart Monatswerte: statt der Stände steht die Tabelle der Monatswerte (mit Summe und Vorjahr).
+  final bool monatswerte;
+
+  /// "Erzeugung" bei einer Anlage, sonst "Verbrauch".
+  final String wort;
+
   /// Kosten oder Ersparnis als Zeilen (Bezeichnung, Wert); leer, wenn nicht gewählt oder kein Tarif.
   final List<(String, String)> kosten;
   final String kostenTitel;
@@ -101,6 +107,8 @@ class BerichtAbschnitt {
     this.vorjahrGesamt,
     this.vorjahrVeraenderung,
     this.unvollstaendig = false,
+    this.monatswerte = false,
+    this.wort = 'Verbrauch',
     this.kosten = const [],
     this.kostenTitel = 'Kosten',
   });
@@ -126,8 +134,10 @@ BerichtAbschnitt _abschnitt(ZaehlerKachel k, BerichtWahl w, DateTime heute) {
   final vj = vorjahrVon(z);
   final einheit = k.einheit;
   final tabellen = <BerichtTabelle>[];
+  final nurMonatswerte = k.reihen.every((r) => r.monatlich);
   if (w.staende) {
     for (final r in k.reihen) {
+      if (r.monatlich) continue; // Monatswerte haben keine Stände: sie stehen in der Monatstabelle
       final zeilen = <BerichtStandZeile>[];
       Stand? davor;
       for (final s in r.staende) {
@@ -154,7 +164,7 @@ BerichtAbschnitt _abschnitt(ZaehlerKachel k, BerichtWahl w, DateTime heute) {
     }
   }
   final monate = <BerichtMonatZeile>[];
-  if (w.monate) {
+  if (w.monate || (nurMonatswerte && w.staende)) {
     final aktuell = kachelMonate(k, z.start, z.ende);
     final vorher = kachelMonate(k, vj.start, vj.ende);
     for (var i = 0; i < aktuell.length; i++) {
@@ -212,6 +222,8 @@ BerichtAbschnitt _abschnitt(ZaehlerKachel k, BerichtWahl w, DateTime heute) {
     vorjahrGesamt: w.vorjahr && vorGesamt.abgedeckteTage > 0 ? verbrauchAnzeige(vorGesamt.milli, einheit) : null,
     vorjahrVeraenderung: w.vorjahr && gesamt.abgedeckteTage > 0 && vorGesamt.vollstaendig ? _veraenderung(gesamt.milli, vorGesamt.milli) : null,
     unvollstaendig: !gesamt.vollstaendig,
+    monatswerte: nurMonatswerte,
+    wort: k.art == ZaehlerArt.erzeugung ? 'Erzeugung' : 'Verbrauch',
     kosten: kosten,
     kostenTitel: kostenTitel,
   );

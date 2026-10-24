@@ -161,7 +161,7 @@ Uint8List zaehlerBerichtPdf(BerichtDaten d) {
       s.y -= 13;
     }
     if (ab.unvollstaendig) {
-      s.text('Hinweis: Für einen Teil des Zeitraums fehlen Ablesungen; die Werte gelten nur für den abgedeckten Teil.', links, 8.5, farbe: _cMuted);
+      s.text(ab.monatswerte ? 'Hinweis: Für einen Teil des Zeitraums fehlen Monatswerte; die Summe gilt nur für die eingetragenen Monate.' : 'Hinweis: Für einen Teil des Zeitraums fehlen Ablesungen; die Werte gelten nur für den abgedeckten Teil.', links, 8.5, farbe: _cMuted);
       s.y -= 12;
     }
     s.y -= 6;
@@ -193,7 +193,7 @@ Uint8List zaehlerBerichtPdf(BerichtDaten d) {
     // Verbrauch je Monat: Balken und Tabelle
     if (ab.monate.isNotEmpty) {
       s.platz(130);
-      s.text('Verbrauch je Monat (${ab.einheit})', links, 10, fett: true);
+      s.text(ab.monatswerte ? 'Monatswerte ${ab.wort} (${ab.einheit})' : '${ab.wort} je Monat (${ab.einheit})', links, 10, fett: true);
       s.y -= 8;
       const hoehe = 56.0;
       var max = 1;
@@ -217,7 +217,7 @@ Uint8List zaehlerBerichtPdf(BerichtDaten d) {
         s.text('Die Umrisse zeigen das Vorjahr.', links, 8, farbe: _cMuted);
         s.y -= 12;
       }
-      _kopfzeile(s, ['Monat', 'Verbrauch', if (d.wahl.vorjahr) 'Vorjahr', if (d.wahl.vorjahr) 'Veränd.']);
+      _kopfzeile(s, ['Monat', ab.monatswerte ? 'Wert' : 'Verbrauch', if (d.wahl.vorjahr) 'Vorjahr', if (d.wahl.vorjahr) 'Veränd.']);
       for (final m in ab.monate) {
         s.platz(16);
         s.text('${m.monat}${m.teilweise && m.milli != null ? ' *' : ''}', links, 9.5);
@@ -229,7 +229,7 @@ Uint8List zaehlerBerichtPdf(BerichtDaten d) {
         s.y -= 13.5;
       }
       if (ab.monate.any((m) => m.teilweise && m.milli != null)) {
-        s.text('* nicht der ganze Monat ist durch Ablesungen gedeckt', links, 8, farbe: _cMuted);
+        s.text(ab.monatswerte ? '* laufender Monat: Zwischenstand' : '* nicht der ganze Monat ist durch Ablesungen gedeckt', links, 8, farbe: _cMuted);
         s.y -= 12;
       }
       s.y -= 6;
@@ -239,7 +239,7 @@ Uint8List zaehlerBerichtPdf(BerichtDaten d) {
     s.platz(60);
     s.linie(links, rechts, s.y + 6);
     s.y -= 8;
-    s.text('Gesamtverbrauch', links, 10.5);
+    s.text(ab.monatswerte ? 'Summe ${ab.wort}' : 'Gesamtverbrauch', links, 10.5);
     s.text(ab.gesamt, rechts, 10.5, fett: true, rechts: true);
     s.y -= 14;
     if (ab.vorjahrGesamt != null) {
