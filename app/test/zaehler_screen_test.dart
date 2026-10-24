@@ -407,6 +407,8 @@ void main() {
       await eingeben(tester, 'Name (zum Beispiel Strom Haus)', 'Strom Haus');
       expect(tester.widget<SwitchListTile>(find.widgetWithText(SwitchListTile, 'Kosten rechnen')).value, isTrue);
       await tippe(tester, find.text('Preisstand hinzufügen'));
+      expect(find.text('Der erste Preis gilt auch für frühere Zeiträume.'), findsOneWidget);
+      expect(find.textContaining('Gilt ab 01.01.2026'), findsOneWidget, reason: 'der erste Preis beginnt vorbelegt am Jahresanfang, nicht heute');
       await eingeben(tester, 'Arbeitspreis in Euro je kWh', '0,31');
       await eingeben(tester, 'Grundgebühr in Euro im Jahr', '138');
       await eingeben(tester, 'Zählergebühr in Euro im Jahr', '24');
@@ -418,6 +420,7 @@ void main() {
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
       final z = repo.angelegt.single;
       expect(z.art, ZaehlerArt.strom);
+      expect(z.preise.single.ab, '2026-01-01');
       expect(z.preise.single.arbeitspreis, 3100);
       expect(z.preise.single.grundgebuehrJahr, 13800);
       expect(z.preise.single.zaehlergebuehrJahr, 2400);

@@ -246,7 +246,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     final p = await showDialog<Preis>(
       useRootNavigator: false,
       context: context,
-      builder: (_) => _PreisDialog(start: index == null ? null : _preise[index], nurArbeit: _art == ZaehlerArt.erzeugung, einheit: _art == ZaehlerArt.eigen ? _einheit.text.trim() : _art.einheit),
+      builder: (_) => _PreisDialog(start: index == null ? null : _preise[index], erster: index == null && _preise.isEmpty, nurArbeit: _art == ZaehlerArt.erzeugung, einheit: _art == ZaehlerArt.eigen ? _einheit.text.trim() : _art.einheit),
     );
     if (p == null || !mounted) return;
     setState(() {
@@ -568,8 +568,11 @@ class _Stepper extends StatelessWidget {
 class _PreisDialog extends StatefulWidget {
   final Preis? start;
   final bool nurArbeit;
+
+  /// Erster Preis des Zählers: gilt auch für frühere Zeiträume, Beginn deshalb vorbelegt mit dem Jahresanfang statt mit heute.
+  final bool erster;
   final String einheit;
-  const _PreisDialog({required this.start, required this.nurArbeit, required this.einheit});
+  const _PreisDialog({required this.start, required this.erster, required this.nurArbeit, required this.einheit});
 
   @override
   State<_PreisDialog> createState() => _PreisDialogState();
@@ -579,7 +582,7 @@ class _PreisDialogState extends State<_PreisDialog> {
   late final _arbeit = TextEditingController(text: widget.start == null ? '' : preisText(widget.start!.arbeitspreis));
   late final _grund = TextEditingController(text: widget.start == null || widget.start!.grundgebuehrJahr == 0 ? '' : geldText(widget.start!.grundgebuehrJahr));
   late final _zaehler = TextEditingController(text: widget.start == null || widget.start!.zaehlergebuehrJahr == 0 ? '' : geldText(widget.start!.zaehlergebuehrJahr));
-  late DateTime _ab = widget.start?.abTag ?? zaehlerHeute(DateTime.now());
+  late DateTime _ab = widget.start?.abTag ?? (widget.erster ? DateTime.utc(zaehlerHeute(DateTime.now()).year, 1, 1) : zaehlerHeute(DateTime.now()));
   String? _fehler;
 
   @override
@@ -625,6 +628,11 @@ class _PreisDialogState extends State<_PreisDialog> {
       children: [
         if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 10)],
         OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(_datum()), icon: const Icon(Icons.calendar_today, size: 18), label: Text('Gilt ab ${tagDeutsch(_ab)}')),
+        const SizedBox(height: 6),
+        Text(
+          widget.erster ? 'Der erste Preis gilt auch für frühere Zeiträume.' : 'Der Preis gilt ab diesem Datum bis zum nächsten Preisstand. Davor gilt der vorherige Preis.',
+          style: const TextStyle(fontSize: 12, color: kTextMuted),
+        ),
         const SizedBox(height: 12),
         TextField(controller: _arbeit, autofocus: true, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))], decoration: InputDecoration(labelText: 'Arbeitspreis in Euro je ${widget.einheit.isEmpty ? 'Einheit' : widget.einheit}')),
         if (!widget.nurArbeit) ...[
