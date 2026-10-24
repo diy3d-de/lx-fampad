@@ -4,7 +4,7 @@
 //    Im Ausgang lokal `l1:z1:…`. Hülle: Art `z`.
 //  - Zählerstand: Klartext `a1:` + JSON (Datum, Stand, Notiz, Marke). Im Ausgang lokal `l1:a1:…`. Hülle: Art `a`, Bezug = Zähler.
 //  - Monatswert (Eingabeart "Monatswerte", z. B. Balkonkraftwerk ohne Zähler): ebenfalls `a1:`, aber mit `v: 2`, Monat `m` (`YYYY-MM`), Wert `w` (Tausendstel der Einheit im Monat) und
-//    Schreibzeit `t` (Millisekunden); OHNE Datum `d`. Ältere Apps lesen `v: 2` nicht (sie zeigen "neuere App-Version nötig") und halten ihn nie für einen Zählerstand. Der Server kennt
+//    Schreibzeit `t` (Millisekunden); OHNE Datum `d`. Ältere Apps lesen `v: 2` nicht und lassen ihn weg (er erscheint dort in keiner Liste, nie als falscher Zählerstand). Der Server kennt
 //    für Stände nur Zufalls-IDs: ein Monat kann darum mehrfach vorkommen (zwei Geräte); es gilt der Eintrag mit dem größten `t` (bei Gleichstand die größte ID), siehe `monatswerteZusammenfuehren`.
 // Alle Mengen und Beträge sind GANZE ZAHLEN (Festkomma, keine Gleitkommafehler): Stände in Tausendstel der Einheit (1,234 kWh = 1234), Preise je Einheit in Zehntausendstel Euro
 // (0,3456 €/kWh = 3456), Gebühren und Abschläge in Cent. Der Server liest nichts davon. Unbekannte Versionen (`v` größer als [kZaehlerFormat]) und kaputte Daten ergeben `null`
