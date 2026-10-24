@@ -11,7 +11,10 @@ import type { Role } from '../auth/types.js';
 export interface EngineFlags {
   /** Wraps mit Schlüsselversion (Wrap-ID v2) annehmen (E2EE_WRAP_KEY_VERSION). */
   wrapKeyVersion: boolean;
+  /** Dateiablage (FILES_ENABLED): Ordner, Dateien und Anhänge werden nur dann angenommen. */
+  filesEnabled?: boolean;
 }
+import type { ClaimedBlob, ClaimField } from '../files/claim.js';
 import type { Actor, Facts, Rules } from './permissions.js';
 
 /** Eine Zeile aus der Datenbank (Schlüssel = Eigenschaftsnamen der Drizzle-Tabelle, also camelCase). */
@@ -90,6 +93,14 @@ export interface EntityDef {
   ownerPerParent?: { field: string; max: number };
   /** Personen, die durch diese Änderung die Sicht auf den Datensatz GEWINNEN; sie bekommen den bisherigen Inhalt (begrenzt) mit dem Änderungsstrom. */
   gainedSight?(before: Row, after: Row): readonly string[];
+  /**
+   * Blobs der Dateiablage, die der Datensatz beim ANLEGEN beansprucht (Abschnitt 6n): je Feld die ID des hochgeladenen Blobs (Modus und Art müssen passen). Die Engine
+   * beansprucht sie atomar in der Sync-Transaktion (`UPDATE … RETURNING`, files/claim.ts) und lehnt die Op mit `invalid_reference` ab, wenn ein Blob fehlt, fremd oder schon
+   * vergeben ist. `derive` setzt vom Server gesetzte Felder (Größe, Typ, Prüfsumme) aus den beanspruchten Blobs. Danach hängt die Leseberechtigung der Blobs an diesem Datensatz.
+   */
+  claim?: { fields: readonly ClaimField[]; derive?(blobs: ReadonlyMap<string, ClaimedBlob>): Row };
+  /** Zusätzliche, asynchrone Sperre für das Löschen (z. B. ein Ordner nur, wenn er leer ist); false = `forbidden`. */
+  deleteGuard?(env: { tx: Executor; familyId: string; actor: Actor }, row: Row): Promise<boolean>;
   /** Felder, die nach einer Änderung aus älteren Protokolleinträgen des Datensatzes entfernt werden (ersetzte Inhalte bleiben nicht im Protokoll). */
   scrubOnUpdate?: readonly string[];
   /** Mengenbegrenzung für Änderungen: höchstens `perMinute` Änderungen je Person, die eines der Felder berühren. */

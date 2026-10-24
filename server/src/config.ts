@@ -1,6 +1,7 @@
 // Konfiguration ausschließlich über Umgebungsvariablen (siehe .env.example).
 import { randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { MAX_OPS } from './sync/types.js';
 import { MIN_PROTOCOL_VERSION } from './version.js';
 
@@ -132,7 +133,31 @@ export interface Config {
   parentRecoveryWaitHours: number;
   /** Betreiber-Ansicht (nur lesend): Pfade und Prüfungen, die der Status ohne root lesen darf (leer = nicht ermittelbar, "unbekannt"). */
   operator: OperatorConfig;
+  /** Dateiablage (Dateien-Bereich und verschlüsselte Blobs; Schalter FILES_ENABLED, Standard aus, ohne Schalter antworten die Routen mit 404). */
+  files: FilesConfig;
 }
+
+/** Dateiablage: Grenzen (Bytes) und Schalter; der Ordner steht in `Config.filesDir` (FILES_DIR). */
+export interface FilesConfig {
+  enabled: boolean;
+  /** Speicherkontingent je Familie (belegte Blobs plus reservierte Uploads). */
+  quotaBytes: number;
+  /** Größte Datei im Modus `server` (Klartextgröße). */
+  maxBytes: number;
+  /** Größte Übertragung im Modus `e2ee`: `maxBytes` plus kleiner Verschlüsselungs-Overhead. */
+  maxE2eeBytes: number;
+  /** Uploads werden abgelehnt, wenn auf dem Datenträger weniger frei ist. */
+  minFreeBytes: number;
+  /** Summe aller offenen Uploads (Staging) über alle Familien. */
+  stagingMaxBytes: number;
+  /** Kinder: höchstens so viele Bytes an Uploads je Stunde und je Tag (die Regel `rate.bytes` der Registry zählt Textlängen, hier geht es um Dateigrößen). */
+  childBytesPerHour: number;
+  childBytesPerDay: number;
+}
+
+export const FILES_CHUNK_BYTES = 4 * 1024 * 1024;
+export const FILES_E2EE_OVERHEAD_BYTES = 1024 * 1024;
+export const FILES_THUMB_MAX_BYTES = 256 * 1024;
 
 export interface OperatorConfig {
   /** Zweite, lesbare Statusdatei der Sicherung (schreibt lx-fampad-backup als root nach /var/lib/lx-fampad-status/); nur wenn der Dienst sie lesen darf, sonst "unbekannt". */
@@ -319,6 +344,32 @@ const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'
 const SEMVER = /^\d+\.\d+\.\d+$/;
 const NODE_ENVS = ['development', 'production', 'test'] as const;
 
+function nonNegativeInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return fallback;
+  const n = Number(raw);
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error(`${name} ungültig: ${raw}`);
+  return n;
+}
+
+/** FILES_*: Dateiablage. Aus (Standard) = keine Routen; an braucht in Produktion einen absoluten FILES_DIR und stimmige Grenzen. Große Zahlen als Literale (Web-Ganzzahl-Regel). */
+function filesConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): FilesConfig {
+  const enabled = boolFlag(env, 'FILES_ENABLED');
+  const quotaBytes = positiveInt(env, 'FILES_QUOTA_BYTES', 10_737_418_240);
+  const maxBytes = positiveInt(env, 'FILES_MAX_BYTES', 104_857_600);
+  const minFreeBytes = nonNegativeInt(env, 'FILES_MIN_FREE_BYTES', 5_368_709_120);
+  const stagingMaxBytes = positiveInt(env, 'FILES_STAGING_MAX_BYTES', 2_147_483_648);
+  const childBytesPerHour = positiveInt(env, 'FILES_CHILD_BYTES_PER_HOUR', 524_288_000);
+  const childBytesPerDay = positiveInt(env, 'FILES_CHILD_BYTES_PER_DAY', 1_073_741_824);
+  if (enabled) {
+    if (maxBytes > quotaBytes) throw new Error('FILES_MAX_BYTES darf nicht über FILES_QUOTA_BYTES liegen');
+    if (stagingMaxBytes < maxBytes) throw new Error('FILES_STAGING_MAX_BYTES muss mindestens FILES_MAX_BYTES betragen');
+    const dir = env.FILES_DIR?.trim();
+    if (nodeEnv === 'production' && (!dir || !isAbsolute(dir))) throw new Error('FILES_DIR muss mit FILES_ENABLED ein absoluter Pfad sein');
+  }
+  return { enabled, quotaBytes, maxBytes, maxE2eeBytes: maxBytes + FILES_E2EE_OVERHEAD_BYTES, minFreeBytes, stagingMaxBytes, childBytesPerHour, childBytesPerDay };
+}
+
 function positiveInt(env: NodeJS.ProcessEnv, name: string, fallback: number): number {
   const raw = env[name];
   if (raw === undefined || raw === '') return fallback;
@@ -490,6 +541,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     e2eeParentRecovery,
     parentRecoveryWaitHours,
     operator: operatorConfig(env, nodeEnv),
+    files: filesConfig(env, nodeEnv),
   };
 }
 

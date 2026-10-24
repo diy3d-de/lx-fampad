@@ -69,6 +69,8 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb, mai
         wrapKeyVersion: config.e2eeWrapKeyVersion,
         prfBackup: config.e2eePrfBackup,
         parentRecovery: config.e2eeParentRecovery,
+        // Dateiablage (FILES_ENABLED): Uploads, Ordner, Dateien und verschlüsselte Anhänge; die App zeigt den Bereich nur dann
+        files: config.files.enabled,
       },
     };
   });

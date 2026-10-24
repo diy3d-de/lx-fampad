@@ -372,15 +372,12 @@ describe.each(backends)('Schema-Migration (%s)', (_name, open) => {
       ).rejects.toThrow();
     });
 
-    it('verhindert Ordner-Zuordnung über Familiengrenzen', async () => {
+    it('verhindert Datei-Fassungen über Familiengrenzen', async () => {
       const a = await seed();
       const b = await seed();
-      const folder = one(await db
-        .insert(schema.files)
-        .values({ familyId: a.familyId, kind: 'folder', name: 'Fotos', rev: 1 })
-        .returning());
+      const datei = one(await db.insert(schema.dateien).values({ familyId: a.familyId, name: 'a.pdf', rev: 1 }).returning());
       await expect(
-        db.insert(schema.files).values({ familyId: b.familyId, parentId: folder.id, name: 'x.jpg', rev: 1 }),
+        db.insert(schema.dateiVersionen).values({ familyId: b.familyId, dateiId: datei.id, nr: 1, blobId: randomUUID(), rev: 1 }),
       ).rejects.toThrow();
     });
   });
