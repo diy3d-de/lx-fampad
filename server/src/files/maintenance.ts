@@ -6,6 +6,7 @@
 //  - Abgleich Platte gegen Datenbank: nur lesend. Dateien ohne Zeile und Zeilen ohne Datei werden gezählt und gewarnt, nie automatisch gelöscht.
 // Nie ein Name, nie ein Pfad im Log: nur Zahlen.
 import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { join } from 'node:path';
 import type { AuthContext } from '../auth/context.js';
 import { dateiBlob, dateiUpload } from '../db/schema.js';
 import { defaultRegistry } from '../sync/index.js';
@@ -44,6 +45,10 @@ export async function runFilesMaintenance(ctx: Pick<AuthContext, 'db' | 'config'
     .where(and(inArray(dateiUpload.status, ['open', 'finalizing']), lt(dateiUpload.expiresAt, now)))
     .returning({ id: dateiUpload.id });
   report.uploadsExpired = expired.length;
+  for (const u of expired) {
+    if (await store.remove(store.partPath(u.id)).catch(() => false)) report.stagingRemoved++;
+    await store.remove(store.encPath(u.id)).catch(() => false);
+  }
   const dead = await db
     .delete(dateiUpload)
     .where(and(inArray(dateiUpload.status, ['done', 'aborted']), lt(dateiUpload.updatedAt, ago(UPLOAD_KEEP_HOURS * 3_600_000))))
@@ -52,9 +57,11 @@ export async function runFilesMaintenance(ctx: Pick<AuthContext, 'db' | 'config'
   const active = new Set((await db.select({ id: dateiUpload.id }).from(dateiUpload).where(inArray(dateiUpload.status, ['open', 'finalizing']))).map((u) => u.id));
   const listing = await store.list();
   for (const f of listing.staging) {
-    const id = f.name.replace(/\.(part|enc)$/, '');
-    if (active.has(id) || f.mtimeMs > ago(UPLOAD_KEEP_HOURS * 3_600_000).getTime()) continue;
-    if (await store.remove(`${store.tmpDir}/${f.name}`).catch(() => false)) report.stagingRemoved++;
+    // nur eigene Staging-Dateien (Zufalls-UUID mit .part/.enc), nie Fremdes
+    const m = /^([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(part|enc)$/.exec(f.name);
+    if (!m?.[1]) continue;
+    if (active.has(m[1]) || f.mtimeMs > ago(UPLOAD_KEEP_HOURS * 3_600_000).getTime()) continue;
+    if (await store.remove(join(store.tmpDir, f.name)).catch(() => false)) report.stagingRemoved++;
   }
 
   // ----- Verwaiste Blobs markieren: der beanspruchende Datensatz ist gelöscht oder weg -----
