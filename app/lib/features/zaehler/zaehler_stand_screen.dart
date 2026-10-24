@@ -21,11 +21,22 @@ import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'zaehler_anzeige.dart';
 import 'zaehler_editor.dart' show zaehlerWechselOeffnen;
+import 'zaehler_monat_screen.dart';
 
 /// Öffnet "Stand eintragen": [reiheIds] = die Zähler, die nacheinander abgefragt werden (ohne Angabe: freie Wahl unter den aktiven Zählern).
+/// Zähler mit der Eingabeart Monatswerte öffnen "Monatswert eintragen" ([ZaehlerMonatScreen]); gemischte Runden fragen nur die Zähler mit Zählerstand nacheinander ab (die mit
+/// Monatswerten tragen ihren Wert über ihre Kachel ein).
 Future<void> standEintragenOeffnen(BuildContext context, {List<String>? reiheIds}) {
-  if (!ProviderScope.containerOf(context).read(zaehlerDarfProvider)) return Future.value();
-  return Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => ZaehlerStandScreen(reiheIds: reiheIds)));
+  final c = ProviderScope.containerOf(context);
+  if (!c.read(zaehlerDarfProvider)) return Future.value();
+  final daten = c.read(zaehlerDatenProvider);
+  final ids = reiheIds ?? [for (final r in daten.reihen) if (!r.archiviert) r.id];
+  final monatlich = [for (final id in ids) if (daten.reihe(id)?.monatlich ?? false) id];
+  final stand = [for (final id in ids) if (!(daten.reihe(id)?.monatlich ?? false)) id];
+  if (monatlich.isNotEmpty && (stand.isEmpty || (reiheIds == null && daten.reihe(ids.first)?.monatlich == true))) {
+    return monatswertEintragenOeffnen(context, reiheId: monatlich.first);
+  }
+  return Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => ZaehlerStandScreen(reiheIds: reiheIds == null ? null : (stand.isEmpty ? reiheIds : stand))));
 }
 
 /// Tage heute, begrenzt auf einen gültigen Tag für den Datumsdialog.
@@ -201,11 +212,17 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
                   AuswahlKnopf(
                     text: a.name,
                     gewaehlt: a.id == r.id,
-                    onTap: () => setState(() {
-                      _gewaehlt = a.id;
-                      _bestaetigt = false;
-                      _wert.clear();
-                    }),
+                    onTap: () {
+                      if (a.monatlich) {
+                        unawaited(Navigator.of(context).pushReplacement<void, void>(MaterialPageRoute(builder: (_) => ZaehlerMonatScreen(reiheId: a.id))));
+                        return;
+                      }
+                      setState(() {
+                        _gewaehlt = a.id;
+                        _bestaetigt = false;
+                        _wert.clear();
+                      });
+                    },
                   ),
               ],
             ),
