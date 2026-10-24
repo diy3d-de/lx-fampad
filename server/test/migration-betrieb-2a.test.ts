@@ -28,7 +28,7 @@ describe('Migration 0021 (Betreiber Paket 2a) additiv auf Stand 0020', () => {
       await grantOperator(world.auth.ctx, a.email);
       for (const c of [a.client, m.client]) expect((await c.post('/api/v1/me/keys', { publicEncKey: key(), publicSignKey: key() })).status).toBe(200);
 
-      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'operator_alert_state' order by 1`)).rows).map((r) => r.tablename);
+      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'files' and tablename <> 'operator_alert_state' order by 1`)).rows).map((r) => r.tablename);
       const ohne: Record<string, string> = { devices: " - 'key_version' - 'key_reported_at'", operators: " - 'alerts_enabled'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;

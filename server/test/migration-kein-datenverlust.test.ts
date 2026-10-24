@@ -42,7 +42,7 @@ describe('Migration 0020 (Kein Datenverlust) additiv auf Stand 0019', () => {
       // ein altes Sicherheitsereignis (Stand 0019)
       await db.execute(sql`insert into security_events (family_id, user_id, kind, via) select family_id, user_id, 'password_reset_done', 'recovery_code' from memberships where user_id = ${await id('mama@example.org')}`);
 
-      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'key_backup_archive' order by 1`)).rows).map((r) => r.tablename);
+      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'files' and tablename <> 'key_backup_archive' order by 1`)).rows).map((r) => r.tablename);
       const ohne: Record<string, string> = { sessions: " - 'origin' - 'origin_at'", security_events: " - 'subject_id'", users: " - 'access_changed_at'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;

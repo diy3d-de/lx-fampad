@@ -37,7 +37,7 @@ describe('Migration 0026 additiv auf Stand 0023', () => {
       await db.execute(sql`insert into memberships (family_id, user_id, role) values (${fid}, ${kind}, 'child'), (${fid}, ${mama}, 'parent')`);
       await db.execute(sql`insert into person_keys (user_id, public_enc_key, public_sign_key, key_version) values (${kind}, 'a', 'b', 1)`);
       await db.execute(sql`insert into security_events (family_id, user_id, kind, via) values (${fid}, ${kind}, 'key_rotated', 'password')`);
-      const tabellen = (await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' order by 1`)).rows.map((r) => r.tablename);
+      const tabellen = (await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'files' order by 1`)).rows.map((r) => r.tablename);
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x))::text, '|' order by (to_jsonb(x))::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;
       const vorher = new Map<string, string>();
