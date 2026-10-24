@@ -1,4 +1,4 @@
-// Migration 0034 (Dateiablage: Tabellen ordner, dateien, datei_versionen, tresor_anhaenge, datei_blob, datei_upload; Altlast files/messages.file_id entfernt) ist idempotent:
+// Migration 0035 (Dateiablage: Tabellen ordner, dateien, datei_versionen, tresor_anhaenge, datei_blob, datei_upload; Altlast files/messages.file_id entfernt) ist idempotent:
 // Zweimal ausgeführt ändert sie nichts und wirft nicht; die Prüfungen der Datenbank greifen (Modus/Schlüssel, Beanspruchung, Längen, Fremdschlüssel, Kaskade).
 import { PGlite } from '@electric-sql/pglite';
 import { sql } from 'drizzle-orm';
@@ -11,7 +11,7 @@ import type { Db } from '../src/auth/context.js';
 import * as schema from '../src/db/schema.js';
 import { adminPassword, migrationsFolder, World } from './helpers.js';
 
-describe('Migration 0034 (Dateiablage) idempotent', () => {
+describe('Migration 0035 (Dateiablage) idempotent', () => {
   it('PGlite: erneutes Ausführen wirft nicht und ändert nichts, Prüfungen greifen, Altlast ist weg', async () => {
     const client = new PGlite();
     const db = drizzleLite(client, { schema }) as unknown as Db;
@@ -25,7 +25,7 @@ describe('Migration 0034 (Dateiablage) idempotent', () => {
       const familyId = fam!.id;
       const admin = adm!.id;
 
-      const datei = readFileSync(`${migrationsFolder}/0034_dateien.sql`, 'utf8');
+      const datei = readFileSync(`${migrationsFolder}/0035_dateien.sql`, 'utf8');
       const schritte = datei.split('--> statement-breakpoint').map((s) => s.trim()).filter(Boolean);
       expect(schritte.length).toBeGreaterThan(20);
       const tabellen = "'ordner','dateien','datei_versionen','tresor_anhaenge','datei_blob','datei_upload','messages'";
