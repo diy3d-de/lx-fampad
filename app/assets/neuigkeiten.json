@@ -1,4 +1,7 @@
 {
+  "0.16.1": [
+    "Neue Adresse: Der Familienhub läuft jetzt unter familyhub.lx-labs.dev. Diese Version spricht nur mit dem neuen Server"
+  ],
   "0.16.0": [
     "Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall) kommen jetzt auch bei geschlossener App, per Push-Wecker. Einschalten unter Profil › Benachrichtigungen › Wetter-Hinweise",
     "Dafür muss Push (ntfy) eingerichtet sein und die Benachrichtigungserlaubnis erteilt sein"
