@@ -80,7 +80,7 @@ void main() {
   group('Passkey-Optionen', () {
     test('Server-Optionen (SimpleWebAuthn) werden vom Paket verstanden, auch ohne transports', () {
       final req = RegisterRequestType.fromJson(normalisiereOptionen(webauthnOptionen()));
-      expect(req.relyingParty.id, 'familie.lx-labs.dev');
+      expect(req.relyingParty.id, 'familyhub.lx-labs.dev');
       expect(req.user.name, 'anna@beispiel.de');
       expect(req.excludeCredentials.single.id, 'Y3JlZA');
       expect(req.excludeCredentials.single.transports, isEmpty);
@@ -90,9 +90,9 @@ void main() {
 
     test('Anmeldeoptionen ohne allowCredentials (auffindbare Passkeys)', () {
       final req = AuthenticateRequestType.fromJson(
-        normalisiereOptionen({'challenge': 'YWJj', 'rpId': 'familie.lx-labs.dev', 'userVerification': 'required', 'timeout': 60000}),
+        normalisiereOptionen({'challenge': 'YWJj', 'rpId': 'familyhub.lx-labs.dev', 'userVerification': 'required', 'timeout': 60000}),
       );
-      expect(req.relyingPartyId, 'familie.lx-labs.dev');
+      expect(req.relyingPartyId, 'familyhub.lx-labs.dev');
       expect(req.allowCredentials, isNull);
       expect(req.userVerification, 'required');
     });
@@ -101,7 +101,7 @@ void main() {
       final req = AuthenticateRequestType.fromJson(
         normalisiereOptionen({
           'challenge': 'YWJj',
-          'rpId': 'familie.lx-labs.dev',
+          'rpId': 'familyhub.lx-labs.dev',
           'allowCredentials': [
             {'id': 'Y3JlZA', 'type': 'public-key', 'transports': ['internal', 'hybrid']},
           ],

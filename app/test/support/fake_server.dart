@@ -135,7 +135,7 @@ Map<String, dynamic> neueEinladungJson({bool pin = true}) => {
   'invite': {
     'id': 'i-neu',
     'token': fixToken,
-    'link': 'https://familie.lx-labs.dev/#/einladung/$fixToken',
+    'link': 'https://familyhub.lx-labs.dev/#/einladung/$fixToken',
     'pin': ?(pin ? '123456' : null),
     'expiresAt': DateTime.now().add(const Duration(hours: 24)).toUtc().toIso8601String(),
     'requireApproval': false,
@@ -144,7 +144,7 @@ Map<String, dynamic> neueEinladungJson({bool pin = true}) => {
 
 Map<String, dynamic> webauthnOptionen() => {
   'challenge': 'Y2hhbGxlbmdl',
-  'rp': {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'},
+  'rp': {'name': 'lx-familyhub', 'id': 'familyhub.lx-labs.dev'},
   'user': {'id': 'dXNlcg', 'name': 'anna@beispiel.de', 'displayName': 'Anna'},
   'pubKeyCredParams': [
     {'alg': -7, 'type': 'public-key'},

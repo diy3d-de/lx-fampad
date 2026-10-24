@@ -1,4 +1,4 @@
-// Einladungslinks: https://familie.lx-labs.dev/#/einladung/<token>. Das Token steht im URL-Fragment (nie im Pfad oder in
+// Einladungslinks: https://familyhub.lx-labs.dev/#/einladung/<token>. Das Token steht im URL-Fragment (nie im Pfad oder in
 // der Query), damit es in keinem Server-, Proxy- oder Caddy-Log landet. Der Client liest es und sendet es nur im POST-Body.
 import '../../constants.dart';
 

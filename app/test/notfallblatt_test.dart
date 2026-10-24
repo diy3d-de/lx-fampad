@@ -107,8 +107,8 @@ Future<void> main() async {
       for (final verboten in ['/URI', '/JavaScript', '/JS', 'http://', 'https://', '/Launch', '/EmbeddedFile']) {
         expect(s, isNot(contains(verboten)), reason: verboten);
       }
-      // familie.lx-labs.dev steht ohne Schema (kein anklickbarer Link) als Text in der Anleitung
-      expect(s, contains('familie.lx-labs.dev'));
+      // familyhub.lx-labs.dev steht ohne Schema (kein anklickbarer Link) als Text in der Anleitung
+      expect(s, contains('familyhub.lx-labs.dev'));
     });
 
     test('Zeilen passen auf die Seite: Umbruch auf höchstens 86 Zeichen, Schlüssel in Sieben-Gruppen-Zeilen', () {

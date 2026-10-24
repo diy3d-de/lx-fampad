@@ -82,7 +82,7 @@ void main() {
     expect(i.status, InviteStatus.locked);
     expect(i.hasPin, isTrue);
     final neu = CreatedInvite.fromJson(neueEinladungJson()['invite']);
-    expect(neu.link, 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+    expect(neu.link, 'https://familyhub.lx-labs.dev/#/einladung/$fixToken');
     expect(neu.pin, '123456');
     expect(CreatedInvite.fromJson(neueEinladungJson(pin: false)['invite']).pin, isNull);
   });
@@ -104,7 +104,7 @@ void main() {
 
   test('WebAuthn-Optionen bleiben unverändert erhalten', () {
     final c = ChallengeDto.fromJson({'challengeId': 'x', 'options': webauthnOptionen()});
-    expect(c.options['rp'], {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'});
+    expect(c.options['rp'], {'name': 'lx-familyhub', 'id': 'familyhub.lx-labs.dev'});
   });
 
   test('Rollen: Wire-Namen, Beschriftung und Einladungsrechte (Eltern nur Kind); unbekannte Werte (alter Server: "guest") gelten als Kind', () {

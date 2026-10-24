@@ -40,7 +40,7 @@ Map<String, dynamic> _konfig() => {
       'id': 'server',
       'items': [
         {'key': 'NODE_ENV', 'value': 'production'},
-        {'key': 'PUBLIC_URL', 'value': 'https://familie.lx-labs.dev'},
+        {'key': 'PUBLIC_URL', 'value': 'https://familyhub.lx-labs.dev'},
         {'key': 'RATE_LIMIT_MAX', 'value': 300, 'unit': 'perMinute'},
         {'key': 'AUDIT_RETENTION_DAYS', 'value': 365, 'unit': 'd'},
       ],

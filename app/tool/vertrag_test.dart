@@ -2,7 +2,7 @@
 // Einladungslink-Parser, Passkey-Optionen) rufen die von der App genutzten Endpunkte einmal real auf. Seit Phase 1c gehört der Sync dazu
 // (syncVertrag, offlineOnlineVertrag): zwei Geräte derselben Person, Idempotenz, Konflikte pro Feld, Löschen gewinnt, Validierung, Rechte von
 // Kind (inklusive "hidden"-Tombstone), mehrseitiger Snapshot (> 500 Einträge, purged_rev > 0) und Geisterlisten, zwei lokale Datenbanken mit SyncStore und SyncEngine (offline/online), WebSocket "rev N" und
-// das Bereinigen von Verweisen beim Entfernen eines Mitglieds, Kalender (kalenderVertrag) und Aufgaben (aufgabenVertrag: Folgeaufgabe mit fester ID, Rechte, Validierung). Der Server muss mit PUBLIC_URL=https://familie.lx-labs.dev laufen (RP-ID).
+// das Bereinigen von Verweisen beim Entfernen eines Mitglieds, Kalender (kalenderVertrag) und Aufgaben (aufgabenVertrag: Folgeaufgabe mit fester ID, Rechte, Validierung). Der Server muss mit PUBLIC_URL=https://familyhub.lx-labs.dev laufen (RP-ID).
 // Der Chat-Teil (e2eeChatVertrag) prüft die Ende-zu-Ende-Verschlüsselung mit drei Personen und zwei Geräten; er benutzt libsodium, wo vorhanden (Linux/Docker, SODIUM_ERFORDERLICH=1),
 // sonst den Fake aus test/support/fake_crypto.dart (gleiche Protokolle, Drahtformat unabhängig vom Verfahren).
 // Gehört NICHT zu 'flutter test' (echte Netzverbindung, ändert die Datenbank, dauert ca. 1 Minute wegen der TOTP-Zeitschritte).
@@ -1505,7 +1505,7 @@ void main() {
     final anon = Gegenstelle();
     final loginOpt = await anon.api.passkeyAnmeldeOptionen();
     final authReq = AuthenticateRequestType.fromJson(normalisiereOptionen(loginOpt.options));
-    expect(authReq.relyingPartyId, 'familie.lx-labs.dev');
+    expect(authReq.relyingPartyId, 'familyhub.lx-labs.dev');
     expect(authReq.userVerification, 'required');
     expect(authReq.challenge, isNotEmpty);
 
@@ -1516,11 +1516,11 @@ void main() {
     expect(info.role, Role.admin);
     expect(info.familyName, 'Familie Vertrag');
     expect(info.pinRequired, isFalse);
-    expect(parseInviteToken('https://familie.lx-labs.dev/#/einladung/$adminToken'), adminToken);
+    expect(parseInviteToken('https://familyhub.lx-labs.dev/#/einladung/$adminToken'), adminToken);
 
     final pkOpt = await admin.api.passkeyRegistrierungStart(token: adminToken, email: 'anna@beispiel.de', anzeigename: 'Anna');
     final regReq = RegisterRequestType.fromJson(normalisiereOptionen(pkOpt.options));
-    expect(regReq.relyingParty.id, 'familie.lx-labs.dev');
+    expect(regReq.relyingParty.id, 'familyhub.lx-labs.dev');
     expect(regReq.user.name, 'anna@beispiel.de');
     expect(regReq.authSelectionType!.userVerification, 'required');
     expect(regReq.pubKeyCredParams, isNotEmpty);

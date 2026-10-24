@@ -55,9 +55,9 @@ void main() {
   });
 
   test('Adresse: wss für https, ws für http, Port bleibt, Pfad /ws (nie ein Ticket in der Adresse)', () {
-    expect(webSocketAdresse(api: 'https://familie.lx-labs.dev').toString(), 'wss://familie.lx-labs.dev/ws');
+    expect(webSocketAdresse(api: 'https://familyhub.lx-labs.dev').toString(), 'wss://familyhub.lx-labs.dev/ws');
     expect(webSocketAdresse(api: 'http://localhost:4400').toString(), 'ws://localhost:4400/ws');
-    expect(webSocketAdresse(api: '', seite: Uri.parse('https://familie.lx-labs.dev/#/x')).toString(), 'wss://familie.lx-labs.dev/ws');
+    expect(webSocketAdresse(api: '', seite: Uri.parse('https://familyhub.lx-labs.dev/#/x')).toString(), 'wss://familyhub.lx-labs.dev/ws');
     expect(webSocketAdresse(api: '', seite: Uri.parse('http://127.0.0.1:8091/')).toString(), 'ws://127.0.0.1:8091/ws');
   });
 

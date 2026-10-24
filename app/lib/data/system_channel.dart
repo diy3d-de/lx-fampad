@@ -27,7 +27,7 @@ class SystemChannel {
     });
   }
 
-  /// Hört auf Links, die die laufende App erreichen (Android: Intent mit https://familie.lx-labs.dev/#/einladung/…).
+  /// Hört auf Links, die die laufende App erreichen (Android: Intent mit https://familyhub.lx-labs.dev/#/einladung/…).
   Stream<String> get links {
     _verbinden();
     return _links.stream;

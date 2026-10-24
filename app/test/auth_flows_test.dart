@@ -53,7 +53,7 @@ void main() {
     testWidgets('Link ohne Einladungs-Fragment (z. B. nur die Startseite) wird ignoriert: kein Hinweis, keine Einladung', (tester) async {
       final server = FakeServer();
       await starteApp(tester, TestUmgebung(server));
-      await _vonAndroid(tester, 'link', 'https://familie.lx-labs.dev/');
+      await _vonAndroid(tester, 'link', 'https://familyhub.lx-labs.dev/');
       expect(find.textContaining('ungültig'), findsNothing);
       expect(find.text('Willkommen zurück'), findsOneWidget);
       expect(server.anfragen('POST /auth/invites/lookup'), isEmpty);
@@ -62,14 +62,14 @@ void main() {
     testWidgets('Link mit Einladungs-Fragment öffnet die Einladung', (tester) async {
       final server = FakeServer()..json('POST /auth/invites/lookup', _lookupOk);
       await starteApp(tester, TestUmgebung(server));
-      await _vonAndroid(tester, 'link', 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+      await _vonAndroid(tester, 'link', 'https://familyhub.lx-labs.dev/#/einladung/$fixToken');
       expect(server.anfragen('POST /auth/invites/lookup').single.json, {'token': fixToken});
       expect(find.text('Familie Beispiel'), findsOneWidget);
     });
 
     testWidgets('Einladungs-Fragment mit kaputtem Token: Hinweis "ungültig"', (tester) async {
       await starteApp(tester, TestUmgebung(FakeServer()));
-      await _vonAndroid(tester, 'link', 'https://familie.lx-labs.dev/#/einladung/zu-kurz');
+      await _vonAndroid(tester, 'link', 'https://familyhub.lx-labs.dev/#/einladung/zu-kurz');
       expect(find.text('Der Einladungslink ist ungültig.'), findsOneWidget);
     });
 
@@ -81,7 +81,7 @@ void main() {
       await env.angemeldet();
       await starteApp(tester, env);
       expect(find.textContaining('Fast geschafft'), findsOneWidget);
-      await _vonAndroid(tester, 'link', 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+      await _vonAndroid(tester, 'link', 'https://familyhub.lx-labs.dev/#/einladung/$fixToken');
       expect(find.textContaining('Du bist schon angemeldet'), findsNothing);
       expect(find.text('Familie Beispiel'), findsOneWidget);
     });

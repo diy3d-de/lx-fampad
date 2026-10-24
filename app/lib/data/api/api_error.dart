@@ -227,7 +227,7 @@ class ApiException implements Exception {
     'payload_too_large': 'Die Anfrage ist zu groß.',
     'device_mismatch': 'Dieses Gerät passt nicht mehr zur Anmeldung. Bitte versuche es gleich noch einmal.',
     'invalid_endpoint':
-        'Der Push-Endpunkt gehört nicht zum Familien-Server. Trage in der ntfy-App unter Einstellungen den Standardserver https://ntfy.familie.lx-labs.dev ein und schalte Benachrichtigungen dann neu ein.',
+        'Der Push-Endpunkt gehört nicht zum Familien-Server. Trage in der ntfy-App unter Einstellungen den Standardserver https://ntfy.familyhub.lx-labs.dev ein und schalte Benachrichtigungen dann neu ein.',
     'endpoint_in_use': 'Dieser Push-Endpunkt ist schon vergeben. Schalte Benachrichtigungen aus und wieder ein.',
     'push_unavailable': 'Push ist auf dem Server noch nicht eingerichtet.',
     'no_endpoint': 'Für dieses Gerät ist Push noch nicht angemeldet.',

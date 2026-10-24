@@ -5,7 +5,7 @@ import 'package:lx_fampad/features/auth/invite_link.dart';
 
 void main() {
   const token = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-AbCdE'; // 43 Zeichen base64url wie vom Server
-  const host = 'https://familie.lx-labs.dev';
+  const host = 'https://familyhub.lx-labs.dev';
 
   group('gültig', () {
     test('vollständiger Link mit Fragment', () {
@@ -25,7 +25,7 @@ void main() {
       expect(parseInviteToken('$host/#/einladung/$token/'), token);
     });
     test('Host unabhängig von Groß-/Kleinschreibung', () {
-      expect(parseInviteToken('https://Familie.LX-Labs.dev/#/einladung/$token'), token);
+      expect(parseInviteToken('https://Familyhub.LX-Labs.dev/#/einladung/$token'), token);
     });
     test('reines Token eingefügt', () {
       expect(parseInviteToken(token), token);
@@ -45,12 +45,12 @@ void main() {
       'Token in der Query vor dem Fragment': '$host/?x=1#/einladung/$token',
       'Token im Pfad statt im Fragment': '$host/einladung/$token#/',
       'fremder Host': 'https://boese.example/#/einladung/$token',
-      'Host mit Zusatz': 'https://familie.lx-labs.dev.boese.example/#/einladung/$token',
-      'Unterdomäne': 'https://x.familie.lx-labs.dev/#/einladung/$token',
-      'http statt https': 'http://familie.lx-labs.dev/#/einladung/$token',
+      'Host mit Zusatz': 'https://familyhub.lx-labs.dev.boese.example/#/einladung/$token',
+      'Unterdomäne': 'https://x.familyhub.lx-labs.dev/#/einladung/$token',
+      'http statt https': 'http://familyhub.lx-labs.dev/#/einladung/$token',
       'fremdes Schema': 'javascript:alert(1)//#/einladung/$token',
-      'Benutzerangabe im Link': 'https://familie.lx-labs.dev@boese.example/#/einladung/$token',
-      'anderer Port': 'https://familie.lx-labs.dev:8443/#/einladung/$token',
+      'Benutzerangabe im Link': 'https://familyhub.lx-labs.dev@boese.example/#/einladung/$token',
+      'anderer Port': 'https://familyhub.lx-labs.dev:8443/#/einladung/$token',
       'anderer Fragment-Pfad': '$host/#/anmelden/$token',
       'Token zu kurz': '$host/#/einladung/abc',
       'Token zu lang': '$host/#/einladung/${'a' * 129}',
@@ -78,12 +78,12 @@ void main() {
 
   group('istEinladungsLink', () {
     test('nur Links mit Fragment #/einladung zählen', () {
-      expect(istEinladungsLink('https://familie.lx-labs.dev/#/einladung/abc'), isTrue);
-      expect(istEinladungsLink('https://familie.lx-labs.dev/#/einladung'), isTrue);
-      expect(istEinladungsLink('https://familie.lx-labs.dev/'), isFalse);
-      expect(istEinladungsLink('https://familie.lx-labs.dev'), isFalse);
-      expect(istEinladungsLink('https://familie.lx-labs.dev/#/kalender'), isFalse);
-      expect(istEinladungsLink('https://familie.lx-labs.dev/einladung/abc'), isFalse);
+      expect(istEinladungsLink('https://familyhub.lx-labs.dev/#/einladung/abc'), isTrue);
+      expect(istEinladungsLink('https://familyhub.lx-labs.dev/#/einladung'), isTrue);
+      expect(istEinladungsLink('https://familyhub.lx-labs.dev/'), isFalse);
+      expect(istEinladungsLink('https://familyhub.lx-labs.dev'), isFalse);
+      expect(istEinladungsLink('https://familyhub.lx-labs.dev/#/kalender'), isFalse);
+      expect(istEinladungsLink('https://familyhub.lx-labs.dev/einladung/abc'), isFalse);
       expect(istEinladungsLink(''), isFalse);
     });
   });

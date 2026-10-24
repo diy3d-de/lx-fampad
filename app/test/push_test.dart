@@ -47,7 +47,7 @@ class _PushServer {
   final List<String> endpunkte = [];
 
   void registrieren(FakeServer s) {
-    s.on('GET /me/push', (_) => jsonAntwort({'available': verfuegbar, 'server': 'https://ntfy.familie.lx-labs.dev', 'registered': registriert, 'active': registriert && aktiv, 'lastOkAt': null, 'lastErrorAt': null}));
+    s.on('GET /me/push', (_) => jsonAntwort({'available': verfuegbar, 'server': 'https://ntfy.familyhub.lx-labs.dev', 'registered': registriert, 'active': registriert && aktiv, 'lastOkAt': null, 'lastErrorAt': null}));
     s.on('PUT /me/push', (req) {
       if (putFehler != null && putFehlerAnzahl > 0) {
         putFehlerAnzahl--;
@@ -150,7 +150,7 @@ void main() {
       await push().einschalten();
       await ruhe();
       expect(z().angemeldet, isFalse);
-      expect(z().fehler, contains('https://ntfy.familie.lx-labs.dev'));
+      expect(z().fehler, contains('https://ntfy.familyhub.lx-labs.dev'));
       expect(z().fehler, isNot(contains('Meldung des Servers')));
     });
 
@@ -266,7 +266,7 @@ void main() {
       await ruhe(100);
       expect(fake.registriert, 2);
       expect(z().angemeldet, isFalse);
-      expect(z().fehler, contains('https://ntfy.familie.lx-labs.dev'));
+      expect(z().fehler, contains('https://ntfy.familyhub.lx-labs.dev'));
     });
   });
 
@@ -276,14 +276,14 @@ void main() {
       await push().einschalten();
       await ruhe();
       // "Neustart": neuer Container auf derselben Datenbank
-      final fake2 = FakePush()..gespeichert = 'io.heckel.ntfy'..endpunkt = 'https://ntfy.familie.lx-labs.dev/upNeuerEndpunkt1?up=1';
+      final fake2 = FakePush()..gespeichert = 'io.heckel.ntfy'..endpunkt = 'https://ntfy.familyhub.lx-labs.dev/upNeuerEndpunkt1?up=1';
       final c2 = ProviderContainer(overrides: [...env.overrides, pushPlattformProvider.overrideWithValue(fake2), pushAbmeldenProvider.overrideWithValue(({required bool serverLoeschen}) async {})]);
       addTearDown(c2.dispose);
       await c2.read(pushProvider.notifier).starten();
       await ruhe();
       expect(fake2.initialisiert, 1);
       expect(fake2.registriert, 1);
-      expect(ps.endpunkte.last, 'https://ntfy.familie.lx-labs.dev/upNeuerEndpunkt1?up=1');
+      expect(ps.endpunkte.last, 'https://ntfy.familyhub.lx-labs.dev/upNeuerEndpunkt1?up=1');
       expect(c2.read(pushProvider).gewuenscht, isTrue);
     });
 

@@ -512,7 +512,7 @@ void main() {
 
       Future<void> linkEingeben(WidgetTester tester) async {
         await tippeText(tester, 'Einladung per QR-Code annehmen');
-        await eingeben(tester, 'Einladungslink', 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+        await eingeben(tester, 'Einladungslink', 'https://familyhub.lx-labs.dev/#/einladung/$fixToken');
         await tippeText(tester, 'Einladung prüfen');
       }
 

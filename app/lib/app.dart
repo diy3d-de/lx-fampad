@@ -98,7 +98,7 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     return true;
   }
 
-  /// Link, mit dem Android die App geöffnet hat (https://familie.lx-labs.dev/#/einladung/…). Nur Einladungslinks (Fragment
+  /// Link, mit dem Android die App geöffnet hat (https://familyhub.lx-labs.dev/#/einladung/…). Nur Einladungslinks (Fragment
   /// #/einladung…) zählen; andere Links der Domain (z. B. nur die Startseite, die verifizierte App Links ebenfalls öffnen) ignoriert die App.
   void _linkVonAussen(String link) {
     if (!istEinladungsLink(link)) return;
