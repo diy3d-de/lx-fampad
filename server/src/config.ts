@@ -252,7 +252,7 @@ function ntfyUrlPruefen(url: string | undefined, nodeEnv: Config['env']): string
 }
 
 function ntfyPublicHost(env: NodeJS.ProcessEnv): string {
-  const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familie.lx-labs.dev').toLowerCase();
+  const host = (env.NTFY_PUBLIC_HOST?.trim() || 'ntfy.familyhub.lx-labs.dev').toLowerCase();
   if (!/^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host)) throw new Error(`NTFY_PUBLIC_HOST ungültig: ${host}`);
   return host;
 }

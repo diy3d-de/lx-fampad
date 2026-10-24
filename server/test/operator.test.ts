@@ -314,8 +314,8 @@ last_success_epoch=${ep - 35 * 3600 - 40 * 60}
   it('TLS-Prüfung: ungültiger Port in der Konfiguration bricht den Start ab, die Messung wirft nie', async () => {
     expect(() => loadConfig({ NODE_ENV: 'test', AUTH_SECRET_KEY: TEST_KEY, OPERATOR_TLS_PROBE: '127.0.0.1:70000' })).toThrow(/OPERATOR_TLS_PROBE/);
     expect(() => loadConfig({ NODE_ENV: 'test', AUTH_SECRET_KEY: TEST_KEY, OPERATOR_TLS_PROBE: 'kein port' })).toThrow(/OPERATOR_TLS_PROBE/);
-    expect(await realProbes.tlsValidTo('127.0.0.1:99999', 'familie.lx-labs.dev')).toBeNull();
-    expect(await realProbes.tlsValidTo('127.0.0.1:1', 'familie.lx-labs.dev')).toBeNull();
+    expect(await realProbes.tlsValidTo('127.0.0.1:99999', 'familyhub.lx-labs.dev')).toBeNull();
+    expect(await realProbes.tlsValidTo('127.0.0.1:1', 'familyhub.lx-labs.dev')).toBeNull();
   });
 
   describe('Protokoll', () => {

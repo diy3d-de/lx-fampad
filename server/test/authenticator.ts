@@ -41,8 +41,8 @@ export class TestAuthenticator {
   backupState = true;
 
   constructor(
-    private readonly rpId = 'familie.lx-labs.dev',
-    private readonly origin = 'https://familie.lx-labs.dev',
+    private readonly rpId = 'familyhub.lx-labs.dev',
+    private readonly origin = 'https://familyhub.lx-labs.dev',
     opts: { initialCounter?: number } = {},
   ) {
     const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
