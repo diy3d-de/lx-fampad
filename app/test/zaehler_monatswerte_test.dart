@@ -223,6 +223,19 @@ void main() {
     });
   });
 
+  group('Solar: nur ein Preis, Beginn heute (der Fall aus dem Alltag)', () {
+    test('der eine Preis gilt auch für die Monate davor, Eigenverbrauch deckt den ganzen laufenden Monat', () {
+      final z = _solar(eigen: 10000, preise: [const Preis(ab: '2026-10-24', arbeitspreis: 3000)]);
+      final werte = [M(2026, 8, 100), M(2026, 9, 100), M(2026, 10, 31)];
+      final reihen = baueReihen({'s': z}, {}, monatswerte: {'s': werte}, heute: D('2026-10-24'));
+      final s = solarAuswertung(reihen.single, D('2026-10-24'));
+      expect(s.ergebnis.preisLuecke, isFalse);
+      expect(s.ergebnis.erzeugtMilli, 231000);
+      expect(s.ergebnis.eigenMilli, 231000, reason: 'auch der Anteil des heutigen Tages zählt, die Summe stimmt mit den Eingaben überein');
+      expect(s.ergebnis.ersparnisCent, 6930); // 231 kWh * 0,30
+    });
+  });
+
   group('Plausibilität', () {
     final vorhanden = [M(2025, 6, 100, id: 'v'), M(2026, 5, 80, id: 'w')];
     final heute = D('2026-10-24');

@@ -363,7 +363,8 @@ Hochrechnung? hochrechnung(Verbrauchskurve k, Zeitraum periode, DateTime heute, 
 
 // ---------------------------------------------------------------- Kosten
 
-/// Preisstand an einem Tag (der letzte mit `ab` <= Tag), null davor.
+/// Preisstand an einem Tag (der letzte mit `ab` <= Tag). Liegt der Tag vor dem ersten Preisstand, gilt der erste Preis auch rückwirkend (wer nur einen Preis einträgt,
+/// erwartet ihn für alle Zeiträume); null nur, wenn es gar keinen Preis gibt.
 Preis? preisAm(List<Preis> preise, DateTime tag) {
   final t = tagText(_tag(tag));
   Preis? p;
@@ -374,7 +375,7 @@ Preis? preisAm(List<Preis> preise, DateTime tag) {
       break;
     }
   }
-  return p;
+  return p ?? (preise.isEmpty ? null : preise.first);
 }
 
 /// Teile der Kosten eines Zeitraums, in Cent.

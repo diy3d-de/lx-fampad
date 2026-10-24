@@ -212,7 +212,9 @@ class SolarAuswertung {
 /// Der Strompreis der Ersparnis steht im Preisverlauf des Erzeugungszählers selbst (Arbeitspreis); Eigenverbrauchsanteil, Einspeisevergütung und Anschaffungspreis ebenfalls dort.
 SolarAuswertung solarAuswertung(ZaehlerReihe r, DateTime heute) {
   final p = abrechnungsperiode(heute, periodeMonat: r.inhalt.periodeMonat, periodeTag: r.inhalt.periodeTag);
-  final bis = heute.isBefore(p.ende) ? (heute.isBefore(p.start) ? p.start : heute) : p.ende;
+  // Monatswerte enthalten den laufenden Monat bis einschließlich heute: der Zeitraum endet dann nach heute, sonst fehlt der Anteil des heutigen Tages
+  final bisHeute = r.inhalt.monatlich ? heute.add(const Duration(days: 1)) : heute;
+  final bis = bisHeute.isBefore(p.ende) ? (bisHeute.isBefore(p.start) ? p.start : bisHeute) : p.ende;
   final jahr = solarVorteil(r.inhalt, r.kurve, Zeitraum(p.start, bis), r.inhalt.preise);
   Amortisation? am;
   final kosten = r.inhalt.anlagenkosten;
@@ -220,7 +222,7 @@ SolarAuswertung solarAuswertung(ZaehlerReihe r, DateTime heute) {
   if (kosten != null && kosten > 0 && erster != null) {
     final seit = tagVonNummer(erster);
     final tage = tagNummer(heute) - erster;
-    final gesamt = solarVorteil(r.inhalt, r.kurve, Zeitraum(seit, heute), r.inhalt.preise).vorteilCent;
+    final gesamt = solarVorteil(r.inhalt, r.kurve, Zeitraum(seit, bisHeute), r.inhalt.preise).vorteilCent;
     final jahrVorteil = tage >= 365
         ? solarVorteil(r.inhalt, r.kurve, Zeitraum(heute.subtract(const Duration(days: 365)), heute), r.inhalt.preise).vorteilCent
         : (tage >= 30 ? rundenDiv(gesamt * 365, tage) : 0);
