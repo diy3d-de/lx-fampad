@@ -846,6 +846,66 @@ class WetterPunkt {
   const WetterPunkt(this.zeit, this.temperatur);
 }
 
+/// Stundenreihen der letzten Tage (`hourly` der Antwort): Wert `i` gehört zur Stunde `von + i h`, null = keine Messung. Alle Reihen sind gleich lang.
+class WetterStunden {
+  final DateTime von;
+  final List<double?> temperatur;
+  final List<double?> feuchte;
+  final List<double?> druck;
+  /// Niederschlag in mm je Stunde.
+  final List<double?> regen;
+  final List<double?> wind;
+  final List<double?> boeen;
+  final List<double?> richtung;
+  const WetterStunden({required this.von, required this.temperatur, required this.feuchte, required this.druck, required this.regen, required this.wind, required this.boeen, required this.richtung});
+
+  int get laenge => temperatur.length;
+  DateTime zeit(int i) => von.add(Duration(hours: i));
+
+  /// Höchstens 8 Tage; wer mehr schickt, wird abgeschnitten (Schutz vor unsinnigen Antworten).
+  static const _max = 24 * 8;
+
+  static WetterStunden? lesen(Object? roh) {
+    if (roh is! Map<String, dynamic>) return null;
+    final von = roh['from'] is String ? DateTime.tryParse(roh['from'] as String) : null;
+    final t = roh['temperature'];
+    if (von == null || t is! List) return null;
+    final n = t.length > _max ? _max : t.length;
+    List<double?> reihe(Object? r) {
+      final l = r is List ? r : const <Object?>[];
+      return List<double?>.generate(n, (i) => i < l.length && l[i] is num && (l[i] as num).isFinite ? (l[i] as num).toDouble() : null, growable: false);
+    }
+
+    if (n == 0) return null;
+    return WetterStunden(
+      von: von,
+      temperatur: reihe(t),
+      feuchte: reihe(roh['humidity']),
+      druck: reihe(roh['pressure']),
+      regen: reihe(roh['rain']),
+      wind: reihe(roh['windKmh']),
+      boeen: reihe(roh['gustKmh']),
+      richtung: reihe(roh['windAngle']),
+    );
+  }
+}
+
+/// Tagesextreme der Temperatur (`days`); [datum] ist der Kalendertag `JJJJ-MM-TT` in Europe/Berlin.
+class WetterTag {
+  final String datum;
+  final double min;
+  final double max;
+  const WetterTag(this.datum, this.min, this.max);
+}
+
+/// Sonnenauf- und -untergang eines Tages (`sun`) als Uhrzeit `HH:MM` (Europe/Berlin); null = geht nicht auf bzw. unter.
+class WetterSonne {
+  final String datum;
+  final String? aufgang;
+  final String? untergang;
+  const WetterSonne(this.datum, this.aufgang, this.untergang);
+}
+
 class WetterDto {
   /// Der Server hat das Wetter eingeschaltet.
   final bool verfuegbar;
@@ -854,7 +914,26 @@ class WetterDto {
   final double? min24h;
   final double? max24h;
   final List<WetterPunkt> verlauf;
-  const WetterDto({required this.verfuegbar, this.ort = '', this.aktuell, this.min24h, this.max24h, this.verlauf = const []});
+
+  /// Neue Felder (Station-Paket); bei älteren Servern null bzw. leer.
+  final WetterStunden? stunden;
+  final List<WetterTag> tage;
+  final List<WetterSonne> sonne;
+  const WetterDto({
+    required this.verfuegbar,
+    this.ort = '',
+    this.aktuell,
+    this.min24h,
+    this.max24h,
+    this.verlauf = const [],
+    this.stunden,
+    this.tage = const [],
+    this.sonne = const [],
+  });
+
+  static final _datum = RegExp(r'^\d{4}-\d{2}-\d{2}$');
+  // Uhrzeit aus einer ISO-Zeit mit Offset: die Wanduhr der Familienzone steht schon im Text
+  static String? _uhr(Object? v) => v is String && v.length >= 16 && RegExp(r'^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}').hasMatch(v) ? v.substring(11, 16) : null;
 
   static double? _d(Object? v) => v is num && v.isFinite ? v.toDouble() : null;
 
@@ -889,7 +968,35 @@ class WetterDto {
         if (t != null && v != null) verlauf.add(WetterPunkt(t, v));
       }
     }
-    return WetterDto(verfuegbar: true, ort: ort, aktuell: aktuell, min24h: _d(m['min24h']), max24h: _d(m['max24h']), verlauf: verlauf);
+    final tage = <WetterTag>[];
+    if (m['days'] is List) {
+      for (final p in m['days'] as List) {
+        if (p is! Map<String, dynamic>) continue;
+        final d = p['date'];
+        final lo = _d(p['min']);
+        final hi = _d(p['max']);
+        if (d is String && _datum.hasMatch(d) && lo != null && hi != null && tage.length < 8) tage.add(WetterTag(d, lo, hi));
+      }
+    }
+    final sonne = <WetterSonne>[];
+    if (m['sun'] is List) {
+      for (final p in m['sun'] as List) {
+        if (p is! Map<String, dynamic>) continue;
+        final d = p['date'];
+        if (d is String && _datum.hasMatch(d) && sonne.length < 3) sonne.add(WetterSonne(d, _uhr(p['sunrise']), _uhr(p['sunset'])));
+      }
+    }
+    return WetterDto(
+      verfuegbar: true,
+      ort: ort,
+      aktuell: aktuell,
+      min24h: _d(m['min24h']),
+      max24h: _d(m['max24h']),
+      verlauf: verlauf,
+      stunden: WetterStunden.lesen(m['hourly']),
+      tage: tage,
+      sonne: sonne,
+    );
   }
 }
 

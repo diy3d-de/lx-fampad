@@ -28,6 +28,7 @@ import '../muell/muell_logik.dart' show istMuellPayload;
 import '../muell/muell_state.dart' show muellErinnerungen, muellProvider;
 import '../api/models.dart' show Role;
 import '../betrieb/betrieb_hinweis.dart' show kBetriebPayload;
+import '../wetter/wetter_hinweise.dart' show istWetterPayload;
 import '../standort/standort_hinweis.dart' show kStandortPayload;
 import '../tasks/aufgabe_repository.dart' show aufgabenProvider;
 import 'erinnerung_einstellungen.dart';
@@ -93,6 +94,7 @@ class ErinnerungDienst {
 
   /// Tipp auf die Müll-Erinnerung bzw. den Hinweis auf ein neues Jahr (Nutzlast `muell|<Tag>` oder `muell`): die Müll-Seite öffnen.
   void Function()? beiMuellGeoeffnet;
+  void Function()? beiWetterGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -324,6 +326,10 @@ class ErinnerungDienst {
     }
     if (istMuellPayload(payload)) {
       beiMuellGeoeffnet?.call();
+      return;
+    }
+    if (istWetterPayload(payload)) {
+      beiWetterGeoeffnet?.call();
       return;
     }
     final aufgabe = aufgabeErinnerungPayloadLesen(payload);
