@@ -371,7 +371,7 @@ class ApiClient {
     final gen = _gen;
     await _tokenLaden();
     if (await _frischeUebernehmen(gen)) return;
-    final mein = '${_now().microsecondsSinceEpoch}-${Random.secure().nextInt(1 << 32)}';
+    final mein = '${_now().microsecondsSinceEpoch}-${Random.secure().nextInt(4294967296)}';
     final uhr = Stopwatch()..start();
     while (true) {
       final s = await _store.readErneuerungsSperre();

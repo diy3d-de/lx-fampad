@@ -210,7 +210,7 @@ class VerlaufTag {
     final text = _text(raw['day']);
     final tag = text == null || !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(text) ? null : DateTime.tryParse('${text}T00:00:00Z');
     if (tag == null) return null;
-    int n(String k) => (_zahl(raw[k]) ?? 0).clamp(0, 1 << 52);
+    int n(String k) => (_zahl(raw[k]) ?? 0).clamp(0, 4503599627370496);
     return VerlaufTag(
       tag: tag,
       personen7: n('activePersons7'),

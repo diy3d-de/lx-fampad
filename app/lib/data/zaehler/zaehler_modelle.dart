@@ -612,7 +612,7 @@ StandInhalt? standLesen(String klar) {
   if (notiz == null) return null;
   if (v == kMonatswertFormat) {
     final w = _ganz(d['w'], 0, kMaxMonatswertMilli);
-    final t = _ganz(d['t'], 0, 1 << 52);
+    final t = _ganz(d['t'], 0, 4503599627370496);
     if (d['m'] is! String || w == null || t == null) return null;
     final m = StandInhalt.monatswert(monat: d['m'] as String, milli: w, zeit: t, notiz: notiz);
     return m.gueltig ? m : null;
