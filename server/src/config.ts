@@ -160,6 +160,8 @@ export interface WeatherConfig {
   /** Suchrechteck für getpublicdata (klein halten: eine Anfrage liefert alle öffentlichen Stationen darin). */
   bbox: { latSw: number; lonSw: number; latNe: number; lonNe: number };
   pollMs: number;
+  /** Vorhersage und amtliche Warnungen (DWD über Bright Sky; nur Server, Schalter WEATHER_FORECAST_ENABLED, braucht WEATHER_ENABLED). */
+  forecast: { enabled: boolean; lat: number; lon: number };
 }
 
 /** Abfuhrtermine (ICS-Abruf nur im Dienst lx-fampad-waste; standardmäßig aus). */
@@ -299,8 +301,11 @@ function operatorConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): Operato
 function weatherConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WeatherConfig {
   const enabled = boolFlag(env, 'WEATHER_ENABLED');
   const pollMs = positiveInt(env, 'WEATHER_POLL_MS', 10 * 60_000);
-  const off = { enabled: false, place: '', stationMac: '', bbox: { latSw: 0, lonSw: 0, latNe: 0, lonNe: 0 }, pollMs };
-  if (!enabled) return off;
+  const off = { enabled: false, place: '', stationMac: '', bbox: { latSw: 0, lonSw: 0, latNe: 0, lonNe: 0 }, pollMs, forecast: { enabled: false, lat: 0, lon: 0 } };
+  if (!enabled) {
+    if (boolFlag(env, 'WEATHER_FORECAST_ENABLED')) throw new Error('WEATHER_FORECAST_ENABLED braucht WEATHER_ENABLED=true (Ortsangabe)');
+    return off;
+  }
   if (pollMs < 5 * 60_000 && nodeEnv === 'production') throw new Error('WEATHER_POLL_MS darf in Produktion nicht unter 300000 liegen');
   const place = (env.WEATHER_PLACE?.trim() || 'Westerburg').normalize('NFC');
   if (place.length > 60 || /[<>]/.test(place) || [...place].some((c) => c < ' ')) throw new Error('WEATHER_PLACE ungültig');
@@ -312,7 +317,10 @@ function weatherConfig(env: NodeJS.ProcessEnv, nodeEnv: Config['env']): WeatherC
   if (latSw >= latNe || lonSw >= lonNe || latSw < -90 || latNe > 90 || lonSw < -180 || lonNe > 180 || latNe - latSw > 0.5 || lonNe - lonSw > 0.5) {
     throw new Error('WEATHER_BBOX ungültig (Südwest unter Nordost, höchstens 0,5 Grad je Richtung)');
   }
-  return { enabled, place, stationMac: mac, bbox: { latSw, lonSw, latNe, lonNe }, pollMs };
+  // Vorhersage: Mitte des Suchrechtecks, auf 2 Nachkommastellen gerundet (ca. 1 km); nur diese gerundete Angabe verlässt den Server
+  const gerundet = (n: number) => Math.round(n * 100) / 100;
+  const forecast = { enabled: boolFlag(env, 'WEATHER_FORECAST_ENABLED'), lat: gerundet((latSw + latNe) / 2), lon: gerundet((lonSw + lonNe) / 2) };
+  return { enabled, place, stationMac: mac, bbox: { latSw, lonSw, latNe, lonNe }, pollMs, forecast };
 }
 
 const LOG_LEVELS = ['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'] as const;
