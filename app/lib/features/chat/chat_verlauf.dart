@@ -476,6 +476,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       ChatArt.group => '${teilnehmer.length} teilnehmer',
       ChatArt.meds => 'medikamente',
       ChatArt.zaehler => 'zähler',
+      ChatArt.tresor => 'tresor',
     };
     final verschluesselt = konv.encVersion == 'e1';
     final kryptoZustand = chatKryptoZustand(ref.watch(e2eeProvider));

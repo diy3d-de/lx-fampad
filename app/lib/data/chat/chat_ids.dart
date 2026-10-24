@@ -45,6 +45,9 @@ String medsChatId(String subjektId) => uuidAusSchluessel('meds:${subjektId.toLow
 /// ID der Zähler-Konversation einer Familie (Abschnitt 6l): je Familie genau eine, daraus abgeleitet (muss exakt dem Server entsprechen, server/src/sync/entities/chat-ids.ts).
 String zaehlerChatId(String familyId) => uuidAusSchluessel('zaehler:${familyId.toLowerCase()}');
 
+/// ID der Tresor-Konversation einer Familie (Abschnitt 6m): je Familie genau eine, daraus abgeleitet (muss exakt dem Server entsprechen, server/src/sync/entities/chat-ids.ts).
+String tresorChatId(String familyId) => uuidAusSchluessel('tresor:${familyId.toLowerCase()}');
+
 /// ID der Reaktion einer Person auf eine Nachricht (je Person und Nachricht genau eine).
 String reaktionId(String nachrichtId, String userId) => uuidAusSchluessel('reaktion:${nachrichtId.toLowerCase()}:${userId.toLowerCase()}');
 

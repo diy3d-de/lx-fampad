@@ -17,6 +17,7 @@ import 'widgets/ungelesen_titel.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
 import 'features/medikamente/medikament_steuerung.dart';
+import 'data/tresor/tresor_steuerung.dart';
 import 'features/zaehler/zaehler_steuerung.dart';
 import 'features/home/heute_widget_steuerung.dart';
 import 'features/auth/auth_widgets.dart';
@@ -155,6 +156,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     ref.watch(medikamentSteuerungProvider);
     // Zähler: Teilnehmer der Zähler-Konversation nachziehen (nur Eltern und Admins; neue Eltern bekommen den Verlauf ohne Hinweis)
     ref.watch(zaehlerSteuerungProvider);
+    // Tresor: Teilnehmer der Tresor-Konversation nachziehen (nur Eltern und Admins; neue Eltern bekommen den Verlauf ohne Hinweis)
+    ref.watch(tresorSteuerungProvider);
     // Betreiber: lokales Konto-Flag für die Warnungen (nur dann fragt ein Wecker den Warnstand ab) und Meldung des Schlüsselstands dieses Geräts
     ref.watch(betriebWarnSteuerungProvider);
     ref.watch(geraetSchluesselMelderProvider);

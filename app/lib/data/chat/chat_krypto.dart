@@ -40,6 +40,9 @@ const kPraefixLokal = 'l1:';
 /// Größte Nachricht in UTF-8-Bytes (vor dem Verschlüsseln): die verschlüsselte Hülle bleibt damit unter der Obergrenze des Servers (16 384 Zeichen Base64url).
 const kMaxNachrichtBytes = 8000;
 
+/// Größter Klartext eines Tresor-Eintrags in Byte (Abschnitt 6m); der Server nimmt dafür Hüllen bis 24576 Zeichen an.
+const kMaxTresorKlartextBytes = 16000;
+
 /// Eine Person kann (noch) nicht in einen verschlüsselten Chat aufgenommen werden: sie hat die Verschlüsselung nicht eingerichtet oder ihr Schlüssel ist ungeprüft.
 class SchluesselFehlt implements Exception {
   final List<String> personen;
@@ -766,9 +769,9 @@ class ChatKrypto {
   // ------------------------------------------------------------------ Nachrichten
 
   /// Verschlüsselt eine Nachricht für den Versand (Hülle `e1:`); null, wenn jetzt nicht verschlüsselt werden kann (der Aufrufer wartet).
-  Future<String?> nachrichtVersiegeln({required String konversationId, required String nachrichtId, required String klartext, String? antwortAuf, String? art}) async {
+  Future<String?> nachrichtVersiegeln({required String konversationId, required String nachrichtId, required String klartext, String? antwortAuf, String? art, int maxBytes = kMaxNachrichtBytes}) async {
     final bytes = utf8.encode(klartext);
-    if (bytes.length > kMaxNachrichtBytes) throw const VerschluesselungNichtBereit('Die Nachricht ist zu lang.');
+    if (bytes.length > maxBytes) throw const VerschluesselungNichtBereit('Die Nachricht ist zu lang.');
     final s = await sendeEpoche(konversationId);
     final epoche = s.epoche;
     if (epoche == null) return null;
@@ -796,7 +799,7 @@ class ChatKrypto {
   /// Eine eigene, schon verschlüsselte Nachricht im Ausgang mit der höchsten bestätigten Epoche neu verschlüsseln, wenn inzwischen eine neuere bekannt ist (eine
   /// Rotation lag dazwischen: sonst könnte ein inzwischen entferntes Mitglied sie noch lesen). Liefert die neue Hülle, [wire] unverändert (schon aktuell oder
   /// nicht neu zu verschlüsseln) oder null (die neuere Epoche ist noch nicht bereit: die Nachricht wartet).
-  Future<String?> nachrichtNeuVersiegeln({required String konversationId, required String nachrichtId, required String wire, String? antwortAuf, String? art}) async {
+  Future<String?> nachrichtNeuVersiegeln({required String konversationId, required String nachrichtId, required String wire, String? antwortAuf, String? art, int maxBytes = kMaxNachrichtBytes}) async {
     final alt = huellenEpoche(wire);
     if (alt == null) return wire;
     final s = await sendeEpoche(konversationId);
@@ -805,7 +808,7 @@ class ChatKrypto {
     if (alt >= neu) return wire;
     final d = await nachrichtOeffnen(konversationId: konversationId, nachrichtId: nachrichtId, autorId: ichId, wire: wire, antwortAuf: antwortAuf, art: art);
     if (!d.lesbar) return wire; // die alte Epoche lässt sich nicht mehr öffnen: es bleibt, wie es ist
-    return nachrichtVersiegeln(konversationId: konversationId, nachrichtId: nachrichtId, klartext: d.text, antwortAuf: antwortAuf, art: art);
+    return nachrichtVersiegeln(konversationId: konversationId, nachrichtId: nachrichtId, klartext: d.text, antwortAuf: antwortAuf, art: art, maxBytes: maxBytes);
   }
 
   /// Öffnet eine verschlüsselte Nachricht (`e1:`). Prüft zuerst die Signatur gegen den Schlüssel des Absenders in der Version der Hülle, entschlüsselt erst danach.

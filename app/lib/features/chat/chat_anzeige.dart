@@ -31,6 +31,8 @@ String chatName(Konversation k, List<String> teilnehmer, Mitglieder mitglieder, 
       return 'Medikamente'; // nie in der Chatliste, nur als Rückfall
     case ChatArt.zaehler:
       return 'Zähler'; // nie in der Chatliste, nur als Rückfall
+    case ChatArt.tresor:
+      return 'Tresor'; // nie in der Chatliste, nur als Rückfall
   }
 }
 
