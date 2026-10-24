@@ -37,5 +37,8 @@ const kMedikamenteTab = 9;
 /// Index des Zähler-Bereichs in [kDesktopTabs] (nur Eltern und Admins; nur im Desktop-Layout ein Bereich der Shell, mobil eine Seite über das Blatt "Mehr").
 const kZaehlerTab = 10;
 
+/// Index des Tresor-Bereichs in [kDesktopTabs] (nur Eltern und Admins, ohne Badge; nur im Desktop-Layout ein Bereich der Shell, mobil eine Seite über das Blatt "Mehr").
+const kTresorTab = 11;
+
 /// Index des (noch nicht gebauten) Dateien-Bereichs in [kTabs]; ausgeblendet, solange `kDateienSichtbar` falsch ist.
 const kDateienTab = 3;
