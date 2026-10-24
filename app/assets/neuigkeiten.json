@@ -1,4 +1,7 @@
 {
+  "0.13.2": [
+    "Web: Die Monatswerte der Zähler werden jetzt auch in der Web-App angezeigt. Ein Rechenfehler im Browser hatte sie abgewiesen, die eingetragenen Werte sind unverändert da"
+  ],
   "0.13.1": [
     "Zähler: Erzeugung und Verbrauch lassen sich auch als Monatswert eintragen, zum Beispiel die Solar-Erzeugung aus der Anker-App. Bitte vorher alle Geräte aktualisieren"
   ],
