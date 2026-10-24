@@ -1,6 +1,6 @@
 {
   "0.13.3": [
-    "Zähler: Der Strompreis gilt auch für frühere Monate. Die Solar-Ersparnis wird damit jetzt berechnet, auch wenn der Preis mit dem heutigen Datum eingetragen wurde"
+    "Zähler: Der Strompreis gilt auch für frühere Monate. Die Solar-Ersparnis wird damit jetzt berechnet, auch wenn der Preis mit dem heutigen Datum eingetragen wurde. Im Preis-Dialog steht jetzt ein Hinweis zum Beginn, der erste Preis beginnt am Jahresanfang"
   ],
   "0.13.2": [
     "Web: Die Monatswerte der Zähler werden jetzt auch in der Web-App angezeigt. Ein Rechenfehler im Browser hatte sie abgewiesen, die eingetragenen Werte sind unverändert da"
