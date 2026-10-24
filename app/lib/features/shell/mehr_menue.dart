@@ -21,7 +21,9 @@ import '../zaehler/zaehler_anzeige.dart' show zaehlerFaelligProvider;
 import '../zaehler/zaehler_karte.dart' show zaehlerOeffnen;
 import '../tresor/tresor_screen.dart' show tresorOeffnen;
 import '../../data/tresor/tresor_state.dart' show tresorDarfProvider;
+import '../../data/dateien/datei_state.dart' show dateienVerfuegbarProvider;
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
+import '../files/dateien_screen.dart' show dateienOeffnen;
 import '../muell/muell_karte.dart' show muellOeffnen;
 import '../profile/profile_screen.dart';
 import '../standort/standort_start_karte.dart' show standortOeffnen;
@@ -59,13 +61,14 @@ class MehrEintrag {
   const MehrEintrag({required this.id, required this.label, required this.icon, required this.oeffnen, this.hinweis = 0, this.ueberfaellig = false});
 }
 
-/// Die Einträge des Blatts in fester Reihenfolge: Bereiche hinter "Mehr", Fristen, Medikamente, Zähler und Tresor (nur Eltern/Admins), Müll, Wetter (nur wenn verfügbar), Standort, Suche.
+/// Die Einträge des Blatts in fester Reihenfolge: Bereiche hinter "Mehr", Fristen, Medikamente, Zähler und Tresor (nur Eltern/Admins), Dateien (nur wenn die Dateiablage da ist), Müll, Wetter (nur wenn verfügbar), Standort, Suche.
 List<MehrEintrag> mehrEintraege(WidgetRef ref, List<int> leiste) {
   final h = ref.watch(mehrHinweiseProvider);
   final muell = ref.watch(muellProvider.select((m) => m.verfuegbar));
   final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar));
   final zaehlerDarf = ref.watch(zaehlerDarfProvider);
   final tresorDarf = ref.watch(tresorDarfProvider);
+  final dateienDa = ref.watch(dateienVerfuegbarProvider).value ?? false;
   return [
     for (final tab in hinterMehr(leiste))
       MehrEintrag(
@@ -93,6 +96,8 @@ List<MehrEintrag> mehrEintraege(WidgetRef ref, List<int> leiste) {
     if (zaehlerDarf) MehrEintrag(id: 'zaehler', label: 'Zähler', icon: Icons.speed_outlined, hinweis: h.zaehler, oeffnen: (c, _) => zaehlerOeffnen(c)),
     // Tresor (nach Zähler): NUR für Eltern und Admins, Kinder bekommen den Eintrag nie; ohne Zahl und ohne Zeichen
     if (tresorDarf) MehrEintrag(id: 'tresor', label: 'Tresor', icon: Icons.lock_outline, oeffnen: (c, _) => tresorOeffnen(c)),
+    // Dateien (nach Tresor): nur wenn der Server die Dateiablage meldet; Kinder sehen den Bereich mit ihren Rechten, ohne Zahl und ohne Zeichen
+    if (dateienDa) MehrEintrag(id: 'dateien', label: 'Dateien', icon: Icons.folder_outlined, oeffnen: (c, _) => dateienOeffnen(c)),
     if (muell) MehrEintrag(id: 'muell', label: 'Müll', icon: Icons.delete_outline, oeffnen: (c, _) => muellOeffnen(c)),
     if (wetter) MehrEintrag(id: 'wetter', label: 'Wetter', icon: Icons.wb_sunny_outlined, oeffnen: (c, _) => wetterOeffnen(c)),
     MehrEintrag(id: 'standort', label: 'Standort', icon: Icons.location_on_outlined, oeffnen: (c, _) => standortOeffnen(c)),

@@ -29,6 +29,7 @@ import '../shell/shell_tab.dart';
 import '../muell/muell_karte.dart';
 import '../medikamente/medikamente_karte.dart' show MedikamenteStartKarte;
 import '../zaehler/zaehler_karte.dart' show ZaehlerStartKarte;
+import '../files/dateien_start_karte.dart' show dateiSchnellHochladen;
 import '../standort/standort_start_karte.dart';
 import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
@@ -196,8 +197,8 @@ class _SchnellzugriffReihe extends StatelessWidget {
       children: const [
         _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
         _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
-        _Schnellzugriff('Foto', Icons.image_outlined),
-        _Schnellzugriff('Datei', Icons.upload_outlined),
+        _Schnellzugriff('Foto', Icons.image_outlined, zumFoto: true),
+        _Schnellzugriff('Datei', Icons.upload_outlined, zumDatei: true),
       ],
       );
   }
@@ -208,7 +209,9 @@ class _Schnellzugriff extends ConsumerWidget {
   final IconData icon;
   final bool zumListenTab;
   final bool zumTerminEditor;
-  const _Schnellzugriff(this.label, this.icon, {this.zumListenTab = false, this.zumTerminEditor = false});
+  final bool zumFoto;
+  final bool zumDatei;
+  const _Schnellzugriff(this.label, this.icon, {this.zumListenTab = false, this.zumTerminEditor = false, this.zumFoto = false, this.zumDatei = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => LxCard(
@@ -223,6 +226,8 @@ class _Schnellzugriff extends ConsumerWidget {
             } else {
               ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
             }
+          } else if (zumFoto || zumDatei) {
+            dateiSchnellHochladen(context, ref, nurBilder: zumFoto);
           } else {
             zeigePhase1Hinweis(context);
           }

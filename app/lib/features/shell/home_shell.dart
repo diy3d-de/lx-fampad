@@ -35,7 +35,8 @@ import '../chat/chat_screen.dart';
 import '../../data/shell/leiste_logik.dart';
 import '../../data/shell/leiste_state.dart';
 import 'mehr_menue.dart';
-import '../files/files_screen.dart';
+import '../files/dateien_screen.dart';
+import '../../data/dateien/datei_state.dart' show dateienVerfuegbarProvider;
 import '../../data/startseite/startseite_state.dart';
 import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
@@ -72,7 +73,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
     ChatScreen(key: _keys[1]),
-    FilesScreen(key: _keys[2]),
+    // Dateien: mobil eine Seite hinter "Mehr" (kein Bereich der Leiste), im Desktop-Layout der Bereich der Seitenleiste (siehe _desktopScreens)
+    const SizedBox.shrink(),
     ListsScreen(key: _keys[3]),
     TasksScreen(key: _keys[4]),
   ];
@@ -84,9 +86,13 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   bool _medikamenteBesucht = false;
   bool _zaehlerBesucht = false;
   bool _tresorBesucht = false;
+  bool _dateienBesucht = false;
   List<Widget> get _desktopScreens => [
     const DesktopHome(),
-    ..._screens.sublist(1),
+    ..._screens.sublist(1, kDateienTab),
+    // Dateien: erst gebaut, wenn der Bereich gewählt wurde (nur mit Dateiablage auf dem Server)
+    if (_dateienBesucht) DateienScreen(key: _keys[2], eingebettet: true) else const SizedBox.shrink(),
+    ..._screens.sublist(kDateienTab + 1),
     if (_standortBesucht) StandortScreen(key: _keys[5], eingebettet: true) else const SizedBox.shrink(),
     if (_wetterBesucht) WetterScreen(key: _keys[6], eingebettet: true) else const SizedBox.shrink(),
     if (_muellBesucht) MuellScreen(key: _keys[7], eingebettet: true) else const SizedBox.shrink(),
@@ -249,6 +255,13 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (mounted && !ref.read(zaehlerDarfProvider) && ref.read(shellTabProvider) == kZaehlerTab) ref.read(shellTabProvider.notifier).waehlen(0);
       });
     }
+    // Ohne Dateiablage auf dem Server (oder solange die Antwort des Servers noch fehlt) landet niemand im Dateien-Bereich: kein Deep-Link, kein Tab
+    final dateienAntwort = ref.watch(dateienVerfuegbarProvider);
+    if (tab == kDateienTab && dateienAntwort.hasValue && !dateienAntwort.requireValue) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && ref.read(shellTabProvider) == kDateienTab && !(ref.read(dateienVerfuegbarProvider).value ?? false)) ref.read(shellTabProvider.notifier).waehlen(0);
+      });
+    }
     // Wer den Tresor nicht (mehr) sehen darf (Rollenwechsel zur Laufzeit), landet nie im Tresor-Bereich
     if (!ref.watch(tresorDarfProvider) && tab == kTresorTab) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -265,6 +278,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (tab == kMedikamenteTab) _medikamenteBesucht = true;
         if (tab == kZaehlerTab && ref.read(zaehlerDarfProvider)) _zaehlerBesucht = true;
         if (tab == kTresorTab && ref.read(tresorDarfProvider)) _tresorBesucht = true;
+        if (tab == kDateienTab && (ref.read(dateienVerfuegbarProvider).value ?? false)) _dateienBesucht = true;
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite
