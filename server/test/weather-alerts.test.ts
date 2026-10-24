@@ -332,10 +332,10 @@ describe.each(backends)('Wetter-Wecker ($name)', (backend) => {
     });
   });
 
-  it('Migration 0032 ist idempotent (zweimal ausführbar, Daten bleiben)', async () => {
+  it('Migration 0033 ist idempotent (zweimal ausführbar, Daten bleiben)', async () => {
     await register(fam.parent, 'parent');
     await want(fam.parent, ['wind']);
-    const sqlText = readFileSync(new URL('../drizzle/0032_weather_alerts.sql', import.meta.url), 'utf8');
+    const sqlText = readFileSync(new URL('../drizzle/0033_weather_alerts.sql', import.meta.url), 'utf8');
     for (const teil of sqlText.split('--> statement-breakpoint')) await world.db.execute(sql.raw(teil));
     for (const teil of sqlText.split('--> statement-breakpoint')) await world.db.execute(sql.raw(teil));
     expect((await rows(sql`select weather_kinds from push_endpoints`))[0]?.weather_kinds).toBe(kindsToMask(['wind']));

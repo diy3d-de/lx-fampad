@@ -136,7 +136,7 @@ class _TeilenSeiteState extends ConsumerState<TeilenSeite> {
     final namen = {for (final e in eintraege) e.id: chatName(e.konversation, e.teilnehmer, mitglieder, ich, inhalt)};
     final id = await _waehlen('In welchen Chat senden?', [
       for (final e in eintraege)
-        _Eintrag(e.id, namen[e.id]!, switch (e.art) { ChatArt.family => 'alle in der Familie', ChatArt.direct => 'Direktchat', ChatArt.group => 'Gruppe', ChatArt.meds => 'Medikamente', ChatArt.zaehler => 'Zähler' }),
+        _Eintrag(e.id, namen[e.id]!, switch (e.art) { ChatArt.family => 'alle in der Familie', ChatArt.direct => 'Direktchat', ChatArt.group => 'Gruppe', ChatArt.meds => 'Medikamente', ChatArt.zaehler => 'Zähler', ChatArt.tresor => 'Tresor' }),
     ]);
     if (id == null || !mounted) return;
     setState(() => _beschaeftigt = true);

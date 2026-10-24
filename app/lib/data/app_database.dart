@@ -470,7 +470,26 @@ class AufgabePunkte extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, Zaehler, Zaehlerstaende])
+/// Tresor-Eintrag (Abschnitt 6m), Kind der Tresor-Konversation (`konversationen.art = 'tresor'`). `inhalt` ist die Hülle der Schnittstelle (`e1:` bzw. lokal `l1:` im Ausgang), lesbar nur
+/// über `NachrichtenInhalt.zusatz` (Art `t`); `bearbeiterId` ist die Person, die den Inhalt zuletzt geschrieben und signiert hat. Kategorie, Titel, Felder und Notiz stehen nur darin.
+@DataClassName('TresorEintragZeile')
+@TableIndex(name: 'tresor_eintraege_konversation_idx', columns: {#konversationId})
+class TresorEintraege extends Table {
+  @override
+  String get tableName => 'tresor_eintraege';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, Zaehler, Zaehlerstaende, TresorEintraege])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -481,13 +500,14 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 14;
+  int get schemaVersion => 15;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
   /// Version 12: `frist` und `frist_monate` an Aufgaben (Fristen-Tracker) mit Sync-Reset, damit vorhandene Werte ankommen.
   /// Version 13: Medikamenten-Plan (`subjekt_id` an Konversationen, Tabellen `medikamente` und `einnahmen`) mit Sync-Reset.
   /// Version 14: Zähler (Tabellen `zaehler` und `zaehlerstaende`) mit Sync-Reset.
+  /// Version 15: Tresor (Tabelle `tresor_eintraege`) mit Sync-Reset.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -576,6 +596,10 @@ class AppDatabase extends _$AppDatabase {
           await m.createIndex(zaehlerstaendeZaehlerIdx);
           await m.createIndex(zaehlerstaendeKonversationIdx);
         }
+        if (from < 15) {
+          await m.createTable(tresorEintraege);
+          await m.createIndex(tresorEintraegeKonversationIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -612,6 +636,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 14) {
         // Version 14 legt Tabellen für neue Sync-Entitäten an (Zähler, Zählerstände); ohne Reset kämen schon vorhandene nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 15) {
+        // Version 15 legt eine Tabelle für eine neue Sync-Entität an (Tresor-Einträge); ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {

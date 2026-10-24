@@ -1,5 +1,5 @@
 {
-  "id": "e1e2f872-7a18-4e2c-a414-76fea743f2d8",
+  "id": "8dc0cfe8-82fa-43d1-b6cc-e11fa5849f47",
   "prevId": "d3c39f63-61c9-40f1-b66e-f3c494142aaa",
   "version": "7",
   "dialect": "postgresql",
@@ -3973,7 +3973,7 @@
         },
         "konversationen_teilnehmer_ck": {
           "name": "konversationen_teilnehmer_ck",
-          "value": "(\"konversationen\".\"art\" = 'family' and cardinality(\"konversationen\".\"teilnehmer\") = 0)\n        or (\"konversationen\".\"art\" = 'direct' and cardinality(\"konversationen\".\"teilnehmer\") = 2)\n        or (\"konversationen\".\"art\" = 'group' and cardinality(\"konversationen\".\"teilnehmer\") between 2 and 20)\n        or (\"konversationen\".\"art\"::text = 'meds' and cardinality(\"konversationen\".\"teilnehmer\") between 1 and 20)\n        or (\"konversationen\".\"art\"::text = 'zaehler' and cardinality(\"konversationen\".\"teilnehmer\") between 1 and 20)"
+          "value": "(\"konversationen\".\"art\" = 'family' and cardinality(\"konversationen\".\"teilnehmer\") = 0)\n        or (\"konversationen\".\"art\" = 'direct' and cardinality(\"konversationen\".\"teilnehmer\") = 2)\n        or (\"konversationen\".\"art\" = 'group' and cardinality(\"konversationen\".\"teilnehmer\") between 2 and 20)\n        or (\"konversationen\".\"art\"::text = 'meds' and cardinality(\"konversationen\".\"teilnehmer\") between 1 and 20)\n        or (\"konversationen\".\"art\"::text = 'zaehler' and cardinality(\"konversationen\".\"teilnehmer\") between 1 and 20)\n        or (\"konversationen\".\"art\"::text = 'tresor' and cardinality(\"konversationen\".\"teilnehmer\") between 1 and 20)"
         }
       },
       "isRLSEnabled": false
@@ -6737,20 +6737,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "weather_kinds": {
-          "name": "weather_kinds",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "weather_sent": {
-          "name": "weather_sent",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
         }
       },
       "indexes": {
@@ -6812,10 +6798,6 @@
       },
       "policies": {},
       "checkConstraints": {
-        "push_endpoints_weather_kinds_ck": {
-          "name": "push_endpoints_weather_kinds_ck",
-          "value": "\"push_endpoints\".\"weather_kinds\" between 0 and 31"
-        },
         "push_endpoints_topic_ck": {
           "name": "push_endpoints_topic_ck",
           "value": "\"push_endpoints\".\"topic\" ~ '^up[A-Za-z0-9_-]{12,64}$'"
@@ -8550,6 +8532,232 @@
       },
       "isRLSEnabled": false
     },
+    "public.tresor_eintraege": {
+      "name": "tresor_eintraege",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "family_id": {
+          "name": "family_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "konversation_id": {
+          "name": "konversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "inhalt": {
+          "name": "inhalt",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bearbeiter_id": {
+          "name": "bearbeiter_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "rev": {
+          "name": "rev",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "field_revs": {
+          "name": "field_revs",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "deleted_at": {
+          "name": "deleted_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "tresor_eintraege_konversation_idx": {
+          "name": "tresor_eintraege_konversation_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "konversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tresor_eintraege_family_rev_idx": {
+          "name": "tresor_eintraege_family_rev_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tresor_eintraege_tombstone_idx": {
+          "name": "tresor_eintraege_tombstone_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rev",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tresor_eintraege\".\"deleted_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "tresor_eintraege_bearbeiter_idx": {
+          "name": "tresor_eintraege_bearbeiter_idx",
+          "columns": [
+            {
+              "expression": "family_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "bearbeiter_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"tresor_eintraege\".\"bearbeiter_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "tresor_eintraege_family_id_families_id_fk": {
+          "name": "tresor_eintraege_family_id_families_id_fk",
+          "tableFrom": "tresor_eintraege",
+          "tableTo": "families",
+          "columnsFrom": [
+            "family_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "tresor_eintraege_bearbeiter_id_users_id_fk": {
+          "name": "tresor_eintraege_bearbeiter_id_users_id_fk",
+          "tableFrom": "tresor_eintraege",
+          "tableTo": "users",
+          "columnsFrom": [
+            "bearbeiter_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "tresor_eintraege_family_id_konversation_id_konversationen_family_id_id_fk": {
+          "name": "tresor_eintraege_family_id_konversation_id_konversationen_family_id_id_fk",
+          "tableFrom": "tresor_eintraege",
+          "tableTo": "konversationen",
+          "columnsFrom": [
+            "family_id",
+            "konversation_id"
+          ],
+          "columnsTo": [
+            "family_id",
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "tresor_eintraege_family_id_uq": {
+          "name": "tresor_eintraege_family_id_uq",
+          "nullsNotDistinct": false,
+          "columns": [
+            "family_id",
+            "id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "tresor_eintraege_inhalt_len_ck": {
+          "name": "tresor_eintraege_inhalt_len_ck",
+          "value": "char_length(\"tresor_eintraege\".\"inhalt\") <= 24576"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.user_avatars": {
       "name": "user_avatars",
       "schema": "",
@@ -8932,38 +9140,6 @@
           "value": "\"waste_years\".\"year\" between 2000 and 2200"
         }
       },
-      "isRLSEnabled": false
-    },
-    "public.weather_alert_state": {
-      "name": "weather_alert_state",
-      "schema": "",
-      "columns": {
-        "kind": {
-          "name": "kind",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "active": {
-          "name": "active",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "changed_at": {
-          "name": "changed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.weather_credentials": {
@@ -9822,7 +9998,8 @@
         "direct",
         "group",
         "meds",
-        "zaehler"
+        "zaehler",
+        "tresor"
       ]
     },
     "public.list_audience": {

@@ -507,7 +507,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
-| `konversation` | `art` | `family`, `direct`, `group`, `meds`, `zaehler` (Pflicht; `meds` nur für den Medikamenten-Plan, `zaehler` nur für die Zähler, siehe unten) | create |
+| `konversation` | `art` | `family`, `direct`, `group`, `meds`, `zaehler`, `tresor` (Pflicht; `meds` nur für den Medikamenten-Plan, `zaehler` nur für die Zähler, `tresor` nur für den Tresor, siehe unten) | create |
 | | `subjektId` | nur bei `meds`: UUID der Person, um deren Medikamente es geht (Pflicht dort, sonst `null`); unveränderlich | create |
 | | `encVersion` | Version der Inhaltshülle: `e1` (Ende-zu-Ende verschlüsselt, **Standard**) oder `p1` (Klartext, nur Altbestand); **neue Konversationen nur als `e1`** (`p1` und alles andere beim Anlegen `invalid`); nach dem Anlegen unveränderlich (kein Zurückstufen: Änderung ist `invalid`), beim Wiederbeleben einer gelöschten Konversation gilt die Hülle der Neuanlage (`e1`, auch aus einem `p1`-Altbestand) | create |
 | | `titel` | undurchsichtiger Text bis 512 Zeichen (Standard leer; Direkt- und Familienchat: leer) | rw |
@@ -582,6 +582,22 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Grenzen:** höchstens 50 lebende Zähler je Konversation, 5000 Stände je Zähler (`limit_reached`); je Person 20 neue Zähler und 60 neue Stände je Minute (200 bzw. 600 je Stunde), 60 bzw. 120 Änderungen je Minute.
 - **Kein Wecker:** `Facts.quiet` schaltet den Push-Wecker für Konversation, Epochen, Wraps, Zähler und Stände ab; ältere Inhalte werden aus den Protokolleinträgen entfernt, beim Löschen geleert.
 - **Ältere Clients** überspringen `zaehler` und `zaehlerstand` im Änderungsstrom (`protocolVersion` bleibt 1); eine Konversation der Art `zaehler` sehen nur Eltern und Admins (bei älteren Apps wie eine leere Gruppe).
+
+**Tresor (Migration 0032)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6m. Gemeinsamer Eltern-Tresor, Ende-zu-Ende verschlüsselt. Eine **verborgene Konversation je Familie** der Art `tresor`; Einträge sind ihre Kinder. Epochen und Wraps laufen über `epoche` und `epoche_wrap`.
+
+- **`konversation` mit `art: "tresor"`:** wie `zaehler` (`encVersion: "e1"`, kein `titel`, kein `subjektId`, 1 bis 20 Teilnehmer, nur aktive Eltern und Admins, nie ein Kind, nie löschbar, keine Nachrichten, `hidden` nach einem Rollenwechsel zum Kind). Die ID ist **vorgeschrieben**: `tresorChatId(Familie)` = SHA-256 von `lx-fampad:tresor:<Familien-ID kleingeschrieben>` (Muster UUID Version 5; Known-Answer-Tests auf beiden Seiten); jede andere ID (auch die der Zähler-Konversation) ist `invalid`.
+
+| Entität `tresor_eintrag` | Feld | Typ | Zugriff |
+|---|---|---|---|
+| | `konversationId` | UUID der Tresor-Konversation (Pflicht; lebend, `e1`, Art `tresor`, sonst `invalid`) | create |
+| | `inhalt` | e1-Hülle (Pflicht, `e1:` + Base64url, höchstens 24576 Zeichen; Klartext oder andere Formate `invalid`) | rw |
+| | `bearbeiterId`, `createdAt` | Person, die zuletzt geschrieben hat, und Anlagezeit (setzt der Server) | server |
+
+- **Rechte:** Lesen, Anlegen, Ändern (nur `inhalt`) und Löschen nur für **Eltern und Admins als Teilnehmer**, alle gemeinsam (jede Person ändert und löscht jeden Eintrag); Kinder haben in der Regeltabelle kein Recht (`not_found`), Unbeteiligte ebenso (das Betreiber-Flag zählt nie). IDs sind Zufalls-UUIDs (Version 4).
+- **Hülle:** unverändert `e1` (9a); **Art** `t` (ohne Bezug) und der Bearbeiter stehen in AAD und Signatur. Klartext `t1:` mit höchstens 16000 Byte (Obergrenze der App; der Server prüft nur Form und Größe der Hülle).
+- **Grenzen:** höchstens 500 lebende Einträge je Konversation (`limit_reached`); je Person 30 neue Einträge je Minute (300 je Stunde), 60 Änderungen je Minute.
+- **Kein Wecker, kein Inhalt im Protokoll:** `Facts.quiet`; ältere Inhalte werden aus den Protokolleinträgen entfernt, beim Löschen geleert.
+- **Ältere Clients** überspringen `tresor_eintrag` im Änderungsstrom (`protocolVersion` bleibt 1); eine Konversation der Art `tresor` sehen nur Eltern und Admins (bei älteren Apps wie eine leere Gruppe).
 
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
