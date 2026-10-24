@@ -1,4 +1,8 @@
 {
+  "0.16.0": [
+    "Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall) kommen jetzt auch bei geschlossener App, per Push-Wecker. Einschalten unter Profil › Benachrichtigungen › Wetter-Hinweise",
+    "Dafür muss Push (ntfy) eingerichtet sein und die Benachrichtigungserlaubnis erteilt sein"
+  ],
   "0.15.0": [
     "Tresor: gemeinsamer, Ende-zu-Ende verschlüsselter Tresor für alle Eltern, zum Beispiel WLAN, Versicherungen, Ausweise, Notfall-Infos der Kinder und Zugangsdaten. Hinter Mehr, mit Sperre und erneuter Bestätigung",
     "Kinder haben keinen Zugriff auf den Tresor. Bitte vorher alle Geräte aktualisieren"
