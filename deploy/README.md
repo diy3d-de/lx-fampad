@@ -35,7 +35,7 @@ Verzeichnisse auf dem Server:
 | `/srv/fampad/releases/android` | `latest.json` und APK des Update-Kanals | `lx` |
 | `/srv/fampad/well-known` | `assetlinks.json` (später `apple-app-site-association`) | `lx` |
 | `/srv/fampad/font-fallback` | Fallback-Schriften für Flutter Web | `lx` |
-| `/srv/fampad/files` | Dateiablage (später verschlüsselt) | `lx-fampad`, 0700 |
+| `/srv/fampad/files` | Dateiablage (Blobs serverseitig verschlüsselt bzw. Ende-zu-Ende verschlüsselt, Staging; Abschnitt 14) | `lx-fampad`, 0700 |
 | `/etc/lx-fampad/env` | Konfiguration und Geheimnisse (Datenbank-Passwort) | `root:root`, 0600 |
 
 ---
@@ -528,6 +528,17 @@ Der Server lädt die ICS-Datei des Abfallkalenders (nur der Server, nie die App)
 4. **Prüfen:** `journalctl -u lx-fampad-waste -n 50` zeigt nur feste Codes (`http_403`, `http_404`, `empty`, `not_ics`, `redirect`, `too_large`, `network`, `shrunk`, `db`), nie den Link. In der App erscheinen Kachel und Seite nach dem ersten Abruf.
 5. **Ausschalten:** `WASTE_ENABLED` entfernen, `sudo systemctl restart lx-fampad lx-fampad-waste` (der Dienst bleibt danach gestoppt); ganz entfernen: `sudo systemctl disable --now lx-fampad-waste`. Die Termine bleiben in der Datenbank. Den Link ändern: nur in der env-Datei (`sudoedit`), danach beide Dienste neu starten; die App hat bewusst kein Eingabefeld dafür.
 
+### 14. Dateiablage (optional, Schalter `FILES_ENABLED`)
+
+Der Server ist gebaut (Blob-Schicht mit Upload per tus, Kontingent, Auslieferung; Abschnitt 6n der Projektbeschreibung), die App folgt. **Diese Schritte sind nur beschrieben und werden erst vor dem Einschalten ausgeführt.** Ohne Schalter (Standard) bleiben alle Routen 404 und es wird nichts angelegt.
+
+1. **Ordner** (einmalig, in Schritt 2 schon angelegt): `/srv/fampad/files` gehört `lx-fampad`, 0700. Der Dienst legt darunter `blobs/` und `tmp/` selbst an (0700, Dateien 0600). Er muss auf demselben Dateisystem liegen (Umbenennen aus `tmp/` ist atomar).
+2. **Dienst:** `ReadWritePaths=/srv/fampad/files` steht schon in `lx-fampad.service`; bei einem anderen `FILES_DIR` dort anpassen (`sudo systemctl daemon-reload`).
+3. **Variablen** in `/etc/lx-fampad/env` (Vorlage `server/.env.example`): `FILES_ENABLED=true` und `FILES_DIR=/srv/fampad/files` (absolut, in Produktion Pflicht); optional `FILES_QUOTA_BYTES` (10 GB je Familie), `FILES_MAX_BYTES` (100 MB je Datei), `FILES_MIN_FREE_BYTES` (5 GB: darunter keine neuen Uploads), `FILES_STAGING_MAX_BYTES` (2 GB), `FILES_CHILD_BYTES_PER_HOUR`/`_PER_DAY`. Ungültige Werte brechen den Start ab. Dann `sudo systemctl restart lx-fampad`; der Dienst läuft mit 512 MB (`MemoryMax`), die Abschnitte sind 4 MiB, das Abschließen läuft einzeln (hashen und verschlüsseln blockweise, kein Laden ganzer Dateien in den Speicher).
+4. **Caddy:** keine Änderung nötig. `deploy/Caddyfile` setzt für `/api/*` kein `request_body max_size` (Caddy begrenzt von sich aus nichts), PATCH-Abschnitte von 4 MiB laufen also unverändert zum Dienst; die Größe begrenzt der Dienst (`413`). Das Haupt-Caddyfile auf dem Server nicht anfassen. Hinweis: Das `header`-Block des Sites überschreibt die `Content-Security-Policy` auch auf API-Antworten (wie bei den Benutzerbildern); die Auslieferung ist unabhängig davon immer `attachment` mit `nosniff`. Sollen später `sandbox`-CSP und Zeitlimits pro Route gelten, geht das nur über einen eigenen `handle /api/v1/files/*`-Block per validierendem Skript (Dry-Run, siehe oben).
+5. **Backup:** Blobs gehören **nicht** in die tägliche Datenbanksicherung (`INCLUDE_FILES` bleibt aus). Das NAS holt `/srv/fampad/files/blobs` inkrementell per rsync (eigener, nur lesender Zugang wie bei `lxbackup`; nie `--delete`); Wiederherstellung braucht Datenbank-Dump, `AUTH_SECRET_KEY` und die Blobs. Einrichtung folgt mit D5.
+6. **Prüfen:** `curl -s https://familie.lx-labs.dev/api/v1/version` zeigt `"files":true`; die Betreiber-Ansicht zeigt unter `files` nur Zahlen. Das stündliche Aufräumen warnt im Log mit Zahlen (`strayFiles`, `missingFiles`), wenn Platte und Datenbank abweichen.
+
 ## Updates veröffentlichen
 
 **VOR dem Deploy von Migration 0005 (Gäste entfallen):** Sicherung ziehen und prüfen, ob Gäste existieren. Die Migration löscht Gast-Konten und ist nicht umkehrbar. **Dieser Deploy wird bei Fehler nicht automatisch zurückgerollt:** der Rückfall von `deploy.sh` spielt nur den Code zurück, nicht die Datenbank (ein alter Server würde zudem `audience 'all'` in die neue Enum-Spalte schreiben und mit 500 antworten). Wiederherstellung per Dump.
@@ -600,7 +611,7 @@ Migration 0024 (Spalte `epoche_wraps.key_version`) ist rein additiv. Der Schalte
 
 - Backups der Dateiablage (`/srv/fampad/files`): erst wenn sie genutzt wird (`INCLUDE_FILES=1`, später inkrementell); Datenbank und Konfiguration sind erledigt, siehe Abschnitt "Backups"
 - Speicherplatz-Warnung; Aufbewahrung von IP-Adressen in der Datenbank (`audit_log.ip`) höchstens 7 Tage (Aufräum-Job in Phase 1)
-- Hauptschlüssel für die Dateiverschlüsselung außerhalb von `/srv/fampad/files` ablegen (Phase 1)
+- Hauptschlüssel für die Dateiverschlüsselung: `AUTH_SECRET_KEY` liegt außerhalb von `/srv/fampad/files` (Abschnitt 14; er steckt in der Sicherung der Konfiguration)
 
 ## Umbenennung von lx-familienzentrale
 
