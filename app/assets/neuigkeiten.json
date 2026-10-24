@@ -1,4 +1,7 @@
 {
+  "0.13.1": [
+    "Zähler: Erzeugung und Verbrauch lassen sich auch als Monatswert eintragen, zum Beispiel die Solar-Erzeugung aus der Anker-App. Bitte vorher alle Geräte aktualisieren"
+  ],
   "0.13.0": [
     "Zähler: Strom, Wasser, Gas, Wärme und Solar ablesen, Verbrauch und Kosten sehen, mit dem Vorjahr vergleichen und als PDF-Bericht drucken. Nur für Eltern und Admins, Ende-zu-Ende verschlüsselt",
     "Wasser aus mehreren Zählern mit Summe, Balkonkraftwerk als Erzeugung mit Ersparnis",
