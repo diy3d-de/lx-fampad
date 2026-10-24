@@ -190,7 +190,8 @@ class _TresorAnhangScreenState extends ConsumerState<TresorAnhangScreen> {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(12),
                 child: Container(
-                  constraints: const BoxConstraints(maxHeight: 420),
+                  constraints: const BoxConstraints(minHeight: 120, maxHeight: 420),
+                  alignment: Alignment.center,
                   color: kSurface,
                   child: Image(
                     image: _bild!,

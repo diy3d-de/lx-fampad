@@ -66,7 +66,7 @@ class _TresorDokumenteState extends ConsumerState<TresorDokumente> {
       // Größe und Kontingent vorab prüfen, wenn die Größe schon bekannt ist (bevor die Datei geladen wird)
       final l = wahl.laenge;
       if (l != null) {
-        final f = l > max ? DateiFehler.zuGross : groessePruefen(e2eeGroesse(l), n, e2ee: true);
+        final f = l > max ? DateiFehler.zuGross : groessePruefen(l <= 0 ? 0 : e2eeGroesse(l), n, e2ee: true);
         if (f != null) {
           setState(() => _fehler = anhangFehlerText(f, maxKlartextBytes: max));
           return;
@@ -74,7 +74,7 @@ class _TresorDokumenteState extends ConsumerState<TresorDokumente> {
       }
       bytes = await anhangWahlLesen(wahl, max: max);
       if (!mounted || !ref.read(tresorDokumenteAktivProvider)) return;
-      final f = groessePruefen(e2eeGroesse(bytes.length), n, e2ee: true);
+      final f = groessePruefen(bytes.isEmpty ? 0 : e2eeGroesse(bytes.length), n, e2ee: true);
       if (f != null) {
         setState(() => _fehler = anhangFehlerText(f, maxKlartextBytes: max));
         return;

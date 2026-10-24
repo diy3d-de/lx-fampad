@@ -1,5 +1,5 @@
 // Dateiauswahl für Anhänge im Tresor (Abschnitt 6m/6n). Wie bei Benutzerbild und ICS-Import: System-Picker (`file_picker`; Android ohne Speicherberechtigung, Web: Browser-Dialog), gelesen wird
-// über einen Byte-Strom, nie über dart:io. Die Größe wird VOR dem Laden geprüft und beim Lesen erzwungen; die Bytes liegen nur im Arbeitsspeicher und gehören dem Aufrufer, der sie nach der
+// über einen Byte-Strom, nie über das Dateisystem. Die Größe wird VOR dem Laden geprüft und beim Lesen erzwungen; die Bytes liegen nur im Arbeitsspeicher und gehören dem Aufrufer, der sie nach der
 // Benutzung überschreibt. Hier steht bewusst alles, was `file_picker` braucht, damit die Oberfläche des Tresors das Paket nie selbst einbindet. Nie Namen oder Inhalte loggen.
 import 'dart:async';
 import 'dart:typed_data';
