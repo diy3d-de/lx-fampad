@@ -26,6 +26,9 @@ const kFerien = Color(0xFF60A5FA); // Schulferien im Kalender
 const kGeburtstag = Color(0xFFD946EF); // Geburtstage (Fuchsia; bewusst nicht Pink #f472b6 = Personenfarbe 6 der personPalette)
 const kWetterRegen = Color(0xFF6366F1); // Regenbalken im Wetter-Verlauf (Indigo)
 const kWetterKalt = Color(0xFF38BDF8); // Tiefpunkt/fallend im Wetter-Verlauf (Hellblau)
+/// Amtliche DWD-Warnstufen: 1 gelb (`kWarn`), 2 orange, 3 rot (`kDanger`), 4 violett (nie nur Farbe: die Stufe steht immer im Text).
+const kWarnOrange = Color(0xFFFB923C);
+const kWarnViolett = Color(0xFFC084FC);
 
 /// Abfallarten (Müll-Kachel, Seite, Kalenderanzeige): je Art eine feste Farbe, nie als Hex im Widget.
 const kMuellRest = Color(0xFF9AA3B8); // Restabfall (Grau-Blau)

@@ -225,6 +225,9 @@ class FampadApi {
   /// Rohe Antwort (die App legt sie für den Offline-Stand unverändert ab).
   Future<Json> wetterRoh() => client.get('/weather');
 
+  /// Vorhersage und amtliche Warnungen des Deutschen Wetterdienstes (`GET /weather/forecast`, Offline-Stand unverändert in `sync_meta`); ältere Server antworten mit 404.
+  Future<Json> wetterVorhersageRoh() => client.get('/weather/forecast');
+
   // ----------------------------------------------------------- Müll (Abfuhrtermine)
 
   /// Rohe Antwort von `GET /waste` (Offline-Stand unverändert in `sync_meta`); 404 = der Server hat die Abfuhrtermine nicht eingeschaltet.

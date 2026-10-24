@@ -1756,6 +1756,24 @@ export const weatherAlertState = pgTable('weather_alert_state', {
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/**
+ * Vorhersage und amtliche Warnungen (nur der Wetter-Dienst schreibt, `GET /weather/forecast` liest): je Art (`forecast`, `alerts`) eine Zeile mit dem
+ * bereits streng ausgewerteten Ergebnis (nur Zahlen, feste Codes, gekürzte Texte; nie Koordinaten oder Rohantworten). `fetched_at` = letzter Erfolg.
+ */
+export const weatherForecast = pgTable(
+  'weather_forecast',
+  {
+    kind: text('kind').primaryKey(),
+    data: jsonb('data').notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    /** Kurzer Code des letzten Fehlers (nie Inhalte der Antwort). */
+    lastErrorCode: text('last_error_code'),
+    errorCount: integer('error_count').notNull().default(0),
+  },
+  (t) => [check('weather_forecast_kind_ck', sql`${t.kind} in ('forecast', 'alerts')`)],
+);
+
 /** Abfallarten (feste Liste; unbekannte Namen der Quelle landen unter `sonst`). Dieselben Codes verwendet die App. */
 export const WASTE_KINDS = ['rest', 'bio', 'gelb', 'papier', 'gruen', 'sonder', 'sperr', 'baum', 'sonst'] as const;
 export type WasteKind = (typeof WASTE_KINDS)[number];
