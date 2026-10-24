@@ -261,6 +261,31 @@ describe.each(backends)('Wetter-Dienst und Route ($name)', (backend) => {
     expect((await harness.db.select().from(schema.weatherCredentials))[0]?.refreshTokenEnc).toBe(vorher);
   });
 
+  it('erweiterte Antwort: Stundenreihen, Tagesextreme, Sonne; alte Felder unverändert, nie Koordinaten', async () => {
+    const a = await adminPassword(world);
+    await zugang();
+    const ins = (sek: number, v: Partial<typeof schema.weatherSamples.$inferInsert>) => harness.db.insert(schema.weatherSamples).values({ ts: new Date((jetzt() - sek) * 1000), ...v });
+    await ins(3 * 3600, { temperature: 4, humidity: 80, pressure: 1010, rain1h: 0, windKmh: 10, gustKmh: 20, windAngle: 350 });
+    await ins(4800, { temperature: 6, humidity: 82, pressure: 1011, rain1h: 0.4, windKmh: 14, gustKmh: 31, windAngle: 10 });
+    await ins(3 * 86400, { temperature: 1 });
+    const res = await a.client.get('/api/v1/weather');
+    const j = res.json;
+    expect(j.available).toBe(true);
+    expect(Object.keys(j)).toEqual(expect.arrayContaining(['place', 'current', 'min24h', 'max24h', 'series']));
+    expect(j.series.map((p: { temperature: number }) => p.temperature)).toEqual([4, 6]);
+    const h = j.hourly;
+    expect(h.stepSec).toBe(3600);
+    for (const k of ['temperature', 'humidity', 'pressure', 'rain', 'windKmh', 'gustKmh', 'windAngle']) expect(h[k]).toHaveLength(168);
+    expect(h.temperature.filter((v: number | null) => v !== null).length).toBeGreaterThanOrEqual(2);
+    expect(h.temperature.filter((v: number | null) => v === 0)).toEqual([]);
+    expect(j.days.length).toBeGreaterThanOrEqual(2);
+    expect(j.sun).toHaveLength(2);
+    expect(j.sun[0].sunrise).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$/);
+    // Datenschutz: keine Koordinaten, Straße, MAC, Rechteck
+    const text = JSON.stringify(j);
+    for (const verboten of [MAC, '50.56', '7.97', '50.54', '8.00', 'lat', 'lon', 'Geheimstra', 'bbox', 'location']) expect(text).not.toContain(verboten);
+  });
+
   it('Verlauf, Min/Max über 24 Stunden, veralteter Stand, Aufräumen nach 7 Tagen', async () => {
     const a = await adminPassword(world);
     await zugang();
