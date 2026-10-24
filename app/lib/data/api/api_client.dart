@@ -44,6 +44,34 @@ class BytesAntwort {
   const BytesAntwort(this.bytes, this.etag);
 }
 
+/// Rohe Antwort von [ApiClient.roh]: Status, Kopfzeilen (Namen klein geschrieben) und Bytes.
+class RohAntwort {
+  final int status;
+  final Map<String, String> kopf;
+  final Uint8List bytes;
+  const RohAntwort(this.status, this.kopf, this.bytes);
+
+  String? kopfzeile(String name) => kopf[name.toLowerCase()];
+
+  /// Fehlercode des Servers (`error` im JSON-Körper), leer ohne.
+  String get fehlerCode {
+    if (bytes.isEmpty) return '';
+    try {
+      final d = jsonDecode(utf8.decode(bytes));
+      return d is Map && d['error'] is String ? d['error'] as String : '';
+    } on Object {
+      return '';
+    }
+  }
+
+  /// `Retry-After` in Sekunden (gedeckelt auf einen Tag), null ohne gültigen Wert.
+  Duration? get wartezeit {
+    final s = int.tryParse(kopfzeile('retry-after') ?? '');
+    if (s == null || s < 0) return null;
+    return Duration(seconds: s > 86400 ? 86400 : s);
+  }
+}
+
 class ApiClient {
   final http.Client _client;
   final TokenStore _store;
@@ -179,6 +207,16 @@ class ApiClient {
     throw ApiException.unerwarteteAntwort;
   }
 
+  /// Eine rohe Anfrage für Protokolle mit eigener Statuslogik (tus-Upload, Download mit Range): Kopfzeilen und Bytes kommen unverändert zurück, der Aufrufer wertet den Status aus. Anmeldung,
+  /// Erneuerung des Zugangs (nur über den serialisierten Weg des Clients) und CSRF laufen wie bei jeder anderen Anfrage; nur ein abgelehnter Zugang (401 mit Sitzungscode) wird hier zum Fehler.
+  /// [zeitlimit] ersetzt das Standard-Zeitlimit (große Abschnitte brauchen auf langsamen Verbindungen länger). Nie Pfade, Namen oder Inhalte loggen.
+  Future<RohAntwort> roh(String method, String path, {Uint8List? bytes, String? contentType, Map<String, String> kopf = const {}, Duration? zeitlimit}) async {
+    final gen = _gen;
+    final res = await _senden(method, path, null, true, rohdaten: bytes, contentType: contentType, extraKopf: kopf, zeitlimit: zeitlimit);
+    if (res.statusCode == 401 && _istSitzungsCode(_fehlercode(res))) await _auswerten(res, true, gen); // wirft "nicht angemeldet" und meldet den Sitzungsverlust
+    return RohAntwort(res.statusCode, res.headers, res.bodyBytes);
+  }
+
   Future<Json> _anfrage(String method, String path, Object? body, bool auth, {Uint8List? rohdaten, String? contentType}) async {
     final gen = _gen;
     final res = await _senden(method, path, body, auth, rohdaten: rohdaten, contentType: contentType);
@@ -194,22 +232,23 @@ class ApiClient {
     Uint8List? rohdaten,
     String? contentType,
     Map<String, String> extraKopf = const {},
+    Duration? zeitlimit,
   }) async {
     var gesendetesToken = await _vorbereiten(auth);
-    var res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
+    var res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf, zeitlimit);
     if (auth && res.statusCode == 401 && !_web && gesendetesToken != null && _istSitzungsCode(_fehlercode(res))) {
       // ohne Refresh-Erlaubnis (Hintergrund): weder erneuern noch die Sitzung verwerfen, nur melden, dass es jetzt nicht geht
       if (!_refreshErlaubt) {
         if (!_hintergrundErneuern || _hgLauf != null) throw ApiException.zugangAbgelaufen;
         await _nachUnauthorized(gesendetesToken, hintergrund: true);
         gesendetesToken = (await _tokenLaden())?.accessToken;
-        return _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
+        return _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf, zeitlimit);
       }
       // Access-Token abgelehnt (z. B. abgelaufen/Uhr): einmal erneuern, aber nur, wenn nicht schon jemand anderes erneuert hat.
       // Andere 401-Fachcodes (step_up_failed ...) bleiben, wie sie sind: kein Erneuern, kein zweiter Versuch.
       await _nachUnauthorized(gesendetesToken);
       gesendetesToken = (await _tokenLaden())?.accessToken;
-      res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf);
+      res = await _einmal(method, path, body, auth, gesendetesToken, rohdaten, contentType, extraKopf, zeitlimit);
     }
     return res;
   }
@@ -263,7 +302,9 @@ class ApiClient {
     Uint8List? rohdaten,
     String? contentType,
     Map<String, String> extraKopf = const {},
+    Duration? zeitlimit,
   ]) async {
+    final limit = zeitlimit ?? _timeout;
     final headers = <String, String>{'accept': 'application/json', ...extraKopf};
     if (body != null) headers['content-type'] = 'application/json';
     if (rohdaten != null && contentType != null) headers['content-type'] = contentType;
@@ -273,8 +314,8 @@ class ApiClient {
     if (body != null) request.body = jsonEncode(body);
     if (rohdaten != null) request.bodyBytes = rohdaten;
     try {
-      final streamed = await _client.send(request).timeout(_timeout);
-      return await http.Response.fromStream(streamed).timeout(_timeout);
+      final streamed = await _client.send(request).timeout(limit);
+      return await http.Response.fromStream(streamed).timeout(limit);
     } on Exception catch (e) {
       // Zeitüberschreitung, ClientException, TLS-Fehler u. ä.: alles, was nicht vom Server kommt, ist ein Verbindungsproblem
       throw netzwerkFehler(e);
