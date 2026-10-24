@@ -3,6 +3,9 @@
 //  - Zähler: Klartext `z1:` + JSON (Art, Name, Einheit, Zählernummer, Abrechnungsperiode, Preise mit Gültigkeitsdatum, Abschlag, Gruppe, Vorgänger, Ablese-Rhythmus, Solar-Angaben).
 //    Im Ausgang lokal `l1:z1:…`. Hülle: Art `z`.
 //  - Zählerstand: Klartext `a1:` + JSON (Datum, Stand, Notiz, Marke). Im Ausgang lokal `l1:a1:…`. Hülle: Art `a`, Bezug = Zähler.
+//  - Monatswert (Eingabeart "Monatswerte", z. B. Balkonkraftwerk ohne Zähler): ebenfalls `a1:`, aber mit `v: 2`, Monat `m` (`YYYY-MM`), Wert `w` (Tausendstel der Einheit im Monat) und
+//    Schreibzeit `t` (Millisekunden); OHNE Datum `d`. Ältere Apps lesen `v: 2` nicht (sie zeigen "neuere App-Version nötig") und halten ihn nie für einen Zählerstand. Der Server kennt
+//    für Stände nur Zufalls-IDs: ein Monat kann darum mehrfach vorkommen (zwei Geräte); es gilt der Eintrag mit dem größten `t` (bei Gleichstand die größte ID), siehe `monatswerteZusammenfuehren`.
 // Alle Mengen und Beträge sind GANZE ZAHLEN (Festkomma, keine Gleitkommafehler): Stände in Tausendstel der Einheit (1,234 kWh = 1234), Preise je Einheit in Zehntausendstel Euro
 // (0,3456 €/kWh = 3456), Gebühren und Abschläge in Cent. Der Server liest nichts davon. Unbekannte Versionen (`v` größer als [kZaehlerFormat]) und kaputte Daten ergeben `null`
 // (nicht lesbar), nie einen Absturz und nie einen Teilinhalt.
@@ -32,6 +35,12 @@ const int kMaxOrtZeichen = 40;
 const int kMaxPreise = 40;
 const int kMaxKlartextBytesZaehler = 8000;
 const int kMaxKlartextBytesStand = 600;
+
+/// Format-Version eines Monatswerts (`a1:` mit `v: 2`).
+const int kMonatswertFormat = 2;
+
+/// Größter Monatswert: 100 000 Einheiten je Monat (in Tausendsteln).
+const int kMaxMonatswertMilli = 100000000;
 
 /// Festkomma: Stände in Tausendstel, Preise in Zehntausendstel, Beträge in Cent.
 const int kMengeNachkomma = 3;
@@ -103,6 +112,28 @@ String? _text(Object? v, int max, {bool leerErlaubt = false}) {
 }
 
 int? _ganz(Object? v, int min, int max) => v is int && v >= min && v <= max ? v : null;
+
+// ---------------------------------------------------------------- Eingabeart
+
+/// Wie die Werte eines Zählers erfasst werden: als Zählerstand (Differenzen ergeben den Verbrauch) oder als Monatswert (Verbrauch bzw. Erzeugung je Monat direkt, z. B. aus einer
+/// Hersteller-App). Beim Standard `stand` steht nichts im Klartext (bestehende Zähler bleiben byte-gleich).
+enum ZaehlerModus {
+  stand('stand'),
+  monat('monat');
+
+  final String wire;
+  const ZaehlerModus(this.wire);
+
+  static ZaehlerModus? tolerant(Object? v) {
+    for (final a in values) {
+      if (a.wire == v) return a;
+    }
+    return null;
+  }
+
+  /// Vorbelegung beim Einrichten: Erzeugung (kein richtiger Zähler) = Monatswerte, sonst Zählerstand.
+  static ZaehlerModus standardFuer(ZaehlerArt art) => art == ZaehlerArt.erzeugung ? monat : stand;
+}
 
 // ---------------------------------------------------------------- Art
 
@@ -268,6 +299,9 @@ class ZaehlerInhalt {
   /// Warnschwelle: ab wie viel Prozent über dem Vorjahr der Verbrauch als ungewöhnlich hoch gilt (null: keine Warnung).
   final int? warnProzent;
 
+  /// Eingabeart: Zählerstand (Standard) oder Monatswerte.
+  final ZaehlerModus modus;
+
   ZaehlerInhalt({
     required this.art,
     required this.name,
@@ -288,11 +322,14 @@ class ZaehlerInhalt {
     this.einspeiseVerguetung,
     this.ort = '',
     this.warnProzent,
+    this.modus = ZaehlerModus.stand,
   }) : einheit = einheit ?? art.einheit,
        kosten = kosten ?? art.kostenStandard,
        preise = List.unmodifiable(preise);
 
   bool get archiviert => archiviertAb != null;
+
+  bool get monatlich => modus == ZaehlerModus.monat;
 
   /// Ist der Inhalt in sich stimmig (alles, was [zaehlerLesen] beim Lesen verlangt)? Ein ungültiger Inhalt wird nie geschrieben.
   bool get gueltig {
@@ -335,6 +372,7 @@ class ZaehlerInhalt {
     int? Function()? einspeiseVerguetung,
     String? ort,
     int? Function()? warnProzent,
+    ZaehlerModus? modus,
   }) => ZaehlerInhalt(
     art: art ?? this.art,
     name: name ?? this.name,
@@ -355,6 +393,7 @@ class ZaehlerInhalt {
     einspeiseVerguetung: einspeiseVerguetung != null ? einspeiseVerguetung() : this.einspeiseVerguetung,
     ort: ort ?? this.ort,
     warnProzent: warnProzent != null ? warnProzent() : this.warnProzent,
+    modus: modus ?? this.modus,
   );
 
   Map<String, dynamic> toJson() => {
@@ -378,6 +417,7 @@ class ZaehlerInhalt {
     if (einspeiseVerguetung != null) 'einsp': einspeiseVerguetung,
     if (ort.isNotEmpty) 'ort': ort,
     if (warnProzent != null) 'warn': warnProzent,
+    if (modus != ZaehlerModus.stand) 'modus': modus.wire,
   };
 
   @override
@@ -434,6 +474,8 @@ ZaehlerInhalt? zaehlerLesen(String klar) {
   if (ort == null) return null;
   final warn = d.containsKey('warn') ? (_ganz(d['warn'], 1, 1000) ?? -1) : null;
   if (warn == -1) return null;
+  final modus = d.containsKey('modus') ? ZaehlerModus.tolerant(d['modus']) : ZaehlerModus.stand;
+  if (modus == null) return null;
   final abschlag = optGanz('abschlag', kMaxGeldCent);
   final eigen = optGanz('eigen', 10000);
   final anlage = optGanz('anlage', 100 * kMaxGeldCent);
@@ -467,6 +509,7 @@ ZaehlerInhalt? zaehlerLesen(String klar) {
     einspeiseVerguetung: einsp,
     ort: ort,
     warnProzent: warn,
+    modus: modus,
   );
   return z.gueltig ? z : null;
 }
@@ -488,29 +531,45 @@ enum StandMarke {
   }
 }
 
-/// Eine Ablesung: der Zählerstand an einem Kalendertag (in Tausendsteln der Einheit).
+/// Eine Ablesung (der Zählerstand an einem Kalendertag, in Tausendsteln der Einheit) ODER ein Monatswert ([monat] gesetzt: Verbrauch bzw. Erzeugung dieses Monats in Tausendsteln).
 class StandInhalt {
-  /// Tag der Ablesung (`YYYY-MM-DD`).
+  /// Tag der Ablesung (`YYYY-MM-DD`); bei einem Monatswert der Monatserste (nur abgeleitet, steht nie im Klartext).
   final String datum;
   final int milli;
   final String notiz;
   final StandMarke? marke;
-  const StandInhalt({required this.datum, required this.milli, this.notiz = '', this.marke});
+
+  /// Nur Monatswert: Monat (`YYYY-MM`) und Schreibzeit in Millisekunden (für "der letzte Eintrag je Monat gewinnt").
+  final String? monat;
+  final int zeit;
+  const StandInhalt({required this.datum, required this.milli, this.notiz = '', this.marke}) : monat = null, zeit = 0;
+
+  /// Ein Monatswert für [monat] (`YYYY-MM`).
+  StandInhalt.monatswert({required String this.monat, required this.milli, required this.zeit, this.notiz = ''}) : datum = '$monat-01', marke = null;
+
+  bool get istMonatswert => monat != null;
 
   DateTime? get tag => tagLesen(datum);
 
-  bool get gueltig => tag != null && milli >= 0 && milli <= kMaxStandMilli && notiz.length <= kMaxStandNotizZeichen;
+  bool get gueltig {
+    if (notiz.length > kMaxStandNotizZeichen) return false;
+    if (istMonatswert) return monatLesen(monat) != null && milli >= 0 && milli <= kMaxMonatswertMilli && zeit >= 0;
+    return tag != null && milli >= 0 && milli <= kMaxStandMilli;
+  }
 
-  StandInhalt kopie({String? datum, int? milli, String? notiz, StandMarke? Function()? marke}) =>
-      StandInhalt(datum: datum ?? this.datum, milli: milli ?? this.milli, notiz: notiz ?? this.notiz, marke: marke != null ? marke() : this.marke);
+  StandInhalt kopie({String? datum, int? milli, String? notiz, StandMarke? Function()? marke}) => istMonatswert
+      ? StandInhalt.monatswert(monat: monat!, milli: milli ?? this.milli, zeit: zeit, notiz: notiz ?? this.notiz)
+      : StandInhalt(datum: datum ?? this.datum, milli: milli ?? this.milli, notiz: notiz ?? this.notiz, marke: marke != null ? marke() : this.marke);
 
-  Map<String, dynamic> toJson() => {
-    'v': kZaehlerFormat,
-    'd': datum,
-    'w': milli,
-    if (notiz.isNotEmpty) 'n': notiz,
-    if (marke != null) 'k': marke!.wire,
-  };
+  Map<String, dynamic> toJson() => istMonatswert
+      ? {'v': kMonatswertFormat, 'm': monat, 'w': milli, 't': zeit, if (notiz.isNotEmpty) 'n': notiz}
+      : {
+          'v': kZaehlerFormat,
+          'd': datum,
+          'w': milli,
+          if (notiz.isNotEmpty) 'n': notiz,
+          if (marke != null) 'k': marke!.wire,
+        };
 
   @override
   bool operator ==(Object other) => other is StandInhalt && jsonEncode(other.toJson()) == jsonEncode(toJson());
@@ -518,6 +577,19 @@ class StandInhalt {
   @override
   int get hashCode => jsonEncode(toJson()).hashCode;
 }
+
+/// Liest einen Monat `YYYY-MM` als (Jahr, Monat); null bei allem anderen.
+({int jahr, int monat})? monatLesen(String? text) {
+  if (text == null) return null;
+  final m = RegExp(r'^(\d{4})-(\d{2})$').firstMatch(text);
+  if (m == null) return null;
+  final j = int.parse(m.group(1)!);
+  final mo = int.parse(m.group(2)!);
+  if (j < 2000 || j > 2999 || mo < 1 || mo > 12) return null;
+  return (jahr: j, monat: mo);
+}
+
+String monatText(int jahr, int monat) => '${jahr.toString().padLeft(4, '0')}-${monat.toString().padLeft(2, '0')}';
 
 String standKodieren(StandInhalt s) {
   if (!s.gueltig) throw ArgumentError('Ungültiger Zählerstand');
@@ -534,12 +606,22 @@ StandInhalt? standLesen(String klar) {
   } on FormatException {
     return null;
   }
-  if (d is! Map || d['v'] is! int || (d['v'] as int) < 1 || (d['v'] as int) > kZaehlerFormat) return null;
+  if (d is! Map || d['v'] is! int) return null;
+  final v = d['v'] as int;
+  final notiz = d.containsKey('n') ? _text(d['n'], kMaxStandNotizZeichen, leerErlaubt: true) : '';
+  if (notiz == null) return null;
+  if (v == kMonatswertFormat) {
+    final w = _ganz(d['w'], 0, kMaxMonatswertMilli);
+    final t = _ganz(d['t'], 0, 1 << 52);
+    if (d['m'] is! String || w == null || t == null) return null;
+    final m = StandInhalt.monatswert(monat: d['m'] as String, milli: w, zeit: t, notiz: notiz);
+    return m.gueltig ? m : null;
+  }
+  if (v < 1 || v > kZaehlerFormat) return null;
   final datum = d['d'];
   final w = _ganz(d['w'], 0, kMaxStandMilli);
-  final notiz = d.containsKey('n') ? _text(d['n'], kMaxStandNotizZeichen, leerErlaubt: true) : '';
   final marke = d.containsKey('k') ? StandMarke.tolerant(d['k']) : null;
-  if (datum is! String || w == null || notiz == null || (d.containsKey('k') && marke == null)) return null;
+  if (datum is! String || w == null || (d.containsKey('k') && marke == null)) return null;
   final s = StandInhalt(datum: datum, milli: w, notiz: notiz, marke: marke);
   return s.gueltig ? s : null;
 }

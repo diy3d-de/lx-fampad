@@ -12,6 +12,7 @@ import '../calendar/zeitzonen.dart';
 import '../erinnerungen/erinnerung_planung.dart' show GeplanteErinnerung, erinnerungId, kMindestAbstand;
 import 'zaehler_logik.dart';
 import 'zaehler_modelle.dart';
+import 'zaehler_monate.dart';
 import 'zaehler_state.dart';
 import 'zaehler_uebersicht.dart';
 
@@ -60,8 +61,16 @@ List<GeplanteErinnerung> planeZaehlerErinnerungen({required ZaehlerDaten daten, 
   final heute = DateTime.utc(wand.year, wand.month, wand.day);
   final tage = <int, DateTime>{};
   for (final r in daten.reihen) {
+    if (r.archiviert) continue;
+    if (r.monatlich) {
+      // Eingabeart Monatswerte: am Monatsersten um 09:00, solange der Wert des Vormonats fehlt (dieselbe neutrale Erinnerung wie sonst)
+      for (final t in monatswertErinnerungstage(r.monatswerte, heute, heute.add(const Duration(days: kZaehlerHorizontMonatlich)))) {
+        tage[tagNummer(t)] = t;
+      }
+      continue;
+    }
     final a = r.inhalt.ablesung;
-    if (r.archiviert || a == null) continue;
+    if (a == null) continue;
     final bis = heute.add(Duration(days: a.art == AblesungArt.monatlich ? kZaehlerHorizontMonatlich : kZaehlerHorizontJaehrlich));
     final letzter = r.letzter?.tag;
     for (final t in ablesetermine(a, heute, bis)) {
