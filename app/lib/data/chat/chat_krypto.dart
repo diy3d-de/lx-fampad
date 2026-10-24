@@ -43,6 +43,9 @@ const kMaxNachrichtBytes = 8000;
 /// Größter Klartext eines Tresor-Eintrags in Byte (Abschnitt 6m); der Server nimmt dafür Hüllen bis 24576 Zeichen an.
 const kMaxTresorKlartextBytes = 16000;
 
+/// Größter Klartext der Hülle eines Tresor-Anhangs in Byte (Abschnitt 6n): der Server nimmt dafür `e1:`-Hüllen bis 4096 Zeichen an (Kopf 114 Byte + Klartext, Base64url, bis 2955 Byte Klartext).
+const kMaxAnhangKlartextBytes = 2800;
+
 /// Eine Person kann (noch) nicht in einen verschlüsselten Chat aufgenommen werden: sie hat die Verschlüsselung nicht eingerichtet oder ihr Schlüssel ist ungeprüft.
 class SchluesselFehlt implements Exception {
   final List<String> personen;

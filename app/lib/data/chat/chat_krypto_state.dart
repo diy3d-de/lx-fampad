@@ -250,6 +250,10 @@ class ChatOpVorbereiter implements OpVorbereiter {
         // Tresor (Abschnitt 6m): kein Bezug (Art `t`, gebunden an Konversation, eigene ID und Bearbeiter)
         final zeile = await (db.select(db.tresorEintraege)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
         konv ??= zeile?.konversationId;
+      case 'tresor_anhang':
+        // Tresor-Anhang (Abschnitt 6n): kein Bezug (Art `f`, gebunden an Konversation, eigene ID und Bearbeiter); die Zuordnung zum Eintrag steht im verschlüsselten Inhalt
+        final zeile = await (db.select(db.tresorAnhaenge)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
       case 'einnahme':
         // Bezug ist das Medikament (Art `n`): eine Einnahme lässt sich nicht an ein anderes Medikament hängen
         final zeile = await (db.select(db.einnahmen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
@@ -258,10 +262,10 @@ class ChatOpVorbereiter implements OpVorbereiter {
     }
     if (konv == null) return null;
     final konversationId = konv;
-    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', 'zaehler' => 'z', 'zaehlerstand' => 'a', 'tresor_eintrag' => 't', _ => null };
-    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'zaehler' && op.entity != 'tresor_eintrag' && antwortAuf == null) return null;
-    // ein Tresor-Eintrag darf größer sein als eine Nachricht (16000 statt 8000 Byte Klartext)
-    final maxBytes = op.entity == 'tresor_eintrag' ? kMaxTresorKlartextBytes : kMaxNachrichtBytes;
+    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', 'zaehler' => 'z', 'zaehlerstand' => 'a', 'tresor_eintrag' => 't', 'tresor_anhang' => 'f', _ => null };
+    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'zaehler' && op.entity != 'tresor_eintrag' && op.entity != 'tresor_anhang' && antwortAuf == null) return null;
+    // ein Tresor-Eintrag darf größer sein als eine Nachricht (16000 statt 8000 Byte Klartext), die Hülle eines Anhangs ist kleiner (der Server nimmt höchstens 4096 Zeichen an)
+    final maxBytes = op.entity == 'tresor_eintrag' ? kMaxTresorKlartextBytes : (op.entity == 'tresor_anhang' ? kMaxAnhangKlartextBytes : kMaxNachrichtBytes);
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)

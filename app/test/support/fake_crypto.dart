@@ -97,6 +97,49 @@ class FakeCryptoProvider implements CryptoProvider {
       chiffretext: Uint8List.sublistView(chiffretext, 24),
     );
   }
+
+  // Fake des secretstream: gleiche Maße wie libsodium (Kopfzeile 24 Byte, je Block 17 Byte mehr als der Klartext), Block i hängt über Nonce (Kopfzeile + Zähler) und Kennzeichen (AAD) an Reihenfolge
+  // und Ende. KEINE sichere Kryptografie; die echten Bausteine prüfen die libsodium-Läufe der Tests.
+  Uint8List _stromNonce(Uint8List kopf, int i) => verketten([Uint8List.sublistView(kopf, 0, 16), Uint8List.fromList([for (var b = 0; b < 8; b++) (i >> (8 * b)) & 255])]);
+
+  @override
+  Future<Uint8List> stromVerschluesseln({required Uint8List schluessel, required Uint8List klartext, int blockBytes = 65536}) async {
+    if (schluessel.length != 32 || blockBytes < 1) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Ungültige Länge.');
+    final kopf = zufall(24);
+    final teile = <Uint8List>[kopf];
+    var pos = 0;
+    var i = 0;
+    do {
+      final ende = pos + blockBytes < klartext.length ? pos + blockBytes : klartext.length;
+      final letzter = ende >= klartext.length;
+      final flag = Uint8List.fromList([letzter ? 1 : 0]);
+      final ct = verschluesseln(schluessel: schluessel, nonce: _stromNonce(kopf, i++), klartext: Uint8List.sublistView(klartext, pos, ende), zusatzdaten: flag);
+      teile.addAll([flag, ct]);
+      pos = ende;
+    } while (pos < klartext.length);
+    return verketten(teile);
+  }
+
+  @override
+  Future<Uint8List> stromEntschluesseln({required Uint8List schluessel, required Uint8List chiffretext, int blockBytes = 65536}) async {
+    const fehler = CryptoFehler(CryptoFehlerArt.entschluesselung, 'Entschlüsselung nicht möglich.');
+    if (schluessel.length != 32 || blockBytes < 1 || chiffretext.length < 24 + 17) throw fehler;
+    final kopf = Uint8List.sublistView(chiffretext, 0, 24);
+    final teile = <Uint8List>[];
+    var pos = 24;
+    var i = 0;
+    var istFinal = false;
+    while (pos < chiffretext.length) {
+      if (istFinal) throw fehler; // nach dem letzten Block darf nichts mehr kommen
+      final ende = pos + blockBytes + 17 < chiffretext.length ? pos + blockBytes + 17 : chiffretext.length;
+      final flag = Uint8List.sublistView(chiffretext, pos, pos + 1);
+      istFinal = flag[0] == 1;
+      teile.add(entschluesseln(schluessel: schluessel, nonce: _stromNonce(kopf, i++), chiffretext: Uint8List.sublistView(chiffretext, pos + 1, ende), zusatzdaten: flag));
+      pos = ende;
+    }
+    if (!istFinal) throw fehler; // gekürzt
+    return verketten(teile);
+  }
 }
 
 /// Die Varianten, gegen die die Logik-Tests laufen: immer der Fake, dazu libsodium, wenn die Bibliothek geladen werden kann.

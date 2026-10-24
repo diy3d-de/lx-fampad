@@ -701,6 +701,9 @@ class ServerFaehigkeiten {
   /// Passkey-Sicherung (WebAuthn-PRF) und Eltern-Wiederherstellung für Kinder: je ein eigener Schalter des Servers (Standard aus).
   final bool prfBackup;
   final bool elternWiederherstellung;
+
+  /// Dateiablage (`features.files`, Schalter FILES_ENABLED des Servers): erst dann bietet die App den Bereich Dateien (und Anhänge im Tresor) an. Ältere Server melden nichts: false.
+  final bool files;
   const ServerFaehigkeiten({
     required this.pwBackup,
     required this.authKey,
@@ -708,6 +711,7 @@ class ServerFaehigkeiten {
     this.wrapKeyVersion = false,
     this.prfBackup = false,
     this.elternWiederherstellung = false,
+    this.files = false,
   });
 
   static const keine = ServerFaehigkeiten(pwBackup: false, authKey: false, legacyPasswortLogin: true);
@@ -719,6 +723,7 @@ class ServerFaehigkeiten {
     wrapKeyVersion: f['wrapKeyVersion'] == true,
     prfBackup: f['prfBackup'] == true,
     elternWiederherstellung: f['parentRecovery'] == true,
+    files: f['files'] == true,
   );
 }
 
