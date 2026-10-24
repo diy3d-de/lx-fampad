@@ -307,6 +307,23 @@ class DateiRepository {
 
   // ------------------------------------------------------------------ Anlegen nach dem Upload (Claim)
 
+  /// Prüft VOR dem Upload, ob die neue Datei so angelegt werden dürfte (Name, Rechte, Zielordner und Stufe); wirft [DateiFehler]. Liefert den bereinigten Namen.
+  Future<String> neueDateiPruefen({required String name, required String? ordnerId, required String audience}) async {
+    _ich();
+    final n = _name(name);
+    if (!rechte.darfAnlegen(audience)) throw DateiFehler.nichtErlaubt;
+    await _ziel(ordnerId, audience);
+    return n;
+  }
+
+  /// Prüft VOR dem Upload, ob die Person eine neue Fassung dieser Datei anlegen darf (Kinder nur für eigene Dateien); liefert die Datei.
+  Future<DateiZeile> neueFassungPruefen(String dateiId) async {
+    _ich();
+    final d = await _datei(dateiId);
+    if (!rechte.darfFassungHochladen(d.ownerId)) throw DateiFehler.nichtErlaubt;
+    return d;
+  }
+
   /// Legt Datei UND erste Fassung in EINEM Stapel an: [blobId] (und [thumbBlobId]) sind die fertigen Uploads; der Server beansprucht sie atomar. Größe, Typ und Prüfsumme setzt der Server;
   /// lokal stehen bis dahin die Werte des Geräts. Liefert die Fassungs-ID.
   Future<String> dateiMitFassungAnlegen({

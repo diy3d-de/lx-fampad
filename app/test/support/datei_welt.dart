@@ -57,6 +57,9 @@ class FakeDateien {
   final Map<String, Role> rollen = {};
   int _n = 0;
 
+  /// Wird vor jeder Verarbeitung eines PATCH abgewartet (Tests halten damit Uploads an, um Parallelität und Abbruch zu prüfen); danach läuft die echte Logik.
+  FutureOr<void> Function(Req)? vorPatch;
+
   /// Alle PATCH-Längen (zum Prüfen der Abschnittsgrenzen) in der Reihenfolge der Anfragen.
   final List<int> patchLaengen = [];
 
@@ -131,6 +134,7 @@ class FakeDateien {
   Future<http.Response> _patch(Req r) async {
     final e = await _eingespritzt(r);
     if (e != null) return e;
+    await vorPatch?.call(r);
     final b = _meinBlob(r);
     if (b == null) return _fehler(404, 'not_found');
     final bytes = r.body is Uint8List ? r.body as Uint8List : Uint8List(0);
