@@ -3,7 +3,7 @@ description: "lx-fampad: Familien-App (Android und Web)"
 publish_to: 'none'
 
 # Versionsnummer = Update-Vergleich (Android-OTA, /api/v1/version). Build-Nummer = versionCode.
-version: 0.13.3+13003
+version: 0.14.0+14000
 
 # Versionen sind exakt gepinnt (docs/VERSIONEN.md), kein ^ und keine Bereiche.
 environment:

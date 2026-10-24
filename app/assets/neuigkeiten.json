@@ -1,4 +1,9 @@
 {
+  "0.14.0": [
+    "Wetter: bedienbarer Verlauf (mit dem Finger über die Kurve fahren), Messgrößen Temperatur, Feuchte, Druck, Regen und Wind, Zeitraum 24 Stunden, 3 oder 7 Tage",
+    "Wetter: gefühlte Temperatur, Taupunkt, Trends, Regen je Stunde, Wind-Kompass, Vergleich mit gestern und Sonnenzeiten",
+    "Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall) unter Profil › Benachrichtigungen, nur bei geöffneter App"
+  ],
   "0.13.3": [
     "Zähler: Der Strompreis gilt auch für frühere Monate. Die Solar-Ersparnis wird damit jetzt berechnet, auch wenn der Preis mit dem heutigen Datum eingetragen wurde. Im Preis-Dialog steht jetzt ein Hinweis zum Beginn, der erste Preis beginnt am Jahresanfang"
   ],
