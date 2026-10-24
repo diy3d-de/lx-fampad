@@ -130,6 +130,9 @@ class ApiClient {
     return _base.isEmpty ? Uri.base.resolve(u) : Uri.parse(u);
   }
 
+  /// Vollständige Adresse eines Pfads der Schnittstelle (ohne Token). Nur für den Browser-Download im Web (normale Navigation mit dem Cookie der Sitzung): nie eine Adresse mit Zugangsdaten.
+  String adresseFuer(String pfad) => _uri(pfad).toString();
+
   // ---------------------------------------------------------------- Sitzung
 
   /// Übernimmt die Sitzung aus einer Anmeldeantwort (Web: CSRF-Token, App: Token in den sicheren Speicher).
