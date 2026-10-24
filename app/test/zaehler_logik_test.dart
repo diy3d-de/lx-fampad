@@ -240,12 +240,12 @@ void main() {
       expect(h1.grundCent, 5951); // 12000 * 181 / 365
     });
 
-    test('Preislücke vor dem ersten Preisstand: dort keine Kosten, mit Kennzeichen', () {
+    test('vor dem ersten Preisstand gilt der erste Preis rückwirkend, keine Lücke', () {
       final preise = [const Preis(ab: '2025-03-01', arbeitspreis: 3000)];
       final t = kostenFuerZeitraum(preise, stetig, jahr2025, bezugsTage: 365);
-      expect(t.preisLuecke, isTrue);
-      expect(t.verbrauchCent, 91800); // 306 Tage * 10 * 0,30
-      expect(t.verbrauchMilli, 3650000); // der Verbrauch selbst ist vollständig
+      expect(t.preisLuecke, isFalse);
+      expect(t.verbrauchCent, 109500); // 365 Tage * 10 * 0,30, auch vor dem 1. März
+      expect(t.verbrauchMilli, 3650000);
     });
 
     test('ohne Preise keine Kosten, aber eine Lücke', () {
@@ -255,7 +255,8 @@ void main() {
 
     test('Preis am Tag: der letzte mit Beginn bis zu diesem Tag', () {
       final preise = [const Preis(ab: '2024-01-01', arbeitspreis: 1), const Preis(ab: '2025-01-01', arbeitspreis: 2)];
-      expect(preisAm(preise, D('2023-12-31')), isNull);
+      expect(preisAm(preise, D('2023-12-31'))!.arbeitspreis, 1, reason: 'vor dem ersten Preis gilt der erste rückwirkend');
+      expect(preisAm(const [], D('2023-12-31')), isNull);
       expect(preisAm(preise, D('2024-01-01'))!.arbeitspreis, 1);
       expect(preisAm(preise, D('2024-12-31'))!.arbeitspreis, 1);
       expect(preisAm(preise, D('2025-01-01'))!.arbeitspreis, 2);
@@ -346,15 +347,19 @@ void main() {
       expect([s.eigenMilli, s.einspeiseMilli, s.ersparnisCent, s.verguetungCent], [1000000, 0, 30000, 0]);
     });
 
-    test('Strompreis mit Verlauf und mit Lücke', () {
+    test('Strompreis mit Verlauf, der erste Preis gilt auch rückwirkend', () {
       final e = _z(art: ZaehlerArt.erzeugung, eigen: 10000);
       final verlauf = [const Preis(ab: '2025-01-01', arbeitspreis: 3000), const Preis(ab: '2025-07-01', arbeitspreis: 4000)];
       final s = solarVorteil(e, erzeugt, jahr, verlauf);
       // 1000 kWh gleichmäßig: 181/365 zum alten (0,30), 184/365 zum neuen Preis (0,40): ca. 350,41 EUR
       expect(s.ersparnisCent, 35041);
-      final luecke = solarVorteil(e, erzeugt, jahr, [const Preis(ab: '2025-07-01', arbeitspreis: 4000)]);
-      expect(luecke.preisLuecke, isTrue);
-      expect(luecke.ersparnisCent, lessThan(s.ersparnisCent));
+      // nur ein Preis mit Beginn mitten im Jahr: er gilt auch für die Monate davor (kein Ergebnis 0, keine Lücke)
+      final nurEiner = solarVorteil(e, erzeugt, jahr, [const Preis(ab: '2025-07-01', arbeitspreis: 4000)]);
+      expect(nurEiner.preisLuecke, isFalse);
+      expect(nurEiner.ersparnisCent, 40000); // 1000 kWh * 0,40
+      // ganz ohne Preis bleibt es eine Lücke mit Ersparnis 0
+      final keiner = solarVorteil(e, erzeugt, jahr, const []);
+      expect([keiner.preisLuecke, keiner.ersparnisCent], [true, 0]);
     });
 
     test('Amortisation: Rest, Jahre und Prozent', () {

@@ -297,7 +297,8 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
   }
 
   List<Widget> _solar(ZaehlerReihe r, Zeitraum z, DateTime heute) {
-    final bis = heute.isBefore(z.ende) ? (heute.isBefore(z.start) ? z.start : heute) : z.ende;
+    final bisHeute = r.inhalt.monatlich ? heute.add(const Duration(days: 1)) : heute; // Monatswerte reichen bis einschließlich heute
+    final bis = bisHeute.isBefore(z.ende) ? (bisHeute.isBefore(z.start) ? z.start : bisHeute) : z.ende;
     final s = solarVorteil(r.inhalt, r.kurve, Zeitraum(z.start, bis), r.inhalt.preise);
     final a = solarAuswertung(r, heute).amortisation;
     return [
