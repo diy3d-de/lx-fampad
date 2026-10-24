@@ -44,6 +44,7 @@ void main() {
     final erlaubt = {
       'lib/features/shell/desktop_shell.dart', 'lib/features/shell/home_shell.dart', 'lib/features/shell/mehr_menue.dart',
       'lib/features/home/desktop_home.dart', 'lib/features/home/home_screen.dart', 'lib/features/home/startseite_verfuegbar.dart',
+      'lib/features/tresor/tresor_dokumente.dart', 'lib/features/tresor/tresor_eintrag_screen.dart', 'lib/features/tresor/tresor_anhang_screen.dart', 'lib/features/tresor/tresor_screen.dart', // Tresor-Anhänge (Dokumente an Einträgen)
       'lib/app.dart', 'lib/data/api/fampad_api.dart', // die Schnittstelle zum Server (Nutzung und Fähigkeiten), keine Anzeige
     };
     final treffer = <String>[];
