@@ -299,6 +299,11 @@ class FampadApi {
     await client.put('/me/push', {'endpoint': endpunkt});
   }
 
+  /// Wetter-Hinweise per Wecker: welche Arten (feste Namen: frost, regen, wind, hitze, druck) dieses Gerät will; leer = aus. Nur das Gerät der Sitzung, nie Inhalte.
+  Future<void> wetterHinweiseMelden(List<String> arten) async {
+    await client.put('/me/weather-alerts', {'kinds': arten});
+  }
+
   Future<void> pushLoeschen() async {
     await client.delete('/me/push');
   }

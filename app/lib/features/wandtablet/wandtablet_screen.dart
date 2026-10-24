@@ -52,6 +52,7 @@ class WandtabletScreen extends ConsumerStatefulWidget {
 class _WandtabletScreenState extends ConsumerState<WandtabletScreen> {
   late final BildschirmWach _wach = ref.read(bildschirmWachProvider);
   late final String? _person = ref.read(authProvider).user?.id;
+  late final WandtabletLaeuft _laeuft = ref.read(wandtabletLaeuftProvider.notifier);
   Timer? _hinweisTimer;
   bool _hinweis = true;
   bool _beendet = false;
@@ -61,6 +62,9 @@ class _WandtabletScreenState extends ConsumerState<WandtabletScreen> {
   @override
   void initState() {
     super.initState();
+    // nach dem Aufbau melden (nie den Baum beim Bauen ändern): Wetter-Benachrichtigungen schweigen, solange der Modus läuft
+    final laeuft = _laeuft; // sofort lesen: dispose() braucht den Notifier auch dann, wenn die Mikroaufgabe nie lief
+    Future<void>.microtask(() => laeuft.setzen(true));
     unawaited(_wach.halten());
     if (_android) unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
     _hinweisTimer = Timer(const Duration(seconds: 6), () {
@@ -70,6 +74,13 @@ class _WandtabletScreenState extends ConsumerState<WandtabletScreen> {
 
   @override
   void dispose() {
+    Future<void>.microtask(() {
+      try {
+        _laeuft.setzen(false);
+      } on Object {
+        // Container schon geschlossen
+      }
+    });
     _hinweisTimer?.cancel();
     unawaited(_wach.freigeben());
     if (_android) unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));

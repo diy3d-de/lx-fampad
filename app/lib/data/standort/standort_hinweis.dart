@@ -229,6 +229,9 @@ const kDiagAbruf = 'diag_abruf';
 const kDiagHinweis = 'diag_hinweis';
 const kDiagSync = 'diag_sync';
 
+/// Letzte Wetterprüfung im Hintergrund (wetter_hintergrund.dart).
+const kDiagWetter = 'diag_wetter';
+
 /// Merkt Zeitpunkt und Code (nie Namen, Kennungen oder Orte). Fehler beim Speichern sind egal.
 Future<void> standortDiagnoseSchreiben(AppDatabase db, String schluessel, String code, DateTime zeit) async {
   try {
@@ -263,7 +266,10 @@ class StandortDiagnose {
   final StandortDiagnoseEintrag? abruf;
   final StandortDiagnoseEintrag? hinweis;
   final StandortDiagnoseEintrag? sync;
-  const StandortDiagnose({this.wecker, this.abruf, this.hinweis, this.sync});
+
+  /// Letzte Wetterprüfung im Hintergrund (`wetter_hintergrund.dart`).
+  final StandortDiagnoseEintrag? wetter;
+  const StandortDiagnose({this.wecker, this.abruf, this.hinweis, this.sync, this.wetter});
 }
 
 /// Lesbare Texte zu den Codes (feste Sätze, keine Servertexte).
@@ -283,6 +289,9 @@ String standortDiagnoseText(String code) => switch (code) {
   'schon_gemeldet' => 'schon gemeldet',
   'abstand' => 'unterdrückt: weniger als 10 Minuten nach dem letzten Hinweis dieser Person',
   'abgelaufen' => 'Freigabe schon abgelaufen',
+  'kurz_her' => 'übersprungen: Wetter vor weniger als 10 Minuten abgerufen',
+  'wandtablet' => 'unterdrückt: Wandtablet-Betrieb',
+  'nicht_verfuegbar' => 'Wetter ist auf dem Server nicht eingeschaltet',
   'stumm' => 'unterdrückt: Person ist stumm geschaltet',
   'eigene' => 'eigene Freigabe',
   'keine_erlaubnis' => 'Android zeigt keine Benachrichtigungen (Erlaubnis oder Kanal aus)',
@@ -298,6 +307,7 @@ final standortDiagnoseProvider = FutureProvider.autoDispose<StandortDiagnose>((r
       abruf: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagAbruf)),
       hinweis: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagHinweis)),
       sync: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagSync)),
+      wetter: StandortDiagnoseEintrag.lesen(await db.metaLesen(kDiagWetter)),
     );
   } catch (_) {
     return const StandortDiagnose();

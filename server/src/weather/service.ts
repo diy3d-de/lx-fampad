@@ -35,6 +35,8 @@ export interface WeatherServiceDeps {
   log: Logger;
   now?: () => Date;
   fetch?: typeof fetch;
+  /** Nach jedem erfolgreichen Abruf mit dem frischen Stand (Wetter-Hinweise per Wecker; nur der Wetter-Dienst setzt es). Wirft nie. */
+  nachAbruf?: (view: WeatherView) => Promise<unknown>;
 }
 
 /** Sichtbarer Zustand für die Route (nie Zugangsdaten, nie Station). */
@@ -76,8 +78,10 @@ export class WeatherService {
   private currentTick: Promise<void> | null = null;
   private failures = 0;
   private closed = false;
+  private readonly nachAbruf: WeatherServiceDeps['nachAbruf'];
 
   constructor(deps: WeatherServiceDeps) {
+    this.nachAbruf = deps.nachAbruf;
     this.db = deps.db;
     this.cfg = deps.config.weather;
     this.keys = deps.keys;
@@ -158,6 +162,14 @@ export class WeatherService {
         this.access = null;
         result = await this.fetchPublic();
         if (result === 'auth_error') result = await this.fail('auth_rejected');
+      }
+      const nach = this.nachAbruf;
+      if (result === 'ok' && nach) {
+        try {
+          await nach(await this.view());
+        } catch (err: unknown) {
+          this.log.error({ err }, 'Wetter: Nachbearbeitung des Abrufs fehlgeschlagen');
+        }
       }
       return result;
     } finally {

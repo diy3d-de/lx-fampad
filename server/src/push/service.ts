@@ -194,6 +194,24 @@ export class PushService {
   }
 
   /**
+   * Wecker an bestimmte Geräte (Wetter-Hinweise im Wetter-Dienst, weather/alerts.ts): die Empfänger hat der Aufrufer schon bestimmt, es gibt kein auslösendes
+   * Gerät und keine Sichtregel. Gleicher fester Wecker, gleiche Entprellung, Pause und Deaktivierung (404/410) wie bei jedem Wecker. Wirft nie.
+   */
+  weckeEndpunkte(deviceIds: readonly string[]): void {
+    if (this.closed || deviceIds.length === 0) return;
+    if (!this.enabled) return this.logStatusOnce();
+    try {
+      this.prune();
+      for (const id of deviceIds) {
+        if (this.live(id)) this.nachpruefen(id);
+        else this.schedule(id);
+      }
+    } catch (err: unknown) {
+      this.o.log.error({ err }, 'Push: Wecker an Geräte fehlgeschlagen');
+    }
+  }
+
+  /**
    * Standort-Wecker: jemand hat eine Freigabe an [userIds] gestartet. Geweckt werden Geräte dieser Personen mit Endpunkt, die keine lebendige Verbindung
    * irgendeiner Art haben (sonst bekommen sie `loc_start` über den Socket). Gleicher fester Wecker wie sonst (kein Name, kein Titel, kein Hinweis auf
    * den Standort): die App gleicht ab und fragt den Standort-Kanal kurz selbst ab. Entprellung je Gerät wie bei jedem Wecker. Wirft nie.
@@ -367,12 +385,13 @@ export class PushService {
     if (outcome === 'ok') {
       await this.o.db.update(pushEndpoints).set({ lastOkAt: now, failCount: 0 }).where(where);
     } else if (outcome === 'gone') {
-      await this.o.db.update(pushEndpoints).set({ disabledAt: now, lastErrorAt: now, failCount: failCount + 1 }).where(where);
+      // deaktiviert: auch der Wunsch nach Wetter-Weckern erlischt (die App meldet ihn nach der Neuanmeldung des Endpunkts neu)
+      await this.o.db.update(pushEndpoints).set({ disabledAt: now, lastErrorAt: now, failCount: failCount + 1, weatherKinds: 0, weatherSent: {} }).where(where);
     } else if (outcome === 'client') {
       const next = failCount + 1;
       await this.o.db
         .update(pushEndpoints)
-        .set({ lastErrorAt: now, failCount: next, ...(next >= MAX_FAILS ? { disabledAt: now } : {}) })
+        .set({ lastErrorAt: now, failCount: next, ...(next >= MAX_FAILS ? { disabledAt: now, weatherKinds: 0, weatherSent: {} } : {}) })
         .where(where);
     } else if (outcome === 'pause') {
       // nur zur Anzeige, ohne den Zähler zu erhöhen

@@ -6,7 +6,9 @@
 import { Auth } from '../auth/service.js';
 import { loadConfig } from '../config.js';
 import { createDb } from '../db/index.js';
+import { PushService } from '../push/service.js';
 import { serializeErr } from '../log.js';
+import { WeatherAlerts } from '../weather/alerts.js';
 import { startWeatherPoller } from '../weather/poller.js';
 import { WeatherService } from '../weather/service.js';
 
@@ -25,7 +27,12 @@ if (!config.weather.enabled) {
 if (!config.databaseUrl) throw new Error('DATABASE_URL fehlt');
 const { db, pool } = createDb(config.databaseUrl, (err) => log.error({ err }, 'Fehler im Datenbank-Pool'), config.dbStatementTimeoutMs);
 const auth = new Auth({ db, config });
-const weather = new WeatherService({ db, config, keys: auth.ctx.keys, log });
+// Wetter-Hinweise per Wecker: derselbe PushService wie in der API (Loopback-ntfy, Endpunkt-Prüfung, Deaktivierung bei 404/410); dieser Prozess hat keine
+// WebSocket-Verbindungen, also gilt kein Gerät als "lebendig" und jeder Wecker geht hinaus. Ohne NTFY_URL/NTFY_TOKEN bleibt Push still aus.
+const push = new PushService({ db, config, log, now: auth.ctx.now, hasLiveSocket: () => false });
+push.logStatusOnce();
+const alerts = new WeatherAlerts({ db, push, log, now: auth.ctx.now });
+const weather = new WeatherService({ db, config, keys: auth.ctx.keys, log, nachAbruf: (view) => alerts.run(view) });
 
 const status = await weather.status();
 if (!status.configured) log.warn({ code: 'not_configured' }, 'Keine Wetter-Zugangsdaten: weather-setup ausführen (prüft alle 10 Minuten erneut)');
@@ -40,6 +47,7 @@ const shutdown = async (signal: string) => {
   weather.close();
   // einen laufenden Abruf (Token-Rotation!) zu Ende laufen lassen, höchstens 10 s (TimeoutStopSec=20 in der Unit)
   await weather.drain(10_000);
+  push.close();
   await pool.end();
   process.exit(0);
 };
