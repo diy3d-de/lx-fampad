@@ -3,6 +3,7 @@
 // bereinigen, abgelaufene Einladungen protokollieren. Kurzlebiges (Challenges, Tickets, Fehlversuche) bleibt so höchstens
 // rund eine Stunde über seinen Ablauf hinaus in der Datenbank.
 import { and, eq, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { runFilesMaintenance, type FilesReport } from '../files/maintenance.js';
 import { runSyncMaintenance, type SyncPurgeReport } from '../sync/maintenance.js';
 import { auditLog, invites, keyBackupsPrf, keyBackupsPw, keyTransfers, loginAttempts, webauthnChallenges, wsTickets } from '../db/schema.js';
 import { serializeErr } from '../log.js';
@@ -34,6 +35,8 @@ export interface PurgeReport {
   /** Messpunkte der Betreiber-Ansicht, die älter als 400 Tage sind. */
   metricsDeleted: number;
   sync: SyncPurgeReport;
+  /** Dateiablage (nur mit FILES_ENABLED): Uploads, Waisen, Abgleich Platte/Datenbank. */
+  files: FilesReport | null;
 }
 
 export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
@@ -112,6 +115,16 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
 
   const sync = await runSyncMaintenance(ctx);
 
+  // Dateiablage aufräumen (nur mit Schalter); ein Fehler hier darf den übrigen Aufräum-Job nie verhindern
+  let files: FilesReport | null = null;
+  if (ctx.config.files.enabled) {
+    try {
+      files = await runFilesMaintenance(ctx);
+    } catch (err: unknown) {
+      ctx.log.error({ err: serializeErr(err) }, 'Aufräumen der Dateiablage fehlgeschlagen');
+    }
+  }
+
   return {
     auditIpCleared: ipCleared.length,
     auditDeleted: auditGone.length,
@@ -125,6 +138,7 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     removedMembersPurged: removedPurged,
     metricsDeleted: metricsGone,
     sync,
+    files,
   };
 }
 

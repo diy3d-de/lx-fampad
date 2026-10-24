@@ -16,11 +16,15 @@ import { registerAvatarRoutes } from './routes/avatar.js';
 import { registerPushRoutes } from './routes/push.js';
 import { PushService } from './push/service.js';
 import { registerWeatherRoutes } from './routes/weather.js';
+import { registerFilesRoutes } from './routes/files.js';
+import { FilesService, type FilesDeps } from './files/service.js';
+import { defaultRegistry } from './sync/index.js';
 import { registerOperatorRoutes } from './routes/operator.js';
 import { MaintenanceGate } from './operator/maintenance.js';
 import { UsageCounters } from './operator/metrics.js';
 import { OperatorMonitor } from './operator/monitor.js';
 import type { Probes } from './operator/probes.js';
+import { ForecastService } from './weather/forecast.js';
 import { WeatherService } from './weather/service.js';
 import { registerWasteRoutes } from './routes/waste.js';
 import { WasteService } from './waste/service.js';
@@ -47,6 +51,8 @@ declare module 'fastify' {
     operatorMonitor?: OperatorMonitor;
     /** Wartungsmodus (nur mit Datenbank); Tests lesen den Zustand neu, nachdem sie die Datenbank von Hand geändert haben (`invalidate()`). */
     maintenance?: MaintenanceGate;
+    /** Dateiablage (nur mit Datenbank); Routen und Aufräumen gelten nur mit FILES_ENABLED. */
+    files?: FilesService;
   }
 }
 
@@ -70,6 +76,8 @@ export interface AppDeps {
   operatorProbes?: Partial<Probes>;
   /** Nur Tests: Netatmo ersetzen (Fake-HTTP). */
   weatherFetch?: typeof fetch;
+  /** Nur Tests: freier Platz und Unterbrechungspunkte der Dateiablage ersetzen. */
+  filesDeps?: FilesDeps;
   /** Nur für Tests: Ziel des Logs (Standard: stdout). */
   logStream?: Writable;
 }
@@ -99,7 +107,7 @@ export function isApiRequest(req: FastifyRequest): boolean {
   }
 }
 
-export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock, operatorProbes }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock, operatorProbes, filesDeps }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       config.logLevel === 'silent'
@@ -192,6 +200,9 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     registerGuardianRoutes(app, config, authCore);
     registerAvatarRoutes(app, config, authCore);
     registerSyncRoutes(app, config, authCore);
+    const filesService = new FilesService(authCore.ctx, defaultRegistry, filesDeps);
+    app.decorate('files', filesService);
+    registerFilesRoutes(app, config, authCore, filesService);
     const push = new PushService({
       db,
       config,
@@ -214,7 +225,8 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     const weather = new WeatherService({ db, config, keys: authCore.ctx.keys, log: app.log, now: authCore.ctx.now, ...(weatherFetch ? { fetch: weatherFetch } : {}) });
     app.decorate('weather', weather);
     app.addHook('onClose', async () => weather.close());
-    registerWeatherRoutes(app, authCore, weather);
+    const forecast = new ForecastService({ db, config, log: app.log, now: authCore.ctx.now, ...(weatherFetch ? { fetch: weatherFetch } : {}) });
+    registerWeatherRoutes(app, authCore, weather, forecast);
     // Abfuhrtermine: der API-Prozess ruft nie ab (nur lesen und Prüfung anfordern); der Abruf läuft in cli/waste-poller.ts
     registerWasteRoutes(app, config, authCore, new WasteService({ db, config, log: app.log, now: authCore.ctx.now }));
     // Betreiber-Warnungen: der Takt startet in server.ts (nicht in Tests), der Prüfer lässt sich dort von Hand anstoßen

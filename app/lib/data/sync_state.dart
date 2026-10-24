@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/update/update_service.dart';
 import 'auth/auth_state.dart';
 import 'database_provider.dart';
+import 'dateien/transfer_dienst.dart' show dateiCacheDienstProvider, transferDienstProvider;
 import 'erinnerungen/erinnerung_dienst.dart';
 import 'heute_widget/heute_widget_dienst.dart';
 import 'standort/standort_hinweis.dart';
@@ -456,6 +457,12 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   try {
     await ref.read(standortBenachrichtigerProvider).alleEntfernen();
   } catch (_) {}
+  // laufende Übertragungen der Dateiablage enden, heruntergeladene Dateien (Offline-Kopien, Teil-Dateien) und angefangene Uploads bleiben nicht auf dem Gerät liegen; der Dienst entsteht danach neu
+  try {
+    await ref.read(transferDienstProvider).beenden();
+    await ref.read(dateiCacheDienstProvider).alleLoeschen().timeout(const Duration(seconds: 10));
+  } catch (_) {}
+  ref.invalidate(transferDienstProvider);
   await ref.read(appDatabaseProvider).alleDatenLoeschen();
   // die gemerkte Reihenfolge der Startseite lag in sync_meta und ist weg: der Zustand im Arbeitsspeicher liest neu (Standard), die nächste Person erbt sie nicht
   ref.invalidate(startseiteMobilProvider);

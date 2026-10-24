@@ -25,7 +25,7 @@ describe('Migration 0022 (P1 Schlüssel-Paket) additiv auf Stand 0021', () => {
       const a = await adminPassword(world);
       const m = await addMember(world, a.client, 'parent', 'mama@example.org');
       expect((await m.client.post('/api/v1/me/keys', { publicEncKey: key(), publicSignKey: key() })).status).toBe(200);
-      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' order by 1`)).rows).map((r) => r.tablename);
+      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'files' order by 1`)).rows).map((r) => r.tablename);
       const ohne: Record<string, string> = { users: " - 'removed_at' - 'removed_by'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;

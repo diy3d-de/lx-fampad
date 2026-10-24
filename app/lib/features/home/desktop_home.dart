@@ -24,6 +24,7 @@ import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/countdown_karte.dart';
 import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
+import '../wetter/wetter_dwd_warn_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../chat/chat_anzeige.dart';
@@ -37,6 +38,8 @@ import '../../data/startseite/startseite_state.dart';
 import 'startseite_verfuegbar.dart';
 import 'startseite_anpassen_zeile.dart';
 import 'startseite_widgets.dart';
+import '../files/dateien_start_karte.dart';
+import '../files/dateien_screen.dart' show dateienOeffnen;
 import '../standort/standort_start_karte.dart';
 import '../wandtablet/wandtablet_steuerung.dart' show WandtabletStartZeile;
 import '../wetter/wetter_karte.dart';
@@ -74,6 +77,7 @@ class DesktopHome extends ConsumerWidget {
         const UpdateAnzeige(),
         const AbsicherungsKarte(),
         const WetterHinweisKarte(),
+        const WetterDwdWarnKarte(),
         const _Raster(),
         const SizedBox(height: 8),
         const StartseiteAnpassenZeile(),
@@ -350,7 +354,7 @@ Widget _kachel(String id) => switch (id) {
   'countdown' => const CountdownKarte(),
   'chat' => const _ChatKarte(),
   'einkauf' => const _EinkaufKarte(),
-  'dateien' => const _BaldKarte(label: '// zuletzt geteilt', icon: Icons.folder_outlined, titel: 'Noch keine Dateien', hinweis: 'Dateien kommen in einer späteren Phase.', tab: 3),
+  'dateien' => const _DateienKarte(),
   'aufgaben' => const _AufgabenKarte(),
   'fristen' => const FristenStartKarte(),
   'medikamente' => const MedikamenteStartKarte(),
@@ -551,24 +555,6 @@ class _StandortKarte extends ConsumerWidget {
   }
 }
 
-/// Karte für einen Bereich, den es noch nicht gibt: sauberer Leerzustand statt erfundener Daten.
-class _BaldKarte extends ConsumerWidget {
-  final String label;
-  final IconData icon;
-  final String titel;
-  final String hinweis;
-  final int? tab;
-  const _BaldKarte({required this.label, required this.icon, required this.titel, required this.hinweis, this.tab});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) => _Karte(
-    label: label,
-    semantik: '${label.substring(3)}. $titel. $hinweis',
-    onTap: tab == null ? null : () => ref.read(shellTabProvider.notifier).waehlen(tab!),
-    child: EmptyState(icon: icon, title: titel, hint: hinweis),
-  );
-}
-
 /// Kartenkörper für Laden und Fehler (kein falscher Leerzustand, solange Daten fehlen).
 Widget _laedt() => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
 Widget _fehler(String text) => Text(text, style: const TextStyle(color: kDanger));
@@ -724,4 +710,13 @@ class _FamilieKarte extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// "Zuletzt geteilt": die letzten Dateien der Dateiablage, Tippen öffnet den Bereich (die Kachel gibt es nur, wenn der Server die Dateiablage meldet).
+class _DateienKarte extends ConsumerWidget {
+  const _DateienKarte();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) =>
+      _Karte(label: '// zuletzt geteilt', semantik: dateienKachelSemantik(ref.watch(letzteDateienProvider)), onTap: () => dateienOeffnen(context), child: const DateienKachelInhalt());
 }

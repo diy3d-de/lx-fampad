@@ -7,6 +7,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/dateien/tresor_anhang_repository.dart';
+import '../../data/dateien/tresor_anhang_state.dart';
+import '../../data/dateien/transfer_dienst.dart' show transferDienstProvider;
 import '../../data/tresor/tresor_daten.dart';
 import '../../data/tresor/tresor_modelle.dart';
 import '../../data/tresor/tresor_repository.dart';
@@ -16,6 +19,7 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import '../lists/list_dialogs.dart' show bestaetigen;
 import 'tresor_bausteine.dart';
+import 'tresor_dokumente.dart';
 import 'tresor_editor.dart';
 
 /// So lange bleibt ein geheimer Wert nach dem Tipp auf "Anzeigen" sichtbar.
@@ -64,11 +68,37 @@ class _AnsichtState extends ConsumerState<_Ansicht> {
 
   Future<void> _loeschen() async {
     final i = widget.eintrag.inhalt!;
-    final ok = await bestaetigen(context, titel: 'Eintrag löschen?', text: '„${i.titel}“ verschwindet für alle Eltern und lässt sich nicht wiederherstellen.', knopf: 'Löschen');
+    final id = widget.eintrag.id;
+    // Dokumente dieses Eintrags (nur wenn es sie gibt: Dateiablage verfügbar und entsperrt)
+    var n = 0;
+    if (ref.read(tresorDokumenteAktivProvider)) {
+      try {
+        n = anhaengeFuerEintrag(await ref.read(tresorAnhaengeProvider.future), id)?.length ?? 0;
+      } on Object {
+        n = 0;
+      }
+      if (!mounted) return;
+    }
+    final ok = await bestaetigen(
+      context,
+      titel: n > 0 ? 'Eintrag und $n ${n == 1 ? 'Dokument' : 'Dokumente'} löschen?' : 'Eintrag löschen?',
+      text: n > 0
+          ? '„${i.titel}“ und ${n == 1 ? 'das angehängte Dokument verschwinden' : 'die $n angehängten Dokumente verschwinden'} für alle Eltern und lassen sich nicht wiederherstellen.'
+          : '„${i.titel}“ verschwindet für alle Eltern und lässt sich nicht wiederherstellen.',
+      knopf: 'Löschen',
+    );
     if (!ok || !mounted) return;
     setState(() => _laeuft = true);
     final nav = Navigator.of(context);
     try {
+      if (n > 0) {
+        // laufende Uploads zu diesem Eintrag zuerst abbrechen, dann die Dokumente, zuletzt der Eintrag (scheitert ein Schritt, bleibt der Eintrag stehen)
+        final dienst = ref.read(transferDienstProvider);
+        for (final u in ref.read(tresorAnhangUploadsProvider).values.where((u) => u.eintragId == id).toList()) {
+          await dienst.abbrechen(u.transferId);
+        }
+        await ref.read(tresorAnhangRepositoryProvider).fuerEintragLoeschen(id);
+      }
       await ref.read(tresorRepositoryProvider).loeschen(widget.eintrag.id);
       if (mounted) nav.pop();
     } on TresorFehler catch (e) {
@@ -110,6 +140,8 @@ class _AnsichtState extends ConsumerState<_Ansicht> {
           ),
           const SizedBox(height: 12),
         ],
+        TresorDokumente(eintragId: widget.eintrag.id),
+        const SizedBox(height: 12),
         LxCard(
           child: Row(
             children: [

@@ -5,12 +5,11 @@ import 'package:lx_fampad/data/shell/leiste_logik.dart';
 
 void main() {
   group('Standard und Auswahl', () {
-    test('Standard: Start, Kalender, Chat, Aufgaben; Listen liegen hinter Mehr, Dateien sind ausgeblendet', () {
+    test('Standard: Start, Kalender, Chat, Aufgaben; Listen liegen hinter Mehr, Dateien nie in der Leiste (mobil nur hinter Mehr, wenn der Server die Dateiablage meldet)', () {
       expect(kLeisteStandard.map((t) => kTabs[t].label), ['Start', 'Kalender', 'Chat', 'Aufgaben']);
       expect(hinterMehr(kLeisteStandard).map((t) => kTabs[t].label), ['Listen']);
-      expect(kDateienSichtbar, isFalse);
       expect(leisteWaehlbar.map((t) => kTabs[t].label), ['Start', 'Kalender', 'Chat', 'Listen', 'Aufgaben']);
-      expect(mobilerTabGueltig(3), isFalse, reason: 'Dateien nicht anzeigen');
+      expect(mobilerTabGueltig(3), isFalse, reason: 'Dateien steht nie in der Leiste');
       expect(mobilerTabGueltig(6), isFalse, reason: 'Standort ist mobil kein Tab');
       expect(leisteGueltig(kLeisteStandard), isTrue);
     });

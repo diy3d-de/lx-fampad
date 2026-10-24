@@ -1,4 +1,9 @@
 {
+  "0.17.0": [
+    "Dateien: gemeinsame Dateiablage mit Ordnern, Vorschaubildern und Versionen, hinter Mehr. Kinder sehen nur Einträge für die ganze Familie",
+    "Tresor: Dokumente (z. B. Ausweiskopien) lassen sich an Einträge anhängen, Ende-zu-Ende verschlüsselt",
+    "Wetter: Vorhersage für die nächsten Tage (Daten vom Deutschen Wetterdienst über Bright Sky)"
+  ],
   "0.16.0": [
     "Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall) kommen jetzt auch bei geschlossener App, per Push-Wecker. Einschalten unter Profil › Benachrichtigungen › Wetter-Hinweise",
     "Dafür muss Push (ntfy) eingerichtet sein und die Benachrichtigungserlaubnis erteilt sein"

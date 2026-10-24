@@ -59,9 +59,9 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | desugar_jdk_libs | 2.1.4 | Core-Library-Desugaring für `flutter_local_notifications` (`coreLibraryDesugaring` in `app/android/app/build.gradle.kts`, von Google, Version aus der README des Plugins; lange vor dem Stichtag veröffentlicht). Release-Build: `app/android/app/proguard-rules.pro` (Plugin und Gson/TypeToken) |
 | (transitiv zu file_picker) | android_file_picker 2.0.0 (14.09.2026), file_picker_darwin 2.1.2 (22.09.2026), file_picker_linux 2.0.1 (22.09.2026), file_picker_platform_interface 4.0.0 (14.09.2026), file_picker_web 4.0.0 (14.09.2026), windows_file_picker 2.0.0 (14.09.2026), cross_file 0.3.5+5 (25.08.2026), dbus 0.8.0 (16.09.2026), petitparser 7.0.2 (14.02.2026), xml 7.0.1 (25.04.2026) | Alle mindestens 14 Tage alt (Stand 19.10.2026). Die ersten sechs und petitparser/xml sind in `app/pubspec.yaml` unter `dependency_overrides` festgehalten, weil bei der Auflösung sonst Oktober-Stände (android_file_picker 2.1.1, file_picker_platform_interface 4.2.0, file_picker_web 4.2.0 ..., jünger als 14 Tage) gewählt würden. **Wiedervorlage 19.11.2026:** prüfen, ob die neuen Stände dann 14 Tage alt sind, und die Overrides entfernen |
 | http | 1.6.0 | Update-Prüfung und APK-Download |
-| crypto | 3.0.7 | SHA-256 der APK |
+| crypto | 3.0.7 | SHA-256 der APK und der Dateiablage (Prüfsumme der übertragenen Bytes) |
 | cryptography | 2.9.0 | Ed25519-Prüfung des Update-Manifests (reines Dart, auch im Web); 21.11.2025 |
-| path_provider | 2.1.6 | Cache-Ordner für die heruntergeladene APK |
+| path_provider | 2.1.6 | Cache-Ordner für die heruntergeladene APK und die Offline-Kopien der Dateiablage (nur Android) |
 | intl | 0.20.3 | Datumsformate (de_DE) |
 | flutter_lints | 6.0.0 | nur Entwicklung |
 | build_runner | 2.16.1 | nur Entwicklung (drift-Code); `--delete-conflicting-outputs` nur lokal, nicht in der CI |

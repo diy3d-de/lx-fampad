@@ -41,7 +41,6 @@ export const credentialType = pgEnum('credential_type', ['passkey', 'totp', 'pas
 export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom', 'template']);
 /** Wer eine Liste oder einen Termin sehen darf: nur Eltern/Admins oder die ganze Familie (Eingaben alter Apps mit "all" werden auf "family" abgebildet). */
 export const listAudience = pgEnum('list_audience', ['parents', 'family']);
-export const fileKind = pgEnum('file_kind', ['file', 'folder']);
 /** Art einer Konversation: der Familienchat (genau einer je Familie), ein Direktchat (zwei Personen) oder eine Gruppe. */
 export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group', 'meds', 'zaehler', 'tresor']);
 
@@ -1166,37 +1165,6 @@ export const aufgabePunkte = pgTable(
   ],
 );
 
-/** Dateien sind unveränderlich: eine neue Fassung ist ein neuer Eintrag mit gleichem version_of. */
-export const files = pgTable(
-  'files',
-  {
-    id: id(),
-    familyId: familyRef(),
-    kind: fileKind('kind').notNull().default('file'),
-    parentId: uuid('parent_id'),
-    name: text('name').notNull(),
-    mime: text('mime'),
-    size: bigint('size', { mode: 'number' }),
-    sha256: text('sha256'),
-    /** Schlüssel der verschlüsselten Datei unterhalb von FILES_DIR (nie ein Nutzerpfad). */
-    storageKey: text('storage_key'),
-    /** Pro Datei verpackter AES-256-GCM-Schlüssel (Hauptschlüssel liegt außerhalb des Datenverzeichnisses). */
-    wrappedKey: text('wrapped_key'),
-    versionOf: uuid('version_of'),
-    version: integer('version').notNull().default(1),
-    uploadedBy: uuid('uploaded_by').references(() => users.id, { onDelete: 'set null' }),
-    createdAt: createdAt(),
-    ...syncColumns(),
-  },
-  (t) => [
-    index('files_family_parent_idx').on(t.familyId, t.parentId),
-    index('files_family_rev_idx').on(t.familyId, t.rev),
-    unique('files_family_id_uq').on(t.familyId, t.id),
-    // Ordner und Dateien liegen immer in derselben Familie
-    foreignKey({ columns: [t.familyId, t.parentId], foreignColumns: [t.familyId, t.id] }).onDelete('cascade'),
-  ],
-);
-
 /** Chat: nur Anhängen. Veränderlich sind nur Lesestatus und Reaktionen, nie der Text. */
 export const messages = pgTable(
   'messages',
@@ -1207,7 +1175,6 @@ export const messages = pgTable(
     chatId: text('chat_id').notNull().default('family'),
     senderId: uuid('sender_id').references(() => users.id, { onDelete: 'set null' }),
     body: text('body').notNull().default(''),
-    fileId: uuid('file_id').references(() => files.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
     ...syncColumns(),
   },
@@ -1631,6 +1598,197 @@ export const tresorEintraege = pgTable(
 );
 
 /**
+ * Dateiablage (Dateien-Bereich, Abschnitt 6n). Ordner: `parent_id` verweist auf einen anderen Ordner derselben Familie (leer = oberste Ebene); die Zugehörigkeit prüft der Server
+ * (Zyklus, Tiefe, Freigabe), bewusst ohne Fremdschlüssel: ein bereinigter Tombstone des Elternordners darf nie am Kind hängen.
+ */
+export const ordner = pgTable(
+  'ordner',
+  {
+    id: id(),
+    familyId: familyRef(),
+    parentId: uuid('parent_id'),
+    name: text('name').notNull(),
+    audience: listAudience('audience').notNull().default('family'),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('ordner_family_id_uq').on(t.familyId, t.id),
+    index('ordner_parent_idx').on(t.familyId, t.parentId),
+    index('ordner_family_rev_idx').on(t.familyId, t.rev),
+    index('ordner_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('ordner_name_len_ck', sql`char_length(${t.name}) <= 200`),
+  ],
+);
+
+/** Datei: Name, Ablageort (Ordner) und Freigabe; der Inhalt steht in den unveränderlichen Fassungen (`datei_versionen`). */
+export const dateien = pgTable(
+  'dateien',
+  {
+    id: id(),
+    familyId: familyRef(),
+    ordnerId: uuid('ordner_id'),
+    name: text('name').notNull(),
+    audience: listAudience('audience').notNull().default('family'),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('dateien_family_id_uq').on(t.familyId, t.id),
+    index('dateien_ordner_idx').on(t.familyId, t.ordnerId),
+    index('dateien_family_rev_idx').on(t.familyId, t.rev),
+    index('dateien_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('dateien_owner_idx')
+      .on(t.familyId, t.ownerId)
+      .where(sql`${t.ownerId} is not null`),
+    check('dateien_name_len_ck', sql`char_length(${t.name}) <= 200`),
+  ],
+);
+
+/** Unveränderliche Fassung einer Datei: verweist auf einen Blob (und optional ein Vorschaubild); Größe, Typ und Prüfsumme setzt der Server aus dem beanspruchten Blob. */
+export const dateiVersionen = pgTable(
+  'datei_versionen',
+  {
+    id: id(),
+    familyId: familyRef(),
+    dateiId: uuid('datei_id').notNull(),
+    nr: integer('nr').notNull(),
+    blobId: uuid('blob_id').notNull(),
+    thumbBlobId: uuid('thumb_blob_id'),
+    size: bigint('size', { mode: 'number' }).notNull().default(0),
+    mime: text('mime'),
+    sha256: text('sha256'),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('datei_versionen_family_id_uq').on(t.familyId, t.id),
+    unique('datei_versionen_nr_uq').on(t.familyId, t.dateiId, t.nr),
+    foreignKey({ columns: [t.familyId, t.dateiId], foreignColumns: [dateien.familyId, dateien.id] }).onDelete('cascade'),
+    index('datei_versionen_datei_idx').on(t.familyId, t.dateiId),
+    index('datei_versionen_family_rev_idx').on(t.familyId, t.rev),
+    index('datei_versionen_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('datei_versionen_nr_ck', sql`${t.nr} between 1 and 9999`),
+    check('datei_versionen_size_ck', sql`${t.size} >= 0`),
+  ],
+);
+
+/**
+ * Anhang eines Tresor-Eintrags: ein Ende-zu-Ende verschlüsselter Blob (Modus `e2ee`). `inhalt` ist eine e1-Hülle (Name, Typ, Dateischlüssel, Zuordnung zum Eintrag); der Server
+ * sieht nur die Blob-ID und die Größe. Kind der Tresor-Konversation und erbt ihre Teilnehmer-Sicht.
+ */
+export const tresorAnhaenge = pgTable(
+  'tresor_anhaenge',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    blobId: uuid('blob_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    size: bigint('size', { mode: 'number' }).notNull().default(0),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('tresor_anhaenge_family_id_uq').on(t.familyId, t.id),
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('tresor_anhaenge_konversation_idx').on(t.familyId, t.konversationId),
+    index('tresor_anhaenge_family_rev_idx').on(t.familyId, t.rev),
+    index('tresor_anhaenge_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    check('tresor_anhaenge_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 4096`),
+    check('tresor_anhaenge_size_ck', sql`${t.size} >= 0`),
+  ],
+);
+
+/**
+ * Blobs der Dateiablage (nicht synchronisiert; die Datei liegt unter FILES_DIR/blobs/<2 Hex>/<id>). Die ID ist zugleich die ID des Uploads.
+ *  - `server`: der Server hat die Datei (AES-256-GCM, 64-KiB-Blöcke) verschlüsselt abgelegt; `dek_wrap` ist der mit dem abgeleiteten Schlüssel `files/wrap/v<kid>` verpackte Dateischlüssel.
+ *  - `e2ee`: der Client lieferte schon verschlüsselte Bytes; der Server speichert sie undurchsichtig (kein Schlüssel, kein Name, kein Typ), `sha256` gilt den übertragenen Bytes.
+ * `ready` = fertig hochgeladen, noch von keinem Datensatz beansprucht (nur die hochladende Person sieht ihn); `claimed` = ein Sync-Datensatz (`claim_entity`, `claim_id`) hat ihn beansprucht.
+ */
+export const dateiBlob = pgTable(
+  'datei_blob',
+  {
+    id: uuid('id').primaryKey(),
+    familyId: familyRef(),
+    uploaderId: uuid('uploader_id').references(() => users.id, { onDelete: 'set null' }),
+    modus: text('modus').notNull(),
+    kind: text('kind').notNull(),
+    /** Größe des Inhalts (Modus server: Klartext, Modus e2ee: übertragene Bytes); zählt für das Kontingent. */
+    size: bigint('size', { mode: 'number' }).notNull(),
+    /** Größe der Datei auf dem Datenträger. */
+    diskSize: bigint('disk_size', { mode: 'number' }).notNull(),
+    sha256: text('sha256').notNull(),
+    mime: text('mime'),
+    dekWrap: bytea('dek_wrap'),
+    kid: integer('kid'),
+    state: text('state').notNull().default('ready'),
+    claimEntity: text('claim_entity'),
+    claimId: uuid('claim_id'),
+    createdAt: createdAt(),
+    claimedAt: timestamp('claimed_at', { withTimezone: true }),
+    /** Seit wann niemand den Blob mehr braucht (Karenz bis zum Löschen der Datei). */
+    orphanedAt: timestamp('orphaned_at', { withTimezone: true }),
+  },
+  (t) => [
+    unique('datei_blob_family_id_uq').on(t.familyId, t.id),
+    index('datei_blob_family_state_idx').on(t.familyId, t.state),
+    index('datei_blob_claim_idx').on(t.claimEntity, t.claimId),
+    index('datei_blob_orphan_idx')
+      .on(t.orphanedAt)
+      .where(sql`${t.orphanedAt} is not null`),
+    check('datei_blob_modus_ck', sql`${t.modus} in ('server', 'e2ee')`),
+    check('datei_blob_kind_ck', sql`${t.kind} in ('datei', 'thumb', 'opak')`),
+    check('datei_blob_state_ck', sql`${t.state} in ('ready', 'claimed')`),
+    check('datei_blob_size_ck', sql`${t.size} >= 0 and ${t.diskSize} >= 0`),
+    check('datei_blob_key_ck', sql`(${t.modus} = 'server' and ${t.dekWrap} is not null and ${t.kid} is not null) or (${t.modus} = 'e2ee' and ${t.dekWrap} is null and ${t.kid} is null)`),
+    check('datei_blob_claim_ck', sql`(${t.state} = 'claimed') = (${t.claimEntity} is not null and ${t.claimId} is not null)`),
+  ],
+);
+
+/** Laufender Upload (tus, Staging unter FILES_DIR/tmp/<id>.part); die ID wird zur Blob-ID. `aborted`-Zeilen bleiben bis zum Aufräumen (24 h) für die Mengenbegrenzung stehen. */
+export const dateiUpload = pgTable(
+  'datei_upload',
+  {
+    id: uuid('id').primaryKey(),
+    familyId: familyRef(),
+    uploaderId: uuid('uploader_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    modus: text('modus').notNull(),
+    kind: text('kind').notNull(),
+    /** Vom Client genannter Typ (nur im Modus server, geprüft gegen die Magic-Bytes). */
+    declaredMime: text('declared_mime'),
+    length: bigint('length', { mode: 'number' }).notNull(),
+    offset: bigint('offset', { mode: 'number' }).notNull().default(0),
+    status: text('status').notNull().default('open'),
+    createdAt: createdAt(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [
+    unique('datei_upload_family_id_uq').on(t.familyId, t.id),
+    index('datei_upload_uploader_idx').on(t.uploaderId, t.createdAt),
+    index('datei_upload_family_status_idx').on(t.familyId, t.status),
+    check('datei_upload_modus_ck', sql`${t.modus} in ('server', 'e2ee')`),
+    check('datei_upload_kind_ck', sql`${t.kind} in ('datei', 'thumb', 'opak')`),
+    check('datei_upload_status_ck', sql`${t.status} in ('open', 'finalizing', 'done', 'aborted')`),
+    check('datei_upload_len_ck', sql`${t.length} >= 0 and ${t.offset} >= 0 and ${t.offset} <= ${t.length}`),
+  ],
+);
+
+/**
  * Epochen einer verschlüsselten Konversation (E2EE Phase 2): je Epoche genau eine Zeile (feste, abgeleitete ID; der erste Schreiber gewinnt). `mitglieder` ist die
  * vom Verteiler signierte Mitgliederliste der Epoche als undurchsichtiger Text (der Server wertet sie nie aus). Kein Schlüsselmaterial.
  */
@@ -1755,6 +1913,24 @@ export const weatherAlertState = pgTable('weather_alert_state', {
   active: boolean('active').notNull(),
   changedAt: timestamp('changed_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Vorhersage und amtliche Warnungen (nur der Wetter-Dienst schreibt, `GET /weather/forecast` liest): je Art (`forecast`, `alerts`) eine Zeile mit dem
+ * bereits streng ausgewerteten Ergebnis (nur Zahlen, feste Codes, gekürzte Texte; nie Koordinaten oder Rohantworten). `fetched_at` = letzter Erfolg.
+ */
+export const weatherForecast = pgTable(
+  'weather_forecast',
+  {
+    kind: text('kind').primaryKey(),
+    data: jsonb('data').notNull(),
+    fetchedAt: timestamp('fetched_at', { withTimezone: true }),
+    lastErrorAt: timestamp('last_error_at', { withTimezone: true }),
+    /** Kurzer Code des letzten Fehlers (nie Inhalte der Antwort). */
+    lastErrorCode: text('last_error_code'),
+    errorCount: integer('error_count').notNull().default(0),
+  },
+  (t) => [check('weather_forecast_kind_ck', sql`${t.kind} in ('forecast', 'alerts')`)],
+);
 
 /** Abfallarten (feste Liste; unbekannte Namen der Quelle landen unter `sonst`). Dieselben Codes verwendet die App. */
 export const WASTE_KINDS = ['rest', 'bio', 'gelb', 'papier', 'gruen', 'sonder', 'sperr', 'baum', 'sonst'] as const;

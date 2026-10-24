@@ -7,7 +7,6 @@
 //  - Fest oben stehen (nicht in dieser Liste, nicht verschiebbar, nicht ausblendbar): Update-Hinweis und die Warnkarte "Bin ich abgesichert?".
 import 'dart:convert';
 
-import '../shell/leiste_logik.dart' show kDateienSichtbar;
 
 enum StartLayout {
   mobil,
@@ -54,8 +53,8 @@ const kDesktopKacheln = <StartKachel>[
   StartKachel('termine', 'Heute & morgen', 'termine'),
   StartKachel('chat', 'Chat', 'letzte nachrichten'),
   StartKachel('einkauf', 'Einkaufsliste', 'offene einträge'),
-  // Der Dateien-Platzhalter ist ausgeblendet, solange der Bereich nicht gebaut ist (kDateienSichtbar in leiste_logik.dart)
-  if (kDateienSichtbar) StartKachel('dateien', 'Zuletzt geteilt', 'dateien, kommen später'),
+  // "Zuletzt geteilt": nur wenn der Server die Dateiablage meldet (startseite_verfuegbar.dart)
+  StartKachel('dateien', 'Zuletzt geteilt', 'erscheint nur mit der dateiablage'),
   StartKachel('aufgaben', 'Aufgaben', 'offene aufgaben'),
   StartKachel('familie', 'Familie & Orte', 'mitglieder'),
   StartKachel('standort', 'Standort', 'standort teilen'),

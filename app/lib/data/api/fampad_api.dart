@@ -8,6 +8,7 @@ import '../sync/sync_models.dart';
 import '../crypto/schluessel.dart';
 import '../betrieb/betrieb_modelle.dart';
 import '../betrieb/familien_stand.dart';
+import '../dateien/datei_modelle.dart';
 import 'eltern_modelle.dart';
 import 'models.dart';
 
@@ -225,6 +226,9 @@ class FampadApi {
   /// Rohe Antwort (die App legt sie für den Offline-Stand unverändert ab).
   Future<Json> wetterRoh() => client.get('/weather');
 
+  /// Vorhersage und amtliche Warnungen des Deutschen Wetterdienstes (`GET /weather/forecast`, Offline-Stand unverändert in `sync_meta`); ältere Server antworten mit 404.
+  Future<Json> wetterVorhersageRoh() => client.get('/weather/forecast');
+
   // ----------------------------------------------------------- Müll (Abfuhrtermine)
 
   /// Rohe Antwort von `GET /waste` (Offline-Stand unverändert in `sync_meta`); 404 = der Server hat die Abfuhrtermine nicht eingeschaltet.
@@ -352,6 +356,9 @@ class FampadApi {
       return false; // nur eine Anzeige: ohne Antwort bleibt die Funktion unsichtbar
     }
   }
+
+  /// Zahlen der Dateiablage (`GET /files/usage`: belegt, reserviert, Kontingent, Grenzen). Ohne Schalter des Servers `404 not_found`.
+  Future<DateiNutzung> dateiNutzung() async => DateiNutzung.fromJson(await client.get('/files/usage'));
 
   /// Wie [serverFaehigkeiten], aber jeder Fehler ergibt "nichts davon" (nur für Anzeigen: ohne Antwort bleiben die Funktionen unsichtbar).
   Future<ServerFaehigkeiten> faehigkeitenOderKeine() async {

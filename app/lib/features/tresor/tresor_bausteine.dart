@@ -180,7 +180,7 @@ Color tresorKategorieFarbe(String wire) => switch (wire) {
 /// Untertitel der Kategorien (Beispiele, kein Inhalt).
 String tresorKategorieBeispiele(String wire) => switch (wire) {
   'notfall' => 'Allergien, Blutgruppe, Ärzte',
-  'dokumente' => 'Ausweise, Policen, Verträge (Felder und Notizen, Anhänge folgen)',
+  'dokumente' => 'Ausweise, Policen, Verträge (Felder, Notizen und Dokumente)',
   'zugang' => 'Alarmcode, Konten, Zählernummern',
   'haushalt' => 'WLAN, Router, Wartungsverträge',
   _ => 'Deine eigene Gruppe',

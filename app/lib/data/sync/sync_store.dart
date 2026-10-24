@@ -47,7 +47,7 @@ abstract interface class OpVorbereiter {
 
 /// Verschlüsselte Chat-Inhalte je Entität: das Feld, das vor dem Senden aus dem lokalen Klartext (`l1:`) zur Hülle `e1:` wird (Nachricht: Text; Reaktion und Stimme:
 /// Inhalt). Ein anderes Feld oder eine andere Entität (z. B. ein Listeneintrag, der mit "l1:" beginnt) ist ein ganz normaler Text.
-const kVerschluesselteFelder = {'nachricht': 'text', 'reaktion': 'inhalt', 'stimme': 'inhalt', 'medikament': 'inhalt', 'einnahme': 'inhalt', 'zaehler': 'inhalt', 'zaehlerstand': 'inhalt', 'tresor_eintrag': 'inhalt'};
+const kVerschluesselteFelder = {'nachricht': 'text', 'reaktion': 'inhalt', 'stimme': 'inhalt', 'medikament': 'inhalt', 'einnahme': 'inhalt', 'zaehler': 'inhalt', 'zaehlerstand': 'inhalt', 'tresor_eintrag': 'inhalt', 'tresor_anhang': 'inhalt'};
 
 /// Ein lokaler Klartext (`l1:`) eines verschlüsselten Chat-Inhalts darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet).
 bool _hatLokalenKlartext(OutboxData z) {
@@ -184,7 +184,16 @@ class SyncStore {
 
   /// Löscht lokal sofort (samt untergeordneten Zeilen) und merkt die Löschung für den Server vor. Eine Zeile, die der Server nie
   /// gesehen hat, verschwindet spurlos (ohne Op).
-  Future<void> loeschen(String entity, String id) => db.transaction(() async {
+  Future<void> loeschen(String entity, String id) => db.transaction(() => _loeschen(entity, id));
+
+  /// Mehrere Löschungen in EINER Transaktion, in der angegebenen Reihenfolge (die Dateiablage löscht von unten nach oben: der Server löscht einen Ordner nur leer).
+  Future<void> loeschenMehrere(List<(String, String)> liste) => db.transaction(() async {
+    for (final (e, i) in liste) {
+      await _loeschen(e, i);
+    }
+  });
+
+  Future<void> _loeschen(String entity, String id) async {
     final def = _entitaet(entity);
     final rev = await def.rev(db, id);
     if (rev == null) return;
@@ -205,7 +214,7 @@ class SyncStore {
         OutboxCompanion.insert(opId: _neueOpId(), op: 'delete', entity: entity, entityId: id, baseRev: Value(rev), createdAt: Value(_jetzt())),
       );
     }
-  });
+  }
 
   /// Die Zeile und alle untergeordneten (rekursiv) als (Entität, ID).
   Future<List<(String, String)>> _baum(String entity, String id) async {
@@ -454,7 +463,7 @@ class SyncStore {
         bericht.hinweise.add(SyncHinweis('Das darfst du nicht: $name wurde nicht geändert.'));
         await _zuruecknehmen(z, neu, bericht);
       case 'invalid_reference':
-        bericht.hinweise.add(SyncHinweis('Die zugewiesene Person gehört nicht mehr zur Familie. $name wurde nicht geändert.'));
+        bericht.hinweise.add(SyncHinweis('${def.ungueltigerVerweis}. $name wurde nicht geändert.'));
         await _zuruecknehmen(z, neu, bericht);
       case 'limit_reached' when def.bleibtBeiLimit && z.op == 'upsert':
         // Nachrichten gehen nicht verloren: dieselbe Änderung kommt mit neuer op_id wieder in den Ausgang (der nächste Abgleich versucht es erneut)

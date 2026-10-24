@@ -11,7 +11,7 @@ import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/muell/muell_state.dart';
-import '../../data/shell/leiste_logik.dart' show kDateienSichtbar;
+import '../../data/dateien/datei_state.dart' show dateienVerfuegbarProvider;
 import '../../data/sync_state.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
@@ -323,6 +323,8 @@ class _Seitenleiste extends ConsumerWidget {
     final zaehlerFaellig = ref.watch(zaehlerFaelligProvider);
     // Tresor: nur für Eltern und Admins in der Seitenleiste (Kinder sehen den Eintrag nie), ohne Badge
     final tresorDarf = ref.watch(tresorDarfProvider);
+    // Dateien: nur in der Seitenleiste, wenn der Server die Dateiablage meldet (sonst auch kein Deep-Link: home_shell wählt dann die Startseite)
+    final dateienDa = ref.watch(dateienVerfuegbarProvider).value ?? false;
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -387,7 +389,7 @@ class _Seitenleiste extends ConsumerWidget {
                 child: ListView(
                   children: [
                     for (var i = 0; i < kDesktopTabs.length; i++)
-                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || kDateienSichtbar) && (i != kZaehlerTab || zaehlerDarf) && (i != kTresorTab || tresorDarf))
+                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || dateienDa) && (i != kZaehlerTab || zaehlerDarf) && (i != kTresorTab || tresorDarf))
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,

@@ -29,6 +29,9 @@ class FakeSyncServer {
   /// Nächste Antworten als Fehler (Status, Code); danach wieder normal.
   final List<(int, String)> fehlerQueue = [];
 
+  /// Person der laufenden Anfrage (Bearer-Token der Tests: `person-<Kennung>` -> `person-<Kennung>`); für Fakes mit Rechten (Dateiablage).
+  String? person;
+
   /// Retry-After (Sekunden) der Fehler 429/503 aus [fehlerQueue].
   int retryAfterWert = 7;
 
@@ -51,6 +54,7 @@ class FakeSyncServer {
   void registrieren(FakeServer s) {
     s.on('POST /sync', (req) {
       if (offline) throw http.ClientException('offline');
+      person = req.headers['authorization']?.replaceFirst('Bearer ', '');
       if (fehlerQueue.isNotEmpty) {
         final (status, code) = fehlerQueue.removeAt(0);
         return fehler(status, code, retryAfter: status == 429 || status == 503 ? retryAfterWert : null);
@@ -144,6 +148,15 @@ class FakeSyncServer {
     'aufgabe_punkt': ('aufgabe', 'aufgabeId'),
     'nachricht': ('konversation', 'konversationId'),
     'lesestand': ('konversation', 'konversationId'),
+    'datei_version': ('datei', 'dateiId'),
+  };
+
+  /// Vom Server gesetzte Felder der Dateiablage (Besitzer, Stufe, Ordner; bei Fassungen die Werte aus dem Blob).
+  static Map<String, dynamic> _dateiStandard(String entity, String besitzer) => switch (entity) {
+    'ordner' => {'parentId': null, 'audience': 'family', 'ownerId': besitzer},
+    'datei' => {'ordnerId': null, 'audience': 'family', 'ownerId': besitzer},
+    'datei_version' => {'thumbBlobId': null, 'size': 0, 'mime': null, 'sha256': null},
+    _ => const {},
   };
 
   static Map<String, dynamic> _terminStandard(String owner) => {
@@ -216,6 +229,7 @@ class FakeSyncServer {
         if (o['entity'] == 'aufgabe') ..._aufgabeStandard(fixIdAdmin),
         if (o['entity'] == 'aufgabe_punkt') ...{'doneAt': null, 'position': 0},
         ..._chatStandard(o['entity'] as String, fixIdAdmin),
+        ..._dateiStandard(o['entity'] as String, fixIdAdmin),
         ...fields,
       }, ++rev);
       for (final f in fields.keys) {
@@ -283,6 +297,7 @@ class FakeSyncServer {
         if (entity == 'aufgabe') ..._aufgabeStandard(fixIdKind),
         if (entity == 'aufgabe_punkt') ...{'doneAt': null, 'position': 0},
         ..._chatStandard(entity, fixIdKind),
+        ..._dateiStandard(entity, fixIdKind),
         ...fields,
       }, ++rev);
       zeilen[key] = z;

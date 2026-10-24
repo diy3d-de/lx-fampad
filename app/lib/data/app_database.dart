@@ -489,7 +489,151 @@ class TresorEintraege extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, Zaehler, Zaehlerstaende, TresorEintraege])
+/// Ordner der Dateiablage (Abschnitt 6n), Sync-Entität `ordner`. `parentId` null = oberste Ebene. `audience` ist die Freigabestufe (`parents`/`family`), ohne Vererbung (Invariante: ein
+/// `family`-Eintrag liegt nur in einem `family`-Ordner oder oben; der Server erzwingt sie, `datei_logik.dart` und das Repository stellen Stapel dafür zusammen).
+@DataClassName('OrdnerZeile')
+@TableIndex(name: 'ordner_parent_idx', columns: {#parentId})
+class Ordner extends Table {
+  @override
+  String get tableName => 'ordner';
+
+  TextColumn get id => text()();
+  TextColumn get parentId => text().nullable()();
+  TextColumn get name => text()();
+  TextColumn get audience => text().withDefault(const Constant('family'))();
+  TextColumn get ownerId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Datei der Dateiablage (Abschnitt 6n), Sync-Entität `datei`. Die Bytes liegen nicht im Sync, sondern an den Fassungen ([DateiVersionen]).
+@DataClassName('DateiZeile')
+@TableIndex(name: 'dateien_ordner_idx', columns: {#ordnerId})
+class Dateien extends Table {
+  @override
+  String get tableName => 'dateien';
+
+  TextColumn get id => text()();
+  TextColumn get ordnerId => text().nullable()();
+  TextColumn get name => text()();
+  TextColumn get audience => text().withDefault(const Constant('family'))();
+  TextColumn get ownerId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Unveränderliche Fassung einer Datei (Sync-Entität `datei_version`): `blobId` (Upload-ID) und `thumbBlobId` (Vorschau) zeigen auf Blobs des Servers; `size`, `mime` und `sha256` setzt der
+/// Server aus dem Blob (lokal bei einer neuen Zeile die Werte des Geräts, bis der Server sie liefert).
+@DataClassName('DateiVersionZeile')
+@TableIndex(name: 'datei_versionen_datei_idx', columns: {#dateiId})
+class DateiVersionen extends Table {
+  @override
+  String get tableName => 'datei_versionen';
+
+  TextColumn get id => text()();
+  TextColumn get dateiId => text()();
+  IntColumn get nr => integer()();
+  TextColumn get blobId => text()();
+  TextColumn get thumbBlobId => text().nullable()();
+  IntColumn get size => integer().withDefault(const Constant(0))();
+  TextColumn get mime => text().nullable()();
+  TextColumn get sha256 => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Verschlüsselter Anhang eines Tresor-Eintrags (Sync-Entität `tresor_anhang`, Kind der Tresor-Konversation). `inhalt` ist die Hülle (`e1:` bzw. lokal `l1:` im Ausgang, Art `f`): Name, Typ,
+/// Größe, Dateischlüssel, Zuordnung zum Eintrag und Prüfsumme stehen nur darin. `blobId` zeigt auf die Chiffretext-Bytes beim Server (Modus `e2ee`).
+@DataClassName('TresorAnhangZeile')
+@TableIndex(name: 'tresor_anhaenge_konversation_idx', columns: {#konversationId})
+class TresorAnhaenge extends Table {
+  @override
+  String get tableName => 'tresor_anhaenge';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get blobId => text()();
+  TextColumn get inhalt => text()();
+  IntColumn get size => integer().withDefault(const Constant(0))();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Warteschlange der Übertragungen (nur lokal, nie synchronisiert): Upload und Download mit Zustand, Fortschritt und Fehlercode. Enthält nie Dateiinhalte; der Anzeigename steht nur hier
+/// (lokale Datenbank), nie im Log. Zustände: siehe `TransferZustand` in `transfer_modelle.dart`.
+@DataClassName('TransferZeile')
+@TableIndex(name: 'transfers_zustand_idx', columns: {#zustand})
+class Transfers extends Table {
+  @override
+  String get tableName => 'transfers';
+
+  TextColumn get id => text()();
+
+  /// `hoch` oder `runter`.
+  TextColumn get richtung => text()();
+
+  /// `datei` (neue Datei), `fassung` (neue Fassung einer Datei), `anhang` (verschlüsselter Tresor-Anhang), `runter` (Download).
+  TextColumn get art => text()();
+  TextColumn get zustand => text()();
+  TextColumn get name => text()();
+  TextColumn get mime => text().nullable()();
+  IntColumn get groesse => integer().withDefault(const Constant(0))();
+  IntColumn get uebertragen => integer().withDefault(const Constant(0))();
+
+  /// Upload: Ziel-Ordner, Datei, Fassung, Freigabestufe; Download: Datei/Fassung/Blob.
+  TextColumn get ordnerId => text().nullable()();
+  TextColumn get dateiId => text().nullable()();
+  TextColumn get versionId => text().nullable()();
+  TextColumn get audience => text().nullable()();
+  TextColumn get konversationId => text().nullable()();
+
+  /// tus-Upload (= Blob-ID) der Datei bzw. der Vorschau; bei einem Download die Blob-ID, die geladen wird.
+  TextColumn get blobId => text().nullable()();
+  TextColumn get thumbBlobId => text().nullable()();
+  TextColumn get quellePfad => text().nullable()();
+  TextColumn get zielPfad => text().nullable()();
+  TextColumn get sha256 => text().nullable()();
+  TextColumn get fehlerCode => text().nullable()();
+  IntColumn get versuche => integer().withDefault(const Constant(0))();
+  IntColumn get naechsterVersuch => integer().map(const MsDatumConverter()).nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get aktualisiertAt => integer().map(const MsDatumConverter())();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Offline-Kopien (nur Android, nur lokal): eine Zeile je Blob, dessen Bytes im Cache-Ordner liegen; die älteste Nutzung fliegt zuerst heraus (LRU), angeheftete bleiben.
+@DataClassName('DateiCacheZeile')
+class DateiCache extends Table {
+  @override
+  String get tableName => 'datei_cache';
+
+  TextColumn get blobId => text()();
+  IntColumn get groesse => integer()();
+  TextColumn get name => text()();
+  TextColumn get mime => text().nullable()();
+  BoolColumn get angeheftet => boolean().withDefault(const Constant(false))();
+  IntColumn get zuletztGenutzt => integer().map(const MsDatumConverter())();
+
+  @override
+  Set<Column> get primaryKey => {blobId};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, Zaehler, Zaehlerstaende, TresorEintraege, Ordner, Dateien, DateiVersionen, TresorAnhaenge, Transfers, DateiCache])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -500,7 +644,7 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 15;
+  int get schemaVersion => 16;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
@@ -508,6 +652,7 @@ class AppDatabase extends _$AppDatabase {
   /// Version 13: Medikamenten-Plan (`subjekt_id` an Konversationen, Tabellen `medikamente` und `einnahmen`) mit Sync-Reset.
   /// Version 14: Zähler (Tabellen `zaehler` und `zaehlerstaende`) mit Sync-Reset.
   /// Version 15: Tresor (Tabelle `tresor_eintraege`) mit Sync-Reset.
+  /// Version 16: Dateiablage (Tabellen `ordner`, `dateien`, `datei_versionen`, `tresor_anhaenge` als Sync-Entitäten, `transfers` und `datei_cache` nur lokal) mit Sync-Reset.
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -600,6 +745,19 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(tresorEintraege);
           await m.createIndex(tresorEintraegeKonversationIdx);
         }
+        if (from < 16) {
+          await m.createTable(ordner);
+          await m.createTable(dateien);
+          await m.createTable(dateiVersionen);
+          await m.createTable(tresorAnhaenge);
+          await m.createTable(transfers);
+          await m.createTable(dateiCache);
+          await m.createIndex(ordnerParentIdx);
+          await m.createIndex(dateienOrdnerIdx);
+          await m.createIndex(dateiVersionenDateiIdx);
+          await m.createIndex(tresorAnhaengeKonversationIdx);
+          await m.createIndex(transfersZustandIdx);
+        }
       }
       // Regel: Jeder Schritt, der Tabellen für Sync-Entitäten anlegt, setzt den Sync-Fortschritt zurück. Die ältere App hat Entitäten
       // ohne Definition übersprungen, ihren Cursor aber weitergerückt; ohne Reset kämen diese Datensätze nie an. sinceRev 0 holt einen
@@ -640,6 +798,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 15) {
         // Version 15 legt eine Tabelle für eine neue Sync-Entität an (Tresor-Einträge); ohne Reset kämen schon vorhandene nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 16) {
+        // Version 16 legt Tabellen für neue Sync-Entitäten an (Ordner, Dateien, Fassungen, Tresor-Anhänge); ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from >= 6 && from < 7) {
