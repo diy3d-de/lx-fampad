@@ -39,7 +39,7 @@ describe('Migration 0024 (Wrap-ID v2) additiv auf Stand 0023', () => {
           upsert('epoche_wrap', wrapId(konv, n, fam.child.userId), { konversationId: konv, epoche: n, empfaengerId: fam.child.userId, wrap: BLOB(110 + n) }),
         ]);
       }
-      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' order by 1`)).rows).map((r) => r.tablename);
+      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'files' order by 1`)).rows).map((r) => r.tablename);
       const ohne: Record<string, string> = { epoche_wraps: " - 'key_version'", credentials: " - 'device_type' - 'backed_up'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;

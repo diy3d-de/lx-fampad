@@ -18,6 +18,7 @@ import { AppError } from '../errors.js';
 import { authorize, mayRead, rolesThatMayRead, type Actor, type Facts } from './permissions.js';
 import { columnOf, syncColumns, type EngineFlags, type EntityDef, type Registry, type Row } from './registry.js';
 import type { ConflictOut, ParsedOp, RejectCode } from './types.js';
+import { claimBlobs, releaseClaims } from '../files/claim.js';
 
 export interface OpOutcome {
   status: 'acked' | 'rejected';
@@ -333,10 +334,21 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
     }
   }
 
+  // Blobs der Dateiablage beanspruchen: als LETZTER Schritt vor dem Einfügen (jede spätere Ablehnung gibt sie wieder frei)
+  let claimed: Row = {};
+  let claimedIds: string[] = [];
+  if (def.claim) {
+    const wishes = def.claim.fields.flatMap((f) => (typeof values[f.field] === 'string' ? [{ ...f, blobId: values[f.field] as string }] : []));
+    const got = await claimBlobs(env.tx, { familyId: env.familyId, userId: env.actor.userId, entity: def.name, entityId: op.id, now: env.now }, wishes);
+    if (!got) return rejected('invalid_reference');
+    claimed = def.claim.derive?.(got) ?? {};
+    claimedIds = [...got.values()].map((b) => b.id);
+  }
+
   const rev = env.revs.rev + 1; // erst nach erfolgreichem Einfügen vergeben (sonst entstünde eine Lücke)
   const fieldRevs: Record<string, number> = {};
   for (const [name, f] of Object.entries(def.fields)) if (f.access !== 'server') fieldRevs[name] = rev;
-  const row: Row = { ...values, ...(def.onCreate?.(env.actor, env.now) ?? {}), ...(def.derive?.(env.actor, values) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
+  const row: Row = { ...values, ...claimed, ...(def.onCreate?.(env.actor, env.now) ?? {}), ...(def.derive?.(env.actor, values) ?? {}), id: op.id, familyId: env.familyId, rev, fieldRevs, createdAt: env.now, updatedAt: env.now };
   const c = syncColumns(def);
   // Wiederbeleben: der gelöschte Datensatz mit fester ID wird zu einem neuen (Tombstone verschwindet, Kinder bleiben gelöscht)
   const inserted = revive
@@ -351,7 +363,10 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
         .onConflictDoNothing() // jede Eindeutigkeit (ID, aktive Teilnehmer/Ausnahmen) ergibt eine Ablehnung, nie einen Datenbankfehler
         .returning({ id: c.id });
   // die ID gehört einem fremden Datensatz (auch einer anderen Familie) oder der Datensatz gibt es schon: nicht verraten, was davon
-  if (inserted.length === 0) return rejected('not_found');
+  if (inserted.length === 0) {
+    await releaseClaims(env.tx, env.familyId, claimedIds);
+    return rejected('not_found');
+  }
   env.revs.next();
   await logChange(env, { def, id: op.id, rev, tombstone: false, created: true, changes: wireRow(def, row) });
   const to = recipients(def, def.factsForCreate(env.actor, values, parentFacts));
@@ -473,6 +488,7 @@ async function remove(env: EngineEnv, def: EntityDef, row: Row | undefined): Pro
   if (row.deletedAt) return { status: 'acked', rev: null, conflicts: [] }; // schon gelöscht: nichts zu tun
   if (decision !== 'ok') return rejected(decision);
   if (def.guard && !def.guard('delete', row)) return rejected('forbidden');
+  if (def.deleteGuard && !(await def.deleteGuard({ tx: env.tx, familyId: env.familyId, actor: env.actor }, row))) return rejected('forbidden');
   const rev = await tombstoneTree(env, def, row);
   const to = recipients(def, facts);
   return { status: 'acked', rev, conflicts: [], roles: to.roles, users: to.users, wake: to.wake };
@@ -572,7 +588,7 @@ export async function applyOp(
         return { outcome, committedRev: null };
       }
       const revs = new RevCounter(family.rev);
-      const env: EngineEnv = { tx, registry, familyId, actor, deviceId, authorId: actor.userId, now: ctx.now(), revs, flags: { wrapKeyVersion: ctx.config.e2eeWrapKeyVersion } };
+      const env: EngineEnv = { tx, registry, familyId, actor, deviceId, authorId: actor.userId, now: ctx.now(), revs, flags: { wrapKeyVersion: ctx.config.e2eeWrapKeyVersion, filesEnabled: ctx.config.files.enabled } };
       const outcome = await evaluateOp(env, op);
       if (outcome.status === 'rejected' && revs.changed) throw new Error('Abgelehnte Op hat eine Revision vergeben');
       if (revs.changed) await tx.update(families).set({ currentRev: revs.rev }).where(eq(families.id, familyId));

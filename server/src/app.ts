@@ -16,6 +16,9 @@ import { registerAvatarRoutes } from './routes/avatar.js';
 import { registerPushRoutes } from './routes/push.js';
 import { PushService } from './push/service.js';
 import { registerWeatherRoutes } from './routes/weather.js';
+import { registerFilesRoutes } from './routes/files.js';
+import { FilesService, type FilesDeps } from './files/service.js';
+import { defaultRegistry } from './sync/index.js';
 import { registerOperatorRoutes } from './routes/operator.js';
 import { MaintenanceGate } from './operator/maintenance.js';
 import { UsageCounters } from './operator/metrics.js';
@@ -48,6 +51,8 @@ declare module 'fastify' {
     operatorMonitor?: OperatorMonitor;
     /** Wartungsmodus (nur mit Datenbank); Tests lesen den Zustand neu, nachdem sie die Datenbank von Hand geändert haben (`invalidate()`). */
     maintenance?: MaintenanceGate;
+    /** Dateiablage (nur mit Datenbank); Routen und Aufräumen gelten nur mit FILES_ENABLED. */
+    files?: FilesService;
   }
 }
 
@@ -71,6 +76,8 @@ export interface AppDeps {
   operatorProbes?: Partial<Probes>;
   /** Nur Tests: Netatmo ersetzen (Fake-HTTP). */
   weatherFetch?: typeof fetch;
+  /** Nur Tests: freier Platz und Unterbrechungspunkte der Dateiablage ersetzen. */
+  filesDeps?: FilesDeps;
   /** Nur für Tests: Ziel des Logs (Standard: stdout). */
   logStream?: Writable;
 }
@@ -100,7 +107,7 @@ export function isApiRequest(req: FastifyRequest): boolean {
   }
 }
 
-export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock, operatorProbes }: AppDeps): Promise<FastifyInstance> {
+export async function buildApp({ config, pingDb, db, auth: authOverride, now, logStream, pushFetch, pushMinIntervalMs, weatherFetch, memberDirectory, locationClock, operatorProbes, filesDeps }: AppDeps): Promise<FastifyInstance> {
   const app = Fastify({
     logger:
       config.logLevel === 'silent'
@@ -193,6 +200,9 @@ export async function buildApp({ config, pingDb, db, auth: authOverride, now, lo
     registerGuardianRoutes(app, config, authCore);
     registerAvatarRoutes(app, config, authCore);
     registerSyncRoutes(app, config, authCore);
+    const filesService = new FilesService(authCore.ctx, defaultRegistry, filesDeps);
+    app.decorate('files', filesService);
+    registerFilesRoutes(app, config, authCore, filesService);
     const push = new PushService({
       db,
       config,
