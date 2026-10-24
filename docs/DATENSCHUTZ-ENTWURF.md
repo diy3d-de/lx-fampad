@@ -71,6 +71,7 @@ Die **Chat-Nachrichten** sind seit v0.3.0 **Ende-zu-Ende verschlüsselt** (Schl�
 | **Let's Encrypt** | Zertifikate für HTTPS (Caddy holt sie automatisch) | die Domainnamen werden in öffentlichen Zertifikatstransparenz-Logs sichtbar; keine Nutzerdaten |
 | **Push-Dienst des Browsers** (Google/Mozilla/Apple) | nur bei **Web Push** im Browser | verschlüsselte Mitteilung ohne Inhalt („Neues in der Familie“); der Browser-Anbieter sieht die Push-Adresse und den Zeitpunkt |
 | **Betreiber des Abfallkalenders** (Abfall-Plattform des Landkreises, Abruf per HTTPS) | Datenquelle der Abfuhrtermine; **kein Auftragsverarbeiter, es werden keine Daten der Familie übermittelt** | nur der **Server** ruft die Termindatei ab (nie ein Gerät, nie ein Browser): die Anfrage enthält den Abruflink der Familie (Straße/Haushalt als Teil der Adresse, Zeitraum) und die IP-Adresse des Servers (Betreiber des VPS), keine Daten einzelner Personen. Antwort höchstens 1 MB, nur der konfigurierte Host, keine Weiterleitung. Der Server meldet sich dabei mit einer **gängigen Browser-Kennung** (User-Agent), weil die Plattform sonst mit 403 antwortet. **[Prüfen]** Nutzungsbedingungen der Plattform, auch zu dieser Kennzeichnung |
+| **Bright Sky** (`api.brightsky.dev`, Daten des Deutschen Wetterdienstes; nur bei eingeschalteter Vorhersage) | Datenquelle der Wettervorhersage und der Unwetterwarnungen; **kein Auftragsverarbeiter, es werden keine Daten der Familie übermittelt** | nur der **Server** ruft ab: auf zwei Nachkommastellen gerundete Gebietskoordinaten, Zeitzone, Einheiten und technisch bedingt die IP-Adresse des Servers (siehe 9c) |
 | Google Play Services | nur für Passkeys (Credential Manager) auf Android | lokal auf dem Gerät, keine Übermittlung durch die App **[Prüfen]** |
 
 Eigene Dienste statt Fremddienste: Push läuft über einen **eigenen ntfy-Server** (`ntfy.familie.lx-labs.dev`, UnifiedPush) ohne Firebase und ohne
@@ -136,6 +137,13 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 - **Erinnerung am Abend vor der Abholung** (nur Eltern und Admins, nur Android): wird **auf dem Gerät** aus den lokal gespeicherten Terminen berechnet und vom Betriebssystem angezeigt (wie die Terminerinnerungen, Abschnitt 9a). Kein Push, kein Server-Aufruf, nichts verlässt das Gerät. Einstellungen (an/aus, Uhrzeit, Arten) liegen nur lokal.
 - **Hinweis „Abfuhrtermine 20XX sind da“:** entsteht lokal, sobald die App beim Abruf ein neues Jahr bemerkt (nur Eltern/Admins, einmalig je Gerät); ohne Inhalt außer dem Jahr.
 - **Anzeige im Kalender** ist ein lokaler Schalter (Standard aus) und eine reine Anzeige: die Termine werden nie als Kalendertermine gespeichert oder synchronisiert.
+
+### 9c. Wetter-Vorhersage und amtliche Warnungen (optional, Schalter `WEATHER_FORECAST_ENABLED`)
+
+- Die **Vorhersage** und die **amtlichen Unwetterwarnungen** des Deutschen Wetterdienstes lädt ausschließlich der **Server** (nie ein Gerät) über den Dienst **Bright Sky** (`api.brightsky.dev`), der die offenen Daten des Deutschen Wetterdienstes (DWD Open Data) bereitstellt. Quellenangabe in der App: „Deutscher Wetterdienst“.
+- **Übermittelt werden nur die auf zwei Nachkommastellen gerundeten Koordinaten des Wetter-Gebiets** (ca. 1 km genau, Gebiet der Wetterstation, nicht ein Haushalt oder eine Person), die Zeitzone und die Einheiten; dabei sieht der Dienst technisch bedingt die **IP-Adresse des Servers** (nicht die der Familie). **Es werden keine Personen-, Geräte-, Konto- oder Inhaltsdaten übermittelt**; die Geräte der Familie rufen nie bei Dritten an, sie fragen nur den eigenen Server.
+- Gespeichert wird nur das streng geprüfte Ergebnis (Zahlen, feste Wettercodes, gekürzte Warntexte) in der Datenbank des Servers; ältere Stände werden überschrieben. Auf dem Gerät liegt der letzte Stand lokal (Offline-Anzeige). Es gibt keine Benachrichtigungen zu amtlichen Warnungen.
+- **[Prüfen]** Nutzungsbedingungen von Bright Sky und die DWD-Lizenz (GeoNutzV, Quellenangabe) vor dem Einschalten beachten; Bright Sky ist ein privat betriebener Dienst (kein Auftragsverarbeiter, keine Daten der Familie).
 
 ## 10. Speicherdauer und Löschung
 
