@@ -382,7 +382,8 @@ describe.each(backends)('Dateien im Sync (%s)', (backend) => {
 
   describe('Auslieferung folgt dem Datensatz', () => {
     it('verborgene Datei: nur Eltern/Admins lesen; Freigabe an die Familie öffnet sie für das Kind; Löschen sperrt alle', async () => {
-      const { dateiId, blobId } = await neueDatei(fam.parent, pdfLike(1500), { audience: 'parents', name: 'Müll Plan "2026".pdf' });
+      const { dateiId, blobId, versionId } = await neueDatei(fam.parent, pdfLike(1500), { audience: 'parents', name: 'Müll Plan "2026".pdf' });
+      expect(ids(await fam.child.pull(), 'datei_version')).toEqual([]);
       expect((await get(fam.child, blobId)).status).toBe(404);
       for (const d of [fam.parent, fam.admin, papa]) {
         const r = await get(d, blobId);
@@ -392,6 +393,8 @@ describe.each(backends)('Dateien im Sync (%s)', (backend) => {
       }
       expect(acked(await fam.parent.sync([upsert('datei', dateiId, { audience: 'family' }, await revOf('dateien', dateiId))]))).toBe(1);
       expect((await get(fam.child, blobId)).status).toBe(200);
+      // die Fassung kommt mit der Freigabe beim Kind an (sie wird neu angestoßen)
+      expect(ids(await fam.child.pull(), 'datei_version')).toEqual([versionId]);
       expect(acked(await fam.parent.sync([upsert('datei', dateiId, { audience: 'parents' }, await revOf('dateien', dateiId))]))).toBe(1);
       expect((await get(fam.child, blobId)).status).toBe(404);
       await fam.parent.sync([remove('datei', dateiId, await revOf('dateien', dateiId))]);

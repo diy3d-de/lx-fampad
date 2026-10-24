@@ -163,6 +163,8 @@ export const dateiEntity: EntityDef = {
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
   },
   rules: dateiRules,
+  // ändert sich die Stufe, werden die Fassungen neu angestoßen (Geräte, die die Datei jetzt sehen, bekommen sie)
+  visibilityFields: ['audience'],
   userRefs: ['ownerId'],
   idValid: (id: string): boolean => istUuidV4(id),
   facts: (row: Row): Facts => ({ audience: row.audience as Audience, ownerId: (row.ownerId as string | null) ?? null }),
