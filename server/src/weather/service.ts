@@ -10,6 +10,7 @@ import type { Config } from '../config.js';
 import { weatherCredentials, weatherSamples } from '../db/schema.js';
 import { leseBegrenzt } from '../http-limit.js';
 import { stationMessung, type Messung } from './parse.js';
+import { sonnenTage, stundenReihen, tagesExtreme, type SonnenTag, type Stundenreihen } from './summary.js';
 
 const API = 'https://api.netatmo.com';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -54,6 +55,12 @@ export interface WeatherView {
   min24h: number | null;
   max24h: number | null;
   series: { t: string; temperature: number }[];
+  /** Stundenreihen der letzten bis zu 7 Tage (ausgerichtet, null = kein Wert). */
+  hourly: Stundenreihen;
+  /** Tagesextreme der Temperatur, letzte 7 Kalendertage (Europe/Berlin). */
+  days: { date: string; min: number; max: number }[];
+  /** Sonnenauf-/-untergang heute und morgen (Uhrzeit mit Offset, Europe/Berlin); aus der Mitte des Suchrechtecks gerechnet, Koordinaten werden nie ausgeliefert. */
+  sun: SonnenTag[];
 }
 
 export class WeatherService {
@@ -350,6 +357,7 @@ export class WeatherService {
   async view(): Promise<WeatherView> {
     const now = this.now();
     const von = new Date(now.getTime() - 24 * HOUR_MS);
+    const b = this.cfg.bbox;
     const rows = await this.db.select().from(weatherSamples).where(gte(weatherSamples.ts, new Date(now.getTime() - SAMPLE_RETENTION_MS))).orderBy(asc(weatherSamples.ts));
     const letzte = rows[rows.length - 1];
     const tag = rows.filter((r) => r.ts >= von);
@@ -379,6 +387,9 @@ export class WeatherService {
       min24h: temps.length ? Math.min(...temps) : null,
       max24h: temps.length ? Math.max(...temps) : null,
       series: [...faecher.values()].map((f) => ({ t: f.t.toISOString(), temperature: f.temperature })),
+      hourly: stundenReihen(rows, now),
+      days: tagesExtreme(rows, now),
+      sun: sonnenTage(now, (b.latNe + b.latSw) / 2, (b.lonNe + b.lonSw) / 2),
     };
   }
 }

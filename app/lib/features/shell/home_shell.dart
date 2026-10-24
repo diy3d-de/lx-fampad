@@ -26,6 +26,7 @@ import '../../data/muell/muell_hinweis.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/neuigkeiten/neuigkeiten.dart';
 import '../../data/sync_state.dart';
+import '../../data/wetter/wetter_hinweise.dart' show wetterOeffnenProvider;
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/familien_hinweis_banner.dart';
@@ -231,6 +232,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     // Tipp auf eine Müll-Benachrichtigung (Erinnerung, "Abfuhrtermine 20XX sind da"): die Müll-Seite öffnen
     ref.listen(muellOeffnenProvider, (_, _) => _muellOeffnen());
+    // Tipp auf eine Wetter-Hinweis-Benachrichtigung: die Wetter-Seite öffnen
+    ref.listen(wetterOeffnenProvider, (_, _) => _wetterOeffnen());
     // Tipp auf eine Medikamenten-Erinnerung: die Medikamenten-Ansicht öffnen (die Nutzlast trägt nie einen Inhalt)
     ref.listen(medikamentOeffnenProvider, (_, _) => _medikamenteOeffnen());
     // Tipp auf eine Zähler-Erinnerung: die Zähler-Übersicht öffnen (nur Eltern und Admins; die Nutzlast trägt nie einen Inhalt)
@@ -333,6 +336,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(shellTabProvider.notifier).waehlen(kMuellTab);
     } else {
       unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellScreen())));
+    }
+  }
+
+  /// Öffnet die Wetter-Seite: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite.
+  void _wetterOeffnen() {
+    if (!mounted) return;
+    if (_desktopLayout) {
+      ref.read(shellTabProvider.notifier).waehlen(kWetterTab);
+    } else {
+      unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const WetterScreen())));
     }
   }
 

@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/push/push_state.dart';
+import '../../data/wetter/wetter_hinweise.dart';
+import '../../data/wetter/wetter_logik.dart' show WetterHinweisArt;
+import '../../data/wetter/wetter_state.dart';
+import '../wetter/wetter_hinweise_screen.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import 'erinnerungen_screen.dart';
@@ -29,6 +33,19 @@ class BenachrichtigungenScreen extends ConsumerWidget {
           titel: 'Erinnerungen',
           untertitel: 'terminerinnerungen auf diesem gerät',
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ErinnerungenScreen())),
+        ),
+        // Wetter-Hinweise: nur wenn der Server das Wetter anbietet
+        Consumer(
+          builder: (context, ref, _) {
+            if (!ref.watch(wetterProvider.select((s) => s.dto?.verfuegbar ?? false))) return const SizedBox.shrink();
+            final an = ref.watch(wetterHinweisEinstellungenProvider.select((e) => e.an.length));
+            return EinstellungsZeile(
+              icon: Icons.thermostat,
+              titel: 'Wetter-Hinweise',
+              untertitel: an == 0 ? 'alle aus' : '$an von ${WetterHinweisArt.values.length} an',
+              onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const WetterHinweiseScreen())),
+            );
+          },
         ),
         if (!web)
           Consumer(
