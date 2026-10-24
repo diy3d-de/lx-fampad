@@ -8,6 +8,7 @@ import { pushEndpoints } from '../db/schema.js';
 import { AppError } from '../errors.js';
 import { topicFromEndpoint } from '../push/endpoint.js';
 import type { PushService } from '../push/service.js';
+import { ALERT_KINDS, kindsToMask } from '../weather/alerts.js';
 import { parse, strictLimit } from './util.js';
 
 function isUniqueViolation(err: unknown): boolean {
@@ -74,6 +75,23 @@ export function registerPushRoutes(app: FastifyInstance, config: Config, auth: A
     const p = await auth.requireSession(req);
     const deviceId = deviceOf(p);
     await ctx.db.delete(pushEndpoints).where(and(eq(pushEndpoints.deviceId, deviceId), eq(pushEndpoints.familyId, p.familyId)));
+    return { ok: true };
+  });
+
+  // Wetter-Hinweise per Wecker: welche Arten dieses Gerät will (nur das Gerät der Sitzung; [] = aus). Der Server merkt sich nur "Gerät will Art X",
+  // nie Inhalte oder Standort. Ohne angemeldeten Push-Endpunkt gibt es nichts zu wecken (409); die Wünsche erlöschen mit dem Endpunkt.
+  app.put('/api/v1/me/weather-alerts', strikt, async (req) => {
+    const p = await auth.requireSession(req);
+    const deviceId = deviceOf(p);
+    const body = parse(z.object({ kinds: z.array(z.enum(ALERT_KINDS)).max(ALERT_KINDS.length) }).strict(), req.body);
+    if (!config.weather.enabled) throw new AppError(503, 'weather_unavailable', 'Das Wetter ist auf dem Server nicht eingerichtet.');
+    const mask = kindsToMask([...new Set(body.kinds)]);
+    const rows = await ctx.db
+      .update(pushEndpoints)
+      .set({ weatherKinds: mask })
+      .where(and(eq(pushEndpoints.deviceId, deviceId), eq(pushEndpoints.familyId, p.familyId)))
+      .returning({ d: pushEndpoints.deviceId });
+    if (rows.length === 0) throw new AppError(409, 'no_endpoint', 'Für dieses Gerät ist Push nicht angemeldet.');
     return { ok: true };
   });
 

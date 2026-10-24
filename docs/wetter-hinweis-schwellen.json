@@ -1,0 +1,9 @@
+{
+  "_hinweis": "Gemeinsame Schwellen der Wetter-Hinweise. Server (server/src/weather/alerts.ts) und App (app/lib/data/wetter/wetter_logik.dart) rechnen mit denselben Werten; je ein Test (server/test/weather-alerts.test.ts, app/test/wetter_schwellen_test.dart) liest diese Datei und vergleicht. Wer einen Wert ändert, ändert beide Seiten und diese Datei.",
+  "frostUnterGradC": 2,
+  "windBoeenUeberKmh": 50,
+  "hitzeUeberGradC": 30,
+  "druckAbfallMehrAlsHpa3h": 4,
+  "maxAlterMinuten": 40,
+  "abstandStunden": 6
+}
