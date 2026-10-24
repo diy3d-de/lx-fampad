@@ -188,6 +188,7 @@ const kDesktopTabs = <NavTab>[
   NavTab('Müll', Icons.delete_outline, Icons.delete),
   NavTab('Medikamente', Icons.medication_outlined, Icons.medication),
   NavTab('Zähler', Icons.speed_outlined, Icons.speed),
+  NavTab('Tresor', Icons.lock_outline, Icons.lock),
 ];
 
 /// Ab dieser Fensterbreite zeigt die App das Desktop-Layout (Seitenleiste, Karten-Raster); darunter bleibt es mobil.

@@ -25,6 +25,7 @@ import '../update/update_service.dart';
 import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
 import '../zaehler/zaehler_anzeige.dart' show zaehlerFaelligProvider;
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
+import '../../data/tresor/tresor_state.dart' show tresorDarfProvider;
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -320,6 +321,8 @@ class _Seitenleiste extends ConsumerWidget {
     // Zähler: nur für Eltern und Admins in der Seitenleiste (Kinder sehen den Eintrag nie), mit der Zahl der fälligen Ablesungen
     final zaehlerDarf = ref.watch(zaehlerDarfProvider);
     final zaehlerFaellig = ref.watch(zaehlerFaelligProvider);
+    // Tresor: nur für Eltern und Admins in der Seitenleiste (Kinder sehen den Eintrag nie), ohne Badge
+    final tresorDarf = ref.watch(tresorDarfProvider);
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -384,7 +387,7 @@ class _Seitenleiste extends ConsumerWidget {
                 child: ListView(
                   children: [
                     for (var i = 0; i < kDesktopTabs.length; i++)
-                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || kDateienSichtbar) && (i != kZaehlerTab || zaehlerDarf))
+                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || kDateienSichtbar) && (i != kZaehlerTab || zaehlerDarf) && (i != kTresorTab || tresorDarf))
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,

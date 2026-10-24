@@ -55,3 +55,6 @@ export const pinId = (nachrichtId: string): string => uuidAusSchluessel(`pin:${n
 
 /** Feste ID der Zähler-Konversation einer Familie (Abschnitt 6l): je Familie genau eine, daraus abgeleitet (niemand kann sie vorab belegen). */
 export const zaehlerChatId = (familyId: string): string => uuidAusSchluessel(`zaehler:${familyId.toLowerCase()}`);
+
+/** Feste ID der Tresor-Konversation einer Familie (Abschnitt 6m): je Familie genau eine, daraus abgeleitet (niemand kann sie vorab belegen). */
+export const tresorChatId = (familyId: string): string => uuidAusSchluessel(`tresor:${familyId.toLowerCase()}`);

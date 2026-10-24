@@ -42,8 +42,10 @@ import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
 import '../medikamente/medikamente_screen.dart';
 import '../zaehler/zaehler_screen.dart';
+import '../tresor/tresor_screen.dart';
 import '../../data/zaehler/zaehler_hinweis.dart';
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
+import '../../data/tresor/tresor_state.dart' show tresorDarfProvider;
 import '../muell/muell_screen.dart';
 import '../standort/standort_screen.dart';
 import '../tasks/tasks_screen.dart';
@@ -65,7 +67,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(10, (_) => GlobalKey());
+  final _keys = List.generate(11, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -81,6 +83,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   bool _muellBesucht = false;
   bool _medikamenteBesucht = false;
   bool _zaehlerBesucht = false;
+  bool _tresorBesucht = false;
   List<Widget> get _desktopScreens => [
     const DesktopHome(),
     ..._screens.sublist(1),
@@ -90,6 +93,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     if (_medikamenteBesucht) MedikamenteScreen(key: _keys[8], eingebettet: true) else const SizedBox.shrink(),
     // Zähler: erst gebaut, wenn der Bereich gewählt wurde (nur Eltern und Admins; für alle anderen bleibt es leer)
     if (_zaehlerBesucht) ZaehlerScreen(key: _keys[9], eingebettet: true) else const SizedBox.shrink(),
+    // Tresor: ebenso erst nach dem Wählen gebaut (nur Eltern und Admins); beim Verlassen der Rolle bleibt nur die neutrale Seite
+    if (_tresorBesucht) TresorScreen(key: _keys[10], eingebettet: true) else const SizedBox.shrink(),
   ];
 
   /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
@@ -244,6 +249,12 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (mounted && !ref.read(zaehlerDarfProvider) && ref.read(shellTabProvider) == kZaehlerTab) ref.read(shellTabProvider.notifier).waehlen(0);
       });
     }
+    // Wer den Tresor nicht (mehr) sehen darf (Rollenwechsel zur Laufzeit), landet nie im Tresor-Bereich
+    if (!ref.watch(tresorDarfProvider) && tab == kTresorTab) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !ref.read(tresorDarfProvider) && ref.read(shellTabProvider) == kTresorTab) ref.read(shellTabProvider.notifier).waehlen(0);
+      });
+    }
     return LayoutBuilder(builder: (context, c) {
       _desktopLayout = c.maxWidth >= kDesktopBreakpoint;
       // Desktop-Layout ab kDesktopBreakpoint, darunter unverändert mobil
@@ -253,6 +264,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (tab == kMuellTab) _muellBesucht = true;
         if (tab == kMedikamenteTab) _medikamenteBesucht = true;
         if (tab == kZaehlerTab && ref.read(zaehlerDarfProvider)) _zaehlerBesucht = true;
+        if (tab == kTresorTab && ref.read(tresorDarfProvider)) _tresorBesucht = true;
         return DesktopShell(screens: _desktopScreens);
       }
       // Standort ist nur im Desktop-Layout ein Tab: nach dem Verkleinern des Fensters zeigt die Leiste wieder die Startseite

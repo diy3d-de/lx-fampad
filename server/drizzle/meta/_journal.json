@@ -225,6 +225,13 @@
       "when": 1792793551623,
       "tag": "0031_zaehler",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792840839756,
+      "tag": "0032_tresor",
+      "breakpoints": true
     }
   ]
 }

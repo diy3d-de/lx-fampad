@@ -246,6 +246,10 @@ class ChatOpVorbereiter implements OpVorbereiter {
         final zeile = await (db.select(db.zaehlerstaende)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
         konv ??= zeile?.konversationId;
         antwortAuf = f['zaehlerId'] is String ? f['zaehlerId'] as String : zeile?.zaehlerId;
+      case 'tresor_eintrag':
+        // Tresor (Abschnitt 6m): kein Bezug (Art `t`, gebunden an Konversation, eigene ID und Bearbeiter)
+        final zeile = await (db.select(db.tresorEintraege)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
       case 'einnahme':
         // Bezug ist das Medikament (Art `n`): eine Einnahme lässt sich nicht an ein anderes Medikament hängen
         final zeile = await (db.select(db.einnahmen)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
@@ -254,18 +258,20 @@ class ChatOpVorbereiter implements OpVorbereiter {
     }
     if (konv == null) return null;
     final konversationId = konv;
-    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', 'zaehler' => 'z', 'zaehlerstand' => 'a', _ => null };
-    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'zaehler' && antwortAuf == null) return null;
+    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', 'zaehler' => 'z', 'zaehlerstand' => 'a', 'tresor_eintrag' => 't', _ => null };
+    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'zaehler' && op.entity != 'tresor_eintrag' && antwortAuf == null) return null;
+    // ein Tresor-Eintrag darf größer sein als eine Nachricht (16000 statt 8000 Byte Klartext)
+    final maxBytes = op.entity == 'tresor_eintrag' ? kMaxTresorKlartextBytes : kMaxNachrichtBytes;
     final k = await krypto();
     if (k == null) return null;
     // frischer Stand der Schlüssel (der Abgleich hat vielleicht gerade eine neue Epoche und ihren Wrap geholt)
     await k.aktualisieren();
     if (!klar) {
-      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf, art: art);
+      final neu = await k.nachrichtNeuVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, wire: text, antwortAuf: antwortAuf, art: art, maxBytes: maxBytes);
       if (neu == null) return null;
       return neu == text ? op.fieldsJson : jsonEncode({...f, feld: neu});
     }
-    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf, art: art);
+    final wire = await k.nachrichtVersiegeln(konversationId: konversationId, nachrichtId: op.entityId, klartext: text.substring(kPraefixLokal.length), antwortAuf: antwortAuf, art: art, maxBytes: maxBytes);
     if (wire == null) return null;
     return jsonEncode({...f, feld: wire});
   }

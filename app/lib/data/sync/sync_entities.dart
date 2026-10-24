@@ -10,6 +10,7 @@ import '../app_database.dart';
 import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
 import 'sync_medikamente.dart';
+import 'sync_tresor.dart';
 import 'sync_zaehler.dart';
 
 /// Untergeordnete Entität: Zeilen von [entity], deren Feld [field] auf die ID des Elternteils zeigt, hängen an ihm (Löschen, Sichtbarkeit).
@@ -423,7 +424,7 @@ class KonversationEntitaet extends SyncEntity {
   String get name => 'konversation';
 
   @override
-  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId'), KindLink('zaehler', 'konversationId'), KindLink('zaehlerstand', 'konversationId')];
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId'), KindLink('zaehler', 'konversationId'), KindLink('zaehlerstand', 'konversationId'), KindLink('tresor_eintrag', 'konversationId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -969,6 +970,7 @@ final Map<String, SyncEntity> syncEntities = {
     EinnahmeEntitaet(),
     ZaehlerEntitaet(),
     ZaehlerstandEntitaet(),
+    TresorEintragEntitaet(),
   ])
     e.name: e,
 };

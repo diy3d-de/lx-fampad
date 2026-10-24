@@ -43,7 +43,7 @@ export const listKind = pgEnum('list_kind', ['shopping', 'packing', 'custom', 't
 export const listAudience = pgEnum('list_audience', ['parents', 'family']);
 export const fileKind = pgEnum('file_kind', ['file', 'folder']);
 /** Art einer Konversation: der Familienchat (genau einer je Familie), ein Direktchat (zwei Personen) oder eine Gruppe. */
-export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group', 'meds', 'zaehler']);
+export const konversationArt = pgEnum('konversation_art', ['family', 'direct', 'group', 'meds', 'zaehler', 'tresor']);
 
 const id = () => uuid('id').primaryKey().default(sql`gen_random_uuid()`);
 const createdAt = () => timestamp('created_at', { withTimezone: true }).notNull().defaultNow();
@@ -1311,7 +1311,8 @@ export const konversationen = pgTable(
         or (${t.art} = 'direct' and cardinality(${t.teilnehmer}) = 2)
         or (${t.art} = 'group' and cardinality(${t.teilnehmer}) between 2 and 20)
         or (${t.art}::text = 'meds' and cardinality(${t.teilnehmer}) between 1 and 20)
-        or (${t.art}::text = 'zaehler' and cardinality(${t.teilnehmer}) between 1 and 20)`,
+        or (${t.art}::text = 'zaehler' and cardinality(${t.teilnehmer}) between 1 and 20)
+        or (${t.art}::text = 'tresor' and cardinality(${t.teilnehmer}) between 1 and 20)`,
     ),
   ],
 );
@@ -1590,6 +1591,37 @@ export const zaehlerstaende = pgTable(
       .on(t.familyId, t.bearbeiterId, t.createdAt)
       .where(sql`${t.bearbeiterId} is not null`),
     check('zaehlerstaende_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 2048`),
+  ],
+);
+
+/**
+ * Tresor (Abschnitt 6m): ein Eintrag des gemeinsamen Eltern-Tresors (WLAN, Versicherung, Ausweis, Arzt, Notfall-Infos, ...), Kind der Tresor-Konversation (`konversationen.art = 'tresor'`,
+ * eine je Familie, nur Eltern und Admins als Teilnehmer). `inhalt` ist eine Ende-zu-Ende verschlüsselte, signierte e1-Hülle (Kategorie, Titel, Felder, Notiz): der Server sieht nur Struktur
+ * und Größe. Grenze 24576 Zeichen der Hülle = 16000 Byte Klartext.
+ */
+export const tresorEintraege = pgTable(
+  'tresor_eintraege',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    unique('tresor_eintraege_family_id_uq').on(t.familyId, t.id),
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('tresor_eintraege_konversation_idx').on(t.familyId, t.konversationId),
+    index('tresor_eintraege_family_rev_idx').on(t.familyId, t.rev),
+    index('tresor_eintraege_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('tresor_eintraege_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('tresor_eintraege_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 24576`),
   ],
 );
 
