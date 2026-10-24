@@ -105,12 +105,12 @@ Einmalig vorbereiten (als der Benutzer, der den Job ausführt):
 ```bash
 mkdir -p ~/lx-fampad-backup && cp lx-fampad-pull.sh ~/lx-fampad-backup/
 # Host-Schlüssel des Servers festhalten und den Fingerabdruck mit dem Server vergleichen (ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub dort):
-ssh-keyscan -p <SSH-Port> -t ed25519 familie.lx-labs.dev > ~/.ssh/lx-fampad-backup.known_hosts && ssh-keygen -lf ~/.ssh/lx-fampad-backup.known_hosts
+ssh-keyscan -p <SSH-Port> -t ed25519 familyhub.lx-labs.dev > ~/.ssh/lx-fampad-backup.known_hosts && ssh-keygen -lf ~/.ssh/lx-fampad-backup.known_hosts
 # Probe, ohne etwas zu schreiben
 LXB_DEST=/volume1/backup/lx-fampad bash ~/lx-fampad-backup/lx-fampad-pull.sh --dry-run
 ```
 
-Einstellungen per Umgebungsvariable (Standardwerte im Skript): `LXB_SERVER` (Standard `familie.lx-labs.dev`), `LXB_PORT`, `LXB_KEY`, `LXB_KNOWN_HOSTS`,
+Einstellungen per Umgebungsvariable (Standardwerte im Skript): `LXB_SERVER` (Standard `familyhub.lx-labs.dev`), `LXB_PORT`, `LXB_KEY`, `LXB_KNOWN_HOSTS`,
 `LXB_DEST`, `LXB_MAX_AGE_HOURS` (36), `LXB_KEEP_DAILY/WEEKLY/MONTHLY`, `LXB_NOTIFY_CMD` (Befehl, der bei Alarm mit der Meldung aufgerufen wird).
 Die Namen der Ordner sind UTC-Zeitstempel; die Rotation rechnet ebenfalls in UTC.
 
@@ -205,7 +205,7 @@ Server **03:30** (plus bis zu 5 Minuten Zufallsverzögerung, die Sicherung dauer
 
 ```bash
 # Nur zum Ausprobieren (holt ALLES ungeprüft; ohne -a, damit keine Links/Rechte/Besitzer vom Server übernommen werden):
-rsync -rt --no-links --no-perms --no-owner --no-group --no-devices --no-specials --max-size=2G --exclude '.tmp-*' -e 'ssh -i ~/.ssh/lx-fampad-backup' lxbackup@familie.lx-labs.dev:/ /ziel/probe/
+rsync -rt --no-links --no-perms --no-owner --no-group --no-devices --no-specials --max-size=2G --exclude '.tmp-*' -e 'ssh -i ~/.ssh/lx-fampad-backup' lxbackup@familyhub.lx-labs.dev:/ /ziel/probe/
 ```
 
 ## 5. Aufbewahrung und Löschen (Datenschutz)

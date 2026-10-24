@@ -1,6 +1,6 @@
 # API (Phase 1a bis 1c: Konten, Anmeldung, Sync)
 
-Stand: Phase 1c-4a (Sync-Kern mit Listen, Kalender: Termine, Teilnehmer, Ausnahmen, und Aufgaben mit Unteraufgaben; Konten und Anmeldung seit 1a/1b). Basis: `https://familie.lx-labs.dev/api/v1`, REST mit JSON (`Content-Type: application/json`). Der Sync (`POST /sync`) ist im Abschnitt „Sync“ beschrieben; Chat und Dateien kommen als weitere Entitäten dazu. Diese Beschreibung ist Markdown statt OpenAPI; die Validierung steckt in den Zod-Schemas in
+Stand: Phase 1c-4a (Sync-Kern mit Listen, Kalender: Termine, Teilnehmer, Ausnahmen, und Aufgaben mit Unteraufgaben; Konten und Anmeldung seit 1a/1b). Basis: `https://familyhub.lx-labs.dev/api/v1`, REST mit JSON (`Content-Type: application/json`). Der Sync (`POST /sync`) ist im Abschnitt „Sync“ beschrieben; Chat und Dateien kommen als weitere Entitäten dazu. Diese Beschreibung ist Markdown statt OpenAPI; die Validierung steckt in den Zod-Schemas in
 `server/src/routes/` (jedes Objekt ist `strict`: unbekannte Felder führen zu `400`).
 
 ## Allgemeines
@@ -100,7 +100,7 @@ WebSocket-Anmeldefehler zählen mit. Die Erzeugung von Challenges ohne Anmeldung
 
 ## Einladung einlösen (ohne Anmeldung)
 
-Das Token steht im Einladungslink im **URL-Fragment** (`https://familie.lx-labs.dev/#/einladung/<token>`) und wird von der App nur im **POST-Body** gesendet.
+Das Token steht im Einladungslink im **URL-Fragment** (`https://familyhub.lx-labs.dev/#/einladung/<token>`) und wird von der App nur im **POST-Body** gesendet.
 
 | Methode, Pfad | Body | Antwort |
 | --- | --- | --- |
@@ -723,7 +723,7 @@ Push ist ein **Wecker ohne Inhalt**: kein Text, kein Titel, keine Tags, keine Na
 ## WebSocket `/ws`
 
 1. `POST /ws-ticket` (angemeldet) → `{ ticket }`.
-2. `wss://familie.lx-labs.dev/ws` öffnen (kein Ticket in der URL!); der Server sendet `{type:"hello", protocolVersion, serverVersion}`.
+2. `wss://familyhub.lx-labs.dev/ws` öffnen (kein Ticket in der URL!); der Server sendet `{type:"hello", protocolVersion, serverVersion}`.
 3. Als **erste Nachricht** `{ "type": "auth", "ticket": "<ticket>" }` senden (innerhalb von 5 s). Antwort `{type:"ready"}`; bei ungültigem, abgelaufenem oder schon benutztem Ticket schließt der Server mit Code `4401` und zählt den Fehlversuch gegen die IP.
    Danach meldet der Server nach **jedem Commit einer Änderung** im Sync den Sockets der Familie, **deren Rolle die Änderung sehen darf**, `{ "type": "rev", "rev": N }` (ohne Inhalt; auch an das Gerät, das die Änderung gesendet hat). Wer einen Datensatz nicht sehen darf, erfährt nicht einmal, dass es eine Änderung gab; entzieht eine Änderung die Sicht (Freigabe zurückgenommen), erfahren es die Rollen vorher und nachher. Das Bereinigen von Verweisen beim Entfernen eines Mitglieds geht an alle Rollen. Änderungen an **Privatchats** (Direkt- und Gruppenchats) gehen nur an deren Teilnehmer (nach Person, nicht nach Rolle). Der Client gleicht daraufhin ab (`POST /sync`), wenn `N` größer als sein Stand ist. Der Client kann `{ "type": "ping" }` senden und bekommt `{ "type": "pong" }` (die App tut das alle 25 s und verbindet neu, wenn das Pong ausbleibt).
 4. Browser mit gültigem Session-Cookie sind schon beim Upgrade angemeldet.

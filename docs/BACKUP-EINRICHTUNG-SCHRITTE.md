@@ -213,16 +213,16 @@ rsync --version | head -1
 **Erwartung:** `2025-12-31` (GNU-date), bash ≥ 4, rsync ≥ 3.4.0 (älter: Warnung, Paket/DSM aktualisieren). Kommt bei `date` ein Fehler, ist es BusyBox: Skript im Container ausführen oder GNU coreutils installieren (siehe `BACKUP.md`).
 
 ```bash
-ssh-keyscan -t ed25519 familie.lx-labs.dev > ~/.ssh/lx-fampad-backup.known_hosts
+ssh-keyscan -t ed25519 familyhub.lx-labs.dev > ~/.ssh/lx-fampad-backup.known_hosts
 ssh-keygen -lf ~/.ssh/lx-fampad-backup.known_hosts
 ```
 
-**Erwartung:** `256 SHA256:… familie.lx-labs.dev (ED25519)`. **Vergleiche den Fingerabdruck** mit dem auf dem Server (`ssh lx-labs ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`): er muss gleich sein.
+**Erwartung:** `256 SHA256:… familyhub.lx-labs.dev (ED25519)`. **Vergleiche den Fingerabdruck** mit dem auf dem Server (`ssh lx-labs ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub`): er muss gleich sein.
 
 3. Zugang testen (der erzwungene Befehl lässt nur lesen zu, eine Meldung von `rrsync` ist die richtige Antwort):
 
 ```bash
-ssh -i ~/.ssh/lx-fampad-backup -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/lx-fampad-backup.known_hosts lxbackup@familie.lx-labs.dev
+ssh -i ~/.ssh/lx-fampad-backup -o IdentitiesOnly=yes -o UserKnownHostsFile=$HOME/.ssh/lx-fampad-backup.known_hosts lxbackup@familyhub.lx-labs.dev
 ```
 
 **Erwartung:** eine Meldung wie `rrsync error: SSH_ORIGINAL_COMMAND does not run rsync` oder sofortiges Ende ohne Shell, **kein** Eingabeprompt. `Permission denied (publickey)` bedeutet: falscher Schlüssel, falsche `NAS_IP` (Schritt 2: Absenderadresse prüfen) oder `lxbackup` nicht in `AllowUsers`.
@@ -237,7 +237,7 @@ LXB_DEST=/volume1/backup/lx-fampad bash /volume1/backup/lx-fampad-pull.sh
 **Erwartung (echter Lauf):**
 
 ```
-==> Abholen von familie.lx-labs.dev (nur lesend, ohne --delete, zuerst in /volume1/backup/lx-fampad/.staging)
+==> Abholen von familyhub.lx-labs.dev (nur lesend, ohne --delete, zuerst in /volume1/backup/lx-fampad/.staging)
     zu holen: … MB
     neu und ok: <YYYYMMDD-HHMMSS>
 ==> Prüfen

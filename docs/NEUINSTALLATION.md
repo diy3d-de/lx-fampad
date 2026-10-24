@@ -59,7 +59,7 @@ noch einmal starten, bereits Erledigtes wird erkannt und übersprungen. Vorhande
   `RELEASE_CERT_SHA256` und ggf. die Wetter-Werte. Ohne diese Datei läuft das Skript auch, aber ohne tägliche Sicherung.
 - [ ] Zugang zu **netcup** (neuen Server bestellen), **Cloudflare** (DNS), **GitHub** (Deploy-Key eintragen), dem **NAS**.
 - [ ] **Nicht auf dem Server und nicht in der Sicherung** (getrennt aufbewahrt und jetzt griffbereit): privater age-Schlüssel, **Android-Keystore**, **Update-Signaturschlüssel** (`UPDATE_SIGNING_KEY`), Netatmo-Zugangsdaten.
-- [ ] Einen Tag vorher (nur beim geplanten Umzug): **TTL** der DNS-Einträge `familie` und `ntfy.familie` auf 300 Sekunden senken.
+- [ ] Einen Tag vorher (nur beim geplanten Umzug): **TTL** der DNS-Einträge `familyhub` und `ntfy.familyhub` auf 300 Sekunden senken.
 
 Welche Schlüssel und Geheimnisse es überhaupt gibt, wo sie entstehen, wo sie hingehören und was ohne sie passiert, steht in Abschnitt 2a (Schlüssel-Landkarte).
 
@@ -109,7 +109,7 @@ Alle Beispielwerte sind Platzhalter (`age1…`, `AA:BB:…`, `tk_…`); echte We
 | --- | --- | --- | --- |
 | C1 | **GitHub-Secrets für den Release-Upload:** `VPS_KNOWN_HOSTS` (Ausgabe von `ssh-keyscan -t ed25519 <IP>`; Fingerabdruck mit `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` auf dem Server vergleichen), `VPS_HOST`, `VPS_USER` (`lx`), `VPS_SSH_KEY` (privater Teil von A9). Diese vier **nur** in der Environment `vps-deploy`; `ANDROID_*` im Repository, `UPDATE_SIGNING_KEY` nur in `release`. Optional die Variable `UPDATE_MIN_VERSION` (kein Geheimnis) | GitHub > Settings > Secrets and variables > Actions bzw. Environments | Nur der optionale Upload schlägt fehl; Bau und Signatur laufen weiter, hochladen dann von Hand |
 | C2 | **Deploy-Key bei GitHub eintragen** (B2) | bei der Pause der Phase `code` | Skript hält an |
-| C3 | **NAS lernt den neuen Host-Schlüssel:** `ssh-keygen -R familie.lx-labs.dev -f ~/.ssh/lx-fampad-backup.known_hosts`, dann `ssh-keyscan -t ed25519 familie.lx-labs.dev >> …`, Fingerabdruck vergleichen; Probe: `lx-fampad-pull.sh --dry-run`. Der NAS-Schlüssel (A4) bleibt gültig | auf dem NAS | Abholung bricht mit Alarm ab (strikte Host-Prüfung); der Server hat dann nur seine 3 lokalen Sicherungen |
+| C3 | **NAS lernt den neuen Host-Schlüssel:** `ssh-keygen -R familyhub.lx-labs.dev -f ~/.ssh/lx-fampad-backup.known_hosts`, dann `ssh-keyscan -t ed25519 familyhub.lx-labs.dev >> …`, Fingerabdruck vergleichen; Probe: `lx-fampad-pull.sh --dry-run`. Der NAS-Schlüssel (A4) bleibt gültig | auf dem NAS | Abholung bricht mit Alarm ab (strikte Host-Prüfung); der Server hat dann nur seine 3 lokalen Sicherungen |
 | C4 | **Ersten Admin anlegen:** `sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js --family "<Familienname>" [--pin]`. Ausgabe: **Einladungslink** (Einmaltoken, 7 Tage gültig, in der Datenbank nur als Hash); `--pin` verlangt zusätzlich eine 6-stellige PIN, getrennt weitergeben. Danach Passkey oder Passwort + TOTP einrichten und die Wiederherstellungscodes notieren | Server; Link im Browser | ohne ihn kein Konto. Link abgelaufen: Befehl wiederholen (ersetzt die Einladung); Admin ausgesperrt: `--reset <E-Mail>` |
 | C5 | **Betreiber setzen:** `sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/operator.js grant <E-Mail>` | Server | nur die Ansicht „Betrieb“ fehlt |
 | C6 | **Netatmo eintragen** (A10): `sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/weather-setup.js` (Eingabe unsichtbar, Werte danach nur verschlüsselt in der Datenbank), dann den Wetter-Dienst starten (`--wetter-starten --phase anwendung` oder `sudo systemctl enable --now lx-fampad-weather`) | Server | kein Wetter |
@@ -117,7 +117,7 @@ Alle Beispielwerte sind Platzhalter (`age1…`, `AA:BB:…`, `tk_…`); echte We
 | C8 | **Sicherung abnehmen:** Wiederherstellungstest mit dem **privaten** age-Schlüssel (A1) auf deinem PC (`deploy/backup/wiederherstellung-test.sh`) mit einer vom NAS geholten Sicherung des neuen Servers | PC | die Sicherung gilt als ungeprüft |
 | C9 | **NAS-Rückmeldung neu einrichten** (nur wenn du sie nutzt; sie steht in keiner Sicherung und fehlt nach einem Umzug still): `sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey '<A11, öffentlicher Teil>' --nas-ip '<NAS-IP>'`, dann ohne `--dry-run` (Anleitung: `BACKUP-EINRICHTUNG-SCHRITTE.md`, Abschnitt 11; mit dem Assistenten: `bash umzug.sh --weiter nasstatus`) | Server | „Betrieb“ zeigt „noch keine Rückmeldung vom NAS“, keine Warnungen „NAS“ |
 
-DNS (Cloudflare, `familie` und `ntfy.familie`, DNS only) ist kein Schlüssel, gehört aber vor die Phase `caddy` (Abschnitt 6, Punkt 1).
+DNS (Cloudflare, `familyhub` und `ntfy.familyhub`, DNS only) ist kein Schlüssel, gehört aber vor die Phase `caddy` (Abschnitt 6, Punkt 1).
 
 ### Reihenfolge
 
@@ -153,7 +153,7 @@ Der **Personenschlüssel** für die Ende-zu-Ende-Verschlüsselung der Chats ents
 
 ### Passkey-Domain (WebAuthn) und Android-App-Links
 
-- **Domain/RP-ID:** `PUBLIC_URL=https://familie.lx-labs.dev` in der `env` (aus `server/.env.example`); die RP-ID ist standardmäßig der Hostname daraus (`WEBAUTHN_RP_ID` ist in der Vorlage auskommentiert). Das ist **kein Schlüssel, aber an die Passkeys gebunden**: Ein Wechsel macht alle Passkeys unbrauchbar. Das Skript prüft `PUBLIC_URL` auf diese Domain.
+- **Domain/RP-ID:** `PUBLIC_URL=https://familyhub.lx-labs.dev` in der `env` (aus `server/.env.example`); die RP-ID ist standardmäßig der Hostname daraus (`WEBAUTHN_RP_ID` ist in der Vorlage auskommentiert). Das ist **kein Schlüssel, aber an die Passkeys gebunden**: Ein Wechsel macht alle Passkeys unbrauchbar. Das Skript prüft `PUBLIC_URL` auf diese Domain.
 - **Android:** Passkeys der App brauchen zwei Dinge, beide aus A7: `assetlinks.json` (Beziehungen `get_login_creds` und `handle_all_urls`, Paket `dev.lx_labs.fampad`) und `WEBAUTHN_ORIGINS=android:apk-key-hash:…` in der `env`. Beides trägt das Skript aus `RELEASE_CERT_SHA256` ein; in der Produktion nur der Release-Fingerabdruck.
 - Ändert sich der Keystore (A6), ändert sich der Fingerabdruck: `assetlinks.json` und `WEBAUTHN_ORIGINS` müssen nachgezogen werden (`deploy/README.md`, Abschnitt 9).
 
@@ -257,7 +257,7 @@ bash bootstrap-server.sh --params neuinstallation.params --lx-anlegen           
 
 Ziel: derselbe Stand wie zur letzten Sicherung (höchstens ca. 24 Stunden Verlust), mit denselben Konten, Anmeldedaten und Schlüsseln.
 
-1. Abschnitt 3 erledigen. Die **Domain bleibt `familie.lx-labs.dev`**: Das ist die Passkey-Domain (RP-ID); sie darf sich nie ändern. Das Skript lehnt eine Sicherung mit anderer Domain ab.
+1. Abschnitt 3 erledigen. Die **Domain bleibt `familyhub.lx-labs.dev`**: Das ist die Passkey-Domain (RP-ID); sie darf sich nie ändern. Das Skript lehnt eine Sicherung mit anderer Domain ab.
 2. **Sicherung auf den Server kopieren** (vom PC aus; die Dateien sind verschlüsselt): `scp -r /pfad/archiv/20261020-033000 root@<NEUE-IP>:/root/sicherung/`. Danach auf dem Server: `chown -R root:root /root/sicherung && chmod -R go-w /root/sicherung` (das Skript verlangt root-Eigentum und keine Gruppen-/Welt-Schreibrechte; fehlt ein Archiv in `SHA256SUMS`, bricht es ab).
    Läuft auf dem Server schon ein **Swap** (`cat /proc/swaps`), zuerst `swapoff -a` (das Skript bricht sonst vor dem Einlesen des Schlüssels ab, siehe Sicherheitsregeln).
 3. In die Parameterdatei den **Code-Stand** eintragen (`GIT_REF=v0.6.5` o. ä.) und die `BACKUP_*`-Werte, damit der neue Server wieder gesichert wird.
@@ -302,11 +302,11 @@ DNS umstellen; Schritt 7. Einzelheiten und Rückfall: `WIEDERHERSTELLUNG.md`, Ab
 
 | # | Schritt | Wann | Wie |
 | --- | --- | --- | --- |
-| 1 | **DNS** (Cloudflare): A-Einträge `familie` und `ntfy.familie` auf die IP des neuen Servers, **DNS only** (graue Wolke), AAAA nur, wenn der Server IPv6 hat | nach dem Skriptlauf (Wiederherstellung/Umzug) bzw. vorher (leere Neuinstallation) | danach `bash bootstrap-server.sh --params … --phase caddy,pruefung`; `dig +short familie.lx-labs.dev` zeigt zuerst die neue IP |
+| 1 | **DNS** (Cloudflare): A-Einträge `familyhub` und `ntfy.familyhub` auf die IP des neuen Servers, **DNS only** (graue Wolke), AAAA nur, wenn der Server IPv6 hat | nach dem Skriptlauf (Wiederherstellung/Umzug) bzw. vorher (leere Neuinstallation) | danach `bash bootstrap-server.sh --params … --phase caddy,pruefung`; `dig +short familyhub.lx-labs.dev` zeigt zuerst die neue IP |
 | 2 | **Firewall:** nur 22, 80, 443; SSH nur mit Schlüssel (Passwort-Login aus) | vor dem ersten Lauf | netcup-Firewall oder `ufw`; Skript prüft und warnt nur |
 | 3 | **Deploy-Key bei GitHub** eintragen | bei der Pause in der Phase `code` | öffentlichen Schlüssel aus der Ausgabe kopieren, Deploy key ohne Schreibrecht |
 | 4 | **GitHub-Secrets** für den Release-Upload aktualisieren | wenn du den Upload per Actions nutzt | `VPS_KNOWN_HOSTS` = neuer SSH-Host-Schlüssel (`ssh-keyscan -t ed25519 <IP>`, Fingerabdruck mit `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` auf dem Server vergleichen), ggf. `VPS_HOST`; der Schlüssel aus `CI_DEPLOY_PUBKEY` muss zum Secret `VPS_SSH_KEY` passen |
-| 5 | **NAS neu verbinden** | nach dem Lauf | auf dem NAS den neuen Host-Schlüssel eintragen: `ssh-keygen -R familie.lx-labs.dev -f ~/.ssh/lx-fampad-backup.known_hosts`, `ssh-keyscan -t ed25519 familie.lx-labs.dev >> …`, Fingerabdruck vergleichen; der NAS-Schlüssel selbst bleibt gültig, den Zugang auf dem Server hat das Skript aus `BACKUP_NAS_*` wieder angelegt; Probe: `lx-fampad-pull.sh --dry-run` (`BACKUP.md`, Abschnitt 4) |
+| 5 | **NAS neu verbinden** | nach dem Lauf | auf dem NAS den neuen Host-Schlüssel eintragen: `ssh-keygen -R familyhub.lx-labs.dev -f ~/.ssh/lx-fampad-backup.known_hosts`, `ssh-keyscan -t ed25519 familyhub.lx-labs.dev >> …`, Fingerabdruck vergleichen; der NAS-Schlüssel selbst bleibt gültig, den Zugang auf dem Server hat das Skript aus `BACKUP_NAS_*` wieder angelegt; Probe: `lx-fampad-pull.sh --dry-run` (`BACKUP.md`, Abschnitt 4) |
 | 5a | **NAS-Rückmeldung („Status vom NAS“) neu einrichten** | nach Punkt 5 (Host-Schlüssel und Probe-Abholung) | auf dem Server: `sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey '<öffentlicher zweiter Schlüssel, auf dem NAS ~/.ssh/lx-fampad-status.pub>' --nas-ip '<NAS-IP>'`, dann ohne `--dry-run`. Den Schlüssel liefert nur das NAS (der Server hat keine Zugangsdaten dazu); Benutzer `lxnasstatus`, Befehl und Ordner stehen in keiner Sicherung. Danach auf dem NAS `lx-fampad-nasstatus.sh` einmal von Hand (Abschnitt 11 der `BACKUP-EINRICHTUNG-SCHRITTE.md`). Mit dem Assistenten: `bash umzug.sh --weiter nasstatus` |
 | 6 | **Web-App hochladen** | nach DNS und Caddy | vom PC `deploy/deploy-web.sh` (SSH-Alias auf den neuen Server) |
 | 7 | **APK-Link** `lx-familyhub-latest.apk` neu kopieren (Kopie der neuesten APK im Ordner `/srv/fampad/releases/android`) und `latest.json` prüfen | nach der Wiederherstellung | `deploy/README.md` Abschnitt 9; `latest.json` und die neueste APK kommen aus der Sicherung (wenn `INCLUDE_APK=1`), sonst aus den GitHub-Releases |
@@ -324,7 +324,7 @@ DNS umstellen; Schritt 7. Einzelheiten und Rückfall: `WIEDERHERSTELLUNG.md`, Ab
 | Konten, Listen, Kalender, Aufgaben, Chats (verschlüsselt), Reaktionen, Pins, Einstellungen | **bleibt** bis zur letzten Sicherung | Änderungen der letzten bis zu ~24 Stunden fehlen; Geräte mit neuerem Stand holen alles neu (ihr Ausgang bleibt erhalten) |
 | Gelöschtes seit der Sicherung | **kommt zurück** | Löschwünsche nach DSGVO erneut ausführen |
 | `AUTH_SECRET_KEY` (TOTP-Geheimnisse, Wiederherstellungscodes, Einladungs-PINs) | **bleibt** (steht in der Konfigurationssicherung) | ohne ihn wären TOTP und alle Codes unbrauchbar; nie neu erzeugen, um „es zum Laufen zu bringen“ |
-| Passkeys und Passwörter | **bleiben** | die Passkey-Domain `familie.lx-labs.dev` ändert sich nicht |
+| Passkeys und Passwörter | **bleiben** | die Passkey-Domain `familyhub.lx-labs.dev` ändert sich nicht |
 | Anmelde-Sitzungen der Geräte | **bleiben** gültig | zwischenzeitlich widerrufene Sitzungen sind wieder gültig: bei Verdacht „überall abmelden“ |
 | **Chat-Schlüssel (Epochenschlüssel)** | **nicht auf dem Server, nie in der Sicherung** | liegen nur im Arbeitsspeicher der Geräte; der Server hat nur Chiffretext und für jedes Gerät verpackte Schlüssel. Die Geräte lesen weiter wie bisher. Hat jemand **kein** Gerät mehr und keinen Wiederherstellungsschlüssel, sind seine Chats unlesbar: das ist unabhängig von der Serverwiederherstellung |
 | **Standort teilen** | **geht verloren** (bewusst) | wird nur im Arbeitsspeicher des Servers gehalten und nie gesichert; nach einem Neustart/Neuaufbau starten alle das Teilen neu |
@@ -350,12 +350,12 @@ DNS umstellen; Schritt 7. Einzelheiten und Rückfall: `WIEDERHERSTELLUNG.md`, Ab
 | `PAUSE: GitHub lässt diesen Server noch nicht lesen` | Deploy-Key bei GitHub eintragen, Befehl wiederholen (Exit-Code 10 ist keine Störung) |
 | `Datenbank-Archiv lässt sich mit diesem Schlüssel nicht lesen` | falscher privater Schlüssel (andere Sicherung?) oder beschädigte Datei; nächstältere Sicherung vom NAS nehmen |
 | `Prüfsummen stimmen nicht` | Sicherung beschädigt (Übertragung?), erneut kopieren oder ältere nehmen |
-| `PUBLIC_URL der Sicherung ist …` | falsche Domain: der Server darf nur `familie.lx-labs.dev` sein (Passkeys) |
+| `PUBLIC_URL der Sicherung ist …` | falsche Domain: der Server darf nur `familyhub.lx-labs.dev` sein (Passkeys) |
 | `…existiert und weicht von der Sicherung ab` | auf dem Server liegt schon eine andere Konfiguration; prüfen, dann `--konfiguration-ersetzen` |
 | Datenbank „nicht leer, Wiederherstellung übersprungen“ | gewollt (Schutz); zum Ersetzen `--datenbank-ersetzen` |
 | `deploy.sh fehlgeschlagen` (Migration) | Code-Stand passt nicht zur Datenbank: `GIT_REF` auf den Stand der Sicherung (oder neuer) setzen; Meldungen: `journalctl -u lx-fampad-migrate -u lx-fampad -n 50` |
 | `Haupt-Caddyfile … ist nicht das Standard-Caddyfile` (OFFEN) | auf diesem Server läuft schon Caddy (lx-labs.dev): die eine Zeile `import /etc/caddy/conf.d/*.caddy` selbst am Ende des Haupt-Caddyfiles ergänzen, `caddy validate --config /etc/caddy/Caddyfile`, `systemctl reload caddy`, dann `--phase caddy` |
-| `DNS zeigt noch nicht auf diesen Server` (OFFEN) | DNS umstellen, warten, bis `dig +short familie.lx-labs.dev` die neue IP zeigt; dann `--phase caddy,pruefung` |
+| `DNS zeigt noch nicht auf diesen Server` (OFFEN) | DNS umstellen, warten, bis `dig +short familyhub.lx-labs.dev` die neue IP zeigt; dann `--phase caddy,pruefung` |
 | Zertifikat fehlt / `antwortet nicht` nach `caddy` | Skript hat zurückgerollt; DNS prüfen, **mindestens 1 Stunde warten**, `journalctl -u caddy -n 50`, wiederholen |
 | `Swap ist aktiv … Schlüssel könnte … ausgelagert werden` | `swapoff -a` und neu starten, oder bewusst `--swap-ok`; den Swap legt das Skript erst nach dem Verwerfen des Schlüssels an (`SWAP_MB`) |
 | `… muss root gehören …` / `… nicht in SHA256SUMS` | Parameterdatei bzw. Sicherungsordner: `chown -R root:root`, `chmod -R go-w`; fehlt ein Archiv in `SHA256SUMS`, ist die Sicherung unvollständig oder verändert: andere Sicherung nehmen |
@@ -378,7 +378,7 @@ nie in Argumenten oder der Umgebung eines Prozesses (Abfrage alle 50 ms, ab dem 
 Für `--aktualisieren` gibt es Tests für die ältere Sicherung, den schon produktiven Server, einen anderen `AUTH_SECRET_KEY`, abweichende Schalter und Fehler vor und nach dem Tausch der Datenbank (Unit-Tests mit gefälschtem bootstrap, Szenario C mit echter zweiter Sicherung); die NAS-Adresse wird gegen `ip_pruefen` aus `einrichtung-backup.sh` verglichen.
 `--weiter nasstatus` ist getestet: Unit-Tests mit gefälschtem `einrichtung-nasstatus.sh` (Trockenlauf zuerst, abgelehnter Schlüssel der Abholung oder privater Schlüssel, fehlende NAS-IP, verändertes Checkout) und Szenario C mit dem echten Skript (Benutzer `lxnasstatus`, `authorized_keys` mit `from=` und erzwungenem Befehl, Ordner `2750`). Die Meldung selbst vom echten NAS (`lx-fampad-nasstatus.sh`) ist nicht getestet.
 **Nicht getestet:** ein echtes Terminal (Farben, unsichtbare Eingabe mit `read -s`, Zeitmeldung, Wiederherstellung der Terminal-Einstellungen); alle Tests laufen mit Eingaben aus einer Pipe.
-**Isolation der Tests:** Der Integrationstest läuft nur in Docker (Container-Lauf und `systemctl`-Attrappe brechen ohne `/.dockerenv` ab), ruft das Skript immer mit `--ohne-systemd` auf (spricht nie `familie.lx-labs.dev` oder `lx-labs.dev` an; `--dns-pruefung-ueberspringen` gibt es nur zusammen damit)
+**Isolation der Tests:** Der Integrationstest läuft nur in Docker (Container-Lauf und `systemctl`-Attrappe brechen ohne `/.dockerenv` ab), ruft das Skript immer mit `--ohne-systemd` auf (spricht nie `familyhub.lx-labs.dev` oder `lx-labs.dev` an; `--dns-pruefung-ueberspringen` gibt es nur zusammen damit)
 und nimmt den Code-Stand aus einem Tarball der verfolgten Dateien (`git ls-files`), nicht aus einer Kopie des Arbeitsbaums mit `.git`. Das Netz braucht er nur für die Paketquellen. Hinweis: Ein Container zeigt den Swap des Hosts, deshalb gibt der Test `--swap-ok` an. `--ohne-systemd` bricht mit Exit 2 ab, wenn `/run/systemd/system` existiert (also auf einem echten Server), und `test-bootstrap.sh` bricht ab, wenn `/srv/fampad/server` existiert.
 
 **Nicht getestet** (nur auf einem echten Server prüfbar): echtes systemd (Unit-Härtung, `systemd-analyze verify`, Neustart nach Reboot), Caddy-Reload mit Zertifikaten und Let's Encrypt, DNS-Umschaltung, die Pause beim GitHub-Deploy-Key bis zum tatsächlichen Eintragen und Weitermachen (der Assistent zeigt die Pause im Container, der Neustart danach läuft dort mit einem lokalen Checkout), der Müll-Dienst des Assistenten (`--weiter muell` mit aktivem Müll), die Koexistenz mit lx-labs.dev
@@ -392,6 +392,18 @@ Die Echtheit einer Sicherung ist heute nur teilweise gesichert: `age` verschlüs
 **Geplant, aber nicht umgesetzt:** `SHA256SUMS` mit einem **Signaturschlüssel signieren, der nicht auf dem Server und nicht auf dem NAS liegt** (z. B. mit `minisign` oder `ssh-keygen -Y sign`, geprüft mit einem im Skript fest eingebauten öffentlichen Schlüssel). Dann könnte weder ein übernommener Server noch ein übernommenes NAS
 eine unterschobene Sicherung als echt ausgeben; die Signatur müsste aber von einer Stelle kommen, die den Server nicht kennt (PC des Betreibers nach dem Abholen), und die Wiederherstellung würde sie vor dem Entpacken prüfen. Bis dahin: Sicherungen aus dem NAS-Archiv nehmen (mit Snapshots, `BACKUP.md`) und den
 Wiederherstellungstest regelmäßig mit einer NAS-Sicherung machen.
+
+## 10a. Frühere Domain (Wechsel auf familyhub.lx-labs.dev)
+
+Die Anwendung läuft auf einem neuen, leeren Server unter **familyhub.lx-labs.dev** (ntfy: `ntfy.familyhub.lx-labs.dev`); es gibt keine Datenübernahme. Die frühere Domain `familie.lx-labs.dev` läuft bis zur Abschaltung des alten Servers weiter, die neue gilt ab dem Stichtag. Bestehende Apps (0.16.0 und älter) kennen die neue Domain **nicht** und brauchen eine neue APK, die mit der neuen Domain gebaut wurde. Das tust du selbst:
+
+- **DNS (Cloudflare):** A-Einträge `familyhub` und `ntfy.familyhub` auf die IP des neuen Servers, nur DNS (graue Wolke).
+- **GitHub:** Secrets und Variablen prüfen, soweit sie die Domain nutzen (`VPS_HOST`, `VPS_KNOWN_HOSTS`).
+- **NAS:** Pull-Ziel (Host der Sicherung) auf den neuen Server umstellen.
+- **SSH:** Alias auf dem PC (`ssh lx-labs`) und `known_hosts` anpassen.
+- **Konten und Passkeys:** Die Familie legt Konten und Passkeys neu an (RP-ID ist die Domain).
+- **ntfy-App:** Abo und Standardserver auf `https://ntfy.familyhub.lx-labs.dev` stellen.
+- **App-Links:** `assetlinks.json` mit `RELEASE_CERT_SHA256` auf dem neuen Server ablegen (macht das Skript).
 
 ## 11. Dateien
 

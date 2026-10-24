@@ -1,7 +1,7 @@
 # lx-fampad
 
 Selbst gehostete Familien-Zentrale (Kalender, Chat, Listen, Aufgaben, Dateien, später Fotos, Karte u. a.) für die eigene Familie.
-Web und Android aus einer Flutter-Codebasis, Server auf dem netcup-VPS von lx-labs.dev. Domain: **familie.lx-labs.dev**.
+Web und Android aus einer Flutter-Codebasis, Server auf dem netcup-VPS von lx-labs.dev. Domain: **familyhub.lx-labs.dev**.
 Sprache aller Inhalte, UI-Texte und Commit-Nachrichten: **Deutsch**, Ansprache per **du**. Verbindliche Beschreibung: `docs/PROJEKTBESCHREIBUNG.md`, Versionen: `docs/VERSIONEN.md`, Mockups: `docs/mockups/`.
 
 E2EE (Chat-Verschlüsselung): **Phase 1 (Schlüsselverwaltung) und Phase 2 (verschlüsselter Chat: Epochenschlüssel, signierte Wraps, Rotation, Hülle `e1`) gebaut** (v0.3.0); Beschreibung `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 9a.
@@ -12,7 +12,7 @@ Stand: **v0.3.0 „Chat-Paket“** (Server: Konten und Anmeldung seit 1a, Sync-K
 
 - **Server** (`server/`): Node 24.21.0, TypeScript 6.0.3, Fastify 5.12.5, `@fastify/websocket` 11.3.3, Drizzle ORM 0.45.3 (+ drizzle-kit 0.31.11), PostgreSQL 17, Vitest 5.0.3, ESLint. Anmeldung: `@simplewebauthn/server` 14.0.3 (Passkeys), `argon2` 0.45.1 (Argon2id), `otplib` 13.5.0 (TOTP), `zod` 4.6.5 (Eingabevalidierung). Konfiguration nur über Umgebungsvariablen (`server/.env.example`); ohne `NODE_ENV` gilt `production` (fail-closed), unbekannte Werte brechen den Start ab, lokal `NODE_ENV=development` in `.env`. In `production` ist `AUTH_SECRET_KEY` Pflicht (Hauptschlüssel für TOTP-Verschlüsselung und HMACs, nie in der Datenbank, nie ändern).
 - **App** (`app/`): Flutter 3.47.7 / Dart 3.13.5 (Android + Web, kein iOS), Riverpod 3.4.3, drift 2.35.1 (SQLite, im Web WASM/OPFS), `rrule` 0.2.18 + `timezone` 0.11.1 (Terminserien; Zeitzonen-Daten als Asset `assets/tz/latest.tzf`); Anmeldung: `flutter_secure_storage` 11.2.0, `passkeys` 2.23.1 (Web: selbst gehostetes `web/passkeys-bundle.js`), `mobile_scanner` 7.4.2 (QR-Scan, nur Android), `qr_flutter` 4.1.0; Karte: `maplibre` 0.3.6 (MapLibre Native/gl-js, Kacheln als PMTiles vom eigenen Server; `dependency_overrides: code_assets: 2.1.0`, Begründung in `docs/VERSIONEN.md`); E2EE: `sodium` 4.1.1+2 (libsodium; Android per Build-Hook mit C-Compiler/NDK, Web: selbst gehostetes `web/sodium.js` Sumo, Prüfsumme in `web-assets.sha256`; kein CDN). Web ohne CDN: `--no-web-resources-cdn`, Schriften gebündelt, `fontFallbackBaseUrl` auf die eigene Domain. `analyzer` (14.4.0) und `sqlite3` (3.7.0, passend zu `web/sqlite3.wasm`) sind bewusst gepinnt; `app/web-assets.sha256` hält die Prüfsummen der Web-Binärdateien (inkl. `passkeys-bundle.js`).
-- **Deploy** (`deploy/`): Caddy (Site `familie.lx-labs.dev`, ntfy auf `ntfy.familie.lx-labs.dev`), systemd-Dienst `lx-fampad`, `deploy.sh`, `deploy-web.sh`. Einrichtung: `deploy/README.md`.
+- **Deploy** (`deploy/`): Caddy (Site `familyhub.lx-labs.dev`, ntfy auf `ntfy.familyhub.lx-labs.dev`), systemd-Dienst `lx-fampad`, `deploy.sh`, `deploy-web.sh`. Einrichtung: `deploy/README.md`.
 - **Versionen sind exakt gepinnt** (kein `^`, kein `~`), Lockfiles (`package-lock.json`, `pubspec.lock`) werden eingecheckt. Neue Pakete nur mit Version, die mindestens 14 Tage alt ist (auch transitiv, sonst per `dependency_overrides` festhalten); in `docs/VERSIONEN.md` eintragen.
 
 ## Befehle

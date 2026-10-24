@@ -4,7 +4,7 @@ Manuelle Prüfung, dass bei Anmeldung, Zurücksetzen, Gerätewechsel und Browser
 
 ## Regeln (vorher lesen)
 
-- **Nie auf der Produktion** (`familie.lx-labs.dev`) und **nie mit dem Betreiber-Konto oder einem Konto der echten Familie**. Die Testfamilie bekommt eine **eigene Instanz** mit eigener Datenbank, eigenem `AUTH_SECRET_KEY` und eigener Adresse. Debug-APKs (Debug-Schlüssel) gehören nur an diese Instanz (`deploy/README.md`, Abschnitt 9).
+- **Nie auf der Produktion** (`familyhub.lx-labs.dev`) und **nie mit dem Betreiber-Konto oder einem Konto der echten Familie**. Die Testfamilie bekommt eine **eigene Instanz** mit eigener Datenbank, eigenem `AUTH_SECRET_KEY` und eigener Adresse. Debug-APKs (Debug-Schlüssel) gehören nur an diese Instanz (`deploy/README.md`, Abschnitt 9).
 - Alle Konten sind Wegwerf-Konten mit erfundenen E-Mail-Adressen (z. B. `anna@test.invalid`). Es werden keine echten Chats, Fotos oder Daten benutzt.
 - **Vor jedem Block ein Snapshot** der Testdatenbank (`pg_dump`), damit ein Versuch wiederholt werden kann. Nach „Hat etwas Unerwartetes verloren“ nichts mehr anfassen, erst Stand sichern.
 - Der Betreiber-Bereich „Betrieb“ ist nicht nötig. Wer die Schlüssel-Ampel ansehen will, legt für die Testinstanz **ein eigenes Test-Konto** als Betreiber an (`node dist/cli/operator.js grant <E-Mail>` auf der Testinstanz), nie das echte.

@@ -58,7 +58,7 @@ idempotent und bleiben in dieser Reihenfolge. Nummern in Klammern verweisen auf 
 
 **Vorbereitung auf dem PC**
 
-1. **TTL** der DNS-Einträge `familie` und `ntfy.familie` auf 300 s senken (beim Umzug: einen Tag vorher). Einträge noch **nicht** ändern.
+1. **TTL** der DNS-Einträge `familyhub` und `ntfy.familyhub` auf 300 s senken (beim Umzug: einen Tag vorher). Einträge noch **nicht** ändern.
 2. Sicherung holen und entschlüsseln-testen (Abschnitt 2). Den **Stand des Codes** festlegen, der zur Sicherung passt (Git-Tag/Commit der laufenden Version; die
    Datenbank darf nicht neuer sein als der Code, ältere Datenbanken migriert der Server beim Start).
 3. Entschlüsselte Daten **nur im RAM des Servers** ablegen (`/dev/shm`, tmpfs): Schlüssel bleibt auf dem PC, Klartext nur durch den SSH-Tunnel:
@@ -116,7 +116,7 @@ sudo shred -u /dev/shm/db.dump /dev/shm/config.tar.gz || sudo rm -f /dev/shm/db.
 
    Hinweis: `pg_restore` ohne `--no-owner` setzt voraus, dass `lx_fampad_migrate` und `lx_fampad` existieren (tun sie nach Schritt 6). Mit `--no-owner --no-privileges` würde `einrichtung-auth.sh` Besitzer und Rechte allein setzen: ebenfalls zulässig.
 10. **Dienst starten und prüfen:** `sudo systemctl start lx-fampad`, `curl -s http://127.0.0.1:4400/api/v1/health` muss `"db":"ok"` liefern; `journalctl -u lx-fampad -n 30`. Bei „Migration fehlgeschlagen“: Code-Stand passt nicht zur Datenbank (Schritt 2).
-11. **DNS umschalten, dann Caddy:** Erst jetzt die A-Einträge `familie` und `ntfy.familie` (DNS only) auf die neue IP setzen, **warten, bis** `dig +short familie.lx-labs.dev` die neue IP zeigt, dann
+11. **DNS umschalten, dann Caddy:** Erst jetzt die A-Einträge `familyhub` und `ntfy.familyhub` (DNS only) auf die neue IP setzen, **warten, bis** `dig +short familyhub.lx-labs.dev` die neue IP zeigt, dann
     `sudo bash ~/lx-fampad/deploy/einrichtung-2.sh` (README 6: Sicherung/Validierung/Rückfall; ändert das Haupt-Caddyfile nur um die Importzeile und lässt lx-labs.dev unberührt). Caddy holt die
     Zertifikate neu (Let's-Encrypt-Limits: höchstens 5 Fehlversuche je Stunde und Name, 5 neue Zertifikate je Woche für denselben Namensatz; bei Fehlern **nicht** wiederholt neu laden, sondern
     `journalctl -u caddy`, DNS prüfen, eine Stunde warten).
@@ -133,8 +133,8 @@ sudo systemctl start ntfy && sudo shred -u /dev/shm/config.tar.gz
     (`etc/lx-fampad/ntfy-family-password` nur, wenn die Datei im Archiv ist.) Passen `NTFY_TOKEN` in `/etc/lx-fampad/env` und die wiederhergestellte `user.db` nicht zusammen, in `env` das
     Token aus `ntfy-token` eintragen (README 7). Dienst `lx-fampad` neu starten.
 13. **Web-App und App-Dateien:** vom PC `deploy/deploy-web.sh` (README 8). `assetlinks.json` und `latest.json` kamen mit Schritt 7 zurück (README 9).
-14. **Sicherung wieder einrichten:** Abschnitt 3 der `BACKUP.md` (`einrichtung-backup.sh` mit denselben Schlüsseln; der NAS-Schlüssel bleibt gültig, nur das `known_hosts` auf dem NAS muss den neuen Host-Schlüssel kennen: `ssh-keygen -R familie.lx-labs.dev`, `ssh-keyscan` neu). **Danach den Rückkanal „Status vom NAS“ neu einrichten** (er steht in keiner Sicherung und fehlt auf dem neuen Server still): `sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey '<~/.ssh/lx-fampad-status.pub vom NAS>' --nas-ip '<NAS-IP>'`, dann ohne `--dry-run`; Anleitung: `BACKUP-EINRICHTUNG-SCHRITTE.md`, Abschnitt 11. Der Umzugs-Assistent (`umzug.sh`) hat dafür `--weiter nasstatus`.
-15. **Test:** `https://familie.lx-labs.dev` laden, Anmeldung mit Passkey/Passwort, **TOTP-Anmeldung** (beweist `AUTH_SECRET_KEY`), Listen und Kalender sichtbar, Push-Test, App-Update-Prüfung,
+14. **Sicherung wieder einrichten:** Abschnitt 3 der `BACKUP.md` (`einrichtung-backup.sh` mit denselben Schlüsseln; der NAS-Schlüssel bleibt gültig, nur das `known_hosts` auf dem NAS muss den neuen Host-Schlüssel kennen: `ssh-keygen -R familyhub.lx-labs.dev`, `ssh-keyscan` neu). **Danach den Rückkanal „Status vom NAS“ neu einrichten** (er steht in keiner Sicherung und fehlt auf dem neuen Server still): `sudo bash ~/lx-fampad/deploy/backup/einrichtung-nasstatus.sh --dry-run --nas-pubkey '<~/.ssh/lx-fampad-status.pub vom NAS>' --nas-ip '<NAS-IP>'`, dann ohne `--dry-run`; Anleitung: `BACKUP-EINRICHTUNG-SCHRITTE.md`, Abschnitt 11. Der Umzugs-Assistent (`umzug.sh`) hat dafür `--weiter nasstatus`.
+15. **Test:** `https://familyhub.lx-labs.dev` laden, Anmeldung mit Passkey/Passwort, **TOTP-Anmeldung** (beweist `AUTH_SECRET_KEY`), Listen und Kalender sichtbar, Push-Test, App-Update-Prüfung,
     `curl -sI https://lx-labs.dev` unverändert 200. Von außen: `nc -zv -w 3 <IP> 4400 2586 5432` müssen scheitern.
 16. **Nacharbeiten:** (a) **Datenverlust-Fenster:** Änderungen seit der Sicherung (bis zu ca. 24 h) fehlen; Geräte, deren Stand neuer ist als der des Servers, melden `resync_required` und laden alles neu
     (der lokale Ausgang mit noch nicht gesendeten Änderungen bleibt erhalten und wird danach gesendet). (b) **Gelöschte Daten kommen zurück:** Konten oder Inhalte, die zwischen Sicherung und Ausfall
@@ -152,15 +152,15 @@ und ohne IP-Änderung möglich ist, ob die Platte mitwächst (dann `growpart`/`r
 
 **Variante B: Neuaufbau, Wiederherstellung, DNS-Umschaltung (empfohlen bei Anbieter-/Systemwechsel).**
 
-1. Tag vorher: TTL der Einträge `familie` und `ntfy.familie` auf 300 s.
+1. Tag vorher: TTL der Einträge `familyhub` und `ntfy.familyhub` auf 300 s.
 2. Neuen Server aufsetzen (Abschnitt 3, Schritte 4 bis 10) mit einer **frischen** Sicherung; die App ändert sich nicht (Domain bleibt).
-3. Auf dem neuen Server gründlich testen, **ohne** DNS: `curl --resolve familie.lx-labs.dev:443:<neue-IP> https://familie.lx-labs.dev/api/v1/health` geht erst nach dem Zertifikat; vorher lokal
+3. Auf dem neuen Server gründlich testen, **ohne** DNS: `curl --resolve familyhub.lx-labs.dev:443:<neue-IP> https://familyhub.lx-labs.dev/api/v1/health` geht erst nach dem Zertifikat; vorher lokal
    `http://127.0.0.1:4400/api/v1/health`. Anmeldung erst nach der Umschaltung sinnvoll.
 4. **Schreibstopp am alten Server:** `sudo systemctl stop lx-fampad` (Nutzer arbeiten offline weiter, die Apps halten ihren Ausgang und senden nach der Umschaltung). Letzte Sicherung ziehen (`systemctl start lx-fampad-backup.service`), auf dem neuen Server einspielen (Schritte 7 bis 10).
 5. DNS umstellen (Schritt 11), Caddy-Zertifikate abwarten, testen (Schritt 15). Alter Server bleibt eine Woche im Stand-by (ohne laufenden `lx-fampad`).
 6. Danach TTL erhöhen, alten Server kündigen/löschen (vorher Datenträger bereinigen lassen; er enthält die Konfiguration und die Datenbank).
 
-Die WebAuthn-RP-ID (`familie.lx-labs.dev`) bleibt gleich, deshalb funktionieren Passkeys nach dem Umzug weiter.
+Die WebAuthn-RP-ID (`familyhub.lx-labs.dev`) bleibt gleich, deshalb funktionieren Passkeys nach dem Umzug weiter.
 
 ## 5. Rollback und typische Fehler
 
