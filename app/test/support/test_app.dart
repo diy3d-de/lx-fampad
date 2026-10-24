@@ -124,7 +124,10 @@ class TestUmgebung {
   final owner = MemoryLocalDataOwner();
   /// false: der Client löst nie das Refresh-Token ein (Hintergrund-Abgleich); vor dem ersten Zugriff auf [client] setzen.
   bool refreshErlaubt = true;
-  late final ApiClient client = ApiClient(client: server.client, store: store, web: web, base: 'https://familie.test', refreshErlaubt: refreshErlaubt);
+
+  /// true: der Client erneuert ein abgelaufenes Zugangstoken genau einmal selbst (wie der Hintergrund-Start nach einem Push-Wecker); mit [refreshErlaubt] = false kombinieren.
+  bool hintergrundErneuern = false;
+  late final ApiClient client = ApiClient(client: server.client, store: store, web: web, base: 'https://familie.test', refreshErlaubt: refreshErlaubt, hintergrundErneuern: hintergrundErneuern);
 
   TestUmgebung(this.server, {this.web = false, MemoryTokenStore? store, FakePasskeys? passkeys})
     : store = store ?? MemoryTokenStore(),

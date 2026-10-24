@@ -8,6 +8,7 @@ import 'constants.dart';
 import 'data/auth/auth_state.dart';
 import 'data/betrieb/betrieb_hinweis.dart' show betriebWarnSteuerungProvider;
 import 'data/wetter/wetter_hinweise.dart' show wetterHinweisSteuerungProvider;
+import 'data/wetter/wetter_meldung.dart' show wetterMeldungProvider;
 import 'data/chat/chat_krypto_state.dart';
 import 'data/crypto/geraet_schluessel_melder.dart' show geraetSchluesselMelderProvider;
 import 'data/geraet_version_melder.dart' show geraetVersionMelderProvider;
@@ -160,6 +161,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     ref.watch(betriebWarnSteuerungProvider);
     // Wetter-Hinweise (lokale Benachrichtigung nach dem Abruf, nur solange die App läuft und nur für eingeschaltete Arten)
     ref.watch(wetterHinweisSteuerungProvider);
+    // meldet dem Server, welche Wetter-Hinweisarten dieses Gerät per Wecker will (nur Namen der Arten, nur mit Push)
+    ref.watch(wetterMeldungProvider);
     ref.watch(geraetSchluesselMelderProvider);
     ref.watch(geraetVersionMelderProvider);
     ref.watch(mitgliederAktualisierungProvider);

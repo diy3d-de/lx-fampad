@@ -304,6 +304,7 @@ class _StandortDiagnoseKarte extends ConsumerWidget {
           _DiagZeile('Letzter Abgleich im Hintergrund', mitCode(d.sync)),
           _DiagZeile('Letzter Abruf des Standort-Kanals', mitCode(d.abruf)),
           _DiagZeile('Letzter Hinweis', mitCode(d.hinweis)),
+          _DiagZeile('Letzte Wetterprüfung im Hintergrund', mitCode(d.wetter)),
           const SizedBox(height: 4),
           const Text('Nur Zeitpunkte und Ergebnis, nie Namen oder Orte.', style: TextStyle(fontSize: 12, color: kTextMuted)),
         ],

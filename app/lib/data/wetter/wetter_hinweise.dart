@@ -1,15 +1,20 @@
-// Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall): rein lokal auf dem Gerät, nichts geht an den Server. Je Art abschaltbar (`sync_meta`,
-// Standard: nur Frost an). Eine gelbe Karte auf der Startseite gilt, solange der Wert auffällig ist; zusätzlich eine lokale Benachrichtigung beim Abruf,
-// SOLANGE DIE APP LÄUFT (kein Hintergrunddienst, kein Push: ohne geöffnete App kommt kein Hinweis). Je Art höchstens eine Benachrichtigung in 6 Stunden.
-// Texte sind neutral und kurz, nie mit Ort oder Koordinaten.
+// Wetter-Hinweise (Frost, Regen, Wind, Hitze, Druckabfall): Die Auswertung geschieht immer lokal auf dem Gerät (aus der Antwort von GET /weather). Je Art
+// abschaltbar (`sync_meta`, Standard: nur Frost an). Eine gelbe Karte auf der Startseite gilt, solange der Wert auffällig ist; zusätzlich eine lokale
+// Benachrichtigung nach einem frischen Abruf. Bei geschlossener App weckt der Server das Gerät (Push-Wecker ohne Inhalt, `wetter_hintergrund.dart`), wenn er
+// einen Übergang erkennt; der Server erfährt dafür nur, WELCHE Arten das Gerät will (`wetter_meldung.dart`), nie Inhalte oder Standort. Ohne eingerichtetes
+// Push gilt weiter nur die offene App. Je Art höchstens eine Benachrichtigung in 6 Stunden (auch auf dem Gerät). Texte sind neutral und kurz, nie mit Ort
+// oder Koordinaten. Im Wandtablet-Betrieb gibt es keine Benachrichtigung.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_state.dart';
+import '../app_database.dart';
 import '../database_provider.dart';
+import '../push/chat_benachrichtiger.dart' show ChatAnzeigePort;
 import '../push/chat_benachrichtiger_provider.dart' show chatAnzeigePortProvider;
+import '../wandtablet/wandtablet_einstellungen.dart';
 import 'wetter_logik.dart';
 import 'wetter_state.dart';
 
@@ -43,6 +48,16 @@ extension WetterHinweisArtText on WetterHinweisArt {
   String get zuletztSchluessel => 'wetter_hinweis_zuletzt_$name';
 }
 
+/// Die eingeschalteten Arten aus `sync_meta` (fehlt der Wert: Standard der Art). Auch die Hintergrund-Engine liest so.
+Future<Set<WetterHinweisArt>> wetterArtenLesen(AppDatabase db) async {
+  final an = <WetterHinweisArt>{};
+  for (final a in WetterHinweisArt.values) {
+    final v = await db.metaLesen(a.schluessel);
+    if (v == null ? a.standardAn : v == 'ja') an.add(a);
+  }
+  return an;
+}
+
 class WetterHinweisEinstellungen {
   final Set<WetterHinweisArt> an;
   final bool geladen;
@@ -59,12 +74,7 @@ class WetterHinweisEinstellungenNotifier extends Notifier<WetterHinweisEinstellu
 
   Future<void> _lesen() async {
     try {
-      final db = ref.read(appDatabaseProvider);
-      final an = <WetterHinweisArt>{};
-      for (final a in WetterHinweisArt.values) {
-        final v = await db.metaLesen(a.schluessel);
-        if (v == null ? a.standardAn : v == 'ja') an.add(a);
-      }
+      final an = await wetterArtenLesen(ref.read(appDatabaseProvider));
       if (!ref.mounted) return;
       state = WetterHinweisEinstellungen(an: an, geladen: true);
     } on Object {
@@ -117,26 +127,47 @@ final wetterHinweisSteuerungProvider = Provider<void>((ref) {
   });
 });
 
-/// Ein Durchgang: für jeden geltenden Hinweis zeigen, wenn die Art nicht in den letzten 6 Stunden gemeldet wurde. Gemerkt wird erst nach erfolgreicher
-/// Anzeige (ohne Erlaubnis oder bei einem Fehler kommt der Hinweis beim nächsten Abruf noch einmal). Nie ein Fehler nach außen.
+/// Ergebnis von [wetterHinweiseZeigen].
+enum WetterZeigen { nichts, schonGemeldet, gezeigt, keineErlaubnis }
+
+/// Zeigt für jeden Hinweis der Liste die Benachrichtigung, wenn die Art nicht in den letzten 6 Stunden gemeldet wurde. Gemerkt wird erst nach erfolgreicher
+/// Anzeige (ohne Erlaubnis oder bei einem Fehler kommt der Hinweis beim nächsten Abruf noch einmal). Gemeinsam für die laufende App und den Hintergrund-Start.
+Future<WetterZeigen> wetterHinweiseZeigen({required AppDatabase db, required ChatAnzeigePort anzeige, required List<WetterHinweis> liste, required DateTime nun}) async {
+  if (liste.isEmpty) return WetterZeigen.nichts;
+  var bereit = false;
+  var gezeigt = false;
+  var unterdrueckt = false;
+  var verweigert = false;
+  for (final h in liste) {
+    final zuletzt = int.tryParse(await db.metaLesen(h.art.zuletztSchluessel) ?? '');
+    if (zuletzt != null && nun.difference(DateTime.fromMillisecondsSinceEpoch(zuletzt)).abs() < kWetterHinweisAbstand) {
+      unterdrueckt = true;
+      continue;
+    }
+    if (!bereit) {
+      if (!await anzeige.initialisieren()) return WetterZeigen.keineErlaubnis;
+      bereit = true;
+    }
+    final ok = await anzeige.zeigenSicherheit(id: kWetterBenachrichtigungsId + h.art.index, titel: 'Wetter', text: h.text, nutzlast: kWetterPayload);
+    if (ok) {
+      await db.metaSchreiben(h.art.zuletztSchluessel, nun.millisecondsSinceEpoch.toString());
+      gezeigt = true;
+    } else {
+      verweigert = true;
+    }
+  }
+  if (gezeigt) return WetterZeigen.gezeigt;
+  if (verweigert) return WetterZeigen.keineErlaubnis;
+  return unterdrueckt ? WetterZeigen.schonGemeldet : WetterZeigen.nichts;
+}
+
+/// Ein Durchgang in der laufenden App (nach einem frischen Abruf). Nie ein Fehler nach außen. Im Wandtablet-Betrieb kommt nichts.
 Future<void> wetterHinweiseBenachrichtigen(Ref ref, {DateTime? jetzt}) async {
   try {
+    if (ref.read(wandtabletLaeuftProvider)) return;
     final liste = ref.read(aktiveWetterHinweiseProvider);
     if (liste.isEmpty) return;
-    final db = ref.read(appDatabaseProvider);
-    final nun = jetzt ?? DateTime.now();
-    final anzeige = ref.read(chatAnzeigePortProvider);
-    var bereit = false;
-    for (final h in liste) {
-      final zuletzt = int.tryParse(await db.metaLesen(h.art.zuletztSchluessel) ?? '');
-      if (zuletzt != null && nun.difference(DateTime.fromMillisecondsSinceEpoch(zuletzt)).abs() < kWetterHinweisAbstand) continue;
-      if (!bereit) {
-        if (!await anzeige.initialisieren()) return;
-        bereit = true;
-      }
-      final ok = await anzeige.zeigenSicherheit(id: kWetterBenachrichtigungsId + h.art.index, titel: 'Wetter', text: h.text, nutzlast: kWetterPayload);
-      if (ok) await db.metaSchreiben(h.art.zuletztSchluessel, nun.millisecondsSinceEpoch.toString());
-    }
+    await wetterHinweiseZeigen(db: ref.read(appDatabaseProvider), anzeige: ref.read(chatAnzeigePortProvider), liste: liste, nun: jetzt ?? DateTime.now());
   } on Object {
     // ein Zusatz: nie den Abruf stören
   }

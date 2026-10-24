@@ -393,7 +393,7 @@ void main() {
       await tippeText(tester, 'Benachrichtigungen');
       expect(find.text('Wetter-Hinweise'), findsOneWidget);
       await tippe(tester, find.text('Wetter-Hinweise'));
-      expect(find.textContaining('Ohne geöffnete App kommt kein Hinweis'), findsOneWidget);
+      expect(find.textContaining('per Wecker auch bei geschlossener App'), findsOneWidget);
       expect(find.byType(SwitchListTile), findsNWidgets(5));
       final schalter = tester.widgetList<SwitchListTile>(find.byType(SwitchListTile)).map((s) => s.value).toList();
       expect(schalter, [true, false, false, false, false]); // Standard: nur Frost
