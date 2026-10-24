@@ -46,11 +46,8 @@ class _Kachel extends StatelessWidget {
   );
 }
 
-Color _trendFarbe(Trend? t, {required bool druck}) {
-  if (t == null || t.richtung == TrendRichtung.stabil) return kTextMuted;
-  if (druck) return t.richtung == TrendRichtung.steigt ? kWarn : kWetterKalt;
-  return t.richtung == TrendRichtung.steigt ? kWarn : kWetterKalt;
-}
+/// Steigend warm (gelb), fallend kalt (hellblau), stabil neutral.
+Color _trendFarbe(Trend? t) => t == null || t.richtung == TrendRichtung.stabil ? kTextMuted : (t.richtung == TrendRichtung.steigt ? kWarn : kWetterKalt);
 
 /// Zwei Spalten; ab Textskala 1,75 eine (sonst läuft der Text über).
 class WetterKacheln extends StatelessWidget {
@@ -77,7 +74,7 @@ class WetterKacheln extends StatelessWidget {
           label: 'Temperatur',
           wert: temperaturKurz(a.temperatur),
           zusatz: tt == null ? null : trendTemperaturText(tt),
-          zusatzFarbe: _trendFarbe(tt, druck: false),
+          zusatzFarbe: _trendFarbe(tt),
           semantik: 'Temperatur ${temperaturText(a.temperatur)}${tt == null ? '' : ', ${trendSprechtext(tt, 'Grad')}'}',
         ),
       if (gefuehlt != null && a.temperatur != null)
@@ -94,7 +91,7 @@ class WetterKacheln extends StatelessWidget {
           label: 'Luftdruck',
           wert: druckText(a.druck),
           zusatz: dt == null ? null : trendDruckText(dt),
-          zusatzFarbe: _trendFarbe(dt, druck: true),
+          zusatzFarbe: _trendFarbe(dt),
           semantik: 'Luftdruck ${druckText(a.druck)}${dt == null ? '' : ', ${trendSprechtext(dt, 'hPa')}'}',
         ),
     ];
