@@ -182,6 +182,10 @@ class ChatWelt {
   /// Aktuelle Schlüsselversion je Person laut Server (fehlt: 1); für die Prüfung der Wrap-ID v2 (keine künftige Version).
   final Map<String, int> schluesselVersionen = {};
 
+  /// Test der Dateiablage: Beanspruchen des Uploads eines Tresor-Anhangs (null = angenommen, sonst der Ablehnungsgrund) und die Größe des Blobs.
+  String? Function(Geraet g, Map<String, dynamic> felder)? blobAnspruch;
+  int Function(String blobId)? blobGroesse;
+
   /// Rollen der aktiven Mitglieder laut Server (für die Medikamenten-Konversation); leer: nicht gesetzt.
   final Map<String, Role> rollen = {};
 
@@ -476,13 +480,22 @@ class ChatWelt {
       case 'zaehler':
       case 'zaehlerstand':
       case 'tresor_eintrag':
+      case 'tresor_anhang':
         {
           final konvId = (vorhanden?.fields['konversationId'] ?? f['konversationId']) as String;
           final konv = _z['konversation/$konvId'];
-          if (konv == null || konv.fields['art'] != (o.entity == 'tresor_eintrag' ? 'tresor' : 'zaehler') || !((konv.fields['teilnehmer'] as List).cast<String>().contains(g.person.id)) || !istErwachsen(rollen[g.person.id] ?? Role.child)) return 'not_found';
+          if (konv == null || konv.fields['art'] != (o.entity == 'tresor_eintrag' || o.entity == 'tresor_anhang' ? 'tresor' : 'zaehler') || !((konv.fields['teilnehmer'] as List).cast<String>().contains(g.person.id)) || !istErwachsen(rollen[g.person.id] ?? Role.child)) return 'not_found';
           final text = f['inhalt'] as String?;
           if (text != null && (!RegExp(r'^e1:[A-Za-z0-9_-]+$').hasMatch(text) || text.length < 153)) return 'invalid';
           if (o.entity == 'zaehlerstand' && vorhanden == null && _z['zaehler/${f['zaehlerId']}']?.fields['konversationId'] != konvId) return 'invalid';
+          if (o.entity == 'tresor_anhang') {
+            // unveränderlich; die Hülle hat höchstens 4096 Zeichen; der Upload wird beansprucht (Claim) und seine Größe gesetzt
+            if (vorhanden != null) return 'forbidden';
+            if (text != null && text.length > 4096) return 'invalid';
+            final claim = blobAnspruch?.call(g, f);
+            if (claim != null) return claim;
+            f['size'] = blobGroesse?.call(f['blobId'] as String) ?? 0;
+          }
           gesehen.add({'entity': o.entity, ...f});
           if (vorhanden == null) {
             _z[key] = ServerZeile(o.entity, o.entityId, {...f, 'bearbeiterId': g.person.id, 'createdAt': serverZeit().toIso8601String()}, ++rev);

@@ -53,6 +53,7 @@ class DateiFehler implements Exception {
   static const zuGross = DateiFehler('zu_gross', 'Die Datei ist größer als erlaubt.');
   static const speicherVoll = DateiFehler('speicher_voll', 'Der Speicher der Familie ist voll.');
   static const leer = DateiFehler('leer', 'Die Datei ist leer.');
+  static const zuVieleAnhaenge = DateiFehler('zu_viele_anhaenge', 'Der Tresor hat schon sehr viele Anhänge.');
   static const nichtVerfuegbar = DateiFehler('nicht_verfuegbar', 'Die Dateiablage ist auf dem Server nicht eingeschaltet.');
 }
 
