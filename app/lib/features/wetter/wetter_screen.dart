@@ -12,6 +12,7 @@ import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
 import 'wetter_hinweise_screen.dart';
+import 'vorhersage_teile.dart';
 import 'wetter_teile.dart';
 import 'wetter_verlauf_karte.dart';
 
@@ -66,6 +67,8 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
         ),
       ],
       kinder: [
+        // amtliche Warnungen des Deutschen Wetterdienstes zuerst (nur aus einem frischen Stand)
+        if (dto != null && dto.verfuegbar) const WetterWarnungenAbschnitt(),
         if (a == null)
           MeldungsBox(
             dto != null && !dto.verfuegbar
@@ -80,6 +83,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
         else ...[
           _Kopf(st: st, jetzt: jetzt),
           const SizedBox(height: 16),
+          const WetterVorhersageAbschnitt(),
           WetterVerlaufKarte(dto: dto!),
           const SizedBox(height: 16),
           WetterKacheln(dto: dto),
@@ -90,6 +94,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
           if (a.windKmh != null || a.boeKmh != null) const SizedBox(height: 16),
           WetterVergleichKarte(dto: dto),
         ],
+        if (a == null && dto != null && dto.verfuegbar) ...[const SizedBox(height: 16), const WetterVorhersageAbschnitt()],
         const SizedBox(height: 16),
         LxCard(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -119,7 +124,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
         ),
         const SizedBox(height: 4),
         const Text(
-          'Messwerte einer Wetterstation in der Nähe. Dein Gerät fragt nur den eigenen Server; abgerufen wird ausschließlich dort.',
+          'Messwerte einer Wetterstation in der Nähe; Vorhersage und Warnungen vom Deutschen Wetterdienst. Dein Gerät fragt nur den eigenen Server; abgerufen wird ausschließlich dort.',
           style: TextStyle(fontSize: 12, color: kTextMuted),
         ),
       ],

@@ -21,6 +21,7 @@ import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
 import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKartenBuilder, standortKartenBuilderProvider;
 import 'package:lx_fampad/data/sync_state.dart';
+import 'package:lx_fampad/data/wetter/vorhersage_state.dart' show vorhersageTaktProvider;
 import 'package:lx_fampad/data/wetter/wetter_state.dart' show wetterTaktProvider;
 import 'package:lx_fampad/data/muell/muell_state.dart' show muellTaktProvider;
 import 'package:lx_fampad/data/betrieb/familien_hinweis_state.dart' show familienHinweisTaktProvider;
@@ -210,6 +211,7 @@ class TestUmgebung {
     ),
     // Wetter: kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     wetterTaktProvider.overrideWithValue(null),
+    vorhersageTaktProvider.overrideWithValue(null),
     // Müll (Abfuhrtermine): kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     muellTaktProvider.overrideWithValue(null),
     // Familienhinweis (Betrieb): kein Abfrage-Takt im Test (ein Timer bliebe stehen)

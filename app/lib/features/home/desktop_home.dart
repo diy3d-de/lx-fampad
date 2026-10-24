@@ -24,6 +24,7 @@ import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/countdown_karte.dart';
 import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
+import '../wetter/wetter_dwd_warn_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../chat/chat_anzeige.dart';
@@ -74,6 +75,7 @@ class DesktopHome extends ConsumerWidget {
         const UpdateAnzeige(),
         const AbsicherungsKarte(),
         const WetterHinweisKarte(),
+        const WetterDwdWarnKarte(),
         const _Raster(),
         const SizedBox(height: 8),
         const StartseiteAnpassenZeile(),
