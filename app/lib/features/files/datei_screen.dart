@@ -108,7 +108,8 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
   }
 
   Future<void> _loeschen(DateiEintrag e) async {
-    if (await dateiLoeschenFragen(context, ref, e) && mounted) Navigator.of(context).pop();
+    // die Seite schließt von selbst, sobald die Datei aus der Datenbank verschwindet (build)
+    await dateiLoeschenFragen(context, ref, e);
   }
 
   Future<void> _offlineSchalten(DateiEintrag e, bool an) => _mit(() async {
@@ -132,7 +133,7 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
     if (e == null) {
       if (async.hasValue) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) Navigator.of(context).maybePop();
+          if (mounted && (ModalRoute.of(context)?.isCurrent ?? false)) unawaited(Navigator.of(context).maybePop());
         });
       }
       return DateiRahmen(

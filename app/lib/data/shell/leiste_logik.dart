@@ -20,7 +20,7 @@ class LeisteBereich {
 }
 
 /// Alle Bereiche, die in der Leiste stehen dürfen (Reihenfolge = Reihenfolge von `kTabs`). Dateien steht nie in der Leiste: mobil eine Seite hinter "Mehr" (nur wenn der Server die
-/// Dateiablage meldet, `dateienVerfuegbarProvider`), im Desktop-Layout ein Bereich der Seitenleiste.
+/// Dateiablage meldet, siehe datei_state.dart), im Desktop-Layout ein Bereich der Seitenleiste.
 const kLeisteBereiche = <LeisteBereich>[
   LeisteBereich('start', 0),
   LeisteBereich('kalender', 1),

@@ -22,7 +22,8 @@ IconData dateiIcon(VorschauArt art) => switch (art) {
   VorschauArt.sonstige => Icons.insert_drive_file_outlined,
 };
 
-String stufeText(String audience) => audience == kStufeEltern ? 'Nur Eltern' : 'Familie';
+String stufeText(String audience) =>
+    audience == kStufeEltern ? 'Nur Eltern' : 'Familie';
 
 /// Datum und Uhrzeit für Dateien: "12.03.2026, 10:05".
 String dateiZeit(DateTime t) {
@@ -40,7 +41,14 @@ class DateiRahmen extends StatelessWidget {
   final Widget child;
   final List<Widget> aktionen;
   final Widget? knopf;
-  const DateiRahmen({super.key, required this.label, required this.titel, required this.child, this.aktionen = const [], this.knopf});
+  const DateiRahmen({
+    super.key,
+    required this.label,
+    required this.titel,
+    required this.child,
+    this.aktionen = const [],
+    this.knopf,
+  });
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -57,7 +65,11 @@ class DateiRahmen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      IconButton(tooltip: 'Zurück', icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.of(context).maybePop()),
+                      IconButton(
+                        tooltip: 'Zurück',
+                        icon: const Icon(Icons.arrow_back),
+                        onPressed: () => Navigator.of(context).maybePop(),
+                      ),
                       const Spacer(),
                       ...aktionen,
                     ],
@@ -68,7 +80,18 @@ class DateiRahmen extends StatelessWidget {
                       children: [
                         MonoLabel(label),
                         const SizedBox(height: 4),
-                        Semantics(header: true, child: Text(titel, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.6, color: kTextStrong))),
+                        Semantics(
+                          header: true,
+                          child: Text(
+                            titel,
+                            style: const TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.6,
+                              color: kTextStrong,
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
                         child,
                       ],
@@ -95,13 +118,30 @@ class StufenPille extends StatelessWidget {
     final farbe = eltern ? kWarn : kTerminal;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-      decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), border: Border.all(color: farbe.withValues(alpha: 0.4)), borderRadius: BorderRadius.circular(999)),
+      decoration: BoxDecoration(
+        color: farbe.withValues(alpha: 0.10),
+        border: Border.all(color: farbe.withValues(alpha: 0.4)),
+        borderRadius: BorderRadius.circular(999),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(eltern ? Icons.lock_outline : Icons.groups_outlined, size: 12, color: farbe),
+          Icon(
+            eltern ? Icons.lock_outline : Icons.groups_outlined,
+            size: 12,
+            color: farbe,
+          ),
           const SizedBox(width: 4),
-          Flexible(child: Text(stufeText(audience), style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: farbe))),
+          Flexible(
+            child: Text(
+              stufeText(audience),
+              style: TextStyle(
+                fontFamily: kFontMono,
+                fontSize: 11,
+                color: farbe,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -114,7 +154,13 @@ class DateiMiniatur extends ConsumerWidget {
   final VorschauArt art;
   final double kante;
   final BoxFit fit;
-  const DateiMiniatur({super.key, required this.thumbBlobId, required this.art, this.kante = 44, this.fit = BoxFit.cover});
+  const DateiMiniatur({
+    super.key,
+    required this.thumbBlobId,
+    required this.art,
+    this.kante = 44,
+    this.fit = BoxFit.cover,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -123,7 +169,17 @@ class DateiMiniatur extends ConsumerWidget {
     final id = thumbBlobId;
     if (id != null) {
       final bytes = ref.watch(vorschauBildProvider(id)).value;
-      if (bytes != null) inhalt = Image.memory(bytes, width: kante, height: kante, fit: fit, gaplessPlayback: true, excludeFromSemantics: true, errorBuilder: (_, _, _) => symbol);
+      if (bytes != null) {
+        inhalt = Image.memory(
+          bytes,
+          width: kante,
+          height: kante,
+          fit: fit,
+          gaplessPlayback: true,
+          excludeFromSemantics: true,
+          errorBuilder: (_, _, _) => symbol,
+        );
+      }
     }
     return ExcludeSemantics(
       child: Container(
@@ -131,7 +187,10 @@ class DateiMiniatur extends ConsumerWidget {
         height: kante,
         clipBehavior: Clip.antiAlias,
         alignment: Alignment.center,
-        decoration: BoxDecoration(color: kAccent.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
+        decoration: BoxDecoration(
+          color: kAccent.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(10),
+        ),
         child: inhalt,
       ),
     );
@@ -147,24 +206,36 @@ class EintragZeile extends StatelessWidget {
   final Widget? pille;
   final Widget? hinten;
   final VoidCallback onTap;
-  const EintragZeile({super.key, required this.vorne, required this.titel, required this.untertitel, required this.semantik, required this.onTap, this.pille, this.hinten});
+  const EintragZeile({
+    super.key,
+    required this.vorne,
+    required this.titel,
+    required this.untertitel,
+    required this.semantik,
+    required this.onTap,
+    this.pille,
+    this.hinten,
+  });
 
   @override
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Semantics(
-      container: true,
-      button: true,
-      label: semantik,
-      excludeSemantics: true,
-      onTap: onTap,
-      child: Material(
-        color: kSurface.withValues(alpha: 0.7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: kBorder)),
-        clipBehavior: Clip.antiAlias,
-        child: Row(
-          children: [
-            Expanded(
+    child: Material(
+      color: kSurface.withValues(alpha: 0.7),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: const BorderSide(color: kBorder),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Row(
+        children: [
+          Expanded(
+            child: Semantics(
+              container: true,
+              button: true,
+              label: semantik,
+              excludeSemantics: true,
+              onTap: onTap,
               child: InkWell(
                 onTap: onTap,
                 child: ConstrainedBox(
@@ -179,10 +250,29 @@ class EintragZeile extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(titel, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                              Text(
+                                titel,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
                               const SizedBox(height: 2),
-                              Text(untertitel, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-                              if (pille != null) ...[const SizedBox(height: 4), pille!],
+                              Text(
+                                untertitel,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontFamily: kFontMono,
+                                  fontSize: 11,
+                                  color: kTextMuted,
+                                ),
+                              ),
+                              if (pille != null) ...[
+                                const SizedBox(height: 4),
+                                pille!,
+                              ],
                             ],
                           ),
                         ),
@@ -192,9 +282,9 @@ class EintragZeile extends StatelessWidget {
                 ),
               ),
             ),
-            ?hinten,
-          ],
-        ),
+          ),
+          ?hinten,
+        ],
       ),
     ),
   );
@@ -206,7 +296,13 @@ class DateiChip extends StatelessWidget {
   final bool gewaehlt;
   final VoidCallback onTap;
   final IconData? icon;
-  const DateiChip({super.key, required this.label, required this.gewaehlt, required this.onTap, this.icon});
+  const DateiChip({
+    super.key,
+    required this.label,
+    required this.gewaehlt,
+    required this.onTap,
+    this.icon,
+  });
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -225,12 +321,29 @@ class DateiChip extends StatelessWidget {
           heightFactor: 1,
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(color: gewaehlt ? kAccent : kSurface, border: Border.all(color: gewaehlt ? kAccent : kBorder), borderRadius: BorderRadius.circular(999)),
+            decoration: BoxDecoration(
+              color: gewaehlt ? kAccent : kSurface,
+              border: Border.all(color: gewaehlt ? kAccent : kBorder),
+              borderRadius: BorderRadius.circular(999),
+            ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (icon != null) ...[Icon(icon, size: 14, color: gewaehlt ? kOnAccent : kTextMuted), const SizedBox(width: 6)],
-                Text(label, style: TextStyle(fontSize: 13, color: gewaehlt ? kOnAccent : kTextMuted)),
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    size: 14,
+                    color: gewaehlt ? kOnAccent : kTextMuted,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: gewaehlt ? kOnAccent : kTextMuted,
+                  ),
+                ),
               ],
             ),
           ),
@@ -249,6 +362,7 @@ class Brotkrumen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     Widget stufe(String text, String? id, bool aktuell) => Semantics(
+      container: true,
       button: !aktuell,
       label: aktuell ? 'Aktueller Ordner: $text' : 'Zu $text',
       excludeSemantics: true,
@@ -263,7 +377,15 @@ class Brotkrumen extends StatelessWidget {
             heightFactor: 1,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 6),
-              child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: aktuell ? kTextStrong : kAccent, fontWeight: aktuell ? FontWeight.w700 : FontWeight.w400)),
+              child: Text(
+                text,
+                style: TextStyle(
+                  fontFamily: kFontMono,
+                  fontSize: 12,
+                  color: aktuell ? kTextStrong : kAccent,
+                  fontWeight: aktuell ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
             ),
           ),
         ),
@@ -274,7 +396,9 @@ class Brotkrumen extends StatelessWidget {
       children: [
         stufe('Dateien', null, pfad.isEmpty),
         for (var i = 0; i < pfad.length; i++) ...[
-          const ExcludeSemantics(child: Icon(Icons.chevron_right, size: 16, color: kTextMuted)),
+          const ExcludeSemantics(
+            child: Icon(Icons.chevron_right, size: 16, color: kTextMuted),
+          ),
           stufe(pfad[i].name, pfad[i].id, i == pfad.length - 1),
         ],
       ],
@@ -288,7 +412,13 @@ class DateiHinweis extends StatelessWidget {
   final String text;
   final String? titel;
   final Color farbe;
-  const DateiHinweis({super.key, required this.icon, required this.text, this.titel, this.farbe = kAccent});
+  const DateiHinweis({
+    super.key,
+    required this.icon,
+    required this.text,
+    this.titel,
+    this.farbe = kAccent,
+  });
 
   @override
   Widget build(BuildContext context) => Semantics(
@@ -297,7 +427,11 @@ class DateiHinweis extends StatelessWidget {
     excludeSemantics: true,
     child: Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: farbe.withValues(alpha: 0.08), border: Border.all(color: farbe.withValues(alpha: 0.35)), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(
+        color: farbe.withValues(alpha: 0.08),
+        border: Border.all(color: farbe.withValues(alpha: 0.35)),
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -307,8 +441,22 @@ class DateiHinweis extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (titel != null) Text(titel!, style: const TextStyle(fontWeight: FontWeight.w700, color: kTextStrong)),
-                Text(text, style: const TextStyle(color: kTextMuted, height: 1.4, fontSize: 13)),
+                if (titel != null)
+                  Text(
+                    titel!,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: kTextStrong,
+                    ),
+                  ),
+                Text(
+                  text,
+                  style: const TextStyle(
+                    color: kTextMuted,
+                    height: 1.4,
+                    fontSize: 13,
+                  ),
+                ),
               ],
             ),
           ),
@@ -338,17 +486,36 @@ class KontingentKarte extends ConsumerWidget {
     };
     return Semantics(
       container: true,
-      label: 'Speicher der Familie: ${k.text}${warnung == null ? '' : '. $warnung'}',
+      label:
+          'Speicher der Familie: ${k.text}${warnung == null ? '' : '. $warnung'}',
       excludeSemantics: true,
       child: LxCard(
         padding: const EdgeInsets.all(14),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(k.text, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kText)),
+            Text(
+              k.text,
+              style: const TextStyle(
+                fontFamily: kFontMono,
+                fontSize: 12,
+                color: kText,
+              ),
+            ),
             const SizedBox(height: 8),
-            ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: k.anteil, minHeight: 8, color: farbe, backgroundColor: kBorder)),
-            if (warnung != null) ...[const SizedBox(height: 8), Text(warnung, style: TextStyle(fontSize: 12, color: farbe))],
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: k.anteil,
+                minHeight: 8,
+                color: farbe,
+                backgroundColor: kBorder,
+              ),
+            ),
+            if (warnung != null) ...[
+              const SizedBox(height: 8),
+              Text(warnung, style: TextStyle(fontSize: 12, color: farbe)),
+            ],
           ],
         ),
       ),

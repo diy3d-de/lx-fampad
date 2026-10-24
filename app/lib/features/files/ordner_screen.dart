@@ -45,7 +45,8 @@ class OrdnerScreen extends ConsumerWidget {
   }
 
   Future<void> _loeschen(BuildContext context, WidgetRef ref, OrdnerZeile o) async {
-    if (await ordnerLoeschenFragen(context, ref, o) && context.mounted) Navigator.of(context).pop();
+    // die Seite schließt von selbst, sobald der Ordner aus der Datenbank verschwindet (build)
+    await ordnerLoeschenFragen(context, ref, o);
   }
 
   @override
@@ -57,7 +58,7 @@ class OrdnerScreen extends ConsumerWidget {
     if (o == null) {
       if (alleAsync.hasValue) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (context.mounted) Navigator.of(context).maybePop();
+          if (context.mounted && (ModalRoute.of(context)?.isCurrent ?? false)) unawaited(Navigator.of(context).maybePop());
         });
       }
       return const DateiRahmen(label: '// ordner', titel: 'Ordner', child: Text('Diesen Ordner gibt es nicht mehr.', style: TextStyle(color: kTextMuted)));
