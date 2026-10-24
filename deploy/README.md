@@ -4,18 +4,18 @@ lx-fampad läuft auf demselben VPS wie lx-labs.dev: eigener Caddy-Block, eigener
 Grundeinrichtung des Servers (Benutzer `lx`, SSH-Schlüssel, ufw, Caddy, Node.js) steht in `lx-labs/deploy/README.md` und wird hier vorausgesetzt.
 
 ```
-Browser/App ──HTTPS──▶ Caddy :443 ─┬─ familie.lx-labs.dev
+Browser/App ──HTTPS──▶ Caddy :443 ─┬─ familyhub.lx-labs.dev
                                    │    /api/*, /ws        ──▶ Node (lx-fampad) 127.0.0.1:4400 ──▶ PostgreSQL 17 (localhost)
                                    │    /releases/*        ──▶ /srv/fampad/releases   (Android-OTA: latest.json + APK)
                                    │    /.well-known/*     ──▶ /srv/fampad/well-known (assetlinks.json)
                                    │    /font-fallback/*   ──▶ /srv/fampad/font-fallback
                                    │    alles andere       ──▶ /srv/fampad/web/current (Flutter-Web-Build)
-                                   └─ ntfy.familie.lx-labs.dev ──▶ ntfy 127.0.0.1:2586 (UnifiedPush)
+                                   └─ ntfy.familyhub.lx-labs.dev ──▶ ntfy 127.0.0.1:2586 (UnifiedPush)
 ```
 
 Dateien in diesem Ordner:
 
-- `Caddyfile` – Site-Block `familie.lx-labs.dev` mit strengen Sicherheits-Headern (ntfy liegt eigenständig in `ntfy/ntfy.caddy`)
+- `Caddyfile` – Site-Block `familyhub.lx-labs.dev` mit strengen Sicherheits-Headern (ntfy liegt eigenständig in `ntfy/ntfy.caddy`)
 - `lx-fampad.service` – systemd-Dienst der API (eigener Benutzer, gehärtet, Speicher-/Prozessgrenzen); `lx-fampad-migrate.service` führt vor jedem Start die Migrationen mit der Migrationsrolle aus; `einrichtung-auth.sh` richtet Schlüssel und Datenbank-Rollen ein
 - `deploy.sh` – läuft auf dem Server: Code holen, Server bauen (`npm ci --ignore-scripts`), nur Produktivpakete übertragen, Dienst neu starten, Health-Check mit `"db":"ok"`
 - `deploy-web.sh` – läuft auf dem PC: Prüfsummen prüfen, Flutter-Web bauen, `version.txt` (= `webVersion`) schreiben und versioniert hochladen
@@ -48,8 +48,8 @@ Zwei A-Einträge auf die Server-IP, beide **DNS only** (graue Wolke), wie bei lx
 
 | Name | Typ | Inhalt | Proxy-Status |
 | --- | --- | --- | --- |
-| `familie` | A | `<SERVER-IP>` | DNS only |
-| `ntfy.familie` | A | `<SERVER-IP>` | DNS only |
+| `familyhub` | A | `<SERVER-IP>` | DNS only |
+| `ntfy.familyhub` | A | `<SERVER-IP>` | DNS only |
 
 ### 1. PostgreSQL 17 (Debian-Repository) und Datenbank
 
@@ -155,7 +155,7 @@ Ab Phase 1a gibt es Konten. Dafür braucht der Server (alles erledigt `deploy/ei
 - **`AUTH_SECRET_KEY`** in `/etc/lx-fampad/env` (256 Bit, Base64): Hauptschlüssel für die TOTP-Verschlüsselung (AES-256-GCM) und die HMACs von Wiederherstellungs-Codes und Einladungs-PINs. Ohne ihn startet der Dienst in `production` nicht (fail-closed; `deploy.sh` spielt dann die Vorversion zurück). Er liegt **außerhalb der Datenbank**, darf nie geändert oder verloren gehen (sonst sind alle TOTP-Geheimnisse und Codes unbrauchbar) und gehört in die Datensicherung, getrennt vom Datenbank-Dump. Alternativ `AUTH_SECRET_KEY_FILE`.
 - **Zwei Datenbank-Rollen:** `lx_fampad_migrate` (Eigentümer von Datenbank und Tabellen, darf DDL, nur für Migrationen) und `lx_fampad` (Laufzeit, nur SELECT/INSERT/UPDATE/DELETE; `ALTER DEFAULT PRIVILEGES` gibt Tabellen künftiger Migrationen automatisch dieselben Rechte). `DATABASE_URL` in `/etc/lx-fampad/env` bleibt die Laufzeitrolle; die Zugangsdaten der Migrationsrolle stehen als `MIGRATION_DATABASE_URL` nur in `/etc/lx-fampad/migrate.env` (`root:root`, 0600), die ausschließlich `lx-fampad-migrate.service` lädt. Der Dienst selbst kennt sie nicht.
 - **`lx-fampad-migrate.service`** (oneshot, `Requires=` von `lx-fampad.service`) ersetzt das frühere `ExecStartPre`: Vor jedem Start laufen die Migrationen mit der Migrationsrolle. Die Einheit lädt **nur** `migrate.env` (nicht die env-Datei mit `AUTH_SECRET_KEY`); fehlt die Datei, scheitert sie mit klarer Meldung und damit auch der Start des Dienstes. `einrichtung-auth.sh` legt sie an und erzwingt bei jedem Lauf Besitzer und Rechte (`root:root`, 0600) beider Dateien.
-- Passkeys: `WEBAUTHN_RP_ID` (Standard: Hostname von `PUBLIC_URL`, also `familie.lx-labs.dev`). Ein späterer Wechsel der RP-ID macht alle Passkeys unbrauchbar.
+- Passkeys: `WEBAUTHN_RP_ID` (Standard: Hostname von `PUBLIC_URL`, also `familyhub.lx-labs.dev`). Ein späterer Wechsel der RP-ID macht alle Passkeys unbrauchbar.
 
 **Umstellung einer laufenden Installation:** `git pull`, dann direkt nacheinander
 
@@ -189,7 +189,7 @@ Es gibt genau eine Familie und keine offene Registrierung. Den ersten Admin legt
 sudo node --env-file=/etc/lx-fampad/env /srv/fampad/server/dist/cli/bootstrap.js --family "Familie Beispiel" [--pin]
 ```
 
-Das Skript legt Familie und eine Einladung für den ersten Admin an und gibt den Link `https://familie.lx-labs.dev/#/einladung/<Token>` aus (Einmaltoken, 7 Tage gültig; in der Datenbank steht nur der SHA-256-Hash; das Token steht im URL-Fragment und taucht in keinem Log auf). `--pin` verlangt zusätzlich eine 6-stellige PIN, die getrennt weitergegeben wird. Ein erneuter Aufruf vor dem Einlösen ersetzt die Einladung; nach dem Einlösen bricht er ab (`already_bootstrapped`).
+Das Skript legt Familie und eine Einladung für den ersten Admin an und gibt den Link `https://familyhub.lx-labs.dev/#/einladung/<Token>` aus (Einmaltoken, 7 Tage gültig; in der Datenbank steht nur der SHA-256-Hash; das Token steht im URL-Fragment und taucht in keinem Log auf). `--pin` verlangt zusätzlich eine 6-stellige PIN, die getrennt weitergegeben wird. Ein erneuter Aufruf vor dem Einlösen ersetzt die Einladung; nach dem Einlösen bricht er ab (`already_bootstrapped`).
 
 **Notfall** (der einzige Admin hat Passkey/Passwort und alle Wiederherstellungs-Codes verloren):
 
@@ -255,7 +255,7 @@ sudo -u postgres psql -d lx_fampad -c "GRANT USAGE ON SCHEMA drizzle TO lx_fampa
 
 ### 6. Caddy
 
-**Warnung ntfy:** `ntfy.familie.lx-labs.dev` gehört **nicht** in `deploy/Caddyfile` bzw. `fampad.caddy` (diese Datei ist byte-gleich zur Serverdatei, `deploy.sh` vergleicht sie). Der Site-Block liegt eigenständig in `deploy/ntfy/ntfy.caddy` und wird nur von `deploy/einrichtung-ntfy.sh` nach `/etc/caddy/conf.d/ntfy.caddy` installiert; sonst gäbe es beim Caddy-Start eine doppelte Site-Definition. `deploy.sh` und `einrichtung-2.sh` fassen `ntfy.caddy` nie an (Reverse-Proxy auf `127.0.0.1:2586`, kein `encode`, wegen Streaming).
+**Warnung ntfy:** `ntfy.familyhub.lx-labs.dev` gehört **nicht** in `deploy/Caddyfile` bzw. `fampad.caddy` (diese Datei ist byte-gleich zur Serverdatei, `deploy.sh` vergleicht sie). Der Site-Block liegt eigenständig in `deploy/ntfy/ntfy.caddy` und wird nur von `deploy/einrichtung-ntfy.sh` nach `/etc/caddy/conf.d/ntfy.caddy` installiert; sonst gäbe es beim Caddy-Start eine doppelte Site-Definition. `deploy.sh` und `einrichtung-2.sh` fassen `ntfy.caddy` nie an (Reverse-Proxy auf `127.0.0.1:2586`, kein `encode`, wegen Streaming).
 
 Festgelegter Pfad: die Konfiguration liegt in **`/etc/caddy/conf.d/fampad.caddy`**; das Haupt-Caddyfile (`/etc/caddy/Caddyfile`, gehört dem lx-labs-Deploy) bindet sie mit der Zeile `import /etc/caddy/conf.d/*.caddy` ein. Reihenfolge zum Schutz von lx-labs.dev: erst sichern, dann Zeile anfügen, prüfen, bei Fehler sofort zurückkopieren, erst danach neu laden.
 
@@ -291,7 +291,7 @@ import /etc/caddy/conf.d/*.caddy
 
 Ein Glob-Import ohne Treffer ist für Caddy kein Fehler. Bis der Vorschlag umgesetzt ist: nach jedem lx-labs-Deploy `deploy.sh` (oder `grep conf.d /etc/caddy/Caddyfile`) ausführen. `deploy.sh` warnt, wenn die Zeile fehlt; dann Schritt 1 bis 3 oben wiederholen.
 
-Caddy holt danach die Zertifikate für beide Domains. Bis die Web-App hochgeladen ist (Schritt 8), antwortet `familie.lx-labs.dev` unter `/` mit 404; `/api/v1/health` geht sofort.
+Caddy holt danach die Zertifikate für beide Domains. Bis die Web-App hochgeladen ist (Schritt 8), antwortet `familyhub.lx-labs.dev` unter `/` mit 404; `/api/v1/health` geht sofort.
 
 ### 7. ntfy (UnifiedPush)
 
@@ -302,15 +302,15 @@ sudo bash ~/lx-fampad/deploy/einrichtung-ntfy.sh --dry-run   # nur prüfen, ver�
 sudo bash ~/lx-fampad/deploy/einrichtung-ntfy.sh
 ```
 
-**Voraussetzungen:** Schritt 6 ist erledigt (Importzeile `import /etc/caddy/conf.d/*.caddy` im Haupt-Caddyfile; fehlt sie, bricht das Skript ab und ergänzt sie **nicht** selbst, dann zuerst `einrichtung-2.sh`), `lx-labs.dev` antwortet, und der DNS-Eintrag `ntfy.familie` (A, ggf. AAAA; DNS only) zeigt auf eine globale Adresse dieses Servers. Das Skript prüft das vor jeder Änderung und bricht sonst mit klarer Meldung ab.
+**Voraussetzungen:** Schritt 6 ist erledigt (Importzeile `import /etc/caddy/conf.d/*.caddy` im Haupt-Caddyfile; fehlt sie, bricht das Skript ab und ergänzt sie **nicht** selbst, dann zuerst `einrichtung-2.sh`), `lx-labs.dev` antwortet, und der DNS-Eintrag `ntfy.familyhub` (A, ggf. AAAA; DNS only) zeigt auf eine globale Adresse dieses Servers. Das Skript prüft das vor jeder Änderung und bricht sonst mit klarer Meldung ab.
 
 **Reihenfolge im Skript:**
 
-1. Prüfungen (Importzeile, `lx-labs.dev`, DNS-Adressen gegen die lokalen globalen Adressen, Port 2586 frei, `ntfy.familie.lx-labs.dev` ist in keiner anderen Caddy-Datei schon definiert). Bei einem Fehler wird nichts verändert.
+1. Prüfungen (Importzeile, `lx-labs.dev`, DNS-Adressen gegen die lokalen globalen Adressen, Port 2586 frei, `ntfy.familyhub.lx-labs.dev` ist in keiner anderen Caddy-Datei schon definiert). Bei einem Fehler wird nichts verändert.
 2. Installation von ntfy **2.29.0** (exakt gepinnt, Release vom 07.10.2026) aus dem offiziellen apt-Repository `archive.ntfy.sh`. Gewählt gegenüber dem GitHub-.deb, weil das Repository signiert ist: Das Skript vergleicht den Schlüssel-Fingerabdruck `55BA 774A 6F5E E674 31E4 B6B7 CFDB 962D 4F1E C4AF` (vorher auf <https://docs.ntfy.sh/install/> gegenlesen) und bricht bei Abweichung ab; die GitHub-Releases haben keine Signatur. `/etc/apt/preferences.d/ntfy` sorgt dafür, dass aus diesem Repository nur das Paket `ntfy` kommt (Pin-Priority 1 für alles andere). Führt das Repository die Version nicht mehr, fällt das Skript auf das Release-.deb mit gepinnter SHA-256 zurück. Danach `apt-mark hold ntfy`.
 3. Systembenutzer `ntfy`, `/var/lib/ntfy` (Benutzerdatenbank), `/var/cache/ntfy` (Nachrichten-Cache 12 h, **Anhänge aus**), `/etc/ntfy/server.yml` aus `deploy/ntfy/server.yml` (deny-all, nur `127.0.0.1:2586`, `behind-proxy`, Rate-Limits; eine abweichende bisherige Datei wird mit Zeitstempel gesichert), systemd-Härtung als Drop-in `/etc/systemd/system/ntfy.service.d/haertung.conf`, Dienst starten und lokal prüfen.
 4. ntfy-Benutzer `fampad-server` (Rolle `user`, kein Admin, Passwort wird nicht gespeichert) mit **Token**, das nur auf `fampad-*` schreiben darf (zum Publizieren). Das Token liegt in `/etc/lx-fampad/ntfy-token` (root, 0600) und erscheint weder im Log noch in der Prozessliste. Lokale Rechteprobe: anonym 401/403, `fampad-*` 200, anderes Topic 401/403.
-5. Caddy: nur `/etc/caddy/conf.d/ntfy.caddy` aus `deploy/ntfy/ntfy.caddy` (eigenständige Datei, nicht `fampad.caddy`; `deploy.sh` und `einrichtung-2.sh` fassen sie nie an). Das Haupt-Caddyfile wird **nie geschrieben**, nur zum Nachlesen gesichert (`/etc/caddy/Caddyfile.vor-ntfy.<Zeitstempel>`). Ablauf: die Kandidat-Datei zuerst allein mit `caddy validate` prüfen, dann atomar installieren (erst `ntfy.caddy.neu`, dann umbenennen), danach Vollvalidierung mit allem Importierten, erst dann `reload`, danach `https://lx-labs.dev`, `https://familie.lx-labs.dev/api/v1/health` und `https://ntfy.familie.lx-labs.dev` (inkl. Rechteprobe) prüfen.
+5. Caddy: nur `/etc/caddy/conf.d/ntfy.caddy` aus `deploy/ntfy/ntfy.caddy` (eigenständige Datei, nicht `fampad.caddy`; `deploy.sh` und `einrichtung-2.sh` fassen sie nie an). Das Haupt-Caddyfile wird **nie geschrieben**, nur zum Nachlesen gesichert (`/etc/caddy/Caddyfile.vor-ntfy.<Zeitstempel>`). Ablauf: die Kandidat-Datei zuerst allein mit `caddy validate` prüfen, dann atomar installieren (erst `ntfy.caddy.neu`, dann umbenennen), danach Vollvalidierung mit allem Importierten, erst dann `reload`, danach `https://lx-labs.dev`, `https://familyhub.lx-labs.dev/api/v1/health` und `https://ntfy.familyhub.lx-labs.dev` (inkl. Rechteprobe) prüfen.
 
 **Bei Fehlern ab Schritt 5** (Validierung, Reload, eine der Prüfungen, Strg+C, SSH-Abbruch): automatischer Rückfall. Die vorherige `ntfy.caddy` kommt zurück, gab es keine, wird sie entfernt; dann `reload` und Prüfung von `lx-labs.dev`. Fehler in Schritt 1 bis 4 lassen Caddy unberührt (ntfy selbst bleibt dann installiert; das Skript lässt sich gefahrlos wiederholen). Danach Ursache klären (`journalctl -u caddy -n 50`, `journalctl -u ntfy -n 50`) und erneut starten. **Nach einem Zertifikatsfehler mindestens 1 Stunde warten** (Let's-Encrypt-Limit für Fehlversuche), vorher DNS prüfen.
 
@@ -327,8 +327,8 @@ Der Server liest die Werte seit dem Push-Versand (Branch phase-push): ohne beide
 
 ```bash
 sudo systemctl status ntfy
-curl -fsS https://ntfy.familie.lx-labs.dev/v1/health                                          # {"healthy":true}
-curl -s -o /dev/null -w '%{http_code}\n' -d x https://ntfy.familie.lx-labs.dev/fampad-test    # 401 oder 403 (anonym verboten)
+curl -fsS https://ntfy.familyhub.lx-labs.dev/v1/health                                          # {"healthy":true}
+curl -s -o /dev/null -w '%{http_code}\n' -d x https://ntfy.familyhub.lx-labs.dev/fampad-test    # 401 oder 403 (anonym verboten)
 sudo -u ntfy ntfy access --config /etc/ntfy/server.yml                                        # Rechteübersicht
 sudo ls -l /etc/lx-fampad/ntfy-token                                                          # -rw------- root root
 curl -sI https://lx-labs.dev | head -1
@@ -336,7 +336,7 @@ curl -sI https://lx-labs.dev | head -1
 
 **Token rotieren:** Das Token läuft nicht ab. Neues Token: `sudo -u ntfy ntfy token --config /etc/ntfy/server.yml list` (altes ansehen), `sudo rm /etc/lx-fampad/ntfy-token`, Skript erneut starten (legt ein neues an), danach das alte widerrufen (`sudo -u ntfy ntfy token --config /etc/ntfy/server.yml remove fampad-server <altes-tk_…>`), `NTFY_TOKEN` in der env-Datei ersetzen und `lx-fampad` neu starten.
 
-**Version aktualisieren:** Aktuell ist **2.29.0** gepinnt; **2.32.0** darf frühestens ab 01.11. (14 Tage nach Veröffentlichung) übernommen werden. Sicher aktualisieren: Release-Datum prüfen, neuen Fingerabdruck und Version auf docs.ntfy.sh gegenlesen, dann `NTFY_VERSION` (und `NTFY_DEB_SHA256` für den Fallback) im Skript anheben, per PR mergen; auf dem Server `sudo apt-mark unhold ntfy && sudo apt-get update && sudo apt-get install ntfy=<neu> && sudo apt-mark hold ntfy && sudo systemctl restart ntfy`, anschließend `curl https://ntfy.familie.lx-labs.dev/v1/health`. Das Skript lässt eine andere installierte Version unangetastet.
+**Version aktualisieren:** Aktuell ist **2.29.0** gepinnt; **2.32.0** darf frühestens ab 01.11. (14 Tage nach Veröffentlichung) übernommen werden. Sicher aktualisieren: Release-Datum prüfen, neuen Fingerabdruck und Version auf docs.ntfy.sh gegenlesen, dann `NTFY_VERSION` (und `NTFY_DEB_SHA256` für den Fallback) im Skript anheben, per PR mergen; auf dem Server `sudo apt-mark unhold ntfy && sudo apt-get update && sudo apt-get install ntfy=<neu> && sudo apt-mark hold ntfy && sudo systemctl restart ntfy`, anschließend `curl https://ntfy.familyhub.lx-labs.dev/v1/health`. Das Skript lässt eine andere installierte Version unangetastet.
 
 **Rückbau:** `sudo rm /etc/caddy/conf.d/ntfy.caddy && sudo systemctl reload caddy` (lx-labs.dev und familie bleiben unberührt), `sudo systemctl disable --now ntfy`. Daten liegen unter `/var/lib/ntfy`.
 
@@ -356,14 +356,14 @@ sudo bash ~/lx-fampad/deploy/einrichtung-ntfy-up.sh
 **Was jede Person in der ntfy-App eintragen muss** (die App auf dem Handy; das Passwort gibt der Betreiber persönlich weiter, es steht per `sudo cat /etc/lx-fampad/ntfy-family-password` bereit):
 
 1. ntfy-App installieren, **bevorzugt aus F-Droid** (oder GitHub-Release): Diese Fassung hat keine Firebase-Bestandteile. Die Fassung aus Google Play bringt Google-Dienste (Firebase) mit; sie funktioniert, passt aber nicht zum Ziel „kein Google“. Keinen eingebetteten FCM-Verteiler benutzen.
-2. In der ntfy-App: Einstellungen, **Standardserver** auf `https://ntfy.familie.lx-labs.dev` stellen, **bevor** in lx-fampad Push eingeschaltet wird. Sonst liegt der UnifiedPush-Endpunkt auf ntfy.sh, und der Familien-Server lehnt ihn ab (`invalid_endpoint`).
+2. In der ntfy-App: Einstellungen, **Standardserver** auf `https://ntfy.familyhub.lx-labs.dev` stellen, **bevor** in lx-fampad Push eingeschaltet wird. Sonst liegt der UnifiedPush-Endpunkt auf ntfy.sh, und der Familien-Server lehnt ihn ab (`invalid_endpoint`).
 3. In der ntfy-App Benutzer `fampad-family` und das Passwort eintragen (Einstellungen, Benutzer verwalten).
 4. In lx-fampad: Profil, **Benachrichtigungen**, einschalten, dann **Test-Wecker senden**.
 5. Akku: ntfy und lx-fampad **unbegrenzt/ohne Einschränkung** laufen lassen. Samsung: Einstellungen, Akku, Hintergrundnutzungsbegrenzungen, „Nie schlafende Apps“ (beide Apps eintragen) und „Automatische Sperre“ für diese Apps abschalten.
 
 **Hinweis zu Fremd-Weckern:** Das Plugin hängt eine exportierte Empfänger-Komponente in das Manifest (Verteiler sind fremde Apps). Sie verwirft jede Nachricht ohne gültiges Registrierungs-Token (zufällig je Registrierung, nur dem Verteiler bekannt; Quelltext `MessagingReceiver.onReceive` der Connector-Bibliothek geprüft). Zusätzlich drosselt die App Hintergrund-Abgleiche auf einen je 10 s und `MainActivity` übernimmt keine Start-Argumente aus Intents.
 
-**Server-Betrieb Push:** `NTFY_URL`, `NTFY_TOKEN` (siehe oben) und optional `NTFY_PUBLIC_HOST` (Standard `ntfy.familie.lx-labs.dev`: Host, den gemeldete Endpunkte haben müssen). Der Wecker geht per Loopback an `NTFY_URL` (der Dienst hat `IPAddressDeny=any` mit `IPAddressAllow=localhost`). Migration `0009_push` kommt mit dem normalen `deploy.sh`. Prüfen: `journalctl -u lx-fampad | grep -i push` (kein „Push ist aus“); in der App Profil, Benachrichtigungen, Test-Wecker.
+**Server-Betrieb Push:** `NTFY_URL`, `NTFY_TOKEN` (siehe oben) und optional `NTFY_PUBLIC_HOST` (Standard `ntfy.familyhub.lx-labs.dev`: Host, den gemeldete Endpunkte haben müssen). Der Wecker geht per Loopback an `NTFY_URL` (der Dienst hat `IPAddressDeny=any` mit `IPAddressAllow=localhost`). Migration `0009_push` kommt mit dem normalen `deploy.sh`. Prüfen: `journalctl -u lx-fampad | grep -i push` (kein „Push ist aus“); in der App Profil, Benachrichtigungen, Test-Wecker.
 
 ### 8. Web-App hochladen
 
@@ -377,24 +377,24 @@ Das Skript baut mit `--no-web-resources-cdn`, lädt nach `/srv/fampad/web/<versi
 
 **Prüfen (Pflicht vor dem ersten Echtbetrieb):** Seite in Chrome öffnen, Entwicklerwerkzeuge → Netzwerk: Es darf **nichts** von `fonts.gstatic.com`, `gstatic.com` oder anderen Fremddomains geladen werden. In der Konsole: `crossOriginIsolated` muss `true` sein (sonst fehlt COOP/COEP, drift fällt auf IndexedDB zurück).
 
-**Fallback-Schriften:** `web/flutter_bootstrap.js` verweist `fontFallbackBaseUrl` auf `https://familie.lx-labs.dev/font-fallback/`. Dort müssen die Noto-Schriften liegen, die Flutter bei fehlenden Zeichen (z. B. Emoji) nachlädt. Welche Dateien nötig sind, zeigt der Netzwerk-Tab, wenn ein Emoji in der App erscheint (404-Anfragen an `/font-fallback/...`); die Dateien aus dem gleichnamigen Pfad von `fonts.gstatic.com/s/` einmalig herunterladen und mit gleicher Pfadstruktur ablegen. Ohne diese Dateien werden solche Zeichen nur als Kästchen dargestellt, es gibt aber keinen Fremdabruf.
+**Fallback-Schriften:** `web/flutter_bootstrap.js` verweist `fontFallbackBaseUrl` auf `https://familyhub.lx-labs.dev/font-fallback/`. Dort müssen die Noto-Schriften liegen, die Flutter bei fehlenden Zeichen (z. B. Emoji) nachlädt. Welche Dateien nötig sind, zeigt der Netzwerk-Tab, wenn ein Emoji in der App erscheint (404-Anfragen an `/font-fallback/...`); die Dateien aus dem gleichnamigen Pfad von `fonts.gstatic.com/s/` einmalig herunterladen und mit gleicher Pfadstruktur ablegen. Ohne diese Dateien werden solche Zeichen nur als Kästchen dargestellt, es gibt aber keinen Fremdabruf.
 
 ### 9. Passkey- und Update-Dateien (ab Phase 1)
 
 - `/srv/fampad/well-known/assetlinks.json` mit dem SHA-256-Fingerprint des **Release-Signaturschlüssels** der Android-App (`dev.lx_labs.fampad`). Vorlage: `deploy/assetlinks.json.template` (Platzhalter ersetzen). Ablauf **Android-Zuordnung (Passkeys und App-Links)**:
   1. Fingerprint des Release-Schlüssels ermitteln: aus dem Release-Workflow (Schritt "Signatur prüfen, Prüfsumme berechnen", Zeile `SHA-256` des Zertifikats) oder `keytool -list -v -keystore <keystore> -alias <alias>` (Zeile `SHA256:`).
      **In der Produktion steht NUR der Release-Fingerprint** in `assetlinks.json` und in `WEBAUTHN_ORIGINS`. Der Debug-Schlüssel (`~/.android/debug.keystore`, Passwort `android`) ist öffentlich bekannt: Jeder kann damit eine App mit demselben Paketnamen bauen und signieren. Stünde er in der Produktion, könnte so eine fremde App Passkeys der Domain nutzen und Einladungs-Links übernehmen. Debug-Builds testet man gegen eine **getrennte Testinstanz** (eigene Domain/Subdomain, eigene `assetlinks.json` und `WEBAUTHN_ORIGINS` mit dem Debug-Fingerprint, nie dieselbe Datenbank).
-  2. Datei als `/srv/fampad/well-known/assetlinks.json` ablegen und prüfen: `curl -s https://familie.lx-labs.dev/.well-known/assetlinks.json` (Content-Type JSON, kein Redirect). Sie muss beide Beziehungen enthalten (die Vorlage tut das): `delegate_permission/common.get_login_creds` (Passkeys) und `delegate_permission/common.handle_all_urls` (App-Links, Schritt 5). Google prüft die Datei beim ersten Passkey-Aufruf; ein Zwischenspeicher kann Änderungen verzögern.
+  2. Datei als `/srv/fampad/well-known/assetlinks.json` ablegen und prüfen: `curl -s https://familyhub.lx-labs.dev/.well-known/assetlinks.json` (Content-Type JSON, kein Redirect). Sie muss beide Beziehungen enthalten (die Vorlage tut das): `delegate_permission/common.get_login_creds` (Passkeys) und `delegate_permission/common.handle_all_urls` (App-Links, Schritt 5). Google prüft die Datei beim ersten Passkey-Aufruf; ein Zwischenspeicher kann Änderungen verzögern.
   3. **Server:** Die Android-App hat eine eigene WebAuthn-Origin `android:apk-key-hash:<Hash>`. Sie muss in `WEBAUTHN_ORIGINS` stehen (`/etc/lx-fampad/env`, kommagetrennt; **ohne sie lehnt der Server jeden Passkey der App ab**). `<Hash>` = SHA-256-Fingerprint des **Release**-Schlüssels als Base64url ohne Auffüllung, z. B. `echo AABBCC…(Hex ohne Doppelpunkte) | xxd -r -p | basenc --base64url | tr -d =`. Danach `sudo systemctl restart lx-fampad`. Nur ein Eintrag (Release); Debug-Origins nur auf der Testinstanz.
-  4. Die App-RP-ID ist `familie.lx-labs.dev` (`WEBAUTHN_RP_ID`); der Browser nutzt `https://familie.lx-labs.dev` (`PUBLIC_URL`). Erst nach 2. und 3. funktionieren Passkeys in der App; bis dahin Passwort + TOTP. Passkeys brauchen Google Play-Dienste und ein eingerichtetes Google-Konto/Passwortmanager.
-  5. **Verifizierte App-Links (`autoVerify`):** Der Einladungs-Intent-Filter in `app/android/app/src/main/AndroidManifest.xml` trägt `android:autoVerify="true"` für `https://familie.lx-labs.dev/`. Android prüft beim Installieren (und später gelegentlich), ob `/.well-known/assetlinks.json` die `handle_all_urls`-Beziehung mit dem Fingerprint der installierten App enthält, und öffnet Einladungslinks dann direkt in der App, ohne Auswahldialog. **Reihenfolge:** zuerst `assetlinks.json` ausliefern und mit `curl` prüfen (Schritt 2), **danach** die App mit `autoVerify` installieren bzw. aktualisieren; sonst schlägt die Prüfung beim Installieren still fehl (der Link öffnet dann weiter im Browser bzw. mit Nachfrage). Prüfen auf einem Gerät mit `adb`: `adb shell pm get-app-links dev.lx_labs.fampad` (Status `verified` für `familie.lx-labs.dev`); neu anstoßen: `adb shell pm verify-app-links --re-verify dev.lx_labs.fampad`. Auch verifizierte Links verlassen sich nicht auf das Fragment: Android reicht es an die App durch, die es liest (`MainActivity.linkAus`). Host und Pfad stehen in `AndroidManifest.xml`, `MainActivity.kt` und (als `INVITE_HOST`) in `lib/constants.dart`; bei einem Domainwechsel alle drei ändern.
+  4. Die App-RP-ID ist `familyhub.lx-labs.dev` (`WEBAUTHN_RP_ID`); der Browser nutzt `https://familyhub.lx-labs.dev` (`PUBLIC_URL`). Erst nach 2. und 3. funktionieren Passkeys in der App; bis dahin Passwort + TOTP. Passkeys brauchen Google Play-Dienste und ein eingerichtetes Google-Konto/Passwortmanager.
+  5. **Verifizierte App-Links (`autoVerify`):** Der Einladungs-Intent-Filter in `app/android/app/src/main/AndroidManifest.xml` trägt `android:autoVerify="true"` für `https://familyhub.lx-labs.dev/`. Android prüft beim Installieren (und später gelegentlich), ob `/.well-known/assetlinks.json` die `handle_all_urls`-Beziehung mit dem Fingerprint der installierten App enthält, und öffnet Einladungslinks dann direkt in der App, ohne Auswahldialog. **Reihenfolge:** zuerst `assetlinks.json` ausliefern und mit `curl` prüfen (Schritt 2), **danach** die App mit `autoVerify` installieren bzw. aktualisieren; sonst schlägt die Prüfung beim Installieren still fehl (der Link öffnet dann weiter im Browser bzw. mit Nachfrage). Prüfen auf einem Gerät mit `adb`: `adb shell pm get-app-links dev.lx_labs.fampad` (Status `verified` für `familyhub.lx-labs.dev`); neu anstoßen: `adb shell pm verify-app-links --re-verify dev.lx_labs.fampad`. Auch verifizierte Links verlassen sich nicht auf das Fragment: Android reicht es an die App durch, die es liest (`MainActivity.linkAus`). Host und Pfad stehen in `AndroidManifest.xml`, `MainActivity.kt` und (als `INVITE_HOST`) in `lib/constants.dart`; bei einem Domainwechsel alle drei ändern.
   6. **Berechtigungen des Passkey-Pakets:** `passkeys_android` bringt `CREDENTIAL_MANAGER_SET_ORIGIN` mit. Das ist eine privilegierte Berechtigung für Browser und System-Apps, die den Origin einer fremden Seite setzen; eine normale App bekommt sie nie, und das Paket setzt keinen Origin (geprüft im Quelltext). Sie ist deshalb im Manifest mit `tools:node="remove"` entfernt. Passkeys der App laufen über die App-Origin `android:apk-key-hash:…` (Schritt 3) und sind davon nicht betroffen. Nach einem Update des Pakets `passkeys` kurz prüfen, ob es neue Berechtigungen anfordert (`aapt dump permissions` auf der APK). **Ungeprüft auf einem Gerät** (kein Android-Build in dieser Umgebung): Nach dem ersten Release-Build Passkey anlegen und anmelden testen.
   7. **Datensicherung:** `allowBackup="false"` plus leere Regeln (`res/xml/data_extraction_rules.xml`, `res/xml/backup_rules.xml`) schließen Cloud-Backup und Geräte-Übertragung vollständig aus. Anmeldedaten liegen im Android Keystore und würden nach einer Wiederherstellung ohnehin unlesbar sein.
 - `/srv/fampad/releases/android/latest.json` und `dev-lx_labs-fampad-<version>.apk` (erzeugt vom Release-Workflow, Abschnitt 10). **Erst hochladen, wenn der echte Update-Schlüssel eingebaut ist:** In `app/lib/constants.dart` steht ein Platzhalter-Schlüssel (`kUpdatePublicKey`), zu dem es keinen privaten Schlüssel gibt; die App lehnt dann jedes Manifest ab. Ablauf:
   1. Schlüssel erzeugen (außerhalb des Repositories): `node tools/update-manifest.mjs keygen ~/lx-update-key.pem`; öffentlichen Schlüssel in `kUpdatePublicKey` und eine neue `kUpdateKeyId` eintragen, den privaten als CI-Secret `UPDATE_SIGNING_KEY` hinterlegen.
   2. App mit dem neuen Schlüssel bauen, signieren: `node tools/update-manifest.mjs sign --apk … --version … --version-code … --key-id … --out latest.json` (Näheres: `tools/README.md`; normalerweise erledigt das der Release-Workflow, Abschnitt 10).
   3. APK und `latest.json` nach `/srv/fampad/releases/android/` legen, **APK zuerst**, dann `latest.json`.
-  4. **Stabiler Download-Link:** Die APK zusätzlich als `lx-familyhub-latest.apk` im selben Ordner ablegen (Kopie, kein Symlink; z. B. `cp dev-lx_labs-fampad-<version>.apk lx-familyhub-latest.apk` auf dem Server, oder die Datei beim Upload unter diesem Namen hochladen, ebenfalls vor `latest.json`). Die App nennt diesen Link in der Einladung, im Willkommenshinweis und unter Profil > Über (`kApkDownloadUrl` in `constants.dart`); er enthält nie ein Token. Bei jedem Release neu überschreiben, sonst verteilt der Link eine alte Version. Prüfen: `curl -sI https://familie.lx-labs.dev/releases/android/lx-familyhub-latest.apk` (200, `Content-Type: application/vnd.android.package-archive`, `Content-Length` wie die Versions-APK). Caddy (`/releases/*`) liefert die Datei bereits aus und setzt den APK-Content-Type; ein `Content-Disposition` gibt es nicht, Android-Browser laden die APK trotzdem herunter (optional `header @apk Content-Disposition "attachment"`, nur nach Rückfrage und über die validierenden Skripte).
+  4. **Stabiler Download-Link:** Die APK zusätzlich als `lx-familyhub-latest.apk` im selben Ordner ablegen (Kopie, kein Symlink; z. B. `cp dev-lx_labs-fampad-<version>.apk lx-familyhub-latest.apk` auf dem Server, oder die Datei beim Upload unter diesem Namen hochladen, ebenfalls vor `latest.json`). Die App nennt diesen Link in der Einladung, im Willkommenshinweis und unter Profil > Über (`kApkDownloadUrl` in `constants.dart`); er enthält nie ein Token. Bei jedem Release neu überschreiben, sonst verteilt der Link eine alte Version. Prüfen: `curl -sI https://familyhub.lx-labs.dev/releases/android/lx-familyhub-latest.apk` (200, `Content-Type: application/vnd.android.package-archive`, `Content-Length` wie die Versions-APK). Caddy (`/releases/*`) liefert die Datei bereits aus und setzt den APK-Content-Type; ein `Content-Disposition` gibt es nicht, Android-Browser laden die APK trotzdem herunter (optional `header @apk Content-Disposition "attachment"`, nur nach Rückfrage und über die validierenden Skripte).
   Der private Schlüssel gehört nie in das Repository und nie auf den Server.
 
 ---
@@ -405,7 +405,7 @@ Der Workflow `.github/workflows/release.yml` läuft bei einem Tag `v*` (z. B. `v
 
 **Vor dem Tag die Version setzen:** `version:` in `app/pubspec.yaml` (z. B. `0.4.0+4000`; Build-Nummer = versionCode = major*1000000 + minor*1000 + patch) und `version` in `server/package.json` und `server/package-lock.json` (beide Stellen oben) auf die Release-Version bringen und committen. Der Job **build** bricht ab, wenn pubspec.yaml oder package.json nicht zur Release-Version (Tag bzw. Eingabe) passen; ebenso `deploy/deploy-web.sh <version>` (oder `RELEASE_VERSION=<version>`; ohne Angabe gilt ein Git-Tag auf HEAD, gibt es keinen, nur eine Warnung). Die Web-App zeigt dann `<version>` und die Build-Kennung (`<version>-<Datum+Uhrzeit>`), unter Profil > Über getrennt.
 
-1. **build**: Version prüfen, Lockfile erzwingen, build_runner, analyze, test, dann `flutter build apk --release` mit dem Android-Schlüssel aus den Secrets (`key.properties` entsteht erst im Job und wird danach gelöscht) und `--dart-define` für `API_BASE`, `INVITE_HOST` und `RELEASES_BASE` (`https://familie.lx-labs.dev`). `versionName` = Tag, `versionCode` = `major*1000000 + minor*1000 + patch` (0.2.0 gibt 2000); der Wert aus `pubspec.yaml` wird dabei überschrieben. Danach `apksigner verify` und SHA-256. Dateiname: `dev-lx_labs-fampad-<version>.apk` (passt zur Namensprüfung der App).
+1. **build**: Version prüfen, Lockfile erzwingen, build_runner, analyze, test, dann `flutter build apk --release` mit dem Android-Schlüssel aus den Secrets (`key.properties` entsteht erst im Job und wird danach gelöscht) und `--dart-define` für `API_BASE`, `INVITE_HOST` und `RELEASES_BASE` (`https://familyhub.lx-labs.dev`). `versionName` = Tag, `versionCode` = `major*1000000 + minor*1000 + patch` (0.2.0 gibt 2000); der Wert aus `pubspec.yaml` wird dabei überschrieben. Danach `apksigner verify` und SHA-256. Dateiname: `dev-lx_labs-fampad-<version>.apk` (passt zur Namensprüfung der App).
 2. **sign** (Environment `release`, manuelle Freigabe): prüft, dass `kUpdateKeyId`/`kUpdatePublicKey` in `constants.dart` echt sind und zum Secret `UPDATE_SIGNING_KEY` passen, erzeugt und signiert `latest.json`. Nur dieser Job sieht den Update-Schlüssel.
 3. **draft**: legt einen **Release-Entwurf** mit APK, `.sha256` und `latest.json` an (nichts wird veröffentlicht).
 4. **deploy** (optional, nur manuell mit Häkchen "deploy_vps", Environment `vps-deploy` mit Freigabe): lädt auf den VPS hoch. Der stabile Download-Link `lx-familyhub-latest.apk` (Abschnitt 9, Schritt 4) wird dabei **nicht** automatisch angelegt (rrsync erlaubt nur Schreiben); nach jedem Release von Hand als Kopie der neuen APK ablegen.
@@ -463,10 +463,10 @@ Die Standort-Seite zeigt die Karte nur, wenn die Kartendatei auf dem Server lieg
    ssh lx-labs 'chmod 644 /srv/fampad/karte/neu.pmtiles && mv -f /srv/fampad/karte/neu.pmtiles /srv/fampad/karte/westerwald.pmtiles'
    ```
    **`chmod 644` ist nötig** (die Datei gehört `lx`, Caddy läuft als anderer Benutzer); das Umbenennen auf demselben Dateisystem ist atomar (laufende Karten lesen kurz mit der alten Datei weiter, nach dem ETag-Wechsel mit der neuen).
-4. **Prüfen:** `sudo bash deploy/einrichtung-karte.sh` (idempotent, ändert nichts mehr, macht den Range-Test: 206, PMTiles-Kennung, kein `Content-Encoding`, ETag) oder von Hand: `curl -s -o /dev/null -w '%{http_code}\n' -r 0-15 https://familie.lx-labs.dev/karte-daten/westerwald.pmtiles` muss `206` liefern. In der App (neu laden) zeigt die Standort-Seite danach die Karte, sobald jemand teilt.
+4. **Prüfen:** `sudo bash deploy/einrichtung-karte.sh` (idempotent, ändert nichts mehr, macht den Range-Test: 206, PMTiles-Kennung, kein `Content-Encoding`, ETag) oder von Hand: `curl -s -o /dev/null -w '%{http_code}\n' -r 0-15 https://familyhub.lx-labs.dev/karte-daten/westerwald.pmtiles` muss `206` liefern. In der App (neu laden) zeigt die Standort-Seite danach die Karte, sobald jemand teilt.
 5. **Rückbau:** Block `handle_path /karte-daten/*` aus `/etc/caddy/conf.d/fampad.caddy` entfernen (das Skript nennt die Sicherungsdatei), `caddy validate`, `sudo systemctl reload caddy`; Datei löschen.
 
-Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-Block in `deploy/Caddyfile`; **vor dem Deploy auf dem Server bestätigen**, dass auch Haupt-Caddyfile und `conf.d/` keinen für familie.lx-labs.dev setzen: `sudo grep -rn "log" /etc/caddy/Caddyfile /etc/caddy/conf.d/`), Kachel-Anfragen werden also nicht mitgeschrieben; `journalctl` hält Caddy-Fehlermeldungen höchstens 7 Tage (Abschnitt „Logs und Datenschutz“).
+Zugriffslogs: Caddy schreibt für diese Site **keine Zugriffslogs** (kein `log`-Block in `deploy/Caddyfile`; **vor dem Deploy auf dem Server bestätigen**, dass auch Haupt-Caddyfile und `conf.d/` keinen für familyhub.lx-labs.dev setzen: `sudo grep -rn "log" /etc/caddy/Caddyfile /etc/caddy/conf.d/`), Kachel-Anfragen werden also nicht mitgeschrieben; `journalctl` hält Caddy-Fehlermeldungen höchstens 7 Tage (Abschnitt „Logs und Datenschutz“).
 
 ### 12. Wetter (Netatmo, optional)
 
@@ -593,7 +593,7 @@ Migration 0024 (Spalte `epoche_wraps.key_version`) ist rein additiv. Der Schalte
 | `sudo systemctl status lx-fampad` | Dienststatus |
 | `sudo journalctl -u lx-fampad -f` | Logs live |
 | `sudo journalctl -u caddy -n 50` | Caddy-Logs (Zertifikate, Fehler) |
-| `curl https://familie.lx-labs.dev/api/v1/version` | Server-, Protokoll- und Mindestversion |
+| `curl https://familyhub.lx-labs.dev/api/v1/version` | Server-, Protokoll- und Mindestversion |
 | `sudo systemctl status ntfy` | ntfy-Status |
 
 ## Noch offen (spätere Phasen)
@@ -604,7 +604,7 @@ Migration 0024 (Spalte `epoche_wraps.key_version`) ist rein additiv. Der Schalte
 
 ## Umbenennung von lx-familienzentrale
 
-Das Projekt hieß früher `lx-familienzentrale` (Dienst/Benutzer/Verzeichnisse `lx-familie`, `/srv/familie`, Datenbank `lx_familie`). Die Domain `familie.lx-labs.dev` und die WebAuthn-RP-ID bleiben. Eine bestehende Installation wird einmalig mit `umbenennung-server.sh` umgestellt (idempotent, bricht bei jedem Fehler mit Meldung ab; `lx-labs` und dessen Caddy-Site werden nicht angefasst).
+Das Projekt hieß früher `lx-familienzentrale` (Dienst/Benutzer/Verzeichnisse `lx-familie`, `/srv/familie`, Datenbank `lx_familie`). Die Domain `familyhub.lx-labs.dev` und die WebAuthn-RP-ID bleiben. Eine bestehende Installation wird einmalig mit `umbenennung-server.sh` umgestellt (idempotent, bricht bei jedem Fehler mit Meldung ab; `lx-labs` und dessen Caddy-Site werden nicht angefasst).
 
 **Vorher prüfen, was im Checkout liegt:** Das Skript läuft als root, der Checkout `~/lx-familienzentrale` gehört aber `lx` (schreibbar), und das Skript installiert Dateien daraus nach `/etc` (Units, Caddy). Es zeigt den letzten Commit an und bricht bei uncommitteten Änderungen in `deploy/` ab; trotzdem vorher selbst ansehen:
 
@@ -618,7 +618,7 @@ cd ~ && newgrp lx-fampad                                  # oder neu anmelden (u
 cd ~/lx-fampad && bash deploy/deploy.sh                   # neuen Code ausrollen
 ```
 
-Schritt 0 prüft **alle** Voraussetzungen (Befehle, `/srv/familie/{server,files}`, `server.prev` wird bei Bedarf angelegt, `env`, Caddy-Import und -Konfiguration, freier Platz) und legt Fehlendes an, bevor irgendein Dienst gestoppt wird. Danach sichert es **getrennt**: nach `/var/backups/lx-fampad-umbenennung-<Zeit>/` pg_dump, Caddyfile, Site-Datei, Units und sudoers, und nach `/root/lx-fampad-umbenennung-<Zeit>-schluessel/` (nur root, 0700/0600) `/etc/lx-familie` mit den env-Dateien und `AUTH_SECRET_KEY`. Der Dump enthält Klarnamen und Anmeldedaten, der Schlüssel entschlüsselt die TOTP-Geheimnisse darin; beides gehört nicht zusammen in einen Ordner (Backup-Werkzeuge, Weitergabe). **Beide Sicherungen nach wenigen Tagen ohne Auffälligkeiten löschen, spätestens nach 14 Tagen** (`sudo rm -rf /var/backups/lx-fampad-umbenennung-* /root/lx-fampad-umbenennung-*-schluessel`). Das Skript stoppt dann den Dienst, benennt Benutzer und Gruppe getrennt und wiederholbar um (`usermod -l`, `groupmod -n`; die Mitgliedschaft von `lx` bleibt), `/srv/familie` -> `/srv/fampad`, `/etc/lx-familie` -> `/etc/lx-fampad`, Datenbank und Rollen (`lx_fampad`, `lx_fampad_migrate`) um, passt die env-Dateien an (0600 root:root; Passwörter werden geprüft und bei Bedarf neu gesetzt), tauscht Units und sudoers aus, ersetzt `conf.d/familie.caddy` durch `fampad.caddy` (mit `caddy validate` vor dem Reload, bei Fehler Rückfall und Prüfung von lx-labs.dev), benennt `~/lx-familienzentrale` -> `~/lx-fampad` und `~/familie.git` -> `~/fampad.git` um (git-Remote wird mitgezogen) und prüft zuletzt `https://familie.lx-labs.dev/api/v1/health` (`"db":"ok"`) und `https://lx-labs.dev` (200).
+Schritt 0 prüft **alle** Voraussetzungen (Befehle, `/srv/familie/{server,files}`, `server.prev` wird bei Bedarf angelegt, `env`, Caddy-Import und -Konfiguration, freier Platz) und legt Fehlendes an, bevor irgendein Dienst gestoppt wird. Danach sichert es **getrennt**: nach `/var/backups/lx-fampad-umbenennung-<Zeit>/` pg_dump, Caddyfile, Site-Datei, Units und sudoers, und nach `/root/lx-fampad-umbenennung-<Zeit>-schluessel/` (nur root, 0700/0600) `/etc/lx-familie` mit den env-Dateien und `AUTH_SECRET_KEY`. Der Dump enthält Klarnamen und Anmeldedaten, der Schlüssel entschlüsselt die TOTP-Geheimnisse darin; beides gehört nicht zusammen in einen Ordner (Backup-Werkzeuge, Weitergabe). **Beide Sicherungen nach wenigen Tagen ohne Auffälligkeiten löschen, spätestens nach 14 Tagen** (`sudo rm -rf /var/backups/lx-fampad-umbenennung-* /root/lx-fampad-umbenennung-*-schluessel`). Das Skript stoppt dann den Dienst, benennt Benutzer und Gruppe getrennt und wiederholbar um (`usermod -l`, `groupmod -n`; die Mitgliedschaft von `lx` bleibt), `/srv/familie` -> `/srv/fampad`, `/etc/lx-familie` -> `/etc/lx-fampad`, Datenbank und Rollen (`lx_fampad`, `lx_fampad_migrate`) um, passt die env-Dateien an (0600 root:root; Passwörter werden geprüft und bei Bedarf neu gesetzt), tauscht Units und sudoers aus, ersetzt `conf.d/familie.caddy` durch `fampad.caddy` (mit `caddy validate` vor dem Reload, bei Fehler Rückfall und Prüfung von lx-labs.dev), benennt `~/lx-familienzentrale` -> `~/lx-fampad` und `~/familie.git` -> `~/fampad.git` um (git-Remote wird mitgezogen) und prüft zuletzt `https://familyhub.lx-labs.dev/api/v1/health` (`"db":"ok"`) und `https://lx-labs.dev` (200).
 
 Danach anpassen: PC-Aufrufe (`ssh lx-labs bash lx-fampad/deploy/deploy.sh`), GitHub-Repository auf `diy3d-de/lx-fampad` umbenennen und den Remote setzen. Der SSH-Deploy-Key `~/.ssh/id_ed25519_familie` darf seinen Namen behalten.
 

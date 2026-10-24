@@ -60,8 +60,8 @@ umask 022
 
 # --- Festwerte und Pins ---------------------------------------------------------------------------------------------------------
 # Die Versionen entsprechen docs/VERSIONEN.md; ntfy wird aus deploy/einrichtung-ntfy.sh gelesen (eine einzige Quelle für diese Pins).
-readonly DOMAIN="familie.lx-labs.dev"                 # fest: Passkeys (RP-ID) und App-Links hängen daran, nie ändern
-readonly NTFY_DOMAIN="ntfy.familie.lx-labs.dev"
+readonly DOMAIN="familyhub.lx-labs.dev"                 # fest: Passkeys (RP-ID) und App-Links hängen daran, nie ändern
+readonly NTFY_DOMAIN="ntfy.familyhub.lx-labs.dev"
 readonly LX_USER="lx"
 readonly SVC_USER="lx-fampad"
 readonly ETC_DIR="/etc/lx-fampad"
@@ -1569,7 +1569,7 @@ phase_pruefung() {
 mensch_liste() {
   echo
   echo "==> Das musst du noch selbst tun (ausführlich: docs/NEUINSTALLATION.md)"
-  echo "    1. DNS bei Cloudflare: A-Einträge 'familie' und 'ntfy.familie' (DNS only) auf die IP dieses Servers; danach: bootstrap-server.sh --phase caddy,pruefung"
+  echo "    1. DNS bei Cloudflare: A-Einträge 'familyhub' und 'ntfy.familyhub' (DNS only) auf die IP dieses Servers; danach: bootstrap-server.sh --phase caddy,pruefung"
   echo "    2. Firewall: nur 22, 80, 443 offen (Anbieter-Firewall oder ufw); SSH-Härtung (nur Schlüssel, kein Passwort, optional fail2ban) wie bei lx-labs"
   echo "    3. Web-App hochladen (vom PC):  deploy/deploy-web.sh   (SSH-Alias auf den neuen Server zeigen lassen)"
   echo "    4. NAS: Host-Schlüssel des neuen Servers eintragen (ssh-keygen -R, ssh-keyscan; Fingerabdruck vergleichen), Pull-Probelauf"

@@ -49,4 +49,4 @@ tar -C app/build/web -cf - . | ssh "$SSH_HOST" "tar -xf - -C /srv/fampad/web/$re
 echo "==> current -> $release"
 ssh "$SSH_HOST" "cd /srv/fampad/web && ln -sfn $release current.new && mv -Tf current.new current && ls -1dt [0-9]*/ | tail -n +6 | xargs -r rm -rf"
 
-echo "==> fertig: https://familie.lx-labs.dev (webVersion: $release)"
+echo "==> fertig: https://familyhub.lx-labs.dev (webVersion: $release)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Einrichtung der Auslieferung der Kartenkacheln (PMTiles) unter https://familie.lx-labs.dev/karte-daten/
+# Einrichtung der Auslieferung der Kartenkacheln (PMTiles) unter https://familyhub.lx-labs.dev/karte-daten/
 # (docs/KARTE-SPIKE.md, tools/karte/README.md). Idempotent, Muster wie einrichtung-ntfy.sh / einrichtung-2.sh.
 #   1. Vorabprüfungen (nichts wird verändert, wenn eine fehlschlägt)
 #   2. Ordner /srv/fampad/karte anlegen (Besitzer: der aufrufende Benutzer, damit "scp" ohne sudo dorthin kopieren kann)
@@ -162,9 +162,9 @@ fi
 
 # --- 4. Prüfung ----------------------------------------------------------------------------------------------------------------
 echo "==> 4/4 Prüfung per HTTPS"
-URL="https://familie.lx-labs.dev/karte-daten/$PMTILES_NAME"
+URL="https://familyhub.lx-labs.dev/karte-daten/$PMTILES_NAME"
 curl -fsI --max-time 10 https://lx-labs.dev >/dev/null
-curl -fsS --max-time 10 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' || { echo "    familie.lx-labs.dev antwortet nicht mehr mit db ok" >&2; false; }
+curl -fsS --max-time 10 https://familyhub.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' || { echo "    familyhub.lx-labs.dev antwortet nicht mehr mit db ok" >&2; false; }
 if [ -s "$KARTE_DIR/$PMTILES_NAME" ]; then
   # Range auf die ersten 16 Byte; Accept-Encoding wie ein Browser, damit eine (unerwünschte) Kompression auffiele
   H="$(curl -s -D "$WORK/h.txt" -o "$WORK/b.bin" --max-time 20 -H 'Accept-Encoding: gzip, br, zstd' -r 0-15 "$URL" -w '%{http_code}')"

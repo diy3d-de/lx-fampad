@@ -4,7 +4,7 @@ Hilfsskripte für Betrieb und CI (Node 24, keine Abhängigkeiten, nur `node:`-Mo
 
 ## update-manifest.mjs – Update-Manifest des Android-Kanals signieren
 
-Der Update-Kanal (`familie.lx-labs.dev/releases/android/latest.json`) ist mit Ed25519 signiert. Die App enthält den **öffentlichen** Schlüssel
+Der Update-Kanal (`familyhub.lx-labs.dev/releases/android/latest.json`) ist mit Ed25519 signiert. Die App enthält den **öffentlichen** Schlüssel
 (`kUpdatePublicKey` und `kUpdateKeyId` in `app/lib/constants.dart`); der **private** Schlüssel liegt nur in der CI (Secret `UPDATE_SIGNING_KEY`) und
 beim Betreiber, **nie im Repository** (`*.pem` und `update-signing*.key` stehen in `.gitignore`).
 

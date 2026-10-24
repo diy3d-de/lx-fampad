@@ -205,7 +205,7 @@ jobs:
             echo "HOST=127.0.0.1"
             echo "PORT=$SERVER_PORT"
             echo "DATABASE_URL=postgres://lx_fampad:ci-runtime@127.0.0.1:5432/lx_fampad"
-            echo "PUBLIC_URL=https://familie.lx-labs.dev"
+            echo "PUBLIC_URL=https://familyhub.lx-labs.dev"
             echo "AUTH_SECRET_KEY=$(openssl rand -base64 32)"
             echo "FILES_DIR=$RUNNER_TEMP/files"
             echo "LOG_LEVEL=warn"

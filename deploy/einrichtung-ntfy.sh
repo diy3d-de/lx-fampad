@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Einrichtung ntfy (selbst gehostet, UnifiedPush) unter https://ntfy.familie.lx-labs.dev (deploy/README.md, Abschnitt 7).
+# Einrichtung ntfy (selbst gehostet, UnifiedPush) unter https://ntfy.familyhub.lx-labs.dev (deploy/README.md, Abschnitt 7).
 # Idempotent: mehrfaches Ausführen ist gefahrlos.
 #   1. Vorabprüfungen (nichts wird verändert, wenn eine fehlschlägt)
 #   2. ntfy installieren: Version exakt gepinnt, aus dem offiziellen apt-Repository mit geprüftem Schlüssel-Fingerabdruck
@@ -25,7 +25,7 @@ NTFY_APT_URL="https://archive.ntfy.sh/apt"
 NTFY_DEB_URL="https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/ntfy_${NTFY_VERSION}_linux_amd64.deb"
 NTFY_DEB_SHA256="e2e693d6490e5d33ef4310a48cbd36f2b1c67cb5fc5cbb6a55d1118836d453c5"
 NTFY_PORT=2586                             # derselbe Wert steht in deploy/ntfy/server.yml und deploy/ntfy/ntfy.caddy
-NTFY_HOST="ntfy.familie.lx-labs.dev"
+NTFY_HOST="ntfy.familyhub.lx-labs.dev"
 NTFY_USER=ntfy
 PUSH_USER="fampad-server"                  # ntfy-Benutzer des Fastify-Servers
 PUSH_TOPICS='fampad-*'
@@ -131,14 +131,14 @@ fi
 echo "    Importzeile im Haupt-Caddyfile vorhanden."
 
 # Keine andere Caddy-Datei (auch nicht fampad.caddy oder das Haupt-Caddyfile) darf die Site schon definieren (doppelte Site-Definition)
-DUP="$(grep -rlE '^[[:space:]]*ntfy\.familie\.lx-labs\.dev([[:space:],{]|$)' /etc/caddy --include='*.caddy' --include=Caddyfile || true)"
+DUP="$(grep -rlE '^[[:space:]]*ntfy\.familyhub\.lx-labs\.dev([[:space:],{]|$)' /etc/caddy --include='*.caddy' --include=Caddyfile || true)"
 DUP="$(grep -vxF "$SITE" <<<"$DUP" || true)"
-[ -z "$DUP" ] || fehler "ntfy.familie.lx-labs.dev ist schon definiert in: $DUP (Block dort entfernen, dann neu starten; $SITE ist die einzige vorgesehene Stelle)"
+[ -z "$DUP" ] || fehler "ntfy.familyhub.lx-labs.dev ist schon definiert in: $DUP (Block dort entfernen, dann neu starten; $SITE ist die einzige vorgesehene Stelle)"
 
 curl -fsI --max-time 10 https://lx-labs.dev >/dev/null || fehler "lx-labs.dev antwortet schon vor der Änderung nicht, Abbruch"
 echo "    lx-labs.dev antwortet."
-curl -fsS --max-time 10 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' \
-  || echo "    Hinweis: familie.lx-labs.dev/api/v1/health antwortet nicht mit db ok (wird nur nach der Änderung zur Gegenprobe benutzt)."
+curl -fsS --max-time 10 https://familyhub.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' \
+  || echo "    Hinweis: familyhub.lx-labs.dev/api/v1/health antwortet nicht mit db ok (wird nur nach der Änderung zur Gegenprobe benutzt)."
 # DNS: A (und AAAA, falls vorhanden) von $NTFY_HOST müssen auf globale Adressen DIESES Servers zeigen, sonst scheitert das Zertifikat
 LOCAL_IPS="$(ip -o addr show scope global | awk '{split($4,a,"/"); print a[1]}')"
 DNS4="$(getent ahostsv4 "$NTFY_HOST" | awk '{print $1}' | sort -u || true)"
@@ -354,13 +354,13 @@ echo "    $NTFY_HOST antwortet über HTTPS."
 ist_verboten "$(http_code -d x "https://${NTFY_HOST}/fampad-pruefung")" || { echo "    anonymes Schreiben über HTTPS nicht verboten" >&2; false; }
 [ "$(mit_token "https://${NTFY_HOST}/fampad-pruefung")" = 200 ] || { echo "    Token-Schreiben über HTTPS schlägt fehl" >&2; false; }
 curl -fsI --max-time 10 https://lx-labs.dev >/dev/null
-curl -fsS --max-time 10 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' \
-  || { echo "    familie.lx-labs.dev antwortet nicht mehr mit db ok" >&2; false; }
+curl -fsS --max-time 10 https://familyhub.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"' \
+  || { echo "    familyhub.lx-labs.dev antwortet nicht mehr mit db ok" >&2; false; }
 [ "$(sha256sum "$CADDYFILE" | cut -d' ' -f1)" = "$MAIN_SUM" ] || { echo "    Haupt-Caddyfile hat sich während des Laufs geändert (nicht durch dieses Skript)" >&2; false; }
 ARMED=0
 trap - ERR INT TERM HUP
 echo "    lx-labs.dev:      $(curl -sI --max-time 10 https://lx-labs.dev | head -1)"
-echo "    familie.lx-labs.dev: ok"
+echo "    familyhub.lx-labs.dev: ok"
 
 cat <<EOF
 

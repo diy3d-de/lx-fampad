@@ -17,7 +17,7 @@
 set -Eeuo pipefail
 umask 077
 
-SERVER="${LXB_SERVER:-familie.lx-labs.dev}"        # Host des VPS (SSH-Port: LXB_PORT)
+SERVER="${LXB_SERVER:-familyhub.lx-labs.dev}"        # Host des VPS (SSH-Port: LXB_PORT)
 PORT="${LXB_PORT:-22}"
 SSH_KEY="${LXB_KEY:-$HOME/.ssh/lx-fampad-backup}"  # privater SSH-Schlüssel NUR für diese Aufgabe
 KNOWN_HOSTS="${LXB_KNOWN_HOSTS:-$HOME/.ssh/lx-fampad-backup.known_hosts}"   # einmalig befüllen (docs/BACKUP.md), danach strikt geprüft

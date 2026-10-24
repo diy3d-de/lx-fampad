@@ -1,6 +1,6 @@
-# Caddy-Konfiguration für familie.lx-labs.dev (ergänzt den Block für lx-labs.dev aus lx-labs/deploy/Caddyfile).
+# Caddy-Konfiguration für familyhub.lx-labs.dev (ergänzt den Block für lx-labs.dev aus lx-labs/deploy/Caddyfile).
 # Caddy holt die HTTPS-Zertifikate automatisch (Let's Encrypt).
-# Voraussetzung: Die DNS-Einträge "familie" und "ntfy.familie" (A, DNS only) zeigen auf diesen Server.
+# Voraussetzung: Die DNS-Einträge "familyhub" und "ntfy.familyhub" (A, DNS only) zeigen auf diesen Server.
 #
 # Einbinden: Datei nach /etc/caddy/conf.d/fampad.caddy kopieren; im Haupt-Caddyfile (/etc/caddy/Caddyfile) steht dafür die Zeile
 #   import /etc/caddy/conf.d/*.caddy
@@ -26,14 +26,14 @@
 	}
 }
 
-familie.lx-labs.dev {
+familyhub.lx-labs.dev {
 	encode zstd gzip
 	import fampad_sicherheit
 
 	header {
 		# wasm-unsafe-eval: CanvasKit und sqlite3.wasm (drift). unsafe-inline nur bei style-src: Flutter Web setzt
 		# Styles zur Laufzeit. Keine Fremd-Adressen: alles kommt von dieser Domain (Karten später ebenfalls).
-		Content-Security-Policy "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://familie.lx-labs.dev blob: data:; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
+		Content-Security-Policy "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' wss://familyhub.lx-labs.dev blob: data:; worker-src 'self' blob:; manifest-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'"
 		# Cross-Origin-Isolation: nötig für SharedArrayBuffer/OPFS (drift im Web, schnelle lokale Datenbank)
 		Cross-Origin-Opener-Policy "same-origin"
 		Cross-Origin-Embedder-Policy "require-corp"

@@ -136,7 +136,7 @@ fi
 # Ein Deploy von lx-labs ersetzt /etc/caddy/Caddyfile und entfernt dabei die Import-Zeile (deploy/README.md, Schritt 6)
 if ! grep -qsE '^[[:space:]]*import[[:space:]]+/etc/caddy/conf\.d/\*\.caddy' /etc/caddy/Caddyfile; then
   echo "==> WARNUNG: /etc/caddy/Caddyfile enthält die Zeile 'import /etc/caddy/conf.d/*.caddy' nicht (nach einem lx-labs-Deploy?)." >&2
-  echo "    familie.lx-labs.dev ist dann nicht erreichbar. Siehe deploy/README.md, Schritt 6." >&2
+  echo "    familyhub.lx-labs.dev ist dann nicht erreichbar. Siehe deploy/README.md, Schritt 6." >&2
 fi
 
 echo "==> deployed: $(git log -1 --format='%h %s')"
