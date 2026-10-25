@@ -62,7 +62,7 @@ const terminRules: Rules = {
     create: 'all',
     update: 'own',
     delete: 'own',
-    updateFields: ['titel', 'ort', 'beschreibung', 'ganztaegig', 'startUtc', 'endUtc', 'tzid', 'startDate', 'endDate', 'rrule', 'erinnerungMin', 'icalUid'],
+    updateFields: ['titel', 'ort', 'beschreibung', 'ganztaegig', 'startUtc', 'endUtc', 'tzid', 'startDate', 'endDate', 'rrule', 'erinnerungMin', 'icalUid', 'farbe'],
     limits: { audience: ['family'] },
   },
 };
@@ -114,6 +114,7 @@ export const terminEntity: EntityDef = {
     rrule: { access: 'rw', schema: rrule.nullable(), defaultValue: null, blank: null },
     erinnerungMin: { access: 'rw', schema: z.number().int().min(0).max(40320).nullable(), defaultValue: null },
     icalUid: { access: 'rw', schema: trimmed(255).nullable(), defaultValue: null, blank: null },
+    farbe: { access: 'rw', schema: z.number().int().min(0).max(10).nullable(), defaultValue: null },
     audience: { access: 'rw', schema: AUDIENCE_INPUT, defaultValue: 'family' },
     ownerId: { access: 'server', schema: uuid.nullable() },
     createdAt: { access: 'server', schema: z.unknown(), toWire: iso },
