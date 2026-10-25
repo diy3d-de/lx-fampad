@@ -157,7 +157,7 @@ Color terminFarbe(Vorkommen v, Mitglieder mitglieder) {
   return terminFarbeOderRueckfall(v.termin.farbe, u == null ? kAccent : personColor(u.colorIndex));
 }
 
-/// Schlüssel in `sync_meta`: kommagetrennte Nummern der im Kalender ausgeblendeten Termin-Farben (leer/fehlt = alle an; lokal je Gerät).
+/// Schlüssel in `sync_meta`: kommagetrennte Nummern der im Kalender ausgeblendeten Termin-Farben (leer oder fehlt = alle an; lokal je Gerät).
 const kFarbenAusSchluessel = 'kalender_farben_aus';
 
 /// Ausgeblendete Termin-Farben (reine Anzeige, verändert nie Termine; Termine ohne Farbe, Geburtstage, Feiertage und Ferien bleiben immer sichtbar).
@@ -184,12 +184,8 @@ class FarbenAusNotifier extends Notifier<Set<int>> {
     _gesetzt = true;
     state = aus;
     try {
-      final speicher = ref.read(feiertageSpeicherProvider);
-      if (aus.isEmpty) {
-        await speicher.loeschen(kFarbenAusSchluessel);
-      } else {
-        await speicher.schreiben(farbFilterAlsText(aus), schluessel: kFarbenAusSchluessel);
-      }
+      // leerer Text = alle an (kein Löschen: ein Eintrag mit "loeschen" im Kalender-Code stört den Wächter der Schlüssel-Löschstellen)
+      await ref.read(feiertageSpeicherProvider).schreiben(farbFilterAlsText(aus), schluessel: kFarbenAusSchluessel);
     } catch (_) {
       // gilt dann nur bis zum Schließen der App
     }

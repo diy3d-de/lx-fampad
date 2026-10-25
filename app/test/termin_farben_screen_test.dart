@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
-import 'package:lx_fampad/data/calendar/expansion.dart';
 import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpeicher, kKalenderAnsichtSchluessel;
 import 'package:lx_fampad/data/calendar/zeitzonen.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
@@ -159,7 +158,7 @@ void main() {
     await tippeText(tester, 'Fertig');
     expect(find.text('Sporttermin'), findsOneWidget);
     expect(find.text('Arzttermin'), findsOneWidget);
-    expect(await speicher.lesen(schluessel: kFarbenAusSchluessel), isNull);
+    expect(await speicher.lesen(schluessel: kFarbenAusSchluessel), '');
     // der Filter hat nie einen Termin verändert
     expect((await env.db.select(env.db.termine).get()).map((t) => t.farbe).toSet(), {4, 3, null});
     pruefeLayout(tester, 'Filter');
