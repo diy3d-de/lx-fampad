@@ -15,6 +15,7 @@ import {
   pgEnum,
   pgTable,
   primaryKey,
+  smallint,
   text,
   timestamp,
   uniqueIndex,
@@ -924,6 +925,8 @@ export const termine = pgTable(
     erinnerungMin: integer('erinnerung_min'),
     /** UID aus iCalendar für den späteren Import (Duplikaterkennung). */
     icalUid: text('ical_uid'),
+    /** Termin-Farbe: Index 0 bis 10 in der festen Farbliste der App (null: keine, die App zeigt dann die Personenfarbe). */
+    farbe: smallint('farbe'),
     /** Wer den Termin sehen darf (wie bei Listen); Standard: die Familie. */
     audience: listAudience('audience').notNull().default('family'),
     /** Wer den Termin angelegt hat (setzt der Server, bestimmt die Personenfarbe; Kinder ändern nur eigene Termine). */
@@ -949,6 +952,7 @@ export const termine = pgTable(
     check('termine_beschreibung_len_ck', sql`char_length(${t.beschreibung}) <= 4000`),
     check('termine_rrule_len_ck', sql`${t.rrule} is null or char_length(${t.rrule}) <= 300`),
     check('termine_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
+    check('termine_farbe_ck', sql`${t.farbe} is null or ${t.farbe} between 0 and 10`),
     check(
       'termine_zeit_ck',
       sql`(${t.ganztaegig} and ${t.startDate} is not null and ${t.endDate} is not null and ${t.endDate} > ${t.startDate})

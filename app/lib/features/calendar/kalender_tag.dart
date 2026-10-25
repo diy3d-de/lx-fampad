@@ -17,6 +17,8 @@ import '../../data/muell/muell_state.dart';
 import '../../ui/widgets.dart';
 import 'calendar_anzeige.dart';
 import 'calendar_state.dart';
+import '../../data/calendar/termin_farben.dart';
+import '../../widgets/benutzer_avatar.dart';
 import 'kalender_widgets.dart';
 import 'muell_kalender.dart';
 
@@ -41,7 +43,7 @@ class TagesInhalt extends ConsumerWidget {
     final mitglieder = mitgliederFuer(ref, daten);
     final geburtstage = ref.watch(geburtstageAnzeigenProvider);
     final hinweise = ref.watch(tagesHinweiseProvider).fuerTag(tag);
-    final liste = nachTagen(gefilterteVorkommen(auswahl, daten, tag, tag.add(const Duration(days: 1)), geburtstage: geburtstage), tag, tag)[tag] ?? const <Vorkommen>[];
+    final liste = nachTagen(gefilterteVorkommen(auswahl, daten, tag, tag.add(const Duration(days: 1)), geburtstage: geburtstage, farbenAus: ref.watch(farbenAusProvider)), tag, tag)[tag] ?? const <Vorkommen>[];
     final heute = heuteTag();
     final kopfLabel = '// ${tag == heute ? 'heute' : DateFormat('E', 'de_DE').format(tag).toLowerCase()} · kw ${kalenderwoche(tag)}';
     final knopf = rechte.darfAnlegen
@@ -110,9 +112,11 @@ class TagesTerminZeile extends StatelessWidget {
       if (v.serie) 'wiederkehrend',
     ].join(' · ');
     final zeitBreite = MediaQuery.textScalerOf(context).scale(64);
+    final farbName = istGeburtstag(v.termin) ? null : terminFarbeName(v.termin.farbe);
+    final ersteller = farbName == null ? null : mitglieder[v.termin.ownerId];
     return Semantics(
       button: true,
-      label: '${vorkommenTitel(v)}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}',
+      label: '${vorkommenTitel(v)}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}${farbName == null ? '' : ', $farbName'}',
       excludeSemantics: true,
       onTap: onTap,
       child: InkWell(
@@ -144,6 +148,8 @@ class TagesTerminZeile extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // mit Termin-Farbe bleibt die Person als kleiner Avatar sichtbar
+                  if (ersteller != null) Padding(padding: const EdgeInsets.only(left: 8), child: Align(alignment: Alignment.center, child: BenutzerAvatar(user: ersteller, size: 24))),
                 ],
               ),
             ),

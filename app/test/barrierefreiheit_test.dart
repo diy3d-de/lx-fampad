@@ -124,6 +124,31 @@ void main() {
         h.dispose();
       });
 
+      testWidgets('Termin-Farben: Farbwahl im Editor, Farben im Filter-Blatt, Termin mit Farbe in der Agenda', (tester) async {
+        final h = tester.ensureSemantics();
+        final env = await start(tester, skala: skala);
+        env.sync.andereAendert('termin', 'aaaaaaaa-2222-4222-8222-222222222222', {
+          'titel': 'Rufdienst am Wochenende',
+          'ganztaegig': true,
+          'startDate': '2026-11-14',
+          'endDate': '2026-11-15',
+          'ownerId': fixIdAdmin,
+          'audience': 'family',
+          'farbe': 10,
+        });
+        await tester.pump(const Duration(seconds: 1));
+        await zumTab(tester, 'Kalender');
+        pruefe(tester, 'Kalender mit Farbtermin $skala');
+        await tippe(tester, find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Filter und Anzeige')));
+        expect(find.text('// FARBEN'), findsOneWidget);
+        pruefe(tester, 'Filter-Blatt mit Farben $skala');
+        await tippeText(tester, 'Fertig');
+        await tippe(tester, find.byTooltip('Neuer Termin'));
+        expect(find.bySemanticsLabel('Farbe Rufdienst'), findsOneWidget);
+        pruefe(tester, 'Termin-Editor mit Farbwahl $skala');
+        h.dispose();
+      });
+
       testWidgets('Profil: Hauptseite und Sammelseiten', (tester) async {
         final h = tester.ensureSemantics();
         await start(tester, skala: skala);

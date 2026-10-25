@@ -289,6 +289,9 @@ void main() {
     expect(find.text('Bearbeiten'), findsOneWidget, reason: 'Detailblatt');
     await tester.tapAt(const Offset(10, 10));
     await warte(tester);
+    // Zwei Monate weiter: das Raster des Folgemonats zeigt am Monatsende noch Tage des Vormonats (z. B. am 26.10. den 26.10. im November-Raster),
+    // erst der übernächste Monat enthält den heutigen Tag sicher nicht mehr.
+    await tippe(tester, find.byTooltip('Nächster Monat'));
     await tippe(tester, find.byTooltip('Nächster Monat'));
     expect(find.text('Heute-Termin'), findsNothing);
     pruefeLayout(tester, 'Monat');

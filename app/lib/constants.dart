@@ -76,6 +76,25 @@ const personPalette = <Color>[
   Color(0xFF818CF8),
 ];
 
+/// Rufdienst (Termin-Farbe Nr. 11): kräftiges Alarmrot, bewusst anders als die rosé Personenfarbe 0xFFFB7185 und als `kDanger`.
+const kTerminFarbeRufdienst = Color(0xFFE5322D);
+
+/// Termin-Farben: je Termin optional EINE von 11 Farben mit festem Namen (Index 0 bis 10, wird als `farbe` synchronisiert).
+/// Die ersten zehn sind genau die Werte von [personPalette], die elfte ist Rufdienst. Nie Namen oder Farben ändern oder umsortieren (Index = Wert am Server).
+const kTerminFarben = <({String name, Color farbe})>[
+  (name: 'Familie', farbe: Color(0xFF38BDF8)),
+  (name: 'Schule', farbe: Color(0xFF34D399)),
+  (name: 'Arbeit', farbe: Color(0xFFFBBF24)),
+  (name: 'Arzt', farbe: Color(0xFFFB7185)),
+  (name: 'Sport', farbe: Color(0xFFA78BFA)),
+  (name: 'Freizeit', farbe: Color(0xFFF472B6)),
+  (name: 'Haushalt', farbe: Color(0xFFA3E635)),
+  (name: 'Urlaub', farbe: Color(0xFFFB923C)),
+  (name: 'Besuch', farbe: Color(0xFF2DD4BF)),
+  (name: 'Sonstiges', farbe: Color(0xFF818CF8)),
+  (name: 'Rufdienst', farbe: kTerminFarbeRufdienst),
+];
+
 Color personColor(int index) => personPalette[index % personPalette.length];
 
 String personInitials(String name) {

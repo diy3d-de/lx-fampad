@@ -231,7 +231,7 @@ class _Agenda extends ConsumerWidget {
     final heute = heuteTag();
     final bis = heute.add(Duration(days: auswahl.agendaTage));
     final tage = nachTagen(
-      gefilterteVorkommen(auswahl, daten, heute, bis, geburtstage: ref.watch(geburtstageAnzeigenProvider)),
+      gefilterteVorkommen(auswahl, daten, heute, bis, geburtstage: ref.watch(geburtstageAnzeigenProvider), farbenAus: ref.watch(farbenAusProvider)),
       heute,
       bis.subtract(const Duration(days: 1)),
     );
@@ -343,7 +343,7 @@ class _Monat extends ConsumerWidget {
     final wochen = wochenDesMonats(monat);
     final von = wochen.first;
     final bisInklusive = DateTime.utc(wochen.last.year, wochen.last.month, wochen.last.day + 6);
-    final liste = gefilterteVorkommen(auswahl, daten, von, bisInklusive.add(const Duration(days: 1)), geburtstage: ref.watch(geburtstageAnzeigenProvider));
+    final liste = gefilterteVorkommen(auswahl, daten, von, bisInklusive.add(const Duration(days: 1)), geburtstage: ref.watch(geburtstageAnzeigenProvider), farbenAus: ref.watch(farbenAusProvider));
     final quellen = _quellen(liste, ref.watch(tagesHinweiseProvider), von, bisInklusive, mitglieder, mitZeit: breit);
 
     // Aktionen lesen die Daten beim Aufruf frisch (das Tagesblatt kann länger offen sein als dieser Aufbau)
@@ -448,7 +448,7 @@ class _Woche extends ConsumerWidget {
     final montag = auswahl.tag.subtract(Duration(days: auswahl.tag.weekday - 1));
     final naechster = DateTime.utc(montag.year, montag.month, montag.day + 7);
     final sonntag = DateTime.utc(montag.year, montag.month, montag.day + 6);
-    final liste = gefilterteVorkommen(auswahl, daten, montag, naechster, geburtstage: ref.watch(geburtstageAnzeigenProvider));
+    final liste = gefilterteVorkommen(auswahl, daten, montag, naechster, geburtstage: ref.watch(geburtstageAnzeigenProvider), farbenAus: ref.watch(farbenAusProvider));
     final quellen = _quellen(
       [
         for (final v in liste)

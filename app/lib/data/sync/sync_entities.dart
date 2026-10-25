@@ -7,6 +7,7 @@ import 'package:drift/drift.dart';
 
 import '../api/models.dart';
 import '../app_database.dart';
+import '../../constants.dart' show kTerminFarben;
 import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
 import 'sync_dateien.dart';
@@ -84,6 +85,9 @@ DateTime? _zeit(Object? v) => v is String ? DateTime.tryParse(v)?.toLocal() : nu
 String? _text(Object? v) => v is String ? v : null;
 bool? _bool(Object? v) => v is bool ? v : null;
 int? _int(Object? v) => v is int ? v : null;
+
+/// Termin-Farbe: nur ein Index der festen Liste (0 bis 10), alles andere gilt als keine Farbe.
+int? _farbe(Object? v) => v is int && v >= 0 && v < kTerminFarben.length ? v : null;
 
 String _iso(DateTime t) => t.toUtc().toIso8601String();
 
@@ -263,6 +267,7 @@ class TermineEntitaet extends SyncEntity {
           rrule: Value(_text(fields['rrule'])),
           erinnerungMin: Value(_int(fields['erinnerungMin'])),
           icalUid: Value(_text(fields['icalUid'])),
+          farbe: Value(_farbe(fields['farbe'])),
           audience: Value(_text(fields['audience']) ?? 'family'),
           ownerId: Value(_text(fields['ownerId'])),
           rev: Value(rev ?? 0),
@@ -285,6 +290,7 @@ class TermineEntitaet extends SyncEntity {
         rrule: setze('rrule') ? Value(_text(fields['rrule'])) : const Value.absent(),
         erinnerungMin: setze('erinnerungMin') ? Value(_int(fields['erinnerungMin'])) : const Value.absent(),
         icalUid: setze('icalUid') ? Value(_text(fields['icalUid'])) : const Value.absent(),
+        farbe: setze('farbe') ? Value(_farbe(fields['farbe'])) : const Value.absent(),
         audience: setze('audience') ? Value(_text(fields['audience']) ?? vorhanden.audience) : const Value.absent(),
         ownerId: setze('ownerId') ? Value(_text(fields['ownerId'])) : const Value.absent(),
         createdAt: setze('createdAt') && _zeit(fields['createdAt']) != null ? Value(_zeit(fields['createdAt'])!) : const Value.absent(),

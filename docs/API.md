@@ -482,6 +482,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `rrule` | Wiederholungsregel oder `null` | rw |
 | | `erinnerungMin` | Ganzzahl 0 bis 40320 oder `null` | rw |
 | | `icalUid` | Text bis 255 Zeichen oder `null` (späterer Import, Duplikaterkennung) | rw |
+| | `farbe` | Ganzzahl 0 bis 10 oder `null` (Standard; Index der festen Termin-Farben der App, `null` = Personenfarbe; Migration 0036, additiv; alte Apps kennen das Feld nicht und lassen es unberührt; gehört zur Serie, Ausnahmen erben sie) | rw |
 | | `audience` | `parents`, `family` (Standard), `all` | rw |
 | | `ownerId` | UUID oder `null` (bestimmt die Personenfarbe) | server |
 | | `createdAt` | ISO-8601 (UTC) | server |

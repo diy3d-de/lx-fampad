@@ -257,6 +257,54 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
     expect((await fam.admin.sync([ok])).json.rejected).toEqual([]);
   });
 
+  it('Farbe: Standard null, 0 bis 10 gültig, setzen und wieder entfernen; alte Apps ohne das Feld ändern sie nicht', async () => {
+    const id = await anlegen();
+    expect((await fam.parent.pull()).find((c) => c.id === id)?.fields.farbe).toBeNull();
+    for (const [i, farbe] of [0, 10, 4].entries()) {
+      expect((await fam.admin.sync([upsert('termin', id, { farbe }, i + 1)])).json.rejected, String(farbe)).toEqual([]);
+      expect((await rows(world, sql`select farbe::int as farbe from termine where id = ${id}`))[0]?.farbe).toBe(farbe);
+    }
+    // eine alte App ändert nur den Titel: die Farbe bleibt
+    expect((await fam.admin.sync([upsert('termin', id, { titel: 'Neu' }, 4)])).json.rejected).toEqual([]);
+    expect((await rows(world, sql`select farbe::int as farbe from termine where id = ${id}`))[0]?.farbe).toBe(4);
+    expect((await fam.admin.sync([upsert('termin', id, { farbe: null }, 5)])).json.rejected).toEqual([]);
+    expect((await rows(world, sql`select farbe from termine where id = ${id}`))[0]?.farbe).toBeNull();
+    // neu anlegen mit Farbe
+    const mit = await anlegen(fam.admin, zeit({ farbe: 7 }));
+    expect((await fam.parent.pull()).find((c) => c.id === mit)?.fields.farbe).toBe(7);
+  });
+
+  it('Farbe: ungültige Werte (11, -1, 1.5, Text, Wahrheitswert) werden abgelehnt', async () => {
+    for (const farbe of [11, -1, 1.5, 'a', '3', true, 1e9]) {
+      const op = upsert('termin', randomUUID(), zeit({ farbe }));
+      const res = await fam.admin.sync([op]);
+      expect(res.json.rejected, String(farbe)).toEqual([{ opId: op.opId, code: 'invalid' }]);
+    }
+    const id = await anlegen();
+    const op = upsert('termin', id, { farbe: 11 }, 1);
+    expect((await fam.admin.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'invalid' }]);
+  });
+
+  it('Farbe: je Feld zusammengeführt (Farbe und Titel verschiedener Geräte), dasselbe Feld: letzte Änderung gewinnt; Kinder ändern die Farbe nur an eigenen Terminen', async () => {
+    const id = await anlegen();
+    const eltern2 = await fam.secondDevice('parent');
+    expect((await fam.admin.sync([upsert('termin', id, { farbe: 2 }, 1)])).json.conflicts).toEqual([]);
+    expect((await eltern2.sync([upsert('termin', id, { titel: 'Kontrolle' }, 1)])).json.conflicts).toEqual([]);
+    const r = await fam.parent.sync([upsert('termin', id, { farbe: 5 }, 1)]);
+    expect(r.json.conflicts).toHaveLength(1);
+    expect(r.json.conflicts[0].fields).toEqual({ farbe: 2 });
+    const eigen = await anlegen(fam.child);
+    expect((await fam.child.sync([upsert('termin', eigen, { farbe: 3 }, 1)])).json.rejected).toEqual([]);
+    const op = upsert('termin', id, { farbe: 3 }, 2);
+    expect((await fam.child.sync([op])).json.rejected).toHaveLength(1);
+  });
+
+  it('Farbe: die Datenbank erlaubt nur 0 bis 10', async () => {
+    const id = await anlegen();
+    await expect(world.db.execute(sql`update termine set farbe = 11 where id = ${id}`)).rejects.toThrow();
+    await expect(world.db.execute(sql`update termine set farbe = -1 where id = ${id}`)).rejects.toThrow();
+  });
+
   it('Felder verschiedener Geräte werden zusammengeführt, dasselbe Feld: letzte Änderung gewinnt (Konflikt gemeldet)', async () => {
     const id = await anlegen();
     const eltern2 = await fam.secondDevice('parent');

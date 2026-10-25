@@ -9,7 +9,10 @@ import 'package:intl/intl.dart';
 import '../../constants.dart';
 import '../../data/api/models.dart';
 import '../../data/calendar/feiertage.dart';
+import '../../data/calendar/geburtstag.dart';
 import '../../data/calendar/monat_layout.dart';
+import '../../data/calendar/termin_farben.dart';
+import '../../data/calendar/termin_repository.dart' show kalenderDatenProvider;
 import '../../data/lists/members.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/sync_state.dart';
@@ -21,9 +24,9 @@ import '../profile/kalender_einstellungen_screen.dart';
 import 'kalender_widgets.dart';
 import 'termin_editor.dart';
 
-/// Anzahl aktiver Filter: gewählte Personen und ausgeschaltete Anzeigen (Feiertage, Schulferien, Geburtstage).
-int aktiveFilter(KalenderAuswahl a, {required bool feiertage, required bool ferien, required bool geburtstage}) =>
-    a.personen.length + (feiertage ? 0 : 1) + (ferien ? 0 : 1) + (geburtstage ? 0 : 1);
+/// Anzahl aktiver Filter: gewählte Personen, ausgeschaltete Anzeigen (Feiertage, Schulferien, Geburtstage) und ein aktiver Farbfilter (zählt als einer).
+int aktiveFilter(KalenderAuswahl a, {required bool feiertage, required bool ferien, required bool geburtstage, int farbenAus = 0}) =>
+    a.personen.length + (feiertage ? 0 : 1) + (ferien ? 0 : 1) + (geburtstage ? 0 : 1) + (farbenAus > 0 ? 1 : 0);
 
 /// Titel der Leiste: Monat und Jahr, Kalenderwoche (mobil "KW 43 · Okt 2026", Desktop "KW 43 · 19.–25. Oktober 2026"), "Agenda".
 ({String haupt, String? unter}) kalenderTitel(KalenderAuswahl a, {required bool breit}) {
@@ -98,7 +101,7 @@ class KalenderLeiste extends ConsumerWidget {
     final feiertage = ref.watch(feiertageAnzeigenProvider);
     final ferien = ref.watch(ferienAnzeigenProvider);
     final geburtstage = ref.watch(geburtstageAnzeigenProvider);
-    final aktiv = aktiveFilter(a, feiertage: feiertage, ferien: ferien, geburtstage: geburtstage);
+    final aktiv = aktiveFilter(a, feiertage: feiertage, ferien: ferien, geburtstage: geburtstage, farbenAus: ref.watch(farbenAusProvider).length);
     final nav = a.ansicht != KalenderAnsicht.agenda;
     // Mobil: ist die Kopfzeile eingeklappt, bleiben Profil und Sync-Zustand hier erreichbar
     final profil = !breit && ref.watch(kalenderKopfEingeklapptProvider);
@@ -358,9 +361,15 @@ class _AnzeigeMenue extends ConsumerWidget {
             ref.read(geburtstageAnzeigenProvider.notifier).setzen(!eintraege[2].an);
           case 'muell':
             ref.read(muellProvider.notifier).kalenderSetzen(!eintraege[3].an);
+          case 'farben':
+            kalenderFilterBlattOeffnen(context);
         }
       },
-      itemBuilder: (_) => [for (final e in eintraege) CheckedPopupMenuItem(value: e.wert, checked: e.an, child: Text(e.text))],
+      itemBuilder: (_) => [
+        for (final e in eintraege) CheckedPopupMenuItem(value: e.wert, checked: e.an, child: Text(e.text)),
+        const PopupMenuDivider(),
+        const PopupMenuItem(value: 'farben', child: Text('Farben filtern …')),
+      ],
       child: const _MenueKnopf(text: 'Anzeige'),
     );
   }
@@ -435,6 +444,7 @@ class _FilterBlatt extends ConsumerWidget {
                     ref.read(feiertageAnzeigenProvider.notifier).setzen(true);
                     ref.read(ferienAnzeigenProvider.notifier).setzen(true);
                     ref.read(geburtstageAnzeigenProvider.notifier).setzen(true);
+                    ref.read(farbenAusProvider.notifier).alleAn();
                   },
                   child: const Text('Zurücksetzen'),
                 ),
@@ -446,6 +456,8 @@ class _FilterBlatt extends ConsumerWidget {
               const SizedBox(height: 8),
               PersonenFilter(personen: personen, gewaehlt: a.personen, onPerson: n.person, onAlle: n.alle),
             ],
+            const SizedBox(height: 16),
+            const _FarbenFilter(),
             const SizedBox(height: 16),
             const MonoLabel('// im kalender anzeigen'),
             const SizedBox(height: 4),
@@ -462,6 +474,52 @@ class _FilterBlatt extends ConsumerWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Abschnitt "Farben" im Filter-Blatt: je Termin-Farbe ein Schalter mit der Zahl der Termine, dazu "Alle an" und "Alle aus". Reine Anzeige:
+/// Termine ohne Farbe, Geburtstage, Feiertage und Ferien bleiben immer sichtbar, es wird nie ein Termin verändert.
+class _FarbenFilter extends ConsumerWidget {
+  const _FarbenFilter();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final aus = ref.watch(farbenAusProvider);
+    final n = ref.read(farbenAusProvider.notifier);
+    final zahlen = zaehleFarben([for (final t in ref.watch(kalenderDatenProvider).termine) if (!istGeburtstag(t)) t.farbe]);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        const MonoLabel('// farben'),
+        const SizedBox(height: 4),
+        for (var i = 0; i < kTerminFarben.length; i++)
+          SwitchListTile(
+            contentPadding: EdgeInsets.zero,
+            value: !aus.contains(i),
+            onChanged: (_) => n.umschalten(i),
+            secondary: null,
+            title: Row(
+              children: [
+                Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: kTerminFarben[i].farbe)),
+                const SizedBox(width: 12),
+                Expanded(child: Text(kTerminFarben[i].name)),
+                Text('${zahlen[i] ?? 0}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+              ],
+            ),
+          ),
+        Row(
+          children: [
+            Expanded(child: OutlinedButton(onPressed: n.alleAn, child: const Text('Alle an'))),
+            const SizedBox(width: 8),
+            Expanded(child: OutlinedButton(onPressed: n.alleAus, child: const Text('Alle aus'))),
+          ],
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text('Termine ohne Farbe bleiben immer sichtbar.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+        ),
+      ],
     );
   }
 }

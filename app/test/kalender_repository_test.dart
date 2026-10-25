@@ -57,6 +57,7 @@ TerminEingabe zeit({
   String? rrule,
   Set<String> teilnehmer = const {},
   TerminSicht sicht = TerminSicht.family,
+  int? farbe,
 }) => TerminEingabe(
   titel: titel,
   ganztaegig: false,
@@ -65,6 +66,7 @@ TerminEingabe zeit({
   rrule: rrule,
   teilnehmer: teilnehmer,
   sicht: sicht,
+  farbe: farbe,
 );
 
 SyncResult antwort({int rev = 1, List<String> acked = const [], List<SyncRejected> rejected = const [], List<SyncConflict> conflicts = const [], List<SyncChange> changes = const []}) =>
@@ -547,6 +549,103 @@ void main() {
       expect((await a.ausnahmen()).single.abgesagt, (await b.ausnahmen()).single.abgesagt);
       expect((await a.ausnahmen()).single.id, ausnahmeId(id, v.schluessel));
       expect(fake.zeilen.values.where((z) => z.entity == 'termin_ausnahmen'), hasLength(1));
+    });
+  });
+
+  group('Termin-Farben', () {
+    test('ohne Farbe: das Feld wird beim Anlegen nicht gesendet, lokal null', () async {
+      final id = await g.repo.anlegen(zeit());
+      expect((await g.termin(id))!.farbe, isNull);
+      final felder = jsonDecode((await g.ausgang()).first.fieldsJson) as Map<String, dynamic>;
+      expect(felder.containsKey('farbe'), isFalse);
+    });
+
+    test('setzen, ändern, entfernen: nur das geänderte Feld geht in den Ausgang', () async {
+      final id = await g.repo.anlegen(zeit(farbe: 3));
+      expect((await g.termin(id))!.farbe, 3);
+      expect((jsonDecode((await g.ausgang()).first.fieldsJson) as Map<String, dynamic>)['farbe'], 3);
+      await g.db.delete(g.db.outbox).go();
+      await g.db.customStatement('UPDATE termine SET rev = 3');
+      // unverändert gespeichert: keine Op
+      await g.repo.alleAendern(id, zeit(farbe: 3));
+      expect(await g.ausgang(), isEmpty);
+      await g.repo.alleAendern(id, zeit(farbe: 10));
+      expect((await g.termin(id))!.farbe, 10);
+      expect(jsonDecode((await g.ausgang()).single.fieldsJson), {'farbe': 10});
+      await g.db.delete(g.db.outbox).go();
+      await g.repo.alleAendern(id, zeit());
+      expect((await g.termin(id))!.farbe, isNull);
+      expect(jsonDecode((await g.ausgang()).single.fieldsJson), {'farbe': null});
+    });
+
+    test('ungültige Nummern gelten als keine Farbe (nie an den Server)', () async {
+      final id = await g.repo.anlegen(zeit(farbe: 11));
+      expect((await g.termin(id))!.farbe, isNull);
+      final id2 = await g.repo.anlegen(zeit(farbe: -1));
+      expect((await g.termin(id2))!.farbe, isNull);
+    });
+
+    test('Serie: Ausnahmen erben die Farbe, "nur dieses" ändert sie nicht', () async {
+      final id = await g.repo.anlegen(zeit(rrule: 'FREQ=WEEKLY;BYDAY=TU', farbe: 4));
+      final daten = await laden();
+      final v = vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 12, 1), jetzt: tag(2026, 10, 19))[1];
+      await g.repo.vorkommenAendern(v, zeit(titel: 'Sonder', start: v.startWand, ende: v.endeWand, farbe: 9));
+      expect((await g.termin(id))!.farbe, 4);
+      final nach = await laden();
+      final v2 = vorkommenImFenster(termine: nach.termine, ausnahmen: nach.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 12, 1), jetzt: tag(2026, 10, 19))[1];
+      expect(v2.termin.farbe, 4);
+      expect(v2.titel, 'Sonder');
+    });
+
+    test('dieses und folgende: die neue Serie erbt die Farbe (wie im Editor vorbelegt), die alte behält ihre', () async {
+      final id = await g.repo.anlegen(zeit(rrule: 'FREQ=WEEKLY;BYDAY=TU', farbe: 6));
+      final daten = await laden();
+      final v = vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: tag(2026, 10, 20), bisWand: tag(2026, 12, 1), jetzt: tag(2026, 10, 19))[1];
+      final neu = await g.repo.folgendeAendern(v, zeit(titel: 'Neu', start: v.startWand, ende: v.endeWand, rrule: 'FREQ=WEEKLY;BYDAY=TU', farbe: 6));
+      expect((await g.termin(id))!.farbe, 6);
+      expect((await g.termin(neu!))!.farbe, 6);
+      // Farbe dabei geändert: nur die neue Serie
+      final daten2 = await laden();
+      final v2 = vorkommenImFenster(termine: [daten2.termin(neu)!], ausnahmen: const {}, vonWand: tag(2026, 11, 10), bisWand: tag(2026, 12, 1), jetzt: tag(2026, 10, 19))[1];
+      final neu2 = await g.repo.folgendeAendern(v2, zeit(titel: 'Neu', start: v2.startWand, ende: v2.endeWand, rrule: 'FREQ=WEEKLY;BYDAY=TU', farbe: 1));
+      expect((await g.termin(neu))!.farbe, 6);
+      expect((await g.termin(neu2!))!.farbe, 1);
+    });
+
+    test('Abgleich mit zwei Geräten: die Farbe kommt an, Änderung und Entfernen ebenso, Farbe und Titel verschiedener Geräte bleiben beide', () async {
+      final server = FakeServer();
+      final fake = FakeSyncServer();
+      fake.registrieren(server);
+      Future<(Geraet, SyncEngine)> geraet(String ich, String geraetId) async {
+        final d = Geraet(ich);
+        final tokens = MemoryTokenStore();
+        await tokens.writeTokens(
+          StoredTokens(accessToken: 'access-1', accessExpiresAt: DateTime.now().add(const Duration(minutes: 15)), refreshToken: 'refresh-1', refreshExpiresAt: DateTime.now().add(const Duration(days: 90)), deviceId: geraetId),
+        );
+        final client = ApiClient(client: server.client, store: tokens, web: false, base: 'https://familie.test');
+        final engine = SyncEngine(store: d.store, api: FampadApi(client, geraet: () async => null), geraeteId: () async => geraetId, seite: 500, maxOps: 50);
+        return (d, engine);
+      }
+
+      final (a, ea) = await geraet('u-a', fixDevice);
+      final (b, eb) = await geraet('u-b', 'geraet-b');
+      addTearDown(a.db.close);
+      addTearDown(b.db.close);
+      final id = await a.repo.anlegen(zeit(farbe: 2));
+      expect((await ea.abgleichen()).ok, isTrue);
+      expect((await eb.abgleichen()).ok, isTrue);
+      expect((await b.termin(id))!.farbe, 2);
+      await b.repo.alleAendern(id, zeit(titel: 'Neu', farbe: 2));
+      await a.repo.alleAendern(id, zeit(farbe: 7));
+      await eb.abgleichen();
+      await ea.abgleichen();
+      await eb.abgleichen();
+      expect([(await a.termin(id))!.titel, (await a.termin(id))!.farbe], ['Neu', 7]);
+      expect([(await b.termin(id))!.titel, (await b.termin(id))!.farbe], ['Neu', 7]);
+      await a.repo.alleAendern(id, zeit(titel: 'Neu'));
+      await ea.abgleichen();
+      await eb.abgleichen();
+      expect((await b.termin(id))!.farbe, isNull);
     });
   });
 

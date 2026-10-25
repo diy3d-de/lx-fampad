@@ -1,4 +1,9 @@
 {
+  "0.18.0": [
+    "Termin-Farben: Jeder Termin kann jetzt eine von 11 Farben bekommen (Familie, Schule, Arbeit, Arzt, Sport, Freizeit, Haushalt, Urlaub, Besuch, Sonstiges, Rufdienst). Die Farbe wählst du im Termin unter Farbe",
+    "Im Kalender filterst du über Filter nach Farben. Termine ohne Farbe zeigen weiter die Farbe der Person",
+    "Bitte vorher alle Geräte aktualisieren, damit alle die Farben sehen"
+  ],
   "0.17.1": [
     "Neue Adresse: Der Familienhub läuft jetzt unter familyhub.lx-labs.dev. Diese Version spricht nur mit dem neuen Server"
   ],

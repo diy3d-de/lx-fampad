@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/feiertage.dart' show feiertageSpeicherProvider, kKalenderAnsichtSchluessel;
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/termin_farben.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/zeitzonen.dart';
 import '../../data/lists/members.dart';
@@ -148,12 +149,60 @@ bool passtZumFilter(Vorkommen v, Set<String> personen, KalenderDaten daten) {
   return daten.teilnehmerIds(t.id).any(personen.contains);
 }
 
-/// Farbe eines Termins: Personenfarbe des Erstellers (unbekannt: Akzent).
+/// Farbe eines Termins: Geburtstage immer `kGeburtstag`, sonst die Termin-Farbe (`farbe`, Serie und Ausnahmen gemeinsam),
+/// ohne sie die Personenfarbe des Erstellers (unbekannt: Akzent).
 Color terminFarbe(Vorkommen v, Mitglieder mitglieder) {
   if (istGeburtstag(v.termin)) return kGeburtstag;
   final u = mitglieder[v.termin.ownerId];
-  return u == null ? kAccent : personColor(u.colorIndex);
+  return terminFarbeOderRueckfall(v.termin.farbe, u == null ? kAccent : personColor(u.colorIndex));
 }
+
+/// Schlüssel in `sync_meta`: kommagetrennte Nummern der im Kalender ausgeblendeten Termin-Farben (leer oder fehlt = alle an; lokal je Gerät).
+const kFarbenAusSchluessel = 'kalender_farben_aus';
+
+/// Ausgeblendete Termin-Farben (reine Anzeige, verändert nie Termine; Termine ohne Farbe, Geburtstage, Feiertage und Ferien bleiben immer sichtbar).
+class FarbenAusNotifier extends Notifier<Set<int>> {
+  bool _gesetzt = false;
+
+  @override
+  Set<int> build() {
+    _gesetzt = false;
+    _laden();
+    return const {};
+  }
+
+  Future<void> _laden() async {
+    try {
+      final w = await ref.read(feiertageSpeicherProvider).lesen(schluessel: kFarbenAusSchluessel);
+      if (ref.mounted && !_gesetzt) state = farbFilterAusText(w);
+    } catch (_) {
+      // nicht lesbar: alle an
+    }
+  }
+
+  Future<void> _setzen(Set<int> aus) async {
+    _gesetzt = true;
+    state = aus;
+    try {
+      // leerer Text = alle an (kein Löschen: ein Eintrag mit "loeschen" im Kalender-Code stört den Wächter der Schlüssel-Löschstellen)
+      await ref.read(feiertageSpeicherProvider).schreiben(farbFilterAlsText(aus), schluessel: kFarbenAusSchluessel);
+    } catch (_) {
+      // gilt dann nur bis zum Schließen der App
+    }
+  }
+
+  /// Schaltet eine Farbe an oder aus.
+  Future<void> umschalten(int farbe) {
+    final aus = {...state};
+    if (!aus.remove(farbe)) aus.add(farbe);
+    return _setzen(aus);
+  }
+
+  Future<void> alleAn() => _setzen(const {});
+  Future<void> alleAus() => _setzen({for (var i = 0; i < kTerminFarbenAnzahl; i++) i});
+}
+
+final farbenAusProvider = NotifierProvider<FarbenAusNotifier, Set<int>>(FarbenAusNotifier.new);
 
 String _hhmm(DateTime w) => '${w.hour.toString().padLeft(2, '0')}:${w.minute.toString().padLeft(2, '0')}';
 
@@ -207,8 +256,8 @@ String erinnerungText(int? min) => switch (min) {
 const kErinnerungen = <int?>[null, 0, 5, 15, 30, 60, 1440, 10080];
 
 
-/// Vorkommen im Fenster [von] bis [bis] (Wanduhr, bis exklusiv) nach Personenfilter; ohne Geburtstage, wenn deren Anzeige ausgeschaltet ist.
-List<Vorkommen> gefilterteVorkommen(KalenderAuswahl a, KalenderDaten daten, DateTime von, DateTime bis, {bool geburtstage = true}) => [
+/// Vorkommen im Fenster [von] bis [bis] (Wanduhr, bis exklusiv) nach Personen- und Farbfilter; ohne Geburtstage, wenn deren Anzeige ausgeschaltet ist.
+List<Vorkommen> gefilterteVorkommen(KalenderAuswahl a, KalenderDaten daten, DateTime von, DateTime bis, {bool geburtstage = true, Set<int> farbenAus = const {}}) => [
   for (final v in vorkommenImFenster(termine: daten.termine, ausnahmen: daten.ausnahmen, vonWand: von, bisWand: bis))
-    if (passtZumFilter(v, a.personen, daten) && (geburtstage || !istGeburtstag(v.termin))) v,
+    if (passtZumFilter(v, a.personen, daten) && (geburtstage || !istGeburtstag(v.termin)) && (istGeburtstag(v.termin) || passtZumFarbFilter(v.termin.farbe, farbenAus))) v,
 ];
