@@ -109,6 +109,9 @@ class Termine extends Table {
   IntColumn get erinnerungMin => integer().nullable()();
   TextColumn get icalUid => text().nullable()();
 
+  /// Termin-Farbe: Index 0 bis 10 (`kTerminFarben`), null = keine (dann gilt die Personenfarbe).
+  IntColumn get farbe => integer().nullable()();
+
   /// parents | family | all (wie bei Listen)
   TextColumn get audience => text().withDefault(const Constant('family'))();
   TextColumn get ownerId => text().nullable()();
@@ -644,7 +647,7 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 16;
+  int get schemaVersion => 17;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
@@ -653,6 +656,7 @@ class AppDatabase extends _$AppDatabase {
   /// Version 14: Zähler (Tabellen `zaehler` und `zaehlerstaende`) mit Sync-Reset.
   /// Version 15: Tresor (Tabelle `tresor_eintraege`) mit Sync-Reset.
   /// Version 16: Dateiablage (Tabellen `ordner`, `dateien`, `datei_versionen`, `tresor_anhaenge` als Sync-Entitäten, `transfers` und `datei_cache` nur lokal) mit Sync-Reset.
+  /// Version 17: `farbe` an Terminen (Termin-Farben); nur eine Spalte, kein Sync-Reset (keine neue Entität, bisher hatte kein Termin eine Farbe).
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
   /// benutzte `outbox` ohne op_id: der Besitzer bleibt erhalten, die leere Outbox wird neu angelegt.
@@ -744,6 +748,11 @@ class AppDatabase extends _$AppDatabase {
         if (from < 15) {
           await m.createTable(tresorEintraege);
           await m.createIndex(tresorEintraegeKonversationIdx);
+        }
+        if (from < 17) {
+          // nur anlegen, wenn sie fehlt (erneuter Lauf nach einem abgebrochenen Update)
+          final spalten = await customSelect("PRAGMA table_info('termine')").get();
+          if (!spalten.any((r) => r.read<String>('name') == 'farbe')) await m.addColumn(termine, termine.farbe);
         }
         if (from < 16) {
           await m.createTable(ordner);

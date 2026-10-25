@@ -20,6 +20,7 @@ import '../sync/sync_entities.dart';
 import '../sync/sync_store.dart';
 import '../sync_state.dart';
 import 'expansion.dart';
+import 'termin_farben.dart';
 import 'wiederholung.dart';
 import 'zeitzonen.dart';
 
@@ -42,6 +43,9 @@ class TerminEingabe {
 
   /// Nur für Geburtstage (Marke, siehe geburtstag.dart); sonst null = das Feld bleibt unberührt.
   final String? icalUid;
+
+  /// Termin-Farbe (Index 0 bis 10, `kTerminFarben`); null = keine (Personenfarbe). Gehört zur Serie, Ausnahmen erben sie.
+  final int? farbe;
   const TerminEingabe({
     required this.titel,
     this.ort = '',
@@ -54,6 +58,7 @@ class TerminEingabe {
     this.sicht = TerminSicht.family,
     this.teilnehmer = const {},
     this.icalUid,
+    this.farbe,
   });
 }
 
@@ -134,6 +139,7 @@ class TerminRepository {
         'erinnerungMin': e.erinnerungMin,
         'audience': e.sicht.wire,
         'icalUid': ?e.icalUid,
+        'farbe': terminFarbeNummer(e.farbe),
       };
     }
     return {
@@ -149,13 +155,17 @@ class TerminRepository {
       'rrule': e.rrule,
       'erinnerungMin': e.erinnerungMin,
       'audience': e.sicht.wire,
+      'farbe': terminFarbeNummer(e.farbe),
     };
   }
+
+  /// Beim Anlegen wird nur eine gesetzte Farbe gesendet (alte Server und Termine ohne Farbe bleiben unberührt).
+  Map<String, dynamic> _felderNeu(TerminEingabe e) => _felder(e)..removeWhere((k, v) => k == 'farbe' && v == null);
 
   Future<String> anlegen(TerminEingabe e) async {
     _pruefeZeit();
     final id = _neueId();
-    await store.aendern('termin', id, _felder(e), nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
+    await store.aendern('termin', id, _felderNeu(e), nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
     for (final u in e.teilnehmer) {
       await store.aendern('termin_teilnehmer', _neueId(), {'terminId': id, 'userId': u});
     }
@@ -186,6 +196,7 @@ class TerminRepository {
       'erinnerungMin': alt.erinnerungMin,
       'audience': alt.audience,
       'icalUid': alt.icalUid,
+      'farbe': terminFarbeNummer(alt.farbe),
     };
     // Ein Termin in einer anderen Zeitzone (z. B. später importiert) behält sie, solange sein Beginn derselbe Zeitpunkt bleibt
     // (sonst änderte sich seine Wanduhrzeit in Serien über die Zeitumstellung).
@@ -377,7 +388,7 @@ class TerminRepository {
     }
     await _serieKuerzen(t, v);
     final neuId = _neueId();
-    final felder = _felder(TerminEingabe(
+    final felder = _felderNeu(TerminEingabe(
       titel: e.titel,
       ort: e.ort,
       beschreibung: e.beschreibung,
@@ -387,6 +398,7 @@ class TerminRepository {
       rrule: rrule,
       erinnerungMin: e.erinnerungMin,
       sicht: e.sicht,
+      farbe: e.farbe,
     ));
     await store.aendern('termin', neuId, felder, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'ownerId': ich()});
     for (final u in e.teilnehmer) {
