@@ -797,6 +797,11 @@ class AppDatabase extends _$AppDatabase {
         // Version 12 fügt der Aufgabe synchronisierte Felder hinzu; ohne Reset kämen schon vorhandene Fristen nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
+      if (from < 17) {
+        // Version 17 fügt dem Termin das synchronisierte Feld `farbe` hinzu: Hat ein anderes Gerät schon mit Farbe geschrieben, hat dieses Gerät
+        // mit der alten App den Cursor über den Termin hinweggerückt und das Feld ignoriert; ohne Reset käme die Farbe nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
       if (from < 13) {
         // Version 13 legt Tabellen für neue Sync-Entitäten an (Medikamente, Einnahmen) und eine Spalte an Konversationen; ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");

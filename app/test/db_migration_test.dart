@@ -551,13 +551,15 @@ void main() {
     expect(await db.select(db.dateiCache).get(), isEmpty);
   });
 
-  test('Version 16 -> 17: Termine behalten alles, farbe kommt dazu (null), Sync-Stand bleibt', () async {
+  test('Version 16 -> 17: Termine behalten alles, farbe kommt dazu (null), Sync-Stand wird zurückgesetzt, Ausgang bleibt', () async {
     final raw = sqlite3.openInMemory();
     addTearDown(raw.close);
     var db = AppDatabase(NativeDatabase.opened(raw, closeUnderlyingOnClose: false));
     await db.besitzerSetzen('u1');
     await db.into(db.termine).insert(TermineCompanion.insert(id: 't1', titel: 'Alt', createdAt: DateTime(2026, 1, 1), farbe: const Value(3)));
     await db.customStatement("INSERT INTO sync_meta (key, value) VALUES ('sinceRev', '42')");
+    await db.customStatement("INSERT INTO sync_meta (key, value) VALUES ('snapshotRev', '40')");
+    await db.into(db.outbox).insert(OutboxCompanion.insert(opId: 'op-17', op: 'delete', entity: 'list', entityId: 'l1'));
     await db.close();
     // Stand 16: Spalte weg
     raw.execute('ALTER TABLE termine DROP COLUMN farbe');
@@ -567,7 +569,9 @@ void main() {
     final t = await (db.select(db.termine)..where((x) => x.id.equals('t1'))).getSingle();
     expect(t.titel, 'Alt');
     expect(t.farbe, isNull);
-    expect(raw.select("SELECT value FROM sync_meta WHERE key = 'sinceRev'").single['value'], '42');
+    expect(raw.select("SELECT value FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')"), isEmpty, reason: 'Sync-Fortschritt zurückgesetzt, damit Farben anderer Geräte ankommen');
+    expect(raw.select("SELECT value FROM sync_meta WHERE key = 'ownerUserId'").single['value'], 'u1', reason: 'Besitzer bleibt');
+    expect(await db.select(db.outbox).get(), hasLength(1), reason: 'Ausgang bleibt');
     expect(raw.select('PRAGMA user_version').single.values.first, 17);
   });
 
