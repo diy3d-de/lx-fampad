@@ -10,6 +10,7 @@ import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/termin_farben.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
@@ -62,6 +63,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   late DateTime _startTagUrsprung;
   late bool _ganztaegigUrsprung;
   int? _erinnerung;
+  int? _farbe; // Termin-Farbe (Index in kTerminFarben), null = keine
   var _teilnehmer = <String>{};
   var _sicht = TerminSicht.family;
   String? _fehler;
@@ -78,7 +80,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   String? _ausgang;
   String _stand() => [
     _titel.text, _ort.text, _beschreibung.text, _ganztaegig, _geburtstag, _jahrBekannt, _geburtsdatum, _startTag, _endTag, _startZeit, _endZeit, _wdhGeaendert,
-    _erinnerung, ([..._teilnehmer]..sort()).join(','), _sicht,
+    _erinnerung, _farbe, ([..._teilnehmer]..sort()).join(','), _sicht,
   ].join('');
   bool get _nurDieses => !_neu && widget.umfang == SerieUmfang.dieses;
 
@@ -128,6 +130,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     _beschreibung.text = t.beschreibung;
     _wdh = Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid), startTag: _startTag);
     _erinnerung = t.erinnerungMin;
+    _farbe = terminFarbeNummer(t.farbe);
     _teilnehmer = daten.teilnehmerIds(t.id);
     _sicht = ListenSicht.von(t.audience);
     _startTagUrsprung = _startTag;
@@ -283,6 +286,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       erinnerungMin: _erinnerung,
       sicht: _sicht,
       teilnehmer: _teilnehmer,
+      farbe: _farbe,
     );
     final v = widget.vorkommen;
     try {
@@ -477,6 +481,10 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
         ],
         if (!_nurDieses) ...[
           if (!_geburtstag) ...[
+            const MonoLabel('Farbe'),
+            const SizedBox(height: 6),
+            FarbWahl(gewaehlt: _farbe, onWahl: (f) => setState(() => _farbe = f)),
+            const SizedBox(height: 12),
             const MonoLabel('Wiederholung'),
             const SizedBox(height: 6),
             wahl(label: 'Wiederholung', text: _wdh.beschreibung(), icon: Icons.repeat, onTap: _wiederholungWaehlen),
@@ -680,5 +688,62 @@ class _WiederholungBlattState extends State<_WiederholungBlatt> {
     final nr = (tag.day - 1) ~/ 7 + 1;
     const namen = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
     return nr >= 5 ? 'Jeden letzten ${namen[tag.weekday - 1]}' : 'Jeden $nr. ${namen[tag.weekday - 1]}';
+  }
+}
+
+/// Farbwahl im Termin-Editor: "Keine" und die elf Farben als zweispaltiges Raster (Punkt + Name); "Keine" = Personenfarbe.
+class FarbWahl extends StatelessWidget {
+  final int? gewaehlt;
+  final void Function(int? farbe) onWahl;
+  const FarbWahl({super.key, required this.gewaehlt, required this.onWahl});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget chip({required String name, required Color? farbe, required bool an, required int? wert}) => Semantics(
+      button: true,
+      selected: an,
+      label: wert == null ? 'Farbe: keine, Personenfarbe' : 'Farbe $name',
+      excludeSemantics: true,
+      onTap: () => onWahl(wert),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => onWahl(wert),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 48),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: an ? kSurface2 : kSurface,
+            border: Border.all(color: an ? (farbe ?? kTextMuted) : kBorder, width: an ? 1.5 : 1),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 14,
+                height: 14,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: farbe, border: farbe == null ? Border.all(color: kTextMuted, width: 1.5) : null),
+              ),
+              const SizedBox(width: 9),
+              Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600))),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    return LayoutBuilder(
+      builder: (context, c) {
+        final breite = (c.maxWidth - 8) / 2;
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            SizedBox(width: breite, child: chip(name: 'Keine', farbe: null, an: gewaehlt == null, wert: null)),
+            for (var i = 0; i < kTerminFarben.length; i++)
+              SizedBox(width: breite, child: chip(name: kTerminFarben[i].name, farbe: kTerminFarben[i].farbe, an: gewaehlt == i, wert: i)),
+          ],
+        );
+      },
+    );
   }
 }

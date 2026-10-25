@@ -8,6 +8,7 @@ import '../../data/api/models.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/termin_farben.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
 import '../../data/lists/members.dart';
@@ -31,9 +32,11 @@ class VorkommenKarte extends StatelessWidget {
     final farbe = terminFarbe(v, mitglieder);
     final zeit = zeitText(v, tag);
     final personen = [for (final id in teilnehmer) ?mitglieder[id]];
+    final farbName = istGeburtstag(v.termin) ? null : terminFarbeName(v.termin.farbe);
+    final ersteller = farbName == null ? null : mitglieder[v.termin.ownerId];
     return Semantics(
       button: true,
-      label: '${vorkommenTitel(v)}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}',
+      label: '${vorkommenTitel(v)}, ${datumZeitText(v)}${v.ort.isEmpty ? '' : ', ${v.ort}'}${farbName == null ? '' : ', $farbName'}',
       excludeSemantics: true,
       child: LxCard(
         padding: EdgeInsets.zero,
@@ -59,6 +62,8 @@ class VorkommenKarte extends StatelessWidget {
                             ),
                             if (istGeburtstag(v.termin)) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.cake_outlined, size: 16, color: kGeburtstag)) else if (v.serie) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.repeat, size: 14, color: kTextMuted)),
                             if (v.geaendert) const Padding(padding: EdgeInsets.only(left: 4), child: Icon(Icons.edit_outlined, size: 14, color: kTextMuted)),
+                            // mit Termin-Farbe zeigt der Balken die Farbe, die Person bleibt als kleiner Avatar sichtbar
+                            if (ersteller != null) Padding(padding: const EdgeInsets.only(left: 8), child: BenutzerAvatar(user: ersteller, size: 24)),
                           ],
                         ),
                         const SizedBox(height: 2),
@@ -222,6 +227,7 @@ Future<TerminAktion?> terminDetailBlatt(
     final ersteller = mitglieder[t.ownerId];
     final wdh = t.rrule == null ? null : Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid));
     final personen = [for (final id in teilnehmer) ?mitglieder[id]];
+    final farbName = istGeburtstag(t) ? null : terminFarbeName(t.farbe);
     Widget zeile(IconData icon, String text) => Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
@@ -251,6 +257,19 @@ Future<TerminAktion?> terminDetailBlatt(
             if (wdh != null && wdh.wiederholt) zeile(Icons.repeat, wdh.beschreibung()),
             if (t.erinnerungMin != null) zeile(Icons.notifications_none, erinnerungText(t.erinnerungMin)),
             if (t.beschreibung.isNotEmpty) zeile(Icons.notes, t.beschreibung),
+            if (farbName != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.palette_outlined, size: 18, color: kTextMuted),
+                    const SizedBox(width: 12),
+                    Container(width: 14, height: 14, decoration: BoxDecoration(shape: BoxShape.circle, color: terminFarbeWert(t.farbe))),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text('Farbe: $farbName')),
+                  ],
+                ),
+              ),
             if (personen.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
