@@ -8,6 +8,7 @@ import { loadConfig } from '../config.js';
 import { createDb } from '../db/index.js';
 import { PushService } from '../push/service.js';
 import { serializeErr } from '../log.js';
+import { ForecastService } from '../weather/forecast.js';
 import { WeatherAlerts } from '../weather/alerts.js';
 import { startWeatherPoller } from '../weather/poller.js';
 import { WeatherService } from '../weather/service.js';
@@ -34,6 +35,13 @@ push.logStatusOnce();
 const alerts = new WeatherAlerts({ db, push, log, now: auth.ctx.now });
 const weather = new WeatherService({ db, config, keys: auth.ctx.keys, log, nachAbruf: (view) => alerts.run(view) });
 
+// Vorhersage und DWD-Warnungen (WEATHER_FORECAST_ENABLED): eigene Takte und eigene Fehlerisolation neben dem Netatmo-Abruf
+const forecast = new ForecastService({ db, config, log });
+if (forecast.enabled) {
+  await forecast.start();
+  log.info({ forecastMs: 3 * 3_600_000, alertsMs: 600_000 }, 'Wetter-Vorhersage gestartet');
+}
+
 const status = await weather.status();
 if (!status.configured) log.warn({ code: 'not_configured' }, 'Keine Wetter-Zugangsdaten: weather-setup ausführen (prüft alle 10 Minuten erneut)');
 startWeatherPoller(weather, log);
@@ -45,8 +53,9 @@ const shutdown = async (signal: string) => {
   log.info({ signal }, 'Beende Wetter-Abruf');
   clearInterval(halten);
   weather.close();
+  forecast.close();
   // einen laufenden Abruf (Token-Rotation!) zu Ende laufen lassen, höchstens 10 s (TimeoutStopSec=20 in der Unit)
-  await weather.drain(10_000);
+  await Promise.all([weather.drain(10_000), forecast.drain(10_000)]);
   push.close();
   await pool.end();
   process.exit(0);

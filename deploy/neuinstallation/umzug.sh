@@ -40,9 +40,9 @@ umask 077
 
 # --- Festwerte ----------------------------------------------------------------------------------------------------------------------
 # Absichtlich nicht "readonly": aus_bootstrap() liest bootstrap-server.sh in einer Unterschale ein, das dieselben Namen schreibgeschützt setzt.
-UMZUG_VERSION="0.16.1"                                 # Stand des Projekts (Versionskopf); bei jedem Versionsbump mitziehen: test-umzug.sh verlangt UMZUG_VERSION >= Version in app/pubspec.yaml
-DOMAIN="familyhub.lx-labs.dev"                          # fest: Passkeys (RP-ID) hängen daran
-NTFY_DOMAIN="ntfy.familyhub.lx-labs.dev"
+UMZUG_VERSION="0.17.1"                                 # Stand des Projekts (Versionskopf); bei jedem Versionsbump mitziehen: test-umzug.sh verlangt UMZUG_VERSION >= Version in app/pubspec.yaml
+DOMAIN="familie.lx-labs.dev"                          # fest: Passkeys (RP-ID) hängen daran
+NTFY_DOMAIN="ntfy.familie.lx-labs.dev"
 LX_USER="lx"
 PHASEN=(pruefen pakete system code konfiguration datenbank anwendung ntfy caddy sicherung pruefung)   # wie in bootstrap-server.sh (test-umzug.sh vergleicht)
 GITHUB_SCHLUESSEL_SEITE="https://github.com/diy3d-de/lx-fampad/settings/keys"
@@ -1188,8 +1188,8 @@ liste_bauen() { # füllt LISTE (reiner Text; Überschriften beginnen mit "[n] ")
   l "      Hat sich nichts geändert (oder ist der alte Server schon aus), überspringst du [$n]."
   l ""
   n=$((n + 1)); dns_nr="$n"; l "[$n] DNS bei Cloudflare umstellen  (graue Wolke, \"DNS only\")"
-  l "      familyhub     A   $ip"
-  l "      ntfy.familyhub   A   $ip"
+  l "      familie        A   $ip"
+  l "      ntfy.familie   A   $ip"
   if [ -n "$IP_V6" ]; then l "      Gibt es einen AAAA-Eintrag: auf $IP_V6 umstellen oder löschen (sonst zeigt er noch zum alten Server)."
   else l "      Einen vorhandenen AAAA-Eintrag löschen (dieser Server hat keine globale IPv6-Adresse)."; fi
   l "    Kontrolle:  dig +short $DOMAIN   (muss $ip zeigen; unter Windows: nslookup $DOMAIN 1.1.1.1)"
@@ -1335,7 +1335,7 @@ weiter_caddy() {
     else schlecht "DNS: $h $(sauber "$grund")."; bad=1; fi
   done
   if [ "$bad" = 1 ]; then
-    fehler_ende "Der DNS-Eintrag zeigt noch nicht (nur) auf diesen Server; Caddy würde keine Zertifikate bekommen und Let's-Encrypt-Versuche verbrauchen." "Stelle die A-Einträge familyhub und ntfy.familyhub auf ${A_IP:-diesen Server} (DNS only), lösche oder ändere einen AAAA-Eintrag, warte, bis 'dig +short $DOMAIN' die Adresse zeigt, und wiederhole den Befehl."
+    fehler_ende "Der DNS-Eintrag zeigt noch nicht (nur) auf diesen Server; Caddy würde keine Zertifikate bekommen und Let's-Encrypt-Versuche verbrauchen." "Stelle die A-Einträge familie und ntfy.familie auf ${A_IP:-diesen Server} (DNS only), lösche oder ändere einen AAAA-Eintrag, warte, bis 'dig +short $DOMAIN' die Adresse zeigt, und wiederhole den Befehl."
   fi
   weiter_phasen "caddy,pruefung" "Caddy, Zertifikate und Abschlussprüfung"
   fertig_markieren caddy; fertig_markieren pruefung; erledigt_markieren caddy

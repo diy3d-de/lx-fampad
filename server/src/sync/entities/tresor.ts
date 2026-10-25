@@ -34,7 +34,7 @@ const verweigert = (): Facts => ({ audience: 'parents', ownerId: null, participa
 type Env = Parameters<NonNullable<EntityDef['validate']>>[0];
 
 /** Die Konversation gehört zur Familie, lebt, ist verschlüsselt (e1) und ist die Tresor-Konversation. */
-async function tresorKonversation(env: Env, konversationId: string): Promise<boolean> {
+export async function tresorKonversation(env: Env, konversationId: string): Promise<boolean> {
   const [k] = await env.tx
     .select({ art: konversationen.art, enc: konversationen.encVersion })
     .from(konversationen)

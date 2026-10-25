@@ -171,4 +171,62 @@ class SodiumCryptoProvider implements CryptoProvider {
       throw const CryptoFehler(CryptoFehlerArt.entschluesselung, 'Entschlüsselung nicht möglich.');
     }
   }
+
+  @override
+  Future<Uint8List> stromVerschluesseln({required Uint8List schluessel, required Uint8List klartext, int blockBytes = 65536}) async {
+    final ss = _s.crypto.secretStream;
+    if (schluessel.length != ss.keyBytes || blockBytes < 1) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Ungültige Schlüssel- oder Blocklänge.');
+    final key = _s.secureCopy(schluessel);
+    try {
+      // jeder Block ausdrücklich getaggt: der letzte als FINAL (auch bei leerem Klartext genau ein leerer FINAL-Block)
+      final bloecke = <SecretStreamPlainMessage>[];
+      var pos = 0;
+      do {
+        final ende = pos + blockBytes < klartext.length ? pos + blockBytes : klartext.length;
+        bloecke.add(SecretStreamPlainMessage(Uint8List.sublistView(klartext, pos, ende), tag: ende >= klartext.length ? SecretStreamMessageTag.finalPush : SecretStreamMessageTag.message));
+        pos = ende;
+      } while (pos < klartext.length);
+      final raus = BytesBuilder(copy: false);
+      await for (final m in ss.pushEx(messageStream: Stream.fromIterable(bloecke), key: key)) {
+        raus.add(m.message);
+      }
+      return raus.takeBytes();
+    } on Object {
+      throw _intern;
+    } finally {
+      key.dispose();
+    }
+  }
+
+  @override
+  Future<Uint8List> stromEntschluesseln({required Uint8List schluessel, required Uint8List chiffretext, int blockBytes = 65536}) async {
+    const fehler = CryptoFehler(CryptoFehlerArt.entschluesselung, 'Entschlüsselung nicht möglich.');
+    final ss = _s.crypto.secretStream;
+    final kopf = ss.headerBytes;
+    final block = blockBytes + ss.aBytes;
+    // Kopfzeile plus mindestens ein (auch leerer) Block
+    if (schluessel.length != ss.keyBytes || blockBytes < 1 || chiffretext.length < kopf + ss.aBytes) throw fehler;
+    final key = _s.secureCopy(schluessel);
+    try {
+      final stuecke = <SecretStreamCipherMessage>[SecretStreamCipherMessage(Uint8List.sublistView(chiffretext, 0, kopf))];
+      for (var pos = kopf; pos < chiffretext.length; pos += block) {
+        final ende = pos + block < chiffretext.length ? pos + block : chiffretext.length;
+        stuecke.add(SecretStreamCipherMessage(Uint8List.sublistView(chiffretext, pos, ende)));
+      }
+      final raus = BytesBuilder(copy: false);
+      var istFinal = false;
+      // ein FINAL-Block muss der letzte sein (der Strom endet danach); ein Strom ohne FINAL-Block wirft (gekürzt)
+      await for (final m in ss.pullEx(cipherStream: Stream.fromIterable(stuecke), key: key)) {
+        if (istFinal) throw fehler;
+        raus.add(m.message);
+        if (m.tag == SecretStreamMessageTag.finalPush) istFinal = true;
+      }
+      if (!istFinal) throw fehler;
+      return raus.takeBytes();
+    } on Object {
+      throw fehler;
+    } finally {
+      key.dispose();
+    }
+  }
 }

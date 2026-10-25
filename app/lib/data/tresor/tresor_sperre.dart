@@ -30,6 +30,22 @@ final tresorJetztProvider = Provider<DateTime Function()>((ref) => DateTime.now)
 
 class TresorSperre extends Notifier<TresorSperreZustand> {
   Timer? _timer;
+  var _systemDialoge = 0;
+
+  /// Läuft gerade ein Dialog des Systems (Dateiauswahl, Speichern)? Auf Android schickt er die App kurz in den Hintergrund: das sperrt den Tresor dann nicht (die Frist der Auto-Sperre läuft weiter).
+  bool get systemDialogOffen => _systemDialoge > 0;
+
+  /// Führt [f] (einen Dialog des Systems) aus, ohne dass der Wechsel in den Hintergrund sperrt. Die Auto-Sperre bleibt aktiv; danach beginnt ihre Frist neu.
+  Future<T> mitSystemDialog<T>(Future<T> Function() f) async {
+    _systemDialoge++;
+    aktivitaet();
+    try {
+      return await f();
+    } finally {
+      _systemDialoge--;
+      aktivitaet();
+    }
+  }
 
   @override
   TresorSperreZustand build() {
@@ -82,7 +98,9 @@ final tresorSperreProvider = NotifierProvider<TresorSperre, TresorSperreZustand>
 final tresorLebenszyklusProvider = Provider<void>((ref) {
   final l = AppLifecycleListener(
     onStateChange: (s) {
-      if (s == AppLifecycleState.hidden || s == AppLifecycleState.paused || s == AppLifecycleState.detached) ref.read(tresorSperreProvider.notifier).sperren();
+      if (s != AppLifecycleState.hidden && s != AppLifecycleState.paused && s != AppLifecycleState.detached) return;
+      final sperre = ref.read(tresorSperreProvider.notifier);
+      if (!sperre.systemDialogOffen) sperre.sperren();
     },
   );
   ref.onDispose(l.dispose);

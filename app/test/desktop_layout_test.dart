@@ -34,7 +34,7 @@ void main() {
       for (final t in kTabs.where((t) => t.label != 'Dateien')) {
         expect(navEintrag(t.label), findsOneWidget, reason: t.label);
       }
-      // der Dateien-Bereich ist noch nicht gebaut: nicht in der Seitenleiste (kDateienSichtbar)
+      // ohne features.files des Servers: Dateien nicht in der Seitenleiste
       expect(navEintrag('Dateien'), findsNothing);
       // keine Platzhalter-Einträge ("bald") in der Seitenleiste: Fotos und Orte stehen erst im Menü, wenn sie gebaut sind
       expect(find.text('bald'), findsNothing);
@@ -44,7 +44,7 @@ void main() {
       expect(find.text('Orte'), findsNothing);
       expect(find.textContaining(RegExp('^Guten (Morgen|Tag|Abend)')), findsOneWidget);
       for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben', '// familie & orte']) {
-      // der Dateien-Platzhalter ist ausgeblendet, solange der Bereich nicht gebaut ist (kDateienSichtbar)
+      // ohne features.files des Servers: keine Kachel "Zuletzt geteilt"
       expect(find.text('// ZULETZT GETEILT'), findsNothing);
         expect(find.text(l.toUpperCase()), findsOneWidget, reason: l);
       }
@@ -90,7 +90,7 @@ void main() {
     await tester.tap(find.text('Start').first);
     await warte(tester);
     expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
-    // der Dateien-Platzhalter ist ausgeblendet (kein Weg in den noch nicht gebauten Bereich)
+    // ohne features.files des Servers: keine Dateien-Kachel und kein Weg in den Bereich
     expect(find.text('Noch keine Dateien'), findsNothing);
   });
 

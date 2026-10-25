@@ -14,6 +14,8 @@ import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/crypto/e2ee_state.dart';
 import 'package:lx_fampad/data/passkey_service.dart';
 import 'package:lx_fampad/data/database_provider.dart';
+import 'package:lx_fampad/data/dateien/datei_ort.dart' show DateiOrt, KeinDateiOrt;
+import 'package:lx_fampad/data/dateien/transfer_dienst.dart' show dateiOrtProvider;
 import 'package:lx_fampad/data/providers.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart' show standortPortProvider;
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart' show MemoryErinnerungSpeicher;
@@ -21,6 +23,7 @@ import 'package:lx_fampad/data/standort/standort_hinweis.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
 import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKartenBuilder, standortKartenBuilderProvider;
 import 'package:lx_fampad/data/sync_state.dart';
+import 'package:lx_fampad/data/wetter/vorhersage_state.dart' show vorhersageTaktProvider;
 import 'package:lx_fampad/data/wetter/wetter_state.dart' show wetterTaktProvider;
 import 'package:lx_fampad/data/muell/muell_state.dart' show muellTaktProvider;
 import 'package:lx_fampad/data/betrieb/familien_hinweis_state.dart' show familienHinweisTaktProvider;
@@ -149,6 +152,9 @@ class TestUmgebung {
   /// Zusätzliche Überschreibungen einzelner Tests (z. B. ein Stream, der einen Lesefehler meldet).
   final List<Override> extraOverrides = [];
 
+  /// Ordner für Dateien der Dateiablage (Standard: keiner; Tests des Ortes setzen einen Wegwerf-Ordner).
+  DateiOrt dateiOrt = const KeinDateiOrt();
+
   /// Anzeige der Standort-Benachrichtigungen (Standard: keine).
   StandortAnzeigePort standortAnzeige = const KeineStandortAnzeige();
 
@@ -199,6 +205,8 @@ class TestUmgebung {
     // besitzerInDb: wie in der App der Besitzer in sync_meta der echten (hier: In-Memory-)Datenbank
     localDataOwnerProvider.overrideWithValue(besitzerInDb ? DatenbankBesitzer(db) : owner),
     appDatabaseProvider.overrideWithValue(db),
+    // Dateiablage: kein Ordner des Geräts im Test (path_provider hat dort keine Plattform und würde nie antworten); Tests des Ortes setzen ihren eigenen über extraOverrides
+    dateiOrtProvider.overrideWithValue(dateiOrt),
     syncSocketOeffnerProvider.overrideWithValue(sockets.oeffner),
     syncZeitenProvider.overrideWithValue(zeiten),
     // Standort teilen: kein Gerätedienst im Test (der Kanal zur Android-Seite fehlt dort)
@@ -210,6 +218,7 @@ class TestUmgebung {
     ),
     // Wetter: kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     wetterTaktProvider.overrideWithValue(null),
+    vorhersageTaktProvider.overrideWithValue(null),
     // Müll (Abfuhrtermine): kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     muellTaktProvider.overrideWithValue(null),
     // Familienhinweis (Betrieb): kein Abfrage-Takt im Test (ein Timer bliebe stehen)

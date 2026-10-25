@@ -5,6 +5,7 @@ import { and, count, eq, gt, isNotNull, isNull, max, sql } from 'drizzle-orm';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
 import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
+import { familyUsage } from '../files/usage.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { WeatherService } from '../weather/service.js';
 import { NAS_STATUS_MAX_BYTES, parseNasStatus, type NasStatus } from './nas-status.js';
@@ -49,6 +50,8 @@ export interface OperatorStatus {
   push: PushStatus;
   /** Update-Stand der Android-Geräte (Zähler ohne Namen; Einzelheiten je Person in `GET /admin/members`). */
   updates: UpdateStatus;
+  /** Dateiablage: nur Zahlen (belegt, reserviert, Kontingent, Blobs, laufende Uploads), nie Namen oder Typen; null = aus oder nicht messbar. */
+  files: { enabled: boolean; usedBytes: number | null; reservedBytes: number | null; quotaBytes: number | null; blobs: number | null; uploadsOpen: number | null };
   features: { pwBackup: boolean; legacyPasswordLogin: boolean; weather: boolean; push: boolean; map: { available: boolean; sizeBytes: number | null } };
 }
 
@@ -273,6 +276,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     oc.nasStatusFile ? probes.readText(oc.nasStatusFile, NAS_STATUS_MAX_BYTES + 1, true) : Promise.resolve(null),
   ]);
   const nas = parseNasStatus(nasText, now);
+  const filesUsage = config.files.enabled && dbOk ? await familyUsage(ctx.db, familyId, config.files.quotaBytes).catch(() => null) : null;
   const push: PushStatus = dbOk ? await collectPushStatus(ctx, familyId, now).catch(() => EMPTY_PUSH) : EMPTY_PUSH;
   const appInfo = manifestText ? parseManifest(manifestText) : null;
   const updates: UpdateStatus = dbOk
@@ -333,6 +337,14 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
     counts,
     versions: { server: SERVER_VERSION, web, app: appInfo, minAppVersion: config.minAppVersion },
     updates,
+    files: {
+      enabled: config.files.enabled,
+      usedBytes: filesUsage?.usedBytes ?? null,
+      reservedBytes: filesUsage?.reservedBytes ?? null,
+      quotaBytes: filesUsage ? filesUsage.quotaBytes : null,
+      blobs: filesUsage?.blobs ?? null,
+      uploadsOpen: filesUsage?.uploadsOpen ?? null,
+    },
     features: {
       pwBackup: config.e2eePwBackup,
       legacyPasswordLogin: config.auth.legacyPasswordLogin,

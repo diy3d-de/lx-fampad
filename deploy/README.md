@@ -35,7 +35,7 @@ Verzeichnisse auf dem Server:
 | `/srv/fampad/releases/android` | `latest.json` und APK des Update-Kanals | `lx` |
 | `/srv/fampad/well-known` | `assetlinks.json` (später `apple-app-site-association`) | `lx` |
 | `/srv/fampad/font-fallback` | Fallback-Schriften für Flutter Web | `lx` |
-| `/srv/fampad/files` | Dateiablage (später verschlüsselt) | `lx-fampad`, 0700 |
+| `/srv/fampad/files` | Dateiablage (Blobs serverseitig verschlüsselt bzw. Ende-zu-Ende verschlüsselt, Staging; Abschnitt 14) | `lx-fampad`, 0700 |
 | `/etc/lx-fampad/env` | Konfiguration und Geheimnisse (Datenbank-Passwort) | `root:root`, 0600 |
 
 ---
@@ -497,6 +497,8 @@ Der Server holt die Werte einer öffentlichen Netatmo-Station (nur der Server, n
 4. **Prüfen:** `journalctl -u lx-fampad-weather -n 50` zeigt höchstens Codes wie `station_not_found` (MAC oder Rechteck stimmen nicht, oder die Station ist nicht öffentlich) oder `invalid_grant` (Token ungültig: Schritt 3 mit einem neuen Refresh-Token wiederholen; der Abruf ist bis dahin abgeschaltet). In der App erscheint die Kachel nach dem ersten erfolgreichen Abruf (spätestens nach 10 Minuten).
 5. **Ausschalten:** `WEATHER_ENABLED` entfernen und `sudo systemctl restart lx-fampad lx-fampad-weather` (der Wetter-Dienst bleibt danach gestoppt; ganz entfernen: `sudo systemctl disable --now lx-fampad-weather`); die Messwerte der letzten 7 Tage bleiben in der Tabelle `weather_samples`, die Zugangsdaten löschen mit `weather-setup.js --remove`.
 
+**Vorhersage und amtliche DWD-Warnungen (optional, Phase 2):** läuft im selben Dienst `lx-fampad-weather` (eigene Takte, eigene Fehlerisolation neben dem Netatmo-Abruf; die Unit hat `IPAddressAllow=any`, `api.brightsky.dev` braucht keine Freigabe). Einmalig in `/etc/lx-fampad/env` `WEATHER_FORECAST_ENABLED=true` ergänzen (setzt `WEATHER_ENABLED=true`, `WEATHER_BBOX` und `WEATHER_PLACE` voraus, sonst bricht der Start ab), danach `deploy.sh` (Migration 0034) bzw. `sudo systemctl restart lx-fampad lx-fampad-weather`. Hinaus gehen nur die auf zwei Nachkommastellen gerundete Mitte von `WEATHER_BBOX`, Zeitzone und Einheiten. Prüfen: `journalctl -u lx-fampad-weather` zeigt `Wetter-Vorhersage gestartet`; bei Problemen nur feste Codes (`network`, `too_large`, `bad_json`, `bad_data`, `http_NNN`). Ausschalten: Schalter entfernen und beide Dienste neu starten (der letzte Stand bleibt in `weather_forecast`, wird aber nicht mehr geliefert).
+
 **Wetter-Hinweise per Wecker (Frost, Regen, Wind, Hitze, Druckabfall) brauchen keine neue Einrichtung:** dieselbe Unit und dieselbe `/etc/lx-fampad/env` (`NTFY_URL` = Loopback-ntfy, `NTFY_TOKEN`; die Unit lässt Verbindungen zu 127.0.0.1 zu, `IPAddressAllow=any`). Die Migration 0033 läuft mit `deploy.sh` (Migrationsdienst), `deploy.sh` startet `lx-fampad-weather` neu. Ohne `NTFY_*` bleibt der Zustand gepflegt, es geht aber kein Wecker hinaus (einmalige Warnung im Journal). Prüfen: `journalctl -u lx-fampad-weather` zeigt bei einem Übergang `Wetter-Hinweis: Wecker geplant` (nur Art und Zahl der Geräte, nie Werte).
 
 **Netatmo rotiert das Refresh-Token bei jeder Erneuerung.** Scheitert das Speichern des neuen Tokens in der Transaktion, schreibt der Dienst es ersatzweise außerhalb davon (Fehlercode `rotate_persist` in `weather-setup --status`). Steht im Log „ging verloren, weather-setup erneut ausführen“, ist das Token weg: Schritt 3 mit einem neuen Refresh-Token wiederholen. Ist der Abruf abgeschaltet (`invalid_grant`), prüft der Dienst alle 10 Minuten, ob neue Zugangsdaten da sind. Deshalb gibt es genau einen Abruf-Takt (ein Dienstprozess); nie dieselben Zugangsdaten auf einem zweiten System (z. B. einer Test-Instanz) gleichzeitig verwenden, sonst macht ein System das Token des anderen ungültig. Der Probeabruf von `weather-setup` läuft nur, wenn `WEATHER_ENABLED=true` in der Umgebung des Befehls steht (über `--env-file`).
@@ -527,6 +529,17 @@ Der Server lädt die ICS-Datei des Abfallkalenders (nur der Server, nie die App)
    **IP-Sperre:** Die Unit sperrt private und lokale Bereiche (`IPAddressDeny=10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10`), Loopback (PostgreSQL) bleibt erlaubt. Zeigt `/etc/resolv.conf` direkt auf einen Resolver in einem dieser Bereiche, scheitert die Namensauflösung (`journalctl` zeigt dann `network`): dann nur die `IPAddressDeny`-Zeile anpassen. Der **Wetter-Dienst** behält vorerst `IPAddressAllow=any`; dieselbe Sperre ließe sich dort mit derselben einen Zeile einführen (`IPAddressAllow=any` durch die `IPAddressDeny=`-Zeile ersetzen), sollte aber erst nach einem Blick auf die Resolver-Einstellung des Servers erfolgen.
 4. **Prüfen:** `journalctl -u lx-fampad-waste -n 50` zeigt nur feste Codes (`http_403`, `http_404`, `empty`, `not_ics`, `redirect`, `too_large`, `network`, `shrunk`, `db`), nie den Link. In der App erscheinen Kachel und Seite nach dem ersten Abruf.
 5. **Ausschalten:** `WASTE_ENABLED` entfernen, `sudo systemctl restart lx-fampad lx-fampad-waste` (der Dienst bleibt danach gestoppt); ganz entfernen: `sudo systemctl disable --now lx-fampad-waste`. Die Termine bleiben in der Datenbank. Den Link ändern: nur in der env-Datei (`sudoedit`), danach beide Dienste neu starten; die App hat bewusst kein Eingabefeld dafür.
+
+### 14. Dateiablage (optional, Schalter `FILES_ENABLED`)
+
+Der Server ist gebaut (Blob-Schicht mit Upload per tus, Kontingent, Auslieferung; Abschnitt 6n der Projektbeschreibung), die App folgt. **Diese Schritte sind nur beschrieben und werden erst vor dem Einschalten ausgeführt.** Ohne Schalter (Standard) bleiben alle Routen 404 und es wird nichts angelegt.
+
+1. **Ordner** (einmalig, in Schritt 2 schon angelegt): `/srv/fampad/files` gehört `lx-fampad`, 0700. Der Dienst legt darunter `blobs/` und `tmp/` selbst an (0700, Dateien 0600). Er muss auf demselben Dateisystem liegen (Umbenennen aus `tmp/` ist atomar).
+2. **Dienst:** `ReadWritePaths=/srv/fampad/files` steht schon in `lx-fampad.service`; bei einem anderen `FILES_DIR` dort anpassen (`sudo systemctl daemon-reload`).
+3. **Variablen** in `/etc/lx-fampad/env` (Vorlage `server/.env.example`): `FILES_ENABLED=true` und `FILES_DIR=/srv/fampad/files` (absolut, in Produktion Pflicht); optional `FILES_QUOTA_BYTES` (10 GB je Familie), `FILES_MAX_BYTES` (100 MB je Datei), `FILES_MIN_FREE_BYTES` (5 GB: darunter keine neuen Uploads), `FILES_STAGING_MAX_BYTES` (2 GB), `FILES_CHILD_BYTES_PER_HOUR`/`_PER_DAY`. Ungültige Werte brechen den Start ab. Dann `sudo systemctl restart lx-fampad`; der Dienst läuft mit 512 MB (`MemoryMax`), die Abschnitte sind 4 MiB, das Abschließen läuft einzeln (hashen und verschlüsseln blockweise, kein Laden ganzer Dateien in den Speicher).
+4. **Caddy:** keine Änderung nötig. `deploy/Caddyfile` setzt für `/api/*` kein `request_body max_size` (Caddy begrenzt von sich aus nichts), PATCH-Abschnitte von 4 MiB laufen also unverändert zum Dienst; die Größe begrenzt der Dienst (`413`). Das Haupt-Caddyfile auf dem Server nicht anfassen. Hinweis: Das `header`-Block des Sites überschreibt die `Content-Security-Policy` auch auf API-Antworten (wie bei den Benutzerbildern); die Auslieferung ist unabhängig davon immer `attachment` mit `nosniff`. Sollen später `sandbox`-CSP und Zeitlimits pro Route gelten, geht das nur über einen eigenen `handle /api/v1/files/*`-Block per validierendem Skript (Dry-Run, siehe oben).
+5. **Backup:** Blobs gehören **nicht** in die tägliche Datenbanksicherung (`INCLUDE_FILES` bleibt aus). Das NAS holt `/srv/fampad/files/blobs` inkrementell per rsync (eigener, nur lesender Zugang wie bei `lxbackup`; nie `--delete`); Wiederherstellung braucht Datenbank-Dump, `AUTH_SECRET_KEY` und die Blobs. Einrichtung folgt mit D5.
+6. **Prüfen:** `curl -s https://familie.lx-labs.dev/api/v1/version` zeigt `"files":true`; die Betreiber-Ansicht zeigt unter `files` nur Zahlen. Das stündliche Aufräumen warnt im Log mit Zahlen (`strayFiles`, `missingFiles`), wenn Platte und Datenbank abweichen.
 
 ## Updates veröffentlichen
 
@@ -600,7 +613,7 @@ Migration 0024 (Spalte `epoche_wraps.key_version`) ist rein additiv. Der Schalte
 
 - Backups der Dateiablage (`/srv/fampad/files`): erst wenn sie genutzt wird (`INCLUDE_FILES=1`, später inkrementell); Datenbank und Konfiguration sind erledigt, siehe Abschnitt "Backups"
 - Speicherplatz-Warnung; Aufbewahrung von IP-Adressen in der Datenbank (`audit_log.ip`) höchstens 7 Tage (Aufräum-Job in Phase 1)
-- Hauptschlüssel für die Dateiverschlüsselung außerhalb von `/srv/fampad/files` ablegen (Phase 1)
+- Hauptschlüssel für die Dateiverschlüsselung: `AUTH_SECRET_KEY` liegt außerhalb von `/srv/fampad/files` (Abschnitt 14; er steckt in der Sicherung der Konfiguration)
 
 ## Umbenennung von lx-familienzentrale
 

@@ -98,6 +98,7 @@ describe('Warn-Bedingungen (rein)', () => {
       nas: NAS_ABSENT,
       push: EMPTY_PUSH,
       updates: emptyUpdates(null, '0.1.0'),
+      files: { enabled: false, usedBytes: null, reservedBytes: null, quotaBytes: null, blobs: null, uploadsOpen: null },
       disk: { totalBytes: 100, freeBytes: 50, usedPercent: 50 },
       certificate: { validTo: new Date(now.getTime() + 60 * DAY).toISOString(), daysLeft: 60 },
       counts: { members: 1, devices: 1, pushDevices: 1, activeSessions: 1 },

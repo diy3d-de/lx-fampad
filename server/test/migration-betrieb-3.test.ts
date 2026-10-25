@@ -24,7 +24,7 @@ describe('Migration 0025 (Betrieb Paket 3) additiv auf Stand 0023', () => {
       await world.close();
       world = undefined;
 
-      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'operator_metrics' order by 1`)).rows).map((r) => r.tablename);
+      const tabellen = ((await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public' and tablename <> 'files' and tablename <> 'operator_metrics' order by 1`)).rows).map((r) => r.tablename);
       const ohne: Record<string, string> = { weather_credentials: " - 'error_count'" };
       const summe = async (t: string) =>
         ((await db.execute<{ h: string }>(sql.raw(`select md5(coalesce(string_agg((to_jsonb(x)${ohne[t] ?? ''})::text, '|' order by (to_jsonb(x)${ohne[t] ?? ''})::text), '')) as h from "${t}" x`))).rows[0] as { h: string }).h;

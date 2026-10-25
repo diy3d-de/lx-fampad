@@ -45,4 +45,11 @@ abstract interface class CryptoProvider {
 
   /// Schlüsselableitung: BLAKE2b mit Schlüssel = [master] (16 bis 64 Byte) über das Kontext-Label (UTF-8). Verschiedene Labels ergeben unabhängige Ausgaben.
   Uint8List kdf(Uint8List master, String kontext, {int laenge = 32});
+
+  /// libsodium secretstream (XChaCha20-Poly1305): verschlüsselt [klartext] in Blöcken von [blockBytes] zu `Kopfzeile (24 Byte) + Blöcke (je Klartext + 17 Byte)`; der letzte Block trägt das Kennzeichen
+  /// FINAL (auch bei einem Klartext, der genau ein Vielfaches der Blockgröße ist), jeder Block hängt am vorherigen (Reihenfolge, Vertauschen und Kürzen werden erkannt). [schluessel] 32 Byte.
+  Future<Uint8List> stromVerschluesseln({required Uint8List schluessel, required Uint8List klartext, int blockBytes = 65536});
+
+  /// Gegenstück: wirft CryptoFehler (entschluesselung) bei falschem Schlüssel, Manipulation, Vertauschen, Kürzen (kein FINAL-Block) und Anhängen nach dem letzten Block.
+  Future<Uint8List> stromEntschluesseln({required Uint8List schluessel, required Uint8List chiffretext, int blockBytes = 65536});
 }

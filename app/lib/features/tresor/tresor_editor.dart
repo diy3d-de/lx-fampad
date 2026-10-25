@@ -1,6 +1,6 @@
 // Tresor (Abschnitt 6m): Eintrag anlegen und bearbeiten. Vorlagen (WLAN, Versicherung, Ausweis, Arzt, Eigener) füllen die Felder vor; Felder lassen sich hinzufügen, entfernen und mit Pfeilen
 // umsortieren, jedes Feld hat einen "Geheim"-Schalter. Der Eintrag gehört allen Eltern (feste Hinweiskarte statt einer Auswahl "Sichtbar für"). Geheime Werte bekommen keine
-// Tastaturvorschläge und keine Autokorrektur. Mit der Sperre schließt sich der Editor, eine ungespeicherte Eingabe geht dabei bewusst verloren. Keine Anhänge in dieser Version.
+// Tastaturvorschläge und keine Autokorrektur. Mit der Sperre schließt sich der Editor, eine ungespeicherte Eingabe geht dabei bewusst verloren. Dokumente (Anhänge) hängen an einem gespeicherten Eintrag: im Editor eines bestehenden Eintrags erscheint der Abschnitt "Dokumente" (sofort wirksam, unabhängig vom Speichern der Felder), bei einem neuen nur ein Hinweis.
 import 'dart:async';
 import 'dart:convert';
 
@@ -21,6 +21,7 @@ import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'tresor_bausteine.dart';
+import 'tresor_dokumente.dart';
 
 /// Öffnet den Editor: [id] = bearbeiten, sonst einen neuen Eintrag anlegen. Nur für Eltern und Admins.
 Future<void> tresorEditorOeffnen(BuildContext context, {String? id}) {
@@ -295,6 +296,8 @@ class _TresorEditorState extends ConsumerState<TresorEditor> {
               textCapitalization: TextCapitalization.sentences,
               decoration: const InputDecoration(labelText: 'Notiz', counterText: '', alignLabelWithHint: true),
             ),
+            const SizedBox(height: 14),
+            TresorDokumente(eintragId: widget.id),
             const SizedBox(height: 14),
             const TresorHinweis(titel: 'Alle Eltern sehen diesen Eintrag', text: 'Er liegt Ende-zu-Ende verschlüsselt und ist für alle Eltern und Admins sichtbar und bearbeitbar. Ein Eintrag hat höchstens 16 KB Text.', icon: Icons.groups_outlined),
           ],
