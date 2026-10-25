@@ -17,7 +17,7 @@
 set -Eeuo pipefail
 
 NTFY_USER=ntfy
-NTFY_HOST="ntfy.familie.lx-labs.dev"
+NTFY_HOST="ntfy.familyhub.lx-labs.dev"
 NTFY_PORT=2586
 CFG=/etc/ntfy/server.yml
 PUSH_USER="fampad-server"

@@ -43,7 +43,7 @@ Future<_Aufbau> _aufbau({bool sicherung = true}) async {
     srv.prfEinspielen(fixIdAdmin, 'cred-1', blob, version: 1);
   }
   server
-    ..json('POST /auth/login/passkey/options', {'challengeId': 'login-1', 'options': {'challenge': 'AAAA', 'rpId': 'familie.lx-labs.dev'}})
+    ..json('POST /auth/login/passkey/options', {'challengeId': 'login-1', 'options': {'challenge': 'AAAA', 'rpId': 'familyhub.lx-labs.dev'}})
     ..json('POST /auth/login/passkey/verify', {'user': userJson(), 'session': appSession()})
     ..json('GET /me', meJson())
     ..json('GET /me/security-events', {'events': <Object>[]});

@@ -18,7 +18,7 @@ const blob = () => randomBytes(160).toString('base64url');
 const kdf = () => ({ id: 'argon2id-v1', memKiB: 65536, ops: 3 });
 const keys = () => ({ publicEncKey: key(), publicSignKey: key() });
 const TOKEN = 'tk_testtoken1234567890';
-const HOST = 'ntfy.familie.lx-labs.dev';
+const HOST = 'ntfy.familyhub.lx-labs.dev';
 const randTopic = () => 'up' + randomBytes(9).toString('base64url').replace(/[-_]/g, 'x').slice(0, 12);
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 

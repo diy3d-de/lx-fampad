@@ -285,20 +285,20 @@ describe('WebSocket /ws', () => {
 
   describe('Origin-Prüfung vor dem Upgrade (fail-closed)', () => {
     it('lehnt fremde Origins in production ab', async () => {
-      const instance = await start({ env: { NODE_ENV: 'production', PUBLIC_URL: 'https://familie.lx-labs.dev' } });
+      const instance = await start({ env: { NODE_ENV: 'production', PUBLIC_URL: 'https://familyhub.lx-labs.dev' } });
       await expect(connect(instance, { origin: 'https://evil.example' })).rejects.toThrow(/403/);
       // Origin "null" (z. B. sandboxed iframe) ist ebenfalls fremd
       await expect(connect(instance, { origin: 'null' })).rejects.toThrow(/403/);
     });
 
     it('lässt die eigene Origin und Clients ohne Origin (App) durch', async () => {
-      const instance = await start({ env: { NODE_ENV: 'production', PUBLIC_URL: 'https://familie.lx-labs.dev', WS_AUTH_TIMEOUT_MS: '60000' } });
-      await connect(instance, { origin: 'https://familie.lx-labs.dev' });
+      const instance = await start({ env: { NODE_ENV: 'production', PUBLIC_URL: 'https://familyhub.lx-labs.dev', WS_AUTH_TIMEOUT_MS: '60000' } });
+      await connect(instance, { origin: 'https://familyhub.lx-labs.dev' });
       await connect(instance);
     });
 
     it('behandelt fehlendes NODE_ENV wie production', async () => {
-      const config = loadConfig({ LOG_LEVEL: 'silent', PUBLIC_URL: 'https://familie.lx-labs.dev', AUTH_SECRET_KEY: TEST_KEY });
+      const config = loadConfig({ LOG_LEVEL: 'silent', PUBLIC_URL: 'https://familyhub.lx-labs.dev', AUTH_SECRET_KEY: TEST_KEY });
       expect(config.env).toBe('production');
       app = await buildApp({ config });
       await app.ready();
@@ -376,7 +376,7 @@ describe('Schlüssel und Datenbank-Rollen (Konfiguration)', () => {
   });
 
   it('RP-ID ist konfigurierbar und Standard ist der Hostname von PUBLIC_URL', () => {
-    expect(loadConfig({ NODE_ENV: 'test', PUBLIC_URL: 'https://familie.lx-labs.dev' }).auth.rpId).toBe('familie.lx-labs.dev');
+    expect(loadConfig({ NODE_ENV: 'test', PUBLIC_URL: 'https://familyhub.lx-labs.dev' }).auth.rpId).toBe('familyhub.lx-labs.dev');
     expect(loadConfig({ NODE_ENV: 'test', WEBAUTHN_RP_ID: 'lx-labs.dev' }).auth.rpId).toBe('lx-labs.dev');
     expect(() => loadConfig({ NODE_ENV: 'test', WEBAUTHN_RP_ID: 'https://x' })).toThrow(/WEBAUTHN_RP_ID/);
   });

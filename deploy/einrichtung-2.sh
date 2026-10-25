@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Einrichtung Teil 2: Caddy für familie.lx-labs.dev (Schritt 6 aus deploy/README.md).
+# Einrichtung Teil 2: Caddy für familyhub.lx-labs.dev (Schritt 6 aus deploy/README.md).
 # Schützt lx-labs.dev: erst sichern, dann einbinden, prüfen; bei jedem Fehler wird das Haupt-Caddyfile zurückgesetzt.
-# Voraussetzung: DNS-Einträge `familie` und `ntfy.familie` zeigen auf den Server (nur DNS, graue Wolke).
-# ntfy gehört NICHT dazu: Der Site-Block für ntfy.familie wird hier vorerst ausgelassen.
+# Voraussetzung: DNS-Einträge `familyhub` und `ntfy.familyhub` zeigen auf den Server (nur DNS, graue Wolke).
+# ntfy gehört NICHT dazu: Der Site-Block für ntfy.familyhub wird hier vorerst ausgelassen.
 #
 # Aufruf auf dem Server als Benutzer lx:   sudo bash ~/lx-fampad/deploy/einrichtung-2.sh
 set -euo pipefail
@@ -28,8 +28,8 @@ fi
 echo "==> Site-Datei ohne ntfy-Block bereitstellen"
 mkdir -p /etc/caddy/conf.d
 # Alles ab dem ntfy-Block abschneiden (ntfy wird später eingerichtet)
-awk '/^ntfy\.familie\.lx-labs\.dev/{exit} {print}' "$REPO/deploy/Caddyfile" > "$SITE"
-grep -q '^familie\.lx-labs\.dev' "$SITE" || { echo "Site-Block familie.lx-labs.dev nicht gefunden" >&2; rm -f "$SITE"; exit 1; }
+awk '/^ntfy\.familyhub\.lx-labs\.dev/{exit} {print}' "$REPO/deploy/Caddyfile" > "$SITE"
+grep -q '^familyhub\.lx-labs\.dev' "$SITE" || { echo "Site-Block familyhub.lx-labs.dev nicht gefunden" >&2; rm -f "$SITE"; exit 1; }
 
 echo "==> Haupt-Caddyfile sichern und Import ergänzen"
 cp -p "$CADDYFILE" "$BACKUP"
@@ -53,15 +53,15 @@ systemctl reload caddy || zuruecksetzen
 sleep 3
 curl -fsI --max-time 10 https://lx-labs.dev | head -1 || zuruecksetzen
 
-echo "==> Zertifikat für familie.lx-labs.dev abwarten (bis zu 60 s)"
+echo "==> Zertifikat für familyhub.lx-labs.dev abwarten (bis zu 60 s)"
 for _ in $(seq 1 30); do
-  if curl -fsS --max-time 5 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then
-    echo "    familie.lx-labs.dev antwortet über HTTPS."
+  if curl -fsS --max-time 5 https://familyhub.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then
+    echo "    familyhub.lx-labs.dev antwortet über HTTPS."
     break
   fi
   sleep 2
 done
-curl -sI --max-time 10 https://familie.lx-labs.dev/api/v1/health | head -1 || true
+curl -sI --max-time 10 https://familyhub.lx-labs.dev/api/v1/health | head -1 || true
 echo "lx-labs.dev:  $(curl -sI --max-time 10 https://lx-labs.dev | head -1)"
 echo
 echo "Fertig. Hinweis: Ein späteres lx-labs-Deploy überschreibt /etc/caddy/Caddyfile und entfernt die Import-Zeile (deploy/README.md, Schritt 6)."

@@ -1,7 +1,7 @@
 // Fake-Verteiler (ntfy-App) für die Push-Tests: zeichnet Aufrufe auf und liefert Endpunkt, Wecker und Fehler auf Zuruf.
 import 'package:lx_fampad/data/push/push_plattform.dart';
 
-const fixEndpunkt = 'https://ntfy.familie.lx-labs.dev/upAbCdEfGhIjKl?up=1';
+const fixEndpunkt = 'https://ntfy.familyhub.lx-labs.dev/upAbCdEfGhIjKl?up=1';
 
 class FakePush implements PushPlattform {
   @override

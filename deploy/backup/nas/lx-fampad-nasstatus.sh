@@ -17,7 +17,7 @@
 set -Eeuo pipefail
 umask 077
 
-SERVER="${LXB_SERVER:-familie.lx-labs.dev}"
+SERVER="${LXB_SERVER:-familyhub.lx-labs.dev}"
 PORT="${LXB_PORT:-22}"
 DEST="${LXB_DEST:-/volume1/backup/lx-fampad}"
 KNOWN_HOSTS="${LXB_KNOWN_HOSTS:-$HOME/.ssh/lx-fampad-backup.known_hosts}"

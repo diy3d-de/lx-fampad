@@ -69,7 +69,7 @@ void main() {
       pruefeLayout(tester, 'Einladung: Link eingeben');
       await tippeText(tester, 'Einladung prüfen');
       pruefeLayout(tester, 'Einladung: ungültiger Link');
-      await eingeben(tester, 'Einladungslink', 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+      await eingeben(tester, 'Einladungslink', 'https://familyhub.lx-labs.dev/#/einladung/$fixToken');
       await tippeText(tester, 'Einladung prüfen');
       pruefeLayout(tester, 'Einladung: Formular Passkey');
       await tippeText(tester, 'Passkey anlegen');

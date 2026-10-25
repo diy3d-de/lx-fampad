@@ -7,7 +7,7 @@ fachkundigen Stelle prüfen lassen. Punkte mit **[Prüfen]** sind offen. Spalte 
 ## 1. Verantwortlicher und Geltungsbereich
 
 - Verantwortlich: **[Name, Anschrift, E-Mail des Betreibers]** (Privatperson, betreibt lx-fampad für die eigene Familie).
-- Geltungsbereich: Web-App (`familie.lx-labs.dev`), Android-App, Server, Push-Dienst (`ntfy.familie.lx-labs.dev`).
+- Geltungsbereich: Web-App (`familyhub.lx-labs.dev`), Android-App, Server, Push-Dienst (`ntfy.familyhub.lx-labs.dev`).
 - **[Prüfen]** Haushaltsausnahme (Art. 2 Abs. 2 lit. c DSGVO): Rein familiäre Nutzung fällt eventuell nicht unter die DSGVO. Sobald
   Personen außerhalb des Haushalts teilnehmen (z. B. Großeltern als eingeladene Familienmitglieder) oder der Betreiber die Daten für andere verwaltet, ist vorsorglich so zu
   handeln, als gelte sie. Dieser Entwurf geht vom vorsichtigen Fall aus.
@@ -68,20 +68,20 @@ Die **Chat-Nachrichten** sind seit v0.3.0 **Ende-zu-Ende verschlüsselt** (Schl�
 | Stelle | Rolle | Was dort ankommt |
 | --- | --- | --- |
 | **netcup GmbH** (Karlsruhe, Deutschland) | Hosting des VPS (Auftragsverarbeiter) | sämtliche Daten liegen auf dem gemieteten Server; **[Prüfen]** Auftragsverarbeitungsvertrag (AVV) mit netcup abgeschlossen |
-| **Cloudflare** | nur DNS (Einträge `familie` und `ntfy.familie`, „DNS only“, kein Proxy) | Namensauflösung; kein Datenverkehr der App läuft über Cloudflare. **[Prüfen]** Hinweis in der Erklärung, Drittlandbezug |
+| **Cloudflare** | nur DNS (Einträge `familyhub` und `ntfy.familyhub`, „DNS only“, kein Proxy) | Namensauflösung; kein Datenverkehr der App läuft über Cloudflare. **[Prüfen]** Hinweis in der Erklärung, Drittlandbezug |
 | **Let's Encrypt** | Zertifikate für HTTPS (Caddy holt sie automatisch) | die Domainnamen werden in öffentlichen Zertifikatstransparenz-Logs sichtbar; keine Nutzerdaten |
 | **Push-Dienst des Browsers** (Google/Mozilla/Apple) | nur bei **Web Push** im Browser | verschlüsselte Mitteilung ohne Inhalt („Neues in der Familie“); der Browser-Anbieter sieht die Push-Adresse und den Zeitpunkt |
 | **Betreiber des Abfallkalenders** (Abfall-Plattform des Landkreises, Abruf per HTTPS) | Datenquelle der Abfuhrtermine; **kein Auftragsverarbeiter, es werden keine Daten der Familie übermittelt** | nur der **Server** ruft die Termindatei ab (nie ein Gerät, nie ein Browser): die Anfrage enthält den Abruflink der Familie (Straße/Haushalt als Teil der Adresse, Zeitraum) und die IP-Adresse des Servers (Betreiber des VPS), keine Daten einzelner Personen. Antwort höchstens 1 MB, nur der konfigurierte Host, keine Weiterleitung. Der Server meldet sich dabei mit einer **gängigen Browser-Kennung** (User-Agent), weil die Plattform sonst mit 403 antwortet. **[Prüfen]** Nutzungsbedingungen der Plattform, auch zu dieser Kennzeichnung |
 | **Bright Sky** (`api.brightsky.dev`, Daten des Deutschen Wetterdienstes; nur bei eingeschalteter Vorhersage) | Datenquelle der Wettervorhersage und der Unwetterwarnungen; **kein Auftragsverarbeiter, es werden keine Daten der Familie übermittelt** | nur der **Server** ruft ab: auf zwei Nachkommastellen gerundete Gebietskoordinaten, Zeitzone, Einheiten und technisch bedingt die IP-Adresse des Servers (siehe 9c) |
 | Google Play Services | nur für Passkeys (Credential Manager) auf Android | lokal auf dem Gerät, keine Übermittlung durch die App **[Prüfen]** |
 
-Eigene Dienste statt Fremddienste: Push läuft über einen **eigenen ntfy-Server** (`ntfy.familie.lx-labs.dev`, UnifiedPush) ohne Firebase und ohne
+Eigene Dienste statt Fremddienste: Push läuft über einen **eigenen ntfy-Server** (`ntfy.familyhub.lx-labs.dev`, UnifiedPush) ohne Firebase und ohne
 ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder OpenStreetMap-Servern. Eine Weitergabe an sonstige Dritte findet nicht statt.
 
 ## 6. Cookies, lokale Speicherung, Aktualisierung
 
 - **Web:** Nach der Anmeldung ein Session-Cookie `__Host-lxsid` (`HttpOnly; Secure; SameSite=Strict`, ohne Domain); technisch notwendig, daher ohne Einwilligungsabfrage
-  (§ 25 Abs. 2 Nr. 2 TDDDG). Die Web-App legt zudem eine lokale Datenbank im Browser an (OPFS, Datei `drift_db/lx_fampad/database`; Offline-Betrieb, geteilt von allen Tabs der Seite); sie enthält dieselben Daten wie auf Android (Listen und Einträge, Ausgang, Sync-Zustand) und bleibt auf dem Gerät. Ein WebSocket zum eigenen Server (`wss://familie.lx-labs.dev/ws`) meldet nur „neue Revision N“, ohne Inhalt.
+  (§ 25 Abs. 2 Nr. 2 TDDDG). Die Web-App legt zudem eine lokale Datenbank im Browser an (OPFS, Datei `drift_db/lx_fampad/database`; Offline-Betrieb, geteilt von allen Tabs der Seite); sie enthält dieselben Daten wie auf Android (Listen und Einträge, Ausgang, Sync-Zustand) und bleibt auf dem Gerät. Ein WebSocket zum eigenen Server (`wss://familyhub.lx-labs.dev/ws`) meldet nur „neue Revision N“, ohne Inhalt.
   Kein Service Worker, keine Tracking-Cookies, kein Local-Storage zu Analysezwecken.
 - **Android:** Access-/Refresh-Token, Geräte-ID und das zuletzt bekannte **Profil mit Name, E-Mail-Adresse, Rolle und Farbe** (für den Start ohne Netz) im Android-Keystore (`flutter_secure_storage`, Phase 1b), dazu eine lokale SQLite-Datenbank mit der **Kopie der Familiendaten** (seit Phase 1c: Listen und Einträge), dem **Ausgang** (noch nicht bestätigte Änderungen), dem Sync-Zustand und der zuletzt geladenen Mitgliederliste (nur Name, Farbe, Rolle, keine E-Mail-Adressen). Das Profil enthält also personenbezogene Daten (auch die E-Mail-Adresse); der Keystore schützt sie hardwaregestützt und app-gebunden. Die Datensicherung durch Android ist abgeschaltet (`allowBackup=false`, leere Regeln für Cloud-Backup und Geräte-Übertragung: nichts verlässt das Gerät über Android-Backups). Im Web liegt die Sitzung im HttpOnly-Cookie; im `localStorage` stehen nur zwei Vermerke ohne Geheimnis (seit der Anmeldung mit `authKey`): `lx_fampad_authkey_konten` (E-Mail-Adressen der Konten in Kleinschreibung, die dieses Gerät schon sicher angemeldet hat, höchstens 20) und `lx_fampad_server_caps` (zuletzt gelesene Fähigkeiten des Servers: Schalterwerte); auf Android stehen sie im Keystore-Speicher. Der Server liefert bei einer Einladung zum Zurücksetzen (nur mit Einladungs-Token) die E-Mail-Adresse des betroffenen Kontos, weil die App sie für die Ableitung braucht. Bildschirmfotos sind auf Seiten mit Geheimnissen (TOTP-Schlüssel, Wiederherstellungscodes, Einladungs-PIN) gesperrt; die Zwischenablage wird nur auf ausdrücklichen Klick befüllt, Android 13+ wird sie dabei als vertraulich markiert (keine Vorschau).
 - **Löschverhalten auf dem Gerät (Android und Web):**
@@ -93,7 +93,7 @@ ntfy.sh; Karten (Phase 2) kommen von der eigenen Domain, nicht von Google oder O
 - **Benutzerbilder (lokaler Zwischenspeicher):** Die App legt die **Fotos aller Familienmitglieder**, die sie angezeigt hat, in der lokalen Datenbank ab (`sync_meta`, Schlüssel `avatar:<Id>`), damit sie offline sichtbar bleiben. Sie verschwinden mit der lokalen Datenbank beim ausdrücklichen Abmelden oder beim Wechsel der Person; bei **Sitzungsverlust** bleiben sie wie die übrige Datenbank bis dahin erhalten. Wird ein Bild entfernt oder ist es auf dem Server nicht mehr vorhanden, wird die lokale Kopie beim nächsten Abruf bzw. Aktualisieren der Mitgliederliste gelöscht; Kopien entfernter Mitglieder ebenso.
 - **Kamera (Android):** Nur für das Scannen eines Einladungs-QR-Codes, nur solange der Scan-Bildschirm offen ist; die Erkennung läuft auf dem Gerät, Bilder werden weder gespeichert noch übertragen.
 - **Einladungslinks:** Das Token steht im Fragment (`#/…`) und wird nicht an den Server gesendet; die Web-App entfernt es sofort aus der Adresszeile (`history.replaceState`) und sendet es nur im Anfragekörper.
-- **App-Update (Android):** Die App ruft `familie.lx-labs.dev/releases/android/latest.json` und die APK von der eigenen Domain ab (die Verbindungsdaten aus Abschnitt 4 fallen an);
+- **App-Update (Android):** Die App ruft `familyhub.lx-labs.dev/releases/android/latest.json` und die APK von der eigenen Domain ab (die Verbindungsdaten aus Abschnitt 4 fallen an);
   das Manifest ist signiert, Prüfung auf dem Gerät. Zusätzlich liest die App `/api/v1/version`. Es werden keine Gerätekennungen übertragen.
 
 ## 7. Kinder und Sorgeberechtigte

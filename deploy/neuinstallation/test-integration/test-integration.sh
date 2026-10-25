@@ -3,7 +3,7 @@
 #   A: leere Neuinstallation -> Testdaten -> Sicherung (age) | B: frischer Container: Wiederherstellung aus dieser Sicherung (Schlüssel über stdin)
 #   C: frischer Container: derselbe Umzug über den Umzugs-Assistenten (umzug.sh, umzug-lauf.sh): Probelauf, falscher Schlüssel, Pause, Neustart, --weiter
 # Ohne systemd (eine Attrappe für systemctl, siehe fake-systemctl.sh); Caddy/DNS/Zertifikate und GitHub-Zugriff werden NICHT geprüft.
-# Isolation: alle Aufrufe mit --ohne-systemd (spricht nie die echten Internet-Adressen familie.lx-labs.dev / lx-labs.dev an), Container-Lauf und
+# Isolation: alle Aufrufe mit --ohne-systemd (spricht nie die echten Internet-Adressen familyhub.lx-labs.dev / lx-labs.dev an), Container-Lauf und
 # Attrappe brechen ohne /.dockerenv ab. Das Netz braucht der Test nur für Paketquellen (apt, npm, NodeSource, Caddy, ntfy).
 # Der Code-Stand kommt aus einem Tarball der verfolgten und neuen (nicht ignorierten) Dateien, nicht aus einer Kopie des Arbeitsbaums mit .git/Geheimnissen.
 #   deploy/neuinstallation/test-integration/test-integration.sh [neu] [wiederherstellung] [umzug]     (ohne Angabe: alle drei; B und C brauchen A, das dann mitläuft)

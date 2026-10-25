@@ -39,7 +39,7 @@
     <!-- GPS ist keine Voraussetzung für die Installation (Tablets, Netzwerk-Ortung genügt) -->
     <uses-feature android:name="android.hardware.location" android:required="false" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
-    <!-- Nur TLS: kein Klartext-Verkehr (familie.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
+    <!-- Nur TLS: kein Klartext-Verkehr (familyhub.lx-labs.dev läuft hinter Caddy mit HTTPS) -->
     <application
         android:label="lx-familyhub"
         android:name="${applicationName}"
@@ -100,8 +100,8 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- Einladungslinks: https://familie.lx-labs.dev/#/einladung/<token>. Android reicht das Fragment mit durch; die App liest
-                 es (MainActivity.linkAus). autoVerify: Android prüft beim Installieren https://familie.lx-labs.dev/.well-known/assetlinks.json
+            <!-- Einladungslinks: https://familyhub.lx-labs.dev/#/einladung/<token>. Android reicht das Fragment mit durch; die App liest
+                 es (MainActivity.linkAus). autoVerify: Android prüft beim Installieren https://familyhub.lx-labs.dev/.well-known/assetlinks.json
                  und öffnet den Link bei Übereinstimmung direkt in der App, ohne Auswahldialog. Solange die Datei nicht (oder mit einem
                  anderen Fingerprint) ausgeliefert wird, schlägt die Prüfung still fehl: Der Link öffnet dann weiter im Browser bzw. mit
                  Nachfrage. Reihenfolge und Prüfung: deploy/README.md, Abschnitt 9. Host und Pfad stehen auch in MainActivity.kt
@@ -110,7 +110,7 @@
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
-                <data android:scheme="https" android:host="familie.lx-labs.dev" android:path="/"/>
+                <data android:scheme="https" android:host="familyhub.lx-labs.dev" android:path="/"/>
             </intent-filter>
             <!-- Teilen aus anderen Apps ("Teilen mit lx-familyhub"): nur Text (ACTION_SEND mit text/plain), keine Bilder, Dateien oder Mehrfachauswahl (kein
                  SEND_MULTIPLE, kein anderer MIME-Typ). MainActivity liest nur das String-Extra EXTRA_TEXT, kürzt es hart (4000 Zeichen) und gibt es an die Oberfläche,

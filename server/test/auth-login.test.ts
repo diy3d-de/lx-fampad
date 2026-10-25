@@ -147,7 +147,7 @@ describe.each(backends)('Sitzungen und Anmeldearten ($name)', (backend) => {
     it('Registrierung und Anmeldung mit simuliertem Authenticator; klassische Algorithmen, RP-ID konfigurierbar', async () => {
       const a = await adminPasskey(world);
       const opts = await world.client().post('/api/v1/auth/login/passkey/options');
-      expect(opts.json.options.rpId).toBe('familie.lx-labs.dev');
+      expect(opts.json.options.rpId).toBe('familyhub.lx-labs.dev');
       expect(opts.json.options.userVerification).toBe('required');
       const reg = await world.client().post('/api/v1/auth/invites/passkey/options', { token: 'x'.repeat(43), email: 'x@example.org', displayName: 'X' });
       expect(reg.status).toBe(400);

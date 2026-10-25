@@ -17,7 +17,8 @@ import 'zeitzonen.dart';
 const kIcsProdId = '-//lx-labs.dev//lx-fampad//DE';
 
 /// Domain für die UID eines Termins ohne `icalUid` (stabil aus der Termin-ID).
-const kIcsUidDomain = 'familie.lx-labs.dev';
+/// Domain-Wechsel (neuer Server, ohne Datenübernahme): Exporte älterer Versionen tragen eine andere UID-Domain.
+const kIcsUidDomain = 'familyhub.lx-labs.dev';
 
 /// Welche Termine in die Datei kommen.
 enum IcsZeitraum { alles, abHeute, jahr }

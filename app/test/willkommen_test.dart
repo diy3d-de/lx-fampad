@@ -21,7 +21,7 @@ void main() {
   final einladung = CreatedInvite(
     id: 'i1',
     token: token,
-    link: 'https://familie.lx-labs.dev/#/einladung/$token',
+    link: 'https://familyhub.lx-labs.dev/#/einladung/$token',
     pin: '123456',
     expiresAt: DateTime.now().add(const Duration(hours: 24)),
     requireApproval: false,

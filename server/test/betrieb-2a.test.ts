@@ -19,7 +19,7 @@ import { addMember, adminPassword, auditEvents, backends, World, type Client, ty
 const MIN = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const HOST = 'ntfy.familie.lx-labs.dev';
+const HOST = 'ntfy.familyhub.lx-labs.dev';
 const GEHEIM = 'tk_geheimes-ntfy-token-123';
 const ENV = { NTFY_URL: 'http://127.0.0.1:2586', NTFY_TOKEN: GEHEIM, OPERATOR_TLS_PROBE: '127.0.0.1:443', E2EE_PW_BACKUP: 'true' };
 const key = () => randomBytes(32).toString('base64url');

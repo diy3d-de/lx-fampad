@@ -1,6 +1,6 @@
 # VPS-Checkliste: lx-fampad neben lx-labs.dev
 
-Ziel: `familie.lx-labs.dev` auf den bestehenden netcup-VPS bringen, ohne dass `lx-labs.dev` ausfällt.
+Ziel: `familyhub.lx-labs.dev` auf den bestehenden netcup-VPS bringen, ohne dass `lx-labs.dev` ausfällt.
 Die Befehle stehen in [`deploy/README.md`](../deploy/README.md) (Nummern in Klammern). Dieser Plan legt Reihenfolge,
 Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Freigabe gearbeitet.
 
@@ -20,7 +20,7 @@ Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Frei
 
 ## B. Reihenfolge der Einrichtung (jeweils danach lx-labs.dev prüfen, siehe E.)
 
-1. **DNS** bei Cloudflare: `familie` und `ntfy.familie` als A-Record, *DNS only* (README 0). Betrifft nur die neuen Namen.
+1. **DNS** bei Cloudflare: `familyhub` und `ntfy.familyhub` als A-Record, *DNS only* (README 0). Betrifft nur die neuen Namen.
 2. **PostgreSQL 17** installieren, Rolle und Datenbank `lx_fampad` anlegen, Passwort per `\password` (README 1).
 3. **Systembenutzer, Verzeichnisse** (`/srv/fampad`, auch `server.prev`), `/etc/lx-fampad/env` als `root:root 0600` (README 2).
 4. **Node 24**: nur nutzen, falls lx-labs dieselbe Hauptversion hat; sonst nicht systemweit ändern (README 3).
@@ -47,8 +47,8 @@ Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Frei
 ## D. Verhalten bei lx-labs-Updates
 
 - Der lx-labs-Deploy (`npm run deploy`) kopiert sein Caddyfile über `/etc/caddy/Caddyfile`. Mit dem `import`-Block darin bleibt die Familien-Site
-  erhalten. Ohne ihn fallen `familie.lx-labs.dev` und `ntfy.familie.lx-labs.dev` aus; lx-labs.dev selbst bleibt erreichbar.
-- Nach dem ersten lx-labs-Deploy danach einmal prüfen: `curl -sI https://familie.lx-labs.dev/api/v1/health`.
+  erhalten. Ohne ihn fallen `familyhub.lx-labs.dev` und `ntfy.familyhub.lx-labs.dev` aus; lx-labs.dev selbst bleibt erreichbar.
+- Nach dem ersten lx-labs-Deploy danach einmal prüfen: `curl -sI https://familyhub.lx-labs.dev/api/v1/health`.
 
 ## E. Prüfungen nach jedem Schritt
 
@@ -58,8 +58,8 @@ Prüfungen und Rückbau fest. Auf dem Server wird erst nach ausdrücklicher Frei
 - [ ] `free -h` und `uptime`: Last/RAM im Rahmen (bei mehr als ca. 80 % RAM: Limits der Units senken oder Server vergrößern)
 - [ ] Firewall: `sudo ufw status verbose` unverändert gegenüber A. (nur 22, 80, 443)
 - [ ] **von außen** (anderer Rechner/Handy-Netz, nicht vom Server): `nc -zv -w 3 <SERVER-IP> 4400`, `2586`, `5432` müssen alle fehlschlagen (Zeitüberschreitung/refused); nur 80/443 antworten
-- [ ] nach Schritt 7/9: `https://familie.lx-labs.dev` lädt, Netzwerk-Tab ohne Fremdabrufe, `crossOriginIsolated === true`
-- [ ] Sicherheit: `curl -sI https://familie.lx-labs.dev` zeigt HSTS, CSP, COOP/COEP; `https://ntfy.familie.lx-labs.dev` verlangt Anmeldung
+- [ ] nach Schritt 7/9: `https://familyhub.lx-labs.dev` lädt, Netzwerk-Tab ohne Fremdabrufe, `crossOriginIsolated === true`
+- [ ] Sicherheit: `curl -sI https://familyhub.lx-labs.dev` zeigt HSTS, CSP, COOP/COEP; `https://ntfy.familyhub.lx-labs.dev` verlangt Anmeldung
 
 ## F. Danach (Betrieb)
 

@@ -32,9 +32,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  API_BASE: https://familie.lx-labs.dev
-  INVITE_HOST: familie.lx-labs.dev
-  RELEASES_BASE: https://familie.lx-labs.dev/releases
+  API_BASE: https://familyhub.lx-labs.dev
+  INVITE_HOST: familyhub.lx-labs.dev
+  RELEASES_BASE: https://familyhub.lx-labs.dev/releases
 
 jobs:
   build:

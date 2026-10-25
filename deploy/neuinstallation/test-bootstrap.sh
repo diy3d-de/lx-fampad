@@ -217,7 +217,7 @@ if hat_werkzeug age && hat_werkzeug age-keygen && hat_werkzeug tar; then
     tar -czf - -C "$ARBEIT/wurzel" "$@" | age -r "$PUB" -o "$out"
   }
   mkdir -p "$ARBEIT/wurzel/etc/lx-fampad"
-  printf 'AUTH_SECRET_KEY=%s\nPUBLIC_URL=https://familie.lx-labs.dev\n' "$(printf 'k%.0s' {1..40})" > "$ARBEIT/wurzel/etc/lx-fampad/env"
+  printf 'AUTH_SECRET_KEY=%s\nPUBLIC_URL=https://familyhub.lx-labs.dev\n' "$(printf 'k%.0s' {1..40})" > "$ARBEIT/wurzel/etc/lx-fampad/env"
   head -c 64 /dev/urandom > "$ARBEIT/wurzel/dump.bin"
   printf 'PGDMPxxxxxxxxxxxx' | age -r "$PUB" -o "$ARBEIT/db-20261022-033000.dump.age"
   baue_config "$ARBEIT/config-gut.age" etc/lx-fampad

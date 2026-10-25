@@ -23,7 +23,7 @@
 #   sudoers        /etc/sudoers.d/lx-familie                        -> /etc/sudoers.d/lx-fampad
 #   Caddy          /etc/caddy/conf.d/familie.caddy                  -> /etc/caddy/conf.d/fampad.caddy (Snippet fampad_sicherheit)
 #   Checkout       ~/lx-familienzentrale, bare ~/familie.git        -> ~/lx-fampad, ~/fampad.git
-# Unverändert: Domain familie.lx-labs.dev, ntfy.familie.lx-labs.dev, WebAuthn-RP-ID, Umgebungsvariablen-Namen, AUTH_SECRET_KEY.
+# Unverändert: Domain familyhub.lx-labs.dev, ntfy.familyhub.lx-labs.dev, WebAuthn-RP-ID, Umgebungsvariablen-Namen, AUTH_SECRET_KEY.
 #
 # Das Skript ist idempotent: Jeder Schritt prüft den Ist-Zustand und überspringt Erledigtes (auch Benutzer und Gruppe einzeln,
 # die Caddy-Site folgt dem Zustand der vorhandenen Site-Datei: ntfy-Block nur, wenn er vorher da war). Bei jedem Fehler bricht es
@@ -131,7 +131,7 @@ $aenderungen"
   # Eingebettete Dateien sicherstellen, bevor irgendetwas verschoben wird
   STAGE="$(mktemp -d /root/umbenennung-stage.XXXXXX)"
   cp "$REPO_AKTUELL/deploy/lx-fampad.service" "$REPO_AKTUELL/deploy/lx-fampad-migrate.service" "$REPO_AKTUELL/deploy/Caddyfile" "$STAGE/"
-  grep -q '^familie\.lx-labs\.dev' "$STAGE/Caddyfile" || abbruch "Site-Block familie.lx-labs.dev fehlt im neuen Caddyfile."
+  grep -q '^familyhub\.lx-labs\.dev' "$STAGE/Caddyfile" || abbruch "Site-Block familyhub.lx-labs.dev fehlt im neuen Caddyfile."
 
   # Voraussetzungen des Servers, alle VOR dem ersten Stoppen/Verschieben
   CADDYFILE=/etc/caddy/Caddyfile
@@ -366,12 +366,12 @@ $aenderungen"
     for f in "$ALT_SITE" "$NEU_SITE"; do
       if [ -f "$f" ]; then VORLAGE="$f"; break; fi
     done
-    if [ -n "$VORLAGE" ] && grep -q '^ntfy\.familie\.lx-labs\.dev' "$VORLAGE"; then
+    if [ -n "$VORLAGE" ] && grep -q '^ntfy\.familyhub\.lx-labs\.dev' "$VORLAGE"; then
       cp "$STAGE/Caddyfile" "$STAGE/fampad.caddy"
     else
-      awk '/^ntfy\.familie\.lx-labs\.dev/{exit} {print}' "$STAGE/Caddyfile" > "$STAGE/fampad.caddy"
+      awk '/^ntfy\.familyhub\.lx-labs\.dev/{exit} {print}' "$STAGE/Caddyfile" > "$STAGE/fampad.caddy"
     fi
-    grep -q '^familie\.lx-labs\.dev' "$STAGE/fampad.caddy" || abbruch "Site-Block familie.lx-labs.dev fehlt in der neuen Site-Datei."
+    grep -q '^familyhub\.lx-labs\.dev' "$STAGE/fampad.caddy" || abbruch "Site-Block familyhub.lx-labs.dev fehlt in der neuen Site-Datei."
     if [ -f "$ALT_SITE" ]; then
       # Die alte Datei muss vor dem Prüfen weg (gleicher Site-Block würde doppelt definiert)
       mv "$ALT_SITE" "$BACKUP_DIR/familie.caddy.entfernt"
@@ -436,13 +436,13 @@ $aenderungen"
   if [ "${PHASE0_BESTAND:-0}" -ne 1 ]; then
     ok=0
     for i in $(seq 1 30); do
-      if curl -fsS --max-time 5 https://familie.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then ok=1; break; fi
+      if curl -fsS --max-time 5 https://familyhub.lx-labs.dev/api/v1/health 2>/dev/null | grep -q '"db":"ok"'; then ok=1; break; fi
       sleep 2
     done
-    [ "$ok" -eq 1 ] || abbruch "https://familie.lx-labs.dev/api/v1/health liefert nicht \"db\":\"ok\" (Rückbau: deploy/README.md)."
-    echo "    https://familie.lx-labs.dev/api/v1/health: \"db\":\"ok\""
+    [ "$ok" -eq 1 ] || abbruch "https://familyhub.lx-labs.dev/api/v1/health liefert nicht \"db\":\"ok\" (Rückbau: deploy/README.md)."
+    echo "    https://familyhub.lx-labs.dev/api/v1/health: \"db\":\"ok\""
   else
-    echo "    familie.lx-labs.dev bleibt bis zum Start des Dienstes ohne Antwort der API (Phase-0-Bestand, siehe unten)."
+    echo "    familyhub.lx-labs.dev bleibt bis zum Start des Dienstes ohne Antwort der API (Phase-0-Bestand, siehe unten)."
   fi
   code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 10 https://lx-labs.dev || true)
   [ "$code" = "200" ] || abbruch "https://lx-labs.dev liefert $code statt 200."

@@ -2,7 +2,7 @@
 # Wird NUR von deploy/einrichtung-ntfy.sh nach /etc/caddy/conf.d/ntfy.caddy kopiert (mit Sicherung, Prüfung und Rückfall).
 # Bewusst eigenständig (kein Snippet aus fampad.caddy): Die Datei bleibt gültig, auch wenn fampad.caddy geändert wird.
 # Das Haupt-Caddyfile (lx-labs.dev) wird dafür nie angefasst; es bindet conf.d/*.caddy bereits per import ein.
-ntfy.familie.lx-labs.dev {
+ntfy.familyhub.lx-labs.dev {
 	header {
 		Strict-Transport-Security "max-age=31536000; includeSubDomains"
 		X-Content-Type-Options "nosniff"

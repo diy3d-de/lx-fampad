@@ -13,7 +13,7 @@ import { familienchatId, lesestandId } from '../src/sync/entities/chat-ids.js';
 import { backends, TEST_KEY, World, type Harness } from './helpers.js';
 import { createFamily, extraMember, resetSync, upsert, type Device, type Family, type Json } from './sync-kit.js';
 
-const HOST = 'ntfy.familie.lx-labs.dev';
+const HOST = 'ntfy.familyhub.lx-labs.dev';
 const TOKEN = 'tk_testtoken1234567890';
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const randTopic = () => 'up' + randomBytes(9).toString('base64url').replace(/[-_]/g, 'x').slice(0, 12);
@@ -79,17 +79,17 @@ describe('topicFromEndpoint (SSRF-Prüfung)', () => {
 });
 
 describe('Konfiguration Push', () => {
-  const basis = { NODE_ENV: 'production', AUTH_SECRET_KEY: TEST_KEY, PUBLIC_URL: 'https://familie.lx-labs.dev' };
+  const basis = { NODE_ENV: 'production', AUTH_SECRET_KEY: TEST_KEY, PUBLIC_URL: 'https://familyhub.lx-labs.dev' };
   it('NTFY_URL: in Produktion nur Loopback, sonst Startabbruch; in Entwicklung/Test frei', () => {
     for (const ok of ['http://127.0.0.1:2586', 'http://localhost:2586', 'http://[::1]:2586']) expect(loadConfig({ ...basis, NTFY_URL: ok }).ntfyUrl).toBeDefined();
-    for (const bad of ['http://10.0.0.5:2586', 'https://ntfy.familie.lx-labs.dev', 'http://127.0.0.1.evil.example:2586', 'http://169.254.169.254']) {
+    for (const bad of ['http://10.0.0.5:2586', 'https://ntfy.familyhub.lx-labs.dev', 'http://127.0.0.1.evil.example:2586', 'http://169.254.169.254']) {
       expect(() => loadConfig({ ...basis, NTFY_URL: bad })).toThrow(/Loopback/);
     }
     expect(loadConfig({ ...basis, NODE_ENV: 'test', NTFY_URL: 'http://10.0.0.5:2586' }).ntfyUrl).toBe('http://10.0.0.5:2586');
     expect(() => loadConfig({ ...basis, NTFY_URL: 'http://user:pw@127.0.0.1:2586' })).toThrow();
   });
   it('NTFY_PUBLIC_HOST: Punkte müssen echte Punkte sein', () => {
-    expect(loadConfig({ ...basis, NODE_ENV: 'test' }).ntfyPublicHost).toBe('ntfy.familie.lx-labs.dev');
+    expect(loadConfig({ ...basis, NODE_ENV: 'test' }).ntfyPublicHost).toBe('ntfy.familyhub.lx-labs.dev');
     for (const bad of ['ntfyxfamilie', 'ntfy_familie.example', 'a b.example', '.example.org', 'example..org']) {
       expect(() => loadConfig({ ...basis, NODE_ENV: 'test', NTFY_PUBLIC_HOST: bad })).toThrow(/NTFY_PUBLIC_HOST/);
     }

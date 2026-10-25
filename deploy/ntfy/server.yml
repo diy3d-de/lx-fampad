@@ -1,6 +1,6 @@
 # /etc/ntfy/server.yml - eigener ntfy-Server für UnifiedPush (lx-fampad)
 # Wird von deploy/einrichtung-ntfy.sh installiert (root:ntfy, 0640). Bei Änderungen: sudo systemctl restart ntfy
-base-url: "https://ntfy.familie.lx-labs.dev"
+base-url: "https://ntfy.familyhub.lx-labs.dev"
 # Nur lokal lauschen; Caddy leitet weiter und terminiert TLS. Derselbe Port steht in deploy/ntfy/ntfy.caddy.
 listen-http: "127.0.0.1:2586"
 behind-proxy: true

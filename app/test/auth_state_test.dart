@@ -172,7 +172,7 @@ void main() {
 
   test('Passkey-Anmeldung: Optionen holen, Passkey bestätigen, Antwort senden', () async {
     final server = FakeServer()
-      ..json('POST /auth/login/passkey/options', {'challengeId': 'c-1', 'options': {'challenge': 'abc', 'rpId': 'familie.lx-labs.dev', 'userVerification': 'required'}})
+      ..json('POST /auth/login/passkey/options', {'challengeId': 'c-1', 'options': {'challenge': 'abc', 'rpId': 'familyhub.lx-labs.dev', 'userVerification': 'required'}})
       ..json('POST /auth/login/passkey/verify', {'user': userJson(), 'session': appSession()})
       ..json('GET /me', meJson());
     final env = TestUmgebung(server);

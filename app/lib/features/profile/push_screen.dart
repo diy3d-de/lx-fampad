@@ -16,7 +16,7 @@ import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 
 /// Adresse des selbst gehosteten ntfy-Servers (steht auch in docs und deploy/README.md).
-const kNtfyServerUrl = 'https://ntfy.familie.lx-labs.dev';
+const kNtfyServerUrl = 'https://ntfy.familyhub.lx-labs.dev';
 
 class PushScreen extends ConsumerStatefulWidget {
   const PushScreen({super.key});

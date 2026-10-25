@@ -203,7 +203,7 @@ if command -v age >/dev/null && command -v age-keygen >/dev/null; then
   KEY1="$(grep '^AGE-SECRET-KEY-1' "$ARBEIT/k1.txt")"; KEY2="$(grep '^AGE-SECRET-KEY-1' "$ARBEIT/k2.txt")"
   CFGW="$ARBEIT/cfgw"; mkdir -p "$CFGW/etc/lx-fampad" "$CFGW/etc/lx-fampad-backup" "$CFGW/srv/fampad/releases/android"
   # die Geheimnisse stehen nur als Text in der Datei (nie in einer Variable des Tests), damit die Prüfung der Variablen unten aussagekräftig ist
-  printf 'PUBLIC_URL=https://familie.lx-labs.dev\nAUTH_SECRET_KEY=GEHEIMER-WERT-AUTH-123456789\nWEATHER_ENABLED=true\nWASTE_ENABLED=true\nWASTE_ICS_URL=https://abfall.example.org/?key=GEHEIMER-LINK-KEY\nDATABASE_URL=postgres://u:PW-GEHEIM-1234@127.0.0.1/db\n' > "$CFGW/etc/lx-fampad/env"
+  printf 'PUBLIC_URL=https://familyhub.lx-labs.dev\nAUTH_SECRET_KEY=GEHEIMER-WERT-AUTH-123456789\nWEATHER_ENABLED=true\nWASTE_ENABLED=true\nWASTE_ICS_URL=https://abfall.example.org/?key=GEHEIMER-LINK-KEY\nDATABASE_URL=postgres://u:PW-GEHEIM-1234@127.0.0.1/db\n' > "$CFGW/etc/lx-fampad/env"
   printf 'KEEP=5\nINCLUDE_APK=0   # Kommentar\nINCLUDE_FILES=1\nUNSINN=ls\n' > "$CFGW/etc/lx-fampad-backup/backup.conf"
   printf '{"payload":"{\\"packageName\\":\\"dev.x\\",\\"version\\":\\"0.9.0\\",\\"versionCode\\":9,\\"minVersion\\":\\"0.0.0\\"}","signature":"abc"}' > "$CFGW/srv/fampad/releases/android/latest.json"
   ( cd "$CFGW" && tar -czf - etc srv ) | age -r "$PUB1" -o "$ARBEIT/config-20261022-033000.tar.age"
@@ -227,7 +227,7 @@ if command -v age >/dev/null && command -v age-keygen >/dev/null; then
   ( cd "$CFGW" && tar -czf - etc srv ) | age -r "$PUB1" -o "$ARBEIT/config-fremd.tar.age"
   FREMD="$( ( CFG_ARCHIV="$ARBEIT/config-fremd.tar.age"; AGE_ID="$KEY1"; OPT_PROBE=1; config_auswerten ) 2>&1; echo "RC=$?" )"
   enthaelt "Sicherung einer anderen Domain wird abgelehnt (Exit-Code 1)" "$FREMD" "RC=1"
-  enthaelt "Meldung nennt die Domain" "$FREMD" "nicht zu https://familie.lx-labs.dev"
+  enthaelt "Meldung nennt die Domain" "$FREMD" "nicht zu https://familyhub.lx-labs.dev"
   AGE_ID=""
 else uebersprungen "Schlüsselprüfung und Konfiguration" "age fehlt"; fi
 
@@ -251,13 +251,13 @@ HINWEISE=("WEBAUTHN_ORIGINS fehlt (Beispiel)" "Die neue Sicherung ist UNGEPRÜFT
 A_WETTER=1; A_MUELL=0; A_MUELL_LINK=0; A_NAS_IP=203.0.113.7; A_ERLEDIGT="caddy"
 liste_bauen
 L="$(printf '%s\n' "${LISTE[@]}")"
-enthaelt "Liste: neue IP bei den DNS-Einträgen" "$L" "familie        A   203.0.113.10"
-enthaelt "Liste: ntfy.familie als A-Eintrag" "$L" "ntfy.familie   A   203.0.113.10"
-enthaelt "Liste: Kontrollbefehl dig" "$L" "dig +short familie.lx-labs.dev"
+enthaelt "Liste: neue IP bei den DNS-Einträgen" "$L" "familyhub     A   203.0.113.10"
+enthaelt "Liste: ntfy.familyhub als A-Eintrag" "$L" "ntfy.familyhub   A   203.0.113.10"
+enthaelt "Liste: Kontrollbefehl dig" "$L" "dig +short familyhub.lx-labs.dev"
 enthaelt "Liste: Caddy-Schritt mit --weiter caddy und Vermerk erledigt" "$L" "--weiter caddy"
 enthaelt "Liste: Caddy als erledigt markiert" "$L" "(erst nach [2]!)   -> erledigt"
 enthaelt "Liste: Web-App" "$L" "deploy/deploy-web.sh"
-enthaelt "Liste: NAS neu verbinden" "$L" "ssh-keygen -R familie.lx-labs.dev"
+enthaelt "Liste: NAS neu verbinden" "$L" "ssh-keygen -R familyhub.lx-labs.dev"
 enthaelt "Liste: Wetter-Dienst" "$L" "--weiter wetter"
 enthaelt_nicht "Liste: kein Müll-Schritt, wenn Müll nicht aktiv war" "$L" "--weiter muell"
 enthaelt "Liste: Wiederherstellungstest" "$L" "wiederherstellung-test.sh"
@@ -419,10 +419,10 @@ esac
 EOF
 chmod 755 /usr/local/sbin/ip /usr/local/sbin/getent
 OPT_DNS_SKIP=0
-gleich "dns_ok: A-Eintrag zeigt auf diesen Server" ok "$(bootstrap_dns familie.lx-labs.dev)"
-gelingt "dns_ok (ohne Überspringen) für beide Domains" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; OPT_DNS_SKIP=0; dns_ok familie.lx-labs.dev && dns_ok ntfy.familie.lx-labs.dev"
+gleich "dns_ok: A-Eintrag zeigt auf diesen Server" ok "$(bootstrap_dns familyhub.lx-labs.dev)"
+gelingt "dns_ok (ohne Überspringen) für beide Domains" bash -c "UMZUG_NUR_FUNKTIONEN=1 . '$SKRIPT'; OPT_DNS_SKIP=0; dns_ok familyhub.lx-labs.dev && dns_ok ntfy.familyhub.lx-labs.dev"
 gleich "plan_bauen: bei passendem DNS läuft Caddy im Hauptlauf mit" 1 "$( A_FERTIG=""; plan_bauen; echo "$CADDY_JETZT" )"
-gleich "dns_ok: Eintrag zeigt woanders hin -> nicht ok" "zeigt auf 198.51.100.9 (keine globale Adresse dieses Servers)" "$(FAKE_A=198.51.100.9 bootstrap_dns familie.lx-labs.dev)"
+gleich "dns_ok: Eintrag zeigt woanders hin -> nicht ok" "zeigt auf 198.51.100.9 (keine globale Adresse dieses Servers)" "$(FAKE_A=198.51.100.9 bootstrap_dns familyhub.lx-labs.dev)"
 gleich "plan_bauen: bei falschem DNS wird Caddy auf später verschoben" 0 "$( A_FERTIG=""; FAKE_A=198.51.100.9 plan_bauen; echo "$CADDY_JETZT" )"
 rm -f /usr/local/sbin/ip /usr/local/sbin/getent
 

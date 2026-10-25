@@ -86,18 +86,18 @@ void main() {
     });
 
     test('Platzhalter werden durch absolute Adressen der eigenen Domain ersetzt; Fremd-Adressen werden abgelehnt', () {
-      final s = karteStyleAusVorlage(vorlage, 'https://familie.lx-labs.dev');
-      expect(s, contains('pmtiles://https://familie.lx-labs.dev/karte-daten/westerwald.pmtiles'));
-      expect(s, contains('https://familie.lx-labs.dev/karte/glyphs/{fontstack}/{range}.pbf'));
+      final s = karteStyleAusVorlage(vorlage, 'https://familyhub.lx-labs.dev');
+      expect(s, contains('pmtiles://https://familyhub.lx-labs.dev/karte-daten/westerwald.pmtiles'));
+      expect(s, contains('https://familyhub.lx-labs.dev/karte/glyphs/{fontstack}/{range}.pbf'));
       expect(s, isNot(contains('{{')));
-      expect(() => karteStyleAusVorlage('{"glyphs":"https://demotiles.maplibre.org/{fontstack}"}', 'https://familie.lx-labs.dev'), throwsStateError);
-      expect(() => karteStyleAusVorlage('{"a":"{{UNBEKANNT}}"}', 'https://familie.lx-labs.dev'), throwsStateError);
+      expect(() => karteStyleAusVorlage('{"glyphs":"https://demotiles.maplibre.org/{fontstack}"}', 'https://familyhub.lx-labs.dev'), throwsStateError);
+      expect(() => karteStyleAusVorlage('{"a":"{{UNBEKANNT}}"}', 'https://familyhub.lx-labs.dev'), throwsStateError);
     });
 
     test('Basisadresse: Define vor API_BASE vor Herkunft der Seite vor Produktion', () {
       expect(karteOrigin(base: 'http://10.0.2.2:8150/', api: 'https://x', web: false), 'http://10.0.2.2:8150');
-      expect(karteOrigin(base: '', api: '', web: true, seite: 'https://familie.lx-labs.dev'), 'https://familie.lx-labs.dev');
-      expect(karteOrigin(base: '', api: '', web: false), 'https://familie.lx-labs.dev');
+      expect(karteOrigin(base: '', api: '', web: true, seite: 'https://familyhub.lx-labs.dev'), 'https://familyhub.lx-labs.dev');
+      expect(karteOrigin(base: '', api: '', web: false), 'https://familyhub.lx-labs.dev');
     });
 
     test('Kartenbereich (Vorgabe 175 km um Westerburg): Mitte drin, Paris, Nordsee und Alpen draußen', () {
@@ -261,9 +261,9 @@ void main() {
         expect(adressen, {'https://www.openstreetmap.org/copyright'}, reason: stil.wert);
         expect(vorlage, contains(kKarteAttribution), reason: stil.wert);
         // streng wie bisher: Platzhalter werden ersetzt, jede Fremd-Adresse wird abgelehnt
-        final fertig = karteStyleAusVorlage(vorlage, 'https://familie.lx-labs.dev');
+        final fertig = karteStyleAusVorlage(vorlage, 'https://familyhub.lx-labs.dev');
         expect(fertig, isNot(contains('{{')));
-        expect(() => karteStyleAusVorlage(vorlage.replaceFirst('{{KARTE_BASE}}/glyphs', 'https://fremd.example/glyphs'), 'https://familie.lx-labs.dev'), throwsStateError);
+        expect(() => karteStyleAusVorlage(vorlage.replaceFirst('{{KARTE_BASE}}/glyphs', 'https://fremd.example/glyphs'), 'https://familyhub.lx-labs.dev'), throwsStateError);
       }
       Map<String, dynamic> lies(String t) => jsonDecode(t) as Map<String, dynamic>;
       final dunkel = lies(vorlage), hell = lies(hellVorlage);

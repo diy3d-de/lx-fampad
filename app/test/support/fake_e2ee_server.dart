@@ -222,7 +222,7 @@ class FakeE2eeServer {
         return jsonAntwort({'blob': p.backupBlob, 'keyVersion': p.backupVersion});
       }))
       ..on('GET /version', (_) => jsonAntwort({'service': 'lx-fampad', 'features': {'pwBackup': pwSchalter, 'authKey': authKeySchalter, 'legacyPasswordLogin': legacyLogin, 'prfBackup': prfSchalter, 'parentRecovery': elternSchalter}}))
-      ..on('POST /auth/step-up/passkey/options', (_) => jsonAntwort({'challengeId': 'step-up-1', 'options': {'challenge': 'AAAA', 'rpId': 'familie.lx-labs.dev', 'allowCredentials': [for (final id in aktivePasskeys) {'id': id, 'type': 'public-key'}]}}))
+      ..on('POST /auth/step-up/passkey/options', (_) => jsonAntwort({'challengeId': 'step-up-1', 'options': {'challenge': 'AAAA', 'rpId': 'familyhub.lx-labs.dev', 'allowCredentials': [for (final id in aktivePasskeys) {'id': id, 'type': 'public-key'}]}}))
       ..on('POST /auth/step-up/passkey/verify', (r) {
         stepUps++;
         stepUpNoetig = false;

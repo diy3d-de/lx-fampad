@@ -27,7 +27,7 @@ import java.io.File
  * bereits geprüfte APK per PackageInstaller-Session installieren (statt ACTION_VIEW mit FileProvider).
  *
  * Zweiter Kanal (lib/data/system_channel.dart): Gerätename, Bildschirmfoto-Schutz (FLAG_SECURE) für Screens mit
- * Geheimnissen und Einladungs-Links (https://familie.lx-labs.dev/#/einladung/<token>), mit denen die App geöffnet wird.
+ * Geheimnissen und Einladungs-Links (https://familyhub.lx-labs.dev/#/einladung/<token>), mit denen die App geöffnet wird.
  * Das Token im Link wird nie protokolliert.
  *
  * FLAG_SECURE: Der Wunsch aus Dart wird gemerkt und in onCreate/onResume neu gesetzt (die Activity kann neu erstellt werden,
@@ -243,7 +243,7 @@ class MainActivity : FlutterActivity() {
     private fun linkAus(intent: Intent?): String? {
         if (intent?.action != Intent.ACTION_VIEW) return null
         val data = intent.data ?: return null
-        if (data.scheme != "https" || data.host != "familie.lx-labs.dev") return null
+        if (data.scheme != "https" || data.host != "familyhub.lx-labs.dev") return null
         val link = data.toString()
         intent.data = null
         return link

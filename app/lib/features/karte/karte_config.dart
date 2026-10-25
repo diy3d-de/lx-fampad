@@ -37,7 +37,7 @@ String karteOrigin({String base = kKarteBase, String api = kApiBase, bool? web, 
   if (base.isNotEmpty) return _ohneSchraegstrich(base);
   if (api.isNotEmpty) return _ohneSchraegstrich(api);
   if (web ?? kIsWeb) return seite ?? Uri.base.origin;
-  return 'https://familie.lx-labs.dev';
+  return 'https://familyhub.lx-labs.dev';
 }
 
 String _ohneSchraegstrich(String s) => s.endsWith('/') ? s.substring(0, s.length - 1) : s;

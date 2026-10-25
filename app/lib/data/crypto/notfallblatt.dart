@@ -92,7 +92,7 @@ const List<(String, String)> kNotfallblattAnleitung = [
   ),
   (
     'So stellst du deinen Schlüssel wieder her',
-    '1. Öffne die App (familie.lx-labs.dev) und melde dich an. 2. Gehe zu Profil > Verschlüsselung > „Gerät verbinden“ > „Mit Wiederherstellungsschlüssel“. '
+    '1. Öffne die App (familyhub.lx-labs.dev) und melde dich an. 2. Gehe zu Profil > Verschlüsselung > „Gerät verbinden“ > „Mit Wiederherstellungsschlüssel“. '
         '3. Tippe den Schlüssel von diesem Blatt ab. Groß- und Kleinschreibung, Leerzeichen und Bindestriche sind egal.',
   ),
   (

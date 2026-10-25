@@ -169,7 +169,7 @@ describe.each(backends)('Wetter-Wecker ($name)', (backend) => {
 
   const register = async (d: Device, name: string) => {
     const topic = 'up' + randomBytes(9).toString('base64url').replace(/[-_]/g, 'x').slice(0, 12);
-    const r = await d.client.request('PUT', '/api/v1/me/push', { body: { endpoint: `https://ntfy.familie.lx-labs.dev/${topic}?up=1` } });
+    const r = await d.client.request('PUT', '/api/v1/me/push', { body: { endpoint: `https://ntfy.familyhub.lx-labs.dev/${topic}?up=1` } });
     expect(r.status).toBe(200);
     topics.set(name, topic);
   };

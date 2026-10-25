@@ -12,7 +12,7 @@ import { addMember, adminPassword, auditEvents, backends, World, type Client, ty
 const MIN = 60_000;
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
-const HOST = 'ntfy.familie.lx-labs.dev';
+const HOST = 'ntfy.familyhub.lx-labs.dev';
 const ENV = { NTFY_URL: 'http://127.0.0.1:2586', NTFY_TOKEN: 'tk_geheimes-ntfy-token-123', OPERATOR_TLS_PROBE: '127.0.0.1:443', E2EE_PW_BACKUP: 'true' };
 const topic = (n: number) => `upWeckerTopic${String(n).padStart(2, '0')}`;
 const NOW = new Date('2026-10-20T08:00:00Z');

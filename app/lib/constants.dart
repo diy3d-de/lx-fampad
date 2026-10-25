@@ -86,11 +86,11 @@ String personInitials(String name) {
 }
 
 /// Basisadresse des Servers. Im Web leer (gleiche Domain, Caddy leitet /api und /ws weiter);
-/// für die Android-App beim Build setzen: --dart-define=API_BASE=https://familie.lx-labs.dev
+/// für die Android-App beim Build setzen: --dart-define=API_BASE=https://familyhub.lx-labs.dev
 const kApiBase = String.fromEnvironment('API_BASE', defaultValue: '');
 
 /// Basisadresse des Update-Kanals (Manifest und APK liegen unter /releases/android/).
-const kReleasesBase = String.fromEnvironment('RELEASES_BASE', defaultValue: 'https://familie.lx-labs.dev/releases');
+const kReleasesBase = String.fromEnvironment('RELEASES_BASE', defaultValue: 'https://familyhub.lx-labs.dev/releases');
 
 /// Kennung des Web-Builds, gesetzt von deploy-web.sh (--dart-define=WEB_VERSION=...). Der Server meldet die
 /// aktuelle Kennung in /api/v1/version (webVersion); weicht sie ab, erscheint "Neue Version - neu laden".
@@ -110,7 +110,7 @@ const kAppName = 'lx-familyhub';
 const kPackageName = 'dev.lx_labs.fampad';
 
 /// Stabiler Download-Link der Android-App (Alias auf die neueste APK, wird beim Release-Upload angelegt). Enthält nie ein Token.
-const kApkDownloadUrl = 'https://familie.lx-labs.dev/releases/android/lx-familyhub-latest.apk';
+const kApkDownloadUrl = 'https://familyhub.lx-labs.dev/releases/android/lx-familyhub-latest.apk';
 
 /// Öffentlicher Ed25519-Schlüssel des Update-Kanals (32 Byte, Base64), erzeugt am 19.10.2026. Der private
 /// Schlüssel liegt nur als CI-Secret UPDATE_SIGNING_KEY und in der Sicherung des Betreibers, nie im Repo.
@@ -141,9 +141,9 @@ const kUpdateChannel = 'dev.lx_labs.fampad/update';
 const kSystemChannel = 'dev.lx_labs.fampad/system';
 
 /// Host der Einladungslinks (`https://<host>/#/einladung/<token>`). Beim Build mit --dart-define=INVITE_HOST=… setzen (Standard:
-/// familie.lx-labs.dev). Er gehört zur selben Domain wie API_BASE; in AndroidManifest.xml (Intent-Filter) und MainActivity.kt steht
+/// familyhub.lx-labs.dev). Er gehört zur selben Domain wie API_BASE; in AndroidManifest.xml (Intent-Filter) und MainActivity.kt steht
 /// dieselbe Domain (deploy/README.md, Abschnitt 9).
-const kInviteHost = String.fromEnvironment('INVITE_HOST', defaultValue: 'familie.lx-labs.dev');
+const kInviteHost = String.fromEnvironment('INVITE_HOST', defaultValue: 'familyhub.lx-labs.dev');
 
 /// Kennzeile unter der Anmeldung ("● host · tls 1.3"): Host aus API_BASE (Android) bzw. der Adresse der Seite (Web); die
 /// TLS-Angabe nur bei https. Parameter für Tests überschreibbar.

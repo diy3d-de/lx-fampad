@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Läuft IM Debian-13-Container (aufgerufen von container-lauf.sh, Szenario "umzug"): testet den Umzugs-Assistenten (umzug.sh) gegen die Sicherung aus Szenario A.
-# Isolation: bricht ohne /.dockerenv ab; alle Aufrufe mit --ohne-systemd (spricht nie die echten Internet-Adressen familie.lx-labs.dev / lx-labs.dev an;
+# Isolation: bricht ohne /.dockerenv ab; alle Aufrufe mit --ohne-systemd (spricht nie die echten Internet-Adressen familyhub.lx-labs.dev / lx-labs.dev an;
 # nur die DNS-Abfrage der Prüfung selbst), systemctl ist die Attrappe aus fake-systemctl.sh. Die Eingaben des Assistenten kommen aus einer Pipe
 # (wie "gespeicherte Antworten"): jede Zeile ist die Antwort auf eine Frage.
 # Ablauf: Falsche Reihenfolge (--weiter ohne Lauf) > Probelauf (ändert nichts) > falscher Schlüssel (bricht ab, ändert nichts) > echter Lauf bis zur
@@ -158,9 +158,9 @@ enthaelt "Datenbank eingespielt (Spalten ausgerichtet)" "$ARBEIT/lauf2.log" "✓
 enthaelt "Schlüssel wird nach der Datenbank verworfen" "$ARBEIT/lauf2.log" "Schlüssel aus dem Arbeitsspeicher des Assistenten entfernt"
 enthaelt "Abschlussprüfung bestanden" "$ARBEIT/lauf2.log" "✓ 11/11 Abschlussprüfung"
 enthaelt "Caddy wartet auf DNS" "$ARBEIT/lauf2.log" "Caddy und Zertifikate: später"
-enthaelt "Dein Teil: neue IP" "$ARBEIT/lauf2.log" "familie        A   $IP_TEST"
-enthaelt "Dein Teil: ntfy.familie" "$ARBEIT/lauf2.log" "ntfy.familie   A   $IP_TEST"
-enthaelt "Dein Teil: Kontrollbefehl dig" "$ARBEIT/lauf2.log" "dig +short familie.lx-labs.dev"
+enthaelt "Dein Teil: neue IP" "$ARBEIT/lauf2.log" "familyhub     A   $IP_TEST"
+enthaelt "Dein Teil: ntfy.familyhub" "$ARBEIT/lauf2.log" "ntfy.familyhub   A   $IP_TEST"
+enthaelt "Dein Teil: Kontrollbefehl dig" "$ARBEIT/lauf2.log" "dig +short familyhub.lx-labs.dev"
 enthaelt "Dein Teil: erst Schreibstopp und frische Sicherung, dann --aktualisieren" "$ARBEIT/lauf2.log" "--aktualisieren"
 enthaelt "Dein Teil: Web-App" "$ARBEIT/lauf2.log" "SSH_HOST=lx@$IP_TEST deploy/deploy-web.sh"
 enthaelt "Dein Teil: Wiederherstellung prüfen" "$ARBEIT/lauf2.log" "Anmeldung mit Passkey und mit TOTP"

@@ -29,7 +29,7 @@ const _lookupOk = {
 
 /// Routen für die Passkey-Anmeldung.
 void _passkeyLogin(FakeServer s) {
-  s.json('POST /auth/login/passkey/options', {'challengeId': 'c-1', 'options': {'challenge': 'abc', 'rpId': 'familie.lx-labs.dev'}});
+  s.json('POST /auth/login/passkey/options', {'challengeId': 'c-1', 'options': {'challenge': 'abc', 'rpId': 'familyhub.lx-labs.dev'}});
   s.json('POST /auth/login/passkey/verify', {'user': userJson(), 'session': appSession()});
   s.json('GET /me', meJson());
 }
@@ -207,7 +207,7 @@ void main() {
       return env;
     }
 
-    String link([String t = fixToken]) => 'https://familie.lx-labs.dev/#/einladung/$t';
+    String link([String t = fixToken]) => 'https://familyhub.lx-labs.dev/#/einladung/$t';
 
     testWidgets('ungültiger Link: Hinweis, kein Serveraufruf', (tester) async {
       final server = FakeServer();
@@ -257,7 +257,7 @@ void main() {
       final start = server.anfragen('POST /auth/invites/passkey/options').single.json;
       expect(start, {'token': fixToken, 'email': 'ben@beispiel.de', 'displayName': 'Ben'});
       expect(env.passkeys.erstellt, 1);
-      expect(env.passkeys.letzteOptionen!['rp'], {'name': 'lx-familyhub', 'id': 'familie.lx-labs.dev'});
+      expect(env.passkeys.letzteOptionen!['rp'], {'name': 'lx-familyhub', 'id': 'familyhub.lx-labs.dev'});
       final fertig = server.anfragen('POST /auth/invites/passkey/complete').single.json;
       expect(fertig['challengeId'], 'c-9');
       expect(fertig['client'], 'app');
@@ -516,7 +516,7 @@ void main() {
           optionen++;
           return optionen == 1 ? fehler(403, 'step_up_required') : jsonAntwort({'challengeId': 'c-5', 'options': webauthnOptionen()});
         })
-        ..json('POST /auth/step-up/passkey/options', {'challengeId': 'c-6', 'options': {'challenge': 'abc', 'rpId': 'familie.lx-labs.dev'}})
+        ..json('POST /auth/step-up/passkey/options', {'challengeId': 'c-6', 'options': {'challenge': 'abc', 'rpId': 'familyhub.lx-labs.dev'}})
         ..json('POST /auth/step-up/passkey/verify', {'stepUpAt': DateTime.now().toUtc().toIso8601String()})
         ..json('POST /me/passkeys/verify', {'id': 'c2'})
         ..json('DELETE /me/passkeys/c1', {'ok': true});
@@ -662,11 +662,11 @@ void main() {
 
       expect(find.text('Einladung erstellt'), findsOneWidget);
       expect(find.byType(QrImageView), findsNWidgets(2)); // Einladung + Download-Link der App
-      expect(tester.widgetList<QrAnzeige>(find.byType(QrAnzeige)).map((q) => q.daten), ['https://familie.lx-labs.dev/#/einladung/$fixToken', kApkDownloadUrl]);
+      expect(tester.widgetList<QrAnzeige>(find.byType(QrAnzeige)).map((q) => q.daten), ['https://familyhub.lx-labs.dev/#/einladung/$fixToken', kApkDownloadUrl]);
       expect(find.text('123456'), findsOneWidget);
       expect(zwischenablage, isEmpty);
       await tippeText(tester, 'Link kopieren');
-      expect(zwischenablage.single, 'https://familie.lx-labs.dev/#/einladung/$fixToken');
+      expect(zwischenablage.single, 'https://familyhub.lx-labs.dev/#/einladung/$fixToken');
       await tester.pump(const Duration(seconds: 5)); // Hinweis "Link kopiert" verschwindet
       await tester.pump(const Duration(seconds: 1));
       await tippeText(tester, 'Fertig');
