@@ -179,6 +179,35 @@ class BetriebPush {
   }
 }
 
+/// Einwurf für Home Assistant (`ingest` in `GET /admin/status`): nur Zahlen und Zeiten, nie Token, Päckchen oder Namen. Zähler null = nicht messbar.
+class BetriebIngest {
+  final bool aktiv;
+  final BetriebStufe stufe;
+  final int? tokens;
+  final int? postfach;
+  final int grenze;
+  final int? aeltestStunden;
+  final DateTime? letzterEinwurf;
+  const BetriebIngest({this.aktiv = false, this.stufe = BetriebStufe.unbekannt, this.tokens, this.postfach, this.grenze = 3000, this.aeltestStunden, this.letzterEinwurf});
+
+  factory BetriebIngest.fromJson(Object? raw) {
+    final m = _map(raw);
+    final alter = m['oldestAgeHours'];
+    return BetriebIngest(
+      aktiv: m['enabled'] == true,
+      stufe: BetriebStufe.lesen(m['state']),
+      tokens: _zahl(m['tokensActive']),
+      postfach: _zahl(m['inboxCount']),
+      grenze: _zahl(m['inboxLimit']) ?? 3000,
+      aeltestStunden: alter is num && alter.isFinite ? alter.round() : null,
+      letzterEinwurf: _zeit(m['lastDropAt']),
+    );
+  }
+
+  /// Nur zeigen, wenn der Einwurf an ist oder es etwas zu melden gibt (ein älterer Server liefert gar kein Feld).
+  bool get zeigen => aktiv || (postfach ?? 0) > 0 || (tokens ?? 0) > 0;
+}
+
 /// Ein täglicher Messpunkt der Betreiber-Ansicht (`GET /admin/metrics`): nur Zahlen, [tag] ist der UTC-Tag.
 class VerlaufTag {
   final DateTime tag;
@@ -336,6 +365,9 @@ class BetriebStatus {
   /// Push-Wecker: Geräte und Zustellfehler als Zähler; null bei einem älteren Server.
   final BetriebPush? push;
 
+  /// Einwurf (Home Assistant); null bei einem älteren Server.
+  final BetriebIngest? ingest;
+
   /// Update-Stand der Android-Geräte; null bei einem älteren Server.
   final BetriebUpdates? updates;
   final BetriebPlatte? platte;
@@ -371,6 +403,7 @@ class BetriebStatus {
     required this.sicherung,
     required this.nas,
     required this.push,
+    this.ingest,
     required this.updates,
     required this.platte,
     required this.zertifikatBis,
@@ -450,6 +483,7 @@ class BetriebStatus {
       ),
       nas: BetriebNas.fromJson(m['nas']),
       push: m['push'] is Map<String, dynamic> ? BetriebPush.fromJson(m['push']) : null,
+      ingest: m['ingest'] is Map<String, dynamic> ? BetriebIngest.fromJson(m['ingest']) : null,
       updates: m['updates'] is Map<String, dynamic> ? BetriebUpdates.fromJson(m['updates']) : null,
       platte: disk == null
           ? null
