@@ -121,6 +121,8 @@ export interface Config {
   weather: WeatherConfig;
   /** Abfuhrtermine (ICS einer Abfall-Plattform, nur Server; standardmäßig aus). */
   waste: WasteConfig;
+  /** Einwurf (Home Assistant, Zähler-Postfach); Standard aus, dann sind alle Routen unter /ingest 404. */
+  ingest: { enabled: boolean; ratePerHour: number };
   /** Vereinfachte Schlüsselverwaltung (Passwort-Sicherung, KDF-Parameter): Routen nur bei true, sonst 404 (Standard aus). */
   e2eePwBackup: boolean;
   /** Wraps mit Schlüsselversion (Wrap-ID v2, "Verlauf freigeben" und "Verlauf teilen"): nur bei true, sonst lehnt der Server sie ab (Standard aus; erst einschalten, wenn alle Apps der Familie aktualisiert sind). */
@@ -543,6 +545,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     locDirectoryTimeoutMs: positiveInt(env, 'LOC_DIRECTORY_TIMEOUT_MS', 5000),
     weather: weatherConfig(env, nodeEnv),
     waste: wasteConfig(env, nodeEnv),
+    ingest: { enabled: boolFlag(env, 'INGEST_ENABLED'), ratePerHour: positiveInt(env, 'INGEST_RATE_PER_HOUR', 120) },
     e2eePwBackup,
     e2eeWrapKeyVersion,
     e2eePrfBackup,

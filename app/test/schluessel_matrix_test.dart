@@ -159,6 +159,8 @@ void _waechter() {
         r"'e2ee.kv.pw.$userId'", // schluesselVomGeraetLoeschen
         'personenschluesselAltName(userId)', // schluesselVomGeraetLoeschen
         'personenschluesselName(userId)', // schluesselVomGeraetLoeschen
+        'postfachName(userId)', // schluesselVomGeraetLoeschen: Postfach-Schlüssel der Home-Assistant-Anbindung (kein Personenschlüssel)
+        'postfachVerbindungenName(userId)', // schluesselVomGeraetLoeschen: gemerkte Token-IDs der eigenen Verbindungen (nichts Geheimes, keine Schlüssel)
       ]..sort(), reason: 'eine neue Löschstelle für Schlüssel braucht eine bewusste Entscheidung (Verlustmatrix, docs/TESTFAMILIE-SCHLUESSEL.md)');
     });
 
@@ -182,7 +184,8 @@ void _waechter() {
     });
 
     test('Löschstellen des Schlüsselspeichers außerhalb von e2ee_state.dart: nur "Vertrauen zurücksetzen" (vertrauen.dart)', () {
-      final erlaubt = {'lib/data/crypto/vertrauen.dart'};
+      // ingest_kopplung.dart: Postfach-Schlüssel der Home-Assistant-Anbindung (kein Personenschlüssel; Löschen nur beim Trennen der letzten Verbindung oder "Gerät abgeben")
+      final erlaubt = {'lib/data/crypto/vertrauen.dart', 'lib/data/ingest/ingest_kopplung.dart'};
       for (final f in _libDateien()) {
         final pfad = _norm(f.path);
         if (pfad == 'lib/data/crypto/e2ee_state.dart' || pfad.startsWith('lib/data/crypto/schluessel_speicher')) continue;

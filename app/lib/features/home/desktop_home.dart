@@ -1,4 +1,4 @@
-// Startseite im Desktop-Layout: Kopfzeile (Datum, Begrüßung, Suche, Benachrichtigungen, "+ Neu") und Karten-Raster.
+// Startseite im Desktop-Layout: Kopfzeile (Datum, Begrüßung, Suche, "+ Neu" mit Termin, Aufgabe, Liste) und Karten-Raster.
 // Die Kacheln lassen sich umsortieren und ausblenden (lokal je Gerät, siehe startseite_anpassen_screen.dart).
 // Echte Daten gibt es für Termine, Aufgaben, Einkaufsliste, Familie und Sync-Zustand; noch nicht gebaute Bereiche zeigen einen Leerzustand.
 import 'dart:async';
@@ -23,6 +23,8 @@ import '../../data/calendar/termin_repository.dart';
 import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/countdown_karte.dart';
+import '../calendar/termin_editor.dart' show terminEditorOeffnen;
+import '../tasks/aufgabe_editor.dart' show aufgabeEditorOeffnen;
 import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../wetter/wetter_dwd_warn_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
@@ -137,19 +139,17 @@ class _Kopfzeile extends ConsumerWidget {
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
             const SuchEinstieg(breite: 240),
-            IconButton(
-              tooltip: 'Benachrichtigungen',
-              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-              icon: const Icon(Icons.notifications_none),
-              onPressed: () => ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(const SnackBar(content: Text('Benachrichtigungen kommen mit Push in einer späteren Phase'))),
-            ),
             PopupMenuButton<String>(
                 tooltip: 'Neu anlegen',
                 color: kSurface,
-                onSelected: (_) => _neueListe(context, ref),
+                onSelected: (wert) => switch (wert) {
+                  'termin' => unawaited(terminEditorOeffnen(context)),
+                  'aufgabe' => unawaited(aufgabeEditorOeffnen(context)),
+                  _ => unawaited(_neueListe(context, ref)),
+                },
                 itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'termin', height: 44, child: Row(children: [Icon(Icons.calendar_today_outlined, size: 18, color: kAccent), SizedBox(width: 10), Text('Neuer Termin')])),
+                  PopupMenuItem(value: 'aufgabe', height: 44, child: Row(children: [Icon(Icons.task_alt_outlined, size: 18, color: kAccent), SizedBox(width: 10), Text('Neue Aufgabe')])),
                   PopupMenuItem(value: 'liste', height: 44, child: Row(children: [Icon(Icons.checklist_outlined, size: 18, color: kAccent), SizedBox(width: 10), Text('Neue Liste')])),
                 ],
                 child: Container(
@@ -661,7 +661,7 @@ class _AufgabenKarte extends ConsumerWidget {
   }
 }
 
-/// Familienmitglieder (echt, mit Personenfarbe); der Standort kommt erst in Phase 2.
+/// Familienmitglieder (echt, mit Personenfarbe).
 class _FamilieKarte extends ConsumerWidget {
   const _FamilieKarte();
 
@@ -673,7 +673,7 @@ class _FamilieKarte extends ConsumerWidget {
     return _Karte(
       label: '// familie & orte',
       zaehler: bereit && mitglieder.isNotEmpty ? '${mitglieder.length}' : null,
-      semantik: bereit ? 'Familie, ${mitglieder.length} Mitglieder. Standort kommt später' : 'Familie. Standort kommt später',
+      semantik: bereit ? 'Familie, ${mitglieder.length} Mitglieder' : 'Familie',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -698,14 +698,6 @@ class _FamilieKarte extends ConsumerWidget {
               ),
             if (mitglieder.length > 5) Text('+ ${mitglieder.length - 5} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
           ],
-          const SizedBox(height: 8),
-          const Row(
-            children: [
-              Icon(Icons.place_outlined, size: 16, color: kTextFaint),
-              SizedBox(width: 6),
-              Expanded(child: Text('Standort teilen: kommt in Phase 2', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextFaint))),
-            ],
-          ),
         ],
       ),
     );

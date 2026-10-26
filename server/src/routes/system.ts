@@ -71,6 +71,8 @@ export function registerSystemRoutes(app: FastifyInstance, { config, pingDb, mai
         parentRecovery: config.e2eeParentRecovery,
         // Dateiablage (FILES_ENABLED): Uploads, Ordner, Dateien und verschlüsselte Anhänge; die App zeigt den Bereich nur dann
         files: config.files.enabled,
+        // Einwurf für Home Assistant (INGEST_ENABLED): die App bietet die Anbindung der Zähler nur dann an
+        ingest: config.ingest.enabled,
       },
     };
   });

@@ -1,0 +1,250 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Konzept: Home Assistant → Familyhub Zähler</title>
+<style>
+:root{--bg:#101114;--s1:#1a1c21;--s2:#23262c;--tx:#ececef;--mu:#a0a4ae;--ac:#6fcfd6;--ok:#7fcf9b;--warn:#e9b45c;--bad:#ef8b83}
+*{box-sizing:border-box;margin:0}
+body{background:var(--bg);color:var(--tx);font:15px/1.55 "Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;padding:30px 16px 80px}
+main{max-width:980px;margin:0 auto}
+h1{font-size:28px;letter-spacing:-.02em}h2{font-size:21px;margin:42px 0 8px;letter-spacing:-.01em}h3{font-size:16px;margin:18px 0 6px}
+p,li{color:#d0d2d9}.mu{color:var(--mu);font-size:13.5px}
+code,pre{font-family:Consolas,"JetBrains Mono",monospace;font-size:12.5px}code{background:var(--s2);padding:1px 6px;border-radius:5px}
+pre{background:#0b0c0e;border-radius:12px;padding:12px 14px;overflow:auto;margin:8px 0;color:#cfd3dc;line-height:1.5}
+ul,ol{padding-left:22px}li{margin:4px 0}
+.box{background:var(--s1);border-radius:16px;padding:16px 20px;margin:12px 0}
+.box.key{border-left:4px solid var(--ac)}.box.warn{border-left:4px solid var(--warn)}
+table{width:100%;border-collapse:collapse;font-size:14px;margin:8px 0}th,td{text-align:left;padding:8px 10px;border-bottom:1px solid #2a2d34;vertical-align:top}th{color:var(--mu);font-weight:600;font-size:12.5px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.wa{color:var(--warn)}
+.shots{display:flex;gap:22px;flex-wrap:wrap;margin:16px 0;justify-content:center}
+.cap{font-size:12.5px;color:var(--mu);text-align:center;margin-top:6px;max-width:300px}
+.ph{width:300px;height:600px;border-radius:28px;border:7px solid #000;background:#15161a;overflow:hidden;box-shadow:0 0 0 1px #2a2a30;display:flex;flex-direction:column}
+.scr{flex:1;padding:14px 15px;overflow:hidden}
+.ph h4{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:6px 0 10px}
+.c{background:#1e2025;border-radius:16px;padding:12px 13px;margin-bottom:9px}
+.l{font-size:12.5px;font-weight:600;color:#a2a6b0;margin:10px 0 4px}
+.f{background:#1e2025;border-radius:12px;padding:9px 12px;font-size:13.5px}
+.r{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid rgba(255,255,255,.05);font-size:13.5px}.r:last-child{border:0}.r small{display:block;color:#a2a6b0;font-size:12px}
+.pill{display:inline-block;font-size:11.5px;padding:2px 9px;border-radius:10px;background:#2c3038;color:#a2a6b0}.pill.g{background:#1d2a22;color:#8fe0a8}.pill.y{background:#332c1d;color:#ecd9b0}
+.btn{display:block;text-align:center;background:#7cd4d9;color:#0c1b1d;font-weight:650;border-radius:14px;padding:11px;font-size:14px;margin-top:10px}
+.btn.s{background:#2c3038;color:#ececef}
+.tog{width:38px;height:22px;border-radius:11px;background:#7cd4d9;position:relative;flex:none}.tog:after{content:"";position:absolute;right:3px;top:3px;width:16px;height:16px;border-radius:50%;background:#0c1b1d}
+.qr{width:120px;height:120px;margin:10px auto;background:conic-gradient(#ececef 25%,#15161a 0 50%,#ececef 0 75%,#15161a 0);background-size:20px 20px;border-radius:8px;border:8px solid #ececef}
+.mono{font-family:Consolas,monospace;font-size:12px;word-break:break-all;background:#0b0c0e;border-radius:10px;padding:8px 10px;color:#cfd3dc}
+.bars{display:flex;gap:3px;align-items:flex-end;height:70px;margin-top:6px}.bars i{flex:1;background:#7cd4d9;border-radius:3px 3px 0 0}.bars i.h{background:#e9b45c}
+/* HA-Stil hell */
+.ha{background:#fafafa;color:#212121;border-radius:0;font-family:Roboto,"Segoe UI",sans-serif}
+.ha .scr{background:#fafafa;color:#212121;padding:0}.ha .hd{background:#03a9f4;color:#fff;padding:14px 16px;font-size:17px}
+.ha .in{padding:14px 16px;font-size:13.5px}.ha .fld{border-bottom:1px solid #999;padding:6px 0;margin:6px 0 14px}.ha .fld small{display:block;color:#777;font-size:11.5px}
+.ha .b{background:#03a9f4;color:#fff;text-align:center;padding:9px;border-radius:6px;font-weight:600;margin-top:8px}
+.ha .ph{border-radius:20px}
+svg text{font-family:"Segoe UI",sans-serif;font-size:12.5px;fill:#ececef}
+</style></head><body><main>
+
+<h1>Home Assistant → Familyhub: Zählerwerte automatisch eintragen</h1>
+<p class="mu">Konzept mit API-Entwurf, Home-Assistant-Seite und Mockups · Stand 26.10.2026 · Entwurf, noch nichts gebaut</p>
+
+<div class="box key"><b>Kurzfassung.</b> Zählerdaten sind im Familyhub Ende-zu-Ende verschlüsselt: der Server kann sie nicht lesen (sie verraten, wann jemand zu Hause ist). Ein einfacher „Server nimmt Werte per Web-Aufruf an“ würde das aufweichen. Mein Vorschlag ist deshalb ein <b>Briefkasten</b>: Home Assistant wirft die Werte <b>verschlüsselt</b> beim Server ein (nur mit einem Einwurf-Schlüssel, der nichts lesen kann); die App eines Elternteils holt sie ab, prüft sie und schreibt sie wie einen von Hand eingetragenen Stand. Home Assistant braucht dafür eine kleine eigene Integration (Crypto lässt sich dort nicht per Standard-YAML erledigen).</div>
+
+<h2>1 · Ausgangslage und Ziel</h2>
+<ul>
+<li>Quellen in Home Assistant (HA): dein Stromzähler (Bezug, ggf. Einspeisung) und die Anker Solix Solarbank 3 E2700 (Solarerzeugung, Batterie laden/entladen). Das sind <b>fortlaufende Zählerstände in kWh</b> (<code>total_increasing</code>) – genau das, was die App als „Zählerstand“ kennt.</li>
+<li>Ziel: je Tag ein Stand pro Kanal, automatisch, ohne dass du etwas tippst. Verbrauchskurve, Kosten und Solar-Ersparnis in der App rechnen dann wie bisher.</li>
+<li>Nicht Ziel: Live-Leistung (Watt im Minutentakt). Das wäre eine andere Aufgabe (siehe Ausbau).</li>
+</ul>
+
+<h2>2 · Drei Wege im Vergleich</h2>
+<table>
+<tr><th></th><th>A · Klartext-API</th><th>B · HA als Familienmitglied</th><th>C · Briefkasten (empfohlen)</th></tr>
+<tr><td>Idee</td><td>HA ruft <code>POST /readings</code> mit Token, Server speichert Werte lesbar</td><td>HA bekommt ein eigenes Konto samt Schlüsselpaar, ist Teilnehmer der Zähler-Konversation</td><td>HA verschlüsselt je Wert an einen Einwurf-Schlüssel; App der Eltern holt ab und trägt ein</td></tr>
+<tr><td>Server sieht Werte</td><td class="bad">ja – bricht die Zusage „Server liest Zähler nie“</td><td class="ok">nein</td><td class="ok">nein</td></tr>
+<tr><td>Aufwand HA-Seite</td><td class="ok">sehr klein (<code>rest_command</code>)</td><td class="bad">sehr groß: Hülle <code>e1</code>, Signaturen, Epochen-Schlüssel, Rotation nachbauen</td><td class="wa">mittel: eine Verschlüsselungsfunktion (libsodium „Sealed Box“) + Token</td></tr>
+<tr><td>Aufwand Server/App</td><td class="ok">klein</td><td class="bad">groß, Sonderrolle „Gerät“ in Rechten und Chat-Krypto</td><td class="wa">mittel: Token, Einwurf-Tabelle, App-Import</td></tr>
+<tr><td>Risiko</td><td class="bad">Verbrauchsmuster beim Server und in Sicherungen</td><td class="bad">Rollen-/Schlüsselpflege bei Rotation fehleranfällig</td><td class="wa">Werte erscheinen erst, wenn ein Elternteil die App öffnet (Verzögerung, kein Verlust)</td></tr>
+</table>
+<p class="mu">Ich empfehle C. A wäre in zwei Stunden gebaut, ist aber genau das, was das Zähler-Design bewusst ausschließt.</p>
+
+<h2>3 · Architektur (Weg C)</h2>
+<div class="box">
+<svg viewBox="0 0 900 250" width="100%" role="img" aria-label="Ablauf Home Assistant zum Familyhub-Server zur App">
+ <defs><marker id="a" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8 z" fill="#6fcfd6"/></marker></defs>
+ <rect x="10" y="40" width="210" height="150" rx="16" fill="#1e2025"/><text x="24" y="66" font-weight="700">Zuhause</text>
+ <text x="24" y="90">Stromzähler, Solix</text><text x="24" y="110">→ Home Assistant</text>
+ <text x="24" y="140" fill="#a0a4ae">Integration „Familyhub“:</text><text x="24" y="160" fill="#a0a4ae">1× täglich Stand je Kanal</text><text x="24" y="178" fill="#a0a4ae">verschlüsseln + senden</text>
+ <rect x="340" y="40" width="220" height="150" rx="16" fill="#1e2025"/><text x="354" y="66" font-weight="700">Familyhub-Server</text>
+ <text x="354" y="92">prüft Token (nur Einwurf)</text><text x="354" y="112">speichert verschlüsselte</text><text x="354" y="130">Päckchen im Briefkasten</text>
+ <text x="354" y="160" fill="#e9b45c">kann nichts lesen</text><text x="354" y="178" fill="#a0a4ae">löscht nach 30 Tagen</text>
+ <rect x="680" y="40" width="210" height="150" rx="16" fill="#1e2025"/><text x="694" y="66" font-weight="700">App (Elternteil)</text>
+ <text x="694" y="92">holt Päckchen ab</text><text x="694" y="112">öffnet sie lokal, prüft</text><text x="694" y="132">schreibt „Zählerstand“</text><text x="694" y="152">als normalen e1-Eintrag</text><text x="694" y="178" fill="#a0a4ae">→ Sync an alle Eltern</text>
+ <line x1="222" y1="115" x2="338" y2="115" stroke="#6fcfd6" stroke-width="2" marker-end="url(#a)"/><text x="232" y="106" fill="#6fcfd6">HTTPS, Token</text>
+ <line x1="562" y1="115" x2="678" y2="115" stroke="#6fcfd6" stroke-width="2" marker-end="url(#a)"/><text x="580" y="106" fill="#6fcfd6">Abholen, löschen</text>
+ <text x="10" y="225" fill="#a0a4ae">Nur ausgehend aus deinem Heimnetz – kein offener Port, kein Zugriff von außen auf Home Assistant.</text>
+</svg></div>
+
+<h3>Schlüssel und Vertrauen</h3>
+<ul>
+<li><b>Briefkasten-Schlüsselpaar</b>: erzeugt die App beim Einrichten. Der <i>öffentliche</i> Teil geht in den Kopplungscode, der <i>private</i> wird im verschlüsselten Zähler-Datensatz abgelegt – damit hat ihn jedes Elternteil automatisch, Kinder nie, der Server nie.</li>
+<li><b>Einwurf-Token</b> (<code>fhi_…</code>): vom Admin mit frischer Bestätigung erzeugt, einmal angezeigt, beim Server nur als Hash gespeichert. Darf <i>ausschließlich</i> einwerfen: nicht lesen, nicht synchronisieren, keine Anmeldung. Jederzeit widerrufbar.</li>
+<li><b>Echtheit</b>: Die Sealed Box allein beweist den Absender nicht. Darum steckt im Kopplungscode zusätzlich ein zufälliges Geheimnis; HA hängt an jedes Päckchen einen HMAC. Selbst wer das Token stiehlt (oder der Server-Betreiber) kann damit <i>keine</i> gefälschten Werte unterschieben.</li>
+<li>Nach dem Abwurf kennt der Server nur: Zeitpunkt, Größe, Token. Keine Kanäle, keine Zahlen.</li>
+</ul>
+
+<h2>4 · API-Entwurf</h2>
+<p>Alles unter <code>/api/v1/ingest/…</code>, in <code>docs/API.md</code> zu ergänzen. Schalter <code>INGEST_ENABLED</code> (Standard aus, sonst 404), Wartungsmodus sperrt wie bei allen Schreibzugriffen.</p>
+<table>
+<tr><th>Route</th><th>Wer</th><th>Zweck</th></tr>
+<tr><td><code>POST /ingest/tokens</code></td><td>Admin, Step-up</td><td>Token anlegen (<code>{ name, kind: "zaehler" }</code> → Klartext-Token einmalig). Audit-Eintrag, Wecker an die anderen Admins</td></tr>
+<tr><td><code>GET /ingest/tokens</code> · <code>DELETE /ingest/tokens/:id</code></td><td>Admin</td><td>Liste (Name, zuletzt benutzt, Anzahl) und Widerruf</td></tr>
+<tr><td><code>POST /ingest/zaehler</code></td><td>Token</td><td>Einwerfen, siehe unten</td></tr>
+<tr><td><code>GET /ingest/zaehler/pending</code></td><td>Eltern/Admin, Sitzung</td><td>Offene Päckchen holen (seitenweise)</td></tr>
+<tr><td><code>DELETE /ingest/zaehler/:id</code></td><td>Eltern/Admin</td><td>Nach erfolgreichem Eintragen löschen (atomar „beanspruchen“, damit zwei Geräte nicht doppelt eintragen)</td></tr>
+</table>
+<pre>POST /api/v1/ingest/zaehler
+Authorization: Bearer fhi_9f3c…
+{
+  "items": [
+    { "k": "strom_bezug:2026-10-26",    // Eindeutigkeitsschlüssel, höchstens 64 Zeichen
+      "box": "base64(sealed box)" },    // höchstens 1 KB
+    …                                   // höchstens 50 je Aufruf
+  ]
+}
+→ 200 { "accepted": 3, "duplicates": 1 }  // gleicher Schlüssel + Token = still ignoriert (HA darf wiederholen)
+→ 401 ungültiges/widerrufenes Token · 413 zu groß · 429 Rate-Limit (z. B. 200 Päckchen/Tag je Token) · 503 Wartung</pre>
+<p><b>Im Päckchen</b> (nur die App liest es):</p>
+<pre>{ "v": 1,
+  "kanal": "strom_bezug",        // frei vom Nutzer benannt, Zuordnung zum Zähler macht die App
+  "t": 1793059140000,            // Ablesezeitpunkt (HA-Uhr, Millisekunden)
+  "stand": "12345.678",          // Text, nie Fließkomma → App rechnet in Tausendstel (festkommaParsen)
+  "einheit": "kWh",
+  "mac": "hex(HMAC(geheimnis, kanal|t|stand))" }</pre>
+<p class="mu">Server-Seite: Tabelle <code>ingest_tokens</code> (Hash, Familie, Name, widerrufen_am, zuletzt) und <code>ingest_inbox</code> (Familie, Token, <code>k</code>, <code>box</code>, Zeit; <code>unique(token, k)</code>). Neue Migration, nur vorwärts, additiv. Eigene Rate-Limits, nie Inhalt oder <code>k</code> ins Log.</p>
+
+<h2>5 · Home-Assistant-Seite</h2>
+<p><b>Empfehlung: kleine eigene Integration („Familyhub“), per HACS installierbar.</b> Gründe: sie braucht PyNaCl (libsodium) für die Sealed Box, einen lokalen Puffer bei Ausfall und eine Einrichtung per Oberfläche statt YAML. Ablauf:</p>
+<ol>
+<li>Integration hinzufügen → <b>Kopplungscode</b> aus der App einfügen (enthält Adresse, Token, öffentlichen Schlüssel, Geheimnis).</li>
+<li>Pro Kanal einen Sensor wählen (nur <code>total_increasing</code>-Sensoren in kWh werden angeboten).</li>
+<li>Die Integration merkt sich um 23:59 Uhr (Ortszeit) den Stand je Kanal, verschlüsselt, sendet. Schlägt es fehl: Puffer, Wiederholung mit Wartezeit, beim Start Nachholen. Ein Sensor „Familyhub: letzter Versand“ zeigt den Zustand.</li>
+<li>Fehlt ein Sensorwert (<code>unavailable</code>), wird <b>nichts</b> gesendet (kein „0“), die Lücke bleibt eine Lücke.</li>
+</ol>
+<p><b>Vorläufer ohne HACS</b> (zum schnellen Testen): ein Pyscript- oder AppDaemon-Skript mit denselben ~40 Zeilen. Reines <code>rest_command</code> reicht <i>nicht</i>, weil HA kein Sealed-Box-Verschlüsseln kann.</p>
+<p class="mu">Kanäle als Vorschlag: <code>strom_bezug</code>, <code>strom_einspeisung</code>, <code>solar_erzeugung</code>, <code>bank_geladen</code>, <code>bank_entladen</code>. Welche Sensoren deine Solix-Anbindung liefert (z. B. die HACS-Integration „Anker Solix“), muss ich noch gegen deine echten Entitäten prüfen.</p>
+
+<h2>6 · Mockups</h2>
+
+<h3>6.1 App · Zähler einrichten: Home Assistant koppeln</h3>
+<div class="shots">
+<div><div class="ph"><div class="scr">
+ <h4>Home Assistant</h4>
+ <div class="c"><b style="font-size:14px">Zählerwerte automatisch einspielen</b><div style="font-size:12.5px;color:#a2a6b0;margin-top:3px">Home Assistant schickt jede Nacht den Stand. Der Server kann ihn nicht lesen.</div></div>
+ <div class="l">Name der Verbindung</div><div class="f">Haus Keller</div>
+ <div class="btn">Kopplungscode erzeugen</div>
+ <div class="l" style="margin-top:16px">Bereits gekoppelt</div>
+ <div class="c"><div class="r"><div>Haus Keller<small>Zuletzt gehört: heute 00:00 · 5 Kanäle</small></div><span class="pill g">aktiv</span></div></div>
+ <div class="btn s">Verbindung trennen</div>
+</div></div><div class="cap">Zähler › Verbindungen. Nur Admins, mit frischer Bestätigung.</div></div>
+
+<div><div class="ph"><div class="scr">
+ <h4>Kopplungscode</h4>
+ <div class="c"><div style="font-size:12.5px;color:#a2a6b0">Gib diesen Code in Home Assistant ein. Er wird <b style="color:#ececef">nur jetzt</b> angezeigt.</div>
+ <div class="qr"></div>
+ <div class="mono">FH1-eyJ1IjoiaHR0cHM6Ly9mYW1pbHl odWIubHgtbGFicy5kZXYiLCJ0Ijoi…</div></div>
+ <div class="btn s">Code kopieren</div>
+ <div style="font-size:12.5px;color:#ecd9b0;background:#332c1d;border-radius:12px;padding:10px 12px;margin-top:10px">Wer den Code hat, kann Werte einspielen, aber nichts lesen. Geht er verloren: Verbindung trennen und neu koppeln.</div>
+ <div class="btn">Fertig</div>
+</div></div><div class="cap">Wird nur auf Klick kopiert, Bildschirm gegen Screenshots geschützt (wie die Schlüssel-Seiten).</div></div>
+</div>
+
+<h3>6.2 App · Zähler einem Kanal zuordnen</h3>
+<div class="shots">
+<div><div class="ph"><div class="scr">
+ <h4>Stromzähler</h4>
+ <div class="l">Name</div><div class="f">Strom Haus</div>
+ <div class="l">Woher kommen die Stände?</div>
+ <div class="c" style="padding:6px 13px"><div class="r"><span>Ich trage sie ein</span><span class="pill">○</span></div><div class="r"><span><b>Home Assistant</b></span><span class="pill g">●</span></div></div>
+ <div class="l">Kanal</div><div class="f">Strom Bezug (kWh) ▾</div>
+ <div class="c" style="margin-top:12px"><div class="r"><div>Prüfen vor dem Eintragen<small>Auffällige Werte erst bestätigen</small></div><div class="tog"></div></div></div>
+ <div class="btn">Speichern</div>
+</div></div><div class="cap">Die Zuordnung steht im verschlüsselten Zähler-Datensatz. HA kennt keine Zähler-Namen.</div></div>
+
+<div><div class="ph"><div class="scr">
+ <h4>Zähler</h4>
+ <div class="c"><div class="r"><div><b>Strom Haus</b><small>Bezug · letzter Stand 14 872,4 kWh</small></div><span class="pill g">automatisch</span></div>
+ <div class="bars"><i style="height:50%"></i><i style="height:62%"></i><i style="height:45%"></i><i style="height:70%"></i><i style="height:58%"></i><i style="height:40%"></i><i style="height:66%"></i><i style="height:52%"></i></div>
+ <div style="font-size:12px;color:#a2a6b0;margin-top:6px">Zuletzt von Home Assistant: heute 00:00</div></div>
+ <div class="c"><div class="r"><div><b>Solar</b><small>Erzeugung · 3 218,9 kWh</small></div><span class="pill g">automatisch</span></div></div>
+ <div class="c"><div class="r"><div><b>Wasser Küche</b><small>Ablesen fällig</small></div><span class="pill">von Hand</span></div></div>
+ <div class="c" style="background:#332c1d"><div class="r"><div>1 Wert prüfen<small style="color:#ecd9b0">Stand liegt unter dem letzten</small></div><span>›</span></div></div>
+</div></div><div class="cap">Kachel mit Herkunft. Von Hand und automatisch lassen sich mischen (z. B. Wasser bleibt manuell).</div></div>
+</div>
+
+<h3>6.3 App · „Prüfen“, wenn ein Wert auffällt</h3>
+<div class="shots">
+<div><div class="ph"><div class="scr">
+ <h4>Zu prüfen</h4>
+ <div class="c" style="background:#332c1d"><b style="font-size:14px">Strom Haus · 26.10.</b><div style="font-size:13px;margin-top:4px">Neuer Stand <b>12,4 kWh</b> liegt unter dem letzten (<b>14 872,4 kWh</b>).</div><div style="font-size:12.5px;color:#ecd9b0;margin-top:4px">Zähler getauscht oder Home Assistant zurückgesetzt?</div></div>
+ <div class="btn">Neuer Zähler ab hier</div>
+ <div class="btn s">Wert verwerfen</div>
+ <div class="c" style="margin-top:14px"><b style="font-size:14px">Strom Haus · 24.10.</b><div style="font-size:13px;margin-top:4px">Sprung um <b>+980 kWh</b> an einem Tag (üblich: 12 kWh).</div></div>
+ <div class="btn s">Trotzdem eintragen</div>
+</div></div><div class="cap">Nutzt die vorhandene Plausibilitätsprüfung. Auffällige Werte landen nie still in der Kurve.</div></div>
+
+<div><div class="ph"><div class="scr">
+ <h4>Briefkasten</h4>
+ <div class="c"><div class="r"><div>Eingetragen heute<small>5 Werte, automatisch</small></div><span class="pill g">✓</span></div>
+ <div class="r"><div>Gerade geholt<small>3 Päckchen · geöffnet</small></div><span class="pill g">✓</span></div>
+ <div class="r"><div>Nicht lesbar<small>1 Päckchen, Prüfwert falsch</small></div><span class="pill y">!</span></div></div>
+ <div style="font-size:12.5px;color:#a2a6b0;margin:8px 2px">Ein Päckchen mit falschem Prüfwert wurde nicht von deiner Home-Assistant-Kopplung erzeugt und wird nie eingetragen.</div>
+ <div class="btn s">Verwerfen</div>
+</div></div><div class="cap">Technische Ansicht für Admins (Profil › Verbindungen). Sonst sieht man nur die Kachel.</div></div>
+</div>
+
+<h3>6.4 Home Assistant · Einrichtung</h3>
+<div class="shots ha">
+<div><div class="ph"><div class="scr"><div class="hd">Familyhub hinzufügen</div><div class="in">
+ <div class="fld"><small>Kopplungscode</small>FH1-eyJ1IjoiaHR0cHM6Ly9…</div>
+ <div style="color:#777;font-size:12.5px;margin-bottom:12px">Den Code erzeugst du in der Familyhub-App unter Zähler › Verbindungen.</div>
+ <div class="b">Weiter</div></div></div></div></div>
+<div><div class="ph"><div class="scr"><div class="hd">Kanäle zuordnen</div><div class="in">
+ <div class="fld"><small>Strom Bezug</small>sensor.stromzaehler_bezug_gesamt ▾</div>
+ <div class="fld"><small>Strom Einspeisung</small>sensor.stromzaehler_einspeisung_gesamt ▾</div>
+ <div class="fld"><small>Solar Erzeugung</small>sensor.solarbank_… ▾</div>
+ <div class="fld"><small>Bank geladen / entladen</small>optional ▾</div>
+ <div class="fld"><small>Versandzeit</small>23:59 (Ortszeit)</div>
+ <div class="b">Fertig</div></div></div></div></div>
+<div><div class="ph"><div class="scr"><div class="hd">Familyhub</div><div class="in">
+ <div style="font-size:12px;color:#777;margin-bottom:4px">Geräte und Entitäten</div>
+ <div class="fld"><small>Letzter Versand</small>heute 00:00 – 5 von 5 angenommen</div>
+ <div class="fld"><small>Warteschlange</small>0 Werte</div>
+ <div class="fld"><small>Verbindung</small>verbunden</div>
+ <div style="color:#777;font-size:12.5px">Meldet bei Fehlern „unavailable“ statt falscher Zahlen.</div></div></div></div></div>
+</div>
+<p class="mu" style="text-align:center">Die Home-Assistant-Seite ist ein Entwurf; Aussehen folgt dem normalen Einrichtungsdialog von HA.</p>
+
+<h2>7 · Sicherheit und Datenschutz</h2>
+<ul>
+<li><b>Server und Sicherungen</b> enthalten nur undurchsichtige Päckchen, die nach spätestens 30 Tagen verschwinden (und sofort nach dem Eintragen).</li>
+<li><b>Token-Diebstahl</b>: kann nur Müll einwerfen (begrenzt durch Rate-Limit), nichts lesen, nichts fälschen (HMAC), und wird per Widerruf sofort wertlos.</li>
+<li><b>Server-Betreiber</b> kann weder lesen noch glaubhaft fälschen. Er könnte Päckchen <i>weglassen</i>; die App zeigt Lücken ehrlich als Lücke.</li>
+<li><b>Home Assistant selbst</b> ist der schwächste Punkt (liegt bei dir zu Hause). Dort liegt Geheimnis + öffentlicher Schlüssel + Token, aber nie ein Schlüssel, der Familyhub-Daten lesen kann.</li>
+<li><b>Kinder</b>: sehen den Bereich nie, bekommen weder Kachel noch Briefkasten (gleiche Regel wie die Zähler).</li>
+<li>Kein neuer Fremddienst, kein Cloud-Umweg über Anker oder HA-Cloud; HA sendet nur an deine Domain.</li>
+</ul>
+
+<h2>8 · Umsetzung in Paketen (grobe Schätzung)</h2>
+<table>
+<tr><th>Paket</th><th>Inhalt</th><th>Aufwand</th></tr>
+<tr><td>1 Server</td><td>Migration, Token-Verwaltung, Einwurf/Abholen/Löschen, Rate-Limits, Tests (inkl. Parallelität beim Löschen), API.md, Betreiber-Zähler (nur Anzahl)</td><td>2–3 Tage</td></tr>
+<tr><td>2 App</td><td>Briefkasten-Schlüssel im Zähler-Datensatz, Kopplungscode (QR/Text), Abholen und Öffnen (Sealed Box + HMAC), Zuordnung Kanal ↔ Zähler, Eintrag als Stand mit Marke „automatisch“, Plausibilität/Prüfliste, Doppelte zusammenführen, Oberfläche, Tests</td><td>4–5 Tage</td></tr>
+<tr><td>3 Home Assistant</td><td>Integration mit Konfigurationsdialog, Verschlüsselung, Puffer/Wiederholung, Statussensor, README (Test mit deinen echten Sensoren)</td><td>2–3 Tage</td></tr>
+<tr><td>4 Ausbau (optional)</td><td>Stündliche Werte für eine feinere Kurve, Batteriestand der Solarbank als Kachel, Hinweis „Heute wenig Sonne“</td><td>später</td></tr>
+</table>
+
+<h2>9 · Offene Punkte (brauche deine Antwort)</h2>
+<ol>
+<li><b>Welche Entitäten</b> hast du? Wie liest du den Stromzähler aus (Lesekopf, Shelly, Smart-Meter-Gateway …), und welche Sensoren liefert die Solix-Anbindung als Gesamtwerte in kWh? Eine Liste deiner <code>sensor.*</code>-Namen genügt.</li>
+<li><b>Takt</b>: reicht ein Stand pro Tag (Vorschlag), oder willst du stündliche Werte für eine genauere Tageskurve?</li>
+<li><b>HA-Installation</b>: Home Assistant OS/Supervised oder Container, und ist HACS vorhanden (sonst liefere ich die Integration als Ordner zum Hineinkopieren)?</li>
+</ol>
+<p class="mu">Kleine Detailfrage für die Umsetzung (kein Blocker): Der Server akzeptiert Zähler-Stände heute nur mit zufälligen IDs. Bei zwei gleichzeitig abholenden Geräten kann deshalb ein Tag doppelt entstehen; die App führt das beim Lesen zusammen (wie bei den Monatswerten), das Löschen im Briefkasten ist atomar und verhindert es fast immer.</p>
+
+</main></body></html>

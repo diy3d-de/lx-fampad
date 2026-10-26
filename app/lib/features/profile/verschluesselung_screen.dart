@@ -20,6 +20,7 @@ import '../../data/crypto/schluessel_speicher.dart' show SpeicherDauer;
 import '../../data/crypto/sicherheitscode.dart';
 import '../../data/crypto/vertrauen.dart';
 import '../../data/crypto/wiederherstellungstest.dart';
+import '../../data/ingest/ingest_kopplung.dart' show PostfachSpeicher;
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -158,13 +159,24 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     } on Object {
       // der Stand des Ausgangs ließ sich nicht lesen: ohne Warnung weiter (die Rückfrage unten bleibt)
     }
+    // dieses Gerät holt die Werte aus Home Assistant ab (hat den Postfach-Schlüssel): mit ihm gehen sie verloren, bis neu gekoppelt wird
+    var holtHaAb = false;
+    final uid = ref.read(authProvider).user?.id;
+    if (uid != null) {
+      try {
+        holtHaAb = await PostfachSpeicher(ref.read(schluesselSpeicherProvider)).vorhanden(uid);
+      } on Object {
+        // nicht lesbar: ohne den Zusatz weiter
+      }
+    }
     if (!mounted) return;
     final ja = await wortBestaetigen(
       context,
       titel: 'Gerät abgeben?',
       text:
           'Dein Schlüssel und alle lokalen Daten werden von diesem Gerät gelöscht, und du wirst abgemeldet. Dein Konto, deine Chats auf dem Server und deine Sicherung bleiben. '
-          'Deinen Verlauf bekommst du danach nur mit deiner Sicherung oder von einem anderen Gerät mit deinem Schlüssel wieder.',
+          'Deinen Verlauf bekommst du danach nur mit deiner Sicherung oder von einem anderen Gerät mit deinem Schlüssel wieder.'
+          '${holtHaAb ? ' Dieses Gerät holt auch die Werte aus Home Assistant ab: Home Assistant liefert danach nichts mehr, bis du neu koppelst.' : ''}',
       haken: [
         if (offen > 0)
           'Ich weiß: ${offen == 1 ? '1 noch nicht gesendete Änderung (z. B. eine Nachricht) geht' : '$offen noch nicht gesendete Änderungen (z. B. Nachrichten) gehen'} verloren. '

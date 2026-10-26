@@ -247,7 +247,8 @@ class ApiException implements Exception {
     'invalid_notice': 'Der Hinweis ist nicht gültig: 1 bis 280 Zeichen in einer Zeile, ohne Sonderzeichen.',
     'notice_link': 'Der Hinweis darf keine Links oder Webadressen enthalten.',
     'invalid_duration': 'Die gewählte Dauer ist nicht gültig. Bitte wähle sie noch einmal.',
-    'internal_error': 'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
+    'token_limit': 'Es gibt schon die höchste Zahl an Verbindungen. Trenne zuerst eine nicht mehr benutzte.',
+    'internal_error':'Auf dem Server ist ein Fehler aufgetreten. Bitte versuche es später erneut.',
   };
 }
 

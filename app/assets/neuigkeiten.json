@@ -1,4 +1,9 @@
 {
+  "0.19.0": [
+    "Home Assistant: Zählerstände (z. B. Strom und Solar) können jeden Tag automatisch aus Home Assistant in deine Zähler kommen, Ende-zu-Ende verschlüsselt. Einrichten unter Zähler › Home Assistant (nur Eltern)",
+    "Das Menü „Mehr“ und die Seitenleiste sind jetzt in Gruppen geordnet: Familie, Zuhause und Ablage. Fristen und Suche gibt es nun auch am Desktop",
+    "Platzhalter und die Glocke ohne Funktion sind entfernt"
+  ],
   "0.18.0": [
     "Termin-Farben: Jeder Termin kann jetzt eine von 11 Farben bekommen (Familie, Schule, Arbeit, Arzt, Sport, Freizeit, Haushalt, Urlaub, Besuch, Sonstiges, Rufdienst). Die Farbe wählst du im Termin unter Farbe",
     "Im Kalender filterst du über Filter nach Farben. Termine ohne Farbe zeigen weiter die Farbe der Person",

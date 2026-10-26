@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Familyhub hinzufügen",
+        "description": "Den Kopplungscode erzeugst du in der Familyhub-App (als Admin) unter Zähler › Home Assistant › Neue Verbindung koppeln. Dort tippst du auf „Code kopieren“ und fügst ihn hier ein.",
+        "data": { "kopplungscode": "Kopplungscode" },
+        "data_description": { "kopplungscode": "Beginnt mit FH1-" }
+      },
+      "bestaetigen": {
+        "title": "Server prüfen",
+        "description": "Familyhub-Server: {host}. Stimmt das? Deine Zählerstände werden (verschlüsselt) nur an diesen Server gesendet. Weicht die Adresse ab, brich ab und erzeuge den Kopplungscode neu."
+      },
+      "reauth_bestaetigen": {
+        "title": "Server prüfen",
+        "description": "Familyhub-Server: {host}. Stimmt das? Deine Zählerstände werden (verschlüsselt) nur an diesen Server gesendet. Weicht die Adresse ab, brich ab und erzeuge den Kopplungscode neu."
+      },
+      "kanaele": {
+        "title": "Kanäle zuordnen",
+        "description": "Wähle für jeden Kanal den Sensor mit dem Zählerstand (Gesamtzähler in kWh). Mindestens ein Kanal ist nötig, die anderen sind optional.",
+        "data": {
+          "strom_bezug": "Strom Bezug",
+          "strom_einspeisung": "Strom Einspeisung",
+          "solar_erzeugung": "Solar Erzeugung"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Familyhub neu koppeln",
+        "description": "Der Server hat die Verbindung abgelehnt (Token widerrufen oder ungültig). Erzeuge in der Familyhub-App einen neuen Kopplungscode und füge ihn hier ein.",
+        "data": { "kopplungscode": "Kopplungscode" }
+      }
+    },
+    "error": {
+      "code_format": "Das ist kein gültiger Kopplungscode. Er beginnt mit FH1- und muss vollständig und ohne Änderungen eingefügt werden.",
+      "code_version": "Dieser Kopplungscode hat eine unbekannte Version. Aktualisiere die Integration oder die App.",
+      "code_adresse": "Die Serveradresse im Code ist ungültig. Erlaubt ist nur https://Rechnername (ohne Pfad, ohne IP-Adresse).",
+      "code_token": "Das Token im Code ist ungültig.",
+      "code_schluessel": "Ein Schlüssel im Code hat nicht die richtige Länge.",
+      "kein_kanal": "Wähle mindestens einen Sensor aus."
+    },
+    "abort": {
+      "already_configured": "Diese Verbindung ist schon eingerichtet.",
+      "reauth_successful": "Die Verbindung wurde neu gekoppelt."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Familyhub-Einstellungen",
+        "description": "Ändere die Sensoren und die Uhrzeit des täglichen Versands (Ortszeit).",
+        "data": {
+          "strom_bezug": "Strom Bezug",
+          "strom_einspeisung": "Strom Einspeisung",
+          "solar_erzeugung": "Solar Erzeugung",
+          "versandzeit": "Versandzeit"
+        }
+      }
+    },
+    "error": {
+      "kein_kanal": "Wähle mindestens einen Sensor aus."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "letzter_versand": { "name": "Letzter Versand" },
+      "warteschlange": { "name": "Warteschlange" },
+      "verbindung": {
+        "name": "Verbindung",
+        "state": {
+          "unbekannt": "Unbekannt",
+          "verbunden": "Verbunden",
+          "ungueltig": "Ungültig",
+          "fehler": "Fehler"
+        }
+      }
+    }
+  },
+  "issues": {
+    "verbindung_ungueltig": {
+      "title": "Familyhub-Verbindung ungültig",
+      "description": "Der Server hat die Verbindung „{name}“ abgelehnt (Token widerrufen oder ungültig). Es wird nichts mehr gesendet. Erzeuge in der Familyhub-App einen neuen Kopplungscode und starte die Neukopplung unter Einstellungen › Geräte & Dienste › Familyhub."
+    }
+  },
+  "services": {
+    "jetzt_senden": {
+      "name": "Jetzt senden",
+      "description": "Liest die Sensoren jetzt aus und sendet die Stände sofort (zum Testen)."
+    }
+  }
+}

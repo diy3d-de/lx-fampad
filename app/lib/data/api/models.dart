@@ -704,6 +704,9 @@ class ServerFaehigkeiten {
 
   /// Dateiablage (`features.files`, Schalter FILES_ENABLED des Servers): erst dann bietet die App den Bereich Dateien (und Anhänge im Tresor) an. Ältere Server melden nichts: false.
   final bool files;
+
+  /// Einwurf für Home Assistant (`features.ingest`, Schalter INGEST_ENABLED): true/false laut Server; null = ein älterer Server meldet nichts (die App fragt dann mit einem Probe-Aufruf).
+  final bool? ingest;
   const ServerFaehigkeiten({
     required this.pwBackup,
     required this.authKey,
@@ -712,6 +715,7 @@ class ServerFaehigkeiten {
     this.prfBackup = false,
     this.elternWiederherstellung = false,
     this.files = false,
+    this.ingest,
   });
 
   static const keine = ServerFaehigkeiten(pwBackup: false, authKey: false, legacyPasswortLogin: true);
@@ -724,6 +728,7 @@ class ServerFaehigkeiten {
     prfBackup: f['prfBackup'] == true,
     elternWiederherstellung: f['parentRecovery'] == true,
     files: f['files'] == true,
+    ingest: f['ingest'] is bool ? f['ingest'] as bool : null,
   );
 }
 

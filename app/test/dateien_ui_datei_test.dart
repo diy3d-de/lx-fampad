@@ -395,11 +395,13 @@ void main() {
       expect(d.auswahlAnfragen, [false, true]);
     });
 
-    testWidgets('ohne Dateiablage bleibt es beim bisherigen Hinweis, keine Auswahl', (tester) async {
+    testWidgets('ohne Dateiablage gibt es die Schnellaktionen "Datei" und "Foto" nicht (statt ihrer "Aufgabe"), keinen Platzhalter-Hinweis', (tester) async {
       final d = DateiUi.neu(dateiablage: false);
       await d.start(tester, groesse: const Size(360, 900));
-      await tippe(tester, find.text('Datei'));
-      expect(find.text('Kommt in Phase 1'), findsOneWidget);
+      expect(find.text('Datei'), findsNothing);
+      expect(find.text('Foto'), findsNothing);
+      expect(find.text('Aufgabe'), findsWidgets);
+      expect(find.textContaining('Phase'), findsNothing);
       expect(d.auswahlAnfragen, isEmpty);
     });
   });

@@ -8,7 +8,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/api/models.dart' show MemberStatus, Role, UserDto;
 import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
+import 'package:lx_fampad/data/crypto/e2ee_state.dart' show cryptoProviderProvider, schluesselSpeicherProvider;
+import 'package:lx_fampad/data/crypto/schluessel_speicher.dart' show MemorySchluesselSpeicher;
+import 'package:lx_fampad/data/ingest/ingest_dienst.dart' show IngestLauf;
+import 'package:lx_fampad/data/ingest/ingest_logik.dart' show PruefGrund;
+import 'package:lx_fampad/data/ingest/ingest_state.dart';
 import 'package:lx_fampad/data/medikamente/medikament_modelle.dart';
+import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show Stand;
+import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
 import 'package:lx_fampad/data/medikamente/medikament_state.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart' show zaehlerRepositoryProvider;
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
@@ -22,8 +29,10 @@ import 'package:lx_fampad/features/suche/such_einstieg.dart' show SuchKnopf;
 import 'support/chat_ui_aufbau.dart';
 import 'support/fake_erinnerung_port.dart';
 
+import 'support/fake_crypto.dart';
 import 'support/fake_server.dart';
 import 'support/harness.dart';
+import 'support/ingest_welt.dart';
 import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
 
@@ -362,6 +371,77 @@ void main() {
         await tippe(tester, find.byTooltip('Zurück'));
         await tippe(tester, find.byTooltip('Bericht als PDF'));
         pruefe(tester, 'Zähler Bericht $skala');
+        h.dispose();
+      });
+
+      // Home Assistant (Werte automatisch abholen): Zeile auf der Zähler-Seite, Seite, Koppeln, Prüfliste, Abschnitt "Quelle" im Editor
+      Future<void> haStart(WidgetTester tester, {IngestZustand? zustand, String role = 'admin', bool altStand = false}) async {
+        final repo = ZaehlerRepoAttrappe();
+        final env = await angemeldeteUmgebung(role: role);
+        // altStand: der letzte Wert liegt über 3 Tage zurück (Karte "kein Wert")
+        final st = altStand ? [for (var i = 0; i < 4; i++) Stand(heuteTag().subtract(Duration(days: 10 - i)), 1000000 + 10000 * i)] : monatsStaende();
+        final d = datenAus([
+          ZaehlerBeispiel(zStrom, ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Strom Haus', quelle: const ZaehlerQuelle(kanal: 'strom_bezug')), st),
+          wasser(zKalt1, 'Kaltwasser Etage', gruppe: ''),
+        ]);
+        env.server.on('GET /ingest/tokens', (_) => jsonAntwort({'tokens': [{'id': 't1', 'name': 'Haus Keller', 'createdAt': '2026-10-01T10:00:00.000Z', 'lastUsedAt': null, 'revokedAt': null}]}));
+        env.server.on('POST /ingest/tokens', (req) => jsonAntwort({'token': 'fhi_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA', 'id': 't9', 'name': req.json['name'], 'createdAt': '2026-10-24T10:00:00.000Z'}));
+        env.extraOverrides.addAll([
+          erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false),
+          zaehlerTestUhr,
+          zaehlerDatenProvider.overrideWithValue(d),
+          zaehlerRepositoryProvider.overrideWithValue(repo),
+          ingestProvider.overrideWith(() => TestIngest(zustand ?? IngestZustand(geladen: true, schalter: true, postfachDa: true, letzter: IngestLauf(zeit: DateTime.now(), eingetragen: 2, wartend: 1, fremd: 1, ohneZaehler: 1), zuPruefen: [pruefEintrag(), pruefEintrag(id: 'p2', grund: PruefGrund.sprung)]))),
+          ingestVerfuegbarProvider.overrideWith((ref) async => true),
+          schluesselSpeicherProvider.overrideWithValue(MemorySchluesselSpeicher()),
+          cryptoProviderProvider.overrideWith((ref) async => FakeCryptoProvider(seed: 3)),
+        ]);
+        await starteApp(tester, env, skala: skala, groesse: const Size(360, 900));
+        await zumTab(tester, 'Zähler');
+      }
+
+      testWidgets('Zähler mit Home Assistant: Übersicht, Seite, Koppeln, Prüfliste', (tester) async {
+        final h = tester.ensureSemantics();
+        await haStart(tester);
+        pruefe(tester, 'Zähler Übersicht mit Home Assistant $skala');
+        await tippe(tester, find.text('Home Assistant'));
+        pruefe(tester, 'Home Assistant Seite $skala');
+        await tippe(tester, find.text('Neue Verbindung koppeln …'));
+        pruefe(tester, 'Home Assistant Koppeln $skala');
+        await tippe(tester, find.widgetWithText(FilledButton, 'Weiter'));
+        pruefe(tester, 'Home Assistant Kopplungscode $skala');
+        await tippe(tester, find.textContaining('QR-Code zeigen'));
+        pruefe(tester, 'Home Assistant Kopplungscode mit QR $skala');
+        await tippe(tester, find.text('Es klappt nicht?'));
+        pruefe(tester, 'Home Assistant Hilfe $skala');
+        await tippe(tester, find.text('Zurück zum Code'));
+        await tippe(tester, find.widgetWithText(FilledButton, 'Weiter: Zähler zuordnen'));
+        pruefe(tester, 'Home Assistant Rückfrage Code $skala');
+        await tippe(tester, find.text('Ja, eingegeben'));
+        pruefe(tester, 'Home Assistant Zähler zuordnen $skala');
+        await tippe(tester, find.widgetWithText(FilledButton, 'Fertig'));
+        await tippe(tester, find.text('Technische Details'));
+        pruefe(tester, 'Home Assistant Seite mit Details $skala');
+        await tippe(tester, find.textContaining('Werte warten auf dich'));
+        pruefe(tester, 'Home Assistant Prüfliste $skala');
+        h.dispose();
+      });
+
+      testWidgets('Zähler mit Home Assistant auf einem Gerät ohne Schlüssel (zweites Elternteil) und mit "kein Wert"', (tester) async {
+        final h = tester.ensureSemantics();
+        await haStart(tester, zustand: const IngestZustand(geladen: true), role: 'parent', altStand: true);
+        pruefe(tester, 'Zähler Übersicht kein Wert $skala');
+        await tippe(tester, find.widgetWithText(TextButton, 'Prüfen'));
+        pruefe(tester, 'Home Assistant anderes Gerät $skala');
+        h.dispose();
+      });
+
+      testWidgets('Zähler-Editor mit Quelle Home Assistant', (tester) async {
+        final h = tester.ensureSemantics();
+        await haStart(tester);
+        await tippe(tester, find.byTooltip('Zähler hinzufügen'));
+        await tippe(tester, find.widgetWithText(Semantics, 'Home Assistant').first);
+        pruefe(tester, 'Zähler Editor Quelle $skala');
         h.dispose();
       });
     });

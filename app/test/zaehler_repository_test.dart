@@ -9,6 +9,7 @@ import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/app_database.dart' show ZaehlerCompanion;
 import 'package:lx_fampad/data/chat/chat_ids.dart';
 import 'package:lx_fampad/data/chat/chat_krypto.dart';
+import 'package:lx_fampad/data/ingest/ingest_dienst.dart' show RepoIngestZaehler;
 import 'package:lx_fampad/data/sync/sync_store.dart' show SyncAenderung;
 import 'package:lx_fampad/data/zaehler/zaehler_logik.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
@@ -322,6 +323,49 @@ Future<void> main() async {
         await alle();
         expect(welt.alle('zaehlerstand'), hasLength(2));
         expect(await staendeLesen(rp, id), hasLength(2));
+      });
+
+      test('Home Assistant, zwei Abholgeräte: derselbe Zähler und Tag zweimal automatisch eingetragen ergibt nach dem Abgleich EINEN Stand (der zuletzt geschriebene), auf beiden Geräten gleich', () async {
+        final id = await rm.anlegen(_strom().kopie(quelle: () => const ZaehlerQuelle(kanal: 'strom_bezug', pruefen: false)));
+        gm.jetzt = gp.jetzt = DateTime.utc(2026, 10, 19, 9);
+        await alle();
+        await RepoIngestZaehler(rm).eintragen(id, _d('2026-10-18'), 1012000);
+        gp.jetzt = DateTime.utc(2026, 10, 19, 9, 5); // das zweite Gerät schreibt später
+        await RepoIngestZaehler(rp).eintragen(id, _d('2026-10-18'), 1012500);
+        await alle();
+        for (final r in [rm, rp]) {
+          final s = await RepoIngestZaehler(r).staende(id);
+          expect(s, hasLength(1));
+          expect(s.single.milli, 1012500);
+          expect(await staendeLesen(r, id), hasLength(2)); // beide Einträge liegen in der Datenbank, nur gerechnet wird mit einem
+        }
+      });
+
+      test('Home Assistant: die Quelle steht verschlüsselt im Zähler, ein automatischer Stand ist ein normaler Stand mit Herkunftsvermerk; der Server sieht nie Kanal, Quelle oder Wert', () async {
+        final id = await rm.anlegen(_strom().kopie(quelle: () => const ZaehlerQuelle(kanal: 'strom_bezug_geheim', pruefen: false)));
+        gm.jetzt = gp.jetzt = DateTime.utc(2026, 10, 19, 9);
+        await rm.standErfassen(id, datum: _d('2026-10-17'), milli: 1000000, notiz: 'von Hand');
+        await RepoIngestZaehler(rm).eintragen(id, _d('2026-10-18'), 1012345);
+        await alle();
+        for (final r in [rm, rp]) {
+          final z = (await lesen(r)).single.inhalt!;
+          expect(z.quelle, const ZaehlerQuelle(kanal: 'strom_bezug_geheim', pruefen: false));
+          expect(z.automatisch, isTrue);
+          final s = (await staendeLesen(r, id)).map((a) => a.inhalt!).toList();
+          expect(s.map((e) => e.automatisch), [false, true]);
+          expect(s.map((e) => e.milli), [1000000, 1012345]);
+          expect([for (final x in await r.staende(id)) '${tagNummer(x.tag)}:${x.milli}'], hasLength(2));
+          // der Zugriff des Dienstes sieht dieselben lesbaren Zähler und Stände
+          final zugriff = RepoIngestZaehler(r);
+          expect((await zugriff.zaehler()).keys, [id]);
+          expect(await zugriff.staende(id), hasLength(2));
+        }
+        final gesehen = serverGesehen();
+        for (final w in ['strom_bezug_geheim', 'quelle', 'kanal', '"q"', '1012345', 'pruefen']) {
+          expect(gesehen, isNot(contains(w)), reason: w);
+        }
+        // ein Tag mit Stand: der Dienst schreibt hier nichts mehr hinein (Entscheidung "schon vorhanden" liegt bei ingest_logik); der Zähler bleibt ein Zähler mit Standsrhythmus
+        await expectLater(RepoIngestZaehler(rm).eintragen(id, _d('2026-10-20'), 1), throwsA(isA<StandUngueltig>())); // Zukunft (heute ist der 19.)
       });
 
       test('Ungültige Stände: Zukunft, unmögliche Werte; Plausibilität (niedriger, Sprung, doppelter Tag) wird gemeldet, aber nicht verboten', () async {

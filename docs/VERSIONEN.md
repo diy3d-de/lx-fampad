@@ -124,3 +124,7 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 ## Schulferien-Asset (Kalender)
 
 `app/assets/kalender/schulferien_rlp.json`: Schulferien Rheinland-Pfalz 2026 bis 2029 (Weihnachten ab 22.12.2025), Quelle Ministerium für Bildung RLP (bm.rlp.de/service/ferientermine, abgerufen 21.10.2026), Abgleich Kalenderpedia; Tatsachenangaben ohne Fremdlizenz, "ohne Gewähr". Kein neues Paket.
+
+## Home-Assistant-Integration (nur Home-Assistant-Seite, nicht in der App)
+
+`homeassistant/custom_components/familyhub/` (Zähler-Werte aus Home Assistant, Abschnitt 6l): **PyNaCl 1.6.2** (`manifest.json` `requirements`, `homeassistant/requirements-test.txt`), exakt gepinnt, für Sealed Box (libsodium) und BLAKE2b-MAC. Veröffentlichung auf PyPI laut Agentenbericht 01.01.2026, im Repo nicht belegt: **Datum offen, vor Release prüfen** (Mindestalter 14 Tage). Home Assistant installiert die Bibliothek selbst; in der App und auf dem Server wird sie nicht verwendet.

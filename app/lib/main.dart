@@ -18,6 +18,7 @@ import 'data/push/push_wecker.dart';
 import 'data/push/push_state.dart';
 import 'data/sync_state.dart';
 import 'data/teilen/teilen_state.dart';
+import 'data/ingest/ingest_state.dart' show ingestProvider;
 import 'data/tresor/tresor_sperre.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/auth/invite_intake.dart';
@@ -52,7 +53,7 @@ Future<void> main(List<String> args) async {
         // laufende Antwort nicht in die geleerte Datenbank schreibt
         // der geheime E2EE-Personenschlüssel bleibt dabei im Schlüsselspeicher liegen (nur sein Zustand im Arbeitsspeicher wird verworfen); löschen kann ihn nur "Gerät abgeben"
         // unabhängig voneinander: ein Fehler beim Leeren der Datenbank darf das Verwerfen des Schlüssels im Arbeitsspeicher nie verhindern (und umgekehrt)
-        localDataWiperProvider.overrideWith((ref) => wiperVerkettet([lokaleDatenWiper(ref), e2eeSitzungWiper(ref), () async => ref.invalidate(chatKryptoProvider), () async => ref.read(teilenProvider.notifier).verwerfen(), () async => ref.invalidate(tresorSperreProvider)])),
+        localDataWiperProvider.overrideWith((ref) => wiperVerkettet([lokaleDatenWiper(ref), e2eeSitzungWiper(ref), () async => ref.invalidate(chatKryptoProvider), () async => ref.read(teilenProvider.notifier).verwerfen(), () async => ref.invalidate(tresorSperreProvider), () async => ref.invalidate(ingestProvider)])),
         // nach einem Push-Wecker: lokale Benachrichtigung über neue Chat-Nachrichten (ohne Inhalt)
         ereignisBenachrichtigerProvider.overrideWith((ref) => ref.watch(chatBenachrichtigerProvider)),
         // Abmelden meldet auch den Push-Endpunkt ab (Server und ntfy-App)

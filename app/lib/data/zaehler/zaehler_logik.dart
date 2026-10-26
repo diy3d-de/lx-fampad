@@ -91,6 +91,27 @@ List<Stand> normalisiere(Iterable<Stand> staende) {
   return [for (final k in (nachTag.keys.toList()..sort())) nachTag[k]!];
 }
 
+/// Ein Stand mit seiner Herkunft im Datenbestand: Kennung des Eintrags und Schreibzeit (ms). Zwei Geräte können für denselben Tag je einen Eintrag schreiben (die Server-IDs der Stände sind
+/// Zufalls-IDs); [standeZusammenfuehren] macht daraus einen Stand.
+class StandQuelle {
+  final String id;
+  final int zeit;
+  final Stand stand;
+  const StandQuelle(this.id, this.zeit, this.stand);
+}
+
+/// Je Tag gilt genau ein Stand: der mit der größten Schreibzeit (bei Gleichstand die größte ID, damit alle Geräte dasselbe wählen); aufsteigend nach Tag. Entspricht
+/// [monatswerteZusammenfuehren] für Zählerstände und ist unabhängig von der Reihenfolge der Eingabe.
+List<Stand> standeZusammenfuehren(Iterable<StandQuelle> eintraege) {
+  final nach = <int, StandQuelle>{};
+  for (final e in eintraege) {
+    final k = tagNummer(e.stand.tag);
+    final alt = nach[k];
+    if (alt == null || e.zeit > alt.zeit || (e.zeit == alt.zeit && e.id.compareTo(alt.id) > 0)) nach[k] = e;
+  }
+  return [for (final k in (nach.keys.toList()..sort())) nach[k]!.stand];
+}
+
 /// Ein Monatswert (Eingabeart "Monatswerte"): Verbrauch bzw. Erzeugung eines Kalendermonats in Tausendsteln; [zeit] ist die Schreibzeit (ms), [id] die des Stand-Eintrags.
 class MonatsWert {
   final int jahr;

@@ -59,7 +59,7 @@ void main() {
     final unerwartet = treffer.where((p) => !erlaubt.contains(p) && !_istDatenschicht(p)).toList();
     expect(unerwartet, isEmpty, reason: 'unerwartete Stellen binden Dateien ein');
     // die beabsichtigten Stellen sind wirklich verdrahtet
-    for (final p in ['lib/features/shell/mehr_menue.dart', 'lib/features/shell/desktop_shell.dart', 'lib/features/home/desktop_home.dart']) {
+    for (final p in ['lib/features/shell/mehr_menue.dart', 'lib/features/home/home_screen.dart', 'lib/features/home/desktop_home.dart']) {
       expect(treffer, contains(p), reason: p);
     }
   });

@@ -20,6 +20,7 @@ import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
 import 'features/medikamente/medikament_steuerung.dart';
 import 'data/dateien/datei_state.dart' show transferSteuerungProvider;
+import 'data/ingest/ingest_state.dart' show ingestSteuerungProvider;
 import 'data/tresor/tresor_steuerung.dart';
 import 'data/tresor/tresor_sperre.dart' show tresorLebenszyklusProvider;
 import 'features/zaehler/zaehler_steuerung.dart';
@@ -160,6 +161,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
     ref.watch(medikamentSteuerungProvider);
     // Zähler: Teilnehmer der Zähler-Konversation nachziehen (nur Eltern und Admins; neue Eltern bekommen den Verlauf ohne Hinweis)
     ref.watch(zaehlerSteuerungProvider);
+    // Zähler: Werte aus Home Assistant abholen (nur Eltern/Admins mit eingeschaltetem Schalter und Postfach-Schlüssel auf diesem Gerät; im Vordergrund, kein Push)
+    ref.watch(ingestSteuerungProvider);
     // Tresor: Teilnehmer der Tresor-Konversation nachziehen (nur Eltern und Admins; neue Eltern bekommen den Verlauf ohne Hinweis)
     ref.watch(tresorSteuerungProvider);
     // Tresor: sperrt beim Wechsel der App in den Hintergrund (auch wenn der Tresor gerade nicht zu sehen ist)

@@ -228,6 +228,29 @@ Future<void> main() async {
         expect(a.srv.gespeichert(fixIdAdmin), contains('"backup":"'), reason: 'die Sicherung beim Server bleibt');
       });
 
+      testWidgets('Holt dieses Gerät die Werte aus Home Assistant ab (Postfach-Schlüssel da), steht das in der Rückfrage; sonst nicht; Schlüssel und gemerkte Verbindungen werden mitgelöscht', (tester) async {
+        final a = await _aufbau();
+        await starteApp(tester, a.env, skala: skala);
+        await _einrichten(tester);
+        a.srv.sicherungEinspielen(fixIdAdmin);
+        await _zurSeite(tester);
+        await _erweitert(tester);
+        await tippeText(tester, 'Gerät abgeben – alles löschen');
+        expect(find.textContaining('Home Assistant liefert danach nichts mehr'), findsNothing);
+        await tippe(tester, find.text('Abbrechen'));
+        await a.speicher.schreiben('ingest.postfach.$fixIdAdmin', Uint8List(96));
+        await a.speicher.schreiben('ingest.tokens.$fixIdAdmin', Uint8List.fromList('["t1"]'.codeUnits));
+        await tippeText(tester, 'Gerät abgeben – alles löschen');
+        expect(find.textContaining('Home Assistant liefert danach nichts mehr, bis du neu koppelst'), findsOneWidget);
+        pruefeLayout(tester, 'Gerät abgeben mit Home Assistant');
+        await tippe(tester, find.byType(CheckboxListTile));
+        await tester.enterText(find.byType(TextField).last, 'löschen');
+        await tester.pump();
+        await tippe(tester, find.widgetWithText(TextButton, 'Gerät abgeben'));
+        expect(await a.speicher.lesen('ingest.postfach.$fixIdAdmin'), isNull);
+        expect(await a.speicher.lesen('ingest.tokens.$fixIdAdmin'), isNull);
+      });
+
       testWidgets('Quarantäne vorhanden: eigener Pflicht-Haken mit Anzahl; ohne ihn kein Abgeben; die frühen Schlüssel werden mitgelöscht', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);

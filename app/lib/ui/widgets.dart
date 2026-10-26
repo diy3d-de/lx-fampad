@@ -130,13 +130,6 @@ class EmptyState extends StatelessWidget {
       );
 }
 
-/// Hinweis für Bedienelemente, die erst in Phase 1 eine Funktion bekommen.
-void zeigePhase1Hinweis(BuildContext context) {
-  ScaffoldMessenger.of(context)
-    ..hideCurrentSnackBar()
-    ..showSnackBar(const SnackBar(content: Text('Kommt in Phase 1')));
-}
-
 /// Kapsel mit Mono-Text, z. B. "● live" (Terminal-Grün) oder "● offline" (gedämpft).
 class StatusPill extends StatelessWidget {
   final String text;

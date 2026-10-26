@@ -6,6 +6,8 @@
 //  - Monatswert (Eingabeart "Monatswerte", z. B. Balkonkraftwerk ohne Zähler): ebenfalls `a1:`, aber mit `v: 2`, Monat `m` (`YYYY-MM`), Wert `w` (Tausendstel der Einheit im Monat) und
 //    Schreibzeit `t` (Millisekunden); OHNE Datum `d`. Ältere Apps lesen `v: 2` nicht und lassen ihn weg (er erscheint dort in keiner Liste, nie als falscher Zählerstand). Der Server kennt
 //    für Stände nur Zufalls-IDs: ein Monat kann darum mehrfach vorkommen (zwei Geräte); es gilt der Eintrag mit dem größten `t` (bei Gleichstand die größte ID), siehe `monatswerteZusammenfuehren`.
+//  - Quelle "Home Assistant" (Abschnitt 6l, Tageswerte aus dem Postfach): im Zähler das optionale Feld `quelle` (Kanal, Prüfen), im Stand das optionale Feld `q: ha`. Beide nur geschrieben,
+//    wenn nicht Standard; die Version `v` bleibt 1 (ältere Apps lesen nur die ihnen bekannten Felder und ignorieren die neuen, nichts wird unlesbar).
 // Alle Mengen und Beträge sind GANZE ZAHLEN (Festkomma, keine Gleitkommafehler): Stände in Tausendstel der Einheit (1,234 kWh = 1234), Preise je Einheit in Zehntausendstel Euro
 // (0,3456 €/kWh = 3456), Gebühren und Abschläge in Cent. Der Server liest nichts davon. Unbekannte Versionen (`v` größer als [kZaehlerFormat]) und kaputte Daten ergeben `null`
 // (nicht lesbar), nie einen Absturz und nie einen Teilinhalt.
@@ -254,6 +256,41 @@ class Ablesung {
   int get hashCode => Object.hash(art, tag, monat);
 }
 
+// ---------------------------------------------------------------- Quelle (Home Assistant)
+
+/// Woher die Stände dieses Zählers kommen: von Hand (Standard, nichts im Klartext) oder automatisch aus Home Assistant (Tageswerte eines Kanals, Abschnitt 6l). Ältere Apps kennen
+/// das Feld `quelle` nicht und ignorieren es (der Zähler bleibt lesbar, die Version `v` bleibt 1); schreibt eine ältere App den Zähler neu, fällt die Quelle weg (der Zähler wird dann
+/// wieder von Hand geführt, die Päckchen warten beim Server).
+class ZaehlerQuelle {
+  /// Fester Kanalname laut docs/HA-FORMAT.md (`[a-z0-9_]{1,40}`).
+  final String kanal;
+
+  /// Auffällige Werte (Stand kleiner als der letzte, Sprung) erst zur Prüfung vorlegen statt sie einzutragen.
+  final bool pruefen;
+  const ZaehlerQuelle({required this.kanal, this.pruefen = true});
+
+  static final RegExp kanalForm = RegExp(r'^[a-z0-9_]{1,40}$');
+
+  bool get gueltig => kanalForm.hasMatch(kanal);
+
+  Map<String, dynamic> toJson() => {'art': 'ha', 'kanal': kanal, 'pruefen': pruefen};
+
+  /// Unbekannte Art oder kaputte Angaben ergeben null (der Zähler bleibt lesbar und gilt als "von Hand").
+  static ZaehlerQuelle? fromJson(Object? v) {
+    if (v is! Map || v['art'] != 'ha' || v['kanal'] is! String) return null;
+    final p = v.containsKey('pruefen') ? v['pruefen'] : true;
+    if (p is! bool) return null;
+    final q = ZaehlerQuelle(kanal: v['kanal'] as String, pruefen: p);
+    return q.gueltig ? q : null;
+  }
+
+  @override
+  bool operator ==(Object other) => other is ZaehlerQuelle && other.kanal == kanal && other.pruefen == pruefen;
+
+  @override
+  int get hashCode => Object.hash(kanal, pruefen);
+}
+
 // ---------------------------------------------------------------- Zähler
 
 /// Ein Zähler des Haushalts. Unveränderlich; [kopie] ersetzt einzelne Felder.
@@ -302,6 +339,9 @@ class ZaehlerInhalt {
   /// Eingabeart: Zählerstand (Standard) oder Monatswerte.
   final ZaehlerModus modus;
 
+  /// Automatische Quelle (Home Assistant); null = von Hand. Nur mit der Eingabeart Zählerstand (Monatswerte und Home Assistant lassen sich nicht kombinieren).
+  final ZaehlerQuelle? quelle;
+
   ZaehlerInhalt({
     required this.art,
     required this.name,
@@ -323,6 +363,7 @@ class ZaehlerInhalt {
     this.ort = '',
     this.warnProzent,
     this.modus = ZaehlerModus.stand,
+    this.quelle,
   }) : einheit = einheit ?? art.einheit,
        kosten = kosten ?? art.kostenStandard,
        preise = List.unmodifiable(preise);
@@ -330,6 +371,9 @@ class ZaehlerInhalt {
   bool get archiviert => archiviertAb != null;
 
   bool get monatlich => modus == ZaehlerModus.monat;
+
+  /// Kommen die Stände automatisch aus Home Assistant?
+  bool get automatisch => quelle != null;
 
   /// Ist der Inhalt in sich stimmig (alles, was [zaehlerLesen] beim Lesen verlangt)? Ein ungültiger Inhalt wird nie geschrieben.
   bool get gueltig {
@@ -349,6 +393,7 @@ class ZaehlerInhalt {
     if (anlagenkosten != null && (anlagenkosten! < 0 || anlagenkosten! > 100 * kMaxGeldCent)) return false;
     if (einspeiseVerguetung != null && (einspeiseVerguetung! < 0 || einspeiseVerguetung! > kMaxPreisAp)) return false;
     if (warnProzent != null && (warnProzent! < 1 || warnProzent! > 1000)) return false;
+    if (quelle != null && (!quelle!.gueltig || modus == ZaehlerModus.monat)) return false;
     return true;
   }
 
@@ -373,6 +418,7 @@ class ZaehlerInhalt {
     String? ort,
     int? Function()? warnProzent,
     ZaehlerModus? modus,
+    ZaehlerQuelle? Function()? quelle,
   }) => ZaehlerInhalt(
     art: art ?? this.art,
     name: name ?? this.name,
@@ -394,6 +440,7 @@ class ZaehlerInhalt {
     ort: ort ?? this.ort,
     warnProzent: warnProzent != null ? warnProzent() : this.warnProzent,
     modus: modus ?? this.modus,
+    quelle: quelle != null ? quelle() : this.quelle,
   );
 
   Map<String, dynamic> toJson() => {
@@ -418,6 +465,7 @@ class ZaehlerInhalt {
     if (ort.isNotEmpty) 'ort': ort,
     if (warnProzent != null) 'warn': warnProzent,
     if (modus != ZaehlerModus.stand) 'modus': modus.wire,
+    if (quelle != null) 'quelle': quelle!.toJson(),
   };
 
   @override
@@ -510,6 +558,7 @@ ZaehlerInhalt? zaehlerLesen(String klar) {
     ort: ort,
     warnProzent: warn,
     modus: modus,
+    quelle: d.containsKey('quelle') ? ZaehlerQuelle.fromJson(d['quelle']) : null,
   );
   return z.gueltig ? z : null;
 }
@@ -542,10 +591,13 @@ class StandInhalt {
   /// Nur Monatswert: Monat (`YYYY-MM`) und Schreibzeit in Millisekunden (für "der letzte Eintrag je Monat gewinnt").
   final String? monat;
   final int zeit;
-  const StandInhalt({required this.datum, required this.milli, this.notiz = '', this.marke}) : monat = null, zeit = 0;
+
+  /// Automatisch aus Home Assistant eingetragen (Feld `q`: `ha`); sonst von Hand. Ältere Apps ignorieren das Feld und lesen den Stand wie jeden anderen.
+  final bool automatisch;
+  const StandInhalt({required this.datum, required this.milli, this.notiz = '', this.marke, this.automatisch = false}) : monat = null, zeit = 0;
 
   /// Ein Monatswert für [monat] (`YYYY-MM`).
-  StandInhalt.monatswert({required String this.monat, required this.milli, required this.zeit, this.notiz = ''}) : datum = '$monat-01', marke = null;
+  StandInhalt.monatswert({required String this.monat, required this.milli, required this.zeit, this.notiz = ''}) : datum = '$monat-01', marke = null, automatisch = false;
 
   bool get istMonatswert => monat != null;
 
@@ -559,7 +611,7 @@ class StandInhalt {
 
   StandInhalt kopie({String? datum, int? milli, String? notiz, StandMarke? Function()? marke}) => istMonatswert
       ? StandInhalt.monatswert(monat: monat!, milli: milli ?? this.milli, zeit: zeit, notiz: notiz ?? this.notiz)
-      : StandInhalt(datum: datum ?? this.datum, milli: milli ?? this.milli, notiz: notiz ?? this.notiz, marke: marke != null ? marke() : this.marke);
+      : StandInhalt(datum: datum ?? this.datum, milli: milli ?? this.milli, notiz: notiz ?? this.notiz, marke: marke != null ? marke() : this.marke, automatisch: automatisch);
 
   Map<String, dynamic> toJson() => istMonatswert
       ? {'v': kMonatswertFormat, 'm': monat, 'w': milli, 't': zeit, if (notiz.isNotEmpty) 'n': notiz}
@@ -569,6 +621,7 @@ class StandInhalt {
           'w': milli,
           if (notiz.isNotEmpty) 'n': notiz,
           if (marke != null) 'k': marke!.wire,
+          if (automatisch) 'q': 'ha',
         };
 
   @override
@@ -622,7 +675,7 @@ StandInhalt? standLesen(String klar) {
   final w = _ganz(d['w'], 0, kMaxStandMilli);
   final marke = d.containsKey('k') ? StandMarke.tolerant(d['k']) : null;
   if (datum is! String || w == null || (d.containsKey('k') && marke == null)) return null;
-  final s = StandInhalt(datum: datum, milli: w, notiz: notiz, marke: marke);
+  final s = StandInhalt(datum: datum, milli: w, notiz: notiz, marke: marke, automatisch: d['q'] == 'ha');
   return s.gueltig ? s : null;
 }
 

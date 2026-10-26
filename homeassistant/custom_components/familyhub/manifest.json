@@ -1,0 +1,13 @@
+{
+  "domain": "familyhub",
+  "name": "Familyhub",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://familyhub.lx-labs.dev",
+  "integration_type": "service",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://familyhub.lx-labs.dev",
+  "requirements": ["PyNaCl==1.6.2"],
+  "version": "0.1.0"
+}

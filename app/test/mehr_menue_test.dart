@@ -71,9 +71,10 @@ void main() {
     Map<String, String> gespeichert = const {},
     bool muell = false,
     bool wetter = false,
+    String rolle = 'admin',
     void Function(TestUmgebung env)? vorher,
   }) async {
-    final env = await angemeldeteUmgebung();
+    final env = await angemeldeteUmgebung(role: rolle);
     speicher = MemoryFeiertageSpeicher('nein', {...gespeichert});
     env.speicher = speicher;
     final List<Override> o = [if (muell) muellProvider.overrideWith(_FesterMuell.new), if (wetter) wetterProvider.overrideWith(_FestesWetter.new)];
@@ -151,10 +152,10 @@ void main() {
       expect(c.read(shellTabProvider), 0);
     });
 
-    testWidgets('Standard: Listen, Fristen, Standort, Suche (kein Müll, kein Wetter ohne Server); Zeile Profil; Medikamente nach Fristen, keine Dateien', (tester) async {
+    testWidgets('Standard: Gruppen Familie, Zuhause, Ablage (kein Müll, kein Wetter ohne Server); Zeile Profil; keine Dateien', (tester) async {
       await start(tester);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'zaehler', 'tresor', 'standort', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'zaehler', 'medikamente', 'tresor', 'suche']);
       for (final t in ['Listen', 'Fristen', 'Standort', 'Suche', 'Profil', 'Konto, Sicherheit, Einstellungen']) {
         expect(find.descendant(of: blatt(), matching: find.text(t)), findsOneWidget, reason: t);
       }
@@ -163,23 +164,23 @@ void main() {
       }
     });
 
-    testWidgets('Müll und Wetter erscheinen nur, wenn der Server sie anbietet (Reihenfolge: Bereiche, Fristen, Medikamente, Müll, Wetter, Standort, Suche)', (tester) async {
+    testWidgets('Müll und Wetter erscheinen nur, wenn der Server sie anbietet (Reihenfolge innerhalb der Gruppen)', (tester) async {
       await start(tester, muell: true, wetter: true);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'zaehler', 'tresor', 'muell', 'wetter', 'standort', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'muell', 'wetter', 'zaehler', 'medikamente', 'tresor', 'suche']);
     });
 
     testWidgets('nur Müll: ohne Wetter', (tester) async {
       await start(tester, muell: true);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'medikamente', 'zaehler', 'tresor', 'muell', 'standort', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'muell', 'zaehler', 'medikamente', 'tresor', 'suche']);
     });
 
     testWidgets('eigene Leiste: die nicht gewählten Bereiche stehen im Blatt', (tester) async {
       await start(tester, gespeichert: {'leiste_bereiche': 'start,kalender,chat,listen'});
       expect(tester.widgetList<NavigationDestination>(find.byType(NavigationDestination)).map((d) => d.label), ['Start', 'Kalender', 'Chat', 'Listen', 'Mehr']);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['aufgaben', 'fristen', 'medikamente', 'zaehler', 'tresor', 'standort', 'suche']);
+      expect(kachelIds(tester), ['aufgaben', 'fristen', 'standort', 'zaehler', 'medikamente', 'tresor', 'suche']);
     });
 
     for (final skala in [1.0, 2.0]) {
@@ -187,7 +188,7 @@ void main() {
         await start(tester, skala: skala, muell: true, wetter: true);
         await mehrOeffnen(tester);
         expect(tester.takeException(), isNull);
-        for (final id in ['listen', 'fristen', 'medikamente', 'zaehler', 'tresor', 'muell', 'wetter', 'standort', 'suche']) {
+        for (final id in ['listen', 'fristen', 'standort', 'muell', 'wetter', 'zaehler', 'medikamente', 'tresor', 'suche']) {
           final s = tester.getSize(find.byKey(ValueKey('mehr:$id')));
           expect(s.width, greaterThanOrEqualTo(44), reason: id);
           expect(s.height, greaterThanOrEqualTo(44), reason: id);
@@ -208,6 +209,41 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('Profil').hitTestable(), findsOneWidget);
     });
+  });
+
+  group('Gruppen', () {
+    List<String> ueberschriften() => [
+      for (final g in MehrGruppe.values)
+        if (find.descendant(of: blatt(), matching: find.text(g.label.toUpperCase())).evaluate().isNotEmpty) g.label,
+    ];
+
+    testWidgets('Eltern: drei Überschriften, Einträge liegen in ihrer Gruppe, Reihenfolge von oben nach unten', (tester) async {
+      await start(tester, muell: true, wetter: true);
+      await mehrOeffnen(tester);
+      expect(ueberschriften(), ['Familie', 'Zuhause', 'Ablage']);
+      double y(String t) => tester.getTopLeft(find.descendant(of: blatt(), matching: find.text(t))).dy;
+      expect(y('FAMILIE'), lessThan(y('Listen')));
+      expect(y('Standort'), lessThan(y('ZUHAUSE')));
+      expect(y('ZUHAUSE'), lessThan(y('Müll')));
+      expect(y('Medikamente'), lessThan(y('ABLAGE')));
+      expect(y('ABLAGE'), lessThan(y('Tresor')));
+    });
+
+    testWidgets('Kind: kein Zähler, kein Tresor; die Gruppe Ablage bleibt mit der Suche', (tester) async {
+      await start(tester, rolle: 'child');
+      await mehrOeffnen(tester);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'medikamente', 'suche']);
+      expect(ueberschriften(), ['Familie', 'Zuhause', 'Ablage']);
+    });
+
+    for (final skala in [1.5, 2.0]) {
+      testWidgets('360 px, Textskala $skala: Überschriften und Kacheln ohne Überlauf', (tester) async {
+        await start(tester, skala: skala, muell: true, wetter: true);
+        await mehrOeffnen(tester);
+        expect(tester.takeException(), isNull);
+        expect(ueberschriften(), ['Familie', 'Zuhause', 'Ablage']);
+      });
+    }
   });
 
   group('Navigation', () {
@@ -364,6 +400,39 @@ void main() {
       await start(tester, skala: 2.0);
       await oeffnen(tester);
       pruefeLayout(tester, 'Untere Leiste, Skala 2.0');
+    });
+  });
+
+  group('Desktop-Seitenleiste in Gruppen', () {
+    testWidgets('dieselben Einträge in derselben Reihenfolge wie das Blatt, mit Fristen und Suche', (tester) async {
+      final h = tester.ensureSemantics();
+      await start(tester, groesse: const Size(1200, 1400), muell: true, wetter: true);
+      // Überschriften sind Text in Großbuchstaben (MonoLabel), Einträge die Beschriftung der Bedienhilfe
+      double y(String t) => tester.getTopLeft(t == t.toUpperCase() ? find.text(t) : find.bySemanticsLabel(t).first).dy;
+      final reihe = ['Start', 'Kalender', 'Chat', 'FAMILIE', 'Listen', 'Aufgaben', 'Fristen', 'Standort', 'ZUHAUSE', 'Müll', 'Wetter', 'Zähler', 'Medikamente', 'ABLAGE', 'Tresor', 'Suche'];
+      for (var i = 1; i < reihe.length; i++) {
+        expect(y(reihe[i]), greaterThan(y(reihe[i - 1])), reason: '${reihe[i - 1]} vor ${reihe[i]}');
+      }
+      h.dispose();
+    });
+
+    testWidgets('Fristen stellt den Filter ein und wählt Aufgaben; Suche öffnet im Inhaltsbereich', (tester) async {
+      final (_, c) = await start(tester, groesse: const Size(1200, 1400));
+      await tester.tap(find.bySemanticsLabel('Fristen'));
+      await warte(tester);
+      expect(c.read(shellTabProvider), kAufgabenTab);
+      expect(c.read(aufgabenAnsichtProvider).filter, AufgabeFilter.fristen);
+      await tester.tap(find.bySemanticsLabel('Suche'));
+      await warte(tester);
+      expect(find.byType(SuchScreen), findsOneWidget);
+      expect(find.text('lx-familyhub'), findsOneWidget);
+    });
+
+    testWidgets('Kind: kein Zähler, kein Tresor in der Seitenleiste', (tester) async {
+      await start(tester, groesse: const Size(1200, 1400), rolle: 'child');
+      expect(find.bySemanticsLabel('Zähler'), findsNothing);
+      expect(find.bySemanticsLabel('Tresor'), findsNothing);
+      expect(find.bySemanticsLabel('Suche'), findsWidgets);
     });
   });
 
