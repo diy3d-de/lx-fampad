@@ -306,3 +306,13 @@ Color appStandFarbe(AppStand s) => switch (s) {
 
 /// Dauer der Anmeldesperre: "noch 45 s" bzw. "noch 2 Min".
 String sperreText(int sekunden) => sekunden < 90 ? 'noch $sekunden s' : 'noch ${(sekunden / 60).ceil()} Min';
+
+/// Untertitel der Zeile "Einwurf" (Home Assistant): feste Texte zu festen Zuständen, nie ein Text vom Server.
+String ingestInfo(BetriebIngest i) {
+  if (!i.aktiv) return 'ausgeschaltet (INGEST_ENABLED)';
+  return switch (i.stufe) {
+    BetriebStufe.warn => 'Postfach fast voll oder Päckchen warten seit über 7 Tagen',
+    BetriebStufe.ok => 'bereit',
+    _ => 'Zustand unbekannt',
+  };
+}

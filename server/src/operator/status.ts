@@ -1,11 +1,12 @@
 // GET /api/v1/admin/status: Zustand des Servers für den Betreiber, nur lesend. Nie Geheimnisse, Standorte, Chat-Inhalte oder Schlüssel
 // (nur Zahlen, Zeitpunkte, Versionen, Schalterstände), nie Pfade oder Fehlertexte. Was ohne root nicht lesbar ist, heißt "unbekannt".
 import { readFileSync } from 'node:fs';
-import { and, count, eq, gt, isNotNull, isNull, max, sql } from 'drizzle-orm';
+import { and, count, eq, gt, isNotNull, isNull, max, min, sql } from 'drizzle-orm';
 import type { AuthContext } from '../auth/context.js';
 import type { Config } from '../config.js';
-import { devices, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
+import { devices, ingestInbox, ingestTokens, memberships, pushEndpoints, sessions, users } from '../db/schema.js';
 import { familyUsage } from '../files/usage.js';
+import { MAX_OPEN_BOXES } from '../ingest/service.js';
 import { PROTOCOL_VERSION, SERVER_VERSION } from '../version.js';
 import type { WeatherService } from '../weather/service.js';
 import { NAS_STATUS_MAX_BYTES, parseNasStatus, type NasStatus } from './nas-status.js';
@@ -52,7 +53,40 @@ export interface OperatorStatus {
   updates: UpdateStatus;
   /** Dateiablage: nur Zahlen (belegt, reserviert, Kontingent, Blobs, laufende Uploads), nie Namen oder Typen; null = aus oder nicht messbar. */
   files: { enabled: boolean; usedBytes: number | null; reservedBytes: number | null; quotaBytes: number | null; blobs: number | null; uploadsOpen: number | null };
+  /** Einwurf (Home Assistant): nur Zahlen und Zeiten, nie Token, Päckchen, Namen oder Werte; null = nicht messbar. `state` ist warn bei Postfach über 80 % der Grenze oder ältestem Päckchen über 7 Tagen. */
+  ingest: IngestStatus;
   features: { pwBackup: boolean; legacyPasswordLogin: boolean; weather: boolean; push: boolean; map: { available: boolean; sizeBytes: number | null } };
+}
+
+export interface IngestStatus {
+  enabled: boolean;
+  state: Level;
+  tokensActive: number | null;
+  inboxCount: number | null;
+  inboxLimit: number;
+  oldestAgeHours: number | null;
+  lastDropAt: string | null;
+}
+
+function emptyIngest(enabled: boolean): IngestStatus {
+  return { enabled, state: enabled ? 'unknown' : 'off', tokensActive: null, inboxCount: null, inboxLimit: MAX_OPEN_BOXES, oldestAgeHours: null, lastDropAt: null };
+}
+
+async function collectIngestStatus(ctx: AuthContext, familyId: string, now: Date, enabled: boolean): Promise<IngestStatus> {
+  try {
+    const [t] = await ctx.db.select({ n: count() }).from(ingestTokens).where(and(eq(ingestTokens.familyId, familyId), isNull(ingestTokens.revokedAt)));
+    const [last] = await ctx.db.select({ at: max(ingestTokens.lastUsedAt) }).from(ingestTokens).where(eq(ingestTokens.familyId, familyId));
+    const [b] = await ctx.db.select({ n: count(), oldest: min(ingestInbox.receivedAt) }).from(ingestInbox).where(eq(ingestInbox.familyId, familyId));
+    const inboxCount = b?.n ?? 0;
+    const oldest = b?.oldest ? new Date(b.oldest) : null;
+    const oldestAgeHours = oldest ? Math.max(0, Math.round(((now.getTime() - oldest.getTime()) / 3_600_000) * 10) / 10) : null;
+    const lastAt = last?.at ? new Date(last.at) : null;
+    const warn = inboxCount > MAX_OPEN_BOXES * 0.8 || (oldestAgeHours !== null && oldestAgeHours > 7 * 24);
+    const state: Level = !enabled && inboxCount === 0 ? 'off' : warn ? 'warn' : 'ok';
+    return { enabled, state, tokensActive: t?.n ?? 0, inboxCount, inboxLimit: MAX_OPEN_BOXES, oldestAgeHours, lastDropAt: lastAt ? lastAt.toISOString() : null };
+  } catch {
+    return emptyIngest(enabled);
+  }
 }
 
 /** Push-Wecker (Betrieb Paket 3): nur Zähler und Zeiten, nie Endpunkte, Themen oder Fehlertexte. */
@@ -278,6 +312,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
   const nas = parseNasStatus(nasText, now);
   const filesUsage = config.files.enabled && dbOk ? await familyUsage(ctx.db, familyId, config.files.quotaBytes).catch(() => null) : null;
   const push: PushStatus = dbOk ? await collectPushStatus(ctx, familyId, now).catch(() => EMPTY_PUSH) : EMPTY_PUSH;
+  const ingest: IngestStatus = dbOk ? await collectIngestStatus(ctx, familyId, now, config.ingest.enabled) : emptyIngest(config.ingest.enabled);
   const appInfo = manifestText ? parseManifest(manifestText) : null;
   const updates: UpdateStatus = dbOk
     ? await collectUpdateStatus(ctx, familyId, appInfo?.version ?? null).catch(() => emptyUpdates(appInfo?.version ?? null, config.minAppVersion))
@@ -345,6 +380,7 @@ export async function collectStatus(deps: StatusDeps, familyId: string): Promise
       blobs: filesUsage?.blobs ?? null,
       uploadsOpen: filesUsage?.uploadsOpen ?? null,
     },
+    ingest,
     features: {
       pwBackup: config.e2eePwBackup,
       legacyPasswordLogin: config.auth.legacyPasswordLogin,

@@ -33,6 +33,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Datei-Übertragungen: Vordergrunddienst vom Typ "dataSync" (nur Zahlen in der Benachrichtigung, nie Dateinamen), damit große Uploads und Downloads beim Wechsel in den Hintergrund nicht abbrechen -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Systemdialog "Im Hintergrund ohne Einschränkung ausführen?" (Akkuoptimierung nur für diese App, die Person bestätigt selbst); ohne das stoppt der Akkuschutz
          vieler Hersteller (One UI) das Teilen bei gesperrtem Bildschirm -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
@@ -81,6 +83,11 @@
             android:name=".StandortService"
             android:exported="false"
             android:foregroundServiceType="location" />
+        <!-- Datei-Übertragungen: Vordergrunddienst, nur intern erreichbar; beendet sich selbst ohne Lebenszeichen der App und beim Wischen der App -->
+        <service
+            android:name=".TransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

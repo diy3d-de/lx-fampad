@@ -723,7 +723,8 @@ class _KartenFlaecheState extends ConsumerState<_KartenFlaeche> with SingleTicke
                     : MapLibreMap(
                         options: MapOptions(
                           initStyle: snap.data!,
-                          initCenter: _kamera?.center ?? const Geographic(lon: 7.9741, lat: 50.5612),
+                          // ohne Vorgängerin: Mitte des Kartenbereichs (Standardansicht, ohne Standortabfrage)
+                          initCenter: _kamera?.center ?? Geographic(lon: (bereich.west + bereich.ost) / 2, lat: (bereich.sued + bereich.nord) / 2),
                           initZoom: _kamera?.zoom ?? 8,
                           initBearing: _kamera?.bearing ?? 0,
                           initPitch: _kamera?.pitch ?? 0,

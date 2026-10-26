@@ -99,6 +99,7 @@ describe('Warn-Bedingungen (rein)', () => {
       push: EMPTY_PUSH,
       updates: emptyUpdates(null, '0.1.0'),
       files: { enabled: false, usedBytes: null, reservedBytes: null, quotaBytes: null, blobs: null, uploadsOpen: null },
+      ingest: { enabled: false, state: 'off', tokensActive: null, inboxCount: null, inboxLimit: 3000, oldestAgeHours: null, lastDropAt: null },
       disk: { totalBytes: 100, freeBytes: 50, usedPercent: 50 },
       certificate: { validTo: new Date(now.getTime() + 60 * DAY).toISOString(), daysLeft: 60 },
       counts: { members: 1, devices: 1, pushDevices: 1, activeSessions: 1 },

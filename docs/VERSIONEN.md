@@ -127,4 +127,4 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 
 ## Home-Assistant-Integration (nur Home-Assistant-Seite, nicht in der App)
 
-`homeassistant/custom_components/familyhub/` (Zähler-Werte aus Home Assistant, Abschnitt 6l): **PyNaCl 1.6.2** (`manifest.json` `requirements`, `homeassistant/requirements-test.txt`), exakt gepinnt, für Sealed Box (libsodium) und BLAKE2b-MAC. Veröffentlichung auf PyPI laut Agentenbericht 01.01.2026, im Repo nicht belegt: **Datum offen, vor Release prüfen** (Mindestalter 14 Tage). Home Assistant installiert die Bibliothek selbst; in der App und auf dem Server wird sie nicht verwendet.
+`homeassistant/custom_components/familyhub/` (Zähler-Werte aus Home Assistant, Abschnitt 6l): **PyNaCl 1.6.2** (`manifest.json` `requirements`, `homeassistant/requirements-test.txt`), exakt gepinnt, für Sealed Box (libsodium) und BLAKE2b-MAC. Veröffentlicht auf PyPI am 01.01.2026 (geprüft am 26.10.2026, Mindestalter 14 Tage erfüllt). Home Assistant installiert die Bibliothek selbst; in der App und auf dem Server wird sie nicht verwendet.

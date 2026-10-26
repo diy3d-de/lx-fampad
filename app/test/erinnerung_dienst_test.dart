@@ -13,6 +13,7 @@ import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_planung.dart';
 import 'package:lx_fampad/data/sync_state.dart' show lokaleDatenWiper;
+import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/calendar/erinnerung_steuerung.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
@@ -194,6 +195,26 @@ void main() {
     port.tippe('unsinn');
     port.tippe('termin|../../x|2026-11-03'); // keine UUID
     expect(c.read(shellTabProvider), 0);
+  });
+
+  test('Tagesbriefing: Standard aus; eingeschaltet kommt am Morgen eine neutrale Benachrichtigung, ausgeschaltet räumt sie auf, der Tipp öffnet die Startseite', () async {
+    await env.db.into(env.db.termine).insert(zeile('t1', min: null, start: '2026-10-20T12:30:00Z', ende: '2026-10-20T13:30:00Z'));
+    await ruhe();
+    expect(port.letzte ?? const <GeplanteErinnerung>[], isEmpty, reason: 'ohne Schalter nichts');
+    final n = c.read(briefingEinstellungenProvider.notifier);
+    await n.morgensSetzen(true);
+    await bis(() => (port.letzte ?? const []).isNotEmpty, grund: 'Planung des Tagesbriefings');
+    final e = port.letzte!.single;
+    expect(e.zeit, DateTime.utc(2026, 10, 20, 5)); // 07:00 Berlin (Sommerzeit)
+    expect(e.text, 'Heute: 1 Termin');
+    expect(e.titel, 'Heute im Überblick');
+    expect(e.payload, 'briefing');
+    expect(e.text + e.titel, isNot(contains('Termin t1')));
+    c.read(shellTabProvider.notifier).waehlen(kKalenderTab);
+    port.tippe('briefing');
+    expect(c.read(shellTabProvider), 0);
+    await n.morgensSetzen(false);
+    await bis(() => (port.letzte ?? [e]).isEmpty, grund: 'Aufräumen nach Ausschalten');
   });
 
   test('Plugin scheitert: Zustand gilt nicht als gesetzt, ein einmaliger Wiederholversuch holt es nach', () async {

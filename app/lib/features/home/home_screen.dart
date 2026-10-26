@@ -22,6 +22,7 @@ import '../calendar/geburtstage_karte.dart';
 import '../calendar/countdown_karte.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
+import '../tagesbriefing/briefing_karte.dart' show BriefingStartKarte;
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
 import '../tasks/aufgabe_editor.dart' show aufgabeEditorOeffnen;
@@ -122,6 +123,7 @@ Widget _kachel(String id) => switch (id) {
   'countdown' => const CountdownKarte(),
   'aufgaben' => const _AufgabenKarte(),
   'fristen' => const FristenStartKarte(),
+  'tagesbriefing' => const BriefingStartKarte(),
   'medikamente' => const MedikamenteStartKarte(),
   'zaehler' => const ZaehlerStartKarte(),
   'muell' => const MuellStartKarte(),
