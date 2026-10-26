@@ -6,6 +6,7 @@ import 'package:lx_fampad/data/standort/standort_dienst.dart';
 import 'package:lx_fampad/data/standort/standort_einstellungen.dart';
 import 'package:lx_fampad/data/standort/standort_modelle.dart';
 import 'package:lx_fampad/data/standort/standort_port.dart';
+import 'package:lx_fampad/features/karte/karte_config.dart';
 import 'package:lx_fampad/features/karte/karte_verfuegbar.dart';
 import 'package:lx_fampad/features/standort/standort_karte.dart';
 
@@ -101,6 +102,7 @@ void main() {
     bool verfuegbar = true,
     _Port? port,
     StandortKartenBuilder? karte,
+    bool? kartendatei,
   }) async {
     final env = await angemeldeteUmgebung(role: role);
     umgebung = env;
@@ -114,7 +116,9 @@ void main() {
     });
     steuerung = _TestSteuerung(zustand);
     // die echte Karte fragt die Kartendatei auf dem Server ab: hier "gibt es nicht" (404)
-    if (karte == standortKartenStandard) env.extraOverrides.add(karteDateiProvider.overrideWith((ref) async => null));
+    if (karte != null) {
+      env.extraOverrides.add(karteDateiProvider.overrideWith((ref) async => kartendatei == true ? KartenBereich.westerburg175 : null));
+    }
     env.standortKarte = karte;
     env.standortPort = verfuegbar ? (port ?? _Port()) : const KeinStandortPort();
     env.extraOverrides.addAll([
@@ -138,7 +142,7 @@ void main() {
     for (final t in ['15 Minuten', '1 Stunde', '8 Stunden', 'Bis ich beende']) {
       expect(find.text(t), findsOneWidget);
     }
-    expect(find.text('Niemand teilt gerade'), findsWidgets);
+    expect(find.text('Gerade teilt niemand seinen Standort.'), findsOneWidget);
     expect(find.textContaining('Ende-zu-Ende verschlüsselt'), findsOneWidget);
   });
 
@@ -245,6 +249,34 @@ void main() {
     await oeffnen(tester);
     expect(find.text('KARTE 1 4'), findsOneWidget);
     expect(bekommen!.single.userId, fixIdKind);
+  });
+
+  for (final skala in [1.0, 1.5]) {
+    testWidgets('Kartendatei da, niemand teilt: Karte wird gebaut (ohne Nadeln), ruhiger Hinweis steht darunter (360 px, Textskala $skala)', (tester) async {
+      List<GeteiltePosition>? bekommen;
+      await start(
+        tester,
+        skala: skala,
+        kartendatei: true,
+        karte: (context, positionen, mitglieder) {
+          bekommen = positionen;
+          return const SizedBox(height: 200, child: Center(child: Text('KARTE')));
+        },
+      );
+      await oeffnen(tester);
+      expect(find.text('KARTE'), findsOneWidget);
+      expect(bekommen, isEmpty);
+      expect(find.text('Gerade teilt niemand seinen Standort.'), findsOneWidget);
+      expect(find.text('Standort teilen'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  testWidgets('Keine Kartendatei, niemand teilt: keine Karte, nur der Hinweis (Rückfall wie bisher)', (tester) async {
+    await start(tester, kartendatei: false, karte: (context, positionen, mitglieder) => const Text('KARTE'));
+    await oeffnen(tester);
+    expect(find.text('KARTE'), findsNothing);
+    expect(find.text('Gerade teilt niemand seinen Standort.'), findsOneWidget);
   });
 
   testWidgets('Echte Karte ohne Kartendatei auf dem Server: Hinweis "Karte noch nicht eingerichtet", die Liste bleibt', (tester) async {

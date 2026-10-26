@@ -23,6 +23,7 @@ import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
 import '../chat/chat_krypto_ui.dart' show personKryptoHindernis;
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
+import '../karte/karte_verfuegbar.dart';
 import 'standort_karte.dart';
 
 class StandortScreen extends ConsumerStatefulWidget {
@@ -166,6 +167,8 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
     final gefiltert = filterNachDistanz(alle, eigene, einst.distanz);
     final liste = gefiltert.sichtbar;
     final karte = ref.watch(standortKartenBuilderProvider);
+    // Kartendatei da (Bereich bekannt): die Karte steht auch ohne Freigaben; ohne Datei bleibt es bei der Liste
+    final kartendatei = karte != null && ref.watch(karteDateiProvider).value != null;
     final mitPosition = [for (final p in liste) if (p.hatPosition) p];
 
     return _huelle(
@@ -208,14 +211,15 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
           const SizedBox(height: 24),
           const MonoLabel('Familie'),
           const SizedBox(height: 8),
-          if (karte != null && (mitPosition.isNotEmpty || st.eigene != null && st.phase == StandortPhase.teilt)) ...[
+          // die Karte ist immer da (ohne Kartendatei zeigt sie selbst den Rückfall); ohne Freigaben bleibt sie ohne Nadeln
+          if (karte != null && (mitPosition.isNotEmpty || eigene != null || kartendatei)) ...[
             karte(context, mitPosition, namen),
             const SizedBox(height: 12),
           ],
           if (alle.isNotEmpty) ...[_DistanzAuswahl(filter: einst.distanz, eigeneBekannt: eigene != null, ausgeblendet: gefiltert.ausgeblendet), const SizedBox(height: 12)],
           if (alle.isEmpty)
             const LxCard(
-              child: EmptyState(icon: Icons.location_off_outlined, title: 'Niemand teilt gerade', hint: 'Wenn jemand aus der Familie seinen Standort teilt, siehst du ihn hier.'),
+              child: EmptyState(icon: Icons.location_off_outlined, title: 'Gerade teilt niemand seinen Standort.', hint: 'Teile deinen Standort oben oder warte, bis jemand aus der Familie teilt, dann siehst du ihn hier.'),
             )
           else if (liste.isEmpty)
             const LxCard(
