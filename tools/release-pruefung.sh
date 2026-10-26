@@ -67,6 +67,18 @@ fi
 grep -q 'android.appwidget.provider' "$manifest" || { echo "FEHLER: android.appwidget.provider (Widget-Beschreibung) fehlt im Release-Manifest" >&2; fehler=1; }
 grep -q 'android.appwidget.action.APPWIDGET_UPDATE' "$manifest" || { echo "FEHLER: APPWIDGET_UPDATE fehlt im Release-Manifest" >&2; fehler=1; }
 
+# Datei-Uebertragungen: Vordergrunddienst nur intern (nicht exportiert), Typ dataSync, Berechtigung vorhanden
+manifest_flach="$(tr -d '\r' < "$manifest" | tr '\n' ' ')"
+transfer_dienst="$(printf '%s' "$manifest_flach" | grep -Eo '<service[^>]*dev\.lx_labs\.fampad\.TransferService"[^>]*>' | head -1)"
+[ -n "$transfer_dienst" ] || transfer_dienst="$(printf '%s' "$manifest_flach" | grep -Eo '<service[^>]*android:name="[^"]*TransferService"[^>]*>' | head -1)"
+if [ -z "$transfer_dienst" ]; then
+  echo "FEHLER: Dienst TransferService fehlt im Release-Manifest (Datei-Uebertragungen im Hintergrund)" >&2; fehler=1
+else
+  printf '%s' "$transfer_dienst" | grep -q 'android:exported="false"' || { echo "FEHLER: TransferService ist nicht auf exported=false gesetzt" >&2; fehler=1; }
+  printf '%s' "$transfer_dienst" | grep -q 'android:foregroundServiceType="dataSync"' || { echo "FEHLER: TransferService hat nicht den Typ dataSync" >&2; fehler=1; }
+fi
+grep -q 'android.permission.FOREGROUND_SERVICE_DATA_SYNC' "$manifest" || { echo "FEHLER: FOREGROUND_SERVICE_DATA_SYNC fehlt im Release-Manifest" >&2; fehler=1; }
+
 # Teilen aus anderen Apps: nur Text (ACTION_SEND mit text/plain); keine Mehrfachauswahl und kein anderer MIME-Typ im Filter
 manifest_zeilen="$(tr -d '\r' < "$manifest" | tr '\n' ' ' | sed 's#</intent-filter>#&\n#g')"
 if ! printf '%s\n' "$manifest_zeilen" | grep 'android.intent.action.SEND"' | grep -q 'mimeType="text/plain"'; then

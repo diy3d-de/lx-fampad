@@ -68,8 +68,8 @@ String transferFehlerText(String? code) => switch (code) {
   _ => 'Die Übertragung hat nicht geklappt.',
 };
 
-/// Vordergrunddienst für größere Stapel (Android, Typ `dataSync`): hält die App am Leben, solange Übertragungen laufen, und zeigt eine dauerhafte Benachrichtigung OHNE Namen und Inhalte
-/// ("n Dateien werden übertragen"). Die Schnittstelle ist fertig; die Android-Seite (Dienstklasse, Berechtigung `FOREGROUND_SERVICE_DATA_SYNC`, Benachrichtigungskanal) folgt mit der Oberfläche.
+/// Vordergrunddienst (Android, Typ `dataSync`): hält die App am Leben, solange Übertragungen aktiv sind, und zeigt eine dauerhafte Benachrichtigung OHNE Namen und Inhalte
+/// ("Übertragung läuft" / "n Übertragungen", Prozent). Android-Seite: `TransferService.kt`/`TransferKanal.kt`, Dart-Seite `transfer_hintergrund_android.dart` (bedingter Import).
 abstract interface class TransferHintergrundPort {
   /// Beginnt den Vordergrunddienst (idempotent).
   Future<void> starten({required int anzahl});

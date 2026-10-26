@@ -42,6 +42,7 @@ class MainActivity : FlutterActivity() {
     private var startWidgetZiel: String? = null
     private var standort: StandortKanal? = null
     private var heute: HeuteKanal? = null
+    private var transfer: TransferKanal? = null
 
     companion object {
         /** Zuletzt von Dart gewünschter Zustand von FLAG_SECURE; als Klassenvariable, damit eine neu erstellte Activity ihn kennt. */
@@ -114,6 +115,8 @@ class MainActivity : FlutterActivity() {
     override fun cleanUpFlutterEngine(flutterEngine: FlutterEngine) {
         standort?.abbauen(neuAufbau = isChangingConfigurations)
         standort = null
+        transfer?.abbauen(neuAufbau = isChangingConfigurations)
+        transfer = null
         super.cleanUpFlutterEngine(flutterEngine)
     }
 
@@ -253,6 +256,8 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         // Standort teilen (Vordergrunddienst, Berechtigungen, Ereignisse): StandortKanal.kt
         standort = StandortKanal(this).also { it.einrichten(flutterEngine) }
+        // Datei-Übertragungen (Vordergrunddienst dataSync, nur Zahlen): TransferKanal.kt
+        transfer = TransferKanal(this).also { it.einrichten(flutterEngine) }
         // Widget "Heute" (Zusammenfassung schreiben, Tipp-Ziel): HeuteWidget.kt
         heute = HeuteKanal(applicationContext).also {
             it.einrichten(flutterEngine)

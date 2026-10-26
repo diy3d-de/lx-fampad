@@ -31,6 +31,7 @@ import 'datei_logik.dart';
 import 'datei_modelle.dart';
 import 'datei_ort.dart';
 import 'datei_repository.dart';
+import 'transfer_hintergrund_plattform.dart';
 import 'transfer_modelle.dart';
 import 'tus_client.dart';
 import 'upload_quelle.dart';
@@ -50,9 +51,8 @@ Future<Uint8List?> standardThumbErzeuger(Uint8List quelle) async {
   }
 }
 
-/// Ab so vielen Byte (Rest aller aktiven Übertragungen) oder so vielen Übertragungen verlangt der Dienst den Vordergrunddienst.
-const int kHintergrundAbBytes = 20 * 1024 * 1024;
-const int kHintergrundAbAnzahl = 3;
+/// Abstand, in dem der Dienst dem Vordergrunddienst ein Lebenszeichen gibt (die Android-Seite beendet sich selbst, wenn es länger ausbleibt).
+const Duration kHintergrundLebenszeichen = Duration(seconds: 30);
 
 class TransferDienst {
   final AppDatabase db;
@@ -101,6 +101,7 @@ class TransferDienst {
   bool _scannt = false;
   bool _nochmal = false;
   bool _hgAktiv = false;
+  Timer? _hgTakt;
   final Map<String, int> _netzVersuche = {};
 
   // ------------------------------------------------------------------ Lesen
@@ -329,13 +330,10 @@ class TransferDienst {
       await _aufraeumenQuelle(id);
     }
     _abschluesse.clear();
-    if (_hgAktiv) {
-      _hgAktiv = false;
-      try {
-        await hintergrund.beenden();
-      } on Object {
-        // der Dienst selbst endet mit dem Prozess
-      }
+    try {
+      await _hintergrundBeenden();
+    } on Object {
+      // der Dienst selbst endet mit dem Prozess bzw. durch seinen Abbruch-Timeout
     }
   }
 
@@ -406,29 +404,39 @@ class TransferDienst {
     _timer = Timer(warte.isNegative ? Duration.zero : warte, () => unawaited(_anstossen()));
   }
 
-  /// Vordergrunddienst für größere Stapel: ab [kHintergrundAbBytes] Restgröße oder [kHintergrundAbAnzahl] aktiven Übertragungen; beendet, wenn nichts mehr aktiv ist.
+  /// Vordergrunddienst (Android): läuft, solange mindestens eine Übertragung aktiv ist (läuft, schließt ab oder wartet ohne Wartezeit), und endet, sobald keine mehr aktiv ist.
+  /// Übertragungen in einer Wartezeit nach einem Fehler halten ihn nicht (nie hängen bleiben). Solange er läuft, gibt ein Takt Lebenszeichen und frischt die Anzeige auf.
   void _hintergrundPflegen() {
     unawaited(() async {
       try {
         final l = await (db.select(db.transfers)..where((t) => t.zustand.isIn(['wartet', 'laeuft', 'abschliessen']))).get();
-        final rest = l.fold<int>(0, (s, z) => s + (z.groesse - z.uebertragen));
-        final gesamt = l.fold<int>(0, (s, z) => s + z.groesse);
-        if (l.isEmpty) {
-          if (_hgAktiv) {
-            _hgAktiv = false;
-            await hintergrund.beenden();
-          }
+        final aktiv = l.where((z) => z.zustand != 'wartet' || z.naechsterVersuch == null).toList();
+        if (aktiv.isEmpty || _beendet) {
+          await _hintergrundBeenden();
           return;
         }
-        if (!_hgAktiv && !_beendet && (rest >= kHintergrundAbBytes || l.length >= kHintergrundAbAnzahl)) {
+        final rest = aktiv.fold<int>(0, (s, z) => s + (z.groesse - z.uebertragen));
+        final gesamt = aktiv.fold<int>(0, (s, z) => s + z.groesse);
+        final prozent = gesamt <= 0 ? 0 : (100 - (rest * 100 ~/ gesamt)).clamp(0, 100);
+        if (!_hgAktiv) {
           _hgAktiv = true;
-          await hintergrund.starten(anzahl: l.length);
+          // ohne echten Dienst (Web, Desktop) braucht es kein Lebenszeichen
+          if (hintergrund is! KeinTransferHintergrund) _hgTakt ??= Timer.periodic(kHintergrundLebenszeichen, (_) => _hintergrundPflegen());
+          await hintergrund.starten(anzahl: aktiv.length);
         }
-        if (_hgAktiv) await hintergrund.aktualisieren(anzahl: l.length, prozent: gesamt <= 0 ? 0 : (100 - (rest * 100 ~/ gesamt)).clamp(0, 100));
+        await hintergrund.aktualisieren(anzahl: aktiv.length, prozent: prozent);
       } on Object {
         // die Anzeige des Hintergrunddienstes darf eine Übertragung nie stören
       }
     }());
+  }
+
+  Future<void> _hintergrundBeenden() async {
+    _hgTakt?.cancel();
+    _hgTakt = null;
+    if (!_hgAktiv) return;
+    _hgAktiv = false;
+    await hintergrund.beenden();
   }
 
   // ------------------------------------------------------------------ Ein Lauf
@@ -728,8 +736,8 @@ final dateiOrtProvider = Provider<DateiOrt>((ref) => DateiOrt.standard());
 
 final dateiCacheDienstProvider = Provider<DateiCacheDienst>((ref) => DateiCacheDienst(db: ref.watch(appDatabaseProvider), ort: ref.watch(dateiOrtProvider)));
 
-/// Hintergrunddienst (Android-Vordergrunddienst): standardmäßig keiner; die Android-Seite überschreibt ihn.
-final transferHintergrundProvider = Provider<TransferHintergrundPort>((ref) => const KeinTransferHintergrund());
+/// Hintergrunddienst: auf Android der Vordergrunddienst (dataSync), sonst keiner (bedingter Import).
+final transferHintergrundProvider = Provider<TransferHintergrundPort>((ref) => transferHintergrundStandard());
 
 final transferDienstProvider = Provider<TransferDienst>((ref) {
   final dienst = TransferDienst(
