@@ -1655,7 +1655,7 @@ void main() {
     schritt('Step-up per Passkey: Optionen kommen an (Konto ohne Passkey: nur Fehler, kein Absturz)');
     await expectLater(
       admin.api.stepUpPasskeyOptionen(),
-      throwsA(isA<ApiException>().having((e) => e.code, 'code', 'no_passkey').having((e) => e.message, 'message', contains('Passkey'))),
+      throwsA(isA<ApiException>().having((e) => e.code, 'code', 'no_passkey').having((e) => e.message, 'message', contains('Anmelden ohne Passwort'))),
     );
 
     schritt('Rolle ändern widerruft Sitzungen der Person: Kind wird zu Elternteil, seine App merkt es und meldet ab');
