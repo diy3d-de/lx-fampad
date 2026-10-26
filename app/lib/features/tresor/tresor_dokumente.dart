@@ -143,8 +143,8 @@ class _TresorDokumenteState extends ConsumerState<TresorDokumente> {
         children: [
           Row(
             children: [
-              const Expanded(child: MonoLabel('// dokumente')),
-              Text('$anzahl von $kMaxAnhaengeJeEintrag', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              const Expanded(child: MonoLabel('Dokumente')),
+              Text('$anzahl von $kMaxAnhaengeJeEintrag', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             ],
           ),
           const SizedBox(height: 8),
@@ -164,7 +164,7 @@ class _TresorDokumenteState extends ConsumerState<TresorDokumente> {
             label: Text(_beschaeftigt ? 'Wird vorbereitet …' : 'Dokument anhängen'),
             style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
           ),
-          if (voll) const Padding(padding: EdgeInsets.only(top: 6), child: Text('Mehr Dokumente passen nicht an diesen Eintrag.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted))),
+          if (voll) const Padding(padding: EdgeInsets.only(top: 6), child: Text('Mehr Dokumente passen nicht an diesen Eintrag.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted))),
           const SizedBox(height: 10),
           const TresorHinweis(titel: 'Anhänge sind verschlüsselt', text: 'Anhänge werden auf deinem Gerät verschlüsselt, bevor sie hochgeladen werden. Der Server sieht weder Namen noch Inhalt. Änderungen an Dokumenten gelten sofort.', icon: Icons.lock_outline),
         ],
@@ -219,7 +219,7 @@ class _AnhangZeile extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              Text(meta, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                              Text(meta, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                             ],
                           ),
                         ),
@@ -287,7 +287,7 @@ class _UploadZeile extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(upload.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                          Text('${groesseText(upload.groesse)} · $text', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                          Text('${groesseText(upload.groesse)} · $text', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                         ],
                       ),
                     ),

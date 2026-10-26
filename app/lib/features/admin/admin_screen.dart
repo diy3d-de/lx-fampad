@@ -139,7 +139,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
       '${m.name} zurückholen?',
       '${m.name} bekommt den Zugang zurück und meldet sich neu an. Schlüssel und Sicherungen sind unverändert da. '
           'Zuständigkeiten und Chat-Teilnahmen kommen nicht zurück: Du nimmst ${m.name} wieder in Gruppen auf, und die Familie bestätigt die Person im Chat wie jede neue Person. '
-          'Empfehlung: Führe danach „Zugang zurücksetzen“ für ${m.name} aus. Das erneuert alle Anmeldedaten und Wiederherstellungscodes, falls das Konto zwischendurch in falsche Hände geraten ist.',
+          'Empfehlung: Führe danach „Zugang zurücksetzen“ für ${m.name} aus. Das erneuert alle Anmeldedaten und Notfall-Codes, falls das Konto zwischendurch in falsche Hände geraten ist.',
       'Zurückholen',
       gefaehrlich: false,
     );
@@ -294,7 +294,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
                 '${m.displayName} bekommt einen Link und legt damit ein neues Passwort fest. '
                 'Zur Sicherheit braucht die Person dafür auch den Code aus ihrer Authenticator-App: Du selbst kannst das Konto damit nicht übernehmen. '
                 'Die App von ${m.displayName} muss aktuell sein (mit einer alten App klappt der Link nicht und zeigt „ungültig“ oder verlangt „Zugang zurücksetzen“). '
-                'Authenticator, Passkeys und Wiederherstellungscodes bleiben. Der Chat-Verlauf bleibt nur erhalten, wenn ${m.displayName} ein Gerät mit dem eigenen Schlüssel oder den Wiederherstellungsschlüssel hat. Alle Geräte von ${m.displayName} werden erst abgemeldet, wenn das neue Passwort gesetzt ist. '
+                'Authenticator, Passkeys und Notfall-Codes bleiben. Der Chat-Verlauf bleibt nur erhalten, wenn ${m.displayName} ein Gerät mit dem eigenen Schlüssel oder den Wiederherstellungsschlüssel hat. Alle Geräte von ${m.displayName} werden erst abgemeldet, wenn das neue Passwort gesetzt ist. '
                 '${m.displayName} sieht den Vorgang in den Sicherheitsereignissen und bekommt eine Benachrichtigung.',
                 style: const TextStyle(color: kTextMuted, height: 1.4),
               ),
@@ -387,13 +387,13 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
           if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
           if (liste == null && laeuft) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
           if (wartend.isNotEmpty) ...[
-            const MonoLabel('// wartet auf freigabe', color: kWarn),
+            const MonoLabel('Wartet auf Freigabe', color: kWarn),
             const SizedBox(height: 8),
             for (final m in wartend) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id], passwortResetDa: _passwortResetDa),
             const SizedBox(height: 12),
           ],
           if (liste != null) ...[
-            MonoLabel('// mitglieder (${aktiv.length})'),
+            MonoLabel('Mitglieder (${aktiv.length})'),
             const SizedBox(height: 8),
             for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id], passwortResetDa: _passwortResetDa),
             if (aktiv.isEmpty) const EmptyState(icon: Icons.group_outlined, title: 'Keine Mitglieder', hint: 'Lade jemanden ein.'),
@@ -401,7 +401,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
           // Soft-Delete: entfernte Mitglieder, die noch zurückgeholt werden können (nur wenn es welche gibt)
           if (_entfernte != null && _entfernte!.mitglieder.isNotEmpty) ...[
             const SizedBox(height: 12),
-            MonoLabel('// kürzlich entfernt (${_entfernte!.mitglieder.length})', color: kTextMuted),
+            MonoLabel('Kürzlich entfernt (${_entfernte!.mitglieder.length})', color: kTextMuted),
             const SizedBox(height: 4),
             Text(
               'Schlüssel und Sicherungen liegen noch ${_entfernte!.aufbewahrungTage} Tage nach dem Entfernen beim Server. Danach wird alles endgültig gelöscht. Die E-Mail-Adresse bleibt bis dahin belegt: Eine Registrierung mit ihr geht erst nach dem Zurückholen oder dem endgültigen Löschen.',
@@ -442,7 +442,7 @@ class _EntferntKarte extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               'entfernt am ${_tag(m.entferntAm)} · endgültig gelöscht am ${_tag(m.loeschtAm)}',
-              style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
             ),
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Zurückholen', icon: Icons.undo, onPressed: onZurueck),
@@ -493,7 +493,7 @@ class _MitgliedKarte extends StatelessWidget {
                 children: [
                   Text(bin ? '${m.displayName} (du)' : m.displayName, style: const TextStyle(fontWeight: FontWeight.w600)),
                   if (m.email != null)
-                    Text(m.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted), overflow: TextOverflow.ellipsis),
+                    Text(m.email!, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted), overflow: TextOverflow.ellipsis),
                   const SizedBox(height: 4),
                   Wrap(spacing: 6, runSpacing: 4, children: [...rollenPillen(m.role, m.familyRole), if (wartet) const RollenPille('wartet', farbe: kWarn), if (passwortModus == PasswortModus.legacy) const RollenPille('altes passwort-verfahren', farbe: kWarn)]),
                 ],
@@ -614,7 +614,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
           if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
           if (liste == null && laeuft) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
           if (liste != null) ...[
-            MonoLabel('// einladungen (${liste.length})'),
+            MonoLabel('Einladungen (${liste.length})'),
             const SizedBox(height: 8),
             if (liste.isEmpty) const EmptyState(icon: Icons.mail_outline, title: 'Keine Einladungen', hint: 'Erstelle eine, um jemanden einzuladen.'),
             for (final i in liste)
@@ -642,7 +642,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
                             const SizedBox(height: 6),
                             Text(
                               'gültig bis ${df.format(i.expiresAt.toLocal())}',
-                              style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                              style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                             ),
                           ],
                         ),

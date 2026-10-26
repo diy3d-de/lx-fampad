@@ -115,7 +115,7 @@ class _AnsichtState extends ConsumerState<_Ansicht> {
     final i = widget.eintrag.inhalt!;
     final geaendert = tresorGeaendertText(i.geaendert);
     return AuthSeite(
-      label: '// ${i.kategorieAnzeige}',
+      label: i.kategorieAnzeige,
       titel: i.titel,
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -132,7 +132,7 @@ class _AnsichtState extends ConsumerState<_Ansicht> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const MonoLabel('// notiz', color: kTextMuted),
+                const MonoLabel('Notiz', color: kTextMuted),
                 const SizedBox(height: 6),
                 Semantics(label: 'Notiz: ${i.notiz}', excludeSemantics: true, child: Text(i.notiz, style: const TextStyle(height: 1.4))),
               ],
@@ -146,7 +146,7 @@ class _AnsichtState extends ConsumerState<_Ansicht> {
           child: Row(
             children: [
               const Expanded(child: Text('Zuletzt geändert', style: TextStyle(color: kTextMuted))),
-              Text(geaendert ?? 'unbekannt', style: const TextStyle(fontFamily: kFontMono, fontSize: 12)),
+              Text(geaendert ?? 'unbekannt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12)),
             ],
           ),
         ),
@@ -229,7 +229,7 @@ class _FeldZeileState extends ConsumerState<_FeldZeile> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(f.bezeichnung, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, letterSpacing: 0.6, color: kTextMuted)),
+                  Text(f.bezeichnung, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, letterSpacing: 0.6, color: kTextMuted)),
                   const SizedBox(height: 2),
                   wert,
                 ],

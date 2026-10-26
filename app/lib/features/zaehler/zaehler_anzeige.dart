@@ -52,7 +52,7 @@ String zaehlerFehlerText(Object e) => switch (e) {
   StandUngueltig f => f.meldung,
   ZaehlerFehler f => f.meldung,
   VerschluesselungNichtBereit v => v.meldung,
-  SchluesselFehlt _ => 'Für eine Person ist die Verschlüsselung noch nicht eingerichtet. Sie muss sich einmal anmelden und sie einrichten.',
+  SchluesselFehlt _ => 'Für eine Person ist der Nachrichten-Schutz noch nicht eingerichtet. Sie muss sich einmal anmelden und ihn einrichten.',
   ArgumentError _ => 'Die Eingaben sind nicht stimmig.',
   _ => 'Das hat gerade nicht geklappt. Versuche es gleich noch einmal.',
 };

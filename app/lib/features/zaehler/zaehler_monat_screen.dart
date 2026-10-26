@@ -91,7 +91,7 @@ class _ZaehlerMonatScreenState extends ConsumerState<ZaehlerMonatScreen> {
     final r = id == null ? null : daten.reihe(id);
     if (!daten.darf || !daten.geladen || r == null || !r.monatlich) {
       return AuthSeite(
-        label: '// neu',
+        label: 'Neu',
         titel: 'Monatswert',
         maxBreite: kMaxContentWidth,
         kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Hier gibt es gerade keinen Zähler mit Monatswerten.', fehler: false)],
@@ -127,7 +127,7 @@ class _ZaehlerMonatScreenState extends ConsumerState<ZaehlerMonatScreen> {
       geaendert: () => _wert.text.trim().isNotEmpty && (!widget.bearbeiten || _wert.text.trim() != (vorhanden == null ? '' : mengeText(vorhanden.milli, kuerzen: true))),
       aenderungen: Listenable.merge([_wert, _notiz]),
       child: AuthSeite(
-        label: widget.bearbeiten ? '// ändern' : '// neu',
+        label: widget.bearbeiten ? 'Ändern' : 'Neu',
         titel: 'Monatswert',
         maxBreite: kMaxContentWidth,
         fussleiste: FilledButton(
@@ -138,7 +138,7 @@ class _ZaehlerMonatScreenState extends ConsumerState<ZaehlerMonatScreen> {
         kinder: [
           if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
           if (aktiv.length > 1 && !widget.bearbeiten) ...[
-            const MonoLabel('// zähler'),
+            const MonoLabel('Zähler'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -161,7 +161,7 @@ class _ZaehlerMonatScreenState extends ConsumerState<ZaehlerMonatScreen> {
             Row(children: [Icon(zaehlerSymbol(r.art), color: zaehlerFarbe(r.art)), const SizedBox(width: 8), Expanded(child: Text(r.name, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)))]),
             const SizedBox(height: 14),
           ],
-          const MonoLabel('// monat'),
+          const MonoLabel('Monat'),
           const SizedBox(height: 6),
           Semantics(
             label: 'Monat des Werts: ${monatTitel(m.jahr, m.monat)}${m == laufend ? ', laufender Monat' : ''}. Ändern',
@@ -192,7 +192,7 @@ class _ZaehlerMonatScreenState extends ConsumerState<ZaehlerMonatScreen> {
             autofocus: widget.bearbeiten,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-            style: const TextStyle(fontFamily: kFontMono, fontSize: 24, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 24, fontWeight: FontWeight.w700),
             onChanged: (_) => setState(() => _bestaetigt = false),
             decoration: InputDecoration(
               labelText: '$wort im Monat in $einheit',
@@ -264,7 +264,7 @@ class _Zeile extends StatelessWidget {
       children: [
         Expanded(child: Text(label, style: const TextStyle(color: kTextMuted))),
         const SizedBox(width: 12),
-        Flexible(child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w600))),
+        Flexible(child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w600))),
       ],
     ),
   );

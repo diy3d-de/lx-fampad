@@ -84,7 +84,7 @@ void main() {
     expect(find.textContaining('seit 5 Tagen überfällig'), findsOneWidget);
     expect(find.textContaining('in 10 Tagen'), findsOneWidget);
     expect(find.textContaining('in 7 Monaten'), findsOneWidget);
-    expect(find.text('jährlich'), findsNWidgets(3));
+    expect(find.text('Jährlich'), findsNWidgets(3));
     expect(find.text('Neue Frist'), findsOneWidget);
     expect(find.text('Nach Fälligkeit'), findsNothing, reason: 'Fristen sind immer nach Ablauf sortiert');
     pruefeLayout(tester, 'Fristen');
@@ -168,7 +168,7 @@ void main() {
     await start(tester, tab: 'Start', vorher: seed);
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
     await warte(tester);
-    expect(find.text('// FRISTEN'), findsOneWidget);
+    expect(labelFinder('Fristen'), findsOneWidget);
     expect(find.byType(FristenStartKarte), findsOneWidget);
     Finder inKarte(String t) => find.descendant(of: find.byType(FristenStartKarte), matching: find.text(t));
     expect(inKarte('Versicherung'), findsOneWidget);
@@ -188,7 +188,7 @@ void main() {
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
     await warte(tester);
     expect(find.byType(FristenStartKarte), findsNothing);
-    expect(find.text('// FRISTEN'), findsNothing);
+    expect(labelFinder('Fristen'), findsNothing);
   });
 
   for (final skala in [1.0, 1.5, 2.0]) {
@@ -203,7 +203,7 @@ void main() {
   testWidgets('Desktop: Kachel "Fristen" im Raster, Tippen öffnet die Ansicht "Fristen"', (tester) async {
     await start(tester, tab: 'Start', groesse: const Size(1440, 900), vorher: seed);
     expect(find.byType(DesktopHome), findsOneWidget);
-    expect(find.text('// FRISTEN'), findsOneWidget);
+    expect(labelFinder('Fristen'), findsOneWidget);
     await tippe(tester, find.descendant(of: find.byType(FristenStartKarte), matching: find.text('Versicherung')));
     expect(find.byType(TasksScreen), findsOneWidget);
     expect(find.text('Normale Aufgabe'), findsNothing);

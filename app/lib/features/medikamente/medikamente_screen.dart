@@ -62,7 +62,7 @@ class MedikamenteScreen extends ConsumerWidget {
       style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
     );
     if (!eingebettet) {
-      return AuthSeite(label: '// ${kopfzeilenDatum()}', titel: 'Medikamente', maxBreite: kMaxContentWidth, fussleiste: neu, kinder: kinder);
+      return AuthSeite(label: kopfzeilenDatum(), titel: 'Medikamente', maxBreite: kMaxContentWidth, fussleiste: neu, kinder: kinder);
     }
     return Material(
       type: MaterialType.transparency,
@@ -107,7 +107,7 @@ class MedikamenteScreen extends ConsumerWidget {
     return [
       Row(
         children: [
-          Expanded(child: Text(a.gesamt == 0 ? 'Heute nichts geplant' : '${a.erledigt} von ${a.gesamt} erledigt', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted))),
+          Expanded(child: Text(a.gesamt == 0 ? 'Heute nichts geplant' : '${a.erledigt} von ${a.gesamt} erledigt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted))),
         ],
       ),
       const SizedBox(height: 10),
@@ -119,7 +119,7 @@ class MedikamenteScreen extends ConsumerWidget {
         const SizedBox(height: 10),
       ],
       if (a.bedarf.isNotEmpty) ...[
-        const MonoLabel('// bei bedarf', color: kTextMuted),
+        const MonoLabel('Bei Bedarf', color: kTextMuted),
         const SizedBox(height: 6),
         for (final e in a.bedarf) _BedarfZeile(eintrag: e, daten: daten),
         const SizedBox(height: 10),
@@ -182,7 +182,7 @@ class _WarnKarte extends StatelessWidget {
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.10), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.10), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(18)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -287,9 +287,9 @@ class _SlotZeile extends ConsumerWidget {
     return Container(
           margin: const EdgeInsets.only(bottom: 6),
           decoration: BoxDecoration(
-            color: kSurface.withValues(alpha: 0.7),
-            border: Border.all(color: faellig || st == SlotStatus.verpasst ? (st == SlotStatus.verpasst ? kDanger : kAccent).withValues(alpha: 0.7) : kBorder),
-            borderRadius: BorderRadius.circular(14),
+            color: kSurface,
+            border: Border.all(color: faellig || st == SlotStatus.verpasst ? (st == SlotStatus.verpasst ? kDanger : kAccent).withValues(alpha: 0.7) : Colors.transparent),
+            borderRadius: BorderRadius.circular(18),
           ),
           child: Row(
             children: [
@@ -298,7 +298,7 @@ class _SlotZeile extends ConsumerWidget {
                 label: slot.erledigt ? 'Einnahme zurücknehmen: $titel' : 'Als genommen abhaken: $titel',
                 child: InkWell(
                   key: ValueKey('med-haken:${slot.eintrag.id}:${slot.slot.slot.schluessel}'),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(18),
                   onTap: () => unawaited(_abhaken(context, ref)),
                   child: SizedBox(
                     width: 56,
@@ -327,7 +327,7 @@ class _SlotZeile extends ConsumerWidget {
                   onTap: () => unawaited(medikamentDetailOeffnen(context, slot.eintrag.id)),
                   child: InkWell(
                   key: ValueKey('med-zeile:${slot.eintrag.id}:${slot.slot.slot.schluessel}'),
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(18),
                   onTap: () => unawaited(medikamentDetailOeffnen(context, slot.eintrag.id)),
                   onLongPress: () => unawaited(_menue(context, ref)),
                   child: ConstrainedBox(
@@ -345,7 +345,7 @@ class _SlotZeile extends ConsumerWidget {
                             crossAxisAlignment: WrapCrossAlignment.center,
                             children: [
                               Text('$person · $statusText', style: TextStyle(fontSize: 12, color: statusFarbe == kTextMuted ? kTextMuted : statusFarbe)),
-                              if (vorrat != null) Text('VORRAT ${vorrat <= 0 ? 'LEER' : '$vorrat T.'}', style: const TextStyle(fontFamily: kFontMono, fontSize: 10, color: kWarn)),
+                              if (vorrat != null) Text('Vorrat ${vorrat <= 0 ? 'leer' : '$vorrat T.'}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, color: kWarn)),
                             ],
                           ),
                         ],
@@ -374,7 +374,7 @@ class _BedarfZeile extends ConsumerWidget {
     final titel = titelText(m);
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
-      decoration: BoxDecoration(color: kSurface.withValues(alpha: 0.7), border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(18)),
       child: Row(
         children: [
           Expanded(
@@ -383,7 +383,7 @@ class _BedarfZeile extends ConsumerWidget {
               label: '$titel, $person, bei Bedarf. Details',
               excludeSemantics: true,
               child: InkWell(
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(18),
                 onTap: () => unawaited(medikamentDetailOeffnen(context, eintrag.id)),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(minHeight: 56),
@@ -441,7 +441,7 @@ class _NichtLesbarZeile extends StatelessWidget {
     child: Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: kSurface.withValues(alpha: 0.5), border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(color: kSurface.withValues(alpha: 0.5), borderRadius: BorderRadius.circular(18)),
       child: Row(
         children: [
           const Icon(Icons.lock_outline, size: 18, color: kTextMuted),
@@ -485,7 +485,7 @@ class _AllePlaeneState extends State<_AllePlaene> {
               constraints: const BoxConstraints(minHeight: 48),
               child: Row(
                 children: [
-                  Expanded(child: MonoLabel('// alle medikamente · ${lesbar.length}', color: kTextMuted)),
+                  Expanded(child: MonoLabel('Alle Medikamente · ${lesbar.length}', color: kTextMuted)),
                   Icon(_offen ? Icons.expand_less : Icons.expand_more, color: kTextMuted),
                 ],
               ),

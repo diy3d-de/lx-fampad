@@ -178,8 +178,8 @@ class StandortState {
 }
 
 /// Meldungen für die Oberfläche (feste Sätze, nie Servertexte).
-const _kMeldungKeinSchluessel = 'Richte zuerst die Verschlüsselung ein (Profil, Verschlüsselung). Ohne sie lässt sich der Standort nicht verschlüsselt teilen.';
-const _kMeldungKeineEmpfaenger = 'Keine der gewählten Personen hat einen bestätigten Schlüssel. Bestätige zuerst ihre Schlüssel (Profil, Verschlüsselung).';
+const _kMeldungKeinSchluessel = 'Richte zuerst den Nachrichten-Schutz ein (Profil › Sicherheit › Nachrichten-Schutz). Ohne ihn lässt sich der Standort nicht verschlüsselt teilen.';
+const _kMeldungKeineEmpfaenger = 'Keine der gewählten Personen hat einen bestätigten Schlüssel. Bestätige zuerst ihre Schlüssel (Profil › Sicherheit › Nachrichten-Schutz).';
 const _kMeldungOffline = 'Keine Verbindung zum Server. Zum Teilen brauchst du eine Verbindung.';
 const _kMeldungAbgelehnt = 'Der Server hat das Teilen abgelehnt. Versuche es später noch einmal.';
 

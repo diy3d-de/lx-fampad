@@ -74,7 +74,7 @@ class AufgabeKurzzeile extends StatelessWidget {
                   meta,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: ueberfaellig ? kDanger : kTextMuted),
+                  style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: ueberfaellig ? kDanger : kTextMuted),
                 ),
               ],
             ),

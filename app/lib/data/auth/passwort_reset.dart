@@ -1,7 +1,7 @@
 // Passwort zurücksetzen (PR 4b der vereinfachten Schlüsselverwaltung; Projektbeschreibung 9a). Drei Wege, alle nur mit abgeleitetem authKey (das neue Passwort
 // verlässt das Gerät nie):
 //   1. Link des Admins einlösen: PIN (falls verlangt), neues Passwort und ein Code des vorhandenen Authenticators (der zweite Faktor bleibt Pflicht);
-//   2. "Passwort vergessen?" mit einem der Wiederherstellungscodes;
+//   2. "Passwort vergessen?" mit einem der Notfall-Codes;
 //   3. "Passwort vergessen?" mit einem Passkey.
 // Nie mit dem Authenticator allein. Der Server berührt dabei keinen Schlüssel: Die Passwort-Sicherung des Personenschlüssels wird dort nur als veraltet
 // markiert (nie gelöscht); der alte Weg (Wiederherstellungsschlüssel, QR) gilt unverändert. Auf einem Gerät mit Schlüssel legt die App danach selbst eine
@@ -41,7 +41,7 @@ class PasswortReset {
     return neu.authKey ?? (throw _fehlerKeinAuthKey);
   }
 
-  /// Link des Admins: neues Passwort und Code des Authenticators. Gibt das Ergebnis wie eine Registrierung zurück (Sitzung inbegriffen, keine neuen Wiederherstellungscodes).
+  /// Link des Admins: neues Passwort und Code des Authenticators. Gibt das Ergebnis wie eine Registrierung zurück (Sitzung inbegriffen, keine neuen Notfall-Codes).
   Future<RegistrationResult> einladungEinloesen({
     required String token,
     String? pin,
@@ -57,7 +57,7 @@ class PasswortReset {
     return r;
   }
 
-  /// "Passwort vergessen?" mit einem Wiederherstellungscode (der Code wird dabei verbraucht).
+  /// "Passwort vergessen?" mit einem Notfall-Code (der Code wird dabei verbraucht).
   Future<LoginResult> vergessenMitCode({required String email, required String code, required String passwort}) async {
     final authKey = await _authKey(email, passwort);
     final r = await api.passwortVergessenMitCode(email: email, code: code, authKey: authKey);

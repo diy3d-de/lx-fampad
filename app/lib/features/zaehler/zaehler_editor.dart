@@ -286,7 +286,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     _laden(daten);
     _ausgang ??= _geladen ? _stand() : null;
     if (!_geladen) {
-      return AuthSeite(label: '// zähler', titel: 'Zähler', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Dieser Zähler lässt sich gerade nicht bearbeiten.', fehler: false)]);
+      return AuthSeite(label: 'Zähler', titel: 'Zähler', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Dieser Zähler lässt sich gerade nicht bearbeiten.', fehler: false)]);
     }
     final erzeugung = _art == ZaehlerArt.erzeugung;
     final gruppen = {for (final r in daten.reihen) if (r.art == _art && r.inhalt.gruppe.trim().isNotEmpty) r.inhalt.gruppe.trim()};
@@ -300,7 +300,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
       geaendert: () => _ausgang != null && _stand() != _ausgang,
       aenderungen: Listenable.merge(_felder),
       child: AuthSeite(
-        label: _neu ? '// neu' : '// zähler',
+        label: _neu ? 'Neu' : 'Zähler',
         titel: _neu ? 'Zähler einrichten' : (_alt?.name ?? 'Zähler'),
         maxBreite: kMaxContentWidth,
         fussleiste: FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: _speichert ? null : () => unawaited(_speichern(daten)), child: Text(_neu ? 'Speichern' : 'Änderungen speichern')),
@@ -308,7 +308,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
           TextField(controller: _name, maxLength: kMaxNameZeichen, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'Name (zum Beispiel Strom Haus)', counterText: '')),
           const SizedBox(height: 14),
-          const MonoLabel('// art und einheit'),
+          const MonoLabel('Art und Einheit'),
           const SizedBox(height: 6),
           if (_neu)
             Wrap(
@@ -323,7 +323,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             TextField(controller: _einheit, maxLength: kMaxEinheitZeichen, decoration: const InputDecoration(labelText: 'Einheit (zum Beispiel Stück oder l)', counterText: '')),
           ],
           const SizedBox(height: 14),
-          const MonoLabel('// eingabeart'),
+          const MonoLabel('Eingabeart'),
           const SizedBox(height: 6),
           if (_quelleHa)
             const Text('Zählerstand (Home Assistant liefert Stände, keine Monatswerte)', style: TextStyle(color: kTextMuted))
@@ -354,7 +354,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           const SizedBox(height: 14),
           TextField(controller: _nummer, maxLength: kMaxNummerZeichen, decoration: const InputDecoration(labelText: 'Zählernummer (optional)', counterText: '')),
           const SizedBox(height: 14),
-          const MonoLabel('// ort'),
+          const MonoLabel('Ort'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -365,7 +365,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           TextField(controller: _ort, maxLength: kMaxOrtZeichen, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Eigener Ort (optional)', counterText: '')),
           if (!erzeugung) ...[
             const SizedBox(height: 14),
-            const MonoLabel('// gruppe (gemeinsame summe)'),
+            const MonoLabel('Gruppe (gemeinsame Summe)'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -380,17 +380,17 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           ],
           if (_quelleHa) ...[
             const SizedBox(height: 16),
-            const MonoLabel('// ablese-rhythmus'),
+            const MonoLabel('Ablese-rhythmus'),
             const SizedBox(height: 6),
             const Text('Entfällt bei automatischer Quelle: „Ablesen fällig“ erscheint nur, wenn mehr als 3 Tage kein Wert angekommen ist.', style: TextStyle(fontSize: 12, color: kTextMuted)),
           ] else if (_modus == ZaehlerModus.monat) ...[
             const SizedBox(height: 16),
-            const MonoLabel('// erinnerung'),
+            const MonoLabel('Erinnerung'),
             const SizedBox(height: 6),
             const Text('Am 1. jedes Monats um 9 Uhr erinnert die App an den Monatswert des Vormonats, bis er eingetragen ist (Profil, Erinnerungen, Zähler-Erinnerungen).', style: TextStyle(fontSize: 12, color: kTextMuted)),
           ] else ...[
           const SizedBox(height: 16),
-          const MonoLabel('// ablese-rhythmus'),
+          const MonoLabel('Ablese-rhythmus'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -415,7 +415,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           ],
           ],
           const SizedBox(height: 16),
-          const MonoLabel('// abrechnungsperiode'),
+          const MonoLabel('Abrechnungsperiode'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -438,7 +438,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
               title: Text(erzeugung ? 'Ersparnis rechnen' : 'Kosten rechnen', style: const TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(
                 erzeugung ? 'Rechnet aus Erzeugung, Eigenverbrauch und Strompreis, was die Anlage spart.' : (_art.istWasser ? 'Wasser läuft meist über Miete und Nebenkosten, darum ist es zunächst aus.' : 'Rechnet Verbrauchskosten, Grund- und Zählergebühr und die Abschläge.'),
-                style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
               value: _kosten,
               onChanged: (v) => setState(() => _kosten = v),
@@ -446,7 +446,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           ),
           if (_kosten) ...[
             const SizedBox(height: 12),
-            MonoLabel(erzeugung ? '// strompreis für die ersparnis' : '// tarif'),
+            MonoLabel(erzeugung ? 'Strompreis für die Ersparnis' : 'Tarif'),
             const SizedBox(height: 6),
             if (_preise.isEmpty) Text(erzeugung ? 'Noch kein Strompreis. Ohne ihn rechnet die App keine Ersparnis.' : 'Noch kein Tarif. Ohne ihn rechnet die App keine Kosten.', style: const TextStyle(color: kTextMuted, fontSize: 13)),
             for (var i = 0; i < _preise.length; i++)
@@ -483,7 +483,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           ],
           if (erzeugung) ...[
             const SizedBox(height: 14),
-            const MonoLabel('// solar'),
+            const MonoLabel('Solar'),
             const SizedBox(height: 6),
             TextField(controller: _anlage, keyboardType: const TextInputType.numberWithOptions(decimal: true), inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))], decoration: const InputDecoration(labelText: 'Anschaffungspreis der Anlage in Euro', helperText: 'Damit rechnet die App aus, wann sich die Anlage bezahlt gemacht hat')),
             const SizedBox(height: 12),
@@ -498,7 +498,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
               child: SwitchListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 title: const Text('Ungewöhnlich hohen Verbrauch melden', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text(_warn ? 'ab $_warnProzent % über dem Vorjahresmonat' : 'aus', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                subtitle: Text(_warn ? 'ab $_warnProzent % über dem Vorjahresmonat' : 'aus', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 value: _warn,
                 onChanged: (v) => setState(() => _warn = v),
               ),
@@ -517,7 +517,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             ),
           ] else if (reihe != null && istJuengster) ...[
             const SizedBox(height: 20),
-            const MonoLabel('// weitere aktionen', color: kTextMuted),
+            const MonoLabel('Weitere Aktionen', color: kTextMuted),
             const SizedBox(height: 6),
             if (!(_alt?.archiviert ?? false) && _modus == ZaehlerModus.stand) OutlinedButton.icon(style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(zaehlerWechselOeffnen(context, ref, reihe.id)), icon: const Icon(Icons.swap_horiz), label: const Text('Zähler wechseln (neue Nummer, neuer Startstand)')),
             const SizedBox(height: 8),
@@ -550,7 +550,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     final eigenOffen = _kanalEigen || (kanal.isNotEmpty && !kHaKanaele.any((k) => k.kanal == kanal));
     return [
       const SizedBox(height: 14),
-      const MonoLabel('// quelle'),
+      const MonoLabel('Quelle'),
       const SizedBox(height: 6),
       Wrap(
         spacing: 8,
@@ -575,7 +575,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           const MeldungsBox('Home Assistant liefert bisher nur Strom und Solar (kWh). Dieser Zähler bekäme nie einen Wert: Wähle „Von Hand“.'),
         ],
         const SizedBox(height: 10),
-        const MonoLabel('// welcher wert?', color: kTextMuted),
+        const MonoLabel('Welcher Wert?', color: kTextMuted),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -605,7 +605,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             title: const Text('Prüfen vor dem Eintragen', style: TextStyle(fontWeight: FontWeight.w600)),
             subtitle: const Text(
               'Ein Stand, der kleiner ist als der davor oder höher als ein späterer, wird immer vorgelegt. Ist der Schalter an, fragt die App auch bei einem plötzlichen großen Sprung im Verbrauch nach.',
-              style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
             ),
             value: _pruefen,
             onChanged: (v) => setState(() => _pruefen = v),
@@ -668,7 +668,7 @@ class _Stepper extends StatelessWidget {
       children: [
         Expanded(child: ExcludeSemantics(child: Text(label, style: const TextStyle(color: kTextMuted)))),
         IconButton(tooltip: '$label verringern', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.remove_circle_outline), onPressed: wert > min ? () => onChanged((wert - schritt).clamp(min, max)) : null),
-        SizedBox(width: 96, child: Center(child: ExcludeSemantics(child: Text(text(wert), style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w700))))),
+        SizedBox(width: 96, child: Center(child: ExcludeSemantics(child: Text(text(wert), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w700))))),
         IconButton(tooltip: '$label erhöhen', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.add_circle_outline), onPressed: wert < max ? () => onChanged((wert + schritt).clamp(min, max)) : null),
       ],
     ),

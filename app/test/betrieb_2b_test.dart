@@ -315,12 +315,12 @@ void main() {
     await starteApp(tester, env, skala: skala, groesse: groesse);
     if (oeffnen) {
       if (groesse.width >= 900) {
-        await tippe(tester, find.text('Betrieb'));
+        await tippe(tester, find.text('Betrieb').last);
       } else {
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-        await tippe(tester, find.text('Betrieb'));
+        await tippe(tester, find.text('Betrieb').last);
       }
-      await tippe(tester, find.text('Einstellungen'));
+      await tippe(tester, find.text('Einstellungen').last);
     }
     return env;
   }
@@ -344,7 +344,7 @@ void main() {
       expect(find.text('Samstag ist Wartung, plant bitte um.'), findsOneWidget);
       expect(find.byType(FamilienHinweisBanner), findsOneWidget);
       // fester Absender über dem Text: der Hinweis ist klar der Text des Betreibers
-      expect(find.text('// HINWEIS DES BETREIBERS'), findsOneWidget);
+      expect(labelFinder('Hinweis des Betreibers'), findsOneWidget);
       await tippe(tester, find.byTooltip('Hinweis schließen'));
       expect(find.text('Samstag ist Wartung, plant bitte um.'), findsNothing);
       expect(await env.db.metaLesen(hinweisGeschlossenSchluessel(fixIdAdmin)), isNotNull);
@@ -356,8 +356,8 @@ void main() {
       await start(tester, betreiber: false, oeffnen: false, stand: () => _stand(wartung: true, bis: bis, hinweis: _hinweis('Kurze Pause')));
       expect(find.textContaining('Wartung bis '), findsOneWidget);
       // Wartung und Hinweis tragen verschiedene feste Kennzeichen
-      expect(find.text('// WARTUNG'), findsOneWidget);
-      expect(find.text('// HINWEIS DES BETREIBERS'), findsOneWidget);
+      expect(labelFinder('Wartung'), findsOneWidget);
+      expect(labelFinder('Hinweis des Betreibers'), findsOneWidget);
       expect(find.textContaining('Änderungen bleiben auf deinem Gerät'), findsOneWidget);
       expect(find.text('Kurze Pause'), findsOneWidget);
       // nur der Hinweis hat einen Schließen-Knopf
@@ -417,7 +417,7 @@ void main() {
       await start(tester, betreiber: false, oeffnen: false, groesse: const Size(1440, 900), stand: () => _stand(hinweis: _hinweis('Hallo Familie')));
       expect(find.text('Hallo Familie'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
-      expect(find.textContaining('sync: '), findsOneWidget);
+      expect(find.text('Version dev'), findsOneWidget);
       pruefeLayout(tester, 'Desktop-Banner');
     });
   });
@@ -425,10 +425,10 @@ void main() {
   group('Einstellungen des Betreibers', () {
     testWidgets('Seite: Wartung aus, kein Hinweis, Konfiguration mit deutschen Namen und Werten; beim Öffnen nur lesen', (tester) async {
       final env = await start(tester);
-      expect(find.text('// WARTUNGSMODUS'), findsOneWidget);
-      expect(find.text('● aus'), findsOneWidget);
+      expect(labelFinder('Wartungsmodus'), findsOneWidget);
+      expect(find.text('aus'), findsWidgets);
       expect(find.text('Zurzeit ist kein Hinweis gesetzt.'), findsOneWidget);
-      await zu(tester, find.text('// KONFIGURATION'));
+      await zu(tester, labelFinder('Konfiguration'));
       await zu(tester, find.text('Passwort-Sicherung'));
       expect(find.text('E2EE_PW_BACKUP'), findsOneWidget);
       await zu(tester, find.text('12 Std.'));
@@ -459,7 +459,7 @@ void main() {
       expect(puts, hasLength(2), reason: 'erst abgelehnt (Step-up nötig), nach der Bestätigung noch einmal');
       final body = puts.last.json;
       expect(body, {'active': true, 'untilMinutes': 24 * 60}, reason: 'die Dauer geht an den Server (er rechnet das Ende mit seiner Uhr), keine Uhrzeit vom Gerät');
-      expect(find.text('● Wartung läuft'), findsOneWidget);
+      expect(find.text('Wartung läuft'), findsOneWidget);
       expect(find.text('Wartung beenden'), findsOneWidget);
       // der eigene Banner (hinter der Seite) holt den Stand sofort neu
       expect(env.server.anfragen('GET /family-notice').length, greaterThanOrEqualTo(2));
@@ -468,12 +468,12 @@ void main() {
     testWidgets('Wartung: Standard 4 Stunden, 72 Stunden wählbar; beenden sendet active=false und keine Dauer', (tester) async {
       final env = await start(tester, vorStart: (env) => env.server.json('GET /admin/settings', _stand(wartung: true, bis: null)));
       // läuft schon: nur "beenden"
-      expect(find.text('● Wartung läuft'), findsOneWidget);
+      expect(find.text('Wartung läuft'), findsOneWidget);
       expect(find.text('ohne Ende'), findsOneWidget);
       await tippe(tester, find.text('Wartung beenden'));
       await tippe(tester, find.text('Mit Passkey bestätigen'));
       expect(env.server.anfragen('PUT /admin/maintenance').last.json, {'active': false});
-      expect(find.text('● aus'), findsOneWidget);
+      expect(find.text('aus'), findsWidgets);
       // wieder an: die vorgewählten 4 Stunden, danach 72 Stunden
       await tippe(tester, find.text('Wartung einschalten'));
       await tippe(tester, find.text('Einschalten'));
@@ -500,7 +500,7 @@ void main() {
       await tippe(tester, find.text('Mit Passkey bestätigen'));
       final put = env.server.anfragen('PUT /admin/notice').last.json;
       expect(put, {'text': 'Server-Umzug am Samstag', 'expiresInMinutes': 7 * 24 * 60}, reason: 'getrimmt, der Ablauf als Dauer (der Server rechnet mit seiner Uhr)');
-      expect(find.text('● sichtbar'), findsOneWidget);
+      expect(find.text('sichtbar'), findsOneWidget);
       expect(find.text('Hinweis löschen'), findsOneWidget);
       expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, isEmpty);
       // löschen
@@ -534,7 +534,7 @@ void main() {
       );
       expect(find.text('Dieser Server kennt das noch nicht (älterer Stand).'), findsNWidgets(3));
       await tippe(tester, find.text('Protokoll'));
-      expect(find.text('// AUDIT-PROTOKOLL'), findsOneWidget);
+      expect(labelFinder('Audit-Protokoll'), findsOneWidget);
     });
 
     testWidgets('Nicht-Betreiber sehen den Bereich nicht und die Seite fragt nie /admin', (tester) async {
@@ -551,7 +551,7 @@ void main() {
         // erst bei normaler Schrift zur Seite, dann vergrößern (die Startseite und das Profil laufen bei 2.0 über: nicht Teil dieses Pakets)
         await start(tester, oeffnen: false, stand: () => _stand(wartung: true, hinweis: _hinweis('Server-Umzug am Samstag, danach läuft alles schneller.')));
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-        await tippe(tester, find.text('Betrieb'));
+        await tippe(tester, find.text('Betrieb').last);
         await tippe(tester, find.text('Einstellungen'));
         tester.platformDispatcher.textScaleFactorTestValue = skala;
         await warte(tester);
@@ -567,7 +567,7 @@ void main() {
 
     testWidgets('Desktop 1440 px: Einstellungen in der Shell', (tester) async {
       await start(tester, groesse: const Size(1440, 900));
-      expect(find.text('// WARTUNGSMODUS'), findsOneWidget);
+      expect(labelFinder('Wartungsmodus'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
       pruefeLayout(tester, 'Betrieb Einstellungen Desktop');
     });

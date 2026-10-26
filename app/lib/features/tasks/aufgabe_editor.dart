@@ -257,7 +257,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
         child: Container(
           constraints: const BoxConstraints(minHeight: 48),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
           child: Row(
             children: [
               Icon(icon, size: 18, color: kTextMuted),
@@ -276,7 +276,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
       geaendert: () => _stand() != _ausgang,
       aenderungen: Listenable.merge([_titel, _beschreibung, _neuerPunkt, for (final p in _punkte) p.text]),
       child: AuthSeite(
-      label: '// aufgabe',
+      label: 'Aufgabe',
       titel: _neu ? 'Neue Aufgabe' : (darf ? 'Aufgabe bearbeiten' : 'Aufgabe'),
       maxBreite: kMaxContentWidth,
       fussleiste: darf ? FilledButton(onPressed: _speichert ? null : _speichern, child: Text(_neu ? 'Aufgabe anlegen' : 'Speichern')) : null,
@@ -294,7 +294,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           decoration: const InputDecoration(labelText: 'Titel', counterText: ''),
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// fällig'),
+        const MonoLabel('Bis wann?'),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -350,7 +350,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           ),
         const SizedBox(height: 12),
         if (mitglieder.isNotEmpty) ...[
-          const MonoLabel('// zuständig'),
+          const MonoLabel('Wer macht das?'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -372,7 +372,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           const Text('Achtung: Die Aufgabe ist nur für Eltern sichtbar, die zuständige Person ist ein Kind und sieht sie deshalb nicht.', style: TextStyle(fontSize: 12, color: kWarn)),
           const SizedBox(height: 12),
         ],
-        const MonoLabel('// priorität'),
+        const MonoLabel('Wie wichtig?'),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -380,7 +380,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           children: [for (final p in AufgabePrio.values) AuswahlKnopf(text: p.label, gewaehlt: _prio == p, onTap: darf ? () => setState(() => _prio = p) : nichts)],
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// wiederholung'),
+        const MonoLabel('Wie oft?'),
         const SizedBox(height: 6),
         if (tag == null)
           const Text('Für eine Wiederholung braucht die Aufgabe ein Fälligkeitsdatum.', style: TextStyle(fontSize: 12, color: kTextMuted))
@@ -397,7 +397,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
         ],
         if (tag != null) ...[
           const SizedBox(height: 16),
-          const MonoLabel('// erinnerung'),
+          const MonoLabel('Erinnern'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -416,7 +416,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
           ],
         ],
         const SizedBox(height: 16),
-        const MonoLabel('// unteraufgaben'),
+        const MonoLabel('Unteraufgaben'),
         const SizedBox(height: 6),
         for (var i = 0; i < _punkte.length; i++)
           Padding(
@@ -492,7 +492,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
         ),
         const SizedBox(height: 12),
         if (darf && rechte.darfFreigabeAendern) ...[
-          const MonoLabel('// sichtbar für'),
+          const MonoLabel('Wer sieht das?'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,

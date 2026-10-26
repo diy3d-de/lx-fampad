@@ -1,4 +1,4 @@
-// Profil > Verschlüsselung > Passkey-Sicherung (nur wenn der Server sie anbietet und die Person einen Passkey hat): den Schlüssel mit der PRF-Erweiterung des Passkeys
+// Profil › Sicherheit › Nachrichten-Schutz › Passkey-Sicherung (nur wenn der Server sie anbietet und die Person einen Passkey hat): den Schlüssel mit der PRF-Erweiterung des Passkeys
 // sichern, und auf einem Gerät ohne Schlüssel damit wieder verbinden. Kein Passwort, kein Zettel: die Geste des Passkeys (Fingerabdruck, Gesicht, PIN) öffnet die Sicherung.
 // Ob der Passkey-Speicher PRF kann, entscheidet sich erst auf dem Gerät: ohne Unterstützung sagt die Seite es und verändert nichts; Wiederherstellungsschlüssel, QR-Code und
 // Passwort-Sicherung gelten unverändert weiter.
@@ -47,7 +47,7 @@ class _PrfSicherungScreenState extends ConsumerState<PrfSicherungScreen> with Ak
     final veraltet = ref.watch(e2eeProvider.select((s) => s.prfSicherungVeraltet));
     final gesichert = ref.watch(e2eeProvider.select((s) => s.prfCredentialIds.isNotEmpty));
     return AuthSeite(
-      label: '// passkey-sicherung',
+      label: 'Passkey-sicherung',
       titel: 'Passkey-Sicherung',
       kinder: [
         if (veraltet) ...[
@@ -58,7 +58,7 @@ class _PrfSicherungScreenState extends ConsumerState<PrfSicherungScreen> with Ak
           const SizedBox(height: 12),
         ],
         const Text(
-          'Dein Verschlüsselungsschlüssel wird mit einem Geheimnis geschützt, das dein Passkey nie verlässt, und so auf dem Server abgelegt. Auf einem neuen Gerät öffnet dein '
+          'Dein Schlüssel wird mit einem Geheimnis geschützt, das dein Passkey nie verlässt, und so auf dem Server abgelegt. Auf einem neuen Gerät öffnet dein '
           'Passkey (Fingerabdruck, Gesicht oder PIN) die Sicherung: kein Zettel, kein Passwort. Der Server sieht weder das Geheimnis noch deinen Schlüssel. '
           'Als Absicherung zählt sie nur, wenn dein Passkey-Anbieter ihn als synchronisiert und gesichert meldet und auf deinen anderen Geräten bereithält (zum Beispiel der Google-Passwortmanager; ob das klappt, hängt vom Anbieter ab); ein Passkey, der nur auf diesem Gerät liegt, geht mit dem Gerät verloren. '
           'Geht der Passkey verloren oder wird er neu angelegt, lässt sich die Sicherung nicht mehr öffnen; Wiederherstellungsschlüssel und verbundene Geräte funktionieren weiter wie bisher.',
@@ -118,7 +118,7 @@ class _PrfVerbindenScreenState extends ConsumerState<PrfVerbindenScreen> with Ak
   Widget build(BuildContext context) {
     final hatSicherung = ref.watch(e2eeProvider.select((s) => s.hatSicherung));
     return AuthSeite(
-      label: '// passkey',
+      label: 'Passkey',
       titel: 'Mit Passkey verbinden',
       kinder: [
         const Text(

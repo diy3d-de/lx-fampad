@@ -125,7 +125,7 @@ void main() {
     await tippeText(tester, 'Cora: Ich kann das machen');
     expect(find.text('Wer holt heute die Kinder ab?'), findsOneWidget);
     expect(find.text('Ich kann das machen'), findsOneWidget);
-    expect(find.text('HEUTE'), findsOneWidget);
+    expect(find.text('Heute'), findsOneWidget);
     expect(find.text('Ben'), findsOneWidget); // Name über der ersten Nachricht
     expect(find.text('Cora Berger'), findsOneWidget);
     // Lesestand lokal gesetzt und zum Server unterwegs
@@ -181,7 +181,7 @@ void main() {
     expect(find.text('Bearbeiten'), findsNothing);
     expect(find.text('Löschen'), findsNothing);
     await tippeText(tester, 'Antworten');
-    expect(find.text('ANTWORT AN BEN'), findsOneWidget);
+    expect(find.text('Antwort an Ben'), findsOneWidget);
     await tester.enterText(eingabe(), 'Ja, um 17 Uhr');
     await tester.pump();
     await tippe(tester, find.byTooltip('Senden'));
@@ -193,7 +193,7 @@ void main() {
     // eigene Nachricht bearbeiten
     await tippeText(tester, 'Ja, um 17 Uhr');
     await tippeText(tester, 'Bearbeiten');
-    expect(find.text('NACHRICHT BEARBEITEN'), findsOneWidget);
+    expect(labelFinder('Nachricht bearbeiten'), findsOneWidget);
     expect(tester.widget<TextField>(eingabe()).controller!.text, 'Ja, um 17 Uhr');
     await tester.enterText(eingabe(), 'Ja, um 18 Uhr');
     await tester.pump();
@@ -498,7 +498,7 @@ void main() {
 
     testWidgets('Startseite: Chat-Karte zeigt die letzten echten Nachrichten der sichtbaren Chats (neueste zuerst)', (tester) async {
       await start(tester, groesse: gross, chat: false, vorher: grundstand);
-      expect(find.text('// CHAT · FAMILIE'), findsOneWidget);
+      expect(labelFinder('Chat · Familie'), findsOneWidget);
       expect(find.text('Kommst du zum Training?'), findsOneWidget);
       expect(find.text('Cora: Ich kann das machen'), findsOneWidget);
       expect(find.text('Noch keine Nachrichten'), findsNothing);

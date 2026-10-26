@@ -15,7 +15,7 @@
 //    Engine die lokale Datenbank nicht offen, wenn die Person die App später öffnet (zwei Engines, eine SQLite-Datei; busy_timeout 5 s).
 //  - Höchstdauer 25 s: danach wird der Lauf abgebrochen (keine Schreibzugriffe mehr) und der Container geschlossen.
 //
-// Grenzen (bewusst): Der Abgleich läuft nur, solange Android den Prozess lässt (wenige Sekunden nach dem Wecker). Scheitert er, holt die
+// Grenzen (bewusst): Der Überträgt … nur, solange Android den Prozess lässt (wenige Sekunden nach dem Wecker). Scheitert er, holt die
 // App es beim nächsten Öffnen nach: der Sync läuft ohnehin bei jedem Start. Mit geöffneter App bekommt die laufende Engine den Wecker
 // (PushController), nicht diese Funktion.
 import 'dart:async';

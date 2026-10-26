@@ -74,7 +74,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
     final daten = ref.watch(zaehlerDatenProvider);
     final k = daten.kachel(_schluessel);
     if (k == null) {
-      return AuthSeite(label: '// verlauf', titel: 'Verlauf', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Diesen Zähler gibt es nicht mehr.', fehler: false)]);
+      return AuthSeite(label: 'Verlauf', titel: 'Verlauf', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Diesen Zähler gibt es nicht mehr.', fehler: false)]);
     }
     final heute = zaehlerHeute(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final einheit = k.einheit;
@@ -115,7 +115,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
     final einzel = !k.istGruppe ? k.erste : null;
     final kostenAn = einzel != null && einzel.inhalt.kosten && !erzeugung;
     return AuthSeite(
-      label: '// ${k.art.anzeige.toLowerCase()}',
+      label: k.art.anzeige,
       titel: k.titel,
       maxBreite: kMaxContentWidth,
       aktionen: [
@@ -161,7 +161,7 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
               _zurueck++;
               _cursor = null;
             })),
-            Expanded(child: Center(child: Text(_zeitraumTitel(k, z), style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w700, fontSize: 16)))),
+            Expanded(child: Center(child: Text(_zeitraumTitel(k, z), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w700, fontSize: 16)))),
             IconButton(tooltip: _modus == _Modus.jahr ? 'Ein Jahr weiter' : 'Eine Periode weiter', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.chevron_right), onPressed: _zurueck == 0 ? null : () => setState(() {
               _zurueck--;
               _cursor = null;
@@ -198,10 +198,10 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        MonoLabel('// ${c == null ? _zeitraumTitel(k, z) : balken[c].beschriftung.toLowerCase()}', color: kTextMuted),
+                        MonoLabel(c == null ? _zeitraumTitel(k, z) : balken[c].beschriftung.toLowerCase(), color: kTextMuted),
                         Semantics(
                           liveRegion: true,
-                          child: Text(c == null || balken[c].milli == null ? (c == null ? 'Noch keine Werte' : 'Noch offen') : verbrauchAnzeige(balken[c].milli!, einheit), style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w700, fontSize: 18)),
+                          child: Text(c == null || balken[c].milli == null ? (c == null ? 'Noch keine Werte' : 'Noch offen') : verbrauchAnzeige(balken[c].milli!, einheit), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w700, fontSize: 18)),
                         ),
                       ],
                     ),
@@ -225,8 +225,8 @@ class _ZaehlerVerlaufScreenState extends ConsumerState<ZaehlerVerlaufScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 3),
                     child: Row(children: [
                       Expanded(child: Text(balken[i].beschriftung)),
-                      Text(balken[i].milli == null ? '–' : verbrauchAnzeige(balken[i].milli!, einheit), style: const TextStyle(fontFamily: kFontMono, fontSize: 13)),
-                      SizedBox(width: 90, child: Text(balken[i].vorjahrMilli == null ? '' : verbrauchAnzeige(balken[i].vorjahrMilli!, '', mitEinheit: false), textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted))),
+                      Text(balken[i].milli == null ? '–' : verbrauchAnzeige(balken[i].milli!, einheit), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13)),
+                      SizedBox(width: 90, child: Text(balken[i].vorjahrMilli == null ? '' : verbrauchAnzeige(balken[i].vorjahrMilli!, '', mitEinheit: false), textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted))),
                     ]),
                   ),
             ],
@@ -345,7 +345,7 @@ class _Zeile extends StatelessWidget {
       children: [
         Expanded(flex: 2, child: Text(label, style: const TextStyle(color: kTextMuted))),
         const SizedBox(width: 12),
-        Expanded(flex: 3, child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontMono, fontSize: 13, fontWeight: FontWeight.w600))),
+        Expanded(flex: 3, child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, fontWeight: FontWeight.w600))),
       ],
     ),
   );
@@ -391,7 +391,7 @@ class _StaendeAbschnitt extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Expanded(child: MonoLabel(mitTitel ? '// letzte stände · ${reihe.name.toLowerCase()}' : '// letzte stände', color: kTextMuted)),
+                Expanded(child: MonoLabel(mitTitel ? 'Letzte Stände · ${reihe.name}' : 'Letzte Stände', color: kTextMuted)),
                 TextButton.icon(
                   style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                   onPressed: () => zaehlerEditorOeffnen(context, id: reihe.id),
@@ -424,7 +424,7 @@ class _StaendeAbschnitt extends ConsumerWidget {
                       excludeSemantics: true,
                       child: Text.rich(
                         TextSpan(children: [
-                          TextSpan(text: standAnzeige(z.s.milli), style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w600)),
+                          TextSpan(text: standAnzeige(z.s.milli), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w600)),
                           if (z.delta != null) TextSpan(text: ' (${z.delta! >= 0 ? '+' : '-'}${verbrauchAnzeige(z.delta!.abs(), einheit, mitEinheit: false)})', style: const TextStyle(fontSize: 12, color: kTextMuted)),
                         ]),
                       ),
@@ -478,7 +478,7 @@ class _MonatswerteAbschnitt extends ConsumerWidget {
           children: [
             Row(
               children: [
-                Expanded(child: MonoLabel(mitTitel ? '// letzte werte · ${reihe.name.toLowerCase()}' : '// letzte werte', color: kTextMuted)),
+                Expanded(child: MonoLabel(mitTitel ? 'Letzte Werte · ${reihe.name}' : 'Letzte Werte', color: kTextMuted)),
                 TextButton.icon(
                   style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
                   onPressed: () => zaehlerEditorOeffnen(context, id: reihe.id),
@@ -506,7 +506,7 @@ class _MonatswerteAbschnitt extends ConsumerWidget {
                     Semantics(
                       label: 'Monatswert ${monatTitel(w.jahr, w.monat)}: ${verbrauchAnzeige(w.milli, einheit)}',
                       excludeSemantics: true,
-                      child: Text(verbrauchAnzeige(w.milli, einheit), style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w600)),
+                      child: Text(verbrauchAnzeige(w.milli, einheit), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w600)),
                     ),
                     PopupMenuButton<String>(
                       tooltip: 'Monatswert ${monatTitel(w.jahr, w.monat)}: Aktionen',

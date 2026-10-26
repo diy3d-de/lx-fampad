@@ -254,7 +254,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
     _ausgang ??= _geladen ? _stand() : null;
     if (!_geladen) {
       return AuthSeite(
-        label: '// medikament',
+        label: 'Medikament',
         titel: 'Medikament',
         maxBreite: kMaxContentWidth,
         kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Dieses Medikament lässt sich gerade nicht bearbeiten.', fehler: false)],
@@ -268,7 +268,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
       geaendert: () => _ausgang != null && _stand() != _ausgang,
       aenderungen: Listenable.merge([_name, _dosis, _menge, _bestand, _packung, _notiz]),
       child: AuthSeite(
-        label: _neu ? '// neu' : '// bearbeiten',
+        label: _neu ? 'Neu' : 'Bearbeiten',
         titel: _neu ? 'Medikament anlegen' : 'Medikament bearbeiten',
         maxBreite: kMaxContentWidth,
         fussleiste: FilledButton(onPressed: _speichert ? null : () => unawaited(_speichern(daten)), child: Text(_neu ? 'Speichern' : 'Änderungen speichern')),
@@ -279,7 +279,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
           TextField(controller: _dosis, maxLength: kMaxDosisZeichen, decoration: const InputDecoration(labelText: 'Dosis (z. B. 5 mg · 1 Tablette)', counterText: '')),
           const SizedBox(height: 16),
           if (_neu && daten.personen.length > 1) ...[
-            const MonoLabel('// für wen (nur du und deine kinder)'),
+            const MonoLabel('Für wen (nur du und deine Kinder)'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -302,7 +302,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
             Text('Für ${_personText(daten.person(subjekt), daten)}', style: const TextStyle(color: kTextMuted)),
             const SizedBox(height: 16),
           ],
-          const MonoLabel('// rhythmus'),
+          const MonoLabel('Rhythmus'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -336,7 +336,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
           ],
           const SizedBox(height: 16),
           if (festeZeiten) ...[
-            const MonoLabel('// uhrzeiten'),
+            const MonoLabel('Uhrzeiten'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -344,7 +344,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
               children: [
                 for (var i = 0; i < _zeiten.length; i++)
                   Container(
-                    decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(10)),
+                    decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10)),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
@@ -356,7 +356,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
                             key: ValueKey('med-zeit:$i'),
                             borderRadius: BorderRadius.circular(10),
                             onTap: () => unawaited(_zeitWaehlen(index: i)),
-                            child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 6, 12), child: Text(_zeiten[i], style: const TextStyle(fontFamily: kFontMono, fontSize: 15))),
+                            child: Padding(padding: const EdgeInsets.fromLTRB(14, 12, 6, 12), child: Text(_zeiten[i], style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 15))),
                           ),
                         ),
                         IconButton(
@@ -376,7 +376,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
             const Text('Ohne feste Uhrzeiten: Du trägst die Einnahme selbst ein, es gibt keine Erinnerung.', style: TextStyle(fontSize: 12, color: kTextMuted)),
             const SizedBox(height: 16),
           ],
-          const MonoLabel('// vorrat (optional)'),
+          const MonoLabel('Vorrat (optional)'),
           const SizedBox(height: 6),
           TextField(controller: _menge, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'Menge je Einnahme (Stück)')),
           const SizedBox(height: 12),
@@ -386,7 +386,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
           const SizedBox(height: 6),
           const Text('Die App warnt, wenn der Vorrat noch höchstens $kVorratWarnTage Tage reicht.', style: TextStyle(fontSize: 12, color: kTextMuted)),
           const SizedBox(height: 16),
-          const MonoLabel('// rezept läuft ab (optional)'),
+          const MonoLabel('Rezept läuft ab (optional)'),
           const SizedBox(height: 6),
           Row(
             children: [
@@ -402,7 +402,7 @@ class _MedikamentEditorState extends ConsumerState<MedikamentEditor> {
                     child: Container(
                       constraints: const BoxConstraints(minHeight: 48, maxWidth: 280),
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+                      decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
                       child: Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.event, size: 18, color: kTextMuted), const SizedBox(width: 8), Flexible(child: Text(_rezept == null ? 'Datum wählen' : datumLang(_rezept!), maxLines: 1, overflow: TextOverflow.ellipsis))]),
                     ),
                   ),
@@ -454,7 +454,7 @@ class _SichtKarte extends StatelessWidget {
       excludeSemantics: true,
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kSurface.withValues(alpha: 0.7), border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(18)),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

@@ -20,6 +20,7 @@ double kontrast(Color a, Color b) {
 }
 
 void main() {
+  ruhigerLook();
   const gruende = {'kBg': kBg, 'kSurface': kSurface, 'kSurface2': kSurface2};
   const text = <String, Color>{
     'kTextStrong': kTextStrong,
@@ -75,5 +76,24 @@ void main() {
       expect(k, lessThan(4.5), reason: 'falls dieser Test bricht, ist die Schwäche behoben: Tabelle und CLAUDE.md anpassen ($g: $k)');
       expect(k, greaterThanOrEqualTo(3.0), reason: g);
     }
+  });
+}
+
+// Ruhiger Look (Akzent gedämpftes Türkis #6FCFD6, Erfolg #4FC99A): gemessene Werte, damit eine spätere Änderung auffällt.
+void ruhigerLook() {
+  group('Ruhiger Look: gemessene Kontraste', () {
+    test('kAccent: etwa 10,9:1 auf Hintergrund, 10,0:1 auf Karte, 9,2:1 auf Fläche; kOnAccent darauf etwa 9,7:1', () {
+      expect(kAccent, const Color(0xFF6FCFD6));
+      expect(kontrast(kAccent, kBg), closeTo(10.9, 0.1));
+      expect(kontrast(kAccent, kSurface), closeTo(10.0, 0.1));
+      expect(kontrast(kAccent, kSurface2), closeTo(9.2, 0.1));
+      expect(kontrast(kOnAccent, kAccent), closeTo(9.7, 0.1));
+    });
+
+    test('kTerminal: etwa 9,6:1 auf Hintergrund und 8,7:1 auf Karte; kTextMuted mindestens 5,4:1 auch auf der hellsten Fläche', () {
+      expect(kontrast(kTerminal, kBg), closeTo(9.6, 0.1));
+      expect(kontrast(kTerminal, kSurface), closeTo(8.7, 0.1));
+      expect(kontrast(kTextMuted, kSurface2), greaterThanOrEqualTo(5.4));
+    });
   });
 }

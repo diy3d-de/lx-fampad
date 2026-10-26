@@ -38,7 +38,7 @@ class MuellEinstellungenScreen extends ConsumerWidget {
     // Standard-Arten (auch ohne Termine) und was vorkommt; "Sonstiges" nur, wenn es vorkommt
     final listeArten = [for (final a in MuellArt.values) if (a != MuellArt.sonst || arten.contains(a)) a];
     return AuthSeite(
-      label: '// müll',
+      label: 'Müll',
       titel: 'Einstellungen',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -47,21 +47,21 @@ class MuellEinstellungenScreen extends ConsumerWidget {
           child: SwitchListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 8),
             title: const Text('Im Kalender anzeigen', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('nur Anzeige, nur auf diesem Gerät', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            subtitle: const Text('Nur zur Ansicht, nur auf diesem Gerät', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             value: einst.imKalender,
             onChanged: (v) => unawaited(notifier.kalenderSetzen(v)),
           ),
         ),
         if (eltern) ...[
           const SizedBox(height: 16),
-          const MonoLabel('// erinnerung'),
+          const MonoLabel('Erinnerung'),
           const SizedBox(height: 8),
           if (!android)
             const MeldungsBox('Erinnerungen gibt es nur in der Android-App. Im Browser zeigt die App keine Benachrichtigungen an.', fehler: false)
           else ...[
             // Fehlen die Systemrechte, kommt keine Erinnerung: der Hinweis sagt, wo man sie erlaubt
             if (ref.watch(erinnerungStatusProvider).value case final s? when s.verfuegbar && !s.erlaubt && !s.unbekannt) ...[
-              const MeldungsBox('Benachrichtigungen sind für die App nicht erlaubt, darum kommt keine Erinnerung. Erlaube sie unter Profil > Erinnerungen oder in den Systemeinstellungen.', fehler: false),
+              const MeldungsBox('Benachrichtigungen sind für die App nicht erlaubt, darum kommt keine Erinnerung. Erlaube sie unter Profil › Benachrichtigungen › Erinnerungen oder in den Systemeinstellungen.', fehler: false),
               const SizedBox(height: 8),
             ],
             LxCard(
@@ -71,7 +71,7 @@ class MuellEinstellungenScreen extends ConsumerWidget {
                   SwitchListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                     title: const Text('Abend vorher erinnern', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('nur für Eltern und Admins, auf diesem Gerät', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    subtitle: const Text('Nur für Eltern und Admins, auf diesem Gerät', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     value: einst.erinnerungAn,
                     onChanged: (v) => unawaited(notifier.erinnerungAnSetzen(v)),
                   ),
@@ -80,11 +80,11 @@ class MuellEinstellungenScreen extends ConsumerWidget {
                     enabled: einst.erinnerungAn,
                     minVerticalPadding: 8,
                     title: const Text('Uhrzeit', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('am Abend vor der Abholung', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    subtitle: const Text('Am Abend vor der Abholung', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     trailing: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(color: kSurface2, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(8)),
-                      child: Text(uhrzeitAusMinuten(einst.minuten), style: const TextStyle(fontFamily: kFontMono, color: kTextStrong)),
+                      decoration: BoxDecoration(color: kSurface2, borderRadius: BorderRadius.circular(8)),
+                      child: Text(uhrzeitAusMinuten(einst.minuten), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, color: kTextStrong)),
                     ),
                     onTap: () async {
                       final t = await showTimePicker(
@@ -99,7 +99,7 @@ class MuellEinstellungenScreen extends ConsumerWidget {
                   SwitchListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                     title: const Text('Arten auf dem Sperrbildschirm', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('aus: nur „Morgen ist Abholung“; gilt auch für Termine', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    subtitle: const Text('Aus: nur „Morgen ist Abholung“. Gilt auch für Termine.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     value: sperre,
                     onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).sperrbildschirmSetzen(v)),
                   ),
@@ -107,7 +107,7 @@ class MuellEinstellungenScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(height: 16),
-            const MonoLabel('// für diese abfallarten'),
+            const MonoLabel('Für diese Abfallarten'),
             const SizedBox(height: 8),
             LxCard(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -127,14 +127,14 @@ class MuellEinstellungenScreen extends ConsumerWidget {
             ),
           ],
           const SizedBox(height: 16),
-          const MonoLabel('// neue datei'),
+          const MonoLabel('Neue Datei'),
           const SizedBox(height: 8),
           const Text('Für ein neues Jahr gibt es die Datei erst später. Der Server prüft das von selbst (im Dezember wöchentlich); hier kannst du es sofort anstoßen.', style: TextStyle(fontSize: 13, color: kTextMuted)),
           const SizedBox(height: 10),
           const MuellPruefenBlock(),
           if (admin) ...[
             const SizedBox(height: 16),
-            EinstellungsZeile(icon: Icons.event_repeat_outlined, titel: 'Abfuhrkalender', untertitel: 'status je jahr und prüfungen', onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellAbfuhrkalenderScreen())))),
+            EinstellungsZeile(icon: Icons.event_repeat_outlined, titel: 'Abfuhrkalender', untertitel: 'Stand je Jahr und Prüfungen', onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellAbfuhrkalenderScreen())))),
           ],
         ],
         const SizedBox(height: 12),

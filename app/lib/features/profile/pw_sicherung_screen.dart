@@ -1,4 +1,4 @@
-// Profil > Verschlüsselung > Passwort-Sicherung (vereinfachte Schlüsselverwaltung, nur wenn der Server sie anbietet): Passwort wählen (Mindeststärke,
+// Profil › Sicherheit › Nachrichten-Schutz › Passwort-Sicherung (vereinfachte Schlüsselverwaltung, nur wenn der Server sie anbietet): Passwort wählen (Mindeststärke,
 // Vorschlag aus Zufallswörtern, Bestätigung) und den Personenschlüssel damit sichern; auf einem Gerät ohne Schlüssel damit wieder verbinden.
 // Passwort und Vorschlag nur in BildschirmSchutz (FLAG_SECURE), Zwischenablage nur auf Klick. Der alte Weg (Wiederherstellungsschlüssel, QR) bleibt
 // unverändert daneben gültig.
@@ -121,7 +121,7 @@ class _PwSicherungScreenState extends ConsumerState<PwSicherungScreen> with Akti
     final stimmtNicht = _pw2.text.isNotEmpty && _pw.text != _pw2.text;
     return BildschirmSchutz(
       child: AuthSeite(
-        label: '// passwort-sicherung',
+        label: 'Passwort-sicherung',
         titel: 'Passwort-Sicherung',
         kinder: [
           if (ref.watch(e2eeProvider.select((s) => s.pwSicherungVeraltet))) ...[
@@ -133,7 +133,7 @@ class _PwSicherungScreenState extends ConsumerState<PwSicherungScreen> with Akti
             const SizedBox(height: 12),
           ],
           const Text(
-            'Dein Verschlüsselungsschlüssel wird mit einem Passwort geschützt auf dem Server abgelegt. Mit diesem Passwort verbindest du später ein neues Gerät, '
+            'Dein Schlüssel wird mit einem Passwort geschützt auf dem Server abgelegt. Mit diesem Passwort verbindest du später ein neues Gerät, '
             'ohne Wiederherstellungsschlüssel oder QR-Code. Der Server sieht das Passwort nie. Vergisst du es, kann es niemand wiederherstellen: '
             'dein Wiederherstellungsschlüssel und verbundene Geräte funktionieren weiter wie bisher.',
             style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
@@ -259,7 +259,7 @@ class _PwVerbindenScreenState extends ConsumerState<PwVerbindenScreen> with Akti
 
   Widget _seite(bool veraltet, bool hatSicherung) => BildschirmSchutz(
     child: AuthSeite(
-      label: '// passwort',
+      label: 'Passwort',
       titel: 'Mit Passwort verbinden',
       kinder: [
         if (veraltet) ...[

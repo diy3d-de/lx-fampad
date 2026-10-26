@@ -390,5 +390,5 @@ String ingestAbbruchText(IngestAbbruch a) => switch (a) {
   IngestAbbruch.keinSchluessel => 'Dieses Gerät kann nicht abholen; die Verbindung wurde auf einem anderen Gerät gekoppelt.',
   IngestAbbruch.schluesselFehler => 'Der Schlüssel dieser Verbindung ließ sich auf diesem Gerät gerade nicht lesen.',
   IngestAbbruch.netz => 'Der Server ist gerade nicht erreichbar. Die Werte warten dort und kommen beim nächsten Mal.',
-  IngestAbbruch.nichtBereit => 'Das Abholen ist gerade nicht möglich. Prüfe Anmeldung und Verschlüsselung.',
+  IngestAbbruch.nichtBereit => 'Das Abholen ist gerade nicht möglich. Prüfe Anmeldung und Nachrichten-Schutz.',
 };

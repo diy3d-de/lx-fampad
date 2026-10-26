@@ -68,7 +68,7 @@ String zeitKurz(DateTime t, [DateTime? jetzt]) {
   final tage = _tag(j).difference(_tag(t)).inDays;
   if (tage <= 0) return DateFormat('HH:mm', 'de_DE').format(t);
   if (tage == 1) return 'gestern';
-  if (tage < 7) return DateFormat('E', 'de_DE').format(t).toLowerCase();
+  if (tage < 7) return DateFormat('E', 'de_DE').format(t);
   return DateFormat('dd.MM.yy', 'de_DE').format(t);
 }
 
@@ -166,7 +166,7 @@ class UngelesenZeichen extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 7),
         alignment: Alignment.center,
         decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(999)),
-        child: Text(anzahl > 99 ? '99+' : '$anzahl', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, fontWeight: FontWeight.w700, color: kOnAccent)),
+        child: Text(anzahl > 99 ? '99+' : '$anzahl', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, fontWeight: FontWeight.w700, color: kOnAccent)),
       ),
     );
   }

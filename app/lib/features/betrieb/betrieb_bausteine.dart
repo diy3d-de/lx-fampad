@@ -26,7 +26,7 @@ class BetriebZeile extends StatelessWidget {
               children: [
                 Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
                 const SizedBox(height: 2),
-                Text(info, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                Text(info, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
           ),

@@ -183,17 +183,17 @@ void main() {
 
   testWidgets('Startseite: Warnkarte mit Stufe als Text; Tipp öffnet die Wetter-Seite mit Warnung, Tagesliste, Stundenband und Quelle', (tester) async {
     await start(tester);
-    expect(find.text('// AMTLICHE WARNUNG · STUFE 3'), findsOneWidget);
+    expect(labelFinder('Amtliche Warnung · Stufe 3'), findsOneWidget);
     expect(find.textContaining('Sturmböen (Stufe 3)'), findsOneWidget);
     pruefeLayout(tester, 'DWD-Warnkarte');
-    await tippe(tester, find.text('// AMTLICHE WARNUNG · STUFE 3'));
+    await tippe(tester, labelFinder('Amtliche Warnung · Stufe 3'));
     expect(find.byType(WetterScreen), findsOneWidget);
-    expect(find.text('// DWD-WARNUNG · STUFE 3'), findsOneWidget);
-    expect(find.text('// NÄCHSTE TAGE'), findsOneWidget);
+    expect(labelFinder('DWD-Warnung · Stufe 3'), findsOneWidget);
+    expect(labelFinder('Nächste Tage'), findsOneWidget);
     expect(find.text('Heute'), findsWidgets);
     expect(find.text('Morgen'), findsOneWidget);
-    expect(find.text('// NÄCHSTE 24 STUNDEN'), findsOneWidget);
-    expect(find.text('// REGENWAHRSCHEINLICHKEIT'), findsOneWidget);
+    expect(labelFinder('Nächste 24 Stunden'), findsOneWidget);
+    expect(labelFinder('Regenwahrscheinlichkeit'), findsOneWidget);
     expect(find.text('Quelle: Deutscher Wetterdienst'), findsOneWidget);
     expect(find.textContaining('Regen 80 %'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('Stufe 3 von 4')), findsOneWidget);
@@ -204,7 +204,7 @@ void main() {
     await start(tester, forecast: () => _antwort(warnungen: [_warnung(level: 1, title: 'Windböen')]));
     expect(find.textContaining('AMTLICHE WARNUNG'), findsNothing);
     await tippe(tester, find.text('Westerburg'));
-    expect(find.text('// DWD-WARNUNG · STUFE 1'), findsOneWidget);
+    expect(labelFinder('DWD-Warnung · Stufe 1'), findsOneWidget);
   });
 
   testWidgets('Warnungen und Vorhersage werden nicht als aktuell gezeigt, wenn der Stand alt ist', (tester) async {
@@ -213,8 +213,8 @@ void main() {
     await tippe(tester, find.text('Westerburg'));
     expect(find.textContaining('Amtliche Warnungen sind gerade nicht aktuell'), findsOneWidget);
     expect(find.textContaining('Die Vorhersage ist veraltet'), findsOneWidget);
-    expect(find.text('// NÄCHSTE 24 STUNDEN'), findsNothing);
-    expect(find.text('// NÄCHSTE TAGE'), findsOneWidget);
+    expect(labelFinder('Nächste 24 Stunden'), findsNothing);
+    expect(labelFinder('Nächste Tage'), findsOneWidget);
   });
 
   testWidgets('Älterer Server ohne die Route: ruhiger Hinweis statt Fehlerfläche, nie ein Absturz', (tester) async {
@@ -222,14 +222,14 @@ void main() {
     expect(find.textContaining('AMTLICHE WARNUNG'), findsNothing);
     await tippe(tester, find.text('Westerburg'));
     expect(find.text('Die Vorhersage ist gerade nicht verfügbar.'), findsOneWidget);
-    expect(find.text('// NÄCHSTE TAGE'), findsNothing);
+    expect(labelFinder('Nächste Tage'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
   testWidgets('Server ohne Vorhersage (available false): kein Abschnitt, keine Karte', (tester) async {
     await start(tester, forecast: () => {'available': false});
     await tippe(tester, find.text('Westerburg'));
-    expect(find.text('// NÄCHSTE TAGE'), findsNothing);
+    expect(labelFinder('Nächste Tage'), findsNothing);
     expect(find.text('Die Vorhersage ist gerade nicht verfügbar.'), findsNothing);
     expect(find.textContaining('AMTLICHE WARNUNG'), findsNothing);
   });
@@ -245,7 +245,7 @@ void main() {
     testWidgets('Wetter-Seite bei Textskala $skala auf 360 px: kein Überlauf, Touch-Ziele', (tester) async {
       await start(tester, skala: skala, forecast: () => _antwort(warnungen: [_warnung(), _warnung(level: 2, title: 'Dauerregen', kind: 'regen'), _warnung(level: 4, title: 'Hitze', kind: 'hitze')]));
       pruefeLayout(tester, 'Startseite mit Warnkarte $skala');
-      await tippe(tester, find.text('// AMTLICHE WARNUNG · STUFE 4'));
+      await tippe(tester, labelFinder('Amtliche Warnung · Stufe 4'));
       pruefeLayout(tester, 'Wetter-Seite $skala');
       for (var i = 0; i < 3; i++) {
         await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
@@ -258,7 +258,7 @@ void main() {
 
   testWidgets('Desktop-Startseite zeigt die Warnkarte', (tester) async {
     await start(tester, groesse: const Size(1440, 900));
-    expect(find.text('// AMTLICHE WARNUNG · STUFE 3'), findsOneWidget);
+    expect(labelFinder('Amtliche Warnung · Stufe 3'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }

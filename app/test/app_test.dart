@@ -47,7 +47,7 @@ void main() {
       if (n > 0) await zumBereich(tester, namen[n]);
       expect(tester.widget<IndexedStack>(find.byType(IndexedStack)).index, tabs[n], reason: namen[n]);
       for (var i = 0; i < seiten.length; i++) {
-        final inhalt = find.descendant(of: find.byType(IndexedStack), matching: find.text(titel[i]));
+        final inhalt = find.descendant(of: find.byType(IndexedStack), matching: find.byWidgetPredicate((w) => w is Text && w.data == titel[i] && w.style?.fontSize == 26));
         if (i == n) {
           expect(inhalt.hitTestable(), findsWidgets, reason: 'Titel "${titel[i]}" muss bei ${namen[n]} sichtbar sein');
           expect(find.descendant(of: find.byType(IndexedStack), matching: find.byType(seiten[i])), findsOneWidget);
@@ -61,8 +61,8 @@ void main() {
   testWidgets('Sync-Indikator und Startseite melden "synchron", sobald der Abgleich gelaufen ist', (tester) async {
     final env = await angemeldeteUmgebung();
     await starteApp(tester, env);
-    expect(find.byTooltip('Synchron. Tippen zum Abgleichen'), findsWidgets);
-    expect(find.text('synchron'), findsOneWidget);
+    expect(find.byTooltip('Alles aktuell. Tippen zum Übertragen'), findsWidgets);
+    expect(find.byWidgetPredicate((w) => w is Semantics && w.properties.label == 'Sync: Alles aktuell'), findsOneWidget, reason: 'bei "synchron" nur ein Punkt, kein Text');
     expect(env.sync.anfragen, isNotEmpty, reason: 'beim Start wird sofort abgeglichen');
   });
 
@@ -71,7 +71,7 @@ void main() {
     env.sync.offline = true;
     await starteApp(tester, env);
     expect(find.byTooltip('Offline'), findsWidgets);
-    expect(find.text('offline'), findsOneWidget);
+    expect(find.text('Gerade keine Verbindung – Änderungen werden nachgeholt'), findsOneWidget);
   });
 
   testWidgets('426 vom Sync (Protokoll zu alt): die Pflicht-Update-Seite ersetzt die App, es folgt kein weiterer Abgleich', (tester) async {

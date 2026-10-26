@@ -474,13 +474,13 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
 String syncMeldungFuer(SyncState s) {
   switch (s.status) {
     case SyncStatus.offline:
-      return 'Offline – Änderungen werden später abgeglichen.';
+      return 'Offline – Änderungen werden später übertragen.';
     case SyncStatus.fehler:
-      return s.meldung ?? 'Der Abgleich ist fehlgeschlagen.';
+      return s.meldung ?? 'Das Übertragen hat nicht geklappt.';
     case SyncStatus.updateNoetig:
       return 'Bitte aktualisiere die App.';
     case SyncStatus.wartung:
-      return 'Wartung – Änderungen werden danach abgeglichen.';
+      return 'Wartung – Änderungen werden danach übertragen.';
     default:
       return '';
   }

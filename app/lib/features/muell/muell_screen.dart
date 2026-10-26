@@ -56,7 +56,7 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
     final ort = z.dto?.ort ?? '';
     final kinder = _inhalt(z, jetzt);
     if (!widget.eingebettet) {
-      return AuthSeite(label: ort.isEmpty ? '// abfuhrtermine' : '// abfuhrtermine · ${ort.toLowerCase()}', titel: 'Müll', maxBreite: kMaxContentWidth, aktionen: aktionen, kinder: kinder);
+      return AuthSeite(label: ort.isEmpty ? 'Abfuhrtermine' : 'Abfuhrtermine · $ort', titel: 'Müll', maxBreite: kMaxContentWidth, aktionen: aktionen, kinder: kinder);
     }
     return Material(
       type: MaterialType.transparency,
@@ -75,7 +75,7 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Row(children: [const Expanded(child: TabKopfzeile(title: 'Müll')), ...aktionen]),
-                    if (ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel('// $ort')],
+                    if (ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel(ort)],
                     const SizedBox(height: 16),
                     ...kinder,
                   ],
@@ -127,7 +127,7 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
     final liste = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// kommende termine'),
+        const MonoLabel('Kommende Termine'),
         const SizedBox(height: 4),
         if (sichtbar.isEmpty)
           const Padding(padding: EdgeInsets.symmetric(vertical: 16), child: Text('Keine weiteren Termine bekannt.', style: TextStyle(color: kTextMuted)))
@@ -147,7 +147,7 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
       filter,
       const SizedBox(height: 8),
       liste,
-      if (stand != null) Padding(padding: const EdgeInsets.only(top: 16), child: Text(stand, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: z.fehler ? kWarn : kTextMuted))),
+      if (stand != null) Padding(padding: const EdgeInsets.only(top: 16), child: Text(stand, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: z.fehler ? kWarn : kTextMuted))),
     ];
   }
 }
@@ -170,7 +170,7 @@ class _NaechsteKarte extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// nächste abholung'),
+            const MonoLabel('Nächste Abholung'),
             const SizedBox(height: 10),
             if (t == null)
               const Text('Keine weitere Abholung bekannt', style: TextStyle(color: kTextMuted))
@@ -227,7 +227,7 @@ class _Chip extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
               color: gewaehlt ? kAccent : kSurface,
-              border: Border.all(color: gewaehlt ? kAccent : kBorder),
+              border: Border.all(color: gewaehlt ? kAccent : Colors.transparent),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Row(
@@ -268,8 +268,8 @@ class _TagZeile extends StatelessWidget {
               width: 62,
               child: Column(
                 children: [
-                  Text(k.zahl, style: TextStyle(fontFamily: kFontMono, fontSize: 24, fontWeight: FontWeight.w500, color: bald ? kAccent : kTextStrong, height: 1.1)),
-                  Text(k.unten, maxLines: 1, style: const TextStyle(fontFamily: kFontMono, fontSize: 10, letterSpacing: 0.8, color: kTextMuted)),
+                  Text(k.zahl, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 24, fontWeight: FontWeight.w500, color: bald ? kAccent : kTextStrong, height: 1.1)),
+                  Text(k.unten, maxLines: 1, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, letterSpacing: 0.8, color: kTextMuted)),
                 ],
               ),
             ),

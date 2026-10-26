@@ -1,5 +1,5 @@
 // Einladung annehmen: Link einfügen oder QR scannen (Android) -> Einladung prüfen -> PIN, Name, E-Mail ->
-// Passkey anlegen ODER Passwort + TOTP (Secret/QR, Bestätigungscode) -> Wiederherstellungscodes (einmalig) -> App.
+// Passkey anlegen ODER Passwort + TOTP (Secret/QR, Bestätigungscode) -> Notfall-Codes (einmalig) -> App.
 // Das Token bleibt im Arbeitsspeicher und geht nur im POST-Body zum Server.
 import 'dart:async';
 
@@ -193,7 +193,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     navigator.popUntil((r) => r.isFirst);
   }
 
-  /// Konto ist angelegt: Wiederherstellungscodes zeigen, erst danach die Sitzung übernehmen.
+  /// Konto ist angelegt: Notfall-Codes zeigen, erst danach die Sitzung übernehmen.
   Future<void> _registriert(RegistrationResult r) async {
     if (!mounted) return;
     final auth = ref.read(authProvider.notifier);
@@ -223,7 +223,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     }
     // Hinweis auf die App nur im Browser und nur vor dem Registrieren (nicht bei Passwort-/TOTP-Stufe)
     final hinweis = _start == null ? WillkommenAppHinweis(android: widget.webAndroid, istWeb: widget.webBrowser) : null;
-    return AuthSeite(label: '// einladung', titel: 'Einladung annehmen', kinder: [?hinweis, inhalt]);
+    return AuthSeite(label: 'Einladung', titel: 'Einladung annehmen', kinder: [?hinweis, inhalt]);
   }
 
   // ------------------------------------------------------------ Stufe 1: Link
@@ -271,7 +271,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MonoLabel(info.reset ? '// zugang neu einrichten' : '// du bist eingeladen'),
+              MonoLabel(info.reset ? 'Zugang neu einrichten' : 'Du bist eingeladen'),
               const SizedBox(height: 8),
               Text(
                 info.familyName.isEmpty ? 'Familie' : info.familyName,
@@ -326,7 +326,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
           ),
           const SizedBox(height: 16),
         ],
-        const MonoLabel('// anmeldung einrichten'),
+        const MonoLabel('Anmeldung einrichten'),
         const SizedBox(height: 8),
         SegmentedButton<bool>(
           showSelectedIcon: false,
@@ -347,7 +347,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
           HauptKnopf(text: 'Passkey anlegen', icon: Icons.fingerprint, laeuft: laeuft, onPressed: _passkeyAnlegen),
         ] else ...[
           const Text(
-            'Passwort mit mindestens 12 Zeichen. Zusätzlich richtest du im nächsten Schritt einen Authenticator (TOTP) ein.',
+            'Passwort mit mindestens 12 Zeichen. Zusätzlich richtest du im nächsten Schritt einen Authenticator ein.',
             style: TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
           ),
           const SizedBox(height: 12),
@@ -401,7 +401,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const MonoLabel('// neues passwort'),
+                  const MonoLabel('Neues Passwort'),
                   const SizedBox(height: 8),
                   Text(
                     info.displayName == null ? 'Neues Passwort festlegen' : 'Neues Passwort für ${info.displayName}',
@@ -479,7 +479,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
         const SizedBox(height: 16),
         QrAnzeige(daten: start.totpUri, beschreibung: 'QR-Code zum Einrichten des Authenticators'),
         const SizedBox(height: 12),
-        const MonoLabel('// schlüssel', color: kTextMuted),
+        const MonoLabel('Schlüssel', color: kTextMuted),
         const SizedBox(height: 4),
         Semantics(
           label: 'Schlüssel für die Authenticator-App',

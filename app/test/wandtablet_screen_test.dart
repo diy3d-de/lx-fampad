@@ -152,7 +152,7 @@ void main() {
 
     testWidgets('nie Chat, Standort, Schlüssel, Betrieb oder Profil; keine Bedienelemente', (tester) async {
       await start(tester, vorher: seed);
-      for (final wort in ['Chat', 'Standort', 'Schlüssel', 'Betrieb', 'Profil', 'Nachricht', 'Verschlüsselung']) {
+      for (final wort in ['Chat', 'Standort', 'Schlüssel', 'Betrieb', 'Profil', 'Nachricht', 'Nachrichten-Schutz']) {
         expect(find.textContaining(wort), findsNothing, reason: wort);
       }
       expect(find.byType(TextField), findsNothing);

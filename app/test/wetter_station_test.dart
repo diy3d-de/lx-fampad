@@ -15,6 +15,7 @@ import 'package:lx_fampad/data/wetter/wetter_logik.dart' show WetterHinweisArt;
 import 'package:lx_fampad/data/wetter/wetter_state.dart';
 import 'package:lx_fampad/features/wetter/wetter_hinweis_karte.dart';
 import 'package:lx_fampad/features/wetter/wetter_screen.dart';
+import 'package:lx_fampad/ui/widgets.dart' show MonoLabel;
 import 'package:lx_fampad/features/wetter/wetter_verlauf_karte.dart';
 
 import 'support/fake_server.dart';
@@ -128,7 +129,7 @@ void main() {
 
   Finder inVerlauf(Finder f) => find.descendant(of: find.byType(WetterVerlaufKarte), matching: f);
   Finder diagramm() => find.byKey(const ValueKey('wetter-diagramm'));
-  Finder kopfZeit() => inVerlauf(find.textContaining(RegExp(r'^// ')));
+  Finder kopfZeit() => inVerlauf(find.descendant(of: find.byWidgetPredicate((w) => w is MonoLabel && w.text != 'verlauf'), matching: find.byType(Text)));
 
   group('Interaktiver Verlauf', () {
     testWidgets('Chips nur für Größen mit Daten, Zeiträume umschaltbar, Berühren zeigt Zeit und Wert, zweites Tippen auf dieselbe Stelle löscht', (tester) async {
@@ -139,11 +140,11 @@ void main() {
       for (final c in ['24 Stunden', '3 Tage', '7 Tage']) {
         expect(inVerlauf(find.text(c)), findsOneWidget, reason: c);
       }
-      expect(inVerlauf(find.text('// JETZT')), findsOneWidget);
+      expect(inVerlauf(labelFinder('Jetzt')), findsOneWidget);
       final r = tester.getRect(diagramm());
       await tester.tapAt(Offset(r.left + r.width * 0.5, r.center.dy));
       await warte(tester);
-      expect(inVerlauf(find.text('// JETZT')), findsNothing);
+      expect(inVerlauf(labelFinder('Jetzt')), findsNothing);
       expect(kopfZeit(), findsOneWidget);
       expect(inVerlauf(find.textContaining('zum Schnitt')), findsOneWidget);
       // Ziehen verschiebt das Fadenkreuz
@@ -153,16 +154,16 @@ void main() {
       expect((tester.widget<Text>(kopfZeit())).data, isNot(vorher));
       // 7 Tage: Zeit mit Wochentag
       await tippe(tester, inVerlauf(find.text('7 Tage')));
-      expect(inVerlauf(find.text('// JETZT')), findsOneWidget);
+      expect(inVerlauf(labelFinder('Jetzt')), findsOneWidget);
       await tester.ensureVisible(diagramm());
       await tester.pump();
       final r2 = tester.getRect(diagramm());
       await tester.tapAt(Offset(r2.left + r2.width * 0.2, r2.center.dy));
       await warte(tester);
-      expect((tester.widget<Text>(kopfZeit())).data, matches(RegExp(r'^// (MO|DI|MI|DO|FR|SA|SO) \d\d:\d\d$')));
+      expect((tester.widget<Text>(kopfZeit())).data, matches(RegExp(r'^(Mo|Di|Mi|Do|Fr|Sa|So) \d\d:\d\d$')));
       // Größe wechselt, Fadenkreuz weg
       await tippe(tester, inVerlauf(find.text('Regen')));
-      expect(inVerlauf(find.text('// JETZT')), findsOneWidget);
+      expect(inVerlauf(labelFinder('Jetzt')), findsOneWidget);
       expect(inVerlauf(find.textContaining('Summe')), findsOneWidget);
       pruefeLayout(tester, 'Verlauf Regen');
     });
@@ -174,10 +175,10 @@ void main() {
       await maus.addPointer(location: Offset(r.left + 10, r.top - 50));
       await maus.moveTo(Offset(r.left + r.width * 0.7, r.center.dy));
       await warte(tester);
-      expect(inVerlauf(find.text('// JETZT')), findsNothing);
+      expect(inVerlauf(labelFinder('Jetzt')), findsNothing);
       await maus.moveTo(Offset(r.left + r.width * 0.7, r.top - 80));
       await warte(tester);
-      expect(inVerlauf(find.text('// JETZT')), findsOneWidget);
+      expect(inVerlauf(labelFinder('Jetzt')), findsOneWidget);
       await maus.removePointer();
       // Fokus per Klick, dann Tasten
       await tester.tapAt(Offset(r.left + r.width * 0.5, r.center.dy));
@@ -198,7 +199,7 @@ void main() {
       await warte(tester);
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await warte(tester);
-      expect(inVerlauf(find.text('// JETZT')), findsOneWidget);
+      expect(inVerlauf(labelFinder('Jetzt')), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
@@ -209,7 +210,7 @@ void main() {
       expect(knoten, findsOneWidget);
       tester.semantics.increase(knoten);
       await warte(tester);
-      expect(inVerlauf(find.text('// JETZT')), findsNothing);
+      expect(inVerlauf(labelFinder('Jetzt')), findsNothing);
       handle.dispose();
     });
 
@@ -221,9 +222,9 @@ void main() {
       expect(inVerlauf(find.text('Wind')), findsNothing);
       expect(inVerlauf(find.text('Druck')), findsNothing);
       // auch die Karten dazu fehlen
-      expect(find.text('// REGEN'), findsNothing);
-      expect(find.text('// WIND'), findsNothing);
-      expect(find.text('LUFTDRUCK'), findsNothing);
+      expect(labelFinder('Regen'), findsNothing);
+      expect(labelFinder('Wind'), findsNothing);
+      expect(labelFinder('Luftdruck'), findsNothing);
       pruefeLayout(tester, 'ohne Regen und Wind');
     });
 
@@ -265,10 +266,10 @@ void main() {
     testWidgets('Kacheln mit Trend, gefühlt, Taupunkt; Regenbalken, Wind-Kompass mit Böen, Vergleich und Sonne', (tester) async {
       final handle = tester.ensureSemantics();
       await start(tester, detail: true);
-      expect(find.text('TEMPERATUR'), findsOneWidget);
-      expect(find.text('GEFÜHLT'), findsOneWidget);
-      expect(find.text('LUFTFEUCHTE'), findsOneWidget);
-      expect(find.text('LUFTDRUCK'), findsOneWidget);
+      expect(labelFinder('Temperatur'), findsOneWidget);
+      expect(labelFinder('Gefühlt'), findsOneWidget);
+      expect(labelFinder('Luftfeuchte'), findsOneWidget);
+      expect(labelFinder('Luftdruck'), findsOneWidget);
       expect(find.textContaining('Taupunkt'), findsOneWidget);
       expect(find.textContaining('in 3 h'), findsWidgets);
       expect(find.textContaining('Druck'), findsWidgets);
@@ -304,7 +305,7 @@ void main() {
       await start(tester, wetter: () => _antwort(temp: 1.4), vorher: (e) async => e.extraOverrides.add(chatAnzeigePortProvider.overrideWithValue(anzeige)));
       await warte(tester, 12);
       expect(find.byType(WetterHinweisKarte), findsOneWidget);
-      expect(find.text('// WETTER-HINWEIS'), findsOneWidget);
+      expect(labelFinder('Wetter-hinweis'), findsOneWidget);
       expect(find.text('Frostwarnung: 1,4 °C'), findsOneWidget);
       pruefeLayout(tester, 'Warnkarte');
       // lokale Benachrichtigung: genau einmal, neutral, mit Ziel Wetter
@@ -331,7 +332,7 @@ void main() {
       );
       await warte(tester, 12);
       expect(find.byType(WetterHinweisKarte), findsOneWidget); // Widget ist da, zeigt aber nichts
-      expect(find.text('// WETTER-HINWEIS'), findsNothing);
+      expect(labelFinder('Wetter-hinweis'), findsNothing);
       expect(anzeige.gezeigt, isEmpty);
     });
 
@@ -367,7 +368,7 @@ void main() {
         },
       );
       await warte(tester, 12);
-      expect(find.text('// WETTER-HINWEIS'), findsNothing);
+      expect(labelFinder('Wetter-hinweis'), findsNothing);
       expect(anzeige.gezeigt, isEmpty);
     });
 
@@ -383,7 +384,7 @@ void main() {
       env.server.on('GET /weather', (_) => fehler(503, 'unavailable'));
       await starteApp(tester, env);
       await warte(tester, 12);
-      expect(find.text('// WETTER-HINWEIS'), findsNothing);
+      expect(labelFinder('Wetter-hinweis'), findsNothing);
       expect(anzeige.gezeigt, isEmpty);
     });
 
@@ -421,14 +422,14 @@ void main() {
     testWidgets('Warnkarte bei Textskala 2.0 auf 360 px ohne Überlauf, Desktop: Karte oben im Raster', (tester) async {
       await start(tester, wetter: () => _antwort(temp: -4, boeen: 80), skala: 2.0, vorher: (e) async => e.db.metaSchreiben(WetterHinweisArt.wind.schluessel, 'ja'));
       await warte(tester, 12);
-      expect(find.text('// WETTER-HINWEIS'), findsOneWidget);
+      expect(labelFinder('Wetter-hinweis'), findsOneWidget);
       pruefeLayout(tester, 'Warnkarte 2.0');
     });
 
     testWidgets('Desktop-Startseite zeigt die Warnkarte', (tester) async {
       await start(tester, wetter: () => _antwort(temp: -4), groesse: const Size(1440, 900));
       await warte(tester, 12);
-      expect(find.text('// WETTER-HINWEIS'), findsOneWidget);
+      expect(labelFinder('Wetter-hinweis'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   });

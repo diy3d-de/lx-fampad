@@ -99,7 +99,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
             shrinkWrap: true,
             padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
             children: [
-              const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('// person')),
+              const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('Person')),
               ListTile(
                 minTileHeight: 52,
                 leading: const Icon(Icons.groups_outlined, color: kTextMuted),
@@ -223,7 +223,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         ],
       ),
       const SizedBox(height: 8),
-      if (daten.aufgaben.isNotEmpty) Text('$offen offen · $erledigt erledigt', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+      if (daten.aufgaben.isNotEmpty) Text('$offen offen · $erledigt erledigt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
       if (loeschbar.isNotEmpty)
         Align(
           alignment: Alignment.centerLeft,
@@ -318,7 +318,7 @@ class _PersonFilter extends StatelessWidget {
           decoration: BoxDecoration(
             color: aktiv ? kAccentSoft : null,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: aktiv ? kAccent.withValues(alpha: 0.4) : kBorder),
+            border: Border.all(color: aktiv ? kAccent.withValues(alpha: 0.4) : Colors.transparent),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -382,7 +382,7 @@ class _Zeile extends StatelessWidget {
         children: [
           Icon(icon, size: 13, color: farbe),
           const SizedBox(width: 3),
-          Flexible(child: Text(text, softWrap: true, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: farbe))),
+          Flexible(child: Text(text, softWrap: true, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: farbe))),
         ],
       ),
     );
@@ -398,8 +398,8 @@ class _Zeile extends StatelessWidget {
     final karte = Container(
       constraints: const BoxConstraints(minHeight: 56),
       decoration: BoxDecoration(
-        color: erledigt ? null : kSurface.withValues(alpha: 0.7),
-        border: Border.all(color: ueberfaellig ? kDanger.withValues(alpha: 0.6) : (fristOffen && ampel == FristAmpel.bald ? kWarn.withValues(alpha: 0.6) : kBorder)),
+        color: erledigt ? null : kSurface,
+        border: Border.all(color: ueberfaellig ? kDanger.withValues(alpha: 0.6) : (fristOffen && ampel == FristAmpel.bald ? kWarn.withValues(alpha: 0.6) : Colors.transparent)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -468,10 +468,10 @@ class _Zeile extends StatelessWidget {
                                 ueberfaellig ? kDanger : kTextMuted,
                                 semantik: 'Fällig ${faelligText(a, jetzt)}',
                               ),
-                            if (prio != AufgabePrio.keine) meta(Icons.flag_outlined, prio.label.toLowerCase(), prioFarbe(prio), semantik: 'Priorität ${prio.label}'),
+                            if (prio != AufgabePrio.keine) meta(Icons.flag_outlined, prio.label, prioFarbe(prio), semantik: 'Priorität ${prio.label}'),
                             if (stand.gesamt > 0) meta(Icons.checklist, '${stand.erledigt}/${stand.gesamt}', kTextMuted, semantik: '${stand.erledigt} von ${stand.gesamt} Unteraufgaben erledigt'),
-                            if (wdh != AufgabeWdh.keine) meta(Icons.repeat, wdh.label.toLowerCase(), kTextMuted),
-                            if (a.frist && a.fristMonate != null) meta(Icons.repeat, fristWiederholungText(a.fristMonate).toLowerCase(), kTextMuted),
+                            if (wdh != AufgabeWdh.keine) meta(Icons.repeat, wdh.label, kTextMuted),
+                            if (a.frist && a.fristMonate != null) meta(Icons.repeat, fristWiederholungText(a.fristMonate), kTextMuted),
                           ],
                         ),
                       ],

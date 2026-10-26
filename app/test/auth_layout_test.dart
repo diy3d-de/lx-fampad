@@ -55,13 +55,13 @@ void main() {
       pruefeLayout(tester, 'Login Schritt 2');
       await tippe(tester, find.widgetWithText(FilledButton, 'Anmelden'));
       pruefeLayout(tester, 'Login Schritt 2 mit Fehler');
-      await tippeText(tester, 'Wiederherstellungscode nutzen');
-      pruefeLayout(tester, 'Login Schritt 2 mit Wiederherstellungscode');
+      await tippeText(tester, 'Notfall-Code nutzen');
+      pruefeLayout(tester, 'Login Schritt 2 mit Notfall-Code');
       await tippeText(tester, 'zurück');
-      await tippeText(tester, 'Passwort verloren? Mit Wiederherstellungscode anmelden');
-      pruefeLayout(tester, 'Login nur Wiederherstellungscode');
+      await tippeText(tester, 'Passwort verloren? Mit Notfall-Code anmelden');
+      pruefeLayout(tester, 'Login nur Notfall-Code');
       await tippe(tester, find.widgetWithText(FilledButton, 'Anmelden'));
-      pruefeLayout(tester, 'Login nur Wiederherstellungscode mit Fehler');
+      pruefeLayout(tester, 'Login nur Notfall-Code mit Fehler');
       await tippeText(tester, 'zurück');
 
       // Einladung
@@ -87,9 +87,9 @@ void main() {
       pruefeLayout(tester, 'Einladung: Authenticator mit Fehler');
       await eingeben(tester, 'Code aus der Authenticator-App', '123456');
       await tippeText(tester, 'Bestätigen und Konto anlegen');
-      pruefeLayout(tester, 'Wiederherstellungscodes');
+      pruefeLayout(tester, 'Notfall-Codes');
       await tippeText(tester, 'Ich habe die Codes sicher gespeichert.');
-      pruefeLayout(tester, 'Wiederherstellungscodes bestätigt');
+      pruefeLayout(tester, 'Notfall-Codes bestätigt');
       await tippe(tester, find.widgetWithText(FilledButton, 'Weiter'));
       pruefeLayout(tester, 'Warten auf Freigabe');
       expect(find.textContaining('Fast geschafft'), findsOneWidget);
@@ -111,12 +111,12 @@ void main() {
 
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
       pruefeLayout(tester, 'Profil');
-      await tippeText(tester, 'Wiederherstellungscodes');
+      await tippeText(tester, 'Notfall-Codes');
       pruefeLayout(tester, 'Rückfrage neue Codes');
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       pruefeLayout(tester, 'Step-up-Dialog');
-      await tippeText(tester, 'Wiederherstellungscode nutzen');
-      pruefeLayout(tester, 'Step-up-Dialog mit Wiederherstellungscode');
+      await tippeText(tester, 'Notfall-Code nutzen');
+      pruefeLayout(tester, 'Step-up-Dialog mit Notfall-Code');
       await tippeText(tester, 'Mit Code bestätigen');
       pruefeLayout(tester, 'Step-up-Dialog mit Fehler');
       await tippeText(tester, 'Abbrechen');
@@ -125,8 +125,8 @@ void main() {
       pruefeLayout(tester, 'Abmelden-Dialog');
       await tippeText(tester, 'Abbrechen');
 
-      await tippeText(tester, 'Passkeys');
-      pruefeLayout(tester, 'Passkeys');
+      await tippeText(tester, 'Anmelden ohne Passwort');
+      pruefeLayout(tester, 'Anmelden ohne Passwort');
       await tippe(tester, find.byTooltip('Passkey Pixel 9 entfernen'));
       pruefeLayout(tester, 'Passkey entfernen');
       await tippeText(tester, 'Abbrechen');

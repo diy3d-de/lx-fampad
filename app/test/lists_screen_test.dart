@@ -193,7 +193,7 @@ void main() {
     await tester.pump(const Duration(seconds: 3));
     await warte(tester, 10);
     expect(env.sync.zeilen.values.where((z) => z.entity == 'list_item').single.fields['text'], 'Milch');
-    expect(find.byTooltip('Synchron. Tippen zum Abgleichen'), findsWidgets);
+    expect(find.byTooltip('Alles aktuell. Tippen zum Übertragen'), findsWidgets);
   });
 
   testWidgets('Eintrag bearbeiten und löschen über das Blatt', (tester) async {
@@ -255,7 +255,7 @@ void main() {
     expect((await env.db.select(env.db.listen).get()).single.name, 'Wocheneinkauf');
 
     await tippe(tester, find.byTooltip('Liste verwalten'));
-    await tippeText(tester, 'Sichtbar für …');
+    await tippeText(tester, 'Wer sieht das? …');
     await tippeText(tester, 'Nur Eltern');
     await warte(tester, 8);
     expect((await env.db.select(env.db.listen).get()).single.audience, 'parents');
@@ -301,19 +301,19 @@ void main() {
     await start(tester, role: 'child', vorher: (e) => eigeneListe(e, name: 'Elternliste'));
     expect(find.byTooltip('Liste verwalten'), findsNothing, reason: 'fremde Liste');
     await tippe(tester, find.byTooltip('Neue Liste'));
-    expect(find.text('// sichtbar für'.toUpperCase()), findsNothing);
+    expect(labelFinder('Wer sieht das?'), findsNothing);
     await eingeben(tester, 'Name der Liste', 'Meine Liste');
     await tippeText(tester, 'Anlegen');
     await warte(tester, 10);
     expect(find.byTooltip('Liste verwalten'), findsOneWidget, reason: 'eigene Liste');
     await tippe(tester, find.byTooltip('Liste verwalten'));
-    expect(find.text('Sichtbar für …'), findsNothing);
+    expect(find.text('Wer sieht das? …'), findsNothing);
   });
 
   testWidgets('Eltern sehen die Freigabe-Wahl beim Anlegen', (tester) async {
     await start(tester, role: 'parent');
     await tippeText(tester, 'Liste anlegen');
-    expect(find.text('NUR ELTERN'), findsNothing);
+    expect(labelFinder('Nur Eltern'), findsNothing);
     expect(find.text('Nur Eltern'), findsOneWidget);
   });
 
@@ -322,17 +322,17 @@ void main() {
       e.sync.offline = true;
       e.sockets.scheitern = 99; // ohne Netz gibt es auch keinen WebSocket
     });
-    expect(find.textContaining('Offline – Änderungen werden später abgeglichen'), findsOneWidget);
+    expect(find.textContaining('Offline – Änderungen werden später übertragen'), findsOneWidget);
     expect(find.byTooltip('Offline'), findsWidgets);
     await listeAnlegen(tester, 'Einkauf');
     await eintragSchreiben(tester, 'Milch');
     expect(find.byTooltip('Offline, 2 Änderungen offen'), findsWidgets);
-    expect(find.textContaining('2 Änderungen werden später abgeglichen'), findsOneWidget);
+    expect(find.textContaining('2 Änderungen werden später übertragen'), findsOneWidget);
     env.sync.offline = false;
     await tippe(tester, find.byTooltip('Offline, 2 Änderungen offen').first);
     await warte(tester, 10);
     expect(find.textContaining('Offline –'), findsNothing);
-    expect(find.byTooltip('Synchron. Tippen zum Abgleichen'), findsWidgets);
+    expect(find.byTooltip('Alles aktuell. Tippen zum Übertragen'), findsWidgets);
     expect(env.sync.zeilen, hasLength(2));
   });
 
@@ -342,7 +342,7 @@ void main() {
       e.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
       e.sync.fehlerQueue.add((500, 'internal_error'));
     });
-    expect(find.textContaining('Der Abgleich hat nicht geklappt'), findsOneWidget);
+    expect(find.textContaining('Der Übertragen hat nicht geklappt'), findsOneWidget);
     expect(find.byIcon(Icons.cloud_off), findsWidgets);
   });
 
@@ -352,7 +352,7 @@ void main() {
       e.sync.andereAendert('list_item', _i1, {'listId': _l1, 'text': 'Milch', 'position': 0});
     });
     expect(find.text('Milch'), findsOneWidget);
-    // lokal ändern, bevor der Abgleich läuft; währenddessen löscht ein anderes Gerät
+    // lokal ändern, bevor der Überträgt …; währenddessen löscht ein anderes Gerät
     env.sync.offline = true;
     await tippeText(tester, 'Milch');
     await eingeben(tester, 'Eintrag', 'Hafermilch');

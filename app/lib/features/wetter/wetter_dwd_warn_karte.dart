@@ -34,7 +34,7 @@ class WetterDwdWarnKarte extends ConsumerWidget {
         onTap: () => wetterOeffnen(context),
         child: Material(
           color: farbe.withValues(alpha: 0.10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: farbe.withValues(alpha: 0.6))),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: farbe.withValues(alpha: 0.6))),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => wetterOeffnen(context),
@@ -45,7 +45,7 @@ class WetterDwdWarnKarte extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    MonoLabel('// amtliche warnung · stufe ${liste.first.stufe}', color: farbe),
+                    MonoLabel('Amtliche Warnung · Stufe ${liste.first.stufe}', color: farbe),
                     const SizedBox(height: 6),
                     for (final w in gezeigt)
                       Padding(
@@ -64,7 +64,7 @@ class WetterDwdWarnKarte extends ConsumerWidget {
                           ],
                         ),
                       ),
-                    if (rest > 0) Text('+ $rest weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                    if (rest > 0) Text('+ $rest weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                     const Text('Quelle: Deutscher Wetterdienst', style: TextStyle(fontSize: 11, color: kTextMuted)),
                   ],
                 ),

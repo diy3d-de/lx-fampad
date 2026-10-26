@@ -143,7 +143,7 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
       } else {
         final k = await krypto();
         r = k == null
-            ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
+            ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Nachrichten-Schutz nicht bereit')
             : await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.userId, wire: z.wire, antwortAuf: z.nachrichtId.isEmpty ? null : z.nachrichtId, art: z.art);
       }
       _merkeZusatz(z.id, (wire: z.wire, inhalt: r));
@@ -171,7 +171,7 @@ class E2eeNachrichtenInhalt implements NachrichtenInhalt {
       } else {
         final k = await krypto();
         r = k == null
-            ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Verschlüsselung nicht bereit')
+            ? const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'Nachrichten-Schutz nicht bereit')
             : await k.nachrichtOeffnen(konversationId: n.konversationId, nachrichtId: n.id, autorId: n.autorId, wire: w, antwortAuf: n.antwortAuf);
         // Inhalte von Reaktionen und Stimmen sind nie Nachrichtentext (eine Nachricht mit diesem Präfix wird nicht angezeigt)
         if (r.lesbar && (r.text.startsWith('r1:') || r.text.startsWith('s1:'))) r = const DekodierterInhalt('', InhaltStatus.nichtEntschluesselbar, hinweis: 'ungültiger Inhalt');
@@ -522,7 +522,7 @@ class ChatKryptoController extends Notifier<int> {
   DateTime? _ereignisFehler;
 
   /// Wann wurde der Zugang dieser Person zuletzt komplett zurückgesetzt (Hinweis an die Familie, [SicherheitsArt.mitgliedZugangZurueckgesetzt]), sofern der Hinweis jünger
-  /// als [kFreigabeResetFenster] ist? Der Abgleich läuft über die KONTO-ID, nie über den Anzeigenamen (ein Umbenennen umgeht die Sperre nicht). Ein Hinweis ohne Kennung
+  /// als [kFreigabeResetFenster] ist? Der Überträgt … über die KONTO-ID, nie über den Anzeigenamen (ein Umbenennen umgeht die Sperre nicht). Ein Hinweis ohne Kennung
   /// (älterer Server, die betroffene Person ist nicht mehr da) lässt sich nicht zuordnen: fail-closed gilt er für JEDE Person, die Freigabe geht dann den strengen Weg.
   DateTime? _resetZeit(List<SicherheitsEreignisDto> ereignisse, String userId) {
     final grenze = DateTime.now().subtract(kFreigabeResetFenster);

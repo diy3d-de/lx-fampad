@@ -83,7 +83,7 @@ class _IcsExportScreenState extends ConsumerState<IcsExportScreen> {
     final n = _auswahl(daten).length;
     final hoch = ButtonStyle(minimumSize: const WidgetStatePropertyAll(Size(64, 48)), tapTargetSize: MaterialTapTargetSize.padded);
     return AuthSeite(
-      label: '// export',
+      label: 'Export',
       titel: 'Kalender exportieren',
       maxBreite: kMaxContentWidth,
       fussleiste: FilledButton.icon(
@@ -101,7 +101,7 @@ class _IcsExportScreenState extends ConsumerState<IcsExportScreen> {
           style: TextStyle(color: kTextMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// zeitraum'),
+        const MonoLabel('Zeitraum'),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -127,7 +127,7 @@ class _IcsExportScreenState extends ConsumerState<IcsExportScreen> {
                 liveRegion: true,
                 child: Text(
                   '$_jahr',
-                  style: const TextStyle(fontFamily: kFontMono, fontSize: 18, color: kTextStrong),
+                  style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 18, color: kTextStrong),
                 ),
               ),
               IconButton(
@@ -144,7 +144,7 @@ class _IcsExportScreenState extends ConsumerState<IcsExportScreen> {
           liveRegion: true,
           child: Text(
             n == 0 ? 'Keine Termine im Zeitraum.' : (n == 1 ? '1 Termin wird exportiert.' : '$n Termine werden exportiert.'),
-            style: const TextStyle(color: kTextStrong, fontFamily: kFontMono),
+            style: const TextStyle(color: kTextStrong, fontFamily: kFontSans, fontFeatures: kZiffern),
           ),
         ),
         const SizedBox(height: 8),

@@ -206,7 +206,7 @@ void main() {
       env.passkeys.fehler = const PasskeyException(PasskeyFehler.abgebrochen, 'Abgebrochen. Du kannst es erneut versuchen.');
       await starteApp(tester, env);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      await tippeText(tester, 'Wiederherstellungscodes');
+      await tippeText(tester, 'Notfall-Codes');
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       await tippeText(tester, 'Mit Passkey bestätigen');
       expect(find.text('Bitte bestätigen'), findsOneWidget);
@@ -218,7 +218,7 @@ void main() {
       final server = standardServer()..on('POST /me/recovery-codes', (_) => fehler(403, 'step_up_required'));
       await starteApp(tester, await angemeldeteUmgebung(server: server));
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      await tippeText(tester, 'Wiederherstellungscodes');
+      await tippeText(tester, 'Notfall-Codes');
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       expect(find.text('Bitte bestätigen'), findsOneWidget);
       await tester.tapAt(const Offset(4, 4));
@@ -238,7 +238,7 @@ void main() {
         });
       await starteApp(tester, await angemeldeteUmgebung(server: server));
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      await tippeText(tester, 'Wiederherstellungscodes');
+      await tippeText(tester, 'Notfall-Codes');
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       await tester.tap(find.text('Mit Passkey bestätigen').first);
       await tester.pump(const Duration(milliseconds: 50));
@@ -330,7 +330,7 @@ void main() {
     });
 
     for (final skala in [1.0, 1.5]) {
-      testWidgets('"Wiederherstellungscodes" bricht bei 360 px (Textskala $skala) nicht mitten im Wort um', (tester) async {
+      testWidgets('"Notfall-Codes" bricht bei 360 px (Textskala $skala) nicht mitten im Wort um', (tester) async {
         final env = TestUmgebung(FakeServer());
         tester.view.physicalSize = const Size(360, 800);
         tester.view.devicePixelRatio = 1.0;
@@ -347,13 +347,13 @@ void main() {
           ),
         );
         await warte(tester);
-        final text = find.text('Wiederherstellungscodes');
+        final text = find.text('Notfall-Codes');
         expect(text, findsOneWidget);
         final absatz = tester.renderObject<RenderParagraph>(text);
         final stil = tester.widget<Text>(text).style!;
         // Textskala 1.0: eine Zeile. Bei 1.5 passt das Wort auch in 18 px nicht mehr in 312 px: dann gilt die Mindestgröße
         if (skala == 1.0) expect(absatz.size.height, lessThan(stil.fontSize! * skala * 1.9), reason: 'einzeilig');
-        expect(stil.fontSize, lessThan(26), reason: 'Schrift wurde für das lange Wort verkleinert');
+        expect(stil.fontSize, lessThanOrEqualTo(26), reason: 'Schrift höchstens in Überschriftgröße (das kürzere Wort braucht keine Verkleinerung mehr)');
         expect(stil.fontSize, greaterThanOrEqualTo(18));
         expect(tester.takeException(), isNull);
       });

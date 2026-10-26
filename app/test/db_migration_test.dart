@@ -525,7 +525,7 @@ void main() {
     await db.into(db.dateien).insert(DateienCompanion.insert(id: 'd1', name: 'a.txt', createdAt: jetzt));
     await db.into(db.dateiVersionen).insert(DateiVersionenCompanion.insert(id: 'v1', dateiId: 'd1', nr: 1, blobId: 'b1', createdAt: jetzt));
     await db.into(db.tresorAnhaenge).insert(TresorAnhaengeCompanion.insert(id: 'a1', konversationId: 'k1', blobId: 'b2', inhalt: 'e1:x', createdAt: jetzt));
-    await db.into(db.transfers).insert(TransfersCompanion.insert(id: 'tr1', richtung: 'hoch', art: 'datei', zustand: 'wartet', name: 'a.txt', createdAt: jetzt, aktualisiertAt: jetzt));
+    await db.into(db.transfers).insert(TransfersCompanion.insert(id: 'tr1', richtung: 'Hoch', art: 'datei', zustand: 'wartet', name: 'a.txt', createdAt: jetzt, aktualisiertAt: jetzt));
     await db.into(db.dateiCache).insert(DateiCacheCompanion.insert(blobId: 'b1', groesse: 5, name: 'a.txt', zuletztGenutzt: jetzt));
     final indizes = [for (final r in raw.select("SELECT name FROM sqlite_master WHERE type = 'index'")) r['name']];
     expect(indizes, containsAll(['ordner_parent_idx', 'dateien_ordner_idx', 'datei_versionen_datei_idx', 'tresor_anhaenge_konversation_idx', 'transfers_zustand_idx']));
@@ -543,7 +543,7 @@ void main() {
     addTearDown(db.close);
     final jetzt = DateTime(2026, 10, 24);
     await db.into(db.ordner).insert(OrdnerCompanion.insert(id: 'o1', name: 'x', createdAt: jetzt));
-    await db.into(db.transfers).insert(TransfersCompanion.insert(id: 'tr1', richtung: 'hoch', art: 'datei', zustand: 'wartet', name: 'a', createdAt: jetzt, aktualisiertAt: jetzt));
+    await db.into(db.transfers).insert(TransfersCompanion.insert(id: 'tr1', richtung: 'Hoch', art: 'datei', zustand: 'wartet', name: 'a', createdAt: jetzt, aktualisiertAt: jetzt));
     await db.into(db.dateiCache).insert(DateiCacheCompanion.insert(blobId: 'b1', groesse: 5, name: 'a', zuletztGenutzt: jetzt));
     await db.alleDatenLoeschen();
     expect(await db.select(db.ordner).get(), isEmpty);

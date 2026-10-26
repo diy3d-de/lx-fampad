@@ -1,5 +1,5 @@
 // Chat für die Oberfläche: liest aus der lokalen Datenbank (Streams) und schreibt Änderungen sofort lokal (Tabelle und Ausgang, über
-// SyncStore). Nichts wartet auf das Netz; der Abgleich läuft im Hintergrund (data/sync/). Inhalte laufen über NachrichtenInhalt.
+// SyncStore). Nichts wartet auf das Netz; der Überträgt … im Hintergrund (data/sync/). Inhalte laufen über NachrichtenInhalt.
 import 'dart:async';
 import 'dart:convert';
 
@@ -300,7 +300,7 @@ WHERE (n.autor_id IS NULL OR n.autor_id <> ?1)
   /// Der Chat braucht Verschlüsselung: ohne eingerichtete Schlüssel dieser Person geht nichts.
   Future<ChatKrypto> _kryptoPflicht() async {
     final k = await krypto();
-    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst die Verschlüsselung ein (Profil, Verschlüsselung).');
+    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst den Nachrichten-Schutz ein (Profil › Sicherheit › Nachrichten-Schutz).');
     return k;
   }
 

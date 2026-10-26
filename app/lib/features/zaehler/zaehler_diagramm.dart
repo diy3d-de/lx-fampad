@@ -166,7 +166,7 @@ class _Maler extends CustomPainter {
         canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, size.height - pb - h, w, h < 2 ? 2 : h), const Radius.circular(2)), Paint()..color = b.teilweise ? grundFarbe.withValues(alpha: 0.55) : grundFarbe);
       }
       final tp = TextPainter(
-        text: TextSpan(text: b.label, style: TextStyle(fontFamily: kFontMono, fontSize: 10, color: cursor == i ? kAccent : kTextMuted)),
+        text: TextSpan(text: b.label, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, color: cursor == i ? kAccent : kTextMuted)),
         textDirection: TextDirection.ltr,
       )..layout();
       tp.paint(canvas, Offset(x + w / 2 - tp.width / 2, size.height - pb + 4));

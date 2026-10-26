@@ -113,7 +113,7 @@ class _SuchScreenState extends ConsumerState<SuchScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const MonoLabel('// suche'),
+                          const MonoLabel('Suche'),
                           const SizedBox(height: 4),
                           Semantics(
                             header: true,
@@ -187,7 +187,7 @@ class _Gruppe extends StatelessWidget {
         if (gruppe.weitere > 0)
           Padding(
             padding: const EdgeInsets.fromLTRB(4, 6, 4, 0),
-            child: Text('und ${gruppe.weitere} weitere – grenze die Suche mit einem zusätzlichen Wort ein', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            child: Text('und ${gruppe.weitere} weitere – grenze die Suche mit einem zusätzlichen Wort ein', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ),
       ],
     ),
@@ -238,7 +238,7 @@ class SuchZeile extends StatelessWidget {
                 TrefferText(t.titel, t.titelBereiche, stil: TextStyle(fontSize: 15, color: t.erledigt ? kTextMuted : kTextStrong, decoration: t.erledigt ? TextDecoration.lineThrough : null)),
                 if (unter.isNotEmpty) ...[
                   const SizedBox(height: 2),
-                  Text(unter, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text(unter, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
                 if (t.auszug != null) ...[
                   const SizedBox(height: 4),

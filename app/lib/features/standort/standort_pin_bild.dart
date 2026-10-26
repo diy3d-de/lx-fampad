@@ -74,7 +74,7 @@ Future<Uint8List> pinPng(PinBildAngaben a, {double massstab = 2}) async {
   } else {
     canvas.drawCircle(mitte, r, ui.Paint()..color = farbe.withValues(alpha: 0.18));
     final tp = TextPainter(
-      text: TextSpan(text: personInitials(a.name), style: TextStyle(fontFamily: kFontMono, fontSize: kPinBild * 0.34, fontWeight: FontWeight.w600, color: farbe)),
+      text: TextSpan(text: personInitials(a.name), style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: kPinBild * 0.34, fontWeight: FontWeight.w600, color: farbe)),
       textDirection: TextDirection.ltr,
     )..layout();
     tp.paint(canvas, mitte - ui.Offset(tp.width / 2, tp.height / 2));

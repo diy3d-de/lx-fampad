@@ -152,7 +152,7 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
     final ohneLoeschen = lauf == null || lauf.ohneZaehler == 0 ? null : paketLoeschInTagen(lauf.aeltestOhneZaehler, jetzt);
     String werte(int n) => n == 1 ? '1 Wert' : '$n Werte';
     return AuthSeite(
-      label: '// zähler',
+      label: 'Zähler',
       titel: 'Home Assistant',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -170,7 +170,7 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
                   const SizedBox(height: 6),
                   const Text('Die Werte aus Home Assistant holt das Gerät ab, auf dem die Verbindung gekoppelt wurde. Du siehst sie trotzdem in deinen Zählern, sobald dieses Gerät sie abgeholt hat.', style: TextStyle(fontSize: 13, color: kTextMuted)),
                   const SizedBox(height: 8),
-                  Text(letzter == null ? 'Noch kein Wert angekommen.' : 'Letzter Wert: ${letzter.name} · ${tagDeutsch(letzter.tag)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text(letzter == null ? 'Noch kein Wert angekommen.' : 'Letzter Wert: ${letzter.name} · ${tagDeutsch(letzter.tag)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),
@@ -200,13 +200,13 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
             child: SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Werte automatisch abholen', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Auf diesem Gerät. Aus = es wird nichts eingetragen.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              subtitle: const Text('Auf diesem Gerät. Aus = es wird nichts eingetragen.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               value: z.schalter,
               onChanged: z.postfachDa ? (v) => unawaited(ref.read(ingestProvider.notifier).schalterSetzen(v)) : null,
             ),
           ),
           const SizedBox(height: 16),
-          const MonoLabel('// zustand'),
+          const MonoLabel('Zustand'),
           const SizedBox(height: 6),
           LxCard(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
@@ -232,7 +232,7 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
                     titel: 'Werte kommen doppelt an',
                     untertitel:
                         'Für ${doppelt.zaehler.map((n) => '„$n“').join(', ')} liefern mehrere Verbindungen oder Geräte denselben Kanal (${doppelt.kanaele.map(haKanalLabel).join(', ')}). Es zählt der zuletzt geschriebene Wert je Tag. Lass nur ein Gerät abholen.',
-                    pille: const StatusPill('DOPPELT', color: kWarn),
+                    pille: const StatusPill('Doppelt', color: kWarn),
                   ),
                 if (lauf != null && lauf.fehler > 0)
                   _ZustandsZeile(titel: 'Nicht eingetragen', untertitel: '${werte(lauf.fehler)} ließen sich gerade nicht eintragen (neuer Versuch beim nächsten Abholen)', pille: StatusPill('${lauf.fehler}', color: kWarn)),
@@ -240,7 +240,7 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
                 _ZustandsZeile(
                   titel: 'Letzte Abholung',
                   untertitel: abbruch != null ? ingestAbbruchText(abbruch) : (lauf == null ? (z.aktiv ? 'noch nicht abgeholt' : 'aus') : text.toString()),
-                  pille: abbruch != null ? const StatusPill('FEHLER', color: kWarn) : (lauf != null && lauf.fehler == 0 && !lauf.quittungFehlgeschlagen ? const StatusPill('OK') : (lauf == null ? null : const StatusPill('TEILWEISE', color: kWarn))),
+                  pille: abbruch != null ? const StatusPill('Fehler', color: kWarn) : (lauf != null && lauf.fehler == 0 && !lauf.quittungFehlgeschlagen ? const StatusPill('OK') : (lauf == null ? null : const StatusPill('TEILWEISE', color: kWarn))),
                 ),
               ],
             ),
@@ -277,7 +277,7 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
         ),
         if (admin) ...[
           const SizedBox(height: 18),
-          const MonoLabel('// verbindung (nur admin)'),
+          const MonoLabel('Verbindung (nur Admin)'),
           const SizedBox(height: 6),
           _Verbindungen(beschaeftigt: _beschaeftigt, onTrennen: (v) => unawaited(_trennen(v))),
           const SizedBox(height: 10),
@@ -312,7 +312,7 @@ class _Detail extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(titel),
-          Text(text, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          Text(text, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         ],
       ),
     ),
@@ -339,7 +339,7 @@ class _ZustandsZeile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(titel),
-                  Text(untertitel, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text(untertitel, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),
@@ -388,12 +388,12 @@ class _Verbindungen extends ConsumerWidget {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(v.name, maxLines: 2, overflow: TextOverflow.ellipsis),
-                            Text(v.zuletztGehoert == null ? 'Noch nie gehört' : 'Zuletzt gehört: ${haZeitText(v.zuletztGehoert!, jetzt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                            Text(v.zuletztGehoert == null ? 'Noch nie gehört' : 'Zuletzt gehört: ${haZeitText(v.zuletztGehoert!, jetzt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      const StatusPill('AKTIV'),
+                      const StatusPill('Aktiv'),
                       TextButton(
                         style: TextButton.styleFrom(minimumSize: const Size(48, 48), foregroundColor: kDanger),
                         onPressed: beschaeftigt ? null : () => onTrennen(v),

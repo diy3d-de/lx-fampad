@@ -66,7 +66,7 @@ class MedKachelInhalt extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.baseline,
           textBaseline: TextBaseline.alphabetic,
           children: [
-            Text(daten.zeit!, style: const TextStyle(fontFamily: kFontMono, fontSize: 22, fontWeight: FontWeight.w700)),
+            Text(daten.zeit!, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 22, fontWeight: FontWeight.w700)),
             const SizedBox(width: 10),
             Expanded(child: Text('${daten.person} · nächste Einnahme', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kTextMuted))),
           ],
@@ -96,7 +96,7 @@ class MedikamenteStartKarte extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [const Expanded(child: MonoLabel('// medikamente')), if (d.offen > 0) Text('${d.offen} offen', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kWarn))]),
+            Row(children: [const Expanded(child: MonoLabel('Medikamente')), if (d.offen > 0) Text('${d.offen} offen', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kWarn))]),
             const SizedBox(height: 10),
             MedKachelInhalt(daten: d),
           ],

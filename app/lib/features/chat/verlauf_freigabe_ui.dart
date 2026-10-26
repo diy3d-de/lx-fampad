@@ -157,7 +157,7 @@ class _FreigabeDialogState extends State<_FreigabeDialog> {
             style: const TextStyle(fontSize: 14, height: 1.4),
           ),
           const SizedBox(height: 12),
-          const MonoLabel('// sicherheitscode'),
+          const MonoLabel('Sicherheitscode'),
           const SizedBox(height: 6),
           Semantics(
             label: 'Sicherheitscode von $name: ${widget.code}',

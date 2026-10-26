@@ -37,7 +37,7 @@ void main() {
     expect(a.deviceId, fixDevice);
   });
 
-  test('Anmeldung per Wiederherstellungscode liefert die Restzahl', () {
+  test('Anmeldung per Notfall-Code liefert die Restzahl', () {
     final r = LoginResult.fromJson({'user': userJson(), 'session': appSession(), 'recoveryCodesRemaining': 7});
     expect(r.recoveryCodesRemaining, 7);
     expect(LoginResult.fromJson({'user': userJson(), 'session': webSession()}).recoveryCodesRemaining, isNull);

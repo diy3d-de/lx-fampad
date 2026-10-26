@@ -228,7 +228,7 @@ class _TresorEditorState extends ConsumerState<TresorEditor> {
         geaendert: () => _ausgang != null && _stand() != _ausgang,
         aenderungen: _aenderung,
         child: AuthSeite(
-          label: _neu ? '// neu' : '// ${_alt!.kategorieAnzeige}',
+          label: _neu ? 'Neu' : _alt!.kategorieAnzeige,
           titel: _neu ? 'Eintrag' : 'Eintrag bearbeiten',
           maxBreite: kMaxContentWidth,
           fussleiste: FilledButton(
@@ -239,14 +239,14 @@ class _TresorEditorState extends ConsumerState<TresorEditor> {
           kinder: [
             if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
             if (_neu) ...[
-              const MonoLabel('// vorlage'),
+              const MonoLabel('Vorlage'),
               const SizedBox(height: 8),
               Wrap(spacing: 8, runSpacing: 8, children: [for (final v in kTresorVorlagen) AuswahlKnopf(text: v.name, gewaehlt: _vorlage == v.kennung, onTap: () => unawaited(_vorlageWaehlen(v)))]),
               const SizedBox(height: 14),
             ],
             TextField(controller: _titel, maxLength: kMaxTresorTitel, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'Titel (zum Beispiel WLAN Zuhause)', counterText: '')),
             const SizedBox(height: 14),
-            const MonoLabel('// kategorie'),
+            const MonoLabel('Kategorie'),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -269,7 +269,7 @@ class _TresorEditorState extends ConsumerState<TresorEditor> {
               ],
             ],
             const SizedBox(height: 14),
-            const MonoLabel('// felder'),
+            const MonoLabel('Felder'),
             const SizedBox(height: 8),
             for (var n = 0; n < _felder.length; n++) ...[_feldKarte(n), const SizedBox(height: 8)],
             OutlinedButton.icon(
@@ -282,7 +282,7 @@ class _TresorEditorState extends ConsumerState<TresorEditor> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 _felder.length >= kMaxTresorFelder ? 'Mehr als $kMaxTresorFelder Felder passen nicht in einen Eintrag.' : '${_felder.length} von $kMaxTresorFelder Feldern',
-                style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
             ),
             const SizedBox(height: 14),

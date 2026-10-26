@@ -44,7 +44,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
     final a = dto?.aktuell;
     final jetzt = DateTime.now();
     final seite = AuthSeite(
-      label: '// wetter',
+      label: 'Wetter',
       titel: dto != null && dto.verfuegbar && dto.ort.isNotEmpty
           ? dto.ort
           : 'Wetter',
@@ -76,7 +76,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
                 : st.fehler
                 ? 'Das Wetter konnte nicht geladen werden. Es gibt noch keinen gespeicherten Stand.'
                 : st.laedt
-                ? 'Das Wetter wird geladen …'
+                ? 'Wetter lädt …'
                 : 'Es liegen noch keine Messwerte vor.',
             fehler: false,
           )
@@ -107,7 +107,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
             subtitle: const Text(
               'nur auf diesem Gerät',
               style: TextStyle(
-                fontFamily: kFontMono,
+                fontFamily: kFontSans, fontFeatures: kZiffern,
                 fontSize: 11,
                 color: kTextMuted,
               ),
@@ -136,7 +136,7 @@ class _WetterScreenState extends ConsumerState<WetterScreen> {
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
           Row(children: [const Expanded(child: TabKopfzeile(title: 'Wetter')), ...seite.aktionen]),
-          if (dto != null && dto.verfuegbar && dto.ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel('// ${dto.ort}')],
+          if (dto != null && dto.verfuegbar && dto.ort.isNotEmpty) ...[const SizedBox(height: 4), MonoLabel(dto.ort)],
           const SizedBox(height: 16),
           ...seite.kinder,
         ],
@@ -164,12 +164,12 @@ class _Kopf extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// jetzt'),
+            const MonoLabel('Jetzt'),
             const SizedBox(height: 8),
             Text(
               temperaturText(a.temperatur),
               style: const TextStyle(
-                fontFamily: kFontMono,
+                fontFamily: kFontSans, fontFeatures: kZiffern,
                 fontSize: 40,
                 fontWeight: FontWeight.w700,
                 color: kAccent,
@@ -177,13 +177,13 @@ class _Kopf extends StatelessWidget {
             ),
             if (gefuehlt != null) ...[
               const SizedBox(height: 4),
-              Text('gefühlt ${temperaturText(gefuehlt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+              Text('gefühlt ${temperaturText(gefuehlt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
             ],
             const SizedBox(height: 6),
             Text(
               stand.text,
               style: TextStyle(
-                fontFamily: kFontMono,
+                fontFamily: kFontSans, fontFeatures: kZiffern,
                 fontSize: 12,
                 color: stand.warnung ? kWarn : kTextMuted,
               ),
@@ -194,7 +194,7 @@ class _Kopf extends StatelessWidget {
                     ? 'zuletzt abgerufen ${standText(abgerufen, jetzt)}'
                     : 'abgerufen ${standText(abgerufen, jetzt)}',
                 style: const TextStyle(
-                  fontFamily: kFontMono,
+                  fontFamily: kFontSans, fontFeatures: kZiffern,
                   fontSize: 11,
                   color: kTextMuted,
                 ),

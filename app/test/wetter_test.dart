@@ -124,7 +124,7 @@ void main() {
     'Startseite: Kachel mit Ort, Temperatur, Stand und Min/Max; Tippen öffnet die Detailseite mit allen Werten',
     (tester) async {
       await start(tester);
-      expect(find.text('// WETTER'), findsOneWidget);
+      expect(labelFinder('Wetter'), findsOneWidget);
       expect(find.text('Westerburg'), findsOneWidget);
       expect(find.text('12,5 °C'), findsOneWidget);
       expect(find.textContaining('Stand '), findsOneWidget);
@@ -171,7 +171,7 @@ void main() {
       expect(await env.db.metaLesen(kWetterAnzeigenSchluessel), 'nein');
       await tippe(tester, find.byTooltip('Zurück'));
       await warte(tester);
-      expect(find.text('// WETTER'), findsNothing);
+      expect(labelFinder('Wetter'), findsNothing);
       expect(
         env.server.log.where(
           (r) => r.method != 'GET' && r.path.contains('weather'),
@@ -183,7 +183,7 @@ void main() {
 
   testWidgets('Server hat Wetter aus: keine Kachel', (tester) async {
     await start(tester, wetter: () => {'available': false});
-    expect(find.text('// WETTER'), findsNothing);
+    expect(labelFinder('Wetter'), findsNothing);
   });
 
   testWidgets(
@@ -200,7 +200,7 @@ void main() {
           'series': <Object>[],
         },
       );
-      expect(find.text('// WETTER'), findsNothing);
+      expect(labelFinder('Wetter'), findsNothing);
     },
   );
 
@@ -247,13 +247,13 @@ void main() {
     (tester) async {
       await start(tester, groesse: const Size(1440, 900));
       expect(find.byType(DesktopHome), findsOneWidget);
-      expect(find.text('// WETTER'), findsOneWidget);
+      expect(labelFinder('Wetter'), findsOneWidget);
       expect(find.text('12,5 °C'), findsOneWidget);
       await tippe(tester, find.text('Westerburg'));
       expect(find.byType(WetterScreen), findsOneWidget);
       // Detailseite als Bereich der Shell: Seitenleiste und Fußzeile bleiben, kein Zurück-Pfeil, Kopfzeile wie bei den anderen Bereichen
       expect(find.text('lx-familyhub'), findsOneWidget);
-      expect(find.textContaining('sync: '), findsOneWidget);
+      expect(find.text('Version dev'), findsOneWidget);
       expect(find.byTooltip('Zurück'), findsNothing);
       expect(find.byType(Scaffold), findsOneWidget);
       expect(find.text('Wetter'), findsNWidgets(2)); // Seitenleiste + Kopfzeile
@@ -279,7 +279,7 @@ void main() {
     expect(find.bySemanticsLabel('Wetter'), findsOneWidget);
     await tippe(tester, find.bySemanticsLabel('Start'));
     expect(find.bySemanticsLabel('Wetter'), findsNothing);
-    expect(find.text('// WETTER'), findsNothing);
+    expect(labelFinder('Wetter'), findsNothing);
     handle.dispose();
   });
 
@@ -289,7 +289,7 @@ void main() {
       final c = ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first));
       await c.read(wetterProvider.notifier).anzeigenSetzen(false);
       await warte(tester);
-      expect(find.text('// WETTER'), findsNothing);
+      expect(labelFinder('Wetter'), findsNothing);
       if (groesse.width < 900) {
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
       } else {
@@ -301,7 +301,7 @@ void main() {
       expect(c.read(wetterProvider).anzeigen, isTrue);
       await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.byTooltip('Zurück'));
-      expect(find.text('// WETTER'), findsOneWidget);
+      expect(labelFinder('Wetter'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }

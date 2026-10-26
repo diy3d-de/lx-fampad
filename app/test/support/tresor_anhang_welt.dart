@@ -38,7 +38,7 @@ AnhangAnsicht anhang(String id, String eintragId, String name, {String? mime, in
 
 TransferZeile transferZeile(String id, String zustand, {int uebertragen = 0, int groesse = 1000, String? fehler, String art = 'anhang'}) => TransferZeile(
   id: id,
-  richtung: 'hoch',
+  richtung: 'Hoch',
   art: art,
   zustand: zustand,
   name: 'Anhang',

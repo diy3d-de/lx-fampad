@@ -149,7 +149,7 @@ void main() {
         await zumTab(tester, 'Kalender');
         pruefe(tester, 'Kalender mit Farbtermin $skala');
         await tippe(tester, find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Filter und Anzeige')));
-        expect(find.text('// FARBEN'), findsOneWidget);
+        expect(labelFinder('Farben'), findsOneWidget);
         pruefe(tester, 'Filter-Blatt mit Farben $skala');
         await tippeText(tester, 'Fertig');
         await tippe(tester, find.byTooltip('Neuer Termin'));
@@ -353,7 +353,7 @@ void main() {
         expect(data.decreasedValue, isNotEmpty);
         tester.semantics.increase(find.semantics.byLabel(RegExp(r'^Verbrauch je Monat')));
         await warte(tester);
-        expect(find.textContaining('// SEPTEMBER'), findsOneWidget);
+        expect(find.textContaining('September'), findsOneWidget);
         h.dispose();
       });
 

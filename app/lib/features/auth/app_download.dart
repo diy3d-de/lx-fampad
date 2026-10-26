@@ -25,7 +25,7 @@ class AppInstallierenBlock extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const MonoLabel('// app installieren', color: kTextMuted),
+      const MonoLabel('App installieren', color: kTextMuted),
       const SizedBox(height: 4),
       const Text(
         'Lade $kAppName für Android herunter. Dieser Link enthält keine Einladungsdaten.',
@@ -76,7 +76,7 @@ class WillkommenAppHinweis extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// lieber die app?'),
+            const MonoLabel('Lieber die App?'),
             const SizedBox(height: 8),
             const Text(
               'Lieber die App? $kAppName für Android herunterladen',

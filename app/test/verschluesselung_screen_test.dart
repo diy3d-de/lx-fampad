@@ -1,4 +1,4 @@
-// Oberfläche der Verschlüsselung (Profil > Verschlüsselung): Einrichtung samt Wiederherstellungsschlüssel (verdecken und ganz eintippen), Status,
+// Oberfläche der Verschlüsselung (Profil › Sicherheit › Nachrichten-Schutz): Einrichtung samt Wiederherstellungsschlüssel (verdecken und ganz eintippen), Status,
 // Gerät verbinden, Warnung bei Schlüsselwechsel. 360 px Breite, Textskala 1.0 und 1.5, Touch-Ziele >= 44 px.
 import 'dart:convert';
 import 'dart:typed_data';
@@ -44,7 +44,7 @@ Future<_Aufbau> _aufbau({bool bensSchluessel = false}) async {
 
 Future<void> _zurSeite(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Verschlüsselung');
+  await tippeText(tester, 'Nachrichten-Schutz');
 }
 
 Future<void> main() async {
@@ -61,7 +61,7 @@ Future<void> main() async {
       expect(find.text('Nicht eingerichtet'), findsOneWidget);
       pruefeLayout(tester, 'Verschlüsselung: nicht eingerichtet');
 
-      await tippeText(tester, 'Verschlüsselung einrichten');
+      await tippeText(tester, 'Nachrichten-Schutz einrichten');
       expect(find.text('Wiederherstellungsschlüssel'), findsWidgets);
       pruefeLayout(tester, 'Wiederherstellungsschlüssel');
       // 14 Gruppen sichtbar
@@ -88,11 +88,11 @@ Future<void> main() async {
       await tippe(tester, weiter);
 
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.text('aktiv'), findsOneWidget, reason: 'die Sicherung liegt jetzt bestätigt beim Server');
-      expect(find.textContaining('sicherung liegt beim server (seit '), findsOneWidget);
+      expect(find.text('Aktiv'), findsOneWidget, reason: 'die Sicherung liegt jetzt bestätigt beim Server');
+      expect(find.textContaining('Sicherung liegt beim Server (seit '), findsOneWidget);
       expect(find.text('Neues Gerät verbinden'), findsOneWidget);
       expect(a.srv.gespeichert(fixIdAdmin).contains('"backup":null'), isFalse, reason: 'Sicherung liegt beim Server');
-      expect(find.textContaining('// SICHERHEITSCODE'), findsOneWidget);
+      expect(find.textContaining('Sicherheitscode'), findsOneWidget);
       pruefeLayout(tester, 'Verschlüsselung: eingerichtet');
     });
 
@@ -100,13 +100,13 @@ Future<void> main() async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      await tippeText(tester, 'Verschlüsselung einrichten');
+      await tippeText(tester, 'Nachrichten-Schutz einrichten');
       await tippeText(tester, 'Später sichern');
       await tippeText(tester, 'Später');
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.textContaining('keine sicherung · jetzt erzeugen'), findsOneWidget);
+      expect(find.textContaining('Noch keine Sicherung. Jetzt anlegen'), findsOneWidget);
       expect(find.textContaining('Sicherung offen'), findsOneWidget, reason: 'sichtbare Markierung nach "Später sichern"');
-      expect(find.text('aktiv'), findsNothing);
+      expect(find.text('Aktiv'), findsNothing);
       pruefeLayout(tester, 'Verschlüsselung: ohne Sicherung');
     });
 
@@ -114,7 +114,7 @@ Future<void> main() async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      await tippeText(tester, 'Verschlüsselung einrichten');
+      await tippeText(tester, 'Nachrichten-Schutz einrichten');
       await tippeText(tester, 'Später sichern');
       await tippeText(tester, 'Später');
       await tippeText(tester, 'Neues Gerät verbinden');
@@ -177,13 +177,13 @@ Future<void> main() async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      await tippeText(tester, 'Verschlüsselung einrichten');
+      await tippeText(tester, 'Nachrichten-Schutz einrichten');
       await tippeText(tester, 'Später sichern');
       await tippeText(tester, 'Später');
       await tippe(tester, find.byTooltip('Zurück'));
       await tippeText(tester, 'Abmelden');
       expect(find.textContaining('Dein Schlüssel bleibt auf diesem Gerät'), findsOneWidget);
-      expect(find.textContaining('nicht gesichert'), findsNothing);
+      expect(find.textContaining('Noch nicht gesichert'), findsNothing);
       expect(find.text('Erst sichern'), findsNothing);
       expect(find.text('Trotzdem abmelden'), findsNothing);
       pruefeLayout(tester, 'Abmelden-Dialog mit Hinweis');
@@ -195,7 +195,7 @@ Future<void> main() async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      await tippeText(tester, 'Verschlüsselung einrichten');
+      await tippeText(tester, 'Nachrichten-Schutz einrichten');
       final gruppen = [
         for (final w in tester.widgetList<Text>(find.byType(Text)))
           if (RegExp(r'^[A-Z2-7]{4}$').hasMatch(w.data ?? '')) w.data!,
@@ -220,7 +220,7 @@ Future<void> main() async {
     await starteApp(tester, a.env);
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
     await tippeText(tester, 'Sicherheit');
-    expect(find.text('Verschlüsselung'), findsOneWidget);
+    expect(find.text('Nachrichten-Schutz'), findsOneWidget);
     expect(find.text('Warnung'), findsOneWidget);
     pruefeLayout(tester, 'Profil mit Warnung');
   });

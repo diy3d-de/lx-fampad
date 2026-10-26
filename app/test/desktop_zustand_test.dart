@@ -71,9 +71,9 @@ void main() {
     expect(tester.takeException(), isNull);
     expect(find.text('+ 3 weitere'), findsOneWidget);
     // gleiche Reihe = zwei Spalten
-    final a = tester.getTopLeft(find.text('// HEUTE & MORGEN'));
-    final b = tester.getTopLeft(find.text('// CHAT · FAMILIE'));
-    final c = tester.getTopLeft(find.text('// EINKAUFSLISTE'));
+    final a = tester.getTopLeft(labelFinder('Heute und morgen'));
+    final b = tester.getTopLeft(labelFinder('Chat · Familie'));
+    final c = tester.getTopLeft(labelFinder('Einkaufsliste'));
     expect(a.dy, b.dy);
     expect(c.dy, greaterThan(a.dy));
   });
@@ -88,7 +88,7 @@ void main() {
     await tester.pump();
     await tester.tap(find.text('Start').first);
     await warte(tester);
-    expect(find.text('// EINKAUFSLISTE'), findsOneWidget);
+    expect(labelFinder('Einkaufsliste'), findsOneWidget);
     await tester.tap(find.text('Listen').first);
     await warte(tester);
     expect(find.text('Entwurf Butter'), findsOneWidget, reason: 'Tab-Wechsel');
@@ -103,14 +103,14 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Geräte werden einmal abgerufen, auch bei Moduswechsel', (tester) async {
+  testWidgets('Die Fußzeile zeigt keine Geräteanzahl mehr und ruft die Geräte nicht ab, auch nicht bei Moduswechsel', (tester) async {
     final env = await start(tester, const Size(1440, 900));
     await warte(tester, 10);
-    expect(env.server.anfragen('GET /devices'), hasLength(1));
-    expect(find.text('geräte: 2'), findsOneWidget);
+    expect(env.server.anfragen('GET /devices'), isEmpty);
+    expect(find.text('geräte: 2'), findsNothing);
     await groesseAendern(tester, const Size(600, 900));
     await groesseAendern(tester, const Size(1440, 900));
-    expect(env.server.anfragen('GET /devices'), hasLength(1));
+    expect(env.server.anfragen('GET /devices'), isEmpty);
   });
 
   testWidgets('Semantik: Navigation und Karten sind per Tap-Aktion bedienbar', (tester) async {
@@ -118,16 +118,16 @@ void main() {
     await start(tester, const Size(1440, 900));
     tester.semantics.tap(find.semantics.byLabel('Chat'));
     await warte(tester);
-    expect(find.text('// HEUTE & MORGEN'), findsNothing);
+    expect(labelFinder('Heute und morgen'), findsNothing);
     tester.semantics.tap(find.semantics.byLabel('Start'));
     await warte(tester);
-    expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+    expect(labelFinder('Heute und morgen'), findsOneWidget);
     final karte = find.semantics.byLabel(RegExp('^Einkaufsliste'));
     expect(karte, findsOneWidget);
     expect(tester.getSemantics(find.bySemanticsLabel(RegExp('^Einkaufsliste'))), isSemantics(hasTapAction: true, isFocusable: true, isButton: true));
     tester.semantics.tap(karte);
     await warte(tester);
-    expect(find.text('// HEUTE & MORGEN'), findsNothing);
+    expect(labelFinder('Heute und morgen'), findsNothing);
     handle.dispose();
   });
 
@@ -156,26 +156,37 @@ void main() {
       expect(aufChat(), isTrue, reason: 'Fokus erreicht den Eintrag "Chat"');
       await tester.sendKeyEvent(taste);
       await warte(tester);
-      expect(find.text('// HEUTE & MORGEN'), findsNothing);
+      expect(labelFinder('Heute und morgen'), findsNothing);
     });
   }
 
-  testWidgets('Fußzeile zeigt sync, geräte, verbindung und version', (tester) async {
+  testWidgets('Fußzeile: nur Punkt und Version, keine Konsolen-Zeilen (sync/geräte/verbindung)', (tester) async {
     await start(tester, const Size(1440, 900));
     await warte(tester, 10);
-    expect(find.textContaining('sync: '), findsOneWidget);
-    expect(find.textContaining('verbindung: '), findsOneWidget);
-    expect(find.text('version: dev'), findsOneWidget, reason: 'ohne WEB_VERSION-define Fallback dev, nie "–"');
+    expect(find.textContaining('sync: '), findsNothing);
+    expect(find.textContaining('geräte: '), findsNothing);
+    expect(find.textContaining('verbindung: '), findsNothing);
+    expect(find.text('Version dev'), findsOneWidget, reason: 'ohne WEB_VERSION-define Fallback dev, nie "–"');
   });
 
-  test('syncAnzeige: Text und Farbe je Zustand (eine Quelle für Mobil und Desktop)', () {
-    expect(syncAnzeige(const SyncState(status: SyncStatus.synchron)), ('synchron', kTerminal));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.synchron, offeneAenderungen: 2)), ('synchron · 2 offen', kTerminal));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.offline, offeneAenderungen: 1)), ('offline · 1 offen', kTextMuted));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.offline)), ('offline', kTextMuted));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.laeuft)), ('gleiche ab …', kTextMuted));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.fehler)), ('abgleich fehlgeschlagen', kDanger));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.updateNoetig)), ('update nötig', kTextMuted));
-    expect(syncAnzeige(const SyncState()), ('nicht verbunden', kTextMuted));
+  test('syncAnzeige: Bedienhilfe-Text und Farbe je Zustand (eine Quelle für Mobil und Desktop)', () {
+    expect(syncAnzeige(const SyncState(status: SyncStatus.synchron)), ('Alles aktuell', kTerminal));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.synchron, offeneAenderungen: 2)), ('Alles aktuell, 2 Änderungen offen', kTerminal));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.offline, offeneAenderungen: 1)), ('Gerade keine Verbindung – Änderungen werden nachgeholt, 1 Änderung offen', kTextMuted));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.offline)), ('Gerade keine Verbindung – Änderungen werden nachgeholt', kTextMuted));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.laeuft)), ('Überträgt …', kTextMuted));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.fehler)), ('Übertragen hat nicht geklappt', kDanger));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.updateNoetig)), ('Update nötig', kTextMuted));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.wartung)), ('Kurze Wartung', kWarn));
+    expect(syncAnzeige(const SyncState()), ('Nicht verbunden', kTextMuted));
+  });
+
+  test('syncHinweis: Text nur, wenn etwas nicht stimmt', () {
+    expect(syncHinweis(const SyncState(status: SyncStatus.synchron, offeneAenderungen: 3)), isNull);
+    expect(syncHinweis(const SyncState(status: SyncStatus.laeuft)), isNull);
+    expect(syncHinweis(const SyncState(status: SyncStatus.offline)), 'Gerade keine Verbindung – Änderungen werden nachgeholt');
+    expect(syncHinweis(const SyncState(status: SyncStatus.wartung)), 'Kurze Wartung');
+    expect(syncHinweis(const SyncState(status: SyncStatus.fehler)), 'Übertragen hat nicht geklappt');
+    expect(syncHinweis(const SyncState(status: SyncStatus.updateNoetig)), 'Update nötig');
   });
 }

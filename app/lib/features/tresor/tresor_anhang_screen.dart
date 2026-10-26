@@ -156,7 +156,7 @@ class _TresorAnhangScreenState extends ConsumerState<TresorAnhangScreen> {
     return TresorSeite(
       unterseite: true,
       child: AuthSeite(
-        label: '// dokument',
+        label: 'Dokument',
         titel: name,
         maxBreite: kMaxContentWidth,
         kinder: [
@@ -219,7 +219,7 @@ class _TresorAnhangScreenState extends ConsumerState<TresorAnhangScreen> {
             child: Row(
               children: [
                 const Expanded(child: Text('Datei', style: TextStyle(color: kTextMuted))),
-                Flexible(child: Text(meta, textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontMono, fontSize: 12))),
+                Flexible(child: Text(meta, textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12))),
               ],
             ),
           ),

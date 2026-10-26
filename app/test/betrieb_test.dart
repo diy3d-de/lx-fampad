@@ -154,7 +154,7 @@ void main() {
 
   Future<void> betriebOeffnenMobil(WidgetTester tester) async {
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-    await tippe(tester, find.text('Betrieb'));
+    await tippe(tester, find.text('Betrieb').last);
   }
 
   group('Sichtbarkeit', () {
@@ -162,7 +162,7 @@ void main() {
       final env = await start(tester, betreiber: false);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
       expect(find.text('Betrieb'), findsNothing);
-      expect(find.text('// BETRIEB'), findsNothing);
+      expect(labelFinder('Betrieb'), findsNothing);
       expect(env.server.log.where((r) => r.path.startsWith('/admin')), isEmpty);
     });
 
@@ -174,10 +174,10 @@ void main() {
 
     testWidgets('Desktop: Betreiber öffnet "Betrieb" in der Seitenleiste, Seitenleiste und Fußzeile bleiben', (tester) async {
       final env = await start(tester, groesse: const Size(1440, 900));
-      await tippe(tester, find.text('Betrieb'));
+      await tippe(tester, find.text('Betrieb').last);
       expect(find.byType(BetriebScreen), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
-      expect(find.textContaining('sync: '), findsOneWidget);
+      expect(find.text('Version dev'), findsOneWidget);
       expect(find.text('0.7.0'), findsWidgets);
       expect(env.server.anfragen('GET /admin/status'), isNotEmpty);
       // erneutes Tippen öffnet keine zweite Seite
@@ -192,8 +192,8 @@ void main() {
       final env = await start(tester);
       await betriebOeffnenMobil(tester);
       expect(find.byType(BetriebScreen), findsOneWidget);
-      expect(find.text('● alles in Ordnung'), findsOneWidget);
-      expect(find.text('// SERVER'), findsOneWidget);
+      expect(find.text('alles in Ordnung'), findsOneWidget);
+      expect(labelFinder('Server'), findsOneWidget);
       expect(find.text('online seit 3 T 4 Std'), findsOneWidget);
       expect(find.text('38 MB'), findsWidgets);
       expect(find.text('41 %'), findsOneWidget);
@@ -217,7 +217,7 @@ void main() {
         status: () => {..._status(overall: 'error', backup: {'state': 'unknown', 'lastSuccessAt': null, 'ageHours': null, 'totalBytes': null, 'lastResult': null}, disk: null), 'certificate': null},
       );
       await betriebOeffnenMobil(tester);
-      expect(find.text('● Störung'), findsOneWidget);
+      expect(find.text('Störung'), findsOneWidget);
       expect(find.text('unbekannt'), findsWidgets);
       expect(find.text('Statusdatei nicht lesbar'), findsOneWidget);
       expect(find.textContaining('Zertifikat nicht ermittelbar'), findsOneWidget);
@@ -264,7 +264,7 @@ void main() {
       );
       await betriebOeffnenMobil(tester);
       await tippe(tester, find.text('Protokoll'));
-      expect(find.text('// AUDIT-PROTOKOLL'), findsOneWidget);
+      expect(labelFinder('Audit-Protokoll'), findsOneWidget);
       expect(find.text('Anmeldung'), findsWidgets);
       expect(find.textContaining('Anna · 203.0.113.0/24'), findsWidgets);
       // nie das Detail-Feld oder Roh-Codes
@@ -308,8 +308,8 @@ void main() {
     testWidgets('Gesamtzeile: Unbekanntes wird nicht als "alles in Ordnung" gemeldet', (tester) async {
       await start(tester, status: () => {..._status(), 'unknownCount': 3});
       await betriebOeffnenMobil(tester);
-      expect(find.text('● in Ordnung, 3 unbekannt'), findsOneWidget);
-      expect(find.text('● alles in Ordnung'), findsNothing);
+      expect(find.text('in Ordnung, 3 unbekannt'), findsOneWidget);
+      expect(find.text('alles in Ordnung'), findsNothing);
     });
 
     testWidgets('Migrationsstand ohne Leserecht: "unbekannt" mit Hinweis auf den Grant', (tester) async {
@@ -328,10 +328,10 @@ void main() {
       tester.platformDispatcher.textScaleFactorTestValue = 2.0;
       await warte(tester);
       tester.takeException(); // Überlauf des Profils bei 2.0 gehört nicht zu diesem Paket
-      await tippe(tester, find.text('Betrieb'));
+      await tippe(tester, find.text('Betrieb').last);
       await warte(tester);
-      final a = tester.getTopLeft(find.text('// SERVER'));
-      final b = tester.getTopLeft(find.text('// DATENBANK'));
+      final a = tester.getTopLeft(labelFinder('Server'));
+      final b = tester.getTopLeft(labelFinder('Datenbank'));
       expect(a.dx, b.dx);
       expect(b.dy, greaterThan(a.dy));
       pruefeLayout(tester, 'Betrieb 2.0');
@@ -352,7 +352,7 @@ void main() {
       await start(tester, groesse: const Size(1440, 900));
       await tippe(tester, find.byIcon(Icons.settings_outlined));
       expect(find.byType(ProfileScreen), findsOneWidget);
-      await tippe(tester, find.text('Betrieb'));
+      await tippe(tester, find.text('Betrieb').last);
       expect(find.byType(BetriebScreen), findsOneWidget);
       expect(find.byType(ProfileScreen), findsNothing);
       await tippe(tester, find.byIcon(Icons.settings_outlined));

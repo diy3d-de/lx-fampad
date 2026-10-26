@@ -209,7 +209,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     ref.listen(resetHinweisProvider, (_, text) => _resetHinweisZeigen(text));
     // Nach der Anmeldung mit Passwort: Gerät automatisch mit dem Schlüssel verbunden (oder warum nicht)
     ref.listen(autoVerbindenHinweisProvider, (_, text) => _autoVerbindenHinweisZeigen(text));
-    // Tipp auf die Sicherheitsbenachrichtigung: Profil > Sicherheitsereignisse
+    // Tipp auf die Sicherheitsbenachrichtigung: Profil › Sicherheit › Sicherheitsereignisse
     ref.listen(sicherheitOeffnenProvider, (_, _) {
       if (mounted) unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const SicherheitEreignisseScreen())));
     });
@@ -303,7 +303,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         SnackBar(
           content: Text(hinweis.abgebenAnbieten ? '${hinweis.text} Ist das nicht dein eigenes Gerät? Dann gib es unter „Gerät abgeben“ wieder ab.' : hinweis.text),
           duration: const Duration(seconds: 12),
-          // Weg zurück: Profil > Verschlüsselung (dort „Gerät abgeben – alles löschen“ unter „Erweitert“)
+          // Weg zurück: Profil › Sicherheit › Nachrichten-Schutz (dort „Gerät abgeben – alles löschen“ unter „Erweitert“)
           action: hinweis.abgebenAnbieten
               ? SnackBarAction(label: 'Gerät abgeben', onPressed: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const VerschluesselungScreen()))))
               : null,
@@ -338,8 +338,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       if (await db.metaLesen(kSicherheitAbgemeldetSchluessel) == null || !mounted) return;
       await _dialogZeigen(
         'Dein Passwort wurde zurückgesetzt',
-        'Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde. Warst du das nicht, melde dich mit einem Wiederherstellungscode an und sage es einem Admin. '
-            'Details stehen unter Profil > Sicherheitsereignisse.',
+        'Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde. Warst du das nicht, melde dich mit einem Notfall-Code an und sage es einem Admin. '
+            'Details stehen unter Profil › Sicherheit › Sicherheitsereignisse.',
       );
       await db.metaLoeschen(kSicherheitAbgemeldetSchluessel);
     } catch (_) {}

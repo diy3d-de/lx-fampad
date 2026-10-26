@@ -45,7 +45,7 @@ class PasswortAnmeldung {
 
   static const _fehlerGeraet = CryptoFehler(
     CryptoFehlerArt.bibliothek,
-    'Die Anmeldung ist auf diesem Gerät gerade nicht möglich (Verschlüsselung nicht verfügbar). Bitte versuche es mit einem Passkey.',
+    'Die Anmeldung ist auf diesem Gerät gerade nicht möglich (Nachrichten-Schutz nicht verfügbar). Bitte versuche es mit „Anmelden ohne Passwort“ (Passkey).',
   );
 
   /// Leitet den authKey ab; null, wenn das auf diesem Gerät nicht geht (Bibliothek fehlt, unbekanntes Verfahren des Servers). Netzfehler gehen nach oben.

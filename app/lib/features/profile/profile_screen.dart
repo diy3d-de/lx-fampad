@@ -54,7 +54,7 @@ class EinstellungsZeile extends StatelessWidget {
                 children: [
                   Text(titel, style: const TextStyle(fontWeight: FontWeight.w600)),
                   if (untertitel != null)
-                    Text(untertitel!, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(untertitel!, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),
@@ -143,7 +143,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
             duration: Duration(seconds: 8),
             content: Text(
               'Du wurdest nur auf diesem Gerät abgemeldet: Der Server war nicht erreichbar. Die Sitzung dort bleibt bis zum Ablauf gültig; '
-              'du kannst sie später unter "Angemeldete Geräte" beenden.',
+              'Du kannst sie später unter "Angemeldete Geräte" beenden.',
             ),
           ),
         );
@@ -160,7 +160,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
     final user = auth.user;
     final web = ref.watch(profilWebProvider);
     return AuthSeite(
-      label: '// konto',
+      label: 'Konto',
       titel: 'Profil',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -177,12 +177,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                     children: [
                       Text(user.displayName, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: kTextStrong)),
                       if (user.email != null)
-                        Text(user.email!, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                        Text(user.email!, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                       const SizedBox(height: 6),
                       Wrap(
                         spacing: 6,
                         runSpacing: 4,
-                        children: [...rollenPillen(user.role, user.familyRole), if (ref.watch(elternHilfeAktivProvider)) const RollenPille('eltern-hilfe aktiv', farbe: kTerminal)],
+                        children: [...rollenPillen(user.role, user.familyRole), if (ref.watch(elternHilfeAktivProvider)) const RollenPille('Eltern-Hilfe aktiv', farbe: kTerminal)],
                       ),
                       const SizedBox(height: 2),
                       Semantics(
@@ -194,12 +194,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
                             constraints: const BoxConstraints(minHeight: 44),
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: Text('Familienrolle ändern (nur Anzeige)', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
+                              child: Text('Familienrolle ändern (nur Anzeige)', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kAccent)),
                             ),
                           ),
                         ),
                       ),
-                      const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent)),
+                      const Text('Profilbild ändern', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kAccent)),
                     ],
                   ),
                 ),
@@ -221,41 +221,41 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
           LinkKnopf('Trotzdem nur lokal abmelden', onPressed: laeuft ? null : () => _abmeldenAusfuehren(ueberall: _abmeldenUeberall, nurLokal: true)),
         ],
         const SizedBox(height: 12),
-        const MonoLabel('// einstellungen'),
+        const MonoLabel('Einstellungen'),
         const SizedBox(height: 8),
         SicherheitsZeile(onTap: () => _oeffne(const SicherheitScreen())),
-        EinstellungsZeile(icon: Icons.notifications_none, titel: 'Benachrichtigungen', untertitel: web ? 'erinnerungen' : 'erinnerungen und push', onTap: () => _oeffne(const BenachrichtigungenScreen())),
-        EinstellungsZeile(icon: Icons.dashboard_customize_outlined, titel: 'Startseite und Anzeige', untertitel: web ? 'kacheln, wetter' : 'kacheln, wetter, widget', onTap: () => _oeffne(const AnzeigeScreen())),
-        EinstellungsZeile(icon: Icons.calendar_month_outlined, titel: 'Kalender', untertitel: 'import und export (ics)', onTap: () => _oeffne(const KalenderEinstellungenScreen())),
+        EinstellungsZeile(icon: Icons.notifications_none, titel: 'Benachrichtigungen', untertitel: web ? 'Erinnerungen' : 'Erinnerungen und Hinweise aufs Handy', onTap: () => _oeffne(const BenachrichtigungenScreen())),
+        EinstellungsZeile(icon: Icons.dashboard_customize_outlined, titel: 'Startseite und Anzeige', untertitel: web ? 'Kacheln und Wetter' : 'Kacheln, Wetter und Widget', onTap: () => _oeffne(const AnzeigeScreen())),
+        EinstellungsZeile(icon: Icons.calendar_month_outlined, titel: 'Kalender', untertitel: 'Termine importieren und exportieren', onTap: () => _oeffne(const KalenderEinstellungenScreen())),
         const _MuellZeile(),
         if (auth.darfEinladen) ...[
           const SizedBox(height: 12),
-          const MonoLabel('// familie'),
+          const MonoLabel('Familie'),
           const SizedBox(height: 8),
           EinstellungsZeile(
             icon: Icons.group_outlined,
             titel: auth.istAdmin ? 'Mitglieder und Einladungen' : 'Einladungen',
-            untertitel: auth.istAdmin ? 'verwalten' : 'für Kinder',
+            untertitel: auth.istAdmin ? 'Mitglieder verwalten' : 'Einladungen für Kinder',
             onTap: () => _oeffne(const AdminScreen()),
           ),
         ],
         // Betreiber-Ansicht (Konto-Flag, nicht die Rolle): nur lesen, auch mobil über das Profil erreichbar
         if (auth.istBetreiber) ...[
           const SizedBox(height: 12),
-          const MonoLabel('// betrieb'),
+          const MonoLabel('Betrieb'),
           const SizedBox(height: 8),
           EinstellungsZeile(
             icon: Icons.monitor_heart_outlined,
             titel: 'Betrieb',
-            untertitel: 'zustand des servers, protokoll, nur lesen',
+            untertitel: 'Zustand des Servers und Protokoll',
             // im Desktop-Layout ersetzt die Seite das Konto (beide stapeln dort nicht), mobil liegt sie darüber
             onTap: () => DesktopShellMarke.vorhanden(context) ? Navigator.of(context).pushReplacement<void, void>(BetriebScreen.route()) : Navigator.of(context).push<void>(BetriebScreen.route()),
           ),
         ],
         const SizedBox(height: 12),
-        const MonoLabel('// app'),
+        const MonoLabel('App'),
         const SizedBox(height: 8),
-        EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kAppName', untertitel: 'version und update', onTap: () => _oeffne(const UeberScreen())),
+        EinstellungsZeile(icon: Icons.info_outline, titel: 'Über $kAppName', untertitel: 'Version und Updates', onTap: () => _oeffne(const UeberScreen())),
         const SizedBox(height: 4),
         ZweitKnopf(text: 'Abmelden', icon: Icons.logout, onPressed: laeuft ? null : () => _abmelden(ueberall: false)),
         const SizedBox(height: 8),
@@ -281,7 +281,7 @@ class _MuellZeile extends ConsumerWidget {
     return EinstellungsZeile(
       icon: Icons.delete_outline,
       titel: 'Müll',
-      untertitel: 'erinnerung, kalender, abfuhrkalender',
+      untertitel: 'Erinnerung und Abfuhrkalender',
       onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const MuellEinstellungenScreen()))),
     );
   }

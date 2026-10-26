@@ -84,7 +84,7 @@ class MuellTagesZeile extends StatelessWidget {
                   children: [
                     Icon(a.icon, size: 14, color: a.farbe),
                     const SizedBox(width: 6),
-                    Flexible(child: Text(a.name, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: a.farbe))),
+                    Flexible(child: Text(a.name, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: a.farbe))),
                   ],
                 ),
               ),

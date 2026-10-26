@@ -53,14 +53,14 @@ void main() {
       expect(find.textContaining('September'), findsWidgets); // letzter voller Monat
       expect(find.textContaining('Ersparnis ca.'), findsOneWidget);
       expect(find.textContaining('Noch kein Monatswert'), findsNothing);
-      expect(find.textContaining('NÄCHSTE'), findsOneWidget);
+      expect(find.textContaining('Nächste'), findsOneWidget);
       expect(find.textContaining('Zählerstand'), findsNothing);
       pruefeLayout(tester, 'Kachel Monatswerte');
     });
 
     testWidgets('fehlt der Vormonat: Hinweiskarte und Pille nennen den Monatswert, nicht das Ablesen', (tester) async {
       await start(tester, nurSolar(vormonat: false));
-      expect(find.text('WERT FÄLLIG'), findsOneWidget);
+      expect(find.text('Wert fällig'), findsOneWidget);
       expect(find.textContaining('Erzeugung September fehlt'), findsOneWidget);
       expect(find.text('Eintragen'), findsOneWidget);
       expect(find.text('Ablesen'), findsNothing);
@@ -181,11 +181,11 @@ void main() {
       expect(find.text('2026 bisher'), findsOneWidget);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
       await warte(tester);
-      expect(find.text('// LETZTE WERTE'), findsOneWidget);
+      expect(labelFinder('Letzte Werte'), findsOneWidget);
       await tippe(tester, find.byType(PopupMenuButton<String>).first);
       await tippe(tester, find.text('Bearbeiten'));
       expect(find.text('Monatswert'), findsOneWidget);
-      expect(find.text('// ÄNDERN'), findsOneWidget);
+      expect(labelFinder('Ändern'), findsOneWidget);
       expect(find.textContaining('schon einen Wert'), findsNothing); // eigener Wert: keine Rückfrage
       await tippe(tester, find.byIcon(Icons.arrow_back).first);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
@@ -227,9 +227,9 @@ void main() {
       await oeffneEditor(tester);
       await eingeben(tester, 'Name (zum Beispiel Strom Haus)', 'Garage Solar');
       await tippe(tester, find.text('Erzeugung (Solar) · kWh'));
-      expect(find.text('// EINGABEART'), findsOneWidget);
+      expect(labelFinder('Eingabeart'), findsOneWidget);
       expect(find.textContaining('Einen Zähler brauchst du dafür nicht'), findsOneWidget);
-      expect(find.text('// ABLESE-RHYTHMUS'), findsNothing);
+      expect(labelFinder('Ablese-rhythmus'), findsNothing);
       expect(find.textContaining('Am 1. jedes Monats um 9 Uhr'), findsOneWidget);
       expect(find.textContaining('Aktueller Zählerstand'), findsNothing);
       pruefeLayout(tester, 'Editor Monatswerte');
@@ -243,10 +243,10 @@ void main() {
       await oeffneEditor(tester);
       await eingeben(tester, 'Name (zum Beispiel Strom Haus)', 'Strom Haus');
       await tippe(tester, find.text('Strom · kWh'));
-      expect(find.text('// ABLESE-RHYTHMUS'), findsOneWidget);
+      expect(labelFinder('Ablese-rhythmus'), findsOneWidget);
       gewaehlt(tester, 'Zählerstand', true);
       await tippe(tester, find.text('Monatswerte'));
-      expect(find.text('// ABLESE-RHYTHMUS'), findsNothing);
+      expect(labelFinder('Ablese-rhythmus'), findsNothing);
       expect(find.textContaining('Verbrauch je Monat direkt'), findsOneWidget);
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
       expect(repo.angelegt.single.modus, ZaehlerModus.monat);

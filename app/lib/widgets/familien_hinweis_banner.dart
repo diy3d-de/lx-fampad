@@ -37,10 +37,10 @@ class FamilienHinweisBanner extends ConsumerWidget {
             _Banner(
               icon: Icons.build_outlined,
               farbe: kWarn,
-              label: '// wartung',
+              label: 'Wartung',
               text: wartung?.bis == null
-                  ? 'Wartung: Die Familienzentrale wird gerade gewartet. Änderungen bleiben auf deinem Gerät und werden danach abgeglichen.'
-                  : 'Wartung bis ${endeText(wartung!.bis!, jetzt)}: Änderungen bleiben auf deinem Gerät und werden danach abgeglichen.',
+                  ? 'Wartung: Die Familienzentrale wird gerade gewartet. Änderungen bleiben auf deinem Gerät und werden danach übertragen.'
+                  : 'Wartung bis ${endeText(wartung!.bis!, jetzt)}: Änderungen bleiben auf deinem Gerät und werden danach übertragen.',
             ),
           if (z.wartung && hinweis != null) const SizedBox(height: 8),
           if (hinweis != null)
@@ -48,7 +48,7 @@ class FamilienHinweisBanner extends ConsumerWidget {
               icon: Icons.campaign_outlined,
               farbe: kAccent,
               // fester Absender: ein Hinweis wirkt nie wie eine Systemmeldung der App (Wartung) und der Text bleibt erkennbar als Text des Betreibers
-              label: '// hinweis des betreibers',
+              label: 'Hinweis des Betreibers',
               text: hinweis.text,
               schliessen: () => ref.read(familienHinweisProvider.notifier).schliessen(),
             ),

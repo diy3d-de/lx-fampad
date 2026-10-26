@@ -90,14 +90,14 @@ void main() {
 
   group('serverKennzeile', () {
     test('Android: Host und TLS aus API_BASE', () {
-      expect(serverKennzeile(api: 'https://familie.beispiel.de', web: false), '● familie.beispiel.de · tls 1.3');
+      expect(serverKennzeile(api: 'https://familie.beispiel.de', web: false), 'familie.beispiel.de · verschlüsselt');
     });
     test('Web: Adresse der Seite; ohne https keine TLS-Angabe', () {
-      expect(serverKennzeile(api: '', seite: Uri.parse('https://fam.test/'), web: true), '● fam.test · tls 1.3');
-      expect(serverKennzeile(api: '', seite: Uri.parse('http://localhost:8080/'), web: true), '● localhost');
+      expect(serverKennzeile(api: '', seite: Uri.parse('https://fam.test/'), web: true), 'fam.test · verschlüsselt');
+      expect(serverKennzeile(api: '', seite: Uri.parse('http://localhost:8080/'), web: true), 'localhost');
     });
     test('ohne Angaben: Standard-Domain', () {
-      expect(serverKennzeile(api: '', web: false), '● $kInviteHost · tls 1.3');
+      expect(serverKennzeile(api: '', web: false), '$kInviteHost · verschlüsselt');
     });
   });
 }

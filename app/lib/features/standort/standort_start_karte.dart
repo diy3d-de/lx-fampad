@@ -53,7 +53,7 @@ class StandortStartKarte extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const MonoLabel('// standort'),
+              const MonoLabel('Standort'),
               const SizedBox(height: 10),
               Row(
                 children: [

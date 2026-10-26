@@ -68,7 +68,7 @@ class AnstehenderTermin extends StatelessWidget {
                   '$tagText · ${zeitText(v, tag)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                  style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                 ),
               ],
             ),

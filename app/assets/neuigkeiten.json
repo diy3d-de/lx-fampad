@@ -1,4 +1,9 @@
 {
+  "0.20.0": [
+    "Ruhigerer Look: dezenteres Türkis statt Neon, Karten ohne Rahmen, normale Schrift statt Terminal-Optik. Der Hintergrund bleibt",
+    "Verständlichere Texte: „Anmelden ohne Passwort“, „Notfall-Codes“, „Nachrichten-Schutz“ und Formulare als Fragen („Wer macht das?“)",
+    "Der Übertragungs-Status zeigt nur noch einen Punkt, solange alles aktuell ist"
+  ],
   "0.19.0": [
     "Home Assistant: Zählerstände (z. B. Strom und Solar) können jeden Tag automatisch aus Home Assistant in deine Zähler kommen, Ende-zu-Ende verschlüsselt. Einrichten unter Zähler › Home Assistant (nur Eltern)",
     "Das Menü „Mehr“ und die Seitenleiste sind jetzt in Gruppen geordnet: Familie, Zuhause und Ablage. Fristen und Suche gibt es nun auch am Desktop",

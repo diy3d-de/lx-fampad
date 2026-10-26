@@ -9,6 +9,7 @@ import 'package:lx_fampad/data/countdown/countdown_logik.dart';
 import 'package:lx_fampad/data/countdown/countdown_state.dart';
 import 'package:lx_fampad/features/calendar/countdown_karte.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
+import 'support/harness.dart';
 
 Termin _termin(String id, String titel, {String? start, String? rrule}) => Termin(
   id: id,
@@ -123,11 +124,11 @@ void main() {
       expect(find.text('in 62 Tagen'), findsOneWidget);
       expect(find.text('morgen'), findsOneWidget);
       expect(find.text('heute'), findsOneWidget);
-      expect(find.text('// COUNTDOWN'), findsOneWidget);
+      expect(labelFinder('Countdown'), findsOneWidget);
       expect(tester.takeException(), isNull);
       await zeige(const []);
       await tester.pump();
-      expect(find.text('// COUNTDOWN'), findsNothing);
+      expect(labelFinder('Countdown'), findsNothing);
     });
   }
 }

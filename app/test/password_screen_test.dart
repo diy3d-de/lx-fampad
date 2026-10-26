@@ -1,4 +1,4 @@
-// Begrüßung mit Namen auf dem Start-Tab und Profil > Passwort & Zwei-Faktor (einrichten, ändern, entfernen), 360 px, Textskala 1.0/1.5.
+// Begrüßung mit Namen auf dem Start-Tab und Profil > Passwort und zweiter Schritt (einrichten, ändern, entfernen), 360 px, Textskala 1.0/1.5.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -39,7 +39,7 @@ FakeServer _server({bool password = false, int passkeys = 1}) {
 
 Future<void> _zurSeite(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Passwort und Zwei-Faktor (TOTP)');
+  await tippeText(tester, 'Passwort und zweiter Schritt');
 }
 
 void main() {
@@ -89,7 +89,7 @@ void main() {
     }
   });
 
-  group('Passwort und Zwei-Faktor', () {
+  group('Passwort und zweiter Schritt', () {
     testWidgets('Zeile ist klickbar und zeigt den Stand', (tester) async {
       final env = TestUmgebung(_server());
       await env.angemeldet();
@@ -128,8 +128,8 @@ void main() {
       // Step-up-Dialog: mit Code bestätigen, dann läuft der Start erneut
       expect(find.text('Bitte bestätigen'), findsOneWidget);
       stepUp = false;
-      await tippeText(tester, 'Wiederherstellungscode nutzen');
-      await eingeben(tester, 'Wiederherstellungscode', 'ABCD-EFGH-IJKL-MNOP');
+      await tippeText(tester, 'Notfall-Code nutzen');
+      await eingeben(tester, 'Notfall-Code', 'ABCD-EFGH-IJKL-MNOP');
       await tippeText(tester, 'Mit Code bestätigen');
       expect(server.anfragen('POST /me/password/start').last.json, {'password': 'ein-sehr-langes-passwort'});
 
@@ -149,7 +149,7 @@ void main() {
       await eingeben(tester, 'Code aus der Authenticator-App', '654321');
       await tippeText(tester, 'Bestätigen und einrichten');
       expect(server.anfragen('POST /me/password/complete').single.json, {'challengeId': 'c-pw', 'code': '654321'});
-      expect(find.text('Passwort und Zwei-Faktor sind eingerichtet.'), findsOneWidget);
+      expect(find.text('Passwort und zweiter Schritt sind eingerichtet.'), findsOneWidget);
       expect(find.text('Passwort und Authenticator sind eingerichtet'), findsOneWidget);
       expect(find.text('Passwort ändern'), findsOneWidget);
       // der ganze Screen ist geschützt (auch die Übersicht); beim Verlassen wird der Schutz wieder aufgehoben
@@ -211,10 +211,10 @@ void main() {
       await env.angemeldet();
       await starteApp(tester, env);
       await _zurSeite(tester);
-      await tippeText(tester, 'Passwort und Zwei-Faktor entfernen');
+      await tippeText(tester, 'Passwort und zweiter Schritt entfernen');
       await tippeText(tester, 'Abbrechen');
       expect(server.anfragen('DELETE /me/password'), isEmpty);
-      await tippeText(tester, 'Passwort und Zwei-Faktor entfernen');
+      await tippeText(tester, 'Passwort und zweiter Schritt entfernen');
       await tippe(tester, find.widgetWithText(TextButton, 'Entfernen'));
       expect(server.anfragen('DELETE /me/password'), hasLength(1));
       expect(find.text('Noch nicht eingerichtet'), findsOneWidget);
@@ -226,7 +226,7 @@ void main() {
       await env.angemeldet();
       await starteApp(tester, env);
       await _zurSeite(tester);
-      final knopf = find.ancestor(of: find.text('Passwort und Zwei-Faktor entfernen'), matching: find.byType(OutlinedButton));
+      final knopf = find.ancestor(of: find.text('Passwort und zweiter Schritt entfernen'), matching: find.byType(OutlinedButton));
       expect(tester.widget<OutlinedButton>(knopf).onPressed, isNull);
       expect(find.textContaining('Passkey eingerichtet'), findsOneWidget);
     });
@@ -237,7 +237,7 @@ void main() {
       await env.angemeldet();
       await starteApp(tester, env);
       await _zurSeite(tester);
-      await tippeText(tester, 'Passwort und Zwei-Faktor entfernen');
+      await tippeText(tester, 'Passwort und zweiter Schritt entfernen');
       await tippe(tester, find.widgetWithText(TextButton, 'Entfernen'));
       expect(find.text('Das ist dein letzter Zugang. Lege zuerst einen anderen an.'), findsOneWidget);
     });
@@ -289,12 +289,12 @@ void main() {
       await eingeben(tester, 'Code aus der Authenticator-App', '654321');
       await tippeText(tester, 'Bestätigen und einrichten');
       // /me hängt noch: weder Übersicht noch Hinweis (kein Doppel-Absenden)
-      expect(find.text('Passwort und Zwei-Faktor sind eingerichtet.'), findsNothing);
+      expect(find.text('Passwort und zweiter Schritt sind eingerichtet.'), findsNothing);
       expect(find.text('Passwort und Authenticator sind eingerichtet'), findsNothing);
       expect(server.anfragen('POST /me/password/complete'), hasLength(1));
       hang.complete();
       await warte(tester);
-      expect(find.text('Passwort und Zwei-Faktor sind eingerichtet.'), findsOneWidget);
+      expect(find.text('Passwort und zweiter Schritt sind eingerichtet.'), findsOneWidget);
       expect(find.text('Passwort und Authenticator sind eingerichtet'), findsOneWidget);
       expect(find.text('Passwort ändern'), findsOneWidget);
     });

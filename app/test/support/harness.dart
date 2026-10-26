@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:lx_fampad/app.dart';
 import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/ui/widgets.dart' show MonoLabel, beschriftungText;
 
 import 'fake_server.dart';
 import 'test_app.dart';
@@ -89,11 +90,11 @@ Future<void> tippe(WidgetTester tester, Finder f) async {
 /// Zeilen der Profil-Unterseiten und die Sammelseite, auf der sie liegen (Profil-Umbau): `tippeText` öffnet die Sammelseite zuerst, wenn die Zeile
 /// auf der aktuellen Seite fehlt (so bleiben die Tests der einzelnen Seiten unabhängig davon, wohin die Zeile einsortiert ist).
 const profilZeilenSeite = <String, String>{
-  'Passkeys': 'Sicherheit',
-  'Passwort und Zwei-Faktor (TOTP)': 'Sicherheit',
-  'Wiederherstellungscodes': 'Sicherheit',
+  'Anmelden ohne Passwort': 'Sicherheit',
+  'Passwort und zweiter Schritt': 'Sicherheit',
+  'Notfall-Codes': 'Sicherheit',
   'Bin ich abgesichert?': 'Sicherheit',
-  'Verschlüsselung': 'Sicherheit',
+  'Nachrichten-Schutz': 'Sicherheit',
   'Angemeldete Geräte': 'Sicherheit',
   'Sicherheitsereignisse': 'Sicherheit',
   'Erinnerungen': 'Benachrichtigungen',
@@ -202,4 +203,10 @@ Future<void> zumBereich(WidgetTester tester, String label) async {
     await tester.tap(find.descendant(of: find.byType(BottomSheet), matching: find.text(label)));
   }
   await warte(tester);
+}
+
+/// Findet eine Beschriftung (`MonoLabel`) nach ihrem angezeigten Text (exakt, fertige Satzschreibung): trennt sie von gleichnamigen Titeln, Tabs und
+/// Seitenleisten-Einträgen (z. B. Karte "Aufgaben" und Bereich "Aufgaben").
+Finder labelFinder(String text) {
+  return find.byWidgetPredicate((w) => w is MonoLabel && beschriftungText(w.text) == text);
 }

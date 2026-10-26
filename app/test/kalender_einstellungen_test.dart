@@ -24,7 +24,7 @@ void main() {
     testWidgets('Textskala $skala (360 px): Abschnitt und beide Einträge sichtbar, kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
       await oeffneMobil(tester, skala: skala);
       expect(find.byType(KalenderEinstellungenScreen), findsOneWidget);
-      expect(find.text('IMPORT UND EXPORT'), findsOneWidget);
+      expect(find.text('Import und Export'), findsOneWidget);
       expect(find.text('Datei importieren (.ics)'), findsOneWidget);
       expect(find.text('Kalender exportieren'), findsOneWidget);
       for (final e in find.byType(EinstellungsZeile).evaluate()) {
@@ -61,8 +61,8 @@ void main() {
     await tippe(tester, find.widgetWithText(EinstellungsZeile, 'Kalender'));
     expect(find.byType(KalenderEinstellungenScreen), findsOneWidget);
     expect(find.text('lx-familyhub'), findsOneWidget);
-    expect(find.textContaining('sync: '), findsOneWidget);
-    expect(tester.getTopLeft(find.text('IMPORT UND EXPORT')).dx, greaterThan(248), reason: 'rechts neben der Seitenleiste');
+    expect(find.text('Version dev'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('Import und Export')).dx, greaterThan(248), reason: 'rechts neben der Seitenleiste');
     await tippe(tester, find.text('Datei importieren (.ics)'));
     expect(find.byType(IcsImportScreen), findsOneWidget);
     expect(find.text('lx-familyhub'), findsOneWidget);

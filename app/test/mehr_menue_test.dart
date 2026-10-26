@@ -214,7 +214,7 @@ void main() {
   group('Gruppen', () {
     List<String> ueberschriften() => [
       for (final g in MehrGruppe.values)
-        if (find.descendant(of: blatt(), matching: find.text(g.label.toUpperCase())).evaluate().isNotEmpty) g.label,
+        if (find.descendant(of: blatt(), matching: labelFinder(g.label)).evaluate().isNotEmpty) g.label,
     ];
 
     testWidgets('Eltern: drei Überschriften, Einträge liegen in ihrer Gruppe, Reihenfolge von oben nach unten', (tester) async {
@@ -222,11 +222,11 @@ void main() {
       await mehrOeffnen(tester);
       expect(ueberschriften(), ['Familie', 'Zuhause', 'Ablage']);
       double y(String t) => tester.getTopLeft(find.descendant(of: blatt(), matching: find.text(t))).dy;
-      expect(y('FAMILIE'), lessThan(y('Listen')));
-      expect(y('Standort'), lessThan(y('ZUHAUSE')));
-      expect(y('ZUHAUSE'), lessThan(y('Müll')));
-      expect(y('Medikamente'), lessThan(y('ABLAGE')));
-      expect(y('ABLAGE'), lessThan(y('Tresor')));
+      expect(y('Familie'), lessThan(y('Listen')));
+      expect(y('Standort'), lessThan(y('Zuhause')));
+      expect(y('Zuhause'), lessThan(y('Müll')));
+      expect(y('Medikamente'), lessThan(y('Ablage')));
+      expect(y('Ablage'), lessThan(y('Tresor')));
     });
 
     testWidgets('Kind: kein Zähler, kein Tresor; die Gruppe Ablage bleibt mit der Suche', (tester) async {
@@ -407,9 +407,9 @@ void main() {
     testWidgets('dieselben Einträge in derselben Reihenfolge wie das Blatt, mit Fristen und Suche', (tester) async {
       final h = tester.ensureSemantics();
       await start(tester, groesse: const Size(1200, 1400), muell: true, wetter: true);
-      // Überschriften sind Text in Großbuchstaben (MonoLabel), Einträge die Beschriftung der Bedienhilfe
-      double y(String t) => tester.getTopLeft(t == t.toUpperCase() ? find.text(t) : find.bySemanticsLabel(t).first).dy;
-      final reihe = ['Start', 'Kalender', 'Chat', 'FAMILIE', 'Listen', 'Aufgaben', 'Fristen', 'Standort', 'ZUHAUSE', 'Müll', 'Wetter', 'Zähler', 'Medikamente', 'ABLAGE', 'Tresor', 'Suche'];
+      // Überschriften sind MonoLabel-Text, Einträge die Beschriftung der Bedienhilfe
+      double y(String t) => tester.getTopLeft(const {'Familie', 'Zuhause', 'Ablage'}.contains(t) ? labelFinder(t).first : find.bySemanticsLabel(t).first).dy;
+      final reihe = ['Start', 'Kalender', 'Chat', 'Familie', 'Listen', 'Aufgaben', 'Fristen', 'Standort', 'Zuhause', 'Müll', 'Wetter', 'Zähler', 'Medikamente', 'Ablage', 'Tresor', 'Suche'];
       for (var i = 1; i < reihe.length; i++) {
         expect(y(reihe[i]), greaterThan(y(reihe[i - 1])), reason: '${reihe[i - 1]} vor ${reihe[i]}');
       }

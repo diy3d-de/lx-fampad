@@ -154,7 +154,7 @@ void main() {
     pruefeLayout(tester, 'Gesperrte Frage');
   });
 
-  testWidgets('Umbenennen umgeht die Sperre nicht: der Abgleich läuft über die Konto-ID, nicht über den Anzeigenamen', (tester) async {
+  testWidgets('Umbenennen umgeht die Sperre nicht: der Überträgt … über die Konto-ID, nicht über den Anzeigenamen', (tester) async {
     // der Hinweis nannte den früheren Namen "Benedikt"; heute heißt die Person "Ben": die Kennung entscheidet
     await gateFall(tester, () async => true, ereignisse: () async => [_reset('Benedikt', const Duration(hours: 2), id: fixIdKind)]);
     expect(find.textContaining('Der Zugang von Ben wurde vor kurzem zurückgesetzt'), findsOneWidget);

@@ -15,7 +15,7 @@ class StartseiteAnpassenZeile extends StatelessWidget {
       style: TextButton.styleFrom(minimumSize: const Size(44, 44), foregroundColor: kTextMuted, tapTargetSize: MaterialTapTargetSize.padded),
       onPressed: () => Navigator.of(context).push<void>(StartseiteAnpassenScreen.route()),
       icon: const Icon(Icons.tune, size: 18),
-      label: const Text('Startseite anpassen', style: TextStyle(fontFamily: kFontMono, fontSize: 12)),
+      label: const Text('Startseite anpassen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12)),
     ),
   );
 }

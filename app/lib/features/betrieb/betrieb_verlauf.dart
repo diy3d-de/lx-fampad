@@ -101,9 +101,9 @@ class VerlaufDiagramm extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(child: MonoLabel('// $titel')),
+                Expanded(child: MonoLabel(titel)),
                 const SizedBox(width: 8),
-                Flexible(child: Text(zuletzt, textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontMono, fontSize: 13, fontWeight: FontWeight.w700))),
+                Flexible(child: Text(zuletzt, textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, fontWeight: FontWeight.w700))),
               ],
             ),
             const SizedBox(height: 8),
@@ -116,9 +116,9 @@ class VerlaufDiagramm extends StatelessWidget {
             const SizedBox(height: 6),
             Row(
               children: [
-                Expanded(child: Text(datumText(von), style: const TextStyle(fontFamily: kFontMono, fontSize: 10, color: kTextMuted))),
-                if (s != null) Text('${format(s.$1)} bis ${format(s.$2)}', textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontMono, fontSize: 10, color: kTextMuted)),
-                Expanded(child: Text(datumText(bis), textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontMono, fontSize: 10, color: kTextMuted))),
+                Expanded(child: Text(datumText(von), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, color: kTextMuted))),
+                if (s != null) Text('${format(s.$1)} bis ${format(s.$2)}', textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, color: kTextMuted)),
+                Expanded(child: Text(datumText(bis), textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, color: kTextMuted))),
               ],
             ),
             if (reihen.length > 1) ...[

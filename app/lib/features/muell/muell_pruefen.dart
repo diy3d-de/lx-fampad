@@ -125,7 +125,7 @@ class _MuellPruefenBlockState extends ConsumerState<MuellPruefenBlock> {
         for (final z in ergebnis)
           Padding(
             padding: const EdgeInsets.only(top: 8),
-            child: Semantics(liveRegion: true, child: Text(z, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kText))),
+            child: Semantics(liveRegion: true, child: Text(z, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kText))),
           ),
       ],
     );

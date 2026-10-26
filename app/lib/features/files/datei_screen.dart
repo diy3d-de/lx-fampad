@@ -137,7 +137,7 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
         });
       }
       return DateiRahmen(
-        label: '// datei',
+        label: 'Datei',
         titel: 'Datei',
         child: async.hasValue ? const Text('Diese Datei gibt es nicht mehr.', style: TextStyle(color: kTextMuted)) : const Center(child: CircularProgressIndicator(strokeWidth: 2)),
       );
@@ -153,7 +153,7 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
     final darfAendern = rechte.darfAendern(e.datei.ownerId);
 
     return DateiRahmen(
-      label: '// datei',
+      label: 'Datei',
       titel: e.name,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -166,7 +166,7 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
               onTap: voll && e.neueste != null ? () => _bildOeffnen(e) : null,
               child: InkWell(
                 onTap: voll && e.neueste != null ? () => _bildOeffnen(e) : null,
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(18),
                 child: DateiMiniatur(thumbBlobId: e.thumbBlobId, art: art, kante: 160, fit: BoxFit.contain),
               ),
             ),
@@ -227,7 +227,7 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const MonoLabel('// freigabe'),
+                  const MonoLabel('Freigabe'),
                   const SizedBox(height: 8),
                   Wrap(
                     spacing: 8,
@@ -245,7 +245,7 @@ class _DateiScreenState extends ConsumerState<DateiScreen> {
           if (rechte.darfLoeschen(e.datei.ownerId)) ZeilenKnopf(icon: Icons.delete_outline, text: 'Datei endgültig löschen', farbe: kDanger, onTap: () => unawaited(_loeschen(e))),
           if (versionen.isNotEmpty) ...[
             const SizedBox(height: 12),
-            const MonoLabel('// fassungen'),
+            const MonoLabel('Fassungen'),
             const SizedBox(height: 8),
             for (final v in versionen) _FassungZeile(e: e, v: v, aktuell: v.id == e.neueste?.id, gesperrt: _arbeitet, onSpeichern: () => unawaited(_mit(() => fassungSpeichern(context, ref, datei: e.datei, fassung: v, status: _status)))),
           ],
@@ -282,7 +282,7 @@ class _Zeile extends StatelessWidget {
       child: Wrap(
         spacing: 8,
         children: [
-          Text(name, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+          Text(name, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
           Text(wert, style: const TextStyle(fontSize: 13)),
         ],
       ),
@@ -314,7 +314,7 @@ class _FassungZeile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Fassung ${v.nr}${aktuell ? ' · aktuell' : ''}', style: const TextStyle(fontWeight: FontWeight.w600)),
-                  Text('${groesseText(v.size)} · ${dateiZeit(v.createdAt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text('${groesseText(v.size)} · ${dateiZeit(v.createdAt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),

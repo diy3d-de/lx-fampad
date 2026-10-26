@@ -31,10 +31,10 @@ class SyncStatusLeiste extends StatelessWidget {
   Widget build(BuildContext context) {
     final offen = sync.offeneAenderungen;
     final String? text = switch (sync.status) {
-      SyncStatus.offline => offen > 0 ? 'Offline – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} später abgeglichen.' : 'Offline – Änderungen werden später abgeglichen.',
-      SyncStatus.fehler => 'Der Abgleich hat nicht geklappt. Deine Änderungen bleiben gespeichert und werden erneut gesendet.',
-      SyncStatus.updateNoetig => 'Bitte aktualisiere die App, damit der Abgleich wieder funktioniert.',
-      SyncStatus.wartung => offen > 0 ? 'Wartung – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} danach abgeglichen.' : 'Wartung – der Abgleich läuft danach weiter.',
+      SyncStatus.offline => offen > 0 ? 'Offline – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} später übertragen.' : 'Offline – Änderungen werden später übertragen.',
+      SyncStatus.fehler => 'Der Übertragen hat nicht geklappt. Deine Änderungen bleiben gespeichert und werden erneut gesendet.',
+      SyncStatus.updateNoetig => 'Bitte aktualisiere die App, damit wieder alles übertragen wird.',
+      SyncStatus.wartung => offen > 0 ? 'Wartung – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} danach übertragen.' : 'Wartung – danach geht es weiter.',
       _ => null,
     };
     if (text == null) return const SizedBox.shrink();
@@ -55,7 +55,7 @@ class SyncStatusLeiste extends StatelessWidget {
             children: [
               Icon(sync.status == SyncStatus.offline ? Icons.cloud_off : (sync.status == SyncStatus.wartung ? Icons.build_outlined : Icons.error_outline), size: 16, color: farbe),
               const SizedBox(width: 10),
-              Expanded(child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: farbe))),
+              Expanded(child: Text(text, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: farbe))),
             ],
           ),
         ),

@@ -92,7 +92,7 @@ void main() {
       if (muell.evaluate().isNotEmpty) expect(tester.getTopLeft(muell).dy <= dateien.dy, isTrue, reason: 'Zuhause steht vor Ablage');
       await tester.tap(find.descendant(of: blatt, matching: find.text('Dateien')));
       await warte(tester);
-      expect(find.text('// FAMILIE'), findsOneWidget);
+      expect(labelFinder('Familie'), findsOneWidget);
       expect(find.text('Noch keine Dateien'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
@@ -108,7 +108,7 @@ void main() {
       await warte(tester);
       c.read(shellTabProvider.notifier).waehlen(kDateienTab);
       await warte(tester);
-      expect(find.text('// FAMILIE'), findsNothing);
+      expect(labelFinder('Familie'), findsNothing);
       expect(find.byType(NavigationBar), findsOneWidget);
     });
 

@@ -36,7 +36,7 @@ class BetriebBackupsSeite extends ConsumerWidget {
       children: [
         if (st.fehler != null) ...[MeldungsBox('${fehlerText(st.fehler!)} Angezeigt wird der letzte Stand.'), const SizedBox(height: 12)],
         BetriebAbschnitt(
-          label: '// sicherung auf dem server',
+          label: 'Sicherung auf dem Server',
           kind: BetriebListe([
             BetriebZeile(
               name: 'Letzte Sicherung',
@@ -56,7 +56,7 @@ class BetriebBackupsSeite extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         BetriebAbschnitt(
-          label: '// abholung durch das nas',
+          label: 'Abholung durch das NAS',
           kind: !nas.bekannt
               ? const _Leer('Dieser Server kennt die Rückmeldung des NAS noch nicht (älterer Stand).')
               : !nas.eingerichtet
@@ -70,7 +70,7 @@ class BetriebBackupsSeite extends ConsumerWidget {
         ),
         const SizedBox(height: 20),
         BetriebAbschnitt(
-          label: '// wiederherstellungstest',
+          label: 'Wiederherstellungstest',
           kind: !nas.bekannt
               ? const _Leer('Dieser Server kennt die Rückmeldung des NAS noch nicht (älterer Stand).')
               : !nas.eingerichtet || nas.test.ergebnis == null
@@ -120,13 +120,13 @@ class _Abholung extends StatelessWidget {
         BetriebZeile(
           name: 'Stände auf dem NAS',
           info: a.neuesteSicherung == null ? 'neueste Sicherung unbekannt' : 'neueste: ${_zeitMitAlter(a.neuesteSicherung, jetzt)}',
-          pille: Text(a.anzahl == null ? '–' : '${a.anzahl}', textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontMono, fontSize: 13)),
+          pille: Text(a.anzahl == null ? '–' : '${a.anzahl}', textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13)),
         ),
       if (nas.empfangen != null)
         BetriebZeile(
           name: 'Meldung empfangen',
           info: _zeitMitAlter(nas.empfangen, jetzt),
-          pille: const Text('vom NAS', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          pille: const Text('vom NAS', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         ),
     ]);
   }

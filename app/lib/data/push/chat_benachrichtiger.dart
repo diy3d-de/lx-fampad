@@ -21,7 +21,7 @@ abstract class ChatAnzeigePort {
   /// sonst zählt Android die aktiven Benachrichtigungen als Punkt/Zahl).
   Future<bool> zeigen({required int id, required String titel, required String text, required bool sperrbildschirmTitel, int? anzahl});
 
-  /// Sicherheitshinweis (Passwort-Reset): eigener Kanal "Sicherheit", hohe Wichtigkeit, nie der Chat-Kanal; ein Tipp öffnet Profil > Sicherheitsereignisse (Nutzlast `sicherheit`).
+  /// Sicherheitshinweis (Passwort-Reset): eigener Kanal "Sicherheit", hohe Wichtigkeit, nie der Chat-Kanal; ein Tipp öffnet Profil › Sicherheit › Sicherheitsereignisse (Nutzlast `sicherheit`).
   /// Nur feste Texte der App, nie Namen oder Einzelheiten. false: nicht angezeigt (keine Erlaubnis, Web), der Aufrufer behält dann seinen Stand.
   /// [nutzlast]: wohin ein Tipp führt (Standard `sicherheit`; der Betreiber-Hinweis nimmt `betrieb`).
   Future<bool> zeigenSicherheit({required int id, required String titel, required String text, String nutzlast = 'sicherheit'});

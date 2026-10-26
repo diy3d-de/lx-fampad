@@ -24,7 +24,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
     final tabs = st.tabs;
     final dahinter = hinterMehr(tabs);
     return AuthSeite(
-      label: '// profil · anzeige',
+      label: 'Profil · Anzeige',
       titel: 'Untere Leiste',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -33,7 +33,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
           style: TextStyle(fontSize: 13, color: kTextMuted),
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// in der leiste'),
+        const MonoLabel('In der Leiste'),
         const SizedBox(height: 8),
         if (!st.geladen)
           const Padding(padding: EdgeInsets.all(24), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))
@@ -50,7 +50,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
             ),
           const _FesterPlatz(),
           const SizedBox(height: 12),
-          const MonoLabel('// hinter „mehr“'),
+          const MonoLabel('Hinter „mehr“'),
           const SizedBox(height: 8),
           Text(
             dahinter.isEmpty ? 'Fristen, Medikamente, Müll, Wetter, Standort und Suche' : '${dahinter.map((t) => kTabs[t].label).join(', ')}, Fristen, Medikamente, Müll, Wetter, Standort und Suche',
@@ -92,7 +92,7 @@ class _Platz extends StatelessWidget {
           constraints: const BoxConstraints(minHeight: 52),
           child: Row(
             children: [
-              SizedBox(width: 24, child: Text('$nummer', textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted))),
+              SizedBox(width: 24, child: Text('$nummer', textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted))),
               const SizedBox(width: 8),
               Icon(kTabs[tab].icon, color: kAccent, size: 22),
               const SizedBox(width: 10),
@@ -131,10 +131,10 @@ class _FesterPlatz extends StatelessWidget {
     child: Container(
       constraints: const BoxConstraints(minHeight: 52),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      decoration: BoxDecoration(color: kBgElevated, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+      decoration: BoxDecoration(color: kBgElevated, borderRadius: BorderRadius.circular(18)),
       child: const Row(
         children: [
-          SizedBox(width: 24, child: Text('5', textAlign: TextAlign.center, style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted))),
+          SizedBox(width: 24, child: Text('5', textAlign: TextAlign.center, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted))),
           SizedBox(width: 8),
           Icon(Icons.apps, color: kTextMuted, size: 22),
           SizedBox(width: 10),

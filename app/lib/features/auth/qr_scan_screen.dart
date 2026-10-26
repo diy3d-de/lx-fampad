@@ -47,13 +47,13 @@ class _QrScanScreenState extends State<QrScanScreen> {
 
   @override
   Widget build(BuildContext context) => AuthSeite(
-    label: '// einladung',
+    label: 'Einladung',
     titel: 'QR-Code scannen',
     kinder: [
       const Text('Halte die Kamera auf den QR-Code der Einladung.', style: TextStyle(fontSize: 14, color: kTextMuted)),
       const SizedBox(height: 12),
       ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         child: SizedBox(
           height: 320,
           child: MobileScanner(

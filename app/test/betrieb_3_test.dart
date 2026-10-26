@@ -163,10 +163,10 @@ void main() {
     await starteApp(tester, env, skala: skala, groesse: groesse);
     if (groesse.width >= 900) {
       // Desktop-Layout: "Betrieb" steht in der Seitenleiste
-      await tippe(tester, find.text('Betrieb'));
+      await tippe(tester, find.text('Betrieb').last);
     } else {
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      await tippe(tester, find.text('Betrieb'));
+      await tippe(tester, find.text('Betrieb').last);
     }
     return env;
   }
@@ -472,15 +472,15 @@ void main() {
     testWidgets('zeigt aktuelle Zahlen, Grafiken mit Zusammenfassung, Wetter- und Push-Zähler; schreibt nichts', (tester) async {
       final env = await start(tester, status: () => _status(wetterFehler: 3));
       await seite(tester, 'Nutzung');
-      expect(find.text('// NUTZUNG'), findsOneWidget);
+      expect(labelFinder('Nutzung'), findsOneWidget);
       expect(find.text('Aktive Personen'), findsOneWidget);
       expect(find.text('2 · 3'), findsOneWidget);
       expect(find.text('Rate-Limit-Treffer heute'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('// VERLAUF'), 300, scrollable: find.byType(Scrollable).first);
+      await tester.scrollUntilVisible(labelFinder('Verlauf'), 300, scrollable: find.byType(Scrollable).first);
       await warte(tester);
       expect(find.text('30 Tage'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'Verlauf aktive personen')), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('// WETTER UND PUSH'), 500, scrollable: find.byType(Scrollable).first);
+      await tester.scrollUntilVisible(labelFinder('Wetter und Push'), 500, scrollable: find.byType(Scrollable).first);
       await warte(tester);
       expect(find.text('Wetter-Dienst'), findsOneWidget);
       expect(find.text('Fehler in Folge'), findsOneWidget);
@@ -518,7 +518,7 @@ void main() {
       await warte(tester);
       expect(find.textContaining('alle 5 Minuten'), findsOneWidget);
       expect(find.text('Noch keine Messpunkte'), findsWidgets);
-      await tester.scrollUntilVisible(find.text('// WETTER UND PUSH'), 500, scrollable: find.byType(Scrollable).first);
+      await tester.scrollUntilVisible(labelFinder('Wetter und Push'), 500, scrollable: find.byType(Scrollable).first);
       expect(find.text('3 Geräte angemeldet'), findsOneWidget);
     });
 
@@ -543,7 +543,7 @@ void main() {
     testWidgets('Desktop 1440 px: Nutzung in der Shell', (tester) async {
       await start(tester, groesse: const Size(1440, 900));
       await seite(tester, 'Nutzung');
-      expect(find.text('// NUTZUNG'), findsOneWidget);
+      expect(labelFinder('Nutzung'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
       pruefeLayout(tester, 'Nutzung Desktop');
     });
@@ -553,7 +553,7 @@ void main() {
     testWidgets('zeigt Versionen und Zähler; Hinweis auf die Personen; nichts Schreibendes', (tester) async {
       final env = await start(tester);
       await seite(tester, 'Nutzung');
-      expect(find.text('// UPDATE-STAND'), findsOneWidget);
+      expect(labelFinder('Update-Stand'), findsOneWidget);
       expect(find.text('Android-App'), findsOneWidget);
       expect(find.text('Auf der neuesten Version'), findsOneWidget);
       expect(find.text('Auf älterer Version'), findsOneWidget);
@@ -584,19 +584,19 @@ void main() {
     testWidgets('eingerichtet: Server-Sicherung, Abholung und Wiederherstellungstest mit Alter und Stand', (tester) async {
       await start(tester);
       await seite(tester, 'Backups');
-      expect(find.text('// SICHERUNG AUF DEM SERVER'), findsOneWidget);
+      expect(labelFinder('Sicherung auf dem Server'), findsOneWidget);
       expect(find.text('Letzte Sicherung'), findsOneWidget);
       expect(find.textContaining('603 KB'), findsOneWidget);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -450));
       await warte(tester);
-      expect(find.text('// ABHOLUNG DURCH DAS NAS'), findsOneWidget);
+      expect(labelFinder('Abholung durch das NAS'), findsOneWidget);
       expect(find.text('Letzte erfolgreiche Abholung'), findsOneWidget);
       expect(find.textContaining('vor 5 Std'), findsWidgets);
       expect(find.text('Stände auf dem NAS'), findsOneWidget);
       expect(find.text('14'), findsOneWidget);
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -450));
       await warte(tester);
-      expect(find.text('// WIEDERHERSTELLUNGSTEST'), findsOneWidget);
+      expect(labelFinder('Wiederherstellungstest'), findsOneWidget);
       expect(find.text('Letzter erfolgreicher Test'), findsOneWidget);
       expect(find.textContaining('vor 2 T'), findsWidgets);
       expect(find.text('Konfigurationsarchiv geprüft'), findsOneWidget);

@@ -50,7 +50,7 @@ Future<void> main() async {
         expect(() => Personenschluessel.ausBytes(crypto, Uint8List(63)), throwsA(isA<CryptoFehler>()));
       });
 
-      test('Signatur- und Verschlüsselungsschlüssel sind unabhängig', () {
+      test('Signatur- und Schlüssel sind unabhängig', () {
         final pk = Personenschluessel.erzeugen(crypto);
         expect(pk.encOeffentlich, isNot(pk.signOeffentlich));
       });

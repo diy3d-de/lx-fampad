@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../constants.dart';
 
-/// Material-3-Theme (nur Dark Mode) wie lx-urlaubsplanung: transparenter Scaffold über dem Glow-Hintergrund.
+/// Material-3-Theme (nur Dark Mode), ruhiger Look: gedämpftes Türkis, Flächen statt Rahmen, Inter überall (Mono nur für Codes);
+/// transparenter Scaffold über dem Glow-Hintergrund (Hintergrund unverändert).
 ThemeData buildTheme() {
   final scheme = ColorScheme.fromSeed(seedColor: kAccent, brightness: Brightness.dark).copyWith(
     primary: kAccent,
@@ -15,7 +16,7 @@ ThemeData buildTheme() {
     outlineVariant: kBorder,
     error: kDanger,
   );
-  const radius = BorderRadius.all(Radius.circular(12));
+  const radius = BorderRadius.all(Radius.circular(14));
   final base = ThemeData(brightness: Brightness.dark, useMaterial3: true);
   final textTheme = base.textTheme.apply(fontFamily: kFontSans, bodyColor: kText, displayColor: kText);
   return ThemeData(
@@ -39,7 +40,7 @@ ThemeData buildTheme() {
       color: kSurface,
       margin: EdgeInsets.zero,
       elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: kBorder)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(18))),
     ),
     dividerColor: kBorder,
     navigationBarTheme: NavigationBarThemeData(
@@ -51,9 +52,9 @@ ThemeData buildTheme() {
       ),
       labelTextStyle: WidgetStateProperty.resolveWith(
         (s) => TextStyle(
-          fontFamily: kFontMono,
-          fontSize: 11,
-          fontWeight: FontWeight.w500,
+          fontFamily: kFontSans,
+          fontSize: 12,
+          fontWeight: s.contains(WidgetState.selected) ? FontWeight.w600 : FontWeight.w500,
           color: s.contains(WidgetState.selected) ? kAccent : kTextMuted,
         ),
       ),
@@ -71,7 +72,6 @@ ThemeData buildTheme() {
       style: OutlinedButton.styleFrom(
         foregroundColor: kText,
         minimumSize: const Size(48, 48),
-        side: const BorderSide(color: kBorder),
         shape: const RoundedRectangleBorder(borderRadius: radius),
       ),
     ),
@@ -83,9 +83,9 @@ ThemeData buildTheme() {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: kBg.withValues(alpha: 0.6),
-      border: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: kBorder)),
-      enabledBorder: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: kBorder)),
+      fillColor: kSurface2,
+      border: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
+      enabledBorder: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide.none),
       focusedBorder: const OutlineInputBorder(borderRadius: radius, borderSide: BorderSide(color: kAccent, width: 2)),
       labelStyle: const TextStyle(color: kTextMuted),
       hintStyle: const TextStyle(color: kTextMuted),
@@ -103,7 +103,7 @@ ThemeData buildTheme() {
     dialogTheme: const DialogThemeData(
       backgroundColor: kSurface,
       surfaceTintColor: Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: radius, side: BorderSide(color: kBorder)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(18))),
     ),
     snackBarTheme: const SnackBarThemeData(
       backgroundColor: kSurface2,

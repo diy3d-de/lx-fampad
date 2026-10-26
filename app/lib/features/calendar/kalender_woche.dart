@@ -214,7 +214,7 @@ class _WochenRasterState extends State<WochenRaster> {
                   maxLines: 1,
                   softWrap: false,
                   overflow: TextOverflow.clip,
-                  style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 10 : 8, color: kTextFaint),
+                  style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                 ),
               ),
             ),
@@ -254,11 +254,11 @@ class _WochenRasterState extends State<WochenRaster> {
                     child: Padding(
                       padding: EdgeInsets.only(left: breit ? 10 : 0, top: 4),
                       child: Text(
-                        'GANZ',
+                        'Ganztag',
                         maxLines: 1,
                         softWrap: false,
                         overflow: TextOverflow.clip,
-                        style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 10 : 8, color: kTextFaint),
+                        style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                       ),
                     ),
                   ),
@@ -295,7 +295,7 @@ class _WochenRasterState extends State<WochenRaster> {
                                           child: Text(
                                             '+${layout.mehr[i]}',
                                             maxLines: 1,
-                                            style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 12 : 10, fontWeight: FontWeight.w600, color: kTextMuted),
+                                            style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: breit ? 12 : 10, fontWeight: FontWeight.w600, color: kTextMuted),
                                           ),
                                         ),
                                       ),
@@ -437,7 +437,7 @@ class _Tageskopf extends StatelessWidget {
               Text(
                 _WochenRasterState._kurz[spalte],
                 maxLines: 1,
-                style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 11 : 10, color: istHeute ? kAccent : kTextMuted),
+                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: breit ? 11 : 10, color: istHeute ? kAccent : kTextMuted),
               ),
               const SizedBox(height: 2),
               zahl,
@@ -543,7 +543,7 @@ class _Zeitraster extends StatelessWidget {
                         maxLines: 1,
                         softWrap: false,
                         overflow: TextOverflow.clip,
-                        style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 11 : 10, color: kTextFaint, height: 1.0),
+                        style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted, height: 1.0),
                       ),
                     ),
                   ),
@@ -722,7 +722,7 @@ class _Block extends StatelessWidget {
                                 if (mitZeit)
                                   TextSpan(
                                     text: '\n$spanne',
-                                    style: const TextStyle(fontFamily: kFontMono, fontSize: 10, fontWeight: FontWeight.w400),
+                                    style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, fontWeight: FontWeight.w400),
                                   ),
                               ],
                             ),

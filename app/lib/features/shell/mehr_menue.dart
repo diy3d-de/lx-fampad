@@ -163,7 +163,7 @@ class HinweisZeichen extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 5),
     alignment: Alignment.center,
     decoration: BoxDecoration(color: ueberfaellig ? kDanger : kWarn, borderRadius: BorderRadius.circular(9)),
-    child: Text(hinweisText(zahl), style: const TextStyle(fontFamily: kFontMono, fontSize: 10, fontWeight: FontWeight.w700, color: kBg, height: 1.1)),
+    child: Text(hinweisText(zahl), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, fontWeight: FontWeight.w700, color: kBg, height: 1.1)),
   );
 }
 
@@ -267,10 +267,10 @@ class _Kachel extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: kBgElevated,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: kBorder)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         child: InkWell(
           key: ValueKey('mehr:${e.id}'),
-          customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
           onTap: onTap,
           child: Stack(
             fit: StackFit.expand,

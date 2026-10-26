@@ -73,8 +73,9 @@ Future<void> main() async {
         expect(text, isNotEmpty);
       }
       // die Wege in der Anleitung gibt es in der App
-      expect(s, contains('Verschlüsselung'));
-      expect(s, contains('Mit Wiederherstellungsschl'));
+      expect(s, contains('Nachrichten-Schutz'));
+      expect(s, contains('Sicherheit'));
+      expect(s, contains('Wiederherstellungsschl'));
       expect(s, contains('Abgelegt am'));
     });
 

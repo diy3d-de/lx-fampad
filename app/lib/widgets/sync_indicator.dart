@@ -14,7 +14,7 @@ class SyncIndicator extends ConsumerWidget {
     final sync = ref.watch(syncProvider);
     if (sync.status == SyncStatus.laeuft) {
       return Semantics(
-        label: 'Abgleich läuft',
+        label: 'Überträgt …',
         child: const Padding(
           padding: EdgeInsets.all(14),
           child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
@@ -24,20 +24,20 @@ class SyncIndicator extends ConsumerWidget {
     final n = sync.offeneAenderungen;
     final offen = n > 0 ? (n == 1 ? '1 Änderung offen' : '$n Änderungen offen') : null;
     final (IconData icon, Color farbe, String text) = switch (sync.status) {
-      SyncStatus.fehler => (Icons.cloud_off, kDanger, 'Abgleich fehlgeschlagen. ${sync.meldung ?? ''}'.trim()),
+      SyncStatus.fehler => (Icons.cloud_off, kDanger, 'Übertragen hat nicht geklappt. ${sync.meldung ?? ''}'.trim()),
       SyncStatus.updateNoetig => (Icons.system_update_alt, kWarn, 'Bitte aktualisiere die App'),
       SyncStatus.wartung => (Icons.build_outlined, kWarn, offen == null ? 'Wartung' : 'Wartung, $offen'),
       SyncStatus.offline => (Icons.cloud_off, kTextMuted, offen == null ? 'Offline' : 'Offline, $offen'),
       SyncStatus.getrennt => (Icons.cloud_off, kTextMuted, 'Nicht verbunden'),
       SyncStatus.synchron || SyncStatus.laeuft => n > 0
           ? (Icons.cloud_upload_outlined, kTextMuted, offen!)
-          : (Icons.cloud_done_outlined, kTerminal, 'Synchron'),
+          : (Icons.cloud_done_outlined, kTerminal, 'Alles aktuell'),
     };
     return IconButton(
-      tooltip: sync.status == SyncStatus.synchron && n == 0 ? 'Synchron. Tippen zum Abgleichen' : text,
+      tooltip: sync.status == SyncStatus.synchron && n == 0 ? 'Alles aktuell. Tippen zum Übertragen' : text,
       icon: Badge(
         isLabelVisible: n > 0,
-        label: Text('$n', style: const TextStyle(fontFamily: kFontMono, fontSize: 10)),
+        label: Text('$n', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10)),
         backgroundColor: kAccent,
         textColor: kOnAccent,
         child: Icon(icon, color: farbe),
@@ -53,11 +53,11 @@ class SyncIndicator extends ConsumerWidget {
           SnackBar(
             content: Text(
               switch (s.status) {
-                SyncStatus.synchron => 'Abgeglichen',
-                SyncStatus.offline => 'Offline – Änderungen werden später abgeglichen.',
-                SyncStatus.wartung => 'Wartung – Änderungen werden danach abgeglichen.',
+                SyncStatus.synchron => 'Alles aktuell',
+                SyncStatus.offline => 'Offline – Änderungen werden später übertragen.',
+                SyncStatus.wartung => 'Wartung – Änderungen werden danach übertragen.',
                 SyncStatus.getrennt => 'Nicht verbunden',
-                _ => s.meldung ?? 'Der Abgleich ist fehlgeschlagen.',
+                _ => s.meldung ?? 'Das Übertragen hat nicht geklappt.',
               },
             ),
           ),

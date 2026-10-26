@@ -126,7 +126,7 @@ class WiederherstellungsPruefung {
       if (server == null || server.version != keyVersion || !server.gleichWie(geoeffnet.oeffentlich(server.version))) {
         throw const CryptoFehler(
           CryptoFehlerArt.schluessel,
-          'Die Sicherung lässt sich öffnen, gehört aber nicht zu deinem aktuellen Schlüssel. Lege die Sicherung neu an (Profil > Bin ich abgesichert?).',
+          'Die Sicherung lässt sich öffnen, gehört aber nicht zu deinem aktuellen Schlüssel. Lege die Sicherung neu an (Profil › Sicherheit › Bin ich abgesichert?).',
         );
       }
     } finally {

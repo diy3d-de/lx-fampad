@@ -1,8 +1,8 @@
-// Profil > Verschlüsselung (Phase 1 der Ende-zu-Ende-Verschlüsselung): Status, Einrichtung, neues Gerät verbinden, Sicherheitscode,
+// Profil › Sicherheit › Nachrichten-Schutz (Phase 1 der Ende-zu-Ende-Verschlüsselung): Status, Einrichtung, neues Gerät verbinden, Sicherheitscode,
 // Warnungen bei Schlüsselwechsel. Die Schlüssel schützen die Chats (Ende-zu-Ende); diese Seite verwaltet sie.
 // Ehrlichkeit: "aktiv" (grün) erscheint nur, wenn der Server eine BESTÄTIGTE Sicherung meldet; sonst "offen". Sicherungen heißen "liegt beim Server (seit …)",
 // nie "gesichert". "Gerät abgeben" (Schlüssel UND lokale Daten löschen) ist die einzige Aktion, die einen Schlüssel löscht, und bleibt ohne bestätigte
-// Sicherung gesperrt; "Neuen Schlüssel erzeugen" gibt es nur im Notfallbereich hinter einer Checkliste.
+// Sicherung gesperrt; "Neuen Schlüssel erzeugen" gibt es nur im Bereich „Neuer Schlüssel“ hinter einer Checkliste.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -248,8 +248,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     final s = ref.watch(e2eeProvider);
     final auth = ref.watch(authProvider);
     return AuthSeite(
-      label: '// verschlüsselung',
-      titel: 'Verschlüsselung',
+      label: 'Profil',
+      titel: 'Nachrichten-Schutz',
       maxBreite: kMaxContentWidth,
       kinder: [
         const Text(
@@ -286,7 +286,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         return const [Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))];
       case E2eeStatus.nichtVerfuegbar:
         return [
-          MeldungsBox(s.meldung ?? 'Die Verschlüsselung ist gerade nicht verfügbar.'),
+          MeldungsBox(s.meldung ?? 'Der Nachrichten-Schutz ist gerade nicht verfügbar.'),
           const SizedBox(height: 12),
           if (s.vertrauenDefekt) ...[
             ZweitKnopf(text: 'Vertrauen zurücksetzen', icon: Icons.restart_alt, onPressed: laeuft ? null : _vertrauenZuruecksetzen),
@@ -297,9 +297,9 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         ];
       case E2eeStatus.keinSchluessel:
         return [
-          const MonoLabel('// status'),
+          const MonoLabel('Status'),
           const SizedBox(height: 8),
-          const EinstellungsZeile(icon: Icons.lock_open, titel: 'Nicht eingerichtet', untertitel: 'noch kein schlüssel'),
+          const EinstellungsZeile(icon: Icons.lock_open, titel: 'Nicht eingerichtet', untertitel: 'Noch kein Schlüssel angelegt'),
           const SizedBox(height: 8),
           const Text(
             'Bei der Einrichtung entsteht dein Schlüssel auf diesem Gerät. Du bekommst einen Wiederherstellungsschlüssel, den du sicher aufbewahrst, '
@@ -307,14 +307,14 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             style: TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
           ),
           const SizedBox(height: 12),
-          HauptKnopf(text: 'Verschlüsselung einrichten', icon: Icons.lock_outline, laeuft: laeuft, onPressed: _einrichten),
+          HauptKnopf(text: 'Nachrichten-Schutz einrichten', icon: Icons.lock_outline, laeuft: laeuft, onPressed: _einrichten),
           ..._zusatz(s),
         ];
       case E2eeStatus.geraetNichtVerbunden:
         return [
-          const MonoLabel('// status'),
+          const MonoLabel('Status'),
           const SizedBox(height: 8),
-          const EinstellungsZeile(icon: Icons.phonelink_lock, titel: 'Dieses Gerät ist nicht verbunden', untertitel: 'schlüssel fehlt hier'),
+          const EinstellungsZeile(icon: Icons.phonelink_lock, titel: 'Dieses Gerät ist nicht verbunden', untertitel: 'Auf diesem Gerät fehlt dein Schlüssel'),
           const SizedBox(height: 8),
           const Text(
             'Dein Schlüssel liegt auf einem anderen Gerät. Verbinde dieses Gerät per QR-Code oder Code von dort, oder mit deinem Wiederherstellungsschlüssel.',
@@ -366,14 +366,14 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         ];
       case E2eeStatus.bereit:
         return [
-          const MonoLabel('// status'),
+          const MonoLabel('Status'),
           const SizedBox(height: 8),
           EinstellungsZeile(
             icon: Icons.lock,
             titel: 'Eingerichtet',
-            untertitel: 'schlüsselversion ${s.serverSchluessel?.version ?? 1}',
+            untertitel: s.sicherungBestaetigt ? 'Sicherung beim Server bestätigt' : 'Sicherung bisher nicht geprüft',
             // grün nur mit bestätigter Sicherung beim Server: ohne sie oder bei unbekanntem Stand "offen"
-            status: s.sicherungBestaetigt ? const RollenPille('aktiv', farbe: kTerminal) : const RollenPille('offen', farbe: kWarn),
+            status: s.sicherungBestaetigt ? const RollenPille('Aktiv', farbe: kTerminal) : const RollenPille('Offen', farbe: kWarn),
           ),
           if (!s.sicherungBestaetigt) ...[_SicherungOffen(onSichern: laeuft ? null : () => _sicherungAnlegen(s)), const SizedBox(height: 8)],
           ..._testErinnerung(s),
@@ -381,11 +381,11 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
             icon: Icons.key_outlined,
             titel: 'Wiederherstellungsschlüssel',
             untertitel: !s.hatSicherung
-                ? 'keine sicherung · jetzt erzeugen'
+                ? 'Noch keine Sicherung. Jetzt anlegen.'
                 : s.wiederherstellungAm != null
-                ? 'sicherung liegt beim server (seit ${_datum(s.wiederherstellungAm!)}) · neuen erzeugen'
-                : 'sicherung liegt beim server · stand unbestätigt · neuen erzeugen',
-            status: s.hatSicherung && s.wiederherstellungAm != null ? null : const RollenPille('offen', farbe: kWarn),
+                ? 'Sicherung liegt beim Server (seit ${_datum(s.wiederherstellungAm!)}). Du kannst eine neue anlegen.'
+                : 'Sicherung liegt beim Server, ist aber noch nicht bestätigt.',
+            status: s.hatSicherung && s.wiederherstellungAm != null ? null : const RollenPille('Offen', farbe: kWarn),
             onTap: laeuft ? null : _neuerSchluessel,
           ),
           if (s.pwSicherungVerfuegbar) _pwZeile(s),
@@ -395,7 +395,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           EinstellungsZeile(
             icon: Icons.qr_code_2,
             titel: 'Neues Gerät verbinden',
-            untertitel: 'qr-code oder code zeigen',
+            untertitel: 'Mit QR-Code oder Code',
             onTap: laeuft ? null : () => _oeffne(const UebertragungAnbietenScreen()),
           ),
           const SizedBox(height: 12),
@@ -408,7 +408,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   static String _datum(DateTime t) => DateFormat('d. MMM yyyy', 'de_DE').format(t.toLocal());
 
   /// Gemeinsame Abschnitte unter dem Status: Browser-Hinweis, aufbewahrte alte Schlüssel, Hinweis auf ältere Sicherungen und der eingeklappte Bereich
-  /// "Erweitert" (Gerät abgeben, bei [notfall] der Notfallbereich, Vertrauensmodell).
+  /// "Erweitert" (Gerät abgeben, bei [notfall] der Bereich „Neuer Schlüssel“, Vertrauensmodell).
   List<Widget> _zusatz(E2eeState s, {bool notfall = false}) => [
     ..._browserHinweis(s),
     ..._quarantaene(s),
@@ -470,7 +470,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     final df = DateFormat('d. MMM yyyy, HH:mm', 'de_DE');
     return [
       const SizedBox(height: 16),
-      const MonoLabel('// alter schlüssel auf diesem gerät', color: kTextMuted),
+      const MonoLabel('Alter Schlüssel auf diesem Gerät', color: kTextMuted),
       const SizedBox(height: 8),
       const Text(
         'Dieses Gerät hat einen früheren Schlüssel von dir aufbewahrt, statt ihn zu löschen. Die App benutzt ihn nirgends; er liegt nur hier, bis du ihn verwirfst '
@@ -512,7 +512,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
               'Lege zuerst eine Sicherung an.'
         : null;
     return [
-      const MonoLabel('// gerät abgeben', color: kTextMuted),
+      const MonoLabel('Gerät abgeben', color: kTextMuted),
       const SizedBox(height: 8),
       const Text(
         'Wenn du dieses Gerät weitergibst oder verkaufst, oder an einem gemeinsam genutzten Computer: Das löscht deinen Schlüssel und alle lokalen Daten von diesem Gerät und meldet dich ab. '
@@ -544,14 +544,14 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     final aktuell = s.serverSchluessel?.version;
     final bestaetigt = s.pwBestaetigtAm;
     final (String untertitel, Widget? pille) = s.pwSicherungVeraltet && s.status == E2eeStatus.bereit
-        ? ('veraltet nach Passwort-Reset · Sicherung erneuern', const RollenPille('erneuern', farbe: kWarn))
+        ? ('Veraltet nach dem Zurücksetzen des Passworts. Bitte erneuern.', const RollenPille('Erneuern', farbe: kWarn))
         : bestaetigt != null
-        ? ('liegt beim server (seit ${_datum(bestaetigt)}) · neues passwort wählen', null)
+        ? ('Liegt beim Server (seit ${_datum(bestaetigt)}). Du kannst ein neues Passwort wählen.', null)
         : v == null
-        ? ('nicht gesichert · jetzt einrichten', const RollenPille('offen', farbe: kWarn))
+        ? ('Noch nicht gesichert. Jetzt einrichten.', const RollenPille('Offen', farbe: kWarn))
         : v == aktuell
-        ? ('auf diesem gerät angelegt · server meldet keinen stand', const RollenPille('offen', farbe: kWarn))
-        : ('veraltet · neu sichern', const RollenPille('offen', farbe: kWarn));
+        ? ('Auf diesem Gerät angelegt, der Server kennt noch keinen Stand.', const RollenPille('Offen', farbe: kWarn))
+        : ('Veraltet. Bitte neu sichern.', const RollenPille('Offen', farbe: kWarn));
     return EinstellungsZeile(
       icon: Icons.password,
       titel: 'Passwort-Sicherung',
@@ -569,7 +569,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       icon: Icons.rule,
       titel: 'Wiederherstellung testen',
       untertitel: testZeitText(stand),
-      status: faellig ? const RollenPille('fällig', farbe: kWarn) : null,
+      status: faellig ? const RollenPille('Fällig', farbe: kWarn) : null,
       onTap: laeuft ? null : () => _oeffne(const WiederherstellungTestenScreen()),
     );
   }
@@ -584,8 +584,8 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         EinstellungsZeile(
           icon: Icons.family_restroom,
           titel: 'Eltern-Wiederherstellung',
-          untertitel: aktiv ? 'deine eltern können dir helfen' : 'aus · eltern helfen lassen',
-          status: aktiv ? const RollenPille('aktiv', farbe: kTerminal) : const RollenPille('aus', farbe: kWarn),
+          untertitel: aktiv ? 'Deine Eltern können dir helfen.' : 'Aus. Du kannst deine Eltern helfen lassen.',
+          status: aktiv ? const RollenPille('Aktiv', farbe: kTerminal) : const RollenPille('Aus', farbe: kWarn),
           onTap: laeuft ? null : () => _oeffne(const ElternWiederherstellungScreen()),
         ),
       ];
@@ -599,7 +599,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           icon: Icons.child_care,
           titel: 'Kindern helfen',
           untertitel: offen > 0 ? '$offen anfrage${offen == 1 ? '' : 'n'} offen' : '${h.kinder.length} kind${h.kinder.length == 1 ? '' : 'er'} · du kannst helfen',
-          status: offen > 0 ? const RollenPille('anfrage', farbe: kWarn) : null,
+          status: offen > 0 ? const RollenPille('Anfrage', farbe: kWarn) : null,
           onTap: laeuft ? null : () => _oeffne(const ElternHilfeScreen()),
         ),
       ];
@@ -625,12 +625,12 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   Widget _prfZeile(E2eeState s) {
     final bestaetigt = s.prfBestaetigtAm;
     final (String untertitel, Widget? pille) = s.prfSicherungVeraltet && s.prfCredentialIds.isEmpty
-        ? ('veraltet nach Schlüsselwechsel · Sicherung erneuern', const RollenPille('erneuern', farbe: kWarn))
+        ? ('Veraltet nach dem Schlüsselwechsel. Bitte erneuern.', const RollenPille('Erneuern', farbe: kWarn))
         : bestaetigt != null && s.prfCredentialIds.isNotEmpty && !s.prfSynchronisiert
-        ? ('liegt beim server · zählt (noch) nicht: dein passkey meldet sich nicht als synchronisiert', const RollenPille('nur dieses gerät', farbe: kWarn))
+        ? ('Liegt beim Server, zählt aber noch nicht: Dein Passkey ist vielleicht an dieses Gerät gebunden.', const RollenPille('Nur dieses Gerät', farbe: kWarn))
         : bestaetigt != null && s.prfCredentialIds.isNotEmpty
-        ? ('liegt beim server (seit ${_datum(bestaetigt)}) · erneuern', null)
-        : ('nicht gesichert · jetzt einrichten', const RollenPille('offen', farbe: kWarn));
+        ? ('Liegt beim Server (seit ${_datum(bestaetigt)}). Du kannst sie erneuern.', null)
+        : ('Noch nicht gesichert. Jetzt einrichten.', const RollenPille('Offen', farbe: kWarn));
     return EinstellungsZeile(
       icon: Icons.fingerprint,
       titel: 'Passkey-Sicherung',
@@ -643,7 +643,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   Widget _gefahr() => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      const MonoLabel('// notfall', color: kTextMuted),
+      const MonoLabel('Neuer Schlüssel (letzter Ausweg)', color: kTextMuted),
       const SizedBox(height: 8),
       OutlinedButton.icon(
         onPressed: laeuft ? null : _wechseln,
@@ -653,14 +653,14 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
       ),
       const SizedBox(height: 4),
       const Text(
-        'Letzter Ausweg, nur nach einer Checkliste: wenn dir kein Gerät, kein Wiederherstellungsschlüssel und kein Passwort der Passwort-Sicherung mehr bleibt. Alte verschlüsselte Inhalte lassen sich dann nicht mehr lesen.',
+        'Letzter Ausweg, nur nach einer Checkliste (Notfall-Codes sind für die Anmeldung, der Wiederherstellungsschlüssel gehört zu deinen Chats): wenn dir kein Gerät, kein Wiederherstellungsschlüssel und kein Passwort der Passwort-Sicherung mehr bleibt. Alte verschlüsselte Inhalte lassen sich dann nicht mehr lesen.',
         style: TextStyle(fontSize: 12, height: 1.4, color: kTextMuted),
       ),
     ],
   );
 }
 
-/// Eingeklappter Bereich "Erweitert": Gerät abgeben, Notfall und Vertrauensmodell stehen nicht im Weg, sind aber da.
+/// Eingeklappter Bereich "Erweitert": Gerät abgeben, neuer Schlüssel und Vertrauensmodell stehen nicht im Weg, sind aber da.
 class _Erweitert extends StatelessWidget {
   final List<Widget> children;
   const _Erweitert({required this.children});
@@ -673,7 +673,7 @@ class _Erweitert extends StatelessWidget {
       childrenPadding: const EdgeInsets.only(bottom: 8),
       expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
       title: const Text('Erweitert', style: TextStyle(fontWeight: FontWeight.w600)),
-      subtitle: const Text('gerät abgeben · notfall · vertrauensmodell', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+      subtitle: const Text('Gerät abgeben, neuer Schlüssel und Vertrauen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
       children: children,
     ),
   );
@@ -739,7 +739,7 @@ class _WarnKarte extends StatelessWidget {
         decoration: BoxDecoration(
           color: kDanger.withValues(alpha: 0.08),
           border: Border.all(color: kDanger.withValues(alpha: 0.5)),
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(18),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -774,8 +774,8 @@ class _WarnKarte extends StatelessWidget {
               style: TextStyle(fontSize: 13, height: 1.4, color: kText),
             ),
             const SizedBox(height: 8),
-            Text('bisher: $alt', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
-            if (neu != null) Text('neu:    $neu', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kWarn)),
+            Text('Bisher: $alt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
+            if (neu != null) Text('Neu: $neu', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kWarn)),
             const SizedBox(height: 10),
             if (!warnung.rueckfall) ZweitKnopf(text: 'Neuen Schlüssel akzeptieren', icon: Icons.check, onPressed: onAkzeptieren),
           ],
@@ -798,7 +798,7 @@ class _SicherheitscodeKarte extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const MonoLabel('// sicherheitscode'),
+          const MonoLabel('Sicherheitscode'),
           const SizedBox(height: 8),
           Semantics(
             label: 'Sicherheitscode der Familie: ${state.sicherheitscode}',
@@ -835,7 +835,7 @@ class _SicherheitscodeKarte extends StatelessWidget {
                                 Text(m.id == eigeneId ? '${m.displayName} (du)' : m.displayName, style: const TextStyle(fontWeight: FontWeight.w600)),
                                 SelectableText(
                                   personenSicherheitscode(MitgliedSchluessel(m.id, m.schluessel!)),
-                                  style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
+                                  style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted),
                                 ),
                               ],
                             ),
@@ -860,7 +860,7 @@ class _Vertrauensmodell extends StatelessWidget {
   Widget build(BuildContext context) => const Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
-      MonoLabel('// was das schützt', color: kTextMuted),
+      MonoLabel('Was das schützt', color: kTextMuted),
       SizedBox(height: 6),
       Text(
         'Geschützt vor einem Datenleck auf dem Server, vor dem Hoster und vor gestohlenen Sicherungen. '
@@ -882,14 +882,14 @@ class VerschluesselungsZeile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final s = ref.watch(e2eeProvider);
     final (String untertitel, Widget? pille) = switch (s.status) {
-      _ when s.warnungen.isNotEmpty => ('schlüssel geändert', const RollenPille('Warnung', farbe: kDanger)),
+      _ when s.warnungen.isNotEmpty => ('Schlüssel geändert', const RollenPille('Warnung', farbe: kDanger)),
       // grün nur mit bestätigter Sicherung beim Server, sonst "offen"
-      E2eeStatus.bereit => ('schlüssel · geräte verbinden', s.sicherungBestaetigt ? const RollenPille('aktiv', farbe: kTerminal) : const RollenPille('offen', farbe: kWarn)),
-      E2eeStatus.keinSchluessel => ('nicht eingerichtet', null),
-      E2eeStatus.geraetNichtVerbunden => ('gerät verbinden', const RollenPille('offen', farbe: kWarn)),
-      E2eeStatus.abweichend => ('schlüssel weicht ab', const RollenPille('Warnung', farbe: kDanger)),
-      _ => ('schlüssel · geräte verbinden', null),
+      E2eeStatus.bereit => ('Schlüssel und Geräte', s.sicherungBestaetigt ? const RollenPille('Aktiv', farbe: kTerminal) : const RollenPille('Offen', farbe: kWarn)),
+      E2eeStatus.keinSchluessel => ('Noch nicht eingerichtet', null),
+      E2eeStatus.geraetNichtVerbunden => ('Gerät verbinden', const RollenPille('Offen', farbe: kWarn)),
+      E2eeStatus.abweichend => ('Schlüssel weicht ab', const RollenPille('Warnung', farbe: kDanger)),
+      _ => ('Schlüssel und Geräte', null),
     };
-    return EinstellungsZeile(icon: Icons.lock_outline, titel: 'Verschlüsselung', untertitel: untertitel, status: pille, onTap: onTap);
+    return EinstellungsZeile(icon: Icons.lock_outline, titel: 'Nachrichten-Schutz', untertitel: untertitel, status: pille, onTap: onTap);
   }
 }

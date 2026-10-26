@@ -88,7 +88,7 @@ class ZaehlerStartKarte extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(children: [const Expanded(child: MonoLabel('// ablesen fällig')), Text('${d.faellig}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kWarn))]),
+            Row(children: [const Expanded(child: MonoLabel('Ablesen fällig')), Text('${d.faellig}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kWarn))]),
             const SizedBox(height: 10),
             ZaehlerKachelInhalt(daten: d),
           ],

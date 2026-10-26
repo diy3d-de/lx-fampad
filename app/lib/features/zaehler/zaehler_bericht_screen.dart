@@ -115,10 +115,10 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
     final nurMonatswerte = gewaehlt.isNotEmpty && gewaehlt.every((k) => k.reihen.every((r) => r.monatlich));
     final kannErstellen = !_arbeitet && gewaehlt.isNotEmpty && wahl.gueltig && (_staende || _monate);
     if (!daten.geladen || alle.isEmpty) {
-      return AuthSeite(label: '// zähler', titel: 'Bericht', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Es gibt noch keinen Zähler, für den ein Bericht entstehen kann.', fehler: false)]);
+      return AuthSeite(label: 'Zähler', titel: 'Bericht', maxBreite: kMaxContentWidth, kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Es gibt noch keinen Zähler, für den ein Bericht entstehen kann.', fehler: false)]);
     }
     return AuthSeite(
-      label: '// zähler',
+      label: 'Zähler',
       titel: 'Bericht',
       maxBreite: kMaxContentWidth,
       fussleiste: FilledButton.icon(
@@ -129,7 +129,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
       ),
       kinder: [
         if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
-        const MonoLabel('// zähler'),
+        const MonoLabel('Zähler'),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -144,7 +144,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
           ],
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// zeitraum'),
+        const MonoLabel('Zeitraum'),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -160,7 +160,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
           Row(
             children: [
               IconButton(tooltip: 'Ein Jahr zurück', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.chevron_left), onPressed: () => setState(() => _jahr = jahr - 1)),
-              Expanded(child: Center(child: Text('$jahr', style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w700, fontSize: 16)))),
+              Expanded(child: Center(child: Text('$jahr', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w700, fontSize: 16)))),
               IconButton(tooltip: 'Ein Jahr weiter', constraints: const BoxConstraints(minWidth: 48, minHeight: 48), icon: const Icon(Icons.chevron_right), onPressed: jahr < heute.year ? () => setState(() => _jahr = jahr + 1) : null),
             ],
           ),
@@ -177,7 +177,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
           if (_von != null && _bis != null && !wahl.gueltig) const Padding(padding: EdgeInsets.only(top: 6), child: Text('Das Ende liegt vor dem Beginn.', style: TextStyle(color: kDanger, fontSize: 13))),
         ],
         const SizedBox(height: 16),
-        const MonoLabel('// inhalt'),
+        const MonoLabel('Inhalt'),
         const SizedBox(height: 6),
         Wrap(
           spacing: 8,
@@ -191,7 +191,7 @@ class _ZaehlerBerichtScreenState extends ConsumerState<ZaehlerBerichtScreen> {
         ),
         if (!_staende && !_monate) Padding(padding: const EdgeInsets.only(top: 6), child: Text(nurMonatswerte ? 'Wähle mindestens „Monatswerte“ oder „Verbrauch je Monat“.' : 'Wähle mindestens „Stände“ oder „Verbrauch je Monat“.', style: TextStyle(color: kWarn, fontSize: 13))),
         const SizedBox(height: 16),
-        const MonoLabel('// vorschau', color: kTextMuted),
+        const MonoLabel('Vorschau', color: kTextMuted),
         const SizedBox(height: 6),
         LxCard(
           child: gewaehlt.isEmpty || !wahl.gueltig
@@ -239,7 +239,7 @@ class _VorschauZeile extends StatelessWidget {
                 ],
               ),
             ),
-            Text(v.abgedeckteTage == 0 ? (kachel.erste.monatlich ? 'keine Werte' : 'keine Stände') : verbrauchAnzeige(v.milli, kachel.einheit), style: const TextStyle(fontFamily: kFontMono, fontSize: 12)),
+            Text(v.abgedeckteTage == 0 ? (kachel.erste.monatlich ? 'keine Werte' : 'keine Stände') : verbrauchAnzeige(v.milli, kachel.einheit), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12)),
           ],
         ),
       ),

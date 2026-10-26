@@ -44,17 +44,37 @@ class LxContentWidth extends StatelessWidget {
       );
 }
 
-/// Abschnitts-Label im Terminal-Stil ("// so, 18. okt"): Mono, Großbuchstaben, Cyan.
+/// Abschnitts-Beschriftung in Inter (Name stammt aus der Terminal-Zeit, das Widget ist NICHT mehr Mono): Satzschreibung, 13 px, w600, `kTextMuted`.
+/// Ein führendes "// " wird entfernt und der erste Buchstabe groß geschrieben (der Rest bleibt unverändert, Eigennamen wie "Wi-Fi" bleiben).
+/// Für echte Codes (Sicherheitscode, Schlüssel, Seriennummern) bleibt `kFontMono`.
 class MonoLabel extends StatelessWidget {
   final String text;
   final Color color;
-  const MonoLabel(this.text, {super.key, this.color = kAccent});
+  const MonoLabel(this.text, {super.key, this.color = kTextMuted});
 
   @override
   Widget build(BuildContext context) => Text(
-        text.toUpperCase(),
-        style: TextStyle(fontFamily: kFontMono, fontSize: 11, letterSpacing: 0.9, color: color),
+        beschriftungText(text),
+        style: TextStyle(fontFamily: kFontSans, fontSize: 13, fontWeight: FontWeight.w600, color: color),
       );
+}
+
+/// Beschriftung in Satzschreibung: führendes "// " weg; der erste Buchstabe wird nur groß, wenn er klein ist und das zweite Zeichen
+/// kein Großbuchstabe ist (also nie "KWh" aus "kWh" oder "IPhone" aus "iPhone"). Ziffer, "ß" (würde zu "SS") und Emoji bleiben unverändert.
+String beschriftungText(String roh) {
+  var s = roh.startsWith('// ') ? roh.substring(3) : (roh.startsWith('//') ? roh.substring(2) : roh);
+  s = s.trimLeft();
+  if (s.isEmpty) return s;
+  final zeichen = s.characters;
+  final erstes = zeichen.first;
+  final gross = erstes.toUpperCase();
+  if (gross == erstes || gross.characters.length != 1) return s;
+  final rest = zeichen.skip(1);
+  if (rest.isNotEmpty) {
+    final zweites = rest.first;
+    if (zweites != zweites.toLowerCase() && zweites == zweites.toUpperCase()) return s;
+  }
+  return gross + rest.toString();
 }
 
 /// Kopfzeile eines Tabs: Titel (Inter 800, enger Letter-Spacing) und rechts frei wählbare Aktionen.
@@ -86,7 +106,7 @@ class ScreenHeader extends StatelessWidget {
       );
 }
 
-/// Karte wie `.lx-card`: Fläche `surface` (leicht transparent), 1-px-Rand, Radius 14.
+/// Karte: Fläche `surface` ohne Rand (Trennung nur durch die Flächenfarbe), Radius 18, keine Schatten. Nur die gewählte Karte trägt einen Akzentrand.
 class LxCard extends StatelessWidget {
   final Widget child;
   final EdgeInsetsGeometry padding;
@@ -98,8 +118,8 @@ class LxCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Material(
-        color: gewaehlt ? kAccentSoft : kSurface.withValues(alpha: 0.7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: gewaehlt ? kAccent : kBorder)),
+        color: gewaehlt ? kAccentSoft : kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: gewaehlt ? const BorderSide(color: kAccent) : BorderSide.none),
         clipBehavior: Clip.antiAlias,
         child: InkWell(onTap: onTap, child: Padding(padding: padding, child: child)),
       );
@@ -110,7 +130,11 @@ class EmptyState extends StatelessWidget {
   final IconData icon;
   final String title;
   final String hint;
-  const EmptyState({super.key, required this.icon, required this.title, required this.hint});
+
+  /// Optionaler nächster Schritt als Knopf (Beschriftung und Aktion gehören zusammen).
+  final String? knopf;
+  final VoidCallback? onKnopf;
+  const EmptyState({super.key, required this.icon, required this.title, required this.hint, this.knopf, this.onKnopf});
 
   @override
   Widget build(BuildContext context) => Center(
@@ -124,13 +148,17 @@ class EmptyState extends StatelessWidget {
               Text(title, textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
               const SizedBox(height: 4),
               Text(hint, textAlign: TextAlign.center, style: const TextStyle(color: kTextMuted)),
+              if (knopf != null && onKnopf != null) ...[
+                const SizedBox(height: 16),
+                FilledButton(onPressed: onKnopf, child: Text(knopf!)),
+              ],
             ],
           ),
         ),
       );
 }
 
-/// Kapsel mit Mono-Text, z. B. "● live" (Terminal-Grün) oder "● offline" (gedämpft).
+/// Kapsel mit Text in Inter, z. B. "Live" (Grün) oder "Offline" (gedämpft); ohne Rand.
 class StatusPill extends StatelessWidget {
   final String text;
   final Color color;
@@ -141,10 +169,9 @@ class StatusPill extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.10),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
           borderRadius: BorderRadius.circular(999),
         ),
-        child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: color)),
+        child: Text(text, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: color)),
       );
 }
 
@@ -167,7 +194,7 @@ class PersonAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final farbe = personColor(colorIndex);
     final initialen = Center(
-      child: Text(personInitials(name), style: TextStyle(fontFamily: kFontMono, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
+      child: Text(personInitials(name), style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: size * 0.34, fontWeight: FontWeight.w600, color: farbe)),
     );
     return ExcludeSemantics(
       child: Container(

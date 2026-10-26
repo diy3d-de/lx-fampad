@@ -80,7 +80,7 @@ class ErinnerungDienst {
   /// Tipp auf die Benachrichtigung "Standort geteilt": die Standort-Seite öffnen.
   void Function()? beiStandortGeoeffnet;
 
-  /// Tipp auf den Sicherheitshinweis (Nutzlast `sicherheit`): Profil > Sicherheitsereignisse öffnen.
+  /// Tipp auf den Sicherheitshinweis (Nutzlast `sicherheit`): Profil › Sicherheit › Sicherheitsereignisse öffnen.
   void Function()? beiSicherheitGeoeffnet;
 
   /// Tipp auf den Betreiber-Hinweis (Betrieb: Hinweis – öffne Betrieb).

@@ -51,7 +51,7 @@ void main() {
       await zeige(tester, EinladungErstelltSeite(einladung: einladung), skala: skala);
       final liste = find.byType(Scrollable).first;
       await tester.scrollUntilVisible(find.text('Download-Link kopieren'), 200, scrollable: liste);
-      expect(find.text('// APP INSTALLIEREN'), findsOneWidget);
+      expect(labelFinder('App installieren'), findsOneWidget);
       expect(find.byType(QrImageView), findsNWidgets(2));
       expect(find.text(kApkDownloadUrl), findsOneWidget);
       expect(find.textContaining('Installation aus dieser Quelle erlauben'), findsOneWidget);

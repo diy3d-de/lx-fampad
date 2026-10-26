@@ -159,7 +159,7 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
     final r = id == null ? null : daten.reihe(id);
     if (!daten.darf || !daten.geladen || r == null) {
       return AuthSeite(
-        label: '// neu',
+        label: 'Neu',
         titel: 'Zählerstand',
         maxBreite: kMaxContentWidth,
         kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Hier gibt es gerade keinen Zähler zum Ablesen.', fehler: false)],
@@ -181,7 +181,7 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
       geaendert: () => _wert.text.trim().isNotEmpty || _notiz.text.trim().isNotEmpty,
       aenderungen: Listenable.merge([_wert, _notiz]),
       child: AuthSeite(
-        label: _folge ? '// zähler ${_schritt + 1} von $anzahl' : '// neu',
+        label: _folge ? 'Zähler ${_schritt + 1} von $anzahl' : 'Neu',
         titel: 'Zählerstand',
         maxBreite: kMaxContentWidth,
         fussleiste: Row(
@@ -202,7 +202,7 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
         kinder: [
           if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
           if (!_folge) ...[
-            const MonoLabel('// zähler'),
+            const MonoLabel('Zähler'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -233,7 +233,7 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
             const Text('Ein Datum gilt für alle Zähler dieser Runde. Jeder Stand wird sofort gespeichert.', style: TextStyle(fontSize: 12, color: kTextMuted)),
             const SizedBox(height: 14),
           ],
-          const MonoLabel('// datum'),
+          const MonoLabel('Datum'),
           const SizedBox(height: 6),
           Semantics(
             button: true,
@@ -252,7 +252,7 @@ class _ZaehlerStandScreenState extends ConsumerState<ZaehlerStandScreen> {
             autofocus: _folge && _schritt > 0,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-            style: const TextStyle(fontFamily: kFontMono, fontSize: 24, fontWeight: FontWeight.w700),
+            style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 24, fontWeight: FontWeight.w700),
             onChanged: (_) => setState(() => _bestaetigt = false),
             decoration: InputDecoration(labelText: 'Zählerstand in $einheit', helperText: 'Mit Nachkommastellen, wie am Zähler (Komma)', errorText: wertFehler ? 'Gib den Stand als Zahl ein, zum Beispiel 48213,5.' : null),
           ),
@@ -327,7 +327,7 @@ class _Zeile extends StatelessWidget {
       children: [
         Expanded(child: Text(label, style: const TextStyle(color: kTextMuted))),
         const SizedBox(width: 12),
-        Flexible(child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w600))),
+        Flexible(child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w600))),
       ],
     ),
   );

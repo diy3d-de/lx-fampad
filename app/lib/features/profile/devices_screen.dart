@@ -89,7 +89,7 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
     final df = DateFormat('d. MMM, HH:mm', 'de_DE');
     final g = _geraete;
     return AuthSeite(
-      label: '// sitzungen',
+      label: 'Sitzungen',
       titel: 'Angemeldete Geräte',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -114,9 +114,9 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
                           Text(
                             '${d.platform}${d.appVersion == null ? '' : ' · v${d.appVersion}'}'
                             '${d.lastSeenAt == null ? '' : ' · zuletzt ${df.format(d.lastSeenAt!.toLocal())}'}',
-                            style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                            style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                           ),
-                          if (d.current) const Padding(padding: EdgeInsets.only(top: 6), child: RollenPille('dieses gerät', farbe: kTerminal)),
+                          if (d.current) const Padding(padding: EdgeInsets.only(top: 6), child: RollenPille('Dieses Gerät', farbe: kTerminal)),
                         ],
                       ),
                     ),

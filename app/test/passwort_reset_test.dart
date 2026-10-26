@@ -1,4 +1,4 @@
-// Passwort zurücksetzen (PR 4b): "Passwort vergessen?" mit Wiederherstellungscode und Passkey, Link des Admins einlösen, Admin-Aktion, Sicherheitsereignisse,
+// Passwort zurücksetzen (PR 4b): "Passwort vergessen?" mit Notfall-Code und Passkey, Link des Admins einlösen, Admin-Aktion, Sicherheitsereignisse,
 // automatische neue Passwort-Sicherung nach dem Reset, Sicherheitshinweis. Layout bei 360 px und Textskala 1.0/1.5. Nie geht das Passwort an den Server.
 import 'dart:convert';
 import 'dart:typed_data';
@@ -73,7 +73,7 @@ Future<void> _zuPasswortVergessen(WidgetTester tester) async {
 
 Future<void> _vergessenAusfuellen(WidgetTester tester, {String code = _wiederherstellung, String pw = _pwNeu, String? pw2}) async {
   await eingeben(tester, 'E-Mail', 'anna@beispiel.de');
-  await eingeben(tester, 'Wiederherstellungscode', code);
+  await eingeben(tester, 'Notfall-Code', code);
   await eingeben(tester, 'Neues Passwort (mind. 12 Zeichen)', pw);
   await eingeben(tester, 'Passwort wiederholen', pw2 ?? pw);
   await tippe(tester, find.widgetWithText(FilledButton, 'Neues Passwort festlegen'));
@@ -110,7 +110,7 @@ void main() {
       expect(e.art, SicherheitsArt.passwortZurueckgesetzt);
       expect(e.weg, SicherheitsWeg.wiederherstellungscode);
       expect(e.akteur, isNull);
-      expect(sicherheitsEreignisText(e), contains('Wiederherstellungscode'));
+      expect(sicherheitsEreignisText(e), contains('Notfall-Code'));
       final a = SicherheitsEreignisDto.fromJson({'id': 'e2', 'kind': 'password_reset_requested', 'via': 'admin', 'actorName': 'Anna', 'byAdmin': true, 'createdAt': '2026-10-21T10:00:00.000Z'});
       expect(sicherheitsEreignisText(a), startsWith('Anna hat einen Link'));
       final neu = SicherheitsEreignisDto.fromJson({'id': 'e3', 'kind': 'zukunft', 'via': 'x', 'actorName': null, 'byAdmin': false, 'createdAt': '2026-10-21T10:00:00.000Z'});
@@ -300,7 +300,7 @@ void main() {
       expect(z.id, kSicherheitAbgemeldetBenachrichtigungsId);
       expect(z.titel, 'Du wurdest abgemeldet');
       expect(z.text, contains('Dein Passwort wurde zurückgesetzt'));
-      expect(z.text, contains('Wiederherstellungscode'));
+      expect(z.text, contains('Notfall-Code'));
       expect(await a.db.metaLesen(kSicherheitAbgemeldetSchluessel), '1');
       // die Person setzt selbst zurück: der Hinweis ist dann nichts Neues
       await a.pruefer.hinweisAbgemeldetLoeschen();
@@ -333,10 +333,10 @@ void main() {
         final a = await _aufbau(angeboten: false);
         await starteApp(tester, a.env, skala: skala);
         expect(find.text('Passwort vergessen? Neues Passwort festlegen'), findsNothing);
-        expect(find.textContaining('Passwort verloren? Mit Wiederherstellungscode anmelden'), findsOneWidget, reason: 'der alte Weg bleibt');
+        expect(find.textContaining('Passwort verloren? Mit Notfall-Code anmelden'), findsOneWidget, reason: 'der alte Weg bleibt');
       });
 
-      testWidgets('mit Wiederherstellungscode: nur der authKey geht hinaus, neue Passwort-Sicherung wird angelegt und geprüft, Hinweis erscheint', (tester) async {
+      testWidgets('mit Notfall-Code: nur der authKey geht hinaus, neue Passwort-Sicherung wird angelegt und geprüft, Hinweis erscheint', (tester) async {
         final a = await _aufbau();
         a.server.on('POST /auth/password-reset/recovery', (r) {
           a.srv.passwortZurueckgesetzt(fixIdAdmin);
@@ -430,7 +430,7 @@ void main() {
         await _vergessenAusfuellen(tester, pw2: 'etwas-ganz-anderes-123');
         expect(find.textContaining('nicht gleich'), findsOneWidget);
         await _vergessenAusfuellen(tester, code: '');
-        expect(find.textContaining('Wiederherstellungscode ein'), findsWidgets);
+        expect(find.textContaining('Notfall-Code ein'), findsWidgets);
         await _vergessenAusfuellen(tester, pw: 'passwortpasswort');
         expect(find.textContaining('zu leicht zu erraten'), findsOneWidget);
         expect(a.server.anfragen('POST /auth/password-reset/recovery'), isEmpty);
@@ -618,7 +618,7 @@ void main() {
         expect(find.textContaining('Du selbst kannst das Konto damit nicht übernehmen'), findsOneWidget);
         // ehrlich: der Verlauf bleibt nicht pauschal, sondern nur mit einem Gerät mit dem Schlüssel oder dem Wiederherstellungsschlüssel
         expect(find.textContaining('Der Chat-Verlauf bleibt nur erhalten, wenn Ben ein Gerät mit dem eigenen Schlüssel oder den Wiederherstellungsschlüssel hat'), findsOneWidget);
-        expect(find.textContaining('Wiederherstellungscodes und der Chat-Verlauf bleiben'), findsNothing);
+        expect(find.textContaining('Notfall-Codes und der Chat-Verlauf bleiben'), findsNothing);
         pruefeLayout(tester, 'Passwort zurücksetzen: Dialog');
         await tippeText(tester, 'Link erstellen');
         // das Step-up-Fenster: Code eingeben
@@ -664,14 +664,14 @@ void main() {
 
       Future<void> zurVerschluesselung(WidgetTester tester) async {
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-        await tippeText(tester, 'Verschlüsselung');
+        await tippeText(tester, 'Nachrichten-Schutz');
       }
 
       testWidgets('mit Schlüssel auf dem Gerät: "Sicherung erneuern" wird angeboten, erklärt den Grund und legt mit einem Passwort neu an', (tester) async {
         final a = await veraltet();
         await starteApp(tester, a.env, skala: skala);
         await zurVerschluesselung(tester);
-        expect(find.textContaining('veraltet nach Passwort-Reset · Sicherung erneuern'), findsOneWidget);
+        expect(find.textContaining('Veraltet nach dem Zurücksetzen des Passworts'), findsOneWidget);
         pruefeLayout(tester, 'Verschlüsselung: Sicherung erneuern');
         await tippeText(tester, 'Passwort-Sicherung');
         expect(find.textContaining('Dein Passwort wurde zurückgesetzt, deshalb ist die bisherige Passwort-Sicherung veraltet'), findsOneWidget);
@@ -764,7 +764,7 @@ void main() {
         await tippeText(tester, 'Sicherheitsereignisse');
         expect(find.textContaining('mit dem Link eines Admins zurückgesetzt'), findsOneWidget);
         expect(find.textContaining('Anna hat einen Link zum Zurücksetzen deines Passworts erstellt'), findsOneWidget);
-        expect(find.textContaining('mit einem Wiederherstellungscode zurückgesetzt'), findsOneWidget);
+        expect(find.textContaining('mit einem Notfall-Code zurückgesetzt'), findsOneWidget);
         pruefeLayout(tester, 'Sicherheitsereignisse');
       });
 

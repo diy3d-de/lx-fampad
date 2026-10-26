@@ -50,7 +50,7 @@ const kMobilKacheln = <StartKachel>[
 
 /// Kacheln des Desktop-Rasters in der Standardreihenfolge.
 const kDesktopKacheln = <StartKachel>[
-  StartKachel('termine', 'Heute & morgen', 'termine'),
+  StartKachel('termine', 'Heute und morgen', 'termine'),
   StartKachel('chat', 'Chat', 'letzte nachrichten'),
   StartKachel('einkauf', 'Einkaufsliste', 'offene einträge'),
   // "Zuletzt geteilt": nur wenn der Server die Dateiablage meldet (startseite_verfuegbar.dart)

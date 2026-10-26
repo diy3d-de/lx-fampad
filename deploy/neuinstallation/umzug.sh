@@ -40,7 +40,7 @@ umask 077
 
 # --- Festwerte ----------------------------------------------------------------------------------------------------------------------
 # Absichtlich nicht "readonly": aus_bootstrap() liest bootstrap-server.sh in einer Unterschale ein, das dieselben Namen schreibgeschützt setzt.
-UMZUG_VERSION="0.19.0"                                 # Stand des Projekts (Versionskopf); bei jedem Versionsbump mitziehen: test-umzug.sh verlangt UMZUG_VERSION >= Version in app/pubspec.yaml
+UMZUG_VERSION="0.20.0"                                 # Stand des Projekts (Versionskopf); bei jedem Versionsbump mitziehen: test-umzug.sh verlangt UMZUG_VERSION >= Version in app/pubspec.yaml
 DOMAIN="familie.lx-labs.dev"                          # fest: Passkeys (RP-ID) hängen daran
 NTFY_DOMAIN="ntfy.familie.lx-labs.dev"
 LX_USER="lx"

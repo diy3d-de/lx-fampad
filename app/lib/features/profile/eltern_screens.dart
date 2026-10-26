@@ -1,4 +1,4 @@
-// Profil > Verschlüsselung > Eltern-Wiederherstellung (nur wenn der Server sie anbietet): zwei Seiten.
+// Profil › Sicherheit › Nachrichten-Schutz › Eltern-Wiederherstellung (nur wenn der Server sie anbietet): zwei Seiten.
 //  - [ElternWiederherstellungScreen] (Kinder-Konten): Zustimmung geben, zurücknehmen, aktualisieren; auf einem Gerät ohne Schlüssel die Eltern um Hilfe bitten (Wartefrist, Kurzcode).
 //  - [ElternHilfeScreen] (Admin und Eltern): Kinder, die eine Hinterlegung gemacht haben, und ihre Anfragen: übernehmen, Kurzcode des Kindes eingeben, freigeben oder ablehnen.
 // Ablauf und Sicherheitsüberlegung: Projektbeschreibung 9a. Das Kind bleibt immer Herr des Verfahrens: Es stimmt zu, es kann jederzeit abbrechen oder zurücknehmen, und die Eltern
@@ -158,7 +158,7 @@ class _ElternWiederherstellungScreenState extends ConsumerState<ElternWiederhers
     final hatSchluessel = s.status == E2eeStatus.bereit;
     return BildschirmSchutz(
       child: AuthSeite(
-        label: '// eltern-wiederherstellung',
+        label: 'Eltern-wiederherstellung',
         titel: 'Eltern-Wiederherstellung',
         maxBreite: kMaxContentWidth,
         kinder: [
@@ -182,7 +182,7 @@ class _ElternWiederherstellungScreenState extends ConsumerState<ElternWiederhers
           if (!stand.berechtigt)
             const MeldungsBox('Die Eltern-Wiederherstellung gibt es nur für Kinder-Konten.', fehler: false)
           else ...[
-            const MonoLabel('// meine zustimmung'),
+            const MonoLabel('Meine Zustimmung'),
             const SizedBox(height: 8),
             if (stand.aktiv) ..._aktiv(stand, hatSchluessel) else ..._inaktiv(hatSchluessel),
             const SizedBox(height: 20),
@@ -194,7 +194,7 @@ class _ElternWiederherstellungScreenState extends ConsumerState<ElternWiederhers
   }
 
   List<Widget> _inaktiv(bool hatSchluessel) => [
-    EinstellungsZeile(icon: Icons.family_restroom, titel: 'Aus', untertitel: 'deine eltern können dir nicht helfen', status: const RollenPille('aus', farbe: kWarn)),
+    EinstellungsZeile(icon: Icons.family_restroom, titel: 'Aus', untertitel: 'Deine Eltern können dir nicht helfen.', status: const RollenPille('Aus', farbe: kWarn)),
     const SizedBox(height: 8),
     if (!hatSchluessel)
       const Text('Erlauben kannst du es nur auf einem Gerät, auf dem dein Schlüssel liegt.', style: TextStyle(fontSize: 13, height: 1.5, color: kTextMuted))
@@ -218,8 +218,8 @@ class _ElternWiederherstellungScreenState extends ConsumerState<ElternWiederhers
       EinstellungsZeile(
         icon: Icons.family_restroom,
         titel: 'An',
-        untertitel: stand.seit == null ? 'deine eltern können dir helfen' : 'seit ${_zeit(stand.seit!)}',
-        status: veraltet ? const RollenPille('aktualisieren', farbe: kWarn) : const RollenPille('aktiv', farbe: kTerminal),
+        untertitel: stand.seit == null ? 'Deine Eltern können dir helfen.' : 'seit ${_zeit(stand.seit!)}',
+        status: veraltet ? const RollenPille('Aktualisieren', farbe: kWarn) : const RollenPille('Aktiv', farbe: kTerminal),
       ),
       const SizedBox(height: 8),
       for (final e in stand.eltern)
@@ -240,7 +240,7 @@ class _ElternWiederherstellungScreenState extends ConsumerState<ElternWiederhers
     final a = _ansicht?.anfrage;
     final z = a?.zustand;
     return [
-      const MonoLabel('// schlüssel zurückholen'),
+      const MonoLabel('Schlüssel zurückholen'),
       const SizedBox(height: 8),
       if (a == null || (z != null && !z.offen && z != AnfrageZustand.fertig)) ...[
         if (z == AnfrageZustand.abgelehnt) const MeldungsBox('Ein Elternteil hat die Anfrage abgelehnt. Sprich mit ihnen und stelle sie bei Bedarf noch einmal.', fehler: false),
@@ -363,7 +363,7 @@ class _ElternHilfeScreenState extends ConsumerState<ElternHilfeScreen> with Akti
     final daten = u.value ?? HilfeUebersicht.leer;
     return BildschirmSchutz(
       child: AuthSeite(
-        label: '// kinder helfen',
+        label: 'Kinder helfen',
         titel: 'Kindern helfen',
         maxBreite: kMaxContentWidth,
         kinder: [
@@ -381,12 +381,12 @@ class _ElternHilfeScreenState extends ConsumerState<ElternHilfeScreen> with Akti
             EinstellungsZeile(
               icon: Icons.child_care,
               titel: k.name,
-              untertitel: k.veraltet ? 'hinterlegung veraltet · das kind muss sie aktualisieren' : 'du kannst helfen',
-              status: k.veraltet ? const RollenPille('veraltet', farbe: kWarn) : null,
+              untertitel: k.veraltet ? 'Die Hinterlegung ist veraltet. Das Kind muss sie aktualisieren.' : 'Du kannst helfen.',
+              status: k.veraltet ? const RollenPille('Veraltet', farbe: kWarn) : null,
             ),
           if (daten.anfragen.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const MonoLabel('// anfragen'),
+            const MonoLabel('Anfragen'),
             const SizedBox(height: 8),
             for (final a in daten.anfragen) ..._anfrage(a, ich),
           ],

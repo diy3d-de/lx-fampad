@@ -1,4 +1,4 @@
-// Erneute Bestätigung (Step-up) für sensible Aktionen: Passkey oder TOTP-/Wiederherstellungscode.
+// Erneute Bestätigung (Step-up) für sensible Aktionen: Passkey oder TOTP-/Notfall-Code.
 // Der Server verlangt sie bis 5 Minuten nach der letzten Bestätigung nicht erneut (403 step_up_required).
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -56,7 +56,7 @@ class _StepUpDialogState extends ConsumerState<StepUpDialog> with AktionsZustand
     final ok = await ausfuehren(() async {
       if (_mitWiederherstellungscode) {
         final c = _wiederherstellung.text.trim();
-        if (c.isEmpty) throw const EingabeFehler('Bitte gib einen Wiederherstellungscode ein.');
+        if (c.isEmpty) throw const EingabeFehler('Bitte gib einen Notfall-Code ein.');
         await ref.read(apiProvider).stepUpCode(wiederherstellungscode: c);
       } else {
         if (!RegExp(r'^\d{6}$').hasMatch(_code.text)) throw const EingabeFehler('Bitte gib den 6-stelligen Code ein.');
@@ -99,7 +99,7 @@ class _StepUpDialogState extends ConsumerState<StepUpDialog> with AktionsZustand
               textCapitalization: TextCapitalization.characters,
               style: const TextStyle(fontFamily: kFontMono, fontSize: 16, color: kAccent),
               onSubmitted: (_) => _mitCode(),
-              decoration: const InputDecoration(labelText: 'Wiederherstellungscode', hintText: 'XXXX-XXXX-XXXX-XXXX'),
+              decoration: const InputDecoration(labelText: 'Notfall-Code', hintText: 'XXXX-XXXX-XXXX-XXXX'),
             )
           else if (codeSichtbar)
             CodeFeld(controller: _code, label: 'Code aus der Authenticator-App', onSubmitted: (_) => _mitCode()),
@@ -110,7 +110,7 @@ class _StepUpDialogState extends ConsumerState<StepUpDialog> with AktionsZustand
           Align(
             alignment: Alignment.centerLeft,
             child: LinkKnopf(
-              _mitWiederherstellungscode ? 'Code aus der App nutzen' : 'Wiederherstellungscode nutzen',
+              _mitWiederherstellungscode ? 'Code aus der App nutzen' : 'Notfall-Code nutzen',
               onPressed: laeuft
                   ? null
                   : () => setState(() {

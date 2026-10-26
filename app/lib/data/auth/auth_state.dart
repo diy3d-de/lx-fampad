@@ -354,7 +354,7 @@ class AuthController extends Notifier<AuthState> {
     } catch (_) {}
   }
 
-  /// Nach erfolgreicher Registrierung (und bestätigten Wiederherstellungscodes): Sitzung übernehmen bzw. auf Freigabe warten.
+  /// Nach erfolgreicher Registrierung (und bestätigten Notfall-Codes): Sitzung übernehmen bzw. auf Freigabe warten.
   Future<void> registrierungAbschliessen(RegistrationResult r) async {
     if (r.status == MemberStatus.pending || r.session == null) {
       state = AuthState(status: AuthStatus.wartend, user: r.member);

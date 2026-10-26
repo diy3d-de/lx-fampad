@@ -64,7 +64,7 @@ class WarnungKarte extends StatelessWidget {
       excludeSemantics: true,
       child: Material(
         color: farbe.withValues(alpha: 0.10),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: farbe.withValues(alpha: 0.55))),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: farbe.withValues(alpha: 0.55))),
         child: Padding(
           padding: const EdgeInsets.all(14),
           child: ConstrainedBox(
@@ -72,7 +72,7 @@ class WarnungKarte extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                MonoLabel('// dwd-warnung · stufe ${warnung.stufe}', color: farbe),
+                MonoLabel('DWD-Warnung · Stufe ${warnung.stufe}', color: farbe),
                 const SizedBox(height: 6),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -85,7 +85,7 @@ class WarnungKarte extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text(zeitraum, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                Text(zeitraum, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                 if (warnung.text.isNotEmpty) ...[
                   const SizedBox(height: 6),
                   Text(warnung.text, style: const TextStyle(fontSize: 13, color: kText)),
@@ -167,7 +167,7 @@ class WetterVorhersageAbschnitt extends ConsumerWidget {
               padding: const EdgeInsets.only(bottom: 10),
               child: Text(
                 'Die Vorhersage ist veraltet (${vorhersageStand(teil, jetzt)}) und wird beim nächsten erfolgreichen Abruf erneuert.',
-                style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kWarn),
+                style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kWarn),
               ),
             ),
           WetterTageKarte(tage: tage, jetzt: jetzt, stand: vorhersageStand(teil, jetzt), veraltet: veraltet),
@@ -199,8 +199,8 @@ class WetterTageKarte extends StatelessWidget {
         children: [
           Row(
             children: [
-              const Expanded(child: MonoLabel('// nächste tage')),
-              Text(stand, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: veraltet ? kWarn : kTextMuted)),
+              const Expanded(child: MonoLabel('Nächste Tage')),
+              Text(stand, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: veraltet ? kWarn : kTextMuted)),
             ],
           ),
           const SizedBox(height: 10),
@@ -271,14 +271,14 @@ class _TagZeile extends StatelessWidget {
                   child: FittedBox(
                     fit: BoxFit.scaleDown,
                     alignment: Alignment.centerRight,
-                    child: Text('${gradText(tag.min)} / ${gradText(tag.max)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 14, color: kText)),
+                    child: Text('${gradText(tag.min)} / ${gradText(tag.max)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 14, color: kText)),
                   ),
                 ),
               ],
             ),
             if (detail.isNotEmpty) ...[
               const SizedBox(height: 2),
-              Text(detail, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              Text(detail, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             ],
           ],
         ),
@@ -299,7 +299,7 @@ class WetterStundenBand extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: MonoLabel('// nächste 24 stunden')),
+          const Padding(padding: EdgeInsets.symmetric(horizontal: 4), child: MonoLabel('Nächste 24 Stunden')),
           const SizedBox(height: 10),
           SingleChildScrollView(
             scrollDirection: Axis.horizontal,
@@ -328,14 +328,14 @@ class _StundeSpalte extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 2),
         child: Column(
           children: [
-            Text('${s.zeit.hour.toString().padLeft(2, '0')} Uhr', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            Text('${s.zeit.hour.toString().padLeft(2, '0')} Uhr', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             const SizedBox(height: 6),
             Icon(wetterSymbolIcon(s.symbol), size: 22, color: wetterSymbolFarbe(s.symbol)),
             const SizedBox(height: 6),
-            Text(gradText(s.temperatur), style: const TextStyle(fontFamily: kFontMono, fontSize: 14, fontWeight: FontWeight.w700, color: kTextStrong)),
+            Text(gradText(s.temperatur), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 14, fontWeight: FontWeight.w700, color: kTextStrong)),
             const SizedBox(height: 4),
-            Text(regen.isEmpty ? '–' : regen.replaceAll(' mm', ''), style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: regen.isEmpty ? kTextFaint : kWetterRegen)),
-            if (wind.isNotEmpty) Text(wind, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            Text(regen.isEmpty ? '–' : regen.replaceAll(' mm', ''), style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: regen.isEmpty ? kTextMuted : kWetterRegen)),
+            if (wind.isNotEmpty) Text(wind, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ],
         ),
       ),
@@ -360,7 +360,7 @@ class WetterRegenWahrscheinlichkeit extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// regenwahrscheinlichkeit'),
+            const MonoLabel('Regenwahrscheinlichkeit'),
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -369,7 +369,7 @@ class WetterRegenWahrscheinlichkeit extends StatelessWidget {
                   Expanded(
                     child: Column(
                       children: [
-                        Text(t.regenProzent == null ? '–' : '${t.regenProzent}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kText)),
+                        Text(t.regenProzent == null ? '–' : '${t.regenProzent}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kText)),
                         const SizedBox(height: 3),
                         Container(
                           height: 4 + 44 * ((t.regenProzent ?? 0).clamp(0, 100) / 100),
@@ -377,7 +377,7 @@ class WetterRegenWahrscheinlichkeit extends StatelessWidget {
                           decoration: BoxDecoration(color: kWetterRegen.withValues(alpha: 0.85), borderRadius: BorderRadius.circular(3)),
                         ),
                         const SizedBox(height: 4),
-                        FittedBox(fit: BoxFit.scaleDown, child: Text(wochentagKurz(t.datum), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted))),
+                        FittedBox(fit: BoxFit.scaleDown, child: Text(wochentagKurz(t.datum), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted))),
                       ],
                     ),
                   ),

@@ -17,7 +17,7 @@ class SodiumCryptoProvider implements CryptoProvider {
     try {
       return SodiumCryptoProvider(await SodiumSumoInit.init());
     } on Object {
-      throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'Die Verschlüsselung ist auf diesem Gerät nicht verfügbar.');
+      throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'Der Nachrichten-Schutz ist auf diesem Gerät nicht verfügbar.');
     }
   }
 
@@ -31,7 +31,7 @@ class SodiumCryptoProvider implements CryptoProvider {
     }
   }
 
-  static const _intern = CryptoFehler(CryptoFehlerArt.bibliothek, 'Die Verschlüsselung hat einen Fehler gemeldet.');
+  static const _intern = CryptoFehler(CryptoFehlerArt.bibliothek, 'Der Nachrichten-Schutz hat einen Fehler gemeldet.');
 
   @override
   Uint8List zufall(int laenge) => _s.randombytes.buf(laenge);

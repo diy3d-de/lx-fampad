@@ -63,7 +63,7 @@ class _EinladungsBlattState extends State<_EinladungsBlatt> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const MonoLabel('// neue einladung'),
+          const MonoLabel('Neue Einladung'),
           const SizedBox(height: 4),
           const Text('Wen möchtest du einladen?', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kTextStrong)),
           const SizedBox(height: 12),
@@ -84,7 +84,7 @@ class _EinladungsBlattState extends State<_EinladungsBlatt> {
             const Text('Für eine Admin-Einladung musst du dich noch einmal bestätigen.', style: TextStyle(fontSize: 12, color: kTextMuted)),
           ],
           const SizedBox(height: 16),
-          const MonoLabel('// gültigkeit', color: kTextMuted),
+          const MonoLabel('Gültigkeit', color: kTextMuted),
           const SizedBox(height: 4),
           Wrap(
             spacing: 8,
@@ -135,7 +135,7 @@ class EinladungErstelltSeite extends StatelessWidget {
     final bis = DateFormat('d. MMM yyyy, HH:mm', 'de_DE').format(einladung.expiresAt.toLocal());
     return BildschirmSchutz(
       child: AuthSeite(
-        label: passwortReset ? '// passwort zurücksetzen' : '// einladung bereit',
+        label: passwortReset ? 'Passwort zurücksetzen' : 'Einladung bereit',
         titel: passwortReset ? 'Neues Passwort für $fuer' : (fuer == null ? 'Einladung erstellt' : 'Zurücksetzen für $fuer'),
         kinder: [
           Wrap(
@@ -160,14 +160,14 @@ class EinladungErstelltSeite extends StatelessWidget {
           const SizedBox(height: 4),
           const Center(child: Text('Zum Scannen in der App: „Einladung per QR-Code annehmen“', style: TextStyle(fontSize: 12, color: kTextMuted), textAlign: TextAlign.center)),
           const SizedBox(height: 16),
-          const MonoLabel('// link', color: kTextMuted),
+          const MonoLabel('Link', color: kTextMuted),
           const SizedBox(height: 4),
           Semantics(label: 'Einladungslink', child: SelectableText(einladung.link, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kAccent))),
           const SizedBox(height: 8),
           ZweitKnopf(text: 'Link kopieren', icon: Icons.copy, onPressed: () => inZwischenablage(context, einladung.link, 'Link kopiert.', geheim: true)),
           if (einladung.pin != null) ...[
             const SizedBox(height: 16),
-            const MonoLabel('// pin', color: kTextMuted),
+            const MonoLabel('Pin', color: kTextMuted),
             const SizedBox(height: 4),
             Semantics(label: 'PIN der Einladung', child: SelectableText(einladung.pin!, style: const TextStyle(fontFamily: kFontMono, fontSize: 28, letterSpacing: 6, color: kAccent))),
             const SizedBox(height: 4),

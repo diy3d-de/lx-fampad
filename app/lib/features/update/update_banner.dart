@@ -63,7 +63,7 @@ class UpdateAnzeige extends ConsumerWidget {
                   color: u.phase == UpdatePhase.fehler && !u.webNeu ? kDanger : kAccent,
                 ),
                 const SizedBox(width: 12),
-                Expanded(child: Text(titel, style: const TextStyle(fontFamily: kFontMono, fontSize: 12))),
+                Expanded(child: Text(titel, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12))),
                 if (aktion != null) TextButton(onPressed: onTap, child: Text(aktion)),
               ],
             ),
@@ -103,7 +103,7 @@ class PflichtUpdateSeite extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    const MonoLabel('// update erforderlich', color: kWarn),
+                    const MonoLabel('Update erforderlich', color: kWarn),
                     const SizedBox(height: 4),
                     const Text(
                       'Bitte aktualisieren',

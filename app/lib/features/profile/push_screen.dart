@@ -162,7 +162,7 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
     }
     final bereit = z.gewuenscht && z.angemeldet;
     return AuthSeite(
-      label: '// push',
+      label: 'Push',
       titel: 'Benachrichtigungen',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -214,7 +214,7 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
           const SizedBox(height: 8),
           const _StandortDiagnoseKarte(),
           const SizedBox(height: 20),
-          const MonoLabel('// status'),
+          const MonoLabel('Status'),
           const SizedBox(height: 8),
           LxCard(
             child: Column(
@@ -239,7 +239,7 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
           if (z.test != null) ...[const SizedBox(height: 8), _TestAnzeige(z.test!)],
         ],
         const SizedBox(height: 20),
-        const MonoLabel('// einrichtung'),
+        const MonoLabel('Einrichtung'),
         const SizedBox(height: 8),
         const LxCard(child: _Anleitung()),
       ],
@@ -298,10 +298,10 @@ class _StandortDiagnoseKarte extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const MonoLabel('// diagnose standortfreigaben'),
+          const MonoLabel('Diagnose Standortfreigaben'),
           const SizedBox(height: 8),
           _DiagZeile('Letzter Wecker', wecker(d.wecker)),
-          _DiagZeile('Letzter Abgleich im Hintergrund', mitCode(d.sync)),
+          _DiagZeile('Zuletzt im Hintergrund übertragen', mitCode(d.sync)),
           _DiagZeile('Letzter Abruf des Standort-Kanals', mitCode(d.abruf)),
           _DiagZeile('Letzter Hinweis', mitCode(d.hinweis)),
           _DiagZeile('Letzte Wetterprüfung im Hintergrund', mitCode(d.wetter)),
@@ -325,7 +325,7 @@ class _DiagZeile extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(titel, style: const TextStyle(fontSize: 13)),
-        Text(wert, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+        Text(wert, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
       ],
     ),
   );
@@ -346,7 +346,7 @@ class _StatusZeile extends StatelessWidget {
         const SizedBox(width: 10),
         Expanded(child: Text(titel, style: const TextStyle(fontSize: 14))),
         const SizedBox(width: 8),
-        Flexible(child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted))),
+        Flexible(child: Text(wert, textAlign: TextAlign.right, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted))),
       ],
     ),
   );

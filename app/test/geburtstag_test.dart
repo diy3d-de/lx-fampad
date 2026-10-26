@@ -133,9 +133,9 @@ void main() {
     await tippe(tester, find.byTooltip('Neuer Termin'));
     await tester.enterText(find.byType(TextField).first, 'Lena');
     await tippe(tester, find.text('Geburtstag'));
-    expect(find.text('GEBURTSDATUM'), findsWidgets);
-    expect(find.text('LETZTER TAG'), findsNothing, reason: 'Zeitfelder entfallen beim Geburtstag');
-    expect(find.text('WIEDERHOLUNG'), findsNothing);
+    expect(find.text('Geburtsdatum'), findsWidgets);
+    expect(labelFinder('Letzter Tag'), findsNothing, reason: 'Zeitfelder entfallen beim Geburtstag');
+    expect(labelFinder('Wie oft?'), findsNothing);
     await tippe(tester, find.text('Geburtstag anlegen'));
     await warte(tester, 10);
     final zeilen = await env.db.select(env.db.termine).get();
@@ -156,7 +156,7 @@ void main() {
 
   testWidgets('Startseite: Karte "Nächste Geburtstage" nur mit Geburtstagen, Tippen öffnet den Kalender', (tester) async {
     final (_, _) = await start(tester, tab: 'Start');
-    expect(find.text('// GEBURTSTAGE'), findsNothing);
+    expect(labelFinder('Geburtstage'), findsNothing);
   });
 
   testWidgets('Startseite mit Geburtstag in 3 Tagen: Karte zeigt Name, Alter und Tag', (tester) async {
@@ -175,7 +175,7 @@ void main() {
         'audience': 'family',
       });
     });
-    expect(find.text('// GEBURTSTAGE'), findsOneWidget);
+    expect(labelFinder('Geburtstage'), findsOneWidget);
     expect(find.text('Mia wird 8'), findsWidgets);
     pruefeLayout(tester, 'Startseite Geburtstage');
   });

@@ -67,7 +67,7 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
                             padding: const EdgeInsets.fromLTRB(20, 4, 20, 0),
                             sliver: SliverList.list(
                               children: [
-                                const MonoLabel('// einstellungen'),
+                                const MonoLabel('Einstellungen'),
                                 const SizedBox(height: 4),
                                 Semantics(
                                   header: true,
@@ -181,7 +181,7 @@ class _FesterEintrag extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minHeight: 56),
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(color: kBgElevated, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kBgElevated, borderRadius: BorderRadius.circular(18)),
         child: const Row(
           children: [
             Icon(Icons.push_pin_outlined, size: 18, color: kTextFaint),
@@ -191,7 +191,7 @@ class _FesterEintrag extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Bin ich abgesichert?', style: TextStyle(fontWeight: FontWeight.w600)),
-                  Text('bleibt oben, nur bei problemen sichtbar', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text('bleibt oben, nur bei problemen sichtbar', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),
@@ -269,7 +269,7 @@ class _Eintrag extends StatelessWidget {
               : leer
               ? 'gerade nichts anzuzeigen'
               : kachel.hinweis,
-          style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+          style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
         ),
       ],
     );
@@ -293,7 +293,7 @@ class _Eintrag extends StatelessWidget {
                       _pfeil(hoch: true, onTap: onHoch),
                       _pfeil(hoch: false, onTap: onRunter),
                       const SizedBox(width: 8),
-                      Expanded(child: Text(_position.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted))),
+                      Expanded(child: Text(_position, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted))),
                     ],
                   ),
                 ],
@@ -304,7 +304,7 @@ class _Eintrag extends StatelessWidget {
           child: Container(
             constraints: const BoxConstraints(minHeight: 56),
             padding: const EdgeInsets.fromLTRB(4, 4, 10, 4),
-            decoration: flach ? null : BoxDecoration(color: kSurface.withValues(alpha: 0.7), border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+            decoration: flach ? null : BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(18)),
             child: inhalt,
           ),
         );

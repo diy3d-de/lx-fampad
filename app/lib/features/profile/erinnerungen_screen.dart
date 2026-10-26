@@ -130,7 +130,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
     final laedt = status.isLoading && !status.hasValue;
     final s = status.value;
     return AuthSeite(
-      label: '// gerät',
+      label: 'Gerät',
       titel: 'Erinnerungen',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -153,7 +153,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             child: SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Erinnerungen auf diesem Gerät', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Termin- und Aufgabenerinnerungen anzeigen', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              subtitle: const Text('Termin- und Aufgabenerinnerungen anzeigen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               value: einst.an,
               onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).anSetzen(v)),
             ),
@@ -166,7 +166,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
               title: const Text('Aufgaben-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
                 'Aufgaben, die dir zugewiesen sind (oder die du ohne Zuständige angelegt hast), erinnern zur eingestellten Zeit',
-                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
               value: einst.aufgabenAn,
               onChanged: einst.an ? (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).aufgabenAnSetzen(v)) : null,
@@ -180,7 +180,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
               title: const Text('Medikamenten-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
                 'Erinnert an deine Einnahmen und an die deiner Kinder, einmal erneut nach 15 Minuten. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
-                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
               value: einst.medikamenteAn,
               onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).medikamenteAnSetzen(v)),
@@ -196,7 +196,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
                 title: const Text('Zähler-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
                 subtitle: const Text(
                   'Erinnert am Ablesetag um 9 Uhr. Der Text ist immer neutral, nie eine Zählerart oder ein Stand; nichts geht über den Server',
-                  style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                  style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                 ),
                 value: einst.zaehlerAn,
                 onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).zaehlerAnSetzen(v)),
@@ -210,8 +210,8 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
               title: const Text('Titel auf Sperrbildschirm zeigen', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
-                'aus: gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort (und der Chat-Name neuer Nachrichten) erst nach dem Entsperren',
-                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                'Aus: Gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort (und der Chat-Name neuer Nachrichten) erst nach dem Entsperren',
+                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
               value: einst.sperrbildschirmTitel,
               onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).sperrbildschirmSetzen(v)),
@@ -258,7 +258,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             LinkKnopf('Alarme & Erinnerungen öffnen', onPressed: () => unawaited(_einstellungen(alarme: true))),
           ],
           const SizedBox(height: 20),
-          const MonoLabel('// vorlaufzeit für neue termine'),
+          const MonoLabel('Vorlaufzeit für neue Termine'),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -278,7 +278,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             style: TextStyle(fontSize: 12, color: kTextMuted),
           ),
           const SizedBox(height: 20),
-          const MonoLabel('// pünktlich bleiben'),
+          const MonoLabel('Pünktlich bleiben'),
           const SizedBox(height: 8),
           const LxCard(
             child: Text(
@@ -321,10 +321,10 @@ class _DiagnoseZeile extends ConsumerWidget {
     return Semantics(
       label: 'Diagnose der Erinnerungen',
       child: Text(
-        '// diagnose: erlaubt ${ja(d.erlaubt)} · kategorie ${_kanal(d.kanal)} · genaue alarme ${ja(d.exakt)} · plugin ${ja(d.bereit)} · '
+        'Diagnose: erlaubt ${ja(d.erlaubt)} · kategorie ${_kanal(d.kanal)} · genaue alarme ${ja(d.exakt)} · plugin ${ja(d.bereit)} · '
         'geplant ${d.geplant < 0 ? '?' : d.geplant}${d.fehler == null ? '' : ' · fehler ${d.fehler}'}',
         key: const Key('erinnerung-diagnose'),
-        style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+        style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
       ),
     );
   }

@@ -92,7 +92,7 @@ class KalenderLeiste extends ConsumerWidget {
     if (!context.mounted) return;
     final s = ref.read(syncProvider);
     messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(content: Text(s.status == SyncStatus.synchron ? 'Abgeglichen' : (s.meldung ?? 'Der Abgleich ist nicht möglich: ${syncAnzeige(s).$1}.'))));
+    messenger.showSnackBar(SnackBar(content: Text(s.status == SyncStatus.synchron ? 'Alles aktuell' : (s.meldung ?? 'Übertragen geht gerade nicht: ${syncAnzeige(s).$1}.'))));
   }
 
   @override
@@ -122,7 +122,7 @@ class KalenderLeiste extends ConsumerWidget {
       itemBuilder: (_) => [
         // eingeklappte Kopfzeile: Heute und der Abgleich (sonst in Leiste bzw. Kopfzeile) liegen hier, damit der Titel Platz behält
         if (profil && nav) const PopupMenuItem(value: 'heute', child: Text('Heute')),
-        if (profil) PopupMenuItem(value: 'sync', child: Text('Jetzt abgleichen (${syncAnzeige(ref.read(syncProvider)).$1})')),
+        if (profil) PopupMenuItem(value: 'sync', child: Text('Jetzt übertragen (${syncAnzeige(ref.read(syncProvider)).$1})')),
         const PopupMenuItem(value: 'einstellungen', child: Text('Kalender-Einstellungen …')),
       ],
     );
@@ -153,7 +153,7 @@ class KalenderLeiste extends ConsumerWidget {
                         child: SizedBox(
                           width: 44,
                           height: 44,
-                          child: Center(child: Text('${heuteTag().day}', style: const TextStyle(fontFamily: kFontMono, fontSize: 13, fontWeight: FontWeight.w600, color: kAccent))),
+                          child: Center(child: Text('${heuteTag().day}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, fontWeight: FontWeight.w600, color: kAccent))),
                         ),
                       ),
                     ),
@@ -266,7 +266,7 @@ class _TitelKnopf extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
           style: TextStyle(fontSize: breit ? 30 : 18, fontWeight: FontWeight.w800, letterSpacing: breit ? -0.9 : -0.4, color: kTextStrong, height: 1.15),
         ),
-        if (titel.unter != null) Text(titel.unter!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+        if (titel.unter != null) Text(titel.unter!, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
       ],
     );
     final skaliert = breit ? text : FittedBox(fit: BoxFit.scaleDown, alignment: Alignment.centerLeft, child: text);
@@ -308,7 +308,7 @@ class _RahmenKnopf extends StatelessWidget {
         child: Container(
           width: 44,
           height: 44,
-          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10), border: Border.all(color: kBorder)),
+          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10)),
           child: Icon(icon, size: 20),
         ),
       ),
@@ -324,7 +324,7 @@ class _MenueKnopf extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     constraints: const BoxConstraints(minHeight: 44),
     padding: const EdgeInsets.symmetric(horizontal: 14),
-    decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10), border: Border.all(color: kBorder)),
+    decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(10)),
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -401,7 +401,7 @@ class AnsichtUmschalter extends StatelessWidget {
 
     final segmente = [for (final a in KalenderAnsicht.values) breit ? segment(a) : Expanded(child: segment(a))];
     return Container(
-      decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
       clipBehavior: Clip.antiAlias,
       child: IntrinsicHeight(child: Row(mainAxisSize: breit ? MainAxisSize.min : MainAxisSize.max, children: segmente)),
     );
@@ -452,14 +452,14 @@ class _FilterBlatt extends ConsumerWidget {
             ),
             if (personen.length >= 2) ...[
               const SizedBox(height: 12),
-              const MonoLabel('// personen'),
+              const MonoLabel('Personen'),
               const SizedBox(height: 8),
               PersonenFilter(personen: personen, gewaehlt: a.personen, onPerson: n.person, onAlle: n.alle),
             ],
             const SizedBox(height: 16),
             const _FarbenFilter(),
             const SizedBox(height: 16),
-            const MonoLabel('// im kalender anzeigen'),
+            const MonoLabel('Im Kalender anzeigen'),
             const SizedBox(height: 4),
             _SchalterZeile(text: 'Feiertage', farbe: kFeiertag, provider: feiertageAnzeigenProvider),
             _SchalterZeile(text: 'Schulferien', farbe: kFerien, provider: ferienAnzeigenProvider),
@@ -491,7 +491,7 @@ class _FarbenFilter extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// farben'),
+        const MonoLabel('Farben'),
         const SizedBox(height: 4),
         for (var i = 0; i < kTerminFarben.length; i++)
           SwitchListTile(
@@ -504,7 +504,7 @@ class _FarbenFilter extends ConsumerWidget {
                 Container(width: 10, height: 10, decoration: BoxDecoration(shape: BoxShape.circle, color: kTerminFarben[i].farbe)),
                 const SizedBox(width: 12),
                 Expanded(child: Text(kTerminFarben[i].name)),
-                Text('${zahlen[i] ?? 0}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                Text('${zahlen[i] ?? 0}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
               ],
             ),
           ),

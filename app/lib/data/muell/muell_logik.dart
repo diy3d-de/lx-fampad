@@ -48,7 +48,7 @@ List<MuellArt> vorkommendeArten(List<MuellTag> tage) {
 
 const _wochentageKurz = ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'];
 const _wochentageLang = ['Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag', 'Sonntag'];
-const _monateKurz = ['JAN', 'FEB', 'MÄR', 'APR', 'MAI', 'JUN', 'JUL', 'AUG', 'SEP', 'OKT', 'NOV', 'DEZ'];
+const _monateKurz = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
 
 /// "Mi 28.10." (Kachel).
 String muellKurzDatum(DateTime tag) => '${_wochentageKurz[tag.weekday - 1]} ${tag.day}.${tag.month}.';

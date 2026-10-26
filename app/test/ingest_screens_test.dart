@@ -102,8 +102,8 @@ void main() {
   group('Zähler-Seite', () {
     testWidgets('Herkunft: nur automatische Zähler tragen "Home Assistant" auf der Kachel, Zähler von Hand tragen nichts (keine Pille "von Hand")', (tester) async {
       await start(tester, datenAus([_haStrom(), _handWasser()]));
-      expect(find.text('⇄ HOME ASSISTANT'), findsOneWidget);
-      expect(find.text('VON HAND'), findsNothing);
+      expect(find.text('Aus Home Assistant'), findsOneWidget);
+      expect(labelFinder('Von Hand'), findsNothing);
       expect(find.bySemanticsLabel(RegExp(r'^Strom Haus\..*Werte aus Home Assistant')), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp(r'^Wasser Küche\..*Von Hand')), findsNothing);
       pruefeLayout(tester, 'Übersicht mit Herkunft');
@@ -111,8 +111,8 @@ void main() {
 
     testWidgets('Ohne automatische Zähler: keine Herkunfts-Pillen (alles wie bisher)', (tester) async {
       await start(tester, datenAus([_handWasser()]), verfuegbar: false);
-      expect(find.text('VON HAND'), findsNothing);
-      expect(find.text('⇄ HOME ASSISTANT'), findsNothing);
+      expect(labelFinder('Von Hand'), findsNothing);
+      expect(labelFinder('⇄ home assistant'), findsNothing);
       expect(find.text('Home Assistant'), findsNothing); // Server ohne Einwurf: keine Zeile
     });
 
@@ -172,8 +172,8 @@ void main() {
     testWidgets('Automatischer Zähler ohne Wert seit mehr als 3 Tagen: "kein Wert" (nie die Aufforderung zum Ablesen) mit Weg zur Seite Home Assistant; mit frischem Wert nicht', (tester) async {
       final alt = ZaehlerBeispiel(zStrom, _haStrom().inhalt, [for (var i = 0; i < 4; i++) Stand(heuteTag().subtract(Duration(days: 10 - i)), 1000000 + 10000 * i)]);
       await start(tester, datenAus([alt]));
-      expect(find.text('KEIN WERT'), findsOneWidget);
-      expect(find.text('ABLESEN FÄLLIG'), findsNothing);
+      expect(find.text('Kein Wert'), findsOneWidget);
+      expect(labelFinder('Ablesen fällig'), findsNothing);
       expect(find.textContaining('Strom Haus: seit 7 Tagen kein Wert'), findsOneWidget);
       expect(find.textContaining('Home Assistant hat nichts geschickt'), findsOneWidget);
       expect(find.text('Ablesen'), findsNothing);
@@ -186,14 +186,14 @@ void main() {
       final alt = ZaehlerBeispiel(zStrom, _haStrom().inhalt, [for (var i = 0; i < 4; i++) Stand(heuteTag().subtract(Duration(days: 10 - i)), 1000000 + 10000 * i)]);
       final hand = ZaehlerBeispiel(zKalt1, ZaehlerInhalt(art: ZaehlerArt.kaltwasser, name: 'Wasser Küche', ablesung: Ablesung.monatlich(1)), [Stand(heuteTag().subtract(const Duration(days: 80)), 5000)]);
       await start(tester, datenAus([alt, hand]));
-      expect(find.text('KEIN WERT'), findsOneWidget);
-      expect(find.text('ABLESEN FÄLLIG'), findsOneWidget);
+      expect(find.text('Kein Wert'), findsOneWidget);
+      expect(find.text('Ablesen fällig'), findsOneWidget);
     });
 
     testWidgets('Automatischer Zähler mit gestrigem Wert: nicht fällig', (tester) async {
       await start(tester, datenAus([_haStrom()]));
-      expect(find.text('ABLESEN FÄLLIG'), findsNothing);
-      expect(find.text('AKTUELL'), findsOneWidget);
+      expect(labelFinder('Ablesen fällig'), findsNothing);
+      expect(find.text('Aktuell'), findsOneWidget);
     });
   });
 
@@ -244,7 +244,7 @@ void main() {
       expect(find.byType(Switch), findsNothing);
       expect(find.text('Werte automatisch abholen'), findsNothing);
       expect(find.text('Jetzt abholen'), findsNothing);
-      expect(find.text('aus'), findsNothing);
+      expect(find.text('Aus'), findsNothing);
       expect(find.textContaining('unbekannt'), findsNothing);
       pruefeLayout(tester, 'HA-Seite ohne Schlüssel');
     });
@@ -295,7 +295,7 @@ void main() {
       await zurHaSeite(tester);
       expect(find.text('Werte kommen doppelt an'), findsOneWidget);
       expect(find.textContaining('„Strom Haus“ liefern mehrere Verbindungen oder Geräte denselben Kanal (Strom Bezug)'), findsOneWidget);
-      expect(find.text('DOPPELT'), findsOneWidget);
+      expect(find.text('Doppelt'), findsOneWidget);
       pruefeLayout(tester, 'HA-Seite doppelt');
     });
 
@@ -324,7 +324,7 @@ void main() {
     testWidgets('Fehler des letzten Laufs: fester Text, nie ein Servertext', (tester) async {
       await start(tester, datenAus([_haStrom()]), zustand: IngestZustand(geladen: true, schalter: true, postfachDa: true, letzter: IngestLauf(zeit: DateTime.now(), abbruch: IngestAbbruch.netz)));
       await zurHaSeite(tester);
-      expect(find.text('FEHLER'), findsOneWidget);
+      expect(find.text('Fehler'), findsOneWidget);
       expect(find.textContaining('Der Server ist gerade nicht erreichbar'), findsOneWidget);
     });
 
@@ -332,7 +332,7 @@ void main() {
       await start(tester, datenAus([_haStrom()]), role: 'parent');
       await zurHaSeite(tester);
       expect(find.text('Neue Verbindung koppeln …'), findsNothing);
-      expect(find.textContaining('// verbindung'), findsNothing);
+      expect(find.textContaining('Verbindung'), findsNothing);
       expect(find.textContaining('VERBINDUNG (NUR ADMIN)'), findsNothing);
     });
 
@@ -483,12 +483,12 @@ void main() {
       env.server.on('POST /ingest/tokens', (req) => jsonAntwort({'token': _token, 'id': 't9', 'name': req.json['name'], 'createdAt': '2026-10-24T10:00:00.000Z'}));
       await zurHaSeite(tester);
       await tippe(tester, find.text('Neue Verbindung koppeln …'));
-      expect(find.text('// SCHRITT 1 VON 3'), findsOneWidget);
+      expect(labelFinder('Schritt 1 von 3'), findsOneWidget);
       await eingeben(tester, 'Name der Verbindung (zum Beispiel Haus Keller)', 'Haus Keller');
       await tippe(tester, find.widgetWithText(FilledButton, 'Weiter'));
       expect(env.server.anfragen('POST /ingest/tokens').single.json, {'name': 'Haus Keller'});
       expect(find.text('Code in Home Assistant einfügen'), findsOneWidget);
-      expect(find.text('// SCHRITT 2 VON 3'), findsOneWidget);
+      expect(labelFinder('Schritt 2 von 3'), findsOneWidget);
       // die Anleitung nennt den echten Pfad in Home Assistant; von einem QR-Scan in Home Assistant ist keine Rede
       expect(find.textContaining('Einstellungen › Geräte & Dienste › Integration hinzufügen › Familyhub'), findsOneWidget);
       expect(find.textContaining('Scanne den QR-Code in Home Assistant'), findsNothing);
@@ -538,7 +538,7 @@ void main() {
       expect(find.text('Code in Home Assistant einfügen'), findsNothing);
       expect(find.byType(SelectableText), findsNothing);
       expect(find.text('Fast geschafft'), findsOneWidget);
-      expect(find.text('// SCHRITT 3 VON 3'), findsOneWidget);
+      expect(labelFinder('Schritt 3 von 3'), findsOneWidget);
       expect(find.textContaining('erst nach der nächsten Mitternacht'), findsOneWidget);
       pruefeLayout(tester, 'Zähler zuordnen');
     });
@@ -780,7 +780,7 @@ void main() {
     testWidgets('Home Assistant wählen: Kanal, "Prüfen vor dem Eintragen", kein Rhythmus; gespeichert wird die Quelle mit Eingabeart Zählerstand', (tester) async {
       await start(tester, datenAus([_handWasser()]));
       await tippe(tester, find.byTooltip('Zähler hinzufügen'));
-      expect(find.text('// QUELLE'), findsOneWidget);
+      expect(labelFinder('Quelle'), findsOneWidget);
       expect(find.text('Von Hand'), findsOneWidget);
       expect(find.text('Strom Bezug'), findsNothing); // Kanäle erst nach der Wahl
       await tippe(tester, find.widgetWithText(Semantics, 'Home Assistant').first);
@@ -833,14 +833,14 @@ void main() {
     testWidgets('Quelle "Home Assistant" nur für Strom und Solar: bei Wasser fehlt der Abschnitt, der Wechsel der Art nimmt eine gewählte Quelle zurück', (tester) async {
       await start(tester, datenAus([_handWasser()]));
       await tippe(tester, find.byTooltip('Zähler hinzufügen'));
-      expect(find.text('// QUELLE'), findsOneWidget); // Standardart Strom
+      expect(labelFinder('Quelle'), findsOneWidget); // Standardart Strom
       await tippe(tester, find.widgetWithText(Semantics, 'Home Assistant').first);
       expect(find.text('Strom Bezug'), findsOneWidget);
       await tippe(tester, find.text('Kaltwasser · m³'));
-      expect(find.text('// QUELLE'), findsNothing);
+      expect(labelFinder('Quelle'), findsNothing);
       expect(find.text('Strom Bezug'), findsNothing);
       await tippe(tester, find.text('Gas · m³'));
-      expect(find.text('// QUELLE'), findsNothing);
+      expect(labelFinder('Quelle'), findsNothing);
       await eingeben(tester, 'Name (zum Beispiel Strom Haus)', 'Gas Haus');
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
       expect(repo.angelegt.single.quelle, isNull);
@@ -852,7 +852,7 @@ void main() {
       await start(tester, datenAus([falsch]), verfuegbar: false);
       await tippe(tester, find.bySemanticsLabel(RegExp(r'^Wasser Küche')));
       await tippe(tester, find.text('Zähler bearbeiten').first);
-      expect(find.text('// QUELLE'), findsOneWidget);
+      expect(labelFinder('Quelle'), findsOneWidget);
       expect(find.textContaining('Home Assistant liefert bisher nur Strom und Solar'), findsOneWidget);
       await tippe(tester, find.widgetWithText(FilledButton, 'Änderungen speichern'));
       expect(repo.geaendert, isEmpty);
@@ -874,7 +874,7 @@ void main() {
       await start(tester, datenAus([_haStrom(kanal: 'solar_erzeugung', pruefen: false)]), verfuegbar: false);
       await tippe(tester, find.bySemanticsLabel(RegExp(r'^Strom Haus\.')));
       await tippe(tester, find.text('Zähler bearbeiten').first);
-      expect(find.text('// QUELLE'), findsOneWidget); // auch ohne Antwort des Servers: der Zähler hat eine Quelle
+      expect(labelFinder('Quelle'), findsOneWidget); // auch ohne Antwort des Servers: der Zähler hat eine Quelle
       expect(find.text('Solar Erzeugung'), findsOneWidget);
       await tippe(tester, find.widgetWithText(Semantics, 'Von Hand').first);
       await tippe(tester, find.widgetWithText(FilledButton, 'Änderungen speichern'));
@@ -884,7 +884,7 @@ void main() {
     testWidgets('Server ohne Einwurf und Zähler ohne Quelle: der Abschnitt fehlt ganz', (tester) async {
       await start(tester, datenAus([_handWasser()]), verfuegbar: false);
       await tippe(tester, find.byTooltip('Zähler hinzufügen'));
-      expect(find.text('// QUELLE'), findsNothing);
+      expect(labelFinder('Quelle'), findsNothing);
     });
 
     testWidgets('Doppelter Kanal: Warnung mit dem Namen des anderen Zählers', (tester) async {

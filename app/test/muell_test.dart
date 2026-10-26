@@ -169,7 +169,7 @@ void main() {
       expect(muellKurzDatum(n.tag), 'Mi 28.10.');
       expect(muellLangDatum(n.tag), 'Mittwoch, 28.10.');
       expect(artenText(n.arten), 'Bioabfall, Gelber Sack');
-      expect(muellTagKopf(n.tag), (zahl: '28', unten: 'Mi · OKT'));
+      expect(muellTagKopf(n.tag), (zahl: '28', unten: 'Mi · Okt'));
     });
 
     test('Texte der Prüfung: gefunden, noch nicht verfügbar, Quelle nicht erreichbar, noch nicht geprüft', () {
@@ -320,7 +320,7 @@ void main() {
   group('Startseite: Kachel', () {
     testWidgets('normal: Datum der nächsten Abholung, Symbole der Arten und Abstand; nicht hervorgehoben', (tester) async {
       await start(tester);
-      expect(find.text('// MÜLL'), findsOneWidget);
+      expect(labelFinder('Müll'), findsOneWidget);
       expect(find.text('Mi 28.10.'), findsOneWidget);
       expect(find.text('in 6 Tagen · Bioabfall, Gelber Sack'), findsOneWidget);
       expect(find.byIcon(Icons.eco_outlined), findsOneWidget);
@@ -332,7 +332,7 @@ void main() {
 
     testWidgets('am Tag vor der Abholung: hervorgehoben, "morgen" als Hinweis', (tester) async {
       await start(tester, jetzt: DateTime.utc(2026, 10, 27, 10));
-      expect(find.text('// MÜLL · MORGEN'), findsOneWidget);
+      expect(labelFinder('Müll · morgen'), findsOneWidget);
       expect(find.text('morgen'), findsOneWidget);
       expect(find.text('Mi 28.10.'), findsOneWidget);
       expect(tester.widget<LxCard>(kachelCard()).gewaehlt, isTrue);
@@ -341,7 +341,7 @@ void main() {
 
     testWidgets('am Tag der Abholung: "heute" hervorgehoben', (tester) async {
       await start(tester, jetzt: DateTime.utc(2026, 10, 28, 6));
-      expect(find.text('// MÜLL · HEUTE'), findsOneWidget);
+      expect(labelFinder('Müll · heute'), findsOneWidget);
       expect(find.text('heute'), findsOneWidget);
     });
 
@@ -352,13 +352,13 @@ void main() {
 
     testWidgets('auf dem Server ausgeschaltet (404): keine Kachel', (tester) async {
       await start(tester, antwort: () => null);
-      expect(find.text('// MÜLL'), findsNothing);
+      expect(labelFinder('Müll'), findsNothing);
       expect(find.text('Mi 28.10.'), findsNothing);
     });
 
     testWidgets('ohne Termine: keine Kachel', (tester) async {
       await start(tester, antwort: () => _antwort(termine: const []));
-      expect(find.text('// MÜLL'), findsNothing);
+      expect(labelFinder('Müll'), findsNothing);
     });
 
     for (final skala in [1.0, 1.5]) {
@@ -369,9 +369,9 @@ void main() {
         expect(find.text('Müll'), findsWidgets);
         expect(find.text('Mittwoch, 28.10.'), findsOneWidget);
         expect(find.text('Bioabfall, Gelber Sack · in 6 Tagen'), findsOneWidget);
-        expect(find.text('// KOMMENDE TERMINE'), findsOneWidget);
-        expect(find.text('// LEGENDE'), findsNothing);
-        expect(find.text('// NÄCHSTE JE ART'), findsNothing);
+        expect(labelFinder('Kommende Termine'), findsOneWidget);
+        expect(labelFinder('Legende'), findsNothing);
+        expect(labelFinder('Nächste je art'), findsNothing);
         expect(find.text('Alle'), findsOneWidget);
         // Die Chips zeigen nur Arten mit Terminen im Zeitraum (Grünabfall und Sonstiges kommen nicht vor)
         expect(find.text('Rest'), findsOneWidget);
@@ -413,10 +413,10 @@ void main() {
       await warte(tester);
       expect(find.byType(MuellScreen), findsOneWidget);
       expect(find.text('Mittwoch, 28.10.'), findsOneWidget);
-      expect(find.text('// LEGENDE'), findsNothing);
-      expect(find.text('// NÄCHSTE JE ART'), findsNothing);
+      expect(labelFinder('Legende'), findsNothing);
+      expect(labelFinder('Nächste je art'), findsNothing);
       // einspaltig und auf die Inhaltsbreite begrenzt wie die anderen Bereiche
-      final breite = tester.getSize(find.ancestor(of: find.text('// NÄCHSTE ABHOLUNG'), matching: find.byType(LxCard)).first).width;
+      final breite = tester.getSize(find.ancestor(of: labelFinder('Nächste Abholung'), matching: find.byType(LxCard)).first).width;
       expect(breite, lessThanOrEqualTo(kMaxContentWidth), reason: 'nicht über die ganze Breite gezogen');
       expect(breite, greaterThan(600), reason: 'eine volle Spalte, keine halbleere zweite Spalte');
       expect(find.text('Papier'), findsOneWidget, reason: 'Filter-Chips auch auf dem Desktop');

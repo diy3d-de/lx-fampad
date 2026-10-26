@@ -95,7 +95,7 @@ void main() {
     expect(y[0], lessThan(y[1]));
     expect(y[1], lessThan(y[2]));
     expect(find.textContaining('überfällig · gestern'), findsOneWidget);
-    expect(find.text('hoch'), findsOneWidget);
+    expect(find.text('Hoch'), findsOneWidget);
     expect(find.text('3 offen · 1 erledigt'), findsOneWidget);
     pruefeLayout(tester, 'Liste');
     await tippeText(tester, 'Erledigt');
@@ -112,12 +112,12 @@ void main() {
     await start(tester, vorher: (e) {
       e.sync.andereAendert('aufgabe', _a1, _aufgabe('Niedrig früh', tage: 0, prio: 1, zu: fixIdAdmin));
       e.sync.andereAendert('aufgabe', _a2, _aufgabe('Hoch spät', tage: 5, prio: 3, zu: fixIdKind));
-      e.sync.andereAendert('aufgabe', _a3, _aufgabe('Mittel', tage: 2, prio: 2, zu: fixIdKind));
+      e.sync.andereAendert('aufgabe', _a3, _aufgabe('Mittlere Aufgabe', tage: 2, prio: 2, zu: fixIdKind));
     });
     expect(tester.getTopLeft(find.text('Niedrig früh')).dy, lessThan(tester.getTopLeft(find.text('Hoch spät')).dy));
     await tippeText(tester, 'Nach Priorität');
-    expect(tester.getTopLeft(find.text('Hoch spät')).dy, lessThan(tester.getTopLeft(find.text('Mittel')).dy));
-    expect(tester.getTopLeft(find.text('Mittel')).dy, lessThan(tester.getTopLeft(find.text('Niedrig früh')).dy));
+    expect(tester.getTopLeft(find.text('Hoch spät')).dy, lessThan(tester.getTopLeft(find.text('Mittlere Aufgabe')).dy));
+    expect(tester.getTopLeft(find.text('Mittlere Aufgabe')).dy, lessThan(tester.getTopLeft(find.text('Niedrig früh')).dy));
     await tippeText(tester, 'Meine');
     expect(find.text('Niedrig früh'), findsOneWidget);
     expect(find.text('Hoch spät'), findsNothing);
@@ -126,7 +126,7 @@ void main() {
     await tippeText(tester, 'Ben');
     expect(find.text('Niedrig früh'), findsNothing);
     expect(find.text('Hoch spät'), findsOneWidget);
-    expect(find.text('Mittel'), findsOneWidget);
+    expect(find.text('Mittlere Aufgabe'), findsOneWidget);
     pruefeLayout(tester, 'Person gefiltert');
   });
 
@@ -154,7 +154,7 @@ void main() {
     final folge = alle.firstWhere((a) => a.erledigtAt == null);
     expect([folge.titel, folge.faelligDate, folge.wiederholung], ['Tonne', _tag(7), 'weekly']);
     expect(find.text('Tonne'), findsOneWidget); // nur die Folgeaufgabe ist noch offen
-    expect(find.textContaining('wöchentlich'), findsOneWidget);
+    expect(find.textContaining('Wöchentlich'), findsOneWidget);
     // Zurücksetzen unter "Erledigt"
     await tippeText(tester, 'Erledigt');
     await tippe(tester, find.byIcon(Icons.check_box));
@@ -191,10 +191,10 @@ void main() {
     testWidgets('Editor, Textskala $skala: Erinnerung nur mit Fälligkeit, Auswahl wird gespeichert, Layout 360 px', (tester) async {
       final env = await start(tester, groesse: const Size(360, 2400), skala: skala);
       await tippeDirekt(tester, find.byTooltip('Aufgabe mit Details anlegen'));
-      expect(find.text('// ERINNERUNG'), findsNothing, reason: 'ohne Fälligkeit keine Erinnerung');
+      expect(labelFinder('Erinnern'), findsNothing, reason: 'ohne Fälligkeit keine Erinnerung');
       await tester.enterText(find.widgetWithText(TextField, 'Titel'), 'Arzt anrufen');
       await tippeDirekt(tester, find.text('Morgen'));
-      expect(find.text('// ERINNERUNG'), findsOneWidget);
+      expect(labelFinder('Erinnern'), findsOneWidget);
       for (final t in ['Zur Fälligkeit', '15 Minuten vorher', '1 Stunde vorher', '1 Tag vorher']) {
         expect(find.widgetWithText(AuswahlKnopf, t), findsOneWidget, reason: t);
       }
@@ -238,7 +238,7 @@ void main() {
     await tippeDirekt(tester, find.text('Steuer'));
     expect(tester.widget<AuswahlKnopf>(find.widgetWithText(AuswahlKnopf, '1 Tag vorher')).gewaehlt, isTrue);
     await tippeDirekt(tester, find.text('Kein Datum'));
-    expect(find.text('// ERINNERUNG'), findsNothing);
+    expect(labelFinder('Erinnern'), findsNothing);
     await tippeDirekt(tester, find.text('Speichern'));
     expect((await dbAufgaben(env)).single.erinnerungMin, isNull);
   });
@@ -315,11 +315,11 @@ void main() {
     expect(find.text('Du darfst diese Aufgabe ansehen, aber nicht ändern.'), findsOneWidget);
     expect(find.text('Speichern'), findsNothing);
     expect(find.text('Aufgabe löschen'), findsNothing);
-    expect(find.text('Sichtbar für'.toUpperCase()), findsNothing);
+    expect(labelFinder('Wer sieht das?'), findsNothing);
     await tippe(tester, find.byTooltip('Zurück'));
     await tippeText(tester, 'Meine Aufgabe');
     expect(find.text('Speichern'), findsOneWidget);
-    expect(find.text('// sichtbar für'.toUpperCase()), findsNothing, reason: 'Kinder ändern die Freigabe nicht');
+    expect(labelFinder('Wer sieht das?'), findsNothing, reason: 'Kinder ändern die Freigabe nicht');
     pruefeLayout(tester, 'Editor Kind');
   });
 
@@ -328,7 +328,7 @@ void main() {
     await tippe(tester, find.byTooltip('Aufgabe mit Details anlegen'));
     await tester.drag(find.byType(Scrollable).first, const Offset(0, -1500));
     await warte(tester);
-    expect(find.text('// sichtbar für'.toUpperCase()), findsOneWidget);
+    expect(labelFinder('Wer sieht das?'), findsOneWidget);
     expect(find.widgetWithText(AuswahlKnopf, 'Nur Eltern'), findsOneWidget);
   });
 
@@ -353,7 +353,7 @@ void main() {
       await tippe(tester, find.byTooltip('Zurück'));
       await zumTab(tester, 'Start');
       pruefeLayout(tester, 'Start');
-      expect(find.text('// aufgaben'.toUpperCase()), findsOneWidget);
+      expect(labelFinder('Aufgaben'), findsOneWidget);
     });
   }
 

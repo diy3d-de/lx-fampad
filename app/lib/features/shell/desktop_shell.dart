@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
-import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
 import '../../data/sync_state.dart';
 import '../../data/tasks/aufgabe_logik.dart' show AufgabeFilter;
@@ -135,7 +134,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     super.dispose();
   }
 
-  /// Schließt alle Unterseiten per `maybePop` (nie `popUntil`): Seiten mit `PopScope` (Wiederherstellungscodes, Step-up, laufende Aktionen,
+  /// Schließt alle Unterseiten per `maybePop` (nie `popUntil`): Seiten mit `PopScope` (Notfall-Codes, Step-up, laufende Aktionen,
   /// Editoren mit Eingaben) behalten ihr Vetorecht. Gelingt das Schließen einer Seite nicht, bleibt sie offen und der Bereich unverändert (false).
   Future<bool> _unterseitenSchliessen() async {
     final nav = _navKey.currentState;
@@ -323,7 +322,7 @@ class _Seitenleiste extends ConsumerWidget {
         width: kSidebarWidth,
         decoration: BoxDecoration(
           color: kBgElevated.withValues(alpha: 0.85),
-          border: const Border(right: BorderSide(color: kBorder)),
+          
         ),
         padding: const EdgeInsets.fromLTRB(14, 20, 14, 14),
         child: Column(
@@ -336,7 +335,7 @@ class _Seitenleiste extends ConsumerWidget {
                 children: [
                   Text(kAppName, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.55, color: kTextStrong)),
                   SizedBox(height: 2),
-                  Text(kInviteHost, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text(kInviteHost, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),
@@ -348,7 +347,7 @@ class _Seitenleiste extends ConsumerWidget {
               child: Container(
                 constraints: const BoxConstraints(minHeight: 48),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(color: kSurface.withValues(alpha: 0.7), border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+                decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
                 child: Row(
                   children: [
                     Container(
@@ -366,7 +365,7 @@ class _Seitenleiste extends ConsumerWidget {
                         children: [
                           const Text('Familie', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: FontWeight.w600)),
                           if (anzahl != null)
-                            Text('$anzahl ${anzahl == 1 ? 'mitglied' : 'mitglieder'}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                            Text('$anzahl ${anzahl == 1 ? 'Mitglied' : 'Mitglieder'}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                         ],
                       ),
                     ),
@@ -504,10 +503,10 @@ class _ProfilKachel extends ConsumerWidget {
     final art = me == null
         ? null
         : [
-            if (me.passkeys > 0) 'passkey',
-            if (me.hasPassword) 'pw',
-            if (me.hasTotp) '2fa',
-          ].join(' + ');
+            if (me.passkeys > 0) 'Passkey',
+            if (me.hasPassword) 'Passwort',
+            if (me.hasTotp) 'zweiter Schritt',
+          ].join(', ');
     final name = user?.displayName ?? 'Profil';
     return ValueListenableBuilder<bool>(
       valueListenable: konto,
@@ -538,10 +537,10 @@ class _ProfilKachel extends ConsumerWidget {
                       const SizedBox(height: 2),
                     ],
                     Text(
-                      art == null || art.isEmpty ? 'einstellungen' : art,
+                      'Einstellungen',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                      style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                     ),
                   ],
                 ),
@@ -560,25 +559,28 @@ class _Fusszeile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(syncProvider);
-    final geraete = ref.watch(geraeteAnzahlProvider).value;
     final installiert = ref.watch(updateProvider.select((u) => u.installierteVersion));
     final version = installiert ?? (kWebVersion.isNotEmpty ? webVersionTeilen(kWebVersion).version : 'dev');
-    final (text, farbe) = syncAnzeige(sync);
-    const stil = TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted);
+    final (bedienText, farbe) = syncAnzeige(sync);
+    final hinweis = syncHinweis(sync);
+    const stil = TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted);
     return Container(
       constraints: const BoxConstraints(minHeight: 36),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      decoration: const BoxDecoration(border: Border(top: BorderSide(color: kBorderSoft))),
+      
       child: Align(
         alignment: Alignment.centerLeft,
         child: Wrap(
           spacing: 24,
           runSpacing: 4,
           children: [
-            Text.rich(TextSpan(children: [TextSpan(text: '● ', style: TextStyle(color: farbe)), TextSpan(text: 'sync: $text')]), style: stil),
-            Text('geräte: ${geraete ?? '–'}', style: stil),
-            Text('verbindung: ${sync.live ? 'live' : 'ohne live'}', style: stil),
-            Text('version: $version', style: stil),
+            // Zustand immer als Text (nie nur Farbe): bei "synchron" ein kurzes „Alles aktuell“, sonst ein ruhiger Satz; die Zahl offener Änderungen steht im Bedienhilfe-Text
+            Semantics(
+              label: 'Sync: $bedienText',
+              excludeSemantics: true,
+              child: Text(hinweis ?? (sync.status == SyncStatus.laeuft ? 'Überträgt …' : 'Alles aktuell'), style: stil.copyWith(color: hinweis == null ? farbe : kTextMuted)),
+            ),
+            Text('Version $version', style: stil),
           ],
         ),
       ),

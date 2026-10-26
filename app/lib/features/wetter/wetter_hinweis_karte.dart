@@ -25,7 +25,7 @@ class WetterHinweisKarte extends ConsumerWidget {
         onTap: () => wetterOeffnen(context),
         child: Material(
           color: kWarn.withValues(alpha: 0.10),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: BorderSide(color: kWarn.withValues(alpha: 0.5))),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18), side: BorderSide(color: kWarn.withValues(alpha: 0.5))),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => wetterOeffnen(context),
@@ -36,7 +36,7 @@ class WetterHinweisKarte extends ConsumerWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const MonoLabel('// wetter-hinweis', color: kWarn),
+                    const MonoLabel('Wetter-hinweis', color: kWarn),
                     const SizedBox(height: 6),
                     for (final h in liste) Padding(padding: const EdgeInsets.only(bottom: 2), child: Text(h.text, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kText))),
                   ],

@@ -155,7 +155,7 @@ class UserDto {
   /// Benutzerbild (null = keines: Initialen).
   final AvatarDto? avatar;
 
-  /// Öffentliche Verschlüsselungsschlüssel (null, solange die Person keine eingerichtet hat oder der Server keine liefert).
+  /// Öffentliche Schlüssel (null, solange die Person keine eingerichtet hat oder der Server keine liefert).
   final OeffentlicheSchluessel? schluessel;
 
   /// Familienrolle (reine Anzeige; null = nicht gesetzt, auch bei alten Servern).
@@ -245,7 +245,7 @@ class LoginResult {
   final UserDto user;
   final SessionDto session;
 
-  /// Nur bei der Anmeldung per Wiederherstellungscode.
+  /// Nur bei der Anmeldung per Notfall-Code.
   final int? recoveryCodesRemaining;
   const LoginResult({required this.user, required this.session, this.recoveryCodesRemaining});
 
@@ -520,7 +520,7 @@ class PasswordStart {
   }
 }
 
-/// Ergebnis der Registrierung (Passkey oder Passwort): Wiederherstellungscodes erscheinen nur hier.
+/// Ergebnis der Registrierung (Passkey oder Passwort): Notfall-Codes erscheinen nur hier.
 class RegistrationResult {
   final UserDto member;
   final MemberStatus status;
@@ -1058,7 +1058,7 @@ enum SicherheitsArt {
   };
 }
 
-/// Weg eines Sicherheitsereignisses: durch einen Admin, mit einem Wiederherstellungscode oder mit einem Passkey.
+/// Weg eines Sicherheitsereignisses: durch einen Admin, mit einem Notfall-Code oder mit einem Passkey.
 enum SicherheitsWeg {
   admin,
   wiederherstellungscode,

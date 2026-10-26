@@ -533,7 +533,7 @@ void main() {
     }
     await tippe(tester, find.byTooltip('Mehr'));
     expect(find.text('Heute'), findsOneWidget);
-    expect(find.textContaining('Jetzt abgleichen'), findsOneWidget);
+    expect(find.textContaining('Jetzt übertragen'), findsOneWidget);
     await tippeText(tester, 'Heute');
     expect(container.read(kalenderAuswahlProvider).monat, DateTime.utc(heuteTag().year, heuteTag().month));
   });
@@ -622,7 +622,7 @@ void main() {
     final (_, container) = await start(tester, groesse: const Size(1440, 900), monat: _d(2027, 3, 10));
     await tippe(tester, tagZelle(_d(2027, 3, 12)));
     expect(container.read(kalenderKopfEingeklapptProvider), isFalse);
-    expect(find.text('// ${kopfzeilenDatum()}'.toUpperCase()), findsOneWidget);
+    expect(labelFinder(kopfzeilenDatum()), findsOneWidget);
   });
 
   for (final breit in [false, true]) {

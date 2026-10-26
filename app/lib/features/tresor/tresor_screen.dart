@@ -62,7 +62,7 @@ class _Rahmen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!eingebettet) {
-      return AuthSeite(label: '// ende-zu-ende verschlüsselt', titel: 'Tresor', maxBreite: kMaxContentWidth, fussleiste: aktion, kinder: kinder);
+      return AuthSeite(label: 'Ende-zu-Ende verschlüsselt', titel: 'Tresor', maxBreite: kMaxContentWidth, fussleiste: aktion, kinder: kinder);
     }
     return Material(
       type: MaterialType.transparency,
@@ -186,9 +186,9 @@ class _UebersichtState extends ConsumerState<_Uebersicht> {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(color: kTerminal.withValues(alpha: 0.14), border: Border.all(color: kTerminal.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(999)),
-                      child: const Text('ENTSPERRT', style: TextStyle(fontFamily: kFontMono, fontSize: 11, letterSpacing: 0.9, color: kTerminal)),
+                      child: const Text('Entsperrt', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, letterSpacing: 0.9, color: kTerminal)),
                     ),
-                    if (bis != null) Text('bis ${tresorUhrzeit(bis)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                    if (bis != null) Text('bis ${tresorUhrzeit(bis)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                   ],
                 ),
               ),
@@ -347,7 +347,7 @@ class _KategorieZeile extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
                   decoration: BoxDecoration(color: kAccentSoft, borderRadius: BorderRadius.circular(999)),
-                  child: Text('$anzahl', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kAccent)),
+                  child: Text('$anzahl', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kAccent)),
                 ),
                 Icon(offen ? Icons.expand_less : Icons.expand_more, color: kTextMuted),
               ],
@@ -402,13 +402,13 @@ class _EintragZeile extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(i.titel, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      Text(unter, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      Text(unter, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     ],
                   ),
                 ),
                 if (docs > 0) ...[
                   const Icon(Icons.attach_file, size: 16, color: kTextMuted),
-                  Text('$docs', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  Text('$docs', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   const SizedBox(width: 4),
                 ],
                 const Icon(Icons.chevron_right, color: kTextMuted),

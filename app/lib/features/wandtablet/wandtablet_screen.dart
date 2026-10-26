@@ -141,7 +141,7 @@ class _WandtabletScreenState extends ConsumerState<WandtabletScreen> {
                 bottom: 10,
                 child: Semantics(
                   liveRegion: true,
-                  child: Text(offlineText(sync.$2, jetzt), style: const TextStyle(fontFamily: kFontMono, fontSize: 14, color: kTextMuted)),
+                  child: Text(offlineText(sync.$2, jetzt), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 14, color: kTextMuted)),
                 ),
               ),
             if (_hinweis)
@@ -153,8 +153,8 @@ class _WandtabletScreenState extends ConsumerState<WandtabletScreen> {
                   child: Center(
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                      decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12), border: Border.all(color: kBorder)),
-                      child: const Text(kWandHinweisBeenden, style: TextStyle(fontFamily: kFontMono, fontSize: 16, color: kTextStrong)),
+                      decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
+                      child: const Text(kWandHinweisBeenden, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 16, color: kTextStrong)),
                     ),
                   ),
                 ),
@@ -233,7 +233,7 @@ class _Inhalt extends ConsumerWidget {
 }
 
 TextStyle _mono(double groesse, {Color farbe = kTextMuted, FontWeight gewicht = FontWeight.w400}) =>
-    TextStyle(fontFamily: kFontMono, fontSize: groesse, color: farbe, fontWeight: gewicht);
+    TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: groesse, color: farbe, fontWeight: gewicht);
 
 class _Kopf extends ConsumerWidget {
   final DateTime jetzt;

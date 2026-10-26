@@ -43,7 +43,7 @@ class DateienKachelInhalt extends ConsumerWidget {
                 const SizedBox(width: 10),
                 Expanded(child: Text(d.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
                 const SizedBox(width: 8),
-                Text(groesseText(d.groesse), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                Text(groesseText(d.groesse), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
           ),

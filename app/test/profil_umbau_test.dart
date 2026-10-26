@@ -67,19 +67,19 @@ void main() {
         await start(tester, skala: skala);
         expect(find.byType(ProfileScreen), findsOneWidget);
         expect(find.text('Profil'), findsOneWidget);
-        expect(find.text('// EINSTELLUNGEN'), findsOneWidget);
+        expect(labelFinder('Einstellungen'), findsOneWidget);
         for (final t in ['Sicherheit', 'Benachrichtigungen', 'Startseite und Anzeige', 'Kalender']) {
           expect(zeile(t), findsOneWidget, reason: t);
         }
-        expect(find.text('// FAMILIE'), findsOneWidget);
+        expect(labelFinder('Familie'), findsOneWidget);
         expect(zeile('Mitglieder und Einladungen'), findsOneWidget);
-        expect(find.text('// BETRIEB'), findsNothing);
-        expect(find.text('// APP'), findsOneWidget);
+        expect(labelFinder('Betrieb'), findsNothing);
+        expect(labelFinder('App'), findsOneWidget);
         expect(zeile('Über lx-familyhub'), findsOneWidget);
         expect(find.text('Abmelden'), findsOneWidget);
         expect(find.text('Überall abmelden'), findsOneWidget);
         // die Einstellungen selbst liegen nicht mehr auf der Hauptseite
-        for (final t in ['Passkeys', 'Wiederherstellungscodes', 'Angemeldete Geräte', 'Erinnerungen', 'Startseite anpassen', 'Wetter anzeigen', 'Widget „Heute“', 'Push']) {
+        for (final t in ['Anmelden ohne Passwort', 'Notfall-Codes', 'Angemeldete Geräte', 'Erinnerungen', 'Startseite anpassen', 'Wetter anzeigen', 'Widget „Heute“', 'Push']) {
           expect(find.text(t), findsNothing, reason: '$t gehört auf eine Unterseite');
         }
         // ohne Verfügbarkeit auf dem Server keine Müll-Zeile
@@ -90,9 +90,9 @@ void main() {
 
     testWidgets('Kind: weder Familie noch Betrieb', (tester) async {
       await start(tester, role: 'child');
-      expect(find.text('// EINSTELLUNGEN'), findsOneWidget);
-      expect(find.text('// FAMILIE'), findsNothing);
-      expect(find.text('// BETRIEB'), findsNothing);
+      expect(labelFinder('Einstellungen'), findsOneWidget);
+      expect(labelFinder('Familie'), findsNothing);
+      expect(labelFinder('Betrieb'), findsNothing);
       expect(find.text('Einladungen'), findsNothing);
       expect(find.text('Mitglieder und Einladungen'), findsNothing);
       expect(zeile('Sicherheit'), findsOneWidget);
@@ -101,17 +101,17 @@ void main() {
 
     testWidgets('Elternteil: Familie mit "Einladungen" (nicht "Mitglieder und Einladungen"), kein Betrieb', (tester) async {
       await start(tester, role: 'parent');
-      expect(find.text('// FAMILIE'), findsOneWidget);
+      expect(labelFinder('Familie'), findsOneWidget);
       expect(zeile('Einladungen'), findsOneWidget);
       expect(find.text('Mitglieder und Einladungen'), findsNothing);
-      expect(find.text('// BETRIEB'), findsNothing);
+      expect(labelFinder('Betrieb'), findsNothing);
       await tippe(tester, zeile('Einladungen'));
       expect(find.byType(AdminScreen), findsOneWidget);
     });
 
     testWidgets('Betreiber: Gruppe "betrieb" mit der Zeile "Betrieb"', (tester) async {
       await start(tester, betreiber: true);
-      expect(find.text('// BETRIEB'), findsOneWidget);
+      expect(labelFinder('Betrieb'), findsOneWidget);
       expect(zeile('Betrieb'), findsOneWidget);
       pruefeLayout(tester, 'Hauptseite Betreiber');
     });
@@ -126,14 +126,14 @@ void main() {
     testWidgets('Familienrolle bleibt wählbar, Untertitel der Zeilen nennen Push und Widget nur auf Android', (tester) async {
       await start(tester);
       expect(find.text('Familienrolle ändern (nur Anzeige)'), findsOneWidget);
-      expect(find.text('erinnerungen und push'), findsOneWidget);
-      expect(find.text('kacheln, wetter, widget'), findsOneWidget);
+      expect(find.text('Erinnerungen und Hinweise aufs Handy'), findsOneWidget);
+      expect(find.text('Kacheln, Wetter und Widget'), findsOneWidget);
     });
 
     testWidgets('Web: Untertitel ohne Push und Widget', (tester) async {
       await start(tester, web: true);
-      expect(find.text('erinnerungen'), findsOneWidget);
-      expect(find.text('kacheln, wetter'), findsOneWidget);
+      expect(find.text('Erinnerungen'), findsOneWidget);
+      expect(find.text('Kacheln und Wetter'), findsOneWidget);
     });
 
     testWidgets('Zeilen führen auf die Seiten: Sicherheit, Benachrichtigungen, Startseite und Anzeige, Kalender, Über', (tester) async {
@@ -159,17 +159,17 @@ void main() {
         await start(tester, skala: skala);
         await tippe(tester, zeile('Sicherheit'));
         expect(find.byType(SicherheitScreen), findsOneWidget);
-        for (final t in ['// ANMELDUNG', '// SCHLÜSSEL UND CHAT', '// GERÄTE UND EREIGNISSE']) {
-          expect(find.text(t), findsOneWidget, reason: t);
+        for (final t in ['Anmeldung', 'Schlüssel und Chat', 'Geräte und Ereignisse']) {
+          expect(labelFinder(t), findsOneWidget, reason: t);
         }
-        for (final t in ['Passkeys', 'Passwort und Zwei-Faktor (TOTP)', 'Wiederherstellungscodes', 'Bin ich abgesichert?', 'Verschlüsselung', 'Angemeldete Geräte', 'Sicherheitsereignisse']) {
+        for (final t in ['Anmelden ohne Passwort', 'Passwort und zweiter Schritt', 'Notfall-Codes', 'Bin ich abgesichert?', 'Nachrichten-Schutz', 'Angemeldete Geräte', 'Sicherheitsereignisse']) {
           await tester.ensureVisible(find.text(t));
           expect(find.text(t), findsOneWidget, reason: t);
         }
-        expect(find.text('1 aktiv'), findsOneWidget);
-        expect(find.textContaining('8 übrig'), findsOneWidget);
+        expect(find.text('Mit Fingerabdruck, Gesicht oder Gerätesperre'), findsOneWidget);
+        expect(find.textContaining('Noch 8 Codes übrig'), findsOneWidget);
         pruefeLayout(tester, 'Sicherheit');
-        await tippe(tester, find.text('Passkeys'));
+        await tippe(tester, find.text('Anmelden ohne Passwort'));
         expect(find.byType(PasskeysScreen), findsOneWidget);
       });
     }
@@ -240,7 +240,7 @@ void main() {
       await tippe(tester, zeile('Sicherheit'));
       expect(find.byType(SicherheitScreen), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
-      await tippe(tester, find.text('Passkeys'));
+      await tippe(tester, find.text('Anmelden ohne Passwort'));
       expect(find.byType(PasskeysScreen), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
       await tippe(tester, find.byTooltip('Zurück'));
