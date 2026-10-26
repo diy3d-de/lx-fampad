@@ -137,7 +137,7 @@ void main() {
     expect(find.text('Sporttermin'), findsOneWidget);
     await tippe(tester, _filterKnopf);
     expect(find.text('Farben'.toLowerCase()), findsNothing);
-    expect(find.text('// FARBEN'), findsOneWidget);
+    expect(labelFinder('Farben'), findsOneWidget);
     expect(find.text('Rufdienst'), findsOneWidget);
     await tippe(tester, find.widgetWithText(SwitchListTile, 'Sport'));
     expect(find.byTooltip('Filter und Anzeige, 3 aktiv'), findsOneWidget, reason: 'ein Farbfilter zählt als einer (Feiertage/Ferien sind im Test aus)');
@@ -168,7 +168,7 @@ void main() {
     testWidgets('Filter-Blatt (Textskala $skala): Layout und Touch-Ziele', (tester) async {
       await start(tester, skala: skala, vorher: (e) => e.sync.andereAendert('termin', _t1, _termin('Sporttermin', farbe: 4)));
       await tippe(tester, _filterKnopf);
-      expect(find.text('// FARBEN'), findsOneWidget);
+      expect(labelFinder('Farben'), findsOneWidget);
       pruefeLayout(tester, 'Filter-Blatt');
     });
   }

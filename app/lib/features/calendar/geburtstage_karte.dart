@@ -33,7 +33,7 @@ class GeburtstageKarte extends ConsumerWidget {
       final tag = v.ersterTag;
       if (tag == heute) return 'heute';
       if (tag == heute.add(const Duration(days: 1))) return 'morgen';
-      return DateFormat('E, d. MMM', 'de_DE').format(tag).toLowerCase();
+      return DateFormat('E, d. MMM', 'de_DE').format(tag);
     }
 
     return Semantics(
@@ -45,7 +45,7 @@ class GeburtstageKarte extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// geburtstage'),
+            const MonoLabel('Geburtstage'),
             const SizedBox(height: 12),
             for (final v in liste)
               Padding(
@@ -56,7 +56,7 @@ class GeburtstageKarte extends ConsumerWidget {
                     const SizedBox(width: 10),
                     Expanded(child: Text(vorkommenTitel(v), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600))),
                     const SizedBox(width: 8),
-                    Text(tagText(v), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(tagText(v), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   ],
                 ),
               ),

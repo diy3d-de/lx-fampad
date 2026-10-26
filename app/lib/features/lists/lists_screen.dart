@@ -161,11 +161,13 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     if (listen.isEmpty) {
       return [
         const SizedBox(height: 24),
-        const EmptyState(icon: Icons.checklist_outlined, title: 'Noch keine Liste', hint: 'Lege eine Liste an, z. B. für den Einkauf oder die Packliste.'),
-        if (rechte.darfListeAnlegen)
-          Center(
-            child: FilledButton.icon(onPressed: _listeAnlegen, icon: const Icon(Icons.add), label: const Text('Liste anlegen')),
-          ),
+        EmptyState(
+          icon: Icons.checklist_outlined,
+          title: 'Noch keine Liste',
+          hint: 'Lege eine Liste an, z. B. für den Einkauf oder die Packliste.',
+          knopf: rechte.darfListeAnlegen ? 'Liste anlegen' : null,
+          onKnopf: rechte.darfListeAnlegen ? _listeAnlegen : null,
+        ),
       ];
     }
     final liste = listen.firstWhere((l) => l.id == gewaehlt, orElse: () => listen.first);
@@ -203,7 +205,7 @@ class _Reiter extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(4),
-    decoration: BoxDecoration(color: kSurface, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+    decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
     child: Row(
       children: [
         Expanded(
@@ -328,7 +330,7 @@ class _ListeAnsicht extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Text(
                     '${ListenArt.von(liste.kind).label} · ${ListenSicht.von(liste.audience).label}',
-                    style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                    style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                   ),
                 ],
               ),
@@ -343,7 +345,7 @@ class _ListeAnsicht extends ConsumerWidget {
                   const PopupMenuItem(value: 'umbenennen', height: 48, child: Text('Umbenennen')),
                   if (art == ListenArt.shopping) const PopupMenuItem(value: 'vorlage_nehmen', height: 48, child: Text('Aus Vorlage übernehmen')),
                   if (art == ListenArt.shopping) const PopupMenuItem(value: 'vorlage_speichern', height: 48, child: Text('Als Vorlage speichern')),
-                  if (rechte.darfFreigabeAendern) const PopupMenuItem(value: 'sicht', height: 48, child: Text('Sichtbar für …')),
+                  if (rechte.darfFreigabeAendern) const PopupMenuItem(value: 'sicht', height: 48, child: Text('Wer sieht das? …')),
                   const PopupMenuItem(value: 'loeschen', height: 48, child: Text('Liste löschen', style: TextStyle(color: kDanger))),
                 ],
               ),
@@ -359,7 +361,7 @@ class _ListeAnsicht extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Text(gesamt == 0 ? '' : '$erledigt von $gesamt erledigt', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+        Text(gesamt == 0 ? '' : '$erledigt von $gesamt erledigt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         if (rechte.darfEintraegeAendern) ...[
           const SizedBox(height: 12),
           Row(
@@ -405,7 +407,7 @@ class _ListeAnsicht extends ConsumerWidget {
             child: Text(
               '${gesamt - erledigt} offen · $erledigt erledigt',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
             ),
           ),
       ],
@@ -429,8 +431,7 @@ class _Zeile extends StatelessWidget {
     return Container(
       constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
-        color: erledigt ? null : kSurface.withValues(alpha: 0.7),
-        border: Border.all(color: kBorder),
+        color: erledigt ? null : kSurface,
         borderRadius: BorderRadius.circular(12),
       ),
       child: Row(
@@ -515,7 +516,7 @@ class _Vorschlaege extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const MonoLabel('// zuletzt gekauft', color: kTextMuted),
+              const MonoLabel('Zuletzt gekauft', color: kTextMuted),
               const SizedBox(height: 6),
               Wrap(
                 spacing: 8,

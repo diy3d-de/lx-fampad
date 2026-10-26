@@ -40,7 +40,7 @@ class UebertragungenScreen extends ConsumerWidget {
     final liste = ref.watch(dateiTransfersProvider);
     final hatErledigte = liste.any((z) => z.zustandTyp == TransferZustand.fertig || z.zustandTyp == TransferZustand.abgebrochen);
     return DateiRahmen(
-      label: '// dateien',
+      label: 'Dateien',
       titel: 'Übertragungen',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -102,7 +102,7 @@ class _TransferZeile extends ConsumerWidget {
                 ],
               ),
               const SizedBox(height: 4),
-              Text('${art == TransferArt.fassung ? 'Neue Fassung · ' : ''}${groesseText(z.groesse)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              Text('${art == TransferArt.fassung ? 'Neue Fassung · ' : ''}${groesseText(z.groesse)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               if (aktiv) ...[
                 const SizedBox(height: 8),
                 ExcludeSemantics(child: ClipRRect(borderRadius: BorderRadius.circular(4), child: LinearProgressIndicator(value: zustand == TransferZustand.wartet ? null : z.fortschritt, minHeight: 6, color: kAccent, backgroundColor: kBorder))),

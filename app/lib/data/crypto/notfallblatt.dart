@@ -30,7 +30,7 @@ const double _rand = 54;
 
 /// Windows-1252 (WinAnsiEncoding) für die Zeichen, die in deutschen Texten vorkommen; Unbekanntes wird zu "?".
 List<int> _winAnsi(String s) {
-  const sonder = {0x201E: 0x84, 0x201C: 0x93, 0x201D: 0x94, 0x2013: 0x96, 0x2014: 0x97, 0x2026: 0x85, 0x20AC: 0x80, 0x2022: 0x95};
+  const sonder = {0x201E: 0x84, 0x201C: 0x93, 0x201D: 0x94, 0x2013: 0x96, 0x2014: 0x97, 0x2026: 0x85, 0x20AC: 0x80, 0x2022: 0x95, 0x203A: 0x9B, 0x2039: 0x8B};
   final out = <int>[];
   for (final r in s.runes) {
     if (r < 0x80 || (r >= 0xA0 && r <= 0xFF)) {
@@ -87,12 +87,12 @@ List<String> umbrechen(String text, int maxZeichen) {
 const List<(String, String)> kNotfallblattAnleitung = [
   (
     'Wofür ist dieser Schlüssel?',
-    'Mit dem Wiederherstellungsschlüssel holst du deinen Verschlüsselungsschlüssel zurück, wenn du alle Geräte verloren hast oder dein Passwort nicht mehr kennst. '
+    'Mit dem Wiederherstellungsschlüssel holst du deinen Schlüssel zurück, wenn du alle Geräte verloren hast oder dein Passwort nicht mehr kennst. '
         'Ohne ihn, ohne die Passwort-Sicherung und ohne ein Gerät, auf dem du angemeldet bist, ist dein Chat-Verlauf nicht mehr lesbar. Auch ein Admin kann ihn nicht wiederherstellen.',
   ),
   (
     'So stellst du deinen Schlüssel wieder her',
-    '1. Öffne die App (familyhub.lx-labs.dev) und melde dich an. 2. Gehe zu Profil > Verschlüsselung > „Gerät verbinden“ > „Mit Wiederherstellungsschlüssel“. '
+    '1. Öffne die App (familyhub.lx-labs.dev) und melde dich an. 2. Gehe zu Profil › Sicherheit › Nachrichten-Schutz › „Gerät verbinden“ › „Mit Wiederherstellungsschlüssel“. '
         '3. Tippe den Schlüssel von diesem Blatt ab. Groß- und Kleinschreibung, Leerzeichen und Bindestriche sind egal.',
   ),
   (
@@ -102,7 +102,7 @@ const List<(String, String)> kNotfallblattAnleitung = [
   ),
   (
     'Wenn der Schlüssel in falsche Hände geraten ist',
-    'Erzeuge unter Profil > Verschlüsselung > Erweitert einen neuen Wiederherstellungsschlüssel. Der alte gilt dann nicht mehr. Sage es einem Admin.',
+    'Erzeuge unter Profil › Sicherheit › Nachrichten-Schutz › Erweitert einen neuen Wiederherstellungsschlüssel. Der alte gilt dann nicht mehr. Sage es einem Admin.',
   ),
 ];
 

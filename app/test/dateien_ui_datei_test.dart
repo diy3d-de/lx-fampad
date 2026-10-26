@@ -96,7 +96,7 @@ void main() {
       await start(tester, skala: skala, daten: anleitung);
       await dateiOeffnen(tester, 'Anleitung.pdf');
       expect(find.text('Anleitung.pdf'), findsWidgets);
-      expect(find.text('// DATEI'), findsOneWidget);
+      expect(labelFinder('Datei'), findsOneWidget);
       expect(find.text('PDF'), findsOneWidget);
       expect(find.text('4,9 KB'), findsOneWidget);
       expect(find.text('Oberste Ebene'), findsOneWidget);
@@ -105,7 +105,7 @@ void main() {
       for (final t in ['Umbenennen', 'Verschieben', 'Neue Fassung hochladen', 'Datei endgültig löschen']) {
         expect(find.text(t), findsOneWidget, reason: t);
       }
-      expect(find.text('// FREIGABE'), findsOneWidget);
+      expect(labelFinder('Freigabe'), findsOneWidget);
       expect(find.textContaining('Fassung 1 · aktuell'), findsOneWidget);
       expect(find.textContaining('Vorschaubilder enthalten keinen Standort'), findsOneWidget);
       expect(find.textContaining('nie per Link nach außen'), findsOneWidget);
@@ -284,13 +284,13 @@ void main() {
       for (final t in ['Umbenennen', 'Verschieben', 'Neue Fassung hochladen', 'Datei endgültig löschen']) {
         expect(find.text(t), findsNothing, reason: 'fremd: $t');
       }
-      expect(find.text('// FREIGABE'), findsNothing);
+      expect(labelFinder('Freigabe'), findsNothing);
       await tippe(tester, find.byTooltip('Zurück'));
       await dateiOeffnen(tester, 'Eigen.txt');
       for (final t in ['Umbenennen', 'Verschieben', 'Neue Fassung hochladen', 'Datei endgültig löschen']) {
         expect(find.text(t), findsOneWidget, reason: 'eigen: $t');
       }
-      expect(find.text('// FREIGABE'), findsNothing, reason: 'die Stufe ändern nur Eltern');
+      expect(labelFinder('Freigabe'), findsNothing, reason: 'die Stufe ändern nur Eltern');
     });
 
     testWidgets('Kind: Ordner eines anderen nur ansehen; eigene Ordner anlegen geht (immer für die Familie); Ordner mit Inhalt löschen nur Eltern', (tester) async {
@@ -336,7 +336,7 @@ void main() {
         for (final t in ['Umbenennen', 'Verschieben', 'Neue Fassung hochladen', 'Datei endgültig löschen']) {
           expect(find.text(t), findsOneWidget, reason: '$rolle: $t');
         }
-        expect(find.text('// FREIGABE'), findsOneWidget);
+        expect(labelFinder('Freigabe'), findsOneWidget);
         // für die nächste Rolle sauber neu starten
         await tester.pumpWidget(const SizedBox());
       }
@@ -356,7 +356,7 @@ void main() {
         await tippe(tester, find.text('Schule'));
         expect(find.text('Zeugnis.pdf'), findsOneWidget);
         await tippe(tester, find.text('Zeugnis.pdf'));
-        expect(find.text('// DATEI'), findsOneWidget);
+        expect(labelFinder('Datei'), findsOneWidget);
         expect(find.text('lx-familyhub'), findsOneWidget, reason: 'die Seitenleiste bleibt');
         await tippe(tester, find.byTooltip('Zurück'));
         expect(find.text('Zeugnis.pdf'), findsOneWidget, reason: 'zurück im Ordner');
@@ -375,16 +375,16 @@ void main() {
         await d.datei('a', 'Alt.txt', zeit: DateTime.utc(2026, 1, 1));
         await d.datei('b', 'Neu.txt', zeit: DateTime.utc(2026, 5, 1));
       });
-      expect(find.text('// ZULETZT GETEILT'), findsOneWidget);
+      expect(labelFinder('Zuletzt geteilt'), findsOneWidget);
       expect(find.text('Neu.txt'), findsOneWidget);
       expect(find.text('Alt.txt'), findsOneWidget);
-      await tippe(tester, find.text('// ZULETZT GETEILT'));
+      await tippe(tester, labelFinder('Zuletzt geteilt'));
       expect(c.read(shellTabProvider), kDateienTab);
     });
 
     testWidgets('Desktop-Kachel ohne Dateien: ruhiger Leerzustand', (tester) async {
       final (_, _) = await start(tester, groesse: const Size(1440, 900), oeffnen: false);
-      expect(find.text('// ZULETZT GETEILT'), findsOneWidget);
+      expect(labelFinder('Zuletzt geteilt'), findsOneWidget);
       expect(find.text('Noch keine Dateien'), findsOneWidget);
     });
 

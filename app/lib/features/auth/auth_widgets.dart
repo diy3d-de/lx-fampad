@@ -88,7 +88,7 @@ class AuthSeite extends StatelessWidget {
   );
 }
 
-/// Seitentitel: 26 px; ein einzelnes langes Wort (z. B. "Wiederherstellungscodes") würde auf 360 px mitten im Wort umbrechen,
+/// Seitentitel: 26 px; ein einzelnes langes Wort (z. B. "Notfall-Codes") würde auf 360 px mitten im Wort umbrechen,
 /// deshalb wird die Schrift gerade so weit verkleinert (mindestens 18 px), dass das längste Wort in eine Zeile passt.
 class _SeitenTitel extends StatelessWidget {
   final String text;
@@ -130,7 +130,6 @@ class MarkenKopf extends StatelessWidget {
         alignment: Alignment.center,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: kBorder),
           gradient: RadialGradient(
             center: const Alignment(-0.4, -0.6),
             radius: 1.0,
@@ -151,7 +150,7 @@ class MarkenKopf extends StatelessWidget {
         style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong),
       ),
       const SizedBox(height: 6),
-      const Text('// eure familie. euer server.', style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+      const Text('Eure Familie. euer server.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
     ],
   );
 }
@@ -345,7 +344,7 @@ Future<({FamilyRole? rolle})?> familienrolleWaehlen(BuildContext context, {requi
       children: [
         const Padding(
           padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Text('nur anzeige, ändert keine rechte', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          child: Text('nur anzeige, ändert keine rechte', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         ),
         for (final r in FamilyRole.values) zeile(ctx, r.label, r),
         zeile(ctx, 'Keine Angabe', null),
@@ -355,7 +354,7 @@ Future<({FamilyRole? rolle})?> familienrolleWaehlen(BuildContext context, {requi
 }
 
 /// Hält FLAG_SECURE (Android: kein Bildschirmfoto, keine Vorschau in der App-Übersicht), solange das Widget im Baum ist.
-/// Für Screens mit Geheimnissen (TOTP-Secret, Wiederherstellungscodes).
+/// Für Screens mit Geheimnissen (TOTP-Secret, Notfall-Codes).
 class BildschirmSchutz extends ConsumerStatefulWidget {
   final Widget child;
   const BildschirmSchutz({super.key, required this.child});

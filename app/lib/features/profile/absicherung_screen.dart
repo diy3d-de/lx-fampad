@@ -35,7 +35,7 @@ class AbsicherungPille extends StatelessWidget {
   const AbsicherungPille(this.status, {super.key});
 
   @override
-  Widget build(BuildContext context) => StatusPill('● ${status.wort}', color: absicherungFarbe(status.ampel));
+  Widget build(BuildContext context) => StatusPill(status.wort, color: absicherungFarbe(status.ampel));
 }
 
 /// Öffnet die Seite, auf der die Person den Schritt erledigt. Fehler beim Vorbereiten (z. B. Schlüsselspeicher) werden als Hinweis gezeigt, nie als Ausnahme.
@@ -80,8 +80,8 @@ class AbsicherungsZeile extends ConsumerWidget {
       child: EinstellungsZeile(
         icon: Icons.health_and_safety_outlined,
         titel: 'Bin ich abgesichert?',
-        untertitel: a.ampel == AbsicherungAmpel.unbekannt ? 'stand wird geprüft' : '${a.wege} von ${a.wegeMoeglich} wegen zum schlüssel',
-        status: StatusPill('● ${a.antwort}', color: absicherungFarbe(a.ampel)),
+        untertitel: a.ampel == AbsicherungAmpel.unbekannt ? 'Wird geprüft …' : 'Dein Zugang zu den Chats ist auf ${a.wege} von ${a.wegeMoeglich} Wegen gesichert.',
+        status: StatusPill(a.antwort, color: absicherungFarbe(a.ampel)),
         onTap: onTap,
       ),
     );
@@ -112,7 +112,7 @@ class AbsicherungsKarte extends ConsumerWidget {
                 spacing: 10,
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
-                children: [const MonoLabel('// absicherung'), AbsicherungPille(a)],
+                children: [const MonoLabel('Absicherung'), AbsicherungPille(a)],
               ),
               const SizedBox(height: 8),
               Text(a.erklaerung, style: const TextStyle(fontSize: 14, height: 1.4, color: kText)),
@@ -154,7 +154,7 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
     final hierBereit = s.status == E2eeStatus.bereit;
     final andere = a.geraeteMitSchluessel;
     return AuthSeite(
-      label: '// absicherung',
+      label: 'Absicherung',
       titel: 'Bin ich abgesichert?',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -179,35 +179,35 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// deine wege'),
+        const MonoLabel('Deine Wege'),
         const SizedBox(height: 8),
         _Weg(
           da: a.geraetWeg,
           titel: 'Gerät mit deinem Schlüssel',
           text: a.geraetWeg
-              ? (hierBereit ? 'dieses Gerät${andere != null && andere > 1 ? ' (laut Server melden $andere Geräte deinen Schlüssel)' : ''}' : 'ein anderes Gerät')
-              : 'auf diesem Gerät fehlt dein Schlüssel',
+              ? (hierBereit ? 'Dieses Gerät${andere != null && andere > 1 ? ' (laut Server melden $andere Geräte deinen Schlüssel)' : ''}' : 'Ein anderes Gerät')
+              : 'Auf diesem Gerät fehlt dein Schlüssel',
         ),
         if (a.pwVerfuegbar || a.pwWeg)
           _Weg(
             da: a.pwWeg,
             titel: 'Passwort-Sicherung',
-            text: a.pwWeg ? 'bestätigt seit ${_tag(a.pwSeit)}' : (s.pwSicherungVeraltet ? 'veraltet, bitte erneuern' : 'nicht angelegt'),
+            text: a.pwWeg ? 'Bestätigt seit ${_tag(a.pwSeit)}' : (s.pwSicherungVeraltet ? 'Veraltet, bitte erneuern' : 'Noch nicht angelegt'),
           ),
         if (a.prfAngeboten || a.prfWeg)
           _Weg(
             da: a.prfWeg,
             titel: 'Passkey-Sicherung',
             text: a.prfWeg
-                ? 'bestätigt seit ${_tag(a.prfSeit)}; gilt nur, solange dein Passkey-Anbieter ihn auch auf anderen Geräten bereithält (ob das klappt, hängt vom Anbieter ab)'
+                ? 'Bestätigt seit ${_tag(a.prfSeit)}. Gilt nur, solange dein Passkey-Anbieter ihn auch auf anderen Geräten bereithält (ob das klappt, hängt vom Anbieter ab)'
                 : s.prfCredentialIds.isNotEmpty && !s.prfSynchronisiert
-                ? 'angelegt, zählt aber (noch) nicht: dein Passkey meldet sich nicht als gesichert und synchronisiert, er ist vielleicht an dieses Gerät gebunden'
-                : (s.prfSicherungVeraltet ? 'veraltet, bitte erneuern' : 'nicht angelegt'),
+                ? 'Angelegt, zählt aber noch nicht: Dein Passkey ist vielleicht an dieses Gerät gebunden.'
+                : (s.prfSicherungVeraltet ? 'Veraltet, bitte erneuern' : 'Noch nicht angelegt'),
           ),
         _Weg(
           da: a.wiederherstellungWeg,
           titel: 'Wiederherstellungsschlüssel',
-          text: a.wiederherstellungWeg ? 'liegt beim Server seit ${_tag(a.wiederherstellungSeit)}' : 'nicht angelegt',
+          text: a.wiederherstellungWeg ? 'Liegt beim Server seit ${_tag(a.wiederherstellungSeit)}' : 'Noch nicht angelegt',
         ),
         const SizedBox(height: 8),
         // Wiederherstellungstest (rein lokal): eine Sicherung, die nie probiert wurde, ist keine
@@ -223,7 +223,7 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
                   icon: Icons.rule,
                   titel: 'Wiederherstellung testen',
                   untertitel: testZeitText(stand),
-                  status: faellig ? const RollenPille('fällig', farbe: kWarn) : null,
+                  status: faellig ? const RollenPille('Fällig', farbe: kWarn) : null,
                   onTap: () => unawaited(Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const WiederherstellungTestenScreen()))),
                 ),
               );
@@ -236,7 +236,7 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
           const SizedBox(height: 8),
           ZweitKnopf(text: 'Erneut versuchen', icon: Icons.refresh, onPressed: () => unawaited(ref.read(e2eeProvider.notifier).laden())),
         ] else if (a.schritte.isNotEmpty) ...[
-          const MonoLabel('// nächste schritte'),
+          const MonoLabel('Nächste Schritte'),
           const SizedBox(height: 8),
           for (var i = 0; i < a.schritte.length; i++) ...[
             if (i == 0)
@@ -252,7 +252,7 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
         ],
         if (hierBereit && a.wiederherstellungWeg) ...[
           const SizedBox(height: 8),
-          const MonoLabel('// notfallblatt'),
+          const MonoLabel('Notfallblatt'),
           const SizedBox(height: 8),
           const Text(
             'Den Wiederherstellungsschlüssel zeigt die App nur einmal, bei der Einrichtung. Brauchst du ein neues Notfallblatt, erzeuge einen neuen Wiederherstellungsschlüssel: '
@@ -296,11 +296,11 @@ class _Weg extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(titel, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    Text(text, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(text, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   ],
                 ),
               ),
-              Text(da ? 'ja' : 'offen', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: da ? kTerminal : kWarn)),
+              Text(da ? 'Ja' : 'Offen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: da ? kTerminal : kWarn)),
             ],
           ),
         ),

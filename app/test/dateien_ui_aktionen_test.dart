@@ -141,7 +141,7 @@ void main() {
       await start(tester, skala: skala, daten: standard);
       await ordnerVerwalten(tester, 'Urlaub 2026');
       expect(find.text('Urlaub 2026'), findsWidgets);
-      expect(find.text('// FREIGABE'), findsOneWidget);
+      expect(labelFinder('Freigabe'), findsOneWidget);
       expect(find.text('Familie'), findsWidgets);
       expect(find.text('Nur Eltern'), findsOneWidget);
       expect(find.textContaining('3,2 MB'), findsOneWidget, reason: 'Größe der Dateien im Ordner');
@@ -258,7 +258,7 @@ void main() {
       expect((await ordnerZeile(d, 'o-italien'))!.audience, 'parents');
       expect((await dateiZeile(d, 'd-foto'))!.audience, 'parents');
       expect((await dateiZeile(d, 'd-anleitung'))!.audience, 'family', reason: 'liegt woanders');
-      expect(find.text('// ORDNER · NUR ELTERN'), findsOneWidget);
+      expect(labelFinder('Ordner · nur Eltern'), findsOneWidget);
     });
 
     testWidgets('blockierte Änderung: ein Unterordner kann nicht offener sein als sein Ordner; die Meldung erklärt es und bietet an, die übergeordneten Ordner mitzuändern', (tester) async {
@@ -376,7 +376,7 @@ void main() {
       Future<void> z(String id, String zustand, String name, {String art = 'datei', int groesse = 1000, int uebertragen = 0, String? fehler}) => d.db.into(d.db.transfers).insert(
         TransfersCompanion.insert(
           id: id,
-          richtung: art == 'runter' ? 'runter' : 'hoch',
+          richtung: art == 'runter' ? 'runter' : 'Hoch',
           art: art,
           zustand: zustand,
           name: name,
@@ -398,7 +398,7 @@ void main() {
     fuerSkalen('Liste: Fortschritt, Fehler mit festem Text, Aktionen; Tresor-Anhänge fehlen; Layout und Touch-Ziele', (tester, skala) async {
       final (_, _) = await start(tester, skala: skala, daten: zeilen);
       await tippe(tester, find.byTooltip('Übertragungen'));
-      expect(find.text('// DATEIEN'), findsOneWidget);
+      expect(labelFinder('Dateien'), findsOneWidget);
       expect(find.text('Urlaub.mp4'), findsOneWidget);
       expect(find.text('Lädt hoch · 45 %'), findsOneWidget);
       expect(find.text('Der Speicher der Familie ist voll.'), findsOneWidget);

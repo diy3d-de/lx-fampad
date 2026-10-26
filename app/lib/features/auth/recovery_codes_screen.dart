@@ -5,7 +5,7 @@ import '../../constants.dart';
 import '../../ui/widgets.dart';
 import 'auth_widgets.dart';
 
-/// Zeigt die Wiederherstellungscodes EINMAL. Weiter geht es erst, wenn die Person bestätigt, sie gespeichert zu haben.
+/// Zeigt die Notfall-Codes EINMAL. Weiter geht es erst, wenn die Person bestätigt, sie gespeichert zu haben.
 /// Android: Bildschirmfoto-Schutz (FLAG_SECURE). Die Zwischenablage wird nur auf ausdrücklichen Klick befüllt.
 class RecoveryCodesScreen extends ConsumerStatefulWidget {
   final List<String> codes;
@@ -43,8 +43,8 @@ class _RecoveryCodesScreenState extends ConsumerState<RecoveryCodesScreen> with 
     child: BildschirmSchutz(
       child: AuthSeite(
         zurueck: false,
-        label: '// einmalig',
-        titel: 'Wiederherstellungscodes',
+        label: 'Einmalig',
+        titel: 'Notfall-Codes',
         kinder: [
           const Text(
             'Mit diesen Codes kommst du wieder in dein Konto, wenn du Passkey oder Authenticator verlierst. '
@@ -53,7 +53,7 @@ class _RecoveryCodesScreenState extends ConsumerState<RecoveryCodesScreen> with 
           ),
           const SizedBox(height: 16),
           Semantics(
-            label: 'Wiederherstellungscodes, ${widget.codes.length} Stück',
+            label: 'Notfall-Codes, ${widget.codes.length} Stück',
             child: LxCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,

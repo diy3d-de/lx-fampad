@@ -166,7 +166,7 @@ void main() {
       await env.angemeldet();
       final jetzt = DateTime.now();
       await env.db.into(env.db.transfers).insert(
-        TransfersCompanion.insert(id: 't1', richtung: 'hoch', art: 'datei', zustand: 'laeuft', name: 'a.bin', groesse: const Value(1000), blobId: const Value('00000001-0000-4000-8000-000000000000'), createdAt: jetzt, aktualisiertAt: jetzt),
+        TransfersCompanion.insert(id: 't1', richtung: 'Hoch', art: 'datei', zustand: 'laeuft', name: 'a.bin', groesse: const Value(1000), blobId: const Value('00000001-0000-4000-8000-000000000000'), createdAt: jetzt, aktualisiertAt: jetzt),
       );
       await starteApp(tester, env);
       for (var i = 0; i < 20; i++) {

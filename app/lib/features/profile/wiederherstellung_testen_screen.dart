@@ -1,4 +1,4 @@
-// Profil > Verschlüsselung > Wiederherstellung testen: Prüft, dass sich die Sicherung wirklich öffnen lässt, ohne etwas zu verändern (data/crypto/wiederherstellungstest.dart).
+// Profil › Sicherheit › Nachrichten-Schutz › Wiederherstellung testen: Prüft, dass sich die Sicherung wirklich öffnen lässt, ohne etwas zu verändern (data/crypto/wiederherstellungstest.dart).
 // Wege: Wiederherstellungsschlüssel, Passwort der Passwort-Sicherung, Passkey. Dazu der Schalter der Erinnerung alle 90 Tage (rein lokal). Eingaben nur in BildschirmSchutz.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -100,7 +100,7 @@ class _WiederherstellungTestenScreenState extends ConsumerState<Wiederherstellun
     final hatPasskey = s.prfCredentialIds.isNotEmpty && (ref.watch(authProvider.select((a) => (a.me?.passkeys ?? 0) > 0)));
     return BildschirmSchutz(
       child: AuthSeite(
-        label: '// wiederherstellung testen',
+        label: 'Wiederherstellung testen',
         titel: 'Wiederherstellung testen',
         maxBreite: kMaxContentWidth,
         kinder: [
@@ -110,18 +110,18 @@ class _WiederherstellungTestenScreenState extends ConsumerState<Wiederherstellun
             style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
           ),
           const SizedBox(height: 12),
-          Text(testZeitText(stand), style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+          Text(testZeitText(stand), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
           const SizedBox(height: 16),
           if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
           if (_hinweis != null) ...[MeldungsBox(_hinweis!), const SizedBox(height: 12)],
           if (_bestanden != null) ...[MeldungsBox(_bestanden!, fehler: false), const SizedBox(height: 12)],
           if (!hatSchluessel && !hatPw && !hatPasskey)
             const MeldungsBox(
-              'Es gibt noch keine bestätigte Sicherung, die sich testen ließe. Lege zuerst eine an (Profil > Bin ich abgesichert?).',
+              'Es gibt noch keine bestätigte Sicherung, die sich testen ließe. Lege zuerst eine an (Profil › Sicherheit › Bin ich abgesichert?).',
               fehler: false,
             ),
           if (hatSchluessel) ...[
-            const MonoLabel('// wiederherstellungsschlüssel'),
+            const MonoLabel('Wiederherstellungsschlüssel'),
             const SizedBox(height: 8),
             TextField(
               controller: _schluessel,
@@ -144,7 +144,7 @@ class _WiederherstellungTestenScreenState extends ConsumerState<Wiederherstellun
             const SizedBox(height: 20),
           ],
           if (hatPw) ...[
-            const MonoLabel('// passwort-sicherung'),
+            const MonoLabel('Passwort-sicherung'),
             const SizedBox(height: 8),
             TextField(
               controller: _passwort,
@@ -159,12 +159,12 @@ class _WiederherstellungTestenScreenState extends ConsumerState<Wiederherstellun
             const SizedBox(height: 20),
           ],
           if (hatPasskey) ...[
-            const MonoLabel('// passkey-sicherung'),
+            const MonoLabel('Passkey-sicherung'),
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Mit Passkey testen', icon: Icons.fingerprint, onPressed: laeuft ? null : _mitPasskey),
             const SizedBox(height: 20),
           ],
-          const MonoLabel('// erinnerung'),
+          const MonoLabel('Erinnerung'),
           const SizedBox(height: 4),
           SwitchListTile(
             value: stand.erinnerungAn,

@@ -482,10 +482,10 @@ void main() {
     await starteApp(tester, env, skala: skala, groesse: groesse);
     if (oeffnen) {
       if (groesse.width >= 900) {
-        await tippe(tester, find.text('Betrieb'));
+        await tippe(tester, find.text('Betrieb').last);
       } else {
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-        await tippe(tester, find.text('Betrieb'));
+        await tippe(tester, find.text('Betrieb').last);
       }
     }
     return env;
@@ -494,15 +494,15 @@ void main() {
   group('Übersicht: Schlüssel-Ampel und Warnungen', () {
     testWidgets('Familienampel mit Personen und Erklärung; Warnstatus ohne aktive Warnung', (tester) async {
       final env = await start(tester);
-      await _zu(tester, find.text('// SCHLÜSSEL-AMPEL'));
-      expect(find.text('// SCHLÜSSEL-AMPEL'), findsOneWidget);
-      expect(find.text('● gelb'), findsOneWidget);
+      await _zu(tester, labelFinder('Schlüssel-ampel'));
+      expect(labelFinder('Schlüssel-ampel'), findsOneWidget);
+      expect(find.text('gelb'), findsOneWidget);
       expect(find.text('2 von 3 grün (1 gelb), noch nicht Stichtag-bereit'), findsOneWidget);
       // die Übersicht kennt nur Zähler: keine Namen (die stehen auf der Seite Mitglieder, mit Bestätigung)
       expect(find.textContaining('Anna'), findsNothing);
       expect(env.server.anfragen('GET /admin/key-status').every((r) => r.query['summary'] == '1'), isTrue);
-      await _zu(tester, find.text('// WARNUNGEN'));
-      expect(find.text('// WARNUNGEN'), findsOneWidget);
+      await _zu(tester, labelFinder('Warnungen'));
+      expect(labelFinder('Warnungen'), findsOneWidget);
       expect(find.text('Warnungen an dich'), findsOneWidget);
       expect(find.textContaining('Keine aktive Warnung'), findsOneWidget);
       // beim Öffnen nur lesen
@@ -519,10 +519,10 @@ void main() {
           {'kind': 'etwas-neues', 'since': null},
         ]),
       );
-      await _zu(tester, find.text('// SCHLÜSSEL-AMPEL'));
-      expect(find.text('● grün'), findsOneWidget);
+      await _zu(tester, labelFinder('Schlüssel-ampel'));
+      expect(find.text('grün'), findsOneWidget);
       expect(find.text('alle grün: Stichtag-bereit'), findsOneWidget);
-      await _zu(tester, find.text('// WARNUNGEN'));
+      await _zu(tester, labelFinder('Warnungen'));
       expect(find.text('Zertifikat läuft in weniger als 14 Tagen ab'), findsOneWidget);
       expect(find.text('Schlüssel-Ampel einer Person ist rot (2)'), findsOneWidget);
       expect(find.text('Hinweis des Servers'), findsOneWidget);
@@ -531,7 +531,7 @@ void main() {
 
     testWidgets('ohne Push auf dem Server: ehrlicher Hinweis', (tester) async {
       await start(tester, warnungen: () => _warnungen(push: false));
-      await _zu(tester, find.text('// WARNUNGEN'));
+      await _zu(tester, labelFinder('Warnungen'));
       expect(find.textContaining('Push ist auf dem Server nicht eingerichtet'), findsOneWidget);
     });
 
@@ -543,10 +543,10 @@ void main() {
           env.server.on('GET /admin/warnings', (_) => fehler(404, 'not_found'));
         },
       );
-      await _zu(tester, find.text('// WARNUNGEN'));
+      await _zu(tester, labelFinder('Warnungen'));
       expect(find.text('Dieser Server kennt das noch nicht (älterer Stand).'), findsNWidgets(2));
-      expect(find.text('● alles in Ordnung'), findsOneWidget);
-      expect(find.text('// DIENSTE'), findsOneWidget);
+      expect(find.text('alles in Ordnung'), findsOneWidget);
+      expect(labelFinder('Dienste'), findsOneWidget);
     });
 
     testWidgets('Schalter "Warnungen": Step-up, dann PUT {enabled: false}; Hinweis "Aus"', (tester) async {
@@ -568,7 +568,7 @@ void main() {
           });
         },
       );
-      await _zu(tester, find.text('// WARNUNGEN'));
+      await _zu(tester, labelFinder('Warnungen'));
       await tippe(tester, find.byType(Switch));
       expect(find.byType(StepUpDialog), findsOneWidget);
       await tippe(tester, find.text('Abbrechen'));
@@ -586,7 +586,7 @@ void main() {
       await start(tester);
       await _zu(tester, find.text('Einzelheiten je Person (mit Bestätigung)'));
       await tippe(tester, find.text('Einzelheiten je Person (mit Bestätigung)'));
-      expect(find.text('// MITGLIEDER UND GERÄTE'), findsOneWidget);
+      expect(labelFinder('Mitglieder und Geräte'), findsOneWidget);
     });
   });
 
@@ -594,12 +594,12 @@ void main() {
     testWidgets('Mitglieder mit Rolle, Ampel, Wegen, Geräten und Schlüsselstand; keine E-Mail, kein Schlüsselmaterial', (tester) async {
       final env = await start(tester);
       await tippe(tester, find.text('Mitglieder'));
-      expect(find.text('// MITGLIEDER UND GERÄTE'), findsOneWidget);
+      expect(labelFinder('Mitglieder und Geräte'), findsOneWidget);
       expect(find.text('Anna (du)'), findsOneWidget);
       expect(find.text('Ben'), findsOneWidget);
       expect(find.text('Kim'), findsOneWidget);
-      expect(find.text('● grün'), findsWidgets);
-      expect(find.text('● rot'), findsOneWidget);
+      expect(find.text('grün'), findsWidgets);
+      expect(find.text('rot'), findsOneWidget);
       expect(find.text('betreiber'), findsOneWidget);
       expect(find.text('Pixel 9'), findsOneWidget);
       expect(find.textContaining('Android · 0.7.0 · zuletzt '), findsWidgets);
@@ -703,7 +703,7 @@ void main() {
       await tippe(tester, find.text('Mitglieder'));
       expect(find.textContaining('GEHEIMER-SERVERTEXT'), findsNothing);
       await tippe(tester, find.text('Übersicht'));
-      expect(find.text('// DIENSTE'), findsOneWidget);
+      expect(labelFinder('Dienste'), findsOneWidget);
     });
   });
 
@@ -726,7 +726,7 @@ void main() {
         // erst bei normaler Schrift zur Seite, dann vergrößern: die Startseite und das Profil laufen bei 2.0 über (nicht Teil dieses Pakets)
         await start(tester, oeffnen: false, mitglieder: () => _members(lock: {'until': '2026-10-21T10:00:00.000Z', 'seconds': 45}));
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-        await tippe(tester, find.text('Betrieb'));
+        await tippe(tester, find.text('Betrieb').last);
         tester.platformDispatcher.textScaleFactorTestValue = skala;
         await warte(tester);
         tester.takeException();
@@ -751,7 +751,7 @@ void main() {
       await tippe(tester, find.text('Mitglieder'));
       expect(find.text('Anna (du)'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
-      expect(find.textContaining('sync: '), findsOneWidget);
+      expect(find.text('Version dev'), findsOneWidget);
       pruefeLayout(tester, 'Betrieb Mitglieder Desktop');
     });
   });

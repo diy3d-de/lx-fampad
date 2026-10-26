@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
 
 import '../../constants.dart';
 import '../../data/app_database.dart';
@@ -146,38 +145,45 @@ class _SyncZeile extends StatelessWidget {
   );
 }
 
-/// Streifen mit dem Stand des Abgleichs (fest, keine Kachel).
+/// Stand des Abgleichs (fest, keine Kachel): bei "synchron" nur ein kleiner Punkt, sonst ein ruhiger Satz. Die Zahl offener Änderungen steht
+/// nur im Bedienhilfe-Text. Der Sync-Zustand steht auf der Startseite nur hier (die Kopfzeile zeigt ihn mobil als Symbol).
 class _SyncLeiste extends ConsumerWidget {
   const _SyncLeiste();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(syncProvider);
-    final verbunden = sync.status == SyncStatus.synchron;
-    final (statusText, farbe) = syncAnzeige(sync);
-    return Container(
-      constraints: const BoxConstraints(minHeight: 44),
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: farbe.withValues(alpha: 0.08),
-        border: Border.all(color: farbe.withValues(alpha: 0.4)),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          Icon(verbunden || sync.status == SyncStatus.laeuft ? Icons.sync : Icons.cloud_off, size: 16, color: farbe),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              statusText,
-              style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: farbe),
+    final (bedienText, farbe) = syncAnzeige(sync);
+    final hinweis = syncHinweis(sync);
+    if (hinweis == null) {
+      return Semantics(
+        label: 'Sync: $bedienText',
+        child: SizedBox(
+          height: 44,
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Padding(
+              padding: const EdgeInsets.only(left: 14),
+              child: ExcludeSemantics(child: Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: farbe))),
             ),
           ),
-          Text(
-            sync.letzterAbgleich == null ? '' : DateFormat('HH:mm').format(sync.letzterAbgleich!),
-            style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
-          ),
-        ],
+        ),
+      );
+    }
+    return Semantics(
+      label: 'Sync: $bedienText',
+      excludeSemantics: true,
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(18)),
+        child: Row(
+          children: [
+            Icon(sync.status == SyncStatus.wartung ? Icons.build_outlined : Icons.cloud_off, size: 16, color: farbe),
+            const SizedBox(width: 10),
+            Expanded(child: Text(hinweis, style: TextStyle(fontSize: 13, color: farbe == kTextMuted ? kText : farbe))),
+          ],
+        ),
       ),
     );
   }
@@ -290,8 +296,8 @@ class _EinkaufKarte extends ConsumerWidget {
           children: [
             Row(
               children: [
-                const Expanded(child: MonoLabel('// einkaufsliste')),
-                if (einkauf != null) Text('${offen.length} offen', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                const Expanded(child: MonoLabel('Einkaufsliste')),
+                if (einkauf != null) Text('${offen.length} offen', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
             const SizedBox(height: 12),
@@ -311,7 +317,7 @@ class _EinkaufKarte extends ConsumerWidget {
                     ],
                   ),
                 ),
-              if (offen.length > 4) Text('+ ${offen.length - 4} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              if (offen.length > 4) Text('+ ${offen.length - 4} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             ],
           ],
         ),
@@ -340,13 +346,13 @@ class _AufgabenKarte extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// aufgaben'),
+            const MonoLabel('Aufgaben'),
             const SizedBox(height: 12),
             if (zeigen.isEmpty)
               Text(alle.any((a) => a.erledigtAt == null) ? 'Nichts fällig' : 'Keine offenen Aufgaben', style: const TextStyle(color: kTextMuted))
             else
               for (final a in zeigen) AufgabeKurzzeile(aufgabe: a, mitglieder: mitglieder, jetzt: jetzt),
-            if (faellig.length > zeigen.length) Text('+ ${faellig.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            if (faellig.length > zeigen.length) Text('+ ${faellig.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ],
         ),
       ),
@@ -375,13 +381,13 @@ class _NaechsteKarte extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// als nächstes'),
+            const MonoLabel('Als nächstes'),
             const SizedBox(height: 12),
             if (zeigen.isEmpty)
               const Text('Keine anstehenden Termine', style: TextStyle(color: kTextMuted))
             else
               for (final v in zeigen) AnstehenderTermin(v: v, mitglieder: mitglieder, heute: heute),
-            if (kommende.length > zeigen.length) Text('+ ${kommende.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            if (kommende.length > zeigen.length) Text('+ ${kommende.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ],
         ),
       ),

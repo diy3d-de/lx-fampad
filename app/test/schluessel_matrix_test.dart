@@ -311,7 +311,7 @@ class _ZickendeKrypto extends FakeCryptoProvider {
   bool zicken = false;
   @override
   SchluesselPaar boxPaarAusSeed(Uint8List seed) {
-    if (zicken) throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'Die Verschlüsselung hat einen Fehler gemeldet.');
+    if (zicken) throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'Der Nachrichten-Schutz hat einen Fehler gemeldet.');
     return super.boxPaarAusSeed(seed);
   }
 }

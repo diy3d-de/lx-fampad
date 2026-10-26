@@ -6,6 +6,6 @@
     <color name="lx_border">#242936</color>
     <color name="lx_text">#E6E8EE</color>
     <color name="lx_text_muted">#8B93A7</color>
-    <color name="lx_accent">#00F0FF</color>
+    <color name="lx_accent">#6FCFD6</color>
     <color name="lx_danger">#FF5F57</color>
 </resources>

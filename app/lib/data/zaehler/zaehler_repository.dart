@@ -102,7 +102,7 @@ class ZaehlerRepository {
 
   Future<ChatKrypto> _kryptoPflicht() async {
     final k = await krypto();
-    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst die Verschlüsselung ein (Profil, Verschlüsselung).');
+    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst den Nachrichten-Schutz ein (Profil › Sicherheit › Nachrichten-Schutz).');
     return k;
   }
 
@@ -238,7 +238,7 @@ class ZaehlerRepository {
     }
     if (bearbeiterId == null) return (text: null, hinweis: 'Person nicht mehr in der Familie');
     final k = await krypto();
-    if (k == null) return (text: null, hinweis: 'Verschlüsselung nicht bereit');
+    if (k == null) return (text: null, hinweis: 'Nachrichten-Schutz nicht bereit');
     try {
       final d = await k.nachrichtOeffnen(konversationId: konversationId, nachrichtId: id, autorId: bearbeiterId, wire: wire, antwortAuf: bezug, art: art);
       return d.lesbar ? (text: d.text, hinweis: null) : (text: null, hinweis: d.hinweis ?? 'nicht lesbar');

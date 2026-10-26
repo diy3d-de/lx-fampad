@@ -55,7 +55,7 @@ class WetterInhalt extends StatelessWidget {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  fontFamily: kFontMono,
+                  fontFamily: kFontSans, fontFeatures: kZiffern,
                   fontSize: 11,
                   color: stand.warnung ? kWarn : kTextMuted,
                 ),
@@ -67,7 +67,7 @@ class WetterInhalt extends StatelessWidget {
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    fontFamily: kFontMono,
+                    fontFamily: kFontSans, fontFeatures: kZiffern,
                     fontSize: 11,
                     color: kTextMuted,
                   ),
@@ -80,7 +80,7 @@ class WetterInhalt extends StatelessWidget {
         Text(
           temperaturText(a.temperatur),
           style: const TextStyle(
-            fontFamily: kFontMono,
+            fontFamily: kFontSans, fontFeatures: kZiffern,
             fontSize: 24,
             fontWeight: FontWeight.w700,
             color: kAccent,
@@ -119,7 +119,7 @@ class WetterStartKarte extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const MonoLabel('// wetter'),
+              const MonoLabel('Wetter'),
               const SizedBox(height: 10),
               WetterInhalt(zustand: st),
             ],

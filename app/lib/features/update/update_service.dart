@@ -283,7 +283,7 @@ class UpdateController extends Notifier<UpdateState> {
     final pfad = state.apkPfad;
     final info = state.info;
     if (pfad == null || info == null || state.phase != UpdatePhase.bereit) return 'Kein geladenes Update vorhanden';
-    if (ref.read(syncProvider).beschaeftigt) return 'Bitte warten, bis der Abgleich abgeschlossen ist.';
+    if (ref.read(syncProvider).beschaeftigt) return 'Bitte warten, bis alles übertragen ist.';
     if (!await apkPruefsummeStimmt(pfad, info.sha256)) {
       state = UpdateState(
         phase: UpdatePhase.verfuegbar,

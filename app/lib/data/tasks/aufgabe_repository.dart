@@ -1,5 +1,5 @@
 // Aufgaben für die Oberfläche: liest aus der lokalen Datenbank (Streams) und schreibt Änderungen sofort lokal (Tabelle und Ausgang, siehe
-// SyncStore). Der Abgleich läuft im Hintergrund; hier wartet nichts auf das Netz.
+// SyncStore). Der Überträgt … im Hintergrund; hier wartet nichts auf das Netz.
 //
 // Wiederholung: Wird eine wiederkehrende Aufgabe erledigt, legt der Client die nächste an (Fälligkeit siehe naechsteFaelligkeit). Die ID der
 // Folgeaufgabe ist fest aus der erledigten Aufgabe abgeleitet: erledigen zwei Geräte dieselbe Aufgabe, schreiben beide dieselbe Zeile, es

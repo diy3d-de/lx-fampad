@@ -249,7 +249,7 @@ Future<void> main() async {
       final a = await aufbau(sicherungSeit: DateTime.now().toUtc());
       await starteApp(tester, a.env, skala: skala);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      await tippeText(tester, 'Verschlüsselung');
+      await tippeText(tester, 'Nachrichten-Schutz');
       expect(find.text('Wiederherstellung testen'), findsOneWidget);
       expect(find.text('noch nie getestet'), findsOneWidget);
       expect(find.textContaining('Es ist über 90 Tage her'), findsNothing);
@@ -282,9 +282,9 @@ Future<void> main() async {
       final a = await aufbau(sicherungSeit: DateTime.now().toUtc().subtract(const Duration(days: 120)));
       await starteApp(tester, a.env, skala: skala);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      await tippeText(tester, 'Verschlüsselung');
+      await tippeText(tester, 'Nachrichten-Schutz');
       expect(find.textContaining('Es ist über 90 Tage her'), findsOneWidget);
-      expect(find.text('fällig'), findsOneWidget);
+      expect(find.text('Fällig'), findsOneWidget);
       pruefeLayout(tester, 'Erinnerung fällig');
       await tippe(tester, find.widgetWithText(OutlinedButton, 'Wiederherstellung testen'));
       expect(find.text('Alle 90 Tage an den Test erinnern'), findsOneWidget);
@@ -294,7 +294,7 @@ Future<void> main() async {
       pruefeLayout(tester, 'Test-Seite mit Schalter aus');
       await tippe(tester, find.byTooltip('Zurück'));
       expect(find.textContaining('Es ist über 90 Tage her'), findsNothing);
-      expect(find.text('fällig'), findsNothing);
+      expect(find.text('Fällig'), findsNothing);
       // nichts davon geht an den Server
       expect(a.env.server.anfragen('PUT /me/key-backup'), isEmpty);
     });

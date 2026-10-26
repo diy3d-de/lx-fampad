@@ -24,14 +24,14 @@ class MuellAbfuhrkalenderScreen extends ConsumerWidget {
     final jetzt = ref.watch(muellUhrProvider)();
     final heuteJahr = muellHeute(jetzt).year; // Jahr der Familienzone, nicht des Geräts
     if (rolle != Role.admin) {
-      return const AuthSeite(label: '// müll', titel: 'Abfuhrkalender', kinder: [MeldungsBox('Diese Seite ist nur für Admins.', fehler: false)]);
+      return const AuthSeite(label: 'Müll', titel: 'Abfuhrkalender', kinder: [MeldungsBox('Diese Seite ist nur für Admins.', fehler: false)]);
     }
     final dto = z.dto;
     final p = dto?.pruefung ?? const MuellPruefung();
     // alle bekannten Jahre, dazu das laufende und das nächste (auch wenn noch nie geprüft)
     final jahre = {...?dto?.jahre.map((j) => j.jahr), heuteJahr, heuteJahr + 1}.toList()..sort();
     return AuthSeite(
-      label: '// müll',
+      label: 'Müll',
       titel: 'Abfuhrkalender',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -39,7 +39,7 @@ class MuellAbfuhrkalenderScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const MonoLabel('// quelle'),
+              const MonoLabel('Quelle'),
               const SizedBox(height: 6),
               Text(dto != null && dto.ort.isNotEmpty ? dto.ort : 'Abfallkalender', style: const TextStyle(fontWeight: FontWeight.w600)),
               const SizedBox(height: 2),
@@ -52,7 +52,7 @@ class MuellAbfuhrkalenderScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const MonoLabel('// jahre'),
+              const MonoLabel('Jahre'),
               const SizedBox(height: 8),
               for (final j in jahre) _JahrZeile(jahr: j, daten: dto?.jahr(j)),
             ],
@@ -63,7 +63,7 @@ class MuellAbfuhrkalenderScreen extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const MonoLabel('// automatische prüfung'),
+              const MonoLabel('Automatische Prüfung'),
               const SizedBox(height: 8),
               _Kv('Zeitraum', 'ab 1. Dezember, wöchentlich'),
               _Kv('Nächste Prüfung', p.naechste == null ? 'beim nächsten Takt' : (p.naechste!.isAfter(jetzt) ? muellZeitpunkt(p.naechste!) : 'fällig, beim nächsten Takt')),
@@ -94,7 +94,7 @@ class _Kv extends StatelessWidget {
       spacing: 12,
       children: [
         Text(k, style: const TextStyle(fontSize: 13, color: kTextMuted)),
-        Text(v, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kText)),
+        Text(v, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kText)),
       ],
     ),
   );

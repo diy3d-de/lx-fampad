@@ -221,7 +221,7 @@ class _Liste extends ConsumerWidget {
         : !async.hasValue
         ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
         : eintraege.isEmpty
-        ? const EmptyState(icon: Icons.chat_bubble_outline, title: 'Noch keine Chats', hint: 'Der Familienchat erscheint nach dem ersten Abgleich. Starte unten einen neuen Chat.')
+        ? const EmptyState(icon: Icons.chat_bubble_outline, title: 'Noch keine Chats', hint: 'Der Familienchat erscheint sobald alles übertragen ist. Starte unten einen neuen Chat.')
         : ListView(
             padding: const EdgeInsets.only(bottom: 88),
             children: [abschnitt('familie', familie), abschnitt('direkt', direkt), abschnitt('gruppen', gruppen)],
@@ -306,7 +306,7 @@ class _Kachel extends StatelessWidget {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      if (zeit.isNotEmpty) Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      if (zeit.isNotEmpty) Text(zeit, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                       if (fehler) const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.error_outline, size: 18, color: kDanger)),
                       if (ungelesen > 0) ...[const SizedBox(height: 4), UngelesenZeichen(ungelesen)],
                     ],

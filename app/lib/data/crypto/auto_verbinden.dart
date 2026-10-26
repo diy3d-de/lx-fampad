@@ -15,10 +15,10 @@ String? autoVerbindenText(AutoVerbinden r) => switch (r) {
   AutoVerbinden.veraltet =>
     'Dein Passwort wurde zurückgesetzt, deshalb passt deine Passwort-Sicherung nicht mehr zum Passwort. Verbinde dieses Gerät mit deinem Wiederherstellungsschlüssel oder einem Gerät, auf dem du schon angemeldet warst.',
   AutoVerbinden.passwortPasstNicht =>
-    'Dein Passwort öffnet die Passwort-Sicherung nicht (sie wurde mit einem anderen Passwort angelegt). Verbinde dieses Gerät unter Profil > Verschlüsselung.',
+    'Dein Passwort öffnet die Passwort-Sicherung nicht (sie wurde mit einem anderen Passwort angelegt). Verbinde dieses Gerät unter Profil › Sicherheit › Nachrichten-Schutz.',
   AutoVerbinden.passkeyPasstNicht =>
-    'Dein Passkey öffnet die Passkey-Sicherung nicht (er wurde vermutlich neu angelegt). Verbinde dieses Gerät unter Profil > Verschlüsselung mit deinem Wiederherstellungsschlüssel oder einem anderen Gerät.',
-  AutoVerbinden.fehlgeschlagen => 'Dieses Gerät konnte nicht automatisch mit deinem Schlüssel verbunden werden. Du kannst es unter Profil > Verschlüsselung selbst verbinden. Es wurde nichts verändert.',
+    'Dein Passkey öffnet die Passkey-Sicherung nicht (er wurde vermutlich neu angelegt). Verbinde dieses Gerät unter Profil › Sicherheit › Nachrichten-Schutz mit deinem Wiederherstellungsschlüssel oder einem anderen Gerät.',
+  AutoVerbinden.fehlgeschlagen => 'Dieses Gerät konnte nicht automatisch mit deinem Schlüssel verbunden werden. Du kannst es unter Profil › Sicherheit › Nachrichten-Schutz selbst verbinden. Es wurde nichts verändert.',
   AutoVerbinden.nichtNoetig || AutoVerbinden.keineSicherung => null,
 };
 

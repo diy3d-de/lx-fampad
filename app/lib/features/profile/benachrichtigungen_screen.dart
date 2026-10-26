@@ -22,16 +22,16 @@ class BenachrichtigungenScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final web = ref.watch(profilWebProvider);
     return AuthSeite(
-      label: '// profil',
+      label: 'Profil',
       titel: 'Benachrichtigungen',
       maxBreite: kMaxContentWidth,
       kinder: [
-        const MonoLabel('// auf diesem gerät'),
+        const MonoLabel('Auf diesem Gerät'),
         const SizedBox(height: 8),
         EinstellungsZeile(
           icon: Icons.notifications_none,
           titel: 'Erinnerungen',
-          untertitel: 'terminerinnerungen auf diesem gerät',
+          untertitel: 'Terminerinnerungen auf diesem Gerät',
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ErinnerungenScreen())),
         ),
         // Wetter-Hinweise: nur wenn der Server das Wetter anbietet
@@ -42,7 +42,7 @@ class BenachrichtigungenScreen extends ConsumerWidget {
             return EinstellungsZeile(
               icon: Icons.thermostat,
               titel: 'Wetter-Hinweise',
-              untertitel: an == 0 ? 'alle aus' : '$an von ${WetterHinweisArt.values.length} an',
+              untertitel: an == 0 ? 'Alle aus' : '$an von ${WetterHinweisArt.values.length} an',
               onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const WetterHinweiseScreen())),
             );
           },
@@ -54,7 +54,7 @@ class BenachrichtigungenScreen extends ConsumerWidget {
               return EinstellungsZeile(
                 icon: Icons.notifications_outlined,
                 titel: 'Push',
-                untertitel: push.gewuenscht ? (push.angemeldet ? 'push aktiv' : 'wird eingerichtet') : 'aus',
+                untertitel: push.gewuenscht ? (push.angemeldet ? 'Hinweise aktiv' : 'Wird eingerichtet …') : 'Aus',
                 status: push.gewuenscht && push.angemeldet ? const RollenPille('an', farbe: kTerminal) : null,
                 onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const PushScreen())),
               );
@@ -63,7 +63,7 @@ class BenachrichtigungenScreen extends ConsumerWidget {
         else
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: Text('Push gibt es nur in der Android-App.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            child: Text('Push gibt es nur in der Android-App.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ),
       ],
     );

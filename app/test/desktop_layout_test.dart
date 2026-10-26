@@ -43,16 +43,13 @@ void main() {
       expect(find.text('Fotos'), findsNothing);
       expect(find.text('Orte'), findsNothing);
       expect(find.textContaining(RegExp('^Guten (Morgen|Tag|Abend)')), findsOneWidget);
-      for (final l in ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben', '// familie & orte']) {
+      for (final l in ['Heute und morgen', 'Chat · Familie', 'Einkaufsliste', 'Aufgaben', 'Familie und Orte']) {
       // ohne features.files des Servers: keine Kachel "Zuletzt geteilt"
-      expect(find.text('// ZULETZT GETEILT'), findsNothing);
-        expect(find.text(l.toUpperCase()), findsOneWidget, reason: l);
+      expect(labelFinder('Zuletzt geteilt'), findsNothing);
+        expect(labelFinder(l), findsOneWidget, reason: l);
       }
       expect(find.text('Heute und morgen steht nichts an.'), findsOneWidget); // Termine-Karte ohne Termine
-      expect(find.textContaining('sync: '), findsOneWidget);
-      expect(find.textContaining('geräte: '), findsOneWidget);
-      expect(find.textContaining('verbindung: '), findsOneWidget);
-      expect(find.textContaining('version: '), findsOneWidget);
+      expect(find.textContaining('Version '), findsOneWidget);
       expect(find.byTooltip('Benachrichtigungen'), findsNothing, reason: 'keine Glocke ohne Funktion');
       expect(find.textContaining('Phase'), findsNothing);
       expect(find.text('Neu'), findsOneWidget);
@@ -67,12 +64,12 @@ void main() {
 
   testWidgets('3 Spalten bei 1440 px, 2 Spalten bei 900 px', (tester) async {
     await start(tester, const Size(1440, 900));
-    final a = tester.getTopLeft(find.text('// HEUTE & MORGEN'));
-    final b = tester.getTopLeft(find.text('// CHAT · FAMILIE'));
-    final c = tester.getTopLeft(find.text('// EINKAUFSLISTE'));
+    final a = tester.getTopLeft(labelFinder('Heute und morgen'));
+    final b = tester.getTopLeft(labelFinder('Chat · Familie'));
+    final c = tester.getTopLeft(labelFinder('Einkaufsliste'));
     expect(a.dy, b.dy);
     expect(b.dy, c.dy);
-    final d = tester.getTopLeft(find.text('// AUFGABEN'));
+    final d = tester.getTopLeft(labelFinder('Aufgaben'));
     expect(d.dy, greaterThan(a.dy));
   });
 
@@ -87,10 +84,10 @@ void main() {
     await start(tester, const Size(1440, 900));
     await tester.tap(find.text('Chat').first);
     await warte(tester);
-    expect(find.text('// HEUTE & MORGEN'), findsNothing);
+    expect(labelFinder('Heute und morgen'), findsNothing);
     await tester.tap(find.text('Start').first);
     await warte(tester);
-    expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+    expect(labelFinder('Heute und morgen'), findsOneWidget);
     // ohne features.files des Servers: keine Dateien-Kachel und kein Weg in den Bereich
     expect(find.text('Noch keine Dateien'), findsNothing);
   });
@@ -104,17 +101,17 @@ void main() {
       await warte(tester);
       expect(tester.widget<IndexedStack>(find.byType(IndexedStack).first).index, kStandortTab);
       expect(find.text('lx-familyhub'), findsOneWidget); // Seitenleiste
-      expect(find.textContaining('sync: '), findsOneWidget); // Fußzeile
+      expect(find.text('Version dev'), findsOneWidget); // Fußzeile
       expect(find.text('Standort'), findsNWidgets(2)); // Seitenleiste + Kopfzeile des Bereichs
       // gleicher oberer Abstand wie bei den anderen Bereichen (Kalender, Aufgaben, Listen, Chat: 16 px)
       expect(tester.getTopLeft(find.byType(TabKopfzeile)).dy, 16);
-      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(labelFinder('Mein Standort'), findsOneWidget);
       expect(find.byTooltip('Zurück'), findsNothing);
       expect(find.byType(NavigationBar), findsNothing);
       // zurück zur Startseite über die Seitenleiste
       await tester.tap(navEintrag('Start'));
       await warte(tester);
-      expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+      expect(labelFinder('Heute und morgen'), findsOneWidget);
       expect(tester.takeException(), isNull);
       handle.dispose();
     });
@@ -139,7 +136,7 @@ void main() {
       // bei Textskala 1.5 steht der Eintrag nicht ohne Scrollen in der (scrollbaren) Seitenleiste: Bereich direkt wählen
       ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first)).read(shellTabProvider.notifier).waehlen(kStandortTab);
       await warte(tester);
-      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(labelFinder('Mein Standort'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
@@ -155,7 +152,7 @@ void main() {
       await tester.tap(find.text('Ansehen'));
       await warte(tester);
       expect(container(tester).read(shellTabProvider), kStandortTab);
-      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(labelFinder('Mein Standort'), findsOneWidget);
     });
 
     testWidgets('kein Hinweis, solange der Standort-Bereich selbst zu sehen ist', (tester) async {
@@ -174,7 +171,7 @@ void main() {
       expect(find.text('Jemand teilt seinen Standort'), findsOneWidget);
       await tester.tap(find.text('Ansehen'));
       await warte(tester);
-      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(labelFinder('Mein Standort'), findsOneWidget);
       expect(find.byTooltip('Zurück'), findsOneWidget);
       // solange die Seite offen ist, kein weiterer Hinweis und keine zweite Seite
       container(tester).read(standortHinweisProvider.notifier).melden('unbekannt');
@@ -197,9 +194,9 @@ void main() {
 
   testWidgets('Startseite (Desktop): die Standort-Karte wechselt in den Bereich statt eine Seite zu öffnen', (tester) async {
     await start(tester, const Size(1440, 900));
-    await tester.tap(find.text('// STANDORT'));
+    await tester.tap(labelFinder('Standort'));
     await warte(tester);
-    expect(find.text('// MEIN STANDORT'), findsOneWidget);
+    expect(labelFinder('Mein Standort'), findsOneWidget);
     expect(find.text('lx-familyhub'), findsOneWidget);
     expect(find.byTooltip('Zurück'), findsNothing);
   });

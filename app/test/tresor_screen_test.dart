@@ -106,7 +106,7 @@ void main() {
       expect(find.text('Der Tresor ist gesperrt'), findsOneWidget);
       expect(find.text('Tresor entsperren'), findsOneWidget);
       expect(find.text('WLAN Zuhause'), findsNothing);
-      expect(find.text('ENTSPERRT'), findsNothing);
+      expect(find.text('Entsperrt'), findsNothing);
       expect(a.bestaetigungen, 0);
       pruefeLayout(tester, 'gesperrt');
     });
@@ -122,7 +122,7 @@ void main() {
       await tippe(tester, find.text('Tresor entsperren'));
       expect(a.bestaetigungen, 2);
       expect(c.read(tresorSperreProvider).entsperrt, isTrue);
-      expect(find.text('ENTSPERRT'), findsOneWidget);
+      expect(find.text('Entsperrt'), findsOneWidget);
       expect(find.text('bis 14:02'), findsOneWidget); // Fake-Uhr 14:00 + 2 Minuten
       expect(find.text('Sperren'), findsOneWidget);
       await ende(tester, c, a);
@@ -381,7 +381,7 @@ void main() {
         expect(find.text(v), findsOneWidget, reason: v);
       }
       expect(find.text('Alle Eltern sehen diesen Eintrag'), findsOneWidget);
-      expect(find.text('Sichtbar für'), findsNothing);
+      expect(find.text('Wer sieht das?'), findsNothing);
       expect(find.textContaining('anhängen'), findsNothing);
       await tippe(tester, find.text('WLAN'));
       expect(find.text('4 von 20 Feldern'), findsOneWidget);
@@ -494,7 +494,7 @@ void main() {
       await ende(tester, c, a);
     });
 
-    testWidgets('Speicherfehler des Repositorys (z. B. Verschlüsselung nicht bereit) erscheinen als ruhige Meldung', (tester) async {
+    testWidgets('Speicherfehler des Repositorys (z. B. Nachrichten-Schutz nicht bereit) erscheinen als ruhige Meldung', (tester) async {
       final a = TresorTestAufbau();
       a.repo.fehler = const TresorFehler('Den Eintrag gibt es nicht mehr.');
       final (_, c) = await start(tester, aufbau: a, entsperren: true);

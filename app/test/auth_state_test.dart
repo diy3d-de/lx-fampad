@@ -153,7 +153,7 @@ void main() {
     expect(server.anfragen('POST /invites').single.headers['x-csrf-token'], 'csrf-abc');
   });
 
-  test('Wiederherstellungscode: Passwort-Anmeldung mit recoveryCode statt totp, und reiner Code-Weg', () async {
+  test('Notfall-Code: Passwort-Anmeldung mit recoveryCode statt totp, und reiner Code-Weg', () async {
     final server = FakeServer()
       ..json('POST /auth/login/password', {'user': userJson(), 'session': appSession()})
       ..json('POST /auth/login/recovery', {'user': userJson(), 'session': appSession(), 'recoveryCodesRemaining': 7})

@@ -76,7 +76,7 @@ void main() {
   for (final skala in [1.0, 1.5]) {
     testWidgets('Kopfzeile Textskala $skala: alle Tabs zeigen Datum, Sync-Symbol und Profil-Knopf gleich angeordnet', (tester) async {
       await start(tester, skala: skala, tab: 'Start');
-      final datum = '// ${kopfzeilenDatum()}'.toUpperCase();
+      final datum = kopfzeilenDatum();
       Rect? profil;
       Rect? sync;
       Rect? label;
@@ -127,7 +127,7 @@ void main() {
     expect(find.text('Ferien'), findsNWidgets(3), reason: 'mehrtägig: an jedem Tag');
     expect(find.text('ganztägig'), findsWidgets);
     expect(find.byIcon(Icons.repeat), findsWidgets);
-    expect(find.textContaining('· HEUTE'), findsOneWidget, reason: 'der heutige Tag ist markiert');
+    expect(find.textContaining('· heute'), findsOneWidget, reason: 'der heutige Tag ist markiert');
     pruefeLayout(tester, 'Agenda');
   });
 
@@ -189,7 +189,7 @@ void main() {
       await eingeben(tester, 'Ort', 'Schule');
       // Wiederholung: wöchentlich
       await tippeText(tester, 'Einmalig');
-      pruefeLayout(tester, 'Wiederholung');
+      pruefeLayout(tester, 'Wie oft?');
       await tippeText(tester, 'Wöchentlich');
       await tippeText(tester, 'Nach Anzahl');
       await tippeText(tester, 'Fertig');
@@ -259,7 +259,7 @@ void main() {
     await tippeText(tester, 'Bearbeiten');
     await tippeText(tester, 'Nur dieses Vorkommen');
     expect(find.text('Dieses Vorkommen'), findsOneWidget);
-    expect(find.text('Wiederholung'), findsNothing, reason: 'eine Ausnahme hat keine eigene Wiederholung');
+    expect(find.text('Wie oft?'), findsNothing, reason: 'eine Ausnahme hat keine eigene Wiederholung');
     await eingeben(tester, 'Titel', 'Chor Sonderprobe');
     await tippeText(tester, 'Speichern');
     await warte(tester, 8);
@@ -419,11 +419,11 @@ void main() {
     expect(find.text('Kalender-Einstellungen …'), findsOneWidget);
     expect(find.text('Importieren / Exportieren'), findsNothing);
     // Desktop: Datum und Titel bleiben, Sync (Fußzeile) und Profil (Seitenleiste) stehen schon woanders
-    expect(find.text('// ${kopfzeilenDatum()}'.toUpperCase()), findsOneWidget);
+    expect(labelFinder(kopfzeilenDatum()), findsOneWidget);
     expect(find.text('Kalender'), findsWidgets);
     expect(find.byType(ProfilButton), findsNothing);
     expect(find.byType(SyncIndicator), findsNothing);
-    expect(find.textContaining('sync: '), findsOneWidget);
+    expect(find.text('Version dev'), findsOneWidget);
     pruefeLayout(tester, 'Kalender Desktop');
   });
 

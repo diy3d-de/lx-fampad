@@ -161,7 +161,7 @@ void main() {
     final zeile = find.text('Benachrichtigungen');
     expect(zeile, findsOneWidget);
     await tippe(tester, zeile);
-    expect(find.text('aus'), findsOneWidget);
+    expect(find.text('Aus'), findsOneWidget);
     await tippe(tester, find.text('Push'));
     expect(find.text('Auf diesem Gerät benachrichtigen'), findsOneWidget);
   });

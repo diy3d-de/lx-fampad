@@ -13,7 +13,7 @@ enum AbsicherungAmpel { gruen, gelb, rot, unbekannt }
 
 /// Was die Person als Nächstes tun kann (die Oberfläche macht daraus Knöpfe).
 enum AbsicherungSchritt {
-  /// Es gibt noch keinen Schlüssel: Verschlüsselung einrichten.
+  /// Es gibt noch keinen Schlüssel: Nachrichten-Schutz einrichten.
   einrichten,
 
   /// Das Gerät hat den Schlüssel nicht: verbinden (Passwort, QR, Wiederherstellungsschlüssel).
@@ -92,18 +92,18 @@ class AbsicherungsStatus {
 
   /// Ein Wort für die Pille.
   String get wort => switch (ampel) {
-    AbsicherungAmpel.gruen => 'abgesichert',
-    AbsicherungAmpel.gelb => 'teilweise',
-    AbsicherungAmpel.rot => 'nicht abgesichert',
-    AbsicherungAmpel.unbekannt => 'unbekannt',
+    AbsicherungAmpel.gruen => 'Alles gut abgesichert',
+    AbsicherungAmpel.gelb => 'Einen Weg noch einrichten',
+    AbsicherungAmpel.rot => 'Noch nicht abgesichert',
+    AbsicherungAmpel.unbekannt => 'Wird geprüft',
   };
 
   /// Kurzform als Antwort auf die Frage "Bin ich abgesichert?" (schmale Pille in der Profilzeile).
   String get antwort => switch (ampel) {
-    AbsicherungAmpel.gruen => 'ja',
-    AbsicherungAmpel.gelb => 'teilweise',
-    AbsicherungAmpel.rot => 'nein',
-    AbsicherungAmpel.unbekannt => 'unbekannt',
+    AbsicherungAmpel.gruen => 'Ja',
+    AbsicherungAmpel.gelb => 'Teilweise',
+    AbsicherungAmpel.rot => 'Nein',
+    AbsicherungAmpel.unbekannt => 'Wird geprüft',
   };
 
   /// Die Erklärung in einem Satz (Karte, Zeile, Screenreader).
@@ -123,7 +123,7 @@ class AbsicherungsStatus {
 
 /// Text zu einem Schritt (Knopf).
 String schrittText(AbsicherungSchritt s) => switch (s) {
-  AbsicherungSchritt.einrichten => 'Verschlüsselung einrichten',
+  AbsicherungSchritt.einrichten => 'Nachrichten-Schutz einrichten',
   AbsicherungSchritt.geraetVerbinden => 'Dieses Gerät verbinden',
   AbsicherungSchritt.geraetNeuVerbinden => 'Gerät neu verbinden',
   AbsicherungSchritt.passwortSicherung => 'Passwort-Sicherung anlegen',
@@ -140,7 +140,7 @@ String schrittErklaerung(AbsicherungSchritt s) => switch (s) {
   AbsicherungSchritt.geraetNeuVerbinden => 'Der Schlüssel auf diesem Gerät passt nicht zu deinem Konto. Der alte bleibt aufbewahrt.',
   AbsicherungSchritt.passwortSicherung => 'Dein Passwort öffnet dann auf jedem neuen Gerät automatisch deinen Schlüssel. Kein Zettel nötig.',
   AbsicherungSchritt.passwortSicherungErneuern => 'Seit dem Zurücksetzen deines Passworts passt die Sicherung nicht mehr zu deinem Passwort.',
-  AbsicherungSchritt.passkeySicherung => 'Dein Passkey öffnet dann auf einem neuen Gerät deinen Schlüssel: Fingerabdruck oder PIN genügen, kein Zettel nötig.',
+  AbsicherungSchritt.passkeySicherung => 'Dein Zugang ohne Passwort (Passkey) öffnet dann auf einem neuen Gerät deinen Schlüssel: Fingerabdruck oder PIN genügen, kein Zettel nötig.',
   AbsicherungSchritt.passkeySicherungErneuern => 'Dein Schlüssel wurde gewechselt, die bisherige Passkey-Sicherung gehört zum alten Schlüssel.',
   AbsicherungSchritt.wiederherstellungsschluessel => 'Ein Schlüssel zum Aufschreiben oder Ausdrucken (Notfallblatt): dein Weg zurück, wenn alles andere weg ist.',
 };

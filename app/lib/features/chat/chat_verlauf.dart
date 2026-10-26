@@ -708,7 +708,7 @@ class _Kopf extends StatelessWidget {
                         verschluesselt ? 'ende-zu-ende verschlüsselt · $untertitel' : untertitel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                        style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                       ),
                     ),
                   ],
@@ -748,7 +748,7 @@ class _Trenner extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.symmetric(vertical: 10),
     child: Center(
-      child: Semantics(header: true, child: MonoLabel(text.toLowerCase())),
+      child: Semantics(header: true, child: MonoLabel(text)),
     ),
   );
 }
@@ -845,7 +845,7 @@ class _Blase extends StatelessWidget {
                     bottomLeft: Radius.circular(eigen ? 14 : 4),
                     bottomRight: Radius.circular(eigen ? 4 : 14),
                   ),
-                  side: BorderSide(color: markiert ? kAccent : (eigen ? kAccent.withValues(alpha: 0.4) : kBorder), width: markiert ? 2 : 1),
+                  side: BorderSide(color: markiert ? kAccent : (eigen ? kAccent.withValues(alpha: 0.4) : Colors.transparent), width: markiert ? 2 : 1),
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: InkWell(
@@ -885,9 +885,9 @@ class _Blase extends StatelessWidget {
                             alignment: WrapAlignment.end,
                             children: [
                               if (angeheftet) const Icon(Icons.push_pin, size: 12, color: kAccent, semanticLabel: 'angeheftet'),
-                              if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                              if (bearbeitet) const Text('bearbeitet', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                               if (!gesendet && eigen) _SendeText(lese: lese),
-                              Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                              Text(zeit, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                               if (lese != null) LeseHaken(info: lese!, text: leseText),
                             ],
                           ),
@@ -920,7 +920,7 @@ class _SendeText extends StatelessWidget {
       LeseZustand.abgelehnt => ('nicht gesendet · tippen', kDanger),
       _ => ('wird gesendet', kTextMuted),
     };
-    return ExcludeSemantics(child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: farbe)));
+    return ExcludeSemantics(child: Text(text, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: farbe)));
   }
 }
 
@@ -934,7 +934,7 @@ class _Banner extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     margin: const EdgeInsets.fromLTRB(12, 0, 12, 4),
     padding: const EdgeInsets.only(left: 10),
-    decoration: BoxDecoration(color: kSurface, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+    decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
     child: Row(
       children: [
         Expanded(

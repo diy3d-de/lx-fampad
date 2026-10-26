@@ -60,9 +60,9 @@ class _BetriebNutzungSeiteState extends ConsumerState<BetriebNutzungSeite> {
 }
 
 /// Zeile mit einer Zahl rechts; eine Zahl über null bekommt Farbe und Wort in der Beschreibung, nie nur Farbe.
-Widget _zahl(int n, {Color farbe = kText}) => Text('$n', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 15, fontWeight: FontWeight.w700, color: n > 0 ? farbe : kTextMuted));
+Widget _zahl(int n, {Color farbe = kText}) => Text('$n', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 15, fontWeight: FontWeight.w700, color: n > 0 ? farbe : kTextMuted));
 
-Widget _wert(String text, {Color farbe = kText}) => Text(text, textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: farbe));
+Widget _wert(String text, {Color farbe = kText}) => Text(text, textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: farbe));
 
 // ------------------------------------------------------------------ Nutzung (aktuelle Zahlen)
 
@@ -96,7 +96,7 @@ class _NutzungAbschnitt extends ConsumerWidget {
       ]);
     }
     return BetriebAbschnitt(
-      label: '// nutzung',
+      label: 'Nutzung',
       kind: inhalt,
       hinweis: 'Aktiv heißt: ein Gerät hat sich angemeldet, erneuert oder abgeglichen. Es werden nur Zahlen gezählt, nie Inhalte, Titel oder Namen.',
     );
@@ -194,7 +194,7 @@ class _VerlaufAbschnitt extends ConsumerWidget {
       );
     }
     return BetriebAbschnitt(
-      label: '// verlauf',
+      label: 'Verlauf',
       kind: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -210,7 +210,7 @@ class _VerlaufAbschnitt extends ConsumerWidget {
                   excludeSemantics: true,
                   child: Material(
                     color: z.tage == t ? kAccentSoft : Colors.transparent,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999), side: BorderSide(color: z.tage == t ? kAccent : kBorder)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999), side: BorderSide(color: z.tage == t ? kAccent : Colors.transparent)),
                     clipBehavior: Clip.antiAlias,
                     child: InkWell(
                       onTap: () => unawaited(ref.read(betriebVerlaufProvider.notifier).laden(tage: t)),
@@ -279,7 +279,7 @@ class _WetterPushAbschnitt extends StatelessWidget {
       );
     }
     return BetriebAbschnitt(
-      label: '// wetter und push',
+      label: 'Wetter und Push',
       kind: LxCard(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
         child: Column(
@@ -310,7 +310,7 @@ class UpdateStandAbschnitt extends StatelessWidget {
   Widget build(BuildContext context) {
     final u = s.updates;
     final app = s.appVersion;
-    Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: v == null ? kTextMuted : kText));
+    Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: v == null ? kTextMuted : kText));
     final Widget geraete;
     if (u == null) {
       geraete = const LxCard(padding: EdgeInsets.all(14), child: Text('Dieser Server kennt den Update-Stand noch nicht (älterer Stand).', style: TextStyle(color: kTextMuted, fontSize: 13)));
@@ -331,7 +331,7 @@ class UpdateStandAbschnitt extends StatelessWidget {
       ]);
     }
     return BetriebAbschnitt(
-      label: '// update-stand',
+      label: 'Update-Stand',
       kind: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

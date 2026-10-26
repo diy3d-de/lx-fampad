@@ -57,7 +57,7 @@ Future<_Aufbau> _aufbau({required String rolle, bool schalter = true, bool schlu
 
 Future<void> _zurVerschluesselung(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Verschlüsselung');
+  await tippeText(tester, 'Nachrichten-Schutz');
 }
 
 Future<void> main() async {
@@ -71,8 +71,8 @@ Future<void> main() async {
       final a = await _aufbau(rolle: 'child', schalter: false);
       await starteApp(tester, a.env, skala: skala);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      expect(find.text('eltern-hilfe aktiv'), findsNothing);
-      await tippeText(tester, 'Verschlüsselung');
+      expect(find.text('Eltern-Hilfe aktiv'), findsNothing);
+      await tippeText(tester, 'Nachrichten-Schutz');
       expect(find.text('Eltern-Wiederherstellung'), findsNothing);
       expect(find.text('Kindern helfen'), findsNothing);
       expect(a.server.anfragen('GET /me/guardian-escrow'), isEmpty);
@@ -83,7 +83,7 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurVerschluesselung(tester);
       expect(find.text('Eltern-Wiederherstellung'), findsOneWidget);
-      expect(find.textContaining('aus · eltern helfen lassen'), findsOneWidget);
+      expect(find.textContaining('Aus. Du kannst deine Eltern helfen lassen'), findsOneWidget);
       pruefeLayout(tester, 'Verschlüsselung mit Eltern-Zeile');
 
       await tippeText(tester, 'Eltern-Wiederherstellung');
@@ -98,7 +98,7 @@ Future<void> main() async {
       await warte(tester);
       expect(find.textContaining('Deine Eltern (Mama) können dir jetzt helfen'), findsOneWidget);
       expect(a.srv.hinterlegungen[_kind]!.keys, [_mama]);
-      expect(find.text('aktiv'), findsWidgets);
+      expect(find.text('Aktiv'), findsWidgets);
       expect(find.widgetWithText(OutlinedButton, 'Hinterlegung aktualisieren'), findsOneWidget);
       pruefeLayout(tester, 'Eltern-Wiederherstellung aktiv');
 
@@ -106,11 +106,11 @@ Future<void> main() async {
       await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.byTooltip('Zurück'));
-      expect(find.text('eltern-hilfe aktiv'), findsOneWidget);
+      expect(find.text('Eltern-Hilfe aktiv'), findsOneWidget);
       pruefeLayout(tester, 'Profil mit Pille');
 
       // zurücknehmen: Rückfrage, dann aus
-      await tippeText(tester, 'Verschlüsselung');
+      await tippeText(tester, 'Nachrichten-Schutz');
       await tippeText(tester, 'Eltern-Wiederherstellung');
       await tippe(tester, find.widgetWithText(OutlinedButton, 'Zurücknehmen'));
       expect(find.text('Eltern-Wiederherstellung zurücknehmen?'), findsOneWidget);
@@ -121,7 +121,7 @@ Future<void> main() async {
       expect(a.srv.hinterlegungen[_kind] ?? {}, isEmpty);
       await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.byTooltip('Zurück'));
-      expect(find.text('eltern-hilfe aktiv'), findsNothing);
+      expect(find.text('Eltern-Hilfe aktiv'), findsNothing);
     });
 
     testWidgets('Gerät ohne Schlüssel: Eltern um Hilfe bitten, Wartefrist wird erklärt, Abbrechen ($s)', (tester) async {

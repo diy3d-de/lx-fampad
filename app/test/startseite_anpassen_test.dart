@@ -45,11 +45,11 @@ void main() {
   }
 
   /// Obere Kante des Labels einer Kachel (die Beschriftungen stehen in Großbuchstaben).
-  double oben(WidgetTester tester, String label) => tester.getTopLeft(find.text(label.toUpperCase())).dy;
+  double oben(WidgetTester tester, String label) => tester.getTopLeft(labelFinder(label)).dy;
 
   /// Reihenfolge der gefundenen Beschriftungen von oben nach unten.
   List<String> folge(WidgetTester tester, List<String> labels) {
-    final l = [for (final x in labels) if (find.text(x.toUpperCase()).evaluate().isNotEmpty) x];
+    final l = [for (final x in labels) if (labelFinder(x).evaluate().isNotEmpty) x];
     l.sort((a, b) => oben(tester, a).compareTo(oben(tester, b)));
     return l;
   }
@@ -67,7 +67,7 @@ void main() {
     await warte(tester);
   }
 
-  const mobilLabels = ['// einkaufsliste', '// als nächstes', '// aufgaben', '// standort'];
+  const mobilLabels = ['Einkaufsliste', 'Als nächstes', 'Aufgaben', 'Standort'];
 
   group('Handy-Startseite', () {
     testWidgets('Standardreihenfolge und die Zeile "Startseite anpassen"', (tester) async {
@@ -81,10 +81,10 @@ void main() {
     testWidgets('Aufgaben gedrückt halten und über die Einkaufsliste ziehen: neue Reihenfolge, gespeichert, nach Neustart wieder da', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein');
       await start(tester, speicher: speicher);
-      final von = tester.getCenter(find.text('// AUFGABEN'));
-      final nach = Offset(von.dx, tester.getTopLeft(find.text('// EINKAUFSLISTE')).dy - 6);
+      final von = tester.getCenter(labelFinder('Aufgaben'));
+      final nach = Offset(von.dx, tester.getTopLeft(labelFinder('Einkaufsliste')).dy - 6);
       await ziehe(tester, von, nach);
-      expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
+      expect(folge(tester, mobilLabels), ['Aufgaben', 'Einkaufsliste', 'Als nächstes', 'Standort']);
       // Geburtstage (ohne Treffer), Müll und Wetter (nicht verfügbar) werden nicht gezeichnet und behalten ihren Platz in der Liste
       expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'aufgaben', 'einkauf', 'geburtstage', 'termine', 'muell', 'wetter', 'standort', 'countdown', 'fristen', 'medikamente', 'zaehler']);
       // der Desktop-Schlüssel bleibt unberührt
@@ -92,23 +92,23 @@ void main() {
       // Neustart mit demselben Speicher
       await tester.pumpWidget(const SizedBox());
       await start(tester, speicher: speicher);
-      expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
+      expect(folge(tester, mobilLabels), ['Aufgaben', 'Einkaufsliste', 'Als nächstes', 'Standort']);
     });
 
     testWidgets('ein Tipp auf eine Kachel öffnet sie weiterhin (kein Ziehen)', (tester) async {
       await start(tester);
-      await tester.tap(find.text('// AUFGABEN'));
+      await tester.tap(labelFinder('Aufgaben'));
       await warte(tester);
-      expect(find.text('// AUFGABEN'), findsNothing); // Aufgaben-Tab statt Startseite
+      expect(labelFinder('Aufgaben'), findsNothing); // Aufgaben-Tab statt Startseite
     });
 
     testWidgets('normales Wischen über eine Kachel scrollt die Seite und ordnet nichts um', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein');
       await start(tester, speicher: speicher, groesse: const Size(360, 500));
-      final vorher = oben(tester, '// EINKAUFSLISTE');
-      await tester.drag(find.text('// EINKAUFSLISTE'), const Offset(0, -150));
+      final vorher = oben(tester, 'Einkaufsliste');
+      await tester.drag(labelFinder('Einkaufsliste'), const Offset(0, -150));
       await warte(tester);
-      expect(oben(tester, '// EINKAUFSLISTE'), lessThan(vorher - 100)); // die Seite hat gescrollt
+      expect(oben(tester, 'Einkaufsliste'), lessThan(vorher - 100)); // die Seite hat gescrollt
       expect(speicher.werte.containsKey(mKey), isFalse);
       expect(folge(tester, mobilLabels), mobilLabels.take(3));
     });
@@ -117,13 +117,13 @@ void main() {
       final speicher = MemoryFeiertageSpeicher('nein', {mKey: '["standort","gibt-es-nicht","aufgaben"]'});
       await start(tester, speicher: speicher);
       // übrige Kacheln kommen in Standardreihenfolge hinter die gemerkten
-      expect(folge(tester, mobilLabels), ['// standort', '// aufgaben', '// einkaufsliste', '// als nächstes']);
+      expect(folge(tester, mobilLabels), ['Standort', 'Aufgaben', 'Einkaufsliste', 'Als nächstes']);
     });
 
     testWidgets('ausgeblendete Kacheln fehlen auf der Startseite', (tester) async {
       await start(tester, speicher: MemoryFeiertageSpeicher('nein', {mAus: '["aufgaben","unbekannt"]'}));
-      expect(find.text('// AUFGABEN'), findsNothing);
-      expect(find.text('// EINKAUFSLISTE'), findsOneWidget);
+      expect(labelFinder('Aufgaben'), findsNothing);
+      expect(labelFinder('Einkaufsliste'), findsOneWidget);
     });
 
     testWidgets('defekter gespeicherter Wert: Standardreihenfolge', (tester) async {
@@ -136,7 +136,7 @@ void main() {
       expect(folge(tester, mobilLabels), mobilLabels);
       await c.read(startseiteMobilProvider.notifier).schieben(['einkauf', 'termine', 'aufgaben', 'standort'], 'aufgaben', -2);
       await warte(tester);
-      expect(folge(tester, mobilLabels), ['// aufgaben', '// einkaufsliste', '// als nächstes', '// standort']);
+      expect(folge(tester, mobilLabels), ['Aufgaben', 'Einkaufsliste', 'Als nächstes', 'Standort']);
       expect(tester.takeException(), isNull);
     });
 
@@ -146,10 +146,10 @@ void main() {
       env.speicher = langsam;
       await starteApp(tester, env);
       // zum ersten Bild war der Speicher noch nicht fertig: nichts gezeichnet, also auch keine Standard-Reihenfolge, die dann springt
-      expect(find.text('// STANDORT'), findsNothing);
+      expect(labelFinder('Standort'), findsNothing);
       langsam.freigeben();
       await warte(tester);
-      expect(folge(tester, mobilLabels).first, '// standort');
+      expect(folge(tester, mobilLabels).first, 'Standort');
     });
   });
 
@@ -176,6 +176,8 @@ void main() {
     Future<ProviderContainer> oeffnen(WidgetTester tester, {MemoryFeiertageSpeicher? speicher, double skala = 1.0, Size groesse = const Size(360, 1800)}) async {
       final c = await start(tester, speicher: speicher, skala: skala, groesse: groesse);
       await tester.scrollUntilVisible(find.text('Startseite anpassen'), 200, scrollable: find.byType(Scrollable).first);
+      Scrollable.ensureVisible(tester.element(find.text('Startseite anpassen')), alignment: 0.3);
+      await tester.pump(const Duration(milliseconds: 300));
       await tester.tap(find.text('Startseite anpassen'));
       await warte(tester);
       return c;
@@ -232,7 +234,7 @@ void main() {
       await tester.tap(find.text('Fertig'));
       await warte(tester);
       expect(find.byType(StartseiteAnpassenScreen), findsNothing);
-      expect(find.text('// STANDORT'), findsOneWidget);
+      expect(labelFinder('Standort'), findsOneWidget);
     });
 
     testWidgets('Ausblenden wirkt auf der Startseite dahinter, Einblenden bringt die Kachel an ihre Stelle zurück', (tester) async {
@@ -241,7 +243,7 @@ void main() {
       await warte(tester);
       await tester.tap(find.text('Fertig'));
       await warte(tester);
-      expect(find.text('// AUFGABEN'), findsNothing);
+      expect(labelFinder('Aufgaben'), findsNothing);
       await tester.scrollUntilVisible(find.text('Startseite anpassen'), 200, scrollable: find.byType(Scrollable).first);
       await tester.tap(find.text('Startseite anpassen'));
       await warte(tester);
@@ -314,8 +316,8 @@ void main() {
     testWidgets('Ziehen mit Textskala 1.5 funktioniert ebenso', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein');
       await start(tester, speicher: speicher, skala: 1.5);
-      final von = tester.getCenter(find.text('// ALS NÄCHSTES'));
-      final nach = Offset(von.dx, tester.getTopLeft(find.text('// EINKAUFSLISTE')).dy - 6);
+      final von = tester.getCenter(labelFinder('Als nächstes'));
+      final nach = Offset(von.dx, tester.getTopLeft(labelFinder('Einkaufsliste')).dy - 6);
       await ziehe(tester, von, nach);
       expect(kennungenAusText(speicher.werte[mKey]), ['schnellzugriff', 'termine', 'einkauf', 'geburtstage', 'aufgaben', 'muell', 'wetter', 'standort', 'countdown', 'fristen', 'medikamente', 'zaehler']);
       expect(tester.takeException(), isNull);
@@ -324,21 +326,21 @@ void main() {
 
   group('Desktop-Raster', () {
     const gross = Size(1440, 1500);
-    const rasterLabels = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben', '// familie & orte', '// standort'];
+    const rasterLabels = ['Heute und morgen', 'Chat · Familie', 'Einkaufsliste', 'Aufgaben', 'Familie und Orte', 'Standort'];
 
     testWidgets('Standardreihenfolge, Zeile "Startseite anpassen" unter dem Raster', (tester) async {
       await start(tester, groesse: gross);
       expect(folge(tester, rasterLabels).toSet(), rasterLabels.toSet());
-      expect(oben(tester, '// heute & morgen'), lessThan(oben(tester, '// aufgaben')));
+      expect(oben(tester, 'Heute und morgen'), lessThan(oben(tester, 'Aufgaben')));
       expect(find.text('Startseite anpassen'), findsOneWidget);
-      expect(oben(tester, '// standort'), lessThan(tester.getTopLeft(find.text('Startseite anpassen')).dy));
+      expect(oben(tester, 'Standort'), lessThan(tester.getTopLeft(find.text('Startseite anpassen')).dy));
     });
 
     testWidgets('Kachel ziehen: Zielstelle als Lücke, Ablegen sortiert um und speichert nur den Desktop-Schlüssel', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein');
       await start(tester, speicher: speicher, groesse: gross);
-      final von = tester.getCenter(find.text('// AUFGABEN'));
-      final ziel = tester.getCenter(find.text('// HEUTE & MORGEN')) + const Offset(0, 60);
+      final von = tester.getCenter(labelFinder('Aufgaben'));
+      final ziel = tester.getCenter(labelFinder('Heute und morgen')) + const Offset(0, 60);
       final g = await tester.startGesture(von);
       await tester.pump(const Duration(milliseconds: 700));
       for (var i = 1; i <= 12; i++) {
@@ -355,7 +357,7 @@ void main() {
       // auch nicht angezeigte Kacheln (Müll, Wetter, Dateien ohne Dateiablage) behalten ihren Eintrag
       expect(kennungenAusText(speicher.werte[dKey]), ['aufgaben', 'termine', 'chat', 'dateien', 'einkauf', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente', 'zaehler']);
       expect(speicher.werte.containsKey(mKey), isFalse);
-      expect(oben(tester, '// aufgaben'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
+      expect(oben(tester, 'Aufgaben'), lessThanOrEqualTo(oben(tester, 'Heute und morgen')));
       expect(tester.takeException(), isNull);
     });
 
@@ -364,7 +366,7 @@ void main() {
       await start(tester, speicher: speicher, groesse: const Size(1440, 600));
       final scroll = tester.state<ScrollableState>(find.descendant(of: find.byType(DesktopHome), matching: find.byType(Scrollable)).first);
       expect(scroll.position.pixels, 0);
-      final von = tester.getCenter(find.text('// HEUTE & MORGEN'));
+      final von = tester.getCenter(labelFinder('Heute und morgen'));
       final g = await tester.startGesture(von);
       await tester.pump(const Duration(milliseconds: 700));
       await g.moveTo(von + const Offset(30, 60));
@@ -386,16 +388,16 @@ void main() {
     testWidgets('neu gestartet: gespeicherte Reihenfolge und ausgeblendete Kacheln gelten', (tester) async {
       final speicher = MemoryFeiertageSpeicher('nein', {dKey: '["standort","chat"]', 'startseite_ausgeblendet_desktop': '["aufgaben"]'});
       await start(tester, speicher: speicher, groesse: gross);
-      expect(find.text('// AUFGABEN'), findsNothing);
-      expect(oben(tester, '// standort'), lessThanOrEqualTo(oben(tester, '// chat · familie')));
-      expect(oben(tester, '// chat · familie'), lessThanOrEqualTo(oben(tester, '// heute & morgen')));
+      expect(labelFinder('Aufgaben'), findsNothing);
+      expect(oben(tester, 'Standort'), lessThanOrEqualTo(oben(tester, 'Chat · Familie')));
+      expect(oben(tester, 'Chat · Familie'), lessThanOrEqualTo(oben(tester, 'Heute und morgen')));
     });
 
     testWidgets('ein Klick auf eine Kachel öffnet sie weiterhin', (tester) async {
       await start(tester, groesse: gross);
-      await tester.tap(find.text('// STANDORT'));
+      await tester.tap(labelFinder('Standort'));
       await warte(tester);
-      expect(find.text('// MEIN STANDORT'), findsOneWidget);
+      expect(labelFinder('Mein Standort'), findsOneWidget);
     });
 
     testWidgets('Anpassen-Seite im Desktop: im Inhaltsbereich, mit Seitenleiste; Schalter blendet die Kachel aus', (tester) async {
@@ -415,7 +417,7 @@ void main() {
       await tester.tap(find.text('Fertig'));
       await warte(tester);
       expect(find.byType(StartseiteAnpassenScreen), findsNothing);
-      expect(find.text('// AUFGABEN'), findsNothing);
+      expect(labelFinder('Aufgaben'), findsNothing);
       pruefeLayout(tester, 'Desktop nach Anpassen');
     });
   });
@@ -500,7 +502,7 @@ void main() {
   group('Kachel erscheint oder verschwindet während des Ziehens', () {
     testWidgets('Handy: Kachel wird aus- und wieder eingeblendet, während gezogen wird: keine Ausnahme, Liste bleibt stimmig', (tester) async {
       final c = await start(tester, groesse: const Size(360, 1400));
-      final von = tester.getCenter(find.text('// AUFGABEN'));
+      final von = tester.getCenter(labelFinder('Aufgaben'));
       final g = await tester.startGesture(von);
       await tester.pump(const Duration(milliseconds: 700));
       await g.moveBy(const Offset(0, -80));
@@ -511,10 +513,10 @@ void main() {
       await tester.pump(const Duration(milliseconds: 100));
       await g.up();
       await warte(tester);
-      expect(find.text('// STANDORT'), findsNothing);
+      expect(labelFinder('Standort'), findsNothing);
       await c.read(startseiteMobilProvider.notifier).anzeigen('standort', true);
       await warte(tester);
-      expect(find.text('// STANDORT'), findsOneWidget);
+      expect(labelFinder('Standort'), findsOneWidget);
       expect(tester.takeException(), isNull);
       expect(folge(tester, mobilLabels).toSet(), mobilLabels.toSet());
     });
@@ -522,7 +524,7 @@ void main() {
     testWidgets('Desktop: die gezogene Kachel verschwindet: der Zug endet ohne Lücke, ohne Ausnahme und ohne Ablegen', (tester) async {
       final sp = _ZaehlenderSpeicher();
       final c = await start(tester, eigener: sp, groesse: const Size(1440, 1500));
-      final g = await tester.startGesture(tester.getCenter(find.text('// AUFGABEN')));
+      final g = await tester.startGesture(tester.getCenter(labelFinder('Aufgaben')));
       await tester.pump(const Duration(milliseconds: 700));
       await g.moveBy(const Offset(-200, 0));
       await tester.pump(const Duration(milliseconds: 100));
@@ -535,17 +537,17 @@ void main() {
       await g.up();
       await warte(tester);
       expect(tester.takeException(), isNull);
-      expect(find.text('// AUFGABEN'), findsNothing);
+      expect(labelFinder('Aufgaben'), findsNothing);
       expect(sp.schreibvorgaenge, davor + 2, reason: 'nur das Ausblenden wurde gespeichert, das Ablegen schreibt nichts');
       expect(find.byType(StartseiteLuecke), findsNothing);
     });
 
     testWidgets('Desktop: eine zweite Kachel kann nicht gleichzeitig gezogen werden', (tester) async {
       await start(tester, groesse: const Size(1440, 1500));
-      final g1 = await tester.startGesture(tester.getCenter(find.text('// AUFGABEN')), pointer: 1);
+      final g1 = await tester.startGesture(tester.getCenter(labelFinder('Aufgaben')), pointer: 1);
       await tester.pump(const Duration(milliseconds: 700));
       await g1.moveBy(const Offset(-50, 0));
-      final g2 = await tester.startGesture(tester.getCenter(find.text('// HEUTE & MORGEN')), pointer: 2);
+      final g2 = await tester.startGesture(tester.getCenter(labelFinder('Heute und morgen')), pointer: 2);
       await tester.pump(const Duration(milliseconds: 700));
       await g2.moveBy(const Offset(50, 0));
       await tester.pump(const Duration(milliseconds: 100));
@@ -560,11 +562,11 @@ void main() {
   group('Desktop: Ablegen, Abbrechen, bedingte Kachel in der Mitte', () {
     const gross = Size(1440, 1500);
     const seitenleiste = Offset(60, 700);
-    const reihe = ['// heute & morgen', '// chat · familie', '// einkaufsliste', '// aufgaben'];
+    const reihe = ['Heute und morgen', 'chat · familie', 'einkaufsliste', 'aufgaben'];
 
     Future<TestGesture> zieheZu(WidgetTester tester, String von, String zu) async {
-      final anfang = tester.getCenter(find.text(von));
-      final ziel = tester.getCenter(find.text(zu)) + const Offset(0, 60);
+      final anfang = tester.getCenter(labelFinder(von));
+      final ziel = tester.getCenter(labelFinder(zu)) + const Offset(0, 60);
       final g = await tester.startGesture(anfang);
       await tester.pump(const Duration(milliseconds: 700));
       for (var i = 1; i <= 12; i++) {
@@ -578,7 +580,7 @@ void main() {
     testWidgets('Loslassen außerhalb (Seitenleiste): es gilt die zuletzt angezeigte Zielstelle', (tester) async {
       final sp = MemoryFeiertageSpeicher('nein');
       await start(tester, speicher: sp, groesse: gross);
-      final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
+      final g = await zieheZu(tester, 'Aufgaben', 'Heute und morgen');
       await g.moveTo(seitenleiste);
       await tester.pump(const Duration(milliseconds: 100));
       await g.up();
@@ -591,7 +593,7 @@ void main() {
       final sp = _ZaehlenderSpeicher();
       await start(tester, eigener: sp, groesse: gross);
       final davor = folge(tester, reihe);
-      final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
+      final g = await zieheZu(tester, 'Aufgaben', 'Heute und morgen');
       await tester.sendKeyEvent(LogicalKeyboardKey.escape);
       await tester.pump(const Duration(milliseconds: 100));
       await g.up();
@@ -604,7 +606,7 @@ void main() {
     testWidgets('an Ort und Stelle loslassen: keine Änderung, nichts wird geschrieben', (tester) async {
       final sp = _ZaehlenderSpeicher();
       await start(tester, eigener: sp, groesse: gross);
-      final von = tester.getCenter(find.text('// AUFGABEN'));
+      final von = tester.getCenter(labelFinder('Aufgaben'));
       await ziehe(tester, von, von + const Offset(6, 6), schritte: 3);
       expect(sp.schreibvorgaenge, 0);
       expect(tester.takeException(), isNull);
@@ -619,8 +621,8 @@ void main() {
         groesse: gross,
         ueberschreibungen: [desktopVerfuegbarProvider.overrideWith((ref) => KachelVerfuegbarkeit(angeboten: angeboten))],
       );
-      expect(find.text('// EINKAUFSLISTE'), findsNothing);
-      final g = await zieheZu(tester, '// AUFGABEN', '// HEUTE & MORGEN');
+      expect(labelFinder('Einkaufsliste'), findsNothing);
+      final g = await zieheZu(tester, 'Aufgaben', 'Heute und morgen');
       await g.up();
       await warte(tester);
       expect(kennungenAusText(sp.werte[dKey]), ['aufgaben', 'termine', 'einkauf', 'chat', 'dateien', 'familie', 'standort', 'muell', 'wetter', 'countdown', 'fristen', 'medikamente', 'zaehler']);

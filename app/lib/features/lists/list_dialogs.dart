@@ -38,22 +38,22 @@ class _AuswahlKnopfState extends State<AuswahlKnopf> {
       onTap: widget.onTap,
       excludeSemantics: true,
       child: InkWell(
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
         onTap: widget.onTap,
         onFocusChange: (f) => setState(() => _fokus = f),
         child: Container(
           constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
           decoration: BoxDecoration(
-            color: gewaehlt ? kAccentSoft : null,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _fokus ? kAccent : (gewaehlt ? kAccent.withValues(alpha: 0.4) : kBorder), width: _fokus ? 2 : 1),
+            color: gewaehlt ? kAccent : kSurface2,
+            borderRadius: BorderRadius.circular(12),
+            border: _fokus ? Border.all(color: kAccentStrong, width: 2) : null,
           ),
           // Align mit widthFactor: der Knopf ist so breit wie sein Text (Container mit alignment füllte die ganze Breite und stapelte die Knöpfe in einem Wrap)
           child: Align(
             alignment: Alignment.center,
             widthFactor: 1,
-            child: Text(widget.text, style: TextStyle(fontSize: 14, fontWeight: gewaehlt ? FontWeight.w600 : FontWeight.w400, color: gewaehlt ? kAccent : kTextMuted)),
+            child: Text(widget.text, style: TextStyle(fontSize: 14, fontWeight: gewaehlt ? FontWeight.w600 : FontWeight.w400, color: gewaehlt ? kOnAccent : kTextMuted)),
           ),
         ),
       ),
@@ -116,7 +116,7 @@ class _NeueListeState extends State<_NeueListe> {
             onSubmitted: (_) => _anlegen(),
           ),
           const SizedBox(height: 16),
-          const MonoLabel('// art'),
+          const MonoLabel('Art'),
           const SizedBox(height: 8),
           Wrap(
             spacing: 8,
@@ -125,7 +125,7 @@ class _NeueListeState extends State<_NeueListe> {
           ),
           if (widget.rechte.freigaben.length > 1) ...[
             const SizedBox(height: 16),
-            const MonoLabel('// sichtbar für'),
+            const MonoLabel('Wer sieht das?'),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -197,7 +197,7 @@ class _TextDialogState extends State<_TextDialog> {
 Future<ListenSicht?> sichtDialog(BuildContext context, ListenSicht aktuell) => showDialog<ListenSicht>(useRootNavigator: false,
   context: context,
   builder: (c) => AlertDialog(
-    title: const Text('Sichtbar für'),
+    title: const Text('Wer sieht das?'),
     content: Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -291,7 +291,7 @@ class _EintragBlattState extends State<_EintragBlatt> {
           ),
           if (widget.mitKategorie) ...[
             const SizedBox(height: 12),
-            const MonoLabel('// kategorie'),
+            const MonoLabel('Kategorie'),
             const SizedBox(height: 8),
             Wrap(
               spacing: 8,
@@ -335,7 +335,7 @@ Future<String?> zuweisenBlatt(BuildContext context, {required List<UserDto> pers
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
         children: [
-          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('// zuständig')),
+          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('Wer macht das?')),
           ListTile(
             minTileHeight: 52,
             leading: const Icon(Icons.person_off_outlined, color: kTextMuted),
@@ -369,7 +369,7 @@ Future<String?> vorlageBlatt(BuildContext context, {required List<Liste> vorlage
         shrinkWrap: true,
         padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
         children: [
-          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('// vorlage wählen')),
+          const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('Vorlage wählen')),
           if (vorlagen.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(12, 8, 12, 8),

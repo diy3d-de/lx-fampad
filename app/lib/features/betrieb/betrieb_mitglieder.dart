@@ -76,7 +76,7 @@ class _BetriebMitgliederSeiteState extends ConsumerState<BetriebMitgliederSeite>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// mitglieder und geräte'),
+        const MonoLabel('Mitglieder und Geräte'),
         const SizedBox(height: 8),
         if (z.fehler != null) ...[MeldungsBox(fehlerText(z.fehler!)), const SizedBox(height: 12)],
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
@@ -160,7 +160,7 @@ class _MitgliedKarte extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 8),
-                StatusPill('● ${ampelText(s.ampel)}', color: ampelFarbe(s.ampel)),
+                StatusPill(ampelText(s.ampel), color: ampelFarbe(s.ampel)),
               ],
             ),
             const SizedBox(height: 8),
@@ -168,7 +168,7 @@ class _MitgliedKarte extends StatelessWidget {
             const SizedBox(height: 4),
             Text(
               'zuletzt angemeldet: ${m.letzteAnmeldung == null ? '–' : zeitText(m.letzteAnmeldung!, jetzt)}${anmeldung.isEmpty ? '' : ' · $anmeldung'}',
-              style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+              style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
             ),
             if (m.geraeteZurueck > 0) ...[
               const SizedBox(height: 8),
@@ -213,11 +213,11 @@ class _MitgliedKarte extends StatelessWidget {
             const SizedBox(height: 10),
             const Divider(height: 1, color: kBorderSoft),
             const SizedBox(height: 8),
-            MonoLabel('// $geraeteText'),
+            MonoLabel(geraeteText),
             for (final g in m.geraete) _GeraetZeile(g: g, jetzt: jetzt),
             if (s.ereignisse.isNotEmpty) ...[
               const SizedBox(height: 10),
-              const MonoLabel('// letzte schlüsselereignisse'),
+              const MonoLabel('Letzte Schlüsselereignisse'),
               const SizedBox(height: 4),
               for (final e in s.ereignisse)
                 Padding(
@@ -289,7 +289,7 @@ class _GeraetZeile extends StatelessWidget {
                   children: [
                     Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text(info, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(info, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     // nur wer zurückliegt, bekommt eine eigene Marke (sonst wäre jede Zeile bunt)
                     if (g.appStand != null && g.appStand!.zurueck) ...[const SizedBox(height: 4), StatusPill(appStandText(g.appStand!), color: appStandFarbe(g.appStand!))],
                   ],

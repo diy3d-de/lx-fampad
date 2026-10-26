@@ -66,7 +66,7 @@ class ZaehlerScreen extends ConsumerWidget {
       ],
     );
     if (!eingebettet) {
-      return AuthSeite(label: '// haushalt', titel: 'Zähler', maxBreite: kMaxContentWidth, fussleiste: aktionen, kinder: kinder);
+      return AuthSeite(label: 'Haushalt', titel: 'Zähler', maxBreite: kMaxContentWidth, fussleiste: aktionen, kinder: kinder);
     }
     return Material(
       type: MaterialType.transparency,
@@ -130,7 +130,7 @@ class ZaehlerScreen extends ConsumerWidget {
       for (final e in daten.nichtLesbar) _NichtLesbarZeile(eintrag: e),
       if (daten.archiviert.isNotEmpty) ...[
         const SizedBox(height: 8),
-        const MonoLabel('// archiviert', color: kTextMuted),
+        const MonoLabel('Archiviert', color: kTextMuted),
         const SizedBox(height: 6),
         for (final r in daten.archiviert) _ArchivZeile(reihe: r),
       ],
@@ -170,7 +170,7 @@ class _FaelligKarte extends StatelessWidget {
       label: 'Ablesen fällig. $titel',
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(18)),
         child: Row(
           children: [
             const Icon(Icons.schedule, color: kWarn),
@@ -211,7 +211,7 @@ class _KeinWertKarte extends StatelessWidget {
       label: 'Kein Wert von Home Assistant. $titel',
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(18)),
         child: Row(
           children: [
             const Icon(Icons.sync_problem, color: kWarn),
@@ -276,13 +276,13 @@ class _KachelKarte extends StatelessWidget {
     // fällig ist bei automatischen Zählern nur "kein Wert gekommen", nie "ablesen"
     final nurAutomatischFaellig = k.reihen.where((x) => reiheFaelligkeit(x, heute).faellig).every((x) => x.inhalt.automatisch);
     final pille = switch (f.art) {
-      FaelligkeitsArt.faellig => StatusPill(k.reihen.every((x) => x.monatlich) ? 'WERT FÄLLIG' : (nurAutomatischFaellig ? 'KEIN WERT' : 'ABLESEN FÄLLIG'), color: kWarn),
-      FaelligkeitsArt.aktuell => StatusPill(k.istGruppe ? '${k.reihen.length} ZÄHLER · AKTUELL' : (f.termin == null ? 'AKTUELL' : 'NÄCHSTE ${tagKurz(f.termin!)}'), color: kTerminal),
-      FaelligkeitsArt.keinRhythmus => StatusPill(erzeugung && !k.istGruppe ? 'ERZEUGUNG' : 'KEIN RHYTHMUS', color: kTextMuted),
+      FaelligkeitsArt.faellig => StatusPill(k.reihen.every((x) => x.monatlich) ? 'Wert fällig' : (nurAutomatischFaellig ? 'Kein Wert' : 'Ablesen fällig'), color: kWarn),
+      FaelligkeitsArt.aktuell => StatusPill(k.istGruppe ? '${k.reihen.length} Zähler · aktuell' : (f.termin == null ? 'Aktuell' : 'Nächste ${tagKurz(f.termin!)}'), color: kTerminal),
+      FaelligkeitsArt.keinRhythmus => StatusPill(erzeugung && !k.istGruppe ? 'Erzeugung' : 'Kein Rhythmus', color: kTextMuted),
     };
     final automatisch = k.reihen.where((r) => r.inhalt.automatisch).length;
     // die Herkunft ist nur bei automatischen Zählern eine Information; bei allen anderen wäre "von Hand" eine Pille ohne Nutzen
-    final herkunftText = !herkunft || automatisch == 0 ? null : (automatisch == k.reihen.length ? '⇄ HOME ASSISTANT' : 'GEMISCHT');
+    final herkunftText = !herkunft || automatisch == 0 ? null : (automatisch == k.reihen.length ? 'Aus Home Assistant' : 'Gemischt');
     final monatsZeile = monat == null ? null : '${monatName(monat.monat)}: ${verbrauchAnzeige(monat.milli, einheit)}';
     final prozent = monat?.prozent;
     final semantik = StringBuffer('${k.titel}. $haupt');
@@ -312,7 +312,7 @@ class _KachelKarte extends StatelessWidget {
             ),
             if (herkunftText != null) ...[const SizedBox(height: 6), Align(alignment: Alignment.centerLeft, child: StatusPill(herkunftText, color: kAccent))],
             const SizedBox(height: 8),
-            Text(haupt, style: TextStyle(fontFamily: kFontMono, fontSize: 20, fontWeight: FontWeight.w700, color: farbe)),
+            Text(haupt, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 20, fontWeight: FontWeight.w700, color: farbe)),
             if (unter != null) Text(unter, style: const TextStyle(fontSize: 12, color: kTextMuted)),
             if (solar == null && ((monatsZeile != null && !k.istGruppe) || prozent != null)) ...[
               const SizedBox(height: 4),
@@ -339,7 +339,7 @@ class _KachelKarte extends StatelessWidget {
                     children: [
                       Container(width: 8, height: 8, margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(shape: BoxShape.circle, color: zaehlerFarbe(m.art))),
                       Expanded(child: Text(m.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                      Text(m.monatlich ? (m.letzterMonat == null ? '–' : '${monatKurz(m.letzterMonat!.monat)} ${verbrauchAnzeige(m.letzterMonat!.milli, m.inhalt.einheit)}') : (m.letzter == null ? '–' : '${standAnzeige(m.letzter!.milli)} ${m.inhalt.einheit}'), style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                      Text(m.monatlich ? (m.letzterMonat == null ? '–' : '${monatKurz(m.letzterMonat!.monat)} ${verbrauchAnzeige(m.letzterMonat!.milli, m.inhalt.einheit)}') : (m.letzter == null ? '–' : '${standAnzeige(m.letzter!.milli)} ${m.inhalt.einheit}'), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                     ],
                   ),
                 ),
@@ -378,7 +378,7 @@ class _PruefenKarte extends StatelessWidget {
       label: '$titel. Werte aus Home Assistant warten auf deine Entscheidung.',
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(18)),
         child: Row(
           children: [
             const Icon(Icons.rule, color: kWarn),
@@ -444,7 +444,7 @@ class _HaZeile extends ConsumerWidget {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Text('Home Assistant', style: TextStyle(fontWeight: FontWeight.w600)),
-                    if (status.isNotEmpty) Text(status, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    if (status.isNotEmpty) Text(status, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   ],
                 ),
               ),
@@ -494,7 +494,7 @@ class _NichtLesbarZeile extends StatelessWidget {
       label: 'Ein Zähler lässt sich gerade nicht lesen: ${eintrag.ansicht.hinweis ?? 'unbekannt'}',
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(18)),
         child: Row(
           children: [
             const Icon(Icons.lock_outline, size: 18, color: kTextMuted),

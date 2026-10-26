@@ -25,7 +25,7 @@ class WandtabletEinstellungenScreen extends ConsumerWidget {
     // eine gewählte Liste, die es nicht mehr gibt, gilt als "keine"
     final gewaehlt = listen.any((l) => l.id == e.liste) ? e.liste : null;
     return AuthSeite(
-      label: '// anzeige',
+      label: 'Anzeige',
       titel: 'Wandtablet-Modus',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -44,7 +44,7 @@ class WandtabletEinstellungenScreen extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// dieses gerät'),
+        const MonoLabel('Dieses Gerät'),
         const SizedBox(height: 8),
         _Schalter(
           icon: Icons.play_circle_outline,
@@ -114,7 +114,7 @@ class _Schalter extends StatelessWidget {
         contentPadding: const EdgeInsets.symmetric(horizontal: 8),
         secondary: Icon(icon, color: kAccent, size: 22),
         title: Text(titel, style: const TextStyle(fontWeight: FontWeight.w600)),
-        subtitle: Text(untertitel, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+        subtitle: Text(untertitel, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         value: wert,
         onChanged: onChanged,
       ),

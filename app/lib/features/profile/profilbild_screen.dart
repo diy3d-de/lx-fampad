@@ -112,7 +112,7 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen>
     return PopScope(
       canPop: !laeuft,
       child: AuthSeite(
-        label: '// profil',
+        label: 'Profil',
         titel: 'Profilbild ändern',
         maxBreite: kMaxContentWidth,
         kinder: [
@@ -151,7 +151,7 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const MonoLabel('// vorschau', color: kTextMuted),
+                      const MonoLabel('Vorschau', color: kTextMuted),
                       const SizedBox(height: 4),
                       Text(
                         name,
@@ -171,7 +171,7 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen>
                                   ? 'noch kein Bild'
                                   : 'aktuelles Bild'),
                         style: const TextStyle(
-                          fontFamily: kFontMono,
+                          fontFamily: kFontSans, fontFeatures: kZiffern,
                           fontSize: 12,
                           color: kTextMuted,
                         ),
@@ -194,7 +194,7 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen>
           ],
           if (_reiter == 0)
             for (final g in AvatarGruppe.values) ...[
-              MonoLabel('// ${g.label.toLowerCase()}', color: kTextMuted),
+              MonoLabel(g.label, color: kTextMuted),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -294,7 +294,6 @@ class _Reiter extends StatelessWidget {
     padding: const EdgeInsets.all(4),
     decoration: BoxDecoration(
       color: kBgElevated,
-      border: Border.all(color: kBorder),
       borderRadius: BorderRadius.circular(12),
     ),
     child: Row(
@@ -319,7 +318,7 @@ class _Reiter extends StatelessWidget {
                         text,
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                          fontFamily: kFontMono,
+                          fontFamily: kFontSans, fontFeatures: kZiffern,
                           fontWeight: FontWeight.w600,
                           fontSize: 13,
                           color: aktiv == i ? kOnAccent : kTextMuted,

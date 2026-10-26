@@ -43,12 +43,12 @@ void main() {
       final env = await angemeldeteUmgebung(server: _server(eigene: 'elternteil', ben: 'sonstige'));
       await starteApp(tester, env, skala: skala);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      expect(find.text('Admin'), findsOneWidget);
+      expect(find.text('Admin'), findsWidgets);
       expect(find.text('Elternteil'), findsOneWidget); // Pille in der Kopfkarte
       pruefeLayout(tester, 'Profil mit Familienrolle');
       await tippe(tester, find.text('Mitglieder und Einladungen'));
       expect(find.byType(AdminScreen), findsOneWidget);
-      expect(find.text('Admin'), findsOneWidget);
+      expect(find.text('Admin'), findsWidgets);
       expect(find.text('Elternteil'), findsOneWidget);
       expect(find.text('Kind'), findsOneWidget);
       expect(find.text('Sonstige'), findsOneWidget);
@@ -83,7 +83,7 @@ void main() {
     expect(puts, hasLength(1));
     expect(puts.single.json, {'familyRole': 'mutter'});
     expect(find.text('Mutter'), findsOneWidget); // Pille in der Kopfkarte
-    expect(find.text('Admin'), findsOneWidget); // Rolle bleibt
+    expect(find.text('Admin'), findsWidgets); // Rolle bleibt
   });
 
   testWidgets('Profil: "Keine Angabe" löscht die Familienrolle (null)', (tester) async {
@@ -115,7 +115,7 @@ void main() {
   testWidgets('Desktop-Seitenleiste: Profilkachel zeigt Rolle und Familienrolle', (tester) async {
     final env = await angemeldeteUmgebung(server: _server(eigene: 'elternteil'));
     await starteApp(tester, env, groesse: const Size(1280, 800));
-    expect(find.text('Admin'), findsOneWidget);
+    expect(find.text('Admin'), findsWidgets);
     expect(find.text('Elternteil'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -123,7 +123,7 @@ void main() {
   testWidgets('Desktop-Seitenleiste bei Textskala 1.5: zwei Pillen in der Profilkachel ohne Überlauf', (tester) async {
     final env = await angemeldeteUmgebung(server: _server(eigene: 'elternteil'));
     await starteApp(tester, env, groesse: const Size(1280, 800), skala: 1.5);
-    expect(find.text('Admin'), findsOneWidget);
+    expect(find.text('Admin'), findsWidgets);
     expect(find.text('Elternteil'), findsOneWidget);
     pruefeLayout(tester, 'Desktop-Profilkachel mit zwei Pillen');
   });

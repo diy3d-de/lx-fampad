@@ -97,12 +97,12 @@ class SyncEngine {
         if (await store.offeneAnzahl() > 0 && ops.isNotEmpty) continue; // weitere Ops (mehr als eine Anfrage voll oder neu dazugekommen)
         return SyncErgebnis(SyncAusgang.ok, hinweise: hinweise, ops: gesendet, rev: rev);
       }
-      return SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: 'Der Abgleich hat nicht abgeschlossen.', ops: gesendet);
+      return SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: 'Das Übertragen hat nicht abgeschlossen.', ops: gesendet);
     } on ApiException catch (e) {
       return _aus(e, hinweise, gesendet);
     } catch (_) {
       // lokale Datenbank oder unerwartete Daten: nie Interna zeigen
-      return SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: 'Der Abgleich ist fehlgeschlagen.', ops: gesendet);
+      return SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: 'Das Übertragen hat nicht geklappt.', ops: gesendet);
     }
   }
 

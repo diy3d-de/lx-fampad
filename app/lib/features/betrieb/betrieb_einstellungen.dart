@@ -36,7 +36,7 @@ class BetriebEinstellungenSeite extends ConsumerWidget {
         const SizedBox(height: 20),
         _HinweisKarte(zustand: stand),
         const SizedBox(height: 20),
-        const MonoLabel('// konfiguration'),
+        const MonoLabel('Konfiguration'),
         const SizedBox(height: 8),
         if (konfig.wert == null)
           Text(konfig.fehler != null ? _nichtVerfuegbarText(konfig.fehler!) : 'Die Konfiguration wird geladen …', style: const TextStyle(color: kTextMuted, fontSize: 13))
@@ -118,9 +118,9 @@ class _WartungKarteState extends ConsumerState<_WartungKarte> with AktionsZustan
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                StatusPill(w.aktiv ? '● Wartung läuft' : '● aus', color: w.aktiv ? kWarn : kTextMuted),
-                if (w.aktiv && w.seit != null) Text('seit ${endeText(w.seit!, jetzt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-                if (w.aktiv) Text(w.bis == null ? 'ohne Ende' : 'bis ${endeText(w.bis!, jetzt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                StatusPill(w.aktiv ? 'Wartung läuft' : 'aus', color: w.aktiv ? kWarn : kTextMuted),
+                if (w.aktiv && w.seit != null) Text('seit ${endeText(w.seit!, jetzt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+                if (w.aktiv) Text(w.bis == null ? 'ohne Ende' : 'bis ${endeText(w.bis!, jetzt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
           ),
@@ -136,7 +136,7 @@ class _WartungKarteState extends ConsumerState<_WartungKarte> with AktionsZustan
           if (w.aktiv)
             HauptKnopf(text: 'Wartung beenden', icon: Icons.check_circle_outline, laeuft: laeuft, onPressed: laeuft ? null : () => unawaited(_ausschalten()))
           else ...[
-            const MonoLabel('// automatisches ende', color: kTextMuted),
+            const MonoLabel('Automatisches Ende', color: kTextMuted),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -155,7 +155,7 @@ class _WartungKarteState extends ConsumerState<_WartungKarte> with AktionsZustan
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// wartungsmodus'),
+        const MonoLabel('Wartungsmodus'),
         const SizedBox(height: 8),
         LxCard(padding: const EdgeInsets.all(14), child: inhalt),
         const SizedBox(height: 4),
@@ -230,8 +230,8 @@ class _HinweisKarteState extends ConsumerState<_HinweisKarte> with AktionsZustan
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  const StatusPill('● sichtbar', color: kTerminal),
-                  Text(aktuell.ablauf == null ? 'ohne Ablauf' : 'bis ${endeText(aktuell.ablauf!, jetzt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  const StatusPill('sichtbar', color: kTerminal),
+                  Text(aktuell.ablauf == null ? 'ohne Ablauf' : 'bis ${endeText(aktuell.ablauf!, jetzt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),
@@ -257,7 +257,7 @@ class _HinweisKarteState extends ConsumerState<_HinweisKarte> with AktionsZustan
             decoration: InputDecoration(labelText: aktuell == null ? 'Neuer Hinweis' : 'Neuer Hinweis (ersetzt den jetzigen)', alignLabelWithHint: true),
           ),
           const SizedBox(height: 8),
-          const MonoLabel('// ablauf', color: kTextMuted),
+          const MonoLabel('Ablauf', color: kTextMuted),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -279,7 +279,7 @@ class _HinweisKarteState extends ConsumerState<_HinweisKarte> with AktionsZustan
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// familienhinweis'),
+        const MonoLabel('Familienhinweis'),
         const SizedBox(height: 8),
         LxCard(padding: const EdgeInsets.all(14), child: inhalt),
         const SizedBox(height: 4),
@@ -346,7 +346,7 @@ class _KonfigZeile extends StatelessWidget {
                     Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
                     if (name != wert.key) ...[
                       const SizedBox(height: 2),
-                      Text(wert.key, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      Text(wert.key, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     ],
                   ],
                 ),
@@ -357,7 +357,7 @@ class _KonfigZeile extends StatelessWidget {
                 constraints: const BoxConstraints(maxWidth: 150),
                 child: v is bool
                     ? StatusPill(text, color: v ? kTerminal : kTextMuted)
-                    : Text(text, textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: v == null ? kTextMuted : kText)),
+                    : Text(text, textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: v == null ? kTextMuted : kText)),
               ),
             ],
           ),

@@ -125,7 +125,7 @@ void main() {
   }
 
   Future<void> oeffnen(WidgetTester tester) async {
-    await tippe(tester, find.text('// STANDORT').first);
+    await tippe(tester, labelFinder('Standort').first);
     await warte(tester);
   }
 
@@ -228,8 +228,8 @@ void main() {
     expect(find.text('Schlüssel nicht bestätigt, keine Position'), findsOneWidget);
     await tippe(tester, find.text('± 12 m · vor 2 Min'));
     expect(find.text('48,13721, 11,57550'), findsOneWidget);
-    expect(find.text('GENAUIGKEIT'), findsOneWidget);
-    expect(find.text('TEILT NOCH'), findsOneWidget);
+    expect(find.text('Genauigkeit'), findsOneWidget);
+    expect(find.text('Teilt noch'), findsOneWidget);
   });
 
   testWidgets('Karten-Schnittstelle: ein eingetragener Builder bekommt nur Personen mit Position', (tester) async {

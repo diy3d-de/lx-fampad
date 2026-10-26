@@ -45,7 +45,7 @@ class TagesInhalt extends ConsumerWidget {
     final hinweise = ref.watch(tagesHinweiseProvider).fuerTag(tag);
     final liste = nachTagen(gefilterteVorkommen(auswahl, daten, tag, tag.add(const Duration(days: 1)), geburtstage: geburtstage, farbenAus: ref.watch(farbenAusProvider)), tag, tag)[tag] ?? const <Vorkommen>[];
     final heute = heuteTag();
-    final kopfLabel = '// ${tag == heute ? 'heute' : DateFormat('E', 'de_DE').format(tag).toLowerCase()} · kw ${kalenderwoche(tag)}';
+    final kopfLabel = '${tag == heute ? 'heute' : DateFormat('E', 'de_DE').format(tag).toLowerCase()} · kw ${kalenderwoche(tag)}';
     final knopf = rechte.darfAnlegen
         ? FilledButton.icon(
             onPressed: onNeu,
@@ -134,7 +134,7 @@ class TagesTerminZeile extends StatelessWidget {
                     width: zeitBreite,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 2),
-                      child: Text(startZeitText(v, tag), maxLines: 2, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kText, height: 1.4)),
+                      child: Text(startZeitText(v, tag), maxLines: 2, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kText, height: 1.4)),
                     ),
                   ),
                   Container(width: 6, margin: const EdgeInsets.only(right: 12), decoration: BoxDecoration(color: terminFarbe(v, mitglieder), borderRadius: BorderRadius.circular(3))),

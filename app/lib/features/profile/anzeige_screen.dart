@@ -22,40 +22,40 @@ class AnzeigeScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final web = ref.watch(profilWebProvider);
     return AuthSeite(
-      label: '// profil',
+      label: 'Profil',
       titel: 'Startseite und Anzeige',
       maxBreite: kMaxContentWidth,
       kinder: [
-        const MonoLabel('// startseite'),
+        const MonoLabel('Startseite'),
         const SizedBox(height: 8),
         EinstellungsZeile(
           icon: Icons.dashboard_customize_outlined,
           titel: 'Startseite anpassen',
-          untertitel: 'kacheln verschieben und ausblenden, nur dieses gerät',
+          untertitel: 'Kacheln verschieben und ausblenden, nur auf diesem Gerät',
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const StartseiteAnpassenScreen())),
         ),
         if (MediaQuery.sizeOf(context).width < kDesktopBreakpoint)
           EinstellungsZeile(
             icon: Icons.view_agenda_outlined,
             titel: 'Untere Leiste',
-            untertitel: 'vier bereiche und „mehr“, nur dieses gerät',
+            untertitel: 'Vier Bereiche und „Mehr“, nur auf diesem Gerät',
             onTap: () => Navigator.of(context).push<void>(LeisteAnpassenScreen.route()),
           ),
         const WetterZeile(),
         EinstellungsZeile(
           icon: Icons.tv_outlined,
           titel: 'Wandtablet-Modus',
-          untertitel: 'vollbild-anzeige für ein tablet an der wand, nur dieses gerät',
+          untertitel: 'Vollbild für ein Tablet an der Wand, nur auf diesem Gerät',
           onTap: () => Navigator.of(context).push<void>(WandtabletEinstellungenScreen.route()),
         ),
         if (!web) ...[
           const SizedBox(height: 4),
-          const MonoLabel('// android'),
+          const MonoLabel('Android'),
           const SizedBox(height: 8),
           EinstellungsZeile(
             icon: Icons.widgets_outlined,
             titel: 'Widget „Heute“',
-            untertitel: 'startbildschirm: termine, aufgaben, liste',
+            untertitel: 'Auf dem Startbildschirm: Termine, Aufgaben und eine Liste',
             onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const HeuteWidgetScreen())),
           ),
         ],
@@ -73,7 +73,7 @@ class WetterZeile extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final st = ref.watch(wetterProvider);
     if (st.dto != null && !st.dto!.verfuegbar) {
-      return const EinstellungsZeile(icon: Icons.wb_sunny_outlined, titel: 'Wetter anzeigen', untertitel: 'wetter ist auf dem server nicht eingerichtet');
+      return const EinstellungsZeile(icon: Icons.wb_sunny_outlined, titel: 'Wetter anzeigen', untertitel: 'Das Wetter ist auf dem Server nicht eingerichtet.');
     }
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -83,7 +83,7 @@ class WetterZeile extends ConsumerWidget {
           contentPadding: const EdgeInsets.symmetric(horizontal: 8),
           secondary: const Icon(Icons.wb_sunny_outlined, color: kAccent, size: 22),
           title: const Text('Wetter anzeigen', style: TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: const Text('startseite und seitenleiste, nur auf diesem gerät', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          subtitle: const Text('Auf Startseite und Seitenleiste, nur auf diesem Gerät', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           value: st.anzeigen,
           onChanged: (v) => unawaited(ref.read(wetterProvider.notifier).anzeigenSetzen(v)),
         ),

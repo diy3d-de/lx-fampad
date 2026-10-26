@@ -79,11 +79,11 @@ class _UebertragungAnbietenScreenState extends ConsumerState<UebertragungAnbiete
     final abgelaufen = a != null && _rest <= Duration.zero;
     return BildschirmSchutz(
       child: AuthSeite(
-        label: '// neues gerät',
+        label: 'Neues Gerät',
         titel: 'Neues Gerät verbinden',
         kinder: [
           const Text(
-            'Öffne auf dem neuen Gerät die Verschlüsselung (Profil) und scanne diesen QR-Code oder tippe den Code ab. '
+            'Öffne auf dem neuen Gerät den Nachrichten-Schutz (Profil) und scanne diesen QR-Code oder tippe den Code ab. '
             'Der Code gilt zwei Minuten und nur einmal. Zeige ihn niemandem, der nicht dein neues Gerät ist.',
             style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
           ),
@@ -162,11 +162,11 @@ class _GeraetVerbindenScreenState extends ConsumerState<GeraetVerbindenScreen> w
   @override
   Widget build(BuildContext context) => BildschirmSchutz(
     child: AuthSeite(
-      label: '// gerät verbinden',
+      label: 'Gerät verbinden',
       titel: 'Mit anderem Gerät verbinden',
       kinder: [
         const Text(
-          'Öffne auf einem Gerät, das schon verbunden ist, Profil > Verschlüsselung > Neues Gerät verbinden. Scanne dann den QR-Code oder tippe den Code hier ab.',
+          'Öffne auf einem Gerät, das schon verbunden ist, Profil › Sicherheit › Nachrichten-Schutz › Neues Gerät verbinden. Scanne dann den QR-Code oder tippe den Code hier ab.',
           style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
         ),
         const SizedBox(height: 16),
@@ -243,13 +243,13 @@ class _UebertragungScanScreenState extends State<_UebertragungScanScreen> {
 
   @override
   Widget build(BuildContext context) => AuthSeite(
-    label: '// gerät verbinden',
+    label: 'Gerät verbinden',
     titel: 'QR-Code scannen',
     kinder: [
       const Text('Halte die Kamera auf den QR-Code des anderen Geräts.', style: TextStyle(fontSize: 14, color: kTextMuted)),
       const SizedBox(height: 12),
       ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         child: SizedBox(
           height: 320,
           child: MobileScanner(
@@ -306,7 +306,7 @@ class _WiederherstellungVerbindenScreenState extends ConsumerState<Wiederherstel
   @override
   Widget build(BuildContext context) => BildschirmSchutz(
     child: AuthSeite(
-      label: '// wiederherstellung',
+      label: 'Wiederherstellung',
       titel: 'Mit Wiederherstellungsschlüssel verbinden',
       kinder: [
         const Text(

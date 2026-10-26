@@ -32,13 +32,13 @@ class _Kachel extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(label.toUpperCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, letterSpacing: 0.9, color: kTextMuted)),
+            MonoLabel(label),
             const SizedBox(height: 4),
             Align(
               alignment: Alignment.centerLeft,
-              child: FittedBox(fit: BoxFit.scaleDown, child: Text(wert, style: const TextStyle(fontFamily: kFontMono, fontSize: 20, fontWeight: FontWeight.w700, color: kTextStrong))),
+              child: FittedBox(fit: BoxFit.scaleDown, child: Text(wert, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 20, fontWeight: FontWeight.w700, color: kTextStrong))),
             ),
-            if (zusatz != null) Text(zusatz!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: zusatzFarbe)),
+            if (zusatz != null) Text(zusatz!, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: zusatzFarbe)),
           ],
         ),
       ),
@@ -133,9 +133,9 @@ class WetterRegenKarte extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// regen'),
+            const MonoLabel('Regen'),
             const SizedBox(height: 4),
-            Text(zeile, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+            Text(zeile, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
             if (balken.isNotEmpty) ...[
               const SizedBox(height: 12),
               SizedBox(height: 56, width: double.infinity, child: CustomPaint(painter: _RegenPainter(balken))),
@@ -211,11 +211,11 @@ class WetterWindKarte extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const MonoLabel('// wind'),
+                  const MonoLabel('Wind'),
                   const SizedBox(height: 4),
                   Align(
                     alignment: Alignment.centerLeft,
-                    child: FittedBox(fit: BoxFit.scaleDown, child: Text(windText(wind), style: const TextStyle(fontFamily: kFontMono, fontSize: 22, fontWeight: FontWeight.w700, color: kTextStrong))),
+                    child: FittedBox(fit: BoxFit.scaleDown, child: Text(windText(wind), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 22, fontWeight: FontWeight.w700, color: kTextStrong))),
                   ),
                   if (text.isNotEmpty) Text(text, style: const TextStyle(fontSize: 12, color: kTextMuted)),
                 ],
@@ -255,7 +255,7 @@ class _KompassPainter extends CustomPainter {
         ..color = kBorder
         ..style = PaintingStyle.stroke,
     );
-    const stil = TextStyle(fontFamily: kFontMono, fontSize: 10, fontWeight: FontWeight.w700, color: kTextMuted);
+    const stil = TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, fontWeight: FontWeight.w700, color: kTextMuted);
     void buchstabe(String t, Offset o) {
       final p = TextPainter(text: TextSpan(text: t, style: stil), textDirection: TextDirection.ltr, textScaler: TextScaler.noScaling)..layout();
       p.paint(canvas, o - Offset(p.width / 2, p.height / 2));
@@ -322,7 +322,7 @@ class WetterVergleichKarte extends StatelessWidget {
                     children: [
                       Expanded(flex: 4, child: Text(z.$1, style: const TextStyle(color: kTextMuted))),
                       const SizedBox(width: 8),
-                      Expanded(flex: 7, child: Text(z.$2, textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontMono, fontSize: 13, color: kTextStrong))),
+                      Expanded(flex: 7, child: Text(z.$2, textAlign: TextAlign.end, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: kTextStrong))),
                     ],
                   ),
                 ),

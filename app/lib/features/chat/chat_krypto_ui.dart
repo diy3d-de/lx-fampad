@@ -43,7 +43,7 @@ extension ChatKryptoZustandX on ChatKryptoZustand {
   bool get darfSchreiben => this == ChatKryptoZustand.bereit || this == ChatKryptoZustand.unbekannt;
 }
 
-/// Hinweis im Chat-Bereich, solange die Verschlüsselung nicht bereit ist; führt zu Profil, Verschlüsselung.
+/// Hinweis im Chat-Bereich, solange die Nachrichten-Schutz nicht bereit ist; führt zu Profil › Sicherheit › Nachrichten-Schutz.
 class VerschluesselungHinweis extends ConsumerWidget {
   /// Als Karte über der Liste (true) oder als schlanke Zeile statt der Eingabe (false).
   final bool gross;
@@ -55,7 +55,7 @@ class VerschluesselungHinweis extends ConsumerWidget {
     if (zustand.darfSchreiben) return const SizedBox.shrink();
     final (titel, text, knopf) = switch (zustand) {
       ChatKryptoZustand.einrichten => (
-        'Verschlüsselung einrichten',
+        'Nachrichten-Schutz einrichten',
         'Deine Chats sind Ende-zu-Ende verschlüsselt. Richte deinen Schlüssel ein (und sichere ihn), dann kannst du Nachrichten lesen und schreiben.',
         'Einrichten',
       ),
@@ -66,7 +66,7 @@ class VerschluesselungHinweis extends ConsumerWidget {
       ),
       _ => (
         'Schlüssel prüfen',
-        'Der Schlüssel auf diesem Gerät passt nicht zu deinem Konto. Prüfe die Verschlüsselung in deinem Profil.',
+        'Der Schlüssel auf diesem Gerät passt nicht zu deinem Konto. Prüfe den Nachrichten-Schutz in deinem Profil.',
         'Prüfen',
       ),
     };
@@ -194,7 +194,7 @@ class _MitgliederDialogState extends ConsumerState<_MitgliederDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const MonoLabel('// mitglieder'),
+          const MonoLabel('Mitglieder'),
           const SizedBox(height: 6),
           if (eigen != null) _Zeile(name: '${eigen.displayName} (du)', farbe: eigen.colorIndex, version: eigen.schluessel?.version),
           for (final id in widget.personen)
@@ -212,7 +212,7 @@ class _MitgliederDialogState extends ConsumerState<_MitgliederDialog> {
             ),
           ],
           const SizedBox(height: 12),
-          const MonoLabel('// sicherheitscode'),
+          const MonoLabel('Sicherheitscode'),
           const SizedBox(height: 6),
           Semantics(
             label: 'Sicherheitscode der Familie: ${e.sicherheitscode}',
@@ -263,8 +263,8 @@ class _Zeile extends StatelessWidget {
         PersonAvatar(name: name, colorIndex: farbe, size: 28),
         const SizedBox(width: 10),
         Expanded(child: Text(name, maxLines: 2, overflow: TextOverflow.ellipsis)),
-        if (neu) const Padding(padding: EdgeInsets.only(right: 6), child: Text('neu', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kAccent))),
-        Text(version == null ? 'ohne Schlüssel' : 'schlüssel v$version', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+        if (neu) const Padding(padding: EdgeInsets.only(right: 6), child: Text('neu', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kAccent))),
+        Text(version == null ? 'ohne Schlüssel' : 'schlüssel v$version', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
       ],
     ),
   );
@@ -275,8 +275,8 @@ String? kryptoFehlerText(Object e, List<UserDto> mitglieder) {
   if (e is SchluesselFehlt) {
     final namen = [for (final id in e.personen) mitglieder.where((m) => m.id == id).firstOrNull?.displayName ?? 'Eine Person'];
     return namen.length == 1
-        ? '${namen.first} hat die Verschlüsselung noch nicht eingerichtet oder den neuen Schlüssel noch nicht bestätigt bekommen. Erst danach geht es.'
-        : '${namen.join(', ')} haben die Verschlüsselung noch nicht eingerichtet oder ihren Schlüssel noch nicht bestätigt bekommen. Erst danach geht es.';
+        ? '${namen.first} hat den Nachrichten-Schutz noch nicht eingerichtet oder den neuen Schlüssel noch nicht bestätigt bekommen. Erst danach geht es.'
+        : '${namen.join(', ')} haben den Nachrichten-Schutz noch nicht eingerichtet oder ihren Schlüssel noch nicht bestätigt bekommen. Erst danach geht es.';
   }
   if (e is VerschluesselungNichtBereit) return e.meldung;
   return null;
@@ -286,7 +286,7 @@ String? kryptoFehlerText(Object e, List<UserDto> mitglieder) {
 String? personKryptoHindernis(E2eeState s, String userId) {
   if (s.mitglieder.isEmpty) return null; // Stand unbekannt (offline): nichts behaupten
   final m = s.mitglieder.where((x) => x.id == userId).firstOrNull;
-  if (m == null || m.schluessel == null) return 'Verschlüsselung noch nicht eingerichtet';
+  if (m == null || m.schluessel == null) return 'Nachrichten-Schutz noch nicht eingerichtet';
   if (s.warnungen.any((w) => w.userId == userId)) return 'Schlüssel nicht bestätigt';
   return null;
 }

@@ -350,7 +350,7 @@ void main() {
       await ende(tester, c, a);
     });
 
-    testWidgets('Fehler des Servers beim Einreihen (Verschlüsselung nicht bereit, Tresor voll): feste Texte, keine Rohtexte', (tester) async {
+    testWidgets('Fehler des Servers beim Einreihen (Nachrichten-Schutz nicht bereit, Tresor voll): feste Texte, keine Rohtexte', (tester) async {
       final z = AnhangTestAufbau(daten: beispiel())
         ..wahl = wahlVon('Scan.pdf', Uint8List.fromList('%PDF-1'.codeUnits))
         ..hochladeFehler = DateiFehler.zuVieleAnhaenge;

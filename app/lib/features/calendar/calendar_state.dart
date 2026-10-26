@@ -240,7 +240,7 @@ String datumZeitText(Vorkommen v) {
 }
 
 /// Kopf eines Tages in der Agenda ("// mo, 20. okt").
-String tagesLabel(DateTime tag) => '// ${DateFormat('E, d. MMM', 'de_DE').format(tag).toLowerCase()}';
+String tagesLabel(DateTime tag) => DateFormat('E, d. MMM', 'de_DE').format(tag);
 
 String erinnerungText(int? min) => switch (min) {
   null => 'Keine Erinnerung',

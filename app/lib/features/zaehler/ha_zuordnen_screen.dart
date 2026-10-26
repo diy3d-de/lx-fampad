@@ -73,7 +73,7 @@ class _HaZuordnenScreenState extends ConsumerState<HaZuordnenScreen> {
     final daten = ref.watch(zaehlerDatenProvider);
     final nachKopplung = widget.nachKopplung;
     return AuthSeite(
-      label: nachKopplung ? '// schritt 3 von 3' : '// home assistant',
+      label: nachKopplung ? 'Schritt 3 von 3' : 'Home Assistant',
       titel: nachKopplung ? 'Fast geschafft' : 'Zähler zuordnen',
       maxBreite: kMaxContentWidth,
       fussleiste: FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => Navigator.of(context).pop(), child: const Text('Fertig')),

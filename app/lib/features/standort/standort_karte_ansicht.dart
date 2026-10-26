@@ -866,7 +866,7 @@ class _Rahmen extends StatelessWidget {
   @override
   Widget build(BuildContext context) => rund
       ? DecoratedBox(
-          decoration: BoxDecoration(color: kSurface, border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(18)),
           child: ClipRRect(borderRadius: BorderRadius.circular(13), child: child),
         )
       : ColoredBox(color: kSurface, child: child);
@@ -939,7 +939,7 @@ class _KartenKnopf extends StatelessWidget {
     padding: const EdgeInsets.only(bottom: 4),
     child: Material(
       color: aktiv ? kAccentSoft : kBg.withValues(alpha: 0.85),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: aktiv ? kAccent : kBorder)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10), side: BorderSide(color: aktiv ? kAccent : Colors.transparent)),
       child: Semantics(
         toggled: aktiv ? true : null,
         child: IconButton(icon: Icon(icon, color: onTap == null ? kTextFaint : kAccent), tooltip: tooltip, onPressed: onTap, constraints: const BoxConstraints(minWidth: 48, minHeight: 48)),
@@ -979,7 +979,7 @@ class _Info extends StatelessWidget {
       liveRegion: true,
       label: '${eintrag.name}, $zeile',
       child: DecoratedBox(
-        decoration: BoxDecoration(color: kBg.withValues(alpha: 0.92), border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(color: kBg.withValues(alpha: 0.92), borderRadius: BorderRadius.circular(12)),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 48),
           child: Row(
@@ -991,7 +991,7 @@ class _Info extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(eintrag.eigene ? 'Du' : eintrag.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, color: kTextStrong)),
-                    Text(zeile, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(zeile, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   ],
                 ),
               ),
@@ -1014,7 +1014,7 @@ class _Attribution extends StatelessWidget {
     excludeSemantics: true,
     child: DecoratedBox(
       decoration: BoxDecoration(color: kBg.withValues(alpha: 0.8), borderRadius: BorderRadius.circular(6)),
-      child: const Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4), child: Text(kKarteAttribution, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted))),
+      child: const Padding(padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4), child: Text(kKarteAttribution, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted))),
     ),
   );
 }

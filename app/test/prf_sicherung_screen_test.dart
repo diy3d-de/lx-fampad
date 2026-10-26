@@ -1,4 +1,4 @@
-// Oberfläche der Passkey-Sicherung (Profil > Verschlüsselung): nur sichtbar, wenn der Server sie anbietet UND die Person einen Passkey hat; Anlegen mit zwei Passkey-Gesten,
+// Oberfläche der Passkey-Sicherung (Profil › Sicherheit › Nachrichten-Schutz): nur sichtbar, wenn der Server sie anbietet UND die Person einen Passkey hat; Anlegen mit zwei Passkey-Gesten,
 // "nicht unterstützt" ohne Veränderung, Fehlerfall, Gerät ohne Schlüssel verbindet mit dem Passkey, Absicherungs-Seite. 360 px Breite, Textskala 1.0 und 1.5.
 import 'dart:typed_data';
 
@@ -58,7 +58,7 @@ Future<_Aufbau> _aufbau({bool schalter = true, bool schluessel = true, int passk
 
 Future<void> _zurSeite(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Verschlüsselung');
+  await tippeText(tester, 'Nachrichten-Schutz');
 }
 
 Future<void> main() async {
@@ -90,7 +90,7 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
       expect(find.text('Passkey-Sicherung'), findsOneWidget);
-      expect(find.textContaining('nicht gesichert · jetzt einrichten'), findsWidgets);
+      expect(find.textContaining('Noch nicht gesichert. Jetzt einrichten'), findsWidgets);
       pruefeLayout(tester, 'Verschlüsselung mit Passkey-Zeile');
 
       await tippeText(tester, 'Passkey-Sicherung');
@@ -102,7 +102,7 @@ Future<void> main() async {
       await warte(tester);
 
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.textContaining('liegt beim server (seit '), findsWidgets);
+      expect(find.textContaining('Liegt beim Server (seit '), findsWidgets);
       expect(a.srv.prfStand(fixIdAdmin, 'cred-1').verifiziert, isTrue);
       expect(a.env.passkeys.mitPrfBestaetigt, 2);
       expect(a.server.anfragen('POST /me/key-backup-prf/verified'), hasLength(1));
@@ -122,7 +122,7 @@ Future<void> main() async {
       expect(a.server.anfragen('PUT /me/key-backup-prf'), isEmpty);
       pruefeLayout(tester, 'Passkey-Sicherung: nicht unterstützt');
       await tippe(tester, find.byTooltip('Zurück'));
-      expect(find.textContaining('nicht gesichert · jetzt einrichten'), findsWidgets);
+      expect(find.textContaining('Noch nicht gesichert. Jetzt einrichten'), findsWidgets);
     });
 
     testWidgets('Prüfung scheitert: Fehlermeldung, nichts gilt als gesichert ($s)', (tester) async {
@@ -190,7 +190,7 @@ Future<void> main() async {
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
       expect(a.srv.prfStand(fixIdAdmin, 'cred-1').verifiziert, isTrue);
-      expect(find.textContaining('bestätigt seit'), findsWidgets);
+      expect(find.textContaining('Bestätigt seit'), findsWidgets);
       expect(find.text('Passkey-Sicherung anlegen'), findsNothing);
       pruefeLayout(tester, 'Absicherung nach Passkey-Sicherung');
     });

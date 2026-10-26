@@ -1,4 +1,4 @@
-// Abläufe der Screens gegen den Fake-Server: Anmeldung, Einladung annehmen, Wiederherstellungscodes, Warten auf Freigabe,
+// Abläufe der Screens gegen den Fake-Server: Anmeldung, Einladung annehmen, Notfall-Codes, Warten auf Freigabe,
 // Profil/Sicherheit, Geräte, Passkeys, Admin (Mitglieder, Einladungen) und Step-up.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -58,7 +58,7 @@ void main() {
       await starteApp(tester, env);
       await tippeText(tester, 'Mit Passkey anmelden');
       expect(find.textContaining('Abgebrochen'), findsOneWidget);
-      expect(find.text('oder mit passwort'.toUpperCase()), findsOneWidget);
+      expect(labelFinder('Oder mit passwort'), findsOneWidget);
       expect(find.byType(NavigationBar), findsNothing);
     });
 
@@ -145,7 +145,7 @@ void main() {
       expect(find.textContaining('ausgelastet'), findsOneWidget);
     });
 
-    testWidgets('Schritt 2: Wiederherstellungscode statt TOTP-Code', (tester) async {
+    testWidgets('Schritt 2: Notfall-Code statt TOTP-Code', (tester) async {
       final server = FakeServer()
         ..json('POST /auth/login/password', {'user': userJson(), 'session': appSession()})
         ..json('GET /me', meJson());
@@ -154,8 +154,8 @@ void main() {
       await eingeben(tester, 'E-Mail', 'anna@beispiel.de');
       await eingeben(tester, 'Passwort', 'pw');
       await tippeText(tester, 'Weiter');
-      await tippeText(tester, 'Wiederherstellungscode nutzen');
-      await eingeben(tester, 'Wiederherstellungscode', 'AAAA-BBBB-CCCC-DDDD');
+      await tippeText(tester, 'Notfall-Code nutzen');
+      await eingeben(tester, 'Notfall-Code', 'AAAA-BBBB-CCCC-DDDD');
       await tippe(tester, find.widgetWithText(FilledButton, 'Anmelden'));
       final a = server.anfragen('POST /auth/login/password').single.json;
       expect(a['recoveryCode'], 'AAAA-BBBB-CCCC-DDDD');
@@ -163,16 +163,16 @@ void main() {
       expect(find.byType(NavigationBar), findsOneWidget);
     });
 
-    testWidgets('Wiederherstellungscode-Weg ohne Passwort (Konto verloren)', (tester) async {
+    testWidgets('Notfall-Code-Weg ohne Passwort (Konto verloren)', (tester) async {
       final server = FakeServer()
         ..json('POST /auth/login/recovery', {'user': userJson(), 'session': appSession(), 'recoveryCodesRemaining': 7})
         ..json('GET /me', meJson());
       final env = TestUmgebung(server);
       await starteApp(tester, env);
-      await tippeText(tester, 'Passwort verloren? Mit Wiederherstellungscode anmelden');
-      expect(find.text('Mit Wiederherstellungscode anmelden'), findsOneWidget);
+      await tippeText(tester, 'Passwort verloren? Mit Notfall-Code anmelden');
+      expect(find.text('Mit Notfall-Code anmelden'), findsOneWidget);
       await eingeben(tester, 'E-Mail', 'anna@beispiel.de');
-      await eingeben(tester, 'Wiederherstellungscode', 'AAAA-BBBB-CCCC-DDDD');
+      await eingeben(tester, 'Notfall-Code', 'AAAA-BBBB-CCCC-DDDD');
       await tippe(tester, find.widgetWithText(FilledButton, 'Anmelden'));
       expect(server.anfragen('POST /auth/login/recovery').single.json['code'], 'AAAA-BBBB-CCCC-DDDD');
       expect(find.byType(NavigationBar), findsOneWidget);
@@ -265,7 +265,7 @@ void main() {
       expect(fertig['label'], 'Pixel 9');
 
       // Codes werden angezeigt, die Sitzung ist noch NICHT übernommen
-      expect(find.text('Wiederherstellungscodes'), findsOneWidget);
+      expect(find.text('Notfall-Codes'), findsOneWidget);
       for (final c in codes()) {
         expect(find.text(c), findsOneWidget);
       }
@@ -384,7 +384,7 @@ void main() {
       await eingeben(tester, 'Code aus der Authenticator-App', '222222');
       await tippeText(tester, 'Bestätigen und Konto anlegen');
       expect(server.anfragen('POST /auth/invites/password/complete').last.json['code'], '222222');
-      expect(find.text('Wiederherstellungscodes'), findsOneWidget);
+      expect(find.text('Notfall-Codes'), findsOneWidget);
     });
 
     testWidgets('Einladung zum Zurücksetzen: weder Name noch E-Mail abgefragt', (tester) async {
@@ -448,10 +448,10 @@ void main() {
       expect(find.text('Profil'), findsOneWidget);
       expect(find.text('Anna'), findsOneWidget);
       expect(find.text('Admin'), findsOneWidget);
-      expect(find.text('1 aktiv'), findsNothing, reason: 'Zugänge und Codes liegen auf der Seite Sicherheit');
+      expect(find.text('Mit Fingerabdruck, Gesicht oder Gerätesperre'), findsNothing, reason: 'Zugänge und Codes liegen auf der Seite Sicherheit');
       await tippeText(tester, 'Sicherheit');
-      expect(find.text('1 aktiv'), findsOneWidget);
-      expect(find.textContaining('8 übrig'), findsOneWidget);
+      expect(find.text('Mit Fingerabdruck, Gesicht oder Gerätesperre'), findsOneWidget);
+      expect(find.textContaining('Noch 8 Codes übrig'), findsOneWidget);
     });
 
     testWidgets('Abmelden: Rückfrage, Token und lokale Daten weg, Anmeldeseite', (tester) async {
@@ -482,13 +482,13 @@ void main() {
       await zumProfil(tester, server: server);
       await tippeText(tester, 'Angemeldete Geräte');
       expect(find.text('Pixel 9'), findsOneWidget);
-      expect(find.text('dieses gerät'), findsOneWidget);
+      expect(find.text('Dieses Gerät'), findsOneWidget);
       await tippe(tester, find.byTooltip('Firefox auf Windows abmelden'));
       await tippe(tester, find.widgetWithText(TextButton, 'Abmelden'));
       expect(server.anfragen('DELETE /devices/dddddddd-0000-4000-8000-000000000002'), hasLength(1));
     });
 
-    testWidgets('Neue Wiederherstellungscodes: Rückfrage, Step-up per Code, einmalige Anzeige', (tester) async {
+    testWidgets('Neue Notfall-Codes: Rückfrage, Step-up per Code, einmalige Anzeige', (tester) async {
       var versuche = 0;
       final server = standardServer()
         ..on('POST /me/recovery-codes', (_) {
@@ -497,15 +497,15 @@ void main() {
         })
         ..json('POST /auth/step-up/code', {'stepUpAt': DateTime.now().toUtc().toIso8601String()});
       await zumProfil(tester, server: server);
-      await tippeText(tester, 'Wiederherstellungscodes');
-      expect(find.text('Neue Wiederherstellungscodes?'), findsOneWidget);
+      await tippeText(tester, 'Notfall-Codes');
+      expect(find.text('Neue Notfall-Codes?'), findsOneWidget);
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       expect(find.text('Bitte bestätigen'), findsOneWidget);
       await eingeben(tester, 'Code aus der Authenticator-App', '123456');
       await tippeText(tester, 'Mit Code bestätigen');
       expect(server.anfragen('POST /auth/step-up/code').single.json, {'totp': '123456'});
       expect(versuche, 2);
-      expect(find.text('Wiederherstellungscodes'), findsOneWidget);
+      expect(find.text('Notfall-Codes'), findsOneWidget);
       expect(find.text(codes().first), findsOneWidget);
     });
 
@@ -521,7 +521,7 @@ void main() {
         ..json('POST /me/passkeys/verify', {'id': 'c2'})
         ..json('DELETE /me/passkeys/c1', {'ok': true});
       final env = await zumProfil(tester, server: server);
-      await tippeText(tester, 'Passkeys');
+      await tippeText(tester, 'Anmelden ohne Passwort');
       expect(find.text('Pixel 9'), findsOneWidget);
 
       await tippeText(tester, 'Passkey hinzufügen');
@@ -540,7 +540,7 @@ void main() {
     testWidgets('letzter Zugang: Server lehnt ab, Meldung ohne Interna', (tester) async {
       final server = standardServer()..on('DELETE /me/passkeys/c1', (_) => fehler(409, 'last_credential'));
       await zumProfil(tester, server: server);
-      await tippeText(tester, 'Passkeys');
+      await tippeText(tester, 'Anmelden ohne Passwort');
       await tippe(tester, find.byTooltip('Passkey Pixel 9 entfernen'));
       await tippe(tester, find.widgetWithText(TextButton, 'Entfernen'));
       expect(find.textContaining('letzter Zugang'), findsOneWidget);
@@ -549,7 +549,7 @@ void main() {
     testWidgets('Step-up abgebrochen: Aktion wird nicht ausgeführt', (tester) async {
       final server = standardServer()..on('POST /me/recovery-codes', (_) => fehler(403, 'step_up_required'));
       await zumProfil(tester, server: server);
-      await tippeText(tester, 'Wiederherstellungscodes');
+      await tippeText(tester, 'Notfall-Codes');
       await tippe(tester, find.widgetWithText(TextButton, 'Neue Codes erzeugen'));
       await tippeText(tester, 'Abbrechen');
       expect(server.anfragen('POST /me/recovery-codes'), hasLength(1));
@@ -571,7 +571,7 @@ void main() {
       expect(find.text('Anna (du)'), findsOneWidget);
       expect(find.text('Ben'), findsOneWidget);
       expect(find.text('Oma'), findsOneWidget);
-      expect(find.text('// wartet auf freigabe'.toUpperCase()), findsOneWidget);
+      expect(labelFinder('Wartet auf Freigabe'), findsOneWidget);
       expect(find.byTooltip('Aktionen für Anna'), findsNothing);
       expect(find.byTooltip('Aktionen für Ben'), findsOneWidget);
     });
@@ -649,7 +649,7 @@ void main() {
       final server = standardServer()..json('POST /invites', neueEinladungJson());
       await zumAdmin(tester, server: server);
       await tippeText(tester, 'Einladungen');
-      expect(find.text('// einladungen (3)'.toUpperCase()), findsOneWidget);
+      expect(labelFinder('Einladungen (3)'), findsOneWidget);
 
       await tippeText(tester, 'Neue Einladung');
       await tippe(tester, find.widgetWithText(ChoiceChip, 'Elternteil'));

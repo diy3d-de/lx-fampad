@@ -134,7 +134,7 @@ Future<void> main() async {
         expect(abrufe(), davor);
       }, timeout: const Timeout(Duration(minutes: 2)));
 
-      test('Lokaler Schlüssel weicht vom Server ab: nie überschrieben (die Person entscheidet unter Profil > Verschlüsselung)', () async {
+      test('Lokaler Schlüssel weicht vom Server ab: nie überschrieben (die Person entscheidet unter Profil › Sicherheit › Nachrichten-Schutz)', () async {
         final g = await mitSicherung();
         srv.setzeSchluessel(_anna, enc: _fremd(7), sign: _fremd(8), version: 2);
         await g.ctrl.laden();

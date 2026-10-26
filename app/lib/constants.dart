@@ -13,13 +13,13 @@ const kBorderSoft = Color(0xFF1B1F2B);
 const kText = Color(0xFFE6E8EE);
 const kTextMuted = Color(0xFF8B93A7);
 const kTextFaint = Color(0xFF5D6578);
-const kAccent = Color(0xFF00F0FF); // Cyber Cyan
-const kAccentStrong = Color(0xFF5CF6FF);
+const kAccent = Color(0xFF6FCFD6); // gedämpftes Türkis (vorher Neon-Cyan 0xFF00F0FF)
+const kAccentStrong = Color(0xFF93DDE2);
 const kNeural = Color(0xFF7C3AED);
-const kTerminal = Color(0xFF10B981); // Erfolg / online
+const kTerminal = Color(0xFF4FC99A); // Erfolg / online
 const kWarn = Color(0xFFFEBC2E);
 const kDanger = Color(0xFFFF5F57);
-const kOnAccent = Color(0xFF04121B);
+const kOnAccent = Color(0xFF0C1B1D);
 const kTextStrong = Color(0xFFFFFFFF); // Überschriften
 const kFeiertag = Color(0xFFFFB86B); // Feiertage im Kalender (dezent, nicht synchronisiert)
 const kFerien = Color(0xFF60A5FA); // Schulferien im Kalender
@@ -56,11 +56,15 @@ const kGlowAccentAlpha = 0.09;
 /// Breite, bis zu der der Inhalt wächst (Desktop/Tablet); darüber wird er zentriert (wie die Anmeldung).
 const kMaxContentWidth = 720.0;
 
-/// Weicher Akzent (rgba(0,240,255,0.12)) für Flächen und den Navigations-Indikator.
+/// Weicher Akzent (12 % Deckkraft) für Flächen und den Navigations-Indikator.
 final kAccentSoft = kAccent.withValues(alpha: 0.12);
 
 const kFontSans = 'Inter';
+/// Mono nur noch für echte Codes (Sicherheitscode, Schlüssel, Wiederherstellungs- und Einladungscodes, Seriennummern, Links).
 const kFontMono = 'JetBrainsMono';
+
+/// Ziffern gleicher Breite (Uhrzeiten, Kennzahlen, Messwerte) in Inter statt Mono.
+const kZiffern = <FontFeature>[FontFeature.tabularFigures()];
 
 /// Personenfarben, je Familienmitglied fest (Kalender, Chat, Karte, Listen einheitlich).
 const personPalette = <Color>[
@@ -164,7 +168,7 @@ const kSystemChannel = 'dev.lx_labs.fampad/system';
 /// dieselbe Domain (deploy/README.md, Abschnitt 9).
 const kInviteHost = String.fromEnvironment('INVITE_HOST', defaultValue: 'familyhub.lx-labs.dev');
 
-/// Kennzeile unter der Anmeldung ("● host · tls 1.3"): Host aus API_BASE (Android) bzw. der Adresse der Seite (Web); die
+/// Kennzeile unter der Anmeldung ("host · verschlüsselt"): Host aus API_BASE (Android) bzw. der Adresse der Seite (Web); die
 /// TLS-Angabe nur bei https. Parameter für Tests überschreibbar.
 String serverKennzeile({String api = kApiBase, Uri? seite, bool? web}) {
   var host = '';
@@ -182,7 +186,7 @@ String serverKennzeile({String api = kApiBase, Uri? seite, bool? web}) {
     host = kInviteHost;
     https = true;
   }
-  return '● $host${https ? ' · tls 1.3' : ''}';
+  return https ? '$host · verschlüsselt' : host;
 }
 
 /// Navigationsziele (Reihenfolge = Reihenfolge in der NavigationBar).

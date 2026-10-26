@@ -105,10 +105,10 @@ class ApiException implements Exception {
         kind: ApiErrorKind.stepUpNoetig,
         status: status,
         code: code,
-        message: 'Bitte bestätige diese Aktion noch einmal mit Passkey oder Code.',
+        message: 'Bitte bestätige diese Aktion noch einmal mit „Anmelden ohne Passwort“ (Passkey) oder mit einem Code.',
       );
     }
-    // gesperrt wegen einer Anmeldung per Wiederherstellungscode oder eines Zurücksetzens: mit Dauer, wenn der Server sie nennt
+    // gesperrt wegen einer Anmeldung per Notfall-Code oder eines Zurücksetzens: mit Dauer, wenn der Server sie nennt
     if (code == 'destructive_locked') {
       return ApiException(
         kind: ApiErrorKind.sonstiges,
@@ -116,7 +116,7 @@ class ApiException implements Exception {
         code: code,
         retryAfter: warte,
         message:
-            'Aus Sicherheitsgründen ist das gerade gesperrt, weil du dich erst vor Kurzem mit einem Wiederherstellungscode angemeldet oder dein Konto zurückgesetzt hast. '
+            'Aus Sicherheitsgründen ist das gerade gesperrt, weil du dich erst vor Kurzem mit einem Notfall-Code angemeldet oder dein Konto zurückgesetzt hast. '
             '${warte == null ? 'Versuche es später noch einmal.' : 'Das ist frühestens in ${_dauerText(warte)} wieder möglich.'}',
       );
     }
@@ -151,7 +151,7 @@ class ApiException implements Exception {
         kind: ApiErrorKind.updateNoetig,
         status: status,
         code: code,
-        message: 'Bitte aktualisiere die App, damit der Abgleich wieder funktioniert.',
+        message: 'Bitte aktualisiere die App, damit wieder alles übertragen wird.',
       );
     }
     if (code == 'account_pending') {
@@ -212,16 +212,16 @@ class ApiException implements Exception {
     'cannot_reset_self': 'Dein eigenes Passwort änderst du im Profil, oder du nutzt auf der Anmeldeseite „Passwort vergessen?“.',
     'no_second_factor': 'Für dieses Konto ist kein Authenticator eingerichtet.',
     'not_active': 'Dieses Mitglied ist nicht aktiv.',
-    'email_mismatch': 'Die E-Mail-Adresse gehört nicht zu diesem Passkey.',
-    'no_passkey': 'Für dein Konto ist noch kein Passkey eingerichtet.',
-    'passkey_exists': 'Für dieses Gerät gibt es schon einen Passkey.',
+    'email_mismatch': 'Die E-Mail-Adresse gehört nicht zu diesem Zugang ohne Passwort.',
+    'no_passkey': 'Für dein Konto ist „Anmelden ohne Passwort“ noch nicht eingerichtet.',
+    'passkey_exists': 'Für dieses Gerät ist „Anmelden ohne Passwort“ schon eingerichtet.',
     'not_pending': 'Dieses Mitglied wartet nicht auf eine Freigabe.',
     'cannot_remove_self': 'Du kannst dich nicht selbst entfernen.',
     'multiple_families': 'Dieses Konto gehört zu mehreren Familien. Das geht hier noch nicht.',
     'already_bootstrapped': 'Die Familie ist schon eingerichtet.',
     'not_found': 'Das wurde nicht gefunden.',
     'keys_exist': 'Für dein Konto gibt es schon einen Schlüssel.',
-    'no_keys': 'Du hast die Verschlüsselung noch nicht eingerichtet.',
+    'no_keys': 'Du hast den Nachrichten-Schutz noch nicht eingerichtet.',
     'transfer_conflict': 'Das hat gerade nicht geklappt. Bitte versuche es noch einmal.',
     'key_version_mismatch': 'Der Schlüssel hat sich inzwischen geändert. Bitte öffne die Ansicht neu.',
     'payload_too_large': 'Die Anfrage ist zu groß.',
@@ -235,7 +235,7 @@ class ApiException implements Exception {
     'legacy_login_disabled': 'Diese App-Version ist zu alt für die Anmeldung. Bitte aktualisiere die App.',
     'password_change_needs_update': 'Zum Ändern des Passworts brauchst du die neueste App-Version. Bitte aktualisiere die App.',
     'backup_not_current': 'Die Passwort-Sicherung ist nicht mehr aktuell. Bitte versuche es noch einmal.',
-    'passkey_unknown': 'Dieser Passkey gehört nicht (mehr) zu deinem Konto. Bitte melde dich mit einem Passkey deines Kontos an.',
+    'passkey_unknown': 'Dieser Zugang ohne Passwort gehört nicht (mehr) zu deinem Konto. Bitte melde dich mit einem Zugang deines Kontos an.',
     'guardian_invalid': 'Dieses Elternteil kann nicht hinterlegt werden.',
     'guardian_key_changed': 'Der Schlüssel eines Elternteils hat sich geändert. Bitte öffne die Ansicht neu.',
     'no_escrow': 'Es gibt keine gültige Hinterlegung bei deinen Eltern. Erlaube die Eltern-Wiederherstellung auf einem Gerät mit deinem Schlüssel.',

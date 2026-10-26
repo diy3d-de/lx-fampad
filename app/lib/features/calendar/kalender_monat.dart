@@ -70,7 +70,7 @@ class MonatsRaster extends StatelessWidget {
                 for (final t in breit ? const ['MO', 'DI', 'MI', 'DO', 'FR', 'SA', 'SO'] : const ['M', 'D', 'M', 'D', 'F', 'S', 'S'])
                   Expanded(
                     child: Center(
-                      child: Text(t, style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 12 : 11, color: kTextMuted)),
+                      child: Text(t, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: breit ? 12 : 11, color: kTextMuted)),
                     ),
                   ),
               ],
@@ -169,7 +169,7 @@ class _WochenZeile extends StatelessWidget {
                       child: Padding(
                         padding: EdgeInsets.only(top: breit ? 6 : 4, left: breit ? 8 : 0),
                         child: ExcludeSemantics(
-                          child: Text('${kalenderwoche(montag)}', maxLines: 1, style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 11 : 10, color: kTextFaint)),
+                          child: Text('${kalenderwoche(montag)}', maxLines: 1, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                         ),
                       ),
                     ),
@@ -218,7 +218,7 @@ class _WochenZeile extends StatelessWidget {
                     height: spur,
                     child: IgnorePointer(
                       child: ExcludeSemantics(
-                        child: Center(child: Text('+${layout.mehr[i]}', maxLines: 1, style: TextStyle(fontFamily: kFontMono, fontSize: breit ? 12 : 10, fontWeight: FontWeight.w600, color: kTextMuted))),
+                        child: Center(child: Text('+${layout.mehr[i]}', maxLines: 1, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: breit ? 12 : 10, fontWeight: FontWeight.w600, color: kTextMuted))),
                       ),
                     ),
                   ),
@@ -255,7 +255,7 @@ class _WochenZeile extends StatelessWidget {
       fontSize: breit ? 13 : 12,
       fontWeight: FontWeight.w600,
       height: 1.1,
-      color: istHeute ? kOnAccent : (imMonat ? kText : kTextFaint),
+      color: istHeute ? kOnAccent : (imMonat ? kText : kTextMuted),
     );
     return Semantics(
       button: true,

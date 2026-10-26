@@ -180,7 +180,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
             ),
           const TabKopfzeile(title: 'Standort'),
           const SizedBox(height: 16),
-          const MonoLabel('// mein standort'),
+          const MonoLabel('Mein Standort'),
           const SizedBox(height: 8),
           if (!port.verfuegbar)
             const MeldungsBox('Deinen Standort teilen kannst du nur in der Android-App. Hier siehst du, wer gerade mit dir teilt.', fehler: false)
@@ -206,7 +206,7 @@ class _StandortScreenState extends ConsumerState<StandortScreen> with WidgetsBin
               onStart: () => unawaited(_teilen(andere)),
             ),
           const SizedBox(height: 24),
-          const MonoLabel('// familie'),
+          const MonoLabel('Familie'),
           const SizedBox(height: 8),
           if (karte != null && (mitPosition.isNotEmpty || st.eigene != null && st.phase == StandortPhase.teilt)) ...[
             karte(context, mitPosition, namen),
@@ -289,7 +289,7 @@ class _Start extends StatelessWidget {
           style: TextStyle(fontSize: 13, color: kTextMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
-        const MonoLabel('// dauer'),
+        const MonoLabel('Dauer'),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -298,10 +298,10 @@ class _Start extends StatelessWidget {
         ),
         if (kStandortDauern[dauer].dauer == null) ...[
           const SizedBox(height: 6),
-          Text('höchstens ${kStandortHoechstdauer.inHours} Stunden', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          Text('höchstens ${kStandortHoechstdauer.inHours} Stunden', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         ],
         const SizedBox(height: 16),
-        const MonoLabel('// aktualisierung'),
+        const MonoLabel('Aktualisierung'),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -309,9 +309,9 @@ class _Start extends StatelessWidget {
           children: [for (final t in StandortTakt.values) AuswahlKnopf(text: t.label, gewaehlt: takt == t, onTap: () => onTakt(t))],
         ),
         const SizedBox(height: 6),
-        const Text('Öfter senden zeigt Bewegungen genauer, kostet aber mehr Akku. Wer still steht, meldet sich seltener.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+        const Text('Öfter senden zeigt Bewegungen genauer, kostet aber mehr Akku. Wer still steht, meldet sich seltener.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         const SizedBox(height: 16),
-        const MonoLabel('// mit wem'),
+        const MonoLabel('Mit wem'),
         const SizedBox(height: 4),
         if (laedt)
           const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
@@ -392,7 +392,7 @@ class _Teilen extends ConsumerWidget {
               const Icon(Icons.my_location, color: kTerminal),
               const SizedBox(width: 10),
               Expanded(child: Text(startet ? 'Teilen wird gestartet …' : 'Du teilst deinen Standort', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700))),
-              StatusPill(st.verbunden ? '● live' : '● offline', color: st.verbunden ? kTerminal : kTextMuted),
+              StatusPill(st.verbunden ? 'live' : 'offline', color: st.verbunden ? kTerminal : kTextMuted),
             ],
           ),
           const SizedBox(height: 8),
@@ -401,7 +401,7 @@ class _Teilen extends ConsumerWidget {
             const SizedBox(height: 4),
             Text(
               rest.isNegative ? 'endet gleich' : 'noch ${_restText(rest)} (bis ${DateFormat('HH:mm').format(ende!)} Uhr)',
-              style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
+              style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted),
             ),
           ],
           const SizedBox(height: 4),
@@ -409,13 +409,13 @@ class _Teilen extends ConsumerWidget {
             eigene == null
                 ? 'Warte auf die erste Position …'
                 : 'Letzte Position: ${genauigkeitText(eigene.genauigkeit)}, ${alterText(jetzt.difference(eigene.zeit).isNegative ? Duration.zero : jetzt.difference(eigene.zeit))}',
-            style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted),
+            style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted),
           ),
           if (st.ortungAus) ...[const SizedBox(height: 12), const MeldungsBox('Die Ortung deines Geräts ist ausgeschaltet. Schalte sie in den Schnellmenüs von Android ein, sonst gibt es nichts zu teilen.')],
           if (!st.verbunden && !startet) ...[const SizedBox(height: 12), const MeldungsBox('Keine Verbindung zum Server. Es wird nichts nachgeschickt; sobald die Verbindung wieder steht, geht die neueste Position raus.', fehler: false)],
           if (aus.isNotEmpty) ...[
             const SizedBox(height: 12),
-            MeldungsBox('Nicht geteilt mit ${aus.join(', ')}: der Schlüssel ist nicht bestätigt (Profil, Verschlüsselung).', fehler: false),
+            MeldungsBox('Nicht geteilt mit ${aus.join(', ')}: der Schlüssel ist nicht bestätigt (Profil › Sicherheit › Nachrichten-Schutz).', fehler: false),
           ],
           const SizedBox(height: 16),
           Semantics(
@@ -439,7 +439,7 @@ class _Teilen extends ConsumerWidget {
               padding: const EdgeInsets.only(top: 4),
               child: Text(
                 standortGesamtlimitText(),
-                style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kWarn),
+                style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kWarn),
               ),
             ),
           if (st.meldung != null && !st.amGesamtlimit) ...[const SizedBox(height: 8), MeldungsBox(st.meldung!)],
@@ -512,13 +512,13 @@ class _Zeile extends StatelessWidget {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
-                            Text(zeile + entf, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: p.ungeprueft || veraltet ? kWarn : kTextMuted)),
-                            if (stumm) const Text('stumm: keine Hinweise', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                            Text(zeile + entf, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: p.ungeprueft || veraltet ? kWarn : kTextMuted)),
+                            if (stumm) const Text('stumm: keine Hinweise', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                           ],
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(_restText(rest), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      Text(_restText(rest), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     ],
                   ),
                 ),
@@ -597,7 +597,7 @@ class _Zeile2 extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SizedBox(width: 110, child: MonoLabel(label)),
-        Expanded(child: Text(wert, style: const TextStyle(fontFamily: kFontMono, fontSize: 13, color: kText))),
+        Expanded(child: Text(wert, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: kText))),
       ],
     ),
   );
@@ -618,7 +618,7 @@ class _AkkuHinweis extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const MonoLabel('// akku'),
+          const MonoLabel('Akku'),
           const SizedBox(height: 8),
           if (stand == true)
             const Text('Akku: nicht eingeschränkt. Das Teilen läuft auch bei gesperrtem Bildschirm weiter.', style: TextStyle(fontSize: 13, color: kTerminal, height: 1.4))
@@ -728,7 +728,7 @@ class _DistanzAuswahl extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const MonoLabel('// entfernung zu mir'),
+        const MonoLabel('Entfernung zu mir'),
         const SizedBox(height: 8),
         if (eigeneBekannt)
           knoepfe
@@ -740,7 +740,7 @@ class _DistanzAuswahl extends ConsumerWidget {
         Text(
           hinweis,
           key: const Key('distanz-hinweis'),
-          style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+          style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
         ),
       ],
     );

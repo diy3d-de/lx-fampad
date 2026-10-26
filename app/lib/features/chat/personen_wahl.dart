@@ -119,7 +119,7 @@ class _PersonenWahlSeiteState extends ConsumerState<PersonenWahlSeite> {
                                             ),
                                           ),
                                           const SizedBox(width: 8),
-                                          Text(u.role.label.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                                          Text(u.role.label, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                                           ExcludeSemantics(
                                             child: Checkbox(
                                               value: _gewaehlt.contains(u.id),

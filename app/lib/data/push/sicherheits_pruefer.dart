@@ -41,7 +41,7 @@ const int kSicherheitAbgemeldetBenachrichtigungsId = 0x700001;
 const kSicherheitMindestabstand = Duration(minutes: 5);
 
 const kSicherheitAbgemeldetTitel = 'Du wurdest abgemeldet';
-const kSicherheitAbgemeldetText = 'Dein Passwort wurde zurückgesetzt. Warst du das nicht, melde dich mit einem Wiederherstellungscode an.';
+const kSicherheitAbgemeldetText = 'Dein Passwort wurde zurückgesetzt. Warst du das nicht, melde dich mit einem Notfall-Code an.';
 
 class SicherheitsPruefer {
   final FampadApi api;
@@ -111,7 +111,7 @@ class SicherheitsPruefer {
         return;
       }
       if (vordergrund) {
-        hinweis?.setzen('Sicherheitshinweis: ${sicherheitsEreignisText(neu.first)} Details unter Profil > Sicherheitsereignisse.');
+        hinweis?.setzen('Sicherheitshinweis: ${sicherheitsEreignisText(neu.first)} Details unter Profil › Sicherheit › Sicherheitsereignisse.');
         await _markieren(alle.first.zeit);
         return;
       }
@@ -124,10 +124,10 @@ class SicherheitsPruefer {
         id: kSicherheitBenachrichtigungsId,
         titel: 'Sicherheitshinweis',
         text: nurFamilie
-            ? 'In der Familie wurde ein Zugang zurückgesetzt. Details unter Profil > Sicherheitsereignisse.'
+            ? 'In der Familie wurde ein Zugang zurückgesetzt. Details unter Profil › Sicherheit › Sicherheitsereignisse.'
             : nurKindBittet
-            ? 'Ein Kind bittet um Hilfe bei der Wiederherstellung. Details unter Profil > Sicherheitsereignisse.'
-            : 'An deinem Konto hat sich etwas geändert. Details unter Profil > Sicherheitsereignisse.',
+            ? 'Ein Kind bittet um Hilfe bei der Wiederherstellung. Details unter Profil › Sicherheit › Sicherheitsereignisse.'
+            : 'An deinem Konto hat sich etwas geändert. Details unter Profil › Sicherheit › Sicherheitsereignisse.',
       );
       if (gezeigt) await _markieren(alle.first.zeit);
     } on ApiException catch (e) {

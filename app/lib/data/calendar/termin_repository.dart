@@ -1,5 +1,5 @@
 // Termine für die Oberfläche: liest aus der lokalen Datenbank (Streams) und schreibt Änderungen sofort lokal (Tabelle und Ausgang,
-// siehe SyncStore). Der Abgleich läuft im Hintergrund; hier wartet nichts auf das Netz.
+// siehe SyncStore). Der Überträgt … im Hintergrund; hier wartet nichts auf das Netz.
 //
 // Serien ändern: "dieses" = Ausnahme zum Vorkommen (eine Zeile je Termin und ursprünglichem Beginn, mit fester ID aus beiden, damit zwei
 // Geräte dieselbe Zeile ansprechen und nie zwei entstehen), "alle" = der Termin selbst, "dieses und folgende" = die Serie endet per UNTIL

@@ -123,8 +123,8 @@ const _ereignisse = <String, String>{
   'password_changed': 'Passwort geändert',
   'password_removed': 'Passwort entfernt',
   'password_authkey_set': 'Passwort-Prüfwert gesetzt',
-  'recovery_codes_created': 'Wiederherstellungscodes erzeugt',
-  'recovery_code_used': 'Wiederherstellungscode benutzt',
+  'recovery_codes_created': 'Notfall-Codes erzeugt',
+  'recovery_code_used': 'Notfall-Code benutzt',
   'ws_auth_failed': 'Live-Verbindung abgelehnt',
   'key_created': 'Verschlüsselungsschlüssel angelegt',
   'key_rotated': 'Verschlüsselungsschlüssel erneuert',
@@ -235,7 +235,7 @@ const _schluesselEreignisse = <String, String>{
   'key_backup_archive_read': 'Archiv abgerufen',
   'key_transfer_created': 'Geräte-Übertragung angelegt',
   'key_transfer_claimed': 'Gerät verbunden',
-  'recovery_code_login': 'Anmeldung mit Wiederherstellungscode',
+  'recovery_code_login': 'Anmeldung mit Notfall-Code',
 };
 
 String schluesselEreignisText(String art) => _schluesselEreignisse[art] ?? 'Ereignis';

@@ -70,9 +70,9 @@ void main() {
     await a.nachricht(dm, 'a0000000-0000-4000-8000-000000000002', a.ben, 'Hallo Anna', vor(10));
   }
 
-  testWidgets('ohne eingerichteten Schlüssel: Hinweis "Verschlüsselung einrichten", Neuer Chat gesperrt, kein Eingabefeld im Verlauf', (tester) async {
+  testWidgets('ohne eingerichteten Schlüssel: Hinweis "Nachrichten-Schutz einrichten", Neuer Chat gesperrt, kein Eingabefeld im Verlauf', (tester) async {
     await start(tester, status: E2eeStatus.keinSchluessel, vorher: gruppeUndDirekt);
-    expect(find.text('Verschlüsselung einrichten'), findsOneWidget);
+    expect(find.text('Nachrichten-Schutz einrichten'), findsOneWidget);
     expect(find.text('Einrichten'), findsOneWidget);
     final knopf = tester.widget<ButtonStyleButton>(find.ancestor(of: find.text('Neuer Chat'), matching: find.bySubtype<ButtonStyleButton>()).first);
     expect(knopf.onPressed, isNull);
@@ -80,7 +80,7 @@ void main() {
     expect(find.text('Ben: Nachricht nicht lesbar'), findsOneWidget);
     await tippeText(tester, 'Ben: Nachricht nicht lesbar');
     expect(eingabe(), findsNothing);
-    expect(find.text('Verschlüsselung einrichten'), findsOneWidget, reason: 'Hinweis statt der Eingabe');
+    expect(find.text('Nachrichten-Schutz einrichten'), findsOneWidget, reason: 'Hinweis statt der Eingabe');
     pruefeLayout(tester, 'Hinweis Einrichten');
   });
 
@@ -92,7 +92,7 @@ void main() {
 
   testWidgets('Verlauf: Schloss und "ende-zu-ende verschlüsselt" im Kopf, Eingabe vorhanden', (tester) async {
     await start(tester, vorher: gruppeUndDirekt);
-    expect(find.text('Verschlüsselung einrichten'), findsNothing);
+    expect(find.text('Nachrichten-Schutz einrichten'), findsNothing);
     await tippeText(tester, 'Hallo Anna');
     expect(find.byIcon(Icons.lock_outline), findsWidgets);
     expect(find.textContaining('ende-zu-ende verschlüsselt'), findsOneWidget);
@@ -116,7 +116,7 @@ void main() {
   testWidgets('Neuer Chat: Person ohne eingerichtete Verschlüsselung ist markiert und lässt sich nicht wählen', (tester) async {
     await start(tester, ohneSchluessel: {coraId});
     await tippeText(tester, 'Neuer Chat');
-    expect(find.text('Verschlüsselung noch nicht eingerichtet'), findsOneWidget);
+    expect(find.text('Nachrichten-Schutz noch nicht eingerichtet'), findsOneWidget);
     await tester.tap(find.text('Cora Berger'));
     await warte(tester);
     // nicht gewählt: kein Knopf "Chat starten" aktiv

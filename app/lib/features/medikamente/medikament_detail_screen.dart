@@ -81,7 +81,7 @@ class _MedikamentDetailScreenState extends ConsumerState<MedikamentDetailScreen>
     final e = daten.eintrag(widget.id);
     if (e == null) {
       return AuthSeite(
-        label: '// medikament',
+        label: 'Medikament',
         titel: 'Medikament',
         maxBreite: kMaxContentWidth,
         kinder: [if (!daten.geladen) const Center(child: CircularProgressIndicator()) else const MeldungsBox('Dieses Medikament gibt es nicht mehr.', fehler: false)],
@@ -89,7 +89,7 @@ class _MedikamentDetailScreenState extends ConsumerState<MedikamentDetailScreen>
     }
     final m = e.inhalt;
     if (m == null) {
-      return AuthSeite(label: '// medikament', titel: 'Medikament', maxBreite: kMaxContentWidth, kinder: [MeldungsBox('Dieses Medikament lässt sich gerade nicht lesen${e.med.hinweis == null ? '' : ' (${e.med.hinweis})'}.', fehler: false)]);
+      return AuthSeite(label: 'Medikament', titel: 'Medikament', maxBreite: kMaxContentWidth, kinder: [MeldungsBox('Dieses Medikament lässt sich gerade nicht lesen${e.med.hinweis == null ? '' : ' (${e.med.hinweis})'}.', fehler: false)]);
     }
     final person = daten.person(e.subjektId);
     final ich = e.subjektId.toLowerCase() == daten.ich?.toLowerCase();
@@ -101,12 +101,12 @@ class _MedikamentDetailScreenState extends ConsumerState<MedikamentDetailScreen>
     final v = verlauf(e, jetzt);
     final letzte = ([...e.einnahmen.where((x) => x.inhalt != null)]..sort((a, b) => b.inhalt!.um.compareTo(a.inhalt!.um))).take(5).toList();
     final zustandPille = switch (m.zustand) {
-      MedikamentZustand.aktiv => warn != null ? 'BALD LEER' : null,
-      MedikamentZustand.pausiert => 'PAUSIERT',
-      MedikamentZustand.beendet => 'BEENDET',
+      MedikamentZustand.aktiv => warn != null ? 'Bald leer' : null,
+      MedikamentZustand.pausiert => 'Pausiert',
+      MedikamentZustand.beendet => 'Beendet',
     };
     return AuthSeite(
-      label: '// medikament',
+      label: 'Medikament',
       titel: m.name,
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -145,14 +145,14 @@ class _MedikamentDetailScreenState extends ConsumerState<MedikamentDetailScreen>
         ),
         const SizedBox(height: 16),
         if (m.rhythmus.festeZeiten) ...[
-          const MonoLabel('// letzte 7 tage', color: kTextMuted),
+          const MonoLabel('Letzte 7 Tage', color: kTextMuted),
           const SizedBox(height: 8),
           _VerlaufReihe(tage: v),
           if (verlaufText(v) != null) ...[const SizedBox(height: 6), Text(verlaufText(v)!, style: const TextStyle(fontSize: 13, color: kTextMuted))],
           const SizedBox(height: 16),
         ],
         if (letzte.isNotEmpty) ...[
-          const MonoLabel('// letzte einträge', color: kTextMuted),
+          const MonoLabel('Letzte Einträge', color: kTextMuted),
           const SizedBox(height: 4),
           for (final x in letzte) _EintragZeile(einnahme: x, onZurueck: () => _tun(() => ref.read(medikamentRepositoryProvider).einnahmeZuruecknehmen(x.id))),
           const SizedBox(height: 12),
@@ -212,7 +212,7 @@ class _Abschnitt extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => LxCard(
-    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [MonoLabel('// $label', color: kTextMuted), const SizedBox(height: 8), kind]),
+    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [MonoLabel(label, color: kTextMuted), const SizedBox(height: 8), kind]),
   );
 }
 
@@ -333,7 +333,7 @@ class _VerlaufReihe extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(wochentagKurz(t.tag.weekday), style: const TextStyle(fontFamily: kFontMono, fontSize: 10, color: kTextMuted)),
+                    Text(wochentagKurz(t.tag.weekday), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, color: kTextMuted)),
                   ],
                 ),
               ),

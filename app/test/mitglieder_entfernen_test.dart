@@ -57,7 +57,7 @@ Future<void> main() async {
       testWidgets('Bereich "Kürzlich entfernt" mit Frist und Knopf "Zurückholen" (360 px, Textskala $skala)', (tester) async {
         await zumAdmin(tester, skala);
         await tester.dragUntilVisible(find.text('Opa'), find.byType(Scrollable).first, const Offset(0, -150));
-        expect(find.text('// kürzlich entfernt (1)'.toUpperCase()), findsOneWidget);
+        expect(labelFinder('Kürzlich entfernt (1)'), findsOneWidget);
         expect(find.text('Opa'), findsOneWidget);
         expect(find.textContaining('noch 30 Tage'), findsOneWidget);
         expect(find.textContaining('endgültig gelöscht am 09.11.2026'), findsOneWidget);
@@ -84,7 +84,7 @@ Future<void> main() async {
       expect(server.anfragen('POST /members/$_idOma/restore'), hasLength(1));
       expect(server.anfragen('GET /members/removed').length, greaterThan(vorher));
       expect(find.text('Opa ist wieder in der Familie.'), findsOneWidget);
-      expect(find.textContaining('kürzlich entfernt'.toUpperCase()), findsNothing, reason: 'der Bereich verschwindet, wenn niemand mehr dort ist');
+      expect(find.textContaining('Kürzlich entfernt'), findsNothing, reason: 'der Bereich verschwindet, wenn niemand mehr dort ist');
     });
 
     testWidgets('Zurückholen verlangt Step-up und wiederholt danach', (tester) async {
@@ -122,7 +122,7 @@ Future<void> main() async {
 
     testWidgets('älterer Server ohne Soft-Delete: kein Bereich, der bisherige Text (endgültig, ohne Versprechen)', (tester) async {
       await zumAdmin(tester, 1.0, softDelete: false);
-      expect(find.textContaining('kürzlich entfernt'.toUpperCase()), findsNothing);
+      expect(find.textContaining('Kürzlich entfernt'), findsNothing);
       await tippe(tester, find.byTooltip('Aktionen für Ben'));
       await tippeText(tester, 'Entfernen');
       expect(find.textContaining('wird entfernt und überall abgemeldet'), findsOneWidget);

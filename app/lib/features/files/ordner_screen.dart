@@ -61,7 +61,7 @@ class OrdnerScreen extends ConsumerWidget {
           if (context.mounted && (ModalRoute.of(context)?.isCurrent ?? false)) unawaited(Navigator.of(context).maybePop());
         });
       }
-      return const DateiRahmen(label: '// ordner', titel: 'Ordner', child: Text('Diesen Ordner gibt es nicht mehr.', style: TextStyle(color: kTextMuted)));
+      return const DateiRahmen(label: 'Ordner', titel: 'Ordner', child: Text('Diesen Ordner gibt es nicht mehr.', style: TextStyle(color: kTextMuted)));
     }
     final dateien = ref.watch(alleDateienProvider).value ?? const <DateiEintrag>[];
     final ids = {o.id, ...unterordnerVonUnten(alle, o.id).map((x) => x.id)};
@@ -71,7 +71,7 @@ class OrdnerScreen extends ConsumerWidget {
     final eltern = o.audience == kStufeEltern;
     final darfAendern = rechte.darfAendern(o.ownerId);
     return DateiRahmen(
-      label: eltern ? '// ordner · nur eltern' : '// ordner · familie',
+      label: eltern ? 'Ordner · nur Eltern' : 'Ordner · Familie',
       titel: o.name,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -80,7 +80,7 @@ class OrdnerScreen extends ConsumerWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const MonoLabel('// freigabe'),
+                const MonoLabel('Freigabe'),
                 const SizedBox(height: 8),
                 if (rechte.darfStufeAendern)
                   Wrap(
@@ -109,7 +109,7 @@ class OrdnerScreen extends ConsumerWidget {
           ),
           if (unter.isNotEmpty) ...[
             const SizedBox(height: 16),
-            const MonoLabel('// unterordner'),
+            const MonoLabel('Unterordner'),
             const SizedBox(height: 8),
             for (final u in unter)
               EintragZeile(
@@ -153,7 +153,7 @@ class _Wert extends StatelessWidget {
       child: Wrap(
         spacing: 8,
         children: [
-          Text(name, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+          Text(name, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
           Text(wert, style: const TextStyle(fontSize: 13)),
         ],
       ),
@@ -179,8 +179,8 @@ class ZeilenKnopf extends StatelessWidget {
       excludeSemantics: true,
       onTap: onTap,
       child: Material(
-        color: kSurface.withValues(alpha: 0.7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14), side: const BorderSide(color: kBorder)),
+        color: kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,

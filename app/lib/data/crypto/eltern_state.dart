@@ -158,7 +158,7 @@ class ElternSteuerung {
       hinterlegt.add(m.displayName);
     }
     if (eintraege.isEmpty) {
-      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Kein Elternteil hat einen Schlüssel, dem dieses Gerät vertraut. Die Eltern müssen die Verschlüsselung eingerichtet haben und du musst ihren Schlüssel kennen.');
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Kein Elternteil hat einen Schlüssel, dem dieses Gerät vertraut. Die Eltern müssen den Nachrichten-Schutz eingerichtet haben und du musst ihren Schlüssel kennen.');
     }
     await api.hinterlegungSetzen(keyVersion: server.version, eintraege: eintraege);
     ref.invalidate(hinterlegungProvider);
@@ -300,7 +300,7 @@ class ElternSteuerung {
     final server = mitglieder.where((m) => m.id == eltern).firstOrNull?.schluessel;
     final vertraut = await _vertraut(eltern, server);
     if (vertraut == null) {
-      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Dieses Gerät kennt den Schlüssel des freigebenden Elternteils nicht. Bitte prüfe den Sicherheitscode unter Profil > Verschlüsselung.');
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Dieses Gerät kennt den Schlüssel des freigebenden Elternteils nicht. Bitte prüfe den Sicherheitscode unter Profil › Sicherheit › Nachrichten-Schutz.');
     }
     final schluessel = ElternKrypto.freigabeOeffnen(crypto, blob: blob, sig: sig, anfrageId: dto.id, kindId: _userId, keyVersion: dto.schluesselVersion, elternId: eltern, elternVertraut: vertraut, paar: lokal.paar);
     // schluesselUebernehmen vergleicht mit dem frisch geholten Schlüssel des Servers und schreibt erst dann (sonst Fehler, nichts verändert)
@@ -412,7 +412,7 @@ class ElternSteuerung {
     final kindServer = mitglieder.where((m) => m.id == a.kindId).firstOrNull?.schluessel;
     final kindVertraut = await _vertraut(a.kindId, kindServer);
     if (kindVertraut == null) {
-      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Dieses Gerät kennt den Schlüssel des Kindes nicht (oder er hat sich geändert). Prüfe den Sicherheitscode unter Profil > Verschlüsselung.');
+      throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Dieses Gerät kennt den Schlüssel des Kindes nicht (oder er hat sich geändert). Prüfe den Sicherheitscode unter Profil › Sicherheit › Nachrichten-Schutz.');
     }
     final seeds = ElternKrypto.hinterlegungOeffnen(
       crypto,

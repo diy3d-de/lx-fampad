@@ -213,28 +213,28 @@ void main() {
 
   testWidgets('Anheften: Leiste oben, Liste und Lösen; Admin darf im Familienchat anheften', (tester) async {
     final env = await start(tester);
-    expect(find.text('ANGEHEFTET'), findsNothing);
+    expect(find.text('Angeheftet'), findsNothing);
     await tippeText(tester, 'Wer holt heute die Kinder ab?');
     await tippeText(tester, 'Anheften');
     await warte(tester, 10);
     expect((await env.db.select(env.db.pins).get()).single.id, pinId(_n1));
-    expect(find.text('ANGEHEFTET'), findsOneWidget);
+    expect(find.text('Angeheftet'), findsOneWidget);
     expect(find.text('Wer holt heute die Kinder ab?'), findsNWidgets(2)); // Leiste und Nachricht
     pruefeLayout(tester, 'Pin-Leiste');
     // Liste öffnen und lösen
     await tippe(tester, find.bySemanticsLabel(RegExp(r'Angeheftet: Wer holt')));
-    expect(find.text('ANGEHEFTETE NACHRICHTEN'), findsOneWidget);
+    expect(labelFinder('Angeheftete nachrichten'), findsOneWidget);
     await tippe(tester, find.byTooltip('Anheftung lösen'));
     await warte(tester, 10);
     expect(await env.db.select(env.db.pins).get(), isEmpty);
-    expect(find.text('ANGEHEFTET'), findsNothing);
+    expect(find.text('Angeheftet'), findsNothing);
   });
 
   testWidgets('Kinder können im Familienchat nicht anheften, sehen aber die Pins der Eltern und lösen sie nicht', (tester) async {
     final env = await start(tester, role: 'child', mehr: (env, a) async {
       env.sync.andereAendert('pin', pinId(_n1), {'konversationId': _famChat, 'nachrichtId': _n1, 'gepinntVon': coraId, 'createdAt': vor(3)});
     });
-    expect(find.text('ANGEHEFTET'), findsOneWidget);
+    expect(find.text('Angeheftet'), findsOneWidget);
     await tippeText(tester, 'Ich kann das machen');
     expect(find.text('Anheften'), findsNothing);
     await tester.tapAt(const Offset(5, 5)); // Menü schließen

@@ -128,7 +128,7 @@ class TresorAnhangRepository {
     }
     if (z.bearbeiterId == null) return (text: null, hinweis: 'Person nicht mehr in der Familie');
     final k = await krypto();
-    if (k == null) return (text: null, hinweis: 'Verschlüsselung nicht bereit');
+    if (k == null) return (text: null, hinweis: 'Nachrichten-Schutz nicht bereit');
     try {
       final d = await k.nachrichtOeffnen(konversationId: z.konversationId, nachrichtId: z.id, autorId: z.bearbeiterId, wire: z.inhalt, art: kArtAnhang);
       return d.lesbar ? (text: d.text, hinweis: null) : (text: null, hinweis: d.hinweis ?? 'nicht lesbar');
@@ -176,7 +176,7 @@ class TresorAnhangRepository {
     final konv = konversationId;
     if (konv == null) throw const TresorFehler('Die Familie ist nicht bekannt.');
     final k = await krypto();
-    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst die Verschlüsselung ein (Profil, Verschlüsselung).');
+    if (k == null) throw const VerschluesselungNichtBereit('Richte zuerst den Nachrichten-Schutz ein (Profil › Sicherheit › Nachrichten-Schutz).');
     final vorhanden = await (db.select(db.tresorAnhaenge)..where((z) => z.konversationId.equals(konv))).get();
     if (vorhanden.length >= kMaxTresorAnhaenge) throw DateiFehler.zuVieleAnhaenge;
     final n = await dienst.nutzung();

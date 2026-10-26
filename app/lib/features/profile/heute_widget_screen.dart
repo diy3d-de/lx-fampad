@@ -23,7 +23,7 @@ class HeuteWidgetScreen extends ConsumerWidget {
     final listen = ref.watch(listenProvider).value ?? const <Liste>[];
     final notifier = ref.read(heuteWidgetEinstellungenProvider.notifier);
     return AuthSeite(
-      label: '// gerät',
+      label: 'Gerät',
       titel: 'Widget „Heute“',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -43,7 +43,7 @@ class HeuteWidgetScreen extends ConsumerWidget {
               title: const Text('Titel im Widget zeigen', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
                 'aus: das Widget zeigt nur Uhrzeiten und neutrale Wörter („Termin“, „Aufgabe“), z. B. wenn der Startbildschirm für andere sichtbar ist',
-                style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
               value: einst.titel,
               onChanged: (v) => unawaited(notifier.titelSetzen(v)),

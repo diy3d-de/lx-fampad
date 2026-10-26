@@ -55,22 +55,22 @@ void main() {
       },
     );
     await warte(tester);
-    final obst = oben(tester, find.text('OBST UND GEMÜSE'));
-    final getraenke = oben(tester, find.text('GETRÄNKE'));
-    final sonstiges = oben(tester, find.text('SONSTIGES'));
-    final erledigt = oben(tester, find.text('ERLEDIGT'));
+    final obst = oben(tester, labelFinder('Obst und Gemüse'));
+    final getraenke = oben(tester, labelFinder('Getränke'));
+    final sonstiges = oben(tester, find.text('Sonstiges'));
+    final erledigt = oben(tester, labelFinder('Erledigt'));
     expect(obst, lessThan(getraenke));
     expect(getraenke, lessThan(sonstiges));
     expect(sonstiges, lessThan(erledigt));
     expect(oben(tester, find.text('Äpfel')), greaterThan(obst));
     expect(oben(tester, find.text('Äpfel')), lessThan(getraenke));
     expect(oben(tester, find.text('Eis')), greaterThan(erledigt));
-    expect(find.text('TIEFKÜHL'), findsNothing, reason: 'Kategorien ohne offene Einträge entfallen');
+    expect(labelFinder('Tiefkühl'), findsNothing, reason: 'Kategorien ohne offene Einträge entfallen');
     // die eigene Liste bleibt unverändert
     await tippe(tester, find.text('Notizen'));
     await warte(tester);
     expect(find.text('Etwas'), findsOneWidget);
-    expect(find.text('OBST UND GEMÜSE'), findsNothing);
+    expect(labelFinder('Obst und Gemüse'), findsNothing);
   });
 
   testWidgets('Neuer Eintrag bekommt die Kategorie aus dem Namen; ohne Treffer bleibt sie leer', (tester) async {
@@ -83,8 +83,8 @@ void main() {
     }
     final e = {for (final x in await env.db.select(env.db.listenEintraege).get()) x.inhalt: x.category};
     expect(e, {'Vollmilch': 'milch_kuehlregal', 'Geschenkpapier': null});
-    expect(find.text('MILCH UND KÜHLREGAL'), findsOneWidget);
-    expect(find.text('SONSTIGES'), findsOneWidget);
+    expect(find.text('Milch und Kühlregal'), findsOneWidget);
+    expect(find.text('Sonstiges'), findsOneWidget);
   });
 
   testWidgets('Zuletzt gekauft: Vorschläge beim Tippen aus abgehakten Einträgen, Tipp übernimmt Name und Kategorie', (tester) async {
@@ -97,10 +97,10 @@ void main() {
         await eintrag(env, _l1, 'Hafermilch offen', kategorie: 'milch_kuehlregal');
       },
     );
-    expect(find.text('// ZULETZT GEKAUFT'), findsNothing, reason: 'ohne Eingabe keine Vorschläge');
+    expect(labelFinder('Zuletzt gekauft'), findsNothing, reason: 'ohne Eingabe keine Vorschläge');
     await tester.enterText(eingabe('Was fehlt?'), 'hafer');
     await tester.pump();
-    expect(find.text('// ZULETZT GEKAUFT'), findsOneWidget);
+    expect(labelFinder('Zuletzt gekauft'), findsOneWidget);
     expect(find.widgetWithText(ActionChip, 'Haferdrink'), findsOneWidget);
     expect(find.widgetWithText(ActionChip, 'Haferflocken'), findsOneWidget);
     expect(find.widgetWithText(ActionChip, 'Hafermilch offen'), findsNothing, reason: 'nur abgehakte');

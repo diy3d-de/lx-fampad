@@ -25,7 +25,7 @@ class KalenderEinstellungenScreen extends ConsumerWidget {
     final user = ref.watch(authProvider.select((a) => a.user));
     final darfAnlegen = TerminRechte(user?.role ?? Role.child, user?.id).darfAnlegen;
     return AuthSeite(
-      label: '// kalender',
+      label: 'Kalender',
       titel: 'Kalender',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -35,13 +35,13 @@ class KalenderEinstellungenScreen extends ConsumerWidget {
           EinstellungsZeile(
             icon: Icons.file_download_outlined,
             titel: 'Datei importieren (.ics)',
-            untertitel: 'termine aus einer ics-datei übernehmen',
+            untertitel: 'Termine aus einer ICS-Datei übernehmen',
             onTap: () => icsImportOeffnen(context),
           ),
         EinstellungsZeile(
           icon: Icons.file_upload_outlined,
           titel: 'Kalender exportieren',
-          untertitel: 'termine als ics-datei speichern',
+          untertitel: 'Termine als ICS-Datei speichern',
           onTap: () => icsExportOeffnen(context),
         ),
       ],

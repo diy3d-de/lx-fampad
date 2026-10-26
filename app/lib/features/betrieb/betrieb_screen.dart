@@ -96,7 +96,7 @@ class _BetriebScreenState extends ConsumerState<BetriebScreen> {
     // hält den Verlauf am Leben (autoDispose): die Nutzungsseite lädt ihn beim ersten Öffnen, danach bleibt er beim Wechseln der Reiter erhalten
     ref.watch(betriebVerlaufProvider.select((p) => p.wert != null || p.fehler != null));
     return AuthSeite(
-      label: '// betrieb',
+      label: 'Betrieb',
       titel: 'Betrieb',
       maxBreite: kMaxContentWidth,
       aktionen: [
@@ -207,7 +207,7 @@ class _Reiter extends StatelessWidget {
     excludeSemantics: true,
     child: Material(
       color: gewaehlt ? kAccentSoft : Colors.transparent,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: gewaehlt ? kAccent : kBorder)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: BorderSide(color: gewaehlt ? kAccent : Colors.transparent)),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
@@ -252,8 +252,8 @@ class _Uebersicht extends ConsumerWidget {
             runSpacing: 4,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              StatusPill('● ${gesamtText(s.gesamt, unbekannt: s.unbekannt)}', color: farbe),
-              Text('Stand ${uhrzeit(s.erzeugt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              StatusPill(gesamtText(s.gesamt, unbekannt: s.unbekannt), color: farbe),
+              Text('Stand ${uhrzeit(s.erzeugt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             ],
           ),
         ),
@@ -264,17 +264,17 @@ class _Uebersicht extends ConsumerWidget {
         const SizedBox(height: 20),
         const WarnungenKarte(),
         const SizedBox(height: 20),
-        const MonoLabel('// dienste'),
+        const MonoLabel('Dienste'),
         const SizedBox(height: 8),
         _Dienste(s: s, jetzt: jetzt),
         const SizedBox(height: 4),
         const Text('Neustart und Konfiguration bewusst nur per SSH auf dem Server.', style: TextStyle(fontSize: 12, color: kTextMuted)),
         const SizedBox(height: 20),
-        const MonoLabel('// funktionen'),
+        const MonoLabel('Funktionen'),
         const SizedBox(height: 8),
         _Funktionen(s: s),
         const SizedBox(height: 20),
-        const MonoLabel('// versionen'),
+        const MonoLabel('Versionen'),
         const SizedBox(height: 8),
         _Versionen(s: s),
         const SizedBox(height: 20),
@@ -299,7 +299,7 @@ class _Kachel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Semantics(
     container: true,
-    label: '${label.replaceFirst('// ', '')}: $wert, $hinweis',
+    label: '${beschriftungText(label)}: $wert, $hinweis',
     excludeSemantics: true,
     child: LxCard(
       padding: const EdgeInsets.all(14),
@@ -310,7 +310,7 @@ class _Kachel extends StatelessWidget {
           const SizedBox(height: 6),
           Text(wert, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.5, color: farbe)),
           const SizedBox(height: 4),
-          Text(hinweis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+          Text(hinweis, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         ],
       ),
     ),
@@ -328,9 +328,9 @@ class _Kacheln extends StatelessWidget {
     final backup = s.sicherung;
     final platte = s.platte;
     final kacheln = [
-      _Kachel(label: '// server', wert: s.serverVersion, hinweis: 'online seit ${laufzeitText(s.laufzeitSekunden)}', farbe: kTerminal),
+      _Kachel(label: 'Server', wert: s.serverVersion, hinweis: 'online seit ${laufzeitText(s.laufzeitSekunden)}', farbe: kTerminal),
       _Kachel(
-        label: '// datenbank',
+        label: 'Datenbank',
         wert: s.datenbankOk ? groesseText(s.datenbankBytes) : 'Störung',
         hinweis: !s.datenbankOk
             ? 'nicht erreichbar'
@@ -338,7 +338,7 @@ class _Kacheln extends StatelessWidget {
         farbe: s.datenbankOk ? kText : kDanger,
       ),
       _Kachel(
-        label: '// letzte sicherung',
+        label: 'Letzte Sicherung',
         wert: backup.letzterErfolg == null ? 'unbekannt' : uhrzeit(backup.letzterErfolg!),
         hinweis: backup.letzterErfolg == null
             ? 'Statusdatei nicht lesbar'
@@ -346,12 +346,12 @@ class _Kacheln extends StatelessWidget {
         farbe: backup.stufe == BetriebStufe.unbekannt ? kTextMuted : stufeFarbe(backup.stufe),
       ),
       _Kachel(
-        label: '// speicher',
+        label: 'Speicher',
         wert: platte == null ? 'unbekannt' : '${platte.belegtProzent} %',
         hinweis: platte == null ? 'nicht ermittelbar' : '${groesseText(platte.gesamt - platte.frei)} von ${groesseText(platte.gesamt)} belegt',
         farbe: platte == null ? kTextMuted : (platte.belegtProzent >= 95 ? kDanger : (platte.belegtProzent > 85 ? kWarn : kText)),
       ),
-      _Kachel(label: '// mitglieder', wert: '${s.mitglieder}', hinweis: '${s.geraete} Geräte · ${s.sitzungen} Sitzungen', farbe: kText),
+      _Kachel(label: 'Mitglieder', wert: '${s.mitglieder}', hinweis: '${s.geraete} Geräte · ${s.sitzungen} Sitzungen', farbe: kText),
     ];
     return LayoutBuilder(
       builder: (context, c) {
@@ -437,7 +437,7 @@ class _Versionen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final app = s.appVersion;
-    Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: v == null ? kTextMuted : kText));
+    Widget version(String? v) => Text(v ?? 'unbekannt', textAlign: TextAlign.end, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: v == null ? kTextMuted : kText));
     return BetriebListe([
       BetriebZeile(name: 'Server', info: 'Protokoll ${s.protokoll} · Migrationen ${s.migrationen.letzte?.substring(0, 4) ?? 'unbekannt'}', pille: version(s.serverVersion)),
       BetriebZeile(name: 'Web-App', info: 'ausgelieferter Build', pille: version(s.webVersion)),
@@ -462,7 +462,7 @@ class _Ereignisse extends ConsumerWidget {
       children: [
         Row(
           children: [
-            const Expanded(child: MonoLabel('// ereignisse')),
+            const Expanded(child: MonoLabel('Ereignisse')),
             TextButton(onPressed: oeffneProtokoll, style: TextButton.styleFrom(minimumSize: const Size(44, 44)), child: const Text('Alle ansehen')),
           ],
         ),
@@ -517,8 +517,8 @@ class _EintragZeile extends StatelessWidget {
                   children: [
                     Text(text, style: const TextStyle(fontWeight: FontWeight.w600)),
                     const SizedBox(height: 2),
-                    Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
-                    if (wer.isNotEmpty) Text(wer, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(zeit, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+                    if (wer.isNotEmpty) Text(wer, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   ],
                 ),
               ),
@@ -541,7 +541,7 @@ class _Protokoll extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// audit-protokoll'),
+        const MonoLabel('Audit-Protokoll'),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -555,7 +555,7 @@ class _Protokoll extends ConsumerWidget {
                 excludeSemantics: true,
                 child: Material(
                   color: p.art == a ? kAccentSoft : Colors.transparent,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999), side: BorderSide(color: p.art == a ? kAccent : kBorder)),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999), side: BorderSide(color: p.art == a ? kAccent : Colors.transparent)),
                   clipBehavior: Clip.antiAlias,
                   child: InkWell(
                     onTap: () => unawaited(neuLaden(art: a)),

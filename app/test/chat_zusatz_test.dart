@@ -458,7 +458,7 @@ Future<void> main() async {
         expect(await (a.db.select(a.db.nachrichten)).get(), isEmpty);
       });
 
-      test('Alte App-Versionen: unbekannte Entitäten im Änderungsstrom werden übersprungen, der Abgleich läuft weiter', () async {
+      test('Alte App-Versionen: unbekannte Entitäten im Änderungsstrom werden übersprungen, der Überträgt … weiter', () async {
         final alt = {...syncEntities}..remove('reaktion')..remove('stimme')..remove('pin');
         final altStore = SyncStore(a.db, entitaeten: alt);
         final res = welt.antwortMit([

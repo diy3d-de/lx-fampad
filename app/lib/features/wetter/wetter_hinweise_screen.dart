@@ -24,7 +24,7 @@ class WetterHinweiseScreen extends ConsumerWidget {
     final verfuegbar = ref.watch(wetterProvider.select((s) => s.dto?.verfuegbar ?? true));
     final push = ref.watch(pushProvider.select((p) => (p.unterstuetzt, p.angemeldet)));
     return AuthSeite(
-      label: '// profil · benachrichtigungen',
+      label: 'Profil · Benachrichtigungen',
       titel: 'Wetter-Hinweise',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -51,7 +51,7 @@ class WetterHinweiseScreen extends ConsumerWidget {
           const MeldungsBox('Das Wetter ist auf dem Server nicht eingeschaltet. Hinweise gibt es erst, wenn es eingerichtet ist.', fehler: false),
         ],
         const SizedBox(height: 16),
-        const MonoLabel('// hinweise'),
+        const MonoLabel('Hinweise'),
         const SizedBox(height: 8),
         for (final art in WetterHinweisArt.values)
           Padding(
@@ -61,7 +61,7 @@ class WetterHinweiseScreen extends ConsumerWidget {
               child: SwitchListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                 title: Text(art.titel, style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text(art.erklaerung, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                subtitle: Text(art.erklaerung, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 value: einst.an.contains(art),
                 onChanged: einst.geladen ? (v) => unawaited(ref.read(wetterHinweisEinstellungenProvider.notifier).setzen(art, v)) : null,
               ),

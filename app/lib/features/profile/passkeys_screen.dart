@@ -101,8 +101,8 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
     final passkeys = _zugaenge?.where((c) => c.istPasskey).toList();
     final df = DateFormat('d. MMM yyyy', 'de_DE');
     return AuthSeite(
-      label: '// zugänge',
-      titel: 'Passkeys',
+      label: 'Zugänge',
+      titel: 'Anmelden ohne Passwort',
       maxBreite: kMaxContentWidth,
       kinder: [
         const Text(
@@ -113,13 +113,13 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
         const SizedBox(height: 16),
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
         if (_passkeysDa == false) ...[
-          const MeldungsBox('Dieses Gerät oder dieser Browser unterstützt keine Passkeys. Du kannst Passkeys auf einem anderen Gerät hinzufügen.'),
+          const MeldungsBox('Dieses Gerät oder dieser Browser unterstützt kein Anmelden ohne Passwort. Du kannst es auf einem anderen Gerät einrichten.'),
           const SizedBox(height: 12),
         ],
         if (passkeys == null && laeuft)
           const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
         else if (passkeys != null && passkeys.isEmpty)
-          const EmptyState(icon: Icons.fingerprint, title: 'Noch kein Passkey', hint: 'Lege einen an, um dich schneller anzumelden.')
+          const EmptyState(icon: Icons.fingerprint, title: 'Noch nicht eingerichtet', hint: 'Richte es ein, um dich ohne Passwort anzumelden.')
         else if (passkeys != null)
           for (final c in passkeys)
             Padding(
@@ -136,8 +136,8 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
                         children: [
                           Text(c.label ?? 'Passkey', style: const TextStyle(fontWeight: FontWeight.w600)),
                           Text(
-                            'angelegt ${df.format(c.createdAt.toLocal())}${c.lastUsedAt == null ? '' : ' · zuletzt ${df.format(c.lastUsedAt!.toLocal())}'}',
-                            style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                            'Angelegt am ${df.format(c.createdAt.toLocal())}${c.lastUsedAt == null ? '' : ', zuletzt benutzt am ${df.format(c.lastUsedAt!.toLocal())}'}',
+                            style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                           ),
                         ],
                       ),

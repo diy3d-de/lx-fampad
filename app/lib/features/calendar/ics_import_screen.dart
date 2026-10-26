@@ -182,7 +182,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         fuss = null;
     }
     return AuthSeite(
-      label: '// import',
+      label: 'Import',
       titel: 'Kalender importieren',
       maxBreite: kMaxContentWidth,
       fussleiste: fuss,
@@ -209,7 +209,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         const Text(
           'Übernimm deinen bisherigen Kalender aus einer ICS-Datei (Export aus Google, Apple, Outlook und anderen). '
           'Übernommen werden Termine mit Ort, Beschreibung, Wiederholungen und Erinnerung. Teilnehmer, Anhänge und Links bleiben außen vor. '
-          'Ein erneuter Import legt keine Termine doppelt an. Importiere dieselbe Datei aber nicht gleichzeitig auf zwei Geräten: bis zum Abgleich würden Termine doppelt entstehen.',
+          'Ein erneuter Import legt keine Termine doppelt an. Importiere dieselbe Datei aber nicht gleichzeitig auf zwei Geräten: bis alles übertragen ist, würden Termine doppelt entstehen.',
           style: TextStyle(color: kTextMuted, height: 1.4),
         ),
         const SizedBox(height: 16),
@@ -239,7 +239,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       children: [
         LinearProgressIndicator(value: _gesamt == 0 ? null : _erledigt / _gesamt, color: kAccent, semanticsLabel: 'Import läuft'),
         const SizedBox(height: 12),
-        Text('$_erledigt von $_gesamt Terminen', style: const TextStyle(color: kTextMuted, fontFamily: kFontMono)),
+        Text('$_erledigt von $_gesamt Terminen', style: const TextStyle(color: kTextMuted, fontFamily: kFontSans, fontFeatures: kZiffern)),
       ],
     ),
   );
@@ -278,7 +278,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(zahl, style: TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w700, color: farbe)),
+        Text(zahl, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w700, color: farbe)),
         const SizedBox(width: 8),
         Flexible(child: Text(text, style: const TextStyle(color: kText))),
       ],
@@ -292,7 +292,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        MonoLabel('// $_dateiname', color: kTextMuted),
+        MonoLabel(_dateiname, color: kTextMuted),
         const SizedBox(height: 8),
         Wrap(
           spacing: 8,
@@ -310,18 +310,18 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         ],
         if (vorschau.isNotEmpty) ...[
           const SizedBox(height: 16),
-          const MonoLabel('// termine'),
+          const MonoLabel('Termine'),
           const SizedBox(height: 6),
           for (final e in vorschau) _Zeile(eintrag: e, wann: _wann(e.termin)),
           if (plan.eintraege.length > vorschau.length)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('… und ${plan.eintraege.length - vorschau.length} weitere', style: const TextStyle(color: kTextMuted, fontFamily: kFontMono, fontSize: 12)),
+              child: Text('… und ${plan.eintraege.length - vorschau.length} weitere', style: const TextStyle(color: kTextMuted, fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12)),
             ),
         ],
         if (warnungen.isNotEmpty) ...[
           const SizedBox(height: 16),
-          const MonoLabel('// hinweise', color: kWarn),
+          const MonoLabel('Hinweise', color: kWarn),
           const SizedBox(height: 6),
           LxCard(
             padding: const EdgeInsets.all(12),
@@ -348,7 +348,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         if (plan.neu + plan.geaendert > 0) ...[
           const SizedBox(height: 16),
           if (plan.neu > 0 && rechte.darfFreigabeAendern) ...[
-            const MonoLabel('Sichtbar für'),
+            const MonoLabel('Wer sieht das?'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -381,7 +381,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
             ),
           if (plan.geaendert > 0 && _aktualisieren) ...[
             const SizedBox(height: 4),
-            const MonoLabel('// wird überschrieben', color: kWarn),
+            const MonoLabel('Wird überschrieben', color: kWarn),
             const SizedBox(height: 6),
             LxCard(
               padding: const EdgeInsets.all(12),
@@ -413,7 +413,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
         children: [
-          SizedBox(width: 56, child: Text(zahl, style: TextStyle(fontFamily: kFontMono, fontWeight: FontWeight.w700, fontSize: 18, color: farbe))),
+          SizedBox(width: 56, child: Text(zahl, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontWeight: FontWeight.w700, fontSize: 18, color: farbe))),
           Expanded(child: Text(text, style: const TextStyle(color: kText))),
         ],
       ),
@@ -429,7 +429,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         zeile('${b.uebersprungen.length}', 'übersprungen', kWarn),
         if (b.uebersprungen.isNotEmpty) ...[
           const SizedBox(height: 8),
-          const MonoLabel('// übersprungen', color: kWarn),
+          const MonoLabel('Übersprungen', color: kWarn),
           const SizedBox(height: 6),
           LxCard(
             padding: const EdgeInsets.all(12),
@@ -479,7 +479,7 @@ class _Zeile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(t.titel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kTextStrong, fontWeight: FontWeight.w600)),
-                  Text(wann, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kTextMuted, fontFamily: kFontMono, fontSize: 12)),
+                  Text(wann, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: kTextMuted, fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12)),
                 ],
               ),
             ),

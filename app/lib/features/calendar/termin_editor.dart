@@ -343,7 +343,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
         child: Container(
           constraints: const BoxConstraints(minHeight: 48),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+          decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
           child: Row(
             children: [
               Icon(icon, size: 18, color: kTextMuted),
@@ -397,7 +397,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       geaendert: () => _stand() != _ausgang,
       aenderungen: Listenable.merge([_titel, _ort, _beschreibung]),
       child: AuthSeite(
-      label: '// termin',
+      label: 'Termin',
       titel: titel,
       maxBreite: kMaxContentWidth,
       fussleiste: FilledButton(onPressed: _speichern, child: Text(_neu ? (_geburtstag ? 'Geburtstag anlegen' : 'Termin anlegen') : 'Speichern')),
@@ -485,12 +485,12 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
             const SizedBox(height: 6),
             FarbWahl(gewaehlt: _farbe, onWahl: (f) => setState(() => _farbe = f)),
             const SizedBox(height: 12),
-            const MonoLabel('Wiederholung'),
+            const MonoLabel('Wie oft?'),
             const SizedBox(height: 6),
-            wahl(label: 'Wiederholung', text: _wdh.beschreibung(), icon: Icons.repeat, onTap: _wiederholungWaehlen),
+            wahl(label: 'Wie oft?', text: _wdh.beschreibung(), icon: Icons.repeat, onTap: _wiederholungWaehlen),
             const SizedBox(height: 12),
           ],
-          const MonoLabel('Erinnerung'),
+          const MonoLabel('Erinnern'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -537,7 +537,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
           ),
           const SizedBox(height: 12),
           if (rechte.darfFreigabeAendern) ...[
-            const MonoLabel('Sichtbar für'),
+            const MonoLabel('Wer sieht das?'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -576,7 +576,7 @@ class _WiederholungBlattState extends State<_WiederholungBlatt> {
     children: [
       Expanded(child: Text(label)),
       IconButton(tooltip: 'Weniger', onPressed: wert > min ? () => onChanged(wert - 1) : null, icon: const Icon(Icons.remove_circle_outline)),
-      SizedBox(width: 36, child: Text('$wert', textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontMono))),
+      SizedBox(width: 36, child: Text('$wert', textAlign: TextAlign.center, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern))),
       IconButton(tooltip: 'Mehr', onPressed: wert < max ? () => onChanged(wert + 1) : null, icon: const Icon(Icons.add_circle_outline)),
     ],
   );
@@ -599,7 +599,7 @@ class _WiederholungBlattState extends State<_WiederholungBlatt> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const MonoLabel('// wiederholung'),
+            const MonoLabel('Wie oft?'),
             const SizedBox(height: 10),
             if (eigene) ...[
               const Text('Dieser Termin hat eine eigene Wiederholungsregel. Sie bleibt unverändert erhalten.', style: TextStyle(color: kTextMuted)),
@@ -713,7 +713,7 @@ class FarbWahl extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           decoration: BoxDecoration(
             color: an ? kSurface2 : kSurface,
-            border: Border.all(color: an ? (farbe ?? kTextMuted) : kBorder, width: an ? 1.5 : 1),
+            border: Border.all(color: an ? (farbe ?? kTextMuted) : Colors.transparent, width: an ? 1.5 : 1),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Row(

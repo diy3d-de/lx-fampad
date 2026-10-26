@@ -152,7 +152,7 @@ void main() {
     testWidgets('Chat ohne bereite Verschlüsselung ist nicht wählbar (Hinweis statt Senden)', (tester) async {
       await startMit(tester);
       await teile(tester, 'Hallo');
-      expect(find.text('Dafür muss die Verschlüsselung auf diesem Gerät bereit sein.'), findsOneWidget);
+      expect(find.text('Dafür muss der Nachrichten-Schutz auf diesem Gerät bereit sein.'), findsOneWidget);
       await tippe(tester, find.text('Als Nachricht in einen Chat'));
       expect(find.text('In welchen Chat senden?'), findsNothing);
     });

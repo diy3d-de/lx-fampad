@@ -73,8 +73,8 @@ String medFehlerText(Object e, {String? person}) => switch (e) {
   MedikamentFehler f => f.meldung,
   VerschluesselungNichtBereit v => v.meldung,
   SchluesselFehlt _ => person == null
-      ? 'Für diese Person ist die Verschlüsselung noch nicht eingerichtet.'
-      : 'Für $person ist die Verschlüsselung noch nicht eingerichtet. Sie muss sich einmal anmelden und sie einrichten.',
+      ? 'Für diese Person ist der Nachrichten-Schutz noch nicht eingerichtet.'
+      : 'Für $person ist der Nachrichten-Schutz noch nicht eingerichtet. Sie muss sich einmal anmelden und ihn einrichten.',
   ArgumentError _ => 'Die Eingaben sind nicht stimmig.',
   _ => 'Das hat gerade nicht geklappt. Versuche es gleich noch einmal.',
 };

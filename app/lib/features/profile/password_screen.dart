@@ -1,4 +1,4 @@
-// Passwort und Zwei-Faktor (TOTP) nachträglich einrichten, ändern oder entfernen (alles mit Step-up).
+// Passwort und zweiter Schritt nachträglich einrichten, ändern oder entfernen (alles mit Step-up).
 // Einrichten in zwei Stufen wie bei der Einladung: Passwort eingeben -> QR/Schlüssel anzeigen und mit dem 6-stelligen Code bestätigen.
 // Entfernen geht nur, solange noch ein Passkey als Zugang bleibt (Server: 409 last_credential).
 import 'package:flutter/material.dart';
@@ -131,7 +131,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
     });
     if (ok && erledigt && mounted) {
       _zurueck();
-      zeigeHinweis(context, _hinweis('Passwort und Zwei-Faktor sind eingerichtet.', aktuell));
+      zeigeHinweis(context, _hinweis('Passwort und zweiter Schritt sind eingerichtet.', aktuell));
     }
   }
 
@@ -158,12 +158,12 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
           if (r != null) {
             if (r.sicherungAktualisiert) zusatz = ' Deine Passwort-Sicherung gehört jetzt zum neuen Passwort.';
             if (r.sicherungVeraltet) {
-              zusatz = ' Achtung: Deine Passwort-Sicherung gehört noch zum alten Passwort. Lege sie unter Profil > Verschlüsselung neu an.';
+              zusatz = ' Achtung: Deine Passwort-Sicherung gehört noch zum alten Passwort. Lege sie unter Profil › Sicherheit › Nachrichten-Schutz neu an.';
             }
             await ref.read(passwortAnmeldungProvider).merkeKonto(_email);
           }
         } on CryptoFehler catch (e) {
-          throw EingabeFehler('${e.meldung} Das Passwort wurde nicht geändert. Den Stand deiner Passwort-Sicherung siehst du unter Profil > Verschlüsselung.');
+          throw EingabeFehler('${e.meldung} Das Passwort wurde nicht geändert. Den Stand deiner Passwort-Sicherung siehst du unter Profil › Sicherheit › Nachrichten-Schutz.');
         } finally {
           w.loeschen();
         }
@@ -189,7 +189,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Passwort entfernen?'),
-        content: const Text('Passwort und Zwei-Faktor (TOTP) werden gelöscht. Du meldest dich danach nur noch mit Passkey an.'),
+        content: const Text('Passwort und zweiter Schritt (TOTP) werden gelöscht. Du meldest dich danach nur noch mit Passkey an.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(dialogContext).pop(false), child: const Text('Abbrechen')),
           TextButton(
@@ -211,7 +211,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
       if (erledigt) aktuell = await _nachErfolg(hatPasswort: false);
     });
     if (ok && erledigt && mounted) {
-      zeigeHinweis(context, _hinweis('Passwort und Zwei-Faktor wurden entfernt.', aktuell));
+      zeigeHinweis(context, _hinweis('Passwort und zweiter Schritt wurden entfernt.', aktuell));
     }
   }
 
@@ -231,7 +231,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         if (!didPop && !laeuft) _zurueck();
       },
       child: BildschirmSchutz(
-        child: AuthSeite(label: '// zugänge', titel: 'Passwort & Zwei-Faktor', maxBreite: kMaxContentWidth, kinder: [inhalt]),
+        child: AuthSeite(label: 'Zugänge', titel: 'Passwort und zweiter Schritt', maxBreite: kMaxContentWidth, kinder: [inhalt]),
       ),
     );
   }
@@ -242,7 +242,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const Text(
-          'Mit Passwort und einem Code aus einer Authenticator-App (TOTP) kannst du dich auch ohne Passkey anmelden, '
+          'Mit Passwort und einem Code aus einer Authenticator-App kannst du dich auch ohne Passkey anmelden, '
           'zum Beispiel an einem fremden Gerät.',
           style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
         ),
@@ -255,7 +255,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  me == null ? 'wird geladen …' : (aktiv ? 'Passwort und Authenticator sind eingerichtet' : 'Noch nicht eingerichtet'),
+                  me == null ? 'Lädt …' : (aktiv ? 'Passwort und Authenticator sind eingerichtet' : 'Noch nicht eingerichtet'),
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
@@ -277,7 +277,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
               minimumSize: const Size.fromHeight(48),
             ),
             icon: const Icon(Icons.delete_outline),
-            label: const Text('Passwort und Zwei-Faktor entfernen', textAlign: TextAlign.center),
+            label: const Text('Passwort und zweiter Schritt entfernen', textAlign: TextAlign.center),
           ),
           if (passkeys == 0) ...[
             const SizedBox(height: 8),
@@ -303,7 +303,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         Text(
           aendern
               ? 'Neues Passwort mit mindestens 12 Zeichen. Der Authenticator bleibt unverändert.'
-              : 'Passwort mit mindestens 12 Zeichen. Im nächsten Schritt richtest du den Authenticator (TOTP) ein.',
+              : 'Passwort mit mindestens 12 Zeichen. Im nächsten Schritt richtest du den Authenticator ein.',
           style: const TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
         ),
         const SizedBox(height: 16),
@@ -337,7 +337,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
     children: [
       const Align(
         alignment: Alignment.centerLeft,
-        child: RollenPille('authenticator einrichten', farbe: kNeural),
+        child: RollenPille('Authenticator einrichten', farbe: kNeural),
       ),
       const SizedBox(height: 12),
       const Text(
@@ -348,7 +348,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
       const SizedBox(height: 16),
       QrAnzeige(daten: start.totpUri, beschreibung: 'QR-Code zum Einrichten des Authenticators'),
       const SizedBox(height: 12),
-      const MonoLabel('// schlüssel', color: kTextMuted),
+      const MonoLabel('Schlüssel', color: kTextMuted),
       const SizedBox(height: 4),
       Semantics(
         label: 'Schlüssel für die Authenticator-App',

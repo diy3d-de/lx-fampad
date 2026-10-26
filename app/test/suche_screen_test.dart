@@ -58,9 +58,9 @@ void main() {
     expect(find.byType(SuchScreen), findsOneWidget);
     expect(find.text('Wonach suchst du?'), findsOneWidget);
     await suchen(tester, 'apfel');
-    expect(find.text('Termine · 1'.toUpperCase()), findsOneWidget);
-    expect(find.text('Aufgaben · 1'.toUpperCase()), findsOneWidget);
-    expect(find.text('Listeneinträge · 1'.toUpperCase()), findsOneWidget);
+    expect(labelFinder('Termine · 1'), findsOneWidget);
+    expect(labelFinder('Aufgaben · 1'), findsOneWidget);
+    expect(labelFinder('Listeneinträge · 1'), findsOneWidget);
     pruefeLayout(tester, 'Suche mit Treffern');
     await suchen(tester, 'xyzxyz');
     expect(find.text('Nichts gefunden'), findsOneWidget);

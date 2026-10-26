@@ -73,7 +73,7 @@ class FristenStartKarte extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const MonoLabel('// fristen'),
+            const MonoLabel('Fristen'),
             const SizedBox(height: 12),
             for (final a in zeigen)
               Padding(
@@ -91,7 +91,7 @@ class FristenStartKarte extends ConsumerWidget {
                             fristKurzText(a, jetzt),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: fristFarbe(fristAmpel(a, jetzt))),
+                            style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: fristFarbe(fristAmpel(a, jetzt))),
                           ),
                         ],
                       ),
@@ -99,7 +99,7 @@ class FristenStartKarte extends ConsumerWidget {
                   ],
                 ),
               ),
-            if (liste.length > zeigen.length) Text('+ ${liste.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            if (liste.length > zeigen.length) Text('+ ${liste.length - zeigen.length} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ],
         ),
       ),

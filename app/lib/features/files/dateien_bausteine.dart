@@ -136,7 +136,7 @@ class StufenPille extends StatelessWidget {
             child: Text(
               stufeText(audience),
               style: TextStyle(
-                fontFamily: kFontMono,
+                fontFamily: kFontSans, fontFeatures: kZiffern,
                 fontSize: 11,
                 color: farbe,
               ),
@@ -221,10 +221,9 @@ class EintragZeile extends StatelessWidget {
   Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
     child: Material(
-      color: kSurface.withValues(alpha: 0.7),
+      color: kSurface,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: kBorder),
+        borderRadius: BorderRadius.circular(18),
       ),
       clipBehavior: Clip.antiAlias,
       child: Row(
@@ -264,7 +263,7 @@ class EintragZeile extends StatelessWidget {
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                                 style: const TextStyle(
-                                  fontFamily: kFontMono,
+                                  fontFamily: kFontSans, fontFeatures: kZiffern,
                                   fontSize: 11,
                                   color: kTextMuted,
                                 ),
@@ -323,7 +322,7 @@ class DateiChip extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
             decoration: BoxDecoration(
               color: gewaehlt ? kAccent : kSurface,
-              border: Border.all(color: gewaehlt ? kAccent : kBorder),
+              border: Border.all(color: gewaehlt ? kAccent : Colors.transparent),
               borderRadius: BorderRadius.circular(999),
             ),
             child: Row(
@@ -380,7 +379,7 @@ class Brotkrumen extends StatelessWidget {
               child: Text(
                 text,
                 style: TextStyle(
-                  fontFamily: kFontMono,
+                  fontFamily: kFontSans, fontFeatures: kZiffern,
                   fontSize: 12,
                   color: aktuell ? kTextStrong : kAccent,
                   fontWeight: aktuell ? FontWeight.w700 : FontWeight.w400,
@@ -497,7 +496,7 @@ class KontingentKarte extends ConsumerWidget {
             Text(
               k.text,
               style: const TextStyle(
-                fontFamily: kFontMono,
+                fontFamily: kFontSans, fontFeatures: kZiffern,
                 fontSize: 12,
                 color: kText,
               ),

@@ -98,7 +98,7 @@ class _HaPruefenScreenState extends ConsumerState<HaPruefenScreen> {
     final liste = ref.watch(ingestProvider.select((z) => z.zuPruefen));
     final daten = ref.watch(zaehlerDatenProvider);
     return AuthSeite(
-      label: '// home assistant',
+      label: 'Home Assistant',
       titel: 'Zu prüfen',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -156,7 +156,7 @@ class _PruefKarte extends StatelessWidget {
       label: '$titel. ${haPruefText(e)}${loesch == null ? '' : ' ${paketLoeschText(loesch)}.'}',
       child: Container(
         padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(color: kSurface.withValues(alpha: 0.7), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        decoration: BoxDecoration(color: kSurface, border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(18)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -170,8 +170,8 @@ class _PruefKarte extends StatelessWidget {
                   spacing: 16,
                   runSpacing: 2,
                   children: [
-                    Text('Davor: ${zahl(e.davorMilli!)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
-                    Text('Neu: ${zahl(e.milli)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kWarn)),
+                    Text('Davor: ${zahl(e.davorMilli!)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
+                    Text('Neu: ${zahl(e.milli)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kWarn)),
                   ],
                 ),
               ),

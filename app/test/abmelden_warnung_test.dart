@@ -60,8 +60,8 @@ Future<_Aufbau> _aufbau({bool pwServer = true}) async {
 /// Einrichtung ohne Sicherung des Wiederherstellungsschlüssels, danach zurück im Profil.
 Future<void> _einrichten(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Verschlüsselung');
-  await tippeText(tester, 'Verschlüsselung einrichten');
+  await tippeText(tester, 'Nachrichten-Schutz');
+  await tippeText(tester, 'Nachrichten-Schutz einrichten');
   await tippeText(tester, 'Später sichern');
   await tippe(tester, find.widgetWithText(TextButton, 'Später'));
   await tippe(tester, find.byTooltip('Zurück'));
@@ -315,34 +315,34 @@ Future<void> main() async {
     });
 
     // Lücke L-5: ungesendete Änderungen im Ausgang gehen beim Abmelden verloren, darum nennt der Dialog die Anzahl und bietet das Synchronisieren an
-    testWidgets('ungesendete Änderungen: Warnung mit Anzahl, "Erst synchronisieren" gleicht ab', (tester) async {
+    testWidgets('ungesendete Änderungen: Warnung mit Anzahl, "Erst übertragen" gleicht ab', (tester) async {
       final sync = _OffenSync(3);
       await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), extra: [syncProvider.overrideWith(() => sync)]);
       expect(find.textContaining('3 Änderungen'), findsOneWidget);
-      expect(find.text('Erst synchronisieren'), findsOneWidget);
+      expect(find.text('Erst übertragen'), findsOneWidget);
       expect(find.textContaining('Änderungen verwerfen'), findsOneWidget, reason: 'der Abmelden-Knopf sagt ehrlich, was passiert');
       pruefeLayout(tester, 'Dialog 2.0 mit ungesendeten Änderungen');
       sync.nachSync = 0;
-      await tester.tap(find.text('Erst synchronisieren'));
+      await tester.tap(find.text('Erst übertragen'));
       await tester.pumpAndSettle();
       expect(sync.synchronisiert, 1);
       expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing, reason: 'nach dem Abgleich ist nichts mehr offen');
-      expect(find.text('Erst synchronisieren'), findsNothing);
+      expect(find.text('Erst übertragen'), findsNothing);
       expect(find.text('Abmelden'), findsOneWidget);
     });
 
     testWidgets('ohne ungesendete Änderungen: keine Warnung', (tester) async {
       await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit));
       expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing);
-      expect(find.text('Erst synchronisieren'), findsNothing);
+      expect(find.text('Erst übertragen'), findsNothing);
     });
 
     // G-2: vom Server abgelehnte Änderungen (Fehlercode im Ausgang) gehen beim Abmelden ebenfalls verloren und werden getrennt genannt
-    testWidgets('abgelehnte Änderungen: getrennt genannt, kein "Erst synchronisieren", Knopf warnt', (tester) async {
+    testWidgets('abgelehnte Änderungen: getrennt genannt, kein "Erst übertragen", Knopf warnt', (tester) async {
       await _dialogAllein(tester, const E2eeState(status: E2eeStatus.bereit), abgelehnt: 2);
       expect(find.textContaining('2 nicht gesendete Nachrichten (Änderungen) mit Fehler'), findsOneWidget);
       expect(find.textContaining('noch nicht an den Server gesendet'), findsNothing);
-      expect(find.text('Erst synchronisieren'), findsNothing, reason: 'ein Abgleich ändert an abgelehnten Änderungen nichts');
+      expect(find.text('Erst übertragen'), findsNothing, reason: 'ein Abgleich ändert an abgelehnten Änderungen nichts');
       expect(find.textContaining('Änderungen verwerfen'), findsOneWidget);
       pruefeLayout(tester, 'Dialog 2.0 mit abgelehnten Änderungen');
     });
@@ -372,7 +372,7 @@ Future<void> main() async {
         extra: [syncProvider.overrideWith(() => _OffenSync(12))],
       );
       expect(find.text('Überall abmelden (Änderungen verwerfen)'), findsOneWidget);
-      expect(find.text('Erst synchronisieren'), findsOneWidget);
+      expect(find.text('Erst übertragen'), findsOneWidget);
       expect(find.text('Abbrechen'), findsOneWidget);
       pruefeLayout(tester, 'Dialog 2.0 längster Knopf');
       expect(tester.takeException(), isNull);

@@ -1,8 +1,8 @@
 // Rückfrage vor einem frei gewählten Abmelden. Abmelden beendet nur die Sitzung (und leert die zwischengespeicherten Daten): Der Personenschlüssel bleibt im
 // Schlüsselspeicher dieses Geräts liegen und wird bei der nächsten Anmeldung derselben Person wieder benutzt. Die Rückfrage ist darum nur ein ruhiger Hinweis,
-// keine Warnung; die harte Warnung gehört zu "Gerät abgeben" (Profil > Verschlüsselung), der einzigen Aktion, die den Schlüssel löscht.
+// keine Warnung; die harte Warnung gehört zu "Gerät abgeben" (Profil › Sicherheit › Nachrichten-Schutz), der einzigen Aktion, die den Schlüssel löscht.
 // Gilt für "Abmelden", "Überall abmelden" und "Dieses Gerät abmelden"; Zwangsabmeldungen (401, Widerruf) fragen nie.
-// Warten noch ungesendete Änderungen im Ausgang (Zähler des Sync-Dienstes, live) oder vom Server abgelehnte, warnt der Dialog mit der Anzahl und bietet "Erst synchronisieren"
+// Warten noch ungesendete Änderungen im Ausgang (Zähler des Sync-Dienstes, live) oder vom Server abgelehnte, warnt der Dialog mit der Anzahl und bietet "Erst übertragen"
 // an: Beim Abmelden werden sie mit den lokalen Daten gelöscht (Lücke L-5). Ohne solche Änderungen bleibt es beim ruhigen Hinweis.
 // Ob ein Schlüssel auf dem Gerät liegt, fragt die App direkt im Schlüsselspeicher; lässt sich das nicht klären, gilt "unbekannt, evtl. vorhanden" und nie "kein Schlüssel".
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -65,10 +65,10 @@ Future<bool> abmeldenBestaetigen(
     SchluesselLage.keiner => null,
     SchluesselLage.vorhanden =>
       'Dein Schlüssel bleibt auf diesem Gerät. Wenn du dich hier wieder anmeldest, sind deine Chats gleich wieder lesbar. '
-          'Willst du das Gerät abgeben, nutze Profil › Verschlüsselung › Gerät abgeben.',
+          'Willst du das Gerät abgeben, nutze Profil › Sicherheit › Nachrichten-Schutz › Gerät abgeben.',
     SchluesselLage.unbekannt =>
       'Ein Schlüssel, der auf diesem Gerät liegt, bleibt hier; die App konnte ihn gerade nicht prüfen. '
-          'Willst du das Gerät abgeben, nutze Profil › Verschlüsselung › Gerät abgeben.',
+          'Willst du das Gerät abgeben, nutze Profil › Sicherheit › Nachrichten-Schutz › Gerät abgeben.',
   };
   final ja = await showDialog<bool>(
     useRootNavigator: false,
@@ -165,7 +165,7 @@ class _AbmeldeDialogState extends ConsumerState<_AbmeldeDialog> {
           TextButton(
             onPressed: _synchronisiert ? null : _synchronisieren,
             style: _stil(kAccent),
-            child: Text(_synchronisiert ? 'Synchronisiere …' : 'Erst synchronisieren'),
+            child: Text(_synchronisiert ? 'Überträgt …' : 'Erst übertragen'),
           ),
         TextButton(
           onPressed: () => Navigator.of(context).pop(true),
@@ -180,7 +180,7 @@ class _AbmeldeDialogState extends ConsumerState<_AbmeldeDialog> {
 /// Warnung vor dem Verlust noch nicht gesendeter Änderungen (Ausgang): Beim ausdrücklichen Abmelden und bei "Gerät abgeben" werden sie mit den lokalen Daten gelöscht.
 String ungesendetText(int n) =>
     '${n == 1 ? 'Eine Änderung (z. B. eine Nachricht) wurde' : '$n Änderungen (z. B. Nachrichten) wurden'} noch nicht an den Server gesendet und '
-    '${n == 1 ? 'geht' : 'gehen'} beim Abmelden verloren. Verbinde dich mit dem Netz und synchronisiere zuerst.';
+    '${n == 1 ? 'geht' : 'gehen'} beim Abmelden verloren. Verbinde dich mit dem Netz und übertrage zuerst.';
 
 /// Vom Server abgelehnte, nie gesendete Änderungen (Fehler an der Nachricht): Auch sie gehen beim Abmelden verloren; ein Abgleich ändert daran nichts.
 String abgelehntText(int n) =>

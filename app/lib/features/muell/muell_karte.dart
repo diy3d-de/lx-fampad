@@ -68,7 +68,7 @@ class MuellKachelInhalt extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
               decoration: BoxDecoration(color: kAccent, borderRadius: BorderRadius.circular(999)),
-              child: Text(daten.tage == 0 ? 'heute' : 'morgen', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, fontWeight: FontWeight.w500, color: kOnAccent)),
+              child: Text(daten.tage == 0 ? 'heute' : 'morgen', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, fontWeight: FontWeight.w500, color: kOnAccent)),
             ),
           )
         else
@@ -102,7 +102,7 @@ class MuellStartKarte extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              MonoLabel(d.hervorgehoben ? '// müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : '// müll'),
+              MonoLabel(d.hervorgehoben ? 'Müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : 'Müll'),
               const SizedBox(height: 10),
               MuellKachelInhalt(daten: d),
             ],

@@ -1,4 +1,4 @@
-// Oberfläche der Passwort-Sicherung (Profil > Verschlüsselung > Passwort-Sicherung): nur sichtbar, wenn der Server sie anbietet; Passwort mit
+// Oberfläche der Passwort-Sicherung (Profil › Sicherheit › Nachrichten-Schutz › Passwort-Sicherung): nur sichtbar, wenn der Server sie anbietet; Passwort mit
 // Mindeststärke und Bestätigung, Vorschlag, Anlegen mit Prüfung, Fehlerfall; Gerät ohne Schlüssel verbindet mit Passwort.
 // 360 px Breite, Textskala 1.0 und 1.5, Touch-Ziele >= 44 px.
 import 'dart:math';
@@ -63,7 +63,7 @@ Future<_Aufbau> _aufbau({bool schalter = true, bool schluessel = true}) async {
 
 Future<void> _zurSeite(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Verschlüsselung');
+  await tippeText(tester, 'Nachrichten-Schutz');
 }
 
 Future<void> main() async {
@@ -87,7 +87,7 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
       expect(find.text('Passwort-Sicherung'), findsOneWidget);
-      expect(find.textContaining('nicht gesichert · jetzt einrichten'), findsOneWidget);
+      expect(find.textContaining('Noch nicht gesichert. Jetzt einrichten'), findsOneWidget);
       pruefeLayout(tester, 'Verschlüsselung mit Zeile');
 
       await tippeText(tester, 'Passwort-Sicherung');
@@ -130,8 +130,8 @@ Future<void> main() async {
       await warte(tester);
 
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.textContaining('liegt beim server (seit '), findsOneWidget, reason: 'der Stand beim Server zählt, nicht ein "geprüft" auf diesem Gerät');
-      expect(find.textContaining('neues passwort wählen'), findsOneWidget);
+      expect(find.textContaining('Liegt beim Server (seit '), findsOneWidget, reason: 'der Stand beim Server zählt, nicht ein "geprüft" auf diesem Gerät');
+      expect(find.textContaining('Du kannst ein neues Passwort wählen'), findsOneWidget);
       expect(a.srv.pwStand(fixIdAdmin).verifiziert, isTrue);
       expect(a.server.anfragen('POST /me/key-backup-pw/verified'), hasLength(1));
       pruefeLayout(tester, 'Verschlüsselung nach Anlegen');
@@ -154,7 +154,7 @@ Future<void> main() async {
       expect(a.server.anfragen('POST /me/key-backup-pw/verified'), isEmpty);
       pruefeLayout(tester, 'Passwort-Sicherung: Fehler');
       await tippe(tester, find.byTooltip('Zurück'));
-      expect(find.textContaining('nicht gesichert · jetzt einrichten'), findsOneWidget);
+      expect(find.textContaining('Noch nicht gesichert. Jetzt einrichten'), findsOneWidget);
     });
 
     testWidgets('Gerät ohne Schlüssel: mit Passwort verbinden ($s)', (tester) async {

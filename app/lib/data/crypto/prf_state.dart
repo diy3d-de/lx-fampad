@@ -72,7 +72,7 @@ class PrfSteuerung {
     final lokal = await _e2ee.lokalenSchluesselFuerAblauf();
     if (lokal == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät gibt es keinen Schlüssel.');
     final server = (await ref.read(apiProvider).eigeneSchluessel()).schluessel;
-    if (server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast die Verschlüsselung noch nicht eingerichtet.');
+    if (server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast den Nachrichten-Schutz noch nicht eingerichtet.');
     final erste = await _auswerten();
     if (erste == null) return PrfAnlegen.nichtUnterstuetzt;
     try {

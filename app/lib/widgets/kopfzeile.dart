@@ -12,8 +12,8 @@ import '../ui/widgets.dart';
 import 'benutzer_avatar.dart';
 import 'sync_indicator.dart';
 
-/// Datum der Kopfzeile in Kleinschreibung ("do, 22. okt").
-String kopfzeilenDatum([DateTime? jetzt]) => DateFormat('E, d. MMM', 'de_DE').format(jetzt ?? DateTime.now()).toLowerCase();
+/// Datum der Kopfzeile ("Do., 22. Okt."; als Beschriftung mit großem Anfangsbuchstaben).
+String kopfzeilenDatum([DateTime? jetzt]) => DateFormat('E, d. MMM', 'de_DE').format(jetzt ?? DateTime.now());
 
 class TabKopfzeile extends StatelessWidget {
   final String title;
@@ -21,7 +21,7 @@ class TabKopfzeile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ScreenHeader(
-    label: '// ${kopfzeilenDatum()}',
+    label: kopfzeilenDatum(),
     title: title,
     // Desktop-Layout: Sync-Zustand steht in der Fußzeile, das Profil unten in der Seitenleiste (nicht doppelt)
     actions: MediaQuery.sizeOf(context).width >= kDesktopBreakpoint ? const [] : const [SyncIndicator(), ProfilButton()],

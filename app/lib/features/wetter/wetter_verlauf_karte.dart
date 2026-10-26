@@ -73,7 +73,7 @@ class _WetterVerlaufKarteState extends State<WetterVerlaufKarte> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            MonoLabel('// verlauf'),
+            MonoLabel('Verlauf'),
             SizedBox(height: 12),
             Text(
               'Noch zu wenige Messwerte für einen Verlauf.',
@@ -102,13 +102,13 @@ class _WetterVerlaufKarteState extends State<WetterVerlaufKarte> {
     String kopfInfo;
     if (cursor != null) {
       final p = punkte[cursor];
-      kopfZeit = '// ${verlaufZeitText(p.zeit, mitTag: mitTag)}';
+      kopfZeit = verlaufZeitText(p.zeit, mitTag: mitTag);
       kopfWert = wertText(g, p.wert);
       kopfInfo = p.wert == null
           ? 'keine Messung'
           : _zumSchnitt(g, p.wert!, punkte);
     } else {
-      kopfZeit = '// jetzt';
+      kopfZeit = 'Jetzt';
       kopfWert = wertText(g, letzter.wert);
       if (ex == null) {
         kopfInfo = '';
@@ -141,15 +141,7 @@ class _WetterVerlaufKarteState extends State<WetterVerlaufKarte> {
             ],
           ),
           const SizedBox(height: 12),
-          Text(
-            kopfZeit.toUpperCase(),
-            style: const TextStyle(
-              fontFamily: kFontMono,
-              fontSize: 11,
-              letterSpacing: 0.9,
-              color: kTextMuted,
-            ),
-          ),
+          MonoLabel(kopfZeit),
           const SizedBox(height: 4),
           Align(
             alignment: Alignment.centerLeft,
@@ -158,7 +150,7 @@ class _WetterVerlaufKarteState extends State<WetterVerlaufKarte> {
               child: Text(
                 kopfWert,
                 style: const TextStyle(
-                  fontFamily: kFontMono,
+                  fontFamily: kFontSans, fontFeatures: kZiffern,
                   fontSize: 26,
                   fontWeight: FontWeight.w700,
                   color: kAccent,
@@ -170,7 +162,7 @@ class _WetterVerlaufKarteState extends State<WetterVerlaufKarte> {
             Text(
               kopfInfo,
               style: const TextStyle(
-                fontFamily: kFontMono,
+                fontFamily: kFontSans, fontFeatures: kZiffern,
                 fontSize: 11,
                 color: kTextMuted,
               ),
@@ -455,7 +447,7 @@ class _VerlaufPainter extends CustomPainter {
     }
     // Beschriftung der Zeitachse: Beginn links, "jetzt" rechts (feste Größe, die Zusammenfassung steht für Screenreader im Text)
     final stil = const TextStyle(
-      fontFamily: kFontMono,
+      fontFamily: kFontSans, fontFeatures: kZiffern,
       fontSize: 10,
       color: kTextMuted,
     );

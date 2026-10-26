@@ -121,7 +121,7 @@ class _DateienScreenState extends ConsumerState<DateienScreen> {
       const SizedBox(height: 4),
       Row(
         children: [
-          Expanded(child: _filter == DateiFilter.alle ? Brotkrumen(pfad: pfad, onWaehlen: _ordnerWaehlen) : MonoLabel('// ${_filterName(_filter)}')),
+          Expanded(child: _filter == DateiFilter.alle ? Brotkrumen(pfad: pfad, onWaehlen: _ordnerWaehlen) : MonoLabel(_filterName(_filter))),
           PopupMenuButton<DateiSortierung>(
             tooltip: 'Sortieren, jetzt: ${_sortText(_sortierung)}',
             icon: const Icon(Icons.sort),
@@ -243,7 +243,7 @@ class _DateienScreenState extends ConsumerState<DateienScreen> {
         _ordnerWaehlen(pfad.length >= 2 ? pfad[pfad.length - 2].id : null);
       },
       child: DateiRahmen(
-        label: '// familie',
+        label: 'Familie',
         titel: 'Dateien',
         knopf: hochladenKnopf,
         aktionen: [IconButton(tooltip: 'Übertragungen', icon: const Icon(Icons.swap_vert), onPressed: _uebertragungen)],

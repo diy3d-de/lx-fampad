@@ -24,8 +24,7 @@ void main() {
 
   void seitenleisteUndFusszeileDa() {
     expect(find.text('lx-familyhub'), findsOneWidget);
-    expect(find.textContaining('sync: '), findsOneWidget);
-    expect(find.textContaining('version: '), findsOneWidget);
+    expect(find.text('Version dev'), findsOneWidget);
   }
 
   for (final groesse in [const Size(1200, 800), const Size(900, 700)]) {
@@ -42,7 +41,7 @@ void main() {
       // Unterseite öffnen: Seitenleiste und Fußzeile bleiben
       await tester.tap(find.text('Sicherheit'));
       await warte(tester);
-      await tester.tap(find.text('Passkeys'));
+      await tester.tap(find.text('Anmelden ohne Passwort'));
       await warte(tester);
       expect(find.text('Profil'), findsNothing);
       seitenleisteUndFusszeileDa();
@@ -57,7 +56,7 @@ void main() {
       await tester.tap(find.byTooltip('Zurück'));
       await warte(tester);
       expect(find.text('Profil'), findsNothing);
-      expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+      expect(labelFinder('Heute und morgen'), findsOneWidget);
       seitenleisteUndFusszeileDa();
       handle.dispose();
     });
@@ -119,7 +118,7 @@ void main() {
     await tester.tap(find.text('Start').first);
     await warte(tester);
     expect(find.text('Profil'), findsNothing);
-    expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+    expect(labelFinder('Heute und morgen'), findsOneWidget);
   });
 
   testWidgets('Editor mit Eingaben: Bereichswechsel fragt nach; weiter bearbeiten bleibt, verwerfen schließt (Dialog im Shell-Navigator)', (tester) async {
@@ -152,7 +151,7 @@ void main() {
     await warte(tester);
     expect(find.text('Neue Aufgabe'), findsNothing);
     expect(find.text('Änderungen verwerfen?'), findsNothing);
-    expect(find.text('// HEUTE & MORGEN'), findsOneWidget);
+    expect(labelFinder('Heute und morgen'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 

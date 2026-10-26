@@ -228,7 +228,7 @@ class _HaKoppelnScreenState extends ConsumerState<HaKoppelnScreen> {
         canPop: false,
         child: BildschirmSchutz(
           child: AuthSeite(
-            label: '// schritt 2 von 3',
+            label: 'Schritt 2 von 3',
             titel: 'Code in Home Assistant einfügen',
             zurueck: false,
             maxBreite: kMaxContentWidth,
@@ -286,7 +286,7 @@ class _HaKoppelnScreenState extends ConsumerState<HaKoppelnScreen> {
       geaendert: () => _name.text.trim() != 'Home Assistant',
       aenderungen: _name,
       child: AuthSeite(
-        label: '// schritt 1 von 3',
+        label: 'Schritt 1 von 3',
         titel: 'Neue Verbindung',
         maxBreite: kMaxContentWidth,
         fussleiste: FilledButton(style: FilledButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: _laeuft ? null : () => unawaited(_koppeln()), child: Text(_laeuft ? 'Einen Moment …' : 'Weiter')),
@@ -298,7 +298,7 @@ class _HaKoppelnScreenState extends ConsumerState<HaKoppelnScreen> {
               label: 'Hinweis: Es gibt schon eine Verbindung auf einem anderen Gerät.',
               child: Container(
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+                decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(18)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -335,7 +335,7 @@ class _Schritt extends StatelessWidget {
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(width: 24, child: Text('$nr.', style: const TextStyle(fontFamily: kFontMono, color: kTextMuted))),
+        SizedBox(width: 24, child: Text('$nr.', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, color: kTextMuted))),
         Expanded(child: Text(text)),
       ],
     ),

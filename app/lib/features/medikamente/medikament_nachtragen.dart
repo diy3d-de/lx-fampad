@@ -127,11 +127,11 @@ class _NachtragenDialogState extends ConsumerState<_NachtragenDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const MonoLabel('// tag'),
+          const MonoLabel('Tag'),
           const SizedBox(height: 6),
           _Feld(icon: Icons.event, text: datumKurz(_tag), semantik: 'Tag, ${datumKurz(_tag)}. Ändern', onTap: _tagWaehlen),
           const SizedBox(height: 14),
-          const MonoLabel('// zeitpunkt im plan'),
+          const MonoLabel('Zeitpunkt im Plan'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -151,7 +151,7 @@ class _NachtragenDialogState extends ConsumerState<_NachtragenDialog> {
             ],
           ),
           const SizedBox(height: 14),
-          const MonoLabel('// genommen um'),
+          const MonoLabel('Genommen um'),
           const SizedBox(height: 6),
           _Feld(icon: Icons.schedule, text: zeitText(_minute), semantik: 'Uhrzeit, ${zeitText(_minute)}. Ändern', onTap: _zeitWaehlen),
           if (_fehler != null) ...[const SizedBox(height: 12), Text(_fehler!, style: const TextStyle(color: kDanger, fontSize: 13))],
@@ -184,7 +184,7 @@ class _Feld extends StatelessWidget {
       child: Container(
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+        decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

@@ -190,7 +190,7 @@ class _TeilenSeiteState extends ConsumerState<TeilenSeite> {
                   child: ListView(
                     padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
                     children: [
-                      const MonoLabel('// teilen'),
+                      const MonoLabel('Teilen'),
                       const SizedBox(height: 4),
                       Semantics(
                         header: true,
@@ -210,17 +210,17 @@ class _TeilenSeiteState extends ConsumerState<TeilenSeite> {
                         if (teilenWahrscheinlichGekuerzt(t))
                           const Padding(
                             padding: EdgeInsets.only(top: 6),
-                            child: Text('Der Text wurde auf $kMaxTeilenZeichen Zeichen gekürzt.', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                            child: Text('Der Text wurde auf $kMaxTeilenZeichen Zeichen gekürzt.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                           ),
                         const SizedBox(height: 16),
-                        const MonoLabel('// wohin damit?'),
+                        const MonoLabel('Wohin damit?'),
                         const SizedBox(height: 8),
                         _Ziel(icon: Icons.checklist_outlined, titel: 'Zu einer Liste hinzufügen', hinweis: listen.isEmpty ? 'Noch keine Liste vorhanden.' : 'Als neuer Eintrag oben in der Liste.', aktiv: listen.isNotEmpty && !_beschaeftigt, onTap: () => _alsListe(t)),
                         _Ziel(icon: Icons.task_alt_outlined, titel: 'Als Aufgabe anlegen', hinweis: 'Titel und Notiz kannst du gleich anpassen.', aktiv: !_beschaeftigt, onTap: () => _alsAufgabe(t)),
                         _Ziel(
                           icon: Icons.chat_bubble_outline,
                           titel: 'Als Nachricht in einen Chat',
-                          hinweis: chatBereit ? 'Wird Ende-zu-Ende verschlüsselt gesendet.' : 'Dafür muss die Verschlüsselung auf diesem Gerät bereit sein.',
+                          hinweis: chatBereit ? 'Wird Ende-zu-Ende verschlüsselt gesendet.' : 'Dafür muss der Nachrichten-Schutz auf diesem Gerät bereit sein.',
                           aktiv: chatBereit && !_beschaeftigt,
                           onTap: () => _alsNachricht(t),
                         ),

@@ -20,7 +20,7 @@ import 'passwort_vergessen_screen.dart';
 
 enum _Schritt { start, code, wiederherstellung }
 
-/// Anmeldung wie im Login-Mockup: Passkey-Knopf, Passwort mit zweitem Schritt (Bestätigungscode), Wiederherstellungscode-Weg.
+/// Anmeldung wie im Login-Mockup: Passkey-Knopf, Passwort mit zweitem Schritt (Bestätigungscode), Notfall-Code-Weg.
 class LoginScreen extends ConsumerStatefulWidget {
   const LoginScreen({super.key});
 
@@ -35,7 +35,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   final _wiederherstellung = TextEditingController();
   _Schritt _schritt = _Schritt.start;
 
-  /// Schritt 2: statt des TOTP-Codes einen Wiederherstellungscode eingeben.
+  /// Schritt 2: statt des TOTP-Codes einen Notfall-Code eingeben.
   bool _mitWiederherstellungscode = false;
   bool? _passkeysDa;
 
@@ -46,7 +46,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   /// Bietet der Server die Passkey-Sicherung an (GET /version)? Nur dann fragt die Passkey-Anmeldung die PRF-Erweiterung mit; sonst läuft sie wie bisher.
   bool _prfMoeglich = false;
 
-  /// Bietet der Server "Passwort vergessen?" an (neues Passwort mit Wiederherstellungscode oder Passkey)?
+  /// Bietet der Server "Passwort vergessen?" an (neues Passwort mit Notfall-Code oder Passkey)?
   bool _resetMoeglich = false;
 
   /// Die App hat im Hintergrund erfahren, dass die Sitzung nach einem Passwort-Reset widerrufen wurde: dauerhafter Hinweis, bis die Person ihn bestätigt.
@@ -108,7 +108,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     final code = _code.text.trim();
     final wc = _wiederherstellung.text.trim();
     if (_mitWiederherstellungscode ? wc.isEmpty : code.length != 6) {
-      setState(() => fehler = _mitWiederherstellungscode ? 'Bitte gib einen Wiederherstellungscode ein.' : 'Bitte gib den 6-stelligen Code ein.');
+      setState(() => fehler = _mitWiederherstellungscode ? 'Bitte gib einen Notfall-Code ein.' : 'Bitte gib den 6-stelligen Code ein.');
       return;
     }
     final email = _email.text.trim();
@@ -166,7 +166,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
 
   Future<void> _nurWiederherstellung() async {
     if (_email.text.trim().isEmpty || _wiederherstellung.text.trim().isEmpty) {
-      setState(() => fehler = 'Bitte gib E-Mail und Wiederherstellungscode ein.');
+      setState(() => fehler = 'Bitte gib E-Mail und Notfall-Code ein.');
       return;
     }
     await ausfuehren(() => _auth.mitWiederherstellungscodeAnmelden(email: _email.text.trim(), code: _wiederherstellung.text.trim()));
@@ -186,7 +186,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
         const MarkenKopf(),
         const SizedBox(height: 28),
         if (_abgemeldetHinweis) ...[
-          const MeldungsBox('Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde. Warst du das nicht, melde dich mit einem Wiederherstellungscode an und sage es einem Admin.'),
+          const MeldungsBox('Du wurdest abgemeldet, weil dein Passwort zurückgesetzt wurde. Warst du das nicht, melde dich mit einem Notfall-Code an und sage es einem Admin.'),
           Align(
             alignment: Alignment.centerLeft,
             child: LinkKnopf(
@@ -241,7 +241,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
     if (_passkeysDa == false) ...[
       const SizedBox(height: 8),
       const Text(
-        'Passkeys werden auf diesem Gerät oder in diesem Browser nicht unterstützt. Melde dich mit Passwort und Code an.',
+        'Anmelden ohne Passwort wird auf diesem Gerät oder in diesem Browser nicht unterstützt. Melde dich mit Passwort und Code an.',
         style: TextStyle(fontSize: 12, color: kTextMuted),
       ),
     ],
@@ -289,18 +289,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
         ),
       ),
     Center(
-      child: LinkKnopf('Passwort verloren? Mit Wiederherstellungscode anmelden', onPressed: laeuft ? null : () => _zu(_Schritt.wiederherstellung)),
+      child: LinkKnopf('Passwort verloren? Mit Notfall-Code anmelden', onPressed: laeuft ? null : () => _zu(_Schritt.wiederherstellung)),
     ),
   ];
 
   List<Widget> _codeSchritt() => [
     const Align(alignment: Alignment.centerLeft, child: RollenPille('schritt 2 von 2', farbe: kNeural)),
     const SizedBox(height: 12),
-    _Ueberschrift(_mitWiederherstellungscode ? 'Wiederherstellungscode' : 'Bestätigungscode'),
+    _Ueberschrift(_mitWiederherstellungscode ? 'Notfall-Code' : 'Bestätigungscode'),
     const SizedBox(height: 8),
     Text(
       _mitWiederherstellungscode
-          ? 'Gib einen deiner Wiederherstellungscodes ein. Jeder Code gilt nur einmal.'
+          ? 'Gib einen deiner Notfall-Codes ein. Jeder Code gilt nur einmal.'
           : 'Gib den 6-stelligen Code aus deiner Authenticator-App ein.',
       style: const TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
     ),
@@ -314,7 +314,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
         textCapitalization: TextCapitalization.characters,
         style: const TextStyle(fontFamily: kFontMono, fontSize: 18, color: kAccent),
         onSubmitted: (_) => _anmeldenMitCode(),
-        decoration: const InputDecoration(labelText: 'Wiederherstellungscode', hintText: 'XXXX-XXXX-XXXX-XXXX'),
+        decoration: const InputDecoration(labelText: 'Notfall-Code', hintText: 'XXXX-XXXX-XXXX-XXXX'),
       )
     else
       CodeFeld(controller: _code, label: 'Code aus der Authenticator-App', autofocus: true, onSubmitted: (_) => _anmeldenMitCode()),
@@ -327,7 +327,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       children: [
         LinkKnopf('zurück', icon: Icons.arrow_back, onPressed: laeuft ? null : () => _zu(_Schritt.start)),
         LinkKnopf(
-          _mitWiederherstellungscode ? 'Code aus der App nutzen' : 'Wiederherstellungscode nutzen',
+          _mitWiederherstellungscode ? 'Code aus der App nutzen' : 'Notfall-Code nutzen',
           onPressed: laeuft
               ? null
               : () => setState(() {
@@ -340,10 +340,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   ];
 
   List<Widget> _nurWiederherstellungSchritt() => [
-    const _Ueberschrift('Mit Wiederherstellungscode anmelden'),
+    const _Ueberschrift('Mit Notfall-Code anmelden'),
     const SizedBox(height: 8),
     const Text(
-      'Kein Passkey und kein Authenticator zur Hand? Mit E-Mail und einem Wiederherstellungscode kommst du wieder hinein. '
+      'Kein Passkey und kein Authenticator zur Hand? Mit E-Mail und einem Notfall-Code kommst du wieder hinein. '
       'Richte danach unter Profil und Sicherheit einen neuen Zugang ein.',
       style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
     ),
@@ -363,7 +363,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
       textCapitalization: TextCapitalization.characters,
       style: const TextStyle(fontFamily: kFontMono, fontSize: 18, color: kAccent),
       onSubmitted: (_) => _nurWiederherstellung(),
-      decoration: const InputDecoration(labelText: 'Wiederherstellungscode', hintText: 'XXXX-XXXX-XXXX-XXXX'),
+      decoration: const InputDecoration(labelText: 'Notfall-Code', hintText: 'XXXX-XXXX-XXXX-XXXX'),
     ),
     const SizedBox(height: 16),
     HauptKnopf(text: 'Anmelden', laeuft: laeuft, onPressed: _nurWiederherstellung),

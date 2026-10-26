@@ -146,7 +146,7 @@ Future<void> main() async {
       final a = bewerteAbsicherung(_zustand(E2eeStatus.keinSchluessel, schluesselBeimServer: false));
       expect(a.ampel, AbsicherungAmpel.rot);
       expect(a.schritte, [AbsicherungSchritt.einrichten]);
-      expect(a.wort, 'nicht abgesichert');
+      expect(a.wort, 'Noch nicht abgesichert');
     });
 
     test('unklarer Stand ist nie grün und hat keine Schritte: laedt, nichtVerfuegbar', () {
@@ -154,7 +154,7 @@ Future<void> main() async {
         final a = bewerteAbsicherung(_zustand(st, pw: true, rec: true), server: _wege(geraet: true, pw: true, rec: true));
         expect(a.ampel, AbsicherungAmpel.unbekannt);
         expect(a.schritte, isEmpty);
-        expect(a.wort, 'unbekannt');
+        expect(a.wort, 'Wird geprüft');
       }
     });
 
@@ -243,28 +243,28 @@ Future<void> main() async {
     }
 
     for (final skala in [1.0, 1.5]) {
-      testWidgets('Startseite: ohne Schlüssel rot mit Knopf "Verschlüsselung einrichten"; Profil zeigt die Ampel mit Wort (360 px, Textskala $skala)', (tester) async {
+      testWidgets('Startseite: ohne Schlüssel rot mit Knopf "Nachrichten-Schutz einrichten"; Profil zeigt die Ampel mit Wort (360 px, Textskala $skala)', (tester) async {
         await start(tester, skala);
-        expect(find.text('// ABSICHERUNG'), findsOneWidget);
-        expect(find.text('● nicht abgesichert'), findsOneWidget);
-        expect(find.widgetWithText(FilledButton, 'Verschlüsselung einrichten'), findsOneWidget);
+        expect(labelFinder('Absicherung'), findsOneWidget);
+        expect(find.text('Noch nicht abgesichert'), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Nachrichten-Schutz einrichten'), findsOneWidget);
         expect(find.textContaining('noch keinen Schlüssel'), findsOneWidget);
         pruefeLayout(tester, 'Startseite mit Absicherungs-Karte');
         // Profil: die Zeile ist immer da
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
         // Hauptseite: nur die Zeile Sicherheit mit der Antwort der Ampel als Pille; die Ampel-Zeile selbst liegt auf der Seite Sicherheit
         expect(find.text('Sicherheit'), findsOneWidget);
-        expect(find.text('● nein'), findsOneWidget);
+        expect(find.text('Nein'), findsOneWidget);
         expect(find.text('Bin ich abgesichert?'), findsNothing);
         pruefeLayout(tester, 'Profil mit Sicherheits-Zeile');
         await tippeText(tester, 'Sicherheit');
         expect(find.text('Bin ich abgesichert?'), findsOneWidget);
-        expect(find.text('● nein'), findsOneWidget);
+        expect(find.text('Nein'), findsOneWidget);
         pruefeLayout(tester, 'Sicherheit mit Ampel-Zeile');
         await tippeText(tester, 'Bin ich abgesichert?');
-        expect(find.text('// DEINE WEGE'), findsOneWidget);
+        expect(labelFinder('Deine Wege'), findsOneWidget);
         expect(find.text('Wiederherstellungsschlüssel'), findsOneWidget);
-        expect(find.text('offen'), findsWidgets);
+        expect(find.text('Offen'), findsWidgets);
         pruefeLayout(tester, 'Absicherungs-Seite ohne Schlüssel');
       });
     }
@@ -274,7 +274,7 @@ Future<void> main() async {
       // Einrichten über den Controller (wie die Seite Verschlüsselung), dann die Startseite neu bewerten
       await a.c.read(e2eeProvider.notifier).einrichten();
       await warte(tester);
-      expect(find.text('● teilweise'), findsOneWidget);
+      expect(find.text('Einen Weg noch einrichten'), findsOneWidget);
       expect(find.textContaining('nur auf einem Gerät'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Wiederherstellungsschlüssel anlegen'), findsOneWidget);
       pruefeLayout(tester, 'gelb');
@@ -282,13 +282,13 @@ Future<void> main() async {
       a.srv.sicherungEinspielen(fixIdAdmin);
       await a.c.read(e2eeProvider.notifier).laden();
       await warte(tester);
-      expect(find.text('// ABSICHERUNG'), findsNothing);
+      expect(labelFinder('Absicherung'), findsNothing);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-      expect(find.text('● ja'), findsOneWidget);
+      expect(find.text('Ja'), findsOneWidget);
       await tippeText(tester, 'Bin ich abgesichert?');
-      expect(find.text('● abgesichert'), findsOneWidget);
+      expect(find.text('Alles gut abgesichert'), findsOneWidget);
       expect(find.textContaining('Es ist nichts zu tun'), findsOneWidget);
-      expect(find.textContaining('liegt beim Server seit'), findsOneWidget);
+      expect(find.textContaining('Liegt beim Server seit'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'Neuen Schlüssel und Notfallblatt erzeugen'), findsOneWidget);
       pruefeLayout(tester, 'grün');
     });
@@ -308,7 +308,7 @@ Future<void> main() async {
       await warte(tester);
       expect(find.widgetWithText(FilledButton, 'Passwort-Sicherung anlegen'), findsOneWidget);
       await tippeText(tester, 'Einzelheiten');
-      expect(find.text('// NÄCHSTE SCHRITTE'), findsOneWidget);
+      expect(labelFinder('Nächste Schritte'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, 'Wiederherstellungsschlüssel anlegen'), findsOneWidget, reason: 'der zweite Weg steht als zweite Wahl daneben');
       expect(find.text('Passwort-Sicherung'), findsOneWidget);
       pruefeLayout(tester, 'Seite mit zwei Schritten');
@@ -319,14 +319,14 @@ Future<void> main() async {
       a.srv.keyStatusSchalter = false;
       await a.c.read(e2eeProvider.notifier).einrichten();
       await warte(tester);
-      expect(find.text('● teilweise'), findsOneWidget);
+      expect(find.text('Einen Weg noch einrichten'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('Desktop-Breite: die Karte steht auch auf der Startseite des Desktop-Layouts', (tester) async {
       await start(tester, 1.0, groesse: const Size(1200, 900));
-      expect(find.text('// ABSICHERUNG'), findsOneWidget);
-      expect(find.text('● nicht abgesichert'), findsWidgets);
+      expect(labelFinder('Absicherung'), findsOneWidget);
+      expect(find.text('Noch nicht abgesichert'), findsWidgets);
     });
   });
 }

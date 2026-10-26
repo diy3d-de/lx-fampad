@@ -167,8 +167,8 @@ void main() {
     testWidgets('Tagesliste nach Tageszeit, Abhaken schreibt eine Einnahme zum Slot', (tester) async {
       await start(tester, eigene());
       expect(find.text('Medikamente'), findsWidgets);
-      expect(find.text('NACHTS · 00:01'), findsOneWidget);
-      expect(find.text('ABENDS · 22:00'), findsNothing);
+      expect(find.text('Nachts · 00:01'), findsOneWidget);
+      expect(find.text('Abends · 22:00'), findsNothing);
       expect(find.text('Blutdrucktablette · 5 mg'), findsNWidgets(2));
       expect(find.text('0 von 2 erledigt'), findsOneWidget);
       await tippe(tester, find.byKey(ValueKey('med-haken:$_med1:${_heute()}T00:01')));
@@ -197,7 +197,7 @@ void main() {
 
     testWidgets('bei Bedarf steht getrennt und trägt eine Einnahme ohne Slot ein', (tester) async {
       await start(tester, d(Role.parent, [_e(_med2, _ich, _spray())]));
-      expect(find.text('// BEI BEDARF'), findsOneWidget);
+      expect(labelFinder('Bei Bedarf'), findsOneWidget);
       expect(find.text('Heute ist nichts zu nehmen. Pausierte und beendete Pläne findest du unter „Alle Medikamente“.'), findsNothing);
       await tippe(tester, find.byKey(const ValueKey('med-bedarf:$_med2')));
       expect(repo.erfasst.single.slot, isNull);
@@ -208,7 +208,7 @@ void main() {
       await start(tester, d(Role.parent, [_e(_med3, _ich, _vitamin())]));
       expect(find.text('Vorrat oder Rezept beachten'), findsOneWidget);
       expect(find.textContaining('Vitamin D: Vorrat reicht noch'), findsOneWidget);
-      expect(find.textContaining('VORRAT '), findsOneWidget);
+      expect(find.byWidgetPredicate((w) => w is Text && RegExp(r'^Vorrat \d').hasMatch(w.data ?? '')), findsOneWidget);
       pruefeLayout(tester, 'Warnkarte');
     });
 
@@ -277,7 +277,7 @@ void main() {
       expect(find.textContaining('Warnung ab 7 Tagen'), findsOneWidget);
       expect(find.text('Ben, alle Eltern und Admins'), findsOneWidget);
       expect(find.text('Ben, alle Eltern und Admins (fest)'), findsOneWidget);
-      expect(find.text('// LETZTE 7 TAGE'), findsOneWidget);
+      expect(labelFinder('Letzte 7 Tage'), findsOneWidget);
       expect(find.text('Packung aufgefüllt'), findsOneWidget);
       expect(find.text('Einnahme nachtragen'), findsOneWidget);
       expect(find.text('Pausieren'), findsOneWidget);
@@ -358,7 +358,7 @@ void main() {
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
       expect(find.text('Wähle mindestens einen Wochentag.'), findsOneWidget);
       await tippe(tester, find.text('Bei Bedarf'));
-      expect(find.text('// UHRZEITEN'), findsNothing);
+      expect(labelFinder('Uhrzeiten'), findsNothing);
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
       expect(repo.angelegt.single.inhalt.rhythmus.art, RhythmusArt.bedarf);
       expect(repo.angelegt.single.inhalt.zeiten, isEmpty);
@@ -380,7 +380,7 @@ void main() {
       await eingeben(tester, 'Name', 'X');
       repo.fehler = const SchluesselFehlt(['x']);
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
-      expect(find.textContaining('Verschlüsselung noch nicht eingerichtet'), findsOneWidget);
+      expect(find.textContaining('Nachrichten-Schutz noch nicht eingerichtet'), findsOneWidget);
     });
 
     testWidgets('Rezept läuft ab: Frist nur für Kinder (neutral, nur Eltern), für mich selbst keine Verknüpfung', (tester) async {
@@ -446,30 +446,32 @@ void main() {
 
     testWidgets('Desktop: Eintrag in der Seitenleiste mit Zahl, Bereich im Inhaltsbereich, Seitenleiste bleibt', (tester) async {
       await start(tester, eigene(), groesse: const Size(1440, 900), zumBereichGehen: false);
-      expect(find.text('Medikamente'), findsOneWidget);
-      await tester.tap(find.text('Medikamente'));
+      expect(find.text('Medikamente').first, findsOneWidget);
+      await tester.tap(find.text('Medikamente').first);
       await warte(tester);
       expect(find.text('lx-familyhub'), findsOneWidget);
-      expect(find.text('NACHTS · 00:01'), findsOneWidget);
+      expect(find.text('Nachts · 00:01'), findsOneWidget);
       expect(find.byType(MedikamenteScreen), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
 
     testWidgets('Startseite: Kachel zeigt Uhrzeit und Person, nie den Medikamentennamen', (tester) async {
       await start(tester, d(Role.parent, [_e(_med1, _ich, _blut(zeit: '23:58')), _e(_med2, _kind, _vitamin())], kinder: true), zumBereichGehen: false);
-      expect(find.text('// MEDIKAMENTE'), findsOneWidget);
+      expect(labelFinder('Medikamente'), findsOneWidget);
       expect(find.textContaining('nächste Einnahme'), findsOneWidget);
       expect(find.textContaining('Blutdruck'), findsNothing);
       expect(find.textContaining('Vitamin'), findsNothing);
       expect(find.textContaining('5 mg'), findsNothing);
-      await tester.tap(find.text('// MEDIKAMENTE'));
+      Scrollable.ensureVisible(tester.element(find.textContaining('nächste Einnahme')), alignment: 0.3);
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.textContaining('nächste Einnahme'));
       await warte(tester);
       expect(find.byType(MedikamenteScreen), findsOneWidget);
     });
 
     testWidgets('Startseite ohne offene Einnahmen: keine Kachel', (tester) async {
       await start(tester, d(Role.parent, [_e(_med2, _ich, _spray())]), zumBereichGehen: false);
-      expect(find.text('// MEDIKAMENTE'), findsNothing);
+      expect(labelFinder('Medikamente'), findsNothing);
     });
   });
 

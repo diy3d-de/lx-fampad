@@ -16,7 +16,7 @@ class QrAnzeige extends StatelessWidget {
       final seite = c.maxWidth.isFinite ? (c.maxWidth < groesse ? c.maxWidth : groesse) : groesse;
       return Center(
         child: Container(
-          decoration: BoxDecoration(color: kTextStrong, borderRadius: BorderRadius.circular(14)),
+          decoration: BoxDecoration(color: kTextStrong, borderRadius: BorderRadius.circular(18)),
           padding: const EdgeInsets.all(10),
           child: QrImageView(
             data: daten,

@@ -76,7 +76,7 @@ Future<void> main() async {
     expect(find.widgetWithText(SnackBarAction, 'Gerät abgeben'), findsOneWidget);
     pruefeLayout(tester, 'Hinweis mit Gerät abgeben');
     await tippe(tester, find.widgetWithText(SnackBarAction, 'Gerät abgeben'));
-    expect(find.text('Verschlüsselung'), findsWidgets);
+    expect(find.text('Nachrichten-Schutz'), findsWidgets);
     expect(find.textContaining('Mit einem persönlichen Schlüssel'), findsOneWidget);
     // ein Hinweis ohne Verbinden (z. B. fehlgeschlagen) bietet das Abgeben nicht an
     Navigator.of(tester.element(find.textContaining('Mit einem persönlichen Schlüssel'))).pop();

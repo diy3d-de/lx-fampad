@@ -19,10 +19,10 @@ class StartseiteGehoben extends StatelessWidget {
     child: DecoratedBox(
       position: DecorationPosition.foreground,
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: kAccent, width: 1.5),
       ),
-      child: ClipRRect(borderRadius: BorderRadius.circular(14), child: ColoredBox(color: kSurface2, child: child)),
+      child: ClipRRect(borderRadius: BorderRadius.circular(18), child: ColoredBox(color: kSurface2, child: child)),
     ),
   );
 
@@ -50,7 +50,7 @@ class StartseiteLuecke extends StatelessWidget {
         height: hoehe,
         width: double.infinity,
         child: const Center(
-          child: Text('HIER ABLEGEN', style: TextStyle(fontFamily: kFontMono, fontSize: 11, letterSpacing: 0.9, color: kAccent)),
+          child: Text('Hier ablegen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, letterSpacing: 0.9, color: kAccent)),
         ),
       ),
     ),

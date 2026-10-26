@@ -67,7 +67,7 @@ class VorkommenKarte extends StatelessWidget {
                           ],
                         ),
                         const SizedBox(height: 2),
-                        Text(zeit, style: const TextStyle(fontFamily: kFontMono, fontSize: 12, color: kTextMuted)),
+                        Text(zeit, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                         if (v.ort.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 2),
@@ -87,7 +87,7 @@ class VorkommenKarte extends StatelessWidget {
                               runSpacing: 4,
                               children: [
                                 for (final u in personen.take(4)) BenutzerAvatar(user: u, size: 22),
-                                if (personen.length > 4) Text('+${personen.length - 4}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                                if (personen.length > 4) Text('+${personen.length - 4}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                               ],
                             ),
                           ),
@@ -151,7 +151,7 @@ class PersonKapsel extends StatelessWidget {
           decoration: BoxDecoration(
             color: gewaehlt ? farbe.withValues(alpha: 0.16) : null,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: gewaehlt ? farbe : kBorder),
+            border: Border.all(color: gewaehlt ? farbe : Colors.transparent),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -191,7 +191,7 @@ Future<SerieUmfang?> serieUmfangFragen(BuildContext context, {required String ti
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
-          const MonoLabel('// serie'),
+          const MonoLabel('Serie'),
           const SizedBox(height: 4),
           Text(titel, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kTextStrong)),
           const SizedBox(height: 12),
@@ -246,7 +246,7 @@ Future<TerminAktion?> terminDetailBlatt(
               children: [
                 Container(width: 4, height: 18, color: farbe),
                 const SizedBox(width: 8),
-                MonoLabel(istGeburtstag(t) ? '// geburtstag' : (v.geaendert ? '// termin · geändert' : '// termin'), color: farbe),
+                MonoLabel(istGeburtstag(t) ? 'Geburtstag' : (v.geaendert ? 'Termin · geändert' : 'Termin'), color: farbe),
               ],
             ),
             const SizedBox(height: 6),
@@ -334,7 +334,7 @@ class TagesHinweisZeile extends StatelessWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(8), border: Border.all(color: farbe.withValues(alpha: 0.35))),
-                  child: Text(text, style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: farbe)),
+                  child: Text(text, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: farbe)),
                 ),
               );
             }(),

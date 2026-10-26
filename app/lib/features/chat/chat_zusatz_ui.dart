@@ -82,14 +82,14 @@ class ReaktionsChips extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: g.ich ? kAccentSoft : kSurface,
                           borderRadius: BorderRadius.circular(999),
-                          border: Border.all(color: g.ich ? kAccent : kBorder),
+                          border: Border.all(color: g.ich ? kAccent : Colors.transparent),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(g.emoji, textScaler: TextScaler.noScaling, style: const TextStyle(fontSize: 15)),
                             const SizedBox(width: 4),
-                            Text('${g.anzahl}', style: TextStyle(fontFamily: kFontMono, fontSize: 12, color: g.ich ? kAccent : kTextMuted)),
+                            Text('${g.anzahl}', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: g.ich ? kAccent : kTextMuted)),
                           ],
                         ),
                       ),
@@ -154,7 +154,7 @@ class UmfrageKarte extends StatelessWidget {
             if (umfrage.mehrfach) 'mehrere Antworten möglich',
             if (beendet) 'beendet' else if (umfrage.ende != null) 'endet ${_endeText(umfrage.ende!)}',
           ].join(' · '),
-          style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted, height: 1.4),
+          style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted, height: 1.4),
         ),
       ],
     );
@@ -203,7 +203,7 @@ class _Option extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(child: Text(text, style: const TextStyle(color: kText, height: 1.3))),
                       const SizedBox(width: 8),
-                      Text('$stimmen', style: TextStyle(fontFamily: kFontMono, fontSize: 13, color: gewaehlt ? kAccent : kTextMuted)),
+                      Text('$stimmen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: gewaehlt ? kAccent : kTextMuted)),
                     ],
                   ),
                   const SizedBox(height: 4),

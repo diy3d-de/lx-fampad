@@ -24,8 +24,8 @@ class SuchFeldKnopf extends StatelessWidget {
     child: SizedBox(
       width: breite,
       child: Material(
-        color: kSurface.withValues(alpha: 0.7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kBorder)),
+        color: kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: onTap,
@@ -61,8 +61,8 @@ class SuchKnopf extends StatelessWidget {
       excludeSemantics: true,
       onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),
       child: Material(
-        color: kSurface.withValues(alpha: 0.7),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12), side: const BorderSide(color: kBorder)),
+        color: kSurface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),

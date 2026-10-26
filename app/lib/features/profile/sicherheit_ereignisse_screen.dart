@@ -39,7 +39,7 @@ class _SicherheitEreignisseScreenState extends ConsumerState<SicherheitEreigniss
     final df = DateFormat('d. MMM yyyy, HH:mm', 'de_DE');
     final l = _liste;
     return AuthSeite(
-      label: '// sicherheit',
+      label: 'Sicherheit',
       titel: 'Sicherheitsereignisse',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -68,7 +68,7 @@ class _SicherheitEreignisseScreenState extends ConsumerState<SicherheitEreigniss
                         children: [
                           Text(sicherheitsEreignisText(e), style: const TextStyle(height: 1.4)),
                           const SizedBox(height: 4),
-                          Text(df.format(e.zeit.toLocal()), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                          Text(df.format(e.zeit.toLocal()), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                         ],
                       ),
                     ),

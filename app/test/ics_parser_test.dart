@@ -148,7 +148,7 @@ void main() {
       expect(m.endUtc!.difference(m.startUtc!), const Duration(hours: 1));
       final z = t('event/1010');
       expect(z.endUtc!.isAfter(z.startUtc!), isTrue);
-      expect(z.beschreibung, contains('● Buchungsnummer'));
+      expect(z.beschreibung, contains('Buchungsnummer'));
     });
 
     test('Emoji, Umlaute und Escapes', () {

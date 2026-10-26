@@ -171,7 +171,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
       geaendert: () => _stand() != _ausgang,
       aenderungen: Listenable.merge([_titel, _notiz]),
       child: AuthSeite(
-        label: '// frist',
+        label: 'Frist',
         titel: _neu ? 'Neue Frist' : (darf ? 'Frist bearbeiten' : 'Frist'),
         maxBreite: kMaxContentWidth,
         fussleiste: darf ? FilledButton(onPressed: _speichert ? null : _speichern, child: Text(_neu ? 'Frist anlegen' : 'Speichern')) : null,
@@ -179,7 +179,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
           if (!darf) ...[const MeldungsBox('Du darfst diese Frist ansehen, aber nicht ändern.', fehler: false), const SizedBox(height: 12)],
           if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
           if (_neu) ...[
-            const MonoLabel('// vorlage'),
+            const MonoLabel('Vorlage'),
             const SizedBox(height: 6),
             Wrap(spacing: 8, runSpacing: 8, children: [for (final v in kFristVorlagen) AuswahlKnopf(text: v.titel, gewaehlt: false, onTap: () => _vorlage(v))]),
             const SizedBox(height: 4),
@@ -194,7 +194,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
             decoration: const InputDecoration(labelText: 'Titel', counterText: ''),
           ),
           const SizedBox(height: 16),
-          const MonoLabel('// läuft ab am'),
+          const MonoLabel('Läuft ab am'),
           const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerLeft,
@@ -210,7 +210,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
                 child: Container(
                   constraints: const BoxConstraints(minHeight: 48, maxWidth: 280),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(border: Border.all(color: kBorder), borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
@@ -224,7 +224,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
             ),
           ),
           const SizedBox(height: 16),
-          const MonoLabel('// wiederholung'),
+          const MonoLabel('Wie oft?'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -236,7 +236,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
             const Text('Sobald du die Frist erledigst, entsteht die nächste.', style: TextStyle(fontSize: 12, color: kTextMuted)),
           ],
           const SizedBox(height: 16),
-          const MonoLabel('// vorwarnung'),
+          const MonoLabel('Wann erinnern?'),
           const SizedBox(height: 6),
           Wrap(
             spacing: 8,
@@ -247,7 +247,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
           Text('Erinnert um 09:00 Uhr, $wer', style: const TextStyle(fontSize: 12, color: kTextMuted)),
           const SizedBox(height: 16),
           if (mitglieder.isNotEmpty) ...[
-            const MonoLabel('// zuständig'),
+            const MonoLabel('Wer macht das?'),
             const SizedBox(height: 6),
             Wrap(
               spacing: 8,
@@ -275,7 +275,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
           ),
           const SizedBox(height: 12),
           if (darf && rechte.darfFreigabeAendern) ...[
-            const MonoLabel('// sichtbar für'),
+            const MonoLabel('Wer sieht das?'),
             const SizedBox(height: 6),
             Wrap(spacing: 8, runSpacing: 8, children: [for (final s in rechte.freigaben) AuswahlKnopf(text: s.label, gewaehlt: s == _sicht, onTap: () => setState(() => _sicht = s))]),
             const SizedBox(height: 12),

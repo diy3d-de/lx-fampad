@@ -19,7 +19,7 @@ Future<void> neuigkeitenDialogZeigen(BuildContext context, Neuigkeit n, {require
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const MonoLabel('// neuigkeiten'),
+              const MonoLabel('Neuigkeiten'),
               const SizedBox(height: 10),
               for (final p in n.punkte)
                 Padding(

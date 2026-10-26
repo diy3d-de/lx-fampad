@@ -91,12 +91,12 @@ void main() {
       await start(tester, alle());
       expect(find.text('Zähler'), findsWidgets);
       expect(find.text('Strom'), findsWidgets);
-      expect(find.text('ABLESEN FÄLLIG'), findsWidgets);
+      expect(find.text('Ablesen fällig'), findsWidgets);
       expect(find.textContaining('Strom: Ablesen am'), findsOneWidget);
       expect(find.text('Wasser Wohnung'), findsOneWidget); // die beiden Kaltwasserzähler; das Warmwasser steht allein (andere Art)
       expect(find.text('Warmwasser Etage'), findsOneWidget);
       expect(find.text('Balkonkraftwerk'), findsOneWidget);
-      expect(find.text('ERZEUGUNG'), findsOneWidget);
+      expect(find.text('Erzeugung'), findsOneWidget);
       expect(find.textContaining('Ersparnis ca.'), findsOneWidget);
       expect(find.textContaining('% der Anschaffung drin'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, 'Stand eintragen'), findsOneWidget);
@@ -156,7 +156,7 @@ void main() {
       await start(tester, datenAus([strom(), z]));
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -400));
       await warte(tester);
-      expect(find.text('// ARCHIVIERT'), findsOneWidget);
+      expect(labelFinder('Archiviert'), findsOneWidget);
       await tippe(tester, find.text('Aktivieren'));
       expect(repo.aufrufe, ['reaktivieren:arch']);
     });
@@ -174,30 +174,30 @@ void main() {
       // links tippen: der Januar
       await tester.tapAt(Offset(rect.left + rect.width * 0.04, rect.center.dy));
       await warte(tester);
-      expect(find.textContaining('// JANUAR'), findsOneWidget);
+      expect(find.textContaining('Januar'), findsOneWidget);
       // rechts tippen: der Dezember
       await tester.tapAt(Offset(rect.left + rect.width * 0.96, rect.center.dy));
       await warte(tester);
-      expect(find.textContaining('// DEZEMBER'), findsOneWidget);
+      expect(find.textContaining('Dezember'), findsOneWidget);
       // ziehen
       final g = await tester.startGesture(Offset(rect.left + rect.width * 0.04, rect.center.dy));
       await g.moveTo(Offset(rect.left + rect.width * 0.46, rect.center.dy));
       await warte(tester);
-      expect(find.textContaining('// JUNI'), findsOneWidget);
+      expect(find.textContaining('Juni'), findsOneWidget);
       await g.up();
       await warte(tester);
       // Tastatur (Web): der Fokus liegt nach dem Tippen auf dem Diagramm
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowLeft);
       await warte(tester);
-      expect(find.textContaining('// MAI'), findsOneWidget);
+      expect(find.textContaining('Mai'), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await warte(tester);
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
       await warte(tester);
-      expect(find.textContaining('// JULI'), findsOneWidget);
+      expect(find.textContaining('Juli'), findsOneWidget);
       await tester.sendKeyEvent(LogicalKeyboardKey.home);
       await warte(tester);
-      expect(find.textContaining('// JANUAR'), findsOneWidget);
+      expect(find.textContaining('Januar'), findsOneWidget);
       pruefeLayout(tester, 'Verlauf');
     });
 
@@ -246,7 +246,7 @@ void main() {
       await oeffneVerlauf(tester, 'Strom');
       await tester.drag(find.byType(Scrollable).first, const Offset(0, -900));
       await warte(tester);
-      expect(find.text('// LETZTE STÄNDE'), findsOneWidget);
+      expect(labelFinder('Letzte Stände'), findsOneWidget);
       expect(find.textContaining('(+300)'), findsWidgets);
       await tippe(tester, find.byType(PopupMenuButton<String>).first);
       await tippe(tester, find.text('Bearbeiten'));
@@ -264,7 +264,7 @@ void main() {
       await start(tester, alle(stromFaellig: false));
       await oeffneVerlauf(tester, 'Strom');
       await tippe(tester, find.widgetWithText(FilledButton, 'Stand eintragen').evaluate().isEmpty ? find.text('Balkonkraftwerk') : find.text('Balkonkraftwerk'));
-      expect(find.text('// ERZEUGUNG (SOLAR)'), findsOneWidget);
+      expect(labelFinder('Erzeugung (Solar)'), findsOneWidget);
     });
 
     for (final skala in [1.5, 2.0]) {
@@ -345,12 +345,12 @@ void main() {
       await start(tester, datenAus([wasser(zKalt1, 'Kaltwasser Etage'), wasser(zKalt2, 'Kaltwasser Waschkeller', start: 50, proMonat: 2), wasser(zWarm, 'Warmwasser Etage', art: ZaehlerArt.warmwasser, start: 20, proMonat: 1)]));
       // die Gruppe "Wasser Wohnung" fasst alle drei zusammen (Kalt und Warm bilden je eine Gruppe, siehe Übersichtslogik): hier genügt die Kaltwasser-Gruppe
       await tippe(tester, find.text('Alle Wasserzähler ablesen').first);
-      expect(find.text('// ZÄHLER 1 VON 2'), findsOneWidget);
+      expect(labelFinder('Zähler 1 von 2'), findsOneWidget);
       expect(find.text('Kaltwasser Etage'), findsOneWidget);
       await eingeben(tester, 'Zählerstand in m³', '222,5');
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern und weiter'));
       expect(repo.erfasst.single.id, zKalt1);
-      expect(find.text('// ZÄHLER 2 VON 2'), findsOneWidget);
+      expect(labelFinder('Zähler 2 von 2'), findsOneWidget);
       expect(find.text('Kaltwasser Waschkeller'), findsOneWidget);
       await eingeben(tester, 'Zählerstand in m³', '131,5');
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
@@ -435,7 +435,7 @@ void main() {
       await oeffneEditor(tester);
       await eingeben(tester, 'Name (zum Beispiel Strom Haus)', 'Balkonkraftwerk');
       await tippe(tester, find.text('Erzeugung (Solar) · kWh'));
-      expect(find.text('// STROMPREIS FÜR DIE ERSPARNIS'), findsOneWidget);
+      expect(labelFinder('Strompreis für die Ersparnis'), findsOneWidget);
       expect(find.textContaining('0,31 € je kWh'), findsOneWidget); // vorbelegt aus dem Stromzähler
       expect(find.textContaining('Grund '), findsNothing); // beim Solarzähler nur der Arbeitspreis
       expect(find.textContaining('Grund-'), findsNothing);
@@ -552,7 +552,7 @@ void main() {
       await start(tester, alle(stromFaellig: false));
       await tippe(tester, find.byTooltip('Bericht als PDF'));
       expect(find.text('Bericht'), findsWidgets);
-      expect(find.text('// VORSCHAU'), findsOneWidget);
+      expect(labelFinder('Vorschau'), findsOneWidget);
       const jahr = 2026;
       await tippe(tester, find.byTooltip('Ein Jahr zurück'));
       expect(find.text('${jahr - 1}'), findsOneWidget);
@@ -617,7 +617,7 @@ void main() {
 
     testWidgets('Kind: kein Eintrag im Mehr-Blatt, nichts am Feld Mehr, keine Startseiten-Kachel', (tester) async {
       await start(tester, alle(), role: 'child', zumBereichGehen: false);
-      expect(find.text('ABLESEN FÄLLIG'), findsNothing);
+      expect(labelFinder('Ablesen fällig'), findsNothing);
       expect(find.textContaining('Zähler warten auf eine Ablesung'), findsNothing);
       expect(find.textContaining('Zähler wartet auf eine Ablesung'), findsNothing);
       final leiste = find.byType(NavigationBar);
@@ -699,13 +699,13 @@ void main() {
 
     testWidgets('Startseiten-Kachel "Ablesen fällig": Eltern sehen sie nur, wenn etwas ansteht', (tester) async {
       await start(tester, alle(), role: 'parent', zumBereichGehen: false);
-      expect(find.text('// ABLESEN FÄLLIG'), findsOneWidget);
+      expect(labelFinder('Ablesen fällig'), findsOneWidget);
       expect(find.textContaining('wartet auf eine Ablesung'), findsOneWidget);
       pruefeLayout(tester, 'Startseite mit Kachel');
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
       await start(tester, alle(stromFaellig: false), role: 'parent', zumBereichGehen: false);
-      expect(find.text('// ABLESEN FÄLLIG'), findsNothing);
+      expect(labelFinder('Ablesen fällig'), findsNothing);
     });
   });
 }

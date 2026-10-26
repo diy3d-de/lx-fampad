@@ -1,5 +1,5 @@
-// P0 "Kein Datenverlust" (Oberfläche, Profil > Verschlüsselung): ehrliche Anzeige (grün nur mit bestätigter Sicherung beim Server, sonst gelb "offen"),
-// "Gerät abgeben – alles löschen" (gesperrt ohne bestätigte Sicherung, Haken und getipptes Wort), Notfallbereich mit Checkliste, kein "Neuen Schlüssel erzeugen" auf
+// P0 "Kein Datenverlust" (Oberfläche, Profil › Sicherheit › Nachrichten-Schutz): ehrliche Anzeige (grün nur mit bestätigter Sicherung beim Server, sonst gelb "offen"),
+// "Gerät abgeben – alles löschen" (gesperrt ohne bestätigte Sicherung, Haken und getipptes Wort), Bereich „Neuer Schlüssel“ mit Checkliste, kein "Neuen Schlüssel erzeugen" auf
 // der Seite "Gerät nicht verbunden", aufbewahrte alte Schlüssel (Quarantäne), Hinweis auf den Web-Speicher, Wiederherstellungsschlüssel verdecken und vollständig
 // eintippen. 360 px, Textskala 1.0 und 1.5, Touch-Ziele 44 px, Semantics.
 import 'dart:typed_data';
@@ -68,17 +68,17 @@ Future<_Aufbau> _aufbau({bool pwServer = false, SpeicherDauer dauer = SpeicherDa
 /// Einrichtung ohne Sicherung des Wiederherstellungsschlüssels ("Später sichern"), danach zurück im Profil.
 Future<void> _einrichten(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Verschlüsselung');
-  await tippeText(tester, 'Verschlüsselung einrichten');
+  await tippeText(tester, 'Nachrichten-Schutz');
+  await tippeText(tester, 'Nachrichten-Schutz einrichten');
   await tippeText(tester, 'Später sichern');
   await tippe(tester, find.widgetWithText(TextButton, 'Später'));
   await tippe(tester, find.byTooltip('Zurück'));
 }
 
 /// Von der Profilseite zur Seite "Verschlüsselung".
-Future<void> _zurSeite(WidgetTester tester) async => tippeText(tester, 'Verschlüsselung');
+Future<void> _zurSeite(WidgetTester tester) async => tippeText(tester, 'Nachrichten-Schutz');
 
-/// Den eingeklappten Bereich "Erweitert" öffnen (Gerät abgeben, Notfall, Vertrauensmodell).
+/// Den eingeklappten Bereich "Erweitert" öffnen (Gerät abgeben, neuer Schlüssel, Vertrauensmodell).
 Future<void> _erweitert(WidgetTester tester) async => tippeText(tester, 'Erweitert');
 
 /// Die App neu starten (der Zustand im Arbeitsspeicher geht verloren, der Schlüsselspeicher bleibt).
@@ -108,16 +108,16 @@ Future<void> main() async {
         await starteApp(tester, a.env, skala: skala);
         await _einrichten(tester);
         // Profil-Zeile "Verschlüsselung" (andere Zeilen des Profils dürfen "aktiv" sein)
-        final zeile = find.ancestor(of: find.text('Verschlüsselung'), matching: find.byType(EinstellungsZeile));
-        expect(find.descendant(of: zeile, matching: find.text('offen')), findsOneWidget);
-        expect(find.descendant(of: zeile, matching: find.text('aktiv')), findsNothing);
+        final zeile = find.ancestor(of: find.text('Nachrichten-Schutz'), matching: find.byType(EinstellungsZeile));
+        expect(find.descendant(of: zeile, matching: find.text('Offen')), findsOneWidget);
+        expect(find.descendant(of: zeile, matching: find.text('Aktiv')), findsNothing);
         await _zurSeite(tester);
-        expect(find.text('offen'), findsWidgets);
-        expect(find.text('aktiv'), findsNothing);
+        expect(find.text('Offen'), findsWidgets);
+        expect(find.text('Aktiv'), findsNothing);
         expect(find.textContaining('Sicherung offen: Beim Server liegt keine bestätigte Sicherung'), findsOneWidget);
         expect(find.widgetWithText(OutlinedButton, 'Jetzt sichern'), findsOneWidget);
-        expect(find.textContaining('nicht gesichert'), findsNothing);
-        expect(find.textContaining('keine sicherung · jetzt erzeugen'), findsOneWidget);
+        expect(find.textContaining('Noch nicht gesichert'), findsNothing);
+        expect(find.textContaining('Noch keine Sicherung. Jetzt anlegen'), findsOneWidget);
         expect(_semantik('Sicherung offen'), findsOneWidget);
         pruefeLayout(tester, 'Verschlüsselung ohne bestätigte Sicherung');
       });
@@ -128,9 +128,9 @@ Future<void> main() async {
         await _einrichten(tester);
         a.srv.sicherungEinspielen(fixIdAdmin);
         await _zurSeite(tester);
-        expect(find.text('aktiv'), findsOneWidget);
+        expect(find.text('Aktiv'), findsOneWidget);
         expect(find.textContaining('Sicherung offen'), findsNothing);
-        expect(find.textContaining('sicherung liegt beim server (seit '), findsOneWidget);
+        expect(find.textContaining('Sicherung liegt beim Server (seit '), findsOneWidget);
         expect(find.textContaining('gesichert'), findsNothing);
         pruefeLayout(tester, 'Verschlüsselung mit bestätigter Sicherung');
       });
@@ -142,10 +142,10 @@ Future<void> main() async {
         await _einrichten(tester);
         a.srv.sicherungEinspielen(fixIdAdmin);
         await _zurSeite(tester);
-        expect(find.text('aktiv'), findsNothing);
-        expect(find.text('offen'), findsWidgets);
+        expect(find.text('Aktiv'), findsNothing);
+        expect(find.text('Offen'), findsWidgets);
         expect(find.textContaining('Sicherung offen'), findsOneWidget);
-        expect(find.textContaining('stand unbestätigt'), findsOneWidget);
+        expect(find.textContaining('noch nicht bestätigt'), findsOneWidget);
       });
 
       testWidgets('Passwort-Sicherung: "liegt beim server (seit …)" ohne grüne Pille; ohne Server-Stand "server meldet keinen stand"', (tester) async {
@@ -154,8 +154,8 @@ Future<void> main() async {
         await _einrichten(tester);
         a.srv.pwEinspielen(fixIdAdmin, 'blob', version: a.srv.schluesselVersion(fixIdAdmin));
         await _zurSeite(tester);
-        expect(find.textContaining('liegt beim server (seit '), findsWidgets);
-        expect(find.text('aktiv'), findsOneWidget, reason: 'nur die Hauptzeile, nie die einzelne Sicherung');
+        expect(find.textContaining('Liegt beim Server (seit '), findsWidgets);
+        expect(find.text('Aktiv'), findsOneWidget, reason: 'nur die Hauptzeile, nie die einzelne Sicherung');
         pruefeLayout(tester, 'Passwort-Sicherung liegt beim Server');
       });
     });
@@ -359,7 +359,7 @@ Future<void> main() async {
       });
     });
 
-    group('Notfallbereich und "Gerät nicht verbunden" ($s)', () {
+    group('Bereich „Neuer Schlüssel“ und "Gerät nicht verbunden" ($s)', () {
       testWidgets('"Neuen Schlüssel erzeugen" nur unter "Erweitert", hinter Checkliste (4 Haken) und getipptem Wort', (tester) async {
         final a = await _aufbau();
         await starteApp(tester, a.env, skala: skala);
@@ -374,7 +374,7 @@ Future<void> main() async {
         expect(find.text('Ich habe kein anderes Gerät mit meinem Schlüssel.'), findsOneWidget);
         expect(find.text('Ich kenne kein Passwort der Passwort-Sicherung.'), findsOneWidget);
         expect(find.text('Alte Chats gehen unwiderruflich verloren.'), findsOneWidget);
-        pruefeLayout(tester, 'Notfall-Checkliste');
+        pruefeLayout(tester, 'Neuer-Schlüssel-Checkliste');
         expect(_textKnopf(tester, 'Neuen Schlüssel erzeugen').onPressed, isNull);
         // drei von vier Haken und das richtige Wort: noch gesperrt
         for (var i = 0; i < 3; i++) {
@@ -402,7 +402,7 @@ Future<void> main() async {
         expect(find.textContaining('Neuen Schlüssel erzeugen'), findsNothing);
         await _erweitert(tester);
         expect(find.textContaining('Neuen Schlüssel erzeugen'), findsNothing, reason: 'auch nicht unter "Erweitert"');
-        expect(find.text('// notfall'), findsNothing);
+        expect(labelFinder('Neuer Schlüssel (letzter Ausweg)'), findsNothing);
         expect(find.text('Mit anderem Gerät verbinden'), findsOneWidget);
         expect(find.text('Gerät abgeben – alles löschen'), findsNothing, reason: 'es liegt nichts zu löschen auf diesem Gerät');
         pruefeLayout(tester, 'Gerät nicht verbunden');
@@ -627,8 +627,8 @@ Future<void> main() async {
     final a = await _aufbau();
     await starteApp(tester, a.env);
     await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-    await tippeText(tester, 'Verschlüsselung');
-    await tippeText(tester, 'Verschlüsselung einrichten');
+    await tippeText(tester, 'Nachrichten-Schutz');
+    await tippeText(tester, 'Nachrichten-Schutz einrichten');
     final gruppen = [
       for (final e in find.byType(Text).evaluate())
         if (RegExp(r'^[A-Z2-7]{4}$').hasMatch((e.widget as Text).data ?? '')) (e.widget as Text).data!,
@@ -639,7 +639,7 @@ Future<void> main() async {
     await tester.pump();
     await tippeText(tester, 'Stimmt, jetzt sichern');
     expect(find.textContaining('liegt jetzt als Sicherung beim Server'), findsOneWidget);
-    expect(find.text('aktiv'), findsOneWidget);
+    expect(find.text('Aktiv'), findsOneWidget);
     expect(find.textContaining('Sicherung offen'), findsNothing);
     expect(a.srv.server.anfragen('PUT /me/key-backup'), hasLength(1));
   });

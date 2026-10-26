@@ -383,8 +383,7 @@ class _Monat extends ConsumerWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: kBgElevated,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kBorder),
+                    borderRadius: BorderRadius.circular(18),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: raster,
@@ -415,7 +414,7 @@ class _TagesPanel extends StatelessWidget {
     child: Container(
       decoration: BoxDecoration(
         color: kSurface,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: kAccent.withValues(alpha: 0.4)),
       ),
       padding: const EdgeInsets.all(20),
@@ -504,8 +503,7 @@ class _Woche extends ConsumerWidget {
                 child: Container(
                   decoration: BoxDecoration(
                     color: kBgElevated,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kBorder),
+                    borderRadius: BorderRadius.circular(18),
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: raster,

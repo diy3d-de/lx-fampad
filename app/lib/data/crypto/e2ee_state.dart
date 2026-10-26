@@ -59,7 +59,7 @@ enum PwNachReset {
   /// Auf diesem Gerät liegt der Personenschlüssel nicht: der Verlauf bleibt zunächst unlesbar, es wird NIE von selbst ein neuer Schlüssel angelegt.
   keinSchluesselAufGeraet,
 
-  /// Das Anlegen ist gescheitert (Netz, Bestätigung abgelaufen o. Ä.): die Sicherung lässt sich unter Profil > Verschlüsselung neu anlegen.
+  /// Das Anlegen ist gescheitert (Netz, Bestätigung abgelaufen o. Ä.): die Sicherung lässt sich unter Profil › Sicherheit › Nachrichten-Schutz neu anlegen.
   fehlgeschlagen,
 }
 
@@ -83,7 +83,7 @@ enum AutoVerbinden {
   /// Der Passkey öffnet die Passkey-Sicherung nicht (er wurde zum Beispiel neu angelegt).
   passkeyPasstNicht,
 
-  /// Technischer Fehler (Netz, Speicher, Step-up): es wurde nichts verändert; manuell unter Profil > Verschlüsselung.
+  /// Technischer Fehler (Netz, Speicher, Step-up): es wurde nichts verändert; manuell unter Profil › Sicherheit › Nachrichten-Schutz.
   fehlgeschlagen,
 }
 
@@ -446,7 +446,7 @@ class E2eeController extends Notifier<E2eeState> {
     } on CryptoFehler {
       rethrow;
     } on Object {
-      throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'Die Verschlüsselung ist auf diesem Gerät nicht verfügbar.');
+      throw const CryptoFehler(CryptoFehlerArt.bibliothek, 'Der Nachrichten-Schutz ist auf diesem Gerät nicht verfügbar.');
     }
   }
 
@@ -766,7 +766,7 @@ class E2eeController extends Notifier<E2eeState> {
     return Einrichtung(Wiederherstellung.neuerSchluessel(crypto), ver.version);
   }
 
-  /// Eigener Knopf in Profil > Verschlüsselung (nur Web, wenn der Browser die dauerhafte Ablage nicht zugesagt hat): fragt einmal je Sitzung nach.
+  /// Eigener Knopf in Profil › Sicherheit › Nachrichten-Schutz (nur Web, wenn der Browser die dauerhafte Ablage nicht zugesagt hat): fragt einmal je Sitzung nach.
   Future<void> dauerhaftenSpeicherAnfordern() async {
     await _speicher.dauerhaftAnfordern().timeout(const Duration(seconds: 30), onTimeout: () => SpeicherDauer.unbekannt);
     await laden();
@@ -780,7 +780,7 @@ class E2eeController extends Notifier<E2eeState> {
     final name = personenschluesselName(_userId);
     final altName = personenschluesselAltName(_userId);
     final aktuell = await _serverSchluessel();
-    if (aktuell == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast die Verschlüsselung noch nicht eingerichtet.');
+    if (aktuell == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast den Nachrichten-Schutz noch nicht eingerichtet.');
     final alt = await _speicher.lesen(name);
     final neu = Personenschluessel.erzeugen(crypto);
     try {
@@ -962,7 +962,7 @@ class E2eeController extends Notifier<E2eeState> {
     final lokal = _lokal ?? await _lokalLaden(crypto);
     if (lokal == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Auf diesem Gerät gibt es keinen Schlüssel.');
     final server = await _serverSchluessel();
-    if (server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast die Verschlüsselung noch nicht eingerichtet.');
+    if (server == null) throw const CryptoFehler(CryptoFehlerArt.schluessel, 'Du hast den Nachrichten-Schutz noch nicht eingerichtet.');
     return _pwAblauf(crypto).vorbereiten(lokal: lokal, server: server, passwort: passwort);
   }
 
@@ -1102,7 +1102,7 @@ class E2eeController extends Notifier<E2eeState> {
   /// Nach der Anmeldung mit Passwort (ein Passwort für Anmeldung und Sicherung): Hat dieses Gerät noch keinen Schlüssel, der Server aber eine bestätigte, nicht
   /// veraltete Passwort-Sicherung, öffnet die App sie mit dem Passwort, das die Person gerade eingegeben hat, und verbindet das Gerät (kein zweites Passwort).
   /// Nie ein neuer Personenschlüssel, nie ein vorhandener lokaler Schlüssel wird angefasst oder ersetzt (liegt einer da, passiert nichts, auch bei "abweichend": das
-  /// entscheidet die Person unter Profil > Verschlüsselung). Übernommen wird der Schlüssel erst nach dem Vergleich mit dem frisch geholten öffentlichen Schlüssel
+  /// entscheidet die Person unter Profil › Sicherheit › Nachrichten-Schutz). Übernommen wird der Schlüssel erst nach dem Vergleich mit dem frisch geholten öffentlichen Schlüssel
   /// des Servers ([_lokalUebernehmen]). Wirft nie; der Ausgang sagt, was geschehen ist.
   Future<AutoVerbinden> automatischVerbinden(String passwort) async {
     try {
@@ -1143,7 +1143,7 @@ class E2eeController extends Notifier<E2eeState> {
   }
 
   /// Nimmt den Schlüssel aus dem Betrieb dieses Geräts (z. B. bei abweichendem Schlüssel), danach kann das Gerät neu verbunden werden. Der Schlüssel wird
-  /// **nicht gelöscht**, sondern in die Quarantäne verschoben (Profil > Verschlüsselung: "Alter Schlüssel auf diesem Gerät"). Lässt er sich nicht
+  /// **nicht gelöscht**, sondern in die Quarantäne verschoben (Profil › Sicherheit › Nachrichten-Schutz: "Alter Schlüssel auf diesem Gerät"). Lässt er sich nicht
   /// verschieben, bleibt alles, wie es ist, und es gibt einen Fehler.
   Future<void> lokalenSchluesselVerwerfen() async {
     final namen = [personenschluesselName(_userId), personenschluesselAltName(_userId)];

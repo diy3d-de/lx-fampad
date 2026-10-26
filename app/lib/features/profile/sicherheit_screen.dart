@@ -35,8 +35,8 @@ class SicherheitsZeile extends ConsumerWidget {
       child: EinstellungsZeile(
         icon: Icons.shield_outlined,
         titel: 'Sicherheit',
-        untertitel: 'passkeys, passwort, schlüssel, geräte',
-        status: StatusPill('● ${a.antwort}', color: absicherungFarbe(a.ampel)),
+        untertitel: 'Anmelden, Nachrichten-Schutz und Geräte',
+        status: StatusPill(a.antwort, color: absicherungFarbe(a.ampel)),
         onTap: onTap,
       ),
     );
@@ -80,7 +80,7 @@ class _SicherheitScreenState extends ConsumerState<SicherheitScreen> with Aktion
 
   Future<void> _neueCodes() async {
     final ja = await _bestaetigen(
-      'Neue Wiederherstellungscodes?',
+      'Neue Notfall-Codes?',
       'Die bisherigen Codes werden damit ungültig. Die neuen Codes siehst du nur einmal.',
       'Neue Codes erzeugen',
     );
@@ -101,7 +101,7 @@ class _SicherheitScreenState extends ConsumerState<SicherheitScreen> with Aktion
     final me = ref.watch(authProvider.select((a) => a.me));
     final a = ref.watch(absicherungProvider);
     return AuthSeite(
-      label: '// profil',
+      label: 'Profil',
       titel: 'Sicherheit',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -117,7 +117,7 @@ class _SicherheitScreenState extends ConsumerState<SicherheitScreen> with Aktion
                   children: [
                     Text(a.wort, style: const TextStyle(fontWeight: FontWeight.w700, color: kTextStrong)),
                     if (a.ampel != AbsicherungAmpel.unbekannt)
-                      Text('${a.wege} von ${a.wegeMoeglich} wegen zum schlüssel', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                      Text('Dein Zugang zu den Chats ist auf ${a.wege} von ${a.wegeMoeglich} Wegen gesichert.', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
                   ],
                 ),
               ),
@@ -125,43 +125,43 @@ class _SicherheitScreenState extends ConsumerState<SicherheitScreen> with Aktion
           ),
         ),
         const SizedBox(height: 12),
-        const MonoLabel('// anmeldung'),
+        const MonoLabel('Anmeldung'),
         const SizedBox(height: 8),
         EinstellungsZeile(
           icon: Icons.fingerprint,
-          titel: 'Passkeys',
-          untertitel: me == null ? 'wird geladen …' : (me.passkeys == 0 ? 'keiner eingerichtet' : '${me.passkeys} aktiv'),
-          status: me != null && me.passkeys > 0 ? const RollenPille('aktiv', farbe: kTerminal) : null,
+          titel: 'Anmelden ohne Passwort',
+          untertitel: me == null ? 'Lädt …' : (me.passkeys == 0 ? 'Noch nicht eingerichtet' : (me.passkeys == 1 ? 'Mit Fingerabdruck, Gesicht oder Gerätesperre' : 'Auf ${me.passkeys} Geräten oder Schlüsseln')),
+          status: me != null && me.passkeys > 0 ? const RollenPille('Aktiv', farbe: kTerminal) : null,
           onTap: () => _oeffne(const PasskeysScreen()),
         ),
         EinstellungsZeile(
           icon: Icons.verified_user_outlined,
-          titel: 'Passwort und Zwei-Faktor (TOTP)',
-          untertitel: me == null ? 'wird geladen …' : (me.hasPassword && me.hasTotp ? 'authenticator-app' : 'nicht eingerichtet'),
-          status: me != null && me.hasPassword && me.hasTotp ? const RollenPille('an', farbe: kTerminal) : null,
+          titel: 'Passwort und zweiter Schritt',
+          untertitel: me == null ? 'Lädt …' : (me.hasPassword && me.hasTotp ? 'Mit Code aus deiner Authenticator-App' : 'Noch nicht eingerichtet'),
+          status: me != null && me.hasPassword && me.hasTotp ? const RollenPille('Aktiv', farbe: kTerminal) : null,
           onTap: me == null ? null : () => _oeffne(const PasswordScreen()),
         ),
         EinstellungsZeile(
           icon: Icons.key_outlined,
-          titel: 'Wiederherstellungscodes',
-          untertitel: me == null ? 'wird geladen …' : '${me.recoveryCodesRemaining} übrig · neue erzeugen',
+          titel: 'Notfall-Codes',
+          untertitel: me == null ? 'Lädt …' : (me.recoveryCodesRemaining == 1 ? 'Noch 1 Code übrig. Du kannst neue erzeugen.' : 'Noch ${me.recoveryCodesRemaining} Codes übrig. Du kannst neue erzeugen.'),
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
         const SizedBox(height: 4),
-        const MonoLabel('// schlüssel und chat'),
+        const MonoLabel('Schlüssel und Chat'),
         const SizedBox(height: 8),
         AbsicherungsZeile(onTap: () => _oeffne(const AbsicherungScreen())),
         VerschluesselungsZeile(onTap: () => _oeffne(const VerschluesselungScreen())),
         const SizedBox(height: 4),
-        const MonoLabel('// geräte und ereignisse'),
+        const MonoLabel('Geräte und Ereignisse'),
         const SizedBox(height: 8),
         EinstellungsZeile(
           icon: Icons.phone_android,
           titel: 'Angemeldete Geräte',
-          untertitel: 'einzeln abmelden',
+          untertitel: 'Jedes Gerät einzeln abmelden',
           onTap: () => _oeffne(const DevicesScreen()),
         ),
-        EinstellungsZeile(icon: Icons.shield_outlined, titel: 'Sicherheitsereignisse', untertitel: 'passwort-resets und hinweise', onTap: () => _oeffne(const SicherheitEreignisseScreen())),
+        EinstellungsZeile(icon: Icons.shield_outlined, titel: 'Sicherheitsereignisse', untertitel: 'Zum Beispiel ein zurückgesetztes Passwort', onTap: () => _oeffne(const SicherheitEreignisseScreen())),
       ],
     );
   }

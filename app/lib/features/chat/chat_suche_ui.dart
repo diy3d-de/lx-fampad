@@ -233,7 +233,7 @@ class _ChatSuchLeisteState extends ConsumerState<ChatSuchLeiste> {
                 liveRegion: true,
                 child: Text(
                   s.treffer.isEmpty ? chatSuchStatus(s, gueltig: gueltig) : 'Treffer ${_index + 1} von ${s.treffer.length}${s.trefferGesamt > s.treffer.length ? ' (${s.trefferGesamt} insgesamt)' : ''}. ${chatSuchZusatz(s)}'.trim(),
-                  style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+                  style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                 ),
               ),
             ),
@@ -312,7 +312,7 @@ class _ChatSuchSeiteState extends ConsumerState<ChatSuchSeite> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const MonoLabel('// chat'),
+                          const MonoLabel('Chat'),
                           const SizedBox(height: 4),
                           Semantics(header: true, child: const Text('In Chats suchen', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w800, letterSpacing: -0.65, color: kTextStrong))),
                           const SizedBox(height: 12),
@@ -327,7 +327,7 @@ class _ChatSuchSeiteState extends ConsumerState<ChatSuchSeite> {
                           const SizedBox(height: 8),
                           Semantics(
                             liveRegion: true,
-                            child: Text(chatSuchStatus(s, gueltig: gueltig), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                            child: Text(chatSuchStatus(s, gueltig: gueltig), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                           ),
                           const SizedBox(height: 2),
                           const Text(
@@ -392,7 +392,7 @@ class _TrefferZeile extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('$chat · $autor · $zeit', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              Text('$chat · $autor · $zeit', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               const SizedBox(height: 4),
               TrefferText(ausschnitt.text, ausschnitt.bereiche, stil: const TextStyle(fontSize: 14, color: kText), maxLines: 3),
             ],

@@ -1,4 +1,4 @@
-// "Passwort vergessen?": ein neues Passwort festlegen, ohne das alte zu kennen. Nur mit einem Wiederherstellungscode oder mit einem Passkey, nie mit dem
+// "Passwort vergessen?": ein neues Passwort festlegen, ohne das alte zu kennen. Nur mit einem Notfall-Code oder mit einem Passkey, nie mit dem
 // Code der Authenticator-App allein. Das neue Passwort verlässt das Gerät nie (nur der abgeleitete authKey). Dein Verlauf bleibt nur erhalten, wenn du ein Gerät
 // mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast (die Seite sagt es so, nicht pauschal); auf einem Gerät mit deinem Schlüssel legt die App danach selbst eine neue Passwort-Sicherung an.
 import 'dart:async';
@@ -63,7 +63,7 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
     final ok = await ausfuehren(() async {
       final mail = _email.text.trim();
       if (!mail.contains('@') || mail.length < 5) throw const EingabeFehler('Bitte gib die E-Mail-Adresse deines Kontos ein.');
-      if (!_mitPasskey && _code.text.trim().isEmpty) throw const EingabeFehler('Bitte gib einen Wiederherstellungscode ein.');
+      if (!_mitPasskey && _code.text.trim().isEmpty) throw const EingabeFehler('Bitte gib einen Notfall-Code ein.');
       if (pw.length < 12) throw const EingabeFehler('Das neue Passwort braucht mindestens 12 Zeichen.');
       if (pw != _pw2.text) throw const EingabeFehler('Die beiden Passwörter sind nicht gleich.');
       await pruefer.hinweisAbgemeldetLoeschen();
@@ -85,13 +85,13 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
   }
 
   static String _restText(int n) => n <= 3
-      ? 'Du hast nur noch $n Wiederherstellungscodes. Erzeuge unter Profil > Sicherheit bald neue.'
-      : 'Du hast noch $n Wiederherstellungscodes.';
+      ? 'Du hast nur noch $n Notfall-Codes. Erzeuge unter Profil › Sicherheit bald neue.'
+      : 'Du hast noch $n Notfall-Codes.';
 
   @override
   Widget build(BuildContext context) => BildschirmSchutz(
     child: AuthSeite(
-    label: '// passwort vergessen',
+    label: 'Passwort vergessen',
     titel: 'Neues Passwort festlegen',
     maxBreite: kMaxContentWidth,
     kinder: [
@@ -100,7 +100,7 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Du kommst nicht mehr in dein Konto? Mit einem deiner Wiederherstellungscodes oder mit deinem Passkey legst du ein neues Passwort fest. '
+              'Du kommst nicht mehr in dein Konto? Mit einem deiner Notfall-Codes oder mit deinem Passkey legst du ein neues Passwort fest. '
               'Der Code aus der Authenticator-App allein reicht dafür nicht. Dein Verlauf bleibt erhalten, wenn du ein Gerät mit deinem Schlüssel oder deinen Wiederherstellungsschlüssel hast.',
               style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
             ),
@@ -119,7 +119,7 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
               decoration: const InputDecoration(labelText: 'E-Mail'),
             ),
             const SizedBox(height: 16),
-            const MonoLabel('// so bestätigst du dich'),
+            const MonoLabel('So bestätigst du dich'),
             const SizedBox(height: 8),
             SegmentedButton<bool>(
               showSelectedIcon: false,
@@ -134,7 +134,7 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
             if (_mitPasskey)
               Text(
                 _passkeysDa == false
-                    ? 'Passkeys werden auf diesem Gerät oder in diesem Browser nicht unterstützt. Nimm einen Wiederherstellungscode.'
+                    ? 'Anmelden ohne Passwort wird auf diesem Gerät oder in diesem Browser nicht unterstützt. Nimm einen Notfall-Code.'
                     : 'Du bestätigst gleich mit Fingerabdruck, Gesicht oder Bildschirmsperre.',
                 style: const TextStyle(fontSize: 13, height: 1.5, color: kTextMuted),
               )
@@ -145,10 +145,10 @@ class _PasswortVergessenScreenState extends ConsumerState<PasswortVergessenScree
                 enableSuggestions: false,
                 textCapitalization: TextCapitalization.characters,
                 style: const TextStyle(fontFamily: kFontMono, fontSize: 18, color: kAccent),
-                decoration: const InputDecoration(labelText: 'Wiederherstellungscode', hintText: 'XXXX-XXXX-XXXX-XXXX'),
+                decoration: const InputDecoration(labelText: 'Notfall-Code', hintText: 'XXXX-XXXX-XXXX-XXXX'),
               ),
             const SizedBox(height: 16),
-            const MonoLabel('// neues passwort'),
+            const MonoLabel('Neues Passwort'),
             const SizedBox(height: 8),
             TextField(
               controller: _pw,

@@ -70,11 +70,11 @@ class DesktopHome extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final name = ref.watch(authProvider.select((s) => s.user?.displayName));
     final jetzt = DateTime.now();
-    final heute = DateFormat('E, d. MMM', 'de_DE').format(jetzt).toLowerCase();
+    final heute = DateFormat('E, d. MMM', 'de_DE').format(jetzt);
     return ListView(
       padding: const EdgeInsets.fromLTRB(32, 24, 32, 24),
       children: [
-        _Kopfzeile(label: '// $heute', gruss: tagesgruss(name, jetzt)),
+        _Kopfzeile(label: heute, gruss: tagesgruss(name, jetzt)),
         const SizedBox(height: 24),
         const UpdateAnzeige(),
         const AbsicherungsKarte(),
@@ -380,7 +380,7 @@ class _TermineKarte extends ConsumerWidget {
     // heute und morgen: Vorkommen, die vor dem Ende von morgen beginnen
     final liste = [for (final v in anstehende(daten, jetzt, tage: 2)) if (v.startWand.isBefore(morgenEnde)) v];
     return _Karte(
-      label: '// heute & morgen',
+      label: 'Heute und morgen',
       zaehler: liste.isEmpty ? null : '${liste.length}',
       semantik: liste.isEmpty ? 'Heute und morgen: keine Termine. Kalender öffnen' : 'Heute und morgen: ${liste.length} Termine. Kalender öffnen',
       onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),
@@ -423,7 +423,7 @@ class _Karte extends StatelessWidget {
           Row(
             children: [
               Expanded(child: MonoLabel(label)),
-              if (zaehler != null) Text(zaehler!, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+              if (zaehler != null) Text(zaehler!, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
             ],
           ),
           const SizedBox(height: 12),
@@ -457,7 +457,7 @@ class _ChatKarte extends ConsumerWidget {
     final mitNachricht = [for (final e in async.value ?? const <ChatEintrag>[]) if (e.letzte != null) e]..sort((a, b) => b.aktivitaet.compareTo(a.aktivitaet));
     final ungelesen = mitNachricht.fold<int>(0, (s, e) => s + e.ungelesen);
     return _Karte(
-      label: '// chat · familie',
+      label: 'Chat · Familie',
       zaehler: ungelesen > 0 ? '$ungelesen neu' : null,
       semantik: fehler
           ? 'Chat, nicht geladen. Öffnen'
@@ -498,7 +498,7 @@ class _ChatKarte extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(zeitKurz(e.letzte!.createdAt), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                        Text(zeitKurz(e.letzte!.createdAt), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                       ],
                     ),
                   ),
@@ -517,7 +517,7 @@ class _MuellKarte extends ConsumerWidget {
     final z = ref.watch(muellProvider);
     final d = MuellKachelDaten.aus(z, muellJetzt(ref));
     return _Karte(
-      label: d.hervorgehoben ? '// müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : '// müll',
+      label: d.hervorgehoben ? 'Müll · ${d.tage == 0 ? 'heute' : 'morgen'}' : 'Müll',
       semantik: muellKachelSemantik(d),
       hervorgehoben: d.hervorgehoben,
       onTap: () => muellOeffnen(context),
@@ -534,7 +534,7 @@ class _WetterKarte extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final st = ref.watch(wetterProvider);
     if (!st.hatDaten) return const SizedBox.shrink();
-    return _Karte(label: '// wetter', semantik: wetterSemantik(st), onTap: () => wetterOeffnen(context), child: WetterInhalt(zustand: st));
+    return _Karte(label: 'Wetter', semantik: wetterSemantik(st), onTap: () => wetterOeffnen(context), child: WetterInhalt(zustand: st));
   }
 }
 
@@ -547,7 +547,7 @@ class _StandortKarte extends ConsumerWidget {
     final st = ref.watch(standortProvider);
     final text = standortKurzstatus(st, st.geteilt.isEmpty ? const <String, UserDto>{} : ref.watch(standortMitgliederProvider));
     return _Karte(
-      label: '// standort',
+      label: 'Standort',
       semantik: 'Standort. $text. Öffnen',
       onTap: () => standortOeffnen(context),
       child: EmptyState(icon: st.teilt ? Icons.my_location : Icons.location_on_outlined, title: text, hint: st.teilt ? 'Tippen zum Beenden oder Verlängern.' : 'Tippen, um deinen Standort zu teilen.'),
@@ -577,7 +577,7 @@ class _EinkaufKarte extends ConsumerWidget {
     final offen = einkauf == null ? <Listeneintrag>[] : sortiereEintraege(alle.where((e) => e.listId == einkauf.id && e.doneAt == null).toList());
     final erledigt = einkauf == null ? 0 : alle.where((e) => e.listId == einkauf.id && e.doneAt != null).length;
     return _Karte(
-      label: '// einkaufsliste',
+      label: 'Einkaufsliste',
       zaehler: !fehler && !laedt && einkauf != null ? '${offen.length} offen' : null,
       semantik: fehler
           ? 'Einkaufsliste, nicht geladen. Öffnen'
@@ -612,7 +612,7 @@ class _EinkaufKarte extends ConsumerWidget {
                       ],
                     ),
                   ),
-                if (offen.length > 6) Text('+ ${offen.length - 6} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                if (offen.length > 6) Text('+ ${offen.length - 6} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
     );
@@ -634,7 +634,7 @@ class _AufgabenKarte extends ConsumerWidget {
     final mitglieder = mitgliederFuerAufgaben(ref, offen);
     final ueberfaellig = offen.where((a) => istUeberfaellig(a, jetzt)).length;
     return _Karte(
-      label: '// aufgaben',
+      label: 'Aufgaben',
       zaehler: fehler || laedt || offen.isEmpty ? null : (ueberfaellig > 0 ? '${offen.length} offen · $ueberfaellig überfällig' : '${offen.length} offen'),
       semantik: fehler
           ? 'Aufgaben, nicht geladen. Öffnen'
@@ -654,7 +654,7 @@ class _AufgabenKarte extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 for (final a in offen.take(6)) AufgabeKurzzeile(aufgabe: a, mitglieder: mitglieder, jetzt: jetzt),
-                if (offen.length > 6) Text('+ ${offen.length - 6} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                if (offen.length > 6) Text('+ ${offen.length - 6} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
     );
@@ -671,7 +671,7 @@ class _FamilieKarte extends ConsumerWidget {
     final mitglieder = async.value ?? const <UserDto>[];
     final bereit = async.hasValue;
     return _Karte(
-      label: '// familie & orte',
+      label: 'Familie und Orte',
       zaehler: bereit && mitglieder.isNotEmpty ? '${mitglieder.length}' : null,
       semantik: bereit ? 'Familie, ${mitglieder.length} Mitglieder' : 'Familie',
       child: Column(
@@ -692,11 +692,11 @@ class _FamilieKarte extends ConsumerWidget {
                     BenutzerAvatar(user: u, size: 32),
                     const SizedBox(width: 10),
                     Expanded(child: Text(u.displayName, maxLines: 1, overflow: TextOverflow.ellipsis)),
-                    Text(u.role.label.toLowerCase(), style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                    Text(u.role.label, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                   ],
                 ),
               ),
-            if (mitglieder.length > 5) Text('+ ${mitglieder.length - 5} weitere', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            if (mitglieder.length > 5) Text('+ ${mitglieder.length - 5} weitere', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ],
         ],
       ),
@@ -710,5 +710,5 @@ class _DateienKarte extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) =>
-      _Karte(label: '// zuletzt geteilt', semantik: dateienKachelSemantik(ref.watch(letzteDateienProvider)), onTap: () => dateienOeffnen(context), child: const DateienKachelInhalt());
+      _Karte(label: 'Zuletzt geteilt', semantik: dateienKachelSemantik(ref.watch(letzteDateienProvider)), onTap: () => dateienOeffnen(context), child: const DateienKachelInhalt());
 }

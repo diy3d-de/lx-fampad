@@ -54,7 +54,7 @@ Future<_Aufbau> _aufbau({bool authKey = true, bool mitSicherung = false, bool sc
 
 Future<void> _zurPasswortSeite(WidgetTester tester) async {
   await tippe(tester, find.byTooltip('Profil und Sicherheit'));
-  await tippeText(tester, 'Passwort und Zwei-Faktor (TOTP)');
+  await tippeText(tester, 'Passwort und zweiter Schritt');
 }
 
 Future<void> _passwortAendern(WidgetTester tester, String pw) async {

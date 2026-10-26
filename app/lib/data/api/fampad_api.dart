@@ -92,7 +92,7 @@ class FampadApi {
     await client.post('/auth/invites/password-reset/complete', {'challengeId': challengeId, 'code': code, ...await _clientFelder()}, false),
   );
 
-  /// "Passwort vergessen?" mit einem der Wiederherstellungscodes (verbraucht ihn); meldet gleich an.
+  /// "Passwort vergessen?" mit einem der Notfall-Codes (verbraucht ihn); meldet gleich an.
   Future<LoginResult> passwortVergessenMitCode({required String email, required String code, required String authKey}) async => LoginResult.fromJson(
     await client.post('/auth/password-reset/recovery', {'email': email, 'code': code, 'authKey': authKey, ...await _clientFelder()}, false),
   );
@@ -110,7 +110,7 @@ class FampadApi {
     await client.post('/auth/login/passkey/verify', {'challengeId': challengeId, 'response': antwort, ...await _clientFelder()}, false),
   );
 
-  /// Passwort nur mit zweitem Faktor: entweder [totp] oder [wiederherstellungscode]. Entweder [authKey] (abgeleitet, das Passwort verlässt das Gerät
+  /// Passwort nur mit zweitem Faktor: entweder [totp] oder [Notfall-Code]. Entweder [authKey] (abgeleitet, das Passwort verlässt das Gerät
   /// nie) oder [passwort] (Klartext, alter Weg); mit [passwort] kann [upgradeAuthKey] den authKey des Kontos anlegen (Umstellung beim Anmelden).
   Future<LoginResult> passwortAnmelden({
     required String email,

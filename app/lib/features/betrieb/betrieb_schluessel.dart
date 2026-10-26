@@ -43,8 +43,8 @@ class FamilienAmpelKarte extends ConsumerWidget {
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
-                StatusPill('● ${ampelText(s.gesamt)}', color: farbe),
-                Text('${s.gruen} grün · ${s.gelb} gelb · ${s.rot} rot', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                StatusPill(ampelText(s.gesamt), color: farbe),
+                Text('${s.gruen} grün · ${s.gelb} gelb · ${s.rot} rot', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
               ],
             ),
           ),
@@ -62,7 +62,7 @@ class FamilienAmpelKarte extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// schlüssel-ampel'),
+        const MonoLabel('Schlüssel-ampel'),
         const SizedBox(height: 8),
         LxCard(padding: const EdgeInsets.all(14), child: inhalt),
         const SizedBox(height: 4),
@@ -106,7 +106,7 @@ class _WarnungenKarteState extends ConsumerState<WarnungenKarte> with AktionsZus
             value: w.an,
             onChanged: laeuft ? null : (v) => unawaited(_umschalten(v)),
             title: const Text('Warnungen an dich', style: TextStyle(fontWeight: FontWeight.w600)),
-            subtitle: const Text('Push ohne Inhalt: „Betrieb: Hinweis – öffne Betrieb“', style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+            subtitle: const Text('Push ohne Inhalt: „Betrieb: Hinweis – öffne Betrieb“', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
           ),
           if (fehler != null) ...[const SizedBox(height: 8), MeldungsBox(fehler!)],
           if (!w.pushDa) ...[
@@ -139,7 +139,7 @@ class _WarnungenKarteState extends ConsumerState<WarnungenKarte> with AktionsZus
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(warnZeile(a.art, a.anzahl), style: const TextStyle(fontWeight: FontWeight.w600)),
-                            if (a.seit != null) Text('seit ${zeitText(a.seit!, jetzt)}', style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                            if (a.seit != null) Text('seit ${zeitText(a.seit!, jetzt)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                           ],
                         ),
                       ),
@@ -157,7 +157,7 @@ class _WarnungenKarteState extends ConsumerState<WarnungenKarte> with AktionsZus
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MonoLabel('// warnungen'),
+        const MonoLabel('Warnungen'),
         const SizedBox(height: 8),
         LxCard(padding: const EdgeInsets.all(14), child: inhalt),
         const SizedBox(height: 4),

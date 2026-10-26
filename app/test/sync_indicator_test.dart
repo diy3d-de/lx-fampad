@@ -65,7 +65,7 @@ void main() {
     await tester.tap(find.byType(IconButton));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 300));
-    expect(find.text('Abgeglichen'), findsOneWidget);
+    expect(find.text('Alles aktuell'), findsOneWidget);
     sync.stoppen();
     await tester.pump();
   });

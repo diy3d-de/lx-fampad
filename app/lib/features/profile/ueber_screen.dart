@@ -93,24 +93,24 @@ class UeberScreen extends ConsumerWidget {
     final i = info.value;
     final server = i?.server;
     final serverText = i == null
-        ? 'wird geladen …'
+        ? 'Lädt …'
         : server == null
             ? 'nicht erreichbar'
             : '${server.version != null ? 'Server ${server.version}' : 'Server'} · Protokoll ${server.protocolVersion}';
     final pruefend = update.phase == UpdatePhase.pruefe || update.phase == UpdatePhase.laedt;
     return AuthSeite(
-      label: '// app',
+      label: 'App',
       titel: 'Über $kAppName',
       maxBreite: kMaxContentWidth,
       kinder: [
         Semantics(
           button: i != null,
-          label: i == null ? 'Version wird geladen' : 'Version ${i.kurz}, antippen zum Kopieren',
+          label: i == null ? 'Version lädt' : 'Version ${i.kurz}, antippen zum Kopieren',
           excludeSemantics: true,
           child: EinstellungsZeile(
             icon: Icons.info_outline,
-            titel: i == null ? 'wird geladen …' : '$kAppName ${i.version}',
-            untertitel: i == null ? null : [if (i.buildText != null) 'build ${i.buildText}', i.plattform].join(' · '),
+            titel: i == null ? 'Lädt …' : '$kAppName ${i.version}',
+            untertitel: i == null ? null : [if (i.buildText != null) 'Build ${i.buildText}', i.plattform].join(' · '),
             status: i == null ? null : const Icon(Icons.copy, size: 18, color: kTextMuted),
             onTap: i == null ? null : () => unawaited(_kopieren(context, i)),
           ),
