@@ -38,6 +38,9 @@ flutter run -d chrome
 flutter build web --release --no-web-resources-cdn
 # Vertragsprüfung gegen den echten Server (nicht Teil von flutter test; läuft in der CI als Job `vertrag` gegen PostgreSQL 17 mit Migrations- und Laufzeitrolle, lokal wie beschrieben; der Server braucht dafür `E2EE_WRAP_KEY_VERSION=true`): app/tool/vertrag_test.dart (Anmeldung und seit 1c der Sync mit zwei Geräten, Konflikten, Rechten, WebSocket, mehrseitigem Snapshot bei purged_rev > 0, Geisterliste), Ablauf im Dateikopf (enthält die Ende-zu-Ende-Prüfung des Chats mit drei Personen und zwei Geräten)
 
+# Lokale Vorprüfung vor dem Push (Repo-Wurzel; ersetzt die CI nicht: libsodium-Tests, Vertragsprüfung und Release laufen nur dort)
+bash tools/lokal-pruefen.sh server|app|alles|db-stop     # Server gegen PostgreSQL 17 in Docker (Port 5433), App analyze + test; nie parallel starten
+
 # Werkzeuge (Repo-Wurzel)
 node --test "tools/*.test.mjs"                                      # Test der Manifest-Signatur
 node tools/update-manifest.mjs keygen|sign …            # Update-Schlüssel, Manifest signieren (tools/README.md)
