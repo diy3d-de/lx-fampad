@@ -35,6 +35,7 @@ class StartKachel {
 /// Kacheln der Handy-Startseite in der Standardreihenfolge.
 const kMobilKacheln = <StartKachel>[
   StartKachel('schnellzugriff', 'Schnellzugriff', 'termin, eintrag, foto, datei'),
+  StartKachel('tagesbriefing', 'Heute im Überblick', 'erscheint nur, wenn es etwas zu zeigen gibt'),
   StartKachel('einkauf', 'Einkaufsliste', 'offene einträge'),
   StartKachel('termine', 'Als nächstes', 'die nächsten termine'),
   StartKachel('geburtstage', 'Geburtstage', 'erscheint nur, wenn einer ansteht'),
@@ -50,6 +51,7 @@ const kMobilKacheln = <StartKachel>[
 
 /// Kacheln des Desktop-Rasters in der Standardreihenfolge.
 const kDesktopKacheln = <StartKachel>[
+  StartKachel('tagesbriefing', 'Heute im Überblick', 'erscheint nur, wenn es etwas zu zeigen gibt'),
   StartKachel('termine', 'Heute und morgen', 'termine'),
   StartKachel('chat', 'Chat', 'letzte nachrichten'),
   StartKachel('einkauf', 'Einkaufsliste', 'offene einträge'),

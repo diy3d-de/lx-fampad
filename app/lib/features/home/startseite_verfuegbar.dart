@@ -13,13 +13,14 @@ import '../medikamente/medikament_anzeige.dart' show medikamenteVorhandenProvide
 import '../medikamente/medikamente_karte.dart' show medKachelProvider;
 import '../zaehler/zaehler_anzeige.dart' show zaehlerVorhandenProvider;
 import '../zaehler/zaehler_karte.dart' show zaehlerKachelProvider;
+import '../tagesbriefing/briefing_karte.dart' show briefingKachelProvider;
 
-KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true, bool medikamente = false, bool medikamenteOffen = false, bool zaehler = false, bool zaehlerOffen = false, bool dateien = false}) => KachelVerfuegbarkeit(
+KachelVerfuegbarkeit _verfuegbar(StartLayout l, {required bool muell, required bool wetter, bool geburtstage = true, bool countdown = true, bool fristen = true, bool medikamente = false, bool medikamenteOffen = false, bool zaehler = false, bool zaehlerOffen = false, bool dateien = false, bool briefing = true, bool briefingLeer = false}) => KachelVerfuegbarkeit(
   angeboten: {
     for (final id in l.standard)
-      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown) && !(id == 'medikamente' && !medikamente) && !(id == 'zaehler' && !zaehler) && !(id == 'dateien' && !dateien)) id,
+      if (!(id == 'muell' && !muell) && !(id == 'wetter' && !wetter) && !(id == 'countdown' && !countdown) && !(id == 'medikamente' && !medikamente) && !(id == 'zaehler' && !zaehler) && !(id == 'dateien' && !dateien) && !(id == 'tagesbriefing' && !briefing)) id,
   },
-  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen', if (!medikamenteOffen) 'medikamente', if (!zaehlerOffen) 'zaehler'},
+  leer: {if (l == StartLayout.mobil && !geburtstage) 'geburtstage', if (!fristen) 'fristen', if (!medikamenteOffen) 'medikamente', if (!zaehlerOffen) 'zaehler', if (briefingLeer) 'tagesbriefing'},
 );
 
 final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
@@ -34,6 +35,8 @@ final mobilVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     medikamenteOffen: ref.watch(medKachelProvider.select((k) => k.sichtbar)),
     zaehler: ref.watch(zaehlerVorhandenProvider),
     zaehlerOffen: ref.watch(zaehlerKachelProvider.select((k) => k.sichtbar)),
+    briefing: ref.watch(briefingKachelProvider.select((k) => k.angeboten)),
+    briefingLeer: ref.watch(briefingKachelProvider.select((k) => k.leer)),
   ),
 );
 
@@ -48,6 +51,8 @@ final desktopVerfuegbarProvider = Provider.autoDispose<KachelVerfuegbarkeit>(
     medikamenteOffen: ref.watch(medKachelProvider.select((k) => k.sichtbar)),
     zaehler: ref.watch(zaehlerVorhandenProvider),
     zaehlerOffen: ref.watch(zaehlerKachelProvider.select((k) => k.sichtbar)),
+    briefing: ref.watch(briefingKachelProvider.select((k) => k.angeboten)),
+    briefingLeer: ref.watch(briefingKachelProvider.select((k) => k.leer)),
     dateien: ref.watch(dateienVerfuegbarProvider).value ?? false,
   ),
 );

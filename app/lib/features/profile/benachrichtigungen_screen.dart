@@ -10,6 +10,7 @@ import '../../data/wetter/wetter_state.dart';
 import '../wetter/wetter_hinweise_screen.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import '../tagesbriefing/briefing_einstellungen_ui.dart' show BriefingMorgensZeile;
 import 'erinnerungen_screen.dart';
 import 'profil_plattform.dart';
 import 'profile_screen.dart' show EinstellungsZeile;
@@ -47,6 +48,7 @@ class BenachrichtigungenScreen extends ConsumerWidget {
             );
           },
         ),
+        if (!web) const BriefingMorgensZeile(),
         if (!web)
           Consumer(
             builder: (context, ref, _) {

@@ -17,6 +17,7 @@ import '../../data/standort/standort_hinweis.dart' show standortOeffnenProvider;
 import '../../data/medikamente/medikament_hinweis.dart' show medikamentOeffnenProvider;
 import '../../data/medikamente/medikament_state.dart' show medDatenProvider;
 import '../../data/muell/muell_hinweis.dart' show muellOeffnenProvider;
+import '../../data/tagesbriefing/briefing_einstellungen.dart' show briefingEinstellungenProvider;
 import '../../data/wetter/wetter_hinweise.dart' show wetterOeffnenProvider;
 import '../../data/zaehler/zaehler_hinweis.dart' show zaehlerOeffnenProvider;
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
@@ -48,6 +49,7 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   dienst.beiZaehlerGeoeffnet = () => ref.read(zaehlerOeffnenProvider.notifier).anfordern();
   dienst.beiMuellGeoeffnet = () => ref.read(muellOeffnenProvider.notifier).anfordern();
   dienst.beiWetterGeoeffnet = () => ref.read(wetterOeffnenProvider.notifier).anfordern();
+  dienst.beiBriefingGeoeffnet = () => ref.read(shellTabProvider.notifier).waehlen(0); // Startseite (Tab 0)
   void los() => unawaited(dienst.abgleichen());
   // Abfuhrtermine (Abend vor der Abholung, nur Eltern/Admins): neue Daten oder Einstellungen -> Fenster neu berechnen
   ref.listen(muellProvider.select((z) => z.stand), (_, _) => dienst.entprellt());
@@ -63,6 +65,8 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
     if (neu.geladen != (alt?.geladen ?? false) || neu.reihen.isNotEmpty || (alt?.reihen.isNotEmpty ?? false)) dienst.entprellt();
   });
   ref.listen(erinnerungEinstellungenProvider, (_, _) => los());
+  // Tagesbriefing: Schalter oder Uhrzeit geändert -> Fenster neu berechnen
+  ref.listen(briefingEinstellungenProvider.select((e) => (e.morgensAn, e.minuten)), (_, _) => los());
   // (die Rolle gehört dazu: ein Rollenwechsel ändert, wer Müll-Erinnerungen bekommt)
   ref.listen(authProvider.select((a) => (a.status, a.user?.id, a.user?.role, a.hinweis)), (_, _) => los());
   // Rückkehr (auch aus den Systemeinstellungen): Erlaubnis neu lesen, damit Anzeigen und Planung ohne Neustart nachziehen

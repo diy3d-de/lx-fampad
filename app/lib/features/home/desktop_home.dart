@@ -34,6 +34,7 @@ import '../lists/list_dialogs.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
+import '../tagesbriefing/briefing_karte.dart' show BriefingStartKarte;
 import '../shell/shell_tab.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/startseite/startseite_state.dart';
@@ -357,6 +358,7 @@ Widget _kachel(String id) => switch (id) {
   'dateien' => const _DateienKarte(),
   'aufgaben' => const _AufgabenKarte(),
   'fristen' => const FristenStartKarte(),
+  'tagesbriefing' => const BriefingStartKarte(),
   'medikamente' => const MedikamenteStartKarte(),
   'zaehler' => const ZaehlerStartKarte(),
   'familie' => const _FamilieKarte(),
