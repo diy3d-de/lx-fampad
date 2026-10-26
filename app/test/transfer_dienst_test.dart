@@ -457,41 +457,69 @@ void main() {
   });
 
   group('Hintergrunddienst', () {
-    test('ab drei aktiven Übertragungen (oder 20 MB) startet er, ohne Namen; am Ende ist er beendet', () async {
+    Future<void> warteAuf(bool Function() bedingung) async {
+      for (var i = 0; i < 200 && !bedingung(); i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
+    test('schon eine einzelne laufende Übertragung startet ihn; am Ende ist er beendet', () async {
+      final tor = Completer<void>();
+      welt.vorPatch = (r) => tor.future;
+      await mama.dienst.hochladenDatei(name: 'secret.txt', quelle: UploadQuelle.ausBytes(bytes(100)));
+      await warteAuf(() => mama.hintergrund.aktiv);
+      expect(mama.hintergrund.aktiv, isTrue);
+      expect(mama.hintergrund.ereignisse, ['start 1']);
+      tor.complete();
+      await mama.dienst.warteBisRuhig();
+      await warteAuf(() => !mama.hintergrund.aktiv);
+      expect(mama.hintergrund.aktiv, isFalse);
+      expect(mama.hintergrund.ereignisse.last, 'ende');
+    });
+
+    test('mehrere Übertragungen: genau ein Start (Mehrfach-Anstoßen startet nicht neu), genau ein Ende', () async {
       final tor = Completer<void>();
       welt.vorPatch = (r) => tor.future;
       for (var i = 0; i < 3; i++) {
         await mama.dienst.hochladenDatei(name: 'secret$i.txt', quelle: UploadQuelle.ausBytes(bytes(100)));
       }
-      for (var i = 0; i < 100 && !mama.hintergrund.aktiv; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
-      expect(mama.hintergrund.aktiv, isTrue);
-      expect(mama.hintergrund.ereignisse.first, 'start 3');
+      await warteAuf(() => mama.hintergrund.letzteAnzahl == 3);
+      expect(mama.hintergrund.ereignisse.where((e) => e.startsWith('start')).length, 1);
+      expect(mama.hintergrund.letzteAnzahl, 3);
       tor.complete();
       await mama.dienst.warteBisRuhig();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(mama.hintergrund.aktiv, isFalse);
-      expect(mama.hintergrund.ereignisse.last, 'ende');
+      await warteAuf(() => !mama.hintergrund.aktiv);
+      expect(mama.hintergrund.ereignisse.where((e) => e == 'ende').length, 1);
     });
 
-    test('eine einzelne kleine Datei braucht keinen Vordergrunddienst', () async {
-      await mama.dienst.hochladenDatei(name: 'a.txt', quelle: UploadQuelle.ausBytes(bytes(100)));
-      await mama.dienst.warteBisRuhig();
+    test('ohne Übertragung startet er nie', () async {
       await Future<void>.delayed(const Duration(milliseconds: 50));
       expect(mama.hintergrund.ereignisse, isEmpty);
     });
 
-    test('eine große Datei (ab 20 MB) startet ihn allein', () async {
+    test('Fehler mit Wartezeit: der Dienst endet (hängt nie fest)', () async {
+      welt.einspritzen((r) => r.method == 'POST', (r) => http.Response(jsonEncode({'error': 'server_busy'}), 503, headers: {'retry-after': '120'}));
+      final id = await mama.dienst.hochladenDatei(name: 'a.txt', quelle: UploadQuelle.ausBytes(bytes(100)));
+      await mama.dienst.warteBisRuhig();
+      expect((await t(mama, id)).zustandTyp, TransferZustand.wartet);
+      await warteAuf(() => !mama.hintergrund.aktiv);
+      expect(mama.hintergrund.aktiv, isFalse);
+      expect(mama.hintergrund.ereignisse.last, 'ende');
+    });
+
+    test('Abmelden (Dienst beenden) beendet ihn mitten in einer Übertragung', () async {
       final tor = Completer<void>();
       welt.vorPatch = (r) => tor.future;
-      await mama.dienst.hochladenDatei(name: 'gross.bin', quelle: UploadQuelle.ausBytes(bytes(21 * 1024 * 1024)));
-      for (var i = 0; i < 100 && !mama.hintergrund.aktiv; i++) {
-        await Future<void>.delayed(const Duration(milliseconds: 5));
-      }
+      await mama.dienst.hochladenDatei(name: 'a.txt', quelle: UploadQuelle.ausBytes(bytes(100)));
+      await warteAuf(() => mama.hintergrund.aktiv);
       expect(mama.hintergrund.aktiv, isTrue);
+      await mama.dienst.beenden();
+      expect(mama.hintergrund.aktiv, isFalse);
+      expect(mama.hintergrund.ereignisse.last, 'ende');
       tor.complete();
       await mama.dienst.warteBisRuhig();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(mama.hintergrund.aktiv, isFalse); // ein spätes Anstoßen startet ihn nach dem Beenden nicht wieder
     });
   });
 
