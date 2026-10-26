@@ -85,7 +85,7 @@ Map<String, dynamic> _verlauf({List<Map<String, dynamic>>? tage}) => {
   'days': tage ?? [for (var i = 29; i >= 0; i--) if (i % 7 != 3) _tag(i, runs: 100 + i, db: (40 + (29 - i)) * 1024 * 1024)],
 };
 
-Map<String, dynamic> _status({Object? nas = _std, Object? updates = _std, Object? push = _std, int wetterFehler = 0, String overall = 'ok'}) => {
+Map<String, dynamic> _status({Object? nas = _std, Object? updates = _std, Object? push = _std, Object? ingest = _keine, int wetterFehler = 0, String overall = 'ok'}) => {
   'generatedAt': _t0.toIso8601String(),
   'overall': overall,
   'server': {'version': '0.7.0', 'protocolVersion': 1, 'startedAt': '2026-10-18T08:00:00.000Z', 'uptimeSec': 3 * 86400, 'memoryRssMb': 58},
@@ -109,6 +109,7 @@ Map<String, dynamic> _status({Object? nas = _std, Object? updates = _std, Object
   'backup': {'state': 'ok', 'lastSuccessAt': _vor(const Duration(hours: 5)), 'ageHours': 5, 'totalBytes': 617472, 'lastResult': 'ok'},
   if (!identical(nas, _keine)) 'nas': identical(nas, _std) ? _nas() : nas,
   if (!identical(push, _keine)) 'push': identical(push, _std) ? _push() : push,
+  if (!identical(ingest, _keine)) 'ingest': ingest,
   if (!identical(updates, _keine)) 'updates': identical(updates, _std) ? _updates() : updates,
   'disk': {'totalBytes': 44 * 1024 * 1024 * 1024, 'freeBytes': 26 * 1024 * 1024 * 1024, 'usedPercent': 41},
   'certificate': {'validTo': '2027-01-14T00:00:00.000Z', 'daysLeft': 85},
@@ -546,6 +547,63 @@ void main() {
       expect(labelFinder('Nutzung'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
       pruefeLayout(tester, 'Nutzung Desktop');
+    });
+  });
+
+  group('Home Assistant (Einwurf)', () {
+    Map<String, dynamic> ha({bool an = true, String state = 'ok', int? tokens = 1, int? postfach = 4, num? alter = 5, bool einwurf = true}) => {
+      'enabled': an,
+      'state': state,
+      'tokensActive': tokens,
+      'inboxCount': postfach,
+      'inboxLimit': 3000,
+      'oldestAgeHours': alter,
+      'lastDropAt': einwurf ? _vor(const Duration(hours: 2)) : null,
+    };
+
+    test('Modell tolerant: ältere Server ohne Feld, Unsinn, null-Zähler', () {
+      expect(BetriebStatus.fromJson(_status()).ingest, isNull);
+      final i = BetriebIngest.fromJson({'enabled': 'ja', 'state': 5, 'tokensActive': 'x', 'oldestAgeHours': double.nan});
+      expect(i.aktiv, isFalse);
+      expect(i.stufe, BetriebStufe.unbekannt);
+      expect(i.tokens, isNull);
+      expect(i.aeltestStunden, isNull);
+      expect(i.zeigen, isFalse);
+      final ok = BetriebStatus.fromJson(_status(ingest: ha())).ingest!;
+      expect(ok.postfach, 4);
+      expect(ok.aeltestStunden, 5);
+      expect(ok.letzterEinwurf, isNotNull);
+      expect(ok.zeigen, isTrue);
+      expect(ingestInfo(ok), 'bereit');
+      expect(ingestInfo(BetriebIngest.fromJson(ha(state: 'warn'))), contains('7 Tagen'));
+      expect(ingestInfo(BetriebIngest.fromJson(ha(an: false))), contains('ausgeschaltet'));
+    });
+
+    testWidgets('zeigt Zähler und Zeiten; ohne Block oder bei aus und leer fehlt der Abschnitt', (tester) async {
+      await start(tester, status: () => _status(ingest: ha(state: 'warn', postfach: 2500, alter: 200)));
+      await seite(tester, 'Nutzung');
+      await tester.scrollUntilVisible(labelFinder('Home Assistant'), 500, scrollable: find.byType(Scrollable).first);
+      await warte(tester);
+      expect(find.text('Postfach'), findsOneWidget);
+      expect(find.text('2500'), findsOneWidget);
+      expect(find.text('Letzter Einwurf'), findsOneWidget);
+      expect(find.text('Hinweis'), findsWidgets);
+    });
+
+    testWidgets('nicht angezeigt, wenn aus und leer', (tester) async {
+      await start(tester, status: () => _status(ingest: ha(an: false, state: 'off', tokens: 0, postfach: 0, alter: null, einwurf: false)));
+      await seite(tester, 'Nutzung');
+      expect(labelFinder('Home Assistant'), findsNothing);
+    });
+
+    testWidgets('360 px und Textskala 1.5: nichts läuft über, Touch-Ziele mindestens 44 px', (tester) async {
+      await start(tester, skala: 1.5, status: () => _status(ingest: ha(state: 'warn')));
+      await seite(tester, 'Nutzung');
+      for (var i = 0; i < 8; i++) {
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -500));
+        await warte(tester);
+        pruefeLayout(tester, 'HA 1.5 Schritt $i');
+      }
     });
   });
 

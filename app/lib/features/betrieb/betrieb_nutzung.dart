@@ -52,6 +52,7 @@ class _BetriebNutzungSeiteState extends ConsumerState<BetriebNutzungSeite> {
         const _VerlaufAbschnitt(),
         const SizedBox(height: 20),
         _WetterPushAbschnitt(s: s),
+        if (s.ingest?.zeigen ?? false) ...[const SizedBox(height: 20), _IngestAbschnitt(i: s.ingest!)],
         const SizedBox(height: 20),
         UpdateStandAbschnitt(s: s, oeffneMitglieder: widget.oeffneMitglieder),
       ],
@@ -295,6 +296,39 @@ class _WetterPushAbschnitt extends StatelessWidget {
         ),
       ),
       hinweis: 'Der Wetter-Dienst läuft als eigener Dienst (lx-fampad-weather). Die Seite zeigt nur Zähler und feste Codes, nie Fehlertexte, Endpunkte oder Zugangsdaten.',
+    );
+  }
+}
+
+// ------------------------------------------------------------------ Home Assistant (Einwurf)
+
+class _IngestAbschnitt extends StatelessWidget {
+  final BetriebIngest i;
+  const _IngestAbschnitt({required this.i});
+
+  @override
+  Widget build(BuildContext context) {
+    final jetzt = DateTime.now();
+    final stufe = i.aktiv ? i.stufe : BetriebStufe.aus;
+    return BetriebAbschnitt(
+      label: 'Home Assistant',
+      kind: LxCard(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+        child: Column(
+          children: [
+            BetriebZeile(name: 'Einwurf', info: ingestInfo(i), pille: StatusPill(stufeText(stufe), color: stufeFarbe(stufe))),
+            const Divider(height: 1, color: kBorderSoft),
+            BetriebZeile(name: 'Verbindungen', info: 'aktive Zugangsschlüssel', pille: _wert(i.tokens == null ? '–' : '${i.tokens}')),
+            const Divider(height: 1, color: kBorderSoft),
+            BetriebZeile(name: 'Postfach', info: i.postfach == null ? 'nicht messbar' : 'Päckchen, Grenze ${i.grenze}', pille: _wert(i.postfach == null ? '–' : '${i.postfach}')),
+            const Divider(height: 1, color: kBorderSoft),
+            BetriebZeile(name: 'Ältestes Päckchen', info: 'wartet auf Abholung', pille: _wert(i.postfach == 0 ? 'keins' : (i.aeltestStunden == null ? '–' : vorText(Duration(hours: i.aeltestStunden!))))),
+            const Divider(height: 1, color: kBorderSoft),
+            BetriebZeile(name: 'Letzter Einwurf', info: 'zuletzt genutzte Verbindung', pille: _wert(i.letzterEinwurf == null ? '–' : vorText(jetzt.difference(i.letzterEinwurf!)))),
+          ],
+        ),
+      ),
+      hinweis: 'Der Server sieht nur undurchsichtige Päckchen. Die Seite zeigt nur Zahlen und Zeiten, nie Schlüssel, Namen oder Werte.',
     );
   }
 }
