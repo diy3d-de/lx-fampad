@@ -8,6 +8,7 @@ import '../../constants.dart';
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import '../tagesbriefing/briefing_einstellungen_ui.dart' show BriefingKachelZeile;
 import '../home/startseite_anpassen_screen.dart';
 import 'leiste_anpassen_screen.dart';
 import '../wandtablet/wandtablet_einstellungen_screen.dart';
@@ -42,6 +43,7 @@ class AnzeigeScreen extends ConsumerWidget {
             onTap: () => Navigator.of(context).push<void>(LeisteAnpassenScreen.route()),
           ),
         const WetterZeile(),
+        const BriefingKachelZeile(),
         EinstellungsZeile(
           icon: Icons.tv_outlined,
           titel: 'Wandtablet-Modus',

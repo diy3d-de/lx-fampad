@@ -25,6 +25,8 @@ import '../medikamente/medikament_state.dart' show medDatenProvider;
 import '../zaehler/zaehler_erinnerung.dart' show istZaehlerPayload, planeZaehlerErinnerungen;
 import '../zaehler/zaehler_state.dart' show darfRolleZaehler, zaehlerDatenProvider;
 import '../muell/muell_logik.dart' show istMuellPayload;
+import '../tagesbriefing/briefing_einstellungen.dart' show briefingEinstellungenProvider;
+import '../tagesbriefing/briefing_erinnerung.dart' show istBriefingPayload, planeBriefingErinnerungen;
 import '../muell/muell_state.dart' show muellErinnerungen, muellProvider;
 import '../api/models.dart' show Role;
 import '../betrieb/betrieb_hinweis.dart' show kBetriebPayload;
@@ -95,6 +97,9 @@ class ErinnerungDienst {
   /// Tipp auf die Müll-Erinnerung bzw. den Hinweis auf ein neues Jahr (Nutzlast `muell|<Tag>` oder `muell`): die Müll-Seite öffnen.
   void Function()? beiMuellGeoeffnet;
   void Function()? beiWetterGeoeffnet;
+
+  /// Tipp auf die Benachrichtigung des Tagesbriefings (Nutzlast `briefing`, nur Zahlen): die Startseite öffnen.
+  void Function()? beiBriefingGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -196,7 +201,22 @@ class ErinnerungDienst {
     final zd = einst.zaehlerAn && darfRolleZaehler(auth.user?.role) ? _ref.read(zaehlerDatenProvider) : null;
     if (zd != null && !zd.geladen) return true;
     final zaehlerPlan = zd == null ? const <GeplanteErinnerung>[] : planeZaehlerErinnerungen(daten: zd, jetzt: _jetzt());
-    final zusatzPlan = [...muellPlan, ...medPlan, ...zaehlerPlan];
+    // Tagesbriefing am Morgen (eigener Schalter, Standard aus, neutral, nur Zahlen, nur lokal): erst, wenn Termine und Aufgaben gelesen sind
+    await _ref.read(briefingEinstellungenProvider.notifier).bereit;
+    final be = _ref.read(briefingEinstellungenProvider);
+    var briefingPlan = const <GeplanteErinnerung>[];
+    if (be.morgensAn) {
+      if (!_datenDa(true)) return true;
+      briefingPlan = planeBriefingErinnerungen(
+        daten: _ref.read(kalenderDatenProvider),
+        aufgaben: _ref.read(aufgabenProvider).value ?? const [],
+        ich: ich,
+        elternRolle: auth.user?.role == Role.admin || auth.user?.role == Role.parent,
+        minuten: be.minuten,
+        jetzt: _jetzt(),
+      );
+    }
+    final zusatzPlan = [...muellPlan, ...medPlan, ...zaehlerPlan, ...briefingPlan];
     if (nurMuell && zusatzPlan.isEmpty) return _loeschen();
     // Erst planen, wenn die Datenbank die Termine geliefert hat (sonst würde ein leeres Fenster alle Alarme löschen)
     if (!nurMuell && !_datenDa(einst.aufgabenAn)) return true;
@@ -326,6 +346,10 @@ class ErinnerungDienst {
     }
     if (istMuellPayload(payload)) {
       beiMuellGeoeffnet?.call();
+      return;
+    }
+    if (istBriefingPayload(payload)) {
+      beiBriefingGeoeffnet?.call();
       return;
     }
     if (istWetterPayload(payload)) {

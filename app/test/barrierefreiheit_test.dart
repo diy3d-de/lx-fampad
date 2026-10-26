@@ -20,6 +20,7 @@ import 'package:lx_fampad/data/medikamente/medikament_state.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart' show zaehlerRepositoryProvider;
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
 import 'package:lx_fampad/features/zaehler/zaehler_diagramm.dart' show VerbrauchsDiagramm;
+import 'package:lx_fampad/features/tagesbriefing/briefing_karte.dart' show BriefingStartKarte;
 import 'package:lx_fampad/features/neuigkeiten/neuigkeiten_dialog.dart';
 import 'package:lx_fampad/data/neuigkeiten/neuigkeiten.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart' show EinstellungsZeile;
@@ -463,6 +464,30 @@ void main() {
     pruefe(tester, 'Desktop-Startseite');
     h.dispose();
   });
+
+  // Tagesbriefing: Startseiten-Kachel "Heute im Überblick" (nur Text, kein Tipp-Knopf) und die Schalter in den Einstellungen
+  for (final skala in [1.0, 2.0]) {
+    testWidgets('Tagesbriefing: Kachel und Einstellungen, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      final heute = heuteTag();
+      String tag(int n) => tagText(DateTime.utc(heute.year, heute.month, heute.day + n));
+      env.sync.andereAendert('termin', 'aaaaaaaa-2222-4222-8222-222222222222', {'titel': 'Familienfeier', 'ganztaegig': true, 'startDate': tag(0), 'endDate': tag(1), 'ownerId': fixIdAdmin, 'audience': 'family'});
+      env.sync.andereAendert('aufgabe', 'bbbbbbbb-2222-4222-8222-222222222222', {'titel': 'Eine Aufgabe', 'faelligDate': tag(0), 'assigneeId': fixIdAdmin});
+      await starteApp(tester, env, skala: skala);
+      expect(find.byType(BriefingStartKarte), findsOneWidget);
+      pruefe(tester, 'Startseite mit Tagesbriefing $skala');
+      await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+      await tippe(tester, find.text('Startseite und Anzeige'));
+      expect(find.text('Tagesbriefing'), findsOneWidget);
+      pruefe(tester, 'Startseite und Anzeige mit Tagesbriefing $skala');
+      await tippe(tester, find.byTooltip('Zurück'));
+      await tippe(tester, find.text('Benachrichtigungen'));
+      expect(find.text('Morgens benachrichtigen'), findsOneWidget);
+      pruefe(tester, 'Benachrichtigungen mit Tagesbriefing $skala');
+      h.dispose();
+    });
+  }
 
   test('Konstante: Touch-Ziel-Mindestmaß', () => expect(minZiel, 44.0));
   test('Konstante: Desktop-Grenze', () => expect(kDesktopBreakpoint, 900.0));
