@@ -1,4 +1,10 @@
 {
+  "0.21.0": [
+    "Tagesbriefing: Die Kachel „Heute im Überblick“ fasst Termine, Aufgaben, Müll und Wetter zusammen. Auf Wunsch gibt es morgens eine neutrale Benachrichtigung (unter Benachrichtigungen)",
+    "Große Uploads und Downloads laufen jetzt auch weiter, wenn du die App verlässt (Android)",
+    "Die Karte bei Standort erscheint auch, wenn gerade niemand teilt",
+    "Betrieb: Zustand der Home-Assistant-Anbindung (nur für den Betreiber)"
+  ],
   "0.20.0": [
     "Ruhigerer Look: dezenteres Türkis statt Neon, Karten ohne Rahmen, normale Schrift statt Terminal-Optik. Der Hintergrund bleibt",
     "Verständlichere Texte: „Anmelden ohne Passwort“, „Notfall-Codes“, „Nachrichten-Schutz“ und Formulare als Fragen („Wer macht das?“)",
