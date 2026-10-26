@@ -53,7 +53,8 @@ void main() {
       expect(find.textContaining('geräte: '), findsOneWidget);
       expect(find.textContaining('verbindung: '), findsOneWidget);
       expect(find.textContaining('version: '), findsOneWidget);
-      expect(find.byTooltip('Benachrichtigungen'), findsOneWidget);
+      expect(find.byTooltip('Benachrichtigungen'), findsNothing, reason: 'keine Glocke ohne Funktion');
+      expect(find.textContaining('Phase'), findsNothing);
       expect(find.text('Neu'), findsOneWidget);
       expect(tester.takeException(), isNull);
       // Inhalt der Startseite höchstens kMaxContentWidthDesktop breit

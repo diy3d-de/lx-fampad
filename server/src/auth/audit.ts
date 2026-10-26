@@ -87,7 +87,10 @@ export type AuditEvent =
   /** Betreiber setzt oder löscht den Familienhinweis (`detail.had`/`has`, Länge und Ablauf, nie der Text). */
   | 'operator_notice_set'
   /** Eltern/Admin fordern eine Prüfung des Abfuhrkalenders an („Jetzt prüfen“); der Dienst lx-fampad-waste holt sie ab. */
-  | 'waste_check_requested';
+  | 'waste_check_requested'
+  /** Einwurf-Token (Home Assistant) angelegt oder widerrufen (`detail.tokenId`, nie das Token). */
+  | 'ingest_token_created'
+  | 'ingest_token_revoked';
 
 export interface AuditEntry {
   event: AuditEvent;

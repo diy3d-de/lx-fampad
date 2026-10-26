@@ -1,5 +1,6 @@
-// "Mehr" in der unteren Leiste (nur mobil): Blatt mit den Bereichen und Seiten, die nicht in der Leiste stehen, dazu Hinweise (Zahlen) und die Zeile "Profil".
-// Das Blatt ändert den aktiven Bereich nicht; ein Eintrag schließt es und öffnet sein Ziel. Neuer Eintrag (z. B. Medikamente) = ein Eintrag in [mehrEintraege].
+// "Mehr" in der unteren Leiste (nur mobil): Blatt mit den Bereichen und Seiten, die nicht in der Leiste stehen, in drei Gruppen (Familie, Zuhause, Ablage), dazu Hinweise (Zahlen) und die Zeile "Profil".
+// Dieselben Einträge in derselben Reihenfolge zeigt die Seitenleiste im Desktop-Layout. Das Blatt ändert den aktiven Bereich nicht; ein Eintrag schließt es und öffnet sein Ziel.
+// Neuer Eintrag (z. B. Medikamente) = ein Eintrag mit Gruppe in [bereichsEintraege].
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -50,60 +51,93 @@ final mehrHinweiseProvider = Provider.autoDispose<MehrHinweise>((ref) {
   );
 });
 
-/// Ein Eintrag im Blatt. [hinweis] > 0 zeigt ein kleines Zeichen (rot bei [ueberfaellig], sonst gelb).
+/// Die drei Gruppen der Navigation (Blatt "Mehr" mobil, Seitenleiste im Desktop-Layout): gleiche Einträge in gleicher Reihenfolge.
+enum MehrGruppe {
+  familie('Familie'),
+  zuhause('Zuhause'),
+  ablage('Ablage');
+
+  final String label;
+  const MehrGruppe(this.label);
+}
+
+/// Ein Eintrag der Navigation. [hinweis] > 0 zeigt ein kleines Zeichen (rot bei [ueberfaellig], sonst gelb).
+/// [tab] ist der Index im Seitenstapel, wenn der Eintrag ein Bereich der Desktop-Shell ist (sonst null, z. B. Suche); [vorWahl] läuft vor dem Wechsel
+/// in den Bereich (Fristen stellen den Aufgaben-Filter ein).
 class MehrEintrag {
   final String id;
   final String label;
   final IconData icon;
+  final MehrGruppe gruppe;
+  final int? tab;
   final int hinweis;
   final bool ueberfaellig;
+  final void Function(WidgetRef ref)? vorWahl;
   final void Function(BuildContext context, WidgetRef ref) oeffnen;
-  const MehrEintrag({required this.id, required this.label, required this.icon, required this.oeffnen, this.hinweis = 0, this.ueberfaellig = false});
+  const MehrEintrag({required this.id, required this.label, required this.icon, required this.gruppe, required this.oeffnen, this.tab, this.hinweis = 0, this.ueberfaellig = false, this.vorWahl});
 }
 
-/// Die Einträge des Blatts in fester Reihenfolge: Bereiche hinter "Mehr", Fristen, Medikamente, Zähler und Tresor (nur Eltern/Admins), Dateien (nur wenn die Dateiablage da ist), Müll, Wetter (nur wenn verfügbar), Standort, Suche.
-List<MehrEintrag> mehrEintraege(WidgetRef ref, List<int> leiste) {
+/// Alle Einträge der drei Gruppen in fester Reihenfolge (eine Quelle für Blatt und Seitenleiste; ein neuer Bereich = ein Eintrag hier):
+/// Familie: Listen, Aufgaben, Fristen, Standort. Zuhause: Müll und Wetter (nur wenn verfügbar), Zähler (nur Eltern/Admins), Medikamente.
+/// Ablage: Dateien (nur wenn die Dateiablage da ist), Tresor (nur Eltern/Admins), Suche. [offenerTab]: der gerade gewählte Bereich der Desktop-Shell
+/// (Wetter und Müll bleiben dann auch sichtbar, wenn sie ausgeschaltet werden, damit der Bereich nicht unter dir verschwindet).
+List<MehrEintrag> bereichsEintraege(WidgetRef ref, {int? offenerTab}) {
   final h = ref.watch(mehrHinweiseProvider);
-  final muell = ref.watch(muellProvider.select((m) => m.verfuegbar));
-  final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar));
+  final muell = ref.watch(muellProvider.select((m) => m.verfuegbar)) || offenerTab == kMuellTab;
+  final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar)) || offenerTab == kWetterTab;
   final zaehlerDarf = ref.watch(zaehlerDarfProvider);
   final tresorDarf = ref.watch(tresorDarfProvider);
   final dateienDa = ref.watch(dateienVerfuegbarProvider).value ?? false;
+  MehrEintrag tabEintrag(int tab, MehrGruppe g) => MehrEintrag(
+    id: leisteKennung(tab),
+    label: kTabs[tab].label,
+    icon: kTabs[tab].icon,
+    gruppe: g,
+    tab: tab,
+    hinweis: tab == kAufgabenTab ? h.aufgaben : 0,
+    ueberfaellig: tab == kAufgabenTab && h.aufgabenUeberfaellig > 0,
+    oeffnen: (_, ref) => ref.read(shellTabProvider.notifier).waehlen(tab),
+  );
   return [
-    for (final tab in hinterMehr(leiste))
-      MehrEintrag(
-        id: leisteKennung(tab),
-        label: kTabs[tab].label,
-        icon: kTabs[tab].icon,
-        hinweis: tab == kAufgabenTab ? h.aufgaben : 0,
-        ueberfaellig: tab == kAufgabenTab && h.aufgabenUeberfaellig > 0,
-        oeffnen: (_, ref) => ref.read(shellTabProvider.notifier).waehlen(tab),
-      ),
+    // Familie
+    tabEintrag(kListenTab, MehrGruppe.familie),
+    tabEintrag(kAufgabenTab, MehrGruppe.familie),
     MehrEintrag(
       id: 'fristen',
       label: 'Fristen',
       icon: Icons.event_available_outlined,
+      gruppe: MehrGruppe.familie,
+      tab: kAufgabenTab,
       hinweis: h.fristen,
       ueberfaellig: h.fristenUeberfaellig > 0,
+      vorWahl: (ref) => ref.read(aufgabenAnsichtProvider.notifier).filter(AufgabeFilter.fristen),
       oeffnen: (_, ref) {
         ref.read(aufgabenAnsichtProvider.notifier).filter(AufgabeFilter.fristen);
         ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
       },
     ),
-    // Medikamente (nach Fristen): nur Eigenes und das der Kinder; die Zahl sind fällige und verpasste Einnahmen heute
-    MehrEintrag(id: 'medikamente', label: 'Medikamente', icon: Icons.medication_outlined, hinweis: h.medikamente, oeffnen: (c, _) => medikamenteOeffnen(c)),
-    // Zähler (nach Medikamenten): NUR für Eltern und Admins, Kinder bekommen den Eintrag nie; die Zahl sind die Zähler, die jetzt abgelesen werden sollen
-    if (zaehlerDarf) MehrEintrag(id: 'zaehler', label: 'Zähler', icon: Icons.speed_outlined, hinweis: h.zaehler, oeffnen: (c, _) => zaehlerOeffnen(c)),
-    // Tresor (nach Zähler): NUR für Eltern und Admins, Kinder bekommen den Eintrag nie; ohne Zahl und ohne Zeichen
-    if (tresorDarf) MehrEintrag(id: 'tresor', label: 'Tresor', icon: Icons.lock_outline, oeffnen: (c, _) => tresorOeffnen(c)),
-    // Dateien (nach Tresor): nur wenn der Server die Dateiablage meldet; Kinder sehen den Bereich mit ihren Rechten, ohne Zahl und ohne Zeichen
-    if (dateienDa) MehrEintrag(id: 'dateien', label: 'Dateien', icon: Icons.folder_outlined, oeffnen: (c, _) => dateienOeffnen(c)),
-    if (muell) MehrEintrag(id: 'muell', label: 'Müll', icon: Icons.delete_outline, oeffnen: (c, _) => muellOeffnen(c)),
-    if (wetter) MehrEintrag(id: 'wetter', label: 'Wetter', icon: Icons.wb_sunny_outlined, oeffnen: (c, _) => wetterOeffnen(c)),
-    MehrEintrag(id: 'standort', label: 'Standort', icon: Icons.location_on_outlined, oeffnen: (c, _) => standortOeffnen(c)),
-    MehrEintrag(id: 'suche', label: 'Suche', icon: Icons.search, oeffnen: (c, _) => unawaited(Navigator.of(c).push<void>(SuchScreen.route()))),
+    MehrEintrag(id: 'standort', label: 'Standort', icon: Icons.location_on_outlined, gruppe: MehrGruppe.familie, tab: kStandortTab, oeffnen: (c, _) => standortOeffnen(c)),
+    // Zuhause
+    if (muell) MehrEintrag(id: 'muell', label: 'Müll', icon: Icons.delete_outline, gruppe: MehrGruppe.zuhause, tab: kMuellTab, oeffnen: (c, _) => muellOeffnen(c)),
+    if (wetter) MehrEintrag(id: 'wetter', label: 'Wetter', icon: Icons.wb_sunny_outlined, gruppe: MehrGruppe.zuhause, tab: kWetterTab, oeffnen: (c, _) => wetterOeffnen(c)),
+    // Zähler: NUR für Eltern und Admins, Kinder bekommen den Eintrag nie; die Zahl sind die Zähler, die jetzt abgelesen werden sollen
+    if (zaehlerDarf) MehrEintrag(id: 'zaehler', label: 'Zähler', icon: Icons.speed_outlined, gruppe: MehrGruppe.zuhause, tab: kZaehlerTab, hinweis: h.zaehler, oeffnen: (c, _) => zaehlerOeffnen(c)),
+    // Medikamente: nur Eigenes und das der Kinder; die Zahl sind fällige und verpasste Einnahmen heute
+    MehrEintrag(id: 'medikamente', label: 'Medikamente', icon: Icons.medication_outlined, gruppe: MehrGruppe.zuhause, tab: kMedikamenteTab, hinweis: h.medikamente, oeffnen: (c, _) => medikamenteOeffnen(c)),
+    // Ablage
+    // Dateien: nur wenn der Server die Dateiablage meldet; Kinder sehen den Bereich mit ihren Rechten, ohne Zahl und ohne Zeichen
+    if (dateienDa) MehrEintrag(id: 'dateien', label: 'Dateien', icon: Icons.folder_outlined, gruppe: MehrGruppe.ablage, tab: kDateienTab, oeffnen: (c, _) => dateienOeffnen(c)),
+    // Tresor: NUR für Eltern und Admins, Kinder bekommen den Eintrag nie; ohne Zahl und ohne Zeichen
+    if (tresorDarf) MehrEintrag(id: 'tresor', label: 'Tresor', icon: Icons.lock_outline, gruppe: MehrGruppe.ablage, tab: kTresorTab, oeffnen: (c, _) => tresorOeffnen(c)),
+    MehrEintrag(id: 'suche', label: 'Suche', icon: Icons.search, gruppe: MehrGruppe.ablage, oeffnen: (c, _) => unawaited(Navigator.of(c).push<void>(SuchScreen.route()))),
   ];
 }
+
+/// Die Einträge des Blatts: alle Einträge der drei Gruppen, ohne die Bereiche, die in der Leiste stehen (Listen und Aufgaben, falls gewählt).
+List<MehrEintrag> mehrEintraege(WidgetRef ref, List<int> leiste) => [
+  for (final e in bereichsEintraege(ref))
+    if (e.id == 'fristen' || e.tab == null || !leiste.contains(e.tab)) e,
+];
 
 /// Öffnet das Blatt (im Navigator der Seite, nicht im Wurzel-Navigator).
 Future<void> mehrBlattOeffnen(BuildContext context) => showModalBottomSheet<void>(
@@ -158,16 +192,27 @@ class MehrBlatt extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            MediaQuery(
-              data: MediaQuery.of(context).copyWith(textScaler: skala),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: eintraege.length,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8, mainAxisExtent: hoehe),
-                itemBuilder: (_, i) => _Kachel(eintrag: eintraege[i], onTap: () => waehlen(eintraege[i])),
-              ),
-            ),
+            // drei Gruppen mit Überschrift; leere Gruppen entfallen samt Überschrift
+            for (final g in MehrGruppe.values)
+              if (eintraege.any((e) => e.gruppe == g)) ...[
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(2, 6, 2, 8),
+                  child: Semantics(header: true, child: MonoLabel(g.label, color: kTextMuted)),
+                ),
+                MediaQuery(
+                  data: MediaQuery.of(context).copyWith(textScaler: skala),
+                  child: GridView.builder(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    itemCount: eintraege.where((e) => e.gruppe == g).length,
+                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8, mainAxisExtent: hoehe),
+                    itemBuilder: (_, i) {
+                      final e = eintraege.where((x) => x.gruppe == g).elementAt(i);
+                      return _Kachel(eintrag: e, onTap: () => waehlen(e));
+                    },
+                  ),
+                ),
+              ],
             const SizedBox(height: 10),
             Semantics(
               button: true,

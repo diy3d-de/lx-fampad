@@ -411,9 +411,9 @@ class _StaendeAbschnitt extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(datumTextDeutsch(z.s.datum)),
-                          if (z.s.marke != null || z.s.notiz.isNotEmpty)
+                          if (z.s.marke != null || z.s.notiz.isNotEmpty || z.s.automatisch)
                             Text(
-                              [if (z.s.marke == StandMarke.ende) 'Endstand beim Zählerwechsel', if (z.s.marke == StandMarke.start) 'Startstand nach Zählerwechsel', if (z.s.notiz.isNotEmpty) z.s.notiz].join(' · '),
+                              [if (z.s.automatisch) 'aus Home Assistant', if (z.s.marke == StandMarke.ende) 'Endstand beim Zählerwechsel', if (z.s.marke == StandMarke.start) 'Startstand nach Zählerwechsel', if (z.s.notiz.isNotEmpty) z.s.notiz].join(' · '),
                               style: const TextStyle(fontSize: 12, color: kTextMuted),
                             ),
                         ],

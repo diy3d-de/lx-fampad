@@ -25,6 +25,8 @@ import '../tasks/aufgaben_anzeige.dart';
 import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
 import '../../data/tasks/aufgabe_repository.dart';
 import '../calendar/termin_editor.dart';
+import '../tasks/aufgabe_editor.dart' show aufgabeEditorOeffnen;
+import '../../data/dateien/datei_state.dart' show dateienVerfuegbarProvider;
 import '../shell/shell_tab.dart';
 import '../muell/muell_karte.dart';
 import '../medikamente/medikamente_karte.dart' show MedikamenteStartKarte;
@@ -182,25 +184,30 @@ class _SyncLeiste extends ConsumerWidget {
 }
 
 /// Kachel "Schnellzugriff": vier Knöpfe in einer Reihe.
-class _SchnellzugriffReihe extends StatelessWidget {
+class _SchnellzugriffReihe extends ConsumerWidget {
   const _SchnellzugriffReihe();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Foto und Datei gibt es nur mit Dateiablage; sonst steht an ihrer Stelle "Aufgabe" (keine Knöpfe ohne Funktion)
+    final dateienDa = ref.watch(dateienVerfuegbarProvider).value ?? false;
     // feste Höhe statt Seitenverhältnis: wächst nicht mit der Breite, aber mit der Schrift; bei stark vergrößerter Schrift zwei Knöpfe je Reihe,
     // damit die Beschriftungen nicht mitten im Wort brechen
     final skala = MediaQuery.textScalerOf(context).scale(1.0);
-    final spalten = skala >= 1.75 ? 2 : 4;
+    final spalten = skala >= 1.75 ? 2 : (dateienDa ? 4 : 3);
     final hoehe = (24 + 36 + 8 + 12 * skala * 1.4 + 4).ceilToDouble();
     return GridView(
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: spalten, mainAxisSpacing: 10, crossAxisSpacing: 10, mainAxisExtent: hoehe < 96 ? 96 : hoehe),
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      children: const [
-        _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
-        _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
-        _Schnellzugriff('Foto', Icons.image_outlined, zumFoto: true),
-        _Schnellzugriff('Datei', Icons.upload_outlined, zumDatei: true),
+      children: [
+        const _Schnellzugriff('Termin', Icons.calendar_today_outlined, zumTerminEditor: true),
+        const _Schnellzugriff('Eintrag', Icons.checklist_outlined, zumListenTab: true),
+        if (dateienDa) ...const [
+          _Schnellzugriff('Foto', Icons.image_outlined, zumFoto: true),
+          _Schnellzugriff('Datei', Icons.upload_outlined, zumDatei: true),
+        ] else
+          const _Schnellzugriff('Aufgabe', Icons.task_alt_outlined, zumAufgabeEditor: true),
       ],
       );
   }
@@ -211,9 +218,10 @@ class _Schnellzugriff extends ConsumerWidget {
   final IconData icon;
   final bool zumListenTab;
   final bool zumTerminEditor;
+  final bool zumAufgabeEditor;
   final bool zumFoto;
   final bool zumDatei;
-  const _Schnellzugriff(this.label, this.icon, {this.zumListenTab = false, this.zumTerminEditor = false, this.zumFoto = false, this.zumDatei = false});
+  const _Schnellzugriff(this.label, this.icon, {this.zumListenTab = false, this.zumTerminEditor = false, this.zumAufgabeEditor = false, this.zumFoto = false, this.zumDatei = false});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => LxCard(
@@ -228,10 +236,15 @@ class _Schnellzugriff extends ConsumerWidget {
             } else {
               ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
             }
+          } else if (zumAufgabeEditor) {
+            final u = ref.read(authProvider).user;
+            if (AufgabeRechte(u?.role ?? Role.child, u?.id).darfAnlegen) {
+              unawaited(aufgabeEditorOeffnen(context));
+            } else {
+              ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+            }
           } else if (zumFoto || zumDatei) {
             dateiSchnellHochladen(context, ref, nurBilder: zumFoto);
-          } else {
-            zeigePhase1Hinweis(context);
           }
         },
         child: Column(

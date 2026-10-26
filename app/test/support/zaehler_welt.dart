@@ -109,7 +109,7 @@ ZaehlerDaten datenAus(List<ZaehlerBeispiel> b, {String ich = 'a', bool geladen =
         ZaehlerAnsicht(id: z.id, konversationId: 'k', inhalt: z.inhalt, erstelltAt: DateTime.utc(2026, 1, 1)),
         [
           for (var i = 0; i < z.staende.length; i++)
-            StandAnsicht(id: '${z.id}-s$i', zaehlerId: z.id, inhalt: StandInhalt(datum: tagText(z.staende[i].tag), milli: z.staende[i].milli, marke: z.staende[i].marke), erstelltAt: DateTime.utc(2026, 1, 1, 0, 0, i)),
+            StandAnsicht(id: '${z.id}-s$i', zaehlerId: z.id, inhalt: StandInhalt(datum: tagText(z.staende[i].tag), milli: z.staende[i].milli, marke: z.staende[i].marke, automatisch: z.inhalt.automatisch), erstelltAt: DateTime.utc(2026, 1, 1, 0, 0, i)),
           for (final w in z.monatswerte)
             StandAnsicht(id: w.id, zaehlerId: z.id, inhalt: StandInhalt.monatswert(monat: w.schluessel, milli: w.milli, zeit: w.zeit, notiz: w.notiz), erstelltAt: DateTime.utc(2026, 1, 1)),
         ],
@@ -166,7 +166,7 @@ class ZaehlerRepoAttrappe implements ZaehlerRepository {
   }
 
   @override
-  Future<String> standErfassen(String zaehlerId, {required DateTime datum, required int milli, String notiz = '', StandMarke? marke}) async {
+  Future<String> standErfassen(String zaehlerId, {required DateTime datum, required int milli, String notiz = '', StandMarke? marke, bool automatisch = false}) async {
     if (fehler != null) throw fehler!;
     erfasst.add((id: zaehlerId, datum: datum, milli: milli, notiz: notiz));
     return 's';

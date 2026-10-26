@@ -25,6 +25,7 @@ import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKa
 import 'package:lx_fampad/data/sync_state.dart';
 import 'package:lx_fampad/data/wetter/vorhersage_state.dart' show vorhersageTaktProvider;
 import 'package:lx_fampad/data/wetter/wetter_state.dart' show wetterTaktProvider;
+import 'package:lx_fampad/data/ingest/ingest_state.dart' show ingestTaktProvider;
 import 'package:lx_fampad/data/muell/muell_state.dart' show muellTaktProvider;
 import 'package:lx_fampad/data/betrieb/familien_hinweis_state.dart' show familienHinweisTaktProvider;
 
@@ -109,6 +110,9 @@ class TestUmgebung {
   final FakePasskeys passkeys;
   final bool web;
   int geloescht = 0;
+
+  /// Abstand der automatischen Läufe der Home-Assistant-Anbindung (null = keiner, sonst bliebe ein Timer stehen); nur Tests des Takts setzen ihn.
+  Duration? ingestTakt;
 
   /// Lokale Datenbank (im Arbeitsspeicher), Sync-Fake und WebSocket-Fake dieser Umgebung.
   // Abfrage-Streams sofort schließen: sonst bleiben nach dem Abbau des Widget-Baums Timer von drift stehen (Flutter-Test bricht dann ab)
@@ -221,6 +225,7 @@ class TestUmgebung {
     vorhersageTaktProvider.overrideWithValue(null),
     // Müll (Abfuhrtermine): kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     muellTaktProvider.overrideWithValue(null),
+    ingestTaktProvider.overrideWithValue(ingestTakt),
     // Familienhinweis (Betrieb): kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     familienHinweisTaktProvider.overrideWithValue(null),
     ...extraOverrides,

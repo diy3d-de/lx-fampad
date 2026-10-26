@@ -11,6 +11,7 @@ import '../api/fampad_api.dart';
 import '../api/models.dart';
 import '../auth/auth_state.dart';
 import '../auth/eigener_abruf.dart';
+import '../ingest/ingest_kopplung.dart' show postfachName, postfachVerbindungenName;
 import 'bytes.dart';
 import 'crypto_fehler.dart';
 import 'crypto_provider.dart';
@@ -124,6 +125,9 @@ Future<void> schluesselVomGeraetLoeschen(SchluesselSpeicher speicher, String use
   await schritt(() => speicher.loeschen(personenschluesselAltName(userId)));
   await schritt(() => speicher.loeschen('e2ee.kv.$userId'));
   await schritt(() => speicher.loeschen('e2ee.kv.pw.$userId'));
+  // Postfach-Schlüssel der Home-Assistant-Anbindung (nur das Abholgerät hat ihn; die Werte beim Server bleiben bis zu 30 Tage abholbar)
+  await schritt(() => speicher.loeschen(postfachName(userId)));
+  await schritt(() => speicher.loeschen(postfachVerbindungenName(userId)));
   // Vermerke der Wiederherstellungstests und der Eltern-Wiederherstellung (flüchtiges Paar des Kindes, festgehaltene Werte des Elternteils je Anfrage)
   await schritt(() => speicher.loeschen(testVermerkName(userId)));
   await schritt(() => speicher.loeschen(testAusName(userId)));

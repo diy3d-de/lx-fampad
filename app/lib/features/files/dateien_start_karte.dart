@@ -1,5 +1,5 @@
 // Startseite und Dateiablage (Abschnitt 6n): die Kachel "Zuletzt geteilt" im Desktop-Raster (die letzten Dateien, Tippen öffnet den Bereich) und die Schnellaktionen "Datei" und "Foto" der mobilen
-// Startseite (öffnen den Weg zum Hochladen in die oberste Ebene). Beides gibt es nur, wenn der Server die Dateiablage meldet; sonst bleibt es ausgeblendet bzw. beim bisherigen Hinweis. Die Kachel
+// Startseite (öffnen den Weg zum Hochladen in die oberste Ebene). Beides gibt es nur, wenn der Server die Dateiablage meldet; sonst bleibt es ausgeblendet. Die Kachel
 // zeigt Dateinamen nur auf dem eigenen Bildschirm, nie in einer Benachrichtigung (Dateien lösen nie Push, Erinnerungen oder Hinweise aus).
 import 'dart:async';
 
@@ -52,11 +52,9 @@ class DateienKachelInhalt extends ConsumerWidget {
   }
 }
 
-/// Schnellaktion der mobilen Startseite: mit Dateiablage Dateien (oder Fotos) wählen und in die oberste Ebene hochladen, sonst der bisherige Hinweis.
+/// Schnellaktion der mobilen Startseite: Dateien (oder Fotos) wählen und in die oberste Ebene hochladen. Die Knöpfe gibt es nur mit Dateiablage; ohne sie tut der Aufruf nichts.
 void dateiSchnellHochladen(BuildContext context, WidgetRef ref, {required bool nurBilder}) {
   if (ref.read(dateienVerfuegbarProvider).value ?? false) {
     unawaited(dateienHochladen(context, ref, nurBilder: nurBilder));
-  } else {
-    zeigePhase1Hinweis(context);
   }
 }

@@ -6,7 +6,7 @@
 //  - Der Text ist IMMER neutral und für alle Zähler gleich: "Zeit, die Zähler abzulesen", nie Art, Name, Stand oder Verbrauch; auch auf dem Sperrbildschirm. Die Nutzlast ist nur
 //    `zaehler` (keine ID, kein Inhalt).
 //  - Am Ablesetag um 09:00 Uhr (Familienzone). Ein Alarm je Tag, auch wenn mehrere Zähler am selben Tag dran sind.
-//  - Wurde der Zähler seit dem Solltermin schon abgelesen (Stand am Tag oder danach), entfällt der Alarm dieses Tages. Archivierte Zähler und Zähler ohne Rhythmus erinnern nie.
+//  - Wurde der Zähler seit dem Solltermin schon abgelesen (Stand am Tag oder danach), entfällt der Alarm dieses Tages. Archivierte Zähler, Zähler ohne Rhythmus und Zähler mit automatischer Quelle erinnern nie.
 //  - Monatlich: 75 Tage voraus; jährlich (Jahresablesung): 400 Tage voraus; vergangene Zeitpunkte entfallen.
 import '../calendar/zeitzonen.dart';
 import '../erinnerungen/erinnerung_planung.dart' show GeplanteErinnerung, erinnerungId, kMindestAbstand;
@@ -69,6 +69,7 @@ List<GeplanteErinnerung> planeZaehlerErinnerungen({required ZaehlerDaten daten, 
       }
       continue;
     }
+    if (r.inhalt.automatisch) continue; // automatische Quelle (Home Assistant): kein Ablese-Rhythmus, keine Erinnerung
     final a = r.inhalt.ablesung;
     if (a == null) continue;
     final bis = heute.add(Duration(days: a.art == AblesungArt.monatlich ? kZaehlerHorizontMonatlich : kZaehlerHorizontJaehrlich));

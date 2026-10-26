@@ -202,6 +202,9 @@ class ZaehlerRepository {
 
   // ------------------------------------------------------------------ Lesen
 
+  /// Alle lesbaren Zähler (für die Zuordnung der Home-Assistant-Kanäle); nicht lesbare fehlen.
+  Future<List<ZaehlerAnsicht>> alleZaehler() async => lesen(await db.select(db.zaehler).get());
+
   /// Die Zähler-Zeilen (älteste zuerst); leer, wenn es die Konversation lokal nicht gibt.
   Stream<List<ZaehlerZeile>> zeilen() {
     final id = konversationId;
@@ -300,10 +303,11 @@ class ZaehlerRepository {
           ..where((e) => e.zaehlerId.equals(zaehlerId))
           ..orderBy([(e) => OrderingTerm.asc(e.createdAt), (e) => OrderingTerm.asc(e.id)]))
         .get();
-    return [
+    // ein Stand je Tag (zwei Abholgeräte können denselben Tag doppelt schreiben): der zuletzt geschriebene gilt
+    return standeZusammenfuehren([
       for (final a in await lesenStaende(zeilen))
-        if (a.inhalt != null && !a.inhalt!.istMonatswert && a.inhalt!.tag != null) Stand(a.inhalt!.tag!, a.inhalt!.milli, marke: a.inhalt!.marke),
-    ];
+        if (a.inhalt != null && !a.inhalt!.istMonatswert && a.inhalt!.tag != null) StandQuelle(a.id, a.erstelltAt.millisecondsSinceEpoch, Stand(a.inhalt!.tag!, a.inhalt!.milli, marke: a.inhalt!.marke)),
+    ]);
   }
 
   // ------------------------------------------------------------------ Schreiben: Zähler
@@ -387,19 +391,19 @@ class ZaehlerRepository {
   /// Prüft einen (neuen oder geänderten) Stand auf Plausibilität (Zukunft, Doppelter Tag, niedriger als der vorige, Sprung). [ausser]: ein Stand, der ersetzt wird, zählt nicht mit.
   Future<Plausibilitaet> standPruefen(String zaehlerId, {required DateTime datum, required int milli, String? ausser}) async {
     final zeilen = await (db.select(db.zaehlerstaende)..where((e) => e.zaehlerId.equals(zaehlerId) & (ausser == null ? const Constant(true) : e.id.equals(ausser).not()))).get();
-    final bestehende = [
+    final bestehende = standeZusammenfuehren([
       for (final a in await lesenStaende(zeilen))
-        if (a.inhalt != null && !a.inhalt!.istMonatswert && a.inhalt!.tag != null) Stand(a.inhalt!.tag!, a.inhalt!.milli),
-    ];
+        if (a.inhalt != null && !a.inhalt!.istMonatswert && a.inhalt!.tag != null) StandQuelle(a.id, a.erstelltAt.millisecondsSinceEpoch, Stand(a.inhalt!.tag!, a.inhalt!.milli)),
+    ]);
     return pruefeStand(datum: datum, milli: milli, bestehende: bestehende, heute: _heute);
   }
 
-  /// Erfasst eine Ablesung. Ein Datum in der Zukunft und unmögliche Werte werden abgelehnt ([StandUngueltig]); Hinweise ([standPruefen]) entscheidet die Person vorher.
-  Future<String> standErfassen(String zaehlerId, {required DateTime datum, required int milli, String notiz = '', StandMarke? marke}) => _seriell(() async {
+  /// Erfasst eine Ablesung ([automatisch]: aus Home Assistant eingetragen, Herkunft im Stand vermerkt). Ein Datum in der Zukunft und unmögliche Werte werden abgelehnt ([StandUngueltig]); Hinweise ([standPruefen]) entscheidet die Person vorher.
+  Future<String> standErfassen(String zaehlerId, {required DateTime datum, required int milli, String notiz = '', StandMarke? marke, bool automatisch = false}) => _seriell(() async {
     final (z, zi) = await _aktuell(zaehlerId);
     if (zi.monatlich) throw const StandUngueltig('Dieser Zähler nimmt Monatswerte statt Zählerstände.');
     _standPruefenHart(datum, milli);
-    final inhalt = StandInhalt(datum: tagText(datum), milli: milli, notiz: notiz, marke: marke);
+    final inhalt = StandInhalt(datum: tagText(datum), milli: milli, notiz: notiz, marke: marke, automatisch: automatisch);
     final klar = standKodieren(inhalt);
     final id = _neueId();
     await store.aendern(

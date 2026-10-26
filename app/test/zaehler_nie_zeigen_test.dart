@@ -78,7 +78,7 @@ void main() {
 
   test('Wandtablet, Suche, Widget "Heute", Teilen, Standort, Betreiber-Ansicht und Push sind nicht mit den Zählern verbunden (kein Import, keine Typen)', () {
     final kopplung = RegExp(
-      r"import\s+'[^']*zaehler|\bZaehlerDaten\b|\bZaehlerEintrag\b|\bZaehlerReihe\b|\bZaehlerKachel\b|zaehlerDatenProvider|zaehlerRepositoryProvider|\bZaehlerRepository\b|\bStandAnsicht\b|zaehlerFaelligProvider|zaehlerKachelProvider|db\.(zaehler|zaehlerstaende)\b",
+      r"import\s+'[^']*(zaehler|ingest)|\bIngestZustand\b|\bIngestNotifier\b|\bIngestDienst\b|ingestProvider|\bPostfachSchluessel\b|\bZaehlerDaten\b|\bZaehlerEintrag\b|\bZaehlerReihe\b|\bZaehlerKachel\b|zaehlerDatenProvider|zaehlerRepositoryProvider|\bZaehlerRepository\b|\bStandAnsicht\b|zaehlerFaelligProvider|zaehlerKachelProvider|db\.(zaehler|zaehlerstaende)\b",
     );
     final bereiche = ['lib/data/wandtablet', 'lib/features/wandtablet', 'lib/data/suche', 'lib/features/suche', 'lib/data/heute_widget', 'lib/data/teilen', 'lib/features/teilen', 'lib/data/standort', 'lib/features/standort', 'lib/data/betrieb', 'lib/features/betrieb', 'lib/data/push'];
     final treffer = <String>[];
@@ -93,6 +93,20 @@ void main() {
     }
     expect(dateien, greaterThan(20));
     expect(treffer, isEmpty, reason: 'Diese Bereiche dürfen Zähler nie anzeigen');
+  });
+
+  test('Home Assistant (Werte abholen): kein Push, kein Hintergrund-Isolate, keine Verbindung zu Chat, Wandtablet, Suche, Teilen, Standort und Betreiber-Ansicht, nichts wird protokolliert', () {
+    final dateien = [for (final f in Directory('lib/data/ingest').listSync().whereType<File>().where((f) => f.path.endsWith('.dart'))) f.readAsStringSync()].join('\n');
+    expect(dateien.length, greaterThan(1000));
+    // keine Wecker, kein Hintergrund (Isolate, Plugin, Push-Hintergrund), keine Benachrichtigung
+    expect(RegExp(r'PushService|EreignisBenachrichtiger|ChatBenachrichtiger|ChatAnzeigePort|push_hintergrund|workmanager|Isolate\.|compute\(|unifiedpush|flutter_local_notifications').hasMatch(dateien), isFalse);
+    // keine Verbindung zu den übrigen Bereichen
+    expect(RegExp(r"import\s+'[^']*(chat/|wandtablet|suche|teilen|standort|betrieb|heute_widget)").hasMatch(dateien), isFalse);
+    // Werte, Kanäle und Päckchen werden nie protokolliert
+    expect(RegExp(r'\bprint\(|debugPrint\(|\blog\(|developer\.log').hasMatch(dateien), isFalse);
+    // die Oberfläche der Anbindung zeigt nichts auf der Startseite und sendet nichts per Push
+    final ui = [for (final n in ['ha_verbindung_screen', 'ha_koppeln_screen', 'ha_pruefen_screen', 'ha_zuordnen_screen']) File('lib/features/zaehler/$n.dart').readAsStringSync()].join('\n');
+    expect(RegExp(r'PushService|EreignisBenachrichtiger|ChatAnzeigePort|home_screen|print\(|debugPrint\(').hasMatch(ui), isFalse);
   });
 
   test('Die Schreibwege der Zähler kennen keinen Push-Wecker (kein Wecker, keine Benachrichtigung vom Server) und senden nichts an Dritte', () {

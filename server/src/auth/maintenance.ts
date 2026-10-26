@@ -14,6 +14,7 @@ import { expireGuardianRecoveries } from './guardian-recovery.js';
 import { PRF_PENDING_TTL_MS } from './keys-prf.js';
 import { PW_PENDING_TTL_MS } from './keys-pw.js';
 import { purgeSecurityEvents } from './password-reset.js';
+import { purgeInbox, purgeRevokedTokens } from '../ingest/service.js';
 import { purgeMetrics } from '../operator/metrics.js';
 import { purgeSessions } from './sessions.js';
 
@@ -34,6 +35,10 @@ export interface PurgeReport {
   removedMembersPurged: number;
   /** Messpunkte der Betreiber-Ansicht, die älter als 400 Tage sind. */
   metricsDeleted: number;
+  /** Päckchen des Einwurf-Postfachs, die älter als 30 Tage sind. */
+  ingestDeleted: number;
+  /** Widerrufene Einwurf-Tokens, die älter als 400 Tage sind. */
+  ingestTokensDeleted: number;
   sync: SyncPurgeReport;
   /** Dateiablage (nur mit FILES_ENABLED): Uploads, Waisen, Abgleich Platte/Datenbank. */
   files: FilesReport | null;
@@ -113,6 +118,20 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     ctx.log.error({ err: serializeErr(err) }, 'Aufräumen der Messpunkte fehlgeschlagen');
   }
 
+  // Päckchen im Postfach (Einwurf, Home Assistant) nach 30 Tagen löschen; ein Fehler hier darf den übrigen Aufräum-Job nie verhindern
+  let ingestGone = 0;
+  try {
+    ingestGone = await purgeInbox(ctx);
+  } catch (err: unknown) {
+    ctx.log.error({ err: serializeErr(err) }, 'Aufräumen des Einwurf-Postfachs fehlgeschlagen');
+  }
+  let ingestTokensGone = 0;
+  try {
+    ingestTokensGone = await purgeRevokedTokens(ctx);
+  } catch (err: unknown) {
+    ctx.log.error({ err: serializeErr(err) }, 'Aufräumen der Einwurf-Tokens fehlgeschlagen');
+  }
+
   const sync = await runSyncMaintenance(ctx);
 
   // Dateiablage aufräumen (nur mit Schalter); ein Fehler hier darf den übrigen Aufräum-Job nie verhindern
@@ -137,6 +156,8 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     invitesDeleted: invitesGone.length,
     removedMembersPurged: removedPurged,
     metricsDeleted: metricsGone,
+    ingestDeleted: ingestGone,
+    ingestTokensDeleted: ingestTokensGone,
     sync,
     files,
   };

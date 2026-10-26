@@ -3,6 +3,7 @@
 //  - Eine REIHE ist ein Zähler samt seiner Wechsel-Kette (alter -> neuer Zähler, `kette`): der Verbrauch läuft nahtlos weiter (`Verbrauchskurve.verkettet`).
 //  - Eine KACHEL ist eine Reihe oder eine Gruppe mehrerer Reihen derselben Art mit gleichem Gruppennamen (z. B. drei Wasserzähler mit Summe).
 // Alles rechnet mit den ganzen Zahlen der Logik (Tausendstel, Zehntausendstel, Cent); nichts wird geraten.
+import '../ingest/ingest_logik.dart' show automatischFaellig, kAutomatischFaelligTage;
 import '../medikamente/medikament_modelle.dart' show tagText;
 import 'zaehler_logik.dart';
 import 'zaehler_modelle.dart';
@@ -165,7 +166,16 @@ Faelligkeit reiheFaelligkeit(ZaehlerReihe r, DateTime heute) => r.archiviert
     ? const Faelligkeit(null, null, false)
     : r.monatlich
         ? monatswertFaellig(r.monatswerte, heute)
-        : ablesungFaellig(r.inhalt.ablesung, r.letzter?.tag, heute);
+        : r.inhalt.automatisch
+            ? automatischeFaelligkeit(r.letzter?.tag, heute)
+            : ablesungFaellig(r.inhalt.ablesung, r.letzter?.tag, heute);
+
+/// Automatische Quelle (Home Assistant): ein Ablese-Rhythmus entfällt, "Ablesen fällig" erscheint erst, wenn länger als [kAutomatischFaelligTage] Tage kein Wert kam.
+Faelligkeit automatischeFaelligkeit(DateTime? letzterStand, DateTime heute) {
+  if (!automatischFaellig(letzterStand, heute)) return const Faelligkeit(null, null, false);
+  final seit = letzterStand!.add(const Duration(days: kAutomatischFaelligTage + 1));
+  return Faelligkeit(seit, seit, true);
+}
 
 /// Die Reihen, die jetzt abgelesen werden sollen.
 List<ZaehlerReihe> faelligeReihen(Iterable<ZaehlerReihe> reihen, DateTime heute) => [for (final r in reihen) if (reiheFaelligkeit(r, heute).faellig) r];
@@ -178,7 +188,7 @@ enum FaelligkeitsArt { faellig, aktuell, keinRhythmus }
   var rhythmus = false;
   for (final r in k.reihen) {
     final f = reiheFaelligkeit(r, heute);
-    if ((r.inhalt.ablesung != null || r.monatlich) && !r.archiviert) rhythmus = true;
+    if ((r.inhalt.ablesung != null || r.monatlich || r.inhalt.automatisch) && !r.archiviert) rhythmus = true;
     if (f.faellig) return (art: FaelligkeitsArt.faellig, termin: f.naechsterTermin);
     if (f.naechsterTermin != null && (naechster == null || f.naechsterTermin!.isBefore(naechster))) naechster = f.naechsterTermin;
   }

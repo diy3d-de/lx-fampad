@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/ingest/ingest_anzeige.dart';
+import '../../data/ingest/ingest_state.dart' show ingestVerfuegbarProvider;
 import '../../data/zaehler/zaehler_logik.dart';
 import '../../data/zaehler/zaehler_modelle.dart';
 import '../../data/zaehler/zaehler_repository.dart';
@@ -18,6 +20,7 @@ import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import 'ha_verbindung_screen.dart' show haVerbindungOeffnen;
 import 'zaehler_anzeige.dart';
 import 'zaehler_screen.dart' show zaehlerLoeschenMitBestaetigung;
 
@@ -54,6 +57,12 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
   final _eigen = TextEditingController(text: '100');
   final _verguetung = TextEditingController();
   final _start = TextEditingController();
+  final _kanal = TextEditingController();
+  var _quelleHa = false;
+
+  /// Der freie Kanalname (für Fortgeschrittene) ist aufgeklappt; ein Kanal, der keiner der drei festen ist, klappt ihn von selbst auf.
+  var _kanalEigen = false;
+  var _pruefen = true;
   var _art = ZaehlerArt.strom;
   var _modus = ZaehlerModus.stand;
   var _rhythmus = _Rhythmus.keiner;
@@ -74,9 +83,9 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
 
   bool get _neu => widget.id == null;
 
-  List<TextEditingController> get _felder => [_name, _nummer, _ort, _gruppe, _einheit, _notiz, _abschlag, _anlage, _eigen, _verguetung, _start];
+  List<TextEditingController> get _felder => [_name, _nummer, _ort, _gruppe, _einheit, _notiz, _abschlag, _anlage, _eigen, _verguetung, _start, _kanal];
 
-  String _stand() => [for (final c in _felder) c.text, _art, _modus, _rhythmus, _rTag, _rMonat, _kalenderjahr, _pTag, _pMonat, _kosten, [for (final p in _preise) '${p.ab}/${p.arbeitspreis}/${p.grundgebuehrJahr}/${p.zaehlergebuehrJahr}'], _warn, _warnProzent].join('|');
+  String _stand() => [for (final c in _felder) c.text, _art, _modus, _rhythmus, _rTag, _rMonat, _kalenderjahr, _pTag, _pMonat, _kosten, [for (final p in _preise) '${p.ab}/${p.arbeitspreis}/${p.grundgebuehrJahr}/${p.zaehlergebuehrJahr}'], _warn, _warnProzent, _quelleHa, _pruefen].join('|');
 
   @override
   void dispose() {
@@ -122,6 +131,12 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     _verguetung.text = z.einspeiseVerguetung == null ? '' : preisText(z.einspeiseVerguetung!);
     _warn = z.warnProzent != null;
     _warnProzent = z.warnProzent ?? 30;
+    if (z.quelle != null) {
+      _quelleHa = true;
+      _kanal.text = z.quelle!.kanal;
+      _pruefen = z.quelle!.pruefen;
+      _kanalEigen = !kHaKanaele.any((k) => k.kanal == z.quelle!.kanal);
+    }
     _geladen = true;
   }
 
@@ -137,7 +152,8 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
   void _artWaehlen(ZaehlerArt a, ZaehlerDaten d) {
     setState(() {
       _art = a;
-      _modus = ZaehlerModus.standardFuer(a); // Erzeugung hat keinen richtigen Zähler: Monatswerte, sonst Zählerstand (änderbar)
+      if (!haLiefertFuer(a)) _quelleHa = false; // Home Assistant liefert nur Strom und Solar (kWh): für alles andere gäbe es nie einen Wert
+      _modus = _quelleHa ? ZaehlerModus.stand : ZaehlerModus.standardFuer(a); // Erzeugung hat keinen richtigen Zähler: Monatswerte, sonst Zählerstand (änderbar); Home Assistant liefert immer Stände
       _kosten = a.kostenStandard;
       if (a != ZaehlerArt.eigen) _einheit.text = a.einheit;
       if (a == ZaehlerArt.eigen) _einheit.clear();
@@ -184,6 +200,9 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
       vergutung = vt.isEmpty ? null : preisParsen(vt);
       if (vt.isNotEmpty && (vergutung == null || vergutung > kMaxPreisAp)) return _fehlerSetzen('Die Einspeisevergütung muss ein Preis je kWh in Euro sein, zum Beispiel 0,081.');
     }
+    final kanal = _kanal.text.trim();
+    if (_quelleHa && !haLiefertFuer(_art)) return _fehlerSetzen('Home Assistant liefert nur Strom und Solar. Wähle bei der Quelle „Von Hand“.');
+    if (_quelleHa && !ZaehlerQuelle.kanalForm.hasMatch(kanal)) return _fehlerSetzen('Wähle den Kanal von Home Assistant oder gib einen eigenen ein (Kleinbuchstaben, Ziffern und _, höchstens 40 Zeichen).');
     final preise = [..._preise]..sort((a, b) => a.ab.compareTo(b.ab));
     final inhalt = ZaehlerInhalt(
       art: _art,
@@ -200,9 +219,10 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
       abschlag: _kosten && _art != ZaehlerArt.erzeugung ? abschlag : null,
       vorgaenger: _alt?.vorgaenger,
       archiviertAb: _alt?.archiviertAb,
-      modus: _modus,
-      ablesung: _modus == ZaehlerModus.monat
-          ? null // bei Monatswerten erinnert die App am Monatsersten, ein eigener Rhythmus entfällt
+      modus: _quelleHa ? ZaehlerModus.stand : _modus, // Monatswerte und Home Assistant lassen sich nicht kombinieren
+      quelle: _quelleHa ? ZaehlerQuelle(kanal: kanal, pruefen: _pruefen) : null,
+      ablesung: _quelleHa || _modus == ZaehlerModus.monat
+          ? null // bei Home Assistant liefert die Quelle die Werte, ein Rhythmus entfällt // bei Monatswerten erinnert die App am Monatsersten, ein eigener Rhythmus entfällt
           : switch (_rhythmus) {
         _Rhythmus.keiner => null,
         _Rhythmus.monatlich => Ablesung.monatlich(_rTag),
@@ -273,6 +293,9 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     final einheit = _art == ZaehlerArt.eigen ? _einheit.text.trim() : _art.einheit;
     final reihe = _neu ? null : daten.reihe(widget.id!);
     final istJuengster = reihe == null || reihe.id == widget.id;
+    // Der Abschnitt "Quelle" erscheint, wenn der Server den Einwurf kennt (oder der Zähler schon eine Quelle hat, dann lässt sie sich auch ohne Antwort ändern)
+    // und nur für Strom und Solar (Home Assistant sendet nur kWh); Wasser, Gas und Wärme bekämen nie einen Wert
+    final haAngeboten = _quelleHa || ((ref.watch(ingestVerfuegbarProvider).value ?? false) && haLiefertFuer(_art));
     return UngespeichertSchutz(
       geaendert: () => _ausgang != null && _stand() != _ausgang,
       aenderungen: Listenable.merge(_felder),
@@ -302,7 +325,9 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
           const SizedBox(height: 14),
           const MonoLabel('// eingabeart'),
           const SizedBox(height: 6),
-          if (_neu || !_hatWerte(daten))
+          if (_quelleHa)
+            const Text('Zählerstand (Home Assistant liefert Stände, keine Monatswerte)', style: TextStyle(color: kTextMuted))
+          else if (_neu || !_hatWerte(daten))
             Wrap(
               spacing: 8,
               runSpacing: 8,
@@ -313,7 +338,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             )
           else
             Text(_modus == ZaehlerModus.monat ? 'Monatswerte' : 'Zählerstand', style: const TextStyle(color: kTextMuted)),
-          Padding(
+          if (!_quelleHa) Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               _modus == ZaehlerModus.monat
@@ -324,7 +349,8 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
               style: const TextStyle(fontSize: 12, color: kTextMuted),
             ),
           ),
-          if (!_neu && _hatWerte(daten)) const Padding(padding: EdgeInsets.only(top: 4), child: Text('Die Eingabeart lässt sich nicht mehr ändern, solange es Werte gibt.', style: TextStyle(fontSize: 12, color: kTextMuted))),
+          if (!_quelleHa && !_neu && _hatWerte(daten)) const Padding(padding: EdgeInsets.only(top: 4), child: Text('Die Eingabeart lässt sich nicht mehr ändern, solange es Werte gibt.', style: TextStyle(fontSize: 12, color: kTextMuted))),
+          if (haAngeboten) ..._quelleAbschnitt(daten),
           const SizedBox(height: 14),
           TextField(controller: _nummer, maxLength: kMaxNummerZeichen, decoration: const InputDecoration(labelText: 'Zählernummer (optional)', counterText: '')),
           const SizedBox(height: 14),
@@ -352,7 +378,12 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
             const SizedBox(height: 8),
             TextField(controller: _gruppe, maxLength: kMaxGruppeZeichen, onChanged: (_) => setState(() {}), decoration: const InputDecoration(labelText: 'Gruppe (zum Beispiel Wasser Wohnung)', helperText: 'Zähler gleicher Art mit gleichem Namen zeigt die App mit einer Summe', counterText: '')),
           ],
-          if (_modus == ZaehlerModus.monat) ...[
+          if (_quelleHa) ...[
+            const SizedBox(height: 16),
+            const MonoLabel('// ablese-rhythmus'),
+            const SizedBox(height: 6),
+            const Text('Entfällt bei automatischer Quelle: „Ablesen fällig“ erscheint nur, wenn mehr als 3 Tage kein Wert angekommen ist.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+          ] else if (_modus == ZaehlerModus.monat) ...[
             const SizedBox(height: 16),
             const MonoLabel('// erinnerung'),
             const SizedBox(height: 6),
@@ -509,6 +540,87 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
     );
   }
 
+  /// Abschnitt "// quelle": von Hand oder aus Home Assistant (Tageswerte eines Kanals; nur für Strom und Solar), einer der drei festen Kanäle (ein eigener Name steht eingeklappt für
+  /// Fortgeschrittene), "Prüfen vor dem Eintragen".
+  List<Widget> _quelleAbschnitt(ZaehlerDaten daten) {
+    final kanal = _kanal.text.trim();
+    final doppelt = _quelleHa && kanal.isNotEmpty
+        ? daten.reihen.where((r) => !r.archiviert && r.id != widget.id && r.ids.every((i) => i != widget.id) && r.inhalt.quelle?.kanal == kanal).firstOrNull
+        : null;
+    final eigenOffen = _kanalEigen || (kanal.isNotEmpty && !kHaKanaele.any((k) => k.kanal == kanal));
+    return [
+      const SizedBox(height: 14),
+      const MonoLabel('// quelle'),
+      const SizedBox(height: 6),
+      Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          AuswahlKnopf(text: 'Von Hand', gewaehlt: !_quelleHa, onTap: () => setState(() => _quelleHa = false)),
+          AuswahlKnopf(
+            text: 'Home Assistant',
+            gewaehlt: _quelleHa,
+            onTap: () => setState(() {
+              _quelleHa = true;
+              _modus = ZaehlerModus.stand; // Monatswerte und Home Assistant lassen sich nicht kombinieren
+              _rhythmus = _Rhythmus.keiner;
+              if (_kanal.text.trim().isEmpty) _kanal.text = haStandardKanal(_art) ?? ''; // Strom: Bezug, Solar: Erzeugung (änderbar)
+            }),
+          ),
+        ],
+      ),
+      if (_quelleHa) ...[
+        if (!haLiefertFuer(_art)) ...[
+          const SizedBox(height: 10),
+          const MeldungsBox('Home Assistant liefert bisher nur Strom und Solar (kWh). Dieser Zähler bekäme nie einen Wert: Wähle „Von Hand“.'),
+        ],
+        const SizedBox(height: 10),
+        const MonoLabel('// welcher wert?', color: kTextMuted),
+        const SizedBox(height: 6),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [for (final k in kHaKanaele) AuswahlKnopf(text: k.label, gewaehlt: kanal == k.kanal, onTap: () => setState(() => _kanal.text = k.kanal))],
+        ),
+        const SizedBox(height: 4),
+        TextButton.icon(
+          style: TextButton.styleFrom(minimumSize: const Size(48, 48), alignment: Alignment.centerLeft),
+          onPressed: () => setState(() => _kanalEigen = !eigenOffen),
+          icon: Icon(eigenOffen ? Icons.expand_less : Icons.expand_more, size: 18),
+          label: const Text('Eigener Name (für Fortgeschrittene)'),
+        ),
+        if (eigenOffen)
+          TextField(
+            controller: _kanal,
+            maxLength: 40,
+            onChanged: (_) => setState(() {}),
+            decoration: const InputDecoration(labelText: 'Kanal (Name, den Home Assistant mitschickt)', counterText: '', helperText: 'Kleinbuchstaben, Ziffern und _; die Zuordnung steht verschlüsselt in diesem Zähler'),
+          ),
+        if (doppelt != null) ...[const SizedBox(height: 8), MeldungsBox('Dieser Kanal gehört schon zu „${doppelt.name}“. Dann bekommt nur einer von beiden die Werte.')],
+        const SizedBox(height: 12),
+        LxCard(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+          child: SwitchListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+            title: const Text('Prüfen vor dem Eintragen', style: TextStyle(fontWeight: FontWeight.w600)),
+            subtitle: const Text(
+              'Ein Stand, der kleiner ist als der davor oder höher als ein späterer, wird immer vorgelegt. Ist der Schalter an, fragt die App auch bei einem plötzlichen großen Sprung im Verbrauch nach.',
+              style: TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted),
+            ),
+            value: _pruefen,
+            onChanged: (v) => setState(() => _pruefen = v),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Text('Noch keine Verbindung?', style: TextStyle(fontSize: 13, color: kTextMuted)),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(haVerbindungOeffnen(context)), child: const Text('Mit Home Assistant verbinden ›')),
+        ),
+      ],
+    ];
+  }
+
   Future<void> _archivieren(ZaehlerReihe r) async {
     final repo = ref.read(zaehlerRepositoryProvider);
     final nav = Navigator.of(context);
@@ -650,15 +762,17 @@ class _PreisDialogState extends State<_PreisDialog> {
 // ---------------------------------------------------------------- Zählerwechsel
 
 /// Zählerwechsel: der alte Zähler bekommt am Tag seinen Endstand und wird archiviert, der neue beginnt mit dem Startstand; der Verbrauch läuft nahtlos weiter. true = gewechselt.
-Future<bool> zaehlerWechselOeffnen(BuildContext context, WidgetRef ref, String reiheId, {DateTime? datum}) async {
-  final ok = await showDialog<bool>(useRootNavigator: false, context: context, builder: (_) => _WechselDialog(reiheId: reiheId, datum: datum));
+/// [startMilli]: Vorbelegung des Startstands (z. B. der Wert aus Home Assistant, der unter dem letzten Stand lag).
+Future<bool> zaehlerWechselOeffnen(BuildContext context, WidgetRef ref, String reiheId, {DateTime? datum, int? startMilli}) async {
+  final ok = await showDialog<bool>(useRootNavigator: false, context: context, builder: (_) => _WechselDialog(reiheId: reiheId, datum: datum, startMilli: startMilli));
   return ok ?? false;
 }
 
 class _WechselDialog extends ConsumerStatefulWidget {
   final String reiheId;
   final DateTime? datum;
-  const _WechselDialog({required this.reiheId, this.datum});
+  final int? startMilli;
+  const _WechselDialog({required this.reiheId, this.datum, this.startMilli});
 
   @override
   ConsumerState<_WechselDialog> createState() => _WechselDialogState();
@@ -666,7 +780,7 @@ class _WechselDialog extends ConsumerStatefulWidget {
 
 class _WechselDialogState extends ConsumerState<_WechselDialog> {
   final _ende = TextEditingController();
-  final _start = TextEditingController(text: '0');
+  late final _start = TextEditingController(text: widget.startMilli == null ? '0' : mengeText(widget.startMilli!, kuerzen: true));
   final _nummer = TextEditingController();
   late DateTime _datum = widget.datum ?? zaehlerHeute(DateTime.now());
   var _speichert = false;

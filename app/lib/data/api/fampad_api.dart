@@ -9,6 +9,7 @@ import '../crypto/schluessel.dart';
 import '../betrieb/betrieb_modelle.dart';
 import '../betrieb/familien_stand.dart';
 import '../dateien/datei_modelle.dart';
+import '../ingest/ingest_modelle.dart';
 import 'eltern_modelle.dart';
 import 'models.dart';
 
@@ -237,6 +238,32 @@ class FampadApi {
   /// "Jetzt nach neuer Datei suchen" (nur Eltern/Admins): setzt die Anforderung; der Abruf-Dienst des Servers holt sie im nächsten Takt ab (429 bei zu häufig).
   Future<void> muellPruefenAnfordern() async {
     await client.post('/waste/check');
+  }
+
+  // ----------------------------------------------------------- Home Assistant (Einwurf der Zählerwerte, docs/API.md)
+
+  /// Verbindungen (nur Admins). 404 = der Server hat den Einwurf nicht eingeschaltet.
+  Future<List<IngestToken>> ingestTokens() async => parseListe((await client.get('/ingest/tokens'))['tokens'], IngestToken.fromJson);
+
+  /// Legt eine Verbindung an (nur Admin, frisches Step-up). Das Klartext-Token steht nur in dieser Antwort.
+  Future<IngestTokenNeu> ingestTokenAnlegen(String name) async => IngestTokenNeu.fromJson(await client.post('/ingest/tokens', {'name': name}));
+
+  /// Widerruft eine Verbindung (nur Admin, frisches Step-up); schon abgelegte Päckchen bleiben abholbar.
+  Future<void> ingestTokenWiderrufen(String id) async {
+    await client.delete('/ingest/tokens/$id');
+  }
+
+  /// Eine Seite wartender Päckchen (Eltern und Admins). [after] ist der undurchsichtige Zeiger der vorigen Seite.
+  /// Mit [token] (ID einer Verbindung) nur die Päckchen dieser Verbindung; ohne alle der Familie.
+  Future<IngestSeite> ingestWartende({String? after, int limit = 200, String? token}) async => IngestSeite.fromJson(
+    await client.get('/ingest/zaehler/pending?limit=$limit${after == null ? '' : '&after=${Uri.encodeQueryComponent(after)}'}${token == null ? '' : '&token=${Uri.encodeQueryComponent(token)}'}'),
+  );
+
+  /// Quittiert erledigte Päckchen (höchstens 200); der Server löscht sie. Liefert die Zahl der gelöschten.
+  Future<int> ingestQuittieren(List<String> ids) async {
+    final r = await client.post('/ingest/zaehler/ack', {'ids': ids});
+    final d = r['deleted'];
+    return d is int ? d : 0;
   }
 
   // ----------------------------------------------------------- Betrieb (nur Betreiber, fast nur lesend)

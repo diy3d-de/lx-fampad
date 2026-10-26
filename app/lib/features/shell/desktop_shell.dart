@@ -10,10 +10,8 @@ import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/geraete_anzahl.dart';
 import '../../data/lists/members.dart';
-import '../../data/muell/muell_state.dart';
-import '../../data/dateien/datei_state.dart' show dateienVerfuegbarProvider;
 import '../../data/sync_state.dart';
-import '../../data/wetter/wetter_state.dart';
+import '../../data/tasks/aufgabe_logik.dart' show AufgabeFilter;
 import '../../ui/widgets.dart';
 import '../../widgets/familien_hinweis_banner.dart';
 import '../../widgets/sync_anzeige.dart';
@@ -22,10 +20,9 @@ import '../betrieb/betrieb_screen.dart';
 import '../profile/profile_screen.dart';
 import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
-import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
-import '../zaehler/zaehler_anzeige.dart' show zaehlerFaelligProvider;
-import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
-import '../../data/tresor/tresor_state.dart' show tresorDarfProvider;
+import '../suche/such_screen.dart' show SuchScreen;
+import '../tasks/tasks_state.dart' show aufgabenAnsichtProvider;
+import 'mehr_menue.dart' show MehrGruppe, bereichsEintraege;
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -220,6 +217,9 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
     unawaited(_navKey.currentState?.push<void>(BetriebScreen.route()));
   }
 
+  /// Suche (Eintrag der Seitenleiste): eine Unterseite im Inhaltsbereich wie das Konto.
+  void _suchen() => unawaited(_navKey.currentState?.push<void>(SuchScreen.route()));
+
   @override
   Widget build(BuildContext context) {
     // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen, sofern sie sich schließen lassen
@@ -233,7 +233,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, betrieb: _beobachter.betrieb, betriebOeffnen: _betriebOeffnen, waehlen: _bereichWaehlen),
+              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, betrieb: _beobachter.betrieb, betriebOeffnen: _betriebOeffnen, waehlen: _bereichWaehlen, suchen: _suchen),
               Expanded(
                 child: Column(
                   children: [
@@ -303,7 +303,8 @@ class _Seitenleiste extends ConsumerWidget {
   final ValueListenable<bool> betrieb;
   final VoidCallback betriebOeffnen;
   final ValueChanged<int> waehlen;
-  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.betrieb, required this.betriebOeffnen, required this.waehlen});
+  final VoidCallback suchen;
+  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.betrieb, required this.betriebOeffnen, required this.waehlen, required this.suchen});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -311,20 +312,10 @@ class _Seitenleiste extends ConsumerWidget {
     final updateDa = ref.watch(updateProvider.select((u) => u.updateDa));
     final anzahl = ref.watch(mitgliederProvider).value?.length;
     final ungelesen = ref.watch(chatUngelesenProvider).value ?? 0;
-    // Wetter nur, wenn auch die Kachel der Startseite sichtbar ist (oder der Bereich gerade offen ist, damit er beim Ausschalten nicht unter dir verschwindet)
-    final wetter = ref.watch(wetterProvider.select((w) => w.kachelSichtbar)) || tab == kWetterTab;
     final betreiber = ref.watch(authProvider.select((s) => s.istBetreiber));
-    // Müll nur, wenn der Server die Abfuhrtermine eingeschaltet hat (oder der Bereich gerade offen ist)
-    final muell = ref.watch(muellProvider.select((m) => m.verfuegbar)) || tab == kMuellTab;
-    // Zahl fälliger und verpasster Einnahmen am Eintrag "Medikamente" (nur lokal berechnet)
-    final medFaellig = ref.watch(medikamenteFaelligProvider);
-    // Zähler: nur für Eltern und Admins in der Seitenleiste (Kinder sehen den Eintrag nie), mit der Zahl der fälligen Ablesungen
-    final zaehlerDarf = ref.watch(zaehlerDarfProvider);
-    final zaehlerFaellig = ref.watch(zaehlerFaelligProvider);
-    // Tresor: nur für Eltern und Admins in der Seitenleiste (Kinder sehen den Eintrag nie), ohne Badge
-    final tresorDarf = ref.watch(tresorDarfProvider);
-    // Dateien: nur in der Seitenleiste, wenn der Server die Dateiablage meldet (sonst auch kein Deep-Link: home_shell wählt dann die Startseite)
-    final dateienDa = ref.watch(dateienVerfuegbarProvider).value ?? false;
+    // Einträge der drei Gruppen (Sichtbarkeit nach Rolle, Server-Fähigkeiten und Hinweis-Zahlen: bereichsEintraege in mehr_menue.dart; Wetter und Müll bleiben sichtbar, solange ihr Bereich offen ist)
+    final eintraege = bereichsEintraege(ref, offenerTab: tab);
+    final fristenAnsicht = ref.watch(aufgabenAnsichtProvider.select((a) => a.filter == AufgabeFilter.fristen));
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -388,16 +379,35 @@ class _Seitenleiste extends ConsumerWidget {
               child: FocusTraversalGroup(
                 child: ListView(
                   children: [
-                    for (var i = 0; i < kDesktopTabs.length; i++)
-                      if ((i != kWetterTab || wetter) && (i != kMuellTab || muell) && (i != kDateienTab || dateienDa) && (i != kZaehlerTab || zaehlerDarf) && (i != kTresorTab || tresorDarf))
+                    // Start, Kalender und Chat stehen oben; darunter dieselben Gruppen und Einträge wie im Blatt "Mehr" (mehr_menue.dart)
+                    for (var i = 0; i <= kChatTab; i++)
                       _NavEintrag(
                         icon: tab == i ? kDesktopTabs[i].selectedIcon : kDesktopTabs[i].icon,
                         label: kDesktopTabs[i].label,
                         gewaehlt: tab == i,
                         badge: updateDa && i == 0,
-                        zaehler: i == kChatTab ? ungelesen : (i == kMedikamenteTab ? medFaellig : (i == kZaehlerTab ? zaehlerFaellig : 0)),
+                        zaehler: i == kChatTab ? ungelesen : 0,
                         onTap: () => waehlen(i),
                       ),
+                    for (final g in MehrGruppe.values)
+                      if (eintraege.any((e) => e.gruppe == g)) ...[
+                        _GruppenKopf(g.label),
+                        for (final e in eintraege.where((e) => e.gruppe == g))
+                          _NavEintrag(
+                            icon: e.icon,
+                            label: e.label,
+                            gewaehlt: e.id == 'fristen' ? (tab == kAufgabenTab && fristenAnsicht) : (e.tab != null && tab == e.tab && !(e.tab == kAufgabenTab && fristenAnsicht)),
+                            zaehler: e.hinweis,
+                            onTap: () {
+                              if (e.tab == null) {
+                                suchen();
+                              } else {
+                                e.vorWahl?.call(ref);
+                                waehlen(e.tab!);
+                              }
+                            },
+                          ),
+                      ],
                     // nur der Betreiber des Servers sieht "Betrieb" (Konto-Flag, nicht die Rolle); öffnet wie das Konto eine Unterseite
                     if (betreiber)
                       ValueListenableBuilder<bool>(
@@ -415,6 +425,18 @@ class _Seitenleiste extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Zwischenüberschrift einer Gruppe der Seitenleiste (Familie, Zuhause, Ablage).
+class _GruppenKopf extends StatelessWidget {
+  final String text;
+  const _GruppenKopf(this.text);
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
+    child: Semantics(header: true, child: MonoLabel(text, color: kTextMuted)),
+  );
 }
 
 class _NavEintrag extends StatelessWidget {

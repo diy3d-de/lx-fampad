@@ -80,7 +80,7 @@ void main() {
   }
 
   group('Sichtbarkeit nach features.files', () {
-    testWidgets('mit Dateiablage: "Dateien" steht im Blatt "Mehr" nach Tresor und öffnet den Bereich', (tester) async {
+    testWidgets('mit Dateiablage: "Dateien" steht im Blatt "Mehr" in der Gruppe Ablage vor dem Tresor und öffnet den Bereich', (tester) async {
       final (_, _) = await start(tester, oeffnen: false);
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Mehr')));
       await warte(tester);
@@ -88,8 +88,8 @@ void main() {
       final tresor = tester.getTopLeft(find.descendant(of: blatt, matching: find.text('Tresor')));
       final dateien = tester.getTopLeft(find.descendant(of: blatt, matching: find.text('Dateien')));
       final muell = find.descendant(of: blatt, matching: find.text('Müll'));
-      expect(dateien.dy > tresor.dy || dateien.dx > tresor.dx, isTrue, reason: 'nach Tresor');
-      if (muell.evaluate().isNotEmpty) expect(tester.getTopLeft(muell).dy >= dateien.dy, isTrue);
+      expect(dateien.dy < tresor.dy || dateien.dx < tresor.dx, isTrue, reason: 'Ablage: Dateien vor Tresor');
+      if (muell.evaluate().isNotEmpty) expect(tester.getTopLeft(muell).dy <= dateien.dy, isTrue, reason: 'Zuhause steht vor Ablage');
       await tester.tap(find.descendant(of: blatt, matching: find.text('Dateien')));
       await warte(tester);
       expect(find.text('// FAMILIE'), findsOneWidget);
@@ -128,8 +128,7 @@ void main() {
       final handle = tester.ensureSemantics();
       final (_, c) = await start(tester, groesse: const Size(1200, 800), oeffnen: false);
       expect(find.bySemanticsLabel('Dateien'), findsOneWidget);
-      await tester.tap(find.bySemanticsLabel('Dateien'));
-      await warte(tester);
+      await tippe(tester, find.bySemanticsLabel('Dateien'));
       expect(c.read(shellTabProvider), kDateienTab);
       expect(find.text('Noch keine Dateien'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);

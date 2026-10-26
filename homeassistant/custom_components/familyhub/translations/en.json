@@ -1,0 +1,90 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Add Familyhub",
+        "description": "Create the pairing code in the Familyhub app (as admin) under Meters › Home Assistant › Neue Verbindung koppeln (pair new connection). Tap \"Code kopieren\" (copy code) there and paste it here.",
+        "data": { "kopplungscode": "Pairing code" },
+        "data_description": { "kopplungscode": "Starts with FH1-" }
+      },
+      "bestaetigen": {
+        "title": "Check server",
+        "description": "Familyhub server: {host}. Is this correct? Your meter readings (encrypted) are sent to this server only. If the address differs, cancel and create the pairing code again."
+      },
+      "reauth_bestaetigen": {
+        "title": "Check server",
+        "description": "Familyhub server: {host}. Is this correct? Your meter readings (encrypted) are sent to this server only. If the address differs, cancel and create the pairing code again."
+      },
+      "kanaele": {
+        "title": "Assign channels",
+        "description": "Pick the sensor holding the meter reading for each channel (total meter in kWh). At least one channel is required, the others are optional.",
+        "data": {
+          "strom_bezug": "Grid import",
+          "strom_einspeisung": "Grid export",
+          "solar_erzeugung": "Solar generation"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Re-pair Familyhub",
+        "description": "The server rejected the connection (token revoked or invalid). Create a new pairing code in the Familyhub app under Meters › Home Assistant › Neue Verbindung koppeln and paste it here.",
+        "data": { "kopplungscode": "Pairing code" }
+      }
+    },
+    "error": {
+      "code_format": "This is not a valid pairing code. It starts with FH1- and must be pasted completely and unchanged.",
+      "code_version": "This pairing code has an unknown version. Update the integration or the app.",
+      "code_adresse": "The server address in the code is invalid. Only https://hostname is allowed (no path, no IP address).",
+      "code_token": "The token in the code is invalid.",
+      "code_schluessel": "A key in the code has the wrong length.",
+      "kein_kanal": "Select at least one sensor."
+    },
+    "abort": {
+      "already_configured": "This connection is already set up.",
+      "reauth_successful": "The connection was paired again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Familyhub settings",
+        "description": "Change the sensors and the time of the daily upload (local time).",
+        "data": {
+          "strom_bezug": "Grid import",
+          "strom_einspeisung": "Grid export",
+          "solar_erzeugung": "Solar generation",
+          "versandzeit": "Upload time"
+        }
+      }
+    },
+    "error": {
+      "kein_kanal": "Select at least one sensor."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "letzter_versand": { "name": "Last upload" },
+      "warteschlange": { "name": "Queue" },
+      "verbindung": {
+        "name": "Connection",
+        "state": {
+          "unbekannt": "Unknown",
+          "verbunden": "Connected",
+          "ungueltig": "Invalid",
+          "fehler": "Error"
+        }
+      }
+    }
+  },
+  "issues": {
+    "verbindung_ungueltig": {
+      "title": "Familyhub connection invalid",
+      "description": "The server rejected the connection \"{name}\" (token revoked or invalid). Nothing is sent anymore. Create a new pairing code in the Familyhub app under Meters › Home Assistant › Neue Verbindung koppeln and start re-pairing under Settings › Devices & services › Familyhub."
+    }
+  },
+  "services": {
+    "jetzt_senden": {
+      "name": "Send now",
+      "description": "Reads the sensors now and uploads the readings immediately (for testing)."
+    }
+  }
+}

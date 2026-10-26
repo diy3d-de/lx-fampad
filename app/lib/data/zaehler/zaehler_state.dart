@@ -33,10 +33,11 @@ class ZaehlerEintrag {
   bool get lesbar => inhalt != null;
 
   /// Die lesbaren Stände als Rechen-Stände (Monatswerte sind keine Stände).
-  List<Stand> get rechenStaende => [
+  /// Ein Stand je Tag (zwei Geräte können denselben Tag doppelt schreiben): der zuletzt geschriebene gilt, siehe [standeZusammenfuehren].
+  List<Stand> get rechenStaende => standeZusammenfuehren([
     for (final s in staende)
-      if (s.inhalt != null && !s.inhalt!.istMonatswert && s.inhalt!.tag != null) Stand(s.inhalt!.tag!, s.inhalt!.milli, marke: s.inhalt!.marke),
-  ];
+      if (s.inhalt != null && !s.inhalt!.istMonatswert && s.inhalt!.tag != null) StandQuelle(s.id, s.erstelltAt.millisecondsSinceEpoch, Stand(s.inhalt!.tag!, s.inhalt!.milli, marke: s.inhalt!.marke)),
+  ]);
 
   /// Alle lesbaren Monatswert-Einträge (auch Doppelte eines Monats, in Anlage-Reihenfolge); [monatswerteZusammenfuehren] macht daraus einen Wert je Monat.
   List<MonatsWert> get roheMonatswerte => [

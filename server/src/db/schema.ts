@@ -1985,3 +1985,48 @@ export const wasteState = pgTable('waste_state', {
   lastRequestAt: timestamp('last_request_at', { withTimezone: true }),
   lastCheckAt: timestamp('last_check_at', { withTimezone: true }),
 });
+
+/**
+ * Einwurf (Home Assistant, Zähler-Postfach): Token zum Einwerfen. Gespeichert wird nur der SHA-256 des Tokens (nie der Klartext).
+ * Das Token authentifiziert ausschließlich `POST /ingest/zaehler`. Widerrufen wird nur markiert, nie gelöscht.
+ */
+export const ingestTokens = pgTable(
+  'ingest_tokens',
+  {
+    id: id(),
+    familyId: familyRef(),
+    name: text('name').notNull(),
+    tokenHash: text('token_hash').notNull(),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (t) => [unique('ingest_tokens_family_id_unique').on(t.familyId, t.id), unique('ingest_tokens_hash_unique').on(t.tokenHash), check('ingest_tokens_name_ck', sql`char_length(${t.name}) between 1 and 40`)],
+);
+
+/**
+ * Postfach: undurchsichtige Päckchen (libsodium Sealed Box, vom Server nie geöffnet oder ausgewertet). `k` ist der Eindeutigkeitsschlüssel des Clients
+ * (je Token einmal). `seq` ordnet die Päckchen stabil für das seitenweise Abholen. Aufbewahrung höchstens 30 Tage.
+ */
+export const ingestInbox = pgTable(
+  'ingest_inbox',
+  {
+    id: id(),
+    seq: bigint('seq', { mode: 'number' }).generatedAlwaysAsIdentity().notNull(),
+    familyId: familyRef(),
+    tokenId: uuid('token_id').notNull(),
+    k: text('k').notNull(),
+    box: bytea('box').notNull(),
+    receivedAt: timestamp('received_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.tokenId], foreignColumns: [ingestTokens.familyId, ingestTokens.id], name: 'ingest_inbox_token_fk' }).onDelete('cascade'),
+    unique('ingest_inbox_token_k_unique').on(t.tokenId, t.k),
+    unique('ingest_inbox_seq_unique').on(t.seq),
+    index('ingest_inbox_family_seq_idx').on(t.familyId, t.seq),
+    index('ingest_inbox_received_idx').on(t.receivedAt),
+    check('ingest_inbox_k_ck', sql`char_length(${t.k}) between 1 and 64`),
+    check('ingest_inbox_box_ck', sql`octet_length(${t.box}) between 1 and 1024`),
+  ],
+);

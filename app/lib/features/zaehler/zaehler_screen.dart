@@ -8,6 +8,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/api/models.dart' show Role;
+import '../../data/auth/auth_state.dart' show authProvider;
+import '../../data/ingest/ingest_anzeige.dart';
+import '../../data/ingest/ingest_state.dart';
 import '../../data/zaehler/zaehler_logik.dart' show abrechnungsperiode;
 import '../../data/zaehler/zaehler_repository.dart';
 import '../../data/zaehler/zaehler_state.dart';
@@ -17,6 +21,9 @@ import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show bestaetigen;
+import 'ha_koppeln_screen.dart' show haKoppelnOeffnen;
+import 'ha_pruefen_screen.dart';
+import 'ha_verbindung_screen.dart';
 import 'zaehler_anzeige.dart';
 import 'zaehler_bericht_screen.dart';
 import 'zaehler_editor.dart';
@@ -83,19 +90,43 @@ class ZaehlerScreen extends ConsumerWidget {
 
   List<Widget> _inhalt(BuildContext context, WidgetRef ref, ZaehlerDaten daten, DateTime heute, List<ZaehlerReihe> faellig) {
     if (!daten.geladen) return const [Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))];
+    final haBekannt = ref.watch(ingestVerfuegbarProvider).value ?? false;
     if (daten.eintraege.isEmpty) {
-      return const [
-        SizedBox(height: 24),
+      // Wer Home Assistant hat, will oft genau damit anfangen: der Einstieg steht auch ohne Zähler da (nur wenn der Server die Anbindung anbietet)
+      final admin = ref.watch(authProvider.select((a) => a.user?.role)) == Role.admin;
+      return [
+        const SizedBox(height: 24),
         EmptyState(
           icon: Icons.speed_outlined,
           title: 'Noch keine Zähler',
-          hint: 'Richte Strom, Wasser, Gas oder Solar ein, trage die Stände ein und lass den Verbrauch berechnen. Alle Angaben sind Ende-zu-Ende verschlüsselt und nur für Eltern und Admins sichtbar.',
+          hint: haBekannt
+              ? 'Trag Stände selbst ein oder lass sie von Home Assistant liefern. Strom, Wasser, Gas und Solar werden berechnet. Alle Angaben sind Ende-zu-Ende verschlüsselt und nur für Eltern und Admins sichtbar.'
+              : 'Richte Strom, Wasser, Gas oder Solar ein, trage die Stände ein und lass den Verbrauch berechnen. Alle Angaben sind Ende-zu-Ende verschlüsselt und nur für Eltern und Admins sichtbar.',
         ),
+        if (haBekannt)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+              onPressed: () => unawaited(admin ? haKoppelnOeffnen(context) : haVerbindungOeffnen(context)),
+              icon: const Icon(Icons.sync_alt, size: 18),
+              label: const Text('Mit Home Assistant verbinden'),
+            ),
+          ),
       ];
     }
+    final zuPruefen = ref.watch(ingestProvider.select((z) => z.zuPruefen.length));
+    final mischung = daten.reihen.any((r) => !r.archiviert && r.inhalt.automatisch);
+    final automatischFaellig = [for (final r in faellig) if (r.inhalt.automatisch) r];
+    final handFaellig = [for (final r in faellig) if (!r.inhalt.automatisch) r];
     return [
-      if (faellig.isNotEmpty) ...[_FaelligKarte(faellig: faellig, heute: heute), const SizedBox(height: 14)],
-      for (final k in daten.kacheln) ...[_KachelKarte(kachel: k, heute: heute), const SizedBox(height: 12)],
+      const _IngestAnstoss(),
+      if (zuPruefen > 0) ...[_PruefenKarte(anzahl: zuPruefen), const SizedBox(height: 14)],
+      // die Zeile "Home Assistant" steht oben (hier meldet sie "läuft" oder "Problem"), nicht unter allen Kacheln
+      if (haBekannt || mischung) ...[const _HaZeile(), const SizedBox(height: 12)],
+      if (handFaellig.isNotEmpty) ...[_FaelligKarte(faellig: handFaellig, heute: heute), const SizedBox(height: 14)],
+      if (automatischFaellig.isNotEmpty) ...[_KeinWertKarte(faellig: automatischFaellig, heute: heute), const SizedBox(height: 14)],
+      for (final k in daten.kacheln) ...[_KachelKarte(kachel: k, heute: heute, herkunft: mischung), const SizedBox(height: 12)],
       for (final e in daten.nichtLesbar) _NichtLesbarZeile(eintrag: e),
       if (daten.archiviert.isNotEmpty) ...[
         const SizedBox(height: 8),
@@ -162,11 +193,55 @@ class _FaelligKarte extends StatelessWidget {
   }
 }
 
+/// Hinweiskarte für automatische Zähler (Home Assistant): seit Tagen kam kein Wert. Verlangt nie das Ablesen, denn das Problem liegt bei der Verbindung, nicht im Keller.
+class _KeinWertKarte extends StatelessWidget {
+  final List<ZaehlerReihe> faellig;
+  final DateTime heute;
+  const _KeinWertKarte({required this.faellig, required this.heute});
+
+  @override
+  Widget build(BuildContext context) {
+    final erste = faellig.first;
+    final tage = tageOhneWert(erste, heute);
+    final titel = faellig.length == 1
+        ? (tage == null ? '${erste.name}: noch kein Wert' : '${erste.name}: ${seitTagenText(tage)} kein Wert')
+        : '${faellig.length} Zähler: kein Wert von Home Assistant';
+    return Semantics(
+      container: true,
+      label: 'Kein Wert von Home Assistant. $titel',
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        child: Row(
+          children: [
+            const Icon(Icons.sync_problem, color: kWarn),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titel, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const Text('Home Assistant hat nichts geschickt, oder das Abholgerät war nicht online. Von Hand eintragen geht weiter über „Stand eintragen“.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(haVerbindungOeffnen(context)), child: const Text('Prüfen')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Eine Kachel der Übersicht.
 class _KachelKarte extends StatelessWidget {
   final ZaehlerKachel kachel;
   final DateTime heute;
-  const _KachelKarte({required this.kachel, required this.heute});
+
+  /// Zeigt die Herkunft ("Home Assistant" oder "von Hand"), sobald mindestens ein Zähler automatisch geführt wird.
+  final bool herkunft;
+  const _KachelKarte({required this.kachel, required this.heute, this.herkunft = false});
 
   @override
   Widget build(BuildContext context) {
@@ -198,17 +273,23 @@ class _KachelKarte extends StatelessWidget {
       haupt = r.letzter == null ? 'Noch kein Stand' : '${standAnzeige(r.letzter!.milli)} $einheit';
       unter = r.inhalt.nummer.isEmpty ? null : 'Zähler ${r.inhalt.nummer}';
     }
+    // fällig ist bei automatischen Zählern nur "kein Wert gekommen", nie "ablesen"
+    final nurAutomatischFaellig = k.reihen.where((x) => reiheFaelligkeit(x, heute).faellig).every((x) => x.inhalt.automatisch);
     final pille = switch (f.art) {
-      FaelligkeitsArt.faellig => StatusPill(k.reihen.every((x) => x.monatlich) ? 'WERT FÄLLIG' : 'ABLESEN FÄLLIG', color: kWarn),
+      FaelligkeitsArt.faellig => StatusPill(k.reihen.every((x) => x.monatlich) ? 'WERT FÄLLIG' : (nurAutomatischFaellig ? 'KEIN WERT' : 'ABLESEN FÄLLIG'), color: kWarn),
       FaelligkeitsArt.aktuell => StatusPill(k.istGruppe ? '${k.reihen.length} ZÄHLER · AKTUELL' : (f.termin == null ? 'AKTUELL' : 'NÄCHSTE ${tagKurz(f.termin!)}'), color: kTerminal),
       FaelligkeitsArt.keinRhythmus => StatusPill(erzeugung && !k.istGruppe ? 'ERZEUGUNG' : 'KEIN RHYTHMUS', color: kTextMuted),
     };
+    final automatisch = k.reihen.where((r) => r.inhalt.automatisch).length;
+    // die Herkunft ist nur bei automatischen Zählern eine Information; bei allen anderen wäre "von Hand" eine Pille ohne Nutzen
+    final herkunftText = !herkunft || automatisch == 0 ? null : (automatisch == k.reihen.length ? '⇄ HOME ASSISTANT' : 'GEMISCHT');
     final monatsZeile = monat == null ? null : '${monatName(monat.monat)}: ${verbrauchAnzeige(monat.milli, einheit)}';
     final prozent = monat?.prozent;
     final semantik = StringBuffer('${k.titel}. $haupt');
     if (unter != null) semantik.write('. $unter');
     if (monat != null) semantik.write('. ${monatlich ? 'Monatswert ' : ''}${monatName(monat.monat)} ${verbrauchAnzeige(monat.milli, einheit)}${prozent == null ? '' : ', ${prozent > 0 ? 'plus' : 'minus'} ${prozent.abs().round()} Prozent zum Vorjahr'}');
-    if (f.art == FaelligkeitsArt.faellig) semantik.write(monatlich ? '. Monatswert fällig' : '. Ablesen fällig');
+    if (herkunftText != null) semantik.write(automatisch == k.reihen.length ? '. Werte aus Home Assistant' : '. Teils aus Home Assistant');
+    if (f.art == FaelligkeitsArt.faellig) semantik.write(monatlich ? '. Monatswert fällig' : (nurAutomatischFaellig ? '. Kein Wert von Home Assistant' : '. Ablesen fällig'));
     if (warn) semantik.write('. Verbrauch ungewöhnlich hoch');
     semantik.write('. Öffnen für den Verlauf');
     return Semantics(
@@ -229,6 +310,7 @@ class _KachelKarte extends StatelessWidget {
                 Flexible(child: pille),
               ],
             ),
+            if (herkunftText != null) ...[const SizedBox(height: 6), Align(alignment: Alignment.centerLeft, child: StatusPill(herkunftText, color: kAccent))],
             const SizedBox(height: 8),
             Text(haupt, style: TextStyle(fontFamily: kFontMono, fontSize: 20, fontWeight: FontWeight.w700, color: farbe)),
             if (unter != null) Text(unter, style: const TextStyle(fontSize: 12, color: kTextMuted)),
@@ -281,6 +363,123 @@ class _KachelKarte extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Hinweiskarte "1 Wert prüfen" (nur hier auf der Zähler-Seite, nie auf der Startseite oder in Push).
+class _PruefenKarte extends StatelessWidget {
+  final int anzahl;
+  const _PruefenKarte({required this.anzahl});
+
+  @override
+  Widget build(BuildContext context) {
+    final titel = anzahl == 1 ? '1 Wert prüfen' : '$anzahl Werte prüfen';
+    return Semantics(
+      container: true,
+      label: '$titel. Werte aus Home Assistant warten auf deine Entscheidung.',
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: kWarn.withValues(alpha: 0.08), border: Border.all(color: kWarn.withValues(alpha: 0.5)), borderRadius: BorderRadius.circular(14)),
+        child: Row(
+          children: [
+            const Icon(Icons.rule, color: kWarn),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(titel, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  const Text('Aus Home Assistant, noch nicht eingetragen.', style: TextStyle(fontSize: 12, color: kTextMuted)),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton(style: TextButton.styleFrom(minimumSize: const Size(48, 48)), onPressed: () => unawaited(haPruefenOeffnen(context)), child: const Text('Prüfen')),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Zeile "Home Assistant" der Zähler-Seite: Einstieg in die Seite mit Schalter, Zustand und Verbindungen.
+class _HaZeile extends ConsumerWidget {
+  const _HaZeile();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final z = ref.watch(ingestProvider);
+    final daten = ref.watch(zaehlerDatenProvider);
+    final letzter = letzterAutomatischerStand(daten.reihen);
+    // Gerät ohne Postfach-Schlüssel (zweites Elternteil): nie "aus", die Werte kommen über ein anderes Gerät. Sonst der Zustand dieses Geräts.
+    final String status;
+    if (!z.geladen) {
+      status = '';
+    } else if (!z.postfachDa) {
+      status = letzter == null ? 'läuft über ein anderes Gerät' : 'läuft über ein anderes Gerät · letzter Wert ${tagKurz(letzter.tag)}';
+    } else if (!z.schalter) {
+      status = 'Abholen ist aus';
+    } else if (z.laeuft) {
+      status = 'holt ab …';
+    } else if (z.letzter?.abbruch != null) {
+      status = 'Problem beim Abholen';
+    } else {
+      status = letzter == null ? 'läuft' : 'läuft · letzter Wert ${tagKurz(letzter.tag)}';
+    }
+    return LxCard(
+      onTap: () => unawaited(haVerbindungOeffnen(context)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      child: Semantics(
+        button: true,
+        label: 'Home Assistant. ${status.isEmpty ? '' : '$status. '}Öffnen',
+        excludeSemantics: true,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 48),
+          child: Row(
+            children: [
+              const Icon(Icons.sync_alt, color: kAccent, size: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Home Assistant', style: TextStyle(fontWeight: FontWeight.w600)),
+                    if (status.isNotEmpty) Text(status, style: const TextStyle(fontFamily: kFontMono, fontSize: 11, color: kTextMuted)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right, color: kTextMuted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Löst beim Öffnen der Zähler-Seite einen Lauf aus (höchstens einmal je Minute; nur mit Schalter und Schlüssel, sonst tut es nichts).
+class _IngestAnstoss extends ConsumerStatefulWidget {
+  const _IngestAnstoss();
+
+  @override
+  ConsumerState<_IngestAnstoss> createState() => _IngestAnstossState();
+}
+
+class _IngestAnstossState extends ConsumerState<_IngestAnstoss> {
+  @override
+  void initState() {
+    super.initState();
+    unawaited(Future.microtask(() async {
+      try {
+        await ref.read(ingestProvider.notifier).beimOeffnen();
+      } on Object {
+        // ein Fehler beim Abholen stört die Seite nie
+      }
+    }));
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox.shrink();
 }
 
 class _NichtLesbarZeile extends StatelessWidget {
