@@ -68,7 +68,8 @@ class VorsorgeScreen extends ConsumerWidget {
       const SizedBox(height: 18),
       const Text(kVorsorgeHinweis, style: TextStyle(color: kTextMuted, fontSize: 12, height: 1.4)),
     ];
-    final neu = FilledButton.icon(
+    final schreiben = vorsorgeDarfSchreiben(daten.ichRolle);
+    final neu = !schreiben ? null : FilledButton.icon(
       onPressed: person == null ? null : () => unawaited(vorsorgeHinzufuegenOeffnen(context, ref, subjektId: person.id, personName: _anrede(daten, person))),
       icon: const Icon(Icons.add),
       label: const Text('Hinzufügen'),
@@ -92,8 +93,7 @@ class VorsorgeScreen extends ConsumerWidget {
                   const TabKopfzeile(title: 'Vorsorge'),
                   const SizedBox(height: 16),
                   ...kinder,
-                  const SizedBox(height: 16),
-                  Align(alignment: Alignment.centerLeft, child: neu),
+                  if (neu != null) ...[const SizedBox(height: 16), Align(alignment: Alignment.centerLeft, child: neu)],
                 ],
               ),
             ),
@@ -117,7 +117,13 @@ class VorsorgeScreen extends ConsumerWidget {
     return [
       _ProfilZeile(person: person, eigene: eigene, profil: profil, unlesbar: unlesbar, name: name),
       const SizedBox(height: 14),
-      if (eintraege.isEmpty)
+      if (!vorsorgeDarfSchreiben(daten.ichRolle)) ...[
+        const Text('Deine Eltern tragen das ein. Du kannst hier nachsehen.', style: TextStyle(color: kTextMuted, fontSize: 13, height: 1.4)),
+        const SizedBox(height: 14),
+      ],
+      if (eintraege.isEmpty && !vorsorgeDarfSchreiben(daten.ichRolle))
+        const EmptyState(icon: Icons.vaccines_outlined, title: 'Noch nichts eingetragen', hint: 'Sobald deine Eltern etwas eintragen, siehst du es hier.'),
+      if (eintraege.isEmpty && vorsorgeDarfSchreiben(daten.ichRolle))
         EmptyState(
           icon: Icons.vaccines_outlined,
           title: 'Noch nichts eingetragen',
@@ -192,7 +198,7 @@ class _ProfilZeile extends ConsumerWidget {
           const Icon(Icons.cake_outlined, size: 20, color: kTextMuted),
           const SizedBox(width: 10),
           Expanded(child: Text(text, style: const TextStyle(fontSize: 13, color: kTextMuted))),
-          if (!unlesbar)
+          if (!unlesbar && vorsorgeDarfSchreiben(ref.watch(vorsorgeAnsichtProvider.select((d) => d.ichRolle))))
             TextButton(
               onPressed: () => unawaited(vorsorgeProfilOeffnen(context, subjektId: person.id, personName: name, bisher: profil)),
               style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
@@ -238,7 +244,7 @@ class _Zeile extends ConsumerWidget {
     final name = vorsorgeName(posten.vorlage, i);
     final stand = vorsorgeStandText(f, heute);
     final zusatz = vorsorgeVerlaessigkeitText(posten.vorlage);
-    final erledigtMoeglich = f.status != VorsorgeStatus.erledigt;
+    final erledigtMoeglich = f.status != VorsorgeStatus.erledigt && vorsorgeDarfSchreiben(ref.watch(vorsorgeAnsichtProvider.select((d) => d.ichRolle)));
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Semantics(

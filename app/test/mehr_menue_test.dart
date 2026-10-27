@@ -7,6 +7,7 @@ import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/features/vorsorge/vorsorge_anzeige.dart' show vorsorgeHinweisProvider;
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/api/models.dart' show WetterAktuell, WetterDto;
 import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
@@ -338,6 +339,23 @@ void main() {
       expect((a.zahl, a.ueberfaellig), (2, true));
       final f = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:fristen')), matching: find.byType(HinweisZeichen)));
       expect((f.zahl, f.ueberfaellig), (1, false));
+    });
+
+    testWidgets('Vorsorge: Zahl der fälligen Einträge, rot bei Überfälligem, in der Summe; Text nur "n Hinweise", nie Name oder Art', (tester) async {
+      await start(tester, vorher: (e) => e.extraOverrides.add(vorsorgeHinweisProvider.overrideWithValue((offen: 2, ueberfaellig: 1))));
+      expect(find.byTooltip('Weitere Bereiche, 2 Hinweise'), findsOneWidget);
+      await mehrOeffnen(tester);
+      final z = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:vorsorge')), matching: find.byType(HinweisZeichen)));
+      expect((z.zahl, z.ueberfaellig), (2, true));
+      expect(find.bySemanticsLabel('Vorsorge, 2 Hinweise, Überfälliges dabei'), findsOneWidget);
+    });
+
+    testWidgets('Vorsorge ohne fällige Einträge: kein Zeichen am Eintrag; Wetter, Standort, Tresor, Suche nie mit Zahl', (tester) async {
+      await start(tester);
+      await mehrOeffnen(tester);
+      for (final id in ['vorsorge', 'standort', 'tresor', 'suche', 'wetter', 'dateien']) {
+        expect(find.descendant(of: find.byKey(ValueKey('mehr:$id')), matching: find.byType(HinweisZeichen)), findsNothing, reason: id);
+      }
     });
 
     testWidgets('ohne Hinweise: kein Zeichen an Mehr', (tester) async {

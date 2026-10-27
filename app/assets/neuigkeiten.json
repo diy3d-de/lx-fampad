@@ -1,4 +1,8 @@
 {
+  "0.27.0": [
+    "Im Mehr-Menü zeigt jetzt auch die Vorsorge eine Hinweis-Zahl (fällig und überfällig), und der Müll am Tag vor der Abholung",
+    "Vorsorge: Kinder können ihre Einträge nur ansehen, ihre Eltern tragen sie ein"
+  ],
   "0.26.0": [
     "Neu: Vorsorge und Impfungen für dich und deine Kinder. Du siehst, was nach den offiziellen Richtwerten (STIKO, Krankenkassen) ansteht, trägst Erledigtes ein und bekommst neutrale Erinnerungen. Die Daten sind verschlüsselt, das ist keine ärztliche Beratung"
   ],

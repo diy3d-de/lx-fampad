@@ -107,14 +107,20 @@ class MehrHinweise {
 
   /// Zähler, die jetzt abgelesen werden sollen (nur Eltern und Admins; für alle anderen 0; liegt immer hinter "Mehr").
   final int zaehler;
-  const MehrHinweise({this.aufgaben = 0, this.aufgabenUeberfaellig = 0, this.fristen = 0, this.fristenUeberfaellig = 0, this.medikamente = 0, this.zaehler = 0});
+  /// Fällige und überfällige Vorsorge-Einträge der Personen, die diese Person sehen darf (nur die Zahl), und davon die überfälligen.
+  final int vorsorge;
+  final int vorsorgeUeberfaellig;
 
-  /// Summe am Feld "Mehr": Fristen, Medikamente und Zähler immer (sie liegen immer hinter "Mehr"), Aufgaben nur, wenn der Aufgaben-Bereich hinter "Mehr" liegt
+  /// 1 nur am Tag vor einer Abholung und am Abholtag selbst (wie die Hervorhebung der Müll-Kachel), sonst 0.
+  final int muell;
+  const MehrHinweise({this.aufgaben = 0, this.aufgabenUeberfaellig = 0, this.fristen = 0, this.fristenUeberfaellig = 0, this.medikamente = 0, this.zaehler = 0, this.vorsorge = 0, this.vorsorgeUeberfaellig = 0, this.muell = 0});
+
+  /// Summe am Feld "Mehr": Fristen, Medikamente, Zähler, Vorsorge und Müll immer (sie liegen immer hinter "Mehr"), Aufgaben nur, wenn der Aufgaben-Bereich hinter "Mehr" liegt
   /// (steht er in der Leiste, sieht man ihn dort ohnehin).
-  int summe(List<int> leiste) => fristen + medikamente + zaehler + (leiste.contains(5) ? 0 : aufgaben);
+  int summe(List<int> leiste) => fristen + medikamente + zaehler + vorsorge + muell + (leiste.contains(5) ? 0 : aufgaben);
 
   /// Ist darunter etwas Überfälliges (rotes Zeichen statt gelbem)?
-  bool ueberfaellig(List<int> leiste) => fristenUeberfaellig > 0 || (!leiste.contains(5) && aufgabenUeberfaellig > 0);
+  bool ueberfaellig(List<int> leiste) => fristenUeberfaellig > 0 || vorsorgeUeberfaellig > 0 || (!leiste.contains(5) && aufgabenUeberfaellig > 0);
 }
 
 /// Zeichen am Feld "Mehr" und an den Kacheln: Zahl über 9 als "9+".
