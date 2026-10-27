@@ -129,6 +129,13 @@ void main() {
         await start(tester, skala: skala);
         await zumTab(tester, 'Aufgaben');
         pruefe(tester, 'Aufgaben $skala');
+        // Filter-Blatt der Aufgaben (Status, Person, Sortierung) und die Chips aktiver Filter
+        await tippe(tester, find.byTooltip('Filter und Anzeige'));
+        pruefe(tester, 'Aufgaben-Filterblatt $skala');
+        await tippe(tester, find.text('Erledigt').last);
+        await tippe(tester, find.textContaining(RegExp(r'Aufgaben? zeigen')));
+        pruefe(tester, 'Aufgaben mit Filter-Chip $skala');
+        await tippe(tester, find.text('Zurücksetzen'));
         await zumTab(tester, 'Kalender');
         pruefe(tester, 'Kalender $skala');
         h.dispose();

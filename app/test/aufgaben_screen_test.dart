@@ -98,10 +98,10 @@ void main() {
     expect(find.text('Hoch'), findsOneWidget);
     expect(find.text('3 offen · 1 erledigt'), findsOneWidget);
     pruefeLayout(tester, 'Liste');
-    await tippeText(tester, 'Erledigt');
+    await aufgabenFilter(tester, ['Erledigt']);
     expect(find.text('Schon fertig'), findsOneWidget);
     expect(find.text('Später'), findsNothing);
-    await tippeText(tester, 'Alle');
+    await aufgabenFilter(tester, ['Alle']);
     expect(find.text('Schon fertig'), findsOneWidget);
     expect(find.text('Später'), findsOneWidget);
     // erledigte unten
@@ -115,19 +115,89 @@ void main() {
       e.sync.andereAendert('aufgabe', _a3, _aufgabe('Mittlere Aufgabe', tage: 2, prio: 2, zu: fixIdKind));
     });
     expect(tester.getTopLeft(find.text('Niedrig früh')).dy, lessThan(tester.getTopLeft(find.text('Hoch spät')).dy));
-    await tippeText(tester, 'Nach Priorität');
+    await aufgabenFilter(tester, ['Priorität']);
     expect(tester.getTopLeft(find.text('Hoch spät')).dy, lessThan(tester.getTopLeft(find.text('Mittlere Aufgabe')).dy));
     expect(tester.getTopLeft(find.text('Mittlere Aufgabe')).dy, lessThan(tester.getTopLeft(find.text('Niedrig früh')).dy));
-    await tippeText(tester, 'Meine');
+    await aufgabenFilter(tester, ['Meine']);
     expect(find.text('Niedrig früh'), findsOneWidget);
     expect(find.text('Hoch spät'), findsNothing);
-    await tippeText(tester, 'Offen');
-    await tippeText(tester, 'Alle Personen');
-    await tippeText(tester, 'Ben');
+    await aufgabenFilter(tester, ['Offen', 'Ben']);
     expect(find.text('Niedrig früh'), findsNothing);
     expect(find.text('Hoch spät'), findsOneWidget);
     expect(find.text('Mittlere Aufgabe'), findsOneWidget);
     pruefeLayout(tester, 'Person gefiltert');
+  });
+
+  void seedFilter(TestUmgebung e) {
+    e.sync.andereAendert('aufgabe', _a1, _aufgabe('Eigene offen', tage: 3, zu: fixIdAdmin));
+    e.sync.andereAendert('aufgabe', _a2, _aufgabe('Von Ben', tage: 1, zu: fixIdKind));
+    e.sync.andereAendert('aufgabe', _a3, _aufgabe('Schon fertig', erledigt: true));
+  }
+
+  Finder filterKnopf([String tooltip = 'Filter und Anzeige']) => find.byTooltip(tooltip);
+
+  testWidgets('Leiste: keine Filter-Chips mehr, Filter-Knopf ohne Plakette; das Blatt zeigt Status, Person, Sortierung und die Trefferzahl', (tester) async {
+    await start(tester, vorher: seedFilter);
+    expect(find.byType(AuswahlKnopf), findsNothing);
+    expect(find.text('Nach Priorität'), findsNothing);
+    expect(find.byTooltip('Filter und Anzeige'), findsOneWidget, reason: 'keine aktiven Filter: keine Plakette');
+    await tippe(tester, filterKnopf());
+    expect(find.text('Filter und Anzeige'), findsWidgets);
+    for (final t in ['Offen', 'Alle', 'Meine', 'Erledigt', 'Fristen', 'Alle Personen', 'Ben', 'Fälligkeit', 'Priorität']) {
+      expect(find.text(t), findsWidgets, reason: t);
+    }
+    expect(find.text('2 Aufgaben zeigen'), findsOneWidget);
+    expect(find.text('Zurücksetzen'), findsOneWidget);
+    pruefeLayout(tester, 'Filter-Blatt');
+    await tippe(tester, find.text('Erledigt').last);
+    expect(find.text('1 Aufgabe zeigen'), findsOneWidget);
+    await tippe(tester, find.text('2 Aufgaben zeigen').evaluate().isEmpty ? find.text('1 Aufgabe zeigen') : find.text('2 Aufgaben zeigen'));
+    expect(find.byType(BottomSheet), findsNothing);
+  });
+
+  testWidgets('Aktive Filter: Plakette mit Zahl, entfernbare Chips, Zurücksetzen; Sortierung bei Fristen gesperrt', (tester) async {
+    await start(tester, vorher: seedFilter);
+    await aufgabenFilter(tester, ['Alle', 'Ben', 'Priorität']);
+    expect(find.byTooltip('Filter und Anzeige, 3 aktiv'), findsOneWidget);
+    expect(find.text('Status: Alle'), findsOneWidget);
+    expect(find.text('Person: Ben'), findsOneWidget);
+    expect(find.text('Nach Priorität'), findsOneWidget);
+    expect(find.text('Von Ben'), findsOneWidget);
+    expect(find.text('Eigene offen'), findsNothing);
+    pruefeLayout(tester, 'Chips');
+    await tippe(tester, find.byTooltip('Filter entfernen: Person: Ben'));
+    expect(find.text('Person: Ben'), findsNothing);
+    expect(find.text('Eigene offen'), findsOneWidget);
+    expect(find.byTooltip('Filter und Anzeige, 2 aktiv'), findsOneWidget);
+    await tippe(tester, find.text('Zurücksetzen'));
+    expect(find.byTooltip('Filter und Anzeige'), findsOneWidget);
+    expect(find.text('Status: Alle'), findsNothing);
+    expect(find.text('Schon fertig'), findsNothing, reason: 'zurück auf Offen');
+  });
+
+  testWidgets('Leerzustand mit Filtern: eigener Text und Zurücksetzen; "Erledigte löschen" nur in der Ansicht Erledigt', (tester) async {
+    await start(tester, vorher: seedFilter);
+    expect(find.textContaining('Erledigte löschen'), findsNothing);
+    await aufgabenFilter(tester, ['Meine', 'Ben']);
+    expect(find.text('Keine Aufgaben mit diesen Filtern'), findsOneWidget);
+    await tippe(tester, find.text('Filter zurücksetzen'));
+    expect(find.text('Keine Aufgaben mit diesen Filtern'), findsNothing);
+    expect(find.text('Eigene offen'), findsOneWidget);
+    await aufgabenFilter(tester, ['Erledigt']);
+    expect(find.text('Erledigte löschen'), findsOneWidget);
+    await aufgabenFilter(tester, ['Offen']);
+    expect(find.textContaining('Erledigte löschen'), findsNothing);
+  });
+
+  testWidgets('Desktop: das Filter-Blatt ist ein Seitenpanel (kein Bottom-Sheet) und wirkt sofort', (tester) async {
+    await start(tester, vorher: seedFilter, groesse: const Size(1440, 900));
+    await tippe(tester, filterKnopf());
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.text('Filter und Anzeige'), findsWidgets);
+    await tippe(tester, find.text('Ben').last);
+    expect(find.text('Eigene offen'), findsNothing);
+    await tippe(tester, find.byTooltip('Schließen'));
+    expect(find.text('Person: Ben'), findsOneWidget);
   });
 
   testWidgets('Schnell anlegen: Titel eintippen, Plus: lokal sofort in der Liste und im Ausgang; leere Eingabe tut nichts', (tester) async {
@@ -156,7 +226,7 @@ void main() {
     expect(find.text('Tonne'), findsOneWidget); // nur die Folgeaufgabe ist noch offen
     expect(find.textContaining('Wöchentlich'), findsOneWidget);
     // Zurücksetzen unter "Erledigt"
-    await tippeText(tester, 'Erledigt');
+    await aufgabenFilter(tester, ['Erledigt']);
     await tippe(tester, find.byIcon(Icons.check_box));
     expect((await dbAufgaben(env)).where((a) => a.erledigtAt != null), isEmpty);
   });
@@ -341,9 +411,9 @@ void main() {
         e.sync.andereAendert('aufgabe', _a3, _aufgabe('Erledigt', erledigt: true));
       });
       pruefeLayout(tester, 'Liste');
-      await tippeText(tester, 'Alle');
+      await aufgabenFilter(tester, ['Alle']);
       pruefeLayout(tester, 'Liste alle');
-      await tippeText(tester, 'Nach Priorität');
+      await aufgabenFilter(tester, ['Priorität']);
       pruefeLayout(tester, 'Liste Priorität');
       await tippe(tester, find.byTooltip('Aufgabe mit Details anlegen'));
       pruefeLayout(tester, 'Editor');
@@ -416,7 +486,7 @@ void main() {
       e.sync.andereAendert('aufgabe', _a3, _aufgabe('Offen 1'));
     });
     expect(find.textContaining('Erledigte löschen'), findsNothing);
-    await tippeText(tester, 'Erledigt');
+    await aufgabenFilter(tester, ['Erledigt']);
     expect(find.text('Erledigte löschen (2)'), findsOneWidget);
     await tippeText(tester, 'Erledigte löschen (2)');
     expect(find.text('2 erledigte Aufgaben löschen?'), findsOneWidget);
@@ -425,7 +495,7 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, 'Neue Aufgabe'), 'Neu im Erledigt-Filter');
     await tippe(tester, find.byTooltip('Aufgabe hinzufügen'));
     expect(find.text('Neu im Erledigt-Filter'), findsOneWidget, reason: 'zurück auf Offen: die neue Aufgabe ist sichtbar');
-    await tippeText(tester, 'Erledigt');
+    await aufgabenFilter(tester, ['Erledigt']);
     await tippeText(tester, 'Erledigte löschen (2)');
     await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
     expect((await dbAufgaben(env)).map((a) => a.titel).toSet(), {'Offen 1', 'Neu im Erledigt-Filter'});
