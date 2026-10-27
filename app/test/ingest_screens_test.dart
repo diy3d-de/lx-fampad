@@ -17,13 +17,14 @@ import 'package:lx_fampad/data/ingest/ingest_dienst.dart';
 import 'package:lx_fampad/data/ingest/ingest_kopplung.dart';
 import 'package:lx_fampad/data/ingest/ingest_logik.dart' show PruefGrund;
 import 'package:lx_fampad/data/ingest/ingest_state.dart';
+import 'package:lx_fampad/data/ingest/ingest_weitergabe.dart';
 import 'package:lx_fampad/data/ingest/ingest_zwischenablage.dart';
 import 'package:lx_fampad/data/tresor/tresor_zwischenablage.dart' show TresorZwischenablage;
 import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show Stand;
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart';
-import 'package:lx_fampad/features/auth/auth_widgets.dart' show MeldungsBox;
+import 'package:lx_fampad/features/auth/auth_widgets.dart' show MeldungsBox, ZweitKnopf;
 import 'package:lx_fampad/features/zaehler/ha_verbindung_screen.dart';
 import 'package:lx_fampad/features/zaehler/ha_zuordnen_screen.dart' show HaZuordnenScreen;
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -288,13 +289,13 @@ void main() {
       expect(find.text('Dieses Gerät holt gerade nichts ab'), findsNothing);
     });
 
-    testWidgets('Doppelt belegter Kanal (zwei Abholgeräte schreiben denselben Tag): die Seite meldet es mit Zähler und Kanal', (tester) async {
+    testWidgets('Doppelt belegter Kanal (zwei Verbindungen schreiben denselben Tag mit verschiedenen Werten): die Seite meldet es mit Zähler und Kanal', (tester) async {
       final tag = heuteTag().subtract(const Duration(days: 1));
-      final doppelt = ZaehlerBeispiel(zStrom, ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Strom Haus', quelle: const ZaehlerQuelle(kanal: 'strom_bezug')), [Stand(tag, 2951000), Stand(tag, 2951000)]);
+      final doppelt = ZaehlerBeispiel(zStrom, ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Strom Haus', quelle: const ZaehlerQuelle(kanal: 'strom_bezug')), [Stand(tag, 2951000), Stand(tag, 2951500)]);
       await start(tester, datenAus([doppelt]));
       await zurHaSeite(tester);
       expect(find.text('Werte kommen doppelt an'), findsOneWidget);
-      expect(find.textContaining('„Strom Haus“ liefern mehrere Verbindungen oder Geräte denselben Kanal (Strom Bezug)'), findsOneWidget);
+      expect(find.textContaining('„Strom Haus“ liefern mehrere Verbindungen denselben Kanal (Strom Bezug) mit verschiedenen Werten'), findsOneWidget);
       expect(find.text('Doppelt'), findsOneWidget);
       pruefeLayout(tester, 'HA-Seite doppelt');
     });
@@ -1019,13 +1020,17 @@ void main() {
   });
 
   group('Notifier (echt): Schalter, Schlüssel, Rolle', () {
-    Future<(ProviderContainer, FakeIngestDienst)> bauen({String role = 'admin', bool schalter = false, bool schluessel = true, Duration? takt}) async {
+    Future<(ProviderContainer, FakeIngestDienst)> bauen({String role = 'admin', bool schalter = false, bool schluessel = true, Duration? takt, _FakeWeitergabe? weitergabe}) async {
       final dienst = FakeIngestDienst();
       speicher = MemorySchluesselSpeicher();
       if (schluessel) await PostfachSpeicher(speicher).schreiben(fixIdAdmin, PostfachSchluessel.erzeugen(FakeCryptoProvider(seed: 4)));
       env = await angemeldeteUmgebung(role: role)..ingestTakt = takt;
       await env.db.metaSchreiben(kIngestAbholenSchluessel, schalter ? '1' : '0');
       env.extraOverrides.addAll([schluesselSpeicherProvider.overrideWithValue(speicher), ingestDienstProvider.overrideWithValue(dienst)]);
+      if (weitergabe != null) {
+        weitergabe.speicher = speicher;
+        env.extraOverrides.add(ingestWeitergabeProvider.overrideWithValue(weitergabe));
+      }
       final c = env.container();
       addTearDown(c.dispose);
       await c.read(authProvider.notifier).start();
@@ -1063,6 +1068,37 @@ void main() {
       expect(d.laeufe, 1);
       await c.read(ingestProvider.notifier).abholen(); // ausdrücklich: immer
       expect(d.laeufe, 2);
+    });
+
+    test('Weitergabe: Kinder bekommen weder ein Angebot noch eine Übernahme (der Dienst wird nie gerufen, die Rolle entscheidet vorher)', () async {
+      final weitergabe = _FakeWeitergabe();
+      final (kind, _) = await bauen(role: 'child', schluessel: false, weitergabe: weitergabe);
+      await expectLater(kind.read(ingestProvider.notifier).weitergabeAnnehmen('X'), throwsA(isA<WeitergabeFehler>().having((e) => e.art, 'art', WeitergabeFehlerArt.nichtBereit)));
+      await expectLater(kind.read(ingestProvider.notifier).weitergabeAnbieten(), throwsA(isA<WeitergabeFehler>().having((e) => e.art, 'art', WeitergabeFehlerArt.nichtBereit)));
+      expect(weitergabe.aufrufe, isEmpty);
+      expect(await PostfachSpeicher(speicher).vorhanden(fixIdAdmin), isFalse);
+    });
+
+    test('Weitergabe übernehmen (Elternteil ohne Schlüssel): der Dienst wird gerufen, der Schlüssel erscheint, der Schalter geht an und es wird abgeholt', () async {
+      final weitergabe = _FakeWeitergabe();
+      final (c, d) = await bauen(role: 'parent', schluessel: false, weitergabe: weitergabe);
+      expect(c.read(ingestProvider).postfachDa, isFalse);
+      final r = await c.read(ingestProvider.notifier).weitergabeAnnehmen('CODE');
+      expect(r, WeitergabeErgebnis.uebernommen);
+      expect(weitergabe.aufrufe, ['annehmen:CODE']);
+      expect(c.read(ingestProvider).postfachDa, isTrue);
+      expect(c.read(ingestProvider).schalter, isTrue);
+      expect(d.laeufe, 1);
+      expect(await env.db.metaLesen(kIngestAbholenSchluessel), '1');
+    });
+
+    test('Weitergabe: scheitert die Übernahme, bleibt der Zustand unverändert (kein Schalter, kein Lauf)', () async {
+      final weitergabe = _FakeWeitergabe()..fehler = const WeitergabeFehler(WeitergabeFehlerArt.abgelaufen);
+      final (c, d) = await bauen(role: 'parent', schluessel: false, weitergabe: weitergabe);
+      await expectLater(c.read(ingestProvider.notifier).weitergabeAnnehmen('CODE'), throwsA(isA<WeitergabeFehler>()));
+      expect(c.read(ingestProvider).postfachDa, isFalse);
+      expect(c.read(ingestProvider).schalter, isFalse);
+      expect(d.laeufe, 0);
     });
 
     test('Die Werte zur Prüfung bleiben nach einem abgebrochenen Lauf stehen', () async {
@@ -1180,8 +1216,117 @@ void main() {
       expect(await PostfachSpeicher(speicher).vorhanden(fixIdAdmin), isFalse);
     });
   });
+
+  group('Mehrgeräte-Weitergabe', () {
+    testWidgets('Gerät ohne Schlüssel (zweites Elternteil oder weiteres eigenes Gerät): "Auf diesem Gerät auch abholen" führt zur Eingabe, der Code geht an den Notifier, danach holt das Gerät ab', (tester) async {
+      await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true), role: 'parent');
+      await tippe(tester, find.text('Home Assistant'));
+      expect(find.text('Läuft über ein anderes Gerät'), findsOneWidget);
+      pruefeLayout(tester, 'HA-Seite mit Weitergabe-Knopf');
+      await tippe(tester, find.text('Auf diesem Gerät auch abholen'));
+      expect(find.text('Code (14 Gruppen)'), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+      pruefeLayout(tester, 'Weitergabe übernehmen');
+      // ohne Eingabe: ruhige Meldung, kein Aufruf
+      await tippe(tester, find.widgetWithText(ZweitKnopf, 'Mit Code abholen'));
+      expect(find.textContaining('scanne den QR-Code oder gib den Code ein'), findsOneWidget);
+      expect(ingest.aufrufe.where((a) => a.startsWith('weitergabe')), isEmpty);
+      await tester.enterText(find.byType(TextField), 'ABCD-EFGH');
+      await tippe(tester, find.widgetWithText(ZweitKnopf, 'Mit Code abholen'));
+      expect(ingest.aufrufe, contains('weitergabe:annehmen:ABCD-EFGH'));
+      // zurück auf der Seite: dieses Gerät holt jetzt ab, der Hinweis "anderes Gerät" ist weg
+      expect(find.text('Werte automatisch abholen'), findsOneWidget);
+      expect(find.text('Läuft über ein anderes Gerät'), findsNothing);
+    });
+
+    testWidgets('Hat das Gerät schon ein Postfach, ist die Eingabe gesperrt: klare Meldung, kein Textfeld, kein Einlösen', (tester) async {
+      await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true), role: 'parent');
+      await tippe(tester, find.text('Home Assistant'));
+      await tippe(tester, find.text('Auf diesem Gerät auch abholen'));
+      expect(find.byType(TextField), findsOneWidget);
+      ingest.state = ingest.state.kopie(postfachDa: true);
+      await tester.pump();
+      expect(find.byType(TextField), findsNothing);
+      expect(find.textContaining('Dieses Gerät hat schon ein Postfach für Home Assistant'), findsOneWidget);
+      expect(ingest.aufrufe.where((x) => x.startsWith('weitergabe')), isEmpty);
+      pruefeLayout(tester, 'Weitergabe gesperrt');
+    });
+
+    testWidgets('Fehler bei der Übernahme: feste Meldung, die Seite bleibt, nichts wird behauptet', (tester) async {
+      await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true), role: 'parent');
+      ingest.weitergabeFehler = const WeitergabeFehler(WeitergabeFehlerArt.abgelaufen);
+      await tippe(tester, find.text('Home Assistant'));
+      await tippe(tester, find.text('Auf diesem Gerät auch abholen'));
+      await tester.enterText(find.byType(TextField), 'ABCD');
+      await tippe(tester, find.widgetWithText(ZweitKnopf, 'Mit Code abholen'));
+      expect(find.text(const WeitergabeFehler(WeitergabeFehlerArt.abgelaufen).text), findsOneWidget);
+      expect(find.text('Code (14 Gruppen)'), findsOneWidget);
+      expect(find.text('Werte automatisch abholen'), findsNothing);
+      pruefeLayout(tester, 'Weitergabe Fehler');
+    });
+
+    testWidgets('Abholgerät: "Auf weiterem Gerät abholen" zeigt QR-Code und Code mit Restzeit; "Code kopieren" nur auf Klick', (tester) async {
+      await start(tester, datenAus([_haStrom()]));
+      await zurHaSeite(tester);
+      expect(find.text('Auf diesem Gerät auch abholen'), findsNothing); // das Abholgerät hat den Schlüssel schon
+      await tippe(tester, find.text('Auf weiterem Gerät abholen …'));
+      expect(ingest.aufrufe, contains('weitergabe:anbieten'));
+      expect(find.text('Auf weiterem Gerät abholen'), findsOneWidget);
+      expect(find.textContaining('ABCD-EFGH-IJKL'), findsOneWidget);
+      expect(find.textContaining('noch 1:5'), findsOneWidget);
+      expect(find.text('Code kopieren'), findsOneWidget);
+      pruefeLayout(tester, 'Weitergabe anbieten');
+    });
+
+    testWidgets('Abholgerät ohne Schlüssel im Speicher: Fehler als feste Meldung, "Erneut versuchen"', (tester) async {
+      await start(tester, datenAus([_haStrom()]));
+      ingest.weitergabeFehler = const WeitergabeFehler(WeitergabeFehlerArt.keinPostfach);
+      await zurHaSeite(tester);
+      await tippe(tester, find.text('Auf weiterem Gerät abholen …'));
+      expect(find.text(const WeitergabeFehler(WeitergabeFehlerArt.keinPostfach).text), findsOneWidget);
+      expect(find.text('Erneut versuchen'), findsOneWidget);
+    });
+
+    testWidgets('Ohne Schlüssel auf dem Gerät gibt es nie ein Angebot, nur den Weg zum Übernehmen', (tester) async {
+      await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true, postfachDa: false));
+      await tippe(tester, find.text('Home Assistant'));
+      expect(find.text('Auf weiterem Gerät abholen …'), findsNothing); // ohne Schlüssel gibt es nur den Weg "Auf diesem Gerät auch abholen"
+    });
+
+    testWidgets('Kinder: kein Zugang zur Seite und damit nie zur Weitergabe (Rolle entscheidet)', (tester) async {
+      await start(tester, datenAus([_haStrom()]), role: 'child', bereich: null);
+      expect(find.text('Auf diesem Gerät auch abholen'), findsNothing);
+      expect(find.text('Auf weiterem Gerät abholen …'), findsNothing);
+    });
+  });
 }
 
+
+/// Ersetzt den Weitergabe-Dienst: zeichnet Aufrufe auf; "annehmen" legt einen Schlüssel in den Speicher, wie der echte Dienst (oder wirft [fehler]).
+class _FakeWeitergabe implements IngestWeitergabe {
+  final aufrufe = <String>[];
+  MemorySchluesselSpeicher? speicher;
+  WeitergabeFehler? fehler;
+
+  @override
+  Future<WeitergabeErgebnis> annehmen(String eingabe) async {
+    aufrufe.add('annehmen:$eingabe');
+    final f = fehler;
+    if (f != null) throw f;
+    final p = FakeCryptoProvider(seed: 4).boxPaarAusSeed(Uint8List.fromList(List.filled(32, 1)));
+    await PostfachSpeicher(speicher!).schreiben(fixIdAdmin, PostfachSchluessel(p.oeffentlich, p.geheim, Uint8List.fromList(List.filled(32, 2))));
+    return WeitergabeErgebnis.uebernommen;
+  }
+
+  @override
+  Future<WeitergabeAnzeige> anbieten() async {
+    aufrufe.add('anbieten');
+    throw StateError('unerwartet');
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError('${invocation.memberName}');
+}
 
 /// Ein Notifier, dessen "Verwerfen" erst endet, wenn der Test es erlaubt (für den Ladekreis am gedrückten Knopf).
 class _Haengt extends TestIngest {

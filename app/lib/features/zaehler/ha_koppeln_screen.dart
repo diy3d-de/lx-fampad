@@ -315,7 +315,7 @@ class _HaKoppelnScreenState extends ConsumerState<HaKoppelnScreen> {
             ),
             const SizedBox(height: 14),
           ],
-          const Text('Du bestätigst gleich mit Passkey oder Code. Danach erzeugt dieses Gerät den Schlüssel für die Werte aus Home Assistant und zeigt dir den Kopplungscode einmal an. Der private Schlüssel bleibt auf diesem Gerät; nur dieses Gerät kann die Werte abholen.', style: TextStyle(color: kTextMuted)),
+          const Text('Du bestätigst gleich mit Passkey oder Code. Danach erzeugt dieses Gerät den Schlüssel für die Werte aus Home Assistant und zeigt dir den Kopplungscode einmal an. Der private Schlüssel bleibt auf diesem Gerät; abholen kann nur dieses Gerät, bis du weitere eigene Geräte unter Zähler › Home Assistant dafür freigibst.', style: TextStyle(color: kTextMuted)),
           const SizedBox(height: 14),
           TextField(controller: _name, maxLength: kMaxVerbindungsname, textCapitalization: TextCapitalization.sentences, decoration: const InputDecoration(labelText: 'Name der Verbindung (zum Beispiel Haus Keller)', counterText: '')),
         ],

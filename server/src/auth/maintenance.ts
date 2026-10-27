@@ -15,6 +15,7 @@ import { PRF_PENDING_TTL_MS } from './keys-prf.js';
 import { PW_PENDING_TTL_MS } from './keys-pw.js';
 import { purgeSecurityEvents } from './password-reset.js';
 import { purgeInbox, purgeRevokedTokens } from '../ingest/service.js';
+import { purgePostfachTransfers } from '../ingest/transfer.js';
 import { purgeMetrics } from '../operator/metrics.js';
 import { purgeSessions } from './sessions.js';
 
@@ -130,6 +131,13 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
     ingestTokensGone = await purgeRevokedTokens(ctx);
   } catch (err: unknown) {
     ctx.log.error({ err: serializeErr(err) }, 'Aufräumen der Einwurf-Tokens fehlgeschlagen');
+  }
+
+  // abgelaufene Weitergaben des Postfach-Schlüssels (2 Minuten gültig); ein Fehler hier darf den übrigen Aufräum-Job nie verhindern
+  try {
+    await purgePostfachTransfers(ctx);
+  } catch (err: unknown) {
+    ctx.log.error({ err: serializeErr(err) }, 'Aufräumen der Postfach-Weitergaben fehlgeschlagen');
   }
 
   const sync = await runSyncMaintenance(ctx);

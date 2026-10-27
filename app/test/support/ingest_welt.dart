@@ -4,6 +4,7 @@ import 'dart:async';
 import 'package:lx_fampad/data/ingest/ingest_dienst.dart';
 import 'package:lx_fampad/data/ingest/ingest_logik.dart' show PruefGrund;
 import 'package:lx_fampad/data/ingest/ingest_state.dart';
+import 'package:lx_fampad/data/ingest/ingest_weitergabe.dart';
 
 import 'zaehler_welt.dart' show zStrom;
 
@@ -27,6 +28,27 @@ class TestIngest extends IngestNotifier {
 
   @override
   Future<void> abholen() async => aufrufe.add('abholen');
+
+  /// Antwort von [weitergabeAnbieten] und [weitergabeAnnehmen]: ein Fehler (wird geworfen) oder das Ergebnis.
+  WeitergabeFehler? weitergabeFehler;
+  WeitergabeAnzeige weitergabeAnzeige = WeitergabeAnzeige(qrText: 'LXP1:ABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVWX', codeText: 'ABCD-EFGH-IJKL-MNOP-QRST-UVWX-YZ23-4567-ABCD-EFGH-IJKL-MNOP-QRST-UVWX', gueltigBis: DateTime.now().add(const Duration(minutes: 2)));
+
+  @override
+  Future<WeitergabeAnzeige> weitergabeAnbieten() async {
+    aufrufe.add('weitergabe:anbieten');
+    final f = weitergabeFehler;
+    if (f != null) throw f;
+    return weitergabeAnzeige;
+  }
+
+  @override
+  Future<WeitergabeErgebnis> weitergabeAnnehmen(String eingabe) async {
+    aufrufe.add('weitergabe:annehmen:$eingabe');
+    final f = weitergabeFehler;
+    if (f != null) throw f;
+    state = state.kopie(postfachDa: true, schalter: true);
+    return WeitergabeErgebnis.uebernommen;
+  }
 
   @override
   Future<void> beimOeffnen() async => aufrufe.add('oeffnen');

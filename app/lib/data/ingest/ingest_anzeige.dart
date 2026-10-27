@@ -52,8 +52,9 @@ int? tageOhneWert(ZaehlerReihe r, DateTime heute) {
 /// "seit 4 Tagen" / "seit gestern".
 String seitTagenText(int tage) => tage <= 1 ? 'seit gestern' : 'seit $tage Tagen';
 
-/// Zähler mit Quelle, für die ein Tag mehrere automatische Stände hat (zwei Abholgeräte oder zwei Verbindungen liefern denselben Kanal), und die betroffenen Kanäle. Reine Zählung über die
-/// lesbaren Einträge, keine Werte; archivierte Zähler zählen nicht.
+/// Zähler mit Quelle, für die ein Tag mehrere automatische Stände MIT VERSCHIEDENEN WERTEN hat (zwei Verbindungen liefern denselben Kanal), und die betroffenen Kanäle. Derselbe Wert zweimal
+/// am selben Tag ist unkritisch und kein Grund zur Warnung: das passiert, wenn zwei Abholgeräte desselben Elternteils (Mehrgeräte-Weitergabe) dasselbe Päckchen gleichzeitig holen; die Stände
+/// laufen zu einem zusammen. Reine Zählung über die lesbaren Einträge; archivierte Zähler zählen nicht.
 ({List<String> zaehler, Set<String> kanaele}) doppeltBelieferte(Iterable<ZaehlerEintrag> eintraege) {
   final inhalte = <String, ZaehlerInhalt>{};
   final tage = <String, List<DateTime>>{};
@@ -63,9 +64,10 @@ String seitTagenText(int tage) => tage <= 1 ? 'seit gestern' : 'seit $tage Tagen
     if (i == null || i.quelle == null || i.archiviert) continue;
     inhalte[e.id] = i;
     namen[e.id] = i.name;
+    final gesehen = <(int, int)>{};
     tage[e.id] = [
       for (final s in e.staende)
-        if (s.inhalt != null && s.inhalt!.automatisch && !s.inhalt!.istMonatswert && s.inhalt!.tag != null) s.inhalt!.tag!,
+        if (s.inhalt != null && s.inhalt!.automatisch && !s.inhalt!.istMonatswert && s.inhalt!.tag != null && gesehen.add((tagNummer(s.inhalt!.tag!), s.inhalt!.milli))) s.inhalt!.tag!,
     ];
   }
   final ids = zaehlerMitDoppeltenAutoTagen(tage);

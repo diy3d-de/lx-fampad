@@ -22,6 +22,7 @@ import '../zaehler/zaehler_repository.dart';
 import '../zaehler/zaehler_state.dart';
 import 'ingest_dienst.dart';
 import 'ingest_kopplung.dart';
+import 'ingest_weitergabe.dart';
 
 /// Schlüssel in `sync_meta`: Schalter dieses Geräts (`1`/`0`) und die zuletzt bekannte Antwort des Servers zur Verfügbarkeit des Einwurfs.
 const String kIngestAbholenSchluessel = 'ingest_abholen';
@@ -42,6 +43,16 @@ final ingestDienstProvider = Provider<IngestDienst>((ref) {
     krypto: () => ref.read(cryptoProviderProvider.future),
     postfach: PostfachSpeicher(ref.watch(schluesselSpeicherProvider)),
     zaehler: RepoIngestZaehler(ref.watch(zaehlerRepositoryProvider)),
+    ich: () => ref.read(authProvider).user?.id,
+  );
+});
+
+/// Weitergabe des Postfach-Schlüssels an ein weiteres eigenes Gerät (Abschnitt 6l, ingest_weitergabe.dart).
+final ingestWeitergabeProvider = Provider<IngestWeitergabe>((ref) {
+  return IngestWeitergabe(
+    api: ref.watch(apiProvider),
+    krypto: () => ref.read(cryptoProviderProvider.future),
+    postfach: PostfachSpeicher(ref.watch(schluesselSpeicherProvider)),
     ich: () => ref.read(authProvider).user?.id,
   );
 });
@@ -196,6 +207,21 @@ class IngestNotifier extends Notifier<IngestZustand> {
     state = state.kopie(schalter: an);
     _taktSetzen();
     if (an) await abholen();
+  }
+
+  /// Auf dem Abholgerät: zeigt ein Angebot für ein weiteres eigenes Gerät (nur Eltern und Admins, nur mit Postfach-Schlüssel). Wirft [WeitergabeFehler].
+  Future<WeitergabeAnzeige> weitergabeAnbieten() async {
+    if (!ref.read(zaehlerDarfProvider)) throw const WeitergabeFehler(WeitergabeFehlerArt.nichtBereit);
+    return ref.read(ingestWeitergabeProvider).anbieten();
+  }
+
+  /// Auf dem Zielgerät: übernimmt den Postfach-Schlüssel aus QR/Code, merkt die Verbindungen, schaltet das Abholen auf diesem Gerät ein und holt gleich ab (nur Eltern und Admins). Wirft [WeitergabeFehler].
+  Future<WeitergabeErgebnis> weitergabeAnnehmen(String eingabe) async {
+    if (!ref.read(zaehlerDarfProvider)) throw const WeitergabeFehler(WeitergabeFehlerArt.nichtBereit);
+    final r = await ref.read(ingestWeitergabeProvider).annehmen(eingabe);
+    await neuLesen();
+    await schalterSetzen(true);
+    return r;
   }
 
   /// Holt jetzt ab (nur mit Schalter und Schlüssel, nur Eltern/Admins). Ein Lauf zur Zeit; der Zustand zeigt das Ergebnis. Fehler stören nichts.
