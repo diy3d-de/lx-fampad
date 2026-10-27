@@ -1448,6 +1448,33 @@ export const pins = pgTable(
 );
 
 /**
+ * Familien-Status (Abschnitt 6o): je Person genau ein kurzer, unverschlüsselter Status ("Beim Sport") mit optionalem Ablauf `bis`. Feste ID aus der Person
+ * (`statusId`), Sicht für die ganze Familie, schreiben und löschen nur die Person selbst. Abgelaufene Stati zeigt die App nie (sie rechnet gegen die Uhr).
+ */
+export const familienStatus = pgTable(
+  'familien_status',
+  {
+    id: id(),
+    familyId: familyRef(),
+    userId: uuid('user_id').notNull(),
+    text: text('text').notNull(),
+    bis: timestamp('bis', { withTimezone: true }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('familien_status_active_uq')
+      .on(t.familyId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('familien_status_family_rev_idx').on(t.familyId, t.rev),
+    index('familien_status_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+  ],
+);
+
+/**
  * Medikamenten-Plan (Abschnitt 6k): ein Medikament einer Person, Kind der Medikamenten-Konversation (`konversationen.art = 'meds'`). `inhalt` ist eine Ende-zu-Ende
  * verschlüsselte, signierte e1-Hülle (Name, Dosis, Rhythmus, Uhrzeiten, Vorrat, Notizen, Rezeptdatum, Zustand): der Server sieht nur Struktur und Größe.
  * `bearbeiter_id` ist die Person, die den Inhalt zuletzt geschrieben (und signiert) hat.

@@ -486,6 +486,16 @@ Die Oberfläche steht in `app/lib/features/files/`; sie nutzt die Datenschicht u
 - **Startseite:** die Desktop-Kachel „Zuletzt geteilt“ (die drei neuesten Dateien, Tippen öffnet den Bereich; nur mit Dateiablage) und die Schnellaktionen „Datei“ und „Foto“ der mobilen Startseite (öffnen die Dateiauswahl).
 - **Nie:** Wandtablet, Widget „Heute“, Suche, Teilen, Standort, Betreiber-Ansicht, Push, Erinnerungen (Negativtests `test/dateien_nie_zeigen_test.dart`); kein Dateiname in einer Benachrichtigung.
 
+### 6o. Familien-Status
+
+Je Person genau ein kurzer Status („Beim Sport“, „Lernen“, „Bitte nicht stören“), von Hand gesetzt, mit optionalem Ablauf. Keine Verschlüsselung (bewusst kurz, ohne Geheimnisse; nichts davon gehört in den Status), Sicht für die ganze Familie einschließlich Kinder.
+
+- **Sync-Entität `status`** (Server `sync/entities/status.ts`, Tabelle `familien_status`, Migration 0038, App `data/sync/sync_status.dart`, drift Version 18 mit Sync-Reset): feste ID aus der Person (`statusId`), Felder `text` (1 bis 60 Zeichen, ohne Steuer- und unsichtbare Zeichen) und `bis` (optional, höchstens 7 Tage nach der Serveruhr). Schreiben und Löschen nur die eigene Zeile (Regeltabelle nach `role`; Admins ändern keinen fremden Status). Kein Push-Wecker, nie im Log. Schnittstelle: `docs/API.md`, „Familien-Status“.
+- **Anzeige:** die App rechnet gegen die Uhr (`data/status/status_logik.dart`); abgelaufene Stati werden nirgends gezeigt, aber nicht gelöscht. Ende-Auswahl in der Familienzeitzone: in 1 Stunde, in 3 Stunden, heute Abend 22 Uhr (nur, wenn noch mindestens eine Stunde bleibt), morgen früh 7 Uhr, ohne Ende.
+- **Oberfläche:** Startseiten-Kachel „Status“ (Kennung `status`, mobil und Desktop) mit den Stati der Familie und „Mein Status setzen“; Blatt mit Text, Schnellauswahl, Ende und Löschen (`features/status/`).
+- **Schalter „Familien-Status anzeigen“:** lokal je Gerät in `sync_meta` (`familien_status_anzeigen`, Standard an) in Profil › Startseite und Anzeige. Aus: Kachel und alle Status-Zeilen verschwinden, der Status anderer wird nirgends gezeigt.
+- **Nie:** Wandtablet (bewusst kein Block), Widget „Heute“, Suche, Teilen, Push, Erinnerungen, Betreiber-Ansicht.
+
 ## 7. Anmeldung und Konten
 
 Umgesetzt in Phase 1a (Server) und Phase 1b (App: Anmeldung, Einladungen, Konto, Admin; Abschnitt "App-Teil (Phase 1b)" unten). Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.
