@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
+import '../../data/erinnerungen/web_erinnerung_state.dart' show webErinnerungAnProvider;
 import '../../data/push/push_state.dart';
 import '../../data/wetter/wetter_hinweise.dart';
 import '../../data/wetter/wetter_logik.dart' show WetterHinweisArt;
@@ -31,8 +32,8 @@ class BenachrichtigungenScreen extends ConsumerWidget {
         const SizedBox(height: 8),
         EinstellungsZeile(
           icon: Icons.notifications_none,
-          titel: 'Erinnerungen',
-          untertitel: 'Terminerinnerungen auf diesem Gerät',
+          titel: web ? 'Erinnerungen im Browser' : 'Erinnerungen',
+          untertitel: web ? (ref.watch(webErinnerungAnProvider) ? 'An, nur solange die Web-App geöffnet ist' : 'Aus') : 'Terminerinnerungen auf diesem Gerät',
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ErinnerungenScreen())),
         ),
         // Wetter-Hinweise: nur wenn der Server das Wetter anbietet

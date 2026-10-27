@@ -15,6 +15,7 @@
 //  - Erinnerungen entstehen nur lokal: kein Server, kein Push, nichts verlässt das Gerät.
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../auth/auth_state.dart';
@@ -37,8 +38,10 @@ import 'erinnerung_einstellungen.dart';
 import 'erinnerung_planung.dart';
 import 'erinnerung_port.dart';
 import 'erinnerung_port_stub.dart' if (dart.library.io) 'erinnerung_port_io.dart';
+import 'web_erinnerung_state.dart' show webErinnerungPortProvider;
 
-final erinnerungPortProvider = Provider<ErinnerungPort>((ref) => erinnerungPortErzeugen());
+/// Port des Geräts: im Web der Browser-Port (nur solange die Web-App offen ist, siehe web_erinnerung_port.dart), sonst das Android-Plugin bzw. ohne Wirkung.
+final erinnerungPortProvider = Provider<ErinnerungPort>((ref) => kIsWeb ? ref.watch(webErinnerungPortProvider) : erinnerungPortErzeugen());
 
 /// Uhr (für Tests überschreibbar).
 final erinnerungUhrProvider = Provider<DateTime Function()>((ref) => DateTime.now);
@@ -321,6 +324,9 @@ class ErinnerungDienst {
       _gesperrt = false;
     }
   }
+
+  /// Öffnet das Ziel einer Nutzlast wie ein Tipp auf die Benachrichtigung (Web: Tipp auf einen Hinweis in der App).
+  void oeffnen(String? payload) => _getippt(payload);
 
   void _getippt(String? payload) {
     if (_beendet) return;

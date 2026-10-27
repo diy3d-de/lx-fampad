@@ -15,6 +15,7 @@ import 'auth/auth_state.dart';
 import 'database_provider.dart';
 import 'dateien/transfer_dienst.dart' show dateiCacheDienstProvider, transferDienstProvider;
 import 'erinnerungen/erinnerung_dienst.dart';
+import 'erinnerungen/web_erinnerung_state.dart' show webErinnerungAnProvider, webHinweiseProvider;
 import 'heute_widget/heute_widget_dienst.dart';
 import 'standort/standort_hinweis.dart';
 import 'startseite/startseite_state.dart';
@@ -468,6 +469,9 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   ref.invalidate(startseiteMobilProvider);
   ref.invalidate(startseiteDesktopProvider);
   ref.invalidate(countdownTermineProvider);
+  // Erinnerungen im Browser: Schalter (lag in sync_meta) und Hinweise im Arbeitsspeicher gehören der Vorperson nicht
+  ref.invalidate(webErinnerungAnProvider);
+  ref.invalidate(webHinweiseProvider);
 };
 
 /// Fehlermeldung für die Anzeige (nie Interna).
