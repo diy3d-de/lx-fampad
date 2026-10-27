@@ -10,6 +10,7 @@ import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/termin_erinnerung.dart';
 import '../../data/calendar/termin_farben.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/wiederholung.dart';
@@ -63,6 +64,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   late DateTime _startTagUrsprung;
   late bool _ganztaegigUrsprung;
   int? _erinnerung;
+  int? _erinnerungBisher; // gespeicherter Rohwert eines bestehenden Termins (null = nie gesetzt, -1 = bewusst keine)
   bool _erinnerungGewaehlt = false; // die Person hat die Erinnerung selbst gewählt (dann ändert der Geburtstags-Schalter sie nicht mehr)
   int? _farbe; // Termin-Farbe (Index in kTerminFarben), null = keine
   var _teilnehmer = <String>{};
@@ -130,7 +132,8 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     _ort.text = widget.umfang == SerieUmfang.alle ? t.ort : v.ort;
     _beschreibung.text = t.beschreibung;
     _wdh = Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid), startTag: _startTag);
-    _erinnerung = t.erinnerungMin;
+    _erinnerung = erinnerungMinuten(t.erinnerungMin);
+    _erinnerungBisher = t.erinnerungMin;
     _farbe = terminFarbeNummer(t.farbe);
     _teilnehmer = daten.teilnehmerIds(t.id);
     _sicht = ListenSicht.von(t.audience);
@@ -226,7 +229,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       startWand: start,
       endeWand: start.add(const Duration(days: 1)),
       rrule: geburtstagRegel(d.month, d.day),
-      erinnerungMin: _erinnerung,
+      erinnerungMin: erinnerungSpeichern(_erinnerung, neu: _neu, bisher: _erinnerungBisher),
       sicht: _sicht,
       teilnehmer: _teilnehmer,
       icalUid: geburtstagUid(jahr, suffix),
@@ -284,7 +287,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       startWand: start,
       endeWand: ende,
       rrule: rrule,
-      erinnerungMin: _erinnerung,
+      erinnerungMin: erinnerungSpeichern(_erinnerung, neu: _neu, bisher: _erinnerungBisher),
       sicht: _sicht,
       teilnehmer: _teilnehmer,
       farbe: _farbe,

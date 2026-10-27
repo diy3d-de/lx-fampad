@@ -179,6 +179,17 @@ void main() {
     pruefeLayout(tester, 'nach dem Löschen');
   });
 
+  testWidgets('Erinnerung "Keine" wird als -1 (bewusst keine) gespeichert', (tester) async {
+    final env = await start(tester, groesse: const Size(360, 2400));
+    await tippe(tester, find.byTooltip('Neuer Termin'));
+    await eingeben(tester, 'Titel', 'Ohne Erinnerung');
+    await tippe(tester, find.widgetWithText(AuswahlKnopf, 'Keine'));
+    await tippeText(tester, 'Termin anlegen');
+    await warte(tester, 10);
+    final t = (await env.db.select(env.db.termine).get()).single;
+    expect(t.erinnerungMin, -1);
+  });
+
   for (final skala in [1.0, 1.5]) {
     testWidgets('Termin anlegen (Textskala $skala): Editor, Wiederholung, Teilnehmer; erscheint in der Agenda; Layout', (tester) async {
       final env = await start(tester, skala: skala);

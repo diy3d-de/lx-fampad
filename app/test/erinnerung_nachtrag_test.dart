@@ -63,6 +63,7 @@ void main() {
         termin('vergangen', start: DateTime.utc(2026, 10, 1, 9)),
         termin('gesetzt', erinnerung: 15),
         termin('keine-bewusst-0', erinnerung: 0),
+        termin('bewusst-keine', erinnerung: -1),
         termin('ganz-heute', ganztaegig: true, startDate: '2026-10-27'),
         termin('ganz-gestern', ganztaegig: true, startDate: '2026-10-26'),
         termin('geburtstag', ganztaegig: true, startDate: '2027-01-05', rrule: 'FREQ=YEARLY', uid: 'lxfampad-geb-2000-00000000-0000-4000-8000-000000000001'),
@@ -135,9 +136,10 @@ void main() {
     test('trägt 60 nach, lässt Gesetztes unberührt, ist idempotent und setzt die Marke', () async {
       await anlegen('a');
       await anlegen('b', erinnerung: 15);
+      await anlegen('c', erinnerung: -1); // bewusst keine: auch von einem zweiten Gerät nie überschrieben
       expect(await lauf(), 1);
       final t = {for (final x in (await lesen()).termine) x.id: x.erinnerungMin};
-      expect(t, {'a': 60, 'b': 15});
+      expect(t, {'a': 60, 'b': 15, 'c': -1});
       expect(geaendert, 1);
       expect(await db.metaLesen(nachtragMarke(ich)), '1');
       // nur die geänderte Zeile im Ausgang (a), Feld erinnerungMin
@@ -145,9 +147,13 @@ void main() {
       expect(ausgang.where((o) => o.entityId == 'a'), isNotEmpty);
       expect(ausgang.where((o) => o.entityId == 'b').where((o) => o.fieldsJson.contains('erinnerungMin')).where((o) => o.fieldsJson.contains('60')), isEmpty);
       // ein bewusstes "Keine" danach wird nie wieder überschrieben
-      await store.aendern('termin', 'a', {'erinnerungMin': null});
+      await store.aendern('termin', 'a', {'erinnerungMin': -1});
       expect(await lauf(), 0);
-      expect((await lesen()).termine.firstWhere((x) => x.id == 'a').erinnerungMin, isNull);
+      expect((await lesen()).termine.firstWhere((x) => x.id == 'a').erinnerungMin, -1);
+      // ohne Marke (zweites Gerät): -1 bleibt trotzdem unberührt
+      await db.customStatement("delete from sync_meta where key = '${nachtragMarke(ich)}'");
+      expect(await lauf(), 0);
+      expect((await lesen()).termine.firstWhere((x) => x.id == 'a').erinnerungMin, -1);
     });
 
     test('Standard "Keine": nichts nachtragen, Marke trotzdem gesetzt', () async {

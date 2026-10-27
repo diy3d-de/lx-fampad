@@ -1,9 +1,9 @@
 // Einmalige Nachtragung der Standard-Erinnerung (Profil > Kalender) bei vorhandenen Terminen ohne Erinnerung.
 //
-// Warum so: `erinnerungMin` ist ein geteiltes Termin-Feld (Sync), "keine Erinnerung" ist `null` (der Server kennt 0 bis 40320 oder null; 0 heißt
-// "zur Startzeit"). Ein späteres bewusstes "Keine" lässt sich darum von "nie gesetzt" nicht unterscheiden. Deshalb läuft die Nachtragung
-// GENAU EINMAL je Person und Gerät (Marke in `sync_meta`, wird erst nach vollständigem Lauf gesetzt) und nie wieder: was danach auf "Keine"
-// gestellt wird, bleibt so. Sie fasst nur Termine an, die noch bevorstehen (bzw. laufende Serien), die die Person ändern darf und die sie
+// Warum so: `erinnerungMin` ist ein geteiltes Termin-Feld (Sync). `null` = nie gesetzt (Altbestand), -1 = bewusst keine Erinnerung
+// (`termin_erinnerung.dart`, Server seit Migration 0038). Die Nachtragung fasst darum NUR `null` an und setzt die Standard-Erinnerung; eine
+// bewusste Wahl "Keine" (-1) wird nie überschrieben, auch nicht von einem zweiten Gerät. Die Marke in `sync_meta` (je Person und Gerät, erst
+// nach vollständigem Lauf gesetzt) spart nur Aufwand: der Lauf passiert einmal. Sie fasst nur Termine an,die noch bevorstehen (bzw. laufende Serien), die die Person ändern darf und die sie
 // selbst betreffen (Ersteller oder Teilnehmer; andere Personen holen ihre eigenen Termine auf ihren Geräten nach), nie Geburtstage.
 // Geschrieben wird in Stapeln zu 50 Änderungen (= Obergrenze einer Sync-Anfrage) über `SyncStore.aendernMehrere`, nie ohne Marke.
 // Ist die Standard-Erinnerung dieses Geräts "Keine", wird nichts nachgetragen (die Marke wird trotzdem gesetzt).

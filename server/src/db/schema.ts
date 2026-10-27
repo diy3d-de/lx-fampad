@@ -951,7 +951,7 @@ export const termine = pgTable(
     check('termine_ort_len_ck', sql`char_length(${t.ort}) <= 200`),
     check('termine_beschreibung_len_ck', sql`char_length(${t.beschreibung}) <= 4000`),
     check('termine_rrule_len_ck', sql`${t.rrule} is null or char_length(${t.rrule}) <= 300`),
-    check('termine_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
+    check('termine_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between -1 and 40320`),
     check('termine_farbe_ck', sql`${t.farbe} is null or ${t.farbe} between 0 and 10`),
     check(
       'termine_zeit_ck',

@@ -97,6 +97,22 @@ void main() {
       expect(ops.where((o) => o.entity == 'termin'), hasLength(e.termine.length));
     });
 
+    test('Import ohne VALARM legt Termine mit -1 (bewusst keine) an; ein erneuter Import überschreibt eine spätere Wahl nie', () async {
+      final g = _Geraet();
+      final e = icsLesen(_fixture('familywall.ics'));
+      await g.importer.importieren(await g.plan(e), sicht: TerminSicht.family, rechte: _admin);
+      final alle = await g.termine();
+      for (final t in alle) {
+        final datei = e.termine.firstWhere((x) => x.uid == t.icalUid);
+        expect(t.erinnerungMin, datei.erinnerungMin ?? -1, reason: t.titel);
+      }
+      final ohne = alle.firstWhere((t) => t.erinnerungMin == -1);
+      await g.store.aendern('termin', ohne.id, {'erinnerungMin': 60});
+      final plan2 = await g.plan(e);
+      expect(plan2.geaendert, 0, reason: 'fehlendes VALARM ist keine Änderung');
+      expect((await g.termine()).firstWhere((t) => t.id == ohne.id).erinnerungMin, 60);
+    });
+
     test('Import: jährliche ganztägige "Geburtstag"-Termine (FamilyWall) gelten als Geburtstage, ohne Alter; Zeittermine nicht', () async {
       final g = _Geraet();
       final e = icsLesen(_fixture('familywall.ics'));

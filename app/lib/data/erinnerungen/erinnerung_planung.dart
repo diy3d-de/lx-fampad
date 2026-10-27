@@ -7,7 +7,7 @@
 // (oder ohne Zuständige von ihr stammen); Bezugspunkt eines Fälligkeitstags ohne Uhrzeit ist wie bei ganztägigen Terminen 09:00 Uhr.
 //
 // Regeln (docs/PROJEKTBESCHREIBUNG.md, Abschnitt 6b, "Erinnerungen"):
-//  - Quelle ist `Termin.erinnerungMin` (Minuten VOR dem Beginn, null = keine). Serien erinnern an jedem Vorkommen; abgesagte Vorkommen
+//  - Quelle ist `Termin.erinnerungMin` (Minuten VOR dem Beginn, null und -1 = keine; nur Werte >= 0 werden geplant). Serien erinnern an jedem Vorkommen; abgesagte Vorkommen
 //    nicht; verschobene Vorkommen (Ausnahme) zur neuen Zeit; einen geänderten Titel/Ort der Ausnahme zeigt die Erinnerung.
 //  - Zeittermine: Beginn (echter Zeitpunkt) minus Vorlaufzeit. Ganze Tage der Vorlaufzeit (1440, 10080 ...) werden in der Wanduhr der
 //    Familienzone gerechnet, wie bei ganztägigen Terminen: "1 Tag vorher" bei einem Termin um 10:00 ist am Vortag um 10:00, auch über die
