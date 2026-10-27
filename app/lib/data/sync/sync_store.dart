@@ -47,7 +47,7 @@ abstract interface class OpVorbereiter {
 
 /// Verschlüsselte Chat-Inhalte je Entität: das Feld, das vor dem Senden aus dem lokalen Klartext (`l1:`) zur Hülle `e1:` wird (Nachricht: Text; Reaktion und Stimme:
 /// Inhalt). Ein anderes Feld oder eine andere Entität (z. B. ein Listeneintrag, der mit "l1:" beginnt) ist ein ganz normaler Text.
-const kVerschluesselteFelder = {'nachricht': 'text', 'reaktion': 'inhalt', 'stimme': 'inhalt', 'medikament': 'inhalt', 'einnahme': 'inhalt', 'zaehler': 'inhalt', 'zaehlerstand': 'inhalt', 'tresor_eintrag': 'inhalt', 'tresor_anhang': 'inhalt'};
+const kVerschluesselteFelder = {'nachricht': 'text', 'reaktion': 'inhalt', 'stimme': 'inhalt', 'medikament': 'inhalt', 'einnahme': 'inhalt', 'vorsorge_profil': 'inhalt', 'vorsorge_eintrag': 'inhalt', 'zaehler': 'inhalt', 'zaehlerstand': 'inhalt', 'tresor_eintrag': 'inhalt', 'tresor_anhang': 'inhalt'};
 
 /// Ein lokaler Klartext (`l1:`) eines verschlüsselten Chat-Inhalts darf den Ausgang nie verlassen (der Server lehnt ihn ab; hier wird er gar nicht erst gesendet).
 bool _hatLokalenKlartext(OutboxData z) {

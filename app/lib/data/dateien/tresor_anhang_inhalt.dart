@@ -10,12 +10,12 @@ import '../crypto/crypto_fehler.dart';
 import 'datei_logik.dart';
 import 'datei_modelle.dart' show DateiFehler;
 import 'e2ee_blob.dart';
+export '../crypto/huellen_arten.dart' show kArtAnhang;
 
 /// Typpräfix des Klartexts (nach dem Hüllenpräfix `l1:` bzw. nach dem Öffnen der Hülle).
 const String kPraefixAnhang = 'f1:';
 
 /// Art im AAD der Hülle (`HuellenKontext.art`): Tresor-Anhang `f`. Eine Hülle lässt sich nie als andere Art lesen.
-const String kArtAnhang = 'f';
 
 /// Version des Klartext-Formats (Feld `v`).
 const int kAnhangFormat = 1;

@@ -414,7 +414,7 @@ void main() {
     }
 
     testWidgets('Desktop 1440 px: der Banner steht über dem Inhalt, Seitenleiste und Fußzeile bleiben', (tester) async {
-      await start(tester, betreiber: false, oeffnen: false, groesse: const Size(1440, 900), stand: () => _stand(hinweis: _hinweis('Hallo Familie')));
+      await start(tester, betreiber: false, oeffnen: false, groesse: const Size(1440, 1100), stand: () => _stand(hinweis: _hinweis('Hallo Familie')));
       expect(find.text('Hallo Familie'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
       expect(find.text('Version dev'), findsOneWidget);
@@ -566,7 +566,7 @@ void main() {
     }
 
     testWidgets('Desktop 1440 px: Einstellungen in der Shell', (tester) async {
-      await start(tester, groesse: const Size(1440, 900));
+      await start(tester, groesse: const Size(1440, 1100));
       expect(labelFinder('Wartungsmodus'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
       pruefeLayout(tester, 'Betrieb Einstellungen Desktop');

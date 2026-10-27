@@ -22,6 +22,7 @@ import '../../data/push/sicherheits_pruefer.dart';
 import '../../data/standort/standort_dienst.dart';
 import '../../data/standort/standort_hinweis.dart';
 import '../../data/medikamente/medikament_hinweis.dart';
+import '../../data/vorsorge/vorsorge_hinweis.dart';
 import '../../data/muell/muell_hinweis.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/neuigkeiten/neuigkeiten.dart';
@@ -42,6 +43,7 @@ import '../home/desktop_home.dart';
 import '../home/home_screen.dart';
 import '../lists/lists_screen.dart';
 import '../medikamente/medikamente_screen.dart';
+import '../vorsorge/vorsorge_screen.dart';
 import '../zaehler/zaehler_screen.dart';
 import '../tresor/tresor_screen.dart';
 import '../../data/zaehler/zaehler_hinweis.dart';
@@ -68,7 +70,7 @@ class HomeShell extends ConsumerStatefulWidget {
 class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserver {
   // Die Bereiche tragen GlobalKeys: Beim Wechsel zwischen Mobil und Desktop (Fenstergröße) bleibt ihr Zustand (Eingaben, Scrollposition) erhalten.
   // Start unterscheidet sich je Layout (HomeScreen / DesktopHome) und hat daher keinen Schlüssel.
-  final _keys = List.generate(11, (_) => GlobalKey());
+  final _keys = List.generate(12, (_) => GlobalKey());
   late final _screens = <Widget>[
     const HomeScreen(),
     CalendarScreen(key: _keys[0]),
@@ -86,6 +88,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
   bool _medikamenteBesucht = false;
   bool _zaehlerBesucht = false;
   bool _tresorBesucht = false;
+  bool _vorsorgeBesucht = false;
   bool _dateienBesucht = false;
   List<Widget> get _desktopScreens => [
     const DesktopHome(),
@@ -101,6 +104,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     if (_zaehlerBesucht) ZaehlerScreen(key: _keys[9], eingebettet: true) else const SizedBox.shrink(),
     // Tresor: ebenso erst nach dem Wählen gebaut (nur Eltern und Admins); beim Verlassen der Rolle bleibt nur die neutrale Seite
     if (_tresorBesucht) TresorScreen(key: _keys[10], eingebettet: true) else const SizedBox.shrink(),
+    if (_vorsorgeBesucht) VorsorgeScreen(key: _keys[11], eingebettet: true) else const SizedBox.shrink(),
   ];
 
   /// Zuletzt gebautes Layout (aus der Breite der Shell, dieselbe Quelle wie die Weiche unten): bestimmt, wohin "Standort öffnen" führt.
@@ -247,6 +251,8 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     ref.listen(wetterOeffnenProvider, (_, _) => _wetterOeffnen());
     // Tipp auf eine Medikamenten-Erinnerung: die Medikamenten-Ansicht öffnen (die Nutzlast trägt nie einen Inhalt)
     ref.listen(medikamentOeffnenProvider, (_, _) => _medikamenteOeffnen());
+    // Tipp auf eine Vorsorge-Erinnerung: den Bereich Vorsorge öffnen (die Nutzlast trägt nie einen Inhalt)
+    ref.listen(vorsorgeOeffnenProvider, (_, _) => _vorsorgeOeffnen());
     // Tipp auf eine Zähler-Erinnerung: die Zähler-Übersicht öffnen (nur Eltern und Admins; die Nutzlast trägt nie einen Inhalt)
     ref.listen(zaehlerOeffnenProvider, (_, _) => _zaehlerOeffnen());
     // Wer die Zähler nicht (mehr) sehen darf (Rollenwechsel), landet nie im Zähler-Bereich
@@ -276,6 +282,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
         if (tab == kWetterTab) _wetterBesucht = true;
         if (tab == kMuellTab) _muellBesucht = true;
         if (tab == kMedikamenteTab) _medikamenteBesucht = true;
+        if (tab == kVorsorgeTab) _vorsorgeBesucht = true;
         if (tab == kZaehlerTab && ref.read(zaehlerDarfProvider)) _zaehlerBesucht = true;
         if (tab == kTresorTab && ref.read(tresorDarfProvider)) _tresorBesucht = true;
         if (tab == kDateienTab && (ref.read(dateienVerfuegbarProvider).value ?? false)) _dateienBesucht = true;
@@ -382,6 +389,16 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
       ref.read(shellTabProvider.notifier).waehlen(kMedikamenteTab);
     } else {
       unawaited(Navigator.of(context).push<void>(medikamenteRoute()));
+    }
+  }
+
+  /// Öffnet den Bereich Vorsorge: im Desktop-Layout der Bereich der Shell, sonst eine eigene Seite.
+  void _vorsorgeOeffnen() {
+    if (!mounted) return;
+    if (_desktopLayout) {
+      ref.read(shellTabProvider.notifier).waehlen(kVorsorgeTab);
+    } else {
+      unawaited(Navigator.of(context).push<void>(vorsorgeRoute()));
     }
   }
 

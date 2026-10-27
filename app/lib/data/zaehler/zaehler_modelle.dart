@@ -14,6 +14,7 @@
 import 'dart:convert';
 
 import '../medikamente/medikament_modelle.dart' show tagLesen, tagText;
+export '../crypto/huellen_arten.dart' show kArtZaehler, kArtStand;
 
 /// Version des Klartext-Formats (Feld `v`).
 const int kZaehlerFormat = 1;
@@ -23,8 +24,6 @@ const String kPraefixZaehler = 'z1:';
 const String kPraefixStand = 'a1:';
 
 /// Art im AAD der Hülle (`HuellenKontext.art`): Zähler `z`, Zählerstand `a`. Eine Hülle lässt sich nie als andere Art lesen.
-const String kArtZaehler = 'z';
-const String kArtStand = 'a';
 
 /// Obergrenzen (Zeichen bzw. Anzahl); das verschlüsselte Ergebnis bleibt damit unter den Grenzen des Servers (16384 bzw. 2048 Zeichen der Hülle).
 const int kMaxNameZeichen = 60;

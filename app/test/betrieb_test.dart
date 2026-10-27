@@ -167,13 +167,13 @@ void main() {
     });
 
     testWidgets('Desktop: Seitenleiste zeigt "Betrieb" nur dem Betreiber', (tester) async {
-      await start(tester, betreiber: false, groesse: const Size(1440, 900));
+      await start(tester, betreiber: false, groesse: const Size(1440, 1100));
       expect(find.text('lx-familyhub'), findsOneWidget);
       expect(find.text('Betrieb'), findsNothing);
     });
 
     testWidgets('Desktop: Betreiber öffnet "Betrieb" in der Seitenleiste, Seitenleiste und Fußzeile bleiben', (tester) async {
-      final env = await start(tester, groesse: const Size(1440, 900));
+      final env = await start(tester, groesse: const Size(1440, 1100));
       await tippe(tester, find.text('Betrieb').last);
       expect(find.byType(BetriebScreen), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);
@@ -349,7 +349,7 @@ void main() {
     });
 
     testWidgets('Desktop: Konto und Betrieb stapeln nicht', (tester) async {
-      await start(tester, groesse: const Size(1440, 900));
+      await start(tester, groesse: const Size(1440, 1100));
       await tippe(tester, find.byIcon(Icons.settings_outlined));
       expect(find.byType(ProfileScreen), findsOneWidget);
       await tippe(tester, find.text('Betrieb').last);

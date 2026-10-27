@@ -155,7 +155,7 @@ void main() {
     testWidgets('Standard: Gruppen Familie, Zuhause, Ablage (kein Müll, kein Wetter ohne Server); Zeile Profil; keine Dateien', (tester) async {
       await start(tester);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'zaehler', 'medikamente', 'tresor', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'zaehler', 'medikamente', 'vorsorge', 'tresor', 'suche']);
       for (final t in ['Listen', 'Fristen', 'Standort', 'Suche', 'Profil', 'Konto, Sicherheit, Einstellungen']) {
         expect(find.descendant(of: blatt(), matching: find.text(t)), findsOneWidget, reason: t);
       }
@@ -167,20 +167,20 @@ void main() {
     testWidgets('Müll und Wetter erscheinen nur, wenn der Server sie anbietet (Reihenfolge innerhalb der Gruppen)', (tester) async {
       await start(tester, muell: true, wetter: true);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'muell', 'wetter', 'zaehler', 'medikamente', 'tresor', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'muell', 'wetter', 'zaehler', 'medikamente', 'vorsorge', 'tresor', 'suche']);
     });
 
     testWidgets('nur Müll: ohne Wetter', (tester) async {
       await start(tester, muell: true);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'muell', 'zaehler', 'medikamente', 'tresor', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'muell', 'zaehler', 'medikamente', 'vorsorge', 'tresor', 'suche']);
     });
 
     testWidgets('eigene Leiste: die nicht gewählten Bereiche stehen im Blatt', (tester) async {
       await start(tester, gespeichert: {'leiste_bereiche': 'start,kalender,chat,listen'});
       expect(tester.widgetList<NavigationDestination>(find.byType(NavigationDestination)).map((d) => d.label), ['Start', 'Kalender', 'Chat', 'Listen', 'Mehr']);
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['aufgaben', 'fristen', 'standort', 'zaehler', 'medikamente', 'tresor', 'suche']);
+      expect(kachelIds(tester), ['aufgaben', 'fristen', 'standort', 'zaehler', 'medikamente', 'vorsorge', 'tresor', 'suche']);
     });
 
     for (final skala in [1.0, 2.0]) {
@@ -188,7 +188,7 @@ void main() {
         await start(tester, skala: skala, muell: true, wetter: true);
         await mehrOeffnen(tester);
         expect(tester.takeException(), isNull);
-        for (final id in ['listen', 'fristen', 'standort', 'muell', 'wetter', 'zaehler', 'medikamente', 'tresor', 'suche']) {
+        for (final id in ['listen', 'fristen', 'standort', 'muell', 'wetter', 'zaehler', 'medikamente', 'vorsorge', 'tresor', 'suche']) {
           final s = tester.getSize(find.byKey(ValueKey('mehr:$id')));
           expect(s.width, greaterThanOrEqualTo(44), reason: id);
           expect(s.height, greaterThanOrEqualTo(44), reason: id);
@@ -232,7 +232,7 @@ void main() {
     testWidgets('Kind: kein Zähler, kein Tresor; die Gruppe Ablage bleibt mit der Suche', (tester) async {
       await start(tester, rolle: 'child');
       await mehrOeffnen(tester);
-      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'medikamente', 'suche']);
+      expect(kachelIds(tester), ['listen', 'fristen', 'standort', 'medikamente', 'vorsorge', 'suche']);
       expect(ueberschriften(), ['Familie', 'Zuhause', 'Ablage']);
     });
 

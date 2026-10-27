@@ -41,6 +41,9 @@ export const wrapIdV2 = (konversationId: string, epoche: number, empfaengerId: s
 /** Feste ID der Medikamenten-Konversation einer Person (Abschnitt 6k): je Person genau eine, daraus abgeleitet (niemand kann sie für eine andere Person vorab belegen). */
 export const medsChatId = (subjektId: string): string => uuidAusSchluessel(`meds:${subjektId.toLowerCase()}`);
 
+/** Feste ID des Vorsorge-Profils einer Medikamenten-Konversation (Abschnitt 6p): je Person genau eines, daraus abgeleitet (niemand kann es für eine andere Person vorab belegen). */
+export const vorsorgeProfilId = (konversationId: string): string => uuidAusSchluessel(`vorsorge-profil:${konversationId.toLowerCase()}`);
+
 /** Zufalls-UUID Version 4 (Gruppen, Nachrichten). */
 export const istUuidV4 = (id: string): boolean => /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 

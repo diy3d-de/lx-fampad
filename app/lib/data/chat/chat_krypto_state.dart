@@ -17,6 +17,7 @@ import '../crypto/bytes.dart';
 import '../crypto/crypto_fehler.dart';
 import '../crypto/crypto_provider.dart';
 import '../crypto/e2ee_state.dart';
+import '../crypto/huellen_arten.dart';
 import '../crypto/schluessel.dart';
 import '../crypto/vertrauen.dart';
 import '../database_provider.dart';
@@ -237,6 +238,14 @@ class ChatOpVorbereiter implements OpVorbereiter {
         // Medikamenten-Plan: kein Bezug (Art `m`, gebunden an Konversation, eigene ID und Bearbeiter)
         final zeile = await (db.select(db.medikamente)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
         konv ??= zeile?.konversationId;
+      case 'vorsorge_profil':
+        // Vorsorge (Abschnitt 6p): kein Bezug (Art `p`, gebunden an Konversation, eigene ID und Bearbeiter)
+        final zeile = await (db.select(db.vorsorgeProfile)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
+      case 'vorsorge_eintrag':
+        // Vorsorge-Eintrag (Art `v`): kein Bezug
+        final zeile = await (db.select(db.vorsorgeEintraege)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
+        konv ??= zeile?.konversationId;
       case 'zaehler':
         // Zähler (Abschnitt 6l): kein Bezug (Art `z`, gebunden an Konversation, eigene ID und Bearbeiter)
         final zeile = await (db.select(db.zaehler)..where((n) => n.id.equals(op.entityId))).getSingleOrNull();
@@ -262,8 +271,8 @@ class ChatOpVorbereiter implements OpVorbereiter {
     }
     if (konv == null) return null;
     final konversationId = konv;
-    final art = switch (op.entity) { 'reaktion' => 'r', 'stimme' => 's', 'medikament' => 'm', 'einnahme' => 'n', 'zaehler' => 'z', 'zaehlerstand' => 'a', 'tresor_eintrag' => 't', 'tresor_anhang' => 'f', _ => null };
-    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'zaehler' && op.entity != 'tresor_eintrag' && op.entity != 'tresor_anhang' && antwortAuf == null) return null;
+    final art = switch (op.entity) { 'reaktion' => kArtReaktion, 'stimme' => kArtStimme, 'medikament' => kArtMedikament, 'einnahme' => kArtEinnahme, 'vorsorge_profil' => kArtVorsorgeProfil, 'vorsorge_eintrag' => kArtVorsorgeEintrag, 'zaehler' => kArtZaehler, 'zaehlerstand' => kArtStand, 'tresor_eintrag' => kArtTresor, 'tresor_anhang' => kArtAnhang, _ => null };
+    if (op.entity != 'nachricht' && op.entity != 'medikament' && op.entity != 'vorsorge_profil' && op.entity != 'vorsorge_eintrag' && op.entity != 'zaehler' && op.entity != 'tresor_eintrag' && op.entity != 'tresor_anhang' && antwortAuf == null) return null;
     // ein Tresor-Eintrag darf größer sein als eine Nachricht (16000 statt 8000 Byte Klartext), die Hülle eines Anhangs ist kleiner (der Server nimmt höchstens 4096 Zeichen an)
     final maxBytes = op.entity == 'tresor_eintrag' ? kMaxTresorKlartextBytes : (op.entity == 'tresor_anhang' ? kMaxAnhangKlartextBytes : kMaxNachrichtBytes);
     final k = await krypto();

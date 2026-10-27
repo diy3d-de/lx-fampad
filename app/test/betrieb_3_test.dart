@@ -542,7 +542,7 @@ void main() {
     });
 
     testWidgets('Desktop 1440 px: Nutzung in der Shell', (tester) async {
-      await start(tester, groesse: const Size(1440, 900));
+      await start(tester, groesse: const Size(1440, 1100));
       await seite(tester, 'Nutzung');
       expect(labelFinder('Nutzung'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);

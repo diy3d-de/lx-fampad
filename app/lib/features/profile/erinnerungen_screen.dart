@@ -311,6 +311,20 @@ class ErinnerungArtSchalter extends ConsumerWidget {
                   onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).medikamenteAnSetzen(v)),
                 ),
               ),
+              const SizedBox(height: 8),
+              LxCard(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  title: const Text('Vorsorge-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Erinnert an fällige Vorsorge und Impfungen von dir und deinen Kindern, höchstens einmal pro Person und Tag um 9 Uhr. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
+                    style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
+                  ),
+                  value: einst.vorsorgeAn,
+                  onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).vorsorgeAnSetzen(v)),
+                ),
+              ),
               // Zähler: nur für Eltern und Admins (Kinder sehen den Eintrag nie)
               if (ref.watch(zaehlerDarfProvider)) ...[
                 const SizedBox(height: 8),

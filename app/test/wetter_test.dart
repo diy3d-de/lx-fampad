@@ -245,7 +245,7 @@ void main() {
   testWidgets(
     'Desktop: Karte "Wetter" im Raster, Tippen öffnet die Detailseite',
     (tester) async {
-      await start(tester, groesse: const Size(1440, 900));
+      await start(tester, groesse: const Size(1440, 1100));
       expect(find.byType(DesktopHome), findsOneWidget);
       expect(labelFinder('Wetter'), findsOneWidget);
       expect(find.text('12,5 °C'), findsOneWidget);
@@ -269,7 +269,7 @@ void main() {
 
   testWidgets('Desktop: Seitenleiste zeigt "Wetter" nur bei sichtbarer Kachel', (tester) async {
     final handle = tester.ensureSemantics();
-    await start(tester, groesse: const Size(1440, 900));
+    await start(tester, groesse: const Size(1440, 1100));
     expect(find.bySemanticsLabel('Wetter'), findsOneWidget);
     await tippe(tester, find.bySemanticsLabel('Wetter'));
     expect(find.byType(WetterScreen), findsOneWidget);
@@ -283,7 +283,7 @@ void main() {
     handle.dispose();
   });
 
-  for (final groesse in [const Size(360, 2400), const Size(1440, 900)]) {
+  for (final groesse in [const Size(360, 2400), const Size(1440, 1100)]) {
     testWidgets('${groesse.width.toInt()} px: Profil schaltet "Wetter anzeigen" auch bei ausgeschalteter Kachel wieder ein', (tester) async {
       await start(tester, groesse: groesse);
       final c = ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first));
@@ -316,13 +316,13 @@ void main() {
 
   testWidgets('Desktop: ohne Wetter keine Seitenleisten-Zeile', (tester) async {
     final handle = tester.ensureSemantics();
-    await start(tester, groesse: const Size(1440, 900), wetter: () => null);
+    await start(tester, groesse: const Size(1440, 1100), wetter: () => null);
     expect(find.bySemanticsLabel('Wetter'), findsNothing);
     handle.dispose();
   });
 
   testWidgets('Desktop, Textskala 1.5: Wetter-Bereich ohne Layoutfehler', (tester) async {
-    await start(tester, groesse: const Size(1200, 800), skala: 1.5);
+    await start(tester, groesse: const Size(1200, 1100), skala: 1.5);
     await tippe(tester, find.text('Westerburg'));
     expect(find.byType(WetterScreen), findsOneWidget);
     expect(tester.takeException(), isNull);
