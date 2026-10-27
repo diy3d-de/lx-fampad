@@ -1,4 +1,8 @@
 {
+  "0.24.0": [
+    "Erinnerungen auch in der Web-App: Solange sie im Browser geöffnet ist, zeigt sie fällige Erinnerungen als Benachrichtigung (neutral, ohne Titel). Einschalten unter Benachrichtigungen › Erinnerungen im Browser",
+    "Neu: „Verpasst seit du weg warst“ zeigt Erinnerungen, die während deiner Abwesenheit fällig wurden"
+  ],
   "0.23.0": [
     "Home Assistant auf mehreren Geräten: Das Postfach lässt sich per Code oder QR auf ein weiteres eigenes Gerät übertragen (Zähler › Home Assistant)",
     "Der Status steht jetzt weiter oben auf der Startseite; der kleine grüne Punkt entfällt (das Wolken-Symbol zeigt den Stand)"
