@@ -541,6 +541,27 @@ Der Server ist gebaut (Blob-Schicht mit Upload per tus, Kontingent, Auslieferung
 5. **Backup:** Blobs gehören **nicht** in die tägliche Datenbanksicherung (`INCLUDE_FILES` bleibt aus). Das NAS holt `/srv/fampad/files/blobs` inkrementell per rsync (eigener, nur lesender Zugang wie bei `lxbackup`; nie `--delete`); Wiederherstellung braucht Datenbank-Dump, `AUTH_SECRET_KEY` und die Blobs. Einrichtung folgt mit D5.
 6. **Prüfen:** `curl -s https://familie.lx-labs.dev/api/v1/version` zeigt `"files":true`; die Betreiber-Ansicht zeigt unter `files` nur Zahlen. Das stündliche Aufräumen warnt im Log mit Zahlen (`strayFiles`, `missingFiles`), wenn Platte und Datenbank abweichen.
 
+### 15. Firewall (netcup Server Control Panel)
+
+Auf den Servern läuft kein `ufw`; die einzige Schicht ist die Firewall im netcup-Panel (je Server eigene Regeln). Stand 27.10.2026 auf dem neuen und dem alten Server, in dieser Reihenfolge (die erste zutreffende Regel gilt):
+
+| Nr. | Regel | Richtung | Protokoll | Zielport | Aktion |
+|---|---|---|---|---|---|
+| 1 bis 3 | netcup Mail block (Standard) | ausgehend | TCP | 25, 465, 587 | DROP |
+| 4 bis 7 | netcup Ping allow (Standard) | ein- und ausgehend | ICMP, ICMPv6 | – | ACCEPT |
+| 8 | SSH | eingehend | TCP | 22 | ACCEPT |
+| 9 | Caddy (Zertifikat, Weiterleitung auf https) | eingehend | TCP | 80 | ACCEPT |
+| 10 | Caddy (Web-App, API, ntfy) | eingehend | TCP | 443 | ACCEPT |
+| 11 | HTTP/3 | eingehend | UDP | 443 | ACCEPT |
+| 12 | alles andere | eingehend | TCP | beliebig | DROP |
+| 13 | alles andere | eingehend | UDP | beliebig | DROP |
+| 14, 15 | Implizite Regeln (System) | ein- und ausgehend | ANY | – | ACCEPT |
+
+- **Quellport immer leer lassen (beliebig).** Setzt man bei den Regeln 8 bis 11 den Quellport auf 22/80/443, trifft keine Regel zu (Clients nutzen zufällige Quellports) und die DROP-Regeln sperren alles, auch SSH und die App (am 27.10.2026 einmal passiert).
+- Ausgehend bleibt alles offen (Updates, Zertifikate, Bright Sky, Netatmo, Müll-Quelle). Die SSH-Regel zuerst anlegen und prüfen, dann erst die DROP-Regeln; die Konsole im Panel erreichbar halten.
+- Die internen Dienste lauschen nur auf `127.0.0.1` (API 4400, ntfy 2586, Caddy-Admin 2019, PostgreSQL 5432); von außen sind nur 22, 80 und 443 erreichbar.
+- **Prüfen von außen:** `https://<domain>/api/v1/version` antwortet 200, SSH geht, und ein geschlossener Port (z. B. 8080, 5432) gibt keine Antwort (DROP statt „abgelehnt“). Hat der Server eine öffentliche IPv6-Adresse, müssen die Regeln auch dafür gelten.
+
 ## Updates veröffentlichen
 
 **VOR dem Deploy von Migration 0005 (Gäste entfallen):** Sicherung ziehen und prüfen, ob Gäste existieren. Die Migration löscht Gast-Konten und ist nicht umkehrbar. **Dieser Deploy wird bei Fehler nicht automatisch zurückgerollt:** der Rückfall von `deploy.sh` spielt nur den Code zurück, nicht die Datenbank (ein alter Server würde zudem `audience 'all'` in die neue Enum-Spalte schreiben und mit 500 antworten). Wiederherstellung per Dump.
