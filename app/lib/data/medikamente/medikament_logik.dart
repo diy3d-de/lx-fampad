@@ -207,7 +207,7 @@ class VorratPrognose {
   /// Aktueller Bestand (null: nicht erfasst).
   final double? bestand;
 
-  /// Ganze Tage ab heute, die der Bestand noch deckt (0: reicht nicht mehr für den nächsten offenen Slot); null, wenn unbekannt oder unbegrenzt.
+  /// Ganze Tage, die der Bestand noch deckt, ab heute, wenn heute noch etwas offen ist, sonst ab morgen (0: reicht nicht mehr für den nächsten offenen Slot); null, wenn unbekannt oder unbegrenzt.
   final int? tage;
 
   /// Der erste Tag (`YYYY-MM-DD`), an dem eine Einnahme nicht mehr gedeckt ist; null, wenn unbekannt oder unbegrenzt.
@@ -227,12 +227,15 @@ VorratPrognose vorratPrognose(MedikamentInhalt m, Iterable<EinnahmeAnsicht> einn
   var rest = bestand;
   final heute = familienTag(jetzt, ort);
   var verbrauchtIrgendwas = false;
+  // Ist heute schon alles erledigt (genommen, übersprungen, verpasst), zählt heute nicht mehr als "noch" gedeckter Tag: bei 90 Stück und einer Tablette täglich steht dann 90, nicht 91.
+  final heutePlan = tagesplan(m, einnahmen, heute, jetzt, verpasstNach: verpasstNach, ort: ort, ab: ab);
+  final heuteErledigt = heutePlan.isNotEmpty && heutePlan.every((s) => s.status != SlotStatus.offen);
   for (var i = 0; i <= horizontTage; i++) {
     final tag = DateTime.utc(heute.year, heute.month, heute.day + i);
     for (final s in tagesplan(m, einnahmen, tag, jetzt, verpasstNach: verpasstNach, ort: ort, ab: ab)) {
       if (i == 0 && s.status != SlotStatus.offen) continue; // heute: erfasste und verpasste Slots verbrauchen nichts mehr
       verbrauchtIrgendwas = true;
-      if (rest + 1e-9 < m.menge) return VorratPrognose(bestand: bestand, tage: i, leerAm: tagText(tag));
+      if (rest + 1e-9 < m.menge) return VorratPrognose(bestand: bestand, tage: heuteErledigt && i > 0 ? i - 1 : i, leerAm: tagText(tag));
       rest -= m.menge;
     }
   }

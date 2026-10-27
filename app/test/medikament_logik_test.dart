@@ -367,6 +367,20 @@ void main() {
       expect(vorratPrognose(halb, const [], DateTime.utc(2026, 10, 23, 5)).tage, 6);
     });
 
+    test('Prognose: 90 Stück und heute schon genommen: reicht noch 90 Tage; heute noch offen: 91', () {
+      final stand = DateTime.utc(2026, 10, 1);
+      final m = med(zeiten: const ['08:00'], bestand: 91, stand: stand);
+      final genommen = [ein('2026-10-27T08:00', DateTime.utc(2026, 10, 27, 6, 5))];
+      final p = vorratPrognose(m, genommen, DateTime.utc(2026, 10, 27, 9));
+      expect(p.bestand, 90);
+      expect(p.tage, 90);
+      expect(p.leerAm, '2027-01-26');
+      final offen = vorratPrognose(m, const [], DateTime.utc(2026, 10, 27, 5));
+      expect(offen.bestand, 91);
+      expect(offen.tage, 91);
+      expect(offen.leerAm, '2027-01-26');
+    });
+
     test('Prognose: erfasste Einnahme heute verbraucht nichts mehr; Plan ohne Verbrauch und Plan, der vorher endet', () {
       final stand = DateTime.utc(2026, 10, 1);
       final m = med(zeiten: const ['08:00'], bestand: 2, stand: stand);
@@ -375,7 +389,7 @@ void main() {
       final p = vorratPrognose(m, genommen, DateTime.utc(2026, 10, 23, 8));
       expect(p.bestand, 1);
       expect(p.leerAm, '2026-10-25');
-      expect(p.tage, 2);
+      expect(p.tage, 1, reason: 'heute schon genommen: zählt nicht mehr, nur morgen ist noch gedeckt');
       expect(vorratPrognose(med(rhythmus: const Rhythmus.bedarf(), zeiten: const [], bestand: 5, stand: stand), const [], DateTime.utc(2026, 10, 23)).keinVerbrauch, isTrue);
       // der Plan endet am 24.10.: 2 Stück genügen bis zum Ende
       final kur = med(zeiten: const ['08:00'], ende: '2026-10-24', bestand: 2, stand: stand);
