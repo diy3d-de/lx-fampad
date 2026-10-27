@@ -39,7 +39,7 @@ const _l1 = 'ffffffff-1111-4111-8111-111111111111';
 const _i1 = 'ffffffff-2222-4222-8222-222222222222';
 
 String _tag(int tage) {
-  final h = heuteTag();
+  final h = heuteTag(TestUmgebung.testJetzt);
   return tagText(DateTime.utc(h.year, h.month, h.day + tage));
 }
 
@@ -192,7 +192,7 @@ void main() {
     });
 
     testWidgets('Müll (morgen, hervorgehoben) und Wetter erscheinen, wenn der Server sie liefert', (tester) async {
-      final morgen = heuteTag().add(const Duration(days: 1));
+      final morgen = heuteTag(TestUmgebung.testJetzt).add(const Duration(days: 1));
       await start(
         tester,
         vorher: (e) {

@@ -121,6 +121,7 @@ void main() {
 
   Future<(TestUmgebung, ProviderContainer)> start(WidgetTester tester, {String tab = 'Kalender', void Function(TestUmgebung)? vorher, Size groesse = const Size(360, 800)}) async {
     final env = await angemeldeteUmgebung(role: 'admin');
+    env.extraOverrides.add(echteUhr); // Daten dieser Datei entstehen relativ zur echten Uhr
     vorher?.call(env);
     final c = await starteApp(tester, env, groesse: groesse);
     await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)));

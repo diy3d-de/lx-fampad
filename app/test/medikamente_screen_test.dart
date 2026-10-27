@@ -33,7 +33,7 @@ UserDto _u(String id, Role r, String name) => UserDto(id: id, email: null, displ
 MedEintrag _e(String id, String subjekt, MedikamentInhalt m, {List<EinnahmeAnsicht> einnahmen = const []}) =>
     MedEintrag(MedikamentAnsicht(id: id, konversationId: 'k$subjekt', subjektId: subjekt, inhalt: m, erstelltAt: DateTime.utc(2026, 10, 1)), einnahmen);
 
-String _heute() => tagText(familienTag(DateTime.now()));
+String _heute() => tagText(familienTag(TestUmgebung.testJetzt));
 
 // Frühe Uhrzeit: immer schon vorbei (offen und fällig oder verpasst); späte: noch nicht fällig
 MedikamentInhalt _blut({String zeit = '00:01'}) => MedikamentInhalt(name: 'Blutdrucktablette', dosis: '5 mg', zeiten: [zeit, '23:59'], beginn: '2026-10-01');
@@ -44,7 +44,7 @@ MedikamentInhalt _vitamin() => MedikamentInhalt(
   zeiten: const ['00:02'],
   beginn: '2026-10-01',
   bestand: 5,
-  bestandStand: DateTime.now().toUtc(),
+  bestandStand: TestUmgebung.testJetzt.toUtc(),
   packung: 30,
 );
 
@@ -182,8 +182,8 @@ void main() {
       final hakt = EinnahmeAnsicht(
         id: 'e1',
         medikamentId: _med1,
-        inhalt: EinnahmeInhalt(status: EinnahmeStatus.genommen, um: DateTime.now().toUtc(), geplant: '${_heute()}T00:01'),
-        erstelltAt: DateTime.now().toUtc(),
+        inhalt: EinnahmeInhalt(status: EinnahmeStatus.genommen, um: TestUmgebung.testJetzt.toUtc(), geplant: '${_heute()}T00:01'),
+        erstelltAt: TestUmgebung.testJetzt.toUtc(),
       );
       await start(tester, d(Role.parent, [_e(_med1, _ich, _blut(), einnahmen: [hakt])]));
       expect(find.textContaining('Ich · erledigt '), findsOneWidget);
@@ -312,7 +312,8 @@ void main() {
       expect(find.text('Einnahme nachtragen'), findsWidgets);
       await tippe(tester, find.text('23:59'));
       await tippe(tester, find.widgetWithText(FilledButton, 'Speichern'));
-      expect(repo.erfasst.single.slot!.schluessel, '${_heute()}T23:59');
+      // der Nachtrag-Dialog rechnet mit der echten Uhr (Produktivcode), nicht mit der Test-Uhr
+      expect(repo.erfasst.single.slot!.schluessel, '${tagText(familienTag(DateTime.now()))}T23:59');
       expect(repo.erfasst.single.um, isNotNull);
     });
 
