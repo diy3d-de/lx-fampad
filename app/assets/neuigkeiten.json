@@ -1,4 +1,7 @@
 {
+  "0.27.1": [
+    "Medikamente: „Reicht noch n Tage“ zählt den heutigen Tag nicht mehr mit, wenn du die Einnahme schon erledigt hast"
+  ],
   "0.27.0": [
     "Im Mehr-Menü zeigt jetzt auch die Vorsorge eine Hinweis-Zahl (fällig und überfällig), und der Müll am Tag vor der Abholung",
     "Vorsorge: Kinder können ihre Einträge nur ansehen, ihre Eltern tragen sie ein"
