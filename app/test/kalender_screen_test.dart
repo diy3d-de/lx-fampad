@@ -62,6 +62,7 @@ void main() {
 
   Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', void Function(TestUmgebung env)? vorher, double skala = 1.0, String tab = 'Kalender', Size groesse = const Size(360, 800)}) async {
     final env = await angemeldeteUmgebung(role: role);
+    env.extraOverrides.add(echteUhr); // Daten dieser Datei entstehen relativ zur echten Uhr
     vorher?.call(env);
     final container = await starteApp(tester, env, skala: skala, groesse: groesse);
     if (groesse.width >= kDesktopBreakpoint) {

@@ -61,6 +61,7 @@ void main() {
     final env = await angemeldeteUmgebung(role: role);
     // kein Gerätedienst für Erinnerungen (sonst bleibt nach einer Änderung der Aufgaben ein Entprell-Timer stehen)
     env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
+    env.extraOverrides.add(echteUhr); // Daten dieser Datei entstehen relativ zur echten Uhr
     vorher?.call(env);
     final container = await starteApp(tester, env, skala: skala, groesse: groesse);
     if (groesse.width >= kDesktopBreakpoint) {

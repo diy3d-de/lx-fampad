@@ -20,6 +20,8 @@ import 'package:lx_fampad/data/providers.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart' show standortPortProvider;
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart' show MemoryErinnerungSpeicher;
 import 'package:lx_fampad/data/standort/standort_hinweis.dart';
+import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
+import 'package:lx_fampad/features/calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
 import 'package:lx_fampad/features/standort/standort_karte.dart' show StandortKartenBuilder, standortKartenBuilderProvider;
 import 'package:lx_fampad/data/sync_state.dart';
@@ -180,8 +182,17 @@ class TestUmgebung {
   /// Eigener Speicher der lokalen Kalender-Einstellungen (z. B. mit Fehlern); ersetzt den Speicher im Arbeitsspeicher.
   FeiertageSpeicher? speicher;
 
+  /// Feste Uhr der Oberfläche (Startseiten-Kacheln, Briefing, Mehr-Menü): kein Test hängt von der echten Uhr ab; ein Test überschreibt sie über [extraOverrides].
+  static final DateTime testJetzt = DateTime.utc(2026, 10, 24, 10);
+
+  /// Standard-Überschreibungen, die ein Test über [extraOverrides] ersetzen darf (sonst gäbe es eine doppelte Überschreibung).
+  List<Override> get standardUhr => [
+    minutenTaktProvider.overrideWith((ref) => Stream.value(testJetzt)),
+  ];
+
   List<Override> get overrides => [
-    feiertageSpeicherProvider.overrideWithValue(speicher ?? MemoryFeiertageSpeicher(feiertage, {kKalenderAnsichtSchluessel: ?kalenderAnsicht})),
+    // Tagesbriefing-Kachel im Standard aus (verdrängt sonst getestete Kacheln); Tests des Briefings setzen kBriefingKachelSchluessel im eigenen Speicher
+    feiertageSpeicherProvider.overrideWithValue(speicher ?? MemoryFeiertageSpeicher(feiertage, {kKalenderAnsichtSchluessel: ?kalenderAnsicht, kBriefingKachelSchluessel: 'nein'})),
     // Widget "Heute": im Test gilt flutter_test als Android, ohne Fake würde der Kanal angesprochen und ein Entprell-Timer bliebe stehen; Tests des Widgets setzen ihren Fake über extraOverrides
     heuteWidgetPortProvider.overrideWithValue(heuteWidgetPort),
     httpClientProvider.overrideWithValue(server.client),
@@ -229,6 +240,7 @@ class TestUmgebung {
     // Familienhinweis (Betrieb): kein Abfrage-Takt im Test (ein Timer bliebe stehen)
     familienHinweisTaktProvider.overrideWithValue(null),
     ...extraOverrides,
+    ...standardUhr.where((o) => !extraOverrides.any((e) => e.origin == o.origin)),
   ];
 
   ProviderContainer container() {
@@ -236,3 +248,7 @@ class TestUmgebung {
     return c;
   }
 }
+
+
+/// Für Tests, deren Daten ausdrücklich relativ zur echten Uhr entstehen (heuteTag(), DateTime.now()): die Oberfläche läuft dann auf der echten statt der festen Uhr.
+final echteUhr = minutenTaktProvider.overrideWith((ref) => Stream.value(DateTime.now()));
