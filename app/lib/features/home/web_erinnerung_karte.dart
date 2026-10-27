@@ -70,7 +70,7 @@ class _WebErinnerungKarteState extends ConsumerState<WebErinnerungKarte> {
                     Expanded(
                       child: Semantics(
                         button: true,
-                        label: '${webNeutralerText(e.payload) ?? 'Erinnerung'}. Öffnen',
+                        label: '${webAnzeigeText(e) ?? 'Erinnerung'}. Öffnen',
                         excludeSemantics: true,
                         onTap: () => _oeffnen(e),
                         child: InkWell(
@@ -80,7 +80,7 @@ class _WebErinnerungKarteState extends ConsumerState<WebErinnerungKarte> {
                             constraints: const BoxConstraints(minHeight: 44),
                             child: Align(
                               alignment: Alignment.centerLeft,
-                              child: Text(webNeutralerText(e.payload) ?? 'Erinnerung', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kText)),
+                              child: Text(webAnzeigeText(e) ?? 'Erinnerung', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: kText)),
                             ),
                           ),
                         ),
@@ -125,7 +125,7 @@ class _WebErinnerungKarteState extends ConsumerState<WebErinnerungKarte> {
                 for (final e in h.verpasst)
                   Semantics(
                     button: true,
-                    label: '${webErinnerungZeitText(e, jetzt)}. ${webNeutralerText(e.payload) ?? 'Erinnerung'}. Öffnen',
+                    label: '${webErinnerungZeitText(e, jetzt)}. ${webAnzeigeText(e) ?? 'Erinnerung'}. Öffnen',
                     excludeSemantics: true,
                     onTap: () => ref.read(erinnerungDienstProvider).oeffnen(e.payload),
                     child: InkWell(
@@ -135,7 +135,7 @@ class _WebErinnerungKarteState extends ConsumerState<WebErinnerungKarte> {
                         constraints: const BoxConstraints(minHeight: 44),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('${webErinnerungZeitText(e, jetzt)} · ${webNeutralerText(e.payload) ?? 'Erinnerung'}', style: _klein),
+                          child: Text('${webErinnerungZeitText(e, jetzt)} · ${webAnzeigeText(e) ?? 'Erinnerung'}', style: _klein),
                         ),
                       ),
                     ),

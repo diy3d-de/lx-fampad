@@ -29,7 +29,10 @@ class WebEintrag {
   final int id;
   final int zeitMs;
   final String payload;
-  const WebEintrag(this.id, this.zeitMs, this.payload);
+
+  /// Nur beim Tagesbriefing: der Zahlentext ("Heute: 3 Termine, 2 Aufgaben"), streng geprüft ([webBriefingZahlen]); sonst null.
+  final String? zahlen;
+  const WebEintrag(this.id, this.zeitMs, this.payload, [this.zahlen]);
 
   DateTime get zeit => DateTime.fromMillisecondsSinceEpoch(zeitMs, isUtc: true);
 
@@ -37,10 +40,18 @@ class WebEintrag {
   String get schluessel => '$id@$zeitMs';
 
   @override
-  bool operator ==(Object other) => other is WebEintrag && other.id == id && other.zeitMs == zeitMs && other.payload == payload;
+  bool operator ==(Object other) => other is WebEintrag && other.id == id && other.zeitMs == zeitMs && other.payload == payload && other.zahlen == zahlen;
   @override
-  int get hashCode => Object.hash(id, zeitMs, payload);
+  int get hashCode => Object.hash(id, zeitMs, payload, zahlen);
 }
+
+final _zahlenText = RegExp(r'^Heute: \d{1,4} (Termin|Termine|Aufgabe|Aufgaben|Frist|Fristen)(, \d{1,4} (Termin|Termine|Aufgabe|Aufgaben|Frist|Fristen))*$');
+
+/// Der Zahlentext des Tagesbriefings, nur wenn er genau die Form "Heute: n Termine, n Aufgaben" hat (nie ein Titel oder Name); sonst null.
+String? webBriefingZahlen(String payload, String text) => istBriefingPayload(payload) && _zahlenText.hasMatch(text) ? text : null;
+
+/// Text für Benachrichtigung und Hinweis: beim Briefing die Zahlen, sonst der neutrale Text; null = nicht für das Web.
+String? webAnzeigeText(WebEintrag e) => e.zahlen ?? webNeutralerText(e.payload);
 
 /// Neutraler Text zur Nutzlast; null = nicht für das Web gedacht (Hinweis "Erinnerungen laufen aus", unbekanntes Format, Sicherheits-/Betriebs-/
 /// Standort-/Wetter-Hinweise gehören nicht hierher). Nie ein Titel, nie ein Name.
@@ -65,7 +76,7 @@ List<WebEintrag> webSchnappschuss(List<GeplanteErinnerung> neu, List<WebEintrag>
   }
   for (final g in neu) {
     if (webNeutralerText(g.payload) == null) continue;
-    final e = WebEintrag(g.id, g.zeit.toUtc().millisecondsSinceEpoch, g.payload);
+    final e = WebEintrag(g.id, g.zeit.toUtc().millisecondsSinceEpoch, g.payload, webBriefingZahlen(g.payload, g.text));
     out[e.schluessel] = e;
   }
   return out.values.toList()..sort((a, b) => a.zeitMs != b.zeitMs ? a.zeitMs.compareTo(b.zeitMs) : a.id.compareTo(b.id));
@@ -105,7 +116,7 @@ Set<String> webMerklisteBereinigen(Set<String> gezeigt, DateTime jetzt) {
 
 // ---- Ablage (JSON in sync_meta) ----
 
-String webPlanKodieren(List<WebEintrag> plan) => jsonEncode([for (final e in plan) [e.id, e.zeitMs, e.payload]]);
+String webPlanKodieren(List<WebEintrag> plan) => jsonEncode([for (final e in plan) [e.id, e.zeitMs, e.payload, if (e.zahlen != null) e.zahlen]]);
 
 /// Tolerant: ein unlesbarer Stand ergibt eine leere Liste.
 List<WebEintrag> webPlanLesen(String? text) {
@@ -115,7 +126,8 @@ List<WebEintrag> webPlanLesen(String? text) {
     if (j is! List) return const [];
     return [
       for (final z in j)
-        if (z is List && z.length == 3 && z[0] is int && z[1] is int && z[2] is String && webNeutralerText(z[2] as String) != null) WebEintrag(z[0] as int, z[1] as int, z[2] as String),
+        if (z is List && (z.length == 3 || z.length == 4) && z[0] is int && z[1] is int && z[2] is String && webNeutralerText(z[2] as String) != null)
+          WebEintrag(z[0] as int, z[1] as int, z[2] as String, z.length == 4 && z[3] is String ? webBriefingZahlen(z[2] as String, z[3] as String) : null),
     ];
   } catch (_) {
     return const [];
