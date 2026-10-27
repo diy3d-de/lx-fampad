@@ -113,7 +113,7 @@ void main() {
   });
 
   for (final web in [false, true]) {
-    testWidgets('Profil: Schalter "Tagesbriefing" in Anzeige; "Morgens benachrichtigen" nur in der Android-App (web: $web)', (tester) async {
+    testWidgets('Profil: Schalter "Tagesbriefing" in Anzeige; "Morgens benachrichtigen" in Android und Browser (web: $web)', (tester) async {
       final env = await angemeldeteUmgebung();
       env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
 
@@ -127,11 +127,10 @@ void main() {
       expect(c.read(briefingEinstellungenProvider).kachelAn, isFalse);
       await tippe(tester, find.byTooltip('Zurück'));
       await tippe(tester, find.text('Benachrichtigungen'));
-      expect(find.text('Morgens benachrichtigen'), web ? findsNothing : findsOneWidget);
-      if (!web) {
-        await tippe(tester, find.text('Morgens benachrichtigen'));
-        expect(c.read(briefingEinstellungenProvider).morgensAn, isTrue);
-      }
+      expect(find.text('Morgens benachrichtigen'), findsOneWidget);
+      expect(find.textContaining('Nur solange die Web-App geöffnet ist'), web ? findsOneWidget : findsNothing);
+      await tippe(tester, find.text('Morgens benachrichtigen'));
+      expect(c.read(briefingEinstellungenProvider).morgensAn, isTrue);
       pruefeLayout(tester, 'Benachrichtigungen mit Tagesbriefing');
     });
   }

@@ -576,7 +576,7 @@ void main() {
       if (mitHinweisen) {
         sp.werte[kWebPlanSchluessel] = webPlanKodieren([
           WebEintrag(1, jetzt.subtract(const Duration(minutes: 1)).millisecondsSinceEpoch, 'aufgabe|3f2b8c1e-9d4a-4b6f-8a1c-2e7d5f0a9b13'),
-          WebEintrag(2, jetzt.subtract(const Duration(hours: 2)).millisecondsSinceEpoch, 'briefing'),
+          WebEintrag(2, jetzt.subtract(const Duration(hours: 2)).millisecondsSinceEpoch, 'briefing', 'Heute: 2 Termine, 1 Aufgabe'),
         ]);
       }
       env.speicher = sp;

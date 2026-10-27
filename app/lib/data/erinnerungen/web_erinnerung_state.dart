@@ -156,7 +156,7 @@ Future<void> webErinnerungPruefen(Ref ref) async {
 void _zeigen(Ref ref, WebErinnerungPort port, List<WebEintrag> faellig) {
   if (faellig.length == 1) {
     final e = faellig.first;
-    final text = webNeutralerText(e.payload);
+    final text = webAnzeigeText(e);
     if (text == null) return;
     port.browser.zeigen(titel: kAppName, text: text, tag: 'fampad-${e.id}', beiKlick: () => webErinnerungOeffnen(ref, e));
   } else {

@@ -49,7 +49,7 @@ class BenachrichtigungenScreen extends ConsumerWidget {
             );
           },
         ),
-        if (!web) const BriefingMorgensZeile(),
+        const BriefingMorgensZeile(),
         if (!web)
           Consumer(
             builder: (context, ref, _) {

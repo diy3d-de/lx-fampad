@@ -15,6 +15,29 @@ WebEintrag _e(int id, Duration vor, [String? payload]) => WebEintrag(id, _nun.su
 GeplanteErinnerung _g(int id, DateTime zeit, String payload) => GeplanteErinnerung(id: id, zeit: zeit, titel: 'Geheimer Titel', text: 'Geheimer Ort', payload: payload);
 
 void main() {
+  group('Tagesbriefing im Web', () {
+    test('nur der Zahlentext kommt durch, nie ein Titel oder fremder Text', () {
+      const p = 'briefing';
+      expect(webBriefingZahlen(p, 'Heute: 3 Termine, 2 Aufgaben'), 'Heute: 3 Termine, 2 Aufgaben');
+      expect(webBriefingZahlen(p, 'Heute: 1 Frist'), isNotNull);
+      for (final t in ['Heute: Zahnarzt Dr. Geheim', 'Heute: 3 Termine, Zahnarzt', 'Heute: 3 Termine\nGeheim', 'Zahnarzt', '']) {
+        expect(webBriefingZahlen(p, t), isNull, reason: t);
+      }
+      expect(webBriefingZahlen('aufgabe|$_u', 'Heute: 3 Termine'), isNull, reason: 'nur für das Briefing');
+    });
+
+    test('Schnappschuss und Ablage tragen nur die Zahlen; Anzeige: Zahlen, sonst neutraler Text', () {
+      final s = webSchnappschuss([_g(1, _nun.add(const Duration(hours: 1)), 'briefing')], const [], _nun);
+      expect(s.single.zahlen, isNull, reason: 'der Fixture-Text hat keine Zahlenform');
+      expect(webAnzeigeText(s.single), contains('Tagesüberblick'));
+      final z = GeplanteErinnerung(id: 3, zeit: _nun.add(const Duration(hours: 3)), titel: 'Heute im Überblick', text: 'Heute: 3 Termine, 2 Aufgaben', payload: 'briefing');
+      final e = webSchnappschuss([z], const [], _nun).single;
+      expect(webAnzeigeText(e), 'Heute: 3 Termine, 2 Aufgaben');
+      expect(webPlanLesen(webPlanKodieren([e])).single, e);
+      expect(webPlanLesen('[[1,2,"briefing","Heute: Geheim"]]').single.zahlen, isNull);
+    });
+  });
+
   group('neutrale Texte', () {
     test('nie ein Titel, nie ein Name; unbekannte Nutzlasten und der Auslauf-Hinweis haben keinen Web-Text', () {
       expect(webNeutralerText('termin|$_u|2026-10-19'), 'Erinnerung: Ein Termin steht an');

@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/tagesbriefing/briefing_einstellungen.dart';
+import '../profile/profil_plattform.dart';
 import '../../ui/widgets.dart';
 
 const _kleinStil = TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted);
@@ -35,7 +36,7 @@ class BriefingKachelZeile extends ConsumerWidget {
   }
 }
 
-/// "Morgens benachrichtigen" mit Uhrzeit (nur Android-App). Die Benachrichtigung nennt nur Zahlen, nie Titel oder Namen.
+/// "Morgens benachrichtigen" mit Uhrzeit (Android und Browser; im Browser nur solange die Web-App geöffnet ist und "Erinnerungen im Browser" an ist). Die Benachrichtigung nennt nur Zahlen, nie Titel oder Namen.
 class BriefingMorgensZeile extends ConsumerWidget {
   const BriefingMorgensZeile({super.key});
 
@@ -62,7 +63,12 @@ class BriefingMorgensZeile extends ConsumerWidget {
               enabled: einst.morgensAn,
               minVerticalPadding: 8,
               title: const Text('Uhrzeit', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Ohne Erlaubnis für Benachrichtigungen kommt nichts (Profil › Benachrichtigungen › Erinnerungen)', style: _kleinStil),
+              subtitle: Text(
+                ref.watch(profilWebProvider)
+                    ? 'Nur solange die Web-App geöffnet ist und „Erinnerungen im Browser“ an ist (Profil › Benachrichtigungen)'
+                    : 'Ohne Erlaubnis für Benachrichtigungen kommt nichts (Profil › Benachrichtigungen › Erinnerungen)',
+                style: _kleinStil,
+              ),
               trailing: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(color: kSurface2, borderRadius: BorderRadius.circular(8)),
