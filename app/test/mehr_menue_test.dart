@@ -354,7 +354,7 @@ void main() {
       await start(tester);
       await mehrOeffnen(tester);
       for (final id in ['vorsorge', 'standort', 'tresor', 'suche', 'wetter', 'dateien']) {
-        expect(find.descendant(of: find.byKey(ValueKey('mehr:' + id)), matching: find.byType(HinweisZeichen)), findsNothing, reason: id);
+        expect(find.descendant(of: find.byKey(ValueKey('mehr:$id')), matching: find.byType(HinweisZeichen)), findsNothing, reason: id);
       }
     });
 
