@@ -37,7 +37,7 @@ function requireAdmin(p: SessionPrincipal): void {
 }
 
 /** Nur Eltern und Admins (Kinder bekommen 404 wie bei den Zählern). */
-function requireParent(p: SessionPrincipal): void {
+export function requireParent(p: SessionPrincipal): void {
   if (p.role !== 'admin' && p.role !== 'parent') throw notFound();
 }
 

@@ -155,7 +155,7 @@ class _GeraetVerbindenScreenState extends ConsumerState<GeraetVerbindenScreen> w
   }
 
   Future<void> _scannen() async {
-    final text = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const _UebertragungScanScreen()));
+    final text = await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_) => const UebertragungScanScreen()));
     if (text != null && mounted) await _verbinden(text);
   }
 
@@ -198,15 +198,33 @@ class _GeraetVerbindenScreenState extends ConsumerState<GeraetVerbindenScreen> w
   );
 }
 
-/// Scanner für den QR-Code der Übertragung (nur Android; im Web gibt es nur das Abtippen, weil der Web-Scanner ein CDN bräuchte).
-class _UebertragungScanScreen extends StatefulWidget {
-  const _UebertragungScanScreen();
+/// Scanner für den QR-Code der Übertragung (nur Android; im Web gibt es nur das Abtippen, weil der Web-Scanner ein CDN bräuchte). Ohne Angaben für die Geräte-Übertragung
+/// des Personenschlüssels (Präfix LXK1); die Weitergabe des Postfach-Schlüssels (Home Assistant) nutzt ihn mit eigenem Präfix und eigener Prüfung.
+class UebertragungScanScreen extends StatefulWidget {
+  /// Nur Codes mit diesem Präfix werden angenommen.
+  final String praefix;
+
+  /// Prüft den Text (wirft [CryptoFehler]): ein beschädigter oder fremder Code löst nichts aus.
+  final void Function(String text) pruefer;
+  final String label;
+  final String titel;
+  final String fremdText;
+  const UebertragungScanScreen({
+    super.key,
+    this.praefix = 'LXK1:',
+    this.pruefer = _pruefeUebertragung,
+    this.label = 'Gerät verbinden',
+    this.titel = 'QR-Code scannen',
+    this.fremdText = 'Das ist kein QR-Code zum Verbinden eines Geräts.',
+  });
 
   @override
-  State<_UebertragungScanScreen> createState() => _UebertragungScanScreenState();
+  State<UebertragungScanScreen> createState() => _UebertragungScanScreenState();
 }
 
-class _UebertragungScanScreenState extends State<_UebertragungScanScreen> {
+void _pruefeUebertragung(String text) => Uebertragung.geheimnisLesen(text);
+
+class _UebertragungScanScreenState extends State<UebertragungScanScreen> {
   final _controller = MobileScannerController(formats: const [BarcodeFormat.qrCode], detectionSpeed: DetectionSpeed.noDuplicates);
   bool _fertig = false;
   String? _hinweis;
@@ -222,12 +240,12 @@ class _UebertragungScanScreenState extends State<_UebertragungScanScreen> {
     String? hinweis;
     for (final b in capture.barcodes) {
       final text = b.rawValue ?? '';
-      if (!text.toUpperCase().startsWith('LXK1:')) continue;
+      if (!text.toUpperCase().startsWith(widget.praefix)) continue;
       // Prüfsumme sofort prüfen: ein beschädigter oder fremder Code löst nichts am Server aus
       try {
-        Uebertragung.geheimnisLesen(text);
+        widget.pruefer(text);
       } on CryptoFehler catch (e) {
-        hinweis = e.art == CryptoFehlerArt.pruefsumme ? 'Der QR-Code ist beschädigt oder unvollständig. Bitte scanne ihn noch einmal.' : 'Das ist kein gültiger QR-Code zum Verbinden eines Geräts.';
+        hinweis = e.art == CryptoFehlerArt.pruefsumme ? 'Der QR-Code ist beschädigt oder unvollständig. Bitte scanne ihn noch einmal.' : widget.fremdText;
         continue;
       }
       _fertig = true;
@@ -236,15 +254,15 @@ class _UebertragungScanScreenState extends State<_UebertragungScanScreen> {
       return;
     }
     if (capture.barcodes.isNotEmpty) {
-      final neu = hinweis ?? 'Das ist kein QR-Code zum Verbinden eines Geräts.';
+      final neu = hinweis ?? widget.fremdText;
       if (_hinweis != neu) setState(() => _hinweis = neu);
     }
   }
 
   @override
   Widget build(BuildContext context) => AuthSeite(
-    label: 'Gerät verbinden',
-    titel: 'QR-Code scannen',
+    label: widget.label,
+    titel: widget.titel,
     kinder: [
       const Text('Halte die Kamera auf den QR-Code des anderen Geräts.', style: TextStyle(fontSize: 14, color: kTextMuted)),
       const SizedBox(height: 12),

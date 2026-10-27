@@ -698,7 +698,7 @@ void main() {
     });
 
     testWidgets('Startseiten-Kachel "Ablesen fällig": Eltern sehen sie nur, wenn etwas ansteht', (tester) async {
-      await start(tester, alle(), role: 'parent', zumBereichGehen: false);
+      await start(tester, alle(), role: 'parent', groesse: const Size(360, 2400), zumBereichGehen: false);
       expect(labelFinder('Ablesen fällig'), findsOneWidget);
       expect(find.textContaining('wartet auf eine Ablesung'), findsOneWidget);
       pruefeLayout(tester, 'Startseite mit Kachel');

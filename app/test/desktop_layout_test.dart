@@ -66,7 +66,7 @@ void main() {
     await start(tester, const Size(1440, 900));
     final a = tester.getTopLeft(labelFinder('Heute und morgen'));
     final b = tester.getTopLeft(labelFinder('Chat · Familie'));
-    final c = tester.getTopLeft(labelFinder('Einkaufsliste'));
+    final c = tester.getTopLeft(labelFinder('Status'));
     expect(a.dy, b.dy);
     expect(b.dy, c.dy);
     final d = tester.getTopLeft(labelFinder('Aufgaben'));

@@ -74,8 +74,11 @@ void main() {
     final a = tester.getTopLeft(labelFinder('Heute und morgen'));
     final b = tester.getTopLeft(labelFinder('Chat · Familie'));
     final c = tester.getTopLeft(labelFinder('Einkaufsliste'));
-    expect(a.dy, b.dy);
-    expect(c.dy, greaterThan(a.dy));
+    // Die Status-Kachel steht seit 0.23.0 vorn im Raster und verschiebt die Paare um eine Stelle:
+    // Termine teilen sich die Reihe nun mit ihr, der Chat mit der Einkaufsliste (weiterhin zwei Spalten).
+    expect(a.dy, lessThan(b.dy));
+    expect(b.dy, c.dy);
+    expect(b.dx, isNot(c.dx));
   });
 
   testWidgets('Zustand bleibt beim Tab-Wechsel und beim Wechsel Desktop <-> Mobil erhalten', (tester) async {

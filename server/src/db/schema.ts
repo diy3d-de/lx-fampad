@@ -2033,6 +2033,24 @@ export const ingestTokens = pgTable(
 );
 
 /**
+ * Einwurf: kurzlebige Weitergabe des Postfach-Schlüssels an ein weiteres Gerät derselben Person (Mehrgeräte-Abholen). Wie `key_transfers`: nur der Hash der Suchkennung,
+ * der Blob ist mit einem Einmalgeheimnis verschlüsselt, das der Server nie sieht. Höchstens eine je Person, einmal einlösbar (DELETE ... RETURNING), 2 Minuten gültig.
+ */
+export const ingestPostfachTransfers = pgTable(
+  'ingest_postfach_transfers',
+  {
+    userId: uuid('user_id')
+      .primaryKey()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    lookupHash: text('lookup_hash').notNull().unique(),
+    blob: text('blob').notNull(),
+    createdAt: createdAt(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  },
+  (t) => [check('ingest_postfach_transfers_blob_ck', sql`char_length(${t.blob}) between 32 and 1024`)],
+);
+
+/**
  * Postfach: undurchsichtige Päckchen (libsodium Sealed Box, vom Server nie geöffnet oder ausgewertet). `k` ist der Eindeutigkeitsschlüssel des Clients
  * (je Token einmal). `seq` ordnet die Päckchen stabil für das seitenweise Abholen. Aufbewahrung höchstens 30 Tage.
  */

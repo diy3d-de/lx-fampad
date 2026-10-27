@@ -457,7 +457,7 @@ void main() {
     });
 
     testWidgets('Startseite: Kachel zeigt Uhrzeit und Person, nie den Medikamentennamen', (tester) async {
-      await start(tester, d(Role.parent, [_e(_med1, _ich, _blut(zeit: '23:58')), _e(_med2, _kind, _vitamin())], kinder: true), zumBereichGehen: false);
+      await start(tester, d(Role.parent, [_e(_med1, _ich, _blut(zeit: '23:58')), _e(_med2, _kind, _vitamin())], kinder: true), groesse: const Size(360, 2400), zumBereichGehen: false);
       expect(labelFinder('Medikamente'), findsOneWidget);
       expect(find.textContaining('nächste Einnahme'), findsOneWidget);
       expect(find.textContaining('Blutdruck'), findsNothing);

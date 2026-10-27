@@ -453,6 +453,25 @@ void main() {
         h.dispose();
       });
 
+      testWidgets('Home Assistant, Weitergabe an ein weiteres Gerät: Anbieten (QR, Code) und Übernehmen (Eingabe)', (tester) async {
+        final h = tester.ensureSemantics();
+        await haStart(tester);
+        await tippe(tester, find.text('Home Assistant'));
+        await tippe(tester, find.text('Auf weiterem Gerät abholen …'));
+        pruefe(tester, 'Home Assistant Weitergabe anbieten $skala');
+        h.dispose();
+      });
+
+      testWidgets('Home Assistant, Weitergabe: Übernehmen auf einem Gerät ohne Schlüssel', (tester) async {
+        final h = tester.ensureSemantics();
+        await haStart(tester, zustand: const IngestZustand(geladen: true), role: 'parent');
+        await tippe(tester, find.text('Home Assistant'));
+        pruefe(tester, 'Home Assistant anderes Gerät mit Weitergabe $skala');
+        await tippe(tester, find.text('Auf diesem Gerät auch abholen'));
+        pruefe(tester, 'Home Assistant Weitergabe übernehmen $skala');
+        h.dispose();
+      });
+
       testWidgets('Zähler-Editor mit Quelle Home Assistant', (tester) async {
         final h = tester.ensureSemantics();
         await haStart(tester);

@@ -19,10 +19,11 @@ import {
   revokeToken,
   touchToken,
 } from '../ingest/service.js';
+import { claimPostfachTransfer, createPostfachTransfer } from '../ingest/transfer.js';
 import { BoundedLimiter } from '../ingest/limiter.js';
 import { normalizeIp } from '../net.js';
 import { AppError } from '../errors.js';
-import { idParams, meta, parse, safeString, strictLimit, text, uuid } from './util.js';
+import { b64urlBlobMin, b64urlKey, idParams, meta, parse, safeString, strictLimit, text, uuid } from './util.js';
 
 /** Base64 (Standard-Alphabet, mit Auffüllung, kanonisch) zu 1 bis 1024 Bytes; sonst null. Der Inhalt wird nie ausgewertet. */
 function decodeBox(s: string): Buffer | null {
@@ -62,6 +63,9 @@ const HOUR_MS = 3_600_000;
 export const IP_PER_HOUR = 300;
 /** Anfragen mit ungültigem Token je Netzadresse und Stunde (nur Fehlschläge zählen). */
 export const BAD_TOKEN_PER_HOUR = 20;
+/** Weitergabe des Postfach-Schlüssels: Anlegen und Einlösen je Person (Sitzung) und Stunde, zusätzlich zur strengen Grenze je Netzadresse. */
+export const TRANSFER_CREATE_PER_HOUR = 10;
+export const TRANSFER_CLAIM_PER_HOUR = 20;
 
 export function registerIngestRoutes(app: FastifyInstance, config: Config, auth: Auth): void {
   const ctx = auth.ctx;
@@ -72,6 +76,8 @@ export function registerIngestRoutes(app: FastifyInstance, config: Config, auth:
   const badAuth = new BoundedLimiter(BAD_TOKEN_PER_HOUR, HOUR_MS, ctx.now);
   const perToken = new BoundedLimiter(config.ingest.ratePerHour, HOUR_MS, ctx.now);
   const tooMany = () => new AppError(429, 'rate_limited', 'Zu viele Anfragen. Bitte später erneut versuchen.', { 'retry-after': '600' });
+  const transferCreate = new BoundedLimiter(TRANSFER_CREATE_PER_HOUR, HOUR_MS, ctx.now);
+  const transferClaim = new BoundedLimiter(TRANSFER_CLAIM_PER_HOUR, HOUR_MS, ctx.now);
   const dropLimit = {
     config: {
       rateLimit: {
@@ -142,5 +148,21 @@ export function registerIngestRoutes(app: FastifyInstance, config: Config, auth:
     const p = await auth.requireSession(req);
     const body = parse(z.object({ ids: z.array(uuid).min(1).max(MAX_PAGE) }).strict(), req.body);
     return reply.send({ deleted: await ackPending(ctx, p, body.ids) });
+  });
+  // Weitergabe des Postfach-Schlüssels an ein weiteres Gerät derselben Person (Eltern/Admins, Sitzung; der Blob bleibt für den Server undurchsichtig)
+  app.post('/api/v1/ingest/postfach-transfer', strikt, async (req, reply) => {
+    requireIngestEnabled(ctx);
+    const p = await auth.requireSession(req);
+    if (!transferCreate.hit(p.userId)) throw tooMany();
+    const body = parse(z.object({ lookup: b64urlKey, blob: b64urlBlobMin(32, 1024) }).strict(), req.body);
+    return reply.header('cache-control', 'no-store').send(await createPostfachTransfer(ctx, p, body, meta(req)));
+  });
+
+  app.post('/api/v1/ingest/postfach-transfer/claim', strikt, async (req, reply) => {
+    requireIngestEnabled(ctx);
+    const p = await auth.requireSession(req);
+    if (!transferClaim.hit(p.userId)) throw tooMany();
+    const body = parse(z.object({ lookup: b64urlKey }).strict(), req.body);
+    return reply.header('cache-control', 'no-store').send(await claimPostfachTransfer(ctx, p, body, meta(req)));
   });
 }

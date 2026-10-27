@@ -1,4 +1,8 @@
 {
+  "0.23.0": [
+    "Home Assistant auf mehreren Geräten: Das Postfach lässt sich per Code oder QR auf ein weiteres eigenes Gerät übertragen (Zähler › Home Assistant)",
+    "Der Status steht jetzt weiter oben auf der Startseite; der kleine grüne Punkt entfällt (das Wolken-Symbol zeigt den Stand)"
+  ],
   "0.22.0": [
     "Familien-Status: Setz einen kurzen Status wie „Beim Sport“ mit Ende, die Familie sieht ihn auf der Startseite. Abschaltbar unter Startseite und Anzeige",
     "Standard-Erinnerung für Termine einstellbar (Profil › Kalender), vorbelegt mit 1 Stunde vorher; bestehende Termine ohne Erinnerung bekommen sie einmalig nachgetragen",

@@ -1,7 +1,8 @@
 // Seite "Home Assistant" (Zähler, Abschnitt 6l). Auf dem Abholgerät (dem Gerät mit dem Postfach-Schlüssel): Schalter "Werte automatisch abholen" (je Gerät), der Zustand nach Handlungen
 // geordnet (zuerst, was die Person tun kann: Zu prüfen, Zähler zuordnen; dann die letzte Abholung; Zahlen für Technikinteressierte eingeklappt), "Jetzt abholen". Auf jedem anderen Gerät
 // (zweites Elternteil) kein Schalter und kein "aus": ein ruhiger Text "Läuft über ein anderes Gerät" mit dem Stand der Zähler. Dazu die Verbindungsliste und für Admins das Koppeln und
-// Trennen. Erreichbar über die Zeile "Home Assistant" der Zähler-Seite; nur für Eltern und Admins und nur, wenn der Server den Einwurf kennt. Der Server sieht nur verschlüsselte Werte;
+// Trennen. Mehrgeräte-Weitergabe: das Gerät ohne Schlüssel bietet "Auf diesem Gerät auch abholen" (auch ein weiteres eigenes Gerät), das Abholgerät "Auf weiterem Gerät abholen"
+// (ha_weitergabe_screens.dart). Erreichbar über die Zeile "Home Assistant" der Zähler-Seite; nur für Eltern und Admins und nur, wenn der Server den Einwurf kennt. Der Server sieht nur verschlüsselte Werte;
 // sie öffnet nur das Abholgerät. Nie Werte, Kanäle oder Päckchen in Meldungen, nie ein Servertext.
 import 'dart:async';
 
@@ -25,6 +26,7 @@ import '../auth/step_up.dart';
 import '../lists/list_dialogs.dart' show bestaetigen;
 import 'ha_koppeln_screen.dart';
 import 'ha_pruefen_screen.dart';
+import 'ha_weitergabe_screens.dart';
 import 'ha_zuordnen_screen.dart';
 import 'zaehler_anzeige.dart';
 
@@ -161,16 +163,23 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
           LxCard(
             child: Semantics(
               container: true,
-              label: 'Läuft über ein anderes Gerät. Die Werte holt das Gerät ab, auf dem die Verbindung gekoppelt wurde.${letzter == null ? '' : ' Letzter Wert: ${letzter.name}, ${tagDeutsch(letzter.tag)}.'}',
+              label: 'Läuft über ein anderes Gerät. Die Werte holt das Gerät ab, auf dem die Verbindung gekoppelt wurde. Du kannst dieses Gerät auch abholen lassen.${letzter == null ? '' : ' Letzter Wert: ${letzter.name}, ${tagDeutsch(letzter.tag)}.'}',
               excludeSemantics: true,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Row(children: [Icon(Icons.devices_other, size: 20, color: kAccent), SizedBox(width: 10), Expanded(child: Text('Läuft über ein anderes Gerät', style: TextStyle(fontWeight: FontWeight.w700)))]),
                   const SizedBox(height: 6),
-                  const Text('Die Werte aus Home Assistant holt das Gerät ab, auf dem die Verbindung gekoppelt wurde. Du siehst sie trotzdem in deinen Zählern, sobald dieses Gerät sie abgeholt hat.', style: TextStyle(fontSize: 13, color: kTextMuted)),
+                  const Text('Die Werte aus Home Assistant holt das Gerät ab, auf dem die Verbindung gekoppelt wurde. Du siehst sie trotzdem in deinen Zählern, sobald dieses Gerät sie abgeholt hat. Soll auch dieses Gerät abholen, übertrage den Schlüssel von dem anderen Gerät hierher.', style: TextStyle(fontSize: 13, color: kTextMuted)),
                   const SizedBox(height: 8),
                   Text(letzter == null ? 'Noch kein Wert angekommen.' : 'Letzter Wert: ${letzter.name} · ${tagDeutsch(letzter.tag)}', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
+                    onPressed: () => unawaited(haWeitergabeUebernehmenOeffnen(context)),
+                    icon: const Icon(Icons.download_for_offline_outlined, size: 18),
+                    label: const Text('Auf diesem Gerät auch abholen'),
+                  ),
                 ],
               ),
             ),
@@ -231,7 +240,7 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
                   _ZustandsZeile(
                     titel: 'Werte kommen doppelt an',
                     untertitel:
-                        'Für ${doppelt.zaehler.map((n) => '„$n“').join(', ')} liefern mehrere Verbindungen oder Geräte denselben Kanal (${doppelt.kanaele.map(haKanalLabel).join(', ')}). Es zählt der zuletzt geschriebene Wert je Tag. Lass nur ein Gerät abholen.',
+                        'Für ${doppelt.zaehler.map((n) => '„$n“').join(', ')} liefern mehrere Verbindungen denselben Kanal (${doppelt.kanaele.map(haKanalLabel).join(', ')}) mit verschiedenen Werten. Es zählt der zuletzt geschriebene Wert je Tag. Prüfe, welche Verbindung welchen Zähler beliefert.',
                     pille: const StatusPill('Doppelt', color: kWarn),
                   ),
                 if (lauf != null && lauf.fehler > 0)
@@ -266,6 +275,13 @@ class _HaVerbindungScreenState extends ConsumerState<HaVerbindungScreen> {
             onPressed: z.aktiv && !z.laeuft ? () => unawaited(ref.read(ingestProvider.notifier).abholen()) : null,
             icon: z.laeuft ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.sync, size: 18),
             label: Text(z.laeuft ? 'Holt ab …' : 'Jetzt abholen'),
+          ),
+          const SizedBox(height: 10),
+          OutlinedButton.icon(
+            style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
+            onPressed: z.postfachDa ? () => unawaited(haWeitergabeAnbietenOeffnen(context)) : null,
+            icon: const Icon(Icons.devices_other, size: 18),
+            label: const Text('Auf weiterem Gerät abholen …'),
           ),
         ],
         const SizedBox(height: 10),

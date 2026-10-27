@@ -60,7 +60,7 @@ void main() {
     Object? Function()? wetter,
     Future<void> Function(TestUmgebung)? vorher,
     double skala = 1.0,
-    Size groesse = const Size(360, 800),
+    Size groesse = const Size(360, 2400),
   }) async {
     final env = await angemeldeteUmgebung();
     await vorher?.call(env);
@@ -283,7 +283,7 @@ void main() {
     handle.dispose();
   });
 
-  for (final groesse in [const Size(360, 800), const Size(1440, 900)]) {
+  for (final groesse in [const Size(360, 2400), const Size(1440, 900)]) {
     testWidgets('${groesse.width.toInt()} px: Profil schaltet "Wetter anzeigen" auch bei ausgeschalteter Kachel wieder ein', (tester) async {
       await start(tester, groesse: groesse);
       final c = ProviderScope.containerOf(tester.element(find.byType(Scaffold, skipOffstage: false).first));

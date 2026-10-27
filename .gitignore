@@ -29,3 +29,7 @@ app/android/**/GeneratedPluginRegistrant.*
 update-signing*.key
 /server/data/
 .claude/
+
+/.pruefung-status
+/.pruefung-log
+/.pruefung-gesamt

@@ -149,7 +149,7 @@ class _SyncZeile extends StatelessWidget {
   );
 }
 
-/// Stand des Abgleichs (fest, keine Kachel): bei "synchron" nur ein kleiner Punkt, sonst ein ruhiger Satz. Die Zahl offener Änderungen steht
+/// Stand des Abgleichs (fest, keine Kachel): bei "synchron" nichts (die Kopfzeile zeigt das Wolken-Symbol), sonst ein ruhiger Satz. Die Zahl offener Änderungen steht
 /// nur im Bedienhilfe-Text. Der Sync-Zustand steht auf der Startseite nur hier (die Kopfzeile zeigt ihn mobil als Symbol).
 class _SyncLeiste extends ConsumerWidget {
   const _SyncLeiste();
@@ -160,19 +160,8 @@ class _SyncLeiste extends ConsumerWidget {
     final (bedienText, farbe) = syncAnzeige(sync);
     final hinweis = syncHinweis(sync);
     if (hinweis == null) {
-      return Semantics(
-        label: 'Sync: $bedienText',
-        child: SizedBox(
-          height: 44,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 14),
-              child: ExcludeSemantics(child: Container(width: 8, height: 8, decoration: BoxDecoration(shape: BoxShape.circle, color: farbe))),
-            ),
-          ),
-        ),
-      );
+      // bei "synchron" nichts zeigen (das Wolken-Symbol der Kopfzeile sagt dasselbe); die Zeile behält die Höhe für den Such-Knopf
+      return Semantics(label: 'Sync: $bedienText', child: const SizedBox(height: 44));
     }
     return Semantics(
       label: 'Sync: $bedienText',
