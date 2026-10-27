@@ -7,6 +7,7 @@
 //  - Keine Dokument-Anhänge in dieser Version (kommen mit dem Dateien-Bereich); das Format ist dafür offen (`v` hochzählen, unbekannte Felder werden beim Lesen ignoriert).
 // Unbekannte Versionen (`v` größer als [kTresorFormat]) und kaputte Daten ergeben `null` (nicht lesbar), nie einen Absturz und nie einen Teilinhalt.
 import 'dart:convert';
+export '../crypto/huellen_arten.dart' show kArtTresor;
 
 /// Version des Klartext-Formats (Feld `v`).
 const int kTresorFormat = 1;
@@ -15,7 +16,6 @@ const int kTresorFormat = 1;
 const String kPraefixTresor = 't1:';
 
 /// Art im AAD der Hülle (`HuellenKontext.art`): Tresor-Eintrag `t`. Eine Hülle lässt sich nie als andere Art lesen.
-const String kArtTresor = 't';
 
 /// Obergrenzen (wie der Server und die Hülle): höchstens so viele Einträge im Tresor, Felder je Eintrag und Byte Klartext je Eintrag (der Server nimmt Hüllen bis 24576 Zeichen an).
 const int kMaxTresorEintraege = 500;

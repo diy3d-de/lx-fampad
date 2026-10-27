@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../../data/crypto/huellen_arten.dart' show kArtReaktion, kArtStimme;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
@@ -489,7 +490,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     final ausgang = ref.watch(nachrichtenAusgangProvider).value ?? const <String, OutboxData>{};
     // Reaktionen, Stimmen und Anheftungen (Inhalte werden im Hintergrund entschlüsselt; nicht lesbare zählen nicht mit)
     final reaktionenJe = gruppiereReaktionen(ref.watch(reaktionenProvider(_id)).value ?? const <Reaktion>[], (r) {
-      final z = inhalt.zusatz(ZusatzRef(id: r.id, konversationId: r.konversationId, nachrichtId: r.nachrichtId, userId: r.userId, wire: r.inhalt, rev: r.rev, art: 'r'));
+      final z = inhalt.zusatz(ZusatzRef(id: r.id, konversationId: r.konversationId, nachrichtId: r.nachrichtId, userId: r.userId, wire: r.inhalt, rev: r.rev, art: kArtReaktion));
       return z.lesbar ? z.text : null;
     }, ich);
     final stimmenJe = <String, List<Stimme>>{};
@@ -497,7 +498,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
       (stimmenJe[st.nachrichtId] ??= []).add(st);
     }
     String? stimmeText(Stimme st) {
-      final z = inhalt.zusatz(ZusatzRef(id: st.id, konversationId: st.konversationId, nachrichtId: st.nachrichtId, userId: st.userId, wire: st.inhalt, rev: st.rev, art: 's'));
+      final z = inhalt.zusatz(ZusatzRef(id: st.id, konversationId: st.konversationId, nachrichtId: st.nachrichtId, userId: st.userId, wire: st.inhalt, rev: st.rev, art: kArtStimme));
       return z.lesbar ? z.text : null;
     }
     final pinZeilen = ref.watch(pinsProvider(_id)).value ?? const <ChatPin>[];

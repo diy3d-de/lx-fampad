@@ -49,6 +49,7 @@ const gemeinsam = {
   parent: { entity: 'konversation', field: 'konversationId' },
   userRefs: ['bearbeiterId'],
   noWake: true,
+  // ownerId = Bearbeiter hat keine Wirkung, solange keine Regel `own` benutzt wird (alle Rechte hier sind `shared`, die Teilnehmer-Grenze entscheidet)
   facts: (row: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: (row.bearbeiterId as string | null) ?? null }),
   factsForCreate: (actor: Actor, _values: Row, parent: Facts | null): Facts => ({ ...(parent ?? verweigert()), ownerId: actor.userId }),
   // wer den Inhalt schreibt, signiert ihn (beim Anlegen und bei jeder Änderung des Inhalts)
@@ -69,6 +70,8 @@ export const vorsorgeProfilEntity: EntityDef = {
   ...gemeinsam,
   // je Person genau eines: die ID ist aus der Konversation abgeleitet
   idValid: (id: string, values: Row): boolean => id === vorsorgeProfilId(String(values.konversationId)),
+  // Löschen gesperrt: nach einem Tombstone lässt die Engine dieselbe feste ID nie wieder zu (`deleted`), die Person könnte kein Profil mehr anlegen. Ändern geht; mit der Konversation fällt es per Kaskade weg.
+  guard: (action: 'update' | 'delete'): boolean => action !== 'delete',
   rate: { field: 'bearbeiterId', perMinute: VORSORGE_PRO_MINUTE, perHour: VORSORGE_PRO_STUNDE, viaLog: true },
   updateRate: { fields: ['inhalt'], perMinute: 60 },
 };

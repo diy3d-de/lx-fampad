@@ -6,6 +6,7 @@
 import 'dart:convert';
 
 import '../medikamente/medikament_modelle.dart' show tagLesen, tagText;
+export '../crypto/huellen_arten.dart' show kArtVorsorgeProfil, kArtVorsorgeEintrag;
 
 /// Version des Klartext-Formats (Feld `v`).
 const int kVorsorgeFormat = 1;
@@ -14,8 +15,6 @@ const String kPraefixVorsorgeProfil = 'vp1:';
 const String kPraefixVorsorgeEintrag = 've1:';
 
 /// Art im AAD der Hülle (`HuellenKontext.art`): Profil `p`, Eintrag `v`. Eine Hülle lässt sich nie als andere Art lesen (die Art ist Teil der Signatur).
-const String kArtVorsorgeProfil = 'p';
-const String kArtVorsorgeEintrag = 'v';
 
 const int kMaxVorsorgeNameZeichen = 80;
 const int kMaxVorsorgeNotizZeichen = 300;

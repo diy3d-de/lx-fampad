@@ -4,6 +4,7 @@
 //  - Einnahme (Protokolleintrag): Klartext `n1:` + JSON (geplanter Slot, Zeitpunkt, Status, Menge). Im Ausgang lokal `l1:n1:…`.
 // Der Server liest nichts davon. Unbekannte Versionen (`v` größer als [kFormatVersion]) und kaputte Daten ergeben `null` (nicht lesbar), nie einen Absturz und nie einen Teilinhalt.
 import 'dart:convert';
+export '../crypto/huellen_arten.dart' show kArtMedikament, kArtEinnahme;
 
 /// Version des Klartext-Formats (Feld `v`).
 const int kFormatVersion = 1;
@@ -13,8 +14,6 @@ const String kPraefixMedikament = 'm1:';
 const String kPraefixEinnahme = 'n1:';
 
 /// Art im AAD der Hülle (`HuellenKontext.art`): Medikament `m`, Einnahme `n`. Eine Hülle lässt sich nie als andere Art lesen.
-const String kArtMedikament = 'm';
-const String kArtEinnahme = 'n';
 
 /// Obergrenzen (Zeichen bzw. Anzahl); das verschlüsselte Ergebnis bleibt damit unter den Grenzen des Servers (16384 bzw. 2048 Zeichen der Hülle).
 const int kMaxNameZeichen = 80;

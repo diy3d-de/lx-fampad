@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart';
 import 'package:lx_fampad/data/chat/chat_repository.dart';
+import 'package:lx_fampad/data/erinnerungen/web_erinnerung_logik.dart' show webNeutralerText;
 import 'package:lx_fampad/data/push/chat_benachrichtiger.dart';
 
 import 'support/fake_server.dart';
@@ -103,6 +104,18 @@ void main() {
     }
     expect(dateien, greaterThan(20));
     expect(treffer, isEmpty, reason: 'Diese Bereiche dürfen Vorsorge-Daten nie anzeigen');
+  });
+
+  test('Web-Erinnerungs-Port: kennt nur die Nutzlast, nie Daten oder Repository; der Text ist neutral', () {
+    final kopplung = RegExp(r'VorsorgeDaten|VorsorgeAnsicht|vorsorgeDatenProvider|VorsorgeRepository|vorsorgeRepositoryProvider|vorsorge_state|vorsorge_repository|vorsorge_modelle|vorsorge_vorlagen');
+    var n = 0;
+    for (final f in Directory('lib').listSync(recursive: true).whereType<File>().where((f) => f.path.replaceAll('\\', '/').contains('/web_erinnerung'))) {
+      n++;
+      expect(kopplung.hasMatch(f.readAsStringSync()), isFalse, reason: f.path);
+    }
+    expect(n, greaterThan(2));
+    expect(webNeutralerText('vorsorge'), 'Erinnerung: Etwas steht an');
+    expect(webNeutralerText('vorsorge'), isNot(contains('Vorsorge')));
   });
 
   test('der Betreiber-Weg liest keine Inhalte (die Tabellen sind ihm unbekannt), und kein Server-Weg kennt Vorsorge-Inhalte', () {

@@ -16,7 +16,6 @@ import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'support/fake_erinnerung_port.dart';
 import 'support/fake_server.dart';
 import 'support/harness.dart';
-import 'support/test_app.dart';
 
 const _ich = fixIdAdmin;
 const _kind = fixIdKind;

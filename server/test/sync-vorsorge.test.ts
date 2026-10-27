@@ -174,6 +174,16 @@ describe.each(backends)('Vorsorge im Sync ($name)', (backend) => {
       expect((await rows(sql`select count(*)::int as n from vorsorge_profile where konversation_id = ${k}`))[0]?.n).toBe(1);
     });
 
+    it('Profil löschen wird abgewiesen (ein Tombstone ließe die feste ID nie wieder zu), ändern geht, alte Daten bleiben', async () => {
+      const k = await plan(fam.child, fam.child, [fam.child]);
+      expect((await fam.child.sync([profil(k, E1('alt'))])).json.rejected).toEqual([]);
+      const id = vorsorgeProfilId(k);
+      expect(codes(await fam.child.sync([remove('vorsorge_profil', id, await revOf('vorsorge_profile', id))]))).toEqual(['forbidden']);
+      expect((await rows(sql`select inhalt, deleted_at from vorsorge_profile where id = ${id}`))[0]).toMatchObject({ inhalt: E1('alt'), deleted_at: null });
+      expect((await fam.child.sync([upsert('vorsorge_profil', id, { inhalt: E1('neu') }, await revOf('vorsorge_profile', id))])).json.acked).toHaveLength(1);
+      expect((await rows(sql`select inhalt from vorsorge_profile where id = ${id}`))[0]?.inhalt).toBe(E1('neu'));
+    });
+
     it('Eintrag: Zufalls-IDs (UUID v4); Bezug nur auf eine verschlüsselte meds-Konversation', async () => {
       const k = await plan(fam.child, fam.child, [fam.child]);
       expect(codes(await fam.child.sync([eintrag(k, uuidAusSchluessel('irgendwas'))]))).toEqual(['invalid']);
