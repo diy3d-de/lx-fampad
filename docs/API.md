@@ -600,6 +600,20 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Kein Wecker, kein Inhalt im Protokoll:** `Facts.quiet`; ältere Inhalte werden aus den Protokolleinträgen entfernt, beim Löschen geleert.
 - **Ältere Clients** überspringen `tresor_eintrag` im Änderungsstrom (`protocolVersion` bleibt 1); eine Konversation der Art `tresor` sehen nur Eltern und Admins (bei älteren Apps wie eine leere Gruppe).
 
+**Familien-Status (Migration 0038)** · Konzept: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6o. Je Person ein kurzer, **unverschlüsselter** Status („Beim Sport“) mit optionalem Ablauf; Sicht für die ganze Familie.
+
+| Entität `status` | Feld | Typ | Zugriff |
+|---|---|---|---|
+| | `userId` | UUID der Person (Pflicht, aktives Mitglied der Familie; muss die anlegende Person sein) | create |
+| | `text` | 1 bis 60 Zeichen (UTF-16-Einheiten), ohne Steuer-, Zeilenumbruch- und unsichtbare Zeichen | rw |
+| | `bis` | ISO-8601-Zeitpunkt oder `null` (ohne Ende); höchstens 7 Tage nach der Serveruhr (sonst `invalid`), die Vergangenheit ist erlaubt | rw |
+| | `createdAt` | Anlagezeit (setzt der Server) | server |
+
+- **ID:** vorgeschrieben `statusId(userId)` = SHA-256 von `lx-fampad:status:<Personen-ID kleingeschrieben>` (Muster UUID Version 5; Known-Answer-Tests auf beiden Seiten); jede andere ID ist `invalid`. Löschen = Tombstone, erneutes Setzen belebt dieselbe Zeile wieder.
+- **Rechte:** Lesen alle Rollen (Stufe `family`); Anlegen, Ändern (`text`, `bis`) und Löschen nur die **eigene** Zeile, auch Admins ändern oder löschen keinen fremden Status (`forbidden`); das Betreiber-Flag und die Familienrolle zählen nie. Höchstens 50 lebende Stati je Familie, 20 neue und 20 Änderungen je Person und Minute.
+- **Kein Wecker, kein Inhalt im Protokoll:** `noWake`; ältere Texte werden aus den Protokolleinträgen entfernt. Abgelaufene Stati löscht der Server nicht; die App zeigt sie nur nicht mehr.
+- **Ältere Clients** überspringen `status` im Änderungsstrom (`protocolVersion` bleibt 1).
+
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).
 

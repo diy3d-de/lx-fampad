@@ -47,6 +47,7 @@ const kMobilKacheln = <StartKachel>[
   StartKachel('fristen', 'Fristen', 'erscheint nur, wenn eine frist bald abläuft'),
   StartKachel('medikamente', 'Medikamente', 'erscheint nur mit offenen einnahmen'),
   StartKachel('zaehler', 'Ablesen fällig', 'nur für eltern, erscheint nur, wenn etwas ansteht'),
+  StartKachel('status', 'Status', 'wer gerade was macht, mit ablauf'),
 ];
 
 /// Kacheln des Desktop-Rasters in der Standardreihenfolge.
@@ -66,6 +67,7 @@ const kDesktopKacheln = <StartKachel>[
   StartKachel('fristen', 'Fristen', 'erscheint nur, wenn eine frist bald abläuft'),
   StartKachel('medikamente', 'Medikamente', 'erscheint nur mit offenen einnahmen'),
   StartKachel('zaehler', 'Ablesen fällig', 'nur für eltern, erscheint nur, wenn etwas ansteht'),
+  StartKachel('status', 'Status', 'wer gerade was macht, mit ablauf'),
 ];
 
 /// Welche Kacheln es gerade gibt: [angeboten] (Feature ist da, erscheint in der Anpassen-Seite) und davon [leer] (gerade nichts zu zeigen,

@@ -84,7 +84,7 @@ export interface EntityDef {
   /** Darf ein gelöschter Datensatz mit fester ID durch erneutes Anlegen (mit Baserev 0) wieder aufleben? */
   revive?(row: Row): boolean;
   /** Prüfung gegen andere Datensätze (gleiche Konversation, Inhaltsversion) beim Anlegen und nach dem Zusammenführen einer Änderung; false = `invalid`. */
-  validate?(env: { tx: Executor; familyId: string; actor: Actor; flags?: EngineFlags }, row: Row): Promise<boolean>;
+  validate?(env: { tx: Executor; familyId: string; actor: Actor; /** Serveruhr der Op */ now?: Date; flags?: EngineFlags }, row: Row): Promise<boolean>;
   /** Felder, die beim Wiederbeleben einer gelöschten Zeile mit fester ID NICHT neu gesetzt werden (z. B. die Hülle `encVersion` eines Chats). */
   reviveKeep?: readonly string[];
   /** Spalte mit der Person, der der Datensatz gehört (Empfänger): der Verlauf für neu Aufgenommene wird schon in der Abfrage darauf beschränkt, damit fremde Zeilen die eigenen nicht verdrängen. */

@@ -339,6 +339,8 @@ void main() {
     expect(find.text('Kalender'), findsWidgets);
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
     await zumTab(tester, 'Start');
+    // die Startseite ist länger als der Bildschirm: erst nach oben, wo der Schnellzugriff steht
+    await tester.scrollUntilVisible(find.text('Termin'), -300, scrollable: find.byType(Scrollable).first);
     await tippeText(tester, 'Termin');
     expect(find.text('Neuer Termin'), findsWidgets);
     expect(find.byType(TextField), findsWidgets);
