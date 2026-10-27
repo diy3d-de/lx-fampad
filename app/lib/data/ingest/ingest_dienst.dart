@@ -387,7 +387,7 @@ class IngestDienst {
 /// Meldung zu einem Abbruch (feste Texte).
 String ingestAbbruchText(IngestAbbruch a) => switch (a) {
   IngestAbbruch.nichtVerfuegbar => 'Der Server nimmt keine Werte aus Home Assistant an.',
-  IngestAbbruch.keinSchluessel => 'Dieses Gerät kann nicht abholen; die Verbindung wurde auf einem anderen Gerät gekoppelt.',
+  IngestAbbruch.keinSchluessel => 'Dieses Gerät kann nicht abholen; die Verbindung wurde auf einem anderen Gerät gekoppelt. Du kannst den Schlüssel unter Zähler › Home Assistant auf dieses Gerät übertragen.',
   IngestAbbruch.schluesselFehler => 'Der Schlüssel dieser Verbindung ließ sich auf diesem Gerät gerade nicht lesen.',
   IngestAbbruch.netz => 'Der Server ist gerade nicht erreichbar. Die Werte warten dort und kommen beim nächsten Mal.',
   IngestAbbruch.nichtBereit => 'Das Abholen ist gerade nicht möglich. Prüfe Anmeldung und Nachrichten-Schutz.',

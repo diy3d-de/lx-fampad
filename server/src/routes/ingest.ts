@@ -19,10 +19,11 @@ import {
   revokeToken,
   touchToken,
 } from '../ingest/service.js';
+import { claimPostfachTransfer, createPostfachTransfer } from '../ingest/transfer.js';
 import { BoundedLimiter } from '../ingest/limiter.js';
 import { normalizeIp } from '../net.js';
 import { AppError } from '../errors.js';
-import { idParams, meta, parse, safeString, strictLimit, text, uuid } from './util.js';
+import { b64urlBlobMin, b64urlKey, idParams, meta, parse, safeString, strictLimit, text, uuid } from './util.js';
 
 /** Base64 (Standard-Alphabet, mit Auffüllung, kanonisch) zu 1 bis 1024 Bytes; sonst null. Der Inhalt wird nie ausgewertet. */
 function decodeBox(s: string): Buffer | null {
@@ -142,5 +143,19 @@ export function registerIngestRoutes(app: FastifyInstance, config: Config, auth:
     const p = await auth.requireSession(req);
     const body = parse(z.object({ ids: z.array(uuid).min(1).max(MAX_PAGE) }).strict(), req.body);
     return reply.send({ deleted: await ackPending(ctx, p, body.ids) });
+  });
+  // Weitergabe des Postfach-Schlüssels an ein weiteres Gerät derselben Person (Eltern/Admins, Sitzung; der Blob bleibt für den Server undurchsichtig)
+  app.post('/api/v1/ingest/postfach-transfer', strikt, async (req, reply) => {
+    requireIngestEnabled(ctx);
+    const p = await auth.requireSession(req);
+    const body = parse(z.object({ lookup: b64urlKey, blob: b64urlBlobMin(32, 1024) }).strict(), req.body);
+    return reply.header('cache-control', 'no-store').send(await createPostfachTransfer(ctx, p, body, meta(req)));
+  });
+
+  app.post('/api/v1/ingest/postfach-transfer/claim', strikt, async (req, reply) => {
+    requireIngestEnabled(ctx);
+    const p = await auth.requireSession(req);
+    const body = parse(z.object({ lookup: b64urlKey }).strict(), req.body);
+    return reply.header('cache-control', 'no-store').send(await claimPostfachTransfer(ctx, p, body, meta(req)));
   });
 }

@@ -105,7 +105,7 @@ void main() {
     // Werte, Kanäle und Päckchen werden nie protokolliert
     expect(RegExp(r'\bprint\(|debugPrint\(|\blog\(|developer\.log').hasMatch(dateien), isFalse);
     // die Oberfläche der Anbindung zeigt nichts auf der Startseite und sendet nichts per Push
-    final ui = [for (final n in ['ha_verbindung_screen', 'ha_koppeln_screen', 'ha_pruefen_screen', 'ha_zuordnen_screen']) File('lib/features/zaehler/$n.dart').readAsStringSync()].join('\n');
+    final ui = [for (final n in ['ha_verbindung_screen', 'ha_koppeln_screen', 'ha_pruefen_screen', 'ha_zuordnen_screen', 'ha_weitergabe_screens']) File('lib/features/zaehler/$n.dart').readAsStringSync()].join('\n');
     expect(RegExp(r'PushService|EreignisBenachrichtiger|ChatAnzeigePort|home_screen|print\(|debugPrint\(').hasMatch(ui), isFalse);
   });
 

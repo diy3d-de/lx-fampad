@@ -266,6 +266,21 @@ class FampadApi {
     return d is int ? d : 0;
   }
 
+  /// Legt die Weitergabe des Postfach-Schlüssels an ein weiteres eigenes Gerät an (undurchsichtiger Blob, 2 Minuten, einmal einlösbar; Eltern und Admins). Liefert die Ablaufzeit.
+  Future<DateTime> ingestWeitergabeAnlegen({required String suchkennung, required String blob}) async {
+    final r = await client.post('/ingest/postfach-transfer', {'lookup': suchkennung, 'blob': blob});
+    final t = r['expiresAt'];
+    return t is String ? (DateTime.tryParse(t) ?? DateTime.now()) : DateTime.now();
+  }
+
+  /// Löst die Weitergabe ein und liefert den Blob (nur dieselbe Person, einmal; sonst 404).
+  Future<String> ingestWeitergabeEinloesen(String suchkennung) async {
+    final r = await client.post('/ingest/postfach-transfer/claim', {'lookup': suchkennung});
+    final b = r['blob'];
+    if (b is! String) throw const FormatException('blob');
+    return b;
+  }
+
   // ----------------------------------------------------------- Betrieb (nur Betreiber, fast nur lesend)
 
   /// [frisch] umgeht den kurzen Cache des Servers (der begrenzt das selbst auf höchstens eine Messung je 5 Sekunden).

@@ -20,6 +20,16 @@ FH1-<base64url ohne Padding von UTF-8-JSON>
 
 Der private Postfach-Schlüssel entsteht in der App (`crypto_box_keypair`) und verlässt das Gerät nie (Schlüsselspeicher des Geräts, wie der Personenschlüssel). Unbekannte `v` = Code ablehnen.
 
+## Weitergabe des Postfach-Schlüssels auf ein weiteres Gerät (nur App, nicht Teil der Integration)
+
+Verfahren wie die Geräte-Übertragung des Personenschlüssels (`app/lib/data/crypto/uebertragung.dart`), Umsetzung `app/lib/data/ingest/ingest_weitergabe.dart`. Die Integration und die Päckchen sind davon nicht berührt, `docs/ingest-vektoren.json` bleibt unverändert.
+
+- Das Abholgerät erzeugt ein 32-Byte-Einmalgeheimnis S. QR: `LXP1:` + 56 Zeichen Base32 (mit 3 Byte Prüfsumme über den Zweck `lx-fampad|ingest-postfach-transfer|anzeige|v1`); Tippform: dieselben 56 Zeichen in 14 Vierergruppen.
+- Suchkennung (an den Server): `BLAKE2b-256(key = S, "lx-fampad|ingest|postfach-transfer-lookup|v1")`, Base64url. Verpackungsschlüssel (bleibt auf den Geräten): `BLAKE2b-256(key = S, "lx-fampad|ingest|postfach-transfer-key|v1")`.
+- Klartext: 1 Byte Version (1) | 96 Byte Postfach (öffentlicher Schlüssel 32, privater 32, MAC-Geheimnis `s` 32) | 1 Byte Anzahl n (0 bis 20) | n mal 16 Byte (UUID einer Verbindung, nur die Token-IDs).
+- Blob (Base64url, höchstens 1024 Zeichen): Version (1) | Nonce (24) | Chiffretext (wie bei der Geräte-Übertragung); AAD `lx-fampad|ingest-postfach-transfer|v1|<userId>`.
+- Server: `POST /ingest/postfach-transfer` und `…/claim` (siehe `docs/API.md`); 2 Minuten, einmal einlösbar, nur dieselbe Person.
+
 ## Päckchen
 
 `POST /ingest/zaehler` mit `items: [{ k, box }]`:

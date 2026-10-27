@@ -90,7 +90,9 @@ export type AuditEvent =
   | 'waste_check_requested'
   /** Einwurf-Token (Home Assistant) angelegt oder widerrufen (`detail.tokenId`, nie das Token). */
   | 'ingest_token_created'
-  | 'ingest_token_revoked';
+  | 'ingest_token_revoked'
+  | 'ingest_postfach_transfer_created'
+  | 'ingest_postfach_transfer_claimed';
 
 export interface AuditEntry {
   event: AuditEvent;

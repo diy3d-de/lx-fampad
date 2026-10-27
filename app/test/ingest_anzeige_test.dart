@@ -65,8 +65,8 @@ void main() {
     );
     final strom = ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Strom Haus', quelle: ha);
 
-    test('Zwei automatische Stände am selben Tag (zwei Abholgeräte): der Zähler und sein Kanal gelten als doppelt belegt', () {
-      final e = eintrag(zStrom, strom, [stand('a', zStrom, '2026-10-24', 1000, 1), stand('b', zStrom, '2026-10-24', 1000, 2), stand('c', zStrom, '2026-10-25', 1010, 3)]);
+    test('Zwei automatische Stände am selben Tag mit verschiedenen Werten (zwei Verbindungen): der Zähler und sein Kanal gelten als doppelt belegt', () {
+      final e = eintrag(zStrom, strom, [stand('a', zStrom, '2026-10-24', 1000, 1), stand('b', zStrom, '2026-10-24', 1005, 2), stand('c', zStrom, '2026-10-25', 1010, 3)]);
       final d = doppeltBelieferte([e]);
       expect(d.zaehler, ['Strom Haus']);
       expect(d.kanaele, {'strom_bezug'});
@@ -74,10 +74,17 @@ void main() {
       expect(haKanalLabel('xyz'), 'xyz');
     });
 
+    test('Derselbe Wert zweimal am selben Tag (zwei Abholgeräte desselben Elternteils holen gleichzeitig ab) ist unkritisch und löst keine Warnung aus', () {
+      final e = eintrag(zStrom, strom, [stand('a', zStrom, '2026-10-24', 1000, 1), stand('b', zStrom, '2026-10-24', 1000, 2), stand('c', zStrom, '2026-10-25', 1010, 3)]);
+      final d = doppeltBelieferte([e]);
+      expect(d.zaehler, isEmpty);
+      expect(d.kanaele, isEmpty);
+    });
+
     test('Ein von Hand und ein automatisch geschriebener Stand am selben Tag, archivierte Zähler und Zähler ohne Quelle zählen nicht', () {
       final gemischt = eintrag(zStrom, strom, [stand('a', zStrom, '2026-10-24', 1000, 1, auto: false), stand('b', zStrom, '2026-10-25', 1010, 2)]);
       expect(doppeltBelieferte([gemischt]).zaehler, isEmpty);
-      final doppelt = [stand('a', zStrom, '2026-10-24', 1000, 1), stand('b', zStrom, '2026-10-24', 1000, 2)];
+      final doppelt = [stand('a', zStrom, '2026-10-24', 1000, 1), stand('b', zStrom, '2026-10-24', 1005, 2)];
       final archiv = ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Alt', quelle: ha, archiviertAb: '2026-01-01');
       expect(doppeltBelieferte([eintrag(zStrom, archiv, doppelt)]).zaehler, isEmpty);
       expect(doppeltBelieferte([eintrag(zStrom, ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Hand'), doppelt)]).zaehler, isEmpty);
