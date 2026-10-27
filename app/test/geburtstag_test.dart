@@ -144,6 +144,7 @@ void main() {
     expect(t.titel, 'Lena');
     expect(t.ganztaegig, isTrue);
     expect(t.rrule, 'FREQ=YEARLY');
+    expect(t.erinnerungMin, isNull, reason: 'Geburtstage behalten ihr bisheriges Verhalten: keine Erinnerung vorbelegt');
     expect(hatGeburtstagsMarke(t), isTrue);
     expect(geburtsjahr(t), heuteTag().year - 10);
     final s = tagAusText(t.startDate)!;

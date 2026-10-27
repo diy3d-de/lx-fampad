@@ -21,6 +21,7 @@ import 'features/calendar/erinnerung_steuerung.dart';
 import 'features/medikamente/medikament_steuerung.dart';
 import 'data/dateien/datei_state.dart' show transferSteuerungProvider;
 import 'data/ingest/ingest_state.dart' show ingestSteuerungProvider;
+import 'data/erinnerungen/erinnerung_nachtrag.dart' show erinnerungNachtragProvider;
 import 'data/tresor/tresor_steuerung.dart';
 import 'data/tresor/tresor_sperre.dart' show tresorLebenszyklusProvider;
 import 'features/zaehler/zaehler_steuerung.dart';
@@ -153,6 +154,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     // Terminerinnerungen (Android) aktuell halten: hier am Wurzel-Widget, das nie pausiert (hinter geöffneten Seiten pausieren Beobachter)
     ref.watch(erinnerungSteuerungProvider);
+    // Standard-Erinnerung einmalig bei vorhandenen Terminen ohne Erinnerung nachtragen (alle Plattformen, nie wieder, siehe erinnerung_nachtrag.dart)
+    ref.watch(erinnerungNachtragProvider);
     // Startbildschirm-Widget "Heute" (Android) aktuell halten und Tipps darauf auswerten
     ref.watch(heuteWidgetSteuerungProvider);
     // Chat-Verschlüsselung (Schlüsselbund, Epochen, Entschlüsselung) am Laufen halten

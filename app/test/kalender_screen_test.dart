@@ -203,6 +203,7 @@ void main() {
       expect(t.rrule, startsWith('FREQ=WEEKLY;BYDAY='));
       expect(t.rrule, endsWith('COUNT=10'));
       expect(t.tzid, 'Europe/Berlin');
+      expect(t.erinnerungMin, 60, reason: 'Standard-Erinnerung vorbelegt');
       expect(t.ownerId, fixIdAdmin);
       expect((await env.db.select(env.db.terminTeilnehmer).get()).single.userId, fixIdKind);
       expect(find.textContaining('Elternabend'), findsWidgets);

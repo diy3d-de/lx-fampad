@@ -182,6 +182,10 @@ void main() {
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
         await tippe(tester, find.widgetWithText(EinstellungsZeile, 'Kalender'));
         pruefe(tester, 'Kalender-Einstellungen $skala');
+        await tippe(tester, find.widgetWithText(EinstellungsZeile, 'Standard-Erinnerung'));
+        pruefe(tester, 'Standard-Erinnerung $skala');
+        await tippe(tester, find.text('1 Stunde'));
+        expect(find.text('Gilt für neue Termine: 1 Stunde vorher. Beim Anlegen kannst du sie ändern.'), findsOneWidget);
         await tippe(tester, find.byTooltip('Zurück'));
         await tippe(tester, find.text('Startseite und Anzeige'));
         await tippe(tester, find.text('Startseite anpassen'));

@@ -148,12 +148,21 @@ void main() {
     expect(find.textContaining('Genaue Alarme ("Alarme & Erinnerungen") sind auf diesem Gerät nicht erlaubt'), findsOneWidget);
   });
 
-  testWidgets('Standard-Vorlaufzeit wählen: wird lokal gespeichert', (tester) async {
+  testWidgets('Standard-Erinnerung (Profil > Kalender): Vorgabe 1 Stunde, Wahl und "Keine" werden lokal gespeichert', (tester) async {
     await oeffnen(tester);
-    await tippeText(tester, '1 Stunde');
-    expect(speicher.daten['erinnerung_vorlauf'], '60');
+    expect(find.textContaining('unter Profil › Kalender'), findsOneWidget);
+    await tippe(tester, find.byTooltip('Zurück'));
+    await tippe(tester, find.byTooltip('Zurück'));
+    await tippeText(tester, 'Kalender');
+    expect(find.textContaining('Gilt für neue Termine: 1 Stunde vorher'), findsOneWidget);
+    await tippeText(tester, 'Standard-Erinnerung');
+    await tippeText(tester, '1 Tag');
+    expect(speicher.daten['erinnerung_vorlauf'], '1440');
+    expect(find.textContaining('Gilt für neue Termine: 1 Tag vorher'), findsOneWidget);
+    await tippeText(tester, 'Standard-Erinnerung');
     await tippeText(tester, 'Keine');
     expect(speicher.daten['erinnerung_vorlauf'], '');
+    expect(find.textContaining('Gilt für neue Termine: Keine'), findsOneWidget);
   });
 
   testWidgets('Testbenachrichtigung: in 10 Sekunden geplant, bei fehlender Berechtigung wird erst gefragt', (tester) async {
