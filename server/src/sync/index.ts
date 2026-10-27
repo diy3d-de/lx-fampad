@@ -3,6 +3,7 @@ import { epocheEntity, epocheWrapEntity } from './entities/chat-epochen.js';
 import { konversationEntity, lesestandEntity, nachrichtEntity } from './entities/chat.js';
 import { pinEntity, reaktionEntity, stimmeEntity } from './entities/chat-zusatz.js';
 import { einnahmeEntity, medikamentEntity } from './entities/medikamente.js';
+import { vorsorgeEintragEntity, vorsorgeProfilEntity } from './entities/vorsorge.js';
 import { dateiEntity, dateiVersionEntity, ordnerEntity } from './entities/dateien.js';
 import { tresorAnhangEntity } from './entities/tresor-anhang.js';
 import { tresorEintragEntity } from './entities/tresor.js';
@@ -31,6 +32,8 @@ export const defaultRegistry = new Registry([
   pinEntity,
   medikamentEntity,
   einnahmeEntity,
+  vorsorgeProfilEntity,
+  vorsorgeEintragEntity,
   zaehlerEntity,
   zaehlerstandEntity,
   tresorEintragEntity,

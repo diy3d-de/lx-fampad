@@ -9,6 +9,7 @@
 import 'dart:convert';
 
 import '../medikamente/medikament_erinnerung.dart' show istMedikamentPayload;
+import '../vorsorge/vorsorge_erinnerung.dart' show istVorsorgePayload;
 import '../muell/muell_logik.dart' show istMuellPayload;
 import '../tagesbriefing/briefing_erinnerung.dart' show istBriefingPayload;
 import '../zaehler/zaehler_erinnerung.dart' show istZaehlerPayload;
@@ -59,7 +60,7 @@ String? webNeutralerText(String payload) {
   if (erinnerungPayloadLesen(payload) != null) return 'Erinnerung: Ein Termin steht an';
   if (aufgabeErinnerungPayloadLesen(payload) != null) return 'Erinnerung: Eine Aufgabe steht an';
   if (istMuellPayload(payload)) return 'Erinnerung: Eine Abholung steht an';
-  if (istMedikamentPayload(payload) || istZaehlerPayload(payload)) return 'Erinnerung: Etwas steht an';
+  if (istMedikamentPayload(payload) || istZaehlerPayload(payload) || istVorsorgePayload(payload)) return 'Erinnerung: Etwas steht an';
   if (istBriefingPayload(payload)) return 'Erinnerung: Dein Tagesüberblick ist bereit';
   return null;
 }

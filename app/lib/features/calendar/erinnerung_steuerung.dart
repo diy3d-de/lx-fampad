@@ -16,6 +16,8 @@ import '../../data/betrieb/betrieb_hinweis.dart' show betriebOeffnenProvider;
 import '../../data/standort/standort_hinweis.dart' show standortOeffnenProvider;
 import '../../data/medikamente/medikament_hinweis.dart' show medikamentOeffnenProvider;
 import '../../data/medikamente/medikament_state.dart' show medDatenProvider;
+import '../../data/vorsorge/vorsorge_hinweis.dart' show vorsorgeOeffnenProvider;
+import '../../data/vorsorge/vorsorge_state.dart' show vorsorgeDatenProvider;
 import '../../data/muell/muell_hinweis.dart' show muellOeffnenProvider;
 import '../../data/tagesbriefing/briefing_einstellungen.dart' show briefingEinstellungenProvider;
 import '../../data/wetter/wetter_hinweise.dart' show wetterOeffnenProvider;
@@ -46,6 +48,7 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   dienst.beiSicherheitGeoeffnet = () => ref.read(sicherheitOeffnenProvider.notifier).anfordern();
   dienst.beiBetriebGeoeffnet = () => ref.read(betriebOeffnenProvider.notifier).anfordern();
   dienst.beiMedikamentGeoeffnet = () => ref.read(medikamentOeffnenProvider.notifier).anfordern();
+  dienst.beiVorsorgeGeoeffnet = () => ref.read(vorsorgeOeffnenProvider.notifier).anfordern();
   dienst.beiZaehlerGeoeffnet = () => ref.read(zaehlerOeffnenProvider.notifier).anfordern();
   dienst.beiMuellGeoeffnet = () => ref.read(muellOeffnenProvider.notifier).anfordern();
   dienst.beiWetterGeoeffnet = () => ref.read(wetterOeffnenProvider.notifier).anfordern();
@@ -58,6 +61,10 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   // Einnahme-Erinnerungen: neue Pläne, abgehakte Einnahmen oder eine fertige Entschlüsselung -> Fenster neu berechnen (ein abgehakter Slot nimmt seine Alarme mit)
   ref.listen(medDatenProvider, (alt, neu) {
     // nur wenn sich etwas für die Erinnerungen ändern kann: Pläne vorhanden (oder eben weggefallen) oder die Daten sind erst jetzt geladen; ohne Pläne löst nichts einen Abgleich aus
+    if (neu.geladen != (alt?.geladen ?? false) || neu.eintraege.isNotEmpty || (alt?.eintraege.isNotEmpty ?? false)) dienst.entprellt();
+  });
+  // Vorsorge-Erinnerungen: neue Einträge, ein neues Profil oder eine fertige Entschlüsselung -> Fenster neu berechnen (ohne Daten löst nichts einen Abgleich aus)
+  ref.listen(vorsorgeDatenProvider, (alt, neu) {
     if (neu.geladen != (alt?.geladen ?? false) || neu.eintraege.isNotEmpty || (alt?.eintraege.isNotEmpty ?? false)) dienst.entprellt();
   });
   // Ablese-Erinnerungen der Zähler (nur Eltern und Admins; für alle anderen ändert sich nie etwas): neue Stände, Zähler oder eine fertige Entschlüsselung -> Fenster neu berechnen

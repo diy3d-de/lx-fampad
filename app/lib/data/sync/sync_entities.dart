@@ -12,6 +12,7 @@ import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
 import 'sync_dateien.dart';
 import 'sync_medikamente.dart';
+import 'sync_vorsorge.dart';
 import 'sync_status.dart';
 import 'sync_tresor.dart';
 import 'sync_zaehler.dart';
@@ -435,7 +436,7 @@ class KonversationEntitaet extends SyncEntity {
   String get name => 'konversation';
 
   @override
-  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId'), KindLink('zaehler', 'konversationId'), KindLink('zaehlerstand', 'konversationId'), KindLink('tresor_eintrag', 'konversationId'), KindLink('tresor_anhang', 'konversationId')];
+  List<KindLink> get kinder => const [KindLink('nachricht', 'konversationId'), KindLink('lesestand', 'konversationId'), KindLink('epoche', 'konversationId'), KindLink('epoche_wrap', 'konversationId'), KindLink('reaktion', 'konversationId'), KindLink('stimme', 'konversationId'), KindLink('pin', 'konversationId'), KindLink('medikament', 'konversationId'), KindLink('einnahme', 'konversationId'), KindLink('vorsorge_profil', 'konversationId'), KindLink('vorsorge_eintrag', 'konversationId'), KindLink('zaehler', 'konversationId'), KindLink('zaehlerstand', 'konversationId'), KindLink('tresor_eintrag', 'konversationId'), KindLink('tresor_anhang', 'konversationId')];
 
   @override
   String get elternGeloescht => 'Der Chat wurde gelöscht.';
@@ -979,6 +980,8 @@ final Map<String, SyncEntity> syncEntities = {
     PinEntitaet(),
     MedikamentEntitaet(),
     EinnahmeEntitaet(),
+    VorsorgeProfilEntitaet(),
+    VorsorgeEintragEntitaet(),
     ZaehlerEntitaet(),
     ZaehlerstandEntitaet(),
     TresorEintragEntitaet(),

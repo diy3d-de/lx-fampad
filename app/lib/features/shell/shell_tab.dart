@@ -40,5 +40,8 @@ const kZaehlerTab = 10;
 /// Index des Tresor-Bereichs in [kDesktopTabs] (nur Eltern und Admins, ohne Badge; nur im Desktop-Layout ein Bereich der Shell, mobil eine Seite über das Blatt "Mehr").
 const kTresorTab = 11;
 
+/// Index des Vorsorge-Bereichs in [kDesktopTabs] (für alle Rollen, nur Eigenes und das der Kinder; nur im Desktop-Layout ein Bereich der Shell, mobil eine Seite über das Blatt "Mehr").
+const kVorsorgeTab = 12;
+
 /// Index des Dateien-Bereichs in [kTabs]; nur im Desktop-Layout ein Bereich der Shell (Seitenleiste, wenn der Server die Dateiablage meldet), mobil eine Seite hinter "Mehr".
 const kDateienTab = 3;

@@ -1538,6 +1538,58 @@ export const einnahmen = pgTable(
   ],
 );
 
+/** Vorsorge-Profil (Abschnitt 6p): je Person genau eines (feste ID aus der Konversation), Kind der Medikamenten-Konversation `meds`. `inhalt` ist eine e1-Hülle (Geburtsdatum, Geschlecht optional). */
+export const vorsorgeProfile = pgTable(
+  'vorsorge_profile',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('vorsorge_profile_konversation_idx').on(t.familyId, t.konversationId),
+    index('vorsorge_profile_family_rev_idx').on(t.familyId, t.rev),
+    index('vorsorge_profile_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('vorsorge_profile_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('vorsorge_profile_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 2048`),
+  ],
+);
+
+/** Vorsorge-/Impf-Eintrag (Abschnitt 6p): Kind der Medikamenten-Konversation `meds`. `inhalt` ist eine e1-Hülle (Vorlage oder Name, Art, Erledigt-Daten, Vorlauf, Notiz). Keine automatische Löschung. */
+export const vorsorgeEintraege = pgTable(
+  'vorsorge_eintraege',
+  {
+    id: id(),
+    familyId: familyRef(),
+    konversationId: uuid('konversation_id').notNull(),
+    inhalt: text('inhalt').notNull(),
+    bearbeiterId: uuid('bearbeiter_id').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.konversationId], foreignColumns: [konversationen.familyId, konversationen.id] }).onDelete('cascade'),
+    index('vorsorge_eintraege_konversation_idx').on(t.familyId, t.konversationId),
+    index('vorsorge_eintraege_family_rev_idx').on(t.familyId, t.rev),
+    index('vorsorge_eintraege_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
+    index('vorsorge_eintraege_bearbeiter_idx')
+      .on(t.familyId, t.bearbeiterId, t.createdAt)
+      .where(sql`${t.bearbeiterId} is not null`),
+    check('vorsorge_eintraege_inhalt_len_ck', sql`char_length(${t.inhalt}) <= 8192`),
+  ],
+);
+
 /**
  * Zähler (Abschnitt 6l): ein Zähler des Haushalts (Strom, Wasser, Gas, ...), Kind der Zähler-Konversation (`konversationen.art = 'zaehler'`, eine je Familie, nur Eltern und
  * Admins als Teilnehmer). `inhalt` ist eine Ende-zu-Ende verschlüsselte, signierte e1-Hülle (Art, Name, Einheit, Preise, Periode, ...): der Server sieht nur Struktur und Größe.

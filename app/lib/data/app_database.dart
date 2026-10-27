@@ -654,7 +654,43 @@ class FamilienStati extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, Zaehler, Zaehlerstaende, TresorEintraege, Ordner, Dateien, DateiVersionen, TresorAnhaenge, Transfers, DateiCache, FamilienStati])
+/// Vorsorge-Profil (Abschnitt 6p), Kind der Medikamenten-Konversation: je Person genau eines (feste ID `vorsorgeProfilId`). `inhalt` ist die Hülle (`e1:` bzw. lokal `l1:` im Ausgang), Art `p`.
+@DataClassName('VorsorgeProfilZeile')
+@TableIndex(name: 'vorsorge_profile_konversation_idx', columns: {#konversationId})
+class VorsorgeProfile extends Table {
+  @override
+  String get tableName => 'vorsorge_profile';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+/// Vorsorge-/Impf-Eintrag (Abschnitt 6p), Kind der Medikamenten-Konversation; Hülle wie beim Profil (Art `v`).
+@DataClassName('VorsorgeEintragZeile')
+@TableIndex(name: 'vorsorge_eintraege_konversation_idx', columns: {#konversationId})
+class VorsorgeEintraege extends Table {
+  @override
+  String get tableName => 'vorsorge_eintraege';
+
+  TextColumn get id => text()();
+  TextColumn get konversationId => text()();
+  TextColumn get inhalt => text()();
+  TextColumn get bearbeiterId => text().nullable()();
+  IntColumn get createdAt => integer().map(const MsDatumConverter())();
+  IntColumn get rev => integer().withDefault(const Constant(0))();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [SyncMeta, Outbox, Listen, ListenEintraege, Termine, TerminTeilnehmer, TerminAusnahmen, Konversationen, Nachrichten, Lesestaende, KonversationEpochen, EpocheWraps, Aufgaben, AufgabePunkte, Reaktionen, Stimmen, Pins, Medikamente, Einnahmen, VorsorgeProfile, VorsorgeEintraege,Zaehler, Zaehlerstaende, TresorEintraege, Ordner, Dateien, DateiVersionen, TresorAnhaenge, Transfers, DateiCache, FamilienStati])
 class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
@@ -665,7 +701,7 @@ class AppDatabase extends _$AppDatabase {
   /// Version 8: Lesestände aller Teilnehmer (Lesebestätigung); der Server liefert sie erst jetzt, darum einmal neu abgleichen.
   /// Version 9: `fehlerCode` im Ausgang (abgelehnte Chat-Nachrichten bleiben als Fehler sichtbar); nur eine Spalte, kein Sync-Reset.
   @override
-  int get schemaVersion => 18;
+  int get schemaVersion => 19;
 
   /// Version 10: Chat-Erweiterungen (Reaktionen, Stimmen, Pins) mit Sync-Reset.
   /// Version 11: `category` an Listeneinträgen (Einkauf nach Gang) mit Sync-Reset, damit vorhandene Kategorien ankommen.
@@ -675,6 +711,7 @@ class AppDatabase extends _$AppDatabase {
   /// Version 15: Tresor (Tabelle `tresor_eintraege`) mit Sync-Reset.
   /// Version 16: Dateiablage (Tabellen `ordner`, `dateien`, `datei_versionen`, `tresor_anhaenge` als Sync-Entitäten, `transfers` und `datei_cache` nur lokal) mit Sync-Reset.
   /// Version 18: Familien-Status (Tabelle `familien_status`) mit Sync-Reset.
+  /// Version 19: Vorsorge und Impfungen (Tabellen `vorsorge_profile` und `vorsorge_eintraege`) mit Sync-Reset.
   /// Version 17: `farbe` an Terminen (Termin-Farben); nur eine Spalte, kein Sync-Reset (keine neue Entität, bisher hatte kein Termin eine Farbe).
 
   /// Migrationen nur vorwärts. Version 1 (Phase 0 bis 1b) kannte nur `sync_meta` (mit dem Besitzer der Daten) und eine nie
@@ -778,6 +815,14 @@ class AppDatabase extends _$AppDatabase {
           final da = await customSelect("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'familien_status'").get();
           if (da.isEmpty) await m.createTable(familienStati);
         }
+        if (from < 19) {
+          // nur anlegen, wenn sie fehlen (erneuter Lauf nach einem abgebrochenen Update)
+          final da = {for (final r in await customSelect("SELECT name FROM sqlite_master WHERE type = 'table'").get()) r.read<String>('name')};
+          if (!da.contains('vorsorge_profile')) await m.createTable(vorsorgeProfile);
+          if (!da.contains('vorsorge_eintraege')) await m.createTable(vorsorgeEintraege);
+          await customStatement('CREATE INDEX IF NOT EXISTS vorsorge_profile_konversation_idx ON vorsorge_profile (konversation_id)');
+          await customStatement('CREATE INDEX IF NOT EXISTS vorsorge_eintraege_konversation_idx ON vorsorge_eintraege (konversation_id)');
+        }
         if (from < 16) {
           await m.createTable(ordner);
           await m.createTable(dateien);
@@ -819,6 +864,10 @@ class AppDatabase extends _$AppDatabase {
       }
       if (from < 12) {
         // Version 12 fügt der Aufgabe synchronisierte Felder hinzu; ohne Reset kämen schon vorhandene Fristen nie an (Regel oben).
+        await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
+      }
+      if (from < 19) {
+        // Version 19 legt Tabellen für neue Sync-Entitäten an (Vorsorge-Profil, Vorsorge-Einträge); ohne Reset kämen schon vorhandene nie an (Regel oben).
         await customStatement("DELETE FROM sync_meta WHERE key IN ('sinceRev', 'snapshotRev')");
       }
       if (from < 18) {

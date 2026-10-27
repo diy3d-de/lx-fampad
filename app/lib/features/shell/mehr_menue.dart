@@ -18,6 +18,7 @@ import '../../ui/widgets.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
 import '../medikamente/medikamente_karte.dart' show medikamenteOeffnen;
+import '../vorsorge/vorsorge_screen.dart' show vorsorgeOeffnen;
 import '../zaehler/zaehler_anzeige.dart' show zaehlerFaelligProvider;
 import '../zaehler/zaehler_karte.dart' show zaehlerOeffnen;
 import '../tresor/tresor_screen.dart' show tresorOeffnen;
@@ -124,6 +125,8 @@ List<MehrEintrag> bereichsEintraege(WidgetRef ref, {int? offenerTab}) {
     if (zaehlerDarf) MehrEintrag(id: 'zaehler', label: 'Zähler', icon: Icons.speed_outlined, gruppe: MehrGruppe.zuhause, tab: kZaehlerTab, hinweis: h.zaehler, oeffnen: (c, _) => zaehlerOeffnen(c)),
     // Medikamente: nur Eigenes und das der Kinder; die Zahl sind fällige und verpasste Einnahmen heute
     MehrEintrag(id: 'medikamente', label: 'Medikamente', icon: Icons.medication_outlined, gruppe: MehrGruppe.zuhause, tab: kMedikamenteTab, hinweis: h.medikamente, oeffnen: (c, _) => medikamenteOeffnen(c)),
+    // Vorsorge: für alle Rollen, aber nur Eigenes und das der Kinder; ohne Zahl und ohne Zeichen
+    MehrEintrag(id: 'vorsorge', label: 'Vorsorge', icon: Icons.vaccines_outlined, gruppe: MehrGruppe.zuhause, tab: kVorsorgeTab, oeffnen: (c, _) => vorsorgeOeffnen(c)),
     // Ablage
     // Dateien: nur wenn der Server die Dateiablage meldet; Kinder sehen den Bereich mit ihren Rechten, ohne Zahl und ohne Zeichen
     if (dateienDa) MehrEintrag(id: 'dateien', label: 'Dateien', icon: Icons.folder_outlined, gruppe: MehrGruppe.ablage, tab: kDateienTab, oeffnen: (c, _) => dateienOeffnen(c)),
