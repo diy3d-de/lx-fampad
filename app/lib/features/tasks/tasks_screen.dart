@@ -17,10 +17,11 @@ import '../../widgets/benutzer_avatar.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
-import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import '../lists/list_dialogs.dart' show bestaetigen;
 import 'aufgabe_editor.dart';
 import '../../data/tasks/fristen_logik.dart';
 import 'aufgaben_anzeige.dart';
+import 'aufgaben_filter_blatt.dart';
 import 'frist_editor.dart';
 import 'fristen_anzeige.dart';
 import 'tasks_state.dart';
@@ -87,43 +88,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     knopf: 'Löschen',
   );
 
-  Future<void> _personWaehlen(List<UserDto> personen, String? aktuell) async {
-    final wahl = await showModalBottomSheet<String>(useRootNavigator: false,
-      context: context,
-      showDragHandle: true,
-      isScrollControlled: true,
-      builder: (c) => SafeArea(
-        child: ConstrainedBox(
-          constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(c).height * 0.7),
-          child: ListView(
-            shrinkWrap: true,
-            padding: const EdgeInsets.fromLTRB(8, 0, 8, 16),
-            children: [
-              const Padding(padding: EdgeInsets.fromLTRB(12, 0, 12, 8), child: MonoLabel('Person')),
-              ListTile(
-                minTileHeight: 52,
-                leading: const Icon(Icons.groups_outlined, color: kTextMuted),
-                title: const Text('Alle Personen'),
-                selected: aktuell == null,
-                onTap: () => Navigator.of(c).pop(''),
-              ),
-              for (final p in personen)
-                ListTile(
-                  minTileHeight: 52,
-                  leading: BenutzerAvatar(user: p, size: 32),
-                  title: Text(p.displayName),
-                  selected: p.id == aktuell,
-                  onTap: () => Navigator.of(c).pop(p.id),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-    if (wahl == null) return;
-    ref.read(aufgabenAnsichtProvider.notifier).person(wahl.isEmpty ? null : wahl);
-  }
-
   Future<void> _erledigteLoeschen(List<Aufgabe> erledigte) async {
     final ja = await bestaetigen(
       context,
@@ -154,6 +118,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     final mitgliederListe = daten.aufgaben.isEmpty ? const <UserDto>[] : (ref.watch(mitgliederProvider).value ?? const <UserDto>[]);
     final mitglieder = Mitglieder(mitgliederListe);
 
+    final notifier = ref.read(aufgabenAnsichtProvider.notifier);
+    final aktiv = aktiveAufgabenFilter(ansicht);
     final fristenAnsicht = ansicht.filter == AufgabeFilter.fristen;
     final gefiltert = filtereAufgaben(daten.aufgaben, filter: ansicht.filter, person: ansicht.person, ich: user?.id);
     final sichtbar = [
@@ -170,18 +136,41 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       const TabKopfzeile(title: 'Aufgaben'),
       const SizedBox(height: 12),
       const SyncHinweise(),
-      if (rechte.darfAnlegen && fristenAnsicht) ...[
-        Align(
-          alignment: Alignment.centerLeft,
-          child: FilledButton.icon(
-            style: FilledButton.styleFrom(minimumSize: const Size(44, 48)),
-            onPressed: () => fristEditorOeffnen(context),
-            icon: const Icon(Icons.add),
-            label: const Text('Neue Frist'),
+      Row(
+        children: [
+          Expanded(
+            child: Wrap(
+              spacing: 12,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                if (daten.aufgaben.isNotEmpty) Text('$offen offen · $erledigt erledigt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: kTextMuted)),
+                if (rechte.darfAnlegen && fristenAnsicht)
+                  FilledButton.icon(
+                    style: FilledButton.styleFrom(minimumSize: const Size(44, 48)),
+                    onPressed: () => fristEditorOeffnen(context),
+                    icon: const Icon(Icons.add),
+                    label: const Text('Neue Frist'),
+                  ),
+              ],
+            ),
           ),
-        ),
-        const SizedBox(height: 12),
-      ] else if (rechte.darfAnlegen) ...[
+          IconButton(
+            style: IconButton.styleFrom(minimumSize: const Size(48, 48), backgroundColor: aktiv > 0 ? kAccentSoft : kSurface),
+            tooltip: aktiv == 0 ? 'Filter und Anzeige' : 'Filter und Anzeige, $aktiv aktiv',
+            onPressed: () => aufgabenFilterBlattOeffnen(context),
+            icon: Badge(
+              isLabelVisible: aktiv > 0,
+              label: Text('$aktiv'),
+              backgroundColor: kAccent,
+              textColor: kOnAccent,
+              child: Icon(Icons.filter_list, color: aktiv > 0 ? kAccent : kText),
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      if (rechte.darfAnlegen && !fristenAnsicht) ...[
         Row(
           children: [
             Expanded(
@@ -202,28 +191,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         ),
         const SizedBox(height: 12),
       ],
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (final f in AufgabeFilter.values) AuswahlKnopf(text: f.label, gewaehlt: ansicht.filter == f, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).filter(f)),
-        ],
-      ),
-      const SizedBox(height: 8),
-      Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          if (mitgliederListe.length > 1)
-            _PersonFilter(person: mitglieder[ansicht.person], aktiv: ansicht.person != null, onTap: () => _personWaehlen(mitgliederListe, ansicht.person)),
-          if (!fristenAnsicht)
-            for (final s in AufgabeSortierung.values)
-              AuswahlKnopf(text: 'Nach ${s.label}', gewaehlt: ansicht.sortierung == s, onTap: () => ref.read(aufgabenAnsichtProvider.notifier).sortierung(s)),
-        ],
-      ),
-      const SizedBox(height: 8),
-      if (daten.aufgaben.isNotEmpty) Text('$offen offen · $erledigt erledigt', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+      if (aktiv > 0)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              if (ansicht.filter != AufgabeFilter.offen) _FilterChip(text: 'Status: ${ansicht.filter.label}', onEntfernen: () => notifier.filter(AufgabeFilter.offen)),
+              if (ansicht.person != null)
+                _FilterChip(text: 'Person: ${mitglieder[ansicht.person]?.displayName.split(RegExp(r'\s+')).first ?? 'unbekannt'}', onEntfernen: () => notifier.person(null)),
+              if (ansicht.sortierung != AufgabeSortierung.faelligkeit && !fristenAnsicht)
+                _FilterChip(text: 'Nach ${ansicht.sortierung.label}', onEntfernen: () => notifier.sortierung(AufgabeSortierung.faelligkeit)),
+              TextButton(style: TextButton.styleFrom(minimumSize: const Size(44, 44)), onPressed: notifier.zuruecksetzen, child: const Text('Zurücksetzen')),
+            ],
+          ),
+        ),
       if (loeschbar.isNotEmpty)
         Align(
           alignment: Alignment.centerLeft,
@@ -243,18 +227,16 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
         const EmptyState(icon: Icons.event_available_outlined, title: 'Noch keine Fristen', hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.')
       else if (daten.aufgaben.isEmpty)
         const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
-      else if (sichtbar.isEmpty)
+      else if (sichtbar.isEmpty && aktiv > 0)
         EmptyState(
           icon: Icons.filter_alt_off_outlined,
-          title: ansicht.filter == AufgabeFilter.erledigt ? 'Noch nichts erledigt' : 'Nichts gefunden',
-          hint: switch (ansicht.filter) {
-            AufgabeFilter.meine => 'Dir ist gerade nichts zugewiesen.',
-            AufgabeFilter.offen => 'Es ist nichts mehr offen.',
-            AufgabeFilter.erledigt => 'Erledigte Aufgaben erscheinen hier.',
-            AufgabeFilter.alle => 'Für diese Person gibt es keine Aufgaben.',
-            AufgabeFilter.fristen => 'Es gibt keine offenen Fristen.',
-          },
-        ),
+          title: 'Keine Aufgaben mit diesen Filtern',
+          hint: 'Ändere die Filter oder setze sie zurück.',
+          knopf: 'Filter zurücksetzen',
+          onKnopf: notifier.zuruecksetzen,
+        )
+      else if (sichtbar.isEmpty)
+        const EmptyState(icon: Icons.filter_alt_off_outlined, title: 'Nichts gefunden', hint: 'Es ist nichts mehr offen.'),
     ];
 
     return RefreshIndicator(
@@ -294,47 +276,30 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
   }
 }
 
-class _PersonFilter extends StatelessWidget {
-  final UserDto? person;
-  final bool aktiv;
-  final VoidCallback onTap;
-  const _PersonFilter({required this.person, required this.aktiv, required this.onTap});
+/// Aktiver Filter als kleine Fläche; das Kreuz entfernt ihn (Touch-Ziel 44 px).
+class _FilterChip extends StatelessWidget {
+  final String text;
+  final VoidCallback onEntfernen;
+  const _FilterChip({required this.text, required this.onEntfernen});
 
   @override
-  Widget build(BuildContext context) {
-    final text = aktiv ? (person?.displayName.split(RegExp(r'\s+')).first ?? 'Person') : 'Alle Personen';
-    return Semantics(
-      button: true,
-      selected: aktiv,
-      label: 'Person filtern, $text',
-      excludeSemantics: true,
-      onTap: onTap,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(10),
-        onTap: onTap,
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 44),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: aktiv ? kAccentSoft : null,
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: aktiv ? kAccent.withValues(alpha: 0.4) : Colors.transparent),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (aktiv && person != null) ...[BenutzerAvatar(user: person, size: 24), const SizedBox(width: 8)] else ...[const Icon(Icons.person_outline, size: 18, color: kTextMuted), const SizedBox(width: 6)],
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 160),
-                child: Text(text, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: aktiv ? kAccent : kTextMuted)),
-              ),
-              const Icon(Icons.arrow_drop_down, size: 20, color: kTextMuted),
-            ],
-          ),
+  Widget build(BuildContext context) => Container(
+    constraints: const BoxConstraints(minHeight: 44),
+    padding: const EdgeInsets.only(left: 12),
+    decoration: BoxDecoration(color: kAccentSoft, borderRadius: BorderRadius.circular(12)),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(child: Text(text, softWrap: true, style: const TextStyle(fontSize: 13, color: kAccent))),
+        IconButton(
+          constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+          tooltip: 'Filter entfernen: $text',
+          onPressed: onEntfernen,
+          icon: const Icon(Icons.close, size: 16, color: kAccent),
         ),
-      ),
-    );
-  }
+      ],
+    ),
+  );
 }
 
 class _Zeile extends StatelessWidget {

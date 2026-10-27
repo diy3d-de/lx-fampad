@@ -119,6 +119,15 @@ Future<void> tippeText(WidgetTester tester, String text) async {
   await tippe(tester, find.text(text));
 }
 
+/// Aufgaben: öffnet das Blatt "Filter und Anzeige", tippt die genannten Einträge (Status, Person, Sortierung) und schließt es mit "n Aufgaben zeigen".
+Future<void> aufgabenFilter(WidgetTester tester, List<String> eintraege) async {
+  await tippe(tester, find.byWidgetPredicate((w) => w is IconButton && (w.tooltip ?? '').startsWith('Filter und Anzeige')));
+  for (final e in eintraege) {
+    await tippe(tester, find.text(e).last); // das Blatt liegt als oberste Route zuletzt im Baum
+  }
+  await tippe(tester, find.textContaining(RegExp(r'Aufgaben? zeigen')));
+}
+
 Future<void> eingeben(WidgetTester tester, String label, String wert) async {
   final f = find.widgetWithText(TextField, label);
   expect(f, findsOneWidget, reason: 'Feld "$label"');
