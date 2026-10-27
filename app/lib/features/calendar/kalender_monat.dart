@@ -2,6 +2,7 @@
 // darunter Balken: mehrtägige Termine und Ferien laufen durchgehend über die Tage (an den Wochenrändern abgeschnitten), eintägige sind kurze
 // Balken. Wie viele Balken je Zeile passen, ergibt sich aus der Höhe (und der Textgröße); der Rest steht als "+n" am Tag. Ein Tipp auf einen Tag
 // öffnet das Tagesblatt (mobil) bzw. wählt den Tag für das Tagespanel (Desktop). Die Belegung der Spuren steht in data/calendar/monat_layout.dart.
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -41,7 +42,10 @@ class MonatsRaster extends StatelessWidget {
 
   /// Abfuhrtermine (nur Anzeige, nur mit eingeschaltetem Schalter): je Tag die Arten; als schmaler Streifen am unteren Rand der Zelle.
   final Map<DateTime, List<MuellArt>> muell;
-  const MonatsRaster({super.key, required this.monat, required this.heute, required this.gewaehlt, this.gewaehltMarkieren = false, this.breit = false, required this.quellen, required this.onTag, this.muell = const {}});
+
+  /// Wischen nach links/rechts wechselt den Monat (+1 = nächster, -1 = vorheriger); ohne Angabe gibt es keine Wischgeste.
+  final void Function(int richtung)? onMonat;
+  const MonatsRaster({super.key, required this.monat, required this.heute, required this.gewaehlt, this.gewaehltMarkieren = false, this.breit = false, required this.quellen, required this.onTag, this.muell = const {}, this.onMonat});
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +62,7 @@ class MonatsRaster extends StatelessWidget {
     for (final l in proTag.values) {
       l.sort((a, b) => a.art.index != b.art.index ? b.art.index.compareTo(a.art.index) : a.sortierung.compareTo(b.sortierung));
     }
-    return Column(
+    final inhalt = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         ExcludeSemantics(
@@ -111,6 +115,48 @@ class MonatsRaster extends StatelessWidget {
           ),
         ),
       ],
+    );
+    final wechsel = onMonat;
+    return wechsel == null ? inhalt : _WischWechsel(onRichtung: wechsel, child: inhalt);
+  }
+}
+
+/// Wischen wechselt den Monat, wie in der Wochenansicht: erst ab 40 px Weg und 300 px/s, nicht bei einer Randgeste (die ersten und letzten 8 px
+/// gehören dem System). Das senkrechte Scrollen des Rasters bleibt unberührt.
+class _WischWechsel extends StatefulWidget {
+  final void Function(int richtung) onRichtung;
+  final Widget child;
+  const _WischWechsel({required this.onRichtung, required this.child});
+
+  @override
+  State<_WischWechsel> createState() => _WischWechselState();
+}
+
+class _WischWechselState extends State<_WischWechsel> {
+  double _weg = 0;
+  bool _rand = false;
+  double _breite = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, c) {
+        _breite = c.maxWidth;
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          dragStartBehavior: DragStartBehavior.down,
+          onHorizontalDragStart: (d) {
+            _weg = 0;
+            _rand = d.localPosition.dx < 8 || d.localPosition.dx > _breite - 8;
+          },
+          onHorizontalDragUpdate: (d) => _weg += d.primaryDelta ?? 0,
+          onHorizontalDragEnd: (d) {
+            final v = d.primaryVelocity ?? 0;
+            if (!_rand && v.abs() > 300 && _weg.abs() >= 40 && (v < 0) == (_weg < 0)) widget.onRichtung(v < 0 ? 1 : -1);
+          },
+          child: widget.child,
+        );
+      },
     );
   }
 }
