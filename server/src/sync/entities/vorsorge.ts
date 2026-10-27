@@ -10,10 +10,10 @@ import { and, eq, isNull } from 'drizzle-orm';
 import { z } from 'zod';
 import { konversationen, vorsorgeEintraege, vorsorgeProfile } from '../../db/schema.js';
 import { safeString } from '../../routes/util.js';
-import type { Actor, Facts } from '../permissions.js';
+import { ROLES, type Actor, type Facts, type RoleRule, type Rules } from '../permissions.js';
 import type { EntityDef, Row } from '../registry.js';
 import { istUuidV4, vorsorgeProfilId } from './chat-ids.js';
-import { E1_MIN, forAllRoles } from './chat.js';
+import { E1_MIN } from './chat.js';
 import { iso, uuid } from './common.js';
 
 /** Größte Hülle eines Profils / eines Eintrags (Zeichen). Der Klartext ist in der App auf 512 bzw. 4000 Byte begrenzt. */
@@ -41,8 +41,10 @@ async function medsKonversation(env: Env, konversationId: string): Promise<boole
   return !!k && k.art === 'meds' && k.enc === 'e1';
 }
 
-// Lesen, anlegen, ändern, löschen: jeder Teilnehmer der Konversation (die Teilnehmer-Grenze erzwingt das Rechte-Modell; Rollen spielen hier keine Rolle)
-const rules = forAllRoles({ read: 'shared', create: 'shared', update: 'shared', delete: 'shared', updateFields: ['inhalt'] });
+// Kinder dürfen NUR LESEN (ihre eigenen Daten als Teilnehmer); Eltern und Admins tragen ein, ändern und löschen
+const erwachsene: RoleRule = { read: 'shared', create: 'shared', update: 'shared', delete: 'shared', updateFields: ['inhalt'] };
+const kind: RoleRule = { read: 'shared', create: 'none', update: 'none', delete: 'none' };
+const rules = Object.fromEntries(ROLES.map((r) => [r, r === 'child' ? kind : erwachsene])) as unknown as Rules;
 
 const gemeinsam = {
   rules,

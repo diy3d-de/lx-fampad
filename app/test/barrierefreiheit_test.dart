@@ -324,6 +324,30 @@ void main() {
         h.dispose();
       });
 
+      testWidgets('Kind: nur Ansicht', (tester) async {
+        final h = tester.ensureSemantics();
+        final kind = VorsorgeDaten(
+          geladen: true,
+          ich: fixIdKind,
+          ichRolle: Role.child,
+          personen: const [UserDto(id: fixIdKind, email: null, displayName: 'Ben', colorIndex: 1, role: Role.child, status: MemberStatus.active)],
+          eintraege: [VorsorgeAnsicht(id: 'dddddddd-0000-4000-8000-0000000000b1', konversationId: 'k1', subjektId: fixIdKind, inhalt: const VorsorgeEintragInhalt(vorlage: 'u4', art: VorsorgeArt.vorsorge), erstelltAt: DateTime.utc(2026, 10, 1))],
+          profile: const {fixIdKind: VorsorgeProfilAnsicht(subjektId: fixIdKind, inhalt: VorsorgeProfilInhalt(geburt: '2026-08-01'))},
+        );
+        final env = await angemeldeteUmgebung(role: 'child');
+        env.extraOverrides.addAll([
+          erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false),
+          vorsorgeDatenProvider.overrideWithValue(kind),
+          vorsorgeAnsichtProvider.overrideWithValue(kind),
+        ]);
+        await starteApp(tester, env, skala: skala, groesse: const Size(360, 900));
+        await zumTab(tester, 'Vorsorge');
+        pruefe(tester, 'Vorsorge Kind $skala');
+        await tippe(tester, find.text('U4 (3. bis 4. Monat)'));
+        pruefe(tester, 'Vorsorge Kind Detail $skala');
+        h.dispose();
+      });
+
       testWidgets('Auswahlblatt, Profil und Erledigt-Dialog', (tester) async {
         final h = tester.ensureSemantics();
         await vorsorgeStart(tester);

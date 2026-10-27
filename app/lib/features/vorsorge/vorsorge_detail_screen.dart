@@ -79,6 +79,7 @@ class _VorsorgeDetailScreenState extends ConsumerState<VorsorgeDetailScreen> {
     final heute = vorsorgeHeuteAus(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final f = vorsorgeFaelligkeit(vorlage: v, eintrag: i, geburt: profil?.geburtTag, geschlecht: profil?.geschlecht, heute: heute);
     final zusatz = vorsorgeVerlaessigkeitText(v);
+    final schreiben = vorsorgeDarfSchreiben(daten.ichRolle);
     return AuthSeite(
       titel: vorsorgeName(v, i),
       label: wer,
@@ -139,6 +140,7 @@ class _VorsorgeDetailScreenState extends ConsumerState<VorsorgeDetailScreen> {
                 const Icon(Icons.check_circle_outline, size: 18, color: kTextMuted),
                 const SizedBox(width: 8),
                 Expanded(child: Text(vorsorgeTagAnzeige(t), style: const TextStyle(fontFeatures: kZiffern))),
+                if (schreiben)
                 IconButton(
                   tooltip: 'Eintrag vom ${vorsorgeTagAnzeige(t)} zurücknehmen',
                   icon: const Icon(Icons.close, size: 18),
@@ -150,6 +152,7 @@ class _VorsorgeDetailScreenState extends ConsumerState<VorsorgeDetailScreen> {
           ),
         if (i.notiz.isNotEmpty) ...[const SizedBox(height: 10), const MonoLabel('Notiz', color: kTextMuted), const SizedBox(height: 4), Text(i.notiz)],
         if (_fehler != null) ...[const SizedBox(height: 10), Text(_fehler!, style: const TextStyle(color: kDanger, fontSize: 13))],
+        if (schreiben) ...[
         const SizedBox(height: 18),
         FilledButton.icon(
           onPressed: () => unawaited(vorsorgeErledigtOeffnen(context, id: widget.id)),
@@ -171,6 +174,7 @@ class _VorsorgeDetailScreenState extends ConsumerState<VorsorgeDetailScreen> {
           label: const Text('Eintrag löschen', style: TextStyle(color: kDanger)),
           style: TextButton.styleFrom(minimumSize: const Size(48, 48)),
         ),
+        ],
       ],
     );
   }

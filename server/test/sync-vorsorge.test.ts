@@ -33,15 +33,24 @@ describe('Vorsorge: Rechte-Modell (Regeltabelle)', () => {
   const E = 'u-eltern';
   const privat = (owner: string | null, teilnehmer: string[]): Facts => ({ audience: 'family', ownerId: owner, participants: teilnehmer, quiet: true });
 
-  it('nur Teilnehmer lesen, anlegen, ändern, löschen; nie ein Unbeteiligter (kein Rollen-Durchgriff, auch Admin nicht)', () => {
+  it('Eltern und Admins: Teilnehmer lesen, anlegen, ändern, löschen; Kinder nur lesen (auch ihre eigenen); nie ein Unbeteiligter', () => {
     for (const def of [vorsorgeProfilEntity, vorsorgeEintragEntity]) {
       for (const role of ['admin', 'parent', 'child'] as const) {
         const f = privat(S, [S, E]);
+        const schreiben = role !== 'child';
         for (const teil of [S, E]) {
           expect(mayRead(def.rules, actor(role, teil), f), `${def.name} ${role} lesen`).toBe(true);
-          expect(authorize(def.rules, 'create', actor(role, teil), f, ['inhalt'])).toBe('ok');
-          expect(authorize(def.rules, 'update', actor(role, teil), f, ['inhalt'])).toBe('ok');
-          expect(authorize(def.rules, 'delete', actor(role, teil), f)).toBe('ok');
+          expect(authorize(def.rules, 'create', actor(role, teil), f, ['inhalt']), `${def.name} ${role} anlegen`).toBe(schreiben ? 'ok' : 'forbidden');
+          expect(authorize(def.rules, 'update', actor(role, teil), f, ['inhalt']), `${def.name} ${role} ändern`).toBe(schreiben ? 'ok' : 'forbidden');
+          expect(authorize(def.rules, 'delete', actor(role, teil), f), `${def.name} ${role} löschen`).toBe(schreiben ? 'ok' : 'forbidden');
+        }
+        // das Kind als eigenes Subjekt (es ist Besitzer des Datensatzes): trotzdem nur lesen
+        const eigen = privat(S, [S]);
+        expect(mayRead(def.rules, actor(role, S), eigen)).toBe(true);
+        if (role === 'child') {
+          expect(authorize(def.rules, 'create', actor(role, S), eigen, ['inhalt'])).toBe('forbidden');
+          expect(authorize(def.rules, 'update', actor(role, S), eigen, ['inhalt'])).toBe('forbidden');
+          expect(authorize(def.rules, 'delete', actor(role, S), eigen)).toBe('forbidden');
         }
         expect(mayRead(def.rules, actor(role, 'u-fremd'), f), `${def.name} ${role} Fremder`).toBe(false);
         expect(authorize(def.rules, 'create', actor(role, 'u-fremd'), f, ['inhalt'])).toBe('forbidden');
@@ -103,15 +112,17 @@ describe.each(backends)('Vorsorge im Sync ($name)', (backend) => {
         [fam.parent, await plan(fam.parent, fam.parent, [fam.parent])],
         [admin2, await plan(admin2, admin2, [admin2])],
         [fam.admin, await plan(fam.admin, fam.admin, [fam.admin])],
-        [fam.child, await plan(fam.child, fam.child, [fam.child])],
-        [kind2, await plan(kind2, kind2, [kind2])],
       ] as const;
       for (const [d, k] of ks) await beide(d, k);
-      for (const d of [fam.parent, admin2, fam.admin, fam.child, kind2]) {
+      // Kinder schreiben nie selbst: ihre Daten tragen Eltern ein (admin2 für kind2, fam.parent für fam.child)
+      await beide(fam.parent, await plan(fam.parent, fam.child, [fam.child, fam.parent]));
+      await beide(admin2, await plan(admin2, kind2, [kind2, admin2]));
+      const erwartet = new Map<Device, number>([[fam.parent, 2], [admin2, 2], [fam.admin, 1], [fam.child, 1], [kind2, 1]]);
+      for (const [d, n] of erwartet) {
         d.sinceRev = 0;
         const c = await d.pull();
-        expect(ids(c, 'vorsorge_eintrag'), d.userId).toHaveLength(1);
-        expect(ids(c, 'vorsorge_profil'), d.userId).toHaveLength(1);
+        expect(ids(c, 'vorsorge_eintrag'), d.userId).toHaveLength(n);
+        expect(ids(c, 'vorsorge_profil'), d.userId).toHaveLength(n);
       }
     });
 
@@ -154,63 +165,74 @@ describe.each(backends)('Vorsorge im Sync ($name)', (backend) => {
   describe('Profil und Eintrag', () => {
     it('Teilnehmer legen an und ändern; der Server setzt den Bearbeiter und prüft nur Form und Größe', async () => {
       const k = await plan(fam.parent, fam.child, [fam.child, fam.parent]);
-      const id = await beide(fam.child, k);
-      expect((await rows(sql`select bearbeiter_id from vorsorge_eintraege where id = ${id}`))[0]?.bearbeiter_id).toBe(fam.child.userId);
+      const id = await beide(fam.parent, k);
+      expect((await rows(sql`select bearbeiter_id from vorsorge_eintraege where id = ${id}`))[0]?.bearbeiter_id).toBe(fam.parent.userId);
       const rev = await revOf('vorsorge_eintraege', id);
       expect((await fam.parent.sync([upsert('vorsorge_eintrag', id, { inhalt: E1('neu') }, rev)])).json.acked).toHaveLength(1);
       expect((await rows(sql`select bearbeiter_id from vorsorge_eintraege where id = ${id}`))[0]?.bearbeiter_id).toBe(fam.parent.userId);
       for (const inhalt of ['Impfung', 'v1:{}', 'e1:kurz', `e1:${'A'.repeat(100)}!`, `e1:${'A'.repeat(9000)}`, '']) {
-        expect(codes(await fam.child.sync([eintrag(k, randomUUID(), inhalt)])), inhalt.slice(0, 12)).toEqual(['invalid']);
+        expect(codes(await fam.parent.sync([eintrag(k, randomUUID(), inhalt)])), inhalt.slice(0, 12)).toEqual(['invalid']);
       }
-      expect(codes(await fam.child.sync([profil(k, `e1:${'A'.repeat(2100)}`)]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([profil(k, `e1:${'A'.repeat(2100)}`)]))).toEqual(['invalid']);
+    });
+
+    it('Kinder dürfen nur lesen: anlegen, ändern und löschen werden abgewiesen, auch für die eigenen Daten', async () => {
+      const k = await plan(fam.parent, fam.child, [fam.child, fam.parent]);
+      const e = await beide(fam.parent, k);
+      expect(codes(await fam.child.sync([eintrag(k)]))).toEqual(['forbidden']);
+      expect(codes(await fam.child.sync([profil(k, E1('kind'))]))).toEqual(['forbidden']);
+      expect(codes(await fam.child.sync([upsert('vorsorge_eintrag', e, { inhalt: E1('kind') }, await revOf('vorsorge_eintraege', e))]))).toEqual(['forbidden']);
+      expect(codes(await fam.child.sync([remove('vorsorge_eintrag', e, await revOf('vorsorge_eintraege', e))]))).toEqual(['forbidden']);
+      expect((await rows(sql`select inhalt from vorsorge_eintraege where id = ${e}`))[0]).toMatchObject({ inhalt: E1('v') });
+      fam.child.sinceRev = 0;
+      expect(ids(await fam.child.pull(), 'vorsorge_eintrag')).toEqual([e]);
     });
 
     it('Profil: nur die feste ID dieser Konversation (nie Zufalls-ID, nie die einer anderen Person), je Person genau eines', async () => {
-      const k = await plan(fam.child, fam.child, [fam.child]);
+      const k = await plan(fam.parent, fam.child, [fam.child, fam.parent]);
       const kMama = await plan(fam.parent, fam.parent, [fam.parent]);
-      expect(codes(await fam.child.sync([upsert('vorsorge_profil', randomUUID(), { konversationId: k, inhalt: E1('p') })]))).toEqual(['invalid']);
-      expect(codes(await fam.child.sync([upsert('vorsorge_profil', vorsorgeProfilId(kMama), { konversationId: k, inhalt: E1('p') })]))).toEqual(['invalid']);
-      expect((await fam.child.sync([profil(k)])).json.rejected).toEqual([]);
+      expect(codes(await fam.parent.sync([upsert('vorsorge_profil', randomUUID(), { konversationId: k, inhalt: E1('p') })]))).toEqual(['invalid']);
+      expect(codes(await fam.parent.sync([upsert('vorsorge_profil', vorsorgeProfilId(kMama), { konversationId: k, inhalt: E1('p') })]))).toEqual(['invalid']);
+      expect((await fam.parent.sync([profil(k)])).json.rejected).toEqual([]);
       expect((await rows(sql`select count(*)::int as n from vorsorge_profile where konversation_id = ${k}`))[0]?.n).toBe(1);
     });
 
     it('Profil löschen wird abgewiesen (ein Tombstone ließe die feste ID nie wieder zu), ändern geht, alte Daten bleiben', async () => {
-      const k = await plan(fam.child, fam.child, [fam.child]);
-      expect((await fam.child.sync([profil(k, E1('alt'))])).json.rejected).toEqual([]);
+      const k = await plan(fam.parent, fam.child, [fam.child, fam.parent]);
+      expect((await fam.parent.sync([profil(k, E1('alt'))])).json.rejected).toEqual([]);
       const id = vorsorgeProfilId(k);
-      expect(codes(await fam.child.sync([remove('vorsorge_profil', id, await revOf('vorsorge_profile', id))]))).toEqual(['forbidden']);
+      expect(codes(await fam.parent.sync([remove('vorsorge_profil', id, await revOf('vorsorge_profile', id))]))).toEqual(['forbidden']);
       expect((await rows(sql`select inhalt, deleted_at from vorsorge_profile where id = ${id}`))[0]).toMatchObject({ inhalt: E1('alt'), deleted_at: null });
-      expect((await fam.child.sync([upsert('vorsorge_profil', id, { inhalt: E1('neu') }, await revOf('vorsorge_profile', id))])).json.acked).toHaveLength(1);
+      expect((await fam.parent.sync([upsert('vorsorge_profil', id, { inhalt: E1('neu') }, await revOf('vorsorge_profile', id))])).json.acked).toHaveLength(1);
       expect((await rows(sql`select inhalt from vorsorge_profile where id = ${id}`))[0]?.inhalt).toBe(E1('neu'));
     });
 
     it('Eintrag: Zufalls-IDs (UUID v4); Bezug nur auf eine verschlüsselte meds-Konversation', async () => {
-      const k = await plan(fam.child, fam.child, [fam.child]);
-      expect(codes(await fam.child.sync([eintrag(k, uuidAusSchluessel('irgendwas'))]))).toEqual(['invalid']);
+      const k = await plan(fam.parent, fam.parent, [fam.parent]);
+      expect(codes(await fam.parent.sync([eintrag(k, uuidAusSchluessel('irgendwas'))]))).toEqual(['invalid']);
       const gruppe = randomUUID();
       await fam.parent.sync([upsert('konversation', gruppe, { art: 'group', teilnehmer: [fam.parent.userId, fam.admin.userId] })]);
       expect(codes(await fam.parent.sync([eintrag(gruppe)]))).toEqual(['invalid']);
     });
 
     it('Einträge sind löschbar und es gibt keine automatische Löschung; Konflikte je Feld', async () => {
-      const k = await plan(fam.parent, fam.child, [fam.child, fam.parent]);
+      const k = await plan(fam.parent, fam.child, [fam.child, fam.parent, fam.admin]);
       const e = await beide(fam.parent, k);
       const rev = await revOf('vorsorge_eintraege', e);
       expect((await fam.parent.sync([upsert('vorsorge_eintrag', e, { inhalt: E1('eins') }, rev)])).json.conflicts).toEqual([]);
-      const zweite = await fam.child.sync([upsert('vorsorge_eintrag', e, { inhalt: E1('zwei') }, rev)]);
+      const zweite = await fam.admin.sync([upsert('vorsorge_eintrag', e, { inhalt: E1('zwei') }, rev)]);
       expect(zweite.json.conflicts).toHaveLength(1);
       await world.db.execute(sql`update vorsorge_eintraege set created_at = now() - interval '5 years' where id = ${e}`);
-      await fam.child.pull();
       const { runSyncMaintenance } = await import('../src/sync/maintenance.js');
       await runSyncMaintenance(world.auth.ctx);
       expect(await rows(sql`select 1 from vorsorge_eintraege where id = ${e} and deleted_at is null`)).toHaveLength(1);
-      expect((await fam.child.sync([remove('vorsorge_eintrag', e, await revOf('vorsorge_eintraege', e))])).json.acked).toHaveLength(1);
+      expect((await fam.parent.sync([remove('vorsorge_eintrag', e, await revOf('vorsorge_eintraege', e))])).json.acked).toHaveLength(1);
     });
 
     it('Obergrenze je Person', async () => {
-      const k = await plan(fam.child, fam.child, [fam.child]);
+      const k = await plan(fam.parent, fam.parent, [fam.parent]);
       await world.db.execute(sql`insert into vorsorge_eintraege (family_id, konversation_id, inhalt, rev) select ${fam.familyId}, ${k}, ${E1('x')}, 1 from generate_series(1, ${MAX_VORSORGE_EINTRAEGE})`);
-      expect(codes(await fam.child.sync([eintrag(k)]))).toEqual(['limit_reached']);
+      expect(codes(await fam.parent.sync([eintrag(k)]))).toEqual(['limit_reached']);
     });
   });
 
@@ -228,8 +250,8 @@ describe.each(backends)('Vorsorge im Sync ($name)', (backend) => {
 
     it('Person entfernt: Profil und Einträge verschwinden mit der Konversation', async () => {
       const x = await extraMember(world, fam.admin, 'child', 'weg@example.org');
-      const kWeg = await plan(x, x, [x]);
-      const e = await beide(x, kWeg);
+      const kWeg = await plan(fam.parent, x, [x, fam.parent]);
+      const e = await beide(fam.parent, kWeg);
       expect((await fam.admin.client.del(`/api/v1/members/${x.userId}`)).status).toBe(200);
       expect(await rows(sql`select 1 from vorsorge_eintraege where id = ${e} and deleted_at is null`)).toHaveLength(0);
       expect(await rows(sql`select 1 from vorsorge_profile where konversation_id = ${kWeg} and deleted_at is null`)).toHaveLength(0);
@@ -240,15 +262,15 @@ describe.each(backends)('Vorsorge im Sync ($name)', (backend) => {
     it('weder Profil noch Eintrag lösen einen Push-Wecker aus', async () => {
       const mk = (op: ReturnType<typeof upsert>, by: Device) => applyOp(world.auth.ctx, defaultRegistry, { actor: { userId: by.userId, role: by.role as Role }, familyId: fam.familyId, deviceId: by.deviceId, op });
       const k = medsChatId(fam.child.userId);
-      expect((await mk(konv(fam.child, [fam.child]), fam.child)).outcome.status).toBe('acked');
-      expect((await mk(profil(k), fam.child)).outcome.wake).toBe(false);
-      expect((await mk(eintrag(k), fam.child)).outcome.wake).toBe(false);
+      expect((await mk(konv(fam.child, [fam.child, fam.parent]), fam.parent)).outcome.status).toBe('acked');
+      expect((await mk(profil(k), fam.parent)).outcome.wake).toBe(false);
+      expect((await mk(eintrag(k), fam.parent)).outcome.wake).toBe(false);
     });
 
     it('das Änderungsprotokoll hält nach Änderungen keine alten Inhalte', async () => {
-      const k = await plan(fam.child, fam.child, [fam.child]);
-      const e = await beide(fam.child, k);
-      await fam.child.sync([upsert('vorsorge_eintrag', e, { inhalt: E1('neu') }, await revOf('vorsorge_eintraege', e))]);
+      const k = await plan(fam.parent, fam.parent, [fam.parent]);
+      const e = await beide(fam.parent, k);
+      await fam.parent.sync([upsert('vorsorge_eintrag', e, { inhalt: E1('neu') }, await revOf('vorsorge_eintraege', e))]);
       const alt = await rows(sql`select changes from change_log where entity = 'vorsorge_eintrag' and entity_id = ${e} order by rev`);
       expect(alt.filter((r) => JSON.stringify(r.changes).includes(E1('v')))).toHaveLength(0);
     });

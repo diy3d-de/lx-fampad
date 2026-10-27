@@ -18,6 +18,7 @@ import '../../ui/widgets.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../medikamente/medikament_anzeige.dart' show medikamenteFaelligProvider;
 import '../medikamente/medikamente_karte.dart' show medikamenteOeffnen;
+import '../vorsorge/vorsorge_anzeige.dart' show vorsorgeHinweisProvider;
 import '../vorsorge/vorsorge_screen.dart' show vorsorgeOeffnen;
 import '../zaehler/zaehler_anzeige.dart' show zaehlerFaelligProvider;
 import '../zaehler/zaehler_karte.dart' show zaehlerOeffnen;
@@ -26,7 +27,7 @@ import '../../data/tresor/tresor_state.dart' show tresorDarfProvider;
 import '../../data/dateien/datei_state.dart' show dateienVerfuegbarProvider;
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
 import '../files/dateien_screen.dart' show dateienOeffnen;
-import '../muell/muell_karte.dart' show muellOeffnen;
+import '../muell/muell_karte.dart' show MuellKachelDaten, muellOeffnen;
 import '../profile/profile_screen.dart';
 import '../standort/standort_start_karte.dart' show standortOeffnen;
 import '../suche/such_screen.dart';
@@ -42,6 +43,9 @@ final mehrHinweiseProvider = Provider.autoDispose<MehrHinweise>((ref) {
   final jetzt = ref.watch(minutenTaktProvider).value ?? DateTime.now();
   final fristen = ref.watch(dringendeFristenProvider);
   final aufgaben = startseitenAufgaben([for (final a in alle) if (!istFrist(a)) a], jetzt, nurFaellig: true);
+  final vorsorge = ref.watch(vorsorgeHinweisProvider);
+  final muellZ = ref.watch(muellProvider);
+  final muellHinweis = muellZ.verfuegbar && MuellKachelDaten.aus(muellZ, jetzt).hervorgehoben ? 1 : 0;
   return MehrHinweise(
     aufgaben: aufgaben.length,
     aufgabenUeberfaellig: aufgaben.where((a) => istUeberfaellig(a, jetzt)).length,
@@ -49,6 +53,9 @@ final mehrHinweiseProvider = Provider.autoDispose<MehrHinweise>((ref) {
     fristenUeberfaellig: fristen.where((a) => fristAmpel(a, jetzt) == FristAmpel.ueberfaellig).length,
     medikamente: ref.watch(medikamenteFaelligProvider),
     zaehler: ref.watch(zaehlerFaelligProvider),
+    vorsorge: vorsorge.offen,
+    vorsorgeUeberfaellig: vorsorge.ueberfaellig,
+    muell: muellHinweis,
   );
 });
 
@@ -119,14 +126,14 @@ List<MehrEintrag> bereichsEintraege(WidgetRef ref, {int? offenerTab}) {
     ),
     MehrEintrag(id: 'standort', label: 'Standort', icon: Icons.location_on_outlined, gruppe: MehrGruppe.familie, tab: kStandortTab, oeffnen: (c, _) => standortOeffnen(c)),
     // Zuhause
-    if (muell) MehrEintrag(id: 'muell', label: 'Müll', icon: Icons.delete_outline, gruppe: MehrGruppe.zuhause, tab: kMuellTab, oeffnen: (c, _) => muellOeffnen(c)),
+    if (muell) MehrEintrag(id: 'muell', label: 'Müll', icon: Icons.delete_outline, gruppe: MehrGruppe.zuhause, tab: kMuellTab, hinweis: h.muell, oeffnen: (c, _) => muellOeffnen(c)),
     if (wetter) MehrEintrag(id: 'wetter', label: 'Wetter', icon: Icons.wb_sunny_outlined, gruppe: MehrGruppe.zuhause, tab: kWetterTab, oeffnen: (c, _) => wetterOeffnen(c)),
     // Zähler: NUR für Eltern und Admins, Kinder bekommen den Eintrag nie; die Zahl sind die Zähler, die jetzt abgelesen werden sollen
     if (zaehlerDarf) MehrEintrag(id: 'zaehler', label: 'Zähler', icon: Icons.speed_outlined, gruppe: MehrGruppe.zuhause, tab: kZaehlerTab, hinweis: h.zaehler, oeffnen: (c, _) => zaehlerOeffnen(c)),
     // Medikamente: nur Eigenes und das der Kinder; die Zahl sind fällige und verpasste Einnahmen heute
     MehrEintrag(id: 'medikamente', label: 'Medikamente', icon: Icons.medication_outlined, gruppe: MehrGruppe.zuhause, tab: kMedikamenteTab, hinweis: h.medikamente, oeffnen: (c, _) => medikamenteOeffnen(c)),
-    // Vorsorge: für alle Rollen, aber nur Eigenes und das der Kinder; ohne Zahl und ohne Zeichen
-    MehrEintrag(id: 'vorsorge', label: 'Vorsorge', icon: Icons.vaccines_outlined, gruppe: MehrGruppe.zuhause, tab: kVorsorgeTab, oeffnen: (c, _) => vorsorgeOeffnen(c)),
+    // Vorsorge: für alle Rollen, aber nur Eigenes und das der Kinder; die Zahl sind fällige und überfällige Einträge (nur die Zahl, nie ein Name)
+    MehrEintrag(id: 'vorsorge', label: 'Vorsorge', icon: Icons.vaccines_outlined, gruppe: MehrGruppe.zuhause, tab: kVorsorgeTab, hinweis: h.vorsorge, ueberfaellig: h.vorsorgeUeberfaellig > 0, oeffnen: (c, _) => vorsorgeOeffnen(c)),
     // Ablage
     // Dateien: nur wenn der Server die Dateiablage meldet; Kinder sehen den Bereich mit ihren Rechten, ohne Zahl und ohne Zeichen
     if (dateienDa) MehrEintrag(id: 'dateien', label: 'Dateien', icon: Icons.folder_outlined, gruppe: MehrGruppe.ablage, tab: kDateienTab, oeffnen: (c, _) => dateienOeffnen(c)),

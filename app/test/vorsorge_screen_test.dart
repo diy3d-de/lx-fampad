@@ -242,6 +242,45 @@ void main() {
     });
   }
 
+  group('Kind: nur ansehen', () {
+    VorsorgeDaten kind() => VorsorgeDaten(
+      geladen: true,
+      ich: _ich,
+      ichRolle: Role.child,
+      personen: [_u(_ich, Role.child, 'Ben')],
+      eintraege: [_e(_ich, const VorsorgeEintragInhalt(vorlage: 'u4', art: VorsorgeArt.vorsorge)), _e(_ich, const VorsorgeEintragInhalt(vorlage: 'mmr', art: VorsorgeArt.impfung, erledigt: ['2026-09-01']))],
+      profile: {_ich: _p(_ich, '2026-08-01')},
+    );
+
+    for (final skala in [1.0, 1.5, 2.0]) {
+      testWidgets('Übersicht ohne Schreibwege, mit ruhigem Satz (360 px, Textskala $skala)', (tester) async {
+        final h = tester.ensureSemantics();
+        await start(tester, kind(), role: 'child', skala: skala);
+        expect(find.text('Deine Eltern tragen das ein. Du kannst hier nachsehen.'), findsOneWidget);
+        expect(find.text('U4 (3. bis 4. Monat)'), findsOneWidget);
+        expect(find.widgetWithText(FilledButton, 'Hinzufügen'), findsNothing);
+        expect(find.text('Ändern'), findsNothing);
+        expect(find.textContaining('Erledigt eintragen'), findsNothing);
+        expect(find.byTooltip(RegExp(r'^Erledigt eintragen')), findsNothing);
+        pruefeLayout(tester, 'Kind $skala');
+        await tippe(tester, find.text('U4 (3. bis 4. Monat)'));
+        expect(find.text('Erledigt eintragen'), findsNothing);
+        expect(find.text('Bearbeiten'), findsNothing);
+        expect(find.text('Eintrag löschen'), findsNothing);
+        expect(find.textContaining('Quelle'), findsWidgets);
+        pruefeLayout(tester, 'Kind Detail $skala');
+        h.dispose();
+      });
+    }
+
+    testWidgets('leer: keine Auswahl, kein Knopf', (tester) async {
+      await start(tester, VorsorgeDaten(geladen: true, ich: _ich, ichRolle: Role.child, personen: [_u(_ich, Role.child, 'Ben')]), role: 'child');
+      expect(find.text('Sobald deine Eltern etwas eintragen, siehst du es hier.'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, 'Hinzufügen'), findsNothing);
+      expect(find.text('Eintragen'), findsNothing);
+    });
+  });
+
   group('Einstieg', () {
     testWidgets('Mehr-Blatt: Eintrag Vorsorge für alle Rollen, ohne Zahl', (tester) async {
       await start(tester, d(Role.child, const []), role: 'child');
