@@ -1,4 +1,7 @@
 {
+  "0.25.0": [
+    "„Morgens benachrichtigen“ gibt es jetzt auch in der Web-App (gilt, solange sie geöffnet ist und „Erinnerungen im Browser“ an ist)"
+  ],
   "0.24.0": [
     "Erinnerungen auch in der Web-App: Solange sie im Browser geöffnet ist, zeigt sie fällige Erinnerungen als Benachrichtigung (neutral, ohne Titel). Einschalten unter Benachrichtigungen › Erinnerungen im Browser",
     "Neu: „Verpasst seit du weg warst“ zeigt Erinnerungen, die während deiner Abwesenheit fällig wurden"
