@@ -18,6 +18,7 @@ import 'data/push/chat_benachrichtigung_raeumen.dart';
 import 'widgets/ungelesen_titel.dart';
 import 'features/auth/adresszeile.dart';
 import 'features/calendar/erinnerung_steuerung.dart';
+import 'features/calendar/web_erinnerung_steuerung.dart';
 import 'features/medikamente/medikament_steuerung.dart';
 import 'data/dateien/datei_state.dart' show transferSteuerungProvider;
 import 'data/ingest/ingest_state.dart' show ingestSteuerungProvider;
@@ -154,6 +155,8 @@ class _FampadAppState extends ConsumerState<FampadApp> with WidgetsBindingObserv
   Widget build(BuildContext context) {
     // Terminerinnerungen (Android) aktuell halten: hier am Wurzel-Widget, das nie pausiert (hinter geöffneten Seiten pausieren Beobachter)
     ref.watch(erinnerungSteuerungProvider);
+    // dasselbe im Browser: Minutentakt der Web-Erinnerungen (nur solange die Web-App offen ist)
+    ref.watch(webErinnerungSteuerungProvider);
     // Standard-Erinnerung einmalig bei vorhandenen Terminen ohne Erinnerung nachtragen (alle Plattformen, nie wieder, siehe erinnerung_nachtrag.dart)
     ref.watch(erinnerungNachtragProvider);
     // Startbildschirm-Widget "Heute" (Android) aktuell halten und Tipps darauf auswerten

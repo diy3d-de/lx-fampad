@@ -11,6 +11,8 @@ import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import 'profil_plattform.dart';
+import 'web_erinnerungen_seite.dart';
 
 class ErinnerungenScreen extends ConsumerStatefulWidget {
   const ErinnerungenScreen({super.key});
@@ -122,6 +124,8 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
 
   @override
   Widget build(BuildContext context) {
+    // Browser: eigene Seite (Schalter, Erlaubnis, Grenze); alles Weitere dieser Seite ist Android
+    if (ref.watch(profilWebProvider)) return const WebErinnerungenSeite();
     final status = ref.watch(erinnerungStatusProvider);
     final einst = ref.watch(erinnerungEinstellungenProvider);
     final verfuegbar = status.value?.verfuegbar ?? true;
@@ -146,61 +150,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             style: TextStyle(fontSize: 13, color: kTextMuted),
           ),
           const SizedBox(height: 12),
-          LxCard(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              title: const Text('Erinnerungen auf diesem Gerät', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text('Termin- und Aufgabenerinnerungen anzeigen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
-              value: einst.an,
-              onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).anSetzen(v)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          LxCard(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              title: const Text('Aufgaben-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text(
-                'Aufgaben, die dir zugewiesen sind (oder die du ohne Zuständige angelegt hast), erinnern zur eingestellten Zeit',
-                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
-              ),
-              value: einst.aufgabenAn,
-              onChanged: einst.an ? (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).aufgabenAnSetzen(v)) : null,
-            ),
-          ),
-          const SizedBox(height: 8),
-          LxCard(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            child: SwitchListTile(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              title: const Text('Medikamenten-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: const Text(
-                'Erinnert an deine Einnahmen und an die deiner Kinder, einmal erneut nach 15 Minuten. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
-                style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
-              ),
-              value: einst.medikamenteAn,
-              onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).medikamenteAnSetzen(v)),
-            ),
-          ),
-          // Zähler: nur für Eltern und Admins (Kinder sehen den Eintrag nie)
-          if (ref.watch(zaehlerDarfProvider)) ...[
-            const SizedBox(height: 8),
-            LxCard(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              child: SwitchListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                title: const Text('Zähler-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: const Text(
-                  'Erinnert am Ablesetag um 9 Uhr. Der Text ist immer neutral, nie eine Zählerart oder ein Stand; nichts geht über den Server',
-                  style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
-                ),
-                value: einst.zaehlerAn,
-                onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).zaehlerAnSetzen(v)),
-              ),
-            ),
-          ],
+          const ErinnerungArtSchalter(),
           const SizedBox(height: 8),
           LxCard(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -309,6 +259,76 @@ class _DiagnoseZeile extends ConsumerWidget {
         key: const Key('erinnerung-diagnose'),
         style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
       ),
+    );
+  }
+}
+
+/// Die Schalter je Art (Termine, Aufgaben, Medikamente, Zähler): auf Android und im Browser dieselben.
+class ErinnerungArtSchalter extends ConsumerWidget {
+  const ErinnerungArtSchalter({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final einst = ref.watch(erinnerungEinstellungenProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+              LxCard(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  title: const Text('Erinnerungen auf diesem Gerät', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text('Termin- und Aufgabenerinnerungen anzeigen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+                  value: einst.an,
+                  onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).anSetzen(v)),
+                ),
+              ),
+              const SizedBox(height: 8),
+              LxCard(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  title: const Text('Aufgaben-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Aufgaben, die dir zugewiesen sind (oder die du ohne Zuständige angelegt hast), erinnern zur eingestellten Zeit',
+                    style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
+                  ),
+                  value: einst.aufgabenAn,
+                  onChanged: einst.an ? (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).aufgabenAnSetzen(v)) : null,
+                ),
+              ),
+              const SizedBox(height: 8),
+              LxCard(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                child: SwitchListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                  title: const Text('Medikamenten-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+                  subtitle: const Text(
+                    'Erinnert an deine Einnahmen und an die deiner Kinder, einmal erneut nach 15 Minuten. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
+                    style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
+                  ),
+                  value: einst.medikamenteAn,
+                  onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).medikamenteAnSetzen(v)),
+                ),
+              ),
+              // Zähler: nur für Eltern und Admins (Kinder sehen den Eintrag nie)
+              if (ref.watch(zaehlerDarfProvider)) ...[
+                const SizedBox(height: 8),
+                LxCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: SwitchListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+                    title: const Text('Zähler-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text(
+                      'Erinnert am Ablesetag um 9 Uhr. Der Text ist immer neutral, nie eine Zählerart oder ein Stand; nichts geht über den Server',
+                      style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
+                    ),
+                    value: einst.zaehlerAn,
+                    onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).zaehlerAnSetzen(v)),
+                  ),
+                ),
+              ],
+      ],
     );
   }
 }

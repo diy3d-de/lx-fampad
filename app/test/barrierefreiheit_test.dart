@@ -7,7 +7,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
 import 'package:lx_fampad/data/api/models.dart' show MemberStatus, Role, UserDto;
-import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
+import 'package:lx_fampad/data/erinnerungen/browser_benachrichtigung.dart';
+import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider, erinnerungUhrProvider;
+import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart' show MemoryErinnerungSpeicher, erinnerungSpeicherProvider;
+import 'package:lx_fampad/data/erinnerungen/web_erinnerung_logik.dart';
+import 'package:lx_fampad/data/erinnerungen/web_erinnerung_port.dart';
+import 'package:lx_fampad/data/erinnerungen/web_erinnerung_state.dart';
+import 'package:lx_fampad/features/calendar/calendar_anzeige.dart' show minutenTaktProvider;
+import 'package:lx_fampad/features/profile/profil_plattform.dart' show profilWebProvider;
+import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
 import 'package:lx_fampad/data/crypto/e2ee_state.dart' show cryptoProviderProvider, schluesselSpeicherProvider;
 import 'package:lx_fampad/data/crypto/schluessel_speicher.dart' show MemorySchluesselSpeicher;
 import 'package:lx_fampad/data/ingest/ingest_dienst.dart' show IngestLauf;
@@ -555,6 +563,52 @@ void main() {
       await tippe(tester, find.text('Startseite und Anzeige'));
       expect(find.text('Familien-Status anzeigen'), findsOneWidget);
       pruefe(tester, 'Startseite und Anzeige mit Status-Schalter $skala');
+      h.dispose();
+    });
+  }
+
+  // Erinnerungen im Browser (nur Web-App): Profil-Seite und Hinweiskarte der Startseite
+  for (final skala in [1.0, 1.5, 2.0]) {
+    Future<ProviderContainer> webErinnerungStart(WidgetTester tester, {bool mitHinweisen = false, BrowserErlaubnis stand = BrowserErlaubnis.offen}) async {
+      final env = await angemeldeteUmgebung();
+      final sp = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'nein', kWebAnSchluessel: 'ja'});
+      final jetzt = DateTime.utc(2026, 10, 19, 12);
+      if (mitHinweisen) {
+        sp.werte[kWebPlanSchluessel] = webPlanKodieren([
+          WebEintrag(1, jetzt.subtract(const Duration(minutes: 1)).millisecondsSinceEpoch, 'aufgabe|3f2b8c1e-9d4a-4b6f-8a1c-2e7d5f0a9b13'),
+          WebEintrag(2, jetzt.subtract(const Duration(hours: 2)).millisecondsSinceEpoch, 'briefing'),
+        ]);
+      }
+      env.speicher = sp;
+      env.extraOverrides.addAll([
+        browserBenachrichtigungProvider.overrideWithValue(FakeBrowserBenachrichtigung(stand: stand)),
+        erinnerungPortProvider.overrideWith((ref) => ref.watch(webErinnerungPortProvider)),
+        erinnerungUhrProvider.overrideWithValue(() => jetzt),
+        erinnerungSpeicherProvider.overrideWithValue(MemoryErinnerungSpeicher()),
+        profilWebProvider.overrideWithValue(true),
+        minutenTaktProvider.overrideWith((ref) => Stream.value(jetzt)),
+      ]);
+      return starteApp(tester, env, skala: skala, groesse: const Size(360, 900));
+    }
+
+    testWidgets('Erinnerungen im Browser: Profil-Seite, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      await webErinnerungStart(tester);
+      await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+      await tippeText(tester, 'Erinnerungen im Browser');
+      expect(find.text('Benachrichtigungen erlauben'), findsOneWidget);
+      pruefe(tester, 'Erinnerungen im Browser $skala');
+      h.dispose();
+    });
+
+    testWidgets('Erinnerungen im Browser: Hinweiskarte der Startseite (neu und verpasst), Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      await webErinnerungStart(tester, mitHinweisen: true, stand: BrowserErlaubnis.erlaubt);
+      await warte(tester, 10);
+      expect(find.text('Erinnerung: Eine Aufgabe steht an'), findsOneWidget);
+      pruefe(tester, 'Hinweiskarte zugeklappt $skala');
+      await tippe(tester, find.textContaining('Verpasst seit du weg warst'));
+      pruefe(tester, 'Hinweiskarte mit verpassten $skala');
       h.dispose();
     });
   }

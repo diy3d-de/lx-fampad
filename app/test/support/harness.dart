@@ -98,6 +98,7 @@ const profilZeilenSeite = <String, String>{
   'Angemeldete Geräte': 'Sicherheit',
   'Sicherheitsereignisse': 'Sicherheit',
   'Erinnerungen': 'Benachrichtigungen',
+  'Erinnerungen im Browser': 'Benachrichtigungen',
   'Push': 'Benachrichtigungen',
   'Startseite anpassen': 'Startseite und Anzeige',
   'Wetter anzeigen': 'Startseite und Anzeige',

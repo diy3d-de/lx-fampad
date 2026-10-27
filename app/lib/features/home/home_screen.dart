@@ -37,6 +37,7 @@ import '../standort/standort_start_karte.dart';
 import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_dwd_warn_karte.dart';
+import 'web_erinnerung_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../wetter/wetter_karte.dart';
 import 'startseite_verfuegbar.dart';
@@ -81,7 +82,8 @@ class HomeScreen extends ConsumerWidget {
               const UpdateAnzeige(),
               const AbsicherungsKarte(),
               const WetterHinweisKarte(),
-        const WetterDwdWarnKarte(),
+              const WetterDwdWarnKarte(),
+              const WebErinnerungKarte(),
               const _SyncZeile(),
               const SizedBox(height: 20),
             ],

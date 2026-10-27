@@ -187,13 +187,13 @@ void main() {
       expect(find.byType(PushScreen), findsOneWidget);
     });
 
-    testWidgets('Web: Erinnerungen, Push nur als Hinweis', (tester) async {
+    testWidgets('Web: Erinnerungen im Browser, Push nur als Hinweis', (tester) async {
       await start(tester, web: true);
       await tippe(tester, zeile('Benachrichtigungen'));
-      expect(zeile('Erinnerungen'), findsOneWidget);
+      expect(zeile('Erinnerungen im Browser'), findsOneWidget);
       expect(zeile('Push'), findsNothing);
       expect(find.text('Push gibt es nur in der Android-App.'), findsOneWidget);
-      await tippe(tester, zeile('Erinnerungen'));
+      await tippe(tester, zeile('Erinnerungen im Browser'));
       expect(find.byType(ErinnerungenScreen), findsOneWidget);
     });
 
