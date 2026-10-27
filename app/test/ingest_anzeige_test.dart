@@ -1,7 +1,7 @@
 // Home-Assistant-Anbindung: kleine reine Anzeige-Hilfen (letzter automatischer Stand, Tage ohne Wert, welche Zählerarten Home Assistant bedient, Kanäle).
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/ingest/ingest_anzeige.dart';
-import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show Stand;
+import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show Stand, Verbrauchskurve;
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart' show ZaehlerEintrag;
 import 'package:lx_fampad/data/zaehler/zaehler_uebersicht.dart';
@@ -88,6 +88,15 @@ void main() {
       final archiv = ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Alt', quelle: ha, archiviertAb: '2026-01-01');
       expect(doppeltBelieferte([eintrag(zStrom, archiv, doppelt)]).zaehler, isEmpty);
       expect(doppeltBelieferte([eintrag(zStrom, ZaehlerInhalt(art: ZaehlerArt.strom, name: 'Hand'), doppelt)]).zaehler, isEmpty);
+    });
+
+    test('Doppelte gleiche Stände zweier Abholgeräte ergeben keinen doppelten Verbrauch: die Kurve aus den Rechen-Ständen gleicht der aus einfachen Ständen', () {
+      final doppelt = [stand('a', zStrom, '2026-10-24', 1000, 1), stand('b', zStrom, '2026-10-24', 1000, 2), stand('c', zStrom, '2026-10-25', 1010, 3), stand('d', zStrom, '2026-10-25', 1010, 4), stand('e', zStrom, '2026-10-26', 1030, 5)];
+      final einfach = [doppelt[0], doppelt[2], doppelt[4]];
+      final a = Verbrauchskurve.aus(eintrag(zStrom, strom, doppelt).rechenStaende).verbrauch(DateTime.utc(2026, 10, 24), DateTime.utc(2026, 10, 26));
+      final b = Verbrauchskurve.aus(eintrag(zStrom, strom, einfach).rechenStaende).verbrauch(DateTime.utc(2026, 10, 24), DateTime.utc(2026, 10, 26));
+      expect(a.milli, b.milli);
+      expect(a.milli, 30);
     });
 
     test('Die Rechen-Stände eines Zählers führen doppelte Tage zusammen: der zuletzt geschriebene gilt, in jeder Reihenfolge', () {

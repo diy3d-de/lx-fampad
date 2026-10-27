@@ -160,7 +160,7 @@ enum WeitergabeFehlerArt {
   /// Die Weitergabe ließ sich nicht öffnen (beschädigt, anderes Konto oder neuere App-Version).
   beschaedigt,
 
-  /// Dieses Gerät hat schon einen anderen Postfach-Schlüssel (eine eigene Verbindung): nichts wird überschrieben.
+  /// Dieses Gerät hat schon einen Postfach-Schlüssel (zum Beispiel von einer eigenen Verbindung): der Code wird nicht eingelöst, nichts wird überschrieben.
   schonAnderes,
 
   /// Der Schlüsselspeicher ließ sich nicht lesen oder beschreiben.
@@ -179,7 +179,7 @@ class WeitergabeFehler implements Exception {
     WeitergabeFehlerArt.codeUngueltig => 'Der Code stimmt nicht. Prüfe ihn auf Tippfehler oder scanne den QR-Code noch einmal.',
     WeitergabeFehlerArt.abgelaufen => 'Der Code ist abgelaufen oder schon benutzt. Zeige auf dem anderen Gerät einen neuen an.',
     WeitergabeFehlerArt.beschaedigt => 'Die Weitergabe ließ sich nicht öffnen. Zeige auf dem anderen Gerät einen neuen Code an, und halte beide Apps aktuell.',
-    WeitergabeFehlerArt.schonAnderes => 'Dieses Gerät hat schon einen eigenen Schlüssel für Home Assistant. Er bleibt unverändert.',
+    WeitergabeFehlerArt.schonAnderes => 'Dieses Gerät hat schon ein Postfach für Home Assistant. Es bleibt unverändert, der Code wurde nicht eingelöst.',
     WeitergabeFehlerArt.speicher => 'Der Schlüsselspeicher dieses Geräts ließ sich gerade nicht nutzen. Versuche es noch einmal.',
   };
 
@@ -199,9 +199,6 @@ class WeitergabeAnzeige {
 enum WeitergabeErgebnis {
   /// Der Schlüssel liegt jetzt auf diesem Gerät.
   uebernommen,
-
-  /// Dieses Gerät hatte genau diesen Schlüssel schon (nur die Verbindungen wurden ergänzt).
-  schonDa,
 }
 
 class IngestWeitergabe {
@@ -254,8 +251,8 @@ class IngestWeitergabe {
     }
   }
 
-  /// Auf dem Zielgerät: QR-Text oder Code einlesen, die Weitergabe beim Server einlösen und den Schlüssel übernehmen. Ein schon vorhandener ANDERER Schlüssel bleibt unverändert
-  /// ([WeitergabeFehlerArt.schonAnderes]); derselbe Schlüssel ergibt [WeitergabeErgebnis.schonDa].
+  /// Auf dem Zielgerät: QR-Text oder Code einlesen, die Weitergabe beim Server einlösen und den Schlüssel übernehmen. Hat dieses Gerät schon einen Postfach-Schlüssel,
+  /// wird der Code gar nicht erst eingelöst ([WeitergabeFehlerArt.schonAnderes]); es wird nie etwas überschrieben.
   Future<WeitergabeErgebnis> annehmen(String eingabe) async {
     final uid = ich();
     if (uid == null) throw const WeitergabeFehler(WeitergabeFehlerArt.nichtBereit);
@@ -274,6 +271,8 @@ class IngestWeitergabe {
       } on SchluesselSpeicherFehler {
         throw const WeitergabeFehler(WeitergabeFehlerArt.speicher);
       }
+      // Hat dieses Gerät schon einen Postfach-Schlüssel, wird der Code gar nicht erst eingelöst (nichts wird überschrieben, der Server protokolliert keine Übernahme)
+      if (vorhanden != null) throw const WeitergabeFehler(WeitergabeFehlerArt.schonAnderes);
       final c = await _krypto();
       final String blob;
       try {
@@ -295,20 +294,6 @@ class IngestWeitergabe {
       }
       final neu = inhalt.schluessel;
       try {
-        if (vorhanden != null) {
-          final a = vorhanden.toBytes();
-          final b = neu.toBytes();
-          final bool gleich;
-          try {
-            gleich = gleicheBytes(a, b);
-          } finally {
-            loescheBytes(a);
-            loescheBytes(b);
-          }
-          if (!gleich) throw const WeitergabeFehler(WeitergabeFehlerArt.schonAnderes);
-          if (inhalt.verbindungen.isNotEmpty) await postfach.verbindungenMerken(uid, inhalt.verbindungen);
-          return WeitergabeErgebnis.schonDa;
-        }
         // erst die Merkliste, dann der Schlüssel: scheitert das Schreiben des Schlüssels, bleibt höchstens eine unbenutzte Liste liegen (sie macht ohne Schlüssel nichts)
         if (inhalt.verbindungen.isNotEmpty) await postfach.verbindungenMerken(uid, inhalt.verbindungen);
         await postfach.schreiben(uid, neu);

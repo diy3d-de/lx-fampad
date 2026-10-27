@@ -63,6 +63,9 @@ const HOUR_MS = 3_600_000;
 export const IP_PER_HOUR = 300;
 /** Anfragen mit ungültigem Token je Netzadresse und Stunde (nur Fehlschläge zählen). */
 export const BAD_TOKEN_PER_HOUR = 20;
+/** Weitergabe des Postfach-Schlüssels: Anlegen und Einlösen je Person (Sitzung) und Stunde, zusätzlich zur strengen Grenze je Netzadresse. */
+export const TRANSFER_CREATE_PER_HOUR = 10;
+export const TRANSFER_CLAIM_PER_HOUR = 20;
 
 export function registerIngestRoutes(app: FastifyInstance, config: Config, auth: Auth): void {
   const ctx = auth.ctx;
@@ -73,6 +76,8 @@ export function registerIngestRoutes(app: FastifyInstance, config: Config, auth:
   const badAuth = new BoundedLimiter(BAD_TOKEN_PER_HOUR, HOUR_MS, ctx.now);
   const perToken = new BoundedLimiter(config.ingest.ratePerHour, HOUR_MS, ctx.now);
   const tooMany = () => new AppError(429, 'rate_limited', 'Zu viele Anfragen. Bitte später erneut versuchen.', { 'retry-after': '600' });
+  const transferCreate = new BoundedLimiter(TRANSFER_CREATE_PER_HOUR, HOUR_MS, ctx.now);
+  const transferClaim = new BoundedLimiter(TRANSFER_CLAIM_PER_HOUR, HOUR_MS, ctx.now);
   const dropLimit = {
     config: {
       rateLimit: {
@@ -148,6 +153,7 @@ export function registerIngestRoutes(app: FastifyInstance, config: Config, auth:
   app.post('/api/v1/ingest/postfach-transfer', strikt, async (req, reply) => {
     requireIngestEnabled(ctx);
     const p = await auth.requireSession(req);
+    if (!transferCreate.hit(p.userId)) throw tooMany();
     const body = parse(z.object({ lookup: b64urlKey, blob: b64urlBlobMin(32, 1024) }).strict(), req.body);
     return reply.header('cache-control', 'no-store').send(await createPostfachTransfer(ctx, p, body, meta(req)));
   });
@@ -155,6 +161,7 @@ export function registerIngestRoutes(app: FastifyInstance, config: Config, auth:
   app.post('/api/v1/ingest/postfach-transfer/claim', strikt, async (req, reply) => {
     requireIngestEnabled(ctx);
     const p = await auth.requireSession(req);
+    if (!transferClaim.hit(p.userId)) throw tooMany();
     const body = parse(z.object({ lookup: b64urlKey }).strict(), req.body);
     return reply.header('cache-control', 'no-store').send(await claimPostfachTransfer(ctx, p, body, meta(req)));
   });

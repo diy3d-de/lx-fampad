@@ -1239,6 +1239,19 @@ void main() {
       expect(find.text('Läuft über ein anderes Gerät'), findsNothing);
     });
 
+    testWidgets('Hat das Gerät schon ein Postfach, ist die Eingabe gesperrt: klare Meldung, kein Textfeld, kein Einlösen', (tester) async {
+      await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true), role: 'parent');
+      await tippe(tester, find.text('Home Assistant'));
+      await tippe(tester, find.text('Auf diesem Gerät auch abholen'));
+      expect(find.byType(TextField), findsOneWidget);
+      ingest.state = ingest.state.kopie(postfachDa: true);
+      await tester.pump();
+      expect(find.byType(TextField), findsNothing);
+      expect(find.textContaining('Dieses Gerät hat schon ein Postfach für Home Assistant'), findsOneWidget);
+      expect(ingest.aufrufe.where((x) => x.startsWith('weitergabe')), isEmpty);
+      pruefeLayout(tester, 'Weitergabe gesperrt');
+    });
+
     testWidgets('Fehler bei der Übernahme: feste Meldung, die Seite bleibt, nichts wird behauptet', (tester) async {
       await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true), role: 'parent');
       ingest.weitergabeFehler = const WeitergabeFehler(WeitergabeFehlerArt.abgelaufen);

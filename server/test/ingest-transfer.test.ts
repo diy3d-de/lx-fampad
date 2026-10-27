@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { runMaintenance } from '../src/auth/maintenance.js';
 import { sha256Hex } from '../src/auth/crypto.js';
+import { TRANSFER_CLAIM_PER_HOUR, TRANSFER_CREATE_PER_HOUR } from '../src/routes/ingest.js';
 import * as schema from '../src/db/schema.js';
 import { addMember, adminPassword, backends, World, type Harness } from './helpers.js';
 
@@ -128,6 +129,19 @@ describe.each(backends)('Postfach-Weitergabe ($name)', (backend) => {
     const f = await familie();
     await anlegen(f.eltern, lookup());
     expect(await world.count('key_transfers')).toBe(0);
+  });
+
+  it('Grenze je Person (zusätzlich zur Netzadresse): Anlegen und Einlösen werden nach der Stundenobergrenze mit 429 abgelehnt, andere Personen sind nicht betroffen, nach einer Stunde geht es wieder', async () => {
+    await neu({ ...ENV, AUTH_RATE_LIMIT_MAX: '1000' });
+    const f = await familie();
+    for (let i = 0; i < TRANSFER_CREATE_PER_HOUR; i++) expect((await anlegen(f.eltern, lookup())).status).toBe(200);
+    expect((await anlegen(f.eltern, lookup())).status).toBe(429);
+    expect((await anlegen(f.eltern2, lookup())).status).toBe(200);
+    for (let i = 0; i < TRANSFER_CLAIM_PER_HOUR; i++) expect((await einloesen(f.eltern, lookup())).status).toBe(404);
+    expect((await einloesen(f.eltern, lookup())).status).toBe(429);
+    expect((await einloesen(f.eltern2, lookup())).status).toBe(404);
+    world.advance(3_600_001);
+    expect((await anlegen(f.eltern, lookup())).status).toBe(200);
   });
 
   it('Schalter aus = 404 auf beiden Routen', async () => {

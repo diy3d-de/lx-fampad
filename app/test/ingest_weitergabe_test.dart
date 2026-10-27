@@ -213,12 +213,15 @@ void main() {
       expect(server.anfragen('POST /ingest/postfach-transfer/claim'), isEmpty);
     });
 
-    test('Zielgerät hat schon genau diesen Schlüssel: "schon da", die Merkliste wird ergänzt', () async {
+    test('Zielgerät hat schon einen Schlüssel (auch genau diesen): der Code wird gar nicht erst eingelöst, nichts ändert sich', () async {
       await PostfachSpeicher(ziel).schreiben(_uid, schluessel());
       await PostfachSpeicher(ziel).verbindungenMerken(_uid, [_t1]);
       final anzeige = await dienst(server, quelle).anbieten();
-      expect(await dienst(server, ziel).annehmen(anzeige.codeText), WeitergabeErgebnis.schonDa);
-      expect(await PostfachSpeicher(ziel).verbindungen(_uid), [_t1, _t2]);
+      await expectLater(dienst(server, ziel).annehmen(anzeige.codeText), throwsA(isA<WeitergabeFehler>().having((e) => e.art, 'art', WeitergabeFehlerArt.schonAnderes)));
+      expect(server.anfragen('POST /ingest/postfach-transfer/claim'), isEmpty);
+      expect(abgelegt, isNotNull); // der Code gilt weiter, auf einem Gerät ohne Postfach lässt er sich noch einlösen
+      expect(await PostfachSpeicher(ziel).verbindungen(_uid), [_t1]);
+      expect(await dienst(server, _Kaputt()).annehmen(anzeige.codeText), WeitergabeErgebnis.uebernommen);
     });
 
     test('Zielgerät hat einen ANDEREN Schlüssel (eigene Verbindung): nichts wird überschrieben', () async {
@@ -228,6 +231,7 @@ void main() {
       await PostfachSpeicher(ziel).verbindungenMerken(_uid, [_t1]);
       final anzeige = await dienst(server, quelle).anbieten();
       await expectLater(dienst(server, ziel).annehmen(anzeige.codeText), throwsA(isA<WeitergabeFehler>().having((e) => e.art, 'art', WeitergabeFehlerArt.schonAnderes)));
+      expect(server.anfragen('POST /ingest/postfach-transfer/claim'), isEmpty);
       expect((await PostfachSpeicher(ziel).lesen(_uid))!.toBytes(), eigen.toBytes());
       expect(await PostfachSpeicher(ziel).verbindungen(_uid), [_t1]);
     });

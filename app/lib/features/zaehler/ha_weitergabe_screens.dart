@@ -191,10 +191,10 @@ class _HaWeitergabeUebernehmenScreenState extends ConsumerState<HaWeitergabeUebe
       _fehler = null;
     });
     try {
-      final r = await ref.read(ingestProvider.notifier).weitergabeAnnehmen(eingabe);
+      await ref.read(ingestProvider.notifier).weitergabeAnnehmen(eingabe);
       if (!mounted) return;
       _code.clear();
-      zeigeHinweis(context, r == WeitergabeErgebnis.schonDa ? 'Dieses Gerät holt schon ab. Die Verbindungen sind ergänzt.' : 'Dieses Gerät holt jetzt auch die Werte aus Home Assistant ab.');
+      zeigeHinweis(context, 'Dieses Gerät holt jetzt auch die Werte aus Home Assistant ab.');
       Navigator.of(context).pop(true);
     } on Object catch (e) {
       if (mounted) {
@@ -221,11 +221,14 @@ class _HaWeitergabeUebernehmenScreenState extends ConsumerState<HaWeitergabeUebe
   }
 
   @override
-  Widget build(BuildContext context) => BildschirmSchutz(
-    child: AuthSeite(
-      label: 'Home Assistant',
-      titel: 'Auf diesem Gerät auch abholen',
-      kinder: [
+  Widget build(BuildContext context) {
+    // Hat dieses Gerät schon ein Postfach, ist die Übernahme gesperrt (der Code würde sonst eingelöst und verworfen)
+    final gesperrt = ref.watch(ingestProvider.select((z) => z.postfachDa));
+    return BildschirmSchutz(
+      child: AuthSeite(
+        label: 'Home Assistant',
+        titel: 'Auf diesem Gerät auch abholen',
+        kinder: gesperrt ? [MeldungsBox(const WeitergabeFehler(WeitergabeFehlerArt.schonAnderes).text, fehler: false)] : [
         const Text(
           'Öffne auf dem Gerät, das die Werte aus Home Assistant schon abholt, Zähler › Home Assistant › „Auf weiterem Gerät abholen“. Scanne dann den QR-Code oder tippe den Code hier ab. '
           'Der Schlüssel wandert verschlüsselt auf dieses Gerät; der Server sieht ihn nie. Danach holen beide Geräte ab, doppelte Werte trägt die App nicht ein.',
@@ -255,8 +258,8 @@ class _HaWeitergabeUebernehmenScreenState extends ConsumerState<HaWeitergabeUebe
           HauptKnopf(text: 'Auf diesem Gerät abholen', icon: Icons.link, laeuft: _laeuft, onPressed: () => _uebernehmen(_code.text))
         else
           ZweitKnopf(text: 'Mit Code abholen', icon: Icons.link, onPressed: _laeuft ? null : () => _uebernehmen(_code.text)),
-      ],
-    ),
-  );
+        ],
+      ),
+    );
+  }
 }
-
