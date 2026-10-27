@@ -8,6 +8,7 @@ import '../../data/api/models.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/feiertage.dart';
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/termin_erinnerung.dart';
 import '../../data/calendar/termin_farben.dart';
 import '../../data/calendar/wiederholung.dart';
 import '../../data/calendar/zeitzonen.dart';
@@ -255,7 +256,7 @@ Future<TerminAktion?> terminDetailBlatt(
             zeile(Icons.schedule, datumZeitText(v)),
             if (v.ort.isNotEmpty) zeile(Icons.place_outlined, v.ort),
             if (wdh != null && wdh.wiederholt) zeile(Icons.repeat, wdh.beschreibung()),
-            if (t.erinnerungMin != null) zeile(Icons.notifications_none, erinnerungText(t.erinnerungMin)),
+            if (erinnerungMinuten(t.erinnerungMin) != null) zeile(Icons.notifications_none, erinnerungText(erinnerungMinuten(t.erinnerungMin))),
             if (t.beschreibung.isNotEmpty) zeile(Icons.notes, t.beschreibung),
             if (farbName != null)
               Padding(

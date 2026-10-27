@@ -13,6 +13,7 @@ import '../sync/sync_entities.dart';
 import '../sync/sync_store.dart';
 import '../sync_state.dart';
 import 'ics_parser.dart';
+import 'termin_erinnerung.dart';
 import 'termin_repository.dart';
 
 enum IcsStatus { neu, vorhanden, geaendert, uebersprungen }
@@ -60,7 +61,9 @@ Map<String, dynamic> _felder(IcsTermin t) => {
   'endUtc': t.ganztaegig ? null : zeitFuerServer(t.endUtc!),
   'tzid': t.ganztaegig ? null : t.tzid,
   'rrule': t.rrule,
-  'erinnerungMin': t.erinnerungMin,
+  // ohne VALARM in der Datei: bewusst keine Erinnerung (-1), damit ein Import nie von der Standard-Erinnerung überrascht und die Nachtragung
+  // ihn nicht berührt; bei einem erneuten Import bleibt der vorhandene Wert, siehe [_unterschiede]
+  'erinnerungMin': t.erinnerungMin ?? kErinnerungKeine,
   'icalUid': t.uid,
 };
 
@@ -86,6 +89,7 @@ const _kZeitFelder = ['ganztaegig', 'startUtc', 'endUtc', 'tzid', 'startDate', '
 Map<String, dynamic> _unterschiede(Termin alt, IcsTermin neu) {
   final a = _bisher(alt), n = _felder(neu);
   final d = {for (final k in n.keys) if (n[k] != a[k]) k: n[k]};
+  if (neu.erinnerungMin == null) d.remove('erinnerungMin'); // keine Angabe in der Datei: die Wahl der Person bleibt
   if (d.keys.any(_kZeitFelder.contains)) {
     for (final k in _kZeitFelder) {
       d[k] = n[k];

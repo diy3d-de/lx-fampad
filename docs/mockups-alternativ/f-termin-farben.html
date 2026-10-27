@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Termin-Farben im jetzigen Design – anklickbar</title>
+<style>
+:root{--bg:#090a0f;--s1:#13161f;--s2:#1a1e29;--s3:#212634;--line:#242936;--soft:#1b1f2b;--tx:#e6e8ee;--mu:#8b93a7;--fa:#5d6578;--ac:#00f0ff;--onac:#04121b;--ok:#10b981;--warn:#febc2e;--mono:"JetBrains Mono","Consolas",monospace}
+*{box-sizing:border-box;margin:0}
+body{background:#000;font-family:"Inter","Segoe UI",system-ui,sans-serif;color:var(--tx);padding:20px;display:flex;flex-direction:column;align-items:center;gap:14px}
+h1{font-size:18px}.hint{font-size:12.5px;color:#8c8c95;max-width:780px;text-align:center}
+.row{display:flex;gap:26px;flex-wrap:wrap;justify-content:center}.cap{font-size:12.5px;color:#8c8c95;text-align:center;margin-bottom:6px;font-weight:600}
+.ph{width:370px;height:780px;border-radius:34px;border:8px solid #000;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 0 0 1px #2a2a30}
+.ph:before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 55% at 20% -10%,rgba(124,58,237,.26),transparent 60%),radial-gradient(90% 45% at 90% -5%,rgba(0,240,255,.14),transparent 60%)}
+.sb{display:flex;justify-content:space-between;padding:9px 20px 0;font-size:11px;color:var(--mu);position:relative}
+.scr{flex:1;overflow-y:auto;padding:10px 16px 14px;position:relative;scrollbar-width:none}.scr::-webkit-scrollbar{display:none}
+.lab{font-family:var(--mono);font-size:11.5px;color:var(--mu);letter-spacing:.02em}.lab:before{content:"// "}
+.top{display:flex;justify-content:space-between;align-items:center}.av{width:32px;height:32px;border-radius:50%;background:var(--s2);border:1px solid var(--line);display:grid;place-items:center;font-weight:700;font-size:12px;color:#f472b6}
+h2{font-size:28px;font-weight:800;letter-spacing:-.03em;margin:4px 0 10px}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.seg{display:flex;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:3px}.seg span{padding:6px 12px;font-size:12.5px;border-radius:9px;color:var(--mu);font-weight:600}.seg .a{background:var(--s3);color:var(--tx)}
+.fbtn{margin-left:auto;display:flex;align-items:center;gap:6px;background:var(--s1);border:1px solid var(--line);border-radius:12px;padding:7px 12px;font-size:12.5px;font-weight:600;cursor:pointer}.fbtn b{background:var(--ac);color:var(--onac);border-radius:9px;padding:0 6px;font-size:11px}
+.mon{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:12.5px;margin-bottom:8px}
+.mon .w{font-family:var(--mono);font-size:10.5px;color:var(--fa);padding:3px 0}.mon .d{padding:5px 0 12px;border-radius:10px;position:relative;cursor:pointer;border:1px solid transparent}
+.mon .d.o{color:var(--fa)}.mon .d.s{background:var(--s2);border-color:var(--line)}.mon .d.t b{background:var(--ac);color:var(--onac);border-radius:50%;display:inline-block;width:22px;height:22px;line-height:22px}
+.dots{position:absolute;bottom:3px;left:0;right:0;display:flex;gap:2px;justify-content:center}.dots u{width:5px;height:5px;border-radius:50%;background:var(--c)}
+.ev{display:flex;gap:11px;padding:10px 12px;margin-bottom:8px;background:var(--s1);border:1px solid var(--line);border-radius:14px;align-items:center}
+.ev .b{width:4px;align-self:stretch;border-radius:2px;background:var(--c)}.ev time{font-family:var(--mono);font-size:12px;color:var(--ac);width:46px}
+.ev b{font-weight:600;font-size:14.5px;display:block}.ev small{font-size:12px;color:var(--mu);display:flex;align-items:center;gap:6px;margin-top:2px}.ev small i{width:7px;height:7px;border-radius:50%;background:var(--c)}
+.ev .p{margin-left:auto;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;font-size:10.5px;font-weight:800;color:#06080c;flex:none}
+.empty{color:var(--fa);font-size:13px;padding:10px 4px}
+.fld{background:var(--s1);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:9px;font-size:15px}.fld small{display:block;font-family:var(--mono);color:var(--mu);font-size:10.5px;margin-bottom:2px}
+.cats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.cat{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:12px;background:var(--s1);border:1px solid var(--line);font-size:14px;font-weight:600;cursor:pointer}
+.cat i{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none}.cat.sel{border-color:var(--c);background:var(--s2);box-shadow:0 0 0 1px var(--c) inset}
+.cat.none i{background:none;box-shadow:inset 0 0 0 1.5px var(--fa)}
+.who{display:flex;gap:7px;margin:4px 0 6px}.chip{display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:14px;background:var(--s1);border:1px solid var(--line);font-size:13px;font-weight:600;cursor:default}.chip i{width:9px;height:9px;border-radius:50%;background:var(--c)}.chip.sel{border-color:var(--c)}
+.save{display:block;width:100%;margin-top:12px;border:0;background:var(--ac);color:var(--onac);font:700 15px inherit;padding:14px;border-radius:14px;cursor:pointer}.note{font-size:12px;color:var(--fa);margin-top:6px}
+.sheet{background:var(--s1);border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px}
+.tg{display:flex;align-items:center;gap:11px;padding:9px 0;border-bottom:1px solid var(--soft);cursor:pointer;font-size:14.5px;font-weight:550}.tg:last-child{border:0}
+.tg i{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none}.tg span{flex:1}.tg em{font-style:normal;font-family:var(--mono);font-size:11px;color:var(--fa)}
+.sw{width:42px;height:24px;border-radius:12px;background:var(--s3);position:relative;flex:none}.sw:after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:var(--mu);transition:.15s}
+.tg.on .sw{background:var(--ac)}.tg.on .sw:after{left:21px;background:var(--onac)}
+.sm{display:flex;gap:8px;margin-top:8px}.sm button{flex:1;background:var(--s2);border:1px solid var(--line);color:var(--tx);border-radius:12px;padding:9px;font:600 13px inherit;cursor:pointer}
+</style></head><body>
+<h1>Termin-Farben im jetzigen Design</h1>
+<div class="hint">Gleiches Aussehen wie die App heute (dunkel, Cyan, Mono-Labels). Pro Termin <b>eine</b> von 10 Farben mit festem Namen; die Person bleibt als kleiner Avatar sichtbar. Termine ohne Farbe zeigen wie bisher die Personenfarbe. Alles anklickbar: Filter, Farbe wählen, Speichern wirkt auf den Kalender.</div>
+<div class="row">
+<div><div class="cap">1 · Kalender mit Farben</div><div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div><div class="scr">
+ <div class="top"><span class="lab">2026</span><div class="av">L</div></div><h2>Oktober</h2>
+ <div class="bar"><div class="seg"><span class="a">Monat</span><span>Woche</span><span>Agenda</span></div><div class="fbtn" id="fb">Filter <b id="fc">10</b></div></div>
+ <div class="mon" id="mon"></div>
+ <div class="lab" id="dayt" style="margin:10px 0 8px"></div><div id="dayl"></div>
+</div></div></div>
+
+<div><div class="cap">2 · Termin anlegen</div><div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div><div class="scr">
+ <div class="top"><span style="font-size:22px;color:var(--mu)">‹</span></div><h2>Neuer Termin</h2>
+ <div class="fld"><small>TITEL</small>Zahnarzt Tim</div>
+ <div class="fld"><small>WANN</small>Do, 22. Okt · 15:00 – 15:45</div>
+ <div class="lab" style="margin:12px 0 7px">Farbe</div>
+ <div class="cats" id="ecat"></div>
+ <div class="lab" style="margin:12px 0 4px">Wer</div>
+ <div class="who"><div class="chip" style="--c:#fb7185"><i></i>Lena</div><div class="chip sel" style="--c:#38bdf8"><i></i>Tim</div><div class="chip" style="--c:#34d399"><i></i>Marie</div></div>
+ <button class="save" id="sv">Speichern</button><div class="note" id="svn"></div>
+</div></div></div>
+
+<div><div class="cap">3 · Filter-Blatt (Kalender › Filter)</div><div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div><div class="scr">
+ <div class="top"><span class="lab">Filter</span></div><h2>Anzeigen</h2>
+ <div class="lab" style="margin:4px 0 6px">Farben</div>
+ <div class="sheet" id="ftg"></div>
+ <div class="sm"><button id="all">Alle an</button><button id="none">Alle aus</button></div>
+ <div class="lab" style="margin:16px 0 6px">Personen</div>
+ <div class="sheet"><div class="tg on" style="--c:#fb7185"><i></i><span>Lena</span><div class="sw"></div></div><div class="tg on" style="--c:#38bdf8"><i></i><span>Tim</span><div class="sw"></div></div><div class="tg on" style="--c:#34d399"><i></i><span>Marie</span><div class="sw"></div></div></div>
+ <div class="lab" style="margin:16px 0 6px">Zusätzlich anzeigen</div>
+ <div class="sheet"><div class="tg on"><span>Feiertage</span><div class="sw"></div></div><div class="tg on"><span>Schulferien</span><div class="sw"></div></div><div class="tg on"><span>Geburtstage</span><div class="sw"></div></div></div>
+ <div class="note">Geburtstage, Feiertage, Ferien und Müll behalten ihre festen Farben und sind nicht Teil der zehn.</div>
+</div></div></div>
+</div>
+<script>
+const COL=['#38bdf8','#34d399','#fbbf24','#fb7185','#a78bfa','#f472b6','#a3e635','#fb923c','#2dd4bf','#818cf8'],NAME=['Familie','Schule','Arbeit','Arzt','Sport','Freizeit','Haushalt','Urlaub','Besuch','Sonstiges'];
+const on=NAME.map(()=>true);let ecat=3;
+// [Zeit,Titel,Person,Farbe(index|-1),Personenfarbe]
+let evs={25:[['08:30','Schwimmkurs','Tim',4,'#38bdf8'],['12:00','Mittagessen bei Oma','alle',0,'#fb7185'],['18:30','Elternabend','Marie',1,'#34d399'],['20:00','Serienabend','Lena',-1,'#fb7185']],26:[['09:00','Teamtag','Marie',2,'#34d399']],22:[],16:[['15:00','Zahnarzt Lena','Lena',3,'#fb7185']],8:[['19:00','Elternstammtisch','Marie',1,'#34d399']],29:[['16:30','Fußballtraining','Tim',4,'#38bdf8']],30:[['14:00','Kaffee mit Nachbarn','alle',8,'#fb7185']]};
+const $=id=>document.getElementById(id),col=e=>e[3]<0?e[4]:COL[e[3]],vis=e=>e[3]<0||on[e[3]];let sel=25;
+function drawM(){let h='Mo Di Mi Do Fr Sa So'.split(' ').map(w=>`<div class="w">${w}</div>`).join('')+[28,29,30].map(d=>`<div class="d o">${d}</div>`).join('');
+ for(let d=1;d<=31;d++){const es=(evs[d]||[]).filter(vis);const dots=[...new Set(es.map(col))].slice(0,4).map(c=>`<u style="--c:${c}"></u>`).join('');h+=`<div class="d ${d===25?'t':''} ${d===sel?'s':''}" data-d="${d}"><b>${d}</b><div class="dots">${dots}</div></div>`}
+ $('mon').innerHTML=h;$('mon').onclick=e=>{const x=e.target.closest('.d');if(x&&x.dataset.d){sel=+x.dataset.d;all()}}}
+function drawD(){const wd=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'][(sel+2)%7];$('dayt').textContent=wd+', '+sel+'. Oktober';
+ const es=(evs[sel]||[]).filter(vis);$('dayl').innerHTML=es.map(e=>`<div class="ev" style="--c:${col(e)}"><time>${e[0]}</time><div class="b"></div><div><b>${e[1]}</b><small>${e[3]<0?'<i></i>Personenfarbe (keine Farbe gewählt)':'<i></i>'+NAME[e[3]]}</small></div><div class="p" style="background:${e[4]}">${e[2]==='alle'?'★':e[2][0]}</div></div>`).join('')||'<div class="empty">Keine Termine (oder Farbe ausgeblendet)</div>';
+ $('fc').textContent=on.filter(Boolean).length}
+function drawE(){$('ecat').innerHTML=`<div class="cat none ${ecat<0?'sel':''}" style="--c:#8b93a7" data-i="-1"><i></i>Keine</div>`+NAME.map((n,i)=>`<div class="cat ${i===ecat?'sel':''}" style="--c:${COL[i]}" data-i="${i}"><i></i>${n}</div>`).join('');$('ecat').onclick=e=>{const x=e.target.closest('.cat');if(x){ecat=+x.dataset.i;drawE()}}}
+$('sv').onclick=()=>{evs[22]=[['15:00','Zahnarzt Tim','Tim',ecat,'#38bdf8']];sel=22;on.fill(true);all();$('svn').textContent=ecat<0?'Gespeichert ohne Farbe: Kalender zeigt die Personenfarbe.':'Gespeichert: im Kalender (1) am 22. Oktober in der Farbe „'+NAME[ecat]+'“.'};
+function drawF(){$('ftg').innerHTML=NAME.map((n,i)=>`<div class="tg ${on[i]?'on':''}" style="--c:${COL[i]}" data-i="${i}"><i></i><span>${n}</span><em>${Object.values(evs).flat().filter(e=>e[3]===i).length}</em><div class="sw"></div></div>`).join('');
+ $('ftg').onclick=e=>{const x=e.target.closest('.tg');if(x){on[+x.dataset.i]=!on[+x.dataset.i];all()}}}
+$('all').onclick=()=>{on.fill(true);all()};$('none').onclick=()=>{on.fill(false);all()};
+function all(){drawM();drawD();drawE();drawF()}all();
+</script></body></html>

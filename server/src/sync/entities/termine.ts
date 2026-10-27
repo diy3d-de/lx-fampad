@@ -112,7 +112,7 @@ export const terminEntity: EntityDef = {
     startDate: { access: 'rw', schema: calendarDate.nullable(), defaultValue: null },
     endDate: { access: 'rw', schema: calendarDate.nullable(), defaultValue: null },
     rrule: { access: 'rw', schema: rrule.nullable(), defaultValue: null, blank: null },
-    erinnerungMin: { access: 'rw', schema: z.number().int().min(0).max(40320).nullable(), defaultValue: null },
+    erinnerungMin: { access: 'rw', schema: z.number().int().min(-1).max(40320).nullable(), defaultValue: null },
     icalUid: { access: 'rw', schema: trimmed(255).nullable(), defaultValue: null, blank: null },
     farbe: { access: 'rw', schema: z.number().int().min(0).max(10).nullable(), defaultValue: null },
     audience: { access: 'rw', schema: AUDIENCE_INPUT, defaultValue: 'family' },

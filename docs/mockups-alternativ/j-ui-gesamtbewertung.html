@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>UI-Gesamtbewertung</title>
+<style>
+:root{--pg:#050506;--pt:#ececef;--pm:#9a9ea8}
+*{box-sizing:border-box;margin:0}
+body{background:var(--pg);color:var(--pt);font-family:"Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;padding:28px 16px 70px;line-height:1.45}
+h1{font-size:27px;letter-spacing:-.02em;text-align:center}
+.lead{max-width:820px;margin:8px auto 26px;text-align:center;color:var(--pm);font-size:15px}
+code{background:#1d1f25;padding:1px 5px;border-radius:5px;font-size:12.5px;color:#d6d8de}
+.box{max-width:1000px;margin:0 auto 28px;background:#121317;border-radius:16px;padding:18px 22px}
+.box h2{font-size:19px;margin-bottom:10px}.box h3{font-size:15px;margin:12px 0 6px;color:#fff}
+.box li{margin:5px 0;font-size:14px;color:#c8cad2}.box ul,.box ol{padding-left:20px}.box b{color:#fff}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:22px}@media(max-width:760px){.grid2{grid-template-columns:1fr}}
+.area{max-width:1000px;margin:42px auto 10px;font-size:22px;letter-spacing:-.01em;border-bottom:1px solid #26282e;padding-bottom:8px}
+.area small{font-size:13px;color:var(--pm);font-weight:400;margin-left:8px}
+.prob{max-width:1000px;margin:0 auto 46px}
+.prob h3{font-size:18px;margin-bottom:6px}
+.meta{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;font-size:12.5px}
+.meta span{padding:2px 9px;border-radius:9px;background:#1d1f25;color:#c8cad2}
+.meta .hoch{background:#3a1d1d;color:#ff9a94}.meta .mittel{background:#3a311b;color:#f3d48a}.meta .niedrig{background:#1c2a33;color:#9cc9e6}
+.meta .auf{background:#22252d}
+.fund{font-size:12.5px;color:var(--pm);margin-bottom:14px}
+.why{max-width:760px;margin:14px auto 0;font-size:14px;color:#c8cad2;background:#121317;border-radius:12px;padding:10px 14px}
+.why b{color:#fff}
+.pair{display:flex;gap:26px;flex-wrap:wrap;justify-content:center}
+.col{display:flex;flex-direction:column;align-items:center;gap:8px}
+.tag{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:10px}
+.tag.v{background:#3a1d1d;color:#ff9a94}.tag.n{background:#16301f;color:#8fe0a8}
+.ph{width:320px;max-width:100%;min-height:330px;border-radius:28px;border:6px solid #000;overflow:hidden;position:relative;box-shadow:0 0 0 1px #2a2a30;background:var(--bg);color:var(--tx);display:flex;flex-direction:column}
+.ph.wide{width:470px}
+.scr{flex:1;padding:14px 15px;position:relative}
+/* heutiger Look (Tokens aus constants.dart) */
+.alt{--bg:#090a0f;--s1:#13161f;--s2:#1a1e29;--line:#242936;--tx:#e6e8ee;--mu:#8b93a7;--fa:#5d6578;--ac:#00f0ff;--onac:#04121b;--ok:#10b981;--warn:#febc2e;--bad:#ff5f57;--neu:#7c3aed;--r:14px}
+.alt .scr:before{content:"";position:absolute;inset:0;background:radial-gradient(120% 45% at 15% -10%,rgba(124,58,237,.28),transparent 60%),radial-gradient(90% 35% at 100% 0,rgba(0,240,255,.08),transparent 60%);pointer-events:none}
+.alt .lab{font-family:Consolas,"JetBrains Mono",monospace;font-size:11px;letter-spacing:.06em;color:var(--ac);text-transform:uppercase;margin:12px 0 6px;position:relative}
+.alt .mono{font-family:Consolas,"JetBrains Mono",monospace}
+.alt .card{border:1px solid var(--line)}
+.alt h4{font-weight:800;letter-spacing:-.03em;font-size:25px;color:#fff}
+.alt .pill{font-family:Consolas,monospace;font-size:10.5px;border:1px solid currentColor;background:transparent}
+/* Vorschlag ruhiger Look (wie h-weniger-technisch.html) */
+.neu{--bg:#15161a;--s1:#1e2025;--s2:#272a31;--line:transparent;--tx:#efeff2;--mu:#a2a6b0;--fa:#80848e;--ac:#7cd4d9;--onac:#0c1b1d;--ok:#7fcf9b;--warn:#e9b45c;--bad:#f08a80;--neu:#a99cf0;--r:18px}
+.neu .lab{font-size:13px;font-weight:600;color:var(--mu);margin:14px 0 6px}
+.neu h4{font-weight:650;letter-spacing:-.02em;font-size:25px}
+.neu .pill{font-size:12px}
+/* Vorschlag im HEUTIGEN Look (nur Inhalt/Aufbau neu, sofort baubar) */
+.altn{}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;position:relative;margin-bottom:4px}
+.back{font-size:18px;color:var(--mu)}
+.sub{font-size:12px;color:var(--mu)}
+.card{background:var(--s1);border-radius:var(--r);padding:12px 13px;margin-bottom:10px;position:relative}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.06);font-size:14px;min-height:44px}.row:last-child{border:0}
+.row small{display:block;color:var(--mu);font-size:12px;margin-top:1px}
+.alt .row small{font-family:Consolas,monospace;font-size:11px}
+.pill{display:inline-block;padding:2px 9px;border-radius:10px;white-space:nowrap;background:var(--s2);color:var(--mu)}
+.p-ok{color:var(--ok)}.p-w{color:var(--warn)}.p-b{color:var(--bad)}.p-a{color:var(--ac)}
+.neu .p-ok{background:rgba(127,207,155,.14)}.neu .p-w{background:rgba(233,180,92,.15)}.neu .p-a{background:rgba(124,212,217,.13)}
+.btn{display:block;text-align:center;background:var(--ac);color:var(--onac);font-weight:650;border-radius:12px;padding:12px;font-size:14px;margin-top:10px;min-height:44px}
+.btn.s{background:none;border:1px solid var(--line);color:var(--tx)}.neu .btn.s{background:var(--s2);border:0}
+.btn.t{background:none;color:var(--ac);border:0;padding:10px}
+.btn.d{background:none;border:0;color:var(--bad)}
+.note{font-size:12.5px;color:var(--mu);margin-top:8px;line-height:1.45}
+.warnb{border-radius:12px;padding:10px 12px;font-size:12.8px;margin:8px 0;line-height:1.45}
+.alt .warnb{border:1px solid rgba(254,188,46,.5);background:rgba(254,188,46,.08);color:#f0d9a0}
+.neu .warnb{background:#2a2620;color:#ecd9b0}
+.badb{border-radius:12px;padding:10px 12px;font-size:12.8px;margin:8px 0}
+.alt .badb{border:1px solid rgba(255,95,87,.55);background:rgba(255,95,87,.08);color:#ffb3ae}
+.infob{border-radius:12px;padding:10px 12px;font-size:12.8px;margin:8px 0;line-height:1.45}
+.alt .infob{border:1px solid rgba(0,240,255,.35);background:rgba(0,240,255,.06);color:#bdf6fa}
+.neu .infob{background:#1f2a2c;color:#cfe9ea}
+.tog{width:42px;height:24px;border-radius:12px;background:var(--line);position:relative;flex:none}.tog:after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#8b93a7}
+.tog.on{background:var(--ac)}.tog.on:after{left:21px;background:var(--onac)}.tog.dis{opacity:.4}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}.chip{font-size:12.5px;padding:8px 12px;border-radius:12px;background:var(--s2);color:var(--mu);min-height:36px}
+.alt .chip{border:1px solid var(--line);background:none}.alt .chip.on{border-color:var(--ac);color:var(--ac);background:rgba(0,240,255,.12)}
+.neu .chip.on{background:var(--ac);color:var(--onac);font-weight:650}
+.fld{background:var(--s1);border-radius:12px;padding:10px 12px;font-size:14px;margin:6px 0;color:var(--tx)}
+.alt .fld{border:1px solid var(--line);background:rgba(9,10,15,.6)}
+.fld i{font-style:normal;font-size:11.5px;color:var(--mu);display:block}
+.code{font-family:Consolas,monospace;font-size:10.5px;word-break:break-all;line-height:1.4;color:var(--tx)}
+.qr{width:150px;height:150px;margin:8px auto;background:repeating-conic-gradient(#fff 0 25%,#000 0 50%) 0 0/18px 18px;border:8px solid #fff;border-radius:6px}
+.qr.klein{width:96px;height:96px;background-size:12px 12px;border-width:5px}
+.steps{counter-reset:s;list-style:none;padding:0;margin:6px 0}
+.steps li{counter-increment:s;position:relative;padding:6px 0 6px 32px;font-size:13.5px}
+.steps li:before{content:counter(s);position:absolute;left:0;top:5px;width:22px;height:22px;border-radius:50%;background:var(--s2);color:var(--ac);font-weight:700;font-size:12px;display:grid;place-items:center}
+.steps li.ok:before{content:"✓";background:var(--ok);color:#06140d}
+.steps li.off{color:var(--mu)}
+.nav{display:flex;background:var(--s1);padding:7px 4px 12px;border-top:1px solid var(--line)}
+.nav div{flex:1;text-align:center;font-size:10.5px;color:var(--mu);padding:5px 0}.nav .on{color:var(--ac)}
+.alt .nav div{font-family:Consolas,monospace;font-size:10px}
+.tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.tile{background:var(--bg);border:1px solid var(--line);border-radius:12px;height:64px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:10.5px;gap:4px;position:relative}
+.tile i{font-style:normal;color:var(--ac);font-size:16px}
+.tile em{position:absolute;top:3px;right:4px;font-style:normal;font-size:9px;background:var(--warn);color:#000;border-radius:8px;padding:0 4px}
+.neu .tile{background:var(--s1);border:0;font-size:11.5px}.neu .tile i{color:var(--tx)}
+.grp{font-size:12px;color:var(--mu);margin:10px 0 6px;font-weight:600}
+.side{display:flex;min-height:330px}
+.sb{width:150px;background:var(--s1);padding:10px 8px;font-size:12.5px;border-right:1px solid var(--line)}
+.sb div{padding:6px 8px;border-radius:8px;color:var(--tx)}.sb .on{background:rgba(0,240,255,.12);color:var(--ac);font-weight:700}
+.neu .sb .on{background:var(--s2);color:#fff}
+.sb .g{font-size:11px;color:var(--mu);padding:8px 8px 2px}
+.main{flex:1;padding:12px;display:flex;flex-direction:column}
+.foot{margin-top:auto;font-family:Consolas,monospace;font-size:10.5px;color:var(--mu);border-top:1px solid var(--line);padding-top:6px}
+.neu .foot{font-family:inherit;font-size:12px;border:0}
+.axis{display:flex;gap:6px}.axis .h{width:24px;font-family:Consolas,monospace;font-size:8px;color:var(--fa);text-align:right}
+.neu .axis .h,.axis .h.gut{font-family:inherit;font-size:11.5px;color:var(--mu);width:30px}
+.wk{flex:1;display:grid;grid-template-columns:repeat(5,1fr);gap:3px}
+.wk div{height:34px;border-top:1px solid var(--line);position:relative}
+.ev{position:absolute;left:1px;right:1px;border-radius:5px;font-size:9.5px;padding:2px 3px;color:#000;overflow:hidden}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--ok);margin-right:6px}
+.sum{max-width:1000px;margin:0 auto 30px;background:#121317;border-radius:16px;padding:18px 22px;overflow-x:auto}
+.sum h2{font-size:19px;margin-bottom:10px}
+.sum table{width:100%;border-collapse:collapse;font-size:13.5px;min-width:620px}
+.sum th{text-align:left;color:var(--pm);font-weight:600;padding:6px;border-bottom:1px solid #2c2f36}
+.sum td{padding:8px 6px;border-bottom:1px solid #22252b;vertical-align:top;color:#c8cad2}
+.sum td:first-child{white-space:nowrap;color:#fff}
+.w1{color:#8fe0a8;font-weight:700}.w2{color:#f3d48a;font-weight:700}.w3{color:#9cc9e6;font-weight:700}
+.bugs li{margin:8px 0}
+</style></head><body>
+
+<h1>UI-Gesamtbewertung lx-familyhub</h1>
+<p class="lead">Stand: Code vom 26.10.2026 (v0.18.0 plus die ungebauten Dateien der Home-Assistant-Anbindung). Geprüft wurden alle Bereiche unter <code>app/lib/features/</code>, dazu <code>ui/</code>, <code>widgets/</code> und <code>constants.dart</code>. Links steht immer der <b>heutige Stand mit den echten Texten</b>, rechts der Vorschlag. Vorschläge in den allgemeinen Abschnitten zeigen den ruhigeren Look aus <code>h-weniger-technisch.html</code>. Die Home-Assistant-Vorschläge zeigen bewusst den <b>heutigen</b> Look: Sie lassen sich sofort bauen, egal, wie die Look-Entscheidung ausgeht.</p>
+
+<!-- ================================================================== GESAMTBEWERTUNG -->
+<div class="box grid2">
+<div>
+<h2>Stärken, die bleiben sollen</h2>
+<ul>
+<li><b>Ein Satz Tokens für alles</b> (<code>constants.dart</code>, <code>theme.dart</code>): Ein Look-Wechsel ist an einer Stelle möglich und damit billig.</li>
+<li><b>Bedienbarkeit ist ernst genommen:</b> Knöpfe mindestens 48 px, feste Kachelhöhen mit Textskala, <code>Semantics</code> fast überall, eigene Tests für 360 px und Textskala 1,5/2,0.</li>
+<li><b>Offline zuerst und ehrlich:</b> Nichts wartet auf den Server, offene Änderungen sind sichtbar, und der Wartungsmodus zählt nicht als Fehler.</li>
+<li><b>Personenfarben</b> sind in Kalender, Chat, Listen und Karte einheitlich. Termin-Farben nutzen dieselbe Palette und sind benannt.</li>
+<li><b>Leere Zustände</b> gibt es in fast jedem Bereich, mit einem Satz dazu, was man als Nächstes tun kann (Listen, Aufgaben, Tresor, Medikamente).</li>
+<li><b>Datenschutz-Texte sind ehrlich</b> (Tresor, Medikamente, Dateien). Neutrale Benachrichtigungen ohne Inhalt.</li>
+<li><b>Die Startseite ist anpassbar</b> (Reihenfolge, Ausblenden). Die Desktop-Shell behält Seitenleiste und Fußzeile.</li>
+<li>Chat, Listen und Medikamente sprechen schon heute <b>weitgehend Alltagssprache</b>.</li>
+</ul>
+</div>
+<div>
+<h2>Die 5 größten Probleme</h2>
+<ol>
+<li><b>Home Assistant: Mit zwei Abholgeräten gehen Werte verloren.</b> Holen zwei Geräte ab, löscht jedes die Päckchen des anderen als „ungültig“. Außerdem endet die Kopplung im Leeren: Die Anleitung stimmt nicht (QR-Code), der Schritt „Zähler zuordnen“ fehlt, und die zweite Person sieht „aus“ (<a href="#ha1">HA-1</a> bis <a href="#ha4">HA-4</a>).</li>
+<li><b>Der Grundton ist technisch:</b> Statuszeilen wie in einer Konsole („sync: … verbindung: live“, „passkey + pw + 2fa“, „● … · tls 1.3“), überall <code>// LABEL</code> in Cyan-Mono und kleingeschriebene Untertitel (<a href="#g1">G1</a>, ergänzt <code>h-weniger-technisch.html</code>).</li>
+<li><b>Die Navigation hat keine Ordnung:</b> Hinter „Mehr“ stehen 11 gleiche Cyan-Kacheln, in der Seitenleiste 12 Einträge. Fristen und Suche gibt es nur mobil, das Profil auf drei Wegen (<a href="#g2">G2</a>).</li>
+<li><b>Platzhalter in der fertigen App:</b> „Kommt in Phase 1“, „Standort teilen: kommt in Phase 2“, eine Glocke ohne Funktion und „Neu“ mit nur einem Eintrag. Das wirkt unfertig und kostet Vertrauen (<a href="#g3">G3</a>).</li>
+<li><b>Uneinheitliche Formulare und blasse Kleinstschrift:</b> Vier verschiedene Arten, Abschnitte zu beschriften. Die Achse der Kalender-Woche steht in 8 bis 10 px <code>kTextFaint</code> und verstößt damit gegen die eigene Regel (<a href="#g5">G5</a>, <a href="#g6">G6</a>).</li>
+</ol>
+<h3>Bereiche ohne eigene Karte (Stichprobe ohne großen Befund)</h3>
+<ul>
+<li><b>Chat:</b> gute Sprache. Nur „Nachricht nicht lesbar – warte auf Schlüssel“ und „Dieser Chat ist nicht verschlüsselt“ sind technisch. Die Sicherheitscode-Erklärung ist vorbildlich.</li>
+<li><b>Listen, Aufgaben:</b> klar. Betroffen nur von G5 (Labels) und G7 (Fehlerzustände).</li>
+<li><b>Tresor, Medikamente, Müll:</b> ruhig und verständlich. Die Pille „ENTSPERRT“ und <code>// ALLE MEDIKAMENTE · 4</code> fallen unter G1/G5.</li>
+<li><b>Wetter:</b> der Bereich mit den meisten Mono-Texten (32 Stellen). Er wirkt am stärksten wie ein Messgerät, wird aber mit der Look-Umstellung automatisch ruhiger.</li>
+<li><b>Standort/Karte, Wandtablet, Dateien, Neuigkeiten-Dialog, Update-Banner:</b> funktional gut. Sie folgen G1/G5. Das Wandtablet nutzt Mono sogar für große Uhrzeiten und Hinweise (<code>wandtablet_screen.dart:144,157,236</code>).</li>
+<li><b>Profil:</b> wurde gerade umgebaut und ist kurz und gut gegliedert. Offen sind nur die Untertitel in Kleinschreibung (G1). Die Seite „Sicherheit“ ist in <code>h-weniger-technisch.html</code> schon gezeigt.</li>
+</ul>
+</div>
+</div>
+
+<!-- ================================================================== ÜBERGREIFEND -->
+<h2 class="area">A · Übergreifend: Ton, Navigation, Status <small>(G1 bis G4)</small></h2>
+
+<div class="prob" id="g1">
+<h3>G1 · Statuszeilen wie in einer Konsole</h3>
+<div class="meta"><span class="hoch">Schwere hoch</span><span class="auf">Aufwand klein</span><span>Desktop, Anmeldung, Profil</span></div>
+<p class="fund"><code>features/shell/desktop_shell.dart:482–488, 519, 556–559</code> · <code>constants.dart:169–186</code> (<code>serverKennzeile</code>) · <code>features/profile/profile_screen.dart</code>, <code>anzeige_screen.dart</code>, <code>benachrichtigungen_screen.dart</code> (Untertitel)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph wide alt"><div class="side">
+ <div class="sb"><b style="font-size:15px">lx-familyhub</b><div class="mono" style="font-size:10px;color:var(--mu);padding:0">familyhub.lx-labs.dev</div><br>
+ <div class="on">Start</div><div>Kalender</div><div>Chat</div><div>…</div>
+ <div class="card" style="margin-top:40px;padding:8px"><b style="font-size:12px">Anna</b><br><span class="pill p-a" style="font-size:9px">ADMIN</span><div class="mono" style="font-size:10px;color:var(--mu)">passkey + pw + 2fa</div></div></div>
+ <div class="main"><div class="lab">// mo, 26. okt</div><h4>Hallo, Anna</h4>
+ <div class="card" style="margin-top:10px"><div class="lab" style="margin-top:0">// profil › kalender</div><div class="row"><span>Kalender<small>import und export (ics)</small></span>›</div><div class="row"><span>Über lx-familyhub<small>version und update</small></span>›</div></div>
+ <div class="foot">● sync: synchron &nbsp; geräte: 3 &nbsp; verbindung: live &nbsp; version: 0.18.0</div></div>
+</div></div>
+<div class="ph alt" style="min-height:150px"><div class="scr" style="text-align:center"><div class="sub">Anmeldung, unten:</div><br><span class="pill p-ok">● familyhub.lx-labs.dev · tls 1.3</span></div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph wide neu"><div class="side">
+ <div class="sb"><b style="font-size:15px">Familyhub</b><br><br>
+ <div class="on">Start</div><div>Kalender</div><div>Chat</div><div>…</div>
+ <div class="card" style="margin-top:40px;padding:8px"><b style="font-size:12px">Anna</b><div style="font-size:11px;color:var(--mu)">Admin · Einstellungen</div></div></div>
+ <div class="main"><div class="lab">Montag, 26. Oktober</div><h4>Hallo, Anna</h4>
+ <div class="card" style="margin-top:10px"><div class="row"><span>Kalender<small>Termine importieren und exportieren</small></span>›</div><div class="row"><span>Über Familyhub<small>Version und Updates</small></span>›</div></div>
+ <div class="foot"><span class="dot"></span>Alles aktuell · Version 0.18</div></div>
+</div></div>
+<div class="ph neu" style="min-height:150px"><div class="scr" style="text-align:center"><div class="sub">Anmeldung, unten:</div><br><span class="pill">🔒 Sichere Verbindung zu familyhub.lx-labs.dev</span></div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Zähler wie „geräte: 3“ und Kürzel wie „pw + 2fa“ beantworten keine Frage, die eine Familie hat. Sie lassen die App aber wie ein Admin-Werkzeug wirken. Gerätezahl, Live-Verbindung und Anmeldeart gehören auf die Seiten „Geräte“ bzw. „Sicherheit“ oder in den Betrieb, die Fußzeile braucht nur „Alles aktuell“ oder „Wird nachgeholt“.</p>
+</div>
+
+<div class="prob" id="g2">
+<h3>G2 · Navigation ohne Ordnung: „Mehr“ und Seitenleiste sind flache Listen</h3>
+<div class="meta"><span class="hoch">Schwere hoch</span><span class="auf">Aufwand mittel</span><span>Navigation mobil und Desktop</span></div>
+<p class="fund"><code>features/shell/mehr_menue.dart:65–105, 136–250</code> · <code>features/shell/desktop_shell.dart:391–406</code> · <code>constants.dart:196–214</code></p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute (Eltern-Konto)</span>
+<div class="ph alt"><div class="scr"><div class="sub" style="text-align:center;margin-bottom:8px">Blatt „Mehr“</div>
+<div class="tiles">
+<div class="tile"><i>☑</i>Listen</div><div class="tile"><i>✓</i>Aufgaben<em>3</em></div><div class="tile"><i>📅</i>Fristen</div><div class="tile"><i>💊</i>Medika&shy;mente<em>2</em></div>
+<div class="tile"><i>⏲</i>Zähler<em>1</em></div><div class="tile"><i>🔒</i>Tresor</div><div class="tile"><i>📁</i>Dateien</div><div class="tile"><i>🗑</i>Müll</div>
+<div class="tile"><i>☀</i>Wetter</div><div class="tile"><i>📍</i>Standort</div><div class="tile"><i>🔍</i>Suche</div></div>
+<div class="card" style="margin-top:10px"><div class="row"><span>Profil<small style="font-family:inherit">Konto, Sicherheit, Einstellungen</small></span>›</div></div>
+<div class="note">Desktop: 12 Einträge untereinander (Start … Tresor), dort fehlen „Fristen“ und „Suche“. Das Profil erreicht man über den Avatar, über „Mehr“ und über die Kachel der Seitenleiste.</div>
+</div><div class="nav"><div>Start</div><div>Kalender</div><div>Chat</div><div>Aufgaben</div><div class="on">Mehr</div></div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr"><div class="sub" style="text-align:center;margin-bottom:4px">Blatt „Mehr“, gruppiert</div>
+<div class="grp">Familie</div><div class="tiles"><div class="tile"><i>☑</i>Listen</div><div class="tile"><i>✓</i>Aufgaben<em>3</em></div><div class="tile"><i>📍</i>Standort</div><div class="tile"><i>🔍</i>Suche</div></div>
+<div class="grp">Zuhause</div><div class="tiles"><div class="tile"><i>🗑</i>Müll</div><div class="tile"><i>☀</i>Wetter</div><div class="tile"><i>⏲</i>Zähler<em>1</em></div><div class="tile"><i>💊</i>Medika&shy;mente<em>2</em></div></div>
+<div class="grp">Ablage (nur Eltern)</div><div class="tiles"><div class="tile"><i>📁</i>Dateien</div><div class="tile"><i>🔒</i>Tresor</div><div class="tile"><i>📅</i>Fristen</div></div>
+<div class="note">Desktop: dieselben drei Gruppen als Zwischenüberschriften in der Seitenleiste, mit denselben Einträgen (also auch „Fristen“ und „Suche“). Das Profil steht nur noch unten in der Seitenleiste bzw. hinter dem Avatar.</div>
+</div><div class="nav"><div>Start</div><div>Kalender</div><div>Chat</div><div>Aufgaben</div><div class="on">Mehr</div></div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Elf gleich aussehende Kacheln muss man jedes Mal ganz lesen. Mit drei Gruppen findet man „Müll“ oder „Tresor“ beim zweiten Mal blind. Dass Fristen und Suche nur mobil eigene Einträge haben und das Profil drei Wege hat, macht mobil und Desktop unnötig verschieden. Die Gruppen lassen sich aus derselben Liste <code>mehrEintraege</code> bauen, die feste Reihenfolge bleibt erhalten.</p>
+</div>
+
+<div class="prob" id="g3">
+<h3>G3 · Platzhalter und tote Knöpfe in der fertigen App</h3>
+<div class="meta"><span class="hoch">Schwere hoch</span><span class="auf">Aufwand klein</span><span>Start mobil und Desktop</span></div>
+<p class="fund"><code>features/home/home_screen.dart:200–235</code> + <code>features/files/dateien_start_karte.dart:55–61</code> („Kommt in Phase 1“) · <code>features/home/desktop_home.dart:701–707</code> („Standort teilen: kommt in Phase 2“, obwohl es Standort gibt) · <code>desktop_home.dart:140–147</code> (Glocke) · <code>desktop_home.dart:148–154</code> („Neu“ nur mit „Neue Liste“) · <code>ui/widgets.dart:134–138</code></p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// mo, 26. okt</div><h4>Hallo, Anna</h4>
+<div class="tiles" style="margin-top:12px"><div class="tile"><i>📅</i>Termin</div><div class="tile"><i>☑</i>Eintrag</div><div class="tile"><i>🖼</i>Foto</div><div class="tile"><i>⬆</i>Datei</div></div>
+<div class="card" style="margin-top:14px;background:var(--s2);font-size:13px">Kommt in Phase 1</div>
+<div class="sub" style="margin-top:4px">← Snackbar nach Tipp auf „Foto“ (Server ohne Dateiablage)</div>
+<div class="card" style="margin-top:12px"><div class="lab" style="margin-top:0">// familie</div><div class="row"><span>Anna</span><span class="mono sub">admin</span></div><div class="row"><span>Ben</span><span class="mono sub">kind</span></div><div class="mono" style="font-size:10.5px;color:var(--fa)">📍 Standort teilen: kommt in Phase 2</div></div>
+<div class="sub">Desktop-Kopf: 🔔 → „Benachrichtigungen kommen mit Push in einer späteren Phase“ · [+ Neu] → nur „Neue Liste“</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+<div class="lab">Montag, 26. Oktober</div><h4>Hallo, Anna</h4>
+<div class="tiles" style="margin-top:12px;grid-template-columns:repeat(3,1fr)"><div class="tile"><i>📅</i>Termin</div><div class="tile"><i>✓</i>Aufgabe</div><div class="tile"><i>☑</i>Einkauf</div></div>
+<div class="note">„Foto“ und „Datei“ erscheinen nur, wenn der Server Dateien kann (<code>dateienVerfuegbarProvider</code>), sonst „Aufgabe“ statt einer leeren Stelle.</div>
+<div class="card" style="margin-top:12px"><div class="lab" style="margin-top:0">Familie</div><div class="row"><span>Anna</span><span class="sub">Admin</span></div><div class="row"><span>Ben</span><span class="sub">teilt gerade seinen Standort ›</span></div></div>
+<div class="note">Desktop: Glocke weg (oder sie öffnet „Benachrichtigungen“ im Profil). „Neu“ bietet Termin, Aufgabe, Liste und Chat an. <code>zeigePhase1Hinweis</code> löschen.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> „Phase 1/2“ ist Projektsprache und für eine Familie ein Versprechen, das nie kommt. Ein Knopf, der nur „später“ sagt, enttäuscht beim ersten Tipp. Beim Standort ist der Text sogar falsch, weil es die Funktion längst gibt.</p>
+</div>
+
+<div class="prob" id="g4">
+<h3>G4 · Der Sync-Status steht auf der Startseite dreimal und immer in Farbe</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Start mobil</span></div>
+<p class="fund"><code>features/home/home_screen.dart:82, 133–182</code> (Streifen + Uhrzeit) · <code>widgets/kopfzeile.dart:27</code> (Wolke) · <code>widgets/sync_anzeige.dart</code> (Texte „synchron · 2 offen“, „gleiche ab …“)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div class="top"><div><div class="lab" style="margin:0">// mo, 26. okt</div><h4>Hallo, Anna</h4></div><span style="color:var(--ok)">☁✓ <span style="border-radius:50%;background:#333;padding:6px 8px;font-size:11px" class="mono">AN</span></span></div>
+<div style="display:flex;gap:8px;margin-top:14px"><div class="card mono" style="flex:1;margin:0;border-color:rgba(16,185,129,.45);background:rgba(16,185,129,.08);color:var(--ok);font-size:12px;padding:12px">⟳ synchron · 2 offen <span style="float:right;color:var(--mu)">08:14</span></div><div class="card" style="margin:0;padding:12px">🔍</div></div>
+<div class="card" style="margin-top:12px"><div class="lab" style="margin-top:0">// als nächstes</div><div class="row"><span class="mono" style="color:var(--ac)">08:30</span><span style="flex:1">Zahnarzt Mia</span></div></div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+<div class="top"><div><div class="lab" style="margin:0">Montag, 26. Oktober</div><h4>Hallo, Anna</h4></div><span><span class="dot"></span><span style="border-radius:50%;background:#333;padding:6px 8px;font-size:11px">AN</span></span></div>
+<div class="fld" style="margin-top:14px;color:var(--mu)">🔍 In Familyhub suchen</div>
+<div class="card"><div class="lab" style="margin-top:0">Als Nächstes</div><div class="row"><b style="font-weight:650">08:30</b><span style="flex:1">Zahnarzt Mia</span></div></div>
+<div class="warnb"><b>Gerade keine Verbindung</b><br>2 Änderungen werden später übertragen.</div>
+<div class="sub">← erscheint NUR offline, bei Fehler oder Wartung (statt des dauerhaften Streifens)</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Der Status steht jetzt dreimal da (Wolke, Streifen, Uhrzeit), und im Normalfall hat er nichts zu sagen. Damit nimmt er den besten Platz der Startseite. Erscheint der Streifen nur, wenn die Person etwas wissen muss, und wird die Suche zu einem breiten Feld, ist der Platz für die Termine frei.</p>
+</div>
+
+<!-- ================================================================== FORMULARE, KALENDER, ZUSTÄNDE -->
+<h2 class="area">B · Formulare, Kalender, Zustände, Anmeldung <small>(G5 bis G8)</small></h2>
+
+<div class="prob" id="g5">
+<h3>G5 · Vier Arten, Abschnitte zu beschriften</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein (zentral) bis mittel (Texte)</span><span>alle Editoren</span></div>
+<p class="fund"><code>ui/widgets.dart:47–58</code> (<code>MonoLabel</code>: Großbuchstaben, Cyan, Mono 11 px) · <code>calendar/termin_editor.dart:484–540</code> („Farbe“, „Teilnehmer“ ohne //) gegenüber <code>:602</code> („// wiederholung“) · <code>tasks/aufgabe_editor.dart:297–495</code> · <code>medikamente/medikament_editor.dart:282</code> („// für wen (nur du und deine kinder)“) · <code>zaehler/zaehler_editor.dart:362</code> · <code>lists/lists_screen.dart</code> („Erledigt“ neben „// zuletzt gekauft“)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute: drei Editoren nebeneinander</span>
+<div class="ph alt"><div class="scr">
+<div class="sub">Termin-Editor</div><div class="lab">Farbe</div><div class="chips"><span class="chip on">Schule</span><span class="chip">Arzt</span></div>
+<div class="sub" style="margin-top:10px">Aufgaben-Editor</div><div class="lab">// fällig</div><div class="fld">Fr, 30.10.</div>
+<div class="sub" style="margin-top:10px">Medikament</div><div class="lab">// für wen (nur du und deine kinder)</div><div class="chips"><span class="chip on">Ich</span><span class="chip">Ben</span></div>
+<div class="sub" style="margin-top:10px">Zähler</div><div class="lab">// gruppe (gemeinsame summe)</div><div class="fld">Wasser Wohnung</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag: ein Muster</span>
+<div class="ph neu"><div class="scr">
+<div class="lab">Farbe</div><div class="chips"><span class="chip on">Schule</span><span class="chip">Arzt</span></div>
+<div class="lab">Fällig am</div><div class="fld">Fr, 30.10.</div>
+<div class="lab">Für wen</div><div class="chips"><span class="chip on">Ich</span><span class="chip">Ben</span></div><div class="note" style="margin-top:0">Du siehst nur dich und deine Kinder.</div>
+<div class="lab">Gruppe</div><div class="fld">Wasser Wohnung</div><div class="note" style="margin-top:0">Zähler mit gleicher Gruppe zeigt die App mit einer Summe.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Großgeschriebene Cyan-Mono-Zeilen mit „//“ lesen sich wie Code-Kommentare, und dass der Termin-Editor es schon anders macht, zeigt die Unsicherheit. Eine Regel (Satzschreibung, kurzes Label, Erklärung als normale Hilfszeile darunter), zentral in <code>MonoLabel</code> umgesetzt, macht alle Editor-Abschnitte (rund 40 Stellen in Termin, Aufgabe, Frist, Medikament, Tresor, Zähler) auf einmal ruhiger.</p>
+</div>
+
+<div class="prob" id="g6">
+<h3>G6 · Kalender-Woche: Zeitachse in 8 bis 10 px und Schwachkontrast</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Kalender › Woche, Monat</span></div>
+<p class="fund"><code>calendar/kalender_woche.dart:217</code> („KW“, 8 px), <code>:261</code> („GANZ“, 8 px), <code>:546</code> (Stunden 10 px), alle in <code>kTextFaint</code> · <code>calendar/kalender_monat.dart:172</code> (KW 10 px) – laut CLAUDE.md: „Informationstexte nie in kTextFaint“</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute (360 px, mobil)</span>
+<div class="ph alt"><div class="scr">
+<div class="axis"><div class="h">KW 44</div><div class="wk" style="grid-template-columns:repeat(5,1fr);font-size:10px;color:var(--mu)"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span></div></div>
+<div class="axis" style="margin-top:4px"><div class="h">GANZ</div><div style="flex:1;font-size:9.5px;background:#a3e635;color:#000;border-radius:4px;padding:1px 4px">Herbstferien</div></div>
+<div class="axis" style="margin-top:6px"><div><div class="h" style="height:34px">08</div><div class="h" style="height:34px">09</div><div class="h" style="height:34px">10</div><div class="h" style="height:34px">11</div></div>
+<div class="wk"><div><span class="ev" style="top:10px;height:40px;background:#38bdf8">Zahnarzt</span></div><div></div><div><span class="ev" style="top:40px;height:30px;background:#fb7185">Arzt</span></div><div></div><div></div>
+<div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+<div class="axis"><div class="h">KW 44</div><div class="wk" style="grid-template-columns:repeat(5,1fr);font-size:11.5px;color:var(--mu)"><span>Mo</span><span>Di</span><span>Mi</span><span>Do</span><span>Fr</span></div></div>
+<div class="axis" style="margin-top:4px"><div class="h">☀</div><div style="flex:1;font-size:10.5px;background:#a3e635;color:#000;border-radius:5px;padding:1px 5px">Herbstferien</div></div>
+<div class="axis" style="margin-top:6px"><div><div class="h" style="height:34px">8</div><div class="h" style="height:34px">9</div><div class="h" style="height:34px">10</div><div class="h" style="height:34px">11</div></div>
+<div class="wk"><div><span class="ev" style="top:10px;height:40px;background:#38bdf8">Zahnarzt</span></div><div></div><div><span class="ev" style="top:40px;height:30px;background:#fb7185">Arzt</span></div><div></div><div></div>
+<div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div><div></div></div></div>
+<div class="note">Mindestens 11 px in <code>kTextMuted</code>. „GANZ“ wird zu einem Symbol mit Tooltip „ganztägig“ (<code>Semantics</code> ist schon da). Ist die Achse zu schmal, fällt „KW“ weg und die Nummer bleibt.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> 8 px bei 3,1:1 Kontrast sind auf einem Handy im Hellen nicht lesbar, und die Stundenachse ist in der Woche die wichtigste Orientierung. Die eigene Regel und <code>kontrast_test.dart</code> fordern hier schon <code>kTextMuted</code>. Die Woche ist nur durchgerutscht, weil die Texte in <code>ExcludeSemantics</code> stehen.</p>
+</div>
+
+<div class="prob" id="g7">
+<h3>G7 · Fehler- und Ladezustände: technisch und ohne Ausweg</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Listen, Aufgaben, Chat, Startseite</span></div>
+<p class="fund"><code>lists/lists_screen.dart</code> („Listen nicht lesbar“ / „Die lokale Datenbank konnte nicht gelesen werden.“) · <code>tasks/tasks_screen.dart</code> (gleich) · <code>chat/chat_screen.dart</code> („Die lokalen Daten konnten nicht gelesen werden.“) · <code>home/desktop_home.dart:684</code> („Keine Mitglieder geladen“) · <code>ui/widgets.dart:109–131</code> (<code>EmptyState</code> ohne Aktion)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr" style="text-align:center;padding-top:50px">
+<div class="lab" style="text-align:left">// mo, 26. okt</div><h4 style="text-align:left">Listen</h4><br><br>
+<div style="color:var(--fa);font-size:30px">⚠</div><b>Listen nicht lesbar</b><div class="sub" style="font-size:13.5px">Die lokale Datenbank konnte nicht gelesen werden.</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr" style="text-align:center;padding-top:50px">
+<div class="lab" style="text-align:left">Montag, 26. Oktober</div><h4 style="text-align:left">Listen</h4><br><br>
+<div style="color:var(--mu);font-size:30px">⚠</div><b>Die Listen lassen sich gerade nicht öffnen</b><div class="sub" style="font-size:13.5px">Deine Einträge sind nicht verloren. Meist hilft es, die App neu zu öffnen.</div>
+<div class="btn" style="margin:14px 40px 0">Neu laden</div><div class="btn t">Hilfe: Was kann ich tun?</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> „Lokale Datenbank“ sagt einer Familie nichts und lässt Datenverlust befürchten. Außerdem fehlt jeder Ausweg. Wenn <code>EmptyState</code> einen optionalen Knopf bekommt und der Text mit „nicht verloren“ beruhigt, lässt sich das in allen Bereichen auf einmal ändern.</p>
+</div>
+
+<div class="prob" id="g8">
+<h3>G8 · Anmeldung: zwei fast gleiche „Passwort …?“-Links und Terminal-Deko</h3>
+<div class="meta"><span class="niedrig">Schwere niedrig</span><span class="auf">Aufwand klein</span><span>Anmeldung</span></div>
+<p class="fund"><code>auth/login_screen.dart:249</code> (Trenner „oder mit passwort“), <code>:284–293</code> (zwei Links), <code>:297</code> (Pille „schritt 2 von 2“ in Violett) · <code>auth/auth_widgets.dart</code> („// eure familie. euer server.“)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div style="text-align:center"><b style="font-size:22px">lx</b><div class="mono sub">// eure familie. euer server.</div></div>
+<h4 style="font-size:22px;margin-top:12px">Willkommen zurück</h4>
+<div class="btn">⌾ Mit Passkey anmelden</div>
+<div class="mono sub" style="text-align:center;margin:10px 0">— oder mit passwort —</div>
+<div class="fld"><i>E-Mail</i></div><div class="fld"><i>Passwort</i></div>
+<div class="btn s">Weiter</div>
+<div class="btn t" style="font-size:12.5px">Passwort vergessen? Neues Passwort festlegen</div>
+<div class="btn t" style="font-size:12.5px;padding-top:0">Passwort verloren? Mit Wiederherstellungscode anmelden</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+<div style="text-align:center"><b style="font-size:22px">Familyhub</b><div class="sub">Eure Familie, euer Server</div></div>
+<h4 style="font-size:22px;margin-top:12px">Willkommen zurück</h4>
+<div class="btn">Mit Fingerabdruck oder Gesichtserkennung</div>
+<div class="sub" style="text-align:center;margin:10px 0">oder mit E-Mail und Passwort</div>
+<div class="fld"><i>E-Mail</i></div><div class="fld"><i>Passwort</i></div>
+<div class="btn s">Anmelden</div>
+<div class="btn t" style="font-size:13px">Ich komme nicht mehr rein …</div>
+<div class="note" style="text-align:center">→ ein Blatt mit den Wegen: „Passwort vergessen“, „Wiederherstellungscode nutzen“, „Admin fragen“</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> „Vergessen“ und „verloren“ meinen für Laien dasselbe, und die Wahl zwischen zwei Wegen kommt im ungünstigsten Moment. Ein einziger Einstieg mit erklärten Wegen nimmt den Druck heraus. Der Fachbegriff „Passkey“ darf in Klammern unter dem Knopf stehen bleiben.</p>
+</div>
+
+<!-- ================================================================== HOME ASSISTANT -->
+<h2 class="area">C · Zähler und Home Assistant (neu) <small>(HA-1 bis HA-10, Vorschläge im heutigen Look)</small></h2>
+<div class="box" style="font-size:14px;color:#c8cad2">
+<b>Stand der Dateien:</b> Die drei Seiten <code>ha_koppeln_screen.dart</code>, <code>ha_verbindung_screen.dart</code> und <code>ha_pruefen_screen.dart</code> sind vorhanden und vollständig, ebenso die Änderungen in <code>zaehler_screen.dart</code> (Zeile „Home Assistant“, Karte „Werte prüfen“, Herkunfts-Pille) und <code>zaehler_editor.dart</code> (Abschnitt „Quelle“). <b>Noch nicht vorhanden:</b> eine Kennzeichnung der automatisch eingetragenen Werte im Verlauf, ein Hinweis bei „Gerät abgeben“, dass die Verbindung dann nichts mehr liefert, und Oberflächentests der neuen Seiten (nur <code>ingest_kopplung_test</code> und <code>ingest_paket_test</code> gibt es; kein Eintrag in <code>barrierefreiheit_test.dart</code>, kein Test der Entscheidungslogik und des Abholdienstes, kein „nie zeigen“-Test).
+<br><br><b>Passt der Look?</b> Ja, die neuen Seiten verwenden dieselben Bausteine wie das Zähler-Modul (<code>AuthSeite</code>, <code>LxCard</code>, <code>StatusPill</code>, Warnkarte im Stil von „Ablesen fällig“). Optisch fallen sie nicht heraus. Das Problem liegt bei der <b>Sprache</b> (Päckchen, Postfach, Kanal, Prüfsumme, MAC) und beim <b>Ablauf</b>, nicht bei den Bausteinen.
+</div>
+
+<div class="prob" id="ha1">
+<h3>HA-1 · Zwei Abholgeräte löschen sich gegenseitig die Werte</h3>
+<div class="meta"><span class="hoch">Schwere hoch (Datenverlust)</span><span class="auf">Aufwand mittel</span><span>Koppeln, Abholen</span></div>
+<p class="fund"><code>data/ingest/ingest_dienst.dart:194–202</code> (jedes nicht zu öffnende Päckchen wird als „ungültig“ quittiert, also gelöscht) · <code>server/src/ingest/service.ts:164–190</code> (offene Päckchen und Quittung gelten für die ganze Familie, nicht je Verbindung) · <code>features/zaehler/ha_koppeln_screen.dart:74–80</code> (ohne Postfach auf diesem Gerät wird still ein neues angelegt)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute: Anna koppelt am Handy, Ben (auch Admin) am Laptop</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// zähler</div><h4>Home Assistant</h4>
+<div class="lab">// zustand</div>
+<div class="card"><div class="row"><span>Letzte Abholung<small>heute 07:12 · 0 Werte eingetragen</small></span><span class="pill p-ok">OK</span></div>
+<div class="row"><span>Verworfen<small>3 Päckchen ungültig (Prüfsumme oder Form stimmt nicht)</small></span><span class="pill p-w">3</span></div></div>
+<div class="lab">// verbindung (nur admin)</div>
+<div class="card"><div class="row"><span>Home Assistant<small>Zuletzt gehört: heute 00:05</small></span><span><span class="pill p-ok">AKTIV</span> <span class="p-b" style="font-size:13px">Trennen</span></span></div>
+<div class="row"><span>Haus Keller<small>Zuletzt gehört: heute 00:05</small></span><span><span class="pill p-ok">AKTIV</span> <span class="p-b" style="font-size:13px">Trennen</span></span></div></div>
+<div class="note">Die drei „ungültigen“ Päckchen waren gültige Werte für das andere Gerät. Sie sind jetzt beim Server gelöscht und kommen nie an.</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// home assistant</div><h4>Neue Verbindung</h4>
+<div class="warnb"><b style="color:#fff">Es gibt schon ein Abholgerät</b><br>„Home Assistant“ wurde auf einem anderen Gerät gekoppelt. Nur dieses Gerät kann die Werte öffnen. Koppele neue Verbindungen am besten <b>dort</b>, dann landen alle Werte an einer Stelle.</div>
+<div class="btn s">Abbrechen</div>
+<div class="btn t">Trotzdem hier koppeln</div>
+<div class="note" style="border-top:1px solid var(--line);padding-top:8px"><b style="color:var(--tx)">Im Code dazu:</b> Päckchen, die sich mit dem eigenen Schlüssel nicht öffnen lassen (<code>PaketFehler.entschluesselung</code>) oder eine unbekannte Version haben, <b>nie</b> quittieren. Sie gehören einem anderen Gerät oder einer neueren App. In der Zustandsliste stehen sie als „2 Werte für ein anderes Gerät“, nicht als „ungültig“. Besser noch: Der Server liefert je Gerät nur die Päckchen „seiner“ Verbindungen.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Familien mit zwei Admins oder mit Handy und PC kommen genau in diese Lage, und die Oberfläche zeigt den Verlust als harmloses „Verworfen“. Hinweis und Code-Änderung sind zusammen nötig: Der Hinweis lenkt auf ein Abholgerät, der Code verhindert das Löschen, falls es doch zwei gibt.</p>
+</div>
+
+<div class="prob" id="ha2">
+<h3>HA-2 · Die Anleitung zum Kopplungscode stimmt nicht und der Code bleibt in der Zwischenablage</h3>
+<div class="meta"><span class="hoch">Schwere hoch</span><span class="auf">Aufwand klein</span><span>Kopplungscode</span></div>
+<p class="fund"><code>features/zaehler/ha_koppeln_screen.dart:141</code> („Scanne den QR-Code in Home Assistant“; die Integration hat nur ein Textfeld, <code>homeassistant/…/config_flow.py:62–72</code>) · <code>homeassistant/…/translations/de.json</code> (verweist auf „Zähler › Verbindungen“, das es in der App nicht gibt) · <code>ha_koppeln_screen.dart:120–125, 159</code> (Zwischenablage wird nie geleert; der Tresor leert nach 30 s, <code>data/tresor/tresor_zwischenablage.dart</code>) · <code>:139</code> („Fertig“ ohne Rückfrage, danach ist der Code weg)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// einmal sichtbar</div><h4>Kopplungscode</h4>
+<div class="sub" style="font-size:13px;margin-top:6px">Scanne den QR-Code in Home Assistant oder füge den Text in die Einrichtung der Integration ein. Dieser Code wird nur jetzt angezeigt; er enthält den Zugang und den Schlüssel zum Prüfen der Werte.</div>
+<div class="qr"></div>
+<div class="card code">FH1-eyJ2IjoxLCJ1IjoiaHR0cHM6Ly9mYW1pbHlodWIubHgtbGFicy5kZXYiLCJ0IjoiZmhpX…</div>
+<div class="btn s">⧉ Code kopieren</div>
+<div class="note" style="font-size:12px">Die Zwischenablage bleibt, bis du etwas anderes kopierst; lösche sie danach, wenn andere dein Gerät benutzen. Dieses Gerät holt die Werte jetzt ab.</div>
+<div class="btn">Fertig</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// schritt 2 von 3</div><h4>Code in Home Assistant einfügen</h4>
+<ol class="steps">
+<li>Tippe auf <b>Code kopieren</b>.</li>
+<li>Öffne Home Assistant (App oder Browser): <b>Einstellungen › Geräte &amp; Dienste › Integration hinzufügen › Familyhub</b>.</li>
+<li>Füge den Code ins Feld „Kopplungscode“ ein und wähle die Sensoren.</li>
+</ol>
+<div class="btn">⧉ Code kopieren</div>
+<div class="note">Die Zwischenablage wird nach 60 Sekunden geleert. Zeig den Code niemandem, er ist wie ein Schlüssel.</div>
+<div class="card" style="display:flex;gap:10px;align-items:center;margin-top:10px"><div class="qr klein" style="margin:0"></div><div class="sub">Home Assistant läuft auf einem anderen Gerät? Scanne den QR-Code dort mit der Kamera und kopiere den Text.</div></div>
+<div class="btn s">Weiter: Zähler zuordnen</div>
+<div class="note" style="text-align:center">„Weiter“ fragt: „Hast du den Code eingefügt? Danach ist er weg.“</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Wer nach der Anleitung einen QR-Scanner in Home Assistant sucht, findet keinen und bricht ab. Die Integration verweist außerdem auf einen Menüpunkt, den es nicht gibt. Nummerierte Schritte mit dem echten Pfad, Kopieren als Hauptweg und die automatisch geleerte Zwischenablage wie im Tresor machen die Kopplung allein schaffbar und gleichen sie an die übrigen Geheimnis-Seiten an.</p>
+</div>
+
+<div class="prob" id="ha3">
+<h3>HA-3 · Nach „Fertig“ endet die Kopplung im Leeren</h3>
+<div class="meta"><span class="hoch">Schwere hoch</span><span class="auf">Aufwand mittel</span><span>Ablauf nach dem Koppeln</span></div>
+<p class="fund"><code>features/zaehler/ha_koppeln_screen.dart:139</code> („Fertig“ führt zurück) · <code>ha_verbindung_screen.dart:156, 164, 265</code> („Wartet beim Server: unbekannt“, „Ohne Zähler“, „Noch nie gehört“) · die Zuordnung Kanal → Zähler gibt es nur tief im Zähler-Editor (<code>zaehler_editor.dart:534–592</code>)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute: direkt nach „Fertig“</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// zähler</div><h4>Home Assistant</h4>
+<div class="card"><div class="row"><span><b>Werte automatisch abholen</b><small>Auf diesem Gerät. Aus = es wird nichts eingetragen.</small></span><span class="tog on"></span></div></div>
+<div class="lab">// zustand</div>
+<div class="card"><div class="row"><span>Letzte Abholung<small>heute 14:02 · 0 Werte eingetragen</small></span><span class="pill p-ok">OK</span></div>
+<div class="row"><span>Wartet beim Server<small>0 Päckchen</small></span><span class="pill" style="color:var(--mu)">0</span></div>
+<div class="row"><span>Zu prüfen<small>nichts</small></span></div></div>
+<div class="lab">// verbindung (nur admin)</div>
+<div class="card"><div class="row"><span>Home Assistant<small>Noch nie gehört</small></span><span class="pill p-ok">AKTIV</span></div></div>
+<div class="note">Kein Wort dazu, dass noch jeder Zähler den Kanal „Strom Bezug“ usw. braucht. Ohne Zuordnung landen die Werte später als „Ohne Zähler“.</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// schritt 3 von 3</div><h4>Fast geschafft</h4>
+<ol class="steps">
+<li class="ok">Verbindung angelegt</li>
+<li class="ok">Code in Home Assistant eingefügt</li>
+<li>Welcher Zähler bekommt welche Werte?</li>
+</ol>
+<div class="card">
+<div class="row"><span>Strom Bezug<small>aus Home Assistant</small></span><span class="chip on" style="padding:6px 10px">Strom Haus ▾</span></div>
+<div class="row"><span>Strom Einspeisung</span><span class="chip" style="padding:6px 10px">nicht nutzen ▾</span></div>
+<div class="row"><span>Solar Erzeugung</span><span class="chip on" style="padding:6px 10px">Solar ▾</span></div></div>
+<div class="infob">⏳ <b>Warte auf den ersten Wert.</b> Home Assistant sendet einmal am Tag kurz nach Mitternacht. Morgen früh steht hier „Verbunden ✓“.</div>
+<div class="btn">Fertig</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Die Kopplung ist erst fertig, wenn ein Zähler Werte bekommt, und genau dieser Schritt fehlt im Ablauf. Eine Zuordnungsliste mit den drei bekannten Kanälen schreibt dieselbe <code>ZaehlerQuelle</code> wie der Editor. Der Wartehinweis erklärt, warum „Noch nie gehört“ am ersten Abend normal ist.</p>
+</div>
+
+<div class="prob" id="ha4">
+<h3>HA-4 · Die zweite Person sieht „aus“ und „unbekannt“, obwohl alles läuft</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Home Assistant (Eltern ohne Abholgerät)</span></div>
+<p class="fund"><code>features/zaehler/ha_verbindung_screen.dart:130–143</code> (gesperrter Schalter), <code>:153</code> („aus“), <code>:156</code> („unbekannt“) · <code>zaehler_screen.dart:588</code> (Zeile „Werte automatisch abholen: aus“) · <code>ingest_dienst.dart:310</code></p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute: Ben (Elternteil), Abholgerät ist Annas Handy</span>
+<div class="ph alt"><div class="scr">
+<div class="sub">Zähler-Seite, ganz unten:</div>
+<div class="card"><div class="row"><span><b style="color:var(--ac)">⇄</b> Home Assistant<small>Werte automatisch abholen: aus</small></span>›</div></div>
+<div class="sub" style="margin-top:8px">dahinter:</div>
+<div class="card"><div class="row" style="opacity:.55"><span><b>Werte automatisch abholen</b><small>Auf diesem Gerät. Aus = es wird nichts eingetragen.</small></span><span class="tog dis"></span></div></div>
+<div class="sub" style="font-size:13px">Dieses Gerät kann nicht abholen; die Verbindung wurde auf einem anderen Gerät gekoppelt.</div>
+<div class="lab">// zustand</div>
+<div class="card"><div class="row"><span>Letzte Abholung<small>aus</small></span></div><div class="row"><span>Wartet beim Server<small>unbekannt</small></span></div><div class="row"><span>Zu prüfen<small>nichts</small></span></div></div>
+<div class="btn s" style="opacity:.5">⟳ Jetzt abholen</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="sub">Zähler-Seite:</div>
+<div class="card"><div class="row"><span><b style="color:var(--ac)">⇄</b> Home Assistant<small>läuft · letzter Wert heute 00:05</small></span>›</div></div>
+<div class="sub" style="margin-top:8px">dahinter:</div>
+<div class="infob"><b>Die Werte holt ein anderes Gerät ab</b> (das Gerät, auf dem gekoppelt wurde). Du siehst sie trotzdem in allen Zählern, sobald es die App öffnet.</div>
+<div class="lab">// letzte werte</div>
+<div class="card"><div class="row"><span>Strom Haus<small>2 951,7 kWh · heute 00:05</small></span><span class="pill p-ok">AKTUELL</span></div><div class="row"><span>Solar<small>1 204,3 kWh · heute 00:05</small></span><span class="pill p-ok">AKTUELL</span></div></div>
+<div class="note">Kein Schalter, kein „Jetzt abholen“ auf Geräten ohne Schlüssel. Die Zeitpunkte kommen aus den automatisch eingetragenen Ständen (Feld <code>q: ha</code>), die jedes Elternteil schon lesen kann.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Ein grauer Schalter mit „aus“ sieht nach einer Störung aus und lädt zum Herumprobieren ein, obwohl alles richtig läuft. Wer nicht abholt, braucht nur eine Antwort: Kommen die Werte an? Die lässt sich aus den Zählerständen beantworten, ohne neue Server-Abfrage.</p>
+</div>
+
+<div class="prob" id="ha5">
+<h3>HA-5 · Fachwörter in der Zustandsliste: Päckchen, Prüfsumme, Kanal, Server</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Home Assistant (Abholgerät)</span></div>
+<p class="fund"><code>features/zaehler/ha_verbindung_screen.dart:151–166</code> (Zeilen und Pillen OK/TEILWEISE/FEHLER), <code>:190</code> (Fußtext) · <code>data/ingest/ingest_dienst.dart:308–314</code> (Abbruchtexte, z. B. „Prüfe Anmeldung und Verschlüsselung.“)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// zustand</div>
+<div class="card">
+<div class="row"><span>Letzte Abholung<small>heute 07:12 · 2 Werte eingetragen</small></span><span class="pill p-w">TEILWEISE</span></div>
+<div class="row"><span>Wartet beim Server<small>3 Päckchen</small></span><span class="pill" style="color:var(--mu)">3</span></div>
+<div class="row"><span>Zu prüfen<small>1 Wert wartet auf dich</small></span><span class="pill p-w">1 ›</span></div>
+<div class="row"><span>Verworfen<small>1 Päckchen ungültig (Prüfsumme oder Form stimmt nicht)</small></span><span class="pill p-w">1</span></div>
+<div class="row"><span>Ohne Zähler<small>1 Wert für einen Kanal ohne Zähler (wartet beim Server)</small></span><span class="pill" style="color:var(--mu)">1</span></div></div>
+<div class="note" style="font-size:12px">Der Server sieht nur verschlüsselte Päckchen. Nur Eltern und Admins können sie öffnen. Es zählt je Kanal und Tag ein Wert (Stand zum Tagesbeginn); …</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="card" style="border-color:rgba(254,188,46,.5)"><b>1 Wert wartet auf dich</b><div class="sub">Strom Haus · 24.10. sieht ungewöhnlich aus</div><div class="btn" style="margin-top:8px">Ansehen</div></div>
+<div class="card"><div class="row"><span>Zuletzt geholt<small>heute 07:12 · 2 neue Werte</small></span><span class="pill p-ok">✓</span></div>
+<div class="row"><span>Solar Erzeugung hat noch keinen Zähler<small>Der Wert wartet, bis du einen zuordnest.</small></span><span class="p-a" style="font-size:13px">Zuordnen</span></div></div>
+<div class="row" style="border:0"><span class="sub">▸ Technische Details (3 beim Server, 1 unlesbar)</span></div>
+<div class="note">Die Werte kommen verschlüsselt an. Nur ihr Eltern könnt sie lesen, der Server nicht. Pro Zähler zählt ein Wert am Tag, und nichts wird überschrieben.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Was zu tun ist (prüfen, zuordnen), steht heute gleichrangig zwischen Zählern, die nur für Technikinteressierte zählen. Wenn Handlungen oben stehen und Zahlen eingeklappt sind, versteht die Familie die Seite ohne Worte wie „Päckchen“ oder „Prüfsumme“, und nichts geht verloren.</p>
+</div>
+
+<div class="prob" id="ha6">
+<h3>HA-6 · „Ablesen fällig“ verlangt bei Home-Assistant-Zählern das Ablesen</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Zähler-Übersicht</span></div>
+<p class="fund"><code>features/zaehler/zaehler_screen.dart:143–166</code> (Titel „Ablesen am …“, Text „Dein Rhythmus ist abgelaufen. Trage den aktuellen Stand ein.“, Knopf „Ablesen“) · <code>data/zaehler/zaehler_uebersicht.dart:209–218</code> (automatische Fälligkeit nach 3 Tagen ohne Wert)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute (seit 4 Tagen kam nichts)</span>
+<div class="ph alt" style="min-height:200px"><div class="scr">
+<div class="card" style="border-color:rgba(254,188,46,.5);background:rgba(254,188,46,.08);display:flex;gap:10px;align-items:center"><span style="color:var(--warn)">⏱</span><span style="flex:1"><b>Strom Haus: Ablesen am 26.10.</b><div class="sub">Dein Rhythmus ist abgelaufen. Trage den aktuellen Stand ein.</div></span><span class="p-a">Ablesen</span></div>
+<div class="note">Der Zähler hat gar keinen Rhythmus (der Editor sagt „Entfällt bei automatischer Quelle“).</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt" style="min-height:200px"><div class="scr">
+<div class="card" style="border-color:rgba(254,188,46,.5);background:rgba(254,188,46,.08);display:flex;gap:10px;align-items:center"><span style="color:var(--warn)">⇄</span><span style="flex:1"><b>Strom Haus: seit 4 Tagen kein Wert</b><div class="sub">Home Assistant hat nichts geschickt, oder das Abholgerät war nicht online.</div></span><span class="p-a">Prüfen</span></div>
+<div class="note">„Prüfen“ öffnet die Seite Home Assistant. Von Hand eintragen geht weiter über „Stand eintragen“.</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Der Text widerspricht dem Editor und schickt die Person in den Keller, obwohl das Problem in der Verbindung liegt. Ein eigener Satz für <code>inhalt.automatisch</code> kostet eine Bedingung.</p>
+</div>
+
+<div class="prob" id="ha7">
+<h3>HA-7 · Editor „Quelle“: freies Kanal-Feld mit Regex-Hilfe, Angebot auch für Wasser und Gas</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Zähler-Editor</span></div>
+<p class="fund"><code>features/zaehler/zaehler_editor.dart:324</code> (Abschnitt für jede Art), <code>:402–418</code> (Chips plus Textfeld „Kleinbuchstaben, Ziffern und _ …“) · <code>homeassistant/README.md</code> („Sensoren in Wh oder MWh werden in kWh umgerechnet; andere Einheiten werden nicht gesendet“)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute (Art „Kaltwasser“)</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// quelle</div><div class="chips"><span class="chip">Von Hand</span><span class="chip on">Home Assistant</span></div>
+<div class="lab" style="color:var(--mu)">// kanal</div><div class="chips"><span class="chip">Strom Bezug</span><span class="chip">Strom Einspeisung</span><span class="chip">Solar Erzeugung</span></div>
+<div class="fld"><i>Kanal (Name, den Home Assistant mitschickt)</i>wasser_kalt</div>
+<div class="sub" style="font-size:11.5px">Kleinbuchstaben, Ziffern und _; die Zuordnung steht verschlüsselt in diesem Zähler</div>
+<div class="card" style="margin-top:8px"><div class="row"><span><b>Prüfen vor dem Eintragen</b><small>Auffällige Werte erst bestätigen (ein Stand, der kleiner ist als der letzte, wird immer vorgelegt)</small></span><span class="tog on"></span></div></div>
+<div class="note">Home Assistant schickt nur kWh. Dieser Zähler bekommt nie einen Wert.</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// woher kommen die stände?</div><div class="chips"><span class="chip">Ich trage sie ein</span><span class="chip on">Home Assistant</span></div>
+<div class="lab" style="color:var(--mu)">// welcher wert?</div><div class="chips"><span class="chip on">Strom Bezug</span><span class="chip">Strom Einspeisung</span><span class="chip">Solar Erzeugung</span></div>
+<div class="sub">▸ Eigener Name (für Fortgeschrittene)</div>
+<div class="card" style="margin-top:8px"><div class="row"><span><b>Ungewöhnliche Werte erst zeigen</b><small style="font-family:inherit">Bei einem großen Sprung fragt die App nach. Ein kleinerer Stand als zuvor wird immer gezeigt.</small></span><span class="tog on"></span></div></div>
+<div class="infob" style="font-size:12.5px">Noch keine Verbindung? <b>Mit Home Assistant verbinden ›</b></div>
+<div class="note">Für Wasser, Gas und Wärme erscheint der Abschnitt nicht (oder mit dem Satz „Home Assistant liefert bisher nur Strom und Solar“).</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Ein Feld mit Regex-Beschreibung ist eine Falle, und für Wasser legt es eine Verbindung an, die nie etwas liefert. Mit den drei festen Kanälen, dem eigenen Namen als eingeklapptem Sonderfall und einem Einstieg zum Koppeln passt der Abschnitt zum Rest des Editors.</p>
+</div>
+
+<div class="prob" id="ha8">
+<h3>HA-8 · Der Einstieg ist versteckt und fehlt ganz, solange es keinen Zähler gibt</h3>
+<div class="meta"><span class="mittel">Schwere mittel</span><span class="auf">Aufwand klein</span><span>Zähler-Übersicht</span></div>
+<p class="fund"><code>features/zaehler/zaehler_screen.dart:89–98</code> (leerer Zustand kehrt vor der Zeile zurück), <code>:106–107</code> (Zeile „Home Assistant“ nach allen Kacheln, vor dem Archiv)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute: neue Familie, noch kein Zähler</span>
+<div class="ph alt"><div class="scr" style="text-align:center">
+<div class="lab" style="text-align:left">// haushalt</div><h4 style="text-align:left">Zähler</h4><br>
+<div style="color:var(--fa);font-size:28px">⏲</div><b>Noch keine Zähler</b><div class="sub" style="font-size:13px">Richte Strom, Wasser, Gas oder Solar ein, trage die Stände ein und lass den Verbrauch berechnen. Alle Angaben sind Ende-zu-Ende verschlüsselt und nur für Eltern und Admins sichtbar.</div>
+<div class="btn" style="margin-top:20px">＋ Zähler einrichten</div>
+<div class="note">Home Assistant ist nirgends zu sehen. Mit fünf Zählern steht die Zeile unter der fünften Kachel.</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr" style="text-align:center">
+<div class="lab" style="text-align:left">// haushalt</div><h4 style="text-align:left">Zähler</h4><br>
+<div style="color:var(--fa);font-size:28px">⏲</div><b>Noch keine Zähler</b><div class="sub" style="font-size:13px">Trag Stände selbst ein oder lass sie von Home Assistant liefern.</div>
+<div class="btn" style="margin-top:20px">＋ Zähler einrichten</div>
+<div class="btn s">⇄ Mit Home Assistant verbinden</div>
+<div class="note" style="text-align:left">Mit Zählern: kurze Zeile „⇄ Home Assistant · läuft“ <b>oben</b> unter „Werte prüfen“, nicht unter allen Kacheln (nur wenn der Server es anbietet).</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Wer Home Assistant hat, will genau damit anfangen, und kann das heute erst nach einem von Hand angelegten Zähler. Oben ist die Zeile auch der natürliche Ort für „läuft“ oder „Problem“, ohne dass man an fünf Kacheln vorbeiscrollen muss.</p>
+</div>
+
+<div class="prob" id="ha9">
+<h3>HA-9 · Prüfliste: drei gleich große Knöpfe, falscher Ladekreis, kein Zusammenhang</h3>
+<div class="meta"><span class="niedrig">Schwere niedrig</span><span class="auf">Aufwand klein</span><span>Zu prüfen</span></div>
+<p class="fund"><code>features/zaehler/ha_pruefen_screen.dart:126–147</code> (drei Vollbreit-Knöpfe, Titel in <code>kWarn</code>), <code>:146</code> (Ladekreis immer auf „Verwerfen“, egal welcher Knopf gedrückt wurde)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// home assistant</div><h4>Zu prüfen</h4>
+<div class="card" style="border-color:rgba(254,188,46,.5);margin-top:10px">
+<b style="color:var(--warn)">Strom Haus · 24.10.</b>
+<div style="font-size:13px;margin-top:4px">Neuer Stand 12,4 kWh liegt unter dem letzten (2 951,7 kWh).</div>
+<div class="sub" style="margin-top:4px">Zähler getauscht oder Home Assistant zurückgesetzt?</div>
+<div class="btn">Neuer Zähler ab hier</div><div class="btn s">Trotzdem eintragen</div><div class="btn s"><span style="display:inline-block;width:14px;height:14px;border:2px solid var(--ac);border-right-color:transparent;border-radius:50%"></span></div>
+</div>
+<div class="sub">↑ Gedrückt war „Trotzdem eintragen“, gedreht hat sich „Verwerfen“.</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="lab">// home assistant</div><h4>Zu prüfen</h4>
+<div class="card" style="border-color:rgba(254,188,46,.5);margin-top:10px">
+<b>Strom Haus · Sa, 24.10.</b>
+<div class="row" style="padding:6px 0;min-height:0"><span class="sub">23.10. (von Hand)</span><span class="mono">2 951,7 kWh</span></div>
+<div class="row" style="padding:6px 0;min-height:0"><span class="sub">24.10. Home Assistant</span><span class="mono p-w">12,4 kWh ⚠</span></div>
+<div style="font-size:13px;margin-top:6px">Der neue Wert ist <b>kleiner</b>. Was ist passiert?</div>
+<div class="btn s">Der Zähler wurde getauscht</div>
+<div class="btn s">Home Assistant wurde zurückgesetzt – Wert verwerfen</div>
+<div class="btn t">Wert stimmt, trotzdem eintragen</div>
+</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Die Entscheidung fällt leichter, wenn man den Wert davor sieht und die Antworten wie Antworten formuliert sind statt als Befehle. Der „große“ Zählerwechsel als Hauptknopf ist bei einem kurz zurückgesetzten Sensor die riskanteste Wahl.</p>
+</div>
+
+<div class="prob" id="ha10">
+<h3>HA-10 · Herkunft: „VON HAND“ auf jeder Kachel, aber im Verlauf keine Kennzeichnung</h3>
+<div class="meta"><span class="niedrig">Schwere niedrig</span><span class="auf">Aufwand klein</span><span>Übersicht, Verlauf</span></div>
+<p class="fund"><code>features/zaehler/zaehler_screen.dart:521–536</code> (Pille auf allen Kacheln, sobald ein Zähler automatisch ist) · <code>zaehler_verlauf_screen.dart:414–416</code> (Zusatzzeile kennt nur Wechsel-Marken und Notiz, nicht <code>StandInhalt.automatisch</code>)</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+<div class="card"><div class="top"><b>Strom Haus</b><span class="pill p-ok">AKTUELL</span></div><span class="pill p-a">⇄ HOME ASSISTANT</span><div class="mono" style="font-size:19px;font-weight:700;color:var(--warn);margin-top:6px">11,8 kWh</div></div>
+<div class="card"><div class="top"><b>Wasser Küche</b><span class="pill" style="color:var(--mu)">KEIN RHYTHMUS</span></div><span class="pill" style="color:var(--mu)">VON HAND</span></div>
+<div class="card"><div class="top"><b>Gas</b><span class="pill p-ok">NÄCHSTE 01.11.</span></div><span class="pill" style="color:var(--mu)">VON HAND</span></div>
+<div class="sub">Verlauf „Strom Haus“: 25.10. 2 939,9 kWh · 26.10. 2 951,7 kWh (ohne Hinweis, woher)</div>
+</div></div>
+</div>
+<div class="col"><span class="tag n">Vorschlag (heutiger Look)</span>
+<div class="ph alt"><div class="scr">
+<div class="card"><div class="top"><b>Strom Haus <span class="p-a" style="font-size:13px">⇄</span></b><span class="pill p-ok">AKTUELL</span></div><div class="mono" style="font-size:19px;font-weight:700;color:var(--warn);margin-top:6px">11,8 kWh</div><div class="sub">Stand 2 951,7 kWh · heute 00:05 aus Home Assistant</div></div>
+<div class="card"><div class="top"><b>Wasser Küche</b><span class="pill" style="color:var(--mu)">KEIN RHYTHMUS</span></div></div>
+<div class="card"><div class="top"><b>Gas</b><span class="pill p-ok">NÄCHSTE 01.11.</span></div></div>
+<div class="sub">Verlauf: „26.10. · 2 951,7 kWh · aus Home Assistant“</div>
+</div></div>
+</div>
+</div>
+<p class="why"><b>Begründung:</b> Die Herkunft ist nur bei den automatischen Zählern eine Information. Bei allen anderen ist „VON HAND“ eine zusätzliche Pille ohne Nutzen. Wo man den Wert prüfen will, im Verlauf, fehlt sie dagegen, obwohl das Feld <code>q: ha</code> schon gespeichert wird.</p>
+</div>
+
+<!-- ================================================================== REIHENFOLGE -->
+<div class="sum">
+<h2>Empfohlene Änderungen in Reihenfolge</h2>
+<table>
+<tr><th>Welle</th><th>Punkt</th><th>Was genau</th><th>Aufwand</th><th>Wirkung</th></tr>
+<tr><td class="w1">Welle 1</td><td><a href="#ha1">HA-1</a> (Code-Teil)</td><td>Nicht zu öffnende Päckchen und unbekannte Versionen nicht quittieren, Anzeige „für ein anderes Gerät“</td><td>klein</td><td>verhindert Datenverlust</td></tr>
+<tr><td class="w1">Welle 1</td><td><a href="#ha2">HA-2</a></td><td>Anleitung mit echtem Pfad, Kopieren als Hauptweg, Zwischenablage nach 60 s leeren, Rückfrage vor „Fertig“. Text der HA-Integration („Zähler › Home Assistant“) angleichen</td><td>klein</td><td>Kopplung ohne Hilfe schaffbar</td></tr>
+<tr><td class="w1">Welle 1</td><td><a href="#g3">G3</a></td><td>Platzhalter entfernen (Phase 1/2, Glocke), Foto/Datei nur mit Dateiablage, „Neu“ mit Termin/Aufgabe</td><td>klein</td><td>wirkt fertig</td></tr>
+<tr><td class="w1">Welle 1</td><td><a href="#ha6">HA-6</a>, <a href="#ha8">HA-8</a></td><td>Eigener Text für automatische Fälligkeit, Einstieg im leeren Zustand und oben</td><td>klein</td><td>Funktion auffindbar und schlüssig</td></tr>
+<tr><td class="w1">Welle 1</td><td><a href="#g6">G6</a></td><td>Kalender-Woche/Monat: Achse mindestens 11 px in <code>kTextMuted</code></td><td>klein</td><td>Lesbarkeit, eigene Regel erfüllt</td></tr>
+<tr><td class="w1">Welle 1</td><td><a href="#g1">G1</a>, <a href="#g4">G4</a></td><td>Desktop-Fußzeile, Profil-Kachel, Login-Kennzeile, Untertitel in Satzschreibung; Sync-Streifen nur bei Bedarf</td><td>klein</td><td>großer Teil des „technisch“-Eindrucks weg</td></tr>
+<tr><td class="w2">Welle 2</td><td><a href="#ha3">HA-3</a>, <a href="#ha4">HA-4</a>, <a href="#ha5">HA-5</a></td><td>Schritt „Zähler zuordnen“ mit Wartehinweis, Ansicht für Nicht-Abholgeräte, Zustandsliste nach Handlungen ordnen</td><td>mittel</td><td>Home Assistant für beide Elternteile verständlich</td></tr>
+<tr><td class="w2">Welle 2</td><td><a href="#ha1">HA-1</a> (Oberfläche/Server)</td><td>Hinweis „Es gibt schon ein Abholgerät“; Server liefert Päckchen je Verbindung bzw. Postfach</td><td>mittel</td><td>sauberer Mehr-Geräte-Fall</td></tr>
+<tr><td class="w2">Welle 2</td><td><a href="#ha7">HA-7</a></td><td>Quelle nur für Strom/Solar, freier Kanal eingeklappt, Einstieg zum Koppeln</td><td>klein</td><td>keine stillen Fehlkonfigurationen</td></tr>
+<tr><td class="w2">Welle 2</td><td><a href="#g5">G5</a>, <a href="#g7">G7</a></td><td><code>MonoLabel</code> zentral auf Satzschreibung ohne „//“, Erklärungen als Hilfszeile; <code>EmptyState</code> mit Knopf, ruhige Fehlertexte</td><td>klein bis mittel (Tests mit Texten)</td><td>ein Formularmuster für alle Bereiche</td></tr>
+<tr><td class="w2">Welle 2</td><td><a href="#g2">G2</a></td><td>„Mehr“ und Seitenleiste in drei Gruppen, gleiche Einträge mobil/Desktop, Profil nur noch an zwei Stellen</td><td>mittel</td><td>schnelleres Finden</td></tr>
+<tr><td class="w3">Welle 3</td><td>Look laut <code>h-weniger-technisch.html</code></td><td>Akzentfarbe, Hintergrund, Schimmer, Mono nur für Codes, Karten ohne Rand (eine Stelle: <code>constants.dart</code>/<code>theme.dart</code>, dann Durchsicht)</td><td>groß (Entscheidung + Tests)</td><td>wärmerer Gesamteindruck</td></tr>
+<tr><td class="w3">Welle 3</td><td><a href="#g8">G8</a>, <a href="#ha9">HA-9</a>, <a href="#ha10">HA-10</a></td><td>Ein „Ich komme nicht rein“-Weg, Prüfliste mit Kontext, Herkunft im Verlauf statt Pille überall</td><td>klein</td><td>Feinschliff</td></tr>
+</table>
+</div>
+
+<!-- ================================================================== FEHLER -->
+<div class="box bugs">
+<h2>Echte Fehler und Risiken im Code</h2>
+<ol>
+<li><b>Datenverlust bei zwei Abholgeräten:</b> <code>app/lib/data/ingest/ingest_dienst.dart:194–202</code> quittiert jedes Päckchen, das <code>paketOeffnen</code> nicht öffnen kann, also auch <code>PaketFehler.entschluesselung</code> (gehört zu einem anderen Postfach) und <code>PaketFehler.version</code> (neuere Integration). Der Server liefert und löscht familienweit (<code>server/src/ingest/service.ts:164–190</code>). Zwei Admins oder ein Admin auf zwei Geräten löschen sich so gegenseitig die Werte; eine neuere HA-Version (v2) würde von älteren Apps gelöscht.</li>
+<li><b>Falsche Anleitung:</b> <code>app/lib/features/zaehler/ha_koppeln_screen.dart:141</code> nennt einen QR-Scan in Home Assistant, den die Integration nicht hat (<code>homeassistant/custom_components/familyhub/config_flow.py:62–72</code>, nur Textfeld). Umgekehrt nennt <code>homeassistant/…/translations/de.json</code> (Schritt <code>user</code>) und <code>homeassistant/README.md</code> „Zähler › Verbindungen“; in der App heißt der Weg „Zähler › Home Assistant › Neue Verbindung koppeln …“.</li>
+<li><b>Zwischenablage mit Geheimnis:</b> <code>ha_koppeln_screen.dart:120–125</code> legt den Kopplungscode (Token und Prüfgeheimnis) ohne Ablauf in die Zwischenablage. Der Tresor leert nach 30 s (<code>app/lib/data/tresor/tresor_zwischenablage.dart</code>).</li>
+<li><b>„Gerät abgeben“ beendet Home Assistant still:</b> <code>app/lib/data/crypto/e2ee_state.dart:128–129</code> löscht den Postfach-Schlüssel mit. Die Abgabe-Seite sagt dazu nichts, die Päckchen sammeln sich 30 Tage beim Server und sind dann verloren. Ein Satz in der Rückfrage („Home Assistant liefert danach nichts mehr, bis du neu koppelst“) fehlt.</li>
+<li><b>Falscher Fälligkeitstext:</b> <code>app/lib/features/zaehler/zaehler_screen.dart:143–166</code> zeigt für automatische Zähler „Dein Rhythmus ist abgelaufen. Trage den aktuellen Stand ein.“</li>
+<li><b>Einstieg fehlt ohne Zähler:</b> <code>zaehler_screen.dart:89–98</code> kehrt im leeren Zustand vor <code>_HaZeile</code> zurück.</li>
+<li><b>Quelle für Nicht-kWh-Zähler:</b> <code>app/lib/features/zaehler/zaehler_editor.dart:324</code> bietet Home Assistant für jede Zählerart an. Die Integration sendet nur kWh (<code>homeassistant/README.md</code>), ein Wasserzähler mit Quelle „Home Assistant“ bekommt nie einen Wert und wird nach 3 Tagen „fällig“.</li>
+<li><b>Ladekreis am falschen Knopf:</b> <code>app/lib/features/zaehler/ha_pruefen_screen.dart:146</code> zeigt den Kreis immer auf „Verwerfen“.</li>
+<li><b>Fehlermeldung nach erfolgreichem Trennen:</b> <code>app/lib/features/zaehler/ha_verbindung_screen.dart:84</code> fragt nach dem Widerruf erneut <code>ingestTokens()</code> ab. Scheitert dieser Abruf, erscheint eine Fehlermeldung, obwohl die Verbindung schon getrennt ist.</li>
+<li><b>Text des Schalters ungenau:</b> <code>zaehler_editor.dart:425</code> sagt, nur ein kleinerer Stand werde immer vorgelegt. Laut <code>app/lib/data/ingest/ingest_logik.dart</code> (<code>entscheide</code>) gilt das auch für „höher als ein späterer Stand“.</li>
+<li><b>Takt läuft im Hintergrund weiter:</b> <code>app/lib/data/ingest/ingest_state.dart:125</code> startet <code>Timer.periodic</code> (3 h), der auf Android weiterläuft, solange der Prozess lebt. Der Dateikopf verspricht „nie im Hintergrund“. Das sollte man an <code>AppLifecycleState</code> koppeln oder den Kommentar anpassen.</li>
+<li><b>Platzhaltertexte im Produkt:</b> <code>app/lib/features/files/dateien_start_karte.dart:60</code> und <code>app/lib/features/home/home_screen.dart:234</code> („Kommt in Phase 1“), <code>app/lib/features/home/desktop_home.dart:676, 706</code> („Standort … kommt in Phase 2“, obwohl es Standort gibt), <code>desktop_home.dart:144–146</code> (Glocke).</li>
+<li><b>Verstoß gegen die eigene Kontrast-Regel:</b> <code>app/lib/features/calendar/kalender_woche.dart:217, 261, 546</code> und <code>kalender_monat.dart:172</code> setzen Informationstext in <code>kTextFaint</code> mit 8 bis 10 px.</li>
+<li><b>Tests fehlen:</b> Die drei neuen Seiten fehlen in <code>app/test/barrierefreiheit_test.dart</code>; es gibt keinen Test für <code>ingest_logik.dart</code>/<code>ingest_dienst.dart</code> (Sprung, „kleiner“, Quittung) und keinen „nie zeigen“-Test, wie ihn die anderen Zähler-Wege haben.</li>
+</ol>
+</div>
+
+</body></html>

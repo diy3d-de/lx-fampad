@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vorschlag A – Familienzettel</title>
+<style>
+:root{--paper:#f3ecdf;--card:#fbf7ee;--ink:#2b2622;--mute:#6b6258;--rule:#d8cdb8;--tomato:#d9482b;--olive:#5b6b3a;--mustard:#e0a82e;--sky:#4f7ea8;--plum:#8a4b6b}
+*{box-sizing:border-box;margin:0}
+body{background:#cfc6b4;font-family:"Segoe UI",system-ui,sans-serif;color:var(--ink);padding:24px;display:flex;flex-direction:column;align-items:center;gap:16px}
+h1{font:italic 700 20px Georgia,serif}p.n{font-size:13px;color:#4a4238;max-width:760px;text-align:center}
+.row{display:flex;gap:28px;flex-wrap:wrap;justify-content:center}
+.ph{width:360px;height:740px;background:var(--paper);border-radius:30px;border:8px solid #2b2622;overflow:hidden;display:flex;flex-direction:column;position:relative}
+.sb{display:flex;justify-content:space-between;padding:8px 18px 0;font-size:11px;color:var(--mute)}
+.scr{flex:1;overflow:hidden;padding:10px 16px 0}
+.date{font-size:12px;color:var(--tomato);font-weight:700;letter-spacing:.04em;text-transform:uppercase}
+h2{font:italic 700 30px/1.05 Georgia,serif;margin:2px 0 12px}
+.zettel{background:var(--card);padding:12px 14px;margin-bottom:12px;box-shadow:0 1px 0 var(--rule),0 3px 8px rgba(60,40,10,.12);position:relative}
+.zettel.r1{transform:rotate(-.6deg)}.zettel.r2{transform:rotate(.5deg)}
+.tape{position:absolute;top:-8px;left:42%;width:54px;height:16px;background:rgba(224,168,46,.55);transform:rotate(-3deg)}
+.lab{font:700 11px Georgia,serif;font-style:italic;color:var(--mute);margin-bottom:6px;border-bottom:1px dashed var(--rule);padding-bottom:4px}
+.li{display:flex;gap:10px;align-items:baseline;padding:5px 0;font-size:14px;border-bottom:1px dotted var(--rule)}
+.li:last-child{border:0}.t{font:700 13px Georgia,serif;width:46px;color:var(--ink)}
+.dot{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;font-size:10px;font-weight:700;color:#fff;flex:none}
+.chk{width:16px;height:16px;border:2px solid var(--ink);flex:none;transform:translateY(2px);border-radius:3px}
+.chk.on{background:var(--olive);border-color:var(--olive)}
+.big{font:700 38px Georgia,serif}.temp{display:flex;gap:14px;align-items:center}
+.nav{display:flex;border-top:2px solid var(--ink);background:var(--card)}
+.nav span{flex:1;text-align:center;padding:12px 0 14px;font-size:12px;color:var(--mute);font-weight:600}
+.nav .a{color:var(--ink);box-shadow:inset 0 -4px 0 var(--tomato)}
+.wk{display:grid;grid-template-columns:repeat(7,1fr);text-align:center;margin-bottom:10px;font-size:11px;color:var(--mute)}
+.wk b{display:block;font:700 18px Georgia,serif;color:var(--ink);margin-top:2px;padding:4px 0}
+.wk .h b{background:var(--tomato);color:#fff;border-radius:50%;width:30px;margin:2px auto 0}
+.ev{border-left:5px solid;padding:6px 10px;margin-bottom:8px;background:var(--card);font-size:13px}
+.ev small{display:block;color:var(--mute)}
+.b{max-width:78%;padding:8px 12px;margin-bottom:8px;font-size:14px;line-height:1.35;background:var(--card);box-shadow:0 1px 0 var(--rule)}
+.b.me{margin-left:auto;background:#f0d9a6}.b small{display:block;font-size:10.5px;color:var(--mute);margin-bottom:2px;font-weight:700}
+.in{margin:6px 0 10px;border:2px solid var(--ink);background:var(--card);padding:10px 12px;font-size:13px;color:var(--mute)}
+</style></head><body>
+<h1>Vorschlag A – „Familienzettel“</h1>
+<p class="n">Hell, warm, wie der Zettel am Kühlschrank: Papierton, Tinte statt Neon, Serifen-Überschriften, leicht schiefe Notizzettel. Kein Verlauf, kein Leuchten. Alle Farben sind gedeckt (Tomate, Olive, Senf).</p>
+<div class="row">
+<div class="ph"><div class="sb"><span>9:41</span><span>● ● ▮</span></div><div class="scr">
+<div class="date">Sonntag, 25. Oktober</div><h2>Guten Morgen,<br>Lena</h2>
+<div class="zettel r1"><div class="tape"></div><div class="lab">Heute</div>
+<div class="li"><span class="t">08:30</span><span class="dot" style="background:var(--sky)">T</span>Schwimmkurs Tim</div>
+<div class="li"><span class="t">12:00</span><span class="dot" style="background:var(--tomato)">L</span>Mittagessen bei Oma</div>
+<div class="li"><span class="t">18:30</span><span class="dot" style="background:var(--olive)">M</span>Elternabend Schule</div></div>
+<div class="zettel r2"><div class="lab">Zu erledigen</div>
+<div class="li"><span class="chk on"></span><s style="color:var(--mute)">Müll rausstellen</s></div>
+<div class="li"><span class="chk"></span>Zahnarzt anrufen</div>
+<div class="li"><span class="chk"></span>Geschenk für Papa besorgen</div></div>
+<div class="zettel"><div class="lab">Wetter in Salz</div><div class="temp"><span class="big">9°</span><span style="font-size:13px;color:var(--mute)">bedeckt, ab Mittag Regen<br>Nacht: Frost möglich</span></div></div>
+</div><div class="nav"><span class="a">Heute</span><span>Kalender</span><span>Chat</span><span>Listen</span><span>Mehr</span></div></div>
+
+<div class="ph"><div class="sb"><span>9:41</span><span>● ● ▮</span></div><div class="scr">
+<div class="date">Oktober 2026</div><h2>Kalender</h2>
+<div class="wk"><div>Mo<b>19</b></div><div>Di<b>20</b></div><div>Mi<b>21</b></div><div>Do<b>22</b></div><div>Fr<b>23</b></div><div>Sa<b>24</b></div><div class="h">So<b>25</b></div></div>
+<div class="lab" style="margin-top:14px">Sonntag, 25.</div>
+<div class="ev" style="border-color:var(--sky)">Schwimmkurs Tim<small>08:30 – 09:30 · Hallenbad</small></div>
+<div class="ev" style="border-color:var(--tomato)">Mittagessen bei Oma<small>12:00 · ganze Familie</small></div>
+<div class="ev" style="border-color:var(--olive)">Elternabend Schule<small>18:30 – 20:00 · Marie</small></div>
+<div class="lab" style="margin-top:14px">Montag, 26.</div>
+<div class="ev" style="border-color:var(--mustard)">Müllabfuhr: Gelbe Tonne<small>ganztägig</small></div>
+<div class="ev" style="border-color:var(--plum)">Geburtstag Opa Karl · 78<small>ganztägig</small></div>
+</div><div class="nav"><span>Heute</span><span class="a">Kalender</span><span>Chat</span><span>Listen</span><span>Mehr</span></div></div>
+
+<div class="ph"><div class="sb"><span>9:41</span><span>● ● ▮</span></div><div class="scr">
+<div class="date">3 Personen</div><h2>Familienchat</h2>
+<div class="b"><small>Marie</small>Bringt jemand Brot mit?</div>
+<div class="b me">Ich nehme zwei Laibe mit 🍞</div>
+<div class="b"><small>Tim</small>Darf ich bei Oma Pizza?</div>
+<div class="b"><small>Marie</small>Klar, wenn du alles aufisst.</div>
+<div class="b me">Wir sind um 12 da.</div>
+<div style="position:absolute;left:16px;right:16px;bottom:62px"><div class="in">Nachricht schreiben …</div></div>
+</div><div class="nav"><span>Heute</span><span>Kalender</span><span class="a">Chat</span><span>Listen</span><span>Mehr</span></div></div>
+</div></body></html>

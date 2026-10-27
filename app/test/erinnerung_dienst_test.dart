@@ -411,7 +411,7 @@ void main() {
     addTearDown(c4.dispose);
     c4.read(erinnerungEinstellungenProvider);
     await c4.read(erinnerungEinstellungenProvider.notifier).bereit;
-    expect(c4.read(erinnerungEinstellungenProvider).standardVorlauf, isNull);
+    expect(c4.read(erinnerungEinstellungenProvider).standardVorlauf, 60);
 
     // eine Eingabe, bevor das Lesen fertig ist, wird vom Ergebnis des Lesens nicht überschrieben
     final s5 = MemoryErinnerungSpeicher()..daten['erinnerung_an'] = 'nein';

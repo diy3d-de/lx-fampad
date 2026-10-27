@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weniger technisch – Vorher / Nachher</title>
+<style>
+:root{--bg:#050506;--tx:#ececef}
+*{box-sizing:border-box;margin:0}
+body{background:#050506;color:#ececef;font-family:"Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;padding:28px 16px 60px;line-height:1.45}
+h1{font-size:26px;letter-spacing:-.02em;text-align:center}
+.lead{max-width:760px;margin:8px auto 28px;text-align:center;color:#9a9ea8;font-size:15px}
+.row{max-width:980px;margin:0 auto 54px}
+.row h2{font-size:20px;margin-bottom:4px}.row>p{color:#9a9ea8;font-size:14px;margin-bottom:16px}
+.pair{display:flex;gap:26px;flex-wrap:wrap;justify-content:center}
+.col{display:flex;flex-direction:column;align-items:center;gap:8px}
+.tag{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:3px 10px;border-radius:10px}
+.tag.v{background:#3a1d1d;color:#ff9a94}.tag.n{background:#16301f;color:#8fe0a8}
+.ph{width:330px;height:640px;border-radius:30px;border:7px solid #000;overflow:hidden;position:relative;box-shadow:0 0 0 1px #2a2a30;background:var(--bg);color:var(--tx);display:flex;flex-direction:column}
+.scr{flex:1;overflow:hidden;padding:14px 16px;position:relative}
+/* VORHER = heutiger Look */
+.alt{--bg:#090a0f;--s1:#13161f;--s2:#1a1e29;--line:#242936;--tx:#e6e8ee;--mu:#8b93a7;--ac:#00f0ff;--onac:#04121b;--ok:#10b981;--r:14px}
+.alt .scr:before{content:"";position:absolute;inset:0;background:radial-gradient(120% 50% at 15% -10%,rgba(124,58,237,.30),transparent 60%),radial-gradient(90% 40% at 100% 0,rgba(0,240,255,.09),transparent 60%);pointer-events:none}
+.alt .lab{font-family:Consolas,"JetBrains Mono",monospace;font-size:11.5px;color:var(--mu);letter-spacing:.02em}
+.alt .lab:before{content:"// "}
+.alt .mono{font-family:Consolas,"JetBrains Mono",monospace}
+.alt .card{border:1px solid var(--line)}
+.alt .tm{font-family:Consolas,monospace;color:var(--ac);font-size:13px}
+.alt h3{font-weight:800;letter-spacing:-.03em;font-size:26px}
+/* NACHHER = ruhiger, wärmer */
+.neu{--bg:#15161a;--s1:#1e2025;--s2:#272a31;--line:transparent;--tx:#efeff2;--mu:#a2a6b0;--ac:#7cd4d9;--onac:#0c1b1d;--ok:#7fcf9b;--r:18px}
+.neu .lab{font-size:13px;font-weight:600;color:var(--mu)}
+.neu .card{border:0}
+.neu .tm{font-weight:650;font-variant-numeric:tabular-nums;font-size:14px}
+.neu h3{font-weight:650;letter-spacing:-.02em;font-size:26px}
+/* gemeinsam */
+.top{display:flex;justify-content:space-between;align-items:center;position:relative;margin-bottom:6px}
+.av{width:32px;height:32px;border-radius:50%;background:var(--s2);display:grid;place-items:center;font-weight:700;font-size:12px;color:#fb7185}
+.sync{font-size:11.5px;color:var(--mu);display:flex;gap:6px;align-items:center}.sync i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.card{background:var(--s1);border-radius:var(--r);padding:13px 14px;margin-bottom:10px;position:relative}
+.ev{display:flex;gap:11px;align-items:center;padding:8px 0}.ev .b{width:4px;align-self:stretch;border-radius:2px}
+.ev b{display:block;font-weight:550;font-size:14.5px}.ev span{font-size:12.5px;color:var(--mu)}
+.row2{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:11px 0;border-bottom:1px solid rgba(255,255,255,.05)}.row2:last-child{border:0}
+.row2 b{font-weight:550;font-size:14.5px;display:block}.row2 span{font-size:12.5px;color:var(--mu)}
+.chev{color:var(--mu)}
+.pill{display:inline-block;font-size:12px;padding:3px 10px;border-radius:12px;background:var(--s2);color:var(--mu)}
+.btn{display:block;text-align:center;background:var(--ac);color:var(--onac);font-weight:650;border-radius:14px;padding:12px;font-size:14.5px;margin-top:12px}
+.alt .btn{border-radius:10px;font-weight:700}
+.fld{background:var(--s1);border-radius:12px;padding:10px 12px;font-size:14px;margin:6px 0 12px}
+.alt .fld{border:1px solid var(--line)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 12px}.chip{font-size:12.5px;padding:6px 12px;border-radius:14px;background:var(--s2);color:var(--mu)}.chip.on{background:var(--ac);color:var(--onac);font-weight:650}
+.alt .chip.on{background:rgba(0,240,255,.14);color:var(--ac);border:1px solid var(--ac)}
+.alt .chip{border:1px solid var(--line);font-family:Consolas,monospace;font-size:11.5px}
+.nav{display:flex;background:var(--s1);padding:7px 4px 12px}
+.nav div{flex:1;text-align:center;font-size:11px;color:var(--mu);padding:5px 0}.nav .on{color:var(--ac)}
+.alt .nav div{font-family:Consolas,monospace;font-size:10px}
+.banner{border-radius:14px;padding:11px 13px;font-size:13px;margin-bottom:10px}
+.alt .banner{background:rgba(255,95,87,.1);border:1px solid #ff5f57;color:#ff5f57;font-family:Consolas,monospace;font-size:12px}
+.neu .banner{background:#2a2620;color:#ecd9b0}
+.big{font-size:34px;font-weight:700;letter-spacing:-.03em}
+.ok{color:var(--ok)}
+.notes{max-width:700px;margin:22px auto 0;background:#15161a;border-radius:16px;padding:16px 20px}
+.notes ol{padding-left:20px;font-size:14px;color:#c8cad2}.notes li{margin:6px 0}.notes b{color:#fff}
+.sum{max-width:760px;margin:0 auto;background:#15161a;border-radius:16px;padding:18px 22px}
+.sum h2{font-size:18px;margin-bottom:10px}.sum table{width:100%;border-collapse:collapse;font-size:14px}
+.sum td{padding:8px 6px;border-bottom:1px solid #26282e;vertical-align:top}.sum td:first-child{color:#ff9a94;width:38%}.sum td:last-child{color:#8fe0a8}
+.sum code{background:#222;padding:1px 5px;border-radius:5px;font-size:12.5px}
+</style></head><body>
+<h1>Weniger „technisch“ – so könnte es aussehen</h1>
+<p class="lead">Links der heutige Stand, rechts der Vorschlag. Drei Hebel machen den Unterschied: <b>Optik</b> (Neon-Cyan, Terminal-Schrift, Rahmen), <b>Beschriftungen</b> (<code>// so</code> und kleingeschrieben) und <b>Sprache</b> (Fachwörter wie TOTP, Passkey, abgleichen).</p>
+
+<!-- 1 START -->
+<div class="row"><h2>1 · Startseite</h2><p>Begrüßung statt Statuszeile, normale Überschriften, Uhrzeiten in der normalen Schrift, Sync nur als kleiner Punkt.</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+ <div class="top"><span class="lab">Mo, 26. Okt</span><span class="sync"><i></i>synchron · 2 offen</span><div class="av mono">AN</div></div>
+ <h3>Start</h3><div style="height:12px"></div>
+ <div class="card"><div class="lab" style="margin-bottom:6px">als nächstes</div>
+  <div class="ev"><span class="tm">08:30</span><div class="b" style="background:#38bdf8"></div><div><b>Zahnarzt Mia</b><span>Anna · 45 min</span></div></div>
+  <div class="ev"><span class="tm">15:00</span><div class="b" style="background:#a3e635"></div><div><b>Fußball</b><span>Ben</span></div></div></div>
+ <div class="card"><div class="lab" style="margin-bottom:6px">aufgaben</div><div class="ev"><b>Müll rausstellen</b></div></div>
+ <div class="card"><div class="lab" style="margin-bottom:6px">einkaufsliste</div><span style="font-size:14px">Milch, Brot, Äpfel +4</span></div>
+</div><div class="nav"><div class="on">start</div><div>kalender</div><div>chat</div><div>listen</div><div>mehr</div></div></div></div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+ <div class="top"><span class="sync"><i></i></span><div class="av">AN</div></div>
+ <h3 style="margin-bottom:2px">Guten Morgen, Anna</h3><span style="font-size:13.5px;color:var(--mu)">Montag, 26. Oktober</span><div style="height:14px"></div>
+ <div class="card"><div class="lab" style="margin-bottom:6px">Als Nächstes</div>
+  <div class="ev"><span class="tm" style="width:44px">08:30</span><div class="b" style="background:#6fa8dc"></div><div><b>Zahnarzt Mia</b><span>Anna · 45 Min.</span></div></div>
+  <div class="ev"><span class="tm" style="width:44px">15:00</span><div class="b" style="background:#8fbf7a"></div><div><b>Fußball</b><span>Ben</span></div></div></div>
+ <div class="card"><div class="lab" style="margin-bottom:6px">Aufgaben</div><div class="ev"><b>Müll rausstellen</b></div></div>
+ <div class="card"><div class="lab" style="margin-bottom:6px">Einkaufsliste</div><span style="font-size:14px">Milch, Brot, Äpfel und 4 weitere</span></div>
+</div><div class="nav"><div class="on">Start</div><div>Kalender</div><div>Chat</div><div>Listen</div><div>Mehr</div></div></div></div>
+</div>
+<div class="notes"><ol>
+<li><b>Abschnittstitel</b>: <code>// als nächstes</code> in Terminal-Schrift → „Als Nächstes“ in normaler Schrift (92 Stellen im Code, ein Wechsel im <code>MonoLabel</code> genügt).</li>
+<li><b>Uhrzeiten</b> nicht mehr in Cyan und Monospace, sondern fett in der normalen Schrift.</li>
+<li><b>Sync-Zustand</b>: Text „synchron · 2 offen“ nur noch, wenn etwas nicht stimmt; sonst ein stiller Punkt.</li>
+<li><b>Kopf</b>: persönliche Begrüßung statt Titel „Start“ und Statuszeile.</li>
+<li><b>Hintergrund</b>: kein violett-cyaner Schimmer, ruhiges warmes Dunkelgrau; Karten ohne Rand, nur durch Fläche getrennt, größere Rundung.</li>
+<li><b>Akzent</b>: gedämpftes Türkis statt Neon-Cyan #00F0FF. Kleinschreibung in der Leiste weg.</li>
+</ol></div></div>
+
+<!-- 2 SICHERHEIT -->
+<div class="row"><h2>2 · Profil › Sicherheit</h2><p>Hier ist es am technischsten: Fachbegriffe als Überschrift. Besser: sagen, was die Person davon hat.</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+ <div class="top"><span class="lab">profil</span></div><h3 style="margin-bottom:12px">Sicherheit</h3>
+ <div class="card"><span class="mono" style="font-size:12px;color:var(--ok)">● 2 von 3 wegen zum schlüssel</span></div>
+ <div class="card">
+  <div class="row2"><div><b>Passkeys</b><span>keiner eingerichtet</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Passwort und Zwei-Faktor (TOTP)</b><span>authenticator-app</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Wiederherstellungscodes</b><span>8 übrig · neue erzeugen</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Verschlüsselung</b><span>e1 · schlüsselversion 2</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Angemeldete Geräte</b><span>einzeln abmelden</span></div><span class="chev">›</span></div></div>
+</div></div></div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+ <div class="top"><span class="lab">Profil</span></div><h3 style="margin-bottom:12px">Sicherheit</h3>
+ <div class="card" style="background:#1d2a22"><b style="font-size:15px" class="ok">✓ Alles gut abgesichert</b><div style="font-size:13px;color:var(--mu);margin-top:3px">Du kommst auch nach einem Handy-Verlust wieder an deine Nachrichten.</div></div>
+ <div class="card">
+  <div class="row2"><div><b>Anmelden ohne Passwort</b><span>Noch nicht eingerichtet – mit Fingerabdruck oder Gesicht</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Passwort und zweiter Schritt</b><span>Mit Code aus deiner Authenticator-App</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Notfall-Codes</b><span>Noch 8 Codes übrig</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Nachrichten-Schutz</b><span>Nur ihr in der Familie könnt sie lesen</span></div><span class="chev">›</span></div>
+  <div class="row2"><div><b>Deine Geräte</b><span>2 Geräte angemeldet</span></div><span class="chev">›</span></div></div>
+</div></div></div>
+</div>
+<div class="notes"><ol>
+<li><b>Ein Satz Gesamtbild</b> statt „2 von 3 wegen zum schlüssel“ (Ampel bleibt, nur Text und Farbe werden freundlicher).</li>
+<li><b>Fachwörter ersetzen</b>: Passkey → „Anmelden ohne Passwort“, TOTP/Zwei-Faktor → „zweiter Schritt“, Wiederherstellungscodes → „Notfall-Codes“, Verschlüsselung/<code>e1</code> → „Nachrichten-Schutz“. Der Fachbegriff steht erst auf der Detailseite in Klammern.</li>
+<li><b>Untertitel als ganze Sätze</b>, groß geschrieben, ohne Zwischenpunkt-Ketten und ohne Versionsnummern.</li>
+<li><b>Ladezustand</b> „wird geladen …“ → dezentes Platzhalter-Skelett statt Text.</li>
+</ol></div></div>
+
+<!-- 3 EDITOR -->
+<div class="row"><h2>3 · Aufgabe anlegen</h2><p>Formulare: Beschriftungen wie ein Formular, nicht wie eine Konsole.</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+ <h3 style="margin-bottom:10px">Neue Aufgabe</h3>
+ <div class="fld">Müll rausstellen</div>
+ <div class="lab">zuständig</div><div class="chips"><span class="chip on">Anna</span><span class="chip">Ben</span><span class="chip">Mia</span></div>
+ <div class="lab">wiederholung</div><div class="chips"><span class="chip">keine</span><span class="chip on">wöchentlich</span><span class="chip">monatlich</span></div>
+ <div class="lab">erinnerung</div><div class="fld mono" style="font-size:12.5px">erinnerungMin: 60 · vor fälligkeit</div>
+ <div class="lab">sichtbar für</div><div class="chips"><span class="chip on">family</span><span class="chip">parents</span></div>
+ <div class="btn">Speichern</div>
+</div></div></div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+ <h3 style="margin-bottom:10px">Neue Aufgabe</h3>
+ <div class="fld">Müll rausstellen</div>
+ <div class="lab">Wer macht das?</div><div class="chips"><span class="chip on">Anna</span><span class="chip">Ben</span><span class="chip">Mia</span></div>
+ <div class="lab">Wie oft?</div><div class="chips"><span class="chip">Einmalig</span><span class="chip on">Jede Woche</span><span class="chip">Jeden Monat</span></div>
+ <div class="lab">Erinnern</div><div class="fld">1 Stunde vorher</div>
+ <div class="lab">Wer sieht das?</div><div class="chips"><span class="chip on">Die ganze Familie</span><span class="chip">Nur Eltern</span></div>
+ <div class="btn">Speichern</div>
+</div></div></div>
+</div>
+<div class="notes"><ol>
+<li><b>Fragen statt Feldnamen</b>: „zuständig“ → „Wer macht das?“, „wiederholung“ → „Wie oft?“, „sichtbar für“ → „Wer sieht das?“.</li>
+<li><b>Chips</b> ohne Rahmen und Mono-Schrift; Auswahl als gefüllte Fläche in der Akzentfarbe.</li>
+<li><b>Interne Bezeichner</b> (family/parents, Minuten-Werte) nie anzeigen, immer Klartext.</li>
+</ol></div></div>
+
+<!-- 4 STATUS -->
+<div class="row"><h2>4 · Statusmeldungen und Fehler</h2><p>Der Ton: erklären, beruhigen, sagen was zu tun ist.</p>
+<div class="pair">
+<div class="col"><span class="tag v">Heute</span>
+<div class="ph alt"><div class="scr">
+ <div class="top"><span class="lab">jetzt</span><span class="sync mono" style="color:#ff5f57">● abgleich fehlgeschlagen</span></div>
+ <div class="banner">sync: server nicht erreichbar (503) · 3 änderungen offen · nächster versuch in 30 s</div>
+ <div class="banner" style="background:rgba(254,188,46,.1);border-color:#febc2e;color:#febc2e">wartung · 3 offen</div>
+ <div class="banner" style="background:rgba(0,240,255,.07);border-color:#00f0ff;color:#00f0ff">update nötig · v0.18.0</div>
+</div></div></div>
+<div class="col"><span class="tag n">Vorschlag</span>
+<div class="ph neu"><div class="scr">
+ <div class="top"><span class="lab">Heute</span><span class="sync"><i style="background:#e9b45c"></i>Wird nachgeholt</span></div>
+ <div class="banner"><b style="color:#fff;display:block">Gerade keine Verbindung</b>Alles, was du jetzt änderst, bleibt gespeichert und wird später automatisch übertragen.</div>
+ <div class="banner"><b style="color:#fff;display:block">Kurze Wartung</b>Der Familienserver ist gleich wieder da. Deine Änderungen gehen nicht verloren.</div>
+ <div class="banner"><b style="color:#fff;display:block">Neue Version verfügbar</b>Bitte aktualisiere die App, dann geht’s weiter.</div>
+</div></div></div>
+</div>
+<div class="notes"><ol>
+<li><b>Keine Fehlercodes, Zähler und Zeitintervalle</b> in der Oberfläche (Details nur im Betreiber-Bereich).</li>
+<li><b>Ton</b>: „abgleich fehlgeschlagen“ klingt nach Defekt. „Wird nachgeholt“ sagt dasselbe und beruhigt. Rot nur, wenn die Person wirklich handeln muss.</li>
+<li><b>Banner</b> in warmem, weichem Gelb statt roter/cyan Rahmen.</li>
+</ol></div></div>
+
+<div class="sum"><h2>Zusammenfassung: Was ändert sich im Code?</h2>
+<table>
+<tr><td>Neon-Cyan, Violett-Schimmer</td><td><code>kAccent</code> auf ~#7CD4D9, <code>kBg</code> auf ~#15161A, Schimmer in <code>LxBackground</code> raus. Eine Stelle: <code>constants.dart</code>.</td></tr>
+<tr><td>Terminal-Schrift und <code>// </code> überall</td><td><code>MonoLabel</code> rendert Sans, ohne <code>//</code> und ohne Kleinschreibung. Texte mit <code>//</code> werden im Zug bereinigt (92 Dateien, rein mechanisch).</td></tr>
+<tr><td>Mono für Uhrzeiten, Kennzahlen, Navigation</td><td>Nur noch Zahlen mit <code>tabularFigures</code> in Inter; <code>JetBrainsMono</code> bleibt höchstens für Codes (Sicherheitscode, Schlüssel).</td></tr>
+<tr><td>Rahmen um alle Karten, kleine Rundung</td><td><code>LxCard</code> ohne 1-px-Rand, Radius 18, Fläche statt Linie. Die Regel „keine Schatten“ bleibt.</td></tr>
+<tr><td>Fachwörter (Passkey, TOTP, e1, Sync)</td><td>Textliste in <code>docs/</code> mit Ersatzwörtern, Fachbegriff nur auf Detailseiten in Klammern.</td></tr>
+<tr><td>Kleingeschriebene Untertitel, Zwischenpunkte</td><td>Normale Satzschreibung, ganze Sätze.</td></tr>
+<tr><td>Status- und Fehlertexte</td><td><code>syncAnzeige</code> und <code>ApiException</code>-Meldungen umformulieren; Details nur für Betreiber.</td></tr>
+<tr><td>Begrüßung auf der Startseite</td><td>Kleiner neuer Baustein in <code>home_screen.dart</code> (Tageszeit + Vorname).</td></tr>
+</table>
+<p style="margin-top:14px;font-size:13.5px;color:#9a9ea8">Aufwand grob: Farben/Schrift/Karten = ein Tag, Textbereinigung = ein bis zwei Tage (viele Tests prüfen Texte, die müssen mit). Das Corporate-Design lx-labs (Cyan, Mono) würde die App dann bewusst verlassen – das ist die eigentliche Entscheidung. Die älteren Varianten <code>d-feinschliff.html</code> und <code>g-kategorien-gross.html</code> im selben Ordner gehen in dieselbe Richtung.</p></div>
+</body></html>

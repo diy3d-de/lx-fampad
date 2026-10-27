@@ -10,6 +10,7 @@ import '../../data/app_database.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/expansion.dart';
 import '../../data/calendar/geburtstag.dart';
+import '../../data/calendar/termin_erinnerung.dart';
 import '../../data/calendar/termin_farben.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/wiederholung.dart';
@@ -63,6 +64,8 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
   late DateTime _startTagUrsprung;
   late bool _ganztaegigUrsprung;
   int? _erinnerung;
+  int? _erinnerungBisher; // gespeicherter Rohwert eines bestehenden Termins (null = nie gesetzt, -1 = bewusst keine)
+  bool _erinnerungGewaehlt = false; // die Person hat die Erinnerung selbst gewählt (dann ändert der Geburtstags-Schalter sie nicht mehr)
   int? _farbe; // Termin-Farbe (Index in kTerminFarben), null = keine
   var _teilnehmer = <String>{};
   var _sicht = TerminSicht.family;
@@ -109,7 +112,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       // Vorbelegung: heute vor zehn Jahren; am Schalttag (29.2.) auf den letzten Tag des Monats im Zieljahr begrenzt
       final zielJahr = tag.year - 10;
       _geburtsdatum = DateTime.utc(zielJahr, tag.month, tag.day.clamp(1, DateTime.utc(zielJahr, tag.month + 1, 0).day));
-      _erinnerung = ref.read(erinnerungEinstellungenProvider).standardVorlauf; // lokale Vorgabe dieses Geräts
+      _erinnerung = ref.read(erinnerungEinstellungenProvider).standardVorlauf; // Standard-Erinnerung dieses Geräts (Profil > Kalender, Vorgabe 1 Stunde)
       return;
     }
     final t = v.termin;
@@ -129,7 +132,8 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
     _ort.text = widget.umfang == SerieUmfang.alle ? t.ort : v.ort;
     _beschreibung.text = t.beschreibung;
     _wdh = Wiederholung.ausRrule(t.rrule, ganztaegig: t.ganztaegig, ort: ortFuer(t.tzid), startTag: _startTag);
-    _erinnerung = t.erinnerungMin;
+    _erinnerung = erinnerungMinuten(t.erinnerungMin);
+    _erinnerungBisher = t.erinnerungMin;
     _farbe = terminFarbeNummer(t.farbe);
     _teilnehmer = daten.teilnehmerIds(t.id);
     _sicht = ListenSicht.von(t.audience);
@@ -225,7 +229,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       startWand: start,
       endeWand: start.add(const Duration(days: 1)),
       rrule: geburtstagRegel(d.month, d.day),
-      erinnerungMin: _erinnerung,
+      erinnerungMin: erinnerungSpeichern(_erinnerung, neu: _neu, bisher: _erinnerungBisher),
       sicht: _sicht,
       teilnehmer: _teilnehmer,
       icalUid: geburtstagUid(jahr, suffix),
@@ -283,7 +287,7 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       startWand: start,
       endeWand: ende,
       rrule: rrule,
-      erinnerungMin: _erinnerung,
+      erinnerungMin: erinnerungSpeichern(_erinnerung, neu: _neu, bisher: _erinnerungBisher),
       sicht: _sicht,
       teilnehmer: _teilnehmer,
       farbe: _farbe,
@@ -419,7 +423,13 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
               title: const Text('Geburtstag'),
               subtitle: const Text('Ganztägig, wiederholt sich jedes Jahr'),
               value: _geburtstag,
-              onChanged: _neu ? (v) => setState(() => _geburtstag = v) : null,
+              onChanged: _neu
+                  ? (v) => setState(() {
+                      _geburtstag = v;
+                      // Geburtstage behalten ihr bisheriges Verhalten (keine Erinnerung vorbelegt), solange die Person nichts gewählt hat
+                      if (!_erinnerungGewaehlt) _erinnerung = v ? null : ref.read(erinnerungEinstellungenProvider).standardVorlauf;
+                    })
+                  : null,
             ),
           ),
         if (_geburtstag) ...[
@@ -497,7 +507,10 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
             runSpacing: 8,
             children: [
               for (final m in kErinnerungen)
-                AuswahlKnopf(text: m == null ? 'Keine' : erinnerungText(m).replaceAll(' vorher', ''), gewaehlt: _erinnerung == m, onTap: () => setState(() => _erinnerung = m)),
+                AuswahlKnopf(text: m == null ? 'Keine' : erinnerungText(m).replaceAll(' vorher', ''), gewaehlt: _erinnerung == m, onTap: () => setState(() {
+                  _erinnerung = m;
+                  _erinnerungGewaehlt = true;
+                })),
             ],
           ),
           if (_erinnerung != null && _benachrichtigungenFehlen) ...[

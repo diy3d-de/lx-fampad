@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Terminkategorien – anklickbares Mockup</title>
+<style>
+:root{--bg:#121316;--s1:#1a1c21;--s2:#23262c;--tx:#ececef;--mu:#9a9ea8;--fa:#6c707a;--ac:#6fcfd6;--onac:#0b1a1c}
+*{box-sizing:border-box;margin:0}
+body{background:#050506;font-family:"Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;color:var(--tx);padding:20px;display:flex;flex-direction:column;align-items:center;gap:14px}
+h1{font-size:18px}.hint{font-size:12.5px;color:#8c8c95;max-width:760px;text-align:center}
+.row{display:flex;gap:26px;flex-wrap:wrap;justify-content:center}
+.cap{font-size:12.5px;color:#8c8c95;text-align:center;margin-bottom:6px;font-weight:600}
+.ph{width:370px;height:760px;border-radius:34px;border:8px solid #000;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;box-shadow:0 0 0 1px #2a2a30}
+.sb{display:flex;justify-content:space-between;padding:9px 20px 0;font-size:11px;color:var(--mu)}
+.scr{flex:1;overflow-y:auto;padding:10px 18px 16px;scrollbar-width:none}.scr::-webkit-scrollbar{display:none}
+.top{display:flex;align-items:center;gap:10px;margin-bottom:6px}.top .back{font-size:20px;color:var(--mu)}
+h2{font-size:26px;font-weight:650;letter-spacing:-.02em;margin:4px 0 12px}
+.lab{font-size:12.5px;color:var(--mu);font-weight:600;margin:14px 0 6px}
+.chips{display:flex;gap:7px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none;margin-bottom:10px}.chips::-webkit-scrollbar{display:none}
+.chip{display:flex;align-items:center;gap:7px;padding:7px 12px;border-radius:16px;background:var(--s1);font-size:13px;font-weight:550;white-space:nowrap;cursor:pointer;border:1.5px solid transparent;flex:none}
+.chip i{width:10px;height:10px;border-radius:50%;background:var(--c)}.chip.off{opacity:.4}.chip.off i{background:none;box-shadow:inset 0 0 0 1.5px var(--c)}
+.mon{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;text-align:center;font-size:12.5px;margin-bottom:8px}
+.mon .w{font-size:11px;color:var(--fa);padding:3px 0}.mon .d{padding:6px 0 10px;border-radius:10px;position:relative;cursor:pointer}.mon .d.o{color:var(--fa)}.mon .d.s{background:var(--s2)}
+.mon .d.t b{background:var(--ac);color:var(--onac);border-radius:50%;display:inline-block;width:22px;height:22px;line-height:22px}
+.dots{position:absolute;bottom:2px;left:0;right:0;display:flex;gap:2px;justify-content:center}.dots u{width:5px;height:5px;border-radius:50%;background:var(--c)}
+.ev{display:flex;gap:11px;padding:10px 12px;margin-bottom:8px;background:var(--s1);border-radius:14px;align-items:center}
+.ev .bar{width:5px;align-self:stretch;border-radius:3px;background:var(--c)}.ev time{font-size:13px;width:42px;font-weight:600;font-variant-numeric:tabular-nums}
+.ev b{font-weight:550;font-size:14.5px;display:block}.ev small{font-size:12px;color:var(--mu);display:flex;align-items:center;gap:6px;margin-top:2px}.ev small i{width:7px;height:7px;border-radius:50%;background:var(--c)}
+.ev .p{margin-left:auto;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:700;color:#111;flex:none}
+.empty{color:var(--fa);font-size:13px;padding:12px 4px}
+.fld{background:var(--s1);border-radius:14px;padding:13px 15px;margin-bottom:10px;font-size:15px}.fld small{display:block;color:var(--mu);font-size:11.5px;margin-bottom:2px}
+.cats{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.cat{display:flex;align-items:center;gap:9px;padding:11px 12px;border-radius:14px;background:var(--s1);font-size:14px;font-weight:550;cursor:pointer;border:2px solid transparent}
+.cat i{width:14px;height:14px;border-radius:50%;background:var(--c);flex:none}.cat.sel{border-color:var(--c);background:var(--s2)}
+.save{display:block;width:100%;margin-top:12px;border:0;background:var(--ac);color:var(--onac);font:650 15px inherit;padding:14px;border-radius:14px}
+.li{display:flex;align-items:center;gap:12px;background:var(--s1);border-radius:14px;padding:12px 14px;margin-bottom:8px;cursor:pointer;border:2px solid transparent}
+.li.sel{border-color:var(--ac)}.li i{width:22px;height:22px;border-radius:50%;background:var(--c);flex:none}.li span{flex:1;font-size:15px;font-weight:550}.li em{font-style:normal;color:var(--fa);font-size:12px}
+.pal{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;background:var(--s1);border-radius:16px;padding:14px;margin:6px 0 10px}
+.sw{aspect-ratio:1;border-radius:50%;background:var(--c);cursor:pointer;display:grid;place-items:center;color:#111;font-weight:800;border:3px solid var(--s1);box-shadow:0 0 0 2px transparent}
+.sw.on{box-shadow:0 0 0 2px var(--tx)}.sw.used{opacity:.35}
+.nm{background:var(--s1);border-radius:14px;padding:12px 14px;font-size:15px;color:var(--tx);width:100%;border:0;font-family:inherit;outline:none}
+.note{font-size:12px;color:var(--fa);margin-top:4px}
+.fab{display:inline-flex;gap:8px;align-items:center;margin-top:6px;padding:11px 14px;border-radius:14px;border:1.5px dashed var(--fa);color:var(--mu);font-size:14px;font-weight:600;width:100%;justify-content:center}
+</style></head><body>
+<h1>Terminkategorien – anklickbar</h1>
+<div class="hint">Drei Ansichten desselben Ablaufs: <b>Kalender</b> mit Kategorie-Filter, <b>Termin anlegen</b> mit Kategorie-Wahl, <b>Kategorien verwalten</b> (Name + eine von 10 Farben). Alles ist klickbar und wirkt auf die anderen Ansichten.</div>
+<div class="row">
+<div><div class="cap">1 · Kalender</div><div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div><div class="scr">
+ <div class="top"><span class="lab" style="margin:0">2026</span></div><h2>Oktober</h2>
+ <div class="chips" id="filt"></div>
+ <div class="mon" id="mon"></div>
+ <div class="lab" id="dayt"></div><div id="dayl"></div>
+</div></div></div>
+
+<div><div class="cap">2 · Termin anlegen</div><div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div><div class="scr">
+ <div class="top"><span class="back">‹</span></div><h2>Neuer Termin</h2>
+ <div class="fld"><small>Titel</small>Zahnarzt Tim</div>
+ <div class="fld"><small>Wann</small>Do, 22. Okt · 15:00 – 15:45</div>
+ <div class="lab" style="margin-top:6px">Kategorie</div>
+ <div class="cats" id="ecat"></div>
+ <div class="lab">Wer</div>
+ <div class="chips"><div class="chip" style="--c:#e07a6b"><i></i>Lena</div><div class="chip" style="--c:#6fa8dc;border-color:#6fa8dc"><i></i>Tim</div><div class="chip" style="--c:#8fbf7a"><i></i>Marie</div></div>
+ <button class="save" id="sv">Speichern</button>
+ <div class="note" id="svn"></div>
+</div></div></div>
+
+<div><div class="cap">3 · Kategorien verwalten (Profil › Kalender)</div><div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div><div class="scr">
+ <div class="top"><span class="back">‹</span></div><h2>Kategorien</h2>
+ <div id="clist"></div>
+ <div class="fab" id="add">＋ Neue Kategorie</div>
+ <div class="lab">Name</div><input class="nm" id="nm">
+ <div class="lab">Farbe</div><div class="pal" id="pal"></div>
+ <div class="note">Nur Eltern und Admins ändern Kategorien. Jede Farbe gibt es einmal; vergebene Farben sind abgeblendet.</div>
+</div></div></div>
+</div>
+<script>
+const COL=['#e07a6b','#e3924f','#e0c15a','#a7c957','#6dbf8b','#5ec2b7','#6fa8dc','#8d90e0','#c08ad6','#e58fb0'];
+let cats=[['Familie',0],['Schule',6],['Arbeit',7],['Arzt',5],['Sport',4],['Geburtstag',9],['Haushalt',1],['Freizeit',3],['Urlaub',2],['Sonstiges',8]].map((c,i)=>({id:i,name:c[0],col:c[1],on:true}));
+let evs={25:[['08:30','Schwimmkurs','Tim',4,'#6fa8dc'],['12:00','Mittagessen bei Oma','alle',0,'#e07a6b'],['18:30','Elternabend','Marie',1,'#8fbf7a']],26:[['ganztägig','Gelbe Tonne','Haushalt',6,'#e07a6b'],['ganztägig','Geburtstag Opa Karl · 78','alle',5,'#e07a6b']],22:[['15:00','Zahnarzt Tim','Lena',3,'#e07a6b']],16:[['09:00','Teamtag','Marie',2,'#8fbf7a']],8:[['19:00','Elternstammtisch','Marie',1,'#8fbf7a']],29:[['16:30','Fußballtraining','Tim',4,'#6fa8dc']]};
+let sel=25,ecat=3,mcat=0;
+const $=id=>document.getElementById(id),C=c=>COL[cats[c].col];
+function drawF(){$('filt').innerHTML=cats.map(c=>`<div class="chip ${c.on?'':'off'}" style="--c:${COL[c.col]}" data-i="${c.id}"><i></i>${c.name}</div>`).join('');$('filt').onclick=e=>{const x=e.target.closest('.chip');if(!x)return;cats[x.dataset.i].on=!cats[x.dataset.i].on;all()}}
+function drawM(){let h='Mo Di Mi Do Fr Sa So'.split(' ').map(w=>`<div class="w">${w}</div>`).join('')+[28,29,30].map(d=>`<div class="d o">${d}</div>`).join('');
+ for(let d=1;d<=31;d++){const es=(evs[d]||[]).filter(e=>cats[e[3]].on);const dots=[...new Set(es.map(e=>e[3]))].slice(0,4).map(i=>`<u style="--c:${C(i)}"></u>`).join('');h+=`<div class="d ${d===25?'t':''} ${d===sel?'s':''}" data-d="${d}"><b>${d}</b><div class="dots">${dots}</div></div>`}
+ $('mon').innerHTML=h;$('mon').onclick=e=>{const x=e.target.closest('.d');if(x&&x.dataset.d){sel=+x.dataset.d;all()}}}
+function drawD(){const wd=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'][(sel+2)%7];$('dayt').textContent=wd+', '+sel+'. Oktober';
+ const es=(evs[sel]||[]).filter(e=>cats[e[3]].on);$('dayl').innerHTML=es.map(e=>`<div class="ev" style="--c:${C(e[3])}"><time style="${e[0].length>5?'font-size:11px;width:56px':''}">${e[0]}</time><div class="bar"></div><div><b>${e[1]}</b><small><i></i>${cats[e[3]].name}</small></div><div class="p" style="background:${e[4]}">${e[2]==='alle'?'★':e[2][0]}</div></div>`).join('')||'<div class="empty">Keine Termine (oder Kategorie ausgeblendet)</div>'}
+function drawE(){$('ecat').innerHTML=cats.map(c=>`<div class="cat ${c.id===ecat?'sel':''}" style="--c:${COL[c.col]}" data-i="${c.id}"><i></i>${c.name}</div>`).join('');$('ecat').onclick=e=>{const x=e.target.closest('.cat');if(x){ecat=+x.dataset.i;drawE()}}}
+$('sv').onclick=()=>{evs[22]=[['15:00','Zahnarzt Tim','Lena',ecat,'#e07a6b']];sel=22;all();$('svn').textContent='Gespeichert: erscheint in Kalender 1 am 22. Oktober in der Farbe „'+cats[ecat].name+'“.'};
+function drawC(){$('clist').innerHTML=cats.map(c=>`<div class="li ${c.id===mcat?'sel':''}" style="--c:${COL[c.col]}" data-i="${c.id}"><i></i><span>${c.name}</span><em>${(Object.values(evs).flat().filter(e=>e[3]===c.id).length)} Termine</em></div>`).join('');
+ $('clist').onclick=e=>{const x=e.target.closest('.li');if(x){mcat=+x.dataset.i;drawC();drawP()}};drawP()}
+function drawP(){$('nm').value=cats[mcat].name;const used=new Set(cats.filter(c=>c.id!==mcat).map(c=>c.col));$('pal').innerHTML=COL.map((c,i)=>`<div class="sw ${i===cats[mcat].col?'on':''} ${used.has(i)?'used':''}" style="--c:${c}" data-i="${i}">${i===cats[mcat].col?'✓':''}</div>`).join('');
+ $('pal').onclick=e=>{const x=e.target.closest('.sw');if(!x||used.has(+x.dataset.i))return;cats[mcat].col=+x.dataset.i;all()}}
+$('nm').oninput=e=>{cats[mcat].name=e.target.value||' ';drawF();drawD();drawE();document.querySelectorAll('#clist .li')[mcat].querySelector('span').textContent=e.target.value}
+$('add').onclick=()=>{const used=new Set(cats.map(c=>c.col));const f=COL.findIndex((_,i)=>!used.has(i));if(f<0){$('add').textContent='Alle 10 Farben sind vergeben';return}cats.push({id:cats.length,name:'Neu',col:f,on:true});mcat=cats.length-1;all()}
+function all(){drawF();drawM();drawD();drawE();drawC()}all();
+</script></body></html>

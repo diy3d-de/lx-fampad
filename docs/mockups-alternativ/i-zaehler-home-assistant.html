@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zähler mit Home Assistant – Mockup (aktueller Look)</title>
+<style>
+:root{--bg:#090a0f;--s:#13161f;--s2:#1a1e29;--b:#242936;--tx:#e6e8ee;--mu:#8b93a7;--ac:#00f0ff;--onac:#04121b;--ok:#10b981;--warn:#febc2e;--bad:#ff5f57;--sol:#a3e635;--strom:#febc2e}
+*{box-sizing:border-box;margin:0}
+body{background:#000;color:var(--tx);font-family:Inter,"Segoe UI",system-ui,sans-serif;padding:26px 14px 70px}
+h1{font-size:24px;text-align:center}.lead{max-width:760px;margin:8px auto 26px;text-align:center;color:#9aa0b0;font-size:14.5px}
+.wrap{max-width:1100px;margin:0 auto}
+.grid{display:flex;flex-wrap:wrap;gap:26px;justify-content:center}
+.cap{width:320px;margin:8px auto 0;font-size:13px;color:#9aa0b0;text-align:center}.cap b{color:#fff}
+.ph{width:320px;height:660px;border-radius:30px;border:7px solid #1b1b20;background:var(--bg);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.ph:before{content:"";position:absolute;inset:0;background:radial-gradient(120% 45% at 15% -10%,rgba(124,58,237,.28),transparent 60%),radial-gradient(90% 35% at 100% 0,rgba(0,240,255,.08),transparent 60%);pointer-events:none}
+.scr{flex:1;overflow:hidden;padding:14px 15px;position:relative}
+.mono,.lab{font-family:Consolas,"JetBrains Mono",monospace}
+.lab{font-size:11.5px;color:var(--mu);letter-spacing:.02em;margin:14px 0 6px}
+h2{font-size:26px;font-weight:800;letter-spacing:-.03em;margin:2px 0 10px}
+.card{background:var(--s);border:1px solid var(--b);border-radius:14px;padding:12px 13px;margin-bottom:10px}
+.hd{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.hd b{font-weight:800;font-size:15.5px}
+.big{font-family:Consolas,monospace;font-size:20px;font-weight:700;margin-top:4px}
+.sub{font-size:12px;color:var(--mu)}
+.pill{font-family:Consolas,monospace;font-size:10.5px;padding:2px 8px;border-radius:9px;border:1px solid var(--b);color:var(--mu);white-space:nowrap}
+.pill.ha{color:var(--ac);border-color:rgba(0,240,255,.45);background:rgba(0,240,255,.07)}
+.pill.ok{color:var(--ok);border-color:rgba(16,185,129,.5)}.pill.w{color:var(--warn);border-color:rgba(254,188,46,.5)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:46px;margin-top:8px}.bars i{flex:1;border-radius:2px 2px 0 0;background:var(--c)}
+.row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--b);font-size:14px}.row:last-child{border:0}
+.row small{display:block;color:var(--mu);font-size:12px;margin-top:1px}
+.tog{width:44px;height:26px;border-radius:13px;background:var(--b);position:relative;flex:none}.tog:after{content:"";position:absolute;left:3px;top:3px;width:20px;height:20px;border-radius:50%;background:#8b93a7}
+.tog.on{background:var(--ac)}.tog.on:after{left:21px;background:var(--onac)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}.chip{font-size:12.5px;padding:7px 12px;border-radius:12px;border:1px solid var(--b);color:var(--mu)}.chip.on{border-color:var(--ac);color:var(--ac);background:rgba(0,240,255,.12)}
+.fld{border:1px solid var(--b);background:var(--s);border-radius:12px;padding:10px 12px;font-size:14px}
+.btn{display:block;text-align:center;background:var(--ac);color:var(--onac);font-weight:700;border-radius:12px;padding:12px;font-size:14px;margin-top:10px}
+.btn.s{background:none;border:1px solid var(--b);color:var(--tx);font-weight:600}
+.note{font-size:12.5px;color:var(--mu);margin-top:6px;line-height:1.45}
+.warnb{border:1px solid rgba(254,188,46,.5);background:rgba(254,188,46,.08);border-radius:12px;padding:10px 12px;font-size:12.5px;color:#f0d9a0;margin:10px 0}
+.nav{display:flex;border-top:1px solid var(--b);background:var(--s);padding:7px 2px 12px;position:relative}.nav div{flex:1;text-align:center;font:10px Consolas,monospace;color:var(--mu)}.nav .on{color:var(--ac)}
+.opin{max-width:780px;margin:44px auto 0;background:#12141b;border:1px solid var(--b);border-radius:16px;padding:18px 22px}
+.opin h2{font-size:19px;margin:0 0 8px}.opin li{margin:6px 0;color:#c5c9d6;font-size:14px}.opin ul{padding-left:20px}
+code{background:#1a1e29;padding:1px 6px;border-radius:5px;font-size:12.5px}
+</style></head><body><div class="wrap">
+<h1>Zähler mit Home Assistant</h1>
+<p class="lead">So fügt sich die Anbindung in das <b>heutige</b> Zähler-Modul ein (aktueller Look, gleiche Kacheln und Formulare). Neu sind nur die markierten Stellen: die Herkunft „Home Assistant“, ein Abschnitt „Quelle“ im Zähler-Editor und die Seite „Home Assistant“ mit dem Schalter.</p>
+<div class="grid">
+
+<!-- 1 Übersicht -->
+<div><div class="ph"><div class="scr">
+ <div class="lab" style="margin-top:2px">Mo, 26. Okt</div><h2>Zähler</h2>
+ <div class="lab" style="margin-top:0">// haushalt</div>
+ <div class="card"><div class="hd"><b style="color:var(--strom)">Strom Haus</b><span class="pill ha">⇄ Home Assistant</span></div>
+  <div class="big" style="color:var(--strom)">11,8 kWh <span class="sub">gestern</span></div>
+  <div class="sub">Oktober bisher 286 kWh · −4 % zum Vorjahr</div>
+  <div class="bars" style="--c:var(--strom)"><i style="height:55%"></i><i style="height:70%"></i><i style="height:48%"></i><i style="height:80%"></i><i style="height:60%"></i><i style="height:42%"></i><i style="height:66%"></i><i style="height:52%"></i><i style="height:74%"></i><i style="height:58%"></i></div>
+  <div class="sub" style="margin-top:6px">Stand 2 951,7 kWh · heute 00:00 von Home Assistant</div></div>
+ <div class="card"><div class="hd"><b style="color:var(--sol)">Solar</b><span class="pill ha">⇄ Home Assistant</span></div>
+  <div class="big" style="color:var(--sol)">1,2 kWh <span class="sub">gestern</span></div>
+  <div class="sub">Ersparnis ca. 38 € in dieser Periode</div></div>
+ <div class="card"><div class="hd"><b style="color:#38bdf8">Wasser Küche</b><span class="pill">von Hand</span></div>
+  <div class="sub" style="margin-top:6px">Ablesen fällig · Rhythmus abgelaufen</div></div>
+</div><div class="nav"><div>start</div><div>kalender</div><div>chat</div><div>listen</div><div class="on">mehr</div></div></div>
+<div class="cap"><b>1 · Übersicht.</b> Die Kachel bleibt wie heute, neu ist nur die Pille für die Herkunft. Hand-Zähler und automatische Zähler lassen sich mischen.</div></div>
+
+<!-- 2 Editor -->
+<div><div class="ph"><div class="scr">
+ <div class="lab" style="margin-top:2px">// zähler</div><h2>Strom Haus</h2>
+ <div class="lab">// art und einheit</div><div class="chips"><span class="chip on">Strom</span><span class="chip">Gas</span><span class="chip">Wasser</span><span class="chip">Solar</span></div>
+ <div class="lab">// quelle <span style="color:var(--ac)">neu</span></div>
+ <div class="chips"><span class="chip">Von Hand</span><span class="chip on">Home Assistant</span></div>
+ <div class="lab">// kanal</div>
+ <div class="fld">Strom Bezug ▾</div>
+ <div class="note">Der Kanal ist der Name, den Home Assistant mitschickt. Die Zuordnung steht verschlüsselt in diesem Zähler.</div>
+ <div class="card" style="margin-top:12px"><div class="row" style="padding:0"><div>Prüfen vor dem Eintragen<small>Auffällige Werte erst bestätigen</small></div><div class="tog on"></div></div></div>
+ <div class="lab">// ablese-rhythmus</div>
+ <div class="note">Entfällt bei automatischer Quelle: „Ablesen fällig“ erscheint nur, wenn mehr als 3 Tage kein Wert ankam.</div>
+ <div class="btn">Speichern</div>
+</div></div>
+<div class="cap"><b>2 · Zähler-Editor.</b> Ein Abschnitt „Quelle“ mit zwei Auswahlknöpfen. Alles andere (Tarif, Periode, Warnschwelle) bleibt unverändert.</div></div>
+
+<!-- 3 Einstellungen -->
+<div><div class="ph"><div class="scr">
+ <div class="lab" style="margin-top:2px">// zähler</div><h2>Home Assistant</h2>
+ <div class="card"><div class="row" style="padding:0"><div><b>Werte automatisch abholen</b><small>Auf diesem Gerät. Aus = es wird nichts eingetragen.</small></div><div class="tog on"></div></div></div>
+ <div class="lab">// zustand</div>
+ <div class="card"><div class="row"><div>Letzte Abholung<small>heute 12:05 · 3 Werte eingetragen</small></div><span class="pill ok">ok</span></div>
+  <div class="row"><div>Wartet beim Server<small>2 Päckchen</small></div><span class="pill">2</span></div>
+  <div class="row"><div>Zu prüfen<small>1 Wert wartet auf dich</small></div><span class="pill w">1 ›</span></div></div>
+ <div class="btn s">Jetzt abholen</div>
+ <div class="lab">// verbindung (nur admin)</div>
+ <div class="card"><div class="row"><div>Haus Keller<small>Zuletzt gehört: heute 12:00</small></div><span class="pill ok">aktiv</span></div></div>
+ <div class="btn s">Neue Verbindung koppeln …</div>
+ <div class="note">Der Server sieht nur verschlüsselte Päckchen. Nur Eltern und Admins können sie öffnen.</div>
+</div></div>
+<div class="cap"><b>3 · Einstellungen.</b> Erreichbar über das „⋯“-Menü der Zähler-Seite. Der Schalter gilt <b>je Gerät</b> (lokal gespeichert). Admins koppeln hier die Verbindung.</div></div>
+
+<!-- 4 Prüfen -->
+<div><div class="ph"><div class="scr">
+ <div class="lab" style="margin-top:2px">// home assistant</div><h2>Zu prüfen</h2>
+ <div class="card" style="border-color:rgba(254,188,46,.5)"><b style="font-size:14.5px;color:var(--strom)">Strom Haus · 26.10.</b>
+  <div style="font-size:13px;margin-top:5px">Neuer Stand <b class="mono">12,4 kWh</b> liegt unter dem letzten (<b class="mono">2 951,7 kWh</b>).</div>
+  <div class="note">Zähler getauscht oder Home Assistant zurückgesetzt?</div>
+  <div class="btn" style="margin-top:10px">Neuer Zähler ab hier</div><div class="btn s">Verwerfen</div></div>
+ <div class="card"><b style="font-size:14.5px;color:var(--sol)">Solar · 24.10.</b>
+  <div style="font-size:13px;margin-top:5px">Sprung um <b class="mono">+86 kWh</b> an einem Tag (üblich: 1,5 kWh).</div>
+  <div class="btn s" style="margin-top:10px">Trotzdem eintragen</div><div class="btn s">Verwerfen</div></div>
+ <div class="note">Nichts davon landet ungeprüft in deinen Kurven.</div>
+</div></div>
+<div class="cap"><b>4 · Prüfliste.</b> Nutzt die vorhandene Plausibilitätsprüfung. Auch ein Zählerwechsel läuft über den bestehenden Dialog „Zähler wechseln“.</div></div>
+
+</div>
+
+<div class="opin"><h2>Was ich vom Schalter halte</h2>
+<ul>
+<li><b>Gute Idee, mit einer Änderung: ein Schalter je Gerät, nicht je Familie.</b> Jedes Elternteil-Gerät holt für sich ab. Es genügt, dass <i>ein</i> Gerät eingeschaltet ist; die Werte sind danach über den normalen Sync bei allen. Ein familienweiter Schalter bräuchte einen neuen, verschlüsselten Speicherort und brächte keinen Vorteil.</li>
+<li><b>Standard: aus</b>, bis eine Verbindung gekoppelt ist. Dann schlägt die App beim ersten Öffnen der Seite vor, ihn einzuschalten.</li>
+<li><b>Gefahr beim Ausschalten:</b> Ist auf <i>keinem</i> Gerät eingeschaltet, stauen sich die Päckchen beim Server (Obergrenze 3000, Löschung nach 30 Tagen). Darum zeigt die Seite „Wartet beim Server: n“ und warnt ab 7 Tagen. Es geht nichts verloren, solange man innerhalb von 30 Tagen wieder einschaltet.</li>
+<li><b>Wann wird abgeholt?</b> Beim Start, beim Öffnen der Zähler und alle paar Stunden, solange die App läuft. Kein Dauerbetrieb im Hintergrund, keine Push-Nachricht für Messwerte.</li>
+<li><b>Kinder</b> sehen von all dem nichts (wie die Zähler selbst).</li>
+</ul>
+<p class="note" style="margin-top:10px">Technisch: Schalter lokal in <code>sync_meta</code> (Schlüssel <code>ingest_abholen</code>), Standard aus. Abholen über <code>GET /ingest/zaehler/pending</code>, nach dem Eintragen <code>POST /ingest/zaehler/ack</code>.</p></div>
+</div></body></html>
