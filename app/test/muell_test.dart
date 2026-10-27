@@ -14,6 +14,7 @@ import 'package:lx_fampad/data/calendar/expansion.dart' show tagText;
 import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart';
 import 'package:lx_fampad/data/erinnerungen/erinnerung_planung.dart';
+import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart';
 import 'package:lx_fampad/data/muell/muell_logik.dart';
 import 'package:lx_fampad/data/muell/muell_modelle.dart';
 import 'package:lx_fampad/data/muell/muell_state.dart';
@@ -23,6 +24,7 @@ import 'package:lx_fampad/data/push/chat_benachrichtiger.dart' show ChatAnzeigeP
 import 'package:lx_fampad/data/push/chat_benachrichtiger_provider.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/calendar/erinnerung_steuerung.dart';
+import 'package:lx_fampad/features/calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import 'package:lx_fampad/features/calendar/muell_kalender.dart';
 import 'package:lx_fampad/features/muell/muell_abfuhrkalender_screen.dart';
 import 'package:lx_fampad/features/muell/muell_einstellungen_screen.dart';
@@ -298,6 +300,10 @@ void main() {
     final env = await angemeldeteUmgebung(role: role);
     env.extraOverrides.addAll([
       muellUhrProvider.overrideWithValue(() => jetzt ?? _jetzt),
+      // alle übrigen Kacheln (Tagesbriefing, Aufgaben, Termine) laufen auf derselben festen Uhr, nicht auf der echten
+      minutenTaktProvider.overrideWith((ref) => Stream.value(jetzt ?? _jetzt)),
+      // das Tagesbriefing (eigene Kachel, nennt "Morgen ist Müllabfuhr") schiebt sonst die Müll-Kachel aus dem sichtbaren Bereich
+      briefingEinstellungenProvider.overrideWith(_OhneBriefing.new),
       muellPruefAbfrageProvider.overrideWithValue(const Duration(milliseconds: 250)),
       // kein Gerätedienst für Erinnerungen (sonst bleibt nach einer Änderung ein Entprell-Timer stehen); Tests der Erinnerungen setzen ihren eigenen
       erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()
@@ -917,4 +923,10 @@ void main() {
     });
   });
 
+}
+
+/// Tagesbriefing-Kachel aus, damit die Müll-Kachel in den Tests nicht durch sie verdrängt wird.
+class _OhneBriefing extends BriefingEinstellungenNotifier {
+  @override
+  BriefingEinstellungen build() => const BriefingEinstellungen(kachelAn: false);
 }
