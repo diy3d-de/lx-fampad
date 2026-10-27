@@ -11,8 +11,6 @@ import '../../data/erinnerungen/erinnerung_einstellungen.dart';
 import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
-import '../calendar/calendar_state.dart' show erinnerungText;
-import '../lists/list_dialogs.dart' show AuswahlKnopf;
 
 class ErinnerungenScreen extends ConsumerStatefulWidget {
   const ErinnerungenScreen({super.key});
@@ -258,23 +256,8 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             LinkKnopf('Alarme & Erinnerungen öffnen', onPressed: () => unawaited(_einstellungen(alarme: true))),
           ],
           const SizedBox(height: 20),
-          const MonoLabel('Vorlaufzeit für neue Termine'),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final m in kStandardVorlaeufe)
-                AuswahlKnopf(
-                  text: m == null ? 'Keine' : erinnerungText(m).replaceAll(' vorher', ''),
-                  gewaehlt: einst.standardVorlauf == m,
-                  onTap: () => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).vorlaufSetzen(m)),
-                ),
-            ],
-          ),
-          const SizedBox(height: 6),
           const Text(
-            'Gilt nur als Vorgabe im Termin-Editor und nur auf diesem Gerät. Ganztägige Termine erinnern ab 09:00 Uhr: "1 Tag" bedeutet 09:00 Uhr am Vortag. Bei Terminen mit Uhrzeit heißt "1 Tag": am Vortag zur selben Uhrzeit.',
+            'Die Standard-Erinnerung für neue Termine stellst du unter Profil › Kalender ein.',
             style: TextStyle(fontSize: 12, color: kTextMuted),
           ),
           const SizedBox(height: 20),

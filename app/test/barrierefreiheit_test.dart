@@ -20,6 +20,9 @@ import 'package:lx_fampad/data/medikamente/medikament_state.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart' show zaehlerRepositoryProvider;
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
 import 'package:lx_fampad/features/zaehler/zaehler_diagramm.dart' show VerbrauchsDiagramm;
+import 'package:lx_fampad/features/status/status_karte.dart' show StatusStartKarte;
+import 'package:lx_fampad/data/chat/chat_ids.dart' show statusId;
+import 'package:lx_fampad/data/status/status_state.dart' show statusJetztProvider;
 import 'package:lx_fampad/features/tagesbriefing/briefing_karte.dart' show BriefingStartKarte;
 import 'package:lx_fampad/features/neuigkeiten/neuigkeiten_dialog.dart';
 import 'package:lx_fampad/data/neuigkeiten/neuigkeiten.dart';
@@ -34,6 +37,8 @@ import 'support/fake_crypto.dart';
 import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/ingest_welt.dart';
+import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpeicher;
+import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
 
@@ -129,6 +134,13 @@ void main() {
         await start(tester, skala: skala);
         await zumTab(tester, 'Aufgaben');
         pruefe(tester, 'Aufgaben $skala');
+        // Filter-Blatt der Aufgaben (Status, Person, Sortierung) und die Chips aktiver Filter
+        await tippe(tester, find.byTooltip('Filter und Anzeige'));
+        pruefe(tester, 'Aufgaben-Filterblatt $skala');
+        await tippe(tester, find.text('Erledigt').last);
+        await tippe(tester, find.textContaining(RegExp(r'Aufgaben? zeigen')));
+        pruefe(tester, 'Aufgaben mit Filter-Chip $skala');
+        await tippe(tester, find.text('Zurücksetzen'));
         await zumTab(tester, 'Kalender');
         pruefe(tester, 'Kalender $skala');
         h.dispose();
@@ -182,6 +194,10 @@ void main() {
         await tippe(tester, find.byTooltip('Profil und Sicherheit'));
         await tippe(tester, find.widgetWithText(EinstellungsZeile, 'Kalender'));
         pruefe(tester, 'Kalender-Einstellungen $skala');
+        await tippe(tester, find.widgetWithText(EinstellungsZeile, 'Standard-Erinnerung'));
+        pruefe(tester, 'Standard-Erinnerung $skala');
+        await tippe(tester, find.text('1 Stunde'));
+        expect(find.text('Gilt für neue Termine: 1 Stunde vorher. Beim Anlegen kannst du sie ändern.'), findsOneWidget);
         await tippe(tester, find.byTooltip('Zurück'));
         await tippe(tester, find.text('Startseite und Anzeige'));
         await tippe(tester, find.text('Startseite anpassen'));
@@ -470,6 +486,7 @@ void main() {
     testWidgets('Tagesbriefing: Kachel und Einstellungen, Textskala $skala', (tester) async {
       final h = tester.ensureSemantics();
       final env = await angemeldeteUmgebung();
+      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja'});
       final heute = heuteTag();
       String tag(int n) => tagText(DateTime.utc(heute.year, heute.month, heute.day + n));
       env.sync.andereAendert('termin', 'aaaaaaaa-2222-4222-8222-222222222222', {'titel': 'Familienfeier', 'ganztaegig': true, 'startDate': tag(0), 'endDate': tag(1), 'ownerId': fixIdAdmin, 'audience': 'family'});
@@ -485,6 +502,40 @@ void main() {
       await tippe(tester, find.text('Benachrichtigungen'));
       expect(find.text('Morgens benachrichtigen'), findsOneWidget);
       pruefe(tester, 'Benachrichtigungen mit Tagesbriefing $skala');
+      h.dispose();
+    });
+  }
+
+  // Familien-Status: Kachel (mit Stati der Familie), Blatt zum Setzen und der Schalter in den Einstellungen
+  for (final skala in [1.0, 2.0]) {
+    testWidgets('Familien-Status: Kachel, Blatt und Einstellung, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      env.extraOverrides.add(statusJetztProvider.overrideWithValue(() => DateTime.utc(2026, 10, 27, 14)));
+      env.sync.andereAendert('status', statusId(fixIdKind), {'userId': fixIdKind, 'text': 'Beim Sport', 'bis': '2026-10-27T17:00:00.000Z'});
+      await starteApp(tester, env, skala: skala);
+      for (var i = 0; i < 12 && find.byType(StatusStartKarte).evaluate().isEmpty; i++) {
+        await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+        await tester.pump();
+      }
+      await warte(tester, 2);
+      expect(find.byType(StatusStartKarte), findsOneWidget);
+      expect(find.text('Beim Sport'), findsOneWidget);
+      pruefe(tester, 'Startseite mit Status $skala');
+      await tippe(tester, find.text('Mein Status setzen'));
+      expect(find.text('Was machst du gerade?'), findsOneWidget);
+      pruefe(tester, 'Status-Blatt $skala');
+      h.dispose();
+    });
+
+    testWidgets('Familien-Status: Schalter in Startseite und Anzeige, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      await starteApp(tester, env, skala: skala);
+      await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+      await tippe(tester, find.text('Startseite und Anzeige'));
+      expect(find.text('Familien-Status anzeigen'), findsOneWidget);
+      pruefe(tester, 'Startseite und Anzeige mit Status-Schalter $skala');
       h.dispose();
     });
   }

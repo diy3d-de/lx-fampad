@@ -24,7 +24,7 @@ const _a2 = 'dddddddd-2222-4222-8222-222222222222';
 const _t1 = 'eeeeeeee-1111-4111-8111-111111111111';
 
 String _tag(int tage) {
-  final h = heuteTag();
+  final h = heuteTag(TestUmgebung.testJetzt);
   return tagText(DateTime.utc(h.year, h.month, h.day + tage));
 }
 
@@ -42,7 +42,7 @@ void main() {
   Future<(TestUmgebung, ProviderContainer)> start(WidgetTester tester, {void Function(TestUmgebung env)? vorher, double skala = 1.0, Size groesse = const Size(360, 800), Map<String, String> meta = const {}}) async {
     final env = await angemeldeteUmgebung();
     env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
-    env.speicher = MemoryFeiertageSpeicher(null, meta);
+    env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja', ...meta});
     vorher?.call(env);
     final c = await starteApp(tester, env, skala: skala, groesse: groesse);
     return (env, c);
@@ -117,6 +117,7 @@ void main() {
       final env = await angemeldeteUmgebung();
       env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
 
+      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja'});
       env.extraOverrides.add(profilWebProvider.overrideWithValue(web));
       final c = await starteApp(tester, env);
       await tippe(tester, find.byTooltip('Profil und Sicherheit'));

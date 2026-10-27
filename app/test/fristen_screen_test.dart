@@ -52,6 +52,7 @@ void main() {
 
   Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', void Function(TestUmgebung env)? vorher, double skala = 1.0, String tab = 'Aufgaben', Size groesse = const Size(360, 800)}) async {
     final env = await angemeldeteUmgebung(role: role);
+    env.extraOverrides.add(echteUhr); // Daten dieser Datei entstehen relativ zur echten Uhr
     env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
     vorher?.call(env);
     final container = await starteApp(tester, env, skala: skala, groesse: groesse);
@@ -76,7 +77,7 @@ void main() {
   testWidgets('Ansicht "Fristen": nur Fristen, nach Ablauf sortiert, Ampel-Text und Wiederholung; Aufgaben-Tab behält seine Kopfzeile', (tester) async {
     await start(tester, vorher: seed);
     expect(find.text('Normale Aufgabe'), findsOneWidget, reason: 'in "Offen" stehen Fristen und Aufgaben');
-    await tippeText(tester, 'Fristen');
+    await aufgabenFilter(tester, ['Fristen']);
     expect(find.text('Normale Aufgabe'), findsNothing);
     final y = [for (final t in ['Versicherung', 'TÜV', 'Reisepass']) tester.getTopLeft(find.text(t)).dy];
     expect(y[0], lessThan(y[1]));
@@ -88,11 +89,15 @@ void main() {
     expect(find.text('Neue Frist'), findsOneWidget);
     expect(find.text('Nach Fälligkeit'), findsNothing, reason: 'Fristen sind immer nach Ablauf sortiert');
     pruefeLayout(tester, 'Fristen');
+    // im Filter-Blatt ist die Sortierung gesperrt und der Grund steht dabei
+    await tippe(tester, find.byTooltip('Filter und Anzeige, 1 aktiv'));
+    expect(find.text('Fristen sind immer nach Ablauf sortiert.'), findsOneWidget);
+    expect(tester.widget<IgnorePointer>(find.ancestor(of: find.text('Priorität'), matching: find.byType(IgnorePointer)).first).ignoring, isTrue);
   });
 
   testWidgets('Ansicht "Fristen" ohne Fristen: Leerzustand mit Hinweis', (tester) async {
     await start(tester);
-    await tippeText(tester, 'Fristen');
+    await aufgabenFilter(tester, ['Fristen']);
     expect(find.text('Noch keine Fristen'), findsOneWidget);
     expect(find.text('Neue Frist'), findsOneWidget);
   });
@@ -100,7 +105,7 @@ void main() {
   for (final skala in [1.0, 1.5, 2.0]) {
     testWidgets('Ansicht und Editor, Textskala $skala: keine Layoutfehler bei 360 px', (tester) async {
       await start(tester, vorher: seed, skala: skala, groesse: const Size(360, 900));
-      await tippeText(tester, 'Fristen');
+      await aufgabenFilter(tester, ['Fristen']);
       pruefeLayout(tester, 'Fristen Liste');
       await tippe(tester, find.text('Neue Frist'));
       expect(find.byType(FristEditor), findsOneWidget);
@@ -113,7 +118,7 @@ void main() {
 
   testWidgets('Editor neu: Vorlage füllt Titel, Wiederholung und Vorwarnzeit vor; ohne Ablaufdatum wird nichts gespeichert', (tester) async {
     final env = await start(tester, groesse: const Size(360, 2400));
-    await tippeText(tester, 'Fristen');
+    await aufgabenFilter(tester, ['Fristen']);
     await tippeDirekt(tester, find.text('Neue Frist'));
     await tippeDirekt(tester, find.text('Reisepass'));
     expect(tester.widget<TextField>(find.widgetWithText(TextField, 'Titel')).controller!.text, 'Reisepass');
@@ -131,7 +136,7 @@ void main() {
 
   testWidgets('Editor bearbeiten: Wiederholung und Vorwarnzeit ändern; Tippen auf eine Frist öffnet den Frist-Editor', (tester) async {
     final env = await start(tester, vorher: seed, groesse: const Size(360, 2400));
-    await tippeText(tester, 'Fristen');
+    await aufgabenFilter(tester, ['Fristen']);
     await tippeDirekt(tester, find.text('TÜV'));
     expect(find.byType(FristEditor), findsOneWidget);
     expect(find.text('Frist bearbeiten'), findsOneWidget);
@@ -145,7 +150,7 @@ void main() {
 
   testWidgets('Erledigen einer wiederkehrenden Frist legt die nächste an', (tester) async {
     final env = await start(tester, vorher: seed);
-    await tippeText(tester, 'Fristen');
+    await aufgabenFilter(tester, ['Fristen']);
     await tippe(tester, find.byIcon(Icons.check_box_outline_blank).first); // Versicherung (ältester Ablauf)
     final alle = await dbAufgaben(env);
     final folge = alle.firstWhere((a) => a.titel == 'Versicherung' && a.erledigtAt == null);
@@ -156,7 +161,7 @@ void main() {
 
   testWidgets('Kind: sieht Fristen und darf eigene anlegen, fremde nur ansehen', (tester) async {
     await start(tester, role: 'child', vorher: seed);
-    await tippeText(tester, 'Fristen');
+    await aufgabenFilter(tester, ['Fristen']);
     expect(find.text('Reisepass'), findsOneWidget);
     expect(find.text('Neue Frist'), findsOneWidget);
     await tippeDirekt(tester, find.text('Reisepass'));

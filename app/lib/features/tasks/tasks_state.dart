@@ -22,7 +22,14 @@ class AufgabenAnsichtNotifier extends Notifier<AufgabenAnsicht> {
   void filter(AufgabeFilter f) => state = state.mit(filter: f);
   void sortierung(AufgabeSortierung s) => state = state.mit(sortierung: s);
   void person(String? id) => state = id == null ? state.mit(personLeeren: true) : state.mit(person: id);
+
+  /// Alle Filter auf den Standard (Offen, nach Fälligkeit, alle Personen).
+  void zuruecksetzen() => state = const AufgabenAnsicht();
 }
+
+/// Zahl der Einstellungen, die vom Standard abweichen (Status, Person, Sortierung; bei Fristen zählt die Sortierung nicht, sie ist fest).
+int aktiveAufgabenFilter(AufgabenAnsicht a) =>
+    (a.filter != AufgabeFilter.offen ? 1 : 0) + (a.person != null ? 1 : 0) + (a.sortierung != AufgabeSortierung.faelligkeit && a.filter != AufgabeFilter.fristen ? 1 : 0);
 
 /// Aufgabe, die nach dem Tippen auf eine Erinnerung geöffnet werden soll (die Liste öffnet den Editor, sobald die Daten da sind).
 class AufgabeOeffnenNotifier extends Notifier<String?> {

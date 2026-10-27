@@ -23,6 +23,7 @@ import 'package:lx_fampad/data/push/chat_benachrichtiger.dart' show ChatAnzeigeP
 import 'package:lx_fampad/data/push/chat_benachrichtiger_provider.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/calendar/erinnerung_steuerung.dart';
+import 'package:lx_fampad/features/calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import 'package:lx_fampad/features/calendar/muell_kalender.dart';
 import 'package:lx_fampad/features/muell/muell_abfuhrkalender_screen.dart';
 import 'package:lx_fampad/features/muell/muell_einstellungen_screen.dart';
@@ -298,6 +299,7 @@ void main() {
     final env = await angemeldeteUmgebung(role: role);
     env.extraOverrides.addAll([
       muellUhrProvider.overrideWithValue(() => jetzt ?? _jetzt),
+      minutenTaktProvider.overrideWith((ref) => Stream.value(jetzt ?? _jetzt)),
       muellPruefAbfrageProvider.overrideWithValue(const Duration(milliseconds: 250)),
       // kein Gerätedienst für Erinnerungen (sonst bleibt nach einer Änderung ein Entprell-Timer stehen); Tests der Erinnerungen setzen ihren eigenen
       erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()

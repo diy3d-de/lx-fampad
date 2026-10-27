@@ -253,7 +253,7 @@ async function create(env: EngineEnv, def: EntityDef, op: ParsedOp, supplied: Ro
   const decision = authorize(def.rules, 'create', env.actor, def.factsForCreate(env.actor, values, parentFacts), Object.keys(supplied), values);
   if (decision !== 'ok') return rejected(decision);
   if (def.check && !def.check(values)) return rejected('invalid');
-  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor, ...(env.flags ? { flags: env.flags } : {}) }, { ...values, id: op.id }))) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor, now: env.now, ...(env.flags ? { flags: env.flags } : {}) }, { ...values, id: op.id }))) return rejected('invalid');
 
   for (const [name, f] of Object.entries(def.fields)) {
     const v = values[name];
@@ -425,7 +425,7 @@ async function update(env: EngineEnv, def: EntityDef, op: ParsedOp, row: Row, su
     }
     if (Object.keys(changed).length === 0) return { status: 'acked', rev: null, conflicts };
   }
-  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor, ...(env.flags ? { flags: env.flags } : {}) }, { ...row, ...changed }))) return rejected('invalid');
+  if (def.validate && !(await def.validate({ tx: env.tx, familyId: env.familyId, actor: env.actor, now: env.now, ...(env.flags ? { flags: env.flags } : {}) }, { ...row, ...changed }))) return rejected('invalid');
   // Mengenbegrenzung für Änderungen (z. B. Teilnehmerwechsel, Text-Bearbeitungen): gezählt wird im Änderungsprotokoll
   if (def.updateRate && def.updateRate.fields.some((f) => f in changed)) {
     const fieldList = sql.join(def.updateRate.fields.map((f) => sql`${f}`), sql`, `);

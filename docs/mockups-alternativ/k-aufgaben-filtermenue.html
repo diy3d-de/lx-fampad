@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Aufgaben – Filtermenü (Mockup)</title>
+<style>
+:root{--bg:#090a0f;--s:#13161f;--s2:#1a1e29;--s3:#212634;--b:#242936;--tx:#e6e8ee;--mu:#8b93a7;--fa:#5d6578;--ac:#6fcfd6;--onac:#0c1b1d;--ok:#4fc99a;--warn:#febc2e;--bad:#ff5f57;--accsoft:rgba(111,207,214,.12)}
+*{box-sizing:border-box;margin:0}
+body{background:#000;color:var(--tx);font-family:Inter,"Segoe UI",system-ui,sans-serif;padding:20px 12px 60px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+h1{font-size:22px;text-align:center}
+.lead{max-width:760px;margin:6px auto 16px;text-align:center;color:#9aa0b0;font-size:14px}
+.bar{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;margin:8px 0}
+.seg{display:flex;background:var(--s);border-radius:14px;padding:3px;gap:2px}
+.seg button{padding:9px 14px;border-radius:11px;font-size:13.5px;color:var(--mu);min-height:44px}
+.seg button.on{background:var(--ac);color:var(--onac);font-weight:700}
+.stage{display:flex;justify-content:center;margin-top:18px}
+.cap{text-align:center;color:#9aa0b0;font-size:13px;margin:10px auto 0;max-width:560px}.cap b{color:#fff}
+/* Gerät */
+.ph{width:360px;height:700px;border-radius:30px;border:7px solid #1b1b20;background:var(--bg);overflow:hidden;position:relative;display:flex;flex-direction:column}
+.dk{width:min(1020px,100%);height:640px;border-radius:14px;border:6px solid #1b1b20;background:var(--bg);overflow:hidden;position:relative;display:flex}
+.ph:before,.main:before{content:"";position:absolute;inset:0;background:radial-gradient(120% 45% at 15% -10%,rgba(124,58,237,.25),transparent 60%),radial-gradient(90% 35% at 100% 0,rgba(111,207,214,.07),transparent 60%);pointer-events:none}
+.side{width:200px;background:var(--s);padding:16px 10px;flex:none;position:relative;font-size:14px}
+.side div{padding:11px 12px;border-radius:12px;color:var(--mu)}.side .on{background:var(--accsoft);color:var(--ac)}
+.main{flex:1;position:relative;display:flex;min-width:0}
+.col{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
+.scr{flex:1;overflow-y:auto;padding:14px 16px 24px;position:relative;scrollbar-width:none}
+.scr::-webkit-scrollbar{display:none}
+.lab{font-size:13px;font-weight:600;color:var(--mu)}
+h2{font-size:26px;font-weight:800;letter-spacing:-.03em;color:#fff}
+.kopf{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px}
+.prof{width:36px;height:36px;border-radius:50%;background:var(--s2);display:grid;place-items:center;font-size:12px;font-weight:700;color:#38bdf8}
+.add{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.fld{flex:1;background:var(--s);border-radius:14px;padding:13px 14px;font-size:15px;color:var(--mu);min-height:48px}
+.ib{width:48px;height:48px;border-radius:14px;display:grid;place-items:center;font-size:20px;flex:none}
+.ib.f{background:var(--ac);color:var(--onac);font-weight:700}.ib.s{background:var(--s);color:var(--ac)}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.chip{min-height:44px;padding:0 14px;border-radius:14px;background:var(--s);color:var(--mu);font-size:14px;display:inline-flex;align-items:center;gap:6px}
+.chip.on{background:var(--ac);color:var(--onac);font-weight:700}
+.chip.soft{background:var(--accsoft);color:var(--ac)}
+.small{font-size:12px;color:var(--mu);font-variant-numeric:tabular-nums}
+.mini{display:inline-flex;align-items:center;gap:6px;background:var(--accsoft);color:var(--ac);border-radius:12px;padding:0 6px 0 11px;min-height:36px;font-size:13px}
+.mini i{font-style:normal;width:30px;height:30px;display:grid;place-items:center;border-radius:10px;font-size:15px}
+.minis{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:0 0 10px}
+.minis .rs{color:var(--mu);font-size:13px;min-height:44px;padding:0 6px;text-decoration:underline}
+/* Leiste Vorschlag */
+.leiste{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.leiste .t{flex:1;min-width:0}
+.fbtn{position:relative;width:48px;height:48px;border-radius:14px;background:var(--s);display:grid;place-items:center;color:var(--tx);font-size:19px;flex:none}
+.fbtn.act{background:var(--accsoft);color:var(--ac)}
+.fbtn b{position:absolute;top:-4px;right:-4px;min-width:20px;height:20px;border-radius:10px;background:var(--ac);color:var(--onac);font-size:11px;display:grid;place-items:center;padding:0 5px}
+.pill{display:inline-flex;align-items:center;gap:6px;min-height:44px;padding:0 14px;background:var(--s);border-radius:14px;font-size:14px;color:var(--mu)}
+/* Zeilen */
+.z{display:flex;align-items:stretch;background:var(--s);border-radius:14px;margin-bottom:6px;min-height:56px}
+.z.done{background:none}
+.z .hk{width:48px;display:grid;place-items:center;font-size:21px;color:var(--mu);flex:none}
+.z.done .hk{color:var(--ok)}
+.z .tx{flex:1;min-width:0;padding:8px 0}
+.z .ti{font-size:15px}.z.done .ti{color:var(--mu);text-decoration:line-through}
+.z .me{display:flex;gap:10px;flex-wrap:wrap;margin-top:3px;font-size:11px;color:var(--mu)}
+.z .me .bad{color:var(--bad)}.z .me .w{color:var(--warn)}.z .me .ok{color:var(--ok)}
+.z .av{width:30px;height:30px;border-radius:50%;align-self:center;margin:0 10px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#0c1b1d;flex:none}
+.z.od{box-shadow:inset 0 0 0 1px rgba(255,95,87,.55)}
+.leer{text-align:center;padding:40px 10px;color:var(--mu)}
+.leer .ic{font-size:34px;margin-bottom:8px}.leer b{display:block;color:var(--tx);font-size:16px;margin-bottom:4px}
+.leer .chip{margin-top:14px}
+.nav{display:flex;background:var(--s);padding:6px 2px 12px;position:relative}
+.nav div{flex:1;text-align:center;font-size:11px;color:var(--mu);padding:6px 0}.nav .on{color:var(--ac);font-weight:700}
+/* Blatt */
+.scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:.2s;z-index:5}
+.scrim.on{opacity:1;pointer-events:auto}
+.blatt{position:absolute;left:0;right:0;bottom:0;max-height:88%;background:var(--s);border-radius:24px 24px 0 0;z-index:6;transform:translateY(105%);transition:transform .25s;display:flex;flex-direction:column}
+.blatt.on{transform:none}
+.panel{position:absolute;top:0;right:0;bottom:0;width:340px;background:var(--s);z-index:6;transform:translateX(105%);transition:transform .25s;display:flex;flex-direction:column;border-radius:18px 0 0 18px}
+.panel.on{transform:none}
+.griff{width:40px;height:4px;background:var(--fa);border-radius:2px;margin:10px auto 2px}
+.bk{display:flex;align-items:center;justify-content:space-between;padding:8px 18px 4px}
+.bk h3{font-size:20px;font-weight:800;letter-spacing:-.4px;color:#fff}
+.bk .x{width:44px;height:44px;border-radius:12px;color:var(--mu);font-size:18px}
+.bd{overflow-y:auto;padding:4px 18px 8px;scrollbar-width:none}.bd::-webkit-scrollbar{display:none}
+.gr{margin:12px 0 8px}
+.pers{display:flex;flex-direction:column;gap:2px}
+.pr{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 10px;border-radius:12px;font-size:15px;text-align:left;width:100%}
+.pr.on{background:var(--accsoft);color:var(--ac)}
+.pr .av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;color:#0c1b1d}
+.pr .ck{margin-left:auto}
+.fuss{display:flex;gap:10px;padding:12px 18px 18px;background:var(--s)}
+.fuss .rs{min-height:48px;padding:0 16px;border-radius:14px;background:var(--s2);font-size:15px}
+.fuss .ok{flex:1;min-height:48px;border-radius:14px;background:var(--ac);color:var(--onac);font-weight:700;font-size:15px}
+.hint{font-size:12.5px;color:var(--mu);margin:2px 0 6px}
+.opin{max-width:800px;margin:34px auto 0;background:var(--s);border-radius:18px;padding:18px 22px}
+.opin h2{font-size:18px;margin-bottom:8px}.opin li{margin:6px 0;color:#c5c9d6;font-size:14px}.opin ul{padding-left:20px}
+.opin table{border-collapse:collapse;width:100%;font-size:13.5px;margin-top:6px}.opin td,.opin th{padding:7px 8px;text-align:left;border-bottom:1px solid var(--b);color:#c5c9d6}.opin th{color:#fff}
+.rec{display:inline-block;background:var(--accsoft);color:var(--ac);border-radius:10px;padding:2px 9px;font-size:12px;margin-left:6px}
+</style></head><body>
+<h1>Aufgaben aufräumen – Filtermenü</h1>
+<p class="lead">Klickbar. Alle Daten sind erfunden. „Aktuell“ zeigt den heutigen Stand, die Vorschläge verlagern die Filter in ein Blatt wie im Kalender.</p>
+<div class="bar">
+ <div class="seg" id="vsel"></div>
+ <div class="seg" id="gsel"></div>
+</div>
+<div class="stage" id="stage"></div>
+<div class="cap" id="cap"></div>
+
+<div class="opin"><h2>Was heute an Filtern existiert (aus dem Code)</h2>
+<table>
+<tr><th>Gruppe</th><th>Heute</th><th>Im Vorschlag</th></tr>
+<tr><td>Status</td><td>5 Chips: Offen, Alle, Meine, Erledigt, Fristen</td><td>Blatt, Abschnitt „Anzeigen“ (A) bzw. Chips in der Leiste (B)</td></tr>
+<tr><td>Person</td><td>Knopf „Alle Personen“ öffnet Personenwahl (nur bei mehr als einem Mitglied)</td><td>Blatt, Abschnitt „Person“ mit Avataren, direkt wählbar (ein Schritt weniger)</td></tr>
+<tr><td>Sortierung</td><td>2 Chips „Nach Fälligkeit/Priorität“ (bei Fristen ausgeblendet)</td><td>Blatt, Abschnitt „Sortieren“ (bei Fristen ausgegraut mit Hinweis)</td></tr>
+<tr><td>Zusatz</td><td>Zähler „n offen · n erledigt“, „Erledigte löschen“ (nur Ansicht Erledigt)</td><td>Zähler im Titel, „Erledigte löschen“ als Zeile über der Liste nur in der Ansicht Erledigt</td></tr>
+</table>
+<ul style="margin-top:12px">
+<li><b>Empfehlung:</b> Variante B (Status-Chips bleiben, Person und Sortierung ins Blatt) <span class="rec">empfohlen</span> – Offen/Meine/Erledigt/Fristen sind die täglichen Griffe und sollen ein Tipp bleiben; Person und Sortierung brauchst du selten. Es spart trotzdem eine ganze Zeile plus die Wrap-Zeile mit Sortierchips.</li>
+<li>Variante A ist am ruhigsten (nur Titel, Suchfeld und ein Filter-Knopf), kostet aber für „Meine“ zwei Tipps statt einen.</li>
+</ul></div>
+
+<script>
+const P=[{n:'Mama',c:'#38bdf8',i:'M'},{n:'Papa',c:'#34d399',i:'P'},{n:'Lea',c:'#fbbf24',i:'L'},{n:'Tom',c:'#fb7185',i:'T'}];
+const ICH='Mama';
+// d = Tage bis fällig (null = ohne), pr 0..3 (3 hoch), sub=[erledigt,gesamt]
+const T=[
+ {t:'Müllsäcke nachkaufen',p:'Papa',d:-2,pr:2,done:0},
+ {t:'Elternabend Anmeldung',p:'Mama',d:0,pr:3,done:0},
+ {t:'Zahnarzt Termin Lea',p:'Mama',d:3,pr:0,done:0,sub:[1,3]},
+ {t:'Geschenk für Oma besorgen',p:'Papa',d:6,pr:1,done:0},
+ {t:'Regale im Keller sortieren',p:'Tom',d:null,pr:0,done:0},
+ {t:'Hausaufgaben Mathe',p:'Lea',d:1,pr:2,done:0},
+ {t:'Reisepass Lea erneuern',p:'Mama',d:40,pr:0,done:0,frist:1,fm:'in 40 Tagen'},
+ {t:'TÜV Auto',p:'Papa',d:12,pr:0,done:0,frist:1,fm:'in 12 Tagen'},
+ {t:'Versicherung kündigen',p:'Mama',d:-5,pr:0,done:0,frist:1,fm:'seit 5 Tagen abgelaufen'},
+ {t:'Wäsche aufhängen',p:'Tom',d:null,pr:0,done:1},
+ {t:'Blumen gießen',p:'Lea',d:0,pr:0,done:1},
+ {t:'Pakete zur Post',p:'Papa',d:-1,pr:0,done:1}
+];
+const S=['offen','alle','meine','erledigt','fristen'];
+const SL={offen:'Offen',alle:'Alle',meine:'Meine',erledigt:'Erledigt',fristen:'Fristen'};
+let st={v:'aktuell',g:'mobil',f:'offen',p:null,s:'faelligkeit',open:false,q:''};
+const pf=n=>P.find(x=>x.n===n);
+const dtxt=d=>d===null?'ohne Datum':d===0?'heute':d===1?'morgen':d===-1?'gestern':(d<0?'vor '+(-d)+' Tagen':'in '+d+' Tagen');
+function filt(){
+ let l=T.filter(a=>({alle:1,offen:!a.done,erledigt:a.done,meine:a.p===ICH&&!a.done,fristen:a.frist&&!a.done}[st.f]));
+ if(st.p) l=l.filter(a=>a.p===st.p);
+ if(st.q) l=l.filter(a=>a.t.toLowerCase().includes(st.q.toLowerCase()));
+ if(st.f==='fristen') l.sort((a,b)=>a.d-b.d);
+ else if(st.s==='prioritaet') l.sort((a,b)=>b.pr-a.pr||(a.d??999)-(b.d??999));
+ else l.sort((a,b)=>(a.d??999)-(b.d??999));
+ return l;
+}
+function aktiv(){ // zählt Abweichungen vom Standard
+ let n=0; if(st.v==='A'&&st.f!=='offen')n++; if(st.p)n++; if(st.s!=='faelligkeit'&&st.f!=='fristen')n++; return n;
+}
+const offenN=T.filter(a=>!a.done).length, erlN=T.length-offenN;
+function zeile(a){
+ const od=!a.done&&a.d!==null&&a.d<0, pr=['','Niedrig','Mittel','Hoch'][a.pr], p=pf(a.p);
+ const meta=[];
+ if(a.frist&&!a.done) meta.push(`<span class="${a.d<0?'bad':a.d<14?'w':'ok'}">⟳ ${a.fm}</span>`);
+ else if(a.d!==null) meta.push(`<span class="${od?'bad':''}">${od?'⚠ überfällig · ':'▫ '}${dtxt(a.d)}</span>`);
+ if(a.pr) meta.push(`<span class="${a.pr==3?'bad':a.pr==2?'w':''}">⚑ ${pr}</span>`);
+ if(a.sub) meta.push(`<span>☑ ${a.sub[0]}/${a.sub[1]}</span>`);
+ return `<div class="z ${a.done?'done':''} ${od&&!a.frist?'od':''}"><button class="hk" aria-label="abhaken">${a.done?'☑':'☐'}</button><div class="tx"><div class="ti">${a.t}</div>${meta.length?`<div class="me">${meta.join('')}</div>`:''}</div><div class="av" style="background:${p.c}">${p.i}</div></div>`;
+}
+function leer(){
+ const mitF=aktiv()>0||st.q;
+ return `<div class="leer"><div class="ic">⌕</div><b>${mitF?'Keine Aufgaben mit diesen Filtern':'Noch keine Aufgaben'}</b>${mitF?'Ändere die Filter oder setze sie zurück.':'Schreib oben auf, was zu tun ist.'}${mitF?`<br><button class="chip soft" data-a="reset">Filter zurücksetzen</button>`:''}</div>`;
+}
+function liste(){
+ const l=filt();
+ let h='';
+ if(st.f==='erledigt'&&l.length) h+=`<button class="chip" style="color:var(--bad);margin-bottom:8px" data-a="del">🗑 Erledigte löschen (${l.length})</button>`;
+ return h+(l.length?l.map(zeile).join(''):leer());
+}
+const kopfAdd=(neu)=>`<div class="add"><div class="fld">Neue Aufgabe</div><button class="ib f" aria-label="hinzufügen">+</button><button class="ib s" aria-label="mit Details">⚙</button></div>`;
+function pChips(){return S.map(f=>`<button class="chip ${st.f===f?'on':''}" data-f="${f}">${SL[f]}</button>`).join('')}
+function minis(){
+ const m=[];
+ if(st.v==='A'&&st.f!=='offen') m.push(['Status: '+SL[st.f],'f']);
+ if(st.p) m.push(['Person: '+st.p,'p']);
+ if(st.s!=='faelligkeit'&&st.f!=='fristen') m.push(['Nach Priorität','s']);
+ if(!m.length) return '';
+ return `<div class="minis">${m.map(x=>`<span class="mini">${x[0]}<i data-x="${x[1]}" role="button" aria-label="Filter entfernen">✕</i></span>`).join('')}<button class="rs" data-a="reset">Zurücksetzen</button></div>`;
+}
+function aktuellInhalt(){
+ const l=filt();
+ return `<div class="kopf"><div><div class="lab">Mo, 26. Okt</div><h2>Aufgaben</h2></div><div class="prof">MA</div></div>
+ ${kopfAdd()}
+ <div class="chips">${pChips()}</div>
+ <div class="chips"><button class="pill" data-a="pers">☺ ${st.p?st.p:'Alle Personen'} ▾</button>${st.f!=='fristen'?`<button class="chip ${st.s==='faelligkeit'?'on':''}" data-s="faelligkeit">Nach Fälligkeit</button><button class="chip ${st.s==='prioritaet'?'on':''}" data-s="prioritaet">Nach Priorität</button>`:''}</div>
+ <div class="small" style="margin:4px 0 10px">${offenN} offen · ${erlN} erledigt</div>${liste()}`;
+}
+function vorschlagInhalt(){
+ const A=st.v==='A', n=aktiv();
+ const l=filt();
+ return `<div class="kopf"><div><div class="lab">Mo, 26. Okt</div><h2>Aufgaben</h2></div><div class="prof">MA</div></div>
+ <div class="leiste"><div class="t"><div class="small" style="font-size:13px">${offenN} offen · ${erlN} erledigt</div></div>
+  <button class="fbtn ${n?'act':''}" data-a="open" aria-label="Filter und Anzeige${n?', '+n+' aktiv':''}"><svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z"/></svg>${n?`<b>${n}</b>`:''}</button></div>
+ ${kopfAdd()}
+ ${A?'':`<div class="chips">${pChips()}</div>`}
+ ${minis()}${liste()}`;
+}
+function blatt(){
+ const A=st.v==='A', l=filt();
+ const stat=A?`<div class="gr lab">Anzeigen</div><div class="chips">${pChips()}</div>`:'';
+ const pers=`<div class="gr lab">Person</div><div class="pers"><button class="pr ${!st.p?'on':''}" data-p=""><span class="av" style="background:var(--s3);color:var(--mu)">☺</span>Alle Personen${!st.p?'<span class="ck">✓</span>':''}</button>${P.map(x=>`<button class="pr ${st.p===x.n?'on':''}" data-p="${x.n}"><span class="av" style="background:${x.c}">${x.i}</span>${x.n}${st.p===x.n?'<span class="ck">✓</span>':''}</button>`).join('')}</div>`;
+ const fr=st.f==='fristen';
+ const sor=`<div class="gr lab">Sortieren</div><div class="chips" style="${fr?'opacity:.45;pointer-events:none':''}"><button class="chip ${st.s==='faelligkeit'?'on':''}" data-s="faelligkeit">Fälligkeit</button><button class="chip ${st.s==='prioritaet'?'on':''}" data-s="prioritaet">Priorität</button></div>${fr?'<div class="hint">Fristen sind immer nach Ablauf sortiert.</div>':''}`;
+ const kopf=`<div class="bk"><h3>Filter und Anzeige</h3><button class="x" data-a="close" aria-label="Schließen">✕</button></div>`;
+ const fuss=`<div class="fuss"><button class="rs" data-a="reset">Zurücksetzen</button><button class="ok" data-a="close">${l.length===1?'1 Aufgabe zeigen':l.length+' Aufgaben zeigen'}</button></div>`;
+ return {kopf,body:`<div class="bd">${stat}${pers}${sor}</div>`,fuss};
+}
+function render(){
+ const A=st.v!=='aktuell', desk=st.g==='desktop';
+ const inner=A?vorschlagInhalt():aktuellInhalt();
+ const b=A?blatt():null;
+ const overlay=A?(desk?`<div class="panel ${st.open?'on':''}">${b.kopf}${b.body}${b.fuss}</div>`:`<div class="scrim ${st.open?'on':''}" data-a="close"></div><div class="blatt ${st.open?'on':''}"><div class="griff"></div>${b.kopf}${b.body}${b.fuss}</div>`):'';
+ const nav=`<div class="nav"><div>Start</div><div>Kalender</div><div>Chat</div><div>Listen</div><div class="on">Mehr</div></div>`;
+ const html=desk
+ ?`<div class="dk"><div class="side"><div>Start</div><div>Kalender</div><div>Chat</div><div class="on">Aufgaben</div><div>Listen</div></div><div class="main"><div class="col"><div class="scr" style="padding:20px 28px"><div style="max-width:720px">${inner}</div></div>${A&&desk?'<div class="scrim '+(st.open?'on':'')+'" data-a="close"></div>':''}${overlay}</div></div></div>`
+ :`<div class="ph"><div class="scr">${inner}</div>${nav}${overlay}</div>`;
+ document.getElementById('stage').innerHTML=html;
+ document.getElementById('vsel').innerHTML=[['aktuell','Aktuell'],['A','Vorschlag A: alles im Blatt'],['B','Vorschlag B: Status bleibt']].map(x=>`<button class="${st.v===x[0]?'on':''}" data-v="${x[0]}">${x[1]}</button>`).join('');
+ document.getElementById('gsel').innerHTML=[['mobil','Mobil 360 px'],['desktop','Desktop ab 900 px']].map(x=>`<button class="${st.g===x[0]?'on':''}" data-g="${x[0]}">${x[1]}</button>`).join('');
+ document.getElementById('cap').innerHTML={aktuell:'<b>Aktuell:</b> drei Zeilen Eingabe und Chips, bevor die erste Aufgabe kommt.',A:'<b>Vorschlag A:</b> Titelzeile mit Zähler, Eingabe und ein Filter-Knopf mit Zähler; Status, Person und Sortierung im Blatt. Aktive Filter erscheinen als kleine Chips (antippen = entfernen).',B:'<b>Vorschlag B:</b> die fünf Status-Chips bleiben als eine Zeile (täglicher Griff), Person und Sortierung wandern ins Blatt.'}[st.v];
+}
+document.addEventListener('click',e=>{
+ const t=e.target.closest('[data-v],[data-g],[data-f],[data-s],[data-p],[data-a],[data-x]'); if(!t)return;
+ const d=t.dataset;
+ if(d.v){st.v=d.v;st.open=false;st.f='offen';st.p=null;st.s='faelligkeit'}
+ else if(d.g){st.g=d.g;st.open=false}
+ else if(d.f)st.f=d.f;
+ else if(d.s)st.s=d.s;
+ else if(d.p!==undefined)st.p=d.p||null;
+ else if(d.x){if(d.x==='f')st.f='offen';if(d.x==='p')st.p=null;if(d.x==='s')st.s='faelligkeit'}
+ else if(d.a==='open')st.open=true;
+ else if(d.a==='close')st.open=false;
+ else if(d.a==='reset'){st.f='offen';st.p=null;st.s='faelligkeit'}
+ else if(d.a==='pers'){const i=P.findIndex(x=>x.n===st.p);st.p=i>=P.length-1?null:P[i+1].n} // Aktuell: Personenwahl vereinfacht per Durchschalten
+ else if(d.a==='del'){alert('Mockup: hier käme die Rückfrage „Erledigte Aufgaben löschen?“')}
+ render();
+});
+render();
+</script></body></html>

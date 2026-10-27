@@ -951,7 +951,7 @@ export const termine = pgTable(
     check('termine_ort_len_ck', sql`char_length(${t.ort}) <= 200`),
     check('termine_beschreibung_len_ck', sql`char_length(${t.beschreibung}) <= 4000`),
     check('termine_rrule_len_ck', sql`${t.rrule} is null or char_length(${t.rrule}) <= 300`),
-    check('termine_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between 0 and 40320`),
+    check('termine_erinnerung_ck', sql`${t.erinnerungMin} is null or ${t.erinnerungMin} between -1 and 40320`),
     check('termine_farbe_ck', sql`${t.farbe} is null or ${t.farbe} between 0 and 10`),
     check(
       'termine_zeit_ck',
@@ -1444,6 +1444,33 @@ export const pins = pgTable(
     index('pins_von_idx')
       .on(t.familyId, t.gepinntVon, t.createdAt)
       .where(sql`${t.gepinntVon} is not null`),
+  ],
+);
+
+/**
+ * Familien-Status (Abschnitt 6o): je Person genau ein kurzer, unverschlüsselter Status ("Beim Sport") mit optionalem Ablauf `bis`. Feste ID aus der Person
+ * (`statusId`), Sicht für die ganze Familie, schreiben und löschen nur die Person selbst. Abgelaufene Stati zeigt die App nie (sie rechnet gegen die Uhr).
+ */
+export const familienStatus = pgTable(
+  'familien_status',
+  {
+    id: id(),
+    familyId: familyRef(),
+    userId: uuid('user_id').notNull(),
+    text: text('text').notNull(),
+    bis: timestamp('bis', { withTimezone: true }),
+    createdAt: createdAt(),
+    ...syncColumns(),
+  },
+  (t) => [
+    foreignKey({ columns: [t.familyId, t.userId], foreignColumns: [memberships.familyId, memberships.userId] }).onDelete('cascade'),
+    uniqueIndex('familien_status_active_uq')
+      .on(t.familyId, t.userId)
+      .where(sql`${t.deletedAt} is null`),
+    index('familien_status_family_rev_idx').on(t.familyId, t.rev),
+    index('familien_status_tombstone_idx')
+      .on(t.familyId, t.rev)
+      .where(sql`${t.deletedAt} is not null`),
   ],
 );
 

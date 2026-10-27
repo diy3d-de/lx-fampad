@@ -267,6 +267,20 @@
       "when": 1793021090632,
       "tag": "0037_ingest_postfach",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1793081802254,
+      "tag": "0038_familien_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1793088317453,
+      "tag": "0039_termin_erinnerung_keine",
+      "breakpoints": true
     }
   ]
 }

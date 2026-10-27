@@ -1,0 +1,2 @@
+ALTER TABLE "termine" DROP CONSTRAINT IF EXISTS "termine_erinnerung_ck";--> statement-breakpoint
+ALTER TABLE "termine" ADD CONSTRAINT "termine_erinnerung_ck" CHECK ("termine"."erinnerung_min" is null or "termine"."erinnerung_min" between -1 and 40320);

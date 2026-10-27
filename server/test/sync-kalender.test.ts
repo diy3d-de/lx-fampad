@@ -227,7 +227,7 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
       zeit({ titel: 'x'.repeat(201) }),
       zeit({ titel: '   ' }),
       zeit({ beschreibung: 'x'.repeat(4001) }),
-      zeit({ erinnerungMin: -1 }),
+      zeit({ erinnerungMin: -2 }),
       zeit({ erinnerungMin: 40321 }),
       zeit({ erinnerungMin: 1.5 }),
       tag({ endDate: '2026-12-24' }),
@@ -255,6 +255,17 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
     expect((await fam.admin.sync([umschalten])).json.rejected).toEqual([{ opId: umschalten.opId, code: 'invalid' }]);
     const ok = upsert('termin', id, { ganztaegig: true, startDate: '2026-10-20', endDate: '2026-10-21' }, 1);
     expect((await fam.admin.sync([ok])).json.rejected).toEqual([]);
+  });
+
+  it('Erinnerung: -1 = bewusst keine, null = nie gesetzt, -2 abgelehnt; Konflikte wie bei jedem Feld', async () => {
+    const id = await anlegen(fam.admin, zeit({ erinnerungMin: -1 }));
+    expect((await rows(world, sql`select erinnerung_min::int as m from termine where id = ${id}`))[0]?.m).toBe(-1);
+    expect((await fam.parent.pull()).find((c) => c.id === id)?.fields.erinnerungMin).toBe(-1);
+    expect((await fam.admin.sync([upsert('termin', id, { erinnerungMin: 60 }, 1)])).json.rejected).toEqual([]);
+    expect((await fam.admin.sync([upsert('termin', id, { erinnerungMin: -1 }, 2)])).json.rejected).toEqual([]);
+    expect((await fam.admin.sync([upsert('termin', id, { erinnerungMin: null }, 3)])).json.rejected).toEqual([]);
+    const op = upsert('termin', id, { erinnerungMin: -2 }, 4);
+    expect((await fam.admin.sync([op])).json.rejected).toEqual([{ opId: op.opId, code: 'invalid' }]);
   });
 
   it('Farbe: Standard null, 0 bis 10 gültig, setzen und wieder entfernen; alte Apps ohne das Feld ändern sie nicht', async () => {

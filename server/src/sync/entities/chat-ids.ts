@@ -58,3 +58,6 @@ export const zaehlerChatId = (familyId: string): string => uuidAusSchluessel(`za
 
 /** Feste ID der Tresor-Konversation einer Familie (Abschnitt 6m): je Familie genau eine, daraus abgeleitet (niemand kann sie vorab belegen). */
 export const tresorChatId = (familyId: string): string => uuidAusSchluessel(`tresor:${familyId.toLowerCase()}`);
+
+/** Feste ID des Familien-Status einer Person (Abschnitt 6o): je Person genau einer, daraus abgeleitet (niemand kann die ID einer anderen Person vorab belegen). */
+export const statusId = (userId: string): string => uuidAusSchluessel(`status:${userId.toLowerCase()}`);

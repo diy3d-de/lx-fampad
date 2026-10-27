@@ -12,6 +12,7 @@ import '../chat/verlauf_vermerk.dart';
 import 'sync_chat_zusatz.dart';
 import 'sync_dateien.dart';
 import 'sync_medikamente.dart';
+import 'sync_status.dart';
 import 'sync_tresor.dart';
 import 'sync_zaehler.dart';
 
@@ -985,6 +986,7 @@ final Map<String, SyncEntity> syncEntities = {
     DateiEntitaet(),
     DateiVersionEntitaet(),
     TresorAnhangEntitaet(),
+    StatusEntitaet(),
   ])
     e.name: e,
 };

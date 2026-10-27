@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Feinschliff – anklickbares Mockup</title>
+<style>
+/* Feinschliff (Standard) */
+:root{--bg:#121316;--s1:#1a1c21;--s2:#23262c;--line:transparent;--tx:#ececef;--mu:#9a9ea8;--fa:#6c707a;--ac:#6fcfd6;--onac:#0b1a1c;
+--ok:#7fcf9b;--warn:#e9b45c;--lab-font:inherit;--lab-tt:none;--lab-ls:0;--lab-fs:13px;--rad:16px;--glow:none;--p1:#e07a6b;--p2:#6fa8dc;--p3:#8fbf7a;--p4:#c79bd4;--h2w:650}
+/* Aktuell (zum Vergleich) */
+body[data-t="alt"]{--bg:#090a0f;--s1:#13161f;--s2:#1a1e29;--line:#242936;--tx:#e6e8ee;--mu:#8b93a7;--fa:#5d6578;--ac:#00f0ff;--onac:#04121b;--ok:#10b981;--warn:#febc2e;
+--lab-font:"Consolas","JetBrains Mono",monospace;--lab-tt:none;--lab-ls:.02em;--lab-fs:12px;--rad:14px;--glow:radial-gradient(120% 60% at 20% -10%,rgba(124,58,237,.28),transparent 60%),radial-gradient(90% 50% at 90% -5%,rgba(0,240,255,.16),transparent 60%);--p1:#f472b6;--p2:#38bdf8;--p3:#a3e635;--p4:#a78bfa;--h2w:800}
+*{box-sizing:border-box;margin:0}
+body{background:#050506;font-family:"Segoe UI Variable","Segoe UI",Inter,system-ui,sans-serif;color:var(--tx);min-height:100vh;display:flex;flex-direction:column;align-items:center;gap:14px;padding:18px}
+.ctl{display:flex;gap:6px;background:#1b1b1f;border-radius:20px;padding:4px}
+.ctl button{border:0;background:none;color:#a5a5ad;padding:8px 16px;border-radius:16px;font:600 13px inherit;cursor:pointer}
+.ctl button.on{background:#e8e8ec;color:#111}
+.hint{font-size:12.5px;color:#8c8c95;max-width:420px;text-align:center}
+.ph{width:380px;height:780px;border-radius:34px;border:8px solid #000;background:var(--bg);overflow:hidden;display:flex;flex-direction:column;position:relative;box-shadow:0 0 0 1px #2a2a30}
+.ph:before{content:"";position:absolute;inset:0;background:var(--glow);pointer-events:none}
+.sb{display:flex;justify-content:space-between;padding:9px 20px 0;font-size:11px;color:var(--mu);position:relative}
+.scr{flex:1;overflow-y:auto;padding:10px 18px 16px;position:relative;scrollbar-width:none}.scr::-webkit-scrollbar{display:none}
+.top{display:flex;justify-content:space-between;align-items:center}
+.lab{font-family:var(--lab-font);font-size:var(--lab-fs);letter-spacing:var(--lab-ls);color:var(--mu);text-transform:var(--lab-tt)}
+body[data-t="alt"] .lab:before{content:"// "}
+.sync{display:flex;align-items:center;gap:6px}.sync i{width:8px;height:8px;border-radius:50%;background:var(--ok)}
+.av{width:34px;height:34px;border-radius:50%;background:var(--s2);display:grid;place-items:center;font-weight:700;font-size:13px;color:var(--p1);border:1px solid var(--line)}
+h2{font-size:30px;font-weight:var(--h2w);letter-spacing:-.025em;margin:6px 0 16px;line-height:1.1}
+.card{background:var(--s1);border-radius:var(--rad);padding:14px 16px;margin-bottom:12px;border:1px solid var(--line);position:relative}
+.hero{padding:18px}.hero .tt{font-size:22px;font-weight:650;letter-spacing:-.015em;margin:5px 0 2px}.hero p{font-size:13.5px;color:var(--mu)}
+.hero .pill{display:inline-block;margin-top:12px;background:var(--ac);color:var(--onac);font-weight:650;font-size:13px;padding:8px 14px;border-radius:12px}
+.ev{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--s2)}.ev:last-child{border:0}
+.ev time{width:44px;font-size:13.5px;font-weight:600;font-variant-numeric:tabular-nums}
+body[data-t="alt"] .ev time{font-family:var(--lab-font);color:var(--ac)}
+.ev .bar{width:4px;align-self:stretch;border-radius:2px;background:var(--c)}.ev b{font-weight:550;font-size:15px;display:block}.ev span{font-size:12.5px;color:var(--mu)}
+.chk{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--s2);cursor:pointer;font-size:15px}.chk:last-child{border:0}
+.chk .bx{width:22px;height:22px;border-radius:7px;border:2px solid var(--fa);flex:none;display:grid;place-items:center;font-size:13px;color:var(--onac)}
+.chk.on .bx{background:var(--ac);border-color:var(--ac)}.chk.on span{color:var(--fa);text-decoration:line-through}
+.tiles{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}.tile{background:var(--s1);border-radius:var(--rad);padding:12px;border:1px solid var(--line)}
+.tile b{display:block;font-size:22px;font-weight:650;margin:3px 0 1px;letter-spacing:-.02em}.tile span{font-size:12px;color:var(--mu)}
+.nav{display:flex;background:var(--s1);border-top:1px solid var(--line);position:relative;padding:6px 6px 14px}
+.nav button{flex:1;border:0;background:none;color:var(--mu);display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 0;font:600 11px inherit;cursor:pointer}
+.nav button.on{color:var(--ac)}.nav svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.nav .ind{width:54px;height:30px;border-radius:15px;display:grid;place-items:center}.nav button.on .ind{background:color-mix(in srgb,var(--ac) 16%,transparent)}
+body[data-t="alt"] .nav button{font-family:var(--lab-font);font-size:10px}
+.scr>div{display:none}.scr>div.on{display:block}
+.mon{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;text-align:center;font-size:13px;margin-bottom:14px}
+.mon .w{font-size:11.5px;color:var(--fa);padding:4px 0}.mon .d{padding:9px 0;border-radius:12px;cursor:pointer;position:relative}
+.mon .d.o{color:var(--fa)}.mon .d.s{background:var(--ac);color:var(--onac);font-weight:700}.mon .d.t:not(.s){box-shadow:inset 0 0 0 1.5px var(--ac)}
+.mon .d.p:after{content:"";position:absolute;bottom:3px;left:50%;width:4px;height:4px;margin-left:-2px;border-radius:50%;background:var(--c,var(--p2))}
+.mon .d.s.p:after{background:var(--onac)}
+.msgs{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;min-height:420px}
+.b{max-width:80%;padding:10px 14px;border-radius:18px 18px 18px 5px;background:var(--s2);font-size:14.5px;line-height:1.35}
+.b small{display:block;font-size:11.5px;font-weight:650;margin-bottom:2px}
+.b.me{align-self:flex-end;background:var(--ac);color:var(--onac);border-radius:18px 18px 5px 18px}
+.send{display:flex;gap:8px;position:sticky;bottom:0;background:var(--bg);padding-top:6px}
+.send input{flex:1;background:var(--s1);border:1px solid var(--line);border-radius:22px;padding:12px 16px;color:var(--tx);font:inherit;font-size:14.5px;outline:none}
+.send button{width:44px;height:44px;border-radius:50%;border:0;background:var(--ac);color:var(--onac);font-size:18px;cursor:pointer}
+.grp{font-size:12.5px;color:var(--mu);margin:14px 0 4px;font-weight:600}
+.badge{display:inline-block;background:var(--s2);color:var(--mu);border-radius:10px;padding:2px 8px;font-size:11.5px;margin-left:6px;font-weight:600}
+</style></head><body data-t="neu">
+<div class="ctl"><button id="bn" class="on">Feinschliff</button><button id="ba">Aktuell</button></div>
+<div class="hint">Alles anklickbar: Tabs unten, Aufgaben und Einkauf abhaken, Tage im Kalender wählen, im Chat schreiben. Oben umschalten zwischen dem jetzigen und dem überarbeiteten Aussehen.</div>
+<div class="ph"><div class="sb"><span>9:41</span><span>●●▮</span></div>
+<div class="scr">
+ <div id="s0" class="on">
+  <div class="top"><span class="lab">Sonntag, 25. Oktober</span><div class="sync"><i></i><div class="av">L</div></div></div>
+  <h2>Guten Morgen,<br>Lena</h2>
+  <div class="card hero"><span class="lab">Als Nächstes · in 2 Std.</span><div class="tt">Schwimmkurs Tim</div><p>08:30 · Hallenbad</p><span class="pill">Details</span></div>
+  <div class="grp lab" style="margin-top:4px">Heute</div>
+  <div class="card" style="padding:4px 16px">
+   <div class="ev" style="--c:var(--p2)"><time>08:30</time><div class="bar"></div><div><b>Schwimmkurs</b><span>Tim</span></div></div>
+   <div class="ev" style="--c:var(--p1)"><time>12:00</time><div class="bar"></div><div><b>Mittagessen bei Oma</b><span>ganze Familie</span></div></div>
+   <div class="ev" style="--c:var(--p3)"><time>18:30</time><div class="bar"></div><div><b>Elternabend</b><span>Marie · Schule</span></div></div>
+  </div>
+  <div class="grp lab">Aufgaben</div>
+  <div class="card" style="padding:4px 16px"><div class="chk"><div class="bx"></div><span>Zahnarzt anrufen</span></div><div class="chk"><div class="bx"></div><span>Geschenk für Papa besorgen</span></div><div class="chk on"><div class="bx">✓</div><span>Müll rausstellen</span></div></div>
+  <div class="tiles"><div class="tile"><span class="lab">Wetter</span><b>9°</b><span>Regen ab 12</span></div><div class="tile"><span class="lab">Müll</span><b>Morgen</b><span>Gelbe Tonne</span></div><div class="tile"><span class="lab">Einkauf</span><b id="cnt">5</b><span>Einträge</span></div></div>
+ </div>
+ <div id="s1">
+  <div class="top"><span class="lab">2026</span><div class="sync"><i></i><div class="av">L</div></div></div>
+  <h2>Oktober</h2>
+  <div class="mon" id="mon"></div>
+  <div class="grp lab" id="dayt">Sonntag, 25.</div>
+  <div class="card" style="padding:4px 16px" id="dayl"></div>
+ </div>
+ <div id="s2">
+  <div class="top"><span class="lab">Marie · Tim · Lena</span><div class="sync"><i></i><div class="av">L</div></div></div>
+  <h2>Familienchat</h2>
+  <div class="msgs" id="msgs"><div class="b"><small style="color:var(--p1)">Marie</small>Bringt jemand Brot mit?</div><div class="b me">Ich nehme zwei Laibe mit.</div><div class="b"><small style="color:var(--p2)">Tim</small>Darf ich bei Oma Pizza?</div><div class="b"><small style="color:var(--p1)">Marie</small>Klar, wenn du alles aufisst.</div></div>
+  <form class="send" id="f"><input id="in" placeholder="Nachricht schreiben …" autocomplete="off"><button aria-label="Senden">↑</button></form>
+ </div>
+ <div id="s3">
+  <div class="top"><span class="lab">3 Listen</span><div class="sync"><i></i><div class="av">L</div></div></div>
+  <h2>Einkauf</h2>
+  <div class="grp">Obst und Gemüse</div><div class="card" style="padding:4px 16px"><div class="chk it"><div class="bx"></div><span>Äpfel</span></div><div class="chk it"><div class="bx"></div><span>Bananen</span></div></div>
+  <div class="grp">Brot und Backwaren</div><div class="card" style="padding:4px 16px"><div class="chk it"><div class="bx"></div><span>Brot <b class="badge">2</b></span></div></div>
+  <div class="grp">Milchprodukte</div><div class="card" style="padding:4px 16px"><div class="chk it"><div class="bx"></div><span>Milch</span></div><div class="chk it on"><div class="bx">✓</div><span>Butter</span></div></div>
+ </div>
+</div>
+<div class="nav" id="nav"></div></div>
+<script>
+const icons=[['Heute','<path d="M3 11l9-8 9 8M5 10v10h14V10"/>'],['Kalender','<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>'],['Chat','<path d="M4 5h16v11H9l-5 4z"/>'],['Listen','<path d="M9 6h12M9 12h12M9 18h12M4 6l1 1 2-2M4 12l1 1 2-2M4 18l1 1 2-2"/>']];
+const nav=document.getElementById('nav');
+icons.forEach((n,i)=>{const b=document.createElement('button');b.innerHTML='<span class="ind"><svg viewBox="0 0 24 24">'+n[1]+'</svg></span>'+n[0];b.onclick=()=>go(i);nav.appendChild(b)});
+function go(i){document.querySelectorAll('.scr>div').forEach((d,k)=>d.classList.toggle('on',k===i));[...nav.children].forEach((b,k)=>b.classList.toggle('on',k===i));document.querySelector('.scr').scrollTop=0}
+go(0);
+document.body.addEventListener('click',e=>{const c=e.target.closest('.chk');if(!c)return;c.classList.toggle('on');c.querySelector('.bx').textContent=c.classList.contains('on')?'✓':'';document.getElementById('cnt').textContent=5-document.querySelectorAll('#s3 .chk.on').length+(0)});
+const ev={25:[['08:30','Schwimmkurs','Tim','--p2'],['12:00','Mittagessen bei Oma','ganze Familie','--p1'],['18:30','Elternabend','Marie · Schule','--p3']],26:[['ganztägig','Gelbe Tonne','Müll','--warn'],['ganztägig','Geburtstag Opa Karl · 78','Familie','--p4']],16:[['15:00','Zahnarzt Tim','Lena','--p2']],8:[['19:00','Elternstammtisch','Marie','--p3']]};
+const mon=document.getElementById('mon');
+function draw(sel){mon.innerHTML='';'Mo Di Mi Do Fr Sa So'.split(' ').forEach(w=>mon.insertAdjacentHTML('beforeend','<div class="w">'+w+'</div>'));
+ [28,29,30].forEach(d=>mon.insertAdjacentHTML('beforeend','<div class="d o">'+d+'</div>'));
+ for(let d=1;d<=31;d++){const c=['d'];if(ev[d])c.push('p');if(d===25)c.push('t');if(d===sel)c.push('s');const e=document.createElement('div');e.className=c.join(' ');e.textContent=d;e.onclick=()=>show(d);mon.appendChild(e)}}
+function show(d){draw(d);const wd=['Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag','Sonntag'][(d+2)%7];document.getElementById('dayt').textContent=wd+', '+d+'.';
+ const l=document.getElementById('dayl');l.innerHTML=(ev[d]||[]).map(x=>'<div class="ev" style="--c:var('+x[3]+')"><time style="width:'+(x[0].length>5?'70':'44')+'px;font-size:'+(x[0].length>5?'12':'13.5')+'px">'+x[0]+'</time><div class="bar"></div><div><b>'+x[1]+'</b><span>'+x[2]+'</span></div></div>').join('')||'<div class="ev"><div><span>Keine Termine</span></div></div>'}
+show(25);
+document.getElementById('f').onsubmit=e=>{e.preventDefault();const i=document.getElementById('in');if(!i.value.trim())return;const m=document.getElementById('msgs');m.insertAdjacentHTML('beforeend','<div class="b me"></div>');m.lastChild.textContent=i.value;i.value='';document.querySelector('.scr').scrollTop=9999};
+const bn=document.getElementById('bn'),ba=document.getElementById('ba');
+bn.onclick=()=>{document.body.dataset.t='neu';bn.classList.add('on');ba.classList.remove('on')};ba.onclick=()=>{document.body.dataset.t='alt';ba.classList.add('on');bn.classList.remove('on')};
+document.getElementById('cnt').textContent=4;
+</script></body></html>

@@ -12,8 +12,11 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../crypto/sicherer_speicher.dart';
 
-/// Auswahl für die Standard-Vorlaufzeit (Minuten; null = keine). Teilmenge der Werte, die der Termin-Editor anbietet.
-const kStandardVorlaeufe = <int?>[null, 15, 60, 1440];
+/// Auswahl für die Standard-Erinnerung (Minuten; null = keine): dieselben Werte wie im Termin-Editor (`kErinnerungen`).
+const kStandardVorlaeufe = <int?>[null, 0, 5, 15, 30, 60, 1440, 10080];
+
+/// Standard-Erinnerung, solange die Person nichts gewählt hat: 1 Stunde vorher. "Keine" ist ein eigener, gespeicherter Wert (leerer Text).
+const kStandardVorlaufVorgabe = 60;
 
 class ErinnerungEinstellungen {
   final bool an;
@@ -22,7 +25,7 @@ class ErinnerungEinstellungen {
   final bool aufgabenAn;
   final bool medikamenteAn;
   final bool zaehlerAn;
-  const ErinnerungEinstellungen({this.an = true, this.standardVorlauf, this.sperrbildschirmTitel = false, this.aufgabenAn = true, this.medikamenteAn = true, this.zaehlerAn = true});
+  const ErinnerungEinstellungen({this.an = true, this.standardVorlauf = kStandardVorlaufVorgabe,this.sperrbildschirmTitel = false, this.aufgabenAn = true, this.medikamenteAn = true, this.zaehlerAn = true});
 
   ErinnerungEinstellungen kopie({bool? an, Object? standardVorlauf = _keine, bool? sperrbildschirmTitel, bool? aufgabenAn, bool? medikamenteAn, bool? zaehlerAn}) => ErinnerungEinstellungen(
     an: an ?? this.an,
@@ -132,10 +135,11 @@ class ErinnerungEinstellungenNotifier extends Notifier<ErinnerungEinstellungen> 
       final m = await ref.read(erinnerungSpeicherProvider).lesen();
       final an = m[_kAn];
       final v = m[_kVorlauf];
-      final vorlauf = v == null || v.isEmpty ? null : int.tryParse(v);
+      // nie gesetzt = Vorgabe (1 Stunde), leer = bewusst "Keine", unlesbar = Vorgabe
+      final vorlauf = v == null ? kStandardVorlaufVorgabe : (v.isEmpty ? null : int.tryParse(v));
       neu = ErinnerungEinstellungen(
         an: an != 'nein',
-        standardVorlauf: kStandardVorlaeufe.contains(vorlauf) ? vorlauf : null,
+        standardVorlauf: kStandardVorlaeufe.contains(vorlauf) ? vorlauf : kStandardVorlaufVorgabe,
         sperrbildschirmTitel: m[_kSperre] == 'ja',
         aufgabenAn: m[_kAufgaben] != 'nein',
         medikamenteAn: m[_kMedikamente] != 'nein',

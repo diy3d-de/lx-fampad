@@ -469,7 +469,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Wiederholung:** `rrule` ist RFC-5545-Text **ohne** Präfix. Erlaubt: `FREQ` (`DAILY`, `WEEKLY`, `MONTHLY`, `YEARLY`), `INTERVAL` 1 bis 999, `COUNT` 1 bis 1000 oder `UNTIL` (nicht beide; Zeittermin: `YYYYMMDDTHHMMSSZ` in UTC, ganztägig: `YYYYMMDD`), `BYDAY` (bei `MONTHLY`/`YEARLY` mit Zahl -5 bis 5), `BYMONTHDAY`, `BYMONTH`, `BYSETPOS`, `WKST`; höchstens 300 Zeichen und 10 Teile. Abgelehnt: **unerfüllbare Kombinationen** (`BYMONTH` mit `BYMONTHDAY`, für die es keinen Monat mit passendem Tag gibt, z. B. 30. Februar oder 31. April), `SECONDLY`/`MINUTELY`/`HOURLY`, `BYHOUR`/`BYMINUTE`/`BYSECOND`/`BYYEARDAY`/`BYWEEKNO`, ein Präfix, Kleinbuchstaben, doppelte Teile. Die Prüfung ist ein Hand-Tokenizer (`server/src/sync/rrule.ts`, kein regulärer Ausdruck mit Rückverfolgung). Der **Client** expandiert (Paket `rrule` mit `timezone`): höchstens 1000 Vorkommen je Termin und Abfrage, Horizont 5 Jahre.
 - **Ausnahmen** (`termin_ausnahmen`): eine Zeile je (`terminId`, `originalStart`); `originalStart` ist **unveränderlich** und nennt das ursprüngliche Vorkommen: bei Zeitterminen den Beginn in UTC (`YYYY-MM-DDTHH:MM:SSZ`, der Server normalisiert), bei ganztägigen den Tag (`YYYY-MM-DD`). `abgesagt` blendet das Vorkommen aus; `titel`, `start`, `ende`, `ort` überschreiben (`null` = unverändert; nur `start` gesetzt: die Dauer bleibt; `start`/`ende` haben die Art von `originalStart`). Eine Ausnahme wird nicht gelöscht, sondern zurückgesetzt (alles leer); die App vergibt ihre ID aus Termin und `originalStart` (zwei Geräte schreiben dieselbe Zeile; ein zweites Anlegen mit neuer ID wird abgelehnt). **Gelöscht wird eine Ausnahme nie von der App** (nur zurückgesetzt oder mit dem Termin per Kaskade): eine gelöschte feste ID bliebe als Tombstone stehen und ließe sich nicht wiederverwenden (`deleted`). **„Dieses und alle folgenden“** ändert die Serie nicht über Ausnahmen: der Master bekommt ein `UNTIL` vor dem **ursprünglichen** Beginn des Vorkommens (nicht vor einem durch eine Ausnahme verschobenen), ab dort beginnt ein neuer Termin. Der neue Termin gehört der Person, die ihn anlegt (der Server setzt `ownerId` aus der Sitzung): teilen Eltern die Serie eines Kindes, ändert das Kind den neuen Teil nicht mehr.
 - **Teilnehmer** (`termin_teilnehmer`): eine Zeile je Person (`userId` aktives Mitglied der Familie, `terminId`, beide unveränderlich); eine aktive Zeile je Person und Termin (ein zweites Anlegen ergibt `not_found`), Entfernen = Tombstone, danach ist Neu-Eintragen möglich. Verlässt die Person die Familie, wird ihre Zeile **mit Tombstone und Änderungseintrag** gelöscht (`memberOwned` im Register, vor dem Entfernen der Mitgliedschaft); die Zeile selbst verschwindet danach per Fremdschlüssel-Kaskade, der Änderungsstrom liefert den Tombstone trotzdem (`hidden`, nur die ID), und die Wartung räumt den verwaisten Eintrag nach 90 Tagen.
-- **Erinnerung:** `erinnerungMin` (Minuten vor Beginn, 0 bis 40320, `null` = keine) wird gespeichert und synchronisiert; die Benachrichtigung entsteht lokal auf dem Gerät (Android, `flutter_local_notifications`), der Server verschickt nichts (siehe PROJEKTBESCHREIBUNG, Abschnitt 6b).
+- **Erinnerung:** `erinnerungMin` (Minuten vor Beginn, 0 bis 40320, `null` = nie gesetzt, **`-1` = bewusst keine Erinnerung** (Migration 0039, additiv; ältere Apps planen dafür nichts)) wird gespeichert und synchronisiert; die Benachrichtigung entsteht lokal auf dem Gerät (Android, `flutter_local_notifications`), der Server verschickt nichts (siehe PROJEKTBESCHREIBUNG, Abschnitt 6b).
 
 | Entität | Feld | Typ | Zugriff |
 | --- | --- | --- | --- |
@@ -480,7 +480,7 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 | | `tzid` | IANA-Zeitzone (z. B. `Europe/Berlin`) oder `null` | rw |
 | | `startDate`, `endDate` | `YYYY-MM-DD` oder `null` | rw |
 | | `rrule` | Wiederholungsregel oder `null` | rw |
-| | `erinnerungMin` | Ganzzahl 0 bis 40320 oder `null` | rw |
+| | `erinnerungMin` | Ganzzahl -1 bis 40320 oder `null` (-1 = bewusst keine, `null` = nie gesetzt) | rw |
 | | `icalUid` | Text bis 255 Zeichen oder `null` (späterer Import, Duplikaterkennung) | rw |
 | | `farbe` | Ganzzahl 0 bis 10 oder `null` (Standard; Index der festen Termin-Farben der App, `null` = Personenfarbe; Migration 0036, additiv; alte Apps kennen das Feld nicht und lassen es unberührt; gehört zur Serie, Ausnahmen erben sie) | rw |
 | | `audience` | `parents`, `family` (Standard), `all` | rw |
@@ -599,6 +599,20 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Grenzen:** höchstens 500 lebende Einträge je Konversation (`limit_reached`); je Person 30 neue Einträge je Minute (300 je Stunde), 60 Änderungen je Minute.
 - **Kein Wecker, kein Inhalt im Protokoll:** `Facts.quiet`; ältere Inhalte werden aus den Protokolleinträgen entfernt, beim Löschen geleert.
 - **Ältere Clients** überspringen `tresor_eintrag` im Änderungsstrom (`protocolVersion` bleibt 1); eine Konversation der Art `tresor` sehen nur Eltern und Admins (bei älteren Apps wie eine leere Gruppe).
+
+**Familien-Status (Migration 0038)** · Konzept: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6o. Je Person ein kurzer, **unverschlüsselter** Status („Beim Sport“) mit optionalem Ablauf; Sicht für die ganze Familie.
+
+| Entität `status` | Feld | Typ | Zugriff |
+|---|---|---|---|
+| | `userId` | UUID der Person (Pflicht, aktives Mitglied der Familie; muss die anlegende Person sein) | create |
+| | `text` | 1 bis 60 Zeichen (UTF-16-Einheiten), ohne Steuer-, Zeilenumbruch- und unsichtbare Zeichen | rw |
+| | `bis` | ISO-8601-Zeitpunkt oder `null` (ohne Ende); höchstens 7 Tage nach der Serveruhr (sonst `invalid`), die Vergangenheit ist erlaubt | rw |
+| | `createdAt` | Anlagezeit (setzt der Server) | server |
+
+- **ID:** vorgeschrieben `statusId(userId)` = SHA-256 von `lx-fampad:status:<Personen-ID kleingeschrieben>` (Muster UUID Version 5; Known-Answer-Tests auf beiden Seiten); jede andere ID ist `invalid`. Löschen = Tombstone, erneutes Setzen belebt dieselbe Zeile wieder.
+- **Rechte:** Lesen alle Rollen (Stufe `family`); Anlegen, Ändern (`text`, `bis`) und Löschen nur die **eigene** Zeile, auch Admins ändern oder löschen keinen fremden Status (`forbidden`); das Betreiber-Flag und die Familienrolle zählen nie. Höchstens 50 lebende Stati je Familie, 20 neue und 20 Änderungen je Person und Minute.
+- **Kein Wecker, kein Inhalt im Protokoll:** `noWake`; ältere Texte werden aus den Protokolleinträgen entfernt. Abgelaufene Stati löscht der Server nicht; die App zeigt sie nur nicht mehr.
+- **Ältere Clients** überspringen `status` im Änderungsstrom (`protocolVersion` bleibt 1).
 
 **Epochen und Schlüssel-Wraps (E2EE Phase 2)** · Protokoll: `PROJEKTBESCHREIBUNG.md`, Abschnitt 9a. Zwei weitere Sync-Entitäten, Kinder der Konversation. Der Server speichert nur undurchsichtige
 Base64url-Texte und wertet sie **nie** aus (keine Signaturprüfung, kein Entschlüsseln); er prüft Form, Größe, Eindeutigkeit und die Sicht. Nur in `e1`-Konversationen (sonst `invalid`).

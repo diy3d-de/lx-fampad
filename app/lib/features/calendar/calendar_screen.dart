@@ -364,6 +364,7 @@ class _Monat extends ConsumerWidget {
           breit: breit,
           quellen: quellen,
           muell: ref.watch(muellKalenderTageProvider),
+          onMonat: (r) => notifier.tag(DateTime.utc(auswahl.monat.year, auswahl.monat.month + r)),
           onTag: (tag) {
             notifier.waehleTag(tag);
             if (!breit) ref.read(kalenderKopfEingeklapptProvider.notifier).setzen(true);

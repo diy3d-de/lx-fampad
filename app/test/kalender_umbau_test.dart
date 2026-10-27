@@ -305,6 +305,26 @@ void main() {
     expect(find.text('Neuer Termin'), findsWidgets, reason: 'Editor');
   });
 
+  testWidgets('Wischen im Monatsraster wechselt den Monat; kurze Wischer und Randgesten tun nichts', (tester) async {
+    final (_, container) = await start(tester, monat: _d(2027, 3, 10));
+    DateTime monat() => container.read(kalenderAuswahlProvider).monat;
+    expect(monat().month, 3);
+    final mitte = tester.getCenter(find.byType(MonatsRaster));
+    await tester.flingFrom(mitte, const Offset(-250, 0), 1200);
+    await warte(tester);
+    expect(monat().month, 4, reason: 'nach links wischen = nächster Monat');
+    await tester.flingFrom(mitte, const Offset(250, 0), 1200);
+    await warte(tester);
+    expect(monat().month, 3, reason: 'nach rechts wischen = vorheriger Monat');
+    await tester.flingFrom(mitte, const Offset(-30, 0), 1500); // schnell, aber unter 40 px
+    await warte(tester);
+    expect(monat().month, 3);
+    final r = tester.getRect(find.byType(MonatsRaster));
+    await tester.flingFrom(Offset(r.left + 2, mitte.dy), const Offset(250, 0), 1500); // Randgeste
+    await warte(tester);
+    expect(monat().month, 3);
+  });
+
   testWidgets('Kopfzeile klappt im Raster ein (Tipp auf einen Tag) und kommt beim Herunterziehen wieder', (tester) async {
     final (_, container) = await start(tester, monat: _d(2027, 3, 10));
     expect(find.byType(TabKopfzeile), findsOneWidget);

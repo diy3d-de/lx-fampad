@@ -62,6 +62,7 @@ void main() {
 
   Future<TestUmgebung> start(WidgetTester tester, {String role = 'admin', void Function(TestUmgebung env)? vorher, double skala = 1.0, String tab = 'Kalender', Size groesse = const Size(360, 800)}) async {
     final env = await angemeldeteUmgebung(role: role);
+    env.extraOverrides.add(echteUhr); // Daten dieser Datei entstehen relativ zur echten Uhr
     vorher?.call(env);
     final container = await starteApp(tester, env, skala: skala, groesse: groesse);
     if (groesse.width >= kDesktopBreakpoint) {
@@ -179,6 +180,17 @@ void main() {
     pruefeLayout(tester, 'nach dem Löschen');
   });
 
+  testWidgets('Erinnerung "Keine" wird als -1 (bewusst keine) gespeichert', (tester) async {
+    final env = await start(tester, groesse: const Size(360, 2400));
+    await tippe(tester, find.byTooltip('Neuer Termin'));
+    await eingeben(tester, 'Titel', 'Ohne Erinnerung');
+    await tippe(tester, find.widgetWithText(AuswahlKnopf, 'Keine'));
+    await tippeText(tester, 'Termin anlegen');
+    await warte(tester, 10);
+    final t = (await env.db.select(env.db.termine).get()).single;
+    expect(t.erinnerungMin, -1);
+  });
+
   for (final skala in [1.0, 1.5]) {
     testWidgets('Termin anlegen (Textskala $skala): Editor, Wiederholung, Teilnehmer; erscheint in der Agenda; Layout', (tester) async {
       final env = await start(tester, skala: skala);
@@ -203,6 +215,7 @@ void main() {
       expect(t.rrule, startsWith('FREQ=WEEKLY;BYDAY='));
       expect(t.rrule, endsWith('COUNT=10'));
       expect(t.tzid, 'Europe/Berlin');
+      expect(t.erinnerungMin, 60, reason: 'Standard-Erinnerung vorbelegt');
       expect(t.ownerId, fixIdAdmin);
       expect((await env.db.select(env.db.terminTeilnehmer).get()).single.userId, fixIdKind);
       expect(find.textContaining('Elternabend'), findsWidgets);
@@ -339,6 +352,8 @@ void main() {
     expect(find.text('Kalender'), findsWidgets);
     expect(tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex, 1);
     await zumTab(tester, 'Start');
+    // die Startseite ist länger als der Bildschirm: erst nach oben, wo der Schnellzugriff steht
+    await tester.scrollUntilVisible(find.text('Termin'), -300, scrollable: find.byType(Scrollable).first);
     await tippeText(tester, 'Termin');
     expect(find.text('Neuer Termin'), findsWidgets);
     expect(find.byType(TextField), findsWidgets);

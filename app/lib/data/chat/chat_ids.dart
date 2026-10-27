@@ -56,3 +56,6 @@ String stimmeId(String nachrichtId, String userId) => uuidAusSchluessel('stimme:
 
 /// ID der Anheftung einer Nachricht (je Nachricht genau eine).
 String pinId(String nachrichtId) => uuidAusSchluessel('pin:${nachrichtId.toLowerCase()}');
+
+/// ID des Familien-Status einer Person (Abschnitt 6o): je Person genau einer, daraus abgeleitet (muss exakt dem Server entsprechen, server/src/sync/entities/chat-ids.ts).
+String statusId(String userId) => uuidAusSchluessel('status:${userId.toLowerCase()}');

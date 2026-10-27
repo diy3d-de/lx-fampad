@@ -1,4 +1,10 @@
 {
+  "0.22.0": [
+    "Familien-Status: Setz einen kurzen Status wie „Beim Sport“ mit Ende, die Familie sieht ihn auf der Startseite. Abschaltbar unter Startseite und Anzeige",
+    "Standard-Erinnerung für Termine einstellbar (Profil › Kalender), vorbelegt mit 1 Stunde vorher; bestehende Termine ohne Erinnerung bekommen sie einmalig nachgetragen",
+    "Aufgaben: Filter, Person und Sortierung stehen jetzt in einem Filtermenü",
+    "Monatsansicht: Nach links und rechts wischen wechselt den Monat"
+  ],
   "0.21.0": [
     "Tagesbriefing: Die Kachel „Heute im Überblick“ fasst Termine, Aufgaben, Müll und Wetter zusammen. Auf Wunsch gibt es morgens eine neutrale Benachrichtigung (unter Benachrichtigungen)",
     "Große Uploads und Downloads laufen jetzt auch weiter, wenn du die App verlässt (Android)",
