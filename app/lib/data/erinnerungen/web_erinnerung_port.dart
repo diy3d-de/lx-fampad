@@ -16,7 +16,7 @@ const kWebMerklisteSchluessel = 'web_erinnerung_gezeigt';
 const kWebAnSchluessel = 'web_erinnerung_an';
 
 class WebErinnerungPort implements ErinnerungPort {
-  final FeiertageSpeicher _speicher;
+  final FeiertageSpeicher _meta;
   final BrowserBenachrichtigung browser;
   final Future<bool> Function() _aktiv;
   final DateTime Function() _jetzt;
@@ -33,14 +33,14 @@ class WebErinnerungPort implements ErinnerungPort {
   void Function()? beiGeplant;
 
   WebErinnerungPort({required FeiertageSpeicher speicher, required this.browser, required Future<bool> Function() aktiv, required DateTime Function() jetzt})
-    : _speicher = speicher,
+    : _meta = speicher,
       _aktiv = aktiv,
       _jetzt = jetzt;
 
   Future<void> _bereit() => _laden ??= () async {
     try {
-      _plan = webPlanLesen(await _speicher.lesen(schluessel: kWebPlanSchluessel));
-      _gezeigt = webMerklisteLesen(await _speicher.lesen(schluessel: kWebMerklisteSchluessel));
+      _plan = webPlanLesen(await _meta.lesen(schluessel: kWebPlanSchluessel));
+      _gezeigt = webMerklisteLesen(await _meta.lesen(schluessel: kWebMerklisteSchluessel));
     } catch (_) {
       _plan = const [];
       _gezeigt = const {};
@@ -49,8 +49,8 @@ class WebErinnerungPort implements ErinnerungPort {
 
   Future<void> _sichern() async {
     try {
-      await _speicher.schreiben(webPlanKodieren(_plan ?? const []), schluessel: kWebPlanSchluessel);
-      await _speicher.schreiben(webMerklisteKodieren(_gezeigt ?? const {}), schluessel: kWebMerklisteSchluessel);
+      await _meta.schreiben(webPlanKodieren(_plan ?? const []), schluessel: kWebPlanSchluessel);
+      await _meta.schreiben(webMerklisteKodieren(_gezeigt ?? const {}), schluessel: kWebMerklisteSchluessel);
     } catch (_) {
       // gilt dann nur, solange die App offen ist
     }
@@ -116,8 +116,8 @@ class WebErinnerungPort implements ErinnerungPort {
     _gezeigt = const {};
     _laden = Future<void>.value();
     try {
-      await _speicher.loeschen(kWebPlanSchluessel);
-      await _speicher.loeschen(kWebMerklisteSchluessel);
+      await _meta.loeschen(kWebPlanSchluessel);
+      await _meta.loeschen(kWebMerklisteSchluessel);
     } catch (_) {}
     return true;
   }
