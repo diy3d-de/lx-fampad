@@ -138,17 +138,44 @@ class VorsorgeRepository {
     }
   }
 
+  /// Die Eintrag-Zeilen der Person (älteste zuerst); leer, wenn es die Konversation lokal nicht gibt.
+  Stream<List<VorsorgeEintragZeile>> zeilen(String subjektId) {
+    final q = db.select(db.vorsorgeEintraege).join([innerJoin(db.konversationen, db.konversationen.id.equalsExp(db.vorsorgeEintraege.konversationId))])
+      ..where(db.konversationen.subjektId.equals(subjektId.toLowerCase()) & db.konversationen.art.equals(ChatArt.meds.wire))
+      ..orderBy([OrderingTerm.asc(db.vorsorgeEintraege.createdAt), OrderingTerm.asc(db.vorsorgeEintraege.id)]);
+    return q.watch().map((l) => [for (final r in l) r.readTable(db.vorsorgeEintraege)]);
+  }
+
+  /// Liest Eintrag-Zeilen (entschlüsselt, geprüft: Signatur, Konversation, eigene ID, Art). Nicht lesbare kommen mit Hinweis und ohne Inhalt.
+  Future<List<VorsorgeAnsicht>> lesen(String subjektId, Iterable<VorsorgeEintragZeile> zeilen) async => [
+    for (final z in zeilen)
+      await () async {
+        final t = await _klartext(id: z.id, konversationId: z.konversationId, bearbeiterId: z.bearbeiterId, wire: z.inhalt, art: kArtVorsorgeEintrag);
+        final e = t == null ? null : vorsorgeEintragLesen(t);
+        return VorsorgeAnsicht(id: z.id, konversationId: z.konversationId, subjektId: subjektId, inhalt: e, hinweis: e != null ? null : 'nicht lesbar', erstelltAt: z.createdAt, lokalNeu: z.rev == 0);
+      }(),
+  ];
+
+  /// Das Profil der Person (null: keines oder nicht lesbar).
+  Future<VorsorgeProfilInhalt?> profilLesen(String subjektId) async {
+    final konv = medsChatId(subjektId);
+    final z = await (db.select(db.vorsorgeProfile)..where((t) => t.id.equals(vorsorgeProfilId(konv)))).getSingleOrNull();
+    if (z == null) return null;
+    final t = await _klartext(id: z.id, konversationId: z.konversationId, bearbeiterId: z.bearbeiterId, wire: z.inhalt, art: kArtVorsorgeProfil);
+    return t == null ? null : vorsorgeProfilLesen(t);
+  }
+
   // ------------------------------------------------------------------ Schreiben: Profil
 
   /// Setzt (oder ändert) das Profil der Person; die Konversation entsteht bei Bedarf. Ein ungültiges Profil wird nie geschrieben ([ArgumentError]).
   Future<void> profilSetzen(String subjektId, VorsorgeProfilInhalt profil) async {
     final klar = vorsorgeProfilKodieren(profil);
     if (profil.geburtTag!.isAfter(_jetzt().toUtc().add(const Duration(days: 1)))) throw const VorsorgeUngueltig('Das Geburtsdatum kann nicht in der Zukunft liegen.');
+    await _darfSubjekt(subjektId);
     final konv = await konversationSicherstellen(subjektId);
     return _seriell(() async {
       final me = ich();
       if (me == null) throw const VorsorgeNichtErlaubt();
-      await _darfSubjekt(subjektId);
       final id = vorsorgeProfilId(konv);
       final vorhanden = await (db.select(db.vorsorgeProfile)..where((t) => t.id.equals(id))).getSingleOrNull();
       if (vorhanden == null) {
@@ -185,11 +212,11 @@ class VorsorgeRepository {
   Future<String> anlegen(String subjektId, VorsorgeEintragInhalt inhalt) async {
     final klar = vorsorgeEintragKodieren(inhalt);
     _pruefeZukunft(inhalt);
+    await _darfSubjekt(subjektId);
     final konv = await konversationSicherstellen(subjektId);
     return _seriell(() async {
       final me = ich();
       if (me == null) throw const VorsorgeNichtErlaubt();
-      await _darfSubjekt(subjektId);
       final id = _neueId();
       await store.aendern('vorsorge_eintrag', id, {'konversationId': konv, 'inhalt': '$kPraefixLokal$klar'}, nurLokal: {'createdAt': zeitFuerServer(_jetzt()), 'bearbeiterId': me});
       beiAenderung();

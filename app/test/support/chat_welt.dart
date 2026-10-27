@@ -461,12 +461,16 @@ class ChatWelt {
         }
       case 'medikament':
       case 'einnahme':
+      case 'vorsorge_profil':
+      case 'vorsorge_eintrag':
         {
           final konvId = (vorhanden?.fields['konversationId'] ?? f['konversationId']) as String;
           final konv = _z['konversation/$konvId'];
           if (konv == null || konv.fields['art'] != 'meds' || !((konv.fields['teilnehmer'] as List).cast<String>().contains(g.person.id))) return 'not_found';
           final text = f['inhalt'] as String?;
           if (text != null && (!RegExp(r'^e1:[A-Za-z0-9_-]+$').hasMatch(text) || text.length < 153)) return 'invalid';
+          // Vorsorge-Profil: je Person genau eines, feste ID aus der Konversation (wie der echte Server)
+          if (o.entity == 'vorsorge_profil' && o.entityId != vorsorgeProfilId(konvId)) return 'invalid';
           if (o.entity == 'einnahme' && vorhanden == null && _z['medikament/${f['medikamentId']}']?.fields['konversationId'] != konvId) return 'invalid';
           gesehen.add({'entity': o.entity, ...f});
           if (vorhanden == null) {

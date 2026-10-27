@@ -564,6 +564,23 @@ Jeder Datensatz hat eine Freigabe-Stufe `audience` (`parents`: nur Eltern und Ad
 - **Grenzen:** höchstens 100 lebende Medikamente je Konversation, 3000 Einnahmen je Medikament (`limit_reached`); je Person 20 neue Medikamente und 60 neue Einnahmen je Minute (200 bzw. 600 je Stunde; Anlegen zählt über das Änderungsprotokoll), 60 bzw. 120 Änderungen von `inhalt` je Minute.
 - **Ältere Clients** überspringen `medikament` und `einnahme` im Änderungsstrom (`protocolVersion` bleibt 1) und zeigen die Konversation der Art `meds` wie eine leere Gruppe.
 
+**Vorsorge und Impfungen (Migration 0041)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6p. Gesundheitsdaten, Ende-zu-Ende verschlüsselt. **Keine neue Konversationsart:** beide Entitäten sind Kinder der verborgenen Konversation `meds` der Person (Regeln wie beim Medikamenten-Plan oben: Teilnehmer-Grenze, Rollen-Regel, `reconcileMedsTeilnehmer`, Kaskade).
+
+| Entität | Feld | Wert | Zugriff |
+|---|---|---|---|
+| `vorsorge_profil` | `konversationId` | UUID der Medikamenten-Konversation (Pflicht; lebend, `e1`, Art `meds`, sonst `invalid`) | create |
+| | `inhalt` | e1-Hülle (Pflicht, Form `^e1:[A-Za-z0-9_-]+$`, 153 bis 2048 Zeichen): Geburtsdatum, Geschlecht; der Server liest nichts davon | rw |
+| | `bearbeiterId`, `createdAt` | Person, die den Inhalt zuletzt geschrieben und signiert hat (setzt der Server); Anlagezeit | server |
+| `vorsorge_eintrag` | `konversationId` | wie oben | create |
+| | `inhalt` | e1-Hülle (Pflicht, 153 bis 8192 Zeichen): Vorlage oder Name, Art, Erledigt-Daten, Vorlauf, Notiz | rw |
+| | `bearbeiterId`, `createdAt` | wie beim Profil | server |
+
+- **IDs:** das Profil hat eine **feste ID** (`vorsorgeProfilId(Konversation)` = SHA-256 von `lx-fampad:vorsorge-profil:<Konversations-ID kleingeschrieben>`, erste 16 Byte, Version-Nibble 5, Variante 10xx; je Person genau eines, niemand belegt das einer anderen Person vorab, sonst `invalid`); der Eintrag eine Zufalls-UUID (Version 4).
+- **Rechte:** Anlegen, Lesen, Ändern (nur `inhalt`) und Löschen darf **jeder Teilnehmer der Konversation, jede Rolle**, sonst nichts (`not_found` für Unbeteiligte). Keine automatische Löschung. Kein Wecker (`noWake`), kein Inhalt im Änderungsprotokoll nach Änderungen (`scrubOnUpdate`).
+- **Hülle:** unverändert `e1` (9a); **Art** `p` (Profil) bzw. `v` (Eintrag), ohne Bezug, mit Bearbeiter als Absender in AAD und Signatur.
+- **Grenzen:** 200 lebende Einträge je Konversation (`limit_reached`); je Person 20 neue je Minute und 200 je Stunde, 60 Änderungen von `inhalt` je Minute.
+- **Ältere Clients** überspringen beide Entitäten im Änderungsstrom (`protocolVersion` bleibt 1).
+
 **Zähler (Migration 0031)** · Konzept, Rechte und Datenschutz: `PROJEKTBESCHREIBUNG.md`, Abschnitt 6l. Verbrauchsdaten, Ende-zu-Ende verschlüsselt. Eine **verborgene Konversation je Familie** der Art `zaehler`; Zähler und Zählerstände sind ihre Kinder. Epochen und Wraps laufen über `epoche` und `epoche_wrap` (wie bei jedem verschlüsselten Chat).
 
 - **`konversation` mit `art: "zaehler"`:** `encVersion: "e1"`, kein `titel`, kein `subjektId`. Die ID ist **vorgeschrieben**: `zaehlerChatId(Familie)` = SHA-256 von `lx-fampad:zaehler:<Familien-ID kleingeschrieben>` (Muster UUID Version 5, `chat-ids.ts`/`chat_ids.dart`, Known-Answer-Tests auf beiden Seiten); jede andere ID ist `invalid`. `teilnehmer` (1 bis 20, die anlegende Person dabei, sonst `forbidden`): **nur aktive Eltern und Admins** (`parent`/`admin`), **nie ein Kind** (`invalid`); angelegt und geändert wird nur von einer erwachsenen Person. Jeder Teilnehmer darf die Liste ändern, jede Änderung legt eine neue Epoche an. **Nie löschbar** (`forbidden`), `titel` unveränderlich, **keine Nachrichten** darin (`invalid`). Nach einem Rollenwechsel (`PATCH /members/:id/role`) wirft der Server ein Elternteil, das Kind wurde, **sofort** aus der Liste (`hidden`-Tombstone ohne Inhalt); ein Kind, das Elternteil wurde, nimmt der Server nicht von selbst auf (das tut ein Teilnehmer mit Schlüssel, den Verlauf nur auf ausdrücklichen Tipp).

@@ -115,7 +115,7 @@ void main() {
     testWidgets('Desktop ohne features.files: Seitenleiste ohne "Dateien", der Tab springt zurück zur Startseite', (tester) async {
       final handle = tester.ensureSemantics();
       final d = DateiUi.neu(dateiablage: false);
-      final c = await d.start(tester, groesse: const Size(1200, 800));
+      final c = await d.start(tester, groesse: const Size(1200, 1100));
       expect(find.bySemanticsLabel('Dateien'), findsNothing);
       c.read(shellTabProvider.notifier).waehlen(kDateienTab);
       await warte(tester);
@@ -126,7 +126,7 @@ void main() {
 
     testWidgets('Desktop mit Dateiablage: "Dateien" in der Seitenleiste, der Bereich ist Teil der Shell (Seitenleiste bleibt)', (tester) async {
       final handle = tester.ensureSemantics();
-      final (_, c) = await start(tester, groesse: const Size(1200, 800), oeffnen: false);
+      final (_, c) = await start(tester, groesse: const Size(1200, 1100), oeffnen: false);
       expect(find.bySemanticsLabel('Dateien'), findsOneWidget);
       await tippe(tester, find.bySemanticsLabel('Dateien'));
       expect(c.read(shellTabProvider), kDateienTab);

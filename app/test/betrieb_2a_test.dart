@@ -747,7 +747,7 @@ void main() {
     }
 
     testWidgets('Desktop 1440 px: Mitglieder in der Shell, Seitenleiste und Fußzeile bleiben', (tester) async {
-      await start(tester, groesse: const Size(1440, 900));
+      await start(tester, groesse: const Size(1440, 1100));
       await tippe(tester, find.text('Mitglieder'));
       expect(find.text('Anna (du)'), findsOneWidget);
       expect(find.text('lx-familyhub'), findsOneWidget);

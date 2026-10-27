@@ -229,7 +229,7 @@ void main() {
     });
 
     testWidgets('Der Editor schließt sich mit der Sperre auch mit ungespeicherter Eingabe (Desktop-Layout, wo sonst gefragt würde)', (tester) async {
-      final (a, c) = await start(tester, groesse: const Size(1200, 800), entsperren: true);
+      final (a, c) = await start(tester, groesse: const Size(1200, 1100), entsperren: true);
       await tippe(tester, find.text('Eintrag hinzufügen'));
       await eingabe(tester, find.widgetWithText(TextField, 'Titel (zum Beispiel WLAN Zuhause)'), 'Halb fertig');
       expect(find.text('Halb fertig'), findsOneWidget);
@@ -526,7 +526,7 @@ void main() {
     });
 
     testWidgets('Desktop: ungespeicherte Eingaben fragen "Änderungen verwerfen?"', (tester) async {
-      final (a, c) = await start(tester, groesse: const Size(1200, 800), entsperren: true);
+      final (a, c) = await start(tester, groesse: const Size(1200, 1100), entsperren: true);
       await tippe(tester, find.text('Eintrag hinzufügen'));
       await eingabe(tester, find.widgetWithText(TextField, 'Titel (zum Beispiel WLAN Zuhause)'), 'Entwurf');
       await tippe(tester, find.byTooltip('Zurück'));
@@ -603,19 +603,19 @@ void main() {
     });
 
     testWidgets('Desktop: Seitenleiste mit Eintrag Tresor (Admin, ohne Zahl) und ohne (Kind)', (tester) async {
-      final (a, c) = await start(tester, groesse: const Size(1200, 800), oeffnen: false);
+      final (a, c) = await start(tester, groesse: const Size(1200, 1100), oeffnen: false);
       expect(find.text('Tresor'), findsOneWidget); // der Eintrag der Seitenleiste
       await ende(tester, c, a);
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
-      await start(tester, role: 'child', groesse: const Size(1200, 800), oeffnen: false);
+      await start(tester, role: 'child', groesse: const Size(1200, 1100), oeffnen: false);
       expect(find.text('Tresor'), findsNothing);
       expect(find.text('Zähler'), findsNothing);
       expect(find.text('Medikamente'), findsWidgets);
     });
 
     testWidgets('Desktop: der Bereich ist gesperrt und entsperrt wie mobil; Wechsel in einen anderen Bereich lässt ihn entsperrt bis zur Frist', (tester) async {
-      final (a, c) = await start(tester, groesse: const Size(1200, 800));
+      final (a, c) = await start(tester, groesse: const Size(1200, 1100));
       expect(c.read(shellTabProvider), kTresorTab);
       expect(find.text('Der Tresor ist gesperrt'), findsOneWidget);
       await tippe(tester, find.text('Tresor entsperren'));
@@ -632,7 +632,7 @@ void main() {
         ...a.overrides,
         tresorDarfProvider.overrideWith((ref) => ref.watch(darf)),
       ]);
-      final c = await starteApp(tester, env, groesse: const Size(1200, 800));
+      final c = await starteApp(tester, env, groesse: const Size(1200, 1100));
       c.read(shellTabProvider.notifier).waehlen(kTresorTab);
       await warte(tester);
       await tippe(tester, find.text('Tresor entsperren'));

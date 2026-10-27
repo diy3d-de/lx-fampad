@@ -10,7 +10,10 @@ import '../../data/vorsorge/vorsorge_modelle.dart';
 import '../../data/vorsorge/vorsorge_repository.dart' show VorsorgeFehler;
 
 /// Heutiger Kalendertag in der Familienzone (UTC-Mitternacht).
-DateTime vorsorgeHeute() => nurTag(familienTag(DateTime.now()));
+DateTime vorsorgeHeute() => vorsorgeHeuteAus(DateTime.now());
+
+/// Der Kalendertag in der Familienzone zu einem Zeitpunkt (die Oberfläche nimmt die Uhr des Minutentakts, Tests eine feste).
+DateTime vorsorgeHeuteAus(DateTime jetzt) => nurTag(familienTag(jetzt));
 
 /// Meldung zu einem Fehler beim Speichern (nie ein Inhalt, nie ein Servertext).
 String vorsorgeFehlerText(Object e, {String? person}) => switch (e) {

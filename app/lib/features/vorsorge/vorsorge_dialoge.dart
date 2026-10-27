@@ -12,6 +12,7 @@ import '../../data/vorsorge/vorsorge_repository.dart';
 import '../../data/vorsorge/vorsorge_state.dart';
 import '../../data/vorsorge/vorsorge_vorlagen.dart';
 import '../../ui/widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show AuswahlKnopf;
 import 'vorsorge_anzeige.dart';
 
@@ -172,10 +173,16 @@ class _ErledigtDialog extends ConsumerStatefulWidget {
 }
 
 class _ErledigtDialogState extends ConsumerState<_ErledigtDialog> {
-  late DateTime _tag = vorsorgeHeute();
+  late DateTime _tag;
   final _notiz = TextEditingController();
   String? _fehler;
   var _speichert = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tag = vorsorgeHeuteAus(ref.read(minutenTaktProvider).value ?? DateTime.now());
+  }
 
   @override
   void dispose() {
@@ -462,7 +469,7 @@ class _VorlagenBlattState extends ConsumerState<_VorlagenBlatt> {
   Widget build(BuildContext context) {
     final daten = ref.watch(vorsorgeAnsichtProvider);
     final profil = daten.profilVon(widget.subjektId);
-    final heute = vorsorgeHeute();
+    final heute = vorsorgeHeuteAus(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final vorhanden = {for (final e in daten.von(widget.subjektId)) if (e.inhalt?.vorlage != null) e.inhalt!.vorlage!};
     final frei = [for (final v in kVorsorgeVorlagen) if (!vorhanden.contains(v.kennung)) v];
     final geburt = profil?.geburtTag;

@@ -643,17 +643,17 @@ void main() {
     });
 
     testWidgets('Desktop: Seitenleiste mit Eintrag Zähler (Admin) und ohne (Kind)', (tester) async {
-      await start(tester, alle(), groesse: const Size(1200, 800), zumBereichGehen: false);
+      await start(tester, alle(), groesse: const Size(1200, 1100), zumBereichGehen: false);
       expect(find.text('Zähler'), findsOneWidget); // der Eintrag der Seitenleiste
       await tester.pumpWidget(const SizedBox());
       await tester.pump();
-      await start(tester, alle(), role: 'child', groesse: const Size(1200, 800), zumBereichGehen: false);
+      await start(tester, alle(), role: 'child', groesse: const Size(1200, 1100), zumBereichGehen: false);
       expect(find.text('Zähler'), findsNothing);
       expect(find.text('Medikamente'), findsWidgets);
     });
 
     testWidgets('Desktop: der Bereich zeigt die Übersicht', (tester) async {
-      final (_, c) = await start(tester, alle(), groesse: const Size(1200, 800));
+      final (_, c) = await start(tester, alle(), groesse: const Size(1200, 1100));
       expect(find.text('Balkonkraftwerk'), findsOneWidget);
       expect(c.read(shellTabProvider), kZaehlerTab);
       pruefeLayout(tester, 'Desktop Zähler');
@@ -670,7 +670,7 @@ void main() {
         zaehlerDarfProvider.overrideWith((ref) => ref.watch(darf)),
         zaehlerRepositoryProvider.overrideWithValue(repo),
       ]);
-      final c = await starteApp(tester, env, groesse: const Size(1200, 800));
+      final c = await starteApp(tester, env, groesse: const Size(1200, 1100));
       c.read(shellTabProvider.notifier).waehlen(kZaehlerTab);
       await warte(tester);
       expect(find.text('Zähler'), findsWidgets);

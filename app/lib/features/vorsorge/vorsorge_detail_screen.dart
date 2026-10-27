@@ -13,6 +13,7 @@ import '../../data/vorsorge/vorsorge_state.dart';
 import '../../data/vorsorge/vorsorge_vorlagen.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show bestaetigen;
 import 'vorsorge_anzeige.dart';
 import 'vorsorge_dialoge.dart';
@@ -75,7 +76,7 @@ class _VorsorgeDetailScreenState extends ConsumerState<VorsorgeDetailScreen> {
     }
     final profil = daten.profilVon(a.subjektId);
     final v = vorsorgeVorlage(i.vorlage);
-    final heute = vorsorgeHeute();
+    final heute = vorsorgeHeuteAus(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final f = vorsorgeFaelligkeit(vorlage: v, eintrag: i, geburt: profil?.geburtTag, geschlecht: profil?.geschlecht, heute: heute);
     final zusatz = vorsorgeVerlaessigkeitText(v);
     return AuthSeite(

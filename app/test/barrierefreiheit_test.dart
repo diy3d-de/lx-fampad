@@ -25,6 +25,9 @@ import 'package:lx_fampad/data/medikamente/medikament_modelle.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_logik.dart' show Stand;
 import 'package:lx_fampad/data/zaehler/zaehler_modelle.dart';
 import 'package:lx_fampad/data/medikamente/medikament_state.dart';
+import 'package:lx_fampad/data/vorsorge/vorsorge_modelle.dart';
+import 'package:lx_fampad/data/vorsorge/vorsorge_repository.dart' show VorsorgeProfilAnsicht;
+import 'package:lx_fampad/data/vorsorge/vorsorge_state.dart';
 import 'package:lx_fampad/data/zaehler/zaehler_repository.dart' show zaehlerRepositoryProvider;
 import 'package:lx_fampad/data/zaehler/zaehler_state.dart' show zaehlerDatenProvider;
 import 'package:lx_fampad/features/zaehler/zaehler_diagramm.dart' show VerbrauchsDiagramm;
@@ -277,6 +280,61 @@ void main() {
         expect(tester.takeException(), isNull);
         expect(unbeschriftet(tester), isEmpty, reason: 'Neuigkeiten-Dialog');
         expect(tester.getSize(find.byType(TextButton).last).height, greaterThanOrEqualTo(44));
+        h.dispose();
+      });
+    });
+  }
+
+  // Vorsorge und Impfungen: Übersicht (Karten, Personenauswahl), Detail, Auswahlblatt, Profil und Erledigt-Dialog, jedes Bedienelement beschriftet
+  for (final skala in [1.0, 2.0]) {
+    group('Vorsorge, Textskala $skala', () {
+      final daten = VorsorgeDaten(
+        geladen: true,
+        ich: fixIdAdmin,
+        ichRolle: Role.admin,
+        personen: const [
+          UserDto(id: fixIdAdmin, email: null, displayName: 'Anna', colorIndex: 0, role: Role.admin, status: MemberStatus.active),
+          UserDto(id: fixIdKind, email: null, displayName: 'Ben', colorIndex: 1, role: Role.child, status: MemberStatus.active),
+        ],
+        eintraege: [
+          VorsorgeAnsicht(id: 'dddddddd-0000-4000-8000-0000000000a1', konversationId: 'k1', subjektId: fixIdAdmin, inhalt: const VorsorgeEintragInhalt(vorlage: 'checkup_35', art: VorsorgeArt.vorsorge), erstelltAt: DateTime.utc(2026, 10, 1)),
+          VorsorgeAnsicht(id: 'dddddddd-0000-4000-8000-0000000000a2', konversationId: 'k1', subjektId: fixIdAdmin, inhalt: const VorsorgeEintragInhalt(name: 'Augenarzt', art: VorsorgeArt.sonstiges, naechstes: '2026-11-20'), erstelltAt: DateTime.utc(2026, 10, 1)),
+          VorsorgeAnsicht(id: 'dddddddd-0000-4000-8000-0000000000a3', konversationId: 'k1', subjektId: fixIdAdmin, inhalt: const VorsorgeEintragInhalt(vorlage: 'fsme_risiko', art: VorsorgeArt.impfung), erstelltAt: DateTime.utc(2026, 10, 1)),
+        ],
+        profile: const {fixIdAdmin: VorsorgeProfilAnsicht(subjektId: fixIdAdmin, inhalt: VorsorgeProfilInhalt(geburt: '1985-04-04'))},
+      );
+
+      Future<void> vorsorgeStart(WidgetTester tester) async {
+        final env = await angemeldeteUmgebung();
+        env.extraOverrides.addAll([
+          erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false),
+          vorsorgeDatenProvider.overrideWithValue(daten),
+          vorsorgeAnsichtProvider.overrideWithValue(daten),
+        ]);
+        await starteApp(tester, env, skala: skala, groesse: const Size(360, 900));
+        await zumTab(tester, 'Vorsorge');
+      }
+
+      testWidgets('Übersicht und Detail', (tester) async {
+        final h = tester.ensureSemantics();
+        await vorsorgeStart(tester);
+        pruefe(tester, 'Vorsorge Übersicht $skala');
+        await tippe(tester, find.text('Augenarzt').first);
+        pruefe(tester, 'Vorsorge Detail $skala');
+        h.dispose();
+      });
+
+      testWidgets('Auswahlblatt, Profil und Erledigt-Dialog', (tester) async {
+        final h = tester.ensureSemantics();
+        await vorsorgeStart(tester);
+        await tippe(tester, find.byTooltip('Erledigt eintragen: Augenarzt'));
+        pruefe(tester, 'Vorsorge Erledigt $skala');
+        await tippe(tester, find.widgetWithText(TextButton, 'Abbrechen'));
+        await tippe(tester, find.widgetWithText(TextButton, 'Ändern'));
+        pruefe(tester, 'Vorsorge Profil $skala');
+        await tippe(tester, find.widgetWithText(TextButton, 'Abbrechen'));
+        await tippe(tester, find.widgetWithText(FilledButton, 'Hinzufügen'));
+        pruefe(tester, 'Vorsorge Hinzufügen $skala');
         h.dispose();
       });
     });

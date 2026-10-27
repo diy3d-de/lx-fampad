@@ -15,6 +15,7 @@ import '../../data/vorsorge/vorsorge_vorlagen.dart' show kVorsorgeHinweis;
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import '../shell/shell_tab.dart';
@@ -57,12 +58,13 @@ class VorsorgeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final daten = ref.watch(vorsorgeAnsichtProvider);
+    final heute = vorsorgeHeuteAus(ref.watch(minutenTaktProvider).value ?? DateTime.now());
     final gewaehlt = ref.watch(vorsorgePersonProvider);
     // eine Person, die es (nicht mehr) gibt oder die man nicht sehen darf, gilt nicht: dann die eigene
     final person = (gewaehlt != null ? daten.person(gewaehlt) : null) ?? (daten.personen.isEmpty ? null : daten.personen.first);
     final kinder = <Widget>[
       if (daten.hatKinder) ...[_Auswahl(daten: daten, aktiv: person?.id), const SizedBox(height: 14)],
-      ..._inhalt(context, ref, daten, person),
+      ..._inhalt(context, ref, daten, person, heute),
       const SizedBox(height: 18),
       const Text(kVorsorgeHinweis, style: TextStyle(color: kTextMuted, fontSize: 12, height: 1.4)),
     ];
@@ -103,13 +105,12 @@ class VorsorgeScreen extends ConsumerWidget {
 
   String _anrede(VorsorgeDaten d, UserDto p) => p.id.toLowerCase() == d.ich?.toLowerCase() ? 'dich' : _vorname(p);
 
-  List<Widget> _inhalt(BuildContext context, WidgetRef ref, VorsorgeDaten daten, UserDto? person) {
+  List<Widget> _inhalt(BuildContext context, WidgetRef ref, VorsorgeDaten daten, UserDto? person, DateTime heute) {
     if (!daten.geladen || person == null) return const [Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))];
     final eigene = person.id.toLowerCase() == daten.ich?.toLowerCase();
     final profil = daten.profilVon(person.id);
     final unlesbar = daten.profilUnlesbar(person.id);
     final eintraege = daten.von(person.id);
-    final heute = vorsorgeHeute();
     final karten = vorsorgeKarten(eintraege, geburt: profil?.geburtTag, geschlecht: profil?.geschlecht, heute: heute);
     final nicht = [for (final e in eintraege) if (e.inhalt == null) e];
     final name = eigene ? 'dich' : _vorname(person);
