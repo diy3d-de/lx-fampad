@@ -291,7 +291,7 @@ void main() {
     Object? Function()? antwort,
     DateTime? jetzt,
     double skala = 1.0,
-    Size groesse = const Size(360, 800),
+    Size groesse = const Size(360, 2400),
     void Function(TestUmgebung env)? vorher,
     bool erinnerungen = true,
     bool erlaubt = true,
@@ -399,7 +399,7 @@ void main() {
       // (320 px bei Textskala 1.5 läuft die vorhandene Schnellzugriff-Reihe der Startseite über: das ist nicht Sache der Müll-Seite)
       for (final skala in breite < 360 ? [1.0] : [1.0, 1.5]) {
         testWidgets('Filter-Chips haben ihre eigene Breite und stehen nebeneinander, nicht untereinander (${breite.round()} px, Textskala $skala)', (tester) async {
-          await start(tester, groesse: Size(breite, 900), skala: skala);
+          await start(tester, groesse: Size(breite, 2400), skala: skala);
           await tippe(tester, find.text('Mi 28.10.'));
           _chipsNebeneinander(tester);
           pruefeLayout(tester, 'Chips ${breite.round()} px, Skala $skala');

@@ -405,7 +405,7 @@ void main() {
 
   for (final skala in [1.0, 1.5]) {
     testWidgets('Layout 360 px, Textskala $skala: lange Titel, alle Angaben, Filterzeilen, Editor, Dashboard', (tester) async {
-      await start(tester, skala: skala, vorher: (e) {
+      await start(tester, skala: skala, groesse: const Size(360, 2400), vorher: (e) {
         e.sync.andereAendert('aufgabe', _a1, _aufgabe('Ein sehr langer Titel einer Aufgabe, die über mehrere Zeilen läuft und trotzdem passen muss', tage: -2, prio: 3, zu: fixIdKind, wdh: 'weekly'));
         e.sync.andereAendert('aufgabe_punkt', 'cccccccc-1111-4111-8111-111111111111', {'aufgabeId': _a1, 'text': 'Eins', 'position': 0});
         e.sync.andereAendert('aufgabe', _a2, _aufgabe('Kurz', tage: 0, prio: 1, zu: fixIdAdmin));

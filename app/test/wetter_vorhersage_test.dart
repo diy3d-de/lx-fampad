@@ -167,7 +167,7 @@ void main() {
     WidgetTester tester, {
     Object? Function()? forecast,
     double skala = 1.0,
-    Size groesse = const Size(360, 800),
+    Size groesse = const Size(360, 2400),
   }) async {
     final env = await angemeldeteUmgebung();
     env.server.on('GET /weather', (_) => jsonAntwort(_wetter()));
