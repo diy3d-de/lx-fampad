@@ -84,7 +84,10 @@
   "services": {
     "jetzt_senden": {
       "name": "Jetzt senden",
-      "description": "Liest die Sensoren jetzt aus und sendet die Stände sofort (zum Testen)."
+      "description": "Liest die Sensoren jetzt aus und sendet die Stände sofort (zum Testen).",
+      "fields": {
+        "erneut": { "name": "Heutigen Tag erneut senden", "description": "Sendet auch Kanäle noch einmal, die heute schon gesendet wurden (zum Beispiel nachdem du die Stände in der App gelöscht hast)." }
+      }
     }
   }
 }

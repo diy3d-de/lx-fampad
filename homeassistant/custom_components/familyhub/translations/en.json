@@ -84,7 +84,10 @@
   "services": {
     "jetzt_senden": {
       "name": "Send now",
-      "description": "Reads the sensors now and uploads the readings immediately (for testing)."
+      "description": "Reads the sensors now and uploads the readings immediately (for testing).",
+      "fields": {
+        "erneut": { "name": "Resend today", "description": "Also resends channels already sent today (for example after you deleted the readings in the app)." }
+      }
     }
   }
 }

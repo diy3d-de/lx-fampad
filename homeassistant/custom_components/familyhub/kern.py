@@ -362,6 +362,13 @@ class Warteschlange:
         k = schluessel(kanal, d)
         return k in self.offen or k in self.bestaetigt
 
+    def tag_vergessen(self, d: str) -> int:
+        """Vergisst die Merkliste der bestätigten Päckchen für Tag `d` (offene bleiben), damit der Tag neu gesendet werden kann."""
+        weg = [k for k, tag in self.bestaetigt.items() if tag == d]
+        for k in weg:
+            del self.bestaetigt[k]
+        return len(weg)
+
     def verwerfen_alte(self, heute: str) -> list[str]:
         """Verwirft offene Päckchen älter als 7 Tage (Merkliste: 14 Tage)."""
         grenze = _tag(heute) - timedelta(days=MAX_ALTER_TAGE)
