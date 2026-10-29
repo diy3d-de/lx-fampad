@@ -15,11 +15,16 @@ PLATFORMS = [Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    async def jetzt_senden(_call: ServiceCall) -> None:
+    async def jetzt_senden(call: ServiceCall) -> None:
         for dienst in list(hass.data.get(DOMAIN, {}).values()):
-            await dienst.tagesversand()
+            await dienst.tagesversand(erneut=call.data["erneut"])
 
-    hass.services.async_register(DOMAIN, SERVICE_JETZT_SENDEN, jetzt_senden, schema=vol.Schema({}))
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_JETZT_SENDEN,
+        jetzt_senden,
+        schema=vol.Schema({vol.Optional("erneut", default=False): bool}),
+    )
     return True
 
 

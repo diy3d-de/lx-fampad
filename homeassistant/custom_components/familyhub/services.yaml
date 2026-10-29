@@ -1,1 +1,7 @@
 jetzt_senden:
+  fields:
+    erneut:
+      required: false
+      default: false
+      selector:
+        boolean:

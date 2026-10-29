@@ -176,11 +176,16 @@ class FamilyhubDienst:
             return None
         return stand_aus_zustand(zustand.state, zustand.attributes.get("unit_of_measurement"))
 
-    async def tagesversand(self, jetzt: datetime | None = None) -> None:
-        """Stand je Kanal lesen, Päckchen anlegen (je Tag und Kanal einmal), senden."""
+    async def tagesversand(self, jetzt: datetime | None = None, erneut: bool = False) -> None:
+        """Stand je Kanal lesen, Päckchen anlegen (je Tag und Kanal einmal), senden.
+
+        `erneut`: schon bestätigte Päckchen des heutigen Tages vergessen und den Tag noch einmal senden
+        (nur auf ausdrücklichen Wunsch, z. B. wenn die Werte in der App gelöscht wurden)."""
         jetzt = berlin_zeit(jetzt or dt_util.utcnow())
         d = berliner_datum(jetzt)
         t = epoch_ms(jetzt)
+        if erneut:
+            self.queue.tag_vergessen(d)
         for kanal, entity_id in self.kanaele.items():
             if self.queue.hat_tag(kanal, d):
                 continue

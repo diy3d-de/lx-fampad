@@ -202,6 +202,17 @@ def test_queue_duplikate(kern):
     assert w.hinzufuegen(paket()) is False
 
 
+def test_queue_tag_vergessen(kern):
+    w = kern.Warteschlange()
+    w.hinzufuegen(paket())
+    w.bestaetigen(["strom_bezug:2026-10-26"])
+    assert w.tag_vergessen("2026-10-27") == 0
+    assert w.hat_tag("strom_bezug", "2026-10-26")
+    assert w.tag_vergessen("2026-10-26") == 1
+    assert not w.hat_tag("strom_bezug", "2026-10-26")
+    assert w.hinzufuegen(paket()) is True
+
+
 def test_queue_verwerfen_nach_7_tagen(kern):
     w = kern.Warteschlange()
     for d in ["2026-10-18", "2026-10-19", "2026-10-26"]:
