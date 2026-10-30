@@ -11,6 +11,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/update/update_service.dart';
+import '../widgets/rueckgaengig.dart' show rueckgaengigSchliessen;
 import 'auth/auth_state.dart';
 import 'database_provider.dart';
 import 'dateien/transfer_dienst.dart' show dateiCacheDienstProvider, transferDienstProvider;
@@ -448,6 +449,8 @@ final syncProvider = NotifierProvider<SyncController, SyncState>(SyncController.
 /// kommt zuerst, damit eine noch laufende Antwort des Servers nicht in die geleerte Datenbank geschrieben wird.
 Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   ref.read(syncProvider.notifier).stoppen();
+  // ein noch offener Rückgängig-Hinweis (Eintrag gelöscht, Aufgabe erledigt) gehört der Vorperson
+  rueckgaengigSchliessen();
   // Terminerinnerungen des Geräts gehören zu den lokalen Daten: weg damit (fehlerfrei, ein Problem hier darf das Leeren nicht stoppen)
   try {
     await ref.read(erinnerungDienstProvider).alleEntfernen();

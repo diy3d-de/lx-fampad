@@ -119,10 +119,12 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         // "Sonstiges" und kein Wert sind dasselbe: dann nichts schreiben
         if (mitKategorie && EinkaufKategorie.von(kategorie) != EinkaufKategorie.von(e.category)) await _repo.eintragKategorie(e.id, kategorie);
       case EintragLoeschen():
-        await _repo.eintragLoeschen(e.id);
+        final repo = _repo; // vor dem Hinweis holen (nach dem Abmelden gibt es den Bildschirm nicht mehr)
+        final ich = ref.read(authProvider).user?.id;
+        await repo.eintragLoeschen(e.id);
         if (!mounted) return;
         // Rückgängig legt den Eintrag mit neuer ID wieder an (der Server behält den gelöschten als Tombstone)
-        rueckgaengigZeigen(context, text: 'Eintrag gelöscht', rueckgaengig: () async => _repo.eintragWiederherstellen(e));
+        rueckgaengigZeigen(context, text: 'Eintrag gelöscht', rueckgaengig: () async => repo.eintragWiederherstellen(e, besitzer: ich));
     }
   }
 

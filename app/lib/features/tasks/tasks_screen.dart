@@ -83,17 +83,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
 
   Future<void> _loeschen(Aufgabe a) async {
     final punkte = ref.read(aufgabenDatenProvider).punkteVon(a.id);
-    await _repo.loeschen(a.id);
+    // Repository und Person VOR dem Hinweis holen: die Handlung darf nach dem Abmelden nichts mehr über `ref` des Bildschirms lesen
+    final repo = _repo;
+    final ich = ref.read(authProvider).user?.id;
+    await repo.loeschen(a.id);
     // Rückgängig legt die offene Aufgabe mit neuer ID wieder an (der Server behält die gelöschte als Tombstone)
     if (!mounted || istErledigt(a)) return;
-    rueckgaengigZeigen(context, text: 'Aufgabe gelöscht', rueckgaengig: () async => _repo.wiederherstellen(a, punkte));
+    rueckgaengigZeigen(context, text: 'Aufgabe gelöscht', rueckgaengig: () async => repo.wiederherstellen(a, punkte, besitzer: ich));
   }
 
   Future<void> _haken(Aufgabe a) async {
     final warErledigt = istErledigt(a);
-    await _repo.erledigt(a, !warErledigt);
-    if (!mounted || warErledigt) return;
-    rueckgaengigZeigen(context, text: 'Aufgabe erledigt', rueckgaengig: () => _repo.erledigt(a, false));
+    final repo = _repo;
+    final ich = ref.read(authProvider).user?.id;
+    // Hinweis nur, wenn dieser Tipp wirklich etwas geändert hat (ein Doppeltipp ändert beim zweiten Mal nichts)
+    final geaendert = await repo.erledigt(a, !warErledigt);
+    if (!mounted || warErledigt || !geaendert) return;
+    rueckgaengigZeigen(context, text: 'Aufgabe erledigt', rueckgaengig: () => repo.erledigtZuruecknehmen(a, besitzer: ich));
   }
 
   Future<bool> _loeschenFragen(Aufgabe a) => bestaetigen(

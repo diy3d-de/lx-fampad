@@ -19,6 +19,8 @@ import '../calendar/expansion.dart' show tagText;
 import '../calendar/termin_repository.dart' show ZeitzonenFehlen;
 import '../calendar/zeitzonen.dart';
 import '../database_provider.dart';
+import '../lists/members.dart' show mitgliedNochAktiv;
+import '../rueckgaengig_fehler.dart';
 import '../sync/sync_entities.dart';
 import '../sync/sync_store.dart';
 import '../sync_state.dart';
@@ -236,11 +238,12 @@ class AufgabeRepository {
   /// Haken setzen oder entfernen. Beim Erledigen einer wiederkehrenden Aufgabe entsteht die nächste (einmalig, siehe [folgeAufgabeId]); beim
   /// Zurücknehmen verschwindet die noch offene, unveränderte Folgeaufgabe wieder. Ein zweiter Tipp, während der erste noch läuft, tut nichts
   /// (und liest vor dem Schreiben den aktuellen Stand: ist die Aufgabe schon so, wie gewünscht, passiert nichts).
-  Future<void> erledigt(Aufgabe a, bool erledigt) async {
-    if (!_laufend.add(a.id)) return;
+  /// Liefert `true`, wenn sich etwas geändert hat (ein zweiter Tipp auf denselben Haken ändert nichts und ergibt `false`).
+  Future<bool> erledigt(Aufgabe a, bool erledigt) async {
+    if (!_laufend.add(a.id)) return false;
     try {
       final frisch = await (db.select(db.aufgaben)..where((t) => t.id.equals(a.id))).getSingleOrNull();
-      if (frisch == null || istErledigt(frisch) == erledigt) return;
+      if (frisch == null || istErledigt(frisch) == erledigt) return false;
       final jetzt = _jetzt();
       final folge = erledigt ? await _folgeaufgabe(frisch, jetzt) : (aenderungen: const <SyncAenderung>[], id: null as String?);
       await store.aendernMehrere([
@@ -255,12 +258,19 @@ class AufgabeRepository {
       ]);
       if (!erledigt) await _folgeZuruecknehmen(frisch);
       beiAenderung();
+      return true;
     } finally {
       _laufend.remove(a.id);
     }
   }
 
   Future<bool> _gibt(String id) async => await (db.select(db.aufgaben)..where((t) => t.id.equals(id))).getSingleOrNull() != null;
+
+  /// "Rückgängig" nach dem Erledigen: nur für dieselbe angemeldete Person [besitzer] (sonst [RueckgaengigAbgelehnt]).
+  Future<void> erledigtZuruecknehmen(Aufgabe a, {required String? besitzer}) async {
+    if (besitzer != null && ich() != besitzer) throw const RueckgaengigAbgelehnt('Rückgängig nicht möglich: Du bist inzwischen als eine andere Person angemeldet.');
+    await erledigt(a, false);
+  }
 
   /// Die Folgeaufgabe einer Aufgabe, die gerade erledigt wird (Änderungen + ID für `folgeId` der Vorlage); ohne Änderungen, wenn keine entsteht.
   /// ID: abgeleitet aus der Vorlage (zwei Geräte schreiben dieselbe Zeile). Ist sie schon belegt (jemand hat die berechenbare ID vorab angelegt,
@@ -364,7 +374,10 @@ class AufgabeRepository {
   /// "Rückgängig" nach dem Löschen: Ein gelöschter Datensatz bleibt auf dem Server ein Tombstone (dieselbe ID lässt sich nicht neu anlegen), darum
   /// entsteht die Aufgabe samt Unteraufgaben mit NEUEN IDs wieder (gleicher Inhalt, neue Anlegezeit und Besitzer = ich). Nur für offene Aufgaben
   /// (bei erledigten bliebe die Folgeaufgabe unklar); liefert die neue ID, sonst null.
-  Future<String?> wiederherstellen(Aufgabe a, List<AufgabePunkt> punkte) async {
+  /// Wirft [RueckgaengigAbgelehnt], wenn [besitzer] (wer gelöscht hat) nicht mehr die angemeldete Person ist oder die zuständige Person kein aktives Mitglied mehr ist.
+  Future<String?> wiederherstellen(Aufgabe a, List<AufgabePunkt> punkte, {String? besitzer}) async {
+    if (besitzer != null && ich() != besitzer) throw const RueckgaengigAbgelehnt('Rückgängig nicht möglich: Du bist inzwischen als eine andere Person angemeldet.');
+    if (!await mitgliedNochAktiv(db, a.assigneeId)) throw const RueckgaengigAbgelehnt('Rückgängig nicht möglich: Die zuständige Person gehört nicht mehr zur Familie.');
     if (istErledigt(a)) return null;
     final w = faelligWand(a);
     final geordnet = sortierePunkte(punkte);

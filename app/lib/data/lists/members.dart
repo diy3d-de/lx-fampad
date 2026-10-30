@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../api/api_error.dart';
 import '../api/models.dart';
 import '../auth/auth_state.dart';
+import '../app_database.dart' show AppDatabase;
 import '../avatar/avatar_foto.dart';
 import '../database_provider.dart';
 import '../sync_state.dart' show mitgliederHinweisProvider, syncProvider;
@@ -50,6 +51,18 @@ List<UserDto> mitgliederAusSpeicher(String? json) {
     return parseListe(daten, UserDto.fromJson);
   } catch (_) {
     return const [];
+  }
+}
+
+/// Ist die Person [id] laut zwischengespeicherter Mitgliederliste noch ein aktives Mitglied? Ohne ID, oder solange es keine Liste gibt (nie geladen), gilt sie
+/// als aktiv (kein Grund, etwas abzulehnen, was sich nicht prüfen lässt).
+Future<bool> mitgliedNochAktiv(AppDatabase db, String? id) async {
+  if (id == null) return true;
+  try {
+    final alle = mitgliederAusSpeicher(await db.metaLesen(_kMitglieder));
+    return alle.isEmpty || alle.any((u) => u.id == id);
+  } catch (_) {
+    return true;
   }
 }
 
