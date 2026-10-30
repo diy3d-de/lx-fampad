@@ -18,6 +18,7 @@ import '../../widgets/liste_detail.dart' show detailOeffnen;
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import 'editor_verschwunden.dart';
 import 'fristen_anzeige.dart';
 
 /// Öffnet den Frist-Editor. [frist] null = neue Frist.
@@ -31,7 +32,7 @@ class FristEditor extends ConsumerStatefulWidget {
   ConsumerState<FristEditor> createState() => _FristEditorState();
 }
 
-class _FristEditorState extends ConsumerState<FristEditor> {
+class _FristEditorState extends ConsumerState<FristEditor> with EditorSchliesstBeiLoeschung<FristEditor> {
   final _titel = TextEditingController();
   final _notiz = TextEditingController();
   DateTime? _tag; // Ablaufdatum (Tag, UTC-Markierung)
@@ -135,6 +136,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
     final nav = Navigator.of(context);
     final ja = await bestaetigen(context, titel: 'Frist „${a.titel}“ löschen?', text: 'Die Frist wird für alle gelöscht.', knopf: 'Löschen');
     if (!ja) return;
+    selbstBeendet = true; // die Löschung lässt den Datensatz verschwinden: der Editor schließt sich hier selbst, nicht zweimal
     await repo.loeschen(a.id);
     if (mounted) nav.pop();
   }
@@ -154,6 +156,7 @@ class _FristEditorState extends ConsumerState<FristEditor> {
 
   @override
   Widget build(BuildContext context) {
+    pruefeVerschwunden(widget.frist?.id);
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = AufgabeRechte(user?.role ?? Role.child, user?.id);
     _ausgang ??= _stand();

@@ -115,6 +115,77 @@ void main() {
       expect(find.byType(AufgabeEditor), findsOneWidget);
     });
 
+    testWidgets('Tablet (800 px, mobiles Layout): kein Zweispalter, Liste dann Editor als Vollseite', (tester) async {
+      await start(tester, tab: kAufgabenTab, groesse: const Size(800, 900), vorher: aufgaben);
+      await zumBereich(tester, 'Aufgaben');
+      expect(find.text('Wähle links eine Aufgabe'), findsNothing);
+      await tippe(tester, find.text('Fahrrad reparieren'));
+      expect(find.byType(AufgabeEditor), findsOneWidget);
+      expect(find.text('Elternbrief unterschreiben'), findsNothing, reason: 'Vollseite: die Liste liegt dahinter');
+    });
+
+    testWidgets('Zurück (Android, Browser) schließt zuerst den Editor in der rechten Spalte und verlässt den Bereich nicht', (tester) async {
+      final (_, c) = await start(tester, tab: kAufgabenTab, vorher: aufgaben);
+      await tippe(tester, find.text('Fahrrad reparieren'));
+      expect(find.byType(AufgabeEditor), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await warte(tester);
+      expect(find.byType(AufgabeEditor), findsNothing);
+      expect(find.text('Wähle links eine Aufgabe'), findsOneWidget);
+      expect(c.read(shellTabProvider), kAufgabenTab, reason: 'der Bereich bleibt');
+    });
+
+    testWidgets('Zurück mit ungespeicherten Eingaben fragt nach, statt zu verwerfen', (tester) async {
+      await start(tester, tab: kAufgabenTab, vorher: aufgaben);
+      await tippe(tester, find.text('Fahrrad reparieren'));
+      await tester.enterText(find.widgetWithText(TextField, 'Fahrrad reparieren'), 'Fahrrad reparieren und putzen');
+      await tester.pump();
+      await tester.binding.handlePopRoute();
+      await warte(tester);
+      expect(find.text('Änderungen verwerfen?'), findsOneWidget);
+      await tippeText(tester, 'Weiter bearbeiten');
+      expect(find.byType(AufgabeEditor), findsOneWidget);
+    });
+
+    testWidgets('der Datensatz des offenen Editors wird gelöscht (z. B. von einem anderen Gerät): der Editor schließt sich', (tester) async {
+      final (env, _) = await start(tester, tab: kAufgabenTab, vorher: aufgaben);
+      await tippe(tester, find.text('Fahrrad reparieren'));
+      expect(find.byType(AufgabeEditor), findsOneWidget);
+      await (env.db.delete(env.db.aufgaben)..where((t) => t.id.equals(_a1))).go();
+      await warte(tester);
+      expect(find.byType(AufgabeEditor), findsNothing);
+      expect(find.text('Wähle links eine Aufgabe'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Editor selbst löschen: schließt genau einmal (die Liste und der Bereich bleiben)', (tester) async {
+      final (env, c) = await start(tester, tab: kAufgabenTab, vorher: aufgaben);
+      await tippe(tester, find.text('Fahrrad reparieren'));
+      await tippeText(tester, 'Aufgabe löschen');
+      await tippe(tester, find.descendant(of: find.byType(AlertDialog), matching: find.text('Löschen')));
+      await warte(tester, 8);
+      expect(find.byType(AufgabeEditor), findsNothing);
+      expect(find.text('Elternbrief unterschreiben'), findsOneWidget, reason: 'kein zweites Pop: die Liste ist noch da');
+      expect(c.read(shellTabProvider), kAufgabenTab);
+      expect((await env.db.select(env.db.aufgaben).get()).map((a) => a.id), [_a2]);
+    });
+
+    testWidgets('Fenster wird schmaler, während der Editor mit Eingaben offen ist: der Editor bleibt (ganze Breite), nichts geht verloren', (tester) async {
+      await start(tester, tab: kAufgabenTab, vorher: aufgaben);
+      await tippe(tester, find.text('Fahrrad reparieren'));
+      await tester.enterText(find.widgetWithText(TextField, 'Fahrrad reparieren'), 'Fahrrad reparieren und putzen');
+      await tester.pump();
+      tester.view.physicalSize = const Size(900, 900);
+      await warte(tester);
+      expect(find.byType(AufgabeEditor), findsOneWidget);
+      expect(find.text('Fahrrad reparieren und putzen'), findsWidgets, reason: 'die Eingabe bleibt erhalten');
+      tester.view.physicalSize = const Size(1280, 900);
+      await warte(tester);
+      expect(find.byType(AufgabeEditor), findsOneWidget);
+      expect(find.text('Fahrrad reparieren und putzen'), findsWidgets);
+      expect(find.text('Elternbrief unterschreiben'), findsOneWidget, reason: 'breit: die Liste ist wieder daneben');
+    });
+
     testWidgets('Kind: darf eigene Aufgaben anlegen, der Leerzustand bietet die Handlung an', (tester) async {
       await start(tester, tab: kAufgabenTab, role: 'child', vorher: (e) {
         e.sync.andereAendert('aufgabe', _a1, {..._aufgabe('Zimmer saugen'), 'assigneeId': fixIdKind});
@@ -143,6 +214,13 @@ void main() {
       await warte(tester);
       expect(find.text('Sonnencreme'), findsOneWidget);
       expect(find.text('Milch'), findsNothing);
+    });
+
+    testWidgets('Tablet (800 px, mobiles Layout): keine Listenspalte', (tester) async {
+      await start(tester, tab: kListenTab, groesse: const Size(800, 900), vorher: listen);
+      await zumBereich(tester, 'Listen');
+      expect(find.byKey(const ValueKey('liste:$_l1')), findsNothing);
+      expect(find.text('Milch'), findsOneWidget);
     });
 
     testWidgets('mobil: weiter Reiter über der Liste, keine Listenspalte', (tester) async {

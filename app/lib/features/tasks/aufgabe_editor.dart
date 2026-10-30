@@ -22,6 +22,7 @@ import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import 'editor_verschwunden.dart';
 import 'frist_editor.dart' show FristEditor;
 
 /// Öffnet den Editor. [aufgabe] null = neue Aufgabe.
@@ -50,7 +51,7 @@ class AufgabeEditor extends ConsumerStatefulWidget {
   ConsumerState<AufgabeEditor> createState() => _AufgabeEditorState();
 }
 
-class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
+class _AufgabeEditorState extends ConsumerState<AufgabeEditor> with EditorSchliesstBeiLoeschung<AufgabeEditor> {
   final _titel = TextEditingController();
   final _beschreibung = TextEditingController();
   final _neuerPunkt = TextEditingController();
@@ -221,6 +222,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     final nav = Navigator.of(context);
     final ja = await bestaetigen(context, titel: 'Aufgabe „${a.titel}“ löschen?', text: 'Die Aufgabe und ihre Unteraufgaben werden für alle gelöscht.', knopf: 'Löschen');
     if (!ja) return;
+    selbstBeendet = true; // die Löschung lässt den Datensatz verschwinden: der Editor schließt sich hier selbst, nicht zweimal
     await repo.loeschen(a.id);
     if (mounted) nav.pop();
   }
@@ -236,6 +238,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
 
   @override
   Widget build(BuildContext context) {
+    pruefeVerschwunden(widget.aufgabe?.id);
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = AufgabeRechte(user?.role ?? Role.child, user?.id);
     _ausgang ??= _stand();

@@ -15,6 +15,7 @@ import '../../widgets/sync_hinweise.dart';
 import '../../widgets/kopfzeile.dart';
 import '../../widgets/liste_detail.dart' show kListeDetailBreite, kListeSpaltenBreite;
 import '../../widgets/rueckgaengig.dart';
+import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import 'list_dialogs.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -167,7 +168,8 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     // Zweispalter wie bei den Aufgaben: links die Listen, rechts die gewählte Liste (schmaler: Reiter über der Liste, wie bisher)
     return LayoutBuilder(
       builder: (context, c) {
-        if (c.maxWidth < kListeDetailBreite) return einspaltig;
+        // zwei Spalten nur im Desktop-Layout (nicht mobil, nicht auf dem Tablet mit 700 bis 899 px)
+        if (c.maxWidth < kListeDetailBreite || !DesktopShellMarke.vorhanden(context)) return einspaltig;
         final liste = vorhandene.firstWhere((l) => l.id == gewaehlt, orElse: () => vorhandene.first);
         final mitglieder = Mitglieder(ref.watch(mitgliederProvider).value ?? const []);
         return Row(

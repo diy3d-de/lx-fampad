@@ -1,12 +1,17 @@
-// Zweispalter "Liste links, Detail rechts" für Bereiche mit Detailseiten (Aufgaben): wie der Chat ab einer Inhaltsbreite von [kListeDetailBreite], darunter bleibt es
-// bei Liste, dann Detail als Vollseite (mobil unverändert). Rechts liegt ein eigener Navigator: Editoren und Detailseiten werden dort geöffnet (nicht über der
+// Zweispalter "Liste links, Detail rechts" für Bereiche mit Detailseiten (Aufgaben): nur im Desktop-Layout (Marke [DesktopShellMarke], ab 900 px Fensterbreite)
+// und dort ab einer Inhaltsbreite von [kListeDetailBreite]; sonst (mobil, Tablet 700 bis 899 px, schmaler Inhalt) bleibt es bei Liste, dann Detail als Vollseite.
+// Wird das Fenster schmaler, während rechts ein Detail (Editor) offen ist, bleibt es offen und füllt die ganze Breite (die Liste tritt zurück; nichts geht verloren).
+// Zurück (Android, Browser) schließt zuerst das Detail rechts ([NavigatorPopHandler]), erst dann verlässt es den Bereich. Rechts liegt ein eigener Navigator: Editoren und Detailseiten werden dort geöffnet (nicht über der
 // ganzen Shell), `Navigator.of(context).pop()` in ihnen schließt nur die rechte Spalte, und dort aufgerufene Dialoge (`useRootNavigator: false`) und der
 // UngespeichertSchutz der Editoren wirken in der rechten Spalte. Ohne geöffnetes Detail zeigt die Spalte den Leerzustand mit einer Handlung.
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants.dart';
+import '../data/shell/detail_offen_state.dart';
+import '../features/shell/desktop_shell.dart' show DesktopShellMarke;
 
 /// Ab dieser Breite des Inhaltsbereichs gibt es zwei Spalten.
 const kListeDetailBreite = 700.0;
@@ -48,22 +53,40 @@ Future<void> detailOeffnen(BuildContext context, WidgetBuilder seite, {String? i
 
 class _Beobachter extends NavigatorObserver {
   final ValueNotifier<String?> auswahl;
-  _Beobachter(this.auswahl);
+
+  /// Ist rechts ein Detail über dem Leerzustand offen?
+  final ValueNotifier<bool> offen;
+  _Beobachter(this.auswahl, this.offen);
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null) scheduleMicrotask(() => offen.value = true);
+  }
 
   @override
   void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) {
     // zurück auf die erste Seite (Leerzustand): nichts mehr ausgewählt
-    if (previousRoute?.isFirst ?? false) scheduleMicrotask(() => auswahl.value = null);
+    if (previousRoute?.isFirst ?? false) {
+      scheduleMicrotask(() {
+        auswahl.value = null;
+        offen.value = false;
+      });
+    }
   }
 
   @override
   void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) {
-    if (previousRoute?.isFirst ?? false) scheduleMicrotask(() => auswahl.value = null);
+    if (previousRoute?.isFirst ?? false) {
+      scheduleMicrotask(() {
+        auswahl.value = null;
+        offen.value = false;
+      });
+    }
   }
 }
 
 /// Zweispalter: [liste] links, rechts ein Navigator mit [leer] als Grundzustand. Unter [kListeDetailBreite] nur die Liste.
-class ListeDetail extends StatefulWidget {
+class ListeDetail extends ConsumerStatefulWidget {
   final Widget liste;
 
   /// Rechte Spalte ohne geöffnetes Detail (Leerzustand mit Handlung).
@@ -71,42 +94,77 @@ class ListeDetail extends StatefulWidget {
   const ListeDetail({super.key, required this.liste, required this.leer});
 
   @override
-  State<ListeDetail> createState() => _ListeDetailState();
+  ConsumerState<ListeDetail> createState() => _ListeDetailState();
 }
 
-class _ListeDetailState extends State<ListeDetail> {
+class _ListeDetailState extends ConsumerState<ListeDetail> {
   final _navKey = GlobalKey<NavigatorState>();
   final _auswahl = ValueNotifier<String?>(null);
-  late final _beobachter = _Beobachter(_auswahl);
+  final _offen = ValueNotifier<bool>(false);
+  late final _beobachter = _Beobachter(_auswahl, _offen);
+  late final ProviderContainer _container = ProviderScope.containerOf(context, listen: false);
+
+  @override
+  void initState() {
+    super.initState();
+    _offen.addListener(_melden);
+  }
+
+  // die Shell erfährt, dass rechts ein Detail offen ist (Zurück schließt dann zuerst das Detail)
+  void _melden() => Future.microtask(() {
+    try {
+      _container.read(detailOffenProvider.notifier).setzen(_offen.value);
+    } catch (_) {
+      // Container schon weg (Fenster zu)
+    }
+  });
 
   @override
   void dispose() {
+    _offen.removeListener(_melden);
+    if (_offen.value) _offen.value = false;
+    _melden();
     _auswahl.dispose();
+    _offen.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, c) {
-      if (c.maxWidth < kListeDetailBreite) return widget.liste;
-      return DetailSpalte(
-        navigatorKey: _navKey,
-        auswahl: _auswahl,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            SizedBox(width: kListeSpaltenBreite, child: widget.liste),
-            const VerticalDivider(width: 1, color: kBorderSoft),
-            Expanded(
-              child: Navigator(
-                key: _navKey,
-                observers: [_beobachter],
-                onGenerateRoute: (s) => PageRouteBuilder<void>(settings: s, pageBuilder: (_, _, _) => Material(type: MaterialType.transparency, child: widget.leer), transitionDuration: Duration.zero),
-              ),
+  Widget build(BuildContext context) {
+    // Zwei Spalten gibt es nur im Desktop-Layout; mobil und auf dem Tablet (700 bis 899 px) bleibt es bei Liste, dann Detail als Vollseite
+    if (!DesktopShellMarke.vorhanden(context)) return widget.liste;
+    return LayoutBuilder(
+      builder: (context, c) => ValueListenableBuilder<bool>(
+        valueListenable: _offen,
+        builder: (context, offen, _) {
+          final breit = c.maxWidth >= kListeDetailBreite;
+          if (!breit && !offen) return widget.liste;
+          // der Schlüssel am Navigator hält die offene Seite (und ihre Eingaben) beim Wechsel zwischen den Anordnungen
+          final detail = NavigatorPopHandler(
+            enabled: offen,
+            onPopWithResult: (_) => unawaited(_navKey.currentState?.maybePop()),
+            child: Navigator(
+              key: _navKey,
+              observers: [_beobachter],
+              onGenerateRoute: (s) => PageRouteBuilder<void>(settings: s, pageBuilder: (_, _, _) => Material(type: MaterialType.transparency, child: widget.leer), transitionDuration: Duration.zero),
             ),
-          ],
-        ),
-      );
-    },
-  );
+          );
+          return DetailSpalte(
+            navigatorKey: _navKey,
+            auswahl: _auswahl,
+            child: breit
+                ? Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      SizedBox(width: kListeSpaltenBreite, child: widget.liste),
+                      const VerticalDivider(width: 1, color: kBorderSoft),
+                      Expanded(child: detail),
+                    ],
+                  )
+                : detail,
+          );
+        },
+      ),
+    );
+  }
 }

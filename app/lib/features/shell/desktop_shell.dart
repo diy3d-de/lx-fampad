@@ -23,6 +23,7 @@ import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
 import '../suche/such_screen.dart' show SuchScreen;
 import '../tasks/tasks_state.dart' show aufgabenAnsichtProvider;
+import '../../data/shell/detail_offen_state.dart';
 import 'mehr_menue.dart' show HinweisZeichen, MehrEintrag, MehrGruppe, bereichsEintraege;
 import 'schnellwahl.dart';
 import 'shell_tab.dart';
@@ -281,7 +282,8 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
                         child: ValueListenableBuilder<int>(
                           valueListenable: _beobachter.tiefe,
                           builder: (context, tiefe, kind) => NavigatorPopHandler(
-                            enabled: tiefe > 1,
+                            // auch solange im Zweispalter rechts ein Detail offen ist: der Bereich fängt "Zurück" ab und schließt zuerst das Detail
+                            enabled: tiefe > 1 || ref.watch(detailOffenProvider),
                             onPopWithResult: (Object? r) => _navKey.currentState?.maybePop(r),
                             child: kind!,
                           ),
