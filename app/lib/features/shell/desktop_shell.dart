@@ -562,7 +562,7 @@ class _Fusszeile extends ConsumerWidget {
     final installiert = ref.watch(updateProvider.select((u) => u.installierteVersion));
     final version = installiert ?? (kWebVersion.isNotEmpty ? webVersionTeilen(kWebVersion).version : 'dev');
     final (bedienText, farbe) = syncAnzeige(sync);
-    final hinweis = syncHinweis(sync);
+    final zeile = syncZeile(sync);
     const stil = TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted);
     return Container(
       constraints: const BoxConstraints(minHeight: 36),
@@ -574,11 +574,29 @@ class _Fusszeile extends ConsumerWidget {
           spacing: 24,
           runSpacing: 4,
           children: [
-            // Zustand immer als Text (nie nur Farbe): bei "synchron" ein kurzes „Alles aktuell“, sonst ein ruhiger Satz; die Zahl offener Änderungen steht im Bedienhilfe-Text
+            // Zustand immer als Symbol UND Text (nie nur Farbe): bei "synchron" ein kurzes „Alles aktuell“, sonst die ruhige Zeile (ein Fehler mit "Erneut versuchen");
+            // die Zahl offener Änderungen steht nur, solange welche warten
             Semantics(
-              label: 'Sync: $bedienText',
-              excludeSemantics: true,
-              child: Text(hinweis ?? (sync.status == SyncStatus.laeuft ? 'Überträgt …' : 'Alles aktuell'), style: stil.copyWith(color: hinweis == null ? farbe : kTextMuted)),
+              label: zeile == null ? 'Sync: $bedienText' : null,
+              liveRegion: zeile != null,
+              excludeSemantics: zeile == null,
+              container: true,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (zeile != null) ...[
+                    ExcludeSemantics(child: Icon(zeile.symbol, size: 14, color: zeile.alarm ? kDanger : kTextMuted)),
+                    const SizedBox(width: 6),
+                  ],
+                  Text(zeile?.text ?? (sync.status == SyncStatus.laeuft ? 'Überträgt …' : 'Alles aktuell'), style: stil.copyWith(color: zeile == null ? farbe : kTextMuted)),
+                  if (zeile?.handlung != null)
+                    TextButton(
+                      style: TextButton.styleFrom(minimumSize: const Size(44, 44), padding: const EdgeInsets.symmetric(horizontal: 8), foregroundColor: kAccent, textStyle: stil),
+                      onPressed: () => unawaited(ref.read(syncProvider.notifier).synchronisieren(manuell: true)),
+                      child: Text(zeile!.handlung!),
+                    ),
+                ],
+              ),
             ),
             Text('Version $version', style: stil),
           ],
