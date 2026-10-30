@@ -15,6 +15,8 @@ import '../../data/tasks/aufgabe_repository.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
 import '../../widgets/kopfzeile.dart';
+import '../../widgets/liste_detail.dart';
+import '../../widgets/rueckgaengig.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show bestaetigen;
@@ -53,7 +55,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     if (id == null || !ref.read(aufgabenProvider).hasValue) return;
     ref.read(aufgabeOeffnenProvider.notifier).setzen(null);
     final a = ref.read(aufgabenDatenProvider).aufgabe(id);
-    if (a != null) unawaited(aufgabeEditorOeffnen(context, aufgabe: a));
+    if (a != null) unawaited(aufgabeEditorOeffnen(_ctx, aufgabe: a));
   }
 
   @override
@@ -79,7 +81,26 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     if (mounted) _fokus.requestFocus();
   }
 
-  Future<void> _loeschen(Aufgabe a) => _repo.loeschen(a.id);
+  Future<void> _loeschen(Aufgabe a) async {
+    final punkte = ref.read(aufgabenDatenProvider).punkteVon(a.id);
+    // Repository und Person VOR dem Hinweis holen: die Handlung darf nach dem Abmelden nichts mehr über `ref` des Bildschirms lesen
+    final repo = _repo;
+    final ich = ref.read(authProvider).user?.id;
+    await repo.loeschen(a.id);
+    // Rückgängig legt die offene Aufgabe mit neuer ID wieder an (der Server behält die gelöschte als Tombstone)
+    if (!mounted || istErledigt(a)) return;
+    rueckgaengigZeigen(context, text: 'Aufgabe gelöscht', rueckgaengig: () async => repo.wiederherstellen(a, punkte, besitzer: ich));
+  }
+
+  Future<void> _haken(Aufgabe a) async {
+    final warErledigt = istErledigt(a);
+    final repo = _repo;
+    final ich = ref.read(authProvider).user?.id;
+    // Hinweis nur, wenn dieser Tipp wirklich etwas geändert hat (ein Doppeltipp ändert beim zweiten Mal nichts)
+    final geaendert = await repo.erledigt(a, !warErledigt);
+    if (!mounted || warErledigt || !geaendert) return;
+    rueckgaengigZeigen(context, text: 'Aufgabe erledigt', rueckgaengig: () => repo.erledigtZuruecknehmen(a, besitzer: ich));
+  }
 
   Future<bool> _loeschenFragen(Aufgabe a) => bestaetigen(
     context,
@@ -148,7 +169,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
                 if (rechte.darfAnlegen && fristenAnsicht)
                   FilledButton.icon(
                     style: FilledButton.styleFrom(minimumSize: const Size(44, 48)),
-                    onPressed: () => fristEditorOeffnen(context),
+                    onPressed: () => fristEditorOeffnen(_ctx),
                     icon: const Icon(Icons.add),
                     label: const Text('Neue Frist'),
                   ),
@@ -186,7 +207,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
             ),
             const SizedBox(width: 8),
             IconButton.filled(tooltip: 'Aufgabe hinzufügen', onPressed: _hinzufuegen, icon: const Icon(Icons.add)),
-            IconButton(tooltip: 'Aufgabe mit Details anlegen', onPressed: () => aufgabeEditorOeffnen(context), icon: const Icon(Icons.tune, color: kAccent)),
+            IconButton(tooltip: 'Aufgabe mit Details anlegen', onPressed: () => aufgabeEditorOeffnen(_ctx), icon: const Icon(Icons.tune, color: kAccent)),
           ],
         ),
         const SizedBox(height: 12),
@@ -222,11 +243,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       if (lesefehler)
         const EmptyState(icon: Icons.error_outline, title: 'Aufgaben nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
       else if (ladend)
-        const Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))
+        const LadePlatzhalter(karten: 2)
       else if (fristenAnsicht && sichtbar.isEmpty && !daten.aufgaben.any((a) => a.frist))
-        const EmptyState(icon: Icons.event_available_outlined, title: 'Noch keine Fristen', hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.')
+        EmptyState(
+          icon: Icons.event_available_outlined,
+          title: 'Noch keine Fristen',
+          hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.',
+          knopf: rechte.darfAnlegen ? 'Frist anlegen' : null,
+          onKnopf: rechte.darfAnlegen ? () => fristEditorOeffnen(_ctx) : null,
+        )
       else if (daten.aufgaben.isEmpty)
-        const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
+        EmptyState(
+          icon: Icons.task_alt_outlined,
+          title: 'Noch keine Aufgaben',
+          hint: 'Schreib oben auf, was zu tun ist.',
+          knopf: rechte.darfAnlegen ? 'Aufgabe hinzufügen' : null,
+          onKnopf: rechte.darfAnlegen ? _fokus.requestFocus : null,
+        )
       else if (sichtbar.isEmpty && aktiv > 0)
         EmptyState(
           icon: Icons.filter_alt_off_outlined,
@@ -236,9 +269,32 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
           onKnopf: notifier.zuruecksetzen,
         )
       else if (sichtbar.isEmpty)
-        const EmptyState(icon: Icons.filter_alt_off_outlined, title: 'Nichts gefunden', hint: 'Es ist nichts mehr offen.'),
+        EmptyState(
+          icon: Icons.task_alt_outlined,
+          title: 'Alles erledigt',
+          hint: 'Es ist nichts mehr offen.',
+          knopf: rechte.darfAnlegen && !fristenAnsicht ? 'Aufgabe hinzufügen' : null,
+          onKnopf: rechte.darfAnlegen && !fristenAnsicht ? _fokus.requestFocus : null,
+        ),
     ];
 
+    final liste = Builder(
+      builder: (innen) {
+        _innen = innen; // Kontext innerhalb des Zweispalters: Editoren öffnen in der rechten Spalte
+        return _listeMitAktualisieren(kopf, sichtbar, daten, rechte, mitglieder, jetzt, lesefehler || ladend);
+      },
+    );
+    return ListeDetail(
+      liste: liste,
+      leer: _KeinDetail(darfAnlegen: rechte.darfAnlegen),
+    );
+  }
+
+  /// Der Kontext für das Öffnen von Editoren: innerhalb des Zweispalters (rechte Spalte), sonst der eigene.
+  BuildContext get _ctx => (_innen != null && _innen!.mounted) ? _innen! : context;
+  BuildContext? _innen;
+
+  Widget _listeMitAktualisieren(List<Widget> kopf, List<Aufgabe> sichtbar, AufgabenDaten daten, AufgabeRechte rechte, Mitglieder mitglieder, DateTime jetzt, bool ohneZeilen) {
     return RefreshIndicator(
       color: kAccent,
       backgroundColor: kSurface,
@@ -247,7 +303,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       child: ListView.builder(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-        itemCount: kopf.length + (lesefehler || ladend ? 0 : sichtbar.length),
+        itemCount: kopf.length + (ohneZeilen ? 0 : sichtbar.length),
         itemBuilder: (context, i) {
           if (i < kopf.length) return kopf[i];
           final a = sichtbar[i - kopf.length];
@@ -261,7 +317,8 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               statusDarf: rechte.darfStatus(a),
               person: mitglieder[a.assigneeId],
               jetzt: jetzt,
-              onHaken: () => _repo.erledigt(a, !istErledigt(a)),
+              onHaken: () => unawaited(_haken(a)),
+              gewaehlt: DetailSpalte.maybeOf(context)?.auswahl == a.id,
               onOeffnen: () => aufgabeEditorOeffnen(context, aufgabe: a),
               onLoeschenFragen: () => _loeschenFragen(a),
               onLoeschen: () {
@@ -311,6 +368,9 @@ class _Zeile extends StatelessWidget {
   final DateTime jetzt;
   final VoidCallback onHaken;
   final VoidCallback onOeffnen;
+
+  /// Das Detail dieser Aufgabe ist im Zweispalter rechts offen: hellere Fläche.
+  final bool gewaehlt;
   final Future<bool> Function() onLoeschenFragen;
   final VoidCallback onLoeschen;
   const _Zeile({
@@ -322,6 +382,7 @@ class _Zeile extends StatelessWidget {
     required this.jetzt,
     required this.onHaken,
     required this.onOeffnen,
+    this.gewaehlt = false,
     required this.onLoeschenFragen,
     required this.onLoeschen,
   });
@@ -363,7 +424,7 @@ class _Zeile extends StatelessWidget {
     final karte = Container(
       constraints: const BoxConstraints(minHeight: 56),
       decoration: BoxDecoration(
-        color: erledigt ? null : kSurface,
+        color: gewaehlt ? kSurface2 : (erledigt ? null : kSurface),
         border: Border.all(color: ueberfaellig ? kDanger.withValues(alpha: 0.6) : (fristOffen && ampel == FristAmpel.bald ? kWarn.withValues(alpha: 0.6) : Colors.transparent)),
         borderRadius: BorderRadius.circular(12),
       ),
@@ -388,6 +449,7 @@ class _Zeile extends StatelessWidget {
           Expanded(
             child: Semantics(
               button: true,
+              selected: gewaehlt,
               label: beschreibung,
               hint: 'Öffnen',
               excludeSemantics: true,
@@ -480,4 +542,19 @@ class _Zeile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Rechte Spalte ohne geöffnete Aufgabe (nur im Zweispalter): Leerzustand mit Handlung.
+class _KeinDetail extends ConsumerWidget {
+  final bool darfAnlegen;
+  const _KeinDetail({required this.darfAnlegen});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => EmptyState(
+    icon: Icons.task_alt_outlined,
+    title: 'Wähle links eine Aufgabe',
+    hint: 'Hier siehst du dann alle Einzelheiten. Oder lege gleich eine neue an.',
+    knopf: darfAnlegen ? 'Aufgabe hinzufügen' : null,
+    onKnopf: darfAnlegen ? () => unawaited(aufgabeEditorOeffnen(context)) : null,
+  );
 }

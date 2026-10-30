@@ -11,6 +11,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../features/update/update_service.dart';
+import '../widgets/rueckgaengig.dart' show rueckgaengigSchliessen;
 import 'auth/auth_state.dart';
 import 'database_provider.dart';
 import 'dateien/transfer_dienst.dart' show dateiCacheDienstProvider, transferDienstProvider;
@@ -18,6 +19,8 @@ import 'erinnerungen/erinnerung_dienst.dart';
 import 'erinnerungen/web_erinnerung_state.dart' show webErinnerungAnProvider, webHinweiseProvider;
 import 'heute_widget/heute_widget_dienst.dart';
 import 'standort/standort_hinweis.dart';
+import 'shell/zuletzt_state.dart' show shellMerkerProvider;
+import 'startseite/jetzt_wichtig_state.dart' show jetztWichtigAnProvider;
 import 'startseite/startseite_state.dart';
 import 'countdown/countdown_state.dart';
 import 'chat/chat_krypto_state.dart';
@@ -446,6 +449,8 @@ final syncProvider = NotifierProvider<SyncController, SyncState>(SyncController.
 /// kommt zuerst, damit eine noch laufende Antwort des Servers nicht in die geleerte Datenbank geschrieben wird.
 Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   ref.read(syncProvider.notifier).stoppen();
+  // ein noch offener Rückgängig-Hinweis (Eintrag gelöscht, Aufgabe erledigt) gehört der Vorperson
+  rueckgaengigSchliessen();
   // Terminerinnerungen des Geräts gehören zu den lokalen Daten: weg damit (fehlerfrei, ein Problem hier darf das Leeren nicht stoppen)
   try {
     await ref.read(erinnerungDienstProvider).alleEntfernen();
@@ -469,6 +474,9 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   ref.invalidate(startseiteMobilProvider);
   ref.invalidate(startseiteDesktopProvider);
   ref.invalidate(countdownTermineProvider);
+  // „Zuletzt benutzt“, eingeklappte Gruppen und der Schalter „Jetzt wichtig“ lagen in sync_meta: die nächste Person erbt sie nicht
+  ref.invalidate(shellMerkerProvider);
+  ref.invalidate(jetztWichtigAnProvider);
   // Erinnerungen im Browser: Schalter (lag in sync_meta) und Hinweise im Arbeitsspeicher gehören der Vorperson nicht
   ref.invalidate(webErinnerungAnProvider);
   ref.invalidate(webHinweiseProvider);

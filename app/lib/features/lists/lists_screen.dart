@@ -13,6 +13,9 @@ import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../../widgets/kopfzeile.dart';
+import '../../widgets/liste_detail.dart' show kListeDetailBreite, kListeSpaltenBreite;
+import '../../widgets/rueckgaengig.dart';
+import '../shell/desktop_shell.dart' show DesktopShellMarke;
 import 'list_dialogs.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -117,7 +120,12 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         // "Sonstiges" und kein Wert sind dasselbe: dann nichts schreiben
         if (mitKategorie && EinkaufKategorie.von(kategorie) != EinkaufKategorie.von(e.category)) await _repo.eintragKategorie(e.id, kategorie);
       case EintragLoeschen():
-        await _repo.eintragLoeschen(e.id);
+        final repo = _repo; // vor dem Hinweis holen (nach dem Abmelden gibt es den Bildschirm nicht mehr)
+        final ich = ref.read(authProvider).user?.id;
+        await repo.eintragLoeschen(e.id);
+        if (!mounted) return;
+        // Rückgängig legt den Eintrag mit neuer ID wieder an (der Server behält den gelöschten als Tombstone)
+        rueckgaengigZeigen(context, text: 'Eintrag gelöscht', rueckgaengig: () async => repo.eintragWiederherstellen(e, besitzer: ich));
     }
   }
 
@@ -134,7 +142,8 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     ref.watch(authProvider.select((a) => a.user?.id)); // bei Personenwechsel neu bauen
     final gewaehlt = ref.watch(gewaehlteListeProvider);
 
-    return RefreshIndicator(
+    final vorhandene = listenWert.value;
+    final einspaltig = RefreshIndicator(
       color: kAccent,
       backgroundColor: kSurface,
       onRefresh: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
@@ -150,12 +159,65 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
               EmptyState(icon: Icons.error_outline, title: 'Listen nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.'),
             ],
             AsyncData(:final value) || AsyncLoading(value: final value?) || AsyncError(value: final value?) => _inhalt(value, gewaehlt, rechte),
-            _ => const [Padding(padding: EdgeInsets.only(top: 48), child: Center(child: CircularProgressIndicator()))],
+            _ => const [LadePlatzhalter(karten: 2)],
           },
         ],
       ),
     );
+    if (vorhandene == null || vorhandene.isEmpty) return einspaltig;
+    // Zweispalter wie bei den Aufgaben: links die Listen, rechts die gewählte Liste (schmaler: Reiter über der Liste, wie bisher)
+    return LayoutBuilder(
+      builder: (context, c) {
+        // zwei Spalten nur im Desktop-Layout (nicht mobil, nicht auf dem Tablet mit 700 bis 899 px)
+        if (c.maxWidth < kListeDetailBreite || !DesktopShellMarke.vorhanden(context)) return einspaltig;
+        final liste = vorhandene.firstWhere((l) => l.id == gewaehlt, orElse: () => vorhandene.first);
+        final mitglieder = Mitglieder(ref.watch(mitgliederProvider).value ?? const []);
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: kListeSpaltenBreite,
+              child: RefreshIndicator(
+                color: kAccent,
+                backgroundColor: kSurface,
+                onRefresh: () => ref.read(syncProvider.notifier).synchronisieren(manuell: true),
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+                  children: [
+                    const TabKopfzeile(title: 'Listen'),
+                    const SizedBox(height: 12),
+                    const SyncHinweise(),
+                    _ListenSpalte(listen: vorhandene, aktiv: liste.id, onWahl: (id) => ref.read(gewaehlteListeProvider.notifier).waehlen(id), onNeu: rechte.darfListeAnlegen ? _listeAnlegen : null),
+                  ],
+                ),
+              ),
+            ),
+            const VerticalDivider(width: 1, color: kBorderSoft),
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(24, 16, 20, 24),
+                children: [_ansicht(liste, rechte, mitglieder)],
+              ),
+            ),
+          ],
+        );
+      },
+    );
   }
+
+  Widget _ansicht(Liste liste, ListenRechte rechte, Mitglieder mitglieder) => _ListeAnsicht(
+    key: ValueKey(liste.id),
+    liste: liste,
+    rechte: rechte,
+    mitglieder: mitglieder,
+    eingabe: _neu,
+    fokus: _fokus,
+    onHinzu: () => _eintragHinzufuegen(liste),
+    onMenue: (a) => _menue(liste, a),
+    onBearbeiten: (e) => _eintragBearbeiten(e, liste),
+    onZuweisen: (e) => _zuweisen(e, mitglieder.alle),
+  );
 
   List<Widget> _inhalt(List<Liste> listen, String? gewaehlt, ListenRechte rechte) {
     if (listen.isEmpty) {
@@ -176,23 +238,76 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     return [
       _Reiter(listen: listen, aktiv: liste.id, onWahl: (id) => ref.read(gewaehlteListeProvider.notifier).waehlen(id), onNeu: rechte.darfListeAnlegen ? _listeAnlegen : null),
       const SizedBox(height: 16),
-      _ListeAnsicht(
-        key: ValueKey(liste.id),
-        liste: liste,
-        rechte: rechte,
-        mitglieder: mitglieder,
-        eingabe: _neu,
-        fokus: _fokus,
-        onHinzu: () => _eintragHinzufuegen(liste),
-        onMenue: (a) => _menue(liste, a),
-        onBearbeiten: (e) => _eintragBearbeiten(e, liste),
-        onZuweisen: (e) => _zuweisen(e, mitglieder.alle),
-      ),
+      _ansicht(liste, rechte, mitglieder),
     ];
   }
 }
 
 // ------------------------------------------------------------------------------------------------ Teile
+
+/// Die Listen als Spalte (Zweispalter im Desktop-Layout): Name und Zahl offener Einträge, die gewählte als hellere Fläche (Fläche und Text, nicht nur Farbe).
+class _ListenSpalte extends ConsumerWidget {
+  final List<Liste> listen;
+  final String aktiv;
+  final void Function(String id) onWahl;
+  final VoidCallback? onNeu;
+  const _ListenSpalte({required this.listen, required this.aktiv, required this.onWahl, required this.onNeu});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final alle = ref.watch(alleEintraegeProvider).value ?? const <Listeneintrag>[];
+    int offen(String id) => alle.where((e) => e.listId == id && e.doneAt == null).length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final l in listen)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Semantics(
+              button: true,
+              selected: l.id == aktiv,
+              label: '${l.name}, ${offen(l.id)} offen',
+              excludeSemantics: true,
+              child: Material(
+                color: l.id == aktiv ? kSurface2 : kSurface,
+                borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  key: ValueKey('liste:${l.id}'),
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => onWahl(l.id),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 56),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(l.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: l.id == aktiv ? FontWeight.w700 : FontWeight.w500, color: l.id == aktiv ? kTextStrong : kText)),
+                                Text('${ListenArt.von(l.kind).label} · ${offen(l.id)} offen', style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+                              ],
+                            ),
+                          ),
+                          if (l.id == aktiv) const Icon(Icons.chevron_right, color: kAccent),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        if (onNeu != null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(style: TextButton.styleFrom(minimumSize: const Size(44, 44)), onPressed: onNeu, icon: const Icon(Icons.add), label: const Text('Neue Liste')),
+          ),
+      ],
+    );
+  }
+}
 
 /// Reiter der Listen (waagerecht scrollbar) und der Knopf "Neue Liste".
 class _Reiter extends StatelessWidget {
@@ -386,8 +501,16 @@ class _ListeAnsicht extends ConsumerWidget {
         const SizedBox(height: 16),
         if (lesefehler)
           const EmptyState(icon: Icons.error_outline, title: 'Einträge nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
+        else if (!eintraegeWert.hasValue)
+          const LadePlatzhalter()
         else if (sortiert.isEmpty)
-          const EmptyState(icon: Icons.checklist_outlined, title: 'Noch nichts drauf', hint: 'Schreib oben auf, was auf die Liste soll.')
+          EmptyState(
+            icon: Icons.checklist_outlined,
+            title: 'Noch nichts drauf',
+            hint: 'Schreib oben auf, was auf die Liste soll.',
+            knopf: rechte.darfEintraegeAendern ? 'Eintrag hinzufügen' : null,
+            onKnopf: rechte.darfEintraegeAendern ? fokus.requestFocus : null,
+          )
         else if (gruppiert) ...[
           for (final g in gruppiereOffene(eintraege)) ...[
             Padding(

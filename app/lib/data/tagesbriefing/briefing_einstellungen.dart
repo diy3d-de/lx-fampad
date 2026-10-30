@@ -1,5 +1,5 @@
 // Einstellungen des Tagesbriefings: nur lokal je Gerät in `sync_meta` (nie synchronisiert, kein Server, kein Schema).
-//  - kachelAn: Kachel "Heute im Überblick" auf der Startseite (Standard: an; sie erscheint nur, wenn es etwas zu zeigen gibt).
+//  - kachelAn: Kachel "Heute im Überblick" auf der Startseite (Standard: AUS, seit 0.28.0 übernimmt der Block „Jetzt wichtig“ die Übersicht; wer sie bewusst eingeschaltet hat (gespeichert `ja`), behält sie; sie erscheint nur, wenn es etwas zu zeigen gibt).
 //  - morgensAn: lokale Benachrichtigung am Morgen (nur Android; Standard: AUS), minuten: Uhrzeit in Minuten ab Mitternacht (Standard 07:00).
 // Lese- und Schreibfehler ergeben die Standardwerte bzw. gelten nur bis zum Schließen der App.
 import 'dart:async';
@@ -19,7 +19,7 @@ class BriefingEinstellungen {
   final bool kachelAn;
   final bool morgensAn;
   final int minuten;
-  const BriefingEinstellungen({this.kachelAn = true, this.morgensAn = false, this.minuten = kBriefingStandardZeit});
+  const BriefingEinstellungen({this.kachelAn = false, this.morgensAn = false, this.minuten = kBriefingStandardZeit});
 
   BriefingEinstellungen kopie({bool? kachelAn, bool? morgensAn, int? minuten}) =>
       BriefingEinstellungen(kachelAn: kachelAn ?? this.kachelAn, morgensAn: morgensAn ?? this.morgensAn, minuten: minuten ?? this.minuten);
@@ -53,7 +53,7 @@ class BriefingEinstellungenNotifier extends Notifier<BriefingEinstellungen> {
       final kachel = await s.lesen(schluessel: kBriefingKachelSchluessel);
       final morgens = await s.lesen(schluessel: kBriefingMorgensSchluessel);
       final zeit = int.tryParse(await s.lesen(schluessel: kBriefingZeitSchluessel) ?? '');
-      neu = BriefingEinstellungen(kachelAn: kachel != 'nein', morgensAn: morgens == 'ja', minuten: zeit != null && zeit >= 0 && zeit < 1440 ? zeit : kBriefingStandardZeit);
+      neu = BriefingEinstellungen(kachelAn: kachel == 'ja', morgensAn: morgens == 'ja', minuten: zeit != null && zeit >= 0 && zeit < 1440 ? zeit : kBriefingStandardZeit);
     } catch (_) {
       // nicht lesbar: Standardwerte
     }

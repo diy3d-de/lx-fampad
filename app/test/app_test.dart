@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lx_fampad/data/sync_state.dart' show SyncZeiten;
 import 'package:lx_fampad/features/calendar/calendar_screen.dart';
 import 'package:lx_fampad/features/chat/chat_screen.dart';
 import 'package:lx_fampad/features/home/home_screen.dart';
@@ -71,7 +72,34 @@ void main() {
     env.sync.offline = true;
     await starteApp(tester, env);
     expect(find.byTooltip('Offline'), findsWidgets);
-    expect(find.text('Gerade keine Verbindung – Änderungen werden nachgeholt'), findsOneWidget);
+    expect(find.text('Du bist offline. Alles ist auf diesem Gerät gespeichert.'), findsOneWidget, reason: 'der Zustand steht auf der Startseite genau einmal');
+    expect(find.byIcon(Icons.cloud_off), findsWidgets, reason: 'Symbol UND Text, nie nur Farbe');
+  });
+
+  testWidgets('Serverfehler: Startseite zeigt Symbol, Text und die Handlung "Erneut versuchen" (Touch-Ziel >= 44 px), der Tipp gleicht erneut ab', (tester) async {
+    final env = await angemeldeteUmgebung();
+    env.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
+    env.sync.fehlerQueue.add((500, 'internal_error'));
+    await starteApp(tester, env);
+    expect(find.text('Übertragen hat nicht geklappt'), findsOneWidget);
+    final knopf = find.widgetWithText(TextButton, 'Erneut versuchen');
+    expect(knopf, findsOneWidget);
+    expect(tester.getSize(knopf).height, greaterThanOrEqualTo(44));
+    final n = env.server.anfragen('POST /sync').length;
+    await tippe(tester, knopf);
+    await warte(tester, 10);
+    expect(env.server.anfragen('POST /sync').length, greaterThan(n));
+    expect(find.text('Übertragen hat nicht geklappt'), findsNothing);
+  });
+
+  testWidgets('Desktop: Fußzeile zeigt beim Fehler Symbol, Text und die Handlung', (tester) async {
+    final env = await angemeldeteUmgebung();
+    env.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
+    env.sync.fehlerQueue.add((500, 'internal_error'));
+    await starteApp(tester, env, groesse: const Size(1280, 900));
+    expect(find.text('Übertragen hat nicht geklappt'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, 'Erneut versuchen'), findsOneWidget);
+    expect(find.byIcon(Icons.error_outline), findsWidgets);
   });
 
   testWidgets('426 vom Sync (Protokoll zu alt): die Pflicht-Update-Seite ersetzt die App, es folgt kein weiterer Abgleich', (tester) async {

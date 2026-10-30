@@ -4,6 +4,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_riverpod/misc.dart' show Override;
 import 'package:flutter_test/flutter_test.dart';
@@ -15,6 +16,7 @@ import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpei
 import 'package:lx_fampad/data/muell/muell_modelle.dart' show MuellDto;
 import 'package:lx_fampad/data/muell/muell_state.dart';
 import 'package:lx_fampad/data/shell/leiste_logik.dart';
+import 'package:lx_fampad/data/shell/zuletzt_logik.dart';
 import 'package:lx_fampad/data/tasks/aufgabe_logik.dart' show AufgabeFilter;
 import 'package:lx_fampad/data/wetter/wetter_state.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart' show heuteTag;
@@ -23,6 +25,7 @@ import 'package:lx_fampad/features/profile/anzeige_screen.dart';
 import 'package:lx_fampad/features/profile/leiste_anpassen_screen.dart';
 import 'package:lx_fampad/features/profile/profile_screen.dart';
 import 'package:lx_fampad/features/shell/mehr_menue.dart';
+import 'package:lx_fampad/features/shell/schnellwahl.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
 import 'package:lx_fampad/features/standort/standort_screen.dart';
 import 'package:lx_fampad/features/suche/such_screen.dart';
@@ -329,21 +332,37 @@ void main() {
       expect(find.descendant(of: find.byKey(const ValueKey('mehr:listen')), matching: find.byType(HinweisZeichen)), findsNothing);
     });
 
+    testWidgets('Desktop: eine eingeklappte Gruppe zeigt am Kopf die Summe der Hinweise mit Ausrufezeichen und Vorlesetext, aufgeklappt nicht mehr', (tester) async {
+      final h = tester.ensureSemantics();
+      await start(tester, groesse: const Size(1200, 1400), gespeichert: {kGruppenZuSchluessel: '["Familie"]'}, vorher: daten);
+      expect(find.text('3!'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist: Zahl UND Zeichen, nie nur Farbe');
+      expect(find.bySemanticsLabel('Familie, 3 Hinweise, Überfälliges dabei'), findsOneWidget);
+      expect(find.byTooltip('Familie: 3 Hinweise, Überfälliges dabei'), findsOneWidget);
+      expect(find.bySemanticsLabel('Zuhause'), findsOneWidget, reason: 'offene Gruppe ohne Hinweise: nur der Name');
+      await tester.tap(find.bySemanticsLabel('Familie, 3 Hinweise, Überfälliges dabei'));
+      await warte(tester);
+      expect(find.text('3!'), findsNothing);
+      expect(find.bySemanticsLabel('Familie'), findsOneWidget);
+      h.dispose();
+    });
+
     testWidgets('Aufgaben hinter Mehr: Summe aus fälligen Aufgaben (überfällig und bald fällig) und Fristen; Zeichen rot bei Überfälligem', (tester) async {
       await start(tester, gespeichert: {'leiste_bereiche': 'start,kalender,chat,listen'}, vorher: daten);
-      expect(find.byTooltip('Weitere Bereiche, 3 Hinweise'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist');
+      expect(find.byTooltip('Weitere Bereiche, 3 Hinweise, Überfälliges dabei'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist');
+      expect(find.descendant(of: leiste(), matching: find.text('3!')), findsOneWidget, reason: 'Überfälliges steht im Zeichen selbst (Ausrufezeichen), nie nur als rote Farbe');
       final badge = tester.widget<Badge>(find.descendant(of: leiste(), matching: find.byType(Badge)).last);
       expect(badge.backgroundColor, kDanger);
       await mehrOeffnen(tester);
       final a = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:aufgaben')), matching: find.byType(HinweisZeichen)));
       expect((a.zahl, a.ueberfaellig), (2, true));
+      expect(find.descendant(of: find.byKey(const ValueKey('mehr:aufgaben')), matching: find.text('2!')), findsOneWidget);
       final f = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:fristen')), matching: find.byType(HinweisZeichen)));
       expect((f.zahl, f.ueberfaellig), (1, false));
     });
 
     testWidgets('Vorsorge: Zahl der fälligen Einträge, rot bei Überfälligem, in der Summe; Text nur "n Hinweise", nie Name oder Art', (tester) async {
       await start(tester, vorher: (e) => e.extraOverrides.add(vorsorgeHinweisProvider.overrideWithValue((offen: 2, ueberfaellig: 1))));
-      expect(find.byTooltip('Weitere Bereiche, 2 Hinweise'), findsOneWidget);
+      expect(find.byTooltip('Weitere Bereiche, 2 Hinweise, Überfälliges dabei'), findsOneWidget);
       await mehrOeffnen(tester);
       final z = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:vorsorge')), matching: find.byType(HinweisZeichen)));
       expect((z.zahl, z.ueberfaellig), (2, true));
@@ -451,6 +470,129 @@ void main() {
       expect(find.bySemanticsLabel('Zähler'), findsNothing);
       expect(find.bySemanticsLabel('Tresor'), findsNothing);
       expect(find.bySemanticsLabel('Suche'), findsWidgets);
+    });
+  });
+
+  group('Auffindbarkeit: Suche und Zuletzt benutzt (mobil), Gruppen und Schnellwahl (Desktop)', () {
+    test('Logik: Merken (neueste zuerst, ohne Doppelte, begrenzt), Lesen defekter Werte, Namenssuche mit Umlaut-Toleranz', () {
+      expect(zuletztMerken(['a', 'b', 'c'], 'c'), ['c', 'a', 'b']);
+      expect(zuletztMerken([for (var i = 0; i < kZuletztMax; i++) 'x$i'], 'neu'), hasLength(kZuletztMax));
+      expect(zuletztAusText(null), isEmpty);
+      expect(zuletztAusText('kaputt{'), isEmpty);
+      expect(zuletztAusText('["a","a",3,"b"]'), ['a', 'b']);
+      expect(zuletztSichtbar(['a', 'weg', 'b', 'c', 'd'], {'a', 'b', 'c', 'd'}), ['a', 'b', 'c']);
+      expect(gruppenZuAusText('["Familie"]'), {'Familie'});
+      expect(gruppenZuAusText('nein'), isEmpty);
+      expect(bereichPasst('Zähler', 'zae'), isTrue);
+      expect(bereichPasst('Zähler', 'zä'), isTrue);
+      expect(bereichPasst('Zähler', 'za'), isTrue);
+      expect(bereichPasst('Medikamente', 'frist'), isFalse);
+      expect(bereichPasst('Medikamente', ''), isTrue);
+    });
+
+    testWidgets('Blatt: Suchfeld filtert nur die Bereichsnamen, leere Treffer sagen es, Löschen bringt die Gruppen zurück', (tester) async {
+      await start(tester);
+      await mehrOeffnen(tester);
+      expect(find.descendant(of: blatt(), matching: find.text('Zuletzt benutzt')), findsNothing, reason: 'noch nichts benutzt');
+      await tester.enterText(find.descendant(of: blatt(), matching: find.byType(TextField)), 'frist');
+      await warte(tester);
+      expect(kachelIds(tester), ['fristen']);
+      expect(find.text('Familie'), findsNothing, reason: 'bei der Suche keine Gruppen');
+      await tester.enterText(find.descendant(of: blatt(), matching: find.byType(TextField)), 'xyz');
+      await warte(tester);
+      expect(find.text('Keinen Bereich gefunden.'), findsOneWidget);
+      await tester.tap(find.byTooltip('Suche leeren'));
+      await warte(tester);
+      expect(kachelIds(tester), contains('listen'));
+      expect(find.text('Familie'), findsWidgets);
+    });
+
+    testWidgets('Zuletzt benutzt: nach dem Öffnen eines Bereichs steht er als Chip im Blatt und wird lokal gemerkt', (tester) async {
+      await start(tester);
+      await mehrOeffnen(tester);
+      await tester.tap(find.byKey(const ValueKey('mehr:fristen')));
+      await warte(tester);
+      expect(speicher.werte[kZuletztSchluessel], '["fristen"]');
+      await mehrOeffnen(tester);
+      expect(find.text('Zuletzt benutzt'), findsOneWidget);
+      expect(find.byKey(const ValueKey('zuletzt:fristen')), findsOneWidget);
+      expect(tester.getSize(find.byKey(const ValueKey('zuletzt:fristen'))).height, greaterThanOrEqualTo(44));
+      await tester.tap(find.byKey(const ValueKey('zuletzt:fristen')));
+      await warte(tester);
+      expect(blatt(), findsNothing);
+    });
+
+    testWidgets('Gemerkter Wert eines nicht (mehr) vorhandenen Bereichs erscheint nicht', (tester) async {
+      await start(tester, gespeichert: {kZuletztSchluessel: '["gibtesnicht","tresor"]'}, rolle: 'child');
+      await mehrOeffnen(tester);
+      expect(find.text('Zuletzt benutzt'), findsNothing, reason: 'Tresor gibt es für Kinder nie');
+    });
+
+    testWidgets('Blatt bei 360 px und Textskala 2.0 ohne Überlauf, Chips bedienbar', (tester) async {
+      await start(tester, skala: 2.0, gespeichert: {kZuletztSchluessel: '["fristen","listen","standort"]'});
+      await mehrOeffnen(tester);
+      expect(find.byKey(const ValueKey('zuletzt:fristen')), findsOneWidget);
+      pruefeLayout(tester, 'Mehr-Blatt mit Zuletzt benutzt, Skala 2.0');
+    });
+
+    testWidgets('Desktop: Gruppe einklappen blendet die Einträge aus (der gewählte bleibt), der Zustand wird lokal gemerkt', (tester) async {
+      final h = tester.ensureSemantics();
+      final (_, c) = await start(tester, groesse: const Size(1200, 1400));
+      expect(find.bySemanticsLabel('Standort'), findsOneWidget);
+      await tester.tap(find.bySemanticsLabel('Familie').first);
+      await warte(tester);
+      expect(find.bySemanticsLabel('Standort'), findsNothing);
+      expect(find.bySemanticsLabel('Listen'), findsNothing);
+      expect(speicher.werte[kGruppenZuSchluessel], '["Familie"]');
+      // der gewählte Bereich einer eingeklappten Gruppe bleibt sichtbar
+      c.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+      await warte(tester);
+      expect(find.bySemanticsLabel('Aufgaben'), findsWidgets);
+      expect(find.bySemanticsLabel('Standort'), findsNothing);
+      await tester.tap(find.bySemanticsLabel('Familie').first);
+      await warte(tester);
+      expect(find.bySemanticsLabel('Standort'), findsOneWidget);
+      h.dispose();
+    });
+
+    testWidgets('Desktop: Strg+K öffnet die Schnellwahl, Eingabe filtert die Namen, Enter öffnet den Bereich; Esc schließt', (tester) async {
+      final (_, c) = await start(tester, groesse: const Size(1200, 1400));
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await warte(tester);
+      expect(find.byType(Schnellwahl), findsOneWidget);
+      await tester.enterText(find.descendant(of: find.byType(Schnellwahl), matching: find.byType(TextField)), 'aufg');
+      await warte(tester);
+      expect(find.byKey(const ValueKey('schnellwahl:aufgaben')), findsOneWidget);
+      expect(find.byKey(const ValueKey('schnellwahl:standort')), findsNothing);
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await warte(tester);
+      expect(find.byType(Schnellwahl), findsNothing);
+      expect(c.read(shellTabProvider), kAufgabenTab);
+
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyK);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      await warte(tester);
+      expect(find.byType(Schnellwahl), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await warte(tester);
+      expect(find.byType(Schnellwahl), findsNothing);
+    });
+
+    testWidgets('Desktop: "Bereich suchen" in der Seitenleiste öffnet die Schnellwahl; Kinder sehen dort keinen Zähler und keinen Tresor', (tester) async {
+      final (_, c) = await start(tester, groesse: const Size(1200, 1400), rolle: 'child');
+      await tester.tap(find.text('Bereich suchen'));
+      await warte(tester);
+      expect(find.byType(Schnellwahl), findsOneWidget);
+      expect(find.byKey(const ValueKey('schnellwahl:zaehler')), findsNothing);
+      expect(find.byKey(const ValueKey('schnellwahl:tresor')), findsNothing);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await warte(tester);
+      await tester.tap(find.byKey(const ValueKey('schnellwahl:listen')));
+      await warte(tester);
+      expect(c.read(shellTabProvider), kListenTab);
     });
   });
 

@@ -210,7 +210,8 @@ Future<void> zumBereich(WidgetTester tester, String label) async {
   } else {
     await tester.tap(find.descendant(of: leiste, matching: find.text('Mehr')));
     await warte(tester);
-    await tester.tap(find.descendant(of: find.byType(BottomSheet), matching: find.text(label)));
+    // "Zuletzt benutzt" zeigt denselben Namen noch einmal: die Kachel der Gruppe steht zuletzt im Baum
+    await tester.tap(find.descendant(of: find.byType(BottomSheet), matching: find.text(label)).last);
   }
   await warte(tester);
 }

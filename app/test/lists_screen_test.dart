@@ -215,6 +215,15 @@ void main() {
     expect(find.text('Hafermilch'), findsNothing);
     expect(await eintraege(env), isEmpty);
     expect(find.text('Noch nichts drauf'), findsOneWidget);
+    // Hinweis mit Handlung statt stiller Leere: Rückgängig legt den Eintrag (mit neuer ID) wieder an
+    expect(find.text('Eintrag gelöscht'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Eintrag hinzufügen'), findsOneWidget);
+    await tippeText(tester, 'Rückgängig');
+    await warte(tester, 8);
+    final wieder = await eintraege(env);
+    expect(wieder.map((e) => e.inhalt), ['Hafermilch']);
+    expect(wieder.single.id, isNot(_i1));
+    expect(find.text('Hafermilch'), findsOneWidget);
   });
 
   testWidgets('Zuweisen: Person wählen (Name und Farbe), erneut ändern, auf "Niemand" zurücksetzen', (tester) async {

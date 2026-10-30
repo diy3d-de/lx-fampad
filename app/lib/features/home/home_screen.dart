@@ -37,6 +37,8 @@ import '../standort/standort_start_karte.dart';
 import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_dwd_warn_karte.dart';
+import 'jetzt_wichtig_block.dart';
+import 'kachel_semantik.dart';
 import 'web_erinnerung_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../wetter/wetter_karte.dart';
@@ -84,6 +86,7 @@ class HomeScreen extends ConsumerWidget {
               const WetterHinweisKarte(),
               const WetterDwdWarnKarte(),
               const WebErinnerungKarte(),
+              const JetztWichtigBlock(),
               const _SyncZeile(),
               const SizedBox(height: 20),
             ],
@@ -151,36 +154,20 @@ class _SyncZeile extends StatelessWidget {
   );
 }
 
-/// Stand des Abgleichs (fest, keine Kachel): bei "synchron" nichts (die Kopfzeile zeigt das Wolken-Symbol), sonst ein ruhiger Satz. Die Zahl offener Änderungen steht
-/// nur im Bedienhilfe-Text. Der Sync-Zustand steht auf der Startseite nur hier (die Kopfzeile zeigt ihn mobil als Symbol).
+/// Stand des Abgleichs (fest, keine Kachel): bei "synchron" nichts (die Kopfzeile zeigt das Wolken-Symbol), sonst eine ruhige Zeile mit Symbol und Text (offene Änderungen mit Zahl, Fehler mit "Erneut versuchen", Wartung neutral). Der Sync-Zustand steht auf der Startseite nur hier (die Kopfzeile zeigt ihn mobil als Symbol).
 class _SyncLeiste extends ConsumerWidget {
   const _SyncLeiste();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final sync = ref.watch(syncProvider);
-    final (bedienText, farbe) = syncAnzeige(sync);
-    final hinweis = syncHinweis(sync);
-    if (hinweis == null) {
+    final (bedienText, _) = syncAnzeige(sync);
+    final zeile = syncZeile(sync);
+    if (zeile == null) {
       // bei "synchron" nichts zeigen (das Wolken-Symbol der Kopfzeile sagt dasselbe); die Zeile behält die Höhe für den Such-Knopf
       return Semantics(label: 'Sync: $bedienText', child: const SizedBox(height: 44));
     }
-    return Semantics(
-      label: 'Sync: $bedienText',
-      excludeSemantics: true,
-      child: Container(
-        constraints: const BoxConstraints(minHeight: 44),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        decoration: BoxDecoration(color: farbe.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(18)),
-        child: Row(
-          children: [
-            Icon(sync.status == SyncStatus.wartung ? Icons.build_outlined : Icons.cloud_off, size: 16, color: farbe),
-            const SizedBox(width: 10),
-            Expanded(child: Text(hinweis, style: TextStyle(fontSize: 13, color: farbe == kTextMuted ? kText : farbe))),
-          ],
-        ),
-      ),
-    );
+    return SyncZeileFlaeche(daten: zeile, onHandlung: () => unawaited(ref.read(syncProvider.notifier).synchronisieren(manuell: true)));
   }
 }
 
@@ -282,7 +269,9 @@ class _EinkaufKarte extends ConsumerWidget {
 
     return Semantics(
       button: true,
-      label: einkauf == null ? 'Einkaufsliste, noch keine Liste. Öffnen' : 'Einkaufsliste, ${offen.length} offen. Öffnen',
+      label: einkauf == null
+          ? 'Einkaufsliste, noch keine Liste. Öffnen'
+          : (offen.isEmpty ? 'Einkaufsliste, 0 offen. Öffnen' : 'Einkaufsliste, ${offen.length} offen: ${einkaufSemantik(offen)}. Öffnen'),
       excludeSemantics: true,
       child: LxCard(
         onTap: oeffnen,
@@ -334,7 +323,7 @@ class _AufgabenKarte extends ConsumerWidget {
     final mitglieder = mitgliederFuerAufgaben(ref, zeigen);
     return Semantics(
       button: true,
-      label: zeigen.isEmpty ? 'Aufgaben: nichts fällig. Aufgaben öffnen' : 'Aufgaben: ${faellig.length} fällig. Aufgaben öffnen',
+      label: zeigen.isEmpty ? 'Aufgaben: nichts fällig. Aufgaben öffnen' : 'Aufgaben: ${faellig.length} fällig: ${aufgabenSemantik(faellig, jetzt)}. Aufgaben öffnen',
       excludeSemantics: true,
       child: LxCard(
         onTap: () => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab),
@@ -369,7 +358,7 @@ class _NaechsteKarte extends ConsumerWidget {
     final zeigen = kommende.take(4).toList();
     return Semantics(
       button: true,
-      label: zeigen.isEmpty ? 'Als Nächstes: keine anstehenden Termine. Kalender öffnen' : 'Als Nächstes: ${zeigen.length} Termine. Kalender öffnen',
+      label: zeigen.isEmpty ? 'Als Nächstes: keine anstehenden Termine. Kalender öffnen' : 'Als Nächstes: ${zeigen.length} Termine: ${termineSemantik(kommende, heute)}. Kalender öffnen',
       excludeSemantics: true,
       child: LxCard(
         onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),

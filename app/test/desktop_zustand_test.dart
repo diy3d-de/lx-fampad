@@ -180,15 +180,28 @@ void main() {
     expect(syncAnzeige(const SyncState(status: SyncStatus.laeuft)), ('Überträgt …', kTextMuted));
     expect(syncAnzeige(const SyncState(status: SyncStatus.fehler)), ('Übertragen hat nicht geklappt', kDanger));
     expect(syncAnzeige(const SyncState(status: SyncStatus.updateNoetig)), ('Update nötig', kTextMuted));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.wartung)), ('Kurze Wartung', kWarn));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.wartung)), ('Kurze Wartung', kTextMuted));
     expect(syncAnzeige(const SyncState()), ('Nicht verbunden', kTextMuted));
+  });
+
+  test('syncZeile: Symbol UND Text, Handlung nur beim Fehler, Wartung neutral (kein Alarm)', () {
+    for (final st in SyncStatus.values) {
+      final z = syncZeile(SyncState(status: st, offeneAenderungen: 2));
+      if (z != null) expect(z.text, isNotEmpty, reason: '$st');
+      expect(z?.alarm ?? false, st == SyncStatus.fehler, reason: 'nur der Fehler ist ein Alarm: $st');
+      expect(z?.handlung != null, st == SyncStatus.fehler, reason: '$st');
+    }
+    expect(syncZeile(const SyncState(status: SyncStatus.fehler))!.handlung, 'Erneut versuchen');
   });
 
   test('syncHinweis: Text nur, wenn etwas nicht stimmt', () {
     expect(syncHinweis(const SyncState(status: SyncStatus.synchron, offeneAenderungen: 3)), isNull);
     expect(syncHinweis(const SyncState(status: SyncStatus.laeuft)), isNull);
-    expect(syncHinweis(const SyncState(status: SyncStatus.offline)), 'Gerade keine Verbindung – Änderungen werden nachgeholt');
-    expect(syncHinweis(const SyncState(status: SyncStatus.wartung)), 'Kurze Wartung');
+    expect(syncHinweis(const SyncState(status: SyncStatus.offline)), 'Du bist offline. Alles ist auf diesem Gerät gespeichert.');
+    expect(syncHinweis(const SyncState(status: SyncStatus.offline, offeneAenderungen: 1)), '1 Änderung wartet auf Verbindung');
+    expect(syncHinweis(const SyncState(status: SyncStatus.offline, offeneAenderungen: 3)), '3 Änderungen warten auf Verbindung');
+    expect(syncHinweis(const SyncState(status: SyncStatus.laeuft, offeneAenderungen: 3)), 'Wird übertragen, noch 3 Änderungen');
+    expect(syncHinweis(const SyncState(status: SyncStatus.wartung)), 'Wartung läuft. Deine Änderungen bleiben gespeichert.');
     expect(syncHinweis(const SyncState(status: SyncStatus.fehler)), 'Übertragen hat nicht geklappt');
     expect(syncHinweis(const SyncState(status: SyncStatus.updateNoetig)), 'Update nötig');
   });

@@ -49,6 +49,10 @@ import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/ingest_welt.dart';
 import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpeicher;
+import 'package:lx_fampad/data/startseite/jetzt_wichtig_logik.dart' show kJetztWichtigSchluessel;
+import 'package:lx_fampad/data/sync_state.dart' show SyncZeiten;
+import 'package:lx_fampad/features/shell/schnellwahl.dart' show Schnellwahl;
+import 'package:lx_fampad/features/tasks/aufgabe_editor.dart' show AufgabeEditor;
 import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
@@ -590,12 +594,101 @@ void main() {
     h.dispose();
   });
 
+  // Desktop-Zweispalter (Aufgaben, Listen): beide Spalten, Editor rechts, Leerzustand
+  testWidgets('Desktop-Zweispalter: Aufgaben mit Leerzustand und Editor rechts, Listen mit Listenspalte, alles beschriftet', (tester) async {
+    final h = tester.ensureSemantics();
+    final env = await angemeldeteUmgebung();
+    env.sync.andereAendert('aufgabe', 'bbbbbbbb-6666-4666-8666-666666666666', {'titel': 'Eine Aufgabe mit einem langen Titel, der in der Listenspalte umbrechen muss', 'assigneeId': fixIdAdmin});
+    env.sync.andereAendert('list', l1, {'name': 'Einkauf', 'kind': 'shopping', 'audience': 'family'});
+    env.sync.andereAendert('list_item', '33333333-3333-4333-8333-000000000009', {'listId': l1, 'text': 'Milch', 'position': 0});
+    final c = await starteApp(tester, env, groesse: const Size(1280, 900));
+    c.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+    await warte(tester);
+    expect(find.text('Wähle links eine Aufgabe'), findsOneWidget);
+    pruefe(tester, 'Aufgaben-Zweispalter ohne Auswahl');
+    await tester.tap(find.textContaining('Eine Aufgabe mit einem langen Titel').first);
+    await warte(tester);
+    expect(find.byType(AufgabeEditor), findsOneWidget);
+    pruefe(tester, 'Aufgaben-Zweispalter mit Editor');
+    c.read(shellTabProvider.notifier).waehlen(kListenTab);
+    await warte(tester);
+    expect(find.byKey(const ValueKey('liste:$l1')), findsOneWidget);
+    pruefe(tester, 'Listen-Zweispalter');
+    h.dispose();
+  });
+
+  // UX-Runde 1: Startseite mit Block "Jetzt wichtig" und Sync-Zeile, Vorlesetexte der Kacheln, Mehr-Blatt mit Suche und Zuletzt benutzt, Schnellwahl
+  for (final skala in [1.0, 2.0]) {
+    testWidgets('Startseite: "Jetzt wichtig" und Kacheln mit Vorlesetext, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'nein', kJetztWichtigSchluessel: 'ja'});
+      final heute = DateTime.utc(TestUmgebung.testJetzt.year, TestUmgebung.testJetzt.month, TestUmgebung.testJetzt.day);
+      String tag(int n) => tagText(DateTime.utc(heute.year, heute.month, heute.day + n));
+      env.sync.andereAendert('aufgabe', 'bbbbbbbb-3333-4333-8333-333333333333', {'titel': 'Rechnung zahlen', 'faelligDate': tag(-2), 'assigneeId': fixIdAdmin});
+      env.sync.andereAendert('aufgabe', 'bbbbbbbb-4444-4444-8444-444444444444', {'titel': 'Blumen gießen', 'faelligDate': tag(0), 'assigneeId': fixIdAdmin});
+      env.sync.andereAendert('termin', 'aaaaaaaa-3333-4333-8333-333333333333', {'titel': 'Zahnarzt', 'ganztaegig': true, 'startDate': tag(0), 'endDate': tag(1), 'ownerId': fixIdAdmin, 'audience': 'family'});
+      await starteApp(tester, env, skala: skala);
+      expect(find.text('Jetzt wichtig'), findsOneWidget);
+      pruefe(tester, 'Startseite mit Jetzt wichtig $skala');
+      expect(find.bySemanticsLabel(RegExp('Überfällig: Rechnung zahlen, 2 Tage überfällig')), findsOneWidget);
+      h.dispose();
+    });
+  }
+
+  for (final skala in [1.0, 2.0]) {
+    testWidgets('Startseite: Sync-Zeile mit Symbol, Text und Handlung, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      env.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
+      env.sync.fehlerQueue.add((500, 'internal_error'));
+      await starteApp(tester, env, skala: skala);
+      expect(find.text('Übertragen hat nicht geklappt'), findsOneWidget);
+      expect(find.widgetWithText(TextButton, 'Erneut versuchen'), findsOneWidget);
+      pruefe(tester, 'Startseite mit Sync-Zeile $skala');
+      h.dispose();
+    });
+  }
+
+  for (final skala in [1.0, 2.0]) {
+    testWidgets('Mehr-Blatt mit Suche, Zuletzt benutzt und Überfälligem als Zeichen, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'nein', kJetztWichtigSchluessel: 'nein', 'mehr_zuletzt': '["fristen","standort"]', 'leiste_bereiche': 'start,kalender,chat,listen'});
+      final heute = DateTime.utc(TestUmgebung.testJetzt.year, TestUmgebung.testJetzt.month, TestUmgebung.testJetzt.day);
+      env.sync.andereAendert('aufgabe', 'bbbbbbbb-5555-4555-8555-555555555555', {'titel': 'Alt', 'faelligDate': tagText(DateTime.utc(heute.year, heute.month, heute.day - 3)), 'assigneeId': fixIdAdmin});
+      await starteApp(tester, env, skala: skala);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Mehr')));
+      await warte(tester);
+      expect(find.text('Zuletzt benutzt'), findsOneWidget);
+      expect(find.text('1!'), findsWidgets, reason: 'Überfälliges: Ausrufezeichen am Zähler, nie nur Farbe');
+      expect(find.bySemanticsLabel('Aufgaben, 1 Hinweis, Überfälliges dabei'), findsOneWidget);
+      expect(find.bySemanticsLabel('Zuletzt benutzt: Fristen'), findsOneWidget);
+      pruefe(tester, 'Mehr-Blatt $skala');
+      h.dispose();
+    });
+  }
+
+  testWidgets('Desktop: Seitenleiste mit einklappbaren Gruppen und Schnellwahl, alles beschriftet', (tester) async {
+    final h = tester.ensureSemantics();
+    final env = await angemeldeteUmgebung();
+    await starteApp(tester, env, groesse: const Size(1280, 900));
+    expect(find.bySemanticsLabel('Familie'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('Bereich suchen, Tastenkürzel Strg K')), findsOneWidget);
+    pruefe(tester, 'Desktop-Seitenleiste mit Gruppen');
+    await tester.tap(find.text('Bereich suchen'));
+    await warte(tester);
+    expect(find.byType(Schnellwahl), findsOneWidget);
+    pruefe(tester, 'Schnellwahl');
+    h.dispose();
+  });
+
   // Tagesbriefing: Startseiten-Kachel "Heute im Überblick" (nur Text, kein Tipp-Knopf) und die Schalter in den Einstellungen
   for (final skala in [1.0, 2.0]) {
     testWidgets('Tagesbriefing: Kachel und Einstellungen, Textskala $skala', (tester) async {
       final h = tester.ensureSemantics();
       final env = await angemeldeteUmgebung();
-      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja'});
+      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja', kJetztWichtigSchluessel: 'nein'});
       final heute = heuteTag();
       String tag(int n) => tagText(DateTime.utc(heute.year, heute.month, heute.day + n));
       env.sync.andereAendert('termin', 'aaaaaaaa-2222-4222-8222-222222222222', {'titel': 'Familienfeier', 'ganztaegig': true, 'startDate': tag(0), 'endDate': tag(1), 'ownerId': fixIdAdmin, 'audience': 'family'});

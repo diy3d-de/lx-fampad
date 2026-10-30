@@ -1,0 +1,86 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Desktop-Zweispalter für Aufgaben und Listen</title><style>
+:root{--bg:#090a0f;--s:#13161f;--s2:#1a1e29;--s3:#212634;--b:#242936;--tx:#e6e8ee;--mu:#8b93a7;--fa:#5d6578;--ac:#6fcfd6;--onac:#0c1b1d;--ok:#4fc99a;--warn:#febc2e;--bad:#ff5f57;--st:#fff;--p0:#38bdf8;--p1:#34d399;--p2:#fbbf24;--p3:#fb7185;--p4:#a78bfa}
+*{box-sizing:border-box;margin:0}body{background:#000;color:var(--tx);font-family:Inter,"Segoe UI",system-ui,sans-serif;padding:20px 12px 50px}
+h1{font-size:22px;text-align:center}.lead{max-width:900px;margin:6px auto 18px;text-align:center;color:var(--mu);font-size:14px}
+.row{display:flex;gap:28px;justify-content:center;align-items:flex-start;flex-wrap:wrap;margin-bottom:34px}
+.lab{color:var(--mu);font-size:13px;font-weight:600;margin-bottom:8px;text-align:center}
+.web{width:1280px;height:600px;background:var(--bg);border-radius:12px;overflow:hidden;display:flex;outline:6px solid #1b1b20}
+.web.k{height:320px}
+.ph{width:360px;height:700px;background:var(--bg);border-radius:28px;overflow:hidden;position:relative;outline:6px solid #1b1b20;display:flex;flex-direction:column}
+.side{width:200px;background:var(--s);padding:14px 10px;display:flex;flex-direction:column;gap:2px;flex:none}
+.grp{font-size:12px;font-weight:600;color:var(--mu);margin:10px 10px 2px}
+.it{display:flex;align-items:center;gap:10px;min-height:44px;padding:0 10px;border-radius:12px;font-size:14px;color:var(--mu)}
+.it.on{background:var(--ac);color:var(--onac);font-weight:700}.it i{font-style:normal;width:20px;text-align:center}
+.lst{width:380px;flex:none;padding:16px 14px;overflow:hidden;display:flex;flex-direction:column;gap:6px}
+.det{flex:1;min-width:0;padding:22px 28px;overflow:hidden;background:var(--s);margin:12px 12px 12px 0;border-radius:18px}
+.det.leer{display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+h2{font-size:22px;font-weight:800;letter-spacing:-.5px;color:var(--st)}.sub{font-size:13px;color:var(--mu)}
+.lbl{font-size:13px;font-weight:600;color:var(--mu);margin-bottom:6px}
+.chip{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border-radius:14px;background:var(--s2);font-size:13.5px;color:var(--tx)}
+.chip.on{background:var(--ac);color:var(--onac);font-weight:700}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:0 18px;border-radius:14px;background:var(--ac);color:var(--onac);font-weight:700;font-size:14px}
+.rowi{display:flex;align-items:center;gap:12px;min-height:56px;padding:0 14px;border-radius:16px;background:var(--s);font-size:14px}
+.rowi.sel{background:var(--s3)}
+.rowi .t{margin-left:auto;font-size:13px;color:var(--mu);font-variant-numeric:tabular-nums;white-space:nowrap}
+.rowi small{display:block;font-size:12.5px;color:var(--mu)}
+.cb{width:24px;height:24px;border-radius:8px;background:var(--s3);flex:none;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--onac)}
+.rowi.sel .cb{background:var(--s2)}.cb.d{background:var(--ac)}
+.dot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.sp{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+.f{background:var(--s2);border-radius:14px;padding:12px 14px;margin-bottom:8px;font-size:14px}
+.tab{display:flex;background:var(--s);padding:6px 6px 10px;margin-top:auto}.tab div{flex:1;min-height:48px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-size:11.5px;color:var(--mu);gap:2px}.tab .on{color:var(--st)}
+.bk{display:flex;align-items:center;gap:8px;min-height:44px;padding:0 16px;font-size:14px;color:var(--ac);font-weight:700}
+.note{max-width:900px;margin:22px auto 0;background:var(--s);border-radius:16px;padding:14px 18px;font-size:13.5px;color:#c9ceda;line-height:1.5}.note b{color:#fff}
+.hd{padding:16px}
+</style></head><body>
+<h1>Desktop-Zweispalter für Aufgaben und Listen</h1>
+<p class="lead">Ab 900 px Breite zeigt Aufgaben (und Listen) wie der Chat links die Liste und rechts das Detail, statt einer einzelnen Spalte mit 720 px Höchstbreite. Mobil bleibt es bei Liste, dann Detail als Vollseite.</p>
+
+<div class="row"><div><div class="lab">Desktop 1280 px: Aufgabe ausgewählt</div><div class="web">
+<div class="side"><div class="it"><i>⌂</i>Start</div><div class="it"><i>▦</i>Kalender</div><div class="it"><i>✉</i>Chat</div><div class="it on"><i>✓</i>Aufgaben</div><div class="it"><i>☰</i>Listen</div><div class="grp">Zuhause</div><div class="it"><i>♻</i>Müll</div></div>
+<div class="lst"><div style="padding:0 4px 6px"><div class="lbl">Donnerstag, 30. Oktober</div><h2>Aufgaben</h2><div class="sub">4 offen · 7 erledigt</div></div>
+<div style="display:flex;gap:8px"><span class="chip on">Offen</span><span class="chip">Meine</span><span class="chip">Fristen</span></div>
+<div class="rowi"><span class="cb"></span><span>Müllsäcke kaufen<small>Mama</small></span><span class="t">heute</span></div>
+<div class="rowi sel"><span class="cb"></span><span>Fahrrad von Mia reparieren<small>Papa · 2 Unteraufgaben</small></span><span class="t">Sa</span></div>
+<div class="rowi"><span class="cb"></span><span>Elternbrief unterschreiben<small>Mama</small></span><span class="t">Mo</span></div>
+<div class="rowi"><span class="cb"></span><span>Geschenk für Oma<small>Alle</small></span><span class="t">in 9 Tagen</span></div>
+<div style="margin-top:auto"><span class="btn">Aufgabe hinzufügen</span></div></div>
+<div class="det"><div class="sub">Aufgabe</div><h2>Fahrrad von Mia reparieren</h2>
+<div class="sp"><span class="chip"><span class="dot" style="background:var(--p0);margin-right:8px"></span>Papa</span><span class="chip">Fällig: Samstag, 1. November</span><span class="chip">Erinnern: 1 Tag vorher</span></div>
+<div class="f"><div class="lbl">Notiz</div>Schlauch hinten, Licht prüfen.</div>
+<div class="lbl" style="margin-top:14px">Unteraufgaben</div>
+<div class="rowi" style="background:var(--s2)"><span class="cb d">✓</span>Schlauch besorgen</div><div class="rowi" style="background:var(--s2);margin-top:6px"><span class="cb"></span>Licht prüfen</div>
+<div style="margin-top:16px;display:flex;gap:10px"><span class="btn">Erledigt</span><span class="chip">Bearbeiten</span></div></div></div></div></div>
+
+<div class="row"><div><div class="lab">Desktop 1280 px: nichts ausgewählt (Leerzustand mit Handlung)</div><div class="web">
+<div class="side"><div class="it"><i>⌂</i>Start</div><div class="it"><i>▦</i>Kalender</div><div class="it"><i>✉</i>Chat</div><div class="it on"><i>✓</i>Aufgaben</div><div class="it"><i>☰</i>Listen</div></div>
+<div class="lst"><div style="padding:0 4px 6px"><div class="lbl">Donnerstag, 30. Oktober</div><h2>Aufgaben</h2><div class="sub">4 offen · 7 erledigt</div></div>
+<div style="display:flex;gap:8px"><span class="chip on">Offen</span><span class="chip">Meine</span><span class="chip">Fristen</span></div>
+<div class="rowi"><span class="cb"></span><span>Müllsäcke kaufen<small>Mama</small></span><span class="t">heute</span></div>
+<div class="rowi"><span class="cb"></span><span>Fahrrad von Mia reparieren<small>Papa</small></span><span class="t">Sa</span></div>
+<div class="rowi"><span class="cb"></span><span>Elternbrief unterschreiben<small>Mama</small></span><span class="t">Mo</span></div></div>
+<div class="det leer"><div style="font-size:30px;color:var(--mu)">✓</div><div style="font-weight:700;color:var(--st);font-size:18px;margin:6px 0 4px">Wähle links eine Aufgabe</div><div class="sub" style="margin-bottom:14px;max-width:320px">Hier siehst du dann alle Einzelheiten. Oder lege gleich eine neue an.</div><span class="btn">Aufgabe hinzufügen</span></div></div></div></div>
+
+<div class="row"><div><div class="lab">Desktop 1280 px, kurz: Listen im selben Muster</div><div class="web k">
+<div class="side"><div class="it"><i>✓</i>Aufgaben</div><div class="it on"><i>☰</i>Listen</div></div>
+<div class="lst"><div style="padding:0 4px 6px"><h2>Listen</h2></div>
+<div class="rowi sel"><span class="dot" style="background:var(--p1)"></span><span>Einkauf<small>6 Einträge</small></span></div>
+<div class="rowi"><span class="dot" style="background:var(--p2)"></span><span>Packliste Urlaub<small>12 Einträge</small></span></div></div>
+<div class="det"><div class="sub">Liste</div><h2>Einkauf</h2><div class="rowi" style="background:var(--s2);margin-top:12px"><span class="cb"></span>Milch</div><div class="rowi" style="background:var(--s2);margin-top:6px"><span class="cb"></span>Brot</div><div class="rowi" style="background:var(--s2);margin-top:6px"><span class="cb"></span>Äpfel</div></div></div></div></div>
+
+<div class="row">
+<div><div class="lab">Smartphone 360 px: Liste</div><div class="ph"><div class="hd"><div class="sub">Donnerstag, 30. Oktober</div><h2>Aufgaben</h2><div class="sub">4 offen · 7 erledigt</div></div>
+<div style="padding:0 16px;display:flex;flex-direction:column;gap:6px"><div style="display:flex;gap:8px;margin-bottom:4px"><span class="chip on">Offen</span><span class="chip">Meine</span></div>
+<div class="rowi"><span class="cb"></span><span>Müllsäcke kaufen<small>Mama</small></span><span class="t">heute</span></div>
+<div class="rowi"><span class="cb"></span><span>Fahrrad von Mia reparieren<small>Papa</small></span><span class="t">Sa</span></div>
+<div class="rowi"><span class="cb"></span><span>Elternbrief unterschreiben<small>Mama</small></span><span class="t">Mo</span></div></div>
+<div class="tab"><div>⌂<span>Start</span></div><div>▦<span>Kalender</span></div><div>✉<span>Chat</span></div><div class="on">✓<span>Aufgaben</span></div><div>⋯<span>Mehr</span></div></div></div></div>
+<div><div class="lab">Smartphone 360 px: Detail als Vollseite</div><div class="ph"><div class="bk">‹ Aufgaben</div><div style="padding:0 16px"><div class="sub">Aufgabe</div><h2>Fahrrad von Mia reparieren</h2>
+<div class="sp"><span class="chip">Papa</span><span class="chip">Samstag, 1. November</span></div>
+<div class="f"><div class="lbl">Notiz</div>Schlauch hinten, Licht prüfen.</div>
+<div class="rowi" style="background:var(--s2)"><span class="cb d">✓</span>Schlauch besorgen</div><div class="rowi" style="background:var(--s2);margin-top:6px"><span class="cb"></span>Licht prüfen</div>
+<div style="margin-top:16px"><span class="btn" style="width:100%">Erledigt</span></div></div></div></div>
+</div>
+
+<div class="note"><b>Umsetzung:</b> Weiche wie im Chat (<code>Zweispalter ab 900 px</code>): Listenspalte 380 px, Detail füllt den Rest; die 720-px-Begrenzung entfällt nur für diese beiden Bereiche. Auswahl bleibt beim Wechsel zwischen Layouts erhalten, ohne Auswahl der Leerzustand mit Handlung. Mobil unverändert: Liste, dann Detail als Vollseite mit „Zurück“. Dialoge im Desktop-Layout mit <code>useRootNavigator: false</code>, Editoren mit <code>UngespeichertSchutz</code>. Touch-Ziele mindestens 44 px, Flächen statt Rahmen, Auswahl als hellere Fläche (<code>--s3</code>), Text immer zusätzlich zur Farbe.</div>
+</body></html>

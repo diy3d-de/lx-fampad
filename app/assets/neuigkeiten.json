@@ -1,4 +1,11 @@
 {
+  "0.28.0": [
+    "Nach dem Löschen und Erledigen kannst du mit „Rückgängig“ zurück; beim Laden siehst du Platzhalter, leere Listen bieten gleich den nächsten Schritt an",
+    "Oben auf der Startseite steht jetzt „Jetzt wichtig“: Überfälliges, Heutiges und der Müll. Ausschalten kannst du es unter Profil › Startseite und Anzeige. Die Kachel „Heute im Überblick“ ist dafür nicht mehr vorbelegt; du schaltest sie dort bei Bedarf ein",
+    "Der Übertragungs-Zustand ist klarer: offline, wartende Änderungen, Fehler mit „Erneut versuchen“ und Wartung",
+    "Im Mehr-Menü kannst du Bereiche suchen und siehst „Zuletzt benutzt“. Am Desktop klappst du Gruppen ein und öffnest Bereiche mit Strg+K",
+    "Am Desktop zeigen Aufgaben und Listen links die Liste und rechts die Einzelheiten"
+  ],
   "0.27.1": [
     "Medikamente: „Reicht noch n Tage“ zählt den heutigen Tag nicht mehr mit, wenn du die Einnahme schon erledigt hast"
   ],

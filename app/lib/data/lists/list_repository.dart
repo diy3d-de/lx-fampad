@@ -8,9 +8,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../app_database.dart';
 import '../auth/auth_state.dart';
 import '../database_provider.dart';
+import '../rueckgaengig_fehler.dart';
 import '../sync/sync_entities.dart';
 import '../sync/sync_store.dart';
 import '../sync_state.dart';
+import 'members.dart' show mitgliedNochAktiv;
 
 /// Wer eine Liste sieht.
 enum ListenSicht {
@@ -143,6 +145,27 @@ class ListenRepository {
   Future<void> eintragLoeschen(String id) async {
     await store.loeschen('list_item', id);
     beiAenderung();
+  }
+
+  /// "Rückgängig" nach dem Löschen: der gelöschte Datensatz bleibt auf dem Server ein Tombstone, darum entsteht der Eintrag mit einer NEUEN ID
+  /// wieder (gleicher Text, gleiche Stelle, Zuständige, Kategorie und Erledigt-Stand).
+  /// Wirft [RueckgaengigAbgelehnt], wenn [besitzer] nicht mehr die angemeldete Person ist, die Liste fehlt oder die zuständige Person kein aktives Mitglied mehr ist
+  /// (statt eine verwaiste Zeile anzulegen).
+  Future<String> eintragWiederherstellen(Listeneintrag e, {String? besitzer}) async {
+    if (besitzer != null && ich() != besitzer) throw const RueckgaengigAbgelehnt('Rückgängig nicht möglich: Du bist inzwischen als eine andere Person angemeldet.');
+    if (await (db.select(db.listen)..where((l) => l.id.equals(e.listId))).getSingleOrNull() == null) {
+      throw const RueckgaengigAbgelehnt('Rückgängig nicht möglich: Die Liste gibt es nicht mehr.');
+    }
+    if (!await mitgliedNochAktiv(db, e.assigneeId)) throw const RueckgaengigAbgelehnt('Rückgängig nicht möglich: Die zuständige Person gehört nicht mehr zur Familie.');
+    final id = _neueId();
+    await store.aendern(
+      'list_item',
+      id,
+      {'listId': e.listId, 'text': e.inhalt, 'position': e.position, 'assigneeId': ?e.assigneeId, 'category': ?e.category, if (e.doneAt != null) 'doneAt': zeitFuerServer(e.doneAt!)},
+      nurLokal: {'createdAt': zeitFuerServer(_jetzt())},
+    );
+    beiAenderung();
+    return id;
   }
 
   /// Speichert die Einträge einer Liste (ohne Erledigt-Stand, Zuständigkeit und Position der Liste) als neue Vorlage mit der Freigabe der Liste.

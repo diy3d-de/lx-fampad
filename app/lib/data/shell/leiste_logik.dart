@@ -125,3 +125,6 @@ class MehrHinweise {
 
 /// Zeichen am Feld "Mehr" und an den Kacheln: Zahl über 9 als "9+".
 String hinweisText(int n) => n > 9 ? '9+' : '$n';
+
+/// Wie [hinweisText], bei Überfälligem mit einem Ausrufezeichen dahinter: die Dringlichkeit steht im Zeichen selbst, nie nur in der Farbe ('5!').
+String hinweisTextMarke(int n, {required bool ueberfaellig}) => ueberfaellig ? '${hinweisText(n)}!' : hinweisText(n);

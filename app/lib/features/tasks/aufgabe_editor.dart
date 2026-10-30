@@ -17,16 +17,20 @@ import '../../data/lists/members.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/liste_detail.dart' show detailOeffnen;
 import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
+import 'editor_verschwunden.dart';
 import 'frist_editor.dart' show FristEditor;
 
 /// Öffnet den Editor. [aufgabe] null = neue Aufgabe.
-Future<void> aufgabeEditorOeffnen(BuildContext context, {Aufgabe? aufgabe}) => Navigator.of(context).push<void>(
-  // Fristen haben ihren eigenen Editor (Ablaufdatum, Wiederholung in Monaten, Vorwarnzeit)
-  MaterialPageRoute(builder: (_) => aufgabe != null && aufgabe.frist ? FristEditor(frist: aufgabe) : AufgabeEditor(aufgabe: aufgabe)),
+Future<void> aufgabeEditorOeffnen(BuildContext context, {Aufgabe? aufgabe}) => detailOeffnen(
+  context,
+  // Fristen haben ihren eigenen Editor (Ablaufdatum, Wiederholung in Monaten, Vorwarnzeit); im Zweispalter (Desktop) öffnet er in der rechten Spalte
+  (_) => aufgabe != null && aufgabe.frist ? FristEditor(frist: aufgabe) : AufgabeEditor(aufgabe: aufgabe),
+  id: aufgabe?.id,
 );
 
 /// Obergrenze der Unteraufgaben je Aufgabe (wie am Server).
@@ -47,7 +51,7 @@ class AufgabeEditor extends ConsumerStatefulWidget {
   ConsumerState<AufgabeEditor> createState() => _AufgabeEditorState();
 }
 
-class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
+class _AufgabeEditorState extends ConsumerState<AufgabeEditor> with EditorSchliesstBeiLoeschung<AufgabeEditor> {
   final _titel = TextEditingController();
   final _beschreibung = TextEditingController();
   final _neuerPunkt = TextEditingController();
@@ -218,6 +222,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
     final nav = Navigator.of(context);
     final ja = await bestaetigen(context, titel: 'Aufgabe „${a.titel}“ löschen?', text: 'Die Aufgabe und ihre Unteraufgaben werden für alle gelöscht.', knopf: 'Löschen');
     if (!ja) return;
+    selbstBeendet = true; // die Löschung lässt den Datensatz verschwinden: der Editor schließt sich hier selbst, nicht zweimal
     await repo.loeschen(a.id);
     if (mounted) nav.pop();
   }
@@ -233,6 +238,7 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> {
 
   @override
   Widget build(BuildContext context) {
+    pruefeVerschwunden(widget.aufgabe?.id);
     final user = ref.watch(authProvider.select((a) => a.user));
     final rechte = AufgabeRechte(user?.role ?? Role.child, user?.id);
     _ausgang ??= _stand();

@@ -27,6 +27,8 @@ import '../calendar/termin_editor.dart' show terminEditorOeffnen;
 import '../tasks/aufgabe_editor.dart' show aufgabeEditorOeffnen;
 import '../profile/absicherung_screen.dart' show AbsicherungsKarte;
 import '../wetter/wetter_dwd_warn_karte.dart';
+import 'jetzt_wichtig_block.dart';
+import 'kachel_semantik.dart';
 import 'web_erinnerung_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../../data/tasks/aufgabe_logik.dart';
@@ -84,6 +86,7 @@ class DesktopHome extends ConsumerWidget {
         const WetterHinweisKarte(),
         const WetterDwdWarnKarte(),
         const WebErinnerungKarte(),
+        const JetztWichtigBlock(),
         const _Raster(),
         const SizedBox(height: 8),
         const StartseiteAnpassenZeile(),
@@ -388,7 +391,7 @@ class _TermineKarte extends ConsumerWidget {
     return _Karte(
       label: 'Heute und morgen',
       zaehler: liste.isEmpty ? null : '${liste.length}',
-      semantik: liste.isEmpty ? 'Heute und morgen: keine Termine. Kalender öffnen' : 'Heute und morgen: ${liste.length} Termine. Kalender öffnen',
+      semantik: liste.isEmpty ? 'Heute und morgen: keine Termine. Kalender öffnen' : 'Heute und morgen: ${liste.length} Termine: ${termineSemantik(liste, heute)}. Kalender öffnen',
       onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),
       child: liste.isEmpty
           ? const EmptyState(icon: Icons.event_available_outlined, title: 'Keine Termine', hint: 'Heute und morgen steht nichts an.')
@@ -591,7 +594,7 @@ class _EinkaufKarte extends ConsumerWidget {
           ? 'Einkaufsliste, lädt. Öffnen'
           : einkauf == null
           ? 'Einkaufsliste, noch keine Liste. Öffnen'
-          : 'Einkaufsliste, ${offen.length} offen. Öffnen',
+          : (offen.isEmpty ? 'Einkaufsliste, 0 offen. Öffnen' : 'Einkaufsliste, ${offen.length} offen: ${einkaufSemantik(offen)}. Öffnen'),
       onTap: () {
         if (einkauf != null) ref.read(gewaehlteListeProvider.notifier).waehlen(einkauf.id);
         ref.read(shellTabProvider.notifier).waehlen(kListenTab);
@@ -648,7 +651,7 @@ class _AufgabenKarte extends ConsumerWidget {
           ? 'Aufgaben, lädt. Öffnen'
           : offen.isEmpty
           ? 'Aufgaben: nichts offen. Öffnen'
-          : 'Aufgaben, ${offen.length} offen, davon $ueberfaellig überfällig. Öffnen',
+          : 'Aufgaben, ${offen.length} offen, davon $ueberfaellig überfällig: ${aufgabenSemantik(offen, jetzt)}. Öffnen',
       onTap: () => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab),
       child: fehler
           ? _fehler('Die Aufgaben konnten nicht geladen werden.')

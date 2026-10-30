@@ -41,6 +41,14 @@ List<Vorkommen> anstehende(KalenderDaten daten, DateTime jetzt, {int tage = 60})
 /// Mitglieder für Farben, aber erst laden, wenn es Termine gibt (kein zusätzlicher Abruf auf leeren Startseiten).
 Mitglieder mitgliederFuer(WidgetRef ref, KalenderDaten daten) => Mitglieder(daten.termine.isEmpty ? const [] : (ref.watch(mitgliederProvider).value ?? const []));
 
+/// "heute · 15:30", "morgen · ganztägig" oder "do, 22. okt · ab 22:00": Tag und Zeit eines anstehenden Termins (Anzeige und Vorlesetext).
+String anstehenderTerminText(Vorkommen v, DateTime heute) {
+  final tag = v.ersterTag.isBefore(heute) ? heute : v.ersterTag;
+  final morgen = heute.add(const Duration(days: 1));
+  final tagText = tag == heute ? 'heute' : (tag == morgen ? 'morgen' : DateFormat('E, d. MMM', 'de_DE').format(tag).toLowerCase());
+  return '$tagText · ${zeitText(v, tag)}';
+}
+
 /// Eine Zeile "Farbbalken, Titel, Tag und Zeit".
 class AnstehenderTermin extends StatelessWidget {
   final Vorkommen v;
@@ -50,9 +58,6 @@ class AnstehenderTermin extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final tag = v.ersterTag.isBefore(heute) ? heute : v.ersterTag;
-    final morgen = heute.add(const Duration(days: 1));
-    final tagText = tag == heute ? 'heute' : (tag == morgen ? 'morgen' : DateFormat('E, d. MMM', 'de_DE').format(tag).toLowerCase());
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Row(
@@ -65,7 +70,7 @@ class AnstehenderTermin extends StatelessWidget {
               children: [
                 Text(vorkommenTitel(v), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
                 Text(
-                  '$tagText · ${zeitText(v, tag)}',
+                  anstehenderTerminText(v, heute),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
