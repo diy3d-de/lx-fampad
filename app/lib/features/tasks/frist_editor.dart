@@ -14,14 +14,14 @@ import '../../data/tasks/aufgabe_repository.dart';
 import '../../data/tasks/fristen_logik.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/ungespeichert_schutz.dart';
+import '../../widgets/liste_detail.dart' show detailOeffnen;
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
 import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'fristen_anzeige.dart';
 
 /// Öffnet den Frist-Editor. [frist] null = neue Frist.
-Future<void> fristEditorOeffnen(BuildContext context, {Aufgabe? frist}) =>
-    Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => FristEditor(frist: frist)));
+Future<void> fristEditorOeffnen(BuildContext context, {Aufgabe? frist}) => detailOeffnen(context, (_) => FristEditor(frist: frist), id: frist?.id);
 
 class FristEditor extends ConsumerStatefulWidget {
   final Aufgabe? frist;

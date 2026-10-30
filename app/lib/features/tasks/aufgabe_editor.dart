@@ -17,6 +17,7 @@ import '../../data/lists/members.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../../ui/widgets.dart';
+import '../../widgets/liste_detail.dart' show detailOeffnen;
 import '../../widgets/ungespeichert_schutz.dart';
 import '../auth/auth_widgets.dart';
 import '../calendar/kalender_widgets.dart' show PersonKapsel;
@@ -24,9 +25,11 @@ import '../lists/list_dialogs.dart' show AuswahlKnopf, bestaetigen;
 import 'frist_editor.dart' show FristEditor;
 
 /// Öffnet den Editor. [aufgabe] null = neue Aufgabe.
-Future<void> aufgabeEditorOeffnen(BuildContext context, {Aufgabe? aufgabe}) => Navigator.of(context).push<void>(
-  // Fristen haben ihren eigenen Editor (Ablaufdatum, Wiederholung in Monaten, Vorwarnzeit)
-  MaterialPageRoute(builder: (_) => aufgabe != null && aufgabe.frist ? FristEditor(frist: aufgabe) : AufgabeEditor(aufgabe: aufgabe)),
+Future<void> aufgabeEditorOeffnen(BuildContext context, {Aufgabe? aufgabe}) => detailOeffnen(
+  context,
+  // Fristen haben ihren eigenen Editor (Ablaufdatum, Wiederholung in Monaten, Vorwarnzeit); im Zweispalter (Desktop) öffnet er in der rechten Spalte
+  (_) => aufgabe != null && aufgabe.frist ? FristEditor(frist: aufgabe) : AufgabeEditor(aufgabe: aufgabe),
+  id: aufgabe?.id,
 );
 
 /// Obergrenze der Unteraufgaben je Aufgabe (wie am Server).

@@ -52,6 +52,7 @@ import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpei
 import 'package:lx_fampad/data/startseite/jetzt_wichtig_logik.dart' show kJetztWichtigSchluessel;
 import 'package:lx_fampad/data/sync_state.dart' show SyncZeiten;
 import 'package:lx_fampad/features/shell/schnellwahl.dart' show Schnellwahl;
+import 'package:lx_fampad/features/tasks/aufgabe_editor.dart' show AufgabeEditor;
 import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
@@ -590,6 +591,29 @@ void main() {
     final env = await start(tester, skala: 1.0, groesse: const Size(1200, 800));
     expect(env, isNotNull);
     pruefe(tester, 'Desktop-Startseite');
+    h.dispose();
+  });
+
+  // Desktop-Zweispalter (Aufgaben, Listen): beide Spalten, Editor rechts, Leerzustand
+  testWidgets('Desktop-Zweispalter: Aufgaben mit Leerzustand und Editor rechts, Listen mit Listenspalte, alles beschriftet', (tester) async {
+    final h = tester.ensureSemantics();
+    final env = await angemeldeteUmgebung();
+    env.sync.andereAendert('aufgabe', 'bbbbbbbb-6666-4666-8666-666666666666', {'titel': 'Eine Aufgabe mit einem langen Titel, der in der Listenspalte umbrechen muss', 'assigneeId': fixIdAdmin});
+    env.sync.andereAendert('list', l1, {'name': 'Einkauf', 'kind': 'shopping', 'audience': 'family'});
+    env.sync.andereAendert('list_item', '33333333-3333-4333-8333-000000000009', {'listId': l1, 'text': 'Milch', 'position': 0});
+    final c = await starteApp(tester, env, groesse: const Size(1280, 900));
+    c.read(shellTabProvider.notifier).waehlen(kAufgabenTab);
+    await warte(tester);
+    expect(find.text('Wähle links eine Aufgabe'), findsOneWidget);
+    pruefe(tester, 'Aufgaben-Zweispalter ohne Auswahl');
+    await tester.tap(find.textContaining('Eine Aufgabe mit einem langen Titel').first);
+    await warte(tester);
+    expect(find.byType(AufgabeEditor), findsOneWidget);
+    pruefe(tester, 'Aufgaben-Zweispalter mit Editor');
+    c.read(shellTabProvider.notifier).waehlen(kListenTab);
+    await warte(tester);
+    expect(find.byKey(const ValueKey('liste:$l1')), findsOneWidget);
+    pruefe(tester, 'Listen-Zweispalter');
     h.dispose();
   });
 
