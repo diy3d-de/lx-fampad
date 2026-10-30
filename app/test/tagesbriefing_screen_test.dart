@@ -88,7 +88,7 @@ void main() {
     expect(labelFinder('Heute im Überblick'), findsOneWidget);
   });
 
-  testWidgets('Einstellungen: Standard Kachel an, Benachrichtigung aus, 07:00; Änderungen landen in sync_meta', (tester) async {
+  testWidgets('Einstellungen: Standard Kachel AUS, Benachrichtigung aus, 07:00; Änderungen landen in sync_meta', (tester) async {
     final speicher = MemoryFeiertageSpeicher();
     final env = await angemeldeteUmgebung();
     env.speicher = speicher;
@@ -96,10 +96,12 @@ void main() {
     addTearDown(c.dispose);
     await c.read(briefingEinstellungenProvider.notifier).bereit;
     expect(c.read(briefingEinstellungenProvider), const BriefingEinstellungen());
-    expect(c.read(briefingEinstellungenProvider).kachelAn, isTrue);
+    expect(c.read(briefingEinstellungenProvider).kachelAn, isFalse, reason: 'Standard seit 0.28.0: aus (Jetzt wichtig übernimmt)');
     expect(c.read(briefingEinstellungenProvider).morgensAn, isFalse);
     expect(briefingUhrzeit(c.read(briefingEinstellungenProvider).minuten), '07:00');
     final n = c.read(briefingEinstellungenProvider.notifier);
+    await n.kachelSetzen(true);
+    expect(speicher.werte[kBriefingKachelSchluessel], 'ja');
     await n.kachelSetzen(false);
     await n.morgensSetzen(true);
     await n.zeitSetzen(6 * 60 + 45);

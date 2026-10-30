@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/auth/auth_state.dart' show localDataWiperProvider;
 import 'package:lx_fampad/data/calendar/feiertage.dart' show FeiertageSpeicher, MemoryFeiertageSpeicher, kFeiertageSchluessel;
 import 'package:lx_fampad/data/startseite/startseite_logik.dart';
+import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'package:lx_fampad/data/startseite/startseite_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
 import 'package:lx_fampad/features/home/startseite_anpassen_screen.dart';
@@ -174,7 +175,8 @@ void main() {
   group('Seite "Startseite anpassen" (Handy)', () {
     // hoch genug, dass alle Zeilen der (lazy gebauten) Liste da sind; die Layout-Tests nehmen die echte Handyhöhe
     Future<ProviderContainer> oeffnen(WidgetTester tester, {MemoryFeiertageSpeicher? speicher, double skala = 1.0, Size groesse = const Size(360, 2400)}) async {
-      final c = await start(tester, speicher: speicher, skala: skala, groesse: groesse);
+      // die Kachel „Heute im Überblick“ ist seit 0.28.0 im Standard aus: diese Tests listen sie, darum eingeschaltet
+      final c = await start(tester, speicher: speicher ?? MemoryFeiertageSpeicher('nein', {kBriefingKachelSchluessel: 'ja'}), skala: skala, groesse: groesse);
       await tester.scrollUntilVisible(find.text('Startseite anpassen'), 200, scrollable: find.byType(Scrollable).first);
       Scrollable.ensureVisible(tester.element(find.text('Startseite anpassen')), alignment: 0.3);
       await tester.pump(const Duration(milliseconds: 300));
@@ -198,7 +200,7 @@ void main() {
     });
 
     testWidgets('Pfeil runter und hoch ordnen um, speichern, die Pfeile an den Enden sind aus', (tester) async {
-      final speicher = MemoryFeiertageSpeicher('nein');
+      final speicher = MemoryFeiertageSpeicher('nein', {kBriefingKachelSchluessel: 'ja'});
       await oeffnen(tester, speicher: speicher);
       expect(tester.widget<IconButton>(find.byKey(const ValueKey('hoch:schnellzugriff'))).onPressed, isNull);
       expect(tester.widget<IconButton>(find.byKey(const ValueKey('runter:fristen'))).onPressed, isNull);
@@ -267,7 +269,7 @@ void main() {
     });
 
     testWidgets('Ziehen am Griff ordnet um', (tester) async {
-      final speicher = MemoryFeiertageSpeicher('nein');
+      final speicher = MemoryFeiertageSpeicher('nein', {kBriefingKachelSchluessel: 'ja'});
       await oeffnen(tester, speicher: speicher);
       final griff = find.descendant(of: find.byKey(const ValueKey('eintrag:standort')), matching: find.byIcon(Icons.drag_indicator));
       final von = tester.getCenter(griff);
