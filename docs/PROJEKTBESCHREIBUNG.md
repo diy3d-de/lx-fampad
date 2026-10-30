@@ -958,7 +958,7 @@ Ergebnis der Sicherheits-Nachprüfung am Ende von Phase 0; diese Punkte gehören
 
 - ~~**WebSocket-Fehlversuche zählen:**~~ erledigt in Phase 1a: abgelehnte Tickets/Anmeldungen am WebSocket gegen das Rate-Limit je IP zählen (nicht nur erfolgreiche Verbindungen).
 - ~~**Getrennte Datenbank-Rollen:**~~ erledigt in Phase 1a (`lx_fampad_migrate` / `lx_fampad`, `deploy/README.md`): eine Rolle für Migrationen (DDL), eine eingeschränkte für den Betrieb (nur DML); der Dienst läuft mit der Betriebsrolle.
-- **GitHub Actions auf Commit-SHA pinnen** und das Signieren des Update-Manifests in einen eigenen Job mit nur dafür freigegebenem Secret (`UPDATE_SIGNING_KEY`) trennen. Dazu in `ci.yml` einen Schritt `npm audit --omit=dev` für den Server aufnehmen (Produktivabhängigkeiten).
+- ~~**GitHub Actions auf Commit-SHA pinnen**~~ erledigt: alle Actions in `ci.yml` und `release.yml` sind auf SHA gepinnt; das Signieren des Update-Manifests läuft im eigenen Job `sign` (nur dort `UPDATE_SIGNING_KEY`, Environment `release`, Pflicht-Prüfer in den Repository-Einstellungen eintragen); `ci.yml` führt `npm audit --omit=dev` für den Server aus.
 - **Später (Befunde aus Phase 1a, bewusst zurückgestellt):**
   - **Audit-Log nur anhängen:** Die Laufzeitrolle darf `audit_log` heute ändern und löschen (der Aufräum-Job braucht das). Besser: Laufzeit nur `INSERT`/`SELECT`, Bereinigung über eine eigene Rolle oder einen Datenbank-Job.
   - **`AUTH_SECRET_KEY`: Key-ID und Rotation:** Gespeicherte HMACs und TOTP-Geheimnisse tragen keine Schlüsselkennung; eine Rotation ist daher nicht möglich. Key-ID im Format (z. B. `v1.<kid>.…`) und Neuverschlüsselung vorsehen.

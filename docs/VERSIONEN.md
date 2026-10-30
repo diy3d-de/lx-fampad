@@ -8,14 +8,14 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | --- | --- | --- |
 | Node.js | 24.21.0 | wie lx-labs; Node 26 erst nach Phase 1 prüfen |
 | TypeScript | 6.0.3 | TS 7 hat noch keine API, nur optional als Typcheck |
-| Fastify | 5.12.5 | auf Node 24 im Test prüfen |
+| Fastify | 5.12.7 | auf Node 24 im Test prüfen; 5.12.7 (13.10.2026) behebt GHSA-389g-gv7q-r4x8 |
 | @fastify/websocket | 11.3.3 | Auth über Session-Cookie beim Upgrade oder Einmal-Ticket |
 | drizzle-orm / drizzle-kit | 0.45.3 / 0.31.11 | 1.0 noch RC; kein `db.query` (Relational v1) |
 | PostgreSQL | 17 (Debian 13, Debian-Repo) | entschieden 18.10.2026; CI-Service-Container der Vertragsprüfung: `postgres:17.6` |
 | @simplewebauthn/server | 14.0.3 | Phase 1a im Einsatz (veröffentlicht 25.09.2026). `supportedAlgorithmIDs` = ES256/RS256, UV Pflicht, Attestation `none`; Antworten werden im Test mit einem eigenen Test-Authenticator erzeugt |
 | otplib | 13.5.0 | Phase 1a im Einsatz (21.08.2026). API ≠ v12 (funktionale `verify`/`generate`, `epochTolerance`); Replay-Schutz über `afterTimeStep` und atomares Fortschreiben von `credentials.last_time_step` |
 | argon2 | 0.45.1 | Phase 1a im Einsatz (21.07.2026). Argon2id (32 MiB, t=3, p=1). Native Prebuilds liegen im Paket: läuft auch mit `npm ci --ignore-scripts` (deploy.sh), auf Debian 13/glibc x64 noch nicht auf dem echten Server geprüft |
-| zod | 4.6.5 | Phase 1a: Eingabevalidierung der Routen (13.09.2026). 4.6.6 (11.10.) und 4.6.7 (12.10.) waren zum Stichtag jünger als 14 Tage |
+| zod | 4.6.7 | Phase 1a: Eingabevalidierung der Routen; 4.6.7 (12.10.2026) behebt GHSA-mrhx-c7xc-m3w5 (Speicherüberlauf) |
 | @tus/server / @tus/file-store | 2.4.5 / 2.1.1 | Teil-Uploads liegen unverschlüsselt: nach `onUploadFinish` verschlüsselt ablegen |
 | sharp | 0.35.5 | |
 | pg / @types/pg | 8.23.1 / 8.23.1 | node-postgres; Pool mit Fehler-Handler und Verbindungs-Timeout |
@@ -128,3 +128,5 @@ Die zehn Zeichnungen in `app/assets/avatare/` (V01, V08, V12, M01, M08, M13, K07
 ## Home-Assistant-Integration (nur Home-Assistant-Seite, nicht in der App)
 
 `homeassistant/custom_components/familyhub/` (Zähler-Werte aus Home Assistant, Abschnitt 6l): **PyNaCl 1.6.2** (`manifest.json` `requirements`, `homeassistant/requirements-test.txt`), exakt gepinnt, für Sealed Box (libsodium) und BLAKE2b-MAC. Veröffentlicht auf PyPI am 01.01.2026 (geprüft am 26.10.2026, Mindestalter 14 Tage erfüllt). Home Assistant installiert die Bibliothek selbst; in der App und auf dem Server wird sie nicht verwendet.
+
+Ausnahme von der 14-Tage-Regel (29.10.2026): `fast-uri` (transitiv über ajv und fast-json-stringify) per `overrides` in `server/package.json` auf 3.1.9 bzw. 4.2.3 (beide 19.10.2026) festgehalten, weil sie Schwachstellen beheben (u. a. GHSA-w74x-v6f9-j3xg). Override nach dem 2.11.2026 prüfen und entfernen, sobald fastify/ajv selbst darauf auflösen.
