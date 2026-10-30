@@ -6,7 +6,7 @@ Sprache aller Inhalte, UI-Texte und Commit-Nachrichten: **Deutsch**, Ansprache p
 
 E2EE (Chat-Verschlüsselung): **Phase 1 (Schlüsselverwaltung) und Phase 2 (verschlüsselter Chat: Epochenschlüssel, signierte Wraps, Rotation, Hülle `e1`) gebaut** (v0.3.0); Beschreibung `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 9a.
 
-Stand: **v0.3.0 „Chat-Paket“** (Server: Konten und Anmeldung seit 1a, Sync-Kern; App: Anmeldung, Einladungen, Konto, Admin seit 1b, Sync und **Listen** in 1c-1, **Kalender-Kern** (Termine, Teilnehmer, Ausnahmen, Serien) in 1c-2a, **Aufgaben** (mit Unteraufgaben und einfacher Wiederholung; Abschnitt 6e) in 1c-4a, **Chat** (Familienchat, Direktchats, Gruppen, Lesestand; Abschnitt 6c) **Ende-zu-Ende verschlüsselt** (9a), **Push** (UnifiedPush-Wecker, lokale Benachrichtigung „Neue Nachricht in <Chat>“ ohne Inhalt; 6d); Dateien folgen als eigene Teile auf demselben Kern). Fahrplan in `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 12; Endpunkte in `docs/API.md`.
+Stand: **v0.28.0** (Server: Konten und Anmeldung seit 1a, Sync-Kern; App: Anmeldung, Einladungen, Konto, Admin seit 1b, Sync und **Listen** in 1c-1, **Kalender-Kern** (Termine, Teilnehmer, Ausnahmen, Serien) in 1c-2a, **Aufgaben** (mit Unteraufgaben und einfacher Wiederholung; Abschnitt 6e) in 1c-4a, **Chat** (Familienchat, Direktchats, Gruppen, Lesestand; Abschnitt 6c) **Ende-zu-Ende verschlüsselt** (9a), **Push** (UnifiedPush-Wecker, lokale Benachrichtigung „Neue Nachricht in <Chat>“ ohne Inhalt; 6d); Dateien folgen als eigene Teile auf demselben Kern). Fahrplan in `docs/PROJEKTBESCHREIBUNG.md`, Abschnitt 12; Endpunkte in `docs/API.md`.
 
 ## Stack
 

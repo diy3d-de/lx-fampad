@@ -1,11 +1,22 @@
 # lx-familyhub
 
-Selbst gehostete Familien-Zentrale nach dem Vorbild von FamilyWall: gemeinsamer Kalender, Chat, Listen, Aufgaben und Dateien
-(später Fotos, Karte, Tresor u. a.). Läuft im Browser und als Android-App, offline-fähig, mit Echtzeit-Abgleich.
-Die Daten bleiben auf dem eigenen Server in Deutschland (`familyhub.lx-labs.dev`).
+Selbst gehostete Familien-Zentrale nach dem Vorbild von FamilyWall für die eigene Familie. Läuft im Browser und als Android-App
+aus einer Flutter-Codebasis, offline-fähig, mit Echtzeit-Abgleich. Die Daten bleiben auf dem eigenen Server in Deutschland
+(`familyhub.lx-labs.dev`), ohne Tracker und ohne Fremddienste für Nutzerdaten.
 
-**Status: Phase 1c-1.** Server, Datenbankschema, Konten und Anmeldung (Passkey, Passwort + 2FA, Einladungen), Flutter-App mit Anmeldung, Sync-Kern
-(offline-first, Konflikte pro Feld, WebSocket-Hinweis) und den **Listen** als erstem Fachbereich stehen; Kalender, Chat, Aufgaben und Dateien folgen auf demselben Kern.
+**Stand: Version 0.27** (aktuelle Version: siehe [Releases](../../releases)). Enthalten sind:
+
+- **Familie:** Kalender (Serien, Farben, Feiertage und Ferien, Geburtstage, ICS), Aufgaben und Fristen, Listen mit Einkaufsliste,
+  Familien-Status, Standort teilen mit Karte (flüchtig, Ende-zu-Ende verschlüsselt), Suche
+- **Chat:** Familienchat, Direktchats und Gruppen, Ende-zu-Ende verschlüsselt (Reaktionen, Umfragen, Pins), Push ohne Inhalt
+  über eigenes ntfy
+- **Zuhause:** Wetter (Netatmo-Station, DWD-Warnungen), Müll-Abfuhrtermine, Zähler mit Home-Assistant-Anbindung,
+  Tagesbriefing, Wandtablet-Modus, Widget „Heute“
+- **Vertraulich:** Tresor, Medikamenten-Plan, Vorsorge und Impfungen (alle Ende-zu-Ende verschlüsselt, nur für berechtigte Rollen)
+- **Dateien:** Dateiablage mit Freigaben, Fassungen und Offline-Kopien
+- **Betrieb:** Betreiber-Ansicht (nur lesend), verschlüsselte Backups, signierte App-Updates
+
+Fahrplan und Ideen: [docs/PROJEKTBESCHREIBUNG.md](docs/PROJEKTBESCHREIBUNG.md), Abschnitt 12.
 
 | Ordner | Inhalt |
 | --- | --- |
