@@ -175,7 +175,7 @@ class HinweisZeichen extends StatelessWidget {
     padding: const EdgeInsets.symmetric(horizontal: 5),
     alignment: Alignment.center,
     decoration: BoxDecoration(color: ueberfaellig ? kDanger : kWarn, borderRadius: BorderRadius.circular(9)),
-    child: Text(hinweisText(zahl), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, fontWeight: FontWeight.w700, color: kBg, height: 1.1)),
+    child: Text(hinweisTextMarke(zahl, ueberfaellig: ueberfaellig), style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 10, fontWeight: FontWeight.w700, color: kBg, height: 1.1)),
   );
 }
 

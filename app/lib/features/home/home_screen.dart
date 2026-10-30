@@ -38,6 +38,7 @@ import '../suche/such_einstieg.dart';
 import '../update/update_banner.dart';
 import '../wetter/wetter_dwd_warn_karte.dart';
 import 'jetzt_wichtig_block.dart';
+import 'kachel_semantik.dart';
 import 'web_erinnerung_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../wetter/wetter_karte.dart';
@@ -268,7 +269,9 @@ class _EinkaufKarte extends ConsumerWidget {
 
     return Semantics(
       button: true,
-      label: einkauf == null ? 'Einkaufsliste, noch keine Liste. Öffnen' : 'Einkaufsliste, ${offen.length} offen. Öffnen',
+      label: einkauf == null
+          ? 'Einkaufsliste, noch keine Liste. Öffnen'
+          : (offen.isEmpty ? 'Einkaufsliste, 0 offen. Öffnen' : 'Einkaufsliste, ${offen.length} offen: ${einkaufSemantik(offen)}. Öffnen'),
       excludeSemantics: true,
       child: LxCard(
         onTap: oeffnen,
@@ -320,7 +323,7 @@ class _AufgabenKarte extends ConsumerWidget {
     final mitglieder = mitgliederFuerAufgaben(ref, zeigen);
     return Semantics(
       button: true,
-      label: zeigen.isEmpty ? 'Aufgaben: nichts fällig. Aufgaben öffnen' : 'Aufgaben: ${faellig.length} fällig. Aufgaben öffnen',
+      label: zeigen.isEmpty ? 'Aufgaben: nichts fällig. Aufgaben öffnen' : 'Aufgaben: ${faellig.length} fällig: ${aufgabenSemantik(faellig, jetzt)}. Aufgaben öffnen',
       excludeSemantics: true,
       child: LxCard(
         onTap: () => ref.read(shellTabProvider.notifier).waehlen(kAufgabenTab),
@@ -355,7 +358,7 @@ class _NaechsteKarte extends ConsumerWidget {
     final zeigen = kommende.take(4).toList();
     return Semantics(
       button: true,
-      label: zeigen.isEmpty ? 'Als Nächstes: keine anstehenden Termine. Kalender öffnen' : 'Als Nächstes: ${zeigen.length} Termine. Kalender öffnen',
+      label: zeigen.isEmpty ? 'Als Nächstes: keine anstehenden Termine. Kalender öffnen' : 'Als Nächstes: ${zeigen.length} Termine: ${termineSemantik(kommende, heute)}. Kalender öffnen',
       excludeSemantics: true,
       child: LxCard(
         onTap: () => ref.read(shellTabProvider.notifier).waehlen(kKalenderTab),

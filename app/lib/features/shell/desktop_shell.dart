@@ -552,7 +552,7 @@ class _NavEintrag extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
-                  Badge(isLabelVisible: badge || zaehler > 0, label: zaehler > 0 ? Text(zaehler > 99 ? '99+' : '$zaehler') : null, child: Icon(icon, size: 20, color: farbe)),
+                  Badge(isLabelVisible: badge || zaehler > 0, label: zaehler > 0 ? Text('${zaehler > 99 ? '99+' : zaehler}${ueberfaellig ? '!' : ''}') : null, child: Icon(icon, size: 20, color: farbe)),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: farbe)),

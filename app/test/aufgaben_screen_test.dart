@@ -589,6 +589,10 @@ void main() {
     expect(find.text('Irgendwann'), findsNothing);
     expect(find.text('Nächsten Monat'), findsNothing);
     expect(find.textContaining('überfällig · '), findsOneWidget);
+    // Vorlesetext: die ersten Aufgaben mit ihrem Zustand als Wort (nicht nur die Zahl)
+    final h = tester.ensureSemantics();
+    expect(find.bySemanticsLabel(RegExp(r'^Aufgaben: 2 fällig: Überfällig, überfällig, .*Morgen dran, morgen. Aufgaben öffnen')), findsOneWidget);
+    h.dispose();
     await tippe(tester, find.text('Morgen dran'));
     expect(find.byType(TasksScreen), findsOneWidget);
   });

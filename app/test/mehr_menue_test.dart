@@ -334,19 +334,21 @@ void main() {
 
     testWidgets('Aufgaben hinter Mehr: Summe aus fälligen Aufgaben (überfällig und bald fällig) und Fristen; Zeichen rot bei Überfälligem', (tester) async {
       await start(tester, gespeichert: {'leiste_bereiche': 'start,kalender,chat,listen'}, vorher: daten);
-      expect(find.byTooltip('Weitere Bereiche, 3 Hinweise'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist');
+      expect(find.byTooltip('Weitere Bereiche, 3 Hinweise, Überfälliges dabei'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist');
+      expect(find.descendant(of: leiste(), matching: find.text('3!')), findsOneWidget, reason: 'Überfälliges steht im Zeichen selbst (Ausrufezeichen), nie nur als rote Farbe');
       final badge = tester.widget<Badge>(find.descendant(of: leiste(), matching: find.byType(Badge)).last);
       expect(badge.backgroundColor, kDanger);
       await mehrOeffnen(tester);
       final a = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:aufgaben')), matching: find.byType(HinweisZeichen)));
       expect((a.zahl, a.ueberfaellig), (2, true));
+      expect(find.descendant(of: find.byKey(const ValueKey('mehr:aufgaben')), matching: find.text('2!')), findsOneWidget);
       final f = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:fristen')), matching: find.byType(HinweisZeichen)));
       expect((f.zahl, f.ueberfaellig), (1, false));
     });
 
     testWidgets('Vorsorge: Zahl der fälligen Einträge, rot bei Überfälligem, in der Summe; Text nur "n Hinweise", nie Name oder Art', (tester) async {
       await start(tester, vorher: (e) => e.extraOverrides.add(vorsorgeHinweisProvider.overrideWithValue((offen: 2, ueberfaellig: 1))));
-      expect(find.byTooltip('Weitere Bereiche, 2 Hinweise'), findsOneWidget);
+      expect(find.byTooltip('Weitere Bereiche, 2 Hinweise, Überfälliges dabei'), findsOneWidget);
       await mehrOeffnen(tester);
       final z = tester.widget<HinweisZeichen>(find.descendant(of: find.byKey(const ValueKey('mehr:vorsorge')), matching: find.byType(HinweisZeichen)));
       expect((z.zahl, z.ueberfaellig), (2, true));

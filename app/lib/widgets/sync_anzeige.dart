@@ -64,26 +64,27 @@ class SyncZeileFlaeche extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final d = daten;
+    // bei stark vergrößerter Schrift steht die Handlung unter dem Text (sonst läuft die Zeile über)
+    final darunter = MediaQuery.textScalerOf(context).scale(13) > 18;
+    final knopf = d.handlung == null || onHandlung == null
+        ? null
+        : TextButton(style: TextButton.styleFrom(minimumSize: const Size(44, 44), foregroundColor: kAccent), onPressed: onHandlung, child: Text(d.handlung!));
+    final text = Row(
+      children: [
+        ExcludeSemantics(child: Icon(d.symbol, size: 16, color: d.alarm ? kDanger : kTextMuted)),
+        const SizedBox(width: 10),
+        Expanded(child: Text(d.text, style: const TextStyle(fontSize: 13, color: kText))),
+        if (knopf != null && !darunter) knopf,
+      ],
+    );
     return Semantics(
       container: true,
       liveRegion: true,
       child: Container(
         constraints: const BoxConstraints(minHeight: 44),
-        padding: EdgeInsets.only(left: 14, right: d.handlung == null ? 14 : 4, top: 6, bottom: 6),
+        padding: EdgeInsets.only(left: 14, right: knopf != null && !darunter ? 4 : 14, top: 6, bottom: knopf != null && darunter ? 2 : 6),
         decoration: BoxDecoration(color: kSurface2, borderRadius: BorderRadius.circular(18)),
-        child: Row(
-          children: [
-            ExcludeSemantics(child: Icon(d.symbol, size: 16, color: d.alarm ? kDanger : kTextMuted)),
-            const SizedBox(width: 10),
-            Expanded(child: Text(d.text, style: const TextStyle(fontSize: 13, color: kText))),
-            if (d.handlung != null && onHandlung != null)
-              TextButton(
-                style: TextButton.styleFrom(minimumSize: const Size(44, 44), foregroundColor: kAccent),
-                onPressed: onHandlung,
-                child: Text(d.handlung!),
-              ),
-          ],
-        ),
+        child: knopf != null && darunter ? Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [text, Align(alignment: Alignment.centerRight, child: knopf)]) : text,
       ),
     );
   }

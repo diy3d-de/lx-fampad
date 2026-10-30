@@ -440,7 +440,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
 
     Widget mehrSymbol(IconData icon) => Badge(
       isLabelVisible: mehrZahl > 0,
-      label: Text(hinweisText(mehrZahl)),
+      label: Text(hinweisTextMarke(mehrZahl, ueberfaellig: hinweise.ueberfaellig(leiste))),
       backgroundColor: hinweise.ueberfaellig(leiste) ? kDanger : kWarn,
       textColor: kBg,
       child: Icon(icon),
@@ -478,7 +478,7 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
             icon: mehrSymbol(Icons.apps_outlined),
             selectedIcon: mehrSymbol(Icons.apps),
             label: 'Mehr',
-            tooltip: mehrZahl > 0 ? 'Weitere Bereiche, $mehrZahl ${mehrZahl == 1 ? 'Hinweis' : 'Hinweise'}' : 'Weitere Bereiche',
+            tooltip: mehrZahl > 0 ? 'Weitere Bereiche, $mehrZahl ${mehrZahl == 1 ? 'Hinweis' : 'Hinweise'}${hinweise.ueberfaellig(leiste) ? ', Überfälliges dabei' : ''}' : 'Weitere Bereiche',
           ),
         ],
       ),
