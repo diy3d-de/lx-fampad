@@ -198,18 +198,7 @@ export class WeatherService {
       return this.fail('network');
     }
     if (res.status === 401 || res.status === 403) return 'auth_error';
-    if (!res.ok) {
-      // Diagnose für Upstream-Fehler: nur Statuszeile, ausgewählte Kopfzeilen und ein gekürzter Antwortanfang (nie Token, nie Koordinaten)
-      const kopf: Record<string, string> = {};
-      for (const n of ['retry-after', 'content-type', 'server', 'via', 'x-request-id', 'x-ratelimit-remaining']) {
-        const v = res.headers.get(n);
-        if (v) kopf[n] = v.slice(0, 80);
-      }
-      // eslint-disable-next-line no-control-regex
-      const anfang = text.replace(/[\u0000-\u001f\u007f]+/g, ' ').slice(0, 200);
-      this.log.warn({ status: res.status, kopf, laenge: text.length, anfang }, 'Wetter-Abruf: Antwort des Upstreams');
-      return this.fail(`http_${res.status}`);
-    }
+    if (!res.ok) return this.fail(`http_${res.status}`);
     let json: unknown;
     try {
       json = JSON.parse(text);
