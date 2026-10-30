@@ -145,6 +145,20 @@ class ListenRepository {
     beiAenderung();
   }
 
+  /// "Rückgängig" nach dem Löschen: der gelöschte Datensatz bleibt auf dem Server ein Tombstone, darum entsteht der Eintrag mit einer NEUEN ID
+  /// wieder (gleicher Text, gleiche Stelle, Zuständige, Kategorie und Erledigt-Stand).
+  Future<String> eintragWiederherstellen(Listeneintrag e) async {
+    final id = _neueId();
+    await store.aendern(
+      'list_item',
+      id,
+      {'listId': e.listId, 'text': e.inhalt, 'position': e.position, 'assigneeId': ?e.assigneeId, 'category': ?e.category, if (e.doneAt != null) 'doneAt': zeitFuerServer(e.doneAt!)},
+      nurLokal: {'createdAt': zeitFuerServer(_jetzt())},
+    );
+    beiAenderung();
+    return id;
+  }
+
   /// Speichert die Einträge einer Liste (ohne Erledigt-Stand, Zuständigkeit und Position der Liste) als neue Vorlage mit der Freigabe der Liste.
   /// Liefert die ID der Vorlage; eine leere Liste ergibt keine Vorlage (null).
   Future<String?> alsVorlageSpeichern(Liste liste, {String? name}) async {

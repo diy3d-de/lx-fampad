@@ -13,6 +13,7 @@ import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../../widgets/kopfzeile.dart';
+import '../../widgets/rueckgaengig.dart';
 import 'list_dialogs.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -118,6 +119,9 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         if (mitKategorie && EinkaufKategorie.von(kategorie) != EinkaufKategorie.von(e.category)) await _repo.eintragKategorie(e.id, kategorie);
       case EintragLoeschen():
         await _repo.eintragLoeschen(e.id);
+        if (!mounted) return;
+        // Rückgängig legt den Eintrag mit neuer ID wieder an (der Server behält den gelöschten als Tombstone)
+        rueckgaengigZeigen(context, text: 'Eintrag gelöscht', rueckgaengig: () async => _repo.eintragWiederherstellen(e));
     }
   }
 
@@ -150,7 +154,7 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
               EmptyState(icon: Icons.error_outline, title: 'Listen nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.'),
             ],
             AsyncData(:final value) || AsyncLoading(value: final value?) || AsyncError(value: final value?) => _inhalt(value, gewaehlt, rechte),
-            _ => const [Padding(padding: EdgeInsets.only(top: 48), child: Center(child: CircularProgressIndicator()))],
+            _ => const [LadePlatzhalter(karten: 2)],
           },
         ],
       ),
@@ -386,8 +390,16 @@ class _ListeAnsicht extends ConsumerWidget {
         const SizedBox(height: 16),
         if (lesefehler)
           const EmptyState(icon: Icons.error_outline, title: 'Einträge nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
+        else if (!eintraegeWert.hasValue)
+          const LadePlatzhalter()
         else if (sortiert.isEmpty)
-          const EmptyState(icon: Icons.checklist_outlined, title: 'Noch nichts drauf', hint: 'Schreib oben auf, was auf die Liste soll.')
+          EmptyState(
+            icon: Icons.checklist_outlined,
+            title: 'Noch nichts drauf',
+            hint: 'Schreib oben auf, was auf die Liste soll.',
+            knopf: rechte.darfEintraegeAendern ? 'Eintrag hinzufügen' : null,
+            onKnopf: rechte.darfEintraegeAendern ? fokus.requestFocus : null,
+          )
         else if (gruppiert) ...[
           for (final g in gruppiereOffene(eintraege)) ...[
             Padding(

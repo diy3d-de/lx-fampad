@@ -15,6 +15,7 @@ import '../../data/tasks/aufgabe_repository.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/benutzer_avatar.dart';
 import '../../widgets/kopfzeile.dart';
+import '../../widgets/rueckgaengig.dart';
 import '../../widgets/sync_hinweise.dart';
 import '../calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import '../lists/list_dialogs.dart' show bestaetigen;
@@ -79,7 +80,20 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     if (mounted) _fokus.requestFocus();
   }
 
-  Future<void> _loeschen(Aufgabe a) => _repo.loeschen(a.id);
+  Future<void> _loeschen(Aufgabe a) async {
+    final punkte = ref.read(aufgabenDatenProvider).punkteVon(a.id);
+    await _repo.loeschen(a.id);
+    // Rückgängig legt die offene Aufgabe mit neuer ID wieder an (der Server behält die gelöschte als Tombstone)
+    if (!mounted || istErledigt(a)) return;
+    rueckgaengigZeigen(context, text: 'Aufgabe gelöscht', rueckgaengig: () async => _repo.wiederherstellen(a, punkte));
+  }
+
+  Future<void> _haken(Aufgabe a) async {
+    final warErledigt = istErledigt(a);
+    await _repo.erledigt(a, !warErledigt);
+    if (!mounted || warErledigt) return;
+    rueckgaengigZeigen(context, text: 'Aufgabe erledigt', rueckgaengig: () => _repo.erledigt(a, false));
+  }
 
   Future<bool> _loeschenFragen(Aufgabe a) => bestaetigen(
     context,
@@ -222,11 +236,23 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
       if (lesefehler)
         const EmptyState(icon: Icons.error_outline, title: 'Aufgaben nicht lesbar', hint: 'Die lokale Datenbank konnte nicht gelesen werden.')
       else if (ladend)
-        const Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))
+        const LadePlatzhalter(karten: 2)
       else if (fristenAnsicht && sichtbar.isEmpty && !daten.aufgaben.any((a) => a.frist))
-        const EmptyState(icon: Icons.event_available_outlined, title: 'Noch keine Fristen', hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.')
+        EmptyState(
+          icon: Icons.event_available_outlined,
+          title: 'Noch keine Fristen',
+          hint: 'Lege Ablaufdaten an, z. B. Reisepass, TÜV oder Versicherung.',
+          knopf: rechte.darfAnlegen ? 'Frist anlegen' : null,
+          onKnopf: rechte.darfAnlegen ? () => fristEditorOeffnen(context) : null,
+        )
       else if (daten.aufgaben.isEmpty)
-        const EmptyState(icon: Icons.task_alt_outlined, title: 'Noch keine Aufgaben', hint: 'Schreib oben auf, was zu tun ist.')
+        EmptyState(
+          icon: Icons.task_alt_outlined,
+          title: 'Noch keine Aufgaben',
+          hint: 'Schreib oben auf, was zu tun ist.',
+          knopf: rechte.darfAnlegen ? 'Aufgabe hinzufügen' : null,
+          onKnopf: rechte.darfAnlegen ? _fokus.requestFocus : null,
+        )
       else if (sichtbar.isEmpty && aktiv > 0)
         EmptyState(
           icon: Icons.filter_alt_off_outlined,
@@ -236,7 +262,13 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
           onKnopf: notifier.zuruecksetzen,
         )
       else if (sichtbar.isEmpty)
-        const EmptyState(icon: Icons.filter_alt_off_outlined, title: 'Nichts gefunden', hint: 'Es ist nichts mehr offen.'),
+        EmptyState(
+          icon: Icons.task_alt_outlined,
+          title: 'Alles erledigt',
+          hint: 'Es ist nichts mehr offen.',
+          knopf: rechte.darfAnlegen && !fristenAnsicht ? 'Aufgabe hinzufügen' : null,
+          onKnopf: rechte.darfAnlegen && !fristenAnsicht ? _fokus.requestFocus : null,
+        ),
     ];
 
     return RefreshIndicator(
@@ -261,7 +293,7 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               statusDarf: rechte.darfStatus(a),
               person: mitglieder[a.assigneeId],
               jetzt: jetzt,
-              onHaken: () => _repo.erledigt(a, !istErledigt(a)),
+              onHaken: () => unawaited(_haken(a)),
               onOeffnen: () => aufgabeEditorOeffnen(context, aufgabe: a),
               onLoeschenFragen: () => _loeschenFragen(a),
               onLoeschen: () {

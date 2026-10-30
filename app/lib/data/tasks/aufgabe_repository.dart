@@ -360,6 +360,31 @@ class AufgabeRepository {
     await store.loeschen('aufgabe', id);
     beiAenderung();
   }
+
+  /// "Rückgängig" nach dem Löschen: Ein gelöschter Datensatz bleibt auf dem Server ein Tombstone (dieselbe ID lässt sich nicht neu anlegen), darum
+  /// entsteht die Aufgabe samt Unteraufgaben mit NEUEN IDs wieder (gleicher Inhalt, neue Anlegezeit und Besitzer = ich). Nur für offene Aufgaben
+  /// (bei erledigten bliebe die Folgeaufgabe unklar); liefert die neue ID, sonst null.
+  Future<String?> wiederherstellen(Aufgabe a, List<AufgabePunkt> punkte) async {
+    if (istErledigt(a)) return null;
+    final w = faelligWand(a);
+    final geordnet = sortierePunkte(punkte);
+    return anlegen(
+      AufgabeEingabe(
+        titel: a.titel,
+        beschreibung: a.beschreibung,
+        faellig: w,
+        mitUhrzeit: hatUhrzeit(a),
+        prioritaet: AufgabePrio.von(a.prioritaet),
+        zustaendig: a.assigneeId,
+        wiederholung: AufgabeWdh.von(a.wiederholung),
+        sicht: AufgabeSicht.von(a.audience),
+        erinnerungMin: a.erinnerungMin,
+        frist: a.frist,
+        fristMonate: a.fristMonate,
+        punkte: [for (final p in geordnet) PunktEingabe(id: _neueId(), text: p.inhalt, erledigt: p.doneAt != null)],
+      ),
+    );
+  }
 }
 
 final aufgabeRepositoryProvider = Provider<AufgabeRepository>((ref) {

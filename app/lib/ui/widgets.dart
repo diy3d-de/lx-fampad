@@ -158,6 +158,41 @@ class EmptyState extends StatelessWidget {
       );
 }
 
+/// Platzhalter, solange die lokalen Daten noch gelesen werden: eine ruhige Fläche mit grauen Balken statt Leere oder Drehrad (ohne Animation).
+class LadePlatzhalter extends StatelessWidget {
+  /// Anzahl der Karten.
+  final int karten;
+  const LadePlatzhalter({super.key, this.karten = 1});
+
+  @override
+  Widget build(BuildContext context) {
+    Widget balken(double faktor) => FractionallySizedBox(
+      widthFactor: faktor,
+      alignment: Alignment.centerLeft,
+      child: Container(height: 14, decoration: BoxDecoration(color: kSurface2, borderRadius: BorderRadius.circular(8))),
+    );
+    return Semantics(
+      label: 'Wird geladen',
+      liveRegion: true,
+      excludeSemantics: true,
+      child: Column(
+        children: [
+          for (var i = 0; i < karten; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: LxCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [balken(0.5), const SizedBox(height: 12), balken(1), const SizedBox(height: 8), balken(0.8)],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 /// Kapsel mit Text in Inter, z. B. "Live" (Grün) oder "Offline" (gedämpft); ohne Rand.
 class StatusPill extends StatelessWidget {
   final String text;

@@ -372,6 +372,41 @@ void main() {
     expect(await dbAufgaben(env), isEmpty);
   });
 
+  testWidgets('Rückgängig: Erledigen wird zurückgenommen, Löschen legt die Aufgabe samt Unteraufgaben mit neuer ID wieder an', (tester) async {
+    final env = await start(tester, vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Zahnarzt anrufen', tage: 1, prio: 2));
+      e.sync.andereAendert('aufgabe_punkt', 'cccccccc-1111-4111-8111-111111111111', {'aufgabeId': _a1, 'text': 'Nummer suchen', 'position': 0});
+    });
+    await tippe(tester, find.byIcon(Icons.check_box_outline_blank));
+    expect(find.text('Aufgabe erledigt'), findsOneWidget);
+    expect((await dbAufgaben(env)).single.erledigtAt, isNotNull);
+    await tippeText(tester, 'Rückgängig');
+    expect((await dbAufgaben(env)).single.erledigtAt, isNull);
+    expect(find.text('Zahnarzt anrufen'), findsOneWidget);
+
+    await tester.drag(find.text('Zahnarzt anrufen'), const Offset(-300, 0));
+    await warte(tester);
+    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
+    expect(await dbAufgaben(env), isEmpty);
+    expect(find.text('Aufgabe gelöscht'), findsOneWidget);
+    await tippeText(tester, 'Rückgängig');
+    final da = await dbAufgaben(env);
+    expect(da.single.titel, 'Zahnarzt anrufen');
+    expect(da.single.id, isNot(_a1));
+    expect([da.single.faelligDate, da.single.prioritaet], [_tag(1), 2]);
+    final punkte = await env.db.select(env.db.aufgabePunkte).get();
+    expect(punkte.map((p) => [p.aufgabeId, p.inhalt]), [[da.single.id, 'Nummer suchen']]);
+    expect(find.text('Zahnarzt anrufen'), findsOneWidget);
+  });
+
+  testWidgets('Leerzustand mit Handlung: "Aufgabe hinzufügen" setzt den Fokus ins Eingabefeld; Kinder mit Rechten sehen sie auch, ohne Recht keinen Knopf', (tester) async {
+    await start(tester);
+    expect(find.widgetWithText(FilledButton, 'Aufgabe hinzufügen'), findsOneWidget);
+    await tippe(tester, find.widgetWithText(FilledButton, 'Aufgabe hinzufügen'));
+    final fokus = FocusManager.instance.primaryFocus?.context;
+    expect(fokus?.findAncestorWidgetOfExactType<TextField>()?.decoration?.hintText, 'Neue Aufgabe');
+  });
+
   testWidgets('Kind: eigene Aufgaben änderbar, fremde nur ansehen (Haken gesperrt, Editor schreibgeschützt); Eltern-Aufgaben unsichtbar (Server)', (tester) async {
     final env = await start(tester, role: 'child', vorher: (e) {
       e.sync.andereAendert('aufgabe', _a1, _aufgabe('Meine Aufgabe', owner: fixIdAdmin));

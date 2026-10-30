@@ -512,6 +512,12 @@ Impf- und Vorsorge-Erinnerungen für Kinder und Erwachsene: Wann steht welche Im
 - **Erinnerungen** (lokal, Schalter „Vorsorge-Erinnerungen“ in Profil › Benachrichtigungen › Erinnerungen, Standard an; Android und Browser über denselben Dienst): jedes Gerät plant, was es sehen darf (die Person selbst, bei Kindern die Eltern und Admins); **Text immer neutral** („Eine Vorsorge ist fällig“, nie Name, Person oder Art; im Browser „Erinnerung: Etwas steht an“), Nutzlast `vorsorge` öffnet den Bereich; ab dem Vorlauf vor dem Zeitfenster (je Eintrag, Standard 14 Tage) einmal wöchentlich bis erledigt, 09:00 Uhr, höchstens ein Alarm je Person und Tag, 28 Tage voraus im gemeinsamen Fenster von 300 (`planeErinnerungen(zusatz:)`); geplant erst nach geladenen Daten.
 - **Nie:** Wandtablet, Widget „Heute“, globale Suche, Chatliste und Ungelesen, Teilen, Standort, Push-Inhalt, Betreiber-Ansicht, Tagesbriefing, Server-Log und Audit (Test `vorsorge_nie_zeigen_test.dart`).
 
+### 6q. UX-Runde 1 (nur Oberfläche, lokal, kein Server und kein Schema)
+
+Spezifikation waren die Mockups `docs/mockups-alternativ/n` bis `s`; wo sie den Design-Regeln widersprechen, gelten die Regeln.
+
+- **Rückmeldung und Leerzustände (p):** Nach dem Erledigen (Aufgabe) und dem Löschen (Aufgabe, Listeneintrag) steht ein ruhiger Hinweis mit **„Rückgängig“** (`widgets/rueckgaengig.dart`, SnackBar, 6 Sekunden). Die Handlung läuft nur über die Repositories (`SyncStore.aendern/loeschen`). **Grenze:** ein gelöschter Datensatz bleibt auf dem Server ein Tombstone, dieselbe ID lässt sich nicht neu anlegen; „Rückgängig“ nach dem Löschen legt deshalb eine Kopie mit **neuer ID** an (`AufgabeRepository.wiederherstellen` samt Unteraufgaben, nur für offene Aufgaben; `ListenRepository.eintragWiederherstellen`). Kein Rückgängig für: Liste löschen (Kaskade), „Erledigte löschen“, Abhaken von Listeneinträgen (zu häufig, der Haken lässt sich selbst zurücknehmen). Beim Laden zeigen Aufgaben und Listen einen Platzhalter (`LadePlatzhalter`, ohne Animation) statt eines Drehrads; leere Zustände haben eine Handlung (Aufgabe hinzufügen, Frist anlegen, Eintrag hinzufügen, Liste anlegen).
+
 ## 7. Anmeldung und Konten
 
 Umgesetzt in Phase 1a (Server) und Phase 1b (App: Anmeldung, Einladungen, Konto, Admin; Abschnitt "App-Teil (Phase 1b)" unten). Endpunkte: [`API.md`](API.md). Betrieb (Schlüssel, Datenbank-Rollen, erster Admin): `deploy/README.md`.
