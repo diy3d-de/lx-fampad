@@ -20,6 +20,7 @@ import 'package:lx_fampad/data/providers.dart';
 import 'package:lx_fampad/data/standort/standort_dienst.dart' show standortPortProvider;
 import 'package:lx_fampad/data/erinnerungen/erinnerung_einstellungen.dart' show MemoryErinnerungSpeicher;
 import 'package:lx_fampad/data/standort/standort_hinweis.dart';
+import 'package:lx_fampad/data/startseite/jetzt_wichtig_logik.dart' show kJetztWichtigSchluessel;
 import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'package:lx_fampad/features/calendar/calendar_anzeige.dart' show minutenTaktProvider;
 import 'package:lx_fampad/data/standort/standort_port.dart' show KeinStandortPort, StandortPort;
@@ -192,7 +193,7 @@ class TestUmgebung {
 
   List<Override> get overrides => [
     // Tagesbriefing-Kachel im Standard aus (verdrängt sonst getestete Kacheln); Tests des Briefings setzen kBriefingKachelSchluessel im eigenen Speicher
-    feiertageSpeicherProvider.overrideWithValue(speicher ?? MemoryFeiertageSpeicher(feiertage, {kKalenderAnsichtSchluessel: ?kalenderAnsicht, kBriefingKachelSchluessel: 'nein'})),
+    feiertageSpeicherProvider.overrideWithValue(speicher ?? MemoryFeiertageSpeicher(feiertage, {kKalenderAnsichtSchluessel: ?kalenderAnsicht, kBriefingKachelSchluessel: 'nein', kJetztWichtigSchluessel: 'nein'})),
     // Widget "Heute": im Test gilt flutter_test als Android, ohne Fake würde der Kanal angesprochen und ein Entprell-Timer bliebe stehen; Tests des Widgets setzen ihren Fake über extraOverrides
     heuteWidgetPortProvider.overrideWithValue(heuteWidgetPort),
     httpClientProvider.overrideWithValue(server.client),

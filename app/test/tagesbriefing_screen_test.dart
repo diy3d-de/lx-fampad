@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/data/calendar/expansion.dart';
 import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpeicher;
 import 'package:lx_fampad/data/erinnerungen/erinnerung_dienst.dart' show erinnerungPortProvider;
+import 'package:lx_fampad/data/startseite/jetzt_wichtig_logik.dart' show kJetztWichtigSchluessel;
 import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
@@ -42,7 +43,7 @@ void main() {
   Future<(TestUmgebung, ProviderContainer)> start(WidgetTester tester, {void Function(TestUmgebung env)? vorher, double skala = 1.0, Size groesse = const Size(360, 800), Map<String, String> meta = const {}}) async {
     final env = await angemeldeteUmgebung();
     env.extraOverrides.add(erinnerungPortProvider.overrideWithValue(FakeErinnerungPort()..verfuegbar = false));
-    env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja', ...meta});
+    env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja', kJetztWichtigSchluessel: 'nein', ...meta}); // der Block "Jetzt wichtig" hat eigene Tests
     vorher?.call(env);
     final c = await starteApp(tester, env, skala: skala, groesse: groesse);
     return (env, c);

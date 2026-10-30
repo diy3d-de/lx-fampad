@@ -49,6 +49,7 @@ import 'support/fake_server.dart';
 import 'support/harness.dart';
 import 'support/ingest_welt.dart';
 import 'package:lx_fampad/data/calendar/feiertage.dart' show MemoryFeiertageSpeicher;
+import 'package:lx_fampad/data/startseite/jetzt_wichtig_logik.dart' show kJetztWichtigSchluessel;
 import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'support/test_app.dart';
 import 'support/zaehler_welt.dart';
@@ -595,7 +596,7 @@ void main() {
     testWidgets('Tagesbriefing: Kachel und Einstellungen, Textskala $skala', (tester) async {
       final h = tester.ensureSemantics();
       final env = await angemeldeteUmgebung();
-      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja'});
+      env.speicher = MemoryFeiertageSpeicher(null, {kBriefingKachelSchluessel: 'ja', kJetztWichtigSchluessel: 'nein'});
       final heute = heuteTag();
       String tag(int n) => tagText(DateTime.utc(heute.year, heute.month, heute.day + n));
       env.sync.andereAendert('termin', 'aaaaaaaa-2222-4222-8222-222222222222', {'titel': 'Familienfeier', 'ganztaegig': true, 'startDate': tag(0), 'endDate': tag(1), 'ownerId': fixIdAdmin, 'audience': 'family'});
