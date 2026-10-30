@@ -3,12 +3,14 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/chat/chat_repository.dart';
 import '../../data/lists/members.dart';
+import '../../data/shell/zuletzt_state.dart';
 import '../../data/sync_state.dart';
 import '../../data/tasks/aufgabe_logik.dart' show AufgabeFilter;
 import '../../ui/widgets.dart';
@@ -21,7 +23,8 @@ import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
 import '../suche/such_screen.dart' show SuchScreen;
 import '../tasks/tasks_state.dart' show aufgabenAnsichtProvider;
-import 'mehr_menue.dart' show MehrGruppe, bereichsEintraege;
+import 'mehr_menue.dart' show MehrEintrag, MehrGruppe, bereichsEintraege;
+import 'schnellwahl.dart';
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
 
@@ -219,6 +222,37 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
   /// Suche (Eintrag der Seitenleiste): eine Unterseite im Inhaltsbereich wie das Konto.
   void _suchen() => unawaited(_navKey.currentState?.push<void>(SuchScreen.route()));
 
+  /// Eintrag der Gruppen (Seitenleiste und Schnellwahl): als zuletzt benutzt merken und öffnen.
+  void _eintragOeffnen(MehrEintrag e) {
+    unawaited(ref.read(shellMerkerProvider.notifier).merken(e.id));
+    if (e.tab == null) {
+      _suchen();
+    } else {
+      e.vorWahl?.call(ref);
+      _bereichWaehlen(e.tab!);
+    }
+  }
+
+  var _schnellwahlOffen = false;
+
+  /// Schnellwahl (Strg+K): Fenster mit Suchfeld über den Bereichsnamen; liegt im Navigator des Inhaltsbereichs wie die Unterseiten.
+  Future<void> _schnellwahl() async {
+    final nav = _navKey.currentState;
+    final kontext = _navKey.currentContext;
+    if (nav == null || kontext == null || _schnellwahlOffen) return;
+    final eintraege = bereichsEintraege(ref, offenerTab: ref.read(shellTabProvider));
+    final ziele = [
+      for (var i = 0; i <= kChatTab; i++) SchnellwahlZiel(id: kDesktopTabs[i].label, label: kDesktopTabs[i].label, icon: kDesktopTabs[i].icon, oeffnen: () => _bereichWaehlen(i)),
+      for (final e in eintraege) SchnellwahlZiel(id: e.id, label: e.label, icon: e.icon, gruppe: e.gruppe.label, oeffnen: () => _eintragOeffnen(e)),
+    ];
+    _schnellwahlOffen = true;
+    try {
+      await nav.push<void>(schnellwahlRoute(kontext, ziele));
+    } finally {
+      _schnellwahlOffen = false;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Anderer Bereich gewählt (Seitenleiste, Karte, Benachrichtigung): offene Unterseiten schließen, sofern sie sich schließen lassen
@@ -232,7 +266,7 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, betrieb: _beobachter.betrieb, betriebOeffnen: _betriebOeffnen, waehlen: _bereichWaehlen, suchen: _suchen),
+              _Seitenleiste(konto: _beobachter.konto, kontoOeffnen: _kontoOeffnen, betrieb: _beobachter.betrieb, betriebOeffnen: _betriebOeffnen, waehlen: _bereichWaehlen, eintragOeffnen: _eintragOeffnen, schnellwahl: _schnellwahl),
               Expanded(
                 child: Column(
                   children: [
@@ -268,7 +302,16 @@ class _DesktopShellState extends ConsumerState<DesktopShell> {
         ),
       ),
     );
-    return DesktopShellMarke(child: shell);
+    // Strg+K (macOS: Cmd+K) öffnet die Schnellwahl von überall; der Fokusknoten sorgt dafür, dass die Taste auch ohne fokussiertes Feld ankommt
+    return DesktopShellMarke(
+      child: CallbackShortcuts(
+        bindings: {
+          const SingleActivator(LogicalKeyboardKey.keyK, control: true): () => unawaited(_schnellwahl()),
+          const SingleActivator(LogicalKeyboardKey.keyK, meta: true): () => unawaited(_schnellwahl()),
+        },
+        child: Focus(autofocus: true, skipTraversal: true, child: shell),
+      ),
+    );
   }
 }
 
@@ -302,8 +345,9 @@ class _Seitenleiste extends ConsumerWidget {
   final ValueListenable<bool> betrieb;
   final VoidCallback betriebOeffnen;
   final ValueChanged<int> waehlen;
-  final VoidCallback suchen;
-  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.betrieb, required this.betriebOeffnen, required this.waehlen, required this.suchen});
+  final ValueChanged<MehrEintrag> eintragOeffnen;
+  final VoidCallback schnellwahl;
+  const _Seitenleiste({required this.konto, required this.kontoOeffnen, required this.betrieb, required this.betriebOeffnen, required this.waehlen, required this.eintragOeffnen, required this.schnellwahl});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -315,6 +359,7 @@ class _Seitenleiste extends ConsumerWidget {
     // Einträge der drei Gruppen (Sichtbarkeit nach Rolle, Server-Fähigkeiten und Hinweis-Zahlen: bereichsEintraege in mehr_menue.dart; Wetter und Müll bleiben sichtbar, solange ihr Bereich offen ist)
     final eintraege = bereichsEintraege(ref, offenerTab: tab);
     final fristenAnsicht = ref.watch(aufgabenAnsichtProvider.select((a) => a.filter == AufgabeFilter.fristen));
+    final gruppenZu = ref.watch(shellMerkerProvider.select((m) => m.gruppenZu));
     return Semantics(
       container: true,
       label: 'Navigation',
@@ -390,22 +435,22 @@ class _Seitenleiste extends ConsumerWidget {
                       ),
                     for (final g in MehrGruppe.values)
                       if (eintraege.any((e) => e.gruppe == g)) ...[
-                        _GruppenKopf(g.label),
+                        _GruppenKopf(
+                          text: g.label,
+                          zu: gruppenZu.contains(g.label),
+                          onTap: () => unawaited(ref.read(shellMerkerProvider.notifier).gruppeUmschalten(g.label)),
+                        ),
                         for (final e in eintraege.where((e) => e.gruppe == g))
-                          _NavEintrag(
-                            icon: e.icon,
-                            label: e.label,
-                            gewaehlt: e.id == 'fristen' ? (tab == kAufgabenTab && fristenAnsicht) : (e.tab != null && tab == e.tab && !(e.tab == kAufgabenTab && fristenAnsicht)),
-                            zaehler: e.hinweis,
-                            onTap: () {
-                              if (e.tab == null) {
-                                suchen();
-                              } else {
-                                e.vorWahl?.call(ref);
-                                waehlen(e.tab!);
-                              }
-                            },
-                          ),
+                          // eine eingeklappte Gruppe zeigt nur noch den gewählten Bereich (damit er nicht unter dir verschwindet)
+                          if (!gruppenZu.contains(g.label) || _istGewaehlt(e, tab, fristenAnsicht))
+                            _NavEintrag(
+                              icon: e.icon,
+                              label: e.label,
+                              gewaehlt: _istGewaehlt(e, tab, fristenAnsicht),
+                              zaehler: e.hinweis,
+                              ueberfaellig: e.ueberfaellig,
+                              onTap: () => eintragOeffnen(e),
+                            ),
                       ],
                     // nur der Betreiber des Servers sieht "Betrieb" (Konto-Flag, nicht die Rolle); öffnet wie das Konto eine Unterseite
                     if (betreiber)
@@ -417,7 +462,9 @@ class _Seitenleiste extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
+            _NavEintrag(icon: Icons.manage_search_outlined, label: 'Bereich suchen', gewaehlt: false, kurz: 'Strg K', onTap: schnellwahl),
+            const SizedBox(height: 4),
             _ProfilKachel(konto: konto, oeffnen: kontoOeffnen),
           ],
         ),
@@ -426,15 +473,39 @@ class _Seitenleiste extends ConsumerWidget {
   }
 }
 
-/// Zwischenüberschrift einer Gruppe der Seitenleiste (Familie, Zuhause, Ablage).
+bool _istGewaehlt(MehrEintrag e, int tab, bool fristenAnsicht) =>
+    e.id == 'fristen' ? (tab == kAufgabenTab && fristenAnsicht) : (e.tab != null && tab == e.tab && !(e.tab == kAufgabenTab && fristenAnsicht));
+
+/// Zwischenüberschrift einer Gruppe der Seitenleiste (Familie, Zuhause, Ablage): ein Tipp klappt die Gruppe ein oder aus (nur lokal gemerkt).
 class _GruppenKopf extends StatelessWidget {
   final String text;
-  const _GruppenKopf(this.text);
+  final bool zu;
+  final VoidCallback onTap;
+  const _GruppenKopf({required this.text, required this.zu, required this.onTap});
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 14, 12, 6),
-    child: Semantics(header: true, child: MonoLabel(text, color: kTextMuted)),
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    expanded: !zu,
+    label: text,
+    onTap: onTap,
+    excludeSemantics: true,
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(minHeight: 44),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 8, 2),
+          child: Row(
+            children: [
+              Expanded(child: MonoLabel(text, color: kTextMuted)),
+              Icon(zu ? Icons.chevron_right : Icons.expand_more, size: 18, color: kTextMuted),
+            ],
+          ),
+        ),
+      ),
+    ),
   );
 }
 
@@ -446,8 +517,14 @@ class _NavEintrag extends StatelessWidget {
 
   /// Anzahl ungelesener Nachrichten (0: kein Zeichen).
   final int zaehler;
+
+  /// Überfälliges dabei: die Zahl bekommt dann im Vorlesetext den Zusatz, im Bild ein Ausrufezeichen (nie nur Farbe).
+  final bool ueberfaellig;
+
+  /// Kurzer Hinweis rechts (z. B. die Tastenkombination).
+  final String? kurz;
   final VoidCallback? onTap;
-  const _NavEintrag({required this.icon, required this.label, required this.gewaehlt, this.badge = false, this.zaehler = 0, this.onTap});
+  const _NavEintrag({required this.icon, required this.label, required this.gewaehlt, this.badge = false, this.zaehler = 0, this.ueberfaellig = false, this.kurz, this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -460,7 +537,7 @@ class _NavEintrag extends StatelessWidget {
         enabled: true,
         focusable: true,
         onTap: onTap,
-        label: zaehler > 0 ? '$label, $zaehler ungelesen' : label,
+        label: zaehler > 0 ? '$label, $zaehler ${label == 'Chat' ? 'ungelesen' : (zaehler == 1 ? 'Hinweis' : 'Hinweise')}${ueberfaellig ? ', Überfälliges dabei' : ''}' : (kurz == null ? label : '$label, Tastenkürzel $kurz'),
         excludeSemantics: true,
         child: Material(
           color: gewaehlt ? kAccentSoft : Colors.transparent,
@@ -480,6 +557,7 @@ class _NavEintrag extends StatelessWidget {
                   Expanded(
                     child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontWeight: gewaehlt ? FontWeight.w700 : FontWeight.w500, color: farbe)),
                   ),
+                  if (kurz != null) Text(kurz!, style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                 ],
               ),
             ),

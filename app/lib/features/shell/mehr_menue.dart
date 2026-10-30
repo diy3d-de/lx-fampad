@@ -10,6 +10,8 @@ import '../../constants.dart';
 import '../../data/muell/muell_state.dart';
 import '../../data/shell/leiste_logik.dart';
 import '../../data/shell/leiste_state.dart';
+import '../../data/shell/zuletzt_logik.dart';
+import '../../data/shell/zuletzt_state.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../../data/tasks/aufgabe_repository.dart' show aufgabenProvider;
 import '../../data/tasks/fristen_logik.dart';
@@ -177,52 +179,103 @@ class HinweisZeichen extends StatelessWidget {
   );
 }
 
-class MehrBlatt extends ConsumerWidget {
+class MehrBlatt extends ConsumerStatefulWidget {
   /// Kontext der Seite unter dem Blatt: Ziele öffnen darin, nachdem das Blatt geschlossen ist.
   final BuildContext seite;
   const MehrBlatt({super.key, required this.seite});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MehrBlatt> createState() => _MehrBlattState();
+}
+
+class _MehrBlattState extends ConsumerState<MehrBlatt> {
+  final _suche = TextEditingController();
+
+  @override
+  void dispose() {
+    _suche.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final seite = widget.seite;
     final leiste = ref.watch(leisteProvider).tabs;
     final eintraege = mehrEintraege(ref, leiste);
+    final merker = ref.watch(shellMerkerProvider);
+    final eingabe = _suche.text.trim();
+    // Suche nur in den Namen der Bereiche (nie in Inhalten); ohne Eingabe: "Zuletzt benutzt" und die Gruppen
+    final treffer = [for (final e in eintraege) if (bereichPasst(e.label, eingabe)) e];
+    final zuletzt = [
+      for (final id in zuletztSichtbar(merker.zuletzt, {for (final e in eintraege) e.id}))
+        eintraege.firstWhere((e) => e.id == id),
+    ];
     // Beschriftungen wachsen höchstens auf 1,3-fach (vier Spalten); Screenreader bekommen den vollen Namen, die Fläche scrollt
     final skala = MediaQuery.textScalerOf(context).clamp(maxScaleFactor: 1.3);
     final hoehe = 66 + skala.scale(11) * 2.3;
 
     void waehlen(MehrEintrag e) {
+      unawaited(ref.read(shellMerkerProvider.notifier).merken(e.id));
       Navigator.of(context).pop();
       if (seite.mounted) e.oeffnen(seite, ref);
     }
 
+    Widget raster(List<MehrEintrag> liste) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(textScaler: skala),
+      child: GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: liste.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8, mainAxisExtent: hoehe),
+        itemBuilder: (_, i) => _Kachel(eintrag: liste[i], onTap: () => waehlen(liste[i])),
+      ),
+    );
+
     return SafeArea(
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+        padding: EdgeInsets.fromLTRB(14, 0, 14, 14 + MediaQuery.viewInsetsOf(context).bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // drei Gruppen mit Überschrift; leere Gruppen entfallen samt Überschrift
-            for (final g in MehrGruppe.values)
-              if (eintraege.any((e) => e.gruppe == g)) ...[
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(2, 6, 2, 8),
-                  child: Semantics(header: true, child: MonoLabel(g.label, color: kTextMuted)),
+            TextField(
+              controller: _suche,
+              textInputAction: TextInputAction.search,
+              decoration: InputDecoration(
+                hintText: 'Bereich suchen',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: eingabe.isEmpty ? null : IconButton(tooltip: 'Suche leeren', icon: const Icon(Icons.close), onPressed: () => setState(_suche.clear)),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            if (eingabe.isNotEmpty) ...[
+              if (treffer.isEmpty)
+                const Padding(padding: EdgeInsets.symmetric(vertical: 24), child: Text('Keinen Bereich gefunden.', textAlign: TextAlign.center, style: TextStyle(color: kTextMuted)))
+              else
+                raster(treffer),
+            ] else ...[
+              if (zuletzt.isNotEmpty) ...[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(2, 6, 2, 8),
+                  child: MonoLabel('Zuletzt benutzt', color: kTextMuted),
                 ),
-                MediaQuery(
-                  data: MediaQuery.of(context).copyWith(textScaler: skala),
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: eintraege.where((e) => e.gruppe == g).length,
-                    gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8, mainAxisExtent: hoehe),
-                    itemBuilder: (_, i) {
-                      final e = eintraege.where((x) => x.gruppe == g).elementAt(i);
-                      return _Kachel(eintrag: e, onTap: () => waehlen(e));
-                    },
-                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [for (final e in zuletzt) _ZuletztChip(eintrag: e, onTap: () => waehlen(e))],
                 ),
               ],
+              // drei Gruppen mit Überschrift; leere Gruppen entfallen samt Überschrift
+              for (final g in MehrGruppe.values)
+                if (eintraege.any((e) => e.gruppe == g)) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 6, 2, 8),
+                    child: Semantics(header: true, child: MonoLabel(g.label, color: kTextMuted)),
+                  ),
+                  raster([for (final e in eintraege) if (e.gruppe == g) e]),
+                ],
+            ],
             const SizedBox(height: 10),
             Semantics(
               button: true,
@@ -261,6 +314,43 @@ class MehrBlatt extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Eintrag der Zeile "Zuletzt benutzt": eine Fläche mit Symbol und Name (Touch-Ziel mindestens 44 px).
+class _ZuletztChip extends StatelessWidget {
+  final MehrEintrag eintrag;
+  final VoidCallback onTap;
+  const _ZuletztChip({required this.eintrag, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: 'Zuletzt benutzt: ${eintrag.label}',
+    excludeSemantics: true,
+    child: Material(
+      color: kBgElevated,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        key: ValueKey('zuletzt:${eintrag.id}'),
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minHeight: 44),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(eintrag.icon, size: 18, color: kAccent),
+                const SizedBox(width: 8),
+                Flexible(child: Text(eintrag.label, style: const TextStyle(fontSize: 13.5))),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
 }
 
 class _Kachel extends StatelessWidget {
