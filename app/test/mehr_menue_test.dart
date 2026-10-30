@@ -332,6 +332,20 @@ void main() {
       expect(find.descendant(of: find.byKey(const ValueKey('mehr:listen')), matching: find.byType(HinweisZeichen)), findsNothing);
     });
 
+    testWidgets('Desktop: eine eingeklappte Gruppe zeigt am Kopf die Summe der Hinweise mit Ausrufezeichen und Vorlesetext, aufgeklappt nicht mehr', (tester) async {
+      final h = tester.ensureSemantics();
+      await start(tester, groesse: const Size(1200, 1400), gespeichert: {kGruppenZuSchluessel: '["Familie"]'}, vorher: daten);
+      expect(find.text('3!'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist: Zahl UND Zeichen, nie nur Farbe');
+      expect(find.bySemanticsLabel('Familie, 3 Hinweise, Überfälliges dabei'), findsOneWidget);
+      expect(find.byTooltip('Familie: 3 Hinweise, Überfälliges dabei'), findsOneWidget);
+      expect(find.bySemanticsLabel('Zuhause'), findsOneWidget, reason: 'offene Gruppe ohne Hinweise: nur der Name');
+      await tester.tap(find.bySemanticsLabel('Familie, 3 Hinweise, Überfälliges dabei'));
+      await warte(tester);
+      expect(find.text('3!'), findsNothing);
+      expect(find.bySemanticsLabel('Familie'), findsOneWidget);
+      h.dispose();
+    });
+
     testWidgets('Aufgaben hinter Mehr: Summe aus fälligen Aufgaben (überfällig und bald fällig) und Fristen; Zeichen rot bei Überfälligem', (tester) async {
       await start(tester, gespeichert: {'leiste_bereiche': 'start,kalender,chat,listen'}, vorher: daten);
       expect(find.byTooltip('Weitere Bereiche, 3 Hinweise, Überfälliges dabei'), findsOneWidget, reason: '2 Aufgaben (eine überfällig) + 1 Frist');

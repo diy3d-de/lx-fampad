@@ -23,7 +23,7 @@ import '../profile/ueber_screen.dart' show webVersionTeilen;
 import '../update/update_service.dart';
 import '../suche/such_screen.dart' show SuchScreen;
 import '../tasks/tasks_state.dart' show aufgabenAnsichtProvider;
-import 'mehr_menue.dart' show MehrEintrag, MehrGruppe, bereichsEintraege;
+import 'mehr_menue.dart' show HinweisZeichen, MehrEintrag, MehrGruppe, bereichsEintraege;
 import 'schnellwahl.dart';
 import 'shell_tab.dart';
 import '../../widgets/benutzer_avatar.dart';
@@ -438,6 +438,9 @@ class _Seitenleiste extends ConsumerWidget {
                         _GruppenKopf(
                           text: g.label,
                           zu: gruppenZu.contains(g.label),
+                          // zu: die Zahlen der verborgenen Einträge am Kopf (der gewählte Eintrag bleibt sichtbar und zeigt seine eigene)
+                          zaehler: gruppenZu.contains(g.label) ? gruppenHinweise(eintraege.where((e) => e.gruppe == g && !_istGewaehlt(e, tab, fristenAnsicht))).zahl : 0,
+                          ueberfaellig: gruppenZu.contains(g.label) && gruppenHinweise(eintraege.where((e) => e.gruppe == g && !_istGewaehlt(e, tab, fristenAnsicht))).ueberfaellig,
                           onTap: () => unawaited(ref.read(shellMerkerProvider.notifier).gruppeUmschalten(g.label)),
                         ),
                         for (final e in eintraege.where((e) => e.gruppe == g))
@@ -476,21 +479,25 @@ class _Seitenleiste extends ConsumerWidget {
 bool _istGewaehlt(MehrEintrag e, int tab, bool fristenAnsicht) =>
     e.id == 'fristen' ? (tab == kAufgabenTab && fristenAnsicht) : (e.tab != null && tab == e.tab && !(e.tab == kAufgabenTab && fristenAnsicht));
 
+/// Summe der Hinweis-Zahlen und ob Überfälliges dabei ist (für den Kopf einer eingeklappten Gruppe).
+({int zahl, bool ueberfaellig}) gruppenHinweise(Iterable<MehrEintrag> eintraege) =>
+    (zahl: eintraege.fold(0, (s, e) => s + e.hinweis), ueberfaellig: eintraege.any((e) => e.hinweis > 0 && e.ueberfaellig));
+
 /// Zwischenüberschrift einer Gruppe der Seitenleiste (Familie, Zuhause, Ablage): ein Tipp klappt die Gruppe ein oder aus (nur lokal gemerkt).
+/// Ist sie zu, zeigt der Kopf die Summe der Hinweise der verborgenen Einträge (Zahl und bei Überfälligem ein Ausrufezeichen, nie nur Farbe).
 class _GruppenKopf extends StatelessWidget {
   final String text;
   final bool zu;
+  final int zaehler;
+  final bool ueberfaellig;
   final VoidCallback onTap;
-  const _GruppenKopf({required this.text, required this.zu, required this.onTap});
+  const _GruppenKopf({required this.text, required this.zu, required this.onTap, this.zaehler = 0, this.ueberfaellig = false});
 
   @override
-  Widget build(BuildContext context) => Semantics(
-    button: true,
-    expanded: !zu,
-    label: text,
-    onTap: onTap,
-    excludeSemantics: true,
-    child: InkWell(
+  Widget build(BuildContext context) {
+    final mitZahl = zu && zaehler > 0;
+    final hinweis = mitZahl ? '$zaehler ${zaehler == 1 ? 'Hinweis' : 'Hinweise'}${ueberfaellig ? ', Überfälliges dabei' : ''}' : null;
+    final kopf = InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: ConstrainedBox(
@@ -500,13 +507,22 @@ class _GruppenKopf extends StatelessWidget {
           child: Row(
             children: [
               Expanded(child: MonoLabel(text, color: kTextMuted)),
+              if (mitZahl) ...[HinweisZeichen(zahl: zaehler, ueberfaellig: ueberfaellig), const SizedBox(width: 6)],
               Icon(zu ? Icons.chevron_right : Icons.expand_more, size: 18, color: kTextMuted),
             ],
           ),
         ),
       ),
-    ),
-  );
+    );
+    return Semantics(
+      button: true,
+      expanded: !zu,
+      label: hinweis == null ? text : '$text, $hinweis',
+      onTap: onTap,
+      excludeSemantics: true,
+      child: hinweis == null ? kopf : Tooltip(message: '$text: $hinweis', excludeFromSemantics: true, child: kopf),
+    );
+  }
 }
 
 class _NavEintrag extends StatelessWidget {
