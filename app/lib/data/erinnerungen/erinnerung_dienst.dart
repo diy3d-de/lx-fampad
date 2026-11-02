@@ -28,6 +28,7 @@ import '../vorsorge/vorsorge_state.dart' show vorsorgeDatenProvider;
 import '../zaehler/zaehler_erinnerung.dart' show istZaehlerPayload, planeZaehlerErinnerungen;
 import '../zaehler/zaehler_state.dart' show darfRolleZaehler, zaehlerDatenProvider;
 import '../muell/muell_logik.dart' show istMuellPayload;
+import '../calendar/termin_hinweis_logik.dart' show istTerminHinweisPayload;
 import '../tagesbriefing/briefing_einstellungen.dart' show briefingEinstellungenProvider;
 import '../tagesbriefing/briefing_erinnerung.dart' show istBriefingPayload, planeBriefingErinnerungen;
 import '../muell/muell_state.dart' show muellErinnerungen, muellProvider;
@@ -108,6 +109,9 @@ class ErinnerungDienst {
 
   /// Tipp auf die Benachrichtigung des Tagesbriefings (Nutzlast `briefing`, nur Zahlen): die Startseite öffnen.
   void Function()? beiBriefingGeoeffnet;
+
+  /// Tipp auf die Benachrichtigung über neue oder geänderte Termine (Nutzlast `termine`): den Kalender öffnen.
+  void Function()? beiTermineGeoeffnet;
 
   /// Zuletzt erfolgreich an das Betriebssystem übergebene Planung samt Einstellungen (null: nichts bekannt).
   List<GeplanteErinnerung>? _letzte;
@@ -365,6 +369,10 @@ class ErinnerungDienst {
     }
     if (istMuellPayload(payload)) {
       beiMuellGeoeffnet?.call();
+      return;
+    }
+    if (istTerminHinweisPayload(payload)) {
+      beiTermineGeoeffnet?.call();
       return;
     }
     if (istBriefingPayload(payload)) {

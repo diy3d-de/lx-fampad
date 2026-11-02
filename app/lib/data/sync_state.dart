@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../features/update/update_service.dart';
 import '../widgets/rueckgaengig.dart' show rueckgaengigSchliessen;
 import 'auth/auth_state.dart';
+import 'calendar/termin_hinweis_dienst.dart' show terminHinweisDienstProvider;
 import 'database_provider.dart';
 import 'dateien/transfer_dienst.dart' show dateiCacheDienstProvider, transferDienstProvider;
 import 'erinnerungen/erinnerung_dienst.dart';
@@ -131,6 +132,8 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
     api: ref.watch(apiProvider),
     // Chat: Klartext im Ausgang wird erst beim Senden verschlüsselt (mit der dann aktuellen Epoche)
     vorbereiter: ref.watch(opVorbereiterProvider),
+    // Hinweise auf neue und geänderte Termine anderer Personen (lokal, neutral; Abschnitt 6r)
+    beobachter: ref.watch(terminHinweisDienstProvider),
     geraeteId: () async {
       final aus = ref.read(authProvider).me?.sessionDeviceId;
       if (aus != null && aus.isNotEmpty) return aus;
@@ -454,6 +457,10 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   // Terminerinnerungen des Geräts gehören zu den lokalen Daten: weg damit (fehlerfrei, ein Problem hier darf das Leeren nicht stoppen)
   try {
     await ref.read(erinnerungDienstProvider).alleEntfernen();
+  } catch (_) {}
+  // eine schon gezeigte Meldung über neue oder geänderte Termine (kann einen Titel nennen) und der Stand des Hinweis-Dienstes gehören der Vorperson nicht
+  try {
+    await ref.read(terminHinweisDienstProvider).abmelden();
   } catch (_) {}
   // die Zusammenfassung für das Startbildschirm-Widget (Titel, Aufgaben, Einkauf) bleibt nicht auf dem Gerät liegen
   try {

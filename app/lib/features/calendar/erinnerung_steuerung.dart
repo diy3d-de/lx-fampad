@@ -19,6 +19,7 @@ import '../../data/medikamente/medikament_state.dart' show medDatenProvider;
 import '../../data/vorsorge/vorsorge_hinweis.dart' show vorsorgeOeffnenProvider;
 import '../../data/vorsorge/vorsorge_state.dart' show vorsorgeDatenProvider;
 import '../../data/muell/muell_hinweis.dart' show muellOeffnenProvider;
+import '../../data/calendar/termin_hinweis_dienst.dart' show termineOeffnenProvider;
 import '../../data/tagesbriefing/briefing_einstellungen.dart' show briefingEinstellungenProvider;
 import '../../data/wetter/wetter_hinweise.dart' show wetterOeffnenProvider;
 import '../../data/zaehler/zaehler_hinweis.dart' show zaehlerOeffnenProvider;
@@ -52,6 +53,7 @@ final erinnerungSteuerungProvider = Provider<void>((ref) {
   dienst.beiZaehlerGeoeffnet = () => ref.read(zaehlerOeffnenProvider.notifier).anfordern();
   dienst.beiMuellGeoeffnet = () => ref.read(muellOeffnenProvider.notifier).anfordern();
   dienst.beiWetterGeoeffnet = () => ref.read(wetterOeffnenProvider.notifier).anfordern();
+  dienst.beiTermineGeoeffnet = () => ref.read(termineOeffnenProvider.notifier).anfordern();
   dienst.beiBriefingGeoeffnet = () => ref.read(shellTabProvider.notifier).waehlen(0); // Startseite (Tab 0)
   void los() => unawaited(dienst.abgleichen());
   // Abfuhrtermine (Abend vor der Abholung, nur Eltern/Admins): neue Daten oder Einstellungen -> Fenster neu berechnen

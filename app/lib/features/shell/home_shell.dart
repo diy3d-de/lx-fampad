@@ -31,6 +31,7 @@ import '../../data/wetter/wetter_hinweise.dart' show wetterOeffnenProvider;
 import '../../data/wetter/wetter_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/familien_hinweis_banner.dart';
+import '../../data/calendar/termin_hinweis_dienst.dart' show termineOeffnenProvider;
 import '../calendar/calendar_screen.dart';
 import '../chat/chat_screen.dart';
 import '../../data/shell/leiste_logik.dart';
@@ -247,6 +248,10 @@ class _HomeShellState extends ConsumerState<HomeShell> with WidgetsBindingObserv
     });
     // Tipp auf eine Müll-Benachrichtigung (Erinnerung, "Abfuhrtermine 20XX sind da"): die Müll-Seite öffnen
     ref.listen(muellOeffnenProvider, (_, _) => _muellOeffnen());
+    // Tipp auf die Benachrichtigung über neue oder geänderte Termine: den Kalender öffnen
+    ref.listen(termineOeffnenProvider, (_, _) {
+      if (mounted) ref.read(shellTabProvider.notifier).waehlen(kKalenderTab);
+    });
     // Tipp auf eine Wetter-Hinweis-Benachrichtigung: die Wetter-Seite öffnen
     ref.listen(wetterOeffnenProvider, (_, _) => _wetterOeffnen());
     // Tipp auf eine Medikamenten-Erinnerung: die Medikamenten-Ansicht öffnen (die Nutzlast trägt nie einen Inhalt)
