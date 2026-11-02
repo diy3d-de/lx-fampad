@@ -89,7 +89,9 @@ class AndroidTerminHinweisAnzeige implements TerminHinweisAnzeige {
             importance: Importance.defaultImportance,
             priority: Priority.defaultPriority,
             category: AndroidNotificationCategory.event,
-            visibility: sperrbildschirmTitel ? NotificationVisibility.public : NotificationVisibility.private,
+            // Ohne "Titel zeigen" steht in der Meldung ohnehin nur der neutrale Text (terminHinweisText); ein privater Eintrag würde ihn durch das
+            // systemeigene "Inhalt ausgeblendet" ersetzen (das Plugin kennt keine publicVersion). Mit der Einstellung steht der Titel bewusst auch dort.
+            visibility: NotificationVisibility.public,
           ),
         ),
         payload: kTerminHinweisPayload,
