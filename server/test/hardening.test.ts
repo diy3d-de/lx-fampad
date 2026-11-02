@@ -294,6 +294,7 @@ describe.each(backends)('Härtung ($name)', (backend) => {
       for (let i = 0; i < 50 && (await world.count('webauthn_challenges')) > 0; i++) await new Promise((r) => setTimeout(r, 20));
       expect(await world.count('webauthn_challenges')).toBe(0);
       job.stop();
+      await job.idle(); // der Rest des Laufs darf nicht in das Leeren der Tabellen des nächsten Tests laufen
     });
 
     it('Fehlversuche außerhalb des Fensters verschwinden, aktive Sperren bleiben', async () => {
