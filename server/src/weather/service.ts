@@ -185,17 +185,24 @@ export class WeatherService {
     const q = new URLSearchParams({ lat_ne: String(b.latNe), lon_ne: String(b.lonNe), lat_sw: String(b.latSw), lon_sw: String(b.lonSw), filter: 'false' });
     let res: Response;
     let text: string;
-    try {
-      res = await this.fetchFn(`${API}/api/getpublicdata?${q.toString()}`, {
-        headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
-        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        redirect: 'error',
-      });
-      const t = await leseBegrenzt(res, MAX_BODY_BYTES);
-      if (t === null) return this.fail('too_large');
-      text = t;
-    } catch {
-      return this.fail('network');
+    // Netatmo meldet kurze Ausfälle als 502/503/504 mit Retry-After (meist 5 s): bis zu zweimal kurz warten und wiederholen
+    for (let versuch = 0; ; versuch++) {
+      try {
+        res = await this.fetchFn(`${API}/api/getpublicdata?${q.toString()}`, {
+          headers: { authorization: `Bearer ${token}`, accept: 'application/json' },
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+          redirect: 'error',
+        });
+        const t = await leseBegrenzt(res, MAX_BODY_BYTES);
+        if (t === null) return this.fail('too_large');
+        text = t;
+      } catch {
+        return this.fail('network');
+      }
+      if (![502, 503, 504].includes(res.status) || versuch >= 2) break;
+      const ra = Number(res.headers.get('retry-after'));
+      const warteMs = Number.isFinite(ra) && ra > 0 ? Math.min(ra, 10) * 1000 : 5000;
+      await new Promise((r) => setTimeout(r, warteMs));
     }
     if (res.status === 401 || res.status === 403) return 'auth_error';
     if (!res.ok) {
