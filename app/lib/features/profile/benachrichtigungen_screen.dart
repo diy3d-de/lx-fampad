@@ -11,6 +11,7 @@ import '../../data/wetter/wetter_state.dart';
 import '../wetter/wetter_hinweise_screen.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
+import '../calendar/termin_hinweis_ui.dart';
 import '../tagesbriefing/briefing_einstellungen_ui.dart' show BriefingMorgensZeile;
 import 'erinnerungen_screen.dart';
 import 'profil_plattform.dart';
@@ -36,6 +37,7 @@ class BenachrichtigungenScreen extends ConsumerWidget {
           untertitel: web ? (ref.watch(webErinnerungAnProvider) ? 'An, nur solange die Web-App geöffnet ist' : 'Aus') : 'Terminerinnerungen auf diesem Gerät',
           onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const ErinnerungenScreen())),
         ),
+        const TerminHinweiseSchalterZeile(),
         // Wetter-Hinweise: nur wenn der Server das Wetter anbietet
         Consumer(
           builder: (context, ref, _) {

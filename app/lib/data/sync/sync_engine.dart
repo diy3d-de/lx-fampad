@@ -51,6 +51,14 @@ class SyncErgebnis {
   bool get ok => ausgang == SyncAusgang.ok;
 }
 
+/// Beobachter eines Abgleichs (Hinweise auf neue und geänderte Termine): [vor] hält den Stand zu Beginn fest, [nach] wertet ihn nach einem
+/// erfolgreichen Lauf aus. Beide dürfen nie werfen. Bei einer vollständigen Synchronisierung (erster Abgleich, Snapshot, Neusynchronisierung)
+/// wird [nach] nicht aufgerufen: das ist nichts Neues.
+abstract class AbgleichBeobachter {
+  Future<Object?> vor({required int sinceRev});
+  Future<void> nach(Object? vor);
+}
+
 class SyncEngine {
   final SyncStore store;
   final FampadApi api;
@@ -63,7 +71,10 @@ class SyncEngine {
   /// Bereitet Ops vor dem Senden vor (Chat: verschlüsseln); null: unverändert senden.
   final OpVorbereiter? vorbereiter;
 
-  SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 50, this.seite = 500, this.vorbereiter});
+  /// Optional: wird vor dem Lauf und nach einem erfolgreichen, nicht vollständigen Lauf gefragt.
+  final AbgleichBeobachter? beobachter;
+
+  SyncEngine({required this.store, required this.api, required this.geraeteId, this.maxOps = 50, this.seite = 500, this.vorbereiter, this.beobachter});
 
   /// [abgebrochen] wird nach jeder Antwort geprüft: ist der Dienst inzwischen gestoppt (Abmelden löscht die Datenbank), wird nichts mehr
   /// in die lokalen Tabellen geschrieben.
@@ -75,6 +86,9 @@ class SyncEngine {
       if (dev == null) return const SyncErgebnis(SyncAusgang.geraetFalsch); // Geräte-ID noch unbekannt (/me wird nachgeladen)
       await store.geraetZuordnen(dev);
       var rev = 0;
+      var voll = false; // erster Abgleich, Snapshot oder Neusynchronisierung: nichts davon ist neu
+      Object? beobachtet;
+      var beobachtetFertig = false;
       // Klartext, der lange im Ausgang wartet (offline geschrieben): erst den Stand des Servers holen (neue Epoche?), dann verschlüsseln und senden
       final vorab = vorbereiter != null && await store.hatAltenKlartext(const Duration(seconds: 20));
       for (var runde = 0; runde < 300; runde++) {
@@ -82,12 +96,22 @@ class SyncEngine {
         final ops = nurAbholen ? const <OutboxData>[] : await store.naechsteOps(maxOps, vorbereiter: vorbereiter);
         final since = await store.sinceRev();
         final snapshot = since > 0 ? await store.snapshotRev() : null; // läuft ein mehrseitiger Snapshot, ist sinceRev nur der Cursor
+        if (!beobachtetFertig) {
+          beobachtetFertig = true;
+          if (since <= 0 || snapshot != null) {
+            voll = true;
+          } else if (beobachter != null) {
+            beobachtet = await beobachter!.vor(sinceRev: since);
+          }
+        }
+        if (since <= 0 || snapshot != null) voll = true;
         final res = await api.sync(deviceId: dev, sinceRev: since, ops: [for (final o in ops) SyncStore.alsOp(o)], limit: seite, snapshotRev: snapshot);
         if (abgebrochen?.call() ?? false) return SyncErgebnis(SyncAusgang.abgebrochen, hinweise: hinweise, ops: gesendet);
         final bericht = await store.uebernehmen(res, ops);
         hinweise.addAll(bericht.hinweise);
         gesendet += res.acked.length;
         rev = res.rev;
+        if (bericht.resync || bericht.neuLaden) voll = true;
         if (bericht.neuLaden) await store.neuLadenVormerken();
         // ohne Fortschritt nicht in der Schleife bleiben (der Server hat keine der gesendeten Ops bestätigt oder abgelehnt)
         if (ops.isNotEmpty && res.acked.isEmpty && res.rejected.isEmpty && !res.resyncNoetig && !res.hasMore) {
@@ -95,6 +119,7 @@ class SyncEngine {
         }
         if (nurAbholen || bericht.resync || bericht.neuLaden || res.hasMore) continue;
         if (await store.offeneAnzahl() > 0 && ops.isNotEmpty) continue; // weitere Ops (mehr als eine Anfrage voll oder neu dazugekommen)
+        if (!voll && beobachter != null) await beobachter!.nach(beobachtet);
         return SyncErgebnis(SyncAusgang.ok, hinweise: hinweise, ops: gesendet, rev: rev);
       }
       return SyncErgebnis(SyncAusgang.fehler, hinweise: hinweise, meldung: 'Das Übertragen hat nicht abgeschlossen.', ops: gesendet);
