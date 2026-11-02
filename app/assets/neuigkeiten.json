@@ -1,4 +1,8 @@
 {
+  "0.29.0": [
+    "Neu: Du bekommst eine Benachrichtigung, wenn jemand einen Termin neu anlegt oder ändert („Ein neuer Termin“, „3 Termine geändert“). Den Titel siehst du nur, wenn du ihn auf dem Sperrbildschirm erlaubst. Ausschalten kannst du es unter Profil › Benachrichtigungen",
+    "Das Wetter holt sich bei kurzen Ausfällen der Messstation selbst einen neuen Stand"
+  ],
   "0.28.0": [
     "Nach dem Löschen und Erledigen kannst du mit „Rückgängig“ zurück; beim Laden siehst du Platzhalter, leere Listen bieten gleich den nächsten Schritt an",
     "Oben auf der Startseite steht jetzt „Jetzt wichtig“: Überfälliges, Heutiges und der Müll. Ausschalten kannst du es unter Profil › Startseite und Anzeige. Die Kachel „Heute im Überblick“ ist dafür nicht mehr vorbelegt; du schaltest sie dort bei Bedarf ein",
