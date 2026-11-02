@@ -14,7 +14,7 @@
 # shellcheck disable=SC2029
 set -euo pipefail
 cd "$(dirname "$0")/.."
-SSH_HOST="${SSH_HOST:-lx-labs}"
+SSH_HOST="${SSH_HOST:-familyhub}"
 
 version=$(grep -E '^version:' app/pubspec.yaml | head -1 | sed -E 's/version:[[:space:]]*//; s/\+.*//')
 release="${version}-$(date +%Y%m%d%H%M%S)"
