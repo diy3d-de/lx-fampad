@@ -1,5 +1,5 @@
 // Schalter "Neue und geänderte Termine melden" (Profil > Benachrichtigungen): nur lokal auf diesem Gerät, Standard an. Gemeldet werden Termine anderer
-// Personen, nie Geburtstage; der Text ist neutral (der Titel nur mit "Titel zeigen" in den Erinnerungen, im Browser nie).
+// Personen, nie Geburtstage; der Text ist neutral (der Titel nur mit "Titel auf Sperrbildschirm zeigen" in den Erinnerungen, im Browser nie).
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -24,8 +24,8 @@ class TerminHinweiseSchalterZeile extends ConsumerWidget {
           secondary: const Icon(Icons.event_available_outlined, color: kAccent, size: 22),
           title: const Text('Neue und geänderte Termine melden', style: TextStyle(fontWeight: FontWeight.w600)),
           subtitle: const Text(
-            'Wenn jemand anderes einen Termin anlegt oder ändert, nur auf diesem Gerät',
-            style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
+            'Wenn jemand anderes einen Termin anlegt oder ändert, nur auf diesem Gerät. Der Titel steht nur da, wenn du in den Erinnerungen „Titel auf Sperrbildschirm zeigen“ eingeschaltet hast; dann sehen ihn auch Smartwatches und Apps, die Benachrichtigungen mitlesen.',
+            style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 13, color: kTextMuted),
           ),
           value: an,
           onChanged: (v) => unawaited(ref.read(terminHinweiseAnProvider.notifier).setzen(v)),

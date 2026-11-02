@@ -458,6 +458,10 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   try {
     await ref.read(erinnerungDienstProvider).alleEntfernen();
   } catch (_) {}
+  // eine schon gezeigte Meldung über neue oder geänderte Termine (kann einen Titel nennen) und der Stand des Hinweis-Dienstes gehören der Vorperson nicht
+  try {
+    await ref.read(terminHinweisDienstProvider).abmelden();
+  } catch (_) {}
   // die Zusammenfassung für das Startbildschirm-Widget (Titel, Aufgaben, Einkauf) bleibt nicht auf dem Gerät liegen
   try {
     await ref.read(heuteWidgetDienstProvider).loeschen();

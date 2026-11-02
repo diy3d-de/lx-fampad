@@ -9,22 +9,57 @@ import 'termin_hinweis_logik.dart';
 
 const _kKanalId = 'termin_hinweise';
 const _kKanalName = 'Terminänderungen';
-const _kKanalBeschreibung = 'Hinweise auf neue und geänderte Termine anderer Personen. Der Titel steht nur da, wenn du ihn auf dem Sperrbildschirm zeigen lässt.';
+const _kKanalBeschreibung =
+    'Hinweise auf neue und geänderte Termine anderer Personen. Hast du in den Erinnerungen „Titel auf Sperrbildschirm zeigen“ eingeschaltet, steht der Titel in der Meldung und ist dann auch für Smartwatches und Apps sichtbar, die Benachrichtigungen mitlesen.';
 const _kSymbol = 'ic_stat_notify';
 
 class AndroidTerminHinweisAnzeige implements TerminHinweisAnzeige {
   final _plugin = FlutterLocalNotificationsPlugin();
   var _bereit = false;
+  var _pluginBereit = false;
 
-  Future<bool> _vorbereiten() async {
+  /// Ein Tipp auf die Meldung (oder eine andere Meldung der App, falls dieses Plugin zuerst eingerichtet wurde) läuft hierüber.
+  final void Function(String payload)? beiTipp;
+  AndroidTerminHinweisAnzeige({this.beiTipp});
+
+  /// Plugin einrichten (ohne Kanal und Erlaubnis; zum Zurücknehmen genügt das).
+  Future<bool> _pluginVorbereiten() async {
     if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return false;
-    if (_bereit) return true;
+    if (_pluginBereit) return true;
     try {
-      // Hat schon die Terminerinnerung das Plugin eingerichtet (mit ihrem Rückruf beim Tippen), wird nicht noch einmal initialisiert
+      // Hat schon die Terminerinnerung das Plugin eingerichtet (mit ihrem Rückruf beim Tippen), wird nicht noch einmal initialisiert; sonst bekommt
+      // es hier denselben Rückruf, damit ein Tipp den Kalender öffnet
       if (!erinnerungPluginInitialisiert) {
-        final ok = await _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings(_kSymbol)));
+        final ok = await _plugin.initialize(
+          settings: const InitializationSettings(android: AndroidInitializationSettings(_kSymbol)),
+          onDidReceiveNotificationResponse: (r) {
+            final p = r.payload;
+            if (p != null) beiTipp?.call(p);
+          },
+        );
         if (ok != true) return false;
       }
+      _pluginBereit = true;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
+  Future<void> entfernen() async {
+    if (!await _pluginVorbereiten()) return;
+    try {
+      await _plugin.cancel(id: kTerminHinweisId);
+    } catch (_) {
+      // Zusatz: ein Fehler hier darf nichts stören
+    }
+  }
+
+  Future<bool> _vorbereiten() async {
+    if (_bereit) return true;
+    try {
+      if (!await _pluginVorbereiten()) return false;
       final android = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
       await android?.createNotificationChannel(const AndroidNotificationChannel(_kKanalId, _kKanalName, description: _kKanalBeschreibung, importance: Importance.defaultImportance));
       // ohne Erlaubnis (Android 13+) gibt es keine Anzeige; gefragt wird nur in Profil > Benachrichtigungen
@@ -66,4 +101,4 @@ class AndroidTerminHinweisAnzeige implements TerminHinweisAnzeige {
   }
 }
 
-TerminHinweisAnzeige terminHinweisAnzeigeErzeugen() => AndroidTerminHinweisAnzeige();
+TerminHinweisAnzeige terminHinweisAnzeigeErzeugen({void Function(String payload)? beiTipp}) => AndroidTerminHinweisAnzeige(beiTipp: beiTipp);

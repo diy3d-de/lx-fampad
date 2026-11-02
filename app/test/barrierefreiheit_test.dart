@@ -708,6 +708,22 @@ void main() {
     });
   }
 
+  // Hinweise auf neue und geänderte Termine: Schalterzeile in Profil > Benachrichtigungen
+  for (final skala in [1.0, 1.5, 2.0]) {
+    testWidgets('Benachrichtigungen mit Schalter für Terminhinweise, Textskala $skala', (tester) async {
+      final h = tester.ensureSemantics();
+      final env = await angemeldeteUmgebung();
+      await starteApp(tester, env, skala: skala);
+      await tippe(tester, find.byTooltip('Profil und Sicherheit'));
+      await tippe(tester, find.text('Benachrichtigungen'));
+      expect(find.text('Neue und geänderte Termine melden'), findsOneWidget);
+      final untertitel = tester.widget<Text>(find.textContaining('Smartwatches'));
+      expect(untertitel.style?.fontSize, greaterThanOrEqualTo(13));
+      pruefe(tester, 'Benachrichtigungen mit Termin-Hinweisen $skala');
+      h.dispose();
+    });
+  }
+
   // Familien-Status: Kachel (mit Stati der Familie), Blatt zum Setzen und der Schalter in den Einstellungen
   for (final skala in [1.0, 2.0]) {
     testWidgets('Familien-Status: Kachel, Blatt und Einstellung, Textskala $skala', (tester) async {
