@@ -593,12 +593,17 @@ void main() {
 
   testWidgets('knapp überlange Agenda (Scrollweite zwischen 80 und 200 px): die Kopfzeile bleibt beim Scrollen stehen', (tester) async {
     await start(tester, monatsansicht: false, groesse: const Size(360, 800), vorher: (e) => viele(e, 12));
-    // Fenster so einstellen, dass der Inhalt genau 140 px länger ist als der sichtbare Bereich
+    // Fenster so einstellen, dass der Inhalt genau 140 px länger ist als der sichtbare Bereich.
+    // Die Länge der lazy aufgebauten Liste ist anfangs nur geschätzt (und hängt von Kopfzeilen wie Monatswechseln ab):
+    // darum mit tatsächlich gebauten Elementen nachführen, bis die gemessene Scrollweite stimmt.
     var pos = agendaPosition(tester);
-    final inhalt = pos.maxScrollExtent + pos.viewportDimension;
-    tester.view.physicalSize = Size(360, 800 + (inhalt - 140) - pos.viewportDimension);
-    await warte(tester);
-    pos = agendaPosition(tester);
+    for (var i = 0; i < 8; i++) {
+      final soll = 140 - pos.maxScrollExtent;
+      if (soll.abs() < 1) break;
+      tester.view.physicalSize = Size(360, tester.view.physicalSize.height / tester.view.devicePixelRatio - soll);
+      await warte(tester);
+      pos = agendaPosition(tester);
+    }
     expect(pos.maxScrollExtent, inInclusiveRange(80, 200), reason: 'Voraussetzung des Tests: knapp überlang');
     for (var i = 0; i < 3; i++) {
       await tester.drag(find.byType(ListView), const Offset(0, -120));
