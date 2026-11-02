@@ -15,6 +15,9 @@ class FakeZeile {
   final Map<String, int> fieldRevs = {};
   final Map<int, String> schreiber = {}; // rev -> Gerät
   bool geloescht = false;
+
+  /// Urheber-Person des letzten Stands (`by` im Änderungsstrom, nur für Termine); null = unbekannt.
+  String? urheber;
   FakeZeile(this.entity, this.id, this.fields, this.rev);
 }
 
@@ -108,7 +111,7 @@ class FakeSyncServer {
       conflicts,
       [
         for (final z in seite)
-          {'rev': z.rev, 'entity': z.entity, 'id': z.id, 'tombstone': z.geloescht, 'fields': z.geloescht ? <String, dynamic>{} : z.fields},
+          {'rev': z.rev, 'entity': z.entity, 'id': z.id, 'tombstone': z.geloescht, 'fields': z.geloescht ? <String, dynamic>{} : z.fields, if (z.urheber != null) 'by': z.urheber},
       ],
       hasMore,
       hasMore ? (mehr ? seite.last.rev : ziel) : rev,
@@ -285,7 +288,7 @@ class FakeSyncServer {
   // ------------------------------------------------------------------ Änderungen "von einem anderen Gerät"
 
   /// Ändert Felder (oder legt an) wie ein anderes Gerät.
-  FakeZeile andereAendert(String entity, String id, Map<String, dynamic> fields) {
+  FakeZeile andereAendert(String entity, String id, Map<String, dynamic> fields, {String? urheber}) {
     final key = '$entity/$id';
     var z = zeilen[key];
     if (z == null) {
@@ -309,6 +312,7 @@ class FakeSyncServer {
       z.fieldRevs[f] = z.rev;
     }
     z.schreiber[z.rev] = 'anderes-geraet';
+    z.urheber = urheber;
     return z;
   }
 

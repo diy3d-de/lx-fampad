@@ -4,6 +4,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:crypto/crypto.dart' show sha256;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/widgets.dart' show AppLifecycleState, WidgetsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -90,13 +91,64 @@ class TerminHinweisDienst implements AbgleichBeobachter {
   /// Android im Vordergrund mit dem Kalender vor Augen: die Oberfläche zeigt die Änderung selbst.
   final bool Function() unterdruecken;
 
-  /// Stand der betroffenen Termine VOR dem Einarbeiten der Serverantwort: Termin-ID -> Abdruck (`null`: gab es lokal nicht). Nur im Arbeitsspeicher
-  /// (Titel und Ort landen nie auf der Platte). Bleibt über abgebrochene Läufe hinweg bestehen, bis ein Lauf vollständig durch ist; ein
-  /// Hintergrund-Start, der abbricht, verliert ihn mit seinem Container (dann entfällt die Meldung).
+  /// Stand der betroffenen Termine VOR dem Einarbeiten der Serverantwort: Termin-ID -> Prüfwert (SHA-256 des Abdrucks, nie Titel oder Ort;
+  /// `null`: gab es lokal nicht). Bleibt über abgebrochene Läufe hinweg bestehen, bis ein Lauf vollständig durch ist, und liegt dafür als
+  /// Prüfwert in `sync_meta` (`kStandSchluessel`): bricht ein Hintergrund-Start ab, übernimmt ihn der nächste Lauf.
   final Map<String, String?> _vorher = {};
 
   /// Termine, die diese Person selbst geändert hat (offener oder im Lauf gesendeter Ausgang).
   final Set<String> _eigene = {};
+
+  /// Termine, deren Stand laut Server von dieser Person stammt (`by`, auch von einem anderen eigenen Gerät), und solche mit einer fremden oder
+  /// unbekannten Urheber-Person in diesem Lauf (fremd gewinnt: lieber eine Meldung zu viel).
+  final Set<String> _eigeneVomServer = {};
+  final Set<String> _fremde = {};
+  var _geladen = false;
+
+  /// Schlüssel in `sync_meta`: nur Termin-IDs und Prüfwerte, nichts Lesbares.
+  static const kStandSchluessel = 'termin_hinweis_stand';
+
+  static String _pruefwert(String abdruck) => sha256.convert(utf8.encode(abdruck)).toString();
+
+  /// Den Stand eines abgebrochenen Laufs einmal nachladen (der ältere Stand gewinnt).
+  Future<void> _laden() async {
+    if (_geladen) return;
+    _geladen = true;
+    try {
+      final roh = await db.metaLesen(kStandSchluessel);
+      if (roh == null) return;
+      final j = jsonDecode(roh);
+      if (j is! Map) return;
+      final v = j['v'];
+      if (v is Map) {
+        for (final e in v.entries) {
+          if (e.key is String && (e.value == null || e.value is String)) _vorher.putIfAbsent(e.key as String, () => e.value as String?);
+        }
+      }
+      void ids(Object? l, Set<String> ziel) {
+        if (l is List) ziel.addAll(l.whereType<String>());
+      }
+
+      ids(j['e'], _eigene);
+      ids(j['s'], _eigeneVomServer);
+      ids(j['f'], _fremde);
+    } catch (_) {
+      // beschädigter Stand: wie keiner
+    }
+  }
+
+  Future<void> _sichern() async {
+    try {
+      if (_vorher.isEmpty) return;
+      await db.metaSchreiben(kStandSchluessel, jsonEncode({'v': _vorher, 'e': _eigene.toList(), 's': _eigeneVomServer.toList(), 'f': _fremde.toList()}));
+    } catch (_) {}
+  }
+
+  Future<void> _vergessen() async {
+    try {
+      await db.metaLoeschen(kStandSchluessel);
+    } catch (_) {}
+  }
 
   TerminHinweisDienst({
     required this.db,
@@ -109,7 +161,7 @@ class TerminHinweisDienst implements AbgleichBeobachter {
 
   static bool _nie() => false;
 
-  Future<String> _abdruck(Termin t) async => terminAbdruck(t, await (db.select(db.terminAusnahmen)..where((x) => x.terminId.equals(t.id))).get());
+  Future<String> _abdruck(Termin t) async => _pruefwert(terminAbdruck(t, await (db.select(db.terminAusnahmen)..where((x) => x.terminId.equals(t.id))).get()));
 
   /// Termin-ID, die ein Ausgangseintrag betrifft (Termin selbst oder Ausnahme); sonst null.
   Future<String?> _terminVon(String entity, String id, {String fieldsJson = '{}'}) async {
@@ -130,6 +182,8 @@ class TerminHinweisDienst implements AbgleichBeobachter {
   Future<void> vorUebernahme(List<SyncChange> changes, List<OutboxData> gesendet) async {
     try {
       if (!await an()) return;
+      await _laden();
+      final ich = await db.metaLesen('ownerUserId');
       // eigene Änderungen: alles, was im Ausgang liegt, und was in dieser Runde gesendet wird
       for (final o in [...await db.select(db.outbox).get(), ...gesendet]) {
         final t = await _terminVon(o.entity, o.entityId, fieldsJson: o.fieldsJson);
@@ -145,10 +199,18 @@ class TerminHinweisDienst implements AbgleichBeobachter {
           final f = c.fields['terminId'];
           id = f is String ? f : await _terminVon(c.entity, c.id);
         }
-        if (id == null || _vorher.containsKey(id)) continue;
+        if (id == null) continue;
+        // der Server nennt die Urheber-Person: stammt der Stand von dieser Person (auch von einem anderen eigenen Gerät), meldet er nichts
+        if (c.by != null && c.by == ich) {
+          _eigeneVomServer.add(id);
+        } else {
+          _fremde.add(id);
+        }
+        if (_vorher.containsKey(id)) continue;
         final t = await (db.select(db.termine)..where((x) => x.id.equals(id!))).getSingleOrNull();
         _vorher[id] = t == null ? null : await _abdruck(t);
       }
+      await _sichern();
     } catch (_) {
       // ein Zusatz: nie den Abgleich stören
     }
@@ -157,10 +219,11 @@ class TerminHinweisDienst implements AbgleichBeobachter {
   @override
   Future<void> nach() async {
     try {
+      await _laden();
       final vorher = Map<String, String?>.of(_vorher);
-      final eigene = Set<String>.of(_eigene);
-      _vorher.clear();
-      _eigene.clear();
+      final eigene = {..._eigene, ..._eigeneVomServer.difference(_fremde)};
+      _leeren();
+      await _vergessen();
       if (vorher.isEmpty || !await an() || wandtablet()) return;
       final jetzt = <String, ({Termin termin, String abdruck})>{};
       for (final id in vorher.keys) {
@@ -176,15 +239,23 @@ class TerminHinweisDienst implements AbgleichBeobachter {
     }
   }
 
-  @override
-  void verwerfen() {
+  void _leeren() {
     _vorher.clear();
     _eigene.clear();
+    _eigeneVomServer.clear();
+    _fremde.clear();
+  }
+
+  @override
+  void verwerfen() {
+    _leeren();
+    unawaited(_vergessen());
   }
 
   /// Abmelden, Personenwechsel, Gerät abgeben: Zustand weg und eine schon gezeigte Meldung zurücknehmen (sie nennt vielleicht einen Titel).
   Future<void> abmelden() async {
-    verwerfen();
+    _leeren();
+    await _vergessen();
     try {
       await anzeige.entfernen();
     } catch (_) {}

@@ -193,6 +193,31 @@ describe.each(backends)('Kalender-Sync ($name)', (backend) => {
     return id;
   }
 
+  it('der Änderungsstrom nennt bei Terminen die Urheber-Person (nur die ID), bei Mischung mehrerer Personen und im Snapshot keine', async () => {
+    const a = await anlegen(); // Admin
+    fam.child.sinceRev = fam.parent.sinceRev = 0;
+    await fam.parent.pull(); // Snapshot: kein Urheber
+    const snap = await fam.child.pull();
+    expect(snap.find((c) => c.id === a)).not.toHaveProperty('by');
+    // Delta: der Admin legt an, das Elternteil holt ab
+    const b = await anlegen();
+    const delta = await fam.parent.pull();
+    expect(delta.find((c) => c.id === b)?.by).toBe(fam.admin.userId);
+    expect(JSON.stringify(delta.find((c) => c.id === b))).not.toContain(fam.parent.userId);
+    const baseB = Number(delta.find((c) => c.id === b)?.rev);
+    // zwei Personen am selben Termin in einem Fenster: kein Urheber
+    await fam.admin.sync([upsert('termin', b, { titel: 'Anders' }, baseB)]);
+    const r2 = await fam.parent.sync([upsert('termin', b, { ort: 'Praxis' }, baseB)]);
+    expect(r2.json.rejected.length + r2.json.conflicts.length, JSON.stringify(r2.json)).toBe(0);
+    const gemischt = await fam.child.pull();
+    expect(gemischt.find((c) => c.id === b)).not.toHaveProperty('by');
+    // Entitäten außerhalb der Termine tragen nie einen Urheber
+    const l = randomUUID();
+    await fam.admin.sync([upsert('list', l, { name: 'Einkauf', kind: 'shopping' })]);
+    const listen = await fam.parent.pull();
+    expect(listen.find((c) => c.id === l)).not.toHaveProperty('by');
+  });
+
   it('legt Zeit- und ganztägige Termine an; die Antwort trägt Zeitpunkte als ISO, Datum als Text, Ersteller und Freigabe', async () => {
     const a = await anlegen();
     const b = await anlegen(fam.admin, tag({ rrule: 'FREQ=YEARLY', erinnerungMin: 60, icalUid: 'abc@example.org' }));
