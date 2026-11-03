@@ -193,7 +193,7 @@ void main() {
       expect(find.text('Lade etwas hoch oder lege einen Ordner an.'), findsOneWidget);
       expect(find.text('5 GB von 10 GB belegt'), findsOneWidget);
       expect(find.byType(FloatingActionButton), findsOneWidget);
-      expect(find.text('Hochladen'), findsOneWidget);
+      expect(find.text('Hochladen'), findsNWidgets(2));
       pruefeLayout(tester, 'leer');
     });
 

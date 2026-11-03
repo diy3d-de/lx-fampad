@@ -169,7 +169,7 @@ Future<void> main() async {
         expect(find.text('Gerät abgeben – alles löschen'), findsNothing, reason: 'eingeklappt');
         await _erweitert(tester);
         expect(find.textContaining('Gesperrt: Beim Server liegt keine bestätigte Sicherung'), findsOneWidget);
-        final knopf = tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Gerät abgeben – alles löschen'));
+        final knopf = tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Gerät abgeben – alles löschen'));
         expect(knopf.onPressed, isNull);
         expect(find.widgetWithText(OutlinedButton, 'Sicherung anlegen'), findsOneWidget);
         await tester.tap(find.text('Gerät abgeben – alles löschen'), warnIfMissed: false);
@@ -200,7 +200,7 @@ Future<void> main() async {
         a.srv.sicherungEinspielen(fixIdAdmin);
         await _zurSeite(tester);
         await _erweitert(tester);
-        expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Gerät abgeben – alles löschen')).onPressed, isNotNull);
+        expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Gerät abgeben – alles löschen')).onPressed, isNotNull);
         await tippeText(tester, 'Gerät abgeben – alles löschen');
         expect(find.text('Gerät abgeben?'), findsOneWidget);
         expect(find.byType(CheckboxListTile), findsOneWidget, reason: 'ohne frühere Schlüssel nur der eine Haken');

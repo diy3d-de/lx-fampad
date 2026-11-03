@@ -61,7 +61,7 @@ Future<void> main() async {
         expect(find.text('Opa'), findsOneWidget);
         expect(find.textContaining('noch 30 Tage'), findsOneWidget);
         expect(find.textContaining('endgültig gelöscht am 09.11.2026'), findsOneWidget);
-        expect(find.text('schlüssel gespeichert'), findsOneWidget);
+        expect(find.text('Schlüssel liegt noch beim Server'), findsOneWidget);
         expect(find.widgetWithText(OutlinedButton, 'Zurückholen'), findsOneWidget);
         pruefeLayout(tester, 'Kürzlich entfernt');
       });

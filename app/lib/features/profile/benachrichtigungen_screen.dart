@@ -58,18 +58,15 @@ class BenachrichtigungenScreen extends ConsumerWidget {
               final push = ref.watch(pushProvider);
               return EinstellungsZeile(
                 icon: Icons.notifications_outlined,
-                titel: 'Push',
+                titel: 'Hinweise aufs Handy (Push)',
                 untertitel: push.gewuenscht ? (push.angemeldet ? 'Hinweise aktiv' : 'Wird eingerichtet …') : 'Aus',
-                status: push.gewuenscht && push.angemeldet ? const RollenPille('an', farbe: kTerminal) : null,
+                status: push.gewuenscht && push.angemeldet ? const RollenPille('Aktiv', farbe: kTerminal) : null,
                 onTap: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => const PushScreen())),
               );
             },
           )
         else
-          const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 4, vertical: 8),
-            child: Text('Push gibt es nur in der Android-App.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
-          ),
+          const MeldungsBox('Hinweise aufs Handy (Push) gibt es nur in der Android-App.', fehler: false),
       ],
     );
   }

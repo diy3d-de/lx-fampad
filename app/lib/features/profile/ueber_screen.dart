@@ -70,19 +70,19 @@ class UeberScreen extends ConsumerWidget {
   String _updateText(UpdateState u) {
     switch (u.phase) {
       case UpdatePhase.pruefe:
-        return 'prüfe …';
+        return 'Wird geprüft …';
       case UpdatePhase.laedt:
-        return 'lädt Update …';
+        return 'Das Update wird geladen …';
       case UpdatePhase.bereit:
-        return 'Update ${u.info?.version ?? ''} bereit zum Installieren'.replaceAll('  ', ' ');
+        return 'Update ${u.info?.version ?? ''} ist bereit zum Installieren'.replaceAll('  ', ' ');
       case UpdatePhase.verfuegbar:
-        return 'Update ${u.info?.version ?? ''} verfügbar'.replaceAll('  ', ' ');
+        return 'Update ${u.info?.version ?? ''} ist verfügbar'.replaceAll('  ', ' ');
       case UpdatePhase.fehler:
-        return u.fehler ?? 'Prüfung fehlgeschlagen';
+        return u.fehler ?? 'Die Prüfung ist fehlgeschlagen';
       case UpdatePhase.deaktiviert:
-        return 'Updates nicht eingerichtet';
+        return 'Updates sind nicht eingerichtet';
       case UpdatePhase.aktuell:
-        return u.webNeu ? 'neue Web-Version verfügbar, Seite neu laden' : 'kein Update bekannt';
+        return u.webNeu ? 'Eine neue Web-Version ist da. Lade die Seite neu.' : 'Kein Update bekannt';
     }
   }
 
@@ -95,8 +95,8 @@ class UeberScreen extends ConsumerWidget {
     final serverText = i == null
         ? 'Lädt …'
         : server == null
-            ? 'nicht erreichbar'
-            : '${server.version != null ? 'Server ${server.version}' : 'Server'} · Protokoll ${server.protocolVersion}';
+            ? 'Nicht erreichbar'
+            : '${server.version != null ? 'Version ${server.version}' : 'Version unbekannt'}, Protokoll ${server.protocolVersion}';
     final pruefend = update.phase == UpdatePhase.pruefe || update.phase == UpdatePhase.laedt;
     return AuthSeite(
       label: 'App',
@@ -110,8 +110,9 @@ class UeberScreen extends ConsumerWidget {
           child: EinstellungsZeile(
             icon: Icons.info_outline,
             titel: i == null ? 'Lädt …' : '$kAppName ${i.version}',
-            untertitel: i == null ? null : [if (i.buildText != null) 'Build ${i.buildText}', i.plattform].join(' · '),
+            untertitel: i == null ? null : [if (i.buildText != null) 'Build ${i.buildText}', i.plattform].join(', '),
             status: i == null ? null : const Icon(Icons.copy, size: 18, color: kTextMuted),
+            chevron: false,
             onTap: i == null ? null : () => unawaited(_kopieren(context, i)),
           ),
         ),
@@ -129,8 +130,9 @@ class UeberScreen extends ConsumerWidget {
           child: EinstellungsZeile(
             icon: Icons.link,
             titel: 'App-Download-Link kopieren',
-            untertitel: 'zum Weitergeben der Android-App',
+            untertitel: 'Zum Weitergeben der Android-App',
             status: const Icon(Icons.copy, size: 18, color: kTextMuted),
+            chevron: false,
             onTap: () => unawaited(inZwischenablage(context, kApkDownloadUrl, 'Download-Link kopiert.')),
           ),
         ),

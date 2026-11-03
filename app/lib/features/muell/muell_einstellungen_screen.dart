@@ -39,7 +39,7 @@ class MuellEinstellungenScreen extends ConsumerWidget {
     final listeArten = [for (final a in MuellArt.values) if (a != MuellArt.sonst || arten.contains(a)) a];
     return AuthSeite(
       label: 'Müll',
-      titel: 'Einstellungen',
+      titel: 'Müll-Einstellungen',
       maxBreite: kMaxContentWidth,
       kinder: [
         LxCard(
@@ -98,8 +98,9 @@ class MuellEinstellungenScreen extends ConsumerWidget {
                   ),
                   SwitchListTile(
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-                    title: const Text('Arten auf dem Sperrbildschirm', style: TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: const Text('Aus: nur „Morgen ist Abholung“. Gilt auch für Termine.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+                    // dieselbe Einstellung wie unter Profil › Benachrichtigungen › Erinnerungen (ein Name, ein Schalter)
+                    title: const Text('Inhalt auf dem Sperrbildschirm', style: TextStyle(fontWeight: FontWeight.w600)),
+                    subtitle: const Text('Gesperrt zeigt das Gerät sonst nur einen neutralen Hinweis. Gilt auch für Termine.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
                     value: sperre,
                     onChanged: (v) => unawaited(ref.read(erinnerungEinstellungenProvider.notifier).sperrbildschirmSetzen(v)),
                   ),

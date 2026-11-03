@@ -1,5 +1,5 @@
 // Aufgaben-Oberfläche: Liste, Filter, Sortierung, schnelles Anlegen und Abhaken, Editor (neu, bearbeiten, Unteraufgaben, Wiederholung),
-// Löschen mit Rückfrage, Rechte der Kinder, Startseiten-Karten, Desktop-Seitenleiste; bei 360 px Breite und Textskala 1.0 und 1.5.
+// Löschen (Wischen ohne Rückfrage mit Rückgängig, Editor mit Rückfrage), Rechte der Kinder, Startseiten-Karten, Desktop-Seitenleiste; bei 360 px Breite und Textskala 1.0 und 1.5.
 import 'package:drift/drift.dart' show OrderingTerm;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderScope;
@@ -277,6 +277,19 @@ void main() {
     });
   }
 
+  testWidgets('Editor bei Textskala 2.0 (360 px): Fälligkeitsdatum und Uhrzeit werden nicht abgeschnitten, kein Überlauf', (tester) async {
+    await start(tester, groesse: const Size(360, 2400), skala: 2.0);
+    await tippe(tester, find.byTooltip('Aufgabe mit Details anlegen'));
+    await tippeDirekt(tester, find.text('Morgen'));
+    pruefeLayout(tester, 'Editor 2.0');
+    final datumMuster = RegExp(r'^[A-Za-zÄÖÜäöü]{2}\., \d{1,2}\. [A-Za-zÄÖÜäöü]+\.? \d{4}$');
+    final datum = find.byWidgetPredicate((w) => w is Text && datumMuster.hasMatch(w.data ?? ''));
+    expect(datum, findsOneWidget);
+    final rp = tester.renderObject<RenderParagraph>(datum);
+    final tp = TextPainter(text: rp.text, textDirection: TextDirection.ltr, textScaler: rp.textScaler)..layout();
+    expect(rp.size.width, greaterThanOrEqualTo(tp.width - 0.5), reason: 'das Datum passt ganz in sein Feld (kein Abschneiden)');
+  });
+
   testWidgets('Tippen auf eine Aufgaben-Erinnerung öffnet den Editor der Aufgabe; unbekannte ID bleibt beim Tab', (tester) async {
     await start(tester, vorher: (e) {
       e.sync.andereAendert('aufgabe', _a1, _aufgabe('Steuer', tage: 3, owner: fixIdAdmin));
@@ -355,21 +368,19 @@ void main() {
     expect(find.text('Noch keine Aufgaben'), findsOneWidget);
   });
 
-  testWidgets('Wischen nach links löscht erst nach Rückfrage', (tester) async {
+  testWidgets('Wischen nach links löscht ohne Rückfrage; der Hinweis "Rückgängig" nimmt es zurück', (tester) async {
     final env = await start(tester, vorher: (e) {
       e.sync.andereAendert('aufgabe', _a1, _aufgabe('Wegwerfen'));
     });
     await tester.drag(find.text('Wegwerfen'), const Offset(-300, 0));
     await warte(tester);
-    expect(find.text('Aufgabe „Wegwerfen“ löschen?'), findsOneWidget);
-    await tippeText(tester, 'Abbrechen');
-    expect(find.text('Wegwerfen'), findsOneWidget);
-    expect(await dbAufgaben(env), hasLength(1));
-    await tester.drag(find.text('Wegwerfen'), const Offset(-300, 0));
-    await warte(tester);
-    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
+    expect(find.text('Aufgabe „Wegwerfen“ löschen?'), findsNothing, reason: 'Einzelobjekt mit Rückgängig-Weg: keine Rückfrage');
     expect(find.text('Wegwerfen'), findsNothing);
     expect(await dbAufgaben(env), isEmpty);
+    expect(find.text('Aufgabe gelöscht'), findsOneWidget);
+    await tippeText(tester, 'Rückgängig');
+    expect(find.text('Wegwerfen'), findsOneWidget);
+    expect((await dbAufgaben(env)).single.id, isNot(_a1), reason: 'Rückgängig legt eine Kopie mit neuer ID an');
   });
 
   testWidgets('Rückgängig: Erledigen wird zurückgenommen, Löschen legt die Aufgabe samt Unteraufgaben mit neuer ID wieder an', (tester) async {
@@ -386,7 +397,6 @@ void main() {
 
     await tester.drag(find.text('Zahnarzt anrufen'), const Offset(-300, 0));
     await warte(tester);
-    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
     expect(await dbAufgaben(env), isEmpty);
     expect(find.text('Aufgabe gelöscht'), findsOneWidget);
     await tippeText(tester, 'Rückgängig');
@@ -537,6 +547,26 @@ void main() {
     expect((await dbAufgaben(env)).map((a) => a.titel).toSet(), {'Offen 1', 'Neu im Erledigt-Filter'});
   });
 
+  testWidgets('Wischen einer erledigten Aufgabe fragt nach (Rückgängig legt nur offene neu an); Abbrechen behält sie', (tester) async {
+    final env = await start(tester, vorher: (e) {
+      e.sync.andereAendert('aufgabe', _a1, _aufgabe('Schon fertig', erledigt: true));
+    });
+    await aufgabenFilter(tester, ['Erledigt']);
+    await tester.drag(find.text('Schon fertig'), const Offset(-300, 0));
+    await warte(tester);
+    expect(find.text('Erledigte Aufgabe löschen?'), findsOneWidget);
+    await tippeText(tester, 'Abbrechen');
+    await warte(tester);
+    expect(find.text('Schon fertig'), findsOneWidget, reason: 'Abbrechen: die Aufgabe bleibt, die Zeile springt zurück');
+    expect(await dbAufgaben(env), hasLength(1));
+    await tester.drag(find.text('Schon fertig'), const Offset(-300, 0));
+    await warte(tester);
+    await tippe(tester, find.descendant(of: find.byType(AlertDialog), matching: find.widgetWithText(FilledButton, 'Löschen')));
+    await warte(tester);
+    expect(await dbAufgaben(env), isEmpty);
+    expect(find.text('Aufgabe gelöscht'), findsNothing, reason: 'erledigte Aufgaben lassen sich nicht zurückholen, darum kein Rückgängig-Hinweis');
+  });
+
   testWidgets('Wischen: die Zeile ist sofort weg, auch bevor die Datenbank nachzieht', (tester) async {
     final env = await start(tester, vorher: (e) {
       e.sync.andereAendert('aufgabe', _a1, _aufgabe('Weg 1'));
@@ -544,7 +574,6 @@ void main() {
     });
     await tester.drag(find.text('Weg 1'), const Offset(-300, 0));
     await warte(tester);
-    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
     expect(find.text('Weg 1'), findsNothing);
     expect(find.text('Bleibt'), findsOneWidget);
     expect((await dbAufgaben(env)).map((a) => a.titel), ['Bleibt']);

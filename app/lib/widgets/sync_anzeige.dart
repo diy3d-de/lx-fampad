@@ -12,7 +12,7 @@ import '../data/sync_state.dart';
     SyncStatus.synchron => ('Alles aktuell$zahl', kTerminal),
     SyncStatus.laeuft => ('Überträgt …', kTextMuted),
     SyncStatus.offline => ('Gerade keine Verbindung – Änderungen werden nachgeholt$zahl', kTextMuted),
-    SyncStatus.fehler => ('Übertragen hat nicht geklappt$zahl', kDanger),
+    SyncStatus.fehler => ('Das Übertragen hat nicht geklappt$zahl', kDanger),
     SyncStatus.updateNoetig => ('Update nötig', kTextMuted),
     SyncStatus.wartung => ('Kurze Wartung$zahl', kTextMuted),
     SyncStatus.getrennt => ('Nicht verbunden', kTextMuted),
@@ -33,6 +33,35 @@ class SyncZeileDaten {
 
 String _aenderungen(int n) => n == 1 ? '1 Änderung' : '$n Änderungen';
 
+/// Der Offline-Text, EINE Stelle für Startseiten-Zeile, Statusleiste der Bereiche und die Rückmeldung nach "Jetzt abgleichen".
+String syncOfflineText(int offen) => offen == 0
+    ? 'Du bist offline. Alles ist auf diesem Gerät gespeichert.'
+    : (offen == 1 ? '1 Änderung wartet auf Verbindung' : '$offen Änderungen warten auf Verbindung');
+
+/// Der Fehlertext, wenn das Übertragen nicht geklappt hat (kurz für Zeile und Rückmeldung).
+const kSyncFehlerText = 'Das Übertragen hat nicht geklappt.';
+
+/// Text der Statusleiste über dem Inhalt eines Bereichs (Listen, Kalender): nur, wenn etwas nicht stimmt, sonst `null`.
+String? syncLeistenText(SyncState s) {
+  final offen = s.offeneAenderungen;
+  return switch (s.status) {
+    SyncStatus.offline => syncOfflineText(offen),
+    SyncStatus.fehler => '$kSyncFehlerText Deine Änderungen bleiben gespeichert und werden erneut gesendet.',
+    SyncStatus.updateNoetig => 'Bitte aktualisiere die App, damit wieder alles übertragen wird.',
+    SyncStatus.wartung => offen > 0 ? 'Wartung – ${_aenderungen(offen)} ${offen == 1 ? 'wird' : 'werden'} danach übertragen.' : 'Wartung – danach geht es weiter.',
+    _ => null,
+  };
+}
+
+/// Kurze Rückmeldung nach "Jetzt abgleichen" (Hinweis unten).
+String syncRueckmeldung(SyncState s) => switch (s.status) {
+  SyncStatus.synchron => 'Alles aktuell',
+  SyncStatus.offline => syncOfflineText(s.offeneAenderungen),
+  SyncStatus.wartung => 'Wartung – Änderungen werden danach übertragen.',
+  SyncStatus.getrennt => 'Nicht verbunden',
+  _ => s.meldung ?? kSyncFehlerText,
+};
+
 /// Die Zeile zum Zustand; bei "synchron" (und beim Abgleichen ohne offene Änderungen) `null`: dann zeigt die Oberfläche nichts (die Kopfzeile hat das
 /// Wolken-Symbol). Die Zahl offener Änderungen steht nur, solange welche warten.
 SyncZeileDaten? syncZeile(SyncState s) {
@@ -40,11 +69,8 @@ SyncZeileDaten? syncZeile(SyncState s) {
   return switch (s.status) {
     SyncStatus.synchron => null,
     SyncStatus.laeuft => offen == 0 ? null : SyncZeileDaten(symbol: Icons.sync, text: 'Wird übertragen, noch ${_aenderungen(offen)}'),
-    SyncStatus.offline =>
-      offen == 0
-          ? const SyncZeileDaten(symbol: Icons.cloud_off, text: 'Du bist offline. Alles ist auf diesem Gerät gespeichert.')
-          : SyncZeileDaten(symbol: Icons.schedule, text: offen == 1 ? '1 Änderung wartet auf Verbindung' : '$offen Änderungen warten auf Verbindung'),
-    SyncStatus.fehler => const SyncZeileDaten(symbol: Icons.error_outline, text: 'Übertragen hat nicht geklappt', handlung: 'Erneut versuchen', alarm: true),
+    SyncStatus.offline => SyncZeileDaten(symbol: offen == 0 ? Icons.cloud_off : Icons.schedule, text: syncOfflineText(offen)),
+    SyncStatus.fehler => const SyncZeileDaten(symbol: Icons.error_outline, text: 'Das Übertragen hat nicht geklappt', handlung: 'Erneut versuchen', alarm: true),
     SyncStatus.updateNoetig => const SyncZeileDaten(symbol: Icons.system_update_alt, text: 'Update nötig'),
     SyncStatus.wartung => const SyncZeileDaten(symbol: Icons.build_outlined, text: 'Wartung läuft. Deine Änderungen bleiben gespeichert.'),
     SyncStatus.getrennt => const SyncZeileDaten(symbol: Icons.cloud_off, text: 'Nicht verbunden'),

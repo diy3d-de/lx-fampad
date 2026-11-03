@@ -231,7 +231,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         if (!didPop && !laeuft) _zurueck();
       },
       child: BildschirmSchutz(
-        child: AuthSeite(label: 'Zugänge', titel: 'Passwort und zweiter Schritt', maxBreite: kMaxContentWidth, kinder: [inhalt]),
+        child: AuthSeite(label: 'Sicherheit', titel: 'Passwort und zweiter Schritt', maxBreite: kMaxContentWidth, kinder: [inhalt]),
       ),
     );
   }
@@ -259,7 +259,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
               ),
-              if (aktiv) const RollenPille('an', farbe: kTerminal),
+              if (aktiv) const RollenPille('Aktiv', farbe: kTerminal),
             ],
           ),
         ),
@@ -269,16 +269,7 @@ class _PasswordScreenState extends ConsumerState<PasswordScreen> with AktionsZus
         if (aktiv) ...[
           HauptKnopf(text: 'Passwort ändern', icon: Icons.edit_outlined, onPressed: laeuft ? null : () => setState(() => _modus = _Modus.passwortFeld)),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: laeuft || passkeys == 0 ? null : _entfernen,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: kDanger,
-              side: BorderSide(color: passkeys == 0 ? kBorder : kDanger),
-              minimumSize: const Size.fromHeight(48),
-            ),
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Passwort und zweiter Schritt entfernen', textAlign: TextAlign.center),
-          ),
+          GefahrKnopf(text: 'Passwort und zweiter Schritt entfernen', icon: Icons.delete_outline, onPressed: laeuft || passkeys == 0 ? null : _entfernen),
           if (passkeys == 0) ...[
             const SizedBox(height: 8),
             const Text(

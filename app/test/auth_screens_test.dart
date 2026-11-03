@@ -94,7 +94,7 @@ void main() {
       await eingeben(tester, 'E-Mail', 'anna@beispiel.de');
       await eingeben(tester, 'Passwort', 'geheimes-passwort');
       await tippeText(tester, 'Weiter');
-      expect(find.text('schritt 2 von 2'), findsOneWidget);
+      expect(find.text('Schritt 2 von 2'), findsOneWidget);
       expect(find.text('Bestätigungscode'), findsOneWidget);
       expect(server.anfragen('POST /auth/login/password'), isEmpty, reason: 'erst nach dem Code wird gesendet');
 
@@ -524,7 +524,7 @@ void main() {
       await tippeText(tester, 'Anmelden ohne Passwort');
       expect(find.text('Pixel 9'), findsOneWidget);
 
-      await tippeText(tester, 'Passkey hinzufügen');
+      await tippeText(tester, 'Zugang ohne Passwort hinzufügen');
       expect(find.text('Bitte bestätigen'), findsOneWidget);
       await tippeText(tester, 'Mit Passkey bestätigen');
       expect(env.passkeys.bestaetigt, 1);

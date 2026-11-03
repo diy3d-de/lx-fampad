@@ -24,7 +24,7 @@ class WetterHinweiseScreen extends ConsumerWidget {
     final verfuegbar = ref.watch(wetterProvider.select((s) => s.dto?.verfuegbar ?? true));
     final push = ref.watch(pushProvider.select((p) => (p.unterstuetzt, p.angemeldet)));
     return AuthSeite(
-      label: 'Profil · Benachrichtigungen',
+      label: 'Benachrichtigungen',
       titel: 'Wetter-Hinweise',
       maxBreite: kMaxContentWidth,
       kinder: [

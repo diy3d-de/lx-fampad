@@ -89,13 +89,13 @@ class _DevicesScreenState extends ConsumerState<DevicesScreen> with AktionsZusta
     final df = DateFormat('d. MMM, HH:mm', 'de_DE');
     final g = _geraete;
     return AuthSeite(
-      label: 'Sitzungen',
+      label: 'Sicherheit',
       titel: 'Angemeldete Geräte',
       maxBreite: kMaxContentWidth,
       kinder: [
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
         if (g == null && laeuft)
-          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+          const LadePlatzhalter(karten: 2)
         else if (g != null)
           for (final d in g)
             Padding(

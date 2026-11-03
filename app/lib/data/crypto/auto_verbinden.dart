@@ -17,7 +17,7 @@ String? autoVerbindenText(AutoVerbinden r) => switch (r) {
   AutoVerbinden.passwortPasstNicht =>
     'Dein Passwort öffnet die Passwort-Sicherung nicht (sie wurde mit einem anderen Passwort angelegt). Verbinde dieses Gerät unter Profil › Sicherheit › Nachrichten-Schutz.',
   AutoVerbinden.passkeyPasstNicht =>
-    'Dein Passkey öffnet die Passkey-Sicherung nicht (er wurde vermutlich neu angelegt). Verbinde dieses Gerät unter Profil › Sicherheit › Nachrichten-Schutz mit deinem Wiederherstellungsschlüssel oder einem anderen Gerät.',
+    'Dein Passkey öffnet die Sicherung per Passkey nicht (er wurde vermutlich neu angelegt). Verbinde dieses Gerät unter Profil › Sicherheit › Nachrichten-Schutz mit deinem Wiederherstellungsschlüssel oder einem anderen Gerät.',
   AutoVerbinden.fehlgeschlagen => 'Dieses Gerät konnte nicht automatisch mit deinem Schlüssel verbunden werden. Du kannst es unter Profil › Sicherheit › Nachrichten-Schutz selbst verbinden. Es wurde nichts verändert.',
   AutoVerbinden.nichtNoetig || AutoVerbinden.keineSicherung => null,
 };

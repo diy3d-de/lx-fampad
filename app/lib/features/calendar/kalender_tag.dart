@@ -45,7 +45,7 @@ class TagesInhalt extends ConsumerWidget {
     final hinweise = ref.watch(tagesHinweiseProvider).fuerTag(tag);
     final liste = nachTagen(gefilterteVorkommen(auswahl, daten, tag, tag.add(const Duration(days: 1)), geburtstage: geburtstage, farbenAus: ref.watch(farbenAusProvider)), tag, tag)[tag] ?? const <Vorkommen>[];
     final heute = heuteTag();
-    final kopfLabel = '${tag == heute ? 'heute' : DateFormat('E', 'de_DE').format(tag).toLowerCase()} · kw ${kalenderwoche(tag)}';
+    final kopfLabel = '${tag == heute ? 'heute' : DateFormat('E', 'de_DE').format(tag).toLowerCase()} · KW ${kalenderwoche(tag)}';
     final knopf = rechte.darfAnlegen
         ? FilledButton.icon(
             onPressed: onNeu,

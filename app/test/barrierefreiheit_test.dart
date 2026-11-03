@@ -643,7 +643,7 @@ void main() {
       env.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
       env.sync.fehlerQueue.add((500, 'internal_error'));
       await starteApp(tester, env, skala: skala);
-      expect(find.text('Übertragen hat nicht geklappt'), findsOneWidget);
+      expect(find.text('Das Übertragen hat nicht geklappt'), findsOneWidget);
       expect(find.widgetWithText(TextButton, 'Erneut versuchen'), findsOneWidget);
       pruefe(tester, 'Startseite mit Sync-Zeile $skala');
       h.dispose();

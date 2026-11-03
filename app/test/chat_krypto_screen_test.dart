@@ -90,13 +90,14 @@ void main() {
     expect(find.text('Verbinden'), findsOneWidget);
   });
 
-  testWidgets('Verlauf: Schloss und "ende-zu-ende verschlüsselt" im Kopf, Eingabe vorhanden', (tester) async {
+  testWidgets('Verlauf: Schloss mit Vorlesetext "Nachrichten-Schutz an" im Kopf (kein Fachwort im Untertitel), Eingabe vorhanden', (tester) async {
     await start(tester, vorher: gruppeUndDirekt);
     expect(find.text('Nachrichten-Schutz einrichten'), findsNothing);
     await tippeText(tester, 'Hallo Anna');
     expect(find.byIcon(Icons.lock_outline), findsWidgets);
-    expect(find.textContaining('ende-zu-ende verschlüsselt'), findsOneWidget);
-    expect(find.bySemanticsLabel('Ende-zu-Ende verschlüsselt'), findsOneWidget);
+    expect(find.textContaining('verschlüsselt'), findsNothing, reason: 'Fachwort nur in der Bedienhilfe, nicht im Untertitel');
+    expect(find.bySemanticsLabel('Nachrichten-Schutz an'), findsOneWidget);
+    expect(find.text('Direktchat'), findsOneWidget, reason: 'Untertitel in Satzschreibung');
     expect(eingabe(), findsOneWidget);
     expect(find.text('Hallo Anna'), findsOneWidget);
   });

@@ -98,7 +98,7 @@ void main() {
 
   testWidgets('Sperrbildschirm: Standard aus, Schalter wird lokal gespeichert', (tester) async {
     await oeffnen(tester);
-    expect(find.text('Titel auf Sperrbildschirm zeigen'), findsOneWidget);
+    expect(find.text('Inhalt auf dem Sperrbildschirm'), findsOneWidget);
     expect(tester.widget<Switch>(find.byType(Switch).last).value, isFalse);
     await tippe(tester, find.byType(Switch).last);
     expect(tester.widget<Switch>(find.byType(Switch).last).value, isTrue);
@@ -188,7 +188,7 @@ void main() {
         expect(find.textContaining('Benachrichtigungen für lx-familyhub nicht erlaubt'), erlaubt ? findsNothing : findsOneWidget);
         if (!erlaubt) {
           await tippeText(tester, 'Benachrichtigungen erlauben');
-          expect(find.text('Titel auf Sperrbildschirm zeigen'), findsOneWidget, reason: 'Link öffnet die Einstellungen');
+          expect(find.text('Inhalt auf dem Sperrbildschirm'), findsOneWidget, reason: 'Link öffnet die Einstellungen');
         }
         expect(tester.takeException(), isNull);
         await tester.pumpWidget(const SizedBox());
@@ -251,12 +251,17 @@ void main() {
     expect(tester.widget<OutlinedButton>(knopf).onPressed, isNotNull);
   });
 
-  testWidgets('Diagnose-Zeile zeigt nur Zustände', (tester) async {
+  testWidgets('Technische Angaben: eingeklappt, zeigen nur Zustände (keine Konsolen-Zeile, keine Inhalte)', (tester) async {
     await oeffnen(tester, mitTermin: true);
-    final text = tester.widget<Text>(find.byKey(const Key('erinnerung-diagnose'))).data!;
-    expect(text, contains('erlaubt ja'));
-    expect(text, contains('plugin ja'));
-    expect(text, isNot(contains('Zahnarzt')));
+    expect(find.byKey(const Key('erinnerung-diagnose')), findsOneWidget);
+    expect(find.text('Erlaubt'), findsNothing, reason: 'eingeklappt');
+    await tester.ensureVisible(find.text('Technische Angaben'));
+    await tippe(tester, find.text('Technische Angaben'));
+    expect(find.text('Erlaubt'), findsOneWidget);
+    expect(find.text('Plugin bereit'), findsOneWidget);
+    expect(find.text('Ja'), findsWidgets);
+    expect(find.textContaining('Diagnose:'), findsNothing);
+    expect(find.textContaining('Zahnarzt'), findsNothing);
   });
 
   testWidgets('Status unbekannt: eigener Hinweis, Test-Knopf bleibt, "Erneut prüfen" liest neu', (tester) async {

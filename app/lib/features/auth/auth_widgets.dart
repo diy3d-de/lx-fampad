@@ -150,12 +150,12 @@ class MarkenKopf extends StatelessWidget {
         style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800, letterSpacing: -0.4, color: kTextStrong),
       ),
       const SizedBox(height: 6),
-      const Text('Eure Familie. euer server.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
+      const Text('Eure Familie auf eurem Server.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12, color: kTextMuted)),
     ],
   );
 }
 
-/// Fehler-/Hinweisbox (Meldung in Klartext, nie Interna).
+/// Fehler-/Hinweisbox (Meldung in Klartext, nie Interna). Fläche ohne Rand (Design-Regel "Flächen statt Rahmen").
 class MeldungsBox extends StatelessWidget {
   final String text;
   final bool fehler;
@@ -169,8 +169,7 @@ class MeldungsBox extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: farbe.withValues(alpha: 0.08),
-          border: Border.all(color: farbe.withValues(alpha: 0.4)),
+          color: farbe.withValues(alpha: 0.10),
           borderRadius: BorderRadius.circular(12),
         ),
         child: Row(
@@ -243,6 +242,30 @@ class ZweitKnopf extends StatelessWidget {
     return icon == null
         ? OutlinedButton(onPressed: onPressed, style: style, child: Text(text, textAlign: TextAlign.center))
         : OutlinedButton.icon(onPressed: onPressed, style: style, icon: Icon(icon), label: Text(text, textAlign: TextAlign.center));
+  }
+}
+
+/// Knopf für gefährliche, meist unumkehrbare Aktionen (Löschen, Entfernen, Überall abmelden): gefüllte Fläche in gedämpftem
+/// Alarmrot ohne Rand, Text und Symbol in [kDanger]. Die eigentliche Rückfrage stellt der Aufrufer.
+class GefahrKnopf extends StatelessWidget {
+  final String text;
+  final IconData? icon;
+  final VoidCallback? onPressed;
+
+  /// Volle Breite (Standard) oder nur so breit wie der Inhalt (z. B. in einer Reihe von Knöpfen).
+  final bool volleBreite;
+  const GefahrKnopf({super.key, required this.text, this.icon, required this.onPressed, this.volleBreite = true});
+
+  @override
+  Widget build(BuildContext context) {
+    final style = FilledButton.styleFrom(
+      backgroundColor: kDanger.withValues(alpha: 0.12),
+      foregroundColor: kDanger,
+      minimumSize: volleBreite ? const Size.fromHeight(48) : const Size(48, 48),
+    );
+    return icon == null
+        ? FilledButton(onPressed: onPressed, style: style, child: Text(text, textAlign: TextAlign.center))
+        : FilledButton.icon(onPressed: onPressed, style: style, icon: Icon(icon), label: Text(text, textAlign: TextAlign.center));
   }
 }
 
@@ -344,7 +367,7 @@ Future<({FamilyRole? rolle})?> familienrolleWaehlen(BuildContext context, {requi
       children: [
         const Padding(
           padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
-          child: Text('nur anzeige, ändert keine rechte', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+          child: Text('Nur zur Anzeige, die Rechte bleiben gleich.', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
         ),
         for (final r in FamilyRole.values) zeile(ctx, r.label, r),
         zeile(ctx, 'Keine Angabe', null),

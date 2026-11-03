@@ -318,7 +318,7 @@ class _Start extends StatelessWidget {
         const MonoLabel('Mit wem'),
         const SizedBox(height: 4),
         if (laedt)
-          const Padding(padding: EdgeInsets.all(16), child: Center(child: CircularProgressIndicator()))
+          const LadePlatzhalter(karten: 2)
         else if (andere.isEmpty)
           const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: Text('Es gibt noch keine weiteren Mitglieder.', style: TextStyle(color: kTextMuted)))
         else

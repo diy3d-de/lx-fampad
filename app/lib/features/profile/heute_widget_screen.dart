@@ -23,7 +23,7 @@ class HeuteWidgetScreen extends ConsumerWidget {
     final listen = ref.watch(listenProvider).value ?? const <Liste>[];
     final notifier = ref.read(heuteWidgetEinstellungenProvider.notifier);
     return AuthSeite(
-      label: 'Gerät',
+      label: 'Startseite und Anzeige',
       titel: 'Widget „Heute“',
       maxBreite: kMaxContentWidth,
       kinder: [

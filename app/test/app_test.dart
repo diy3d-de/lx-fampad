@@ -81,7 +81,7 @@ void main() {
     env.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
     env.sync.fehlerQueue.add((500, 'internal_error'));
     await starteApp(tester, env);
-    expect(find.text('Übertragen hat nicht geklappt'), findsOneWidget);
+    expect(find.text('Das Übertragen hat nicht geklappt'), findsOneWidget);
     final knopf = find.widgetWithText(TextButton, 'Erneut versuchen');
     expect(knopf, findsOneWidget);
     expect(tester.getSize(knopf).height, greaterThanOrEqualTo(44));
@@ -89,7 +89,7 @@ void main() {
     await tippe(tester, knopf);
     await warte(tester, 10);
     expect(env.server.anfragen('POST /sync').length, greaterThan(n));
-    expect(find.text('Übertragen hat nicht geklappt'), findsNothing);
+    expect(find.text('Das Übertragen hat nicht geklappt'), findsNothing);
   });
 
   testWidgets('Desktop: Fußzeile zeigt beim Fehler Symbol, Text und die Handlung', (tester) async {
@@ -97,7 +97,7 @@ void main() {
     env.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
     env.sync.fehlerQueue.add((500, 'internal_error'));
     await starteApp(tester, env, groesse: const Size(1280, 900));
-    expect(find.text('Übertragen hat nicht geklappt'), findsOneWidget);
+    expect(find.text('Das Übertragen hat nicht geklappt'), findsOneWidget);
     expect(find.widgetWithText(TextButton, 'Erneut versuchen'), findsOneWidget);
     expect(find.byIcon(Icons.error_outline), findsWidgets);
   });

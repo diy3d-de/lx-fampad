@@ -364,8 +364,8 @@ void main() {
       expect(find.text('Eintrag löschen?'), findsOneWidget);
       await tippe(tester, find.text('Abbrechen'));
       expect(a.repo.geloescht, isEmpty);
-      await tippe(tester, find.text('Löschen'));
-      await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
+      await tippe(tester, find.widgetWithText(FilledButton, 'Löschen').first);
+      await tippe(tester, find.descendant(of: find.byType(AlertDialog), matching: find.widgetWithText(FilledButton, 'Löschen')));
       expect(a.repo.geloescht, ['e-wlan']);
       expect(find.text('Eintrag bearbeiten'), findsNothing);
       await ende(tester, c, a);

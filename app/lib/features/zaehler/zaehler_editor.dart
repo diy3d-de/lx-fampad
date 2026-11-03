@@ -528,12 +528,7 @@ class _ZaehlerEditorState extends ConsumerState<ZaehlerEditor> {
               label: Text((_alt?.archiviert ?? false) ? 'Wieder aktivieren' : 'Archivieren (die Stände bleiben)'),
             ),
             const SizedBox(height: 8),
-            TextButton.icon(
-              style: TextButton.styleFrom(minimumSize: const Size(48, 48), foregroundColor: kDanger),
-              onPressed: () => unawaited(_loeschen(reihe)),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Zähler endgültig löschen'),
-            ),
+            GefahrKnopf(text: 'Zähler endgültig löschen', icon: Icons.delete_outline, onPressed: () => unawaited(_loeschen(reihe))),
           ],
         ],
       ),

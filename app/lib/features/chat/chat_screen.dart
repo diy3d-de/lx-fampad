@@ -155,6 +155,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
         );
         if (!zweiSpalten) return liste;
         final gewaehlt = ref.watch(gewaehlterChatProvider);
+        final darfNeu = chatKryptoZustand(ref.watch(e2eeProvider)).darfSchreiben;
         return Row(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -162,7 +163,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             const VerticalDivider(width: 1, color: kBorderSoft),
             Expanded(
               child: gewaehlt == null
-                  ? const EmptyState(icon: Icons.forum_outlined, title: 'Wähle einen Chat', hint: 'Oder starte links einen neuen Chat.')
+                  ? EmptyState(
+                      icon: Icons.forum_outlined,
+                      title: 'Wähle einen Chat',
+                      hint: 'Oder starte gleich einen neuen Chat.',
+                      knopf: darfNeu ? 'Neuer Chat' : null,
+                      onKnopf: darfNeu ? () => _neuerChat(zweiSpalten) : null,
+                    )
                   : ChatVerlauf(key: ValueKey(gewaehlt), konversationId: gewaehlt, zurueckPfeil: false, beiSchliessen: () => ref.read(gewaehlterChatProvider.notifier).waehlen(null)),
             ),
           ],
@@ -216,15 +223,22 @@ class _Liste extends ConsumerWidget {
             ],
           );
 
+    final darfNeu = chatKryptoZustand(ref.watch(e2eeProvider)).darfSchreiben;
     final Widget inhaltsbereich = async.hasError
         ? const EmptyState(icon: Icons.error_outline, title: 'Chats nicht geladen', hint: 'Die lokalen Daten konnten nicht gelesen werden.')
         : !async.hasValue
-        ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+        ? const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: LadePlatzhalter(karten: 3))
         : eintraege.isEmpty
-        ? const EmptyState(icon: Icons.chat_bubble_outline, title: 'Noch keine Chats', hint: 'Der Familienchat erscheint sobald alles übertragen ist. Starte unten einen neuen Chat.')
+        ? EmptyState(
+            icon: Icons.chat_bubble_outline,
+            title: 'Noch keine Chats',
+            hint: 'Der Familienchat erscheint, sobald alles übertragen ist.',
+            knopf: darfNeu ? 'Neuer Chat' : null,
+            onKnopf: darfNeu ? onNeu : null,
+          )
         : ListView(
             padding: const EdgeInsets.only(bottom: 88),
-            children: [abschnitt('familie', familie), abschnitt('direkt', direkt), abschnitt('gruppen', gruppen)],
+            children: [abschnitt('Familienchat', familie), abschnitt('Direktchats', direkt), abschnitt('Gruppen', gruppen)],
           );
 
     return Stack(
@@ -246,7 +260,7 @@ class _Liste extends ConsumerWidget {
           bottom: 16,
           child: FilledButton.icon(
             style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
-            onPressed: chatKryptoZustand(ref.watch(e2eeProvider)).darfSchreiben ? onNeu : null,
+            onPressed: darfNeu ? onNeu : null,
             icon: const Icon(Icons.edit_outlined, size: 20),
             label: const Text('Neuer Chat'),
           ),

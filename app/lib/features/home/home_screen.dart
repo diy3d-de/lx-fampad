@@ -8,7 +8,9 @@ import '../../data/app_database.dart';
 import '../../data/api/models.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/calendar/termin_repository.dart';
+import '../../data/api/api_error.dart';
 import '../../data/lists/list_repository.dart';
+import '../../data/lists/list_rights.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/startseite/startseite_state.dart';
 import '../../data/startseite/suche_feld_state.dart';
@@ -21,6 +23,7 @@ import '../calendar/calendar_anzeige.dart';
 import '../calendar/calendar_state.dart';
 import '../calendar/geburtstage_karte.dart';
 import '../calendar/countdown_karte.dart';
+import '../lists/list_dialogs.dart' show neueListeDialog;
 import '../tasks/aufgaben_anzeige.dart';
 import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
 import '../status/status_karte.dart' show StatusStartKarte;
@@ -261,18 +264,46 @@ class _Schnellzugriff extends ConsumerWidget {
       );
 }
 
-/// Karte "Einkaufsliste" mit echten Daten: offene Einträge der ersten Einkaufsliste (lokale Datenbank, auch offline).
+/// Legt über den Dialog "Neue Liste" eine Liste an und öffnet sie im Listen-Bereich (Startseite mobil und Desktop); [art] belegt die Art vor.
+/// Liest alles Nötige vor dem Warten auf den Dialog: danach kann das Widget schon weg sein.
+Future<void> neueListeAnlegenUndOeffnen(BuildContext context, WidgetRef ref, {ListenArt art = ListenArt.shopping}) async {
+  final u = ref.read(authProvider).user;
+  final repo = ref.read(listenRepositoryProvider);
+  final gewaehlt = ref.read(gewaehlteListeProvider.notifier);
+  final tab = ref.read(shellTabProvider.notifier);
+  final messenger = ScaffoldMessenger.of(context);
+  final a = await neueListeDialog(context, ListenRechte(u?.role ?? Role.child, u?.id), art: art);
+  if (a == null || !context.mounted) return;
+  try {
+    final id = await repo.listeAnlegen(name: a.name, art: a.art, sicht: a.sicht);
+    gewaehlt.waehlen(id);
+    tab.waehlen(kListenTab);
+  } on ApiException catch (e) {
+    messenger.showSnackBar(SnackBar(content: Text(e.message)));
+  } catch (_) {
+    messenger.showSnackBar(const SnackBar(content: Text('Die Liste konnte nicht angelegt werden.')));
+  }
+}
+
+/// Karte "Einkaufsliste" mit echten Daten: offene Einträge der ersten Einkaufsliste (lokale Datenbank, auch offline). Ohne Einkaufsliste legt
+/// ein Tipp (mit Recht) gleich eine an.
 class _EinkaufKarte extends ConsumerWidget {
   const _EinkaufKarte();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final u = ref.watch(authProvider.select((s) => s.user));
+    final darfAnlegen = ListenRechte(u?.role ?? Role.child, u?.id).darfListeAnlegen;
     final listen = ref.watch(listenProvider).value ?? const <Liste>[];
     final alle = ref.watch(alleEintraegeProvider).value ?? const <Listeneintrag>[];
     final einkauf = listen.where((l) => l.kind == 'shopping').firstOrNull;
     final offen = einkauf == null ? <Listeneintrag>[] : sortiereEintraege(alle.where((e) => e.listId == einkauf.id && e.doneAt == null).toList());
     final erledigt = einkauf == null ? 0 : alle.where((e) => e.listId == einkauf.id && e.doneAt != null).length;
     void oeffnen() {
+      if (einkauf == null && darfAnlegen) {
+        unawaited(neueListeAnlegenUndOeffnen(context, ref, art: ListenArt.shopping));
+        return;
+      }
       if (einkauf != null) ref.read(gewaehlteListeProvider.notifier).waehlen(einkauf.id);
       ref.read(shellTabProvider.notifier).waehlen(kListenTab);
     }
@@ -280,7 +311,7 @@ class _EinkaufKarte extends ConsumerWidget {
     return Semantics(
       button: true,
       label: einkauf == null
-          ? 'Einkaufsliste, noch keine Liste. Öffnen'
+          ? (darfAnlegen ? 'Einkaufsliste, noch keine Liste. Anlegen' : 'Einkaufsliste, noch keine Liste. Öffnen')
           : (offen.isEmpty ? 'Einkaufsliste, 0 offen. Öffnen' : 'Einkaufsliste, ${offen.length} offen: ${einkaufSemantik(offen)}. Öffnen'),
       excludeSemantics: true,
       child: LxCard(
@@ -296,7 +327,7 @@ class _EinkaufKarte extends ConsumerWidget {
             ),
             const SizedBox(height: 12),
             if (einkauf == null)
-              const Text('Noch keine Einkaufsliste – tippen zum Anlegen', style: TextStyle(color: kTextMuted))
+              Text(darfAnlegen ? 'Noch keine Einkaufsliste – tippen zum Anlegen' : 'Noch keine Einkaufsliste', style: const TextStyle(color: kTextMuted))
             else if (offen.isEmpty)
               Text(erledigt == 0 ? 'Nichts auf der Liste' : 'Alles erledigt', style: const TextStyle(color: kTextMuted))
             else ...[

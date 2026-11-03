@@ -158,7 +158,7 @@ class _ElternWiederherstellungScreenState extends ConsumerState<ElternWiederhers
     final hatSchluessel = s.status == E2eeStatus.bereit;
     return BildschirmSchutz(
       child: AuthSeite(
-        label: 'Eltern-wiederherstellung',
+        label: 'Nachrichten-Schutz',
         titel: 'Eltern-Wiederherstellung',
         maxBreite: kMaxContentWidth,
         kinder: [

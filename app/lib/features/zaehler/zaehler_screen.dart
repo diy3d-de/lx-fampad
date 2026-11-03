@@ -89,7 +89,7 @@ class ZaehlerScreen extends ConsumerWidget {
   }
 
   List<Widget> _inhalt(BuildContext context, WidgetRef ref, ZaehlerDaten daten, DateTime heute, List<ZaehlerReihe> faellig) {
-    if (!daten.geladen) return const [Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))];
+    if (!daten.geladen) return const [LadePlatzhalter(karten: 2)];
     final haBekannt = ref.watch(ingestVerfuegbarProvider).value ?? false;
     if (daten.eintraege.isEmpty) {
       // Wer Home Assistant hat, will oft genau damit anfangen: der Einstieg steht auch ohne Zähler da (nur wenn der Server die Anbindung anbietet)
@@ -102,17 +102,9 @@ class ZaehlerScreen extends ConsumerWidget {
           hint: haBekannt
               ? 'Trag Stände selbst ein oder lass sie von Home Assistant liefern. Strom, Wasser, Gas und Solar werden berechnet. Alle Angaben sind Ende-zu-Ende verschlüsselt und nur für Eltern und Admins sichtbar.'
               : 'Richte Strom, Wasser, Gas oder Solar ein, trage die Stände ein und lass den Verbrauch berechnen. Alle Angaben sind Ende-zu-Ende verschlüsselt und nur für Eltern und Admins sichtbar.',
+          knopf: haBekannt ? 'Mit Home Assistant verbinden' : null,
+          onKnopf: haBekannt ? () => unawaited(admin ? haKoppelnOeffnen(context) : haVerbindungOeffnen(context)) : null,
         ),
-        if (haBekannt)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: OutlinedButton.icon(
-              style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48)),
-              onPressed: () => unawaited(admin ? haKoppelnOeffnen(context) : haVerbindungOeffnen(context)),
-              icon: const Icon(Icons.sync_alt, size: 18),
-              label: const Text('Mit Home Assistant verbinden'),
-            ),
-          ),
       ];
     }
     final zuPruefen = ref.watch(ingestProvider.select((z) => z.zuPruefen.length));
@@ -415,15 +407,15 @@ class _HaZeile extends ConsumerWidget {
     if (!z.geladen) {
       status = '';
     } else if (!z.postfachDa) {
-      status = letzter == null ? 'läuft über ein anderes Gerät' : 'läuft über ein anderes Gerät · letzter Wert ${tagKurz(letzter.tag)}';
+      status = letzter == null ? 'Läuft über ein anderes Gerät.' : 'Läuft über ein anderes Gerät, letzter Wert vom ${tagKurz(letzter.tag)}.';
     } else if (!z.schalter) {
-      status = 'Abholen ist aus';
+      status = 'Das Abholen ist aus.';
     } else if (z.laeuft) {
-      status = 'holt ab …';
+      status = 'Holt gerade ab …';
     } else if (z.letzter?.abbruch != null) {
-      status = 'Problem beim Abholen';
+      status = 'Beim Abholen gab es ein Problem.';
     } else {
-      status = letzter == null ? 'läuft' : 'läuft · letzter Wert ${tagKurz(letzter.tag)}';
+      status = letzter == null ? 'Läuft.' : 'Läuft, letzter Wert vom ${tagKurz(letzter.tag)}.';
     }
     return LxCard(
       onTap: () => unawaited(haVerbindungOeffnen(context)),

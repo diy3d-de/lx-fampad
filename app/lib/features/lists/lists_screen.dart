@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../constants.dart';
@@ -120,13 +123,18 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
         // "Sonstiges" und kein Wert sind dasselbe: dann nichts schreiben
         if (mitKategorie && EinkaufKategorie.von(kategorie) != EinkaufKategorie.von(e.category)) await _repo.eintragKategorie(e.id, kategorie);
       case EintragLoeschen():
-        final repo = _repo; // vor dem Hinweis holen (nach dem Abmelden gibt es den Bildschirm nicht mehr)
-        final ich = ref.read(authProvider).user?.id;
-        await repo.eintragLoeschen(e.id);
-        if (!mounted) return;
-        // Rückgängig legt den Eintrag mit neuer ID wieder an (der Server behält den gelöschten als Tombstone)
-        rueckgaengigZeigen(context, text: 'Eintrag gelöscht', rueckgaengig: () async => repo.eintragWiederherstellen(e, besitzer: ich));
+        await _eintragLoeschen(e);
     }
+  }
+
+  /// Löscht einen Eintrag ohne Rückfrage (Wischen oder Knopf im Blatt): der Hinweis "Rückgängig" nimmt es zurück.
+  Future<void> _eintragLoeschen(Listeneintrag e) async {
+    final repo = _repo; // vor dem Hinweis holen (nach dem Abmelden gibt es den Bildschirm nicht mehr)
+    final ich = ref.read(authProvider).user?.id;
+    await repo.eintragLoeschen(e.id);
+    if (!mounted) return;
+    // Rückgängig legt den Eintrag mit neuer ID wieder an (der Server behält den gelöschten als Tombstone)
+    rueckgaengigZeigen(context, text: 'Eintrag gelöscht', rueckgaengig: () async => repo.eintragWiederherstellen(e, besitzer: ich));
   }
 
   Future<void> _zuweisen(Listeneintrag e, List<UserDto> personen) async {
@@ -217,6 +225,7 @@ class _ListsScreenState extends ConsumerState<ListsScreen> {
     onMenue: (a) => _menue(liste, a),
     onBearbeiten: (e) => _eintragBearbeiten(e, liste),
     onZuweisen: (e) => _zuweisen(e, mitglieder.alle),
+    onLoeschen: (e) => unawaited(_eintragLoeschen(e)),
   );
 
   List<Widget> _inhalt(List<Liste> listen, String? gewaehlt, ListenRechte rechte) {
@@ -389,6 +398,7 @@ class _ListeAnsicht extends ConsumerWidget {
   final void Function(String aktion) onMenue;
   final void Function(Listeneintrag) onBearbeiten;
   final void Function(Listeneintrag) onZuweisen;
+  final void Function(Listeneintrag) onLoeschen;
   const _ListeAnsicht({
     super.key,
     required this.liste,
@@ -400,6 +410,7 @@ class _ListeAnsicht extends ConsumerWidget {
     required this.onMenue,
     required this.onBearbeiten,
     required this.onZuweisen,
+    required this.onLoeschen,
   });
 
   String get _hinweisText => switch (ListenArt.von(liste.kind)) {
@@ -430,6 +441,7 @@ class _ListeAnsicht extends ConsumerWidget {
         onHaken: () => ref.read(listenRepositoryProvider).eintragErledigt(e.id, e.doneAt == null),
         onBearbeiten: () => onBearbeiten(e),
         onZuweisen: () => onZuweisen(e),
+        onLoeschen: () => onLoeschen(e),
       ),
     );
     return Column(
@@ -538,20 +550,36 @@ class _ListeAnsicht extends ConsumerWidget {
   }
 }
 
-class _Zeile extends StatelessWidget {
+class _Zeile extends StatefulWidget {
   final Listeneintrag eintrag;
   final ListenRechte rechte;
   final UserDto? person;
   final VoidCallback onHaken;
   final VoidCallback onBearbeiten;
   final VoidCallback onZuweisen;
-  const _Zeile({super.key, required this.eintrag, required this.rechte, required this.person, required this.onHaken, required this.onBearbeiten, required this.onZuweisen});
+  final VoidCallback onLoeschen;
+  const _Zeile({super.key, required this.eintrag, required this.rechte, required this.person, required this.onHaken, required this.onBearbeiten, required this.onZuweisen, required this.onLoeschen});
+
+  @override
+  State<_Zeile> createState() => _ZeileState();
+}
+
+class _ZeileState extends State<_Zeile> {
+  /// Weggewischt: die Zeile verschwindet sofort (ein weggewischtes Dismissible darf nicht im Baum bleiben), bis die Datenbank nachzieht.
+  var _weg = false;
 
   @override
   Widget build(BuildContext context) {
+    if (_weg) return const SizedBox.shrink();
+    final eintrag = widget.eintrag;
+    final rechte = widget.rechte;
+    final person = widget.person;
+    final onHaken = widget.onHaken;
+    final onBearbeiten = widget.onBearbeiten;
+    final onZuweisen = widget.onZuweisen;
     final erledigt = eintrag.doneAt != null;
     final zugewiesen = eintrag.assigneeId != null;
-    return Container(
+    final zeile = Container(
       constraints: const BoxConstraints(minHeight: 52),
       decoration: BoxDecoration(
         color: erledigt ? null : kSurface,
@@ -612,6 +640,29 @@ class _Zeile extends StatelessWidget {
           else if (zugewiesen)
             Padding(padding: const EdgeInsets.only(right: 12), child: BenutzerAvatar(user: person, size: 30)),
         ],
+      ),
+    );
+    if (!rechte.darfEintraegeAendern) return zeile;
+    // Wischen nach links löscht ohne Rückfrage (wie bei den Aufgaben): der Hinweis "Rückgängig" nimmt es zurück; für Tastatur und
+    // Screenreader steht "Löschen" als Aktion bereit und im Blatt als Knopf
+    void loeschen() {
+      setState(() => _weg = true);
+      widget.onLoeschen();
+    }
+
+    return Semantics(
+      customSemanticsActions: {const CustomSemanticsAction(label: 'Löschen'): loeschen},
+      child: Dismissible(
+        key: ValueKey('wischen-${eintrag.id}'),
+        direction: DismissDirection.endToStart,
+        onDismissed: (_) => loeschen(),
+        background: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          decoration: BoxDecoration(color: kDanger.withValues(alpha: 0.25), borderRadius: BorderRadius.circular(12)),
+          child: const Icon(Icons.delete_outline, color: kDanger),
+        ),
+        child: zeile,
       ),
     );
   }

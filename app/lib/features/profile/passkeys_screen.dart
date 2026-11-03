@@ -72,7 +72,7 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
     final ja = await showDialog<bool>(useRootNavigator: false,
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text('Passkey entfernen?'),
+        title: const Text('Zugang entfernen?'),
         content: Text('"${c.label ?? 'Passkey'}" kann danach nicht mehr zur Anmeldung genutzt werden.'),
         actions: [
           TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Abbrechen')),
@@ -101,7 +101,7 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
     final passkeys = _zugaenge?.where((c) => c.istPasskey).toList();
     final df = DateFormat('d. MMM yyyy', 'de_DE');
     return AuthSeite(
-      label: 'Zugänge',
+      label: 'Sicherheit',
       titel: 'Anmelden ohne Passwort',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -117,9 +117,16 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
           const SizedBox(height: 12),
         ],
         if (passkeys == null && laeuft)
-          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+          const LadePlatzhalter(karten: 2)
         else if (passkeys != null && passkeys.isEmpty)
-          const EmptyState(icon: Icons.fingerprint, title: 'Noch nicht eingerichtet', hint: 'Richte es ein, um dich ohne Passwort anzumelden.')
+          // der nächste Schritt steht im Leerzustand selbst (kein zweiter Knopf darunter)
+          EmptyState(
+            icon: Icons.fingerprint,
+            title: 'Noch nicht eingerichtet',
+            hint: 'Richte es ein, um dich ohne Passwort anzumelden.',
+            knopf: 'Zugang ohne Passwort hinzufügen',
+            onKnopf: _passkeysDa == false || laeuft ? null : _hinzufuegen,
+          )
         else if (passkeys != null)
           for (final c in passkeys)
             Padding(
@@ -152,7 +159,7 @@ class _PasskeysScreenState extends ConsumerState<PasskeysScreen> with AktionsZus
               ),
             ),
         const SizedBox(height: 12),
-        HauptKnopf(text: 'Passkey hinzufügen', icon: Icons.add, laeuft: laeuft && passkeys != null, onPressed: _passkeysDa == false ? null : _hinzufuegen),
+        if (passkeys == null || passkeys.isNotEmpty) HauptKnopf(text: 'Zugang ohne Passwort hinzufügen', icon: Icons.add, laeuft: laeuft && passkeys != null, onPressed: _passkeysDa == false ? null : _hinzufuegen),
         const SizedBox(height: 8),
         const Text(
           'Zum Hinzufügen und Entfernen bestätigst du noch einmal mit einem bestehenden Zugang.',

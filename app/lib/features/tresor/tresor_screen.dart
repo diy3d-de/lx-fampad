@@ -229,9 +229,15 @@ class _UebersichtState extends ConsumerState<_Uebersicht> {
         ),
         const SizedBox(height: 12),
         if (!daten.geladen)
-          const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))
+          const LadePlatzhalter(karten: 2)
         else if (lesbar.isEmpty && daten.unlesbare.isEmpty)
-          const EmptyState(icon: Icons.lock_outline, title: 'Noch nichts im Tresor', hint: 'Lege WLAN-Zugang, Versicherungen oder Notfall-Infos an. Alle Eltern sehen sie.')
+          EmptyState(
+            icon: Icons.lock_outline,
+            title: 'Noch nichts im Tresor',
+            hint: 'Lege WLAN-Zugang, Versicherungen oder Notfall-Infos an. Alle Eltern sehen sie.',
+            knopf: 'Eintrag hinzufügen',
+            onKnopf: () => tresorEditorOeffnen(context),
+          )
         else if (anfrage.trim().isNotEmpty)
           ..._treffer(daten, anfrage)
         else

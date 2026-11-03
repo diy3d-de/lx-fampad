@@ -173,14 +173,21 @@ Future<void> vorkommenOeffnen(BuildContext context, WidgetRef ref, Vorkommen v, 
     case TerminAktion.loeschen:
       if (serie) {
         final u = await serieUmfangFragen(context, titel: 'Was möchtest du löschen?', erstes: erstes);
-        if (u == null) return;
+        if (u == null || !context.mounted) return;
         switch (u) {
           case SerieUmfang.dieses:
             await repo.vorkommenAbsagen(v);
           case SerieUmfang.folgende:
             await repo.folgendeLoeschen(v);
           case SerieUmfang.alle:
-            await repo.alleLoeschen(v.termin.id);
+            // die ganze Serie ist ein Behälter ohne Rückgängig-Weg: wie beim Einzeltermin erst nachfragen
+            final ja = await bestaetigen(
+              context,
+              titel: 'Serie „${v.titel}“ löschen?',
+              text: 'Alle Vorkommen der Serie werden für alle gelöscht.',
+              knopf: 'Löschen',
+            );
+            if (ja) await repo.alleLoeschen(v.termin.id);
         }
       } else {
         final ja = await bestaetigen(
@@ -245,7 +252,13 @@ class _Agenda extends ConsumerWidget {
       padding: _listenRand(platzFuerKnopf),
       children: [
         if (schluessel.isEmpty)
-          const EmptyState(icon: Icons.event_available_outlined, title: 'Keine Termine', hint: 'In den nächsten Wochen steht nichts an.')
+          EmptyState(
+            icon: Icons.event_available_outlined,
+            title: 'Keine Termine',
+            hint: 'In den nächsten Wochen steht nichts an.',
+            knopf: rechte.darfAnlegen ? 'Termin anlegen' : null,
+            onKnopf: rechte.darfAnlegen ? () => terminEditorOeffnen(context) : null,
+          )
         else
           for (final tag in schluessel) ...[
             Padding(

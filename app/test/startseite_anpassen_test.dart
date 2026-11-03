@@ -19,6 +19,7 @@ import 'package:lx_fampad/features/home/startseite_anpassen_screen.dart';
 import 'package:lx_fampad/features/home/startseite_anpassen_zeile.dart';
 import 'package:lx_fampad/features/home/startseite_verfuegbar.dart';
 import 'package:lx_fampad/features/home/startseite_widgets.dart';
+import 'package:lx_fampad/ui/widgets.dart' show LadePlatzhalter;
 
 import 'support/fake_server.dart';
 import 'support/harness.dart';
@@ -207,7 +208,7 @@ void main() {
       expect(find.byType(StartseiteAnpassenScreen), findsOneWidget);
       expect(find.text('Startseite anpassen'), findsOneWidget);
       expect(find.text('Bin ich abgesichert?'), findsOneWidget);
-      expect(find.text('fest'), findsOneWidget);
+      expect(find.text('Fest'), findsOneWidget);
       for (final id in ['schnellzugriff', 'einkauf', 'termine', 'geburtstage', 'aufgaben', 'standort']) {
         expect(find.byKey(ValueKey('an:$id')), findsOneWidget, reason: id);
       }
@@ -687,7 +688,7 @@ void main() {
       final nav = tester.state<NavigatorState>(find.byType(Navigator).first);
       unawaited(nav.push<void>(StartseiteAnpassenScreen.route()));
       await warte(tester);
-      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.byType(LadePlatzhalter), findsOneWidget, reason: 'ruhiger Platzhalter statt Drehrad');
       expect(find.byKey(const ValueKey('an:einkauf')), findsNothing);
       expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, 'Zurücksetzen')).onPressed, isNull);
     });

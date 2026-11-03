@@ -102,13 +102,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
     rueckgaengigZeigen(context, text: 'Aufgabe erledigt', rueckgaengig: () => repo.erledigtZuruecknehmen(a, besitzer: ich));
   }
 
-  Future<bool> _loeschenFragen(Aufgabe a) => bestaetigen(
-    context,
-    titel: 'Aufgabe „${a.titel}“ löschen?',
-    text: 'Die Aufgabe wird für alle gelöscht.',
-    knopf: 'Löschen',
-  );
-
   Future<void> _erledigteLoeschen(List<Aufgabe> erledigte) async {
     final ja = await bestaetigen(
       context,
@@ -320,7 +313,6 @@ class _TasksScreenState extends ConsumerState<TasksScreen> {
               onHaken: () => unawaited(_haken(a)),
               gewaehlt: DetailSpalte.maybeOf(context)?.auswahl == a.id,
               onOeffnen: () => aufgabeEditorOeffnen(context, aufgabe: a),
-              onLoeschenFragen: () => _loeschenFragen(a),
               onLoeschen: () {
                 setState(() => _weg.add(a.id));
                 unawaited(_loeschen(a));
@@ -371,7 +363,6 @@ class _Zeile extends StatelessWidget {
 
   /// Das Detail dieser Aufgabe ist im Zweispalter rechts offen: hellere Fläche.
   final bool gewaehlt;
-  final Future<bool> Function() onLoeschenFragen;
   final VoidCallback onLoeschen;
   const _Zeile({
     required this.aufgabe,
@@ -383,7 +374,6 @@ class _Zeile extends StatelessWidget {
     required this.onHaken,
     required this.onOeffnen,
     this.gewaehlt = false,
-    required this.onLoeschenFragen,
     required this.onLoeschen,
   });
 
@@ -520,17 +510,21 @@ class _Zeile extends StatelessWidget {
     );
 
     if (!darf) return karte;
-    // Wischen nach links löscht (mit Rückfrage); für Tastatur und Screenreader steht "Löschen" als Aktion bereit und im Editor als Knopf
+    // Wischen nach links löscht eine offene Aufgabe ohne Rückfrage: der Hinweis "Rückgängig" nimmt es zurück. Eine erledigte Aufgabe lässt
+    // sich nicht zurückholen (das Repository legt nur offene neu an), darum fragt sie vorher nach. Für Tastatur und Screenreader steht
+    // "Löschen" als Aktion bereit und im Editor als Knopf
+    Future<bool> frage() => bestaetigen(context, titel: 'Erledigte Aufgabe löschen?', text: 'Sie wird für alle gelöscht.', knopf: 'Löschen');
     return Semantics(
       customSemanticsActions: {
         const CustomSemanticsAction(label: 'Löschen'): () async {
-          if (await onLoeschenFragen()) onLoeschen();
+          if (erledigt && !await frage()) return;
+          onLoeschen();
         },
       },
       child: Dismissible(
         key: ValueKey('wischen-${a.id}'),
         direction: DismissDirection.endToStart,
-        confirmDismiss: (_) => onLoeschenFragen(),
+        confirmDismiss: erledigt ? (_) => frage() : null,
         onDismissed: (_) => onLoeschen(),
         background: Container(
           alignment: Alignment.centerRight,

@@ -599,7 +599,7 @@ class _ProfilKachel extends ConsumerWidget {
     final art = me == null
         ? null
         : [
-            if (me.passkeys > 0) 'Passkey',
+            if (me.passkeys > 0) 'Anmelden ohne Passwort',
             if (me.hasPassword) 'Passwort',
             if (me.hasTotp) 'zweiter Schritt',
           ].join(', ');

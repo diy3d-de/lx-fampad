@@ -121,7 +121,7 @@ class _PwSicherungScreenState extends ConsumerState<PwSicherungScreen> with Akti
     final stimmtNicht = _pw2.text.isNotEmpty && _pw.text != _pw2.text;
     return BildschirmSchutz(
       child: AuthSeite(
-        label: 'Passwort-sicherung',
+        label: 'Nachrichten-Schutz',
         titel: 'Passwort-Sicherung',
         kinder: [
           if (ref.watch(e2eeProvider.select((s) => s.pwSicherungVeraltet))) ...[

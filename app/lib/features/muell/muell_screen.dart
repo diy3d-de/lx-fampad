@@ -56,7 +56,7 @@ class _MuellScreenState extends ConsumerState<MuellScreen> {
     final ort = z.dto?.ort ?? '';
     final kinder = _inhalt(z, jetzt);
     if (!widget.eingebettet) {
-      return AuthSeite(label: ort.isEmpty ? 'Abfuhrtermine' : 'Abfuhrtermine · $ort', titel: 'Müll', maxBreite: kMaxContentWidth, aktionen: aktionen, kinder: kinder);
+      return AuthSeite(label: ort.isEmpty ? 'Abfuhrtermine' : 'Abfuhrtermine in $ort', titel: 'Müll', maxBreite: kMaxContentWidth, aktionen: aktionen, kinder: kinder);
     }
     return Material(
       type: MaterialType.transparency,

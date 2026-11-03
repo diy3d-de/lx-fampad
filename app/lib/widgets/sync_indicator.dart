@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants.dart';
 import '../data/sync_state.dart';
+import 'sync_anzeige.dart';
 
 /// Wolken-Symbol in der Kopfzeile: Zustand des Abgleichs. Grün und fertig = synchron; Pfeil nach oben mit Zahl = N Änderungen
 /// noch nicht beim Server; durchgestrichen = offline; rot = Fehler. Tippen gleicht sofort ab.
@@ -24,7 +25,7 @@ class SyncIndicator extends ConsumerWidget {
     final n = sync.offeneAenderungen;
     final offen = n > 0 ? (n == 1 ? '1 Änderung offen' : '$n Änderungen offen') : null;
     final (IconData icon, Color farbe, String text) = switch (sync.status) {
-      SyncStatus.fehler => (Icons.cloud_off, kDanger, 'Übertragen hat nicht geklappt. ${sync.meldung ?? ''}'.trim()),
+      SyncStatus.fehler => (Icons.cloud_off, kDanger, 'Das Übertragen hat nicht geklappt. ${sync.meldung ?? ''}'.trim()),
       SyncStatus.updateNoetig => (Icons.system_update_alt, kWarn, 'Bitte aktualisiere die App'),
       SyncStatus.wartung => (Icons.build_outlined, kWarn, offen == null ? 'Wartung' : 'Wartung, $offen'),
       SyncStatus.offline => (Icons.cloud_off, kTextMuted, offen == null ? 'Offline' : 'Offline, $offen'),
@@ -49,19 +50,7 @@ class SyncIndicator extends ConsumerWidget {
         if (!context.mounted) return;
         final s = ref.read(syncProvider);
         messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              switch (s.status) {
-                SyncStatus.synchron => 'Alles aktuell',
-                SyncStatus.offline => 'Offline – Änderungen werden später übertragen.',
-                SyncStatus.wartung => 'Wartung – Änderungen werden danach übertragen.',
-                SyncStatus.getrennt => 'Nicht verbunden',
-                _ => s.meldung ?? 'Das Übertragen hat nicht geklappt.',
-              },
-            ),
-          ),
-        );
+        messenger.showSnackBar(SnackBar(content: Text(syncRueckmeldung(s))));
       },
     );
   }

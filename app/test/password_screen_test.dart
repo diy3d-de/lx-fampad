@@ -226,8 +226,8 @@ void main() {
       await env.angemeldet();
       await starteApp(tester, env);
       await _zurSeite(tester);
-      final knopf = find.ancestor(of: find.text('Passwort und zweiter Schritt entfernen'), matching: find.byType(OutlinedButton));
-      expect(tester.widget<OutlinedButton>(knopf).onPressed, isNull);
+      final knopf = find.ancestor(of: find.text('Passwort und zweiter Schritt entfernen'), matching: find.byType(FilledButton));
+      expect(tester.widget<FilledButton>(knopf).onPressed, isNull);
       expect(find.textContaining('Passkey eingerichtet'), findsOneWidget);
     });
 

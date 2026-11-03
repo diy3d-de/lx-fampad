@@ -226,6 +226,26 @@ void main() {
     expect(find.text('Hafermilch'), findsOneWidget);
   });
 
+  testWidgets('Wischen nach links löscht einen Eintrag ohne Rückfrage; "Rückgängig" legt ihn mit neuer ID wieder an', (tester) async {
+    final env = await start(tester, vorher: (e) {
+      eigeneListe(e);
+      e.sync.andereAendert('list_item', _i1, {'listId': _l1, 'text': 'Milch', 'position': 0});
+    });
+    expect(find.byType(Dismissible), findsOneWidget);
+    await tester.drag(find.text('Milch'), const Offset(-300, 0));
+    await warte(tester, 8);
+    expect(find.byType(AlertDialog), findsNothing, reason: 'Einzelobjekt mit Rückgängig-Weg: keine Rückfrage');
+    expect(find.text('Milch'), findsNothing);
+    expect(await eintraege(env), isEmpty);
+    expect(find.text('Eintrag gelöscht'), findsOneWidget);
+    await tippeText(tester, 'Rückgängig');
+    await warte(tester, 8);
+    final wieder = await eintraege(env);
+    expect(wieder.map((e) => e.inhalt), ['Milch']);
+    expect(wieder.single.id, isNot(_i1));
+    expect(find.text('Milch'), findsOneWidget);
+  });
+
   testWidgets('Zuweisen: Person wählen (Name und Farbe), erneut ändern, auf "Niemand" zurücksetzen', (tester) async {
     final env = await start(tester, vorher: (e) {
       eigeneListe(e);
@@ -331,16 +351,17 @@ void main() {
       e.sync.offline = true;
       e.sockets.scheitern = 99; // ohne Netz gibt es auch keinen WebSocket
     });
-    expect(find.textContaining('Offline – Änderungen werden später übertragen'), findsOneWidget);
+    expect(find.text('Du bist offline. Alles ist auf diesem Gerät gespeichert.'), findsOneWidget);
     expect(find.byTooltip('Offline'), findsWidgets);
     await listeAnlegen(tester, 'Einkauf');
     await eintragSchreiben(tester, 'Milch');
     expect(find.byTooltip('Offline, 2 Änderungen offen'), findsWidgets);
-    expect(find.textContaining('2 Änderungen werden später übertragen'), findsOneWidget);
+    expect(find.text('2 Änderungen warten auf Verbindung'), findsOneWidget);
     env.sync.offline = false;
     await tippe(tester, find.byTooltip('Offline, 2 Änderungen offen').first);
     await warte(tester, 10);
-    expect(find.textContaining('Offline –'), findsNothing);
+    expect(find.textContaining('offline'), findsNothing);
+    expect(find.textContaining('warten auf Verbindung'), findsNothing);
     expect(find.byTooltip('Alles aktuell. Tippen zum Übertragen'), findsWidgets);
     expect(env.sync.zeilen, hasLength(2));
   });
@@ -351,7 +372,7 @@ void main() {
       e.zeiten = const SyncZeiten(backoffStart: Duration(minutes: 5));
       e.sync.fehlerQueue.add((500, 'internal_error'));
     });
-    expect(find.textContaining('Der Übertragen hat nicht geklappt'), findsOneWidget);
+    expect(find.textContaining('Das Übertragen hat nicht geklappt'), findsOneWidget);
     expect(find.byIcon(Icons.cloud_off), findsWidgets);
   });
 

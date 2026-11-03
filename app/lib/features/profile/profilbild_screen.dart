@@ -262,17 +262,7 @@ class _ProfilbildScreenState extends ConsumerState<ProfilbildScreen>
             onPressed: kannUebernehmen ? _uebernehmen : null,
           ),
           const SizedBox(height: 8),
-          if (aktuell != null)
-            OutlinedButton.icon(
-              onPressed: laeuft ? null : _entfernen,
-              style: OutlinedButton.styleFrom(
-                foregroundColor: kDanger,
-                side: const BorderSide(color: kDanger),
-                minimumSize: const Size.fromHeight(48),
-              ),
-              icon: const Icon(Icons.delete_outline),
-              label: const Text('Bild entfernen'),
-            ),
+          if (aktuell != null) GefahrKnopf(text: 'Bild entfernen', icon: Icons.delete_outline, onPressed: laeuft ? null : _entfernen),
           LinkKnopf(
             'Abbrechen',
             onPressed: laeuft ? null : () => Navigator.of(context).maybePop(),

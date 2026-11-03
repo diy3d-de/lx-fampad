@@ -33,8 +33,8 @@ void main() {
     testWidgets('Textskala $skala: Angaben sichtbar, kein Überlauf, Touch-Ziele mindestens 44 px', (tester) async {
       await oeffnen(tester, android, skala: skala);
       expect(find.text('$kAppName 0.2.0'), findsOneWidget);
-      expect(find.text('Build 1002 · Android'), findsOneWidget);
-      expect(find.text('Server 0.1.4 · Protokoll 1'), findsOneWidget);
+      expect(find.text('Build 1002, Android'), findsOneWidget);
+      expect(find.text('Version 0.1.4, Protokoll 1'), findsOneWidget);
       expect(find.text('Pixel 9'), findsOneWidget);
       expect(find.text('Nach Update suchen'), findsOneWidget);
       pruefeLayout(tester, 'Über');
@@ -72,7 +72,7 @@ void main() {
     await oeffnen(tester, web);
     expect(find.text('$kAppName dev'), findsOneWidget);
     expect(find.text('Web'), findsOneWidget);
-    expect(find.text('nicht erreichbar'), findsOneWidget);
+    expect(find.text('Nicht erreichbar'), findsOneWidget);
     expect(web.kurz, 'lx-familyhub dev · Web');
   });
 
@@ -85,7 +85,7 @@ void main() {
     final info = UeberInfo(version: w.version, webBuild: w.kennung, plattform: 'Web');
     await oeffnen(tester, info);
     expect(find.text('$kAppName 0.4.0'), findsOneWidget);
-    expect(find.text('Build 20261020055100 · Web'), findsOneWidget);
+    expect(find.text('Build 20261020055100, Web'), findsOneWidget);
     expect(info.kurz, 'lx-familyhub 0.4.0 (20261020055100) · Web');
   });
 
