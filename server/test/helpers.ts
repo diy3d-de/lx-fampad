@@ -38,7 +38,29 @@ export interface Backend {
   open(): Promise<Harness>;
 }
 
+/** Sperr-Konflikte (Deadlock 40P01, Sperre nicht verfügbar 55P03, Serialisierung 40001) mit einem Rest-Lauf im Hintergrund: kurz warten und erneut versuchen. */
+const WIEDERHOLBAR = new Set(['40P01', '55P03', '40001']);
+function fehlerCode(err: unknown): string | undefined {
+  for (let e = err as { code?: unknown; cause?: unknown } | undefined, i = 0; e && i < 5; e = e.cause as typeof e, i++) {
+    if (typeof e.code === 'string') return e.code;
+  }
+  return undefined;
+}
+
 async function truncateAll(db: Db): Promise<void> {
+  for (let versuch = 1; ; versuch++) {
+    try {
+      await truncateEinmal(db);
+      return;
+    } catch (err) {
+      const code = fehlerCode(err);
+      if (versuch >= 5 || !code || !WIEDERHOLBAR.has(code)) throw err;
+      await new Promise((r) => setTimeout(r, 100 * versuch));
+    }
+  }
+}
+
+async function truncateEinmal(db: Db): Promise<void> {
   const rows = await db.execute<{ tablename: string }>(sql`select tablename from pg_tables where schemaname = 'public'`);
   const names = rows.rows.map((r) => `"${r.tablename}"`);
   if (names.length > 0) await db.execute(sql.raw(`truncate table ${names.join(', ')} restart identity cascade`));
