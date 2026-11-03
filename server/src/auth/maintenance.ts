@@ -172,17 +172,29 @@ export async function runMaintenance(ctx: AuthContext): Promise<PurgeReport> {
 }
 
 /** Startet den Job einmal sofort und danach stündlich; der Timer hält den Prozess nicht am Leben. */
-export function startMaintenance(ctx: AuthContext): { stop: () => void; first: Promise<PurgeReport | null> } {
-  const run = () =>
-    runMaintenance(ctx).then(
+export function startMaintenance(ctx: AuthContext): { stop: () => void; first: Promise<PurgeReport | null>; idle: () => Promise<void> } {
+  const running = new Set<Promise<unknown>>();
+  const run = () => {
+    const p = runMaintenance(ctx).then(
       (report) => report,
       (err: unknown) => {
         ctx.log.error({ err }, 'Aufräum-Job fehlgeschlagen');
         return null;
       },
     );
+    running.add(p);
+    void p.finally(() => running.delete(p));
+    return p;
+  };
   const first = run();
   const timer = setInterval(() => void run(), HOUR_MS);
   timer.unref();
-  return { stop: () => clearInterval(timer), first };
+  return {
+    stop: () => clearInterval(timer),
+    first,
+    /** Wartet, bis alle gerade laufenden Läufe fertig sind (für Tests: sonst kollidiert ein Rest-Lauf mit dem Leeren der Tabellen). */
+    idle: async () => {
+      while (running.size > 0) await Promise.allSettled([...running]);
+    },
+  };
 }
