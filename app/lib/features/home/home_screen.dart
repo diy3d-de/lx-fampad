@@ -11,6 +11,7 @@ import '../../data/calendar/termin_repository.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/startseite/startseite_state.dart';
+import '../../data/startseite/suche_feld_state.dart';
 import '../../data/sync_state.dart';
 import '../../ui/widgets.dart';
 import '../../widgets/kopfzeile.dart';
@@ -81,13 +82,13 @@ class HomeScreen extends ConsumerWidget {
             children: [
               TabKopfzeile(title: begruessung(name)),
               const SizedBox(height: 20),
+              const _SucheUndSync(),
               const UpdateAnzeige(),
               const AbsicherungsKarte(),
               const WetterHinweisKarte(),
               const WetterDwdWarnKarte(),
               const WebErinnerungKarte(),
               const JetztWichtigBlock(),
-              const _SyncZeile(),
               const SizedBox(height: 20),
             ],
           ),
@@ -139,24 +140,30 @@ Widget _kachel(String id) => switch (id) {
   _ => const SizedBox.shrink(),
 };
 
-/// Sync-Streifen und rechts daneben der Such-Knopf (eine Zeile, fest, keine Kachel).
-class _SyncZeile extends StatelessWidget {
-  const _SyncZeile();
+/// Ganz oben unter der Kopfzeile (fest, keine Kachel): das Suchfeld in voller Breite (ausblendbar unter "Startseite anpassen") und darunter, nur bei Handlungsbedarf, der Stand des Abgleichs.
+class _SucheUndSync extends ConsumerWidget {
+  const _SucheUndSync();
 
   @override
-  Widget build(BuildContext context) => const Row(
-    crossAxisAlignment: CrossAxisAlignment.start,
-    children: [
-      Expanded(child: _SyncLeiste()),
-      SizedBox(width: 8),
-      SuchKnopf(),
-    ],
-  );
+  Widget build(BuildContext context, WidgetRef ref) {
+    final feld = ref.watch(sucheFeldAnProvider);
+    final zeigtSync = syncZeile(ref.watch(syncProvider)) != null;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (feld) const SuchKnopf(),
+        _SyncLeiste(oben: feld),
+        if (feld || zeigtSync) const SizedBox(height: 12),
+      ],
+    );
+  }
 }
 
 /// Stand des Abgleichs (fest, keine Kachel): bei "synchron" nichts (die Kopfzeile zeigt das Wolken-Symbol), sonst eine ruhige Zeile mit Symbol und Text (offene Änderungen mit Zahl, Fehler mit "Erneut versuchen", Wartung neutral). Der Sync-Zustand steht auf der Startseite nur hier (die Kopfzeile zeigt ihn mobil als Symbol).
 class _SyncLeiste extends ConsumerWidget {
-  const _SyncLeiste();
+  /// Abstand zum Suchfeld darüber.
+  final bool oben;
+  const _SyncLeiste({required this.oben});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -164,10 +171,13 @@ class _SyncLeiste extends ConsumerWidget {
     final (bedienText, _) = syncAnzeige(sync);
     final zeile = syncZeile(sync);
     if (zeile == null) {
-      // bei "synchron" nichts zeigen (das Wolken-Symbol der Kopfzeile sagt dasselbe); die Zeile behält die Höhe für den Such-Knopf
-      return Semantics(label: 'Sync: $bedienText', child: const SizedBox(height: 44));
+      // bei "synchron" nichts zeigen (das Wolken-Symbol der Kopfzeile sagt dasselbe)
+      return Semantics(label: 'Sync: $bedienText', child: const SizedBox.shrink());
     }
-    return SyncZeileFlaeche(daten: zeile, onHandlung: () => unawaited(ref.read(syncProvider.notifier).synchronisieren(manuell: true)));
+    return Padding(
+      padding: EdgeInsets.only(top: oben ? 8 : 0),
+      child: SyncZeileFlaeche(daten: zeile, onHandlung: () => unawaited(ref.read(syncProvider.notifier).synchronisieren(manuell: true))),
+    );
   }
 }
 

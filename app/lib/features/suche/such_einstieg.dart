@@ -1,4 +1,4 @@
-// Einstieg in eine Suche: auf der Startseite die globale Suche (mobil ein Knopf rechts neben dem Sync-Status, im Desktop-Layout ein Feld neben "Neu"), auf der Chat-Liste ein
+// Einstieg in eine Suche: auf der Startseite die globale Suche (mobil ein Feld in voller Breite ganz oben, im Desktop-Layout ein Feld neben "Neu"), auf der Chat-Liste ein
 // Feld für die Suche über alle Chats. Die gemeinsame Kopfzeile der Tabs bleibt unverändert (keine eigenen Aktionen dort).
 import 'package:flutter/material.dart';
 
@@ -48,28 +48,15 @@ class SuchFeldKnopf extends StatelessWidget {
   );
 }
 
-/// Quadratischer Such-Knopf (Handy-Startseite, neben dem Sync-Status: kostet keine zusätzliche Zeile); gleicher Rand wie die Streifen und Karten.
+/// Suchfeld in voller Breite (Handy-Startseite, ganz oben unter der Kopfzeile; der Platzhalter sagt, was durchsucht wird).
 class SuchKnopf extends StatelessWidget {
   const SuchKnopf({super.key});
 
   @override
-  Widget build(BuildContext context) => Tooltip(
-    message: 'Suchen',
-    child: Semantics(
-      button: true,
-      label: 'Suchen in Terminen, Aufgaben und Listen',
-      excludeSemantics: true,
-      onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),
-      child: Material(
-        color: kSurface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),
-          child: const SizedBox(width: 44, height: 44, child: Icon(Icons.search, size: 22, color: kAccent)),
-        ),
-      ),
-    ),
+  Widget build(BuildContext context) => SuchFeldKnopf(
+    label: 'Suchen in Terminen, Aufgaben, Listen …',
+    semantik: 'Suchen in Terminen, Aufgaben und Listen',
+    onTap: () => Navigator.of(context).push<void>(SuchScreen.route()),
   );
 }
 

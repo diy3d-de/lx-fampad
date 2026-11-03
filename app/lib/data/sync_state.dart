@@ -22,6 +22,7 @@ import 'heute_widget/heute_widget_dienst.dart';
 import 'standort/standort_hinweis.dart';
 import 'shell/zuletzt_state.dart' show shellMerkerProvider;
 import 'startseite/jetzt_wichtig_state.dart' show jetztWichtigAnProvider;
+import 'startseite/suche_feld_state.dart' show sucheFeldAnProvider;
 import 'startseite/startseite_state.dart';
 import 'countdown/countdown_state.dart';
 import 'chat/chat_krypto_state.dart';
@@ -484,6 +485,7 @@ Future<void> Function() lokaleDatenWiper(Ref ref) => () async {
   // „Zuletzt benutzt“, eingeklappte Gruppen und der Schalter „Jetzt wichtig“ lagen in sync_meta: die nächste Person erbt sie nicht
   ref.invalidate(shellMerkerProvider);
   ref.invalidate(jetztWichtigAnProvider);
+  ref.invalidate(sucheFeldAnProvider);
   // Erinnerungen im Browser: Schalter (lag in sync_meta) und Hinweise im Arbeitsspeicher gehören der Vorperson nicht
   ref.invalidate(webErinnerungAnProvider);
   ref.invalidate(webHinweiseProvider);
