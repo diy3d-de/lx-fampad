@@ -15,13 +15,13 @@ noch einmal starten, bereits Erledigtes wird erkannt und übersprungen. Vorhande
 | Phase | Was passiert |
 | --- | --- |
 | `pruefen` | nur lesen: Debian 13, Platz, Netz, DNS, Parameter, Sicherung (Prüfsummen), vorhandener Zustand |
-| `pakete` | Debian-Pakete (PostgreSQL 17, age, rsync, sqlite3, git …), Node.js 24.21.0 aus NodeSource (Schlüssel-Fingerabdruck und Version fest eingebaut, kein `curl \| bash`); bei einer Wiederherstellung wird hier zuerst geprüft, ob dein Schlüssel zur Sicherung passt |
+| `pakete` | Debian-Pakete (PostgreSQL 17, age, rsync, sqlite3, git …), Node.js 24.22.0 aus NodeSource (Schlüssel-Fingerabdruck und Version fest eingebaut, kein `curl \| bash`); bei einer Wiederherstellung wird hier zuerst geprüft, ob dein Schlüssel zur Sicherung passt |
 | `system` | Benutzer `lx` (optional) und `lx-fampad`, Ordner unter `/srv/fampad`, Log-Aufbewahrung 7 Tage, `sudo`-Regel (nur: Dienst neu starten), optional Schlüssel für den GitHub-Release-Upload |
 | `code` | Git-Checkout nach `~lx/lx-fampad` mit eigenem Deploy-Key (GitHub-Host-Schlüssel fest eingebaut); **pausiert**, bis du den Deploy-Key bei GitHub eingetragen hast |
 | `konfiguration` | leer: `/etc/lx-fampad/env` mit Zufallspasswort; Wiederherstellung (über ein Staging im Arbeitsspeicher, gezielt kopiert): `env`, `migrate.env`, ntfy-Token und -Benutzerdatenbank, `assetlinks.json`, Update-Kanal, Empfänger der Sicherung (`AUTH_SECRET_KEY` kommt zurück; `backup.conf` nicht) |
 | `datenbank` | Datenbankrollen (Laufzeit nur lesen/schreiben, Migrationsrolle darf Tabellen ändern), Datenbank, bei Wiederherstellung `pg_restore` als Migrationsrolle über eine Wegwerf-Datenbank, `einrichtung-auth.sh`; danach wird der private Schlüssel aus dem Arbeitsspeicher des Skripts entfernt |
 | `anwendung` | (Swap aus `SWAP_MB`, erst jetzt) Server bauen und starten (`deploy.sh`), Migrationen, Wetter-Dienst installieren (gestartet wird er nur auf Wunsch) |
-| `ntfy` | ntfy 2.29.0 installieren und härten, Benutzer, Token, Rechte, Eintrag in der `env`; in Wiederholungsläufen startet ntfy nur neu, wenn er nicht läuft oder sich Konfiguration/Härtung geändert haben |
+| `ntfy` | ntfy 2.32.0 installieren und härten, Benutzer, Token, Rechte, Eintrag in der `env`; in Wiederholungsläufen startet ntfy nur neu, wenn er nicht läuft oder sich Konfiguration/Härtung geändert haben |
 | `caddy` | Caddy 2.11.7 installieren, **nur** Dateien in `/etc/caddy/conf.d/`, `caddy validate` vor jedem Neuladen, Rückfall bei Fehlern; nur wenn DNS stimmt |
 | `sicherung` | tägliche verschlüsselte Sicherung des neuen Servers, Abholung durch das NAS (nutzt `einrichtung-backup.sh`) |
 | `pruefung` | Abschlussprüfung und die Liste dessen, was du noch tun musst |
