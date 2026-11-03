@@ -1,4 +1,7 @@
 {
+  "0.30.1": [
+    "Auf der Startseite steht die Suche jetzt als Feld ganz oben. Ausblenden kannst du es unter Profil › Startseite und Anzeige › Startseite anpassen"
+  ],
   "0.30.0": [
     "Wenn du einen Termin selbst auf einem anderen deiner Geräte änderst, bekommst du dafür keine Benachrichtigung mehr",
     "Die Termin-Benachrichtigung zeigt auf dem Sperrbildschirm den neutralen Text statt „Inhalt ausgeblendet“"
