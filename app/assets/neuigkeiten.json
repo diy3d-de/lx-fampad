@@ -1,4 +1,10 @@
 {
+  "0.31.0": [
+    "Löschen geht jetzt überall gleich: Aufgaben und Listeneinträge wischst du weg und kannst es mit „Rückgängig“ zurückholen, erledigte Aufgaben und ganze Terminserien fragen vorher nach",
+    "Vor einem neuen Wiederherstellungsschlüssel fragt die App jetzt nach, damit du den bisherigen nicht aus Versehen ersetzt",
+    "Leere Bereiche haben einen Knopf zum Loslegen, und beim Laden siehst du Platzhalter statt eines Drehrads",
+    "Viele Texte sind klarer und einheitlich geschrieben, zum Beispiel „Sicherung per Passkey“ und „Hinweise aufs Handy“"
+  ],
   "0.30.1": [
     "Auf der Startseite steht die Suche jetzt als Feld ganz oben. Ausblenden kannst du es unter Profil › Startseite und Anzeige › Startseite anpassen"
   ],
