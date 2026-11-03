@@ -72,7 +72,7 @@ readonly RT_ROLE="lx_fampad"
 readonly MG_ROLE="lx_fampad_migrate"
 readonly PG_MAJOR="17"
 # Pins: Standardwerte; mit NODE_PKG_VERSION / CADDY_PKG_VERSION in der Parameterdatei bewusst übersteuerbar (wenn das Repository die Version nicht mehr führt)
-NODE_PKG_VERSION="24.21.0-1nodesource1"               # = server/.nvmrc 24.21.0
+NODE_PKG_VERSION="24.22.0-1nodesource1"               # = server/.nvmrc 24.22.0
 readonly NODESOURCE_FPR="6F71F525282841EEDAF851B42F59B5F99B1BE0B4"
 readonly NODESOURCE_KEY_URL="https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key"
 CADDY_PKG_VERSION="2.11.7"
@@ -1672,7 +1672,7 @@ main() {
   argumente_lesen "$@"
   [ -z "$PARAMS_DATEI" ] || parameter_lesen "$PARAMS_DATEI"
   parameter_pruefen
-  if [ -n "$P_NODE_PKG_VERSION" ]; then NODE_PKG_VERSION="$P_NODE_PKG_VERSION"; warn "NODE_PKG_VERSION aus der Parameterdatei: $NODE_PKG_VERSION (Standard: 24.21.0-1nodesource1)"; fi
+  if [ -n "$P_NODE_PKG_VERSION" ]; then NODE_PKG_VERSION="$P_NODE_PKG_VERSION"; warn "NODE_PKG_VERSION aus der Parameterdatei: $NODE_PKG_VERSION (Standard: 24.22.0-1nodesource1)"; fi
   if [ -n "$P_CADDY_PKG_VERSION" ]; then CADDY_PKG_VERSION="$P_CADDY_PKG_VERSION"; warn "CADDY_PKG_VERSION aus der Parameterdatei: $CADDY_PKG_VERSION (Standard: 2.11.7)"; fi
   [ "$(id -u)" -eq 0 ] || fehler "Bitte als root starten:  sudo bash $0 ..."
   if ! trocken; then sperren; fi

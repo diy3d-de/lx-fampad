@@ -23,7 +23,7 @@
 
 # Pins übersteuern: nur nötig, wenn das Repository die fest eingebaute Version nicht mehr führt (das Skript nennt dann die verfügbaren).
 # Bewusst wählen und danach in docs/VERSIONEN.md nachziehen; Node muss zu server/.nvmrc (24.x ab 24.21) passen.
-#NODE_PKG_VERSION=24.21.0-1nodesource1
+#NODE_PKG_VERSION=24.22.0-1nodesource1
 #CADDY_PKG_VERSION=2.11.7
 
 # --- Anwendung (nur bei einer LEEREN Neuinstallation; bei einer Wiederherstellung steht alles in der gesicherten env) -------------------------

@@ -18,12 +18,12 @@
 set -Eeuo pipefail
 
 # --- Festwerte ---------------------------------------------------------------------------------------------------------
-NTFY_VERSION="2.29.0"                      # exakt gepinnt (Release vom 07.10.2026, älter als 14 Tage); neuere erst nach 14 Tagen Wartezeit
+NTFY_VERSION="2.32.0"                      # exakt gepinnt (Release vom 18.10.2026, älter als 14 Tage); neuere erst nach 14 Tagen Wartezeit
 NTFY_FPR="55BA774A6F5EE67431E4B6B7CFDB962D4F1EC4AF"   # Schlüssel des ntfy-apt-Repositorys (docs.ntfy.sh/install, vor Änderung dort gegenlesen)
 NTFY_APT_URL="https://archive.ntfy.sh/apt"
 # Fallback (nur wenn das Repository die Version nicht mehr führt): offizielles Release-.deb, SHA-256 aus den GitHub-Release-Metadaten
 NTFY_DEB_URL="https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/ntfy_${NTFY_VERSION}_linux_amd64.deb"
-NTFY_DEB_SHA256="e2e693d6490e5d33ef4310a48cbd36f2b1c67cb5fc5cbb6a55d1118836d453c5"
+NTFY_DEB_SHA256="dfb527714c80c4bbdd7af370e0b0aa76e63ff5ea2a33d540d615ee6ce309d99e"
 NTFY_PORT=2586                             # derselbe Wert steht in deploy/ntfy/server.yml und deploy/ntfy/ntfy.caddy
 NTFY_HOST="ntfy.familyhub.lx-labs.dev"
 NTFY_USER=ntfy

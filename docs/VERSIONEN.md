@@ -6,7 +6,7 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 
 | Paket | Version | Hinweis |
 | --- | --- | --- |
-| Node.js | 24.21.0 | wie lx-labs; Node 26 erst nach Phase 1 prüfen |
+| Node.js | 24.22.0 | wie lx-labs; Node 26 erst nach Phase 1 prüfen |
 | TypeScript | 6.0.3 | TS 7 hat noch keine API, nur optional als Typcheck |
 | Fastify | 5.12.7 | auf Node 24 im Test prüfen; 5.12.7 (13.10.2026) behebt GHSA-389g-gv7q-r4x8 |
 | @fastify/websocket | 11.3.3 | Auth über Session-Cookie beim Upgrade oder Einmal-Ticket |
@@ -26,8 +26,8 @@ Stichtag 18.10.2026, nur Versionen mit mindestens 14 Tagen Alter (Veröffentlich
 | tsx | 4.23.15 | nur Entwicklung (`npm run dev`) |
 | eslint / @eslint/js / typescript-eslint | 10.12.0 / 10.0.1 / 8.71.0 | |
 | Vitest | 5.0.3 | |
-| ntfy | 2.29.0 (2.32.0 ab 01.11.) | eigene Subdomain, `deny-all`, UnifiedPush-Topics `up*` |
-| Node.js (Server-Paket, Neuinstallation) | 24.21.0-1nodesource1 | wie `server/.nvmrc`; `deploy/neuinstallation/bootstrap-server.sh` installiert es aus `deb.nodesource.com/node_24.x` (kein `curl \| bash`), Schlüssel-Fingerabdruck `6F71F525282841EEDAF851B42F59B5F99B1BE0B4` gepinnt, `apt-mark hold`; ein bereits laufender Server darf jede 24.x ab 24.21 haben (heute 24.22.0) |
+| ntfy | 2.32.0 | eigene Subdomain, `deny-all`, UnifiedPush-Topics `up*` |
+| Node.js (Server-Paket, Neuinstallation) | 24.22.0-1nodesource1 | wie `server/.nvmrc`; `deploy/neuinstallation/bootstrap-server.sh` installiert es aus `deb.nodesource.com/node_24.x` (kein `curl \| bash`), Schlüssel-Fingerabdruck `6F71F525282841EEDAF851B42F59B5F99B1BE0B4` gepinnt, `apt-mark hold`; ein bereits laufender Server darf jede 24.x ab 24.21 haben (heute 24.22.0) |
 | *Rhythmus der Pins von `bootstrap-server.sh`* | | Node-/Caddy-Version und -Schlüssel (und ntfy in `einrichtung-ntfy.sh`) bei jedem Server-Update dieser Komponenten und mindestens halbjährlich zusammen mit dem Wiederherstellungstest prüfen und nachziehen (Test: `deploy/neuinstallation/test-docker.sh`). Die Repositories führen ältere Versionen meist weiter, garantiert ist es nicht: fehlt eine Version, bricht das Skript ab und nennt die verfügbaren; dann `NODE_PKG_VERSION`/`CADDY_PKG_VERSION` in der Parameterdatei bewusst setzen und hier eintragen |
 | Caddy (Neuinstallation) | 2.11.7 | wie auf dem laufenden Server; aus dem offiziellen Repository `dl.cloudsmith.io/public/caddy/stable`, Schlüssel-Fingerabdruck `65760C51EDEA2017CEA2CA15155B6D79CA56EA34` gepinnt, `apt-mark hold`; nur `conf.d`-Dateien, das Haupt-Caddyfile von lx-labs.dev wird nie überschrieben |
 | age | 1.2.1 (Debian 13) | Backups: Verschlüsselung der Sicherungen (`age`/`age-keygen`, Debian-Paket), nur Server-Skripte; kein npm-Paket. `rsync` (3.5.0+ds1-0+deb13u1, im Debian-13-Container geprüft; mindestens 3.4.0 wegen CVE-2024-12086; enthält `rrsync`) und `sqlite3` aus Debian für Pull und ntfy-Sicherung |
