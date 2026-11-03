@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../constants.dart';
 import '../../data/startseite/startseite_logik.dart';
 import '../../data/startseite/startseite_state.dart';
+import '../../data/startseite/suche_feld_state.dart';
 import '../../ui/widgets.dart';
 import 'startseite_verfuegbar.dart';
 import 'startseite_widgets.dart';
@@ -83,6 +84,7 @@ class StartseiteAnpassenScreen extends ConsumerWidget {
                                   style: const TextStyle(fontSize: 13, color: kTextMuted),
                                 ),
                                 const SizedBox(height: 16),
+                                if (l == StartLayout.mobil) const _SucheEintrag(),
                                 const _FesterEintrag(),
                               ],
                             ),
@@ -202,6 +204,31 @@ class _FesterEintrag extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// Das Suchfeld ganz oben auf der Handy-Startseite: steht immer als erstes, nur ein- oder ausblendbar (kein Verschieben).
+class _SucheEintrag extends ConsumerWidget {
+  const _SucheEintrag();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final an = ref.watch(sucheFeldAnProvider);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: LxCard(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        child: SwitchListTile(
+          key: const ValueKey('an:suche'),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+          secondary: const Icon(Icons.search, color: kAccent, size: 22),
+          title: const Text('Suchfeld', style: TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(an ? 'Steht immer ganz oben, nicht verschiebbar' : 'ausgeblendet', style: const TextStyle(fontFamily: kFontSans, fontSize: 11, color: kTextMuted)),
+          value: an,
+          onChanged: (v) => unawaited(ref.read(sucheFeldAnProvider.notifier).setzen(v)),
+        ),
+      ),
+    );
+  }
 }
 
 /// Eine Zeile der Liste: Griff, Name, Pfeile, Schalter. Schmal (unter 460 px) stehen die Pfeile in einer zweiten Zeile.

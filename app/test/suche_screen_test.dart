@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' show ProviderContainer;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
+import 'package:lx_fampad/data/startseite/suche_feld_state.dart';
 import 'package:lx_fampad/features/calendar/calendar_state.dart' show kalenderAuswahlProvider;
 import 'package:lx_fampad/features/lists/lists_screen.dart';
 import 'package:lx_fampad/features/shell/shell_tab.dart';
@@ -50,6 +51,21 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await warte(tester);
   }
+
+  testWidgets('Startseite mobil: das Suchfeld steht ganz oben (vor allen Karten) und lässt sich ein- und ausblenden', (tester) async {
+    await start(tester);
+    final feld = suchKnopf();
+    expect(feld, findsOneWidget);
+    // über der ersten Kachel der Startseite (Schnellzugriff) und unter der Kopfzeile
+    expect(tester.getTopLeft(feld).dy, lessThan(tester.getTopLeft(find.text('Aufgabe').first).dy));
+    expect(find.text('Suchen in Terminen, Aufgaben, Listen …'), findsOneWidget);
+    await container.read(sucheFeldAnProvider.notifier).setzen(false);
+    await warte(tester);
+    expect(suchKnopf(), findsNothing);
+    await container.read(sucheFeldAnProvider.notifier).setzen(true);
+    await warte(tester);
+    expect(suchKnopf(), findsOneWidget);
+  });
 
   testWidgets('Startseite mobil: Suchzeile öffnet die Suche, Treffer je Bereich (Umlaut-tolerant), Layout 360 px', (tester) async {
     await start(tester);

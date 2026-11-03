@@ -14,6 +14,7 @@ import 'package:lx_fampad/data/startseite/startseite_logik.dart';
 import 'package:lx_fampad/data/tagesbriefing/briefing_einstellungen.dart' show kBriefingKachelSchluessel;
 import 'package:lx_fampad/data/startseite/startseite_state.dart';
 import 'package:lx_fampad/features/home/desktop_home.dart';
+import 'package:lx_fampad/data/startseite/suche_feld_state.dart';
 import 'package:lx_fampad/features/home/startseite_anpassen_screen.dart';
 import 'package:lx_fampad/features/home/startseite_anpassen_zeile.dart';
 import 'package:lx_fampad/features/home/startseite_verfuegbar.dart';
@@ -184,6 +185,22 @@ void main() {
       await warte(tester);
       return c;
     }
+
+    testWidgets('Suchfeld: Schalter steht über der Warnkarte (nicht verschiebbar) und blendet das Feld aus und wieder ein', (tester) async {
+      final c = await oeffnen(tester);
+      final schalter = find.byKey(const ValueKey('an:suche'));
+      expect(schalter, findsOneWidget);
+      expect(find.text('Suchfeld'), findsOneWidget);
+      expect(tester.getTopLeft(schalter).dy, lessThan(tester.getTopLeft(find.text('Bin ich abgesichert?')).dy));
+      expect(find.byKey(const ValueKey('hoch:suche')), findsNothing);
+      expect(c.read(sucheFeldAnProvider), isTrue);
+      await tester.tap(schalter);
+      await warte(tester);
+      expect(c.read(sucheFeldAnProvider), isFalse);
+      await tester.tap(schalter);
+      await warte(tester);
+      expect(c.read(sucheFeldAnProvider), isTrue);
+    });
 
     testWidgets('listet die Kacheln (auch die leeren) mit fester Warnkarte oben; ohne Müll und Wetter', (tester) async {
       await oeffnen(tester);
