@@ -174,12 +174,7 @@ class _MedikamentDetailScreenState extends ConsumerState<MedikamentDetailScreen>
         const SizedBox(height: 16),
         Align(
           alignment: Alignment.centerLeft,
-          child: TextButton.icon(
-            style: TextButton.styleFrom(foregroundColor: kDanger, minimumSize: const Size(44, 48)),
-            onPressed: () => unawaited(_loeschen()),
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Endgültig löschen'),
-          ),
+          child: GefahrKnopf(text: 'Endgültig löschen', icon: Icons.delete_outline, volleBreite: false, onPressed: () => unawaited(_loeschen())),
         ),
         const SizedBox(height: 8),
         const Text('Die App ist kein Medizinprodukt: Sie gibt keine Hinweise zu Wechselwirkungen oder Dosierung, sie erinnert nur und führt Protokoll.', style: TextStyle(fontSize: 12, color: kTextMuted, height: 1.35)),

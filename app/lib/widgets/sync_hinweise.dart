@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../constants.dart';
 import '../data/sync_state.dart';
+import 'sync_anzeige.dart';
 
 /// Statusleiste und Hinweise des Abgleichs (leer, solange alles in Ordnung ist).
 class SyncHinweise extends ConsumerWidget {
@@ -29,14 +30,8 @@ class SyncStatusLeiste extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final offen = sync.offeneAenderungen;
-    final String? text = switch (sync.status) {
-      SyncStatus.offline => offen > 0 ? 'Offline – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} später übertragen.' : 'Offline – Änderungen werden später übertragen.',
-      SyncStatus.fehler => 'Der Übertragen hat nicht geklappt. Deine Änderungen bleiben gespeichert und werden erneut gesendet.',
-      SyncStatus.updateNoetig => 'Bitte aktualisiere die App, damit wieder alles übertragen wird.',
-      SyncStatus.wartung => offen > 0 ? 'Wartung – $offen ${offen == 1 ? 'Änderung wird' : 'Änderungen werden'} danach übertragen.' : 'Wartung – danach geht es weiter.',
-      _ => null,
-    };
+    // die Texte stehen an einer Stelle (sync_anzeige.dart), gemeinsam mit Startseiten-Zeile und Rückmeldung
+    final text = syncLeistenText(sync);
     if (text == null) return const SizedBox.shrink();
     final farbe = sync.status == SyncStatus.offline ? kTextMuted : (sync.status == SyncStatus.fehler ? kDanger : kWarn);
     return Padding(

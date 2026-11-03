@@ -79,7 +79,7 @@ void main() {
         expect(find.text('Abmelden'), findsOneWidget);
         expect(find.text('Überall abmelden'), findsOneWidget);
         // die Einstellungen selbst liegen nicht mehr auf der Hauptseite
-        for (final t in ['Anmelden ohne Passwort', 'Notfall-Codes', 'Angemeldete Geräte', 'Erinnerungen', 'Startseite anpassen', 'Wetter anzeigen', 'Widget „Heute“', 'Push']) {
+        for (final t in ['Anmelden ohne Passwort', 'Notfall-Codes', 'Angemeldete Geräte', 'Erinnerungen', 'Startseite anpassen', 'Wetter anzeigen', 'Widget „Heute“', 'Hinweise aufs Handy (Push)']) {
           expect(find.text(t), findsNothing, reason: '$t gehört auf eine Unterseite');
         }
         // ohne Verfügbarkeit auf dem Server keine Müll-Zeile
@@ -180,10 +180,10 @@ void main() {
       await start(tester);
       await tippe(tester, zeile('Benachrichtigungen'));
       expect(zeile('Erinnerungen'), findsOneWidget);
-      expect(zeile('Push'), findsOneWidget);
-      expect(find.text('Push gibt es nur in der Android-App.'), findsNothing);
+      expect(zeile('Hinweise aufs Handy (Push)'), findsOneWidget);
+      expect(find.text('Hinweise aufs Handy (Push) gibt es nur in der Android-App.'), findsNothing);
       pruefeLayout(tester, 'Benachrichtigungen Android');
-      await tippe(tester, zeile('Push'));
+      await tippe(tester, zeile('Hinweise aufs Handy (Push)'));
       expect(find.byType(PushScreen), findsOneWidget);
     });
 
@@ -191,8 +191,8 @@ void main() {
       await start(tester, web: true);
       await tippe(tester, zeile('Benachrichtigungen'));
       expect(zeile('Erinnerungen im Browser'), findsOneWidget);
-      expect(zeile('Push'), findsNothing);
-      expect(find.text('Push gibt es nur in der Android-App.'), findsOneWidget);
+      expect(zeile('Hinweise aufs Handy (Push)'), findsNothing);
+      expect(find.text('Hinweise aufs Handy (Push) gibt es nur in der Android-App.'), findsOneWidget);
       await tippe(tester, zeile('Erinnerungen im Browser'));
       expect(find.byType(ErinnerungenScreen), findsOneWidget);
     });

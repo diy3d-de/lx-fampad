@@ -24,7 +24,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
     final tabs = st.tabs;
     final dahinter = hinterMehr(tabs);
     return AuthSeite(
-      label: 'Profil · Anzeige',
+      label: 'Startseite und Anzeige',
       titel: 'Untere Leiste',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -36,7 +36,7 @@ class LeisteAnpassenScreen extends ConsumerWidget {
         const MonoLabel('In der Leiste'),
         const SizedBox(height: 8),
         if (!st.geladen)
-          const Padding(padding: EdgeInsets.all(24), child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))))
+          const LadePlatzhalter(karten: 2)
         else ...[
           for (var i = 0; i < tabs.length; i++)
             _Platz(
@@ -139,7 +139,7 @@ class _FesterPlatz extends StatelessWidget {
           Icon(Icons.apps, color: kTextMuted, size: 22),
           SizedBox(width: 10),
           Expanded(child: Text('Mehr', style: TextStyle(fontWeight: FontWeight.w600, color: kTextMuted))),
-          StatusPill('fest', color: kTextMuted),
+          StatusPill('Fest', color: kTextMuted),
         ],
       ),
     ),

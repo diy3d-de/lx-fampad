@@ -28,13 +28,15 @@ import 'profilbild_screen.dart';
 import '../../widgets/benutzer_avatar.dart';
 
 /// Zeile der Einstellungen: Symbol, Titel, Untertitel (Mono), rechts Status oder Pfeil. Mindestens 56 px hoch.
+/// [chevron] false für Aktionszeilen, die keine Seite öffnen (Neu erzeugen, Kopieren): dann zeigt [status] an, was passiert.
 class EinstellungsZeile extends StatelessWidget {
   final IconData icon;
   final String titel;
   final String? untertitel;
   final Widget? status;
   final VoidCallback? onTap;
-  const EinstellungsZeile({super.key, required this.icon, required this.titel, this.untertitel, this.status, this.onTap});
+  final bool chevron;
+  const EinstellungsZeile({super.key, required this.icon, required this.titel, this.untertitel, this.status, this.onTap, this.chevron = true});
 
   @override
   Widget build(BuildContext context) => Padding(
@@ -59,7 +61,7 @@ class EinstellungsZeile extends StatelessWidget {
               ),
             ),
             if (status != null) ...[const SizedBox(width: 8), status!],
-            if (onTap != null) ...[const SizedBox(width: 4), const Icon(Icons.chevron_right, size: 20, color: kTextMuted)],
+            if (onTap != null && chevron) ...[const SizedBox(width: 4), const Icon(Icons.chevron_right, size: 20, color: kTextMuted)],
           ],
         ),
       ),
@@ -259,12 +261,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> with AktionsZusta
         const SizedBox(height: 4),
         ZweitKnopf(text: 'Abmelden', icon: Icons.logout, onPressed: laeuft ? null : () => _abmelden(ueberall: false)),
         const SizedBox(height: 8),
-        OutlinedButton.icon(
-          onPressed: laeuft ? null : () => _abmelden(ueberall: true),
-          style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: const BorderSide(color: kDanger), minimumSize: const Size.fromHeight(48)),
-          icon: const Icon(Icons.phonelink_erase),
-          label: const Text('Überall abmelden'),
-        ),
+        GefahrKnopf(text: 'Überall abmelden', icon: Icons.phonelink_erase, onPressed: laeuft ? null : () => _abmelden(ueberall: true)),
       ],
     );
   }

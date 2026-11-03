@@ -233,12 +233,7 @@ class _TresorAnhangScreenState extends ConsumerState<TresorAnhangScreen> {
             style: FilledButton.styleFrom(minimumSize: const Size(48, 48)),
           ),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _beschaeftigt ? null : () => unawaited(_loeschen()),
-            icon: const Icon(Icons.delete_outline),
-            label: const Text('Löschen'),
-            style: OutlinedButton.styleFrom(minimumSize: const Size(48, 48), foregroundColor: kDanger, side: const BorderSide(color: kDanger)),
-          ),
+          GefahrKnopf(text: 'Löschen', icon: Icons.delete_outline, onPressed: _beschaeftigt ? null : () => unawaited(_loeschen())),
         ],
       ),
     );

@@ -73,7 +73,7 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.text('Passkey-Sicherung'), findsNothing);
+      expect(find.text('Sicherung per Passkey'), findsNothing);
       pruefeLayout(tester, 'Verschlüsselung ohne Passkey-Sicherung');
     });
 
@@ -82,22 +82,22 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
       expect(find.text('Eingerichtet'), findsOneWidget);
-      expect(find.text('Passkey-Sicherung'), findsNothing);
+      expect(find.text('Sicherung per Passkey'), findsNothing);
     });
 
     testWidgets('Anlegen: zwei Gesten, danach "liegt beim server" und bestätigt ($s)', (tester) async {
       final a = await _aufbau();
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      expect(find.text('Passkey-Sicherung'), findsOneWidget);
+      expect(find.text('Sicherung per Passkey'), findsOneWidget);
       expect(find.textContaining('Noch nicht gesichert. Jetzt einrichten'), findsWidgets);
       pruefeLayout(tester, 'Verschlüsselung mit Passkey-Zeile');
 
-      await tippeText(tester, 'Passkey-Sicherung');
-      expect(find.text('Mit Passkey sichern'), findsOneWidget);
+      await tippeText(tester, 'Sicherung per Passkey');
+      expect(find.text('Mit Fingerabdruck oder Gesicht sichern'), findsOneWidget);
       expect(find.textContaining('zweimal mit deinem Passkey'), findsOneWidget);
       pruefeLayout(tester, 'Passkey-Sicherung anlegen');
-      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Passkey sichern'));
+      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Fingerabdruck oder Gesicht sichern'));
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
 
@@ -114,8 +114,8 @@ Future<void> main() async {
       a.env.passkeys.prfAusgabe = null;
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      await tippeText(tester, 'Passkey-Sicherung');
-      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Passkey sichern'));
+      await tippeText(tester, 'Sicherung per Passkey');
+      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Fingerabdruck oder Gesicht sichern'));
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
       expect(find.textContaining('unterstützt diese Funktion auf diesem Gerät nicht'), findsOneWidget);
@@ -130,8 +130,8 @@ Future<void> main() async {
       a.srv.prfAbrufVerfaelschen = (b) => 'x$b';
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
-      await tippeText(tester, 'Passkey-Sicherung');
-      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Passkey sichern'));
+      await tippeText(tester, 'Sicherung per Passkey');
+      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Fingerabdruck oder Gesicht sichern'));
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
       expect(find.textContaining('Prüfung der Passkey-Sicherung ist fehlgeschlagen'), findsOneWidget);
@@ -154,13 +154,13 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurSeite(tester);
       expect(find.text('Dieses Gerät ist nicht verbunden'), findsOneWidget);
-      expect(find.text('Mit Passkey verbinden'), findsOneWidget);
+      expect(find.text('Mit Fingerabdruck oder Gesicht verbinden (Passkey)'), findsOneWidget);
       pruefeLayout(tester, 'Gerät nicht verbunden mit Passkey-Knopf');
 
       // falscher Passkey (andere Ausgabe): nichts passiert
       a.env.passkeys.prfAusgabe = Uint8List.fromList(List.generate(32, (i) => 99 - i));
-      await tippeText(tester, 'Mit Passkey verbinden');
-      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Passkey verbinden'));
+      await tippeText(tester, 'Mit Fingerabdruck oder Gesicht verbinden (Passkey)');
+      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Fingerabdruck oder Gesicht verbinden (Passkey)'));
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
       expect(find.textContaining('Dieser Passkey öffnet die Sicherung nicht'), findsOneWidget);
@@ -168,7 +168,7 @@ Future<void> main() async {
       pruefeLayout(tester, 'Mit Passkey verbinden: falscher Passkey');
 
       a.env.passkeys.prfAusgabe = _prf();
-      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Passkey verbinden'));
+      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Fingerabdruck oder Gesicht verbinden (Passkey)'));
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
       expect(find.text('Eingerichtet'), findsOneWidget);
@@ -182,16 +182,16 @@ Future<void> main() async {
       await _zurSeite(tester);
       await tippe(tester, find.byTooltip('Zurück'));
       await tippeText(tester, 'Bin ich abgesichert?');
-      expect(find.text('Passkey-Sicherung anlegen'), findsOneWidget);
-      expect(find.text('Passkey-Sicherung'), findsOneWidget);
+      expect(find.text('Sicherung per Passkey anlegen'), findsOneWidget);
+      expect(find.text('Sicherung per Passkey'), findsOneWidget);
       pruefeLayout(tester, 'Absicherung mit Passkey-Schritt');
-      await tippeText(tester, 'Passkey-Sicherung anlegen');
-      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Passkey sichern'));
+      await tippeText(tester, 'Sicherung per Passkey anlegen');
+      await tippe(tester, find.widgetWithText(FilledButton, 'Mit Fingerabdruck oder Gesicht sichern'));
       await tester.pump(const Duration(milliseconds: 200));
       await warte(tester);
       expect(a.srv.prfStand(fixIdAdmin, 'cred-1').verifiziert, isTrue);
       expect(find.textContaining('Bestätigt seit'), findsWidgets);
-      expect(find.text('Passkey-Sicherung anlegen'), findsNothing);
+      expect(find.text('Sicherung per Passkey anlegen'), findsNothing);
       pruefeLayout(tester, 'Absicherung nach Passkey-Sicherung');
     });
   }

@@ -8,12 +8,12 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../constants.dart';
 import '../../data/auth/auth_state.dart';
 import '../../data/crypto/e2ee_state.dart';
 import '../../data/crypto/sicherer_speicher.dart';
 import '../../data/sync_state.dart';
 import '../profile/wort_bestaetigung.dart';
+import 'auth_widgets.dart' show GefahrKnopf;
 
 /// Ablauf "Gerätespeicher zurücksetzen": Probe, Abgleich (falls noch möglich), Rückfrage mit Wort und Haken, erneute Probe, Zurücksetzen, Probe danach, abmelden.
 /// Meldet jedes Ergebnis über [meldung] (Hinweis oder Fehler). Gibt true zurück, wenn der Speicher zurückgesetzt wurde (die App muss danach neu gestartet werden).
@@ -147,12 +147,7 @@ class _GeraeteSpeicherKnopfState extends ConsumerState<GeraeteSpeicherKnopf> {
     if (kIsWeb) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: OutlinedButton.icon(
-        onPressed: _laeuft ? null : _klick,
-        style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: const BorderSide(color: kDanger), minimumSize: const Size.fromHeight(48)),
-        icon: const Icon(Icons.build_circle_outlined),
-        label: const Text('Gerätespeicher zurücksetzen', textAlign: TextAlign.center),
-      ),
+      child: GefahrKnopf(text: 'Gerätespeicher zurücksetzen', icon: Icons.build_circle_outlined, onPressed: _laeuft ? null : _klick),
     );
   }
 }

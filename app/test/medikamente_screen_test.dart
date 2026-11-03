@@ -167,8 +167,8 @@ void main() {
     testWidgets('Tagesliste nach Tageszeit, Abhaken schreibt eine Einnahme zum Slot', (tester) async {
       await start(tester, eigene());
       expect(find.text('Medikamente'), findsWidgets);
-      expect(find.text('Nachts · 00:01'), findsOneWidget);
-      expect(find.text('Abends · 22:00'), findsNothing);
+      expect(find.text('Nachts ab 00:01'), findsOneWidget);
+      expect(find.text('Abends ab 22:00'), findsNothing);
       expect(find.text('Blutdrucktablette · 5 mg'), findsNWidgets(2));
       expect(find.text('0 von 2 erledigt'), findsOneWidget);
       await tippe(tester, find.byKey(ValueKey('med-haken:$_med1:${_heute()}T00:01')));
@@ -451,7 +451,7 @@ void main() {
       await tester.tap(find.text('Medikamente').first);
       await warte(tester);
       expect(find.text('lx-familyhub'), findsOneWidget);
-      expect(find.text('Nachts · 00:01'), findsOneWidget);
+      expect(find.text('Nachts ab 00:01'), findsOneWidget);
       expect(find.byType(MedikamenteScreen), findsOneWidget);
       expect(tester.takeException(), isNull);
     });

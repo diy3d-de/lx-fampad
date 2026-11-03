@@ -12,6 +12,7 @@ import '../../data/zaehler/zaehler_state.dart' show zaehlerDarfProvider;
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
 import 'profil_plattform.dart';
+import 'profile_screen.dart' show EinstellungsZeile;
 import 'web_erinnerungen_seite.dart';
 
 class ErinnerungenScreen extends ConsumerStatefulWidget {
@@ -132,7 +133,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
     final laedt = status.isLoading && !status.hasValue;
     final s = status.value;
     return AuthSeite(
-      label: 'Gerät',
+      label: 'Benachrichtigungen',
       titel: 'Erinnerungen',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -142,7 +143,7 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             fehler: false,
           ),
         ] else if (laedt) ...[
-          const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator())),
+          const LadePlatzhalter(karten: 2),
         ] else ...[
           const Text(
             'Erinnerungen werden auf diesem Gerät aus deinen Terminen und Aufgaben berechnet. Es läuft nichts über den Server, und es wird nichts verschickt. '
@@ -156,9 +157,10 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
             child: SwitchListTile(
               contentPadding: const EdgeInsets.symmetric(horizontal: 8),
-              title: const Text('Titel auf Sperrbildschirm zeigen', style: TextStyle(fontWeight: FontWeight.w600)),
+              // dieselbe Einstellung wie in den Müll-Einstellungen (ein Name, ein Schalter)
+              title: const Text('Inhalt auf dem Sperrbildschirm', style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: const Text(
-                'Aus: Gesperrt steht dort nur ein neutraler Hinweis, Titel und Ort (und der Chat-Name neuer Nachrichten) erst nach dem Entsperren',
+                'Gesperrt zeigt das Gerät sonst nur einen neutralen Hinweis; Titel, Ort und Chat-Name erst nach dem Entsperren.',
                 style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
               ),
               value: einst.sperrbildschirmTitel,
@@ -236,28 +238,39 @@ class _ErinnerungenScreenState extends ConsumerState<ErinnerungenScreen> with Wi
   }
 }
 
-/// Kleine Diagnose: nur Zustände (keine Titel oder Inhalte), hilfreich bei der Fehlersuche.
+/// Kleine Diagnose: nur Zustände (keine Titel oder Inhalte), hilfreich bei der Fehlersuche. Eingeklappter Abschnitt „Technische Angaben“
+/// mit einer Zeile je Angabe (keine Konsolen-Zeile in der Oberfläche).
 class _DiagnoseZeile extends ConsumerWidget {
   const _DiagnoseZeile();
 
   static String _kanal(int k) => switch (k) {
-    -1 => 'unbekannt',
-    0 => 'aus',
-    _ => 'an ($k)',
+    -1 => 'Unbekannt',
+    0 => 'Aus',
+    _ => 'An (Stufe $k)',
   };
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final d = ref.watch(erinnerungDiagnoseProvider).value;
     if (d == null) return const SizedBox.shrink();
-    String ja(bool b) => b ? 'ja' : 'nein';
-    return Semantics(
-      label: 'Diagnose der Erinnerungen',
-      child: Text(
-        'Diagnose: erlaubt ${ja(d.erlaubt)} · kategorie ${_kanal(d.kanal)} · genaue alarme ${ja(d.exakt)} · plugin ${ja(d.bereit)} · '
-        'geplant ${d.geplant < 0 ? '?' : d.geplant}${d.fehler == null ? '' : ' · fehler ${d.fehler}'}',
+    String ja(bool b) => b ? 'Ja' : 'Nein';
+    return Theme(
+      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+      child: ExpansionTile(
         key: const Key('erinnerung-diagnose'),
-        style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
+        tilePadding: EdgeInsets.zero,
+        childrenPadding: const EdgeInsets.only(bottom: 8),
+        expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
+        title: const Text('Technische Angaben', style: TextStyle(fontWeight: FontWeight.w600)),
+        subtitle: const Text('Nur Zustände, keine Inhalte', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted)),
+        children: [
+          EinstellungsZeile(icon: Icons.notifications_none, titel: 'Erlaubt', untertitel: ja(d.erlaubt)),
+          EinstellungsZeile(icon: Icons.category_outlined, titel: 'Kategorie „Terminerinnerungen“', untertitel: _kanal(d.kanal)),
+          EinstellungsZeile(icon: Icons.alarm, titel: 'Genaue Alarme', untertitel: ja(d.exakt)),
+          EinstellungsZeile(icon: Icons.extension_outlined, titel: 'Plugin bereit', untertitel: ja(d.bereit)),
+          EinstellungsZeile(icon: Icons.event_note_outlined, titel: 'Geplante Erinnerungen', untertitel: d.geplant < 0 ? 'Unbekannt' : '${d.geplant}'),
+          if (d.fehler != null) EinstellungsZeile(icon: Icons.error_outline, titel: 'Letzter Fehler', untertitel: d.fehler),
+        ],
       ),
     );
   }
@@ -304,7 +317,7 @@ class ErinnerungArtSchalter extends ConsumerWidget {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                   title: const Text('Medikamenten-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: const Text(
-                    'Erinnert an deine Einnahmen und an die deiner Kinder, einmal erneut nach 15 Minuten. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
+                    'Erinnert an deine Einnahmen und an die deiner Kinder, einmal erneut nach 15 Minuten. Der Text ist immer neutral, nie ein Name.',
                     style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                   ),
                   value: einst.medikamenteAn,
@@ -318,7 +331,7 @@ class ErinnerungArtSchalter extends ConsumerWidget {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                   title: const Text('Vorsorge-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
                   subtitle: const Text(
-                    'Erinnert an fällige Vorsorge und Impfungen von dir und deinen Kindern, höchstens einmal pro Person und Tag um 9 Uhr. Der Text ist immer neutral, nie ein Name; nichts geht über den Server',
+                    'Erinnert an fällige Vorsorge und Impfungen von dir und deinen Kindern, höchstens einmal pro Person und Tag um 9 Uhr. Der Text ist immer neutral, nie ein Name.',
                     style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                   ),
                   value: einst.vorsorgeAn,
@@ -334,7 +347,7 @@ class ErinnerungArtSchalter extends ConsumerWidget {
                     contentPadding: const EdgeInsets.symmetric(horizontal: 8),
                     title: const Text('Zähler-Erinnerungen', style: TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: const Text(
-                      'Erinnert am Ablesetag um 9 Uhr. Der Text ist immer neutral, nie eine Zählerart oder ein Stand; nichts geht über den Server',
+                      'Erinnert am Ablesetag um 9 Uhr. Der Text ist immer neutral, nie eine Zählerart oder ein Stand.',
                       style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
                     ),
                     value: einst.zaehlerAn,

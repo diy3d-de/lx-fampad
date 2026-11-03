@@ -153,8 +153,10 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
     final s = ref.watch(e2eeProvider);
     final hierBereit = s.status == E2eeStatus.bereit;
     final andere = a.geraeteMitSchluessel;
+    // fehlende Wege führen direkt zum Anlegen (dieselben Seiten wie der Nachrichten-Schutz)
+    void zu(AbsicherungSchritt schritt) => unawaited(absicherungSchrittOeffnen(context, ref, schritt));
     return AuthSeite(
-      label: 'Absicherung',
+      label: 'Sicherheit',
       titel: 'Bin ich abgesichert?',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -185,29 +187,35 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
           da: a.geraetWeg,
           titel: 'Gerät mit deinem Schlüssel',
           text: a.geraetWeg
-              ? (hierBereit ? 'Dieses Gerät${andere != null && andere > 1 ? ' (laut Server melden $andere Geräte deinen Schlüssel)' : ''}' : 'Ein anderes Gerät')
-              : 'Auf diesem Gerät fehlt dein Schlüssel',
+              ? (hierBereit
+                    ? (andere != null && andere > 1 ? 'Dieses Gerät und ${andere - 1 == 1 ? '1 weiteres' : '${andere - 1} weitere'} (laut Server)' : 'Dieses Gerät')
+                    : 'Ein anderes Gerät')
+              : 'Auf diesem Gerät fehlt dein Schlüssel. Jetzt verbinden.',
+          onTap: a.geraetWeg ? null : () => zu(s.status == E2eeStatus.keinSchluessel ? AbsicherungSchritt.einrichten : AbsicherungSchritt.geraetVerbinden),
         ),
         if (a.pwVerfuegbar || a.pwWeg)
           _Weg(
             da: a.pwWeg,
             titel: 'Passwort-Sicherung',
-            text: a.pwWeg ? 'Bestätigt seit ${_tag(a.pwSeit)}' : (s.pwSicherungVeraltet ? 'Veraltet, bitte erneuern' : 'Noch nicht angelegt'),
+            text: a.pwWeg ? 'Bestätigt seit ${_tag(a.pwSeit)}' : (s.pwSicherungVeraltet ? 'Veraltet. Jetzt erneuern.' : 'Noch nicht angelegt. Jetzt anlegen.'),
+            onTap: a.pwWeg ? null : () => zu(s.pwSicherungVeraltet ? AbsicherungSchritt.passwortSicherungErneuern : AbsicherungSchritt.passwortSicherung),
           ),
         if (a.prfAngeboten || a.prfWeg)
           _Weg(
             da: a.prfWeg,
-            titel: 'Passkey-Sicherung',
+            titel: 'Sicherung per Passkey',
             text: a.prfWeg
                 ? 'Bestätigt seit ${_tag(a.prfSeit)}. Gilt nur, solange dein Passkey-Anbieter ihn auch auf anderen Geräten bereithält (ob das klappt, hängt vom Anbieter ab)'
                 : s.prfCredentialIds.isNotEmpty && !s.prfSynchronisiert
                 ? 'Angelegt, zählt aber noch nicht: Dein Passkey ist vielleicht an dieses Gerät gebunden.'
-                : (s.prfSicherungVeraltet ? 'Veraltet, bitte erneuern' : 'Noch nicht angelegt'),
+                : (s.prfSicherungVeraltet ? 'Veraltet. Jetzt erneuern.' : 'Noch nicht angelegt. Jetzt anlegen.'),
+            onTap: a.prfWeg ? null : () => zu(s.prfSicherungVeraltet ? AbsicherungSchritt.passkeySicherungErneuern : AbsicherungSchritt.passkeySicherung),
           ),
         _Weg(
           da: a.wiederherstellungWeg,
           titel: 'Wiederherstellungsschlüssel',
-          text: a.wiederherstellungWeg ? 'Liegt beim Server seit ${_tag(a.wiederherstellungSeit)}' : 'Noch nicht angelegt',
+          text: a.wiederherstellungWeg ? 'Liegt beim Server seit ${_tag(a.wiederherstellungSeit)}' : 'Noch nicht angelegt. Jetzt anlegen.',
+          onTap: a.wiederherstellungWeg || !hierBereit ? null : () => zu(AbsicherungSchritt.wiederherstellungsschluessel),
         ),
         const SizedBox(height: 8),
         // Wiederherstellungstest (rein lokal): eine Sicherung, die nie probiert wurde, ist keine
@@ -271,19 +279,23 @@ class _AbsicherungScreenState extends ConsumerState<AbsicherungScreen> {
   }
 }
 
+/// Ein Weg zum Schlüssel. Fehlt er, führt ein Tipp ([onTap]) direkt dorthin, wo man ihn anlegt.
 class _Weg extends StatelessWidget {
   final bool da;
   final String titel;
   final String text;
-  const _Weg({required this.da, required this.titel, required this.text});
+  final VoidCallback? onTap;
+  const _Weg({required this.da, required this.titel, required this.text, this.onTap});
 
   @override
   Widget build(BuildContext context) => Semantics(
     container: true,
+    button: onTap != null,
     label: '$titel: ${da ? 'vorhanden' : 'fehlt'}, $text',
     child: Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: LxCard(
+        onTap: onTap,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         child: ConstrainedBox(
           constraints: const BoxConstraints(minHeight: 44),
@@ -301,6 +313,7 @@ class _Weg extends StatelessWidget {
                 ),
               ),
               Text(da ? 'Ja' : 'Offen', style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: da ? kTerminal : kWarn)),
+              if (onTap != null) ...[const SizedBox(width: 4), const Icon(Icons.chevron_right, size: 20, color: kTextMuted)],
             ],
           ),
         ),

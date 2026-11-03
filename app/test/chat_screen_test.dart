@@ -292,8 +292,8 @@ void main() {
     expect(g.titel, 'p1:Skiurlaub');
     expect(teilnehmerIds(g), [fixIdAdmin, fixIdKind, _cora]..sort());
     expect(find.text('Skiurlaub'), findsOneWidget); // Kopf des Verlaufs
-    expect(find.textContaining('3 teilnehmer'), findsOneWidget);
-    expect(find.byIcon(Icons.lock_outline), findsWidgets); // Schloss im Kopf: Ende-zu-Ende verschlüsselt
+    expect(find.text('3 Teilnehmer'), findsOneWidget);
+    expect(find.byIcon(Icons.lock_outline), findsWidgets); // Schloss im Kopf: Nachrichten-Schutz an
   });
 
   testWidgets('Neuer Chat ohne weitere Mitglieder: Hinweis statt leerer Liste', (tester) async {
@@ -611,14 +611,14 @@ void main() {
       final env = await start(tester, skala: 1.5, vorher: grundstand);
       await sendeAbgelehnt(tester, env);
       expect(find.text('Das klappt nicht'), findsOneWidget, reason: 'die Nachricht verschwindet nicht');
-      expect(find.text('nicht gesendet · tippen'), findsOneWidget);
+      expect(find.text('Nicht gesendet – antippen'), findsOneWidget);
       final symbol = tester.widget<Icon>(find.byIcon(Icons.error_outline));
       expect(symbol.color, kDanger);
       expect(symbol.semanticLabel, startsWith('Senden fehlgeschlagen'));
       expect(find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Senden fehlgeschlagen')), findsOneWidget);
       final op = (await env.db.select(env.db.outbox).get()).single;
       expect(op.fehlerCode, 'forbidden');
-      expect(tester.widget<Text>(find.text('nicht gesendet · tippen')).style?.color, kDanger);
+      expect(tester.widget<Text>(find.text('Nicht gesendet – antippen')).style?.color, kDanger);
       pruefeLayout(tester, 'abgelehnte Nachricht');
       await tippeText(tester, 'Das klappt nicht');
       expect(find.text('Erneut senden'), findsOneWidget);
@@ -655,7 +655,7 @@ void main() {
       await tippeText(tester, 'Erneut senden');
       await tester.pump(const Duration(seconds: 40));
       await warte(tester, 10);
-      expect(find.text('nicht gesendet · tippen'), findsNothing);
+      expect(find.text('Nicht gesendet – antippen'), findsNothing);
       expect(find.text('wird gesendet'), findsNothing);
       final eigene = (await alleNachrichten(env)).where((n) => n.autorId == fixIdAdmin);
       expect(eigene.map((n) => n.id), [id]);
@@ -690,7 +690,7 @@ void main() {
       await warte(tester, 10);
       expect(find.text('wartet auf Verbindung oder Schlüssel'), findsOneWidget);
       expect(find.text('wird gesendet'), findsNothing);
-      expect(find.text('nicht gesendet · tippen'), findsNothing);
+      expect(find.text('Nicht gesendet – antippen'), findsNothing);
       expect(tester.widget<Icon>(find.byIcon(Icons.schedule)).color, kWarn);
       pruefeLayout(tester, 'hängende Nachricht');
     });

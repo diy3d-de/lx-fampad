@@ -313,35 +313,38 @@ class _AufgabeEditorState extends ConsumerState<AufgabeEditor> with EditorSchlie
           ],
         ),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            SizedBox(
-              width: 210,
-              child: wahl(
-                label: 'Fälligkeitsdatum',
-                text: tag == null ? 'Datum wählen' : datum.format(tag),
-                onTap: nurWenn(() async {
-                  final d = await _tagWaehlen(tag ?? heute);
-                  if (d != null) setState(() => _tag = d);
-                }),
-              ),
-            ),
-            if (tag != null && _mitUhrzeit)
+        // die Felder wachsen mit der Textskala, bleiben aber in der Zeile (sonst wird das Datum bei Skala 2.0 abgeschnitten)
+        LayoutBuilder(
+          builder: (context, c) => Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
               SizedBox(
-                width: 112,
+                width: skalierteBreite(context, 210, c.maxWidth),
                 child: wahl(
-                  label: 'Fälligkeit Uhrzeit',
-                  text: _zeit.format(context),
-                  icon: Icons.schedule,
+                  label: 'Fälligkeitsdatum',
+                  text: tag == null ? 'Datum wählen' : datum.format(tag),
                   onTap: nurWenn(() async {
-                    final z = await _zeitWaehlen(_zeit);
-                    if (z != null) setState(() => _zeit = z);
+                    final d = await _tagWaehlen(tag ?? heute);
+                    if (d != null) setState(() => _tag = d);
                   }),
                 ),
               ),
-          ],
+              if (tag != null && _mitUhrzeit)
+                SizedBox(
+                  width: skalierteBreite(context, 112, c.maxWidth),
+                  child: wahl(
+                    label: 'Fälligkeit Uhrzeit',
+                    text: _zeit.format(context),
+                    icon: Icons.schedule,
+                    onTap: nurWenn(() async {
+                      final z = await _zeitWaehlen(_zeit);
+                      if (z != null) setState(() => _zeit = z);
+                    }),
+                  ),
+                ),
+            ],
+          ),
         ),
         if (tag != null)
           Semantics(

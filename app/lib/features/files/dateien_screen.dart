@@ -151,7 +151,7 @@ class _DateienScreenState extends ConsumerState<DateienScreen> {
       final ordner = ref.watch(ordnerInProvider(_ordnerId));
       final dateien = ref.watch(dateienInProvider(_ordnerId));
       if (ordner.hasError || dateien.hasError) return const [DateiHinweis(icon: Icons.error_outline, text: 'Die Dateien lassen sich gerade nicht lesen.', farbe: kDanger)];
-      if (!ordner.hasValue || !dateien.hasValue) return const [Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))];
+      if (!ordner.hasValue || !dateien.hasValue) return const [LadePlatzhalter(karten: 2)];
       final os = ordner.value!;
       final ds = dateienSortiert<DateiEintrag>([for (final d in dateien.value!) if (!d.ohneFassung) d], _sortierung, name: (d) => d.name, geaendert: (d) => d.geaendert, groesse: (d) => d.groesse);
       if (os.isEmpty && ds.isEmpty) {
@@ -160,6 +160,8 @@ class _DateienScreenState extends ConsumerState<DateienScreen> {
             icon: Icons.folder_open_outlined,
             title: _ordnerId == null ? 'Noch keine Dateien' : 'Dieser Ordner ist leer',
             hint: _ordnerId == null ? 'Lade etwas hoch oder lege einen Ordner an.' : 'Lade eine Datei hoch oder lege einen Unterordner an.',
+            knopf: 'Hochladen',
+            onKnopf: _hochladen,
           ),
         ];
       }
@@ -167,7 +169,7 @@ class _DateienScreenState extends ConsumerState<DateienScreen> {
     }
     final alleDateien = ref.watch(alleDateienProvider);
     if (alleDateien.hasError) return const [DateiHinweis(icon: Icons.error_outline, text: 'Die Dateien lassen sich gerade nicht lesen.', farbe: kDanger)];
-    if (!alleDateien.hasValue) return const [Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(strokeWidth: 2)))];
+    if (!alleDateien.hasValue) return const [LadePlatzhalter(karten: 2)];
     var l = [for (final d in alleDateien.value!) if (!d.ohneFassung) d];
     switch (_filter) {
       case DateiFilter.zuletzt:
@@ -186,7 +188,7 @@ class _DateienScreenState extends ConsumerState<DateienScreen> {
         switch (_filter) {
           DateiFilter.offline => const EmptyState(icon: Icons.offline_pin_outlined, title: 'Keine Offline-Dateien', hint: 'Öffne eine Datei und schalte „Offline verfügbar“ ein.'),
           DateiFilter.vonMir => const EmptyState(icon: Icons.folder_open_outlined, title: 'Noch nichts von dir', hint: 'Dateien, die du hochlädst, stehen hier.'),
-          _ => const EmptyState(icon: Icons.folder_open_outlined, title: 'Noch keine Dateien', hint: 'Lade etwas hoch oder lege einen Ordner an.'),
+          _ => EmptyState(icon: Icons.folder_open_outlined, title: 'Noch keine Dateien', hint: 'Lade etwas hoch oder lege einen Ordner an.', knopf: 'Hochladen', onKnopf: _hochladen),
         },
       ];
     }

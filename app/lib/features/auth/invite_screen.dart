@@ -283,8 +283,8 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
                 runSpacing: 6,
                 children: [
                   RollenPille(info.role.label),
-                  if (info.requireApproval) const RollenPille('freigabe nötig', farbe: kWarn),
-                  RollenPille('gültig bis $bis', farbe: kTextMuted),
+                  if (info.requireApproval) const RollenPille('Freigabe nötig', farbe: kWarn),
+                  RollenPille('Gültig bis $bis', farbe: kTextMuted),
                 ],
               ),
               if (info.reset && info.displayName != null) ...[
@@ -408,7 +408,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
                     style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: kTextStrong),
                   ),
                   const SizedBox(height: 8),
-                  Wrap(spacing: 8, runSpacing: 6, children: [RollenPille(info.role.label), RollenPille('gültig bis $bis', farbe: kTextMuted)]),
+                  Wrap(spacing: 8, runSpacing: 6, children: [RollenPille(info.role.label), RollenPille('Gültig bis $bis', farbe: kTextMuted)]),
                   const SizedBox(height: 8),
                   const Text(
                     'Du legst ein neues Passwort fest. Zur Sicherheit bestätigst du mit dem aktuellen Code aus deiner Authenticator-App, dass du es bist. '
@@ -469,7 +469,7 @@ class _InviteScreenState extends ConsumerState<InviteScreen> with AktionsZustand
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Align(alignment: Alignment.centerLeft, child: RollenPille('authenticator einrichten', farbe: kNeural)),
+        const Align(alignment: Alignment.centerLeft, child: RollenPille('Authenticator einrichten', farbe: kNeural)),
         const SizedBox(height: 12),
         const Text(
           'Scanne den QR-Code mit einer Authenticator-App (z. B. Aegis, 2FAS oder Google Authenticator) '

@@ -130,7 +130,9 @@ void main() {
     expect(tester.getSemantics(find.bySemanticsLabel(RegExp('^Einkaufsliste'))), isSemantics(hasTapAction: true, isFocusable: true, isButton: true));
     tester.semantics.tap(karte);
     await warte(tester);
-    expect(labelFinder('Heute und morgen'), findsNothing);
+    // ohne Einkaufsliste öffnet der Tipp den Dialog "Neue Liste" (wie auf dem Handy), ein Wechsel zum Listen-Bereich folgt erst nach dem Anlegen
+    expect(find.text('Neue Liste'), findsOneWidget);
+    expect(labelFinder('Heute und morgen'), findsOneWidget);
     handle.dispose();
   });
 
@@ -178,7 +180,7 @@ void main() {
     expect(syncAnzeige(const SyncState(status: SyncStatus.offline, offeneAenderungen: 1)), ('Gerade keine Verbindung – Änderungen werden nachgeholt, 1 Änderung offen', kTextMuted));
     expect(syncAnzeige(const SyncState(status: SyncStatus.offline)), ('Gerade keine Verbindung – Änderungen werden nachgeholt', kTextMuted));
     expect(syncAnzeige(const SyncState(status: SyncStatus.laeuft)), ('Überträgt …', kTextMuted));
-    expect(syncAnzeige(const SyncState(status: SyncStatus.fehler)), ('Übertragen hat nicht geklappt', kDanger));
+    expect(syncAnzeige(const SyncState(status: SyncStatus.fehler)), ('Das Übertragen hat nicht geklappt', kDanger));
     expect(syncAnzeige(const SyncState(status: SyncStatus.updateNoetig)), ('Update nötig', kTextMuted));
     expect(syncAnzeige(const SyncState(status: SyncStatus.wartung)), ('Kurze Wartung', kTextMuted));
     expect(syncAnzeige(const SyncState()), ('Nicht verbunden', kTextMuted));
@@ -202,7 +204,7 @@ void main() {
     expect(syncHinweis(const SyncState(status: SyncStatus.offline, offeneAenderungen: 3)), '3 Änderungen warten auf Verbindung');
     expect(syncHinweis(const SyncState(status: SyncStatus.laeuft, offeneAenderungen: 3)), 'Wird übertragen, noch 3 Änderungen');
     expect(syncHinweis(const SyncState(status: SyncStatus.wartung)), 'Wartung läuft. Deine Änderungen bleiben gespeichert.');
-    expect(syncHinweis(const SyncState(status: SyncStatus.fehler)), 'Übertragen hat nicht geklappt');
+    expect(syncHinweis(const SyncState(status: SyncStatus.fehler)), 'Das Übertragen hat nicht geklappt');
     expect(syncHinweis(const SyncState(status: SyncStatus.updateNoetig)), 'Update nötig');
   });
 }

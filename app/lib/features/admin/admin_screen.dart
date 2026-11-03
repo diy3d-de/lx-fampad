@@ -385,7 +385,7 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
           if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
-          if (liste == null && laeuft) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+          if (liste == null && laeuft) const LadePlatzhalter(karten: 3),
           if (wartend.isNotEmpty) ...[
             const MonoLabel('Wartet auf Freigabe', color: kWarn),
             const SizedBox(height: 8),
@@ -396,7 +396,15 @@ class _MitgliederTabState extends ConsumerState<_MitgliederTab> with AktionsZust
             MonoLabel('Mitglieder (${aktiv.length})'),
             const SizedBox(height: 8),
             for (final m in aktiv) _MitgliedKarte(m: m, ich: ich, onAktion: laeuft ? null : _aktion, passwortModus: _passwortModi?.modi[m.id], passwortResetDa: _passwortResetDa),
-            if (aktiv.isEmpty) const EmptyState(icon: Icons.group_outlined, title: 'Keine Mitglieder', hint: 'Lade jemanden ein.'),
+            if (aktiv.isEmpty)
+              EmptyState(
+                icon: Icons.group_outlined,
+                title: 'Keine Mitglieder',
+                hint: 'Lade jemanden ein.',
+                knopf: 'Einladen',
+                // zum Reiter "Einladungen" (nur Admins sehen diesen Reiter, sie dürfen einladen)
+                onKnopf: () => DefaultTabController.maybeOf(context)?.animateTo(1),
+              ),
           ],
           // Soft-Delete: entfernte Mitglieder, die noch zurückgeholt werden können (nur wenn es welche gibt)
           if (_entfernte != null && _entfernte!.mitglieder.isNotEmpty) ...[
@@ -438,24 +446,16 @@ class _EntferntKarte extends StatelessWidget {
           children: [
             Text(m.name, style: const TextStyle(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            Wrap(spacing: 6, runSpacing: 4, children: [RollenPille(m.rolle.label, farbe: kTextMuted), if (m.hatSchluessel) const RollenPille('schlüssel gespeichert', farbe: kWarn)]),
+            Wrap(spacing: 6, runSpacing: 4, children: [RollenPille(m.rolle.label, farbe: kTextMuted), if (m.hatSchluessel) const RollenPille('Schlüssel liegt noch beim Server', farbe: kWarn)]),
             const SizedBox(height: 6),
             Text(
-              'entfernt am ${_tag(m.entferntAm)} · endgültig gelöscht am ${_tag(m.loeschtAm)}',
+              'Entfernt am ${_tag(m.entferntAm)}, endgültig gelöscht am ${_tag(m.loeschtAm)}.',
               style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
             ),
             const SizedBox(height: 8),
             ZweitKnopf(text: 'Zurückholen', icon: Icons.undo, onPressed: onZurueck),
             const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: onLoeschen,
-                style: TextButton.styleFrom(foregroundColor: kDanger, minimumSize: const Size(44, 44)),
-                icon: const Icon(Icons.delete_forever_outlined, size: 18),
-                label: const Text('Jetzt endgültig löschen'),
-              ),
-            ),
+            GefahrKnopf(text: 'Jetzt endgültig löschen', icon: Icons.delete_forever_outlined, onPressed: onLoeschen),
           ],
         ),
       ),
@@ -612,7 +612,7 @@ class _EinladungenTabState extends ConsumerState<_EinladungenTab> with AktionsZu
           HauptKnopf(text: 'Neue Einladung', icon: Icons.add, onPressed: laeuft ? null : _neu),
           const SizedBox(height: 16),
           if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
-          if (liste == null && laeuft) const Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator())),
+          if (liste == null && laeuft) const LadePlatzhalter(karten: 2),
           if (liste != null) ...[
             MonoLabel('Einladungen (${liste.length})'),
             const SizedBox(height: 8),

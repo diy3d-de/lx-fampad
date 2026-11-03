@@ -158,6 +158,13 @@ class EmptyState extends StatelessWidget {
       );
 }
 
+/// Breite eines Feldes mit fester Grundbreite [basis], die mit der Textskala wächst, aber nie breiter als [maxBreite] wird
+/// (sonst schneidet z. B. ein Datum in einem `Wrap` bei Skala 2.0 ab).
+double skalierteBreite(BuildContext context, double basis, double maxBreite) {
+  final b = MediaQuery.textScalerOf(context).scale(basis);
+  return b < maxBreite ? b : maxBreite;
+}
+
 /// Platzhalter, solange die lokalen Daten noch gelesen werden: eine ruhige Fläche mit grauen Balken statt Leere oder Drehrad (ohne Animation).
 class LadePlatzhalter extends StatelessWidget {
   /// Anzahl der Karten.

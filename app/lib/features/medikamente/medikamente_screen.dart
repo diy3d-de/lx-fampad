@@ -53,7 +53,7 @@ class MedikamenteScreen extends ConsumerWidget {
     final ansicht = heuteAnsicht(sichtbar, jetzt);
     final kinder = <Widget>[
       if (daten.hatKinder) ...[_Filter(daten: daten, aktiv: aktiv), const SizedBox(height: 14)],
-      ..._inhalt(context, ref, daten, sichtbar, ansicht, jetzt),
+      ..._inhalt(context, ref, daten, sichtbar, ansicht, jetzt, aktiv),
     ];
     final neu = FilledButton.icon(
       onPressed: () => medikamentEditorOeffnen(context, subjektId: aktiv),
@@ -90,15 +90,17 @@ class MedikamenteScreen extends ConsumerWidget {
     );
   }
 
-  List<Widget> _inhalt(BuildContext context, WidgetRef ref, MedDaten daten, List<MedEintrag> sichtbar, HeuteAnsicht a, DateTime jetzt) {
-    if (!daten.geladen) return const [Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))];
+  List<Widget> _inhalt(BuildContext context, WidgetRef ref, MedDaten daten, List<MedEintrag> sichtbar, HeuteAnsicht a, DateTime jetzt, String? aktiv) {
+    if (!daten.geladen) return const [LadePlatzhalter(karten: 2)];
     if (sichtbar.isEmpty) {
-      return const [
-        SizedBox(height: 24),
+      return [
+        const SizedBox(height: 24),
         EmptyState(
           icon: Icons.medication_outlined,
           title: 'Noch keine Medikamente',
           hint: 'Lege einen Plan an, dann erinnert dich die App zur richtigen Zeit. Namen und Dosis sind Ende-zu-Ende verschlüsselt.',
+          knopf: 'Medikament anlegen',
+          onKnopf: () => medikamentEditorOeffnen(context, subjektId: aktiv),
         ),
       ];
     }
@@ -113,7 +115,7 @@ class MedikamenteScreen extends ConsumerWidget {
       const SizedBox(height: 10),
       if (warn.isNotEmpty) ...[_WarnKarte(warnungen: warn, daten: daten), const SizedBox(height: 14)],
       for (final g in a.gruppen) ...[
-        MonoLabel('${g.zeit.label} · ${g.ab}', color: kTextMuted),
+        MonoLabel('${g.zeit.label} ab ${g.ab}', color: kTextMuted),
         const SizedBox(height: 6),
         for (final s in g.slots) _SlotZeile(slot: s, daten: daten, jetzt: jetzt),
         const SizedBox(height: 10),

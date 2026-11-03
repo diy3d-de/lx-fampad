@@ -175,7 +175,7 @@ Future<void> main() async {
       await starteApp(tester, a.env, skala: skala);
       await _zurVerschluesselung(tester);
       expect(find.text('Kindern helfen'), findsOneWidget);
-      expect(find.text('1 anfrage offen'), findsOneWidget);
+      expect(find.text('Eine Anfrage wartet auf dich.'), findsOneWidget);
       expect(find.text('Eltern-Wiederherstellung'), findsNothing, reason: 'Erwachsene sehen die Kinder-Seite nicht');
       pruefeLayout(tester, 'Verschlüsselung mit Eltern-Hilfe-Zeile');
       await tippeText(tester, 'Kindern helfen');

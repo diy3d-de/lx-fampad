@@ -16,7 +16,6 @@ import '../../data/chat/nachrichten_inhalt.dart';
 import '../../data/lists/list_repository.dart';
 import '../../data/lists/list_rights.dart';
 import '../../data/lists/members.dart';
-import '../../data/api/api_error.dart';
 import '../../data/api/models.dart';
 import '../../ui/widgets.dart';
 import '../../data/calendar/termin_repository.dart';
@@ -33,7 +32,6 @@ import 'web_erinnerung_karte.dart';
 import '../wetter/wetter_hinweis_karte.dart';
 import '../../data/tasks/aufgabe_logik.dart';
 import '../chat/chat_anzeige.dart';
-import '../lists/list_dialogs.dart';
 import '../../data/tasks/aufgabe_repository.dart';
 import '../tasks/aufgaben_anzeige.dart';
 import '../tasks/fristen_anzeige.dart' show FristenStartKarte;
@@ -101,25 +99,7 @@ class _Kopfzeile extends ConsumerWidget {
   final String gruss;
   const _Kopfzeile({required this.label, required this.gruss});
 
-  Future<void> _neueListe(BuildContext context, WidgetRef ref) async {
-    // alles Nötige vor dem await lesen: danach kann das Widget schon weg sein
-    final u = ref.read(authProvider).user;
-    final repo = ref.read(listenRepositoryProvider);
-    final gewaehlt = ref.read(gewaehlteListeProvider.notifier);
-    final tab = ref.read(shellTabProvider.notifier);
-    final messenger = ScaffoldMessenger.of(context);
-    final a = await neueListeDialog(context, ListenRechte(u?.role ?? Role.child, u?.id));
-    if (a == null || !context.mounted) return;
-    try {
-      final id = await repo.listeAnlegen(name: a.name, art: a.art, sicht: a.sicht);
-      gewaehlt.waehlen(id);
-      tab.waehlen(kListenTab);
-    } on ApiException catch (e) {
-      messenger.showSnackBar(SnackBar(content: Text(e.message)));
-    } catch (_) {
-      messenger.showSnackBar(const SnackBar(content: Text('Die Liste konnte nicht angelegt werden.')));
-    }
-  }
+  Future<void> _neueListe(BuildContext context, WidgetRef ref) => neueListeAnlegenUndOeffnen(context, ref);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -565,7 +545,7 @@ class _StandortKarte extends ConsumerWidget {
 }
 
 /// Kartenkörper für Laden und Fehler (kein falscher Leerzustand, solange Daten fehlen).
-Widget _laedt() => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)));
+Widget _laedt() => const LadePlatzhalter();
 Widget _fehler(String text) => Text(text, style: const TextStyle(color: kDanger));
 
 /// Einkaufsliste mit echten Daten: offene Einträge der ersten Einkaufsliste (lokale Datenbank, auch offline).
@@ -593,9 +573,14 @@ class _EinkaufKarte extends ConsumerWidget {
           : laedt
           ? 'Einkaufsliste, lädt. Öffnen'
           : einkauf == null
-          ? 'Einkaufsliste, noch keine Liste. Öffnen'
+          ? (darfAnlegen ? 'Einkaufsliste, noch keine Liste. Anlegen' : 'Einkaufsliste, noch keine Liste. Öffnen')
           : (offen.isEmpty ? 'Einkaufsliste, 0 offen. Öffnen' : 'Einkaufsliste, ${offen.length} offen: ${einkaufSemantik(offen)}. Öffnen'),
       onTap: () {
+        // ohne Einkaufsliste legt der Klick (mit Recht) gleich eine an, wie auf der Startseite mobil
+        if (!laedt && !fehler && einkauf == null && darfAnlegen) {
+          unawaited(neueListeAnlegenUndOeffnen(context, ref, art: ListenArt.shopping));
+          return;
+        }
         if (einkauf != null) ref.read(gewaehlteListeProvider.notifier).waehlen(einkauf.id);
         ref.read(shellTabProvider.notifier).waehlen(kListenTab);
       },

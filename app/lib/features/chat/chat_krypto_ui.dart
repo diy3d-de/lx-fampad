@@ -56,7 +56,7 @@ class VerschluesselungHinweis extends ConsumerWidget {
     final (titel, text, knopf) = switch (zustand) {
       ChatKryptoZustand.einrichten => (
         'Nachrichten-Schutz einrichten',
-        'Deine Chats sind Ende-zu-Ende verschlüsselt. Richte deinen Schlüssel ein (und sichere ihn), dann kannst du Nachrichten lesen und schreiben.',
+        'Deine Nachrichten sind geschützt (Ende-zu-Ende verschlüsselt). Richte deinen Schlüssel ein (und sichere ihn), dann kannst du Nachrichten lesen und schreiben.',
         'Einrichten',
       ),
       ChatKryptoZustand.verbinden => (

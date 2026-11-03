@@ -38,7 +38,7 @@ class _PrfSicherungScreenState extends ConsumerState<PrfSicherungScreen> with Ak
       setState(() => _nichtMoeglich = true);
       return;
     }
-    zeigeHinweis(context, 'Passkey-Sicherung angelegt und geprüft.');
+    zeigeHinweis(context, 'Sicherung per Passkey angelegt und geprüft.');
     Navigator.of(context).pop();
   }
 
@@ -47,12 +47,17 @@ class _PrfSicherungScreenState extends ConsumerState<PrfSicherungScreen> with Ak
     final veraltet = ref.watch(e2eeProvider.select((s) => s.prfSicherungVeraltet));
     final gesichert = ref.watch(e2eeProvider.select((s) => s.prfCredentialIds.isNotEmpty));
     return AuthSeite(
-      label: 'Passkey-sicherung',
-      titel: 'Passkey-Sicherung',
+      label: 'Nachrichten-Schutz',
+      titel: 'Sicherung per Passkey',
       kinder: [
+        const Text(
+          'Eine Sicherung über Fingerabdruck oder Gesicht (Passkey).',
+          style: TextStyle(fontSize: 14, height: 1.5, fontWeight: FontWeight.w600, color: kText),
+        ),
+        const SizedBox(height: 8),
         if (veraltet) ...[
           const MeldungsBox(
-            'Dein Schlüssel wurde gewechselt, deshalb ist die bisherige Passkey-Sicherung veraltet. Lege sie hier neu an. Bis dahin gelten deine anderen Wege unverändert.',
+            'Dein Schlüssel wurde gewechselt, deshalb ist die bisherige Sicherung per Passkey veraltet. Lege sie hier neu an. Bis dahin gelten deine anderen Wege unverändert.',
             fehler: false,
           ),
           const SizedBox(height: 12),
@@ -72,7 +77,7 @@ class _PrfSicherungScreenState extends ConsumerState<PrfSicherungScreen> with Ak
         const SizedBox(height: 16),
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
         if (_nichtMoeglich) ...[const MeldungsBox(_nichtUnterstuetzt), const SizedBox(height: 12)],
-        HauptKnopf(text: gesichert || veraltet ? 'Sicherung erneuern' : 'Mit Passkey sichern', icon: Icons.fingerprint, laeuft: laeuft, onPressed: _anlegen),
+        HauptKnopf(text: gesichert || veraltet ? 'Sicherung erneuern' : 'Mit Fingerabdruck oder Gesicht sichern', icon: Icons.fingerprint, laeuft: laeuft, onPressed: _anlegen),
         if (laeuft) ...[
           const SizedBox(height: 8),
           const Text('Bestätige mit deinem Passkey, wenn das Gerät danach fragt.', style: TextStyle(fontSize: 12, color: kTextMuted)),
@@ -106,7 +111,7 @@ class _PrfVerbindenScreenState extends ConsumerState<PrfVerbindenScreen> with Ak
       case PrfVerbinden.nichtUnterstuetzt:
         setState(() => _hinweis = _nichtUnterstuetzt);
       case PrfVerbinden.keineSicherung:
-        setState(() => _hinweis = 'Zu diesem Passkey gibt es keine Passkey-Sicherung. Wähle einen anderen Passkey oder nimm eine andere Möglichkeit.');
+        setState(() => _hinweis = 'Zu diesem Passkey gibt es keine Sicherung. Wähle einen anderen Passkey oder nimm eine andere Möglichkeit.');
       case PrfVerbinden.passtNicht:
         setState(() => _hinweis = 'Dieser Passkey öffnet die Sicherung nicht (er wurde vermutlich neu angelegt). Nimm den Wiederherstellungsschlüssel oder ein anderes Gerät.');
       case null:
@@ -118,17 +123,17 @@ class _PrfVerbindenScreenState extends ConsumerState<PrfVerbindenScreen> with Ak
   Widget build(BuildContext context) {
     final hatSicherung = ref.watch(e2eeProvider.select((s) => s.hatSicherung));
     return AuthSeite(
-      label: 'Passkey',
-      titel: 'Mit Passkey verbinden',
+      label: 'Nachrichten-Schutz',
+      titel: 'Verbinden per Passkey',
       kinder: [
         const Text(
-          'Bestätige mit dem Passkey, mit dem du deine Passkey-Sicherung angelegt hast. Er öffnet deinen Schlüssel auf diesem Gerät.',
+          'Bestätige mit Fingerabdruck oder Gesicht (dem Passkey, mit dem du die Sicherung angelegt hast). Er öffnet deinen Schlüssel auf diesem Gerät.',
           style: TextStyle(fontSize: 14, height: 1.5, color: kTextMuted),
         ),
         const SizedBox(height: 16),
         if (fehler != null) ...[MeldungsBox(fehler!), const SizedBox(height: 12)],
         if (_hinweis != null) ...[MeldungsBox(_hinweis!), const SizedBox(height: 12)],
-        HauptKnopf(text: 'Mit Passkey verbinden', icon: Icons.fingerprint, laeuft: laeuft, onPressed: _verbinden),
+        HauptKnopf(text: 'Mit Fingerabdruck oder Gesicht verbinden (Passkey)', icon: Icons.fingerprint, laeuft: laeuft, onPressed: _verbinden),
         if (hatSicherung) ...[
           const SizedBox(height: 8),
           ZweitKnopf(

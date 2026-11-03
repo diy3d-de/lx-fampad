@@ -1,6 +1,7 @@
 // Kalender-Oberfläche und gemeinsame Kopfzeile: Agenda, Monat, Woche, Filter je Person, Termin anlegen/ändern/löschen (auch Serien),
 // Rechte, Startseite "Als Nächstes", Update-Hinweis; alles bei 360 px Breite und Textskala 1.0 und 1.5.
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lx_fampad/constants.dart';
@@ -54,6 +55,16 @@ Map<String, dynamic> _zeittermin(String titel, {int tage = 1, int stunde = 10, S
 };
 
 Future<void> zumTab(WidgetTester tester, String label) => zumBereich(tester, label);
+
+/// Datum eines Editor-Feldes ("Mi., 4. Nov. 2026", Format `E, d. MMM y`).
+final datumMuster = RegExp(r'^[A-Za-zÄÖÜäöü]{2}\., \d{1,2}\. [A-Za-zÄÖÜäöü]+\.? \d{4}$');
+
+/// Passt der Text des Elements ganz in sein Feld (nicht mit "…" abgeschnitten)? Vergleicht die gemalte Breite mit dem Platzbedarf des Textes.
+bool passtGanz(Element e) {
+  final rp = e.renderObject! as RenderParagraph;
+  final tp = TextPainter(text: rp.text, textDirection: TextDirection.ltr, textScaler: rp.textScaler)..layout();
+  return rp.size.width >= tp.width - 0.5;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -132,9 +143,48 @@ void main() {
     pruefeLayout(tester, 'Agenda');
   });
 
-  testWidgets('Agenda ohne Termine: Hinweis', (tester) async {
+  testWidgets('Agenda ohne Termine: Hinweis mit Handlung "Termin anlegen" (nur mit Recht), öffnet den Editor', (tester) async {
     await start(tester);
     expect(find.text('Keine Termine'), findsOneWidget);
+    await tippe(tester, find.widgetWithText(FilledButton, 'Termin anlegen'));
+    expect(find.text('Neuer Termin'), findsWidgets);
+    expect(find.byType(TextField), findsWidgets);
+  });
+
+  testWidgets('Agenda ohne Termine: Leerzustand mit Knopf "Termin anlegen" (Termine dürfen alle anlegen)', (tester) async {
+    await start(tester, role: 'child');
+    expect(find.text('Keine Termine'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, 'Termin anlegen'), findsOneWidget);
+  });
+
+  testWidgets('Serie: alle Vorkommen löschen fragt erst nach; Abbrechen behält die Serie, Löschen entfernt sie', (tester) async {
+    final env = await start(tester, groesse: const Size(360, 3000), vorher: (e) => e.sync.andereAendert('termin', _t1, _zeittermin('Chor', rrule: 'FREQ=WEEKLY')));
+    await tippe(tester, find.text('Chor').first);
+    await tippeText(tester, 'Löschen');
+    await tippeText(tester, 'Alle Vorkommen');
+    expect(find.text('Serie „Chor“ löschen?'), findsOneWidget);
+    await tippeText(tester, 'Abbrechen');
+    await warte(tester, 8);
+    expect(await env.db.select(env.db.termine).get(), hasLength(1));
+    expect(find.text('Chor'), findsWidgets);
+    await tippe(tester, find.text('Chor').first);
+    await tippeText(tester, 'Löschen');
+    await tippeText(tester, 'Alle Vorkommen');
+    await tippe(tester, find.widgetWithText(FilledButton, 'Löschen'));
+    await warte(tester, 8);
+    expect(await env.db.select(env.db.termine).get(), isEmpty);
+    expect(find.text('Chor'), findsNothing);
+  });
+
+  testWidgets('Editor bei Textskala 2.0 (360 px): Datum und Uhrzeit werden nicht abgeschnitten, kein Überlauf', (tester) async {
+    await start(tester, skala: 2.0, groesse: const Size(360, 2400));
+    await tippe(tester, find.byTooltip('Neuer Termin'));
+    pruefeLayout(tester, 'Editor 2.0');
+    final datum = find.byWidgetPredicate((w) => w is Text && datumMuster.hasMatch(w.data ?? ''));
+    expect(datum, findsAtLeastNWidgets(2), reason: 'Datum von Beginn und Ende');
+    for (final e in datum.evaluate()) {
+      expect(passtGanz(e), isTrue, reason: 'das Datum passt ganz in sein Feld (kein Abschneiden)');
+    }
   });
 
   testWidgets('Filter je Person: nur Termine von Ben (Ersteller oder Teilnehmer)', (tester) async {

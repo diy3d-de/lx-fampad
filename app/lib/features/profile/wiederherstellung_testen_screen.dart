@@ -83,7 +83,7 @@ class _WiederherstellungTestenScreenState extends ConsumerState<Wiederherstellun
 
   Future<void> _mitPasskey() async {
     var unterstuetzt = true;
-    await _lauf('Test bestanden: Dein Passkey öffnet die Passkey-Sicherung, und sie gehört zu deinem aktuellen Schlüssel.', () async {
+    await _lauf('Test bestanden: Dein Passkey öffnet die Sicherung per Passkey, und sie gehört zu deinem aktuellen Schlüssel.', () async {
       unterstuetzt = await _p.mitPasskey();
     });
     if (!unterstuetzt && mounted) {
@@ -100,7 +100,7 @@ class _WiederherstellungTestenScreenState extends ConsumerState<Wiederherstellun
     final hatPasskey = s.prfCredentialIds.isNotEmpty && (ref.watch(authProvider.select((a) => (a.me?.passkeys ?? 0) > 0)));
     return BildschirmSchutz(
       child: AuthSeite(
-        label: 'Wiederherstellung testen',
+        label: 'Nachrichten-Schutz',
         titel: 'Wiederherstellung testen',
         maxBreite: kMaxContentWidth,
         kinder: [

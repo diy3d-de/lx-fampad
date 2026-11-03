@@ -128,8 +128,8 @@ String schrittText(AbsicherungSchritt s) => switch (s) {
   AbsicherungSchritt.geraetNeuVerbinden => 'Gerät neu verbinden',
   AbsicherungSchritt.passwortSicherung => 'Passwort-Sicherung anlegen',
   AbsicherungSchritt.passwortSicherungErneuern => 'Passwort-Sicherung erneuern',
-  AbsicherungSchritt.passkeySicherung => 'Passkey-Sicherung anlegen',
-  AbsicherungSchritt.passkeySicherungErneuern => 'Passkey-Sicherung erneuern',
+  AbsicherungSchritt.passkeySicherung => 'Sicherung per Passkey anlegen',
+  AbsicherungSchritt.passkeySicherungErneuern => 'Sicherung per Passkey erneuern',
   AbsicherungSchritt.wiederherstellungsschluessel => 'Wiederherstellungsschlüssel anlegen',
 };
 
@@ -141,7 +141,7 @@ String schrittErklaerung(AbsicherungSchritt s) => switch (s) {
   AbsicherungSchritt.passwortSicherung => 'Dein Passwort öffnet dann auf jedem neuen Gerät automatisch deinen Schlüssel. Kein Zettel nötig.',
   AbsicherungSchritt.passwortSicherungErneuern => 'Seit dem Zurücksetzen deines Passworts passt die Sicherung nicht mehr zu deinem Passwort.',
   AbsicherungSchritt.passkeySicherung => 'Dein Zugang ohne Passwort (Passkey) öffnet dann auf einem neuen Gerät deinen Schlüssel: Fingerabdruck oder PIN genügen, kein Zettel nötig.',
-  AbsicherungSchritt.passkeySicherungErneuern => 'Dein Schlüssel wurde gewechselt, die bisherige Passkey-Sicherung gehört zum alten Schlüssel.',
+  AbsicherungSchritt.passkeySicherungErneuern => 'Dein Schlüssel wurde gewechselt, die bisherige Sicherung per Passkey gehört zum alten Schlüssel.',
   AbsicherungSchritt.wiederherstellungsschluessel => 'Ein Schlüssel zum Aufschreiben oder Ausdrucken (Notfallblatt): dein Weg zurück, wenn alles andere weg ist.',
 };
 

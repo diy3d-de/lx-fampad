@@ -106,7 +106,7 @@ class VorsorgeScreen extends ConsumerWidget {
   String _anrede(VorsorgeDaten d, UserDto p) => p.id.toLowerCase() == d.ich?.toLowerCase() ? 'dich' : _vorname(p);
 
   List<Widget> _inhalt(BuildContext context, WidgetRef ref, VorsorgeDaten daten, UserDto? person, DateTime heute) {
-    if (!daten.geladen || person == null) return const [Padding(padding: EdgeInsets.only(top: 32), child: Center(child: CircularProgressIndicator()))];
+    if (!daten.geladen || person == null) return const [LadePlatzhalter(karten: 2)];
     final eigene = person.id.toLowerCase() == daten.ich?.toLowerCase();
     final profil = daten.profilVon(person.id);
     final unlesbar = daten.profilUnlesbar(person.id);

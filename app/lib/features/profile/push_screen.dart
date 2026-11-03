@@ -162,8 +162,8 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
     }
     final bereit = z.gewuenscht && z.angemeldet;
     return AuthSeite(
-      label: 'Push',
-      titel: 'Benachrichtigungen',
+      label: 'Benachrichtigungen',
+      titel: 'Hinweise aufs Handy',
       maxBreite: kMaxContentWidth,
       kinder: [
         if (!z.unterstuetzt)
@@ -219,12 +219,12 @@ class _PushScreenState extends ConsumerState<PushScreen> with WidgetsBindingObse
           LxCard(
             child: Column(
               children: [
-                _StatusZeile('Verteiler (ntfy-App)', z.verteiler != null ? verteilerName(z.verteiler!) : 'nicht gewählt', z.verteiler != null),
-                _StatusZeile('Server bereit', z.serverBereit ? 'ja' : 'nein', z.serverBereit),
-                _StatusZeile('Dieses Gerät angemeldet', z.angemeldet ? 'ja' : (z.gewuenscht ? 'wird angemeldet …' : 'aus'), z.angemeldet),
+                _StatusZeile('Verteiler (ntfy-App)', z.verteiler != null ? verteilerName(z.verteiler!) : 'Noch nicht gewählt', z.verteiler != null),
+                _StatusZeile('Server', z.serverBereit ? 'Push ist eingerichtet' : 'Push ist noch nicht eingerichtet', z.serverBereit),
+                _StatusZeile('Dieses Gerät', z.angemeldet ? 'Angemeldet' : (z.gewuenscht ? 'Wird angemeldet …' : 'Nicht angemeldet'), z.angemeldet),
                 _StatusZeile(
                   'Letzter Wecker',
-                  z.letzterWecker == null ? 'noch keiner' : DateFormat('dd.MM. HH:mm', 'de_DE').format(z.letzterWecker!),
+                  z.letzterWecker == null ? 'Noch keiner' : DateFormat('dd.MM. HH:mm', 'de_DE').format(z.letzterWecker!),
                   z.letzterWecker != null,
                 ),
               ],

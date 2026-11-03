@@ -99,7 +99,7 @@ const profilZeilenSeite = <String, String>{
   'Sicherheitsereignisse': 'Sicherheit',
   'Erinnerungen': 'Benachrichtigungen',
   'Erinnerungen im Browser': 'Benachrichtigungen',
-  'Push': 'Benachrichtigungen',
+  'Hinweise aufs Handy (Push)': 'Benachrichtigungen',
   'Startseite anpassen': 'Startseite und Anzeige',
   'Wetter anzeigen': 'Startseite und Anzeige',
   'Widget „Heute“': 'Startseite und Anzeige',

@@ -18,9 +18,9 @@ String sicherheitsEreignisText(SicherheitsEreignisDto e) {
       'Der Zugang von ${e.betroffener ?? 'einem Familienmitglied'} wurde zurückgesetzt. Nimm einen neuen Schlüssel dieser Person nur nach Rücksprache an.',
     SicherheitsArt.passwortSicherungAbgerufen => 'Die Passwort-Sicherung deines Schlüssels wurde abgerufen (zum Beispiel beim Verbinden eines Geräts nach der Anmeldung). Warst du das nicht, ändere dein Passwort.',
     SicherheitsArt.passkeySicherungAbgerufen =>
-      'Die Passkey-Sicherung deines Schlüssels wurde abgerufen (zum Beispiel beim Verbinden eines Geräts nach der Anmeldung). Warst du das nicht, entferne den Passkey unter Profil › Sicherheit › Anmelden ohne Passwort.',
+      'Die Sicherung per Passkey deines Schlüssels wurde abgerufen (zum Beispiel beim Verbinden eines Geräts nach der Anmeldung). Warst du das nicht, entferne den Passkey unter Profil › Sicherheit › Anmelden ohne Passwort.',
     SicherheitsArt.passkeySicherungAngelegt =>
-      'Für deinen Schlüssel wurde eine Passkey-Sicherung angelegt. Warst du das nicht, entferne den Passkey unter Profil › Sicherheit › Anmelden ohne Passwort und ändere dein Passwort.',
+      'Für deinen Schlüssel wurde eine Sicherung per Passkey angelegt. Warst du das nicht, entferne den Passkey unter Profil › Sicherheit › Anmelden ohne Passwort und ändere dein Passwort.',
     SicherheitsArt.elternHinterlegungAngelegt => 'Du hast deinen Eltern erlaubt, dir bei der Wiederherstellung deines Schlüssels zu helfen.',
     SicherheitsArt.elternHinterlegungZurueckgenommen => 'Du hast die Eltern-Wiederherstellung zurückgenommen.',
     SicherheitsArt.elternAnfrageGestellt =>

@@ -145,6 +145,9 @@ class _SicherheitScreenState extends ConsumerState<SicherheitScreen> with Aktion
           icon: Icons.key_outlined,
           titel: 'Notfall-Codes',
           untertitel: me == null ? 'Lädt …' : (me.recoveryCodesRemaining == 1 ? 'Noch 1 Code übrig. Du kannst neue erzeugen.' : 'Noch ${me.recoveryCodesRemaining} Codes übrig. Du kannst neue erzeugen.'),
+          // Aktionszeile (öffnet keine Seite, sondern die Rückfrage): kein Pfeil, die Pille sagt, was passiert
+          status: me == null ? null : const RollenPille('Neu erzeugen', farbe: kAccent),
+          chevron: false,
           onTap: laeuft || me == null ? null : _neueCodes,
         ),
         const SizedBox(height: 4),

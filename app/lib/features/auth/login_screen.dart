@@ -294,7 +294,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> with AktionsZustand<L
   ];
 
   List<Widget> _codeSchritt() => [
-    const Align(alignment: Alignment.centerLeft, child: RollenPille('schritt 2 von 2', farbe: kNeural)),
+    const Align(alignment: Alignment.centerLeft, child: RollenPille('Schritt 2 von 2', farbe: kNeural)),
     const SizedBox(height: 12),
     _Ueberschrift(_mitWiederherstellungscode ? 'Notfall-Code' : 'Bestätigungscode'),
     const SizedBox(height: 8),

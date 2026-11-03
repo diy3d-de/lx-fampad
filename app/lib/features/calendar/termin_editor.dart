@@ -359,42 +359,45 @@ class _TerminEditorState extends ConsumerState<TerminEditor> {
       ),
     );
 
-    Widget zeitzeile(String label, DateTime tag, TimeOfDay zeit, void Function(DateTime, TimeOfDay) setze) => Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        MonoLabel(label),
-        const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            SizedBox(
-              width: 190,
-              child: wahl(
-                label: '$label Datum',
-                text: datum.format(tag),
-                onTap: () async {
-                  final d = await _tagWaehlen(tag);
-                  if (d != null) setze(d, zeit);
-                },
-              ),
-            ),
-            if (!_ganztaegig)
+    // die Felder wachsen mit der Textskala, bleiben aber in der Zeile (sonst wird das Datum bei Skala 2.0 abgeschnitten)
+    Widget zeitzeile(String label, DateTime tag, TimeOfDay zeit, void Function(DateTime, TimeOfDay) setze) => LayoutBuilder(
+      builder: (context, c) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          MonoLabel(label),
+          const SizedBox(height: 6),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
               SizedBox(
-                width: 112,
+                width: skalierteBreite(context, 190, c.maxWidth),
                 child: wahl(
-                  label: '$label Uhrzeit',
-                  text: zeit.format(context),
-                  icon: Icons.schedule,
+                  label: '$label Datum',
+                  text: datum.format(tag),
                   onTap: () async {
-                    final z = await _zeitWaehlen(zeit);
-                    if (z != null) setze(tag, z);
+                    final d = await _tagWaehlen(tag);
+                    if (d != null) setze(d, zeit);
                   },
                 ),
               ),
-          ],
-        ),
-      ],
+              if (!_ganztaegig)
+                SizedBox(
+                  width: skalierteBreite(context, 112, c.maxWidth),
+                  child: wahl(
+                    label: '$label Uhrzeit',
+                    text: zeit.format(context),
+                    icon: Icons.schedule,
+                    onTap: () async {
+                      final z = await _zeitWaehlen(zeit);
+                      if (z != null) setze(tag, z);
+                    },
+                  ),
+                ),
+            ],
+          ),
+        ],
+      ),
     );
 
     return UngespeichertSchutz(

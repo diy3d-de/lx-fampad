@@ -85,7 +85,17 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     await _oeffne(WiederherstellungsschluesselScreen(einrichtung: einrichtung));
   }
 
+  /// Neuer Wiederherstellungsschlüssel. Liegt schon eine Sicherung beim Server (bestätigt oder nicht), ersetzt er sie: erst Rückfrage (Muster Notfall-Codes).
   Future<void> _neuerSchluessel() async {
+    final s = ref.read(e2eeProvider);
+    if (s.hatSicherung) {
+      final ja = await _bestaetigen(
+        'Neuen Wiederherstellungsschlüssel erzeugen?',
+        'Der bisherige gilt dann nicht mehr. Den neuen siehst du nur einmal; bewahre ihn sicher auf.',
+        'Neu erzeugen',
+      );
+      if (!ja || !mounted) return;
+    }
     Einrichtung? e;
     final ok = await ausfuehren(() async => e = await _c.neuerWiederherstellungsschluessel());
     final einrichtung = e;
@@ -248,7 +258,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     final s = ref.watch(e2eeProvider);
     final auth = ref.watch(authProvider);
     return AuthSeite(
-      label: 'Profil',
+      label: 'Sicherheit',
       titel: 'Nachrichten-Schutz',
       maxBreite: kMaxContentWidth,
       kinder: [
@@ -283,7 +293,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
   List<Widget> _inhalt(E2eeState s, AuthState auth) {
     switch (s.status) {
       case E2eeStatus.laedt:
-        return const [Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator()))];
+        return const [LadePlatzhalter(karten: 2)];
       case E2eeStatus.nichtVerfuegbar:
         return [
           MeldungsBox(s.meldung ?? 'Der Nachrichten-Schutz ist gerade nicht verfügbar.'),
@@ -343,7 +353,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
           ],
           if (s.prfSicherungVerfuegbar && (auth.me?.passkeys ?? 0) > 0) ...[
             const SizedBox(height: 8),
-            ZweitKnopf(text: 'Mit Passkey verbinden', icon: Icons.fingerprint, onPressed: laeuft ? null : () => _oeffne(const PrfVerbindenScreen())),
+            ZweitKnopf(text: 'Mit Fingerabdruck oder Gesicht verbinden (Passkey)', icon: Icons.fingerprint, onPressed: laeuft ? null : () => _oeffne(const PrfVerbindenScreen())),
           ],
           if (s.vertrauenDefekt) ...[
             const SizedBox(height: 8),
@@ -385,7 +395,9 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
                 : s.wiederherstellungAm != null
                 ? 'Sicherung liegt beim Server (seit ${_datum(s.wiederherstellungAm!)}). Du kannst eine neue anlegen.'
                 : 'Sicherung liegt beim Server, ist aber noch nicht bestätigt.',
-            status: s.hatSicherung && s.wiederherstellungAm != null ? null : const RollenPille('Offen', farbe: kWarn),
+            // Aktionszeile (legt einen neuen Schlüssel an, öffnet keine Seite): kein Pfeil, die Pille sagt, was passiert
+            status: s.hatSicherung && s.wiederherstellungAm != null ? const RollenPille('Neu erzeugen', farbe: kAccent) : const RollenPille('Offen', farbe: kWarn),
+            chevron: false,
             onTap: laeuft ? null : _neuerSchluessel,
           ),
           if (s.pwSicherungVerfuegbar) _pwZeile(s),
@@ -520,12 +532,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         style: TextStyle(fontSize: 13, height: 1.4, color: kTextMuted),
       ),
       const SizedBox(height: 8),
-      OutlinedButton.icon(
-        onPressed: laeuft || gesperrt != null ? null : _geraetAbgebenAusfuehren,
-        style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: BorderSide(color: gesperrt != null ? kBorder : kDanger), minimumSize: const Size.fromHeight(48)),
-        icon: const Icon(Icons.delete_forever_outlined),
-        label: const Text('Gerät abgeben – alles löschen', textAlign: TextAlign.center),
-      ),
+      GefahrKnopf(text: 'Gerät abgeben – alles löschen', icon: Icons.delete_forever_outlined, onPressed: laeuft || gesperrt != null ? null : _geraetAbgebenAusfuehren),
       if (gesperrt != null) ...[
         const SizedBox(height: 8),
         Text(gesperrt, style: const TextStyle(fontSize: 13, height: 1.4, color: kWarn)),
@@ -598,7 +605,9 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         EinstellungsZeile(
           icon: Icons.child_care,
           titel: 'Kindern helfen',
-          untertitel: offen > 0 ? '$offen anfrage${offen == 1 ? '' : 'n'} offen' : '${h.kinder.length} kind${h.kinder.length == 1 ? '' : 'er'} · du kannst helfen',
+          untertitel: offen > 0
+              ? (offen == 1 ? 'Eine Anfrage wartet auf dich.' : '$offen Anfragen warten auf dich.')
+              : (h.kinder.length == 1 ? 'Du kannst einem Kind helfen.' : 'Du kannst ${h.kinder.length} Kindern helfen.'),
           status: offen > 0 ? const RollenPille('Anfrage', farbe: kWarn) : null,
           onTap: laeuft ? null : () => _oeffne(const ElternHilfeScreen()),
         ),
@@ -633,7 +642,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
         : ('Noch nicht gesichert. Jetzt einrichten.', const RollenPille('Offen', farbe: kWarn));
     return EinstellungsZeile(
       icon: Icons.fingerprint,
-      titel: 'Passkey-Sicherung',
+      titel: 'Sicherung per Passkey',
       untertitel: untertitel,
       status: pille,
       onTap: laeuft ? null : () => _oeffne(const PrfSicherungScreen()),
@@ -645,12 +654,7 @@ class _VerschluesselungScreenState extends ConsumerState<VerschluesselungScreen>
     children: [
       const MonoLabel('Neuer Schlüssel (letzter Ausweg)', color: kTextMuted),
       const SizedBox(height: 8),
-      OutlinedButton.icon(
-        onPressed: laeuft ? null : _wechseln,
-        style: OutlinedButton.styleFrom(foregroundColor: kDanger, side: const BorderSide(color: kDanger), minimumSize: const Size.fromHeight(48)),
-        icon: const Icon(Icons.warning_amber_rounded),
-        label: const Text('Neuen Schlüssel erzeugen …', textAlign: TextAlign.center),
-      ),
+      GefahrKnopf(text: 'Neuen Schlüssel erzeugen …', icon: Icons.warning_amber_rounded, onPressed: laeuft ? null : _wechseln),
       const SizedBox(height: 4),
       const Text(
         'Letzter Ausweg, nur nach einer Checkliste (Notfall-Codes sind für die Anmeldung, der Wiederherstellungsschlüssel gehört zu deinen Chats): wenn dir kein Gerät, kein Wiederherstellungsschlüssel und kein Passwort der Passwort-Sicherung mehr bleibt. Alte verschlüsselte Inhalte lassen sich dann nicht mehr lesen.',

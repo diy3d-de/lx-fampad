@@ -220,7 +220,7 @@ void main() {
         expect(find.text('Erinnerungen im Browser'), findsWidgets);
         expect(find.textContaining('Nur solange die Web-App geöffnet ist'), findsOneWidget);
         expect(find.textContaining('Hintergrundnutzungsgrenzen'), findsNothing, reason: 'Android-Teile fehlen im Web');
-        expect(find.text('Titel auf Sperrbildschirm zeigen'), findsNothing);
+        expect(find.text('Inhalt auf dem Sperrbildschirm'), findsNothing);
         expect(find.text('Medikamenten-Erinnerungen'), findsOneWidget);
         final schalter = find.descendant(of: find.widgetWithText(SwitchListTile, 'Erinnerungen im Browser'), matching: find.byType(Switch));
         expect(tester.widget<Switch>(schalter).value, isFalse);

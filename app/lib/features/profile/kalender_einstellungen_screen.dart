@@ -35,7 +35,7 @@ class KalenderEinstellungenScreen extends ConsumerWidget {
     final darfAnlegen = TerminRechte(user?.role ?? Role.child, user?.id).darfAnlegen;
     final standard = ref.watch(erinnerungEinstellungenProvider.select((e) => e.standardVorlauf));
     return AuthSeite(
-      label: 'Kalender',
+      label: 'Profil',
       titel: 'Kalender',
       maxBreite: kMaxContentWidth,
       kinder: [

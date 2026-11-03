@@ -127,7 +127,7 @@ void main() {
     testWidgets('Die Zeile "Home Assistant" steht oben (vor den Kacheln) und sagt "läuft"', (tester) async {
       await start(tester, datenAus([_haStrom()]));
       expect(tester.getTopLeft(find.text('Home Assistant')).dy, lessThan(tester.getTopLeft(find.text('Strom Haus').first).dy));
-      expect(find.textContaining('läuft'), findsOneWidget);
+      expect(find.textContaining('Läuft'), findsOneWidget);
     });
 
     testWidgets('Leerer Zustand: Einstieg zum Koppeln (Admin)', (tester) async {
@@ -153,7 +153,7 @@ void main() {
 
     testWidgets('Gerät ohne Postfach-Schlüssel (zweites Elternteil): die Zeile sagt "läuft über ein anderes Gerät", nie "aus"', (tester) async {
       await start(tester, datenAus([_haStrom()]), zustand: const IngestZustand(geladen: true), role: 'parent');
-      expect(find.textContaining('läuft über ein anderes Gerät'), findsOneWidget);
+      expect(find.textContaining('Läuft über ein anderes Gerät'), findsOneWidget);
       expect(find.textContaining('Abholen ist aus'), findsNothing);
     });
 

@@ -20,7 +20,7 @@ class PendingScreen extends ConsumerWidget {
         const SizedBox(height: 24),
         const MarkenKopf(),
         const SizedBox(height: 28),
-        const Align(alignment: Alignment.centerLeft, child: RollenPille('wartet auf freigabe', farbe: kWarn)),
+        const Align(alignment: Alignment.centerLeft, child: RollenPille('Wartet auf Freigabe', farbe: kWarn)),
         const SizedBox(height: 12),
         Semantics(
           header: true,

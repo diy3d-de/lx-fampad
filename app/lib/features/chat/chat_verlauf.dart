@@ -358,6 +358,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
         _fokus.requestFocus();
       case 'kopieren':
         await Clipboard.setData(ClipboardData(text: text));
+        if (mounted) _hinweis('Kopiert');
       case 'bearbeiten':
         _text.text = text;
         _text.selection = TextSelection.collapsed(offset: text.length);
@@ -461,7 +462,7 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
           _Kopf(beiSchliessen: widget.zurueckPfeil ? widget.beiSchliessen : null, titel: 'Chat', untertitel: '', avatar: null, menue: null),
           Expanded(
             child: konvAsync.isLoading
-                ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+                ? const Padding(padding: EdgeInsets.fromLTRB(16, 8, 16, 0), child: LadePlatzhalter(karten: 2))
                 : const EmptyState(icon: Icons.chat_bubble_outline, title: 'Chat nicht verfügbar', hint: 'Er wurde gelöscht oder du bist nicht mehr dabei.'),
           ),
         ],
@@ -472,12 +473,12 @@ class _ChatVerlaufState extends ConsumerState<ChatVerlauf> {
     final name = chatName(konv, teilnehmer, mitglieder, ich, inhalt);
     final anderer = art == ChatArt.direct ? mitglieder[teilnehmer.where((t) => t != ich).firstOrNull] : null;
     final untertitel = switch (art) {
-      ChatArt.family => 'alle in der familie',
-      ChatArt.direct => 'direktchat',
-      ChatArt.group => '${teilnehmer.length} teilnehmer',
-      ChatArt.meds => 'medikamente',
-      ChatArt.zaehler => 'zähler',
-      ChatArt.tresor => 'tresor',
+      ChatArt.family => 'Alle in der Familie',
+      ChatArt.direct => 'Direktchat',
+      ChatArt.group => '${teilnehmer.length} Teilnehmer',
+      ChatArt.meds => 'Medikamente',
+      ChatArt.zaehler => 'Zähler',
+      ChatArt.tresor => 'Tresor',
     };
     final verschluesselt = konv.encVersion == 'e1';
     final kryptoZustand = chatKryptoZustand(ref.watch(e2eeProvider));
@@ -700,13 +701,14 @@ class _Kopf extends StatelessWidget {
               if (untertitel.isNotEmpty)
                 Row(
                   children: [
+                    // Nachrichten-Schutz nur als Schloss (mit Vorlesetext), kein Fachwort im Untertitel
                     if (verschluesselt) ...[
-                      Semantics(label: 'Ende-zu-Ende verschlüsselt', child: const Icon(Icons.lock_outline, size: 12, color: kTerminal)),
+                      Semantics(label: 'Nachrichten-Schutz an', child: const Icon(Icons.lock_outline, size: 12, color: kTerminal)),
                       const SizedBox(width: 4),
                     ],
                     Expanded(
                       child: Text(
-                        verschluesselt ? 'ende-zu-ende verschlüsselt · $untertitel' : untertitel,
+                        untertitel,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: kTextMuted),
@@ -918,7 +920,7 @@ class _SendeText extends StatelessWidget {
   Widget build(BuildContext context) {
     final (text, farbe) = switch (lese?.zustand) {
       LeseZustand.haengt => ('wartet auf Verbindung oder Schlüssel', kWarn),
-      LeseZustand.abgelehnt => ('nicht gesendet · tippen', kDanger),
+      LeseZustand.abgelehnt => ('Nicht gesendet – antippen', kDanger),
       _ => ('wird gesendet', kTextMuted),
     };
     return ExcludeSemantics(child: Text(text, style: TextStyle(fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 11, color: farbe)));

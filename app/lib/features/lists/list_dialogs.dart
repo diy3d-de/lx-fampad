@@ -68,15 +68,16 @@ class NeueListeAngaben {
   const NeueListeAngaben(this.name, this.art, this.sicht);
 }
 
-/// Dialog "Neue Liste": Name, Art, bei Eltern auch die Freigabe.
-Future<NeueListeAngaben?> neueListeDialog(BuildContext context, ListenRechte rechte) => showDialog<NeueListeAngaben>(useRootNavigator: false,
+/// Dialog "Neue Liste": Name, Art, bei Eltern auch die Freigabe. [art] belegt die Art vor (Standard Einkauf).
+Future<NeueListeAngaben?> neueListeDialog(BuildContext context, ListenRechte rechte, {ListenArt art = ListenArt.shopping}) => showDialog<NeueListeAngaben>(useRootNavigator: false,
   context: context,
-  builder: (_) => _NeueListe(rechte),
+  builder: (_) => _NeueListe(rechte, art: art),
 );
 
 class _NeueListe extends StatefulWidget {
   final ListenRechte rechte;
-  const _NeueListe(this.rechte);
+  final ListenArt art;
+  const _NeueListe(this.rechte, {required this.art});
 
   @override
   State<_NeueListe> createState() => _NeueListeState();
@@ -84,7 +85,7 @@ class _NeueListe extends StatefulWidget {
 
 class _NeueListeState extends State<_NeueListe> {
   final _name = TextEditingController();
-  var _art = ListenArt.shopping;
+  late var _art = widget.art;
   var _sicht = ListenSicht.family;
 
   @override
