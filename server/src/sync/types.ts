@@ -76,6 +76,11 @@ export interface ChangeOut {
   /** Der Datensatz ist gelöscht (oder, mit `hidden`, für diese Person nicht mehr sichtbar): lokal entfernen. */
   tombstone: boolean;
   hidden?: true;
+  /**
+   * Nur Termine und Ausnahmen: die Person, die diesen Stand zuletzt geschrieben hat (nur die Benutzer-ID, nie ein Inhalt). Fehlt, wenn der Urheber
+   * unbekannt ist oder sich mehrere Personen seit dem letzten Abgleich abgelöst haben. Die App meldet Änderungen der eigenen Person damit nicht.
+   */
+  by?: string;
   /** Vollständiger Stand des Datensatzes (leer bei Tombstone). */
   fields: Record<string, unknown>;
 }

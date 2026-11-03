@@ -45,7 +45,10 @@ class SyncChange {
   final bool tombstone;
   final bool hidden;
   final Json fields;
-  const SyncChange({required this.rev, required this.entity, required this.id, required this.tombstone, required this.hidden, required this.fields});
+
+  /// Urheber-Person des Stands (nur Termine, nur die Benutzer-ID; null: unbekannt oder ältere Server).
+  final String? by;
+  const SyncChange({required this.rev, required this.entity, required this.id, required this.tombstone, required this.hidden, required this.fields, this.by});
 }
 
 class SyncResult {
@@ -127,6 +130,7 @@ class SyncResult {
           tombstone: j['tombstone'] == true,
           hidden: j['hidden'] == true,
           fields: j['fields'] is Map<String, dynamic> ? j['fields'] as Json : const {},
+          by: j['by'] is String ? j['by'] as String : null,
         ),
       ),
       hasMore: m['hasMore'] == true,

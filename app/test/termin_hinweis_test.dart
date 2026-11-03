@@ -239,6 +239,38 @@ void main() {
       expect(anzeige.gezeigt.single.treffer.single.titel, 'Neu vom Abbruch');
     });
 
+    test('derselbe Termin von einem zweiten eigenen Gerät (Urheber = diese Person) meldet nichts, eine fremde Änderung danach schon', () async {
+      sync.andereAendert('termin', _t1, _termin('Alt'));
+      await lauf();
+      sync.andereAendert('termin', _t1, {'titel': 'Vom Tablet'}, urheber: fixIdAdmin);
+      sync.andereAendert('termin', _t2, _termin('Neu vom Tablet'), urheber: fixIdAdmin);
+      await lauf();
+      expect(anzeige.gezeigt, isEmpty, reason: 'eigene Person auf anderem Gerät');
+      sync.andereAendert('termin', _t1, {'titel': 'Von Ben'}, urheber: fixIdKind);
+      await lauf();
+      expect(anzeige.gezeigt, hasLength(1));
+      sync.andereAendert('termin', _t3, _termin('Ohne Urheber (älterer Server)'));
+      await lauf();
+      expect(anzeige.gezeigt, hasLength(2));
+    });
+
+    test('ein abgebrochener Hintergrund-Start: der nächste Dienst übernimmt den Stand (nur Prüfwerte auf der Platte, nie Titel oder Ort)', () async {
+      sync.andereAendert('termin', _t1, _termin('Geheimer Titel'));
+      await lauf();
+      // Abbruch: die Antwort wird festgehalten und eingearbeitet, aber der Lauf endet vor nach(); der Dienst (Container) geht verloren
+      final alt = TerminHinweisDienst(db: db, anzeige: anzeige, an: () async => true, sperrbildschirmTitel: () async => false, wandtablet: () => false);
+      await alt.vorUebernahme([SyncChange(rev: 9, entity: 'termin', id: _t1, tombstone: false, hidden: false, fields: const {})], const []);
+      final roh = await db.metaLesen(TerminHinweisDienst.kStandSchluessel);
+      expect(roh, isNotNull);
+      expect(roh, isNot(contains('Geheimer')));
+      await (db.update(db.termine)..where((x) => x.id.equals(_t1))).write(const TermineCompanion(titel: Value('Geheimer Titel, neu')));
+      final neu = TerminHinweisDienst(db: db, anzeige: anzeige, an: () async => true, sperrbildschirmTitel: () async => false, wandtablet: () => false);
+      await neu.nach();
+      expect(anzeige.gezeigt, hasLength(1));
+      expect(anzeige.gezeigt.single.treffer.single.neu, isFalse);
+      expect(await db.metaLesen(TerminHinweisDienst.kStandSchluessel), isNull, reason: 'nach dem vollständigen Lauf aufgeräumt');
+    });
+
     test('Abmelden (Wiper-Weg): Zustand weg und gezeigte Meldung zurückgenommen', () async {
       await dienst.vorUebernahme([SyncChange(rev: 9, entity: 'termin', id: _t2, tombstone: false, hidden: false, fields: const {})], const []);
       await dienst.abmelden();

@@ -62,6 +62,9 @@ function factsFrom(registry: Registry, rows: RowMap, def: EntityDef, row: Row): 
   return def.facts(row, parentFacts);
 }
 
+/** Entitäten, bei denen der Pull die Urheber-Person mitliefert (Termine: für den lokalen Hinweis "von anderen geändert"). Nie Chat oder Gesundheitsdaten. */
+const AUTHOR_ENTITIES = new Set(['termin', 'termin_ausnahmen']);
+
 export async function pullChanges(
   ctx: Pick<AuthContext, 'db'>,
   registry: Registry,
@@ -104,6 +107,20 @@ export async function pullChanges(
         if (ids.length > 0) await load(tx, registry, familyId, rows, def, ids);
       }
 
+      // Urheber je Datensatz, nur wenn ALLE Einträge dieser Seite zu ihm von derselben Person stammen (sonst bleibt `by` weg: lieber eine Meldung zu viel)
+      const authors = new Map<string, Set<string | null>>();
+      for (const e of page) {
+        const k = `${e.entity}:${e.entityId}`;
+        const set = authors.get(k) ?? new Set<string | null>();
+        set.add(e.authorId);
+        authors.set(k, set);
+      }
+      const byOf = (entity: string, id: string): { by: string } | Record<string, never> => {
+        if (!AUTHOR_ENTITIES.has(entity)) return {};
+        const set = authors.get(`${entity}:${id}`);
+        const only = set?.size === 1 ? [...set][0] : null;
+        return only ? { by: only } : {};
+      };
       const changes: ChangeOut[] = [];
       const hiddenSent = new Set<string>();
       const history: Array<{ def: EntityDef; row: Row; facts: Facts }> = [];
@@ -131,7 +148,7 @@ export async function pullChanges(
           if (row.deletedAt) {
             if (!snapshotMode) changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: true, fields: {} });
           } else {
-            changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: false, fields: wireRow(def, row) });
+            changes.push({ rev: e.rev, entity: e.entity, id: e.entityId, tombstone: false, fields: wireRow(def, row), ...(snapshotMode ? {} : byOf(e.entity, e.entityId)) });
           }
         } else if (restricted) {
           const lost = e.changes[LOST_SIGHT];
