@@ -167,8 +167,14 @@ Future<void> main() async {
         expect(welt.alle('zaehlerstand').single.fields['inhalt'], startsWith('e1:'));
         expect(welt.alle('zaehler').single.fields['bearbeiterId'], _mama);
         final gesehen = serverGesehen();
-        for (final w in ['Hauptzähler', 'Keller-Geheim', 'ABC-4711', 'Geheimnotiz', 'Geheim-Ablesung', '12345678', '2026-10-01', '3456', 'preise', 'kosten', 'abschlag', 'z1:', 'a1:', 'l1:', 'kWh']) {
+        // Kurze Wörter können zufällig im Base64 der Chiffretexte vorkommen (Flake):
+        // sie werden nur außerhalb der langen Base64-Folgen geprüft.
+        final ohneChiffre = gesehen.replaceAll(RegExp(r'[A-Za-z0-9_\-]{40,}'), '');
+        for (final w in ['Hauptzähler', 'Keller-Geheim', 'ABC-4711', 'Geheimnotiz', 'Geheim-Ablesung', '12345678', '2026-10-01', 'preise', 'kosten', 'abschlag']) {
           expect(gesehen, isNot(contains(w)), reason: w);
+        }
+        for (final w in ['3456', 'z1:', 'a1:', 'l1:', 'kWh']) {
+          expect(ohneChiffre, isNot(contains(w)), reason: w);
         }
       });
 
