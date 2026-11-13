@@ -1,6 +1,9 @@
-// ICS-Import: Datei wählen, Vorschau (neu / schon vorhanden / geändert / übersprungen, Hinweise), Freigabe und Zuordnung wählen, importieren,
-// Bericht. Alles läuft lokal (offline-first); der Abgleich mit dem Server folgt im Hintergrund. Es werden keine Teilnehmer, Anhänge oder
-// Links aus der Datei übernommen und nichts aus dem Netz geladen.
+// ICS-Import: Datei wählen oder (nur Android) über einen Link laden, Vorschau (Zahlen, die neuen Termine zum Auswählen, Hinweise), Freigabe und
+// Zuordnung wählen, importieren, Bericht. Alles läuft lokal (offline-first); der Abgleich mit dem Server folgt im Hintergrund. Es werden keine
+// Teilnehmer, Anhänge oder Links aus der Datei übernommen. Schon vorhandene Termine (gleiche UID) erscheinen nur als Zahl.
+import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -14,6 +17,7 @@ import '../../data/calendar/ics_import.dart';
 import '../../data/calendar/ics_parser.dart';
 import '../../data/calendar/termin_repository.dart';
 import '../../data/calendar/zeitzonen.dart';
+import '../../data/database_provider.dart';
 import '../../data/lists/members.dart';
 import '../../ui/widgets.dart';
 import '../auth/auth_widgets.dart';
@@ -38,6 +42,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
   var _phase = _Phase.wahl;
   String? _fehler;
   String _dateiname = '';
+  String _ladeText = '';
   IcsPlan? _plan;
   var _sicht = TerminSicht.family;
   String? _person;
@@ -47,11 +52,66 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
   var _gesamt = 0;
   IcsBericht? _bericht;
   final _abbruch = IcsAbbruch();
+  final _link = TextEditingController();
+
+  /// Neue Termine, die die Person abgewählt hat (Identität des Plan-Eintrags).
+  final _abgewaehlt = <IcsPlanEintrag>{};
+
+  /// Der auf diesem Gerät gespeicherte Link (null = keiner).
+  String? _gespeichert;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!kIsWeb) {
+      ref.read(appDatabaseProvider).metaLesen(kIcsLinkSchluessel).then((l) {
+        if (!mounted || l == null) return;
+        setState(() => _gespeichert = l);
+        if (_link.text.isEmpty) _link.text = l;
+      }, onError: (_) {});
+    }
+  }
+
+  Future<void> _linkSpeichern() async {
+    final link = icsLinkPruefen(_link.text);
+    if (link == null) {
+      setState(() => _fehler = 'Bitte gib einen Link ein, der mit https:// oder webcal:// beginnt.');
+      return;
+    }
+    await ref.read(appDatabaseProvider).metaSchreiben(kIcsLinkSchluessel, link.toString());
+    if (mounted) {
+      setState(() {
+        _fehler = null;
+        _gespeichert = link.toString();
+      });
+    }
+  }
+
+  Future<void> _linkLoeschen() async {
+    await ref.read(appDatabaseProvider).metaLoeschen(kIcsLinkSchluessel);
+    if (mounted) {
+      setState(() {
+        _gespeichert = null;
+        _link.clear();
+      });
+    }
+  }
 
   @override
   void dispose() {
     _abbruch.angefordert = true;
+    _link.dispose();
     super.dispose();
+  }
+
+  Future<void> _linkLaden() async {
+    final link = icsLinkPruefen(_link.text);
+    if (link == null) {
+      setState(() => _fehler = 'Bitte gib einen Link ein, der mit https:// oder webcal:// beginnt.');
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    await _lesen('Kalender von ${link.host}', 'Der Kalender wird geladen …', () => ref.read(icsLinkLaderProvider)(link));
   }
 
   Future<void> _waehlen() async {
@@ -72,12 +132,20 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       });
       return;
     }
+    await _lesen(datei.name, 'Datei „${datei.name}“ wird gelesen …', () => leseBegrenzt(datei!.bytes));
+  }
+
+  Future<void> _lesen(String name, String ladeText, Future<Uint8List> Function() holen) async {
     setState(() {
+      _fehler = null;
       _phase = _Phase.liest;
-      _dateiname = datei!.name;
+      _dateiname = name;
+      _ladeText = ladeText;
+      _lesefortschritt = null;
+      _abgewaehlt.clear();
     });
     try {
-      final bytes = await leseBegrenzt(datei.bytes);
+      final bytes = await holen();
       if (!zeitzonenBereit() && !await zeitzonenNeuLaden()) throw const IcsFehler('Die Zeitzonen-Daten konnten nicht geladen werden. Bitte versuche es gleich noch einmal.');
       final ergebnis = await ref.read(icsLeserProvider)(bytes, (p) {
         if (mounted) setState(() => _lesefortschritt = p);
@@ -110,8 +178,10 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
   }
 
   Future<void> _importieren() async {
-    final plan = _plan;
-    if (plan == null) return;
+    final voll = _plan;
+    if (voll == null) return;
+    // abgewählte neue Termine fallen aus dem Plan (sie zählen dann weder als importiert noch als übersprungen)
+    final plan = IcsPlan(eintraege: [for (final e in voll.eintraege) if (!_abgewaehlt.contains(e)) e], hinweise: voll.hinweise, abgeschnitten: voll.abgeschnitten);
     setState(() {
       _phase = _Phase.laeuft;
       _erledigt = 0;
@@ -172,7 +242,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
     Widget? fuss;
     switch (_phase) {
       case _Phase.vorschau:
-        final n = plan == null ? 0 : plan.neu + (_aktualisieren ? plan.geaendert : 0);
+        final n = plan == null ? 0 : plan.neu - _abgewaehlt.length + (_aktualisieren ? plan.geaendert : 0);
         fuss = FilledButton(style: _hoch, onPressed: n > 0 ? _importieren : null, child: Text(n == 1 ? '1 Termin importieren' : '$n Termine importieren'));
       case _Phase.laeuft:
         fuss = OutlinedButton(style: _hoch, onPressed: () => setState(() => _abbruch.angefordert = true), child: const Text('Abbrechen'));
@@ -190,7 +260,7 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         if (_fehler != null) ...[MeldungsBox(_fehler!), const SizedBox(height: 12)],
         switch (_phase) {
           _Phase.wahl => _wahl(rechte),
-          _Phase.liest => _lade('Datei „$_dateiname“ wird gelesen …'),
+          _Phase.liest => _lade(_ladeText),
           _Phase.vorschau => _vorschau(plan!, rechte),
           _Phase.laeuft => _lauf(),
           _Phase.fertig => _fertig(_bericht!),
@@ -216,6 +286,42 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
         FilledButton.icon(onPressed: _waehlen, icon: const Icon(Icons.upload_file), label: const Text('ICS-Datei auswählen')),
         const SizedBox(height: 8),
         const Text('Höchstens 5 MB und 5000 Termine.', style: TextStyle(color: kTextMuted, fontSize: 12)),
+        const SizedBox(height: 24),
+        const MonoLabel('Oder über einen Link'),
+        const SizedBox(height: 6),
+        if (kIsWeb)
+          const Text('Einen Kalender über einen Link laden kannst du in der Android-App.', style: TextStyle(color: kTextMuted, height: 1.4))
+        else ...[
+          TextField(
+            controller: _link,
+            keyboardType: TextInputType.url,
+            autocorrect: false,
+            enableSuggestions: false,
+            textInputAction: TextInputAction.go,
+            onSubmitted: (_) => _linkLaden(),
+            onChanged: (_) => setState(() {}), // „Link speichern“ hängt am Text
+            decoration: const InputDecoration(labelText: 'Link zum Kalender (ICS)', hintText: 'https://…'),
+          ),
+          const SizedBox(height: 8),
+          FilledButton.icon(style: _hoch, onPressed: _linkLaden, icon: const Icon(Icons.sync), label: const Text('Auf neue Termine prüfen')),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 8,
+            children: [
+              if (icsLinkPruefen(_link.text)?.toString() != _gespeichert)
+                TextButton.icon(style: _hoch, onPressed: _linkSpeichern, icon: const Icon(Icons.bookmark_add_outlined), label: const Text('Link speichern')),
+              if (_gespeichert != null)
+                TextButton.icon(style: _hoch, onPressed: _linkLoeschen, icon: const Icon(Icons.delete_outline), label: const Text('Gespeicherten Link löschen')),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${_gespeichert != null ? 'Ein Link ist auf diesem Gerät gespeichert. ' : ''}'
+            'Gedacht für einen Kalender, den du woanders weiter pflegst: Prüfe ihn, wann du willst, du siehst dann nur die neuen Termine und wählst aus, welche du übernimmst. '
+            'Ein gespeicherter Link bleibt nur auf diesem Gerät. Er ist oft wie ein Passwort zu deinem Kalender, gib ihn nicht weiter.',
+            style: const TextStyle(color: kTextMuted, fontSize: 12, height: 1.4),
+          ),
+        ],
       ],
     );
   }
@@ -243,6 +349,11 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
       ],
     ),
   );
+
+  /// Höchstens so viele neue Termine stehen einzeln zur Wahl (die Seite baut alle Zeilen auf einmal).
+  static const _kMaxEinzeln = 100;
+
+  static DateTime _beginn(IcsTermin t) => (t.ganztaegig ? DateTime.tryParse('${t.startDate}T00:00:00Z') : t.startUtc) ?? DateTime.utc(0);
 
   static String _wann(IcsTermin t) {
     if (t.ganztaegig) {
@@ -287,7 +398,8 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
 
   Widget _vorschau(IcsPlan plan, TerminRechte rechte) {
     final mitglieder = ref.watch(mitgliederProvider).value ?? const <UserDto>[];
-    final vorschau = plan.eintraege.take(25).toList();
+    final neue = [for (final e in plan.eintraege) if (e.status == IcsStatus.neu) e]..sort((a, b) => _beginn(a.termin).compareTo(_beginn(b.termin)));
+    final sichtbar = neue.take(_kMaxEinzeln).toList();
     final warnungen = plan.hinweise;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -308,15 +420,31 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
           const SizedBox(height: 12),
           const MeldungsBox('In der Datei wurden keine Termine gefunden.', fehler: false),
         ],
-        if (vorschau.isNotEmpty) ...[
+        if (plan.eintraege.isNotEmpty && neue.isEmpty) ...[
+          const SizedBox(height: 12),
+          const MeldungsBox('Keine neuen Termine: alles daraus ist schon in deinem Kalender.', fehler: false),
+        ],
+        if (neue.isNotEmpty) ...[
           const SizedBox(height: 16),
-          const MonoLabel('Termine'),
-          const SizedBox(height: 6),
-          for (final e in vorschau) _Zeile(eintrag: e, wann: _wann(e.termin)),
-          if (plan.eintraege.length > vorschau.length)
+          Row(
+            children: [
+              const Expanded(child: MonoLabel('Neue Termine')),
+              TextButton(
+                style: _hoch,
+                onPressed: () => setState(() => _abgewaehlt.length == neue.length ? _abgewaehlt.clear() : _abgewaehlt.addAll(neue)),
+                child: Text(_abgewaehlt.length == neue.length ? 'Alle auswählen' : 'Keine auswählen'),
+              ),
+            ],
+          ),
+          for (final e in sichtbar)
+            _Zeile(eintrag: e, wann: _wann(e.termin), gewaehlt: !_abgewaehlt.contains(e), beiWahl: (v) => setState(() => v ? _abgewaehlt.remove(e) : _abgewaehlt.add(e))),
+          if (neue.length > sichtbar.length)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: Text('… und ${plan.eintraege.length - vorschau.length} weitere', style: const TextStyle(color: kTextMuted, fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12)),
+              child: Text(
+                '… und ${neue.length - sichtbar.length} weitere neue Termine. Sie folgen „Alle auswählen“ und „Keine auswählen“.',
+                style: const TextStyle(color: kTextMuted, fontFamily: kFontSans, fontFeatures: kZiffern, fontSize: 12),
+              ),
             ),
         ],
         if (warnungen.isNotEmpty) ...[
@@ -403,7 +531,17 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
           ],
         ],
         const SizedBox(height: 8),
-        TextButton.icon(style: _hoch, onPressed: _waehlen, icon: const Icon(Icons.swap_horiz), label: const Text('Andere Datei wählen')),
+        TextButton.icon(
+          style: _hoch,
+          onPressed: () => setState(() {
+            _plan = null;
+            _fehler = null;
+            _abgewaehlt.clear();
+            _phase = _Phase.wahl;
+          }),
+          icon: const Icon(Icons.swap_horiz),
+          label: const Text('Andere Datei oder anderen Link wählen'),
+        ),
       ],
     );
   }
@@ -451,29 +589,32 @@ class _IcsImportScreenState extends ConsumerState<IcsImportScreen> {
   }
 }
 
+/// Ein neuer Termin der Vorschau mit Haken (gewählt = wird importiert).
 class _Zeile extends StatelessWidget {
   final IcsPlanEintrag eintrag;
   final String wann;
-  const _Zeile({required this.eintrag, required this.wann});
+  final bool gewaehlt;
+  final ValueChanged<bool> beiWahl;
+  const _Zeile({required this.eintrag, required this.wann, required this.gewaehlt, required this.beiWahl});
 
   @override
   Widget build(BuildContext context) {
     final t = eintrag.termin;
-    final (text, farbe) = switch (eintrag.status) {
-      IcsStatus.neu => ('neu', kTerminal),
-      IcsStatus.vorhanden => ('vorhanden', kTextMuted),
-      IcsStatus.geaendert => ('geändert', kAccent),
-      IcsStatus.uebersprungen => ('übersprungen', kWarn),
-    };
     return Semantics(
-      label: '${t.titel}, $wann, $text${t.serie ? ', Serie' : ''}',
+      label: '${t.titel}, $wann${t.serie ? ', Serie' : ''}',
+      checked: gewaehlt,
+      onTap: () => beiWahl(!gewaehlt),
       excludeSemantics: true,
-      child: Container(
+      child: InkWell(
+        onTap: () => beiWahl(!gewaehlt),
+        child: Container(
         constraints: const BoxConstraints(minHeight: 48),
         padding: const EdgeInsets.symmetric(vertical: 6),
         decoration: const BoxDecoration(border: Border(bottom: BorderSide(color: kBorderSoft))),
         child: Row(
           children: [
+            Checkbox(value: gewaehlt, onChanged: (v) => beiWahl(v ?? false)),
+            const SizedBox(width: 4),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -484,10 +625,9 @@ class _Zeile extends StatelessWidget {
               ),
             ),
             if (t.serie) const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.repeat, size: 16, color: kTextMuted)),
-            const SizedBox(width: 8),
-            StatusPill(text, color: farbe),
           ],
         ),
+      ),
       ),
     );
   }
