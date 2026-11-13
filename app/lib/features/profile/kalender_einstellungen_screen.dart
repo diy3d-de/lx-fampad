@@ -54,7 +54,7 @@ class KalenderEinstellungenScreen extends ConsumerWidget {
           EinstellungsZeile(
             icon: Icons.file_download_outlined,
             titel: 'Datei importieren (.ics)',
-            untertitel: 'Termine aus einer ICS-Datei übernehmen',
+            untertitel: 'Termine aus einer ICS-Datei oder über einen Link übernehmen',
             onTap: () => icsImportOeffnen(context),
           ),
         EinstellungsZeile(

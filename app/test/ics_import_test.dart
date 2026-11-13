@@ -1,5 +1,5 @@
 // ICS-Import: Plan (neu / vorhanden / geändert / übersprungen, Limits, Rechte), Schreiben über den SyncStore (Ausgang), erneuter Import ohne
-// Duplikate, Aktualisieren, und der Ablauf in der Oberfläche (Vorschau, Import, Bericht) bei 360 px und Textskala 1.0 und 1.5.
+// Duplikate, Aktualisieren, und der Ablauf in der Oberfläche (Vorschau, Import, Bericht) bei 360 px und Textskala 1.0 und 1.5; Laden über einen Link, Link speichern/löschen, Auswahl neuer Termine.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -8,6 +8,8 @@ import 'package:drift/drift.dart' show DatabaseConnection, OrderingTerm, Value;
 import 'package:drift/native.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:lx_fampad/data/api/models.dart';
 import 'package:lx_fampad/data/app_database.dart';
 import 'package:lx_fampad/data/calendar/ics_datei.dart';
@@ -74,6 +76,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   tzdata.initializeTimeZones();
   setUpAll(testVorbereiten);
+  linkTests();
 
   group('Plan und Import', () {
     test('Import legt Termine mit UID, Zeitzone, Freigabe und Ausnahmen an und stößt den Sync an', () async {
@@ -345,3 +348,93 @@ void main() {
 }
 
 IcsErgebnis _ics(String uid, String titel) => icsLesen(Uint8List.fromList(utf8.encode('BEGIN:VCALENDAR\r\nVERSION:2.0\r\nBEGIN:VEVENT\r\nUID:$uid\r\nDTSTART:20261201T100000Z\r\nDTEND:20261201T110000Z\r\nSUMMARY:$titel\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n')));
+
+Uint8List _zweiTermine() => Uint8List.fromList(utf8.encode('BEGIN:VCALENDAR\r\nVERSION:2.0\r\n'
+    'BEGIN:VEVENT\r\nUID:link-a\r\nDTSTART:20261201T100000Z\r\nDTEND:20261201T110000Z\r\nSUMMARY:Elternabend\r\nEND:VEVENT\r\n'
+    'BEGIN:VEVENT\r\nUID:link-b\r\nDTSTART:20261202T100000Z\r\nDTEND:20261202T110000Z\r\nSUMMARY:Probe Chor\r\nEND:VEVENT\r\n'
+    'END:VCALENDAR\r\n'));
+
+void linkTests() {
+  group('Link', () {
+    test('icsLinkPruefen: nur https, webcal wird https, keine Zugangsdaten', () {
+      expect(icsLinkPruefen(' https://k.example/a.ics?key=1 ')?.toString(), 'https://k.example/a.ics?key=1');
+      expect(icsLinkPruefen('webcal://k.example/a.ics')?.toString(), 'https://k.example/a.ics');
+      expect(icsLinkPruefen('WEBCAL://k.example/a.ics')?.scheme, 'https');
+      expect(icsLinkPruefen('http://k.example/a.ics'), isNull);
+      expect(icsLinkPruefen('https://nutzer:pw@k.example/a.ics'), isNull);
+      expect(icsLinkPruefen('file:///etc/passwd'), isNull);
+      expect(icsLinkPruefen(''), isNull);
+    });
+
+    test('icsLinkLaden: folgt https-Weiterleitung, lehnt http-Weiterleitung und Fehlercodes ab, nennt nie den Link', () async {
+      final ics = _zweiTermine();
+      final client = MockClient((r) async => switch (r.url.path) {
+        '/weiter' => http.Response('', 302, headers: {'location': '/ziel.ics'}),
+        '/unsicher' => http.Response('', 301, headers: {'location': 'http://k.example/ziel.ics'}),
+        '/ziel.ics' => http.Response.bytes(ics, 200),
+        _ => http.Response('', 404),
+      });
+      expect(await icsLinkLaden(client, Uri.parse('https://k.example/weiter')), ics);
+      await expectLater(icsLinkLaden(client, Uri.parse('https://k.example/unsicher')), throwsA(isA<IcsFehler>()));
+      try {
+        await icsLinkLaden(client, Uri.parse('https://k.example/fehlt?key=geheim'));
+        fail('kein Fehler');
+      } on IcsFehler catch (e) {
+        expect(e.meldung, contains('404'));
+        expect(e.meldung, isNot(contains('geheim')));
+      }
+      final gross = MockClient((r) async => http.Response.bytes(Uint8List(kIcsMaxBytes + 1), 200));
+      await expectLater(icsLinkLaden(gross, Uri.parse('https://k.example/a.ics')), throwsA(isA<IcsFehler>()));
+    });
+
+    testWidgets('Link speichern, löschen, prüfen und nur ausgewählte neue Termine importieren', (tester) async {
+      final env = await angemeldeteUmgebung();
+      Uri? geladen;
+      env.extraOverrides.addAll([
+        icsLeserProvider.overrideWithValue((b, f) async => icsLesen(b)),
+        icsLinkLaderProvider.overrideWithValue((link) async {
+          geladen = link;
+          return _zweiTermine();
+        }),
+      ]);
+      await starteApp(tester, env);
+      await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text('Kalender')));
+      await warte(tester);
+      await tester.tap(find.byTooltip('Mehr'));
+      await warte(tester);
+      await tester.tap(find.text('Kalender-Einstellungen …'));
+      await warte(tester);
+      await tester.tap(find.text('Datei importieren (.ics)'));
+      await warte(tester);
+
+      await tester.enterText(find.byType(TextField), 'webcal://k.example/familie.ics');
+      await warte(tester);
+      await tester.ensureVisible(find.text('Link speichern'));
+      await tester.tap(find.text('Link speichern'));
+      await warte(tester);
+      expect(await env.db.metaLesen(kIcsLinkSchluessel), 'https://k.example/familie.ics');
+      await tester.ensureVisible(find.text('Gespeicherten Link löschen'));
+      await tester.tap(find.text('Gespeicherten Link löschen'));
+      await warte(tester);
+      expect(await env.db.metaLesen(kIcsLinkSchluessel), isNull);
+
+      await tester.enterText(find.byType(TextField), 'https://k.example/familie.ics');
+      await tester.ensureVisible(find.text('Auf neue Termine prüfen'));
+      await tester.tap(find.text('Auf neue Termine prüfen'));
+      await warte(tester, 12);
+      expect(geladen.toString(), 'https://k.example/familie.ics');
+      expect(find.text('Neue Termine'), findsOneWidget);
+      expect(find.text('2 Termine importieren'), findsOneWidget);
+      await tester.ensureVisible(find.text('Probe Chor'));
+      await tester.tap(find.text('Probe Chor'));
+      await warte(tester);
+      expect(find.text('1 Termin importieren'), findsOneWidget);
+      await tester.tap(find.text('1 Termin importieren'));
+      await warte(tester, 20);
+      final titel = (await env.db.select(env.db.termine).get()).map((t) => t.titel).toList();
+      expect(titel, ['Elternabend']);
+      await tester.tap(find.text('Fertig'));
+      await warte(tester);
+    });
+  });
+}
