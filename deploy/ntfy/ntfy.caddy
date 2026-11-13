@@ -8,6 +8,8 @@ ntfy.familyhub.lx-labs.dev {
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "no-referrer"
 		X-Frame-Options "DENY"
+		# Nie in Suchmaschinen (wie fampad.caddy)
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
 		-Server
 		-Via
 	}

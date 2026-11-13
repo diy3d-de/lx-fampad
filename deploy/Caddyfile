@@ -20,6 +20,8 @@
 		Referrer-Policy "no-referrer"
 		# Nicht in fremde Seiten einbetten lassen
 		X-Frame-Options "DENY"
+		# Private Familien-App: nie in Suchmaschinen. Nicht per robots.txt sperren, sonst sieht Google dieses noindex nie.
+		X-Robots-Tag "noindex, nofollow, noarchive, nosnippet, noimageindex"
 		# Server-Software nicht verraten
 		-Server
 		-Via
